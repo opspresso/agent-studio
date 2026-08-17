@@ -139,7 +139,7 @@ model id` 를 한 번씩 로그로 남기기도 한다. `UNKNOWN_MODEL_POLICY=re
 
 요청 밖에서 시작된 작업은 운영자가 이미 볼 수 있는 id 를 쓴다: **webhook 전달**은 자기 history
 행의 delivery id 를, **Slack 이벤트**는 Slack event id 를, **Telegram 업데이트**는 자신의
-`update_id` 를 실어 나른다.
+`update_id` 를, **Teams activity** 는 자신의 activity id 를 실어 나른다.
 
 콘솔에 쓰는 일은 `src/shared/logger.ts` 가 소유하며 `tests/architecture.test.ts` 가 이를
 고정한다. 상시 예외가 둘 있다: 아무것도 import 하지 않아 로거에 닿을 수 없는 `domain` — 위의
@@ -185,11 +185,11 @@ flush 되므로, 롤아웃에서도 마지막 span 은 남는다.
 ## 행 보존
 
 트레이스, usage 행, chat 과 그 메시지, 아티팩트 행, 트리거 전달, 인바운드 A2A 태스크,
-Slack·Telegram 중복 제거 claim, Better Auth 세션 행은 모두 유닉스 초 단위 `expiresAt` 을
+Slack·Telegram·Teams 중복 제거 claim, Better Auth 세션 행은 모두 유닉스 초 단위 `expiresAt` 을
 지니며, 수명이 고정된 여섯 종류의 행도 마찬가지다: webhook 멱등 claim (24h), Slack 스레드 참여
 (1일 — 봇이 답한 스레드가 "봇의 것" 으로 남아 있는 구간), 원격 대화 (7일, 사용할 때마다 갱신 —
 A2A 에이전트의 `contextId` 가 우리 쪽 대화 하나를 위해 이어지는 구간이며, 그것을 넘기면 다음
-transfer 는 맨바닥에서 시작한다), Telegram 대화 트랜스크립트 턴 (각 7일 — Bot API 가 히스토리를
+transfer 는 맨바닥에서 시작한다), Telegram·Teams 대화 트랜스크립트 턴 (각 7일 — 두 플랫폼 모두 히스토리를
 돌려주지 않으므로 후속 메시지가 나르는 컨텍스트), MCP OAuth 진행 중 state (10분), 그리고 런
 동시성 슬롯 (리스 길이 — TTL 이 없어도 동시성은 정확하지만, 행이 런당 하나씩 쌓인다).
 
@@ -368,7 +368,7 @@ Schedule 트리거는 무언가가 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN` 과 함�
 | MCP 레지스트리 편집 | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | 한 인스턴스에서 한 편집이 그 구간만큼 다른 인스턴스들에게 보이지 않는다. |
 | 관리형 MCP | — | **호스트당 앱 인스턴스 하나.** 관리형 컨테이너는 정확히 하나의 네트워크 네임스페이스에 합류한다. |
 | 메트릭 카운터 | — | 프로세스 단위. 인스턴스들 사이의 집계는 스크레이프 계층에서 하라. |
-| 백그라운드 작업 (`after()`) | — | 인스턴스가 갑자기 사라지며 중단된 Slack 이벤트·Telegram 업데이트·트리거 발화는 **재개되지 않는다** — 런은 멱등하지 않다. 두 종류의 트리거 행 모두 sweep 이 `failed` 로 복구한다 — 5분마다 오는 스캔 틱에서(`REPAIR_EVERY_MINUTES`, sweep 이 모든 프로젝트의 트리거를 훑고 그 history 를 읽기 때문에 매분 할 만한 일이 아니다), 그리고 그 트리거 자신의 다음 webhook 전달에서. 그래서 티커를 설정하지 않은 배포에서도 원장은 결국 올바르게 끝난다. 잃어버린 Slack 이벤트나 Telegram 업데이트는 의도적으로 복구하지 않는다 — 마무리할 행을 남기지 않고, 답을 못 받은 사용자만 남기기 때문이다. |
+| 백그라운드 작업 (`after()`) | — | 인스턴스가 갑자기 사라지며 중단된 Slack 이벤트·Telegram 업데이트·Teams activity·트리거 발화는 **재개되지 않는다** — 런은 멱등하지 않다. 두 종류의 트리거 행 모두 sweep 이 `failed` 로 복구한다 — 5분마다 오는 스캔 틱에서(`REPAIR_EVERY_MINUTES`, sweep 이 모든 프로젝트의 트리거를 훑고 그 history 를 읽기 때문에 매분 할 만한 일이 아니다), 그리고 그 트리거 자신의 다음 webhook 전달에서. 그래서 티커를 설정하지 않은 배포에서도 원장은 결국 올바르게 끝난다. 잃어버린 Slack 이벤트·Telegram 업데이트·Teams activity 는 의도적으로 복구하지 않는다 — 마무리할 행을 남기지 않고, 답을 못 받은 사용자만 남기기 때문이다. |
 
 ### 재배포 이후의 관리형 MCP
 
@@ -396,7 +396,7 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오고 SS
 - [ ] `DYNAMODB_ENDPOINT` 는 **비워 둘 것**
 - [ ] `AES_ENCRYPTION_KEY` 를 시크릿으로 프로비저닝하고 백업할 것 — 잃어버리면 저장된 모든 자격 증명을 읽을 수 없게 된다
 - [ ] `PK`/`SK`, `GSI1`, `GSI2` 를 갖춘 DynamoDB 테이블을 만들고 **`expiresAt` 에 TTL 을 켤 것**
-- [ ] `PUBLIC_BASE_URL` 설정 (Agent Card, Slack 매니페스트, Telegram webhook, OAuth 콜백)
+- [ ] `PUBLIC_BASE_URL` 설정 (Agent Card, Slack 매니페스트, Telegram webhook, Teams messaging endpoint 표시, OAuth 콜백)
 - [ ] 태스크/인스턴스 role 이 DynamoDB 를, 그리고 해당 기능을 쓴다면 S3 와 SSM 을 허용할 것
 - [ ] `S3_BUCKET_NAME` 이 설정된 경우: role 의 S3 권한이 **`images/*` 뿐 아니라 `artifacts/*`
       까지** 덮고, `s3:PutObject`·`s3:GetObject`·`s3:DeleteObject` 셋 모두를 포함할 것.

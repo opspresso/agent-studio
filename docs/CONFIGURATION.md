@@ -311,11 +311,19 @@ sync 는 저장소당 한 번에 하나씩만 돈다(두 번째 요청은 409 �
 ## Telegram
 
 환경에는 아무것도 없다. 프로젝트별 설정 — 봇 토큰과 봇이 켜져 있는지 여부 — 는 프로젝트에
-산다 (`/projects/{name}/settings`). webhook 시크릿은 거기서 발급되고 *Register webhook* 액션이
-그것을 Telegram 에 건네주는데, 이 액션은 봇을
-`PUBLIC_BASE_URL/api/telegram/webhook/{project}` 로 향하게 한다 — 그래서 `PUBLIC_BASE_URL` 은
-Telegram 이 도달할 수 있는 주소여야 한다. BotFather 의 *privacy mode* 는 켜 둔 채로 둬도 된다:
-어차피 봇은 그룹에서 자기를 지목한 것에만 답한다 ([design/telegram.md](design/telegram.md)).
+산다 (`/projects/{name}/integrations`). webhook 시크릿은 거기서 발급되고, 봇을 켜면
+`PUBLIC_BASE_URL/api/telegram/webhook/{project}` 에 webhook 이 등록되며 끄면 삭제된다 (*Register
+webhook* 은 주소가 바뀐 뒤 다시 가리키는 용도다) — 그래서 `PUBLIC_BASE_URL` 은 Telegram 이
+도달할 수 있는 주소여야 한다. BotFather 의 *privacy mode* 는 켜 둔 채로 둬도 된다: 어차피 봇은
+그룹에서 자기를 지목한 것에만 답한다 ([design/telegram.md](design/telegram.md)).
+
+## Microsoft Teams
+
+환경에는 아무것도 없다. 프로젝트별 설정 — Azure Bot 의 Microsoft App ID, 클라이언트 시크릿,
+(단일 테넌트 앱이면) 테넌트 id, 켜져 있는지 여부 — 는 프로젝트에 산다
+(`/projects/{name}/integrations`). Azure 에는 endpoint 를 가리키는 호출이 없으므로 콘솔은
+`PUBLIC_BASE_URL/api/teams/messages/{project}` 를 보여 주고 운영자가 Azure Bot 의 messaging
+endpoint 에 붙여 넣는다 ([design/teams.md](design/teams.md)).
 
 ## A2A
 
@@ -398,9 +406,11 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 레지스트리가 외부 agent 에 보내는 "test message" — OpenAI 형태다. `a2a` 항목의 테스트는 위의 A2A 클라이언트를 지나 그 `120s` idle 상한 아래 놓이고 뒤에 런 데드라인도 없으므로, 스트리밍 카드는 침묵으로만 제한된다 | `60s` | `src/infrastructure/agent/agentClient.ts` |
 | Slack Web API 호출 하나 / Slack 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/slack/client.ts` |
 | Telegram Bot API 호출 하나 / Telegram 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/telegram/client.ts` |
+| Bot Framework(Teams) 호출 하나 / 첨부 전송 하나 | `30s` / `120s` | `src/infrastructure/teams/client.ts` |
+| Bot Framework 서명 키 캐시 / 토큰 시각 skew / 앱 토큰 만료 여유 | `24h` / `5m` / `60s` | `src/infrastructure/teams/client.ts` |
 | GitHub API 요청 하나 (plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
 | 모델 응답당 동시 MCP 호출 수 | `5` | `src/application/llm/engine.ts` |
-| 인터랙티브(Slack, Telegram) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
+| 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
 | 턴당 이미지 수 / 각 바이트 | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | 턴당 문서 수 / 각 바이트 | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | 유지하는 추출 텍스트, 문서당 / 턴당 | `20,000` / `40,000` 자 | `src/domain/llm/documentLimits.ts` |
@@ -412,9 +422,9 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 런의 컨텍스트 예산이 잘라 낼 때 유지하는 도구 결과 | 최소 `500` 자 | `src/application/llm/toolResultBudget.ts` |
 | 컨텍스트로 리플레이되는 chat 이력 | `200` 메시지 / `200,000` 자 | `src/application/chat/messageMapping.ts` |
 | 컨텍스트로 리플레이되는 chat 도구 트래픽 | `3` 턴 / `20,000` 자 | `src/application/chat/messageMapping.ts` |
-| 인바운드 webhook / Slack 이벤트 / Telegram update 본문 | 각 `1MB` | `src/app/api/webhook/[project]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts`, `src/app/api/telegram/webhook/_lib/handleUpdateRequest.ts` |
+| 인바운드 webhook / Slack 이벤트 / Telegram update / Teams activity 본문 | 각 `1MB` | `src/app/api/webhook/[project]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts`, `src/app/api/telegram/webhook/_lib/handleUpdateRequest.ts`, `src/app/api/teams/messages/_lib/handleActivityRequest.ts` |
 | 컨텍스트로 쓰는 Slack 스레드 턴 수 | `50` | `src/application/slack/handleSlackEvent.ts` |
-| 컨텍스트로 쓰는 Telegram transcript 턴 수 / 합계 문자 수 / 한 턴에서 유지하는 문자 수 | `50` / `100,000` / `20,000` | `src/application/telegram/handleUpdate.ts` |
+| 컨텍스트로 쓰는 transcript 턴 수 / 합계 문자 수 / 한 턴에서 유지하는 문자 수 (Telegram, Teams) | `50` / `100,000` / `20,000` | `src/application/messaging/transcriptHistory.ts` |
 | Telegram 앨범의 캡션 없는 멤버가 claim 전에 기다리는 시간 | `1s` | `src/application/telegram/handleUpdate.ts` |
 | Slack 스레드 제목 | `60` 자 | `src/application/slack/handleSlackEvent.ts` |
 | 모든 chat-bot 표면에서의 이력 이미지 되짚기 범위 | `10` 메시지 | `src/application/messaging/attachments.ts` |
@@ -434,7 +444,9 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | Slack 프로필 캐시 (성공 / 실패 / 항목 수) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |
 | Telegram 메시지 하나 (Telegram 자신의 상한이다. 더 긴 답변은 다음 메시지로 이어지며, 마지막 `800` 자 안에 줄바꿈이 있으면 거기서 자른다) | `4,096` 자 | `src/application/telegram/replyChannel.ts` |
 | Telegram 답변 편집 주기 / typing 갱신 (Telegram 은 typing 을 `5s` 에 만료시킨다) | `2s` / `4s` | `src/application/telegram/replyChannel.ts` |
-| Telegram 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
+| Teams 메시지 하나 (Teams 의 28KB 아래에서 Markdown 과 첨부에 여유를 둔 값. 더 긴 답변은 다음 메시지로 이어진다) / inline 그림 | `20,000` 자 / `4MB` | `src/application/teams/replyChannel.ts` |
+| Teams 답변 편집 주기 / typing 갱신 | `2s` / `3s` | `src/application/teams/replyChannel.ts` |
+| Telegram·Teams 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
 | usage 요약 질의 범위 | `184` 일 | `src/app/api/usages/summary/validation.ts` |
 | schedule 따라잡기 창 (장애가 한 번에 발화시킬 수 있는 양에 한계를 둔다) | `10` 분 | `src/application/trigger/scanSchedules.ts` |
 | scan tick 하나가 동시에 굴리는 schedule 발화 수 | `8` | `src/application/trigger/scanSchedules.ts` |

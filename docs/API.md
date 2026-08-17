@@ -19,7 +19,8 @@ AgentDure 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는지
   받는다. 토큰은 project 소유자를 대신해 동작하며 그 project 범위로 한정된다
   (참고: [Project API 토큰](#project-api-토큰)). 기계 표면은 게이트가 다르다:
   `/api/a2a/*` 는 `X-A2A-Key`, `/api/slack/events/*` 는 Slack signing secret,
-  `/api/telegram/webhook/*` 는 Telegram 이 되돌려 주는 secret token, `/api/webhook/{project}` 는
+  `/api/telegram/webhook/*` 는 Telegram 이 되돌려 주는 secret token, `/api/teams/messages/*` 는 Bot
+  Framework 가 서명한 토큰, `/api/webhook/{project}` 는
   그 webhook 자신의 secret, `/api/triggers/scan` 은 배포의 `SCHEDULE_SCAN_TOKEN` 이다. `/api/health`, `/api/ready`, `/api/metrics` 는 열려 있다.
 - **Authorization**: project 는 공유 카탈로그다 — 로그인한 사용자라면 누구나 어떤 project 든
   읽고 실행할 수 있다. 변경(수정/삭제/publish, version 생성/수정, Slack·Telegram 설정)은
@@ -92,6 +93,8 @@ AgentDure 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는지
 | `/api/projects/{name}/telegram` | `GET` `PUT` `DELETE` | owner |
 | `/api/projects/{name}/telegram/test` | `POST` | owner |
 | `/api/projects/{name}/telegram/webhook` | `POST` | owner |
+| `/api/projects/{name}/teams` | `GET` `PUT` `DELETE` | owner |
+| `/api/projects/{name}/teams/test` | `POST` | owner |
 | `/api/projects/{name}/a2a` | `GET` | session |
 | `/api/projects/{name}/mcp-connections` | `GET` | owner |
 | `/api/projects/{name}/mcp-connections/{server}` | `PUT` `DELETE` | owner |
@@ -154,6 +157,7 @@ AgentDure 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는지
 | `/api/a2a/{project}` | `POST` | `X-A2A-Key` |
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
 | `/api/telegram/webhook/{project}` | `POST` | `X-Telegram-Bot-Api-Secret-Token` |
+| `/api/teams/messages/{project}` | `POST` | Bot Framework bearer 토큰 |
 | `/api/webhook/{project}` | `POST` | `X-Trigger-Secret` |
 | `/api/triggers/scan` | `POST` | `X-Scan-Token` |
 | `/api/catalog/reindex` | `POST` | `X-Scan-Token` |
@@ -724,6 +728,31 @@ agent 가 아닌 project 에 대한 `PUT` 은 400 이고, 저장되거나 전달
 `{ ok: true, duplicate: true }`, 그 밖의 것은 `{ ok: true }` 이고 런은 ack 이후에 처리된다
 ([design/telegram.md](design/telegram.md) 참조).
 
+프로젝트별 Teams 설정은 이 엔드포인트들을 쓴다:
+
+```
+GET    /api/projects/{name}/teams
+PUT    /api/projects/{name}/teams          { appId?, appPassword?, tenantId?, enabled? }
+DELETE /api/projects/{name}/teams
+POST   /api/projects/{name}/teams/test
+```
+
+모든 동사가 같은 뷰로 답한다: `enabled`, `configured`, `appId`(secret 이 아니다 — 모든 토큰의
+audience 다), 마스킹된 `appPassword`, `tenantId`, `messagingPath`, `messagingUrl` — Azure Bot 의
+messaging endpoint 로 붙여 넣을 주소다. 넷 모두 소유자와 설정된 admin 으로 제한된다. `PUT` 은
+App ID 와 테넌트 id 가 GUID 인지만 확인하고 Microsoft 에는 아무것도 묻지 않는다 — 한 쌍이
+동작한다는 증거는 `test` 가 저장된 자격 증명으로 토큰을 받아 보는 것이고(`{ ok: true, appId,
+expiresInSeconds }`, 설정되지 않았거나 꺼져 있으면 `400`, Microsoft 가 거절하면 `502`), 저장이
+아니라 운영자가 요청하는 네트워크 호출이다. 마스킹되거나 빈 secret 은 저장된 것을 유지하고,
+agent 가 아닌 project 에 대한 `PUT` 과 자격 증명 없이 켜는 것은 400 이다. `DELETE` 는 등록을
+잊는다 — Azure 쪽 endpoint 는 운영자가 지운다.
+
+messaging 엔드포인트 자체인 `POST /api/teams/messages/{project}` 는 Bot Framework 가 호출하는
+것이다: 본문이 1MB 를 넘으면 413, bearer 토큰이 서비스의 키로 검증되지 않거나 이 App ID 를
+audience 로 하지 않거나 activity 의 `serviceUrl` 을 위해 발급된 것이 아니면 401, 봇이 무시하는
+activity 는 아무것도 claim 하지 않은 빈 200, 재전송은 빈 200, 그 밖의 것은 빈 202 이고 런은 ack
+이후에 처리된다 ([design/teams.md](design/teams.md)).
+
 ## 관리형 MCP 서버
 
 managed 서버는 이 배포가 SSM Run Command 로 자기 호스트에서 직접 띄우고 loopback 으로 닿는
@@ -1085,7 +1114,7 @@ GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 `actor` 는 `{kind}:{id}` 다 — `user:a@example.com`, `project-token:owner@example.com` (토큰은
 자기 소유자로서 인증하므로, 기계의 지출을 그 사람 자신의 런과 갈라 두는 것이 kind 다 — 그리고
 개인 tier 예산에 계산되는 것은 `user:` 행뿐이다),
-`slack:U123`, `telegram:123456`, `a2a:shared-key`, 그리고 trigger 발화에는
+`slack:U123`, `telegram:123456`, `teams:{Entra object id}`, `a2a:shared-key`, 그리고 trigger 발화에는
 `webhook:{project}:{triggerId}` 또는 `schedule:{project}:{triggerId}` 다. 지표 필드는 위 요약과
 정확히 같이 모델별 맵이다.
 

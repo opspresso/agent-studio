@@ -67,12 +67,18 @@
 | 전달된 Slack 이벤트 중 어떤 것이 봇에게 온 것인가, loop guard 포함 | `src/application/slack/engagement.ts` |
 | 어떤 메시지가 질문이 아니라 고정된 명령인가 | `src/application/slack/engagement.ts` 의 `parseSlackCommand` — 의도적으로 엄격하다: 명령은 봇이 다시 말할지 여부를 바꾸고, 매칭이 느슨하면 아무도 침묵시켜 달라 하지 않은 스레드를 침묵시킨다 |
 | 런이 사용하는 Slack Web API 표면 | `src/application/slack/types.ts` 의 `SlackClientPort`. 그것이 넘기는 스트리밍 chunk 형태는 `src/domain/slack/types.ts` 의 `SlackChunk` 이고, 어댑터도 거기서 그것들에 닿을 수 있다 |
-| 어댑터가 정규화를 마친 뒤 chat-bot 턴이 어떻게 도는가 — 첨부는 턴 안으로, chunk 는 sink 위로, 꼬리는 한 가지 순서로 | `src/application/messaging/handleTurn.ts` 의 `handleTurn`. Slack 과 Telegram 핸들러는 정규화하고 렌더할 뿐, 어느 쪽도 chunk 를 직접 접어 넣지 않는다 |
+| 어댑터가 정규화를 마친 뒤 chat-bot 턴이 어떻게 도는가 — 첨부는 턴 안으로, chunk 는 sink 위로, 꼬리는 한 가지 순서로 | `src/application/messaging/handleTurn.ts` 의 `handleTurn`. Slack·Telegram·Teams 핸들러는 정규화하고 렌더할 뿐, 어느 쪽도 chunk 를 직접 접어 넣지 않는다 |
+| 편집으로 답을 전달하는 표면의 장부 — 페이싱, 메시지가 넘칠 때 다음으로 잇기, 거부된 쓰기의 재시도 간격, 마감이 독자에게 빚진 것 | `src/application/messaging/editInPlaceReply.ts` 의 `createEditInPlaceReply`. Telegram 과 Teams 는 호출·상한·렌더링(`EditInPlaceTransport`)만 건넨다 |
+| 플랫폼 히스토리가 없는 표면이 대화를 어떻게 읽고 적는가 — 턴 수·문자 예산, 턴 하나의 상한, 텍스트 없는 턴의 기록, 화자 라벨의 옵트인 | `src/application/messaging/transcriptHistory.ts` |
 | 모든 chat-bot 표면에서의 첨부 한도와, 버려진 첨부마다 얻는 문장 | `src/application/messaging/attachments.ts` — 플랫폼이 기여하는 것은 `InboundAttachment.download` 를 통한 바이트뿐이고 그 외에는 없다 |
 | 모든 chat-bot 표면이 구현하는 답변 port | `src/domain/messaging/reply.ts` 의 `ReplySink` / `ReplyChannel` — 파이프라인이 그것을 호출하고, 각 어댑터가 그것을 렌더하며, 어느 쪽도 다른 쪽을 import 하지 않는다 |
-| 인바운드 이벤트를 정확히 한 번 처리하게 하는 claim-and-settle 계약 | `src/infrastructure/db/repositories/inboundClaimRepository.ts` 의 `createInboundClaimRepository`. Slack 은 `event_id` 로, Telegram 은 project 와 `update_id` 로 키를 잡고, port 는 `src/domain/messaging/inboundClaims.ts` 의 `InboundEventClaims` 이다 |
+| 인바운드 이벤트를 정확히 한 번 처리하게 하는 claim-and-settle 계약 | `src/infrastructure/db/repositories/inboundClaimRepository.ts` 의 `createInboundClaimRepository`. Slack 은 `event_id` 로, Telegram 은 project·봇·`update_id` 로, Teams 는 project·App ID·activity id 로 키를 잡고, port 는 `src/domain/messaging/inboundClaims.ts` 의 `InboundEventClaims` 이다 |
 | 모든 chat 플랫폼이 공유하는 webhook 꼬리 — claim, ack, 이벤트의 id 아래에서 작업, settle | `src/app/api/_lib/inboundEvent.ts` 의 `admitInboundEvent` |
-| Telegram 답변이 어떻게 전달되는가 — 제자리에서 수정되고, 4,096자에서 나뉘며, plain fallback 과 함께 한 번 렌더된다 | `src/application/telegram/replyChannel.ts` |
+| Telegram 답변이 어떻게 전달되는가 — Bot API 호출, 4,096자, HTML 로 한 번 렌더하고 plain fallback | `src/application/telegram/replyChannel.ts` (장부는 위의 `editInPlaceReply.ts`) |
+| Teams 답변이 어떻게 전달되는가 — activity 를 보내고 갱신하며, Markdown 은 그대로, 그림은 inline `data:` 첨부 | `src/application/teams/replyChannel.ts` |
+| 전달된 Bot Framework activity 중 어떤 것이 봇에게 온 것인가 | `src/application/teams/engagement.ts` 의 `classifyTeamsActivity` |
+| 이 플랫폼이 사용하는 Bot Framework 표면 | `src/domain/teams/client.ts` 의 `TeamsClientPort`. 어댑터는 `src/infrastructure/teams/client.ts` 이다 |
+| Bot Framework 토큰의 검증 — 서명 키, 발급자, audience, `serviceurl` | `src/infrastructure/teams/client.ts` 의 `verifyRequest` |
 | 전달된 Telegram update 중 어떤 것이 봇에게 온 것이고, 어떤 것이 명령인가 | `src/application/telegram/engagement.ts` 의 `classifyTelegramUpdate` / `parseTelegramCommand` |
 | 이 플랫폼이 사용하는 Telegram Bot API 표면 | `src/domain/telegram/client.ts` 의 `TelegramClientPort`. 어댑터는 `src/infrastructure/telegram/client.ts` 이다 |
 | 답변의 Markdown 을 Telegram HTML 로 렌더하기 | `src/application/telegram/markdown.ts` 의 `markdownToTelegramHtml` |
@@ -117,4 +123,4 @@
 | tool 호출이 사람에게 무엇으로 읽히는가 | `src/app/_lib/toolCalls.ts` 의 `describeTool` |
 | 콘솔이 사람에게 보여주는 모든 문자열 | `src/app/_i18n/messages/en.ts` |
 | 요청이 어떤 언어로 서빙되는가 | `src/app/_i18n/locale.ts` |
-| 플랫폼이 히스토리를 남기지 않을 때 chat-bot 표면이 conversation 에 대해 무엇을 기억하는가 | `src/domain/messaging/transcript.ts` 의 `ConversationTranscriptRepository`. Telegram 핸들러만이 쓰고 읽는다 |
+| 플랫폼이 히스토리를 남기지 않을 때 chat-bot 표면이 conversation 에 대해 무엇을 기억하는가 | `src/domain/messaging/transcript.ts` 의 `ConversationTranscriptRepository`. Telegram 과 Teams 핸들러가 `transcriptHistory.ts` 를 통해 쓰고 읽는다 |

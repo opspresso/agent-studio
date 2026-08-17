@@ -1,7 +1,7 @@
 # 메시징 표면
 
-모든 챗봇 표면 — Slack, Telegram, 그리고 다음에 올 무엇이든 — 이 공유하는 것, 그리고 그것과
-각 플랫폼이 스스로 정하는 것 사이의 경계가 어디인지.
+모든 챗봇 표면 — Slack, Telegram, Microsoft Teams, 그리고 다음에 올 무엇이든 — 이 공유하는
+것, 그리고 그것과 각 플랫폼이 스스로 정하는 것 사이의 경계가 어디인지.
 
 Slack 표면이 첫 번째였고, 그것은 한 파일이었다: 어떤 이벤트가 봇에게 온 것인지, 스레드를
 어떻게 읽는지, 누가 묻고 있는지, 첨부가 어떻게 한 턴이 되는지, 런의 chunk 가 어떻게 답변이
@@ -10,13 +10,16 @@ Slack 표면이 첫 번째였고, 그것은 한 파일이었다: 어떤 이벤�
 둘이 되는 것이 바로 다른 소비자 여섯 곳에서 image 축과 file 축이 이미 어긋나 버린 방식이므로,
 두 번째 표면을 쓰기 전에 공유되는 부분을 먼저 떼어냈다. **rule of three 는 일부러 일찍
 충족시켰다**: 그 모양은 Slack 에서 이미 알고 있었고, Telegram 은 그 모양의 두 번째 사본이
-아니라 첫 고객이다.
+아니라 첫 고객이다. Teams 가 세 번째로 왔을 때 두 가지가 더 공유되었다 — 편집으로 답을
+전달하는 표면의 장부(`editInPlaceReply.ts`)와, 플랫폼 히스토리가 없는 표면이 대화를
+기억하는 방식(`transcriptHistory.ts`) — Telegram 이 첫 고객이었고 Teams 는 두 번째 사본을
+쓰는 대신 그것을 받았다.
 
 ## 분할
 
 ```mermaid
 flowchart LR
-  subgraph adapter["플랫폼마다 어댑터 하나<br/>application/slack · application/telegram"]
+  subgraph adapter["플랫폼마다 어댑터 하나<br/>application/slack · application/telegram · application/teams"]
     gate["어떤 이벤트가 봇에게 온 것인가<br/>(dedup claim 보다 앞에서)"]
     normalise["플랫폼의 이벤트 →<br/>text · attachments · history · actor · caller · conversation"]
     render["ReplyChannel — 답변을 어떻게 렌더링하는가:<br/>스트리밍되는 sink, 독립 메시지,<br/>그림, 꼬리의 마크업"]
@@ -44,21 +47,21 @@ tool call 은 `step` 으로, tool result 는 `stepDone` 으로, 그리고 top-le
 
 **어댑터는 플랫폼이 정하는 모든 것을 소유한다.** 전달된 이벤트 중 어느 것이 런을 일으키는지,
 그리고 그 판정은 라우트에서 dedup claim *보다 앞에서* 실행되므로 아무도 부르지 않은 이벤트는
-서명 검사 하나만 쓰고 끝난다. 이력을 어떻게 읽는지 — Slack 은 플랫폼에 묻고, Telegram 은
-아래의 transcript 저장소에 묻는다. 누가 묻고 있는지를 `callerFrom` 이 받는 모양으로. 답변
+서명 검사 하나만 쓰고 끝난다. 이력을 어떻게 읽는지 — Slack 은 플랫폼에 묻고, Telegram 과
+Teams 는 아래의 transcript 저장소에 묻는다. 누가 묻고 있는지를 `callerFrom` 이 받는 모양으로. 답변
 대상과 그 위에서 답변이 어떻게 렌더링되는지. 그리고 답변 이후에 일어나는 일: Slack 스레드는
-봇이 거기서 말했다는 것을 기록하고, Telegram 대화는 두 턴을 모두 적어 둔다.
+봇이 거기서 말했다는 것을 기록하고, Telegram 과 Teams 대화는 두 턴을 모두 적어 둔다.
 
 **port** 는 domain 어휘다 (`src/domain/messaging/`). 양쪽 모두가 그것을 이름으로 부르고
 어느 쪽도 상대를 import 할 수 없기 때문이다:
 
 | Port | 무엇을 말하는가 |
 |---|---|
-| `ReplySink` | 스트리밍되는 답과 그 진행 상황: `status`, `step`, `stepDone`, `keepStatusAlive`, `push`, `finish`. 보고는 하나이고 표면이 할 수 있는 방식대로 렌더링된다 — Slack 의 상태 줄과 작업 행, Telegram 의 입력 중 표시 |
+| `ReplySink` | 스트리밍되는 답과 그 진행 상황: `status`, `step`, `stepDone`, `keepStatusAlive`, `push`, `finish`. 보고는 하나이고 표면이 할 수 있는 방식대로 렌더링된다 — Slack 의 상태 줄과 작업 행, Telegram·Teams 의 입력 중 표시. 편집으로 답을 전달하는 표면(Telegram, Teams)은 `application/messaging/editInPlaceReply.ts` 의 공유 구현에 플랫폼의 호출·상한·렌더링(`EditInPlaceTransport`)만 건넨다 |
 | `ReplyChannel` | sink 에, 답변이 그 곁에서 표면에 요구하는 것을 더한 것: 독립 메시지를 `say`, `sendImage`, 그리고 `fileLink` 와 `warningLine` 을 표면 자신의 마크업으로 적는 것 — 링크는 곧 마크업이고, mrkdwn 에서 안전한 이름이 HTML 에서는 문법이기 때문이다 |
 | `InboundAttachment` / `HistoryTurn` | 파이프라인이 메시지에서 읽는 것: 이름, 타입, 크기, 그리고 플랫폼의 자격 증명에 묶인 `download` — 플랫폼이 주소를 주지 않았다면 없음이며, 그것은 읽기 실패가 아니라 없다는 사실 그대로 보고된다 |
-| `InboundEventClaims` | 전달 한 건을 정확히 한 번만 받아들이는 admission 으로, 나중에 정산되는 lease 의 형태다. Slack 은 `event_id` 로, Telegram 은 project 와 `update_id` 로 키를 만든다. repository 하나 (`createInboundClaimRepository`) 가 둘 다 담당한다 |
-| `ConversationTranscriptRepository` | 플랫폼이 되읽을 수 있는 이력을 보관하지 않을 때, 표면이 대화에 대해 기억하는 것 — [Telegram](telegram.md#히스토리) 참고 |
+| `InboundEventClaims` | 전달 한 건을 정확히 한 번만 받아들이는 admission 으로, 나중에 정산되는 lease 의 형태다. Slack 은 `event_id` 로, Telegram 은 project·봇·`update_id` 로, Teams 는 project·App ID·activity id 로 키를 만든다. repository 하나 (`createInboundClaimRepository`) 가 모두 담당한다 |
+| `ConversationTranscriptRepository` | 플랫폼이 되읽을 수 있는 이력을 보관하지 않을 때, 표면이 대화에 대해 기억하는 것 — [Telegram](telegram.md#히스토리) 참고. 읽기 예산·기록 규칙·화자 라벨은 `application/messaging/transcriptHistory.ts` 한 곳이다 |
 
 **webhook 꼬리**도 같은 방식으로 공유된다 (`src/app/api/_lib/inboundEvent.ts`): 플랫폼 자신의
 검증과 gate 를 지나면 `admitInboundEvent` 가 이벤트를 claim 하고, 이벤트 자신의 correlation
