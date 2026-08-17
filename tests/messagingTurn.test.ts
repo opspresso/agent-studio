@@ -206,7 +206,7 @@ describe("handleTurn", () => {
     const deps: MessagingDeps = {
       ...makeDeps([
         { warning: "skill gone" },
-        { file: { name: "report.docx", mimeType: "application/x", key: "k1" } },
+        { file: { name: "report.docx", mimeType: "application/x", source: "mcp: render", key: "k1" } },
         { done: true },
       ]),
       signFile: async () => "https://signed/k1",
@@ -220,7 +220,7 @@ describe("handleTurn", () => {
 
   it("says a file was not kept when the deployment stores nothing", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
-    const deps = makeDeps([{ file: { name: "report.docx", mimeType: "application/x" } }, { done: true }]);
+    const deps = makeDeps([{ file: { name: "report.docx", mimeType: "application/x", source: "mcp: render" } }, { done: true }]);
     const { reply, finished } = makeReply();
 
     await handleTurn(deps, turn(), reply);

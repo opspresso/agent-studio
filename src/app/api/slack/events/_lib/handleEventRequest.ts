@@ -1,4 +1,3 @@
-import { after } from "next/server";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
@@ -14,9 +13,7 @@ import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
 import { handleThreadStart } from "@/application/slack/handleThreadStart";
 import { classifySlackEvent, type EngagementPolicy } from "@/application/slack/engagement";
-import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
-import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
-import { withRunContext } from "@/shared/runContext";
+import { admitInboundEvent, readEventBody } from "@/app/api/_lib/inboundEvent";
 import type { SlackBotBinding } from "@/application/slack/handleSlackEvent";
 import type { SlackEventBody, SlackEventDeps } from "@/application/slack/types";
 import { config } from "@/lib/config";
@@ -40,9 +37,9 @@ const MAX_SLACK_BODY_BYTES = 1_000_000;
 /**
  * Shared Slack Events pipeline: verify signature → url_verification →
  * engagement gate → exactly-once claim → ack immediately and process in the
- * background via `after()`. Slack requires an ack within 3 seconds; the
- * container runs as a persistent process, so background work survives the
- * response.
+ * background (`admitInboundEvent`, the tail every chat platform's webhook
+ * shares). Slack requires an ack within 3 seconds; the container runs as a
+ * persistent process, so background work survives the response.
  *
  * **The gate is ahead of the claim, and that is a cost contract.** The bot
  * receives every message in every channel it belongs to, and the great majority
@@ -61,14 +58,9 @@ export async function handleSlackEventRequest(
     engagement?: EngagementPolicy;
   },
 ): Promise<Response> {
-  let body: string;
-  try {
-    body = await readBodyText(request, MAX_SLACK_BODY_BYTES);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) {
-      return Response.json({ error: "Request body too large" }, { status: 413 });
-    }
-    throw error;
+  const body = await readEventBody(request, MAX_SLACK_BODY_BYTES);
+  if (body instanceof Response) {
+    return body;
   }
   const timestamp = request.headers.get("x-slack-request-timestamp");
   const signature = request.headers.get("x-slack-signature");
@@ -132,40 +124,18 @@ export async function handleSlackEventRequest(
   }
   const isThreadStart = disposition.kind === "threadStart";
 
-  const eventId = payload.event_id;
-  if (eventId) {
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    if (!(await slackEventRepository.claim(eventId, nowSeconds, nowSeconds + RUN_LEASE_SECONDS))) {
-      return Response.json({ ok: true, duplicate: true });
-    }
+  const admitted = await admitInboundEvent({
+    claims: slackEventRepository,
+    eventId: payload.event_id,
+    scope: "slack",
+    logLabel: opts.logLabel,
+    work: () =>
+      isThreadStart
+        ? handleThreadStart(slackEventDeps, payload, opts.binding)
+        : handleSlackEvent(slackEventDeps, payload, opts.binding),
+  });
+  if (admitted === "duplicate") {
+    return Response.json({ ok: true, duplicate: true });
   }
-
-  // Same reason as the webhook path: `after()` leaves the request's async
-  // context. The Slack event id is the natural key — it is what the dedup claim
-  // is keyed by, so a log line joins the row that says whether it was handled.
-  after(() =>
-    withRunContext({ runId: eventId ?? "slack-event" }, async () => {
-      let outcome: "done" | "failed" = "done";
-      try {
-        await (isThreadStart
-          ? handleThreadStart(slackEventDeps, payload, opts.binding)
-          : handleSlackEvent(slackEventDeps, payload, opts.binding));
-      } catch (error) {
-        outcome = "failed";
-        log.error("slack", `${opts.logLabel} event handling failed`, error);
-      }
-      if (!eventId) {
-        return;
-      }
-      // Settling is bookkeeping for a response that already went out; a failure
-      // here leaves the claim to expire on its own rather than escalating.
-      try {
-        await slackEventRepository.settle(eventId, outcome);
-      } catch (error) {
-        log.error("slack", `${opts.logLabel} event settle failed`, error);
-      }
-    }),
-  );
-
   return Response.json({ ok: true });
 }
