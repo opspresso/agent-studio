@@ -45,7 +45,26 @@ describe("calculateImageCost", () => {
       imageInputTokens: 0,
       imageOutputTokens: 0,
       sourceImages: 2,
-    })).toBeCloseTo(0.26, 10);
+    })).toBeCloseTo(0.08, 10);
+  });
+
+  /**
+   * The three xAI drawing models against what xAI actually billed for one edit
+   * with one source image — `usage.cost_in_usd_ticks`, in units of 1e-10 USD.
+   * Every figure in that block had been read an order of magnitude high, and a
+   * price list cannot catch that: only the invoice can.
+   */
+  it.each([
+    ["xai/grok-imagine-image", 0.022],
+    ["xai/grok-imagine-image-quality", 0.06],
+    ["xai/grok-imagine-image-2.0", 0.07],
+  ])("bills %s the way xAI's own receipt does", (model, billed) => {
+    expect(calculateImageCost(model, {
+      textInputTokens: 0,
+      imageInputTokens: 0,
+      imageOutputTokens: 0,
+      sourceImages: 1,
+    })).toBeCloseTo(billed, 10);
   });
 
   it("bills token-rated image models from token usage (perImage stays informational)", () => {

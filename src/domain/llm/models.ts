@@ -767,9 +767,18 @@ const MODEL_FAMILIES = {
     contextWindow: GEMINI_FLASH_IMAGE_CONTEXT,
     maxTokens: GEMINI_FLASH_IMAGE_MAX_OUTPUT,
   },
+  /*
+   * The three xAI drawing models, priced from what an edit was actually billed
+   * rather than from the price list: xAI answers `usage.cost_in_usd_ticks` on
+   * every call, in units of 1e-10 USD. One edit with one source image came back
+   * at $0.022, $0.06 and $0.07 for the three below — which is each model's
+   * `perImage` plus a tenth of what this file used to claim a source image
+   * costs. The whole block had been read an order of magnitude too high, in the
+   * one unit nobody thinks to check.
+   */
   "grok-imagine-image": {
     displayName: "Grok Imagine",
-    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.02, perInputImage: 0.02 },
+    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.02, perInputImage: 0.002 },
     capabilities: {
       tools: false,
       structuredOutput: false,
@@ -782,7 +791,7 @@ const MODEL_FAMILIES = {
   },
   "grok-imagine-image-quality": {
     displayName: "Grok Imagine Quality",
-    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.05, perInputImage: 0.1 },
+    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.05, perInputImage: 0.01 },
     capabilities: {
       tools: false,
       structuredOutput: false,
@@ -797,8 +806,10 @@ const MODEL_FAMILIES = {
     displayName: "Grok Imagine Image 2.0",
     // The one model here that charges by quality and resolution as well —
     // $0.04 to $0.08. This is xAI's headline `image_price`, which is what a
-    // request that names neither gets, and what this adapter always sends.
-    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.06, perInputImage: 0.1 },
+    // request naming neither gets, and neither route names them: xAI's own
+    // dialect has no quality field, and the OpenRouter one is not sent because
+    // this model refuses the values our tool schema offers.
+    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.06, perInputImage: 0.01 },
     capabilities: {
       tools: false,
       structuredOutput: false,
@@ -943,8 +954,11 @@ const MODEL_OFFERINGS: ModelOffering[] = [
   { family: "claude-sonnet-5", provider: "openrouter", wireId: "anthropic/claude-sonnet-5" },
   { family: "claude-opus-4.8", provider: "openrouter", wireId: "anthropic/claude-opus-4.8" },
   { family: "claude-haiku-4.5", provider: "openrouter", wireId: "anthropic/claude-haiku-4.5" },
-  // Only Sol needs a rate of its own: OpenRouter prices it at half OpenAI's,
-  // while its Terra and Luna rates are the vendor's own.
+  // Only Sol needs a rate of its own, and it is a *discount* rather than a
+  // cheaper route: its default endpoint carries `pricing.discount: 0.5` over
+  // OpenAI's $5/$30, which the priority and Azure endpoints of the same model
+  // still charge. So this number ends when the promotion does, unlike Terra's
+  // and Luna's, which are the vendor's own rate and need no override at all.
   {
     family: "gpt-5.6-sol",
     provider: "openrouter",

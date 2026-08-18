@@ -328,8 +328,8 @@ describe("generateImage", () => {
       ],
     });
 
-    // The picture ($0.06) plus xAI's flat charge for each source image ($0.10).
-    expect(recorded[0]?.costUsd).toBeCloseTo(0.26, 10);
+    // The picture ($0.06) plus xAI's flat charge for each source image ($0.01).
+    expect(recorded[0]?.costUsd).toBeCloseTo(0.08, 10);
   });
 
   it("generates when the images list is present but empty", async () => {

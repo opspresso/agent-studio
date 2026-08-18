@@ -273,9 +273,12 @@ describe("OpenRouter image dialect", () => {
     expect(body(box.sent)).toEqual({
       model: "google/gemini-3.1-flash-image",
       prompt: "a cat",
-      // Passed through as the port states them, unlike xAI's translation.
+      // `size` passes through as the port states it — the router normalises a
+      // pixel pair for whoever serves the model. `quality` is dropped: it
+      // reaches the provider unchanged, and Grok answers `400 … Accepted: low,
+      // medium` to the "high" this test asks for, so no value is safe on all
+      // four models behind this route.
       size: "1024x1536",
-      quality: "high",
     });
     // Read from `media_type`; `mime_type` is absent here and would fall back to
     // PNG over what is in fact a JPEG.
@@ -341,6 +344,67 @@ describe("OpenRouter image dialect", () => {
     });
 
     expect(result.usage.imageOutputTokens).toBe(4175);
+  });
+
+  /**
+   * The refusal this drop exists to prevent, in the provider's own words:
+   * `No provider for x-ai/grok-imagine-image-2.0 supports the requested
+   * parameter(s): quality "high" … Accepted: low, medium`. The tool schema
+   * offers the model "high", so passing the field on would 400 a run that asked
+   * for nothing unusual.
+   */
+  it("never sends quality, whichever vendor is behind the route", async () => {
+    const box = stubFetch(OPENROUTER_OK);
+
+    await channel.generateImage({
+      model: "openrouter/grok-imagine-image-2.0",
+      prompt: "a cat",
+      quality: "high",
+    });
+
+    expect(body(box.sent)).toEqual({ model: "x-ai/grok-imagine-image-2.0", prompt: "a cat" });
+  });
+
+  it("omits the size rather than guessing one when the caller gives none", async () => {
+    const box = stubFetch(OPENROUTER_OK);
+
+    await channel.generateImage({ model: "openrouter/gpt-image-2", prompt: "a cat" });
+
+    expect(body(box.sent)).toEqual({ model: "openai/gpt-image-2", prompt: "a cat" });
+  });
+
+  /**
+   * The shape of the silent-$0 failure: a successful draw whose usage this
+   * reader cannot find prices at nothing, and only the log says so. Pinned
+   * because the field names are the router's, not this app's, and a rename
+   * upstream would otherwise land as a free month of image generation.
+   */
+  it("reads zeros when usage is missing, and says so", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    stubFetch({ data: [{ b64_json: "aW1n", media_type: "image/png" }] });
+
+    const result = await channel.generateImage({
+      model: "openrouter/gemini-3.1-flash-image",
+      prompt: "a cat",
+    });
+
+    expect(result.usage).toEqual({
+      textInputTokens: 0,
+      imageInputTokens: 0,
+      imageOutputTokens: 0,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("no image output tokens"),
+    );
+    warn.mockRestore();
+  });
+
+  it("refuses an answer that carries no image", async () => {
+    stubFetch({ data: [], usage: { prompt_tokens: 3 } });
+
+    await expect(
+      channel.generateImage({ model: "openrouter/gemini-3.1-flash-image", prompt: "a cat" }),
+    ).rejects.toThrow("Image generation returned no image data");
   });
 
   it("surfaces the router's own message on a refusal", async () => {
