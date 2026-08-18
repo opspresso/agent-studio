@@ -14,7 +14,7 @@
  *   pnpm check-models                    # report; always exits 0
  *   pnpm check-models --since=90d        # only models released in the last 90 days
  *   pnpm check-models --since=2026-01-01 # ...or since a date
- *   pnpm check-models --strict           # exit 1 on a registered model nothing serves,
+ *   pnpm check-models --strict           # exit 1 on an offered route nothing serves,
  *                                        #   or on a check that could not run
  *
  * The registry is a *curated* selection, not a mirror: a provider channel serves
@@ -52,6 +52,13 @@ interface ServedModel {
   id: string;
   /** Release time in epoch ms, or null when the channel does not report one. */
   releasedAt: number | null;
+  /**
+   * Other ids the channel answers to for this model, in registry id form.
+   * xAI lists only canonical ids and puts every accepted spelling here, so
+   * `grok-4.20` — a live alias of `grok-4.20-0309-reasoning` — appears nowhere
+   * else in the catalog. Empty for a channel that declares none.
+   */
+  aliases: string[];
 }
 
 /**
@@ -137,6 +144,26 @@ function parseReleasedAt(entry: Record<string, unknown>): number | null {
   return null;
 }
 
+/**
+ * The other spellings a channel accepts for this model, in registry id form.
+ *
+ * xAI's catalog is canonical ids only, with every accepted spelling in an
+ * `aliases` array beside each one — `grok-4.20` is an alias of
+ * `grok-4.20-0309-reasoning`, and `grok-code-fast-1` of `grok-build-0.1`. Both
+ * are registered here and both dispatch fine, and both read as retired without
+ * this: "candidate to retire" for two models that work, and a `--strict`
+ * failure on a healthy registry. Unlike the dated-snapshot rule below this is
+ * not a guess about a naming convention — the provider is stating it.
+ */
+function parseAliases(entry: Record<string, unknown>, channel: Channel): string[] {
+  if (!Array.isArray(entry.aliases)) {
+    return [];
+  }
+  return entry.aliases
+    .filter((alias): alias is string => typeof alias === "string" && alias.length > 0)
+    .map((alias) => qualify(alias, channel));
+}
+
 /** A runaway `has_more` must not spin; far more pages than any catalog needs. */
 const MAX_PAGES = 25;
 
@@ -182,7 +209,11 @@ async function fetchModels(channel: Channel): Promise<ServedModel[]> {
       if (typeof record.id !== "string" || record.id.length === 0) {
         continue;
       }
-      collected.push({ id: qualify(record.id, channel), releasedAt: parseReleasedAt(record) });
+      collected.push({
+        id: qualify(record.id, channel),
+        releasedAt: parseReleasedAt(record),
+        aliases: parseAliases(record, channel),
+      });
     }
     if (body.has_more !== true || typeof body.last_id !== "string" || body.last_id === "") {
       return [...collected, ...(await fetchImageModels(channel, request))];
@@ -227,7 +258,11 @@ async function fetchImageModels(channel: Channel, request: typeof globalThis.fet
     if (typeof record.id !== "string" || record.id.length === 0) {
       continue;
     }
-    collected.push({ id: qualify(record.id, channel), releasedAt: parseReleasedAt(record) });
+    collected.push({
+      id: qualify(record.id, channel),
+      releasedAt: parseReleasedAt(record),
+      aliases: parseAliases(record, channel),
+    });
   }
   return collected;
 }
@@ -290,6 +325,12 @@ function isSelectable(id: string): boolean {
   return slash > 0 && (SUPPORTED_PROVIDERS as readonly string[]).includes(id.slice(0, slash));
 }
 
+/** The provider a registry id names, or the whole id when it names none. */
+function providerOf(id: string): string {
+  const slash = id.indexOf("/");
+  return slash > 0 ? id.slice(0, slash) : id;
+}
+
 /** `--since=90d` or `--since=2026-01-01` → epoch ms cutoff. */
 function parseSince(argv: string[]): number | null {
   const arg = argv.find((value) => value.startsWith("--since="));
@@ -318,12 +359,18 @@ async function main(): Promise<void> {
   const channels = await resolveChannels();
 
   const served = new Map<string, number | null>();
+  const declaredAliases = new Set<string>();
   let anyChannelFailed = false;
   for (const channel of channels) {
     try {
       const models = await fetchModels(channel);
       const selectable = models.filter((model) => isSelectable(model.id));
       for (const model of selectable) {
+        for (const alias of model.aliases) {
+          if (isSelectable(alias)) {
+            declaredAliases.add(alias);
+          }
+        }
         // Two channels may both serve an id. Keep the earliest release, because
         // a later date is a re-list rather than a new model — and because the
         // alternative is a date decided by channel iteration order, which the
@@ -370,6 +417,12 @@ async function main(): Promise<void> {
       covered.add(alias);
     }
   }
+  // The aliases a channel declares are credited the same way, and for the same
+  // reason: they satisfy a registry entry without ever counting as a model
+  // observed in its own right.
+  for (const alias of declaredAliases) {
+    covered.add(alias);
+  }
 
   const unregistered = [...served.entries()].filter(([id]) => !registered.has(id));
   /**
@@ -393,6 +446,21 @@ async function main(): Promise<void> {
   const shown = since === null ? missing : missing.filter((m) => (m.releasedAt ?? 0) >= since);
   const unserved = [...registered.keys()].filter((id) => !covered.has(id)).sort();
 
+  /**
+   * A registry route whose provider has no channel was never asked about.
+   *
+   * `google/*` is registered here and no deployment of this app configures
+   * `LLM_PROVIDER_GOOGLE_*`, so those ids fall through to the default channel
+   * and are answered by whatever that is. Nothing observed them, which is not
+   * the same as a provider retiring them — and the difference matters, because
+   * one is a finding and the other is a question about configuration. With no
+   * provider channel at all the default channel takes every id, so every
+   * provider is asked and this exclusion is empty.
+   */
+  const asked = new Set(channels.map((channel) => channel.provider).filter((p) => p !== null));
+  const unasked = asked.size === 0 ? [] : unserved.filter((id) => !asked.has(providerOf(id)));
+  const retired = unserved.filter((id) => asked.size === 0 || asked.has(providerOf(id)));
+
   console.log(`\nMissing from the registry (${shown.length}) — newest first:`);
   for (const model of shown) {
     console.log(`  ${formatDate(model.releasedAt)}  ${model.id}`);
@@ -414,9 +482,15 @@ async function main(): Promise<void> {
       "\nNot served by any channel: skipped — no channel served an id in `provider/model` form, so there was nothing to compare.",
     );
   } else {
-    console.log(`\nNot served by any channel (${unserved.length}):`);
-    for (const id of unserved) {
+    console.log(`\nNot served by any channel (${retired.length}):`);
+    for (const id of retired) {
       console.log(`  ${id}${registered.get(id)?.hidden ? "  (hidden)" : ""}`);
+    }
+    if (unasked.length > 0) {
+      console.log(`\nNo channel configured for their provider — not checked (${unasked.length}):`);
+      for (const id of unasked) {
+        console.log(`  ${id}${registered.get(id)?.hidden ? "  (hidden)" : ""}`);
+      }
     }
   }
 
@@ -437,11 +511,23 @@ async function main(): Promise<void> {
   // new ids in the last seven days, not one of them something this app would
   // offer. So the narrowed form reports too, and does not gate.
   //
-  // A registered model no channel serves is real drift and always counts. So does
-  // a check that could not run — a channel that never answered, or every channel
-  // answering with nothing comparable — because "did not run" must not read as
-  // "all clear" to whatever is gating on the exit code.
-  if (strict && (anyChannelFailed || nothingComparable || unserved.length > 0)) {
+  // What does count is an *offered* route disappearing from a provider this
+  // deployment actually asks. Two exclusions, both for the same reason — the
+  // answer is already known, so it is not news:
+  //
+  //   - a provider with no channel was never asked (`unasked` above);
+  //   - a `hidden` route is one this app already retired. `models.ts` keeps
+  //     those entries deliberately and forever — a past run's usage row is
+  //     priced by looking the model up there, so deleting one re-prices history
+  //     at $0 — which makes "hidden and no longer served" the documented end
+  //     state of a retirement rather than a finding. Gating on it is another
+  //     exit code that can never be green.
+  //
+  // And a check that could not run — a channel that never answered, or every
+  // channel answering with nothing comparable — counts, because "did not run"
+  // must not read as "all clear" to whatever is gating on the exit code.
+  const drifted = retired.filter((id) => registered.get(id)?.hidden !== true);
+  if (strict && (anyChannelFailed || nothingComparable || drifted.length > 0)) {
     process.exit(1);
   }
 }
