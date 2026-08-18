@@ -467,28 +467,30 @@ const MODEL_FAMILIES = {
    *
    * Every number below is read from OpenRouter's own `/api/v1/models` — price,
    * window, and the capability flags from `supported_parameters`, rather than
-   * assumed from the model's reputation. Two of them do not publish a max
+   * assumed from the model's reputation. One of them does not publish a max
    * output; the value is taken from the nearest sibling in the same line and
    * said so, because the field is the run's output reserve and guessing it
    * small is what overflows a window.
    */
   "deepseek-v4-flash": {
     displayName: "DeepSeek V4 Flash",
+    // The dated snapshot's rate. The undated alias this family's one route
+    // follows is cheaper, which is what that offering overrides with.
     pricing: { inputPer1M: 0.14, outputPer1M: 0.28, cachedInputPer1M: 0.028 },
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
     contextWindow: 1_048_576,
-    maxTokens: 393_216,
+    maxTokens: 384_000,
   },
   "deepseek-v4-pro": {
     displayName: "DeepSeek V4 Pro",
-    pricing: { inputPer1M: 1.168, outputPer1M: 2.336, cachedInputPer1M: 0.09855 },
+    pricing: { inputPer1M: 1.32, outputPer1M: 3.96, cachedInputPer1M: 0.044 },
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
     contextWindow: 1_048_576,
-    maxTokens: 393_216,
+    maxTokens: 384_000,
   },
   "deepseek-v4-pro-0813": {
     displayName: "DeepSeek V4 Pro 0813",
-    pricing: { inputPer1M: 0.435, outputPer1M: 0.87, cachedInputPer1M: 0.003625 },
+    pricing: { inputPer1M: 1.32, outputPer1M: 3.96, cachedInputPer1M: 0.044 },
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
     contextWindow: 1_048_576,
     maxTokens: 384_000,
@@ -512,7 +514,6 @@ const MODEL_FAMILIES = {
     pricing: { inputPer1M: 0.63, outputPer1M: 1.98, cachedInputPer1M: 0.0945 },
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
     contextWindow: 1_048_576,
-    // Not published for 5.2; GLM 5's cap, the nearest sibling that states one.
     maxTokens: 131_072,
   },
   "minimax-m3": {
@@ -548,22 +549,22 @@ const MODEL_FAMILIES = {
     displayName: "Qwen3.8 2.4T A95B",
     pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.25 },
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 1_000_000,
+    contextWindow: 1_048_576,
     maxTokens: 262_144,
   },
   "qwen3.8-27b": {
     displayName: "Qwen3.8 27B",
-    pricing: { inputPer1M: 0.45, outputPer1M: 3.2 },
+    pricing: { inputPer1M: 0.45, outputPer1M: 3.2, cachedInputPer1M: 0.05 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
     contextWindow: 262_144,
     maxTokens: 131_072,
   },
   "nemotron-3.5-lightning": {
     displayName: "Nemotron 3.5 Lightning",
-    pricing: { inputPer1M: 0.1, outputPer1M: 0.25, cachedInputPer1M: 0.05 },
+    pricing: { inputPer1M: 0.08, outputPer1M: 0.2, cachedInputPer1M: 0.04 },
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 262_144,
-    maxTokens: 262_144,
+    contextWindow: 1_000_000,
+    maxTokens: 131_072,
   },
   "solar-pro-4": {
     displayName: "Solar Pro 4",
@@ -794,7 +795,10 @@ const MODEL_FAMILIES = {
   },
   "grok-imagine-image-2.0": {
     displayName: "Grok Imagine Image 2.0",
-    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.6, perInputImage: 0.1 },
+    // The one model here that charges by quality and resolution as well —
+    // $0.04 to $0.08. This is xAI's headline `image_price`, which is what a
+    // request that names neither gets, and what this adapter always sends.
+    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.06, perInputImage: 0.1 },
     capabilities: {
       tools: false,
       structuredOutput: false,
@@ -939,19 +943,16 @@ const MODEL_OFFERINGS: ModelOffering[] = [
   { family: "claude-sonnet-5", provider: "openrouter", wireId: "anthropic/claude-sonnet-5" },
   { family: "claude-opus-4.8", provider: "openrouter", wireId: "anthropic/claude-opus-4.8" },
   { family: "claude-haiku-4.5", provider: "openrouter", wireId: "anthropic/claude-haiku-4.5" },
-  { family: "gpt-5.6-sol", provider: "openrouter", wireId: "openai/gpt-5.6-sol" },
+  // Only Sol needs a rate of its own: OpenRouter prices it at half OpenAI's,
+  // while its Terra and Luna rates are the vendor's own.
   {
-    family: "gpt-5.6-terra",
+    family: "gpt-5.6-sol",
     provider: "openrouter",
-    wireId: "openai/gpt-5.6-terra",
-    pricing: { inputPer1M: 1.0, outputPer1M: 6.0, cachedInputPer1M: 0.1 },
+    wireId: "openai/gpt-5.6-sol",
+    pricing: { inputPer1M: 2.5, outputPer1M: 15.0, cachedInputPer1M: 0.25 },
   },
-  {
-    family: "gpt-5.6-luna",
-    provider: "openrouter",
-    wireId: "openai/gpt-5.6-luna",
-    pricing: { inputPer1M: 0.1, outputPer1M: 0.6, cachedInputPer1M: 0.01 },
-  },
+  { family: "gpt-5.6-terra", provider: "openrouter", wireId: "openai/gpt-5.6-terra" },
+  { family: "gpt-5.6-luna", provider: "openrouter", wireId: "openai/gpt-5.6-luna" },
   { family: "gpt-5.4", provider: "openrouter", wireId: "openai/gpt-5.4" },
   { family: "gpt-5.4-mini", provider: "openrouter", wireId: "openai/gpt-5.4-mini" },
   { family: "gemini-3.6-flash", provider: "openrouter", wireId: "google/gemini-3.6-flash" },
@@ -971,7 +972,7 @@ const MODEL_OFFERINGS: ModelOffering[] = [
     family: "deepseek-v4-flash",
     provider: "openrouter",
     wireId: "deepseek/deepseek-v4-flash",
-    pricing: { inputPer1M: 0.06146, outputPer1M: 0.12292, cachedInputPer1M: 0.012292 },
+    pricing: { inputPer1M: 0.0826, outputPer1M: 0.1652, cachedInputPer1M: 0.01652 },
   },
   { family: "deepseek-v4-pro", provider: "openrouter", wireId: "deepseek/deepseek-v4-pro" },
   { family: "deepseek-v4-pro-0813", provider: "openrouter", wireId: "deepseek/deepseek-v4-pro-0813" },
@@ -981,7 +982,7 @@ const MODEL_OFFERINGS: ModelOffering[] = [
     family: "glm-5.2",
     provider: "openrouter",
     wireId: "z-ai/glm-5.2",
-    pricing: { inputPer1M: 0.308, outputPer1M: 0.968, cachedInputPer1M: 0.0572 },
+    pricing: { inputPer1M: 0.5, outputPer1M: 3.15, cachedInputPer1M: 0.115 },
   },
   { family: "minimax-m3", provider: "openrouter", wireId: "minimax/minimax-m3" },
   { family: "step-3.7-flash", provider: "openrouter", wireId: "stepfun/step-3.7-flash" },
@@ -1033,6 +1034,38 @@ export function getModelConfig(id: string): ModelConfig | undefined {
 
 export function getVisibleModels(): ModelConfig[] {
   return MODEL_CONFIGS.filter((m) => !m.hidden);
+}
+
+/** Token counts as a reader compares them: 1,048,576 → `1.05M`, 131,072 → `131K`. */
+function roundTokens(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    const millions = Math.round(tokens / 10_000) / 100;
+    return `${millions}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${Math.round(tokens / 1_000)}K`;
+  }
+  return `${tokens}`;
+}
+
+/**
+ * How much a model can be told, and how much of that the answer may take.
+ *
+ * The two travel together because the output cap is spent *out of* the window —
+ * `createRunContextBudget` subtracts one from the other to size the prompt — so
+ * a window alone overstates the room a long chat has. Rounded on purpose: the
+ * exact figure is never what a choice turns on, and 1,048,576 against 1,050,000
+ * is the same decision twice.
+ *
+ * Here rather than beside the price label it is drawn next to, because reading
+ * `contextWindow` outside this file is what a second context-budget derivation
+ * starts with — `tests/architecture.test.ts` keeps that read single, and a
+ * model's own numbers are the registry's vocabulary anyway.
+ */
+export function contextWindowLabel(
+  model: Pick<ModelConfig, "contextWindow" | "maxTokens">,
+): string {
+  return `Context ${roundTokens(model.contextWindow)} · max out ${roundTokens(model.maxTokens)}`;
 }
 
 /**

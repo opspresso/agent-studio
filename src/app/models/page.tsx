@@ -17,7 +17,7 @@ import {
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { IconChevronDown, IconChevronUp, IconCpu } from "@tabler/icons-react";
-import { MODEL_MAKER_LABELS, type ModelConfig } from "@/domain/llm/models";
+import { MODEL_MAKER_LABELS, contextWindowLabel, type ModelConfig } from "@/domain/llm/models";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
@@ -392,6 +392,9 @@ export default function ModelsPage() {
                   </Group>
                   <Text fz="sm" mt="sm">
                     {modelPriceLabel(model.pricing)}
+                  </Text>
+                  <Text fz="xs" c="dimmed" mt={2}>
+                    {contextWindowLabel(model)}
                   </Text>
                   {routes.length > 0 && (
                     <Text fz="xs" c="dimmed" mt={4}>

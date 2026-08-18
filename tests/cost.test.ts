@@ -45,7 +45,7 @@ describe("calculateImageCost", () => {
       imageInputTokens: 0,
       imageOutputTokens: 0,
       sourceImages: 2,
-    })).toBeCloseTo(0.8, 10);
+    })).toBeCloseTo(0.26, 10);
   });
 
   it("bills token-rated image models from token usage (perImage stays informational)", () => {

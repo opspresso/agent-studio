@@ -177,8 +177,10 @@ offering 은 `pricing`, `capabilities`, `contextWindow`, `maxTokens`, `hidden` �
 엔드포인트는 `bedrock-mantle`(`https://bedrock-mantle.<region>.api.aws/v1`, `_AUTH=sigv4`)
 인데, 거기의 `GET /v1/models` 는 `POST /v1/chat/completions` 가 그다음 거부하는 모델들을
 돌려준다: 모든 `anthropic.*` 모델(이들은 Anthropic Messages API 를 받는데 이 앱은 그 말을
-하지 못한다)과 `xai.grok-4.3`(`isn't supported on this route`)이며, AWS 는 둘 다에 대해
-가격도 공개한다. 그래서 Bedrock offering 은 실제 호출이 답을 돌려준 뒤에만 추가한다 —
+하지 못한다), `xai.grok-4.3`, 그리고 `openai.gpt-5.4`\|`5.5`\|`5.6-*` 전부
+(`isn't supported on this route`)이며, AWS 는 그것들에 대해 가격도 공개한다. 즉 목록에서
+독점 모델을 보고 경로가 생겼다고 읽으면 안 된다 — 목록에 오르는 것과 이 라우트로 호출되는
+것은 별개다. 그래서 Bedrock offering 은 실제 호출이 답을 돌려준 뒤에만 추가한다 —
 레지스트리에 있는 것들은 open-weight 모델이고 하나하나 smoke test 를 거쳤다. 또한
 `bedrock-mantle` 은 `ap-northeast-2` 에 존재하지 않으므로 그 base URL 은 배포의 나머지와
 다른 리전을 지목한다. 서명자는 `AWS_REGION` 이 아니라 그 URL 에서 리전을 읽는다.

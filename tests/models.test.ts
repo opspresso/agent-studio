@@ -6,6 +6,7 @@ import {
   applyModelConstraints,
   calculateCost,
   calculateImageCost,
+  contextWindowLabel,
   getVisibleModels,
   offeredModels,
   resetUnknownModelMetrics,
@@ -207,6 +208,43 @@ describe("model registry invariants", () => {
     expect(getVisibleModels().map((m) => m.id)).toEqual(
       MODEL_CONFIGS.filter((m) => !m.hidden).map((m) => m.id),
     );
+  });
+});
+
+/**
+ * The other half of what a model is picked on, beside its price. The sizes are
+ * rounded, so the assertions are about the rounding: a window printed as
+ * `1048576` is a number to decode rather than one to compare.
+ */
+describe("contextWindowLabel", () => {
+  it("reads a round million as one", () => {
+    expect(contextWindowLabel({ contextWindow: 1_000_000, maxTokens: 128_000 })).toBe(
+      "Context 1M · max out 128K",
+    );
+  });
+
+  it("keeps the part of a million that tells two models apart", () => {
+    expect(contextWindowLabel({ contextWindow: 1_048_576, maxTokens: 65_536 })).toBe(
+      "Context 1.05M · max out 66K",
+    );
+  });
+
+  it("reads a sub-million window in thousands", () => {
+    expect(contextWindowLabel({ contextWindow: 200_000, maxTokens: 64_000 })).toBe(
+      "Context 200K · max out 64K",
+    );
+  });
+
+  /**
+   * Drawn on every card in the model list, so a figure that rounds away to
+   * nothing is a card reading `Context M` rather than a number.
+   */
+  it("states both figures for every registered model", () => {
+    for (const model of MODEL_CONFIGS) {
+      expect(contextWindowLabel(model), model.id).toMatch(
+        /^Context \d[\d.]*[KM] · max out \d[\d.]*[KM]$/,
+      );
+    }
   });
 });
 
