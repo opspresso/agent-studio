@@ -1,0 +1,276 @@
+# AgentDure and its MCP servers on one IDC host.
+#
+# This is a *second instance of the deployed system*, not a second deployment:
+# it reads the same DynamoDB table, the same S3 buckets and the same S3 Vectors
+# index the EKS pods do, reached with an IAM user's access key because there is
+# no pod identity here. README.md says what that shares and what it does not.
+#
+# Two things make the MCP registry work unchanged. Every MCP service carries its
+# **cluster DNS name as a network alias**, so `agent-plugins`' mcp.json — which
+# names `http://mcp-<name>.agent-mcps.svc.cluster.local/mcp` and is the same row
+# in the same table for both instances — resolves here. And every one of them
+# **listens on 80**, because that URL has no port. Neither is cosmetic: the app
+# reaches those addresses only because MCP_INTERNAL_HOST_SUFFIXES declares that
+# suffix past the SSRF guard, and mcp-grafana and mcp-cloudwatch additionally
+# check the Host header against a list that already contains exactly this name
+# without a port.
+
+name: agentdure
+
+x-mcp: &mcp
+  restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  # TLS terminator. Caddy answers the ACME challenge on 80 and serves 443; the
+  # certificate for the hostname in Caddyfile is issued on first boot.
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    logging: *logging
+
+  app:
+    image: ${ECR_REGISTRY}/agentdure:${AGENTDURE_TAG}
+    restart: unless-stopped
+    # .env.secrets last: compose lets the later file win, which is what keeps
+    # the generated half out of the hand-edited one.
+    env_file:
+      - .env.aws
+      - .env
+      - .env.secrets
+    # At least MAX_RUN_DURATION_MS (10 min). Anything shorter cuts SSE streams
+    # that were about to finish — the app turns SIGTERM into draining and never
+    # calls process.exit, so the runtime's grace period is the whole budget.
+    stop_grace_period: 660s
+    mem_limit: 1600m
+    logging: *logging
+
+  # --- MCP servers -------------------------------------------------------
+  # Ours. All three take PORT, so 80 needs no argument beyond the variable.
+  # Containers get net.ipv4.ip_unprivileged_port_start=0, so the unprivileged
+  # user each image runs as can bind it.
+
+  mcp-memory:
+    <<: *mcp
+    image: ${ECR_REGISTRY}/mcp-memory:${MCP_MEMORY_TAG}
+    env_file:
+      - .env.aws
+    environment:
+      PORT: "80"
+      AWS_REGION: ${AWS_REGION}
+      VECTOR_BUCKET: agent-studio-vector
+      VECTOR_INDEX: memories
+      STATE_BUCKET: agent-studio-memory
+      # Titan, not the catalog's Cohere: two indexes, each queried by the model
+      # that wrote it.
+      EMBEDDING_PROVIDER: bedrock
+      EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
+      EMBEDDING_DIM: "1024"
+      RECALL_MIN_SIMILARITY: "0.1"
+    mem_limit: 512m
+    networks:
+      default:
+        aliases:
+          - mcp-memory.agent-mcps.svc.cluster.local
+
+  mcp-document:
+    <<: *mcp
+    image: ${ECR_REGISTRY}/mcp-document:${MCP_DOCUMENT_TAG}
+    environment:
+      PORT: "80"
+    mem_limit: 512m
+    networks:
+      default:
+        aliases:
+          - mcp-document.agent-mcps.svc.cluster.local
+
+  mcp-youtube:
+    <<: *mcp
+    image: ${ECR_REGISTRY}/mcp-youtube:${MCP_YOUTUBE_TAG}
+    environment:
+      PORT: "80"
+    mem_limit: 512m
+    networks:
+      default:
+        aliases:
+          - mcp-youtube.agent-mcps.svc.cluster.local
+
+  mcp-brave-search:
+    <<: *mcp
+    image: brave/brave-search-mcp-server:${MCP_BRAVE_TAG}
+    env_file:
+      - .env.mcp.secrets
+    environment:
+      BRAVE_MCP_TRANSPORT: http
+      BRAVE_MCP_HOST: 0.0.0.0
+      BRAVE_MCP_PORT: "80"
+      BRAVE_MCP_STATELESS: "true"
+    mem_limit: 512m
+    networks:
+      default:
+        aliases:
+          - mcp-brave-search.agent-mcps.svc.cluster.local
+
+  # AWS Labs' server, started through the same python -c launcher the chart
+  # uses. `allowed_hosts` is DNS-rebinding protection and is matched exactly:
+  # the entry without a port is the one a request to port 80 sends.
+  #
+  # `entrypoint`, not `command`, and the two are not interchangeable here: the
+  # chart's `command:`/`args:` are Kubernetes' names for ENTRYPOINT and CMD,
+  # while compose's `command:` replaces CMD alone. This image declares
+  # ENTRYPOINT ["awslabs.cloudwatch-mcp-server"] and no CMD, so putting the
+  # launcher in `command` runs `awslabs.cloudwatch-mcp-server python -c …` — the
+  # stock server on stdio, which finds no stdin, exits 0, and restarts forever
+  # while logging a healthy startup every time.
+  mcp-cloudwatch:
+    <<: *mcp
+    image: public.ecr.aws/awslabs-mcp/awslabs/cloudwatch-mcp-server:${MCP_CLOUDWATCH_TAG}
+    env_file:
+      - .env.aws
+    environment:
+      AWS_REGION: ${AWS_REGION}
+    entrypoint:
+      - python
+      - -c
+      - |
+        from awslabs.cloudwatch_mcp_server.server import mcp
+        from mcp.server.transport_security import TransportSecuritySettings
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = 80
+        mcp.settings.stateless_http = True
+        mcp.settings.json_response = True
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[
+                "mcp-cloudwatch.agent-mcps.svc.cluster.local",
+                "mcp-cloudwatch.agent-mcps.svc.cluster.local:*",
+                "localhost",
+                "localhost:*",
+                "127.0.0.1",
+                "127.0.0.1:*",
+            ],
+        )
+        mcp.run(transport="streamable-http")
+    # The image ships a HEALTHCHECK that exits 1 under this entrypoint, and
+    # nothing in the cluster ever ran it: Kubernetes ignores a image's own
+    # healthcheck and the chart probes the port instead. This is that probe —
+    # a connect, which is all a stateless streamable-http server can promise
+    # without a session.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 80), 3).close()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    mem_limit: 1g
+    networks:
+      default:
+        aliases:
+          - mcp-cloudwatch.agent-mcps.svc.cluster.local
+
+  # --- MCP servers that look back at the cluster -------------------------
+  # These three reached Argo CD, Grafana and the Kubernetes API *from inside*
+  # the cluster. From here each needs an address that resolves off-cluster and
+  # a credential to go with it, so they stay behind a profile and start only
+  # with `--profile eks`. Fill the addresses in .env.mcp first.
+
+  mcp-argocd:
+    <<: *mcp
+    profiles: [eks]
+    image: quay.io/argoprojlabs/mcp-for-argocd:${MCP_ARGOCD_TAG}
+    env_file:
+      - .env.mcp
+      - .env.mcp.secrets
+    # The image declares no ENTRYPOINT — its whole command line is CMD — so
+    # `command` has to name the interpreter, not just the flags.
+    command: ["node", "dist/index.js", "http", "--port", "80", "--stateless"]
+    mem_limit: 256m
+    networks:
+      default:
+        aliases:
+          - mcp-argocd.agent-mcps.svc.cluster.local
+
+  mcp-grafana:
+    <<: *mcp
+    profiles: [eks]
+    image: grafana/mcp-grafana:${MCP_GRAFANA_TAG}
+    env_file:
+      - .env.mcp
+    # --address is load-bearing: the default binds localhost inside the
+    # container's own namespace, which no other container can reach.
+    command:
+      - "--transport"
+      - "streamable-http"
+      - "--address"
+      - "0.0.0.0:80"
+      - "--allowed-hosts"
+      - "mcp-grafana.agent-mcps.svc.cluster.local,mcp-grafana,localhost"
+    mem_limit: 256m
+    networks:
+      default:
+        aliases:
+          - mcp-grafana.agent-mcps.svc.cluster.local
+
+  # Needs a kubeconfig: there is no in-cluster service account here. Mount one
+  # that authenticates to the EKS API and carries the same read-only rights the
+  # chart's RBAC granted.
+  mcp-kubernetes:
+    <<: *mcp
+    profiles: [eks]
+    image: quay.io/containers/kubernetes_mcp_server:${MCP_KUBERNETES_TAG}
+    volumes:
+      - ./kubeconfig:/home/nonroot/.kube/config:ro
+    environment:
+      KUBECONFIG: /home/nonroot/.kube/config
+    command: ["--port", "80", "--toolsets", "core", "--stateless"]
+    mem_limit: 256m
+    networks:
+      default:
+        aliases:
+          - mcp-kubernetes.agent-mcps.svc.cluster.local
+
+  # --- Tickers -----------------------------------------------------------
+  # The three CronJobs, as one loop. Off by default (`--profile ticker`): the
+  # cluster already ticks all three against this same table, and duplicate ticks
+  # are safe but not free — a reindex here would re-embed the whole registry an
+  # hour's worth of nothing. Turn it on when this host is the one that ticks.
+  ticker:
+    profiles: [ticker]
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    env_file:
+      - .env.secrets
+    entrypoint: ["/bin/sh", "/tick.sh"]
+    volumes:
+      - ./scripts/tick.sh:/tick.sh:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    mem_limit: 64m
+    logging: *logging
+
+networks:
+  default:
+    ipam:
+      config:
+        # Fixed so TRUSTED_PROXY_CIDRS can name it: Better Auth strips these
+        # hops off X-Forwarded-For to find the client IP it rate-limits by.
+        - subnet: 172.31.240.0/24
+
+volumes:
+  caddy-data:
+  caddy-config:

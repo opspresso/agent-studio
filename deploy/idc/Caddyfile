@@ -1,0 +1,44 @@
+# TLS and the only thing this host exposes.
+#
+# Caddy proxies with no read timeout of its own, which is what a run needs: the
+# deadline that ends a run is MAX_RUN_DURATION_MS inside the app, not a hop in
+# front of it. The ALB this replaces had to have its idle_timeout raised to 600
+# for exactly that reason — an image generation sends nothing for a minute and
+# was being cut at 60 seconds.
+{
+	# ACME registration address. Let's Encrypt sends expiry warnings here.
+	email me@nalbam.com
+}
+
+alpha.agentdure.com {
+	# Compression, listed rather than excluded: `encode`'s response matcher has
+	# no `not`, so the way to keep text/event-stream out is to not name it. An
+	# SSE response is one response that never ends, and compressing it puts a
+	# buffer in front of exactly the bytes a reader is waiting for.
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/plain*
+			header Content-Type application/json*
+			header Content-Type application/javascript*
+			header Content-Type image/svg+xml*
+		}
+	}
+
+	reverse_proxy app:3000 {
+		# Forward each write as it arrives rather than on a timer. -1 is
+		# unconditional; Caddy's default already does this for SSE responses it
+		# recognises, and this makes it not depend on that recognition.
+		flush_interval -1
+
+		# The load balancer's health check. /api/ready answers 503 while the
+		# instance drains, so Caddy stops sending it new requests during a
+		# deploy; /api/health would keep answering 200 through the drain.
+		health_uri /api/ready
+		health_interval 10s
+		health_timeout 5s
+	}
+}

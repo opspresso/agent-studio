@@ -10,3 +10,6 @@ coverage
 docs
 tests
 scripts/mock-llm.ts
+# Deployment config, and on a host that ran fetch-env.sh, filled-in secrets.
+# Nothing in the image reads them.
+deploy
