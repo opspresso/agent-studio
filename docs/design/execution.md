@@ -237,9 +237,13 @@ Completions 와 달리, Images API 는 하나의 형태가 *아니다*. Port 의
 받는다 — 그 API 문서가 OpenAI SDK 의 multipart `images.edit()` 를 미지원으로 적어 두었고, 그래서
 그 호출 하나는 `fetch` 위에 손으로 짰다.
 
-**OpenRouter 는 어휘가 같고 나머지가 전부 다르다.** `size`(픽셀 또는 티어)와 `quality` 를 port 가
-말하는 그대로 받고, quality 손잡이가 없는 모델은 거부하는 대신 무시한다 — 같은 두 이름을 두고 xAI
-가 하는 것의 정반대다. 하지만 경로는 `images` 하나뿐이라 `images/generations` 는 404 이고, 편집은
+**OpenRouter 는 어휘가 같고 나머지가 전부 다르다.** `size`(픽셀 또는 티어)는 port 가 말하는 그대로
+받아 뒤에 있는 provider 에 맞게 정규화한다. **`quality` 는 정규화하지 않으므로 보내지 않는다** —
+그대로 통과시키는데 Gemini 는 무시하고, GPT Image 는 OpenAI 의 네 값을 받고, Grok 은 툴 스키마가
+모델에게 허용하는 "high" 에 `400 … quality: not supported. Accepted: low, medium` 으로 답한다.
+넷 모두에 안전한 값이 없어서 아무것도 보내지 않고, 각 provider 가 자기 기본 티어로 그린다 —
+레지스트리의 `perImage` 가 값을 매긴 그 티어다. 하지만 경로는 `images` 하나뿐이라
+`images/generations` 는 404 이고, 편집은
 두 번째 경로가 아니라 같은 호출에 `input_references` 를 더한 것이며(mask 는 없어서 xAI 와 같은
 이유로 거부한다), 응답은 `mime_type` 이 아니라 `media_type` 으로 답하고 usage 는 Chat Completions
 의 이름들(`prompt_tokens`, `completion_tokens_details.image_tokens`)로 답한다. 입력 쪽 text/image

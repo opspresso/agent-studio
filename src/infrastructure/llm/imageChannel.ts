@@ -17,6 +17,7 @@
 import OpenAI, { toFile } from "openai";
 import type { ResolvedTarget, TargetResolver } from "./providers";
 import { imageDataUrl } from "@/domain/llm/types";
+import { log } from "@/shared/logger";
 import type {
   ImageBytes,
   ImageChannel,
@@ -222,16 +223,49 @@ function toOpenRouterImageResult(payload: unknown, what: string): ImageGeneratio
     throw new Error(`Image ${what} returned no image data`);
   }
   const usage = response.usage;
+  const imageOutputTokens =
+    usage?.completion_tokens_details?.image_tokens ?? usage?.completion_tokens ?? 0;
+  if (imageOutputTokens === 0) {
+    // A drawn picture that reports no output tokens is priced at $0 by every
+    // model here that bills per token, and the registry cannot tell that from a
+    // free call — the unknown-model counter only fires when the *model* is
+    // missing. So say it: if these field names ever move, this line is the only
+    // thing between a month of drawing and a cost dashboard reading zero.
+    log.warn(
+      "image",
+      `OpenRouter reported no image output tokens for an image ${what}; usage may be under-recorded`,
+    );
+  }
   return {
     b64,
     mimeType: image.media_type ?? "image/png",
     usage: {
       textInputTokens: usage?.prompt_tokens ?? 0,
       imageInputTokens: 0,
-      imageOutputTokens:
-        usage?.completion_tokens_details?.image_tokens ?? usage?.completion_tokens ?? 0,
+      imageOutputTokens,
     },
   };
+}
+
+/**
+ * What OpenRouter is told about the picture's shape — which is the size and
+ * never the quality.
+ *
+ * `size` is the one field the router normalises for whoever serves the model:
+ * a pixel pair reaches Gemini, GPT Image and the two Grok models alike, and the
+ * price does not move with it.
+ *
+ * `quality` it passes straight through to a provider that may not take it, and
+ * a router in front of many vendors cannot make one vocabulary out of that:
+ * Gemini ignores the field, GPT Image honours OpenAI's four values, and Grok
+ * answers `400 … quality: not supported. Accepted: low, medium` to the "high"
+ * the tool schema lets a model ask for. There is no value that is safe on all
+ * four, so none is sent and each provider draws at its default — which is the
+ * tier the registry's `perImage` is priced at. The vendor-direct route keeps
+ * its own answer to the same question.
+ */
+function openRouterDimensions(size?: string): Record<string, unknown> {
+  return size ? { size } : {};
 }
 
 /**
@@ -289,13 +323,7 @@ export function createImageChannel(resolveTarget: TargetResolver): ImageChannel 
           {
             model: target.model,
             prompt: params.prompt,
-            // Both fields pass through as the port states them. OpenRouter took
-            // the same vocabulary the tool schema offers the model — a pixel
-            // `size` is normalised per provider — and a model with no quality
-            // knob ignores the field rather than refusing it, which is the
-            // opposite of what xAI does with the same two names.
-            ...(params.size ? { size: params.size } : {}),
-            ...(params.quality ? { quality: params.quality } : {}),
+            ...openRouterDimensions(params.size),
           },
           "generation",
           toOpenRouterImageResult,
@@ -350,8 +378,7 @@ export function createImageChannel(resolveTarget: TargetResolver): ImageChannel 
             model: target.model,
             prompt: params.prompt,
             ...openRouterReferences(params.images),
-            ...(params.size ? { size: params.size } : {}),
-            ...(params.quality ? { quality: params.quality } : {}),
+            ...openRouterDimensions(params.size),
           },
           "edit",
           toOpenRouterImageResult,

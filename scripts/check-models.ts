@@ -186,11 +186,51 @@ async function fetchModels(channel: Channel): Promise<ServedModel[]> {
       collected.push({ id: qualify(record.id, channel), releasedAt: parseReleasedAt(record) });
     }
     if (body.has_more !== true || typeof body.last_id !== "string" || body.last_id === "") {
-      return collected;
+      return [...collected, ...(await fetchImageModels(channel, request))];
     }
     cursor = body.last_id;
   }
   throw new Error(`GET ${endpoint} → still paginating after ${MAX_PAGES} pages`);
+}
+
+/**
+ * The drawing models a channel keeps in a second catalog.
+ *
+ * OpenRouter lists its dedicated image models at `/images/models` and *not* in
+ * `/models`: `openai/gpt-image-2` and both Grok drawing models are registered
+ * against that channel and appear only there. Without this they read as served
+ * by nothing — "candidate to retire" for three models that work, and a
+ * `--strict` failure on a healthy configuration.
+ *
+ * A channel without that catalog answers 404, which is an answer rather than a
+ * failure — the four provider-direct channels and Bedrock's mantle endpoint all
+ * do. Any other status is a channel not answering, and is raised like one.
+ */
+async function fetchImageModels(channel: Channel, request: typeof globalThis.fetch): Promise<ServedModel[]> {
+  const url = `${channel.baseUrl.replace(/\/+$/, "")}/images/models`;
+  const response = await request(url, { headers: authHeaders(channel) });
+  if (response.status === 404) {
+    return [];
+  }
+  if (!response.ok) {
+    throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
+  }
+  const body = (await response.json()) as { data?: unknown };
+  if (!Array.isArray(body.data)) {
+    throw new Error(`GET ${url} → no "data" array in the response`);
+  }
+  const collected: ServedModel[] = [];
+  for (const entry of body.data) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    if (typeof record.id !== "string" || record.id.length === 0) {
+      continue;
+    }
+    collected.push({ id: qualify(record.id, channel), releasedAt: parseReleasedAt(record) });
+  }
+  return collected;
 }
 
 /**
