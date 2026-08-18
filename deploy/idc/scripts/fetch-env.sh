@@ -7,12 +7,13 @@
 # convenience but the requirement: it decrypts the stored credentials in the
 # table both read.
 #
-# Run it from a laptop with the SSO profile
+# Runs on the host: the agentdure IAM user carries agentdure-idc-ssm-read, which
+# reaches `/k8s/common/agentdure/*` and `/k8s/common/mcp-*` and nothing else.
+# `scripts/deploy.sh` calls it, so refreshing secrets is not a separate errand.
+#
+# It also runs from a laptop with the SSO profile
 # (`AWS_PROFILE=opspresso deploy/idc/scripts/fetch-env.sh`, then scp the two
-# files over). The host's own IAM user cannot read SSM: no policy grants it, on
-# purpose — a leaked access key would otherwise open every deployment secret.
-# Granting it is a decision, not an oversight; make it in
-# terraform-env-demo/demo/9-agentdure if the host should refresh its own.
+# files over), which is what to do if the host's key is ever revoked.
 #
 # Generated whole every time. Nothing edits these files by hand, so there is no
 # merge to get wrong.
