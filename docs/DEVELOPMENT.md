@@ -110,15 +110,20 @@ pnpm exec vitest run -t "streamWithFallback"
 ```bash
 pnpm check-models              # 양방향 보고; 항상 0 으로 종료
 pnpm check-models --since=90d  # 최근 90일 안에 출시된 모델만
-pnpm check-models --strict     # 드리프트가 있거나 채널이 응답하지 못하면 1 로 종료
+pnpm check-models --strict     # 드리프트가 있거나 검사가 실행되지 못했으면 1 로 종료
 ```
 
-`--strict` 는 어느 채널도 서빙하지 않는 등록 모델에서, 그리고 응답하지 않은 채널에서 실패한다 —
-실행되지 못한 검사가 이상 없음으로 읽혀서는 안 된다. 반면 서빙되지만 등록되지 않은 id 에서는
-의도적으로 **실패하지 않는다**: 그 목록은 provider 의 전체 카탈로그에서 이 앱이 골라 담은
-선택(embedding, realtime, 내부 코드네임)을 뺀 것이라, 그것으로 게이팅하면 결코 초록이 될 수 없는
-종료 코드가 된다. `--since` 를 붙이면 새로 릴리즈된 모델이 세어지고, CI 에 넣을 만한 형태는
-그쪽이다.
+`--strict` 는 어느 채널도 서빙하지 않는 등록 모델에서, 그리고 **실행되지 못한 검사**에서
+실패한다 — 응답하지 않은 채널이 하나라도 있을 때, 그리고 모든 채널이 답했지만 그중 아무도
+`provider/model` 형태의 id 를 주지 않았을 때다. 뒤의 경우는 채널 구성의 문제이지 카탈로그의
+문제가 아닌데, 그것을 구별하지 않으면 레지스트리 전체가 은퇴 후보로 출력된다.
+
+반면 서빙되지만 등록되지 않은 id 에서는 의도적으로 **실패하지 않는다**: 그 목록은 provider 의
+전체 카탈로그에서 이 앱이 골라 담은 선택(embedding, realtime, 내부 코드네임)을 뺀 것이라,
+그것으로 게이팅하면 결코 초록이 될 수 없는 종료 코드가 된다. `--since` 는 그 목록을 읽는
+사람을 위해 좁힐 뿐 게이팅하지 않는다 — 라우터 채널은 계속 모델을 내놓기 때문에(OpenRouter 는
+최근 7일에만 새 id 5개를 올렸고 그중 이 앱이 담을 만한 것은 없었다) 7일로 좁힌 형태도 같은
+성질이다. 새 모델은 보고서로 남고, 사람이 읽고 판단한다.
 
 `sigv4` 채널은 런타임이 디스패치할 때 쓰는 것과 같은 서명자를 통해 읽으므로, Bedrock 채널에는
 환경에 AWS 자격 증명이 있어야 한다 (로컬에서는 `AWS_PROFILE=opspresso`) — 없으면 실패한 채널로
@@ -156,9 +161,16 @@ typecheck → test → init-local-table:test + test:integration → build
 갖는다.
 
 `.github/workflows/check-models.yml` 은 `pnpm check-models --strict --since=7d` 를 pull request
-마다가 아니라 주 1회(그리고 필요할 때 수동으로) 돌린다: 살아 있는 provider API 와 `LLM_BASE_URL` /
-`LLM_API_KEY` / `SLACK_WEBHOOK_URL` 저장소 시크릿이 필요하기 때문이다(드리프트는 런이 실패하기 전에
-Slack 으로 전송된다). provider 장애나 시크릿 없는 fork 가 PR 을 실패시켜서는 안 된다.
+마다가 아니라 주 1회(그리고 필요할 때 수동으로) 돌린다: 살아 있는 provider API 와 저장소 시크릿이
+필요하기 때문이다(드리프트는 런이 실패하기 전에 Slack 으로 전송된다). provider 장애나 시크릿 없는
+fork 가 PR 을 실패시켜서는 안 된다.
+
+**이 job 의 채널은 배포의 채널과 같아야 한다.** `LLM_BASE_URL` / `LLM_API_KEY` 만 주면 default
+채널 하나로 도는데, 이 배포에서 그것은 라우터가 아니라 provider 자신의 엔드포인트라 맨 id 를
+서빙한다 — 비교되는 것이 하나도 없고, 등록된 모든 모델이 은퇴 후보로 보고된다. 그래서 차트가
+쓰는 provider 채널 다섯이 여기에도 설정돼 있다: `LLM_PROVIDER_{OPENAI,ANTHROPIC,XAI,OPENROUTER}_API_KEY`
+시크릿과, 키가 아니라 OIDC 로 서명하는 Bedrock (`github--agentdure-models` 역할, 권한은
+`bedrock-mantle:ListModels` 하나뿐). base URL 은 시크릿이 아니라 워크플로에 평문으로 있다.
 
 ## 테스트
 

@@ -15,8 +15,7 @@
  *   pnpm check-models --since=90d        # only models released in the last 90 days
  *   pnpm check-models --since=2026-01-01 # ...or since a date
  *   pnpm check-models --strict           # exit 1 on a registered model nothing serves,
- *                                        #   or on a channel that failed; with --since,
- *                                        #   also on anything newly released
+ *                                        #   or on a check that could not run
  *
  * The registry is a *curated* selection, not a mirror: a provider channel serves
  * its entire catalog — embeddings, speech, moderation, fine-tunes, every dated
@@ -347,6 +346,15 @@ async function main(): Promise<void> {
     }
   }
 
+  // Every channel answered and not one of them served an id this report can
+  // compare against the registry. That is a configuration, not a catalog: the
+  // default channel may be a provider's own endpoint rather than a router — this
+  // deployment's is — and then it serves bare ids, which are ignored by design.
+  // With no provider channel beside it there is nothing left to compare, and the
+  // registry reads as retired in its entirety. Which is the worst false positive
+  // available here, in the one list that invites deleting a live model.
+  const nothingComparable = !anyChannelFailed && served.size === 0;
+
   const registered = new Map(MODEL_CONFIGS.map((model) => [model.id, model]));
 
   // A provider that lists only dated snapshots still serves the undated alias:
@@ -401,6 +409,10 @@ async function main(): Promise<void> {
   // reporting nothing: it invites deleting a model that is very much alive.
   if (anyChannelFailed) {
     console.log("\nNot served by any channel: skipped — a channel failed to answer.");
+  } else if (nothingComparable) {
+    console.log(
+      "\nNot served by any channel: skipped — no channel served an id in `provider/model` form, so there was nothing to compare.",
+    );
   } else {
     console.log(`\nNot served by any channel (${unserved.length}):`);
     for (const id of unserved) {
@@ -420,14 +432,16 @@ async function main(): Promise<void> {
   // Not `missing`: that is the provider's entire catalog minus this app's
   // curated selection — embeddings, realtime, moderation, internal codenames —
   // so gating on it is an exit code that can never be green, which is the same
-  // as no gate at all. A registered model no channel serves is real drift and
-  // always counts. Newly released models count only once `--since` has narrowed
-  // them to a set someone meant to look at.
+  // as no gate at all. `--since` narrows that list for a reader without changing
+  // what it is: a router channel keeps shipping, and OpenRouter alone listed five
+  // new ids in the last seven days, not one of them something this app would
+  // offer. So the narrowed form reports too, and does not gate.
   //
-  // A channel that never answered means the check did not run, which must not
-  // read as "all clear" to whatever is gating on the exit code.
-  const gated = unserved.length + (since === null ? 0 : shown.length);
-  if (strict && (anyChannelFailed || gated > 0)) {
+  // A registered model no channel serves is real drift and always counts. So does
+  // a check that could not run — a channel that never answered, or every channel
+  // answering with nothing comparable — because "did not run" must not read as
+  // "all clear" to whatever is gating on the exit code.
+  if (strict && (anyChannelFailed || nothingComparable || unserved.length > 0)) {
     process.exit(1);
   }
 }

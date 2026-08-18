@@ -3,17 +3,35 @@ name: Check models
 # Diffs the model registry against what every configured channel actually
 # serves (`scripts/check-models.ts`). Scheduled rather than part of `verify`:
 # it needs live provider APIs and real credentials, so a provider outage or a
-# fork without secrets must not fail pull requests. `--strict --since=7d` is
-# the one form with a meaningful exit code (docs/DEVELOPMENT.md).
+# fork without secrets must not fail pull requests. `--strict` is the form with
+# a meaningful exit code; `--since=7d` only narrows the report (docs/DEVELOPMENT.md).
+#
+# The channels have to be the deployment's channels. With `LLM_BASE_URL` alone
+# this job compared the registry against a single provider-direct endpoint,
+# which serves bare ids — nothing matched, and every registered model was
+# reported as retired. So the five provider channels of
+# `argocd-env-demo/charts/agentdure` are configured here too, Bedrock included:
+# it signs with SigV4, hence the OIDC role rather than a key.
 #
 # Requires repository/organization secrets: LLM_BASE_URL, LLM_API_KEY,
-# SLACK_WEBHOOK_URL.
+# LLM_PROVIDER_OPENAI_API_KEY, LLM_PROVIDER_ANTHROPIC_API_KEY,
+# LLM_PROVIDER_XAI_API_KEY, LLM_PROVIDER_OPENROUTER_API_KEY, SLACK_WEBHOOK_URL.
 
 on:
   schedule:
     # Mondays 00:00 UTC — after a weekend of provider releases, before the week's work.
     - cron: "0 0 * * 1"
   workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  # Where Bedrock's OpenAI-compatible host lives. The signer reads the region off
+  # the URL, so this one only has to be a region the role can be assumed in.
+  AWS_REGION: us-east-1
+  AWS_ROLE_ARN: arn:aws:iam::396608815058:role/github--agentdure-models
 
 jobs:
   check-models:
@@ -33,11 +51,30 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Check model registry against served models
         id: models
         env:
+          # Base URLs are configuration, not secrets — they are the same values
+          # the chart carries in plain text. Only the keys are hidden.
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_PROVIDER_OPENAI_BASE_URL: https://api.openai.com/v1
+          LLM_PROVIDER_OPENAI_API_KEY: ${{ secrets.LLM_PROVIDER_OPENAI_API_KEY }}
+          LLM_PROVIDER_ANTHROPIC_BASE_URL: https://api.anthropic.com/v1
+          LLM_PROVIDER_ANTHROPIC_API_KEY: ${{ secrets.LLM_PROVIDER_ANTHROPIC_API_KEY }}
+          LLM_PROVIDER_XAI_BASE_URL: https://api.x.ai/v1
+          LLM_PROVIDER_XAI_API_KEY: ${{ secrets.LLM_PROVIDER_XAI_API_KEY }}
+          LLM_PROVIDER_OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+          LLM_PROVIDER_OPENROUTER_API_KEY: ${{ secrets.LLM_PROVIDER_OPENROUTER_API_KEY }}
+          # No key: the role assumed above is what signs this channel.
+          LLM_PROVIDER_BEDROCK_BASE_URL: https://bedrock-mantle.us-east-1.api.aws/v1
+          LLM_PROVIDER_BEDROCK_AUTH: sigv4
         run: |
           set +e
           pnpm check-models --strict --since=7d 2>&1 | tee model-check.log
