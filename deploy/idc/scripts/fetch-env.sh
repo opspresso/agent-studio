@@ -7,9 +7,12 @@
 # convenience but the requirement: it decrypts the stored credentials in the
 # table both read.
 #
-# Run it wherever AWS credentials are: from a laptop with the SSO profile
-# (`AWS_PROFILE=opspresso deploy/idc/scripts/fetch-env.sh` and scp the result),
-# or on the host if the IAM user carries iam/ssm-read.json.
+# Run it from a laptop with the SSO profile
+# (`AWS_PROFILE=opspresso deploy/idc/scripts/fetch-env.sh`, then scp the two
+# files over). The host's own IAM user cannot read SSM: no policy grants it, on
+# purpose — a leaked access key would otherwise open every deployment secret.
+# Granting it is a decision, not an oversight; make it in
+# terraform-env-demo/demo/9-agentdure if the host should refresh its own.
 #
 # Generated whole every time. Nothing edits these files by hand, so there is no
 # merge to get wrong.

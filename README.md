@@ -250,3 +250,7 @@ docker compose up --build             # 로컬 컨테이너 + DynamoDB Local 두
 밸런서는 `/api/ready` 를, 재시작 검사는 `/api/health` 를 가리키게 하고, `/api/metrics` 를
 스크랩하며, 테이블의 `expiresAt` 속성에 DynamoDB TTL 을 켜라. 전체 체크리스트는
 [docs/OPERATIONS.md](docs/OPERATIONS.md#새-배포를-위한-운영-체크리스트) 에 있다.
+
+배포는 둘이다 — EKS 클러스터가 **prod**, IDC 호스트 하나 위의 Docker Compose(`deploy/idc/`)가
+**alpha**. 코드는 같고 테이블과 버킷은 다르다. 무엇을 나누고 무엇을 나누지 않는지는
+[docs/OPERATIONS.md](docs/OPERATIONS.md#두-환경--alpha-와-prod) 에 있다.

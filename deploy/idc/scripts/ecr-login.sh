@@ -9,7 +9,8 @@
 #
 #   0 */6 * * * /opt/agentdure/scripts/ecr-login.sh >> /var/log/ecr-login.log 2>&1
 #
-# Needs iam/ecr-pull.json on the credentials this host holds.
+# Needs the agentdure-idc-ecr-pull policy on the credentials this host holds;
+# terraform-env-demo/demo/9-agentdure attaches it to the agentdure IAM user.
 
 set -euo pipefail
 
