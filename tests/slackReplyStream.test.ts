@@ -159,7 +159,7 @@ const INDICATOR = ":hourglass_flowing_sand:";
  * matters — the tests under "progress in a channel thread" describe a workspace
  * that cannot stream, not the ordinary one.
  */
-function makeChannelFake(opts: { refuseOver?: number } = {}) {
+function makeChannelFake(opts: { refuseOver?: number; refusePost?: number } = {}) {
   const posted: string[] = [];
   const updates: Array<{ channel: string; ts: string; text: string }> = [];
   const deleted: string[] = [];
@@ -171,6 +171,10 @@ function makeChannelFake(opts: { refuseOver?: number } = {}) {
     async postMessage(_token: string, args: { channel: string; text: string }) {
       if (opts.refuseOver !== undefined && args.text.length > opts.refuseOver) {
         throw new Error("Slack chat.postMessage failed: msg_too_long");
+      }
+      if (opts.refusePost === messages + 1) {
+        opts.refusePost = undefined;
+        throw new Error("Slack chat.postMessage failed: ratelimited");
       }
       posted.push(args.text);
       messages += 1;
@@ -846,6 +850,26 @@ describe("an edited answer longer than one Slack message", () => {
     expect(messages[1]?.startsWith("```python\n")).toBe(true);
   });
 
+  it("keeps a message it finished when the one continuing it cannot be posted", async () => {
+    // The offset may only move past a piece once there is a message holding what
+    // comes after it. Moving it when the piece was *written* left `messageStart`
+    // ahead of the message `messageTs` still pointed at, and the next pass
+    // overwrote a finished message with the text that followed it — losing a
+    // message's worth of the answer with nothing said.
+    const fake = makeChannelFake({ refusePost: 2 });
+    const sink = tickingSink(fake);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sink.push(LONG);
+    // The second message is refused here, and the run carries on.
+    await sink.push(LONG);
+    await sink.finish(LONG, "");
+
+    const messages = onScreen(fake.posted, fake.updates);
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages.join("")).toBe(LONG);
+  });
+
   it("cuts smaller when Slack refuses an edit as too long", async () => {
     // The cap is measured, not documented — a deployment whose real limit is
     // lower must not leave the answer stuck behind a payload that never fits.
@@ -861,5 +885,43 @@ describe("an edited answer longer than one Slack message", () => {
       expect(message.length).toBeLessThanOrEqual(1200);
     }
     expect(messages.join("")).toBe(LONG);
+  });
+});
+
+describe("what a stream's chunks may not do", () => {
+  it("sends no chunk at all when the close owes no text", async () => {
+    // An empty `markdown_text` is not the same as none. The close carries
+    // `chunks` only when it has some, so an empty one would make every healthy
+    // run send a payload Slack was never sent before — and a refused
+    // `stopStream` leaves the message open, saying "is thinking…" on a run that
+    // has already finished.
+    const { slack, appended } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+
+    await sink.push("the whole answer");
+    await sink.finish("the whole answer", "");
+
+    expect(appended.join("")).toBe("the whole answer");
+    expect(appended).not.toContain("");
+  });
+
+  it("puts no fence of its own into the answer at a chunk boundary", async () => {
+    // A chunk is a delta that concatenates, so anything added at a boundary
+    // lands in the middle of the text. Closing and reopening a fence is right
+    // for the edit path, whose pieces are separate messages, and wrong here.
+    const fenced = `\`\`\`js\n${"const x = 1;\n".repeat(1_200)}\`\`\`\n`;
+    const { slack, appended } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+
+    // The status opens the stream; the whole answer is then what the close owes.
+    await sink.status("is thinking…");
+    await sink.finish(fenced, "");
+
+    expect(appended.length).toBeGreaterThan(1);
+    expect(appended.join("")).toBe(fenced);
   });
 });

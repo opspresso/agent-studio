@@ -1,7 +1,7 @@
 import type { SlackChunk, SlackClientPort } from "@/application/slack/types";
 import type { ReplySink } from "@/domain/messaging/reply";
 import { log } from "@/shared/logger";
-import { splitMessages } from "@/shared/messageCut";
+import { cutPoint, splitMessages } from "@/shared/messageCut";
 import { unrefTimer } from "@/shared/unrefTimer";
 
 /**
@@ -168,14 +168,26 @@ function usingPhrase(title: string): string {
 /**
  * Text as as many `markdown_text` chunks as Slack's per-chunk cap requires.
  *
- * Cut where a reader would cut it: each chunk is its own rendered block, so a
- * boundary in the middle of a sentence — or of a code fence — is visible in a
- * way an append boundary within one block is not.
+ * Cut at a line or a sentence rather than at the character the cap reaches — but
+ * **only** cut. A stream's `markdown_text` chunks are deltas that concatenate,
+ * so a character added at a boundary lands in the middle of the answer: closing
+ * a fence here and reopening it in the next chunk, which is right for the edit
+ * path's separate messages, would put ``` into the text of a block that was
+ * never split. That is why this cuts with {@link cutPoint} and not with
+ * {@link splitMessages}.
+ *
+ * Nothing to say is **no** chunks, not one empty one: the close sends `chunks`
+ * only when it has any, and a `markdown_text: ""` on every healthy run is a
+ * payload Slack was never sent before.
  */
 function textChunks(text: string): SlackChunk[] {
-  return splitMessages(text, { room: MAX_STREAM_TEXT, window: MAX_STREAM_TEXT / 10 }).map(
-    (piece) => ({ type: "markdown_text", text: piece.text }),
-  );
+  const chunks: SlackChunk[] = [];
+  for (let at = 0; at < text.length; ) {
+    const cut = cutPoint(text, at, MAX_STREAM_TEXT, MAX_STREAM_TEXT / 10);
+    chunks.push({ type: "markdown_text", text: text.slice(at, cut) });
+    at = cut;
+  }
+  return chunks;
 }
 
 function withSuffix(text: string, suffix: string): string {
@@ -261,6 +273,8 @@ export function createReplySink(
    * how a wrong payload shape went two releases without anyone noticing.
    */
   let appendFailures = 0;
+  /** The same, for the edited path. See {@link editFailed}. */
+  let editFailures = 0;
   const indicator = loadingIndicator || DEFAULT_LOADING_INDICATOR;
 
   function appendFailed(error: unknown): void {
@@ -290,6 +304,24 @@ export function createReplySink(
     editRoom = Math.max(MIN_EDIT_TEXT, Math.floor(editRoom * 0.75));
     log.warn("slack", `Slack refused an edit as too long; cutting at ${editRoom} characters`);
     return true;
+  }
+
+  /**
+   * A refused edit this could not act on.
+   *
+   * One is not worth a line — the path re-sends everything from the message it
+   * is writing, so the next push heals it. A *persistent* one is the answer not
+   * arriving, and it looks identical from outside, which is how the length
+   * disagreement went unnoticed in the first place. `msg_too_long` is the code
+   * Slack sends for it, but the cap it enforces belongs to a rendered block, and
+   * a refusal spelled some other way would come back here rather than be acted
+   * on — so this says which spelling it was.
+   */
+  function editFailed(error: unknown): void {
+    editFailures += 1;
+    if (editFailures === 1 || editFailures % 10 === 0) {
+      log.warn("slack", `reply edit refused (${editFailures} in a row)`, error);
+    }
   }
 
   /**
@@ -333,6 +365,13 @@ export function createReplySink(
               thread_ts: target.threadTs,
               text: body,
             });
+            // Only now is there somewhere for what follows the previous piece to
+            // go, so only now does the offset move past it. Advancing when that
+            // piece was *written* instead loses it: a refused post left
+            // `messageStart` past a message `messageTs` still pointed at, and
+            // the next pass overwrote a finished message with the text after it.
+            messageStart = base + (pieces[index - 1]?.end ?? 0);
+            carry = piece.prefix;
             messageTs = posted.ts;
             messageChannel = posted.channel || target.channel;
           }
@@ -341,15 +380,11 @@ export function createReplySink(
           break;
         }
         progressOnly = false;
+        editFailures = 0;
+        flushed = last ? text.length : base + piece.end;
         if (last) {
-          flushed = text.length;
           return;
         }
-        // This message is finished. What follows belongs to the next one, which
-        // the next turn of the loop opens.
-        messageStart = base + piece.end;
-        flushed = messageStart;
-        carry = pieces[index + 1]?.prefix ?? "";
       }
       if (!refusedAsTooLong(refused)) {
         throw refused;
@@ -760,9 +795,7 @@ export function createReplySink(
           .catch(appendFailed);
         return;
       }
-      // A refused write is not worth a line here: this path re-sends everything
-      // from the message it is writing, so the next push heals it.
-      await writeEdited(fullText, false).catch(() => {});
+      await writeEdited(fullText, false).catch(editFailed);
     },
 
     async finish(fullText, suffix) {
