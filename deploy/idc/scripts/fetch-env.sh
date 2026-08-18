@@ -50,9 +50,9 @@ write_secrets() {
   emit LLM_PROVIDER_OPENROUTER_API_KEY /k8s/common/agentdure/llm-provider-openrouter-api-key
   emit A2A_API_KEY                     /k8s/common/agentdure/a2a-api-key
   emit GITHUB_TOKEN                    /k8s/common/agentdure/github-token
-  # Read by the app and by the ticker. With the ticker profile off the app just
-  # answers 503 on the three scan endpoints, which is correct while the cluster
-  # is the one ticking.
+  # Read by the app and by the ticker. With the ticker profile off the app
+  # answers 503 on the three scan endpoints — and since the split nothing else
+  # ticks this environment, so that is a gap rather than a division of labour.
   emit SCHEDULE_SCAN_TOKEN             /k8s/common/agentdure/schedule-scan-token
 }
 

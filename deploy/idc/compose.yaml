@@ -244,10 +244,12 @@ services:
           - mcp-kubernetes.agent-mcps.svc.cluster.local
 
   # --- Tickers -----------------------------------------------------------
-  # The three CronJobs, as one loop. Off by default (`--profile ticker`): the
-  # cluster already ticks all three against this same table, and duplicate ticks
-  # are safe but not free — a reindex here would re-embed the whole registry an
-  # hour's worth of nothing. Turn it on when this host is the one that ticks.
+  # The three CronJobs, as one loop. Off by default (`--profile ticker`) from
+  # when this host read the cluster's table and the cluster's CronJobs covered
+  # both. They are separate environments now, so **nothing ticks alpha**: its
+  # schedules do not fire, its catalog is never reindexed, and its plugins never
+  # sync. Turn this on — `docker compose --profile ticker up -d` — if this
+  # environment needs any of the three.
   ticker:
     profiles: [ticker]
     image: curlimages/curl:8.11.1
