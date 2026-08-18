@@ -34,11 +34,22 @@ alpha.agentdure.com {
 		# recognises, and this makes it not depend on that recognition.
 		flush_interval -1
 
-		# The load balancer's health check. /api/ready answers 503 while the
-		# instance drains, so Caddy stops sending it new requests during a
-		# deploy; /api/health would keep answering 200 through the drain.
-		health_uri /api/ready
-		health_interval 10s
-		health_timeout 5s
+		# The health check, and it asks the only question worth asking of a
+		# **single** upstream: is the process serving at all.
+		#
+		# It used to ask /api/ready, which answers 503 while the instance drains
+		# — right on a load balancer with somewhere else to send traffic, wrong
+		# here. There is nowhere else. A plugins sync that reindexed the whole
+		# catalog kept /api/ready from answering inside the timeout, Caddy marked
+		# the only backend down, and every request for the next few seconds got a
+		# 503 from Caddy instead of waiting for an app that was working fine.
+		#
+		# /api/health is dependency-free and static, so it fails only when the
+		# process really cannot serve — and when the container is gone, the dial
+		# fails and Caddy answers 503 anyway, which is the drain case handling
+		# itself.
+		health_uri /api/health
+		health_interval 15s
+		health_timeout 10s
 	}
 }
