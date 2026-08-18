@@ -227,6 +227,63 @@ describe("scanSchedules", () => {
     });
   });
 
+  it("delivers a completed report to every selected platform and records each result", async () => {
+    const f = fixture({
+      schedules: [
+        schedule({
+          deliveries: [
+            { kind: "slack", channelId: "C1" },
+            { kind: "telegram", chatId: -1001 },
+            { kind: "teams", conversationId: "19:one" },
+          ],
+        }),
+      ],
+      chunks: [{ delta: { content: "market close" } }],
+    });
+    const sent: Array<{ kind: string; text: string }> = [];
+    f.deps.deliverReport = async (_project, delivery, text) => {
+      sent.push({ kind: delivery.kind, text });
+    };
+    await scanAndExecute(f);
+    expect(sent).toEqual([
+      { kind: "slack", text: "market close" },
+      { kind: "telegram", text: "market close" },
+      { kind: "teams", text: "market close" },
+    ]);
+    expect(f.rows[0]?.deliveryResults).toEqual([
+      { kind: "slack", status: "sent" },
+      { kind: "telegram", status: "sent" },
+      { kind: "teams", status: "sent" },
+    ]);
+  });
+
+  it("keeps a successful run when one destination fails and reports the partial delivery", async () => {
+    const f = fixture({
+      schedules: [
+        schedule({
+          deliveries: [
+            { kind: "slack", channelId: "C1" },
+            { kind: "telegram", chatId: -1001 },
+          ],
+        }),
+      ],
+    });
+    f.deps.deliverReport = async (_project, delivery) => {
+      if (delivery.kind === "slack") {
+        throw new Error("channel_not_found");
+      }
+    };
+    await scanAndExecute(f);
+    expect(f.rows[0]).toMatchObject({
+      status: "succeeded",
+      warning: "slack delivery failed: channel_not_found",
+      deliveryResults: [
+        { kind: "slack", status: "failed", error: "channel_not_found" },
+        { kind: "telegram", status: "sent" },
+      ],
+    });
+  });
+
   it("never runs a disabled schedule, and does not claim its occurrences", async () => {
     const f = fixture({ schedules: [schedule({ enabled: false })] });
     const { summary } = await scanAndExecute(f);

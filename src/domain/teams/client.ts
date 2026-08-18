@@ -17,6 +17,9 @@ export interface TeamsCredentials {
   tenantId?: string;
 }
 
+/** Public-cloud Bot Framework endpoint for proactive messages. */
+export const PUBLIC_TEAMS_SERVICE_URL = "https://smba.trafficmanager.net/teams/";
+
 /** What this platform sends back into a conversation. */
 export interface TeamsOutboundActivity {
   type: "message" | "typing";

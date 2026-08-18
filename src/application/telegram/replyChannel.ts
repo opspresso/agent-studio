@@ -38,7 +38,7 @@ const EDIT_INTERVAL_MS = 2000;
 /** The typing indicator expires after five seconds; refreshed inside that. */
 const TYPING_REFRESH_MS = 4000;
 const CURSOR = " ▌";
-const SOFT_CUT_WINDOW = 800;
+export const SOFT_CUT_WINDOW = 800;
 
 /** Where a reply goes. */
 export interface TelegramReplyTarget {

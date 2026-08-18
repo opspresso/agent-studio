@@ -11,7 +11,7 @@
 WebhookTrigger  { projectName, triggerId (slug), kind: "webhook", description, enabled,
                   secret (AES-encrypted, masked on read), variables?, payloadMode,
                   allowConcurrent, createdAt, updatedAt }
-ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), message? }
+ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), message?, deliveries? }
 ```
 
 - **한 Project 는 webhook 하나와 임의 개수의 schedule 을 갖는다.** webhook 은 예약된 id
@@ -102,6 +102,13 @@ cron 지식도 갖지 않는다: 어떤 발생(occurrence)이 도래했는지, �
 - schedule 에는 **시크릿도 payload 도 없다**: 외부에서 자격 증명을 제시하는 것이 없고, 모든
   발화는 트리거의 고정된 `variables`/`message` 를 published 버전에 대해 실행하며 `schedule`
   actor kind 로 귀속된다.
+- schedule 은 Slack, Telegram, Teams 를 각각 최대 한 번 목적지로 지정할 수 있다. 런이 오류 없이
+  끝나고 텍스트 답을 만들면 세 목적지를 독립적으로 전송한다. 한 플랫폼의 실패는 다른 전송이나
+  런 자체를 실패로 바꾸지 않으며, 이력 행의 `deliveryResults` 와 `warning` 에 남는다. Slack
+  목적지는 프로젝트 bot이 참가한 채널 목록에서 고른 channel id 다. Telegram 은 chat id 와 선택적
+  topic id 를, Teams 는 conversation id 를 저장한다. Teams 의 `serviceUrl` 은 입력으로 받지 않고
+  공개 클라우드 Bot Framework endpoint 를 코드가 고정해 사용하므로 bot token을 임의 호스트로
+  보낼 수 없다.
 
 ## 유실된 발화 복구
 

@@ -601,9 +601,13 @@ export const en = {
   "pset.monthlyAlertHint": "Notify once a month, keep running",
   "pset.monthlyBlock": "Monthly block threshold (USD)",
   "pset.monthlyBlockHint": "Refuse runs for the rest of the month",
-  "pset.slackChannel": "Slack channel id",
+  "pset.slackChannel": "Slack channel",
   "pset.slackChannelHint":
     "Where notifications are posted, using this project’s own bot. Without it the thresholds still block.",
+  "pset.slackChannelUnavailable": "Enable the project bot and invite it to a channel first",
+  "pset.notificationDestinations": "Notification destinations",
+  "pset.notificationDestinationsHint":
+    "Select any enabled project integrations that should receive cost alerts.",
   "pset.slackBot": "Slack bot",
   "pset.appManifest": "App manifest",
   "pset.botToken": "Bot token",
@@ -648,6 +652,18 @@ export const en = {
   "trigger.enabled": "Enabled",
   "trigger.allowOverlap": "Allow overlapping runs",
   "trigger.payload": "Payload",
+  "trigger.destinations": "Report destinations",
+  "trigger.destinationType": "Destination",
+  "trigger.addDestination": "Add destination",
+  "trigger.removeDestination": "Remove",
+  "trigger.slackChannel": "Slack channel",
+  "trigger.slackUnavailable": "Slack channels could not be loaded. Configure and enable the project bot first.",
+  "trigger.telegramChatId": "Telegram chat id",
+  "trigger.telegramThreadId": "Telegram topic id (optional)",
+  "trigger.teamsConversationId": "Teams conversation id",
+  "trigger.destinationHint": "Select an available integration and add it.",
+  "trigger.saveScheduleSettings": "Save",
+  "trigger.saveDestinations": "Save destinations",
 
   // The admin pages, the profile, and the per-project usage tab.
   "admin.adminOnlyAudit": "Audit events are available to admins only.",

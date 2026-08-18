@@ -9,7 +9,7 @@ import type {
 } from "@/domain/project/types";
 import type { ModelConfig } from "@/domain/llm/models";
 import type { McpTool } from "@/domain/mcp/types";
-import type { SlackSuggestedPrompt } from "@/domain/slack/types";
+import type { SlackChannelInfo, SlackSuggestedPrompt } from "@/domain/slack/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { UsageRow } from "@/domain/usage/types";
 import type { Trace } from "@/domain/trace/types";
@@ -18,7 +18,7 @@ import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
 export type { CostLimits, McpBinding, Project, ProjectType, SubagentRef, Version, VersionParameters };
-export type { ModelConfig, EngineChunk, UsageRow, Trace, SlackSuggestedPrompt };
+export type { ModelConfig, EngineChunk, UsageRow, Trace, SlackChannelInfo, SlackSuggestedPrompt };
 
 // --- Projects -------------------------------------------------------------
 
@@ -357,6 +357,14 @@ export async function testProjectSlack(
 ): Promise<{ ok?: boolean; team?: string; botUser?: string; error?: string }> {
   const res = await fetch(`/api/projects/${name}/slack/test`, { method: "POST" });
   return (await res.json()) as { ok?: boolean; team?: string; botUser?: string; error?: string };
+}
+
+export async function listProjectSlackChannels(
+  name: string,
+): Promise<{ channels: SlackChannelInfo[] }> {
+  return readJson<{ channels: SlackChannelInfo[] }>(
+    await fetch(`/api/projects/${name}/slack/channels`),
+  );
 }
 
 export interface ProjectTelegramView {

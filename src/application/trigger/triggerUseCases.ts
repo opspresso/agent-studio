@@ -10,6 +10,7 @@ import { isValidTimezone, parseCron } from "@/domain/trigger/cron";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import {
   PROJECT_WEBHOOK_ID,
+  type ScheduleDelivery,
   type ScheduleTrigger,
   type Trigger,
   type TriggerKind,
@@ -46,6 +47,7 @@ export interface CreateTriggerInput {
   cron?: string;
   timezone?: string;
   message?: string;
+  deliveries?: ScheduleDelivery[];
 }
 
 export interface UpdateTriggerInput {
@@ -59,6 +61,7 @@ export interface UpdateTriggerInput {
   cron?: string;
   timezone?: string;
   message?: string;
+  deliveries?: ScheduleDelivery[];
 }
 
 /**
@@ -86,6 +89,7 @@ export interface TriggerView {
   cron?: string;
   timezone?: string;
   message?: string;
+  deliveries?: ScheduleDelivery[];
 }
 
 function toView(trigger: Trigger, cipher: SecretCipher, plaintext?: string): TriggerView {
@@ -110,6 +114,47 @@ function assertScheduleFields(input: { cron?: string; timezone?: string }): void
   if (input.timezone !== undefined && !isValidTimezone(input.timezone)) {
     throw new ValidationError(`Unknown timezone "${input.timezone}" — use an IANA zone name`);
   }
+}
+
+function cleanDeliveries(deliveries: readonly ScheduleDelivery[]): ScheduleDelivery[] {
+  if (deliveries.length > 3) {
+    throw new ValidationError("A schedule may deliver to at most three destinations");
+  }
+  const seen = new Set<string>();
+  return deliveries.map((delivery) => {
+    if (seen.has(delivery.kind)) {
+      throw new ValidationError(`A schedule may name ${delivery.kind} only once`);
+    }
+    seen.add(delivery.kind);
+    if (delivery.kind === "slack") {
+      const channelId = delivery.channelId.trim();
+      if (!channelId) {
+        throw new ValidationError("A Slack destination needs a channel id");
+      }
+      return { kind: "slack", channelId };
+    }
+    if (delivery.kind === "telegram") {
+      if (!Number.isSafeInteger(delivery.chatId) || delivery.chatId === 0) {
+        throw new ValidationError("A Telegram destination needs a non-zero integer chat id");
+      }
+      if (
+        delivery.threadId !== undefined &&
+        (!Number.isSafeInteger(delivery.threadId) || delivery.threadId <= 0)
+      ) {
+        throw new ValidationError("A Telegram thread id must be a positive integer");
+      }
+      return {
+        kind: "telegram",
+        chatId: delivery.chatId,
+        ...(delivery.threadId !== undefined ? { threadId: delivery.threadId } : {}),
+      };
+    }
+    const conversationId = delivery.conversationId.trim();
+    if (!conversationId) {
+      throw new ValidationError("A Teams destination needs a conversation id");
+    }
+    return { kind: "teams", conversationId };
+  });
 }
 
 /** `adw_…` — traceable to this product and to what it opens, like the others. */
@@ -182,6 +227,9 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           cron: input.cron,
           timezone: input.timezone,
           ...(input.message ? { message: input.message } : {}),
+          ...(input.deliveries?.length
+            ? { deliveries: cleanDeliveries(input.deliveries) }
+            : {}),
         };
       } else {
         // The same refusal update gives: cron fields on a webhook are a caller
@@ -190,9 +238,10 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         if (
           input.cron !== undefined ||
           input.timezone !== undefined ||
-          input.message !== undefined
+          input.message !== undefined ||
+          input.deliveries !== undefined
         ) {
-          throw new ValidationError("Only a schedule trigger has cron, timezone or message");
+          throw new ValidationError("Only a schedule trigger has cron, timezone, message or deliveries");
         }
         secret = newSecret();
         trigger = {
@@ -236,20 +285,30 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         }
         assertScheduleFields(input);
         // An empty string clears the message; undefined keeps what is stored.
-        const { message: stored, ...rest } = existing;
+        const { message: stored, deliveries: storedDeliveries, ...rest } = existing;
         const message = input.message ?? stored ?? "";
+        const deliveries =
+          input.deliveries === undefined
+            ? (storedDeliveries ?? [])
+            : cleanDeliveries(input.deliveries);
         const updated: ScheduleTrigger = {
           ...rest,
           ...shared,
           cron: input.cron ?? existing.cron,
           timezone: input.timezone ?? existing.timezone,
           ...(message ? { message } : {}),
+          ...(deliveries.length > 0 ? { deliveries } : {}),
         };
         await deps.triggers.put(updated);
         return toView(updated, deps.cipher);
       }
-      if (input.cron !== undefined || input.timezone !== undefined || input.message !== undefined) {
-        throw new ValidationError("Only a schedule trigger has cron, timezone or message");
+      if (
+        input.cron !== undefined ||
+        input.timezone !== undefined ||
+        input.message !== undefined ||
+        input.deliveries !== undefined
+      ) {
+        throw new ValidationError("Only a schedule trigger has cron, timezone, message or deliveries");
       }
       const rotated = input.rotateSecret ? newSecret() : undefined;
       const updated: WebhookTrigger = {

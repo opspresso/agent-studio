@@ -90,6 +90,7 @@ AgentDure 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는지
 | `/api/projects/{name}/triggers/{trigger}/runs` | `GET` | owner |
 | `/api/projects/{name}/slack` | `GET` `PUT` `DELETE` | owner |
 | `/api/projects/{name}/slack/test` | `POST` | owner |
+| `/api/projects/{name}/slack/channels` | `GET` | owner |
 | `/api/projects/{name}/telegram` | `GET` `PUT` `DELETE` | owner |
 | `/api/projects/{name}/telegram/test` | `POST` | owner |
 | `/api/projects/{name}/telegram/webhook` | `POST` | owner |
@@ -221,7 +222,11 @@ DELETE /api/skills/{name}     → 204                     | 404
 ```json
 { "costLimits": { "alertThresholdUsd": 20, "blockThresholdUsd": 50,
                   "monthlyAlertThresholdUsd": 300, "monthlyBlockThresholdUsd": 500,
-                  "alertSlackChannel": "C0123456789" } }
+                  "alertDestinations": [
+                    { "kind": "slack", "channelId": "C0123456789" },
+                    { "kind": "telegram", "chatId": -1001234567890, "threadId": 7 },
+                    { "kind": "teams", "conversationId": "19:conversation-id" }
+                  ] } }
 ```
 
 통째로 보낸다 — 이 객체가 저장된 것을 대체하고, `null` 은 가드를 지우며, 필드를 생략하면
@@ -233,9 +238,10 @@ alert 는 혼자서는 절대 발화하지 못하는데, block 이 거기 도달
 월간은 그 달의 행들을 합산한다. block 임계값에 도달하면 모든 실행 진입점이
 `429 { "error": "Project \"…\" has reached its daily cost limit …" }` (또는 `monthly`) 로
 답하고, `Retry-After` 에는 창이 넘어갈 때까지의 초가 담긴다 — 일간은 00:00 UTC, 월간은 다음 달
-1일이다. 임계값을 넘으면 project 자신의 Slack 봇으로 `alertSlackChannel` 에 창당 한 번
-알린다. 채널이나 봇이 없어도 임계값은 여전히 차단한다. 가드가 무엇을 한계 지우고 무엇은
-그러지 못하는지는 [OPERATIONS.md](OPERATIONS.md#비용-가드--fail-open) 를 보라.
+1일이다. 임계값을 넘으면 `alertDestinations` 에 선택한 Slack·Telegram·Teams 연동으로 창당
+한 번 알린다. 플랫폼마다 목적지는 하나만 선택할 수 있고, 각 전송은 독립적으로 시도한다.
+목적지나 연동이 없어도 임계값은 여전히 차단한다. 가드가 무엇을 한계 지우고 무엇은 그러지
+못하는지는 [OPERATIONS.md](OPERATIONS.md#비용-가드--fail-open) 를 보라.
 
 ### Version 과 publish
 
@@ -675,6 +681,7 @@ GET    /api/projects/{name}/slack
 PUT    /api/projects/{name}/slack   { botToken?, signingSecret?, enabled?, suggestedPrompts?, channelKeywords? }
 DELETE /api/projects/{name}/slack
 POST   /api/projects/{name}/slack/test
+GET    /api/projects/{name}/slack/channels
 ```
 
 `suggestedPrompts` 는 `{ title, message }[]` 이고 최대 4개다. `title` 은 80자, `message` 는
@@ -688,13 +695,16 @@ POST   /api/projects/{name}/slack/test
 Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `eventsPath`, `eventsUrl`,
 `suggestedPrompts`, `channelKeywords`, 그리고 생성된 앱 manifest 를 돌려준다 — 모든 동사가 그
 같은 뷰로 답한다.
-네 엔드포인트 모두 소유자와 설정된 admin 으로 제한된다 (그 외에는 403) — 마스킹된 뷰도 봇
+다섯 엔드포인트 모두 소유자와 설정된 admin 으로 제한된다 (그 외에는 403) — 마스킹된 뷰도 봇
 토큰 / signing secret 의 양끝은 드러내기 때문이다. 마스킹되거나 생략된 secret 은 업데이트에서
 보존되고, agent 가 아닌 project 에 대한 `PUT` 은 400 이다 — Slack 봇은 agent project 에만
 붙는다. 저장된 것도 보낸 것도 없는 상태에서 봇 토큰과 signing secret 없이 `enabled: true` 를
 보내는 `PUT` 도 마찬가지다: 켤 것이 없다.
 테스트 엔드포인트는 `{ ok: true, team, botUser }` 를 돌려주고, 그 project 에 Slack 이 설정되지
 않았거나 꺼져 있으면 `400`, Slack API 실패면 `502` 다.
+채널 엔드포인트는 `{ channels: [{ id, name, isPrivate?, isMember? }] }` 를 돌려준다. 설정되고
+활성화된 project bot의 token으로 읽으며, 보고서를 실제로 쓸 수 있도록 bot이 참가한 채널만
+이름순으로 제공한다.
 
 project 별 Telegram 설정은 이 엔드포인트들을 쓴다:
 
@@ -1152,10 +1162,12 @@ GET    /api/projects/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ �
 ```
 
 생성 본문: `{ triggerId (slug), kind?, description?, enabled?, variables?, payloadMode?,
-allowConcurrent?, cron?, timezone?, message? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
+allowConcurrent?, cron?, timezone?, message?, deliveries? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
 `cron` (다섯 필드) 과 `timezone` (IANA) 을 요구하고, 각 kind 는 상대의 필드를 무시하는 대신 400
 으로 거절한다 — `rotateSecret`/`payloadMode` 는 webhook 의 것이고,
-`cron`/`timezone`/`message` 는 schedule 의 것이다. `triggerId` 는 project 이름과 같은 규칙
+`cron`/`timezone`/`message`/`deliveries` 는 schedule 의 것이다. `deliveries` 는 최대 3개이고
+플랫폼을 중복할 수 없는 tagged union 이다: `{ kind: "slack", channelId }`,
+`{ kind: "telegram", chatId, threadId? }`, `{ kind: "teams", conversationId }`. `triggerId` 는 project 이름과 같은 규칙
 (`^[a-z0-9-]+$`) 을 따른다. 콘솔은 입력한 것을 project 폼이 쓰는 것과 같은 `toSlug` 헬퍼로
 정규화하고, API 는 클라이언트가 무엇이든 그 밖의 것을 거절한다.
 
@@ -1209,7 +1221,9 @@ Kubernetes CronJob 이 1분에 한 번 호출하는 것이다. ticker 는 상태
 도래했는지와 각각을 누가 차지하는지는 조건부 쓰기로 발생분마다 서버 측에서 결정된다 — 그래서 두 번
 ticking 하든, 여러 곳에서 하든, 늦게 하든 절대 이중 발화하지 않는다. admit 된 발화는 webhook 전달과
 정확히 같이 배경에서 실행되고, 그 결과는 그 trigger 의 이력 행에 남는다 (`scheduledFor` 가 발생분을
-싣는다). `alreadyClaimed` 는 다른 tick 이 이미 차지한 발생분의 수다 — 겹치는 창에서 나오는 예상된
+싣는다). 목적지가 설정된 schedule 은 성공한 텍스트 답을 각 플랫폼으로 전송하고, 이력의
+`deliveryResults` 에 플랫폼별 `sent`/`failed` 를 남긴다. 전송 실패는 성공한 런을 실패로 바꾸지
+않고 `warning` 에도 기록된다. `alreadyClaimed` 는 다른 tick 이 이미 차지한 발생분의 수다 — 겹치는 창에서 나오는 예상된
 잡음이지 이상 징후가 아니다. 같은 요약이 매 tick 마다 서버 측에 로그되며, 운영자가 알림을 거는 것이
 그것이다.
 

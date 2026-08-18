@@ -7,6 +7,11 @@
  * A2A are published-only (`resolveRunnableVersion`).
  */
 
+import type {
+  MessageDestination,
+  MessageDestinationKind,
+} from "@/domain/messaging/destination";
+
 /** The kinds a stored trigger row can be. */
 export type TriggerKind = "webhook" | "schedule";
 
@@ -45,6 +50,18 @@ export type TriggerPayloadMode =
   | "variables"
   /** The payload is serialised into the user message. What an agent project wants. */
   | "message";
+
+/** A destination that receives a schedule's completed text report. */
+export type ScheduleDelivery = MessageDestination;
+
+export type ScheduleDeliveryKind = MessageDestinationKind;
+
+/** What happened when one destination was attempted after a schedule run. */
+export interface ScheduleDeliveryResult {
+  kind: ScheduleDeliveryKind;
+  status: "sent" | "failed";
+  error?: string;
+}
 
 /** What every trigger kind shares; each kind adds what only it needs. */
 interface TriggerBase {
@@ -87,6 +104,8 @@ export interface ScheduleTrigger extends TriggerBase {
   timezone: string;
   /** The user message each firing runs with; an agent project needs one. */
   message?: string;
+  /** Independently attempted after a successful run, at most once per platform. */
+  deliveries?: ScheduleDelivery[];
 }
 
 export type Trigger = WebhookTrigger | ScheduleTrigger;
@@ -119,6 +138,8 @@ export interface TriggerRun {
    * unattended surface has nobody watching the stream to notice.
    */
   warning?: string;
+  /** Per-destination outcome for a schedule report. */
+  deliveryResults?: ScheduleDeliveryResult[];
   /** Set when the run was sampled into a trace, so the two can be joined. */
   traceId?: string;
 }

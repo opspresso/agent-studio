@@ -32,7 +32,7 @@ const EDIT_INTERVAL_MS = 2000;
 /** A `typing` activity shows for a few seconds; refreshed inside that. */
 const TYPING_REFRESH_MS = 3000;
 const CURSOR = " ▌";
-const SOFT_CUT_WINDOW = 1500;
+export const SOFT_CUT_WINDOW = 1500;
 /**
  * Teams documents an inline bot picture at 1MB and 1024×1024; past this the
  * connector refuses the activity, so the refusal is made here, where it can be

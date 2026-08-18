@@ -23,6 +23,7 @@ vi.mock("@/lib/container", async () => ({
     cipher: (await import("@/infrastructure/crypto/secretCipher")).secretCipher,
     // Reached only by the sibling `test` route, which this file does not import.
     authTest: async () => ({}),
+    listChannels: async () => [],
   }),
 }));
 vi.mock("@/lib/public-url", () => ({

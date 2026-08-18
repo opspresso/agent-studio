@@ -203,6 +203,56 @@ describe("schedule triggers", () => {
     expect(created.secretMasked).toBeUndefined();
   });
 
+  it("stores one report destination for each messaging platform", async () => {
+    const { useCases, stored } = fixture();
+    const deliveries = [
+      { kind: "slack" as const, channelId: " C123 " },
+      { kind: "telegram" as const, chatId: -100123, threadId: 7 },
+      { kind: "teams" as const, conversationId: " 19:meeting " },
+    ];
+    const created = await useCases.create(
+      "p",
+      { ...schedule, deliveries },
+      "owner@example.com",
+    );
+    expect(created.deliveries).toEqual([
+      { kind: "slack", channelId: "C123" },
+      { kind: "telegram", chatId: -100123, threadId: 7 },
+      { kind: "teams", conversationId: "19:meeting" },
+    ]);
+    expect(stored.get("nightly")).toMatchObject({ deliveries: created.deliveries });
+  });
+
+  it("rejects duplicate platforms and clears destinations with an empty list", async () => {
+    const { useCases, stored } = fixture();
+    await expect(
+      useCases.create(
+        "p",
+        {
+          ...schedule,
+          deliveries: [
+            { kind: "slack", channelId: "C1" },
+            { kind: "slack", channelId: "C2" },
+          ],
+        },
+        "owner@example.com",
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await useCases.create(
+      "p",
+      { ...schedule, deliveries: [{ kind: "slack", channelId: "C1" }] },
+      "owner@example.com",
+    );
+    const updated = await useCases.update(
+      "p",
+      "nightly",
+      { deliveries: [] },
+      "owner@example.com",
+    );
+    expect(updated.deliveries).toBeUndefined();
+    expect(stored.get("nightly")).not.toHaveProperty("deliveries");
+  });
+
   it("requires a parseable cron and a real timezone", async () => {
     const { useCases } = fixture();
     for (const bad of [
@@ -258,6 +308,14 @@ describe("schedule triggers", () => {
     await useCases.create("p", { triggerId: PROJECT_WEBHOOK_ID }, "owner@example.com");
     await expect(
       useCases.update("p", PROJECT_WEBHOOK_ID, { cron: "0 9 * * *" }, "owner@example.com"),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      useCases.update(
+        "p",
+        PROJECT_WEBHOOK_ID,
+        { deliveries: [{ kind: "slack", channelId: "C1" }] },
+        "owner@example.com",
+      ),
     ).rejects.toBeInstanceOf(ValidationError);
   });
 

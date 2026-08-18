@@ -103,11 +103,11 @@ const MAX_STREAM_TEXT = 12_000;
  * is *cut* — and because the number is an observation, a refusal shrinks it
  * rather than being retried unchanged.
  */
-const MAX_EDIT_TEXT = 2_800;
+export const MAX_EDIT_TEXT = 2_800;
 /** Below this, cutting smaller costs the reader more than the refusal it avoids. */
 const MIN_EDIT_TEXT = 700;
 /** How far back from the cap a paragraph or line break is looked for. */
-const EDIT_CUT_WINDOW = 600;
+export const EDIT_CUT_WINDOW = 600;
 /**
  * Appended to an edited-in-place reply that is still being written, when the
  * deployment names nothing else.

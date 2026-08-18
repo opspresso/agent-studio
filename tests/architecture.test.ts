@@ -1652,7 +1652,7 @@ describe("single owners", () => {
  * shape of the mistake rather than the shape of the definition.
  *
  * Scoped to `app` because that is exactly where the owner is reachable. The
- * cost guards format dollars into a 429 message and a Slack alert, and they
+ * cost guards format dollars into a 429 message and a messaging alert, and they
  * live in `application`, which may not import `@/app` — their amounts are
  * sentences for a caller, not columns for a reader, and the dependency rule is
  * what keeps the two apart.

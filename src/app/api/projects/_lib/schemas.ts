@@ -16,6 +16,24 @@ export const createProjectSchema = z.object({
   departmentCode: z.string().max(64).optional(),
 });
 
+const messageDestinationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("slack"), channelId: z.string().trim().min(1) }),
+  z.object({
+    kind: z.literal("telegram"),
+    chatId: z.number().int().safe().refine((chatId) => chatId !== 0, "chatId must not be zero"),
+    threadId: z.number().int().positive().safe().optional(),
+  }),
+  z.object({ kind: z.literal("teams"), conversationId: z.string().trim().min(1) }),
+]);
+const messageDestinationsSchema = z
+  .array(messageDestinationSchema)
+  .max(3)
+  .refine(
+    (destinations) =>
+      new Set(destinations.map((destination) => destination.kind)).size === destinations.length,
+    "A messaging platform may be selected only once",
+  );
+
 /**
  * Daily and monthly spend guards. Sent whole: the object replaces whatever was
  * stored, and `null` clears the guard entirely. A partial merge would make
@@ -28,6 +46,7 @@ export const costLimitsSchema = z
     blockThresholdUsd: z.number().positive().optional(),
     monthlyAlertThresholdUsd: z.number().positive().optional(),
     monthlyBlockThresholdUsd: z.number().positive().optional(),
+    alertDestinations: messageDestinationsSchema.optional(),
     alertSlackChannel: z.string().min(1).optional(),
   })
   .refine(
@@ -78,6 +97,7 @@ export const createTriggerSchema = z.object({
   cron: z.string().optional(),
   timezone: z.string().optional(),
   message: z.string().optional(),
+  deliveries: messageDestinationsSchema.optional(),
 });
 
 export const updateTriggerSchema = z.object({
@@ -90,6 +110,7 @@ export const updateTriggerSchema = z.object({
   cron: z.string().optional(),
   timezone: z.string().optional(),
   message: z.string().optional(),
+  deliveries: messageDestinationsSchema.optional(),
 });
 
 export const versionParametersSchema = z.object({

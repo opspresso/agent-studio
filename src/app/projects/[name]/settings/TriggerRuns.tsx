@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Badge, Stack, Table } from "@mantine/core";
+import { Alert, Badge, Group, Stack, Table } from "@mantine/core";
 import { formatDateTime } from "@/shared/date";
 import { useLocale } from "@/app/_i18n/provider";
 import type { TriggerRun } from "../../lib/api";
@@ -68,17 +68,32 @@ export function TriggerRuns({ runs }: { runs: TriggerRun[] }) {
                   hiding it left the operator unable to see what the delivery
                   actually said. */}
               <Table.Td>
-                {run.error ??
-                  (run.warning ? (
-                    <Stack gap={4}>
-                      <Alert color="yellow" variant="light" p={4}>
-                        {run.warning}
-                      </Alert>
-                      {run.result}
-                    </Stack>
-                  ) : (
-                    (run.result ?? "")
-                  ))}
+                <Stack gap={4}>
+                  {run.deliveryResults && run.deliveryResults.length > 0 && (
+                    <Group gap={4}>
+                      {run.deliveryResults.map((delivery) => (
+                        <Badge
+                          key={delivery.kind}
+                          color={delivery.status === "sent" ? "teal" : "red"}
+                          variant="light"
+                        >
+                          {delivery.kind}: {delivery.status}
+                        </Badge>
+                      ))}
+                    </Group>
+                  )}
+                  {run.error ??
+                    (run.warning ? (
+                      <>
+                        <Alert color="yellow" variant="light" p={4}>
+                          {run.warning}
+                        </Alert>
+                        {run.result}
+                      </>
+                    ) : (
+                      (run.result ?? "")
+                    ))}
+                </Stack>
               </Table.Td>
             </Table.Tr>
           ))}

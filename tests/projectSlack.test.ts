@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   buildProjectSlackManifest,
+  createProjectSlackUseCases,
   resolveProjectSlackRuntime as resolveProjectSlackRuntimeImpl,
   updateProjectSlack as updateProjectSlackImpl,
 } from "@/application/slack/projectSlack";
@@ -141,6 +142,38 @@ describe("resolveProjectSlackRuntime", () => {
     await updateProjectSlack(repo, "bot-proj", { enabled: false }, OWNER);
     expect(resolveProjectSlackRuntime(current())).toBeNull();
     expect(resolveProjectSlackRuntime(makeProject())).toBeNull();
+  });
+});
+
+describe("schedule channel choices", () => {
+  it("lists only channels the project bot has joined, sorted by name", async () => {
+    const { repo } = fakeRepo(makeProject());
+    await updateProjectSlack(
+      repo,
+      "bot-proj",
+      { botToken: "xoxb-live", signingSecret: "sig-live", enabled: true },
+      OWNER,
+    );
+    const tokens: string[] = [];
+    const useCases = createProjectSlackUseCases({
+      projects: repo,
+      cipher: secretCipher,
+      authTest: async () => ({}),
+      listChannels: async (token) => {
+        tokens.push(token);
+        return [
+          { id: "C2", name: "zeta", isMember: true },
+          { id: "C3", name: "hidden", isMember: false },
+          { id: "C1", name: "alpha", isMember: true },
+        ];
+      },
+    });
+    expect(await useCases.channels("bot-proj", OWNER)).toEqual([
+      { id: "C1", name: "alpha", isMember: true },
+      { id: "C2", name: "zeta", isMember: true },
+    ]);
+    expect(tokens).toEqual(["xoxb-live"]);
+    await expect(useCases.channels("bot-proj", OTHER)).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 

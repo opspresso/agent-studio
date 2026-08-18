@@ -20,7 +20,8 @@
  * which is only ever reached on a successful read.
  */
 
-import type { Project } from "@/domain/project/types";
+import { costAlertDestinations, type Project } from "@/domain/project/types";
+import type { MessageDestination } from "@/domain/messaging/destination";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageRow } from "@/domain/usage/types";
 import { RateLimitedError } from "@/application/errors";
@@ -31,21 +32,16 @@ import { log } from "@/shared/logger";
 export type CostWindow = "daily" | "monthly";
 
 /**
- * Posting one alert with the project's own credentials, token resolution
- * included. One injected function rather than a Slack client and a cipher:
- * which token a project posts with is the slack slice's knowledge, and
- * importing its resolver from here was the one edge that pulled that whole
- * slice — and the mcp and project modules behind it — into every consumer of
- * the usage slice. The composition root closes over both instead.
- *
- * Resolves `false` when the project has no way to be notified (no enabled bot,
- * no stored token), so the guard can say so in the log; a delivery failure
- * still rejects.
+ * Posting one alert with the project's own integration credentials, including
+ * credential resolution and each platform's delivery details. Keeping that in
+ * one injected function prevents the usage slice from importing messaging
+ * adapters; the composition root closes over them instead.
  */
 export type PostCostAlert = (
   project: Project,
-  args: { channel: string; text: string },
-) => Promise<boolean>;
+  destination: MessageDestination,
+  text: string,
+) => Promise<void>;
 
 /**
  * Only `usage` is required. The notification is the optional half of this
@@ -54,7 +50,7 @@ export type PostCostAlert = (
  */
 export interface CostGuardDeps {
   usage: UsageRepository;
-  /** Absent on a deployment that cannot post to Slack; the guard still blocks. */
+  /** Absent on a deployment that cannot post notifications; the guard still blocks. */
   postAlert?: PostCostAlert;
 }
 
@@ -322,8 +318,10 @@ export async function settleCostLimit(
  * threshold together both post before either claimed.
  *
  * A send that fails still consumed the claim. That is the deliberate choice:
- * retrying on the next run would make a flapping Slack API into a notification
- * storm, and the threshold state is visible in the console either way.
+ * retrying on the next run would make a flapping messaging API into a
+ * notification storm, and the threshold state is visible in the console either
+ * way. Destinations are attempted independently so one unavailable integration
+ * does not prevent the others from receiving the alert.
  */
 async function notifyOnce(
   deps: CostGuardDeps,
@@ -341,18 +339,30 @@ async function notifyOnce(
   if (!claimed) {
     return;
   }
-  const channel = project.costLimits?.alertSlackChannel;
+  const destinations = project.costLimits ? costAlertDestinations(project.costLimits) : [];
   const postAlert = deps.postAlert;
-  if (postAlert && channel) {
+  if (postAlert && destinations.length > 0) {
     const resume = window === "daily" ? "00:00 UTC" : "the start of the next month (UTC)";
     const text =
       kind === "block"
-        ? `:no_entry: *${project.displayName}* has reached its ${window} cost limit — ` +
+        ? `⛔ ${project.displayName} has reached its ${window} cost limit — ` +
           `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC). ` +
           `Further runs are refused until ${resume}.`
-        : `:warning: *${project.displayName}* has passed its ${window} cost alert threshold — ` +
+        : `⚠️ ${project.displayName} has passed its ${window} cost alert threshold — ` +
           `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC).`;
-    if (await postAlert(project, { channel, text })) {
+    const results = await Promise.allSettled(
+      destinations.map((destination) => postAlert(project, destination, text)),
+    );
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        log.error(
+          "cost-guard",
+          `could not deliver ${destinations[index]?.kind ?? "unknown"} cost alert for "${project.name}"`,
+          result.reason,
+        );
+      }
+    });
+    if (results.some((result) => result.status === "fulfilled")) {
       return;
     }
   }
@@ -361,6 +371,6 @@ async function notifyOnce(
   log.warn(
     "cost-guard",
     `"${project.name}" crossed its ${window} ${kind} threshold ` +
-      `($${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)}) with no Slack channel configured`,
+      `($${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)}) with no notification destination available`,
   );
 }

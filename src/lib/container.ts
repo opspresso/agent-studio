@@ -66,7 +66,7 @@ import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
 import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
-import { ConflictError } from "@/application/errors";
+import { ConflictError, ValidationError } from "@/application/errors";
 import type { PluginSyncSelection } from "@/domain/plugin/sync";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import {
@@ -100,9 +100,27 @@ import { a2aClientKeyRepository } from "@/infrastructure/db/repositories/a2aClie
 import { createProjectSlackUseCases, resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import {
   createProjectTelegramUseCases,
+  resolveProjectTelegramRuntime,
   revokeProjectTelegramWebhook,
 } from "@/application/telegram/projectTelegram";
-import { createProjectTeamsUseCases } from "@/application/teams/projectTeams";
+import {
+  createProjectTeamsUseCases,
+  resolveProjectTeamsRuntime,
+} from "@/application/teams/projectTeams";
+import { sendScheduleReport } from "@/application/trigger/scheduleReport";
+import {
+  EDIT_CUT_WINDOW as SLACK_CUT_WINDOW,
+  MAX_EDIT_TEXT as SLACK_MESSAGE_CHARS,
+} from "@/application/slack/replyStream";
+import {
+  MAX_MESSAGE_CHARS as TELEGRAM_MESSAGE_CHARS,
+  SOFT_CUT_WINDOW as TELEGRAM_CUT_WINDOW,
+} from "@/application/telegram/replyChannel";
+import {
+  MAX_MESSAGE_CHARS as TEAMS_MESSAGE_CHARS,
+  SOFT_CUT_WINDOW as TEAMS_CUT_WINDOW,
+} from "@/application/teams/replyChannel";
+import { PUBLIC_TEAMS_SERVICE_URL } from "@/domain/teams/client";
 import { createSlackWorkspaceReader } from "@/application/slack/workspaceRead";
 import type { SlackReaderPort } from "@/domain/slack/reader";
 import { setAuditSink } from "@/application/audit/recordAudit";
@@ -543,6 +561,9 @@ export const a2aExposureDeps: A2aExposureDeps = {
 const slackAuthTest = async (botToken: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.authTest(botToken);
 
+const slackListChannels = async (botToken: string) =>
+  (await import("@/infrastructure/slack/client")).slackClient.listChannels(botToken);
+
 /**
  * The project-Slack surface, composed here rather than at each of the three
  * routes that used it — two of which were reaching for `projectRepository` and
@@ -554,6 +575,7 @@ export const projectSlackUseCases = createProjectSlackUseCases({
   projects: projectRepository,
   cipher: secretCipher,
   authTest: slackAuthTest,
+  listChannels: slackListChannels,
 });
 
 /**
@@ -714,21 +736,64 @@ const actorTierResolver = async (actor: RunActor): Promise<MemberTier | undefine
 };
 
 /**
- * The cost guard's threshold notification, token resolution included — the
- * guard takes one closure so the usage slice never imports the slack slice's
- * resolver. The client stays deferred, like every other Slack use here, so a
- * route that only wanted a repository does not load it.
+ * Application-owned notification delivery, with project credential resolution
+ * and platform message limits kept out of the calling use cases.
  */
-const postCostAlert: PostCostAlert = async (project, args) => {
-  const runtime = resolveProjectSlackRuntime(secretCipher, project);
-  if (!runtime) {
-    return false;
+const deliverProjectMessage: PostCostAlert = async (project, destination, text) => {
+  if (destination.kind === "slack") {
+    const runtime = resolveProjectSlackRuntime(secretCipher, project);
+    if (!runtime) {
+      throw new ValidationError("Slack is not configured or enabled for this project");
+    }
+    const client = (await import("@/infrastructure/slack/client")).slackClient;
+    await sendScheduleReport(
+      text,
+      { maxChars: SLACK_MESSAGE_CHARS, cutWindow: SLACK_CUT_WINDOW },
+      async (piece) => {
+        await client.postMessage(runtime.botToken, {
+          channel: destination.channelId,
+          text: piece,
+        });
+      },
+    );
+    return;
   }
-  await (await import("@/infrastructure/slack/client")).slackClient.postMessage(
-    runtime.botToken,
-    args,
+  if (destination.kind === "telegram") {
+    const runtime = resolveProjectTelegramRuntime(secretCipher, project);
+    if (!runtime) {
+      throw new ValidationError("Telegram is not configured or enabled for this project");
+    }
+    const client = (await import("@/infrastructure/telegram/client")).telegramClient;
+    await sendScheduleReport(
+      text,
+      { maxChars: TELEGRAM_MESSAGE_CHARS, cutWindow: TELEGRAM_CUT_WINDOW },
+      async (piece) => {
+        await client.sendMessage(runtime.botToken, {
+          chatId: destination.chatId,
+          text: piece,
+          ...(destination.threadId !== undefined ? { threadId: destination.threadId } : {}),
+        });
+      },
+    );
+    return;
+  }
+  const credentials = resolveProjectTeamsRuntime(secretCipher, project);
+  if (!credentials) {
+    throw new ValidationError("Teams is not configured or enabled for this project");
+  }
+  const client = (await import("@/infrastructure/teams/client")).teamsClient;
+  await sendScheduleReport(
+    text,
+    { maxChars: TEAMS_MESSAGE_CHARS, cutWindow: TEAMS_CUT_WINDOW },
+    async (piece) => {
+      await client.sendActivity(
+        credentials,
+        PUBLIC_TEAMS_SERVICE_URL,
+        destination.conversationId,
+        { type: "message", text: piece },
+      );
+    },
   );
-  return true;
 };
 
 /** Repository + channel bundle passed to the execution facade (executeVersion/Stream/Agent). */
@@ -767,7 +832,7 @@ export const executionDeps: ExecutionDeps = {
   internalHostSuffixes: config.mcpInternalHostSuffixes,
   traces: runTraceRepository,
   traceSampleRate: config.traceSampleRate,
-  postAlert: postCostAlert,
+  postAlert: deliverProjectMessage,
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
   unknownModelPolicy: getUnknownModelPolicy,
@@ -800,6 +865,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
   versions: versionRepository,
   cipher: secretCipher,
   runSlots: runSlotRepository,
+  deliverReport: deliverProjectMessage,
   run: async function* (input) {
     const { streamProjectRun } = await import("@/application/execution/runProject");
     yield* streamProjectRun(executionDeps, {

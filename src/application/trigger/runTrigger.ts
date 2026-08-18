@@ -25,6 +25,8 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import {
   PROJECT_WEBHOOK_ID,
+  type ScheduleDelivery,
+  type ScheduleDeliveryResult,
   type Trigger,
   type TriggerRun,
   type WebhookTrigger,
@@ -57,6 +59,8 @@ export interface TriggerRunnerDeps {
    * dead instance's hold expires" is exactly what a run slot already is.
    */
   runSlots?: RunSlotRepository;
+  /** Sends a completed schedule report; platform credentials stay in the composition root. */
+  deliverReport?: (project: Project, delivery: ScheduleDelivery, text: string) => Promise<void>;
 }
 
 /** What `admitRun` reads: everything but the webhook secret's cipher. */
@@ -403,6 +407,32 @@ export async function executeFiring(
   } finally {
     await admitted.release();
   }
+  const deliveryResults: ScheduleDeliveryResult[] = [];
+  if (!error && trigger.kind === "schedule" && trigger.deliveries?.length) {
+    const report = text || (images > 0 ? imagesOnlyResult(images) : "");
+    if (report) {
+      const attempted = await Promise.all(
+        trigger.deliveries.map(async (delivery): Promise<ScheduleDeliveryResult> => {
+          try {
+            if (!deps.deliverReport) {
+              throw new Error("Schedule report delivery is unavailable");
+            }
+            await deps.deliverReport(project, delivery, report);
+            return { kind: delivery.kind, status: "sent" };
+          } catch (caught) {
+            const message = caught instanceof Error ? caught.message : String(caught);
+            warnings.push(`${delivery.kind} delivery failed: ${message}`);
+            return {
+              kind: delivery.kind,
+              status: "failed",
+              error: cutCodePoints(message, 500),
+            };
+          }
+        }),
+      );
+      deliveryResults.push(...attempted);
+    }
+  }
   await finishFiring(deps, run, {
     // A picture is said only when the run produced nothing else to say: one
     // beside an answer is already accounted for by the answer, and one
@@ -417,6 +447,7 @@ export async function executeFiring(
     ...(error ? { error } : {}),
     ...(warnings.length > 0 ? { warning: warnings.join("\n") } : {}),
     ...(traceId ? { traceId } : {}),
+    ...(deliveryResults.length > 0 ? { deliveryResults } : {}),
   });
 }
 
@@ -465,7 +496,13 @@ function producedNote(text: string, produced: number, files: readonly string[]):
 async function finishFiring(
   deps: FiringDeps,
   run: TriggerRun,
-  outcome: { text?: string; error?: string; warning?: string; traceId?: string },
+  outcome: {
+    text?: string;
+    error?: string;
+    warning?: string;
+    traceId?: string;
+    deliveryResults?: ScheduleDeliveryResult[];
+  },
 ): Promise<void> {
   const finished: TriggerRun = {
     ...run,
@@ -477,6 +514,7 @@ async function finishFiring(
     ...(outcome.error ? { error: cutCodePoints(outcome.error, MAX_RESULT_CHARS) } : {}),
     ...(outcome.warning ? { warning: cutCodePoints(outcome.warning, MAX_RESULT_CHARS) } : {}),
     ...(outcome.traceId ? { traceId: outcome.traceId } : {}),
+    ...(outcome.deliveryResults ? { deliveryResults: outcome.deliveryResults } : {}),
   };
   try {
     await deps.triggers.finishRun(finished);

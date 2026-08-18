@@ -45,6 +45,7 @@ import {
 } from "@/application/project/projectUseCases";
 import {
   chatMessageSchema,
+  costLimitsSchema,
   predictSchema,
   updateVersionSchema,
   versionNameSchema,
@@ -1183,6 +1184,42 @@ describe("versionNameSchema", () => {
 
   it("rejects the reserved published-pointer sentinel", () => {
     expect(versionNameSchema.safeParse("published").success).toBe(false);
+  });
+});
+
+describe("costLimitsSchema notification destinations", () => {
+  it("accepts one destination per enabled messaging platform", () => {
+    const parsed = costLimitsSchema.safeParse({
+      alertThresholdUsd: 10,
+      alertDestinations: [
+        { kind: "slack", channelId: " C1 " },
+        { kind: "telegram", chatId: -1001, threadId: 7 },
+        { kind: "teams", conversationId: " 19:one " },
+      ],
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.alertDestinations).toEqual([
+      { kind: "slack", channelId: "C1" },
+      { kind: "telegram", chatId: -1001, threadId: 7 },
+      { kind: "teams", conversationId: "19:one" },
+    ]);
+  });
+
+  it("rejects duplicate platforms and an invalid Telegram chat id", () => {
+    expect(
+      costLimitsSchema.safeParse({
+        alertDestinations: [
+          { kind: "slack", channelId: "C1" },
+          { kind: "slack", channelId: "C2" },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      costLimitsSchema.safeParse({
+        alertDestinations: [{ kind: "telegram", chatId: 0 }],
+      }).success,
+    ).toBe(false);
   });
 });
 

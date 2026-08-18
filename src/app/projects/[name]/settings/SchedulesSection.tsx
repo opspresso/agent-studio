@@ -1,22 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useConfirm } from "@/app/_components/useConfirm";
-import { Alert, Badge, Button, Group, Stack, Switch, Text, TextInput } from "@mantine/core";
+import { Alert, Badge, Button, Group, Paper, Select, Stack, Switch, Text, TextInput } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { stateColor } from "@/app/_components/badgeColors";
 import { PROJECT_WEBHOOK_ID } from "@/domain/trigger/types";
+import type { ScheduleDelivery, ScheduleDeliveryKind } from "@/domain/trigger/types";
 import { toSlug } from "@/shared/slug";
 import { useT } from "@/app/_i18n/provider";
 import { TriggerRuns } from "./TriggerRuns";
 import {
   createTrigger,
   deleteTrigger,
+  getProjectTeams,
+  getProjectTelegram,
   listTriggerRuns,
+  listProjectSlackChannels,
   listTriggers,
   updateTrigger,
   type TriggerRun,
   type TriggerView,
+  type SlackChannelInfo,
 } from "../../lib/api";
 
 /**
@@ -36,6 +41,9 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
   const [newMessage, setNewMessage] = useState("");
+  const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
+  const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
+  const [availableDestinations, setAvailableDestinations] = useState<ScheduleDeliveryKind[]>([]);
   // Webhook rows registered by name before a project had one of its own. There
   // is no delivery address that reaches them any more, so they run nothing —
   // but the row is still an encrypted secret, and a credential nobody can see
@@ -80,6 +88,34 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
       cancelled = true;
     };
   }, [reload]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.allSettled([
+      listProjectSlackChannels(projectName),
+      getProjectTelegram(projectName),
+      getProjectTeams(projectName),
+    ]).then(([slack, telegram, teams]) => {
+      if (cancelled) {
+        return;
+      }
+      const channels = slack.status === "fulfilled" ? slack.value.channels : [];
+      setSlackChannels(channels);
+      setSlackChannelsUnavailable(slack.status === "rejected" || channels.length === 0);
+      setAvailableDestinations([
+        ...(channels.length > 0 ? (["slack"] as const) : []),
+        ...(telegram.status === "fulfilled" && telegram.value.configured && telegram.value.enabled
+          ? (["telegram"] as const)
+          : []),
+        ...(teams.status === "fulfilled" && teams.value.configured && teams.value.enabled
+          ? (["teams"] as const)
+          : []),
+      ]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectName]);
 
   async function act(action: () => Promise<void>) {
     setBusy(true);
@@ -186,71 +222,87 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
         </Stack>
 
         {schedules.map((schedule) => (
-          <Stack key={schedule.triggerId} gap="xs">
-            <Group gap="sm">
-              <Text fw={600}>{schedule.triggerId}</Text>
-              <Badge color={schedule.enabled ? "teal" : "gray"} variant="light">
-                {schedule.enabled ? "enabled" : "disabled"}
-              </Badge>
-            </Group>
-            <ScheduleFields
-              schedule={schedule}
-              busy={busy}
-              onSave={(input) =>
-                act(async () => {
-                  await updateTrigger(projectName, schedule.triggerId, input);
-                })
-              }
-            />
-            <Group gap="md" align="center">
-              <Switch
-                label={t("trigger.enabled")}
-                checked={schedule.enabled}
-                disabled={busy}
-                onChange={(e) =>
+          <Paper key={schedule.triggerId} withBorder radius="md" p="md">
+            <Stack gap="sm">
+              <Group gap="sm">
+                <Text fw={600}>{schedule.triggerId}</Text>
+                <Badge color={schedule.enabled ? "teal" : "gray"} variant="light">
+                  {schedule.enabled ? "enabled" : "disabled"}
+                </Badge>
+              </Group>
+              <ScheduleFields
+                schedule={schedule}
+                busy={busy}
+                onSave={(input) =>
                   act(async () => {
-                    await updateTrigger(projectName, schedule.triggerId, {
-                      enabled: e.currentTarget.checked,
-                    });
+                    await updateTrigger(projectName, schedule.triggerId, input);
                   })
                 }
               />
-              <Switch
-                label={t("trigger.allowOverlap")}
-                checked={schedule.allowConcurrent}
-                disabled={busy}
-                onChange={(e) =>
+              <ScheduleDestinations
+                schedule={schedule}
+                slackChannels={slackChannels}
+                slackChannelsUnavailable={slackChannelsUnavailable}
+                availableDestinations={availableDestinations}
+                busy={busy}
+                onSave={(deliveries) =>
                   act(async () => {
-                    await updateTrigger(projectName, schedule.triggerId, {
-                      allowConcurrent: e.currentTarget.checked,
-                    });
+                    await updateTrigger(projectName, schedule.triggerId, { deliveries });
                   })
                 }
+                actions={
+                  <Group gap="md" align="center">
+                  <Switch
+                    label={t("trigger.enabled")}
+                    checked={schedule.enabled}
+                    disabled={busy}
+                    onChange={(e) =>
+                      act(async () => {
+                        await updateTrigger(projectName, schedule.triggerId, {
+                          enabled: e.currentTarget.checked,
+                        });
+                      })
+                    }
+                  />
+                  <Switch
+                    label={t("trigger.allowOverlap")}
+                    checked={schedule.allowConcurrent}
+                    disabled={busy}
+                    onChange={(e) =>
+                      act(async () => {
+                        await updateTrigger(projectName, schedule.triggerId, {
+                          allowConcurrent: e.currentTarget.checked,
+                        });
+                      })
+                    }
+                  />
+                  <Button
+                    variant="default"
+                    color="red"
+                    size="xs"
+                    disabled={busy}
+                    onClick={async () => {
+                      if (
+                        !(await confirm({
+                          title: "Delete schedule",
+                          message: `Delete schedule "${schedule.triggerId}"?`,
+                          confirmLabel: "Delete",
+                        }))
+                      ) {
+                        return;
+                      }
+                      void act(() => deleteTrigger(projectName, schedule.triggerId));
+                    }}
+                  >
+                    Delete
+                  </Button>
+                  </Group>
+                }
               />
-              <Button
-                variant="default"
-                color="red"
-                size="xs"
-                disabled={busy}
-                onClick={async () => {
-                  if (
-                    !(await confirm({
-                      title: "Delete schedule",
-                      message: `Delete schedule "${schedule.triggerId}"?`,
-                      confirmLabel: "Delete",
-                    }))
-                  ) {
-                    return;
-                  }
-                  void act(() => deleteTrigger(projectName, schedule.triggerId));
-                }}
-              >
-                Delete
-              </Button>
-            </Group>
 
-            <TriggerRuns runs={runs[schedule.triggerId] ?? []} />
-          </Stack>
+              <TriggerRuns runs={runs[schedule.triggerId] ?? []} />
+            </Stack>
+          </Paper>
         ))}
 
         {!loading && schedules.length === 0 && (
@@ -372,8 +424,237 @@ function ScheduleFields({
         disabled={busy || !dirty || !cron.trim() || !timezone.trim()}
         onClick={() => onSave({ cron: cron.trim(), timezone: timezone.trim(), message })}
       >
-        Save
+        {t("trigger.saveScheduleSettings")}
       </Button>
     </Group>
+  );
+}
+
+interface DestinationDraft {
+  kinds: ScheduleDeliveryKind[];
+  slackChannelId: string;
+  telegramChatId: string;
+  telegramThreadId: string;
+  teamsConversationId: string;
+}
+
+function destinationDraft(deliveries: readonly ScheduleDelivery[] = []): DestinationDraft {
+  const slack = deliveries.find((delivery) => delivery.kind === "slack");
+  const telegram = deliveries.find((delivery) => delivery.kind === "telegram");
+  const teams = deliveries.find((delivery) => delivery.kind === "teams");
+  return {
+    kinds: deliveries.map((delivery) => delivery.kind),
+    slackChannelId: slack?.kind === "slack" ? slack.channelId : "",
+    telegramChatId: telegram?.kind === "telegram" ? String(telegram.chatId) : "",
+    telegramThreadId:
+      telegram?.kind === "telegram" && telegram.threadId !== undefined
+        ? String(telegram.threadId)
+        : "",
+    teamsConversationId: teams?.kind === "teams" ? teams.conversationId : "",
+  };
+}
+
+function sameDestinations(a: DestinationDraft, b: DestinationDraft): boolean {
+  return (
+    a.kinds.join(",") === b.kinds.join(",") &&
+    a.slackChannelId === b.slackChannelId &&
+    a.telegramChatId === b.telegramChatId &&
+    a.telegramThreadId === b.telegramThreadId &&
+    a.teamsConversationId === b.teamsConversationId
+  );
+}
+
+function ScheduleDestinations({
+  schedule,
+  slackChannels,
+  slackChannelsUnavailable,
+  availableDestinations,
+  busy,
+  onSave,
+  actions,
+}: {
+  schedule: TriggerView;
+  slackChannels: SlackChannelInfo[];
+  slackChannelsUnavailable: boolean;
+  availableDestinations: ScheduleDeliveryKind[];
+  busy: boolean;
+  onSave: (deliveries: ScheduleDelivery[]) => void;
+  actions: ReactNode;
+}) {
+  const t = useT();
+  const server = destinationDraft(schedule.deliveries);
+  const [draft, setDraft] = useState(server);
+  const [seen, setSeen] = useState(server);
+  const [kindToAdd, setKindToAdd] = useState<ScheduleDeliveryKind | null>(null);
+  if (!sameDestinations(server, seen)) {
+    setSeen(server);
+    if (sameDestinations(draft, seen)) {
+      setDraft(server);
+    }
+  }
+  const telegramChatId = draft.telegramChatId.trim();
+  const telegramThreadId = draft.telegramThreadId.trim();
+  const chatId = Number(telegramChatId);
+  const threadId = Number(telegramThreadId);
+  const telegramValid =
+    (!draft.kinds.includes("telegram") ||
+      (Boolean(telegramChatId) && Number.isSafeInteger(chatId))) &&
+    (!telegramThreadId || (Number.isSafeInteger(threadId) && threadId > 0)) &&
+    (!telegramThreadId || Boolean(telegramChatId));
+  const destinationsValid =
+    telegramValid &&
+    (!draft.kinds.includes("slack") || Boolean(draft.slackChannelId)) &&
+    (!draft.kinds.includes("teams") || Boolean(draft.teamsConversationId.trim()));
+  const dirty = !sameDestinations(draft, server);
+  const channelData = slackChannels.map((channel) => ({
+    value: channel.id,
+    label: `#${channel.name}${channel.isPrivate ? " (private)" : ""}`,
+  }));
+  if (
+    draft.slackChannelId &&
+    !channelData.some((channel) => channel.value === draft.slackChannelId)
+  ) {
+    channelData.unshift({ value: draft.slackChannelId, label: draft.slackChannelId });
+  }
+  const destinationKinds = availableDestinations
+    .filter((kind) => !draft.kinds.includes(kind))
+    .map((kind) => ({
+      value: kind,
+      label: kind === "teams" ? "Teams" : `${kind[0]?.toUpperCase()}${kind.slice(1)}`,
+    }));
+
+  const removeDestination = (kind: ScheduleDeliveryKind) => {
+    setDraft({
+      ...draft,
+      kinds: draft.kinds.filter((selected) => selected !== kind),
+      ...(kind === "slack" ? { slackChannelId: "" } : {}),
+      ...(kind === "telegram" ? { telegramChatId: "", telegramThreadId: "" } : {}),
+      ...(kind === "teams" ? { teamsConversationId: "" } : {}),
+    });
+  };
+
+  return (
+    <Stack gap="xs">
+      <Text fw={500} fz="sm">
+        {t("trigger.destinations")}
+      </Text>
+      <Text fz="xs" c="dimmed">
+        {t("trigger.destinationHint")}
+      </Text>
+      {destinationKinds.length > 0 && (
+        <Group align="flex-end" gap="sm">
+          <Select
+            label={t("trigger.destinationType")}
+            data={destinationKinds}
+            value={kindToAdd}
+            onChange={(value) => setKindToAdd(value as ScheduleDeliveryKind | null)}
+            w={220}
+          />
+          <Button
+            variant="default"
+            disabled={!kindToAdd}
+            onClick={() => {
+              if (!kindToAdd) {
+                return;
+              }
+              setDraft({ ...draft, kinds: [...draft.kinds, kindToAdd] });
+              setKindToAdd(null);
+            }}
+          >
+            {t("trigger.addDestination")}
+          </Button>
+        </Group>
+      )}
+      {draft.kinds.includes("slack") && slackChannelsUnavailable && (
+        <Alert color="yellow" variant="light" p="xs">
+          {t("trigger.slackUnavailable")}
+        </Alert>
+      )}
+      {draft.kinds.map((kind) => (
+        <Group key={kind} align="flex-end" gap="sm">
+          <Text fw={600} fz="sm" w={80} pb={8}>
+            {kind === "teams" ? "Teams" : `${kind[0]?.toUpperCase()}${kind.slice(1)}`}
+          </Text>
+          {kind === "slack" && (
+            <Select
+              label={t("trigger.slackChannel")}
+              data={channelData}
+              value={draft.slackChannelId || null}
+              onChange={(value) => setDraft({ ...draft, slackChannelId: value ?? "" })}
+              searchable
+              disabled={slackChannelsUnavailable && !draft.slackChannelId}
+              style={{ flex: 1 }}
+            />
+          )}
+          {kind === "telegram" && (
+            <>
+              <TextInput
+                label={t("trigger.telegramChatId")}
+                value={draft.telegramChatId}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setDraft({ ...draft, telegramChatId: value });
+                }}
+                error={!telegramValid}
+                style={{ flex: 1 }}
+              />
+              <TextInput
+                label={t("trigger.telegramThreadId")}
+                value={draft.telegramThreadId}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setDraft({ ...draft, telegramThreadId: value });
+                }}
+                style={{ flex: 1 }}
+              />
+            </>
+          )}
+          {kind === "teams" && (
+            <TextInput
+              label={t("trigger.teamsConversationId")}
+              value={draft.teamsConversationId}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setDraft({ ...draft, teamsConversationId: value });
+              }}
+              style={{ flex: 1 }}
+            />
+          )}
+          <Button variant="default" color="red" onClick={() => removeDestination(kind)}>
+            {t("trigger.removeDestination")}
+          </Button>
+        </Group>
+      ))}
+      <Group justify="space-between" gap="md" align="center" w="100%">
+        <Button
+          variant="default"
+          size="xs"
+          disabled={busy || !dirty || !destinationsValid}
+          onClick={() => {
+            const deliveries: ScheduleDelivery[] = [];
+            if (draft.kinds.includes("slack")) {
+              deliveries.push({ kind: "slack", channelId: draft.slackChannelId });
+            }
+            if (draft.kinds.includes("telegram")) {
+              deliveries.push({
+                kind: "telegram",
+                chatId,
+                ...(telegramThreadId ? { threadId } : {}),
+              });
+            }
+            if (draft.kinds.includes("teams")) {
+              deliveries.push({
+                kind: "teams",
+                conversationId: draft.teamsConversationId.trim(),
+              });
+            }
+            onSave(deliveries);
+          }}
+        >
+          {t("trigger.saveDestinations")}
+        </Button>
+        {actions}
+      </Group>
+    </Stack>
   );
 }

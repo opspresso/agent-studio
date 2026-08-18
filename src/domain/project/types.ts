@@ -1,4 +1,5 @@
 import type { SlackSuggestedPrompt } from "@/domain/slack/types";
+import type { MessageDestination } from "@/domain/messaging/destination";
 
 export type ProjectType = "llm" | "agent" | "image";
 
@@ -72,12 +73,23 @@ export interface CostLimits {
    * partition, one bounded query — so no separate aggregate exists to drift.
    */
   monthlyBlockThresholdUsd?: number;
+  /** Application-owned notifications, at most one destination per platform. */
+  alertDestinations?: MessageDestination[];
   /**
-   * Slack channel id the notifications are posted to, using this project's own
-   * bot. Without it (or without a configured bot) the thresholds still block —
-   * a missing notification channel must not disable the guard.
+   * Legacy Slack destination. Read when `alertDestinations` is absent and
+   * removed on the next settings save.
    */
   alertSlackChannel?: string;
+}
+
+/** Current destinations, with legacy Slack-only settings read compatibly. */
+export function costAlertDestinations(limits: CostLimits): MessageDestination[] {
+  if (limits.alertDestinations !== undefined) {
+    return limits.alertDestinations;
+  }
+  return limits.alertSlackChannel
+    ? [{ kind: "slack", channelId: limits.alertSlackChannel }]
+    : [];
 }
 
 /**

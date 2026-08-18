@@ -105,15 +105,15 @@ function fixture(
         : {
             // The composition root's closure, emulated: resolve the project's
             // own token, or report that it has no notification path.
-            postAlert: async (target, args) => {
-              const token = target.slack?.enabled
-                ? target.slack.botToken.replace("enc:", "")
-                : null;
-              if (!token) {
-                return false;
+            postAlert: async (target, destination, text) => {
+              if (destination.kind !== "slack" || !target.slack?.enabled) {
+                throw new Error("destination is unavailable");
               }
-              posted.push({ token, ...args });
-              return true;
+              posted.push({
+                token: target.slack.botToken.replace("enc:", ""),
+                channel: destination.channelId,
+                text,
+              });
             },
           }),
     },
@@ -270,6 +270,32 @@ describe("settleCostLimit", () => {
     expect(f.posted).toHaveLength(1);
     expect(f.posted[0]).toMatchObject({ token: "token", channel: "C1" });
     expect(f.posted[0]?.text).toContain("$5.00 of $4.00");
+  });
+
+  it("attempts every selected platform even when one delivery fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const f = fixture({ day: row({ m: 5 }) });
+    const delivered: string[] = [];
+    f.deps.postAlert = async (_target, destination) => {
+      delivered.push(destination.kind);
+      if (destination.kind === "telegram") {
+        throw new Error("telegram unavailable");
+      }
+    };
+    await settleCostLimit(
+      f.deps,
+      project({
+        alertThresholdUsd: 4,
+        alertDestinations: [
+          { kind: "slack", channelId: "C1" },
+          { kind: "telegram", chatId: -1001 },
+          { kind: "teams", conversationId: "19:one" },
+        ],
+      }),
+    );
+    expect(delivered).toEqual(["slack", "telegram", "teams"]);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it("does not post when the claim was already taken today", async () => {

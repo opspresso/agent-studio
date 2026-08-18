@@ -4,7 +4,7 @@ import { assertProjectWritable, getProject } from "@/application/project/project
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
-import type { SlackSuggestedPrompt } from "@/domain/slack/types";
+import type { SlackChannelInfo, SlackSuggestedPrompt } from "@/domain/slack/types";
 import {
   MAX_AGENT_DESCRIPTION_LENGTH,
   MAX_CHANNEL_KEYWORDS,
@@ -399,6 +399,7 @@ export interface ProjectSlackUseCases {
   update(name: string, update: ProjectSlackUpdate, userEmail: string): Promise<ProjectSlackResult>;
   disconnect(name: string, userEmail: string): Promise<ProjectSlackResult>;
   test(name: string, userEmail: string): Promise<{ ok: true; team?: string; botUser?: string } | { ok: false }>;
+  channels(name: string, userEmail: string): Promise<SlackChannelInfo[]>;
   /** No session involved — the request signature is the authentication. */
   resolveEventBinding(projectName: string): Promise<SlackEventBinding | null>;
 }
@@ -407,6 +408,7 @@ export function createProjectSlackUseCases(deps: {
   projects: ProjectRepository;
   cipher: SecretCipher;
   authTest: (botToken: string) => Promise<{ team?: string; user?: string }>;
+  listChannels: (botToken: string) => Promise<SlackChannelInfo[]>;
 }): ProjectSlackUseCases {
   return {
     get: (name, userEmail) => getProjectSlack(deps.projects, name, userEmail, deps.cipher),
@@ -416,6 +418,16 @@ export function createProjectSlackUseCases(deps: {
       disconnectProjectSlack(deps.projects, name, userEmail, deps.cipher),
     test: (name, userEmail) =>
       testProjectSlack(deps.projects, name, userEmail, deps.cipher, deps.authTest),
+    channels: async (name, userEmail) => {
+      const project = await assertProjectWritable(deps.projects, name, userEmail);
+      const runtime = resolveProjectSlackRuntime(deps.cipher, project);
+      if (!runtime) {
+        throw new ValidationError("Slack is not configured or not enabled for this project");
+      }
+      return (await deps.listChannels(runtime.botToken))
+        .filter((channel) => channel.isMember === true)
+        .sort((a, b) => a.name.localeCompare(b.name));
+    },
     resolveEventBinding: (projectName) =>
       resolveSlackEventBinding(deps.projects, projectName, deps.cipher),
   };

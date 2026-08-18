@@ -28,7 +28,8 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
 ```
 
 - `CostLimits { alertThresholdUsd?, blockThresholdUsd?, monthlyAlertThresholdUsd?,
-  monthlyBlockThresholdUsd?, alertSlackChannel? }` — 창(window)은 둘, **UTC 일**(usage 행이
+  monthlyBlockThresholdUsd?, alertDestinations? }` — 목적지는 Slack·Telegram·Teams 중 플랫폼마다
+  하나씩 선택한다. 창(window)은 둘, **UTC 일**(usage 행이
   키로 삼는 단위)과 **UTC 월**이며, 월의 지출은 그 일별 행들의 합이다 — 한 파티션에 최대
   31개, 한 번의 한정된 query — 그래서 어긋날 별도의 집계값이 존재하지 않는다.
 - `McpBinding { name, headers?: Record<string, string | null>, tools?: string[] }` 는 version 을
