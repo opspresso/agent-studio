@@ -20,6 +20,16 @@ import type {
   MessageDestinationKind,
 } from "@/domain/messaging/destination";
 
+export function costLimitsForSave(limits: CostLimits): CostLimits | null {
+  const hasThreshold =
+    limits.alertThresholdUsd !== undefined ||
+    limits.blockThresholdUsd !== undefined ||
+    limits.monthlyAlertThresholdUsd !== undefined ||
+    limits.monthlyBlockThresholdUsd !== undefined;
+  const hasDestination = (limits.alertDestinations?.length ?? 0) > 0;
+  return hasThreshold || hasDestination ? limits : null;
+}
+
 /**
  * Daily and monthly (UTC) spend guards. Four independent thresholds and the
  * channel their notifications go to.
@@ -120,14 +130,9 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
       ...(destinations.length > 0 ? { alertDestinations: destinations } : {}),
     };
     try {
-      // Both thresholds cleared means the guard is off, which is `null` — not an
-      // object holding only a channel that nothing would ever notify on.
-      const hasThreshold =
-        limits.alertThresholdUsd !== undefined ||
-        limits.blockThresholdUsd !== undefined ||
-        limits.monthlyAlertThresholdUsd !== undefined ||
-        limits.monthlyBlockThresholdUsd !== undefined;
-      await updateProject(projectName, { costLimits: hasThreshold ? limits : null });
+      // Destinations may be chosen before a threshold. Clear the stored object
+      // only when both the thresholds and their future delivery targets are gone.
+      await updateProject(projectName, { costLimits: costLimitsForSave(limits) });
       setSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save cost limits");
