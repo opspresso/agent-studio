@@ -1,5 +1,6 @@
 import type { ReplySink } from "@/domain/messaging/reply";
 import { log, type LogScope } from "@/shared/logger";
+import { cutPoint } from "@/shared/messageCut";
 import { unrefTimer } from "@/shared/unrefTimer";
 
 /**
@@ -27,9 +28,9 @@ export interface EditInPlaceLimits {
   /** How often the typing indicator is re-sent while a run is in flight. */
   typingRefreshMs: number;
   /**
-   * Where a message may be cut when the answer outgrows one: the last line
-   * break in this many characters before the cap, so a paragraph is not split
-   * mid-sentence unless the paragraph itself is longer than a message.
+   * How far back from the cap a boundary may be looked for when the answer
+   * outgrows one message. Which boundaries, and in what order, is
+   * {@link cutPoint}'s.
    */
   softCutWindow: number;
   /**
@@ -81,29 +82,6 @@ interface Segment {
    * thousand requests.
    */
   refusedAt?: number;
-}
-
-/**
- * Where to end a message that has to be cut at `limit` characters from `from`.
- * Never between the two halves of a surrogate pair: a lone surrogate is not
- * UTF-8, and a platform refuses the whole write for one.
- */
-function cutPoint(text: string, from: number, limit: number, window: number): number {
-  const hard = from + limit;
-  if (text.length <= hard) {
-    return text.length;
-  }
-  const tail = text.slice(hard - window, hard);
-  const newline = tail.lastIndexOf("\n");
-  if (newline > 0) {
-    return hard - window + newline + 1;
-  }
-  const space = tail.lastIndexOf(" ");
-  if (space > 0) {
-    return hard - window + space + 1;
-  }
-  const code = text.charCodeAt(hard - 1);
-  return code >= 0xd800 && code <= 0xdbff ? hard - 1 : hard;
 }
 
 function withSuffix(text: string, suffix: string): string {

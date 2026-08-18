@@ -1,6 +1,7 @@
 import type { SlackChunk, SlackClientPort } from "@/application/slack/types";
 import type { ReplySink } from "@/domain/messaging/reply";
 import { log } from "@/shared/logger";
+import { splitMessages } from "@/shared/messageCut";
 import { unrefTimer } from "@/shared/unrefTimer";
 
 /**
@@ -93,6 +94,21 @@ const OVERFLOW_TASK_ID = "run-progress-more";
  */
 const MAX_STREAM_TEXT = 12_000;
 /**
+ * Slack's cap on one **edited** message — a different number from the one above,
+ * and a measured one rather than a documented one.
+ *
+ * Slack documents 4,000 characters for `text` and refuses long before that: text
+ * that long is rendered as a section block, whose own cap is 3,000, and Korean
+ * or Markdown-heavy content reaches it sooner still. So this is where the answer
+ * is *cut* — and because the number is an observation, a refusal shrinks it
+ * rather than being retried unchanged.
+ */
+const MAX_EDIT_TEXT = 2_800;
+/** Below this, cutting smaller costs the reader more than the refusal it avoids. */
+const MIN_EDIT_TEXT = 700;
+/** How far back from the cap a paragraph or line break is looked for. */
+const EDIT_CUT_WINDOW = 600;
+/**
  * Appended to an edited-in-place reply that is still being written, when the
  * deployment names nothing else.
  *
@@ -149,13 +165,17 @@ function usingPhrase(title: string): string {
   return `is using ${title}…`;
 }
 
-/** Text as as many `markdown_text` chunks as Slack's per-chunk cap requires. */
+/**
+ * Text as as many `markdown_text` chunks as Slack's per-chunk cap requires.
+ *
+ * Cut where a reader would cut it: each chunk is its own rendered block, so a
+ * boundary in the middle of a sentence — or of a code fence — is visible in a
+ * way an append boundary within one block is not.
+ */
 function textChunks(text: string): SlackChunk[] {
-  const chunks: SlackChunk[] = [];
-  for (let at = 0; at < text.length; at += MAX_STREAM_TEXT) {
-    chunks.push({ type: "markdown_text", text: text.slice(at, at + MAX_STREAM_TEXT) });
-  }
-  return chunks;
+  return splitMessages(text, { room: MAX_STREAM_TEXT, window: MAX_STREAM_TEXT / 10 }).map(
+    (piece) => ({ type: "markdown_text", text: piece.text }),
+  );
 }
 
 function withSuffix(text: string, suffix: string): string {
@@ -181,6 +201,22 @@ export function createReplySink(
    * stream sends each delta exactly once.
    */
   let flushed = 0;
+  /**
+   * Where in the answer the message being edited begins.
+   *
+   * An edited reply outgrows one Slack message and continues in the next, so
+   * what is on screen is several messages and only the last is still moving.
+   * Everything before this offset is in a message that is finished — written
+   * without the indicator, and not touched again.
+   */
+  let messageStart = 0;
+  /** The fence a cut left open, reopened at the top of the message after it. */
+  let carry = "";
+  /**
+   * How much text Slack has been observed to take in one edited message.
+   * {@link MAX_EDIT_TEXT} is a measurement, so a refusal corrects it.
+   */
+  let editRoom = MAX_EDIT_TEXT;
   /**
    * Whether the open message is still only a progress note. It stands in for an
    * answer rather than being one, so a run that ends with no text takes it back
@@ -231,6 +267,93 @@ export function createReplySink(
     appendFailures += 1;
     if (appendFailures === 1 || appendFailures % 10 === 0) {
       log.warn("slack", `reply append refused (${appendFailures} in a row)`, error);
+    }
+  }
+
+  /**
+   * Slack saying the message is too long, taken at its word: the cap is cut and
+   * the same text is laid out again, into one more message than before.
+   *
+   * Without this the edit path had no way out of the disagreement. A refused
+   * edit leaves the message holding whatever it last accepted — indicator and
+   * all — and every push after it re-sent the same oversized payload, so the
+   * answer stopped mid-sentence and the run ended by posting the rest as an
+   * error-recovery message. Returns whether it is worth trying again.
+   */
+  function refusedAsTooLong(error: unknown): boolean {
+    if (!(error instanceof Error) || !error.message.includes("msg_too_long")) {
+      return false;
+    }
+    if (editRoom <= MIN_EDIT_TEXT) {
+      return false;
+    }
+    editRoom = Math.max(MIN_EDIT_TEXT, Math.floor(editRoom * 0.75));
+    log.warn("slack", `Slack refused an edit as too long; cutting at ${editRoom} characters`);
+    return true;
+  }
+
+  /**
+   * Put the answer on screen as edited messages, opening a new one whenever the
+   * one being written fills up.
+   *
+   * Two things a reader sees come from here. A message that has filled up is
+   * **finished**: it is rewritten without the loading indicator, because it is
+   * not being written any more — leaving it there is how a thread ended up with
+   * an answer that reads as still arriving above one that already continued it.
+   * And the cut lands on a paragraph or a line, never on the character the cap
+   * happened to reach, with a code fence closed on one side and reopened on the
+   * other ({@link splitMessages} owns both).
+   *
+   * `final` says the run is over, so the last message loses the indicator too.
+   */
+  async function writeEdited(text: string, final: boolean): Promise<void> {
+    for (;;) {
+      const base = messageStart;
+      const pieces = splitMessages(text.slice(base), {
+        // The indicator shares the message with the answer while it is still
+        // being written, so it comes out of the same budget.
+        room: editRoom - (final ? 0 : indicator.length + 1),
+        window: EDIT_CUT_WINDOW,
+        prefix: carry,
+      });
+      let refused: unknown;
+      for (const [index, piece] of pieces.entries()) {
+        const last = index === pieces.length - 1;
+        const body = last && !final ? `${piece.text} ${indicator}` : piece.text;
+        try {
+          if (index === 0) {
+            await slack.updateMessage(token, {
+              channel: messageChannel,
+              ts: messageTs,
+              text: body,
+            });
+          } else {
+            const posted = await slack.postMessage(token, {
+              channel: target.channel,
+              thread_ts: target.threadTs,
+              text: body,
+            });
+            messageTs = posted.ts;
+            messageChannel = posted.channel || target.channel;
+          }
+        } catch (error) {
+          refused = error;
+          break;
+        }
+        progressOnly = false;
+        if (last) {
+          flushed = text.length;
+          return;
+        }
+        // This message is finished. What follows belongs to the next one, which
+        // the next turn of the loop opens.
+        messageStart = base + piece.end;
+        flushed = messageStart;
+        carry = pieces[index + 1]?.prefix ?? "";
+      }
+      if (!refusedAsTooLong(refused)) {
+        throw refused;
+      }
     }
   }
   /**
@@ -290,15 +413,33 @@ export function createReplySink(
         }`,
       );
     }
-    const posted = await slack.postMessage(token, {
-      channel: target.channel,
-      thread_ts: target.threadTs,
-      text: `${text} ${indicator}`,
-    });
-    mode = "edit";
-    messageTs = posted.ts;
-    messageChannel = posted.channel || target.channel;
-    flushed = text.length;
+    // Only what one message takes. This write is unpaced, so it carries
+    // everything the run has produced so far, and a post Slack refuses for
+    // length would leave the sink unopened — retrying the same payload, larger,
+    // on every push after it. The rest arrives through `writeEdited`, which
+    // opens the messages that continue this one.
+    for (;;) {
+      const [first] = splitMessages(text, {
+        room: editRoom - indicator.length - 1,
+        window: EDIT_CUT_WINDOW,
+      });
+      try {
+        const posted = await slack.postMessage(token, {
+          channel: target.channel,
+          thread_ts: target.threadTs,
+          text: `${first?.text ?? text} ${indicator}`,
+        });
+        mode = "edit";
+        messageTs = posted.ts;
+        messageChannel = posted.channel || target.channel;
+        flushed = first?.end ?? text.length;
+        return;
+      } catch (error) {
+        if (!refusedAsTooLong(error)) {
+          throw error;
+        }
+      }
+    }
   }
 
   /**
@@ -619,17 +760,9 @@ export function createReplySink(
           .catch(appendFailed);
         return;
       }
-      await slack
-        .updateMessage(token, {
-          channel: messageChannel,
-          ts: messageTs,
-          text: `${fullText} ${indicator}`,
-        })
-        .then(() => {
-          flushed = fullText.length;
-          progressOnly = false;
-        })
-        .catch(() => {});
+      // A refused write is not worth a line here: this path re-sends everything
+      // from the message it is writing, so the next push heals it.
+      await writeEdited(fullText, false).catch(() => {});
     },
 
     async finish(fullText, suffix) {
@@ -724,12 +857,7 @@ export function createReplySink(
         } else {
           // An opened message must not be left holding the loading indicator,
           // so unlike the unopened case this always writes something.
-          await slack.updateMessage(token, {
-            channel: messageChannel,
-            ts: messageTs,
-            text: withSuffix(fullText, suffix) || "_(no answer)_",
-          });
-          flushed = fullText.length;
+          await writeEdited(withSuffix(fullText, suffix) || "_(no answer)_", true);
         }
       } catch (error) {
         log.error("slack", "final reply write failed", error);

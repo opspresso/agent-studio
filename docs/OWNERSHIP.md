@@ -70,6 +70,7 @@
 | 런이 사용하는 Slack Web API 표면 | `src/application/slack/types.ts` 의 `SlackClientPort`. 그것이 넘기는 스트리밍 chunk 형태는 `src/domain/slack/types.ts` 의 `SlackChunk` 이고, 어댑터도 거기서 그것들에 닿을 수 있다 |
 | 어댑터가 정규화를 마친 뒤 chat-bot 턴이 어떻게 도는가 — 첨부는 턴 안으로, chunk 는 sink 위로, 꼬리는 한 가지 순서로 | `src/application/messaging/handleTurn.ts` 의 `handleTurn`. Slack·Telegram·Teams 핸들러는 정규화하고 렌더할 뿐, 어느 쪽도 chunk 를 직접 접어 넣지 않는다 |
 | 편집으로 답을 전달하는 표면의 장부 — 페이싱, 메시지가 넘칠 때 다음으로 잇기, 거부된 쓰기의 재시도 간격, 마감이 독자에게 빚진 것 | `src/application/messaging/editInPlaceReply.ts` 의 `createEditInPlaceReply`. Telegram 과 Teams 는 호출·상한·렌더링(`EditInPlaceTransport`)만 건넨다 |
+| 답이 메시지 하나를 넘칠 때 *어디서* 끊는가 — 문단 → 줄 → 문장 → 공백 → 서러게이트 쌍을 쪼개지 않는 하드 컷, 그리고 잘린 코드 펜스를 한쪽에서 닫고 다음 쪽에서 다시 여는 것 | `src/shared/messageCut.ts` 의 `cutPoint` / `splitMessages`. 세 표면이 상한만 다르게 건넨다 — 끊긴 자리는 독자가 보는 것이고, 사본 둘은 "문장 중간에서 멈추는가" 에 대한 답 둘이다 |
 | 플랫폼 히스토리가 없는 표면이 대화를 어떻게 읽고 적는가 — 턴 수·문자 예산, 턴 하나의 상한, 텍스트 없는 턴과 답 없는 런의 기록, 화자 라벨의 옵트인 | `src/application/messaging/transcriptHistory.ts` |
 | 플랫폼 히스토리가 없는 표면의 턴이 어떻게 도는가 — 기억한 대화를 읽고, 파이프라인을 돌리고, 도착 시각으로 두 턴을 적는 것 | `src/application/messaging/rememberedTurn.ts` 의 `runRememberedTurn` / `resolveAgentProject`. Telegram 과 Teams 핸들러는 사람·첨부·도착 시각·답변 대상만 건넨다 |
 | 코드 펜스가 열려 있는지 — 조각 경계와 꼬리 붙이기가 렌더러와 같은 답을 내도록 | `src/shared/markdownFence.ts` |
