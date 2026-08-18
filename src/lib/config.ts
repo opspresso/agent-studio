@@ -253,8 +253,7 @@ export const config = {
   },
   /**
    * Email domains allowed to sign in (ALLOWED_EMAIL_DOMAINS, comma-separated).
-   * Empty means no restriction (fail-open), which `assertAccessControlConfig`
-   * warns about — but does not refuse — in `alpha`/`prod`.
+   * Empty means no restriction (fail-open) in every stage.
    */
   get allowedEmailDomains(): string[] {
     return parseList(process.env.ALLOWED_EMAIL_DOMAINS ?? "");
