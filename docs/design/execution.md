@@ -235,8 +235,20 @@ Completions 와 달리, Images API 는 하나의 형태가 *아니다*. Port 의
 이라 부르고, 모르는 인자를 무시하는 대신 **거부하며**(`400 Argument not supported: size`),
 `response_format` 의 기본값이 이 adapter 가 쓸 수 없는 URL 이고, 편집은 `application/json` 으로만
 받는다 — 그 API 문서가 OpenAI SDK 의 multipart `images.edit()` 를 미지원으로 적어 두었고, 그래서
-그 호출 하나는 `fetch` 위에 손으로 짰다. 여기 추가되는 provider 는 방언을 가정하지 말고 확인해야
-한다: `tests/imageChannelAdapter.test.ts` 가 각각의 wire 형태를 고정한다.
+그 호출 하나는 `fetch` 위에 손으로 짰다.
+
+**OpenRouter 는 어휘가 같고 나머지가 전부 다르다.** `size`(픽셀 또는 티어)와 `quality` 를 port 가
+말하는 그대로 받고, quality 손잡이가 없는 모델은 거부하는 대신 무시한다 — 같은 두 이름을 두고 xAI
+가 하는 것의 정반대다. 하지만 경로는 `images` 하나뿐이라 `images/generations` 는 404 이고, 편집은
+두 번째 경로가 아니라 같은 호출에 `input_references` 를 더한 것이며(mask 는 없어서 xAI 와 같은
+이유로 거부한다), 응답은 `mime_type` 이 아니라 `media_type` 으로 답하고 usage 는 Chat Completions
+의 이름들(`prompt_tokens`, `completion_tokens_details.image_tokens`)로 답한다. 입력 쪽 text/image
+분할은 보고하지 않으므로 참조 이미지의 토큰은 text input 으로 센다 — 이미지 입력이 텍스트보다 비싼
+모델(GPT Image 2: $8 대 $5)에서만 그만큼 낮게 잡히고, 분할을 지어내는 것은 아무도 공개하지 않은
+숫자다. 그래서 transport 만 xAI 와 공유하고 응답 리더는 각자다.
+
+여기 추가되는 provider 는 방언을 가정하지 말고 확인해야 한다:
+`tests/imageChannelAdapter.test.ts` 가 각각의 wire 형태를 고정한다.
 
 **mime type 은 읽는 것이지 결코 가정하는 것이 아니다.** 예전에는 `image/png` 로 하드코딩돼
 있었고, 그것은 OpenAI 의 기본 출력 형식이라서만 성립했다. xAI 는 JPEG 로 답한다. 이 값은

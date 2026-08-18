@@ -72,7 +72,8 @@ interface ImagesApiResponse {
  * filename and the A2A artifact's type. Calling a JPEG a PNG is wrong in all
  * five places at once.
  */
-function toImageResult(response: ImagesApiResponse, what: string): ImageGenerationResult {
+function toImageResult(payload: unknown, what: string): ImageGenerationResult {
+  const response = payload as ImagesApiResponse;
   const image = response.data?.[0];
   const b64 = image?.b64_json;
   if (!b64) {
@@ -95,8 +96,9 @@ function toImageResult(response: ImagesApiResponse, what: string): ImageGenerati
   };
 }
 
-/** The provider whose Images API is not OpenAI's. */
+/** The providers whose Images API is not OpenAI's. */
 const XAI = "xai";
+const OPENROUTER = "openrouter";
 
 /**
  * The tool schema's `size` values, as xAI names the same thing.
@@ -121,22 +123,25 @@ function xaiDimensions(size?: string): { aspect_ratio?: string; resolution?: str
 }
 
 /**
- * One xAI Images call.
+ * One JSON Images call, for the providers the SDK cannot carry.
  *
- * Hand-rolled rather than routed through the SDK because the edit endpoint
- * cannot use it — xAI documents `images.edit()` as unsupported, since the SDK
- * sends `multipart/form-data` and the API takes JSON only. Generation *could*
- * go through the SDK, but then the two halves of one provider's dialect would
- * be written twice in two different styles.
+ * Hand-rolled rather than routed through the SDK because neither provider's
+ * edit can use it — xAI documents `images.edit()` as unsupported, since the SDK
+ * sends `multipart/form-data` and the API takes JSON only, and OpenRouter has
+ * no `images/edits` path at all. Generation *could* go through the SDK, but
+ * then the two halves of one provider's dialect would be written twice in two
+ * different styles.
  *
- * `response_format` is always explicit: xAI defaults to `url`, and this adapter
- * has to return bytes.
+ * The response reader is passed in because only the *transport* is shared: the
+ * two answer with different field names for the bytes' type and for every
+ * usage figure.
  */
-async function xaiImageRequest(
+async function jsonImageRequest(
   target: ResolvedTarget,
   path: string,
   body: Record<string, unknown>,
   what: string,
+  parse: (payload: unknown, what: string) => ImageGenerationResult,
   signal?: AbortSignal,
 ): Promise<ImageGenerationResult> {
   const response = await fetch(`${target.baseUrl.replace(/\/$/, "")}/${path}`, {
@@ -145,29 +150,30 @@ async function xaiImageRequest(
       "Content-Type": "application/json",
       Authorization: `Bearer ${target.apiKey}`,
     },
-    body: JSON.stringify({ ...body, response_format: "b64_json" }),
+    body: JSON.stringify(body),
     ...(signal ? { signal } : {}),
   });
   if (!response.ok) {
     // The SDK's error text is what every other provider's failure reads like in
     // a tool result, so match its shape: status, then whatever the body says.
     const detail = await response.text().catch(() => "");
-    throw new Error(`${response.status} ${xaiErrorMessage(detail) || response.statusText}`);
+    throw new Error(`${response.status} ${providerErrorMessage(detail) || response.statusText}`);
   }
-  return toImageResult((await response.json()) as ImagesApiResponse, what);
+  return parse(await response.json(), what);
 }
 
 /**
- * What an xAI failure says, in the two shapes xAI says it in.
+ * What a failure says, in the two shapes these providers say it in.
  *
- * The models answer `{"code":"400","error":"…"}`. The gateway in front of them
+ * xAI's models answer `{"code":"400","error":"…"}`. The gateway in front of them
  * answers `{"error":{"code":404,"message":"…"}}`, and that is the one a reader
  * actually meets: it is what a path xAI does not serve — or a model that
  * endpoint does not host — comes back as. Only the string form was read, so the
  * nested one arrived as its own raw JSON, with the single sentence that named
- * the problem buried inside a blob. Anything else still falls back to the body.
+ * the problem buried inside a blob. OpenRouter answers in that same nested
+ * shape. Anything else still falls back to the body.
  */
-function xaiErrorMessage(body: string): string {
+function providerErrorMessage(body: string): string {
   try {
     const parsed = JSON.parse(body) as { error?: unknown };
     if (typeof parsed.error === "string") {
@@ -178,6 +184,70 @@ function xaiErrorMessage(body: string): string {
   } catch {
     return body;
   }
+}
+
+/** The subset of OpenRouter's Images API response this adapter reads. */
+interface OpenRouterImageResponse {
+  data?: Array<{ b64_json?: string; media_type?: string }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    completion_tokens_details?: { image_tokens?: number };
+  };
+}
+
+/**
+ * Map OpenRouter's response onto the domain result.
+ *
+ * Separate from the OpenAI reader because it agrees with it on nothing but the
+ * base64 field. The bytes' type is `media_type`, and reading `mime_type` there
+ * finds nothing and falls back to PNG — every model checked through this route
+ * answered `image/jpeg`, so that fallback would be wrong every time, in the five
+ * places the mime type lands.
+ *
+ * The usage split is what OpenRouter reports and no more. It states one
+ * `prompt_tokens` for the whole prompt, with no text/image division, so a
+ * reference image's tokens are counted as text input — that under-prices an
+ * edit only on a model whose image input costs more than its text (GPT Image 2:
+ * $8 against $5), and inventing the split would be a number nobody published.
+ * Image output is `completion_tokens_details.image_tokens`; a model billed per
+ * picture reports a synthetic count there and is priced by the registry's flat
+ * `perImage` regardless, since it carries no per-token image rate.
+ */
+function toOpenRouterImageResult(payload: unknown, what: string): ImageGenerationResult {
+  const response = payload as OpenRouterImageResponse;
+  const image = response.data?.[0];
+  const b64 = image?.b64_json;
+  if (!b64) {
+    throw new Error(`Image ${what} returned no image data`);
+  }
+  const usage = response.usage;
+  return {
+    b64,
+    mimeType: image.media_type ?? "image/png",
+    usage: {
+      textInputTokens: usage?.prompt_tokens ?? 0,
+      imageInputTokens: 0,
+      imageOutputTokens:
+        usage?.completion_tokens_details?.image_tokens ?? usage?.completion_tokens ?? 0,
+    },
+  };
+}
+
+/**
+ * The reference images of an OpenRouter edit.
+ *
+ * There is no edit *endpoint* here: the same `/images` call takes the sources
+ * as `input_references`, which is why an edit and a generation differ by one
+ * field rather than by a path.
+ */
+function openRouterReferences(images: ImageBytes[]): Record<string, unknown> {
+  return {
+    input_references: images.map((image) => ({
+      type: "image_url",
+      image_url: { url: imageDataUrl(image) },
+    })),
+  };
 }
 
 /** The source image(s) of an xAI edit: one `image`, or `images` for several. */
@@ -195,15 +265,40 @@ export function createImageChannel(resolveTarget: TargetResolver): ImageChannel 
     async generateImage(params: ImageGenerationParams): Promise<ImageGenerationResult> {
       const target = await resolveTarget(params.model);
       if (target.providerName === XAI) {
-        return xaiImageRequest(
+        return jsonImageRequest(
           target,
           "images/generations",
           {
             model: target.model,
             prompt: params.prompt,
             ...xaiDimensions(params.size),
+            // xAI defaults to `url`, and this adapter has to return bytes.
+            response_format: "b64_json",
           },
           "generation",
+          toImageResult,
+          params.signal,
+        );
+      }
+      if (target.providerName === OPENROUTER) {
+        return jsonImageRequest(
+          target,
+          // Not `images/generations`: OpenRouter serves one image path, and the
+          // OpenAI one 404s.
+          "images",
+          {
+            model: target.model,
+            prompt: params.prompt,
+            // Both fields pass through as the port states them. OpenRouter took
+            // the same vocabulary the tool schema offers the model — a pixel
+            // `size` is normalised per provider — and a model with no quality
+            // knob ignores the field rather than refusing it, which is the
+            // opposite of what xAI does with the same two names.
+            ...(params.size ? { size: params.size } : {}),
+            ...(params.quality ? { quality: params.quality } : {}),
+          },
+          "generation",
+          toOpenRouterImageResult,
           params.signal,
         );
       }
@@ -226,7 +321,7 @@ export function createImageChannel(resolveTarget: TargetResolver): ImageChannel 
           // success. xAI's schema has no counterpart.
           throw new Error("Image edit masks are not supported by this provider");
         }
-        return xaiImageRequest(
+        return jsonImageRequest(
           target,
           "images/edits",
           {
@@ -234,8 +329,32 @@ export function createImageChannel(resolveTarget: TargetResolver): ImageChannel 
             prompt: params.prompt,
             ...xaiEditSources(params.images),
             ...xaiDimensions(params.size),
+            response_format: "b64_json",
           },
           "edit",
+          toImageResult,
+          params.signal,
+        );
+      }
+      if (target.providerName === OPENROUTER) {
+        if (params.mask) {
+          // Same refusal as xAI's, for the same reason: OpenRouter's image
+          // request has no mask field, and dropping one would redraw the whole
+          // picture and call it a success.
+          throw new Error("Image edit masks are not supported by this provider");
+        }
+        return jsonImageRequest(
+          target,
+          "images",
+          {
+            model: target.model,
+            prompt: params.prompt,
+            ...openRouterReferences(params.images),
+            ...(params.size ? { size: params.size } : {}),
+            ...(params.quality ? { quality: params.quality } : {}),
+          },
+          "edit",
+          toOpenRouterImageResult,
           params.signal,
         );
       }
