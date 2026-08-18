@@ -234,6 +234,35 @@ describe("runAgent context budget", () => {
     expect(String(toolMessage?.content).length).toBeLessThan(40_000);
   });
 
+  it("stops budgeting a run that had no room from the start, and says so", async () => {
+    // Two configurations reach this: an input that fills the window on its own,
+    // and a model whose own `maxTokens` leaves almost none of its window — the
+    // registry has some at a few thousand tokens, which is less than a version's
+    // tool declarations alone. Kept, the budget answers every tool call "budget
+    // exhausted" from turn 0 and blames a budget the run never got to fill,
+    // while the overflow it exists to prevent is already in the request.
+    const channel = toolLoopChannel();
+    const deps: AgentDeps = { channel, callMcpTool: async () => ({ text: "result" }) };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: SMALL_WINDOW_MODEL,
+      // An 8,000-token budget, and 10,000 tokens of input to put in it.
+      parameters: SMALL_BUDGET_PARAMS,
+      messages: [{ role: "user", content: "x".repeat(30_000) }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    expect(
+      chunks.filter((c) => c.warning?.includes("already fill the model's context window")),
+    ).toHaveLength(1);
+    // Unbudgeted, so the tool result arrives whole rather than as an omission
+    // error, and nothing claims the run's budget cut it.
+    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toBe("result");
+    expect(chunks.some((c) => c.warning?.includes("context budget"))).toBe(false);
+  });
+
   it("counts a transfer's answer against the budget", async () => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"do it"}'), usageChunk(1, 1)],

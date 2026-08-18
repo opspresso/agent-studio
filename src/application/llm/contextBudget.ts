@@ -232,9 +232,12 @@ function inputCapacity(config: ModelConfig, maxOutputTokens: number | undefined)
  *
  * The invariant it enforces is per model and always was: whichever one serves a
  * call, what has accumulated plus what that model may generate has to fit inside
- * that model's window. Reserving one model's output from the other's window
- * enforces nothing — a fallback with a *bigger* output cap has the bigger window
- * to generate into.
+ * that model's window. That is the whole reason, and it is worth resisting a
+ * shorter one: "a bigger output cap comes with a bigger window" sounds like it
+ * explains the same thing and is **false here** — `bedrock/minimax-m2.5` may
+ * generate 196,608 tokens into a 204,800-token window while
+ * `openrouter/nemotron-3-super-120b` generates 16,384 into 1,000,000. Only the
+ * capacities can be compared, which is what this does.
  */
 export function createRunContextBudget(
   model: string,
