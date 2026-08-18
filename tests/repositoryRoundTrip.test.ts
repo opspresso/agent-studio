@@ -86,6 +86,7 @@ import { versionRepository } from "@/infrastructure/db/repositories/versionRepos
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
+import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 
@@ -180,6 +181,64 @@ describe("runSlotRepository ownership", () => {
       ExpressionAttributeNames: { "#token": "token" },
       ExpressionAttributeValues: { ":token": slot?.token },
     });
+  });
+});
+
+describe("triggerRepository messaging destination round-trip", () => {
+  it("preserves schedule destinations through put + get", async () => {
+    await triggerRepository.put({
+      projectName: "destination-round-trip",
+      triggerId: "daily",
+      kind: "schedule",
+      description: "",
+      enabled: true,
+      allowConcurrent: false,
+      cron: "0 9 * * *",
+      timezone: "Asia/Seoul",
+      deliveries: [
+        { kind: "slack", channelId: "C1" },
+        { kind: "telegram", chatId: -1001, threadId: 7 },
+        { kind: "teams", conversationId: "19:one" },
+      ],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+    const loaded = await triggerRepository.get("destination-round-trip", "daily");
+
+    expect(loaded).toMatchObject({
+      deliveries: [
+        { kind: "slack", channelId: "C1" },
+        { kind: "telegram", chatId: -1001, threadId: 7 },
+        { kind: "teams", conversationId: "19:one" },
+      ],
+    });
+  });
+
+  it("preserves per-destination results through append + list", async () => {
+    await triggerRepository.appendRun({
+      projectName: "destination-result-round-trip",
+      triggerId: "daily",
+      runId: "run-1",
+      status: "succeeded",
+      startedAt: NOW,
+      endedAt: NOW,
+      deliveryResults: [
+        { kind: "slack", status: "sent" },
+        { kind: "teams", status: "failed", error: "unavailable" },
+      ],
+    });
+
+    const [loaded] = await triggerRepository.listRuns(
+      "destination-result-round-trip",
+      "daily",
+      10,
+    );
+
+    expect(loaded?.deliveryResults).toEqual([
+      { kind: "slack", status: "sent" },
+      { kind: "teams", status: "failed", error: "unavailable" },
+    ]);
   });
 });
 

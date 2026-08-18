@@ -34,7 +34,6 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
   const [monthlyAlertUsd, setMonthlyAlertUsd] = useState<number | "">("");
   const [monthlyBlockUsd, setMonthlyBlockUsd] = useState<number | "">("");
   const [destinations, setDestinations] = useState<MessageDestination[]>([]);
-  const [kindToAdd, setKindToAdd] = useState<MessageDestinationKind | null>(null);
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
   const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
   const [slackChannelsLoading, setSlackChannelsLoading] = useState(true);
@@ -192,7 +191,6 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
           ? { kind, chatId: 0 }
           : { kind, conversationId: "" };
     setDestinations((current) => [...current, destination]);
-    setKindToAdd(null);
   };
 
   return (
@@ -270,22 +268,19 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
             {t("pset.notificationDestinationsHint")}
           </Text>
           {destinationKinds.length > 0 && (
-            <Group align="flex-end" gap="sm">
-              <Select
-                label={t("trigger.destinationType")}
-                data={destinationKinds}
-                value={kindToAdd}
-                onChange={(value) => setKindToAdd(value as MessageDestinationKind | null)}
-                w={220}
-              />
-              <Button
-                variant="default"
-                disabled={!kindToAdd}
-                onClick={() => kindToAdd && addDestination(kindToAdd)}
-              >
-                Add destination
-              </Button>
-            </Group>
+            <Select
+              label={t("trigger.addDestination")}
+              placeholder={t("trigger.destinationType")}
+              data={destinationKinds}
+              value={null}
+              onChange={(value) => {
+                const kind = value as MessageDestinationKind | null;
+                if (kind) {
+                  addDestination(kind);
+                }
+              }}
+              w={220}
+            />
           )}
           {destinations.map((destination) => (
             <Group key={destination.kind} align="flex-end" gap="sm">
@@ -318,6 +313,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
                 <>
                   <NumberInput
                     label={t("trigger.telegramChatId")}
+                    description={t("trigger.telegramChatIdHint")}
                     value={destination.chatId || ""}
                     onChange={(value) =>
                       setDestinations((current) =>
@@ -357,6 +353,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
               {destination.kind === "teams" && (
                 <TextInput
                   label={t("trigger.teamsConversationId")}
+                  description={t("trigger.teamsConversationIdHint")}
                   value={destination.conversationId}
                   onChange={(event) => {
                     const value = event.currentTarget.value;

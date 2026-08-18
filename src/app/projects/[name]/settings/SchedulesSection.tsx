@@ -230,24 +230,15 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
                   {schedule.enabled ? "enabled" : "disabled"}
                 </Badge>
               </Group>
-              <ScheduleFields
-                schedule={schedule}
-                busy={busy}
-                onSave={(input) =>
-                  act(async () => {
-                    await updateTrigger(projectName, schedule.triggerId, input);
-                  })
-                }
-              />
-              <ScheduleDestinations
+              <ScheduleEditor
                 schedule={schedule}
                 slackChannels={slackChannels}
                 slackChannelsUnavailable={slackChannelsUnavailable}
                 availableDestinations={availableDestinations}
                 busy={busy}
-                onSave={(deliveries) =>
+                onSave={(input) =>
                   act(async () => {
-                    await updateTrigger(projectName, schedule.triggerId, { deliveries });
+                    await updateTrigger(projectName, schedule.triggerId, input);
                   })
                 }
                 actions={
@@ -356,86 +347,18 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
   );
 }
 
-/**
- * A schedule's own fields, drafted locally and saved as one update.
- *
- * Not keyed by `updatedAt`: the Enabled and overlap switches beside this also
- * update-and-reload, and a remount would silently discard a cron edit in
- * progress. Instead the draft re-syncs to the server values only when they
- * change while the draft is clean — a dirty draft survives unrelated toggles,
- * and Save is what resolves a conflict with an edit that landed elsewhere.
- */
-function ScheduleFields({
-  schedule,
-  busy,
-  onSave,
-}: {
-  schedule: TriggerView;
-  busy: boolean;
-  onSave: (input: { cron: string; timezone: string; message: string }) => void;
-}) {
-  const t = useT();
-  const server = {
-    cron: schedule.cron ?? "",
-    timezone: schedule.timezone ?? "",
-    message: schedule.message ?? "",
-  };
-  const [draft, setDraft] = useState(server);
-  const [seen, setSeen] = useState(server);
-  const same = (a: typeof server, b: typeof server) =>
-    a.cron === b.cron && a.timezone === b.timezone && a.message === b.message;
-  if (!same(server, seen)) {
-    // Render-time state adjustment, the React-sanctioned key-less reset.
-    setSeen(server);
-    if (same(draft, seen)) {
-      setDraft(server);
-    }
-  }
-  const { cron, timezone, message } = draft;
-  const setCron = (value: string) => setDraft((d) => ({ ...d, cron: value }));
-  const setTimezone = (value: string) => setDraft((d) => ({ ...d, timezone: value }));
-  const setMessage = (value: string) => setDraft((d) => ({ ...d, message: value }));
-  const dirty = !same(draft, server);
-  return (
-    <Group align="flex-end" gap="sm">
-      <TextInput
-        label={t("trigger.cron")}
-        description={t("trigger.cronHint")}
-        inputWrapperOrder={["label", "description", "input", "error"]}
-        value={cron}
-        onChange={(e) => setCron(e.currentTarget.value)}
-        w={180}
-      />
-      <TextInput
-        label={t("trigger.timezone")}
-        value={timezone}
-        onChange={(e) => setTimezone(e.currentTarget.value)}
-        w={180}
-      />
-      <TextInput
-        label={t("trigger.message")}
-        placeholder={t("trigger.messagePlaceholder")}
-        value={message}
-        onChange={(e) => setMessage(e.currentTarget.value)}
-        style={{ flex: 1 }}
-      />
-      <Button
-        variant="default"
-        disabled={busy || !dirty || !cron.trim() || !timezone.trim()}
-        onClick={() => onSave({ cron: cron.trim(), timezone: timezone.trim(), message })}
-      >
-        {t("trigger.saveScheduleSettings")}
-      </Button>
-    </Group>
-  );
-}
-
 interface DestinationDraft {
   kinds: ScheduleDeliveryKind[];
   slackChannelId: string;
   telegramChatId: string;
   telegramThreadId: string;
   teamsConversationId: string;
+}
+
+interface ScheduleDraft extends DestinationDraft {
+  cron: string;
+  timezone: string;
+  message: string;
 }
 
 function destinationDraft(deliveries: readonly ScheduleDelivery[] = []): DestinationDraft {
@@ -464,7 +387,29 @@ function sameDestinations(a: DestinationDraft, b: DestinationDraft): boolean {
   );
 }
 
-function ScheduleDestinations({
+function scheduleDraft(schedule: TriggerView): ScheduleDraft {
+  return {
+    cron: schedule.cron ?? "",
+    timezone: schedule.timezone ?? "",
+    message: schedule.message ?? "",
+    ...destinationDraft(schedule.deliveries),
+  };
+}
+
+function sameScheduleDraft(a: ScheduleDraft, b: ScheduleDraft): boolean {
+  return (
+    a.cron === b.cron &&
+    a.timezone === b.timezone &&
+    a.message === b.message &&
+    sameDestinations(a, b)
+  );
+}
+
+/**
+ * One draft and one Save for every schedule setting. Enabled and overlap still
+ * save immediately; their reloads do not discard an in-progress draft.
+ */
+function ScheduleEditor({
   schedule,
   slackChannels,
   slackChannelsUnavailable,
@@ -478,17 +423,21 @@ function ScheduleDestinations({
   slackChannelsUnavailable: boolean;
   availableDestinations: ScheduleDeliveryKind[];
   busy: boolean;
-  onSave: (deliveries: ScheduleDelivery[]) => void;
+  onSave: (input: {
+    cron: string;
+    timezone: string;
+    message: string;
+    deliveries: ScheduleDelivery[];
+  }) => void;
   actions: ReactNode;
 }) {
   const t = useT();
-  const server = destinationDraft(schedule.deliveries);
+  const server = scheduleDraft(schedule);
   const [draft, setDraft] = useState(server);
   const [seen, setSeen] = useState(server);
-  const [kindToAdd, setKindToAdd] = useState<ScheduleDeliveryKind | null>(null);
-  if (!sameDestinations(server, seen)) {
+  if (!sameScheduleDraft(server, seen)) {
     setSeen(server);
-    if (sameDestinations(draft, seen)) {
+    if (sameScheduleDraft(draft, seen)) {
       setDraft(server);
     }
   }
@@ -498,14 +447,14 @@ function ScheduleDestinations({
   const threadId = Number(telegramThreadId);
   const telegramValid =
     (!draft.kinds.includes("telegram") ||
-      (Boolean(telegramChatId) && Number.isSafeInteger(chatId))) &&
+      (Boolean(telegramChatId) && Number.isSafeInteger(chatId) && chatId !== 0)) &&
     (!telegramThreadId || (Number.isSafeInteger(threadId) && threadId > 0)) &&
     (!telegramThreadId || Boolean(telegramChatId));
   const destinationsValid =
     telegramValid &&
     (!draft.kinds.includes("slack") || Boolean(draft.slackChannelId)) &&
     (!draft.kinds.includes("teams") || Boolean(draft.teamsConversationId.trim()));
-  const dirty = !sameDestinations(draft, server);
+  const dirty = !sameScheduleDraft(draft, server);
   const channelData = slackChannels.map((channel) => ({
     value: channel.id,
     label: `#${channel.name}${channel.isPrivate ? " (private)" : ""}`,
@@ -534,7 +483,39 @@ function ScheduleDestinations({
   };
 
   return (
-    <Stack gap="xs">
+    <Stack gap="sm">
+      <Group align="flex-end" gap="sm">
+        <TextInput
+          label={t("trigger.cron")}
+          description={t("trigger.cronHint")}
+          inputWrapperOrder={["label", "description", "input", "error"]}
+          value={draft.cron}
+          onChange={(event) => {
+            const cron = event.currentTarget.value;
+            setDraft({ ...draft, cron });
+          }}
+          w={180}
+        />
+        <TextInput
+          label={t("trigger.timezone")}
+          value={draft.timezone}
+          onChange={(event) => {
+            const timezone = event.currentTarget.value;
+            setDraft({ ...draft, timezone });
+          }}
+          w={180}
+        />
+        <TextInput
+          label={t("trigger.message")}
+          placeholder={t("trigger.messagePlaceholder")}
+          value={draft.message}
+          onChange={(event) => {
+            const message = event.currentTarget.value;
+            setDraft({ ...draft, message });
+          }}
+          style={{ flex: 1 }}
+        />
+      </Group>
       <Text fw={500} fz="sm">
         {t("trigger.destinations")}
       </Text>
@@ -542,28 +523,19 @@ function ScheduleDestinations({
         {t("trigger.destinationHint")}
       </Text>
       {destinationKinds.length > 0 && (
-        <Group align="flex-end" gap="sm">
-          <Select
-            label={t("trigger.destinationType")}
-            data={destinationKinds}
-            value={kindToAdd}
-            onChange={(value) => setKindToAdd(value as ScheduleDeliveryKind | null)}
-            w={220}
-          />
-          <Button
-            variant="default"
-            disabled={!kindToAdd}
-            onClick={() => {
-              if (!kindToAdd) {
-                return;
-              }
-              setDraft({ ...draft, kinds: [...draft.kinds, kindToAdd] });
-              setKindToAdd(null);
-            }}
-          >
-            {t("trigger.addDestination")}
-          </Button>
-        </Group>
+        <Select
+          label={t("trigger.addDestination")}
+          placeholder={t("trigger.destinationType")}
+          data={destinationKinds}
+          value={null}
+          onChange={(value) => {
+            const kind = value as ScheduleDeliveryKind | null;
+            if (kind) {
+              setDraft({ ...draft, kinds: [...draft.kinds, kind] });
+            }
+          }}
+          w={220}
+        />
       )}
       {draft.kinds.includes("slack") && slackChannelsUnavailable && (
         <Alert color="yellow" variant="light" p="xs">
@@ -590,6 +562,7 @@ function ScheduleDestinations({
             <>
               <TextInput
                 label={t("trigger.telegramChatId")}
+                description={t("trigger.telegramChatIdHint")}
                 value={draft.telegramChatId}
                 onChange={(event) => {
                   const value = event.currentTarget.value;
@@ -612,6 +585,7 @@ function ScheduleDestinations({
           {kind === "teams" && (
             <TextInput
               label={t("trigger.teamsConversationId")}
+              description={t("trigger.teamsConversationIdHint")}
               value={draft.teamsConversationId}
               onChange={(event) => {
                 const value = event.currentTarget.value;
@@ -629,29 +603,45 @@ function ScheduleDestinations({
         <Button
           variant="default"
           size="xs"
-          disabled={busy || !dirty || !destinationsValid}
+          disabled={
+            busy ||
+            !dirty ||
+            !draft.cron.trim() ||
+            !draft.timezone.trim() ||
+            !destinationsValid
+          }
           onClick={() => {
-            const deliveries: ScheduleDelivery[] = [];
-            if (draft.kinds.includes("slack")) {
-              deliveries.push({ kind: "slack", channelId: draft.slackChannelId });
-            }
-            if (draft.kinds.includes("telegram")) {
-              deliveries.push({
-                kind: "telegram",
-                chatId,
-                ...(telegramThreadId ? { threadId } : {}),
-              });
-            }
-            if (draft.kinds.includes("teams")) {
-              deliveries.push({
-                kind: "teams",
-                conversationId: draft.teamsConversationId.trim(),
-              });
-            }
-            onSave(deliveries);
+            const deliveries: ScheduleDelivery[] = [
+              ...(draft.kinds.includes("slack")
+                ? [{ kind: "slack" as const, channelId: draft.slackChannelId }]
+                : []),
+              ...(draft.kinds.includes("telegram")
+                ? [
+                    {
+                      kind: "telegram" as const,
+                      chatId,
+                      ...(telegramThreadId ? { threadId } : {}),
+                    },
+                  ]
+                : []),
+              ...(draft.kinds.includes("teams")
+                ? [
+                    {
+                      kind: "teams" as const,
+                      conversationId: draft.teamsConversationId.trim(),
+                    },
+                  ]
+                : []),
+            ];
+            onSave({
+              cron: draft.cron.trim(),
+              timezone: draft.timezone.trim(),
+              message: draft.message,
+              deliveries,
+            });
           }}
         >
-          {t("trigger.saveDestinations")}
+          {t("trigger.saveScheduleSettings")}
         </Button>
         {actions}
       </Group>

@@ -607,7 +607,7 @@ export const en = {
   "pset.slackChannelUnavailable": "Enable the project bot and invite it to a channel first",
   "pset.notificationDestinations": "Notification destinations",
   "pset.notificationDestinationsHint":
-    "Select any enabled project integrations that should receive cost alerts.",
+    "Select an enabled integration to configure where it receives cost alerts.",
   "pset.slackBot": "Slack bot",
   "pset.appManifest": "App manifest",
   "pset.botToken": "Bot token",
@@ -659,11 +659,12 @@ export const en = {
   "trigger.slackChannel": "Slack channel",
   "trigger.slackUnavailable": "Slack channels could not be loaded. Configure and enable the project bot first.",
   "trigger.telegramChatId": "Telegram chat id",
+  "trigger.telegramChatIdHint": "Telegram does not provide a bot chat list; enter the target chat id.",
   "trigger.telegramThreadId": "Telegram topic id (optional)",
   "trigger.teamsConversationId": "Teams conversation id",
-  "trigger.destinationHint": "Select an available integration and add it.",
+  "trigger.teamsConversationIdHint": "This bot setup cannot list Teams conversations; enter the target conversation id.",
+  "trigger.destinationHint": "Select an available integration to configure its destination.",
   "trigger.saveScheduleSettings": "Save",
-  "trigger.saveDestinations": "Save destinations",
 
   // The admin pages, the profile, and the per-project usage tab.
   "admin.adminOnlyAudit": "Audit events are available to admins only.",

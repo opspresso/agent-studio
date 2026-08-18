@@ -533,7 +533,7 @@ export const ko: Messages = {
   "pset.slackChannelUnavailable": "프로젝트 봇을 활성화하고 채널에 먼저 초대하세요",
   "pset.notificationDestinations": "알림 목적지",
   "pset.notificationDestinationsHint":
-    "비용 경고를 받을 활성화된 프로젝트 연동을 선택합니다.",
+    "활성화된 연동을 선택하면 비용 경고 목적지 입력란이 바로 표시됩니다.",
   "pset.slackBot": "Slack 봇",
   "pset.appManifest": "앱 매니페스트",
   "pset.botToken": "봇 토큰",
@@ -583,11 +583,12 @@ export const ko: Messages = {
   "trigger.slackChannel": "Slack 채널",
   "trigger.slackUnavailable": "Slack 채널을 불러오지 못했습니다. 프로젝트 bot을 먼저 설정하고 활성화하세요.",
   "trigger.telegramChatId": "Telegram chat id",
+  "trigger.telegramChatIdHint": "Telegram은 bot의 chat 목록을 제공하지 않으므로 대상 chat id를 입력합니다.",
   "trigger.telegramThreadId": "Telegram topic id (선택)",
   "trigger.teamsConversationId": "Teams conversation id",
-  "trigger.destinationHint": "사용 가능한 연동을 선택해 추가합니다.",
+  "trigger.teamsConversationIdHint": "현재 bot 설정만으로 Teams conversation 목록을 조회할 수 없어 대상 conversation id를 입력합니다.",
+  "trigger.destinationHint": "사용 가능한 연동을 선택하면 목적지 입력란이 바로 표시됩니다.",
   "trigger.saveScheduleSettings": "Save",
-  "trigger.saveDestinations": "Save destinations",
 
   "admin.adminOnlyAudit": "감사 로그는 관리자만 볼 수 있습니다.",
   "admin.adminOnlyMembers": "멤버 목록은 관리자만 볼 수 있습니다.",

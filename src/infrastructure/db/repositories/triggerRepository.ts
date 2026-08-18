@@ -43,6 +43,9 @@ function toTrigger(item: Record<string, unknown>): Trigger {
       cron: String(item.cron ?? ""),
       timezone: String(item.timezone ?? ""),
       ...(item.message ? { message: String(item.message) } : {}),
+      ...(item.deliveries
+        ? { deliveries: item.deliveries as ScheduleTrigger["deliveries"] }
+        : {}),
     };
   }
   // Rows written before kinds existed carry no `kind`; they are all webhooks.
@@ -79,6 +82,9 @@ function toRun(item: Record<string, unknown>): TriggerRun {
     ...(item.result ? { result: String(item.result) } : {}),
     ...(item.error ? { error: String(item.error) } : {}),
     ...(item.warning ? { warning: String(item.warning) } : {}),
+    ...(item.deliveryResults
+      ? { deliveryResults: item.deliveryResults as TriggerRun["deliveryResults"] }
+      : {}),
     ...(item.traceId ? { traceId: String(item.traceId) } : {}),
   };
 }
