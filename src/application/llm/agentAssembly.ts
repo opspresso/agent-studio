@@ -111,7 +111,7 @@ function registerInputImages(registry: ImageRegistry, messages: ChatMessageInput
       }
       const bytes = parseImageDataUrl(part.image_url.url);
       if (bytes) {
-        registry.add(bytes, message.role === "assistant" ? "an earlier answer" : "sent by the user");
+        registry.add(bytes, "from the conversation");
       }
     }
   }

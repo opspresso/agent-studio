@@ -39,9 +39,9 @@ const MAX_HISTORY_MESSAGES = 200;
 
 /**
  * A stored user turn: text, or content parts when the turn carried attachments.
- * The stored images are object-storage URLs (the provider fetches them), so a
- * replayed attachment is visible to the model but not editable — only the turn
- * that uploaded it had the bytes in hand.
+ * Stored image references have already been resolved upstream. Run replay
+ * restores the newest objects as data URLs so they remain editable; older or
+ * legacy images stay visible through fetchable URLs.
  */
 function userMessage(message: UserChatMessage): ChatMessageInput {
   const documents = message.documents ?? [];
@@ -71,6 +71,22 @@ function userMessage(message: UserChatMessage): ChatMessageInput {
     // Assembled by the same function the turn was sent with: a replay shaped
     // differently would be a different turn than the one this chat recorded.
     content: turnContent(documents, content, images),
+  };
+}
+
+function assistantImageMessage(message: AssistantChatMessage): ChatMessageInput | undefined {
+  const images = (message.images ?? []).flatMap((image) =>
+    image.url ? [{ type: "image_url" as const, image_url: { url: image.url } }] : [],
+  );
+  if (images.length === 0) {
+    return undefined;
+  }
+  return {
+    role: "user",
+    content: [
+      { type: "text", text: "[Image produced in the preceding assistant answer.]" },
+      ...images,
+    ],
   };
 }
 
@@ -262,6 +278,13 @@ export function toEngineMessages(
     out.push(mapped);
     for (const pair of pairs) {
       out.push({ role: "tool", content: pair.content, tool_call_id: pair.call.id as string });
+    }
+    const imageMessage = assistantImageMessage(message);
+    if (imageMessage) {
+      // OpenAI-compatible providers do not consistently accept image parts on
+      // assistant messages. A following user image message preserves ordering
+      // while keeping the generated picture in a portable content shape.
+      out.push(imageMessage);
     }
   }
 

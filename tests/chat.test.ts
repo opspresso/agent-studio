@@ -182,6 +182,7 @@ function makeRunLog() {
  */
 function fakeArtifacts(over: { putFails?: boolean } = {}) {
   const puts: Array<{ key: string; mimeType: string; bytes: Uint8Array }> = [];
+  const reads: Array<{ key: string; maxBytes: number }> = [];
   const storage = {
     objects: {
       async put(input: { key: string; mimeType: string; bytes: Uint8Array }) {
@@ -192,6 +193,10 @@ function fakeArtifacts(over: { putFails?: boolean } = {}) {
       },
       async sign(key: string, ttl: number) {
         return `https://signed.example/${key}?ttl=${ttl}`;
+      },
+      async read(key: string, maxBytes: number) {
+        reads.push({ key, maxBytes });
+        return { bytes: Buffer.from("stored-image"), mimeType: "image/png" };
       },
       async delete() {},
     },
@@ -209,7 +214,7 @@ function fakeArtifacts(over: { putFails?: boolean } = {}) {
       async delete() {},
     },
   } as unknown as NonNullable<ChatDeps["artifacts"]>;
-  return { storage, puts };
+  return { storage, puts, reads };
 }
 
 /** Artifact storage whose signer is the test's own, for the read-time cases. */
@@ -922,6 +927,29 @@ describe("chat image attachments", () => {
     ]);
   });
 
+  it("replays an image produced by an earlier assistant answer", () => {
+    const stored = message({
+      seq: 2,
+      role: "assistant",
+      content: "here is the image",
+      images: [{ url: "data:image/png;base64,cHJldmlvdXM=" }],
+    });
+
+    expect(toEngineMessages([stored]).messages).toEqual([
+      { role: "assistant", content: "here is the image" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "[Image produced in the preceding assistant answer.]" },
+          {
+            type: "image_url",
+            image_url: { url: "data:image/png;base64,cHJldmlvdXM=" },
+          },
+        ],
+      },
+    ]);
+  });
+
   /**
    * The lease is claimed before the turn is written, so a write that throws
    * between the two leaves it held. Nothing released it in a test until now, and
@@ -963,7 +991,7 @@ describe("chat image attachments", () => {
     expect(state.activeRunId).toBeUndefined();
   });
 
-  it("replays a stored image to the provider with the run-length lifetime", async () => {
+  it("falls back to a run-length signed URL when stored bytes cannot be restored", async () => {
     // The provider fetches this, not the browser, and it may do so at the very
     // end of a run allowed to last MAX_RUN_DURATION_MS.
     const sign = async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`;
@@ -974,10 +1002,19 @@ describe("chat image attachments", () => {
       } as ChatMessage,
     ]);
     const seenMessages: unknown[] = [];
+    const artifacts = signingArtifacts(sign);
     const deps = makeDeps(repo, {
       projects: agentProjects,
       versions: publishedVersions,
-      artifacts: signingArtifacts(sign),
+      artifacts: {
+        ...artifacts,
+        objects: {
+          ...artifacts.objects,
+          async read() {
+            throw new Error("read unavailable");
+          },
+        },
+      },
       runAgent: (params) => {
         seenMessages.push(...params.messages);
         return emptyAgent();
@@ -993,6 +1030,45 @@ describe("chat image attachments", () => {
     }
     expect(JSON.stringify(seenMessages)).toContain(
       `https://signed.example/images/x.png?ttl=${REPLAY_URL_TTL_SECONDS}`,
+    );
+  });
+
+  it("restores an earlier generated image as editable bytes", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "make an image" }),
+      message({
+        seq: 1,
+        role: "assistant",
+        content: "done",
+        images: [{ key: "artifacts/image/previous.png" }],
+      }),
+    ]);
+    const artifacts = fakeArtifacts();
+    const seenMessages: unknown[] = [];
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      artifacts: artifacts.storage,
+      runAgent: (params) => {
+        seenMessages.push(...params.messages);
+        return emptyAgent();
+      },
+    });
+
+    const { stream } = await sendMessage(deps, {
+      chatId: "c1",
+      content: "edit the previous image",
+      userEmail: "owner@x.com",
+    });
+    for await (const _ of stream) {
+      // drain
+    }
+
+    expect(artifacts.reads).toEqual([
+      { key: "artifacts/image/previous.png", maxBytes: 5 * 1024 * 1024 },
+    ]);
+    expect(JSON.stringify(seenMessages)).toContain(
+      "data:image/png;base64,c3RvcmVkLWltYWdl",
     );
   });
 

@@ -80,6 +80,9 @@ function setup(stored: Artifact | null, over: { rowDeleteFails?: boolean } = {})
   };
   const objects = {
     async put() {},
+    async read() {
+      return { bytes: new Uint8Array(), mimeType: "application/octet-stream" };
+    },
     async sign(key: string) {
       return `https://signed/${key}`;
     },
@@ -212,7 +215,16 @@ describe("listing", () => {
     };
     const useCases = createArtifactUseCases(
       rows,
-      { async put() {}, async sign() { return ""; }, async delete() {} },
+      {
+        async put() {},
+        async read() {
+          return { bytes: new Uint8Array(), mimeType: "application/octet-stream" };
+        },
+        async sign() {
+          return "";
+        },
+        async delete() {},
+      },
       projects,
     );
     await useCases.listMine(OWNER, { limit: 5000 });

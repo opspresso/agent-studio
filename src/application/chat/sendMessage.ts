@@ -3,7 +3,7 @@ import type { ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
-import { resolveMessageImages } from "./resolveImages";
+import { resolveRunMessageImages } from "./resolveImages";
 import { REPLAY_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { toEngineMessages } from "./messageMapping";
 import {
@@ -93,11 +93,11 @@ export async function sendMessage(
     };
     await deps.chats.appendMessage(userMessage);
 
-    // Resolved before mapping, with the replay's own lifetime: these URLs are
-    // fetched by the *provider*, at whatever point in a run it reaches the turn.
-    const resolved = await resolveMessageImages(
+    // Resolved before mapping. The newest stored images become inline bytes for
+    // editing; the rest keep replay-lifetime URLs fetched by the provider.
+    const resolved = await resolveRunMessageImages(
       existing,
-      deps.artifacts?.objects.sign,
+      deps.artifacts?.objects,
       REPLAY_URL_TTL_SECONDS,
     );
     const history = toEngineMessages(resolved.messages);
@@ -111,6 +111,11 @@ export async function sendMessage(
             `${resolved.dropped} earlier image(s) could not be read back and are missing from this run's context.`,
           ]
         : [];
+    if (resolved.notEditable > 0) {
+      imageWarnings.push(
+        `${resolved.notEditable} earlier image(s) remain visible but are not available to image editing tools.`,
+      );
+    }
     const source = deps.runAgent({
       project,
       version,

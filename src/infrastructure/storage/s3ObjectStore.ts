@@ -54,6 +54,26 @@ export const artifactObjectStore: ArtifactObjectStore = {
     );
   },
 
+  async read(key, maxBytes) {
+    const object = await getS3Client().send(
+      new GetObjectCommand({ Bucket: requireBucket(), Key: key }),
+    );
+    if (object.ContentLength === undefined) {
+      throw new Error("stored object has no content length");
+    }
+    if (object.ContentLength > maxBytes) {
+      throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
+    }
+    if (!object.Body) {
+      throw new Error("stored object has no body");
+    }
+    const bytes = await object.Body.transformToByteArray();
+    if (bytes.byteLength > maxBytes) {
+      throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
+    }
+    return { bytes, mimeType: object.ContentType ?? "application/octet-stream" };
+  },
+
   /**
    * A direct URL in public mode, otherwise a pre-signed GET URL. The signed
    * lifetime is the caller's because readers need different ones.

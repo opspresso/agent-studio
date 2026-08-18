@@ -400,7 +400,7 @@ describe("executeAgent EditImage", () => {
 
     const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
     expect(systemPrompt).toContain("## Available Images");
-    expect(systemPrompt).toContain("| img_1 | sent by the user |");
+    expect(systemPrompt).toContain("| img_1 | from the conversation |");
   });
 
   it("returns an error tool result for an unknown image id", async () => {
@@ -725,7 +725,7 @@ describe("executeAgent image transfer to a subagent", () => {
     expect(properties).toHaveProperty("image_ids");
     const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
     expect(systemPrompt).toContain("## Available Images");
-    expect(systemPrompt).toContain("| img_1 | sent by the user |");
+    expect(systemPrompt).toContain("| img_1 | from the conversation |");
     expect(systemPrompt).toContain("image_ids");
   });
 

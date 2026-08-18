@@ -20,7 +20,14 @@
  */
 
 import type { ChatMessage, ChatMessageImage } from "@/domain/chat/types";
+import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import { resolveImageUrl, type SignImageUrl } from "@/domain/chat/imageRefs";
+import {
+  MAX_ATTACHMENTS,
+  MAX_ATTACHMENT_BYTES,
+  SUPPORTED_IMAGE_TYPES,
+} from "@/domain/llm/imageLimits";
+import { imageDataUrl } from "@/domain/llm/types";
 import { log } from "@/shared/logger";
 
 async function resolveOne(
@@ -50,6 +57,11 @@ export interface ResolvedMessages {
   dropped: number;
 }
 
+export interface RunResolvedMessages extends ResolvedMessages {
+  /** Stored images that stayed visible by URL but could not become editable handles. */
+  notEditable: number;
+}
+
 /**
  * Every message's images resolved. Messages without images pass through
  * untouched, so a chat that has none costs nothing.
@@ -75,4 +87,75 @@ export async function resolveMessageImages(
     }),
   );
   return { messages: resolvedMessages, dropped };
+}
+
+/**
+ * Resolve images for an agent run, restoring the newest stored objects as
+ * inline bytes so the image registry can hand them to EditImage. Remaining
+ * images keep the signed-URL path and are still visible to the model.
+ */
+export async function resolveRunMessageImages(
+  messages: ChatMessage[],
+  objects: ArtifactObjectStore | undefined,
+  ttlSeconds: number,
+): Promise<RunResolvedMessages> {
+  const inline = new Set<ChatMessageImage>();
+  if (objects) {
+    for (const message of [...messages].reverse()) {
+      if (message.role === "tool") {
+        continue;
+      }
+      for (const image of [...(message.images ?? [])].reverse()) {
+        if (inline.size >= MAX_ATTACHMENTS) {
+          break;
+        }
+        if (image.key && !image.url) {
+          inline.add(image);
+        }
+      }
+      if (inline.size >= MAX_ATTACHMENTS) {
+        break;
+      }
+    }
+  }
+
+  let dropped = 0;
+  let notEditable = 0;
+  const resolvedMessages = await Promise.all(
+    messages.map(async (message) => {
+      if (message.role === "tool" || !message.images?.length) {
+        return message;
+      }
+      const resolved = (
+        await Promise.all(
+          message.images.map(async (image) => {
+            if (objects && image.key && inline.has(image)) {
+              try {
+                const stored = await objects.read(image.key, MAX_ATTACHMENT_BYTES);
+                if (!(SUPPORTED_IMAGE_TYPES as readonly string[]).includes(stored.mimeType)) {
+                  throw new Error(`stored object has unsupported image type: ${stored.mimeType}`);
+                }
+                const url = imageDataUrl({
+                  b64: Buffer.from(stored.bytes).toString("base64"),
+                  mimeType: stored.mimeType,
+                });
+                return image.prompt === undefined ? { url } : { url, prompt: image.prompt };
+              } catch (error) {
+                notEditable += 1;
+                log.error(
+                  "chat",
+                  "could not load a stored image for editing; using its address",
+                  error,
+                );
+              }
+            }
+            return resolveOne(image, objects?.sign, ttlSeconds);
+          }),
+        )
+      ).filter((image): image is ChatMessageImage => image !== undefined);
+      dropped += message.images.length - resolved.length;
+      return { ...message, images: resolved };
+    }),
+  );
+  return { messages: resolvedMessages, dropped, notEditable };
 }

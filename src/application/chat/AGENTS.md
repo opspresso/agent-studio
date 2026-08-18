@@ -27,8 +27,9 @@ buffer rather than a record, and why the viewport belongs to a library is
 - `replayRunLog.ts` — `openRunLogReplay`: replay the log from the start, then follow it.
 - `cancelRun.ts` — `cancelChatRun` (persist the ask) and `watchChatCancel` (the running
   side's poll for it).
-- `resolveImages.ts` — sign a stored image key per read, at the lifetime the reader chooses;
-  reports how many could not be addressed so the caller can say so.
+- `resolveImages.ts` — resolve a stored image per reader: the view signs its key, while a run
+  restores the newest four as bounded inline bytes for editing and signs the rest; reports
+  images that could not be addressed or restored so the caller can say so.
 - `resolveFiles.ts` — the same for a file a run produced, carrying the filename to save as.
   Only the view calls it: a file's bytes never enter a replayed turn.
 - `createChat.ts` / `sendMessage.ts` / `listChats.ts` / `getChat.ts` / `deleteChat.ts`.
@@ -120,13 +121,14 @@ buffer rather than a record, and why the viewport belongs to a library is
   `S3_BUCKET_NAME` is set); before that it went to the same bucket with no row at all, which
   made attachments the one class of stored object nothing could list or delete. Either way the
   message keeps `images: [{ key, prompt? }]` — the b64 payload is far past the DynamoDB item
-  limit — and `resolveImages.ts` signs the key per read with the lifetime the reader chooses
-  (`@/application/artifact/urlTtl`); rows written before keys existed carry a public `url` used
-  as-is. A failure drops that image, never the message, and says so through the warning
-  channel: an image that was never stored is indistinguishable from one that was never made.
-  An image that cannot be *addressed* on the way back out is dropped too, and
-  `resolveMessageImages` returns how many so the replay path can say so as well. With no
-  object storage configured, images render during the live stream only, which is reported.
+  limit. The view signs each key with its own lifetime (`@/application/artifact/urlTtl`). A run
+  instead reads the newest four stored images back under `MAX_ATTACHMENT_BYTES` and sends them
+  as data URLs, which is what registers both user attachments and assistant-produced images as
+  editable handles; older images stay visible through replay-lifetime signed URLs. Rows written
+  before keys existed carry a public `url` used as-is and remain visible but cannot become an
+  editable handle. A read or type failure falls back to that address and warns; an image that
+  cannot be addressed is dropped, never the message, and is reported too. With no object storage
+  configured, images render during the live stream only, which is reported.
 - **Files a run produced are references from the moment they arrive.** `EngineChunk.file` is
   a separate axis from `image` because everything that reads `image` *draws* it, and the run
   bracket has already stored the bytes and stripped them by the time this surface sees the

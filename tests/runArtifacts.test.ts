@@ -37,6 +37,9 @@ function fakeStorage(over: { putFails?: boolean; rowFails?: boolean; error?: Err
       async sign(key) {
         return `https://signed/${key}`;
       },
+      async read() {
+        return { bytes: new Uint8Array(), mimeType: "application/octet-stream" };
+      },
       async delete() {
         fake.calls.push("object.delete");
       },

@@ -32,6 +32,8 @@ export type SignObjectUrl = (
 
 export interface ArtifactObjectStore {
   put(input: { key: string; bytes: Uint8Array; mimeType: string }): Promise<void>;
+  /** Read an object without allowing the adapter to buffer past the caller's cap. */
+  read(key: string, maxBytes: number): Promise<{ bytes: Uint8Array; mimeType: string }>;
   sign: SignObjectUrl;
   /**
    * Remove an object. Succeeds when the key is already gone, which is what lets

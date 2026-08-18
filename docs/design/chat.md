@@ -109,7 +109,10 @@ N개의 assistant 턴, tool 텍스트 budget, 그리고 런 전체 단위의 히
 
 **이미지**는 바이트로 이동한다. `image_url` content part 가 되고, 런이 이미지를 편집할 수
 있도록 엔진이 각각에 핸들을 등록하며, 모델은 `imageInput` 을 선언해야 한다 — 텍스트 전용
-모델이 거부하는 part 를 보내면 턴 전체가 실패한다.
+모델이 거부하는 part 를 보내면 턴 전체가 실패한다. 새 턴을 재생할 때는 저장된 최신 이미지
+네 개를 객체 저장소에서 크기 제한 아래 다시 읽어 data URL 로 전달한다. assistant 가 만든
+이미지도 provider 호환 user 이미지 메시지로 이어 붙이므로 후속 턴에서 같은 핸들을 얻는다.
+그보다 오래됐거나 읽지 못한 이미지는 signed URL 로 문맥에는 남지만 편집 핸들은 얻지 못한다.
 
 **문서는 그것을 받은 표면에서 텍스트가 된다.** PDF, 평문 텍스트, Markdown, CSV/TSV, JSON,
 YAML, XML, HTML 은 provider 고유의 file part 가 아니라 텍스트 part 로 턴 안에 읽힌다. 이것은
@@ -147,4 +150,3 @@ UTF-16 을 걸러내기 위한 NUL 검사), 선언된 content type 으로는 결
 이미지가 아닌 `resource.blob` 이 텍스트가 아니면 `MAX_TOOL_FILE_BYTES` 안에 들어가는 동안은
 `file` chunk 로 이동하고(사용자에게 전달된 것으로 결과 텍스트에 이름이 적힌다), 그 크기를
 넘으면 통째로 쏟아내는 대신 이름만 적고 생략한다.
-

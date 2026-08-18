@@ -46,6 +46,50 @@ afterEach(() => {
 });
 
 describe("artifactObjectStore access modes", () => {
+  it("reads stored bytes and preserves their content type", async () => {
+    const transformToByteArray = vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3]));
+    mocks.send.mockResolvedValue({
+      ContentLength: 3,
+      ContentType: "image/png",
+      Body: { transformToByteArray },
+    });
+
+    await expect(artifactObjectStore.read("artifacts/image/id.png", 10)).resolves.toEqual({
+      bytes: Uint8Array.from([1, 2, 3]),
+      mimeType: "image/png",
+    });
+    expect(transformToByteArray).toHaveBeenCalledOnce();
+    const command = mocks.send.mock.calls[0]?.[0] as { input: Record<string, string> };
+    expect(command.input.Key).toBe("artifacts/image/id.png");
+  });
+
+  it("rejects an oversized object before buffering its body", async () => {
+    const transformToByteArray = vi.fn();
+    mocks.send.mockResolvedValue({
+      ContentLength: 11,
+      ContentType: "image/png",
+      Body: { transformToByteArray },
+    });
+
+    await expect(artifactObjectStore.read("artifacts/image/id.png", 10)).rejects.toThrow(
+      "exceeds the 10-byte read limit",
+    );
+    expect(transformToByteArray).not.toHaveBeenCalled();
+  });
+
+  it("does not buffer a body whose size S3 did not report", async () => {
+    const transformToByteArray = vi.fn();
+    mocks.send.mockResolvedValue({
+      ContentType: "image/png",
+      Body: { transformToByteArray },
+    });
+
+    await expect(artifactObjectStore.read("artifacts/image/id.png", 10)).rejects.toThrow(
+      "has no content length",
+    );
+    expect(transformToByteArray).not.toHaveBeenCalled();
+  });
+
   it("returns an encoded direct S3 URL in public mode without presigning", async () => {
     mocks.getArtifactAccessMode.mockResolvedValue("public");
 
