@@ -159,17 +159,27 @@ const INDICATOR = ":hourglass_flowing_sand:";
  * matters — the tests under "progress in a channel thread" describe a workspace
  * that cannot stream, not the ordinary one.
  */
-function makeChannelFake() {
+function makeChannelFake(opts: { refuseOver?: number } = {}) {
   const posted: string[] = [];
   const updates: Array<{ channel: string; ts: string; text: string }> = [];
   const deleted: string[] = [];
   const statuses: string[] = [];
+  // A reply that outgrows one message opens the next one, so each post is its
+  // own ts — the first is still `100.1`.
+  let messages = 0;
   const slack = {
     async postMessage(_token: string, args: { channel: string; text: string }) {
+      if (opts.refuseOver !== undefined && args.text.length > opts.refuseOver) {
+        throw new Error("Slack chat.postMessage failed: msg_too_long");
+      }
       posted.push(args.text);
-      return { ts: "100.1", channel: args.channel };
+      messages += 1;
+      return { ts: `100.${messages}`, channel: args.channel };
     },
     async updateMessage(_token: string, args: { channel: string; ts: string; text: string }) {
+      if (opts.refuseOver !== undefined && args.text.length > opts.refuseOver) {
+        throw new Error("Slack chat.update failed: msg_too_long");
+      }
       updates.push(args);
       return { ts: args.ts };
     },
@@ -738,5 +748,118 @@ describe("an answer longer than one write", () => {
     expect(stopped).toEqual([{}]);
     expect(appended.every((piece) => piece.length <= 12_000)).toBe(true);
     expect(appended.join("")).toBe(LONG);
+  });
+});
+
+/**
+ * The edited path has to end a message somewhere, and where it ends is the part
+ * a reader sees. It used to end nowhere: `chat.update` was sent the whole answer
+ * every time, Slack refused it once it outgrew a message, and the run finished by
+ * posting the remainder as error recovery — so the reply stopped at whatever
+ * character the last accepted write had reached, and the message it stopped in
+ * kept the loading indicator forever.
+ */
+describe("an edited answer longer than one Slack message", () => {
+  /** 202 characters, ending where a message may be cut. */
+  const PARAGRAPH = `${"문단".repeat(100)}\n\n`;
+  const LONG = PARAGRAPH.repeat(30);
+
+  /**
+   * What each message ends up holding, in the order they were opened. The fake
+   * gives the nth post the ts `100.n`, so an edit finds the message it edits.
+   */
+  function onScreen(
+    posted: string[],
+    updates: Array<{ ts: string; text: string }>,
+  ): string[] {
+    return posted.map(
+      (text, index) => updates.filter((update) => update.ts === `100.${index + 1}`).at(-1)?.text ?? text,
+    );
+  }
+
+  function tickingSink(fake: ReturnType<typeof makeChannelFake>) {
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+    return createReplySink(fake.slack, "tok", CHANNEL);
+  }
+
+  it("continues at a paragraph break rather than wherever the cap landed", async () => {
+    const fake = makeChannelFake();
+    const sink = tickingSink(fake);
+
+    await sink.push(LONG);
+    await sink.finish(LONG, "");
+
+    const messages = onScreen(fake.posted, fake.updates);
+    expect(messages.length).toBeGreaterThan(1);
+    // Every message but the last ends where a paragraph does, and the answer is
+    // exactly what the messages say together.
+    for (const message of messages.slice(0, -1)) {
+      expect(message.endsWith("\n\n")).toBe(true);
+    }
+    expect(messages.join("")).toBe(LONG);
+  });
+
+  it("takes the indicator off a message it has finished writing", async () => {
+    const fake = makeChannelFake();
+    const sink = tickingSink(fake);
+
+    await sink.push(LONG);
+    await sink.push(LONG);
+
+    const messages = onScreen(fake.posted, fake.updates);
+    expect(messages.length).toBeGreaterThan(1);
+    for (const message of messages.slice(0, -1)) {
+      expect(message).not.toContain(INDICATOR);
+    }
+    // Only the one still being written says so.
+    expect(messages.at(-1)?.endsWith(INDICATOR)).toBe(true);
+  });
+
+  it("leaves none of them holding it once the run is over", async () => {
+    const fake = makeChannelFake();
+    const sink = tickingSink(fake);
+
+    await sink.push(LONG);
+    await sink.finish(LONG, "");
+
+    for (const message of onScreen(fake.posted, fake.updates)) {
+      expect(message).not.toContain(INDICATOR);
+    }
+  });
+
+  it("closes a code block it cut through and reopens it in the next message", async () => {
+    const code = `설명:\n\n\`\`\`python\n${"print('hello world')\n".repeat(200)}\`\`\`\n`;
+    const fake = makeChannelFake();
+    const sink = tickingSink(fake);
+
+    await sink.push(code);
+    await sink.finish(code, "");
+
+    const messages = onScreen(fake.posted, fake.updates);
+    expect(messages.length).toBeGreaterThan(1);
+    // Each message renders as a block on its own rather than one showing the
+    // markup and the next showing the source.
+    for (const message of messages) {
+      expect(message.split("```").length % 2).toBe(1);
+    }
+    expect(messages[1]?.startsWith("```python\n")).toBe(true);
+  });
+
+  it("cuts smaller when Slack refuses an edit as too long", async () => {
+    // The cap is measured, not documented — a deployment whose real limit is
+    // lower must not leave the answer stuck behind a payload that never fits.
+    const fake = makeChannelFake({ refuseOver: 1200 });
+    const sink = tickingSink(fake);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sink.push(LONG);
+    await sink.finish(LONG, "");
+
+    const messages = onScreen(fake.posted, fake.updates);
+    for (const message of messages) {
+      expect(message.length).toBeLessThanOrEqual(1200);
+    }
+    expect(messages.join("")).toBe(LONG);
   });
 });

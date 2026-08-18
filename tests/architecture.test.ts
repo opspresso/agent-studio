@@ -1540,6 +1540,16 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/messaging/editInPlaceReply.ts",
   },
   {
+    // Three surfaces cut an answer that outgrew one message, and only their
+    // caps differ. Where the cut lands is what a reader sees — a second copy is
+    // a second answer to "does this stop mid-sentence", which is the whole
+    // question. Slack learned it late: its edited path had no cap at all, so
+    // the cut was wherever the last accepted write happened to end.
+    what: "where a reply is cut when it outgrows one message",
+    pattern: /export function cutPoint/,
+    owner: "src/shared/messageCut.ts",
+  },
+  {
     // What a surface with no platform history remembers of a conversation:
     // read within a budget, written bounded, names read only for a version
     // still opted in. Two surfaces need it identically; the drop sentence is
