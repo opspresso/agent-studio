@@ -1311,8 +1311,9 @@ export async function* runAgent(
   );
 
   // One ceiling for everything this run accumulates, derived from the model's
-  // own context window (min with the fallback's — a mid-run switch must still
-  // fit). The *effective* fallback, not the configured one: an image run drops
+  // own context window less what it may generate into it (min with the
+  // fallback's *capacity*, each taken from its own window — a mid-run switch
+  // must still fit). The *effective* fallback, not the configured one: an image run drops
   // a fallback that cannot read images before the first call, and capping the
   // budget to a window that model will never serve starved runs at ~7% of
   // their real capacity. A fallback dropped later mid-run only leaves the min
@@ -1320,7 +1321,7 @@ export async function* runAgent(
   // tools are charged up front; everything the loop adds is charged — or cut
   // to fit, with a report — as it enters. A run with headroom is
   // byte-identical to an unbudgeted one.
-  const contextBudget = createRunContextBudget(
+  let contextBudget = createRunContextBudget(
     input.model,
     fallbackModel,
     input.parameters?.maxTokens,
@@ -1331,6 +1332,26 @@ export async function* runAgent(
     }
     if (tools.length > 0) {
       contextBudget.chargeText(JSON.stringify(tools));
+    }
+    if (contextBudget.remaining() === 0) {
+      // Nothing was left before the first call, so there is nothing for the
+      // budget to bound — and the overflow it exists to prevent is already in
+      // the request, which it cannot edit: the input is the caller's (only a
+      // chat trims its own history) and the tools are the version's. Left in
+      // place it would answer every tool call "budget exhausted" from turn 0,
+      // blaming a budget the run never got to fill, and the provider would
+      // reject the request anyway. So the run goes unbudgeted, as every run did
+      // before the budget existed — and says so, because a bound that is inert
+      // is a loss like any other. Two configurations reach here: a model whose
+      // own `maxTokens` leaves almost none of its window (the registry has some
+      // at a few thousand tokens), and an input that fills the window on its
+      // own.
+      yield {
+        author,
+        warning:
+          "This run's input and tools already fill the model's context window, so nothing was left to bound: the model's own limit is what answers for it.",
+      };
+      contextBudget = undefined;
     }
   }
   // Reported once, at the first cut: a run that never fills the budget should
