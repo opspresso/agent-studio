@@ -392,7 +392,8 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오고 SS
 
 ## 새 배포를 위한 운영 체크리스트
 
-- [ ] `STAGE=alpha|prod`, 그리고 `ADMIN_EMAILS` 와 `ALLOWED_EMAIL_DOMAINS` 설정 (아니면 부팅을 거부한다)
+- [ ] `STAGE=alpha|prod` 와 `ADMIN_EMAILS` 설정 (아니면 부팅을 거부한다)
+- [ ] `ALLOWED_EMAIL_DOMAINS` 설정 — 비워 두면 부팅은 하지만 아무 Google 계정이나 로그인할 수 있고, 부팅 로그에 경고가 남는다
 - [ ] `DYNAMODB_ENDPOINT` 는 **비워 둘 것**
 - [ ] `AES_ENCRYPTION_KEY` 를 시크릿으로 프로비저닝하고 백업할 것 — 잃어버리면 저장된 모든 자격 증명을 읽을 수 없게 된다
 - [ ] `PK`/`SK`, `GSI1`, `GSI2` 를 갖춘 DynamoDB 테이블을 만들고 **`expiresAt` 에 TTL 을 켤 것**

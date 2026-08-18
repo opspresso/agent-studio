@@ -385,18 +385,19 @@ export function createSettingsUseCases(
 
       /*
        * A stored access-control list that parses to nothing is never what the
-       * operator meant, and it is *not* the same as clearing the field: an
-       * absent override falls back to the env var, which `assertAccessControlConfig`
-       * requires on alpha/prod. A present-but-empty one falls back to nothing.
+       * operator meant, and it is *not* the same as clearing the field: an absent
+       * override falls back to the env var, a present-but-empty one falls back to
+       * nothing.
        *
-       * The result would be silent and contradictory. An empty admin list makes
-       * `isAdminEmail` true for everyone — every signed-in user could then mutate
-       * the shared registries and re-edit this very page — while making
+       * What it would fall back *to* is fail-open and silent. An empty admin list
+       * makes `isAdminEmail` true for everyone — every signed-in user could then
+       * mutate the shared registries and re-edit this very page — while making
        * `isConfiguredAdmin` false for everyone, revoking the project override at
-       * the same moment. An empty allowed-domains list lets any Google account
-       * sign in. The boot guard cannot catch either, because it reads the env var
-       * and never runs again. Rejecting the value here is what keeps "effectively
-       * empty on a deployed stage" unreachable.
+       * the same moment; `assertAccessControlConfig` cannot catch it, because it
+       * reads the env var and never runs again. An empty allowed-domains list lets
+       * any Google account sign in, which a deployment *may* choose — the boot
+       * guard warns rather than refusing — but it chooses that by leaving the env
+       * var unset, not by saving a value that reads as a list and is not one.
        */
       for (const key of ["adminEmails", "allowedEmailDomains"] as const) {
         const stored = next[key];
