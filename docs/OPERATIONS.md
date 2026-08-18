@@ -366,8 +366,8 @@ Schedule 트리거는 무언가가 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN` 과 함�
 
 | | 배포 | 주소 | 스토리지 |
 |---|---|---|---|
-| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`) | `alpha.agentdure.com` | `agent-studio`, `agent-studio-static`, `agent-studio-vector`, `agent-studio-memory` |
-| **prod** | EKS 클러스터 (`argocd-env-demo` 의 `charts/agentdure`) | `agentdure.com` | `agentdure`, `agentdure-static`, `agentdure-vector`, `agentdure-memory` |
+| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`) | `agentdure.com` (`alpha.agentdure.com` 은 호환 alias) | `agent-studio`, `agent-studio-static`, `agent-studio-vector`, `agent-studio-memory` |
+| **prod** | EKS 클러스터 (`argocd-env-demo` 의 `charts/agentdure`) | 현재 DNS 미연결 | `agentdure`, `agentdure-static`, `agentdure-vector`, `agentdure-memory` |
 
 `agent-studio` 는 리브랜딩 전 이름이고, alpha 가 그것을 이어받았다. 모든 이름은
 `terraform-env-demo` 의 `demo/9-agentdure` 가 관리한다 — 테이블·버킷·S3 Vectors 인덱스·

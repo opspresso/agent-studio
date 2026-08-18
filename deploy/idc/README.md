@@ -10,7 +10,7 @@ Caddy 가 TLS 를 끊는다.
 | | |
 |---|---|
 | 호스트 | `ubuntu@115.68.216.99` — Ubuntu 24.04, 4 vCPU, 3.8GB RAM |
-| 주소 | `https://alpha.agentdure.com` |
+| 주소 | `https://agentdure.com` (`alpha.agentdure.com` 은 기존 webhook 호환 alias) |
 | 설치 경로 | `/opt/agentdure` (관례일 뿐, compose 는 어디서든 돈다) |
 
 ## 사전 준비
@@ -18,8 +18,9 @@ Caddy 가 TLS 를 끊는다.
 ### 1. 액세스 키
 
 pod identity 가 없으므로 액세스 키 한 벌이 그 자리를 대신한다. **IAM 사용자 `agentdure` 와
-그 정책들, `alpha.agentdure.com` 레코드는 terraform 이 만든다** —
-`terraform-env-demo/demo/9-agentdure`. 사람이 하는 것은 키 발급 하나뿐이다:
+그 정책들은 terraform 이 만든다** — `terraform-env-demo/demo/9-agentdure`.
+`agentdure.com` A 레코드는 이 호스트의 공인 IP를 가리켜야 한다. 사람이 하는 것은 키 발급
+하나뿐이다:
 
 ```bash
 AWS_PROFILE=opspresso aws iam create-access-key --user-name agentdure   # → .env.aws
@@ -39,7 +40,7 @@ SSM 읽기(`agentdure-idc-ssm-read`)는 호스트가 스스로 시크릿을 갱�
 ### 2. Google OAuth
 
 Google OAuth 클라이언트의 승인된 리디렉션 URI 에
-`https://alpha.agentdure.com/api/auth/callback/google` 을 추가한다. **클러스터와 같은
+`https://agentdure.com/api/auth/callback/google` 을 추가한다. **클러스터와 같은
 클라이언트를 쓴다** — client id/secret 이 SSM 에서 오기 때문이다.
 
 ### 3. 호스트
@@ -68,12 +69,12 @@ scripts/deploy.sh                 # 시크릿·이미지 태그·기동을 한 �
 
 `docker compose ps` 로 여섯 서비스(caddy, app, mcp-memory, mcp-document, mcp-youtube,
 mcp-brave-search, mcp-cloudwatch)가 뜬 것을 확인하고, 첫 인증서가 발급될 때까지 잠깐 기다린 뒤
-`https://alpha.agentdure.com` 을 연다.
+`https://agentdure.com` 을 연다.
 
 검증할 것 두 가지:
 
 ```bash
-curl -s https://alpha.agentdure.com/api/health          # 200
+curl -s https://agentdure.com/api/health          # 200
 docker compose exec app wget -qO- \
   http://mcp-document.agent-mcps.svc.cluster.local/health   # MCP 도달성
 ```
