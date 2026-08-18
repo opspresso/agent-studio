@@ -36,11 +36,12 @@
  * A model absent from the registry gets **no budget** (`undefined`): there is
  * no window to derive one from, and inventing a number would truncate runs
  * against a limit nobody configured. When a `fallbackModel` is configured the
- * window is the **minimum** of the two, because a mid-run fallback switch must
- * still fit what the primary had already accumulated.
+ * budget is the **minimum of the two capacities**, each taken from its own
+ * window — see {@link createRunContextBudget} for why "each from its own" is the
+ * part that has to be said.
  */
 
-import { getModelConfig } from "@/domain/llm/models";
+import { getModelConfig, type ModelConfig } from "@/domain/llm/models";
 import type { ChannelMessage } from "@/domain/llm/channel";
 import { cutCodePoints } from "@/shared/utf8Text";
 
@@ -203,16 +204,37 @@ class Budget implements RunContextBudget {
 }
 
 /**
+ * How much input one model can hold: its own window, less what it may generate
+ * into that window.
+ *
+ * The version's `maxTokens` bounds both models' calls on the wire, so when it is
+ * set it is the reserve for each. When it is not, no `max_tokens` is sent and
+ * whichever model serves the call may generate up to its own registry maximum —
+ * which is that model's number, and comes out of that model's window.
+ */
+function inputCapacity(config: ModelConfig, maxOutputTokens: number | undefined): number {
+  return config.contextWindow - (maxOutputTokens ?? config.maxTokens);
+}
+
+/**
  * The budget for one run, or `undefined` when the model is not in the registry
  * (no window to derive from — such a run stays unbudgeted, exactly as every
  * run was before the budget existed).
  *
- * The output reserve is the version's `maxTokens` when set — it bounds both
- * models' calls on the wire. When it is not set, no `max_tokens` is sent and
- * whichever model serves the call may generate up to its own registry maximum,
- * so the reserve is the **larger** of the two: reserving only the primary's
- * would let a fallback with a bigger output cap overflow the very window the
- * minimum above was taken against.
+ * With a fallback configured the budget is the **smaller of the two capacities**,
+ * because a mid-run switch must still fit what the other model had already
+ * accumulated. Each capacity is that model's own — which is the correction: this
+ * used to take the *minimum window* and subtract the *maximum output cap*, so a
+ * primary's 128,000-token output reserve came out of a fallback's 200,000-token
+ * window. A run on a 1,050,000-token model with a 200,000-token fallback got
+ * 70,000 tokens — 6.7% of the window the model actually served every call from —
+ * and answered a question about its own repository by truncating tool output.
+ *
+ * The invariant it enforces is per model and always was: whichever one serves a
+ * call, what has accumulated plus what that model may generate has to fit inside
+ * that model's window. Reserving one model's output from the other's window
+ * enforces nothing — a fallback with a *bigger* output cap has the bigger window
+ * to generate into.
  */
 export function createRunContextBudget(
   model: string,
@@ -224,13 +246,11 @@ export function createRunContextBudget(
     return undefined;
   }
   const fallback = fallbackModel ? getModelConfig(fallbackModel) : undefined;
-  const window = fallback
-    ? Math.min(primary.contextWindow, fallback.contextWindow)
-    : primary.contextWindow;
-  const reserve =
-    (maxOutputTokens ?? Math.max(primary.maxTokens, fallback?.maxTokens ?? 0)) +
-    PROTOCOL_HEADROOM_TOKENS;
-  if (window - reserve <= 0) {
+  const capacity = Math.min(
+    inputCapacity(primary, maxOutputTokens),
+    fallback ? inputCapacity(fallback, maxOutputTokens) : Number.POSITIVE_INFINITY,
+  );
+  if (capacity - PROTOCOL_HEADROOM_TOKENS <= 0) {
     // A `maxTokens` at or above the model's window leaves no capacity to
     // derive: a zero budget would answer every tool call "budget exhausted"
     // from turn 0 and blame a budget the run never got to fill. Nothing
@@ -238,5 +258,5 @@ export function createRunContextBudget(
     // stays unbudgeted — the provider is the one that rejects it coherently.
     return undefined;
   }
-  return new Budget(window - reserve);
+  return new Budget(capacity - PROTOCOL_HEADROOM_TOKENS);
 }
