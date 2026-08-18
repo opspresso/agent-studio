@@ -1004,6 +1004,44 @@ const MODEL_OFFERINGS: ModelOffering[] = [
   { family: "grok-imagine-image", provider: "xai" },
   { family: "grok-imagine-image-quality", provider: "xai" },
   { family: "grok-imagine-image-2.0", provider: "xai" },
+  /*
+   * Image generation through OpenRouter, which serves every family this app
+   * already draws with. Not one of these restates a price: each was read from
+   * `/api/v1/images/models/<id>/endpoints`, whose `{billable, unit, cost_usd}`
+   * lines are the same numbers the vendors publish — the router takes its
+   * margin from the vendor's own rate rather than adding to the sticker.
+   *
+   * The windows stay the family's. OpenRouter states a larger one for two of
+   * them, but a route may not disagree with its family about what the model is
+   * (`tests/models.test.ts`), and the smaller figure is the safe direction: it
+   * is what the run's context budget is sized against.
+   *
+   * Every one of them drew a picture through this app's adapter against the
+   * live API before being listed here, and the edit path was walked on the
+   * Flash Lite one — the same bar the Bedrock entries had to clear.
+   */
+  { family: "gpt-image-2", provider: "openrouter", wireId: "openai/gpt-image-2" },
+  { family: "gemini-3-pro-image", provider: "openrouter", wireId: "google/gemini-3-pro-image" },
+  {
+    family: "gemini-3.1-flash-image",
+    provider: "openrouter",
+    wireId: "google/gemini-3.1-flash-image",
+  },
+  {
+    family: "gemini-3.1-flash-lite-image",
+    provider: "openrouter",
+    wireId: "google/gemini-3.1-flash-lite-image",
+  },
+  {
+    family: "grok-imagine-image-quality",
+    provider: "openrouter",
+    wireId: "x-ai/grok-imagine-image-quality",
+  },
+  {
+    family: "grok-imagine-image-2.0",
+    provider: "openrouter",
+    wireId: "x-ai/grok-imagine-image-2.0",
+  },
 ];
 
 /** One offering resolved against its family. Overrides are shallow merges. */

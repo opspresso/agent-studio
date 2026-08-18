@@ -40,6 +40,13 @@ const channel = createImageChannel(async (modelId) =>
         keepModelPrefix: false,
         auth: "bearer",
       },
+      {
+        name: "openrouter",
+        baseUrl: "https://openrouter.example/api/v1",
+        apiKey: "openrouter-key",
+        keepModelPrefix: false,
+        auth: "bearer",
+      },
     ],
     { baseUrl: "https://router.example/v1", apiKey: "router-key" },
   ),
@@ -232,6 +239,116 @@ describe("xAI image dialect", () => {
     await expect(
       channel.generateImage({ model: "xai/grok-imagine-image", prompt: "x" }),
     ).rejects.toThrow('503 {"unexpected":true}');
+  });
+});
+
+/**
+ * The third dialect, and the one that looks most like OpenAI's without being
+ * it: the vocabulary matches, the path and every response field do not.
+ */
+describe("OpenRouter image dialect", () => {
+  const OPENROUTER_OK = {
+    data: [{ b64_json: "aW1n", media_type: "image/jpeg" }],
+    usage: {
+      prompt_tokens: 12,
+      completion_tokens: 1506,
+      completion_tokens_details: { image_tokens: 1120 },
+    },
+  };
+
+  it("posts to the one image path under the model's router name", async () => {
+    const box = stubFetch(OPENROUTER_OK);
+
+    const result = await channel.generateImage({
+      model: "openrouter/gemini-3.1-flash-image",
+      prompt: "a cat",
+      size: "1024x1536",
+      quality: "high",
+    });
+
+    // `images/generations` is OpenAI's path and 404s here; and the model goes
+    // out under the vendor-qualified id the router knows it by.
+    expect(box.sent?.url).toBe("https://openrouter.example/api/v1/images");
+    expect(box.sent?.authorization).toBe("Bearer openrouter-key");
+    expect(body(box.sent)).toEqual({
+      model: "google/gemini-3.1-flash-image",
+      prompt: "a cat",
+      // Passed through as the port states them, unlike xAI's translation.
+      size: "1024x1536",
+      quality: "high",
+    });
+    // Read from `media_type`; `mime_type` is absent here and would fall back to
+    // PNG over what is in fact a JPEG.
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(result.usage).toEqual({
+      textInputTokens: 12,
+      // OpenRouter reports no text/image split on the input side.
+      imageInputTokens: 0,
+      imageOutputTokens: 1120,
+    });
+  });
+
+  it("edits by adding references to the same call, not by a second path", async () => {
+    const box = stubFetch(OPENROUTER_OK);
+
+    await channel.editImage({
+      model: "openrouter/gemini-3.1-flash-image",
+      prompt: "make it night",
+      images: [
+        { b64: "b25l", mimeType: "image/png" },
+        { b64: "dHdv", mimeType: "image/jpeg" },
+      ],
+    });
+
+    expect(box.sent?.url).toBe("https://openrouter.example/api/v1/images");
+    expect(box.sent?.bodyKind).toBe("String");
+    expect(body(box.sent)).toMatchObject({
+      input_references: [
+        { type: "image_url", image_url: { url: "data:image/png;base64,b25l" } },
+        { type: "image_url", image_url: { url: "data:image/jpeg;base64,dHdv" } },
+      ],
+    });
+  });
+
+  it("refuses a mask instead of redrawing the whole picture", async () => {
+    stubFetch(OPENROUTER_OK);
+
+    await expect(
+      channel.editImage({
+        model: "openrouter/gemini-3.1-flash-image",
+        prompt: "just the sky",
+        images: [{ b64: "b25l", mimeType: "image/png" }],
+        mask: { b64: "bWFzaw==", mimeType: "image/png" },
+      }),
+    ).rejects.toThrow(/masks are not supported/);
+  });
+
+  /**
+   * A model billed per picture reports a made-up token count — 4,175 of them,
+   * whatever the picture. It is carried because it is what the provider said,
+   * and it prices nothing: the registry has no per-token image rate for these
+   * models, so `calculateImageCost` bills the flat `perImage`.
+   */
+  it("carries a per-image model's synthetic output count", async () => {
+    stubFetch({
+      data: [{ b64_json: "aW1n", media_type: "image/jpeg" }],
+      usage: { prompt_tokens: 9, completion_tokens: 4175 },
+    });
+
+    const result = await channel.generateImage({
+      model: "openrouter/grok-imagine-image-2.0",
+      prompt: "a cat",
+    });
+
+    expect(result.usage.imageOutputTokens).toBe(4175);
+  });
+
+  it("surfaces the router's own message on a refusal", async () => {
+    stubFetch({ error: { code: 404, message: "No endpoints found for that model" } }, { status: 404 });
+
+    await expect(
+      channel.generateImage({ model: "openrouter/gemini-3.1-flash-image", prompt: "x" }),
+    ).rejects.toThrow("404 No endpoints found for that model");
   });
 });
 
