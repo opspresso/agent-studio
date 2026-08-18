@@ -35,12 +35,9 @@ export function assertRequiredConfig(): void {
  * of this app's own settings — so `alpha`/`prod` refuse to boot until it is set.
  * `local` keeps the fail-open default for zero-config development.
  *
- * ALLOWED_EMAIL_DOMAINS is fail-open in the same way and is deliberately *not*
- * required: an open sign-up is a deployment's to choose, and this check reads the
- * env var while `getAllowedEmailDomains` prefers a stored override it cannot see
- * from here — so refusing to boot would also refuse a deployment that set its
- * domains in the console. It warns instead, because what an open door must not be
- * is silent.
+ * ALLOWED_EMAIL_DOMAINS is deliberately *not* required: an empty value is the
+ * configured unrestricted policy, while `getAllowedEmailDomains` may still
+ * narrow it with a stored override.
  */
 export function assertAccessControlConfig(): void {
   if (process.env.NODE_ENV === "production" && process.env.STAGE === undefined) {
@@ -51,12 +48,6 @@ export function assertAccessControlConfig(): void {
   }
   if (config.adminEmails.length === 0) {
     throw new Error(`STAGE=${config.stage} requires access-control config; set: ADMIN_EMAILS`);
-  }
-  if (config.allowedEmailDomains.length === 0) {
-    log.warn(
-      "config",
-      `STAGE=${config.stage} with no ALLOWED_EMAIL_DOMAINS: any Google account may sign in unless a stored setting narrows it`,
-    );
   }
 }
 

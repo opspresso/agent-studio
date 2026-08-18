@@ -395,8 +395,7 @@ export function createSettingsUseCases(
        * `isConfiguredAdmin` false for everyone, revoking the project override at
        * the same moment; `assertAccessControlConfig` cannot catch it, because it
        * reads the env var and never runs again. An empty allowed-domains list lets
-       * any Google account sign in, which a deployment *may* choose — the boot
-       * guard warns rather than refusing — but it chooses that by leaving the env
+       * any Google account sign in, which a deployment chooses by leaving the env
        * var unset, not by saving a value that reads as a list and is not one.
        */
       for (const key of ["adminEmails", "allowedEmailDomains"] as const) {

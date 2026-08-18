@@ -59,16 +59,13 @@ describe("assertAccessControlConfig", () => {
     expect(() => assertAccessControlConfig()).toThrow(new RegExp(`STAGE=${stage}.*ADMIN_EMAILS`));
   });
 
-  it("boots without ALLOWED_EMAIL_DOMAINS, and says the door is open", () => {
-    // An open sign-up is a deployment's to choose — the console can still narrow
-    // it at runtime, which this check never sees. Silence is the part that would
-    // be wrong.
+  it("boots silently without ALLOWED_EMAIL_DOMAINS", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     set("STAGE", "prod");
     set("ADMIN_EMAILS", "ops@example.com");
     set("ALLOWED_EMAIL_DOMAINS", undefined);
     expect(() => assertAccessControlConfig()).not.toThrow();
-    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/ALLOWED_EMAIL_DOMAINS/));
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("passes in prod when both are set", () => {

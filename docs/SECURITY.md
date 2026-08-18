@@ -10,8 +10,8 @@
 
 단일 테이블 위의 커스텀 DynamoDB 어댑터(`src/infrastructure/db/authAdapter.ts`)를 쓰는
 Better Auth 1.6, **Google OAuth 만** 쓴다. 로그인은 `ALLOWED_EMAIL_DOMAINS` 로 제한된다. 빈
-목록은 모든 도메인을 허용한다 — `STAGE=alpha|prod` 도 그 상태로 부팅하며, 거부하는 대신
-경고를 남긴다 ([부팅 시 검증](CONFIGURATION.md#부팅-시-검증) 참고).
+목록은 모든 도메인을 허용한다 — `STAGE=alpha|prod` 도 그 상태로 정상 부팅한다
+([부팅 시 검증](CONFIGURATION.md#부팅-시-검증) 참고).
 
 Auth 의 유니크 필드(email, token)는 확인 후 쓰기가 아니라 전용 잠금 아이템으로 트랜잭션
 안에서 선점한다. `GSI2` 는 그 잠금이 생기기 전에 만들어진 행을 위한 호환용 조회로 남아 있다.

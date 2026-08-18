@@ -73,8 +73,8 @@ Required env for any real run (validated fail-fast at boot by `src/instrumentati
 `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` (32-byte base64). `STAGE=alpha|prod`
 additionally requires `ADMIN_EMAILS`, and `NODE_ENV=production` (which the `Dockerfile` sets)
 refuses to boot without an explicit `STAGE`. An empty `ALLOWED_EMAIL_DOMAINS` is fail-open the
-same way but **boots with a warning**: an open sign-up is a deployment's to choose, and the
-check reads the env var while the list also has a runtime override it cannot see.
+same way and means unrestricted sign-in: an open sign-up is a deployment's to choose, while a
+runtime override may still narrow the list.
 
 ## The dependency rule
 

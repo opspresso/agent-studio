@@ -50,7 +50,7 @@ fail-open 이 될 수는 없다.
 | 검사 | 규칙 |
 |---|---|
 | `assertRequiredConfig` | `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` 가 모든 stage 에서 설정돼 있어야 한다. |
-| `assertAccessControlConfig` | `NODE_ENV=production` 은 명시적인 `STAGE` 를 요구한다. `STAGE=alpha` 또는 `prod` 는 추가로 `ADMIN_EMAILS` 를 요구한다. `ALLOWED_EMAIL_DOMAINS` 는 비어 있어도 부팅하며, 대신 경고 한 줄을 남긴다. |
+| `assertAccessControlConfig` | `NODE_ENV=production` 은 명시적인 `STAGE` 를 요구한다. `STAGE=alpha` 또는 `prod` 는 추가로 `ADMIN_EMAILS` 를 요구한다. 빈 `ALLOWED_EMAIL_DOMAINS` 는 모든 도메인을 허용하는 정상 설정이다. |
 
 두 번째 검사가 있는 이유는 두 목록 모두 비어 있을 때 fail-open 이기 때문이다 —
 `ADMIN_EMAILS` 가 설정되지 않으면 로그인한 모든 사용자가 공유 레지스트리에 대한 admin 이
@@ -58,9 +58,8 @@ fail-open 이 될 수는 없다.
 앞의 것은 무설정 로컬 개발에만 옳은 기본값이라 `local` 은 그대로 두고 배포된 stage 들이
 부팅을 거부한다. 뒤의 것은 배포가 고르는 것이다 — 열린 가입을 의도한 배포가 있고, 이
 검사가 읽는 것은 env 인 반면 `getAllowedEmailDomains` 는 여기서 보이지 않는 저장된
-오버라이드를 우선하므로 거부는 콘솔에서 도메인을 설정한 배포까지 함께 막는다. 그래서
-거부하는 대신 부팅 로그에 경고를 남긴다: 열린 문이어서는 안 될 것이 아니라, 조용해서는
-안 될 것이다.
+오버라이드를 우선하므로 거부는 콘솔에서 도메인을 설정한 배포까지 함께 막는다. 빈 값은
+모든 도메인을 허용하는 명시적인 정책으로 취급하고 정상 부팅한다.
 
 Google OAuth 자격증명은 의도적으로 부팅 필수가 *아니다*: 로컬 dev-session 흐름
 (`scripts/dev-session.ts`)은 OAuth 를 통째로 우회한다.
@@ -112,7 +111,7 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 | `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`npx @better-auth/cli secret`). |
 | `BETTER_AUTH_URL` | — | — | Better Auth 가 콜백을 만들 때 기준으로 삼는 base URL. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | — | 실제 로그인에만 필요하다. |
-| `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 비어 있으면 = 아무 도메인이나 — 배포된 stage 에서는 부팅을 막지 않고 경고를 남긴다. |
+| `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 비어 있으면 아무 도메인이나 허용한다. |
 | `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: ALB 와 Istio 가 둘 다 `X-Forwarded-For` 에 덧붙일 때의 VPC CIDR). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
 | `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 프로젝트에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *제한 없음*, 프로젝트 오버라이드에는 *아무도 아님* 을 뜻한다 — 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
 
