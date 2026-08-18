@@ -84,18 +84,41 @@ describe("createRunContextBudget", () => {
     expect(createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 200_000)).toBeUndefined();
   });
 
-  it("reserves the larger output cap when maxTokens is unset and a fallback exists", () => {
-    // With no explicit maxTokens the wire carries none, so whichever model
-    // serves the call may generate up to its own registry maximum — reserving
-    // only the primary's would let a bigger-output fallback overflow the
-    // window the minimum was taken against.
+  it("takes each model's output reserve from its own window", () => {
+    // A 1,050,000-token primary with a 200,000-token fallback. Reserving the
+    // *primary's* 128,000-token output from the *fallback's* window left 70,000
+    // — 6.7% of the window every call in the run was actually served from — and
+    // a Slack answer that truncated its own tool output to fit a limit neither
+    // model has. The pair is bounded by the fallback's own capacity.
+    const budget = createRunContextBudget(
+      "openai/gpt-5.6-luna",
+      "anthropic/claude-haiku-4.5",
+      undefined,
+    )!;
+    expect(budget.remaining()).toBe(134_000);
+    expect(budget.remaining()).toBe(
+      createRunContextBudget("anthropic/claude-haiku-4.5", undefined, undefined)!.remaining(),
+    );
+  });
+
+  it("does not charge a fallback's larger output cap against a smaller window", () => {
+    // The other order of the same mistake. A fallback that may generate more
+    // has the bigger window to generate into; what has to fit is each model's
+    // own input plus its own output, which is what the capacities compare.
     const withFallback = createRunContextBudget(
       SMALL_WINDOW_MODEL,
       "anthropic/claude-sonnet-5",
       undefined,
     )!;
     const alone = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, undefined)!;
-    expect(withFallback.remaining()).toBeLessThan(alone.remaining());
+    expect(withFallback.remaining()).toBe(alone.remaining());
+  });
+
+  it("still lets an explicit maxTokens bound both models", () => {
+    // Set, it is what the wire carries for whichever model serves the call, so
+    // it is the reserve for both and the smaller *window* governs.
+    const budget = createRunContextBudget("openai/gpt-5.6-luna", SMALL_WINDOW_MODEL, 190_000)!;
+    expect(budget.remaining()).toBe(200_000 - 190_000 - 2_000);
   });
 });
 
