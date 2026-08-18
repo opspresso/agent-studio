@@ -28,9 +28,13 @@ AWS_PROFILE=opspresso aws iam create-access-key --user-name agentdure   # → .e
 키를 terraform 이 만들지 않는 이유는 비밀키가 state 에 평문으로 남기 때문이다. 회전도 같은
 명령으로 사람이 한다.
 
-그 사용자에 붙어 있는 것은 앱·mcp-memory·mcp-cloudwatch 의 `pod-role--*` 정책 셋과 ECR pull
-정책 하나다. **권한을 넓히려면 그 `policies/*.json` 을 고쳐야 하고, 그러면 클러스터의 역할도
-같이 넓어진다** — 단일 소스의 값이자 대가다.
+그 사용자에 붙어 있는 것은 앱·mcp-memory·mcp-cloudwatch 의 `pod-role--*` 정책 셋과, 이 호스트
+자신의 것 둘 — ECR pull 과 SSM 읽기다. **`pod-role--*` 를 넓히려면 그 `policies/*.json` 을
+고쳐야 하고, 그러면 클러스터의 역할도 같이 넓어진다** — 단일 소스의 값이자 대가다.
+
+SSM 읽기(`agentdure-idc-ssm-read`)는 호스트가 스스로 시크릿을 갱신하게 해 준다. 대가는
+분명하다 — **이 액세스 키가 유출되면 배포 시크릿 전부가 함께 열린다.** 경로를
+`/k8s/common/agentdure/*` 와 `/k8s/common/mcp-*` 로 좁혀 둔 것이 그 폭을 줄이는 수단이다.
 
 ### 2. Google OAuth
 
@@ -59,9 +63,7 @@ cp .env.example .env
 cp .env.aws.example .env.aws      # 액세스 키를 채운다
 cp .env.mcp.example .env.mcp      # eks 프로파일을 쓸 때만 채우면 된다
 
-scripts/fetch-env.sh              # .env.secrets, .env.mcp.secrets 생성
-scripts/ecr-login.sh
-docker compose up -d
+scripts/deploy.sh                 # 시크릿·이미지 태그·기동을 한 번에
 ```
 
 `docker compose ps` 로 여섯 서비스(caddy, app, mcp-memory, mcp-document, mcp-youtube,
@@ -87,13 +89,19 @@ mcp-cloudwatch 가 받아 주는 것은 그 이름이 이미 각자의 Host 화�
 ## 운영
 
 **업데이트** — 이 호스트는 릴리스 자동화 밖에 있다. 태그 push 는 `repository_dispatch` 로
-`argocd-env-demo` 의 이미지 태그를 올리고, 그것은 클러스터로 간다.
+`argocd-env-demo` 의 이미지 태그를 올리고, 그것은 클러스터로 간다. 여기서 그 자리를 대신하는
+것이 `deploy.sh` 이고, 그것이 업데이트 절차 전부다:
 
 ```bash
-scripts/ecr-login.sh              # 12시간이면 만료된다
-# .env 의 AGENTDURE_TAG 를 새 버전으로 바꾼 뒤
-docker compose up -d app
+scripts/deploy.sh                 # 시크릿 갱신 + 최신 이미지 태그 + compose up
+scripts/deploy.sh -n              # 무엇이 바뀌는지만 보고 멈춘다
+scripts/deploy.sh -s              # 시크릿은 건너뛴다 (SSM 이 느린 부분이다)
 ```
+
+우리가 만드는 넷(`agentdure`, `mcp-memory`, `mcp-document`, `mcp-youtube`)만 ECR 에서 최신
+`v*` 태그로 따라간다. 나머지는 남의 레지스트리에서 오므로 `.env` 에 손으로 고정한 채 둔다.
+바뀐 태그가 있을 때만 `.env` 를 다시 쓰고, 직전 파일은 `.env.bak` 으로 남는다. 아무것도
+바뀌지 않은 실행은 no-op 이라 타이머에 걸어 두어도 된다.
 
 호스트에서 이미지를 빌드하지 마라. RAM 3.8GB 에서 `next build` 는 OOM 으로 끝난다.
 
