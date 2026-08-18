@@ -109,9 +109,10 @@ scripts/deploy.sh -s              # 시크릿은 건너뛴다 (SSM 이 느린 �
 `SIGTERM` 을 드레이닝으로 바꿀 뿐 `process.exit` 를 부르지 않으므로, 이 유예가 진행 중인 SSE
 스트림이 빠져나갈 시간 전부다. 짧게 줄이면 끝났을 스트림이 잘린다.
 
-**티커** — 기본은 꺼져 있다. 클러스터의 CronJob 은 이제 **prod 테이블만** 틱하므로, 이 환경의
-schedule·카탈로그 재색인·plugins sync 가 필요하면 여기서 돌려야 한다:
-`docker compose --profile ticker up -d`.
+**티커** — `ticker` 프로파일이 **켜져 있다**. compose 파일의 기본값은 꺼짐이지만, 이 호스트는
+`docker compose --profile ticker up -d` 로 올려 두었다: 클러스터가 사라진 지금 alpha 를 틱하는
+것은 이것뿐이고, 켜지 않으면 schedule 이 발화하지 않고 카탈로그가 재색인되지 않는다. 사람이
+`/plugins` 를 누를 때만 재색인이 도는 상태에서는 그 한 번이 무거워 헬스체크까지 흔들었다.
 
 **로그** — `docker compose logs -f app`. 컨테이너당 10MB × 3 으로 회전한다.
 
