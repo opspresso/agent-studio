@@ -360,7 +360,46 @@ Schedule 트리거는 무언가가 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN` 과 함�
 - 503 은 `SCHEDULE_SCAN_TOKEN` 이 설정되지 않았거나, `PLUGINS_REPO`/`GITHUB_TOKEN` 이 설정되지
   않았다는 뜻이다.
 
+## 두 환경 — alpha 와 prod
+
+배포는 둘이고, **스토리지를 나누지 않는다.**
+
+| | 배포 | 주소 | 스토리지 |
+|---|---|---|---|
+| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`) | `alpha.agentdure.com` | `agent-studio`, `agent-studio-static`, `agent-studio-vector`, `agent-studio-memory` |
+| **prod** | EKS 클러스터 (`argocd-env-demo` 의 `charts/agentdure`) | `agentdure.com` | `agentdure`, `agentdure-static`, `agentdure-vector`, `agentdure-memory` |
+
+`agent-studio` 는 리브랜딩 전 이름이고, alpha 가 그것을 이어받았다. 모든 이름은
+`terraform-env-demo` 의 `demo/9-agentdure` 가 관리한다 — 테이블·버킷·S3 Vectors 인덱스·
+Knowledge Base·ECR·IDC 의 IAM 사용자까지 한 모듈에 있다.
+
+**한쪽에서 만든 프로젝트는 다른 쪽에 보이지 않는다.** 버전도, 채팅도, 사용량도, 레지스트리
+편집도 그렇다. 두 배포는 다른 데이터를 보는 같은 코드다.
+
+나누지 않는 것도 있다:
+
+| | |
+|---|---|
+| SSM 의 시크릿 (`/k8s/common/agentdure/*`) | 같은 값을 읽는다. `AES_ENCRYPTION_KEY` 가 같은 것은 편의가 아니라 요구다 — 각자의 테이블에 든 암호화된 자격증명을 푸는 키다 |
+| Google OAuth 클라이언트 | 하나를 공유하고, 리디렉션 URI 에 두 주소가 모두 있어야 한다 |
+| agent-plugins 레지스트리 | 스킬·MCP 서버의 정의는 SSOT 하나다. 각 배포가 자기 테이블에 sync 한다 |
+| ECR | 같은 이미지를 끌어간다 |
+
+**티커는 클러스터만 돌린다.** alpha 의 compose 는 `ticker` 프로파일을 꺼 둔 채 온다 — 이제
+테이블이 다르므로 alpha 의 schedule·카탈로그 재색인·plugins sync 는 아무도 돌리지 않는다는
+뜻이기도 하다. alpha 에서 그것들이 필요하면 `docker compose --profile ticker up -d`.
+
+**Slack·Telegram·Teams 는 등록된 webhook URL 하나가 받는다.** 지금은 클러스터다. MCP OAuth
+connection 도 `PUBLIC_BASE_URL` 기반이라 alpha 에서 새로 연결하면 그 project 의 저장된
+connection 을 덮어쓴다 — 다만 이제 project 자체가 서로 다른 테이블에 있으므로, 두 배포에서
+같은 이름의 project 를 만들었을 때만 헷갈릴 여지가 있다.
+
+설치와 운영 절차는 [deploy/idc/README.md](../deploy/idc/README.md).
+
 ## 다중 인스턴스 주의사항
+
+아래는 **한 배포 안에서 파드가 여럿일 때**의 이야기다 — 같은 테이블을 보는 프로세스들 사이의
+문제이고, 위의 두 환경 사이에는 적용되지 않는다. 그쪽은 테이블조차 공유하지 않는다.
 
 | 동작 | 무엇에 묶이는가 | 결과 |
 |---|---|---|
