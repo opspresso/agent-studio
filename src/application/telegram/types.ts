@@ -2,12 +2,15 @@ import type { MessagingDeps } from "@/application/messaging/handleTurn";
 import type { InboundEventClaims } from "@/domain/messaging/inboundClaims";
 import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
 import type { TelegramClientPort } from "@/domain/telegram/client";
+import type { TelegramDestinationRepository } from "@/domain/telegram/destination";
 
 export type { TelegramClientPort };
 
 /** Injected dependencies; wired by the route from the composition root. */
 export interface TelegramEventDeps extends MessagingDeps {
   telegram: TelegramClientPort;
+  /** Chats and forum topics this bot has actually received an admitted message from. */
+  destinations?: TelegramDestinationRepository;
   /**
    * What this surface remembers of a conversation, since Telegram hands back
    * no history. Optional because a deployment may not have wired it; the bot

@@ -1,9 +1,14 @@
 import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { nextUpdatedAt } from "@/application/project/timestamps";
+import { botIdFromToken } from "@/application/telegram/engagement";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, TelegramIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
+import type {
+  TelegramDestination,
+  TelegramDestinationRepository,
+} from "@/domain/telegram/destination";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { log } from "@/shared/logger";
 
@@ -78,6 +83,20 @@ export async function getProjectTelegram(
 ): Promise<ProjectTelegramResult> {
   const project = await assertProjectWritable(repo, name, userEmail);
   return { project, view: maskedView(cipher, project) };
+}
+
+/** Destinations observed by the currently configured bot, newest first. */
+export async function listProjectTelegramDestinations(
+  repo: ProjectRepository,
+  destinations: TelegramDestinationRepository,
+  name: string,
+  userEmail: string,
+  cipher: SecretCipher,
+): Promise<TelegramDestination[]> {
+  const project = await assertProjectWritable(repo, name, userEmail);
+  const runtime = resolveProjectTelegramCredentials(cipher, project);
+  const botId = runtime ? botIdFromToken(runtime.botToken) : undefined;
+  return botId === undefined ? [] : destinations.list(project.name, botId);
 }
 
 async function updateProject(
@@ -368,6 +387,7 @@ export async function resolveTelegramEventBinding(
  */
 export interface ProjectTelegramUseCases {
   get(name: string, userEmail: string): Promise<ProjectTelegramResult>;
+  listDestinations(name: string, userEmail: string): Promise<TelegramDestination[]>;
   update(
     name: string,
     update: ProjectTelegramUpdate,
@@ -386,6 +406,7 @@ export interface ProjectTelegramUseCases {
 
 export function createProjectTelegramUseCases(deps: {
   projects: ProjectRepository;
+  destinations: TelegramDestinationRepository;
   cipher: SecretCipher;
   getMe: (botToken: string) => Promise<TelegramBotIdentity>;
   setWebhook: (
@@ -401,6 +422,14 @@ export function createProjectTelegramUseCases(deps: {
   };
   return {
     get: (name, userEmail) => getProjectTelegram(deps.projects, name, userEmail, deps.cipher),
+    listDestinations: (name, userEmail) =>
+      listProjectTelegramDestinations(
+        deps.projects,
+        deps.destinations,
+        name,
+        userEmail,
+        deps.cipher,
+      ),
     update: (name, update, userEmail, baseUrl) =>
       updateProjectTelegram(deps.projects, name, update, userEmail, deps.cipher, calls, baseUrl),
     disconnect: (name, userEmail) =>

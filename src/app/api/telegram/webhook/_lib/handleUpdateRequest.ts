@@ -2,6 +2,7 @@ import { verifyTelegramSecret, TELEGRAM_SECRET_HEADER } from "@/infrastructure/t
 import { telegramClient } from "@/infrastructure/telegram/client";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { telegramUpdateRepository } from "@/infrastructure/db/repositories/telegramUpdateRepository";
+import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
 import { transcriptRepository } from "@/infrastructure/db/repositories/transcriptRepository";
 import {
   artifactStorage,
@@ -22,6 +23,7 @@ const telegramEventDeps: TelegramEventDeps = {
   projects: projectRepository,
   versions: versionRepository,
   telegram: telegramClient,
+  destinations: telegramDestinationRepository,
   documents: documentExtractor,
   // Named even when this deployment has none, so "no object storage here" is a
   // decision in the source rather than a field nobody thought about.

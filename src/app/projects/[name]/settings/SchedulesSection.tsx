@@ -15,6 +15,7 @@ import {
   deleteTrigger,
   getProjectTeams,
   getProjectTelegram,
+  listProjectTelegramChats,
   listTriggerRuns,
   listProjectSlackChannels,
   listTriggers,
@@ -22,7 +23,13 @@ import {
   type TriggerRun,
   type TriggerView,
   type SlackChannelInfo,
+  type TelegramDestinationInfo,
 } from "../../lib/api";
+import {
+  findTelegramDestination,
+  telegramDestinationLabel,
+  telegramDestinationValue,
+} from "./telegramDestinations";
 
 /**
  * Schedules: a cron in a timezone, and what recent firings did.
@@ -42,6 +49,7 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
   );
   const [newMessage, setNewMessage] = useState("");
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
+  const [telegramChats, setTelegramChats] = useState<TelegramDestinationInfo[]>([]);
   const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
   const [availableDestinations, setAvailableDestinations] = useState<ScheduleDeliveryKind[]>([]);
   // Webhook rows registered by name before a project had one of its own. There
@@ -94,13 +102,17 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
     void Promise.allSettled([
       listProjectSlackChannels(projectName),
       getProjectTelegram(projectName),
+      listProjectTelegramChats(projectName),
       getProjectTeams(projectName),
-    ]).then(([slack, telegram, teams]) => {
+    ]).then(([slack, telegram, telegramDestinations, teams]) => {
       if (cancelled) {
         return;
       }
       const channels = slack.status === "fulfilled" ? slack.value.channels : [];
       setSlackChannels(channels);
+      setTelegramChats(
+        telegramDestinations.status === "fulfilled" ? telegramDestinations.value.chats : [],
+      );
       setSlackChannelsUnavailable(slack.status === "rejected" || channels.length === 0);
       setAvailableDestinations([
         ...(channels.length > 0 ? (["slack"] as const) : []),
@@ -234,6 +246,7 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
                 schedule={schedule}
                 slackChannels={slackChannels}
                 slackChannelsUnavailable={slackChannelsUnavailable}
+                telegramChats={telegramChats}
                 availableDestinations={availableDestinations}
                 busy={busy}
                 onSave={(input) =>
@@ -413,6 +426,7 @@ function ScheduleEditor({
   schedule,
   slackChannels,
   slackChannelsUnavailable,
+  telegramChats,
   availableDestinations,
   busy,
   onSave,
@@ -421,6 +435,7 @@ function ScheduleEditor({
   schedule: TriggerView;
   slackChannels: SlackChannelInfo[];
   slackChannelsUnavailable: boolean;
+  telegramChats: TelegramDestinationInfo[];
   availableDestinations: ScheduleDeliveryKind[];
   busy: boolean;
   onSave: (input: {
@@ -465,6 +480,15 @@ function ScheduleEditor({
   ) {
     channelData.unshift({ value: draft.slackChannelId, label: draft.slackChannelId });
   }
+  const telegramData = telegramChats.map((destination) => ({
+    value: telegramDestinationValue(destination),
+    label: telegramDestinationLabel(destination),
+  }));
+  const selectedTelegram = telegramChats.find(
+    (destination) =>
+      destination.chatId === chatId &&
+      (destination.threadId === undefined ? "" : String(destination.threadId)) === telegramThreadId,
+  );
   const destinationKinds = availableDestinations
     .filter((kind) => !draft.kinds.includes(kind))
     .map((kind) => ({
@@ -531,7 +555,20 @@ function ScheduleEditor({
           onChange={(value) => {
             const kind = value as ScheduleDeliveryKind | null;
             if (kind) {
-              setDraft({ ...draft, kinds: [...draft.kinds, kind] });
+              const destination = kind === "telegram" && telegramChats.length === 1
+                ? telegramChats[0]
+                : undefined;
+              setDraft({
+                ...draft,
+                kinds: [...draft.kinds, kind],
+                ...(destination
+                  ? {
+                      telegramChatId: String(destination.chatId),
+                      telegramThreadId:
+                        destination.threadId === undefined ? "" : String(destination.threadId),
+                    }
+                  : {}),
+              });
             }
           }}
           w={220}
@@ -559,28 +596,48 @@ function ScheduleEditor({
             />
           )}
           {kind === "telegram" && (
-            <>
-              <TextInput
-                label={t("trigger.telegramChatId")}
-                description={t("trigger.telegramChatIdHint")}
-                value={draft.telegramChatId}
-                onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  setDraft({ ...draft, telegramChatId: value });
+            <Stack gap="xs" style={{ flex: 1 }}>
+              <Select
+                label={t("trigger.telegramObservedDestination")}
+                description={t("trigger.telegramObservedDestinationHint")}
+                placeholder={t("trigger.telegramObservedDestinationPlaceholder")}
+                data={telegramData}
+                value={selectedTelegram ? telegramDestinationValue(selectedTelegram) : null}
+                onChange={(value) => {
+                  const destination = findTelegramDestination(telegramChats, value);
+                  if (destination) {
+                    setDraft({
+                      ...draft,
+                      telegramChatId: String(destination.chatId),
+                      telegramThreadId:
+                        destination.threadId === undefined ? "" : String(destination.threadId),
+                    });
+                  }
                 }}
-                error={!telegramValid}
-                style={{ flex: 1 }}
+                searchable
+                disabled={telegramChats.length === 0}
               />
-              <TextInput
-                label={t("trigger.telegramThreadId")}
-                value={draft.telegramThreadId}
-                onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  setDraft({ ...draft, telegramThreadId: value });
-                }}
-                style={{ flex: 1 }}
-              />
-            </>
+              <Group grow align="flex-start" gap="sm">
+                <TextInput
+                  label={t("trigger.telegramChatId")}
+                  description={t("trigger.telegramChatIdHint")}
+                  value={draft.telegramChatId}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setDraft({ ...draft, telegramChatId: value });
+                  }}
+                  error={!telegramValid}
+                />
+                <TextInput
+                  label={t("trigger.telegramThreadId")}
+                  value={draft.telegramThreadId}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setDraft({ ...draft, telegramThreadId: value });
+                  }}
+                />
+              </Group>
+            </Stack>
           )}
           {kind === "teams" && (
             <TextInput

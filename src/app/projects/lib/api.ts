@@ -384,6 +384,22 @@ export async function getProjectTelegram(name: string): Promise<ProjectTelegramV
   return readJson<ProjectTelegramView>(await fetch(`/api/projects/${name}/telegram`));
 }
 
+export interface TelegramDestinationInfo {
+  chatId: number;
+  chatType: "private" | "group" | "supergroup" | "channel";
+  title: string;
+  threadId?: number;
+  lastSeenAt: string;
+}
+
+export async function listProjectTelegramChats(
+  name: string,
+): Promise<{ chats: TelegramDestinationInfo[] }> {
+  return readJson<{ chats: TelegramDestinationInfo[] }>(
+    await fetch(`/api/projects/${name}/telegram/chats`),
+  );
+}
+
 export async function updateProjectTelegram(
   name: string,
   update: { botToken?: string; enabled?: boolean },

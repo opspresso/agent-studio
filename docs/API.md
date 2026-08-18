@@ -92,6 +92,7 @@ AgentDure 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는지
 | `/api/projects/{name}/slack/test` | `POST` | owner |
 | `/api/projects/{name}/slack/channels` | `GET` | owner |
 | `/api/projects/{name}/telegram` | `GET` `PUT` `DELETE` | owner |
+| `/api/projects/{name}/telegram/chats` | `GET` | owner |
 | `/api/projects/{name}/telegram/test` | `POST` | owner |
 | `/api/projects/{name}/telegram/webhook` | `POST` | owner |
 | `/api/projects/{name}/teams` | `GET` `PUT` `DELETE` | owner |
@@ -710,15 +711,16 @@ project 별 Telegram 설정은 이 엔드포인트들을 쓴다:
 
 ```
 GET    /api/projects/{name}/telegram
+GET    /api/projects/{name}/telegram/chats
 PUT    /api/projects/{name}/telegram          { botToken?, enabled? }
 DELETE /api/projects/{name}/telegram
 POST   /api/projects/{name}/telegram/test
 POST   /api/projects/{name}/telegram/webhook
 ```
 
-모든 동사가 같은 뷰로 답한다: `enabled`, `configured`, 마스킹된 `botToken`, 봇의
+설정의 다섯 동사는 같은 뷰로 답한다: `enabled`, `configured`, 마스킹된 `botToken`, 봇의
 `botUsername` (토큰을 저장할 때 알아낸 것. secret 이 아니다), `webhookPath`, `webhookUrl`.
-다섯 모두 소유자와 설정된 admin 으로 제한된다. `PUT` 의 *새* 토큰은 저장하기 전에
+여섯 endpoint 모두 소유자와 설정된 admin 으로 제한된다. `PUT` 의 *새* 토큰은 저장하기 전에
 Telegram(`getMe`)으로 확인하고, Telegram 이 거부하면 400 이다. 마스킹되거나 빈 토큰은 저장된
 것을 유지한다. webhook secret 은 첫 토큰과 함께 이 플랫폼이 발행하며 절대 돌려주지 않는다 —
 그것이 필요한 쪽은 Telegram 뿐이다. **webhook 은 `PUT` 이 스위치를 따라 관리한다**: `enabled`
@@ -731,6 +733,10 @@ secret 을 새로 발행한 뒤 켜져 있으면 새 봇을 등록한다. 그 Te
 agent 가 아닌 project 에 대한 `PUT` 은 400 이고, 저장되거나 전달된 토큰 없이 켜는 것도
 마찬가지다. `test` 는 `{ ok: true, botId, botUsername }` 을 돌려주고, Telegram 이 설정되지
 않았거나 꺼져 있으면 `400`, Bot API 실패면 `502` 다. `webhook` 도 같은 방식으로 답한다.
+`chats` 는 현재 설정된 봇이 실제로 응답 대상으로 받은 chat 과 포럼 topic 을 최근에 본 순서로
+`{ chats: [{ chatId, chatType, title, threadId?, lastSeenAt }] }` 에 담아 돌려준다. Telegram Bot API
+에는 봇의 chat 목록을 조회하는 호출이 없으므로, 아직 이 봇과 대화하지 않은 목적지는 나타나지
+않는다. 토큰을 바꾸면 새 봇의 목록만 보인다.
 
 이벤트 엔드포인트 자체인 `POST /api/telegram/webhook/{project}` 는 Telegram 이 호출하는 것이다
 (사람이 아니다): 본문이 1MB 를 넘으면 413, `X-Telegram-Bot-Api-Secret-Token` 이 틀리거나 없으면

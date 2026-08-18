@@ -52,6 +52,7 @@ import { auditRepository } from "@/infrastructure/db/repositories/auditRepositor
 import { memberRepository } from "@/infrastructure/db/repositories/memberRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
+import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
 import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
 import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
@@ -585,6 +586,7 @@ export const projectSlackUseCases = createProjectSlackUseCases({
  */
 export const projectTelegramUseCases = createProjectTelegramUseCases({
   projects: projectRepository,
+  destinations: telegramDestinationRepository,
   cipher: secretCipher,
   getMe: async (botToken) =>
     (await import("@/infrastructure/telegram/client")).telegramClient.getMe(botToken),

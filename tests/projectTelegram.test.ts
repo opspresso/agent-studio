@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   disconnectProjectTelegram,
+  listProjectTelegramDestinations,
   registerProjectTelegramWebhook,
   resolveProjectTelegramRuntime,
   resolveTelegramEventBinding,
@@ -12,6 +13,7 @@ import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { ForbiddenError, ValidationError } from "@/application/errors";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
+import type { TelegramDestinationRepository } from "@/domain/telegram/destination";
 
 const OWNER = "t@example.com";
 const OTHER = "intruder@example.com";
@@ -217,6 +219,27 @@ describe("runtime, binding, test and webhook", () => {
     const binding = await resolveTelegramEventBinding(repo, "bot-proj", secretCipher);
     expect(binding).toMatchObject({ projectName: "bot-proj", botToken: "42:tok", botUsername: "painter_bot" });
     expect(binding?.webhookSecret.startsWith("adg_")).toBe(true);
+  });
+
+  it("lists only the current bot's observed destinations for an owner", async () => {
+    const { repo } = await configured();
+    const list = vi.fn(async () => [
+      {
+        chatId: 100,
+        chatType: "private" as const,
+        title: "Bruce",
+        lastSeenAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    const destinations = { list, put: async () => {} } satisfies TelegramDestinationRepository;
+
+    await expect(
+      listProjectTelegramDestinations(repo, destinations, "bot-proj", OWNER, secretCipher),
+    ).resolves.toHaveLength(1);
+    expect(list).toHaveBeenCalledWith("bot-proj", 42);
+    await expect(
+      listProjectTelegramDestinations(repo, destinations, "bot-proj", OTHER, secretCipher),
+    ).rejects.toThrow(ForbiddenError);
   });
 
   it("tests the stored token and reports who the bot is", async () => {

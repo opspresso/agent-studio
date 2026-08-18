@@ -8,10 +8,12 @@ import {
   getProject,
   getProjectTeams,
   getProjectTelegram,
+  listProjectTelegramChats,
   listProjectSlackChannels,
   updateProject,
   type CostLimits,
   type SlackChannelInfo,
+  type TelegramDestinationInfo,
 } from "../../lib/api";
 import { useT } from "@/app/_i18n/provider";
 import { costAlertDestinations } from "@/domain/project/types";
@@ -19,6 +21,11 @@ import type {
   MessageDestination,
   MessageDestinationKind,
 } from "@/domain/messaging/destination";
+import {
+  findTelegramDestination,
+  telegramDestinationLabel,
+  telegramDestinationValue,
+} from "./telegramDestinations";
 
 export function costLimitsForSave(limits: CostLimits): CostLimits | null {
   const hasThreshold =
@@ -45,6 +52,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
   const [monthlyBlockUsd, setMonthlyBlockUsd] = useState<number | "">("");
   const [destinations, setDestinations] = useState<MessageDestination[]>([]);
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
+  const [telegramChats, setTelegramChats] = useState<TelegramDestinationInfo[]>([]);
   const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
   const [slackChannelsLoading, setSlackChannelsLoading] = useState(true);
   const [availableDestinations, setAvailableDestinations] = useState<
@@ -89,14 +97,18 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
     void Promise.allSettled([
       listProjectSlackChannels(projectName),
       getProjectTelegram(projectName),
+      listProjectTelegramChats(projectName),
       getProjectTeams(projectName),
     ])
-      .then(([slack, telegram, teams]) => {
+      .then(([slack, telegram, telegramDestinations, teams]) => {
         if (cancelled) {
           return;
         }
         const channels = slack.status === "fulfilled" ? slack.value.channels : [];
         setSlackChannels(channels);
+        setTelegramChats(
+          telegramDestinations.status === "fulfilled" ? telegramDestinations.value.chats : [],
+        );
         setSlackChannelsUnavailable(slack.status === "rejected" || channels.length === 0);
         setAvailableDestinations([
           ...(channels.length > 0 ? (["slack"] as const) : []),
@@ -167,6 +179,10 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
           ...listedChannels,
         ]
       : listedChannels;
+  const telegramData = telegramChats.map((destination) => ({
+    value: telegramDestinationValue(destination),
+    label: telegramDestinationLabel(destination),
+  }));
   const destinationKinds = availableDestinations
     .filter((kind) => !destinations.some((destination) => destination.kind === kind))
     .map((kind) => ({
@@ -193,7 +209,15 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
       kind === "slack"
         ? { kind, channelId: "" }
         : kind === "telegram"
-          ? { kind, chatId: 0 }
+          ? telegramChats.length === 1
+            ? {
+                kind,
+                chatId: telegramChats[0]!.chatId,
+                ...(telegramChats[0]!.threadId === undefined
+                  ? {}
+                  : { threadId: telegramChats[0]!.threadId }),
+              }
+            : { kind, chatId: 0 }
           : { kind, conversationId: "" };
     setDestinations((current) => [...current, destination]);
   };
@@ -315,45 +339,78 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
                 />
               )}
               {destination.kind === "telegram" && (
-                <>
-                  <NumberInput
-                    label={t("trigger.telegramChatId")}
-                    description={t("trigger.telegramChatIdHint")}
-                    value={destination.chatId || ""}
-                    onChange={(value) =>
-                      setDestinations((current) =>
-                        current.map((item) =>
-                          item.kind === "telegram"
-                            ? { ...item, chatId: typeof value === "number" ? value : 0 }
-                            : item,
-                        ),
+                <Stack gap="xs" style={{ flex: 1 }}>
+                  <Select
+                    label={t("trigger.telegramObservedDestination")}
+                    description={t("trigger.telegramObservedDestinationHint")}
+                    placeholder={t("trigger.telegramObservedDestinationPlaceholder")}
+                    data={telegramData}
+                    value={
+                      telegramChats.some(
+                        (chat) =>
+                          chat.chatId === destination.chatId &&
+                          chat.threadId === destination.threadId,
                       )
+                        ? telegramDestinationValue(destination)
+                        : null
                     }
-                    allowDecimal={false}
-                    style={{ flex: 1 }}
+                    onChange={(value) => {
+                      const selected = findTelegramDestination(telegramChats, value);
+                      if (selected) {
+                        setDestinations((current) =>
+                          current.map((item) =>
+                            item.kind === "telegram"
+                              ? {
+                                  ...item,
+                                  chatId: selected.chatId,
+                                  threadId: selected.threadId,
+                                }
+                              : item,
+                          ),
+                        );
+                      }
+                    }}
+                    searchable
+                    disabled={telegramChats.length === 0}
                   />
-                  <NumberInput
-                    label={t("trigger.telegramThreadId")}
-                    value={destination.threadId ?? ""}
-                    onChange={(value) =>
-                      setDestinations((current) =>
-                        current.map((item) =>
-                          item.kind === "telegram"
-                            ? {
-                                ...item,
-                                ...(typeof value === "number"
-                                  ? { threadId: value }
-                                  : { threadId: undefined }),
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                    min={1}
-                    allowDecimal={false}
-                    style={{ flex: 1 }}
-                  />
-                </>
+                  <Group grow align="flex-start" gap="sm">
+                    <NumberInput
+                      label={t("trigger.telegramChatId")}
+                      description={t("trigger.telegramChatIdHint")}
+                      value={destination.chatId || ""}
+                      onChange={(value) =>
+                        setDestinations((current) =>
+                          current.map((item) =>
+                            item.kind === "telegram"
+                              ? { ...item, chatId: typeof value === "number" ? value : 0 }
+                              : item,
+                          ),
+                        )
+                      }
+                      allowDecimal={false}
+                    />
+                    <NumberInput
+                      label={t("trigger.telegramThreadId")}
+                      value={destination.threadId ?? ""}
+                      onChange={(value) =>
+                        setDestinations((current) =>
+                          current.map((item) =>
+                            item.kind === "telegram"
+                              ? {
+                                  ...item,
+                                  ...(typeof value === "number"
+                                    ? { threadId: value }
+                                    : { threadId: undefined }),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                      min={1}
+                      allowDecimal={false}
+                    />
+                  </Group>
+                </Stack>
               )}
               {destination.kind === "teams" && (
                 <TextInput

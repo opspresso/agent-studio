@@ -87,8 +87,49 @@ import { usageRepository } from "@/infrastructure/db/repositories/usageRepositor
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
+import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
 
 const NOW = "2026-01-01T00:00:00.000Z";
+
+describe("telegramDestinationRepository", () => {
+  it("keeps destinations separate by bot and lists the newest first", async () => {
+    await telegramDestinationRepository.put("telegram-project", 42, {
+      chatId: 100,
+      chatType: "private",
+      title: "Bruce",
+      lastSeenAt: "2026-01-01T00:00:00.000Z",
+    });
+    await telegramDestinationRepository.put("telegram-project", 42, {
+      chatId: -5,
+      chatType: "supergroup",
+      title: "Ops",
+      threadId: 9,
+      lastSeenAt: "2026-01-02T00:00:00.000Z",
+    });
+    await telegramDestinationRepository.put("telegram-project", 43, {
+      chatId: 200,
+      chatType: "private",
+      title: "Other bot",
+      lastSeenAt: "2026-01-03T00:00:00.000Z",
+    });
+
+    expect(await telegramDestinationRepository.list("telegram-project", 42)).toEqual([
+      {
+        chatId: -5,
+        chatType: "supergroup",
+        title: "Ops",
+        threadId: 9,
+        lastSeenAt: "2026-01-02T00:00:00.000Z",
+      },
+      {
+        chatId: 100,
+        chatType: "private",
+        title: "Bruce",
+        lastSeenAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+  });
+});
 
 // TTL read-filters compare each row's expiry against the wall clock; pin it to
 // NOW so rows written with NOW-era timestamps are not treated as expired.

@@ -11,6 +11,7 @@ import { callerFrom, type RunCaller } from "@/domain/execution/actor";
 import { MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
 import type { InboundAttachment } from "@/domain/messaging/inbound";
 import { telegramConversation } from "@/domain/telegram/conversation";
+import type { TelegramDestination } from "@/domain/telegram/destination";
 import { log } from "@/shared/logger";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 
@@ -49,6 +50,22 @@ function callerOf(user: TelegramUser | undefined): RunCaller | undefined {
   }
   const name = [user.first_name, user.last_name].filter(Boolean).join(" ").trim();
   return callerFrom({ displayName: name || (user.username ? `@${user.username}` : "") }) ?? undefined;
+}
+
+function destinationOf(message: TelegramMessage, threadId: number | undefined): TelegramDestination {
+  const person = [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ").trim();
+  const title =
+    message.chat.type === "private"
+      ? person ||
+        (message.from?.username ? `@${message.from.username}` : `private ${message.chat.id}`)
+      : message.chat.title?.trim() || `${message.chat.type} ${message.chat.id}`;
+  return {
+    chatId: message.chat.id,
+    chatType: message.chat.type,
+    title,
+    ...(threadId !== undefined ? { threadId } : {}),
+    lastSeenAt: new Date(message.date * 1000).toISOString(),
+  };
 }
 
 /**
@@ -187,6 +204,12 @@ export async function handleTelegramUpdate(
   // own — a reply to the bot there is a follow-up in the group's conversation.
   const threadId =
     message.is_topic_message && message.chat.is_forum ? message.message_thread_id : undefined;
+  if (deps.destinations) {
+    const botId = botIdFromToken(binding.botToken) ?? "unknown";
+    await deps.destinations
+      .put(binding.projectName, botId, destinationOf(message, threadId))
+      .catch((error) => log.warn("telegram", "could not remember the message destination", error));
+  }
   const reply = createTelegramReplyChannel(
     deps.telegram,
     token,

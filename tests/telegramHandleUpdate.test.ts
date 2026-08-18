@@ -140,6 +140,57 @@ afterEach(() => {
 });
 
 describe("handleTelegramUpdate", () => {
+  it("remembers an admitted chat and forum topic for later destination selection", async () => {
+    const { telegram } = makeTelegramFake();
+    const { deps } = makeDeps([{ done: true }], telegram);
+    const puts = vi.fn(async () => {});
+    deps.destinations = { put: puts, list: async () => [] };
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({
+          date: 1_700_000_000,
+          chat: { id: -5, type: "supergroup", title: "Ops", is_forum: true },
+          message_thread_id: 9,
+          is_topic_message: true,
+          text: "@painter_bot hi",
+          entities: [{ type: "mention", offset: 0, length: 12 }],
+        }),
+      }),
+      BINDING,
+    );
+
+    expect(puts).toHaveBeenCalledWith("painter", 42, {
+      chatId: -5,
+      chatType: "supergroup",
+      title: "Ops",
+      threadId: 9,
+      lastSeenAt: "2023-11-14T22:13:20.000Z",
+    });
+  });
+
+  it("still answers when remembering a destination fails", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { telegram, finalText } = makeTelegramFake();
+    const { deps } = makeDeps([{ delta: { content: "ok" } }, { done: true }], telegram);
+    deps.destinations = {
+      put: async () => {
+        throw new Error("store unavailable");
+      },
+      list: async () => [],
+    };
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({ update_id: 1, message: message() }),
+      BINDING,
+    );
+
+    expect(finalText()).toBe("ok");
+  });
+
   it("runs the bound project with the Telegram user as the actor and the chat as the conversation", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

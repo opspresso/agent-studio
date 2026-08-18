@@ -165,10 +165,11 @@ export const keys = {
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 
   /**
-   * One Telegram update delivered to one project's bot, and one album (a
-   * `media_group_id`) the bot answers once. In the project partition so the
-   * cascade delete takes them; qualified by bot because an `update_id` is a
-   * counter per bot, and a project may change bots.
+   * One Telegram update delivered to one project's bot, one album (a
+   * `media_group_id`) the bot answers once, and one observed report
+   * destination. In the project partition so the cascade delete takes them;
+   * qualified by bot because an `update_id` is a counter per bot, and a
+   * project may change bots.
    */
   telegramUpdate: (projectName: string, botId: number | string, updateId: number | string) => ({
     PK: `PROJECT#${projectName}`,
@@ -177,6 +178,19 @@ export const keys = {
   telegramAlbum: (projectName: string, botId: number | string, mediaGroupId: string) => ({
     PK: `PROJECT#${projectName}`,
     SK: `TELEGRAMALBUM#${botId}#${mediaGroupId}`,
+  }),
+  telegramDestinationPrefix: (projectName: string, botId: number | string) => ({
+    PK: `PROJECT#${projectName}`,
+    prefix: `TELEGRAMDESTINATION#${botId}#`,
+  }),
+  telegramDestination: (
+    projectName: string,
+    botId: number | string,
+    chatId: number,
+    threadId?: number,
+  ) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `TELEGRAMDESTINATION#${botId}#${chatId}#${threadId ?? ""}`,
   }),
 
   /**
