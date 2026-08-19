@@ -19,9 +19,7 @@ import {
   Card,
   Group,
   Image,
-  Modal,
   Paper,
-  ScrollArea,
   SegmentedControl,
   Stack,
   Text,
@@ -34,6 +32,7 @@ import {
 } from "@tabler/icons-react";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
+import { useImageViewer } from "@/app/_components/ImageViewer";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { formatShortDateTime } from "@/shared/date";
 import { formatBytes } from "@/app/_lib/formatBytes";
@@ -64,8 +63,7 @@ export function ArtifactGallery({
   const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState<KindFilter>("all");
   const [filter, setFilter] = useState("");
-  const [preview, setPreview] = useState<ArtifactView | null>(null);
-  const [previewOriginal, setPreviewOriginal] = useState(false);
+  const view = useImageViewer();
   const { confirm, confirmModal } = useConfirm();
 
   const query = useCallback(
@@ -136,83 +134,24 @@ export function ArtifactGallery({
     matchesFilter(filter, artifact.filename ?? "", artifact.prompt ?? "", artifact.projectName),
   );
 
-  function closePreview() {
-    setPreview(null);
-    setPreviewOriginal(false);
-  }
-
+  // The filename is the header and the prompt a caption under the picture,
+  // never the title: a paragraph-long prompt there once stretched the dialog
+  // past the screen and pushed the image out of view.
   function openPreview(artifact: ArtifactView) {
-    setPreview(artifact);
-    setPreviewOriginal(false);
-  }
-
-  function advancePreview() {
-    if (previewOriginal) {
-      closePreview();
-    } else {
-      setPreviewOriginal(true);
+    if (!artifact.url) {
+      return;
     }
+    view({
+      src: artifact.url,
+      alt: artifact.prompt ?? t("artifacts.preview"),
+      title: artifact.filename ?? t("artifacts.preview"),
+      ...(artifact.prompt ? { caption: artifact.prompt } : {}),
+    });
   }
 
   return (
     <Stack gap="lg">
       {confirmModal}
-
-      {/*
-       * One modal for the page, not one per tile: a grid mounts as many portals
-       * as it has cards to show at most one of them.
-       *
-       * The picture is the subject and the prompt is a caption under it. The
-       * prompt used to *be* the title, and `size="auto"` sizes a modal to its
-       * content — so a paragraph-long prompt stretched the dialog past the
-       * screen and pushed the image out of view, which is the one thing opening
-       * it was for. `lineClamp` did not help: it clamps what is drawn, not what
-       * the box asks for.
-       */}
-      <Modal
-        opened={preview !== null}
-        onClose={closePreview}
-        title={
-          <Text fw={500} lineClamp={1}>
-            {preview?.filename ?? t("artifacts.preview")}
-          </Text>
-        }
-        size="auto"
-        fullScreen={previewOriginal}
-        centered
-        // On the dialog rather than on its body, so nothing inside can stretch
-        // it — a long filename in the header would otherwise do exactly what the
-        // prompt did.
-        styles={
-          previewOriginal
-            ? { body: { overflow: "auto" } }
-            : { content: { maxWidth: "min(92vw, 60rem)" } }
-        }
-      >
-        {preview?.url && (
-          <Stack gap="sm">
-            <Image
-              src={preview.url}
-              alt={preview.prompt ?? t("artifacts.preview")}
-              fit="contain"
-              mah={previewOriginal ? undefined : "65vh"}
-              w="auto"
-              maw={previewOriginal ? "none" : "100%"}
-              onClick={advancePreview}
-              style={{ cursor: previewOriginal ? "zoom-out" : "zoom-in" }}
-            />
-            {preview.prompt && (
-              // Its own scroll region rather than the modal's: a long prompt
-              // scrolls where it is instead of moving the image off screen.
-              <ScrollArea.Autosize mah="18vh" type="auto">
-                <Text fz="sm" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
-                  {preview.prompt}
-                </Text>
-              </ScrollArea.Autosize>
-            )}
-          </Stack>
-        )}
-      </Modal>
 
       {error && (
         <Alert color="red" variant="light">

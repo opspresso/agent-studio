@@ -19,6 +19,7 @@ import { formatShortDateTime } from "@/shared/date";
 import { imageDataUrl } from "@/domain/llm/types";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
+import { useImageViewer } from "@/app/_components/ImageViewer";
 import { ProducedFile } from "@/app/_components/ProducedFile";
 import { ToolRow } from "@/app/_components/ToolRow";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
@@ -93,10 +94,26 @@ function StoredToolRow({
  * fails at fetch time and would otherwise render as a broken icon with nothing
  * said. That case predates the gallery: retention has always been able to
  * outlive a transcript.
+ *
+ * A click opens it in the shared viewer, where another click shows it at its
+ * own pixel size. `label` names what it is ("Generated image", "Attached
+ * image") and heads the viewer; the `prompt`, when there is one, is the
+ * picture's alt text here and its caption there — never its title, which is
+ * where a paragraph does not belong.
  */
-export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
+export function GeneratedImage({
+  src,
+  label,
+  prompt,
+}: {
+  src: string;
+  label: string;
+  prompt?: string;
+}) {
   const [gone, setGone] = useState(false);
   const t = useT();
+  const view = useImageViewer();
+  const alt = prompt ?? label;
   return (
     <Box maw="80%" w="100%" style={{ aspectRatio: "1 / 1" }}>
       {gone ? (
@@ -120,6 +137,10 @@ export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
           h="100%"
           w="100%"
           fit="contain"
+          onClick={() =>
+            view({ src, alt, title: label, ...(prompt ? { caption: prompt } : {}) })
+          }
+          style={{ cursor: "zoom-in" }}
           onError={() => setGone(true)}
         />
       )}
@@ -218,7 +239,7 @@ export const MessageView = memo(function MessageView({
                 <GeneratedImage
                   key={`attached-${index}`}
                   src={image.url}
-                  alt={t("chat.attachedImage")}
+                  label={t("chat.attachedImage")}
                 />,
               ]
             : [],
@@ -250,7 +271,8 @@ export const MessageView = memo(function MessageView({
               <GeneratedImage
                 key={`image-${index}`}
                 src={image.url}
-                alt={image.prompt ?? t("chat.generatedImage")}
+                label={t("chat.generatedImage")}
+                {...(image.prompt ? { prompt: image.prompt } : {})}
               />,
             ]
           : [],
@@ -298,7 +320,8 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
         <GeneratedImage
           key={`image-${index}`}
           src={liveImageSrc(image)}
-          alt={image.prompt ?? t("chat.generatedImage")}
+          label={t("chat.generatedImage")}
+          {...(image.prompt ? { prompt: image.prompt } : {})}
         />
       ))}
       {turn.files.map((file, index) => (

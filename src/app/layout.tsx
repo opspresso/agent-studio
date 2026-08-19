@@ -3,6 +3,7 @@ import { ColorSchemeScript, MantineProvider, mantineHtmlProps } from "@mantine/c
 import { Notifications } from "@mantine/notifications";
 import { Chakra_Petch, Figtree, JetBrains_Mono } from "next/font/google";
 import { AppLayout } from "@/components/AppLayout";
+import { ImageViewerProvider } from "./_components/ImageViewer";
 import { getSessionUser } from "@/lib/session";
 import { resolveViewer } from "@/lib/viewer";
 import { I18nProvider } from "./_i18n/provider";
@@ -99,9 +100,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <MantineProvider theme={theme} defaultColorScheme="auto">
           <I18nProvider locale={locale}>
             <Notifications position="top-right" />
-            <AppLayout version={version} viewer={viewer}>
-              {children}
-            </AppLayout>
+            <ImageViewerProvider>
+              <AppLayout version={version} viewer={viewer}>
+                {children}
+              </AppLayout>
+            </ImageViewerProvider>
           </I18nProvider>
         </MantineProvider>
       </body>

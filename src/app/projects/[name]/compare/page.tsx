@@ -31,6 +31,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
+import { useImageViewer } from "@/app/_components/ImageViewer";
 import { LoadingText } from "@/app/_components/PageState";
 import { ProducedFile } from "@/app/_components/ProducedFile";
 
@@ -76,6 +77,7 @@ function versionOptions(versions: Version[], published: string | undefined) {
 
 export default function ComparePage() {
   const params = useParams<{ name: string }>();
+  const view = useImageViewer();
   const name = params.name;
 
   const [project, setProject] = useState<Project | null>(null);
@@ -311,6 +313,10 @@ export default function ComparePage() {
                       src={imageDataUrl({ b64: side.image.imageBase64, mimeType: side.image.mimeType })}
                       alt="Generated image"
                       radius="sm"
+                      onClick={(e) =>
+                        view({ src: e.currentTarget.src, alt: e.currentTarget.alt })
+                      }
+                      style={{ cursor: "zoom-in" }}
                     />
                   ) : (
                     <Text fz="sm" style={{ whiteSpace: "pre-wrap" }}>
@@ -323,6 +329,10 @@ export default function ComparePage() {
                       src={imageDataUrl(generated)}
                       alt="Image drawn during the run"
                       radius="sm"
+                      onClick={(e) =>
+                        view({ src: e.currentTarget.src, alt: e.currentTarget.alt })
+                      }
+                      style={{ cursor: "zoom-in" }}
                     />
                   ))}
                   {/* Comparing two versions means comparing what each produced,

@@ -7,6 +7,7 @@ import { parseWireToolCall } from "@/app/_lib/toolCalls";
 import { findTemplateVariables } from "@/shared/template";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { formatUsd } from "@/app/_lib/formatUsd";
+import { useImageViewer } from "@/app/_components/ImageViewer";
 import { ProducedFile } from "@/app/_components/ProducedFile";
 import { ToolRow } from "@/app/_components/ToolRow";
 import {
@@ -105,6 +106,7 @@ export function RunPanel({
   const [quality, setQuality] = useState("medium");
   const { attachments, attachError, addFiles, removeAt } = useAttachments();
   const t = useT();
+  const view = useImageViewer();
 
   const needsMessage = projectType === "agent" || projectType === "image";
   // An image-only turn is a legitimate run: "what is in this picture?" needs no words.
@@ -422,6 +424,8 @@ export function RunPanel({
               src={imageDataUrl({ b64: image.imageBase64, mimeType: image.mimeType })}
               alt={t("chat.generatedImage")}
               radius="sm"
+              onClick={(e) => view({ src: e.currentTarget.src, alt: e.currentTarget.alt })}
+              style={{ cursor: "zoom-in" }}
             />
           ) : (
             <Text fz="sm" c="dimmed">
@@ -445,6 +449,15 @@ export function RunPanel({
           src={imageDataUrl(img)}
           alt={img.prompt ?? t("chat.generatedImage")}
           radius="md"
+          onClick={(e) =>
+            view({
+              src: e.currentTarget.src,
+              alt: e.currentTarget.alt,
+              title: t("chat.generatedImage"),
+              ...(img.prompt ? { caption: img.prompt } : {}),
+            })
+          }
+          style={{ cursor: "zoom-in" }}
         />
       ))}
 
