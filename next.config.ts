@@ -26,6 +26,10 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
+  // `next dev` run from an AI coding agent otherwise appends its own
+  // "read node_modules/next/dist/docs" block to AGENTS.md on every start;
+  // this repository's agent rules are written by hand.
+  agentRules: false,
   outputFileTracingIncludes: {
     "/*": ["./node_modules/@swc/helpers/esm/**/*"],
   },
