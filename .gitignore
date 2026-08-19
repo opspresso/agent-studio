@@ -18,8 +18,6 @@ build/
 # the eks profile mounts. `.env` above already covers deploy/idc/.env.
 deploy/idc/.env.aws
 deploy/idc/.env.mcp
-deploy/idc/.env.secrets
-deploy/idc/.env.mcp.secrets
 deploy/idc/kubeconfig
 
 # misc

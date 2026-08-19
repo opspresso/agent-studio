@@ -60,12 +60,17 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 sudo mkdir -p /opt/agentdure && sudo chown ubuntu:ubuntu /opt/agentdure
 # deploy/idc/ 의 내용을 /opt/agentdure 로 복사한 뒤
 cd /opt/agentdure
-cp .env.example .env
-cp .env.aws.example .env.aws      # 액세스 키를 채운다
-cp .env.mcp.example .env.mcp      # eks 프로파일을 쓸 때만 채우면 된다
+cp .env.aws.example .env.aws      # 액세스 키를 채운다 — 사람이 만드는 파일은 이것 하나다
 
-scripts/deploy.sh                 # 시크릿·이미지 태그·기동을 한 번에
+scripts/deploy.sh                 # .env·.env.mcp 생성 + 이미지 pull + 기동
 ```
+
+`.env` 와 `.env.mcp` 는 손으로 만들지 않는다. `deploy.sh` 가 세 곳에서 모아 매번 통째로
+다시 쓴다 — 설정은 저장소의 `.env.example`/`.env.mcp.example`, 이미지 버전은
+`argocd-env-demo` 의 차트별 `versions-alpha.json`(클러스터 alpha 가 도는 버전 그대로),
+시크릿은 SSM. 그러니 설정을 바꾸려면 example 을 고쳐 커밋하고 다시 돌린다; `.env` 에 직접
+쓴 값은 다음 실행에서 사라진다. 스크립트가 호스트에 기대는 것은 `docker compose`, `aws`,
+`curl`, `python3`(Ubuntu 기본) 넷이고, `.env.aws` 의 키로 SSM 을 읽고 ECR 에 로그인한다.
 
 `docker compose ps` 로 여섯 서비스(caddy, app, mcp-memory, mcp-document, mcp-youtube,
 mcp-brave-search, mcp-cloudwatch)가 뜬 것을 확인하고, 첫 인증서가 발급될 때까지 잠깐 기다린 뒤
@@ -94,15 +99,19 @@ mcp-cloudwatch 가 받아 주는 것은 그 이름이 이미 각자의 Host 화�
 것이 `deploy.sh` 이고, 그것이 업데이트 절차 전부다:
 
 ```bash
-scripts/deploy.sh                 # 시크릿 갱신 + 최신 이미지 태그 + compose up
-scripts/deploy.sh -n              # 무엇이 바뀌는지만 보고 멈춘다
-scripts/deploy.sh -s              # 시크릿은 건너뛴다 (SSM 이 느린 부분이다)
+scripts/deploy.sh                 # 설정(example) + 버전(argocd-env-demo) + 시크릿(SSM) → compose up
 ```
 
-우리가 만드는 넷(`agentdure`, `mcp-memory`, `mcp-document`, `mcp-youtube`)만 ECR 에서 최신
-`v*` 태그로 따라간다. 나머지는 남의 레지스트리에서 오므로 `.env` 에 손으로 고정한 채 둔다.
-바뀐 태그가 있을 때만 `.env` 를 다시 쓰고, 직전 파일은 `.env.bak` 으로 남는다. 아무것도
-바뀌지 않은 실행은 no-op 이라 타이머에 걸어 두어도 된다.
+이미지 아홉 개 전부 — 우리가 만드는 넷(`agentdure`, `mcp-memory`, `mcp-document`,
+`mcp-youtube`)과 남의 레지스트리에서 오는 다섯 — `argocd-env-demo/charts/<chart>/versions-alpha.json`
+의 최신 항목을 따른다. 버전을 고르는 곳은 클러스터 하나뿐이고, 이 호스트는 그것을 읽을 뿐이다.
+GitHub 을 못 읽은 차트는 지금 `.env` 에 있는 버전을 유지한다(그것도 없으면 example 의 값).
+바뀐 것이 없는 실행은 아무것도 재생성하지 않으므로 타이머에 걸어 두어도 된다 — ECR 로그인도
+이 스크립트 안에 있으니 따로 cron 을 둘 필요가 없다:
+
+```
+*/10 * * * * /opt/agentdure/scripts/deploy.sh >> /var/log/agentdure-deploy.log 2>&1
+```
 
 호스트에서 이미지를 빌드하지 마라. RAM 3.8GB 에서 `next build` 는 OOM 으로 끝난다.
 
@@ -110,8 +119,8 @@ scripts/deploy.sh -s              # 시크릿은 건너뛴다 (SSM 이 느린 �
 `SIGTERM` 을 드레이닝으로 바꿀 뿐 `process.exit` 를 부르지 않으므로, 이 유예가 진행 중인 SSE
 스트림이 빠져나갈 시간 전부다. 짧게 줄이면 끝났을 스트림이 잘린다.
 
-**티커** — `ticker` 프로파일이 **켜져 있다**. compose 파일의 기본값은 꺼짐이지만, 이 호스트는
-`docker compose --profile ticker up -d` 로 올려 두었다: 클러스터가 사라진 지금 alpha 를 틱하는
+**티커** — `ticker` 프로파일이 **켜져 있다**. compose 파일의 기본값은 꺼짐이지만
+`.env.example` 의 `COMPOSE_PROFILES=ticker` 가 켠다: 클러스터가 사라진 지금 alpha 를 틱하는
 것은 이것뿐이고, 켜지 않으면 schedule 이 발화하지 않고 카탈로그가 재색인되지 않는다. 사람이
 `/plugins` 를 누를 때만 재색인이 도는 상태에서는 그 한 번이 무거워 헬스체크까지 흔들었다.
 
@@ -128,5 +137,5 @@ scripts/deploy.sh -s              # 시크릿은 건너뛴다 (SSM 이 느린 �
   자격증명은 EKS access entry 에 따로 등록되어야 한다. 차트가 RBAC 로 주던 읽기 권한을 그
   주체에 다시 부여하는 일이다.
 
-셋 다 채워지기 전에는 `docker compose --profile eks up -d` 를 쓰지 마라. 컨테이너는 뜨고 도구
+셋 다 채워지기 전에는 `COMPOSE_PROFILES` 에 `eks` 를 넣지 마라. 컨테이너는 뜨고 도구
 호출만 실패한다.
