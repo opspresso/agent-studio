@@ -17,7 +17,9 @@ import {
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { IconChevronDown, IconChevronUp, IconCpu } from "@tabler/icons-react";
-import { MODEL_MAKER_LABELS, contextWindowLabel, type ModelConfig } from "@/domain/llm/models";
+import { contextWindowLabel, type ModelConfig } from "@/domain/llm/models";
+import { formatUsd } from "@/app/_lib/formatUsd";
+import { formatDate } from "@/shared/date";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
@@ -27,7 +29,7 @@ import { BADGE } from "@/app/_components/badgeColors";
 import { modelPriceLabel } from "@/app/_components/modelOptions";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 import {
   nextSort,
   deserializeModelTableState,
@@ -49,6 +51,9 @@ type CatalogModel = ModelConfig & { enabled: boolean };
 interface Catalog {
   providers: CatalogProvider[];
   models: CatalogModel[];
+  /** Maker id → label, as the loaded catalog names them. */
+  makers: Record<string, string>;
+  updatedAt: string;
   source: "override" | "default";
 }
 
@@ -62,10 +67,41 @@ type TestState = { running: boolean; result?: ModelTestResult };
 
 const CAPABILITY_COLUMNS = [
   ["tools", "Tools"],
+  ["structuredOutput", "JSON"],
   ["imageInput", "Vision"],
   ["reasoning", "Reasoning"],
   ["imageGeneration", "Image"],
 ] as const;
+
+/**
+ * The one-line price row: the label the registry's rates make, and — where the
+ * catalog says the rate is a promotion — how deep it is, with the list price
+ * in the tooltip. The badge is informational: cost is computed from the rates
+ * as stated, which are already net of the discount.
+ */
+function PriceLine({ pricing }: { pricing: ModelConfig["pricing"] }) {
+  const discount = pricing.discount;
+  return (
+    <Group gap={6} mt="sm" align="center" wrap="wrap">
+      <Text fz="sm">{modelPriceLabel(pricing)}</Text>
+      {discount !== undefined && (
+        <Tooltip
+          multiline
+          maw={320}
+          label={`Promotional rate at the route's default endpoint, already applied — list price ${formatUsd(
+            pricing.inputPer1M / (1 - discount),
+          )} in · ${formatUsd(
+            (pricing.imageOutputPer1M ?? pricing.outputPer1M) / (1 - discount),
+          )} out per 1M`}
+        >
+          <Badge size="sm" variant="light" color="green">
+            −{Math.round(discount * 100)}%
+          </Badge>
+        </Tooltip>
+      )}
+    </Group>
+  );
+}
 
 /**
  * The sort control, in the shape a card grid can carry: one button per key,
@@ -133,9 +169,12 @@ function otherRoutes(models: CatalogModel[], model: CatalogModel): string[] {
 
 export default function ModelsPage() {
   const t = useT();
+  const locale = useLocale();
   const viewer = useViewer();
   const [providers, setProviders] = useState<CatalogProvider[]>([]);
   const [models, setModels] = useState<CatalogModel[]>([]);
+  const [makers, setMakers] = useState<Record<string, string>>({});
+  const [updatedAt, setUpdatedAt] = useState("");
   const [source, setSource] = useState<"override" | "default">("default");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -156,10 +195,10 @@ export default function ModelsPage() {
           model.id,
           model.displayName,
           model.provider,
-          MODEL_MAKER_LABELS[model.maker],
+          makers[model.maker] ?? model.maker,
         ),
       ),
-    [models, tableState, filter],
+    [models, makers, tableState, filter],
   );
   const providerByName = useMemo(
     () => new Map(providers.map((provider) => [provider.name, provider])),
@@ -183,6 +222,8 @@ export default function ModelsPage() {
         if (cancelled) return;
         setProviders(data.providers);
         setModels(data.models);
+        setMakers(data.makers ?? {});
+        setUpdatedAt(data.updatedAt ?? "");
         setSource(data.source);
       })
       .catch(
@@ -319,6 +360,7 @@ export default function ModelsPage() {
           <Group gap="sm" align="center">
             <Text fz="sm" c="dimmed">
               {rows.length} {rows.length === 1 ? "model" : "models"}
+              {updatedAt && ` · ${t("models.catalogUpdated")} ${formatDate(updatedAt, locale)}`}
             </Text>
             <SortButtons
               activeKey={tableState.sortKey}
@@ -339,7 +381,7 @@ export default function ModelsPage() {
               <Stack gap="sm" h="100%" justify="space-between">
                 <div>
                   <Group gap="sm" wrap="nowrap" align="flex-start">
-                    <Tooltip label={MODEL_MAKER_LABELS[model.maker]}>
+                    <Tooltip label={makers[model.maker] ?? model.maker}>
                       <Box
                         w={32}
                         h={32}
@@ -349,9 +391,14 @@ export default function ModelsPage() {
                       >
                         <img
                           src={`/icons/brands/${model.maker}.svg`}
-                          alt={`${MODEL_MAKER_LABELS[model.maker]} logo`}
+                          alt={`${makers[model.maker] ?? model.maker} logo`}
                           width={24}
                           height={24}
+                          // A maker the catalog gained before this checkout got
+                          // its mark: show nothing rather than a broken image.
+                          onError={(event) => {
+                            event.currentTarget.style.visibility = "hidden";
+                          }}
                         />
                       </Box>
                     </Tooltip>
@@ -378,11 +425,25 @@ export default function ModelsPage() {
                           : " · unavailable"}
                     </Badge>
                     {CAPABILITY_COLUMNS.filter(([key]) => model.capabilities[key]).map(
-                      ([key, label]) => (
-                        <Badge key={key} size="sm" variant="outline" color="gray">
-                          {label}
-                        </Badge>
-                      ),
+                      ([key, label]) =>
+                        key === "reasoning" && model.capabilities.reasoningWithTools === false ? (
+                          // The provider rejects tools together with reasoning_effort,
+                          // so an agent run forces the effort to "none" (applyModelConstraints).
+                          <Tooltip
+                            key={key}
+                            multiline
+                            maw={300}
+                            label="Not alongside tools: the provider rejects the pair, so agent runs force the effort to none"
+                          >
+                            <Badge size="sm" variant="outline" color="yellow">
+                              {label}
+                            </Badge>
+                          </Tooltip>
+                        ) : (
+                          <Badge key={key} size="sm" variant="outline" color="gray">
+                            {label}
+                          </Badge>
+                        ),
                     )}
                     {!model.enabled && (
                       <Badge size="sm" variant="light" color={BADGE.attention}>
@@ -390,11 +451,12 @@ export default function ModelsPage() {
                       </Badge>
                     )}
                   </Group>
-                  <Text fz="sm" mt="sm">
-                    {modelPriceLabel(model.pricing)}
-                  </Text>
+                  <PriceLine pricing={model.pricing} />
                   <Text fz="xs" c="dimmed" mt={2}>
                     {contextWindowLabel(model)}
+                    {model.pricing.cachedInputPer1M !== undefined &&
+                      !model.capabilities.imageGeneration &&
+                      ` · cached ${formatUsd(model.pricing.cachedInputPer1M)}`}
                   </Text>
                   {routes.length > 0 && (
                     <Text fz="xs" c="dimmed" mt={4}>

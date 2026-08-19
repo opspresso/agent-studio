@@ -1,13 +1,17 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  MODEL_CONFIGS,
-  MODEL_MAKER_LABELS,
+  MODEL_CATALOG_VERSION,
   SUPPORTED_PROVIDERS,
   applyModelConstraints,
   calculateCost,
   calculateImageCost,
   contextWindowLabel,
   getVisibleModels,
+  listModelMakers,
+  listModels,
+  loadModelCatalog,
+  modelCatalogUpdatedAt,
   offeredModels,
   resetUnknownModelMetrics,
   unknownModelSnapshot,
@@ -16,15 +20,28 @@ import {
 import { GET } from "@/app/api/metrics/route";
 
 /**
- * The registry is hand-edited whenever a provider ships a model, and the entries
- * are copied from each other — which is exactly how a wrong provider prefix or a
- * missing price gets in. None of these assertions can tell whether a number is
- * *correct* (only the provider's docs can), but they catch the copy-paste class
- * of mistake, where an entry is internally inconsistent or unpriced.
+ * The registry is the catalog agent-models publishes, as the committed snapshot
+ * holds it. agent-models validates the same invariants before it publishes;
+ * these assertions hold the snapshot — and so every catalog `loadModelCatalog`
+ * accepts — to what this app's dispatch and cost code rely on, so a catalog
+ * that drifted from the contract fails here rather than at dispatch.
  */
 describe("model registry invariants", () => {
+  /**
+   * The one thing this file must never become again. A price, a window or a
+   * flag written here is a second copy of agent-models' registry — the copy
+   * that drifts — and the catalog loader would happily keep serving it until
+   * the first refresh replaced it, so nothing would say so at runtime.
+   */
+  it("states no model of its own — the numbers live in agent-models", () => {
+    const source = readFileSync("src/domain/llm/models.ts", "utf8");
+    expect(source).not.toMatch(/inputPer1M:\s*\d/);
+    expect(source).not.toMatch(/contextWindow:\s*\d/);
+    expect(source).not.toMatch(/MODEL_FAMILIES|MODEL_OFFERINGS/);
+  });
+
   it("has no duplicate ids", () => {
-    const ids = MODEL_CONFIGS.map((model) => model.id);
+    const ids = listModels().map((model) => model.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -36,7 +53,7 @@ describe("model registry invariants", () => {
    * at all.
    */
   it("prefixes every id with its own supported provider", () => {
-    for (const model of MODEL_CONFIGS) {
+    for (const model of listModels()) {
       expect(
         SUPPORTED_PROVIDERS as readonly string[],
         `${model.id}: unsupported provider`,
@@ -48,19 +65,19 @@ describe("model registry invariants", () => {
   });
 
   it("names every model", () => {
-    for (const model of MODEL_CONFIGS) {
+    for (const model of listModels()) {
       expect(model.displayName.trim(), `${model.id}: empty displayName`).not.toBe("");
     }
   });
 
   it("identifies the model maker independently of its route", () => {
-    for (const model of MODEL_CONFIGS) {
-      expect(MODEL_MAKER_LABELS[model.maker], `${model.id}: unknown maker`).toBeTruthy();
+    for (const model of listModels()) {
+      expect(listModelMakers()[model.maker], `${model.id}: unknown maker`).toBeTruthy();
     }
-    expect(MODEL_CONFIGS.find((model) => model.id === "bedrock/gpt-oss-120b")?.maker).toBe(
+    expect(listModels().find((model) => model.id === "bedrock/gpt-oss-120b")?.maker).toBe(
       "openai",
     );
-    expect(MODEL_CONFIGS.find((model) => model.id === "openrouter/claude-opus-5")?.maker).toBe(
+    expect(listModels().find((model) => model.id === "openrouter/claude-opus-5")?.maker).toBe(
       "anthropic",
     );
   });
@@ -73,8 +90,8 @@ describe("model registry invariants", () => {
    * would come back wearing a different hat.
    */
   it("says the same thing about a model however it is reached", () => {
-    const byFamily = new Map<string, typeof MODEL_CONFIGS>();
-    for (const model of MODEL_CONFIGS) {
+    const byFamily = new Map<string, ReturnType<typeof listModels>>();
+    for (const model of listModels()) {
       byFamily.set(model.family, [...(byFamily.get(model.family) ?? []), model]);
     }
     for (const [family, routes] of byFamily) {
@@ -103,14 +120,14 @@ describe("model registry invariants", () => {
    * model it very much serves.
    */
   it("gives every router route a vendor-qualified wire id", () => {
-    for (const model of MODEL_CONFIGS.filter((m) => m.provider === "openrouter")) {
+    for (const model of listModels().filter((m) => m.provider === "openrouter")) {
       expect(model.wireId, `${model.id}: router route needs a wireId`).toBeDefined();
       expect(model.wireId, `${model.id}: wireId names no vendor`).toContain("/");
     }
   });
 
   it("keeps the output cap within the context window", () => {
-    for (const model of MODEL_CONFIGS) {
+    for (const model of listModels()) {
       expect(model.maxTokens, `${model.id}: non-positive maxTokens`).toBeGreaterThan(0);
       expect(model.contextWindow, `${model.id}: maxTokens exceeds contextWindow`).toBeGreaterThanOrEqual(
         model.maxTokens,
@@ -123,14 +140,14 @@ describe("model registry invariants", () => {
    * call is booked at $0 with no warning, because the registry lookup succeeds.
    */
   it("prices every text model on both sides", () => {
-    for (const model of MODEL_CONFIGS.filter((m) => !m.capabilities.imageGeneration)) {
+    for (const model of listModels().filter((m) => !m.capabilities.imageGeneration)) {
       expect(model.pricing.inputPer1M, `${model.id}: no input price`).toBeGreaterThan(0);
       expect(model.pricing.outputPer1M, `${model.id}: no output price`).toBeGreaterThan(0);
     }
   });
 
   it("prices every image model by token rate or per image", () => {
-    const imageModels = MODEL_CONFIGS.filter((m) => m.capabilities.imageGeneration);
+    const imageModels = listModels().filter((m) => m.capabilities.imageGeneration);
     // `DEFAULT_IMAGE_MODEL` is the first of these; with none, image generation
     // has no default model to fall back to.
     expect(imageModels.length).toBeGreaterThan(0);
@@ -146,7 +163,7 @@ describe("model registry invariants", () => {
   });
 
   it("never prices cached input above uncached input", () => {
-    for (const model of MODEL_CONFIGS) {
+    for (const model of listModels()) {
       const cached = model.pricing.cachedInputPer1M;
       if (cached === undefined) {
         continue;
@@ -170,7 +187,7 @@ describe("model registry invariants", () => {
    * vendor behind the route, not to the route.
    */
   it("only carries a wireId that says something the id does not", () => {
-    for (const model of MODEL_CONFIGS.filter((m) => m.wireId !== undefined)) {
+    for (const model of listModels().filter((m) => m.wireId !== undefined)) {
       const wireId = model.wireId as string;
       expect(wireId.trim(), `${model.id}: empty wireId`).not.toBe("");
       expect(
@@ -194,7 +211,7 @@ describe("model registry invariants", () => {
    * 404 only appears at dispatch.
    */
   it("gives every dotted Anthropic id the hyphenated name Anthropic serves", () => {
-    for (const model of MODEL_CONFIGS.filter(
+    for (const model of listModels().filter(
       (m) => m.provider === "anthropic" && m.id.includes("."),
     )) {
       const bare = model.id.slice(model.id.indexOf("/") + 1);
@@ -206,7 +223,7 @@ describe("model registry invariants", () => {
 
   it("exposes exactly the non-hidden models", () => {
     expect(getVisibleModels().map((m) => m.id)).toEqual(
-      MODEL_CONFIGS.filter((m) => !m.hidden).map((m) => m.id),
+      listModels().filter((m) => !m.hidden).map((m) => m.id),
     );
   });
 });
@@ -240,7 +257,7 @@ describe("contextWindowLabel", () => {
    * nothing is a card reading `Context M` rather than a number.
    */
   it("states both figures for every registered model", () => {
-    for (const model of MODEL_CONFIGS) {
+    for (const model of listModels()) {
       expect(contextWindowLabel(model), model.id).toMatch(
         /^Context \d[\d.]*[KM] · max out \d[\d.]*[KM]$/,
       );
@@ -379,7 +396,7 @@ describe("applyModelConstraints", () => {
 
   it("carries the restriction across the whole GPT-5.6 generation", () => {
     // Flagging only the model someone had tried is how `luna` shipped broken.
-    const family = MODEL_CONFIGS.filter((m) => m.id.startsWith("openai/gpt-5.6-"));
+    const family = listModels().filter((m) => m.id.startsWith("openai/gpt-5.6-"));
     expect(family.length).toBeGreaterThan(1);
     for (const model of family) {
       expect({ id: model.id, flag: model.capabilities.reasoningWithTools }).toEqual({

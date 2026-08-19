@@ -143,34 +143,41 @@ provider 채널이 하나라도 설정돼 있으면 `GET /api/models` 는 그 pr
 아니라 **그 집합 전체를 대체한다** — 부분 병합은 "이 provider 를 제거한다" 를 표현할 수 없는
 편집으로 만들어 버린다.
 
-### 모델 레지스트리: family 와 offering
+### 모델 레지스트리: agent-models 의 카탈로그
 
-선택 가능한 모델은 `src/domain/llm/models.ts` 에 살고 손으로 관리된다. 가격, 컨텍스트 윈도,
-capability 플래그가 각 provider 의 문서에만 존재하기 때문이다.
+선택 가능한 모델 — 가격, 컨텍스트 윈도, 출력 상한, capability 플래그, 어떤 route 가 그것을
+서빙하는지 — 는 **이 저장소에 있지 않다.** [opspresso/agent-models](https://github.com/opspresso/agent-models)
+가 관리한다: 모델마다 **family** 하나(표시 이름, 가격, 윈도, capability), 경로마다 **offering**
+하나(provider, wire 이름, 그 경로가 바꾸는 것), 그리고 provider 들의 공개 카탈로그로부터 매일
+갱신(가격·할인·한도, 신규 모델과 경로의 추가, 7일 연속 부재 뒤 은퇴). 그 결과가
+`https://models.opspresso.com/models.json` 으로 발행되고, 이 앱은 그것을 **읽기만 한다**. 모델을
+추가하거나 은퇴시키거나 요율을 고치는 일은 거기서 하며, 여기서는 절대 하지 않는다 —
+`tests/models.test.ts` 가 `src/domain/llm/models.ts` 에 숫자가 돌아오는 것을 막는다.
 
-이 파일은 목록 둘을 담는다. **family** 는 모델을 한 번 기술한다 — 표시 이름, 가격, 윈도,
-capability. **offering** 은 어떤 provider 가 그 family 를 어떤 wire 이름으로 제공하는지,
-그리고 그 경로가 무엇을 바꾸는지를 말한다. `MODEL_CONFIGS` 는 그 둘에서 파생되며 id 는
-`provider/family` 다. 그래서 세 가지 경로로 도달하는 같은 모델은 하나의 숫자 묶음과 한 줄짜리
-경로 셋이 된다:
+카탈로그의 항목은 이 앱의 `ModelConfig` 그대로다 (id 는 `provider/family`, 같은 모델의 세 경로는
+같은 이름·윈도·kind 를 가진다, `wireId` 는 경로가 모델 이름을 다르게 쓸 때만). 두 벌이 프로세스에
+도달한다:
 
-```ts
-{ family: "claude-opus-4.8", provider: "anthropic",  wireId: "claude-opus-4-8" },
-{ family: "claude-opus-4.8", provider: "openrouter", wireId: "anthropic/claude-opus-4.8" },
-```
+- **스냅샷** `src/domain/llm/catalog.json` — 커밋된 사본. 모듈 평가 시 로드되어 단위 테스트와
+  `next build` 가 보는 것이고, 발행된 카탈로그를 못 가져온 부팅이 기대는 것이다.
+  `pnpm sync-models` 가 갱신하고(`--check` 는 뒤처졌으면 1 로 종료), 릴리즈 전이나 테스트가 새
+  모델을 봐야 할 때 돌린다 — agent-models 가 바뀔 때마다는 아니다.
+- **발행된 카탈로그** — 부팅 때 `MODELS_CATALOG_URL` 에서 읽어(`src/instrumentation.ts`, 첫 요청
+  전에 await, 소스 자체의 10초 데드라인), 이후 `MODELS_CATALOG_REFRESH_MS` 마다 다시 읽는다
+  (`application/llm/modelCatalogRefresh.ts`). 실패는 로그를 남기고 레지스트리를 그대로 둔다 —
+  정적 사이트가 내려갔다고 부팅을 거부하는 것은 낡은 가격을 무서비스와 바꾸는 일이다.
 
-offering 은 `pricing`, `capabilities`, `contextWindow`, `maxTokens`, `hidden` 을 오버라이드할
-수 있다 — 얕은 병합이라, 다른 것만 이름 붙이면 된다. 오버라이드는 *경로* 가 바꾸는 것(라우터
-자신의 요율, structured output 을 못 하는 게이트웨이)을 위한 것이지, 모델이 무엇인가를 위한
-것은 결코 아니다: `tests/models.test.ts` 는 두 경로가 이름, 윈도, 혹은 그것이 이미지를
-생성하는지 여부에 대해 서로 다른 말을 하면 실패한다.
+`loadModelCatalog` (`src/domain/llm/models.ts`) 가 유일한 입구다: 버전을 확인하고, 항목마다 런이
+읽는 필드(가격이 숫자인지, 윈도가 양의 정수인지, `provider` 가 이 앱이 가진 채널인지 —
+`SUPPORTED_PROVIDERS` 는 카탈로그가 아니라 코드다)를 검증해 맞지 않는 것은 이유와 함께 건너뛰고,
+레지스트리를 **원자적으로** 바꾼다. 진행 중인 런은 이미 해석한 config 를 그대로 쓴다. 쓸 수 있는
+항목이 하나도 없는 카탈로그는 거부되고 이전 상태가 남는다 — 빈 레지스트리는 낡은 것보다 나쁜 유일한
+결과다.
 
-레지스트리 id 는 라우터 관례(`anthropic/claude-opus-4.8`)를 따르고, 저장된 프로젝트 버전이
-들고 있는 것도 그것이다. 어떤 경로가 모델 이름을 다르게 쓸 때 — Anthropic 은
-`claude-opus-4-8` 을 제공하고 점이 있는 형태에는 404 를 낸다. OpenRouter 는
-`anthropic/claude-opus-4.8` 을, Bedrock 은 `openai.gpt-oss-120b` 를 제공한다 — `wireId` 를
-설정하라. 채널이 접두사를 벗겨 낸 뒤 실제로 전송되는 것이 그것이다. 대신 항목 이름을 바꾸면
-옛 id 를 참조하던 모든 저장된 버전이 고아가 된다.
+| 변수 | 기본값 | Runtime | 설명 |
+|---|---|---|---|
+| `MODELS_CATALOG_URL` | `https://models.opspresso.com/models.json` | boot | 발행된 카탈로그의 주소. 구성값이지 사용자가 친 주소가 아니라서 SSRF 가드를 지나지 않는다. |
+| `MODELS_CATALOG_REFRESH_MS` | `3600000` (1시간) | boot | 다시 읽는 간격. `0` 이면 간격을 끄고 부팅 때만 읽는다. |
 
 **Bedrock 의 모델 목록은 이 프로토콜이 도달할 수 있는 모델의 목록이 아니다.** OpenAI 호환
 엔드포인트는 `bedrock-mantle`(`https://bedrock-mantle.<region>.api.aws/v1`, `_AUTH=sigv4`)

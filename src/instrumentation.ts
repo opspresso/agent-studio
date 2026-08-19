@@ -4,9 +4,10 @@
  * misconfiguration fails fast at boot rather than as a 500 on the first request
  * that touches the missing value, and arms graceful-shutdown signal handling.
  *
- * It also repairs managed MCP servers, because a new process is exactly the
- * event that breaks them: their containers join this app's network namespace,
- * and replacing this app strands them in the old one.
+ * It also loads the published model catalog over the committed snapshot and
+ * keeps it refreshed, and repairs managed MCP servers, because a new process
+ * is exactly the event that breaks them: their containers join this app's
+ * network namespace, and replacing this app strands them in the old one.
  *
  * Every `import()` here stays lexically inside the `NEXT_RUNTIME` check. This
  * file is compiled for the edge runtime too, where that comparison folds to
@@ -80,6 +81,22 @@ export async function register(): Promise<void> {
     // nothing in-process can. Without it the same defect is silent until the
     // first audited act, which writes nothing and says nothing.
     assertAuditSinkWired();
+    // The model registry: the committed snapshot until this lands, today's
+    // published catalog after. Awaited so the first request prices against
+    // the catalog rather than the snapshot, and bounded by the source's own
+    // deadline; a failure keeps the snapshot and is logged, never fatal. The
+    // refresher then re-reads on its interval for the life of the process.
+    const [{ createModelCatalogRefresher }, { createHttpModelCatalogSource }, { config }] = await Promise.all([
+      import("@/application/llm/modelCatalogRefresh"),
+      import("@/infrastructure/llm/modelCatalogHttpSource"),
+      import("@/lib/config"),
+    ]);
+    const modelCatalog = createModelCatalogRefresher({
+      source: createHttpModelCatalogSource(config.modelsCatalogUrl),
+      intervalMs: config.modelsCatalogRefreshMs,
+    });
+    await modelCatalog.refresh();
+    modelCatalog.start();
     // The import is inside the guard so the edge build folds it away, and off
     // the awaited path because evaluating the composition root constructs every
     // AWS client — `register` is awaited before the server accepts connections,

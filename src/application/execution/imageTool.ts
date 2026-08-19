@@ -4,15 +4,22 @@ import type { RunOrigin } from "@/domain/execution/actor";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
-import { getModelConfig, MODEL_CONFIGS, toImageUsageRecord } from "@/domain/llm/models";
+import { getModelConfig, listModels, toImageUsageRecord } from "@/domain/llm/models";
 import * as engine from "@/application/llm/engine";
 import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import type { ExecutionDeps } from "./deps";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 import { log } from "@/shared/logger";
 
-/** Default image model: the first registry entry with the imageGeneration capability. */
-export const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;
+/**
+ * Default image model: the first registry entry with the imageGeneration
+ * capability. A function, not a constant: the registry is a catalog loaded at
+ * boot and refreshed after, so the answer is read when asked, not when this
+ * module was evaluated.
+ */
+export function defaultImageModel(): string | undefined {
+  return listModels().find((m) => m.capabilities.imageGeneration)?.id;
+}
 
 /**
  * The image model a version's builtins draw with — one answer for both.
@@ -39,13 +46,14 @@ export function resolveImageModel(version: Version, projectName: string): string
   if (requested && getModelConfig(requested)?.capabilities.imageGeneration) {
     return requested;
   }
+  const fallback = defaultImageModel();
   if (requested) {
     log.warn(
       "image",
-      `version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${DEFAULT_IMAGE_MODEL}`,
+      `version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${fallback}`,
     );
   }
-  return DEFAULT_IMAGE_MODEL;
+  return fallback;
 }
 
 /**

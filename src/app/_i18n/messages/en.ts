@@ -676,6 +676,7 @@ export const en = {
   "models.lede":
     "Which LLM providers this deployment reaches, and which models users may pick for their agents.",
   "models.filter": "Filter models…",
+  "models.catalogUpdated": "catalog updated",
   "models.empty": "No models are registered.",
   "profile.lede": "Your account, and your own usage across every project.",
   "profile.tierLimits": "Tier limits",

@@ -602,6 +602,7 @@ export const ko: Messages = {
   "models.lede":
     "이 배포가 연결하는 LLM 프로바이더와, 사용자가 에이전트에 고를 수 있는 모델입니다.",
   "models.filter": "Model 검색…",
+  "models.catalogUpdated": "카탈로그 갱신",
   "models.empty": "등록된 model 이 없습니다.",
   "profile.lede": "내 계정과, 모든 프로젝트에 걸친 내 사용량입니다.",
   "profile.tierLimits": "등급 한도",

@@ -2,27 +2,41 @@
  * Model registry: per-model pricing and capability flags. Model ids use the
  * OpenAI-compatible `provider/model` form that the LLM channel dispatches on.
  *
- * What a model *is* and who *serves* it are two lists. A **family** states the
- * model once — display name, price, window, what it can do. An **offering** says
- * a provider serves that family, under which wire name, and what the route
- * changes about it. `MODEL_CONFIGS` is derived from the pair.
+ * **The numbers are not in this repository.** The registry is maintained in
+ * [opspresso/agent-models](https://github.com/opspresso/agent-models) — one
+ * family per model, one offering per route, refreshed from the providers every
+ * day — and published as `https://models.opspresso.com/models.json`. This
+ * module *loads* that catalog and answers questions about it; it does not
+ * state a price. Adding a model, retiring one, or correcting a rate is done
+ * there, never here.
  *
- * The split exists because the same model is reachable more than one way — the
- * vendor's own API, Bedrock, a router — and the flat list this replaced would
- * have carried the window, the capability flags and the price once per route.
- * Three copies of a number that changes when the vendor says so is the shape
- * that drifts; a route now states only what is true of the route.
+ * Two copies of the catalog reach this process. `./catalog.json` is a
+ * committed snapshot, loaded at module evaluation: it is what the unit tests
+ * run against, what `next build` sees, and what a boot falls back to when the
+ * published catalog cannot be fetched (`pnpm sync-models` refreshes it). The
+ * published catalog is fetched at boot and on an interval
+ * (`application/llm/modelCatalogRefresh.ts`) and replaces the snapshot
+ * wholesale through `loadModelCatalog`, which is the one way in: it validates
+ * each entry against the shape below, drops what does not fit, and swaps the
+ * registry atomically — a run in flight keeps the config it already resolved.
+ *
+ * The catalog's shape is this module's `ModelConfig`, because agent-models
+ * writes it for this reader; a field is added there only when this file can
+ * read it.
  */
 
 import type { ChannelParams } from "./channel";
+import snapshot from "./catalog.json";
 
 /**
  * Providers selectable for per-provider LLM channels; model ids are prefixed by
- * these.
+ * these. Code, not catalog: a provider is a *channel* this app knows how to
+ * authenticate to and dispatch through (`resolveProviderTarget`), so a catalog
+ * entry under a prefix not listed here is skipped on load rather than offered
+ * to a channel that does not exist.
  *
  * `bedrock` and `openrouter` are routes rather than model vendors — the same
- * family is reachable through them and through its vendor's own API — which is
- * exactly what the family/offering split above is for.
+ * family is reachable through them and through its vendor's own API.
  */
 export const SUPPORTED_PROVIDERS = [
   "openai",
@@ -34,34 +48,11 @@ export const SUPPORTED_PROVIDERS = [
 ] as const;
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
-export const MODEL_MAKER_LABELS = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  google: "Google",
-  xai: "xAI",
-  deepseek: "DeepSeek",
-  zhipu: "Z.ai",
-  minimax: "MiniMax",
-  moonshot: "Moonshot AI",
-  qwen: "Alibaba Qwen",
-  nvidia: "NVIDIA",
-  xiaomimimo: "Xiaomi",
-  tencent: "Tencent",
-  stepfun: "StepFun",
-  upstage: "Upstage",
-} as const;
-
-export type ModelMaker = keyof typeof MODEL_MAKER_LABELS;
-
 /**
  * Single-rate by design — one number per token class, the base (sub-threshold,
- * standard-tier) rate. Three providers now publish a second, higher tier this
- * shape cannot express: Gemini 3.1 Pro and every current Grok model roughly
- * double past a 200k-token prompt (xAI re-bills *all* tokens of the request at
- * the higher rate), and OpenAI's 5.6 family carries a long-context premium.
- * A run past those thresholds is therefore under-counted here; supporting
- * tiers means widening this type and `calculateCost` together, not patching a
- * number.
+ * standard-tier) rate. Providers that publish a second, higher tier past a
+ * token threshold are under-counted here; supporting tiers means widening this
+ * type and `calculateCost` together, not patching a number.
  */
 export interface ModelPricing {
   inputPer1M: number;
@@ -77,6 +68,12 @@ export interface ModelPricing {
   perImage?: number;
   /** Flat charge for each source image supplied to an image edit. */
   perInputImage?: number;
+  /**
+   * A promotional discount, as a fraction in (0, 1), that the rates above are
+   * already net of — informational: cost is computed from the rates as stated.
+   * Present only where the registry's source publishes one (OpenRouter).
+   */
+  discount?: number;
 }
 
 export interface ModelCapabilities {
@@ -89,12 +86,6 @@ export interface ModelCapabilities {
    * False when the provider rejects `tools` together with `reasoning_effort`
    * on chat/completions (the provider's remedy is an explicit effort of
    * "none"). Absent means the combination is allowed.
-   *
-   * It is a property of the *generation*, not of one model: every GPT-5.6
-   * carries it. Flagging only the one that had been observed left the others
-   * failing the same way — an agent project on `luna` 400'd on every run,
-   * with no version setting that could avoid it, because the console offers
-   * no "none" effort and omitting the field is what the provider rejects.
    */
   reasoningWithTools?: boolean;
 }
@@ -106,7 +97,7 @@ export interface ModelConfig {
   /** The family this offering serves — the id's part after the prefix. */
   family: string;
   /** The company that made the model, independent of the route serving it. */
-  maker: ModelMaker;
+  maker: string;
   displayName: string;
   pricing: ModelPricing;
   capabilities: ModelCapabilities;
@@ -117,975 +108,225 @@ export interface ModelConfig {
   /**
    * Model name to send when the `provider/` prefix is stripped for a
    * provider-direct channel, for the routes whose provider names the model
-   * differently from this registry.
-   *
-   * Registry ids follow the router convention (`anthropic/claude-opus-4.8`),
-   * which is what `LLM_BASE_URL` expects and what stored project versions
-   * already hold. Anthropic's own API spells the same model `claude-opus-4-8`
-   * and 404s on the dotted form, so stripping the prefix is not enough to
-   * reach it — hence a per-offering override rather than a rename that would
-   * orphan every stored version. Omit it when the bare id already matches.
+   * differently from this registry (`anthropic/claude-opus-4.8` is
+   * `claude-opus-4-8` to Anthropic; OpenRouter takes `anthropic/claude-opus-4.8`).
+   * Omitted when the bare id already matches.
    */
   wireId?: string;
 }
 
-/** What a model is, stated once and shared by every route that serves it. */
-interface ModelFamily {
-  displayName: string;
-  pricing: ModelPricing;
-  capabilities: ModelCapabilities;
-  contextWindow: number;
-  maxTokens: number;
+/** The published catalog, as `models.json` carries it. */
+export interface ModelCatalog {
+  version: number;
+  /** When the content last changed. */
+  updatedAt: string;
+  source?: string;
+  providers?: string[];
+  makers: Record<string, string>;
+  models: ModelConfig[];
 }
 
-/**
- * One route to a family: a provider that serves it, plus whatever the route
- * changes.
- *
- * The overrides are shallow merges over the family's values, so an offering
- * names only what differs — a router's own margin on the input rate, a gateway
- * that cannot do structured output. `hidden` lives here rather than on the
- * family because retiring is per route: a model can be dropped from one
- * channel and still be offered on another.
- */
-interface ModelOffering {
-  family: ModelFamilyId;
-  provider: string;
-  wireId?: string;
-  pricing?: Partial<ModelPricing>;
-  capabilities?: Partial<ModelCapabilities>;
-  contextWindow?: number;
-  maxTokens?: number;
-  hidden?: boolean;
+export const MODEL_CATALOG_VERSION = 1;
+
+/** What a load did: how many entries were installed, which were dropped and why. */
+export interface ModelCatalogLoadReport {
+  loaded: number;
+  /** `id — reason`, one per entry the catalog carried and this registry refused. */
+  skipped: string[];
+  updatedAt: string;
 }
 
-/**
- * Every Claude model from the 4.6 generation on carries the same limits;
- * Haiku 4.5 predates that and keeps the older ones. These were verified against
- * Anthropic's `/v1/models`, which reports `max_input_tokens` and `max_tokens`
- * per model — prefer it over the docs table when they disagree.
- */
-const ANTHROPIC_CONTEXT = 1_000_000;
-const ANTHROPIC_MAX_OUTPUT = 128_000;
-const HAIKU_45_CONTEXT = 200_000;
-const HAIKU_45_MAX_OUTPUT = 64_000;
-/**
- * GPT-5.1, 5-mini and the image model. `gpt-5.4` was here too, on the reading
- * that only the 5.6 family had the wider window — OpenAI's model page puts 5.4
- * at 1,050,000, and a window set too small is spent, not saved: the run's
- * context budget derives from this number, so history gets truncated early with
- * nothing to say why.
- */
-const OPENAI_CONTEXT = 400_000;
-/** GPT-5.4 and the whole 5.6 family. */
-const OPENAI_WIDE_CONTEXT = 1_050_000;
-const OPENAI_MAX_OUTPUT = 128_000;
-const GEMINI_CONTEXT = 1_048_576;
-const GEMINI_MAX_OUTPUT = 65_536;
-/**
- * The image models are not the text models with a drawing tool: each carries
- * its own, much smaller window, and every one of them was registered with the
- * text figure above — a 1M-token window on a model that accepts 65,536. Too
- * large is the dangerous direction: the run's budget says the prompt fits and
- * the provider rejects it.
- *
- * `gemini-3-pro-image` is Google's own model page; the two Flash Image variants
- * are OpenRouter's `context_length`, which is the only machine-readable source
- * that carries them and agrees with Google on the Pro.
- */
-const GEMINI_PRO_IMAGE_CONTEXT = 65_536;
-const GEMINI_PRO_IMAGE_MAX_OUTPUT = 32_768;
-const GEMINI_FLASH_IMAGE_CONTEXT = 131_072;
-const GEMINI_FLASH_IMAGE_MAX_OUTPUT = 32_768;
-const GEMINI_FLASH_LITE_IMAGE_CONTEXT = 65_536;
+// ---------------------------------------------------------------------------
+// The registry state, and the one way in
+// ---------------------------------------------------------------------------
 
-const TEXT_CAPABILITIES: ModelCapabilities = {
-  tools: true,
-  structuredOutput: true,
-  imageInput: true,
-  reasoning: true,
-};
-
-/**
- * What a Bedrock route cannot do, whatever the model behind it can.
- *
- * `bedrock-mantle` rejects the structured-output parameter for every model it
- * serves, so this belongs to the route and not to the family — the same model
- * reached through its vendor answers a JSON schema fine. Stated once because
- * eleven offerings would otherwise each repeat it.
- */
-const MANTLE_ROUTE: Partial<ModelCapabilities> = { structuredOutput: false };
-
-/**
- * The families. The key is the model's name inside its id — `openai/gpt-5.4`
- * is the `openai` offering of the `gpt-5.4` family — and `satisfies` keeps that
- * key set as a literal union, so an offering naming a family that does not
- * exist is a type error rather than a model that silently disappears.
- */
-const MODEL_FAMILIES = {
-  // OpenAI
-  "gpt-5.6-sol": {
-    displayName: "GPT-5.6 Sol",
-    pricing: { inputPer1M: 5.0, outputPer1M: 30.0, cachedInputPer1M: 0.5 },
-    capabilities: { ...TEXT_CAPABILITIES, reasoningWithTools: false },
-    contextWindow: OPENAI_WIDE_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  "gpt-5.6-terra": {
-    displayName: "GPT-5.6 Terra",
-    // OpenAI's 2026-07-30 cut; the launch rate was 2.5 / 15.0 / 0.25.
-    pricing: { inputPer1M: 2.0, outputPer1M: 12.0, cachedInputPer1M: 0.2 },
-    capabilities: { ...TEXT_CAPABILITIES, reasoningWithTools: false },
-    contextWindow: OPENAI_WIDE_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  "gpt-5.6-luna": {
-    displayName: "GPT-5.6 Luna",
-    // OpenAI's 2026-07-30 cut; the launch rate was 1.0 / 6.0 / 0.1.
-    pricing: { inputPer1M: 0.2, outputPer1M: 1.2, cachedInputPer1M: 0.02 },
-    capabilities: { ...TEXT_CAPABILITIES, reasoningWithTools: false },
-    contextWindow: OPENAI_WIDE_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  "gpt-5.4": {
-    displayName: "GPT-5.4",
-    pricing: { inputPer1M: 2.5, outputPer1M: 15.0, cachedInputPer1M: 0.25 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: OPENAI_WIDE_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  "gpt-5.4-mini": {
-    displayName: "GPT 5.4 Mini",
-    pricing: { inputPer1M: 0.75, outputPer1M: 4.5, cachedInputPer1M: 0.075 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: OPENAI_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  "gpt-5.1": {
-    displayName: "GPT-5.1",
-    pricing: { inputPer1M: 1.25, outputPer1M: 10.0, cachedInputPer1M: 0.125 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: OPENAI_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  "gpt-5-mini": {
-    displayName: "GPT 5 Mini",
-    pricing: { inputPer1M: 0.25, outputPer1M: 2.0, cachedInputPer1M: 0.025 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: OPENAI_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  // Anthropic
-  "claude-fable-5": {
-    displayName: "Fable 5",
-    pricing: { inputPer1M: 10.0, outputPer1M: 50.0, cachedInputPer1M: 1.0 },
-    capabilities: { ...TEXT_CAPABILITIES, structuredOutput: false },
-    contextWindow: ANTHROPIC_CONTEXT,
-    maxTokens: ANTHROPIC_MAX_OUTPUT,
-  },
-  "claude-opus-5": {
-    displayName: "Opus 5",
-    pricing: { inputPer1M: 5.0, outputPer1M: 25.0, cachedInputPer1M: 0.5 },
-    capabilities: { ...TEXT_CAPABILITIES, structuredOutput: false },
-    contextWindow: ANTHROPIC_CONTEXT,
-    maxTokens: ANTHROPIC_MAX_OUTPUT,
-  },
-  "claude-sonnet-5": {
-    displayName: "Sonnet 5",
-    // Launched as an introductory rate expiring 2026-09-01, which is why this
-    // entry used to carry a diary note. Anthropic has since cancelled that
-    // increase — $2 / $10 is now the standard price, with no expiry (verified
-    // 2026-08-14 against their pricing page).
-    pricing: { inputPer1M: 2.0, outputPer1M: 10.0, cachedInputPer1M: 0.2 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: ANTHROPIC_CONTEXT,
-    maxTokens: ANTHROPIC_MAX_OUTPUT,
-  },
-  "claude-opus-4.8": {
-    displayName: "Opus 4.8",
-    pricing: { inputPer1M: 5.0, outputPer1M: 25.0, cachedInputPer1M: 0.5 },
-    capabilities: { ...TEXT_CAPABILITIES, structuredOutput: false },
-    contextWindow: ANTHROPIC_CONTEXT,
-    maxTokens: ANTHROPIC_MAX_OUTPUT,
-  },
-  "claude-opus-4.7": {
-    displayName: "Opus 4.7",
-    pricing: { inputPer1M: 5.0, outputPer1M: 25.0, cachedInputPer1M: 0.5 },
-    capabilities: { ...TEXT_CAPABILITIES, structuredOutput: false },
-    contextWindow: ANTHROPIC_CONTEXT,
-    maxTokens: ANTHROPIC_MAX_OUTPUT,
-  },
-  "claude-sonnet-4.6": {
-    displayName: "Sonnet 4.6",
-    pricing: { inputPer1M: 3.0, outputPer1M: 15.0, cachedInputPer1M: 0.3 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: ANTHROPIC_CONTEXT,
-    maxTokens: ANTHROPIC_MAX_OUTPUT,
-  },
-  "claude-haiku-4.5": {
-    displayName: "Haiku 4.5",
-    pricing: { inputPer1M: 1.0, outputPer1M: 5.0, cachedInputPer1M: 0.1 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: HAIKU_45_CONTEXT,
-    maxTokens: HAIKU_45_MAX_OUTPUT,
-  },
-  // Google
-  "gemini-3.1-pro": {
-    displayName: "Gemini 3.1 Pro",
-    pricing: { inputPer1M: 2.0, outputPer1M: 12.0, cachedInputPer1M: 0.2 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-3.6-flash": {
-    displayName: "Gemini 3.6 Flash",
-    // Promotional standard rate through 2026-12-31.
-    pricing: { inputPer1M: 0.75, outputPer1M: 3.75, cachedInputPer1M: 0.075 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-3.7-flash": {
-    displayName: "Gemini 3.7 Flash",
-    // Promotional standard rate through 2026-12-31.
-    pricing: { inputPer1M: 0.75, outputPer1M: 3.75, cachedInputPer1M: 0.075 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-3.5-flash": {
-    displayName: "Gemini 3.5 Flash",
-    pricing: { inputPer1M: 1.5, outputPer1M: 9.0, cachedInputPer1M: 0.15 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-3.5-flash-lite": {
-    displayName: "Gemini 3.5 Flash Lite",
-    pricing: { inputPer1M: 0.3, outputPer1M: 2.5, cachedInputPer1M: 0.03 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-3.1-flash-lite": {
-    displayName: "Gemini 3.1 Flash Lite",
-    pricing: { inputPer1M: 0.25, outputPer1M: 1.5, cachedInputPer1M: 0.025 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-3-pro": {
-    displayName: "Gemini 3 Pro",
-    pricing: { inputPer1M: 2.0, outputPer1M: 12.0, cachedInputPer1M: 0.2 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-3-flash": {
-    displayName: "Gemini 3 Flash",
-    pricing: { inputPer1M: 0.5, outputPer1M: 3.0, cachedInputPer1M: 0.05 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-2.5-flash": {
-    displayName: "Gemini 2.5 Flash",
-    pricing: { inputPer1M: 0.3, outputPer1M: 2.5, cachedInputPer1M: 0.03 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-2.5-flash-lite": {
-    displayName: "Gemini 2.5 Flash Lite",
-    pricing: { inputPer1M: 0.1, outputPer1M: 0.4, cachedInputPer1M: 0.01 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: GEMINI_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  // xAI
-  "grok-4.5": {
-    displayName: "Grok 4.5",
-    pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.3 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: 500_000,
-    maxTokens: 64_000,
-  },
-  "grok-4.6": {
-    displayName: "Grok 4.6",
-    pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.5 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: 500_000,
-    maxTokens: 64_000,
-  },
-  // The reasoning-mode alias. xAI also publishes a non-reasoning mode and a
-  // multi-agent variant of 4.20 at the same price; neither is registered
-  // because only the dated snapshot ids are documented for them and their
-  // capability flags are not published.
-  "grok-4.20": {
-    displayName: "Grok 4.20",
-    pricing: { inputPer1M: 1.25, outputPer1M: 2.5, cachedInputPer1M: 0.2 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: 1_000_000,
-    maxTokens: 64_000,
-  },
-  "grok-4.3": {
-    displayName: "Grok 4.3",
-    pricing: { inputPer1M: 1.25, outputPer1M: 2.5, cachedInputPer1M: 0.2 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: 1_000_000,
-    maxTokens: 64_000,
-  },
-  "grok-build-0.1": {
-    displayName: "Grok Build 0.1",
-    pricing: { inputPer1M: 1.0, outputPer1M: 2.0, cachedInputPer1M: 0.2 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: 256_000,
-    maxTokens: 64_000,
-  },
-  "grok-4.1-fast": {
-    displayName: "Grok 4.1 Fast",
-    // grok-4.3's rate — see the retirement note on the offering.
-    pricing: { inputPer1M: 1.25, outputPer1M: 2.5, cachedInputPer1M: 0.2 },
-    capabilities: TEXT_CAPABILITIES,
-    contextWindow: 2_000_000,
-    maxTokens: 64_000,
-  },
-  "grok-code-fast-1": {
-    displayName: "Grok Code Fast 1",
-    // grok-build-0.1's rate — see the retirement note on the offering.
-    pricing: { inputPer1M: 1.0, outputPer1M: 2.0, cachedInputPer1M: 0.2 },
-    capabilities: { ...TEXT_CAPABILITIES, imageInput: false },
-    contextWindow: 256_000,
-    maxTokens: 64_000,
-  },
-  /*
-   * The models OpenRouter's traffic actually runs on, which is a different list
-   * from the vendors above: in the first week of August 2026 eight of its ten
-   * most-used models by token volume were Chinese, led by DeepSeek V4 Flash.
-   * None of them is reachable any other way here, so each is a family with a
-   * single route.
-   *
-   * Every number below is read from OpenRouter's own `/api/v1/models` — price,
-   * window, and the capability flags from `supported_parameters`, rather than
-   * assumed from the model's reputation. One of them does not publish a max
-   * output; the value is taken from the nearest sibling in the same line and
-   * said so, because the field is the run's output reserve and guessing it
-   * small is what overflows a window.
-   */
-  "deepseek-v4-flash": {
-    displayName: "DeepSeek V4 Flash",
-    // The dated snapshot's rate. The undated alias this family's one route
-    // follows is cheaper, which is what that offering overrides with.
-    pricing: { inputPer1M: 0.14, outputPer1M: 0.28, cachedInputPer1M: 0.028 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 1_048_576,
-    maxTokens: 384_000,
-  },
-  "deepseek-v4-pro": {
-    displayName: "DeepSeek V4 Pro",
-    pricing: { inputPer1M: 1.32, outputPer1M: 3.96, cachedInputPer1M: 0.044 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 1_048_576,
-    maxTokens: 384_000,
-  },
-  "deepseek-v4-pro-0813": {
-    displayName: "DeepSeek V4 Pro 0813",
-    pricing: { inputPer1M: 1.32, outputPer1M: 3.96, cachedInputPer1M: 0.044 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 1_048_576,
-    maxTokens: 384_000,
-  },
-  "mimo-v2.5": {
-    displayName: "MiMo V2.5",
-    pricing: { inputPer1M: 0.14, outputPer1M: 0.28, cachedInputPer1M: 0.0028 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: 1_050_000,
-    maxTokens: 131_072,
-  },
-  "hy3": {
-    displayName: "Tencent Hy3",
-    pricing: { inputPer1M: 0.132, outputPer1M: 0.528, cachedInputPer1M: 0.033 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 262_144,
-    maxTokens: 128_000,
-  },
-  "glm-5.2": {
-    displayName: "GLM 5.2",
-    pricing: { inputPer1M: 0.63, outputPer1M: 1.98, cachedInputPer1M: 0.0945 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 1_048_576,
-    maxTokens: 131_072,
-  },
-  "minimax-m3": {
-    displayName: "MiniMax M3",
-    pricing: { inputPer1M: 0.3, outputPer1M: 1.2, cachedInputPer1M: 0.06 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: 1_048_576,
-    maxTokens: 512_000,
-  },
-  "step-3.7-flash": {
-    displayName: "Step 3.7 Flash",
-    pricing: { inputPer1M: 0.2, outputPer1M: 1.15, cachedInputPer1M: 0.04 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: 262_144,
-    maxTokens: 256_000,
-  },
-  "kimi-k3": {
-    displayName: "Kimi K3",
-    pricing: { inputPer1M: 3.0, outputPer1M: 15.0, cachedInputPer1M: 0.3 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: 1_048_576,
-    // Not published for K3; K2.7 Code's cap, the nearest sibling that states one.
-    maxTokens: 262_144,
-  },
-  "qwen3.8-max": {
-    displayName: "Qwen3.8 Max",
-    pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.25 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: 1_000_000,
-    maxTokens: 131_072,
-  },
-  "qwen3.8-2.4t-a95b": {
-    displayName: "Qwen3.8 2.4T A95B",
-    pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.25 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 1_048_576,
-    maxTokens: 262_144,
-  },
-  "qwen3.8-27b": {
-    displayName: "Qwen3.8 27B",
-    pricing: { inputPer1M: 0.45, outputPer1M: 3.2, cachedInputPer1M: 0.05 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: 262_144,
-    maxTokens: 131_072,
-  },
-  "nemotron-3.5-lightning": {
-    displayName: "Nemotron 3.5 Lightning",
-    pricing: { inputPer1M: 0.08, outputPer1M: 0.2, cachedInputPer1M: 0.04 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 1_000_000,
-    maxTokens: 131_072,
-  },
-  "solar-pro-4": {
-    displayName: "Solar Pro 4",
-    pricing: { inputPer1M: 0.03, outputPer1M: 0.12, cachedInputPer1M: 0.006 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 524_288,
-    maxTokens: 131_072,
-  },
-  "solar-pro-3": {
-    displayName: "Solar Pro 3",
-    pricing: { inputPer1M: 0.15, outputPer1M: 0.6, cachedInputPer1M: 0.015 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 131_072,
-    maxTokens: 131_072,
-  },
-  /*
-   * Open-weight models, reached through Bedrock — the same ones OpenRouter's
-   * traffic runs on, one generation back: Bedrock serves DeepSeek V3.2 where
-   * OpenRouter has V4, GLM 5 where it has 5.2. They are separate families for
-   * that reason, not routes to the ones above.
-   *
-   * Prices are AWS's own, from the Pricing API's us-east-1 standard-tier mantle
-   * rows. Windows and capability flags come from OpenRouter's entry for the same
-   * open-weight model, which is the only machine-readable source that carries
-   * them — AWS publishes them per model card, in prose. `structuredOutput` is
-   * the exception and is not taken from there: it is a route limit, so it lives
-   * on the offering as `MANTLE_ROUTE`.
-   *
-   * The two GPT OSS entries predate that and keep their model-card limits
-   * ("128K" / "16K" — the card's own rounding, kept rather than widened to the
-   * model's 131,072, because the number that matters is the one the route
-   * enforces).
-   */
-  "gpt-oss-120b": {
-    displayName: "GPT OSS 120B",
-    pricing: { inputPer1M: 0.15, outputPer1M: 0.6 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 128_000,
-    maxTokens: 16_000,
-  },
-  "gpt-oss-20b": {
-    displayName: "GPT OSS 20B",
-    pricing: { inputPer1M: 0.07, outputPer1M: 0.3 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 128_000,
-    maxTokens: 16_000,
-  },
-  "deepseek-v3.2": {
-    displayName: "DeepSeek V3.2",
-    pricing: { inputPer1M: 0.62, outputPer1M: 1.85 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 163_840,
-    maxTokens: 65_536,
-  },
-  "glm-5": {
-    displayName: "GLM 5",
-    pricing: { inputPer1M: 1.0, outputPer1M: 3.2 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 204_800,
-    maxTokens: 131_072,
-  },
-  "glm-4.7": {
-    displayName: "GLM 4.7",
-    pricing: { inputPer1M: 0.6, outputPer1M: 2.2 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 204_800,
-    maxTokens: 131_072,
-  },
-  "glm-4.7-flash": {
-    displayName: "GLM 4.7 Flash",
-    pricing: { inputPer1M: 0.07, outputPer1M: 0.4 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 202_752,
-    maxTokens: 16_384,
-  },
-  "minimax-m2.5": {
-    displayName: "MiniMax M2.5",
-    pricing: { inputPer1M: 0.3, outputPer1M: 1.2 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 204_800,
-    maxTokens: 196_608,
-  },
-  "kimi-k2.5": {
-    displayName: "Kimi K2.5",
-    pricing: { inputPer1M: 0.6, outputPer1M: 3.0 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: 262_144,
-    maxTokens: 262_144,
-  },
-  "qwen3-coder-next": {
-    displayName: "Qwen3 Coder Next",
-    pricing: { inputPer1M: 0.5, outputPer1M: 1.2 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: false },
-    contextWindow: 262_144,
-    maxTokens: 262_144,
-  },
-  "qwen3-235b-a22b": {
-    displayName: "Qwen3 235B A22B Instruct 2507",
-    pricing: { inputPer1M: 0.22, outputPer1M: 0.88 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: false },
-    contextWindow: 262_144,
-    maxTokens: 16_384,
-  },
-  "nemotron-3-super-120b": {
-    displayName: "Nemotron 3 Super",
-    pricing: { inputPer1M: 0.15, outputPer1M: 0.65 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 1_000_000,
-    maxTokens: 16_384,
-  },
-  "kimi-k2-thinking": {
-    displayName: "Kimi K2 Thinking",
-    pricing: { inputPer1M: 0.6, outputPer1M: 2.5 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
-    contextWindow: 262_144,
-    maxTokens: 100_352,
-  },
-  // Image generation
-  "gpt-image-2": {
-    displayName: "GPT Image 2",
-    pricing: {
-      inputPer1M: 5.0,
-      outputPer1M: 0,
-      // Cached *text* input — the pair of `inputPer1M` above. OpenAI's cached
-      // image-input rate ($2.00/MTok) has no field here; nothing reads cached
-      // rates on the image path today (`calculateImageCost` prices raw tokens
-      // only), so the field is kept honest for the day something does.
-      cachedInputPer1M: 1.25,
-      imageInputPer1M: 8.0,
-      imageOutputPer1M: 30.0,
-    },
-    capabilities: {
-      tools: false,
-      structuredOutput: false,
-      imageInput: true,
-      reasoning: false,
-      imageGeneration: true,
-    },
-    contextWindow: OPENAI_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  "gemini-3-pro-image": {
-    displayName: "Nano Banana Pro (Gemini 3 Pro Image)",
-    pricing: {
-      inputPer1M: 2.0,
-      outputPer1M: 12.0,
-      imageOutputPer1M: 120.0,
-      perImage: 0.134,
-    },
-    capabilities: {
-      tools: false,
-      structuredOutput: false,
-      imageInput: true,
-      reasoning: true,
-      imageGeneration: true,
-    },
-    contextWindow: GEMINI_PRO_IMAGE_CONTEXT,
-    maxTokens: GEMINI_PRO_IMAGE_MAX_OUTPUT,
-  },
-  "gemini-3.1-flash-lite-image": {
-    displayName: "Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
-    pricing: {
-      inputPer1M: 0.25,
-      outputPer1M: 1.5,
-      imageOutputPer1M: 30.0,
-      perImage: 0.034,
-    },
-    capabilities: {
-      tools: false,
-      structuredOutput: false,
-      // Google documents this variant as "not optimized for multiple reference
-      // inputs or multi-turn sequential editing" and demonstrates editing only
-      // on the non-Lite models, so it is not something to hand a conversation's
-      // attachments to. That is all this flag decides — it does not keep
-      // EditImage off the model, which `buildImageEditor` offers on
-      // `imageGeneration` alone and on purpose, so a provider that refuses an
-      // edit says so in the tool result rather than being guessed at here.
-      imageInput: false,
-      reasoning: false,
-      imageGeneration: true,
-    },
-    contextWindow: GEMINI_FLASH_LITE_IMAGE_CONTEXT,
-    maxTokens: GEMINI_MAX_OUTPUT,
-  },
-  "gemini-3.1-flash-image": {
-    displayName: "Nano Banana 2 (Gemini 3.1 Flash Image)",
-    pricing: {
-      inputPer1M: 0.5,
-      outputPer1M: 3.0,
-      imageOutputPer1M: 60.0,
-      perImage: 0.067,
-    },
-    capabilities: {
-      tools: false,
-      structuredOutput: false,
-      imageInput: true,
-      reasoning: false,
-      imageGeneration: true,
-    },
-    contextWindow: GEMINI_FLASH_IMAGE_CONTEXT,
-    maxTokens: GEMINI_FLASH_IMAGE_MAX_OUTPUT,
-  },
-  /*
-   * The three xAI drawing models, priced from what an edit was actually billed
-   * rather than from the price list: xAI answers `usage.cost_in_usd_ticks` on
-   * every call, in units of 1e-10 USD. One edit with one source image came back
-   * at $0.022, $0.06 and $0.07 for the three below — which is each model's
-   * `perImage` plus a tenth of what this file used to claim a source image
-   * costs. The whole block had been read an order of magnitude too high, in the
-   * one unit nobody thinks to check.
-   */
-  "grok-imagine-image": {
-    displayName: "Grok Imagine",
-    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.02, perInputImage: 0.002 },
-    capabilities: {
-      tools: false,
-      structuredOutput: false,
-      imageInput: false,
-      reasoning: false,
-      imageGeneration: true,
-    },
-    contextWindow: 32_768,
-    maxTokens: 4_096,
-  },
-  "grok-imagine-image-quality": {
-    displayName: "Grok Imagine Quality",
-    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.05, perInputImage: 0.01 },
-    capabilities: {
-      tools: false,
-      structuredOutput: false,
-      imageInput: true,
-      reasoning: false,
-      imageGeneration: true,
-    },
-    contextWindow: 32_768,
-    maxTokens: 4_096,
-  },
-  "grok-imagine-image-2.0": {
-    displayName: "Grok Imagine Image 2.0",
-    // The one model here that charges by quality and resolution as well —
-    // $0.04 to $0.08. This is xAI's headline `image_price`, which is what a
-    // request naming neither gets, and neither route names them: xAI's own
-    // dialect has no quality field, and the OpenRouter one is not sent because
-    // this model refuses the values our tool schema offers.
-    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.06, perInputImage: 0.01 },
-    capabilities: {
-      tools: false,
-      structuredOutput: false,
-      imageInput: true,
-      reasoning: false,
-      imageGeneration: true,
-    },
-    contextWindow: 32_768,
-    maxTokens: 4_096,
-  },
-} satisfies Record<string, ModelFamily>;
-
-type ModelFamilyId = keyof typeof MODEL_FAMILIES;
-
-function makerForFamily(family: ModelFamilyId): ModelMaker {
-  if (family.startsWith("gpt-")) return "openai";
-  if (family.startsWith("claude-")) return "anthropic";
-  if (family.startsWith("gemini-")) return "google";
-  if (family.startsWith("grok-")) return "xai";
-  if (family.startsWith("deepseek-")) return "deepseek";
-  if (family.startsWith("glm-")) return "zhipu";
-  if (family.startsWith("minimax-")) return "minimax";
-  if (family.startsWith("kimi-")) return "moonshot";
-  if (family.startsWith("qwen")) return "qwen";
-  if (family.startsWith("nemotron-")) return "nvidia";
-  if (family.startsWith("mimo-")) return "xiaomimimo";
-  if (family === "hy3") return "tencent";
-  if (family.startsWith("step-")) return "stepfun";
-  if (family.startsWith("solar-")) return "upstage";
-  throw new Error(`Model family "${family}" has no maker`);
+interface RegistryState {
+  models: ModelConfig[];
+  byId: Map<string, ModelConfig>;
+  makers: Record<string, string>;
+  updatedAt: string;
 }
 
-const MODEL_OFFERINGS: ModelOffering[] = [
-  // OpenAI
-  { family: "gpt-5.6-sol", provider: "openai" },
-  { family: "gpt-5.6-terra", provider: "openai" },
-  { family: "gpt-5.6-luna", provider: "openai" },
-  { family: "gpt-5.4", provider: "openai" },
-  { family: "gpt-5.4-mini", provider: "openai" },
-  { family: "gpt-5.1", provider: "openai", hidden: true },
-  { family: "gpt-5-mini", provider: "openai", hidden: true },
-  // Anthropic. The dotted registry name is not what Anthropic's own API
-  // answers to from `claude-opus-4-8` on, hence the wire ids.
-  { family: "claude-fable-5", provider: "anthropic" },
-  { family: "claude-opus-5", provider: "anthropic" },
-  { family: "claude-sonnet-5", provider: "anthropic" },
-  { family: "claude-opus-4.8", provider: "anthropic", wireId: "claude-opus-4-8" },
-  { family: "claude-opus-4.7", provider: "anthropic", wireId: "claude-opus-4-7" },
-  { family: "claude-sonnet-4.6", provider: "anthropic", wireId: "claude-sonnet-4-6", hidden: true },
-  { family: "claude-haiku-4.5", provider: "anthropic", wireId: "claude-haiku-4-5" },
-  // Google
-  { family: "gemini-3.1-pro", provider: "google" },
-  { family: "gemini-3.7-flash", provider: "google" },
-  { family: "gemini-3.6-flash", provider: "google" },
-  { family: "gemini-3.5-flash", provider: "google" },
-  { family: "gemini-3.5-flash-lite", provider: "google" },
-  { family: "gemini-3.1-flash-lite", provider: "google" },
-  // Shut down by Google on 2026-03-09 (the served id was
-  // `gemini-3-pro-preview`; `gemini-3.1-pro` is the documented successor).
-  // Hidden rather than deleted for the same reason as the retired xAI
-  // offerings below: a past run's usage row is priced by looking it up here.
-  { family: "gemini-3-pro", provider: "google", hidden: true },
-  { family: "gemini-3-flash", provider: "google" },
-  { family: "gemini-2.5-flash", provider: "google" },
-  { family: "gemini-2.5-flash-lite", provider: "google" },
-  // xAI
-  { family: "grok-4.6", provider: "xai" },
-  { family: "grok-4.5", provider: "xai" },
-  { family: "grok-4.20", provider: "xai" },
-  { family: "grok-4.3", provider: "xai" },
-  { family: "grok-build-0.1", provider: "xai" },
-  /*
-   * Retired 2026-05-15 (12:00 PT). xAI keeps the retired slugs of that
-   * generation *resolving*, not erroring: each redirects to its successor —
-   * `grok-4-1-fast-reasoning` to grok-4.3, `grok-code-fast-1` to
-   * grok-build-0.1 — and bills at the target's rate. So each family's
-   * `pricing` mirrors the target's, not the rate these models were published
-   * at: the number this app reports has to be the number that lands on the
-   * invoice, and a stale rate there reads as a discount nobody is getting.
-   * (xAI's migration page also carries a flat "billed at grok-4.3 pricing"
-   * sentence with no per-slug scoping; the routing table is the reading
-   * followed here, which for `grok-code-fast-1` means grok-build-0.1's rate.)
-   * The other fields still describe the model as xAI documented it.
-   *
-   * `grok-4.1-fast` is **gone** — the dotted slug answers 404 (verified
-   * against the live API): the redirect covers only the hyphenated ids xAI
-   * actually served (`grok-4-1-fast-reasoning`/`-non-reasoning`).
-   * `grok-code-fast-1` still resolves.
-   *
-   * Hidden rather than deleted, and that stays true past retirement: a stored
-   * version may still name one, and a *past* run's usage row is priced by
-   * looking the model up here — deleting it would re-price history at $0. What
-   * retirement changes is that new runs fail at the provider, which needs no
-   * entry to say so.
-   */
-  { family: "grok-4.1-fast", provider: "xai", hidden: true },
-  { family: "grok-code-fast-1", provider: "xai", hidden: true },
-  /*
-   * Bedrock, through its OpenAI-compatible `bedrock-mantle` endpoint. Wire ids
-   * are the endpoint's own (`openai.gpt-oss-120b`), which is neither the
-   * registry's name nor an inference-profile id.
-   *
-   * **Claude is not here on purpose.** Bedrock serves it, but not on this API:
-   * `/v1/chat/completions` answers `does not support the '/v1/chat/completions'
-   * API` for every `anthropic.*` model — they take the Anthropic Messages API
-   * instead, which is a second wire protocol this app does not speak. Adding
-   * those offerings would register models that 400 on every run.
-   *
-   * Prices are AWS's own, read from the Pricing API for us-east-1 standard-tier
-   * mantle usage, and `structuredOutput` is off for the route rather than the
-   * model: mantle rejects the parameter whatever is behind it.
-   */
-  { family: "gpt-oss-120b", provider: "bedrock", wireId: "openai.gpt-oss-120b", capabilities: MANTLE_ROUTE },
-  { family: "gpt-oss-20b", provider: "bedrock", wireId: "openai.gpt-oss-20b", capabilities: MANTLE_ROUTE },
-  { family: "deepseek-v3.2", provider: "bedrock", wireId: "deepseek.v3.2", capabilities: MANTLE_ROUTE },
-  { family: "glm-5", provider: "bedrock", wireId: "zai.glm-5", capabilities: MANTLE_ROUTE },
-  { family: "glm-4.7", provider: "bedrock", wireId: "zai.glm-4.7", capabilities: MANTLE_ROUTE },
-  { family: "glm-4.7-flash", provider: "bedrock", wireId: "zai.glm-4.7-flash", capabilities: MANTLE_ROUTE },
-  { family: "minimax-m2.5", provider: "bedrock", wireId: "minimax.minimax-m2.5", capabilities: MANTLE_ROUTE },
-  { family: "kimi-k2.5", provider: "bedrock", wireId: "moonshotai.kimi-k2.5", capabilities: MANTLE_ROUTE },
-  { family: "qwen3-coder-next", provider: "bedrock", wireId: "qwen.qwen3-coder-next", capabilities: MANTLE_ROUTE },
-  { family: "qwen3-235b-a22b", provider: "bedrock", wireId: "qwen.qwen3-235b-a22b-2507", capabilities: MANTLE_ROUTE },
-  {
-    family: "nemotron-3-super-120b",
-    provider: "bedrock",
-    wireId: "nvidia.nemotron-super-3-120b",
-    capabilities: MANTLE_ROUTE,
-  },
-  { family: "kimi-k2-thinking", provider: "bedrock", wireId: "moonshotai.kimi-k2-thinking", capabilities: MANTLE_ROUTE },
-  /*
-   * OpenRouter. Its ids are `vendor/model`, so every offering carries a wireId —
-   * the registry's own prefix is `openrouter`, and what goes on the wire is the
-   * vendor's name for the model.
-   *
-   * A route restates a price only when OpenRouter's current catalog differs from
-   * the family rate. Cost for this provider does not rest on these estimates —
-   * it reports what a call actually cost and that is what gets recorded — but
-   * the registry still has to show an honest estimate before a run.
-   */
-  { family: "claude-fable-5", provider: "openrouter", wireId: "anthropic/claude-fable-5" },
-  { family: "claude-opus-5", provider: "openrouter", wireId: "anthropic/claude-opus-5" },
-  { family: "claude-sonnet-5", provider: "openrouter", wireId: "anthropic/claude-sonnet-5" },
-  { family: "claude-opus-4.8", provider: "openrouter", wireId: "anthropic/claude-opus-4.8" },
-  { family: "claude-haiku-4.5", provider: "openrouter", wireId: "anthropic/claude-haiku-4.5" },
-  // Only Sol needs a rate of its own, and it is a *discount* rather than a
-  // cheaper route: its default endpoint carries `pricing.discount: 0.5` over
-  // OpenAI's $5/$30, which the priority and Azure endpoints of the same model
-  // still charge. So this number ends when the promotion does, unlike Terra's
-  // and Luna's, which are the vendor's own rate and need no override at all.
-  {
-    family: "gpt-5.6-sol",
-    provider: "openrouter",
-    wireId: "openai/gpt-5.6-sol",
-    pricing: { inputPer1M: 2.5, outputPer1M: 15.0, cachedInputPer1M: 0.25 },
-  },
-  { family: "gpt-5.6-terra", provider: "openrouter", wireId: "openai/gpt-5.6-terra" },
-  { family: "gpt-5.6-luna", provider: "openrouter", wireId: "openai/gpt-5.6-luna" },
-  { family: "gpt-5.4", provider: "openrouter", wireId: "openai/gpt-5.4" },
-  { family: "gpt-5.4-mini", provider: "openrouter", wireId: "openai/gpt-5.4-mini" },
-  { family: "gemini-3.6-flash", provider: "openrouter", wireId: "google/gemini-3.6-flash" },
-  {
-    family: "gemini-3.7-flash",
-    provider: "openrouter",
-    wireId: "google/gemini-3.7-flash",
-    pricing: { inputPer1M: 0.375, outputPer1M: 1.875, cachedInputPer1M: 0.0375 },
-  },
-  { family: "grok-4.6", provider: "openrouter", wireId: "x-ai/grok-4.6" },
-  { family: "grok-4.5", provider: "openrouter", wireId: "x-ai/grok-4.5" },
-  { family: "grok-4.3", provider: "openrouter", wireId: "x-ai/grok-4.3" },
-  // The models OpenRouter is itself busiest with — see the families above.
-  // `deepseek/deepseek-v4-flash` is the undated alias; it resolves to whichever
-  // snapshot OpenRouter has current, which is what a route should follow.
-  {
-    family: "deepseek-v4-flash",
-    provider: "openrouter",
-    wireId: "deepseek/deepseek-v4-flash",
-    pricing: { inputPer1M: 0.0826, outputPer1M: 0.1652, cachedInputPer1M: 0.01652 },
-  },
-  { family: "deepseek-v4-pro", provider: "openrouter", wireId: "deepseek/deepseek-v4-pro" },
-  { family: "deepseek-v4-pro-0813", provider: "openrouter", wireId: "deepseek/deepseek-v4-pro-0813" },
-  { family: "mimo-v2.5", provider: "openrouter", wireId: "xiaomi/mimo-v2.5" },
-  { family: "hy3", provider: "openrouter", wireId: "tencent/hy3" },
-  {
-    family: "glm-5.2",
-    provider: "openrouter",
-    wireId: "z-ai/glm-5.2",
-    pricing: { inputPer1M: 0.5, outputPer1M: 3.15, cachedInputPer1M: 0.115 },
-  },
-  { family: "minimax-m3", provider: "openrouter", wireId: "minimax/minimax-m3" },
-  { family: "step-3.7-flash", provider: "openrouter", wireId: "stepfun/step-3.7-flash" },
-  { family: "kimi-k3", provider: "openrouter", wireId: "moonshotai/kimi-k3" },
-  { family: "qwen3.8-max", provider: "openrouter", wireId: "qwen/qwen3.8-max" },
-  { family: "qwen3.8-2.4t-a95b", provider: "openrouter", wireId: "qwen/qwen3.8-2.4t-a95b" },
-  { family: "qwen3.8-27b", provider: "openrouter", wireId: "qwen/qwen3.8-27b" },
-  { family: "nemotron-3.5-lightning", provider: "openrouter", wireId: "nvidia/nemotron-3.5-lightning" },
-  // Upstage. OpenRouter spells the two generations differently — `solar-pro4`
-  // against `solar-pro-3` — so the registry keeps one readable form and the
-  // wire ids carry theirs, which is the whole job of `wireId`.
-  { family: "solar-pro-4", provider: "openrouter", wireId: "upstage/solar-pro4" },
-  { family: "solar-pro-3", provider: "openrouter", wireId: "upstage/solar-pro-3" },
-  // Image generation
-  { family: "gpt-image-2", provider: "openai" },
-  { family: "gemini-3-pro-image", provider: "google" },
-  { family: "gemini-3.1-flash-lite-image", provider: "google" },
-  { family: "gemini-3.1-flash-image", provider: "google" },
-  { family: "grok-imagine-image", provider: "xai" },
-  { family: "grok-imagine-image-quality", provider: "xai" },
-  { family: "grok-imagine-image-2.0", provider: "xai" },
-  /*
-   * Image generation through OpenRouter, which serves every family this app
-   * already draws with. Not one of these restates a price: each was read from
-   * `/api/v1/images/models/<id>/endpoints`, whose `{billable, unit, cost_usd}`
-   * lines are the same numbers the vendors publish — the router takes its
-   * margin from the vendor's own rate rather than adding to the sticker.
-   *
-   * The windows stay the family's. OpenRouter states a larger one for two of
-   * them, but a route may not disagree with its family about what the model is
-   * (`tests/models.test.ts`), and the smaller figure is the safe direction: it
-   * is what the run's context budget is sized against.
-   *
-   * Every one of them drew a picture through this app's adapter against the
-   * live API before being listed here, and the edit path was walked on the
-   * Flash Lite one — the same bar the Bedrock entries had to clear.
-   */
-  { family: "gpt-image-2", provider: "openrouter", wireId: "openai/gpt-image-2" },
-  { family: "gemini-3-pro-image", provider: "openrouter", wireId: "google/gemini-3-pro-image" },
-  {
-    family: "gemini-3.1-flash-image",
-    provider: "openrouter",
-    wireId: "google/gemini-3.1-flash-image",
-  },
-  {
-    family: "gemini-3.1-flash-lite-image",
-    provider: "openrouter",
-    wireId: "google/gemini-3.1-flash-lite-image",
-  },
-  {
-    family: "grok-imagine-image-quality",
-    provider: "openrouter",
-    wireId: "x-ai/grok-imagine-image-quality",
-  },
-  {
-    family: "grok-imagine-image-2.0",
-    provider: "openrouter",
-    wireId: "x-ai/grok-imagine-image-2.0",
-  },
-];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
-/** One offering resolved against its family. Overrides are shallow merges. */
-function deriveModel(offering: ModelOffering): ModelConfig {
-  const family = MODEL_FAMILIES[offering.family];
+function isRate(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+const PRICING_RATE_KEYS = [
+  "inputPer1M",
+  "outputPer1M",
+  "cachedInputPer1M",
+  "imageInputPer1M",
+  "imageOutputPer1M",
+  "perImage",
+  "perInputImage",
+] as const;
+const CAPABILITY_KEYS = ["tools", "structuredOutput", "imageInput", "reasoning"] as const;
+const OPTIONAL_CAPABILITY_KEYS = ["imageGeneration", "reasoningWithTools"] as const;
+
+/**
+ * Why a catalog entry cannot be installed, or null when it can. Strict on the
+ * fields a run reads (a price that is not a number books a call at NaN; a
+ * window that is not a count breaks the context budget) and silent on the
+ * rest, so a field the catalog gains later does not take every model with it.
+ */
+function rejectReason(entry: unknown): string | null {
+  if (!isRecord(entry)) return "not an object";
+  const id = entry.id;
+  if (typeof id !== "string" || id === "") return "no id";
+  const slash = id.indexOf("/");
+  if (slash <= 0 || slash === id.length - 1) return "id is not provider/family";
+  const provider = id.slice(0, slash);
+  if (!(SUPPORTED_PROVIDERS as readonly string[]).includes(provider)) {
+    return `provider "${provider}" is not a channel this app has`;
+  }
+  if (entry.provider !== provider) return "provider field disagrees with the id";
+  if (entry.family !== id.slice(slash + 1)) return "family field disagrees with the id";
+  if (typeof entry.maker !== "string" || entry.maker === "") return "no maker";
+  if (typeof entry.displayName !== "string" || entry.displayName.trim() === "") return "no displayName";
+  if (!isRecord(entry.pricing)) return "no pricing";
+  if (!isRate(entry.pricing.inputPer1M) || !isRate(entry.pricing.outputPer1M)) {
+    return "pricing lacks inputPer1M/outputPer1M";
+  }
+  for (const key of PRICING_RATE_KEYS) {
+    const value = entry.pricing[key];
+    if (value !== undefined && !isRate(value)) return `pricing.${key} is not a rate`;
+  }
+  if (entry.pricing.discount !== undefined) {
+    const d = entry.pricing.discount;
+    if (typeof d !== "number" || !(d > 0 && d < 1)) return "pricing.discount is not a fraction";
+  }
+  if (!isRecord(entry.capabilities)) return "no capabilities";
+  for (const key of CAPABILITY_KEYS) {
+    if (typeof entry.capabilities[key] !== "boolean") return `capabilities.${key} is not a boolean`;
+  }
+  for (const key of OPTIONAL_CAPABILITY_KEYS) {
+    const value = entry.capabilities[key];
+    if (value !== undefined && typeof value !== "boolean") return `capabilities.${key} is not a boolean`;
+  }
+  if (!isCount(entry.contextWindow)) return "contextWindow is not a positive integer";
+  if (!isCount(entry.maxTokens)) return "maxTokens is not a positive integer";
+  if (entry.maxTokens > entry.contextWindow) return "maxTokens exceeds contextWindow";
+  if (entry.hidden !== undefined && entry.hidden !== true) return "hidden is neither true nor absent";
+  if (entry.wireId !== undefined && (typeof entry.wireId !== "string" || entry.wireId === "")) {
+    return "wireId is not a string";
+  }
+  return null;
+}
+
+/** The entry as this module will hold it — the known fields, nothing the catalog may have added. */
+function toModelConfig(entry: Record<string, unknown>): ModelConfig {
+  const pricing = entry.pricing as Record<string, unknown>;
+  const capabilities = entry.capabilities as Record<string, unknown>;
+  const picked = <T extends string>(source: Record<string, unknown>, keys: readonly T[]) =>
+    Object.fromEntries(keys.filter((key) => source[key] !== undefined).map((key) => [key, source[key]]));
   return {
-    id: `${offering.provider}/${offering.family}`,
-    provider: offering.provider,
-    family: offering.family,
-    maker: makerForFamily(offering.family),
-    displayName: family.displayName,
-    pricing: { ...family.pricing, ...offering.pricing },
-    capabilities: { ...family.capabilities, ...offering.capabilities },
-    contextWindow: offering.contextWindow ?? family.contextWindow,
-    maxTokens: offering.maxTokens ?? family.maxTokens,
-    ...(offering.wireId !== undefined ? { wireId: offering.wireId } : {}),
-    ...(offering.hidden ? { hidden: true } : {}),
+    id: entry.id as string,
+    provider: entry.provider as string,
+    family: entry.family as string,
+    maker: entry.maker as string,
+    displayName: entry.displayName as string,
+    pricing: picked(pricing, [...PRICING_RATE_KEYS, "discount"]) as unknown as ModelPricing,
+    capabilities: picked(capabilities, [...CAPABILITY_KEYS, ...OPTIONAL_CAPABILITY_KEYS]) as unknown as ModelCapabilities,
+    contextWindow: entry.contextWindow as number,
+    maxTokens: entry.maxTokens as number,
+    ...(entry.wireId !== undefined ? { wireId: entry.wireId as string } : {}),
+    ...(entry.hidden === true ? { hidden: true } : {}),
   };
 }
 
-export const MODEL_CONFIGS: ModelConfig[] = MODEL_OFFERINGS.map(deriveModel);
+/**
+ * Validate a catalog into registry state, without installing it. Throws when
+ * the catalog as a whole is unusable — wrong version, no models, or nothing
+ * that survives validation — because replacing a working registry with an
+ * empty one is the one outcome worse than a stale one.
+ */
+function parseCatalog(catalog: unknown): { state: RegistryState; report: ModelCatalogLoadReport } {
+  if (!isRecord(catalog)) throw new Error("model catalog is not an object");
+  if (catalog.version !== MODEL_CATALOG_VERSION) {
+    throw new Error(`model catalog version ${String(catalog.version)} is not ${MODEL_CATALOG_VERSION}`);
+  }
+  if (!Array.isArray(catalog.models) || catalog.models.length === 0) {
+    throw new Error("model catalog carries no models");
+  }
+  const makers: Record<string, string> = {};
+  if (isRecord(catalog.makers)) {
+    for (const [maker, label] of Object.entries(catalog.makers)) {
+      if (typeof label === "string" && label !== "") makers[maker] = label;
+    }
+  }
+  const models: ModelConfig[] = [];
+  const byId = new Map<string, ModelConfig>();
+  const skipped: string[] = [];
+  for (const entry of catalog.models) {
+    const reason = rejectReason(entry);
+    const id = isRecord(entry) && typeof entry.id === "string" ? entry.id : "(no id)";
+    if (reason !== null) {
+      skipped.push(`${id} — ${reason}`);
+      continue;
+    }
+    if (byId.has(id)) {
+      skipped.push(`${id} — duplicate id`);
+      continue;
+    }
+    const model = toModelConfig(entry as Record<string, unknown>);
+    models.push(model);
+    byId.set(model.id, model);
+  }
+  if (models.length === 0) {
+    throw new Error(`model catalog carries ${catalog.models.length} models and none is usable`);
+  }
+  const updatedAt = typeof catalog.updatedAt === "string" ? catalog.updatedAt : "";
+  return { state: { models, byId, makers, updatedAt }, report: { loaded: models.length, skipped, updatedAt } };
+}
 
-const MODEL_BY_ID = new Map(MODEL_CONFIGS.map((m) => [m.id, m]));
+/** The snapshot is the registry until a load replaces it; a broken snapshot is a build error, not a runtime one. */
+let registry: RegistryState = parseCatalog(snapshot).state;
+
+/**
+ * Install a catalog. Atomic: the registry is the old state or the new one,
+ * never between. Throws, leaving the old state in place, when the catalog is
+ * unusable (see `parseCatalog`).
+ */
+export function loadModelCatalog(catalog: unknown): ModelCatalogLoadReport {
+  const parsed = parseCatalog(catalog);
+  registry = parsed.state;
+  return parsed.report;
+}
+
+/** Every model the registry currently holds, hidden ones included, in catalog order. */
+export function listModels(): ModelConfig[] {
+  return registry.models;
+}
+
+/** When the loaded catalog's content last changed — what `/api/health` and the Models page show. */
+export function modelCatalogUpdatedAt(): string {
+  return registry.updatedAt;
+}
+
+/** Maker id → display label, for every maker the loaded catalog names. */
+export function listModelMakers(): Record<string, string> {
+  return registry.makers;
+}
+
+/** A maker's label, or its id for one the catalog does not label. */
+export function modelMakerLabel(maker: string): string {
+  return registry.makers[maker] ?? maker;
+}
 
 export function getModelConfig(id: string): ModelConfig | undefined {
-  return MODEL_BY_ID.get(id);
+  return registry.byId.get(id);
 }
 
 export function getVisibleModels(): ModelConfig[] {
-  return MODEL_CONFIGS.filter((m) => !m.hidden);
+  return registry.models.filter((m) => !m.hidden);
 }
 
 /** Token counts as a reader compares them: 1,048,576 → `1.05M`, 131,072 → `131K`. */

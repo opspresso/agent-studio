@@ -2,7 +2,7 @@ import type { ModelConfig } from "@/domain/llm/models";
 
 export type ModelSortKey = "provider" | "name" | "price";
 export type SortDirection = "asc" | "desc";
-export type FilterCapability = "tools" | "imageInput" | "reasoning" | "imageGeneration";
+export type FilterCapability = "tools" | "structuredOutput" | "imageInput" | "reasoning" | "imageGeneration";
 
 export interface ModelTableState {
   provider: string | null;
@@ -20,6 +20,7 @@ export const DEFAULT_MODEL_TABLE_STATE: ModelTableState = {
 
 const CAPABILITIES = new Set<FilterCapability>([
   "tools",
+  "structuredOutput",
   "imageInput",
   "reasoning",
   "imageGeneration",

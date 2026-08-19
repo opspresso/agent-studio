@@ -11,8 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * refuses.
  *
  * Everything else the hook does is mocked away: the config guardrails, signal
- * handling, and the floating composition-root import that reconciles managed MCP
- * containers. What is left is the audit wiring in its real order.
+ * handling, the model-catalog fetch, and the floating composition-root import
+ * that reconciles managed MCP containers. What is left is the audit wiring in
+ * its real order.
  */
 const { state } = vi.hoisted(() => ({
   state: { repository: undefined as unknown },
@@ -21,6 +22,19 @@ const { state } = vi.hoisted(() => ({
 vi.mock("@/lib/config", () => ({
   assertRequiredConfig: () => {},
   assertAccessControlConfig: () => {},
+  config: { modelsCatalogUrl: "https://models.test/models.json", modelsCatalogRefreshMs: 0 },
+}));
+
+// The catalog refresh is a network read that must not reach out of a unit
+// test; a source that fails leaves the snapshot in place, which is the branch
+// the boot takes offline anyway.
+vi.mock("@/infrastructure/llm/modelCatalogHttpSource", () => ({
+  createHttpModelCatalogSource: (url: string) => ({
+    description: url,
+    load: async () => {
+      throw new Error("offline");
+    },
+  }),
 }));
 
 vi.mock("@/shared/lifecycle", () => ({
