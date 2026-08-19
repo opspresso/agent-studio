@@ -28,7 +28,7 @@ const provisioner = createSsmProvisioner({
   instanceId: "i-1",
   region: "ap-northeast-2",
   registry: REGISTRY,
-  networkContainer: "agentdure",
+  networkContainer: "agent-studio",
 });
 
 /**
@@ -52,7 +52,7 @@ describe("ssm provisioner input handling", () => {
     // has its own 127.0.0.1, so a published host port would be unreachable from
     // here — and an unpublished one is reachable from nowhere else.
     const runLine = script.split("\n").find((line) => line.startsWith("docker run")) ?? "";
-    expect(runLine).toContain("--network container:agentdure");
+    expect(runLine).toContain("--network container:agent-studio");
     // no port publishing at all — not to the host, not to any interface
     expect(runLine).not.toMatch(/-p \S+:\S+/);
     expect(runLine).toContain("--memory 512m");
@@ -82,7 +82,7 @@ describe("ssm provisioner input handling", () => {
         instanceId: "i-1",
         region: "ap-northeast-2; id",
         registry: REGISTRY,
-        networkContainer: "agentdure",
+        networkContainer: "agent-studio",
       }),
     ).toThrow(/unsafe AWS region/);
     expect(() =>
@@ -90,7 +90,7 @@ describe("ssm provisioner input handling", () => {
         instanceId: "i-1",
         region: "ap-northeast-2",
         registry: `${REGISTRY}; id`,
-        networkContainer: "agentdure",
+        networkContainer: "agent-studio",
       }),
     ).toThrow(/unsafe registry host/);
   });

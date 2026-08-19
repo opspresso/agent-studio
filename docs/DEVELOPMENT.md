@@ -1,6 +1,6 @@
 # 개발
 
-AgentDure 를 로컬에서 셋업하고, 실행하고, 검증하는 방법.
+Agent Studio 를 로컬에서 셋업하고, 실행하고, 검증하는 방법.
 
 관련 문서: 모든 변수는 [CONFIGURATION.md](CONFIGURATION.md), 테스트가 강제하는 레이어 규칙은
 [ARCHITECTURE.md](ARCHITECTURE.md), 변경이 지켜야 하는 관례는
@@ -151,7 +151,7 @@ pnpm init-local-table:test
 pnpm test:integration
 ```
 
-이 검사는 `:8084` 의 **별도** 인스턴스와 `agentdure-test` 테이블을 상대로 돈다. 픽스처를 쓰고
+이 검사는 `:8084` 의 **별도** 인스턴스와 `agent-studio-test` 테이블을 상대로 돈다. 픽스처를 쓰고
 그것을 cascade 로 지우기 때문이다. `--env-file=.env.local` 을 넘기지 마라 — 스크립트는 `:8083` 을
 상대로는 실행을 거부하고, 테이블 이름이 그 가드 아래의 두 번째 층이다. `dynamodb-test` 컨테이너는
 `-inMemory` 라서 시작할 때마다 비워지고, 그래서 `init-local-table:test` 가 테이블을 다시 만들어야
@@ -182,7 +182,7 @@ fork 가 PR 을 실패시켜서는 안 된다.
 채널 하나로 도는데, 이 배포에서 그것은 라우터가 아니라 provider 자신의 엔드포인트라 맨 id 를
 서빙한다 — 비교되는 것이 하나도 없고, 등록된 모든 모델이 은퇴 후보로 보고된다. 그래서 차트가
 쓰는 provider 채널 다섯이 여기에도 설정돼 있다: `LLM_PROVIDER_{OPENAI,ANTHROPIC,XAI,OPENROUTER}_API_KEY`
-시크릿과, 키가 아니라 OIDC 로 서명하는 Bedrock (`github--agentdure-models` 역할, 권한은
+시크릿과, 키가 아니라 OIDC 로 서명하는 Bedrock (`github--agent-studio-models` 역할, 권한은
 `bedrock-mantle:ListModels` 하나뿐). base URL 은 시크릿이 아니라 워크플로에 평문으로 있다.
 
 ## 테스트

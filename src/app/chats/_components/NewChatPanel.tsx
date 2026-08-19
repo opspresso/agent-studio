@@ -15,7 +15,7 @@ import { Alert, Box, Flex, Group, ScrollArea, Select, Stack, Text } from "@manti
 import { useLocalStorage } from "@mantine/hooks";
 import classes from "./ChatThread.module.css";
 
-const PROJECT_KEY = "agentdure-chat-project";
+const PROJECT_KEY = "agent-studio-chat-project";
 
 export function NewChatPanel() {
   const t = useT();

@@ -197,19 +197,19 @@ project token 은 대신 SHA-256 해시로 저장돼 있다 — 검증은 되지
 
 ### 발급한 시크릿의 접두사
 
-AgentDure 가 발급하는 시크릿은 GitHub 의 `ghp_`/`gho_` 처럼 제품과 종류를 밝히는 접두사를
+Agent Studio 가 발급하는 시크릿은 GitHub 의 `ghp_`/`gho_` 처럼 제품과 종류를 밝히는 접두사를
 지녀(`src/shared/generatedSecret.ts`), 유출된 문자열이 무엇을 여는지 추적할 수 있다:
 
 | 접두사 | 시크릿 |
 |---|---|
-| `ada_` | 앱 전역 A2A 키 (admin 관리) |
-| `adc_` | 이름 있는 A2A 클라이언트 키 (admin 관리) |
-| `adt_` | Project API token (소유자 관리) |
-| `adw_` | Webhook trigger 시크릿 (소유자 관리) |
-| `adg_` | Telegram webhook 시크릿 (project 마다 발행. Telegram 에게만 건네고 결코 reveal 하지 않는다) |
+| `asa_` | 앱 전역 A2A 키 (admin 관리) |
+| `asc_` | 이름 있는 A2A 클라이언트 키 (admin 관리) |
+| `ast_` | Project API token (소유자 관리) |
+| `asw_` | Webhook trigger 시크릿 (소유자 관리) |
+| `asg_` | Telegram webhook 시크릿 (project 마다 발행. Telegram 에게만 건네고 결코 reveal 하지 않는다) |
 
 랜덤 부분은 32바이트(256비트)이므로 접두사가 잡아먹는 엔트로피는 문제가 되지 않는다. 검증은
-접두사를 결코 보지 않으므로 예전 표기로 발급된 token — `as*_`, 그 이전의 `sk_proj_` — 도 계속
+접두사를 결코 보지 않으므로 예전 표기로 발급된 token — `ad*_`, 그 이전의 `sk_proj_` — 도 계속
 동작한다.
 
 project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆에 저장되므로, token 을 나열하는
@@ -222,9 +222,9 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 
 | 표면 | 자격 증명 | 검증 |
 |---|---|---|
-| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer adt_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **project 소유자로서** 실행된다 (`authenticateExecution`) |
+| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer ast_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **project 소유자로서** 실행된다 (`authenticateExecution`) |
 | Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, project 별 시크릿 |
-| Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`adg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
+| Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다 — 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
 | 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회(actor `a2a:{client}` — 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
 | Webhook trigger | `X-Trigger-Secret` | `cipher.decryptEquals` (상수 시간) |
@@ -390,7 +390,7 @@ mcp-memory 는 이것으로 자기 데이터를 스코프한다 — project 별 
 이 두 헤더가 자동으로 전송되는 **유일한** 신원 메타데이터이고, 둘 다 사용자의 이름이나 email 을
 싣지 않는다 — 테넌트는 project 이름이고, 대화는 불투명한 스레드 주소다. 서버가 그 너머로 알 수
 있는 것은 (a) 모델이 도구 인자에 써 넣는 무엇이든 — *PII 필터링, 그리고 그것이 멈추는 곳* 참고 —
-그리고 (b) OAuth 항목의 경우, 등록된 클라이언트의 이름이 `AgentDure — <project>` 라는 것과
+그리고 (b) OAuth 항목의 경우, 등록된 클라이언트의 이름이 `Agent Studio — <project>` 라는 것과
 token 이 그 서버를 연결한 사람의 grant 를 지닌다는 것이다.
 
 ### 모델이 고른 URL

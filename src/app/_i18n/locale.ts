@@ -25,7 +25,7 @@ export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = "en";
 
 /** Namespaced like the session cookie so a shared dev host cannot collide. */
-export const LOCALE_COOKIE = "agentdure-locale";
+export const LOCALE_COOKIE = "agent-studio-locale";
 
 /** A year — the choice is a preference, not a session fact. */
 export const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;

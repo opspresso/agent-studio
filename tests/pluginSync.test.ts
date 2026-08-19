@@ -305,7 +305,7 @@ describe("syncPluginsFromSnapshot", () => {
           mcpDocs: [
             {
               server: "argocd",
-              path: "plugins/devops/org.opspresso.agentdure/mcp/argocd.md",
+              path: "plugins/devops/org.opspresso.agent-studio/mcp/argocd.md",
               content: "---\ndescription: Argo CD ops\n---\nNotes.",
             },
           ],

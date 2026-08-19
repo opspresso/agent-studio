@@ -22,8 +22,8 @@ import { writeFileSync } from "node:fs";
 process.env.STAGE ??= "alpha";
 
 const apply = process.argv.includes("--apply");
-const BUCKET = process.env.S3_BUCKET_NAME ?? "agentdure-static";
-const ROLLBACK = "/private/tmp/claude-502/-Users-bruce-workspace-github-com-opspresso-agentdure/b7dbd91a-d6fe-4cae-a929-9199fb12f45f/scratchpad/rollback-chat-images.json";
+const BUCKET = process.env.S3_BUCKET_NAME ?? "agent-studio-static";
+const ROLLBACK = "/private/tmp/claude-502/-Users-bruce-workspace-github-com-opspresso-agent-studio/b7dbd91a-d6fe-4cae-a929-9199fb12f45f/scratchpad/rollback-chat-images.json";
 
 interface ImageRef {
   key?: string;

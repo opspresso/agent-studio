@@ -27,7 +27,7 @@ content 와 달리 모델에는 결코 닿지 않는다. description 은 표로 
 호스트에서 실행한다는 뜻이므로, 보고하고 건너뛸 뿐 절대 실행하지 않는다
 (`src/domain/plugin/types.ts` 의 `classifyMcpJsonServer` 가 유일한 transport 결정이다).
 닫힌 mcp.json 스키마에는 description 필드가 없으므로, 각 서버의 모델용 description 과 운영자
-노트는 Plugin 의 `org.opspresso.agentdure/mcp/<server>.md` 확장 문서에 실려 온다 — 스펙이
+노트는 Plugin 의 `org.opspresso.agent-studio/mcp/<server>.md` 확장 문서에 실려 온다 — 스펙이
 정의하는 역도메인(reverse-domain) 클라이언트 확장 관례다. 여기서 걸린 것은 Skill 때보다
 크다: 항목은 암호화된 헤더와 발견된 OAuth 블록도 함께 들고 있으므로, mcp.json 에 선언된
 헤더는 절대 임포트되지 않고(버려진 이름은 보고된다), 호출자가 이름을 지정한 덮어쓰기조차
@@ -264,7 +264,7 @@ dispatch 시점에 적용되는 마지막 **자격증명** 이며 — 레지스�
 되던 연결을 위해 앱을 손으로 등록하게 된다. 이 배포는 배포 단위로 하나가 아니라 project 마다
 하나를 게시하는데(`/api/mcps/oauth/client-metadata/{project}`), 그 문서가 바로 사람이 연결을
 승인할 때 보는 것이기 때문이다 — 하나뿐이라면 어느 project 가 요청하는지 알 길 없이
-"AgentDure" 에 접근 권한을 달라고 요구하는 셈이 되는데, 등록 방식은 자기가 만든 모든
+"Agent Studio" 에 접근 권한을 달라고 요구하는 셈이 되는데, 등록 방식은 자기가 만든 모든
 클라이언트에 project 이름을 붙였었다. 아무것도 요청하지 않고 아무것도 저장하지 않는다:
 예전에 등록하고 시크릿을 받아 암호화하던 흐름이 이제는 이미 알고 있던 URL 을 적을 뿐이다.
 

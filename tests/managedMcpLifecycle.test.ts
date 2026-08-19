@@ -494,7 +494,7 @@ describe("managed MCP reconcile", () => {
 
   it("rebuilds the spec from the stored row", async () => {
     const f = fixture({
-      existing: managedRow({ containerPort: 8080, envRefs: ["/agentdure/image-fetch"] }),
+      existing: managedRow({ containerPort: 8080, envRefs: ["/agent-studio/image-fetch"] }),
     });
     f.answerWith((_url, call) => (call === 1 ? REFUSED : REACHABLE));
     await f.useCases.reconcile();
@@ -504,7 +504,7 @@ describe("managed MCP reconcile", () => {
         name: "image-fetch",
         image: "ecr/img:v1",
         containerPort: 8080,
-        envRefs: ["/agentdure/image-fetch"],
+        envRefs: ["/agent-studio/image-fetch"],
       },
     ]);
   });

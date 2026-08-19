@@ -10,7 +10,7 @@
 	email me@nalbam.com
 }
 
-agentdure.com, alpha.agentdure.com {
+studio.opspresso.com {
 	# Compression, listed rather than excluded: `encode`'s response matcher has
 	# no `not`, so the way to keep text/event-stream out is to not name it. An
 	# SSE response is one response that never ends, and compressing it puts a

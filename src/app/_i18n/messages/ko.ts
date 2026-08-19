@@ -21,7 +21,7 @@ export const ko: Messages = {
   "theme.light": "라이트",
   "theme.dark": "다크",
 
-  "chrome.tagline": "함께 일하는 에이전트",
+  "chrome.tagline": "프로덕션 AI 에이전트 구축과 운영",
   "chrome.navLabel": "워크스페이스 내비게이션",
   "chrome.openProjects": "Projects 열기",
   "chrome.status": "워크스페이스 온라인 · v{version}",
@@ -45,14 +45,14 @@ export const ko: Messages = {
   "auth.signIn": "Google 계정으로 로그인",
   "auth.signOut": "로그아웃",
   "login.title": "로그인이 필요합니다",
-  "login.product": "AgentDure — 프롬프트·에이전트·비용을 관리하는 사내 LLM 플랫폼입니다.",
+  "login.product": "Agent Studio — 프로덕션 AI 에이전트를 만들고 운영하는 플랫폼입니다.",
   "login.domains": "이 배포가 허용한 도메인의 Google 계정으로 로그인하세요.",
 
   "home.eyebrow": "버전 · 배포 · 실행",
-  "home.headline": "에이전트를 한 번 만들면,",
-  "home.headlineAccent": " 어디서든 호출할 수 있습니다.",
+  "home.headline": "프로덕션 AI 에이전트를",
+  "home.headlineAccent": " 만들고 운영하세요.",
   "home.lede":
-    "프롬프트·에이전트·이미지 프로젝트를 작성하고, 버전으로 다듬고, 하나를 배포하세요. 그다음엔 콘솔에서도, OpenAI 호환 API 로도, Slack·웹훅·다른 에이전트에서도 호출할 수 있습니다. 모든 실행은 귀속되고, 비용이 매겨지고, 한도 안에서 돕니다.",
+    "모델·스킬·MCP·워크플로·트레이싱·평가·거버넌스로 에이전트를 만드세요.",
   "home.signInHint": "이 배포가 허용한 도메인의 Google 계정이 필요합니다.",
   "home.proof.engine": "하나의 엔진",
   "home.proof.engineNote": "모든 모델, 모든 창구",
@@ -64,7 +64,7 @@ export const ko: Messages = {
   "home.streamCaption": "agent run · text/event-stream",
   "home.streamLive": "live",
   "home.agentOnline": "● 에이전트 온라인",
-  "home.coverage": "AgentDure 가 다루는 범위",
+  "home.coverage": "Agent Studio 가 다루는 범위",
   "home.domain.projects": "Projects 와 버전",
   "home.domain.projectsBody":
     "프롬프트·에이전트·이미지 프로젝트를 변경 불가능한 버전으로 작성합니다. 하나를 배포하면 호출자는 그 버전을 고정하거나 포인터를 따라갑니다.",
@@ -101,10 +101,7 @@ export const ko: Messages = {
   "home.domain.traces": "트레이스와 감사",
   "home.domain.tracesBody":
     "모든 에이전트 실행을 도구 호출까지 턴 단위로 기록해 프로젝트에서 열어 볼 수 있습니다. 시크릿 열람, 관리자 대리 수정, 삭제는 각각 감사 기록을 남깁니다.",
-  "home.dureName": "두레",
-  "home.dure":
-    "— 이웃이 힘을 모아 혼자서는 끝낼 수 없는 일을 해내던 마을 공동 노동입니다. 여기의 에이전트도 같은 방식으로 일합니다.",
-  "home.product": "프롬프트·에이전트·비용을 관리하는 사내 LLM 플랫폼입니다.",
+  "home.product": "프로덕션 AI 에이전트를 만들고 운영하는 플랫폼입니다.",
 
   "common.loading": "불러오는 중…",
   "common.cancel": "취소",

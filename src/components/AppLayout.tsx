@@ -167,7 +167,7 @@ export function AppLayout({
               </span>
               <div>
                 <Text fw={650} fz="md" lh={1.1}>
-                  AgentDure
+                  Agent Studio
                 </Text>
                 <Text fz={10} c="dimmed" tt="uppercase" lts="0.12em" visibleFrom="xs">
                   {t("chrome.tagline")}

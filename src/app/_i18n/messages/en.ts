@@ -38,7 +38,7 @@ export const en = {
   "theme.dark": "Dark",
 
   // App chrome: the header, the sidebar and its groups.
-  "chrome.tagline": "Agents that work together",
+  "chrome.tagline": "Build and operate production AI agents",
   "chrome.navLabel": "Workspace navigation",
   "chrome.openProjects": "Open projects",
   "chrome.status": "Workspace online · v{version}",
@@ -63,15 +63,15 @@ export const en = {
   "auth.signIn": "Sign in with Google",
   "auth.signOut": "Sign out",
   "login.title": "Sign in to continue",
-  "login.product": "AgentDure — an internal LLM platform for prompt, agent, and cost management.",
+  "login.product": "Agent Studio — build and operate production AI agents.",
   "login.domains": "Use your Google account on one of this deployment’s allowed domains.",
 
   // The signed-out landing page.
   "home.eyebrow": "Version · publish · run",
-  "home.headline": "Build an agent once,",
-  "home.headlineAccent": " call it from anywhere.",
+  "home.headline": "Build and operate",
+  "home.headlineAccent": " production AI agents.",
   "home.lede":
-    "Author a prompt, an agent, or an image project, iterate in versions, publish one — then call it from the console, an OpenAI-compatible API, Slack, a webhook, or another agent. Every run attributed, priced, and bounded.",
+    "Build agents with models, skills, MCP, workflows, tracing, evaluation, and governance.",
   "home.signInHint": "Your Google account, on one of this deployment’s allowed domains.",
   "home.proof.engine": "One engine",
   "home.proof.engineNote": "Every model, every surface",
@@ -83,7 +83,7 @@ export const en = {
   "home.streamCaption": "agent run · text/event-stream",
   "home.streamLive": "live",
   "home.agentOnline": "● agent online",
-  "home.coverage": "What AgentDure covers",
+  "home.coverage": "What Agent Studio covers",
   "home.domain.projects": "Projects & versions",
   "home.domain.projectsBody":
     "Author prompts, agents, and image projects as immutable versions. Publish one; callers pin it or follow the pointer.",
@@ -120,13 +120,7 @@ export const en = {
   "home.domain.traces": "Traces & audit",
   "home.domain.tracesBody":
     "Every agent run traced turn by turn, tool traffic included, and reachable from its project. Secret reveals, admin overrides, and deletions each leave an audit row.",
-  // Split from the sentence because the bolded name differs by language: the
-  // English page glosses the Korean word, and the Korean page has no gloss to
-  // give.
-  "home.dureName": "Dure (두레)",
-  "home.dure":
-    "— a Korean village work cooperative, where neighbors pool their labor to finish what no one could alone. Agents here work the same way.",
-  "home.product": "An internal LLM platform for prompt, agent, and cost management.",
+  "home.product": "Build and operate production AI agents.",
 
   // Vocabulary more than one page uses. A word here is one a reader meets on
   // several screens and should not have to re-learn.

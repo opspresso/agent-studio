@@ -15,7 +15,7 @@ export const EMAIL_DOMAIN_NOT_ALLOWED = "EMAIL_DOMAIN_NOT_ALLOWED";
 
 const MESSAGES: Record<string, string> = {
   [EMAIL_DOMAIN_NOT_ALLOWED]:
-    "Your Google account isn't allowed to access AgentDure. Contact your administrator if you think this is a mistake.",
+    "Your Google account isn't allowed to access Agent Studio. Contact your administrator if you think this is a mistake.",
 };
 
 /**

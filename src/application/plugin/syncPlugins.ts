@@ -69,7 +69,7 @@ export function parsePluginSkillDoc(
 }
 
 /**
- * Parse an `org.opspresso.agentdure/mcp/<server>.md` extension document:
+ * Parse an `org.opspresso.agent-studio/mcp/<server>.md` extension document:
  * the frontmatter `description` is the line the model sees, the body is
  * operator notes. No fallback description — the document's whole purpose is
  * to carry one, and inventing one from the body would report nothing lost.

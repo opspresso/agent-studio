@@ -36,7 +36,7 @@ const PEOPLE: Record<string, SlackUserDetail> = {
     timezone: "Asia/Seoul",
     statusText: "OOO until Friday",
     statusEmoji: ":palm_tree:",
-    avatarUrl: "https://avatars.slack-edge.com/ada_512.png",
+    avatarUrl: "https://avatars.slack-edge.com/asa_512.png",
   },
   U0LIN456: { id: "U0LIN456", displayName: "Lin" },
   U0GONE11: { id: "U0GONE11", displayName: "Former", deactivated: true },
@@ -209,7 +209,7 @@ describe("looking up a user", () => {
         "title: Staff Engineer, Platform",
         "timezone: Asia/Seoul",
         "status: :palm_tree: OOO until Friday",
-        "avatar: https://avatars.slack-edge.com/ada_512.png",
+        "avatar: https://avatars.slack-edge.com/asa_512.png",
       ].join("\n"),
     );
   });

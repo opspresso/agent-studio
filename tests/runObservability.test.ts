@@ -181,11 +181,11 @@ describe("/api/metrics", () => {
     beginRun();
     endRun({ durationMs: 3_000, failed: true });
     const body = await metricsRoute().text();
-    expect(body).toContain("agentdure_runs_failed_total 1");
-    expect(body).toContain("# TYPE agentdure_run_duration_seconds histogram");
-    expect(body).toContain('agentdure_run_duration_seconds_bucket{le="5"} 1');
-    expect(body).toContain('agentdure_run_duration_seconds_bucket{le="+Inf"} 1');
-    expect(body).toContain("agentdure_run_duration_seconds_count 1");
+    expect(body).toContain("agent_studio_runs_failed_total 1");
+    expect(body).toContain("# TYPE agent_studio_run_duration_seconds histogram");
+    expect(body).toContain('agent_studio_run_duration_seconds_bucket{le="5"} 1');
+    expect(body).toContain('agent_studio_run_duration_seconds_bucket{le="+Inf"} 1');
+    expect(body).toContain("agent_studio_run_duration_seconds_count 1");
   });
 
   it("names no project, user or model in any label", async () => {

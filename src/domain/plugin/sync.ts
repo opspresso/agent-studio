@@ -19,7 +19,7 @@ export interface RepoPluginSkill {
   files: SkillFile[];
 }
 
-/** One `org.opspresso.agentdure/mcp/<server>.md` extension document. */
+/** One `org.opspresso.agent-studio/mcp/<server>.md` extension document. */
 export interface RepoPluginDoc {
   server: string;
   path: string;

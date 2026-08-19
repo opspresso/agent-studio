@@ -1,6 +1,6 @@
 # API 레퍼런스
 
-AgentDure 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는지, 그리고 자명하지 않은
+Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는지, 그리고 자명하지 않은
 것들의 요청 / 응답 형태와 에러 케이스.
 
 어떤 표면이 *왜* 이런 모습인지에 대한 설계 근거는
@@ -381,7 +381,7 @@ POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
 POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 ```
 
-- admin 전용. 앱 전역 A2A 키(`ada_` + 랜덤 32바이트)를 새로 발급해 설정 오버라이드로 저장하고,
+- admin 전용. 앱 전역 A2A 키(`asa_` + 랜덤 32바이트)를 새로 발급해 설정 오버라이드로 저장하고,
   갱신된 (마스킹된) 설정 뷰와 함께 돌려준다. 재발급은 이전 키를 즉시 무효화한다.
   `PUT /api/settings` 로 손수 붙여 넣은 키도 여전히 동작한다 — 이 엔드포인트는 키를 지어내는
   수고를 덜어 줄 뿐이다.
@@ -667,7 +667,7 @@ plugin 루트 안에 중첩된 plugin 루트, 두 루트가 주장하는 plugin 
 지워진다 — 구성 요소는 각각 orphan 으로 따로 드러나며, 저마다 별개의 결정이다.
 
 쓰기는 문서가 소유한 것만 대체한다 — skill 의 description·content·첨부, MCP 항목의 `url`,
-`description`, `content` (plugin 의 `org.opspresso.agentdure/mcp/<name>.md` 확장 문서에서
+`description`, `content` (plugin 의 `org.opspresso.agent-studio/mcp/<name>.md` 확장 문서에서
 온다), `source`. 암호화된 헤더, 발견된 OAuth 블록, managed 항목의 프로비저닝된 주소는 절대
 건드리지 않고, 문서가 싣지 않은 필드는 저장된 것을 그대로 둔다. MCP 항목의 주소를 옮기면 옛
 주소에서 읽었던 OAuth 블록이 버려지므로 Discover 를 다시 돌려야 한다.
@@ -790,7 +790,7 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
 ```json
 { "name": "my-tool", "image": "…/my-mcp:1.4.0", "containerPort": 8080,
   "args": ["--port", "{{PORT}}"]?, "endpointPath": "/mcp"?,
-  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/agentdure/my-tool/API_KEY"]?,
+  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/agent-studio/my-tool/API_KEY"]?,
   "description": ""?, "content": ""?, "headers": {}? }
 ```
 
@@ -938,8 +938,8 @@ POST   /api/projects/{name}/token/reveal   → { token, createdAt }           (r
 DELETE /api/projects/{name}/token          → 204
 ```
 
-토큰은 `adt_` + 랜덤 32바이트(base64url)다. `masked` 는 생성 시점에 기록된 표시용 마스크
-(`adt_••••…••wXyZ`)다 — 토큰 자체는 복구 불가능하게 남으므로, 콘솔이 복호화하지 않고 *어느*
+토큰은 `ast_` + 랜덤 32바이트(base64url)다. `masked` 는 생성 시점에 기록된 표시용 마스크
+(`ast_••••…••wXyZ`)다 — 토큰 자체는 복구 불가능하게 남으므로, 콘솔이 복호화하지 않고 *어느*
 토큰이 설정돼 있는지 보여 줄 수 있는 유일한 방법이 이것이다. 마스크를 기록하기 전에 발급된
 토큰에는 없다. 검증이 접두사를 보는 일이 없으므로 그런 토큰도 계속 동작한다.
 
@@ -1187,7 +1187,7 @@ secret 은 해시가 아니라 AES 로 암호화해 저장되므로 — project 
 
 ```
 POST /api/webhook/{project}
-  X-Trigger-Secret: adw_…
+  X-Trigger-Secret: asw_…
   Idempotency-Key: <optional>
   { "any": "json payload" }
 → 202 { ok: true, status: "accepted", runId }
@@ -1357,7 +1357,7 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send,
 비교하고, 클라이언트 키는 해시로 해석한다.
 
 제시된 키는 공유 `A2A_API_KEY` (런은 `a2a:shared-key` 에 귀속) 이거나 **이름 붙은 클라이언트
-키** (`adc_…`, 런은 `a2a:{client}` 에 귀속 — 클라이언트별 귀속과 동시성 한도) 일 수 있다.
+키** (`asc_…`, 런은 `a2a:{client}` 에 귀속 — 클라이언트별 귀속과 동시성 한도) 일 수 있다.
 클라이언트 키는 admin 이 관리한다:
 
 ```
@@ -1390,10 +1390,10 @@ GET /api/metrics  → 200 text/plain; version=0.0.4
 LLM 채널을 찔러 보고 (짧은 타임아웃, 상세는 드러내지 않는다), 하류에 닿을 수 없거나 인스턴스가
 SIGTERM 이후 draining 중이면 503 을 돌려준다.
 
-`/api/metrics` 는 Prometheus scrape 이고 `agentdure_active_runs`,
-`agentdure_runs_{started,finished,failed}_total`, `agentdure_run_duration_seconds`,
-`agentdure_unknown_model_calls_total`, `agentdure_unknown_models`,
-`agentdure_draining` 을 노출한다. 어떤 지표에도 project·사용자·모델 라벨은 붙지 않는다.
+`/api/metrics` 는 Prometheus scrape 이고 `agent_studio_active_runs`,
+`agent_studio_runs_{started,finished,failed}_total`, `agent_studio_run_duration_seconds`,
+`agent_studio_unknown_model_calls_total`, `agent_studio_unknown_models`,
+`agent_studio_draining` 을 노출한다. 어떤 지표에도 project·사용자·모델 라벨은 붙지 않는다.
 
 셋 다 일부러 비인증이고 의존성이 가볍다 — 세션이 없는 인프라가 이것들을 찔러 보기 때문이다.
 연결하는 방법은 [OPERATIONS.md](OPERATIONS.md#헬스-프로브) 를 보라.

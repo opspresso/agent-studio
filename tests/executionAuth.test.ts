@@ -26,7 +26,7 @@ describe("authenticateExecution with a bearer token", () => {
   it("authenticates as the owner when their tier allows tokens", async () => {
     verify.mockResolvedValue("owner@x.com");
     getMemberTier.mockResolvedValue("member");
-    await expect(authenticateExecution(request("adt_ok"), "p")).resolves.toEqual({
+    await expect(authenticateExecution(request("ast_ok"), "p")).resolves.toEqual({
       email: "owner@x.com",
       viaToken: true,
     });
@@ -35,7 +35,7 @@ describe("authenticateExecution with a bearer token", () => {
   it("403s a valid token whose owner's tier does not allow tokens", async () => {
     verify.mockResolvedValue("owner@x.com");
     getMemberTier.mockResolvedValue("guest");
-    const result = await authenticateExecution(request("adt_ok"), "p");
+    const result = await authenticateExecution(request("ast_ok"), "p");
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(403);
   });
@@ -43,7 +43,7 @@ describe("authenticateExecution with a bearer token", () => {
   it("fails open when the owner's tier cannot be read", async () => {
     verify.mockResolvedValue("owner@x.com");
     getMemberTier.mockResolvedValue(null);
-    await expect(authenticateExecution(request("adt_ok"), "p")).resolves.toEqual({
+    await expect(authenticateExecution(request("ast_ok"), "p")).resolves.toEqual({
       email: "owner@x.com",
       viaToken: true,
     });
@@ -51,7 +51,7 @@ describe("authenticateExecution with a bearer token", () => {
 
   it("401s an invalid token without reading any tier", async () => {
     verify.mockResolvedValue(null);
-    const result = await authenticateExecution(request("adt_bad"), "p");
+    const result = await authenticateExecution(request("ast_bad"), "p");
     expect((result as Response).status).toBe(401);
     expect(getMemberTier).not.toHaveBeenCalled();
   });

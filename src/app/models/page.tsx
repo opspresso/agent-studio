@@ -143,7 +143,7 @@ export default function ModelsPage() {
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [filter, setFilter] = useState("");
   const [tableState, setTableState] = useLocalStorage({
-    key: "agentdure.models.table-state.v1",
+    key: "agent-studio.models.table-state.v1",
     defaultValue: DEFAULT_MODEL_TABLE_STATE,
     deserialize: deserializeModelTableState,
   });

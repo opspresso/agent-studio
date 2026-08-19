@@ -10,20 +10,20 @@ Caddy 가 TLS 를 끊는다.
 | | |
 |---|---|
 | 호스트 | `ubuntu@115.68.216.99` — Ubuntu 24.04, 4 vCPU, 3.8GB RAM |
-| 주소 | `https://agentdure.com` (`alpha.agentdure.com` 은 기존 webhook 호환 alias) |
-| 설치 경로 | `/opt/agentdure` (관례일 뿐, compose 는 어디서든 돈다) |
+| 주소 | `https://studio.opspresso.com` |
+| 설치 경로 | `/opt/agent-studio` (관례일 뿐, compose 는 어디서든 돈다) |
 
 ## 사전 준비
 
 ### 1. 액세스 키
 
-pod identity 가 없으므로 액세스 키 한 벌이 그 자리를 대신한다. **IAM 사용자 `agentdure` 와
-그 정책들은 terraform 이 만든다** — `terraform-env-demo/demo/9-agentdure`.
-`agentdure.com` A 레코드는 이 호스트의 공인 IP를 가리켜야 한다. 사람이 하는 것은 키 발급
+pod identity 가 없으므로 액세스 키 한 벌이 그 자리를 대신한다. **IAM 사용자 `agent-studio` 와
+그 정책들은 terraform 이 만든다** — `terraform-env-demo/demo/9-agent-studio`.
+`studio.opspresso.com` A 레코드도 같은 모듈이 이 호스트의 공인 IP로 만든다. 사람이 하는 것은 키 발급
 하나뿐이다:
 
 ```bash
-AWS_PROFILE=opspresso aws iam create-access-key --user-name agentdure   # → .env.aws
+AWS_PROFILE=opspresso aws iam create-access-key --user-name agent-studio   # → .env.aws
 ```
 
 키를 terraform 이 만들지 않는 이유는 비밀키가 state 에 평문으로 남기 때문이다. 회전도 같은
@@ -33,14 +33,14 @@ AWS_PROFILE=opspresso aws iam create-access-key --user-name agentdure   # → .e
 자신의 것 둘 — ECR pull 과 SSM 읽기다. **`pod-role--*` 를 넓히려면 그 `policies/*.json` 을
 고쳐야 하고, 그러면 클러스터의 역할도 같이 넓어진다** — 단일 소스의 값이자 대가다.
 
-SSM 읽기(`agentdure-idc-ssm-read`)는 호스트가 스스로 시크릿을 갱신하게 해 준다. 대가는
+SSM 읽기(`agent-studio-idc-ssm-read`)는 호스트가 스스로 시크릿을 갱신하게 해 준다. 대가는
 분명하다 — **이 액세스 키가 유출되면 배포 시크릿 전부가 함께 열린다.** 경로를
-`/k8s/common/agentdure/*` 와 `/k8s/common/mcp-*` 로 좁혀 둔 것이 그 폭을 줄이는 수단이다.
+`/k8s/common/agent-studio/*` 와 `/k8s/common/mcp-*` 로 좁혀 둔 것이 그 폭을 줄이는 수단이다.
 
 ### 2. Google OAuth
 
 Google OAuth 클라이언트의 승인된 리디렉션 URI 에
-`https://agentdure.com/api/auth/callback/google` 을 추가한다. **클러스터와 같은
+`https://studio.opspresso.com/api/auth/callback/google` 을 추가한다. **클러스터와 같은
 클라이언트를 쓴다** — client id/secret 이 SSM 에서 오기 때문이다.
 
 ### 3. 호스트
@@ -57,9 +57,9 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
 ```bash
 # 호스트에서
-sudo mkdir -p /opt/agentdure && sudo chown ubuntu:ubuntu /opt/agentdure
-# deploy/idc/ 의 내용을 /opt/agentdure 로 복사한 뒤
-cd /opt/agentdure
+sudo mkdir -p /opt/agent-studio && sudo chown ubuntu:ubuntu /opt/agent-studio
+# deploy/idc/ 의 내용을 /opt/agent-studio 로 복사한 뒤
+cd /opt/agent-studio
 cp .env.aws.example .env.aws      # 액세스 키를 채운다 — 사람이 만드는 파일은 이것 하나다
 
 scripts/deploy.sh                 # .env·.env.mcp 생성 + 이미지 pull + 기동
@@ -74,12 +74,12 @@ scripts/deploy.sh                 # .env·.env.mcp 생성 + 이미지 pull + 기
 
 `docker compose ps` 로 여섯 서비스(caddy, app, mcp-memory, mcp-document, mcp-youtube,
 mcp-brave-search, mcp-cloudwatch)가 뜬 것을 확인하고, 첫 인증서가 발급될 때까지 잠깐 기다린 뒤
-`https://agentdure.com` 을 연다.
+`https://studio.opspresso.com` 을 연다.
 
 검증할 것 두 가지:
 
 ```bash
-curl -s https://agentdure.com/api/health          # 200
+curl -s https://studio.opspresso.com/api/health          # 200
 docker compose exec app wget -qO- \
   http://mcp-document.agent-mcps.svc.cluster.local/health   # MCP 도달성
 ```
@@ -102,7 +102,7 @@ mcp-cloudwatch 가 받아 주는 것은 그 이름이 이미 각자의 Host 화�
 scripts/deploy.sh                 # 설정(example) + 버전(argocd-env-demo) + 시크릿(SSM) → compose up
 ```
 
-이미지 아홉 개 전부 — 우리가 만드는 넷(`agentdure`, `mcp-memory`, `mcp-document`,
+이미지 아홉 개 전부 — 우리가 만드는 넷(`agent-studio`, `mcp-memory`, `mcp-document`,
 `mcp-youtube`)과 남의 레지스트리에서 오는 다섯 — `argocd-env-demo/charts/<chart>/versions-alpha.json`
 의 최신 항목을 따른다. 버전을 고르는 곳은 클러스터 하나뿐이고, 이 호스트는 그것을 읽을 뿐이다.
 GitHub 을 못 읽은 차트는 지금 `.env` 에 있는 버전을 유지한다(그것도 없으면 example 의 값).
@@ -110,7 +110,7 @@ GitHub 을 못 읽은 차트는 지금 `.env` 에 있는 버전을 유지한다(
 이 스크립트 안에 있으니 따로 cron 을 둘 필요가 없다:
 
 ```
-*/10 * * * * /opt/agentdure/scripts/deploy.sh >> /var/log/agentdure-deploy.log 2>&1
+*/10 * * * * /opt/agent-studio/scripts/deploy.sh >> /var/log/agent-studio-deploy.log 2>&1
 ```
 
 호스트에서 이미지를 빌드하지 마라. RAM 3.8GB 에서 `next build` 는 OOM 으로 끝난다.

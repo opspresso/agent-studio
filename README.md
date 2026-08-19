@@ -1,10 +1,8 @@
-# ✨ AgentDure
+# ✨ Agent Studio
 
-> **Dure (두레)** — 한국의 마을 공동 노동 조직. 이웃이 서로 일손을 모아 혼자서는 끝낼 수
-> 없는 일을 마친다.
-
-**함께 일하는 AI 에이전트를 만든다.** 프롬프트·에이전트·비용 관리를 위한 사내 LLM 플랫폼
-— 프로덕션 수준의 Next.js 풀스택 애플리케이션 하나다.
+**Build and operate production AI agents.** 모델·스킬·MCP·워크플로·트레이싱·평가·거버넌스로
+에이전트를 만들고 운영한다 — 프롬프트·에이전트·비용 관리를 위한 사내 LLM 플랫폼이자,
+프로덕션 수준의 Next.js 풀스택 애플리케이션 하나다.
 
 프롬프트나 에이전트를 **project** 로 만들고, **version** 으로 다듬고, 하나를 publish 한
 뒤 어디서든 호출한다: 콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, Teams, webhook, 또는 A2A 로
@@ -121,7 +119,7 @@ Skill 은 [Agent Plugins](https://agent-plugins.org/) 저장소(`PLUGINS_REPO`)�
 좁히고 레지스트리의 헤더 위에 자기 헤더를 덧입힐 수 있어, 공유 서버 하나가 서로 다른 자격
 증명으로 여러 project 를 서빙한다.
 
-**Managed 서버** — AgentDure 는 SSM 을 통해 자기 호스트에서 MCP 서버 컨테이너를 띄우고
+**Managed 서버** — Agent Studio 는 SSM 을 통해 자기 호스트에서 MCP 서버 컨테이너를 띄우고
 loopback 으로 도달할 수 있다. 그래서 공개 엔드포인트가 없는 서버도 쓸 수 있다. 부팅 시
 버려진 컨테이너를 자동으로 복구하는데, 이 앱을 교체하는 일이야말로 그것들을 깨뜨리는
 일이기 때문이다. `MANAGED_MCP_INSTANCE_ID` / `MANAGED_MCP_REGISTRY` 로 설정하며, 설정하지
@@ -239,7 +237,7 @@ project 카탈로그를 공유한다는 것은 project 이름이 "누가 이걸 
 빌드 산출물은 컨테이너 이미지다.
 
 ```bash
-docker build -t agentdure .        # 멀티스테이지, Next standalone 출력
+docker build -t agent-studio .        # 멀티스테이지, Next standalone 출력
 docker compose up --build             # 로컬 컨테이너 + DynamoDB Local 두 인스턴스
 ```
 

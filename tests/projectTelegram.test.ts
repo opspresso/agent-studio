@@ -102,7 +102,7 @@ describe("updateProjectTelegram", () => {
     // Enabled with a token: registered at this deployment, with the minted secret.
     expect(registered).toHaveLength(1);
     expect(registered[0]).toMatchObject({ token: "42:AAHsecrettoken", url: `${BASE_URL}/api/telegram/webhook/bot-proj` });
-    expect(registered[0]?.secretToken.startsWith("adg_")).toBe(true);
+    expect(registered[0]?.secretToken.startsWith("asg_")).toBe(true);
     expect(view.enabled).toBe(true);
     expect(view.configured).toBe(true);
     expect(view.botUsername).toBe("painter_bot");
@@ -111,7 +111,7 @@ describe("updateProjectTelegram", () => {
     const stored = current().telegram;
     expect(stored?.botToken.startsWith("enc:")).toBe(true);
     expect(stored?.webhookSecret.startsWith("enc:")).toBe(true);
-    expect(secretCipher.decrypt(stored?.webhookSecret ?? "").startsWith("adg_")).toBe(true);
+    expect(secretCipher.decrypt(stored?.webhookSecret ?? "").startsWith("asg_")).toBe(true);
   });
 
   it("refuses a token Telegram does not accept, and stores nothing", async () => {
@@ -218,7 +218,7 @@ describe("runtime, binding, test and webhook", () => {
     const { repo } = await configured();
     const binding = await resolveTelegramEventBinding(repo, "bot-proj", secretCipher);
     expect(binding).toMatchObject({ projectName: "bot-proj", botToken: "42:tok", botUsername: "painter_bot" });
-    expect(binding?.webhookSecret.startsWith("adg_")).toBe(true);
+    expect(binding?.webhookSecret.startsWith("asg_")).toBe(true);
   });
 
   it("lists only the current bot's observed destinations for an owner", async () => {

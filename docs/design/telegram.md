@@ -11,7 +11,7 @@
 [SECURITY.md](../SECURITY.md#머신-호출자의-요청-인증) 에 있다.
 
 봇은 **프로젝트별**이다: 엔드포인트는 `/api/telegram/webhook/[project]` 하나뿐이고, 이
-플랫폼이 발급한 secret token (`adg_…`) 과 함께 Telegram 에 등록된다. Telegram 은 전달할
+플랫폼이 발급한 secret token (`asg_…`) 과 함께 Telegram 에 등록된다. Telegram 은 전달할
 때마다 그 토큰을 그대로 되돌려 보내고, 그 echo 가 인증의 전부다. **webhook 은 스위치를
 따라간다**: 봇을 켜면 이 배포에 등록되고, 끄면 삭제된다 — 그렇지 않으면 꺼진 봇에게 온
 메시지가 하루 동안 404 를 상대로 재시도되다가 다시 켜는 순간 뒤늦게, 그리고 과금되며 배달된다.

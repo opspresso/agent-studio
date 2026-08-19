@@ -34,7 +34,7 @@ const FETCH_TIMEOUT_MS = 15_000;
 
 // A fixed string rather than the app version: this is sent to third parties on
 // a model's say-so, and there is no reason to tell them which build asked.
-const USER_AGENT = "agentdure (+https://github.com/opspresso/agentdure)";
+const USER_AGENT = "agent-studio (+https://github.com/opspresso/agent-studio)";
 
 /** `text/html; charset=EUC-KR` → `{ mimeType: "text/html", charset: "euc-kr" }`. */
 export function parseContentType(header: string | null): { mimeType: string; charset?: string } {

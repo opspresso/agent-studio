@@ -10,7 +10,7 @@ name: Check models
 # this job compared the registry against a single provider-direct endpoint,
 # which serves bare ids — nothing matched, and every registered model was
 # reported as retired. So the five provider channels of
-# `argocd-env-demo/charts/agentdure` are configured here too, Bedrock included:
+# `argocd-env-demo/charts/agent-studio` are configured here too, Bedrock included:
 # it signs with SigV4, hence the OIDC role rather than a key.
 #
 # Requires repository/organization secrets: LLM_BASE_URL, LLM_API_KEY,
@@ -31,7 +31,7 @@ env:
   # Where Bedrock's OpenAI-compatible host lives. The signer reads the region off
   # the URL, so this one only has to be a region the role can be assumed in.
   AWS_REGION: us-east-1
-  AWS_ROLE_ARN: arn:aws:iam::396608815058:role/github--agentdure-models
+  AWS_ROLE_ARN: arn:aws:iam::396608815058:role/github--agent-studio-models
 
 jobs:
   check-models:

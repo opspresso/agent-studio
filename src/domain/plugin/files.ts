@@ -1,6 +1,6 @@
 /**
  * Which directories of a plugins repository are what: plugin roots, each
- * root's skills, and each root's AgentDure extension documents. Tree-shape
+ * root's skills, and each root's Agent Studio extension documents. Tree-shape
  * decisions live here so the GitHub client stays a raw fetcher — the same
  * split `domain/skill/files.ts` already draws for attachment selection.
  */
@@ -13,7 +13,7 @@ import type { SkillRoot, SkillTreeEntry } from "@/domain/skill/files";
  * schema has no field for: the server's model-facing description and the
  * operator notes. Other clients ignore the directory entirely.
  */
-export const AGENTDURE_EXTENSION_DIR = "org.opspresso.agentdure";
+export const AGENT_STUDIO_EXTENSION_DIR = "org.opspresso.agent-studio";
 
 export interface PluginRoot {
   /** Directory holding plugin.json, "" for the repository root. */
@@ -103,13 +103,13 @@ export function selectPluginSkillRoots(
 
 /**
  * The server an extension document describes, or null for any other path.
- * Matches exactly `<root>/org.opspresso.agentdure/mcp/<name>.md`.
+ * Matches exactly `<root>/org.opspresso.agent-studio/mcp/<name>.md`.
  */
 export function mcpDocServerName(path: string, root: PluginRoot): string | null {
   const prefix =
     root.rootPath === ""
-      ? `${AGENTDURE_EXTENSION_DIR}/mcp/`
-      : `${root.rootPath}/${AGENTDURE_EXTENSION_DIR}/mcp/`;
+      ? `${AGENT_STUDIO_EXTENSION_DIR}/mcp/`
+      : `${root.rootPath}/${AGENT_STUDIO_EXTENSION_DIR}/mcp/`;
   if (!path.startsWith(prefix) || !path.endsWith(".md")) {
     return null;
   }

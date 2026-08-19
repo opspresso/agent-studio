@@ -45,7 +45,7 @@ describe("a project's client ID metadata document", () => {
   it("carries the three required fields, and this deployment's callback", async () => {
     const document = (await (await get("helper")).json()) as Record<string, unknown>;
 
-    expect(document.client_name).toBe("AgentDure — helper");
+    expect(document.client_name).toBe("Agent Studio — helper");
     expect(document.redirect_uris).toEqual([
       `https://studio.example.com${MCP_OAUTH_CALLBACK_PATH}`,
     ]);
@@ -58,8 +58,8 @@ describe("a project's client ID metadata document", () => {
     const second = (await (await get("beta")).json()) as Record<string, unknown>;
 
     expect(first.client_id).not.toBe(second.client_id);
-    expect(first.client_name).toBe("AgentDure — alpha");
-    expect(second.client_name).toBe("AgentDure — beta");
+    expect(first.client_name).toBe("Agent Studio — alpha");
+    expect(second.client_name).toBe("Agent Studio — beta");
   });
 
   it("answers without a session, because the reader is an authorization server", async () => {

@@ -88,12 +88,12 @@ describe("what a Telegram call sends", () => {
     const calls = stubFetch(() => jsonResponse({ ok: true, result: true }));
     await telegramClient.setWebhook(TOKEN, {
       url: "https://studio/api/telegram/webhook/p",
-      secretToken: "adg_x",
+      secretToken: "asg_x",
       allowedUpdates: ["message"],
     });
     expect(JSON.parse(String(calls[0]?.init?.body))).toMatchObject({
       url: "https://studio/api/telegram/webhook/p",
-      secret_token: "adg_x",
+      secret_token: "asg_x",
       allowed_updates: ["message"],
     });
   });

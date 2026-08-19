@@ -106,7 +106,7 @@ const MAX_TOOL_PAGES = 64;
 const MAX_MCP_RESPONSE_BYTES = 14_500_000;
 
 /** How this client names itself to a server. */
-const CLIENT_INFO = { name: "agentdure", version: "0.1.0" } as const;
+const CLIENT_INFO = { name: "agent-studio", version: "0.1.0" } as const;
 
 /**
  * What one discovery learned: the catalogue, and how long the server says it

@@ -111,7 +111,7 @@ chunk 이기 때문이다. 그래도 실패하면 Slack 이 끝내 받지 않은
 두 표면은 같은 단계를 다르게 표현하고, 그것은 sink 의 몫이다: 체크리스트 행은 혼자 서 있으므로
 이름만 그대로 둔다(`Skill: deep-research`). 반면 DM 의 상태 줄과 텍스트 노트 fallback 에는
 동사가 필요하다. Slack 이 그 줄을 앱 이름 뒤에 렌더링하기 때문이다
-("AgentDure is using search…").
+("Agent Studio is using search…").
 
 이 모양은 애니메이션이 없다는 것보다 깊은 문제에 대한 해결이다. status 를 *DM 의 메커니즘* 으로
 모델링하면 채널에는 그것을 흉내 낼 텍스트밖에 남지 않았고, 그 텍스트는 답장 본문에 있어야 했고,

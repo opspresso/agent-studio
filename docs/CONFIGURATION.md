@@ -1,6 +1,6 @@
 # 설정
 
-AgentDure 가 환경에서 읽는 모든 값, 그리고 코드에 고정돼 있어 *설정할 수 없는* 제한들.
+Agent Studio 가 환경에서 읽는 모든 값, 그리고 코드에 고정돼 있어 *설정할 수 없는* 제한들.
 `.env.example` 은 복사해 쓰는 템플릿이고, 이 문서는 각 값이 무엇을 하는지와 값이 잘못됐을
 때 무슨 일이 일어나는지를 설명하는 레퍼런스다.
 
@@ -70,7 +70,7 @@ Google OAuth 자격증명은 의도적으로 부팅 필수가 *아니다*: 로�
 |---|---|---|---|
 | `STAGE` | production 밖에서는 `local` | — | `local` \| `alpha` \| `prod`. 그 밖의 값은 부팅 시 throw 하며, 프로덕션 프로세스는 이 값을 명시적으로 설정해야 한다. 위의 접근 제어 검사를 게이트한다. |
 | `AWS_REGION` | `ap-northeast-2` | — | 모든 AWS 클라이언트가 쓰는 리전. DynamoDB Local 은 액세스 키 **와** 리전으로 테이블 네임스페이스를 나누므로, 앱과 `pnpm init-local-table` 이 서로 일치해야 한다. |
-| `DYNAMODB_TABLE_NAME` | `agentdure` | — | 단일 테이블. 공유 로컬 DynamoDB 에서는 포트가 아니라 이것이 프로젝트들을 갈라놓는다. |
+| `DYNAMODB_TABLE_NAME` | `agent-studio` | — | 단일 테이블. 공유 로컬 DynamoDB 에서는 포트가 아니라 이것이 프로젝트들을 갈라놓는다. |
 | `DYNAMODB_ENDPOINT` | 미설정 | — | DynamoDB Local 전용. **alpha/prod 에서는 반드시 비어 있어야 한다.** 남아 있는 값은 앱을 존재하지도 않는 localhost 로 향하게 한다. |
 | `AES_ENCRYPTION_KEY` | — (필수) | — | 32바이트 base64. 저장되는 모든 시크릿을 암호화한다. [SECURITY.md](SECURITY.md#저장된-시크릿) 를 보라. |
 | `S3_BUCKET_NAME` | 미설정 | — | 런이 만들어 낸 것 — 생성된 이미지와 저장된 문서 — 이 `artifacts/<kind>/` 아래로 들어가는 버킷. 행에는 오브젝트 키가 저장되고 URL 은 절대 저장되지 않는다. 역할의 권한은 (레거시 `images/*` 만이 아니라) **`artifacts/*`** 를 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` 로 덮어야 한다. 설정하지 않으면 영속화가 통째로 꺼진다: 런은 여전히 그림을 그리고, 바이트는 표면까지 도달했다가 거기서 멈추며, artifact 갤러리는 404 로 답한다. |
@@ -195,7 +195,7 @@ offering 은 `pricing`, `capabilities`, `contextWindow`, `maxTokens`, `hidden` �
 
 **레지스트리에 없는 모델도 기본값에서는 그대로 실행되지만, 그 usage 는 $0 으로 값이 매겨진다**
 — 그래서 그 공백은 자기가 망가뜨리는 비용 대시보드에서 보이지 않는다. 놓칠 때마다
-`[cost] unknown model id` 를 한 번 로그하고 `agentdure_unknown_model_calls_total` 을
+`[cost] unknown model id` 를 한 번 로그하고 `agent_studio_unknown_model_calls_total` 을
 증가시킨다. 비용을 알아차릴 때까지 기다리지 말고 0 이 아닌 비율에 알림을 걸어라.
 `pnpm check-models` 는 레지스트리를 설정된 채널들이 실제로 제공하는 것과 비교한다 —
 [DEVELOPMENT.md](DEVELOPMENT.md#스크립트) 를 보라.
@@ -255,7 +255,7 @@ offering 은 `pricing`, `capabilities`, `contextWindow`, `maxTokens`, `hidden` �
 | `MCP_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | 사설 주소로 resolve 되더라도 MCP 항목이 쓸 수 있는 호스트의 DNS suffix 목록, 쉼표 구분 — 보통 `<namespace>.svc.cluster.local`. 비어 있으면 SSRF 가드는 원래 그대로다. [SECURITY.md](SECURITY.md#선언된-내부-호스트) 를 보라. |
 | `MANAGED_MCP_INSTANCE_ID` | 미설정 | — | managed MCP 컨테이너가 SSM Run Command 를 통해 기동되는 호스트. 문자 그대로의 값 `local` 은 대신 이 머신에서 Docker 를 돌린다 — 그러면 앱과 컨테이너가 loopback 인터페이스를 직접 공유하는데, 그것이 EC2 없이 이 경로를 실행해 볼 수 있는 유일한 방법이다. |
 | `MANAGED_MCP_REGISTRY` | 미설정 | — | `docker login` 이 인증하는 레지스트리. 덕분에 이 계정 자신의 이미지는 자격증명을 타이핑하지 않고도 pull 된다. 호스트가 pull 할 수 있는 다른 어떤 레지스트리의 이미지도 허용되며, 그것들에 대해서는 로그인만 건너뛴다. |
-| `MANAGED_MCP_NETWORK_CONTAINER` | `agentdure` | — | managed 워크로드가 네트워크 네임스페이스를 공유하는 컨테이너 — 이 앱 자신이다. 모든 컨테이너는 자기만의 `127.0.0.1` 을 가지므로, loopback 주소는 양쪽 끝이 같은 네임스페이스에 있을 때만 의미가 있다. |
+| `MANAGED_MCP_NETWORK_CONTAINER` | `agent-studio` | — | managed 워크로드가 네트워크 네임스페이스를 공유하는 컨테이너 — 이 앱 자신이다. 모든 컨테이너는 자기만의 `127.0.0.1` 을 가지므로, loopback 주소는 양쪽 끝이 같은 네임스페이스에 있을 때만 의미가 있다. |
 
 `MANAGED_MCP_INSTANCE_ID` 와 `MANAGED_MCP_REGISTRY` 가 설정되지 않으면 managed-MCP 라우트는
 기능을 절반만 켜는 대신 `503` 으로 답한다.
@@ -279,7 +279,7 @@ offering 은 `pricing`, `capabilities`, `contextWindow`, `maxTokens`, `hidden` �
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `PLUGINS_REPO` | 미설정 | **runtime** | [Agent Plugins 1.0.0](https://agent-plugins.org/) 저장소의 `owner/repo`. `plugin.json` 을 가진 모든 디렉터리가 — 저장소 루트를 포함해 — 하나의 plugin 이다. 다른 루트 안에 중첩된 루트는 거부된다. plugin 당: `skills/<name>/SKILL.md` (Agent Skills 스펙 — frontmatter 의 `name` 이 디렉터리와 일치해야 하고 `description` 은 필수), `mcp.json` (`type: "streamable-http"` 서버만 바인딩된다. `stdio` 와 `sse` 항목은 보고되고 건너뛰며 결코 실행되지 않는다), 그리고 닫힌 mcp.json 스키마에는 자리가 없는 각 서버의 설명(frontmatter)과 운영 노트(본문)를 담는 `org.opspresso.agentdure/mcp/<server>.md` 확장 문서. |
+| `PLUGINS_REPO` | 미설정 | **runtime** | [Agent Plugins 1.0.0](https://agent-plugins.org/) 저장소의 `owner/repo`. `plugin.json` 을 가진 모든 디렉터리가 — 저장소 루트를 포함해 — 하나의 plugin 이다. 다른 루트 안에 중첩된 루트는 거부된다. plugin 당: `skills/<name>/SKILL.md` (Agent Skills 스펙 — frontmatter 의 `name` 이 디렉터리와 일치해야 하고 `description` 은 필수), `mcp.json` (`type: "streamable-http"` 서버만 바인딩된다. `stdio` 와 `sse` 항목은 보고되고 건너뛰며 결코 실행되지 않는다), 그리고 닫힌 mcp.json 스키마에는 자리가 없는 각 서버의 설명(frontmatter)과 운영 노트(본문)를 담는 `org.opspresso.agent-studio/mcp/<server>.md` 확장 문서. |
 | `PLUGINS_REPO_BRANCH` | `main` | **runtime** | |
 | `GITHUB_TOKEN` | 미설정 | **runtime** | plugins 저장소에 대한 contents 읽기 권한이 필요하다. |
 

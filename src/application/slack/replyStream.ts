@@ -144,7 +144,7 @@ export type { ReplySink } from "@/domain/messaging/reply";
 
 /**
  * A status-line phrase, dressed to stand on its own as a message. Slack renders
- * these after the app's name ("AgentDure is thinking…"); posted into a thread
+ * these after the app's name ("Agent Studio is thinking…"); posted into a thread
  * they arrive without that subject, so the emphasis is what says this is the
  * app reporting on itself rather than the answer beginning.
  */
@@ -157,7 +157,7 @@ function progressText(text: string, indicator: string): string {
  *
  * A checklist row stands on its own and reads best as the bare thing — `Skill:
  * deep-research` — while the two surfaces that render progress as *prose* need
- * a verb: Slack puts the status line after the app's name ("AgentDure is using
+ * a verb: Slack puts the status line after the app's name ("Agent Studio is using
  * search…"), and the text-note fallback posts it as a message. One phrasing for
  * both, so the fallback cannot drift from the line it stands in for.
  */

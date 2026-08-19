@@ -84,8 +84,8 @@ describe("generated secret helpers", () => {
   });
 
   it("gives each kind a two-char vendor prefix plus one kind character", () => {
-    expect(secretPrefix("a2aApiKey")).toBe("ada_");
-    expect(secretPrefix("projectApiToken")).toBe("adt_");
+    expect(secretPrefix("a2aApiKey")).toBe("asa_");
+    expect(secretPrefix("projectApiToken")).toBe("ast_");
     // The kinds must stay distinguishable from the string alone.
     expect(secretPrefix("a2aApiKey")).not.toBe(secretPrefix("projectApiToken"));
   });
@@ -93,12 +93,12 @@ describe("generated secret helpers", () => {
   it("keeps full entropy after the prefix", () => {
     const value = generateSecretValue("a2aApiKey");
     // 32 random bytes as base64url = 43 chars, regardless of the prefix.
-    expect(value.slice("ada_".length)).toHaveLength(43);
-    expect(value).toMatch(/^ada_[A-Za-z0-9_-]{43}$/);
+    expect(value.slice("asa_".length)).toHaveLength(43);
+    expect(value).toMatch(/^asa_[A-Za-z0-9_-]{43}$/);
   });
 
   it("hashes deterministically and compares in constant time", () => {
-    const token = "adt_abc";
+    const token = "ast_abc";
     expect(hashSecret(token)).toEqual(hashSecret(token));
     expect(secretHashEquals(hashSecret(token), hashSecret(token))).toBe(true);
     expect(secretHashEquals(hashSecret("a"), hashSecret("b"))).toBe(false);
@@ -204,12 +204,12 @@ describe("verifyProjectApiToken", () => {
   it("returns null for a wrong token", async () => {
     const { repo } = makeRepo(project());
     await generateApiToken(repo, "my-bot", OWNER);
-    expect(await verifyProjectApiToken(repo, "my-bot", "adt_wrong")).toBeNull();
+    expect(await verifyProjectApiToken(repo, "my-bot", "ast_wrong")).toBeNull();
   });
 
   it("returns null when no token is configured", async () => {
     const { repo } = makeRepo(project());
-    expect(await verifyProjectApiToken(repo, "my-bot", "adt_anything")).toBeNull();
+    expect(await verifyProjectApiToken(repo, "my-bot", "ast_anything")).toBeNull();
   });
 });
 
@@ -271,7 +271,7 @@ describe("revealApiToken", () => {
     // Hash-only rows have nothing to decrypt; the owner is told to regenerate.
     const { repo } = makeRepo(project());
     await repo.setApiToken("my-bot", {
-      tokenHash: hashSecret("adt_legacy"),
+      tokenHash: hashSecret("ast_legacy"),
       createdAt: "2026-01-01T00:00:00.000Z",
     });
 
@@ -280,7 +280,7 @@ describe("revealApiToken", () => {
     const { token } = await generateApiToken(repo, "my-bot", OWNER);
     expect((await revealApiToken(repo, "my-bot", OWNER)).token).toBe(token);
     // …and the legacy token stops working, because the hash is gone.
-    expect(await verifyProjectApiToken(repo, "my-bot", "adt_legacy")).toBeNull();
+    expect(await verifyProjectApiToken(repo, "my-bot", "ast_legacy")).toBeNull();
   });
 
   it("rejects a non-owner and a project with no token", async () => {
@@ -302,6 +302,6 @@ describe("revealApiToken", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
     });
 
-    expect(await verifyProjectApiToken(repo, "my-bot", "adt_anything")).toBeNull();
+    expect(await verifyProjectApiToken(repo, "my-bot", "ast_anything")).toBeNull();
   });
 });

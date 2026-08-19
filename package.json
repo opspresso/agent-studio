@@ -1,5 +1,5 @@
 {
-  "name": "agentdure",
+  "name": "agent-studio",
   "version": "0.74.0",
   "private": true,
   "packageManager": "pnpm@11.10.0",
@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "check-models": "tsx scripts/check-models.ts",
     "init-local-table": "tsx scripts/init-local-table.ts",
-    "init-local-table:test": "DYNAMODB_ENDPOINT=http://localhost:8084 DYNAMODB_TABLE_NAME=agentdure-test tsx scripts/init-local-table.ts"
+    "init-local-table:test": "DYNAMODB_ENDPOINT=http://localhost:8084 DYNAMODB_TABLE_NAME=agent-studio-test tsx scripts/init-local-table.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.14",

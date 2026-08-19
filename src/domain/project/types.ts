@@ -19,7 +19,7 @@ export interface ProjectApiToken {
    */
   tokenHash?: string;
   /**
-   * The display mask computed at generation time, e.g. `adt_••••••••wXyZ`.
+   * The display mask computed at generation time, e.g. `ast_••••••••wXyZ`.
    * Stored rather than derived so a hash-only token can still be identified,
    * and so listing one costs no decryption. It holds nothing beyond the prefix
    * and the few edge characters a mask reveals. Absent on tokens issued before

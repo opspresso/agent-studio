@@ -17,7 +17,7 @@
 그리고 툴 루프인 `src/application/llm/engine.ts` 로 내려간다.
 [요청 흐름](#요청-흐름) 절이 그 지도다.
 
-AgentDure 는 **project, llm, agents(subagent + 외부 agent registry), skills, mcp, chat,
+Agent Studio 는 **project, llm, agents(subagent + 외부 agent registry), skills, mcp, chat,
 cost/usage** 도메인을 아우르는 하나의 Next.js 16 풀스택 애플리케이션이다.
 
 ## 스택
@@ -183,7 +183,7 @@ flowchart TB
 
 ## DynamoDB 단일 테이블 설계
 
-테이블 하나(`DYNAMODB_TABLE_NAME`, 기본값 `agentdure`), 키는 `PK` (S) / `SK` (S) 이며
+테이블 하나(`DYNAMODB_TABLE_NAME`, 기본값 `agent-studio`), 키는 `PK` (S) / `SK` (S) 이며
 `GSI1`(`GSI1PK`/`GSI1SK`)과 `GSI2`(`GSI2PK`/`GSI2SK`)를 둔다. 모든 아이템은 `entityType`
 을 갖는다.
 

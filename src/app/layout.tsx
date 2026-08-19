@@ -23,14 +23,14 @@ import "./globals.css";
  * pages are `"use client"`, and a client component cannot export `metadata`.
  * The segment layout is the only place left to say what the page is called, so
  * a bare one there is deliberate — deleting it as an empty file puts the tab
- * back to reading `AgentDure` like every other one.
+ * back to reading `Agent Studio` like every other one.
  *
- * A page that names itself gets `<name> · AgentDure`; anything under it that
+ * A page that names itself gets `<name> · Agent Studio`; anything under it that
  * does not — every project sub-tab — inherits the nearest ancestor that did.
  */
 export const metadata: Metadata = {
-  title: { default: "AgentDure", template: "%s · AgentDure" },
-  description: "Build AI agents that work together.",
+  title: { default: "Agent Studio", template: "%s · Agent Studio" },
+  description: "Build and operate production AI agents.",
 };
 
 /*

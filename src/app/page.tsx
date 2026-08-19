@@ -304,9 +304,6 @@ export default async function Home() {
       </section>
 
       <Stack gap={6} align="center">
-        <Text ta="center" fz="sm" c="dimmed" maw={560} lh={1.7}>
-          <strong>{t("home.dureName")}</strong> {t("home.dure")}
-        </Text>
         <Text ta="center" fz="xs" c="dimmed">
           {t("home.product")}
         </Text>

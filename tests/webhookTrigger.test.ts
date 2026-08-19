@@ -20,7 +20,7 @@ import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
 
-const SECRET = "adw_test-secret-value";
+const SECRET = "asw_test-secret-value";
 
 const project: Project = {
   name: "p",

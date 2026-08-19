@@ -157,7 +157,7 @@ function cleanDeliveries(deliveries: readonly ScheduleDelivery[]): ScheduleDeliv
   });
 }
 
-/** `adw_…` — traceable to this product and to what it opens, like the others. */
+/** `asw_…` — traceable to this product and to what it opens, like the others. */
 function newSecret(): string {
   return generateSecretValue("triggerSecret");
 }

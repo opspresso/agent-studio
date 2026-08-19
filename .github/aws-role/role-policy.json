@@ -13,7 +13,7 @@
       "Action": [
         "ecr:*"
       ],
-      "Resource": "arn:aws:ecr:*:*:repository/agentdure"
+      "Resource": "arn:aws:ecr:*:*:repository/agent-studio"
     }
   ]
 }

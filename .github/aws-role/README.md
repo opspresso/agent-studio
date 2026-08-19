@@ -1,7 +1,7 @@
 # aws role
 
 ```bash
-export NAME="agentdure"
+export NAME="agent-studio"
 ```
 
 ## create role

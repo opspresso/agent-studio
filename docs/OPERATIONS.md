@@ -11,7 +11,7 @@
 의존성이 아티팩트 안으로 추적돼 들어가므로 런타임 스테이지에는 `node_modules` 설치가 없다.
 
 ```bash
-docker build -t agentdure .
+docker build -t agent-studio .
 docker compose up --build          # 로컬 컨테이너 + DynamoDB Local
 ```
 
@@ -85,16 +85,16 @@ standalone 서버는 진행 중인 요청을 끝낸다. 이 모듈은 결코 `pr
 
 | 메트릭 | 타입 | 용도 |
 |---|---|---|
-| `agentdure_active_runs` | gauge | **오토스케일링 신호.** |
-| `agentdure_runs_started_total` | counter | 처리량. |
-| `agentdure_runs_finished_total` | counter | 처리량. |
-| `agentdure_runs_failed_total` | counter | **알림 신호.** 취소는 실패가 아니다. |
-| `agentdure_run_duration_seconds` | histogram | **알림 신호.** 버킷 `0.5 … 600`. |
-| `agentdure_unknown_model_calls_total` | counter | 정확성 신호 — 아래 참고. |
-| `agentdure_unknown_models` | gauge | 관측된 미등록 model id 의 가짓수. |
-| `agentdure_draining` | gauge | 셧다운이 시작되면 `1`. |
+| `agent_studio_active_runs` | gauge | **오토스케일링 신호.** |
+| `agent_studio_runs_started_total` | counter | 처리량. |
+| `agent_studio_runs_finished_total` | counter | 처리량. |
+| `agent_studio_runs_failed_total` | counter | **알림 신호.** 취소는 실패가 아니다. |
+| `agent_studio_run_duration_seconds` | histogram | **알림 신호.** 버킷 `0.5 … 600`. |
+| `agent_studio_unknown_model_calls_total` | counter | 정확성 신호 — 아래 참고. |
+| `agent_studio_unknown_models` | gauge | 관측된 미등록 model id 의 가짓수. |
+| `agent_studio_draining` | gauge | 셧다운이 시작되면 `1`. |
 
-**CPU 가 아니라 `agentdure_active_runs` 로 오토스케일하라.** 런은 I/O 바운드다 — 런으로
+**CPU 가 아니라 `agent_studio_active_runs` 로 오토스케일하라.** 런은 I/O 바운드다 — 런으로
 포화된 인스턴스도 CPU 는 유휴로 읽힌다.
 
 **리더가 떠났다고 chat 런이 더는 스스로 떨어져 나가지 않는다.** 탭을 닫은 것은 리더가 떠났다는
@@ -113,7 +113,7 @@ Slack 에는 여전히 해당하며, 이들은 caller 의 signal 을 받아 실�
 이므로 그것을 넘는 것은 자기 한계보다 오래 산 런이고, 데드라인까지 방치된 버려진 chat 런은
 거기에 *실패*로 떨어진다.
 
-**`agentdure_unknown_model_calls_total` 의 rate 가 0 이 아니면 알림을 걸어라.**
+**`agent_studio_unknown_model_calls_total` 의 rate 가 0 이 아니면 알림을 걸어라.**
 `src/domain/llm/models.ts` 에 없는 model id 도 실행은 되지만, 그 usage 는 **$0** 로 기록된다 —
 그 누락이 망가뜨리는 바로 그 비용 대시보드에서 누락이 보이지 않는다. 누락마다 `[cost] unknown
 model id` 를 한 번씩 로그로 남기기도 한다. `UNKNOWN_MODEL_POLICY=refuse` (env 또는 런타임
@@ -367,12 +367,13 @@ Schedule 트리거는 무언가가 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN` 과 함�
 
 | | 배포 | 주소 | 스토리지 |
 |---|---|---|---|
-| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`) | `agentdure.com` (`alpha.agentdure.com` 은 호환 alias) | `agent-studio`, `agent-studio-static`, `agent-studio-vector`, `agent-studio-memory` |
-| **prod** | EKS 클러스터 (`argocd-env-demo` 의 `charts/agentdure`) | 현재 DNS 미연결 | `agentdure`, `agentdure-static`, `agentdure-vector`, `agentdure-memory` |
+| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`) | `studio.opspresso.com` | `agent-studio`, `agent-studio-static`, `agent-studio-vector`, `agent-studio-memory` |
+| **prod** | EKS 클러스터 (`argocd-env-demo` 의 `charts/agent-studio`) | 현재 DNS 미연결 | `agent-studio-prod`, `agent-studio-prod-static`, `agent-studio-prod-vector`, `agent-studio-prod-memory` — **아직 만들지 않았다** |
 
-`agent-studio` 는 리브랜딩 전 이름이고, alpha 가 그것을 이어받았다. 모든 이름은
-`terraform-env-demo` 의 `demo/9-agentdure` 가 관리한다 — 테이블·버킷·S3 Vectors 인덱스·
-Knowledge Base·ECR·IDC 의 IAM 사용자까지 한 모듈에 있다.
+모든 이름은 `terraform-env-demo` 의 `demo/9-agent-studio` 가 관리한다 — 테이블·버킷·S3 Vectors
+인덱스·Knowledge Base·ECR·IDC 의 IAM 사용자까지 한 모듈에 있고, 환경은 그 `envs` 맵의 줄
+하나다. prod 세트는 이름만 정해 두고 주석으로 남겨 두었으므로, 클러스터 배포는 그 줄을 풀어
+apply 하기 전에는 닿을 테이블이 없다.
 
 **한쪽에서 만든 프로젝트는 다른 쪽에 보이지 않는다.** 버전도, 채팅도, 사용량도, 레지스트리
 편집도 그렇다. 두 배포는 다른 데이터를 보는 같은 코드다.
@@ -381,7 +382,7 @@ Knowledge Base·ECR·IDC 의 IAM 사용자까지 한 모듈에 있다.
 
 | | |
 |---|---|
-| SSM 의 시크릿 (`/k8s/common/agentdure/*`) | 같은 값을 읽는다. `AES_ENCRYPTION_KEY` 가 같은 것은 편의가 아니라 요구다 — 각자의 테이블에 든 암호화된 자격증명을 푸는 키다 |
+| SSM 의 시크릿 (`/k8s/common/agent-studio/*`) | 같은 값을 읽는다. `AES_ENCRYPTION_KEY` 가 같은 것은 편의가 아니라 요구다 — 각자의 테이블에 든 암호화된 자격증명을 푸는 키다 |
 | Google OAuth 클라이언트 | 하나를 공유하고, 리디렉션 URI 에 두 주소가 모두 있어야 한다 |
 | agent-plugins 레지스트리 | 스킬·MCP 서버의 정의는 SSOT 하나다. 각 배포가 자기 테이블에 sync 한다 |
 | ECR | 같은 이미지를 끌어간다 |
@@ -458,7 +459,7 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오고 SS
       prefix 에 규칙이 빠지면 조용한 누수가 된다: 행은 만료되는데 오브젝트는 만료되지 않는다
 - [ ] LB 헬스 체크 → `/api/ready` (확장된 플릿에서는 `/api/health`), 재시작 검사 → `/api/health`
 - [ ] 컨테이너 `stopTimeout` ≥ `MAX_RUN_DURATION_MS`
-- [ ] Prometheus 가 `/api/metrics` 를 스크레이프할 것; `agentdure_runs_failed_total`, `agentdure_run_duration_seconds`, `agentdure_unknown_model_calls_total` 에 알림
+- [ ] Prometheus 가 `/api/metrics` 를 스크레이프할 것; `agent_studio_runs_failed_total`, `agent_studio_run_duration_seconds`, `agent_studio_unknown_model_calls_total` 에 알림
 - [ ] 아래 세 가지 틱 중 하나라도 쓴다면 `SCHEDULE_SCAN_TOKEN` 을 시크릿으로 프로비저닝할 것 — 셋 모두를 인증하고, 그중 하나(plugins sync)는 두 레지스트리에 쓴다
 - [ ] Schedule 트리거를 쓴다면: `/api/triggers/scan` 을 최대 1분 간격으로 틱하는 CronJob
 - [ ] `VECTOR_BUCKET` 이 설정된 경우: `/api/catalog/reindex` 를 매시간 틱하는 CronJob — 레지스트리 쓰기는 결코 재색인하지 않으므로, 이 틱이 없으면 인덱스를 갱신하는 것은 완료된 plugins sync 뿐이고, 손으로 등록한 Skill 이나 서버는 영영 발견되지 않는다

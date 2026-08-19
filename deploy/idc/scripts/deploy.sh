@@ -2,7 +2,7 @@
 #
 # The whole update procedure for this host, in one script:
 #
-#   /opt/agentdure/scripts/deploy.sh
+#   /opt/agent-studio/scripts/deploy.sh
 #
 # It rewrites `.env` and `.env.mcp` from three sources — the checked-in
 # examples for configuration, argocd-env-demo for image versions, SSM for
@@ -48,11 +48,11 @@ done
 # Every image compose names, and the argocd-env-demo chart that pins it. Ours
 # and other people's alike: the cluster is the one place a version is chosen.
 IMAGE_VARS=(
-  AGENTDURE_TAG MCP_MEMORY_TAG MCP_DOCUMENT_TAG MCP_YOUTUBE_TAG
+  AGENT_STUDIO_TAG MCP_MEMORY_TAG MCP_DOCUMENT_TAG MCP_YOUTUBE_TAG
   MCP_BRAVE_TAG MCP_CLOUDWATCH_TAG MCP_ARGOCD_TAG MCP_GRAFANA_TAG MCP_KUBERNETES_TAG
 )
 declare -A chart_of=(
-  [AGENTDURE_TAG]=agentdure
+  [AGENT_STUDIO_TAG]=agent-studio
   [MCP_MEMORY_TAG]=mcp-memory
   [MCP_DOCUMENT_TAG]=mcp-document
   [MCP_YOUTUBE_TAG]=mcp-youtube
@@ -99,20 +99,20 @@ done
 # convenience but the requirement: it decrypts the stored credentials in the
 # table both read.
 APP_SECRETS=(
-  AES_ENCRYPTION_KEY=/k8s/common/agentdure/aes-encryption-key
-  BETTER_AUTH_SECRET=/k8s/common/agentdure/better-auth-secret
-  GOOGLE_CLIENT_ID=/k8s/common/agentdure/google-client-id
-  GOOGLE_CLIENT_SECRET=/k8s/common/agentdure/google-client-secret
-  LLM_API_KEY=/k8s/common/agentdure/llm-api-key
-  LLM_PROVIDER_OPENAI_API_KEY=/k8s/common/agentdure/llm-provider-openai-api-key
-  LLM_PROVIDER_ANTHROPIC_API_KEY=/k8s/common/agentdure/llm-provider-anthropic-api-key
-  LLM_PROVIDER_XAI_API_KEY=/k8s/common/agentdure/llm-provider-xai-api-key
-  LLM_PROVIDER_OPENROUTER_API_KEY=/k8s/common/agentdure/llm-provider-openrouter-api-key
-  A2A_API_KEY=/k8s/common/agentdure/a2a-api-key
-  GITHUB_TOKEN=/k8s/common/agentdure/github-token
+  AES_ENCRYPTION_KEY=/k8s/common/agent-studio/aes-encryption-key
+  BETTER_AUTH_SECRET=/k8s/common/agent-studio/better-auth-secret
+  GOOGLE_CLIENT_ID=/k8s/common/agent-studio/google-client-id
+  GOOGLE_CLIENT_SECRET=/k8s/common/agent-studio/google-client-secret
+  LLM_API_KEY=/k8s/common/agent-studio/llm-api-key
+  LLM_PROVIDER_OPENAI_API_KEY=/k8s/common/agent-studio/llm-provider-openai-api-key
+  LLM_PROVIDER_ANTHROPIC_API_KEY=/k8s/common/agent-studio/llm-provider-anthropic-api-key
+  LLM_PROVIDER_XAI_API_KEY=/k8s/common/agent-studio/llm-provider-xai-api-key
+  LLM_PROVIDER_OPENROUTER_API_KEY=/k8s/common/agent-studio/llm-provider-openrouter-api-key
+  A2A_API_KEY=/k8s/common/agent-studio/a2a-api-key
+  GITHUB_TOKEN=/k8s/common/agent-studio/github-token
   # Read by the app and by the ticker: without it the three scan endpoints
   # answer 503 and nothing ticks this environment.
-  SCHEDULE_SCAN_TOKEN=/k8s/common/agentdure/schedule-scan-token
+  SCHEDULE_SCAN_TOKEN=/k8s/common/agent-studio/schedule-scan-token
 )
 MCP_SECRETS=(
   BRAVE_API_KEY=/k8s/common/mcp-brave-search/brave-api-key

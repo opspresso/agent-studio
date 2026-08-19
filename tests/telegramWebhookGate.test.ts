@@ -48,7 +48,7 @@ const { handleTelegramUpdateRequest } = await import(
   "@/app/api/telegram/webhook/_lib/handleUpdateRequest"
 );
 
-const SECRET = "adg_test-secret";
+const SECRET = "asg_test-secret";
 const BINDING = { projectName: "painter", botToken: "42:tok", webhookSecret: SECRET, botUsername: "painter_bot" };
 
 function request(payload: unknown, secret: string | null = SECRET): Request {

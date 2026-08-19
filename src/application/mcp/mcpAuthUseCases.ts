@@ -159,7 +159,7 @@ export const MCP_OAUTH_CALLBACK_PATH = "/api/mcps/oauth/callback";
  *
  * One document per project rather than one for the deployment, because the
  * document is what an authorization server shows the person approving the
- * connection: a single one would ask them to grant access to "AgentDure" with no
+ * connection: a single one would ask them to grant access to "Agent Studio" with no
  * way to tell which project is asking, where dynamic registration named the
  * project in every client it created.
  */
@@ -203,7 +203,7 @@ export function clientMetadataDocument(
   const base = trimBase(baseUrl);
   return {
     client_id: clientMetadataUrl(base, projectName),
-    client_name: `AgentDure — ${projectName}`,
+    client_name: `Agent Studio — ${projectName}`,
     client_uri: base,
     redirect_uris: [`${base}${MCP_OAUTH_CALLBACK_PATH}`],
     grant_types: ["authorization_code", "refresh_token"],
@@ -688,7 +688,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         } else if (server.auth.registrationEndpoint) {
           const registered = await deps.oauth.register({
             registrationEndpoint: server.auth.registrationEndpoint,
-            clientName: `AgentDure — ${projectName}`,
+            clientName: `Agent Studio — ${projectName}`,
             redirectUri: callback,
             scopes,
           });
