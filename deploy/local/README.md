@@ -1,20 +1,20 @@
-# deploy/local — 로컬 docker compose 배포
+# deploy/local — MCP 서버 로컬 배포
 
-`deploy/idc/` 의 로컬 축소판. MCP 서버들을 docker compose 로 띄우고, 워킹 트리에서 빌드한 앱을 `http://localhost:3000` 으로 접속해 **배포 형태 그대로** 테스트한다. 코드 반복 작업에는 여전히 `pnpm dev` 를 쓴다 — 이 구성은 MCP 통합·컨테이너 동작을 확인할 때 쓴다.
+레지스트리의 MCP 서버들을 docker compose 로 로컬에 띄운다. **앱은 컨테이너가 아니라 호스트의 `pnpm dev`** — 코드를 고치고 `http://localhost:3000` 에서 바로 테스트하면서, MCP dispatch 는 실제 배포와 같은 경로로 동작한다.
 
-핵심은 IDC 와 같은 두 가지 트릭이다. agent-plugins 레지스트리가 등록하는 MCP URL 은 `http://mcp-<name>.agent-mcps.svc.cluster.local/mcp`(포트 없음 = 80)이므로, 각 MCP 서비스는 그 클러스터 DNS 이름을 **network alias** 로 달고 **80 포트로 리슨**한다. 앱은 `.env` 의 `MCP_INTERNAL_HOST_SUFFIXES` 선언 덕분에 SSRF 가드를 지나 그 주소에 도달한다.
+agent-plugins 레지스트리가 등록하는 MCP URL 은 `http://mcp-<name>.agent-mcps.svc.cluster.local/mcp`(포트 없음 = 80)이다. `deploy/idc/` 와 같은 트릭으로 각 서비스가 그 클러스터 DNS 이름을 network alias 로 달고 80 포트로 리슨하며, 여기에 하나를 더한다: **OrbStack 커스텀 도메인 라벨**(`dev.orbstack.domains`) 로 호스트의 `pnpm dev` 프로세스도 같은 이름을 컨테이너로 직접 해석한다 — 포트 공개도 `/etc/hosts` 도 필요 없다.
+
+> OrbStack 전용 부분은 라벨 하나뿐이다. 일반 Docker Desktop 에서는 호스트가 이 이름들을 해석하지 못하므로, `/etc/hosts` 에 `127.0.0.1 mcp-<name>.agent-mcps.svc.cluster.local …` 를 추가하고 127.0.0.1:80 에서 Host 헤더로 라우팅하는 프록시(caddy 등)를 두는 방식으로 대신한다.
 
 ## 사전 조건
 
-- 레포 루트의 `.env.local` — 앱의 base 설정 (`docs/DEVELOPMENT.md` 의 로컬 셋업).
-- 공유 dev DynamoDB 와 테이블:
+- 로컬 개발 셋업 (`docs/DEVELOPMENT.md`): dev DynamoDB(:8083), `.env.local`, `pnpm dev`.
+- `.env.local` 에 한 줄 추가 — 이것이 없으면 SSRF 가드가 MCP URL 을 전부 거부하고, plugins sync 는 모든 서버를 `invalid-url` 로 스킵한다:
 
-  ```bash
-  docker compose up -d dynamodb     # 레포 루트, :8083
-  pnpm init-local-table
+  ```
+  MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
   ```
 
-  앱 컨테이너는 `host.docker.internal:8083` 으로 이 인스턴스를 읽는다 — `pnpm dev` 와 **같은 테이블, 같은 dev-session 쿠키**.
 - MCP 이미지를 받을 AWS 자격 증명 (private ECR). `AWS_PROFILE` 이면 충분하다.
 
 ## 실행
@@ -22,26 +22,22 @@
 ```bash
 cd deploy/local
 scripts/deploy.sh    # 첫 실행: .env 생성 후 종료 — 검토하고 다시 실행
-scripts/deploy.sh    # 태그 갱신 + ECR 로그인 + 빌드 + 기동
-```
-
-`.env` 는 컨테이너 관점의 오버라이드만 담는다. `.env.local` 의 `LLM_BASE_URL` 이 루프백(mock-llm `:8002`, LM Studio `:1234`)이면 `.env` 에서 `host.docker.internal` 로 재선언해야 한다 — 컨테이너의 `127.0.0.1` 은 컨테이너 자신이다.
-
-로그인은 `pnpm dev` 와 동일하다: Google OAuth 를 설정했으면 그대로, 아니면 dev-session 쿠키를 쓴다.
-
-```bash
-pnpm tsx --env-file=.env.local scripts/dev-session.ts
+scripts/deploy.sh    # 태그 갱신 + ECR 로그인 + 기동
+pnpm dev             # 레포 루트에서 — http://localhost:3000
 ```
 
 ## 검증
 
 ```bash
-curl -s http://localhost:3000/api/health          # {"status":"ok"}
-docker compose exec app wget -qO- http://mcp-document.agent-mcps.svc.cluster.local/mcp \
-  --header 'Accept: application/json' || true      # alias 해석 확인 (405/406 이어도 도달은 성공)
+# 호스트에서 컨테이너 직결 (OrbStack 도메인)
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -X POST http://mcp-document.agent-mcps.svc.cluster.local/mcp \
+  -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}'
+# → 200
 ```
 
-콘솔에서: `/tools` 의 `mcp-document`·`mcp-youtube` 에 **Test** — 성공하면 suffix 를 경유한 dispatch 까지 동작하는 것이다. 레지스트리에 MCP 행이 없다면 아직 plugins sync 가 돈 적이 없는 것: `ticker` 프로필을 켜거나 `/plugins` 콘솔에서 sync 를 실행한다.
+콘솔에서: `/plugins` 의 **Sync** 를 실행하면 클러스터 DNS 서버들이 레지스트리에 생성된다 (`ticker` 프로필을 켰다면 1분 내 자동). 그다음 `/tools` 의 `mcp-document`·`mcp-youtube` 에 **Test** — 성공하면 suffix 를 경유한 dispatch 까지 동작하는 것이다.
 
 ## 프로필
 
@@ -51,9 +47,9 @@ docker compose exec app wget -qO- http://mcp-document.agent-mcps.svc.cluster.loc
 |---|---|---|---|
 | `aws` | mcp-memory, mcp-cloudwatch | `cp .env.aws.example .env.aws` 후 액세스 키 | mcp-memory 는 **알파와 같은** 메모리 버킷(`agent-studio-vector`/`agent-studio-memory`)을 읽고 쓴다 — 로컬 S3 Vectors 는 없다 |
 | `brave` | mcp-brave-search | `.env` 의 `BRAVE_API_KEY` | |
-| `ticker` | 스케줄·플러그인 sync·카탈로그 리인덱스 | `.env.local` 의 `SCHEDULE_SCAN_TOKEN` | `../idc/scripts/tick.sh` 를 그대로 마운트한다 |
+| `ticker` | 스케줄·플러그인 sync·카탈로그 리인덱스 | `.env.local` 의 `SCHEDULE_SCAN_TOKEN` | `../idc/scripts/tick.sh` 를 그대로 마운트하고 호스트의 `pnpm dev`(:3000)를 두드린다 |
 
-managed MCP(`MANAGED_MCP_*`)는 이 구성에서 의도적으로 꺼져 있다: 앱 이미지에 docker CLI 가 없고, 컨테이너의 루프백은 호스트의 루프백이 아니다. managed 경로를 시험하려면 `pnpm dev` + `MANAGED_MCP_INSTANCE_ID=local` 을 쓴다 (`docs/CONFIGURATION.md`).
+managed MCP(`MANAGED_MCP_INSTANCE_ID=local`)는 별개의 경로다: 앱이 직접 docker CLI 로 컨테이너를 띄우고 루프백으로 등록한다 (`docs/CONFIGURATION.md`). 이 compose 는 *레지스트리(agent-plugins)의* 서버들을 실제 배포와 같은 이름으로 띄우는 쪽이다 — 두 방식은 공존할 수 있다.
 
 ## 정리
 

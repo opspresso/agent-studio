@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 #
-# Bring the local deployment up:
+# Bring the local MCP servers up:
 #
 #   deploy/local/scripts/deploy.sh
 #
-# The IDC script's shape without its secret machinery — there is no SSM here,
-# the app's configuration is the repo root's `.env.local` plus the overrides
-# in `.env`. What this script does: create `.env` from the example on first
-# run (and stop, so it can be reviewed), refresh the MCP image tags from what
-# argocd-env-demo pins for alpha, log Docker in to ECR with whatever AWS
-# credentials the shell already has, and bring compose up with the app built
-# from the working tree. Idempotent — rerun after any change.
+# The IDC script's shape without its secret machinery — there is no SSM here
+# and no app service: the app is `pnpm dev` on the host. What this script
+# does: create `.env` from the example on first run (and stop, so it can be
+# reviewed), refresh the MCP image tags from what argocd-env-demo pins for
+# alpha, log Docker in to ECR with whatever AWS credentials the shell already
+# has, and bring compose up. Idempotent — rerun after any change.
 
 set -euo pipefail
 
@@ -20,16 +19,17 @@ cd "$(dirname "$0")/.."
 : "${VERSIONS_BASE:=https://raw.githubusercontent.com/opspresso/argocd-env-demo/refs/heads/main/charts}"
 export AWS_REGION
 
-if [[ ! -f ../../.env.local ]]; then
-  echo "repo root .env.local is missing — it is the app's base configuration" >&2
-  echo "(cp .env.example .env.local at the repo root and fill in the boot vars)" >&2
-  exit 1
-fi
-
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  echo "Created .env from .env.example — review it (LLM endpoint, profiles), then rerun."
+  echo "Created .env from .env.example — review it (profiles, keys), then rerun."
   exit 0
+fi
+
+# The one line the host-side app needs, or the registry's MCP URLs are refused
+# by the SSRF guard and every server syncs as an invalid-url skip.
+if ! grep -q "^MCP_INTERNAL_HOST_SUFFIXES=" ../../.env.local 2>/dev/null; then
+  echo "WARNING: .env.local has no MCP_INTERNAL_HOST_SUFFIXES — add:" >&2
+  echo "  MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local" >&2
 fi
 
 # --- Versions -------------------------------------------------------------
@@ -95,8 +95,10 @@ aws ecr get-login-password --region "$AWS_REGION" |
 
 # --- Up -------------------------------------------------------------------
 
-echo "== compose up (app built from the working tree)"
-docker compose pull --quiet --ignore-buildable
-docker compose up -d --build
+echo "== compose up"
+docker compose pull --quiet
+docker compose up -d
 echo
 docker compose ps
+echo
+echo "MCP servers are up. Run the app on the host: pnpm dev  (http://localhost:3000)"

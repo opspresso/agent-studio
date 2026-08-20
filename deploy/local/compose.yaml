@@ -1,22 +1,24 @@
-# Agent Studio and its MCP servers on the developer's own machine.
+# The registry's MCP servers on the developer's own machine — the app itself
+# stays `pnpm dev` on the host, so code changes are testable immediately at
+# http://localhost:3000.
 #
-# The local twin of `deploy/idc/compose.yaml`, cut down to what a laptop needs:
-# no caddy (the app publishes 3000 directly), no fixed subnet (there is no
-# proxy hop to strip), and the app is *built from this working tree* rather
-# than pulled — this is how the deployed shape of the current code is tested,
-# `pnpm dev` stays the tool for code iteration.
-#
-# The MCP scheme is the IDC one, unchanged and for the same reason: the
+# The MCP scheme is `deploy/idc/`'s, unchanged and for the same reason: the
 # registry rows agent-plugins syncs name `http://mcp-<name>.agent-mcps.svc.
-# cluster.local/mcp`, so every MCP service carries that **cluster DNS name as a
-# network alias** and **listens on 80** (the URL has no port). The app reaches
-# them only because `.env` declares MCP_INTERNAL_HOST_SUFFIXES past the SSRF
-# guard.
+# cluster.local/mcp` (no port = 80), so every service here **listens on 80**
+# and carries that cluster DNS name twice:
 #
-# DynamoDB is *not* here: the app reaches the shared dev instance the root
-# compose.yaml runs (`docker compose up -d dynamodb`, port 8083) through
-# host.docker.internal, so this deployment reads the same table — and accepts
-# the same dev-session cookies — as `pnpm dev`.
+#  - as a **network alias**, for anything else on this compose network;
+#  - as an **OrbStack custom domain** (`dev.orbstack.domains` label), which is
+#    what lets the *host* — the `pnpm dev` process — resolve the same name
+#    straight to the container, no port publishing, no /etc/hosts.
+#
+# The app reaches those addresses only because `.env.local` declares
+# MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local past the SSRF guard.
+#
+# The OrbStack label is the one OrbStack-specific piece. On plain Docker
+# Desktop the host cannot resolve these names; the fallback is /etc/hosts
+# entries pointing them at 127.0.0.1 plus a Host-routing proxy on port 80 —
+# see README.md.
 
 name: agent-studio-local
 
@@ -29,35 +31,18 @@ x-mcp: &mcp
       max-file: "3"
 
 services:
-  app:
-    build: ../..
-    ports:
-      - "3000:3000"
-    # Later files win: `.env.local` is the developer's ordinary dev config and
-    # `.env` re-states only what looks different from inside a container
-    # (loopback endpoints, the MCP suffix, the managed feature switched off).
-    env_file:
-      - ../../.env.local
-      - .env
-    # host-gateway also works on Docker Desktop/OrbStack, so the mapping is
-    # portable rather than macOS-only.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    # At least MAX_RUN_DURATION_MS (10 min) — same reasoning as IDC: SIGTERM
-    # drains, and the grace period is the whole budget.
-    stop_grace_period: 660s
-    mem_limit: 1600m
-    logging: *logging
-
   # --- MCP servers -------------------------------------------------------
   # The two that need no credentials — the default profile-less set, enough
   # for an end-to-end MCP run.
 
   mcp-document:
     <<: *mcp
+    platform: linux/amd64
     image: ${ECR_REGISTRY}/mcp-document:${MCP_DOCUMENT_TAG}
     environment:
       PORT: "80"
+    labels:
+      dev.orbstack.domains: mcp-document.agent-mcps.svc.cluster.local
     mem_limit: 512m
     networks:
       default:
@@ -66,9 +51,12 @@ services:
 
   mcp-youtube:
     <<: *mcp
+    platform: linux/amd64
     image: ${ECR_REGISTRY}/mcp-youtube:${MCP_YOUTUBE_TAG}
     environment:
       PORT: "80"
+    labels:
+      dev.orbstack.domains: mcp-youtube.agent-mcps.svc.cluster.local
     mem_limit: 512m
     networks:
       default:
@@ -83,6 +71,7 @@ services:
   mcp-memory:
     <<: *mcp
     profiles: [aws]
+    platform: linux/amd64
     image: ${ECR_REGISTRY}/mcp-memory:${MCP_MEMORY_TAG}
     env_file:
       - .env.aws
@@ -96,6 +85,8 @@ services:
       EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
       EMBEDDING_DIM: "1024"
       RECALL_MIN_SIMILARITY: "0.1"
+    labels:
+      dev.orbstack.domains: mcp-memory.agent-mcps.svc.cluster.local
     mem_limit: 512m
     networks:
       default:
@@ -141,6 +132,8 @@ services:
       timeout: 5s
       start_period: 20s
       retries: 3
+    labels:
+      dev.orbstack.domains: mcp-cloudwatch.agent-mcps.svc.cluster.local
     mem_limit: 1g
     networks:
       default:
@@ -158,6 +151,8 @@ services:
       BRAVE_MCP_HOST: 0.0.0.0
       BRAVE_MCP_PORT: "80"
       BRAVE_MCP_STATELESS: "true"
+    labels:
+      dev.orbstack.domains: mcp-brave-search.agent-mcps.svc.cluster.local
     mem_limit: 512m
     networks:
       default:
@@ -166,20 +161,21 @@ services:
 
   # --- Ticker ------------------------------------------------------------
   # IDC's tick loop, mounted from there rather than copied: without it nothing
-  # fires schedules, syncs plugins or reindexes the catalog locally. Needs
-  # SCHEDULE_SCAN_TOKEN (usually already in .env.local).
+  # fires schedules, syncs plugins or reindexes the catalog locally. It ticks
+  # the `pnpm dev` server on the host, and needs SCHEDULE_SCAN_TOKEN (read
+  # from .env.local, where dev already keeps it).
   ticker:
     profiles: [ticker]
     image: curlimages/curl:8.11.1
     restart: unless-stopped
     env_file:
       - ../../.env.local
-      - .env
+    environment:
+      TICK_TARGET: http://host.docker.internal:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     entrypoint: ["/bin/sh", "/tick.sh"]
     volumes:
       - ../idc/scripts/tick.sh:/tick.sh:ro
-    depends_on:
-      app:
-        condition: service_healthy
     mem_limit: 64m
     logging: *logging
