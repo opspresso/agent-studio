@@ -387,6 +387,28 @@ describe("settingsUseCases.update self-hosted declarations", () => {
     expect(getModelConfig("selfhosted/qwen/qwen3.8-27b")).toBeUndefined();
   });
 
+  it("lets one PUT declare a model and enable it together", async () => {
+    const { repo, current } = fakeRepo();
+    await createSettingsUseCases(repo).update(
+      {
+        selfHostedModels: [
+          {
+            family: "gemma-4-e4b",
+            displayName: "Gemma 4 E4B",
+            contextWindow: 131072,
+            maxTokens: 8192,
+            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+          },
+        ],
+        // The declaration installs only after the write, so the enabled check
+        // must count same-patch declarations rather than asking the registry.
+        enabledModels: ["openai/gpt-5.4", "selfhosted/gemma-4-e4b"],
+      },
+      ADMIN,
+    );
+    expect(current()?.enabledModels).toEqual(["openai/gpt-5.4", "selfhosted/gemma-4-e4b"]);
+  });
+
   it("fails the save on a declaration the registry would refuse", async () => {
     const { repo } = fakeRepo();
     await expect(

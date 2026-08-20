@@ -8,6 +8,7 @@ import {
   loadModelCatalog,
   loadSelfHostedModels,
   offeredModels,
+  selfHostedDeclarationIds,
   selfHostedModelRejectReason,
   wireModelId,
 } from "@/domain/llm/models";
@@ -51,6 +52,8 @@ describe("loadSelfHostedModels", () => {
     expect(wireModelId("selfhosted/qwen/qwen3.8-27b")).toBe("qwen/qwen3.8-27b");
     expect(listModels().at(-1)?.id).toBe("selfhosted/qwen/qwen3.8-27b");
     expect(getVisibleModels().some((m) => m.id === "selfhosted/qwen/qwen3.8-27b")).toBe(true);
+    // What tells the console which selfhosted models are its own to edit.
+    expect(selfHostedDeclarationIds()).toEqual(["selfhosted/qwen/qwen3.8-27b"]);
     // A maker only a declaration names still has a label — its own id.
     expect(listModelMakers().local).toBe("local");
   });

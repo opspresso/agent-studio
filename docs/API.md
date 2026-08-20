@@ -1329,6 +1329,7 @@ GET /api/projects/{name}/traces/{traceId}
 GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ],
                                  models: [ { …model, enabled } ],
                                  makers: { <makerId>: label },
+                                 declaredSelfHosted: [ <id> ],
                                  updatedAt,
                                  source: "override" | "default" }
 POST /api/models/test    → 200 { ok, latencyMs, error? } | 400

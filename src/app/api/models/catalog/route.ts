@@ -1,4 +1,11 @@
-import { getVisibleModels, listModelMakers, modelCatalogUpdatedAt, providerOffered, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import {
+  getVisibleModels,
+  listModelMakers,
+  modelCatalogUpdatedAt,
+  providerOffered,
+  selfHostedDeclarationIds,
+  SUPPORTED_PROVIDERS,
+} from "@/domain/llm/models";
 import { getEnabledModels, getLlmProviderConfigs } from "@/lib/runtime-settings";
 import { withMemberAuth } from "@/lib/session";
 
@@ -33,6 +40,10 @@ export const GET = withMemberAuth(async () => {
       enabled: enabled === undefined || enabled.has(model.id),
     })),
     makers: listModelMakers(),
+    // Which selfhosted models are this deployment's own declarations — the
+    // only ones the console's Self-hosted section may edit. A catalog can
+    // publish under the prefix too, and those are agent-models' to change.
+    declaredSelfHosted: selfHostedDeclarationIds(),
     updatedAt: modelCatalogUpdatedAt(),
     source: enabled === undefined ? "default" : "override",
   });
