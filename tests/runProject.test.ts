@@ -1931,6 +1931,50 @@ describe("execution tracing policy", () => {
     expect(traces[0]?.spans.some((span) => span.kind === "model")).toBe(true);
   });
 
+  it("records what the run did before its first model call, through the run itself", async () => {
+    // The recorder's own arithmetic is covered in tests/trace.test.ts; what is
+    // covered here is the wiring — that a real run emits the stage at all, and
+    // that the span says what the resolve came back with.
+    const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    const traces = captureTraces(deps);
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: versionFixture({ piiFiltering: false }),
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    const prepare = traces[0]?.spans.filter((span) => span.kind === "prepare") ?? [];
+    expect(prepare.map((span) => span.name)).toEqual(["tools"]);
+    expect(prepare[0]?.status).toBe("ok");
+    expect(prepare[0]?.output).toMatchObject({ skills: 0, subagents: 0, mcpServers: 0, mcpTools: 0 });
+  });
+
+  it("records the memory stage only for a version that asked for one", async () => {
+    const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    const traces = captureTraces(deps);
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: versionFixture({ piiFiltering: false, memoryRecall: true }),
+        messages: [{ role: "user", content: "what did we decide?" }],
+      }),
+    );
+
+    const memory = traces[0]?.spans.find((span) => span.name === "memory");
+    expect(memory?.kind).toBe("prepare");
+    // No bound server offers `recall`, which is a misconfiguration this version
+    // will warn about on every run it makes — not a stage that failed, and the
+    // difference is what keeps a red span meaning something.
+    expect(memory?.status).toBe("ok");
+    expect(memory?.output).toMatchObject({ asked: 0, warnings: 1 });
+  });
+
   it("honors the configured sampling rate for non-agent runs", async () => {
     const skippedChannel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const skippedFixture = executionDepsFixture(skippedChannel);

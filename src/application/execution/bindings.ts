@@ -357,20 +357,6 @@ async function discoverCapabilities(
 }
 
 /**
- * Resolve a version's skills, subagents and MCP tools together.
- *
- * The MCP promise is handled separately so a *sibling's* failure still releases
- * the sessions that opened: awaiting all three as a plain `Promise.all` drops
- * the tool manager on the floor, and every session it opened stays alive
- * server-side until that server times it out.
- *
- * When the version opted into discovery and this deployment has a catalog, the
- * search runs *first* and its results are appended to the version's own lists —
- * the resolution below then treats bound and discovered alike, which is what
- * keeps every later stage (the prompt tables, the tool enums, the reachability
- * checks) from needing to know the difference.
- */
-/**
  * What the tools stage reports on its trace span.
  *
  * One owner because two run levels record it — the top-level run and an agent
@@ -379,7 +365,8 @@ async function discoverCapabilities(
  * and did it come back with what the version declares. Discovery's additions
  * are **named** rather than counted, because they are the one part of a run's
  * plan that changes per request; bounded like every other accumulator on a
- * trace, with the count beside the list saying what it left out.
+ * trace, with the count beside the list saying how many were found in all (so a
+ * list of twenty beside a count of twenty-five means five are not shown).
  */
 export function toolsPrepared(resolved: {
   skills: readonly unknown[];
@@ -403,6 +390,20 @@ export function toolsPrepared(resolved: {
   };
 }
 
+/**
+ * Resolve a version's skills, subagents and MCP tools together.
+ *
+ * The MCP promise is handled separately so a *sibling's* failure still releases
+ * the sessions that opened: awaiting all three as a plain `Promise.all` drops
+ * the tool manager on the floor, and every session it opened stays alive
+ * server-side until that server times it out.
+ *
+ * When the version opted into discovery and this deployment has a catalog, the
+ * search runs *first* and its results are appended to the version's own lists —
+ * the resolution below then treats bound and discovered alike, which is what
+ * keeps every later stage (the prompt tables, the tool enums, the reachability
+ * checks) from needing to know the difference.
+ */
 export async function resolveRunTools(
   deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
   version: Version,

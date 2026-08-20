@@ -24,6 +24,30 @@ function spanError(span: Trace["spans"][number]): string | null {
   return typeof error === "string" && error ? error : null;
 }
 
+/**
+ * What a stage came back with, as one line under its name.
+ *
+ * A `prepare` span's whole content is its `output` — how many tools the resolve
+ * offered, what a search added by name, how much memory came back — and none of
+ * it was rendered, so the console showed a duration and nothing to explain it.
+ * The names are the point: they are the only part of a run's plan that changes
+ * per request.
+ */
+function prepareDetail(span: Trace["spans"][number]): string | null {
+  if (span.kind !== "prepare" || !span.output) {
+    return null;
+  }
+  const parts = Object.entries(span.output).flatMap(([key, value]) => {
+    if (Array.isArray(value)) {
+      return value.length > 0 ? [`${key}: ${value.join(", ")}`] : [];
+    }
+    // Zeroes are dropped: "skills 0 · subagents 0" on every trace of a version
+    // that binds neither says nothing the version does not already say.
+    return typeof value === "number" && value > 0 ? [`${key} ${value}`] : [];
+  });
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 function spanTokens(span: Trace["spans"][number]): string {
   const input = span.input?.inputTokens ?? span.output?.inputTokens;
   const output = span.output?.outputTokens;
@@ -58,6 +82,7 @@ export function TraceContent({ trace }: { trace: Trace }) {
             {trace.spans.map((span) => {
               const nested = subagentLink(span);
               const error = spanError(span);
+              const detail = prepareDetail(span);
               return (
                 <Table.Tr key={span.spanId}>
                   <Table.Td>{span.kind}</Table.Td>
@@ -76,6 +101,11 @@ export function TraceContent({ trace }: { trace: Trace }) {
                     {error && (
                       <Text fz="xs" c="red" mt={2} style={{ whiteSpace: "pre-wrap" }}>
                         {error}
+                      </Text>
+                    )}
+                    {detail && (
+                      <Text fz="xs" c="dimmed" mt={2} style={{ whiteSpace: "pre-wrap" }}>
+                        {detail}
                       </Text>
                     )}
                   </Table.Td>

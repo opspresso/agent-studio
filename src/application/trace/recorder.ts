@@ -13,7 +13,8 @@ const MAX_WARNINGS = 20;
 /**
  * How many discovered capability names a `prepare` span may name. Bounded for
  * the same reason every accumulator here is — a trace is one DynamoDB item —
- * and the count beside the list says what it left out.
+ * and the count beside the list is the total found, so a shorter list under a
+ * larger count says how many are not shown.
  */
 export const MAX_TRACED_DISCOVERED = 20;
 
