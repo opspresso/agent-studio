@@ -33,6 +33,7 @@
 | 런이 자기 메모리를 어떻게 준비하는가 — 어떤 tool 에게, 무엇으로 묻고, 그 답이 무엇이 되는가 | `src/application/execution/memoryRecall.ts` 의 `recallMemories` / `MAX_RECALLED_CHARS`; 묻는 tool 의 이름과 "바인딩만으로 회상이 불가능한가" 는 `src/domain/project/memoryRecall.ts` 의 `RECALL_TOOL_NAME` / `bindingsMayOfferRecall` — 버전 편집기가 런 전에 같은 답을 읽는다 |
 | 런이 무엇으로 카탈로그를 검색하는가 | `src/application/execution/bindings.ts` 의 `discoveryQueries` |
 | 마크다운 frontmatter 블록의 파싱 | `src/domain/plugin/frontmatter.ts` |
+| repo 소유 컴포넌트의 provenance 문자열(`github:<repo>#<plugin>`) | `src/domain/plugin/types.ts` 의 `pluginSource`/`parsePluginSource` |
 | 아티팩트 목록의 페이지 커서(= 정렬 키) 철자 | `src/domain/artifact/repository.ts` 의 `artifactCursor` |
 | subagent 중첩 한도 | `src/application/execution/subagentRunner.ts` |
 | 런당 MCP tool 상한 | `src/domain/llm/toolLimits.ts` |

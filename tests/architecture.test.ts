@@ -1122,6 +1122,16 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/plugin/frontmatter.ts",
   },
   {
+    // A repo-owned component's provenance — `github:<repo>#<plugin>` — had a
+    // reader in the domain and a writer in the sync, joined only by a comment
+    // asking whoever changed one to remember the other. A prefix that lost its
+    // `#` fails nothing: the sync adopts rows it does not own and the console
+    // stops calling them repo-owned.
+    what: "the provenance string a repo-owned component carries",
+    pattern: /github:\$\{|"github:"/,
+    owner: "src/domain/plugin/types.ts",
+  },
+  {
     // The Agent Plugins spec's name rule, which is deliberately not `isSlug`
     // (periods are legal). The pattern matches the lookahead that encodes the
     // no-`--`/no-`..` clause — the part a re-spelling would get subtly wrong.
