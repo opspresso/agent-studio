@@ -106,6 +106,7 @@ APP_SECRETS=(
   LLM_API_KEY=/k8s/common/agent-studio/llm-api-key
   LLM_PROVIDER_OPENAI_API_KEY=/k8s/common/agent-studio/llm-provider-openai-api-key
   LLM_PROVIDER_ANTHROPIC_API_KEY=/k8s/common/agent-studio/llm-provider-anthropic-api-key
+  LLM_PROVIDER_GOOGLE_API_KEY=/k8s/common/agent-studio/llm-provider-google-api-key
   LLM_PROVIDER_XAI_API_KEY=/k8s/common/agent-studio/llm-provider-xai-api-key
   LLM_PROVIDER_OPENROUTER_API_KEY=/k8s/common/agent-studio/llm-provider-openrouter-api-key
   A2A_API_KEY=/k8s/common/agent-studio/a2a-api-key
