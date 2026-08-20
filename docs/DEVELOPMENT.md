@@ -53,6 +53,15 @@ DynamoDB Local 은 *`-sharedDb` 로 시작하지 않는 한* 액세스 키와 �
 `init-local-table` 은 로컬이 아닌 엔드포인트를 향해서는 실행을 거부하므로, alpha/prod 가 여기에
 건드려지는 일은 있을 수 없다.
 
+## 로컬 배포 (deploy/local)
+
+`pnpm dev` 에는 MCP 가 없다: 레지스트리가 등록하는 MCP URL 은 클러스터 DNS 이름이라 로컬에서
+해석되지 않는다. [deploy/local/](../deploy/local/README.md) 은 그 이름들을 network alias 로 단
+MCP 컨테이너들과 워킹 트리에서 빌드한 앱을 docker compose 로 띄워, `http://localhost:3000` 에서
+**배포 형태 그대로** — MCP dispatch 포함 — 테스트하게 한다. 같은 dev DynamoDB(:8083)를 읽으므로
+데이터와 dev-session 쿠키는 `pnpm dev` 와 공유된다. 코드 반복에는 `pnpm dev`, MCP·컨테이너
+통합 확인에는 이쪽을 쓴다.
+
 ## 실제 자격 증명 없이 작업하기
 
 ```bash
