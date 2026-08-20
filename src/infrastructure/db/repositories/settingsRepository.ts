@@ -1,6 +1,10 @@
 import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { SettingsRepository } from "@/domain/settings/repository";
-import type { AppSettings, LlmProviderSetting } from "@/domain/settings/types";
+import type {
+  AppSettings,
+  LlmProviderSetting,
+  SelfHostedModelSetting,
+} from "@/domain/settings/types";
 import { getDocumentClient, getTableName } from "../client";
 import { keys } from "../keys";
 
@@ -35,6 +39,9 @@ function fromItem(item: Record<string, unknown>): AppSettings {
   }
   if (Array.isArray(item.enabledModels)) {
     settings.enabledModels = item.enabledModels as string[];
+  }
+  if (Array.isArray(item.selfHostedModels)) {
+    settings.selfHostedModels = item.selfHostedModels as SelfHostedModelSetting[];
   }
   return settings;
 }

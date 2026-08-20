@@ -64,6 +64,8 @@ interface Catalog {
   models: CatalogModel[];
   /** Maker id → label, as the loaded catalog names them. */
   makers: Record<string, string>;
+  /** Ids of this deployment's own declarations — the only selfhosted models the section may edit. */
+  declaredSelfHosted: string[];
   updatedAt: string;
   source: "override" | "default";
 }
@@ -429,6 +431,7 @@ export default function ModelsPage() {
   const [makers, setMakers] = useState<Record<string, string>>({});
   const [updatedAt, setUpdatedAt] = useState("");
   const [source, setSource] = useState<"override" | "default">("default");
+  const [declaredIds, setDeclaredIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -474,6 +477,7 @@ export default function ModelsPage() {
     setMakers(data.makers ?? {});
     setUpdatedAt(data.updatedAt ?? "");
     setSource(data.source);
+    setDeclaredIds(data.declaredSelfHosted ?? []);
   }, []);
 
   useEffect(() => {
@@ -599,7 +603,10 @@ export default function ModelsPage() {
 
       {canEdit && providerByName.get("selfhosted")?.dedicated === true && (
         <SelfHostedSection
-          declared={models.filter((model) => model.provider === "selfhosted")}
+          // Declarations only, by id — a catalog-published selfhosted entry is
+          // agent-models' to change, and sweeping it into a full-replace save
+          // would refuse itself against the catalog-collision rule.
+          declared={models.filter((model) => declaredIds.includes(model.id))}
           onChanged={loadCatalog}
         />
       )}

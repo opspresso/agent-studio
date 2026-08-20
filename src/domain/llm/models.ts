@@ -569,6 +569,17 @@ export function getModelConfig(id: string): ModelConfig | undefined {
   return registryState().byId.get(id) ?? localState().byId.get(id);
 }
 
+/**
+ * Ids the deployment's declarations currently install — what tells the second
+ * publisher's models from the catalog's. The console needs the difference:
+ * only declarations are its to edit, and a full-replace save that swept a
+ * catalog-published selfhosted entry in would refuse itself against the
+ * "catalog already carries this id" rule.
+ */
+export function selfHostedDeclarationIds(): string[] {
+  return localState().models.map((model) => model.id);
+}
+
 export function getVisibleModels(): ModelConfig[] {
   return listModels().filter((m) => !m.hidden);
 }

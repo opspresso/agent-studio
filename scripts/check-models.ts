@@ -31,7 +31,12 @@
  * `resolveProviderTarget` strips them — otherwise every model behind a direct
  * channel would read as missing. Ids outside `SUPPORTED_PROVIDERS` are ignored.
  */
-import { listModels, SELF_HOSTED_PROVIDERS, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import {
+  listModels,
+  loadSelfHostedModels,
+  SELF_HOSTED_PROVIDERS,
+  SUPPORTED_PROVIDERS,
+} from "@/domain/llm/models";
 import { AWS_SIGNING_SERVICE, createSignedFetch } from "@/infrastructure/llm/awsSigner";
 import type { ChannelAuth, ProviderChannelConfig } from "@/domain/settings/types";
 
@@ -77,6 +82,10 @@ async function resolveChannels(): Promise<Channel[]> {
     const settings = await import("@/lib/runtime-settings");
     base = await settings.getLlmChannelConfig();
     providers = await settings.getLlmProviderConfigs();
+    // The second publisher's models, or every declared self-hosted model reads
+    // as "missing from the registry" — an invitation to add it to agent-models,
+    // the one publisher it must not come from.
+    loadSelfHostedModels(await settings.getSelfHostedModels());
   } catch (error) {
     console.warn(
       `! stored settings unreachable (${error instanceof Error ? error.message : String(error)}); using environment channels only\n`,

@@ -50,7 +50,9 @@ const updateSchema = z.object({
   selfHostedModels: z
     .array(
       z.object({
-        family: z.string().min(1).max(200),
+        // The serving stack's own name — no whitespace or control characters,
+        // which would otherwise ride into ids, log lines, and dispatch.
+        family: z.string().min(1).max(200).regex(/^\S+$/u, "must not contain whitespace"),
         displayName: z.string().min(1).max(200),
         maker: z.string().max(100).optional(),
         contextWindow: z.number().int().positive(),

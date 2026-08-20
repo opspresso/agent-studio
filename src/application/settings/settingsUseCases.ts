@@ -420,7 +420,13 @@ export function createSettingsUseCases(
           // Sorted and deduplicated so a resubmitted selection compares equal
           // in `changedKeys` regardless of the order the toggles were flipped.
           const ids = [...new Set(patch.enabledModels.map((id) => id.trim()))].sort();
-          const unknown = ids.filter((id) => getModelConfig(id) === undefined);
+          // A declaration in this same patch counts: it installs right after
+          // the write below, so one PUT may declare a model and enable it —
+          // the registry just cannot answer for it yet.
+          const declaredNow = new Set((next.selfHostedModels ?? []).map((entry) => entry.id));
+          const unknown = ids.filter(
+            (id) => getModelConfig(id) === undefined && !declaredNow.has(id),
+          );
           if (unknown.length > 0) {
             throw new ValidationError(`Unknown model ids: ${unknown.join(", ")}`);
           }
