@@ -1,5 +1,6 @@
 import type { McpServer, McpTool } from "@/domain/mcp/types";
 import type { ManagedMcpStatus } from "@/application/mcp/managedMcpUseCases";
+import type { DiscoverAuthResult } from "@/application/mcp/mcpAuthUseCases";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 // Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
@@ -55,9 +56,7 @@ export function testMcpConnection(name: string): Promise<McpTool[]> {
     .then((data) => data.tools);
 }
 
-export type DiscoverAuthResult =
-  | { status: "discovered"; auth: NonNullable<McpServer["auth"]> }
-  | { status: "choose"; resource: string; authorizationServers: string[] };
+export type { DiscoverAuthResult };
 
 /**
  * Read the server's published OAuth metadata and store it (admin-only). Pass an

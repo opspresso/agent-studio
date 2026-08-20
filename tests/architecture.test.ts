@@ -614,6 +614,72 @@ describe("the client bundle", () => {
 });
 
 /**
+ * A response shape is declared where the response is built.
+ *
+ * Eighteen of them were declared twice — once by the producer, once again by
+ * the browser client — because a `"use client"` module may not *import*
+ * `application/`. It may *name* one: a type-only import is erased before a
+ * bundle exists. Nothing linked the copies, and they had drifted: a card type
+ * widened to `Record<string, unknown>` where the producer says `AgentCard`, an
+ * image result missing the warning its producer sends, a Slack view without the
+ * manifest a mutation answers with — the pair that crashed the settings page.
+ *
+ * Checked by *name*, from the browser's side, which is the half that must not
+ * restate: a type declared in a client-reachable `app` module must not share its
+ * name with one a producer exports. Naming is the whole point, so an import or
+ * an alias (`type ImageResult = GenerateImageOutput`) is not a declaration — a
+ * body is. Producers keep declaring theirs; a route that builds the shape it
+ * answers with (`ProjectSlackResponse`, `SkillSummary`) is not client-reachable,
+ * because the console reaches it type-only.
+ *
+ * Request shapes are deliberately excluded. A console input is often narrower
+ * than what the use case accepts — `CreateMcpInput` omits `source`, the sync's
+ * provenance, which must not be settable from a form — so those two
+ * declarations are two contracts rather than one written twice.
+ */
+const DECLARED_TYPE = /^export\s+(?:interface\s+([A-Za-z0-9_]+)\s*(?:extends[^{]*)?\{|type\s+([A-Za-z0-9_]+)\s*=\s*[^;]*[{|])/gm;
+
+function declaredTypes(text: string): string[] {
+  return [...stripComments(text).matchAll(DECLARED_TYPE)].map((m) => (m[1] ?? m[2])!);
+}
+
+describe("response shapes", () => {
+  const reachable = clientReachable(SOURCE_FILES.filter((file) => CLIENT_DIRECTIVE.test(file.text)));
+  const isProducer = (path: string) =>
+    ["application", "domain"].includes(layerOf(path) ?? "") || path.startsWith("src/app/api/");
+  const producerNames = new Set(
+    SOURCE_FILES.filter((file) => isProducer(file.path)).flatMap((file) => declaredTypes(file.text)),
+  );
+
+  it("are named by the browser's half, never declared there", () => {
+    const found: string[] = [];
+    for (const file of reachable) {
+      if (layerOf(file.path) !== "app" || file.path.startsWith("src/app/api/")) {
+        continue;
+      }
+      for (const name of declaredTypes(file.text)) {
+        if (!name.endsWith("Input") && producerNames.has(name)) {
+          found.push(`${file.path} -> ${name}`);
+        }
+      }
+    }
+    expect(found.sort()).toEqual([]);
+  });
+
+  it("still sees both halves it compares", () => {
+    // The scan going blind reads exactly like a clean pass: anchor a producer
+    // declaration, a client module that reaches for one, and the walk that
+    // decides which files are the browser's.
+    expect(producerNames.has("SkillSummary")).toBe(true);
+    expect(producerNames.has("ArtifactPage")).toBe(true);
+    expect(reachable.map((file) => file.path)).toContain("src/app/projects/lib/api.ts");
+    expect(declaredTypes('export interface X {\n  a: string;\n}')).toEqual(["X"]);
+    // An alias names a type rather than restating it, and is not a declaration.
+    expect(declaredTypes("export type ImageResult = GenerateImageOutput;")).toEqual([]);
+  });
+});
+
+/**
  * Repositories the presentation layer no longer composes.
  *
  * The `app` layer is barred from `infrastructure`, so a route reached for a

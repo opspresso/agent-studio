@@ -428,7 +428,7 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   Skill, Agent, Tool, Plugin, Chat, Model, MCP are each an API resource and a URL segment, so
   a console that renamed its copy would make one thing answer to two words.
 - **A response shape is declared where the response is built, and the console takes it from
-  there** — type-only, so nothing of the server reaches the browser bundle. Seventeen wire
+  there** — type-only, so nothing of the server reaches the browser bundle. Eighteen wire
   shapes were declared twice before that: once by the producer, once again by the browser
   client, with nothing linking the copies. They drift the moment a field is added on one
   side, and the drift is invisible until a page renders a field the response does not carry
@@ -444,7 +444,10 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   writes and the fields the type requires — **never what a spread carries in**. So
   `…Response extends` a use-case view plus `...view` publishes every field that view has,
   now and later: the view is the boundary, and on the messaging surfaces it is a *masked*
-  one for exactly that reason.
+  one for exactly that reason. `tests/architecture.test.ts` checks the half that must not
+  restate — no client-reachable `app` module declares a type a producer already exports —
+  and deliberately exempts request shapes, where a console input is often narrower than
+  what the use case accepts.
 - **A timestamp is formatted with a locale, never without one.** `toLocaleString()` with no
   argument means the *runtime's* default, so the server writes `8/14/2026` where a Korean
   browser writes `2026. 8. 14.` — a hydration mismatch wherever a date reaches the first
