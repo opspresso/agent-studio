@@ -42,6 +42,14 @@ import snapshot from "./catalog.json";
  *
  * `bedrock` and `openrouter` are routes rather than model vendors — the same
  * family is reachable through them and through its vendor's own API.
+ *
+ * `selfhosted` is a route too, one the deployment operates itself: an
+ * OpenAI-compatible server the operator runs — LM Studio on a laptop, vLLM on
+ * a server. The prefix is the same everywhere; where it dispatches is each
+ * deployment's `LLM_PROVIDER_SELFHOSTED_BASE_URL`. The serving stack must name
+ * the model as the id's family (vLLM `--served-model-name`, LM Studio's model
+ * identifier), which is what lets one catalog entry serve every deployment
+ * without a `wireId`.
  */
 export const SUPPORTED_PROVIDERS = [
   "openai",
@@ -50,8 +58,19 @@ export const SUPPORTED_PROVIDERS = [
   "xai",
   "bedrock",
   "openrouter",
+  "selfhosted",
 ] as const;
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
+
+/**
+ * Providers whose channel the deployment operates itself rather than buys from
+ * a vendor. What membership changes: zero is such a model's *true* price, so
+ * the priced-text-model guard in `rejectReason` exempts these — explicitly
+ * stated zero only; absent prices still fail. Code, not catalog, for the same
+ * reason as `SUPPORTED_PROVIDERS`: whether a channel bills is a property of
+ * the channel, and the channels are this app's.
+ */
+export const SELF_HOSTED_PROVIDERS = ["selfhosted"] as const satisfies readonly SupportedProvider[];
 
 /**
  * Single-rate by design — one number per token class, the base (sub-threshold,
@@ -220,8 +239,13 @@ function rejectReason(entry: unknown): string | null {
   }
   if (entry.capabilities.imageGeneration !== true) {
     // An unpriced text model is worse than a missing one: the lookup succeeds
-    // and every call books at $0 with no warning.
-    if (!((entry.pricing.inputPer1M as number) > 0) || !((entry.pricing.outputPer1M as number) > 0)) {
+    // and every call books at $0 with no warning. Self-hosted channels are the
+    // deliberate exception — zero is their true price, and it is stated, not
+    // missing: absent prices already failed the pricing check above.
+    if (
+      !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider) &&
+      (!((entry.pricing.inputPer1M as number) > 0) || !((entry.pricing.outputPer1M as number) > 0))
+    ) {
       return "a text model needs input and output prices above zero";
     }
   } else if (

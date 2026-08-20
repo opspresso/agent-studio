@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MODEL_CATALOG_VERSION,
+  SELF_HOSTED_PROVIDERS,
   SUPPORTED_PROVIDERS,
   applyModelConstraints,
   calculateCost,
@@ -144,7 +145,13 @@ describe("model registry invariants", () => {
    * call is booked at $0 with no warning, because the registry lookup succeeds.
    */
   it("prices every text model on both sides", () => {
-    for (const model of listModels().filter((m) => !m.capabilities.imageGeneration)) {
+    // Self-hosted routes are exempt on purpose: zero is their true price
+    // (`SELF_HOSTED_PROVIDERS`), so a zero here is a statement, not a miss.
+    for (const model of listModels().filter(
+      (m) =>
+        !m.capabilities.imageGeneration &&
+        !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(m.provider),
+    )) {
       expect(model.pricing.inputPer1M, `${model.id}: no input price`).toBeGreaterThan(0);
       expect(model.pricing.outputPer1M, `${model.id}: no output price`).toBeGreaterThan(0);
     }
