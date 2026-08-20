@@ -56,9 +56,45 @@ export const MAX_RUN_DURATION_MS = parseMaxRunDuration(process.env.MAX_RUN_DURAT
  */
 export const RUN_LEASE_SECONDS = Math.ceil(MAX_RUN_DURATION_MS / 1000) + 60;
 
-export function withRunDeadline(signal: AbortSignal | undefined): AbortSignal {
-  const deadline = AbortSignal.timeout(MAX_RUN_DURATION_MS);
-  return signal ? AbortSignal.any([signal, deadline]) : deadline;
+/**
+ * Which composed signal carries which deadline.
+ *
+ * A run signal aborts for two very different reasons — the caller left, or this
+ * backstop fired — and only the first is not a failure. The composed signal
+ * cannot be asked: `AbortSignal.any` forwards whichever reason came first, and
+ * a caller may abort with a `TimeoutError` of its own (the Slack surface caps a
+ * run at three minutes that way), so reading the reason's *type* names the
+ * wrong limit as often as the right one.
+ *
+ * Weak on both sides, and no timer of ours: `AbortSignal.timeout` holds its
+ * timer only as long as the signal is reachable, while a `setTimeout` we owned
+ * would keep every finished run alive until its deadline passed.
+ */
+const DEADLINE_OF = new WeakMap<AbortSignal, AbortSignal>();
+
+export function withRunDeadline(
+  signal: AbortSignal | undefined,
+  /** The deadline itself, injected like `now` and `sample` so a test can fire it. */
+  deadline: AbortSignal = AbortSignal.timeout(MAX_RUN_DURATION_MS),
+): AbortSignal {
+  const composed = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  DEADLINE_OF.set(composed, deadline);
+  return composed;
+}
+
+/**
+ * True when this run signal aborted because the run outlived
+ * {@link MAX_RUN_DURATION_MS} — not because whoever asked for it went away.
+ *
+ * The distinction is the whole point of the pair: a caller leaving is a
+ * cancellation nobody needs told about, while the deadline is this platform
+ * stopping a run, and a run that is stopped has to say so in its own words.
+ */
+export function runDeadlineExceeded(signal: AbortSignal | undefined): boolean {
+  if (!signal) {
+    return false;
+  }
+  return (DEADLINE_OF.get(signal) ?? signal).aborted;
 }
 
 /**

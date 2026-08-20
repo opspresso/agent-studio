@@ -11,6 +11,7 @@ import { TraceRecorder } from "@/application/trace/recorder";
 import { actorKey, type RunActor } from "@/domain/execution/actor";
 import { recordUsage } from "@/application/usage/recordUsage";
 import { withRunDeadline } from "@/shared/runDeadline";
+import { runEnding } from "@/application/run/runDeadline";
 import { openRun, type RunBracketDeps } from "@/application/run/runBracket";
 import { traceSampled } from "@/application/run/traceLifecycle";
 import { log } from "@/shared/logger";
@@ -149,6 +150,9 @@ export async function generateImage(
         })
       : undefined;
   let failed = false;
+  // One deadline for the call, held so the catch can ask whether it was this
+  // platform that stopped the run or the caller that left.
+  const runSignal = withRunDeadline(input.signal);
   try {
     const sources = input.images ?? [];
     const result: ImageGenerationResult =
@@ -159,14 +163,14 @@ export async function generateImage(
             images: sources,
             size: input.size,
             quality: input.quality,
-            signal: withRunDeadline(input.signal),
+            signal: runSignal,
           })
         : await deps.imageChannel.generateImage({
             model,
             prompt,
             size: input.size,
             quality: input.quality,
-            signal: withRunDeadline(input.signal),
+            signal: runSignal,
           });
 
     const recorded = toImageUsageRecord(model, {
@@ -210,9 +214,13 @@ export async function generateImage(
       ...(stored ? { artifactId: stored.artifactId, key: stored.key } : {}),
       ...(warning ? { warning } : {}),
     };
-  } catch (error) {
+  } catch (caught) {
     const cancelled = input.signal?.aborted === true;
     failed = !cancelled;
+    // Before `providerFailure`, which would otherwise file this platform's own
+    // deadline as the provider refusing — a 502 naming a model that answered
+    // nothing wrong.
+    const error = runEnding(caught, { run: runSignal, caller: input.signal });
     await finishTrace(recorder, error);
     throw providerFailure(error, model, cancelled);
   } finally {

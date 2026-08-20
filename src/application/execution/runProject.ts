@@ -22,6 +22,7 @@ import { settleCostLimit } from "@/application/usage/costGuard";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
+import { runEnding } from "@/application/run/runDeadline";
 import { log } from "@/shared/logger";
 import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
 import type { Project } from "@/domain/project/types";
@@ -63,6 +64,9 @@ export async function executeVersion(
   // metric and no usage — it never started.
   const bracket = await openRun(deps, input.project, input.version, input.actor);
   const recorder = sampledTraceRecorder(deps, input);
+  // Held rather than built inline: the catch has to be able to ask which of the
+  // two signals stopped the run.
+  const runSignal = withRunDeadline(input.signal);
   let failed = false;
   try {
     const result = await engine.runPrompt(
@@ -78,15 +82,18 @@ export async function executeVersion(
         parameters: toEngineParameters(input.version),
         now: runClock(deps),
         ...callerFor(input),
-        signal: withRunDeadline(input.signal),
+        signal: runSignal,
       },
     );
     recorder?.observeResult(result);
     await finishTrace(recorder);
     return result;
-  } catch (error) {
+  } catch (caught) {
     // A caller that hung up is a cancellation, not a failure of the run.
     failed = !input.signal?.aborted;
+    // The deadline is this platform stopping the run, and it says so in its own
+    // words rather than as the abort reason nothing downstream can place.
+    const error = runEnding(caught, { run: runSignal, caller: input.signal });
     await finishTrace(recorder, error);
     throw error;
   } finally {
@@ -104,6 +111,7 @@ export async function* executeVersionStream(
   const actorKey = input.actor ? toActorKey(input.actor) : undefined;
   const bracket = await openRun(deps, input.project, input.version, input.actor);
   const recorder = sampledTraceRecorder(deps, input);
+  const runSignal = withRunDeadline(input.signal);
   let thrown: unknown;
   let completed = false;
   try {
@@ -120,14 +128,15 @@ export async function* executeVersionStream(
         parameters: toEngineParameters(input.version),
         now: runClock(deps),
         ...callerFor(input),
-        signal: withRunDeadline(input.signal),
+        signal: runSignal,
       },
     )) {
       recorder?.observe(chunk);
       yield chunk;
     }
     completed = true;
-  } catch (error) {
+  } catch (caught) {
+    const error = runEnding(caught, { run: runSignal, caller: input.signal });
     if (!input.signal?.aborted) {
       thrown = error;
     }
@@ -466,12 +475,12 @@ export async function* executeAgent(
   let thrown: unknown;
   let completed = false;
   let closeMcpSessions: (() => Promise<void>) | undefined;
+  // Compose the caller's signal with a hard deadline. Held out here because the
+  // catch has to ask which of the two aborted: a caller leaving is a
+  // cancellation, the deadline is this platform stopping the run.
+  const runSignal = withRunDeadline(input.signal);
   try {
     input.signal?.throwIfAborted();
-    // Compose the caller's signal with a hard deadline; classification in the
-    // catch stays keyed on `input.signal` so a deadline reads as error, a
-    // caller abort as cancelled.
-    const runSignal = withRunDeadline(input.signal);
     // Pinned for the whole run, subagents included: every prompt this run
     // assembles has to agree on when "now" is, and a parent and a child landing
     // on different dates across a midnight boundary is the exact confusion the
@@ -604,7 +613,10 @@ export async function* executeAgent(
       yield chunk;
     }
     completed = true;
-  } catch (error) {
+  } catch (caught) {
+    // Same classification as every other run path, from the one owner: a caller
+    // that left ends the run as it is, the deadline ends it in its own words.
+    const error = runEnding(caught, { run: runSignal, caller: input.signal });
     if (!input.signal?.aborted) {
       thrown = error;
     }

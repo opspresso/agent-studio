@@ -73,6 +73,24 @@ export class RateLimitedError extends AppError {
   }
 }
 
+/**
+ * The run outlived the longest a single run may take (`MAX_RUN_DURATION_MS`).
+ *
+ * The one ending this platform imposes on a run that was otherwise working, and
+ * until it had a type it was the only ending with no words of its own: the abort
+ * reason travelled out as a `DOMException`, which `apiError` cannot place, so a
+ * caller was told "Internal server error" for a limit that is documented and a
+ * streaming caller was told "The operation was aborted due to timeout". 504
+ * rather than 500 because nothing here failed — the answer took longer than the
+ * deployment allows, and the caller's own retry decision depends on knowing
+ * which of the two it was.
+ */
+export class RunDeadlineError extends AppError {
+  constructor(message: string) {
+    super(message, 504);
+  }
+}
+
 /** Map any {@link AppError} to its HTTP status; `null` for non-app errors (→ 500). */
 export function statusForError(error: unknown): number | null {
   return error instanceof AppError ? error.status : null;
