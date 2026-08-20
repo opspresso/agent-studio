@@ -36,6 +36,7 @@ import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools } from "./bindings";
 import { recallForRun } from "./memoryRecall";
 import { log } from "@/shared/logger";
+import { MAX_TRACED_DISCOVERED } from "@/application/trace/recorder";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 
 /**
@@ -473,7 +474,16 @@ export async function* runLocalSubagent(
         subagents: subagents.length,
         mcpServers: mcp.mcpServers.length,
         mcpTools: mcp.mcpTools.length,
-        ...(discovered.length > 0 ? { discovered: discovered.length } : {}),
+        // Named, not counted: what a search added is the one part of a run's
+        // plan that changes per request, and "why did it call that" is
+        // unanswerable afterwards without it. Bounded like every other
+        // accumulator on a trace — the count says what the list left out.
+        ...(discovered.length > 0
+          ? {
+              discovered: discovered.length,
+              discoveredNames: discovered.slice(0, MAX_TRACED_DISCOVERED),
+            }
+          : {}),
         ...(warnings.length > 0 ? { warnings: warnings.length } : {}),
       },
     });

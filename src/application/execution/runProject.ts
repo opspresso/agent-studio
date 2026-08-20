@@ -32,6 +32,7 @@ import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, Execu
 import { discoveryQueries, recentUserQueries, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
+import { MAX_TRACED_DISCOVERED } from "@/application/trace/recorder";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "@/application/run/traceLifecycle";
 import { callerFor, runClock, runStrategyFor, toEngineParameters, toRunInput } from "./deps";
 import { recallForRun } from "./memoryRecall";
@@ -517,9 +518,16 @@ export async function* executeAgent(
         subagents: subagents.length,
         mcpServers: mcp.mcpServers.length,
         mcpTools: mcp.mcpTools.length,
-        // A gain rather than a loss, so it is not a warning — but it is part of
-        // what this run was offered, and the trace is where that is read back.
-        ...(discovered.length > 0 ? { discovered: discovered.length } : {}),
+        // Named, not counted: what a search added is the one part of a run's
+        // plan that changes per request, and "why did it call that" is
+        // unanswerable afterwards without it. Bounded like every other
+        // accumulator on a trace — the count says what the list left out.
+        ...(discovered.length > 0
+          ? {
+              discovered: discovered.length,
+              discoveredNames: discovered.slice(0, MAX_TRACED_DISCOVERED),
+            }
+          : {}),
         ...(warnings.length > 0 ? { warnings: warnings.length } : {}),
       },
     });

@@ -10,6 +10,12 @@ const MAX_PREVIEW_CHARS = 1_000;
 const MAX_SPANS = 100;
 /** A run reports one warning per unusable binding; the item stays bounded. */
 const MAX_WARNINGS = 20;
+/**
+ * How many discovered capability names a `prepare` span may name. Bounded for
+ * the same reason every accumulator here is — a trace is one DynamoDB item —
+ * and the count beside the list says what it left out.
+ */
+export const MAX_TRACED_DISCOVERED = 20;
 
 export interface TraceContext {
   projectName: string;
