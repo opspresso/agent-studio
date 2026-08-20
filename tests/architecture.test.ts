@@ -637,6 +637,13 @@ const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = [
   "traceRepository",
   "usageRepository",
   "secretCipher",
+  // Not a repository but the same decision: eight routes reached into
+  // `artifactStorage.objects.sign` to pick the signer that addresses a file,
+  // two of them right after guarding on `artifactUseCases` — re-deriving from
+  // the store what the use case they had just called was built from. The root
+  // exports `signArtifactUrl`; the store itself stays where a wiring site needs
+  // the pair (`chats/_deps.ts` hands both halves to the chat deps).
+  "artifactStorage",
 ];
 
 describe("composition in the app layer", () => {

@@ -5,7 +5,7 @@ import { telegramUpdateRepository } from "@/infrastructure/db/repositories/teleg
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
 import { transcriptRepository } from "@/infrastructure/db/repositories/transcriptRepository";
 import {
-  artifactStorage,
+  signArtifactUrl,
   executionDeps,
   projectRepository,
   versionRepository,
@@ -27,7 +27,7 @@ const telegramEventDeps: TelegramEventDeps = {
   documents: documentExtractor,
   // Named even when this deployment has none, so "no object storage here" is a
   // decision in the source rather than a field nobody thought about.
-  ...(artifactStorage ? { signFile: artifactStorage.objects.sign } : {}),
+  ...(signArtifactUrl ? { signFile: signArtifactUrl } : {}),
   transcripts: transcriptRepository,
   albums: (projectName, botId) => telegramUpdateRepository.forBot(projectName, botId).albums,
 };

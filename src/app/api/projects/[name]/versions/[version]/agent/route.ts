@@ -1,5 +1,5 @@
 import { sseResponse } from "@/app/api/_lib/sse";
-import { artifactStorage, executionDeps, projectUseCases, versionUseCases } from "@/lib/container";
+import { executionDeps, projectUseCases, signArtifactUrl, versionUseCases } from "@/lib/container";
 import { withAddressedFiles } from "@/application/artifact/producedFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { executeAgent } from "@/application/execution/runProject";
@@ -46,7 +46,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
           ...(conversation ? { conversation } : {}),
           signal: abortController.signal,
         }),
-        artifactStorage?.objects.sign,
+        signArtifactUrl,
         VIEW_URL_TTL_SECONDS,
       ),
       abortController,

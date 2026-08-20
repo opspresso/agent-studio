@@ -4,7 +4,7 @@ import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { slackEventRepository } from "@/infrastructure/db/repositories/slackEventRepository";
 import { slackThreadRepository } from "@/infrastructure/db/repositories/slackThreadRepository";
 import {
-  artifactStorage,
+  signArtifactUrl,
   executionDeps,
   projectRepository,
   versionRepository,
@@ -28,7 +28,7 @@ const slackEventDeps: SlackEventDeps = {
   documents: documentExtractor,
   // Named even when this deployment has none, so "no object storage here" is a
   // decision in the source rather than a field nobody thought about.
-  ...(artifactStorage ? { signFile: artifactStorage.objects.sign } : {}),
+  ...(signArtifactUrl ? { signFile: signArtifactUrl } : {}),
   loadingIndicator: config.slackLoadingIndicator,
 };
 

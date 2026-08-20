@@ -8,7 +8,7 @@
  */
 
 import { withAuth } from "@/lib/session";
-import { artifactStorage, artifactUseCases } from "@/lib/container";
+import { artifactUseCases, signArtifactUrl } from "@/lib/container";
 import { apiError, parseName } from "@/app/api/_lib/http";
 import { parseArtifactQuery, toArtifactViews } from "@/app/api/artifacts/_lib/query";
 
@@ -29,7 +29,7 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
       user.email,
       parsed.options,
     );
-    return Response.json(await toArtifactViews(artifacts, artifactStorage?.objects.sign));
+    return Response.json(await toArtifactViews(artifacts, signArtifactUrl));
   } catch (error) {
     return apiError(error);
   }

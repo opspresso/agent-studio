@@ -17,7 +17,7 @@ vi.mock("@/lib/container", () => ({
   executionDeps: {},
   projectRepository: {},
   versionRepository: {},
-  artifactStorage: undefined,
+  signArtifactUrl: undefined,
 }));
 vi.mock("@/infrastructure/teams/client", () => ({
   teamsClient: { verifyRequest: async () => verdict.value },

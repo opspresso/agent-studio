@@ -3,7 +3,7 @@ import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { teamsActivityRepository } from "@/infrastructure/db/repositories/teamsActivityRepository";
 import { transcriptRepository } from "@/infrastructure/db/repositories/transcriptRepository";
 import {
-  artifactStorage,
+  signArtifactUrl,
   executionDeps,
   projectRepository,
   versionRepository,
@@ -24,7 +24,7 @@ const teamsEventDeps: TeamsEventDeps = {
   documents: documentExtractor,
   // Named even when this deployment has none, so "no object storage here" is a
   // decision in the source rather than a field nobody thought about.
-  ...(artifactStorage ? { signFile: artifactStorage.objects.sign } : {}),
+  ...(signArtifactUrl ? { signFile: signArtifactUrl } : {}),
   transcripts: transcriptRepository,
 };
 
