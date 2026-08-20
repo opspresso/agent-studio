@@ -63,10 +63,14 @@ export function ChatSidebar() {
     void load();
   }, [load, pathname, running]);
 
-  // A tap that opens a chat has done what the drawer was opened for.
+  // A tap that opens a chat has done what the drawer was opened for. Depend on
+  // the stable `close` callback, not the handlers object — useDisclosure
+  // recreates that object every render, which made this effect close the
+  // drawer on the very render that opened it.
+  const closeDrawer = drawer.close;
   useEffect(() => {
-    drawer.close();
-  }, [pathname, drawer]);
+    closeDrawer();
+  }, [pathname, closeDrawer]);
 
   const activeId = pathname.startsWith("/chats/") ? pathname.split("/")[2] : undefined;
 
