@@ -492,9 +492,14 @@ describe("configuration reads", () => {
  * the way the `configuration reads` rule reads `process.env`.
  *
  * The fix for the one occupant was to move the module rather than exempt the
- * import: a pure helper both sides need is what `src/shared` is defined as. That
- * is the shape of every future fix here too — if a client needs it and a use
- * case needs it, it belongs at the bottom of the graph, not across a boundary.
+ * import, and that is still the shape of a fix here — but not always to the same
+ * place. A helper both sides *run* and no layer owns goes to `src/shared`, which
+ * is what `template.ts` did. A rule or format a domain type owns goes to
+ * `domain/`, which is pure TS and just as reachable from a client — `slug.ts`,
+ * `frontmatter.ts` and `imageSniff.ts` came back out of `shared` for that reason.
+ * And a *type* needs no move at all: a type-only import is erased before any
+ * bundle exists, which is how the console names the shapes its routes and use
+ * cases answer with. What must never cross is a value.
  */
 /**
  * A directive may follow comments, and nearly every file here opens with a

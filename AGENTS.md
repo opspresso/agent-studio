@@ -94,9 +94,12 @@ runtime override may still narrow the list.
   directly**; get repositories and `executionDeps` from a wiring site. A **`"use client"`
   file may not import `application/` or `infrastructure/` at all** — the boundary there is
   the runtime it compiles for, not the directory it sits in, so the rule reads the
-  directive. A pure helper both a client and a use case need goes to `src/shared/`, which
-  is what `template.ts` did; reaching across instead is how the engine ends up in the
-  browser bundle.
+  directive. Reaching across is how the engine ends up in the browser bundle. **A
+  type-only import is the one thing that is not reaching across**: it is erased before any
+  bundle exists, which is what lets the console take its response shapes from the modules
+  that build them (below). Values are the rule; a helper both a client and a use case *run*
+  goes to `src/shared/` — which is what `template.ts` did — or to `domain/` when it is a
+  rule a domain type owns.
 - `src/lib/` — cross-cutting glue: composition root, auth, session, config, runtime-settings.
   Infrastructure may import it; application may reach only its pure leaves (today
   `runMetrics`); domain never touches it.
@@ -238,7 +241,11 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 
 - **Domain purity.** Nothing in `src/domain/` imports infrastructure, framework or AWS.
 - **Never hand-write a DynamoDB key string.** They come from
-  `src/infrastructure/db/keys.ts`.
+  `src/infrastructure/db/keys.ts` — with one named exception, because it is not only a key:
+  an artifact listing's GSI sort key *is* the page cursor the API hands a reader, so
+  `artifactCursor` (`src/domain/artifact/repository.ts`) spells it, in the one layer both the
+  adapter that writes it and the route that answers with it may import. Partitions still
+  come from `keys.ts`; a sort key that never leaves the adapter still belongs there.
 - **Never leave a list query unpaginated.** A single Query page caps at 1MB and silently
   truncates. Use `queryAll()`.
 - **Resolving a version's tools without `discoveryQueries` silently disables discovery.**
@@ -421,16 +428,23 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   Skill, Agent, Tool, Plugin, Chat, Model, MCP are each an API resource and a URL segment, so
   a console that renamed its copy would make one thing answer to two words.
 - **A response shape is declared where the response is built, and the console takes it from
-  there.** A `"use client"` module may not *import* `application/` — but a **type-only**
-  import is erased, so it may name one, and `src/app/projects/lib/api.ts` does. Ten wire
-  shapes were declared twice before that was used: once by the producer, once again by the
-  browser client, with nothing linking the copies. They drift the moment a field is added on
-  one side, and the drift is invisible until a page renders a field the response no longer
-  carries — which is what the Slack settings page did after a mutation answered with a
-  narrower shape than the read. The producer's type is the wire contract when the route
-  answers with it as-is; when the route adds what only a request knows (`eventsUrl`,
-  `webhookUrl`, `messagingUrl`, a manifest) the **route** declares a `…Response` extending
-  the view and `satisfies`-checks the object it sends.
+  there** — type-only, so nothing of the server reaches the browser bundle. Seventeen wire
+  shapes were declared twice before that: once by the producer, once again by the browser
+  client, with nothing linking the copies. They drift the moment a field is added on one
+  side, and the drift is invisible until a page renders a field the response does not carry
+  — which is what the Slack settings page did after a mutation answered with a narrower
+  shape than the read, and what made the console drop the "drawn but not kept" warning
+  every other image surface shows. Two homes: **the producer's own type** when the answer
+  is what it returned (`ApiTokenStatus`, `ManagedMcpStatus`, `GenerateImageOutput`, the
+  domain's `TelegramDestination`), and **a route-declared `…Response`** when the route
+  builds the shape — because it adds what only a request knows (`eventsUrl`, `webhookUrl`,
+  `messagingUrl`, a manifest), because it reads a runtime setting (both A2A routes'
+  `enabled`), or because it maps a summary (`SkillSummary`). A route-built shape is
+  `satisfies`-checked, and what that checks is worth knowing: the keys the object literal
+  writes and the fields the type requires — **never what a spread carries in**. So
+  `…Response extends` a use-case view plus `...view` publishes every field that view has,
+  now and later: the view is the boundary, and on the messaging surfaces it is a *masked*
+  one for exactly that reason.
 - **A timestamp is formatted with a locale, never without one.** `toLocaleString()` with no
   argument means the *runtime's* default, so the server writes `8/14/2026` where a Korean
   browser writes `2026. 8. 14.` — a hydration mismatch wherever a date reaches the first
