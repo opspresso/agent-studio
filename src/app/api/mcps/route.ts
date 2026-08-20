@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isSlug, SLUG_RULE } from "@/shared/slug";
+import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { mcpUseCases } from "@/lib/container";
 import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";

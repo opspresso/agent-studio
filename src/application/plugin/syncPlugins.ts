@@ -8,7 +8,7 @@ import type { PluginUseCases } from "./pluginUseCases";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { parseFrontmatter } from "@/shared/frontmatter";
-import { isSlug } from "@/shared/slug";
+import { isSlug } from "@/domain/naming";
 import { log } from "@/shared/logger";
 import {
   classifyMcpJsonServer,

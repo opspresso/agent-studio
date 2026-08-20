@@ -1,7 +1,7 @@
 import type { ZodError } from "zod";
 import { RateLimitedError, statusForError, ValidationError } from "@/application/errors";
 import { log } from "@/shared/logger";
-import { isSlug } from "@/shared/slug";
+import { isSlug } from "@/domain/naming";
 
 /**
  * Validate a route `[name]` param as a slug. Throws {@link ValidationError}

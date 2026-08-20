@@ -6,7 +6,7 @@ import { CopyButton } from "@/app/_components/CopyButton";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { monoInput } from "@/app/_components/monoInput";
 import { BADGE } from "@/app/_components/badgeColors";
-import { toSlug } from "@/shared/slug";
+import { toSlug } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
 
 interface ClientKeyView {

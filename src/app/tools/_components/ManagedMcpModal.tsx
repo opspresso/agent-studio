@@ -16,7 +16,7 @@ import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import { createManagedMcp } from "../api";
-import { MANAGED_NAME } from "@/shared/slug";
+import { MANAGED_NAME } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
 
 

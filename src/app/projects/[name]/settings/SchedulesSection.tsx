@@ -7,7 +7,7 @@ import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { stateColor } from "@/app/_components/badgeColors";
 import { PROJECT_WEBHOOK_ID } from "@/domain/trigger/types";
 import type { ScheduleDelivery, ScheduleDeliveryKind } from "@/domain/trigger/types";
-import { toSlug } from "@/shared/slug";
+import { toSlug } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
 import { TriggerRuns } from "./TriggerRuns";
 import {

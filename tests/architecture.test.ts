@@ -1236,7 +1236,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // Ten copies, and the door they all went through checked nothing.
     what: "the entry name rule",
     pattern: /\/\^\[a-z0-9-\]\+\$\//,
-    owner: "src/shared/slug.ts",
+    owner: "src/domain/naming.ts",
   },
   {
     // The stricter sibling: a slug that must also be a DNS label, because it
@@ -1244,7 +1244,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // both provisioners and the console form each spelled it out.
     what: "the managed-workload name rule",
     pattern: /\[a-z0-9\]\[a-z0-9-\]\{0,62\}/,
-    owner: "src/shared/slug.ts",
+    owner: "src/domain/naming.ts",
   },
   {
     what: "user-document caps",

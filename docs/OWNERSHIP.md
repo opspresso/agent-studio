@@ -48,7 +48,7 @@
 | 런의 trace 를 샘플링할지 여부 | `src/application/run/traceLifecycle.ts` |
 | schedule 이 언제 발화하는지 판정하기 | `src/domain/trigger/cron.ts` |
 | Project 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `projectWebhookPath` |
-| managed workload 이름 규칙 | `src/shared/slug.ts` 의 `MANAGED_NAME` |
+| managed workload 이름 규칙 | `src/domain/naming.ts` 의 `MANAGED_NAME` |
 | 동시에 도는 generator 를 병합하기 | `src/shared/mergeGenerators.ts` |
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/app/_lib/authorPaths.ts` |
 | 사람이 읽을 달러 금액 | `src/app/_lib/formatUsd.ts` 의 `formatUsd` — `SINGLE_OWNERS` 행이 아니라 그 자체가 하나의 규칙으로 강제된다: `app` 안 어디에도 `${…toFixed(…)}` 는 없고 두 `_lib` 포매터만 있다 |
@@ -92,7 +92,7 @@
 | 가져온 URL 이 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` 의 `framedFetchedUrl` |
 | 가져온 URL 을 얼마나 유지하는가 | `src/application/llm/urlContent.ts` 의 `MAX_FETCHED_TEXT_CHARS` |
 | 첨부된 문서가 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` |
-| 모든 항목이 불리는 이름 | `src/shared/slug.ts` 의 `isSlug` |
+| 모든 항목이 불리는 이름 | `src/domain/naming.ts` 의 `isSlug` |
 
 테스트가 패턴으로는 표현하지 못하지만 같은 규칙이 적용되는, 단일 소유자를 갖는 그 밖의
 결정들:
