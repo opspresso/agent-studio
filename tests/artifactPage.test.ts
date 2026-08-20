@@ -22,6 +22,7 @@ function rows(count: number): Artifact[] {
   return Array.from({ length: count }, (_, at) => ({
     artifactId: `a${at}`,
     projectName: "demo",
+    versionName: "v1",
     kind: "image" as const,
     source: "generated" as const,
     mimeType: "image/png",

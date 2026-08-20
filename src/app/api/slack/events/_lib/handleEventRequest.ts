@@ -27,8 +27,10 @@ const slackEventDeps: SlackEventDeps = {
   threads: slackThreadRepository,
   documents: documentExtractor,
   // Named even when this deployment has none, so "no object storage here" is a
-  // decision in the source rather than a field nobody thought about.
-  ...(signArtifactUrl ? { signFile: signArtifactUrl } : {}),
+  // decision in the source rather than a field nobody thought about — which the
+  // conditional spread this used to be did not actually do: it left the field
+  // out, saying exactly as little as forgetting it would.
+  signFile: signArtifactUrl,
   loadingIndicator: config.slackLoadingIndicator,
 };
 

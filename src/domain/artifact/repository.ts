@@ -26,6 +26,13 @@ export interface ListArtifactsOptions {
  * equality*, so the two spellings agreeing is what makes paging work — and a
  * change to one of them (an id widened, a prefix added) would break it by
  * silently repeating or skipping a row rather than by failing.
+ *
+ * **It opens with `createdAt`, and that is load-bearing beyond this function.**
+ * `from`/`to` above are bare `YYYY-MM-DD` days compared against the same key as
+ * a range, so a prefix in front of the timestamp — a version marker, a kind —
+ * keeps every equality here working while turning every date-filtered listing
+ * into an empty or wrong window. Changing the shape means changing the bounds
+ * with it.
  */
 export function artifactCursor(artifact: Pick<Artifact, "createdAt" | "artifactId">): string {
   return `${artifact.createdAt}#${artifact.artifactId}`;

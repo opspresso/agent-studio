@@ -65,6 +65,7 @@ async function main() {
   const { artifactRepository } = await import(
     "@/infrastructure/db/repositories/artifactRepository"
   );
+  const { artifactCursor } = await import("@/domain/artifact/repository");
   const { telegramUpdateRepository } = await import(
     "@/infrastructure/db/repositories/telegramUpdateRepository"
   );
@@ -841,6 +842,29 @@ async function main() {
       [artifactIds[2], artifactIds[0]],
       "the kind filter drops the document",
     );
+
+    // The page cursor is the sort key, and a page excludes its cursor by string
+    // equality — so the spelling the listing hands out and the one the adapter
+    // compares have to be the same string. `artifactCursor` owns it for both,
+    // and this is the round trip that would notice if that stopped being true:
+    // the boundary row appears once across the two pages, not twice and not
+    // never.
+    const firstPage = await artifactRepository.listByProject(projectName, { limit: 2 });
+    assert.deepEqual(
+      firstPage.map((a) => a.artifactId),
+      [artifactIds[2], artifactIds[1]],
+      "a page of two returns the two newest",
+    );
+    const secondPage = await artifactRepository.listByProject(projectName, {
+      limit: 2,
+      before: artifactCursor(firstPage.at(-1)!),
+    });
+    assert.deepEqual(
+      secondPage.map((a) => a.artifactId),
+      [artifactIds[0]],
+      "the next page continues past the cursor without repeating it",
+    );
+    pass("artifact paging: the cursor is the sort key, exclusive and lossless");
 
     await artifactRepository.delete(artifactIds[0]!);
     assert.equal(
