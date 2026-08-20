@@ -43,8 +43,9 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       ...(conversation ? { conversation } : {}),
     };
 
-    // Both shapes answer with the same signer and the same lifetime, so a file
-    // named in a stream and the same file named in a body are one address.
+    // The two branches below answer with the same signer and the same lifetime,
+    // so a file named in a stream and the same file named in a body are one
+    // address.
     if (parsed.data.stream) {
       const abortController = new AbortController();
       const source = executeProjectStream(executionDeps, {
