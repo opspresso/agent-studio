@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+#
+# Bring the local MCP servers up:
+#
+#   deploy/local/scripts/deploy.sh
+#
+# The IDC script's shape without its secret machinery — there is no SSM here
+# and no app service: the app is `pnpm dev` on the host. What this script
+# does: create `.env` from the example on first run (and stop, so it can be
+# reviewed), refresh the MCP image tags from what argocd-env-demo pins for
+# alpha, log Docker in to ECR with whatever AWS credentials the shell already
+# has, and bring compose up. Idempotent — rerun after any change.
+
+set -euo pipefail
+
+# macOS ships bash 3.2, which cannot parse the associative array below and
+# dies with an unrelated-looking "unbound variable" instead. Fail with the
+# actual reason.
+(( BASH_VERSINFO[0] >= 4 )) || { echo "bash 4+ required (brew install bash)" >&2; exit 1; }
+
+cd "$(dirname "$0")/.."
+
+: "${AWS_REGION:=ap-northeast-2}"
+: "${VERSIONS_BASE:=https://raw.githubusercontent.com/opspresso/argocd-env-demo/refs/heads/main/charts}"
+export AWS_REGION
+
+if [[ ! -f .env ]]; then
+  cp .env.example .env
+  echo "Created .env from .env.example — review it (profiles, keys), then rerun."
+  exit 0
+fi
+
+# The one declaration the host-side app needs, or the registry's MCP URLs are
+# refused by the SSRF guard and every server syncs as an invalid-url skip. The
+# value is checked, not just the key: a suffix list without this one fails the
+# same way.
+if ! grep -q "^MCP_INTERNAL_HOST_SUFFIXES=.*agent-mcps\.svc\.cluster\.local" ../../.env.local 2>/dev/null; then
+  echo "WARNING: .env.local does not declare the MCP suffix — add:" >&2
+  echo "  MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local" >&2
+fi
+
+# --- Versions -------------------------------------------------------------
+# The same source of truth as IDC: each chart's versions-alpha.json names what
+# alpha runs, and the laptop runs the same MCP images. A chart whose file
+# cannot be read keeps the tag `.env` already has.
+
+IMAGE_VARS=(MCP_DOCUMENT_TAG MCP_YOUTUBE_TAG MCP_MEMORY_TAG MCP_CLOUDWATCH_TAG MCP_BRAVE_TAG)
+declare -A chart_of=(
+  [MCP_DOCUMENT_TAG]=mcp-document
+  [MCP_YOUTUBE_TAG]=mcp-youtube
+  [MCP_MEMORY_TAG]=mcp-memory
+  [MCP_CLOUDWATCH_TAG]=mcp-cloudwatch
+  [MCP_BRAVE_TAG]=mcp-brave-search
+)
+
+alpha_version() {
+  curl -fsS --max-time 20 "$VERSIONS_BASE/$1/versions-alpha.json" |
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["items"][0]["version"])'
+}
+
+value_in() {  # value_in FILE VAR — the value a KEY=VALUE file holds, or nothing
+  [[ -f "$1" ]] && grep -E "^$2=" "$1" | head -1 | cut -d= -f2- || true
+}
+
+# set_in FILE VAR VALUE — replace the VAR= line in place. `.env` carries the
+# user's own edits, so unlike IDC it is patched, never regenerated.
+set_in() {
+  local tmp
+  tmp=$(mktemp)
+  if grep -qE "^$2=" "$1"; then
+    sed "s|^$2=.*|$2=$3|" "$1" > "$tmp"
+  else
+    cat "$1" > "$tmp"
+    # A file without a trailing newline would glue the appended line onto its
+    # last one — exactly the upgrade case, where a new tag is not in .env yet.
+    if [[ -n $(tail -c1 "$tmp") ]]; then echo >> "$tmp"; fi
+    echo "$2=$3" >> "$tmp"
+  fi
+  mv "$tmp" "$1"
+}
+
+echo "== versions (argocd-env-demo, alpha)"
+for var in "${IMAGE_VARS[@]}"; do
+  chart="${chart_of[$var]}"
+  now=$(value_in .env "$var")
+  if new=$(alpha_version "$chart" 2>/dev/null) && [[ -n "$new" ]]; then
+    if [[ "$new" == "$now" ]]; then echo "   $chart: $now"
+    else
+      echo "   $chart: ${now:-"(unset)"} -> $new"
+      set_in .env "$var" "$new"
+    fi
+  else
+    echo "   $chart: could not read versions-alpha.json, keeping ${now:-"(unset)"}"
+  fi
+done
+
+# --- ECR ------------------------------------------------------------------
+# The token lasts 12h, so log in on every run. Uses the shell's own AWS
+# credentials (AWS_PROFILE or a default chain) — nothing is stored here.
+
+ECR_REGISTRY=$(value_in .env ECR_REGISTRY)
+[[ -n "$ECR_REGISTRY" ]] || { echo "ECR_REGISTRY missing in .env — restore it from .env.example" >&2; exit 1; }
+echo "== ecr login ($ECR_REGISTRY)"
+aws ecr get-login-password --region "$AWS_REGION" |
+  docker login --username AWS --password-stdin "$ECR_REGISTRY" > /dev/null
+
+# --- Up -------------------------------------------------------------------
+
+echo "== compose up"
+docker compose pull --quiet
+docker compose up -d
+echo
+docker compose ps
+echo
+echo "MCP servers are up. Run the app on the host: pnpm dev  (http://localhost:3000)"

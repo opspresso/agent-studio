@@ -1,0 +1,185 @@
+# The registry's MCP servers on the developer's own machine — the app itself
+# stays `pnpm dev` on the host, so code changes are testable immediately at
+# http://localhost:3000.
+#
+# The MCP scheme is `deploy/idc/`'s, unchanged and for the same reason: the
+# registry rows agent-plugins syncs name `http://mcp-<name>.agent-mcps.svc.
+# cluster.local/mcp` (no port = 80), so every service here **listens on 80**
+# and carries that cluster DNS name twice:
+#
+#  - as a **network alias**, for anything else on this compose network;
+#  - as an **OrbStack custom domain** (`dev.orbstack.domains` label), which is
+#    what lets the *host* — the `pnpm dev` process — resolve the same name
+#    straight to the container, no port publishing, no /etc/hosts.
+#
+# The app reaches those addresses only because `.env.local` declares
+# MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local past the SSRF guard.
+#
+# The OrbStack label is the one OrbStack-specific piece. On plain Docker
+# Desktop the host cannot resolve these names; the fallback is /etc/hosts
+# entries pointing them at 127.0.0.1 plus a Host-routing proxy on port 80 —
+# see README.md.
+
+name: agent-studio-local
+
+x-mcp: &mcp
+  restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  # --- MCP servers -------------------------------------------------------
+  # The two that need no credentials — the default profile-less set, enough
+  # for an end-to-end MCP run.
+
+  mcp-document:
+    <<: *mcp
+    platform: linux/amd64
+    image: ${ECR_REGISTRY}/mcp-document:${MCP_DOCUMENT_TAG}
+    environment:
+      PORT: "80"
+    labels:
+      dev.orbstack.domains: mcp-document.agent-mcps.svc.cluster.local
+    mem_limit: 512m
+    networks:
+      default:
+        aliases:
+          - mcp-document.agent-mcps.svc.cluster.local
+
+  mcp-youtube:
+    <<: *mcp
+    platform: linux/amd64
+    image: ${ECR_REGISTRY}/mcp-youtube:${MCP_YOUTUBE_TAG}
+    environment:
+      PORT: "80"
+    labels:
+      dev.orbstack.domains: mcp-youtube.agent-mcps.svc.cluster.local
+    mem_limit: 512m
+    networks:
+      default:
+        aliases:
+          - mcp-youtube.agent-mcps.svc.cluster.local
+
+  # --- MCP servers that need real credentials ----------------------------
+  # `aws` needs .env.aws (an access key); note that mcp-memory then reads and
+  # writes the *same* memory buckets alpha uses — there is no local S3 Vectors.
+  # `brave` needs BRAVE_API_KEY in `.env`.
+
+  mcp-memory:
+    <<: *mcp
+    profiles: [aws]
+    platform: linux/amd64
+    image: ${ECR_REGISTRY}/mcp-memory:${MCP_MEMORY_TAG}
+    env_file:
+      - .env.aws
+    environment:
+      PORT: "80"
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      VECTOR_BUCKET: agent-studio-vector
+      VECTOR_INDEX: memories
+      STATE_BUCKET: agent-studio-memory
+      EMBEDDING_PROVIDER: bedrock
+      EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
+      EMBEDDING_DIM: "1024"
+      RECALL_MIN_SIMILARITY: "0.1"
+    labels:
+      dev.orbstack.domains: mcp-memory.agent-mcps.svc.cluster.local
+    mem_limit: 512m
+    networks:
+      default:
+        aliases:
+          - mcp-memory.agent-mcps.svc.cluster.local
+
+  # Same launcher and healthcheck as IDC — see the long comments there for why
+  # `entrypoint` (not `command`) and why the image's own HEALTHCHECK is
+  # replaced.
+  mcp-cloudwatch:
+    <<: *mcp
+    profiles: [aws]
+    image: public.ecr.aws/awslabs-mcp/awslabs/cloudwatch-mcp-server:${MCP_CLOUDWATCH_TAG}
+    env_file:
+      - .env.aws
+    environment:
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+    entrypoint:
+      - python
+      - -c
+      - |
+        from awslabs.cloudwatch_mcp_server.server import mcp
+        from mcp.server.transport_security import TransportSecuritySettings
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = 80
+        mcp.settings.stateless_http = True
+        mcp.settings.json_response = True
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[
+                "mcp-cloudwatch.agent-mcps.svc.cluster.local",
+                "mcp-cloudwatch.agent-mcps.svc.cluster.local:*",
+                "localhost",
+                "localhost:*",
+                "127.0.0.1",
+                "127.0.0.1:*",
+            ],
+        )
+        mcp.run(transport="streamable-http")
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 80), 3).close()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    labels:
+      dev.orbstack.domains: mcp-cloudwatch.agent-mcps.svc.cluster.local
+    mem_limit: 1g
+    networks:
+      default:
+        aliases:
+          - mcp-cloudwatch.agent-mcps.svc.cluster.local
+
+  mcp-brave-search:
+    <<: *mcp
+    profiles: [brave]
+    image: brave/brave-search-mcp-server:${MCP_BRAVE_TAG}
+    env_file:
+      - .env
+    environment:
+      BRAVE_MCP_TRANSPORT: http
+      BRAVE_MCP_HOST: 0.0.0.0
+      BRAVE_MCP_PORT: "80"
+      BRAVE_MCP_STATELESS: "true"
+    labels:
+      dev.orbstack.domains: mcp-brave-search.agent-mcps.svc.cluster.local
+    mem_limit: 512m
+    networks:
+      default:
+        aliases:
+          - mcp-brave-search.agent-mcps.svc.cluster.local
+
+  # --- Ticker ------------------------------------------------------------
+  # IDC's tick loop, mounted from there rather than copied: without it nothing
+  # fires schedules, syncs plugins or reindexes the catalog locally. It ticks
+  # the `pnpm dev` server on the host.
+  #
+  # The token is interpolated from `.env` rather than env_file-ing the whole
+  # `.env.local`: tick.sh reads exactly one secret, and a third-party curl
+  # image has no business holding the AES key and every provider credential.
+  # Set SCHEDULE_SCAN_TOKEN in `.env` to the same value `.env.local` uses; an
+  # unset token makes tick.sh sleep instead of scan (its own guard).
+  ticker:
+    profiles: [ticker]
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    environment:
+      TICK_TARGET: http://host.docker.internal:3000
+      SCHEDULE_SCAN_TOKEN: ${SCHEDULE_SCAN_TOKEN:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "/tick.sh"]
+    volumes:
+      - ../idc/scripts/tick.sh:/tick.sh:ro
+    mem_limit: 64m
+    logging: *logging

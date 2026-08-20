@@ -14,11 +14,12 @@ build/
 .env.local
 .env.*.local
 
-# idc deploy — the filled-in copies of deploy/idc/*.example, and the kubeconfig
-# the eks profile mounts. `.env` above already covers deploy/idc/.env.
+# deploy — the filled-in copies of deploy/*/*.example, and the kubeconfig the
+# eks profile mounts. `.env` above already covers each deployment's `.env`.
 deploy/idc/.env.aws
 deploy/idc/.env.mcp
 deploy/idc/kubeconfig
+deploy/local/.env.aws
 
 # misc
 .DS_Store

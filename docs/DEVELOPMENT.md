@@ -53,6 +53,15 @@ DynamoDB Local 은 *`-sharedDb` 로 시작하지 않는 한* 액세스 키와 �
 `init-local-table` 은 로컬이 아닌 엔드포인트를 향해서는 실행을 거부하므로, alpha/prod 가 여기에
 건드려지는 일은 있을 수 없다.
 
+## 로컬 MCP (deploy/local)
+
+기본 셋업에는 MCP 가 없다: 레지스트리가 등록하는 MCP URL 은 클러스터 DNS 이름이라 로컬에서
+해석되지 않고, plugins sync 는 그 서버들을 전부 `invalid-url` 로 스킵한다.
+[deploy/local/](../deploy/local/README.md) 은 그 이름들을 network alias 와 OrbStack 커스텀
+도메인으로 단 MCP 컨테이너들을 docker compose 로 띄워, 호스트의 `pnpm dev` 가 같은 레지스트리
+행으로 — 실제 배포와 같은 경로로 — MCP dispatch 까지 테스트하게 한다. `.env.local` 에
+`MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local` 한 줄이 필요하다.
+
 ## 실제 자격 증명 없이 작업하기
 
 ```bash
