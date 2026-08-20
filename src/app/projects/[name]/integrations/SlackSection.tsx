@@ -11,7 +11,7 @@ import {
   testProjectSlack,
   updateProjectSlack,
 } from "../../lib/api";
-import type { ProjectSlackView, ProjectType, SlackSuggestedPrompt } from "../../lib/api";
+import type { ProjectSlackResponse, ProjectType, SlackSuggestedPrompt } from "../../lib/api";
 import { Alert, Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
@@ -39,7 +39,7 @@ export function SlackSection({
   projectType: ProjectType;
 }) {
   const t = useT();
-  const [view, setView] = useState<ProjectSlackView | null>(null);
+  const [view, setView] = useState<ProjectSlackResponse | null>(null);
   const [botToken, setBotToken] = useState("");
   const [signingSecret, setSigningSecret] = useState("");
   const [enabled, setEnabled] = useState(false);

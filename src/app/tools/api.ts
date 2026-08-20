@@ -1,4 +1,5 @@
 import type { McpServer, McpTool } from "@/domain/mcp/types";
+import type { ManagedMcpStatus } from "@/application/mcp/managedMcpUseCases";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 // Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
@@ -99,15 +100,12 @@ export interface CreateManagedMcpInput {
 
 export type UpdateManagedMcpInput = Omit<CreateManagedMcpInput, "name">;
 
-export interface ManagedMcpStatus {
-  name: string;
-  image?: string;
-  running: boolean;
-  /** The server answered. A running container can still be unreachable. */
-  reachable: boolean;
-  address?: string;
-  detail?: string;
-}
+/**
+ * Taken from the use case that answers with it rather than restated here: a
+ * type-only import is erased, so the browser bundle is unchanged and the two
+ * ends of the wire cannot drift.
+ */
+export type { ManagedMcpStatus };
 
 export function createManagedMcp(input: CreateManagedMcpInput): Promise<McpServer> {
   return fetch("/api/mcps/managed", {

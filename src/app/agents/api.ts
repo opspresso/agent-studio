@@ -1,4 +1,5 @@
 import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
+import type { A2aProjectListItem, A2aProjectListView } from "@/app/api/a2a/route";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 // Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
@@ -48,17 +49,7 @@ export async function deleteAgent(name: string): Promise<void> {
   await assertOk(await fetch(`/api/agents/${name}`, { method: "DELETE" }));
 }
 
-export interface A2aProjectListItem {
-  name: string;
-  displayName: string;
-  description: string;
-  cardUrl: string;
-}
-
-export interface A2aProjectListView {
-  enabled: boolean;
-  projects: A2aProjectListItem[];
-}
+export type { A2aProjectListItem, A2aProjectListView };
 
 /** Published studio projects exposed over A2A (derived, not registered). */
 export function listA2aProjects(): Promise<A2aProjectListView> {

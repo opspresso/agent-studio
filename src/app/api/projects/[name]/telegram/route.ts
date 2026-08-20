@@ -2,7 +2,10 @@ import { z } from "zod";
 import { resolvePublicBaseUrl } from "@/lib/public-url";
 import { withAuth } from "@/lib/session";
 import { projectTelegramUseCases } from "@/lib/container";
-import type { ProjectTelegramResult } from "@/application/telegram/projectTelegram";
+import type {
+  ProjectTelegramResult,
+  ProjectTelegramView,
+} from "@/application/telegram/projectTelegram";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -11,6 +14,17 @@ const updateSchema = z.object({
   botToken: z.string().optional(),
   enabled: z.boolean().optional(),
 });
+
+/**
+ * What every verb answers with, declared so the console can take it instead of
+ * restating it.
+ */
+export interface ProjectTelegramResponse extends ProjectTelegramView {
+  /** Where Telegram should deliver this bot's updates. */
+  webhookUrl: string;
+  /** What a save could not do on Telegram's side — a webhook it refused. */
+  warnings?: string[];
+}
 
 /**
  * The one shape every verb answers with: the masked view plus the webhook URL
@@ -23,7 +37,7 @@ async function telegramResponse({ view, warnings }: ProjectTelegramResult, reque
     ...view,
     webhookUrl: `${baseUrl}${view.webhookPath}`,
     ...(warnings ? { warnings } : {}),
-  });
+  } satisfies ProjectTelegramResponse);
 }
 
 export const GET = withAuth(async (user, request: Request, ctx: RouteContext) => {

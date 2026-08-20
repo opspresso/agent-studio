@@ -5,6 +5,7 @@ import { projectSlackUseCases } from "@/lib/container";
 import {
   buildProjectSlackManifest,
   type ProjectSlackResult,
+  type ProjectSlackView,
 } from "@/application/slack/projectSlack";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
@@ -25,6 +26,21 @@ function resolveBaseUrl(request: Request): Promise<string> {
 }
 
 /**
+ * The one shape every verb answers with — the use case's view plus the two
+ * things only a request knows: where this deployment answers events, and the
+ * manifest built against that address.
+ *
+ * Declared rather than assembled anonymously so the console can take it instead
+ * of restating it. The crash below is what a restatement costs.
+ */
+export interface ProjectSlackResponse extends ProjectSlackView {
+  /** Where Slack sends this project's events, for pasting into the app config. */
+  eventsUrl: string;
+  /** Every verb returns it, so the settings page can always render it. */
+  manifest: Record<string, unknown>;
+}
+
+/**
  * The one shape every verb answers with.
  *
  * It was assembled per handler before, and only GET carried the manifest — so
@@ -40,7 +56,7 @@ async function slackResponse({ project, view }: ProjectSlackResult, baseUrl: str
     ...view,
     eventsUrl: `${baseUrl}${view.eventsPath}`,
     manifest: buildProjectSlackManifest(project, baseUrl),
-  });
+  } satisfies ProjectSlackResponse);
 }
 
 export const GET = withAuth(async (user, request: Request, ctx: RouteContext) => {

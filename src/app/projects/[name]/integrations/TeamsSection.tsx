@@ -10,7 +10,7 @@ import {
   testProjectTeams,
   updateProjectTeams,
 } from "../../lib/api";
-import type { ProjectTeamsView, ProjectType } from "../../lib/api";
+import type { ProjectTeamsResponse, ProjectType } from "../../lib/api";
 import { Alert, Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
@@ -24,7 +24,7 @@ export function TeamsSection({
   projectType: ProjectType;
 }) {
   const t = useT();
-  const [view, setView] = useState<ProjectTeamsView | null>(null);
+  const [view, setView] = useState<ProjectTeamsResponse | null>(null);
   const [appId, setAppId] = useState("");
   const [appPassword, setAppPassword] = useState("");
   const [tenantId, setTenantId] = useState("");

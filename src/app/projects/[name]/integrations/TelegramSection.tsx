@@ -11,7 +11,7 @@ import {
   testProjectTelegram,
   updateProjectTelegram,
 } from "../../lib/api";
-import type { ProjectTelegramView, ProjectType } from "../../lib/api";
+import type { ProjectTelegramResponse, ProjectType } from "../../lib/api";
 import { Alert, Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
@@ -25,7 +25,7 @@ export function TelegramSection({
   projectType: ProjectType;
 }) {
   const t = useT();
-  const [view, setView] = useState<ProjectTelegramView | null>(null);
+  const [view, setView] = useState<ProjectTelegramResponse | null>(null);
   const [botToken, setBotToken] = useState("");
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<string | null>(null);

@@ -73,6 +73,13 @@ export interface ArtifactView extends Artifact {
   url?: string;
 }
 
+/** One page of a gallery — what both listing routes answer with. */
+export interface ArtifactPage {
+  artifacts: ArtifactView[];
+  /** Cursor for the next page, absent once there is nothing further back. */
+  nextBefore?: string;
+}
+
 /**
  * The rows plus an address for each.
  *
@@ -86,7 +93,7 @@ export interface ArtifactView extends Artifact {
 export async function toArtifactViews(
   artifacts: Artifact[],
   sign: SignObjectUrl | undefined,
-): Promise<{ artifacts: ArtifactView[]; nextBefore?: string }> {
+): Promise<ArtifactPage> {
   const views = await Promise.all(
     artifacts.map(async (artifact) => {
       if (!sign) {
