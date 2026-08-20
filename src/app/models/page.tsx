@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Badge,
@@ -199,6 +199,7 @@ export default function ModelsPage() {
   const [source, setSource] = useState<"override" | "default">("default");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [filter, setFilter] = useState("");
@@ -234,19 +235,19 @@ export default function ModelsPage() {
   const canRead = viewer !== null && tierAtLeast(viewer.tier, "member");
   const canEdit = viewer?.isAdmin === true;
 
+  const loadCatalog = useCallback(async () => {
+    const data = await readJson<Catalog>(await fetch("/api/models/catalog"));
+    setProviders(data.providers);
+    setModels(data.models);
+    setMakers(data.makers ?? {});
+    setUpdatedAt(data.updatedAt ?? "");
+    setSource(data.source);
+  }, []);
+
   useEffect(() => {
     if (!canRead) return;
     let cancelled = false;
-    fetch("/api/models/catalog")
-      .then((res) => readJson<Catalog>(res))
-      .then((data) => {
-        if (cancelled) return;
-        setProviders(data.providers);
-        setModels(data.models);
-        setMakers(data.makers ?? {});
-        setUpdatedAt(data.updatedAt ?? "");
-        setSource(data.source);
-      })
+    loadCatalog()
       .catch(
         (loadError) =>
           !cancelled &&
@@ -256,7 +257,23 @@ export default function ModelsPage() {
     return () => {
       cancelled = true;
     };
-  }, [canRead]);
+  }, [canRead, loadCatalog]);
+
+  /** Pull the published catalog into the registry now, then re-read the view. */
+  async function refreshCatalog() {
+    setRefreshing(true);
+    setError(null);
+    try {
+      await readJson(await fetch("/api/models/refresh", { method: "POST" }));
+      await loadCatalog();
+    } catch (refreshError) {
+      setError(
+        refreshError instanceof Error ? refreshError.message : "Failed to refresh the catalog",
+      );
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function saveEnabled(
     enabledIds: string[],
@@ -320,22 +337,29 @@ export default function ModelsPage() {
   return (
     <Stack gap="lg">
       <CatalogHeader title={t("nav.models")} description={t("models.lede")} Icon={IconCpu}>
-        {canEdit && source === "override" && (
+        {canEdit && (
           <Group gap="xs">
-            <Badge color={BADGE.attention}>selection restricted</Badge>
-            <Button
-              size="compact-xs"
-              variant="default"
-              disabled={busy}
-              onClick={() =>
-                void saveEnabled(
-                  [],
-                  models.map((model) => ({ ...model, enabled: true })),
-                  "default",
-                )
-              }
-            >
-              Reset — allow all
+            {source === "override" && (
+              <>
+                <Badge color={BADGE.attention}>selection restricted</Badge>
+                <Button
+                  size="compact-xs"
+                  variant="default"
+                  disabled={busy}
+                  onClick={() =>
+                    void saveEnabled(
+                      [],
+                      models.map((model) => ({ ...model, enabled: true })),
+                      "default",
+                    )
+                  }
+                >
+                  Reset — allow all
+                </Button>
+              </>
+            )}
+            <Button variant="default" loading={refreshing} onClick={() => void refreshCatalog()}>
+              {t("models.refreshNow")}
             </Button>
           </Group>
         )}
