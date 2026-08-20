@@ -1101,7 +1101,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // starts.
     what: "parsing a markdown frontmatter block",
     pattern: /\^---\\r\?\\n/,
-    owner: "src/shared/frontmatter.ts",
+    owner: "src/domain/plugin/frontmatter.ts",
   },
   {
     // The Agent Plugins spec's name rule, which is deliberately not `isSlug`

@@ -8,6 +8,11 @@
  * came in as — so the block is parsed here and each caller picks the fields
  * it wants out of `fields`.
  *
+ * It sits beside the plugin types rather than in `shared` because the block is
+ * part of the document format the domain already describes — `sync.ts` and
+ * `files.ts` are its neighbours — and `shared` is the one layer they may not
+ * import.
+ *
  * Deliberately not a YAML implementation. Flat `key: value` lines plus folded
  * and literal scalars are what these documents use; anything else — including
  * the Agent Skills spec's nested `metadata:` map, which nothing here consumes

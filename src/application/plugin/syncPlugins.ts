@@ -7,7 +7,7 @@ import type { PluginRepository } from "@/domain/plugin/repository";
 import type { PluginUseCases } from "./pluginUseCases";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
-import { parseFrontmatter } from "@/shared/frontmatter";
+import { parseFrontmatter } from "@/domain/plugin/frontmatter";
 import { isSlug } from "@/domain/naming";
 import { log } from "@/shared/logger";
 import {
