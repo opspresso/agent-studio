@@ -396,6 +396,19 @@ export const config = {
   get publicBaseUrl(): string | undefined {
     return optionalEnv(process.env.PUBLIC_BASE_URL) ?? optionalEnv(process.env.BETTER_AUTH_URL);
   },
+  /**
+   * Where the model registry is published — agent-models' catalog. Fetched at
+   * boot and on `modelsCatalogRefreshMs`; the committed snapshot
+   * (`src/domain/llm/catalog.json`) serves until then and whenever the fetch
+   * fails.
+   */
+  get modelsCatalogUrl(): string {
+    return optionalEnv(process.env.MODELS_CATALOG_URL) ?? "https://models.opspresso.com/models.json";
+  },
+  /** How often the catalog is re-read; 0 disables the interval (the boot read still happens). */
+  get modelsCatalogRefreshMs(): number {
+    return positiveIntEnv("MODELS_CATALOG_REFRESH_MS", 60 * 60 * 1000);
+  },
   /** GitHub Agent Plugins source repo, e.g. "opspresso/agent-plugins". */
   get pluginsRepo(): string | undefined {
     return optionalEnv(process.env.PLUGINS_REPO);

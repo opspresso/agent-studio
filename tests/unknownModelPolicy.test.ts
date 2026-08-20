@@ -8,7 +8,7 @@ import {
 import { runLocalSubagent } from "@/application/execution/subagentRunner";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { ValidationError } from "@/application/errors";
-import { MODEL_CONFIGS } from "@/domain/llm/models";
+import { listModels } from "@/domain/llm/models";
 import type { RunOrigin } from "@/domain/execution/actor";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
@@ -20,7 +20,7 @@ import type { UsageRepository } from "@/domain/usage/repository";
  * the default; a deployment whose usage rows become an invoice can refuse.
  */
 
-const REGISTERED = MODEL_CONFIGS[0]?.id ?? "openai/gpt-5-mini";
+const REGISTERED = listModels()[0]?.id ?? "openai/gpt-5-mini";
 const UNKNOWN = "acme/not-in-the-registry";
 
 const project: Project = {

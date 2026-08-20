@@ -1,12 +1,13 @@
 /**
  * Diff the model registry against the models the configured LLM channels serve.
  *
- * The registry (`src/domain/llm/models.ts`) is hand-maintained and has to be:
- * pricing, context windows, and capability flags exist only in each provider's
- * documentation, so they cannot be synced from an API. Model *ids* can be, and
- * that is the part that goes stale silently — a provider ships a model, nobody
- * notices, and the first symptom is a run booked at $0. This reports the two
- * lists and leaves every judgement to a human:
+ * The registry is the catalog agent-models publishes, as this checkout's
+ * snapshot holds it (`src/domain/llm/catalog.json`; `pnpm sync-models`
+ * refreshes it). agent-models watches the providers' public catalogs itself;
+ * what it cannot see is *this deployment's* channels — a gateway under
+ * `LLM_BASE_URL`, a Bedrock route, a key that only reaches some models — and
+ * that is what this script compares against. It reports the two lists and
+ * leaves every judgement to a human:
  *
  *   - served by a channel, absent from the registry  → candidate to add
  *   - in the registry, served by no channel          → candidate to retire
@@ -30,7 +31,7 @@
  * `resolveProviderTarget` strips them — otherwise every model behind a direct
  * channel would read as missing. Ids outside `SUPPORTED_PROVIDERS` are ignored.
  */
-import { MODEL_CONFIGS, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { listModels, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { AWS_SIGNING_SERVICE, createSignedFetch } from "@/infrastructure/llm/awsSigner";
 import type { ChannelAuth, ProviderChannelConfig } from "@/domain/settings/types";
 
@@ -274,7 +275,7 @@ async function fetchImageModels(channel: Channel, request: typeof globalThis.fet
  * two findings for a model that is registered and served.
  */
 const BY_WIRE_ID = new Map(
-  MODEL_CONFIGS.filter((model) => model.wireId !== undefined).map((model) => [
+  listModels().filter((model) => model.wireId !== undefined).map((model) => [
     `${model.provider}/${model.wireId}`,
     model.id,
   ]),
@@ -402,7 +403,7 @@ async function main(): Promise<void> {
   // available here, in the one list that invites deleting a live model.
   const nothingComparable = !anyChannelFailed && served.size === 0;
 
-  const registered = new Map(MODEL_CONFIGS.map((model) => [model.id, model]));
+  const registered = new Map(listModels().map((model) => [model.id, model]));
 
   // A provider that lists only dated snapshots still serves the undated alias:
   // Anthropic's catalog names `claude-haiku-4-5-20251001`, yet dispatching

@@ -100,7 +100,7 @@
 | 결정 | 소유자 |
 |---|---|
 | 모든 DynamoDB 키 문자열 | `src/infrastructure/db/keys.ts` |
-| Model 이 무엇이고, 어떤 route 가 그것을 서빙하는가 | `src/domain/llm/models.ts` 의 `MODEL_FAMILIES`/`MODEL_OFFERINGS` |
+| Model 이 무엇이고, 어떤 route 가 그것을 서빙하는가 | **이 저장소 밖** — [opspresso/agent-models](https://github.com/opspresso/agent-models) 의 `models/` (family/offering), `https://models.opspresso.com/models.json` 으로 발행된다. 앱에서는 `src/domain/llm/models.ts` 의 `loadModelCatalog` 가 받아들이는 *유일한 입구* 이고, 숫자는 절대 여기 쓰지 않는다 (`tests/models.test.ts` 가 막는다) |
 | 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` |
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` |
 | tool 의 파일이 실려 다니는 이름과 media type | `src/infrastructure/mcp/toolManager.ts` 의 `safeFileName`/`baseMediaType` |

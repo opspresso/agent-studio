@@ -35,6 +35,7 @@ export type LogScope =
   | "mcp"
   | "memory"
   | "messaging"
+  | "models"
   | "otel"
   | "plugins"
   | "project"

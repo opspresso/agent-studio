@@ -1319,13 +1319,17 @@ GET /api/projects/{name}/traces/{traceId}
 ```
 GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ],
                                  models: [ { …model, enabled } ],
+                                 makers: { <makerId>: label },
+                                 updatedAt,
                                  source: "override" | "default" }
 POST /api/models/test    → 200 { ok, latencyMs, error? } | 400
 ```
 
 - `catalog` 는 `member` 등급부터 읽을 수 있고 (`withMemberAuth` — Intelligence 섹션의 다른
   레지스트리들과 같은 계단이다: 이 배포가 닿을 수 있는 것의 목록이다), `test` 는 admin 전용이다.
-  `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: 보이는 모든 모델과 그 enabled 플래그
+  `makers` 와 `updatedAt` 은 로드된 카탈로그의 것이다 — maker 라벨과 카탈로그 내용이 마지막으로
+  바뀐 시각으로, 레지스트리가 런타임 로드로 바뀐 뒤 클라이언트가 상수에서 가져올 수 없게 된
+  값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: 보이는 모든 모델과 그 enabled 플래그
   (`/api/models` 가 숨기는 것을 정확히 나열한다 — member 는 꺼진 모델을 볼 수는 있어도 고를 수는
   없다), 그리고 프로바이더별로 이 배포가 거기로 dispatch 할 수 있는지다 — `dedicated` 는
   프로바이더별 채널이 설정돼 있다는 뜻이다. 하나도 없으면 모든 프로바이더가 기본 채널을 통해

@@ -75,7 +75,8 @@ pnpm typecheck        # tsc --noEmit, strict + noUncheckedIndexedAccess
 pnpm test             # vitest run
 pnpm test:watch       # vitest watch
 pnpm test:integration # 로컬 DynamoDB 에 대한 리포지토리 + 엔진 검사
-pnpm check-models     # 모델 레지스트리와 채널이 서빙하는 것의 차이
+pnpm check-models     # 카탈로그 스냅샷과 이 배포의 채널이 서빙하는 것의 차이
+pnpm sync-models      # 발행된 카탈로그로 스냅샷 갱신
 ```
 
 ```bash
@@ -97,15 +98,18 @@ pnpm exec vitest run -t "streamWithFallback"
 | `scripts/mock-llm.ts` | `127.0.0.1:8002` (`MOCK_LLM_PORT`) 에서 도는 독립 실행형 OpenAI 호환 mock 서버. 스트리밍과 비스트리밍을 모두 지원하고, 도구가 제공되고 *동시에* 메시지가 `skill named "<slug>"` 를 언급할 때 `Skill` 도구 호출을 한 번 요청한다. `MOCK_LLM_CHUNKS` 와 `MOCK_LLM_DELAY_MS` 는 답변을 부풀리고 늦춰 긴 스트리밍 응답으로 만든다 — 답이 도착하는 동안 chat 창이 무엇을 하는지 볼 수 있는 유일한 방법이다. 기본값은 통합 체크가 기대하는 한 줄 답변을 유지한다. |
 | `scripts/seed-skills.ts` | 샘플 Skill 을 멱등하게 시드한다. |
 | `scripts/integration-check.ts` | 저장소 왕복 전 구간 + 엔진(단발 실행과 agent 루프). |
-| `scripts/check-models.ts` | `src/domain/llm/models.ts` 를 설정된 채널들이 서빙하는 id 와 대조한다. |
+| `scripts/check-models.ts` | 카탈로그 스냅샷(`src/domain/llm/catalog.json`)을 *이 배포의* 채널들이 서빙하는 id 와 대조한다. agent-models 가 provider 의 공개 카탈로그는 스스로 보므로, 여기서 보는 것은 게이트웨이·Bedrock·키의 범위 같은 이 배포만의 차이다. |
+| `scripts/sync-models.ts` | 발행된 카탈로그로 스냅샷을 갱신한다 (`--check` 는 뒤처졌으면 1 로 종료). 런타임은 카탈로그를 직접 읽으므로, 테스트가 새 모델을 봐야 하거나 릴리즈 전일 때 돌린다. |
 | `scripts/backfill-artifacts.ts` | 일회성: artifact 이전의 `images/<uuid>` 레이아웃으로 저장된 오브젝트에, 목록 조회와 삭제를 가능하게 하는 행을 붙인다. 멱등하고(id 를 key 에서 파생한다), 오브젝트나 그것을 읽어 온 chat 메시지는 절대 건드리지 않으며, `--apply` 를 주지 않으면 쓰지 않고 보고만 한다. |
 | `scripts/restore-chat-image-refs.ts` | 일회성: 리브랜딩 이전 버킷을 가리킨 채 남아 있는 레거시 chat 이미지의 `url` 을, 현재 버킷이 들고 있는 `key` 로 다시 쓴다 — 그 key 는 `resolveImageUrl` 이 읽을 때마다 서명한다. 각 오브젝트가 존재하는지 먼저 확인하고, 롤백 파일을 쓰며, 행을 건드리려면 `--apply` 가 필요하다. |
 
 ### `check-models`
 
-레지스트리를 손으로 관리하는 이유는 가격, 컨텍스트 윈도우, capability 플래그가 각 provider 의
-문서에만 존재하기 때문이다. 조용히 낡는 부분은 모델 **id** 다 — provider 가 모델을 내놓고,
-아무도 눈치채지 못하고, 첫 증상은 $0 으로 기록된 런이다.
+레지스트리는 [agent-models](https://github.com/opspresso/agent-models) 가 관리하고 provider
+의 공개 카탈로그를 매일 대조한다 ([CONFIGURATION.md](CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)).
+그것이 볼 수 없는 것은 *이 배포의* 채널이다 — `LLM_BASE_URL` 의 게이트웨이, Bedrock 경로, 일부
+모델만 닿는 키. 이 스크립트는 그 차이를 본다: 채널이 서빙하지만 레지스트리에 없는 id (agent-models
+에 추가할 후보), 레지스트리에 있지만 어떤 채널도 서빙하지 않는 id (이 배포에서 쓸 수 없는 것).
 
 ```bash
 pnpm check-models              # 양방향 보고; 항상 0 으로 종료

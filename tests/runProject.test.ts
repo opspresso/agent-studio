@@ -33,7 +33,7 @@ const testUrlPolicy: UrlPolicy = {
 };
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import { withRunDeadline } from "@/shared/runDeadline";
-import { MODEL_CONFIGS } from "@/domain/llm/models";
+import { listModels } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version, VersionParameters } from "@/domain/project/types";
@@ -42,7 +42,7 @@ import type { Trace } from "@/domain/trace/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
 
-const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;
+const DEFAULT_IMAGE_MODEL = listModels().find((m) => m.capabilities.imageGeneration)?.id;
 
 function projectFixture(): Project {
   return {

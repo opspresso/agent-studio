@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { modelPriceLabel } from "@/app/_components/modelOptions";
-import { MODEL_CONFIGS, getModelConfig } from "@/domain/llm/models";
+import { listModels, getModelConfig } from "@/domain/llm/models";
 
 /**
  * The label reports what a call will cost, next to the model someone is about
@@ -39,7 +39,7 @@ describe("modelPriceLabel", () => {
    * advertised at $0, whatever shape its pricing takes.
    */
   it("never reports a priced model as free", () => {
-    for (const model of MODEL_CONFIGS) {
+    for (const model of listModels()) {
       const priced =
         model.pricing.inputPer1M > 0 ||
         model.pricing.outputPer1M > 0 ||

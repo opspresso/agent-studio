@@ -1,4 +1,4 @@
-import { getVisibleModels, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { getVisibleModels, listModelMakers, modelCatalogUpdatedAt, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { getEnabledModels, getLlmProviderConfigs } from "@/lib/runtime-settings";
 import { withMemberAuth } from "@/lib/session";
 
@@ -10,6 +10,10 @@ import { withMemberAuth } from "@/lib/session";
  * including the models an admin switched off — which a member may see but
  * not pick, since `/api/models` still hides them from the pickers. Changing
  * the selection stays admin's (`PUT /api/settings`), as does the probe.
+ *
+ * `makers` and `updatedAt` come with the models because they are the
+ * catalog's, loaded at runtime: a client cannot import them from a constant
+ * that no longer exists.
  */
 export const GET = withMemberAuth(async () => {
   const [providerConfigs, enabledModels] = await Promise.all([
@@ -29,6 +33,8 @@ export const GET = withMemberAuth(async () => {
       ...model,
       enabled: enabled === undefined || enabled.has(model.id),
     })),
+    makers: listModelMakers(),
+    updatedAt: modelCatalogUpdatedAt(),
     source: enabled === undefined ? "default" : "override",
   });
 });

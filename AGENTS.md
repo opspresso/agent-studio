@@ -114,8 +114,9 @@ domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
 `src/app/api/teams/messages/_lib/` (`TeamsEventDeps`),
 `src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
 handler assembly over `executionDeps`), and `src/instrumentation.ts` (the boot path, which
-wires the audit sink straight from its adapter — the composition root is not loaded until
-this file decides the runtime is the Node server — and resumes the managed MCP containers).
+wires the audit sink straight from its adapter and assembles the model-catalog refresher
+over its HTTP source — the composition root is not loaded until this file decides the
+runtime is the Node server — and resumes the managed MCP containers).
 Three `lib` modules besides the root reach one adapter each without composing a use case —
 `auth.ts`, `runtime-settings.ts`, `memberAccess.ts` — and `tests/architecture.test.ts` names
 exactly those as `lib`'s wiring modules; every other `lib` file is a leaf.
@@ -170,6 +171,9 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 - **LLM engine** — pure logic, everything injected, tested with no network or DB via
   `tests/fakeChannel.ts` → `src/application/llm/AGENTS.md`, then
   [design/execution.md](docs/design/execution.md#llm-engine)
+- **Model registry** — loaded from agent-models' published catalog, never written here;
+  `loadModelCatalog` is the one way in →
+  [CONFIGURATION.md](docs/CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)
 - **Run bracket** — the one thing every top-level run passes through: model policy, cost guard,
   tier cap, concurrency slot, metric, correlation id, artifact recorder →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#런-브래킷)
@@ -308,6 +312,17 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   on — **persist → terminal entry → release the lease** — which is why the lease release lives
   in `runLog.ts` rather than in `runAndPersist`. What it cannot do, and why it is written only
   after the reader leaves, is in [design/chat.md](docs/design/chat.md#런은-자기-연결보다-오래-산다).
+- **The model registry is not in this repository.** `src/domain/llm/models.ts` *loads* the
+  catalog [opspresso/agent-models](https://github.com/opspresso/agent-models) publishes
+  (`https://models.opspresso.com/models.json`) — at boot, on an interval, and from the
+  committed snapshot `src/domain/llm/catalog.json` until then or when the fetch fails — and
+  it states no price, window or flag of its own (`tests/models.test.ts` fails if one
+  appears). Adding a model, retiring one, correcting a rate: agent-models, never here. What
+  this repository owns is the *shape* the loader accepts and `SUPPORTED_PROVIDERS` — a
+  provider is a channel this app can dispatch through, so a catalog entry under another
+  prefix is skipped on load, with its reason logged. `pnpm sync-models` refreshes the
+  snapshot; a test that needs a model the catalog gained runs it first
+  ([CONFIGURATION.md](docs/CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)).
 - **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client
   composers, API bodies and the messaging pipeline all read them) and the `data:` encoding in
   `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.

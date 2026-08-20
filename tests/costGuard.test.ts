@@ -15,7 +15,7 @@ import {
   type ExecutionDeps,
 } from "@/application/execution/runProject";
 import { generateImage, type ImageGenerationDeps } from "@/application/image/generateImage";
-import { MODEL_CONFIGS } from "@/domain/llm/models";
+import { listModels } from "@/domain/llm/models";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 import type { CostLimits, Project, Version } from "@/domain/project/types";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
@@ -439,7 +439,7 @@ describe("every top-level entry point is guarded", () => {
     userPromptTemplate: "",
     // An image-capable model, so `generateImage` reaches the guard rather than
     // being turned away by its capability check first.
-    model: MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id ?? "openai/gpt-image-2",
+    model: listModels().find((m) => m.capabilities.imageGeneration)?.id ?? "openai/gpt-image-2",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
