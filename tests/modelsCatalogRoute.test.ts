@@ -39,7 +39,13 @@ describe("GET /api/models/catalog", () => {
     const body = await catalog();
 
     expect(body.providers).toEqual(
-      SUPPORTED_PROVIDERS.map((name) => ({ name, available: true, dedicated: false })),
+      // The default channel serves every prefix except the self-hosted ones,
+      // which only their own channel can dispatch (`providerOffered`).
+      SUPPORTED_PROVIDERS.map((name) => ({
+        name,
+        available: name !== "selfhosted",
+        dedicated: false,
+      })),
     );
     expect(body.models).toHaveLength(getVisibleModels().length);
     expect(body.models.every((model) => model.enabled)).toBe(true);
@@ -49,12 +55,18 @@ describe("GET /api/models/catalog", () => {
   it("marks only configured providers available once any dedicated channel exists", async () => {
     getLlmProviderConfigs.mockResolvedValue([
       { name: "openai", baseUrl: "https://llm.example.com/v1", apiKey: "sk", keepModelPrefix: false },
+      { name: "selfhosted", baseUrl: "http://127.0.0.1:1234/v1", apiKey: "x", keepModelPrefix: false },
     ]);
 
     const body = await catalog();
 
     expect(body.providers.find((provider) => provider.name === "openai")).toEqual({
       name: "openai",
+      available: true,
+      dedicated: true,
+    });
+    expect(body.providers.find((provider) => provider.name === "selfhosted")).toEqual({
+      name: "selfhosted",
       available: true,
       dedicated: true,
     });

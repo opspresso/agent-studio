@@ -42,6 +42,14 @@ import snapshot from "./catalog.json";
  *
  * `bedrock` and `openrouter` are routes rather than model vendors — the same
  * family is reachable through them and through its vendor's own API.
+ *
+ * `selfhosted` is a route too, one the deployment operates itself: an
+ * OpenAI-compatible server the operator runs — LM Studio on a laptop, vLLM on
+ * a server. The prefix is the same everywhere; where it dispatches is each
+ * deployment's `LLM_PROVIDER_SELFHOSTED_BASE_URL`. The serving stack must name
+ * the model as the id's family (vLLM `--served-model-name`, LM Studio's model
+ * identifier), which is what lets one catalog entry serve every deployment
+ * without a `wireId`.
  */
 export const SUPPORTED_PROVIDERS = [
   "openai",
@@ -50,8 +58,19 @@ export const SUPPORTED_PROVIDERS = [
   "xai",
   "bedrock",
   "openrouter",
+  "selfhosted",
 ] as const;
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
+
+/**
+ * Providers whose channel the deployment operates itself rather than buys from
+ * a vendor. What membership changes: zero is such a model's *true* price, so
+ * the priced-text-model guard in `rejectReason` exempts these — explicitly
+ * stated zero only; absent prices still fail. Code, not catalog, for the same
+ * reason as `SUPPORTED_PROVIDERS`: whether a channel bills is a property of
+ * the channel, and the channels are this app's.
+ */
+export const SELF_HOSTED_PROVIDERS = ["selfhosted"] as const satisfies readonly SupportedProvider[];
 
 /**
  * Single-rate by design — one number per token class, the base (sub-threshold,
@@ -220,8 +239,13 @@ function rejectReason(entry: unknown): string | null {
   }
   if (entry.capabilities.imageGeneration !== true) {
     // An unpriced text model is worse than a missing one: the lookup succeeds
-    // and every call books at $0 with no warning.
-    if (!((entry.pricing.inputPer1M as number) > 0) || !((entry.pricing.outputPer1M as number) > 0)) {
+    // and every call books at $0 with no warning. Self-hosted channels are the
+    // deliberate exception — zero is their true price, and it is stated, not
+    // missing: absent prices already failed the pricing check above.
+    if (
+      !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider) &&
+      (!((entry.pricing.inputPer1M as number) > 0) || !((entry.pricing.outputPer1M as number) > 0))
+    ) {
       return "a text model needs input and output prices above zero";
     }
   } else if (
@@ -250,6 +274,14 @@ function rejectReason(entry: unknown): string | null {
     if (entry.wireId !== expected) {
       return `a dotted Anthropic id needs wireId "${expected}"`;
     }
+  }
+  // A selfhosted family is served under its own name by every deployment's
+  // stack — the convention that lets one entry serve them all — so a wireId
+  // here would rename the model globally for endpoints this catalog has never
+  // seen. Refused rather than ignored, because the publisher meant something
+  // by it and half-applying it would be worse.
+  if ((SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider) && entry.wireId !== undefined) {
+    return "a selfhosted entry must not carry a wireId — the family is the served name";
   }
   return null;
 }
@@ -457,12 +489,28 @@ export function contextWindowLabel(
 }
 
 /**
+ * Whether a deployment can offer a provider's models: through its dedicated
+ * channel once any channel is configured, else through the default channel —
+ * which serves every prefix *except* the self-hosted ones. A `selfhosted/` id
+ * names an endpoint only its own channel knows; no router behind the default
+ * channel serves that prefix, so offering it without the channel is offering
+ * a guaranteed 404. One owner because the /models console's availability
+ * column and the pickers below must tell one story.
+ */
+export function providerOffered(name: string, dedicated: ReadonlySet<string>): boolean {
+  if (dedicated.size > 0) {
+    return dedicated.has(name);
+  }
+  return !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(name);
+}
+
+/**
  * The models this deployment offers for selection: visible entries, narrowed
  * by the configured provider channels (none configured = the default channel
- * dispatches every id), then by the enabled-models override (absent = no
- * restriction; a stale id simply matches nothing). One owner because the
- * /api/models list and the model a fresh project's initial version starts
- * with must answer identically.
+ * dispatches every id — self-hosted providers excepted, see `providerOffered`),
+ * then by the enabled-models override (absent = no restriction; a stale id
+ * simply matches nothing). One owner because the /api/models list and the
+ * model a fresh project's initial version starts with must answer identically.
  */
 export function offeredModels(
   providerNames: string[],
@@ -472,7 +520,7 @@ export function offeredModels(
   const enabled = enabledIds === undefined ? undefined : new Set(enabledIds);
   return getVisibleModels().filter(
     (model) =>
-      (providers.size === 0 || providers.has(model.provider)) &&
+      providerOffered(model.provider, providers) &&
       (enabled === undefined || enabled.has(model.id)),
   );
 }

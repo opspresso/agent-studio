@@ -31,7 +31,7 @@
  * `resolveProviderTarget` strips them — otherwise every model behind a direct
  * channel would read as missing. Ids outside `SUPPORTED_PROVIDERS` are ignored.
  */
-import { listModels, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { listModels, SELF_HOSTED_PROVIDERS, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { AWS_SIGNING_SERVICE, createSignedFetch } from "@/infrastructure/llm/awsSigner";
 import type { ChannelAuth, ProviderChannelConfig } from "@/domain/settings/types";
 
@@ -522,12 +522,20 @@ async function main(): Promise<void> {
   //     priced by looking the model up there, so deleting one re-prices history
   //     at $0 — which makes "hidden and no longer served" the documented end
   //     state of a retirement rather than a finding. Gating on it is another
-  //     exit code that can never be green.
+  //     exit code that can never be green;
+  //   - a self-hosted route is one catalog entry serving every deployment's
+  //     own endpoint, so "not served by this deployment's server" is the
+  //     expected state whenever another deployment carries the family — a
+  //     report line for a human, not drift.
   //
   // And a check that could not run — a channel that never answered, or every
   // channel answering with nothing comparable — counts, because "did not run"
   // must not read as "all clear" to whatever is gating on the exit code.
-  const drifted = retired.filter((id) => registered.get(id)?.hidden !== true);
+  const drifted = retired.filter(
+    (id) =>
+      registered.get(id)?.hidden !== true &&
+      !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(providerOf(id)),
+  );
   if (strict && (anyChannelFailed || nothingComparable || drifted.length > 0)) {
     process.exit(1);
   }
