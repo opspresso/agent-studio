@@ -420,6 +420,17 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   operators read them. And **product nouns stay in English in both catalogues** — Project,
   Skill, Agent, Tool, Plugin, Chat, Model, MCP are each an API resource and a URL segment, so
   a console that renamed its copy would make one thing answer to two words.
+- **A response shape is declared where the response is built, and the console takes it from
+  there.** A `"use client"` module may not *import* `application/` — but a **type-only**
+  import is erased, so it may name one, and `src/app/projects/lib/api.ts` does. Ten wire
+  shapes were declared twice before that was used: once by the producer, once again by the
+  browser client, with nothing linking the copies. They drift the moment a field is added on
+  one side, and the drift is invisible until a page renders a field the response no longer
+  carries — which is what the Slack settings page did after a mutation answered with a
+  narrower shape than the read. The producer's type is the wire contract when the route
+  answers with it as-is; when the route adds what only a request knows (`eventsUrl`,
+  `webhookUrl`, `messagingUrl`, a manifest) the **route** declares a `…Response` extending
+  the view and `satisfies`-checks the object it sends.
 - **A timestamp is formatted with a locale, never without one.** `toLocaleString()` with no
   argument means the *runtime's* default, so the server writes `8/14/2026` where a Korean
   browser writes `2026. 8. 14.` — a hydration mismatch wherever a date reaches the first
