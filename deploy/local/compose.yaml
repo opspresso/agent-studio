@@ -162,16 +162,20 @@ services:
   # --- Ticker ------------------------------------------------------------
   # IDC's tick loop, mounted from there rather than copied: without it nothing
   # fires schedules, syncs plugins or reindexes the catalog locally. It ticks
-  # the `pnpm dev` server on the host, and needs SCHEDULE_SCAN_TOKEN (read
-  # from .env.local, where dev already keeps it).
+  # the `pnpm dev` server on the host.
+  #
+  # The token is interpolated from `.env` rather than env_file-ing the whole
+  # `.env.local`: tick.sh reads exactly one secret, and a third-party curl
+  # image has no business holding the AES key and every provider credential.
+  # Set SCHEDULE_SCAN_TOKEN in `.env` to the same value `.env.local` uses; an
+  # unset token makes tick.sh sleep instead of scan (its own guard).
   ticker:
     profiles: [ticker]
     image: curlimages/curl:8.11.1
     restart: unless-stopped
-    env_file:
-      - ../../.env.local
     environment:
       TICK_TARGET: http://host.docker.internal:3000
+      SCHEDULE_SCAN_TOKEN: ${SCHEDULE_SCAN_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     entrypoint: ["/bin/sh", "/tick.sh"]

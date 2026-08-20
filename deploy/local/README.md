@@ -47,14 +47,14 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 |---|---|---|---|
 | `aws` | mcp-memory, mcp-cloudwatch | `cp .env.aws.example .env.aws` 후 액세스 키 | mcp-memory 는 **알파와 같은** 메모리 버킷(`agent-studio-vector`/`agent-studio-memory`)을 읽고 쓴다 — 로컬 S3 Vectors 는 없다 |
 | `brave` | mcp-brave-search | `.env` 의 `BRAVE_API_KEY` | |
-| `ticker` | 스케줄·플러그인 sync·카탈로그 리인덱스 | `.env.local` 의 `SCHEDULE_SCAN_TOKEN` | `../idc/scripts/tick.sh` 를 그대로 마운트하고 호스트의 `pnpm dev`(:3000)를 두드린다 |
+| `ticker` | 스케줄·플러그인 sync·카탈로그 리인덱스 | `.env` 의 `SCHEDULE_SCAN_TOKEN` (`.env.local` 과 같은 값) | `../idc/scripts/tick.sh` 를 그대로 마운트하고 호스트의 `pnpm dev`(:3000)를 두드린다 — 컨테이너에는 이 토큰 하나만 들어간다 |
 
 managed MCP(`MANAGED_MCP_INSTANCE_ID=local`)는 별개의 경로다: 앱이 직접 docker CLI 로 컨테이너를 띄우고 루프백으로 등록한다 (`docs/CONFIGURATION.md`). 이 compose 는 *레지스트리(agent-plugins)의* 서버들을 실제 배포와 같은 이름으로 띄우는 쪽이다 — 두 방식은 공존할 수 있다.
 
 ## 정리
 
 ```bash
-cd deploy/local && docker compose down
+cd deploy/local && docker compose --profile '*' down
 ```
 
-이 프로젝트(`agent-studio-local`)의 컨테이너만 내려간다. 레포 루트의 `localdev` 프로젝트(공유 DynamoDB)와는 무관하며, 그쪽은 [루트 compose.yaml 의 경고](../../compose.yaml)대로 `down -v` 를 절대 쓰지 않는다.
+`--profile '*'` 는 지금 꺼져 있는 프로필의 컨테이너(예: `aws` 를 켰다가 끈 뒤 남은 mcp-memory)까지 내린다. 이 프로젝트(`agent-studio-local`)의 컨테이너만 내려간다. 레포 루트의 `localdev` 프로젝트(공유 DynamoDB)와는 무관하며, 그쪽은 [루트 compose.yaml 의 경고](../../compose.yaml)대로 `down -v` 를 절대 쓰지 않는다.

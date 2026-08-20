@@ -13,6 +13,11 @@
 
 set -euo pipefail
 
+# macOS ships bash 3.2, which cannot parse the associative array below and
+# dies with an unrelated-looking "unbound variable" instead. Fail with the
+# actual reason.
+(( BASH_VERSINFO[0] >= 4 )) || { echo "bash 4+ required (brew install bash)" >&2; exit 1; }
+
 cd "$(dirname "$0")/.."
 
 : "${AWS_REGION:=ap-northeast-2}"
@@ -25,10 +30,12 @@ if [[ ! -f .env ]]; then
   exit 0
 fi
 
-# The one line the host-side app needs, or the registry's MCP URLs are refused
-# by the SSRF guard and every server syncs as an invalid-url skip.
-if ! grep -q "^MCP_INTERNAL_HOST_SUFFIXES=" ../../.env.local 2>/dev/null; then
-  echo "WARNING: .env.local has no MCP_INTERNAL_HOST_SUFFIXES — add:" >&2
+# The one declaration the host-side app needs, or the registry's MCP URLs are
+# refused by the SSRF guard and every server syncs as an invalid-url skip. The
+# value is checked, not just the key: a suffix list without this one fails the
+# same way.
+if ! grep -q "^MCP_INTERNAL_HOST_SUFFIXES=.*agent-mcps\.svc\.cluster\.local" ../../.env.local 2>/dev/null; then
+  echo "WARNING: .env.local does not declare the MCP suffix — add:" >&2
   echo "  MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local" >&2
 fi
 
@@ -64,6 +71,9 @@ set_in() {
     sed "s|^$2=.*|$2=$3|" "$1" > "$tmp"
   else
     cat "$1" > "$tmp"
+    # A file without a trailing newline would glue the appended line onto its
+    # last one — exactly the upgrade case, where a new tag is not in .env yet.
+    if [[ -n $(tail -c1 "$tmp") ]]; then echo >> "$tmp"; fi
     echo "$2=$3" >> "$tmp"
   fi
   mv "$tmp" "$1"
@@ -89,6 +99,7 @@ done
 # credentials (AWS_PROFILE or a default chain) — nothing is stored here.
 
 ECR_REGISTRY=$(value_in .env ECR_REGISTRY)
+[[ -n "$ECR_REGISTRY" ]] || { echo "ECR_REGISTRY missing in .env — restore it from .env.example" >&2; exit 1; }
 echo "== ecr login ($ECR_REGISTRY)"
 aws ecr get-login-password --region "$AWS_REGION" |
   docker login --username AWS --password-stdin "$ECR_REGISTRY" > /dev/null
