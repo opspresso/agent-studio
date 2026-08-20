@@ -15,6 +15,15 @@ describe("modelPriceLabel", () => {
     );
   });
 
+  /**
+   * Zero on both sides is a self-hosted model's stated price — the registry
+   * refuses it for every other provider — and `$0.00 in · $0.00 out` reads
+   * like missing data rather than a free channel.
+   */
+  it("reads an explicit zero-priced text model as free", () => {
+    expect(modelPriceLabel({ inputPer1M: 0, outputPer1M: 0 })).toBe("Free");
+  });
+
   it("prices an image model by its image-token rate, not its text output", () => {
     const gptImage = getModelConfig("openai/gpt-image-2");
     expect(gptImage?.pricing.outputPer1M).toBe(0);

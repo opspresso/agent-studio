@@ -275,6 +275,14 @@ function rejectReason(entry: unknown): string | null {
       return `a dotted Anthropic id needs wireId "${expected}"`;
     }
   }
+  // A selfhosted family is served under its own name by every deployment's
+  // stack — the convention that lets one entry serve them all — so a wireId
+  // here would rename the model globally for endpoints this catalog has never
+  // seen. Refused rather than ignored, because the publisher meant something
+  // by it and half-applying it would be worse.
+  if ((SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider) && entry.wireId !== undefined) {
+    return "a selfhosted entry must not carry a wireId — the family is the served name";
+  }
   return null;
 }
 
@@ -481,12 +489,28 @@ export function contextWindowLabel(
 }
 
 /**
+ * Whether a deployment can offer a provider's models: through its dedicated
+ * channel once any channel is configured, else through the default channel —
+ * which serves every prefix *except* the self-hosted ones. A `selfhosted/` id
+ * names an endpoint only its own channel knows; no router behind the default
+ * channel serves that prefix, so offering it without the channel is offering
+ * a guaranteed 404. One owner because the /models console's availability
+ * column and the pickers below must tell one story.
+ */
+export function providerOffered(name: string, dedicated: ReadonlySet<string>): boolean {
+  if (dedicated.size > 0) {
+    return dedicated.has(name);
+  }
+  return !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(name);
+}
+
+/**
  * The models this deployment offers for selection: visible entries, narrowed
  * by the configured provider channels (none configured = the default channel
- * dispatches every id), then by the enabled-models override (absent = no
- * restriction; a stale id simply matches nothing). One owner because the
- * /api/models list and the model a fresh project's initial version starts
- * with must answer identically.
+ * dispatches every id — self-hosted providers excepted, see `providerOffered`),
+ * then by the enabled-models override (absent = no restriction; a stale id
+ * simply matches nothing). One owner because the /api/models list and the
+ * model a fresh project's initial version starts with must answer identically.
  */
 export function offeredModels(
   providerNames: string[],
@@ -496,7 +520,7 @@ export function offeredModels(
   const enabled = enabledIds === undefined ? undefined : new Set(enabledIds);
   return getVisibleModels().filter(
     (model) =>
-      (providers.size === 0 || providers.has(model.provider)) &&
+      providerOffered(model.provider, providers) &&
       (enabled === undefined || enabled.has(model.id)),
   );
 }

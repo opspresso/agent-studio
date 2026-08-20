@@ -137,7 +137,9 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 
 provider 채널이 하나라도 설정돼 있으면 `GET /api/models` 는 그 provider 들의 모델만
 나열한다. 하나도 설정돼 있지 않으면 레지스트리에서 보이는(`hidden` 이 아닌) 모든 모델을
-나열한다.
+나열한다 — 단 `selfhosted/` 모델은 예외다: 그 접두사는 기본 채널의 라우터가 서빙하지
+않으므로, 전용 채널이 설정된 경우에만 나열된다 (`providerOffered`). 덕분에 카탈로그의
+selfhosted 엔트리가 채널 없는 배포의 피커에 보증된 404 로 나타나는 일이 없다.
 
 `/settings` 에 저장된 `llmProviders` 오버라이드는 `LLM_PROVIDER_*` env 집합과 병합되는 것이
 아니라 **그 집합 전체를 대체한다** — 부분 병합은 "이 provider 를 제거한다" 를 표현할 수 없는
@@ -147,7 +149,9 @@ provider 채널이 하나라도 설정돼 있으면 `GET /api/models` 는 그 pr
 OpenAI 호환 서버를 `LLM_PROVIDER_SELFHOSTED_BASE_URL` 이 가리킨다. 접두사는 어디서나 같고
 어디로 가는지만 배포마다 다르므로, 카탈로그 엔트리 하나가 모든 배포를 서빙한다. 그 대신 서빙
 스택이 모델을 id 의 family 이름 그대로 서빙해야 한다(vLLM 은 `--served-model-name`, LM Studio
-는 모델 identifier 설정) — `wireId` 없이 동작하는 것은 그 규약 덕분이다. bearer 채널이라 키가
+는 모델 identifier 설정) — `wireId` 없이 동작하는 것은 그 규약 덕분이고, `wireId` 를 실은
+selfhosted 엔트리는 카탈로그가 본 적 없는 엔드포인트들의 이름을 전역으로 바꾸는 일이라
+로드가 거부한다. bearer 채널이라 키가
 필수인데, LM Studio 처럼 키를 무시하는 서버에는 아무 placeholder 값이나 준다. capability
 플래그는 모델 단위라 채널 차이를 표현하지 못하므로, 카탈로그에는 모든 배포의 서빙 스택이
 실제로 보장하는 교집합을 적는다.

@@ -107,9 +107,17 @@ describe("loadModelCatalog", () => {
         }),
         model("anthropic/claude-x.1"),
         // Zero is a self-hosted channel's true price — stated, it loads;
-        // absent, it fails the same pricing check as everyone else's.
+        // absent, it fails the same pricing check as everyone else's. The
+        // exemption is for *text* models only, and a selfhosted entry never
+        // carries a wireId — the family being the served name everywhere is
+        // what lets one entry serve every deployment.
         model("selfhosted/qwen-local", { pricing: { inputPer1M: 0, outputPer1M: 0 } }),
         model("selfhosted/no-price", { pricing: {} }),
+        model("selfhosted/free-draw", {
+          capabilities: { ...TEXT, imageGeneration: true },
+          pricing: { inputPer1M: 0, outputPer1M: 0 },
+        }),
+        model("selfhosted/renamed", { wireId: "qwen3-8b" }),
       ]),
     );
     expect(report.skipped).toEqual([
@@ -120,6 +128,8 @@ describe("loadModelCatalog", () => {
       "openai/unpriced-draw — an image model needs imageOutputPer1M or perImage",
       'anthropic/claude-x.1 — a dotted Anthropic id needs wireId "claude-x-1"',
       "selfhosted/no-price — pricing lacks inputPer1M/outputPer1M",
+      "selfhosted/free-draw — an image model needs imageOutputPer1M or perImage",
+      "selfhosted/renamed — a selfhosted entry must not carry a wireId — the family is the served name",
     ]);
     expect(getModelConfig("selfhosted/qwen-local")?.pricing).toEqual({ inputPer1M: 0, outputPer1M: 0 });
   });

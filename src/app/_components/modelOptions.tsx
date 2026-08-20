@@ -35,6 +35,12 @@ import { formatUsd } from "@/app/_lib/formatUsd";
 export function modelPriceLabel(pricing: ModelConfig["pricing"]): string {
   const { inputPer1M, outputPer1M, imageOutputPer1M, perImage } = pricing;
   if (imageOutputPer1M === undefined && perImage === undefined) {
+    // Zero on both sides is a self-hosted model's stated price — the registry
+    // refuses it everywhere else — and `$0.00 in · $0.00 out` reads like
+    // missing data rather than a free channel.
+    if (inputPer1M === 0 && outputPer1M === 0) {
+      return "Free";
+    }
     return `${formatUsd(inputPer1M)} in · ${formatUsd(outputPer1M)} out per 1M`;
   }
   const image =

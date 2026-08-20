@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import snapshot from "@/domain/llm/catalog.json";
 import {
   MODEL_CATALOG_VERSION,
   SELF_HOSTED_PROVIDERS,
@@ -299,6 +300,44 @@ describe("offeredModels", () => {
         (m) => m.id,
       ),
     ).toEqual(["anthropic/claude-fable-5"]);
+  });
+
+  /**
+   * A `selfhosted/` id names an endpoint only its own channel knows — no
+   * router behind the default channel serves that prefix — so where every
+   * other provider's models fall through to the default channel, these stay
+   * out of the offering until their channel is configured (`providerOffered`).
+   */
+  it("offers a selfhosted model only behind its own channel", () => {
+    loadModelCatalog(
+      {
+        version: MODEL_CATALOG_VERSION,
+        updatedAt: "2026-08-20T00:00:00.000Z",
+        makers: { qwen: "Qwen" },
+        models: [
+          {
+            id: "selfhosted/qwen3-8b",
+            provider: "selfhosted",
+            family: "qwen3-8b",
+            maker: "qwen",
+            displayName: "Qwen3 8B",
+            pricing: { inputPer1M: 0, outputPer1M: 0 },
+            capabilities: { tools: true, structuredOutput: false, imageInput: false, reasoning: false },
+            contextWindow: 32768,
+            maxTokens: 8192,
+          },
+        ],
+      },
+      { maxDropFraction: 1 },
+    );
+    try {
+      expect(offeredModels([], undefined)).toEqual([]);
+      expect(offeredModels(["selfhosted"], undefined).map((m) => m.id)).toEqual([
+        "selfhosted/qwen3-8b",
+      ]);
+    } finally {
+      loadModelCatalog(snapshot, { maxDropFraction: 1 });
+    }
   });
 });
 

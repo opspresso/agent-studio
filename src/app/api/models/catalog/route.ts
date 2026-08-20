@@ -1,4 +1,4 @@
-import { getVisibleModels, listModelMakers, modelCatalogUpdatedAt, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { getVisibleModels, listModelMakers, modelCatalogUpdatedAt, providerOffered, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { getEnabledModels, getLlmProviderConfigs } from "@/lib/runtime-settings";
 import { withMemberAuth } from "@/lib/session";
 
@@ -25,8 +25,7 @@ export const GET = withMemberAuth(async () => {
   return Response.json({
     providers: SUPPORTED_PROVIDERS.map((name) => ({
       name,
-      // With no dedicated channels the default channel dispatches every id.
-      available: dedicated.size === 0 || dedicated.has(name),
+      available: providerOffered(name, dedicated),
       dedicated: dedicated.has(name),
     })),
     models: getVisibleModels().map((model) => ({
