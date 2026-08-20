@@ -30,8 +30,13 @@ function resolveBaseUrl(request: Request): Promise<string> {
  * things only a request knows: where this deployment answers events, and the
  * manifest built against that address.
  *
- * Declared rather than assembled anonymously so the console can take it instead
- * of restating it. The crash below is what a restatement costs.
+ * It was assembled per handler before, and only GET carried the manifest — so
+ * saving replaced the client's view with one that had none, and rendering the
+ * manifest afterwards crashed. The client keeps whatever a mutation returns, so
+ * a response that is a subset of the read is a broken page one click later.
+ * Declared rather than assembled anonymously for that same reason: the console
+ * takes this type rather than restating it, and a field added here reaches both
+ * ends or neither.
  */
 export interface ProjectSlackResponse extends ProjectSlackView {
   /** Where Slack sends this project's events, for pasting into the app config. */
@@ -41,13 +46,6 @@ export interface ProjectSlackResponse extends ProjectSlackView {
 }
 
 /**
- * The one shape every verb answers with.
- *
- * It was assembled per handler before, and only GET carried the manifest — so
- * saving replaced the client's view with one that had none, and rendering the
- * manifest afterwards crashed. The client keeps whatever a mutation returns, so
- * a response that is a subset of the read is a broken page one click later.
- *
  * The project comes back from the use case rather than being re-read here, so a
  * mutation's manifest describes what it just wrote and each verb costs one read.
  */

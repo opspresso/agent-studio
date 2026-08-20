@@ -3,8 +3,6 @@ import { listExposedProjects, type A2aProjectListItem } from "@/application/a2a/
 import { a2aSurfaceEnabled } from "@/app/api/a2a/_lib/auth";
 import { withAuth } from "@/lib/session";
 
-export type { A2aProjectListItem };
-
 export interface A2aProjectListView {
   /** The inbound surface is on: a shared key or at least one client key. */
   enabled: boolean;

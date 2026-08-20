@@ -1,5 +1,8 @@
 import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
-import type { A2aProjectListItem, A2aProjectListView } from "@/app/api/a2a/route";
+// Each from the module that owns it: the item is the use case's, the list is
+// the route's — it is the route that says whether the surface is enabled.
+import type { A2aProjectListItem } from "@/application/a2a/exposure";
+import type { A2aProjectListView } from "@/app/api/a2a/route";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 // Server responses carry masked (length-preserving; 9–20 chars reveal 2 at

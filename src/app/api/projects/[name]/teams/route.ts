@@ -15,18 +15,16 @@ const updateSchema = z.object({
 });
 
 /**
- * What every verb answers with, declared so the console can take it instead of
- * restating it.
+ * The one shape every verb answers with: the masked view plus the messaging
+ * endpoint URL the Azure Bot has to be pointed at, so a mutation's response is
+ * never a subset of the read the page was built from. Declared rather than
+ * assembled anonymously so the console takes this type rather than restating it.
  */
 export interface ProjectTeamsResponse extends ProjectTeamsView {
   /** Where the Azure Bot registration has to point its messaging endpoint. */
   messagingUrl: string;
 }
 
-/**
- * The one shape every verb answers with: the masked view plus the messaging
- * endpoint URL the Azure Bot has to be pointed at.
- */
 async function teamsResponse({ view }: ProjectTeamsResult, request: Request) {
   const baseUrl = await resolvePublicBaseUrl(new URL(request.url).origin);
   return Response.json({

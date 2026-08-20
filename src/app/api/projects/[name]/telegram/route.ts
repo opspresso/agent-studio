@@ -16,8 +16,10 @@ const updateSchema = z.object({
 });
 
 /**
- * What every verb answers with, declared so the console can take it instead of
- * restating it.
+ * The one shape every verb answers with: the masked view plus the webhook URL
+ * the bot has to be registered with, so a mutation's response is never a subset
+ * of the read the page was built from. Declared rather than assembled
+ * anonymously so the console takes this type rather than restating it.
  */
 export interface ProjectTelegramResponse extends ProjectTelegramView {
   /** Where Telegram should deliver this bot's updates. */
@@ -26,11 +28,6 @@ export interface ProjectTelegramResponse extends ProjectTelegramView {
   warnings?: string[];
 }
 
-/**
- * The one shape every verb answers with: the masked view plus the webhook URL
- * the bot has to be registered with, so a mutation's response is never a
- * subset of the read the page was built from.
- */
 async function telegramResponse({ view, warnings }: ProjectTelegramResult, request: Request) {
   const baseUrl = await resolvePublicBaseUrl(new URL(request.url).origin);
   return Response.json({
