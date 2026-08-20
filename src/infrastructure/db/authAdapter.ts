@@ -1,4 +1,4 @@
-import { GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { createAdapter } from "better-auth/adapters";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
@@ -169,15 +169,58 @@ async function findRecords(model: string, where: Where[]): Promise<Item[]> {
       return matchesWhere(record, where) ? [record] : [];
     }
   }
-  const items = uniqueClause
-    ? await queryPartition(
-        "GSI2",
-        "GSI2PK",
-        keys.authUniqueLookup(model, uniqueClause.field, String(uniqueClause.value)),
-      )
-    : await queryPartition("GSI1", "GSI1PK", keys.authModelPartition(model));
+  if (uniqueClause) {
+    const items = await queryPartition(
+      "GSI2",
+      "GSI2PK",
+      keys.authUniqueLookup(model, uniqueClause.field, String(uniqueClause.value)),
+    );
+    const records = items.map(toRecord).filter((r) => matchesWhere(r, where));
+    // Reaching this fallback means the lock row is missing — a migration that
+    // copies rows without their locks leaves it so — and `createItem` guards
+    // on the lock alone, so the next create for this value would mint a
+    // duplicate. Restore the lock from the row the index found before
+    // answering; with two matches there is no right target, and the
+    // consolidation script owns that repair.
+    const record = records[0];
+    if (records.length === 1 && record && typeof record.id === "string") {
+      await restoreLock(model, uniqueClause.field, String(uniqueClause.value), record.id);
+    }
+    return records;
+  }
 
+  const items = await queryPartition("GSI1", "GSI1PK", keys.authModelPartition(model));
   return items.map(toRecord).filter((r) => matchesWhere(r, where));
+}
+
+/**
+ * Put a unique-lock row back for the record a GSI2 fallback found. Conditional
+ * so a concurrent writer keeps its own lock — losing the race is fine, the
+ * winner's lock guards the same invariant.
+ */
+async function restoreLock(
+  model: string,
+  field: string,
+  value: string,
+  targetId: string,
+): Promise<void> {
+  const lock = uniqueLock(model, { id: targetId, [field]: value });
+  if (!lock) {
+    return;
+  }
+  try {
+    await getDocumentClient().send(
+      new PutCommand({
+        TableName: getTableName(),
+        Item: lock,
+        ConditionExpression: "attribute_not_exists(PK)",
+      }),
+    );
+  } catch (error) {
+    if ((error as { name?: string }).name !== "ConditionalCheckFailedException") {
+      throw error;
+    }
+  }
 }
 
 function buildItem(model: string, data: Item): Item {

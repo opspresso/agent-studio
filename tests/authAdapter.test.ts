@@ -1,17 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 
-const { commands, fakeClient, setResponse } = vi.hoisted(() => {
+const { commands, fakeClient, setResponse, setResponder } = vi.hoisted(() => {
   const commands: Array<Record<string, unknown>> = [];
-  const state: { response: Record<string, unknown> } = { response: {} };
+  const state: {
+    response: Record<string, unknown>;
+    responder?: (input: Record<string, unknown>) => Record<string, unknown>;
+  } = { response: {} };
   return {
     commands,
     setResponse(response: Record<string, unknown>) {
       state.response = response;
+      state.responder = undefined;
+    },
+    /** Per-command responses, for flows that read before they write. */
+    setResponder(responder: (input: Record<string, unknown>) => Record<string, unknown>) {
+      state.responder = responder;
     },
     fakeClient: {
       async send(command: { input: Record<string, unknown> }) {
         commands.push(command.input);
-        return state.response;
+        return state.responder ? state.responder(command.input) : state.response;
       },
     },
   };
@@ -53,6 +61,78 @@ describe("dynamodb auth adapter uniqueness", () => {
       targetId: generatedId,
     });
     expect(transaction?.[1]?.Put?.ConditionExpression).toBe("attribute_not_exists(PK)");
+  });
+});
+
+describe("dynamodb auth adapter lock self-heal", () => {
+  const userItem = {
+    PK: "AUTH#user#u1",
+    SK: "ITEM",
+    GSI2PK: "AUTH#user#email#user@example.com",
+    GSI2SK: "ITEM",
+    entityType: "auth:user",
+    id: "u1",
+    email: "user@example.com",
+    name: "User",
+  };
+
+  it("restores a missing email lock from the row the GSI2 fallback finds", async () => {
+    commands.length = 0;
+    // The lock Get misses; the GSI2 query finds the migrated row.
+    setResponder((input) => (input.IndexName === "GSI2" ? { Items: [userItem] } : {}));
+    const adapter = dynamodbAdapter({});
+
+    const found = await adapter.findOne<Record<string, unknown>>({
+      model: "user",
+      where: [{ field: "email", value: "user@example.com" }],
+    });
+
+    expect(found).toMatchObject({ id: "u1" });
+    const put = commands.find(
+      (command) => (command.Item as Record<string, unknown> | undefined)?.SK === "LOCK",
+    );
+    expect(put).toMatchObject({
+      Item: {
+        PK: "AUTHUNIQUE#user#email#user@example.com",
+        SK: "LOCK",
+        targetId: "u1",
+      },
+      // The create path must keep winning a race: never overwrite a lock.
+      ConditionExpression: "attribute_not_exists(PK)",
+    });
+  });
+
+  it("writes nothing when the lock row already resolves", async () => {
+    commands.length = 0;
+    setResponder((input) =>
+      (input.Key as Record<string, unknown> | undefined)?.SK === "LOCK"
+        ? { Item: { targetId: "u1" } }
+        : { Item: userItem },
+    );
+    const adapter = dynamodbAdapter({});
+
+    const found = await adapter.findOne<Record<string, unknown>>({
+      model: "user",
+      where: [{ field: "email", value: "user@example.com" }],
+    });
+
+    expect(found).toMatchObject({ id: "u1" });
+    expect(commands.some((command) => command.Item !== undefined)).toBe(false);
+  });
+
+  it("does not pick a target when two rows share the email", async () => {
+    commands.length = 0;
+    setResponder((input) =>
+      input.IndexName === "GSI2" ? { Items: [userItem, { ...userItem, id: "u2" }] } : {},
+    );
+    const adapter = dynamodbAdapter({});
+
+    await adapter.findOne<Record<string, unknown>>({
+      model: "user",
+      where: [{ field: "email", value: "user@example.com" }],
+    });
+
+    expect(commands.some((command) => command.Item !== undefined)).toBe(false);
   });
 });
 
