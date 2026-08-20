@@ -64,8 +64,6 @@ interface Catalog {
   models: CatalogModel[];
   /** Maker id → label, as the loaded catalog names them. */
   makers: Record<string, string>;
-  /** Ids of this deployment's own declarations — the only selfhosted models the section may edit. */
-  declaredSelfHosted: string[];
   updatedAt: string;
   source: "override" | "default";
 }
@@ -203,6 +201,17 @@ interface ServedModel {
   vision?: boolean;
 }
 
+/** The section's whole picture, from `GET /api/models/selfhosted`. */
+interface SelfHostedView {
+  /** Null when the channel did not answer — `servedError` says why. */
+  served: ServedModel[] | null;
+  servedError?: string;
+  /** The stored declarations — the editing basis, installed or not. */
+  declarations: ModelConfig[];
+  /** Ids the registry actually installed; a stored id missing here was refused. */
+  installed: string[];
+}
+
 const DECLARABLE_CAPABILITIES = [
   ["tools", "Tools"],
   ["structuredOutput", "JSON"],
@@ -211,52 +220,72 @@ const DECLARABLE_CAPABILITIES = [
 ] as const;
 
 /**
- * The deployment's own models: what the selfhosted channel serves, what is
- * declared, and the gap in both directions. Declaring is a settings write —
- * the whole declaration set is resubmitted, matching the PUT's full-replace
- * semantics — and the serving stack stays the availability judge: a declared
- * name the channel no longer lists is flagged, and the Test button on the
- * model's own card is what proves a run can actually use it.
+ * The deployment's own models: the stored declarations (the editing basis —
+ * one the registry refused to install must still be visible here, or the next
+ * full-replace save would delete it silently), what the channel serves, and
+ * the gaps in both directions. Declaring is a settings write; when the
+ * deployment restricts selection (`enabledIds` non-null) the same write keeps
+ * the enabled list in step, so a new declaration is usable at once and a
+ * removed one does not leave a stale id that blocks a later resubmission. The
+ * serving stack stays the availability judge: the Test button on the model's
+ * own card is what proves a run can actually use it.
  */
 function SelfHostedSection({
-  declared,
+  enabledIds,
   onChanged,
 }: {
-  declared: CatalogModel[];
+  /** The enabled-models override as ids, or null when the deployment has none. */
+  enabledIds: string[] | null;
   onChanged: () => Promise<void>;
 }) {
   const t = useT();
-  const [served, setServed] = useState<ServedModel[] | null>(null);
+  const [view, setView] = useState<SelfHostedView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<SelfHostedModelInput | null>(null);
 
+  const loadView = useCallback(async () => {
+    const data = await readJson<SelfHostedView>(await fetch("/api/models/selfhosted"));
+    setView(data);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/models/selfhosted")
-      .then((res) => readJson<{ models: ServedModel[] }>(res))
-      .then((data) => !cancelled && setServed(data.models))
-      .catch(
-        (loadError) =>
-          !cancelled &&
-          setError(loadError instanceof Error ? loadError.message : "Failed to read the channel"),
-      );
+    loadView().catch(
+      (loadError) =>
+        !cancelled &&
+        setError(loadError instanceof Error ? loadError.message : "Failed to read the channel"),
+    );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadView]);
 
-  async function save(next: SelfHostedModelInput[]) {
+  async function save(
+    next: SelfHostedModelInput[],
+    enabled: { add?: string; drop?: string } = {},
+  ) {
     setBusy(true);
     setError(null);
     try {
+      // With a selection override in place, the declaration change carries the
+      // matching enabled-list change in the same PUT (the API accepts a
+      // same-patch declare-and-enable on purpose).
+      let enabledPatch: { enabledModels?: string[] } = {};
+      if (enabledIds !== null) {
+        let ids = enabled.add ? [...new Set([...enabledIds, enabled.add])] : [...enabledIds];
+        if (enabled.drop) {
+          ids = ids.filter((id) => id !== enabled.drop);
+        }
+        enabledPatch = { enabledModels: ids };
+      }
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: jsonHeaders,
-        body: JSON.stringify({ selfHostedModels: next }),
+        body: JSON.stringify({ selfHostedModels: next, ...enabledPatch }),
       });
       await readJson(res);
-      await onChanged();
+      await Promise.all([onChanged(), loadView()]);
       setForm(null);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save");
@@ -265,7 +294,10 @@ function SelfHostedSection({
     }
   }
 
-  const declaredFamilies = new Set(declared.map((model) => model.family));
+  const declarations = view?.declarations ?? [];
+  const served = view?.served ?? null;
+  const installed = new Set(view?.installed ?? []);
+  const declaredFamilies = new Set(declarations.map((model) => model.family));
   const undeclared = (served ?? []).filter((row) => !declaredFamilies.has(row.name));
 
   return (
@@ -282,20 +314,28 @@ function SelfHostedSection({
             {error}
           </Alert>
         )}
-        {declared.map((model) => (
+        {view?.servedError !== undefined && (
+          <Text fz="sm" c="orange">
+            {view.servedError}
+          </Text>
+        )}
+        {declarations.map((model) => (
           <Group key={model.id} justify="space-between" wrap="nowrap">
             <Group gap="xs" wrap="nowrap">
               <Text fz="sm" ff="monospace">
                 {model.family}
               </Text>
+              {!installed.has(model.id) && (
+                <Tooltip multiline maw={320} label={t("models.selfHosted.notInstalledHint")}>
+                  <Badge size="sm" variant="light" color={BADGE.broken}>
+                    {t("models.selfHosted.notInstalled")}
+                  </Badge>
+                </Tooltip>
+              )}
               {served !== null && !served.some((row) => row.name === model.family) && (
-                <Tooltip
-                  multiline
-                  maw={320}
-                  label="The channel does not list this name right now — a run will fail until it is served again."
-                >
+                <Tooltip multiline maw={320} label={t("models.selfHosted.notServedHint")}>
                   <Badge size="sm" variant="light" color={BADGE.attention}>
-                    not served
+                    {t("models.selfHosted.notServed")}
                   </Badge>
                 </Tooltip>
               )}
@@ -305,10 +345,13 @@ function SelfHostedSection({
               variant="default"
               disabled={busy}
               onClick={() =>
-                void save(declared.filter((m) => m.id !== model.id).map(selfHostedModelToInput))
+                void save(
+                  declarations.filter((m) => m.id !== model.id).map(selfHostedModelToInput),
+                  { drop: model.id },
+                )
               }
             >
-              Remove
+              {t("models.selfHosted.remove")}
             </Button>
           </Group>
         ))}
@@ -319,7 +362,7 @@ function SelfHostedSection({
                 {row.name}
               </Text>
               <Text fz="xs" c="dimmed">
-                served by the channel
+                {t("models.selfHosted.servedBy")}
                 {row.contextWindow !== undefined && ` · ctx ${row.contextWindow}`}
                 {row.vision === true && " · vision"}
               </Text>
@@ -343,13 +386,13 @@ function SelfHostedSection({
                 })
               }
             >
-              Declare
+              {t("models.selfHosted.declare")}
             </Button>
           </Group>
         ))}
         {served !== null && served.length === 0 && (
           <Text fz="sm" c="dimmed">
-            The channel serves no models right now.
+            {t("models.selfHosted.empty")}
           </Text>
         )}
         {form && (
@@ -361,14 +404,14 @@ function SelfHostedSection({
               <Group gap="md" wrap="wrap" align="flex-end">
                 <TextInput
                   size="xs"
-                  label="Display name"
+                  label={t("models.selfHosted.displayName")}
                   value={form.displayName}
                   onChange={(event) => setForm({ ...form, displayName: event.currentTarget.value })}
                   w={220}
                 />
                 <NumberInput
                   size="xs"
-                  label="Context window"
+                  label={t("models.selfHosted.context")}
                   value={form.contextWindow}
                   min={1}
                   onChange={(value) => setForm({ ...form, contextWindow: Number(value) || 0 })}
@@ -376,7 +419,7 @@ function SelfHostedSection({
                 />
                 <NumberInput
                   size="xs"
-                  label="Max output"
+                  label={t("models.selfHosted.maxOutput")}
                   value={form.maxTokens}
                   min={1}
                   onChange={(value) => setForm({ ...form, maxTokens: Number(value) || 0 })}
@@ -406,12 +449,16 @@ function SelfHostedSection({
                 <Button
                   size="compact-xs"
                   loading={busy}
-                  onClick={() => void save([...declared.map(selfHostedModelToInput), form])}
+                  onClick={() =>
+                    void save([...declarations.map(selfHostedModelToInput), form], {
+                      add: `selfhosted/${form.family}`,
+                    })
+                  }
                 >
-                  Declare
+                  {t("models.selfHosted.declare")}
                 </Button>
                 <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setForm(null)}>
-                  Cancel
+                  {t("models.selfHosted.cancel")}
                 </Button>
               </Group>
             </Stack>
@@ -431,7 +478,6 @@ export default function ModelsPage() {
   const [makers, setMakers] = useState<Record<string, string>>({});
   const [updatedAt, setUpdatedAt] = useState("");
   const [source, setSource] = useState<"override" | "default">("default");
-  const [declaredIds, setDeclaredIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -477,7 +523,6 @@ export default function ModelsPage() {
     setMakers(data.makers ?? {});
     setUpdatedAt(data.updatedAt ?? "");
     setSource(data.source);
-    setDeclaredIds(data.declaredSelfHosted ?? []);
   }, []);
 
   useEffect(() => {
@@ -603,10 +648,11 @@ export default function ModelsPage() {
 
       {canEdit && providerByName.get("selfhosted")?.dedicated === true && (
         <SelfHostedSection
-          // Declarations only, by id — a catalog-published selfhosted entry is
-          // agent-models' to change, and sweeping it into a full-replace save
-          // would refuse itself against the catalog-collision rule.
-          declared={models.filter((model) => declaredIds.includes(model.id))}
+          enabledIds={
+            source === "override"
+              ? models.filter((model) => model.enabled).map((model) => model.id)
+              : null
+          }
           onChanged={loadCatalog}
         />
       )}

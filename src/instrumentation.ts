@@ -96,9 +96,17 @@ export async function register(): Promise<void> {
       intervalMs: config.modelsCatalogRefreshMs,
       // The second publisher: this deployment's own self-hosted declarations,
       // re-read on the same schedule so a settings write on another instance
-      // reaches this process within a tick.
-      localModels: async () =>
-        (await import("@/lib/runtime-settings")).getSelfHostedModels(),
+      // reaches this process within a tick. Deadlined like the catalog fetch —
+      // the boot refresh is awaited before the first request, and a hung
+      // settings table must not hold the boot the way an unreachable one
+      // (which rejects fast and is logged) already cannot.
+      localModels: async () => {
+        const [{ getSelfHostedModels }, { withTimeout }] = await Promise.all([
+          import("@/lib/runtime-settings"),
+          import("@/shared/withTimeout"),
+        ]);
+        return withTimeout(getSelfHostedModels(), 10_000);
+      },
     });
     await modelCatalog.refresh();
     modelCatalog.start();

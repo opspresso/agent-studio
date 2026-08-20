@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { settingsUseCases } from "@/lib/container";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
-import { apiError } from "@/app/api/_lib/http";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
 
@@ -76,7 +76,10 @@ export const GET = withAdminAuth(async () => {
 export const PUT = withAdminAuth(async (user, request: Request) => {
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return Response.json({ error: "Invalid input", issues: parsed.error.issues }, { status: 400 });
+    // `invalidRequest` puts the first issue's path in the error text — the
+    // form shows only that string, and "Invalid input" alone left an admin
+    // guessing which of a dozen fields a save died on.
+    return invalidRequest(parsed.error);
   }
   try {
     const view = await settingsUseCases.update(parsed.data, user.email);

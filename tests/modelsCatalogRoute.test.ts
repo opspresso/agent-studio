@@ -19,7 +19,6 @@ const { GET } = await import("@/app/api/models/catalog/route");
 interface CatalogBody {
   providers: Array<{ name: string; available: boolean; dedicated: boolean }>;
   models: Array<{ id: string; enabled: boolean }>;
-  declaredSelfHosted: string[];
   source: "override" | "default";
 }
 
@@ -51,8 +50,6 @@ describe("GET /api/models/catalog", () => {
     expect(body.models).toHaveLength(getVisibleModels().length);
     expect(body.models.every((model) => model.enabled)).toBe(true);
     expect(body.source).toBe("default");
-    // No declarations installed → nothing for the Self-hosted section to edit.
-    expect(body.declaredSelfHosted).toEqual([]);
   });
 
   it("marks only configured providers available once any dedicated channel exists", async () => {

@@ -406,7 +406,7 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   저장 시 레지스트리 로더의 검증을 그대로 지나 (통과 못 하면 `400` 에 이유가 담긴다) 이
   프로세스의 오버레이에 즉시 설치되고, 다른 인스턴스는 카탈로그 refresh 틱에 따라온다. 빈
   배열은 전부 제거. env 폴백은 없다 — 선언은 설정이 아니라 데이터다. 다시 읽는 곳은
-  `/api/models/catalog` 이고 (provider 가 `selfhosted` 인 항목), 관리 UI 는 `/models` 콘솔의
+  `GET /api/models/selfhosted` 의 `declarations` 이고, 관리 UI 는 `/models` 콘솔의
   Self-hosted 섹션이다.
 - `source` 는 `override` (DB) | `env` | `default` | `unset` 이다. secret 값은 언제나 마스킹된다
   (길이 보존. 9–20자는 양끝 2자씩, 21자 이상은 4자씩 드러낸다). PUT 의 마스킹된 값은 저장된
@@ -1329,12 +1329,14 @@ GET /api/projects/{name}/traces/{traceId}
 GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ],
                                  models: [ { …model, enabled } ],
                                  makers: { <makerId>: label },
-                                 declaredSelfHosted: [ <id> ],
                                  updatedAt,
                                  source: "override" | "default" }
 POST /api/models/test    → 200 { ok, latencyMs, error? } | 400
 POST /api/models/refresh → 200 { refreshed, updatedAt }
-GET  /api/models/selfhosted → 200 { models: [ { name, contextWindow?, vision? } ] } | 400
+GET  /api/models/selfhosted → 200 { served: [ { name, contextWindow?, vision? } ] | null,
+                                    servedError?,
+                                    declarations: [ <selfHostedModel> ],
+                                    installed: [ <id> ] } | 400
 ```
 
 - `catalog` 는 `member` 등급부터 읽을 수 있고 (`withMemberAuth` — Intelligence 섹션의 다른
@@ -1355,10 +1357,15 @@ GET  /api/models/selfhosted → 200 { models: [ { name, contextWindow?, vision? 
   발행한 것을 콘솔에서 바로 보기 위한 것이다. `refreshed: false` 는 "이미 최신"과 "가져오기 실패"
   둘 다를 덮는다 (이유는 서버 로그에 있고, 어느 쪽이든 레지스트리는 그대로다). `test` 처럼
   설치한 것이 없는 갱신은 실패가 아니라 결과라서 `5xx` 를 돌려주지 않는다.
-- `selfhosted` 는 selfhosted 채널이 *지금* 서빙하는 모델 목록이다 — `/models` 콘솔의 선언
-  보조. 채널의 `/v1/models` 를 채널의 자격증명으로 읽고, LM Studio 의 네이티브 카탈로그가
-  있으면 컨텍스트 길이와 vision 여부를 보강하며 임베딩 모델을 걸러낸다. 채널이 설정돼 있지
-  않으면 `400`. 선언 자체는 `PUT /api/settings` 의 `selfHostedModels` 로 한다.
+- `selfhosted` 는 `/models` 콘솔 Self-hosted 섹션의 전체 그림이다: **저장된** 선언
+  (`declarations` — 편집의 기준이다: 레지스트리가 설치를 거부한 선언도 여기 보여야 다음
+  full-replace 저장이 그것을 조용히 지우지 않는다), 그중 설치된 id(`installed`), 그리고
+  채널이 *지금* 서빙하는 목록(`served` — 채널의 `/v1/models` 를 채널의 자격증명으로 읽고,
+  LM Studio 네이티브 카탈로그가 있으면 컨텍스트 길이·vision 을 보강하며 임베딩 모델을
+  걸러낸다). `served` 는 best-effort 다 — 채널이 답하지 않으면 뷰를 실패시키는 대신
+  `servedError` 로 실린다: 서빙 스택이 죽어 있어도 선언은 admin 이 편집할 수 있어야 한다.
+  채널이 아예 설정돼 있지 않으면 `400`. 선언 자체는 `PUT /api/settings` 의
+  `selfHostedModels` 로 한다.
 
 ## A2A (인바운드)
 
