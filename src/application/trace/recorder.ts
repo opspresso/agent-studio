@@ -46,6 +46,33 @@ interface SubagentEntry {
   error?: string;
 }
 
+/**
+ * How many entries a span's `output` may name, and how many fields it may hold.
+ * Small on purpose: a span's output is metadata about a stage, not a payload.
+ */
+const MAX_OUTPUT_FIELDS = 20;
+
+/**
+ * A stage's `output`, cut to what a trace row can carry: numbers and booleans
+ * as they are, strings previewed, arrays kept to {@link MAX_TRACED_DISCOVERED}
+ * previewed entries, anything else dropped rather than serialised blind.
+ */
+function boundedOutput(output: Record<string, unknown>): Record<string, unknown> {
+  const bounded: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(output).slice(0, MAX_OUTPUT_FIELDS)) {
+    if (typeof value === "number" || typeof value === "boolean") {
+      bounded[key] = value;
+    } else if (typeof value === "string") {
+      bounded[key] = preview(value);
+    } else if (Array.isArray(value)) {
+      bounded[key] = value
+        .slice(0, MAX_TRACED_DISCOVERED)
+        .map((entry) => (typeof entry === "string" ? preview(entry) : String(entry)));
+    }
+  }
+  return bounded;
+}
+
 function preview(value: string): string {
   return value.length <= MAX_PREVIEW_CHARS
     ? value
@@ -98,6 +125,11 @@ export class TraceRecorder {
     startedAt: Date,
     detail?: { status?: "ok" | "error"; output?: Record<string, unknown> },
   ): void {
+    // Bounded here rather than by whoever calls: every other cap on this item
+    // (spans, warnings, previews) is the recorder's, and one caller handing an
+    // unbounded payload overflows the 400KB row — at which point `put` throws
+    // and the *whole* trace is lost, which is what the dropped-span accounting
+    // exists to make impossible.
     const now = new Date();
     this.addSpan({
       spanId: randomUUID(),
@@ -107,7 +139,7 @@ export class TraceRecorder {
       endedAt: now.toISOString(),
       durationMs: Math.max(0, now.getTime() - startedAt.getTime()),
       status: detail?.status ?? "ok",
-      ...(detail?.output ? { output: detail.output } : {}),
+      ...(detail?.output ? { output: boundedOutput(detail.output) } : {}),
     });
     // Outside `addSpan`, which drops past the cap: a dropped span must still
     // not leave its duration inside the next model call.
@@ -148,6 +180,12 @@ export class TraceRecorder {
         output: { contentChars: chunk.toolResult.content.length },
       });
       this.pendingTools.delete(chunk.toolResult.toolCallId);
+      // Where the next model call starts. Without this the tool's own duration
+      // was counted twice — on its span and again inside the model span that
+      // follows it — which is the misreading `prepare` was added to remove, in
+      // the place an agent run does most of its waiting. Every result moves it,
+      // so a response's concurrent calls leave it at the last one to land.
+      this.modelStartedAt = now;
     }
 
     const subagent = chunk.author ? this.trackSubagent(chunk, now) : undefined;
@@ -202,13 +240,17 @@ export class TraceRecorder {
 
   observeResult(result: RunResult): void {
     const now = new Date();
+    // `modelStartedAt`, not `startedAt`: the two are the same until a stage
+    // moves the boundary, and reading the run's start here would count any
+    // preparation twice the moment a single-shot or image path records one.
+    const modelStartedAt = this.modelStartedAt;
     this.addSpan({
       spanId: randomUUID(),
       kind: "model",
       name: result.model,
-      startedAt: this.startedAt.toISOString(),
+      startedAt: modelStartedAt.toISOString(),
       endedAt: now.toISOString(),
-      durationMs: now.getTime() - this.startedAt.getTime(),
+      durationMs: now.getTime() - modelStartedAt.getTime(),
       status: "ok",
       input: {
         messages: this.context.messageCount,

@@ -97,6 +97,33 @@ export function noRecallTargetWarning(): string {
  * spelled once. `version` is the version *as bound*, not as widened by
  * discovery (see {@link recallTargets}); `mcp` is the resolve that ran.
  */
+/**
+ * What the memory stage reports on its trace span — the second half of the pair
+ * `toolsPrepared` owns, and here for the same reason: two run levels record it,
+ * and a field added to one copy is a field the other silently stops carrying.
+ *
+ * `status` is the part worth stating: a server that was asked and did not
+ * answer is a stage that failed, while a version bound to nothing that offers
+ * `recall` warns on every run it will ever make — flagging *that* red puts an
+ * error on every trace a misconfigured version writes.
+ */
+export function memoryPrepared(memory: {
+  input: Pick<engine.RunAgentInput, "remembered">;
+  warnings: readonly string[];
+  asked: number;
+  failed: number;
+}): { status: "ok" | "error"; output: Record<string, unknown> } {
+  return {
+    status: memory.failed > 0 ? "error" : "ok",
+    output: {
+      remembered: memory.input.remembered?.length ?? 0,
+      asked: memory.asked,
+      ...(memory.failed > 0 ? { failed: memory.failed } : {}),
+      ...(memory.warnings.length > 0 ? { warnings: memory.warnings.length } : {}),
+    },
+  };
+}
+
 export async function recallForRun(input: {
   version: Version;
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;

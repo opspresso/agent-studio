@@ -34,7 +34,7 @@ import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools, toolsPrepared } from "./bindings";
-import { recallForRun } from "./memoryRecall";
+import { memoryPrepared, recallForRun } from "./memoryRecall";
 import { log } from "@/shared/logger";
 import { runEnding } from "@/application/run/runDeadline";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
@@ -319,7 +319,11 @@ export async function* runPromptSubagent(
       yield { ...chunk, ...(recorder ? { traceId: recorder.traceId } : {}) };
     }
     completed = true;
-  } catch (error) {
+  } catch (caught) {
+    // Through the same owner as its parent's: the signal is the parent's
+    // composed run signal, so a deadline that stopped both wrote the deadline's
+    // sentence on one trace and the raw abort reason on the other.
+    const error = runEnding(caught, signal);
     thrown = error;
     throw error;
   } finally {
@@ -458,16 +462,44 @@ export async function* runLocalSubagent(
     // its own catalog search, and billing that to its first model call is the
     // same misreading one level down.
     const resolveStartedAt = new Date();
-    const {
-      skills,
-      subagents,
-      mcp,
-      warnings,
-      // Widened by discovery, and the dispatcher below reads its `subagentList`
-      // — so a child that found an agent can also transfer to it.
-      version: runVersion,
-      discovered,
-    } = await resolveRunTools(deps, version, signal, discoveryQueries(version, [message]), origin);
+    // Recorded on both outcomes, like the top level's: the stage worth timing
+    // most is the one that never finished.
+    const prepared = await (async () => {
+      const resolved = await resolveRunTools(
+        deps,
+        version,
+        signal,
+        discoveryQueries(version, [message]),
+        origin,
+      );
+      closeMcpSessions = resolved.mcp.close;
+      // Inside the stage that resolved them: the dispatcher this builds reads a
+      // repository and decrypts a secret for a run with the Slack tools on.
+      const childDeps = await buildAgentDeps(
+        deps,
+        // Widened by discovery, so a child that found an agent can transfer to it.
+        resolved.version,
+        project.name,
+        recordUsageFn,
+        origin,
+        signal,
+        resolved.mcp.callMcpTool,
+      );
+      return { resolved, childDeps };
+    })().then(
+      (ok) => {
+        recorder?.observePrepare("tools", resolveStartedAt, {
+          output: toolsPrepared(ok.resolved),
+        });
+        return ok;
+      },
+      (error: unknown) => {
+        recorder?.observePrepare("tools", resolveStartedAt, { status: "error" });
+        throw error;
+      },
+    );
+    const { skills, subagents, mcp, warnings, discovered } = prepared.resolved;
+    const childDeps = prepared.childDeps;
     if (discovered.length > 0) {
       // A gain, so it is logged rather than reported as a loss — see the field.
       log.info(
@@ -475,40 +507,27 @@ export async function* runLocalSubagent(
         `${project.name}: offering ${discovered.length} discovered: ${discovered.join(", ")}`,
       );
     }
-    closeMcpSessions = mcp.close;
-    // Inside the stage that resolved them, like the top level's: the dispatcher
-    // this builds reads a repository and decrypts a secret for a run with the
-    // Slack tools on, and between two spans that time lands on the model again.
-    const childDeps = await buildAgentDeps(
-      deps,
-      runVersion,
-      project.name,
-      recordUsageFn,
-      origin,
-      signal,
-      mcp.callMcpTool,
-    );
-    recorder?.observePrepare("tools", resolveStartedAt, {
-      output: toolsPrepared({ skills, subagents, mcp, discovered, warnings }),
-    });
     // The child's version decides for itself, like every other opt-in; the
     // transfer message is its whole request, so it is what the memory is asked.
     const recallStartedAt = new Date();
-    const memory = await recallForRun({ version, mcp, query: message, signal });
+    const recordRecall = (
+      detail: { status?: "ok" | "error"; output?: Record<string, unknown> },
+    ): void => {
+      if (version.parameters.memoryRecall) {
+        recorder?.observePrepare("memory", recallStartedAt, detail);
+      }
+    };
+    const memory = await recallForRun({ version, mcp, query: message, signal }).then(
+      (ok) => {
+        recordRecall(memoryPrepared(ok));
+        return ok;
+      },
+      (error: unknown) => {
+        recordRecall({ status: "error" });
+        throw error;
+      },
+    );
     warnings.push(...memory.warnings);
-    if (version.parameters.memoryRecall) {
-      recorder?.observePrepare("memory", recallStartedAt, {
-        // A server asked that did not answer is a failed stage; a version with
-        // nothing to ask is a misconfiguration that warns on every run.
-        status: memory.failed > 0 ? "error" : "ok",
-        output: {
-          remembered: memory.input.remembered?.length ?? 0,
-          asked: memory.asked,
-          ...(memory.failed > 0 ? { failed: memory.failed } : {}),
-          ...(memory.warnings.length > 0 ? { warnings: memory.warnings.length } : {}),
-        },
-      });
-    }
     for (const warning of warnings) {
       const chunk: EngineChunk = { warning, ...(recorder ? { traceId: recorder.traceId } : {}) };
       recorder?.observe(chunk);

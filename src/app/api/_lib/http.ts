@@ -1,5 +1,5 @@
 import type { ZodError } from "zod";
-import { RateLimitedError, statusForError, ValidationError } from "@/application/errors";
+import { RateLimitedError, RunDeadlineError, statusForError, ValidationError } from "@/application/errors";
 import { log } from "@/shared/logger";
 import { isSlug } from "@/domain/naming";
 
@@ -56,7 +56,12 @@ export function invalidRequest(error: ZodError): Response {
  * named it.
  */
 export function apiError(error: unknown, request?: Request): Response {
-  if (request?.signal.aborted) {
+  // A run this deployment stopped is not a caller who left, even when the
+  // caller did leave — which at ten minutes of silence is the ordinary case,
+  // since the load balancer cuts an idle connection at sixty seconds. Answered
+  // and logged as the failure it is; whether anyone is still listening decides
+  // nothing about what happened.
+  if (request?.signal.aborted && !(error instanceof RunDeadlineError)) {
     log.info("api", "caller left before the answer");
     return new Response(null, { status: 499 });
   }

@@ -219,6 +219,73 @@ describe("TraceRecorder", () => {
     }
   });
 
+  it("does not bill a tool's wait to the model call that follows it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    try {
+      const { repository, traces } = memoryRepository();
+      const recorder = new TraceRecorder(repository, {
+        projectName: "parent",
+        versionName: "1",
+        projectType: "agent",
+        model: "openai/gpt-5-mini",
+        messageCount: 1,
+      });
+
+      // Turn 1 answers in a second and asks for a tool.
+      vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
+      recorder.observe({ usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 } });
+      recorder.observe({
+        delta: { toolCalls: [{ id: "call-1", function: { name: "search", arguments: "{}" } }] },
+      });
+      // The tool takes eight seconds.
+      vi.setSystemTime(new Date("2026-01-01T00:00:09.000Z"));
+      recorder.observe({ toolResult: { toolCallId: "call-1", name: "search", content: "ok" } });
+      // Turn 2 answers in one and a half.
+      vi.setSystemTime(new Date("2026-01-01T00:00:10.500Z"));
+      recorder.observe({ usage: { inputTokens: 2, outputTokens: 2, costUsd: 0.001 } });
+      await recorder.finish();
+
+      const spans = traces[0]?.spans ?? [];
+      expect(spans.filter((span) => span.kind === "tool").map((span) => span.durationMs)).toEqual([
+        8000,
+      ]);
+      expect(spans.filter((span) => span.kind === "model").map((span) => span.durationMs)).toEqual([
+        1000, 1500,
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds what a stage may put on its span", async () => {
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "parent",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    recorder.observePrepare("tools", new Date(), {
+      output: {
+        mcpTools: 30,
+        discoveredNames: Array.from({ length: 50 }, (_, at) => `server-${at}`),
+        note: "x".repeat(5_000),
+        // Not metadata about a stage; dropped rather than serialised blind.
+        payload: { nested: "object" },
+      },
+    });
+    await recorder.finish();
+
+    const output = traces[0]?.spans[0]?.output ?? {};
+    expect(output.mcpTools).toBe(30);
+    expect((output.discoveredNames as string[]).length).toBe(20);
+    expect((output.note as string).length).toBeLessThan(1_100);
+    expect(output.payload).toBeUndefined();
+  });
+
   it("marks a stage that failed without failing the run it prepared", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));

@@ -8,6 +8,8 @@ import { getModelConfig, getVisibleModels, toImageUsageRecord } from "@/domain/l
 import * as engine from "@/application/llm/engine";
 import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import type { ExecutionDeps } from "./deps";
+import { runEnding } from "@/application/run/runDeadline";
+import { runDeadlineExceeded } from "@/shared/runDeadline";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 import { log } from "@/shared/logger";
 
@@ -177,8 +179,16 @@ export async function* runImageSubagent(
     };
     await finishTrace(recorder);
     return `Generated an image for: ${message}`;
-  } catch (error) {
-    signal?.throwIfAborted();
+  } catch (caught) {
+    // The trace is written whichever way this ends. `throwIfAborted` used to
+    // rethrow on the line *above* the write, so a cancelled or deadline-stopped
+    // child left no row at all — the run that took the longest being the one
+    // with nothing to read is exactly backwards.
+    const error = runEnding(caught, signal);
+    if (signal?.aborted) {
+      await finishTrace(recorder, error, !runDeadlineExceeded(signal));
+      throw error;
+    }
     yield {
       author: agentName,
       ...(recorder ? { traceId: recorder.traceId } : {}),

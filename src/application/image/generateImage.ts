@@ -10,7 +10,7 @@ import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
 import { actorKey, type RunActor } from "@/domain/execution/actor";
 import { recordUsage } from "@/application/usage/recordUsage";
-import { withRunDeadline } from "@/shared/runDeadline";
+import { runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { runEnding } from "@/application/run/runDeadline";
 import { openRun, type RunBracketDeps } from "@/application/run/runBracket";
 import { traceSampled } from "@/application/run/traceLifecycle";
@@ -215,7 +215,10 @@ export async function generateImage(
       ...(warning ? { warning } : {}),
     };
   } catch (caught) {
-    const cancelled = input.signal?.aborted === true;
+    // A deadline outranks a caller that left: the run was stopped, and the
+    // metric, the trace and the thrown error have to say the same thing.
+    const stopped = runDeadlineExceeded(runSignal);
+    const cancelled = !stopped && input.signal?.aborted === true;
     failed = !cancelled;
     // Before `providerFailure`, which would otherwise file this platform's own
     // deadline as the provider refusing — a 502 naming a model that answered

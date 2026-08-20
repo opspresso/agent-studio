@@ -21,7 +21,7 @@ import { UpstreamError, ValidationError } from "@/application/errors";
 import { settleCostLimit } from "@/application/usage/costGuard";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
-import { withRunDeadline } from "@/shared/runDeadline";
+import { runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { runEnding } from "@/application/run/runDeadline";
 import { log } from "@/shared/logger";
 import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
@@ -35,7 +35,7 @@ import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "@/application/run/traceLifecycle";
 import { callerFor, runClock, runStrategyFor, toEngineParameters, toRunInput } from "./deps";
-import { recallForRun } from "./memoryRecall";
+import { memoryPrepared, recallForRun } from "./memoryRecall";
 
 export type {
   ExecutionDeps,
@@ -88,11 +88,12 @@ export async function executeVersion(
     await finishTrace(recorder);
     return result;
   } catch (caught) {
-    // A caller that hung up is a cancellation, not a failure of the run.
-    failed = !input.signal?.aborted;
-    // The deadline is this platform stopping the run, and it says so in its own
-    // words rather than as the abort reason nothing downstream can place.
+    // A caller that hung up is a cancellation, not a failure of the run — but
+    // the deadline is this platform stopping it, and that is a failure whether
+    // or not the caller was still there to hear about it. One question, one
+    // answer: the same latch decides the ending, the metric and the trace.
     const error = runEnding(caught, runSignal);
+    failed = runDeadlineExceeded(runSignal) || !input.signal?.aborted;
     await finishTrace(recorder, error);
     throw error;
   } finally {
@@ -136,7 +137,7 @@ export async function* executeVersionStream(
     completed = true;
   } catch (caught) {
     const error = runEnding(caught, runSignal);
-    if (!input.signal?.aborted) {
+    if (runDeadlineExceeded(runSignal) || !input.signal?.aborted) {
       thrown = error;
     }
     throw error;
@@ -499,69 +500,79 @@ export async function* executeAgent(
     // its queries and searches the catalog. The recorder bills it to a
     // `prepare` span instead of to the model that has not been called yet.
     const resolveStartedAt = new Date();
-    const {
-      skills,
-      subagents,
-      mcp,
-      warnings,
-      // What the resolve actually read, which discovery may have widened. The
-      // dispatcher below is built from its `subagentList`, so the original would
-      // offer a discovered agent and then refuse to transfer to it.
-      version: runVersion,
-      discovered,
-    } = await resolveRunTools(
-      deps,
-      input.version,
-      runSignal,
-      discoveryQueries(input.version, recentUserQueries(input.messages)),
-      origin,
+    // Recorded on both outcomes, because the stage worth timing most is the one
+    // that never finished: a server that hangs until the run deadline used to
+    // leave a trace with no spans at all, so the run that asked "why was the
+    // first token so late" loudest was the one with no answer in it.
+    const prepared = await (async () => {
+      const resolved = await resolveRunTools(
+        deps,
+        input.version,
+        runSignal,
+        discoveryQueries(input.version, recentUserQueries(input.messages)),
+        origin,
+      );
+      closeMcpSessions = resolved.mcp.close;
+      // Assembled inside the stage that resolved them: building the dispatcher
+      // reads a repository and decrypts a secret for a run with the Slack tools
+      // on, and between two spans that time was billed to the model again.
+      const agentDeps = await buildAgentDeps(
+        runDeps,
+        // What the resolve actually read, which discovery may have widened: the
+        // original would offer a discovered agent and then refuse to transfer
+        // to it.
+        resolved.version,
+        input.project.name,
+        usage.record,
+        origin,
+        runSignal,
+        resolved.mcp.callMcpTool,
+      );
+      return { resolved, agentDeps };
+    })().then(
+      (ok) => {
+        recorder?.observePrepare("tools", resolveStartedAt, {
+          output: toolsPrepared(ok.resolved),
+        });
+        return ok;
+      },
+      (error: unknown) => {
+        recorder?.observePrepare("tools", resolveStartedAt, { status: "error" });
+        throw error;
+      },
     );
-    closeMcpSessions = mcp.close;
-    // Assembled inside the stage that resolved them: building the dispatcher
-    // reads a repository and decrypts a secret for a run with the Slack tools
-    // on, and between two spans that time was billed to the model again — the
-    // smaller half of the misreading the spans exist to remove.
-    const agentDeps = await buildAgentDeps(
-      runDeps,
-      runVersion,
-      input.project.name,
-      usage.record,
-      origin,
-      runSignal,
-      mcp.callMcpTool,
-    );
-    recorder?.observePrepare("tools", resolveStartedAt, {
-      output: toolsPrepared({ skills, subagents, mcp, discovered, warnings }),
-    });
+    const { skills, subagents, mcp, warnings, discovered } = prepared.resolved;
+    const agentDeps = prepared.agentDeps;
     // Before the first token, when the version asked for it: what this project
     // remembers about the request. A recall that fails is a warning below, never
     // the end of the run — the answer is worth more than the recollection. The
     // version as bound, not as widened: only servers the author bound are asked.
     const recallStartedAt = new Date();
+    // Only when the version asked: a run that recalls nothing spent no time
+    // here, and a zero-length span on every trace would say less than none.
+    const recordRecall = (
+      detail: { status?: "ok" | "error"; output?: Record<string, unknown> },
+    ): void => {
+      if (input.version.parameters.memoryRecall) {
+        recorder?.observePrepare("memory", recallStartedAt, detail);
+      }
+    };
     const memory = await recallForRun({
       version: input.version,
       mcp,
       query: latestUserText(input.messages) ?? "",
       signal: runSignal,
-    });
+    }).then(
+      (ok) => {
+        recordRecall(memoryPrepared(ok));
+        return ok;
+      },
+      (error: unknown) => {
+        recordRecall({ status: "error" });
+        throw error;
+      },
+    );
     warnings.push(...memory.warnings);
-    if (input.version.parameters.memoryRecall) {
-      // Only when the version asked: a run that recalls nothing spent no time
-      // here, and a zero-length span on every trace would say less than none.
-      recorder?.observePrepare("memory", recallStartedAt, {
-        // A server that was asked and did not answer is a stage that failed. A
-        // version bound to no memory server is a misconfiguration that warns on
-        // every run it will ever make, and flagging that red would put an error
-        // on every one of its traces.
-        status: memory.failed > 0 ? "error" : "ok",
-        output: {
-          remembered: memory.input.remembered?.length ?? 0,
-          asked: memory.asked,
-          ...(memory.failed > 0 ? { failed: memory.failed } : {}),
-          ...(memory.warnings.length > 0 ? { warnings: memory.warnings.length } : {}),
-        },
-      });
-    }
     // Logged rather than yielded: a capability *found* is a gain, and the
     // warning channel is where a reader looks for what a run lost. What the run
     // then did with it shows up in its tool traffic either way.
@@ -605,9 +616,11 @@ export async function* executeAgent(
     completed = true;
   } catch (caught) {
     // Same classification as every other run path, from the one owner: a caller
-    // that left ends the run as it is, the deadline ends it in its own words.
+    // that left ends the run as it is, the deadline ends it in its own words —
+    // and a deadline that fired is a failure even when the caller had already
+    // gone, which on this deployment is the ordinary case.
     const error = runEnding(caught, runSignal);
-    if (!input.signal?.aborted) {
+    if (runDeadlineExceeded(runSignal) || !input.signal?.aborted) {
       thrown = error;
     }
     throw error;

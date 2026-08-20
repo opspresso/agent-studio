@@ -10,9 +10,12 @@
  * error" and a streaming one "The operation was aborted due to timeout" — for a
  * documented limit, with the real reason only in this server's log.
  *
- * One owner because four run paths classify the same abort — both single-shot
- * paths, the agent loop and the image use case — and a fifth that spelled it
- * again would spell it differently.
+ * One owner because five run paths classify the same abort — both single-shot
+ * paths, the agent loop, the image use case and a transferred-to child — and a
+ * sixth that spelled it again would spell it differently. The list is
+ * `RUN_ENDING_SITES` in `tests/architecture.test.ts`, which fails when a caller
+ * of `withRunDeadline` does not classify what stopped it; this comment is not
+ * the guard, it is the reason for one.
  */
 
 import { RunDeadlineError } from "@/application/errors";
@@ -33,5 +36,13 @@ export function runDeadlineMessage(): string {
  * failure the trace and the metrics then count.
  */
 export function runEnding(error: unknown, runSignal: AbortSignal | undefined): unknown {
-  return runDeadlineExceeded(runSignal) ? new RunDeadlineError(runDeadlineMessage()) : error;
+  if (!runDeadlineExceeded(runSignal)) {
+    return error;
+  }
+  // The latch says the run was stopped; it does not say what the run was doing
+  // when it was. Whatever was in flight — a provider that never answered, an
+  // MCP call that hung — is carried as the cause, because "which one was it
+  // stuck on for ten minutes" is the question a deadline investigation opens
+  // with, and replacing the error outright is what left it unanswerable.
+  return new RunDeadlineError(runDeadlineMessage(), { cause: error });
 }

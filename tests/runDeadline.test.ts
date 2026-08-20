@@ -85,16 +85,27 @@ describe("runEnding", () => {
     expect((ending as RunDeadlineError).message).toMatch(/^This run was stopped after \d+ seconds/);
   });
 
-  it("keeps a caller's cancellation a cancellation when the deadline follows it", () => {
-    // Otherwise a reader who navigated away would be recorded as a failed run
-    // and counted as one, on the strength of a deadline that fired after they
-    // had already gone and that nobody was waiting for.
+  it("keeps a caller's cancellation a cancellation", () => {
+    // Read when the run ends, which is the moment that matters: a reader who
+    // navigated away ends the run there and then, with the deadline still
+    // pending — and must not be recorded as a failed run.
     const deadline = new AbortController();
     const caller = new AbortController();
     const run = withRunDeadline(caller.signal, deadline.signal);
     caller.abort();
-    deadline.abort();
     expect(runEnding(original, run)).toBe(original);
+  });
+
+  it("does not re-compose a run signal, which would hide the deadline it carries", () => {
+    // `AbortSignal.any` flattens its sources, so a second wrap knows only the
+    // second deadline: the first one firing would read as the caller leaving.
+    const outer = new AbortController();
+    const inner = new AbortController();
+    const caller = new AbortController();
+    const run = withRunDeadline(caller.signal, outer.signal);
+    expect(withRunDeadline(run, inner.signal)).toBe(run);
+    outer.abort();
+    expect(runDeadlineExceeded(run)).toBe(true);
   });
 
   it("keeps the deadline the ending when the caller drops while the run unwinds", () => {

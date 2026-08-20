@@ -8,8 +8,10 @@ export class AppError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Forwarded to `Error`, so a wrapping error keeps what it replaced. */
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = new.target.name;
   }
 }
@@ -86,8 +88,8 @@ export class RateLimitedError extends AppError {
  * which of the two it was.
  */
 export class RunDeadlineError extends AppError {
-  constructor(message: string) {
-    super(message, 504);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 504, options);
   }
 }
 
