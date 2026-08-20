@@ -33,10 +33,10 @@ import { buildSlackReader } from "./slackTool";
 import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
-import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools } from "./bindings";
+import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools, toolsPrepared } from "./bindings";
 import { recallForRun } from "./memoryRecall";
 import { log } from "@/shared/logger";
-import { MAX_TRACED_DISCOVERED } from "@/application/trace/recorder";
+import { runEnding } from "@/application/run/runDeadline";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 
 /**
@@ -468,25 +468,6 @@ export async function* runLocalSubagent(
       version: runVersion,
       discovered,
     } = await resolveRunTools(deps, version, signal, discoveryQueries(version, [message]), origin);
-    recorder?.observePrepare("tools", resolveStartedAt, {
-      output: {
-        skills: skills.length,
-        subagents: subagents.length,
-        mcpServers: mcp.mcpServers.length,
-        mcpTools: mcp.mcpTools.length,
-        // Named, not counted: what a search added is the one part of a run's
-        // plan that changes per request, and "why did it call that" is
-        // unanswerable afterwards without it. Bounded like every other
-        // accumulator on a trace — the count says what the list left out.
-        ...(discovered.length > 0
-          ? {
-              discovered: discovered.length,
-              discoveredNames: discovered.slice(0, MAX_TRACED_DISCOVERED),
-            }
-          : {}),
-        ...(warnings.length > 0 ? { warnings: warnings.length } : {}),
-      },
-    });
     if (discovered.length > 0) {
       // A gain, so it is logged rather than reported as a loss — see the field.
       log.info(
@@ -495,20 +476,9 @@ export async function* runLocalSubagent(
       );
     }
     closeMcpSessions = mcp.close;
-    // The child's version decides for itself, like every other opt-in; the
-    // transfer message is its whole request, so it is what the memory is asked.
-    const recallStartedAt = new Date();
-    const memory = await recallForRun({ version, mcp, query: message, signal });
-    warnings.push(...memory.warnings);
-    if (version.parameters.memoryRecall) {
-      recorder?.observePrepare("memory", recallStartedAt, {
-        status: memory.warnings.length > 0 ? "error" : "ok",
-        output: {
-          remembered: memory.input.remembered?.length ?? 0,
-          ...(memory.warnings.length > 0 ? { warnings: memory.warnings.length } : {}),
-        },
-      });
-    }
+    // Inside the stage that resolved them, like the top level's: the dispatcher
+    // this builds reads a repository and decrypts a secret for a run with the
+    // Slack tools on, and between two spans that time lands on the model again.
     const childDeps = await buildAgentDeps(
       deps,
       runVersion,
@@ -518,6 +488,27 @@ export async function* runLocalSubagent(
       signal,
       mcp.callMcpTool,
     );
+    recorder?.observePrepare("tools", resolveStartedAt, {
+      output: toolsPrepared({ skills, subagents, mcp, discovered, warnings }),
+    });
+    // The child's version decides for itself, like every other opt-in; the
+    // transfer message is its whole request, so it is what the memory is asked.
+    const recallStartedAt = new Date();
+    const memory = await recallForRun({ version, mcp, query: message, signal });
+    warnings.push(...memory.warnings);
+    if (version.parameters.memoryRecall) {
+      recorder?.observePrepare("memory", recallStartedAt, {
+        // A server asked that did not answer is a failed stage; a version with
+        // nothing to ask is a misconfiguration that warns on every run.
+        status: memory.failed > 0 ? "error" : "ok",
+        output: {
+          remembered: memory.input.remembered?.length ?? 0,
+          asked: memory.asked,
+          ...(memory.failed > 0 ? { failed: memory.failed } : {}),
+          ...(memory.warnings.length > 0 ? { warnings: memory.warnings.length } : {}),
+        },
+      });
+    }
     for (const warning of warnings) {
       const chunk: EngineChunk = { warning, ...(recorder ? { traceId: recorder.traceId } : {}) };
       recorder?.observe(chunk);
@@ -568,7 +559,11 @@ export async function* runLocalSubagent(
       };
     }
     completed = true;
-  } catch (error) {
+  } catch (caught) {
+    // Through the same owner as its parent's: the signal a child holds is the
+    // parent's composed run signal, so a deadline that stopped both wrote the
+    // deadline's sentence on one trace and the raw abort reason on the other.
+    const error = runEnding(caught, signal);
     thrown = error;
     throw error;
   } finally {

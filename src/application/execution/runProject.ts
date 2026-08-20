@@ -30,10 +30,9 @@ import { openRun } from "@/application/run/runBracket";
 import { captureRunArtifacts } from "@/application/artifact/runArtifacts";
 import { fileRefOf, type ProducedFileRef } from "@/application/artifact/producedFiles";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
-import { discoveryQueries, recentUserQueries, resolveRunTools } from "./bindings";
+import { discoveryQueries, recentUserQueries, resolveRunTools, toolsPrepared } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
-import { MAX_TRACED_DISCOVERED } from "@/application/trace/recorder";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "@/application/run/traceLifecycle";
 import { callerFor, runClock, runStrategyFor, toEngineParameters, toRunInput } from "./deps";
 import { recallForRun } from "./memoryRecall";
@@ -93,7 +92,7 @@ export async function executeVersion(
     failed = !input.signal?.aborted;
     // The deadline is this platform stopping the run, and it says so in its own
     // words rather than as the abort reason nothing downstream can place.
-    const error = runEnding(caught, { run: runSignal, caller: input.signal });
+    const error = runEnding(caught, runSignal);
     await finishTrace(recorder, error);
     throw error;
   } finally {
@@ -136,7 +135,7 @@ export async function* executeVersionStream(
     }
     completed = true;
   } catch (caught) {
-    const error = runEnding(caught, { run: runSignal, caller: input.signal });
+    const error = runEnding(caught, runSignal);
     if (!input.signal?.aborted) {
       thrown = error;
     }
@@ -518,27 +517,21 @@ export async function* executeAgent(
       origin,
     );
     closeMcpSessions = mcp.close;
+    // Assembled inside the stage that resolved them: building the dispatcher
+    // reads a repository and decrypts a secret for a run with the Slack tools
+    // on, and between two spans that time was billed to the model again — the
+    // smaller half of the misreading the spans exist to remove.
+    const agentDeps = await buildAgentDeps(
+      runDeps,
+      runVersion,
+      input.project.name,
+      usage.record,
+      origin,
+      runSignal,
+      mcp.callMcpTool,
+    );
     recorder?.observePrepare("tools", resolveStartedAt, {
-      // What the run ended up holding, which is the question a slow or thin
-      // resolve raises: the counts say whether it was slow *and* whether it
-      // came back with what the version declares.
-      output: {
-        skills: skills.length,
-        subagents: subagents.length,
-        mcpServers: mcp.mcpServers.length,
-        mcpTools: mcp.mcpTools.length,
-        // Named, not counted: what a search added is the one part of a run's
-        // plan that changes per request, and "why did it call that" is
-        // unanswerable afterwards without it. Bounded like every other
-        // accumulator on a trace — the count says what the list left out.
-        ...(discovered.length > 0
-          ? {
-              discovered: discovered.length,
-              discoveredNames: discovered.slice(0, MAX_TRACED_DISCOVERED),
-            }
-          : {}),
-        ...(warnings.length > 0 ? { warnings: warnings.length } : {}),
-      },
+      output: toolsPrepared({ skills, subagents, mcp, discovered, warnings }),
     });
     // Before the first token, when the version asked for it: what this project
     // remembers about the request. A recall that fails is a warning below, never
@@ -556,22 +549,19 @@ export async function* executeAgent(
       // Only when the version asked: a run that recalls nothing spent no time
       // here, and a zero-length span on every trace would say less than none.
       recorder?.observePrepare("memory", recallStartedAt, {
-        status: memory.warnings.length > 0 ? "error" : "ok",
+        // A server that was asked and did not answer is a stage that failed. A
+        // version bound to no memory server is a misconfiguration that warns on
+        // every run it will ever make, and flagging that red would put an error
+        // on every one of its traces.
+        status: memory.failed > 0 ? "error" : "ok",
         output: {
           remembered: memory.input.remembered?.length ?? 0,
+          asked: memory.asked,
+          ...(memory.failed > 0 ? { failed: memory.failed } : {}),
           ...(memory.warnings.length > 0 ? { warnings: memory.warnings.length } : {}),
         },
       });
     }
-    const agentDeps = await buildAgentDeps(
-      runDeps,
-      runVersion,
-      input.project.name,
-      usage.record,
-      origin,
-      runSignal,
-      mcp.callMcpTool,
-    );
     // Logged rather than yielded: a capability *found* is a gain, and the
     // warning channel is where a reader looks for what a run lost. What the run
     // then did with it shows up in its tool traffic either way.
@@ -616,7 +606,7 @@ export async function* executeAgent(
   } catch (caught) {
     // Same classification as every other run path, from the one owner: a caller
     // that left ends the run as it is, the deadline ends it in its own words.
-    const error = runEnding(caught, { run: runSignal, caller: input.signal });
+    const error = runEnding(caught, runSignal);
     if (!input.signal?.aborted) {
       thrown = error;
     }

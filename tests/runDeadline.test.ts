@@ -70,7 +70,7 @@ describe("runEnding", () => {
   it("leaves an ordinary failure alone", () => {
     const caller = new AbortController();
     const run = withRunDeadline(caller.signal);
-    expect(runEnding(original, { run, caller: caller.signal })).toBe(original);
+    expect(runEnding(original, run)).toBe(original);
   });
 
   it("gives the deadline words of its own, and a status a route can map", () => {
@@ -79,21 +79,42 @@ describe("runEnding", () => {
     const run = withRunDeadline(caller.signal, deadline.signal);
     deadline.abort();
 
-    const ending = runEnding(original, { run, caller: caller.signal });
+    const ending = runEnding(original, run);
     expect(ending).toBeInstanceOf(RunDeadlineError);
     expect((ending as RunDeadlineError).status).toBe(504);
     expect((ending as RunDeadlineError).message).toMatch(/^This run was stopped after \d+ seconds/);
   });
 
-  it("keeps a caller's cancellation a cancellation when both fired", () => {
+  it("keeps a caller's cancellation a cancellation when the deadline follows it", () => {
     // Otherwise a reader who navigated away would be recorded as a failed run
-    // and counted as one, on the strength of a deadline that fired in the same
-    // tick and that nobody was waiting for.
+    // and counted as one, on the strength of a deadline that fired after they
+    // had already gone and that nobody was waiting for.
     const deadline = new AbortController();
     const caller = new AbortController();
     const run = withRunDeadline(caller.signal, deadline.signal);
     caller.abort();
     deadline.abort();
-    expect(runEnding(original, { run, caller: caller.signal })).toBe(original);
+    expect(runEnding(original, run)).toBe(original);
+  });
+
+  it("keeps the deadline the ending when the caller drops while the run unwinds", () => {
+    // The common case on the deployed setup rather than a corner: 600s of
+    // silence is ten times the load balancer's idle cut, so the connection is
+    // usually gone by the time the deadline's error reaches this classification.
+    const deadline = new AbortController();
+    const caller = new AbortController();
+    const run = withRunDeadline(caller.signal, deadline.signal);
+    deadline.abort();
+    caller.abort();
+    expect(runEnding(original, run)).toBeInstanceOf(RunDeadlineError);
+  });
+
+  it("says nothing about a signal it never composed", () => {
+    // A bare client-disconnect signal handed to a future call site must not be
+    // rewritten into a deadline nobody reached.
+    const stray = new AbortController();
+    stray.abort();
+    expect(runDeadlineExceeded(stray.signal)).toBe(false);
+    expect(runEnding(original, stray.signal)).toBe(original);
   });
 });

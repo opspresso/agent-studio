@@ -57,20 +57,26 @@ export const MAX_RUN_DURATION_MS = parseMaxRunDuration(process.env.MAX_RUN_DURAT
 export const RUN_LEASE_SECONDS = Math.ceil(MAX_RUN_DURATION_MS / 1000) + 60;
 
 /**
- * Which composed signal carries which deadline.
+ * Which limit stopped a run signal, latched at the moment it aborted.
  *
  * A run signal aborts for two very different reasons — the caller left, or this
- * backstop fired — and only the first is not a failure. The composed signal
- * cannot be asked: `AbortSignal.any` forwards whichever reason came first, and
- * a caller may abort with a `TimeoutError` of its own (the Slack surface caps a
- * run at three minutes that way), so reading the reason's *type* names the
- * wrong limit as often as the right one.
+ * backstop fired — and only the first is not a failure. Neither the signal nor
+ * its reason can be asked afterwards: `AbortSignal.any` forwards whichever
+ * reason came first, and a caller may abort with a `TimeoutError` of its own
+ * (the Slack surface caps a run at three minutes that way), so the reason's
+ * *type* names the wrong limit as often as the right one.
  *
- * Weak on both sides, and no timer of ours: `AbortSignal.timeout` holds its
- * timer only as long as the signal is reachable, while a `setTimeout` we owned
- * would keep every finished run alive until its deadline passed.
+ * Latched rather than compared later, because "did the caller abort?" is true
+ * from the first abort onwards: a client that drops while the catch unwinds
+ * would otherwise erase the deadline that stopped the run a moment earlier —
+ * and on the deployed setup that is the common case, since 600s of silence is
+ * ten times the load balancer's idle cut.
+ *
+ * Weak, and no timer of ours: `AbortSignal.timeout` holds its timer only as
+ * long as the signal is reachable, while a `setTimeout` we owned would keep
+ * every finished run alive until its deadline passed.
  */
-const DEADLINE_OF = new WeakMap<AbortSignal, AbortSignal>();
+const STOPPED_BY = new WeakMap<AbortSignal, "caller" | "deadline">();
 
 export function withRunDeadline(
   signal: AbortSignal | undefined,
@@ -78,7 +84,18 @@ export function withRunDeadline(
   deadline: AbortSignal = AbortSignal.timeout(MAX_RUN_DURATION_MS),
 ): AbortSignal {
   const composed = signal ? AbortSignal.any([signal, deadline]) : deadline;
-  DEADLINE_OF.set(composed, deadline);
+  const latch = (): void => {
+    if (!STOPPED_BY.has(composed)) {
+      STOPPED_BY.set(composed, deadline.aborted ? "deadline" : "caller");
+    }
+  };
+  if (composed.aborted) {
+    // A caller that had already left before the run was composed: the listener
+    // below would never fire for it.
+    latch();
+  } else {
+    composed.addEventListener("abort", latch, { once: true });
+  }
   return composed;
 }
 
@@ -86,15 +103,13 @@ export function withRunDeadline(
  * True when this run signal aborted because the run outlived
  * {@link MAX_RUN_DURATION_MS} — not because whoever asked for it went away.
  *
- * The distinction is the whole point of the pair: a caller leaving is a
- * cancellation nobody needs told about, while the deadline is this platform
- * stopping a run, and a run that is stopped has to say so in its own words.
+ * A signal this module never composed answers `false`. It is not "no deadline
+ * fired", it is "not a run signal", and the two must not read the same: a bare
+ * client-disconnect signal passed here by a future call site would otherwise be
+ * rewritten into a deadline nobody reached.
  */
 export function runDeadlineExceeded(signal: AbortSignal | undefined): boolean {
-  if (!signal) {
-    return false;
-  }
-  return (DEADLINE_OF.get(signal) ?? signal).aborted;
+  return signal !== undefined && STOPPED_BY.get(signal) === "deadline";
 }
 
 /**

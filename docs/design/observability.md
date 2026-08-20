@@ -155,7 +155,9 @@ recorder 는 resolve 보다 먼저 만들어지므로(그래야 resolve 가 던�
 요청마다 달라지는 것은 그 목록뿐이라, 이름이 없으면 "왜 저 도구를 불렀나" 는 사후에 답할 수
 없다.
 단계가 실패해도 런은 실패가 아니다(memory 가 답하지 않아도 런은 기억 없이 계속한다): span 이
-`error` 이고 trace 는 그대로다.
+`error` 이고 trace 는 그대로다. **무엇이 `error` 인지는 경고 수가 아니라 실제로 물어본 서버가
+답하지 않았는지다** — 회상할 서버가 아예 없는 version 은 자기가 하는 모든 런에서 경고하므로,
+그것을 실패로 세면 잘못 설정된 version 의 trace 는 전부 빨갛게 된다.
 
 **trace 는 사용자가 보는 것과 같은 chunk 로 조립된다.** `TraceRecorder`
 (`src/application/trace/recorder.ts`) 는 루프 곳곳에 흩어진 계측 지점에서 호출되는 대신

@@ -24,18 +24,14 @@ export function runDeadlineMessage(): string {
 }
 
 /**
- * The error a run should end with, given what actually aborted it.
+ * The error a run should end with, given what actually stopped it.
  *
- * The caller's own cancellation wins: a reader who left is not owed a reason,
- * and a deadline that fires in the same tick must not turn their departure into
- * a failure the trace and the metrics then count.
+ * One argument, and it is the *run* signal: which limit ended the run is
+ * latched when it aborts (`withRunDeadline`), so a caller that drops while the
+ * catch unwinds cannot erase a deadline that had already fired, and a deadline
+ * that fires a moment after the reader left cannot turn their departure into a
+ * failure the trace and the metrics then count.
  */
-export function runEnding(
-  error: unknown,
-  signals: { run?: AbortSignal; caller?: AbortSignal },
-): unknown {
-  if (signals.caller?.aborted || !runDeadlineExceeded(signals.run)) {
-    return error;
-  }
-  return new RunDeadlineError(runDeadlineMessage());
+export function runEnding(error: unknown, runSignal: AbortSignal | undefined): unknown {
+  return runDeadlineExceeded(runSignal) ? new RunDeadlineError(runDeadlineMessage()) : error;
 }

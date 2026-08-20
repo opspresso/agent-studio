@@ -220,7 +220,7 @@ export async function generateImage(
     // Before `providerFailure`, which would otherwise file this platform's own
     // deadline as the provider refusing — a 502 naming a model that answered
     // nothing wrong.
-    const error = runEnding(caught, { run: runSignal, caller: input.signal });
+    const error = runEnding(caught, runSignal);
     await finishTrace(recorder, error);
     throw providerFailure(error, model, cancelled);
   } finally {
