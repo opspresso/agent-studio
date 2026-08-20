@@ -613,7 +613,7 @@ export const ko: Messages = {
     "채널이 지금 이 이름을 나열하지 않는다 — 다시 서빙될 때까지 런이 실패한다.",
   "models.selfHosted.notInstalled": "설치 안 됨",
   "models.selfHosted.notInstalledHint":
-    "저장은 됐지만 레지스트리가 설치를 거부했다 — 보통 발행 카탈로그가 그 사이 같은 이름을 얻은 경우다. 서버 로그에 이유가 있다; 제거하거나 다시 선언하라.",
+    "저장은 됐지만 이 인스턴스의 레지스트리에는 설치되지 않았다 — 발행 카탈로그가 같은 이름을 갖고 있거나, 방금 저장했다면 아직 다음 카탈로그 틱을 돌지 않은 다른 인스턴스다. 거부된 경우 서버 로그에 이유가 있다.",
   "models.selfHosted.empty": "채널이 지금 서빙하는 모델이 없다.",
   "models.selfHosted.declare": "선언",
   "models.selfHosted.remove": "제거",

@@ -265,20 +265,27 @@ function SelfHostedSection({
     next: SelfHostedModelInput[],
     enabled: { add?: string; drop?: string } = {},
   ) {
+    // With a selection override in place, the declaration change carries the
+    // matching enabled-list change in the same PUT (the API accepts a
+    // same-patch declare-and-enable on purpose).
+    let enabledPatch: { enabledModels?: string[] } = {};
+    if (enabledIds !== null) {
+      let ids = enabled.add ? [...new Set([...enabledIds, enabled.add])] : [...enabledIds];
+      if (enabled.drop) {
+        ids = ids.filter((id) => id !== enabled.drop);
+      }
+      // The same guard the page's enable toggles keep: an empty override is
+      // not "restrict to nothing" — the server reads it as "remove the
+      // restriction", silently opening every model for selection.
+      if (ids.length === 0) {
+        setError("At least one model must stay enabled.");
+        return;
+      }
+      enabledPatch = { enabledModels: ids };
+    }
     setBusy(true);
     setError(null);
     try {
-      // With a selection override in place, the declaration change carries the
-      // matching enabled-list change in the same PUT (the API accepts a
-      // same-patch declare-and-enable on purpose).
-      let enabledPatch: { enabledModels?: string[] } = {};
-      if (enabledIds !== null) {
-        let ids = enabled.add ? [...new Set([...enabledIds, enabled.add])] : [...enabledIds];
-        if (enabled.drop) {
-          ids = ids.filter((id) => id !== enabled.drop);
-        }
-        enabledPatch = { enabledModels: ids };
-      }
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: jsonHeaders,

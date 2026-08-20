@@ -687,7 +687,7 @@ export const en = {
     "The channel does not list this name right now — a run will fail until it is served again.",
   "models.selfHosted.notInstalled": "not installed",
   "models.selfHosted.notInstalledHint":
-    "Stored, but the registry refused to install it — usually a name the published catalog gained since. The server log names the reason; remove or re-declare it.",
+    "Stored, but not installed in this instance's registry — a name the published catalog also carries, or, right after saving, a replica that has not run its next catalog tick. A refusal's reason is in the server log.",
   "models.selfHosted.empty": "The channel serves no models right now.",
   "models.selfHosted.declare": "Declare",
   "models.selfHosted.remove": "Remove",

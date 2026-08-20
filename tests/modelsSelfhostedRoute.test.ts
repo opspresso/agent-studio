@@ -67,10 +67,17 @@ describe("GET /api/models/selfhosted", () => {
     const res = await GET();
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { served: null; servedError: string; declarations: unknown[] };
+    const body = (await res.json()) as {
+      served: null;
+      servedError: string;
+      declarations: unknown[];
+      installed: string[];
+    };
     expect(body.served).toBeNull();
     expect(body.servedError).toContain("503");
     expect(body.declarations).toEqual([DECLARED]);
+    // Stored but not installed — exactly the state the section must show.
+    expect(body.installed).toEqual([]);
   });
 
   it("is a 400 when no self-hosted channel is configured", async () => {
