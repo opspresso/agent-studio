@@ -38,6 +38,7 @@ import { httpResourceReader } from "@/infrastructure/net/httpResource";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
 import { config } from "./config";
+import { withTimeout } from "@/shared/withTimeout";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
@@ -218,7 +219,9 @@ export const testModel = createTestModel(channel);
 export const refreshModelCatalog = createModelCatalogRefresher({
   source: createHttpModelCatalogSource(config.modelsCatalogUrl),
   intervalMs: 0,
-  localModels: getSelfHostedModels,
+  // The same deadline the boot path gives this read — request-scoped here,
+  // but a hung settings table should time a refresh out, not hold it.
+  localModels: () => withTimeout(getSelfHostedModels(), 10_000),
 }).refresh;
 
 /**

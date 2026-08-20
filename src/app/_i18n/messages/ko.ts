@@ -607,6 +607,20 @@ export const ko: Messages = {
   "models.selfHosted.title": "Self-hosted 모델",
   "models.selfHosted.lede":
     "이 배포가 직접 서빙하는 모델 — 여기서 선언하고 selfhosted 채널로 디스패치한다. 목록은 채널이 보고한 것이고, 선언한 모델은 0 가격으로 레지스트리에 올라간다.",
+  "models.selfHosted.servedBy": "채널이 서빙 중",
+  "models.selfHosted.notServed": "서빙 안 됨",
+  "models.selfHosted.notServedHint":
+    "채널이 지금 이 이름을 나열하지 않는다 — 다시 서빙될 때까지 런이 실패한다.",
+  "models.selfHosted.notInstalled": "설치 안 됨",
+  "models.selfHosted.notInstalledHint":
+    "저장은 됐지만 이 인스턴스의 레지스트리에는 설치되지 않았다 — 발행 카탈로그가 같은 이름을 갖고 있거나, 방금 저장했다면 아직 다음 카탈로그 틱을 돌지 않은 다른 인스턴스다. 거부된 경우 서버 로그에 이유가 있다.",
+  "models.selfHosted.empty": "채널이 지금 서빙하는 모델이 없다.",
+  "models.selfHosted.declare": "선언",
+  "models.selfHosted.remove": "제거",
+  "models.selfHosted.cancel": "취소",
+  "models.selfHosted.displayName": "표시 이름",
+  "models.selfHosted.context": "컨텍스트 윈도",
+  "models.selfHosted.maxOutput": "최대 출력",
   "models.promoTooltip": "이미 적용된 프로모션 요율(기본 엔드포인트) — 정가 {list}",
   "models.reasoningNoTools":
     "tools 와 함께는 불가: provider 가 그 조합을 거부해, agent 런은 effort 를 none 으로 강제합니다",

@@ -681,6 +681,20 @@ export const en = {
   "models.selfHosted.title": "Self-hosted models",
   "models.selfHosted.lede":
     "Models this deployment serves itself, declared here and dispatched through the selfhosted channel. The list is what the channel reports; a declared model joins the registry at zero price.",
+  "models.selfHosted.servedBy": "served by the channel",
+  "models.selfHosted.notServed": "not served",
+  "models.selfHosted.notServedHint":
+    "The channel does not list this name right now — a run will fail until it is served again.",
+  "models.selfHosted.notInstalled": "not installed",
+  "models.selfHosted.notInstalledHint":
+    "Stored, but not installed in this instance's registry — a name the published catalog also carries, or, right after saving, a replica that has not run its next catalog tick. A refusal's reason is in the server log.",
+  "models.selfHosted.empty": "The channel serves no models right now.",
+  "models.selfHosted.declare": "Declare",
+  "models.selfHosted.remove": "Remove",
+  "models.selfHosted.cancel": "Cancel",
+  "models.selfHosted.displayName": "Display name",
+  "models.selfHosted.context": "Context window",
+  "models.selfHosted.maxOutput": "Max output",
   "models.promoTooltip":
     "Promotional rate at the route's default endpoint, already applied — list price {list}",
   "models.reasoningNoTools":
