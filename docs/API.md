@@ -136,6 +136,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/models` | `GET` | session |
 | `/api/models/catalog` | `GET` | member |
 | `/api/models/test` | `POST` | admin |
+| `/api/models/refresh` | `POST` | admin |
 | `/api/me` | `GET` | session |
 | `/api/me/profile` | `GET` | session |
 | `/api/me/usage` | `GET` | session |
@@ -1323,10 +1324,12 @@ GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ]
                                  updatedAt,
                                  source: "override" | "default" }
 POST /api/models/test    → 200 { ok, latencyMs, error? } | 400
+POST /api/models/refresh → 200 { refreshed, updatedAt }
 ```
 
 - `catalog` 는 `member` 등급부터 읽을 수 있고 (`withMemberAuth` — Intelligence 섹션의 다른
-  레지스트리들과 같은 계단이다: 이 배포가 닿을 수 있는 것의 목록이다), `test` 는 admin 전용이다.
+  레지스트리들과 같은 계단이다: 이 배포가 닿을 수 있는 것의 목록이다), `test` 와 `refresh` 는
+  admin 전용이다.
   `makers` 와 `updatedAt` 은 로드된 카탈로그의 것이다 — maker 라벨과 카탈로그 내용이 마지막으로
   바뀐 시각으로, 레지스트리가 런타임 로드로 바뀐 뒤 클라이언트가 상수에서 가져올 수 없게 된
   값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: 보이는 모든 모델과 그 enabled 플래그
@@ -1338,6 +1341,10 @@ POST /api/models/test    → 200 { ok, latencyMs, error? } | 400
   프로바이더 해석, base URL, API 키, wire-id 치환까지 포함해서다. 실패한 프로브는 `5xx` 가 아니라
   `200` 본문이다 (`ok: false` 와 상류 에러). 레지스트리에 없는 id 만 `400` 이다. 프로브는 런
   브래킷 밖에서 돌아가므로 사용량 행을 기록하지 않는다.
+- `refresh` 는 발행된 카탈로그를 시간별 틱을 기다리지 않고 지금 당겨온다 — agent-models 가 방금
+  발행한 것을 콘솔에서 바로 보기 위한 것이다. `refreshed: false` 는 "이미 최신"과 "가져오기 실패"
+  둘 다를 덮는다 (이유는 서버 로그에 있고, 어느 쪽이든 레지스트리는 그대로다). `test` 처럼
+  설치한 것이 없는 갱신은 실패가 아니라 결과라서 `5xx` 를 돌려주지 않는다.
 
 ## A2A (인바운드)
 

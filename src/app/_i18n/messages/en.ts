@@ -677,6 +677,7 @@ export const en = {
     "Which LLM providers this deployment reaches, and which models users may pick for their agents.",
   "models.filter": "Filter models…",
   "models.catalogUpdated": "catalog updated",
+  "models.refreshNow": "Refresh now",
   "models.promoTooltip":
     "Promotional rate at the route's default endpoint, already applied — list price {list}",
   "models.reasoningNoTools":

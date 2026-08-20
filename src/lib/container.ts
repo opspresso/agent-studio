@@ -78,6 +78,8 @@ import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createTestModel } from "@/application/llm/testModel";
+import { createModelCatalogRefresher } from "@/application/llm/modelCatalogRefresh";
+import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
 import type { PostCostAlert } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/run/concurrencyGuard";
@@ -203,6 +205,19 @@ const imageChannel = createImageChannel(resolveTarget);
 
 /** One-shot model probe for the /models console — the same channel a run uses. */
 export const testModel = createTestModel(channel);
+
+/**
+ * "Pull the published catalog now", for the /models console's refresh button —
+ * the moment right after agent-models publishes, when the hourly tick is up to
+ * an hour away. A second refresher beside the boot one is safe on purpose:
+ * installs are atomic and stamp-guarded (`modelCatalogRefresh.ts`), so the
+ * worst a concurrent tick costs is one redundant fetch of a static document.
+ * intervalMs 0 keeps this instance tickless — the boot path owns the schedule.
+ */
+export const refreshModelCatalog = createModelCatalogRefresher({
+  source: createHttpModelCatalogSource(config.modelsCatalogUrl),
+  intervalMs: 0,
+}).refresh;
 
 const remoteAgents: RemoteAgentDispatcher = {
   // Every argument through, `options` included: this wrapper is what a run's
