@@ -140,6 +140,9 @@ async function captured(recorder: ArtifactRecorder, chunk: EngineChunk): Promise
       mimeType: chunk.image.mimeType,
       ...(chunk.image.prompt ? { prompt: chunk.image.prompt } : {}),
       ...(chunk.author ? { producedBy: chunk.author } : {}),
+      // Only what the producer named. A run's own model is not a fallback for
+      // a picture drawn by something else — see `EngineChunk.image.model`.
+      ...(chunk.image.model ? { model: chunk.image.model } : {}),
     });
     if (!stored) {
       return chunk;

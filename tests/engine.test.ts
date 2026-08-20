@@ -697,7 +697,7 @@ describe("runAgent GenerateImage builtin", () => {
     ]);
     const generateImage = vi.fn(async (prompt: string) => {
       expect(prompt).toBe("a red fox");
-      return { b64: "aW1n", mimeType: "image/png" };
+      return { b64: "aW1n", mimeType: "image/png", model: "openai/gpt-image-1" };
     });
     const deps: AgentDeps = { channel, generateImage };
     const chunks = await collect(
@@ -708,7 +708,15 @@ describe("runAgent GenerateImage builtin", () => {
       }),
     );
     const imageChunk = chunks.find((c) => c.image);
-    expect(imageChunk?.image).toMatchObject({ b64: "aW1n", mimeType: "image/png", prompt: "a red fox" });
+    // The model rides on the chunk: the builtin draws with the version's image
+    // model, which is not the model this run is talking to, and the artifact row
+    // is written from what the chunk says.
+    expect(imageChunk?.image).toMatchObject({
+      b64: "aW1n",
+      mimeType: "image/png",
+      prompt: "a red fox",
+      model: "openai/gpt-image-1",
+    });
     const finalText = chunks.map((c) => c.delta?.content ?? "").join("");
     expect(finalText).toContain("Here is your fox.");
     // the image tool is offered because generateImage is wired

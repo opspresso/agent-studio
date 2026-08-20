@@ -24,6 +24,7 @@ function fromItem(item: Record<string, unknown>): Artifact {
     ...(item.actor ? { actor: item.actor as Artifact["actor"] } : {}),
     ...(Array.isArray(item.ancestry) ? { ancestry: item.ancestry as string[] } : {}),
     ...(typeof item.producedBy === "string" ? { producedBy: item.producedBy } : {}),
+    ...(typeof item.model === "string" ? { model: item.model } : {}),
     ...(typeof item.runId === "string" ? { runId: item.runId } : {}),
     ...(typeof item.prompt === "string" ? { prompt: item.prompt } : {}),
     createdAt: String(item.createdAt ?? ""),

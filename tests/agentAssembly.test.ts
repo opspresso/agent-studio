@@ -25,8 +25,8 @@ function fullDeps(overrides: Partial<AgentDeps> = {}): AgentDeps {
     runSubagent: async function* () {
       return "";
     },
-    generateImage: async () => ({ b64: "", mimeType: "image/png" }),
-    editImage: async () => ({ b64: "", mimeType: "image/png" }),
+    generateImage: async () => ({ b64: "", mimeType: "image/png", model: "openai/gpt-image-1" }),
+    editImage: async () => ({ b64: "", mimeType: "image/png", model: "openai/gpt-image-1" }),
     ...overrides,
   };
 }

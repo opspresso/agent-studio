@@ -1181,6 +1181,9 @@ describe("executeAgent local subagent projectType dispatch", () => {
     const imageChunk = chunks.find((c) => c.image);
     expect(imageChunk?.author).toBe("painter-img");
     expect(imageChunk?.image?.prompt).toBe("a cat");
+    // The child's model, not the parent's `gpt-test` — which is the whole reason
+    // the artifact row reads this off the chunk instead of off the run.
+    expect(imageChunk?.image?.model).toBe("google/gemini-3-pro-image");
     expect(chunks.some((c) => c.error)).toBe(false);
     // Usage is billed to the child project under its image model.
     expect(
@@ -2157,7 +2160,7 @@ describe("streamProjectRun", () => {
 
     expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
     expect(chunks).toEqual([
-      { image: { b64: "aW1n", mimeType: "image/png" } },
+      { image: { b64: "aW1n", mimeType: "image/png", model: DEFAULT_IMAGE_MODEL } },
       { usage: expect.objectContaining({ inputTokens: 10, outputTokens: 100 }) },
       { done: true },
     ]);
