@@ -82,6 +82,10 @@ export function ArtifactGallery({
       setArtifacts(page.artifacts);
       setNextBefore(page.nextBefore);
     } catch (e) {
+      // English on purpose, like every other error in this console: the message
+      // that usually lands here is an `AppError`'s, which `application` and
+      // `domain` carry as a plain string and cannot translate. A localised
+      // fallback beside an English real message is the worse of the two.
       setError(e instanceof Error ? e.message : "Failed to load artifacts");
     } finally {
       setLoading(false);
@@ -110,14 +114,14 @@ export function ArtifactGallery({
 
   async function remove(artifact: ArtifactView) {
     const ok = await confirm({
-      title: "Delete artifact",
+      title: t("artifacts.deleteTitle"),
       // Said before the fact, because it cannot be said after: the transcript
       // that showed this picture keeps its reference, and there is no way to
       // reach back into every chat and Slack thread that rendered it.
-      message:
-        `This removes the ${artifact.kind} from storage. Anywhere it was shown — a chat message, ` +
-        `a Slack thread — will show it as unavailable. This cannot be undone.`,
-      confirmLabel: "Delete",
+      message: t("artifacts.deleteBody", {
+        kind: t(artifact.kind === "image" ? "artifacts.kindImage" : "artifacts.kindDocument"),
+      }),
+      confirmLabel: t("artifacts.delete"),
     });
     if (!ok) {
       return;
@@ -199,7 +203,7 @@ export function ArtifactGallery({
       {nextBefore && !loading && (
         <Group justify="center">
           <Button variant="default" loading={loadingMore} onClick={() => void loadMore()}>
-            Load more
+            {t("artifacts.loadMore")}
           </Button>
         </Group>
       )}
@@ -232,7 +236,7 @@ function ArtifactCard({
         {artifact.kind === "image" && available ? (
           <Image
             src={artifact.url}
-            alt={artifact.prompt ?? "Generated image"}
+            alt={artifact.prompt ?? t("artifacts.imageAlt")}
             h={180}
             fit="cover"
             onClick={onPreview}
@@ -245,7 +249,7 @@ function ArtifactCard({
               <FileTypeIcon artifact={artifact} />
             ) : (
               <Text fz="sm" c="dimmed" ta="center" px="md">
-                No longer available
+                {t("artifacts.unavailable")}
               </Text>
             )}
           </Paper>
@@ -257,7 +261,7 @@ function ArtifactCard({
           <Text fw={500} truncate>
             {artifact.filename ?? artifact.prompt ?? artifact.kind}
           </Text>
-          {artifact.source === "attachment" && <Badge variant="light">Attached</Badge>}
+          {artifact.source === "attachment" && <Badge variant="light">{t("artifacts.attached")}</Badge>}
         </Group>
 
         {artifact.prompt && artifact.filename && (
@@ -276,7 +280,10 @@ function ArtifactCard({
             model — and with neither the line is not rendered at all. */}
         {(artifact.producedBy || artifact.model) && (
           <Text fz="xs" c="dimmed" truncate>
-            {[artifact.producedBy && `by ${artifact.producedBy}`, artifact.model]
+            {[
+              artifact.producedBy && t("artifacts.producedBy", { name: artifact.producedBy }),
+              artifact.model,
+            ]
               .filter(Boolean)
               .join(" · ")}
           </Text>
@@ -290,14 +297,14 @@ function ArtifactCard({
             <Anchor component="button" type="button" onClick={onPreview} fz="sm">
               <Group gap={4}>
                 <IconEye size={14} />
-                View
+                {t("artifacts.view")}
               </Group>
             </Anchor>
           ) : (
             <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
               <Group gap={4}>
                 <IconDownload size={14} />
-                Download
+                {t("artifacts.download")}
               </Group>
             </Anchor>
           )}
@@ -318,10 +325,17 @@ const FILE_TYPE_ICONS: Partial<Record<ArtifactFileType, string>> = {
 };
 
 function FileTypeIcon({ artifact }: { artifact: ArtifactView }) {
+  const t = useT();
   const type = artifactFileType(artifact.mimeType, artifact.filename, artifact.key);
   const src = FILE_TYPE_ICONS[type];
   return src ? (
-    <Image src={src} alt={`${type.toUpperCase()} document`} w={64} h={64} fit="contain" />
+    <Image
+      src={src}
+      alt={t("artifacts.documentAlt", { type: type.toUpperCase() })}
+      w={64}
+      h={64}
+      fit="contain"
+    />
   ) : (
     <IconFile size={48} opacity={0.4} />
   );
