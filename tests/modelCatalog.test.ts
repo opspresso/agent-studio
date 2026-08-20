@@ -6,6 +6,7 @@ import {
   listModelMakers,
   listModels,
   loadModelCatalog,
+  loadSelfHostedModels,
   modelCatalogUpdatedAt,
 } from "@/domain/llm/models";
 import { createModelCatalogRefresher } from "@/application/llm/modelCatalogRefresh";
@@ -45,6 +46,7 @@ const catalog = (models: unknown[], extra: Record<string, unknown> = {}) => ({
 const install = (catalog: unknown) => loadModelCatalog(catalog, { maxDropFraction: 1 });
 
 afterEach(() => {
+  loadSelfHostedModels([]);
   install(snapshot);
 });
 
@@ -205,6 +207,49 @@ describe("createModelCatalogRefresher", () => {
     expect(await refresher.refresh()).toBe(false);
     expect(getModelConfig("openai/keep")).toBeDefined();
     expect(getModelConfig("openai/older")).toBeUndefined();
+  });
+
+  /**
+   * The second publisher rides the same schedule: declarations are re-read on
+   * every refresh, *after* the catalog step (their validation reads the
+   * current catalog), and independently of whether that step installed —
+   * that is how another instance's settings write reaches this process.
+   */
+  it("re-installs the declarations on every refresh, catalog step or not", async () => {
+    install(catalog([model("openai/keep")], { updatedAt: "2026-08-29T00:00:00.000Z" }));
+    const DECLARED = {
+      id: "selfhosted/qwen/local-x",
+      provider: "selfhosted",
+      family: "qwen/local-x",
+      maker: "local",
+      displayName: "Local X",
+      pricing: { inputPer1M: 0, outputPer1M: 0 },
+      capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: false },
+      contextWindow: 32768,
+      maxTokens: 8192,
+    };
+    const load = vi.fn(async () =>
+      catalog([model("openai/keep")], { updatedAt: "2026-08-30T00:00:00.000Z" }),
+    );
+    const localModels = vi.fn(async (): Promise<unknown> => [DECLARED]);
+    const refresher = createModelCatalogRefresher({
+      source: { description: "test", load },
+      intervalMs: 0,
+      localModels,
+    });
+    expect(await refresher.refresh()).toBe(true);
+    expect(getModelConfig("selfhosted/qwen/local-x")).toBeDefined();
+    // A failing catalog fetch still refreshes the declarations…
+    load.mockRejectedValueOnce(new Error("down"));
+    localModels.mockResolvedValueOnce([]);
+    expect(await refresher.refresh()).toBe(false);
+    expect(getModelConfig("selfhosted/qwen/local-x")).toBeUndefined();
+    // …and a failing declarations read keeps the overlay as it was.
+    localModels.mockResolvedValueOnce([DECLARED]);
+    await refresher.refresh();
+    localModels.mockRejectedValueOnce(new Error("db down"));
+    await refresher.refresh();
+    expect(getModelConfig("selfhosted/qwen/local-x")).toBeDefined();
   });
 
   it("shares one in-flight refresh instead of interleaving installs", async () => {

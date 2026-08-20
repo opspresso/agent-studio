@@ -13,7 +13,12 @@
  * down would be trading a stale price for no service.
  */
 
-import { loadModelCatalog, modelCatalogUpdatedAt, type ModelCatalogLoadReport } from "@/domain/llm/models";
+import {
+  loadModelCatalog,
+  loadSelfHostedModels,
+  modelCatalogUpdatedAt,
+  type ModelCatalogLoadReport,
+} from "@/domain/llm/models";
 import type { ModelCatalogSource } from "@/domain/llm/modelCatalogSource";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
@@ -38,6 +43,14 @@ export interface ModelCatalogRefreshDeps {
   source: ModelCatalogSource;
   /** 0 disables the interval; the boot refresh still runs. */
   intervalMs: number;
+  /**
+   * The deployment's self-hosted declarations, when it has any — re-read and
+   * re-installed on every refresh, right *after* the catalog step, because
+   * declaration validation reads the current catalog (one story per family
+   * across both publishers) and because a settings write on another instance
+   * is otherwise invisible to this process until it reboots.
+   */
+  localModels?: () => Promise<unknown>;
 }
 
 export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): ModelCatalogRefresher {
@@ -46,6 +59,43 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
   let inFlight: Promise<boolean> | undefined;
 
   async function refreshOnce(): Promise<boolean> {
+    const installed = await refreshCatalog();
+    // After the catalog step even when it installed nothing: declaration
+    // validation reads the current catalog, and the declarations may have
+    // changed while the catalog did not.
+    await refreshLocalModels();
+    return installed;
+  }
+
+  /** Re-install the deployment's declarations; a failure keeps the overlay as it was. */
+  async function refreshLocalModels(): Promise<void> {
+    if (deps.localModels === undefined) {
+      return;
+    }
+    try {
+      const report = loadSelfHostedModels((await deps.localModels()) ?? []);
+      // Quiet in the steady state, loud on loss: a skipped declaration is a
+      // model the operator declared and a run cannot use.
+      if (report.skipped.length > 0) {
+        log.warn(
+          "models",
+          `self-hosted declarations: ${report.skipped.length} skipped — ${sample(report.skipped)} (${report.loaded} installed)`,
+        );
+      } else if (report.removed.length > 0) {
+        log.info(
+          "models",
+          `self-hosted declarations installed: ${report.loaded} model(s), removed ${sample(report.removed)}`,
+        );
+      }
+    } catch (error) {
+      log.warn(
+        "models",
+        `self-hosted declarations not refreshed; the overlay keeps what it had — ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  async function refreshCatalog(): Promise<boolean> {
     let document: unknown;
     try {
       document = await deps.source.load();

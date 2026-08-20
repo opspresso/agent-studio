@@ -153,6 +153,16 @@ export async function getEnabledModels(): Promise<string[] | undefined> {
 }
 
 /**
+ * The deployment's self-hosted model declarations, as stored; `[]` when none.
+ * DB-only — there is no env fallback, because the deployment is the publisher
+ * of these and a declaration is data, not configuration. Read by the catalog
+ * refresher (boot and every tick) and installed into the registry overlay.
+ */
+export async function getSelfHostedModels(): Promise<unknown[]> {
+  return (await loadSettings())?.selfHostedModels ?? [];
+}
+
+/**
  * Whether a run may execute a model the registry cannot price. Injected into
  * the run bracket rather than read there — `application` may not import this
  * module. The parsing is the domain's, one layer below both of us.

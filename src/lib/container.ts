@@ -136,13 +136,14 @@ import {
   getLlmProviderConfigs,
   getPluginsRepoConfig,
   getPublicBaseUrl,
+  getSelfHostedModels,
   getUnknownModelPolicy,
   isConfiguredAdmin,
 } from "./runtime-settings";
 import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
 import { DEFAULT_MEMBER_TIER, type MemberTier } from "@/domain/member/tiers";
-import { offeredModels } from "@/domain/llm/models";
+import { offeredModels, SELF_HOSTED_PROVIDERS } from "@/domain/llm/models";
 import { composeCreateProjectWithInitialVersion } from "@/application/project/createProjectFlow";
 
 // The write override's admin list is pushed into the use case here rather than
@@ -217,7 +218,26 @@ export const testModel = createTestModel(channel);
 export const refreshModelCatalog = createModelCatalogRefresher({
   source: createHttpModelCatalogSource(config.modelsCatalogUrl),
   intervalMs: 0,
+  localModels: getSelfHostedModels,
 }).refresh;
+
+/**
+ * What the self-hosted channel is serving right now — the declaration aid on
+ * the /models console. Asks the channel's own `/models` listing, which is the
+ * only party that knows; declaring is still the admin's act, through
+ * `PUT /api/settings`.
+ */
+export const listSelfHostedServedModels = async () => {
+  const providers = await getLlmProviderConfigs();
+  const channel = providers.find((provider) =>
+    (SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider.name),
+  );
+  if (channel === undefined) {
+    throw new ValidationError("No self-hosted provider channel is configured");
+  }
+  const { listServedSelfHostedModels } = await import("@/infrastructure/llm/selfHostedDiscovery");
+  return listServedSelfHostedModels(channel);
+};
 
 const remoteAgents: RemoteAgentDispatcher = {
   // Every argument through, `options` included: this wrapper is what a run's

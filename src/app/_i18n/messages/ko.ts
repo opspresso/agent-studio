@@ -604,6 +604,9 @@ export const ko: Messages = {
   "models.filter": "Model 검색…",
   "models.catalogUpdated": "카탈로그 갱신",
   "models.refreshNow": "지금 갱신",
+  "models.selfHosted.title": "Self-hosted 모델",
+  "models.selfHosted.lede":
+    "이 배포가 직접 서빙하는 모델 — 여기서 선언하고 selfhosted 채널로 디스패치한다. 목록은 채널이 보고한 것이고, 선언한 모델은 0 가격으로 레지스트리에 올라간다.",
   "models.promoTooltip": "이미 적용된 프로모션 요율(기본 엔드포인트) — 정가 {list}",
   "models.reasoningNoTools":
     "tools 와 함께는 불가: provider 가 그 조합을 거부해, agent 런은 effort 를 none 으로 강제합니다",

@@ -6,7 +6,16 @@ import type {
   LlmProviderSetting,
   ProviderChannelConfig,
 } from "@/domain/settings/types";
-import { getModelConfig, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import {
+  getModelConfig,
+  loadSelfHostedModels,
+  selfHostedModelRejectReason,
+  SUPPORTED_PROVIDERS,
+} from "@/domain/llm/models";
+import {
+  selfHostedModelFromInput,
+  type SelfHostedModelInput,
+} from "@/domain/llm/selfHostedModels";
 import { parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
@@ -15,7 +24,10 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 /** Reads `LLM_PROVIDER_*` env vars into channel configs. Injected. */
 export type ParseProviderConfigs = (env: NodeJS.ProcessEnv) => ProviderChannelConfig[];
 
-export type SettingKey = Exclude<keyof AppSettings, "updatedAt" | "llmProviders" | "enabledModels">;
+export type SettingKey = Exclude<
+  keyof AppSettings,
+  "updatedAt" | "llmProviders" | "enabledModels" | "selfHostedModels"
+>;
 
 interface FieldSpec {
   key: SettingKey;
@@ -112,11 +124,15 @@ export interface LlmProviderInput {
   auth?: ChannelAuth;
 }
 
+export type { SelfHostedModelInput };
+
 export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
   /** Full replacement list; empty array removes the override (env fallback). */
   llmProviders?: LlmProviderInput[];
   /** Full replacement list; empty array removes the override (every model offered). */
   enabledModels?: string[];
+  /** Full replacement list; empty array removes every declaration. */
+  selfHostedModels?: SelfHostedModelInput[];
 };
 
 /**
@@ -146,8 +162,12 @@ function changedKeys(specs: FieldSpec[], stored: AppSettings | null, next: AppSe
   if (JSON.stringify(stored?.enabledModels) !== JSON.stringify(next.enabledModels)) {
     changed.push("enabledModels");
   }
+  if (JSON.stringify(stored?.selfHostedModels) !== JSON.stringify(next.selfHostedModels)) {
+    changed.push("selfHostedModels");
+  }
   return changed;
 }
+
 
 function toProviderViews(
   cipher: SecretCipher,
@@ -368,6 +388,31 @@ export function createSettingsUseCases(
         }
       }
 
+      if (patch.selfHostedModels !== undefined) {
+        if (patch.selfHostedModels.length === 0) {
+          delete next.selfHostedModels;
+        } else {
+          const declarations = patch.selfHostedModels.map(selfHostedModelFromInput);
+          // The same validation the install runs, surfaced as the save's
+          // error instead of a warning after it — a declaration that cannot
+          // install must fail the form, not silently vanish from the picker.
+          const problems = declarations
+            .map((entry) => {
+              const reason = selfHostedModelRejectReason(entry);
+              return reason === null ? null : `${entry.id} — ${reason}`;
+            })
+            .filter((problem): problem is string => problem !== null);
+          if (problems.length > 0) {
+            throw new ValidationError(`Invalid self-hosted model(s): ${problems.join("; ")}`);
+          }
+          const ids = new Set(declarations.map((entry) => entry.id));
+          if (ids.size !== declarations.length) {
+            throw new ValidationError("Self-hosted model families must be unique");
+          }
+          next.selfHostedModels = declarations;
+        }
+      }
+
       if (patch.enabledModels !== undefined) {
         if (patch.enabledModels.length === 0) {
           delete next.enabledModels;
@@ -419,6 +464,10 @@ export function createSettingsUseCases(
       const changed = changedKeys(specs, stored, next);
       next.updatedAt = new Date().toISOString();
       await repo.put(next);
+      // Install what was just persisted: this process offers the declared
+      // models immediately; other instances pick them up at their next
+      // catalog tick, which re-reads the declarations (`localModels`).
+      loadSelfHostedModels(next.selfHostedModels ?? []);
       // The row keeps only *which* keys were written, never their values: the
       // admin list is one of them and the LLM credential is another. Without
       // this the settings item held `updatedAt` and nothing about who moved it.

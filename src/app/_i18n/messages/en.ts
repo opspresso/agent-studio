@@ -678,6 +678,9 @@ export const en = {
   "models.filter": "Filter models…",
   "models.catalogUpdated": "catalog updated",
   "models.refreshNow": "Refresh now",
+  "models.selfHosted.title": "Self-hosted models",
+  "models.selfHosted.lede":
+    "Models this deployment serves itself, declared here and dispatched through the selfhosted channel. The list is what the channel reports; a declared model joins the registry at zero price.",
   "models.promoTooltip":
     "Promotional rate at the route's default endpoint, already applied — list price {list}",
   "models.reasoningNoTools":
