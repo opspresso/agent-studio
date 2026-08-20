@@ -36,7 +36,8 @@ import { useImageViewer } from "@/app/_components/ImageViewer";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { formatShortDateTime } from "@/shared/date";
 import { formatBytes } from "@/app/_lib/formatBytes";
-import { deleteArtifact, type ArtifactPage, type ArtifactQuery, type ArtifactView } from "../api";
+import { deleteArtifact, type ArtifactKind, type ArtifactPage, type ArtifactQuery, type ArtifactView } from "../api";
+import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import {
   artifactFileType,
@@ -44,6 +45,22 @@ import {
 } from "@/app/artifacts/_lib/fileType";
 
 type KindFilter = "all" | "image" | "document";
+
+/**
+ * The noun the delete sentence puts in the middle of itself.
+ *
+ * A map rather than a ternary, keyed like `FILE_TYPE_ICONS` below: a ternary's
+ * else branch absorbs a third kind silently, so adding one would have the
+ * dialog tell somebody deleting an audio file that it removes "the document".
+ * Here the compiler asks for the word.
+ *
+ * Separate from the `artifacts.images`/`artifacts.documents` filter labels,
+ * which are plural headings for a segmented control and do not fit a sentence.
+ */
+const KIND_NOUN: Record<ArtifactKind, MessageKey> = {
+  image: "artifacts.kindImage",
+  document: "artifacts.kindDocument",
+};
 
 export function ArtifactGallery({
   load,
@@ -118,9 +135,7 @@ export function ArtifactGallery({
       // Said before the fact, because it cannot be said after: the transcript
       // that showed this picture keeps its reference, and there is no way to
       // reach back into every chat and Slack thread that rendered it.
-      message: t("artifacts.deleteBody", {
-        kind: t(artifact.kind === "image" ? "artifacts.kindImage" : "artifacts.kindDocument"),
-      }),
+      message: t("artifacts.deleteBody", { kind: t(KIND_NOUN[artifact.kind]) }),
       confirmLabel: t("artifacts.delete"),
     });
     if (!ok) {
