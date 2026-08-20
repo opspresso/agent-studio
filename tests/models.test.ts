@@ -21,10 +21,12 @@ import { GET } from "@/app/api/metrics/route";
 
 /**
  * The registry is the catalog agent-models publishes, as the committed snapshot
- * holds it. agent-models validates the same invariants before it publishes;
- * these assertions hold the snapshot — and so every catalog `loadModelCatalog`
- * accepts — to what this app's dispatch and cost code rely on, so a catalog
- * that drifted from the contract fails here rather than at dispatch.
+ * holds it. The invariants dispatch and cost *rely on* — priced text models,
+ * cached ≤ uncached, vendor-qualified router wire ids, one story per family —
+ * are enforced by `loadModelCatalog` itself on every catalog
+ * (`tests/modelCatalog.test.ts`); what this file adds are the publisher-side
+ * conventions worth catching at sync time rather than trusting, checked
+ * against the snapshot.
  */
 describe("model registry invariants", () => {
   /**
@@ -71,15 +73,17 @@ describe("model registry invariants", () => {
   });
 
   it("identifies the model maker independently of its route", () => {
+    // Data-driven on purpose: which ids the catalog carries is agent-models'
+    // decision now, so naming one here would fail this suite the day its
+    // retirement automation acts (`pnpm sync-models` before a release).
     for (const model of listModels()) {
       expect(listModelMakers()[model.maker], `${model.id}: unknown maker`).toBeTruthy();
     }
-    expect(listModels().find((model) => model.id === "bedrock/gpt-oss-120b")?.maker).toBe(
-      "openai",
-    );
-    expect(listModels().find((model) => model.id === "openrouter/claude-opus-5")?.maker).toBe(
-      "anthropic",
-    );
+    const routed = listModels().filter((m) => m.provider === "bedrock" || m.provider === "openrouter");
+    expect(routed.length).toBeGreaterThan(0);
+    for (const model of routed) {
+      expect(["bedrock", "openrouter"], `${model.id}: maker is the route`).not.toContain(model.maker);
+    }
   });
 
   /**
@@ -148,8 +152,8 @@ describe("model registry invariants", () => {
 
   it("prices every image model by token rate or per image", () => {
     const imageModels = listModels().filter((m) => m.capabilities.imageGeneration);
-    // `DEFAULT_IMAGE_MODEL` is the first of these; with none, image generation
-    // has no default model to fall back to.
+    // `defaultImageModel()` is the first visible one of these; with none,
+    // image generation has no default model to fall back to.
     expect(imageModels.length).toBeGreaterThan(0);
     for (const model of imageModels) {
       const { imageOutputPer1M, perImage } = model.pricing;
@@ -394,15 +398,19 @@ describe("applyModelConstraints", () => {
     expect(applyModelConstraints(params).reasoningEffort).toBe("high");
   });
 
-  it("carries the restriction across the whole GPT-5.6 generation", () => {
-    // Flagging only the model someone had tried is how `luna` shipped broken.
-    const family = listModels().filter((m) => m.id.startsWith("openai/gpt-5.6-"));
-    expect(family.length).toBeGreaterThan(1);
-    for (const model of family) {
-      expect({ id: model.id, flag: model.capabilities.reasoningWithTools }).toEqual({
-        id: model.id,
-        flag: false,
+  it("forces the explicit none for every model the catalog flags", () => {
+    // Flagging only the model someone had tried is how `luna` shipped broken;
+    // which models carry the flag is agent-models' call now, so this iterates
+    // whatever the snapshot flags rather than naming a generation that its
+    // retirement automation may one day retire.
+    for (const model of listModels().filter((m) => m.capabilities.reasoningWithTools === false)) {
+      const constrained = applyModelConstraints({
+        model: model.id,
+        messages: [],
+        tools: [{ type: "function", function: { name: "t", description: "", parameters: {} } }],
+        reasoningEffort: "high",
       });
+      expect(constrained.reasoningEffort, model.id).toBe("none");
     }
   });
 });

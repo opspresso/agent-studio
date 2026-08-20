@@ -603,6 +603,10 @@ export const ko: Messages = {
     "이 배포가 연결하는 LLM 프로바이더와, 사용자가 에이전트에 고를 수 있는 모델입니다.",
   "models.filter": "Model 검색…",
   "models.catalogUpdated": "카탈로그 갱신",
+  "models.promoTooltip": "이미 적용된 프로모션 요율(기본 엔드포인트) — 정가 {list}",
+  "models.reasoningNoTools":
+    "tools 와 함께는 불가: provider 가 그 조합을 거부해, agent 런은 effort 를 none 으로 강제합니다",
+  "models.cached": "캐시",
   "models.empty": "등록된 model 이 없습니다.",
   "profile.lede": "내 계정과, 모든 프로젝트에 걸친 내 사용량입니다.",
   "profile.tierLimits": "등급 한도",

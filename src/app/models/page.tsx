@@ -48,6 +48,11 @@ interface CatalogProvider {
 
 type CatalogModel = ModelConfig & { enabled: boolean };
 
+/** A maker's label, or its id for one the loaded catalog does not name. */
+function makerLabel(makers: Record<string, string>, maker: string): string {
+  return makers[maker] ?? maker;
+}
+
 interface Catalog {
   providers: CatalogProvider[];
   models: CatalogModel[];
@@ -74,28 +79,44 @@ const CAPABILITY_COLUMNS = [
 ] as const;
 
 /**
+ * The registry's rates with a promotional discount backed out — the list
+ * price, in the shape `modelPriceLabel` renders, so the tooltip's collapse of
+ * per-1M vs per-image billing is the same one the label beside it uses rather
+ * than a third rule.
+ */
+function undiscounted(pricing: ModelConfig["pricing"], discount: number): ModelConfig["pricing"] {
+  const up = (rate: number | undefined) => (rate === undefined ? undefined : rate / (1 - discount));
+  return {
+    ...pricing,
+    inputPer1M: pricing.inputPer1M / (1 - discount),
+    outputPer1M: pricing.outputPer1M / (1 - discount),
+    imageOutputPer1M: up(pricing.imageOutputPer1M),
+    perImage: up(pricing.perImage),
+  };
+}
+
+/**
  * The one-line price row: the label the registry's rates make, and — where the
  * catalog says the rate is a promotion — how deep it is, with the list price
  * in the tooltip. The badge is informational: cost is computed from the rates
- * as stated, which are already net of the discount.
+ * as stated, which are already net of the discount. A discount that rounds to
+ * 0% shows nothing — a "−0%" badge is noise wearing a number.
  */
 function PriceLine({ pricing }: { pricing: ModelConfig["pricing"] }) {
+  const t = useT();
   const discount = pricing.discount;
+  const percent = discount === undefined ? 0 : Math.round(discount * 100);
   return (
     <Group gap={6} mt="sm" align="center" wrap="wrap">
       <Text fz="sm">{modelPriceLabel(pricing)}</Text>
-      {discount !== undefined && (
+      {discount !== undefined && percent > 0 && (
         <Tooltip
           multiline
           maw={320}
-          label={`Promotional rate at the route's default endpoint, already applied — list price ${formatUsd(
-            pricing.inputPer1M / (1 - discount),
-          )} in · ${formatUsd(
-            (pricing.imageOutputPer1M ?? pricing.outputPer1M) / (1 - discount),
-          )} out per 1M`}
+          label={t("models.promoTooltip", { list: modelPriceLabel(undiscounted(pricing, discount)) })}
         >
           <Badge size="sm" variant="light" color="green">
-            −{Math.round(discount * 100)}%
+            −{percent}%
           </Badge>
         </Tooltip>
       )}
@@ -195,7 +216,7 @@ export default function ModelsPage() {
           model.id,
           model.displayName,
           model.provider,
-          makers[model.maker] ?? model.maker,
+          makerLabel(makers, model.maker),
         ),
       ),
     [models, makers, tableState, filter],
@@ -381,7 +402,7 @@ export default function ModelsPage() {
               <Stack gap="sm" h="100%" justify="space-between">
                 <div>
                   <Group gap="sm" wrap="nowrap" align="flex-start">
-                    <Tooltip label={makers[model.maker] ?? model.maker}>
+                    <Tooltip label={makerLabel(makers, model.maker)}>
                       <Box
                         w={32}
                         h={32}
@@ -391,7 +412,7 @@ export default function ModelsPage() {
                       >
                         <img
                           src={`/icons/brands/${model.maker}.svg`}
-                          alt={`${makers[model.maker] ?? model.maker} logo`}
+                          alt={`${makerLabel(makers, model.maker)} logo`}
                           width={24}
                           height={24}
                           // A maker the catalog gained before this checkout got
@@ -429,12 +450,7 @@ export default function ModelsPage() {
                         key === "reasoning" && model.capabilities.reasoningWithTools === false ? (
                           // The provider rejects tools together with reasoning_effort,
                           // so an agent run forces the effort to "none" (applyModelConstraints).
-                          <Tooltip
-                            key={key}
-                            multiline
-                            maw={300}
-                            label="Not alongside tools: the provider rejects the pair, so agent runs force the effort to none"
-                          >
+                          <Tooltip key={key} multiline maw={300} label={t("models.reasoningNoTools")}>
                             <Badge size="sm" variant="outline" color="yellow">
                               {label}
                             </Badge>
@@ -456,7 +472,7 @@ export default function ModelsPage() {
                     {contextWindowLabel(model)}
                     {model.pricing.cachedInputPer1M !== undefined &&
                       !model.capabilities.imageGeneration &&
-                      ` · cached ${formatUsd(model.pricing.cachedInputPer1M)}`}
+                      ` · ${t("models.cached")} ${formatUsd(model.pricing.cachedInputPer1M)}`}
                   </Text>
                   {routes.length > 0 && (
                     <Text fz="xs" c="dimmed" mt={4}>

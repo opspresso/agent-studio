@@ -15,32 +15,34 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { loadModelCatalog } from "@/domain/llm/models";
+import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
+import { config } from "@/lib/config";
 
 const SNAPSHOT = new URL("../src/domain/llm/catalog.json", import.meta.url);
-const url = process.env.MODELS_CATALOG_URL ?? "https://models.opspresso.com/models.json";
 const check = process.argv.includes("--check");
 
 async function main(): Promise<void> {
-  const response = await fetch(url, { headers: { accept: "application/json" } });
-  if (!response.ok) {
-    throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
-  }
-  const catalog = (await response.json()) as { updatedAt?: string };
+  // The same source, URL resolution and deadline the runtime refresh uses —
+  // a second fetch here is how the two drift on a moved host or a stall.
+  const catalog = (await createHttpModelCatalogSource(config.modelsCatalogUrl).load()) as {
+    updatedAt?: string;
+  };
   const report = loadModelCatalog(catalog);
   if (report.skipped.length > 0) {
     console.warn(`! ${report.skipped.length} entries the registry would skip:\n  - ${report.skipped.join("\n  - ")}`);
   }
 
-  const text = `${JSON.stringify(catalog, null, 2)}\n`;
-  const current = readFileSync(SNAPSHOT, "utf-8");
-  if (current === text) {
+  // Freshness is the catalog's own contract — `updatedAt` moves only when the
+  // content does — so `--check` compares stamps, not serialisations: a
+  // publisher re-ordering keys must not fail CI over identical content.
+  const current = JSON.parse(readFileSync(SNAPSHOT, "utf-8")) as { updatedAt?: string };
+  if (current.updatedAt === catalog.updatedAt) {
     console.log(`snapshot is current (${report.loaded} models, updated ${report.updatedAt})`);
   } else if (check) {
-    const was = (JSON.parse(current) as { updatedAt?: string }).updatedAt;
-    console.error(`snapshot is behind: ${was} → ${report.updatedAt}; run pnpm sync-models`);
+    console.error(`snapshot is behind: ${current.updatedAt} → ${catalog.updatedAt}; run pnpm sync-models`);
     process.exit(1);
   } else {
-    writeFileSync(SNAPSHOT, text);
+    writeFileSync(SNAPSHOT, `${JSON.stringify(catalog, null, 2)}\n`);
     console.log(`snapshot written (${report.loaded} models, updated ${report.updatedAt})`);
   }
 }

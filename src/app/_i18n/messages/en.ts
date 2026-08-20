@@ -677,6 +677,11 @@ export const en = {
     "Which LLM providers this deployment reaches, and which models users may pick for their agents.",
   "models.filter": "Filter models…",
   "models.catalogUpdated": "catalog updated",
+  "models.promoTooltip":
+    "Promotional rate at the route's default endpoint, already applied — list price {list}",
+  "models.reasoningNoTools":
+    "Not alongside tools: the provider rejects the pair, so agent runs force the effort to none",
+  "models.cached": "cached",
   "models.empty": "No models are registered.",
   "profile.lede": "Your account, and your own usage across every project.",
   "profile.tierLimits": "Tier limits",

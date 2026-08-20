@@ -18,7 +18,12 @@
  * (`application/llm/modelCatalogRefresh.ts`) and replaces the snapshot
  * wholesale through `loadModelCatalog`, which is the one way in: it validates
  * each entry against the shape below, drops what does not fit, and swaps the
- * registry atomically — a run in flight keeps the config it already resolved.
+ * registry atomically. Lookups are by id at the moment of use — a long run
+ * whose model leaves the catalog mid-flight books its later usage at $0
+ * through the unknown-model path below — which is tolerable because
+ * agent-models retires by hiding, never by deleting: an id vanishing outright
+ * is a publisher defect, and `parseCatalog`'s shrink guard refuses the
+ * catalogs where that happens wholesale, reporting the rest.
  *
  * The catalog's shape is this module's `ModelConfig`, because agent-models
  * writes it for this reader; a field is added there only when this file can
@@ -115,17 +120,6 @@ export interface ModelConfig {
   wireId?: string;
 }
 
-/** The published catalog, as `models.json` carries it. */
-export interface ModelCatalog {
-  version: number;
-  /** When the content last changed. */
-  updatedAt: string;
-  source?: string;
-  providers?: string[];
-  makers: Record<string, string>;
-  models: ModelConfig[];
-}
-
 export const MODEL_CATALOG_VERSION = 1;
 
 /** What a load did: how many entries were installed, which were dropped and why. */
@@ -133,6 +127,12 @@ export interface ModelCatalogLoadReport {
   loaded: number;
   /** `id — reason`, one per entry the catalog carried and this registry refused. */
   skipped: string[];
+  /**
+   * Ids the registry held before this load and the new catalog no longer
+   * carries. agent-models retires by hiding, so anything here is worth a
+   * warning: a stored version naming one of these now books usage at $0.
+   */
+  removed: string[];
   updatedAt: string;
 }
 
@@ -203,6 +203,13 @@ function rejectReason(entry: unknown): string | null {
     const d = entry.pricing.discount;
     if (typeof d !== "number" || !(d > 0 && d < 1)) return "pricing.discount is not a fraction";
   }
+  if (
+    entry.pricing.cachedInputPer1M !== undefined &&
+    (entry.pricing.cachedInputPer1M as number) > (entry.pricing.inputPer1M as number)
+  ) {
+    // `calculateCost` bills cached tokens at this rate believing it a discount.
+    return "cached input priced above uncached";
+  }
   if (!isRecord(entry.capabilities)) return "no capabilities";
   for (const key of CAPABILITY_KEYS) {
     if (typeof entry.capabilities[key] !== "boolean") return `capabilities.${key} is not a boolean`;
@@ -211,12 +218,38 @@ function rejectReason(entry: unknown): string | null {
     const value = entry.capabilities[key];
     if (value !== undefined && typeof value !== "boolean") return `capabilities.${key} is not a boolean`;
   }
+  if (entry.capabilities.imageGeneration !== true) {
+    // An unpriced text model is worse than a missing one: the lookup succeeds
+    // and every call books at $0 with no warning.
+    if (!((entry.pricing.inputPer1M as number) > 0) || !((entry.pricing.outputPer1M as number) > 0)) {
+      return "a text model needs input and output prices above zero";
+    }
+  } else if (
+    !(((entry.pricing.imageOutputPer1M as number | undefined) ?? 0) > 0) &&
+    !(((entry.pricing.perImage as number | undefined) ?? 0) > 0)
+  ) {
+    return "an image model needs imageOutputPer1M or perImage";
+  }
   if (!isCount(entry.contextWindow)) return "contextWindow is not a positive integer";
   if (!isCount(entry.maxTokens)) return "maxTokens is not a positive integer";
   if (entry.maxTokens > entry.contextWindow) return "maxTokens exceeds contextWindow";
-  if (entry.hidden !== undefined && entry.hidden !== true) return "hidden is neither true nor absent";
+  // An explicit false means what absence means; only a non-boolean is malformed.
+  if (entry.hidden !== undefined && typeof entry.hidden !== "boolean") return "hidden is not a boolean";
   if (entry.wireId !== undefined && (typeof entry.wireId !== "string" || entry.wireId === "")) {
     return "wireId is not a string";
+  }
+  // A router names models `vendor/model`; without the vendor in the wire id,
+  // dispatch sends the bare id and OpenRouter 404s a model it serves.
+  if (provider === "openrouter" && (typeof entry.wireId !== "string" || !entry.wireId.includes("/"))) {
+    return "an openrouter entry needs a vendor-qualified wireId";
+  }
+  // Anthropic serves hyphenated names and 404s the dotted form the registry
+  // uses, so a dotted `anthropic/` id is dispatchable only through its wireId.
+  if (provider === "anthropic" && (entry.family as string).includes(".")) {
+    const expected = (entry.family as string).replaceAll(".", "-");
+    if (entry.wireId !== expected) {
+      return `a dotted Anthropic id needs wireId "${expected}"`;
+    }
   }
   return null;
 }
@@ -280,53 +313,115 @@ function parseCatalog(catalog: unknown): { state: RegistryState; report: ModelCa
     models.push(model);
     byId.set(model.id, model);
   }
-  if (models.length === 0) {
+  // The same model reached two ways is one model: routes to a family must
+  // agree on what it is, or dispatch, budgets and the picker each tell a
+  // different story about one name. The first route in wins; disagreeing
+  // later ones are dropped, named, and the catalog's publisher hears of it.
+  const familyShape = new Map<string, ModelConfig>();
+  const consistent = models.filter((model) => {
+    const first = familyShape.get(model.family);
+    if (first === undefined) {
+      familyShape.set(model.family, model);
+      return true;
+    }
+    const disagrees =
+      first.displayName !== model.displayName ||
+      first.maker !== model.maker ||
+      first.contextWindow !== model.contextWindow ||
+      (first.capabilities.imageGeneration ?? false) !== (model.capabilities.imageGeneration ?? false);
+    if (disagrees) {
+      skipped.push(`${model.id} — disagrees with ${first.id} about what ${model.family} is`);
+      byId.delete(model.id);
+      return false;
+    }
+    return true;
+  });
+  if (consistent.length === 0) {
     throw new Error(`model catalog carries ${catalog.models.length} models and none is usable`);
   }
   const updatedAt = typeof catalog.updatedAt === "string" ? catalog.updatedAt : "";
-  return { state: { models, byId, makers, updatedAt }, report: { loaded: models.length, skipped, updatedAt } };
+  return {
+    state: { models: consistent, byId, makers, updatedAt },
+    report: { loaded: consistent.length, skipped, removed: [], updatedAt },
+  };
 }
 
-/** The snapshot is the registry until a load replaces it; a broken snapshot is a build error, not a runtime one. */
-let registry: RegistryState = parseCatalog(snapshot).state;
+/**
+ * The registry lives on `globalThis`, not in a module-scoped `let`: in dev,
+ * editing a server file re-evaluates this module, and a plain `let` would
+ * reset routes to the snapshot while the boot-time refresher keeps feeding the
+ * *old* module instance — the split-brain `recordAudit` documents for the
+ * audit sink. One process, one registry, however many times the module loads.
+ * The snapshot parse also proves the fallback loads; a broken snapshot fails
+ * the first import (and so the build), not the first request.
+ */
+const REGISTRY_SLOT = Symbol.for("agent-studio.model-registry");
+const slot = globalThis as { [REGISTRY_SLOT]?: RegistryState };
+slot[REGISTRY_SLOT] ??= parseCatalog(snapshot).state;
+
+function registryState(): RegistryState {
+  return slot[REGISTRY_SLOT] as RegistryState;
+}
 
 /**
  * Install a catalog. Atomic: the registry is the old state or the new one,
  * never between. Throws, leaving the old state in place, when the catalog is
- * unusable (see `parseCatalog`).
+ * unusable (see `parseCatalog`) — or when it would silently orphan most of
+ * the registry: agent-models retires by hiding, never by deleting, so a
+ * catalog missing more than half of the ids currently held is a truncated
+ * publish, not a decision. Smaller disappearances install and are reported
+ * as `removed`, for the caller to warn about.
  */
-export function loadModelCatalog(catalog: unknown): ModelCatalogLoadReport {
+export function loadModelCatalog(
+  catalog: unknown,
+  options?: {
+    /**
+     * How much of the current registry a catalog may drop before it is read
+     * as truncated, as a fraction. Defaults to half; `1` disables the guard —
+     * a test seam, since a unit test installs registries nothing published.
+     */
+    maxDropFraction?: number;
+  },
+): ModelCatalogLoadReport {
   const parsed = parseCatalog(catalog);
-  registry = parsed.state;
-  return parsed.report;
+  const current = registryState();
+  const removed = current.models.filter((m) => !parsed.state.byId.has(m.id)).map((m) => m.id);
+  const maxDrop = options?.maxDropFraction ?? 0.5;
+  if (removed.length > current.models.length * maxDrop) {
+    throw new Error(
+      `model catalog drops ${removed.length} of ${current.models.length} current models — refusing a truncated catalog`,
+    );
+  }
+  slot[REGISTRY_SLOT] = parsed.state;
+  return { ...parsed.report, removed };
 }
 
-/** Every model the registry currently holds, hidden ones included, in catalog order. */
+/**
+ * Every model the registry currently holds, hidden ones included, in catalog
+ * order — which agent-models states deliberately (providers in its
+ * `providers.json` order, then each file's order), so "the first entry that
+ * can draw" and its kin are decisions the publisher curates, not accidents.
+ */
 export function listModels(): ModelConfig[] {
-  return registry.models;
+  return registryState().models;
 }
 
-/** When the loaded catalog's content last changed — what `/api/health` and the Models page show. */
+/** When the loaded catalog's content last changed — shown by the Models console. */
 export function modelCatalogUpdatedAt(): string {
-  return registry.updatedAt;
+  return registryState().updatedAt;
 }
 
 /** Maker id → display label, for every maker the loaded catalog names. */
 export function listModelMakers(): Record<string, string> {
-  return registry.makers;
-}
-
-/** A maker's label, or its id for one the catalog does not label. */
-export function modelMakerLabel(maker: string): string {
-  return registry.makers[maker] ?? maker;
+  return registryState().makers;
 }
 
 export function getModelConfig(id: string): ModelConfig | undefined {
-  return registry.byId.get(id);
+  return registryState().byId.get(id);
 }
 
 export function getVisibleModels(): ModelConfig[] {
-  return registry.models.filter((m) => !m.hidden);
+  return registryState().models.filter((m) => !m.hidden);
 }
 
 /** Token counts as a reader compares them: 1,048,576 → `1.05M`, 131,072 → `131K`. */

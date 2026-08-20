@@ -4,7 +4,7 @@ import type { RunOrigin } from "@/domain/execution/actor";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
-import { getModelConfig, listModels, toImageUsageRecord } from "@/domain/llm/models";
+import { getModelConfig, getVisibleModels, toImageUsageRecord } from "@/domain/llm/models";
 import * as engine from "@/application/llm/engine";
 import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import type { ExecutionDeps } from "./deps";
@@ -12,13 +12,14 @@ import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecyc
 import { log } from "@/shared/logger";
 
 /**
- * Default image model: the first registry entry with the imageGeneration
- * capability. A function, not a constant: the registry is a catalog loaded at
- * boot and refreshed after, so the answer is read when asked, not when this
- * module was evaluated.
+ * Default image model: the first *visible* registry entry that can draw. A
+ * function, not a constant — the registry is a catalog loaded at boot and
+ * refreshed after — and "first" is a decision the catalog's publisher curates:
+ * agent-models states its order deliberately (see `listModels`), so a retired
+ * (hidden) model can never become the default by sitting early in the list.
  */
 export function defaultImageModel(): string | undefined {
-  return listModels().find((m) => m.capabilities.imageGeneration)?.id;
+  return getVisibleModels().find((m) => m.capabilities.imageGeneration)?.id;
 }
 
 /**

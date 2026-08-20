@@ -114,8 +114,9 @@ domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
 `src/app/api/teams/messages/_lib/` (`TeamsEventDeps`),
 `src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
 handler assembly over `executionDeps`), and `src/instrumentation.ts` (the boot path, which
-wires the audit sink straight from its adapter — the composition root is not loaded until
-this file decides the runtime is the Node server — and resumes the managed MCP containers).
+wires the audit sink straight from its adapter and assembles the model-catalog refresher
+over its HTTP source — the composition root is not loaded until this file decides the
+runtime is the Node server — and resumes the managed MCP containers).
 Three `lib` modules besides the root reach one adapter each without composing a use case —
 `auth.ts`, `runtime-settings.ts`, `memberAccess.ts` — and `tests/architecture.test.ts` names
 exactly those as `lib`'s wiring modules; every other `lib` file is a leaf.

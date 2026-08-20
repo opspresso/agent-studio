@@ -13,9 +13,18 @@
  * down would be trading a stale price for no service.
  */
 
-import { loadModelCatalog, type ModelCatalogLoadReport } from "@/domain/llm/models";
+import { loadModelCatalog, modelCatalogUpdatedAt, type ModelCatalogLoadReport } from "@/domain/llm/models";
 import type { ModelCatalogSource } from "@/domain/llm/modelCatalogSource";
 import { log } from "@/shared/logger";
+import { unrefTimer } from "@/shared/unrefTimer";
+
+/** How many skipped/removed ids a log line names before counting the rest. */
+const REPORT_SAMPLE = 5;
+
+function sample(items: string[]): string {
+  const shown = items.slice(0, REPORT_SAMPLE).join("; ");
+  return items.length > REPORT_SAMPLE ? `${shown}; +${items.length - REPORT_SAMPLE} more` : shown;
+}
 
 export interface ModelCatalogRefresher {
   /** Fetch and install once; false when the registry was left as it was. */
@@ -33,11 +42,13 @@ export interface ModelCatalogRefreshDeps {
 
 export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): ModelCatalogRefresher {
   let timer: ReturnType<typeof setInterval> | undefined;
+  /** The refresh in flight, so a slow fetch and the next tick cannot interleave installs. */
+  let inFlight: Promise<boolean> | undefined;
 
-  async function refresh(): Promise<boolean> {
-    let report: ModelCatalogLoadReport;
+  async function refreshOnce(): Promise<boolean> {
+    let document: unknown;
     try {
-      report = loadModelCatalog(await deps.source.load());
+      document = await deps.source.load();
     } catch (error) {
       log.warn(
         "models",
@@ -45,9 +56,54 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
       );
       return false;
     }
-    const skipped = report.skipped.length > 0 ? `, ${report.skipped.length} skipped: ${report.skipped.join("; ")}` : "";
-    log.info("models", `model catalog loaded from ${deps.source.description}: ${report.loaded} models (updated ${report.updatedAt})${skipped}`);
+    // `updatedAt` moves only when the content does (agent-models' contract),
+    // so an equal stamp is the quiet hourly case — no reinstall, no log line —
+    // and an older one is a stale read (a lagging CDN node) that must not
+    // roll the registry back.
+    const incoming = (document as { updatedAt?: unknown } | null)?.updatedAt;
+    const current = modelCatalogUpdatedAt();
+    if (typeof incoming === "string" && current !== "" && incoming <= current) {
+      if (incoming < current) {
+        log.warn(
+          "models",
+          `model catalog from ${deps.source.description} is older than the registry (${incoming} < ${current}); keeping the newer one`,
+        );
+      }
+      return false;
+    }
+    let report: ModelCatalogLoadReport;
+    try {
+      report = loadModelCatalog(document);
+    } catch (error) {
+      log.warn(
+        "models",
+        `model catalog not refreshed from ${deps.source.description}; the registry keeps what it had — ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+    const skipped =
+      report.skipped.length > 0 ? `, ${report.skipped.length} skipped: ${sample(report.skipped)}` : "";
+    log.info(
+      "models",
+      `model catalog loaded from ${deps.source.description}: ${report.loaded} models (updated ${report.updatedAt})${skipped}`,
+    );
+    if (report.removed.length > 0) {
+      // agent-models retires by hiding; an id that vanished outright now
+      // books any stored version's usage at $0, which deserves more than the
+      // info line above.
+      log.warn(
+        "models",
+        `model catalog dropped ${report.removed.length} previously held model(s): ${sample(report.removed)}`,
+      );
+    }
     return true;
+  }
+
+  function refresh(): Promise<boolean> {
+    inFlight ??= refreshOnce().finally(() => {
+      inFlight = undefined;
+    });
+    return inFlight;
   }
 
   return {
@@ -60,7 +116,7 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
         void refresh();
       }, deps.intervalMs);
       // A refresh loop must not keep a process alive that is otherwise done.
-      timer.unref?.();
+      unrefTimer(timer);
     },
     stop() {
       if (timer !== undefined) {

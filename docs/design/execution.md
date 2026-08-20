@@ -178,7 +178,7 @@ flowchart TB
   cachedInputPer1M?, imageInputPer1M?, imageOutputPer1M?, perImage?, perInputImage? },
   capabilities { tools, structuredOutput, imageInput, reasoning, reasoningWithTools?,
   imageGeneration? }, contextWindow, maxTokens, hidden?, wireId? }`. `wireId` 와 drift 검사는
-  [CONFIGURATION.md](../CONFIGURATION.md#모델-레지스트리-family-와-offering) 참고.
+  [CONFIGURATION.md](../CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그) 참고.
 
 ## Images
 
@@ -189,7 +189,7 @@ flowchart TB
 | 경로 | 실행되는 곳 | 모델 |
 |---|---|---|
 | `image` project | `generateImage` (`src/application/image/generateImage.ts`) | version 자신의 `model` |
-| agent 런의 `GenerateImage` / `EditImage` builtin | `src/application/execution/imageTool.ts` | `parameters.imageModel` 이 여전히 이미지 가능 모델인 동안에는 그것, 아니면 `DEFAULT_IMAGE_MODEL` — 그 capability 를 가진 첫 registry 항목 |
+| agent 런의 `GenerateImage` / `EditImage` builtin | `src/application/execution/imageTool.ts` | `parameters.imageModel` 이 여전히 이미지 가능 모델인 동안에는 그것, 아니면 `defaultImageModel()` — 그 capability 를 가진 첫 *visible* 카탈로그 항목 |
 | transfer 를 거쳐 도달한 `image` project | `runImageSubagent` (같은 파일) | 자식 version 자신의 `model` |
 
 **생성과 편집은 하나의 결정이고, 입력에서 읽는다.** 모든 경로는 원본 바이트를 들고 있으면
