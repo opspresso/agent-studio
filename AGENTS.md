@@ -323,6 +323,14 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   prefix is skipped on load, with its reason logged. `pnpm sync-models` refreshes the
   snapshot; a test that needs a model the catalog gained runs it first
   ([CONFIGURATION.md](docs/CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)).
+  **Self-hosted models are the one exception, with a second publisher: the deployment
+  itself.** Which models a `selfhosted` channel serves is a fact about one deployment's
+  hardware, so those entries come from the deployment's declarations (runtime settings,
+  managed on the /models console) through `loadSelfHostedModels` into a registry overlay a
+  catalog refresh never touches — never from agent-models, and never as catalog entries
+  here. Same shape, same loader validation; a declaration's `family` is the serving
+  stack's own model name, slashes included, because LM Studio answers a near-miss name
+  with whatever model is loaded rather than a 404.
 - **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client
   composers, API bodies and the messaging pipeline all read them) and the `data:` encoding in
   `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.

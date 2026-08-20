@@ -44,6 +44,27 @@ const updateSchema = z.object({
   unknownModelPolicy: z.enum(["allow", "refuse", ""]).optional(),
   // Full replacement; empty array clears the override (every model offered).
   enabledModels: z.array(z.string().max(200)).max(200).optional(),
+  // Full replacement; empty array removes every declaration. Shape-level only —
+  // the semantic rules (zero pricing, catalog collisions, family agreement)
+  // are the registry loader's, applied in the use case.
+  selfHostedModels: z
+    .array(
+      z.object({
+        family: z.string().min(1).max(200),
+        displayName: z.string().min(1).max(200),
+        maker: z.string().max(100).optional(),
+        contextWindow: z.number().int().positive(),
+        maxTokens: z.number().int().positive(),
+        capabilities: z.object({
+          tools: z.boolean(),
+          structuredOutput: z.boolean(),
+          imageInput: z.boolean(),
+          reasoning: z.boolean(),
+        }),
+      }),
+    )
+    .max(50)
+    .optional(),
 });
 
 export const GET = withAdminAuth(async () => {

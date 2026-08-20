@@ -9,15 +9,21 @@ import {
   Card,
   Checkbox,
   Group,
+  NumberInput,
   Select,
   Stack,
   Switch,
   Text,
+  TextInput,
   Tooltip,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { IconChevronDown, IconChevronUp, IconCpu } from "@tabler/icons-react";
 import { contextWindowLabel, type ModelConfig } from "@/domain/llm/models";
+import {
+  selfHostedModelToInput,
+  type SelfHostedModelInput,
+} from "@/domain/llm/selfHostedModels";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { formatDate } from "@/shared/date";
 import { tierAtLeast } from "@/domain/member/tiers";
@@ -186,6 +192,232 @@ function otherRoutes(models: CatalogModel[], model: CatalogModel): string[] {
   return models
     .filter((other) => other.family === model.family && other.provider !== model.provider)
     .map((other) => other.provider);
+}
+
+/** What the selfhosted channel reports it serves (`GET /api/models/selfhosted`). */
+interface ServedModel {
+  name: string;
+  contextWindow?: number;
+  vision?: boolean;
+}
+
+const DECLARABLE_CAPABILITIES = [
+  ["tools", "Tools"],
+  ["structuredOutput", "JSON"],
+  ["imageInput", "Vision"],
+  ["reasoning", "Reasoning"],
+] as const;
+
+/**
+ * The deployment's own models: what the selfhosted channel serves, what is
+ * declared, and the gap in both directions. Declaring is a settings write —
+ * the whole declaration set is resubmitted, matching the PUT's full-replace
+ * semantics — and the serving stack stays the availability judge: a declared
+ * name the channel no longer lists is flagged, and the Test button on the
+ * model's own card is what proves a run can actually use it.
+ */
+function SelfHostedSection({
+  declared,
+  onChanged,
+}: {
+  declared: CatalogModel[];
+  onChanged: () => Promise<void>;
+}) {
+  const t = useT();
+  const [served, setServed] = useState<ServedModel[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState<SelfHostedModelInput | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/models/selfhosted")
+      .then((res) => readJson<{ models: ServedModel[] }>(res))
+      .then((data) => !cancelled && setServed(data.models))
+      .catch(
+        (loadError) =>
+          !cancelled &&
+          setError(loadError instanceof Error ? loadError.message : "Failed to read the channel"),
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function save(next: SelfHostedModelInput[]) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: jsonHeaders,
+        body: JSON.stringify({ selfHostedModels: next }),
+      });
+      await readJson(res);
+      await onChanged();
+      setForm(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to save");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const declaredFamilies = new Set(declared.map((model) => model.family));
+  const undeclared = (served ?? []).filter((row) => !declaredFamilies.has(row.name));
+
+  return (
+    <Card withBorder>
+      <Stack gap="sm">
+        <div>
+          <Text fw={600}>{t("models.selfHosted.title")}</Text>
+          <Text fz="sm" c="dimmed">
+            {t("models.selfHosted.lede")}
+          </Text>
+        </div>
+        {error && (
+          <Alert color="orange" variant="light" withCloseButton onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+        {declared.map((model) => (
+          <Group key={model.id} justify="space-between" wrap="nowrap">
+            <Group gap="xs" wrap="nowrap">
+              <Text fz="sm" ff="monospace">
+                {model.family}
+              </Text>
+              {served !== null && !served.some((row) => row.name === model.family) && (
+                <Tooltip
+                  multiline
+                  maw={320}
+                  label="The channel does not list this name right now — a run will fail until it is served again."
+                >
+                  <Badge size="sm" variant="light" color={BADGE.attention}>
+                    not served
+                  </Badge>
+                </Tooltip>
+              )}
+            </Group>
+            <Button
+              size="compact-xs"
+              variant="default"
+              disabled={busy}
+              onClick={() =>
+                void save(declared.filter((m) => m.id !== model.id).map(selfHostedModelToInput))
+              }
+            >
+              Remove
+            </Button>
+          </Group>
+        ))}
+        {undeclared.map((row) => (
+          <Group key={row.name} justify="space-between" wrap="nowrap">
+            <div>
+              <Text fz="sm" ff="monospace">
+                {row.name}
+              </Text>
+              <Text fz="xs" c="dimmed">
+                served by the channel
+                {row.contextWindow !== undefined && ` · ctx ${row.contextWindow}`}
+                {row.vision === true && " · vision"}
+              </Text>
+            </div>
+            <Button
+              size="compact-xs"
+              variant="light"
+              disabled={busy}
+              onClick={() =>
+                setForm({
+                  family: row.name,
+                  displayName: row.name.slice(row.name.lastIndexOf("/") + 1),
+                  contextWindow: row.contextWindow ?? 32768,
+                  maxTokens: Math.min(8192, row.contextWindow ?? 32768),
+                  capabilities: {
+                    tools: true,
+                    structuredOutput: true,
+                    imageInput: row.vision === true,
+                    reasoning: false,
+                  },
+                })
+              }
+            >
+              Declare
+            </Button>
+          </Group>
+        ))}
+        {served !== null && served.length === 0 && (
+          <Text fz="sm" c="dimmed">
+            The channel serves no models right now.
+          </Text>
+        )}
+        {form && (
+          <Card withBorder>
+            <Stack gap="xs">
+              <Text fz="sm" ff="monospace">
+                {form.family}
+              </Text>
+              <Group gap="md" wrap="wrap" align="flex-end">
+                <TextInput
+                  size="xs"
+                  label="Display name"
+                  value={form.displayName}
+                  onChange={(event) => setForm({ ...form, displayName: event.currentTarget.value })}
+                  w={220}
+                />
+                <NumberInput
+                  size="xs"
+                  label="Context window"
+                  value={form.contextWindow}
+                  min={1}
+                  onChange={(value) => setForm({ ...form, contextWindow: Number(value) || 0 })}
+                  w={150}
+                />
+                <NumberInput
+                  size="xs"
+                  label="Max output"
+                  value={form.maxTokens}
+                  min={1}
+                  onChange={(value) => setForm({ ...form, maxTokens: Number(value) || 0 })}
+                  w={150}
+                />
+              </Group>
+              <Group gap="md">
+                {DECLARABLE_CAPABILITIES.map(([key, label]) => (
+                  <Checkbox
+                    key={key}
+                    size="xs"
+                    label={label}
+                    checked={form.capabilities[key]}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        capabilities: {
+                          ...form.capabilities,
+                          [key]: event.currentTarget.checked,
+                        } as SelfHostedModelInput["capabilities"],
+                      })
+                    }
+                  />
+                ))}
+              </Group>
+              <Group gap="xs">
+                <Button
+                  size="compact-xs"
+                  loading={busy}
+                  onClick={() => void save([...declared.map(selfHostedModelToInput), form])}
+                >
+                  Declare
+                </Button>
+                <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setForm(null)}>
+                  Cancel
+                </Button>
+              </Group>
+            </Stack>
+          </Card>
+        )}
+      </Stack>
+    </Card>
+  );
 }
 
 export default function ModelsPage() {
@@ -364,6 +596,13 @@ export default function ModelsPage() {
           </Group>
         )}
       </CatalogHeader>
+
+      {canEdit && providerByName.get("selfhosted")?.dedicated === true && (
+        <SelfHostedSection
+          declared={models.filter((model) => model.provider === "selfhosted")}
+          onChanged={loadCatalog}
+        />
+      )}
 
       {error && (
         <Alert color="red" variant="light" withCloseButton onClose={() => setError(null)}>

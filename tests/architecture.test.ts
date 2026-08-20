@@ -1263,7 +1263,17 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // by its family and may be narrowed by one route, so deriving an entry
     // touches the name. That is the value's origin, not a second budget — the
     // thing this rule exists to keep single is the chars-per-token derivation.
-    alsoAllowedUnder: ["src/domain/llm/models.ts"],
+    //
+    // Self-hosted declarations make the deployment a publisher too, and a
+    // publisher *states* the window rather than deriving from it: the console
+    // section edits the number, and the discovery adapter carries what the
+    // serving stack reports. Transport of the value's origin, like models.ts.
+    alsoAllowedUnder: [
+      "src/domain/llm/models.ts",
+      "src/domain/llm/selfHostedModels.ts",
+      "src/app/models/page.tsx",
+      "src/infrastructure/llm/selfHostedDiscovery.ts",
+    ],
   },
   {
     // The wrapper a model reads around an attachment. A chat replays a stored

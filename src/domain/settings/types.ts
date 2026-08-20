@@ -28,6 +28,16 @@ export interface LlmProviderSetting {
 
 export type ArtifactAccessMode = "authenticated" | "public";
 
+/**
+ * One deployment-declared self-hosted model, stored as the full catalog-shaped
+ * entry the registry loader validates (`loadSelfHostedModels`). The deployment
+ * is the publisher here — these models exist only where an operator runs the
+ * serving stack, so their facts live in this row rather than in agent-models.
+ * The shape is the registry's (`domain/llm/models.ts`), because that is who
+ * reads it back.
+ */
+export type SelfHostedModelSetting = import("../llm/selfHostedModels").SelfHostedModelDeclaration;
+
 export interface AppSettings {
   adminEmails?: string;
   allowedEmailDomains?: string;
@@ -58,6 +68,12 @@ export interface AppSettings {
    * keeps running.
    */
   enabledModels?: string[];
+  /**
+   * Self-hosted models this deployment declares (the deployment is their
+   * publisher — agent-models carries external routes only). Installed into the
+   * registry overlay on save and on every catalog refresh tick.
+   */
+  selfHostedModels?: SelfHostedModelSetting[];
   updatedAt: string;
 }
 

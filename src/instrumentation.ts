@@ -94,6 +94,11 @@ export async function register(): Promise<void> {
     const modelCatalog = createModelCatalogRefresher({
       source: createHttpModelCatalogSource(config.modelsCatalogUrl),
       intervalMs: config.modelsCatalogRefreshMs,
+      // The second publisher: this deployment's own self-hosted declarations,
+      // re-read on the same schedule so a settings write on another instance
+      // reaches this process within a tick.
+      localModels: async () =>
+        (await import("@/lib/runtime-settings")).getSelfHostedModels(),
     });
     await modelCatalog.refresh();
     modelCatalog.start();

@@ -137,6 +137,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/models/catalog` | `GET` | member |
 | `/api/models/test` | `POST` | admin |
 | `/api/models/refresh` | `POST` | admin |
+| `/api/models/selfhosted` | `GET` | admin |
 | `/api/me` | `GET` | session |
 | `/api/me/profile` | `GET` | session |
 | `/api/me/usage` | `GET` | session |
@@ -400,6 +401,13 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   정렬·중복 제거해 저장된다. 빈 배열은 오버라이드를 제거한다 (보이는 모델 전부가 제공된다 —
   env 폴백은 없다). 레지스트리에 없는 id 는 `400` 이다. 이것은 GET 뷰에 자리가 없다.
   다시 읽는 곳은 `/api/models/catalog` 다.
+- PUT 의 `selfHostedModels` 도 전체 교체 목록이다 — 이 배포가 직접 서빙하는 모델의 선언
+  (`{ family, displayName, maker?, contextWindow, maxTokens, capabilities }`, 최대 50개).
+  저장 시 레지스트리 로더의 검증을 그대로 지나 (통과 못 하면 `400` 에 이유가 담긴다) 이
+  프로세스의 오버레이에 즉시 설치되고, 다른 인스턴스는 카탈로그 refresh 틱에 따라온다. 빈
+  배열은 전부 제거. env 폴백은 없다 — 선언은 설정이 아니라 데이터다. 다시 읽는 곳은
+  `/api/models/catalog` 이고 (provider 가 `selfhosted` 인 항목), 관리 UI 는 `/models` 콘솔의
+  Self-hosted 섹션이다.
 - `source` 는 `override` (DB) | `env` | `default` | `unset` 이다. secret 값은 언제나 마스킹된다
   (길이 보존. 9–20자는 양끝 2자씩, 21자 이상은 4자씩 드러낸다). PUT 의 마스킹된 값은 저장된
   secret 을 유지하고, 빈 문자열은 오버라이드를 제거한다 (env 폴백). 호출자를 제외하는 목록으로
@@ -1325,11 +1333,12 @@ GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ]
                                  source: "override" | "default" }
 POST /api/models/test    → 200 { ok, latencyMs, error? } | 400
 POST /api/models/refresh → 200 { refreshed, updatedAt }
+GET  /api/models/selfhosted → 200 { models: [ { name, contextWindow?, vision? } ] } | 400
 ```
 
 - `catalog` 는 `member` 등급부터 읽을 수 있고 (`withMemberAuth` — Intelligence 섹션의 다른
-  레지스트리들과 같은 계단이다: 이 배포가 닿을 수 있는 것의 목록이다), `test` 와 `refresh` 는
-  admin 전용이다.
+  레지스트리들과 같은 계단이다: 이 배포가 닿을 수 있는 것의 목록이다), `test`·`refresh`·
+  `selfhosted` 는 admin 전용이다.
   `makers` 와 `updatedAt` 은 로드된 카탈로그의 것이다 — maker 라벨과 카탈로그 내용이 마지막으로
   바뀐 시각으로, 레지스트리가 런타임 로드로 바뀐 뒤 클라이언트가 상수에서 가져올 수 없게 된
   값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: 보이는 모든 모델과 그 enabled 플래그
@@ -1345,6 +1354,10 @@ POST /api/models/refresh → 200 { refreshed, updatedAt }
   발행한 것을 콘솔에서 바로 보기 위한 것이다. `refreshed: false` 는 "이미 최신"과 "가져오기 실패"
   둘 다를 덮는다 (이유는 서버 로그에 있고, 어느 쪽이든 레지스트리는 그대로다). `test` 처럼
   설치한 것이 없는 갱신은 실패가 아니라 결과라서 `5xx` 를 돌려주지 않는다.
+- `selfhosted` 는 selfhosted 채널이 *지금* 서빙하는 모델 목록이다 — `/models` 콘솔의 선언
+  보조. 채널의 `/v1/models` 를 채널의 자격증명으로 읽고, LM Studio 의 네이티브 카탈로그가
+  있으면 컨텍스트 길이와 vision 여부를 보강하며 임베딩 모델을 걸러낸다. 채널이 설정돼 있지
+  않으면 `400`. 선언 자체는 `PUT /api/settings` 의 `selfHostedModels` 로 한다.
 
 ## A2A (인바운드)
 

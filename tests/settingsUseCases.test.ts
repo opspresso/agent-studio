@@ -9,6 +9,7 @@ import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 const createSettingsUseCases = (repo: Parameters<typeof createSettingsUseCasesImpl>[0]) =>
   createSettingsUseCasesImpl(repo, secretCipher, process.env, parseProviderConfigs);
 import { ValidationError } from "@/application/errors";
+import { getModelConfig, loadSelfHostedModels } from "@/domain/llm/models";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";
 import { decryptSecret, encryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
@@ -339,5 +340,75 @@ describe("settingsUseCases.update", () => {
     await expect(
       createSettingsUseCases(repo).update({ adminEmails: "" }, ADMIN),
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+});
+
+describe("settingsUseCases.update self-hosted declarations", () => {
+  afterEach(() => {
+    loadSelfHostedModels([]);
+  });
+
+  it("stores the full catalog-shaped entry, installs it, and clears on empty", async () => {
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    await useCases.update(
+      {
+        selfHostedModels: [
+          {
+            family: "qwen/qwen3.8-27b",
+            displayName: "Qwen3.8 27B",
+            contextWindow: 262144,
+            maxTokens: 8192,
+            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+          },
+        ],
+      },
+      ADMIN,
+    );
+    expect(current()?.selfHostedModels).toEqual([
+      {
+        id: "selfhosted/qwen/qwen3.8-27b",
+        provider: "selfhosted",
+        family: "qwen/qwen3.8-27b",
+        // Defaulted from the family's vendor segment.
+        maker: "qwen",
+        displayName: "Qwen3.8 27B",
+        pricing: { inputPer1M: 0, outputPer1M: 0 },
+        capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+        contextWindow: 262144,
+        maxTokens: 8192,
+      },
+    ]);
+    // Installed for this process the moment it is saved.
+    expect(getModelConfig("selfhosted/qwen/qwen3.8-27b")).toBeDefined();
+
+    await useCases.update({ selfHostedModels: [] }, ADMIN);
+    expect(current()?.selfHostedModels).toBeUndefined();
+    expect(getModelConfig("selfhosted/qwen/qwen3.8-27b")).toBeUndefined();
+  });
+
+  it("fails the save on a declaration the registry would refuse", async () => {
+    const { repo } = fakeRepo();
+    await expect(
+      createSettingsUseCases(repo).update(
+        {
+          selfHostedModels: [
+            {
+              family: "big",
+              displayName: "Big",
+              contextWindow: 100,
+              maxTokens: 200,
+              capabilities: {
+                tools: false,
+                structuredOutput: false,
+                imageInput: false,
+                reasoning: false,
+              },
+            },
+          ],
+        },
+        ADMIN,
+      ),
+    ).rejects.toThrow(/maxTokens exceeds contextWindow/);
   });
 });

@@ -138,23 +138,32 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 provider 채널이 하나라도 설정돼 있으면 `GET /api/models` 는 그 provider 들의 모델만
 나열한다. 하나도 설정돼 있지 않으면 레지스트리에서 보이는(`hidden` 이 아닌) 모든 모델을
 나열한다 — 단 `selfhosted/` 모델은 예외다: 그 접두사는 기본 채널의 라우터가 서빙하지
-않으므로, 전용 채널이 설정된 경우에만 나열된다 (`providerOffered`). 덕분에 카탈로그의
-selfhosted 엔트리가 채널 없는 배포의 피커에 보증된 404 로 나타나는 일이 없다.
+않으므로, 전용 채널이 설정된 경우에만 나열된다 (`providerOffered`). 덕분에 selfhosted
+모델이 채널 없는 배포의 피커에 보증된 404 로 나타나는 일이 없다.
 
 `/settings` 에 저장된 `llmProviders` 오버라이드는 `LLM_PROVIDER_*` env 집합과 병합되는 것이
 아니라 **그 집합 전체를 대체한다** — 부분 병합은 "이 provider 를 제거한다" 를 표현할 수 없는
 편집으로 만들어 버린다.
 
-**`selfhosted` 는 배포가 직접 운영하는 route 다** — LM Studio 든 vLLM 이든, 운영자가 띄운
-OpenAI 호환 서버를 `LLM_PROVIDER_SELFHOSTED_BASE_URL` 이 가리킨다. 접두사는 어디서나 같고
-어디로 가는지만 배포마다 다르므로, 카탈로그 엔트리 하나가 모든 배포를 서빙한다. 그 대신 서빙
-스택이 모델을 id 의 family 이름 그대로 서빙해야 한다(vLLM 은 `--served-model-name`, LM Studio
-는 모델 identifier 설정) — `wireId` 없이 동작하는 것은 그 규약 덕분이고, `wireId` 를 실은
-selfhosted 엔트리는 카탈로그가 본 적 없는 엔드포인트들의 이름을 전역으로 바꾸는 일이라
-로드가 거부한다. bearer 채널이라 키가
-필수인데, LM Studio 처럼 키를 무시하는 서버에는 아무 placeholder 값이나 준다. capability
-플래그는 모델 단위라 채널 차이를 표현하지 못하므로, 카탈로그에는 모든 배포의 서빙 스택이
-실제로 보장하는 교집합을 적는다.
+**`selfhosted` 는 배포가 직접 운영하는 route 이고, 그 모델의 발행자는 배포 자신이다.**
+LM Studio 든 vLLM 이든, 운영자가 띄운 OpenAI 호환 서버를
+`LLM_PROVIDER_SELFHOSTED_BASE_URL` 이 가리킨다 (bearer 채널이라 키가 필수인데, LM Studio
+처럼 키를 무시하는 서버에는 아무 placeholder 값이나 준다). agent-models 는 **전역적으로
+참인** 사실만 담는다 — 벤더의 가격은 어디서나 같다 — 반면 어떤 모델이 selfhosted 채널에
+서빙되는지는 그 배포의 하드웨어에 대한 사실이라, 이 모델들은 카탈로그가 아니라 **배포의
+선언**(runtime settings 의 `selfHostedModels`, `/models` 콘솔의 Self-hosted 섹션)에서 온다.
+선언은 카탈로그 엔트리와 같은 모양이고 같은 로더 검증을 지나 레지스트리 **오버레이**에
+설치된다 (`loadSelfHostedModels`) — 카탈로그 refresh 는 오버레이를 건드리지 않고, 매 틱마다
+선언을 다시 읽어 재설치하므로 다른 인스턴스의 설정 변경도 한 틱 안에 도달한다.
+
+`family` 는 서빙 스택이 쓰는 모델 이름 *그대로*이고 슬래시도 그 일부다 — LM Studio 의
+`qwen/qwen3.8-27b` 는 family 가 `qwen/qwen3.8-27b` 인 `selfhosted/qwen/qwen3.8-27b` 가 되고,
+디스패치는 접두사 하나만 벗겨 정확히 그 이름을 보낸다. 이름이 정확해야 하는 이유: LM Studio
+는 모르는 이름을 받으면 404 대신 **로드돼 있는 모델로 조용히 폴백**하므로, 근사한 이름은
+다른 모델의 답을 성공처럼 돌려준다. 콘솔 섹션은 채널의 `/v1/models` 목록(LM Studio 네이티브
+API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhosted`)에서 선언을 시작하게
+해 주고, 목록에 있다고 실행이 보장되는 것도 아니다 — RAM 이 모자라 로드가 안 되는 모델은
+목록에 남는다 — 최종 판정은 언제나 모델 카드의 Test 다.
 
 ### 모델 레지스트리: agent-models 의 카탈로그
 
@@ -166,6 +175,8 @@ selfhosted 엔트리는 카탈로그가 본 적 없는 엔드포인트들의 이
 `https://models.opspresso.com/models.json` 으로 발행되고, 이 앱은 그것을 **읽기만 한다**. 모델을
 추가하거나 은퇴시키거나 요율을 고치는 일은 거기서 하며, 여기서는 절대 하지 않는다 —
 `tests/models.test.ts` 가 `src/domain/llm/models.ts` 에 숫자가 돌아오는 것을 막는다.
+유일한 예외가 selfhosted 모델이다: 그 발행자는 배포 자신이고, 카탈로그가 아니라 배포의
+선언이 레지스트리 오버레이로 들어온다 (위 *LLM 채널* 절).
 
 카탈로그의 항목은 이 앱의 `ModelConfig` 그대로다 (id 는 `provider/family`, 같은 모델의 세 경로는
 같은 이름·윈도·kind 를 가진다, `wireId` 는 경로가 모델 이름을 다르게 쓸 때만). 두 벌이 프로세스에

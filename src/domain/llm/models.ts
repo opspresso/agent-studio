@@ -28,6 +28,14 @@
  * The catalog's shape is this module's `ModelConfig`, because agent-models
  * writes it for this reader; a field is added there only when this file can
  * read it.
+ *
+ * **Self-hosted models have a second publisher: the deployment itself.**
+ * agent-models states global facts — a vendor's price is true everywhere —
+ * but which models a `selfhosted` channel serves is a fact about one
+ * deployment's own hardware, so those entries come from the deployment's
+ * declarations (runtime settings) through `loadSelfHostedModels`, into an
+ * overlay a catalog refresh never touches. Same `ModelConfig`, same
+ * validation; only the publisher differs.
  */
 
 import type { ChannelParams } from "./channel";
@@ -395,6 +403,106 @@ function registryState(): RegistryState {
   return slot[REGISTRY_SLOT] as RegistryState;
 }
 
+// ---------------------------------------------------------------------------
+// The self-hosted overlay, and its own way in
+// ---------------------------------------------------------------------------
+
+/** What the deployment's declarations install: a second, smaller registry. */
+interface LocalState {
+  models: ModelConfig[];
+  byId: Map<string, ModelConfig>;
+}
+
+const LOCAL_SLOT = Symbol.for("agent-studio.self-hosted-models");
+const localSlot = globalThis as { [LOCAL_SLOT]?: LocalState };
+
+function localState(): LocalState {
+  return (localSlot[LOCAL_SLOT] ??= { models: [], byId: new Map() });
+}
+
+/**
+ * Why a self-hosted declaration cannot be installed, or null when it can.
+ *
+ * A declaration passes the same `rejectReason` every catalog entry does — one
+ * validation, whoever the publisher is — plus what being the *second*
+ * publisher adds: only self-hosted routes may come from here, an id the
+ * published catalog already carries is the catalog's to define, and a family
+ * the catalog also serves must be the same model — the one-story-per-family
+ * rule, held across publishers.
+ */
+export function selfHostedModelRejectReason(entry: unknown): string | null {
+  const reason = rejectReason(entry);
+  if (reason !== null) {
+    return reason;
+  }
+  const model = entry as Record<string, unknown>;
+  if (!(SELF_HOSTED_PROVIDERS as readonly string[]).includes(model.provider as string)) {
+    return `a declaration may only add a self-hosted route, not "${String(model.provider)}"`;
+  }
+  const catalog = registryState();
+  if (catalog.byId.has(model.id as string)) {
+    return "the published catalog already carries this id";
+  }
+  const family = model.family as string;
+  const first = catalog.models.find((m) => m.family === family);
+  if (first !== undefined) {
+    const declared = toModelConfig(model);
+    const disagrees =
+      first.displayName !== declared.displayName ||
+      first.maker !== declared.maker ||
+      first.contextWindow !== declared.contextWindow ||
+      (first.capabilities.imageGeneration ?? false) !==
+        (declared.capabilities.imageGeneration ?? false);
+    if (disagrees) {
+      return `disagrees with ${first.id} about what ${family} is`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Install the deployment's self-hosted declarations, replacing the overlay
+ * wholesale — the second way into the registry, for the second publisher.
+ * The declaration's shape and its form mappings live in
+ * `./selfHostedModels.ts`, since a declaration constructor must state the one
+ * number this module may not: the zero price.
+ *
+ * The overlay survives `loadModelCatalog` on purpose: a catalog refresh
+ * replaces what agent-models publishes and nothing else. Validation reads the
+ * *current* catalog, so it re-runs on every install — the refresher installs
+ * the overlay right after each catalog tick, which is what resolves a conflict
+ * a newer catalog introduces (the losing declaration is dropped and named).
+ * Unlike the catalog there is no shrink guard and an empty list installs:
+ * deleting every declaration is an ordinary thing for an operator to mean.
+ */
+export function loadSelfHostedModels(entries: unknown): ModelCatalogLoadReport {
+  if (!Array.isArray(entries)) {
+    throw new Error("self-hosted declarations are not an array");
+  }
+  const models: ModelConfig[] = [];
+  const byId = new Map<string, ModelConfig>();
+  const skipped: string[] = [];
+  for (const entry of entries) {
+    const id = isRecord(entry) && typeof entry.id === "string" ? entry.id : "(no id)";
+    const reason = selfHostedModelRejectReason(entry);
+    if (reason !== null) {
+      skipped.push(`${id} — ${reason}`);
+      continue;
+    }
+    if (byId.has(id)) {
+      skipped.push(`${id} — duplicate id`);
+      continue;
+    }
+    const model = toModelConfig(entry as Record<string, unknown>);
+    models.push(model);
+    byId.set(model.id, model);
+  }
+  const previous = localState();
+  const removed = previous.models.filter((m) => !byId.has(m.id)).map((m) => m.id);
+  localSlot[LOCAL_SLOT] = { models, byId };
+  return { loaded: models.length, skipped, removed, updatedAt: "" };
+}
+
 /**
  * Install a catalog. Atomic: the registry is the old state or the new one,
  * never between. Throws, leaving the old state in place, when the catalog is
@@ -433,9 +541,10 @@ export function loadModelCatalog(
  * order — which agent-models states deliberately (providers in its
  * `providers.json` order, then each file's order), so "the first entry that
  * can draw" and its kin are decisions the publisher curates, not accidents.
+ * The deployment's self-hosted declarations follow, in declaration order.
  */
 export function listModels(): ModelConfig[] {
-  return registryState().models;
+  return [...registryState().models, ...localState().models];
 }
 
 /** When the loaded catalog's content last changed — shown by the Models console. */
@@ -443,17 +552,25 @@ export function modelCatalogUpdatedAt(): string {
   return registryState().updatedAt;
 }
 
-/** Maker id → display label, for every maker the loaded catalog names. */
+/**
+ * Maker id → display label, for every maker the loaded catalog names. A maker
+ * only a declaration names is labeled with its own id — a declaration carries
+ * no label, and a maker every reader can name is the invariant, not the prose.
+ */
 export function listModelMakers(): Record<string, string> {
-  return registryState().makers;
+  const makers = { ...registryState().makers };
+  for (const model of localState().models) {
+    makers[model.maker] ??= model.maker;
+  }
+  return makers;
 }
 
 export function getModelConfig(id: string): ModelConfig | undefined {
-  return registryState().byId.get(id);
+  return registryState().byId.get(id) ?? localState().byId.get(id);
 }
 
 export function getVisibleModels(): ModelConfig[] {
-  return registryState().models.filter((m) => !m.hidden);
+  return listModels().filter((m) => !m.hidden);
 }
 
 /** Token counts as a reader compares them: 1,048,576 → `1.05M`, 131,072 → `131K`. */
