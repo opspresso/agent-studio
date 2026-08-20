@@ -1033,7 +1033,8 @@ raw-chunk 표면은 대신 자기 프레임에 파일을 인라인으로 실어 
 본문에는 나중의 프레임이 없으므로 이것들이 답과 함께 이동한다. 없으면 잃은 것이 없다는 뜻이다.
 
 `image` project 에는 `{ "prompt?", "variables?", "size?", "quality?", "images?" }` 를 보내면 →
-`{ imageBase64, mimeType, model, usage }` 를 받는다. `prompt` 는 그 version 의
+`{ imageBase64, mimeType, model, usage, warning? }` 를 받는다. `warning` 은 그림은 그렸는데
+보관하지 못했다는 것 — 스트리밍 표면이 `warning` 프레임으로 말하는 것과 같은 손실이다. `prompt` 는 그 version 의
 `userPromptTemplate` 을 덮어쓴다. 생략하면 `variables` 로 렌더링한 템플릿이 프롬프트가 되고,
 어느 쪽이든 결과가 비면 400 이다. `images` 는 인라인 바이트로 담은 원본 그림이다
 (`[ { b64, mimeType } ]`, chat 첨부와 같은 상한). 하나라도 있으면 프롬프트는 그것을 **편집**하고,

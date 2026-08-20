@@ -27,6 +27,7 @@ import type { ProjectSlackResponse } from "@/app/api/projects/[name]/slack/route
 import type { ProjectTelegramResponse } from "@/app/api/projects/[name]/telegram/route";
 import type { ProjectTeamsResponse } from "@/app/api/projects/[name]/teams/route";
 import type { PromptPreview } from "@/application/execution/deps";
+import type { GenerateImageOutput } from "@/application/image/generateImage";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
@@ -253,12 +254,8 @@ export async function streamAgent(
   return res;
 }
 
-export interface ImageResult {
-  imageBase64: string;
-  mimeType: string;
-  model: string;
-  usage: { inputTokens: number; outputTokens: number; costUsd: number };
-}
+/** What `POST /predict` answers with for an image project, as the use case built it. */
+export type ImageResult = GenerateImageOutput;
 
 export async function predictImage(
   name: string,

@@ -157,7 +157,12 @@ export default function ComparePage() {
     try {
       if (project.projectType === "image") {
         const result = await predictImage(name, versionName, { prompt: message });
-        setSide((prev) => ({ ...prev, image: result, costUsd: result.usage.costUsd }));
+        setSide((prev) => ({
+          ...prev,
+          image: result,
+          costUsd: result.usage.costUsd,
+          ...(result.warning ? { warnings: [...prev.warnings, result.warning] } : {}),
+        }));
         return;
       }
       const res =
