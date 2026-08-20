@@ -8,7 +8,7 @@
 
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
-import { isSlug, SLUG_RULE } from "@/shared/slug";
+import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
 /** Minimal repository shape shared by the registry slices. */

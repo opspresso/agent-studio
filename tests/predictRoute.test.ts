@@ -14,7 +14,7 @@ vi.mock("@/lib/container", async () => ({
   imageDeps: {},
   // No object storage in this deployment, which is what makes the file branch
   // below say "not kept" rather than mint an address.
-  artifactStorage: undefined,
+  signArtifactUrl: undefined,
   // `executionAuth` is loaded for real through `importOriginal` below, and it
   // imports this. Only `authenticateExecution` is overridden, so narrowing that
   // override would otherwise fail on an undefined binding rather than say what

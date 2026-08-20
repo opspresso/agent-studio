@@ -77,7 +77,9 @@ src/
   lib/              # 횡단 접착제: composition root (container.ts), auth/session,
                     # 콘솔이 게이트하는 viewer 플래그 (viewer.ts), config +
                     # runtime-settings, 공개 URL, 런 메트릭
-  shared/           # 의존성 없는 헬퍼 (날짜, slug, 타임아웃, PKCE, 상수시간 비교, 로거).
+  shared/           # 의존성 없는 헬퍼 (날짜, 타임아웃, PKCE, 상수시간 비교, 스트림 배관,
+                    # 텍스트 자르기, 로거). 이름 규칙이나 포맷처럼 도메인 타입이 소유하는
+                    # 것은 여기가 아니라 domain/ 이다 — domain 은 이 층을 import 할 수 없다.
                     # 그래프의 바닥: `@/` 에서 아무것도 import 하지 않는다
   proxy.ts          # 페이지 로그인 게이트, 그리고 어느 페이지가 공개인지의 단일 소유자
   instrumentation.ts

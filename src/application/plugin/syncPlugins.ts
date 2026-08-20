@@ -7,13 +7,15 @@ import type { PluginRepository } from "@/domain/plugin/repository";
 import type { PluginUseCases } from "./pluginUseCases";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
-import { parseFrontmatter } from "@/shared/frontmatter";
-import { isSlug } from "@/shared/slug";
+import { parseFrontmatter } from "@/domain/plugin/frontmatter";
+import { isSlug } from "@/domain/naming";
 import { log } from "@/shared/logger";
 import {
   classifyMcpJsonServer,
   parseMcpJson,
   parsePluginManifest,
+  pluginSource,
+  pluginSourcePrefix,
   type Plugin,
   type PluginManifest,
 } from "@/domain/plugin/types";
@@ -176,7 +178,7 @@ export async function syncPluginsFromSnapshot(
   actorEmail: string,
   selection: PluginSyncSelection = {},
 ): Promise<PluginSyncResult> {
-  const repoPrefix = `github:${snapshot.repo}#`;
+  const repoPrefix = pluginSourcePrefix(snapshot.repo);
   const now = new Date().toISOString();
   const removeSkills = new Set(selection.remove?.skills ?? []);
   const removeServers = new Set(selection.remove?.mcpServers ?? []);
@@ -351,7 +353,7 @@ export async function syncPluginsFromSnapshot(
 
   for (const { plugin, manifest } of parsed) {
     const section = sectionFor(manifest.name);
-    const source = repoPrefix + manifest.name;
+    const source = pluginSource(snapshot.repo, manifest.name);
     const report = section.skills;
     const mcpReport = section.mcpServers;
 

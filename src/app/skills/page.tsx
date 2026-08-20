@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { toSlug } from "@/shared/slug";
+import { toSlug } from "@/domain/naming";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { createSkill, listSkills, type SkillSummary } from "./api";
 import {

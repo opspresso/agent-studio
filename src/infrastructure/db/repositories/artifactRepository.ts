@@ -1,4 +1,5 @@
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { artifactCursor } from "@/domain/artifact/repository";
 import type { ArtifactRepository, ListArtifactsOptions } from "@/domain/artifact/repository";
 import type { Artifact } from "@/domain/artifact/types";
 import { artifactOwnerEmail } from "@/domain/artifact/types";
@@ -29,11 +30,6 @@ function fromItem(item: Record<string, unknown>): Artifact {
     ...(typeof item.prompt === "string" ? { prompt: item.prompt } : {}),
     createdAt: String(item.createdAt ?? ""),
   };
-}
-
-/** The sort key both indexes use — and therefore the page cursor. */
-function sortKey(artifact: Artifact): string {
-  return `${artifact.createdAt}#${artifact.artifactId}`;
 }
 
 interface ListQuery {
@@ -92,7 +88,7 @@ async function list({
     );
     for (const item of notExpired(result.Items ?? [], Date.now())) {
       const artifact = fromItem(item);
-      if (before && sortKey(artifact) === before) {
+      if (before && artifactCursor(artifact) === before) {
         continue;
       }
       if (kind && artifact.kind !== kind) {
@@ -122,14 +118,14 @@ export class DynamoArtifactRepository implements ArtifactRepository {
           ...keys.artifact(artifact.artifactId),
           entityType: ARTIFACT_ENTITY,
           GSI1PK: keys.artifactProjectPartition(artifact.projectName),
-          GSI1SK: sortKey(artifact),
+          GSI1SK: artifactCursor(artifact),
           // Sparse on purpose: a row that names no mailbox writes no GSI2
           // attributes, so an A2A or trigger artifact simply is not in the owner
           // index rather than sitting there under a placeholder nobody can query.
           ...(ownerEmail
             ? {
                 GSI2PK: keys.artifactOwnerPartition(ownerEmail),
-                GSI2SK: sortKey(artifact),
+                GSI2SK: artifactCursor(artifact),
               }
             : {}),
           expiresAt: expiresAtSeconds(artifact.createdAt, RETENTION.artifactDays),

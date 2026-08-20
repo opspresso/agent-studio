@@ -21,7 +21,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { useSession } from "@/lib/auth-client";
 import { tierMayCreateProjects } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
-import { toSlug } from "@/shared/slug";
+import { toSlug } from "@/domain/naming";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";

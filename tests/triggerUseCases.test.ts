@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import { createTriggerSchema } from "@/app/api/projects/_lib/schemas";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
-import { toSlug } from "@/shared/slug";
+import { toSlug } from "@/domain/naming";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project } from "@/domain/project/types";

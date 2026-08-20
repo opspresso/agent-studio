@@ -21,7 +21,7 @@ import {
   ValidationError,
 } from "@/application/errors";
 import { generateSecretValue, hashSecret } from "@/shared/generatedSecret";
-import { isSlug, SLUG_RULE } from "@/shared/slug";
+import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { A2A_ACTOR_ID } from "@/domain/execution/actor";
 import { log } from "@/shared/logger";

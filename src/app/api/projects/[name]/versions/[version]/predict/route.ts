@@ -1,10 +1,10 @@
 import { runStrategyFor } from "@/application/execution/runProject";
 import { sseResponse } from "@/app/api/_lib/sse";
 import {
-  artifactStorage,
   executionDeps,
   imageDeps,
   projectUseCases,
+  signArtifactUrl,
   versionUseCases,
 } from "@/lib/container";
 import { resolveProducedFiles, withAddressedFiles } from "@/application/artifact/producedFiles";
@@ -75,7 +75,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         // same non-answer there as it was here.
         withAddressedFiles(
           executeProjectStream(executionDeps, { ...params, signal: abortController.signal }),
-          artifactStorage?.objects.sign,
+          signArtifactUrl,
           VIEW_URL_TTL_SECONDS,
         ),
         abortController,
@@ -88,7 +88,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     // about a report with no report attached is what this endpoint used to send.
     const produced = await resolveProducedFiles(
       run.files,
-      artifactStorage?.objects.sign,
+      signArtifactUrl,
       VIEW_URL_TTL_SECONDS,
     );
     const warnings = [...run.warnings, ...produced.warnings];

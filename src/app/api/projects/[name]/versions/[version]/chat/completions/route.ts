@@ -1,5 +1,5 @@
 import { sseResponse } from "@/app/api/_lib/sse";
-import { artifactStorage, executionDeps, projectUseCases, versionUseCases } from "@/lib/container";
+import { executionDeps, projectUseCases, signArtifactUrl, versionUseCases } from "@/lib/container";
 import { resolveProducedFile, resolveProducedFiles } from "@/application/artifact/producedFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
@@ -43,10 +43,9 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       ...(conversation ? { conversation } : {}),
     };
 
-    // Both shapes answer with the same signer and the same lifetime, so a file
-    // named in a stream and the same file named in a body are one address.
-    const sign = artifactStorage?.objects.sign;
-
+    // The two branches below answer with the same signer and the same lifetime,
+    // so a file named in a stream and the same file named in a body are one
+    // address.
     if (parsed.data.stream) {
       const abortController = new AbortController();
       const source = executeProjectStream(executionDeps, {
@@ -55,14 +54,14 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       });
       return await sseResponse(
         toChatCompletionChunks(source, versionEntity.model, (file) =>
-          resolveProducedFile(file, sign, VIEW_URL_TTL_SECONDS),
+          resolveProducedFile(file, signArtifactUrl, VIEW_URL_TTL_SECONDS),
         ),
         abortController,
       );
     }
 
     const result = await executeProject(executionDeps, { ...params, signal: request.signal });
-    const produced = await resolveProducedFiles(result.files, sign, VIEW_URL_TTL_SECONDS);
+    const produced = await resolveProducedFiles(result.files, signArtifactUrl, VIEW_URL_TTL_SECONDS);
     return Response.json(
       toChatCompletion({
         ...result,

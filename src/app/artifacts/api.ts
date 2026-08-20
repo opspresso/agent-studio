@@ -1,18 +1,15 @@
 import type { Artifact, ArtifactKind, ArtifactSource } from "@/domain/artifact/types";
+import type { ArtifactPage, ArtifactView } from "@/app/api/artifacts/_lib/query";
 import { assertOk, readJson } from "@/app/_lib/httpClient";
 
 export type { Artifact, ArtifactKind, ArtifactSource };
 
-export interface ArtifactView extends Artifact {
-  /** Signed for this page's lifetime; absent when the address could not be minted. */
-  url?: string;
-}
-
-export interface ArtifactPage {
-  artifacts: ArtifactView[];
-  /** Cursor for the next page, absent once there is nothing further back. */
-  nextBefore?: string;
-}
+/**
+ * Taken from the route that answers with them rather than restated here: a
+ * type-only import is erased, so nothing of the server reaches the browser
+ * bundle and the two ends of the wire cannot drift.
+ */
+export type { ArtifactView, ArtifactPage };
 
 export interface ArtifactQuery {
   kind?: ArtifactKind;

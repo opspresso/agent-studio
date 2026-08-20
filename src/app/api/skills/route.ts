@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isSlug, SLUG_RULE } from "@/shared/slug";
+import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { skillUseCases } from "@/lib/container";
 import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -11,19 +11,38 @@ const createSchema = z.object({
   content: z.string(),
 });
 
+/**
+ * What the list endpoint ships — a summary, not the entity: the list pages
+ * render a name, a description and two badges, while a full skill carries its
+ * whole markdown body and up to 200KB of attachments. Detail readers use
+ * GET /api/skills/{name}.
+ *
+ * Declared here because this route is where the shape is built; the console
+ * takes this type rather than restating it, which is what it used to do.
+ */
+export interface SkillSummary {
+  name: string;
+  description: string;
+  /** Provenance of a synced skill; absent on a hand-registered one. */
+  source?: string;
+  /** Attachment count; the files themselves come with the detail read. */
+  files: number;
+  updatedAt: string;
+}
+
 export const GET = withMemberAuth(async () => {
-  // A summary, not the entity: the list pages render a name, a description
-  // and two badges, while a full skill carries its whole markdown body and up
-  // to 200KB of attachments. Detail readers use GET /api/skills/{name}.
   const skills = await skillUseCases.list();
   return Response.json(
-    skills.map((skill) => ({
-      name: skill.name,
-      description: skill.description,
-      source: skill.source,
-      files: skill.files?.length ?? 0,
-      updatedAt: skill.updatedAt,
-    })),
+    skills.map(
+      (skill) =>
+        ({
+          name: skill.name,
+          description: skill.description,
+          ...(skill.source ? { source: skill.source } : {}),
+          files: skill.files?.length ?? 0,
+          updatedAt: skill.updatedAt,
+        }) satisfies SkillSummary,
+    ),
   );
 });
 

@@ -7,6 +7,13 @@
  * checked nothing at all. Nothing was wrong, but nothing made it right either:
  * a name that slipped past one copy would be stored and then be unreadable,
  * because `parseName` refuses it on the way back out.
+ *
+ * It lives in the domain rather than in `shared` because a name rule is what a
+ * domain type is addressed by, and `shared` is the one place the domain may not
+ * import from: the rule sat below the entities it governs, reachable by every
+ * layer except theirs. The Agent Plugins name rule
+ * (`domain/plugin/types.ts`) is the same kind of decision and was already
+ * here; these two are siblings, not one rule and one helper.
  */
 const SLUG = /^[a-z0-9-]+$/;
 

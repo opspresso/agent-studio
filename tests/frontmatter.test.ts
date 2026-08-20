@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstHeadingOrLine, parseFrontmatter } from "@/shared/frontmatter";
+import { firstHeadingOrLine, parseFrontmatter } from "@/domain/plugin/frontmatter";
 
 describe("parseFrontmatter", () => {
   it("returns every field, not only the one a caller happens to want", () => {

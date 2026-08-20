@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isSlug, SLUG_RULE } from "@/shared/slug";
+import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { attachedImagesSchema } from "@/app/api/_lib/attachments";
 import type { ChannelToolCall } from "@/domain/llm/types";
 import type { McpBinding } from "@/domain/project/types";

@@ -45,6 +45,7 @@ import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { artifactRepository } from "@/infrastructure/db/repositories/artifactRepository";
+import type { SignObjectUrl } from "@/domain/artifact/objectStore";
 import {
   artifactObjectStore,
   isObjectStoreConfigured,
@@ -175,6 +176,18 @@ setAuditSink(auditRepository);
 export const artifactStorage = isObjectStoreConfigured()
   ? { rows: artifactRepository, objects: artifactObjectStore }
   : undefined;
+
+/**
+ * How a stored object becomes an address a reader can follow — or `undefined`,
+ * which is this deployment keeping nothing.
+ *
+ * Eight routes reached into `artifactStorage.objects.sign` for it, which is a
+ * route deciding *which* signer addresses a file: the same composition choice
+ * the repositories were taken out of the app layer for. Two of them did it
+ * beside a guard on `artifactUseCases`, re-deriving from the store a fact the
+ * use case they had just called was built from.
+ */
+export const signArtifactUrl: SignObjectUrl | undefined = artifactStorage?.objects.sign;
 
 export const auditUseCases = createAuditUseCases(auditRepository);
 export const memberUseCases = createMemberUseCases(memberRepository, isConfiguredAdmin);

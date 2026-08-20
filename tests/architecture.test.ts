@@ -492,9 +492,14 @@ describe("configuration reads", () => {
  * the way the `configuration reads` rule reads `process.env`.
  *
  * The fix for the one occupant was to move the module rather than exempt the
- * import: a pure helper both sides need is what `src/shared` is defined as. That
- * is the shape of every future fix here too — if a client needs it and a use
- * case needs it, it belongs at the bottom of the graph, not across a boundary.
+ * import, and that is still the shape of a fix here — but not always to the same
+ * place. A helper both sides *run* and no layer owns goes to `src/shared`, which
+ * is what `template.ts` did. A rule or format a domain type owns goes to
+ * `domain/`, which is pure TS and just as reachable from a client — `slug.ts`,
+ * `frontmatter.ts` and `imageSniff.ts` came back out of `shared` for that reason.
+ * And a *type* needs no move at all: a type-only import is erased before any
+ * bundle exists, which is how the console names the shapes its routes and use
+ * cases answer with. What must never cross is a value.
  */
 /**
  * A directive may follow comments, and nearly every file here opens with a
@@ -609,6 +614,72 @@ describe("the client bundle", () => {
 });
 
 /**
+ * A response shape is declared where the response is built.
+ *
+ * Eighteen of them were declared twice — once by the producer, once again by
+ * the browser client — because a `"use client"` module may not *import*
+ * `application/`. It may *name* one: a type-only import is erased before a
+ * bundle exists. Nothing linked the copies, and they had drifted: a card type
+ * widened to `Record<string, unknown>` where the producer says `AgentCard`, an
+ * image result missing the warning its producer sends, a Slack view without the
+ * manifest a mutation answers with — the pair that crashed the settings page.
+ *
+ * Checked by *name*, from the browser's side, which is the half that must not
+ * restate: a type declared in a client-reachable `app` module must not share its
+ * name with one a producer exports. Naming is the whole point, so an import or
+ * an alias (`type ImageResult = GenerateImageOutput`) is not a declaration — a
+ * body is. Producers keep declaring theirs; a route that builds the shape it
+ * answers with (`ProjectSlackResponse`, `SkillSummary`) is not client-reachable,
+ * because the console reaches it type-only.
+ *
+ * Request shapes are deliberately excluded. A console input is often narrower
+ * than what the use case accepts — `CreateMcpInput` omits `source`, the sync's
+ * provenance, which must not be settable from a form — so those two
+ * declarations are two contracts rather than one written twice.
+ */
+const DECLARED_TYPE = /^export\s+(?:interface\s+([A-Za-z0-9_]+)\s*(?:extends[^{]*)?\{|type\s+([A-Za-z0-9_]+)\s*=\s*[^;]*[{|])/gm;
+
+function declaredTypes(text: string): string[] {
+  return [...stripComments(text).matchAll(DECLARED_TYPE)].map((m) => (m[1] ?? m[2])!);
+}
+
+describe("response shapes", () => {
+  const reachable = clientReachable(SOURCE_FILES.filter((file) => CLIENT_DIRECTIVE.test(file.text)));
+  const isProducer = (path: string) =>
+    ["application", "domain"].includes(layerOf(path) ?? "") || path.startsWith("src/app/api/");
+  const producerNames = new Set(
+    SOURCE_FILES.filter((file) => isProducer(file.path)).flatMap((file) => declaredTypes(file.text)),
+  );
+
+  it("are named by the browser's half, never declared there", () => {
+    const found: string[] = [];
+    for (const file of reachable) {
+      if (layerOf(file.path) !== "app" || file.path.startsWith("src/app/api/")) {
+        continue;
+      }
+      for (const name of declaredTypes(file.text)) {
+        if (!name.endsWith("Input") && producerNames.has(name)) {
+          found.push(`${file.path} -> ${name}`);
+        }
+      }
+    }
+    expect(found.sort()).toEqual([]);
+  });
+
+  it("still sees both halves it compares", () => {
+    // The scan going blind reads exactly like a clean pass: anchor a producer
+    // declaration, a client module that reaches for one, and the walk that
+    // decides which files are the browser's.
+    expect(producerNames.has("SkillSummary")).toBe(true);
+    expect(producerNames.has("ArtifactPage")).toBe(true);
+    expect(reachable.map((file) => file.path)).toContain("src/app/projects/lib/api.ts");
+    expect(declaredTypes('export interface X {\n  a: string;\n}')).toEqual(["X"]);
+    // An alias names a type rather than restating it, and is not a declaration.
+    expect(declaredTypes("export type ImageResult = GenerateImageOutput;")).toEqual([]);
+  });
+});
+
+/**
  * Repositories the presentation layer no longer composes.
  *
  * The `app` layer is barred from `infrastructure`, so a route reached for a
@@ -637,6 +708,13 @@ const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = [
   "traceRepository",
   "usageRepository",
   "secretCipher",
+  // Not a repository but the same decision: eight routes reached into
+  // `artifactStorage.objects.sign` to pick the signer that addresses a file,
+  // two of them right after guarding on `artifactUseCases` — re-deriving from
+  // the store what the use case they had just called was built from. The root
+  // exports `signArtifactUrl`; the store itself stays where a wiring site needs
+  // the pair (`chats/_deps.ts` hands both halves to the chat deps).
+  "artifactStorage",
 ];
 
 describe("composition in the app layer", () => {
@@ -1094,6 +1172,17 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/execution/actor.ts",
   },
   {
+    // A listing's page cursor *is* the row's sort key, and the two halves of
+    // that fact were written apart: the adapter built the string to compare a
+    // row against an incoming `before`, and the route answering a page built it
+    // again to hand the reader the next one. Exclusion is by string equality, so
+    // a change to either spelling breaks paging by repeating or skipping a row
+    // rather than by failing.
+    what: "how an artifact listing's page cursor is spelled",
+    pattern: /createdAt\}#\$\{[\w.]*artifactId\}/,
+    owner: "src/domain/artifact/repository.ts",
+  },
+  {
     // The plugins sync reads a frontmatter block from two document kinds —
     // SKILL.md and the MCP extension documents — and a second parser would let
     // the same document mean different things depending on which kind it came
@@ -1101,7 +1190,17 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // starts.
     what: "parsing a markdown frontmatter block",
     pattern: /\^---\\r\?\\n/,
-    owner: "src/shared/frontmatter.ts",
+    owner: "src/domain/plugin/frontmatter.ts",
+  },
+  {
+    // A repo-owned component's provenance — `github:<repo>#<plugin>` — had a
+    // reader in the domain and a writer in the sync, joined only by a comment
+    // asking whoever changed one to remember the other. A prefix that lost its
+    // `#` fails nothing: the sync adopts rows it does not own and the console
+    // stops calling them repo-owned.
+    what: "the provenance string a repo-owned component carries",
+    pattern: /github:\$\{|"github:"/,
+    owner: "src/domain/plugin/types.ts",
   },
   {
     // The Agent Plugins spec's name rule, which is deliberately not `isSlug`
@@ -1236,7 +1335,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // Ten copies, and the door they all went through checked nothing.
     what: "the entry name rule",
     pattern: /\/\^\[a-z0-9-\]\+\$\//,
-    owner: "src/shared/slug.ts",
+    owner: "src/domain/naming.ts",
   },
   {
     // The stricter sibling: a slug that must also be a DNS label, because it
@@ -1244,7 +1343,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // both provisioners and the console form each spelled it out.
     what: "the managed-workload name rule",
     pattern: /\[a-z0-9\]\[a-z0-9-\]\{0,62\}/,
-    owner: "src/shared/slug.ts",
+    owner: "src/domain/naming.ts",
   },
   {
     what: "user-document caps",

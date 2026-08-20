@@ -3,7 +3,7 @@ import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { teamsActivityRepository } from "@/infrastructure/db/repositories/teamsActivityRepository";
 import { transcriptRepository } from "@/infrastructure/db/repositories/transcriptRepository";
 import {
-  artifactStorage,
+  signArtifactUrl,
   executionDeps,
   projectRepository,
   versionRepository,
@@ -23,8 +23,10 @@ const teamsEventDeps: TeamsEventDeps = {
   teams: teamsClient,
   documents: documentExtractor,
   // Named even when this deployment has none, so "no object storage here" is a
-  // decision in the source rather than a field nobody thought about.
-  ...(artifactStorage ? { signFile: artifactStorage.objects.sign } : {}),
+  // decision in the source rather than a field nobody thought about — which the
+  // conditional spread this used to be did not actually do: it left the field
+  // out, saying exactly as little as forgetting it would.
+  signFile: signArtifactUrl,
   transcripts: transcriptRepository,
 };
 

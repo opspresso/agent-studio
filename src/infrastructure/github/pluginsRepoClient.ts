@@ -9,7 +9,7 @@
 
 import type { SkillFile } from "@/domain/skill/types";
 import { selectSkillAttachments, type SkillTreeEntry } from "@/domain/skill/files";
-import { isSlug } from "@/shared/slug";
+import { isSlug } from "@/domain/naming";
 import {
   excludeSubtrees,
   mcpDocServerName,

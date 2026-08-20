@@ -16,6 +16,9 @@ export const SUPPORTED_IMAGE_TYPES = [
   "image/webp",
 ] as const;
 
+/** One of the formats above — what a picture may be, wherever one is named. */
+export type SupportedImageType = (typeof SUPPORTED_IMAGE_TYPES)[number];
+
 /**
  * Padded base64 length of a file of exactly `bytes` bytes — the wire cap for a
  * JSON body. Scaling `bytes` by 4/3 instead rounds a char short of a file at the

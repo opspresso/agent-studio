@@ -13,7 +13,7 @@
 import { execFile } from "node:child_process";
 import { MANAGED_ENV_REF, MANAGED_IMAGE, managedPortFor } from "./managedPort";
 import { promisify } from "node:util";
-import { MANAGED_NAME } from "@/shared/slug";
+import { MANAGED_NAME } from "@/domain/naming";
 import type {
   ManagedWorkload,
   ManagedWorkloadSpec,

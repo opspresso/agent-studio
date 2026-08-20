@@ -2,7 +2,10 @@ import { z } from "zod";
 import { resolvePublicBaseUrl } from "@/lib/public-url";
 import { withAuth } from "@/lib/session";
 import { projectTelegramUseCases } from "@/lib/container";
-import type { ProjectTelegramResult } from "@/application/telegram/projectTelegram";
+import type {
+  ProjectTelegramResult,
+  ProjectTelegramView,
+} from "@/application/telegram/projectTelegram";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -14,16 +17,24 @@ const updateSchema = z.object({
 
 /**
  * The one shape every verb answers with: the masked view plus the webhook URL
- * the bot has to be registered with, so a mutation's response is never a
- * subset of the read the page was built from.
+ * the bot has to be registered with, so a mutation's response is never a subset
+ * of the read the page was built from. Declared rather than assembled
+ * anonymously so the console takes this type rather than restating it.
  */
+export interface ProjectTelegramResponse extends ProjectTelegramView {
+  /** Where Telegram should deliver this bot's updates. */
+  webhookUrl: string;
+  /** What a save could not do on Telegram's side — a webhook it refused. */
+  warnings?: string[];
+}
+
 async function telegramResponse({ view, warnings }: ProjectTelegramResult, request: Request) {
   const baseUrl = await resolvePublicBaseUrl(new URL(request.url).origin);
   return Response.json({
     ...view,
     webhookUrl: `${baseUrl}${view.webhookPath}`,
     ...(warnings ? { warnings } : {}),
-  });
+  } satisfies ProjectTelegramResponse);
 }
 
 export const GET = withAuth(async (user, request: Request, ctx: RouteContext) => {

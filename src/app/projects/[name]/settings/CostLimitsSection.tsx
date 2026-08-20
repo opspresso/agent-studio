@@ -13,7 +13,7 @@ import {
   updateProject,
   type CostLimits,
   type SlackChannelInfo,
-  type TelegramDestinationInfo,
+  type TelegramDestination,
 } from "../../lib/api";
 import { useT } from "@/app/_i18n/provider";
 import { costAlertDestinations } from "@/domain/project/types";
@@ -52,7 +52,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
   const [monthlyBlockUsd, setMonthlyBlockUsd] = useState<number | "">("");
   const [destinations, setDestinations] = useState<MessageDestination[]>([]);
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
-  const [telegramChats, setTelegramChats] = useState<TelegramDestinationInfo[]>([]);
+  const [telegramChats, setTelegramChats] = useState<TelegramDestination[]>([]);
   const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
   const [slackChannelsLoading, setSlackChannelsLoading] = useState(true);
   const [availableDestinations, setAvailableDestinations] = useState<

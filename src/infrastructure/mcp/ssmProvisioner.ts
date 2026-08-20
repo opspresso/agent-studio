@@ -18,7 +18,7 @@ import {
   SendCommandCommand,
   GetCommandInvocationCommand,
 } from "@aws-sdk/client-ssm";
-import { MANAGED_NAME } from "@/shared/slug";
+import { MANAGED_NAME } from "@/domain/naming";
 import { MANAGED_ENV_REF, MANAGED_IMAGE, managedPortFor } from "./managedPort";
 import type {
   ManagedWorkload,

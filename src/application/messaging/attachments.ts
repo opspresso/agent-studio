@@ -15,7 +15,7 @@ import {
   type ReadDocument,
 } from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
-import { sniffImageType } from "@/shared/imageSniff";
+import { sniffImageType } from "@/domain/llm/imageSniff";
 
 /**
  * How a messaging surface's attachments become a turn's content — the one

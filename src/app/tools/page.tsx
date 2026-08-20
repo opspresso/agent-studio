@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { toSlug } from "@/shared/slug";
+import { toSlug } from "@/domain/naming";
 import { createMcp, listMcps, type McpServer } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import {

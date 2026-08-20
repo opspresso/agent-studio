@@ -165,23 +165,43 @@ export function classifyMcpJsonServer(entry: unknown): McpServerClassification {
 }
 
 /**
- * Read a component's provenance string — `github:<repo>#<plugin>`, composed
- * by the plugins sync — back into its parts. Null for anything else,
- * including the retired single-repo form (`github:<repo>` with no `#`),
- * which names no plugin. The sync's `repoPrefix` is the writing side of this
- * format; a change to either must change both.
+ * Where every component a repository owns says it came from:
+ * `github:<repo>#<plugin>`.
+ *
+ * Written by the plugins sync, read by {@link parsePluginSource} and by every
+ * `startsWith` that asks "is this row this repository's?". Both sides used to
+ * spell it out — the sync composed the prefix, this file sliced it apart, and a
+ * comment here asked whoever changed one to remember the other. A prefix that
+ * lost its `#` would not fail: the sync would adopt rows it does not own and
+ * the console would stop calling them repo-owned.
+ */
+const SOURCE_SCHEME = "github:";
+
+export function pluginSourcePrefix(repo: string): string {
+  return `${SOURCE_SCHEME}${repo}#`;
+}
+
+/** The provenance string for one plugin of `repo`. */
+export function pluginSource(repo: string, plugin: string): string {
+  return pluginSourcePrefix(repo) + plugin;
+}
+
+/**
+ * Read a component's provenance string back into its parts. Null for anything
+ * else, including the retired single-repo form (`github:<repo>` with no `#`),
+ * which names no plugin.
  */
 export function parsePluginSource(
   source: string,
 ): { repo: string; plugin: string } | null {
-  if (!source.startsWith("github:")) {
+  if (!source.startsWith(SOURCE_SCHEME)) {
     return null;
   }
   const hash = source.indexOf("#");
   if (hash < 0) {
     return null;
   }
-  const repo = source.slice("github:".length, hash);
+  const repo = source.slice(SOURCE_SCHEME.length, hash);
   const plugin = source.slice(hash + 1);
   return repo !== "" && plugin !== "" ? { repo, plugin } : null;
 }

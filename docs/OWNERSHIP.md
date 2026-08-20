@@ -32,7 +32,9 @@
 | 검색이 한 런에 얼마나 더할 수 있는가 | `src/application/execution/bindings.ts` 의 `DISCOVERY_LIMITS` |
 | 런이 자기 메모리를 어떻게 준비하는가 — 어떤 tool 에게, 무엇으로 묻고, 그 답이 무엇이 되는가 | `src/application/execution/memoryRecall.ts` 의 `recallMemories` / `MAX_RECALLED_CHARS`; 묻는 tool 의 이름과 "바인딩만으로 회상이 불가능한가" 는 `src/domain/project/memoryRecall.ts` 의 `RECALL_TOOL_NAME` / `bindingsMayOfferRecall` — 버전 편집기가 런 전에 같은 답을 읽는다 |
 | 런이 무엇으로 카탈로그를 검색하는가 | `src/application/execution/bindings.ts` 의 `discoveryQueries` |
-| 마크다운 frontmatter 블록의 파싱 | `src/shared/frontmatter.ts` |
+| 마크다운 frontmatter 블록의 파싱 | `src/domain/plugin/frontmatter.ts` |
+| repo 소유 컴포넌트의 provenance 문자열(`github:<repo>#<plugin>`) | `src/domain/plugin/types.ts` 의 `pluginSourcePrefix`(sync 가 `startsWith`/`slice` 로 기대는 쪽)·`pluginSource`·`parsePluginSource` |
+| 아티팩트 목록의 페이지 커서(= GSI 정렬 키) 철자 — 아래 "모든 DynamoDB 키 문자열" 의 유일한 예외이고, API 가 독자에게 건네는 커서이기도 하기 때문이다 | `src/domain/artifact/repository.ts` 의 `artifactCursor` |
 | subagent 중첩 한도 | `src/application/execution/subagentRunner.ts` |
 | 런당 MCP tool 상한 | `src/domain/llm/toolLimits.ts` |
 | 각 member tier 가 쓸 수 있는 금액 | `src/domain/member/tiers.ts` 의 `TIER_LIMITS` |
@@ -48,7 +50,7 @@
 | 런의 trace 를 샘플링할지 여부 | `src/application/run/traceLifecycle.ts` |
 | schedule 이 언제 발화하는지 판정하기 | `src/domain/trigger/cron.ts` |
 | Project 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `projectWebhookPath` |
-| managed workload 이름 규칙 | `src/shared/slug.ts` 의 `MANAGED_NAME` |
+| managed workload 이름 규칙 | `src/domain/naming.ts` 의 `MANAGED_NAME` |
 | 동시에 도는 generator 를 병합하기 | `src/shared/mergeGenerators.ts` |
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/app/_lib/authorPaths.ts` |
 | 사람이 읽을 달러 금액 | `src/app/_lib/formatUsd.ts` 의 `formatUsd` — `SINGLE_OWNERS` 행이 아니라 그 자체가 하나의 규칙으로 강제된다: `app` 안 어디에도 `${…toFixed(…)}` 는 없고 두 `_lib` 포매터만 있다 |
@@ -74,7 +76,7 @@
 | 플랫폼 히스토리가 없는 표면이 대화를 어떻게 읽고 적는가 — 턴 수·문자 예산, 턴 하나의 상한, 텍스트 없는 턴과 답 없는 런의 기록, 화자 라벨의 옵트인 | `src/application/messaging/transcriptHistory.ts` |
 | 플랫폼 히스토리가 없는 표면의 턴이 어떻게 도는가 — 기억한 대화를 읽고, 파이프라인을 돌리고, 도착 시각으로 두 턴을 적는 것 | `src/application/messaging/rememberedTurn.ts` 의 `runRememberedTurn` / `resolveAgentProject`. Telegram 과 Teams 핸들러는 사람·첨부·도착 시각·답변 대상만 건넨다 |
 | 코드 펜스가 열려 있는지 — 조각 경계와 꼬리 붙이기가 렌더러와 같은 답을 내도록 | `src/shared/markdownFence.ts` |
-| 선언 없이 온 그림의 종류를 바이트로 알아내기 | `src/shared/imageSniff.ts` |
+| 선언 없이 온 그림의 종류를 바이트로 알아내기 | `src/domain/llm/imageSniff.ts` |
 | 모든 chat-bot 표면에서의 첨부 한도와, 버려진 첨부마다 얻는 문장 | `src/application/messaging/attachments.ts` — 플랫폼이 기여하는 것은 `InboundAttachment.download` 를 통한 바이트뿐이고 그 외에는 없다 |
 | 모든 chat-bot 표면이 구현하는 답변 port | `src/domain/messaging/reply.ts` 의 `ReplySink` / `ReplyChannel` — 파이프라인이 그것을 호출하고, 각 어댑터가 그것을 렌더하며, 어느 쪽도 다른 쪽을 import 하지 않는다 |
 | 인바운드 이벤트를 정확히 한 번 처리하게 하는 claim-and-settle 계약 | `src/infrastructure/db/repositories/inboundClaimRepository.ts` 의 `createInboundClaimRepository`. Slack 은 `event_id` 로, Telegram 은 project·봇·`update_id` 로, Teams 는 project·App ID·activity id 로 키를 잡고, port 는 `src/domain/messaging/inboundClaims.ts` 의 `InboundEventClaims` 이다 |
@@ -92,14 +94,14 @@
 | 가져온 URL 이 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` 의 `framedFetchedUrl` |
 | 가져온 URL 을 얼마나 유지하는가 | `src/application/llm/urlContent.ts` 의 `MAX_FETCHED_TEXT_CHARS` |
 | 첨부된 문서가 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` |
-| 모든 항목이 불리는 이름 | `src/shared/slug.ts` 의 `isSlug` |
+| 모든 항목이 불리는 이름 | `src/domain/naming.ts` 의 `isSlug` |
 
 테스트가 패턴으로는 표현하지 못하지만 같은 규칙이 적용되는, 단일 소유자를 갖는 그 밖의
 결정들:
 
 | 결정 | 소유자 |
 |---|---|
-| 모든 DynamoDB 키 문자열 | `src/infrastructure/db/keys.ts` |
+| 모든 DynamoDB 키 문자열 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외 — 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` |
 | Model 이 무엇이고, 어떤 route 가 그것을 서빙하는가 | **이 저장소 밖** — [opspresso/agent-models](https://github.com/opspresso/agent-models) 의 `models/` (family/offering), `https://models.opspresso.com/models.json` 으로 발행된다. 앱에서는 `src/domain/llm/models.ts` 의 `loadModelCatalog` 가 받아들이는 *유일한 입구* 이고, 숫자는 절대 여기 쓰지 않는다 (`tests/models.test.ts` 가 막는다) |
 | 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` |
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` |

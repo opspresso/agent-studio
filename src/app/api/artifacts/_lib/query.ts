@@ -11,6 +11,7 @@ import {
   DEFAULT_ARTIFACT_PAGE,
   MAX_ARTIFACT_PAGE,
 } from "@/application/artifact/artifactUseCases";
+import { artifactCursor } from "@/domain/artifact/repository";
 import type { ListArtifactsOptions } from "@/domain/artifact/repository";
 import type { Artifact, ArtifactKind, ArtifactSource } from "@/domain/artifact/types";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
@@ -72,6 +73,44 @@ export interface ArtifactView extends Artifact {
   url?: string;
 }
 
+/** One page of a gallery — what both listing routes answer with. */
+export interface ArtifactPage {
+  artifacts: ArtifactView[];
+  /**
+   * Cursor for the next page, absent once there is nothing further back — see
+   * {@link probeFor} for the one case that can still be one page out.
+   */
+  nextBefore?: string;
+}
+
+/** The page size a request asked for, clamped exactly as the use case clamps it. */
+function pageSize(options: ListArtifactsOptions): number {
+  return Math.min(Math.max(options.limit ?? DEFAULT_ARTIFACT_PAGE, 1), MAX_ARTIFACT_PAGE);
+}
+
+/**
+ * The listing options with room for **one row past the page**, which is how a
+ * page tells "this is the last one" from "there is another".
+ *
+ * Without it every non-empty page carried a cursor, because the only thing this
+ * file could see was that some row was last — so a gallery holding three
+ * pictures offered "Load more", and the click cost up to five DynamoDB queries
+ * and a signing fan-out to answer with nothing.
+ *
+ * The probe row is fetched, never rendered and never signed. At
+ * `MAX_ARTIFACT_PAGE` there is no room for it (the use case clamps there), so
+ * the largest page falls back to "a full page may have more" — one empty
+ * follow-up remains possible when the total is an exact multiple of it.
+ */
+export function probeFor(options: ListArtifactsOptions): ListArtifactsOptions {
+  return { ...options, limit: probeSize(options) };
+}
+
+/** How many rows to ask for: the page and its probe, where there is room. */
+function probeSize(options: ListArtifactsOptions): number {
+  return Math.min(pageSize(options) + 1, MAX_ARTIFACT_PAGE);
+}
+
 /**
  * The rows plus an address for each.
  *
@@ -83,9 +122,16 @@ export interface ArtifactView extends Artifact {
  * while its images keep the permanent one.
  */
 export async function toArtifactViews(
-  artifacts: Artifact[],
+  /** Rows as {@link probeFor} asked for them: the page, plus at most one more. */
+  rows: Artifact[],
   sign: SignObjectUrl | undefined,
-): Promise<{ artifacts: ArtifactView[]; nextBefore?: string }> {
+  options: ListArtifactsOptions,
+): Promise<ArtifactPage> {
+  const limit = pageSize(options);
+  const artifacts = rows.slice(0, limit);
+  // `>=` rather than `>`: at the largest page the probe had nowhere to go, and a
+  // page that came back full is the only evidence left that more may follow.
+  const more = rows.length >= probeSize(options);
   const views = await Promise.all(
     artifacts.map(async (artifact) => {
       if (!sign) {
@@ -110,7 +156,8 @@ export async function toArtifactViews(
   const last = artifacts.at(-1);
   return {
     artifacts: views,
-    // The sort key is the cursor, so no LastEvaluatedKey has to be serialised.
-    ...(last ? { nextBefore: `${last.createdAt}#${last.artifactId}` } : {}),
+    // The sort key is the cursor, spelled by the repository port so this and the
+    // adapter that compares it cannot drift.
+    ...(more && last ? { nextBefore: artifactCursor(last) } : {}),
   };
 }

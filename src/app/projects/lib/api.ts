@@ -13,6 +13,23 @@ import type { SlackChannelInfo, SlackSuggestedPrompt } from "@/domain/slack/type
 import type { EngineChunk } from "@/domain/llm/types";
 import type { UsageRow } from "@/domain/usage/types";
 import type { Trace } from "@/domain/trace/types";
+/**
+ * The shapes the server answers with are taken from the module that produces
+ * each, never restated here: a type-only import is erased, so the browser
+ * bundle is unchanged and the two ends of the wire cannot drift. Restating them
+ * had already cost a crash — the Slack settings page rendered a manifest a
+ * mutation's narrower response did not carry.
+ */
+import type { McpConnectionView } from "@/application/mcp/mcpAuthUseCases";
+import type { ActorUsageView } from "@/application/usage/listActors";
+import type { ProjectA2aResponse } from "@/app/api/projects/[name]/a2a/route";
+import type { ProjectSlackResponse } from "@/app/api/projects/[name]/slack/route";
+import type { ProjectTelegramResponse } from "@/app/api/projects/[name]/telegram/route";
+import type { ProjectTeamsResponse } from "@/app/api/projects/[name]/teams/route";
+import type { PromptPreview } from "@/application/execution/deps";
+import type { GenerateImageOutput } from "@/application/image/generateImage";
+import type { ApiTokenStatus } from "@/application/project/apiTokenUseCases";
+import type { TelegramDestination } from "@/domain/telegram/destination";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
@@ -137,18 +154,7 @@ export function updateVersion(
   }).then((r) => readJson<Version>(r));
 }
 
-export interface PromptPreview {
-  messages: Array<{ role: "system" | "user"; content: string }>;
-  toolNames: string[];
-  tools: Array<{
-    name: string;
-    description?: string;
-    parameters?: Record<string, unknown>;
-  }>;
-  warnings: string[];
-  /** Names a search added on top of the bindings; a gain, so not a warning. */
-  discovered: string[];
-}
+export type { PromptPreview };
 
 /**
  * Assemble what the draft in the editor would send. Owner or admin, and it contacts
@@ -250,12 +256,8 @@ export async function streamAgent(
   return res;
 }
 
-export interface ImageResult {
-  imageBase64: string;
-  mimeType: string;
-  model: string;
-  usage: { inputTokens: number; outputTokens: number; costUsd: number };
-}
+/** What `POST /predict` answers with for an image project, as the use case built it. */
+export type ImageResult = GenerateImageOutput;
 
 export async function predictImage(
   name: string,
@@ -280,15 +282,7 @@ export async function predictImage(
   return (await res.json()) as ImageResult;
 }
 
-export interface ActorUsageView {
-  date: string;
-  /** `kind:id` — stable, and what two callers are told apart by. */
-  actor: string;
-  calls: Record<string, number>;
-  costUsd: Record<string, number>;
-  /** Present when the caller could be resolved to a person (Slack today). */
-  display?: { name: string; avatarUrl?: string };
-}
+export type { ActorUsageView };
 
 /** Who spent this project's budget. Owner/admin only, like traces. */
 export async function usageActors(
@@ -301,26 +295,14 @@ export async function usageActors(
   return (await res.json()) as { items: ActorUsageView[] };
 }
 
-export interface ProjectSlackView {
-  enabled: boolean;
-  configured: boolean;
-  botToken: string;
-  signingSecret: string;
-  eventsPath: string;
-  eventsUrl: string;
-  suggestedPrompts: SlackSuggestedPrompt[];
-  /** Normalized by the server — trimmed, lower-cased and deduplicated. */
-  channelKeywords: string[];
-  /** Every verb returns it, so the settings page can always render the manifest. */
-  manifest: Record<string, unknown>;
-}
+export type { ProjectSlackResponse };
 
-export async function getProjectSlack(name: string): Promise<ProjectSlackView> {
+export async function getProjectSlack(name: string): Promise<ProjectSlackResponse> {
   const res = await fetch(`/api/projects/${name}/slack`);
   if (!res.ok) {
     throw new Error(`Failed to load Slack settings (${res.status})`);
   }
-  return (await res.json()) as ProjectSlackView;
+  return (await res.json()) as ProjectSlackResponse;
 }
 
 export async function updateProjectSlack(
@@ -332,13 +314,13 @@ export async function updateProjectSlack(
     suggestedPrompts?: SlackSuggestedPrompt[];
     channelKeywords?: string[];
   },
-): Promise<ProjectSlackView> {
+): Promise<ProjectSlackResponse> {
   const res = await fetch(`/api/projects/${name}/slack`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(update),
   });
-  const data = (await res.json()) as ProjectSlackView & { error?: string };
+  const data = (await res.json()) as ProjectSlackResponse & { error?: string };
   if (!res.ok) {
     throw new Error(data.error ?? `Failed to save Slack settings (${res.status})`);
   }
@@ -367,35 +349,18 @@ export async function listProjectSlackChannels(
   );
 }
 
-export interface ProjectTelegramView {
-  enabled: boolean;
-  configured: boolean;
-  /** Masked. */
-  botToken: string;
-  /** The bot's @username once a token has been checked; empty before. */
-  botUsername: string;
-  webhookPath: string;
-  webhookUrl: string;
-  /** What a save could not do on Telegram's side — a webhook it refused. */
-  warnings?: string[];
+export type { ProjectTelegramResponse };
+
+export async function getProjectTelegram(name: string): Promise<ProjectTelegramResponse> {
+  return readJson<ProjectTelegramResponse>(await fetch(`/api/projects/${name}/telegram`));
 }
 
-export async function getProjectTelegram(name: string): Promise<ProjectTelegramView> {
-  return readJson<ProjectTelegramView>(await fetch(`/api/projects/${name}/telegram`));
-}
-
-export interface TelegramDestinationInfo {
-  chatId: number;
-  chatType: "private" | "group" | "supergroup" | "channel";
-  title: string;
-  threadId?: number;
-  lastSeenAt: string;
-}
+export type { TelegramDestination };
 
 export async function listProjectTelegramChats(
   name: string,
-): Promise<{ chats: TelegramDestinationInfo[] }> {
-  return readJson<{ chats: TelegramDestinationInfo[] }>(
+): Promise<{ chats: TelegramDestination[] }> {
+  return readJson<{ chats: TelegramDestination[] }>(
     await fetch(`/api/projects/${name}/telegram/chats`),
   );
 }
@@ -403,8 +368,8 @@ export async function listProjectTelegramChats(
 export async function updateProjectTelegram(
   name: string,
   update: { botToken?: string; enabled?: boolean },
-): Promise<ProjectTelegramView> {
-  return readJson<ProjectTelegramView>(
+): Promise<ProjectTelegramResponse> {
+  return readJson<ProjectTelegramResponse>(
     await fetch(`/api/projects/${name}/telegram`, {
       method: "PUT",
       headers: jsonHeaders,
@@ -429,27 +394,17 @@ export async function registerProjectTelegramWebhook(name: string): Promise<{ ok
   return readJson(await fetch(`/api/projects/${name}/telegram/webhook`, { method: "POST" }));
 }
 
-export interface ProjectTeamsView {
-  enabled: boolean;
-  configured: boolean;
-  /** Not a secret. */
-  appId: string;
-  /** Masked. */
-  appPassword: string;
-  tenantId: string;
-  messagingPath: string;
-  messagingUrl: string;
-}
+export type { ProjectTeamsResponse };
 
-export async function getProjectTeams(name: string): Promise<ProjectTeamsView> {
-  return readJson<ProjectTeamsView>(await fetch(`/api/projects/${name}/teams`));
+export async function getProjectTeams(name: string): Promise<ProjectTeamsResponse> {
+  return readJson<ProjectTeamsResponse>(await fetch(`/api/projects/${name}/teams`));
 }
 
 export async function updateProjectTeams(
   name: string,
   update: { appId?: string; appPassword?: string; tenantId?: string; enabled?: boolean },
-): Promise<ProjectTeamsView> {
-  return readJson<ProjectTeamsView>(
+): Promise<ProjectTeamsResponse> {
+  return readJson<ProjectTeamsResponse>(
     await fetch(`/api/projects/${name}/teams`, {
       method: "PUT",
       headers: jsonHeaders,
@@ -469,21 +424,14 @@ export async function testProjectTeams(
   return readJson(await fetch(`/api/projects/${name}/teams/test`, { method: "POST" }));
 }
 
-export interface ProjectTokenStatus {
-  configured: boolean;
-  /** Display mask of the stored token; absent on tokens issued before masks. */
-  masked?: string;
-  createdAt?: string;
-  /** False for a legacy hashed token, which can only be replaced. */
-  revealable?: boolean;
-}
+export type { ApiTokenStatus };
 
-export async function getProjectToken(name: string): Promise<ProjectTokenStatus> {
+export async function getProjectToken(name: string): Promise<ApiTokenStatus> {
   const res = await fetch(`/api/projects/${name}/token`);
   if (!res.ok) {
     throw new Error(`Failed to load API token status (${res.status})`);
   }
-  return (await res.json()) as ProjectTokenStatus;
+  return (await res.json()) as ApiTokenStatus;
 }
 
 /** Generate (or regenerate) the project API token. Returns the raw token once. */
@@ -523,19 +471,14 @@ export async function revokeProjectToken(name: string): Promise<void> {
   }
 }
 
-export interface ProjectA2aView {
-  enabled: boolean;
-  published: boolean;
-  cardUrl: string | null;
-  card: Record<string, unknown> | null;
-}
+export type { ProjectA2aResponse };
 
-export async function getProjectA2a(name: string): Promise<ProjectA2aView> {
+export async function getProjectA2a(name: string): Promise<ProjectA2aResponse> {
   const res = await fetch(`/api/projects/${name}/a2a`);
   if (!res.ok) {
     throw new Error(`Failed to load A2A settings (${res.status})`);
   }
-  return (await res.json()) as ProjectA2aView;
+  return (await res.json()) as ProjectA2aResponse;
 }
 
 // --- MCP OAuth connections -------------------------------------------------
@@ -545,18 +488,7 @@ export async function getProjectA2a(name: string): Promise<ProjectA2aView> {
  * secret and no token — there is no reveal path for either, so this is the whole
  * of what the console can know.
  */
-export interface McpConnectionView {
-  serverName: string;
-  status: "needs_auth" | "connected" | "needs_reauth";
-  clientId: string;
-  /** Masked, same convention as every other stored secret; absent when none. */
-  clientSecret?: string;
-  clientRegistered: boolean;
-  scopes: string[];
-  connectedBy?: string;
-  connectedAt?: string;
-  expiresAt?: string;
-}
+export type { McpConnectionView };
 
 export function listMcpConnections(name: string): Promise<McpConnectionView[]> {
   return fetch(`/api/projects/${name}/mcp-connections`)

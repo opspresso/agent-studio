@@ -5,6 +5,7 @@ import { projectSlackUseCases } from "@/lib/container";
 import {
   buildProjectSlackManifest,
   type ProjectSlackResult,
+  type ProjectSlackView,
 } from "@/application/slack/projectSlack";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
@@ -25,13 +26,26 @@ function resolveBaseUrl(request: Request): Promise<string> {
 }
 
 /**
- * The one shape every verb answers with.
+ * The one shape every verb answers with — the use case's view plus the two
+ * things only a request knows: where this deployment answers events, and the
+ * manifest built against that address.
  *
  * It was assembled per handler before, and only GET carried the manifest — so
  * saving replaced the client's view with one that had none, and rendering the
  * manifest afterwards crashed. The client keeps whatever a mutation returns, so
  * a response that is a subset of the read is a broken page one click later.
- *
+ * Declared rather than assembled anonymously for that same reason: the console
+ * takes this type rather than restating it, and a field added here reaches both
+ * ends or neither.
+ */
+export interface ProjectSlackResponse extends ProjectSlackView {
+  /** Where Slack sends this project's events, for pasting into the app config. */
+  eventsUrl: string;
+  /** Every verb returns it, so the settings page can always render it. */
+  manifest: Record<string, unknown>;
+}
+
+/**
  * The project comes back from the use case rather than being re-read here, so a
  * mutation's manifest describes what it just wrote and each verb costs one read.
  */
@@ -40,7 +54,7 @@ async function slackResponse({ project, view }: ProjectSlackResult, baseUrl: str
     ...view,
     eventsUrl: `${baseUrl}${view.eventsPath}`,
     manifest: buildProjectSlackManifest(project, baseUrl),
-  });
+  } satisfies ProjectSlackResponse);
 }
 
 export const GET = withAuth(async (user, request: Request, ctx: RouteContext) => {

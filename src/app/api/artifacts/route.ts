@@ -1,7 +1,7 @@
 import { withAuth } from "@/lib/session";
-import { artifactStorage, artifactUseCases } from "@/lib/container";
+import { artifactUseCases, signArtifactUrl } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
-import { parseArtifactQuery, toArtifactViews } from "./_lib/query";
+import { parseArtifactQuery, probeFor, toArtifactViews } from "./_lib/query";
 
 export const GET = withAuth(async (user, request: Request) => {
   if (!artifactUseCases) {
@@ -12,8 +12,8 @@ export const GET = withAuth(async (user, request: Request) => {
     return Response.json({ error: parsed.error }, { status: 400 });
   }
   try {
-    const artifacts = await artifactUseCases.listMine(user.email, parsed.options);
-    return Response.json(await toArtifactViews(artifacts, artifactStorage?.objects.sign));
+    const artifacts = await artifactUseCases.listMine(user.email, probeFor(parsed.options));
+    return Response.json(await toArtifactViews(artifacts, signArtifactUrl, parsed.options));
   } catch (error) {
     return apiError(error);
   }

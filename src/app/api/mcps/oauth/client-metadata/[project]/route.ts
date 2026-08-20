@@ -1,6 +1,6 @@
 import { clientMetadataDocument } from "@/application/mcp/mcpAuthUseCases";
 import { getPublicBaseUrl } from "@/lib/runtime-settings";
-import { isSlug } from "@/shared/slug";
+import { isSlug } from "@/domain/naming";
 
 type RouteContext = { params: Promise<{ project: string }> };
 

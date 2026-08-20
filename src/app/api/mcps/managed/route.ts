@@ -3,7 +3,7 @@ import { managedMcpUseCases } from "@/lib/container";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
-import { MANAGED_NAME } from "@/shared/slug";
+import { MANAGED_NAME } from "@/domain/naming";
 import { managedMcpUnavailable } from "./_unavailable";
 
 /**

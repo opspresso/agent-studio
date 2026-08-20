@@ -149,6 +149,12 @@ export function RunPanel({
         });
         setImage(result);
         setCost(result.usage.costUsd);
+        // A picture that was drawn and not kept is a loss like any other, and
+        // this panel is the one surface that had nowhere to put it: the
+        // streaming paths yield it as a `warning` chunk.
+        if (result.warning) {
+          setWarnings([result.warning]);
+        }
         return;
       }
       const imageParts = toRequestImages(attachments).map((image) => ({
