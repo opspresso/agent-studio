@@ -36,7 +36,8 @@ import { useImageViewer } from "@/app/_components/ImageViewer";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { formatShortDateTime } from "@/shared/date";
 import { formatBytes } from "@/app/_lib/formatBytes";
-import { deleteArtifact, type ArtifactPage, type ArtifactQuery, type ArtifactView } from "../api";
+import { deleteArtifact, type ArtifactKind, type ArtifactPage, type ArtifactQuery, type ArtifactView } from "../api";
+import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import {
   artifactFileType,
@@ -44,6 +45,22 @@ import {
 } from "@/app/artifacts/_lib/fileType";
 
 type KindFilter = "all" | "image" | "document";
+
+/**
+ * The noun the delete sentence puts in the middle of itself.
+ *
+ * A map rather than a ternary, keyed like `FILE_TYPE_ICONS` below: a ternary's
+ * else branch absorbs a third kind silently, so adding one would have the
+ * dialog tell somebody deleting an audio file that it removes "the document".
+ * Here the compiler asks for the word.
+ *
+ * Separate from the `artifacts.images`/`artifacts.documents` filter labels,
+ * which are plural headings for a segmented control and do not fit a sentence.
+ */
+const KIND_NOUN: Record<ArtifactKind, MessageKey> = {
+  image: "artifacts.kindImage",
+  document: "artifacts.kindDocument",
+};
 
 export function ArtifactGallery({
   load,
@@ -82,6 +99,10 @@ export function ArtifactGallery({
       setArtifacts(page.artifacts);
       setNextBefore(page.nextBefore);
     } catch (e) {
+      // English on purpose, like every other error in this console: the message
+      // that usually lands here is an `AppError`'s, which `application` and
+      // `domain` carry as a plain string and cannot translate. A localised
+      // fallback beside an English real message is the worse of the two.
       setError(e instanceof Error ? e.message : "Failed to load artifacts");
     } finally {
       setLoading(false);
@@ -110,14 +131,12 @@ export function ArtifactGallery({
 
   async function remove(artifact: ArtifactView) {
     const ok = await confirm({
-      title: "Delete artifact",
+      title: t("artifacts.deleteTitle"),
       // Said before the fact, because it cannot be said after: the transcript
       // that showed this picture keeps its reference, and there is no way to
       // reach back into every chat and Slack thread that rendered it.
-      message:
-        `This removes the ${artifact.kind} from storage. Anywhere it was shown — a chat message, ` +
-        `a Slack thread — will show it as unavailable. This cannot be undone.`,
-      confirmLabel: "Delete",
+      message: t("artifacts.deleteBody", { kind: t(KIND_NOUN[artifact.kind]) }),
+      confirmLabel: t("artifacts.delete"),
     });
     if (!ok) {
       return;
@@ -199,7 +218,7 @@ export function ArtifactGallery({
       {nextBefore && !loading && (
         <Group justify="center">
           <Button variant="default" loading={loadingMore} onClick={() => void loadMore()}>
-            Load more
+            {t("artifacts.loadMore")}
           </Button>
         </Group>
       )}
@@ -232,7 +251,7 @@ function ArtifactCard({
         {artifact.kind === "image" && available ? (
           <Image
             src={artifact.url}
-            alt={artifact.prompt ?? "Generated image"}
+            alt={artifact.prompt ?? t("artifacts.imageAlt")}
             h={180}
             fit="cover"
             onClick={onPreview}
@@ -245,7 +264,7 @@ function ArtifactCard({
               <FileTypeIcon artifact={artifact} />
             ) : (
               <Text fz="sm" c="dimmed" ta="center" px="md">
-                No longer available
+                {t("artifacts.unavailable")}
               </Text>
             )}
           </Paper>
@@ -255,9 +274,11 @@ function ArtifactCard({
       <Stack gap={6} mt="sm" style={{ flex: 1 }}>
         <Group gap="xs" wrap="nowrap" justify="space-between">
           <Text fw={500} truncate>
-            {artifact.filename ?? artifact.prompt ?? artifact.kind}
+            {/* Neither name nor prompt: the kind is all there is to call it,
+                and it is a word a reader sees rather than a stored value. */}
+            {artifact.filename ?? artifact.prompt ?? t(KIND_NOUN[artifact.kind])}
           </Text>
-          {artifact.source === "attachment" && <Badge variant="light">Attached</Badge>}
+          {artifact.source === "attachment" && <Badge variant="light">{t("artifacts.attached")}</Badge>}
         </Group>
 
         {artifact.prompt && artifact.filename && (
@@ -276,7 +297,10 @@ function ArtifactCard({
             model — and with neither the line is not rendered at all. */}
         {(artifact.producedBy || artifact.model) && (
           <Text fz="xs" c="dimmed" truncate>
-            {[artifact.producedBy && `by ${artifact.producedBy}`, artifact.model]
+            {[
+              artifact.producedBy && t("artifacts.producedBy", { name: artifact.producedBy }),
+              artifact.model,
+            ]
               .filter(Boolean)
               .join(" · ")}
           </Text>
@@ -290,14 +314,14 @@ function ArtifactCard({
             <Anchor component="button" type="button" onClick={onPreview} fz="sm">
               <Group gap={4}>
                 <IconEye size={14} />
-                View
+                {t("artifacts.view")}
               </Group>
             </Anchor>
           ) : (
             <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
               <Group gap={4}>
                 <IconDownload size={14} />
-                Download
+                {t("artifacts.download")}
               </Group>
             </Anchor>
           )}
@@ -318,10 +342,17 @@ const FILE_TYPE_ICONS: Partial<Record<ArtifactFileType, string>> = {
 };
 
 function FileTypeIcon({ artifact }: { artifact: ArtifactView }) {
+  const t = useT();
   const type = artifactFileType(artifact.mimeType, artifact.filename, artifact.key);
   const src = FILE_TYPE_ICONS[type];
   return src ? (
-    <Image src={src} alt={`${type.toUpperCase()} document`} w={64} h={64} fit="contain" />
+    <Image
+      src={src}
+      alt={t("artifacts.documentAlt", { type: type.toUpperCase() })}
+      w={64}
+      h={64}
+      fit="contain"
+    />
   ) : (
     <IconFile size={48} opacity={0.4} />
   );

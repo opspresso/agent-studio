@@ -550,6 +550,24 @@ export const en = {
   "artifacts.images": "Images",
   "artifacts.preview": "Preview",
   "artifacts.documents": "Documents",
+  "artifacts.attached": "Attached",
+  "artifacts.view": "View",
+  "artifacts.download": "Download",
+  "artifacts.loadMore": "Load more",
+  "artifacts.unavailable": "No longer available",
+  "artifacts.imageAlt": "Generated image",
+  "artifacts.documentAlt": "{type} document",
+  // Who drew it. The model id beside this is never translated — it is an
+  // identifier a provider owns, like the product nouns.
+  "artifacts.producedBy": "by {name}",
+  "artifacts.deleteTitle": "Delete artifact",
+  // Said before the fact because it cannot be said after — see the caller.
+  "artifacts.deleteBody":
+    "This removes the {kind} from storage. Anywhere it was shown — a chat message, a Slack thread — will show it as unavailable. This cannot be undone.",
+  // The kind as it reads inside that sentence, which the filter labels above
+  // cannot supply: those are plural headings for a segmented control.
+  "artifacts.kindImage": "image",
+  "artifacts.kindDocument": "document",
 
   // Managed MCP: a container this host runs. The start dialog and the server's
   // own settings edit the same fields, so the wording is shared.
