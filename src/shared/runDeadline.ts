@@ -56,9 +56,55 @@ export const MAX_RUN_DURATION_MS = parseMaxRunDuration(process.env.MAX_RUN_DURAT
  */
 export const RUN_LEASE_SECONDS = Math.ceil(MAX_RUN_DURATION_MS / 1000) + 60;
 
-export function withRunDeadline(signal: AbortSignal | undefined): AbortSignal {
-  const deadline = AbortSignal.timeout(MAX_RUN_DURATION_MS);
-  return signal ? AbortSignal.any([signal, deadline]) : deadline;
+/**
+ * Which deadline belongs to which run signal.
+ *
+ * A run signal aborts for two very different reasons — the caller left, or this
+ * backstop fired — and only the first is not a failure. The composed signal
+ * cannot be asked: `AbortSignal.any` forwards whichever reason came first, and
+ * a caller may abort with a `TimeoutError` of its own (the Slack surface caps a
+ * run at three minutes that way), so the reason's *type* names the wrong limit
+ * as often as the right one. The deadline signal itself always knows.
+ *
+ * Read at the moment a run ends, which is what makes the plain read correct: a
+ * caller that drops while the catch unwinds cannot clear a deadline that has
+ * already fired, and a deadline that has not fired by then never will for this
+ * run — nothing waits on it after the run is over.
+ *
+ * Weak, and holding no listener: a non-weak `abort` listener on a timeout or
+ * composite signal puts it in Node's process-global `gcPersistentSignals` set
+ * until it aborts, which for a run that finishes normally means retaining it
+ * for the whole `MAX_RUN_DURATION_MS`.
+ */
+const DEADLINE_OF = new WeakMap<AbortSignal, AbortSignal>();
+
+export function withRunDeadline(
+  signal: AbortSignal | undefined,
+  /** The deadline itself, injected like `now` and `sample` so a test can fire it. */
+  deadline: AbortSignal = AbortSignal.timeout(MAX_RUN_DURATION_MS),
+): AbortSignal {
+  // A run signal composed again would hide the deadline it already carries:
+  // `AbortSignal.any` flattens its sources, so the new signal knows only the
+  // new deadline and an outer one that fired would read as the caller leaving.
+  if (signal && DEADLINE_OF.has(signal)) {
+    return signal;
+  }
+  const composed = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  DEADLINE_OF.set(composed, deadline);
+  return composed;
+}
+
+/**
+ * True when this run signal aborted because the run outlived
+ * {@link MAX_RUN_DURATION_MS} — not because whoever asked for it went away.
+ *
+ * A signal this module never composed answers `false`. It is not "no deadline
+ * fired", it is "not a run signal", and the two must not read the same: a bare
+ * client-disconnect signal passed here by a future call site would otherwise be
+ * rewritten into a deadline nobody reached.
+ */
+export function runDeadlineExceeded(signal: AbortSignal | undefined): boolean {
+  return signal !== undefined && DEADLINE_OF.get(signal)?.aborted === true;
 }
 
 /**

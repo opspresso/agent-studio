@@ -97,6 +97,9 @@ describe("recallMemories", () => {
     });
     expect(result.remembered).toBeUndefined();
     expect(result.warnings[0]).toMatch(/no bound MCP server offers a 'recall' tool/);
+    // Nothing was asked, so nothing failed: this is a version that will warn on
+    // every run it ever makes, and the trace must not flag a red stage for it.
+    expect({ asked: result.asked, failed: result.failed }).toEqual({ asked: 0, failed: 0 });
   });
 
   it("asks nothing when there is nothing to ask with, and says so", async () => {
@@ -110,6 +113,7 @@ describe("recallMemories", () => {
     expect(callMcpTool).not.toHaveBeenCalled();
     expect(result.remembered).toBeUndefined();
     expect(result.warnings[0]).toMatch(/no text to ask memory with/);
+    expect({ asked: result.asked, failed: result.failed }).toEqual({ asked: 0, failed: 0 });
   });
 
   it("a run cancelled mid-recall propagates the cancellation, not a server failure", async () => {
@@ -168,6 +172,9 @@ describe("recallMemories", () => {
       "Memory recall from 'a' failed; the run started without it: boom",
       "Memory recall from 'b' failed; the run started without it: tenant header missing",
     ]);
+    // Three asked, two of them failed — which is what marks the stage's span
+    // failed, rather than the warning count that a misconfiguration also raises.
+    expect({ asked: result.asked, failed: result.failed }).toEqual({ asked: 3, failed: 2 });
   });
 
   it("asks only the servers the version bound, not ones a search added", async () => {

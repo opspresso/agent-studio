@@ -680,6 +680,54 @@ describe("response shapes", () => {
 });
 
 /**
+ * Where a run's ending is classified.
+ *
+ * A run signal aborts for two reasons and they are not the same ending — the
+ * caller left, or `MAX_RUN_DURATION_MS` stopped a run that was otherwise
+ * working — so every path that composes one has to ask which it was. Two did
+ * not: a transferred-to prompt child wrote the raw abort reason on its trace
+ * while its parent wrote the deadline's sentence for the same event, and an
+ * image child rethrew before it wrote a trace at all.
+ *
+ * A prose list said "four run paths" while the branch that wrote it wired five,
+ * which is why this is a test: the rule is that a file composing a run deadline
+ * classifies what stopped it, and the two child paths that classify without
+ * composing (they run on their parent's signal) are named here so the list
+ * stays the whole set rather than half of it.
+ */
+const RUN_ENDING_SITES = [
+  "src/application/execution/imageTool.ts",
+  "src/application/execution/runProject.ts",
+  "src/application/execution/subagentRunner.ts",
+  "src/application/image/generateImage.ts",
+];
+
+describe("a run's ending", () => {
+  const bindsName = (file: (typeof SOURCE_FILES)[number], name: string) =>
+    parseImports(file.text).some((imported) => imported.names.includes(name));
+
+  it("is classified everywhere a run deadline is composed", () => {
+    const composes = SOURCE_FILES.filter(
+      (file) => layerOf(file.path) !== "shared" && bindsName(file, "withRunDeadline"),
+    ).map((file) => file.path);
+    expect(composes.sort()).toEqual(
+      RUN_ENDING_SITES.filter((path) =>
+        SOURCE_FILES.some((file) => file.path === path && bindsName(file, "withRunDeadline")),
+      ).sort(),
+    );
+    expect(composes.length).toBeGreaterThan(0);
+  });
+
+  it("is classified by every site the list names", () => {
+    const missing = RUN_ENDING_SITES.filter((path) => {
+      const file = SOURCE_FILES.find((source) => source.path === path);
+      return !file || !bindsName(file, "runEnding");
+    });
+    expect(missing).toEqual([]);
+  });
+});
+
+/**
  * Repositories the presentation layer no longer composes.
  *
  * The `app` layer is barred from `infrastructure`, so a route reached for a

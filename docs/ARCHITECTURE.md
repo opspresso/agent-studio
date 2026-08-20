@@ -608,8 +608,10 @@ flowchart LR
 
 **HTTP 경로(스트림이 시작되기 전)** — 유스케이스는 `AppError` 하위 클래스를 throw 한다
 (`src/application/errors.ts`: Validation / NotFound / Forbidden / Conflict / RateLimited /
-Upstream — 마지막 것은 다른 시스템의 실패에 대한 502 다. chat 은 같은 베이스 위에 `Chat*`
-하위 클래스를 더한다). `RateLimitedError` 는 기다려야 할 초를 함께 지닌다. 요청이 *왜*
+Upstream / RunDeadline — Upstream 은 다른 시스템의 실패에 대한 502 이고, RunDeadline 은 이
+배포가 `MAX_RUN_DURATION_MS` 로 스스로 멈춘 런에 대한 504 다. 아무것도 실패하지 않았고 답이
+허용된 시간보다 오래 걸렸을 뿐이라, 호출자의 재시도 판단이 그 둘의 구분에 달려 있다. chat 은
+같은 베이스 위에 `Chat*` 하위 클래스를 더한다). `RateLimitedError` 는 기다려야 할 초를 함께 지닌다. 요청이 *왜*
 거절됐는지 아는 것만이 언제 거절이 풀리는지도 알기 때문이다. `apiError`
 (`src/app/api/_lib/http.ts`)가 그것을 `Retry-After` 로 바꾸고, throw 된 모든 에러를
 매핑하며, 해당 없는 것은 일반 500 으로 떨어뜨린다. `parseName` 은 `[name]` 파라미터를

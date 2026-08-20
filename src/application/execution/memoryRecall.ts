@@ -45,6 +45,19 @@ export interface RecallResult {
   remembered?: string;
   /** What was lost — a server that failed, a version with nothing to ask. */
   warnings: string[];
+  /** Servers actually asked. Zero when there was none to ask, or nothing to ask with. */
+  asked: number;
+  /**
+   * Of those, how many failed.
+   *
+   * Told apart from `warnings` because they are not the same event: a version
+   * bound to no memory server warns on every run it will ever make, and marking
+   * *that* as a stage failure would put a red span on every trace of a
+   * permanently misconfigured version — the same dilution the discovery/warning
+   * split exists to avoid. A server that was asked and did not answer is the
+   * one worth flagging.
+   */
+  failed: number;
 }
 
 /**
@@ -84,19 +97,53 @@ export function noRecallTargetWarning(): string {
  * spelled once. `version` is the version *as bound*, not as widened by
  * discovery (see {@link recallTargets}); `mcp` is the resolve that ran.
  */
+/**
+ * What the memory stage reports on its trace span — the second half of the pair
+ * `toolsPrepared` owns, and here for the same reason: two run levels record it,
+ * and a field added to one copy is a field the other silently stops carrying.
+ *
+ * `status` is the part worth stating: a server that was asked and did not
+ * answer is a stage that failed, while a version bound to nothing that offers
+ * `recall` warns on every run it will ever make — flagging *that* red puts an
+ * error on every trace a misconfigured version writes.
+ */
+export function memoryPrepared(memory: {
+  input: Pick<engine.RunAgentInput, "remembered">;
+  warnings: readonly string[];
+  asked: number;
+  failed: number;
+}): { status: "ok" | "error"; output: Record<string, unknown> } {
+  return {
+    status: memory.failed > 0 ? "error" : "ok",
+    output: {
+      remembered: memory.input.remembered?.length ?? 0,
+      asked: memory.asked,
+      ...(memory.failed > 0 ? { failed: memory.failed } : {}),
+      ...(memory.warnings.length > 0 ? { warnings: memory.warnings.length } : {}),
+    },
+  };
+}
+
 export async function recallForRun(input: {
   version: Version;
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;
   query: string;
   signal?: AbortSignal;
-}): Promise<{ input: Pick<engine.RunAgentInput, "remembered">; warnings: string[] }> {
+}): Promise<{
+  input: Pick<engine.RunAgentInput, "remembered">;
+  warnings: string[];
+  asked: number;
+  failed: number;
+}> {
   if (!input.version.parameters.memoryRecall) {
-    return { input: {}, warnings: [] };
+    return { input: {}, warnings: [], asked: 0, failed: 0 };
   }
   const result = await recallMemories(input);
   return {
     input: result.remembered ? { remembered: result.remembered } : {},
     warnings: result.warnings,
+    asked: result.asked,
+    failed: result.failed,
   };
 }
 
@@ -121,7 +168,7 @@ export async function recallMemories(input: {
   const query = cutCodePoints(input.query.trim(), MAX_QUERY_CHARS);
   const targets = recallTargets(mcp, input.version);
   if (targets.length === 0) {
-    return { warnings: [noRecallTargetWarning()] };
+    return { warnings: [noRecallTargetWarning()], asked: 0, failed: 0 };
   }
   if (!query || !mcp.callMcpTool) {
     // A picture-only turn, or a resolve that offered the tools but no way to
@@ -130,11 +177,14 @@ export async function recallMemories(input: {
       warnings: [
         "Memory recall is on, but this turn carried no text to ask memory with; the run started without a memory.",
       ],
+      asked: 0,
+      failed: 0,
     };
   }
   const callMcpTool = mcp.callMcpTool;
   const warnings: string[] = [];
   const sections: string[] = [];
+  let failed = 0;
   const startedAt = Date.now();
   const answers = await Promise.all(
     targets.map(async ({ server, alias }) => {
@@ -152,6 +202,7 @@ export async function recallMemories(input: {
   );
   for (const answer of answers) {
     if ("error" in answer) {
+      failed += 1;
       warnings.push(`Memory recall from '${answer.server}' failed; the run started without it: ${answer.error}`);
       continue;
     }
@@ -160,6 +211,7 @@ export async function recallMemories(input: {
     // itself opens with the word is the price of one convention for every
     // producer, and a small one.
     if (answer.text.startsWith("Error:")) {
+      failed += 1;
       warnings.push(
         `Memory recall from '${answer.server}' failed; the run started without it: ${answer.text.slice("Error:".length).trim()}`,
       );
@@ -170,7 +222,7 @@ export async function recallMemories(input: {
     }
   }
   if (sections.length === 0) {
-    return { warnings };
+    return { warnings, asked: targets.length, failed };
   }
   const joined = sections.join("\n\n");
   // Same rule as every other cut here: never through a character.
@@ -182,7 +234,7 @@ export async function recallMemories(input: {
     "memory",
     `recalled ${remembered.length} chars from ${targets.map((t) => t.server).join(", ")} in ${Date.now() - startedAt}ms`,
   );
-  return { remembered, warnings };
+  return { remembered, warnings, asked: targets.length, failed };
 }
 
 /**

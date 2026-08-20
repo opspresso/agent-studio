@@ -10,6 +10,7 @@ import { searchCapabilitiesByKind, type CatalogSearchDeps } from "@/application/
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./mcpTools";
+import { MAX_TRACED_DISCOVERED } from "@/application/trace/recorder";
 import { log } from "@/shared/logger";
 
 /**
@@ -353,6 +354,40 @@ async function discoverCapabilities(
   subagentList.sort(byName);
   mcpList.sort(byName);
   return { skillList, subagentList, mcpList, notes };
+}
+
+/**
+ * What the tools stage reports on its trace span.
+ *
+ * One owner because two run levels record it — the top-level run and an agent
+ * child — and a field added to one copy is a field the other silently stops
+ * carrying. The counts answer what a slow or thin resolve raises: was it slow,
+ * and did it come back with what the version declares. Discovery's additions
+ * are **named** rather than counted, because they are the one part of a run's
+ * plan that changes per request; bounded like every other accumulator on a
+ * trace, with the count beside the list saying how many were found in all (so a
+ * list of twenty beside a count of twenty-five means five are not shown).
+ */
+export function toolsPrepared(resolved: {
+  skills: readonly unknown[];
+  subagents: readonly unknown[];
+  mcp: { mcpServers: readonly unknown[]; mcpTools: readonly unknown[] };
+  discovered: readonly string[];
+  warnings: readonly string[];
+}): Record<string, unknown> {
+  return {
+    skills: resolved.skills.length,
+    subagents: resolved.subagents.length,
+    mcpServers: resolved.mcp.mcpServers.length,
+    mcpTools: resolved.mcp.mcpTools.length,
+    ...(resolved.discovered.length > 0
+      ? {
+          discovered: resolved.discovered.length,
+          discoveredNames: resolved.discovered.slice(0, MAX_TRACED_DISCOVERED),
+        }
+      : {}),
+    ...(resolved.warnings.length > 0 ? { warnings: resolved.warnings.length } : {}),
+  };
 }
 
 /**
