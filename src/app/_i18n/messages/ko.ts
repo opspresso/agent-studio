@@ -492,8 +492,12 @@ export const ko: Messages = {
   "artifacts.documentAlt": "{type} 문서",
   "artifacts.producedBy": "제작: {name}",
   "artifacts.deleteTitle": "Artifact 삭제",
+  // 조사는 `하나` 에 붙인다 — 보간되는 명사가 아니라. `를`/`을` 은 앞 글자의 받침이
+  // 정하는데, 그 명사는 `ArtifactKind` 가 자라면 바뀐다: `이 {kind}를` 로 두면 받침
+  // 있는 종류가 추가되는 순간 "오디오 파일를" 이 된다. 영어는 `the {kind}` 라 아무
+  // 일도 없어 리뷰에서 놓치고, 타입도 잡아 주지 못하는 자리다.
   "artifacts.deleteBody":
-    "이 {kind}를 스토리지에서 제거합니다. 이것이 표시됐던 모든 곳 — 대화 메시지, Slack 스레드 — 에서 사용할 수 없음으로 표시됩니다. 되돌릴 수 없습니다.",
+    "{kind} 하나를 스토리지에서 제거합니다. 이것이 표시됐던 모든 곳 — 대화 메시지, Slack 스레드 — 에서 사용할 수 없음으로 표시됩니다. 되돌릴 수 없습니다.",
   "artifacts.kindImage": "이미지",
   "artifacts.kindDocument": "문서",
 

@@ -274,7 +274,9 @@ function ArtifactCard({
       <Stack gap={6} mt="sm" style={{ flex: 1 }}>
         <Group gap="xs" wrap="nowrap" justify="space-between">
           <Text fw={500} truncate>
-            {artifact.filename ?? artifact.prompt ?? artifact.kind}
+            {/* Neither name nor prompt: the kind is all there is to call it,
+                and it is a word a reader sees rather than a stored value. */}
+            {artifact.filename ?? artifact.prompt ?? t(KIND_NOUN[artifact.kind])}
           </Text>
           {artifact.source === "attachment" && <Badge variant="light">{t("artifacts.attached")}</Badge>}
         </Group>
