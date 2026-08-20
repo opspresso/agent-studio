@@ -10,7 +10,7 @@
 import { withAuth } from "@/lib/session";
 import { artifactUseCases, signArtifactUrl } from "@/lib/container";
 import { apiError, parseName } from "@/app/api/_lib/http";
-import { parseArtifactQuery, toArtifactViews } from "@/app/api/artifacts/_lib/query";
+import { parseArtifactQuery, probeFor, toArtifactViews } from "@/app/api/artifacts/_lib/query";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -27,9 +27,9 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
     const artifacts = await artifactUseCases.listByProject(
       parseName(name),
       user.email,
-      parsed.options,
+      probeFor(parsed.options),
     );
-    return Response.json(await toArtifactViews(artifacts, signArtifactUrl));
+    return Response.json(await toArtifactViews(artifacts, signArtifactUrl, parsed.options));
   } catch (error) {
     return apiError(error);
   }
