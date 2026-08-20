@@ -392,7 +392,7 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 - PUT 의 `llmProviders` 는 전체 교체 목록이다 (프로바이더별 LLM 채널). 빈 배열은 오버라이드를
   제거한다 (`LLM_PROVIDER_*` env 로 폴백). 마스킹된 `apiKey` 는 그 프로바이더 이름에 대해
   지금 유효한 키를 유지한다. 프로바이더 `name` 은
-  `openai | anthropic | google | xai | bedrock | openrouter` (`SUPPORTED_PROVIDERS`) 중
+  `openai | anthropic | google | xai | bedrock | openrouter | selfhosted` (`SUPPORTED_PROVIDERS`) 중
   하나여야 하고, `auth` 는 `bearer` (기본) 또는 `sigv4` 이며, 목록은 최대 50개까지고, 같은
   이름이 두 번 나오면 `400` 이다.
 - PUT 의 `enabledModels` 도 전체 교체 목록이다 — `/api/models` 가 제공해도 되는 모델 id 들로,

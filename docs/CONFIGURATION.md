@@ -123,7 +123,7 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 |---|---|---|---|
 | `LLM_BASE_URL` | — (필수) | **runtime** | 기본 채널 — OpenRouter 나 LiteLLM 같은 라우터. provider 채널이 가져가지 않는 한 모든 모델 id 가 여기로 간다. |
 | `LLM_API_KEY` | — (필수) | **runtime** | 그 채널의 자격증명. |
-| `LLM_PROVIDER_<NAME>_BASE_URL` | 미설정 | **runtime** | provider 별 채널을 등록한다. `<NAME>` 은 모델 id 의 provider 접두사를 대문자로 쓴 것이다. 레지스트리의 provider 는 `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`, `BEDROCK`, `OPENROUTER` 다. env 파서는 `[A-Z0-9_]+` 형태의 이름이면 무엇이든 받지만, 그 목록 밖의 채널은 어떤 모델 id 와도 절대 매치될 수 없다 — `/settings` 오버라이드 경로는 그런 것을 아예 거부한다. |
+| `LLM_PROVIDER_<NAME>_BASE_URL` | 미설정 | **runtime** | provider 별 채널을 등록한다. `<NAME>` 은 모델 id 의 provider 접두사를 대문자로 쓴 것이다. 레지스트리의 provider 는 `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`, `BEDROCK`, `OPENROUTER`, `SELFHOSTED` 다. env 파서는 `[A-Z0-9_]+` 형태의 이름이면 무엇이든 받지만, 그 목록 밖의 채널은 어떤 모델 id 와도 절대 매치될 수 없다 — `/settings` 오버라이드 경로는 그런 것을 아예 거부한다. |
 | `LLM_PROVIDER_<NAME>_API_KEY` | 미설정 | **runtime** | 그 채널의 자격증명. `_AUTH=sigv4` 가 아닌 한 필수다: 키가 없는 채널은 **조용히 건너뛰어지고**, 그 모델들은 기본 채널로 떨어진다. |
 | `LLM_PROVIDER_<NAME>_AUTH` | `bearer` | **runtime** | `bearer` \| `sigv4`. `sigv4` 는 프로세스의 AWS 자격증명(클러스터에서는 Pod Identity, 로컬에서는 `AWS_PROFILE`)으로 매 요청에 서명하고 API 키를 **받지 않는다**. 문자 그대로의 `sigv4` 가 아닌 값은 전부 `bearer` 로 읽히므로, 오타가 서명도 키도 없는 채널을 만들어 낼 수는 없다. |
 | `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | provider 채널은 맨 모델 이름(`provider/` 접두사를 벗긴 것)을 받는다. 그 채널 자체가 전체 id 를 기대하는 라우터일 때 이 값을 켜라. |
@@ -142,6 +142,15 @@ provider 채널이 하나라도 설정돼 있으면 `GET /api/models` 는 그 pr
 `/settings` 에 저장된 `llmProviders` 오버라이드는 `LLM_PROVIDER_*` env 집합과 병합되는 것이
 아니라 **그 집합 전체를 대체한다** — 부분 병합은 "이 provider 를 제거한다" 를 표현할 수 없는
 편집으로 만들어 버린다.
+
+**`selfhosted` 는 배포가 직접 운영하는 route 다** — LM Studio 든 vLLM 이든, 운영자가 띄운
+OpenAI 호환 서버를 `LLM_PROVIDER_SELFHOSTED_BASE_URL` 이 가리킨다. 접두사는 어디서나 같고
+어디로 가는지만 배포마다 다르므로, 카탈로그 엔트리 하나가 모든 배포를 서빙한다. 그 대신 서빙
+스택이 모델을 id 의 family 이름 그대로 서빙해야 한다(vLLM 은 `--served-model-name`, LM Studio
+는 모델 identifier 설정) — `wireId` 없이 동작하는 것은 그 규약 덕분이다. bearer 채널이라 키가
+필수인데, LM Studio 처럼 키를 무시하는 서버에는 아무 placeholder 값이나 준다. capability
+플래그는 모델 단위라 채널 차이를 표현하지 못하므로, 카탈로그에는 모든 배포의 서빙 스택이
+실제로 보장하는 교집합을 적는다.
 
 ### 모델 레지스트리: agent-models 의 카탈로그
 
@@ -170,7 +179,9 @@ provider 채널이 하나라도 설정돼 있으면 `GET /api/models` 는 그 pr
 `loadModelCatalog` (`src/domain/llm/models.ts`) 가 유일한 입구다: 버전을 확인하고, 항목마다 런이
 읽는 필드(가격이 숫자인지, 윈도가 양의 정수인지, `provider` 가 이 앱이 가진 채널인지 —
 `SUPPORTED_PROVIDERS` 는 카탈로그가 아니라 코드다)를 검증해 맞지 않는 것은 이유와 함께 건너뛰고,
-레지스트리를 **원자적으로** 바꾼다. 진행 중인 런은 이미 해석한 config 를 그대로 쓴다. 쓸 수 있는
+레지스트리를 **원자적으로** 바꾼다. 텍스트 모델은 0보다 큰 가격을 요구하되 self-hosted
+provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다 — 직접 서빙하는 모델은 0 이 참값이라서
+명시적 0 은 통과하고, 가격 필드의 *부재*는 다른 provider 와 똑같이 거부된다. 진행 중인 런은 이미 해석한 config 를 그대로 쓴다. 쓸 수 있는
 항목이 하나도 없는 카탈로그는 거부되고 이전 상태가 남는다 — 빈 레지스트리는 낡은 것보다 나쁜 유일한
 결과다.
 
