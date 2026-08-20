@@ -1094,6 +1094,17 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/execution/actor.ts",
   },
   {
+    // A listing's page cursor *is* the row's sort key, and the two halves of
+    // that fact were written apart: the adapter built the string to compare a
+    // row against an incoming `before`, and the route answering a page built it
+    // again to hand the reader the next one. Exclusion is by string equality, so
+    // a change to either spelling breaks paging by repeating or skipping a row
+    // rather than by failing.
+    what: "how an artifact listing's page cursor is spelled",
+    pattern: /createdAt\}#\$\{[\w.]*artifactId\}/,
+    owner: "src/domain/artifact/repository.ts",
+  },
+  {
     // The plugins sync reads a frontmatter block from two document kinds —
     // SKILL.md and the MCP extension documents — and a second parser would let
     // the same document mean different things depending on which kind it came

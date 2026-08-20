@@ -11,6 +11,7 @@ import {
   DEFAULT_ARTIFACT_PAGE,
   MAX_ARTIFACT_PAGE,
 } from "@/application/artifact/artifactUseCases";
+import { artifactCursor } from "@/domain/artifact/repository";
 import type { ListArtifactsOptions } from "@/domain/artifact/repository";
 import type { Artifact, ArtifactKind, ArtifactSource } from "@/domain/artifact/types";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
@@ -110,7 +111,8 @@ export async function toArtifactViews(
   const last = artifacts.at(-1);
   return {
     artifacts: views,
-    // The sort key is the cursor, so no LastEvaluatedKey has to be serialised.
-    ...(last ? { nextBefore: `${last.createdAt}#${last.artifactId}` } : {}),
+    // The sort key is the cursor, spelled by the repository port so this and the
+    // adapter that compares it cannot drift.
+    ...(last ? { nextBefore: artifactCursor(last) } : {}),
   };
 }
