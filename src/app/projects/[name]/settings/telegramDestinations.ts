@@ -1,19 +1,19 @@
-import type { TelegramDestinationInfo } from "../../lib/api";
+import type { TelegramDestination } from "../../lib/api";
 
 export function telegramDestinationValue(
-  destination: Pick<TelegramDestinationInfo, "chatId" | "threadId">,
+  destination: Pick<TelegramDestination, "chatId" | "threadId">,
 ): string {
   return `${destination.chatId}:${destination.threadId ?? ""}`;
 }
 
-export function telegramDestinationLabel(destination: TelegramDestinationInfo): string {
+export function telegramDestinationLabel(destination: TelegramDestination): string {
   const topic = destination.threadId === undefined ? "" : ` · topic ${destination.threadId}`;
   return `${destination.title}${topic} · ${destination.chatId}`;
 }
 
 export function findTelegramDestination(
-  destinations: readonly TelegramDestinationInfo[],
+  destinations: readonly TelegramDestination[],
   value: string | null,
-): TelegramDestinationInfo | undefined {
+): TelegramDestination | undefined {
   return destinations.find((destination) => telegramDestinationValue(destination) === value);
 }

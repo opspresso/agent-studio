@@ -6,7 +6,7 @@ import { withAuth } from "@/lib/session";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
-export interface ProjectA2aView {
+export interface ProjectA2aResponse {
   /** The inbound surface is on: a shared key or at least one client key. */
   enabled: boolean;
   published: boolean;
@@ -22,5 +22,5 @@ export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) 
   if (!view) {
     return Response.json({ error: "Project not found" }, { status: 404 });
   }
-  return Response.json({ enabled, ...view } satisfies ProjectA2aView);
+  return Response.json({ enabled, ...view } satisfies ProjectA2aResponse);
 });

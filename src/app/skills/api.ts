@@ -1,17 +1,10 @@
 import type { Skill } from "@/domain/skill/types";
+import type { SkillSummary } from "@/app/api/skills/route";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 export type { Skill };
 
-/** What the list endpoint ships — the card's fields, never the body. */
-export interface SkillSummary {
-  name: string;
-  description: string;
-  source?: string;
-  /** Attachment count; the files themselves come with the detail read. */
-  files: number;
-  updatedAt: string;
-}
+export type { SkillSummary };
 
 export interface CreateSkillInput {
   name: string;

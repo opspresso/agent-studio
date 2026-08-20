@@ -7,14 +7,10 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { monoInput } from "@/app/_components/monoInput";
 import { BADGE } from "@/app/_components/badgeColors";
 import { toSlug } from "@/domain/naming";
+// The shape this table renders, from the use case that answers with it — a
+// type-only import, erased before the browser sees anything.
+import type { A2aClientKeyView } from "@/application/a2a/clientKeyUseCases";
 import { useT } from "@/app/_i18n/provider";
-
-interface ClientKeyView {
-  name: string;
-  description?: string;
-  masked: string;
-  createdAt: string;
-}
 
 /**
  * Named inbound-A2A client keys, beside the shared key: each key names its
@@ -23,7 +19,7 @@ interface ClientKeyView {
  */
 export function A2aClientKeysSection() {
   const t = useT();
-  const [items, setItems] = useState<ClientKeyView[]>([]);
+  const [items, setItems] = useState<A2aClientKeyView[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,7 +36,7 @@ export function A2aClientKeysSection() {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       throw new Error(data.error ?? `Request failed (${res.status})`);
     }
-    const data = (await res.json()) as { items?: ClientKeyView[] };
+    const data = (await res.json()) as { items?: A2aClientKeyView[] };
     setItems(data.items ?? []);
   }
 

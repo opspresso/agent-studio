@@ -3,7 +3,7 @@ import { listExposedProjects, type A2aProjectListItem } from "@/application/a2a/
 import { a2aSurfaceEnabled } from "@/app/api/a2a/_lib/auth";
 import { withAuth } from "@/lib/session";
 
-export interface A2aProjectListView {
+export interface A2aProjectListResponse {
   /** The inbound surface is on: a shared key or at least one client key. */
   enabled: boolean;
   /** Published projects, each exposed as an A2A agent when enabled. */
@@ -14,5 +14,5 @@ export interface A2aProjectListView {
 export const GET = withAuth(async () => {
   const enabled = await a2aSurfaceEnabled();
   const projects = await listExposedProjects(a2aExposureDeps);
-  return Response.json({ enabled, projects } satisfies A2aProjectListView);
+  return Response.json({ enabled, projects } satisfies A2aProjectListResponse);
 });

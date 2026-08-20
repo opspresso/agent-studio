@@ -9,7 +9,7 @@ import {
   listA2aProjects,
   listAgents,
   type A2aProjectListItem,
-  type A2aProjectListView,
+  type A2aProjectListResponse,
   type AgentProtocol,
   type ExternalAgent,
 } from "./api";
@@ -44,7 +44,7 @@ export default function AgentsPage() {
   const t = useT();
   const viewer = useViewer();
   const [agents, setAgents] = useState<ExternalAgent[]>([]);
-  const [a2aProjects, setA2aProjects] = useState<A2aProjectListView | null>(null);
+  const [a2aProjects, setA2aProjects] = useState<A2aProjectListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);

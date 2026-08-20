@@ -9,7 +9,7 @@ import {
   getProjectToken,
   revealProjectToken,
   revokeProjectToken,
-  type ProjectTokenStatus,
+  type ApiTokenStatus,
 } from "../../lib/api";
 import { Alert, Badge, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { stateColor } from "@/app/_components/badgeColors";
@@ -19,7 +19,7 @@ import { formatDate } from "@/shared/date";
 export function TokenSection({ projectName }: { projectName: string }) {
   const t = useT();
   const locale = useLocale();
-  const [status, setStatus] = useState<ProjectTokenStatus | null>(null);
+  const [status, setStatus] = useState<ApiTokenStatus | null>(null);
   // The plaintext token, either just generated or read back on request. Held in
   // component state only, so leaving the page hides it again.
   const [rawToken, setRawToken] = useState<string | null>(null);

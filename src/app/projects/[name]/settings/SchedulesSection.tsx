@@ -23,7 +23,7 @@ import {
   type TriggerRun,
   type TriggerView,
   type SlackChannelInfo,
-  type TelegramDestinationInfo,
+  type TelegramDestination,
 } from "../../lib/api";
 import {
   findTelegramDestination,
@@ -49,7 +49,7 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
   );
   const [newMessage, setNewMessage] = useState("");
   const [slackChannels, setSlackChannels] = useState<SlackChannelInfo[]>([]);
-  const [telegramChats, setTelegramChats] = useState<TelegramDestinationInfo[]>([]);
+  const [telegramChats, setTelegramChats] = useState<TelegramDestination[]>([]);
   const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
   const [availableDestinations, setAvailableDestinations] = useState<ScheduleDeliveryKind[]>([]);
   // Webhook rows registered by name before a project had one of its own. There
@@ -435,7 +435,7 @@ function ScheduleEditor({
   schedule: TriggerView;
   slackChannels: SlackChannelInfo[];
   slackChannelsUnavailable: boolean;
-  telegramChats: TelegramDestinationInfo[];
+  telegramChats: TelegramDestination[];
   availableDestinations: ScheduleDeliveryKind[];
   busy: boolean;
   onSave: (input: {

@@ -22,12 +22,14 @@ import type { Trace } from "@/domain/trace/types";
  */
 import type { McpConnectionView } from "@/application/mcp/mcpAuthUseCases";
 import type { ActorUsageView } from "@/application/usage/listActors";
-import type { ProjectA2aView } from "@/app/api/projects/[name]/a2a/route";
+import type { ProjectA2aResponse } from "@/app/api/projects/[name]/a2a/route";
 import type { ProjectSlackResponse } from "@/app/api/projects/[name]/slack/route";
 import type { ProjectTelegramResponse } from "@/app/api/projects/[name]/telegram/route";
 import type { ProjectTeamsResponse } from "@/app/api/projects/[name]/teams/route";
 import type { PromptPreview } from "@/application/execution/deps";
 import type { GenerateImageOutput } from "@/application/image/generateImage";
+import type { ApiTokenStatus } from "@/application/project/apiTokenUseCases";
+import type { TelegramDestination } from "@/domain/telegram/destination";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
@@ -353,18 +355,12 @@ export async function getProjectTelegram(name: string): Promise<ProjectTelegramR
   return readJson<ProjectTelegramResponse>(await fetch(`/api/projects/${name}/telegram`));
 }
 
-export interface TelegramDestinationInfo {
-  chatId: number;
-  chatType: "private" | "group" | "supergroup" | "channel";
-  title: string;
-  threadId?: number;
-  lastSeenAt: string;
-}
+export type { TelegramDestination };
 
 export async function listProjectTelegramChats(
   name: string,
-): Promise<{ chats: TelegramDestinationInfo[] }> {
-  return readJson<{ chats: TelegramDestinationInfo[] }>(
+): Promise<{ chats: TelegramDestination[] }> {
+  return readJson<{ chats: TelegramDestination[] }>(
     await fetch(`/api/projects/${name}/telegram/chats`),
   );
 }
@@ -428,21 +424,14 @@ export async function testProjectTeams(
   return readJson(await fetch(`/api/projects/${name}/teams/test`, { method: "POST" }));
 }
 
-export interface ProjectTokenStatus {
-  configured: boolean;
-  /** Display mask of the stored token; absent on tokens issued before masks. */
-  masked?: string;
-  createdAt?: string;
-  /** False for a legacy hashed token, which can only be replaced. */
-  revealable?: boolean;
-}
+export type { ApiTokenStatus };
 
-export async function getProjectToken(name: string): Promise<ProjectTokenStatus> {
+export async function getProjectToken(name: string): Promise<ApiTokenStatus> {
   const res = await fetch(`/api/projects/${name}/token`);
   if (!res.ok) {
     throw new Error(`Failed to load API token status (${res.status})`);
   }
-  return (await res.json()) as ProjectTokenStatus;
+  return (await res.json()) as ApiTokenStatus;
 }
 
 /** Generate (or regenerate) the project API token. Returns the raw token once. */
@@ -482,14 +471,14 @@ export async function revokeProjectToken(name: string): Promise<void> {
   }
 }
 
-export type { ProjectA2aView };
+export type { ProjectA2aResponse };
 
-export async function getProjectA2a(name: string): Promise<ProjectA2aView> {
+export async function getProjectA2a(name: string): Promise<ProjectA2aResponse> {
   const res = await fetch(`/api/projects/${name}/a2a`);
   if (!res.ok) {
     throw new Error(`Failed to load A2A settings (${res.status})`);
   }
-  return (await res.json()) as ProjectA2aView;
+  return (await res.json()) as ProjectA2aResponse;
 }
 
 // --- MCP OAuth connections -------------------------------------------------

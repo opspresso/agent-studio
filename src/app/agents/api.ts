@@ -2,7 +2,7 @@ import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
 // Each from the module that owns it: the item is the use case's, the list is
 // the route's — it is the route that says whether the surface is enabled.
 import type { A2aProjectListItem } from "@/application/a2a/exposure";
-import type { A2aProjectListView } from "@/app/api/a2a/route";
+import type { A2aProjectListResponse } from "@/app/api/a2a/route";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 // Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
@@ -52,11 +52,11 @@ export async function deleteAgent(name: string): Promise<void> {
   await assertOk(await fetch(`/api/agents/${name}`, { method: "DELETE" }));
 }
 
-export type { A2aProjectListItem, A2aProjectListView };
+export type { A2aProjectListItem, A2aProjectListResponse };
 
 /** Published studio projects exposed over A2A (derived, not registered). */
-export function listA2aProjects(): Promise<A2aProjectListView> {
-  return fetch("/api/a2a").then((r) => readJson<A2aProjectListView>(r));
+export function listA2aProjects(): Promise<A2aProjectListResponse> {
+  return fetch("/api/a2a").then((r) => readJson<A2aProjectListResponse>(r));
 }
 
 export function sendAgentMessage(name: string, message: string): Promise<string> {
