@@ -6,7 +6,15 @@ import type { RunActor } from "@/domain/execution/actor";
  * investigating read as normal on the traces page.
  */
 export type TraceStatus = "completed" | "turn-limit" | "failed" | "cancelled";
-export type TraceSpanKind = "model" | "tool" | "subagent";
+/**
+ * `prepare` is the work a run does before its first model call — resolving the
+ * version's tools (which opens every bound MCP server) and, when the version
+ * asks for it, recalling memory. Its own kind because it is neither: billed to
+ * the first `model` span, as it was, a run that waited eight seconds on a slow
+ * MCP server reported an eight-second model, and "why was the first token so
+ * late" had no answer anywhere on the page.
+ */
+export type TraceSpanKind = "model" | "tool" | "subagent" | "prepare";
 
 export interface TraceSpan {
   spanId: string;

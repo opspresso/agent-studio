@@ -177,6 +177,85 @@ describe("TraceRecorder", () => {
     }
   });
 
+  it("does not bill preparation to the first model span", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    try {
+      const { repository, traces } = memoryRepository();
+      // Constructed before the version's tools resolve, on purpose: a resolve
+      // that throws must still leave a trace.
+      const recorder = new TraceRecorder(repository, {
+        projectName: "parent",
+        versionName: "1",
+        projectType: "agent",
+        model: "openai/gpt-5-mini",
+        messageCount: 1,
+      });
+
+      // Eight seconds opening MCP sessions and listing their tools.
+      const resolveStartedAt = new Date();
+      vi.setSystemTime(new Date("2026-01-01T00:00:08.000Z"));
+      recorder.observePrepare("tools", resolveStartedAt, { output: { mcpServers: 2, mcpTools: 30 } });
+      // Then two on memory, which this version asked for.
+      const recallStartedAt = new Date();
+      vi.setSystemTime(new Date("2026-01-01T00:00:10.000Z"));
+      recorder.observePrepare("memory", recallStartedAt, { output: { remembered: 512 } });
+      // The model itself answers in one and a half.
+      vi.setSystemTime(new Date("2026-01-01T00:00:11.500Z"));
+      recorder.observe({ usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 } });
+      await recorder.finish();
+
+      const spans = traces[0]?.spans ?? [];
+      expect(spans.filter((span) => span.kind === "prepare").map((span) => [span.name, span.durationMs]))
+        .toEqual([
+          ["tools", 8000],
+          ["memory", 2000],
+        ]);
+      expect(spans.filter((span) => span.kind === "model").map((span) => span.durationMs)).toEqual([
+        1500,
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("marks a stage that failed without failing the run it prepared", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    try {
+      const { repository, traces } = memoryRepository();
+      const recorder = new TraceRecorder(repository, {
+        projectName: "parent",
+        versionName: "1",
+        projectType: "agent",
+        model: "openai/gpt-5-mini",
+        messageCount: 1,
+      });
+
+      // A memory server that timed out: the run goes on without a memory, and
+      // the warning it yields is what the reader sees beside this span.
+      const recallStartedAt = new Date();
+      vi.setSystemTime(new Date("2026-01-01T00:00:10.000Z"));
+      recorder.observePrepare("memory", recallStartedAt, {
+        status: "error",
+        output: { remembered: 0, warnings: 1 },
+      });
+      vi.setSystemTime(new Date("2026-01-01T00:00:11.000Z"));
+      recorder.observe({ usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 } });
+      await recorder.finish();
+
+      const prepare = traces[0]?.spans.find((span) => span.kind === "prepare");
+      expect(prepare?.status).toBe("error");
+      expect(prepare?.durationMs).toBe(10_000);
+      // The run answered, so it is not a failed trace — the same rule a failed
+      // transfer follows.
+      expect(traces[0]?.status).toBe("completed");
+      expect(traces[0]?.spans.find((span) => span.kind === "model")?.durationMs).toBe(1000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("fails the subagent span, not the run, when a transfer errors", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {

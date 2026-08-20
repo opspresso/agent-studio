@@ -485,6 +485,11 @@ export async function* executeAgent(
     // newest user turns are what the run is being asked for, and the version's
     // system prompt is what it is generally for. `resolveRunTools` ignores them
     // unless the version opted in.
+    // Timed, because this is the run's other network stage: every bound MCP
+    // server is opened and listed here, and a version with discovery on embeds
+    // its queries and searches the catalog. The recorder bills it to a
+    // `prepare` span instead of to the model that has not been called yet.
+    const resolveStartedAt = new Date();
     const {
       skills,
       subagents,
@@ -503,10 +508,26 @@ export async function* executeAgent(
       origin,
     );
     closeMcpSessions = mcp.close;
+    recorder?.observePrepare("tools", resolveStartedAt, {
+      // What the run ended up holding, which is the question a slow or thin
+      // resolve raises: the counts say whether it was slow *and* whether it
+      // came back with what the version declares.
+      output: {
+        skills: skills.length,
+        subagents: subagents.length,
+        mcpServers: mcp.mcpServers.length,
+        mcpTools: mcp.mcpTools.length,
+        // A gain rather than a loss, so it is not a warning — but it is part of
+        // what this run was offered, and the trace is where that is read back.
+        ...(discovered.length > 0 ? { discovered: discovered.length } : {}),
+        ...(warnings.length > 0 ? { warnings: warnings.length } : {}),
+      },
+    });
     // Before the first token, when the version asked for it: what this project
     // remembers about the request. A recall that fails is a warning below, never
     // the end of the run — the answer is worth more than the recollection. The
     // version as bound, not as widened: only servers the author bound are asked.
+    const recallStartedAt = new Date();
     const memory = await recallForRun({
       version: input.version,
       mcp,
@@ -514,6 +535,17 @@ export async function* executeAgent(
       signal: runSignal,
     });
     warnings.push(...memory.warnings);
+    if (input.version.parameters.memoryRecall) {
+      // Only when the version asked: a run that recalls nothing spent no time
+      // here, and a zero-length span on every trace would say less than none.
+      recorder?.observePrepare("memory", recallStartedAt, {
+        status: memory.warnings.length > 0 ? "error" : "ok",
+        output: {
+          remembered: memory.input.remembered?.length ?? 0,
+          ...(memory.warnings.length > 0 ? { warnings: memory.warnings.length } : {}),
+        },
+      });
+    }
     const agentDeps = await buildAgentDeps(
       runDeps,
       runVersion,

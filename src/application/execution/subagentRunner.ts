@@ -453,6 +453,10 @@ export async function* runLocalSubagent(
     // opted in and was handed no queries would silently run on its bindings
     // alone, which is the difference between the two levels no one would think
     // to look for.
+    // Timed like the top level's: a child opens its own MCP sessions and runs
+    // its own catalog search, and billing that to its first model call is the
+    // same misreading one level down.
+    const resolveStartedAt = new Date();
     const {
       skills,
       subagents,
@@ -463,6 +467,16 @@ export async function* runLocalSubagent(
       version: runVersion,
       discovered,
     } = await resolveRunTools(deps, version, signal, discoveryQueries(version, [message]), origin);
+    recorder?.observePrepare("tools", resolveStartedAt, {
+      output: {
+        skills: skills.length,
+        subagents: subagents.length,
+        mcpServers: mcp.mcpServers.length,
+        mcpTools: mcp.mcpTools.length,
+        ...(discovered.length > 0 ? { discovered: discovered.length } : {}),
+        ...(warnings.length > 0 ? { warnings: warnings.length } : {}),
+      },
+    });
     if (discovered.length > 0) {
       // A gain, so it is logged rather than reported as a loss — see the field.
       log.info(
@@ -473,8 +487,18 @@ export async function* runLocalSubagent(
     closeMcpSessions = mcp.close;
     // The child's version decides for itself, like every other opt-in; the
     // transfer message is its whole request, so it is what the memory is asked.
+    const recallStartedAt = new Date();
     const memory = await recallForRun({ version, mcp, query: message, signal });
     warnings.push(...memory.warnings);
+    if (version.parameters.memoryRecall) {
+      recorder?.observePrepare("memory", recallStartedAt, {
+        status: memory.warnings.length > 0 ? "error" : "ok",
+        output: {
+          remembered: memory.input.remembered?.length ?? 0,
+          ...(memory.warnings.length > 0 ? { warnings: memory.warnings.length } : {}),
+        },
+      });
+    }
     const childDeps = await buildAgentDeps(
       deps,
       runVersion,

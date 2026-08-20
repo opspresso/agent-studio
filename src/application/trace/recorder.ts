@@ -78,6 +78,36 @@ export class TraceRecorder {
     linkTrace(this.traceId);
   }
 
+  /**
+   * A stage that ran before the first token, with what it produced.
+   *
+   * It also moves where the next model span starts: preparation is the model's
+   * *wait*, not its work, and the recorder is constructed before it (on purpose
+   * — a resolve that throws must still leave a trace). Without this the first
+   * model span opened at run start and every second spent opening MCP sessions
+   * or asking memory was reported at the model's name.
+   */
+  observePrepare(
+    name: string,
+    startedAt: Date,
+    detail?: { status?: "ok" | "error"; output?: Record<string, unknown> },
+  ): void {
+    const now = new Date();
+    this.addSpan({
+      spanId: randomUUID(),
+      kind: "prepare",
+      name,
+      startedAt: startedAt.toISOString(),
+      endedAt: now.toISOString(),
+      durationMs: Math.max(0, now.getTime() - startedAt.getTime()),
+      status: detail?.status ?? "ok",
+      ...(detail?.output ? { output: detail.output } : {}),
+    });
+    // Outside `addSpan`, which drops past the cap: a dropped span must still
+    // not leave its duration inside the next model call.
+    this.modelStartedAt = now;
+  }
+
   observe(chunk: EngineChunk): void {
     const now = new Date();
     if (chunk.warning && this.warnings.length < MAX_WARNINGS) {

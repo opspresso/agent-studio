@@ -134,7 +134,7 @@ Trace     { traceId, projectName, versionName, projectType, actor?, ancestry?, c
             status: 'completed' | 'turn-limit' | 'failed' | 'cancelled',
             spans: TraceSpan[], spansDropped?, warnings?,
             startedAt, endedAt, durationMs, error?, createdAt }
-TraceSpan { spanId, kind: 'model' | 'tool' | 'subagent', name, author?,
+TraceSpan { spanId, kind: 'model' | 'tool' | 'subagent' | 'prepare', name, author?,
             startedAt, endedAt, durationMs, status: 'ok' | 'error', input?, output? }
 ```
 
@@ -142,6 +142,17 @@ Agent 런은 model/tool/subagent span 을 언제나 저장하고, agent 가 아�
 런은 샘플링된다. span 은 한도가 정해진 메타데이터만 담는다 — 문자 수, 토큰, 비용, 소요 시간,
 subagent trace id. **원문 프롬프트와 tool 결과는 저장하지 않는다.** 보존 기간, 샘플링, 누가
 trace 를 읽을 수 있는지는 [OPERATIONS.md](../OPERATIONS.md#트레이싱) 에 있다.
+
+**첫 토큰 이전의 준비 작업은 `prepare` span 이다.** 런이 모델을 부르기 전에 하는 두 가지 —
+version 의 도구를 resolve 하는 것(바인딩된 MCP 서버를 전부 열고 도구를 나열하며, discovery 를
+켠 version 은 카탈로그까지 검색한다)과 memory recall — 은 네트워크 작업이고 느려질 수 있다.
+recorder 는 resolve 보다 먼저 만들어지므로(그래야 resolve 가 던져도 trace 가 남는다) 그 시간이
+**첫 model span 안에 들어가 있었다**: MCP 서버 하나가 8초를 잡아먹은 런이 8초짜리 모델로
+읽혔고, "왜 첫 토큰이 늦었나" 는 페이지 어디에도 답이 없었다. 이제 각 단계가 자기 span 을
+갖고(`tools`, `memory`), 그 끝이 다음 model span 의 시작이다. `output` 은 그 단계가 무엇을
+가지고 돌아왔는지다 — skill·subagent·MCP 서버·도구 수, discovery 가 넓힌 수, 잃은 것의 수.
+단계가 실패해도 런은 실패가 아니다(memory 가 답하지 않아도 런은 기억 없이 계속한다): span 이
+`error` 이고 trace 는 그대로다.
 
 **trace 는 사용자가 보는 것과 같은 chunk 로 조립된다.** `TraceRecorder`
 (`src/application/trace/recorder.ts`) 는 루프 곳곳에 흩어진 계측 지점에서 호출되는 대신
