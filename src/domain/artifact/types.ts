@@ -58,6 +58,20 @@ export interface Artifact {
   ancestry?: readonly string[];
   /** The subagent that produced it, from the chunk's author. Absent at top level. */
   producedBy?: string;
+  /**
+   * The model that drew these bytes, named by whichever producer made them.
+   *
+   * Carried on the chunk rather than derived from the run's version, because a
+   * run's model is not what drew the picture: the builtins draw with the image
+   * model `resolveImageModel` chose, and an image subagent draws with its own
+   * version's. Filling this in at the bracket would put the parent's model on a
+   * child's work and never say so.
+   *
+   * Absent whenever nothing can honestly name one — an attachment somebody
+   * brought, a document a tool rendered, a picture an MCP tool or a remote A2A
+   * agent handed back. Empty is the true answer there, not a guess.
+   */
+  model?: string;
   /** The bracket's correlation id — the one key that joins this to the logs. */
   runId?: string;
   /** What it was asked to make. Truncated by the writer. */

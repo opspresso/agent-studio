@@ -1278,7 +1278,8 @@ DELETE /api/artifacts/{artifactId}
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
 `byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의
 출력이 누구 앞으로 정리되는지. 물어본 사람에서 해석한다), `ancestry?` (transfer 사슬. 바깥쪽이
-먼저), `producedBy?`, `runId?`, `prompt?`, `createdAt`, 그리고 서명된 `url` (15분. 문서의 것은
+먼저), `producedBy?`, `model?` (그린 모델. 이름을 댈 수 있는 생산자만 — MCP 도구·원격 A2A 의
+그림, 렌더링된 문서, 첨부는 비어 있다), `runId?`, `prompt?`, `createdAt`, 그리고 서명된 `url` (15분. 문서의 것은
 자기 이름으로 내려받도록 서명된다) 을 싣는다. URL 은 타일마다 가져오는 대신 인라인으로 들어간다 —
 사전 서명은 로컬 서명이라 한 페이지치가 비용이 들지 않는 반면, 각각 왕복하면 갤러리가 N+1 이 된다.
 주소를 만들 수 없으면 없으며, UI 는 그것을 깨진 이미지가 아니라 사용 불가로 렌더링한다.

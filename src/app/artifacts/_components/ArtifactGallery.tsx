@@ -130,8 +130,18 @@ export function ArtifactGallery({
     }
   }
 
+  // Provenance is searchable too: "which of these did gpt-image-1 draw?" is the
+  // question the model line exists to answer, and a filter that could not see it
+  // would show the answer on every tile while refusing to narrow to it.
   const visible = artifacts.filter((artifact) =>
-    matchesFilter(filter, artifact.filename ?? "", artifact.prompt ?? "", artifact.projectName),
+    matchesFilter(
+      filter,
+      artifact.filename ?? "",
+      artifact.prompt ?? "",
+      artifact.projectName,
+      artifact.producedBy,
+      artifact.model,
+    ),
   );
 
   // The filename is the header and the prompt a caption under the picture,
@@ -261,9 +271,14 @@ function ArtifactCard({
           {formatBytes(artifact.byteSize)} · {formatShortDateTime(artifact.createdAt, locale)}
         </Text>
 
-        {artifact.producedBy && (
+        {/* Who drew it and with what. Either half can be missing — a top-level
+            run has no subagent to name, and an MCP tool's picture names no
+            model — and with neither the line is not rendered at all. */}
+        {(artifact.producedBy || artifact.model) && (
           <Text fz="xs" c="dimmed" truncate>
-            by {artifact.producedBy}
+            {[artifact.producedBy && `by ${artifact.producedBy}`, artifact.model]
+              .filter(Boolean)
+              .join(" · ")}
           </Text>
         )}
 

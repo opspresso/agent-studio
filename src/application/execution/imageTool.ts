@@ -84,7 +84,7 @@ export function buildImageGenerator(
     });
     const recorded = toImageUsageRecord(model, result.usage);
     await recordUsageFn({ projectName, model, ...recorded });
-    return { b64: result.b64, mimeType: result.mimeType };
+    return { b64: result.b64, mimeType: result.mimeType, model };
   };
 }
 
@@ -120,7 +120,7 @@ export function buildImageEditor(
       sourceImages: images.length,
     });
     await recordUsageFn({ projectName, model, ...recorded });
-    return { b64: result.b64, mimeType: result.mimeType };
+    return { b64: result.b64, mimeType: result.mimeType, model };
   };
 }
 
@@ -173,7 +173,7 @@ export async function* runImageSubagent(
     yield {
       author: agentName,
       ...(recorder ? { traceId: recorder.traceId } : {}),
-      image: { b64: result.b64, mimeType: result.mimeType, prompt: message },
+      image: { b64: result.b64, mimeType: result.mimeType, prompt: message, model },
     };
     await finishTrace(recorder);
     return `Generated an image for: ${message}`;

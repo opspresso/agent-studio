@@ -223,6 +223,42 @@ describe("captureRunArtifacts", () => {
     expect(storage.rowsWritten[0]?.producedBy).toBe("image-child");
   });
 
+  it("records the model the producer named, not the run's", async () => {
+    // The version this run answers on is `poster-bot/v3`; the picture was drawn
+    // by a child on its own model. Deriving the model from the run instead would
+    // file the child's work under the parent's name with nothing saying so.
+    const storage = fakeStorage();
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+    await collect(
+      captureRunArtifacts(
+        recorder,
+        stream({
+          author: "image-child",
+          image: { b64: PNG, mimeType: "image/png", model: "openai/gpt-image-1" },
+        }),
+      ),
+    );
+    expect(storage.rowsWritten[0]?.model).toBe("openai/gpt-image-1");
+  });
+
+  it("leaves the model out when the producer could not name one", async () => {
+    // An MCP tool's picture and a remote agent's arrive with no model at all.
+    // Empty is the true answer; a fallback would be a guess presented as a fact.
+    const storage = fakeStorage();
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+    await collect(
+      captureRunArtifacts(
+        recorder,
+        stream(
+          { image: { b64: PNG, mimeType: "image/png", prompt: "Returned by render_chart" } },
+          { file: { b64: DOCX, mimeType: "application/pdf", name: "report.pdf", source: "mcp: render_document" } },
+        ),
+      ),
+    );
+    expect(storage.rowsWritten.map((row) => row.model)).toEqual([undefined, undefined]);
+    expect(storage.rowsWritten[0]).not.toHaveProperty("model");
+  });
+
   it("passes the image through with no key when the write failed, and warns once", async () => {
     // Silent loss is the bug, not the failure: the picture is still shown, and
     // the reader is told it was not kept.

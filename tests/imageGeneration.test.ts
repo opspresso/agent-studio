@@ -138,6 +138,8 @@ describe("generateImage artifacts", () => {
       projectName: "img-proj",
       versionName: "1",
       prompt: "A cat wearing hanbok clothes",
+      // The model that actually drew it, so the gallery can say what made this.
+      model: "openai/gpt-image-2",
     });
     // The caller is told where it went, so its own answer can carry the address.
     expect(result.artifactId).toBe(rowsWritten[0]?.artifactId);
@@ -166,6 +168,7 @@ describe("generateImage artifacts", () => {
     // consumer renders it from the chunk.
     expect(chunks[0]?.image).toMatchObject({
       b64: "aGVsbG8=",
+      model: "openai/gpt-image-2",
       artifactId: rowsWritten[0]?.artifactId,
       key: rowsWritten[0]?.key,
     });
@@ -385,7 +388,7 @@ describe("generateImageStream", () => {
     // 100 text tokens * $5/1M + 4160 image output tokens * $30/1M
     const expectedCost = (100 * 5 + 4160 * 30) / 1_000_000;
     expect(chunks).toEqual([
-      { image: { b64: "aGVsbG8=", mimeType: "image/png" } },
+      { image: { b64: "aGVsbG8=", mimeType: "image/png", model: "openai/gpt-image-2" } },
       { usage: { inputTokens: 100, outputTokens: 4160, costUsd: expectedCost } },
       { done: true },
     ]);

@@ -94,6 +94,7 @@ export async function* generateImageStream(
     image: {
       b64: image.imageBase64,
       mimeType: image.mimeType,
+      model: image.model,
       ...(image.artifactId ? { artifactId: image.artifactId, key: image.key } : {}),
     },
   };
@@ -197,6 +198,7 @@ export async function generateImage(
       bytes: Buffer.from(result.b64, "base64"),
       mimeType: result.mimeType,
       prompt,
+      model,
     });
     const warning = bracket.artifacts?.takeWarning();
 

@@ -158,12 +158,20 @@ export type SubagentRunner = (
   transcript?: string,
 ) => AsyncGenerator<EngineChunk, string>;
 
-/** Generate an image for the builtin GenerateImage tool. */
+/**
+ * Generate an image for the builtin GenerateImage tool.
+ *
+ * `model` is returned rather than assumed by the loop: the builtins draw with
+ * the image model the version resolved, which is not the model this run is
+ * talking to, and the artifact row is written from the chunk. Required so an
+ * implementation cannot leave it out and have the picture filed under no model
+ * at all.
+ */
 export type ImageGenerator = (
   prompt: string,
   size?: string,
   quality?: string,
-) => Promise<{ b64: string; mimeType: string }>;
+) => Promise<{ b64: string; mimeType: string; model: string }>;
 
 /**
  * Edit existing image bytes for the builtin EditImage tool. The engine owns the
@@ -174,7 +182,7 @@ export type ImageEditor = (params: {
   images: Array<{ b64: string; mimeType: string }>;
   size?: string;
   quality?: string;
-}) => Promise<{ b64: string; mimeType: string }>;
+}) => Promise<{ b64: string; mimeType: string; model: string }>;
 
 /**
  * Read a URL the model named.

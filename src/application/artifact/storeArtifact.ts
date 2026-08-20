@@ -51,6 +51,8 @@ export interface ArtifactInput {
   prompt?: string;
   /** The subagent that produced it, from the chunk's author. */
   producedBy?: string;
+  /** The model that drew it, from the chunk. Absent when nothing can name one. */
+  model?: string;
 }
 
 /**
@@ -85,6 +87,7 @@ export async function storeArtifact(
     ...(context.ownerEmail ? { ownerEmail: context.ownerEmail } : {}),
     ...(context.ancestry && context.ancestry.length > 0 ? { ancestry: context.ancestry } : {}),
     ...(input.producedBy ? { producedBy: input.producedBy } : {}),
+    ...(input.model ? { model: input.model } : {}),
     ...(context.runId ? { runId: context.runId } : {}),
     ...(prompt ? { prompt } : {}),
     createdAt: new Date().toISOString(),
