@@ -162,7 +162,7 @@ loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for
 ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 120 only
 because the engine's builtins are added after the MCP tools are cut and need the room.
 
-**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 120 decisions across two
+**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 126 decisions across two
 tables, the second holding the ones the test cannot express as a pattern but that the same
 rule governs. `tests/architecture.test.ts` is what enforces both.
 

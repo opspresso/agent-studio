@@ -3,6 +3,7 @@
 import type * as engine from "@/application/llm/engine";
 import type { McpToolResult } from "@/domain/llm/types";
 import {
+  baseMimeType,
   isSavable,
   MAX_SAVED_FILE_BYTES,
   SAVABLE_TYPES,
@@ -28,7 +29,10 @@ export function saveFileResult(input: {
   mimeType: unknown;
   content: unknown;
 }): McpToolResult {
-  const mimeType = typeof input.mimeType === "string" ? input.mimeType.trim().toLowerCase() : "";
+  // The bare type, not what was asked for: a model may name a charset, and a
+  // parameter riding along would reach the row, where `artifactObjectKey`
+  // matches exactly and stores the file as `.bin`.
+  const mimeType = typeof input.mimeType === "string" ? baseMimeType(input.mimeType) : "";
   const content = typeof input.content === "string" ? input.content : "";
   const name = typeof input.name === "string" ? input.name : "";
 

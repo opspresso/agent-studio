@@ -20,6 +20,12 @@
 | 이미지 Model 의 세 가지 토큰 수를 usage 행 하나로 합치기 | `src/domain/llm/models.ts` |
 | artifact 행을 어떻게 쓰는가 | `src/application/artifact/storeArtifact.ts` |
 | artifact 가 저장되는 오브젝트 키 | `src/domain/artifact/types.ts` 의 `artifactObjectKey` |
+| mime 타입에서 파라미터를 떼어낸 형태 — 아래 세 규칙이 모두 이것 위에 쓰여 있어 서로 어긋날 수 없다 | `src/domain/artifact/types.ts` 의 `baseMimeType` |
+| 브라우저에 *보여* 줄 수 있는(= sandbox 를 걸어 줄 값이 있는) 타입 | `src/domain/artifact/types.ts` 의 `isInlineViewable` / `MAX_INLINE_VIEW_BYTES` |
+| 런이 파일로 쓸 수 있는 타입과 그 크기 | `src/domain/artifact/types.ts` 의 `SAVABLE_TYPES` / `isSavable` / `MAX_SAVED_FILE_BYTES` |
+| 저장된 파일이 독자에게 어떤 이름으로 내려가는가 | `src/domain/artifact/types.ts` 의 `savedFileName` |
+| 한 런이 파일을 몇 개까지 쓸 수 있는가 | `src/application/llm/engine.ts` 의 `MAX_SAVED_FILES_PER_RUN` — 이 플랫폼이 고른 루프 한도라 그것을 강제하는 루프 옆에 산다 |
+| 호출이 *알려질* 때 인자에서 무엇이 빠지는가 | `src/application/llm/engine.ts` 의 `announcedArgs` |
 | 저장된 오브젝트를 삭제하기 | `src/infrastructure/storage/s3ObjectStore.ts` |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` |

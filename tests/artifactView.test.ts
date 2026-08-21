@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { setAdminCheck } from "@/application/project/projectUseCases";
-import { isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
+import { baseMimeType, isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
 import type { Artifact } from "@/domain/artifact/types";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -130,8 +130,31 @@ describe("reading an artifact for a view", () => {
     expect(reads).toEqual([]);
   });
 
+  it("refuses a row larger than a view reads, before reading it", async () => {
+    // The row already knows its size, so the adapter's own cap is never the one
+    // that answers: that arrives untyped and reaches the reader as a 500.
+    const { useCases, reads } = setup(artifact({ byteSize: MAX_INLINE_VIEW_BYTES + 1 }));
+    await expect(useCases.readForView("a1", OWNER)).rejects.toThrow(/too large to open/);
+    expect(reads).toEqual([]);
+  });
+
   it("is a 404 when no such row exists", async () => {
     const { useCases } = setup(null);
     await expect(useCases.readForView("missing", OWNER)).rejects.toThrow(/Artifact not found/);
+  });
+});
+
+describe("the type a rule is written against", () => {
+  it("is the type without its parameters", () => {
+    expect(baseMimeType("text/html; charset=euc-kr")).toBe("text/html");
+    expect(baseMimeType("  TEXT/HTML  ")).toBe("text/html");
+  });
+
+  it("is what the served header is built from, not the stored string", () => {
+    // A row an MCP tool wrote may name a charset of its own, and
+    // `text/html; charset=euc-kr; charset=utf-8` is read by the first one —
+    // Korean text arriving as mojibake through the header meant to stop it.
+    const served = `${baseMimeType("text/html; charset=euc-kr")}; charset=utf-8`;
+    expect(served).toBe("text/html; charset=utf-8");
   });
 });

@@ -80,6 +80,19 @@ export interface Artifact {
 }
 
 /**
+ * A mime type without its parameters, which is the form every rule below is
+ * written against: `text/html; charset=euc-kr` is `text/html`.
+ *
+ * One function rather than the copy each predicate was carrying, because they
+ * have to agree — a type that {@link isSavable} admits with a parameter
+ * attached and {@link artifactObjectKey} then matches exactly is stored as
+ * `.bin`, and served back with two charsets in one header.
+ */
+export function baseMimeType(mimeType: string): string {
+  return mimeType.split(";")[0]!.trim().toLowerCase();
+}
+
+/**
  * The types a browser may be shown rather than handed to save.
  *
  * One entry, and the shortness is the point. Showing stored bytes means running
@@ -96,7 +109,7 @@ export interface Artifact {
 const INLINE_VIEWABLE = new Set(["text/html"]);
 
 export function isInlineViewable(mimeType: string): boolean {
-  return INLINE_VIEWABLE.has(mimeType.split(";")[0]!.trim().toLowerCase());
+  return INLINE_VIEWABLE.has(baseMimeType(mimeType));
 }
 
 /**
@@ -123,7 +136,7 @@ export const SAVABLE_TYPES: readonly string[] = [
 ];
 
 export function isSavable(mimeType: string): boolean {
-  return SAVABLE_TYPES.includes(mimeType.split(";")[0]!.trim().toLowerCase());
+  return SAVABLE_TYPES.includes(baseMimeType(mimeType));
 }
 
 /**
@@ -196,7 +209,7 @@ export function savedFileName(name: string, mimeType: string): string {
     .trim()
     .slice(0, 80);
   const safe = cleaned === "" ? "file" : cleaned;
-  const extension = EXTENSIONS[mimeType.split(";")[0]!.trim().toLowerCase()];
+  const extension = EXTENSIONS[baseMimeType(mimeType)];
   if (!extension) {
     return safe;
   }

@@ -81,6 +81,15 @@ export function createArtifactUseCases(
       if (!isInlineViewable(artifact.mimeType)) {
         throw new ValidationError(`${artifact.mimeType} is downloaded rather than viewed`);
       }
+      // The row already knows its size, so the same refusal is spent here rather
+      // than as a transport error from the adapter's own cap — which arrives
+      // untyped and reaches the reader as a 500 saying nothing, after a round
+      // trip that was never going to be used.
+      if (artifact.byteSize > MAX_INLINE_VIEW_BYTES) {
+        throw new ValidationError(
+          `That file is too large to open here; download it instead (${artifact.byteSize} bytes).`,
+        );
+      }
       const { bytes } = await objects.read(artifact.key, MAX_INLINE_VIEW_BYTES);
       return { artifact, bytes };
     },

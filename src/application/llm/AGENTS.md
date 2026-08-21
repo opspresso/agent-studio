@@ -23,15 +23,30 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   gets `loadSkillContent`, so the dep says nothing about what the model was offered.
   `BUILTIN_TOOL_NAMES` is reserved when MCP aliases are allocated, before the run knows which
   builtins it will offer, so an MCP tool never carries a name a builtin might claim.
-- Dispatch of one response: every call is announced first, then the **MCP calls and `FetchUrl`
-  run concurrently** (≤5 in flight, one shared pool) while the *other* builtins run strictly in
-  call order — a transfer moves the turn budget and the image tools mutate the image registry.
-  `FetchUrl` does neither: its bytes are registered below, in order, the way an MCP tool's are,
-  and leaving it sequential would make three links in one answer cost three round trips —
-  slower than the standalone server it replaced. Results, tool messages and the assistant
+- Dispatch of one response: every call is announced first, then the **MCP calls, `FetchUrl` and
+  `SaveFile` run concurrently** (≤5 in flight, one shared pool) while the *other* builtins run
+  strictly in call order — a transfer moves the turn budget and the image tools mutate the image
+  registry. The two joiners do neither: `FetchUrl`'s bytes are registered below, in order, the
+  way an MCP tool's are, and leaving it sequential would make three links in one answer cost
+  three round trips — slower than the standalone server it replaced; `SaveFile` touches nothing
+  the loop carries at all. Results, tool messages and the assistant
   message's `tool_calls` all stay in call order; a dispatcher that throws still tears the run
   down, at its position in that order. A *fetch* that throws does not: an unreachable address
   is the tool reporting an outcome, not a transport fault, so it becomes an `Error: …` result.
+- **A call is announced with the arguments it was made with, with one exception.** `SaveFile`
+  carries a whole file in `content`, and an announced call is kept by everything downstream —
+  the chat view renders it, the run log buffers it, and the assistant message it is persisted on
+  is one 400KB DynamoDB item whose write fails *silently*, taking the reply the reader just
+  watched stream. Content and reasoning are truncated onto that item; `tool_calls` is the axis
+  that is not. So `announcedArgs` swaps the body for its size, while the provider still gets the
+  real arguments on this turn's assistant message. A second tool with a large argument is added
+  there, not worked around at the surface that renders it.
+- **Which copy of the arguments a builtin is dispatched from is a PII decision, not a
+  preference.** `args` is masked and `displayArgs` has the values restored. Anything crossing to
+  another model — a transfer's `message`, a dispatch's `tasks` — reads `args`. Anything reaching
+  a person or an outside system that the caller's own context already trusts — MCP dispatch,
+  the image prompts, `SaveFile`'s file — reads `displayArgs`; a report saved from the masked
+  copy reaches the person who asked for it full of their own placeholders.
 - A returned picture takes one path, whoever produced it. `FetchUrl` normalises onto
   `McpToolResult`, so the image budget, the `img_N` registration, the rejection notice for a
   model that cannot see one, and the follow-up user message carrying the bytes are all written

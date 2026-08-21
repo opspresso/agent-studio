@@ -1,3 +1,4 @@
+import { baseMimeType } from "@/domain/artifact/types";
 import { withAuth } from "@/lib/session";
 import { artifactUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
@@ -28,6 +29,12 @@ const SANDBOX_POLICY = [
   "font-src data:",
   "form-action 'none'",
   "base-uri 'none'",
+  // Only this app may frame it. The sandbox already denies a framing page
+  // anything to read — an opaque origin has nothing it shares — so this is
+  // about the page being *presented* as something it is not, and `'self'`
+  // rather than `'none'` because the same address is what an in-console
+  // preview would embed.
+  "frame-ancestors 'self'",
 ].join("; ");
 
 /**
@@ -51,10 +58,14 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
     const { artifact, bytes } = await artifactUseCases.readForView(artifactId, user.email);
     return new Response(bytes as BodyInit, {
       headers: {
-        // The stored mime is bare, and a browser handed `text/html` with no
-        // charset falls back to the document's own `<meta>` — or to a locale
-        // guess when it has none, which is how Korean text arrives as mojibake.
-        "Content-Type": `${artifact.mimeType}; charset=utf-8`,
+        // The *base* type, not the stored string: a row written by an MCP tool
+        // may carry a charset of its own, and `text/html; charset=euc-kr;
+        // charset=utf-8` is read by the first one — which is Korean text
+        // arriving as mojibake through the header meant to prevent it. A
+        // browser handed a bare `text/html` falls back to the document's own
+        // `<meta>`, or to a locale guess when it has none, so saying it here
+        // is what settles it.
+        "Content-Type": `${baseMimeType(artifact.mimeType)}; charset=utf-8`,
         "Content-Security-Policy": SANDBOX_POLICY,
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",

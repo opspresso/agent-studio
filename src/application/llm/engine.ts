@@ -927,6 +927,34 @@ function toWireToolCall(id: string, name: string, args: Record<string, unknown>)
   return { id, type: "function", function: { name, arguments: JSON.stringify(args) } };
 }
 
+/**
+ * The arguments a call is *announced* with, which are not always the ones it is
+ * made with.
+ *
+ * One tool carries a whole file in one argument, and every consumer of an
+ * announced call keeps what it is given: the chat view renders it, the run log
+ * buffers it, and the assistant message it is persisted on is a single 400KB
+ * DynamoDB item — whose write fails silently and takes the reply the reader
+ * just watched stream with it. Content and reasoning are truncated onto that
+ * item; `tool_calls` is the one axis that is not, and until `SaveFile` no tool's
+ * arguments were large enough for it to matter.
+ *
+ * The provider still gets the real arguments on this turn's assistant message —
+ * a model must see the call it made. A later turn replaying the persisted copy
+ * gets the summary, which is all there is to know: the tool result already said
+ * the file exists and what it is called.
+ */
+function announcedArgs(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (name !== SAVE_FILE_TOOL_NAME) {
+    return args;
+  }
+  const content = args.content;
+  if (typeof content !== "string" || content === "") {
+    return args;
+  }
+  return { ...args, content: `[${Buffer.byteLength(content, "utf8")} bytes, kept as the file]` };
+}
+
 interface PreparedToolCall {
   call: AccumulatedCall;
   args: Record<string, unknown>;
@@ -1023,11 +1051,17 @@ async function dispatchConcurrentTools(
       try {
         if (kind === "save") {
           const text = (value: unknown) => (typeof value === "string" ? value : "");
+          // From `displayArgs`, not `args`, and for the same reason MCP
+          // dispatch reads it: the file is delivered to the *reader*, on this
+          // side of the PII boundary, so it holds what the answer beside it
+          // holds. `args` is the masked copy, and a report saved from it would
+          // reach the person who asked for it full of the placeholders their
+          // own context was rewritten with.
           return {
             ok: await saveDispatch!({
-              name: text(entry.args.name),
-              mimeType: text(entry.args.mime_type),
-              content: text(entry.args.content),
+              name: text(entry.displayArgs.name),
+              mimeType: text(entry.displayArgs.mime_type),
+              content: text(entry.displayArgs.content),
             }),
           };
         }
@@ -1783,7 +1817,10 @@ export async function* runAgent(
         continue;
       }
       wireToolCalls.push(toWireToolCall(call.id, call.name, args));
-      yield { author, delta: { toolCalls: [toWireToolCall(call.id, call.name, displayArgs)] } };
+      yield {
+        author,
+        delta: { toolCalls: [toWireToolCall(call.id, call.name, announcedArgs(call.name, displayArgs))] },
+      };
     }
 
     // The MCP calls of one response are independent by construction — the model

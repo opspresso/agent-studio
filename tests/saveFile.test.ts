@@ -26,6 +26,19 @@ describe("saving a file a run wrote", () => {
     expect(result.text).toContain("do not repeat");
   });
 
+  it("keeps the bare type, so a charset cannot ride onto the row", () => {
+    // `artifactObjectKey` matches exactly: a parameter reaching the row stores
+    // the file as `.bin` and serves it back with two charsets in one header.
+    const result = saveFileResult({
+      name: "report",
+      mimeType: "TEXT/HTML; charset=euc-kr",
+      content: HTML,
+    });
+
+    expect(result.files?.[0]?.mimeType).toBe("text/html");
+    expect(result.files?.[0]?.name).toBe("report.html");
+  });
+
   it("refuses a type it does not write, and names what it does", () => {
     const result = saveFileResult({ name: "deck", mimeType: "application/pdf", content: "x" });
 
