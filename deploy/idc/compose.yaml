@@ -80,6 +80,9 @@ services:
       EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
       EMBEDDING_DIM: "1024"
       RECALL_MIN_SIMILARITY: "0.1"
+      # Turns on search_docs, which queries the `agent-studio` Knowledge Base
+      # over Retrieve. Shared by every project — memories stay per-tenant.
+      KNOWLEDGE_BASE_ID: C3NQOMBFVD
     mem_limit: 512m
     networks:
       default:
