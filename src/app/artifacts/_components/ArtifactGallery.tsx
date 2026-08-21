@@ -43,6 +43,7 @@ import {
   artifactFileType,
   type ArtifactFileType,
 } from "@/app/artifacts/_lib/fileType";
+import { isInlineViewable } from "@/domain/artifact/types";
 
 type KindFilter = "all" | "image" | "document";
 
@@ -318,12 +319,30 @@ function ArtifactCard({
               </Group>
             </Anchor>
           ) : (
-            <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
-              <Group gap={4}>
-                <IconDownload size={14} />
-                {t("artifacts.download")}
-              </Group>
-            </Anchor>
+            <Group gap="md" wrap="nowrap">
+              {/* A page is opened, not saved — and never at the object's own
+                  address: `/view` serves it under a sandbox policy, which an
+                  S3 URL cannot carry. Everything else has only a download. */}
+              {isInlineViewable(artifact.mimeType) && (
+                <Anchor
+                  href={`/api/artifacts/${artifact.artifactId}/view`}
+                  target="_blank"
+                  rel="noreferrer"
+                  fz="sm"
+                >
+                  <Group gap={4}>
+                    <IconEye size={14} />
+                    {t("artifacts.view")}
+                  </Group>
+                </Anchor>
+              )}
+              <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
+                <Group gap={4}>
+                  <IconDownload size={14} />
+                  {t("artifacts.download")}
+                </Group>
+              </Anchor>
+            </Group>
           )}
           <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label={t("artifacts.delete")}>
             <IconTrash size={16} />

@@ -427,6 +427,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 추출 전에 훑어 읽는 HTML 원문 | `500,000` 자 | `src/infrastructure/llm/htmlText.ts` |
 | MCP 도구 결과 하나가 나를 수 있는 파일 | `10.5 MB` × 4 | `src/infrastructure/mcp/toolManager.ts` |
 | artifact 행에 남기는 프롬프트 발췌 | `500` 자 | `src/application/artifact/storeArtifact.ts` |
+| `/view` 가 메모리로 읽어 들이는 artifact | `2 MB` | `src/domain/artifact/types.ts` |
 | 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (skill / 외부 agent / MCP 서버) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
 | 각 MCP 인덱스에 요청하는 카탈로그 매치 수. 그 상한을 넘겨 oversampling 한다 — 여러 도구 행이 한 서버로 합쳐지고, 런이 바인딩할 수 없는 후보가 슬롯을 잡아먹어서는 안 되기 때문이다 | MCP 서버 상한의 `4×`(tool 인덱스) / `3×`(server 인덱스) | `src/application/execution/bindings.ts` |
 | 런이 카탈로그를 검색할 때 쓰는 것 (시스템 프롬프트 / 가장 최근 사용자 턴) | `2,000` 자 / `3` 턴 | `src/application/execution/bindings.ts` |

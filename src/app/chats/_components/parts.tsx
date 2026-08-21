@@ -319,6 +319,8 @@ export const MessageView = memo(function MessageView({
                 name={file.name}
                 url={file.url}
                 byteSize={file.byteSize}
+                mimeType={file.mimeType}
+                artifactId={file.artifactId}
               />,
             ]
           : [],
@@ -469,7 +471,13 @@ export function LiveAssistant({
         />
       ))}
       {turn.files.map((file, index) => (
-        <ProducedFile key={`file-${index}`} name={file.name} byteSize={file.byteSize} />
+        <ProducedFile
+          key={`file-${index}`}
+          name={file.name}
+          byteSize={file.byteSize}
+          mimeType={file.mimeType}
+          artifactId={file.artifactId}
+        />
       ))}
       {turn.text && (
         <div className={classes.answer}>

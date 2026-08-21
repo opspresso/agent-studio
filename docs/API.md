@@ -134,6 +134,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
 | `/api/artifacts/{artifactId}` | `DELETE` | 생성자, project 소유자, 또는 admin |
+| `/api/artifacts/{artifactId}/view` | `GET` | 생성자, project 소유자, 또는 admin |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/models/catalog` | `GET` | member |
@@ -1308,7 +1309,17 @@ GET /api/projects/{name}/artifacts?…same query…
 → 200 { artifacts: [ … ], nextBefore?: … } | 400 | 403 | 404
 DELETE /api/artifacts/{artifactId}
 → 204 | 403 | 404
+GET /api/artifacts/{artifactId}/view
+→ 200 text/html | 400 | 403 | 404
 ```
+
+`/view` 는 주소가 아니라 **바이트로** 답하는 유일한 라우트다. `text/html` 만 받고 나머지는
+400 인데, 목록이 짧은 이유는 표시할 수 있느냐가 아니라 sandbox 를 걸어 줄 값이 있느냐이기
+때문이다. 응답은 `Content-Security-Policy: sandbox allow-scripts; default-src 'none'` 아래에서
+불투명 오리진에 놓이므로 그 페이지는 콘솔의 쿠키·스토리지·DOM 에 닿지 못하고 바깥으로
+요청하지도 못한다. 서명된 오브젝트 URL 로는 그 헤더를 실을 수 없고, 건네진 주소는 그것을 연
+사람의 권한보다 오래 산다 — public 모드에서는 영구다. 그래서 페이지만은 앱을 통해 나간다.
+읽기 상한은 2 MB 이고, 권한 술어는 삭제와 같다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
 `byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의

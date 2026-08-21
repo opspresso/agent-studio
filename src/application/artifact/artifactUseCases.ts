@@ -8,13 +8,17 @@
  * catalog, so it is not a substitute for the personal one either.
  */
 
-import { NotFoundError } from "@/application/errors";
+import { NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import type { ArtifactRepository, ListArtifactsOptions } from "@/domain/artifact/repository";
-import { artifactOwnerEmail } from "@/domain/artifact/types";
+import {
+  artifactOwnerEmail,
+  isInlineViewable,
+  MAX_INLINE_VIEW_BYTES,
+} from "@/domain/artifact/types";
 import type { Artifact } from "@/domain/artifact/types";
 
 /** How many artifacts one page may carry. A gallery page, not a bulk export. */
@@ -29,6 +33,21 @@ export interface ArtifactUseCases {
     options?: ListArtifactsOptions,
   ): Promise<Artifact[]>;
   remove(artifactId: string, actorEmail: string): Promise<void>;
+  /**
+   * The bytes behind one artifact, for the single reader that renders them
+   * instead of handing out an address.
+   *
+   * Every other read is a signed URL: the object answers, and this app never
+   * holds the bytes. A page that runs in a browser cannot be served that way —
+   * an address it could be opened at is an address it could be *forwarded* at,
+   * outliving the rights of whoever opened it, and in public mode it would be
+   * permanent. So the one case that renders comes back through here, where the
+   * same predicate that guards a delete still applies.
+   */
+  readForView(
+    artifactId: string,
+    viewerEmail: string,
+  ): Promise<{ artifact: Artifact; bytes: Uint8Array }>;
 }
 
 export function createArtifactUseCases(
@@ -51,6 +70,21 @@ export function createArtifactUseCases(
   }
 
   return {
+    async readForView(artifactId, viewerEmail) {
+      const artifact = await repo.get(artifactId);
+      if (!artifact) {
+        throw new NotFoundError(`Artifact not found: ${artifactId}`);
+      }
+      await assertMayManage(artifact, viewerEmail);
+      // The type is checked before the bytes are fetched, not after: a ten-megabyte
+      // deck read into memory to then be refused is the same refusal at a cost.
+      if (!isInlineViewable(artifact.mimeType)) {
+        throw new ValidationError(`${artifact.mimeType} is downloaded rather than viewed`);
+      }
+      const { bytes } = await objects.read(artifact.key, MAX_INLINE_VIEW_BYTES);
+      return { artifact, bytes };
+    },
+
     async listMine(email, options = {}) {
       return repo.listByOwner(email, bounded(options));
     },

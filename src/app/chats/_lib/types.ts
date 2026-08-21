@@ -34,8 +34,13 @@ export interface StreamChunk {
    * A file the run produced. No `b64`: the bytes are stripped once stored, so
    * what arrives is the reference — and the address to fetch it by is signed
    * when the finished turn is read back, not here.
+   *
+   * `artifactId` is the exception, and not a contradiction of that: it is a row
+   * id rather than a credential, and the route it addresses authorises every
+   * request on its own. So a page can be opened the moment its bytes are in the
+   * bucket, while a download still waits for the turn to be read back.
    */
-  file?: { name: string; mimeType: string; byteSize?: number; key?: string };
+  file?: { name: string; mimeType: string; byteSize?: number; key?: string; artifactId?: string };
   /**
    * Token accounting for one model call. Read for one number only — how much of
    * the turn went into thinking — which is why nothing else here is declared.
@@ -86,6 +91,13 @@ export interface LiveFile {
   name: string;
   mimeType: string;
   byteSize?: number;
+  /**
+   * Present from the chunk that stored it, which is why a page can be opened
+   * while the turn is still running: the bytes are in the bucket by the time
+   * the reference reaches here, and only the download address waits for the
+   * finished turn to be read back.
+   */
+  artifactId?: string;
 }
 
 /** In-progress assistant turn rendered while a stream is active. */

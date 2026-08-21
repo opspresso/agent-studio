@@ -109,6 +109,22 @@ describe("collectGeneratedFiles", () => {
     expect(warnings).toEqual([]);
   });
 
+  it("keeps the artifact id for a file a browser can be shown, and only then", () => {
+    // The id is what an open link is built from, so it rides along for a page
+    // and is left off everything else: a PDF row carrying one would offer a
+    // view that answers 400.
+    const { stored } = collectGeneratedFiles(
+      [
+        { key: "artifacts/document/p.html", artifactId: "p", name: "r.html", mimeType: "text/html" },
+        { key: "artifacts/document/d.pdf", name: "d.pdf", mimeType: "application/pdf" },
+      ],
+      true,
+    );
+
+    expect(stored[0]).toMatchObject({ artifactId: "p", mimeType: "text/html" });
+    expect(stored[1]).not.toHaveProperty("artifactId");
+  });
+
   /**
    * The asymmetry with images. An image that failed to store was still seen —
    * its bytes rode the stream. A file's are stripped as it is stored, so an

@@ -1,7 +1,8 @@
 "use client";
 
 import { Anchor, Group, Paper, Stack, Text } from "@mantine/core";
-import { IconFileText } from "@tabler/icons-react";
+import { IconExternalLink, IconFileText } from "@tabler/icons-react";
+import { isInlineViewable } from "@/domain/artifact/types";
 import { formatBytes } from "@/app/_lib/formatBytes";
 import { useT } from "@/app/_i18n/provider";
 
@@ -26,13 +27,25 @@ export function ProducedFile({
   name,
   byteSize,
   url,
+  mimeType,
+  artifactId,
 }: {
   name: string;
   byteSize?: number | undefined;
   url?: string | undefined;
+  /** Present where the surface knows it; without it the row is a download. */
+  mimeType?: string | undefined;
+  /**
+   * The artifact row, where the file is one a browser can be shown. Both this
+   * and a viewable `mimeType` are needed before the row offers to open it: the
+   * address is the app's `/view`, never the object's own, because the sandbox
+   * the page runs under is a header only this app can set.
+   */
+  artifactId?: string | undefined;
 }) {
   const t = useT();
   const size = byteSize === undefined ? null : formatBytes(byteSize);
+  const viewable = artifactId !== undefined && mimeType !== undefined && isInlineViewable(mimeType);
   return (
     <Paper withBorder radius="md" px="md" py="xs" maw="80%">
       <Group gap="xs" wrap="nowrap">
@@ -52,6 +65,20 @@ export function ProducedFile({
             {url ? "" : t("chat.fileWhenDone")}
           </Text>
         </Stack>
+        {viewable && (
+          <Anchor
+            href={`/api/artifacts/${artifactId}/view`}
+            target="_blank"
+            rel="noreferrer"
+            fz="sm"
+            ml="auto"
+          >
+            <Group gap={4} wrap="nowrap">
+              <IconExternalLink size={14} />
+              {t("artifacts.view")}
+            </Group>
+          </Anchor>
+        )}
       </Group>
     </Paper>
   );

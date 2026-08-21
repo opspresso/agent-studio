@@ -80,6 +80,36 @@ export interface Artifact {
 }
 
 /**
+ * The types a browser may be shown rather than handed to save.
+ *
+ * One entry, and the shortness is the point. Showing stored bytes means running
+ * somebody's markup, so a type earns a place here by being worth a sandbox —
+ * not by being displayable. Everything else stays a download, which asks for no
+ * trust at all: a `.docx` the browser saves does nothing on the way past.
+ *
+ * Read with the parameters stripped, because `text/html; charset=utf-8` is the
+ * same type. It is not the same *stored* mime — {@link artifactObjectKey}
+ * matches exactly, so a row written with the parameter attached is stored as
+ * `.bin` — and producers write the bare type. Being forgiving here means such a
+ * row is still viewable rather than silently a download.
+ */
+const INLINE_VIEWABLE = new Set(["text/html"]);
+
+export function isInlineViewable(mimeType: string): boolean {
+  return INLINE_VIEWABLE.has(mimeType.split(";")[0]!.trim().toLowerCase());
+}
+
+/**
+ * How much of an artifact a view may read into memory.
+ *
+ * Viewing is the one read that passes bytes through this app rather than handing
+ * out an address, so it needs a ceiling the signed-URL paths never did. Two
+ * megabytes is far past any page a run writes and far short of anything that
+ * would matter to the process holding it.
+ */
+export const MAX_INLINE_VIEW_BYTES = 2 * 1024 * 1024;
+
+/**
  * The extension an object is stored under.
  *
  * Only the types this platform actually stores. Anything else keeps the object
