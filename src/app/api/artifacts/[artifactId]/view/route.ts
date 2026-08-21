@@ -3,7 +3,7 @@ import type { InlineView } from "@/domain/artifact/types";
 import { withAuth } from "@/lib/session";
 import { artifactUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
-import { markdownPage } from "./_lib/markdownPage";
+import { viewPage } from "./_lib/viewPage";
 
 type RouteContext = { params: Promise<{ artifactId: string }> };
 
@@ -39,16 +39,17 @@ const BASE_POLICY = [
 ];
 
 /**
- * The two views are not held to the same policy, and the difference is real
- * rather than tidy.
+ * One kind is granted scripts and the rest are not, and the line is real rather
+ * than tidy.
  *
  * An HTML artifact is served as it was written, so it gets `allow-scripts`: a
  * report's table sorting and scroll-spy are the reason anyone opens it rather
  * than downloading it, and an opaque origin is what makes granting that cheap.
- * A Markdown artifact is *rendered here* by a renderer that turns raw HTML into
- * text — it has no script to run, so it is refused the grant. That puts the
- * guarantee in the browser rather than in the renderer's escaping continuing to
- * behave on the next dependency bump.
+ * Every other kind is a page *this app built* from the bytes — Markdown through
+ * a renderer that turns raw HTML into text, a CSV into a table, an SVG into an
+ * `<img>` that by specification runs nothing. None of them has a script to run,
+ * so none is given the grant. That puts the guarantee in the browser rather
+ * than in a renderer's escaping continuing to behave on the next bump.
  */
 function sandboxPolicy(view: InlineView): string {
   return view === "html"
@@ -76,14 +77,14 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
   try {
     const { artifact, bytes, view } = await artifactUseCases.readForView(artifactId, user.email);
     let body: BodyInit;
-    if (view === "markdown") {
-      const page = markdownPage(bytes, artifact.filename);
+    if (view === "html") {
+      body = bytes as BodyInit;
+    } else {
+      const page = viewPage(view, bytes, artifact.filename);
       if (page === null) {
         throw new ValidationError(`${artifact.filename ?? "That file"} is not readable as text`);
       }
       body = page;
-    } else {
-      body = bytes as BodyInit;
     }
     return new Response(body, {
       headers: {

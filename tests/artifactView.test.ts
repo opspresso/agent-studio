@@ -6,6 +6,7 @@ import {
   inlineViewOf,
   isInlineViewable,
   MAX_INLINE_VIEW_BYTES,
+  SAVABLE_TYPES,
 } from "@/domain/artifact/types";
 import type { Artifact } from "@/domain/artifact/types";
 import type { Project } from "@/domain/project/types";
@@ -100,18 +101,26 @@ describe("what may be viewed rather than downloaded", () => {
     expect(inlineViewOf("TEXT/HTML")).toBe("html");
   });
 
-  it("admits markdown as its own kind, because it is rendered rather than run", () => {
-    // Not the same answer as HTML: one is served as it was written, the other
-    // becomes a page here — which is what lets the view refuse it `allow-scripts`.
+  it("gives every other savable type its own kind, because each is shown as what it is", () => {
+    // Not the same answer as HTML, and not the same as each other: HTML is
+    // served as it was written, the rest are built here from the bytes — which
+    // is what lets the view refuse them `allow-scripts`.
     expect(inlineViewOf("text/markdown")).toBe("markdown");
     expect(inlineViewOf("text/markdown; charset=utf-8")).toBe("markdown");
+    expect(inlineViewOf("text/csv")).toBe("csv");
+    expect(inlineViewOf("application/json")).toBe("json");
+    expect(inlineViewOf("image/svg+xml")).toBe("svg");
+    expect(inlineViewOf("text/plain")).toBe("text");
   });
 
-  it("refuses everything else", () => {
-    // Not a display question. A type belongs on that list by being something a
-    // reader opens rather than files, and a PDF the browser renders on its own
-    // never needed a sandbox.
-    for (const mime of ["application/pdf", "text/plain", "image/svg+xml", "text/csv"]) {
+  it("covers exactly what a run can write, and nothing a browser merely displays", () => {
+    // The two lists agreeing is the point: a run writes these for a person to
+    // read, so each is something this app can put on a screen. A PDF the
+    // browser draws on its own never needed a sandbox.
+    for (const mime of SAVABLE_TYPES) {
+      expect(isInlineViewable(mime)).toBe(true);
+    }
+    for (const mime of ["application/pdf", "application/zip", "image/png"]) {
       expect(isInlineViewable(mime)).toBe(false);
       expect(inlineViewOf(mime)).toBeUndefined();
     }

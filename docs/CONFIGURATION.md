@@ -428,6 +428,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | MCP 도구 결과 하나가 나를 수 있는 파일 | `10.5 MB` × 4 | `src/infrastructure/mcp/toolManager.ts` |
 | artifact 행에 남기는 프롬프트 발췌 | `500` 자 | `src/application/artifact/storeArtifact.ts` |
 | `/view` 가 메모리로 읽어 들이는 artifact | `2 MB` | `src/domain/artifact/types.ts` |
+| `/view` 가 CSV 에서 그리는 행 수 | `2,000` | `src/app/api/artifacts/[artifactId]/view/_lib/viewPage.tsx` |
 | `SaveFile` 하나가 쓸 수 있는 텍스트 | `1 MB` | `src/domain/artifact/types.ts` |
 | 한 런이 쓸 수 있는 파일 수 (`SaveFile`) | `10` | `src/application/llm/engine.ts` |
 | 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (skill / 외부 agent / MCP 서버) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |

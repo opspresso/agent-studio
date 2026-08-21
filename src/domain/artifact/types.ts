@@ -95,17 +95,20 @@ export function baseMimeType(mimeType: string): string {
 /**
  * How a stored artifact reaches a screen, when it can.
  *
- * Two entries and two different answers, which is why this is a kind rather
- * than a yes. `html` is served as it was written — running somebody's markup is
- * exactly what a sandbox is for, and being worth one is what earns a place
- * here. `markdown` has nothing to run: the app renders it into a page, so what
- * the reader gets is markup this app produced from the text, and it can be held
- * to a stricter policy than the case that needs scripts.
+ * A kind rather than a yes, because the answers differ and the difference is
+ * the whole point: showing a CSV as a table and a JSON as re-indented text is
+ * showing each file as *what it is*, where one `<pre>` for all of them would
+ * answer a question nobody asked. `html` alone is served as it was written —
+ * running somebody's markup is exactly what a sandbox is for. Every other kind
+ * is built here from the bytes, carries no script, and is held to the stricter
+ * policy because of it.
  *
- * The list stays short because the question is not "can a browser display
- * this". A PDF the browser draws on its own never needed a sandbox, and a
- * `.docx` it saves does nothing on the way past — those stay downloads, which
- * ask for no trust at all.
+ * The list is {@link SAVABLE_TYPES} and no more, which is not a coincidence:
+ * these are the types a run writes for a person to read, so each one is
+ * something this app can put on a screen. The question is never "can a browser
+ * display this" — a PDF the browser draws on its own never needed a sandbox,
+ * and a `.docx` it saves does nothing on the way past. Those stay downloads,
+ * which ask for no trust at all.
  *
  * Read with the parameters stripped, because `text/html; charset=utf-8` is the
  * same type. It is not the same *stored* mime — {@link artifactObjectKey}
@@ -113,11 +116,15 @@ export function baseMimeType(mimeType: string): string {
  * `.bin` — and producers write the bare type. Being forgiving here means such a
  * row is still viewable rather than silently a download.
  */
-export type InlineView = "html" | "markdown";
+export type InlineView = "html" | "markdown" | "csv" | "json" | "svg" | "text";
 
 const INLINE_VIEWS: Record<string, InlineView> = {
   "text/html": "html",
   "text/markdown": "markdown",
+  "text/csv": "csv",
+  "application/json": "json",
+  "image/svg+xml": "svg",
+  "text/plain": "text",
 };
 
 export function inlineViewOf(mimeType: string): InlineView | undefined {

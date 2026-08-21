@@ -22,7 +22,8 @@
 | artifact 가 저장되는 오브젝트 키 | `src/domain/artifact/types.ts` 의 `artifactObjectKey` |
 | mime 타입에서 파라미터를 떼어낸 형태 — 아래 세 규칙이 모두 이것 위에 쓰여 있어 서로 어긋날 수 없다 | `src/domain/artifact/types.ts` 의 `baseMimeType` |
 | 저장된 artifact 가 화면에 닿는 방식(쓰인 그대로 / 렌더해서), 그리고 그 상한 | `src/domain/artifact/types.ts` 의 `inlineViewOf` / `MAX_INLINE_VIEW_BYTES` |
-| Markdown artifact 를 페이지로 만들기 | `src/app/api/artifacts/[artifactId]/view/_lib/markdownPage.tsx` |
+| 저장된 artifact 를 그 타입답게 페이지로 만들기 | `src/app/api/artifacts/[artifactId]/view/_lib/viewPage.tsx` |
+| 구분자로 나뉜 행의 파싱 (RFC 4180) | `src/app/api/artifacts/[artifactId]/view/_lib/csv.ts` 의 `parseCsv` |
 | 어떤 응답이 콘솔의 보안 헤더를 받는가 — 여기 선언한 헤더는 라우트가 같은 키로 세운 것을 *대체한다* | `next.config.ts` 의 `SECURITY_HEADERS` 와 그 `source` |
 | 런이 파일로 쓸 수 있는 타입과 그 크기 | `src/domain/artifact/types.ts` 의 `SAVABLE_TYPES` / `isSavable` / `MAX_SAVED_FILE_BYTES` |
 | 저장된 파일이 독자에게 어떤 이름으로 내려가는가 | `src/domain/artifact/types.ts` 의 `savedFileName` |
