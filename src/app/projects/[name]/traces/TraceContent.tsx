@@ -57,7 +57,12 @@ function spanTokens(span: Trace["spans"][number]): string {
   // working, which is a different claim from "nobody said".
   const cached = span.input?.cachedTokens;
   const cachedNote = typeof cached === "number" && cached > 0 ? ` (${cached} cached)` : "";
-  return `${typeof input === "number" ? input : 0} in${cachedNote} / ${typeof output === "number" ? output : 0} out`;
+  // Same rule on the way out: the thinking share is a subset of the total, and
+  // naming it only where a provider reported one keeps "0 thinking" from
+  // reading as a model that did not think.
+  const thinking = span.output?.reasoningTokens;
+  const thinkingNote = typeof thinking === "number" && thinking > 0 ? ` (${thinking} thinking)` : "";
+  return `${typeof input === "number" ? input : 0} in${cachedNote} / ${typeof output === "number" ? output : 0} out${thinkingNote}`;
 }
 
 export function TraceContent({ trace }: { trace: Trace }) {

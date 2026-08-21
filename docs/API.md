@@ -1043,7 +1043,9 @@ version 의 MCP 도구·skill·subagent 로 멀티턴 도구 루프를 실행한
 { "messages": [ { "role": "user", "content": "hi" } ], "stream": false }
 // response
 { "result": "…assistant text…", "model": "openai/gpt-5-mini",
-  "usage": { "inputTokens": 12, "outputTokens": 34, … },
+  "usage": { "inputTokens": 12, "outputTokens": 34, … },  // cachedTokens 와 reasoningTokens 는
+                                                          // 각각 앞의 두 수의 *부분집합*이며,
+                                                          // 프로바이더가 보고했을 때만 실린다
   "finishReason": "completed",  // 런이 끝난 이유: "turn-limit" / "output-limit" 은 부분 답을 뜻한다
   "warnings": [ "Skill 'x' is no longer in the registry; it was not offered." ]?,  // 런이 무언가를 잃었을 때만
   "images": [ { "b64": "…", "mimeType": "image/png" } ]?,  // 런이 무언가를 그렸을 때만

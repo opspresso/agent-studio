@@ -244,7 +244,14 @@ export interface VersionParameters {
    * two raw-chunk routes (`/agent` and streaming `/predict`) forward engine
    * chunks verbatim, so anyone holding a project API token receives the
    * reasoning frames too. Nothing else republishes it — the OpenAI shapes, A2A,
-   * the messaging bots and the trace recorder all read the answer beside it.
+   * the messaging bots and the trace recorder all read the answer beside it,
+   * and the trace keeps the token count without the words.
+   *
+   * **Inert on a project reached only as a subagent.** A child's parameters are
+   * its own, so this switches its emission on — but a child's thinking is
+   * dropped everywhere it lands, exactly as its answer is: several children
+   * dispatched at once interleave on the wire with nothing saying whose thought
+   * is whose. Running that project directly is where its reasoning is read.
    *
    * Opt-in, and off for everything written before it existed, because it
    * changes who can read the thinking rather than what the run can do: reasoning

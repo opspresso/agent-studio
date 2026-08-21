@@ -176,9 +176,14 @@ export default function ComparePage() {
       return;
     }
     const startedAt = Date.now();
+    // `null` for an image project: it has no reasoning axis at all — the version
+    // editor never offers the checkbox — so "not recorded for this version"
+    // would answer a question this comparison does not ask.
     const recordsReasoning =
-      versions.find((candidate) => candidate.versionName === versionName)?.parameters
-        .reasoningTrace === true;
+      project.projectType === "image"
+        ? null
+        : versions.find((candidate) => candidate.versionName === versionName)?.parameters
+            .reasoningTrace === true;
     setSide(() => ({ ...IDLE, running: true, reasoningRecorded: recordsReasoning }));
     // Batched rather than committed per token: two sides re-rendering the whole
     // page once per reasoning token is quadratic over a long think.

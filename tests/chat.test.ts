@@ -869,6 +869,27 @@ describe("runAndPersist keeps the run's reasoning", () => {
     expect(Buffer.byteLength(assistant?.content ?? "", "utf8")).toBeLessThanOrEqual(350_000);
   });
 
+  it("says the reasoning was dropped rather than claiming the model withheld it", async () => {
+    // A count with no text reads, in the view, as a provider that refused to
+    // send the thinking — the opposite of an answer that filled the item.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "y".repeat(400_000) } };
+      yield { delta: { reasoningContent: "z".repeat(5_000) } };
+      yield { usage: { inputTokens: 1, outputTokens: 2, costUsd: 0, reasoningTokens: 900 } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    expect(assistant).not.toHaveProperty("reasoning");
+    expect(assistant).not.toHaveProperty("reasoningTokens");
+    expect((assistant as { warnings?: string[] }).warnings).toEqual([
+      "This run's reasoning was not kept: the answer filled the message on its own.",
+    ]);
+  });
+
   it("does not replay a turn that answered with nothing but thinking", async () => {
     // `{ role: "assistant", content: "" }` with no tool calls is rejected by the
     // gateways in front of Anthropic and Bedrock: one such turn would fail the

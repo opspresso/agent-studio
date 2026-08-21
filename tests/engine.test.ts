@@ -902,22 +902,66 @@ describe("recording the run's reasoning", () => {
     expect(chunks.some((c) => c.warning?.includes("answered inside its reasoning"))).toBe(true);
   });
 
-  it("stays quiet about it when the run is recording, or when it also spoke", async () => {
-    const recording = new FakeChannel([[reasoningChunk("thinking"), usageChunk(1, 1)]]);
-    const spoke = new FakeChannel([[reasoningChunk("thinking"), contentChunk("said"), usageChunk(1, 1)]]);
+  it("says it at the turn guard too, where the other warning would mislead", async () => {
+    // "The budget ran out" claims there was an answer coming. There was not —
+    // the words went onto the other axis and were dropped.
+    const channel = new FakeChannel([
+      [reasoningChunk("thinking, not speaking"), toolCallChunk(0, "call_1", "lookup", "{}"), usageChunk(1, 1)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "result" }),
+    };
 
-    for (const [channel, parameters] of [
-      [recording, { reasoningTrace: true }],
-      [spoke, {}],
-    ] as const) {
-      const chunks = await collect(
-        runAgent(
-          { channel, recordUsage: async () => {} },
-          { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }], parameters },
-        ),
-      );
-      expect(chunks.some((c) => c.warning?.includes("answered inside its reasoning"))).toBe(false);
-    }
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        mcpTools: [TOOL],
+        maxTurn: 1,
+      }),
+    );
+
+    expect(chunks.some((c) => c.warning?.includes("answered inside its reasoning"))).toBe(true);
+    expect(chunks.some((c) => c.finishReason === "turn-limit")).toBe(true);
+  });
+
+  it("points a recording run at its reasoning rather than telling it to record", async () => {
+    // The bubble is blank either way; what differs is whether the answer is
+    // somewhere the reader can go and open.
+    const channel = new FakeChannel([[reasoningChunk("the answer, as thinking"), usageChunk(1, 1)]]);
+
+    const chunks = await collect(
+      runAgent(
+        { channel, recordUsage: async () => {} },
+        {
+          projectName: "p",
+          model: MODEL,
+          messages: [{ role: "user", content: "hi" }],
+          parameters: { reasoningTrace: true },
+        },
+      ),
+    );
+
+    expect(chunks.some((c) => c.warning?.includes("in the recorded reasoning"))).toBe(true);
+    expect(chunks.some((c) => c.warning?.includes("does not record"))).toBe(false);
+  });
+
+  it("stays quiet about it when the run also spoke", async () => {
+    const channel = new FakeChannel([
+      [reasoningChunk("thinking"), contentChunk("said"), usageChunk(1, 1)],
+    ]);
+
+    const chunks = await collect(
+      runAgent(
+        { channel, recordUsage: async () => {} },
+        { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
+      ),
+    );
+
+    expect(chunks.some((c) => c.warning?.includes("answered inside its reasoning"))).toBe(false);
   });
 
   it("carries reasoning tokens on the usage chunk, and only when reported", async () => {

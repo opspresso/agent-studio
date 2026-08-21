@@ -131,14 +131,19 @@ const DEFAULT_MAX_TURN = 50;
  */
 const TURN_SEPARATOR = "\n\n";
 /**
- * Said when a run answered entirely inside its thinking and was not recording it.
+ * Said when a run answered entirely inside its thinking.
  *
- * Not a reasoning feature so much as the one place the loss is visible: on the
- * models that do this, `content` stays empty for the whole run and every
- * surface shows a blank answer for a call that was billed in full.
+ * Not a reasoning feature so much as the one place the shape is visible: on the
+ * models that do this (see `toReasoning`), `content` stays empty for the whole
+ * run and every surface shows a blank answer for a call that was billed in
+ * full. Which of the two sentences applies is the difference between a bill
+ * with nothing to show for it and an answer the reader has to go open.
  */
-const ANSWER_WAS_REASONING_WARNING =
-  "This model answered inside its reasoning, which this version does not record — turn on \"Record the reasoning\" to keep it.";
+function answerWasReasoningWarning(recorded: boolean): string {
+  return recorded
+    ? "This model answered inside its reasoning, so the reply is empty and the answer is in the recorded reasoning."
+    : "This model answered inside its reasoning, which this version does not record, so the reply is empty. Recording the reasoning is what keeps it.";
+}
 
 export type RecordUsageFn = (record: {
   projectName: string;
@@ -782,8 +787,8 @@ export async function* runPromptStream(
   if (remainingReasoning) {
     yield { delta: { reasoningContent: remainingReasoning } };
   }
-  if (!traceReasoning && !sawContent && sawReasoning) {
-    yield { warning: ANSWER_WAS_REASONING_WARNING };
+  if (!sawContent && sawReasoning) {
+    yield { warning: answerWasReasoningWarning(traceReasoning) };
   }
 
   const usageInfo = toUsageInfo(state.model, usage);
@@ -1602,6 +1607,14 @@ export async function* runAgent(
     yield { author, usage: usageInfo };
 
     const calls = accumulator.finalize();
+    // Every ending of the loop, not just the clean one. A run whose words went
+    // into its thinking is as blank when the turn guard stops it or the
+    // provider cuts it — and there the *other* warning is actively misleading,
+    // claiming a budget ran out or an answer was truncated when there was
+    // never an answer on that axis to cut.
+    if ((calls.length === 0 || finalTurn) && !saidSomething && reasoningText !== "") {
+      yield { author, warning: answerWasReasoningWarning(traceReasoning) };
+    }
     if (calls.length === 0 && outputCut) {
       // The turn that would have been the answer was cut at the provider's
       // output cap — announced like the turn guard's ending, because a
@@ -1639,16 +1652,6 @@ export async function* runAgent(
       return;
     }
     if (calls.length === 0) {
-      if (!traceReasoning && !saidSomething && reasoningText !== "") {
-        // Some open-weight models put the whole answer in `reasoning_content`
-        // (see `toReasoning`), so a run that recorded none of it finishes with
-        // an empty answer and a full bill. The tokens are gone either way; what
-        // this stops is the silence about where the words went.
-        yield {
-          author,
-          warning: ANSWER_WAS_REASONING_WARNING,
-        };
-      }
       yield { author, done: true };
       return;
     }

@@ -392,17 +392,26 @@ export async function* runAndPersist(
           MAX_PERSISTED_CONTENT_BYTES - Buffer.byteLength(persistedContent, "utf8"),
         ),
       );
+      // The answer filled the item on its own. Said, because the alternative is
+      // a message carrying a thinking-token count and no thinking, which the
+      // view can only read as the provider having withheld the text — the
+      // opposite of what happened, and a claim about the model rather than
+      // about this message's budget.
+      const reasoningDropped = reasoning !== "" && persistedReasoning === "";
+      if (reasoningDropped) {
+        note("This run's reasoning was not kept: the answer filled the message on its own.");
+      }
       await deps.chats.appendMessage({
         chatId: chat.chatId,
         seq: await deps.chats.reserveMessageSeq(chat.chatId),
         role: "assistant",
         content: persistedContent,
         ...(persistedReasoning ? { reasoning: persistedReasoning } : {}),
-        // Independent of the text. The common OpenAI shape reports a reasoning
-        // token count and never streams the thinking itself, so tying the two
-        // together is how a run that spent 4,000 tokens thinking records that
-        // nothing happened.
-        ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
+        // Independent of the text the provider chose not to send, but not of
+        // text this message chose not to keep: the count alone is what tells a
+        // reader the model thought, and it may only say that where the missing
+        // words are the provider's doing.
+        ...(reasoningTokens > 0 && !reasoningDropped ? { reasoningTokens } : {}),
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
         ...(warnings.length > 0 ? { warnings } : {}),
         ...(images.length > 0 ? { images } : {}),
