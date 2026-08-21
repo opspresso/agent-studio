@@ -17,6 +17,18 @@ function parsedDate(value: string): Date | null {
   return value && !Number.isNaN(date.getTime()) ? date : null;
 }
 
+/**
+ * A stored timestamp as milliseconds, or `null` when it cannot be read.
+ *
+ * The same judgement the formatters above make, published for a caller that
+ * wants to measure with the value rather than print it: an unreadable
+ * `createdAt` yields nothing, and deciding that twice is how one reader comes
+ * to treat `""` as the epoch while its neighbour renders an empty string.
+ */
+export function parsedInstant(value: string): number | null {
+  return parsedDate(value)?.getTime() ?? null;
+}
+
 /** Locale date only (year included). Empty string for missing/invalid input. */
 export function formatDate(value: string, locale?: DateLocale): string {
   const date = parsedDate(value);

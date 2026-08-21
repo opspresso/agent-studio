@@ -55,6 +55,10 @@ function AnswerDuration({ durationMs }: { durationMs: number }) {
   const formatted = formatDuration(durationMs, t);
   return (
     <Text fz={11} c="dimmed" mt={2} title={t("chat.answeredIn", { duration: formatted })}>
+      {/* A separator, because the timestamp sits in an identical `Text` right
+          beside it and two dimmed numbers with a gap between them read as one
+          run-on string. */}
+      {"· "}
       {formatted}
     </Text>
   );
@@ -330,21 +334,37 @@ export const MessageView = memo(function MessageView({
 });
 
 /**
- * Whole seconds since `startedAtMs`, ticking once a second.
+ * Whole seconds since `startedAtMs`, ticking as each one turns over.
  *
  * Its own hook so the re-render it schedules lands on the stopwatch and nothing
  * else. Put on `LiveAssistant` instead, every tick would re-render the answer
  * beside it — and re-parse its markdown — which is the cost the store's
  * collection window exists to avoid paying per frame.
+ *
+ * The next tick is scheduled onto the boundary rather than a second from now,
+ * and that is not tidiness. A fixed interval starts out of phase with
+ * `startedAtMs` and then accumulates whatever the main thread owes it — this
+ * view re-parses a growing answer on the store's 50-200ms window, so ordinary
+ * lateness compounds until a second is skipped outright and the reader watches
+ * `12s` become `14s`, which reads as a stalled page. Re-aiming each time also
+ * keeps the last painted frame equal to what the settled badge will say.
  */
 function useElapsedSeconds(startedAtMs: number): number {
   const [seconds, setSeconds] = useState(() => (Date.now() - startedAtMs) / 1000);
   useEffect(() => {
-    // Set once on the way in as well: the interval's first tick is a second
-    // away, and a run reattached to mid-flight would show `0s` until then.
-    setSeconds((Date.now() - startedAtMs) / 1000);
-    const timer = setInterval(() => setSeconds((Date.now() - startedAtMs) / 1000), 1000);
-    return () => clearInterval(timer);
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = (): void => {
+      const elapsed = Date.now() - startedAtMs;
+      setSeconds(elapsed / 1000);
+      // A whole second past the one just shown. `elapsed` can be negative if
+      // the clock steps back mid-run, and `1000 - negative % 1000` is over a
+      // second rather than under — clamped, so the clock keeps ticking.
+      timer = setTimeout(tick, Math.max(50, 1000 - (((elapsed % 1000) + 1000) % 1000)));
+    };
+    // Once on the way in as well: the first boundary is up to a second away,
+    // and a turn re-rendered mid-run would otherwise hold a stale number.
+    tick();
+    return () => clearTimeout(timer);
   }, [startedAtMs]);
   return seconds;
 }
@@ -353,14 +373,26 @@ function RunStopwatch({ startedAtMs }: { startedAtMs: number }) {
   const t = useT();
   const seconds = useElapsedSeconds(startedAtMs);
   return (
-    // Hidden from the accessibility tree: it changes every second, and the
-    // status beside it already says the run is going. Announced, it would talk
-    // over everything else for the length of the reply.
+    // Outside the status region, and hidden from the accessibility tree: a
+    // number that changes every second inside a live region is announced over
+    // everything else for the length of the reply. What the region should say —
+    // that the run started — is said by the label, which does not change.
     <Text fz="xs" c="dimmed" aria-hidden fw={500}>
       {formatSeconds(seconds, t)}
     </Text>
   );
 }
+
+/**
+ * How tall the line under the answer is, whichever of its three states is in it.
+ *
+ * Reserved rather than left to the content, because this line is inside the
+ * scroll container: it goes from spinner to settled duration to nothing at all
+ * as the run finishes and the stored turn replaces it, and a row that changes
+ * height there shoves the text a reader is in the middle of. The same reason
+ * `RunningAgents` is drawn by the composer instead of here.
+ */
+const PROGRESS_LINE_HEIGHT = 22;
 
 /**
  * That the run is working, and for how long.
@@ -377,11 +409,13 @@ function RunStopwatch({ startedAtMs }: { startedAtMs: number }) {
 function RunProgress({ startedAtMs }: { startedAtMs?: number | undefined }) {
   const t = useT();
   return (
-    <Group gap={8} align="center" role="status" py={2}>
-      <Loader size={12} type="dots" />
-      <Text fz="xs" c="dimmed">
-        {t("chat.running")}
-      </Text>
+    <Group gap={8} align="center" h={PROGRESS_LINE_HEIGHT}>
+      <Group gap={8} align="center" role="status">
+        <Loader size={12} type="dots" />
+        <Text fz="xs" c="dimmed">
+          {t("chat.running")}
+        </Text>
+      </Group>
       {startedAtMs !== undefined && <RunStopwatch startedAtMs={startedAtMs} />}
     </Group>
   );
@@ -428,13 +462,17 @@ export function LiveAssistant({
         <RunProgress startedAtMs={startedAtMs} />
       ) : (
         // The stored message carries this turn's own badge, but only once the
-        // retire's fetch has come back — and if it never does, this turn stays
-        // on screen rendered from the live entry for good. Measured here rather
-        // than left to that fetch, the number does not blink out at the finish
-        // and does not disappear entirely when the conversation cannot be read
-        // back.
-        startedAtMs !== undefined &&
-        endedAtMs !== undefined && <AnswerDuration durationMs={endedAtMs - startedAtMs} />
+        // retire's fetch has come back. Measured here as well, the number does
+        // not blink out at the finish — and it is the only one a reader gets in
+        // the minute a failing retire leaves this turn drawn from the live
+        // entry. Held to the same rule as the stored badge: a negative gap is a
+        // clock that stepped back, and `0s` would be a wrong answer where
+        // silence is merely no answer.
+        <Group h={PROGRESS_LINE_HEIGHT} align="center">
+          {startedAtMs !== undefined && endedAtMs !== undefined && endedAtMs >= startedAtMs && (
+            <AnswerDuration durationMs={endedAtMs - startedAtMs} />
+          )}
+        </Group>
       )}
     </Stack>
   );

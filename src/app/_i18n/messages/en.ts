@@ -130,6 +130,8 @@ export const en = {
   "common.copied": "Copied",
   "common.backTo": "← Back to {label}",
   "common.you": "you",
+  "common.durationSeconds": "{seconds}s",
+  "common.durationMinutes": "{minutes}m {seconds}s",
   "common.total": "Total",
   "common.workspaceCatalog": "Workspace catalog",
 
@@ -231,8 +233,6 @@ export const en = {
     "Chats run against an agent project. Create one from Projects to start chatting.",
   "chat.running": "Running",
   "chat.answeredIn": "Answered in {duration}",
-  "chat.durationSeconds": "{seconds}s",
-  "chat.durationMinutes": "{minutes}m {seconds}s",
   "chat.via": "via {path}",
   "chat.imageGone": "This image is no longer available.",
   "chat.fileWhenDone": "available when this reply finishes",

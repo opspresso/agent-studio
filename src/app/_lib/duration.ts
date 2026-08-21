@@ -18,9 +18,9 @@ const SECONDS_PER_MINUTE = 60;
 export function formatSeconds(totalSeconds: number, t: Translate): string {
   const whole = Math.max(0, Math.floor(totalSeconds));
   if (whole < SECONDS_PER_MINUTE) {
-    return t("chat.durationSeconds", { seconds: whole });
+    return t("common.durationSeconds", { seconds: whole });
   }
-  return t("chat.durationMinutes", {
+  return t("common.durationMinutes", {
     minutes: Math.floor(whole / SECONDS_PER_MINUTE),
     seconds: whole % SECONDS_PER_MINUTE,
   });

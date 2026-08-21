@@ -62,14 +62,6 @@ describe("answerDurations", () => {
     ]);
   });
 
-  it("reads by seq, not by the order the list happens to be in", () => {
-    const durations = answerDurations([
-      assistant(2, "2026-08-21T00:00:09.000Z"),
-      user(1, "2026-08-21T00:00:00.000Z"),
-    ]);
-    expect(durations.get(2)).toBe(9_000);
-  });
-
   it("says nothing for an answer whose question is not in the list", () => {
     expect(answerDurations([assistant(2, "2026-08-21T00:00:12.000Z")]).has(2)).toBe(false);
   });
@@ -95,6 +87,31 @@ describe("answerDurations", () => {
   it("says nothing when a timestamp cannot be read", () => {
     const durations = answerDurations([user(1, ""), assistant(2, "2026-08-21T00:00:07.000Z")]);
     expect(durations.has(2)).toBe(false);
+  });
+
+  /**
+   * The turn has to close on the way past an answer it could not measure. Left
+   * open, the question stays live and the *next* answer is credited with a wait
+   * that belongs to a different reply — a wrong number rather than none.
+   */
+  it("does not carry an unmeasurable turn's question into the next answer", () => {
+    const durations = answerDurations([
+      user(1, "2026-08-21T00:00:00.000Z"),
+      assistant(2, "not a date"),
+      assistant(3, "2026-08-21T00:00:30.000Z"),
+    ]);
+    expect(durations.has(2)).toBe(false);
+    expect(durations.has(3)).toBe(false);
+  });
+
+  /** Same for the answer stamped before its question. */
+  it("does not carry a backwards turn's question into the next answer", () => {
+    const durations = answerDurations([
+      user(1, "2026-08-21T00:00:10.000Z"),
+      assistant(2, "2026-08-21T00:00:07.000Z"),
+      assistant(3, "2026-08-21T00:00:30.000Z"),
+    ]);
+    expect(durations.has(3)).toBe(false);
   });
 });
 

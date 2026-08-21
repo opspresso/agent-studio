@@ -28,7 +28,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     // Wired to the cancel watch, not to the connection: a browser that hangs up
     // no longer stops the run, so a Stop press is the only thing that does.
     const abortController = new AbortController();
-    const { runId, userSeq, stream, onClientGone } = await sendMessage(chatDeps, {
+    const { runId, userSeq, startedAtMs, stream, onClientGone } = await sendMessage(chatDeps, {
       chatId,
       content: parsed.data.content,
       ...(parsed.data.images ? { images: parsed.data.images } : {}),
@@ -39,7 +39,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     });
     const stopWatch = watchChatCancel(chatDeps.chats, chatId, runId, abortController);
     return await detachedRunResponse({
-      head: { runId, userSeq },
+      head: { runId, userSeq, elapsedMs: Date.now() - startedAtMs },
       stream,
       onClientGone,
       onDrained: stopWatch,

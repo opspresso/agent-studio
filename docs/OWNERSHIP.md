@@ -55,6 +55,8 @@
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/app/_lib/authorPaths.ts` |
 | 사람이 읽을 달러 금액 | `src/app/_lib/formatUsd.ts` 의 `formatUsd` — `SINGLE_OWNERS` 행이 아니라 그 자체가 하나의 규칙으로 강제된다: `app` 안 어디에도 `${…toFixed(…)}` 는 없고 두 `_lib` 포매터만 있다 |
 | 사람이 읽을 저장 오브젝트의 크기 | `src/app/_lib/formatBytes.ts` 의 `formatBytes` |
+| 사람이 읽을 경과·소요 시간 | `src/app/_lib/duration.ts` 의 `formatSeconds`/`formatDuration` — 단위는 `common.duration*` 카탈로그가 가지므로 어느 페이지든 그대로 쓴다. 진행 중 시계와 끝난 뒤 배지가 같은 규칙(내림)으로 읽히는 것이 이 소유의 요점이다 |
+| 저장된 시각 문자열을 밀리초로 읽기 | `src/shared/date.ts` 의 `parsedInstant` — 읽을 수 없는 `createdAt` 은 값이 없는 것이라는 판단을 포매터들과 나눠 갖는다 |
 | 런이 왜 끝났는지를 그 chunk 들로부터 도출하기 | `src/domain/llm/types.ts` 의 `chunkTermination`/`runTermination` |
 | 런이 무엇을 잃었는지를 그 chunk 들로부터 모으기 | `src/domain/llm/types.ts` 의 `collectedWarning` |
 | 401 응답 본문 | `src/shared/unauthorized.ts` |

@@ -15,15 +15,14 @@
  * derived twice — a second reader inventing its own pairing rule is how two
  * parts of a page come to disagree about the same run.
  *
- * The pairing walks by `seq`, so the `tool` rows stored between the two (and
- * stamped with the assistant's own instant) are simply passed over.
+ * The pairing walks the conversation in stored order, so the `tool` rows between
+ * the two (stamped with the assistant's own instant) are simply passed over.
+ * That order is `listMessages`' zero-padded `seq` key read forward, which is the
+ * same order `storedToolArgs` reads in the neighbouring `useMemo` — and it
+ * depends on it far more sharply than this does.
  */
 import type { ChatMessage } from "@/domain/chat/types";
-
-function instant(iso: string): number | null {
-  const at = Date.parse(iso);
-  return Number.isNaN(at) ? null : at;
-}
+import { parsedInstant } from "@/shared/date";
 
 /**
  * `seq` of each assistant message → how long its answer took, in milliseconds.
@@ -37,24 +36,23 @@ function instant(iso: string): number | null {
 export function answerDurations(messages: readonly ChatMessage[]): Map<number, number> {
   const durations = new Map<number, number>();
   let askedAt: number | null = null;
-  for (const message of [...messages].sort((a, b) => a.seq - b.seq)) {
+  for (const message of messages) {
     if (message.role === "user") {
-      askedAt = instant(message.createdAt);
+      askedAt = parsedInstant(message.createdAt);
       continue;
     }
     if (message.role !== "assistant") {
       continue;
     }
-    const answeredAt = instant(message.createdAt);
-    if (askedAt === null || answeredAt === null) {
-      continue;
-    }
-    const elapsed = answeredAt - askedAt;
-    if (elapsed >= 0) {
+    const answeredAt = parsedInstant(message.createdAt);
+    const elapsed = askedAt !== null && answeredAt !== null ? answeredAt - askedAt : null;
+    if (elapsed !== null && elapsed >= 0) {
       durations.set(message.seq, elapsed);
     }
-    // The turn is over either way: a second assistant message before the next
-    // user turn is not a second answer to the same question.
+    // The turn is over however this one turned out — an unreadable stamp and a
+    // negative gap included. Left open, the *next* answer would be credited
+    // with this question's wait, which is a number attached to the wrong reply
+    // rather than a missing one.
     askedAt = null;
   }
   return durations;

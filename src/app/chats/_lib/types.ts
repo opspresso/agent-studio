@@ -10,6 +10,19 @@ export interface StreamChunk {
   /** Head frame: where the user's turn landed, so a mid-run arrival does not draw it twice. */
   userSeq?: number;
   /**
+   * Head frame: how old the run already is when this frame goes out, measured
+   * on the server between the instant the user row was stamped and now.
+   *
+   * An age rather than a timestamp, and that is what makes the reader's
+   * stopwatch and the duration on the stored answer one measurement: the two
+   * ends are read from the same clock, so nothing here depends on the browser's
+   * agreeing with the server's. What it covers is the turn's own setup — the
+   * attachment upload into object storage, a document being extracted, the
+   * lease — which is real waiting the reader did and which the stored duration
+   * counts too.
+   */
+  elapsedMs?: number;
+  /**
    * Trailing frame: the *run* is over, as opposed to the connection. A closed
    * body says nothing about which of the two happened.
    */

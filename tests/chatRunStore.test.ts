@@ -115,11 +115,22 @@ describe("runStore", () => {
   });
 
   /**
-   * The press is not the start: the turn's attachments go up in the request
-   * body, and the badge that replaces this stopwatch measures from the server's
-   * stamp — written once that upload has landed. A stream that never names a
-   * run has no start this tab can honestly claim.
+   * The press is not the start and neither is the head frame's arrival: between
+   * the server's stamp on the user row and that frame sits the turn's setup —
+   * the attachment upload, a document being extracted — which the stored
+   * duration counts. Subtracting the age the server reports is what makes the
+   * stopwatch and that badge one measurement, using only this tab's clock.
    */
+  it("winds the clock back by the age the head frame reports", async () => {
+    vi.setSystemTime(new Date("2026-08-21T00:00:30.000Z"));
+    stubFetch([() => sse([{ runId: "run-1", elapsedMs: 12_000 }, { ended: true }])]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(store.get("c1")?.startedAtMs).toBe(Date.parse("2026-08-21T00:00:18.000Z"));
+  });
+
   it("does not start the clock until the server names the run", async () => {
     stubFetch([() => sse([{ delta: { content: "hi" } }, { ended: true }])]);
     const store = fresh();
@@ -128,6 +139,54 @@ describe("runStore", () => {
 
     expect(store.get("c1")?.status).toBe("finished");
     expect(store.get("c1")?.startedAtMs).toBeUndefined();
+  });
+
+  /**
+   * A stream that stopped without the run saying so tells this tab nothing
+   * about when the run ended — the probe that finds it over answers after the
+   * connection sat dead for however long the proxy allowed. Stamping there
+   * would report that wait as part of the answer.
+   */
+  it("does not stamp an end it only inferred", async () => {
+    stubFetch([
+      () => sseCut([{ runId: "run-1" }, { delta: { content: "hi" } }]),
+      () => new Response(JSON.stringify({ active: false }), { status: 200 }),
+    ]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(store.get("c1")?.status).toBe("finished");
+    expect(store.get("c1")?.endedAtMs).toBeUndefined();
+  });
+
+  /**
+   * The long, interrupted run is the one whose length is worth saying: its
+   * stream was cut, its reconnects ran out, and the thread re-attaches to the
+   * same run. Minting a fresh entry there drops the stopwatch mid-run and
+   * suppresses the badge at the end.
+   */
+  it("keeps the clock when it re-attaches to the run it was already reading", async () => {
+    vi.setSystemTime(new Date("2026-08-21T00:00:00.000Z"));
+    stubFetch([
+      () => sse([{ runId: "run-1", elapsedMs: 5_000 }], { close: true }),
+      () => new Response(JSON.stringify({ active: true }), { status: 200 }),
+      () => sse([{ runId: "run-1" }], { close: true }),
+      () => new Response(JSON.stringify({ active: true }), { status: 200 }),
+      () => sse([{ runId: "run-1" }], { close: true }),
+      () => new Response(JSON.stringify({ active: true }), { status: 200 }),
+      () => sseOpen([{ runId: "run-1" }]),
+    ]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+    const started = store.get("c1")?.startedAtMs;
+    expect(started).toBe(Date.parse("2026-08-20T23:59:55.000Z"));
+
+    store.attach("c1", "run-1");
+    await settle();
+
+    expect(store.get("c1")?.startedAtMs).toBe(started);
   });
 
   /**
