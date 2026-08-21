@@ -18,14 +18,23 @@ export interface IntegrationSummary {
  * invited — least of all after the owner flips it public, when the stale list
  * would ride along to everyone. Only the owner's settings page needs it.
  */
-export function sanitizeProject(
-  project: Project,
-  opts: { withMemberEmails?: boolean } = {},
-): Omit<Project, "slack" | "telegram" | "teams"> & {
+/**
+ * A project as every project response carries it — the shape the console's
+ * client types against, so the two ends of the wire cannot drift. The domain
+ * `Project` is *not* what a route answers with: the bot integrations collapse
+ * to summaries, which is exactly what lets a client ask "is Slack connected"
+ * without ever seeing a credential.
+ */
+export type SanitizedProject = Omit<Project, "slack" | "telegram" | "teams"> & {
   slack?: IntegrationSummary;
   telegram?: IntegrationSummary;
   teams?: IntegrationSummary;
-} {
+};
+
+export function sanitizeProject(
+  project: Project,
+  opts: { withMemberEmails?: boolean } = {},
+): SanitizedProject {
   const { slack, telegram, teams, memberEmails, ...rest } = project;
   return {
     ...rest,

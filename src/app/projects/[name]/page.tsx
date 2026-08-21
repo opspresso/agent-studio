@@ -10,7 +10,7 @@ import {
   publishVersion,
   updateVersion,
   type ModelConfig,
-  type Project,
+  type SanitizedProject,
   type Version,
   type VersionInput,
 } from "../lib/api";
@@ -34,7 +34,7 @@ import classes from "./Playground.module.css";
 function runImageCapability(
   models: ModelConfig[],
   modelId: string,
-  projectType: Project["projectType"],
+  projectType: SanitizedProject["projectType"],
 ): boolean | undefined {
   const model = models.find((m) => m.id === modelId);
   if (!model) {
@@ -81,7 +81,7 @@ export default function PlaygroundPage() {
 
   const viewer = useViewer();
   const t = useT();
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<SanitizedProject | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [selectedName, setSelectedName] = useState<string>("");

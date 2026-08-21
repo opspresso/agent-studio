@@ -25,7 +25,7 @@ import { toSlug } from "@/domain/naming";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
-import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
+import { createProject, listProjects, type SanitizedProject, type ProjectType } from "./lib/api";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { PROJECT_TYPE_COLOR } from "@/app/_components/badgeColors";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
@@ -41,7 +41,7 @@ export default function ProjectsPage() {
   const t = useT();
   const { data: session } = useSession();
   const viewer = useViewer();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<SanitizedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);

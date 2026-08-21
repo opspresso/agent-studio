@@ -13,13 +13,13 @@ import type { Project } from "@/domain/project/types";
  * Chats need no counterpart: `listChats` returns them newest-first from the
  * `CHATOWNER#{email}` GSI, and they are the viewer's own by definition.
  */
-export function recentProjects(
-  projects: Project[],
+export function recentProjects<T extends Pick<Project, "ownerEmail" | "updatedAt">>(
+  projects: T[],
   viewerEmail: string | null,
   limit: number,
-): Project[] {
-  const byRecency = (a: Project, b: Project) => b.updatedAt.localeCompare(a.updatedAt);
-  const isMine = (project: Project) =>
+): T[] {
+  const byRecency = (a: T, b: T) => b.updatedAt.localeCompare(a.updatedAt);
+  const isMine = (project: T) =>
     viewerEmail !== null && project.ownerEmail === viewerEmail;
   const mine = projects.filter(isMine).sort(byRecency);
   const others = projects.filter((project) => !isMine(project)).sort(byRecency);

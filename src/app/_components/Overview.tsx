@@ -30,7 +30,7 @@ import {
 } from "@tabler/icons-react";
 import { readJson } from "@/app/_lib/httpClient";
 import { recentProjects } from "@/app/_lib/overview";
-import { listProjects, type Project } from "@/app/projects/lib/api";
+import { listProjects, type SanitizedProject } from "@/app/projects/lib/api";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { tierAtLeast, type MemberTier } from "@/domain/member/tiers";
@@ -98,7 +98,7 @@ export function Overview({
   const t = useT();
   const locale = useLocale();
 
-  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [projects, setProjects] = useState<SanitizedProject[] | null>(null);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [chatsLoaded, setChatsLoaded] = useState(false);
