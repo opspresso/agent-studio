@@ -3,6 +3,7 @@ import type {
   McpBinding,
   Project,
   ProjectType,
+  ProjectVisibility,
   SubagentRef,
   Version,
   VersionParameters,
@@ -34,7 +35,7 @@ import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
-export type { CostLimits, McpBinding, Project, ProjectType, SubagentRef, Version, VersionParameters };
+export type { CostLimits, McpBinding, Project, ProjectType, ProjectVisibility, SubagentRef, Version, VersionParameters };
 export type { ModelConfig, EngineChunk, UsageRow, Trace, SlackChannelInfo, SlackSuggestedPrompt };
 
 // --- Projects -------------------------------------------------------------
@@ -53,6 +54,9 @@ export interface UpdateProjectInput {
   departmentCode?: string;
   /** Sent whole; `null` removes the guards. Omitted leaves them untouched. */
   costLimits?: CostLimits | null;
+  visibility?: ProjectVisibility;
+  /** Sent whole; replaces the invite list. Omitted leaves it untouched. */
+  memberEmails?: string[];
 }
 
 export function listProjects(): Promise<Project[]> {
@@ -76,6 +80,17 @@ export function updateProject(name: string, patch: UpdateProjectInput): Promise<
     method: "PUT",
     headers: jsonHeaders,
     body: JSON.stringify(patch),
+  }).then((r) => readJson<Project>(r));
+}
+
+export function cloneProject(
+  sourceName: string,
+  input: { name: string; displayName: string },
+): Promise<Project> {
+  return fetch(`/api/projects/${sourceName}/clone`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
   }).then((r) => readJson<Project>(r));
 }
 

@@ -96,7 +96,14 @@ export default function ProjectsPage() {
               <Text fw={500} truncate>
                 {project.displayName || project.name}
               </Text>
-              <Badge color={PROJECT_TYPE_COLOR[project.projectType]}>{project.projectType}</Badge>
+              <Group gap={6} wrap="nowrap">
+                {project.visibility === "private" && (
+                  <Badge variant="light" color="gray">
+                    {t("projects.privateBadge")}
+                  </Badge>
+                )}
+                <Badge color={PROJECT_TYPE_COLOR[project.projectType]}>{project.projectType}</Badge>
+              </Group>
             </Group>
             <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
               {project.name}

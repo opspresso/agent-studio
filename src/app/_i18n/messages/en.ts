@@ -266,11 +266,15 @@ export const en = {
   "projects.type.llm": "llm — single-shot prompt",
   "projects.type.agent": "agent — multi-turn tool loop",
   "projects.type.image": "image — generate or edit images",
+  "projects.privateBadge": "Private",
+  "projects.cloneFailed": "Failed to clone project",
 
   // One project's header and tab strip.
   "project.badge": "AI project",
   "project.lede": "Design, test, and observe this project from one workspace.",
   "project.ownedBy": "Owned by ",
+  "project.clone": "Clone",
+  "project.cloneTitle": "Clone {name}",
   "project.tab.playground": "Playground",
   "project.tab.versions": "Versions",
   "project.tab.compare": "Compare",
@@ -604,6 +608,14 @@ export const en = {
 
   // A project's settings tab: the sections and their forms.
   "pset.dangerZone": "Danger zone",
+  "pset.visibility": "Visibility",
+  "pset.visibilityPublic": "Public",
+  "pset.visibilityPublicHint": "Every signed-in member can view, run and clone this project.",
+  "pset.visibilityPrivate": "Private",
+  "pset.visibilityPrivateHint": "Only you and the invited members below can view, run and clone it.",
+  "pset.invitedMembers": "Invited members",
+  "pset.invitedMembersHint": "Email addresses, one per tag. Press Enter, comma or space to add.",
+  "pset.visibilitySave": "Save visibility",
   "pset.a2a": "A2A",
   "pset.agentCard": "Agent Card",
   "pset.apiToken": "API token",
