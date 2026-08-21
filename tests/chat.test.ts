@@ -15,6 +15,7 @@ import {
   VIEW_URL_TTL_SECONDS,
 } from "@/application/artifact/urlTtl";
 import { deleteChat } from "@/application/chat/deleteChat";
+import { createChat } from "@/application/chat/createChat";
 import { sendMessage } from "@/application/chat/sendMessage";
 import { ChatConflictError, ChatForbiddenError, ChatNotFoundError } from "@/application/chat/errors";
 import { RateLimitedError } from "@/application/errors";
@@ -856,6 +857,63 @@ describe("ownership checks", () => {
   it("error statuses map to HTTP codes", () => {
     expect(new ChatNotFoundError().status).toBe(404);
     expect(new ChatForbiddenError().status).toBe(403);
+  });
+});
+
+describe("chat access to a private project", () => {
+  const privateProjects: ProjectRepository = {
+    ...emptyProjects,
+    async get() {
+      return {
+        name: "p1",
+        displayName: "P1",
+        description: "",
+        projectType: "agent",
+        ownerEmail: "someone-else@x.com",
+        visibility: "private",
+        memberEmails: ["invited@x.com"],
+        publishedVersion: "1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+    },
+  };
+
+  it("refuses to create a chat for someone the project keeps out", async () => {
+    const { repo } = makeChatRepo(null);
+    await expect(
+      createChat(makeDeps(repo, { projects: privateProjects }), {
+        projectName: "p1",
+        firstMessage: "hi",
+        userEmail: "owner@x.com",
+      }),
+    ).rejects.toBeInstanceOf(ChatForbiddenError);
+  });
+
+  it("refuses the next turn of a chat whose project went private", async () => {
+    const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
+    await expect(
+      sendMessage(makeDeps(repo, { projects: privateProjects }), {
+        chatId: "c1",
+        content: "hey",
+        userEmail: "owner@x.com",
+      }),
+    ).rejects.toBeInstanceOf(ChatForbiddenError);
+    // Refused before the run lease was claimed, so nothing is left to free.
+    expect(state.activeRunId).toBeUndefined();
+  });
+
+  it("lets an invited member chat with a private project", async () => {
+    const { repo } = makeChatRepo(chatFixture("invited@x.com"));
+    // Access passes; the missing version is the next check in line, which is
+    // proof the visibility gate is what let the turn through.
+    await expect(
+      sendMessage(makeDeps(repo, { projects: privateProjects }), {
+        chatId: "c1",
+        content: "hey",
+        userEmail: "invited@x.com",
+      }),
+    ).rejects.toThrow("no runnable version");
   });
 });
 

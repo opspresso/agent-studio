@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
-import { ChatValidationError } from "./errors";
+import { ChatForbiddenError, ChatValidationError } from "./errors";
+import { userMayAccessProject } from "@/application/project/projectUseCases";
 import {
   resolveVersion,
   runAndPersist,
@@ -64,6 +65,9 @@ export async function createChat(
   const project = await deps.projects.get(input.projectName);
   if (!project) {
     throw new ChatValidationError(`project not found: ${input.projectName}`);
+  }
+  if (!(await userMayAccessProject(project, input.userEmail))) {
+    throw new ChatForbiddenError(`project "${project.name}" is private`);
   }
   if (project.projectType !== "agent") {
     throw new ChatValidationError("chat requires an agent project");

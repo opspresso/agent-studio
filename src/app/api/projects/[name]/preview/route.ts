@@ -35,7 +35,7 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
   }
   const caller = sessionCaller(user);
   try {
-    const project = await projectUseCases.get(name);
+    const project = await projectUseCases.assertAccessible(name, user.email);
     const { variables, versionName, message, ...draft } = parsed.data;
     const preview = await previewPrompt(executionDeps, {
       signal: request.signal,

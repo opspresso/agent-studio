@@ -4,7 +4,8 @@ import { sessionCaller } from "@/app/api/_lib/caller";
 import { unauthorized } from "@/shared/unauthorized";
 import { getMemberTier } from "@/lib/memberAccess";
 import { getSessionUser } from "@/lib/session";
-import { apiTokenUseCases } from "@/lib/container";
+import { apiError } from "@/app/api/_lib/http";
+import { apiTokenUseCases, projectUseCases } from "@/lib/container";
 
 export interface ExecutionPrincipal {
   email: string;
@@ -67,6 +68,14 @@ export async function authenticateExecution(
   const user = await getSessionUser();
   if (!user) {
     return unauthorized();
+  }
+  try {
+    // The visibility gate, for the person path only. A bearer token skipped it
+    // above on purpose: the token is the project's own credential, presented
+    // key-in-hand, and it already acts as the owner.
+    await projectUseCases.assertAccessible(projectName, user.email);
+  } catch (error) {
+    return apiError(error);
   }
   const caller = sessionCaller(user);
   return { email: user.email, viaToken: false, ...(caller ? { caller } : {}) };

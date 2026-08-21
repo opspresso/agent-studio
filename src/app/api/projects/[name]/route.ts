@@ -6,10 +6,10 @@ import { sanitizeProject } from "@/app/api/projects/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
-export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    return Response.json(sanitizeProject(await projectUseCases.get(name)));
+    return Response.json(sanitizeProject(await projectUseCases.assertAccessible(name, user.email)));
   } catch (error) {
     return apiError(error);
   }

@@ -1,13 +1,15 @@
 import { withAuth } from "@/lib/session";
-import { versionUseCases } from "@/lib/container";
+import { projectUseCases, versionUseCases } from "@/lib/container";
 import { updateVersionSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 
-export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name, version } = await ctx.params;
   try {
+    // Reading a version is reading the project; the visibility gate comes first.
+    await projectUseCases.assertAccessible(name, user.email);
     return Response.json(versionUseCases.toView(await versionUseCases.get(name, version)));
   } catch (error) {
     return apiError(error);

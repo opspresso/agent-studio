@@ -5,8 +5,8 @@ import { createProjectSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sanitizeProject } from "@/app/api/projects/_lib/http";
 
-export const GET = withAuth(async () => {
-  return Response.json((await projectUseCases.list()).map(sanitizeProject));
+export const GET = withAuth(async (user) => {
+  return Response.json((await projectUseCases.listAccessible(user.email)).map(sanitizeProject));
 });
 
 export const POST = withAuth(async (user, request: Request) => {

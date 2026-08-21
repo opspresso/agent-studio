@@ -3,6 +3,7 @@ import type { ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
+import { userMayAccessProject } from "@/application/project/projectUseCases";
 import { resolveRunMessageImages } from "./resolveImages";
 import { REPLAY_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { toEngineMessages } from "./messageMapping";
@@ -75,6 +76,11 @@ export async function sendMessage(
   const project = await deps.projects.get(chat.projectName);
   if (!project) {
     throw new ChatValidationError(`project not found: ${chat.projectName}`);
+  }
+  // Re-checked every turn, not only at creation: a project made private after
+  // this chat began stops answering people who lost access with it.
+  if (!(await userMayAccessProject(project, input.userEmail))) {
+    throw new ChatForbiddenError(`project "${project.name}" is private`);
   }
   const version = await resolveVersion(deps, project);
   if (!version) {

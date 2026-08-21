@@ -147,17 +147,31 @@ export async function assertProjectAccessible(
   userEmail: string,
 ): Promise<Project> {
   const project = await getProject(repo, name);
-  if (mayAccessProject(project, userEmail)) {
+  if (await userMayAccessProject(project, userEmail)) {
     return project;
+  }
+  throw new ForbiddenError(`Project "${name}" is private`);
+}
+
+/**
+ * The access predicate with the admin override folded in, for slices that
+ * already hold the project row — the chat use cases and the messaging
+ * pipeline, which load the project for the run they are about to start and
+ * must not read it twice just to ask this. Everything else goes through
+ * {@link assertProjectAccessible}.
+ */
+export async function userMayAccessProject(project: Project, userEmail: string): Promise<boolean> {
+  if (mayAccessProject(project, userEmail)) {
+    return true;
   }
   if (await isAdminOverride(userEmail)) {
     log.warn(
       "authz",
-      `admin ${userEmail} is reading private project "${name}" owned by ${project.ownerEmail}`,
+      `admin ${userEmail} is accessing private project "${project.name}" owned by ${project.ownerEmail}`,
     );
-    return project;
+    return true;
   }
-  throw new ForbiddenError(`Project "${name}" is private`);
+  return false;
 }
 
 /**
