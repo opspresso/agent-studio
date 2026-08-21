@@ -17,7 +17,7 @@ import {
 } from "@mantine/core";
 import { IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
-import { formatSeconds } from "@/app/_lib/duration";
+import { formatDuration, formatSeconds } from "@/app/_lib/duration";
 import { imageDataUrl } from "@/domain/llm/types";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
@@ -38,6 +38,23 @@ function MessageTimestamp({ createdAt }: { createdAt: string }) {
   }
   return (
     <Text component="time" fz={11} c="dimmed" mt={2}>
+      {formatted}
+    </Text>
+  );
+}
+
+/**
+ * How long the answer above took.
+ *
+ * Beside the timestamp rather than under the reply: the two are the same kind of
+ * fact about the turn — when it landed, and what it cost to wait for — and a
+ * reader scanning back through a conversation reads them together.
+ */
+function AnswerDuration({ durationMs }: { durationMs: number }) {
+  const t = useT();
+  const formatted = formatDuration(durationMs, t);
+  return (
+    <Text fz={11} c="dimmed" mt={2} title={t("chat.answeredIn", { duration: formatted })}>
       {formatted}
     </Text>
   );
@@ -198,10 +215,13 @@ function WarningNote({ text }: { text: string }) {
 export const MessageView = memo(function MessageView({
   message,
   callArgs,
+  durationMs,
 }: {
   message: ChatMessage;
   /** For a tool row: the arguments its call carried — see `storedToolArgs`. */
   callArgs?: string | undefined;
+  /** For an assistant row: the wait it ended — see `answerDurations`. */
+  durationMs?: number | undefined;
 }) {
   // `memo` compares props, and the locale is not one — but a context change
   // re-renders a consumer regardless of the memo, so switching language still
@@ -298,6 +318,7 @@ export const MessageView = memo(function MessageView({
       </div>
       <Group gap="xs" align="center">
         <MessageTimestamp createdAt={message.createdAt} />
+        {durationMs !== undefined && <AnswerDuration durationMs={durationMs} />}
         {message.content && (
           <span className={classes.actions}>
             <CopyButton text={message.content} />

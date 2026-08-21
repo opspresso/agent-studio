@@ -98,6 +98,36 @@ afterEach(() => {
 
 describe("runStore", () => {
   /**
+   * The stopwatch a reader watches counts from here, so a turn this tab sent
+   * has to carry the instant it went out.
+   */
+  it("stamps a turn this tab started with when it started", async () => {
+    vi.setSystemTime(new Date("2026-08-21T00:00:00.000Z"));
+    stubFetch([() => sse([{ runId: "run-1" }, { ended: true }])]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(store.get("c1")?.startedAtMs).toBe(Date.parse("2026-08-21T00:00:00.000Z"));
+  });
+
+  /**
+   * A run picked up after a reload has been going for however long it has, and
+   * nothing on the wire says how long. Stamping the moment this tab arrived
+   * would report a reply that had been running a minute as seconds old, so the
+   * field stays absent and the view shows the status without a number.
+   */
+  it("leaves a run it only attached to unstamped", async () => {
+    stubFetch([() => sseOpen([{ runId: "run-1" }])]);
+    const store = fresh();
+    store.attach("c1", "run-1");
+    await settle();
+
+    expect(store.get("c1")?.status).toBe("streaming");
+    expect(store.get("c1")?.startedAtMs).toBeUndefined();
+  });
+
+  /**
    * The feature itself, without a component in sight: the turn accumulates
    * whether or not anything is watching, which is what a route change no longer
    * interrupts.
