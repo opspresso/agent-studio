@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import { setAdminCheck } from "@/application/project/projectUseCases";
-import { baseMimeType, isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
+import {
+  baseMimeType,
+  inlineViewOf,
+  isInlineViewable,
+  MAX_INLINE_VIEW_BYTES,
+} from "@/domain/artifact/types";
 import type { Artifact } from "@/domain/artifact/types";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -90,16 +95,25 @@ beforeEach(() => {
 
 describe("what may be viewed rather than downloaded", () => {
   it("admits text/html, with or without the charset parameter", () => {
-    expect(isInlineViewable("text/html")).toBe(true);
-    expect(isInlineViewable("text/html; charset=utf-8")).toBe(true);
-    expect(isInlineViewable("TEXT/HTML")).toBe(true);
+    expect(inlineViewOf("text/html")).toBe("html");
+    expect(inlineViewOf("text/html; charset=utf-8")).toBe("html");
+    expect(inlineViewOf("TEXT/HTML")).toBe("html");
+  });
+
+  it("admits markdown as its own kind, because it is rendered rather than run", () => {
+    // Not the same answer as HTML: one is served as it was written, the other
+    // becomes a page here — which is what lets the view refuse it `allow-scripts`.
+    expect(inlineViewOf("text/markdown")).toBe("markdown");
+    expect(inlineViewOf("text/markdown; charset=utf-8")).toBe("markdown");
   });
 
   it("refuses everything else", () => {
-    // Not a display question. A type belongs on that list by being worth a
-    // sandbox, and a PDF the browser renders on its own never needed one.
-    for (const mime of ["application/pdf", "text/plain", "image/svg+xml", "text/markdown"]) {
+    // Not a display question. A type belongs on that list by being something a
+    // reader opens rather than files, and a PDF the browser renders on its own
+    // never needed a sandbox.
+    for (const mime of ["application/pdf", "text/plain", "image/svg+xml", "text/csv"]) {
       expect(isInlineViewable(mime)).toBe(false);
+      expect(inlineViewOf(mime)).toBeUndefined();
     }
   });
 });
@@ -107,8 +121,9 @@ describe("what may be viewed rather than downloaded", () => {
 describe("reading an artifact for a view", () => {
   it("hands back the bytes to the person who produced it", async () => {
     const { useCases, reads } = setup(artifact());
-    const { artifact: row, bytes } = await useCases.readForView("a1", OWNER);
+    const { artifact: row, bytes, view } = await useCases.readForView("a1", OWNER);
     expect(row.mimeType).toBe("text/html");
+    expect(view).toBe("html");
     expect(new TextDecoder().decode(bytes)).toContain("<!doctype html>");
     expect(reads).toEqual([{ key: "artifacts/document/a1.html", maxBytes: MAX_INLINE_VIEW_BYTES }]);
   });
@@ -136,6 +151,13 @@ describe("reading an artifact for a view", () => {
     const { useCases, reads } = setup(artifact({ byteSize: MAX_INLINE_VIEW_BYTES + 1 }));
     await expect(useCases.readForView("a1", OWNER)).rejects.toThrow(/too large to open/);
     expect(reads).toEqual([]);
+  });
+
+  it("says which view a markdown row wants, so the route need not ask again", async () => {
+    const { useCases } = setup(
+      artifact({ mimeType: "text/markdown", key: "artifacts/document/a1.md" }),
+    );
+    await expect(useCases.readForView("a1", OWNER)).resolves.toMatchObject({ view: "markdown" });
   });
 
   it("is a 404 when no such row exists", async () => {

@@ -16,10 +16,10 @@ import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import type { ArtifactRepository, ListArtifactsOptions } from "@/domain/artifact/repository";
 import {
   artifactOwnerEmail,
-  isInlineViewable,
+  inlineViewOf,
   MAX_INLINE_VIEW_BYTES,
 } from "@/domain/artifact/types";
-import type { Artifact } from "@/domain/artifact/types";
+import type { Artifact, InlineView } from "@/domain/artifact/types";
 
 /** How many artifacts one page may carry. A gallery page, not a bulk export. */
 export const MAX_ARTIFACT_PAGE = 100;
@@ -43,11 +43,16 @@ export interface ArtifactUseCases {
    * outliving the rights of whoever opened it, and in public mode it would be
    * permanent. So the one case that renders comes back through here, where the
    * same predicate that guards a delete still applies.
+   *
+   * `view` comes back with the bytes rather than being re-derived at the route:
+   * whether a page is served as it was written or rendered from text is the
+   * same decision as whether it may be viewed at all, and asking twice is how
+   * the two answers drift.
    */
   readForView(
     artifactId: string,
     viewerEmail: string,
-  ): Promise<{ artifact: Artifact; bytes: Uint8Array }>;
+  ): Promise<{ artifact: Artifact; bytes: Uint8Array; view: InlineView }>;
 }
 
 export function createArtifactUseCases(
@@ -78,7 +83,8 @@ export function createArtifactUseCases(
       await assertMayManage(artifact, viewerEmail);
       // The type is checked before the bytes are fetched, not after: a ten-megabyte
       // deck read into memory to then be refused is the same refusal at a cost.
-      if (!isInlineViewable(artifact.mimeType)) {
+      const view = inlineViewOf(artifact.mimeType);
+      if (!view) {
         throw new ValidationError(`${artifact.mimeType} is downloaded rather than viewed`);
       }
       // The row already knows its size, so the same refusal is spent here rather
@@ -91,7 +97,7 @@ export function createArtifactUseCases(
         );
       }
       const { bytes } = await objects.read(artifact.key, MAX_INLINE_VIEW_BYTES);
-      return { artifact, bytes };
+      return { artifact, bytes, view };
     },
 
     async listMine(email, options = {}) {

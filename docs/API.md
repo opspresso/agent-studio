@@ -1313,13 +1313,22 @@ GET /api/artifacts/{artifactId}/view
 → 200 text/html | 400 | 403 | 404
 ```
 
-`/view` 는 주소가 아니라 **바이트로** 답하는 유일한 라우트다. `text/html` 만 받고 나머지는
-400 인데, 목록이 짧은 이유는 표시할 수 있느냐가 아니라 sandbox 를 걸어 줄 값이 있느냐이기
-때문이다. 응답은 `Content-Security-Policy: sandbox allow-scripts; default-src 'none'` 아래에서
-불투명 오리진에 놓이므로 그 페이지는 콘솔의 쿠키·스토리지·DOM 에 닿지 못하고 바깥으로
-요청하지도 못한다. 서명된 오브젝트 URL 로는 그 헤더를 실을 수 없고, 건네진 주소는 그것을 연
-사람의 권한보다 오래 산다 — public 모드에서는 영구다. 그래서 페이지만은 앱을 통해 나간다.
-읽기 상한은 2 MB 이고, 권한 술어는 삭제와 같다.
+`/view` 는 주소가 아니라 **바이트로** 답하는 유일한 라우트다. `text/html` 과 `text/markdown`
+둘만 받고 나머지는 400 이다. 목록이 짧은 이유는 표시할 수 있느냐가 아니라 **독자가 여는
+것이냐 보관하는 것이냐**이기 때문이다 — 브라우저가 알아서 그리는 PDF 는 sandbox 가 필요
+없고, 다운로드는 애초에 신뢰를 요구하지 않는다.
+
+응답은 어느 쪽이든 `text/html; charset=utf-8` 이다. HTML 은 쓰인 그대로, Markdown 은 앱이
+페이지로 **렌더해서** 나간다. 그래서 CSP 도 둘이 다르다 — HTML 은
+`sandbox allow-scripts` (표 정렬·목차 추적이 다운로드 대신 이것을 여는 이유다), Markdown 은
+그냥 `sandbox` 다. 렌더러가 원시 HTML 을 마크업이 아니라 텍스트로 내보내므로 실행할
+스크립트가 애초에 없고, 그 보장을 이스케이프가 아니라 브라우저가 하게 둔다. 둘 다
+`default-src 'none'` 으로 불투명 오리진에 놓이므로 그 페이지는 콘솔의 쿠키·스토리지·DOM 에
+닿지 못하고 바깥으로 요청하지도 못한다.
+
+서명된 오브젝트 URL 로는 그 헤더를 실을 수 없고, 건네진 주소는 그것을 연 사람의 권한보다
+오래 산다 — public 모드에서는 영구다. 그래서 페이지만은 앱을 통해 나간다. 읽기 상한은
+2 MB 이고, 권한 술어는 삭제와 같다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
 `byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의

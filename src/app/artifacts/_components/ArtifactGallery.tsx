@@ -358,6 +358,12 @@ const FILE_TYPE_ICONS: Partial<Record<ArtifactFileType, string>> = {
   docx: "/icons/file-types/docx.svg",
   pptx: "/icons/file-types/pptx.svg",
   hwpx: "/icons/file-types/hwpx.svg",
+  html: "/icons/file-types/html.svg",
+  md: "/icons/file-types/md.svg",
+  csv: "/icons/file-types/csv.svg",
+  txt: "/icons/file-types/txt.svg",
+  json: "/icons/file-types/json.svg",
+  svg: "/icons/file-types/svg.svg",
 };
 
 function FileTypeIcon({ artifact }: { artifact: ArtifactView }) {

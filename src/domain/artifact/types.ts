@@ -93,12 +93,19 @@ export function baseMimeType(mimeType: string): string {
 }
 
 /**
- * The types a browser may be shown rather than handed to save.
+ * How a stored artifact reaches a screen, when it can.
  *
- * One entry, and the shortness is the point. Showing stored bytes means running
- * somebody's markup, so a type earns a place here by being worth a sandbox —
- * not by being displayable. Everything else stays a download, which asks for no
- * trust at all: a `.docx` the browser saves does nothing on the way past.
+ * Two entries and two different answers, which is why this is a kind rather
+ * than a yes. `html` is served as it was written — running somebody's markup is
+ * exactly what a sandbox is for, and being worth one is what earns a place
+ * here. `markdown` has nothing to run: the app renders it into a page, so what
+ * the reader gets is markup this app produced from the text, and it can be held
+ * to a stricter policy than the case that needs scripts.
+ *
+ * The list stays short because the question is not "can a browser display
+ * this". A PDF the browser draws on its own never needed a sandbox, and a
+ * `.docx` it saves does nothing on the way past — those stay downloads, which
+ * ask for no trust at all.
  *
  * Read with the parameters stripped, because `text/html; charset=utf-8` is the
  * same type. It is not the same *stored* mime — {@link artifactObjectKey}
@@ -106,10 +113,19 @@ export function baseMimeType(mimeType: string): string {
  * `.bin` — and producers write the bare type. Being forgiving here means such a
  * row is still viewable rather than silently a download.
  */
-const INLINE_VIEWABLE = new Set(["text/html"]);
+export type InlineView = "html" | "markdown";
+
+const INLINE_VIEWS: Record<string, InlineView> = {
+  "text/html": "html",
+  "text/markdown": "markdown",
+};
+
+export function inlineViewOf(mimeType: string): InlineView | undefined {
+  return INLINE_VIEWS[baseMimeType(mimeType)];
+}
 
 export function isInlineViewable(mimeType: string): boolean {
-  return INLINE_VIEWABLE.has(baseMimeType(mimeType));
+  return inlineViewOf(mimeType) !== undefined;
 }
 
 /**
