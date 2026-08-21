@@ -152,6 +152,19 @@ describe("project/version atomic writes", () => {
     updatedAt: "2026-01-01T00:00:01.000Z",
   };
 
+  it("round-trips visibility and the invite list", async () => {
+    // The write spreads the whole entity, but the read maps fields by name —
+    // which is exactly how these two were stored and then dropped on every
+    // read: the console saved visibility with a 200 and got "public" back.
+    await projectRepository.update(
+      { ...project, visibility: "private", memberEmails: ["invited@example.com"] },
+      NOW,
+    );
+    const read = await projectRepository.get(project.name);
+    expect(read?.visibility).toBe("private");
+    expect(read?.memberEmails).toEqual(["invited@example.com"]);
+  });
+
   it("guards project replacement with the previously read timestamp", async () => {
     commands.length = 0;
     await projectRepository.update(project, NOW);
