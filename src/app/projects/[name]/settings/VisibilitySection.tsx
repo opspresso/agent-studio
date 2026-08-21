@@ -69,10 +69,16 @@ export function VisibilitySection({ projectName }: { projectName: string }) {
     <CollapsibleSection
       title={t("pset.visibility")}
       badge={
-        !loading && visibility === "private" ? (
-          <Badge variant="light" color="gray">
-            {t("projects.privateBadge")}
-          </Badge>
+        !loading ? (
+          visibility === "private" ? (
+            <Badge variant="light" color="gray">
+              {t("projects.privateBadge")}
+            </Badge>
+          ) : (
+            <Badge variant="light" color="teal">
+              {t("pset.visibilityPublic")}
+            </Badge>
+          )
         ) : undefined
       }
     >
