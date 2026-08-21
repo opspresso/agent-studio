@@ -1,7 +1,9 @@
+process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
+
 import { beforeEach, describe, expect, it } from "vitest";
 
-import type { Project } from "@/domain/project/types";
-import type { ProjectRepository } from "@/domain/project/repository";
+import type { Project, Version } from "@/domain/project/types";
+import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import {
   isProjectPrivate,
   mayAccessProject,
@@ -13,7 +15,8 @@ import {
   setAdminCheck,
   updateProject,
 } from "@/application/project/projectUseCases";
-import { ForbiddenError, NotFoundError } from "@/application/errors";
+import { createVersion, updateVersion, type VersionRefRepos } from "@/application/project/versionUseCases";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 
 const OWNER = "owner@x.com";
 const MEMBER = "member@x.com";
@@ -178,5 +181,99 @@ describe("updateProject visibility", () => {
     const updated = await updateProject(repo, "proj", { description: "new" }, OWNER);
     expect(updated.visibility).toBe("private");
     expect(updated.memberEmails).toEqual([MEMBER]);
+  });
+});
+
+describe("binding a private project as a local subagent", () => {
+  const EDITOR = MEMBER;
+
+  function versionRepos() {
+    const stored: Version[] = [];
+    return {
+      stored,
+      versions: {
+        list: async (projectName: string) => stored.filter((v) => v.projectName === projectName),
+        create: async (version: Version) => void stored.push(version),
+        get: async (projectName: string, versionName: string) =>
+          stored.find((v) => v.projectName === projectName && v.versionName === versionName) ??
+          null,
+        put: async (version: Version) => {
+          const at = stored.findIndex(
+            (v) => v.projectName === version.projectName && v.versionName === version.versionName,
+          );
+          stored[at] = version;
+        },
+      } as unknown as VersionRepository,
+    };
+  }
+
+  function accessRefs(subagent: Project): VersionRefRepos {
+    return {
+      skills: { get: async () => null },
+      mcps: { get: async () => null },
+      externalAgents: { get: async () => null },
+      projects: { get: async () => subagent },
+    } as unknown as VersionRefRepos;
+  }
+
+  const input = {
+    systemPrompt: "",
+    userPromptTemplate: "",
+    model: "openai/gpt-5-mini",
+    parameters: { piiFiltering: false },
+    mcpList: [],
+    skillList: [],
+    subagentList: [{ name: "secret", type: "local" as const }],
+  };
+
+  async function cipher() {
+    return (await import("@/infrastructure/crypto/secretCipher")).secretCipher;
+  }
+
+  it("refuses an editor the subagent project keeps out", async () => {
+    const repo = fakeRepo([project({ name: "mine", projectType: "agent", ownerEmail: EDITOR })]);
+    const { versions } = versionRepos();
+    const secret = project({ name: "secret", visibility: "private" });
+    await expect(
+      createVersion(versions, repo, "mine", input, EDITOR, accessRefs(secret), await cipher()),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("lets an invited editor bind it", async () => {
+    const repo = fakeRepo([project({ name: "mine", projectType: "agent", ownerEmail: EDITOR })]);
+    const { versions, stored } = versionRepos();
+    const secret = project({ name: "secret", visibility: "private", memberEmails: [EDITOR] });
+    await createVersion(versions, repo, "mine", input, EDITOR, accessRefs(secret), await cipher());
+    expect(stored[0]?.subagentList).toEqual([{ name: "secret", type: "local" }]);
+  });
+
+  it("keeps a version editable after a bound project went private", async () => {
+    const repo = fakeRepo([project({ name: "mine", projectType: "agent", ownerEmail: EDITOR })]);
+    const { versions, stored } = versionRepos();
+    const secret = project({ name: "secret", visibility: "private" });
+    stored.push({
+      projectName: "mine",
+      versionName: "1",
+      systemPrompt: "",
+      userPromptTemplate: "",
+      model: "openai/gpt-5-mini",
+      parameters: { piiFiltering: false },
+      mcpList: [],
+      skillList: [],
+      subagentList: [{ name: "secret", type: "local" }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    // The ref is already on the version, so editing the prompt keeps it.
+    const updated = await updateVersion(
+      versions,
+      repo,
+      "mine",
+      "1",
+      { systemPrompt: "new", subagentList: [{ name: "secret", type: "local" }] },
+      EDITOR,
+      accessRefs(secret),
+      await cipher(),
+    );
+    expect(updated.systemPrompt).toBe("new");
   });
 });
