@@ -351,7 +351,6 @@ export async function* runAndPersist(
     if (
       !content &&
       !reasoning &&
-      reasoningTokens === 0 &&
       toolMessages.length === 0 &&
       generatedImages.length === 0 &&
       generatedFiles.length === 0 &&
@@ -407,11 +406,13 @@ export async function* runAndPersist(
         role: "assistant",
         content: persistedContent,
         ...(persistedReasoning ? { reasoning: persistedReasoning } : {}),
-        // Independent of the text the provider chose not to send, but not of
-        // text this message chose not to keep: the count alone is what tells a
-        // reader the model thought, and it may only say that where the missing
-        // words are the provider's doing.
-        ...(reasoningTokens > 0 && !reasoningDropped ? { reasoningTokens } : {}),
+        // Only ever beside the text it counts. `toUsageInfo` reports whatever
+        // the provider says — the *yield* is what `reasoningTrace` gates — so a
+        // count stored on its own would land on every turn of every version
+        // that never opted in, where nothing renders it. A provider that
+        // reports the size and withholds the thinking is the engine's warning
+        // to give, not a number for this message to carry alone.
+        ...(persistedReasoning && reasoningTokens > 0 ? { reasoningTokens } : {}),
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
         ...(warnings.length > 0 ? { warnings } : {}),
         ...(images.length > 0 ? { images } : {}),

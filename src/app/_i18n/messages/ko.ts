@@ -112,7 +112,6 @@ export const ko: Messages = {
   "common.durationSeconds": "{seconds}초",
   "common.durationMinutes": "{minutes}분 {seconds}초",
   "common.reasoning": "추론",
-  "common.reasoningWithheld": "추론 토큰 {count}개 — 이 모델은 그 텍스트를 돌려주지 않습니다.",
   "common.reasoningTokens": "{count} tok",
   "common.total": "합계",
   "common.workspaceCatalog": "워크스페이스 카탈로그",

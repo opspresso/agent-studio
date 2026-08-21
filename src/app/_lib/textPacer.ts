@@ -14,8 +14,20 @@
  */
 const MIN_COMMIT_MS = 50;
 const MAX_COMMIT_MS = 200;
-/** One further millisecond of collecting per this many characters committed. */
+/** One further millisecond of collecting per this many characters already drawn. */
 const CHARS_PER_EXTRA_MS = 128;
+
+/**
+ * How long to collect before drawing, given how much is on screen already.
+ *
+ * The single owner of the pacing curve. The chat thread's store asks the same
+ * question about the answer it is about to re-render and the console asks it
+ * about the thinking it is about to commit, and a second copy of the three
+ * constants is how one surface gets retuned and the other silently does not.
+ */
+export function commitDelayFor(drawnChars: number): number {
+  return Math.min(MAX_COMMIT_MS, MIN_COMMIT_MS + Math.floor(drawnChars / CHARS_PER_EXTRA_MS));
+}
 
 export interface TextPacer {
   /** Take a streamed piece; it reaches `commit` on the next tick. */
@@ -53,11 +65,7 @@ export function createTextPacer(commit: (batch: string) => void): TextPacer {
       if (timer !== undefined) {
         return;
       }
-      const delay = Math.min(
-        MAX_COMMIT_MS,
-        MIN_COMMIT_MS + Math.floor(committed / CHARS_PER_EXTRA_MS),
-      );
-      timer = setTimeout(flush, delay);
+      timer = setTimeout(flush, commitDelayFor(committed));
     },
     flush,
   };

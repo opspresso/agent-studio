@@ -1291,6 +1291,16 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/llm/agentAssembly.ts",
   },
   {
+    // Two surfaces ask the same question — the chat store about the answer it
+    // is about to re-render, the console about the thinking it is about to
+    // commit — and each had grown its own copy of the three constants and the
+    // formula over them. Retuning one then leaves the other on the old curve,
+    // which is invisible: both still feel "about right".
+    what: "how long to collect streamed text before drawing it",
+    pattern: /CHARS_PER_EXTRA_MS\s*=/,
+    owner: "src/app/_lib/textPacer.ts",
+  },
+  {
     // Where the subtleties of a hand-rolled merge live: exactly one in-flight
     // `next()` per source, return values kept at their own index rather than in
     // arrival order, and closing that is deliberately never awaited. A second
@@ -2104,12 +2114,19 @@ describe("folding a run's reasoning", () => {
     expect(missing).toEqual([]);
   });
 
-  it("paces the two that hold it in component state", () => {
-    const unpaced = REASONING_FOLD_SITES.filter((path) => path.startsWith("src/app/projects/"))
-      .filter((path) => {
-        const file = SOURCE_FILES.find((candidate) => candidate.path === path);
-        return file === undefined || !/createTextPacer/.test(stripComments(file.text));
-      });
+  it("paces every fold that holds it in component state", () => {
+    // Named, not derived from a directory: a fifth console surface anywhere
+    // else would otherwise be checked for the author gate and silently exempted
+    // from the pacing, which is the per-token re-render this list exists for.
+    // `stream.ts` folds into the chat store, which paces its own notifications;
+    // `run.ts` renders nothing at all.
+    const PACED_BY_SOMETHING_ELSE = ["src/application/chat/run.ts", "src/app/chats/_lib/stream.ts"];
+    const unpaced = REASONING_FOLD_SITES.filter(
+      (path) => !PACED_BY_SOMETHING_ELSE.includes(path),
+    ).filter((path) => {
+      const file = SOURCE_FILES.find((candidate) => candidate.path === path);
+      return file === undefined || !/createTextPacer/.test(stripComments(file.text));
+    });
     expect(unpaced).toEqual([]);
   });
 });

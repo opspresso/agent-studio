@@ -26,6 +26,7 @@
 import { isTopLevelChunk } from "@/domain/llm/types";
 import { unrefTimer } from "@/shared/unrefTimer";
 import { toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
+import { commitDelayFor } from "@/app/_lib/textPacer";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { readSse } from "./sseClient";
 import { reduceChunk } from "./stream";
@@ -166,11 +167,6 @@ const MAX_TOTAL_RECONNECTS = 20;
  * and one fixed interval either wastes renders on short answers or spends the
  * whole budget on long ones — which are the ones this exists for.
  */
-const MIN_NOTIFY_MS = 50;
-const MAX_NOTIFY_MS = 200;
-/** One further millisecond of collecting per this many characters of answer. */
-const CHARS_PER_EXTRA_MS = 128;
-
 /**
  * The turn a rebuild folds onto: empty, except for what the replay cannot carry.
  *
@@ -183,11 +179,11 @@ const CHARS_PER_EXTRA_MS = 128;
  * is still the fold of what the stream said.
  */
 function rebuiltFrom(live: LiveTurn): LiveTurn {
-  return {
-    ...EMPTY_TURN,
-    reasoning: live.reasoning,
-    reasoningTokens: live.reasoningTokens,
-  };
+  // The text only. `runLog` substitutes a note for reasoning frames but keeps
+  // every `usage` frame verbatim, so the replay re-delivers the token counts —
+  // carrying them across as well would add each turn's a second time, and again
+  // on every later reconnect, against a stored message that says the true one.
+  return { ...EMPTY_TURN, reasoning: live.reasoning };
 }
 
 function notifyDelayFor(entry: RunEntry): number {
@@ -198,8 +194,7 @@ function notifyDelayFor(entry: RunEntry): number {
   // folds away, and charging its length would hold the answer at the 200ms
   // ceiling to render text that is no longer on screen.
   const drawn = entry.live.text.length > 0 ? entry.live.text.length : entry.live.reasoning.length;
-  const extra = Math.floor(drawn / CHARS_PER_EXTRA_MS);
-  return Math.min(MAX_NOTIFY_MS, MIN_NOTIFY_MS + extra);
+  return commitDelayFor(drawn);
 }
 
 const NO_RUNS: readonly string[] = Object.freeze([]);

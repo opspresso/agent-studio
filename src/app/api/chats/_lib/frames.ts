@@ -33,7 +33,9 @@ export async function* withRunFrames(
   // SSE layer's `{error}` frame rather than as a 429 with a `Retry-After`. The
   // only readers of these two routes are the chat client, which draws that
   // frame as the run's error either way; the agent API routes, whose callers do
-  // read statuses, still get theirs from `sseResponse`'s own first pull.
+  // read statuses, get theirs from `sseResponse`'s own first pull — for as long
+  // as `FIRST_CHUNK_GRACE_MS`, past which they are answered with a frame too,
+  // because nothing can flow while that pull is still waiting.
   yield head;
   yield* stream;
   yield { ended: true };

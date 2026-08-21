@@ -18,11 +18,21 @@ const KEEPALIVE_FRAME = encoder.encode(": keepalive\n\n");
 /**
  * How long the first chunk may take before the response is built without it.
  *
- * A refusal is decided from settings and DynamoDB reads — milliseconds — so a
- * generator still silent after this has started a run, and the status it will
- * end with is `200`. Waiting past that buys nothing and costs the connection.
+ * Two different things happen before an agent run's first chunk, and they are
+ * nothing like the same length. The guards are settings and DynamoDB reads —
+ * milliseconds. `resolveRunTools` is not: it opens every bound MCP server and
+ * lists its tools, which `CONFIGURATION.md` bounds at ~20s for one slow server,
+ * and with `dynamicCapabilities` on it also embeds and searches the catalog. A
+ * failure from either half is a status while this is still waiting and an
+ * `{error}` frame afterwards, so the bound has to clear the slow half or it
+ * trades away the 4xx that says what went wrong — which is why it is not the
+ * few seconds the guards alone would need.
+ *
+ * The ceiling is the 60s idle budget the keepalive exists to defend: nothing
+ * flows until the response is built, so this is spent from that budget, and
+ * what is left has to cover a 15s keepalive interval with room over.
  */
-const FIRST_CHUNK_GRACE_MS = 5_000;
+const FIRST_CHUNK_GRACE_MS = 25_000;
 
 /**
  * Give the run a moment to be refused, then stop waiting.

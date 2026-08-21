@@ -60,6 +60,15 @@ interface SideResult {
   reasoningRecorded: boolean | null;
   /** Tokens the run spent thinking, when the provider reported any. */
   reasoningTokens: number;
+  /**
+   * When this run started — the identity of the panels it owns.
+   *
+   * Stable for the whole run, and different for the next one, which is what a
+   * collapsible needs: keyed on anything that changes at the finish (a duration,
+   * a status) the panel remounts the instant the run ends and shuts itself in
+   * front of a reader who had opened it.
+   */
+  startedAt: number | null;
   warnings: string[];
   error: string | null;
   costUsd: number | null;
@@ -78,6 +87,7 @@ const IDLE: SideResult = {
   reasoning: "",
   reasoningRecorded: null,
   reasoningTokens: 0,
+  startedAt: null,
   warnings: [],
   error: null,
   costUsd: null,
@@ -184,7 +194,7 @@ export default function ComparePage() {
         ? null
         : versions.find((candidate) => candidate.versionName === versionName)?.parameters
             .reasoningTrace === true;
-    setSide(() => ({ ...IDLE, running: true, reasoningRecorded: recordsReasoning }));
+    setSide(() => ({ ...IDLE, running: true, reasoningRecorded: recordsReasoning, startedAt }));
     // Batched rather than committed per token: two sides re-rendering the whole
     // page once per reasoning token is quadratic over a long think.
     const reasoningPacer = createTextPacer((batch) =>
@@ -366,7 +376,7 @@ export default function ComparePage() {
                       auto-open for every later comparison. */}
                   {side.reasoningRecorded === true && (
                     <ReasoningRow
-                      key={`reasoning-${index}-${side.durationMs ?? "live"}`}
+                      key={`reasoning-${index}-${side.startedAt ?? 0}`}
                       text={side.reasoning}
                       {...(side.reasoningTokens > 0 ? { tokens: side.reasoningTokens } : {})}
                       streaming={side.running && side.text === "" && side.reasoning !== ""}

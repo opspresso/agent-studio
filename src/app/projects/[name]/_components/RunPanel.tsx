@@ -84,8 +84,8 @@ export function RunPanel({
   const [text, setText] = useState("");
   const [reasoning, setReasoning] = useState("");
   const [reasoningTokens, setReasoningTokens] = useState(0);
-  /** Identity for the panels a run owns; see the `key` on `ReasoningRow`. */
-  const [runSeq, setRunSeq] = useState(0);
+  /** When this run started — the identity of the panels it owns. */
+  const [startedAt, setStartedAt] = useState(0);
   const [toolCalls, setToolCalls] = useState<ToolCallView[]>([]);
   const [toolResults, setToolResults] = useState<ToolResultView[]>([]);
   // The chain currently producing chunks (outermost first), or undefined while the
@@ -139,7 +139,7 @@ export function RunPanel({
     setText("");
     setReasoning("");
     setReasoningTokens(0);
-    setRunSeq((prev) => prev + 1);
+    setStartedAt(Date.now());
     setToolCalls([]);
     setToolResults([]);
     setActivePaths([]);
@@ -452,9 +452,11 @@ export function RunPanel({
       {/* Ahead of the answer, where it happened. Open while the model is still
           thinking and has said nothing, so a long silence shows what fills it. */}
       <ReasoningRow
-        // Same reason as the chat's: a new identity per Run, so collapsing the
-        // panel once does not switch off the auto-open for every later run.
-        key={`reasoning-${runSeq}`}
+        // Same identity the chat and Compare use: the run's own start, stable
+        // for its whole life. A new one per Run, so collapsing the panel once
+        // does not switch off the auto-open for every later run; and nothing
+        // that changes at the finish, which would shut it as the answer lands.
+        key={`reasoning-${startedAt}`}
         text={reasoning}
         {...(reasoningTokens > 0 ? { tokens: reasoningTokens } : {})}
         streaming={running && text === "" && reasoning !== ""}

@@ -40,16 +40,12 @@ export function ReasoningRow({
   const [open, setOpen] = useState(false);
   const shown = touched ? open : streaming === true;
   if (!text) {
-    // The model thought and the provider kept the words: the common OpenAI
-    // shape reports a reasoning token count and streams nothing. Said rather
-    // than drawn as an empty panel — an author who ticked "Record the
-    // reasoning" is owed the difference between "it did not think" and "it
-    // will not show you".
-    return tokens === undefined ? null : (
-      <Text fz="xs" c="dimmed" py={4}>
-        🧠 {t("common.reasoningWithheld", { count: tokens.toLocaleString(locale) })}
-      </Text>
-    );
+    // Nothing is drawn from a count alone. A version that did not opt in still
+    // produces one — `toUsageInfo` reports whatever the provider says, and only
+    // the *yield* is gated — so this branch cannot tell that run from one whose
+    // provider reports a count and streams no thinking. The engine can, and
+    // says so as a warning on the run itself.
+    return null;
   }
   return (
     <Paper withBorder radius="md" style={{ overflow: "hidden" }} my={4} w="100%">

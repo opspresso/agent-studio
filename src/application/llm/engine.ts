@@ -139,6 +139,17 @@ const TURN_SEPARATOR = "\n\n";
  * full. Which of the two sentences applies is the difference between a bill
  * with nothing to show for it and an answer the reader has to go open.
  */
+/**
+ * Said when a version records the thinking and the provider sends only its size.
+ *
+ * The common OpenAI shape reports `reasoning_tokens` and never streams
+ * `reasoning_content`. Nothing downstream can tell that run from one whose
+ * version simply did not opt in — both are a token count with no text — so the
+ * only place the difference is knowable is here, where the flag is.
+ */
+const REASONING_TEXT_WITHHELD_WARNING =
+  "This model reports how many tokens it spent thinking but does not return the thinking itself, so there is nothing to record.";
+
 function answerWasReasoningWarning(recorded: boolean): string {
   return recorded
     ? "This model answered inside its reasoning, so the reply is empty and the answer is in the recorded reasoning."
@@ -792,6 +803,9 @@ export async function* runPromptStream(
   }
 
   const usageInfo = toUsageInfo(state.model, usage);
+  if (traceReasoning && !sawReasoning && (usageInfo.reasoningTokens ?? 0) > 0) {
+    yield { warning: REASONING_TEXT_WITHHELD_WARNING };
+  }
   await recordUsageIfPossible(deps, input.projectName, state.model, usageInfo);
   if (outputCut) {
     // The provider cut the answer at its output cap. `done` would claim the
@@ -1437,6 +1451,8 @@ export async function* runAgent(
   const traceReasoning = input.parameters?.reasoningTrace === true;
   /** The forced-off notice is a fact about the run, so it is said once. */
   let reasoningForcedNoted = false;
+  /** So is the provider keeping its thinking to itself. */
+  let reasoningWithheldNoted = false;
   // A child is recognisable by its continued turn counter, which is what every
   // turn-ceiling wording keys on. Read once: it cannot change inside the loop.
   const isSubagentRun = (input.startTurn ?? 0) > 0;
@@ -1605,6 +1621,15 @@ export async function* runAgent(
     const usageInfo = toUsageInfo(state.model, usage);
     await recordUsageIfPossible(deps, input.projectName, state.model, usageInfo);
     yield { author, usage: usageInfo };
+    if (
+      traceReasoning &&
+      !reasoningWithheldNoted &&
+      reasoningText === "" &&
+      (usageInfo.reasoningTokens ?? 0) > 0
+    ) {
+      reasoningWithheldNoted = true;
+      yield { author, warning: REASONING_TEXT_WITHHELD_WARNING };
+    }
 
     const calls = accumulator.finalize();
     // Every ending of the loop, not just the clean one. A run whose words went

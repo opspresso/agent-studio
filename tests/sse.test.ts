@@ -135,7 +135,7 @@ describe("sseResponse keepalive", () => {
     }
 
     const pending = sseResponse(silentStart());
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(25_000);
     const response = await pending;
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
@@ -164,7 +164,7 @@ describe("sseResponse keepalive", () => {
     // No throw out of `sseResponse`: the status was already sent, so the error
     // becomes a frame rather than being lost.
     const pending = sseResponse(slowRefusal());
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(25_000);
     const response = await pending;
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();

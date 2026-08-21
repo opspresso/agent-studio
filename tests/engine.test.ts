@@ -949,6 +949,46 @@ describe("recording the run's reasoning", () => {
     expect(chunks.some((c) => c.warning?.includes("does not record"))).toBe(false);
   });
 
+  it("says when the provider reports the size of its thinking and withholds it", async () => {
+    // The common OpenAI shape. Nothing downstream can tell this run from one
+    // whose version simply did not opt in — both are a count with no text — so
+    // the engine, which holds the flag, is the only place that can say it.
+    const channel = new FakeChannel([
+      [contentChunk("answered"), usageChunk(3, 4010, undefined, undefined, 4000)],
+    ]);
+
+    const chunks = await collect(
+      runAgent(
+        { channel, recordUsage: async () => {} },
+        {
+          projectName: "p",
+          model: MODEL,
+          messages: [{ role: "user", content: "hi" }],
+          parameters: { reasoningTrace: true },
+        },
+      ),
+    );
+
+    expect(chunks.filter((c) => c.warning?.includes("does not return the thinking itself"))).toHaveLength(1);
+  });
+
+  it("stays quiet about the withheld text when the version never asked for it", async () => {
+    // Every version written before this feature is this run: a reasoning model,
+    // the checkbox off, a provider reporting the count anyway.
+    const channel = new FakeChannel([
+      [contentChunk("answered"), usageChunk(3, 4010, undefined, undefined, 4000)],
+    ]);
+
+    const chunks = await collect(
+      runAgent(
+        { channel, recordUsage: async () => {} },
+        { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
+      ),
+    );
+
+    expect(chunks.some((c) => c.warning !== undefined)).toBe(false);
+  });
+
   it("stays quiet about it when the run also spoke", async () => {
     const channel = new FakeChannel([
       [reasoningChunk("thinking"), contentChunk("said"), usageChunk(1, 1)],

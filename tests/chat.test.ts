@@ -835,9 +835,11 @@ describe("runAndPersist keeps the run's reasoning", () => {
     expect(reasoning.endsWith("…[truncated]")).toBe(true);
   });
 
-  it("keeps the token count when the provider reports one but streams no text", async () => {
-    // The standard OpenAI shape. Tying the count to the text is how a run that
-    // spent 4,000 tokens thinking records that nothing happened.
+  it("keeps the token count only beside the text it counts", async () => {
+    // `toUsageInfo` reports whatever the provider says — only the *yield* is
+    // gated — so a count stored on its own would land on every turn of every
+    // version that never opted in, where nothing renders it. A provider that
+    // reports the size and withholds the thinking is the engine's warning.
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     async function* source(): AsyncGenerator<EngineChunk> {
       yield { usage: { inputTokens: 3, outputTokens: 4000, costUsd: 0, reasoningTokens: 4000 } };
@@ -848,8 +850,9 @@ describe("runAndPersist keeps the run's reasoning", () => {
     }
 
     const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
-    expect(assistant).toMatchObject({ content: "42", reasoningTokens: 4000 });
+    expect(assistant).toMatchObject({ content: "42" });
     expect(assistant).not.toHaveProperty("reasoning");
+    expect(assistant).not.toHaveProperty("reasoningTokens");
   });
 
   it("stores no reasoning at all when the answer left it no room", async () => {
@@ -907,6 +910,26 @@ describe("runAndPersist keeps the run's reasoning", () => {
     const stored = await repo.listMessages("c1");
     expect(stored.find((m) => m.role === "assistant")).toMatchObject({ content: "" });
     expect(toEngineMessages(stored).messages).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  /**
+   * What dropping it leaves behind: the question that was never answered, and
+   * the one that follows it. Two `user` turns in a row is what actually
+   * happened, and OpenAI-compatible gateways accept it — an empty assistant
+   * block is the shape they reject. Pinned because the alternative reads like
+   * an oversight rather than the choice it is.
+   */
+  it("leaves the unanswered question next to the one that followed it", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "first" }),
+      { ...message({ seq: 1, role: "assistant", content: "" }), reasoning: "thought only" } as ChatMessage,
+      message({ seq: 2, role: "user", content: "second" }),
+    ]);
+
+    expect(toEngineMessages(await repo.listMessages("c1")).messages).toEqual([
+      { role: "user", content: "first" },
+      { role: "user", content: "second" },
+    ]);
   });
 
   it("is shown but never replayed as history", async () => {
