@@ -17,13 +17,14 @@
  */
 
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project } from "@/domain/project/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { log } from "@/shared/logger";
 import {
   assertProjectAccessible,
   createProject,
 } from "./projectUseCases";
+import { resolveRunnableVersion } from "./resolveRunnableVersion";
 import { createVersion, type VersionRefRepos } from "./versionUseCases";
 
 export interface CloneProjectFlowDeps {
@@ -42,24 +43,29 @@ export interface CloneProjectInput {
   userEmail: string;
 }
 
-/** The version a clone copies: the published one, else the newest. */
-function versionToCopy(source: Project, versions: Version[]): Version | undefined {
-  if (source.publishedVersion) {
-    const published = versions.find((v) => v.versionName === source.publishedVersion);
-    if (published) {
-      return published;
-    }
-  }
-  return [...versions].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
+export interface CloneProjectResult {
+  project: Project;
+  /**
+   * What the clone could not carry, when something. The project row exists
+   * either way — failing the whole clone over the version would answer 500
+   * for a project the console can already show — but silent loss is the bug,
+   * so the caller is told rather than left to notice the missing version.
+   */
+  warning?: string;
 }
 
 export function composeCloneProject(
   deps: CloneProjectFlowDeps,
-): (input: CloneProjectInput) => Promise<Project> {
+): (input: CloneProjectInput) => Promise<CloneProjectResult> {
   return async (input) => {
     // The visibility gate: cloning is one of the things "access" grants.
     const source = await assertProjectAccessible(deps.projects, input.sourceName, input.userEmail);
-    const sourceVersions = await deps.versions.list(input.sourceName);
+    // What the source actually stands behind — the published version, else its
+    // newest draft. `resolveRunnableVersion` owns that rule; a second sort here
+    // is how a clone would drift from what the source runs.
+    const copied = await resolveRunnableVersion(deps.versions, source, {
+      allowDraftFallback: true,
+    });
 
     const project = await createProject(deps.projects, {
       name: input.name,
@@ -68,11 +74,14 @@ export function composeCloneProject(
       projectType: source.projectType,
       ownerEmail: input.userEmail,
       departmentCode: source.departmentCode,
+      // A private source clones private (with an empty invite list — the new
+      // owner chooses their own). Defaulting to public would let any invitee
+      // republish the private prompt to the whole org in one click.
+      visibility: source.visibility,
     });
 
-    const copied = versionToCopy(source, sourceVersions);
     if (!copied) {
-      return project;
+      return { project };
     }
     try {
       await createVersion(
@@ -98,12 +107,15 @@ export function composeCloneProject(
         deps.cipher,
       );
     } catch (error) {
-      // Same posture as createProjectFlow: the project row exists, so failing
-      // here would answer 500 for a project the console can already show. A
-      // reference the source held may no longer resolve, or its model may have
-      // left the catalog; the clone starts versionless and says so.
+      // A reference the source held may not be available to the cloner (a
+      // private subagent), or its model may have left the catalog.
+      const reason = error instanceof Error ? error.message : "unknown error";
       log.warn("version", `clone of "${input.sourceName}" as "${input.name}" starts without a version`, error);
+      return {
+        project,
+        warning: `The source's version could not be copied (${reason}); the clone starts without one.`,
+      };
     }
-    return project;
+    return { project };
   };
 }

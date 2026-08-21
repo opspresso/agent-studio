@@ -64,6 +64,11 @@ function makeRepos(projects: Project[], versions: Version[]) {
     },
   } as ProjectRepository;
   const versionRepo = {
+    async get(projectName: string, versionName: string) {
+      return (
+        stored.find((v) => v.projectName === projectName && v.versionName === versionName) ?? null
+      );
+    },
     async list(projectName: string) {
       return stored.filter((v) => v.projectName === projectName);
     },
@@ -91,8 +96,9 @@ describe("cloneProject", () => {
       [sourceProject({ publishedVersion: "1" })],
       [sourceVersion(), sourceVersion({ versionName: "2", systemPrompt: "newer", createdAt: "2026-01-03T00:00:00.000Z" })],
     );
-    const project = await makeClone(repos)(INPUT);
+    const { project, warning } = await makeClone(repos)(INPUT);
 
+    expect(warning).toBeUndefined();
     expect(project).toMatchObject({
       name: "copy",
       displayName: "Copy",
@@ -132,12 +138,46 @@ describe("cloneProject", () => {
     expect(repos.stored.filter((v) => v.projectName === "copy")[0]!.systemPrompt).toBe("newer");
   });
 
-  it("creates a versionless clone of a versionless source", async () => {
+  it("creates a versionless clone of a versionless source, with nothing to warn about", async () => {
     const repos = makeRepos([sourceProject()], []);
-    const project = await makeClone(repos)(INPUT);
+    const { project, warning } = await makeClone(repos)(INPUT);
 
     expect(project.name).toBe("copy");
+    expect(warning).toBeUndefined();
     expect(repos.stored).toHaveLength(0);
+  });
+
+  it("says what was lost when the version cannot be copied", async () => {
+    const repos = makeRepos([sourceProject()], [sourceVersion()]);
+    const clone = composeCloneProject({
+      projects: repos.projectRepo,
+      versions: repos.versionRepo,
+      // Every reference the copied version names fails to resolve.
+      refs: {
+        skills: { get: async () => null },
+        mcps: { get: async () => null },
+        externalAgents: { get: async () => null },
+        projects: { get: async () => null },
+      } as unknown as VersionRefRepos,
+      cipher: secretCipher,
+    });
+
+    const { project, warning } = await clone(INPUT);
+
+    expect(project.name).toBe("copy");
+    expect(warning).toContain("could not be copied");
+    expect(repos.stored.filter((v) => v.projectName === "copy")).toHaveLength(0);
+  });
+
+  it("clones a private source as a private project with an empty invite list", async () => {
+    const repos = makeRepos(
+      [sourceProject({ visibility: "private", memberEmails: [CLONER, "other@x.com"] })],
+      [sourceVersion()],
+    );
+    const { project } = await makeClone(repos)(INPUT);
+
+    expect(project.visibility).toBe("private");
+    expect(project.memberEmails).toBeUndefined();
   });
 
   it("refuses a private source the caller cannot access", async () => {
@@ -151,7 +191,7 @@ describe("cloneProject", () => {
       [sourceProject({ visibility: "private", memberEmails: [CLONER] })],
       [sourceVersion()],
     );
-    await expect(makeClone(repos)(INPUT)).resolves.toMatchObject({ name: "copy" });
+    await expect(makeClone(repos)(INPUT)).resolves.toMatchObject({ project: { name: "copy" } });
   });
 
   it("refuses a target name that already exists", async () => {

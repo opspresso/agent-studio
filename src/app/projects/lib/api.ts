@@ -24,6 +24,7 @@ import type { Trace } from "@/domain/trace/types";
 import type { McpConnectionView } from "@/application/mcp/mcpAuthUseCases";
 import type { ActorUsageView } from "@/application/usage/listActors";
 import type { ProjectA2aResponse } from "@/app/api/projects/[name]/a2a/route";
+import type { CloneProjectResponse } from "@/app/api/projects/[name]/clone/route";
 import type { ProjectSlackResponse } from "@/app/api/projects/[name]/slack/route";
 import type { ProjectTelegramResponse } from "@/app/api/projects/[name]/telegram/route";
 import type { ProjectTeamsResponse } from "@/app/api/projects/[name]/teams/route";
@@ -86,12 +87,12 @@ export function updateProject(name: string, patch: UpdateProjectInput): Promise<
 export function cloneProject(
   sourceName: string,
   input: { name: string; displayName: string },
-): Promise<Project> {
+): Promise<CloneProjectResponse> {
   return fetch(`/api/projects/${sourceName}/clone`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify(input),
-  }).then((r) => readJson<Project>(r));
+  }).then((r) => readJson<CloneProjectResponse>(r));
 }
 
 export function deleteProject(name: string): Promise<void> {

@@ -2250,8 +2250,8 @@ describe("private project visibility gate", () => {
     expect(posted.at(-1)?.text).toContain("private");
   });
 
-  it("refuses a message no human sent", async () => {
-    const { slack, posted } = makeSlackFake();
+  it("runs an app-authored message — owner-wired automation, not a person to refuse", async () => {
+    const { slack, posted, reactions } = makeSlackFake();
     const event: SlackEventBody = {
       event_id: "Ev9",
       event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello", bot_id: "B9" },
@@ -2259,7 +2259,61 @@ describe("private project visibility gate", () => {
 
     await handleSlackEvent(privateDeps(slack), event, BINDING);
 
+    expect(reactions).toHaveLength(1);
+    expect(posted.every((message) => !message.text.includes("private"))).toBe(true);
+  });
+
+  it("refuses a userless message that no app signed either", async () => {
+    const { slack, posted } = makeSlackFake();
+    const event: SlackEventBody = {
+      event_id: "Ev9",
+      event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello" },
+    };
+
+    await handleSlackEvent(privateDeps(slack), event, BINDING);
+
     expect(posted.at(-1)?.text).toContain("private");
+  });
+
+  it("refuses an uninvited user's !mute before it writes engagement state", async () => {
+    const { slack, posted, emails } = makeSlackFake();
+    emails.set("U2", "stranger@x.com");
+    const event: SlackEventBody = {
+      event_id: "Ev9",
+      event: {
+        type: "app_mention",
+        channel: "C1",
+        ts: "2.0",
+        thread_ts: "1.0",
+        text: "<@U0> !mute",
+        user: "U2",
+      },
+    };
+
+    await handleSlackEvent(privateDeps(slack), event, BINDING);
+
+    expect(posted.at(-1)?.text).toContain("private");
+    expect(mutes).toHaveLength(0);
+  });
+
+  it("still answers an invited member's !mute", async () => {
+    const { slack, emails } = makeSlackFake();
+    emails.set("U2", "invited@x.com");
+    const event: SlackEventBody = {
+      event_id: "Ev9",
+      event: {
+        type: "app_mention",
+        channel: "C1",
+        ts: "2.0",
+        thread_ts: "1.0",
+        text: "<@U0> !mute",
+        user: "U2",
+      },
+    };
+
+    await handleSlackEvent(privateDeps(slack), event, BINDING);
+
+    expect(mutes).toEqual([{ threadTs: "1.0", muted: true }]);
   });
 
   it("answers an invited member, matching email case-insensitively", async () => {

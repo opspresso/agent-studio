@@ -36,6 +36,12 @@ export interface CreateProjectInput {
   projectType: ProjectType;
   ownerEmail: string;
   departmentCode?: string;
+  /**
+   * Not offered by the console's create form (a new project starts public, as
+   * every project always has); a clone passes the source's, so cloning a
+   * private project cannot quietly republish its prompt to the whole org.
+   */
+  visibility?: ProjectVisibility;
 }
 
 export interface UpdateProjectInput {
@@ -211,6 +217,7 @@ export async function createProject(
     projectType: input.projectType,
     ownerEmail: input.ownerEmail,
     departmentCode: input.departmentCode,
+    ...(input.visibility ? { visibility: input.visibility } : {}),
     createdAt: now,
     updatedAt: now,
   };

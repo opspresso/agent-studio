@@ -16,6 +16,12 @@ export function VisibilitySection({ projectName }: { projectName: string }) {
   const [visibility, setVisibility] = useState<ProjectVisibility>("public");
   const [memberEmails, setMemberEmails] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  /**
+   * Save stays locked until the stored state has actually been read: saving
+   * off the defaults after a failed load would flip a private project public
+   * and replace its invite list with [] in one click.
+   */
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +33,7 @@ export function VisibilitySection({ projectName }: { projectName: string }) {
         if (!cancelled) {
           setVisibility(project.visibility ?? "public");
           setMemberEmails(project.memberEmails ?? []);
+          setLoaded(true);
         }
       })
       .catch((e: unknown) => {
@@ -103,7 +110,7 @@ export function VisibilitySection({ projectName }: { projectName: string }) {
           />
         )}
         <Group gap="sm">
-          <Button onClick={save} loading={saving} disabled={loading}>
+          <Button onClick={save} loading={saving} disabled={loading || !loaded}>
             {t("pset.visibilitySave")}
           </Button>
           {saved && (

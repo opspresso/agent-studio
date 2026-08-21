@@ -73,9 +73,14 @@ URL 에 실리고, 그것이 배포의 허용 도메인 목록이 방금 거절�
 소유자가 직접 연결한 Telegram·Teams bot 은 *자격 증명 자체가 접근권* 이라 visibility 를 묻지
 않는다 — token 은 소유자로서 행동하고, bot 배선은 소유자의 선택이다. Slack bot 만 그 중간에
 있다: workspace 의 누구나 말을 걸 수 있으므로, private project 의 bot 은 `users.info` 의
-이메일로 묻는 사람을 식별해 초대 여부를 확인하고, 이메일을 공유하지 않는 workspace 나
-사람이 보내지 않은 메시지는 거절한다 (`handleSlackEvent`). 그 주소는 판정에만 쓰이고
-프롬프트에는 닿지 않는다.
+이메일로 묻는 사람을 식별해 초대 여부를 확인하고, 이메일을 공유하지 않는 workspace 의
+사용자는 거절한다 (`slackSenderMayAccess` — 런, `!mute` 명령, thread-start 인사가 같은
+게이트를 지난다). 앱이 서명한 메시지(키워드로 깨운 알림 등)는 통과한다: 그 키워드는
+소유자 자신의 설정이라 trigger 와 같은 소유자-배선 자동화다. 조회된 주소는 판정에만
+쓰이고 프롬프트에는 닿지 않는다. 초대 목록 자체(`memberEmails`)는 제3자 주소의 명부이므로
+응답에서도 소유자·admin 에게만 나간다 (`sanitizeProject`). 무인증 A2A Agent Card
+(`/.well-known/agent-card.json`)는 자격 증명이 전혀 없는 경로이므로 private project 를
+404 로 감춘다.
 
 private project 를 local subagent 로 *바인딩* 하는 것도 읽기다: 편집자가 접근할 수 없는
 project 는 버전 저장 시점에 거절된다 (`assertSubagentProjectsAccessible`). 이미 바인딩된

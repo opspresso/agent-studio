@@ -6,7 +6,11 @@ import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sanitizeProject } from "@/app/api/projects/_lib/http";
 
 export const GET = withAuth(async (user) => {
-  return Response.json((await projectUseCases.listAccessible(user.email)).map(sanitizeProject));
+  // One argument on purpose: `map` would otherwise pass the index where
+  // sanitizeProject now takes its options.
+  return Response.json(
+    (await projectUseCases.listAccessible(user.email)).map((project) => sanitizeProject(project)),
+  );
 });
 
 export const POST = withAuth(async (user, request: Request) => {

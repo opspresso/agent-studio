@@ -30,10 +30,17 @@ export function CloneProjectButton({ sourceName }: { sourceName: string }) {
     setSubmitting(true);
     setError(null);
     try {
-      const project = await cloneProject(sourceName, {
+      const { project, warning } = await cloneProject(sourceName, {
         name,
         displayName: displayName || name,
       });
+      if (warning) {
+        // The clone exists but arrived incomplete. Stay here and say what was
+        // lost — navigating away would show an empty playground with no
+        // explanation, which reads as a bug rather than a reported loss.
+        setError(warning);
+        return;
+      }
       close();
       router.push(`/projects/${project.name}`);
     } catch (err) {

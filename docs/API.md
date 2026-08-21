@@ -230,14 +230,19 @@ DELETE /api/skills/{name}     → 204                     | 404
 bot, Slack 의 이메일 판정)는 [SECURITY.md](SECURITY.md#인가-모델) 가 정본이다.
 
 ```
-POST /api/projects/{name}/clone    { "name": "my-copy", "displayName": "My Copy" }  → 201
+POST /api/projects/{name}/clone    { "name": "my-copy", "displayName": "My Copy" }
+  → 201 { "project": { … }, "warning": "…"? }
 ```
 
 접근 가능한 project 를 호출자 소유의 새 project 로 복제한다. tier 게이트는 생성과 같다.
-복사되는 것은 설명·타입·부서 코드와 version 하나 — published 가 있으면 그것, 없으면 최신 —
-이고, MCP 바인딩의 header 오버라이드(원 소유자의 시크릿), bot 연동, 비용 한도, API token,
-초대 목록, published 포인터는 복사되지 않는다. 복제본의 version 은 publish 되지 않은 `"1"`
-로 시작한다.
+복사되는 것은 설명·타입·부서 코드·**공개 범위**(private 원본의 복제본은 private 으로
+시작한다 — 초대받은 사람이 클릭 한 번으로 private 프롬프트를 전사에 재공개하는 일을 막는다)
+와 version 하나 — 원본이 실제로 실행하는 것, 즉 `resolveRunnableVersion` 이 답하는 published
+또는 최신 draft — 다. MCP 바인딩의 header 오버라이드(원 소유자의 시크릿), bot 연동, 비용
+한도, API token, 초대 목록, published 포인터는 복사되지 않는다. 복제본의 version 은 publish
+되지 않은 `"1"` 로 시작한다. version 을 복사할 수 없었던 경우(복제자가 접근할 수 없는
+subagent 참조, 카탈로그를 떠난 모델) project 는 만들어지고 `warning` 이 무엇을 잃었는지
+말한다.
 
 #### 비용 한도
 

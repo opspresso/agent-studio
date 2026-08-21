@@ -1,3 +1,4 @@
+import type { Project } from "@/domain/project/types";
 import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
 import { slackMessageText } from "@/domain/slack/messageText";
@@ -274,6 +275,44 @@ export interface SlackBotBinding {
   botToken: string;
 }
 
+/** The one refusal a private project's bot gives, on every path that refuses. */
+export const privateProjectRefusal = (projectName: string): string =>
+  `Sorry — project "${projectName}" is private. Ask its owner to invite you.`;
+
+/**
+ * May the sender of this Slack event act on the project? The gate for every
+ * path a Slack event can take — the run, the `!mute` commands, the
+ * thread-start greeting — so no path answers someone another path refuses.
+ *
+ * A Slack id maps to a member by email, the one identity both sides share, so
+ * a workspace that shares no address is refused the same way an uninvited
+ * member is: an unidentifiable person is not an invited one. An app's message
+ * (`botId`, no user) passes instead — the keyword that woke the bot is the
+ * owner's own configuration, so an alert's message is owner-wired automation
+ * like a trigger, and there is no person to identify; refusing it would post
+ * a refusal into the alert thread on every firing while the run the owner
+ * configured never executes. The lookup is the cached `users.info` read the
+ * gallery attribution shares, and the address never reaches a prompt.
+ */
+export async function slackSenderMayAccess(
+  deps: Pick<SlackEventDeps, "slack">,
+  token: string,
+  project: Project,
+  sender: { user?: string; botId?: string },
+): Promise<boolean> {
+  if (!isProjectPrivate(project)) {
+    return true;
+  }
+  if (!sender.user) {
+    return Boolean(sender.botId);
+  }
+  const email = await deps.slack.userEmail(token, sender.user).catch((error) => {
+    log.warn("slack", "sender email lookup failed for a private project", error);
+    return null;
+  });
+  return email !== null && (await userMayAccessProject(project, email));
+}
+
 /**
  * Run the agent project for one message and stream the reply.
  *
@@ -302,12 +341,31 @@ export async function handleSlackEvent(
   // mention has neither, and streaming into one needs the recipient named.
   const isAssistantThread = event.channel_type === "im";
 
-  // Ahead of the project lookup, because a command is answered whether or not
-  // this project has a runnable version — `!mute` in particular has to work on
-  // a bot that is currently failing, which is exactly when someone reaches for
-  // it.
+  // Ahead of the *version* lookup, because a command is answered whether or
+  // not this project has a runnable version — `!mute` in particular has to
+  // work on a bot that is currently failing, which is exactly when someone
+  // reaches for it. Not ahead of the visibility gate: a command writes the
+  // project's engagement state, so an uninvited user muting a private
+  // project's thread would be exactly the acted-on message the gate exists to
+  // prevent. A project row that cannot be read keeps the old behaviour — the
+  // command still answers.
   const command = parseSlackCommand(message);
   if (command) {
+    const commandProject = await deps.projects.get(projectName).catch(() => null);
+    if (
+      commandProject &&
+      !(await slackSenderMayAccess(deps, token, commandProject, {
+        ...(event.user ? { user: event.user } : {}),
+        ...(event.bot_id ? { botId: event.bot_id } : {}),
+      }))
+    ) {
+      await deps.slack.postMessage(token, {
+        channel: event.channel,
+        thread_ts: threadTs,
+        text: privateProjectRefusal(projectName),
+      });
+      return;
+    }
     await handleSlackCommand(deps, command, {
       projectName,
       botToken: token,
@@ -339,25 +397,16 @@ export async function handleSlackEvent(
   }
 
   // The visibility gate, ahead of any acknowledgement — no reaction, no status
-  // line, no thread read happens for someone the project keeps out. A Slack id
-  // maps to a member by email, the one identity both sides share, so a
-  // workspace that shares no address (or a message no human sent) is refused
-  // the same way: an unidentifiable asker is not an invited one. The lookup is
-  // the same cached `users.info` the gallery attribution below reuses, and the
-  // address stays out of the prompt either way.
-  if (isProjectPrivate(project)) {
-    const askerEmail = event.user
-      ? await deps.slack.userEmail(token, event.user).catch((error) => {
-          log.warn("slack", "asker email lookup failed for a private project", error);
-          return null;
-        })
-      : null;
-    if (!askerEmail || !(await userMayAccessProject(project, askerEmail))) {
-      await reply.say(
-        `Sorry — project "${projectName}" is private. Ask its owner to invite you.`,
-      );
-      return;
-    }
+  // line, no thread read happens for someone the project keeps out. What
+  // passes and why is {@link slackSenderMayAccess}'s.
+  if (
+    !(await slackSenderMayAccess(deps, token, project, {
+      ...(event.user ? { user: event.user } : {}),
+      ...(event.bot_id ? { botId: event.bot_id } : {}),
+    }))
+  ) {
+    await reply.say(privateProjectRefusal(projectName));
+    return;
   }
 
   log.info("slack", `run start project=${projectName} channel=${event.channel} ts=${event.ts}`);

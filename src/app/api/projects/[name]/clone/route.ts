@@ -7,6 +7,12 @@ import { sanitizeProject } from "@/app/api/projects/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
+export interface CloneProjectResponse {
+  project: ReturnType<typeof sanitizeProject>;
+  /** What the clone could not carry — absent when everything copied. */
+  warning?: string;
+}
+
 export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   // The same tier gate as creating a project: a clone is one.
@@ -18,13 +24,19 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     return invalidRequest(parsed.error);
   }
   try {
-    const project = await cloneProject({
+    const { project, warning } = await cloneProject({
       sourceName: name,
       name: parsed.data.name,
       displayName: parsed.data.displayName,
       userEmail: user.email,
     });
-    return Response.json(sanitizeProject(project), { status: 201 });
+    return Response.json(
+      {
+        project: sanitizeProject(project),
+        ...(warning ? { warning } : {}),
+      } satisfies CloneProjectResponse,
+      { status: 201 },
+    );
   } catch (error) {
     return apiError(error);
   }

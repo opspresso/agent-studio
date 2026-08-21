@@ -16,6 +16,7 @@ import {
   updateProject,
 } from "@/application/project/projectUseCases";
 import { createVersion, updateVersion, type VersionRefRepos } from "@/application/project/versionUseCases";
+import { sanitizeProject } from "@/app/api/projects/_lib/http";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 
 const OWNER = "owner@x.com";
@@ -181,6 +182,16 @@ describe("updateProject visibility", () => {
     const updated = await updateProject(repo, "proj", { description: "new" }, OWNER);
     expect(updated.visibility).toBe("private");
     expect(updated.memberEmails).toEqual([MEMBER]);
+  });
+});
+
+describe("sanitizeProject and the invite list", () => {
+  it("strips memberEmails unless the viewer manages the project", () => {
+    const p = project({ visibility: "private", memberEmails: [MEMBER] });
+    expect(sanitizeProject(p)).not.toHaveProperty("memberEmails");
+    expect(sanitizeProject(p, { withMemberEmails: true }).memberEmails).toEqual([MEMBER]);
+    // Visibility itself stays: the list badge and settings form read it.
+    expect(sanitizeProject(p).visibility).toBe("private");
   });
 });
 

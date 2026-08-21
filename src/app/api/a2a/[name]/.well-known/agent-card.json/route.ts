@@ -1,5 +1,6 @@
 import { a2aExposureDeps } from "@/lib/container";
 import { resolveExposedProject } from "@/application/a2a/exposure";
+import { isProjectPrivate } from "@/domain/project/access";
 import { a2aSurfaceEnabled } from "@/app/api/a2a/_lib/auth";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -17,7 +18,11 @@ export async function GET(_request: Request, ctx: RouteContext): Promise<Respons
   }
   const { name } = await ctx.params;
   const exposed = await resolveExposedProject(a2aExposureDeps, name);
-  if (!exposed) {
+  // A private project has no public card: this route carries no credential at
+  // all, so "the credential itself is access" — what exempts the key-gated
+  // JSON-RPC endpoint from the visibility gate — does not apply here. The same
+  // 404 as an unpublished project, so the card's absence says nothing.
+  if (!exposed || isProjectPrivate(exposed.project)) {
     return Response.json({ error: "Project not found or has no published version" }, { status: 404 });
   }
   return Response.json(exposed.card);

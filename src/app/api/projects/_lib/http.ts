@@ -11,15 +11,25 @@ export interface IntegrationSummary {
  * The slack, telegram and teams fields collapse to a configured/enabled
  * summary; secrets are readable only through the masked /slack, /telegram and
  * /teams endpoints.
+ *
+ * The invite list is stripped too, unless the caller says the viewer manages
+ * this project: `memberEmails` is a roster of third-party addresses, and a
+ * project's being visible never meant its reader may learn who else was
+ * invited — least of all after the owner flips it public, when the stale list
+ * would ride along to everyone. Only the owner's settings page needs it.
  */
-export function sanitizeProject(project: Project): Omit<Project, "slack" | "telegram" | "teams"> & {
+export function sanitizeProject(
+  project: Project,
+  opts: { withMemberEmails?: boolean } = {},
+): Omit<Project, "slack" | "telegram" | "teams"> & {
   slack?: IntegrationSummary;
   telegram?: IntegrationSummary;
   teams?: IntegrationSummary;
 } {
-  const { slack, telegram, teams, ...rest } = project;
+  const { slack, telegram, teams, memberEmails, ...rest } = project;
   return {
     ...rest,
+    ...(opts.withMemberEmails && memberEmails !== undefined ? { memberEmails } : {}),
     ...(slack
       ? {
           slack: {
