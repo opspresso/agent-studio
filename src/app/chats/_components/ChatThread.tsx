@@ -312,7 +312,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
   const streaming = shown?.status === "streaming";
   // An entry exists before it holds anything — just attached, or failed before
   // the first chunk — and an empty bubble under the user's turn promises a reply
-  // that is not coming. While it streams the "Thinking…" bubble is the right
+  // that is not coming. While it streams the running indicator is the right
   // answer to that; settled and still empty, there is nothing to draw.
   const live = shown && (streaming || shown.live !== EMPTY_TURN) ? shown.live : null;
   // The user's turn is written before the run starts, so a view that arrives
