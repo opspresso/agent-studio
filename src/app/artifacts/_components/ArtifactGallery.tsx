@@ -43,6 +43,7 @@ import {
   artifactFileType,
   type ArtifactFileType,
 } from "@/app/artifacts/_lib/fileType";
+import { isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
 
 type KindFilter = "all" | "image" | "document";
 
@@ -318,12 +319,33 @@ function ArtifactCard({
               </Group>
             </Anchor>
           ) : (
-            <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
-              <Group gap={4}>
-                <IconDownload size={14} />
-                {t("artifacts.download")}
-              </Group>
-            </Anchor>
+            <Group gap="md" wrap="nowrap">
+              {/* Opened, not saved — and never at the object's own address:
+                  `/view` serves it under a sandbox policy, which an S3 URL
+                  cannot carry. Gated on size as well as type, because the route
+                  refuses a row past its read limit and only a `SaveFile` row is
+                  guaranteed under it. Everything else has only a download. */}
+              {isInlineViewable(artifact.mimeType) &&
+                artifact.byteSize <= MAX_INLINE_VIEW_BYTES && (
+                <Anchor
+                  href={`/api/artifacts/${artifact.artifactId}/view`}
+                  target="_blank"
+                  rel="noreferrer"
+                  fz="sm"
+                >
+                  <Group gap={4}>
+                    <IconEye size={14} />
+                    {t("artifacts.view")}
+                  </Group>
+                </Anchor>
+              )}
+              <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
+                <Group gap={4}>
+                  <IconDownload size={14} />
+                  {t("artifacts.download")}
+                </Group>
+              </Anchor>
+            </Group>
           )}
           <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label={t("artifacts.delete")}>
             <IconTrash size={16} />
@@ -339,6 +361,12 @@ const FILE_TYPE_ICONS: Partial<Record<ArtifactFileType, string>> = {
   docx: "/icons/file-types/docx.svg",
   pptx: "/icons/file-types/pptx.svg",
   hwpx: "/icons/file-types/hwpx.svg",
+  html: "/icons/file-types/html.svg",
+  md: "/icons/file-types/md.svg",
+  csv: "/icons/file-types/csv.svg",
+  txt: "/icons/file-types/txt.svg",
+  json: "/icons/file-types/json.svg",
+  svg: "/icons/file-types/svg.svg",
 };
 
 function FileTypeIcon({ artifact }: { artifact: ArtifactView }) {

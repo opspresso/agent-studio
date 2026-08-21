@@ -45,10 +45,14 @@ export interface ProducedFile {
 /**
  * The reference a chunk carries, without what only this platform uses.
  *
- * `b64` is already gone by the time a surface sees the chunk; `source` is the
- * provenance an artifact row keeps, and `artifactId` names that row. None of
- * the three is anything a reader can act on, and every surface that answers
- * with a file was picking the same four fields out by hand.
+ * `b64` is already gone by the time a surface sees the chunk; `source` names
+ * what produced the file and `artifactId` names the row it was stored as.
+ * None of the three is anything a reader can act on, and every surface that
+ * answers with a file was picking the same four fields out by hand.
+ *
+ * `source` reaches nothing stored — `ArtifactInput` has no field for it — so it
+ * lives and dies inside one run's stream. Anything that wants to ask later
+ * which builtin or which server wrote a file has to put it on the row first.
  */
 export function fileRefOf(file: NonNullable<EngineChunk["file"]>): ProducedFileRef {
   return {

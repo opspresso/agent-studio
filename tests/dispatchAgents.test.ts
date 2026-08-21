@@ -523,6 +523,7 @@ describe("dispatch_agents is offered only to a top-level run", () => {
       withSlackTools: false,
       withImageTransfer: false,
       withUrlTool: false,
+      withSaveFileTool: false,
       canDispatch,
     }).tools.map((tool) => tool.function.name);
 

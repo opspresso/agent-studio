@@ -84,6 +84,13 @@ buffer rather than a record, and why the viewport belongs to a library is
   **the run's top-level `delta.toolCalls`** and any `warning` chunks it saw. Per-turn
   assistant messages are still not reconstructed — every turn's calls hang off the single
   flattened assistant message.
+  - **`toolCalls` is stored unbudgeted**, unlike `content` and `reasoning` — nothing truncates
+    it onto the 400KB item, and a write that overruns is caught and logged, taking the reply
+    the reader just watched stream. What arrives here is already bounded: the engine swaps any
+    argument past `MAX_TOOL_ARG_BYTES` for its size before the call is announced, keyed to
+    size rather than to a tool name — see `src/application/llm/AGENTS.md`. Do not add a
+    truncation here instead; cutting a call at this end would put arguments the model never
+    made into the replay.
   - Only **top-level calls** are stored on the assistant message (`isTopLevelChunk`). A
     subagent's *results* are stored, because reading a finished chat has to show which
     agent, skill and tool produced the answer — but tagged with their `author` and

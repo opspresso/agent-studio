@@ -10,7 +10,8 @@
  */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
-import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineChunk, McpToolResult } from "@/domain/llm/types";
+import { SAVABLE_TYPES } from "@/domain/artifact/types";
 import { parseImageDataUrl } from "@/domain/llm/types";
 import type { RunCaller } from "@/domain/execution/actor";
 import { formatRunClock } from "@/shared/date";
@@ -21,6 +22,7 @@ export const DISPATCH_TOOL_NAME = "dispatch_agents";
 export const IMAGE_TOOL_NAME = "GenerateImage";
 export const EDIT_IMAGE_TOOL_NAME = "EditImage";
 export const FETCH_URL_TOOL_NAME = "FetchUrl";
+export const SAVE_FILE_TOOL_NAME = "SaveFile";
 export const SLACK_HISTORY_TOOL_NAME = "SlackHistory";
 export const SLACK_THREAD_TOOL_NAME = "SlackThread";
 export const SLACK_USER_TOOL_NAME = "SlackUser";
@@ -49,6 +51,7 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
   IMAGE_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
   FETCH_URL_TOOL_NAME,
+  SAVE_FILE_TOOL_NAME,
   ...SLACK_TOOL_NAMES,
 ];
 
@@ -201,6 +204,19 @@ export type UrlFetcher = (url: string) => Promise<{
 }>;
 
 /**
+ * Keep text the run wrote as a file the reader receives.
+ *
+ * Answers with a tool result rather than bytes, because both endings are one:
+ * a saved file rides out on the result's `files`, and a refused one is the same
+ * result carrying only the sentence that says which part of the call to fix.
+ */
+export type FileSaver = (input: {
+  name: string;
+  mimeType: string;
+  content: string;
+}) => Promise<McpToolResult>;
+
+/**
  * The capability half of the engine's deps — the injected abilities whose
  * *presence* decides what a run is told it can do. Declared here, structurally,
  * rather than as a `Pick` of `AgentDeps`: the assembly is what the loop and the
@@ -213,6 +229,7 @@ export interface AgentCapabilityDeps {
   generateImage?: ImageGenerator;
   editImage?: ImageEditor;
   fetchUrl?: UrlFetcher;
+  saveFile?: FileSaver;
   /**
    * Serves the Slack read tools, or absent when this run has no workspace
    * to look at. One function rather than four deps: the tools differ only in
@@ -716,6 +733,37 @@ const IMAGE_TOOL_DEF: ChannelToolDef = {
   },
 };
 
+const SAVE_FILE_TOOL_DEF: ChannelToolDef = {
+  type: "function",
+  function: {
+    name: SAVE_FILE_TOOL_NAME,
+    description:
+      "Keep text you wrote as a file the person receives — a report, a page, a dataset, a note. " +
+      "Use it when the answer *is* a document rather than a reply: a long HTML report, a CSV of results, " +
+      "a Markdown write-up somebody will file or send on. The file is delivered on its own; " +
+      "say what you made and do not repeat its contents in the answer.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "What to call the file. The extension is added from the type if it is missing.",
+        },
+        mime_type: {
+          type: "string",
+          enum: [...SAVABLE_TYPES],
+          description: "The type of the file being written.",
+        },
+        content: {
+          type: "string",
+          description: "The file's full text. Nothing is appended to it or wrapped around it.",
+        },
+      },
+      required: ["name", "mime_type", "content"],
+    },
+  },
+};
+
 const FETCH_URL_TOOL_DEF: ChannelToolDef = {
   type: "function",
   function: {
@@ -911,6 +959,8 @@ export interface AgentToolsInput {
   withImageTransfer: boolean;
   /** Whether this run may read an address the model names. */
   withUrlTool: boolean;
+  /** Whether anything in this deployment would keep a file the run wrote. */
+  withSaveFileTool: boolean;
   /** Whether this run may read the Slack workspace its project's bot is in. */
   withSlackTools: boolean;
   /**
@@ -956,6 +1006,10 @@ export function buildAgentTools(
   if (withUrlTool) {
     tools.push(FETCH_URL_TOOL_DEF);
     builtinNames.add(FETCH_URL_TOOL_NAME);
+  }
+  if (input.withSaveFileTool) {
+    tools.push(SAVE_FILE_TOOL_DEF);
+    builtinNames.add(SAVE_FILE_TOOL_NAME);
   }
   if (input.withSlackTools) {
     tools.push(...SLACK_TOOL_DEFS);
@@ -1060,6 +1114,7 @@ export function assembleAgentRun(
   // exactly when the thing was injected, so the preview and the run agree.
   const withUrlTool = Boolean(deps.fetchUrl);
   const withSlackTools = Boolean(deps.readSlack);
+  const withSaveFileTool = Boolean(deps.saveFile);
   const systemPrompt = buildAgentSystemPrompt({
     ...(input.systemPrompt !== undefined ? { base: input.systemPrompt } : {}),
     skills,
@@ -1077,6 +1132,7 @@ export function assembleAgentRun(
     skills,
     subagents,
     canLoadSkills: Boolean(deps.loadSkillContent),
+    withSaveFileTool,
     withImageTool: Boolean(deps.generateImage),
     withEditTool: canEdit,
     withImageTransfer: canTransfer,

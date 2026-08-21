@@ -134,6 +134,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
 | `/api/artifacts/{artifactId}` | `DELETE` | 생성자, project 소유자, 또는 admin |
+| `/api/artifacts/{artifactId}/view` | `GET` | 생성자, project 소유자, 또는 admin |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/models/catalog` | `GET` | member |
@@ -1308,7 +1309,37 @@ GET /api/projects/{name}/artifacts?…same query…
 → 200 { artifacts: [ … ], nextBefore?: … } | 400 | 403 | 404
 DELETE /api/artifacts/{artifactId}
 → 204 | 403 | 404
+GET /api/artifacts/{artifactId}/view
+→ 200 text/html | 400 | 403 | 404
 ```
+
+`/view` 는 주소가 아니라 **바이트로** 답하는 유일한 라우트다. 받는 것은 `SAVABLE_TYPES` —
+런이 사람에게 읽히려고 쓰는 타입들 — 뿐이고 나머지는 400 이다. 목록의 기준은 표시할 수
+있느냐가 아니라 **독자가 여는 것이냐 보관하는 것이냐**다. 브라우저가 알아서 그리는 PDF 는
+sandbox 가 필요 없고, 다운로드는 애초에 신뢰를 요구하지 않는다.
+
+응답은 어느 쪽이든 `text/html; charset=utf-8` 이고, **파일 타입마다 그것답게** 나간다.
+
+| 저장된 타입 | 어떻게 보이는가 |
+|---|---|
+| `text/html` | 쓰인 그대로 |
+| `text/markdown` | 채팅 스레드와 같은 렌더러로 렌더 |
+| `text/csv` | 첫 행을 머리행으로 삼은 표 (RFC 4180 파싱, 2,000행 상한) |
+| `application/json` | 다시 들여쓴 텍스트. 파싱되지 않으면 원문 그대로 + 그 사실을 말한다 |
+| `image/svg+xml` | `<img>` 안의 그림 |
+| `text/plain` | 원문 그대로 |
+
+그래서 CSP 도 둘로 갈린다 — `text/html` 만 `sandbox allow-scripts` 이고(표 정렬·목차 추적이
+다운로드 대신 그것을 여는 이유다), 나머지는 그냥 `sandbox` 다. 나머지는 전부 앱이 바이트에서
+만든 페이지라 실행할 스크립트가 애초에 없고, 그 보장을 이스케이프가 아니라 브라우저가 하게
+둔다. 모두 `default-src 'none'` 으로 불투명 오리진에 놓이므로 그 페이지는 콘솔의
+쿠키·스토리지·DOM 에 닿지 못하고 서브리소스를 하나도 불러오지 못한다. `text/html` 만은
+스스로 다른 주소로 *이동*할 수 있다 — 자기 스크립트를 돌려주는 일에 딸린 값이다
+([SECURITY.md](SECURITY.md#저장된-시크릿) 의 artifact 항목).
+
+서명된 오브젝트 URL 로는 그 헤더를 실을 수 없고, 건네진 주소는 그것을 연 사람의 권한보다
+오래 산다 — public 모드에서는 영구다. 그래서 페이지만은 앱을 통해 나간다. 읽기 상한은
+2 MB 이고, 권한 술어는 삭제와 같다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
 `byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의

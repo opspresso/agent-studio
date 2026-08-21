@@ -133,7 +133,13 @@ export function collectGeneratedImages(
  * would be the noise.
  */
 export function collectGeneratedFiles(
-  files: Array<{ name: string; mimeType: string; byteSize?: number; key?: string }>,
+  files: Array<{
+    name: string;
+    mimeType: string;
+    byteSize?: number;
+    key?: string;
+    artifactId?: string;
+  }>,
   storageConfigured: boolean,
 ): { stored: ChatMessageFile[]; warnings: string[] } {
   const stored: ChatMessageFile[] = [];
@@ -146,6 +152,7 @@ export function collectGeneratedFiles(
       name: file.name,
       mimeType: file.mimeType,
       ...(file.byteSize !== undefined ? { byteSize: file.byteSize } : {}),
+      ...(file.artifactId ? { artifactId: file.artifactId } : {}),
     });
   }
   const missing = files.length - stored.length;
@@ -325,7 +332,13 @@ export async function* runAndPersist(
   const generatedImages: { b64: string; mimeType: string; prompt?: string; key?: string }[] = [];
   // No bytes here, unlike the images beside them: the bracket strips a file's
   // payload as it stores it, so what arrives is already the reference.
-  const generatedFiles: { name: string; mimeType: string; byteSize?: number; key?: string }[] = [];
+  const generatedFiles: {
+    name: string;
+    mimeType: string;
+    byteSize?: number;
+    key?: string;
+    artifactId?: string;
+  }[] = [];
   // Why the run came out the shape it did — a binding it could not use, history
   // it could not carry. Persisted so reloading the chat still explains it.
   const warnings: string[] = [];

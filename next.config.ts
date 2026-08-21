@@ -37,8 +37,25 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["@mantine/core", "@mantine/hooks", "@tabler/icons-react"],
     useTypeScriptCli: true,
   },
+  /**
+   * These are the *console's* headers, and one route is not the console.
+   *
+   * A header declared here **replaces** what a route handler set under the same
+   * key, so `/api/artifacts/:id/view` — the one response that is deliberately
+   * served under a `sandbox` policy — came back carrying `frame-ancestors
+   * 'none'` instead, and an artifact's markup ran on this origin with the
+   * console's cookies and storage in reach. The whole reason that route answers
+   * with bytes rather than a signed object URL is a header it turned out not to
+   * be sending.
+   *
+   * The exclusion is written as a negative lookahead rather than by narrowing
+   * the console rule, so a page added tomorrow is covered by default and only
+   * the address that sets its own policy is left alone.
+   */
   async headers() {
-    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+    return [
+      { source: "/((?!api/artifacts/[^/]+/view$).*)", headers: SECURITY_HEADERS },
+    ];
   },
 };
 

@@ -33,7 +33,15 @@ async function resolveOne(
       log.warn("chat", "a stored file has no address to resolve to; leaving it out");
       return undefined;
     }
-    return { url, name: file.name, mimeType: file.mimeType, ...(file.byteSize !== undefined ? { byteSize: file.byteSize } : {}) };
+    return {
+      url,
+      name: file.name,
+      mimeType: file.mimeType,
+      ...(file.byteSize !== undefined ? { byteSize: file.byteSize } : {}),
+      // Kept where the download address is minted, because the two answer
+      // different questions about the same file: one saves it, one opens it.
+      ...(file.artifactId ? { artifactId: file.artifactId } : {}),
+    };
   } catch (error) {
     log.error("chat", "could not sign a stored file", error);
     return undefined;
