@@ -98,10 +98,12 @@ afterEach(() => {
 
 describe("runStore", () => {
   /**
-   * The stopwatch a reader watches counts from here, so a turn this tab sent
-   * has to carry the instant it went out.
+   * The stopwatch a reader watches counts from the head frame, so a turn this
+   * tab sent has to carry the instant the server named its run — and the
+   * instant the stream ended, which is what keeps the number on screen while
+   * the stored message is being fetched.
    */
-  it("stamps a turn this tab started with when it started", async () => {
+  it("stamps the run from its head frame, and stamps the end", async () => {
     vi.setSystemTime(new Date("2026-08-21T00:00:00.000Z"));
     stubFetch([() => sse([{ runId: "run-1" }, { ended: true }])]);
     const store = fresh();
@@ -109,6 +111,23 @@ describe("runStore", () => {
     await settle();
 
     expect(store.get("c1")?.startedAtMs).toBe(Date.parse("2026-08-21T00:00:00.000Z"));
+    expect(store.get("c1")?.endedAtMs).toBe(Date.parse("2026-08-21T00:00:00.000Z"));
+  });
+
+  /**
+   * The press is not the start: the turn's attachments go up in the request
+   * body, and the badge that replaces this stopwatch measures from the server's
+   * stamp — written once that upload has landed. A stream that never names a
+   * run has no start this tab can honestly claim.
+   */
+  it("does not start the clock until the server names the run", async () => {
+    stubFetch([() => sse([{ delta: { content: "hi" } }, { ended: true }])]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(store.get("c1")?.status).toBe("finished");
+    expect(store.get("c1")?.startedAtMs).toBeUndefined();
   });
 
   /**

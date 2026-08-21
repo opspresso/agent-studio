@@ -173,6 +173,7 @@ export function NewChatPanel() {
                 {...(entry.startedAtMs !== undefined
                   ? { startedAtMs: entry.startedAtMs }
                   : {})}
+                {...(entry.endedAtMs !== undefined ? { endedAtMs: entry.endedAtMs } : {})}
               />
             )}
           </Stack>

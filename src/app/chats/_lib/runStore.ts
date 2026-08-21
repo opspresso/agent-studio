@@ -49,8 +49,15 @@ export interface RunEntry {
   readonly status: "streaming" | "finished" | "failed";
   readonly live: LiveTurn;
   /**
-   * When this tab put the run in flight — what the reader's stopwatch counts
-   * from.
+   * When the run this tab started got its id — what the reader's stopwatch
+   * counts from.
+   *
+   * Taken at the **head frame**, not when send was pressed. The turn's
+   * attachments go up in the request body, so a 4MB image on a slow uplink puts
+   * seconds between the two — and the badge that replaces this stopwatch
+   * measures from the server's stamp, which is written once that upload has
+   * landed. Started at the press, the two numbers would disagree by the length
+   * of the upload while sitting in the same spot as the same fact.
    *
    * Absent on `attach`, and deliberately not filled in with the moment this tab
    * arrived: a run picked up after a reload has been going for however long it
@@ -59,6 +66,15 @@ export interface RunEntry {
    * answer is to show the reader that it is running and no number at all.
    */
   readonly startedAtMs?: number;
+  /**
+   * When the stream ended, however it ended.
+   *
+   * What lets the finished turn keep showing its duration in the seconds
+   * between the last frame and the stored message arriving — and keep showing
+   * it for good when that fetch never succeeds, which is exactly the run whose
+   * length the reader most wants to know.
+   */
+  readonly endedAtMs?: number;
   /** Absent when this tab attached to a run it did not start. */
   readonly pendingUser?: PendingUser;
   readonly error?: string;
@@ -279,7 +295,12 @@ export function createRunStore(): RunStore {
   }
 
   function finish(key: string, status: "finished" | "failed", error?: string): void {
-    update(key, (prev) => ({ ...prev, status, ...(error ? { error } : {}) }));
+    update(key, (prev) => ({
+      ...prev,
+      status,
+      endedAtMs: Date.now(),
+      ...(error ? { error } : {}),
+    }));
     const canon = canonical(key);
     if (!entries.has(canon)) {
       return;
@@ -322,6 +343,14 @@ export function createRunStore(): RunStore {
       ...(head.chat ? { chat: head.chat, chatId: head.chat.chatId } : {}),
       ...(head.runId ? { runId: head.runId } : {}),
       ...(head.userSeq !== undefined ? { userSeq: head.userSeq } : {}),
+      // Only the first id this entry ever learns starts the clock. A reconnect
+      // replays from the beginning and sends its own head frame, and an
+      // `attach` was created holding the id already — neither is the run
+      // beginning, and either one restarting the stopwatch would report a long
+      // reply as a short one.
+      ...(head.runId !== undefined && prev.runId === undefined
+        ? { startedAtMs: Date.now() }
+        : {}),
     }));
   }
 
@@ -517,7 +546,7 @@ export function createRunStore(): RunStore {
         // already cleared, and the typed message was simply gone.
         return null;
       }
-      create(chatId, { chatId, pendingUser: pending, startedAtMs: Date.now() });
+      create(chatId, { chatId, pendingUser: pending });
       void pump(chatId, (signal) =>
         fetch(`/api/chats/${chatId}/messages`, {
           method: "POST",
@@ -535,7 +564,7 @@ export function createRunStore(): RunStore {
 
     startNewChat(projectName, pending) {
       const key = `new:${nextPlaceholder++}`;
-      create(key, { pendingUser: pending, startedAtMs: Date.now() });
+      create(key, { pendingUser: pending });
       void pump(key, (signal) =>
         fetch("/api/chats", {
           method: "POST",

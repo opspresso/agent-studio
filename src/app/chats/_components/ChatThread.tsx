@@ -385,6 +385,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
                   {...(shown?.startedAtMs !== undefined
                     ? { startedAtMs: shown.startedAtMs }
                     : {})}
+                  {...(shown?.endedAtMs !== undefined ? { endedAtMs: shown.endedAtMs } : {})}
                 />
               )}
             </Stack>

@@ -391,11 +391,13 @@ export function LiveAssistant({
   turn,
   running,
   startedAtMs,
+  endedAtMs,
 }: {
   turn: LiveTurn;
   /** False once the stream ended but the turn is still on screen. */
   running: boolean;
   startedAtMs?: number | undefined;
+  endedAtMs?: number | undefined;
 }) {
   const t = useT();
   return (
@@ -422,7 +424,18 @@ export function LiveAssistant({
           <MarkdownContent content={turn.text} />
         </div>
       )}
-      {running && <RunProgress startedAtMs={startedAtMs} />}
+      {running ? (
+        <RunProgress startedAtMs={startedAtMs} />
+      ) : (
+        // The stored message carries this turn's own badge, but only once the
+        // retire's fetch has come back — and if it never does, this turn stays
+        // on screen rendered from the live entry for good. Measured here rather
+        // than left to that fetch, the number does not blink out at the finish
+        // and does not disappear entirely when the conversation cannot be read
+        // back.
+        startedAtMs !== undefined &&
+        endedAtMs !== undefined && <AnswerDuration durationMs={endedAtMs - startedAtMs} />
+      )}
     </Stack>
   );
 }

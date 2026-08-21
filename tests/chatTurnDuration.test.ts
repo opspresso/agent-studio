@@ -122,18 +122,23 @@ describe("formatSeconds", () => {
 });
 
 describe("formatDuration", () => {
-  /** A measurement being reported, unlike the stopwatch: 1.9s reads as 2s. */
-  it("rounds a finished measurement", () => {
-    expect(formatDuration(1_900, t)).toBe("2s");
-    expect(formatDuration(12_400, t)).toBe("12s");
+  /**
+   * Truncated, like the stopwatch — the two are read seconds apart in the same
+   * spot, and rounding here made the number tick up once more after the run had
+   * already stopped.
+   */
+  it("truncates, so the settled number matches the stopwatch's last frame", () => {
+    expect(formatDuration(1_900, t)).toBe("1s");
+    expect(formatDuration(42_900, t)).toBe("42s");
+    expect(formatDuration(59_600, t)).toBe("59s");
   });
 
   it("carries into minutes at the boundary", () => {
-    expect(formatDuration(59_600, t)).toBe("1m 0s");
+    expect(formatDuration(60_000, t)).toBe("1m 0s");
   });
 
   it("speaks the reader's language", () => {
     expect(formatDuration(12_000, translator("ko"))).toBe("12초");
-    expect(formatDuration(83_000, translator("ko"))).toBe("1분 23초");
+    expect(formatDuration(83_400, translator("ko"))).toBe("1분 23초");
   });
 });
