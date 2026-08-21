@@ -109,6 +109,8 @@ export const ko: Messages = {
   "common.copied": "복사됨",
   "common.backTo": "← {label} 로 돌아가기",
   "common.you": "나",
+  "common.durationSeconds": "{seconds}초",
+  "common.durationMinutes": "{minutes}분 {seconds}초",
   "common.total": "합계",
   "common.workspaceCatalog": "워크스페이스 카탈로그",
 
@@ -197,7 +199,8 @@ export const ko: Messages = {
   "chat.noAgentProjects": "에이전트 프로젝트가 없습니다",
   "chat.noAgentProjectsBody":
     "대화는 agent 프로젝트에서 실행됩니다. Projects 에서 하나 만들면 대화를 시작할 수 있습니다.",
-  "chat.thinking": "생각하는 중…",
+  "chat.running": "실행 중",
+  "chat.answeredIn": "답변에 {duration} 걸렸습니다",
   "chat.via": "{path} 경유",
   "chat.imageGone": "이 이미지는 더 이상 볼 수 없습니다.",
   "chat.fileWhenDone": "답변이 끝나면 받을 수 있습니다",

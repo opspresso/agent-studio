@@ -2,13 +2,14 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import {
   Alert,
   Badge,
   Box,
   Group,
   Image,
+  Loader,
   Paper,
   Stack,
   Text,
@@ -16,6 +17,7 @@ import {
 } from "@mantine/core";
 import { IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
+import { formatDuration, formatSeconds } from "@/app/_lib/duration";
 import { imageDataUrl } from "@/domain/llm/types";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
@@ -36,6 +38,27 @@ function MessageTimestamp({ createdAt }: { createdAt: string }) {
   }
   return (
     <Text component="time" fz={11} c="dimmed" mt={2}>
+      {formatted}
+    </Text>
+  );
+}
+
+/**
+ * How long the answer above took.
+ *
+ * Beside the timestamp rather than under the reply: the two are the same kind of
+ * fact about the turn — when it landed, and what it cost to wait for — and a
+ * reader scanning back through a conversation reads them together.
+ */
+function AnswerDuration({ durationMs }: { durationMs: number }) {
+  const t = useT();
+  const formatted = formatDuration(durationMs, t);
+  return (
+    <Text fz={11} c="dimmed" mt={2} title={t("chat.answeredIn", { duration: formatted })}>
+      {/* A separator, because the timestamp sits in an identical `Text` right
+          beside it and two dimmed numbers with a gap between them read as one
+          run-on string. */}
+      {"· "}
       {formatted}
     </Text>
   );
@@ -196,10 +219,13 @@ function WarningNote({ text }: { text: string }) {
 export const MessageView = memo(function MessageView({
   message,
   callArgs,
+  durationMs,
 }: {
   message: ChatMessage;
   /** For a tool row: the arguments its call carried — see `storedToolArgs`. */
   callArgs?: string | undefined;
+  /** For an assistant row: the wait it ended — see `answerDurations`. */
+  durationMs?: number | undefined;
 }) {
   // `memo` compares props, and the locale is not one — but a context change
   // re-renders a consumer regardless of the memo, so switching language still
@@ -296,6 +322,7 @@ export const MessageView = memo(function MessageView({
       </div>
       <Group gap="xs" align="center">
         <MessageTimestamp createdAt={message.createdAt} />
+        {durationMs !== undefined && <AnswerDuration durationMs={durationMs} />}
         {message.content && (
           <span className={classes.actions}>
             <CopyButton text={message.content} />
@@ -306,7 +333,106 @@ export const MessageView = memo(function MessageView({
   );
 });
 
-export function LiveAssistant({ turn }: { turn: LiveTurn }) {
+/**
+ * Whole seconds since `startedAtMs`, ticking as each one turns over.
+ *
+ * Its own hook so the re-render it schedules lands on the stopwatch and nothing
+ * else. Put on `LiveAssistant` instead, every tick would re-render the answer
+ * beside it — and re-parse its markdown — which is the cost the store's
+ * collection window exists to avoid paying per frame.
+ *
+ * The next tick is scheduled onto the boundary rather than a second from now,
+ * and that is not tidiness. A fixed interval starts out of phase with
+ * `startedAtMs` and then accumulates whatever the main thread owes it — this
+ * view re-parses a growing answer on the store's 50-200ms window, so ordinary
+ * lateness compounds until a second is skipped outright and the reader watches
+ * `12s` become `14s`, which reads as a stalled page. Re-aiming each time also
+ * keeps the last painted frame equal to what the settled badge will say.
+ */
+function useElapsedSeconds(startedAtMs: number): number {
+  const [seconds, setSeconds] = useState(() => (Date.now() - startedAtMs) / 1000);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = (): void => {
+      const elapsed = Date.now() - startedAtMs;
+      setSeconds(elapsed / 1000);
+      // A whole second past the one just shown. `elapsed` can be negative if
+      // the clock steps back mid-run, and `1000 - negative % 1000` is over a
+      // second rather than under — clamped, so the clock keeps ticking.
+      timer = setTimeout(tick, Math.max(50, 1000 - (((elapsed % 1000) + 1000) % 1000)));
+    };
+    // Once on the way in as well: the first boundary is up to a second away,
+    // and a turn re-rendered mid-run would otherwise hold a stale number.
+    tick();
+    return () => clearTimeout(timer);
+  }, [startedAtMs]);
+  return seconds;
+}
+
+function RunStopwatch({ startedAtMs }: { startedAtMs: number }) {
+  const t = useT();
+  const seconds = useElapsedSeconds(startedAtMs);
+  return (
+    // Outside the status region, and hidden from the accessibility tree: a
+    // number that changes every second inside a live region is announced over
+    // everything else for the length of the reply. What the region should say —
+    // that the run started — is said by the label, which does not change.
+    <Text fz="xs" c="dimmed" aria-hidden fw={500}>
+      {formatSeconds(seconds, t)}
+    </Text>
+  );
+}
+
+/**
+ * How tall the line under the answer is, whichever of its three states is in it.
+ *
+ * Reserved rather than left to the content, because this line is inside the
+ * scroll container: it goes from spinner to settled duration to nothing at all
+ * as the run finishes and the stored turn replaces it, and a row that changes
+ * height there shoves the text a reader is in the middle of. The same reason
+ * `RunningAgents` is drawn by the composer instead of here.
+ */
+const PROGRESS_LINE_HEIGHT = 22;
+
+/**
+ * That the run is working, and for how long.
+ *
+ * It replaced a static "Thinking…", which said nothing after the first second —
+ * a reply that took a minute looked identical to one that had hung. The spinner
+ * is what makes it read as *running* rather than as a line of text that happens
+ * to be there, and the stopwatch is what makes a long wait legible as progress.
+ *
+ * Drawn under the answer rather than in place of it, so it stays visible once
+ * the first token lands: the run is still going, and the reader watching a tool
+ * call finish wants the same two facts they wanted before it started.
+ */
+function RunProgress({ startedAtMs }: { startedAtMs?: number | undefined }) {
+  const t = useT();
+  return (
+    <Group gap={8} align="center" h={PROGRESS_LINE_HEIGHT}>
+      <Group gap={8} align="center" role="status">
+        <Loader size={12} type="dots" />
+        <Text fz="xs" c="dimmed">
+          {t("chat.running")}
+        </Text>
+      </Group>
+      {startedAtMs !== undefined && <RunStopwatch startedAtMs={startedAtMs} />}
+    </Group>
+  );
+}
+
+export function LiveAssistant({
+  turn,
+  running,
+  startedAtMs,
+  endedAtMs,
+}: {
+  turn: LiveTurn;
+  /** False once the stream ended but the turn is still on screen. */
+  running: boolean;
+  startedAtMs?: number | undefined;
+  endedAtMs?: number | undefined;
+}) {
   const t = useT();
   return (
     <Stack gap={4} align="flex-start">
@@ -327,15 +453,27 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
       {turn.files.map((file, index) => (
         <ProducedFile key={`file-${index}`} name={file.name} byteSize={file.byteSize} />
       ))}
-      <div className={classes.answer}>
-        {turn.text ? (
+      {turn.text && (
+        <div className={classes.answer}>
           <MarkdownContent content={turn.text} />
-        ) : (
-          <Text fz="sm" c="dimmed">
-            {t("chat.thinking")}
-          </Text>
-        )}
-      </div>
+        </div>
+      )}
+      {running ? (
+        <RunProgress startedAtMs={startedAtMs} />
+      ) : (
+        // The stored message carries this turn's own badge, but only once the
+        // retire's fetch has come back. Measured here as well, the number does
+        // not blink out at the finish — and it is the only one a reader gets in
+        // the minute a failing retire leaves this turn drawn from the live
+        // entry. Held to the same rule as the stored badge: a negative gap is a
+        // clock that stepped back, and `0s` would be a wrong answer where
+        // silence is merely no answer.
+        <Group h={PROGRESS_LINE_HEIGHT} align="center">
+          {startedAtMs !== undefined && endedAtMs !== undefined && endedAtMs >= startedAtMs && (
+            <AnswerDuration durationMs={endedAtMs - startedAtMs} />
+          )}
+        </Group>
+      )}
     </Stack>
   );
 }

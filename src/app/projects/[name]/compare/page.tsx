@@ -16,6 +16,8 @@ import {
 } from "../../lib/api";
 import { findTemplateVariables } from "@/shared/template";
 import { formatUsd } from "@/app/_lib/formatUsd";
+import { formatDuration } from "@/app/_lib/duration";
+import { useT } from "@/app/_i18n/provider";
 import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
   Alert,
@@ -76,6 +78,9 @@ function versionOptions(versions: Version[], published: string | undefined) {
 }
 
 export default function ComparePage() {
+  // Only the duration badge reads this so far; the rest of this page is still
+  // untranslated, and taking the shared formatter is what brought it in.
+  const t = useT();
   const params = useParams<{ name: string }>();
   const view = useImageViewer();
   const name = params.name;
@@ -358,7 +363,7 @@ export default function ComparePage() {
                     )}
                     {side.durationMs !== null && (
                       <Badge variant="light" color="gray">
-                        {(side.durationMs / 1000).toFixed(1)}s
+                        {formatDuration(side.durationMs, t)}
                       </Badge>
                     )}
                     {side.toolCallCount > 0 && (

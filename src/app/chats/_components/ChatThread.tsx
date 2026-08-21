@@ -9,6 +9,7 @@ import type { ChatMessageImage } from "@/domain/chat/types";
 import { useRunEntry } from "../_lib/runHooks";
 import { pinnedImages } from "../_lib/pins";
 import { storedToolArgs } from "../_lib/toolPairs";
+import { answerDurations } from "../_lib/turnDuration";
 import { runStore } from "../_lib/runStore";
 import { EMPTY_TURN, type Chat, type ChatMessage } from "../_lib/types";
 import { LiveAssistant, MessageView, RunningAgents } from "./parts";
@@ -122,6 +123,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
    * so without this a reloaded conversation says a skill ran and never which.
    */
   const toolArgs = useMemo(() => storedToolArgs(messages), [messages]);
+  /** How long each stored answer took, paired off the timestamps around it. */
+  const durations = useMemo(() => answerDurations(messages), [messages]);
 
   // Two syncs can be in flight — the mount's and a finished turn's — and the
   // slower one must not overwrite fresher messages with staler ones.
@@ -309,7 +312,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
   const streaming = shown?.status === "streaming";
   // An entry exists before it holds anything — just attached, or failed before
   // the first chunk — and an empty bubble under the user's turn promises a reply
-  // that is not coming. While it streams the "Thinking…" bubble is the right
+  // that is not coming. While it streams the running indicator is the right
   // answer to that; settled and still empty, there is nothing to draw.
   const live = shown && (streaming || shown.live !== EMPTY_TURN) ? shown.live : null;
   // The user's turn is written before the run starts, so a view that arrives
@@ -352,6 +355,9 @@ export function ChatThread({ chatId }: { chatId: string }) {
                   key={`${message.seq}`}
                   message={message}
                   {...(toolArgs.has(message.seq) ? { callArgs: toolArgs.get(message.seq) } : {})}
+                  {...(durations.has(message.seq)
+                    ? { durationMs: durations.get(message.seq) }
+                    : {})}
                 />
               ))}
               {pendingUser !== null && (
@@ -372,7 +378,16 @@ export function ChatThread({ chatId }: { chatId: string }) {
                   }}
                 />
               )}
-              {live && <LiveAssistant turn={live} />}
+              {live && (
+                <LiveAssistant
+                  turn={live}
+                  running={streaming}
+                  {...(shown?.startedAtMs !== undefined
+                    ? { startedAtMs: shown.startedAtMs }
+                    : {})}
+                  {...(shown?.endedAtMs !== undefined ? { endedAtMs: shown.endedAtMs } : {})}
+                />
+              )}
             </Stack>
           </div>
         </ScrollArea>

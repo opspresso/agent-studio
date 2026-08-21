@@ -37,6 +37,17 @@ export interface SendMessageResult {
   runId: string;
   /** Where the user's turn landed, so a reader arriving mid-run does not draw it twice. */
   userSeq: number;
+  /**
+   * When this turn's clock started, on the server's own clock — the instant the
+   * user row is stamped with, which is where the answer's stored duration is
+   * measured from.
+   *
+   * Handed out so the head frame can carry the run's *age* rather than a
+   * timestamp: a browser subtracting two clocks reports whatever they disagree
+   * by, and the reader's stopwatch and the duration on the stored answer have to
+   * be the same measurement.
+   */
+  startedAtMs: number;
   stream: AsyncGenerator<unknown>;
   /** Tell the run its reader left, so it starts writing itself down. */
   onClientGone: () => void;
@@ -74,7 +85,8 @@ export async function sendMessage(
   try {
     const existing = await deps.chats.listMessages(input.chatId);
     const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
-    const now = new Date().toISOString();
+    const startedAt = new Date();
+    const now = startedAt.toISOString();
     const attachments = input.images ?? [];
     const uploaded = await storeAttachedImages(
       deps,
@@ -153,7 +165,13 @@ export async function sendMessage(
         input.signal,
       ),
     );
-    return { runId, userSeq, stream: tee.stream, onClientGone: tee.onClientGone };
+    return {
+      runId,
+      userSeq,
+      startedAtMs: startedAt.getTime(),
+      stream: tee.stream,
+      onClientGone: tee.onClientGone,
+    };
   } catch (error) {
     await deps.chats.releaseRun(input.chatId, runId);
     throw error;

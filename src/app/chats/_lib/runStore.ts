@@ -48,6 +48,42 @@ export interface RunEntry {
   readonly userSeq?: number;
   readonly status: "streaming" | "finished" | "failed";
   readonly live: LiveTurn;
+  /**
+   * When this turn started, in this browser's own clock — what the reader's
+   * stopwatch counts from.
+   *
+   * Derived from the head frame's `elapsedMs` rather than taken at the press or
+   * at the frame's arrival, and both of those were wrong in the same direction.
+   * The badge that replaces this stopwatch measures from the server's stamp on
+   * the user row, and between that stamp and the head frame sits the turn's
+   * setup — an attachment being written to object storage, a document being
+   * extracted, the lease being claimed. Counting from the frame skips all of it
+   * and the number *drops* when the stored answer replaces the live one;
+   * counting from the press adds the upload the server has not seen yet.
+   * Subtracting the age the server reports pins both to the same instant while
+   * using only the clock in this tab.
+   *
+   * Absent on `attach`: a run picked up after a reload has been going for
+   * however long it has, and no replay frame carries its age. A clock starting
+   * at zero there would report a ten-second-old answer as instant, so the view
+   * shows that it is running and no number at all.
+   */
+  readonly startedAtMs?: number;
+  /**
+   * When the run said it was over, and only then.
+   *
+   * What lets the finished turn keep showing its duration in the seconds
+   * between the last frame and the stored message arriving, rather than
+   * blinking out at the finish.
+   *
+   * Absent unless this tab saw the `{ended: true}` frame. The other two ways a
+   * stream stops say nothing about when the run stopped: a failed one did not
+   * stop at all as far as the reader is concerned, and a run discovered to be
+   * over by the reconnect probe ended somewhere in the minute the ALB spent
+   * holding a dead connection — stamping either would report that minute as
+   * part of the answer.
+   */
+  readonly endedAtMs?: number;
   /** Absent when this tab attached to a run it did not start. */
   readonly pendingUser?: PendingUser;
   readonly error?: string;
@@ -267,8 +303,19 @@ export function createRunStore(): RunStore {
     }
   }
 
-  function finish(key: string, status: "finished" | "failed", error?: string): void {
-    update(key, (prev) => ({ ...prev, status, ...(error ? { error } : {}) }));
+  function finish(
+    key: string,
+    status: "finished" | "failed",
+    error?: string,
+    /** Only the run announcing its own end knows when it ended — see `endedAtMs`. */
+    endedAtMs?: number,
+  ): void {
+    update(key, (prev) => ({
+      ...prev,
+      status,
+      ...(endedAtMs !== undefined ? { endedAtMs } : {}),
+      ...(error ? { error } : {}),
+    }));
     const canon = canonical(key);
     if (!entries.has(canon)) {
       return;
@@ -311,6 +358,15 @@ export function createRunStore(): RunStore {
       ...(head.chat ? { chat: head.chat, chatId: head.chat.chatId } : {}),
       ...(head.runId ? { runId: head.runId } : {}),
       ...(head.userSeq !== undefined ? { userSeq: head.userSeq } : {}),
+      // Only the first id this entry ever learns starts the clock. A reconnect
+      // replays from the beginning and sends its own head frame, and an
+      // `attach` was created holding the id already — neither is the run
+      // beginning, and either one restarting the stopwatch would report a long
+      // reply as a short one. The replay's head carries no `elapsedMs` either,
+      // so there is nothing to restart it *from*.
+      ...(head.runId && prev.runId === undefined
+        ? { startedAtMs: Date.now() - (head.elapsedMs ?? 0) }
+        : {}),
     }));
   }
 
@@ -410,7 +466,7 @@ export function createRunStore(): RunStore {
           return;
         }
         if (ended) {
-          finish(key, "finished");
+          finish(key, "finished", undefined, Date.now());
           return;
         }
 
@@ -542,12 +598,24 @@ export function createRunStore(): RunStore {
     },
 
     attach(chatId, runId) {
-      if (entries.get(chatId)?.status === "streaming") {
+      const prev = entries.get(chatId);
+      if (prev?.status === "streaming") {
         return;
       }
+      // A re-attach to the run this entry was already reading keeps its clock.
+      // The common way here is a turn this tab started whose stream was cut and
+      // whose reconnects ran out: the entry holding the head frame's stamp is
+      // about to be discarded, and minting a fresh one drops the stopwatch
+      // mid-run and suppresses the badge at the end — on the long, interrupted
+      // run, which is the one whose length is worth saying.
+      const carried = prev?.runId === runId ? prev.startedAtMs : undefined;
       // No `pendingUser`: the turn that started this run is already a stored
       // message, and drawing it again would show it twice.
-      create(chatId, { chatId, runId });
+      create(chatId, {
+        chatId,
+        runId,
+        ...(carried !== undefined ? { startedAtMs: carried } : {}),
+      });
       void pump(chatId, (signal) =>
         fetch(`/api/chats/${chatId}/runs/${runId}/stream`, { signal }),
       );

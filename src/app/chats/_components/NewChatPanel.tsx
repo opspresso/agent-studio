@@ -166,7 +166,15 @@ export function NewChatPanel() {
             {/* Nothing yet and nothing coming — a first message refused leaves
                 an entry holding an empty turn, and its bubble would promise a
                 reply under the error saying there is none. */}
-            {(starting || entry.live !== EMPTY_TURN) && <LiveAssistant turn={entry.live} />}
+            {/* No clock here, and none to pass: this surface only ever draws the
+                window before the head frame, since the render that first sees a
+                chat id has already handed off to `ChatThread` above. The wait it
+                covers is not lost — the head frame reports its own age, so the
+                thread's stopwatch opens with the create, the claim and the
+                upload already counted. */}
+            {(starting || entry.live !== EMPTY_TURN) && (
+              <LiveAssistant turn={entry.live} running={starting} />
+            )}
           </Stack>
         )}
       </ScrollArea>
