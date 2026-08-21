@@ -11,15 +11,34 @@ export interface IntegrationSummary {
  * The slack, telegram and teams fields collapse to a configured/enabled
  * summary; secrets are readable only through the masked /slack, /telegram and
  * /teams endpoints.
+ *
+ * The invite list is stripped too, unless the caller says the viewer manages
+ * this project: `memberEmails` is a roster of third-party addresses, and a
+ * project's being visible never meant its reader may learn who else was
+ * invited — least of all after the owner flips it public, when the stale list
+ * would ride along to everyone. Only the owner's settings page needs it.
  */
-export function sanitizeProject(project: Project): Omit<Project, "slack" | "telegram" | "teams"> & {
+/**
+ * A project as every project response carries it — the shape the console's
+ * client types against, so the two ends of the wire cannot drift. The domain
+ * `Project` is *not* what a route answers with: the bot integrations collapse
+ * to summaries, which is exactly what lets a client ask "is Slack connected"
+ * without ever seeing a credential.
+ */
+export type SanitizedProject = Omit<Project, "slack" | "telegram" | "teams"> & {
   slack?: IntegrationSummary;
   telegram?: IntegrationSummary;
   teams?: IntegrationSummary;
-} {
-  const { slack, telegram, teams, ...rest } = project;
+};
+
+export function sanitizeProject(
+  project: Project,
+  opts: { withMemberEmails?: boolean } = {},
+): SanitizedProject {
+  const { slack, telegram, teams, memberEmails, ...rest } = project;
   return {
     ...rest,
+    ...(opts.withMemberEmails && memberEmails !== undefined ? { memberEmails } : {}),
     ...(slack
       ? {
           slack: {

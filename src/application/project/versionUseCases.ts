@@ -12,7 +12,7 @@ import type { McpRepository } from "@/domain/mcp/repository";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
-import { assertProjectWritable } from "./projectUseCases";
+import { assertProjectWritable, userMayAccessProject } from "./projectUseCases";
 import { nextUpdatedAt } from "./timestamps";
 import { log } from "@/shared/logger";
 
@@ -163,6 +163,36 @@ async function assertReferencesExist(
   const missing = (await Promise.all(checks)).filter((message): message is string => message !== null);
   if (missing.length > 0) {
     throw new ValidationError(missing.join("; "));
+  }
+}
+
+/**
+ * Reject binding a local subagent project the editor may not access. A local
+ * subagent runs another project inside this one's runs, so binding one is the
+ * strongest form of reading it — a private project would otherwise be
+ * reachable through any public project that named it. Only *added* refs are
+ * checked, like the existence check above: a version stays editable after a
+ * project it already bound went private, and the run-time transfer is the
+ * platform's own composition, like the owner's token. A ref that does not
+ * resolve is `assertReferencesExist`'s to report, not this one's.
+ */
+async function assertSubagentProjectsAccessible(
+  refs: VersionRefRepos,
+  next: VersionRefs,
+  userEmail: string,
+  existing?: VersionRefs,
+): Promise<void> {
+  const known = alreadyReferenced(existing).subagents;
+  for (const ref of next.subagentList ?? []) {
+    if (ref.type !== "local" || known.has(subagentKey(ref))) {
+      continue;
+    }
+    const project = await refs.projects.get(ref.name);
+    if (project && !(await userMayAccessProject(project, userEmail))) {
+      throw new ValidationError(
+        `Project "${ref.name}" is private; ask its owner for an invite before binding it as an agent.`,
+      );
+    }
   }
 }
 
@@ -358,6 +388,7 @@ export async function createVersion(
   assertToolBindingsRunnable(project, input);
   assertUniqueReferences(input);
   await assertReferencesExist(refs, input);
+  await assertSubagentProjectsAccessible(refs, input, userEmail);
   const existing = await versions.list(projectName);
 
   const versionName = input.versionName ?? nextVersionName(existing);
@@ -413,6 +444,7 @@ export async function updateVersion(
   // which its own write already checked.
   assertUniqueReferences(input);
   await assertReferencesExist(refs, input, existing);
+  await assertSubagentProjectsAccessible(refs, input, userEmail, existing);
   const updated: Version = {
     ...existing,
     systemPrompt: input.systemPrompt ?? existing.systemPrompt,

@@ -1,5 +1,6 @@
 import type { ProjectRepository } from "@/domain/project/repository";
-import type { CostLimits, Project, ProjectType } from "@/domain/project/types";
+import type { CostLimits, Project, ProjectType, ProjectVisibility } from "@/domain/project/types";
+import { mayAccessProject, normalizeMemberEmails } from "@/domain/project/access";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "./timestamps";
 import { log } from "@/shared/logger";
@@ -35,6 +36,12 @@ export interface CreateProjectInput {
   projectType: ProjectType;
   ownerEmail: string;
   departmentCode?: string;
+  /**
+   * Not offered by the console's create form (a new project starts public, as
+   * every project always has); a clone passes the source's, so cloning a
+   * private project cannot quietly republish its prompt to the whole org.
+   */
+  visibility?: ProjectVisibility;
 }
 
 export interface UpdateProjectInput {
@@ -43,10 +50,30 @@ export interface UpdateProjectInput {
   departmentCode?: string;
   /** Replaces the stored guards; `null` removes them. Absent leaves them alone. */
   costLimits?: CostLimits | null;
+  visibility?: ProjectVisibility;
+  /** Replaces the invite list; absent leaves it alone. Normalized on write. */
+  memberEmails?: string[];
 }
 
 export function listProjects(repo: ProjectRepository): Promise<Project[]> {
   return repo.list();
+}
+
+/**
+ * The projects `userEmail` may see: everything public, plus the private ones
+ * they own or are invited to — or everything, for an admin, who could reach
+ * each one through the write override anyway and administers the catalog as a
+ * whole. One admin check for the whole list, not one per row.
+ */
+export async function listAccessibleProjects(
+  repo: ProjectRepository,
+  userEmail: string,
+): Promise<Project[]> {
+  const projects = await repo.list();
+  if (await isAdminOverride(userEmail)) {
+    return projects;
+  }
+  return projects.filter((project) => mayAccessProject(project, userEmail));
 }
 
 export async function getProject(repo: ProjectRepository, name: string): Promise<Project> {
@@ -59,8 +86,9 @@ export async function getProject(repo: ProjectRepository, name: string): Promise
 
 /**
  * Load a project and assert `userEmail` may write it. Projects are a shared
- * catalog — any signed-in user may read and run them; writing is for the owner
- * and for admins.
+ * catalog — anyone the visibility admits may read and run them
+ * ({@link assertProjectAccessible}); writing is for the owner and for admins,
+ * on either visibility.
  *
  * Named for what it checks, not for the owner alone: it is bound at twenty-odd
  * call sites, and while it asserted ownership the name was the documentation.
@@ -107,6 +135,53 @@ export async function assertProjectWritable(
 }
 
 /**
+ * Load a project and assert `userEmail` may access it — the read-and-run
+ * sibling of {@link assertProjectWritable}, asked by every console surface
+ * that shows or runs a project on a person's behalf. The domain predicate
+ * (`mayAccessProject`) is the rule; this adds the admin override, allowed for
+ * the same reason admins may write: they administer the catalog. Unlike the
+ * write override it is logged but not audited — a read changes nothing, so
+ * there is no later question only an audit row could answer.
+ *
+ * API-token and integration paths deliberately never come here: a token is
+ * the project's own credential, and a bot the owner wired to a surface was
+ * pointed there by the owner. The person-facing gate for those surfaces is
+ * their own (the Slack pipeline checks the asker's email itself).
+ */
+export async function assertProjectAccessible(
+  repo: ProjectRepository,
+  name: string,
+  userEmail: string,
+): Promise<Project> {
+  const project = await getProject(repo, name);
+  if (await userMayAccessProject(project, userEmail)) {
+    return project;
+  }
+  throw new ForbiddenError(`Project "${name}" is private`);
+}
+
+/**
+ * The access predicate with the admin override folded in, for slices that
+ * already hold the project row — the chat use cases and the messaging
+ * pipeline, which load the project for the run they are about to start and
+ * must not read it twice just to ask this. Everything else goes through
+ * {@link assertProjectAccessible}.
+ */
+export async function userMayAccessProject(project: Project, userEmail: string): Promise<boolean> {
+  if (mayAccessProject(project, userEmail)) {
+    return true;
+  }
+  if (await isAdminOverride(userEmail)) {
+    log.warn(
+      "authz",
+      `admin ${userEmail} is accessing private project "${project.name}" owned by ${project.ownerEmail}`,
+    );
+    return true;
+  }
+  return false;
+}
+
+/**
  * The admin override, resolved so that losing the settings store denies rather
  * than throws.
  *
@@ -142,6 +217,7 @@ export async function createProject(
     projectType: input.projectType,
     ownerEmail: input.ownerEmail,
     departmentCode: input.departmentCode,
+    ...(input.visibility ? { visibility: input.visibility } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -177,6 +253,10 @@ export async function updateProject(
       : input.costLimits === null
         ? { costLimits: undefined }
         : { costLimits: input.costLimits }),
+    ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
+    ...(input.memberEmails === undefined
+      ? {}
+      : { memberEmails: normalizeMemberEmails(input.memberEmails, existing.ownerEmail) }),
     updatedAt: nextUpdatedAt(existing.updatedAt),
   };
   try {
@@ -247,7 +327,11 @@ export async function deleteProject(
  */
 export interface ProjectUseCases {
   list(): Promise<Project[]>;
+  /** See {@link listAccessibleProjects} — what this person's console may show. */
+  listAccessible(userEmail: string): Promise<Project[]>;
   get(name: string): Promise<Project>;
+  /** See {@link assertProjectAccessible} — visibility, membership, admin override. */
+  assertAccessible(name: string, userEmail: string): Promise<Project>;
   /** See {@link assertProjectWritable} — owner or admin, and the override is recorded. */
   assertWritable(name: string, userEmail: string): Promise<Project>;
   create(input: CreateProjectInput): Promise<Project>;
@@ -261,7 +345,9 @@ export function createProjectUseCases(
 ): ProjectUseCases {
   return {
     list: () => listProjects(projects),
+    listAccessible: (userEmail) => listAccessibleProjects(projects, userEmail),
     get: (name) => getProject(projects, name),
+    assertAccessible: (name, userEmail) => assertProjectAccessible(projects, name, userEmail),
     assertWritable: (name, userEmail) => assertProjectWritable(projects, name, userEmail),
     create: (input) => createProject(projects, input),
     update: (name, input, userEmail) => updateProject(projects, name, input, userEmail),

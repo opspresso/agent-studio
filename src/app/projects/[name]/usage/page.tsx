@@ -13,7 +13,8 @@ import { UsageBreakdown } from "@/app/_components/UsageBreakdown";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { buildDailySeries, groupUsage, sumRecord, type GroupBy } from "@/app/_lib/usage";
-import { usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
+import { getProject, usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
+import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { Alert, Avatar, Card, Group, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { IconActivity, IconCoins, IconUsers } from "@tabler/icons-react";
 import { useLocale, useT } from "@/app/_i18n/provider";
@@ -65,6 +66,24 @@ export default function UsagePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // The per-caller breakdown is owner/admin-only server-side, so the page asks
+  // the same question before requesting it — a member on a shared project used
+  // to get a guaranteed 403 on every visit and range change.
+  const viewer = useViewer();
+  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getProject(name)
+      .then((project) => !cancelled && setOwnerEmail(project.ownerEmail))
+      // The summary below reports its own errors; without an owner the
+      // breakdown simply stays off, which is what the server would answer.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
+  const maySeeActors = canEditProject(viewer, ownerEmail);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -76,16 +95,19 @@ export default function UsagePage() {
     } finally {
       setLoading(false);
     }
-    // Separately, and never fatal: the breakdown is owner-only, so a member
-    // looking at a shared project's totals gets a 403 here and should still see
-    // the totals rather than an error page.
+    // Separately, and never fatal: a breakdown that fails should cost the
+    // totals nothing.
+    if (!maySeeActors) {
+      setActorRows([]);
+      return;
+    }
     try {
       const { items } = await usageActors(name, range.from, range.to);
       setActorRows(items);
     } catch {
       setActorRows([]);
     }
-  }, [name, range.from, range.to]);
+  }, [name, range.from, range.to, maySeeActors]);
 
   useEffect(() => {
     void load();

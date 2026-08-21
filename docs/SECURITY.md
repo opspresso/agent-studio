@@ -59,12 +59,38 @@ URL 에 실리고, 그것이 배포의 허용 도메인 목록이 방금 거절�
 
 ## 인가 모델
 
-**Project 는 공유 카탈로그다.** 로그인한 사용자라면 누구나 어떤 project 든 읽고 실행할 수
-있다. 변경(mutation)만 게이트된다.
+**Project 는 공유 카탈로그이되, 공개 범위(visibility)를 갖는다.** `public`(기본값이자
+`visibility` 필드가 없는 기존 행의 의미)은 로그인한 사용자라면 누구나 읽고 실행하고 복제할
+수 있다. `private` 은 그 범위를 소유자와 `memberEmails` 의 초대 목록으로 좁힌다 — 쓰기는
+이 축과 무관하게 언제나 소유자-또는-admin 이다. 판정의 유일한 정의는
+`src/domain/project/access.ts` (`mayAccessProject`)이고, admin 오버라이드를 합친 형태가
+`assertProjectAccessible` / `userMayAccessProject` (`projectUseCases.ts`)다. 새 읽기·실행
+표면은 이 둘 중 하나를 지나며, `visibility` 나 `memberEmails` 를 직접 비교하는 두 번째
+판정을 만들지 않는다.
+
+**세 부류의 표면이 세 가지로 다르게 게이트된다.** 사람이 세션으로 들어오는 콘솔·chat 은
+`assertProjectAccessible` 로 막는다. API token, trigger, webhook, A2A 클라이언트 키, 그리고
+소유자가 직접 연결한 Telegram·Teams bot 은 *자격 증명 자체가 접근권* 이라 visibility 를 묻지
+않는다 — token 은 소유자로서 행동하고, bot 배선은 소유자의 선택이다. Slack bot 만 그 중간에
+있다: workspace 의 누구나 말을 걸 수 있으므로, private project 의 bot 은 `users.info` 의
+이메일로 묻는 사람을 식별해 초대 여부를 확인하고, 이메일을 공유하지 않는 workspace 의
+사용자는 거절한다 (`slackSenderMayAccess` — 런, `!mute` 명령, thread-start 인사가 같은
+게이트를 지난다). 앱이 서명한 메시지(키워드로 깨운 알림 등)는 통과한다: 그 키워드는
+소유자 자신의 설정이라 trigger 와 같은 소유자-배선 자동화다. 조회된 주소는 판정에만
+쓰이고 프롬프트에는 닿지 않는다. 초대 목록 자체(`memberEmails`)는 제3자 주소의 명부이므로
+응답에서도 소유자·admin 에게만 나간다 (`sanitizeProject`). 무인증 A2A Agent Card
+(`/.well-known/agent-card.json`)는 자격 증명이 전혀 없는 경로이므로 private project 를
+404 로 감춘다.
+
+private project 를 local subagent 로 *바인딩* 하는 것도 읽기다: 편집자가 접근할 수 없는
+project 는 버전 저장 시점에 거절된다 (`assertSubagentProjectsAccessible`). 이미 바인딩된
+참조는 project 가 뒤늦게 private 이 되어도 편집 가능성을 잃지 않는다 — 실행 시점의 transfer
+는 소유자의 token 과 같은 플랫폼 자신의 조립이다. 비용 대시보드의 project *합계* 는
+visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 운영의 일부로 남겨 둔 결정이다.
 
 | 리소스 | 읽기 | 쓰기 |
 |---|---|---|
-| Project, version | 로그인한 모든 사용자 | 소유자 또는 설정된 admin (`assertProjectWritable`) |
+| Project, version | 접근 가능한 사용자 (`assertProjectAccessible` — public 은 전원, private 은 소유자·초대 멤버·admin) | 소유자 또는 설정된 admin (`assertProjectWritable`) |
 | Project trace | 소유자 또는 설정된 admin | — |
 | Project Slack 설정 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
 | Project API token, trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
@@ -610,9 +636,9 @@ project 는 그것을 결코 보지 않는다. 해석된 프로필은 워크스�
 `parameters.slackWorkspace` 로 버전별 옵트인. 켜져 있으면 런은 자기 project 의 봇이 설치된
 워크스페이스의 채널 히스토리, 스레드, 사용자 이름을 읽을 수 있다.
 
-**Project 는 공유 카탈로그다.** 따라서 project 를 실행할 수 있는 사람은 누구나 그 봇이 읽을 수
-있는 것을 읽을 수 있다 — 봇이 초대된 모든 채널이며, `groups:history` 가 적용되는 비공개 채널도
-포함이다. 그것이 이것을 Slack 에 연결된 모든 project 가 갖는 capability 가 아니라 버전별
+**Project 는 공유 카탈로그다** (private project 라면 그 접근 범위 안에서). 따라서 project 를
+실행할 수 있는 사람은 누구나 그 봇이 읽을 수 있는 것을 읽을 수 있다 — 봇이 초대된 모든
+채널이며, `groups:history` 가 적용되는 비공개 채널도 포함이다. 그것이 이것을 Slack 에 연결된 모든 project 가 갖는 capability 가 아니라 버전별
 옵트인으로 만든 이유 전부다. 켜는 것은 어떤 채널의 내용을 그 채널 자신의 멤버보다 더 넓은
 사람들에게 닿게 하겠다는 결정이다.
 

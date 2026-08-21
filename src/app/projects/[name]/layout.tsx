@@ -21,6 +21,8 @@ import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { getProject } from "../lib/api";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
+import { tierMayCreateProjects } from "@/domain/member/tiers";
+import { CloneProjectButton } from "./_components/CloneProjectButton";
 import classes from "./ProjectLayout.module.css";
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
@@ -120,13 +122,18 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
               </Text>
             </div>
           </Group>
-          {ownerEmail && (
-            <OwnerLine
-              ownerEmail={ownerEmail}
-              isMine={viewer?.email === ownerEmail}
-              prefix={t("project.ownedBy")}
-            />
-          )}
+          <Group gap="md">
+            {ownerEmail && (
+              <OwnerLine
+                ownerEmail={ownerEmail}
+                isMine={viewer?.email === ownerEmail}
+                prefix={t("project.ownedBy")}
+              />
+            )}
+            {viewer !== null && tierMayCreateProjects(viewer.tier) && (
+              <CloneProjectButton sourceName={name} />
+            )}
+          </Group>
         </Group>
       </div>
 

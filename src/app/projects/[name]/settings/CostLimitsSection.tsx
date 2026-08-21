@@ -6,8 +6,6 @@ import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { stateColor } from "@/app/_components/badgeColors";
 import {
   getProject,
-  getProjectTeams,
-  getProjectTelegram,
   listProjectTelegramChats,
   listProjectSlackChannels,
   updateProject,
@@ -65,18 +63,45 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    void getProject(projectName)
-      .then((project) => {
-        if (cancelled) {
-          return;
-        }
-        const limits = project.costLimits;
-        setAlertUsd(limits?.alertThresholdUsd ?? "");
-        setBlockUsd(limits?.blockThresholdUsd ?? "");
-        setMonthlyAlertUsd(limits?.monthlyAlertThresholdUsd ?? "");
-        setMonthlyBlockUsd(limits?.monthlyBlockThresholdUsd ?? "");
-        setDestinations(limits ? costAlertDestinations(limits) : []);
-      })
+    async function load() {
+      const project = await getProject(projectName);
+      if (cancelled) {
+        return;
+      }
+      const limits = project.costLimits;
+      setAlertUsd(limits?.alertThresholdUsd ?? "");
+      setBlockUsd(limits?.blockThresholdUsd ?? "");
+      setMonthlyAlertUsd(limits?.monthlyAlertThresholdUsd ?? "");
+      setMonthlyBlockUsd(limits?.monthlyBlockThresholdUsd ?? "");
+      setDestinations(limits ? costAlertDestinations(limits) : []);
+      setLoading(false);
+
+      // The project's own integration summaries say which surfaces exist, so
+      // only those are asked anything further — an unconnected bot's channel
+      // or chat listing is a guaranteed 400, fired on every settings visit.
+      const slackOn = Boolean(project.slack?.configured && project.slack.enabled);
+      const telegramOn = Boolean(project.telegram?.configured && project.telegram.enabled);
+      const teamsOn = Boolean(project.teams?.configured && project.teams.enabled);
+      const [slack, telegramDestinations] = await Promise.allSettled([
+        slackOn ? listProjectSlackChannels(projectName) : Promise.resolve({ channels: [] }),
+        telegramOn ? listProjectTelegramChats(projectName) : Promise.resolve({ chats: [] }),
+      ]);
+      if (cancelled) {
+        return;
+      }
+      const channels = slack.status === "fulfilled" ? slack.value.channels : [];
+      setSlackChannels(channels);
+      setTelegramChats(
+        telegramDestinations.status === "fulfilled" ? telegramDestinations.value.chats : [],
+      );
+      setSlackChannelsUnavailable(!slackOn || slack.status === "rejected" || channels.length === 0);
+      setAvailableDestinations([
+        ...(channels.length > 0 ? (["slack"] as const) : []),
+        ...(telegramOn ? (["telegram"] as const) : []),
+        ...(teamsOn ? (["teams"] as const) : []),
+      ]);
+    }
+    void load()
       .catch((e: unknown) => {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Failed to load cost limits");
@@ -85,43 +110,6 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
       .finally(() => {
         if (!cancelled) {
           setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectName]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.allSettled([
-      listProjectSlackChannels(projectName),
-      getProjectTelegram(projectName),
-      listProjectTelegramChats(projectName),
-      getProjectTeams(projectName),
-    ])
-      .then(([slack, telegram, telegramDestinations, teams]) => {
-        if (cancelled) {
-          return;
-        }
-        const channels = slack.status === "fulfilled" ? slack.value.channels : [];
-        setSlackChannels(channels);
-        setTelegramChats(
-          telegramDestinations.status === "fulfilled" ? telegramDestinations.value.chats : [],
-        );
-        setSlackChannelsUnavailable(slack.status === "rejected" || channels.length === 0);
-        setAvailableDestinations([
-          ...(channels.length > 0 ? (["slack"] as const) : []),
-          ...(telegram.status === "fulfilled" && telegram.value.configured && telegram.value.enabled
-            ? (["telegram"] as const)
-            : []),
-          ...(teams.status === "fulfilled" && teams.value.configured && teams.value.enabled
-            ? (["teams"] as const)
-            : []),
-        ]);
-      })
-      .finally(() => {
-        if (!cancelled) {
           setSlackChannelsLoading(false);
         }
       });

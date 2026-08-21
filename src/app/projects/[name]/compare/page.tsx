@@ -11,7 +11,7 @@ import {
   streamPredict,
   type EngineChunk,
   type ImageResult,
-  type Project,
+  type SanitizedProject,
   type Version,
 } from "../../lib/api";
 import { findTemplateVariables } from "@/shared/template";
@@ -85,7 +85,7 @@ export default function ComparePage() {
   const view = useImageViewer();
   const name = params.name;
 
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<SanitizedProject | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);

@@ -8,6 +8,7 @@ import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { CostLimitsSection } from "./CostLimitsSection";
+import { VisibilitySection } from "./VisibilitySection";
 import { SchedulesSection } from "./SchedulesSection";
 import { WebhookSection } from "./WebhookSection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
@@ -154,6 +155,8 @@ export default function SettingsPage() {
           </Group>
         </Stack>
       </form>
+
+      <VisibilitySection projectName={name} />
 
       <CostLimitsSection projectName={name} />
 

@@ -3,6 +3,7 @@ import type {
   McpBinding,
   Project,
   ProjectType,
+  ProjectVisibility,
   SubagentRef,
   Version,
   VersionParameters,
@@ -23,6 +24,8 @@ import type { Trace } from "@/domain/trace/types";
 import type { McpConnectionView } from "@/application/mcp/mcpAuthUseCases";
 import type { ActorUsageView } from "@/application/usage/listActors";
 import type { ProjectA2aResponse } from "@/app/api/projects/[name]/a2a/route";
+import type { CloneProjectResponse } from "@/app/api/projects/[name]/clone/route";
+import type { SanitizedProject } from "@/app/api/projects/_lib/http";
 import type { ProjectSlackResponse } from "@/app/api/projects/[name]/slack/route";
 import type { ProjectTelegramResponse } from "@/app/api/projects/[name]/telegram/route";
 import type { ProjectTeamsResponse } from "@/app/api/projects/[name]/teams/route";
@@ -34,7 +37,7 @@ import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
-export type { CostLimits, McpBinding, Project, ProjectType, SubagentRef, Version, VersionParameters };
+export type { CostLimits, McpBinding, Project, ProjectType, ProjectVisibility, SubagentRef, Version, VersionParameters };
 export type { ModelConfig, EngineChunk, UsageRow, Trace, SlackChannelInfo, SlackSuggestedPrompt };
 
 // --- Projects -------------------------------------------------------------
@@ -53,30 +56,49 @@ export interface UpdateProjectInput {
   departmentCode?: string;
   /** Sent whole; `null` removes the guards. Omitted leaves them untouched. */
   costLimits?: CostLimits | null;
+  visibility?: ProjectVisibility;
+  /** Sent whole; replaces the invite list. Omitted leaves it untouched. */
+  memberEmails?: string[];
 }
 
-export function listProjects(): Promise<Project[]> {
-  return fetch("/api/projects").then((r) => readJson<Project[]>(r));
+// Project responses are the sanitized shape the routes actually build —
+// integrations arrive as summaries, which is what lets a page ask "is Slack
+// connected" before it fires a request only a connected bot can answer.
+export type { SanitizedProject };
+
+export function listProjects(): Promise<SanitizedProject[]> {
+  return fetch("/api/projects").then((r) => readJson<SanitizedProject[]>(r));
 }
 
-export function getProject(name: string): Promise<Project> {
-  return fetch(`/api/projects/${name}`).then((r) => readJson<Project>(r));
+export function getProject(name: string): Promise<SanitizedProject> {
+  return fetch(`/api/projects/${name}`).then((r) => readJson<SanitizedProject>(r));
 }
 
-export function createProject(input: CreateProjectInput): Promise<Project> {
+export function createProject(input: CreateProjectInput): Promise<SanitizedProject> {
   return fetch("/api/projects", {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify(input),
-  }).then((r) => readJson<Project>(r));
+  }).then((r) => readJson<SanitizedProject>(r));
 }
 
-export function updateProject(name: string, patch: UpdateProjectInput): Promise<Project> {
+export function updateProject(name: string, patch: UpdateProjectInput): Promise<SanitizedProject> {
   return fetch(`/api/projects/${name}`, {
     method: "PUT",
     headers: jsonHeaders,
     body: JSON.stringify(patch),
-  }).then((r) => readJson<Project>(r));
+  }).then((r) => readJson<SanitizedProject>(r));
+}
+
+export function cloneProject(
+  sourceName: string,
+  input: { name: string; displayName: string },
+): Promise<CloneProjectResponse> {
+  return fetch(`/api/projects/${sourceName}/clone`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  }).then((r) => readJson<CloneProjectResponse>(r));
 }
 
 export function deleteProject(name: string): Promise<void> {
@@ -186,12 +208,12 @@ export function deleteVersion(name: string, version: string): Promise<void> {
   return fetch(`/api/projects/${name}/versions/${version}`, { method: "DELETE" }).then(assertOk);
 }
 
-export function publishVersion(name: string, versionName: string): Promise<Project> {
+export function publishVersion(name: string, versionName: string): Promise<SanitizedProject> {
   return fetch(`/api/projects/${name}/publish`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ versionName }),
-  }).then((r) => readJson<Project>(r));
+  }).then((r) => readJson<SanitizedProject>(r));
 }
 
 // --- Models ---------------------------------------------------------------

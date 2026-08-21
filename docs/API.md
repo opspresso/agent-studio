@@ -22,8 +22,10 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
   `/api/telegram/webhook/*` 는 Telegram 이 되돌려 주는 secret token, `/api/teams/messages/*` 는 Bot
   Framework 가 서명한 토큰, `/api/webhook/{project}` 는
   그 webhook 자신의 secret, `/api/triggers/scan` 은 배포의 `SCHEDULE_SCAN_TOKEN` 이다. `/api/health`, `/api/ready`, `/api/metrics` 는 열려 있다.
-- **Authorization**: project 는 공유 카탈로그다 — 로그인한 사용자라면 누구나 어떤 project 든
-  읽고 실행할 수 있다. 변경(수정/삭제/publish, version 생성/수정, Slack·Telegram 설정)은
+- **Authorization**: project 는 공개 범위를 갖는 공유 카탈로그다 — `public`(기본값) 은
+  로그인한 누구나 읽고 실행하고, `private` 은 소유자·초대 멤버·admin 만이다
+  ([SECURITY.md](SECURITY.md#인가-모델), 그 외에는 `403 { "error": "Project \"…\" is private" }`).
+  변경(수정/삭제/publish, version 생성/수정, Slack·Telegram 설정)은 공개 범위와 무관하게
   소유자와 설정된 admin 만 할 수 있고, 그 외에는
   `403 { "error": "You do not have permission to modify project \"…\"" }` 이다.
   다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 project 하위 리소스 — 트레이스,
@@ -217,6 +219,30 @@ DELETE /api/skills/{name}     → 204                     | 404
   **publish 되지 않는다**: publish 는 의도적인 행위로 남는다 (project 가 publish 되지 않은
   동안 콘솔이 저장 후에 그것을 제안한다). 맞는 제공 모델이 하나도 없으면 project 는 version
   없이 생성되며, 이는 이전과 정확히 같다.
+
+#### 공개 범위와 복제
+
+`PUT /api/projects/{name}` 은 공개 범위도 싣는다: `visibility: "public" | "private"` 와, private
+일 때 의미를 갖는 초대 목록 `memberEmails: string[]` (통째로 대체, 저장 시 trim·소문자·중복
+제거·소유자 제외로 정규화). 필드가 없는 기존 행은 public 이다. private project 는 세션
+기반의 모든 읽기·실행 표면에서 소유자·초대 멤버·admin 외에 403 으로 거절되고, 목록
+(`GET /api/projects`) 에서는 보이지 않는다. 누가 게이트를 받고 누가 받지 않는지(API token,
+bot, Slack 의 이메일 판정)는 [SECURITY.md](SECURITY.md#인가-모델) 가 정본이다.
+
+```
+POST /api/projects/{name}/clone    { "name": "my-copy", "displayName": "My Copy" }
+  → 201 { "project": { … }, "warning": "…"? }
+```
+
+접근 가능한 project 를 호출자 소유의 새 project 로 복제한다. tier 게이트는 생성과 같다.
+복사되는 것은 설명·타입·부서 코드·**공개 범위**(private 원본의 복제본은 private 으로
+시작한다 — 초대받은 사람이 클릭 한 번으로 private 프롬프트를 전사에 재공개하는 일을 막는다)
+와 version 하나 — 원본이 실제로 실행하는 것, 즉 `resolveRunnableVersion` 이 답하는 published
+또는 최신 draft — 다. MCP 바인딩의 header 오버라이드(원 소유자의 시크릿), bot 연동, 비용
+한도, API token, 초대 목록, published 포인터는 복사되지 않는다. 복제본의 version 은 publish
+되지 않은 `"1"` 로 시작한다. version 을 복사할 수 없었던 경우(복제자가 접근할 수 없는
+subagent 참조, 카탈로그를 떠난 모델) project 는 만들어지고 `warning` 이 무엇을 잃었는지
+말한다.
 
 #### 비용 한도
 

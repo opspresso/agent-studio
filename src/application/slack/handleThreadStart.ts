@@ -1,4 +1,4 @@
-import type { SlackBotBinding } from "@/application/slack/handleSlackEvent";
+import { slackSenderMayAccess, type SlackBotBinding } from "@/application/slack/handleSlackEvent";
 import type { SlackEventBody, SlackEventDeps } from "@/application/slack/types";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
 import { log } from "@/shared/logger";
@@ -18,6 +18,8 @@ interface OpenedSurface {
   channel: string;
   threadTs?: string;
   greet: boolean;
+  /** Who opened it, when the event says. The visibility gate asks. */
+  userId?: string;
 }
 
 function openedSurface(body: SlackEventBody): OpenedSurface | null {
@@ -26,13 +28,18 @@ function openedSurface(body: SlackEventBody): OpenedSurface | null {
     // The Home tab is a different surface entirely and has nothing to do with
     // the agent container.
     return event.tab === "messages" && event.channel
-      ? { channel: event.channel, greet: false }
+      ? { channel: event.channel, greet: false, ...(event.user ? { userId: event.user } : {}) }
       : null;
   }
   if (event?.type === "assistant_thread_started") {
     const thread = event.assistant_thread;
     return thread?.channel_id && thread.thread_ts
-      ? { channel: thread.channel_id, threadTs: thread.thread_ts, greet: true }
+      ? {
+          channel: thread.channel_id,
+          threadTs: thread.thread_ts,
+          greet: true,
+          ...(thread.user_id ? { userId: thread.user_id } : {}),
+        }
       : null;
   }
   return null;
@@ -59,6 +66,17 @@ export async function handleThreadStart(
   // Silent, unlike a mention: nobody asked anything, so an error message here
   // would be an unprompted complaint in a thread the user just opened.
   if (!project || project.projectType !== "agent") {
+    return;
+  }
+  // The same gate as a run, and silent on the same reasoning as above: the
+  // greeting restates the project's description and prompts, which is exactly
+  // the read the visibility gate protects. The person's first actual message
+  // gets the spoken refusal.
+  if (
+    !(await slackSenderMayAccess(deps, token, project, {
+      ...(surface.userId ? { user: surface.userId } : {}),
+    }))
+  ) {
     return;
   }
 

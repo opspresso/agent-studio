@@ -1,12 +1,19 @@
 import { withAuth } from "@/lib/session";
-import { versionUseCases } from "@/lib/container";
+import { projectUseCases, versionUseCases } from "@/lib/container";
 import { createVersionSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
-export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
+  try {
+    // A version is the project's configuration, so reading one is reading the
+    // project: the visibility gate applies before anything is listed.
+    await projectUseCases.assertAccessible(name, user.email);
+  } catch (error) {
+    return apiError(error);
+  }
   const versions = await versionUseCases.list(name);
   // Called with one argument on purpose: `map` would otherwise pass the index
   // and the array too, which is silent today and is not once `toView` grows a

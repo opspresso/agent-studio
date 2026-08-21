@@ -25,7 +25,7 @@ import { toSlug } from "@/domain/naming";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
-import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
+import { createProject, listProjects, type SanitizedProject, type ProjectType } from "./lib/api";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { PROJECT_TYPE_COLOR } from "@/app/_components/badgeColors";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
@@ -41,7 +41,7 @@ export default function ProjectsPage() {
   const t = useT();
   const { data: session } = useSession();
   const viewer = useViewer();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<SanitizedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
@@ -96,7 +96,14 @@ export default function ProjectsPage() {
               <Text fw={500} truncate>
                 {project.displayName || project.name}
               </Text>
-              <Badge color={PROJECT_TYPE_COLOR[project.projectType]}>{project.projectType}</Badge>
+              <Group gap={6} wrap="nowrap">
+                {project.visibility === "private" && (
+                  <Badge variant="light" color="gray">
+                    {t("projects.privateBadge")}
+                  </Badge>
+                )}
+                <Badge color={PROJECT_TYPE_COLOR[project.projectType]}>{project.projectType}</Badge>
+              </Group>
             </Group>
             <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
               {project.name}

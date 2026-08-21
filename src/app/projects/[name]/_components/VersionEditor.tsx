@@ -32,6 +32,8 @@ import {
 } from "@/app/_components/modelOptions";
 import { monoInput } from "@/app/_components/monoInput";
 import { listProjects } from "../../lib/api";
+import { tierAtLeast } from "@/domain/member/tiers";
+import { useViewer } from "@/app/_lib/useViewer";
 import type { ModelConfig, ProjectType, VersionInput, VersionParameters } from "../../lib/api";
 import {
   LabeledField,
@@ -76,9 +78,26 @@ export function VersionEditor({
   const hasToolBindings =
     value.mcpList.length > 0 || value.skillList.length > 0 || value.subagentList.length > 0;
 
+  // The capability registries are `member`-gated server-side (`withMemberAuth`),
+  // so a guest's picker requests are guaranteed 403s — the same predicate
+  // decides here whether to ask at all. Projects stay: every tier may list them.
+  const viewer = useViewer();
+  const mayReadRegistries = viewer !== null && tierAtLeast(viewer.tier, "member");
+
   useEffect(() => {
+    // Wait until the viewer is known rather than firing requests that are
+    // refused for a guest and redundant for everyone else once re-run.
+    if (viewer === null) {
+      return;
+    }
     let cancelled = false;
-    void Promise.allSettled([listMcps(), listSkills(), listProjects(), listAgents()]).then(
+    const none: never[] = [];
+    void Promise.allSettled([
+      mayReadRegistries ? listMcps() : Promise.resolve(none),
+      mayReadRegistries ? listSkills() : Promise.resolve(none),
+      listProjects(),
+      mayReadRegistries ? listAgents() : Promise.resolve(none),
+    ]).then(
       ([mcps, skills, projects, agents]) => {
         if (cancelled) {
           return;
@@ -121,7 +140,7 @@ export function VersionEditor({
     return () => {
       cancelled = true;
     };
-  }, [projectName]);
+  }, [projectName, viewer, mayReadRegistries]);
   const [schemaText, setSchemaText] = useState(() =>
     value.parameters.jsonSchema ? JSON.stringify(value.parameters.jsonSchema, null, 2) : "",
   );

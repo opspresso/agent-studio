@@ -147,6 +147,7 @@ import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execu
 import { DEFAULT_MEMBER_TIER, type MemberTier } from "@/domain/member/tiers";
 import { offeredModels, SELF_HOSTED_PROVIDERS } from "@/domain/llm/models";
 import { composeCreateProjectWithInitialVersion } from "@/application/project/createProjectFlow";
+import { composeCloneProject } from "@/application/project/cloneProjectFlow";
 
 // The write override's admin list is pushed into the use case here rather than
 // imported by it — a static import would drag the settings store (and its
@@ -743,6 +744,14 @@ export const createProjectWithInitialVersion = composeCreateProjectWithInitialVe
       enabled,
     );
   },
+});
+
+/** Clone an accessible project into one the caller owns; see the flow module. */
+export const cloneProject = composeCloneProject({
+  versions: versionRepository,
+  projects: projectRepository,
+  refs: versionRefRepos,
+  cipher: secretCipher,
 });
 
 /**

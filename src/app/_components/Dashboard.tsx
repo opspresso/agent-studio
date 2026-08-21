@@ -9,7 +9,7 @@ import {
   IconCoins,
   IconLayersIntersect,
 } from "@tabler/icons-react";
-import type { Project } from "@/domain/project/types";
+import type { SanitizedProject } from "@/app/projects/lib/api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { CardHeading } from "./CardHeading";
 import { GROUP_BY_LABEL, GroupByControl } from "./GroupByControl";
@@ -40,7 +40,7 @@ const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider", "department"];
  * department view is open: every project silently falling into "(none)" is
  * exactly the false claim that view exists to avoid.
  */
-export function Dashboard({ projects }: { projects: Project[] | null }) {
+export function Dashboard({ projects }: { projects: SanitizedProject[] | null }) {
   const t = useT();
   const locale = useLocale();
   const initial = useMemo(() => presetRange(30), []);
