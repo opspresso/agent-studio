@@ -301,6 +301,16 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   evicting the front of the *answer*. Two strings are live at that site: the accumulator
   holds the masked copy the provider gets back, the chunk holds the restored one a
   person reads. Persistence takes the chunk (`src/application/chat/AGENTS.md`).
+- **Folding a run's reasoning has a bounded list, like the image and agent-entry
+  ones.** `delta.reasoningContent` is the one output axis a version can switch
+  off, so a surface cannot tell "this run did not think" from "I am not reading
+  it" — which is how it reached nowhere at all for as long as it did. The four
+  sites (`REASONING_FOLD_SITES` in `tests/architecture.test.ts`) each pair the
+  same three decisions: `isTopLevelChunk` only, the token count carried beside
+  the text (the common OpenAI shape reports a count and streams nothing), and —
+  for the two that hold it in component state — `createTextPacer`, because a
+  commit per token re-renders a string that only grows. A fifth is added there
+  on purpose.
 - **An SSE stream's keepalive cannot start until its first chunk decides the
   status.** `createSseResponse` awaits `generator.next()` before building the
   `Response`, because a refused run throws there and that is what makes it a 429

@@ -306,7 +306,7 @@ export const ko: Messages = {
   "version.defaultPlaceholder": "기본값",
   "version.reasoningTrace": "추론 과정 기록",
   "version.reasoningTraceHint":
-    "답하기 전에 모델이 무엇을 생각했는지 남겨 채팅과 플레이그라운드에서 다시 읽습니다. 기본은 꺼짐 — 추론은 요청을 모델 자신의 말로 되풀이합니다. 보여 주기만 하고 다음 턴의 히스토리로 되돌리지 않습니다.",
+    "답하기 전에 모델이 무엇을 생각했는지 남겨 채팅과 플레이그라운드에서 다시 읽습니다. 기본은 꺼짐 — 추론은 요청을 모델 자신의 말로 되풀이하고, 이 project 의 API 토큰을 가진 쪽에도 함께 전달됩니다. 보여 주기만 하고 다음 턴의 히스토리로 되돌리지 않습니다.",
   "version.reasoningEffort": "추론 강도",
   "version.maxTurns": "최대 턴",
   "version.piiFiltering": "PII 필터링",

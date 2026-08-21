@@ -171,6 +171,25 @@ const MAX_NOTIFY_MS = 200;
 /** One further millisecond of collecting per this many characters of answer. */
 const CHARS_PER_EXTRA_MS = 128;
 
+/**
+ * The turn a rebuild folds onto: empty, except for what the replay cannot carry.
+ *
+ * `runLog` substitutes a single note for a run's reasoning — the frames are a
+ * token apiece and would evict the answer from a 350KB buffer — so a replay
+ * says nothing about thinking that has already happened. Starting the rebuild
+ * from a truly empty turn would therefore blank an open panel the moment the
+ * connection is recycled, mid-run, while the answer beside it rebuilt exactly.
+ * Everything a replay *does* carry is dropped as before, so the rebuilt prefix
+ * is still the fold of what the stream said.
+ */
+function rebuiltFrom(live: LiveTurn): LiveTurn {
+  return {
+    ...EMPTY_TURN,
+    reasoning: live.reasoning,
+    reasoningTokens: live.reasoningTokens,
+  };
+}
+
 function notifyDelayFor(entry: RunEntry): number {
   // Whichever one is actually being drawn. Before the first word of the answer
   // the reasoning panel is open and growing token by token, so a window sized
@@ -399,7 +418,11 @@ export function createRunStore(): RunStore {
    * A replay always starts from the beginning, so the first chunk after a
    * reconnect is folded into an empty turn rather than onto what is on screen.
    * The rebuilt prefix is identical — `reduceChunk` is a pure fold — so nothing
-   * moves.
+   * moves, with one axis excepted: the run log keeps a note in place of the
+   * run's reasoning rather than the frames themselves, so a replay carries none
+   * of it and rebuilding from `EMPTY_TURN` would erase a panel the reader is
+   * looking at mid-run. What the live stream already showed is carried across
+   * the seam instead (see `rebuiltFrom`).
    */
   async function pump(
     key: string,
@@ -461,7 +484,7 @@ export function createRunStore(): RunStore {
             rebuilding = false;
             updateLive(key, (prev) => ({
               ...prev,
-              live: reduceChunk(fold ? EMPTY_TURN : prev.live, chunk),
+              live: reduceChunk(fold ? rebuiltFrom(prev.live) : prev.live, chunk),
             }));
           }
         } catch (error) {

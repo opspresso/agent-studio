@@ -58,7 +58,7 @@ export function ReasoningRow({
           setTouched(true);
           setOpen(!shown);
         }}
-        className={classes.toolToggle}
+        className={classes.rowToggle}
       >
         <Group gap="xs" wrap="nowrap">
           {shown ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}

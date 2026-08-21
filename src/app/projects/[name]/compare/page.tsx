@@ -36,6 +36,7 @@ import {
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { LoadingText } from "@/app/_components/PageState";
 import { ProducedFile } from "@/app/_components/ProducedFile";
+import { createTextPacer } from "@/app/_lib/textPacer";
 import { ReasoningRow } from "@/app/_components/ReasoningRow";
 
 /**
@@ -57,6 +58,8 @@ interface SideResult {
    * has been made, which is what keeps the note off an idle page.
    */
   reasoningRecorded: boolean | null;
+  /** Tokens the run spent thinking, when the provider reported any. */
+  reasoningTokens: number;
   warnings: string[];
   error: string | null;
   costUsd: number | null;
@@ -74,6 +77,7 @@ const IDLE: SideResult = {
   text: "",
   reasoning: "",
   reasoningRecorded: null,
+  reasoningTokens: 0,
   warnings: [],
   error: null,
   costUsd: null,
@@ -176,6 +180,11 @@ export default function ComparePage() {
       versions.find((candidate) => candidate.versionName === versionName)?.parameters
         .reasoningTrace === true;
     setSide(() => ({ ...IDLE, running: true, reasoningRecorded: recordsReasoning }));
+    // Batched rather than committed per token: two sides re-rendering the whole
+    // page once per reasoning token is quadratic over a long think.
+    const reasoningPacer = createTextPacer((batch) =>
+      setSide((prev) => ({ ...prev, reasoning: prev.reasoning + batch })),
+    );
     try {
       if (project.projectType === "image") {
         const result = await predictImage(name, versionName, { prompt: message });
@@ -213,7 +222,7 @@ export default function ComparePage() {
         }
         const reasoned = chunk.delta?.reasoningContent;
         if (reasoned && isTopLevelChunk(chunk)) {
-          setSide((prev) => ({ ...prev, reasoning: prev.reasoning + reasoned }));
+          reasoningPacer.push(reasoned);
         }
         const callCount = chunk.delta?.toolCalls?.length ?? 0;
         if (callCount > 0) {
@@ -239,13 +248,19 @@ export default function ComparePage() {
         }
         if (chunk.usage) {
           const spent = chunk.usage.costUsd;
-          setSide((prev) => ({ ...prev, costUsd: (prev.costUsd ?? 0) + spent }));
+          const thought = chunk.usage.reasoningTokens ?? 0;
+          setSide((prev) => ({
+            ...prev,
+            costUsd: (prev.costUsd ?? 0) + spent,
+            reasoningTokens: prev.reasoningTokens + (isTopLevelChunk(chunk) ? thought : 0),
+          }));
         }
       }
     } catch (e) {
       const failure = e instanceof Error ? e.message : "Run failed";
       setSide((prev) => ({ ...prev, error: failure }));
     } finally {
+      reasoningPacer.flush();
       setSide((prev) => ({ ...prev, running: false, durationMs: Date.now() - startedAt }));
     }
   }
@@ -348,6 +363,7 @@ export default function ComparePage() {
                     <ReasoningRow
                       key={`reasoning-${index}-${side.durationMs ?? "live"}`}
                       text={side.reasoning}
+                      {...(side.reasoningTokens > 0 ? { tokens: side.reasoningTokens } : {})}
                       streaming={side.running && side.text === "" && side.reasoning !== ""}
                     />
                   )}

@@ -115,10 +115,16 @@ const RIDES_WITH_REASONING = new Set(["traceId", "author", "authorPath", "delta"
  */
 function isReasoningOnly(chunk: EngineChunk): boolean {
   const delta = chunk.delta;
-  if (!delta?.reasoningContent || delta.content !== undefined || delta.toolCalls !== undefined) {
+  if (!delta?.reasoningContent) {
     return false;
   }
-  return Object.keys(chunk).every((key) => RIDES_WITH_REASONING.has(key));
+  // An allowlist on both levels, not one of each: naming the delta fields this
+  // must not carry would let a fourth delta axis be deleted from the replay
+  // buffer in silence, which is the failure the chunk-level check above avoids.
+  return (
+    Object.keys(delta).every((key) => key === "reasoningContent") &&
+    Object.keys(chunk).every((key) => RIDES_WITH_REASONING.has(key))
+  );
 }
 
 /**

@@ -1,5 +1,5 @@
 /* The header of a row that opens — shared by ToolRow and ReasoningRow. */
-.toolToggle {
+.rowToggle {
   display: block;
   width: 100%;
   padding: 6px var(--mantine-spacing-sm);
@@ -8,6 +8,6 @@
   background-color: var(--mantine-color-default-hover);
 }
 
-.toolToggle:hover {
+.rowToggle:hover {
   color: var(--mantine-color-text);
 }

@@ -236,9 +236,15 @@ export interface VersionParameters {
    *
    * A reasoning model bills for tokens it spends before the first visible word,
    * and until this is on those tokens leave nothing behind: the engine emits
-   * them and every consumer drops them. With it on, the reasoning reaches the
-   * console — the chat thread and the Playground — and a chat run keeps it on
-   * the assistant message beside the answer.
+   * them and every consumer drops them. With it on, the console renders the
+   * thinking — the chat thread, the Playground, Compare — and a chat run keeps
+   * it on the assistant message beside the answer.
+   *
+   * The console is where it is *rendered*, not the boundary it stops at: the
+   * two raw-chunk routes (`/agent` and streaming `/predict`) forward engine
+   * chunks verbatim, so anyone holding a project API token receives the
+   * reasoning frames too. Nothing else republishes it — the OpenAI shapes, A2A,
+   * the messaging bots and the trace recorder all read the answer beside it.
    *
    * Opt-in, and off for everything written before it existed, because it
    * changes who can read the thinking rather than what the run can do: reasoning

@@ -9,6 +9,7 @@ import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { ProducedFile } from "@/app/_components/ProducedFile";
+import { createTextPacer } from "@/app/_lib/textPacer";
 import { ReasoningRow } from "@/app/_components/ReasoningRow";
 import { ToolRow } from "@/app/_components/ToolRow";
 import {
@@ -131,6 +132,10 @@ export function RunPanel({
       return;
     }
     setRunning(true);
+    // Reasoning arrives token by token and can run far longer than the answer,
+    // so it is committed in batches rather than per token — the same rule the
+    // chat thread's store applies to what it draws.
+    const reasoningPacer = createTextPacer((batch) => setReasoning((prev) => prev + batch));
     setText("");
     setReasoning("");
     setReasoningTokens(0);
@@ -227,7 +232,7 @@ export function RunPanel({
         // the reason the answer is — a child's thinking is its own run's.
         const reasoned = chunk.delta?.reasoningContent;
         if (reasoned && isTopLevelChunk(chunk)) {
-          setReasoning((prev) => prev + reasoned);
+          reasoningPacer.push(reasoned);
         }
         if (chunk.delta?.toolCalls) {
           const calls = chunk.delta.toolCalls.map((c) => toolCallView(c, chunk.author));
@@ -269,6 +274,9 @@ export function RunPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : t("run.failed"));
     } finally {
+      // Whatever the last batch was holding, on every exit path: a run that
+      // ends mid-interval would otherwise leave its last thought unshown.
+      reasoningPacer.flush();
       setRunning(false);
     }
   }

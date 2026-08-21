@@ -131,6 +131,7 @@
 | tool 호출을 그에 답한 결과와 짝짓기 | `src/app/_lib/toolPairs.ts` |
 | 한 tool 의 트래픽을 한 행으로 그리기 | `src/app/_components/ToolRow.tsx` |
 | 런의 추론을 한 블록으로 그리기 | `src/app/_components/ReasoningRow.tsx` |
+| 토큰 속도로 오는 텍스트를 커밋 단위로 묶기 | `src/app/_lib/textPacer.ts` |
 | tool 호출이 사람에게 무엇으로 읽히는가 | `src/app/_lib/toolCalls.ts` 의 `describeTool` |
 | 콘솔이 사람에게 보여주는 모든 문자열 | `src/app/_i18n/messages/en.ts` |
 | 요청이 어떤 언어로 서빙되는가 | `src/app/_i18n/locale.ts` |
