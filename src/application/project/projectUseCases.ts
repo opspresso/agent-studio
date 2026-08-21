@@ -80,8 +80,9 @@ export async function getProject(repo: ProjectRepository, name: string): Promise
 
 /**
  * Load a project and assert `userEmail` may write it. Projects are a shared
- * catalog — any signed-in user may read and run them; writing is for the owner
- * and for admins.
+ * catalog — anyone the visibility admits may read and run them
+ * ({@link assertProjectAccessible}); writing is for the owner and for admins,
+ * on either visibility.
  *
  * Named for what it checks, not for the owner alone: it is bound at twenty-odd
  * call sites, and while it asserted ownership the name was the documentation.

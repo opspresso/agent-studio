@@ -113,6 +113,7 @@
 | 어떤 페이지가 공개인가 | `src/proxy.ts` |
 | chunk 가 top-level 인지 여부 | `src/domain/llm/types.ts` 의 `isTopLevelChunk()` |
 | 런이 어떤 Version 을 실행하는가 | `src/application/project/` 의 `resolveRunnableVersion` |
+| 누가 project 에 접근할 수 있는가 (공개 범위·초대 목록의 판정) | `src/domain/project/access.ts` 의 `mayAccessProject` — admin 오버라이드를 합친 형태는 `projectUseCases.ts` 의 `assertProjectAccessible`/`userMayAccessProject` 뿐이고, 표면들은 그 둘을 지난다 ([SECURITY.md](SECURITY.md#인가-모델)) |
 | 사용자 이미지의 상한 | `src/domain/llm/imageLimits.ts` |
 | `data:` 이미지 인코딩 | `src/domain/llm/types.ts` 의 `imageDataUrl`/`parseImageDataUrl` |
 | 저장된 이미지 참조를 주소로 바꾸기 | `src/domain/chat/imageRefs.ts` 의 `resolveImageUrl` |
