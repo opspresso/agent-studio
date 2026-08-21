@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
+import { setAuditSink } from "@/application/audit/recordAudit";
 import { setAdminCheck } from "@/application/project/projectUseCases";
 import {
   baseMimeType,
@@ -135,6 +136,35 @@ describe("reading an artifact for a view", () => {
     expect(view).toBe("html");
     expect(new TextDecoder().decode(bytes)).toContain("<!doctype html>");
     expect(reads).toEqual([{ key: "artifacts/document/a1.html", maxBytes: MAX_INLINE_VIEW_BYTES }]);
+  });
+
+  it("admits the person the row is filed under, however the run reached it", async () => {
+    // The owner index is written with `artifactOwnerEmail(actor, ownerEmail)`,
+    // and `ownerEmail` exists for the surfaces whose actor names no mailbox.
+    // Asking without it, a report someone got from the Slack bot listed in
+    // their own gallery and then answered 403 to every button on it.
+    const viaSlack = artifact({ actor: { kind: "slack", id: "T123" }, ownerEmail: OWNER });
+    await expect(setup(viaSlack).useCases.readForView("a1", OWNER)).resolves.toBeTruthy();
+    await expect(setup(viaSlack).useCases.remove("a1", OWNER)).resolves.toBeUndefined();
+  });
+
+  it("does not record an admin override for a read", async () => {
+    // `assertProjectWritable` writes a `project.admin-override` row every time
+    // it admits an admin — the right record for a delete, and the wrong one for
+    // a GET behind a link. Ten clicks through a gallery would be ten rows
+    // claiming a write that never happened.
+    const recorded: string[] = [];
+    setAuditSink({
+      append: async (row) => {
+        recorded.push(row.action);
+      },
+      listByDay: async () => [],
+    });
+    await setup(artifact()).useCases.readForView("a1", ADMIN);
+    expect(recorded).toEqual([]);
+
+    await setup(artifact()).useCases.remove("a1", ADMIN);
+    expect(recorded).toContain("project.admin-override");
   });
 
   it("admits an admin reaching into the project, and refuses everyone else", async () => {

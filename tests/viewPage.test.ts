@@ -125,6 +125,29 @@ describe("parsing delimiter-separated rows", () => {
   });
 });
 
+describe("rows that end where a parser stops looking", () => {
+  it("keeps a last row that is one empty quoted field", () => {
+    // After the closing quote both the field and the row are back at their
+    // initial state, which the old end-of-input test read as 'nothing in hand'.
+    expect(parseCsv('a\n""')).toEqual([["a"], [""]]);
+    expect(parseCsv('""')).toEqual([[""]]);
+  });
+
+  it("does not invent a row from a blank line", () => {
+    // A file ending `\r\n\r\n` was drawing an empty <tr> under its data.
+    expect(parseCsv("a,b\nc,d\n\n")).toEqual([
+      ["a", "b"],
+      ["c", "d"],
+    ]);
+    expect(parseCsv("a\n\nb")).toEqual([["a"], ["b"]]);
+  });
+
+  it("still keeps a row whose fields are all empty", () => {
+    // Not a blank line: the delimiters say there are three columns.
+    expect(parseCsv(",,")).toEqual([["", "", ""]]);
+  });
+});
+
 describe("the other kinds", () => {
   it("re-indents JSON", () => {
     const html = page("json", '{"a":[1,2],"b":{"c":true}}');
@@ -154,5 +177,25 @@ describe("the other kinds", () => {
     const html = page("text", "a < b & c\n\tindented");
     expect(html).toContain("a &lt; b &amp; c");
     expect(html).toContain('class="raw"');
+  });
+});
+
+describe("what the page will not spend or pretend", () => {
+  it("caps how much markdown it renders and says what it left out", () => {
+    // The renderer is synchronous and superlinear — 2 MB is ~7 s with the whole
+    // Node instance stopped, every in-flight SSE run included.
+    const long = "# 제목\n\n" + "본문 한 줄.\n\n".repeat(30_000);
+    const html = page("markdown", long);
+
+    expect(html).toContain("Showing the first 256 KB");
+    expect(html).toContain("Download the file for the rest");
+    expect(html).toContain("<h1>제목</h1>");
+  });
+
+  it("refuses an SVG that is not text instead of drawing nothing", () => {
+    // It used to skip the decode, so arbitrary bytes became an inert data URL
+    // inside an <img> — a blank page with nothing saying why.
+    const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x00, 0xff, 0xfe]);
+    expect(viewPage("svg", pdf, "chart.svg")).toBeNull();
   });
 });

@@ -10,7 +10,10 @@
 
 import { NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import {
+  assertProjectOutputReadable,
+  assertProjectWritable,
+} from "@/application/project/projectUseCases";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import type { ArtifactRepository, ListArtifactsOptions } from "@/domain/artifact/repository";
@@ -61,17 +64,53 @@ export function createArtifactUseCases(
   projects: ProjectRepository,
 ): ArtifactUseCases {
   /**
-   * Who may see or remove this. One predicate for both, deliberately: a
-   * different rule for each produces a gallery listing rows whose delete button
-   * answers 403.
+   * Whose gallery this row is in — **the same expression the owner index is
+   * written with**, `ownerEmail` included.
+   *
+   * That argument is not optional detail: `DynamoArtifactRepository.put` files
+   * the row under `artifactOwnerEmail(actor, ownerEmail)`, and `ownerEmail`
+   * exists precisely for the surfaces whose actor names no mailbox. Asking
+   * without it, a report a person got from the Slack or Telegram bot listed in
+   * their own gallery and then answered 403 to every button on it — the row
+   * filed under their address, the check saying it belonged to nobody.
    */
-  async function assertMayManage(artifact: Artifact, viewerEmail: string): Promise<void> {
-    if (artifactOwnerEmail(artifact.actor) === viewerEmail) {
+  function isOwnRow(artifact: Artifact, email: string): boolean {
+    return artifactOwnerEmail(artifact.actor, artifact.ownerEmail) === email;
+  }
+
+  /**
+   * Who may remove this. Falls through to the project's own write rule, which
+   * admits the owner and an admin — and records the override when it is an
+   * admin reaching in.
+   */
+  async function assertMayManage(artifact: Artifact, actorEmail: string): Promise<void> {
+    if (isOwnRow(artifact, actorEmail)) {
       return;
     }
-    // Falls through to the project's own rule, which admits the owner and an
-    // admin — and records the override when it is an admin reaching in.
-    await assertProjectWritable(projects, artifact.projectName, viewerEmail);
+    await assertProjectWritable(projects, artifact.projectName, actorEmail);
+  }
+
+  /**
+   * Who may look at this. The *read* sibling, and not the same call as above on
+   * purpose: `assertProjectWritable` writes a `project.admin-override` audit row
+   * and a warn line every time it admits an admin, which is the right record for
+   * a delete and the wrong one for a GET behind a link. An admin opening ten
+   * artifacts in a gallery would have written ten rows claiming a write
+   * override, burying the trail that table exists for under read traffic —
+   * which `remove` already avoids for a person's own deletes for the same
+   * reason.
+   *
+   * `assertProjectOutputReadable` is the same rule with nothing recorded — not
+   * `assertProjectAccessible`, which admits everyone a *public* project admits.
+   * A project's outputs are not public because the project is: two people
+   * running the same shared project each produced their own, and the project
+   * gallery already asks the stricter question to list them.
+   */
+  async function assertMayRead(artifact: Artifact, viewerEmail: string): Promise<void> {
+    if (isOwnRow(artifact, viewerEmail)) {
+      return;
+    }
+    await assertProjectOutputReadable(projects, artifact.projectName, viewerEmail);
   }
 
   return {
@@ -80,7 +119,7 @@ export function createArtifactUseCases(
       if (!artifact) {
         throw new NotFoundError(`Artifact not found: ${artifactId}`);
       }
-      await assertMayManage(artifact, viewerEmail);
+      await assertMayRead(artifact, viewerEmail);
       // The type is checked before the bytes are fetched, not after: a ten-megabyte
       // deck read into memory to then be refused is the same refusal at a cost.
       const view = inlineViewOf(artifact.mimeType);
@@ -123,7 +162,7 @@ export function createArtifactUseCases(
       // Only when it was not the person's own. A gallery tidy-up recorded row by
       // row would bury the trail this table exists for; reaching into someone
       // else's output is the act worth keeping.
-      if (artifactOwnerEmail(artifact.actor) !== actorEmail) {
+      if (!isOwnRow(artifact, actorEmail)) {
         await recordAudit({
           actorEmail,
           action: "artifact.delete",

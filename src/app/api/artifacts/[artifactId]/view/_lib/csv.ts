@@ -21,16 +21,28 @@ export function parseCsv(text: string): string[][] {
   // Set by the first character of a field, so an unquoted field keeps a quote
   // that appears in the middle of it (`a"b`) as the character it is.
   let atFieldStart = true;
+  /**
+   * Whether anything has been read toward the row in hand.
+   *
+   * Not the same question as "is `field` or `row` non-empty", and that is the
+   * whole reason it exists: after a closing quote, a `""` field has left both
+   * back at their initial state, so a file ending in one dropped its last row
+   * entirely — and a file ending in a blank line grew one that was not there.
+   * Both silently: the view showed a table that was not the file.
+   */
+  let started = false;
 
   const endField = () => {
     row.push(field);
     field = "";
     atFieldStart = true;
+    started = true;
   };
   const endRow = () => {
     endField();
     rows.push(row);
     row = [];
+    started = false;
   };
 
   for (let i = 0; i < text.length; i += 1) {
@@ -52,6 +64,7 @@ export function parseCsv(text: string): string[][] {
     if (char === '"' && atFieldStart) {
       quoted = true;
       atFieldStart = false;
+      started = true;
       continue;
     }
     atFieldStart = false;
@@ -59,25 +72,31 @@ export function parseCsv(text: string): string[][] {
       endField();
       continue;
     }
-    if (char === "\n") {
-      endRow();
-      continue;
-    }
-    if (char === "\r") {
+    if (char === "\n" || char === "\r") {
       // CRLF is one break; a lone CR is treated as one too, which costs nothing
       // and reads an old Mac-line-ending export the way its author meant.
-      if (text[i + 1] === "\n") {
+      if (char === "\r" && text[i + 1] === "\n") {
         i += 1;
       }
-      endRow();
+      // A blank line is not a row of one empty field. Skipping it is what keeps
+      // a file that ends `\r\n\r\n` from drawing an empty `<tr>` under its data,
+      // and it is the reading every other CSV tool gives a blank line.
+      if (started) {
+        endRow();
+      }
       continue;
     }
     field += char;
+    // Set here rather than above the branches: a newline is a character too,
+    // and marking the row started before reading it is what made a trailing
+    // blank line look like a row with something in it.
+    started = true;
   }
 
   // A file ending in a newline has already closed its last row; one that does
-  // not still has a row in hand. An empty trailing field is not a row.
-  if (field !== "" || row.length > 0) {
+  // not still has a row in hand — including a row that reads as empty, which is
+  // why this asks `started` rather than looking at `field` and `row`.
+  if (started) {
     endRow();
   }
   return rows;

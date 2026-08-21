@@ -42,7 +42,7 @@ import { renderToStaticMarkup } from "react-dom/server.edge";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { InlineView } from "@/domain/artifact/types";
-import { decodeUtf8Text } from "@/shared/utf8Text";
+import { cutUtf8Bytes, decodeUtf8Text } from "@/shared/utf8Text";
 import { parseCsv } from "./csv";
 
 /**
@@ -56,6 +56,20 @@ import { parseCsv } from "./csv";
  * avoids.
  */
 const MAX_CSV_ROWS = 2000;
+
+/**
+ * How much Markdown is rendered.
+ *
+ * The renderer is **synchronous and superlinear**: measured on this repo's own
+ * `react-markdown`, 256 KB takes ~0.4 s and 2 MB takes ~7 s with about a
+ * gigabyte of heap. It runs in the route handler before the Response exists, so
+ * that time is the whole Node instance stopped — every in-flight SSE run
+ * included, which is the silent gap `FIRST_CHUNK_GRACE_MS` exists elsewhere to
+ * prevent. `MAX_INLINE_VIEW_BYTES` is a memory cap and far too generous to be
+ * this one; a table has its row cap and JSON its shape, and Markdown had
+ * nothing. What is cut is said on the page.
+ */
+const MAX_MARKDOWN_BYTES = 256 * 1024;
 
 /**
  * Enough of a stylesheet to read a report by, and no more.
@@ -243,8 +257,8 @@ function jsonBody(text: string): { body: string; note?: string } {
  * are re-encoded rather than linked because the object's own address is exactly
  * what this route exists not to hand out.
  */
-function svgBody(bytes: Uint8Array): string {
-  const data = Buffer.from(bytes).toString("base64");
+function svgBody(text: string): string {
+  const data = Buffer.from(text, "utf-8").toString("base64");
   return `<div class="drawing"><img src="data:image/svg+xml;base64,${data}" alt=""></div>`;
 }
 
@@ -261,34 +275,40 @@ const MEASURE: Partial<Record<InlineView, string>> = {
  * `Buffer.toString("utf-8")` would answer for anything — a PDF mislabelled
  * `text/markdown` becomes a screen of replacement characters and renders as if
  * it worked — so the decode decides, and a caller that gets `null` says the row
- * could not be read rather than showing the wreckage. SVG is the one kind that
- * never needs the answer: it is handed on as bytes.
+ * could not be read rather than showing the wreckage — SVG included, since an
+ * SVG that is not text is not an SVG.
  */
 export function viewPage(
   view: Exclude<InlineView, "html">,
   bytes: Uint8Array,
   title: string | undefined,
 ): string | null {
+  // Every kind, SVG included: an SVG is text by definition, so bytes that are
+  // not text are not one — and drawing them anyway produced an inert data URL
+  // inside an `<img>`, which is a blank page with nothing saying why.
+  const text = decodeUtf8Text(bytes);
+  if (text === null) {
+    return null;
+  }
   let body: string;
   let note: string | undefined;
   if (view === "svg") {
-    body = svgBody(bytes);
+    body = svgBody(text);
+  } else if (view === "markdown") {
+    const size = Buffer.byteLength(text, "utf8");
+    const source = size > MAX_MARKDOWN_BYTES ? cutUtf8Bytes(text, MAX_MARKDOWN_BYTES) : text;
+    if (source !== text) {
+      note = `Showing the first ${Math.round(MAX_MARKDOWN_BYTES / 1024)} KB of ${Math.round(size / 1024)} KB. Download the file for the rest.`;
+    }
+    body = renderToStaticMarkup(
+      createElement(ReactMarkdown, { remarkPlugins: [remarkGfm] }, source),
+    );
+  } else if (view === "csv") {
+    ({ body, note } = csvBody(text));
+  } else if (view === "json") {
+    ({ body, note } = jsonBody(text));
   } else {
-    const text = decodeUtf8Text(bytes);
-    if (text === null) {
-      return null;
-    }
-    if (view === "markdown") {
-      body = renderToStaticMarkup(
-        createElement(ReactMarkdown, { remarkPlugins: [remarkGfm] }, text),
-      );
-    } else if (view === "csv") {
-      ({ body, note } = csvBody(text));
-    } else if (view === "json") {
-      ({ body, note } = jsonBody(text));
-    } else {
-      body = `<pre class="raw">${escapeHtml(text)}</pre>`;
-    }
+    body = `<pre class="raw">${escapeHtml(text)}</pre>`;
   }
   const heading = escapeHtml(title?.trim() || "Artifact");
   return [

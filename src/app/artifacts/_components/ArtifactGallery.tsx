@@ -43,7 +43,7 @@ import {
   artifactFileType,
   type ArtifactFileType,
 } from "@/app/artifacts/_lib/fileType";
-import { isInlineViewable } from "@/domain/artifact/types";
+import { isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
 
 type KindFilter = "all" | "image" | "document";
 
@@ -320,10 +320,13 @@ function ArtifactCard({
             </Anchor>
           ) : (
             <Group gap="md" wrap="nowrap">
-              {/* A page is opened, not saved — and never at the object's own
-                  address: `/view` serves it under a sandbox policy, which an
-                  S3 URL cannot carry. Everything else has only a download. */}
-              {isInlineViewable(artifact.mimeType) && (
+              {/* Opened, not saved — and never at the object's own address:
+                  `/view` serves it under a sandbox policy, which an S3 URL
+                  cannot carry. Gated on size as well as type, because the route
+                  refuses a row past its read limit and only a `SaveFile` row is
+                  guaranteed under it. Everything else has only a download. */}
+              {isInlineViewable(artifact.mimeType) &&
+                artifact.byteSize <= MAX_INLINE_VIEW_BYTES && (
                 <Anchor
                   href={`/api/artifacts/${artifact.artifactId}/view`}
                   target="_blank"

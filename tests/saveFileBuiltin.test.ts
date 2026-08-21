@@ -21,7 +21,8 @@ async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]>
 }
 
 const MODEL = "google/gemini-2.5-flash";
-const BODY = "<!doctype html><title>q3</title>" + "<p>revenue</p>".repeat(400);
+/** Past `MAX_TOOL_ARG_BYTES`, which is what the bound is keyed to. */
+const BODY = "<!doctype html><title>q3</title>" + "<p>revenue</p>".repeat(2000);
 
 function input(over: Partial<RunAgentInput> = {}): RunAgentInput {
   return {
@@ -76,7 +77,7 @@ function sentBack(channel: FakeChannel, id: string): Record<string, unknown> {
 }
 
 describe("announcing a call that carries a whole file", () => {
-  it("swaps the body for its size, and only for this tool", async () => {
+  it("swaps the body for its size", async () => {
     // An announced call is kept by everything downstream — rendered, buffered in
     // the run log, and persisted onto an assistant message that is one 400KB
     // item. `tool_calls` is the axis nothing truncates, so the body cannot ride
@@ -88,23 +89,62 @@ describe("announcing a call that carries a whole file", () => {
     const chunks = await collect(runAgent({ ...saver(), channel }, input()));
 
     const shown = announced(chunks, "c1");
-    expect(shown.content).toBe(`[${Buffer.byteLength(BODY, "utf8")} bytes, kept as the file]`);
-    // Everything else about the call is announced as it was made.
+    expect(String(shown.content)).toContain(`${Buffer.byteLength(BODY, "utf8")} bytes`);
+    expect(String(shown.content)).toContain("elided");
+    // Everything else about the call is kept as it was made.
     expect(shown.name).toBe("q3");
     expect(shown.mime_type).toBe("text/html");
   });
 
-  it("still gives the provider the call the model actually made", async () => {
-    // The elision is for the consumers that keep it, not for the model: a run
-    // whose own assistant message disagreed with what it emitted is a different
-    // bug.
+  it("keeps it out of the assistant message the provider gets back too", async () => {
+    // The other half of the same failure, and the worse one: that message is
+    // re-sent on every remaining turn and `contextBudget` cannot cut it, so a
+    // megabyte of content is ~350k tokens per turn — past the window of most
+    // of the catalog, i.e. a provider 400 mid-run after the file was delivered.
     const channel = new FakeChannel([
       [saveCall("c1", BODY), usageChunk(10, 5)],
       [contentChunk("done"), usageChunk(4, 2)],
     ]);
     await collect(runAgent({ ...saver(), channel }, input()));
 
-    expect(sentBack(channel, "c1").content).toBe(BODY);
+    const sent = sentBack(channel, "c1");
+    expect(sent.content).not.toBe(BODY);
+    expect(String(sent.content)).toContain("elided");
+    // The model is not deprived: the tool result on the same turn already said
+    // the file exists and what it is called.
+    expect(sent.name).toBe("q3");
+  });
+
+  it("bounds a call whose arguments never parsed, which is how a big one arrives", async () => {
+    // The provider cuts the turn at its output limit part-way through the file,
+    // so nothing parses and the accumulator has no cap of its own.
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "c1", SAVE_FILE_TOOL_NAME, `{"name":"q3","content":"${BODY}`),
+        usageChunk(10, 5),
+      ],
+      [contentChunk("done"), usageChunk(4, 2)],
+    ]);
+    const chunks = await collect(runAgent({ ...saver(), channel }, input()));
+
+    const raw = chunks.flatMap((chunk) => chunk.delta?.toolCalls ?? []);
+    const args = String(raw[0]?.function?.arguments ?? "");
+    expect(args).toContain("…[truncated]");
+    expect(Buffer.byteLength(args, "utf8")).toBeLessThan(Buffer.byteLength(BODY, "utf8"));
+  });
+
+  it("is keyed to size, not to a tool name", async () => {
+    // The hazard is a large argument. SaveFile is only the first tool to have
+    // one — a document renderer takes the document's text.
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "c1", "render_document", JSON.stringify({ content: BODY })), usageChunk(10, 5)],
+      [contentChunk("done"), usageChunk(4, 2)],
+    ]);
+    const chunks = await collect(
+      runAgent({ ...saver(), channel, callMcpTool: async () => ({ text: "ok" }) }, input()),
+    );
+
+    expect(String(announced(chunks, "c1").content)).toContain("elided");
   });
 });
 

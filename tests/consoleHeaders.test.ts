@@ -36,6 +36,19 @@ describe("which responses get the console's security headers", () => {
     expect(pattern.test("/api/artifacts/a1/view")).toBe(false);
   });
 
+  it("excludes an uppercase spelling too, because Next compiles it with `i`", async () => {
+    // Next offers no way to turn that flag off, so `/API/ARTIFACTS/a1/VIEW` is
+    // stripped of these headers while being served by the console's own
+    // not-found page. Written down rather than left to be discovered — and
+    // survivable only because the view route now attaches its own headers to
+    // *every* response it makes, so nothing depends on this rule getting the
+    // path exactly right.
+    const rules = await nextConfig.headers!();
+    const asNextCompilesIt = new RegExp(`^${rules[0]!.source}$`, "i");
+    expect(asNextCompilesIt.test("/API/ARTIFACTS/a1/VIEW")).toBe(false);
+    expect(asNextCompilesIt.test("/artifacts")).toBe(true);
+  });
+
   it("still covers the artifact routes either side of it", async () => {
     // The exclusion is one address, not a subtree: listing and deleting are
     // ordinary console traffic and keep the console's headers.

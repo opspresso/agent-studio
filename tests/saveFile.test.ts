@@ -88,6 +88,25 @@ describe("what a saved file is called", () => {
     expect(savedFileName("", "text/html")).toBe("file.html");
     expect(savedFileName("...", "text/html")).toBe("file.html");
   });
+
+  it("strips the dots even when whitespace came first", () => {
+    // `^` sees the spaces, so stripping before trimming was a no-op and the
+    // trim then exposed the dots — a hidden file, which is what the strip is
+    // here to prevent.
+    expect(savedFileName("  ...hidden", "text/plain")).toBe("hidden.txt");
+    expect(savedFileName(" .htaccess", "text/plain")).toBe("htaccess.txt");
+  });
+
+  it("cuts by character, so a long name is still text", () => {
+    // `slice` counts UTF-16 units and ends a name of emoji on half a character.
+    // DynamoDB refuses to store that as written — after the object is already
+    // in the bucket, so the file is lost over its name.
+    const name = "보고서" + "📊".repeat(60);
+    const out = savedFileName(name, "text/markdown");
+
+    expect(Buffer.from(out, "utf-8").toString("utf-8")).toBe(out);
+    expect(out.endsWith(".md")).toBe(true);
+  });
 });
 
 describe("whether the tool is offered at all", () => {

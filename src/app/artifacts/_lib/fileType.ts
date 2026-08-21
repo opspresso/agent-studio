@@ -8,6 +8,8 @@
  * `application/octet-stream` for a file whose name says otherwise.
  */
 
+import { baseMimeType } from "@/domain/artifact/types";
+
 export type ArtifactFileType =
   | "pdf"
   | "docx"
@@ -70,7 +72,10 @@ export function artifactFileType(
   filename?: string,
   key?: string,
 ): ArtifactFileType {
-  const byMime = MIME_TYPES[mimeType.toLowerCase()];
+  // The bare type, the same reading `isInlineViewable` gives it on the same
+  // card: a row an MCP tool wrote as `text/html; charset=euc-kr` was getting a
+  // View link and a blank tile.
+  const byMime = MIME_TYPES[baseMimeType(mimeType)];
   if (byMime) {
     return byMime;
   }

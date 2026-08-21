@@ -225,12 +225,23 @@ const EXTENSIONS: Record<string, string> = {
  */
 export function savedFileName(name: string, mimeType: string): string {
   const segment = name.split(/[/\\]/).pop() ?? "";
-  const cleaned = segment
+  const stripped = segment
     // Control characters and the bytes Windows refuses in a name.
     .replace(/[\u0000-\u001f<>:"|?*]/g, "")
-    .replace(/^\.+/, "")
+    // Trimmed *before* the dots are stripped: `^` sees leading whitespace, so
+    // the other order left "  ...notes" with its dots and produced a hidden
+    // file — the outcome the strip is here to prevent.
     .trim()
-    .slice(0, 80);
+    .replace(/^\.+/, "")
+    .trim();
+  // Cut by **character**, never through one. `slice` counts UTF-16 units, so a
+  // name of 80-plus emoji ended in half a character: not well-formed text, and
+  // DynamoDB will not store the row as written — after the object is already in
+  // the bucket, so the file is lost over its name. Spreading is the whole rule
+  // here rather than a second copy of `cutCodePoints`: this layer imports
+  // nothing, `shared` included, and a name is short enough that iterating it is
+  // the simplest thing that cannot split a character.
+  const cleaned = [...stripped].slice(0, 80).join("").trim();
   const safe = cleaned === "" ? "file" : cleaned;
   const extension = EXTENSIONS[baseMimeType(mimeType)];
   if (!extension) {

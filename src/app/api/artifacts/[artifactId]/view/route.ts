@@ -16,12 +16,22 @@ type RouteContext = { params: Promise<{ artifactId: string }> };
  * attribute it holds when the same address is opened as a top-level tab, which
  * is the case an attribute cannot reach.
  *
- * `default-src 'none'` then means the page cannot call home. Everything it
- * needs is in the file — which is what the skill that writes these is told, so
- * this header is the rule being enforced rather than assumed. A remote image is
- * refused with everything else, and that is not an oversight: a picture fetched
- * from an address the model chose reports to that host that the page was
- * opened, and by whom.
+ * `default-src 'none'` then means the page loads nothing from anywhere.
+ * Everything it needs is in the file — which is what the skill that writes
+ * these is told, so this header is the rule being enforced rather than assumed.
+ * A remote image is refused with everything else, and that is not an oversight:
+ * a picture fetched from an address the model chose reports to that host that
+ * the page was opened, and by whom.
+ *
+ * **What none of this stops is the HTML view leaving.** A sandboxed *top-level*
+ * document may navigate itself — the sandbox flags do not apply when the source
+ * and target browsing context are the same, and CSP has no shipping directive
+ * that restricts it — so a script this page runs can set `location` and take
+ * the document's own text with it. That is inherent to running the author's
+ * script at all, and the author is a model (which can be prompt-injected) or
+ * whichever MCP server returned the bytes. Only the *containment* is claimed
+ * here: the page cannot reach the console's cookies, storage or DOM, and
+ * cannot load a subresource. Do not write down that it cannot call out.
  */
 const BASE_POLICY = [
   "default-src 'none'",
@@ -58,6 +68,57 @@ function sandboxPolicy(view: InlineView): string {
 }
 
 /**
+ * What every response from this route carries, whatever its status.
+ *
+ * `next.config.ts` no longer covers this address — it had to stop, because a
+ * header declared there replaces the one a route sets and the sandbox was
+ * being replaced. The cost of that exclusion is that **nothing else puts these
+ * back**, and only the success path was setting them: a 401, the 404 when no
+ * storage is configured, and every `apiError` left with no `nosniff` and no
+ * framing rule at all, on bodies that interpolate a model's or an MCP server's
+ * own strings.
+ */
+const BASE_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+} as const;
+
+/** The console's framing rule, for the responses that are not the artifact. */
+const ERROR_HEADERS = {
+  ...BASE_HEADERS,
+  "Content-Security-Policy": "frame-ancestors 'none'",
+  "X-Frame-Options": "DENY",
+} as const;
+
+/** An error response with the headers the config rule used to add. */
+function withErrorHeaders(response: Response): Response {
+  for (const [key, value] of Object.entries(ERROR_HEADERS)) {
+    response.headers.set(key, value);
+  }
+  return response;
+}
+
+/**
+ * The type this response is served as.
+ *
+ * `text/html` in every case — a rendered kind became a page, and the one kind
+ * served as it was written is HTML already. The charset is said rather than
+ * left to the document, because a browser given a bare `text/html` falls back
+ * to a `<meta>` or to a locale guess, which is how Korean text arrives as
+ * mojibake. A stored mime that names its own charset keeps it: `isInlineViewable`
+ * admits `text/html; charset=euc-kr` on purpose, and answering that row with
+ * `utf-8` would guarantee the mojibake the header is here to prevent. Only a
+ * well-formed token is passed through — the value comes from an MCP server.
+ */
+function contentType(mimeType: string, view: InlineView): string {
+  if (view !== "html") {
+    return "text/html; charset=utf-8";
+  }
+  const declared = /;\s*charset\s*=\s*"?([A-Za-z0-9._-]+)"?/.exec(mimeType)?.[1];
+  return `text/html; charset=${declared ?? "utf-8"}`;
+}
+
+/**
  * Render one artifact in a browser.
  *
  * The only route that answers with an artifact's bytes instead of an address.
@@ -69,7 +130,7 @@ function sandboxPolicy(view: InlineView): string {
  * declared as text into something else, and the whole safety argument is
  * written against the type we said it was.
  */
-export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+const handler = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   if (!artifactUseCases) {
     return Response.json({ error: "Artifact storage is not configured" }, { status: 404 });
   }
@@ -88,17 +149,9 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
     }
     return new Response(body, {
       headers: {
-        // A constant, not the row's mime. This route answers with HTML in both
-        // cases — Markdown because it was rendered into a page, HTML because
-        // that is what it was — so nothing about the response type is read back
-        // off a stored string that may carry a charset of its own. Saying the
-        // charset is what settles it: a browser handed a bare `text/html` falls
-        // back to the document's `<meta>`, or to a locale guess when it has
-        // none, which is how Korean text arrives as mojibake.
-        "Content-Type": "text/html; charset=utf-8",
+        "Content-Type": contentType(artifact.mimeType, view),
         "Content-Security-Policy": sandboxPolicy(view),
-        "X-Content-Type-Options": "nosniff",
-        "Referrer-Policy": "no-referrer",
+        ...BASE_HEADERS,
         // Not `immutable` like the object itself: this response carries one
         // reader's permission, and a shared cache holding it would answer the
         // next reader with it.
@@ -109,3 +162,15 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
     return apiError(error);
   }
 });
+
+/**
+ * The headers are put on every answer here, not on each `return`.
+ *
+ * The 401 is the reason: it comes from `withAuth`, above this handler, so no
+ * amount of care inside it reaches that response. Anything that is not the
+ * artifact gets the console's rule; the artifact keeps the sandbox it set.
+ */
+export const GET = async (request: Request, ctx: RouteContext): Promise<Response> => {
+  const response = await handler(request, ctx);
+  return response.status === 200 ? response : withErrorHeaders(response);
+};

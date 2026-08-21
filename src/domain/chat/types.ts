@@ -81,10 +81,13 @@ export interface ChatMessageFile {
   /** Object key. What is stored; never what is served. */
   key?: string;
   /**
-   * The artifact row these bytes belong to, kept only where a reader can act on
-   * it: a page is opened at `/api/artifacts/{id}/view`, which serves it under a
-   * sandbox policy an object URL cannot carry. Every other file has nothing to
-   * do with the id and does not carry it.
+   * The artifact row these bytes belong to. Present on every file the bracket
+   * stored — it is what `captureRunArtifacts` learned when it wrote the row,
+   * not something a surface asks for.
+   *
+   * What it is *for* is narrower: a viewable file is opened at
+   * `/api/artifacts/{id}/view`, which serves it under a sandbox policy an
+   * object URL cannot carry. A `.docx` carries the id and nothing reads it.
    */
   artifactId?: string;
   /** A signed download address, put here by the read path. */

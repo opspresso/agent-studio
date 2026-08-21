@@ -16,5 +16,10 @@
  * the tool list is strictly better than losing the run, and what was dropped is
  * reported. Set below the provider's own number because the engine's builtins
  * are added after the MCP tools are cut, and they need the room.
+ *
+ * **The number is 128 minus the builtins, so it moves when they do.** It sat at
+ * 120 for eight of them; a run that offered all thirteen would have declared
+ * 133 and been rejected outright — the failure this constant exists to prevent,
+ * caused by the constant. `BUILTIN_TOOL_NAMES` is the count to check against.
  */
-export const MAX_MCP_TOOLS_PER_RUN = 120;
+export const MAX_MCP_TOOLS_PER_RUN = 115;

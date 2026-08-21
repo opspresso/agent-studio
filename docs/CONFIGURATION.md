@@ -437,7 +437,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 메모리 recall (`memoryRecall`): 보내는 질의 / 프롬프트에 유지하는 텍스트 / 첫 토큰이 그것을 기다리는 시간 | `2,000` 자 / `4,000` 자 / `10s` | `src/application/execution/memoryRecall.ts` |
 | 인코딩된 대화 id (그것을 넘으면 대화가 없고, API 헤더는 400 으로 답한다) | `512` 자 | `src/domain/execution/actor.ts` 의 `MAX_CONVERSATION_ID_LENGTH` |
 | 원격 agent 의 `contextId` 를 우리 쪽 대화 하나에 대해 유지하는 기간 | `7` 일, 사용 시 갱신 | `src/infrastructure/db/ttl.ts` |
-| 런당 선언되는 MCP 도구 수 | `120` | `src/domain/llm/toolLimits.ts` |
+| 런당 선언되는 MCP 도구 수 (= 128 − builtin 수) | `115` | `src/domain/llm/toolLimits.ts` |
 | MCP 도구 결과 하나 | `100,000` 자 | `src/infrastructure/mcp/toolManager.ts` |
 | MCP 서버의 HTTP 응답 | `14.5MB` | `src/infrastructure/mcp/session.ts` |
 | MCP 서버 하나에서 읽는 `tools/list` 페이지 수 (상한에 닿으면 그 discovery 는 실패한다 — SDK 는 부분 카탈로그를 남기지 않는다) | `64` | `src/infrastructure/mcp/session.ts` |

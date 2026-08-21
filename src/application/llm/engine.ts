@@ -43,7 +43,7 @@ import { renderTemplate } from "@/shared/template";
 import { formatRunClock } from "@/shared/date";
 import { mergeGenerators } from "@/shared/mergeGenerators";
 import { log } from "@/shared/logger";
-import { cutCodePoints } from "@/shared/utf8Text";
+import { cutCodePoints, cutUtf8Bytes } from "@/shared/utf8Text";
 import {
   assembleAgentRun,
   callerBlock,
@@ -928,31 +928,76 @@ function toWireToolCall(id: string, name: string, args: Record<string, unknown>)
 }
 
 /**
- * The arguments a call is *announced* with, which are not always the ones it is
- * made with.
+ * How much of one tool call's arguments a run keeps and repeats.
  *
- * One tool carries a whole file in one argument, and every consumer of an
- * announced call keeps what it is given: the chat view renders it, the run log
- * buffers it, and the assistant message it is persisted on is a single 400KB
- * DynamoDB item — whose write fails silently and takes the reply the reader
- * just watched stream with it. Content and reasoning are truncated onto that
- * item; `tool_calls` is the one axis that is not, and until `SaveFile` no tool's
- * arguments were large enough for it to matter.
- *
- * The provider still gets the real arguments on this turn's assistant message —
- * a model must see the call it made. A later turn replaying the persisted copy
- * gets the summary, which is all there is to know: the tool result already said
- * the file exists and what it is called.
+ * Generous for every call anyone writes on purpose — a prompt, a URL, a
+ * transfer's message — and far below the two ceilings a large one walks into.
  */
-function announcedArgs(name: string, args: Record<string, unknown>): Record<string, unknown> {
-  if (name !== SAVE_FILE_TOOL_NAME) {
-    return args;
+const MAX_TOOL_ARG_BYTES = 16 * 1024;
+
+/** What stands in for a value too large to keep. Its size, which is the fact. */
+function elidedArg(bytes: number): string {
+  return `[${bytes} bytes, elided — the call was made with the whole value]`;
+}
+
+/**
+ * The arguments a call is *kept* with, which are not always the ones it is made
+ * with.
+ *
+ * A call's arguments outlive the call twice over, and neither copy is bounded
+ * by anything else. **The turn's assistant message carries them back to the
+ * provider on every remaining turn of the run** — `contextBudget` charges them
+ * and nothing can cut them, so one megabyte of `content` is about 350k tokens
+ * re-sent per turn, past the window of most models in the catalog: a 400 from
+ * the provider, mid-run, after the file was already delivered. And **the
+ * announced copy is persisted onto one 400KB DynamoDB item**, whose write is
+ * caught and logged, taking the reply the reader just watched stream.
+ *
+ * So the value is swapped for its size, in both copies. The model is not
+ * deprived of anything it needs: the tool result on the very same turn says the
+ * file exists and what it is called, which is the whole of what a later turn
+ * can act on. It cannot re-read what it wrote — it could not anyway, one run
+ * later.
+ *
+ * **Keyed to size, not to a tool name.** The hazard is a large argument, and
+ * `SaveFile` is only the first tool to have one: a document renderer takes the
+ * document's text, and a model that emits a long string as an array of lines
+ * arrives here with a large value under a name nothing anticipated.
+ */
+function boundToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+  let bounded: Record<string, unknown> | undefined;
+  for (const [key, value] of Object.entries(args)) {
+    // A string is measured as itself, so the number a reader is shown is the
+    // one the tool result and the artifact row also report. Anything else — the
+    // shape a model reaches for when it cannot fit a string — is measured as it
+    // will be serialised, which is the cost it actually imposes.
+    const size =
+      typeof value === "string"
+        ? Buffer.byteLength(value, "utf8")
+        : Buffer.byteLength(JSON.stringify(value) ?? "null", "utf8");
+    if (size <= MAX_TOOL_ARG_BYTES) {
+      continue;
+    }
+    bounded ??= { ...args };
+    bounded[key] = elidedArg(size);
   }
-  const content = args.content;
-  if (typeof content !== "string" || content === "") {
-    return args;
-  }
-  return { ...args, content: `[${Buffer.byteLength(content, "utf8")} bytes, kept as the file]` };
+  return bounded ?? args;
+}
+
+/**
+ * The same bound on a call whose arguments never parsed.
+ *
+ * There is no object here to take a value out of — the model's own text is the
+ * only truthful record of what it asked for — so this cuts rather than elides,
+ * and says where. A truncated `SaveFile` is the *likeliest* way an oversized
+ * argument arrives: the provider cuts the turn at its output limit part-way
+ * through the file, and the accumulator appends fragments with no cap of its
+ * own.
+ */
+function boundArgumentText(text: string): string {
+  return Buffer.byteLength(text, "utf8") <= MAX_TOOL_ARG_BYTES
+    ? text
+    : `${cutUtf8Bytes(text, MAX_TOOL_ARG_BYTES)}…[truncated]`;
 }
 
 interface PreparedToolCall {
@@ -1077,9 +1122,17 @@ async function dispatchConcurrentTools(
           } satisfies McpToolResult,
         };
       } catch (error) {
-        return fetch
-          ? { ok: { text: `Error: could not read that address — ${errorMessage(error)}` } }
-          : { err: error };
+        // A fetch and a save both report an outcome rather than a transport
+        // fault: an unreachable address and a bucket that refused a PUT are
+        // things the model can be told about and work around. An MCP
+        // dispatcher that throws still tears the run down, in call order.
+        if (fetch) {
+          return { ok: { text: `Error: could not read that address — ${errorMessage(error)}` } };
+        }
+        if (kind === "save") {
+          return { ok: { text: `Error: that file could not be kept — ${errorMessage(error)}` } };
+        }
+        return { err: error };
       }
     });
     concurrent.forEach(({ entry }, index) => {
@@ -1807,7 +1860,7 @@ export async function* runAgent(
         const wireCall: ChannelToolCall = {
           id: call.id,
           type: "function",
-          function: { name: call.name, arguments: call.arguments },
+          function: { name: call.name, arguments: boundArgumentText(call.arguments) },
         };
         wireToolCalls.push(wireCall);
         yield {
@@ -1816,10 +1869,13 @@ export async function* runAgent(
         };
         continue;
       }
-      wireToolCalls.push(toWireToolCall(call.id, call.name, args));
+      // Both copies bounded, and each from its own source: `args` is masked and
+      // goes back to the provider, `displayArgs` has the values restored and is
+      // what a person reads.
+      wireToolCalls.push(toWireToolCall(call.id, call.name, boundToolArgs(args)));
       yield {
         author,
-        delta: { toolCalls: [toWireToolCall(call.id, call.name, announcedArgs(call.name, displayArgs))] },
+        delta: { toolCalls: [toWireToolCall(call.id, call.name, boundToolArgs(displayArgs))] },
       };
     }
 

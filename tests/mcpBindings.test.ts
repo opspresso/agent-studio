@@ -2,6 +2,8 @@
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_MCP_TOOLS_PER_RUN } from "@/domain/llm/toolLimits";
+import { BUILTIN_TOOL_NAMES } from "@/application/llm/agentAssembly";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
@@ -368,11 +370,20 @@ describe("what a run may offer from a bound server", () => {
   it("caps the tools one run declares and says how many were left out", async () => {
     // A provider rejects a request that declares too many tools, and the whole
     // run fails with it — losing the tail beats losing the run.
-    const many = Array.from({ length: 130 }, (_, index) => `tool_${index}`);
+    const many = Array.from({ length: MAX_MCP_TOOLS_PER_RUN + 10 }, (_, index) => `tool_${index}`);
 
     const { names, warnings } = await offeredTools([{ name: "shared-mcp" }], many);
 
-    expect(names).toHaveLength(120);
-    expect(warnings.some((warning) => warning.includes("at most 120"))).toBe(true);
+    expect(names).toHaveLength(MAX_MCP_TOOLS_PER_RUN);
+    expect(
+      warnings.some((warning) => warning.includes(`at most ${MAX_MCP_TOOLS_PER_RUN}`)),
+    ).toBe(true);
+  });
+
+  it("leaves the builtins room inside the provider's own limit", async () => {
+    // The cap is 128 minus the builtins, so it moves when they do. At 120 with
+    // thirteen builtins a full run declared 133 and the provider rejected it
+    // outright — the failure the cap exists to prevent, caused by the cap.
+    expect(MAX_MCP_TOOLS_PER_RUN + BUILTIN_TOOL_NAMES.length).toBeLessThanOrEqual(128);
   });
 });

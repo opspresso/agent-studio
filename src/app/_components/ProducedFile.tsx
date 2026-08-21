@@ -2,7 +2,7 @@
 
 import { Anchor, Group, Paper, Stack, Text } from "@mantine/core";
 import { IconExternalLink, IconFileText } from "@tabler/icons-react";
-import { isInlineViewable } from "@/domain/artifact/types";
+import { isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
 import { formatBytes } from "@/app/_lib/formatBytes";
 import { useT } from "@/app/_i18n/provider";
 
@@ -45,7 +45,15 @@ export function ProducedFile({
 }) {
   const t = useT();
   const size = byteSize === undefined ? null : formatBytes(byteSize);
-  const viewable = artifactId !== undefined && mimeType !== undefined && isInlineViewable(mimeType);
+  // Size too, not only type. `/view` refuses a row past its read limit, and the
+  // limits only cannot cross for a file `SaveFile` wrote — an MCP tool may hand
+  // back ten megabytes with the same mime, and the link would have opened a tab
+  // holding a raw JSON 400.
+  const viewable =
+    artifactId !== undefined &&
+    mimeType !== undefined &&
+    isInlineViewable(mimeType) &&
+    (byteSize === undefined || byteSize <= MAX_INLINE_VIEW_BYTES);
   return (
     <Paper withBorder radius="md" px="md" py="xs" maw="80%">
       <Group gap="xs" wrap="nowrap">
