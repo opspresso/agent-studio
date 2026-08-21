@@ -2213,3 +2213,82 @@ describe("commands", () => {
     expect(posted[0]?.text).toContain("could not save");
   });
 });
+
+describe("private project visibility gate", () => {
+  const privateProject = (): Project => ({
+    ...projectFixture(),
+    visibility: "private",
+    memberEmails: ["invited@x.com"],
+  });
+  const withUser = (user: string): SlackEventBody => ({
+    event_id: "Ev9",
+    event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello", user },
+  });
+  const privateDeps = (slack: SlackClientPort) => {
+    const deps = deps0(slack);
+    deps.projects = { get: async () => privateProject() } as unknown as ProjectRepository;
+    return deps;
+  };
+
+  it("refuses a workspace user the project does not invite, before any acknowledgement", async () => {
+    const { slack, posted, reactions, emails } = makeSlackFake();
+    emails.set("U2", "stranger@x.com");
+
+    await handleSlackEvent(privateDeps(slack), withUser("U2"), BINDING);
+
+    expect(posted.at(-1)?.text).toContain("private");
+    // Refused before the pickup reaction and before the thread was engaged.
+    expect(reactions).toHaveLength(0);
+    expect(engagements).toHaveLength(0);
+  });
+
+  it("refuses when the workspace shares no email for the asker", async () => {
+    const { slack, posted } = makeSlackFake();
+
+    await handleSlackEvent(privateDeps(slack), withUser("U2"), BINDING);
+
+    expect(posted.at(-1)?.text).toContain("private");
+  });
+
+  it("refuses a message no human sent", async () => {
+    const { slack, posted } = makeSlackFake();
+    const event: SlackEventBody = {
+      event_id: "Ev9",
+      event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello", bot_id: "B9" },
+    };
+
+    await handleSlackEvent(privateDeps(slack), event, BINDING);
+
+    expect(posted.at(-1)?.text).toContain("private");
+  });
+
+  it("answers an invited member, matching email case-insensitively", async () => {
+    const { slack, posted, reactions, emails } = makeSlackFake();
+    emails.set("U2", "Invited@X.com");
+
+    await handleSlackEvent(privateDeps(slack), withUser("U2"), BINDING);
+
+    // The gate let the turn through: the message was acknowledged and no
+    // refusal was posted.
+    expect(reactions).toHaveLength(1);
+    expect(posted.every((message) => !message.text.includes("private"))).toBe(true);
+  });
+
+  it("answers the owner", async () => {
+    const { slack, posted, reactions, emails } = makeSlackFake();
+    emails.set("U2", "owner@x.com");
+
+    await handleSlackEvent(privateDeps(slack), withUser("U2"), BINDING);
+
+    expect(reactions).toHaveLength(1);
+    expect(posted.every((message) => !message.text.includes("private"))).toBe(true);
+  });
+
+  it("leaves a public project's turns alone — no email lookup at the gate", async () => {
+    const { slack, reactions } = makeSlackFake();
+
+    await handleSlackEvent(deps0(slack), withUser("U2"), BINDING);
+
+    expect(reactions).toHaveLength(1);
+  });
+});

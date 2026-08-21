@@ -2,6 +2,8 @@ import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
 import { slackMessageText } from "@/domain/slack/messageText";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
+import { isProjectPrivate } from "@/domain/project/access";
+import { userMayAccessProject } from "@/application/project/projectUseCases";
 import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
 import { parseSlackCommand, selfUserId } from "@/application/slack/engagement";
 import { handleSlackCommand } from "@/application/slack/handleCommand";
@@ -334,6 +336,28 @@ export async function handleSlackEvent(
       `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
     );
     return;
+  }
+
+  // The visibility gate, ahead of any acknowledgement — no reaction, no status
+  // line, no thread read happens for someone the project keeps out. A Slack id
+  // maps to a member by email, the one identity both sides share, so a
+  // workspace that shares no address (or a message no human sent) is refused
+  // the same way: an unidentifiable asker is not an invited one. The lookup is
+  // the same cached `users.info` the gallery attribution below reuses, and the
+  // address stays out of the prompt either way.
+  if (isProjectPrivate(project)) {
+    const askerEmail = event.user
+      ? await deps.slack.userEmail(token, event.user).catch((error) => {
+          log.warn("slack", "asker email lookup failed for a private project", error);
+          return null;
+        })
+      : null;
+    if (!askerEmail || !(await userMayAccessProject(project, askerEmail))) {
+      await reply.say(
+        `Sorry — project "${projectName}" is private. Ask its owner to invite you.`,
+      );
+      return;
+    }
   }
 
   log.info("slack", `run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
