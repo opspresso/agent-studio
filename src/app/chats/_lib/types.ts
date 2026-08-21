@@ -27,7 +27,7 @@ export interface StreamChunk {
    * body says nothing about which of the two happened.
    */
   ended?: boolean;
-  delta?: { content?: string; toolCalls?: unknown[] };
+  delta?: { content?: string; reasoningContent?: string; toolCalls?: unknown[] };
   toolResult?: unknown;
   image?: { b64: string; mimeType: string; prompt?: string };
   /**
@@ -36,6 +36,11 @@ export interface StreamChunk {
    * when the finished turn is read back, not here.
    */
   file?: { name: string; mimeType: string; byteSize?: number; key?: string };
+  /**
+   * Token accounting for one model call. Read for one number only — how much of
+   * the turn went into thinking — which is why nothing else here is declared.
+   */
+  usage?: { reasoningTokens?: number };
   author?: string;
   /** Transfer chain that produced the chunk, outermost first. */
   authorPath?: string[];
@@ -86,6 +91,13 @@ export interface LiveFile {
 /** In-progress assistant turn rendered while a stream is active. */
 export interface LiveTurn {
   text: string;
+  /**
+   * The run's thinking so far — empty unless the version opted into recording
+   * it, since the engine emits nothing otherwise.
+   */
+  reasoning: string;
+  /** Reasoning tokens this run has spent, when the provider reported any. */
+  reasoningTokens: number;
   toolCalls: LiveToolCall[];
   tools: LiveToolResult[];
   images: LiveImage[];
@@ -111,6 +123,8 @@ export interface AgentProject {
 
 export const EMPTY_TURN: LiveTurn = {
   text: "",
+  reasoning: "",
+  reasoningTokens: 0,
   toolCalls: [],
   tools: [],
   images: [],

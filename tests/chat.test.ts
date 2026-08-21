@@ -778,6 +778,179 @@ describe("runAndPersist size guard and disconnect", () => {
   });
 });
 
+describe("runAndPersist keeps the run's reasoning", () => {
+  it("stores the top-level thinking and leaves a subagent's out", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { reasoningContent: "weighing it" } };
+      yield { author: "child", delta: { reasoningContent: "the child's own" } };
+      yield { usage: { inputTokens: 3, outputTokens: 9, costUsd: 0, reasoningTokens: 7 } };
+      yield { delta: { content: "Done." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    // Exactly the parent's, so the child's is excluded: four children dispatched
+    // at once interleave here with nothing saying whose thought is whose.
+    expect(assistant).toMatchObject({ reasoning: "weighing it", reasoningTokens: 7 });
+  });
+
+  it("writes the message for a run that only thought", async () => {
+    // The run a reviewer opened this feature for: it spent tokens and produced
+    // no answer, and the guard used to drop the whole turn as having nothing.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { reasoningContent: "thought about it" } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    expect(assistant).toMatchObject({ content: "", reasoning: "thought about it" });
+  });
+
+  it("spends one item budget on the answer and the thinking together", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "y".repeat(340_000) } };
+      yield { delta: { reasoningContent: "z".repeat(100_000) } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    const content = assistant?.content ?? "";
+    const reasoning = (assistant as { reasoning?: string } | undefined)?.reasoning ?? "";
+    // Two 350KB fields would be a 700KB item, which the write refuses whole —
+    // taking the answer the reader already watched stream with it.
+    expect(Buffer.byteLength(content, "utf8") + Buffer.byteLength(reasoning, "utf8")).toBeLessThanOrEqual(
+      350_000,
+    );
+    expect(reasoning.endsWith("…[truncated]")).toBe(true);
+  });
+
+  it("keeps the token count only beside the text it counts", async () => {
+    // `toUsageInfo` reports whatever the provider says — only the *yield* is
+    // gated — so a count stored on its own would land on every turn of every
+    // version that never opted in, where nothing renders it. A provider that
+    // reports the size and withholds the thinking is the engine's warning.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { usage: { inputTokens: 3, outputTokens: 4000, costUsd: 0, reasoningTokens: 4000 } };
+      yield { delta: { content: "42" } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    expect(assistant).toMatchObject({ content: "42" });
+    expect(assistant).not.toHaveProperty("reasoning");
+    expect(assistant).not.toHaveProperty("reasoningTokens");
+  });
+
+  it("stores no reasoning at all when the answer left it no room", async () => {
+    // A bare "…[truncated]" would be a reasoning block containing no reasoning,
+    // and would put the item 15 bytes over the ceiling the two caps share.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "y".repeat(400_000) } };
+      yield { delta: { reasoningContent: "z".repeat(5_000) } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    expect(assistant).not.toHaveProperty("reasoning");
+    expect(Buffer.byteLength(assistant?.content ?? "", "utf8")).toBeLessThanOrEqual(350_000);
+  });
+
+  it("says the reasoning was dropped rather than claiming the model withheld it", async () => {
+    // A count with no text reads, in the view, as a provider that refused to
+    // send the thinking — the opposite of an answer that filled the item.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "y".repeat(400_000) } };
+      yield { delta: { reasoningContent: "z".repeat(5_000) } };
+      yield { usage: { inputTokens: 1, outputTokens: 2, costUsd: 0, reasoningTokens: 900 } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    expect(assistant).not.toHaveProperty("reasoning");
+    expect(assistant).not.toHaveProperty("reasoningTokens");
+    expect((assistant as { warnings?: string[] }).warnings).toEqual([
+      "This run's reasoning was not kept: the answer filled the message on its own.",
+    ]);
+  });
+
+  it("does not replay a turn that answered with nothing but thinking", async () => {
+    // `{ role: "assistant", content: "" }` with no tool calls is rejected by the
+    // gateways in front of Anthropic and Bedrock: one such turn would fail the
+    // next send and every one after it.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { reasoningContent: "the answer, as thinking" } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    expect(stored.find((m) => m.role === "assistant")).toMatchObject({ content: "" });
+    expect(toEngineMessages(stored).messages).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  /**
+   * What dropping it leaves behind: the question that was never answered, and
+   * the one that follows it. Two `user` turns in a row is what actually
+   * happened, and OpenAI-compatible gateways accept it — an empty assistant
+   * block is the shape they reject. Pinned because the alternative reads like
+   * an oversight rather than the choice it is.
+   */
+  it("leaves the unanswered question next to the one that followed it", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "first" }),
+      { ...message({ seq: 1, role: "assistant", content: "" }), reasoning: "thought only" } as ChatMessage,
+      message({ seq: 2, role: "user", content: "second" }),
+    ]);
+
+    expect(toEngineMessages(await repo.listMessages("c1")).messages).toEqual([
+      { role: "user", content: "first" },
+      { role: "user", content: "second" },
+    ]);
+  });
+
+  it("is shown but never replayed as history", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { reasoningContent: "weighing it" } };
+      yield { delta: { content: "Done." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    expect(toEngineMessages(await repo.listMessages("c1")).messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Done." },
+    ]);
+  });
+});
+
 describe("stored images are signed at read time", () => {
   const sign = async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`;
 

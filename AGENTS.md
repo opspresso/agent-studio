@@ -162,7 +162,7 @@ loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for
 ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 120 only
 because the engine's builtins are added after the MCP tools are cut and need the room.
 
-**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 115 decisions across two
+**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 120 decisions across two
 tables, the second holding the ones the test cannot express as a pattern but that the same
 rule governs. `tests/architecture.test.ts` is what enforces both.
 
@@ -290,6 +290,39 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   field said so from the day it was written while nothing populated or read it, so a child
   that opted in ran anonymously: the checkbox on, the block missing, nothing saying so. Both
   child prompt assemblies (`runLocalSubagent`, `runPromptSubagent`) go through `callerFor`.
+- **A version's `reasoningTrace` gates the `delta.reasoningContent` yield, and nothing
+  else.** The turn's own `reasoning_content` goes back to the provider on that turn's
+  assistant message either way — the thinking has to stay attached to the turn that
+  produced it and to the tool calls that turn declared — so deleting the accumulation
+  behind the gate because it "looks unused when the flag is off" changes what the model is
+  sent. The gate sits at the emission site for the same reason `callerFor` sits at the
+  input boundary: filtering downstream would put one parameter in nine places, the run
+  log included, whose 350KB replay buffer a token-at-a-time axis fills on its own —
+  evicting the front of the *answer*. Two strings are live at that site: the accumulator
+  holds the masked copy the provider gets back, the chunk holds the restored one a
+  person reads. Persistence takes the chunk (`src/application/chat/AGENTS.md`).
+- **Folding a run's reasoning has a bounded list, like the image and agent-entry
+  ones.** `delta.reasoningContent` is the one output axis a version can switch
+  off, so a surface cannot tell "this run did not think" from "I am not reading
+  it" — which is how it reached nowhere at all for as long as it did. The four
+  sites (`REASONING_FOLD_SITES` in `tests/architecture.test.ts`) each pair the
+  same three decisions: `isTopLevelChunk` only, the token count carried beside
+  the text (the common OpenAI shape reports a count and streams nothing), and —
+  for the two that hold it in component state — `createTextPacer`, because a
+  commit per token re-renders a string that only grows. A fifth is added there
+  on purpose.
+- **An SSE stream's keepalive cannot start until its first chunk decides the
+  status.** `createSseResponse` awaits `generator.next()` before building the
+  `Response`, because a refused run throws there and that is what makes it a 429
+  instead of a `200` with the refusal in a data frame. Nothing can flow during
+  that await — so a run whose first chunk is far away spends the 60s idle budget
+  in silence and is cut mid-run. Two do: an image, whose bytes arrive in one
+  chunk at the end, and a reasoning model on a version not recording its
+  thinking, whose first chunk is the end-of-turn usage. The wait is therefore
+  bounded (`FIRST_CHUNK_GRACE_MS`); past it the response is built and the chunk
+  is awaited inside the stream. **Anything that removes an axis from the wire
+  has to be checked against this**, which is how gating `delta.reasoningContent`
+  turned every unrecorded reasoning run into a silent connection.
 - **Stream author contract.** Top-level chunks are unauthored; only subagent chunks carry
   `author`. Filter with `isTopLevelChunk()` — never re-derive.
 - **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three

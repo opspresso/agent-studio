@@ -70,6 +70,11 @@ export function contentChunk(text: string): ChannelChunk {
   return { choices: [{ delta: { content: text } }] };
 }
 
+/** A delta carrying only the model's thinking. */
+export function reasoningChunk(text: string): ChannelChunk {
+  return { choices: [{ delta: { reasoning_content: text } }] };
+}
+
 export function toolCallChunk(
   index: number,
   id: string,
@@ -137,6 +142,8 @@ export function usageChunk(
   cachedTokens?: number,
   /** USD the channel says the call cost, for the routers that report it. */
   costUsd?: number,
+  /** Output tokens spent thinking, for the providers that report them. */
+  reasoningTokens?: number,
 ): ChannelChunk {
   return {
     choices: [],
@@ -148,6 +155,9 @@ export function usageChunk(
       // from one reporting a cold cache.
       ...(cachedTokens === undefined ? {} : { prompt_tokens_details: { cached_tokens: cachedTokens } }),
       ...(costUsd === undefined ? {} : { cost_usd: costUsd }),
+      ...(reasoningTokens === undefined
+        ? {}
+        : { completion_tokens_details: { reasoning_tokens: reasoningTokens } }),
     },
   };
 }

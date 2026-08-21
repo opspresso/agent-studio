@@ -107,6 +107,8 @@ function fromMessageItem(item: DynamoItem): ChatMessage {
       // Same trap as the user turn below: the write spreads the whole message,
       // so a field missing *here* stores fine and reads back as nothing.
       files: item.files as ChatMessageFile[] | undefined,
+      reasoning: item.reasoning as string | undefined,
+      reasoningTokens: item.reasoningTokens as number | undefined,
     };
   }
   // A user turn carries what the user attached — images, and the text read out

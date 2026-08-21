@@ -24,7 +24,7 @@
  * so rather than showing a blank.
  */
 
-import type { EngineChunk } from "@/domain/llm/types";
+import { isTopLevelChunk, type EngineChunk } from "@/domain/llm/types";
 import type { RunLogEntry } from "@/domain/chat/runLog";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
@@ -99,6 +99,50 @@ function frameBytes(frame: string): number {
  * hold a generated image's megabytes for the whole run, for a reader who is
  * probably still there.
  */
+/**
+ * What a chunk may carry alongside reasoning and still be nothing but reasoning:
+ * who produced it, and the delta it travels on.
+ */
+const RIDES_WITH_REASONING = new Set(["traceId", "author", "authorPath", "delta"]);
+
+/**
+ * A chunk whose whole payload is the run's thinking.
+ *
+ * Written as "carries nothing else" rather than a list of the axes it must not
+ * carry, so an axis added later fails closed. The engine yields reasoning on
+ * its own chunk today; a future producer merging it with the answer would
+ * otherwise have the answer dropped along with it by the substitution below.
+ */
+function isReasoningOnly(chunk: EngineChunk): boolean {
+  const delta = chunk.delta;
+  if (!delta?.reasoningContent) {
+    return false;
+  }
+  // An allowlist on both levels, not one of each: naming the delta fields this
+  // must not carry would let a fourth delta axis be deleted from the replay
+  // buffer in silence, which is the failure the chunk-level check above avoids.
+  return (
+    Object.keys(delta).every((key) => key === "reasoningContent") &&
+    Object.keys(chunk).every((key) => RIDES_WITH_REASONING.has(key))
+  );
+}
+
+/**
+ * What stands in for a run's thinking, once per run.
+ *
+ * Reasoning streams a token at a time, and each frame pays ~33 bytes of
+ * envelope for a few bytes of text: a run that thinks for 20k tokens produces
+ * 20k frames and hundreds of kilobytes against a 350KB buffer that drops from
+ * the front. What it drops is the beginning of the answer — a resumed reader
+ * would get "the first N part(s) are no longer available" followed by a reply
+ * starting mid-sentence, while the saved message holds the whole thing. So the
+ * buffer is spent on the answer, and the thinking arrives with the message the
+ * run writes on its way out.
+ */
+function reasoningNote(): string {
+  return warningFrame("The reasoning for this run appears on the saved message once it finishes.");
+}
+
 function frameFor(chunk: EngineChunk, imagesArePersisted: boolean): string {
   if (chunk.file) {
     // Same rule as an image, and the same reason: a megabyte of base64 has no
@@ -174,7 +218,25 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
     droppedFrames += dropped;
   }
 
+  /** The substitution above says the same thing every time; it is said once. */
+  let reasoningNoted = false;
+
   function record(chunk: EngineChunk): void {
+    if (isReasoningOnly(chunk)) {
+      // A child's thinking is dropped without a word. The note points at the
+      // saved message, and `runAndPersist` keeps top-level reasoning only — so
+      // said over a subagent's it would send the reader to a field that will
+      // never exist, and burn the one note the parent's own thinking needs.
+      if (!isTopLevelChunk(chunk)) {
+        return;
+      }
+      if (reasoningNoted) {
+        return;
+      }
+      reasoningNoted = true;
+      push(reasoningNote());
+      return;
+    }
     push(frameFor(chunk, deps.artifacts !== undefined));
   }
 

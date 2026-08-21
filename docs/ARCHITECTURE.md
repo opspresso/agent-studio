@@ -545,7 +545,8 @@ chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. *
 
 | 필드 | 내보내는 곳 | 소비하는 곳 |
 |---|---|---|
-| `delta.content` / `delta.reasoningContent` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) | top-level 만: chat 영속화, chat 봇의 응답 sink(Slack, Telegram, Teams), OpenAI chunk, A2A artifact, 클라이언트 답변 말풍선 |
+| `delta.content` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) | top-level 만: chat 영속화, chat 봇의 응답 sink(Slack, Telegram, Teams), OpenAI chunk, A2A artifact, 클라이언트 답변 말풍선 |
+| `delta.reasoningContent` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) — 단 **버전이 `parameters.reasoningTrace` 를 켰을 때만**. 턴 사이는 답변과 같은 빈 줄로 갈린다. 게이트는 yield 에만 걸린다: 그 턴의 `reasoning_content` 는 어느 쪽이든 assistant 메시지에 실려 프로바이더로 돌아가고, 그것이 컨텍스트 예산에 과금된다 | top-level 만: chat 영속화(`AssistantChatMessage.reasoning`, **보여 주기만 하고 히스토리로 리플레이하지 않는다**), 클라이언트의 라이브 턴, 콘솔의 Playground 와 Compare. OpenAI 두 모양·A2A·messaging 파이프라인·`/predict` 의 collected 응답·trace recorder 는 **읽지 않는다**. 런 로그는 프레임 대신 메모 한 줄을 넣는다 — 토큰 단위로 오는 프레임이 재생 버퍼에서 답변을 밀어내기 때문 |
 | `delta.toolCalls` | 턴이 툴을 요청할 때 엔진이 (표시용 인자와 함께) | 클라이언트의 툴 호출 렌더링, chat 봇의 진행 표시(Slack 의 상태 줄이나 체크리스트, Telegram·Teams 의 입력 중 표시) |
 | `toolResult` | 각 툴이 끝난 뒤 엔진이 | chat 의 툴 행(화면에 표시되고, 최근 N 턴에 대해서는 컨텍스트로 리플레이된다), 클라이언트 툴 패널 |
 | `warning` | 런이 무언가를 잃는 모든 자리: 셋업 시점에는 쓸 수 없었던 바인딩(삭제된 skill/subagent, 도달 불가하거나 차단된 MCP 서버, 런당 상한을 넘은 tool), 런 도중에는 턴 또는 출력 한도, 컨텍스트 예산 절단, 잘린 transfer transcript, 실패한 transfer, 버려진 document | chat 경고 배너, chat 봇의 경고 꼬리말(Slack, Telegram, Teams), `Trace.warnings`. 절대 스트림을 끝내지 않는다 |

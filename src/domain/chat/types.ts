@@ -131,6 +131,24 @@ export interface AssistantChatMessage extends ChatMessageBase {
   images?: ChatMessageImage[];
   /** Present when the run produced files — what the reader downloads. */
   files?: ChatMessageFile[];
+  /**
+   * The run's own thinking, kept only when the version opted in
+   * (`parameters.reasoningTrace`). Flattened exactly as `content` is: one block
+   * per run, with a blank line between turns.
+   *
+   * Shown, never replayed. A run writes one assistant message carrying every
+   * turn's text, so a `reasoning_content` on it would claim a single block of
+   * thinking belonged to a message whose `tool_calls` came from several
+   * different turns — a shape the provider never produced. `displayOnly` tool
+   * rows are refused replay for the same reason.
+   */
+  reasoning?: string;
+  /**
+   * Tokens the run spent thinking, when the provider reported any. Beside
+   * `reasoning` rather than derived from it: the text is capped for the item
+   * while this counts what was actually spent.
+   */
+  reasoningTokens?: number;
 }
 
 export interface ToolChatMessage extends ChatMessageBase {

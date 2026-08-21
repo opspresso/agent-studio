@@ -82,12 +82,14 @@ function toChannelUsage(usage: unknown): ChannelUsage | null {
     prompt_tokens?: number;
     completion_tokens?: number;
     prompt_tokens_details?: { cached_tokens?: number } | null;
+    completion_tokens_details?: { reasoning_tokens?: number } | null;
     cost?: number;
   };
   return {
     prompt_tokens: u.prompt_tokens ?? 0,
     completion_tokens: u.completion_tokens ?? 0,
     prompt_tokens_details: u.prompt_tokens_details ?? null,
+    completion_tokens_details: u.completion_tokens_details ?? null,
     // OpenRouter reports what the call cost in `usage.cost`, in USD. Carried
     // only when it is a usable number: a channel that does not report it leaves
     // the field off entirely, which is what makes registry pricing the fallback

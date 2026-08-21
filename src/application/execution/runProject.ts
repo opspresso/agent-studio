@@ -351,6 +351,8 @@ export async function collectRun(
   const files: ProducedFileRef[] = [];
   const warnings: string[] = [];
   const usage: UsageInfo = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  let cachedTokens = 0;
+  let reasoningTokens = 0;
   // Why the run ended, as the engine announced it. Only the top level speaks
   // for the stream: an authored termination is a child's, already absorbed
   // into the parent's tool result.
@@ -401,9 +403,29 @@ export async function collectRun(
       usage.inputTokens += chunk.usage.inputTokens;
       usage.outputTokens += chunk.usage.outputTokens;
       usage.costUsd += chunk.usage.costUsd;
+      // The two subset fields are summed here rather than left off, because
+      // this accumulator and the single-shot path answer the *same* endpoint:
+      // built field by field, an agent project's `/predict` silently dropped
+      // what an `llm` project's returned, and a caller reading either could
+      // not tell a provider that reports neither from a shape that discards
+      // them. Absent-not-zero, so a run nobody reported them for is unchanged.
+      cachedTokens += chunk.usage.cachedTokens ?? 0;
+      reasoningTokens += chunk.usage.reasoningTokens ?? 0;
     }
   }
-  return { content, model, usage, images, files, warnings, ...(termination ? { termination } : {}) };
+  return {
+    content,
+    model,
+    usage: {
+      ...usage,
+      ...(cachedTokens > 0 ? { cachedTokens } : {}),
+      ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
+    },
+    images,
+    files,
+    warnings,
+    ...(termination ? { termination } : {}),
+  };
 }
 
 /**

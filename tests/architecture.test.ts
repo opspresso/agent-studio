@@ -568,7 +568,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(87);
+    expect(entries.length).toBe(88);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -1289,6 +1289,16 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "how many agents one dispatch may run",
     pattern: /MAX_DISPATCH_TASKS\s*=/,
     owner: "src/application/llm/agentAssembly.ts",
+  },
+  {
+    // Two surfaces ask the same question — the chat store about the answer it
+    // is about to re-render, the console about the thinking it is about to
+    // commit — and each had grown its own copy of the three constants and the
+    // formula over them. Retuning one then leaves the other on the old curve,
+    // which is invisible: both still feel "about right".
+    what: "how long to collect streamed text before drawing it",
+    pattern: /CHARS_PER_EXTRA_MS\s*=/,
+    owner: "src/app/_lib/textPacer.ts",
   },
   {
     // Where the subtleties of a hand-rolled merge live: exactly one in-flight
@@ -2044,6 +2054,80 @@ describe("what a run produced", () => {
       return reads(text, "image") !== reads(text, "file");
     }).map((file) => file.path);
     expect(oneAxis).toEqual([]);
+  });
+});
+
+/**
+ * Who folds a run's thinking.
+ *
+ * `delta.reasoningContent` is the one axis a version can switch off, so unlike
+ * the answer beside it a surface cannot tell "this run did not think" from "I
+ * am not reading it" — which is how it reached nowhere at all for as long as it
+ * did, emitted by the engine and consumed by no one.
+ *
+ * Four surfaces fold it now, and each pairs the same three decisions: keep only
+ * what `isTopLevelChunk` allows (a child's thinking is its own run's), pace the
+ * commit (it arrives a token at a time and the string only grows), and carry
+ * the token count beside the text (the common OpenAI shape reports a count and
+ * streams nothing). `SideResult` had already dropped the third before this list
+ * existed. A fifth surface is added here on purpose.
+ *
+ * The chat's two are one fold each on either side of the wire — what the store
+ * shows and what the run persists — and the console's two hold it in component
+ * state, which is why they are the pair that needs `textPacer`.
+ */
+const REASONING_FOLD_SITES = [
+  "src/application/chat/run.ts",
+  "src/app/chats/_lib/stream.ts",
+  "src/app/projects/[name]/_components/RunPanel.tsx",
+  "src/app/projects/[name]/compare/page.tsx",
+];
+
+describe("folding a run's reasoning", () => {
+  const folds = (text: string) => /reasoningContent/.test(text);
+
+  it("happens only where the list says", () => {
+    const found = SOURCE_FILES.filter(
+      (file) =>
+        file.path.startsWith("src/app/") ||
+        file.path.startsWith("src/application/chat/") ||
+        file.path.startsWith("src/application/messaging/"),
+    )
+      .filter((file) => folds(stripComments(file.text)))
+      .map((file) => file.path)
+      .filter((path) => !REASONING_FOLD_SITES.includes(path));
+    // Three name the field without folding a run's thinking: the client's wire
+    // shape declares it, the run log substitutes a note for it, and the API
+    // reference lists it among the frames `/agent` sends.
+    expect(found).toEqual([
+      "src/app/chats/_lib/types.ts",
+      "src/app/projects/[name]/api-reference/endpoints.ts",
+      "src/application/chat/runLog.ts",
+    ]);
+  });
+
+  it("keeps the top level only, everywhere it is folded", () => {
+    const missing = REASONING_FOLD_SITES.filter((path) => {
+      const file = SOURCE_FILES.find((candidate) => candidate.path === path);
+      return file === undefined || !/isTopLevelChunk/.test(stripComments(file.text));
+    });
+    expect(missing).toEqual([]);
+  });
+
+  it("paces every fold that holds it in component state", () => {
+    // Named, not derived from a directory: a fifth console surface anywhere
+    // else would otherwise be checked for the author gate and silently exempted
+    // from the pacing, which is the per-token re-render this list exists for.
+    // `stream.ts` folds into the chat store, which paces its own notifications;
+    // `run.ts` renders nothing at all.
+    const PACED_BY_SOMETHING_ELSE = ["src/application/chat/run.ts", "src/app/chats/_lib/stream.ts"];
+    const unpaced = REASONING_FOLD_SITES.filter(
+      (path) => !PACED_BY_SOMETHING_ELSE.includes(path),
+    ).filter((path) => {
+      const file = SOURCE_FILES.find((candidate) => candidate.path === path);
+      return file === undefined || !/createTextPacer/.test(stripComments(file.text));
+    });
+    expect(unpaced).toEqual([]);
   });
 });
 

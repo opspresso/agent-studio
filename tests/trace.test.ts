@@ -177,6 +177,31 @@ describe("TraceRecorder", () => {
     }
   });
 
+  it("names the thinking share of a model span, and only when reported", async () => {
+    // A turn that thought for 4,000 tokens and answered in ten looks, without
+    // this, like a turn that wrote 4,010 words.
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "p",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    recorder.observe({
+      usage: { inputTokens: 1, outputTokens: 4010, costUsd: 0.01, reasoningTokens: 4000 },
+    });
+    recorder.observe({ usage: { inputTokens: 1, outputTokens: 10, costUsd: 0.001 } });
+    await recorder.finish();
+
+    const outputs = (traces[0]?.spans ?? [])
+      .filter((span) => span.kind === "model")
+      .map((span) => span.output?.reasoningTokens);
+    // Absent, not zero, on the turn nobody reported one for.
+    expect(outputs).toEqual([4000, undefined]);
+  });
+
   it("does not bill preparation to the first model span", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));

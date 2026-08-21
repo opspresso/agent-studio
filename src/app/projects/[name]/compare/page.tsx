@@ -36,6 +36,8 @@ import {
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { LoadingText } from "@/app/_components/PageState";
 import { ProducedFile } from "@/app/_components/ProducedFile";
+import { createTextPacer } from "@/app/_lib/textPacer";
+import { ReasoningRow } from "@/app/_components/ReasoningRow";
 
 /**
  * One side's outcome, folded from the same chunk stream the playground reads —
@@ -45,6 +47,28 @@ import { ProducedFile } from "@/app/_components/ProducedFile";
 interface SideResult {
   running: boolean;
   text: string;
+  /** The run's thinking — empty unless this version opted into recording it. */
+  reasoning: string;
+  /**
+   * Whether the version *this result came from* records its reasoning.
+   *
+   * Captured when the run starts rather than read off the dropdown: the reader
+   * can change the selection while an answer is on screen, and the note below
+   * would then describe a version that did not produce it. `null` until a run
+   * has been made, which is what keeps the note off an idle page.
+   */
+  reasoningRecorded: boolean | null;
+  /** Tokens the run spent thinking, when the provider reported any. */
+  reasoningTokens: number;
+  /**
+   * When this run started — the identity of the panels it owns.
+   *
+   * Stable for the whole run, and different for the next one, which is what a
+   * collapsible needs: keyed on anything that changes at the finish (a duration,
+   * a status) the panel remounts the instant the run ends and shuts itself in
+   * front of a reader who had opened it.
+   */
+  startedAt: number | null;
   warnings: string[];
   error: string | null;
   costUsd: number | null;
@@ -60,6 +84,10 @@ interface SideResult {
 const IDLE: SideResult = {
   running: false,
   text: "",
+  reasoning: "",
+  reasoningRecorded: null,
+  reasoningTokens: 0,
+  startedAt: null,
   warnings: [],
   error: null,
   costUsd: null,
@@ -158,7 +186,20 @@ export default function ComparePage() {
       return;
     }
     const startedAt = Date.now();
-    setSide(() => ({ ...IDLE, running: true }));
+    // `null` for an image project: it has no reasoning axis at all — the version
+    // editor never offers the checkbox — so "not recorded for this version"
+    // would answer a question this comparison does not ask.
+    const recordsReasoning =
+      project.projectType === "image"
+        ? null
+        : versions.find((candidate) => candidate.versionName === versionName)?.parameters
+            .reasoningTrace === true;
+    setSide(() => ({ ...IDLE, running: true, reasoningRecorded: recordsReasoning, startedAt }));
+    // Batched rather than committed per token: two sides re-rendering the whole
+    // page once per reasoning token is quadratic over a long think.
+    const reasoningPacer = createTextPacer((batch) =>
+      setSide((prev) => ({ ...prev, reasoning: prev.reasoning + batch })),
+    );
     try {
       if (project.projectType === "image") {
         const result = await predictImage(name, versionName, { prompt: message });
@@ -194,6 +235,10 @@ export default function ComparePage() {
         if (content && isTopLevelChunk(chunk)) {
           setSide((prev) => ({ ...prev, text: prev.text + content }));
         }
+        const reasoned = chunk.delta?.reasoningContent;
+        if (reasoned && isTopLevelChunk(chunk)) {
+          reasoningPacer.push(reasoned);
+        }
         const callCount = chunk.delta?.toolCalls?.length ?? 0;
         if (callCount > 0) {
           setSide((prev) => ({ ...prev, toolCallCount: prev.toolCallCount + callCount }));
@@ -218,13 +263,19 @@ export default function ComparePage() {
         }
         if (chunk.usage) {
           const spent = chunk.usage.costUsd;
-          setSide((prev) => ({ ...prev, costUsd: (prev.costUsd ?? 0) + spent }));
+          const thought = chunk.usage.reasoningTokens ?? 0;
+          setSide((prev) => ({
+            ...prev,
+            costUsd: (prev.costUsd ?? 0) + spent,
+            reasoningTokens: prev.reasoningTokens + (isTopLevelChunk(chunk) ? thought : 0),
+          }));
         }
       }
     } catch (e) {
       const failure = e instanceof Error ? e.message : "Run failed";
       setSide((prev) => ({ ...prev, error: failure }));
     } finally {
+      reasoningPacer.flush();
       setSide((prev) => ({ ...prev, running: false, durationMs: Date.now() - startedAt }));
     }
   }
@@ -318,6 +369,24 @@ export default function ComparePage() {
                       {warning}
                     </Alert>
                   ))}
+                  {/* Said rather than left out. With the section simply absent on
+                      the version that did not opt in, the other side reads as the
+                      one that thought harder — which is not what differs. Keyed
+                      on the run so collapsing it once does not switch off the
+                      auto-open for every later comparison. */}
+                  {side.reasoningRecorded === true && (
+                    <ReasoningRow
+                      key={`reasoning-${index}-${side.startedAt ?? 0}`}
+                      text={side.reasoning}
+                      {...(side.reasoningTokens > 0 ? { tokens: side.reasoningTokens } : {})}
+                      streaming={side.running && side.text === "" && side.reasoning !== ""}
+                    />
+                  )}
+                  {side.reasoningRecorded === false && (
+                    <Text fz="xs" c="dimmed">
+                      Reasoning is not recorded for this version.
+                    </Text>
+                  )}
                   {side.image ? (
                     <Image
                       src={imageDataUrl({ b64: side.image.imageBase64, mimeType: side.image.mimeType })}

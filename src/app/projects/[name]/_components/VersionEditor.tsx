@@ -340,6 +340,34 @@ export function VersionEditor({
         />
       )}
 
+      {/*
+        Stays visible on a stored `true` even where the model has no reasoning,
+        unlike the effort select above it: saving is *rejected* for that pair, so
+        hiding the control would leave an author unable to save anything at all.
+      */}
+      {projectType !== "image" && (supportsReasoning || value.parameters.reasoningTrace) && (
+        <Stack gap={4}>
+          <Checkbox
+            label={t("version.reasoningTrace")}
+            description={t("version.reasoningTraceHint")}
+            checked={value.parameters.reasoningTrace ?? false}
+            onChange={(e) =>
+              patchParams({ reasoningTrace: e.currentTarget.checked ? true : undefined })
+            }
+          />
+          {/* The same constraint /models badges, said where it costs something:
+              this model refuses to think while it can call tools, so an agent
+              run records its final turn and nothing before it. */}
+          {value.parameters.reasoningTrace === true &&
+            runsTools &&
+            selectedModel?.capabilities.reasoningWithTools === false && (
+              <Text fz="xs" c="yellow.7">
+                {t("models.reasoningNoTools")}
+              </Text>
+            )}
+        </Stack>
+      )}
+
       {projectType === "agent" && (
         <NumberField
           label={t("version.maxTurns")}

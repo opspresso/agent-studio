@@ -28,7 +28,8 @@ function toolResultField(toolResult: unknown, field: string): string | undefined
  * results, and generated images all render live regardless of author.
  */
 export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
-  let { text, toolCalls, tools, images, files, warnings, authorPaths } = prev;
+  let { text, reasoning, reasoningTokens, toolCalls, tools, images, files, warnings, authorPaths } =
+    prev;
   // Follow the stream: an authored chunk names a chain that is running now and
   // joins the set — several children speak at once under `dispatch_agents`, while
   // a chain it is nested with has evidently finished. An unauthored chunk means
@@ -42,6 +43,16 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
         : [];
   if (typeof chunk.delta?.content === "string" && isTopLevelChunk(chunk)) {
     text += chunk.delta.content;
+  }
+  // Top-level only, for the reason the answer is: several children thinking at
+  // once interleave here with nothing saying whose thought is whose.
+  if (typeof chunk.delta?.reasoningContent === "string" && isTopLevelChunk(chunk)) {
+    reasoning += chunk.delta.reasoningContent;
+  }
+  // One usage chunk per turn, so an agent run's turns add up. Top-level only:
+  // a child's spend is its own run's, and the panel here shows this run's.
+  if (chunk.usage?.reasoningTokens !== undefined && isTopLevelChunk(chunk)) {
+    reasoningTokens += chunk.usage.reasoningTokens;
   }
   if (Array.isArray(chunk.delta?.toolCalls)) {
     toolCalls = [...toolCalls, ...chunk.delta.toolCalls.map(parseWireToolCall)];
@@ -75,5 +86,15 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
   if (warning !== undefined) {
     warnings = [...warnings, warning];
   }
-  return { text, toolCalls, tools, images, files, warnings, authorPaths };
+  return {
+    text,
+    reasoning,
+    reasoningTokens,
+    toolCalls,
+    tools,
+    images,
+    files,
+    warnings,
+    authorPaths,
+  };
 }

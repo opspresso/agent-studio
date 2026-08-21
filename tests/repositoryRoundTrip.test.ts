@@ -547,7 +547,12 @@ describe("chatRepository message round-trip", () => {
       content: "The answer.",
       toolCalls: [{ id: "call_1", function: { name: "search", arguments: "{}" } }],
       images: [{ url: "https://img.example/1.png", prompt: "a fox" }],
+      // The write spreads the whole message while the read enumerates fields by
+      // name, so this is the only test that catches one missing from the read.
+      files: [{ key: "artifacts/document/a.docx", name: "a.docx", mimeType: "application/msword" }],
       warnings: ["MCP server 'crm' is unreachable."],
+      reasoning: "Weighed the options.",
+      reasoningTokens: 412,
       createdAt: NOW,
     };
     await chatRepository.appendMessage(userMessage);

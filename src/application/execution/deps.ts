@@ -273,6 +273,9 @@ export function toEngineParameters(version: Version): EngineParameters {
   if (p.jsonSchema !== undefined) {
     params.jsonSchema = p.jsonSchema;
   }
+  if (p.reasoningTrace !== undefined) {
+    params.reasoningTrace = p.reasoningTrace;
+  }
   return params;
 }
 

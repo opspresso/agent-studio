@@ -136,6 +136,7 @@ export const versionParametersSchema = z.object({
   imageModel: z.string().optional(),
   dynamicCapabilities: z.boolean().optional(),
   memoryRecall: z.boolean().optional(),
+  reasoningTrace: z.boolean().optional(),
 });
 
 export const subagentRefSchema = z.object({

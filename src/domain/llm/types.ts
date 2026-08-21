@@ -21,6 +21,19 @@ export interface UsageInfo {
    * look exactly as they did.
    */
   cachedTokens?: number;
+  /**
+   * Tokens the model spent thinking — a **subset** of {@link outputTokens},
+   * already priced at the output rate by `calculateCost`.
+   *
+   * Carried for the reader, not for the bill: a reasoning block says how much
+   * of a turn's cost went into thinking nobody would otherwise see. Pricing it
+   * again would double-bill, so no usage row and no dashboard reads it.
+   *
+   * Absent when the provider reported none, which most OpenAI-compatible
+   * gateways do — a usage chunk from one of those is byte-identical to what it
+   * has always been.
+   */
+  reasoningTokens?: number;
 }
 
 /** One OpenAI-shaped tool call as it appears on assistant messages and deltas. */
@@ -384,4 +397,13 @@ export interface EngineParameters {
   /** JSON schema for structured output; when present, response_format is set. */
   jsonSchema?: Record<string, unknown>;
   structuredOutput?: boolean;
+  /**
+   * Whether the run's thinking is emitted as {@link EngineChunk.delta.reasoningContent}.
+   *
+   * The gate is on the *yield* alone. A turn's `reasoning_content` goes back to
+   * the provider on that turn's assistant message either way — that is the
+   * model's own round-trip, not a display feature, and it is charged to the
+   * context budget whichever way this reads.
+   */
+  reasoningTrace?: boolean;
 }

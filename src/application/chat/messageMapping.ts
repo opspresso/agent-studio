@@ -271,11 +271,26 @@ export function toEngineMessages(
       continue; // emitted with the assistant message that declared it
     }
     const pairs = replayed.get(message) ?? [];
+    // `message.reasoning` is deliberately left off. A run writes one assistant
+    // message holding every turn's text, so putting the flattened thinking back
+    // as `reasoning_content` would claim one block belonged to a message whose
+    // `tool_calls` came from several turns. It is also unbudgeted here —
+    // `messageChars` counts content and document text, not this — so replaying
+    // it would overrun the window without the "earlier turn(s) were left out"
+    // warning below ever firing.
     const mapped: ChatMessageInput = { role: "assistant", content: message.content };
     if (pairs.length > 0) {
       mapped.tool_calls = pairs.map((pair) => pair.call);
     }
-    out.push(mapped);
+    // A turn can now be stored with an empty answer — a run that only thought,
+    // which is the whole shape of a model that answers inside its reasoning.
+    // Replaying it would put `{ role: "assistant", content: "" }` with no tool
+    // calls into every later request, and the gateways in front of Anthropic
+    // and Bedrock reject an empty assistant block: one such turn would fail
+    // the *next* send and every one after it.
+    if (mapped.content !== "" || mapped.tool_calls) {
+      out.push(mapped);
+    }
     for (const pair of pairs) {
       out.push({ role: "tool", content: pair.content, tool_call_id: pair.call.id as string });
     }

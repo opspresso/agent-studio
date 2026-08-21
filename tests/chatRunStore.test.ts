@@ -397,6 +397,79 @@ describe("runStore", () => {
   });
 
   /**
+   * The one axis a replay cannot rebuild. `runLog` keeps a note in place of a
+   * run's reasoning — the frames are a token apiece and would evict the answer
+   * from a 350KB buffer — so folding a reconnect from a truly empty turn would
+   * blank an open panel the reader is watching, mid-run, while the answer
+   * beside it rebuilt exactly.
+   */
+  it("keeps the thinking across a reconnect the replay cannot carry", async () => {
+    stubFetch([
+      () =>
+        sse(
+          [
+            { runId: "run-1" },
+            { delta: { reasoningContent: "weighing it" } },
+            { delta: { content: "half" } },
+          ],
+          { close: true },
+        ),
+      () => Response.json({ active: true }),
+      () =>
+        sse([
+          { runId: "run-1" },
+          { warning: "The reasoning for this run appears on the saved message once it finishes." },
+          { delta: { content: "half" } },
+          { delta: { content: " and half" } },
+          { ended: true },
+        ]),
+    ]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(store.get("c1")).toMatchObject({
+      status: "finished",
+      live: { text: "half and half", reasoning: "weighing it" },
+    });
+  });
+
+  /**
+   * The seam carries the *text* only. `runLog` substitutes a note for reasoning
+   * frames but keeps every `usage` frame verbatim, so the replay re-delivers the
+   * counts — carrying them across as well would add each turn's a second time,
+   * and again on every later reconnect, against a stored message that says the
+   * true one.
+   */
+  it("does not double-count the thinking tokens the replay re-delivers", async () => {
+    stubFetch([
+      () =>
+        sse(
+          [
+            { runId: "run-1" },
+            { delta: { reasoningContent: "weighing it" } },
+            { usage: { inputTokens: 1, outputTokens: 1200, costUsd: 0, reasoningTokens: 1200 } },
+          ],
+          { close: true },
+        ),
+      () => Response.json({ active: true }),
+      () =>
+        sse([
+          { runId: "run-1" },
+          { warning: "The reasoning for this run appears on the saved message once it finishes." },
+          { usage: { inputTokens: 1, outputTokens: 1200, costUsd: 0, reasoningTokens: 1200 } },
+          { delta: { content: "done" } },
+          { ended: true },
+        ]),
+    ]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(store.get("c1")?.live.reasoningTokens).toBe(1200);
+  });
+
+  /**
    * The cut this deployment actually sees. It rejects out of `readSse` instead
    * of ending it, and a version of this that let the rejection reach the outer
    * catch reported a run still producing as a network failure and never tried

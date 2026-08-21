@@ -126,6 +126,12 @@ tool 행은 항상 `toolCallId` 를 나르고, assistant 행은 `toolCalls`/`ima
 `files` 는 런이 만들어 낸 것이자 읽는 사람이 내려받는 것이다. 그것을 주소로 해석하는 것은
 오직 뷰뿐인데, 이미지와 달리 파일은 재생되는 턴 안으로 fetch 되는 일이 결코 없기 때문이다.
 
+버전이 `reasoningTrace` 를 켰다면 assistant 행은 그 런의 `reasoning` 과 `reasoningTokens` 도
+나른다. 토큰 수는 텍스트와 독립이다 — 흔한 OpenAI 모양은 개수만 보고하고 사고 자체는 결코
+스트리밍하지 않으므로, 둘을 묶으면 4,000토큰을 생각한 런이 아무 일도 없었다고 기록하게 된다.
+보여 주기만 하고 재생하지 않는 이유와 아이템 예산을 답변과 나눠 쓰는 이유는
+`src/application/chat/AGENTS.md` 에 있다.
+
 한 런은 누적된 텍스트와 그 런의 top-level `toolCalls`, 그리고 그 런이 보고한 `warnings` 를
 담은 **평탄화된 assistant 메시지 하나**를 영속화하고, 그 앞에 자기 tool 행들을 둔다 —
 subagent 의 것과 transfer 의 것도 포함하며, 이들은 `author`/`displayOnly` 를 나르므로 읽는

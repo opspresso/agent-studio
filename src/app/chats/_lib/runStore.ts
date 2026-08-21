@@ -26,6 +26,7 @@
 import { isTopLevelChunk } from "@/domain/llm/types";
 import { unrefTimer } from "@/shared/unrefTimer";
 import { toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
+import { commitDelayFor } from "@/app/_lib/textPacer";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { readSse } from "./sseClient";
 import { reduceChunk } from "./stream";
@@ -166,16 +167,34 @@ const MAX_TOTAL_RECONNECTS = 20;
  * and one fixed interval either wastes renders on short answers or spends the
  * whole budget on long ones — which are the ones this exists for.
  */
-const MIN_NOTIFY_MS = 50;
-const MAX_NOTIFY_MS = 200;
-/** One further millisecond of collecting per this many characters of answer. */
-const CHARS_PER_EXTRA_MS = 128;
+/**
+ * The turn a rebuild folds onto: empty, except for what the replay cannot carry.
+ *
+ * `runLog` substitutes a single note for a run's reasoning — the frames are a
+ * token apiece and would evict the answer from a 350KB buffer — so a replay
+ * says nothing about thinking that has already happened. Starting the rebuild
+ * from a truly empty turn would therefore blank an open panel the moment the
+ * connection is recycled, mid-run, while the answer beside it rebuilt exactly.
+ * Everything a replay *does* carry is dropped as before, so the rebuilt prefix
+ * is still the fold of what the stream said.
+ */
+function rebuiltFrom(live: LiveTurn): LiveTurn {
+  // The text only. `runLog` substitutes a note for reasoning frames but keeps
+  // every `usage` frame verbatim, so the replay re-delivers the token counts —
+  // carrying them across as well would add each turn's a second time, and again
+  // on every later reconnect, against a stored message that says the true one.
+  return { ...EMPTY_TURN, reasoning: live.reasoning };
+}
 
 function notifyDelayFor(entry: RunEntry): number {
-  // Text alone: it is what the markdown renderer walks, and the tool results and
-  // images beside it are drawn once each rather than re-parsed per frame.
-  const extra = Math.floor(entry.live.text.length / CHARS_PER_EXTRA_MS);
-  return Math.min(MAX_NOTIFY_MS, MIN_NOTIFY_MS + extra);
+  // Whichever one is actually being drawn. Before the first word of the answer
+  // the reasoning panel is open and growing token by token, so a window sized
+  // on `text` alone stays pinned at the floor through the whole thinking phase
+  // — the judder these bounds exist to remove. From that first word the panel
+  // folds away, and charging its length would hold the answer at the 200ms
+  // ceiling to render text that is no longer on screen.
+  const drawn = entry.live.text.length > 0 ? entry.live.text.length : entry.live.reasoning.length;
+  return commitDelayFor(drawn);
 }
 
 const NO_RUNS: readonly string[] = Object.freeze([]);
@@ -394,7 +413,11 @@ export function createRunStore(): RunStore {
    * A replay always starts from the beginning, so the first chunk after a
    * reconnect is folded into an empty turn rather than onto what is on screen.
    * The rebuilt prefix is identical — `reduceChunk` is a pure fold — so nothing
-   * moves.
+   * moves, with one axis excepted: the run log keeps a note in place of the
+   * run's reasoning rather than the frames themselves, so a replay carries none
+   * of it and rebuilding from `EMPTY_TURN` would erase a panel the reader is
+   * looking at mid-run. What the live stream already showed is carried across
+   * the seam instead (see `rebuiltFrom`).
    */
   async function pump(
     key: string,
@@ -456,7 +479,7 @@ export function createRunStore(): RunStore {
             rebuilding = false;
             updateLive(key, (prev) => ({
               ...prev,
-              live: reduceChunk(fold ? EMPTY_TURN : prev.live, chunk),
+              live: reduceChunk(fold ? rebuiltFrom(prev.live) : prev.live, chunk),
             }));
           }
         } catch (error) {

@@ -9,6 +9,8 @@ import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { ProducedFile } from "@/app/_components/ProducedFile";
+import { createTextPacer } from "@/app/_lib/textPacer";
+import { ReasoningRow } from "@/app/_components/ReasoningRow";
 import { ToolRow } from "@/app/_components/ToolRow";
 import {
   chunkAuthorPath,
@@ -80,6 +82,10 @@ export function RunPanel({
 
   const [running, setRunning] = useState(false);
   const [text, setText] = useState("");
+  const [reasoning, setReasoning] = useState("");
+  const [reasoningTokens, setReasoningTokens] = useState(0);
+  /** When this run started — the identity of the panels it owns. */
+  const [startedAt, setStartedAt] = useState(0);
   const [toolCalls, setToolCalls] = useState<ToolCallView[]>([]);
   const [toolResults, setToolResults] = useState<ToolResultView[]>([]);
   // The chain currently producing chunks (outermost first), or undefined while the
@@ -126,7 +132,14 @@ export function RunPanel({
       return;
     }
     setRunning(true);
+    // Reasoning arrives token by token and can run far longer than the answer,
+    // so it is committed in batches rather than per token — the same rule the
+    // chat thread's store applies to what it draws.
+    const reasoningPacer = createTextPacer((batch) => setReasoning((prev) => prev + batch));
     setText("");
+    setReasoning("");
+    setReasoningTokens(0);
+    setStartedAt(Date.now());
     setToolCalls([]);
     setToolResults([]);
     setActivePaths([]);
@@ -215,6 +228,12 @@ export function RunPanel({
         if (content && isTopLevelChunk(chunk)) {
           setText((prev) => prev + content);
         }
+        // Only a version with `reasoningTrace` on produces any; top-level for
+        // the reason the answer is — a child's thinking is its own run's.
+        const reasoned = chunk.delta?.reasoningContent;
+        if (reasoned && isTopLevelChunk(chunk)) {
+          reasoningPacer.push(reasoned);
+        }
         if (chunk.delta?.toolCalls) {
           const calls = chunk.delta.toolCalls.map((c) => toolCallView(c, chunk.author));
           setToolCalls((prev) => [...prev, ...calls]);
@@ -246,11 +265,18 @@ export function RunPanel({
         if (chunk.usage) {
           totalCost += chunk.usage.costUsd;
           setCost(totalCost);
+          const thought = chunk.usage.reasoningTokens;
+          if (thought !== undefined && isTopLevelChunk(chunk)) {
+            setReasoningTokens((prev) => prev + thought);
+          }
         }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : t("run.failed"));
     } finally {
+      // Whatever the last batch was holding, on every exit path: a run that
+      // ends mid-interval would otherwise leave its last thought unshown.
+      reasoningPacer.flush();
       setRunning(false);
     }
   }
@@ -422,6 +448,19 @@ export function RunPanel({
           )}
         </Stack>
       )}
+
+      {/* Ahead of the answer, where it happened. Open while the model is still
+          thinking and has said nothing, so a long silence shows what fills it. */}
+      <ReasoningRow
+        // Same identity the chat and Compare use: the run's own start, stable
+        // for its whole life. A new one per Run, so collapsing the panel once
+        // does not switch off the auto-open for every later run; and nothing
+        // that changes at the finish, which would shut it as the answer lands.
+        key={`reasoning-${startedAt}`}
+        text={reasoning}
+        {...(reasoningTokens > 0 ? { tokens: reasoningTokens } : {})}
+        streaming={running && text === "" && reasoning !== ""}
+      />
 
       {projectType === "image" ? (
         <Paper withBorder p="sm" mih={96}>

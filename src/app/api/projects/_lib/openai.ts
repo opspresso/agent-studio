@@ -63,6 +63,15 @@ export function toChatCompletion(
       prompt_tokens: result.usage.inputTokens,
       completion_tokens: result.usage.outputTokens,
       total_tokens: result.usage.inputTokens + result.usage.outputTokens,
+      // Not an extension like the three below it: `completion_tokens_details`
+      // is the OpenAI schema's own field, spelled the way the channel already
+      // reads it on the way in, and it is a *subset* of `completion_tokens`
+      // rather than a number to add. Without it the same run bills differently
+      // depending on which of this project's two endpoints asked — which is
+      // the inconsistency `collectRun` carries it for.
+      ...(result.usage.reasoningTokens
+        ? { completion_tokens_details: { reasoning_tokens: result.usage.reasoningTokens } }
+        : {}),
     },
     ...(result.images && result.images.length > 0 ? { images: result.images } : {}),
     // Same extension treatment as `images`, and for the same reason: the OpenAI

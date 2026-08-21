@@ -2113,6 +2113,47 @@ describe("executeProject non-streaming dispatch", () => {
   });
 
   /**
+   * `/predict` answers from here for an agent project and from `toUsageInfo`
+   * for an `llm` one. Built field by field, this accumulator dropped both
+   * subset fields, so the same endpoint reported them for one project type and
+   * not the other — indistinguishable, to a caller, from a provider that never
+   * reported them at all.
+   */
+  it("carries the usage fields that are subsets of the two totals", async () => {
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield {
+        usage: { inputTokens: 10, outputTokens: 20, costUsd: 1, cachedTokens: 4, reasoningTokens: 7 },
+      };
+      yield { usage: { inputTokens: 5, outputTokens: 6, costUsd: 1, reasoningTokens: 3 } };
+      yield { delta: { content: "answer" } };
+      yield { done: true };
+    }
+
+    const run = await collectRun(source(), "model");
+
+    expect(run.usage).toEqual({
+      inputTokens: 15,
+      outputTokens: 26,
+      costUsd: 2,
+      cachedTokens: 4,
+      reasoningTokens: 10,
+    });
+  });
+
+  it("leaves both off when nothing reported them", async () => {
+    // Absent, not zero: a channel that never reports one must stay tellable
+    // from one reporting a cold cache or a model that did not think.
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { usage: { inputTokens: 1, outputTokens: 2, costUsd: 3 } };
+      yield { done: true };
+    }
+
+    const run = await collectRun(source(), "model");
+
+    expect(run.usage).toEqual({ inputTokens: 1, outputTokens: 2, costUsd: 3 });
+  });
+
+  /**
    * A streaming caller reads this sentence off the wire. Thrown untyped, the
    * collected caller got a 500 and "Internal server error" instead — the same
    * run, the same failure, and the one surface that could not say what it was.

@@ -463,6 +463,8 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 턴이 넘칠 때 유지하는 transfer transcript 한 줄 | 최소 `500` 자 | `src/application/llm/engine.ts` |
 | 컨텍스트 예산 추정 (ASCII / 그 외 / 이미지 part / 여유분) | 토큰당 `3` 자 / 자당 `1.5` 토큰 / `2,500` 토큰 / `2,000` 토큰 | `src/application/llm/contextBudget.ts` |
 | 런의 컨텍스트 예산이 잘라 낼 때 유지하는 도구 결과 | 최소 `500` 자 | `src/application/llm/toolResultBudget.ts` |
+| chat 메시지 하나가 보관하는 텍스트 (답변 · 도구 결과) | `350,000` 바이트 | `src/application/chat/run.ts` |
+| chat 메시지 하나가 보관하는 추론 — 답변 **뒤에**, 같은 아이템 예산에서 | `40,000` 바이트 | `src/application/chat/run.ts` |
 | 컨텍스트로 리플레이되는 chat 이력 | `200` 메시지 / `200,000` 자 | `src/application/chat/messageMapping.ts` |
 | 컨텍스트로 리플레이되는 chat 도구 트래픽 | `3` 턴 / `20,000` 자 | `src/application/chat/messageMapping.ts` |
 | 인바운드 webhook / Slack 이벤트 / Telegram update / Teams activity 본문 | 각 `1MB` | `src/app/api/webhook/[project]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts`, `src/app/api/telegram/webhook/_lib/handleUpdateRequest.ts`, `src/app/api/teams/messages/_lib/handleActivityRequest.ts` |

@@ -222,6 +222,14 @@ export class TraceRecorder {
           },
           output: {
             outputTokens: chunk.usage.outputTokens,
+            // The share of the output spent before the first visible word.
+            // Named beside the total for the reason `cachedTokens` is named
+            // beside its own: it is a subset, it moves the bill on its own, and
+            // it is invisible in every other number a span carries — a turn
+            // that thought for 4,000 tokens and answered in ten looks, without
+            // it, like a turn that wrote 4,010 words. Omitted where nobody
+            // reported one, so "0 thinking" never stands in for "nobody said".
+            ...(chunk.usage.reasoningTokens ? { reasoningTokens: chunk.usage.reasoningTokens } : {}),
             costUsd: chunk.usage.costUsd,
           },
         });

@@ -231,6 +231,38 @@ export interface VersionParameters {
    * per run. Inert when no bound server offers `recall`, which the run reports.
    */
   memoryRecall?: boolean;
+  /**
+   * Whether a run's own thinking is kept for a person to read back.
+   *
+   * A reasoning model bills for tokens it spends before the first visible word,
+   * and until this is on those tokens leave nothing behind: the engine emits
+   * them and every consumer drops them. With it on, the console renders the
+   * thinking — the chat thread, the Playground, Compare — and a chat run keeps
+   * it on the assistant message beside the answer.
+   *
+   * The console is where it is *rendered*, not the boundary it stops at: the
+   * two raw-chunk routes (`/agent` and streaming `/predict`) forward engine
+   * chunks verbatim, so anyone holding a project API token receives the
+   * reasoning frames too. Nothing else republishes it — the OpenAI shapes, A2A,
+   * the messaging bots and the trace recorder all read the answer beside it,
+   * and the trace keeps the token count without the words.
+   *
+   * **Inert on a project reached only as a subagent.** A child's parameters are
+   * its own, so this switches its emission on — but a child's thinking is
+   * dropped everywhere it lands, exactly as its answer is: several children
+   * dispatched at once interleave on the wire with nothing saying whose thought
+   * is whose. Running that project directly is where its reasoning is read.
+   *
+   * Opt-in, and off for everything written before it existed, because it
+   * changes who can read the thinking rather than what the run can do: reasoning
+   * restates the request in the model's own words, so it lands in storage and on
+   * a reader's screen with whatever the request carried. Inert on a model with
+   * no reasoning, and the version editor offers it only where the model has it.
+   *
+   * It does not change what the *model* is sent: a turn's thinking goes back to
+   * the provider attached to that turn either way.
+   */
+  reasoningTrace?: boolean;
 }
 
 export interface SubagentRef {

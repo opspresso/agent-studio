@@ -171,6 +171,29 @@ buffer rather than a record, and why the viewport belongs to a library is
   the reader, not context for the next turn.
 - **Subagent chunks** (`author` set) stream to the client but are excluded from the
   persisted assistant content, tool calls and tool rows alike.
+- **Reasoning is shown and never replayed.** `AssistantChatMessage.reasoning` keeps the
+  top-level run's thinking when the version opted in (`parameters.reasoningTrace`), flattened
+  with the answer's own `TURN_SEPARATOR`. Four things about it:
+  - It is **charged after the answer, out of the same item budget** — `MAX_PERSISTED_REASONING_BYTES`
+    capped by what `MAX_PERSISTED_CONTENT_BYTES` has left. Two 350KB fields is a 700KB item,
+    which the transactional write refuses whole; `persist()` logs rather than throws, so the
+    reply the reader just watched stream would vanish on reload with only orphan tool rows
+    behind it. Overflow reports itself with the same inline `…[truncated]` marker `content`
+    uses — no extra warning, because a yellow banner on every long think is how that channel
+    stops meaning anything.
+  - It is **not replayed** by `toEngineMessages`. A run writes one assistant message holding
+    every turn's text, so a `reasoning_content` on it would claim one block of thinking
+    belonged to a message whose `tool_calls` came from several turns. It is also uncounted by
+    `messageChars`, so replaying it would overrun the window without the "earlier turn(s)
+    were left out" warning ever firing. `displayOnly` tool rows are refused for the same reason.
+  - **`fromMessageItem` reads it by name.** The write spreads the whole message; a field
+    missing from the read stores fine, type-checks fine, and comes back `undefined`.
+    `tests/repositoryRoundTrip.test.ts` is the only test that catches it.
+  - **The run log substitutes it.** Reasoning streams a token at a time, and each frame pays
+    ~33 bytes of envelope; kept verbatim, a deep-thinking run fills the 350KB buffer and
+    evicts the front of the *answer*, which the saved message holds in full. One note goes in
+    instead, and the thinking arrives with the message the run writes on its way out. The
+    substitution is written as "carries nothing else", so an axis added later fails closed.
 - **`ChatDeps.runAgent` is lazy**: `createChat`/`sendMessage` do their writes and return
   a generator; the LLM call only starts when the route's `sseResponse` iterates it.
 - **The head frame beats the run.** `withRunFrames` and `withReplayFrames` both answer
