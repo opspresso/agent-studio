@@ -8,6 +8,11 @@ export const projectNameSchema = z
   .string()
   .refine(isSlug, `name ${SLUG_RULE}`);
 
+export const cloneProjectSchema = z.object({
+  name: projectNameSchema,
+  displayName: z.string().min(1),
+});
+
 export const createProjectSchema = z.object({
   name: projectNameSchema,
   displayName: z.string().min(1),
