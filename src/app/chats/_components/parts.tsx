@@ -2,13 +2,14 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import {
   Alert,
   Badge,
   Box,
   Group,
   Image,
+  Loader,
   Paper,
   Stack,
   Text,
@@ -16,6 +17,7 @@ import {
 } from "@mantine/core";
 import { IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
+import { formatSeconds } from "@/app/_lib/duration";
 import { imageDataUrl } from "@/domain/llm/types";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
@@ -306,7 +308,74 @@ export const MessageView = memo(function MessageView({
   );
 });
 
-export function LiveAssistant({ turn }: { turn: LiveTurn }) {
+/**
+ * Whole seconds since `startedAtMs`, ticking once a second.
+ *
+ * Its own hook so the re-render it schedules lands on the stopwatch and nothing
+ * else. Put on `LiveAssistant` instead, every tick would re-render the answer
+ * beside it — and re-parse its markdown — which is the cost the store's
+ * collection window exists to avoid paying per frame.
+ */
+function useElapsedSeconds(startedAtMs: number): number {
+  const [seconds, setSeconds] = useState(() => (Date.now() - startedAtMs) / 1000);
+  useEffect(() => {
+    // Set once on the way in as well: the interval's first tick is a second
+    // away, and a run reattached to mid-flight would show `0s` until then.
+    setSeconds((Date.now() - startedAtMs) / 1000);
+    const timer = setInterval(() => setSeconds((Date.now() - startedAtMs) / 1000), 1000);
+    return () => clearInterval(timer);
+  }, [startedAtMs]);
+  return seconds;
+}
+
+function RunStopwatch({ startedAtMs }: { startedAtMs: number }) {
+  const t = useT();
+  const seconds = useElapsedSeconds(startedAtMs);
+  return (
+    // Hidden from the accessibility tree: it changes every second, and the
+    // status beside it already says the run is going. Announced, it would talk
+    // over everything else for the length of the reply.
+    <Text fz="xs" c="dimmed" aria-hidden fw={500}>
+      {formatSeconds(seconds, t)}
+    </Text>
+  );
+}
+
+/**
+ * That the run is working, and for how long.
+ *
+ * It replaced a static "Thinking…", which said nothing after the first second —
+ * a reply that took a minute looked identical to one that had hung. The spinner
+ * is what makes it read as *running* rather than as a line of text that happens
+ * to be there, and the stopwatch is what makes a long wait legible as progress.
+ *
+ * Drawn under the answer rather than in place of it, so it stays visible once
+ * the first token lands: the run is still going, and the reader watching a tool
+ * call finish wants the same two facts they wanted before it started.
+ */
+function RunProgress({ startedAtMs }: { startedAtMs?: number | undefined }) {
+  const t = useT();
+  return (
+    <Group gap={8} align="center" role="status" py={2}>
+      <Loader size={12} type="dots" />
+      <Text fz="xs" c="dimmed">
+        {t("chat.running")}
+      </Text>
+      {startedAtMs !== undefined && <RunStopwatch startedAtMs={startedAtMs} />}
+    </Group>
+  );
+}
+
+export function LiveAssistant({
+  turn,
+  running,
+  startedAtMs,
+}: {
+  turn: LiveTurn;
+  /** False once the stream ended but the turn is still on screen. */
+  running: boolean;
+  startedAtMs?: number | undefined;
+}) {
   const t = useT();
   return (
     <Stack gap={4} align="flex-start">
@@ -327,15 +396,12 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
       {turn.files.map((file, index) => (
         <ProducedFile key={`file-${index}`} name={file.name} byteSize={file.byteSize} />
       ))}
-      <div className={classes.answer}>
-        {turn.text ? (
+      {turn.text && (
+        <div className={classes.answer}>
           <MarkdownContent content={turn.text} />
-        ) : (
-          <Text fz="sm" c="dimmed">
-            {t("chat.thinking")}
-          </Text>
-        )}
-      </div>
+        </div>
+      )}
+      {running && <RunProgress startedAtMs={startedAtMs} />}
     </Stack>
   );
 }

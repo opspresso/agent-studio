@@ -229,7 +229,10 @@ export const en = {
   "chat.noAgentProjects": "No agent projects yet",
   "chat.noAgentProjectsBody":
     "Chats run against an agent project. Create one from Projects to start chatting.",
-  "chat.thinking": "Thinking…",
+  "chat.running": "Running",
+  "chat.answeredIn": "Answered in {duration}",
+  "chat.durationSeconds": "{seconds}s",
+  "chat.durationMinutes": "{minutes}m {seconds}s",
   "chat.via": "via {path}",
   "chat.imageGone": "This image is no longer available.",
   "chat.fileWhenDone": "available when this reply finishes",

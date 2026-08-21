@@ -48,6 +48,17 @@ export interface RunEntry {
   readonly userSeq?: number;
   readonly status: "streaming" | "finished" | "failed";
   readonly live: LiveTurn;
+  /**
+   * When this tab put the run in flight — what the reader's stopwatch counts
+   * from.
+   *
+   * Absent on `attach`, and deliberately not filled in with the moment this tab
+   * arrived: a run picked up after a reload has been going for however long it
+   * has, and a clock starting at zero there would report a ten-second-old answer
+   * as instant. Nothing on the wire says when the run began, so the honest
+   * answer is to show the reader that it is running and no number at all.
+   */
+  readonly startedAtMs?: number;
   /** Absent when this tab attached to a run it did not start. */
   readonly pendingUser?: PendingUser;
   readonly error?: string;
@@ -506,7 +517,7 @@ export function createRunStore(): RunStore {
         // already cleared, and the typed message was simply gone.
         return null;
       }
-      create(chatId, { chatId, pendingUser: pending });
+      create(chatId, { chatId, pendingUser: pending, startedAtMs: Date.now() });
       void pump(chatId, (signal) =>
         fetch(`/api/chats/${chatId}/messages`, {
           method: "POST",
@@ -524,7 +535,7 @@ export function createRunStore(): RunStore {
 
     startNewChat(projectName, pending) {
       const key = `new:${nextPlaceholder++}`;
-      create(key, { pendingUser: pending });
+      create(key, { pendingUser: pending, startedAtMs: Date.now() });
       void pump(key, (signal) =>
         fetch("/api/chats", {
           method: "POST",

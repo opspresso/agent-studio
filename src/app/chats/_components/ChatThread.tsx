@@ -372,7 +372,15 @@ export function ChatThread({ chatId }: { chatId: string }) {
                   }}
                 />
               )}
-              {live && <LiveAssistant turn={live} />}
+              {live && (
+                <LiveAssistant
+                  turn={live}
+                  running={streaming}
+                  {...(shown?.startedAtMs !== undefined
+                    ? { startedAtMs: shown.startedAtMs }
+                    : {})}
+                />
+              )}
             </Stack>
           </div>
         </ScrollArea>

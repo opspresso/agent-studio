@@ -166,7 +166,15 @@ export function NewChatPanel() {
             {/* Nothing yet and nothing coming — a first message refused leaves
                 an entry holding an empty turn, and its bubble would promise a
                 reply under the error saying there is none. */}
-            {(starting || entry.live !== EMPTY_TURN) && <LiveAssistant turn={entry.live} />}
+            {(starting || entry.live !== EMPTY_TURN) && (
+              <LiveAssistant
+                turn={entry.live}
+                running={starting}
+                {...(entry.startedAtMs !== undefined
+                  ? { startedAtMs: entry.startedAtMs }
+                  : {})}
+              />
+            )}
           </Stack>
         )}
       </ScrollArea>
