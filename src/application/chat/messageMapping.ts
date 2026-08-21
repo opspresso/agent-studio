@@ -282,7 +282,15 @@ export function toEngineMessages(
     if (pairs.length > 0) {
       mapped.tool_calls = pairs.map((pair) => pair.call);
     }
-    out.push(mapped);
+    // A turn can now be stored with an empty answer — a run that only thought,
+    // which is the whole shape of a model that answers inside its reasoning.
+    // Replaying it would put `{ role: "assistant", content: "" }` with no tool
+    // calls into every later request, and the gateways in front of Anthropic
+    // and Bedrock reject an empty assistant block: one such turn would fail
+    // the *next* send and every one after it.
+    if (mapped.content !== "" || mapped.tool_calls) {
+      out.push(mapped);
+    }
     for (const pair of pairs) {
       out.push({ role: "tool", content: pair.content, tool_call_id: pair.call.id as string });
     }

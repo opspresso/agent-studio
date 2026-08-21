@@ -449,6 +449,10 @@ export function LiveAssistant({
           silence shows what is filling it; it folds away as the answer starts,
           unless the reader has taken the panel over. */}
       <ReasoningRow
+        // Keyed on the turn: the panel keeps whether the reader opened or
+        // collapsed it, and without a new identity per turn one collapse would
+        // switch off the auto-open for the rest of the session.
+        key={`reasoning-${startedAtMs ?? 0}`}
         text={turn.reasoning}
         {...(turn.reasoningTokens > 0 ? { tokens: turn.reasoningTokens } : {})}
         streaming={running && turn.text === "" && turn.reasoning !== ""}

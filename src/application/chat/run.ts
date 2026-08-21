@@ -232,9 +232,14 @@ function truncateForPersist(content: string, budget = MAX_PERSISTED_CONTENT_BYTE
     return content;
   }
   const marker = "\n…[truncated]";
-  // Clamped at zero: a budget smaller than the marker leaves the marker alone,
-  // which still says what happened.
-  const room = Math.max(0, budget - Buffer.byteLength(marker, "utf8"));
+  const room = budget - Buffer.byteLength(marker, "utf8");
+  if (room <= 0) {
+    // Nothing fits, not even the marker. Returning the marker alone would put
+    // a field on the item whose whole content is the word "[truncated]" — and
+    // one that costs the 15 bytes the shared budget was sized to the byte to
+    // avoid. Empty is the honest answer and, being falsy, keeps the field off.
+    return "";
+  }
   // Byte-boundary-safe: a bare subarray cut would persist U+FFFD where the
   // budget fell inside a multi-byte character.
   return cutUtf8Bytes(content, room) + marker;
@@ -346,6 +351,7 @@ export async function* runAndPersist(
     if (
       !content &&
       !reasoning &&
+      reasoningTokens === 0 &&
       toolMessages.length === 0 &&
       generatedImages.length === 0 &&
       generatedFiles.length === 0 &&
@@ -392,7 +398,11 @@ export async function* runAndPersist(
         role: "assistant",
         content: persistedContent,
         ...(persistedReasoning ? { reasoning: persistedReasoning } : {}),
-        ...(persistedReasoning && reasoningTokens > 0 ? { reasoningTokens } : {}),
+        // Independent of the text. The common OpenAI shape reports a reasoning
+        // token count and never streams the thinking itself, so tying the two
+        // together is how a run that spent 4,000 tokens thinking records that
+        // nothing happened.
+        ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
         ...(warnings.length > 0 ? { warnings } : {}),
         ...(images.length > 0 ? { images } : {}),

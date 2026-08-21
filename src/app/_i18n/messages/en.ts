@@ -133,6 +133,7 @@ export const en = {
   "common.durationSeconds": "{seconds}s",
   "common.durationMinutes": "{minutes}m {seconds}s",
   "common.reasoning": "Reasoning",
+  "common.reasoningWithheld": "{count} reasoning tokens — this model does not return the text.",
   "common.reasoningTokens": "{count} tok",
   "common.total": "Total",
   "common.workspaceCatalog": "Workspace catalog",

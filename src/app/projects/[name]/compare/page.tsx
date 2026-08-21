@@ -48,6 +48,15 @@ interface SideResult {
   text: string;
   /** The run's thinking — empty unless this version opted into recording it. */
   reasoning: string;
+  /**
+   * Whether the version *this result came from* records its reasoning.
+   *
+   * Captured when the run starts rather than read off the dropdown: the reader
+   * can change the selection while an answer is on screen, and the note below
+   * would then describe a version that did not produce it. `null` until a run
+   * has been made, which is what keeps the note off an idle page.
+   */
+  reasoningRecorded: boolean | null;
   warnings: string[];
   error: string | null;
   costUsd: number | null;
@@ -64,6 +73,7 @@ const IDLE: SideResult = {
   running: false,
   text: "",
   reasoning: "",
+  reasoningRecorded: null,
   warnings: [],
   error: null,
   costUsd: null,
@@ -162,7 +172,10 @@ export default function ComparePage() {
       return;
     }
     const startedAt = Date.now();
-    setSide(() => ({ ...IDLE, running: true }));
+    const recordsReasoning =
+      versions.find((candidate) => candidate.versionName === versionName)?.parameters
+        .reasoningTrace === true;
+    setSide(() => ({ ...IDLE, running: true, reasoningRecorded: recordsReasoning }));
     try {
       if (project.projectType === "image") {
         const result = await predictImage(name, versionName, { prompt: message });
@@ -328,14 +341,17 @@ export default function ComparePage() {
                   ))}
                   {/* Said rather than left out. With the section simply absent on
                       the version that did not opt in, the other side reads as the
-                      one that thought harder — which is not what differs. */}
-                  {versions.find((version) => version.versionName === sideName)?.parameters
-                    .reasoningTrace ? (
+                      one that thought harder — which is not what differs. Keyed
+                      on the run so collapsing it once does not switch off the
+                      auto-open for every later comparison. */}
+                  {side.reasoningRecorded === true && (
                     <ReasoningRow
+                      key={`reasoning-${index}-${side.durationMs ?? "live"}`}
                       text={side.reasoning}
                       streaming={side.running && side.text === "" && side.reasoning !== ""}
                     />
-                  ) : (
+                  )}
+                  {side.reasoningRecorded === false && (
                     <Text fz="xs" c="dimmed">
                       Reasoning is not recorded for this version.
                     </Text>

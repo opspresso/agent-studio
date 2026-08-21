@@ -702,6 +702,13 @@ Slack 채널에서 그것은 묻는 사람만이 아니다 — 봇이 볼 수 �
 - Trace 는 **제한된 메타데이터만** 저장한다 — 문자 수, token, 비용, 소요 시간, subagent 의
   trace id. 원본 프롬프트와 도구 결과는 영속되지 않지만, trace 의 `error` 와 `warnings` 는 실패
   텍스트를 그대로 최대 1,000자까지 보관하고, 제공자나 도구의 에러 문자열은 내용을 품을 수 있다.
+- **런의 추론은 켠 버전에서 복원된 채로 저장된다.** `parameters.reasoningTrace` 를 켠 버전은
+  assistant 메시지에 그 런의 사고를 남기는데(`AssistantChatMessage.reasoning`, 메시지당 최대
+  40,000바이트), 그것은 `content` 와 같은 출처 — 즉 **마스킹이 풀린** 텍스트다. PII 필터는
+  *모델이 보는 것*을 제한하지 콘솔에 저장되는 것을 제한하지 않으므로(`content` 도 마찬가지다),
+  `piiFiltering` 을 켠 버전에서도 추론은 걸러지지 않은 채 chat 행에 앉는다. 추론은 요청을 모델
+  자신의 말로 되풀이하는 자리라 입력이 실어 온 것을 그대로 품기 쉽다 — 옵트인인 이유가 이것이고,
+  보존 기간은 chat 행과 같다(`RETENTION.chatDays`).
 - `/api/metrics` 는 project, 사용자, model 을 지목하지 않는다. 어떤 메트릭이든 지니는 라벨은
   히스토그램의 `le` 뿐이다.
 - 로그 라인은 런의 correlation id 를 실을 뿐, 프롬프트 내용은 결코 싣지 않는다.

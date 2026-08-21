@@ -40,7 +40,16 @@ export function ReasoningRow({
   const [open, setOpen] = useState(false);
   const shown = touched ? open : streaming === true;
   if (!text) {
-    return null;
+    // The model thought and the provider kept the words: the common OpenAI
+    // shape reports a reasoning token count and streams nothing. Said rather
+    // than drawn as an empty panel — an author who ticked "Record the
+    // reasoning" is owed the difference between "it did not think" and "it
+    // will not show you".
+    return tokens === undefined ? null : (
+      <Text fz="xs" c="dimmed" py={4}>
+        🧠 {t("common.reasoningWithheld", { count: tokens.toLocaleString(locale) })}
+      </Text>
+    );
   }
   return (
     <Paper withBorder radius="md" style={{ overflow: "hidden" }} my={4} w="100%">

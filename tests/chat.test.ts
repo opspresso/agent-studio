@@ -835,6 +835,59 @@ describe("runAndPersist keeps the run's reasoning", () => {
     expect(reasoning.endsWith("…[truncated]")).toBe(true);
   });
 
+  it("keeps the token count when the provider reports one but streams no text", async () => {
+    // The standard OpenAI shape. Tying the count to the text is how a run that
+    // spent 4,000 tokens thinking records that nothing happened.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { usage: { inputTokens: 3, outputTokens: 4000, costUsd: 0, reasoningTokens: 4000 } };
+      yield { delta: { content: "42" } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    expect(assistant).toMatchObject({ content: "42", reasoningTokens: 4000 });
+    expect(assistant).not.toHaveProperty("reasoning");
+  });
+
+  it("stores no reasoning at all when the answer left it no room", async () => {
+    // A bare "…[truncated]" would be a reasoning block containing no reasoning,
+    // and would put the item 15 bytes over the ceiling the two caps share.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "y".repeat(400_000) } };
+      yield { delta: { reasoningContent: "z".repeat(5_000) } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    expect(assistant).not.toHaveProperty("reasoning");
+    expect(Buffer.byteLength(assistant?.content ?? "", "utf8")).toBeLessThanOrEqual(350_000);
+  });
+
+  it("does not replay a turn that answered with nothing but thinking", async () => {
+    // `{ role: "assistant", content: "" }` with no tool calls is rejected by the
+    // gateways in front of Anthropic and Bedrock: one such turn would fail the
+    // next send and every one after it.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { reasoningContent: "the answer, as thinking" } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    expect(stored.find((m) => m.role === "assistant")).toMatchObject({ content: "" });
+    expect(toEngineMessages(stored).messages).toEqual([{ role: "user", content: "hi" }]);
+  });
+
   it("is shown but never replayed as history", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "hi" }),

@@ -24,7 +24,7 @@
  * so rather than showing a blank.
  */
 
-import type { EngineChunk } from "@/domain/llm/types";
+import { isTopLevelChunk, type EngineChunk } from "@/domain/llm/types";
 import type { RunLogEntry } from "@/domain/chat/runLog";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
@@ -121,27 +121,23 @@ function isReasoningOnly(chunk: EngineChunk): boolean {
   return Object.keys(chunk).every((key) => RIDES_WITH_REASONING.has(key));
 }
 
-/** `undefined` drops the chunk from the log entirely — see the reasoning branch. */
-function frameFor(
-  chunk: EngineChunk,
-  imagesArePersisted: boolean,
-  reasoningNoted: boolean,
-): string | undefined {
-  if (isReasoningOnly(chunk)) {
-    // Reasoning streams a token at a time, and each frame pays ~33 bytes of
-    // envelope for a few bytes of text: a run that thinks for 20k tokens
-    // produces 20k frames and hundreds of kilobytes against a 350KB buffer that
-    // drops from the front. What it drops is the beginning of the answer — a
-    // resumed reader would get "the first N part(s) are no longer available"
-    // followed by a reply starting mid-sentence, while the saved message holds
-    // the whole thing. So the buffer is spent on the answer, and the thinking
-    // arrives with the message the run writes on its way out.
-    return reasoningNoted
-      ? undefined
-      : warningFrame(
-          "The reasoning for this run appears on the saved message once it finishes.",
-        );
-  }
+/**
+ * What stands in for a run's thinking, once per run.
+ *
+ * Reasoning streams a token at a time, and each frame pays ~33 bytes of
+ * envelope for a few bytes of text: a run that thinks for 20k tokens produces
+ * 20k frames and hundreds of kilobytes against a 350KB buffer that drops from
+ * the front. What it drops is the beginning of the answer — a resumed reader
+ * would get "the first N part(s) are no longer available" followed by a reply
+ * starting mid-sentence, while the saved message holds the whole thing. So the
+ * buffer is spent on the answer, and the thinking arrives with the message the
+ * run writes on its way out.
+ */
+function reasoningNote(): string {
+  return warningFrame("The reasoning for this run appears on the saved message once it finishes.");
+}
+
+function frameFor(chunk: EngineChunk, imagesArePersisted: boolean): string {
   if (chunk.file) {
     // Same rule as an image, and the same reason: a megabyte of base64 has no
     // business in a replay buffer. The file itself is already stored, so the
@@ -220,14 +216,22 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
   let reasoningNoted = false;
 
   function record(chunk: EngineChunk): void {
-    const frame = frameFor(chunk, deps.artifacts !== undefined, reasoningNoted);
-    if (frame === undefined) {
+    if (isReasoningOnly(chunk)) {
+      // A child's thinking is dropped without a word. The note points at the
+      // saved message, and `runAndPersist` keeps top-level reasoning only — so
+      // said over a subagent's it would send the reader to a field that will
+      // never exist, and burn the one note the parent's own thinking needs.
+      if (!isTopLevelChunk(chunk)) {
+        return;
+      }
+      if (reasoningNoted) {
+        return;
+      }
+      reasoningNoted = true;
+      push(reasoningNote());
       return;
     }
-    if (isReasoningOnly(chunk)) {
-      reasoningNoted = true;
-    }
-    push(frame);
+    push(frameFor(chunk, deps.artifacts !== undefined));
   }
 
   /** The buffered frames as rows, oldest first, each under the item limit. */

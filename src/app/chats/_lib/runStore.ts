@@ -172,15 +172,14 @@ const MAX_NOTIFY_MS = 200;
 const CHARS_PER_EXTRA_MS = 128;
 
 function notifyDelayFor(entry: RunEntry): number {
-  // Text and the reasoning beside it: both grow the render this schedules — the
-  // answer through the markdown renderer, the thinking through the open panel —
-  // while the tool results and images are drawn once each rather than re-parsed
-  // per frame. Reasoning arrives token by token like the answer does, so a
-  // window sized on `text` alone stays pinned at the floor through the whole
-  // thinking phase, which is the judder these bounds exist to remove.
-  const extra = Math.floor(
-    (entry.live.text.length + entry.live.reasoning.length) / CHARS_PER_EXTRA_MS,
-  );
+  // Whichever one is actually being drawn. Before the first word of the answer
+  // the reasoning panel is open and growing token by token, so a window sized
+  // on `text` alone stays pinned at the floor through the whole thinking phase
+  // — the judder these bounds exist to remove. From that first word the panel
+  // folds away, and charging its length would hold the answer at the 200ms
+  // ceiling to render text that is no longer on screen.
+  const drawn = entry.live.text.length > 0 ? entry.live.text.length : entry.live.reasoning.length;
+  const extra = Math.floor(drawn / CHARS_PER_EXTRA_MS);
   return Math.min(MAX_NOTIFY_MS, MIN_NOTIFY_MS + extra);
 }
 

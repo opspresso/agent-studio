@@ -114,6 +114,64 @@ describe("sseResponse keepalive", () => {
     expect(await read()).toBe("data: [DONE]\n\n");
     await expect(reader.read()).resolves.toMatchObject({ done: true });
   });
+
+  /**
+   * The keepalive cannot start until the response exists, so a generator whose
+   * *first* chunk is far away used to spend the whole 60s idle budget in
+   * silence and be cut mid-run. Two runs do exactly that: an image, whose bytes
+   * arrive in one chunk at the end, and a reasoning model on a version that is
+   * not recording its thinking — that stream's first chunk is the end-of-turn
+   * usage.
+   */
+  it("builds the response and starts the keepalive while the first chunk is still coming", async () => {
+    vi.useFakeTimers();
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    async function* silentStart(): AsyncGenerator<unknown> {
+      await gate;
+      yield { delta: "at last" };
+    }
+
+    const pending = sseResponse(silentStart());
+    await vi.advanceTimersByTimeAsync(5_000);
+    const response = await pending;
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const read = async () => decoder.decode((await reader.read()).value);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(await read()).toBe(": keepalive\n\n");
+
+    release();
+    // Held, not dropped: the chunk the grace period outran is still emitted first.
+    expect(await read()).toBe('data: {"delta":"at last"}\n\n');
+    expect(await read()).toBe("data: [DONE]\n\n");
+  });
+
+  it("reports a refusal that lands after the grace period on the stream", async () => {
+    vi.useFakeTimers();
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    async function* slowRefusal(): AsyncGenerator<unknown> {
+      await gate;
+      throw new Error("refused late");
+    }
+
+    // No throw out of `sseResponse`: the status was already sent, so the error
+    // becomes a frame rather than being lost.
+    const pending = sseResponse(slowRefusal());
+    await vi.advanceTimersByTimeAsync(5_000);
+    const response = await pending;
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+
+    release();
+    expect(decoder.decode((await reader.read()).value)).toBe('data: {"error":"refused late"}\n\n');
+  });
 });
 
 describe("sseResponse cancellation", () => {

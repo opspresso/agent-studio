@@ -16,7 +16,40 @@ const KEEPALIVE_INTERVAL_MS = 15_000;
 const KEEPALIVE_FRAME = encoder.encode(": keepalive\n\n");
 
 /**
- * Pull the first chunk before the response exists.
+ * How long the first chunk may take before the response is built without it.
+ *
+ * A refusal is decided from settings and DynamoDB reads — milliseconds — so a
+ * generator still silent after this has started a run, and the status it will
+ * end with is `200`. Waiting past that buys nothing and costs the connection.
+ */
+const FIRST_CHUNK_GRACE_MS = 5_000;
+
+/**
+ * Give the run a moment to be refused, then stop waiting.
+ *
+ * Waits for the outcome of `pending`, not its value — the chunk is read from
+ * the same promise later, since a `next()` is not cancellable and asking twice
+ * would drop what it eventually produces. A rejection inside the grace period
+ * is rethrown, which is what turns a refusal into a status rather than a data
+ * frame; one that lands after it is left for the stream to report, and marked
+ * handled here so it is not also an unhandled rejection.
+ */
+async function awaitFirstChunkBriefly(pending: Promise<unknown>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settled = pending.then(() => undefined);
+  settled.catch(() => undefined);
+  const grace = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, FIRST_CHUNK_GRACE_MS);
+  });
+  try {
+    await Promise.race([settled, grace]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Pull the first chunk before the response exists — but not indefinitely.
  *
  * A run is refused — over its daily cost limit, out of concurrency slots — on
  * the generator's *first* `next()`, which is before it has produced anything.
@@ -24,6 +57,14 @@ const KEEPALIVE_FRAME = encoder.encode(": keepalive\n\n");
  * deliver the refusal as a data frame, so the caller never sees the status or
  * the `Retry-After` that says when to come back. Awaiting one chunk here lets
  * that throw reach the route's `apiError`, which is what turns it into a 429.
+ *
+ * The wait is bounded because the keepalive above cannot start until the
+ * response exists, so every second spent here is a second of the 60s idle
+ * budget spent in silence. Two runs routinely produce nothing for longer than
+ * that: an image, whose bytes arrive in one chunk at the end, and a reasoning
+ * model whose thinking a version did not opt into recording — that stream's
+ * first chunk is the end-of-turn usage. Both used to be cut mid-run for
+ * looking idle while they were working.
  *
  * It costs nothing for a run that starts normally: the chunk is held and
  * emitted first, so the stream is byte-identical. Nothing is buffered beyond
@@ -34,7 +75,9 @@ async function createSseResponse(
   includeDone: boolean,
   abortController?: AbortController,
 ): Promise<Response> {
-  const first = await generator.next();
+  const pending = generator.next();
+  // A refusal throws out of here and never reaches the response below.
+  await awaitFirstChunkBriefly(pending);
   let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -44,6 +87,10 @@ async function createSseResponse(
         }
       }, KEEPALIVE_INTERVAL_MS);
       try {
+        // Already settled unless the grace period won, in which case the wait
+        // happens here — with the keepalive running, where silence costs
+        // nothing. Nothing is buffered beyond this one chunk.
+        const first = await pending;
         if (!first.done) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(first.value)}\n\n`));
         }

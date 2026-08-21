@@ -130,6 +130,15 @@ const DEFAULT_MAX_TURN = 50;
  * the chat bubble, an OpenAI client — reads a blank line as a paragraph break.
  */
 const TURN_SEPARATOR = "\n\n";
+/**
+ * Said when a run answered entirely inside its thinking and was not recording it.
+ *
+ * Not a reasoning feature so much as the one place the loss is visible: on the
+ * models that do this, `content` stays empty for the whole run and every
+ * surface shows a blank answer for a call that was billed in full.
+ */
+const ANSWER_WAS_REASONING_WARNING =
+  "This model answered inside its reasoning, which this version does not record — turn on \"Record the reasoning\" to keep it.";
 
 export type RecordUsageFn = (record: {
   projectName: string;
@@ -708,6 +717,8 @@ export async function* runPromptStream(
   // flush sites below yield nothing on an opted-out run.
   const traceReasoning = input.parameters?.reasoningTrace === true;
   const reasoningRestorer = traceReasoning ? filter?.createStreamRestorer() : undefined;
+  let sawContent = false;
+  let sawReasoning = false;
 
   try {
     for await (const chunk of streamWithFallback(
@@ -729,16 +740,22 @@ export async function* runPromptStream(
       // Independent checks, not a chain: a provider may carry content and
       // reasoning_content in the SAME delta, and an `else if` would drop one.
       if (delta.content) {
+        sawContent = true;
         const content = contentRestorer?.push(delta.content) ?? delta.content;
         if (content) {
           yield { delta: { content } };
         }
       }
-      if (traceReasoning && delta.reasoning_content) {
-        const reasoningContent =
-          reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
-        if (reasoningContent) {
-          yield { delta: { reasoningContent } };
+      if (delta.reasoning_content) {
+        // Counted outside the gate: whether the model thought is a fact about
+        // the run, and it is what makes an empty answer explainable below.
+        sawReasoning = true;
+        if (traceReasoning) {
+          const reasoningContent =
+            reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
+          if (reasoningContent) {
+            yield { delta: { reasoningContent } };
+          }
         }
       }
     }
@@ -758,11 +775,15 @@ export async function* runPromptStream(
 
   const remainingContent = contentRestorer?.flush();
   if (remainingContent) {
+    sawContent = true;
     yield { delta: { content: remainingContent } };
   }
   const remainingReasoning = reasoningRestorer?.flush();
   if (remainingReasoning) {
     yield { delta: { reasoningContent: remainingReasoning } };
+  }
+  if (!traceReasoning && !sawContent && sawReasoning) {
+    yield { warning: ANSWER_WAS_REASONING_WARNING };
   }
 
   const usageInfo = toUsageInfo(state.model, usage);
@@ -1462,14 +1483,18 @@ export async function* runAgent(
       // a version can ask for low, medium or high and nothing else. So this is
       // a model that refuses to think while it can call tools, and the version
       // asked for thinking to be kept — a feature silently inert unless said.
-      // The turns that do get tools are most of them: the loop offers none on
-      // the final turn, so a run would otherwise record its last thought and
-      // nothing before it, which reads as a bug rather than a constraint.
+      //
+      // The wording names no turn on purpose. `finalTurn` is reached only by a
+      // run that spends its whole budget, so the usual run records nothing at
+      // all; and a fallback swap re-derives the constraint for a different
+      // model after this has already fired. Either sentence would be wrong
+      // half the time, and a warning that misstates the loss is worse than the
+      // loss.
       reasoningForcedNoted = true;
       yield {
         author,
         warning:
-          "This model does not reason while it can call tools, so only the final turn's reasoning was recorded.",
+          "This model does not reason while it can call tools, so little or none of this run's reasoning was recorded.",
       };
     }
     const state = { model: input.model };
@@ -1614,6 +1639,16 @@ export async function* runAgent(
       return;
     }
     if (calls.length === 0) {
+      if (!traceReasoning && !saidSomething && reasoningText !== "") {
+        // Some open-weight models put the whole answer in `reasoning_content`
+        // (see `toReasoning`), so a run that recorded none of it finishes with
+        // an empty answer and a full bill. The tokens are gone either way; what
+        // this stops is the silence about where the words went.
+        yield {
+          author,
+          warning: ANSWER_WAS_REASONING_WARNING,
+        };
+      }
       yield { author, done: true };
       return;
     }

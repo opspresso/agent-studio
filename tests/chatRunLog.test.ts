@@ -242,6 +242,26 @@ describe("teeToRunLog", () => {
     ]);
   });
 
+  it("drops a subagent's thinking without spending the note on it", async () => {
+    // `runAndPersist` keeps top-level reasoning only, so a note said over a
+    // child's would send the reader to a field that will never exist — and burn
+    // the one note the parent's own thinking needs.
+    const { deps, frames } = recordingDeps();
+    await run(
+      deps,
+      [
+        { author: "child", authorPath: ["child"], delta: { reasoningContent: "the child's" } },
+        { delta: { reasoningContent: "the parent's" } },
+        { delta: { content: "answer" } },
+      ],
+      { leaveAfter: 1 },
+    );
+    expect(frames()).toEqual([
+      { warning: expect.stringContaining("appears on the saved message") },
+      { delta: { content: "answer" } },
+    ]);
+  });
+
   it("keeps a chunk that carries the answer beside the thinking", async () => {
     // The substitution is "carries nothing else", so a producer that ever merges
     // the two axes does not have the answer dropped along with the thinking.

@@ -884,6 +884,42 @@ describe("recording the run's reasoning", () => {
     expect(replayed?.reasoning_content).not.toContain("a@b.com");
   });
 
+  it("says so when the whole answer arrived as thinking it is not recording", async () => {
+    // Some open-weight models put the answer in `reasoning_content`. With the
+    // trace off, `content` is empty for the whole run and every surface shows a
+    // blank reply for a call that was billed in full.
+    const channel = new FakeChannel([[reasoningChunk("the answer, as thinking"), usageChunk(3, 9)]]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(chunks.some((c) => c.warning?.includes("answered inside its reasoning"))).toBe(true);
+  });
+
+  it("stays quiet about it when the run is recording, or when it also spoke", async () => {
+    const recording = new FakeChannel([[reasoningChunk("thinking"), usageChunk(1, 1)]]);
+    const spoke = new FakeChannel([[reasoningChunk("thinking"), contentChunk("said"), usageChunk(1, 1)]]);
+
+    for (const [channel, parameters] of [
+      [recording, { reasoningTrace: true }],
+      [spoke, {}],
+    ] as const) {
+      const chunks = await collect(
+        runAgent(
+          { channel, recordUsage: async () => {} },
+          { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }], parameters },
+        ),
+      );
+      expect(chunks.some((c) => c.warning?.includes("answered inside its reasoning"))).toBe(false);
+    }
+  });
+
   it("carries reasoning tokens on the usage chunk, and only when reported", async () => {
     const withTokens = new FakeChannel([[contentChunk("ok"), usageChunk(3, 9, undefined, undefined, 7)]]);
     const without = new FakeChannel([[contentChunk("ok"), usageChunk(3, 9)]]);

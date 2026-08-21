@@ -301,6 +301,18 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   evicting the front of the *answer*. Two strings are live at that site: the accumulator
   holds the masked copy the provider gets back, the chunk holds the restored one a
   person reads. Persistence takes the chunk (`src/application/chat/AGENTS.md`).
+- **An SSE stream's keepalive cannot start until its first chunk decides the
+  status.** `createSseResponse` awaits `generator.next()` before building the
+  `Response`, because a refused run throws there and that is what makes it a 429
+  instead of a `200` with the refusal in a data frame. Nothing can flow during
+  that await — so a run whose first chunk is far away spends the 60s idle budget
+  in silence and is cut mid-run. Two do: an image, whose bytes arrive in one
+  chunk at the end, and a reasoning model on a version not recording its
+  thinking, whose first chunk is the end-of-turn usage. The wait is therefore
+  bounded (`FIRST_CHUNK_GRACE_MS`); past it the response is built and the chunk
+  is awaited inside the stream. **Anything that removes an axis from the wire
+  has to be checked against this**, which is how gating `delta.reasoningContent`
+  turned every unrecorded reasoning run into a silent connection.
 - **Stream author contract.** Top-level chunks are unauthored; only subagent chunks carry
   `author`. Filter with `isTopLevelChunk()` — never re-derive.
 - **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three
