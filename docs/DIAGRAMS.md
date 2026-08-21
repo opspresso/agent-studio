@@ -67,7 +67,7 @@ flowchart LR
   engine["엔진 — runAgent / runPrompt(Stream)"]
   channel["OpenAI 호환 채널 (LLM 공급자)"]
   imagechannel["이미지 채널"]
-  tools["도구: MCP(≤5 동시) · Skill · transfer_to_agent / dispatch_agents · 이미지 · FetchUrl · Slack 읽기"]
+  tools["도구: MCP(≤5 동시) · Skill · transfer_to_agent / dispatch_agents · 이미지 · FetchUrl · SaveFile · Slack 읽기"]
   usage["사용량 기록 (런 종료 시 1회 flush)"]
   trace["트레이스 (에이전트 항상, 그 외 샘플링)"]
 

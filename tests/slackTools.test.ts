@@ -297,6 +297,7 @@ describe("what a run is offered", () => {
       withEditTool: false,
       withImageTransfer: false,
       withUrlTool: false,
+      withSaveFileTool: false,
       withSlackTools,
     }).tools.map((tool) => tool.function.name);
 
@@ -317,6 +318,7 @@ describe("what a run is offered", () => {
       withEditTool: false,
       withImageTransfer: false,
       withUrlTool: false,
+      withSaveFileTool: false,
       withSlackTools: true,
     });
 

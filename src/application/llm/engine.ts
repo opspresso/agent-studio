@@ -53,6 +53,7 @@ import {
   IMAGE_TOOL_NAME,
   MAX_DISPATCH_TASKS,
   runClockBlock,
+  SAVE_FILE_TOOL_NAME,
   SKILL_TOOL_NAME,
   SLACK_TOOL_NAMES,
   TRANSFER_TOOL_NAME,
@@ -88,6 +89,7 @@ export {
   IMAGE_TOOL_NAME,
   ImageRegistry,
   imagePromptUses,
+  SAVE_FILE_TOOL_NAME,
   SKILL_TOOL_NAME,
   SLACK_TOOL_NAMES,
   TRANSFER_TOOL_NAME,
@@ -268,6 +270,17 @@ const MAX_PARALLEL_TOOL_CALLS = 5;
  * low enough that a run talked into sweeping a network runs out.
  */
 const MAX_URL_FETCHES_PER_RUN = 20;
+
+/**
+ * Files one run may write.
+ *
+ * Not a cost limit — a PUT is nothing next to the turn that produced the text.
+ * It is a loop limit: a run that decides saving is the answer can decide it
+ * again every turn, and ten files with nobody asking for them is already the
+ * signal that something is wrong. A run that genuinely needs more says so and
+ * the number moves.
+ */
+const MAX_SAVED_FILES_PER_RUN = 10;
 
 /** 429 or 5xx are the only fallback-eligible errors, matching FallbackRunner. */
 function isRetryableError(error: unknown): boolean {
@@ -946,9 +959,11 @@ async function dispatchConcurrentTools(
   deps: AgentDeps,
   prepared: PreparedToolCall[],
   urlFetches: number,
-): Promise<{ settled: Map<string, SettledToolResult>; urlFetches: number }> {
+  savedFiles: number,
+): Promise<{ settled: Map<string, SettledToolResult>; urlFetches: number; savedFiles: number }> {
   const mcpDispatch = deps.callMcpTool;
   const fetchDispatch = deps.fetchUrl;
+  const saveDispatch = deps.saveFile;
   const settled = new Map<string, SettledToolResult>();
   const mcpCalls = mcpDispatch
     ? prepared.filter((entry) => !entry.builtin && !entry.malformed)
@@ -976,13 +991,46 @@ async function dispatchConcurrentTools(
       }
     }
   }
+  const saveCalls: PreparedToolCall[] = [];
+  if (saveDispatch) {
+    for (const entry of prepared) {
+      if (entry.malformed || !entry.builtin || entry.call.name !== SAVE_FILE_TOOL_NAME) {
+        continue;
+      }
+      if (savedFiles >= MAX_SAVED_FILES_PER_RUN) {
+        settled.set(entry.call.id, {
+          ok: {
+            text: `Error: this run has already written ${MAX_SAVED_FILES_PER_RUN} files, which is its limit.`,
+          },
+        });
+      } else {
+        // Counted on acceptance, not on success: a refused call still spent a
+        // turn deciding to make it, and a loop that keeps failing is exactly the
+        // thing this bounds.
+        savedFiles += 1;
+        saveCalls.push(entry);
+      }
+    }
+  }
   const concurrent = [
-    ...mcpCalls.map((entry) => ({ entry, fetch: false })),
-    ...fetchCalls.map((entry) => ({ entry, fetch: true })),
+    ...mcpCalls.map((entry) => ({ entry, kind: "mcp" as const })),
+    ...fetchCalls.map((entry) => ({ entry, kind: "fetch" as const })),
+    ...saveCalls.map((entry) => ({ entry, kind: "save" as const })),
   ];
   if (concurrent.length > 0) {
-    const results = await mapWithLimit(concurrent, MAX_PARALLEL_TOOL_CALLS, async ({ entry, fetch }) => {
+    const results = await mapWithLimit(concurrent, MAX_PARALLEL_TOOL_CALLS, async ({ entry, kind }) => {
+      const fetch = kind === "fetch";
       try {
+        if (kind === "save") {
+          const text = (value: unknown) => (typeof value === "string" ? value : "");
+          return {
+            ok: await saveDispatch!({
+              name: text(entry.args.name),
+              mimeType: text(entry.args.mime_type),
+              content: text(entry.args.content),
+            }),
+          };
+        }
         if (!fetch) {
           return { ok: await mcpDispatch!(entry.call.name, entry.displayArgs) };
         }
@@ -1007,7 +1055,7 @@ async function dispatchConcurrentTools(
       }
     });
   }
-  return { settled, urlFetches };
+  return { settled, urlFetches, savedFiles };
 }
 
 function subagentContextMessage(agentName: string, text: string): string {
@@ -1414,6 +1462,7 @@ export async function* runAgent(
   // requests — the turn budgets bound text — and "many requests, all failing"
   // is the shape an internal-network sweep takes.
   let urlFetches = 0;
+  let savedFiles = 0;
   // Same rule for a turn the provider cut mid-tool-call: the run goes on, so
   // it is a warning rather than an ending, said once.
   let outputCutReported = false;
@@ -1751,9 +1800,10 @@ export async function* runAgent(
     // which is slower than the server this replaces.
     // One pool, so the concurrency cap means what it says: two pools would let a
     // turn run twice the limit.
-    const concurrentTools = await dispatchConcurrentTools(deps, prepared, urlFetches);
+    const concurrentTools = await dispatchConcurrentTools(deps, prepared, urlFetches, savedFiles);
     const mcpSettled = concurrentTools.settled;
     urlFetches = concurrentTools.urlFetches;
+    savedFiles = concurrentTools.savedFiles;
 
     const resultBudget = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN, contextBudget);
     // Every result this turn leaves through here — see the emitter for why the
@@ -2226,7 +2276,10 @@ export async function* runAgent(
           // is involved, and a consumer that does not know the field is
           // unaffected.
           for (const file of settled.ok.files ?? []) {
-            yield { author, file: { ...file, source: `mcp: ${call.name}` } };
+            // Provenance, and the two producers are not the same thing: a
+            // builtin is this platform's own, an MCP tool is a server's.
+            const source = builtin ? `builtin: ${call.name}` : `mcp: ${call.name}`;
+            yield { author, file: { ...file, source } };
           }
           const produced = settled.ok.images ?? [];
           if (produced.length > 0) {

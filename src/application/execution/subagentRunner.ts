@@ -29,6 +29,7 @@ import {
   runImageSubagent,
 } from "./imageTool";
 import { buildUrlFetcher } from "./urlTool";
+import { buildFileSaver } from "./saveFileTool";
 import { buildSlackReader } from "./slackTool";
 import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
@@ -81,6 +82,9 @@ export async function buildAgentDeps(
     // One line here covers the top-level run, every subagent run, and the
     // Playground preview: all three come through this function.
     fetchUrl: buildUrlFetcher(deps, version),
+    // Storage decides, not the version: a run that can keep a file is offered
+    // the tool, and one in a deployment that keeps nothing never sees it.
+    saveFile: buildFileSaver(deps),
     readSlack: await buildSlackReader(deps, version, projectName),
   };
 }

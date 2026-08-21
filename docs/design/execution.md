@@ -123,9 +123,13 @@ flowchart TB
   `GenerateImage`, `EditImage`, `FetchUrl`(모델이 고른 URL, `parameters.urlFetch` 뒤에 있다 —
   [SECURITY.md](../SECURITY.md#모델이-고른-url) 참고. 자기 몫의 추출은 갖지 않는다 —
   텍스트·HTML·PDF 는 첨부가 지나는 것과 같은 `DocumentExtractor` 를 지난다), 그리고
+  `SaveFile`(런이 쓴 텍스트를 독자가 받는 파일로 남긴다 — 버전이 아니라 **오브젝트 스토리지**가
+  게이트다. 앞의 둘은 결정이라 버전이 정한다: 하나는 호출마다 돈을 쓰고 하나는 모델이 말하는
+  주소로 요청을 보낸다. 파일을 쓰는 것은 둘 다 아니고, 못 하는 런은 리포트를 채팅창에 붙여
+  넣는 수밖에 없다),
   `parameters.slackWorkspace` 뒤의 Slack 읽기 도구 여섯 개
   ([workspace 읽기](slack.md#워크스페이스-읽기) 참고).
-  **그 밖의 이름은 모두 MCP 도구이고**, `BUILTIN_TOOL_NAMES` — 열두 개 전부 — 는 alias 할당
+  **그 밖의 이름은 모두 MCP 도구이고**, `BUILTIN_TOOL_NAMES` — 열세 개 전부 — 는 alias 할당
   동안 예약되어, MCP 도구가 builtin 이 주장할 수 있는 이름을 다는 일이 없다.
 
 > 루프가 그것들을 어떻게 dispatch 하는지, builtin 이 *제공된다*는 것이 무슨 뜻이고 왜 그것을
@@ -331,6 +335,12 @@ replay 경로에서는 가져올 수 없는 URL 이 턴 전체를 실패시킨�
 |---|---|
 | `image` | 바이트를 저장하고 그것을 **유지하며**, `artifactId`/`key` 를 추가한다. 라이브 뷰는 여전히 chunk 에서 렌더링한다. `fetched` 표시가 붙은 것은 저장되지 않은 채 지나간다. |
 | `file` | 바이트를 저장하고 그것을 **떼어 내어**, 이름·크기·키만 남긴다. 렌더링된 문서는 그릴 것이 없고, 다운로드 링크 하나 만들자고 SSE 연결로 수 MB 의 base64 를 밀어 내리는 것은 순수한 비용이다. |
+
+파일의 생산자는 둘이다. 파일을 만들어 돌려주는 MCP 도구(문서 렌더러가 그렇다)와 `SaveFile`
+빌트인이고, 행의 provenance 가 둘을 갈라 적는다 — `mcp: render_document` 와
+`builtin: SaveFile`. 빌트인 쪽은 모델이 쓴 텍스트라 바이트를 만든 것이 모델이지만, 그것을
+어디에 둘지는 여전히 브래킷이 정한다: 도구는 결과에 파일을 실어 보낼 뿐이고 저장은
+`captureRunArtifacts` 가 한다. 그래서 새 생산자가 저장 경로를 새로 알 필요가 없었다.
 
 **무엇이 그렸는지는 그린 쪽이 말한다.** artifact 행의 `model` 은 chunk 가 실어 온 것이고
 (`EngineChunk.image.model`), 브래킷이 version 에서 유추하지 않는다 — 런의 모델은 그림을 그린

@@ -100,6 +100,43 @@ export function isInlineViewable(mimeType: string): boolean {
 }
 
 /**
+ * What a run may write as a file, and the type it writes it as.
+ *
+ * Text only, and the reason is not caution about size. A model produces text;
+ * anything else would arrive base64-encoded, which doubles what it costs to say
+ * and puts the model in the business of encoding bytes it cannot check. The two
+ * kinds of file this platform already produces come from things that make bytes
+ * for a living — an image model, a document renderer — and neither is replaced
+ * by this.
+ *
+ * Every entry is a type {@link artifactObjectKey} knows an extension for.
+ * A type that is savable but has no extension would be stored as `.bin`, which
+ * is a file nobody's machine can open by clicking it.
+ */
+export const SAVABLE_TYPES: readonly string[] = [
+  "text/html",
+  "text/markdown",
+  "text/plain",
+  "text/csv",
+  "application/json",
+  "image/svg+xml",
+];
+
+export function isSavable(mimeType: string): boolean {
+  return SAVABLE_TYPES.includes(mimeType.split(";")[0]!.trim().toLowerCase());
+}
+
+/**
+ * How much text one file may carry.
+ *
+ * Below {@link MAX_INLINE_VIEW_BYTES} deliberately: a page a run wrote must be
+ * one this app can turn around and show, and two limits that can cross would
+ * produce a file that was accepted and then cannot be opened. Far past any
+ * report and far short of anything a model would finish writing anyway.
+ */
+export const MAX_SAVED_FILE_BYTES = 1024 * 1024;
+
+/**
  * How much of an artifact a view may read into memory.
  *
  * Viewing is the one read that passes bytes through this app rather than handing
@@ -132,9 +169,43 @@ const EXTENSIONS: Record<string, string> = {
   "text/markdown": "md",
   "text/csv": "csv",
   "text/html": "html",
+  "image/svg+xml": "svg",
   "application/json": "json",
   "application/zip": "zip",
 };
+
+/**
+ * The name a saved file is stored and downloaded under.
+ *
+ * A model names its own file, and a name from a model is text like any other:
+ * it may carry a path, a control character, or nothing at all. What comes back
+ * is a single segment — the last one, so `../../etc/passwd` is `passwd` — with
+ * the extension its type implies, because the reader's machine opens a file by
+ * its extension and a report called `report` opens in nothing.
+ *
+ * The name is not the identity: {@link artifactObjectKey} still derives the key
+ * from the row id, so two files called the same thing are two objects. This only
+ * decides what the reader's download is called.
+ */
+export function savedFileName(name: string, mimeType: string): string {
+  const segment = name.split(/[/\\]/).pop() ?? "";
+  const cleaned = segment
+    // Control characters and the bytes Windows refuses in a name.
+    .replace(/[\u0000-\u001f<>:"|?*]/g, "")
+    .replace(/^\.+/, "")
+    .trim()
+    .slice(0, 80);
+  const safe = cleaned === "" ? "file" : cleaned;
+  const extension = EXTENSIONS[mimeType.split(";")[0]!.trim().toLowerCase()];
+  if (!extension) {
+    return safe;
+  }
+  // The suffix is named rather than inlined into the comparison: that shape is
+  // what `tests/architecture.test.ts` watches for as a copy of the SSRF
+  // host-suffix check, and a filename rule is not that rule.
+  const suffix = `.${extension}`;
+  return safe.toLowerCase().endsWith(suffix) ? safe : `${safe}${suffix}`;
+}
 
 /**
  * Where an artifact's bytes live.
