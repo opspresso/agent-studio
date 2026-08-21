@@ -122,7 +122,8 @@ const SECTION_SEPARATOR = "\n\n";
 const SLACK_TOOL_SET = new Set(SLACK_TOOL_NAMES);
 const DEFAULT_MAX_TURN = 50;
 /**
- * What separates one turn's words from the next turn's in the flattened answer.
+ * What separates one turn's words from the next turn's in the flattened answer,
+ * and one turn's thinking from the next turn's in the flattened reasoning.
  *
  * A blank line rather than a space: these are separate statements a step apart,
  * not a continued sentence, and every surface that renders the answer — Slack,
@@ -293,6 +294,7 @@ function toUsageInfo(model: string, usage: ChannelUsage | null | undefined): Usa
   const inputTokens = usage?.prompt_tokens ?? 0;
   const outputTokens = usage?.completion_tokens ?? 0;
   const cachedTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0;
+  const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens ?? 0;
   // What the channel charged beats what the registry predicts. A router prices
   // the same model differently from its vendor and can change upstream between
   // calls, so its own figure is the only one that matches the invoice — and
@@ -303,7 +305,15 @@ function toUsageInfo(model: string, usage: ChannelUsage | null | undefined): Usa
   // Kept rather than consumed by the pricing above: see `UsageInfo`. Omitted
   // when there is none, so a channel that never reports the field produces
   // exactly the usage it always did.
-  return { inputTokens, outputTokens, costUsd, ...(cachedTokens > 0 ? { cachedTokens } : {}) };
+  return {
+    inputTokens,
+    outputTokens,
+    costUsd,
+    ...(cachedTokens > 0 ? { cachedTokens } : {}),
+    // Not consumed by the pricing above either: reasoning tokens are already
+    // inside `completion_tokens`, so charging them again would double-bill.
+    ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
+  };
 }
 
 function buildChannelParams(
@@ -694,7 +704,10 @@ export async function* runPromptStream(
   // was cut at the output cap, which `done: true` must not claim was a finish.
   let outputCut = false;
   const contentRestorer = filter?.createStreamRestorer();
-  const reasoningRestorer = filter?.createStreamRestorer();
+  // Built only when the version asked for the thinking to be readable, so the
+  // flush sites below yield nothing on an opted-out run.
+  const traceReasoning = input.parameters?.reasoningTrace === true;
+  const reasoningRestorer = traceReasoning ? filter?.createStreamRestorer() : undefined;
 
   try {
     for await (const chunk of streamWithFallback(
@@ -721,7 +734,7 @@ export async function* runPromptStream(
           yield { delta: { content } };
         }
       }
-      if (delta.reasoning_content) {
+      if (traceReasoning && delta.reasoning_content) {
         const reasoningContent =
           reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
         if (reasoningContent) {
@@ -1384,6 +1397,20 @@ export async function* runAgent(
    * re-derive.
    */
   let saidSomething = false;
+  /** The same break, for the thinking: reasoning is flattened exactly as the answer is. */
+  let reasonedSomething = false;
+  /**
+   * Whether the version asked for the run's thinking to be readable.
+   *
+   * The gate is on the yield alone — `reasoningText` below accumulates either
+   * way, because it is put back on this turn's assistant message and that is
+   * the provider's round-trip, not a display feature. Deleting the
+   * accumulation because it looks unused with the flag off changes what the
+   * model is sent.
+   */
+  const traceReasoning = input.parameters?.reasoningTrace === true;
+  /** The forced-off notice is a fact about the run, so it is said once. */
+  let reasoningForcedNoted = false;
   // A child is recognisable by its continued turn counter, which is what every
   // turn-ceiling wording keys on. Read once: it cannot change inside the loop.
   const isSubagentRun = (input.startTurn ?? 0) > 0;
@@ -1430,6 +1457,21 @@ export async function* runAgent(
       finalTurn ? [] : tools,
       input.signal,
     );
+    if (traceReasoning && !reasoningForcedNoted && params.reasoningEffort === "none") {
+      // `applyModelConstraints` is the only thing that can produce "none" here:
+      // a version can ask for low, medium or high and nothing else. So this is
+      // a model that refuses to think while it can call tools, and the version
+      // asked for thinking to be kept — a feature silently inert unless said.
+      // The turns that do get tools are most of them: the loop offers none on
+      // the final turn, so a run would otherwise record its last thought and
+      // nothing before it, which reads as a bug rather than a constraint.
+      reasoningForcedNoted = true;
+      yield {
+        author,
+        warning:
+          "This model does not reason while it can call tools, so only the final turn's reasoning was recorded.",
+      };
+    }
     const state = { model: input.model };
     let assistantText = "";
     let reasoningText = "";
@@ -1439,7 +1481,7 @@ export async function* runAgent(
     let outputCut = false;
     const accumulator = new ToolCallAccumulator(usedCallIds);
     const contentRestorer = filter?.createStreamRestorer();
-    const reasoningRestorer = filter?.createStreamRestorer();
+    const reasoningRestorer = traceReasoning ? filter?.createStreamRestorer() : undefined;
 
     try {
       for await (const chunk of streamWithFallback(deps.channel, params, fallbackModel, state)) {
@@ -1475,11 +1517,21 @@ export async function* runAgent(
           }
         }
         if (delta.reasoning_content) {
+          if (traceReasoning && reasoningText === "" && reasonedSomething) {
+            // The answer's own rule, applied to the thinking: `reasoningText` is
+            // this turn's buffer, so it is empty exactly once per turn.
+            yield { author, delta: { reasoningContent: TURN_SEPARATOR } };
+          }
+          // Outside the gate on purpose: this is what goes back to the provider
+          // on this turn's assistant message, whether or not anyone reads it.
           reasoningText += delta.reasoning_content;
-          const reasoningContent =
-            reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
-          if (reasoningContent) {
-            yield { author, delta: { reasoningContent } };
+          if (traceReasoning) {
+            const reasoningContent =
+              reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
+            if (reasoningContent) {
+              reasonedSomething = true;
+              yield { author, delta: { reasoningContent } };
+            }
           }
         }
         if (delta.tool_calls) {
@@ -1514,6 +1566,9 @@ export async function* runAgent(
     }
     const remainingReasoning = reasoningRestorer?.flush();
     if (remainingReasoning) {
+      // Set here for the reason the content flush above gives: a turn whose
+      // whole thinking arrives through the flush must still break the next one.
+      reasonedSomething = true;
       yield { author, delta: { reasoningContent: remainingReasoning } };
     }
 
@@ -2214,6 +2269,12 @@ export async function* runAgent(
       tool_calls: wireToolCalls,
     };
     if (reasoningText) {
+      // Unreachable by `reasoningTrace`, deliberately: this is the provider's
+      // round-trip — the thinking has to stay attached to the turn that
+      // produced it and to the tool calls that turn declared. What the version
+      // opted into is who may *read* it, not whether the model gets it back.
+      // Masked, because the filter bounds what the model sees; the reader's
+      // copy travels restored on the chunk stream.
       assistantMessage.reasoning_content = reasoningText;
     }
     // The model's own turn is context now too; the tool results — markers,

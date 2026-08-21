@@ -48,7 +48,17 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   stream by appending deltas, so without it one statement runs into the next —
   `…확인해볼게요."demo" 데이터소스를 찾았어요.` Emitted lazily, from the producer: a turn that only
   calls tools never triggers one, and chat, Slack and the OpenAI response would otherwise
-  each have to re-derive a boundary only the loop knows about.
+  each have to re-derive a boundary only the loop knows about. **Reasoning follows the same
+  rule** on its own axis, when it is emitted at all.
+- **`reasoningTrace` gates the yield of `delta.reasoningContent`, and nothing else.** The
+  version's opt-in decides who may *read* the thinking. `reasoningText` accumulates either
+  way and is put back on that turn's assistant message as `reasoning_content`, because the
+  thinking has to stay attached to the turn that produced it and to the tool calls that turn
+  declared — deleting the accumulation because it looks unused with the flag off changes what
+  the model is sent. Two strings are live at once: the accumulator holds what the provider
+  sent (masked, since that is what goes back), the yielded chunk holds the restored copy.
+  Gating downstream instead would put the parameter in nine places — eight consumers and the
+  run log, whose 350KB buffer a token-at-a-time axis fills on its own.
 - One turn's tool-result text is capped (`MAX_TOOL_RESULT_CHARS_PER_TURN`), spent in call
   order. A truncated result says so; one that no longer fits is returned as `Error: …`, which
   also surfaces the exhaustion as a failed span in the trace.

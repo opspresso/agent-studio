@@ -111,6 +111,8 @@ export const ko: Messages = {
   "common.you": "나",
   "common.durationSeconds": "{seconds}초",
   "common.durationMinutes": "{minutes}분 {seconds}초",
+  "common.reasoning": "추론",
+  "common.reasoningTokens": "{count} tok",
   "common.total": "합계",
   "common.workspaceCatalog": "워크스페이스 카탈로그",
 
@@ -301,6 +303,9 @@ export const ko: Messages = {
   "version.temperature": "Temperature",
   "version.maxTokens": "최대 토큰",
   "version.defaultPlaceholder": "기본값",
+  "version.reasoningTrace": "추론 과정 기록",
+  "version.reasoningTraceHint":
+    "답하기 전에 모델이 무엇을 생각했는지 남겨 채팅과 플레이그라운드에서 다시 읽는다. 기본은 꺼짐 — 추론은 요청을 모델 자신의 말로 되풀이한다. 보여 주기만 하고 다음 턴의 히스토리로 되돌리지 않는다.",
   "version.reasoningEffort": "추론 강도",
   "version.maxTurns": "최대 턴",
   "version.piiFiltering": "PII 필터링",

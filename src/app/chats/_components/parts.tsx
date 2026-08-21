@@ -23,6 +23,7 @@ import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { ProducedFile } from "@/app/_components/ProducedFile";
+import { ReasoningRow } from "@/app/_components/ReasoningRow";
 import { ToolRow } from "@/app/_components/ToolRow";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import type { ToolChatMessage } from "@/domain/chat/types";
@@ -291,6 +292,11 @@ export const MessageView = memo(function MessageView({
       {(message.warnings ?? []).map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}
+      {/* Where it happened: the thinking came before the answer. Closed until
+          clicked — no `streaming` here, since this turn is over. */}
+      {message.reasoning && (
+        <ReasoningRow text={message.reasoning} tokens={message.reasoningTokens} />
+      )}
       {(message.images ?? []).flatMap((image, index) =>
         image.url
           ? [
@@ -439,6 +445,14 @@ export function LiveAssistant({
       {turn.warnings.map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}
+      {/* Open while the model is still thinking and has said nothing, so a long
+          silence shows what is filling it; it folds away as the answer starts,
+          unless the reader has taken the panel over. */}
+      <ReasoningRow
+        text={turn.reasoning}
+        {...(turn.reasoningTokens > 0 ? { tokens: turn.reasoningTokens } : {})}
+        streaming={running && turn.text === "" && turn.reasoning !== ""}
+      />
       {pairToolTraffic(turn.toolCalls, turn.tools).map((pair, index) => (
         <ToolRow key={`tool-${index}`} pair={pair} />
       ))}

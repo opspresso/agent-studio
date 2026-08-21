@@ -271,6 +271,13 @@ export function toEngineMessages(
       continue; // emitted with the assistant message that declared it
     }
     const pairs = replayed.get(message) ?? [];
+    // `message.reasoning` is deliberately left off. A run writes one assistant
+    // message holding every turn's text, so putting the flattened thinking back
+    // as `reasoning_content` would claim one block belonged to a message whose
+    // `tool_calls` came from several turns. It is also unbudgeted here —
+    // `messageChars` counts content and document text, not this — so replaying
+    // it would overrun the window without the "earlier turn(s) were left out"
+    // warning below ever firing.
     const mapped: ChatMessageInput = { role: "assistant", content: message.content };
     if (pairs.length > 0) {
       mapped.tool_calls = pairs.map((pair) => pair.call);

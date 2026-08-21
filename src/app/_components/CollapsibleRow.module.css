@@ -1,3 +1,4 @@
+/* The header of a row that opens — shared by ToolRow and ReasoningRow. */
 .toolToggle {
   display: block;
   width: 100%;

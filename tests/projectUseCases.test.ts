@@ -1153,6 +1153,38 @@ describe("model capability validation", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
+  it("rejects reasoningTrace on a model that produces none", async () => {
+    // Nothing would be recorded, and the checkbox would say otherwise.
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        {
+          ...versionInput(),
+          model: "bedrock/qwen3-coder-next",
+          parameters: { piiFiltering: false, reasoningTrace: true },
+        },
+        OWNER,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("accepts reasoningTrace on a model that does", async () => {
+    const created = await createVersion(
+      makeVersionRepo(),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      {
+        ...versionInput(),
+        model: "anthropic/claude-fable-5",
+        parameters: { piiFiltering: false, reasoningTrace: true },
+      },
+      OWNER,
+    );
+    expect(created.parameters.reasoningTrace).toBe(true);
+  });
+
   it("keeps custom (unknown) models on the warn-only path", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {

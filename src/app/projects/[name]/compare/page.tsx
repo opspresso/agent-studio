@@ -36,6 +36,7 @@ import {
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { LoadingText } from "@/app/_components/PageState";
 import { ProducedFile } from "@/app/_components/ProducedFile";
+import { ReasoningRow } from "@/app/_components/ReasoningRow";
 
 /**
  * One side's outcome, folded from the same chunk stream the playground reads —
@@ -45,6 +46,8 @@ import { ProducedFile } from "@/app/_components/ProducedFile";
 interface SideResult {
   running: boolean;
   text: string;
+  /** The run's thinking — empty unless this version opted into recording it. */
+  reasoning: string;
   warnings: string[];
   error: string | null;
   costUsd: number | null;
@@ -60,6 +63,7 @@ interface SideResult {
 const IDLE: SideResult = {
   running: false,
   text: "",
+  reasoning: "",
   warnings: [],
   error: null,
   costUsd: null,
@@ -194,6 +198,10 @@ export default function ComparePage() {
         if (content && isTopLevelChunk(chunk)) {
           setSide((prev) => ({ ...prev, text: prev.text + content }));
         }
+        const reasoned = chunk.delta?.reasoningContent;
+        if (reasoned && isTopLevelChunk(chunk)) {
+          setSide((prev) => ({ ...prev, reasoning: prev.reasoning + reasoned }));
+        }
         const callCount = chunk.delta?.toolCalls?.length ?? 0;
         if (callCount > 0) {
           setSide((prev) => ({ ...prev, toolCallCount: prev.toolCallCount + callCount }));
@@ -318,6 +326,20 @@ export default function ComparePage() {
                       {warning}
                     </Alert>
                   ))}
+                  {/* Said rather than left out. With the section simply absent on
+                      the version that did not opt in, the other side reads as the
+                      one that thought harder — which is not what differs. */}
+                  {versions.find((version) => version.versionName === sideName)?.parameters
+                    .reasoningTrace ? (
+                    <ReasoningRow
+                      text={side.reasoning}
+                      streaming={side.running && side.text === "" && side.reasoning !== ""}
+                    />
+                  ) : (
+                    <Text fz="xs" c="dimmed">
+                      Reasoning is not recorded for this version.
+                    </Text>
+                  )}
                   {side.image ? (
                     <Image
                       src={imageDataUrl({ b64: side.image.imageBase64, mimeType: side.image.mimeType })}

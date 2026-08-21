@@ -346,6 +346,9 @@ function assertModelSupports(project: Project, model: string, parameters: Versio
   if (parameters.structuredOutput && !cfg.capabilities.structuredOutput) {
     throw new ValidationError(`Model does not support structured output: ${model}`);
   }
+  if (parameters.reasoningTrace && !cfg.capabilities.reasoning) {
+    throw new ValidationError(`Model does not produce reasoning to record: ${model}`);
+  }
 }
 
 function nextVersionName(existing: Version[]): string {

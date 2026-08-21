@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ChannelParams, LlmChannel } from "@/domain/llm/channel";
 import type { ContentPart, EngineChunk } from "@/domain/llm/types";
 import {
   buildTransferTranscript,
@@ -10,6 +11,7 @@ import {
   contentChunk,
   FakeChannel,
   mergedDeltaChunk,
+  reasoningChunk,
   toolCallChunk,
   usageChunk,
 } from "./fakeChannel";
@@ -290,6 +292,9 @@ describe("runAgent tool loop", () => {
         model: MODEL,
         messages: [{ role: "user", content: "search" }],
         mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
+        // The reasoning half of the shared delta is only visible to a run that
+        // asked for it; the tool call in the same delta is not conditional.
+        parameters: { reasoningTrace: true },
       }),
     );
 
@@ -685,6 +690,221 @@ describe("tools + reasoning_effort provider constraint", () => {
     );
 
     expect(channel.seenParams[0]?.reasoningEffort).toBe("medium");
+  });
+});
+
+describe("recording the run's reasoning", () => {
+  const TOOL = { type: "function" as const, function: { name: "lookup", parameters: {} } };
+
+  function thinkingRun() {
+    return new FakeChannel([
+      [reasoningChunk("weighing it"), contentChunk("answer"), usageChunk(3, 2)],
+    ]);
+  }
+
+  it("emits nothing unless the version asked for it", async () => {
+    const channel = thinkingRun();
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(chunks.some((c) => c.delta?.reasoningContent !== undefined)).toBe(false);
+    expect(chunks.some((c) => c.delta?.content === "answer")).toBe(true);
+  });
+
+  it("emits the thinking when it did", async () => {
+    const channel = thinkingRun();
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        parameters: { reasoningTrace: true },
+      }),
+    );
+
+    expect(chunks.some((c) => c.delta?.reasoningContent === "weighing it")).toBe(true);
+  });
+
+  it("still returns the turn's thinking to the provider with the gate off", async () => {
+    // The gate is on the yield alone. A turn's `reasoning_content` belongs to
+    // the assistant message that declared its tool calls, and dropping it
+    // changes what the model is sent — this is what makes the accumulation
+    // behind the gate un-deletable.
+    const channel = new FakeChannel([
+      [reasoningChunk("first thought"), toolCallChunk(0, "call_1", "lookup", "{}"), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "result" }),
+    };
+
+    await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        mcpTools: [TOOL],
+      }),
+    );
+
+    const replayed = channel.seenParams[1]?.messages.find((m) => m.role === "assistant");
+    expect(replayed?.reasoning_content).toBe("first thought");
+  });
+
+  it("separates one turn's thinking from the next with a blank line", async () => {
+    const channel = new FakeChannel([
+      [reasoningChunk("look it up"), toolCallChunk(0, "call_1", "lookup", "{}"), usageChunk(1, 1)],
+      [reasoningChunk("now answer"), contentChunk("done"), usageChunk(1, 1)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "result" }),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        mcpTools: [TOOL],
+        parameters: { reasoningTrace: true },
+      }),
+    );
+
+    const reasoning = chunks
+      .filter((c) => c.delta?.reasoningContent)
+      .map((c) => c.delta?.reasoningContent)
+      .join("");
+    expect(reasoning).toBe("look it up\n\nnow answer");
+  });
+
+  it("says so once when the model refuses to reason while it holds tools", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "lookup", "{}"), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "result" }),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: "openai/gpt-5.6-sol",
+        messages: [{ role: "user", content: "hi" }],
+        mcpTools: [TOOL],
+        parameters: { reasoningTrace: true, reasoningEffort: "medium" },
+      }),
+    );
+
+    const warnings = chunks.filter((c) => c.warning?.includes("does not reason while it can call tools"));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("stays quiet about the constraint when the run did not ask to record", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: "openai/gpt-5.6-sol",
+        messages: [{ role: "user", content: "hi" }],
+        mcpTools: [TOOL],
+        parameters: { reasoningEffort: "medium" },
+      }),
+    );
+
+    expect(chunks.some((c) => c.warning !== undefined)).toBe(false);
+  });
+
+  it("shows the reader restored thinking while the model keeps the masked copy", async () => {
+    // The mask/restore boundary is the same one `content` sits on: the filter
+    // bounds what the *model* sees, not what a person reads back. The
+    // replacement token is minted per run, so the model here is one that echoes
+    // back whatever it was actually sent — which is the only way to see both
+    // sides of the boundary at once.
+    const seen: ChannelParams[] = [];
+    const channel: LlmChannel = {
+      chatCompletion: async () => {
+        throw new Error("not used");
+      },
+      async *chatCompletionStream(params: ChannelParams) {
+        seen.push(params);
+        const asked = String(params.messages[params.messages.length - 1]?.content ?? "");
+        const token = /\[\[PII:[^\]]*\]\]/.exec(asked)?.[0] ?? "";
+        if (seen.length === 1) {
+          yield reasoningChunk(`mailing ${token}`);
+          yield toolCallChunk(0, "call_1", "lookup", "{}");
+          yield usageChunk(1, 1);
+          return;
+        }
+        yield contentChunk("done");
+        yield usageChunk(1, 1);
+      },
+    };
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "result" }),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "mail me at a@b.com" }],
+        mcpTools: [TOOL],
+        parameters: { piiFiltering: true, reasoningTrace: true },
+      }),
+    );
+
+    const shown = chunks
+      .filter((c) => c.delta?.reasoningContent)
+      .map((c) => c.delta?.reasoningContent)
+      .join("");
+    expect(shown).toBe("mailing a@b.com");
+
+    const replayed = seen[1]?.messages.find((m) => m.role === "assistant");
+    expect(replayed?.reasoning_content).toContain("[[PII:");
+    expect(replayed?.reasoning_content).not.toContain("a@b.com");
+  });
+
+  it("carries reasoning tokens on the usage chunk, and only when reported", async () => {
+    const withTokens = new FakeChannel([[contentChunk("ok"), usageChunk(3, 9, undefined, undefined, 7)]]);
+    const without = new FakeChannel([[contentChunk("ok"), usageChunk(3, 9)]]);
+
+    for (const [channel, expected] of [
+      [withTokens, 7],
+      [without, undefined],
+    ] as const) {
+      const recorded: unknown[] = [];
+      const chunks = await collect(
+        runAgent(
+          { channel, recordUsage: async (r) => void recorded.push(r) },
+          { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
+        ),
+      );
+      const usage = chunks.find((c) => c.usage)?.usage;
+      expect(usage?.reasoningTokens).toBe(expected);
+      // Inside `outputTokens` already — pricing it again would double-bill.
+      expect(usage?.outputTokens).toBe(9);
+      expect(recorded[0]).not.toHaveProperty("reasoningTokens");
+    }
   });
 });
 

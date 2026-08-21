@@ -132,6 +132,8 @@ export const en = {
   "common.you": "you",
   "common.durationSeconds": "{seconds}s",
   "common.durationMinutes": "{minutes}m {seconds}s",
+  "common.reasoning": "Reasoning",
+  "common.reasoningTokens": "{count} tok",
   "common.total": "Total",
   "common.workspaceCatalog": "Workspace catalog",
 
@@ -350,6 +352,9 @@ export const en = {
   "version.temperature": "Temperature",
   "version.maxTokens": "Max tokens",
   "version.defaultPlaceholder": "default",
+  "version.reasoningTrace": "Record the reasoning",
+  "version.reasoningTraceHint":
+    "Keep what the model thought before answering, so it can be read back in the chat and the playground. Off by default: reasoning restates the request in the model's own words. It is shown, never sent back as history.",
   "version.reasoningEffort": "Reasoning effort",
   "version.maxTurns": "Max turns",
   "version.piiFiltering": "PII filtering",

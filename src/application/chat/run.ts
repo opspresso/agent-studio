@@ -215,15 +215,29 @@ export async function storeAttachedImages(
  */
 const MAX_PERSISTED_CONTENT_BYTES = 350_000;
 
-function truncateForPersist(content: string): string {
-  if (Buffer.byteLength(content, "utf8") <= MAX_PERSISTED_CONTENT_BYTES) {
+/**
+ * How much of a run's thinking one message keeps.
+ *
+ * Charged *after* the answer and out of the same budget above, not beside it: a
+ * reasoning model can think for as long as it speaks, and giving each its own
+ * 350KB is how one item becomes 700KB and the whole turn's write fails —
+ * silently, since `persist()` logs rather than throws, taking the reply the
+ * reader just watched stream with it. The answer is what must survive, so it is
+ * spent first and this is a ceiling on whatever is left.
+ */
+const MAX_PERSISTED_REASONING_BYTES = 40_000;
+
+function truncateForPersist(content: string, budget = MAX_PERSISTED_CONTENT_BYTES): string {
+  if (Buffer.byteLength(content, "utf8") <= budget) {
     return content;
   }
   const marker = "\n…[truncated]";
-  const budget = MAX_PERSISTED_CONTENT_BYTES - Buffer.byteLength(marker, "utf8");
+  // Clamped at zero: a budget smaller than the marker leaves the marker alone,
+  // which still says what happened.
+  const room = Math.max(0, budget - Buffer.byteLength(marker, "utf8"));
   // Byte-boundary-safe: a bare subarray cut would persist U+FFFD where the
   // budget fell inside a multi-byte character.
-  return cutUtf8Bytes(content, budget) + marker;
+  return cutUtf8Bytes(content, room) + marker;
 }
 
 /**
@@ -310,6 +324,11 @@ export async function* runAndPersist(
   // Why the run came out the shape it did — a binding it could not use, history
   // it could not carry. Persisted so reloading the chat still explains it.
   const warnings: string[] = [];
+  // The top-level run's own thinking, when the version asked for it to be kept.
+  // Subagent reasoning is dropped for the reason its content is: four children
+  // dispatched at once interleave on the wire with nothing saying whose is whose.
+  let reasoning = "";
+  let reasoningTokens = 0;
   let persisted = false;
 
   /** Kept to one per distinct reason, and bounded: the message is one item. */
@@ -326,6 +345,7 @@ export async function* runAndPersist(
     persisted = true;
     if (
       !content &&
+      !reasoning &&
       toolMessages.length === 0 &&
       generatedImages.length === 0 &&
       generatedFiles.length === 0 &&
@@ -358,11 +378,21 @@ export async function* runAndPersist(
           createdAt: now,
         });
       }
+      const persistedContent = truncateForPersist(content);
+      const persistedReasoning = truncateForPersist(
+        reasoning,
+        Math.min(
+          MAX_PERSISTED_REASONING_BYTES,
+          MAX_PERSISTED_CONTENT_BYTES - Buffer.byteLength(persistedContent, "utf8"),
+        ),
+      );
       await deps.chats.appendMessage({
         chatId: chat.chatId,
         seq: await deps.chats.reserveMessageSeq(chat.chatId),
         role: "assistant",
-        content: truncateForPersist(content),
+        content: persistedContent,
+        ...(persistedReasoning ? { reasoning: persistedReasoning } : {}),
+        ...(persistedReasoning && reasoningTokens > 0 ? { reasoningTokens } : {}),
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
         ...(warnings.length > 0 ? { warnings } : {}),
         ...(images.length > 0 ? { images } : {}),
@@ -380,6 +410,15 @@ export async function* runAndPersist(
       const delta = chunk.delta?.content;
       if (typeof delta === "string" && isTopLevelChunk(chunk)) {
         content += delta;
+      }
+      if (chunk.usage?.reasoningTokens !== undefined && isTopLevelChunk(chunk)) {
+        reasoningTokens += chunk.usage.reasoningTokens;
+      }
+      const reasoningDelta = chunk.delta?.reasoningContent;
+      if (typeof reasoningDelta === "string" && isTopLevelChunk(chunk)) {
+        // Restored text, the same source `content` takes: the masked copy is the
+        // engine's own, and storing it would put `[[PII:…]]` beside a plain answer.
+        reasoning += reasoningDelta;
       }
       if (chunk.delta?.toolCalls && isTopLevelChunk(chunk)) {
         toolCalls.push(...chunk.delta.toolCalls);

@@ -40,6 +40,10 @@ export interface ChannelUsage {
   prompt_tokens_details?: {
     cached_tokens?: number;
   } | null;
+  completion_tokens_details?: {
+    /** Tokens spent thinking — already inside `completion_tokens`, not beside it. */
+    reasoning_tokens?: number;
+  } | null;
   /**
    * USD the channel says the call actually cost, when it says so at all.
    *

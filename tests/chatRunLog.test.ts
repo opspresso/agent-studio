@@ -218,6 +218,40 @@ describe("teeToRunLog", () => {
     ]);
   });
 
+  /**
+   * Reasoning streams a token at a time. Kept verbatim, a deep-thinking run
+   * fills the buffer with tens of thousands of tiny frames and evicts the front
+   * of the answer — which the saved message holds in full. So the buffer is
+   * spent on the answer and the thinking arrives with the message.
+   */
+  it("keeps one note in place of the whole run's reasoning", async () => {
+    const { deps, frames } = recordingDeps();
+    await run(
+      deps,
+      [
+        { delta: { reasoningContent: "first " } },
+        { delta: { reasoningContent: "second " } },
+        { delta: { reasoningContent: "third" } },
+        { delta: { content: "answer" } },
+      ],
+      { leaveAfter: 1 },
+    );
+    expect(frames()).toEqual([
+      { warning: expect.stringContaining("appears on the saved message") },
+      { delta: { content: "answer" } },
+    ]);
+  });
+
+  it("keeps a chunk that carries the answer beside the thinking", async () => {
+    // The substitution is "carries nothing else", so a producer that ever merges
+    // the two axes does not have the answer dropped along with the thinking.
+    const { deps, frames } = recordingDeps();
+    await run(deps, [{ delta: { reasoningContent: "thought", content: "said" } }], {
+      leaveAfter: 1,
+    });
+    expect(frames()).toEqual([{ delta: { reasoningContent: "thought", content: "said" } }]);
+  });
+
   it("replaces a frame too large for a row with a note about it", async () => {
     const { deps, frames } = recordingDeps();
     await run(

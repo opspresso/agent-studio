@@ -7,7 +7,7 @@ import { describeTool, type ToolKind } from "@/app/_lib/toolCalls";
 import type { ToolPair } from "@/app/_lib/toolPairs";
 import { SUBAGENT_COLOR } from "./badgeColors";
 import { JsonHighlight } from "./JsonHighlight";
-import classes from "./ToolRow.module.css";
+import classes from "./CollapsibleRow.module.css";
 
 /** What each kind of tool row is called and coloured, for the badge on it. */
 const TOOL_KIND: Record<ToolKind, { label: string; color: string }> = {

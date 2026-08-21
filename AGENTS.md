@@ -290,6 +290,17 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   field said so from the day it was written while nothing populated or read it, so a child
   that opted in ran anonymously: the checkbox on, the block missing, nothing saying so. Both
   child prompt assemblies (`runLocalSubagent`, `runPromptSubagent`) go through `callerFor`.
+- **A version's `reasoningTrace` gates the `delta.reasoningContent` yield, and nothing
+  else.** The turn's own `reasoning_content` goes back to the provider on that turn's
+  assistant message either way — the thinking has to stay attached to the turn that
+  produced it and to the tool calls that turn declared — so deleting the accumulation
+  behind the gate because it "looks unused when the flag is off" changes what the model is
+  sent. The gate sits at the emission site for the same reason `callerFor` sits at the
+  input boundary: filtering downstream would put one parameter in nine places, the run
+  log included, whose 350KB replay buffer a token-at-a-time axis fills on its own —
+  evicting the front of the *answer*. Two strings are live at that site: the accumulator
+  holds the masked copy the provider gets back, the chunk holds the restored one a
+  person reads. Persistence takes the chunk (`src/application/chat/AGENTS.md`).
 - **Stream author contract.** Top-level chunks are unauthored; only subagent chunks carry
   `author`. Filter with `isTopLevelChunk()` — never re-derive.
 - **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three

@@ -9,6 +9,7 @@ import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { ProducedFile } from "@/app/_components/ProducedFile";
+import { ReasoningRow } from "@/app/_components/ReasoningRow";
 import { ToolRow } from "@/app/_components/ToolRow";
 import {
   chunkAuthorPath,
@@ -80,6 +81,8 @@ export function RunPanel({
 
   const [running, setRunning] = useState(false);
   const [text, setText] = useState("");
+  const [reasoning, setReasoning] = useState("");
+  const [reasoningTokens, setReasoningTokens] = useState(0);
   const [toolCalls, setToolCalls] = useState<ToolCallView[]>([]);
   const [toolResults, setToolResults] = useState<ToolResultView[]>([]);
   // The chain currently producing chunks (outermost first), or undefined while the
@@ -127,6 +130,8 @@ export function RunPanel({
     }
     setRunning(true);
     setText("");
+    setReasoning("");
+    setReasoningTokens(0);
     setToolCalls([]);
     setToolResults([]);
     setActivePaths([]);
@@ -215,6 +220,12 @@ export function RunPanel({
         if (content && isTopLevelChunk(chunk)) {
           setText((prev) => prev + content);
         }
+        // Only a version with `reasoningTrace` on produces any; top-level for
+        // the reason the answer is — a child's thinking is its own run's.
+        const reasoned = chunk.delta?.reasoningContent;
+        if (reasoned && isTopLevelChunk(chunk)) {
+          setReasoning((prev) => prev + reasoned);
+        }
         if (chunk.delta?.toolCalls) {
           const calls = chunk.delta.toolCalls.map((c) => toolCallView(c, chunk.author));
           setToolCalls((prev) => [...prev, ...calls]);
@@ -246,6 +257,10 @@ export function RunPanel({
         if (chunk.usage) {
           totalCost += chunk.usage.costUsd;
           setCost(totalCost);
+          const thought = chunk.usage.reasoningTokens;
+          if (thought !== undefined && isTopLevelChunk(chunk)) {
+            setReasoningTokens((prev) => prev + thought);
+          }
         }
       }
     } catch (e) {
@@ -422,6 +437,14 @@ export function RunPanel({
           )}
         </Stack>
       )}
+
+      {/* Ahead of the answer, where it happened. Open while the model is still
+          thinking and has said nothing, so a long silence shows what fills it. */}
+      <ReasoningRow
+        text={reasoning}
+        {...(reasoningTokens > 0 ? { tokens: reasoningTokens } : {})}
+        streaming={running && text === "" && reasoning !== ""}
+      />
 
       {projectType === "image" ? (
         <Paper withBorder p="sm" mih={96}>

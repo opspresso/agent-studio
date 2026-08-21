@@ -431,7 +431,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           path: agentPath,
           title: "Agent stream",
           description:
-            "SSE stream of EngineChunk frames (delta.content, toolResult, warning, author for subagent turns, error, and a terminal done: true or finishReason naming why the run ended), terminated by data: [DONE]." +
+            "SSE stream of EngineChunk frames (delta.content, delta.reasoningContent when the version records its reasoning, toolResult, warning, author for subagent turns, error, and a terminal done: true or finishReason naming why the run ended), terminated by data: [DONE]." +
             CONVERSATION_NOTE,
           auth: "token",
           streaming: true,

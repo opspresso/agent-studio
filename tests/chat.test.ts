@@ -778,6 +778,82 @@ describe("runAndPersist size guard and disconnect", () => {
   });
 });
 
+describe("runAndPersist keeps the run's reasoning", () => {
+  it("stores the top-level thinking and leaves a subagent's out", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { reasoningContent: "weighing it" } };
+      yield { author: "child", delta: { reasoningContent: "the child's own" } };
+      yield { usage: { inputTokens: 3, outputTokens: 9, costUsd: 0, reasoningTokens: 7 } };
+      yield { delta: { content: "Done." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    // Exactly the parent's, so the child's is excluded: four children dispatched
+    // at once interleave here with nothing saying whose thought is whose.
+    expect(assistant).toMatchObject({ reasoning: "weighing it", reasoningTokens: 7 });
+  });
+
+  it("writes the message for a run that only thought", async () => {
+    // The run a reviewer opened this feature for: it spent tokens and produced
+    // no answer, and the guard used to drop the whole turn as having nothing.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { reasoningContent: "thought about it" } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    expect(assistant).toMatchObject({ content: "", reasoning: "thought about it" });
+  });
+
+  it("spends one item budget on the answer and the thinking together", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "y".repeat(340_000) } };
+      yield { delta: { reasoningContent: "z".repeat(100_000) } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = (await repo.listMessages("c1")).find((m) => m.role === "assistant");
+    const content = assistant?.content ?? "";
+    const reasoning = (assistant as { reasoning?: string } | undefined)?.reasoning ?? "";
+    // Two 350KB fields would be a 700KB item, which the write refuses whole —
+    // taking the answer the reader already watched stream with it.
+    expect(Buffer.byteLength(content, "utf8") + Buffer.byteLength(reasoning, "utf8")).toBeLessThanOrEqual(
+      350_000,
+    );
+    expect(reasoning.endsWith("…[truncated]")).toBe(true);
+  });
+
+  it("is shown but never replayed as history", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { reasoningContent: "weighing it" } };
+      yield { delta: { content: "Done." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    expect(toEngineMessages(await repo.listMessages("c1")).messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Done." },
+    ]);
+  });
+});
+
 describe("stored images are signed at read time", () => {
   const sign = async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`;
 

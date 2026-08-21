@@ -22,7 +22,7 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
           parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
                        callerContext?, structuredOutput?/jsonSchema,
                        imageGeneration?/imageModel?, urlFetch?, slackWorkspace?,
-                       dynamicCapabilities?, memoryRecall? },
+                       dynamicCapabilities?, memoryRecall?, reasoningTrace? },
           mcpList: McpBinding[], skillList: string[],
           subagentList: { name, type: 'local' | 'remote' }[], maxTurn?, createdAt }
 ```

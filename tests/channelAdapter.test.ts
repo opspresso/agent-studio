@@ -183,7 +183,15 @@ describe("OpenAI channel adapter", () => {
         const frames = [
           { choices: [{ delta: { reasoning: "weighing it up" }, finish_reason: null }] },
           { choices: [{ delta: { content: "Answered." }, finish_reason: "stop" }] },
-          { choices: [], usage: { prompt_tokens: 5, completion_tokens: 2, cost: 0.0007 } },
+          {
+            choices: [],
+            usage: {
+              prompt_tokens: 5,
+              completion_tokens: 2,
+              cost: 0.0007,
+              completion_tokens_details: { reasoning_tokens: 1 },
+            },
+          },
         ];
         const body = `${frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")}data: [DONE]\n\n`;
         return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
@@ -201,6 +209,9 @@ describe("OpenAI channel adapter", () => {
     expect(chunks[0]?.choices[0]?.delta.reasoning_content).toBe("weighing it up");
     expect(chunks[1]?.choices[0]?.delta.content).toBe("Answered.");
     expect(chunks[2]?.usage?.cost_usd).toBe(0.0007);
+    // Inside `completion_tokens`, carried so a reasoning block can say how much
+    // of the turn went into thinking — never priced a second time.
+    expect(chunks[2]?.usage?.completion_tokens_details?.reasoning_tokens).toBe(1);
   });
 
   /** A channel that reports no cost must leave the field off, not report $0. */

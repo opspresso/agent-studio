@@ -231,6 +231,25 @@ export interface VersionParameters {
    * per run. Inert when no bound server offers `recall`, which the run reports.
    */
   memoryRecall?: boolean;
+  /**
+   * Whether a run's own thinking is kept for a person to read back.
+   *
+   * A reasoning model bills for tokens it spends before the first visible word,
+   * and until this is on those tokens leave nothing behind: the engine emits
+   * them and every consumer drops them. With it on, the reasoning reaches the
+   * console — the chat thread and the Playground — and a chat run keeps it on
+   * the assistant message beside the answer.
+   *
+   * Opt-in, and off for everything written before it existed, because it
+   * changes who can read the thinking rather than what the run can do: reasoning
+   * restates the request in the model's own words, so it lands in storage and on
+   * a reader's screen with whatever the request carried. Inert on a model with
+   * no reasoning, and the version editor offers it only where the model has it.
+   *
+   * It does not change what the *model* is sent: a turn's thinking goes back to
+   * the provider attached to that turn either way.
+   */
+  reasoningTrace?: boolean;
 }
 
 export interface SubagentRef {

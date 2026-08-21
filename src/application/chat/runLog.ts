@@ -99,7 +99,49 @@ function frameBytes(frame: string): number {
  * hold a generated image's megabytes for the whole run, for a reader who is
  * probably still there.
  */
-function frameFor(chunk: EngineChunk, imagesArePersisted: boolean): string {
+/**
+ * What a chunk may carry alongside reasoning and still be nothing but reasoning:
+ * who produced it, and the delta it travels on.
+ */
+const RIDES_WITH_REASONING = new Set(["traceId", "author", "authorPath", "delta"]);
+
+/**
+ * A chunk whose whole payload is the run's thinking.
+ *
+ * Written as "carries nothing else" rather than a list of the axes it must not
+ * carry, so an axis added later fails closed. The engine yields reasoning on
+ * its own chunk today; a future producer merging it with the answer would
+ * otherwise have the answer dropped along with it by the substitution below.
+ */
+function isReasoningOnly(chunk: EngineChunk): boolean {
+  const delta = chunk.delta;
+  if (!delta?.reasoningContent || delta.content !== undefined || delta.toolCalls !== undefined) {
+    return false;
+  }
+  return Object.keys(chunk).every((key) => RIDES_WITH_REASONING.has(key));
+}
+
+/** `undefined` drops the chunk from the log entirely — see the reasoning branch. */
+function frameFor(
+  chunk: EngineChunk,
+  imagesArePersisted: boolean,
+  reasoningNoted: boolean,
+): string | undefined {
+  if (isReasoningOnly(chunk)) {
+    // Reasoning streams a token at a time, and each frame pays ~33 bytes of
+    // envelope for a few bytes of text: a run that thinks for 20k tokens
+    // produces 20k frames and hundreds of kilobytes against a 350KB buffer that
+    // drops from the front. What it drops is the beginning of the answer — a
+    // resumed reader would get "the first N part(s) are no longer available"
+    // followed by a reply starting mid-sentence, while the saved message holds
+    // the whole thing. So the buffer is spent on the answer, and the thinking
+    // arrives with the message the run writes on its way out.
+    return reasoningNoted
+      ? undefined
+      : warningFrame(
+          "The reasoning for this run appears on the saved message once it finishes.",
+        );
+  }
   if (chunk.file) {
     // Same rule as an image, and the same reason: a megabyte of base64 has no
     // business in a replay buffer. The file itself is already stored, so the
@@ -174,8 +216,18 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
     droppedFrames += dropped;
   }
 
+  /** The substitution above says the same thing every time; it is said once. */
+  let reasoningNoted = false;
+
   function record(chunk: EngineChunk): void {
-    push(frameFor(chunk, deps.artifacts !== undefined));
+    const frame = frameFor(chunk, deps.artifacts !== undefined, reasoningNoted);
+    if (frame === undefined) {
+      return;
+    }
+    if (isReasoningOnly(chunk)) {
+      reasoningNoted = true;
+    }
+    push(frame);
   }
 
   /** The buffered frames as rows, oldest first, each under the item limit. */

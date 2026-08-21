@@ -283,12 +283,13 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 Version 본문: `systemPrompt`, `userPromptTemplate`, `model` (필수, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
 structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?, urlFetch?,
-slackWorkspace?, dynamicCapabilities?, memoryRecall? }`,
+slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. 이미지 능력이 없는 레지스트리
 모델을 `imageModel` 로 주면 400 으로 거절되고, 그 version 이 필요로 하는 능력이 없는 카탈로그
-`model` 도 마찬가지다 — `agent` project 에는 `tools`, 그 파라미터에는 `structuredOutput` 이
-필요하다 (카탈로그에 없는 id 는 거절이 아니라 경고 대상이다).
+`model` 도 마찬가지다 — `agent` project 에는 `tools`, 그 파라미터에는 `structuredOutput` 과
+`reasoningTrace`(모델의 `reasoning`)가 필요하다 (카탈로그에 없는 id 는 거절이 아니라 경고
+대상이다).
 `mcpList`/`skillList`/`subagentList` 항목은 등록된 MCP 서버·skill·agent·project 로 해석돼야
 한다 — 대롱거리는 참조는 400 으로 거절된다 — 그리고 애초에 `agent` project 만 이들을 가질 수
 있다. 업데이트에서는 *새로 추가된* 항목만 검사하므로, 이미 참조하던 레지스트리 항목이
