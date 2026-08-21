@@ -4,6 +4,15 @@ import type { MessageDestination } from "@/domain/messaging/destination";
 export type ProjectType = "llm" | "agent" | "image";
 
 /**
+ * Who may see and run a project. `public` is the shared catalog every project
+ * lived in before visibility existed: any signed-in user may read, run and
+ * clone it. `private` narrows that to the owner and the emails on
+ * `memberEmails`. Writing was never part of this axis — it stays owner-or-admin
+ * either way (`assertProjectWritable`).
+ */
+export type ProjectVisibility = "public" | "private";
+
+/**
  * Per-project API token. The token is stored AES-256-GCM encrypted so the owner
  * can read it back in the console — a deliberate trade: unlike a hash, stored
  * ciphertext is usable by anyone who obtains both the table and the encryption
@@ -137,6 +146,14 @@ export interface Project {
   description: string;
   projectType: ProjectType;
   ownerEmail: string;
+  /** Absent means `public` — the shape every project had before visibility. */
+  visibility?: ProjectVisibility;
+  /**
+   * Who besides the owner may access a private project. Stored lowercased;
+   * meaningless (and ignored) while the project is public. The owner is never
+   * listed — ownership itself is the access.
+   */
+  memberEmails?: string[];
   departmentCode?: string;
   publishedVersion?: string;
   slack?: SlackIntegration;
