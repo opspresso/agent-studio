@@ -28,7 +28,8 @@
 | 런이 파일로 쓸 수 있는 타입과 그 크기 | `src/domain/artifact/types.ts` 의 `SAVABLE_TYPES` / `isSavable` / `MAX_SAVED_FILE_BYTES` |
 | 저장된 파일이 독자에게 어떤 이름으로 내려가는가 | `src/domain/artifact/types.ts` 의 `savedFileName` |
 | 한 런이 파일을 몇 개까지 쓸 수 있는가 | `src/application/llm/engine.ts` 의 `MAX_SAVED_FILES_PER_RUN` — 이 플랫폼이 고른 루프 한도라 그것을 강제하는 루프 옆에 산다 |
-| 호출이 *알려질* 때 인자에서 무엇이 빠지는가 | `src/application/llm/engine.ts` 의 `announcedArgs` |
+| 한 호출의 인자를 얼마나 보관하고 되풀이하는가 (알려지는 쪽과 프로바이더로 돌아가는 쪽 둘 다) | `src/application/llm/engine.ts` 의 `MAX_TOOL_ARG_BYTES` / `boundToolArgs` / `boundArgumentText` |
+| 프로젝트 산출물을 읽을 수 있는 사람 — 쓰기와 같은 규칙, 기록만 하지 않는다 | `src/application/project/projectUseCases.ts` 의 `assertProjectOutputReadable` |
 | 저장된 오브젝트를 삭제하기 | `src/infrastructure/storage/s3ObjectStore.ts` |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` |

@@ -33,14 +33,22 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   message's `tool_calls` all stay in call order; a dispatcher that throws still tears the run
   down, at its position in that order. A *fetch* that throws does not: an unreachable address
   is the tool reporting an outcome, not a transport fault, so it becomes an `Error: …` result.
-- **A call is announced with the arguments it was made with, with one exception.** `SaveFile`
-  carries a whole file in `content`, and an announced call is kept by everything downstream —
-  the chat view renders it, the run log buffers it, and the assistant message it is persisted on
-  is one 400KB DynamoDB item whose write fails *silently*, taking the reply the reader just
-  watched stream. Content and reasoning are truncated onto that item; `tool_calls` is the axis
-  that is not. So `announcedArgs` swaps the body for its size, while the provider still gets the
-  real arguments on this turn's assistant message. A second tool with a large argument is added
-  there, not worked around at the surface that renders it.
+- **A call's arguments are bounded by size, in both copies, before either is kept.** They
+  outlive the call twice and nothing else cuts either one. The **assistant message** carries
+  them back to the provider on every remaining turn — `contextBudget` charges
+  `JSON.stringify(tool_calls)` and only `fitText` can cut, which never touches an assistant
+  message, so a megabyte of `SaveFile` content is ~350k tokens per turn and past the window of
+  most of the catalog: an unretryable 400 mid-run, after the file was delivered. The
+  **announced copy** is rendered by the chat view, buffered by the run log, and persisted onto
+  one 400KB DynamoDB item whose write fails *silently*, taking the reply the reader just
+  watched stream — content and reasoning are truncated onto that item, `tool_calls` is the axis
+  that is not. `boundToolArgs` swaps any value past `MAX_TOOL_ARG_BYTES` for its size, and
+  `boundArgumentText` cuts a call whose arguments never parsed, which is how an oversize one
+  most often arrives (the provider cuts the turn mid-file; the accumulator has no cap).
+  **Keyed to size, never to a tool name** — a document renderer takes the document's text, and
+  a model that emits a long string as an array of lines arrives under a name nothing
+  anticipated. The model loses nothing: the tool result on the same turn already said the file
+  exists and what it is called.
 - **Which copy of the arguments a builtin is dispatched from is a PII decision, not a
   preference.** `args` is masked and `displayArgs` has the values restored. Anything crossing to
   another model — a transfer's `message`, a dispatch's `tasks` — reads `args`. Anything reaching
