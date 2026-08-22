@@ -40,11 +40,16 @@ function authHeaders(target: TokenRequestTarget): Record<string, string> {
   }
   if (target.tokenEndpointAuthMethod === "client_secret_basic") {
     const credentials = Buffer.from(
-      `${encodeURIComponent(target.clientId)}:${encodeURIComponent(target.clientSecret)}`,
+      `${formEncode(target.clientId)}:${formEncode(target.clientSecret)}`,
     ).toString("base64");
     return { Authorization: `Basic ${credentials}` };
   }
   return {};
+}
+
+/** RFC 6749 §2.3.1 uses HTML form encoding, where a space is `+`, not `%20`. */
+function formEncode(value: string): string {
+  return new URLSearchParams({ value }).toString().slice("value=".length);
 }
 
 function authBodyParams(target: TokenRequestTarget): Record<string, string> {
@@ -134,7 +139,7 @@ async function postForm(
 }
 
 export const oauthClient: OAuthClient = {
-  async register({ registrationEndpoint, clientName, redirectUri, scopes }) {
+  async register({ registrationEndpoint, clientName, redirectUri, scopes, tokenEndpointAuthMethod }) {
     const response = await fetchPublicUrl(registrationEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -143,7 +148,7 @@ export const oauthClient: OAuthClient = {
         redirect_uris: [redirectUri],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        token_endpoint_auth_method: "client_secret_post",
+        token_endpoint_auth_method: tokenEndpointAuthMethod,
         // SEP-837. The redirect is always this deployment's own https callback,
         // built from the configured public base URL — never a loopback one — so
         // `web` is the accurate declaration. Sent rather than left to the OpenID
@@ -167,7 +172,16 @@ export const oauthClient: OAuthClient = {
       throw new Error("Registration response carried no client_id");
     }
     const clientSecret = asString(body.client_secret);
-    return { clientId, ...(clientSecret ? { clientSecret } : {}) } satisfies RegisteredClient;
+    const recorded = asString(body.token_endpoint_auth_method);
+    const method =
+      recorded === "client_secret_basic" || recorded === "client_secret_post" || recorded === "none"
+        ? recorded
+        : undefined;
+    return {
+      clientId,
+      ...(clientSecret ? { clientSecret } : {}),
+      ...(method ? { tokenEndpointAuthMethod: method } : {}),
+    } satisfies RegisteredClient;
   },
 
   async exchangeCode(target, { code, redirectUri, codeVerifier }) {

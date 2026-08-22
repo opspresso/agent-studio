@@ -3,6 +3,7 @@ import { getDocumentClient, getTableName } from "../client";
 import { keys } from "../keys";
 import { queryAll } from "../query";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
+import type { TokenEndpointAuthMethod } from "@/domain/mcp/types";
 
 const ENTITY_TYPE = "MCPCONNECTION";
 
@@ -30,6 +31,10 @@ function toItem(connection: McpConnection): Record<string, unknown> {
 /** A stored `null` reads back as `null`, which the optional fields' type denies. */
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function isAuthMethod(value: unknown): value is TokenEndpointAuthMethod {
+  return value === "client_secret_basic" || value === "client_secret_post" || value === "none";
 }
 
 /**
@@ -62,6 +67,9 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
     // a recoverable connection into one that refuses to reconnect.
     ...(item.clientFromMetadataDocument === true ? { clientFromMetadataDocument: true } : {}),
     ...(item.clientRegistered === true ? { clientRegistered: true } : {}),
+    // The method the registration recorded, which the token endpoint enforces;
+    // lost on the way back, every exchange falls to the entry's discovered one.
+    ...(isAuthMethod(item.tokenEndpointAuthMethod) ? { tokenEndpointAuthMethod: item.tokenEndpointAuthMethod } : {}),
     issuer,
     resource,
     scopes: (item.scopes as string[] | undefined) ?? [],
@@ -131,6 +139,13 @@ export const mcpConnectionRepository: McpConnectionRepository = {
       ":status": next.status,
       ":updatedAt": next.updatedAt,
     };
+    // Widened by a scope challenge, under the same condition as the tokens:
+    // an unconditional put here clobbered a reconnect that landed between
+    // the read and the write.
+    if (next.scopes !== undefined) {
+      sets.push("scopes = :scopes");
+      values[":scopes"] = next.scopes;
+    }
     for (const [name, value] of [
       ["accessToken", next.accessToken],
       ["refreshToken", next.refreshToken],

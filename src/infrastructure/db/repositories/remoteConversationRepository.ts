@@ -26,10 +26,14 @@ export const remoteConversationRepository: RemoteConversationRepository = {
     }
     // The physical purge lags the TTL by up to ~48h, so an expired row is still
     // readable. Checked rather than trusted, like engagement.
-    return isExpired(result.Item?.expiresAt, Date.now()) ? null : contextId;
+    if (isExpired(result.Item?.expiresAt, Date.now())) {
+      return null;
+    }
+    const taskId = result.Item?.taskId;
+    return { contextId, ...(typeof taskId === "string" && taskId ? { taskId } : {}) };
   },
 
-  async put(projectName, agentName, conversationKey, contextId) {
+  async put(projectName, agentName, conversationKey, { contextId, taskId }) {
     await getDocumentClient().send(
       new PutCommand({
         TableName: getTableName(),
@@ -40,6 +44,7 @@ export const remoteConversationRepository: RemoteConversationRepository = {
           agentName,
           conversationKey,
           contextId,
+          ...(taskId ? { taskId } : {}),
           updatedAt: new Date().toISOString(),
           // TTL attribute; enable table TTL on `expiresAt` to purge old rows.
           expiresAt: expiresAtFromNow(REMOTE_CONVERSATION_TTL_SECONDS),

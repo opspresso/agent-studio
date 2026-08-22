@@ -142,23 +142,30 @@ describe("a remote A2A transfer continues the conversation", () => {
   };
 
   function fixture(replies: RemoteAgentReply[]) {
-    const sent: Array<{ message: string; contextId?: string }> = [];
+    const sent: Array<{ message: string; contextId?: string; taskId?: string }> = [];
     const rows = new Map<string, string>();
+    const hints = new Map<string, { contextId: string; taskId?: string }>();
     const remoteAgents: RemoteAgentDispatcher = {
       async send(_target, message, _signal, options) {
-        sent.push({ message, ...(options?.contextId ? { contextId: options.contextId } : {}) });
+        sent.push({
+          message,
+          ...(options?.contextId ? { contextId: options.contextId } : {}),
+          ...(options?.taskId ? { taskId: options.taskId } : {}),
+        });
         return replies.shift() ?? { ok: false, error: "no scripted reply" };
       },
       probe: async () => ({ ok: true, text: "" }),
     };
     const remoteConversations: RemoteConversationRepository = {
       async get(projectName, agentName, key) {
-        return rows.get(`${projectName}|${agentName}|${key}`) ?? null;
+        return hints.get(`${projectName}|${agentName}|${key}`) ?? null;
       },
-      async put(projectName, agentName, key, contextId) {
-        rows.set(`${projectName}|${agentName}|${key}`, contextId);
+      async put(projectName, agentName, key, hint) {
+        hints.set(`${projectName}|${agentName}|${key}`, hint);
+        rows.set(`${projectName}|${agentName}|${key}`, hint.contextId);
       },
       async forget(projectName, agentName, key) {
+        hints.delete(`${projectName}|${agentName}|${key}`);
         rows.delete(`${projectName}|${agentName}|${key}`);
       },
     };
@@ -185,7 +192,7 @@ describe("a remote A2A transfer continues the conversation", () => {
       ExecutionDeps,
       "externalAgents" | "urlPolicy" | "cipher" | "remoteAgents" | "remoteConversations"
     >;
-    return { deps, sent, rows };
+    return { deps, sent, rows, hints };
   }
 
   async function drain(source: AsyncGenerator<EngineChunk, string>) {
@@ -247,6 +254,23 @@ describe("a remote A2A transfer continues the conversation", () => {
     // failed transfer itself is not retried, since the remote may be working.
     expect(sent.map((s) => s.contextId)).toEqual([undefined, "ctx-old", undefined]);
     expect(rows.get("front-desk|helper|slack:C1:1723.45")).toBe("ctx-new");
+  });
+
+  it("parks on a task the remote stopped to ask about, and answers that task next", async () => {
+    const { deps, sent, hints } = fixture([
+      { ok: false, error: "Remote agent needs input before it can continue: which year?", continuation: { contextId: "c1", taskId: "t9" } },
+      { ok: true, text: "2025 sales: up", images: [], contextId: "c1" },
+    ]);
+
+    const first = await drain(runRemoteSubagent(deps, "helper", "sales?", undefined, origin));
+    expect(first).toBe("");
+    expect(hints.get("front-desk|helper|slack:C1:1723.45")).toEqual({ contextId: "c1", taskId: "t9" });
+
+    const second = await drain(runRemoteSubagent(deps, "helper", "2025", undefined, origin));
+    expect(second).toBe("2025 sales: up");
+    expect(sent).toEqual([{ message: "sales?" }, { message: "2025", contextId: "c1", taskId: "t9" }]);
+    // Answered: the conversation goes on, the task does not.
+    expect(hints.get("front-desk|helper|slack:C1:1723.45")).toEqual({ contextId: "c1" });
   });
 
   it("a lookup that fails costs a cold start, never the transfer", async () => {

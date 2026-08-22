@@ -268,6 +268,17 @@ dispatch 시점에 적용되는 마지막 **자격증명** 이며 — 레지스�
 클라이언트에 project 이름을 붙였었다. 아무것도 요청하지 않고 아무것도 저장하지 않는다:
 예전에 등록하고 시크릿을 받아 암호화하던 흐름이 이제는 이미 알고 있던 URL 을 적을 뿐이다.
 
+**메타데이터를 어디서 읽는가.** authorization 서버의 문서는 명세가 정한 순서의 세 주소에서
+찾고(`authorizationServerCandidates`), 경로가 있는 issuer 의 root 문서는 다른 issuer 의 것이라
+시도하지 않으며, `issuer` 가 맞지 않는 문서는 쓰지 않는다(RFC 8414 의 요구대로 문자열을
+code-point 단위로 그대로 비교한다). **알려진 한계**: Microsoft Entra 의 `…/common/v2.0`
+은 테넌트 issuer 로 답하므로 그 문서는 거부된다 — 리소스가 테넌트 issuer 를 직접 광고해야 한다. resource metadata 는 well-known
+서버 자신의 401 이 `WWW-Authenticate` 로 지목하는 주소를 먼저 읽고, 주소가 없을 때만 well-known
+경로 둘을 순서대로 읽는다 — challenge 가 있으면 그것이 authoritative 하다는 MCP discovery 규칙을
+따른다. 프로브는 어차피 클라이언트가 처음 보낼 `initialize` 다. 런타임의 401/403 도 같은
+헤더를 SDK 의 요청별 `InsufficientScopeError` 로 읽어 `insufficient_scope` 가 이름 댄 scope 를
+연결에 합친다. 한 turn 의 tool 호출은 병렬이므로 session 전체의 마지막 challenge 를 읽지 않는다.
+등록은 토큰 요청이 쓸 인증 방식으로 하고 서버가 기록한 방식을 연결에 적는다.
+
 프로토콜 수준의 검사(PKCE, `resource`, `iss`, issuer 바인딩 — 메타데이터 문서 클라이언트에서는
 이것이 뒤집힌다)는 [SECURITY.md](../SECURITY.md#mcp-oauth) 에 있다.
-

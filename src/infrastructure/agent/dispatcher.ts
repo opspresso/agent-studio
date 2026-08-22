@@ -53,7 +53,9 @@ export const remoteAgentDispatcher: RemoteAgentDispatcher = {
         target.headers,
         message,
         signal,
-        ...(options?.contextId ? [{ contextId: options.contextId }] : []),
+        ...(options?.contextId
+          ? [{ contextId: options.contextId, ...(options.taskId ? { taskId: options.taskId } : {}) }]
+          : []),
       );
       return result.ok
         ? {
@@ -62,7 +64,11 @@ export const remoteAgentDispatcher: RemoteAgentDispatcher = {
             images: result.images,
             ...(result.contextId ? { contextId: result.contextId } : {}),
           }
-        : { ok: false, error: result.error };
+        : {
+            ok: false,
+            error: result.error,
+            ...(result.continuation ? { continuation: result.continuation } : {}),
+          };
     }
     // The OpenAI-shaped protocol has no conversation to continue; a
     // `contextId` handed here has nowhere to go and is not pretended into one.

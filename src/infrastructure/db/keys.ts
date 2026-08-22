@@ -230,9 +230,9 @@ export const keys = {
     SK: "META",
   }),
 
-  a2aTask: (projectName: string, taskId: string) => ({
-    PK: `A2ATASK#${projectName}#${taskId}`,
-    SK: "META",
+  a2aTask: (projectName: string, ownerScope: string, taskId: string) => ({
+    PK: `A2ATASK#${projectName}#${encodeURIComponent(ownerScope)}`,
+    SK: `TASK#${taskId}`,
   }),
 
   /**

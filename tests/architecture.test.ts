@@ -568,7 +568,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(88);
+    expect(entries.length).toBe(89);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -1313,6 +1313,17 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // the type out too. It merges nothing; the shared token is generator
     // plumbing, not a second copy of the merge.
     alsoAllowedUnder: ["src/shared/detachOnReturn.ts"],
+  },
+  {
+    // The protocol's lifecycle — a run opened, closed or failed — is emitted by
+    // the one translator that also knows what is still open when it ends (a
+    // text message, a reasoning block, a subagent's step). A second emitter
+    // would close none of those, and a client rejects a run that finishes
+    // with a message still open. The domain declares the shapes with a
+    // semicolon; this matches the object literal a producer writes.
+    what: "emitting an AG-UI run's lifecycle events",
+    pattern: /type: "RUN_(STARTED|FINISHED|ERROR)",/,
+    owner: "src/application/agui/events.ts",
   },
   {
     // Two consumers derived this identically, and they would have drifted the
@@ -2081,6 +2092,10 @@ const REASONING_FOLD_SITES = [
   "src/app/chats/_lib/stream.ts",
   "src/app/projects/[name]/_components/RunPanel.tsx",
   "src/app/projects/[name]/compare/page.tsx",
+  // Forwards it as the protocol's REASONING_* events rather than folding it,
+  // but the same two of the three decisions apply: top level only, and the
+  // token count beside it (on RUN_FINISHED's usage).
+  "src/application/agui/events.ts",
 ];
 
 describe("folding a run's reasoning", () => {
@@ -2091,7 +2106,8 @@ describe("folding a run's reasoning", () => {
       (file) =>
         file.path.startsWith("src/app/") ||
         file.path.startsWith("src/application/chat/") ||
-        file.path.startsWith("src/application/messaging/"),
+        file.path.startsWith("src/application/messaging/") ||
+        file.path.startsWith("src/application/agui/"),
     )
       .filter((file) => folds(stripComments(file.text)))
       .map((file) => file.path)
@@ -2120,7 +2136,12 @@ describe("folding a run's reasoning", () => {
     // from the pacing, which is the per-token re-render this list exists for.
     // `stream.ts` folds into the chat store, which paces its own notifications;
     // `run.ts` renders nothing at all.
-    const PACED_BY_SOMETHING_ELSE = ["src/application/chat/run.ts", "src/app/chats/_lib/stream.ts"];
+    const PACED_BY_SOMETHING_ELSE = [
+      "src/application/chat/run.ts",
+      "src/app/chats/_lib/stream.ts",
+      // A wire translator holds nothing in component state.
+      "src/application/agui/events.ts",
+    ];
     const unpaced = REASONING_FOLD_SITES.filter(
       (path) => !PACED_BY_SOMETHING_ELSE.includes(path),
     ).filter((path) => {

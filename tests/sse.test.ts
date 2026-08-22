@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sseResponse } from "@/app/api/_lib/sse";
+import { sseResponse, sseResponseRaw } from "@/app/api/_lib/sse";
 import { apiError } from "@/app/api/_lib/http";
 import { RateLimitedError } from "@/application/errors";
 import { detachOnReturn } from "@/shared/detachOnReturn";
@@ -233,5 +233,21 @@ describe("sseResponse cancellation", () => {
     release();
     await drained;
     expect(finalized).toBe(true);
+  });
+});
+
+describe("sseResponseRaw error framing", () => {
+  it("lets a protocol say a mid-stream failure in its own frame", async () => {
+    async function* failing(): AsyncGenerator<unknown> {
+      yield { type: "RUN_STARTED" };
+      throw new Error("provider went away");
+    }
+    const response = await sseResponseRaw(failing(), undefined, {
+      errorFrame: (message) => ({ type: "RUN_ERROR", message }),
+    });
+    await expect(collectSse(response)).resolves.toEqual([
+      { type: "RUN_STARTED" },
+      { type: "RUN_ERROR", message: "provider went away" },
+    ]);
   });
 });

@@ -32,7 +32,7 @@ import {
   setCachedFailure,
   setCachedTools,
 } from "./discoveryCache";
-import { isUnauthorized, McpSession, unusableServerReason, type McpTool } from "./session";
+import { isUnauthorized, McpSession, scopeChallengeOf, unusableServerReason, type McpTool } from "./session";
 import { log } from "@/shared/logger";
 import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
 
@@ -78,6 +78,7 @@ export class ToolManager {
   private _toolNamesByServer = new Map<string, string[]>();
   private readonly _warnings: string[] = [];
   private readonly _unauthorizedServers: string[] = [];
+  private readonly _scopeChallenges = new Map<string, string>();
 
   constructor(
     servers: McpServerConfig[],
@@ -113,6 +114,11 @@ export class ToolManager {
    */
   get unauthorizedServers(): readonly string[] {
     return this._unauthorizedServers;
+  }
+
+  /** The scopes a server's 403 challenge asked for, by server — see the port. */
+  get scopeChallenges(): ReadonlyMap<string, string> {
+    return this._scopeChallenges;
   }
 
   aliasFor(serverName: string, toolName: string): string | undefined {
@@ -186,6 +192,10 @@ export class ToolManager {
           // run looks like a model that ignored them.
           const reason = error instanceof Error ? error.message : String(error);
           const unusable = unusableServerReason(error);
+          // A 403 that names scopes is not the server being down and not the
+          // token being refused outright: it is the project's grant being too
+          // narrow, which the project can fix — with the scopes the server named.
+          const stepUp = scopeChallengeOf(error);
           log.warn(
             "mcp",
             `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
@@ -193,7 +203,8 @@ export class ToolManager {
           );
           const failure: DiscoveryFailure = {
             reason,
-            unauthorized: isUnauthorized(error),
+            unauthorized: isUnauthorized(error) || stepUp !== undefined,
+            ...(stepUp?.scope ? { scope: stepUp.scope } : {}),
             ...(unusable ? { unusable } : {}),
           };
           setCachedFailure(server.url, server.headers, failure);
@@ -251,7 +262,10 @@ export class ToolManager {
           type: "function",
           function: {
             name: alias,
-            description: tool.description,
+            // The title is for a reader and the identifier is for the call; a
+            // model reads the description, so the title leads it when both
+            // exist and stands in when only it does.
+            description: toolDescription(tool),
             parameters: { type: "object", properties: {}, ...(tool.inputSchema ?? {}) },
           },
         });
@@ -274,9 +288,11 @@ export class ToolManager {
    */
   private recordFailure(serverName: string, failure: DiscoveryFailure): void {
     if (failure.unauthorized) {
-      this.recordUnauthorized(serverName);
+      this.recordUnauthorized(serverName, failure.scope);
       this._warnings.push(
-        `MCP server '${serverName}' rejected this project's credentials; it needs to be reconnected before its tools are available.`,
+        failure.scope
+          ? `MCP server '${serverName}' needs a wider grant (${failure.scope}); it needs to be reconnected before its tools are available.`
+          : `MCP server '${serverName}' rejected this project's credentials; it needs to be reconnected before its tools are available.`,
       );
       return;
     }
@@ -307,9 +323,12 @@ export class ToolManager {
    * in one turn — must still be named once, or the run would ask the owner to
    * reconnect the same server three times.
    */
-  private recordUnauthorized(serverName: string): void {
+  private recordUnauthorized(serverName: string, scope?: string): void {
     if (!this._unauthorizedServers.includes(serverName)) {
       this._unauthorizedServers.push(serverName);
+    }
+    if (scope) {
+      this._scopeChallenges.set(serverName, scope);
     }
   }
 
@@ -419,12 +438,13 @@ export class ToolManager {
       };
     } catch (error) {
       this.signal?.throwIfAborted();
-      if (isUnauthorized(error)) {
+      const stepUp = scopeChallengeOf(error);
+      if (isUnauthorized(error) || stepUp) {
         // Discovery is cached, so a run whose cache is warm makes its first
         // request *here* — meaning this is the only place a token revoked since
         // the last discovery can surface. Recorded so the console offers a
         // reconnect instead of leaving the owner to re-diagnose it every run.
-        this.recordUnauthorized(serverName);
+        this.recordUnauthorized(serverName, stepUp?.scope);
       }
       const message = error instanceof Error ? error.message : String(error);
       return {
@@ -786,4 +806,12 @@ export function formatToolResult(content: unknown[]): McpToolResult {
     ...(images.length > 0 ? { images } : {}),
     ...(files.length > 0 ? { files } : {}),
   };
+}
+
+/** What the model is told a tool is: its title ahead of its description, or whichever exists. */
+function toolDescription(tool: McpTool): string | undefined {
+  if (tool.title && tool.description) {
+    return tool.title === tool.description ? tool.description : `${tool.title}: ${tool.description}`;
+  }
+  return tool.title ?? tool.description;
 }

@@ -48,15 +48,40 @@ export function requestConversation(request: Request, actor: RunActor): RunConve
   if (raw === null || !raw.trim()) {
     return null;
   }
-  const caller = createHmac("sha256", config.aesEncryptionKey)
-    .update(actorKey(actor))
-    .digest("hex")
-    .slice(0, CALLER_PREFIX_LENGTH - 1);
-  const conversation = conversationOf("api", `${caller}:${raw}`);
+  const conversation = conversationOf("api", `${callerPrefix(actor)}:${raw}`);
   if (!conversation) {
     throw new ValidationError(
       `${CONVERSATION_REQUEST_HEADER} is too long: at most ${MAX_CONVERSATION_ID_LENGTH - CALLER_PREFIX_LENGTH} characters once encoded`,
     );
   }
   return conversation;
+}
+
+/**
+ * The conversation an AG-UI run belongs to: the client's `threadId`, under the
+ * caller — `agui:{caller}:{threadId}`.
+ *
+ * The same pseudonymous namespace as the header above, and for the same
+ * reason: a thread id is the client's, two applications that both number
+ * their threads from 1 are in two conversations, and the actor behind a
+ * project token is an email that must not reach an MCP server as a key. A
+ * thread is not optional in the protocol, so a thread id too long to keep is
+ * refused the way the header is, never run without.
+ */
+export function aguiConversation(actor: RunActor, threadId: string): RunConversation {
+  const conversation = conversationOf("agui", `${callerPrefix(actor)}:${threadId}`);
+  if (!conversation) {
+    throw new ValidationError(
+      `threadId is too long: at most ${MAX_CONVERSATION_ID_LENGTH - CALLER_PREFIX_LENGTH} characters once encoded`,
+    );
+  }
+  return conversation;
+}
+
+/** The keyed digest that stands in for the caller in a conversation key. */
+function callerPrefix(actor: RunActor): string {
+  return createHmac("sha256", config.aesEncryptionKey)
+    .update(actorKey(actor))
+    .digest("hex")
+    .slice(0, CALLER_PREFIX_LENGTH - 1);
 }

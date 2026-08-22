@@ -243,6 +243,15 @@ export interface RunAgentInput {
   mcpTools?: ChannelToolDef[];
   /** Per-server grouping of the MCP tools, for the system prompt overview. */
   mcpServers?: McpServerInfo[];
+  /**
+   * Tools the application the person is using executes on its side (AG-UI's
+   * frontend tools). A turn that calls one is the run's last: the calls are
+   * announced, the run's own calls in that turn still run and report, and the
+   * loop then ends with `done` so the application can answer its own — the
+   * results come back as `tool` messages in the next run's history. Never
+   * handed to a subagent: a child cannot end the run the person is waiting on.
+   */
+  clientTools?: ChannelToolDef[];
   signal?: AbortSignal;
 }
 
@@ -1006,6 +1015,8 @@ interface PreparedToolCall {
   displayArgs: Record<string, unknown>;
   malformed: boolean;
   builtin: boolean;
+  /** Served by the application the person is using, never here. */
+  client: boolean;
 }
 
 type SettledToolResult = { ok: McpToolResult } | { err: unknown };
@@ -1013,6 +1024,7 @@ type SettledToolResult = { ok: McpToolResult } | { err: unknown };
 function prepareToolCalls(
   calls: AccumulatedCall[],
   builtinNames: Set<string>,
+  clientToolNames: Set<string>,
   filter: PiiFilter | undefined,
 ): PreparedToolCall[] {
   return calls.map((call) => {
@@ -1024,6 +1036,7 @@ function prepareToolCalls(
       displayArgs: filter ? (restoreValues(filter, args) as Record<string, unknown>) : args,
       malformed: parsedArgs === null,
       builtin: builtinNames.has(call.name),
+      client: clientToolNames.has(call.name),
     };
   });
 }
@@ -1038,8 +1051,10 @@ async function dispatchConcurrentTools(
   const fetchDispatch = deps.fetchUrl;
   const saveDispatch = deps.saveFile;
   const settled = new Map<string, SettledToolResult>();
+  // A client tool's call is the application's to run, so it is never dispatched
+  // here — not even as the "not available" answer an unknown name gets.
   const mcpCalls = mcpDispatch
-    ? prepared.filter((entry) => !entry.builtin && !entry.malformed)
+    ? prepared.filter((entry) => !entry.builtin && !entry.malformed && !entry.client)
     : [];
   const fetchCalls: PreparedToolCall[] = [];
   if (fetchDispatch) {
@@ -1435,8 +1450,11 @@ export async function* runAgent(
     canEdit,
     canTransfer,
     images,
+    clientToolNames,
+    warnings: assemblyWarnings,
   } = assembleAgentRun(deps, {
     ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+    ...(input.clientTools ? { clientTools: input.clientTools } : {}),
     messages: input.messages,
     skills,
     ...(input.subagents ? { subagents: input.subagents } : {}),
@@ -1456,6 +1474,13 @@ export async function* runAgent(
    * transfer's target already do; what the context receives is the content and a
    * call id, never this.
    */
+  // What the assembly could not offer — an application tool shadowing a name
+  // the run already has, or past the request's room. Said before the first
+  // turn like the facade's own resolve warnings, so a tool the model never
+  // sees is not a tool the reader never hears about.
+  for (const warning of assemblyWarnings) {
+    yield { author, warning };
+  }
   const serverByTool = new Map<string, string>();
   for (const server of input.mcpServers ?? []) {
     for (const toolName of server.toolNames) {
@@ -1817,20 +1842,6 @@ export async function* runAgent(
       return;
     }
 
-    if (outputCut && !outputCutReported) {
-      // The provider cut this turn at its output cap while the model was
-      // calling tools. The loop goes on — the model reads the error results
-      // below and can retry — but the cut is announced: a truncated call plan
-      // executed silently is the same defect as a truncated answer reported
-      // as a finish.
-      outputCutReported = true;
-      yield {
-        author,
-        warning:
-          "The model's turn was cut at its output limit while it was calling tools; the run continues.",
-      };
-    }
-
     // All tool calls of one response aggregate into ONE assistant message.
     const wireToolCalls: ChannelToolCall[] = [];
     const toolMessages: ChannelMessage[] = [];
@@ -1852,15 +1863,40 @@ export async function* runAgent(
     // provider cut the turn, or a model defect — is announced and answered
     // but never dispatched: running it with `{}` would report a call the
     // model never made as a success.
-    const prepared = prepareToolCalls(calls, builtinNames, filter);
-    for (const { call, args, displayArgs, malformed } of prepared) {
+    const prepared = prepareToolCalls(calls, builtinNames, clientToolNames, filter);
+    // Whether this turn is the run's last: a call to a client tool hands the
+    // turn to the application (see `RunAgentInput.clientTools`). Decided before
+    // anything runs, because two things below are done differently for a turn
+    // nothing here will continue.
+    const endsOnClientCall = prepared.some((entry) => entry.client);
+    if (outputCut && !outputCutReported) {
+      // The provider cut this turn at its output cap while the model was
+      // calling tools. The loop goes on — the model reads the error results
+      // below and can retry — but the cut is announced: a truncated call plan
+      // executed silently is the same defect as a truncated answer reported
+      // as a finish. Unless the turn is the run's last, when nothing goes on:
+      // the application receives a call plan that may be incomplete, and the
+      // ending below says `output-limit` rather than a finish.
+      outputCutReported = true;
+      yield {
+        author,
+        warning: endsOnClientCall
+          ? "The model's turn was cut at its output limit while it was calling tools, one of them an application tool; the run ends here and the calls may be incomplete."
+          : "The model's turn was cut at its output limit while it was calling tools; the run continues.",
+      };
+    }
+    for (const { call, args, displayArgs, malformed, client } of prepared) {
       if (malformed) {
         // The model's own text is the only truthful record of arguments that
         // did not parse — re-encoding `{}` would claim it asked for nothing.
+        // A client tool's copy is not cut: the announced text is the call.
         const wireCall: ChannelToolCall = {
           id: call.id,
           type: "function",
-          function: { name: call.name, arguments: boundArgumentText(call.arguments) },
+          function: {
+            name: call.name,
+            arguments: client ? call.arguments : boundArgumentText(call.arguments),
+          },
         };
         wireToolCalls.push(wireCall);
         yield {
@@ -1871,11 +1907,20 @@ export async function* runAgent(
       }
       // Both copies bounded, and each from its own source: `args` is masked and
       // goes back to the provider, `displayArgs` has the values restored and is
-      // what a person reads.
+      // what a person reads. A client tool's announced copy is the exception:
+      // for every other tool the real call was made with the whole value and
+      // the announcement only describes it, but a client tool's call *is* the
+      // announcement — nothing else carries the arguments to the application
+      // that runs it — so a value swapped for its size would be the value the
+      // tool receives.
       wireToolCalls.push(toWireToolCall(call.id, call.name, boundToolArgs(args)));
       yield {
         author,
-        delta: { toolCalls: [toWireToolCall(call.id, call.name, boundToolArgs(displayArgs))] },
+        delta: {
+          toolCalls: [
+            toWireToolCall(call.id, call.name, client ? displayArgs : boundToolArgs(displayArgs)),
+          ],
+        },
       };
     }
 
@@ -1903,7 +1948,14 @@ export async function* runAgent(
     // four steps are not a sequence any branch gets to spell out for itself.
     const toolResult = createToolResultEmitter(author, toolMessages, resultBudget, filter);
 
-    for (const { call, args, displayArgs, builtin, malformed } of prepared) {
+    for (const { call, args, displayArgs, builtin, malformed, client } of prepared) {
+      if (client) {
+        // Announced above and answered by the application: a result from here
+        // would sit beside the real one in the next run's history. Its
+        // arguments went out as the model wrote them, parsed or not — what
+        // to make of them is the application's call.
+        continue;
+      }
       if (malformed) {
         const errorText = outputCut
           ? `Error: the arguments of this call were cut at the model's output limit and did not parse; the call was not executed. Retry it with complete arguments.`
@@ -1974,18 +2026,6 @@ export async function* runAgent(
             : deps.runSubagent(agentName, message, turn + 1, maxTurn, childImages, transcript),
           outcome,
         );
-        // A successful transfer used to leave no trace at all: only its failures
-        // yielded a result, so a reader of the finished conversation could not
-        // tell which agent had answered. Marked display-only — the child's
-        // answer returns as its own message, and replaying this marker in its
-        // place would say the delegation came back empty.
-        yield toolResult(call, `Transferred to '${agentName}'; its answer follows.`, {
-          name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
-          displayOnly: true,
-          // No `fit`: an explicit `stored` is always charged whole, since the
-          // engine wrote it and it is the same string every time.
-          stored: JSON.stringify({ result: null }),
-        });
         // A transfer's answer used to enter the context with no bound at all —
         // the one unbudgeted spot. The user already saw the child's full
         // answer stream by; only what re-enters the parent's context is cut.
@@ -2007,6 +2047,27 @@ export async function* runAgent(
         const childReply =
           answer ||
           (outcome.error ? `Error: ${outcome.error}` : "Error: the agent returned no answer.");
+        if (endsOnClientCall) {
+          // The "For context" turn below dies with the run, and the
+          // application's replay of this turn carries tool results and nothing
+          // else — so on the run's last turn the answer goes out *as* the
+          // transfer's result, where the next run will find it. Fitted like
+          // any child-sized text.
+          yield toolResult(call, childReply, { name: `${TRANSFER_TOOL_NAME}: ${agentName}` });
+        } else {
+          // A successful transfer used to leave no trace at all: only its
+          // failures yielded a result, so a reader of the finished conversation
+          // could not tell which agent had answered. Marked display-only — the
+          // child's answer returns as its own message, and replaying this
+          // marker in its place would say the delegation came back empty.
+          yield toolResult(call, `Transferred to '${agentName}'; its answer follows.`, {
+            name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
+            displayOnly: true,
+            // No `fit`: an explicit `stored` is always charged whole, since the
+            // engine wrote it and it is the same string every time.
+            stored: JSON.stringify({ result: null }),
+          });
+        }
         if (!answer) {
           // The reason reaches the reader, not only the model. Every consumer
           // drops an authored `error` chunk on the grounds that the parent
@@ -2491,6 +2552,24 @@ export async function* runAgent(
     // were fitted or inserted.
     contextBudget?.chargeMessage(assistantMessage);
     messages.push(assistantMessage, ...toolMessages, ...postContextMessages);
+    if (endsOnClientCall) {
+      // The application holds the rest of this turn: it runs the call and
+      // sends the result back as the next run's history, where this turn's
+      // own results already are. What cannot follow is said: a picture a tool
+      // returned rides on a user turn that only this loop holds, so the model
+      // will not see it again, though the reader already has it.
+      if (attachedImages.length > 0) {
+        yield {
+          author,
+          warning: `${attachedImages.length} image(s) tools returned this turn were delivered, but the model will not see them on the next run: the run ends here for the application to act.`,
+        };
+      }
+      // A finish when the model stopped because it asked for something only
+      // the other side can do; the provider's cut when it did not get to
+      // finish asking — `done` would claim a complete call plan.
+      yield outputCut ? { author, finishReason: "output-limit" } : { author, done: true };
+      return;
+    }
     turn = nextTurn;
   }
 }

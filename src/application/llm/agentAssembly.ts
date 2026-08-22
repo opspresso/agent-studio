@@ -10,6 +10,7 @@
  */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
+import { MAX_TOOLS_PER_REQUEST } from "@/domain/llm/toolLimits";
 import type { ChatMessageInput, EngineChunk, McpToolResult } from "@/domain/llm/types";
 import { SAVABLE_TYPES } from "@/domain/artifact/types";
 import { parseImageDataUrl } from "@/domain/llm/types";
@@ -267,6 +268,7 @@ function capabilityFraming(
   withSkills: boolean,
   withMcp: boolean,
   withSubagents: boolean,
+  withClientTools = false,
 ): string {
   // Stated once, here. Each section below documents only what is specific to
   // it; three sections that each also said "use me when…" would leave the model
@@ -278,6 +280,9 @@ function capabilityFraming(
       : []),
     ...(withSubagents
       ? ["transfer to an agent whose description covers the request better than your instructions do"]
+      : []),
+    ...(withClientTools
+      ? ["call an application tool when the action belongs to the application the person is using"]
       : []),
   ];
   const lines = [
@@ -606,6 +611,8 @@ export function callerBlock(caller: RunCaller, canFetchUrl = false): string {
 export interface AgentSystemPromptInput {
   /** The version's own system prompt; the engine's blocks are appended to it. */
   base?: string;
+  /** The application's own tools, as offered — the prompt says how a call to one ends. */
+  clientTools?: ChannelToolDef[];
   skills: SkillInfo[];
   subagents: SubagentInfo[];
   mcpServers: McpServerInfo[];
@@ -684,6 +691,10 @@ export function buildAgentSystemPrompt(input: AgentSystemPromptInput): string {
   if (images.canEdit || images.canTransfer) {
     sections.push(imageSystemPromptAddition(images.handles, images, toolsCanReturnImages));
   }
+  const clientTools = input.clientTools ?? [];
+  if (clientTools.length > 0) {
+    sections.push(clientToolSystemPromptAddition(clientTools));
+  }
   const blocks: string[] = [];
   // Ahead of the capability block, and outside it: the clock and the caller are
   // facts about when the run happens and who it answers, not things the run can
@@ -699,9 +710,32 @@ export function buildAgentSystemPrompt(input: AgentSystemPromptInput): string {
     blocks.push(rememberedBlock(remembered));
   }
   if (sections.length > 0) {
-    blocks.push(capabilityFraming(skills.length > 0, withMcp, subagents.length > 0), ...sections);
+    blocks.push(
+      capabilityFraming(skills.length > 0, withMcp, subagents.length > 0, clientTools.length > 0),
+      ...sections,
+    );
   }
   return withEngineBlocks(base, blocks);
+}
+
+/**
+ * What is specific to an application's tool: it runs on the other side of the
+ * conversation, so a call to one is how the turn ends. The names are not
+ * restated — the definitions are offered as functions like every other tool.
+ */
+function clientToolSystemPromptAddition(tools: readonly ChannelToolDef[]): string {
+  const rows = tools
+    .map((tool) => `| ${tool.function.name} | ${tableCell(tool.function.description ?? "")} |`)
+    .join("\n");
+  return [
+    "## Application Tools",
+    "",
+    "These tools are executed by the application the person is using, on their side — not here. Calling one ends your turn: the result arrives with the conversation once the application has run it, and you continue from there. Do not answer as if the result were already known, and do not call one you cannot wait for.",
+    "",
+    "| Tool | Description |",
+    "|------|-------------|",
+    rows,
+  ].join("\n");
 }
 
 const IMAGE_TOOL_DEF: ChannelToolDef = {
@@ -944,6 +978,13 @@ const EDIT_IMAGE_TOOL_DEF: ChannelToolDef = {
 export interface AgentToolsInput {
   /** MCP tool definitions, already aliased for name collisions. */
   mcpTools?: ChannelToolDef[];
+  /**
+   * Tools the application the person is using declared for this run, executed
+   * on its side (AG-UI's frontend tools). Offered last and cut to what the
+   * request has room for; one whose name a builtin or an MCP alias already
+   * holds is not offered, since the loop could not tell the two apart.
+   */
+  clientTools?: ChannelToolDef[];
   skills: SkillInfo[];
   subagents: SubagentInfo[];
   /**
@@ -971,9 +1012,14 @@ export interface AgentToolsInput {
   canDispatch?: boolean;
 }
 
-export function buildAgentTools(
-  input: AgentToolsInput,
-): { tools: ChannelToolDef[]; builtinNames: Set<string> } {
+export function buildAgentTools(input: AgentToolsInput): {
+  tools: ChannelToolDef[];
+  builtinNames: Set<string>;
+  /** Client tool names actually offered; the loop ends the run on a call to one. */
+  clientToolNames: Set<string>;
+  /** What could not be offered, for the reader. */
+  warnings: string[];
+} {
   const { mcpTools, skills, subagents, canLoadSkills, withImageTool, withEditTool, withUrlTool } =
     input;
   const withImageTransfer = input.withImageTransfer;
@@ -1017,7 +1063,38 @@ export function buildAgentTools(
       builtinNames.add(name);
     }
   }
-  return { tools, builtinNames };
+  const clientToolNames = new Set<string>();
+  const warnings: string[] = [];
+  if (input.clientTools && input.clientTools.length > 0) {
+    const taken = new Set(tools.map((tool) => tool.function.name));
+    const shadowed: string[] = [];
+    const offered: ChannelToolDef[] = [];
+    for (const tool of input.clientTools) {
+      const name = tool.function.name;
+      if (taken.has(name) || clientToolNames.has(name)) {
+        shadowed.push(name);
+        continue;
+      }
+      if (tools.length + offered.length >= MAX_TOOLS_PER_REQUEST) {
+        continue;
+      }
+      offered.push(tool);
+      clientToolNames.add(name);
+    }
+    tools.push(...offered);
+    if (shadowed.length > 0) {
+      warnings.push(
+        `Application tool(s) not offered because the run already has a tool by that name: ${shadowed.join(", ")}.`,
+      );
+    }
+    const dropped = input.clientTools.length - shadowed.length - offered.length;
+    if (dropped > 0) {
+      warnings.push(
+        `${dropped} application tool(s) were not offered: a request may declare at most ${MAX_TOOLS_PER_REQUEST} tools in all.`,
+      );
+    }
+  }
+  return { tools, builtinNames, clientToolNames, warnings };
 }
 
 /**
@@ -1054,11 +1131,17 @@ export interface AgentRunAssembly {
   canTransfer: boolean;
   /** Images this run can address, seeded from the input messages. */
   images: ImageRegistry;
+  /** Client tool names offered — see {@link buildAgentTools}. */
+  clientToolNames: Set<string>;
+  /** What the assembly could not offer; the loop reports these before its first turn. */
+  warnings: string[];
 }
 
 export interface AssembleAgentRunInput {
   /** The version's own system prompt. */
   systemPrompt?: string;
+  /** See {@link AgentToolsInput.clientTools}. */
+  clientTools?: ChannelToolDef[];
   /** The turn history. Inline images in it are registered when something can act on them. */
   messages?: ChatMessageInput[];
   skills?: SkillInfo[];
@@ -1115,20 +1198,9 @@ export function assembleAgentRun(
   const withUrlTool = Boolean(deps.fetchUrl);
   const withSlackTools = Boolean(deps.readSlack);
   const withSaveFileTool = Boolean(deps.saveFile);
-  const systemPrompt = buildAgentSystemPrompt({
-    ...(input.systemPrompt !== undefined ? { base: input.systemPrompt } : {}),
-    skills,
-    subagents,
-    mcpServers: input.mcpServers ?? [],
-    images: { handles: images.list(), canEdit, canTransfer },
-    ...(input.now ? { now: input.now } : {}),
-    canDispatch,
-    withUrlTool,
-    ...(input.caller ? { caller: input.caller } : {}),
-    ...(input.remembered ? { remembered: input.remembered } : {}),
-  });
-  const { tools, builtinNames } = buildAgentTools({
+  const { tools, builtinNames, clientToolNames, warnings } = buildAgentTools({
     ...(input.mcpTools ? { mcpTools: input.mcpTools } : {}),
+    ...(input.clientTools ? { clientTools: input.clientTools } : {}),
     skills,
     subagents,
     canLoadSkills: Boolean(deps.loadSkillContent),
@@ -1140,5 +1212,28 @@ export function assembleAgentRun(
     withSlackTools,
     canDispatch,
   });
-  return { systemPrompt, tools, builtinNames, subagents, canEdit, canTransfer, images };
+  const systemPrompt = buildAgentSystemPrompt({
+    ...(input.systemPrompt !== undefined ? { base: input.systemPrompt } : {}),
+    skills,
+    subagents,
+    mcpServers: input.mcpServers ?? [],
+    images: { handles: images.list(), canEdit, canTransfer },
+    ...(input.now ? { now: input.now } : {}),
+    canDispatch,
+    withUrlTool,
+    ...(input.caller ? { caller: input.caller } : {}),
+    ...(input.remembered ? { remembered: input.remembered } : {}),
+    clientTools: tools.filter((tool) => clientToolNames.has(tool.function.name)),
+  });
+  return {
+    systemPrompt,
+    tools,
+    builtinNames,
+    subagents,
+    canEdit,
+    canTransfer,
+    images,
+    clientToolNames,
+    warnings,
+  };
 }

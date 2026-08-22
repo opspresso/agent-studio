@@ -20,7 +20,7 @@
     "init-local-table:test": "DYNAMODB_ENDPOINT=http://localhost:8084 DYNAMODB_TABLE_NAME=agent-studio-test tsx scripts/init-local-table.ts"
   },
   "dependencies": {
-    "@a2a-js/sdk": "^0.3.14",
+    "@a2a-js/sdk": "^1.0.1",
     "@aws-sdk/client-bedrock-runtime": "^3.1106.0",
     "@aws-sdk/client-dynamodb": "^3.1090.0",
     "@aws-sdk/client-s3": "^3.1091.0",

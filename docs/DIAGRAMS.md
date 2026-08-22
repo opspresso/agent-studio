@@ -52,6 +52,7 @@ flowchart LR
     telegram["POST /api/telegram/webhook/{project}"]
     teams["POST /api/teams/messages/{project}"]
     a2a["POST /api/a2a/{name} (JSON-RPC)"]
+    agui["POST /api/agui/{name} (AG-UI SSE)"]
     webhook["POST /api/webhook/{project}"]
     schedule["POST /api/triggers/scan"]
   end
@@ -79,6 +80,7 @@ flowchart LR
   telegram -->|"handleTurn → runAgent"| facade
   teams -->|"handleTurn → runAgent"| facade
   a2a --> facade
+  agui -->|"streamAguiRun"| facade
   webhook -->|"triggerRunnerDeps.run"| facade
   schedule -->|"triggerRunnerDeps.run"| facade
   facade --> bracket
@@ -93,7 +95,7 @@ flowchart LR
 
 응답 모양은 표면마다 다르다: `predict`·`chat/completions` 는 완성 응답(또는 SSE), `agent` 는
 원시 청크 SSE, chat 은 자체 프레임 + 재생 로그, Slack·Telegram·Teams 는 플랫폼 메시지, A2A 는 태스크
-이벤트, 트리거는 이력 행. 청크의 계약은
+이벤트, AG-UI 는 프로토콜의 이벤트 스트림, 트리거는 이력 행. 청크의 계약은
 [ARCHITECTURE.md#enginechunk-계약](ARCHITECTURE.md#enginechunk-계약).
 
 ## 3. 런 브래킷 — 최상위 런을 감싸는 한 곳
@@ -227,7 +229,7 @@ flowchart LR
     sev["SLACKEVENT#{eventId}"]
     sthread["SLACKTHREAD#{project}#{channel}#{ts}"]
     transcript["PROJECT 파티션 안: TELEGRAMUPDATE#… · TELEGRAMALBUM#… · TEAMSACTIVITY#… · TRANSCRIPT#{conversation}#TURN#…"]
-    a2atask["A2ATASK#{project}#{taskId}"]
+    a2atask["A2ATASK#{project}#{tenant:client}<br/>TASK#{taskId}"]
   end
 ```
 

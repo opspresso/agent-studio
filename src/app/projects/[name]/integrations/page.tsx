@@ -7,6 +7,7 @@ import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { getProject, type ProjectType } from "../../lib/api";
 import { LoadingText } from "@/app/_components/PageState";
 import { A2aSection } from "./A2aSection";
+import { AguiSection } from "./AguiSection";
 import { SlackSection } from "./SlackSection";
 import { TeamsSection } from "./TeamsSection";
 import { TelegramSection } from "./TelegramSection";
@@ -26,6 +27,7 @@ export default function IntegrationsPage() {
   const viewer = useViewer();
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
   const [projectType, setProjectType] = useState<ProjectType>("agent");
+  const [published, setPublished] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,6 +38,7 @@ export default function IntegrationsPage() {
         if (!cancelled) {
           setOwnerEmail(project.ownerEmail);
           setProjectType(project.projectType);
+          setPublished(Boolean(project.publishedVersion));
         }
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load project"))
@@ -76,6 +79,8 @@ export default function IntegrationsPage() {
       <TeamsSection projectName={name} projectType={projectType} />
 
       <A2aSection projectName={name} />
+
+      <AguiSection projectName={name} published={published} />
     </Stack>
   );
 }

@@ -83,6 +83,7 @@ import { createTestModel } from "@/application/llm/testModel";
 import { createModelCatalogRefresher } from "@/application/llm/modelCatalogRefresh";
 import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
+import type { AguiDeps } from "@/application/agui/run";
 import type { PostCostAlert } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/run/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
@@ -380,6 +381,7 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   authProvider: mcpAuthProvider,
   publicBaseUrl: getPublicBaseUrl,
   internalHostSuffixes: config.mcpInternalHostSuffixes,
+  allowUnadvertisedPkce: config.mcpOauthAllowUnadvertisedPkce,
 });
 export const skillUseCases = createSkillUseCases(skillRepository);
 
@@ -938,4 +940,11 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       actor: input.actor,
     });
   },
+};
+
+/** AG-UI: the published version resolved over the same repositories, run through `executionDeps`. */
+export const aguiDeps: AguiDeps = {
+  projects: projectRepository,
+  versions: versionRepository,
+  execution: executionDeps,
 };

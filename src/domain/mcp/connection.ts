@@ -1,3 +1,4 @@
+import type { TokenEndpointAuthMethod } from "./types";
 /**
  * One project's OAuth connection to a shared registry MCP server, and the
  * short-lived record of an authorization still in flight.
@@ -26,6 +27,11 @@ export interface McpConnection {
   clientSecret?: string;
   /** True when RFC 7591 issued the credentials, so they can be re-registered. */
   clientRegistered?: boolean;
+  /**
+   * How this client proves itself at the token endpoint, when the registration
+   * recorded a method of its own. Absent means the entry's discovered method.
+   */
+  tokenEndpointAuthMethod?: TokenEndpointAuthMethod;
   /**
    * True when `clientId` is this deployment's own Client ID Metadata Document
    * URL rather than something an authorization server issued.
@@ -143,7 +149,9 @@ export interface McpConnectionRepository {
     next: Pick<
       McpConnection,
       "accessToken" | "refreshToken" | "expiresAt" | "status" | "updatedAt"
-    >,
+    > &
+      /** Set only by a scope challenge widening the grant; absent leaves the stored scopes. */
+      Partial<Pick<McpConnection, "scopes">>,
   ): Promise<boolean>;
   delete(projectName: string, serverName: string): Promise<void>;
 }

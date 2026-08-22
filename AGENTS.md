@@ -159,10 +159,10 @@ count one request may declare are all a provider's or a stored item's number —
 discovers them. The turn ceiling, the subagent depth, the transfer transcript budget and how
 many tool calls run at once are this platform's own policy, and each is read by exactly the
 loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for a while: the
-ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 120 only
+ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 115 only
 because the engine's builtins are added after the MCP tools are cut and need the room.
 
-**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 130 decisions across two
+**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 133 decisions across two
 tables, the second holding the ones the test cannot express as a pattern but that the same
 rule governs. `tests/architecture.test.ts` is what enforces both.
 
@@ -226,6 +226,9 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   natively, edits in place, the same transcript store → [design/teams.md](docs/design/teams.md)
 - **A2A** — both directions; a transfer continues the remote conversation →
   [design/agents-a2a.md](docs/design/agents-a2a.md)
+- **AG-UI** — a published project inside a user-facing app: `RunAgentInput` in, the
+  protocol's events out, the client's `threadId` as the conversation; a tool the client
+  declares ends the turn when called → [design/agui.md](docs/design/agui.md)
 - **Triggers** — one webhook, any number of schedules, published-only, deduplicated by
   conditional claims; a CronJob ticks the scan → [design/triggers.md](docs/design/triggers.md)
 - **Attribution** — `RunActor { kind, id }` names who caused a run; `RunOrigin` carries it down
@@ -304,13 +307,14 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 - **Folding a run's reasoning has a bounded list, like the image and agent-entry
   ones.** `delta.reasoningContent` is the one output axis a version can switch
   off, so a surface cannot tell "this run did not think" from "I am not reading
-  it" — which is how it reached nowhere at all for as long as it did. The four
+  it" — which is how it reached nowhere at all for as long as it did. The five
   sites (`REASONING_FOLD_SITES` in `tests/architecture.test.ts`) each pair the
   same three decisions: `isTopLevelChunk` only, the token count carried beside
   the text (the common OpenAI shape reports a count and streams nothing), and —
   for the two that hold it in component state — `createTextPacer`, because a
-  commit per token re-renders a string that only grows. A fifth is added there
-  on purpose.
+  commit per token re-renders a string that only grows. The fifth, the AG-UI
+  translator, forwards it as the protocol's `REASONING_*` events and holds nothing
+  in state. A sixth is added there on purpose.
 - **An SSE stream's keepalive cannot start until its first chunk decides the
   status.** `createSseResponse` awaits `generator.next()` before building the
   `Response`, because a refused run throws there and that is what makes it a 429

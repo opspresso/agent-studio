@@ -294,6 +294,11 @@ export interface McpAuthUseCasesDeps {
   publicBaseUrl: () => Promise<string | undefined>;
   /** DNS suffixes this deployment declared internal; see `skipsUrlGuard`. */
   internalHostSuffixes?: readonly string[];
+  /**
+   * Accept an authorization server that does not advertise PKCE. Off by
+   * default — the spec says refuse — and a deployment's choice, not an entry's.
+   */
+  allowUnadvertisedPkce?: boolean;
 }
 
 export interface McpAuthUseCases {
@@ -399,7 +404,15 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
   }
 
   async function redirectUri(): Promise<string> {
-    return `${(await publicBase()).replace(/\/+$/, "")}${MCP_OAUTH_CALLBACK_PATH}`;
+    const uri = `${(await publicBase()).replace(/\/+$/, "")}${MCP_OAUTH_CALLBACK_PATH}`;
+    // The spec's MUST for a redirect: https, or localhost. A plain-http public
+    // base would register a callback the server rejects — or worse, accepts.
+    if (!/^https:\/\//.test(uri) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(uri)) {
+      throw new ValidationError(
+        `The OAuth redirect URI must be https (or localhost); this deployment's public base URL gives ${uri}. Set PUBLIC_BASE_URL to an https address.`,
+      );
+    }
+    return uri;
   }
 
   /**
@@ -494,10 +507,19 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           "Registration endpoint",
         );
       }
-      // Only when the server states its methods and S256 is absent: many
-      // servers support PKCE without advertising it, and refusing those would
-      // block working configurations over a missing field.
+      // The spec's MUST (2026-07-28, authorization security considerations):
+      // a server that does not advertise `code_challenge_methods_supported`
+      // may be one that ignores `code_challenge`, and proceeding against it
+      // silently gives up the code-injection protection PKCE is for. Many
+      // servers do support PKCE without advertising it, which is what the
+      // deployment-level override is for — a choice an operator makes once,
+      // in the environment, not a default.
       const pkce = asMetadata.codeChallengeMethodsSupported;
+      if (!pkce && !deps.allowUnadvertisedPkce) {
+        throw new ValidationError(
+          `Authorization server does not advertise PKCE (no code_challenge_methods_supported), which this client requires. Set MCP_OAUTH_ALLOW_UNADVERTISED_PKCE=true to accept it anyway.`,
+        );
+      }
       if (pkce && !pkce.includes("S256")) {
         throw new ValidationError(
           `Authorization server does not support PKCE S256 (it offers: ${pkce.join(", ")}), which this client requires.`,
@@ -691,6 +713,11 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
             clientName: `Agent Studio — ${projectName}`,
             redirectUri: callback,
             scopes,
+            // The method the token requests will prove themselves with: a
+            // registration that said `post` while the exchange sent `basic`
+            // was refused as `invalid_client` by every server that enforces
+            // what it recorded.
+            tokenEndpointAuthMethod: server.auth.tokenEndpointAuthMethod,
           });
           fresh = {
             ...base,
@@ -699,6 +726,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
               ? { clientSecret: deps.cipher.encrypt(registered.clientSecret) }
               : {}),
             clientRegistered: true,
+            // What the server recorded wins over what was asked for.
+            ...(registered.tokenEndpointAuthMethod
+              ? { tokenEndpointAuthMethod: registered.tokenEndpointAuthMethod }
+              : {}),
           };
         } else if (server.auth.clientIdMetadataDocumentSupported) {
           // The provider's side is fine and ours is not, so saying it "supports
@@ -790,7 +821,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         ...(connection.clientSecret
           ? { clientSecret: deps.cipher.decrypt(connection.clientSecret) }
           : {}),
-        tokenEndpointAuthMethod: server.auth.tokenEndpointAuthMethod,
+        tokenEndpointAuthMethod: connection.tokenEndpointAuthMethod ?? server.auth.tokenEndpointAuthMethod,
         resource: server.auth.resource,
       };
       const tokens = await deps.oauth.exchangeCode(target, {

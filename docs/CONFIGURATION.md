@@ -285,6 +285,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다 — 직접 서빙�
 |---|---|---|---|
 | `MCP_DISCOVERY_CACHE_TTL_MS` | `60000` | — | 바인딩된 서버의 도구 목록을 얼마나 오래 재사용하는지. 키는 `url + headers` 다. 캐시가 따뜻하면 세션이 지연 연결될 수도 있어서, 도구를 하나도 부르지 않는 턴은 MCP 요청을 아예 하지 않는다. `0` 은 캐싱을 통째로 끄며, 어떤 서버 힌트도 그것을 다시 켤 수 없다. 밀리초 정수. |
 | `MCP_MAX_SERVER_TTL_MS` | `300000` (5분) | — | 서버가 `tools/list` 에서 요청할 수 있는 `ttlMs` 의 상한 (SEP-2549). `0` 은 서버 힌트를 완전히 무시하고 모든 항목을 로컬 TTL 로 되돌린다. 밀리초 정수. |
+| `MCP_OAUTH_ALLOW_UNADVERTISED_PKCE` | `false` | — | `true` 면 `code_challenge_methods_supported` 를 광고하지 않는 OAuth authorization 서버를 받아들인다. 명세는 거부하라고 하지만(PKCE 다운그레이드 방어), 광고 없이 PKCE 를 지원하는 서버가 흔하다. 배포 단위의 결정이라 env 다 — [SECURITY.md](SECURITY.md#mcp-oauth). |
 | `MCP_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | 사설 주소로 resolve 되더라도 MCP 항목이 쓸 수 있는 호스트의 DNS suffix 목록, 쉼표 구분 — 보통 `<namespace>.svc.cluster.local`. 비어 있으면 SSRF 가드는 원래 그대로다. [SECURITY.md](SECURITY.md#선언된-내부-호스트) 를 보라. |
 | `MANAGED_MCP_INSTANCE_ID` | 미설정 | — | managed MCP 컨테이너가 SSM Run Command 를 통해 기동되는 호스트. 문자 그대로의 값 `local` 은 대신 이 머신에서 Docker 를 돌린다 — 그러면 앱과 컨테이너가 loopback 인터페이스를 직접 공유하는데, 그것이 EC2 없이 이 경로를 실행해 볼 수 있는 유일한 방법이다. |
 | `MANAGED_MCP_REGISTRY` | 미설정 | — | `docker login` 이 인증하는 레지스트리. 덕분에 이 계정 자신의 이미지는 자격증명을 타이핑하지 않고도 pull 된다. 호스트가 pull 할 수 있는 다른 어떤 레지스트리의 이미지도 허용되며, 그것들에 대해서는 로그인만 건너뛴다. |
@@ -388,7 +389,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `USAGE_RETENTION_DAYS` | `400` | — | 대시보드의 184일 질의 창보다 한참 길게 유지한다. 하한은 `31` — 한 달 전체 — 인데, 월간 비용 가드가 그 달의 일별 행들을 합산하기 때문이다. 더 짧은 창은 월말로 갈수록 지출을 조용히 적게 세게 된다. |
 | `CHAT_RETENTION_DAYS` | `180` | — | chat 의 마지막 활동 시점부터 잰다. |
 | `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | 전달 이력은 운영 로그이지 보관할 기록이 아니다. |
-| `A2A_TASK_RETENTION_DAYS` | `1` | — | 일시적인 작업 상태로, `message/send` 이후 `tasks/get`/`tasks/cancel` 이 가능할 만큼만 유지한다. |
+| `A2A_TASK_RETENTION_DAYS` | `1` | — | 일시적인 작업 상태로, `SendMessage` 이후 `GetTask`/`CancelTask` 가 가능할 만큼만 유지한다. |
 | `ARTIFACT_RETENTION_DAYS` | `180` | — | 런이 만들어 낸 것의 이름을 담는 행. 기본값은 `CHAT_RETENTION_DAYS` 에 맞췄다. 그것이 이미 생성된 이미지의 실효 수명이기 때문이다. **`CHAT_RETENTION_DAYS` 이상으로 유지하라**: 더 짧으면 대화에서 아직 보이는 그림이 자기 갤러리에서 먼저 사라진다. 이 창과 버킷의 lifecycle 규칙은 서로 독립된 두 설정이다 — [OPERATIONS.md](OPERATIONS.md#행-보존) 를 보라. |
 | `AUDIT_RETENTION_DAYS` | `400` | — | 감사 기록. usage 와 함께 여기서 가장 긴 창이다: 감사 행이 답하는 질문은 그 행위로부터 한참 뒤에 던져지고, 그 행은 런당 하나가 아니라 민감한 행위당 하나다. |
 
@@ -449,7 +450,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 런이 끝날 때 MCP 세션을 해제하기 — 단계별로: 레거시 세션이 보내는 `DELETE`, 그다음 close | 각 `5s` | `src/infrastructure/mcp/session.ts` |
 | MCP OAuth well-known 문서 / 토큰 엔드포인트와 RFC 7591 등록 (상수 하나) | `10s` / `15s` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | OpenAI 형태의 원격 agent 로 가는 transfer | `120s` | `src/infrastructure/agent/dispatcher.ts` |
-| A2A 원격 agent 로 가는 transfer. `capabilities.streaming` 을 광고하는 카드에서 이 값은 교환 전체가 아니라 **침묵**에 한계를 둔다 — 타이머는 스트리밍되는 이벤트마다 리셋되고 총량은 런 데드라인이 제한한다. 광고하지 않는 카드에서는 블로킹 `message/send` 에 타이머를 리셋할 이벤트가 없으므로 같은 숫자가 요청 전체의 상한이 된다 | `120s` | `src/infrastructure/a2a/client.ts` |
+| A2A 원격 agent 로 가는 transfer. `capabilities.streaming` 을 광고하는 카드에서 이 값은 교환 전체가 아니라 **침묵**에 한계를 둔다 — 타이머는 스트리밍되는 이벤트마다 리셋되고 총량은 런 데드라인이 제한한다. 광고하지 않는 카드에서는 블로킹 `SendMessage` 에 타이머를 리셋할 이벤트가 없으므로 같은 숫자가 요청 전체의 상한이 된다 | `120s` | `src/infrastructure/a2a/client.ts` |
 | 레지스트리가 외부 agent 에 보내는 "test message" — OpenAI 형태다. `a2a` 항목의 테스트는 위의 A2A 클라이언트를 지나 그 `120s` idle 상한 아래 놓이고 뒤에 런 데드라인도 없으므로, 스트리밍 카드는 침묵으로만 제한된다 | `60s` | `src/infrastructure/agent/agentClient.ts` |
 | Slack Web API 호출 하나 / Slack 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/slack/client.ts` |
 | Telegram Bot API 호출 하나 / Telegram 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/telegram/client.ts` |

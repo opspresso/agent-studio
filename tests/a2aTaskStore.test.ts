@@ -1,15 +1,12 @@
-import type { Task, TaskState } from "@a2a-js/sdk";
+import { TaskState, type Task } from "@a2a-js/sdk";
+import { ServerCallContext } from "@a2a-js/sdk/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { agentMessage, artifact, rawPart, taskStatus, textPart } from "@/domain/a2a/protocol";
 
-/**
- * Faithful in-memory stand-in for the single table: it stores items by PK/SK and
- * evaluates the adapter's terminal-state condition exactly like DynamoDB would,
- * so the terminal-no-regress guarantee is tested end-to-end (not just mocked).
- */
 const { store, behavior, fakeClient } = vi.hoisted(() => {
   const store = new Map<string, Record<string, unknown>>();
   const behavior = { boom: false };
-  const keyOf = (k: { PK: string; SK: string }) => `${k.PK}|${k.SK}`;
+  const keyOf = (key: { PK: string; SK: string }) => `${key.PK}|${key.SK}`;
   const fakeClient = {
     async send(command: { input: Record<string, unknown> }) {
       const input = command.input;
@@ -33,6 +30,17 @@ const { store, behavior, fakeClient } = vi.hoisted(() => {
       if (input.Key) {
         return { Item: store.get(keyOf(input.Key as { PK: string; SK: string })) };
       }
+      if (input.KeyConditionExpression) {
+        const values = input.ExpressionAttributeValues as Record<string, string>;
+        return {
+          Items: [...store.values()].filter(
+            (item) =>
+              item.PK === values[":pk"] &&
+              typeof item.SK === "string" &&
+              item.SK.startsWith(values[":task"] ?? ""),
+          ),
+        };
+      }
       return {};
     },
   };
@@ -46,13 +54,23 @@ vi.mock("@/infrastructure/db/client", () => ({
 
 const { createA2aTaskStore } = await import("@/infrastructure/a2a/taskStore");
 
+const ALICE = new ServerCallContext({
+  tenant: "tenant-a",
+  user: { isAuthenticated: true, userName: "alice" },
+});
+const BOB = new ServerCallContext({
+  tenant: "tenant-a",
+  user: { isAuthenticated: true, userName: "bob" },
+});
+
 function makeTask(id: string, state: TaskState): Task {
   return {
-    kind: "task",
     id,
     contextId: "ctx-1",
-    status: { state, timestamp: "2026-01-01T00:00:00.000Z" },
+    status: taskStatus(state),
+    artifacts: [],
     history: [],
+    metadata: undefined,
   };
 }
 
@@ -63,114 +81,191 @@ beforeEach(() => {
 
 describe("createA2aTaskStore", () => {
   it("round-trips a saved task", async () => {
-    const s = createA2aTaskStore("proj-a");
-    await s.save(makeTask("t1", "working"));
-    const loaded = await s.load("t1");
+    const tasks = createA2aTaskStore("proj-a");
+    await tasks.save(makeTask("t1", TaskState.TASK_STATE_WORKING), ALICE);
+    const loaded = await tasks.load("t1", ALICE);
     expect(loaded?.id).toBe("t1");
-    expect(loaded?.status.state).toBe("working");
+    expect(loaded?.status?.state).toBe(TaskState.TASK_STATE_WORKING);
   });
 
-  it("isolates tasks by project (another project's store cannot load it)", async () => {
-    await createA2aTaskStore("proj-a").save(makeTask("shared-id", "working"));
-    expect(await createA2aTaskStore("proj-b").load("shared-id")).toBeUndefined();
+  it("isolates tasks by project and authenticated caller", async () => {
+    await createA2aTaskStore("proj-a").save(
+      makeTask("shared-id", TaskState.TASK_STATE_WORKING),
+      ALICE,
+    );
+    expect(await createA2aTaskStore("proj-b").load("shared-id", ALICE)).toBeUndefined();
+    expect(await createA2aTaskStore("proj-a").load("shared-id", BOB)).toBeUndefined();
   });
 
-  it("returns undefined for a non-existent task", async () => {
-    expect(await createA2aTaskStore("proj-a").load("missing")).toBeUndefined();
-  });
-
-  it("treats an expired row as absent (TTL read filter)", async () => {
-    // Physical TTL purge lags, so reads must drop already-expired rows.
-    store.set("A2ATASK#proj-a#t1|META", {
-      PK: "A2ATASK#proj-a#t1",
-      SK: "META",
-      state: "completed",
-      task: makeTask("t1", "completed"),
-      expiresAt: 1, // 1970 — long past
+  it("returns undefined for a missing or expired task", async () => {
+    const tasks = createA2aTaskStore("proj-a");
+    expect(await tasks.load("missing", ALICE)).toBeUndefined();
+    store.set("A2ATASK#proj-a#tenant-a%3Aalice|TASK#t1", {
+      PK: "A2ATASK#proj-a#tenant-a%3Aalice",
+      SK: "TASK#t1",
+      state: TaskState.TASK_STATE_COMPLETED,
+      task: makeTask("t1", TaskState.TASK_STATE_COMPLETED),
+      expiresAt: 1,
     });
-    expect(await createA2aTaskStore("proj-a").load("t1")).toBeUndefined();
+    expect(await tasks.load("t1", ALICE)).toBeUndefined();
   });
 
   it("allows non-terminal progression", async () => {
-    const s = createA2aTaskStore("proj-a");
-    await s.save(makeTask("t1", "submitted"));
-    await s.save(makeTask("t1", "working"));
-    await s.save(makeTask("t1", "input-required"));
-    expect((await s.load("t1"))?.status.state).toBe("input-required");
+    const tasks = createA2aTaskStore("proj-a");
+    await tasks.save(makeTask("t1", TaskState.TASK_STATE_SUBMITTED), ALICE);
+    await tasks.save(makeTask("t1", TaskState.TASK_STATE_WORKING), ALICE);
+    await tasks.save(makeTask("t1", TaskState.TASK_STATE_INPUT_REQUIRED), ALICE);
+    expect((await tasks.load("t1", ALICE))?.status?.state).toBe(
+      TaskState.TASK_STATE_INPUT_REQUIRED,
+    );
   });
 
-  it("never overwrites a terminal task (no regression)", async () => {
-    const s = createA2aTaskStore("proj-a");
-    await s.save(makeTask("t1", "completed"));
-    await s.save(makeTask("t1", "working")); // must be a no-op
-    expect((await s.load("t1"))?.status.state).toBe("completed");
+  it("never overwrites a terminal task", async () => {
+    const tasks = createA2aTaskStore("proj-a");
+    await tasks.save(makeTask("t1", TaskState.TASK_STATE_COMPLETED), ALICE);
+    await tasks.save(makeTask("t1", TaskState.TASK_STATE_WORKING), ALICE);
+    expect((await tasks.load("t1", ALICE))?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
   });
 
   it("resolves a complete/cancel race to the first terminal transition", async () => {
-    const s = createA2aTaskStore("proj-a");
-    await s.save(makeTask("t1", "working"));
-    await s.save(makeTask("t1", "canceled")); // cancel lands first
-    // The completion loop finishes later and tries to persist — swallowed.
-    await expect(s.save(makeTask("t1", "completed"))).resolves.toBeUndefined();
-    expect((await s.load("t1"))?.status.state).toBe("canceled");
+    const tasks = createA2aTaskStore("proj-a");
+    await tasks.save(makeTask("t1", TaskState.TASK_STATE_WORKING), ALICE);
+    await tasks.save(makeTask("t1", TaskState.TASK_STATE_CANCELED), ALICE);
+    await expect(
+      tasks.save(makeTask("t1", TaskState.TASK_STATE_COMPLETED), ALICE),
+    ).resolves.toBeUndefined();
+    expect((await tasks.load("t1", ALICE))?.status?.state).toBe(TaskState.TASK_STATE_CANCELED);
   });
 
   it("propagates non-conditional write errors", async () => {
     behavior.boom = true;
-    await expect(createA2aTaskStore("proj-a").save(makeTask("t1", "working"))).rejects.toThrow(
-      /network partition/,
+    await expect(
+      createA2aTaskStore("proj-a").save(makeTask("t1", TaskState.TASK_STATE_WORKING), ALICE),
+    ).rejects.toThrow(/network partition/);
+  });
+
+  it("preserves small raw parts", async () => {
+    const tasks = createA2aTaskStore("proj-a");
+    const task = makeTask("t1", TaskState.TASK_STATE_COMPLETED);
+    task.artifacts = [artifact("image", [rawPart("AAAA", "image/png")])];
+    await tasks.save(task, ALICE);
+    const part = (await tasks.load("t1", ALICE))?.artifacts[0]?.parts[0];
+    expect(part?.content?.$case === "raw" ? Buffer.from(part.content.value).toString("base64") : "").toBe(
+      "AAAA",
     );
   });
 
-  it("preserves small inline file bytes", async () => {
-    const s = createA2aTaskStore("proj-a");
-    const task = makeTask("t1", "completed");
-    task.artifacts = [
-      { artifactId: "image", parts: [{ kind: "file", file: { bytes: "AAAA", mimeType: "image/png" } }] },
-    ];
-    await s.save(task);
-    const loaded = await s.load("t1");
-    const part = loaded?.artifacts?.[0]?.parts?.[0];
-    expect(part?.kind === "file" && "bytes" in part.file && part.file.bytes).toBe("AAAA");
+  it("drops oversized raw bytes before dropping task state", async () => {
+    const tasks = createA2aTaskStore("proj-a");
+    const task = makeTask("t1", TaskState.TASK_STATE_COMPLETED);
+    task.artifacts = [artifact("image", [rawPart("A".repeat(400_000), "image/png")])];
+    await tasks.save(task, ALICE);
+    const loaded = await tasks.load("t1", ALICE);
+    const part = loaded?.artifacts[0]?.parts[0];
+    expect(part?.content?.$case === "raw" ? part.content.value.byteLength : -1).toBe(0);
+    expect(part?.mediaType).toBe("image/png");
+    expect(loaded?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
   });
 
-  it("drops oversized inline file bytes to stay under the item limit", async () => {
-    const s = createA2aTaskStore("proj-a");
-    const task = makeTask("t1", "completed");
-    task.artifacts = [
+  it("drops history before artifacts when the item is too large", async () => {
+    const tasks = createA2aTaskStore("proj-a");
+    const task = makeTask("t1", TaskState.TASK_STATE_COMPLETED);
+    task.history = [agentMessage("m1", "ctx-1", "t1", "x".repeat(400_000))];
+    task.artifacts = [artifact("a1", [textPart("small")])];
+    await tasks.save(task, ALICE);
+    const loaded = await tasks.load("t1", ALICE);
+    expect(loaded?.history).toEqual([]);
+    expect(loaded?.artifacts).toEqual([artifact("a1", [textPart("small")])]);
+  });
+
+  it("degrades to state and metadata when artifacts alone exceed the item limit", async () => {
+    const tasks = createA2aTaskStore("proj-a");
+    const task = makeTask("t1", TaskState.TASK_STATE_COMPLETED);
+    task.artifacts = [artifact("a1", [textPart("x".repeat(400_000))])];
+    await tasks.save(task, ALICE);
+    const loaded = await tasks.load("t1", ALICE);
+    expect(loaded?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+    expect(loaded?.history).toEqual([]);
+    expect(loaded?.artifacts).toEqual([]);
+  });
+
+  it("lists only the caller's tasks with filtering, projection, and pagination", async () => {
+    const tasks = createA2aTaskStore("proj-a");
+    const first = makeTask("t1", TaskState.TASK_STATE_COMPLETED);
+    first.status = { ...taskStatus(TaskState.TASK_STATE_COMPLETED), timestamp: "2026-01-01T00:00:00Z" };
+    first.artifacts = [artifact("a1", [textPart("one")])];
+    first.history = [agentMessage("m1", "ctx-1", "t1", "old"), agentMessage("m2", "ctx-1", "t1", "new")];
+    const second = makeTask("t2", TaskState.TASK_STATE_COMPLETED);
+    second.status = { ...taskStatus(TaskState.TASK_STATE_COMPLETED), timestamp: "2026-01-02T00:00:00Z" };
+    second.artifacts = [artifact("a2", [textPart("two")])];
+    second.history = [agentMessage("m3", "ctx-1", "t2", "second")];
+    await tasks.save(first, ALICE);
+    await tasks.save(second, ALICE);
+    await tasks.save(makeTask("bob", TaskState.TASK_STATE_COMPLETED), BOB);
+
+    const page = await tasks.list(
       {
-        artifactId: "image",
-        parts: [{ kind: "file", file: { bytes: "A".repeat(400_000), mimeType: "image/png" } }],
+        tenant: "tenant-a",
+        contextId: "ctx-1",
+        status: TaskState.TASK_STATE_COMPLETED,
+        pageSize: 1,
+        pageToken: "",
+        historyLength: 1,
+        statusTimestampAfter: "2026-01-01T00:00:00Z",
+        includeArtifacts: false,
       },
-    ];
-    await s.save(task);
-    const loaded = await s.load("t1");
-    const part = loaded?.artifacts?.[0]?.parts?.[0];
-    expect(part?.kind === "file" && "bytes" in part.file && part.file.bytes).toBe("");
-    // Non-byte metadata survives.
-    expect(part?.kind === "file" && part.file.mimeType).toBe("image/png");
-    expect(loaded?.status.state).toBe("completed");
+      ALICE,
+    );
+    expect(page.totalSize).toBe(2);
+    expect(page.tasks.map((task) => task.id)).toEqual(["t2"]);
+    expect(page.tasks[0]?.artifacts).toEqual([]);
+    expect(page.tasks[0]?.history).toHaveLength(1);
+    expect(page.nextPageToken).not.toBe("");
+
+    // A newer task arriving between pages must not shift an offset and make
+    // the last task from page one appear again on page two.
+    const newer = makeTask("t3", TaskState.TASK_STATE_COMPLETED);
+    newer.status = {
+      ...taskStatus(TaskState.TASK_STATE_COMPLETED),
+      timestamp: "2026-01-03T00:00:00Z",
+    };
+    await tasks.save(newer, ALICE);
+
+    const next = await tasks.list(
+      {
+        tenant: "tenant-a",
+        contextId: "ctx-1",
+        status: TaskState.TASK_STATE_COMPLETED,
+        pageSize: 1,
+        pageToken: page.nextPageToken,
+        historyLength: 0,
+        statusTimestampAfter: undefined,
+        includeArtifacts: true,
+      },
+      ALICE,
+    );
+    expect(next.tasks.map((task) => task.id)).toEqual(["t1"]);
+    expect(next.tasks[0]?.artifacts).toHaveLength(1);
+    expect(next.tasks[0]?.history).toEqual([]);
   });
 
-  it("degrades to state + metadata when non-byte content exceeds the item limit", async () => {
-    // History/text with no inline file bytes can still blow the 400KB item
-    // limit; stripping bytes alone would leave it oversized, so the store must
-    // drop history/artifacts and keep the task retrievable rather than throw.
-    const s = createA2aTaskStore("proj-a");
-    const task = makeTask("t1", "completed");
-    task.history = [
-      { kind: "message", role: "agent", messageId: "m1", parts: [{ kind: "text", text: "x".repeat(400_000) }] },
-    ];
-    task.artifacts = [{ artifactId: "a1", parts: [{ kind: "text", text: "small" }] }];
-
-    await expect(s.save(task)).resolves.toBeUndefined();
-
-    const loaded = await s.load("t1");
-    // State + metadata stay retrievable; the bulky collections are dropped.
-    expect(loaded?.status.state).toBe("completed");
-    expect(loaded?.id).toBe("t1");
-    expect(loaded?.contextId).toBe("ctx-1");
-    expect(loaded?.history).toBeUndefined();
-    expect(loaded?.artifacts).toBeUndefined();
+  it("rejects invalid ListTasks bounds and page tokens", async () => {
+    const tasks = createA2aTaskStore("proj-a");
+    const base = {
+      tenant: "tenant-a",
+      contextId: "",
+      status: TaskState.TASK_STATE_UNSPECIFIED,
+      pageToken: "",
+      historyLength: undefined,
+      statusTimestampAfter: undefined,
+      includeArtifacts: false,
+    };
+    await expect(tasks.list({ ...base, pageSize: 0 }, ALICE)).rejects.toThrow(/pageSize/);
+    await expect(tasks.list({ ...base, pageSize: 10, pageToken: "invalid" }, ALICE)).rejects.toThrow(
+      /pageToken/,
+    );
+    await expect(tasks.list({ ...base, pageSize: 10, historyLength: -1 }, ALICE)).rejects.toThrow(
+      /historyLength/,
+    );
   });
 });

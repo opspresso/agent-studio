@@ -30,12 +30,29 @@ export type RemoteAgentReply =
        */
       contextId?: string;
     }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      /**
+       * The remote stopped to ask for input (`input-required`) rather than
+       * failing: `error` carries its question, and the next transfer from
+       * this conversation continues the same task by sending both ids back.
+       */
+      continuation?: RemoteAgentContinuation;
+    };
+
+/** The remote task a conversation is parked on, waiting for its next message. */
+export interface RemoteAgentContinuation {
+  contextId: string;
+  taskId: string;
+}
 
 /** What a transfer may say about the conversation it continues. */
 export interface RemoteAgentSendOptions {
   /** The remote `contextId` an earlier transfer from this conversation received. */
   contextId?: string;
+  /** The task an earlier transfer left waiting for input; the message continues it. */
+  taskId?: string;
 }
 
 export type RemoteAgentProbeReply = { ok: true; text: string } | { ok: false; error: string };

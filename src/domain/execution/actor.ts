@@ -154,7 +154,7 @@ export interface RunOrigin {
  * schedule occurrence are one-shot. Nobody asks a follow-up question in a
  * firing, so a firing has no conversation rather than a conversation of one.
  */
-export type RunSurface = "chat" | "slack" | "telegram" | "teams" | "a2a" | "api";
+export type RunSurface = "chat" | "slack" | "telegram" | "teams" | "a2a" | "agui" | "api";
 
 /**
  * Where a run's conversation is: the surface, and that surface's own id for it.

@@ -50,6 +50,26 @@ const CONVERSATION_HEADER = { "X-Conversation-Id": "$CONVERSATION_ID" } as const
 const CONVERSATION_NOTE =
   " Send the same X-Conversation-Id on the follow-up questions of one conversation: the run then carries it — an A2A subagent it transfers to continues the remote conversation the first question opened, and every MCP server it calls is told which conversation is asking. Optional; without it each request is its own conversation.";
 
+/**
+ * The shortest `@ag-ui/client` program that talks to a project — shown on the
+ * API Reference and on the Integrations tab, from one place so the two cannot
+ * drift. A placeholder stands for the token, never a value.
+ */
+export function aguiClientExample(url: string): string {
+  return [
+    'import { HttpAgent } from "@ag-ui/client";',
+    "",
+    "const agent = new HttpAgent({",
+    `  url: "${url}",`,
+    `  headers: { Authorization: "Bearer ${PLACEHOLDERS.token}" },`,
+    '  initialMessages: [{ id: crypto.randomUUID(), role: "user", content: "Hello" }],',
+    "});",
+    "",
+    "const result = await agent.runAgent();",
+    "console.log(result.newMessages);",
+  ].join("\n");
+}
+
 /** A request/response field row. `type` is a display string, not a real TS type. */
 export interface FieldSpec {
   name: string;
@@ -454,6 +474,46 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     }
   }
 
+  // AG-UI: every published project, whatever its type — the run goes through
+  // `streamProjectRun`, so a chat panel can show a prompt project's answer and
+  // an image project's picture as readily as an agent's tool loop.
+  if (publishedVersion) {
+    const aguiPath = `/api/agui/${projectName}`;
+    const aguiBody = {
+      threadId: "thread-1",
+      runId: "run-1",
+      messages: [{ id: "m1", role: "user", content: "hi" }],
+      tools: [],
+      context: [],
+    };
+    endpoints.push({
+      id: "agui",
+      method: "POST",
+      path: aguiPath,
+      title: "AG-UI run",
+      description:
+        "Runs the published version for an AG-UI client (CopilotKit, @ag-ui/client) and streams the protocol's events: RUN_STARTED, TEXT_MESSAGE_*, TOOL_CALL_* with TOOL_CALL_RESULT, REASONING_* when the version records its thinking, STEP_* for subagents, ACTIVITY_SNAPSHOT (activityType agent-studio.image / agent-studio.file) for a picture or a file the run produced, CUSTOM agent-studio.warning for what the run lost, and RUN_FINISHED carrying usage and result.termination, or RUN_ERROR. " +
+        "threadId is the run's conversation — send the same one on every run of a thread. Tools the client declares are offered to an agent project and executed by the client: a turn that calls one ends the run, and the results come back as tool messages in the next run's history. A user turn may carry text, image and document parts; context and a non-empty state reach the model as a read-only system turn. " +
+        "Call it from your own server (a CopilotKit runtime, a backend): the token is a server credential and the endpoint sends no CORS headers. The stream closes after the terminal event, with no [DONE] frame.",
+      auth: "token",
+      streaming: true,
+      requestFields: [
+        { name: "threadId", type: "string", required: true, description: "The client's conversation id; the run's conversation." },
+        { name: "runId", type: "string", required: true, description: "The client's id for this run; echoed on RUN_STARTED and RUN_FINISHED." },
+        { name: "messages", type: "array[object]", required: true, description: "AG-UI messages (developer, system, user, assistant, tool, reasoning). A user turn may carry text, image and document parts; may be empty." },
+        { name: "tools", type: "array[object]", description: "Tools the client executes: { name, description, parameters }. Offered to agent projects only." },
+        { name: "context", type: "array[object]", description: "{ description, value } facts the application holds; placed ahead of the history as a system turn." },
+        { name: "state", type: "any", description: "Shared with the model read-only, as JSON in the system turn. Never updated: no STATE_SNAPSHOT is sent back." },
+        { name: "forwardedProps", type: "any", description: "Accepted and ignored." },
+      ],
+      errorCodes: [400, 401, 404],
+      codeExamples: [
+        curlExample({ method: "POST", url: abs(aguiPath), auth: "token", body: aguiBody, streaming: true }),
+        { language: "javascript", label: "@ag-ui/client", code: aguiClientExample(abs(aguiPath)) },
+      ],
+    });
+  }
+
   // The project webhook: shown once it is switched on, and deliberately not
   // gated on a published version — the address is live either way, and what it
   // answers without one is the `no-published-version` status documented below.
@@ -513,7 +573,13 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       responseExample: pretty({
         name: projectName,
         description: "…",
-        url: abs(`/api/a2a/${projectName}`),
+        supportedInterfaces: [
+          {
+            url: abs(`/api/a2a/${projectName}`),
+            protocolBinding: "JSONRPC",
+            protocolVersion: "1.0",
+          },
+        ],
       }),
       errorCodes: [404],
       codeExamples: [curlExample({ method: "GET", url: abs(cardPath), auth: "public" })],
@@ -523,8 +589,14 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     const rpcBody = {
       jsonrpc: "2.0",
       id: 1,
-      method: "message/send",
-      params: { message: { role: "user", parts: [{ kind: "text", text: "hi" }] } },
+      method: "SendMessage",
+      params: {
+        message: {
+          messageId: "message-1",
+          role: "ROLE_USER",
+          parts: [{ text: "hi", mediaType: "text/plain" }],
+        },
+      },
     };
     endpoints.push({
       id: "a2a-rpc",
@@ -532,16 +604,30 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: rpcPath,
       title: "A2A JSON-RPC",
       description:
-        "JSON-RPC endpoint (message/send, message/stream, tasks/get, tasks/cancel), authenticated with the X-A2A-Key header.",
+        "A2A 1.0 JSON-RPC endpoint, authenticated with X-A2A-Key and negotiated with A2A-Version: 1.0.",
       auth: "a2a-key",
       streaming: false,
       requestFields: [
         { name: "jsonrpc", type: "string", required: true, description: 'Must be "2.0".' },
-        { name: "method", type: "string", required: true, description: "message/send | message/stream | tasks/get | tasks/cancel." },
+        {
+          name: "method",
+          type: "string",
+          required: true,
+          description:
+            "SendMessage | SendStreamingMessage | GetTask | CancelTask | ResubscribeTask | ListTasks.",
+        },
         { name: "params", type: "object", required: true, description: "Method params (e.g. the A2A message)." },
       ],
       errorCodes: [401, 503],
-      codeExamples: [curlExample({ method: "POST", url: abs(rpcPath), auth: "a2a-key", body: rpcBody })],
+      codeExamples: [
+        curlExample({
+          method: "POST",
+          url: abs(rpcPath),
+          auth: "a2a-key",
+          body: rpcBody,
+          extraHeaders: { "A2A-Version": "1.0" },
+        }),
+      ],
     });
   }
 

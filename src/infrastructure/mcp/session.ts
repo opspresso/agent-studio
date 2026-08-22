@@ -39,6 +39,7 @@
 
 import {
   Client,
+  InsufficientScopeError,
   SdkError,
   SdkErrorCode,
   SdkHttpError,
@@ -49,6 +50,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/client";
 import type { McpTool } from "@/domain/mcp/types";
+import { version as APP_VERSION } from "../../../package.json";
 export type { McpTool };
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { cutCodePoints } from "@/shared/utf8Text";
@@ -105,8 +107,26 @@ const MAX_TOOL_PAGES = 64;
  */
 const MAX_MCP_RESPONSE_BYTES = 14_500_000;
 
-/** How this client names itself to a server. */
-const CLIENT_INFO = { name: "agent-studio", version: "0.1.0" } as const;
+/** How this client names itself to a server: the deployment's own version, not a frozen one. */
+export const MCP_CLIENT_INFO = { name: "agent-studio", version: APP_VERSION } as const;
+
+/**
+ * What a 401 or 403 said in `WWW-Authenticate`, kept by the session that
+ * received it. The SDK's errors carry the status and the body, not the
+ * header, and the header is where a server names the scopes it wants
+ * (`insufficient_scope`) — the one answer that turns "unreachable" into
+ * "needs a wider grant".
+ */
+export interface McpChallenge {
+  status: number;
+  scope?: string;
+  error?: string;
+}
+
+/** Whether a challenge is the server asking for a wider grant rather than refusing the token. */
+export function isScopeChallenge(challenge: McpChallenge | undefined): challenge is McpChallenge {
+  return challenge?.status === 403 && challenge.error === "insufficient_scope";
+}
 
 /**
  * What one discovery learned: the catalogue, and how long the server says it
@@ -131,7 +151,10 @@ export interface McpDiscovery {
  * ceiling is applied to the stream rather than after it, because "read it and
  * check the length" spends the memory before it decides.
  */
-function boundedFetch(loopback: boolean, runSignal: () => AbortSignal | undefined): FetchLike {
+function boundedFetch(
+  loopback: boolean,
+  runSignal: () => AbortSignal | undefined,
+): FetchLike {
   const send = loopback ? fetch : fetchPublicUrl;
   return async (url, init) => {
     const response = await send(url, withSignal(init, runSignal()));
@@ -196,7 +219,6 @@ export class McpSession {
    * release, and releasing it is the one request that must outlive the run.
    */
   private tearingDown = false;
-
   constructor(
     private readonly url: string,
     private readonly headers: Record<string, string>,
@@ -243,13 +265,21 @@ export class McpSession {
 
   private async connect(): Promise<Client> {
     const transport = new StreamableHTTPClientTransport(new URL(this.url), {
-      fetch: boundedFetch(this.loopback, () => (this.tearingDown ? undefined : this.signal)),
+      fetch: boundedFetch(
+        this.loopback,
+        () => (this.tearingDown ? undefined : this.signal),
+      ),
+      // This deployment owns OAuth outside the SDK. Let the transport parse
+      // the exact response's challenge and return it as a typed error; a
+      // session-global "last challenge" races when one model turn calls tools
+      // concurrently.
+      onInsufficientScope: "throw",
       // The registry entry's own headers — a bearer token, a tenant id. Applied
       // as transport defaults so every request carries them, including the
       // era probe, which is the first request a server ever sees from us.
       requestInit: { headers: this.headers },
     });
-    const client = new Client(CLIENT_INFO, {
+    const client = new Client(MCP_CLIENT_INFO, {
       // Probe first, handshake if the probe is not recognised — which is what
       // lets one registry hold servers on either era. Neither of the SDK's
       // other modes will do: `'legacy'` is the default and would make this a
@@ -485,6 +515,8 @@ export class McpHttpError extends Error {
     /** The request this failed, kept so a reading may depend on which one it was. */
     readonly method: string,
     message?: string,
+    /** The authentication challenge from this request, never another concurrent call's. */
+    readonly challenge?: McpChallenge,
   ) {
     super(message ?? `${method} failed: HTTP ${status}`);
     this.name = "McpHttpError";
@@ -511,6 +543,14 @@ const MAX_FAILURE_TEXT_CHARS = 400;
  * unbounded at the source.
  */
 function asMcpError(error: unknown, method: string): unknown {
+  if (error instanceof InsufficientScopeError) {
+    const challenge: McpChallenge = {
+      status: 403,
+      error: "insufficient_scope",
+      ...(error.requiredScope ? { scope: error.requiredScope } : {}),
+    };
+    return new McpHttpError(403, method, boundedFailure(method, 403, error.message), challenge);
+  }
   if (error instanceof UnauthorizedError) {
     return new McpHttpError(401, method, boundedFailure(method, 401, error.message));
   }
@@ -554,6 +594,11 @@ export function isTimeout(error: unknown): boolean {
  */
 export function isUnauthorized(error: unknown): boolean {
   return error instanceof McpHttpError && error.status === 401;
+}
+
+/** The wider OAuth grant this exact failed request asked for, if it did. */
+export function scopeChallengeOf(error: unknown): McpChallenge | undefined {
+  return error instanceof McpHttpError && isScopeChallenge(error.challenge) ? error.challenge : undefined;
 }
 
 /**
