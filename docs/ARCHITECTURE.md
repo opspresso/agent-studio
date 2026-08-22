@@ -309,12 +309,13 @@ dispatch 를 건너뛰는 방식이다. 요청을 추적하려면 dispatch 층�
 | Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (`TelegramEventDeps` 경유) — Slack 과 같은 공유 파이프라인 ([design/messaging.md](design/messaging.md)) |
 | Teams | `/api/teams/messages/[project]` → `handleTeamsActivity` → `handleTurn` | `executeAgent` (`TeamsEventDeps` 경유) — 같은 파이프라인 |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
+| AG-UI | `POST /api/agui/[name]` → `streamAguiRun` | `streamProjectRun` — 채팅 패널은 어느 타입이든 그릴 수 있으므로 image project 도 거절하지 않는다. 청크는 `src/application/agui/events.ts` 가 프로토콜의 이벤트로 바꾼다 ([design/agui.md](design/agui.md)) |
 | Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`container.ts` 에서 `triggerRunnerDeps.run` 으로 바인딩) — image project 를 거절하지 않고 스트리밍하는 유일한 dispatch 다. firing 의 행은 텍스트를 담으므로, 그림을 그렸다는 사실을 기록한다 |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
 
 ```mermaid
 flowchart LR
-  subgraph surfaces["열 개의 진입점"]
+  subgraph surfaces["열한 개의 진입점"]
     predict["predict"]
     cc["chat/completions"]
     agentsse["agent SSE"]
@@ -323,6 +324,7 @@ flowchart LR
     telegram["Telegram 업데이트"]
     teams["Teams activity"]
     a2a["A2A JSON-RPC"]
+    agui["AG-UI 이벤트"]
     webhook["webhook trigger"]
     schedule["schedule scan"]
   end
@@ -346,6 +348,7 @@ flowchart LR
   telegram --> facade
   teams --> facade
   a2a --> facade
+  agui --> facade
   webhook --> facade
   schedule --> facade
   predict -.-> imageuc
@@ -545,17 +548,17 @@ chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. *
 
 | 필드 | 내보내는 곳 | 소비하는 곳 |
 |---|---|---|
-| `delta.content` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) | top-level 만: chat 영속화, chat 봇의 응답 sink(Slack, Telegram, Teams), OpenAI chunk, A2A artifact, 클라이언트 답변 말풍선 |
-| `delta.reasoningContent` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) — 단 **버전이 `parameters.reasoningTrace` 를 켰을 때만**. 턴 사이는 답변과 같은 빈 줄로 갈린다. 게이트는 yield 에만 걸린다: 그 턴의 `reasoning_content` 는 어느 쪽이든 assistant 메시지에 실려 프로바이더로 돌아가고, 그것이 컨텍스트 예산에 과금된다 | top-level 만: chat 영속화(`AssistantChatMessage.reasoning`, **보여 주기만 하고 히스토리로 리플레이하지 않는다**), 클라이언트의 라이브 턴, 콘솔의 Playground 와 Compare. OpenAI 두 모양·A2A·messaging 파이프라인·`/predict` 의 collected 응답·trace recorder 는 **읽지 않는다**. 런 로그는 프레임 대신 메모 한 줄을 넣는다 — 토큰 단위로 오는 프레임이 재생 버퍼에서 답변을 밀어내기 때문 |
-| `delta.toolCalls` | 턴이 툴을 요청할 때 엔진이 (표시용 인자와 함께) | 클라이언트의 툴 호출 렌더링, chat 봇의 진행 표시(Slack 의 상태 줄이나 체크리스트, Telegram·Teams 의 입력 중 표시) |
-| `toolResult` | 각 툴이 끝난 뒤 엔진이 | chat 의 툴 행(화면에 표시되고, 최근 N 턴에 대해서는 컨텍스트로 리플레이된다), 클라이언트 툴 패널 |
-| `warning` | 런이 무언가를 잃는 모든 자리: 셋업 시점에는 쓸 수 없었던 바인딩(삭제된 skill/subagent, 도달 불가하거나 차단된 MCP 서버, 런당 상한을 넘은 tool), 런 도중에는 턴 또는 출력 한도, 컨텍스트 예산 절단, 잘린 transfer transcript, 실패한 transfer, 버려진 document | chat 경고 배너, chat 봇의 경고 꼬리말(Slack, Telegram, Teams), `Trace.warnings`. 절대 스트림을 끝내지 않는다 |
-| `image` | GenerateImage / EditImage 빌트인, 그리고 image project subagent | **author 와 무관하게** 소비된다(agent 가 그림을 그리는 방법이 곧 image subagent 에 위임하는 것이다): chat 이미지 영속화(S3), chat 봇의 업로드(Slack, Telegram, Teams), OpenAI `images` 확장, 클라이언트 갤러리 |
-| `file` | 그림이 아닌 바이트를 반환한 툴 — 렌더링된 문서, 내보내기 파일 | `image` 의 열 개 소비자가 이것을 절대 보지 않도록 정확히 그 이유로 별도의 축이다: chat 은 참조를 영속화하고 다운로드로 제공하며(assistant 메시지의 `files`, 저장될 파일 이름과 함께 읽을 때마다 서명된다), 런 로그는 대신 메모를 넣는다. 바이트는 그것을 저장한 브래킷이 걷어내며 **모델의 컨텍스트에 절대 들어가지 않는다** — 파일을 지목하는 것은 툴 결과 텍스트다. 이름과 media type 은 서버에서 오므로, 그것으로 무언가를 만들기 전에 둘 다 방어적으로 읽는다(`safeFileName`/`baseMediaType`). `image` 를 읽는 모든 표면은 이것도 읽는다 — `/predict` 와 두 OpenAI 모양은 `files` 확장으로 싣고, `/agent` 는 프레임에서 키를 서명된 `url` 로 바꾸며, A2A 는 uri 로 주소가 매겨진 file part 를 발행하고, messaging 파이프라인은 Slack·Telegram·Teams 응답 아래 링크하며, trigger 의 행은 그것을 이름으로 적는다. 해석은 `producedFiles.ts` 가 소유한다. 한 축을 읽으면서 다른 축을 읽지 않는 모듈은 `tests/architecture.test.ts` 를 실패시킨다 |
+| `delta.content` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) | top-level 만: chat 영속화, chat 봇의 응답 sink(Slack, Telegram, Teams), OpenAI chunk, A2A artifact, AG-UI 텍스트 메시지, 클라이언트 답변 말풍선 |
+| `delta.reasoningContent` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) — 단 **버전이 `parameters.reasoningTrace` 를 켰을 때만**. 턴 사이는 답변과 같은 빈 줄로 갈린다. 게이트는 yield 에만 걸린다: 그 턴의 `reasoning_content` 는 어느 쪽이든 assistant 메시지에 실려 프로바이더로 돌아가고, 그것이 컨텍스트 예산에 과금된다 | top-level 만: chat 영속화(`AssistantChatMessage.reasoning`, **보여 주기만 하고 히스토리로 리플레이하지 않는다**), 클라이언트의 라이브 턴, 콘솔의 Playground 와 Compare, AG-UI 의 `REASONING_*` 이벤트. OpenAI 두 모양·A2A·messaging 파이프라인·`/predict` 의 collected 응답·trace recorder 는 **읽지 않는다**. 런 로그는 프레임 대신 메모 한 줄을 넣는다 — 토큰 단위로 오는 프레임이 재생 버퍼에서 답변을 밀어내기 때문 |
+| `delta.toolCalls` | 턴이 툴을 요청할 때 엔진이 (표시용 인자와 함께) | 클라이언트의 툴 호출 렌더링, chat 봇의 진행 표시(Slack 의 상태 줄이나 체크리스트, Telegram·Teams 의 입력 중 표시), AG-UI 의 `TOOL_CALL_*` |
+| `toolResult` | 각 툴이 끝난 뒤 엔진이 | chat 의 툴 행(화면에 표시되고, 최근 N 턴에 대해서는 컨텍스트로 리플레이된다), 클라이언트 툴 패널, AG-UI 의 `TOOL_CALL_RESULT` |
+| `warning` | 런이 무언가를 잃는 모든 자리: 셋업 시점에는 쓸 수 없었던 바인딩(삭제된 skill/subagent, 도달 불가하거나 차단된 MCP 서버, 런당 상한을 넘은 tool), 런 도중에는 턴 또는 출력 한도, 컨텍스트 예산 절단, 잘린 transfer transcript, 실패한 transfer, 버려진 document | chat 경고 배너, chat 봇의 경고 꼬리말(Slack, Telegram, Teams), `Trace.warnings`, AG-UI 의 `CUSTOM` 경고 이벤트(그리고 `RUN_FINISHED.result.warnings`). 절대 스트림을 끝내지 않는다 |
+| `image` | GenerateImage / EditImage 빌트인, 그리고 image project subagent | **author 와 무관하게** 소비된다(agent 가 그림을 그리는 방법이 곧 image subagent 에 위임하는 것이다): chat 이미지 영속화(S3), chat 봇의 업로드(Slack, Telegram, Teams), OpenAI `images` 확장, AG-UI 의 `CUSTOM` 이미지 이벤트, 클라이언트 갤러리 |
+| `file` | 그림이 아닌 바이트를 반환한 툴 — 렌더링된 문서, 내보내기 파일 | `image` 의 열 개 소비자가 이것을 절대 보지 않도록 정확히 그 이유로 별도의 축이다: chat 은 참조를 영속화하고 다운로드로 제공하며(assistant 메시지의 `files`, 저장될 파일 이름과 함께 읽을 때마다 서명된다), 런 로그는 대신 메모를 넣는다. 바이트는 그것을 저장한 브래킷이 걷어내며 **모델의 컨텍스트에 절대 들어가지 않는다** — 파일을 지목하는 것은 툴 결과 텍스트다. 이름과 media type 은 서버에서 오므로, 그것으로 무언가를 만들기 전에 둘 다 방어적으로 읽는다(`safeFileName`/`baseMediaType`). `image` 를 읽는 모든 표면은 이것도 읽는다 — `/predict` 와 두 OpenAI 모양은 `files` 확장으로 싣고, `/agent` 는 프레임에서 키를 서명된 `url` 로 바꾸며, A2A 는 uri 로 주소가 매겨진 file part 를 발행하고, AG-UI 는 서명된 주소를 `CUSTOM` 파일 이벤트로 싣고, messaging 파이프라인은 Slack·Telegram·Teams 응답 아래 링크하며, trigger 의 행은 그것을 이름으로 적는다. 해석은 `producedFiles.ts` 가 소유한다. 한 축을 읽으면서 다른 축을 읽지 않는 모듈은 `tests/architecture.test.ts` 를 실패시킨다 |
 | `usage` | 모델 호출마다 한 번씩 엔진이 | `collectRun` 의 응답 usage. DB 기록은 별개다(엔진 루프 안의 `recordUsage` / 애그리게이터) |
 | `error` | 실패 시 엔진이(스트림 도중 — 재시도 없음). transfer 가 실패하면 authored 로 나간다 | **top-level** 에러만 스트림을 끝낸다. authored 인 것은 거의 모든 소비자가 *버린다*(messaging 파이프라인과 trace recorder 는 예외) — 부모가 그것을 지나쳐 답하기 때문이다. 그래서 실패한 transfer 가 잃은 것은 이 필드가 아니라 그 transfer 의 `warning` 으로 독자에게, "For context" 턴으로 모델에게 닿는다 |
 | `done` | 루프가 툴 호출 없이 끝날 때 엔진이 — 턴 가드가 멈춘 경우는 **아니다** | 아래의 `chunkTermination` 을 통해 읽는다: OpenAI `finish_reason: "stop"`, 클라이언트의 마무리 |
-| `finishReason` | `done` 이 말할 수 없는 이유로 런이 끝날 때 엔진이 — 턴 가드(`turn-limit`)와 프로바이더의 출력 절단(`output-limit`), 각각 그것을 이름 붙인 `warning` 과 함께 | `chunkTermination`/`runTermination` 을 통해 읽는다: OpenAI `finish_reason: "length"`, trace 상태 `turn-limit`, A2A 종단 상태 메시지, predict 의 `finishReason` 필드 |
+| `finishReason` | `done` 이 말할 수 없는 이유로 런이 끝날 때 엔진이 — 턴 가드(`turn-limit`)와 프로바이더의 출력 절단(`output-limit`), 각각 그것을 이름 붙인 `warning` 과 함께 | `chunkTermination`/`runTermination` 을 통해 읽는다: OpenAI `finish_reason: "length"`, trace 상태 `turn-limit`, A2A 종단 상태 메시지, AG-UI 의 `RUN_FINISHED.result.termination`, predict 의 `finishReason` 필드 |
 | `author` | subagent chunk 만 — **가장 안쪽** agent | 소비자는 `isTopLevelChunk` 로 거른다. 클라이언트는 지금 도는 agent 를 보여 준다 |
 | `authorPath` | subagent chunk 만 — 바깥쪽부터 나열한 체인 | 클라이언트는 `sample-agent → simple-image` 로 렌더링한다. trace recorder 는 첫 원소로 transfer 를 묶는다 |
 | `authorDone` | authored 런이 반환될 때 `runSubagent` 래퍼가 | 소비자는 그 체인을 더 이상 활성으로 표시하지 않는다 |
@@ -585,6 +588,7 @@ flowchart LR
   openai["OpenAI 표면<br/>finish_reason stop / length"]
   tracestatus["trace 상태<br/>completed · turn-limit · failed · cancelled"]
   a2aout["A2A 종단 상태<br/>warning 은 상태 메시지에 실려 간다"]
+  aguiout["AG-UI — CUSTOM 경고 이벤트,<br/>RUN_FINISHED.result 에 termination 과 함께 모인다"]
   predictout["predict 논스트리밍<br/>finishReason 필드"]
   chatui["chat — 메시지에 영속화되고,<br/>클라이언트에는 배너로"]
   slackout["Slack, Telegram, Teams — 응답에 붙는 경고 꼬리말"]
@@ -597,6 +601,8 @@ flowchart LR
   term --> tracestatus
   term --> predictout
   warning --> a2aout
+  term --> aguiout
+  warning --> aguiout
   warning --> chatui
   warning --> slackout
   warning --> console
@@ -647,6 +653,7 @@ SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건
 | [design/chat.md](design/chat.md) | 자기 연결보다 오래 사는 런, 리플레이 로그, 그리고 첨부가 턴에 닿는 방식 |
 | [design/observability.md](design/observability.md) | 감사 행, usage 행과 그 귀속(attribution), 그리고 trace |
 | [design/agents-a2a.md](design/agents-a2a.md) | 외부 엔드포인트에 대한 registry 항목, 그리고 A2A 의 양방향 |
+| [design/agui.md](design/agui.md) | 사용자를 마주하는 앱이 project 를 임베드하는 표면 — 청크가 이벤트가 되는 방식, 클라이언트 tool 이 턴을 끝내는 이유 |
 
 두 서브시스템은 여기에 더해 자기 **불변식**을 코드 옆에 두고 있으며, 그 파일들이 해당
 코드를 고칠 때 무엇이 유지돼야 하는지의 권위다: `src/application/llm/AGENTS.md`(툴 루프)와

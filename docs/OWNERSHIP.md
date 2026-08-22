@@ -53,7 +53,7 @@
 | `undici` 에 직접 닿기 | `src/infrastructure/net/publicFetch.ts` — `dispatcher` 는 하나의 fetch 와 그 `Agent` 사이의 사적인 계약이고, 런타임은 전역 `fetch` 뒤에 자기 몫의 undici 를 싣고 다닌다. 둘을 섞은 대가로 모든 아웃바운드 요청이 맨몸의 `TypeError: fetch failed` 를 받았다 |
 | 호출하는 Project 를 MCP 서버에 알리는 헤더 | `src/application/execution/mcpTools.ts` 의 `TENANT_ID_HEADER` |
 | 런의 conversation 을 MCP 서버에 알리는 헤더 | `src/application/execution/mcpTools.ts` 의 `CONVERSATION_ID_HEADER` — API 레이어는 `src/app/api/projects/_lib/conversation.ts` 에서 같은 철자를 *인바운드* 로 읽고, API Reference 탭(`endpoints.ts`)이 그것을 호출자에게 보여준다. 그 두 파일뿐이다 |
-| 런의 conversation 을 어떻게 만들고 무엇으로 키를 삼는가 | `src/domain/execution/actor.ts` 의 `conversationOf` / `conversationKey`. 각 표면의 철자는 저마다 자기 빌더(`chatConversation`, `slackConversation`, `telegramConversation`, `a2aConversation`, `requestConversation`)를 갖지만, 그 전부가 이 둘을 지난다 |
+| 런의 conversation 을 어떻게 만들고 무엇으로 키를 삼는가 | `src/domain/execution/actor.ts` 의 `conversationOf` / `conversationKey`. 각 표면의 철자는 저마다 자기 빌더(`chatConversation`, `slackConversation`, `telegramConversation`, `a2aConversation`, `aguiConversation`, `requestConversation`)를 갖지만, 그 전부가 이 둘을 지난다 |
 | 한 번의 dispatch 가 몇 개의 Agent 를 실행할 수 있는가 | `src/application/llm/agentAssembly.ts` |
 | Agent 런의 프롬프트와 tool 집합을 어떻게 조립하는가 | `src/application/llm/agentAssembly.ts` 의 `assembleAgentRun` |
 | Model 의 window 로부터 런의 컨텍스트 예산을 도출하기 | `src/application/llm/contextBudget.ts` |
@@ -106,6 +106,7 @@
 | 가져온 URL 이 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` 의 `framedFetchedUrl` |
 | 가져온 URL 을 얼마나 유지하는가 | `src/application/llm/urlContent.ts` 의 `MAX_FETCHED_TEXT_CHARS` |
 | 첨부된 문서가 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` |
+| AG-UI 런의 라이프사이클 이벤트(`RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR`)를 내보내기 — 끝낼 때 무엇이 아직 열려 있는지를 아는 유일한 곳 | `src/application/agui/events.ts` |
 | 모든 항목이 불리는 이름 | `src/domain/naming.ts` 의 `isSlug` |
 
 테스트가 패턴으로는 표현하지 못하지만 같은 규칙이 적용되는, 단일 소유자를 갖는 그 밖의
@@ -120,6 +121,8 @@
 | tool 의 파일이 실려 다니는 이름과 media type | `src/infrastructure/mcp/toolManager.ts` 의 `safeFileName`/`baseMediaType` |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` |
 | 페이지네이션된 목록 읽기 | `src/infrastructure/db/query.ts` 의 `queryAll()` |
+| AG-UI 의 와이어 형태 — 받는 `RunAgentInput` 과 내보내는 이벤트 | `src/domain/agui/types.ts` (SDK 대신 직접 선언한 이유가 파일 머리에 있다); 입력 검증은 `src/app/api/agui/_lib/schema.ts` |
+| AG-UI 메시지와 `context` 가 엔진 메시지가 되는 방식 | `src/application/agui/input.ts` |
 | 어떤 페이지가 공개인가 | `src/proxy.ts` |
 | chunk 가 top-level 인지 여부 | `src/domain/llm/types.ts` 의 `isTopLevelChunk()` |
 | 런이 어떤 Version 을 실행하는가 | `src/application/project/` 의 `resolveRunnableVersion` |

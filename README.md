@@ -5,8 +5,8 @@
 프로덕션 수준의 Next.js 풀스택 애플리케이션 하나다.
 
 프롬프트나 에이전트를 **project** 로 만들고, **version** 으로 다듬고, 하나를 publish 한
-뒤 어디서든 호출한다: 콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, Teams, webhook, 또는 A2A 로
-연결된 다른 에이전트. 모든 런은 귀속되고, 값이 매겨지고, 경계가 지어진다.
+뒤 어디서든 호출한다: 콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, Teams, webhook, A2A 로
+연결된 다른 에이전트, 또는 AG-UI 로 임베드한 앱. 모든 런은 귀속되고, 값이 매겨지고, 경계가 지어진다.
 
 ## 무엇이 들어 있나
 
@@ -20,7 +20,7 @@
 | **Chats** | agent project 를 상대로 하는 소유자별 비공개 대화. tool 트래픽과 이미지가 보존된다. |
 | **Cost dashboard** | project 별·model 별 일일 지출 — 그리고 caller 별 귀속. project 카탈로그가 공유되기 때문이다. |
 | **Guards** | project 별 일일·월간 비용 임계값, caller 별 동시 실행 제한, 모든 런에 걸리는 벽시계 데드라인. |
-| **Integrations** | project 별 Slack·Telegram·Teams 봇, webhook trigger, 양방향 A2A. |
+| **Integrations** | project 별 Slack·Telegram·Teams 봇, webhook trigger, 양방향 A2A, 사용자 앱을 위한 AG-UI. |
 
 ## 스택
 

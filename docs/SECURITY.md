@@ -248,7 +248,7 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 
 | 표면 | 자격 증명 | 검증 |
 |---|---|---|
-| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer ast_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **project 소유자로서** 실행된다 (`authenticateExecution`) |
+| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) 와 AG-UI (`/api/agui/{project}`) | `Authorization: Bearer ast_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **project 소유자로서** 실행된다 (`authenticateExecution`) |
 | Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, project 별 시크릿 |
 | Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다 — 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |

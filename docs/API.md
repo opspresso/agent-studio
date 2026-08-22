@@ -17,7 +17,8 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
   (Better Auth catch-all). 실행 엔드포인트 셋(`predict`, `chat/completions`,
   `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **project 별 API 토큰**도
   받는다. 토큰은 project 소유자를 대신해 동작하며 그 project 범위로 한정된다
-  (참고: [Project API 토큰](#project-api-토큰)). 기계 표면은 게이트가 다르다:
+  (참고: [Project API 토큰](#project-api-토큰)). AG-UI 엔드포인트(`/api/agui/{project}`)도
+  같은 게이트다. 기계 표면은 게이트가 다르다:
   `/api/a2a/*` 는 `X-A2A-Key`, `/api/slack/events/*` 는 Slack signing secret,
   `/api/telegram/webhook/*` 는 Telegram 이 되돌려 주는 secret token, `/api/teams/messages/*` 는 Bot
   Framework 가 서명한 토큰, `/api/webhook/{project}` 는
@@ -53,7 +54,8 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
   `ValidationError` 를 던져 `400` 이 된다.
 - **SSE framing**: 각 이벤트는 `data: {json}\n\n` 이다. `sseResponse` 가 서빙하는 모든
   스트림은 — OpenAI 형식의 것들과 chat 스트림 모두 — `data: [DONE]\n\n` 으로 끝난다 (A2A
-  엔드포인트의 JSON-RPC 스트림만 이것을 생략한다). 스트림 도중 실패하면 마지막에
+  엔드포인트의 JSON-RPC 스트림과 AG-UI 이벤트 스트림은 이것을 생략한다 — 각자의 프로토콜이
+  종단 이벤트와 스트림 종료로 끝을 말한다). 스트림 도중 실패하면 마지막에
   `data: {"error":"…"}` 프레임이 나간다.
   `chat/completions` 스트림은 항상 정확히 하나의 `finish_reason` chunk 를 싣는다: 모델이
   스스로 끝냈으면 `stop`, 런이 한계에서 끝났으면 — 턴 예산이거나, 프로바이더가 출력 상한에서
@@ -162,6 +164,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/a2a` | `GET` | session |
 | `/api/a2a/{project}/.well-known/agent-card.json` | `GET` | 공개 |
 | `/api/a2a/{project}` | `POST` | `X-A2A-Key` |
+| `/api/agui/{project}` | `POST` | project 토큰 또는 session |
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
 | `/api/telegram/webhook/{project}` | `POST` | `X-Telegram-Bot-Api-Secret-Token` |
 | `/api/teams/messages/{project}` | `POST` | Bot Framework bearer 토큰 |
@@ -1475,6 +1478,40 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로 만들어진다. Task 상태(`message/s
 `tasks/get`/`tasks/cancel`)는 project 별로 DynamoDB 에 저장되므로 재배포를 넘어 살아남고 인스턴스
 간에 공유된다. 종단 상태를 지키는 조건부 쓰기가, 동시에 일어난 complete/cancel 이 끝난 task 를
 되돌리는 것을 막는다. 행은 TTL(`A2A_TASK_RETENTION_DAYS`, 기본 1일)로 만료된다.
+
+## AG-UI (인바운드)
+
+사용자를 마주하는 앱이 published 된 project 를 임베드하는 표면
+([design/agui.md](design/agui.md)). 설정할 것은 없다 — published version 이 있는 모든
+project 가 답한다.
+
+```
+POST /api/agui/{project}    Authorization: Bearer <project token>  (또는 session)
+                            body: RunAgentInput
+                            → 200 text/event-stream  (AG-UI 이벤트, data: 프레임 하나에 하나, [DONE] 없음)
+                            | 400 (본문 형태, 모델에 넘길 수 없는 content part, 프로바이더가 거절할 tool 이름, 너무 긴 threadId)
+                            | 401 | 404 (project 없음 또는 published version 없음) | 429 (Retry-After)
+```
+
+요청은 프로토콜의 `RunAgentInput` 이다: `threadId`, `runId`, `messages` (1개 이상 —
+`developer` / `system` / `user` / `assistant` / `tool`; `reasoning` 과 `activity` 는 받되 버린다),
+`tools` (`{ name, description, parameters? }`), `context` (`{ description, value }`), 그리고 받아만
+두는 `state` / `forwardedProps`. `user` 턴의 parts 는 `text` 와 `image` (`data` 소스 또는 https
+`url` 소스) 만이고, 이미지는 메시지당 `MAX_ATTACHMENTS` 개까지다.
+
+응답 스트림: `RUN_STARTED` → (`TEXT_MESSAGE_*` | `REASONING_*` | `TOOL_CALL_START/ARGS/END` +
+`TOOL_CALL_RESULT` | `STEP_STARTED/FINISHED` | `CUSTOM`)* → `RUN_FINISHED` 또는 `RUN_ERROR`.
+`RUN_FINISHED` 는 `outcome: { type: "success" }`, `result: { termination, warnings }`
+(`termination` 은 `completed` / `turn-limit` / `output-limit`), `usage: [{ inputTokens,
+outputTokens, totalTokens, reasoningTokens?, cachedInputTokens? }]` 를 싣는다. `CUSTOM` 이벤트의
+`name` 은 `agent-studio.image` (`{ mimeType, dataUrl, prompt?, model?, artifactId? }`),
+`agent-studio.file` (`{ name, mimeType, url, byteSize? }` — 15분 서명 URL), `agent-studio.warning`
+(`{ message }`) 이다.
+
+`threadId` 는 런의 conversation(`agui:{caller}:{threadId}`)이다 — 한 스레드의 모든 런에 같은
+값을 보낸다. `tools` 는 agent project 에 제공되고 클라이언트가 실행한다: 하나를 부른 턴이 런의
+마지막이고, 결과는 다음 런의 `messages` 에 `tool` 메시지로 돌아온다. 다른 타입의 project 에
+선언된 tool 은 `agent-studio.warning` 으로 보고된다.
 
 ## 플랫폼 엔드포인트
 
