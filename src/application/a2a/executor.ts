@@ -34,8 +34,7 @@ const RESULT_ARTIFACT_ID = "result";
 const IMAGE_ARTIFACT_ID = "image";
 /** How often the background watcher re-reads the store to honor a cross-request/instance cancel. */
 const CANCEL_POLL_MS = 2000;
-/** Task states that must never be regressed; a stored terminal task wins. */
-const TERMINAL_STATES: readonly TaskState[] = ["completed", "canceled", "failed", "rejected"];
+import { isTerminalTaskState } from "@/domain/a2a/task";
 
 function userMessageText(message: Message): string {
   return message.parts
@@ -65,6 +64,21 @@ function userMessageContent(message: Message): ChatMessageInput["content"] {
     return text;
   }
   return [...(text ? [{ type: "text" as const, text }] : []), ...images];
+}
+
+/**
+ * The pictures an image project is handed to edit. Bytes only: the image use
+ * case takes sources as bytes, and a part by uri would have to be fetched by
+ * an adapter this executor does not hold — the handler admits such a part
+ * for a model that can read a link, and an image project cannot, which its
+ * card says by not listing a uri among its input modes.
+ */
+function sourceImages(message: Message): Array<{ b64: string; mimeType: string }> {
+  return message.parts.flatMap((part) =>
+    part.kind === "file" && "bytes" in part.file && part.file.mimeType?.startsWith("image/")
+      ? [{ b64: part.file.bytes, mimeType: part.file.mimeType }]
+      : [],
+  );
 }
 
 export class ProjectA2aExecutor implements AgentExecutor {
@@ -101,10 +115,14 @@ export class ProjectA2aExecutor implements AgentExecutor {
     const stopCancelWatch = this.watchForCancel(taskId, controller);
     try {
       if (runStrategyFor(this.project) === "image") {
+        // A picture sent with the prompt is the one to edit: source bytes
+        // decide edit versus generate, as they do on every image surface.
+        const sources = sourceImages(userMessage);
         const image = await generateImage(this.deps, {
           project: this.project,
           version: this.version,
           prompt: messages[0] ? messageText(messages[0]) : "",
+          ...(sources.length > 0 ? { images: sources } : {}),
           actor: this.actor,
           signal: controller.signal,
         });
@@ -284,7 +302,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
 
   async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {
     const task = await this.store.load(taskId);
-    if (!task || TERMINAL_STATES.includes(task.status.state)) {
+    if (!task || isTerminalTaskState(task.status.state)) {
       return;
     }
     // Persist the cancel: the store's conditional write refuses to regress an

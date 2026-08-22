@@ -218,21 +218,19 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       // the server just refused (step-up, 2026-07-28 scope-challenge handling).
       const asked = scope ? scope.split(/\s+/).filter(Boolean) : [];
       const widened = asked.filter((name) => !connection.scopes.includes(name));
-      if (widened.length > 0) {
-        await deps.connections.put({
-          ...connection,
-          scopes: [...connection.scopes, ...widened],
-          status: "needs_reauth",
-          updatedAt: new Date().toISOString(),
-        });
+      if (widened.length === 0 && connection.status === "needs_reauth") {
         return;
       }
-      if (connection.status === "needs_reauth") {
-        return;
-      }
+      // Through the compare-and-set, like every other write to this row: a
+      // reconnect or a refresh landing between the read above and this write
+      // would otherwise be overwritten with the stale row just read.
       await deps.connections.updateTokens(projectName, serverName, connection.refreshToken, {
+        accessToken: connection.accessToken,
+        refreshToken: connection.refreshToken,
+        expiresAt: connection.expiresAt,
         status: "needs_reauth",
         updatedAt: new Date().toISOString(),
+        ...(widened.length > 0 ? { scopes: [...connection.scopes, ...widened] } : {}),
       });
     },
   };

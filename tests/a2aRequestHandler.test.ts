@@ -4,6 +4,9 @@ import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from
 import { A2AError } from "@a2a-js/sdk/server";
 import { ProjectRequestHandler, unsupportedPart } from "@/application/a2a/requestHandler";
 
+const handler = (store: TaskStore, options: { signal?: AbortSignal } = {}) =>
+  new ProjectRequestHandler(store, options, CARD, store, answering);
+
 const CARD: AgentCard = {
   protocolVersion: "0.3.0",
   name: "Helper",
@@ -58,9 +61,15 @@ function storeWith(tasks: Record<string, Task>): TaskStore {
 }
 
 describe("ProjectRequestHandler — what it admits", () => {
-  it("names the parts it cannot read", () => {
+  it("names the parts it cannot read, and bounds a picture like every other surface", () => {
     expect(unsupportedPart({ kind: "text", text: "x" })).toBeNull();
     expect(unsupportedPart({ kind: "file", file: { bytes: "AAAA", mimeType: "image/png" } })).toBeNull();
+    expect(unsupportedPart({ kind: "file", file: { bytes: "AAAA", mimeType: "image/svg+xml" } })).toBe(
+      "file part of type image/svg+xml",
+    );
+    expect(
+      unsupportedPart({ kind: "file", file: { bytes: "A".repeat(8 * 1024 * 1024), mimeType: "image/png" } }),
+    ).toBe("image larger than 5MB");
     expect(unsupportedPart({ kind: "file", file: { uri: "https://x/p.png", mimeType: "image/png" } })).toBeNull();
     expect(unsupportedPart({ kind: "file", file: { uri: "http://x/p.png", mimeType: "image/png" } })).toBe(
       "file part by a non-https uri",
@@ -71,9 +80,20 @@ describe("ProjectRequestHandler — what it admits", () => {
     expect(unsupportedPart({ kind: "data", data: { a: 1 } })).toBe("data part");
   });
 
+  it("refuses more pictures than a turn may carry", async () => {
+    const parts = Array.from({ length: 5 }, () => ({
+      kind: "file" as const,
+      file: { bytes: "AAAA", mimeType: "image/png" },
+    }));
+    const refused = await handler(storeWith({}))
+      .sendMessage({ message: { ...message(), parts } })
+      .then(() => null, (error: unknown) => error);
+    expect((refused as A2AError).code).toBe(-32005);
+    expect((refused as A2AError).message).toContain("at most 4 images");
+  });
+
   it("refuses a data part with the protocol's ContentTypeNotSupported error", async () => {
-    const handler = new ProjectRequestHandler(storeWith({}), CARD, storeWith({}), answering);
-    const refused = await handler
+    const refused = await handler(storeWith({}))
       .sendMessage({ message: { ...message(), parts: [{ kind: "data", data: { a: 1 } }] } })
       .then(() => null, (error: unknown) => error);
     expect(refused).toBeInstanceOf(A2AError);
@@ -82,8 +102,7 @@ describe("ProjectRequestHandler — what it admits", () => {
 
   it("refuses a message that would continue a task still working", async () => {
     const store = storeWith({ t1: task("t1", "working") });
-    const handler = new ProjectRequestHandler(store, CARD, store, answering);
-    const refused = await handler.sendMessage({ message: message("t1") }).then(() => null, (error: unknown) => error);
+    const refused = await handler(store).sendMessage({ message: message("t1") }).then(() => null, (error: unknown) => error);
     expect(refused).toBeInstanceOf(A2AError);
     expect((refused as A2AError).code).toBe(-32602);
     expect((refused as A2AError).message).toContain("keep contextId c1");
@@ -91,8 +110,7 @@ describe("ProjectRequestHandler — what it admits", () => {
 
   it("lets a message through to the SDK's own path otherwise", async () => {
     const store = storeWith({});
-    const handler = new ProjectRequestHandler(store, CARD, store, answering);
-    const result = await handler.sendMessage({ message: message() });
+    const result = await handler(store).sendMessage({ message: message() });
     expect(result.kind).toBe("task");
     expect((result as Task).status.state).toBe("completed");
   });
@@ -107,10 +125,9 @@ describe("ProjectRequestHandler — resubscribe follows the store", () => {
     vi.useFakeTimers();
     const tasks: Record<string, Task> = { t1: task("t1", "working") };
     const store = storeWith(tasks);
-    const handler = new ProjectRequestHandler(store, CARD, store, answering);
     const events: unknown[] = [];
     const drain = (async () => {
-      for await (const event of handler.resubscribe({ id: "t1" })) {
+      for await (const event of handler(store).resubscribe({ id: "t1" })) {
         events.push(event);
       }
     })();
@@ -122,16 +139,56 @@ describe("ProjectRequestHandler — resubscribe follows the store", () => {
     expect(events.map((event) => (event as { kind: string }).kind)).toEqual([
       "task",
       "artifact-update",
+      "artifact-update",
       "status-update",
     ]);
-    expect(events[1]).toMatchObject({ artifact: { artifactId: "result" }, lastChunk: true });
-    expect(events[2]).toMatchObject({ final: true, status: { state: "completed" } });
+    expect(events[1]).toMatchObject({ artifact: { artifactId: "result", parts: [{ kind: "text", text: "done" }] }, append: false });
+    // Closed as the protocol closes one, whether or not the last change landed in the terminal poll.
+    expect(events[2]).toMatchObject({ artifact: { artifactId: "result", parts: [] }, append: true, lastChunk: true });
+    expect(events[3]).toMatchObject({ final: true, status: { state: "completed" } });
+  });
+
+  it("stops polling the moment the reader leaves", async () => {
+    vi.useFakeTimers();
+    const loads: number[] = [];
+    const store: TaskStore = {
+      load: async () => {
+        loads.push(1);
+        return task("t1", "working");
+      },
+      save: async () => {},
+    };
+    const controller = new AbortController();
+    const events: unknown[] = [];
+    const drain = (async () => {
+      for await (const event of handler(store, { signal: controller.signal }).resubscribe({ id: "t1" })) {
+        events.push(event);
+      }
+    })();
+    await vi.advanceTimersByTimeAsync(2_000);
+    controller.abort();
+    await drain;
+    const after = loads.length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(loads.length).toBe(after);
+    expect(events).toHaveLength(1);
+  });
+
+  it("reports a task that never settles as an error rather than closing in silence", async () => {
+    vi.useFakeTimers();
+    const store = storeWith({ t1: task("t1", "working") });
+    const stream = handler(store).resubscribe({ id: "t1" });
+    await stream.next();
+    const pending = stream.next().then(() => null, (error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
+    const error = await pending;
+    expect(error).toBeInstanceOf(A2AError);
+    expect((error as A2AError).message).toContain("did not settle");
   });
 
   it("answers a task it does not hold with TaskNotFound", async () => {
     const store = storeWith({});
-    const handler = new ProjectRequestHandler(store, CARD, store, answering);
-    const refused = await handler
+    const refused = await handler(store)
       .resubscribe({ id: "nope" })
       .next()
       .then(() => null, (error: unknown) => error);

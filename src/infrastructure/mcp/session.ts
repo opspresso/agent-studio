@@ -108,7 +108,7 @@ const MAX_TOOL_PAGES = 64;
 const MAX_MCP_RESPONSE_BYTES = 14_500_000;
 
 /** How this client names itself to a server: the deployment's own version, not a frozen one. */
-const CLIENT_INFO = { name: "agent-studio", version: APP_VERSION } as const;
+export const MCP_CLIENT_INFO = { name: "agent-studio", version: APP_VERSION } as const;
 
 /**
  * What a 401 or 403 said in `WWW-Authenticate`, kept by the session that
@@ -154,7 +154,7 @@ export interface McpDiscovery {
 function boundedFetch(
   loopback: boolean,
   runSignal: () => AbortSignal | undefined,
-  onChallenge: (challenge: McpChallenge) => void,
+  onChallenge: (challenge: McpChallenge | undefined) => void,
 ): FetchLike {
   const send = loopback ? fetch : fetchPublicUrl;
   return async (url, init) => {
@@ -162,6 +162,10 @@ function boundedFetch(
     if (response.status === 401 || response.status === 403) {
       const { scope, error } = extractWWWAuthenticateParams(response);
       onChallenge({ status: response.status, ...(scope ? { scope } : {}), ...(error ? { error } : {}) });
+    } else if (response.ok) {
+      // A challenge describes the response that carried it; one the server
+      // has since stopped sending must not classify a later failure.
+      onChallenge(undefined);
     }
     const declared = Number(response.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > MAX_MCP_RESPONSE_BYTES) {
@@ -289,7 +293,7 @@ export class McpSession {
       // era probe, which is the first request a server ever sees from us.
       requestInit: { headers: this.headers },
     });
-    const client = new Client(CLIENT_INFO, {
+    const client = new Client(MCP_CLIENT_INFO, {
       // Probe first, handshake if the probe is not recognised — which is what
       // lets one registry hold servers on either era. Neither of the SDK's
       // other modes will do: `'legacy'` is the default and would make this a

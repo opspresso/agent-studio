@@ -270,7 +270,9 @@ dispatch 시점에 적용되는 마지막 **자격증명** 이며 — 레지스�
 
 **메타데이터를 어디서 읽는가.** authorization 서버의 문서는 명세가 정한 순서의 세 주소에서
 찾고(`authorizationServerCandidates`), 경로가 있는 issuer 의 root 문서는 다른 issuer 의 것이라
-시도하지 않으며, `issuer` 가 맞지 않는 문서는 쓰지 않는다. resource metadata 는 well-known
+시도하지 않으며, `issuer` 가 맞지 않는 문서는 쓰지 않는다(URL 로 비교 — 대소문자·기본 포트·끝
+슬래시는 같은 것, 경로가 다르면 다른 것). **알려진 한계**: Microsoft Entra 의 `…/common/v2.0`
+은 테넌트 issuer 로 답하므로 그 문서는 거부된다 — 리소스가 테넌트 issuer 를 직접 광고해야 한다. resource metadata 는 well-known
 경로 둘을 먼저, 그것이 모두 빗나가면 서버 자신의 401 이 `WWW-Authenticate` 로 지목하는 주소를
 읽는다 — 프로브는 어차피 클라이언트가 처음 보낼 `initialize` 다. 런타임의 401/403 도 같은
 헤더를 읽어(`McpSession.challenge`) `insufficient_scope` 가 이름 댄 scope 를 연결에 합친다.

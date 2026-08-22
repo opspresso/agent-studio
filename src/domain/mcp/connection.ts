@@ -149,7 +149,9 @@ export interface McpConnectionRepository {
     next: Pick<
       McpConnection,
       "accessToken" | "refreshToken" | "expiresAt" | "status" | "updatedAt"
-    >,
+    > &
+      /** Set only by a scope challenge widening the grant; absent leaves the stored scopes. */
+      Partial<Pick<McpConnection, "scopes">>,
   ): Promise<boolean>;
   delete(projectName: string, serverName: string): Promise<void>;
 }

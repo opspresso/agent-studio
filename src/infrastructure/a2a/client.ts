@@ -27,6 +27,7 @@ import type {
   TaskArtifactUpdateEvent,
 } from "@a2a-js/sdk";
 import { A2AClient } from "@a2a-js/sdk/client";
+import { awaitsInput, isFailedTaskState, isLiveTaskState, isTerminalTaskState } from "@/domain/a2a/task";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
 
@@ -90,7 +91,7 @@ const MAX_CARD_BYTES = 1_000_000;
 const MAX_REPLY_BYTES = 2 * 1024 * 1024;
 /** How often a blocking send that was answered with a live task asks again. */
 const TASK_POLL_MS = 2000;
-const FAILED_STATES = new Set(["failed", "rejected", "canceled"]);
+
 
 /** Accepts either the card URL itself or the agent base URL. */
 export function normalizeAgentCardUrl(url: string): string {
@@ -199,7 +200,7 @@ function mergeArtifact(task: Task, event: TaskArtifactUpdateEvent): Task {
 }
 
 /** States after which the task will not change again. */
-const TERMINAL_STATES = new Set(["completed", "failed", "canceled", "rejected"]);
+
 
 interface StreamCollected {
   /** Null when the stream failed before producing anything usable. */
@@ -222,6 +223,9 @@ async function collectStream(
 ): Promise<StreamCollected> {
   let task: Task | null = null;
   let message: Message | null = null;
+  // Counted as the parts arrive rather than re-summed over the whole task per
+  // event; an upper bound, since a replaced artifact is counted again.
+  let received = 0;
   try {
     for await (const event of client.sendMessageStream(params)) {
       onEvent();
@@ -264,7 +268,8 @@ async function collectStream(
           task = mergeArtifact(ensureTask(task, event), event);
           // Bounded as it accumulates, not after: the whole point of a bound
           // on a streamed reply is that it stops the stream.
-          if (partsBytes(resultParts(task)) > MAX_REPLY_BYTES) {
+          received += partsBytes(event.artifact.parts);
+          if (received > MAX_REPLY_BYTES) {
             return {
               result: null,
               error: `A2A reply exceeds ${MAX_REPLY_BYTES / (1024 * 1024)}MB`,
@@ -280,7 +285,7 @@ async function collectStream(
      * SDK cannot parse, must not discard a task that is already complete.
      * Anything short of terminal is a genuine loss and reported as one.
      */
-    if (task && TERMINAL_STATES.has(task.status.state)) {
+    if (task && isTerminalTaskState(task.status.state)) {
       return { result: task };
     }
     return { result: null, error: errorText(error, idle, caller) };
@@ -325,10 +330,10 @@ function toResult(result: Message | Task): A2aSendResult {
   const text = extractA2aText(result);
   if (result.kind === "task") {
     const state = result.status.state;
-    if (FAILED_STATES.has(state)) {
+    if (isFailedTaskState(state)) {
       return { ok: false, error: `Remote task ${state}${text ? `: ${text}` : ""}` };
     }
-    if (state === "input-required") {
+    if (awaitsInput(state)) {
       return {
         ok: false,
         error: `Remote agent needs input before it can continue${text ? `: ${text}` : ""}`,
@@ -460,18 +465,8 @@ function safeOrigin(url: string): string | undefined {
  */
 async function settled(client: A2AClient, result: Message | Task, signal: AbortSignal): Promise<Message | Task> {
   let current = result;
-  while (current.kind === "task" && !TERMINAL_STATES.has(current.status.state) && current.status.state !== "input-required") {
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, TASK_POLL_MS);
-      signal.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timer);
-          reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
-        },
-        { once: true },
-      );
-    });
+  while (current.kind === "task" && isLiveTaskState(current.status.state)) {
+    await sleepUnlessAborted(TASK_POLL_MS, signal);
     const polled = await client.getTask({ id: current.id });
     if ("error" in polled) {
       throw new Error(`A2A error ${polled.error.code}: ${polled.error.message}`);
@@ -479,4 +474,25 @@ async function settled(client: A2AClient, result: Message | Task, signal: AbortS
     current = polled.result;
   }
   return current;
+}
+
+/**
+ * Wait, or stop waiting the moment the signal fires. The listener is removed
+ * on the normal path — a task polled thirty times would otherwise leave thirty
+ * listeners on the request's signal — and an already-aborted signal never
+ * fires again, so it is checked before the wait rather than listened for.
+ */
+function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }

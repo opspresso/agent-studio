@@ -129,6 +129,28 @@ describe("mcp connection mapping", () => {
     expect((await mcpConnectionRepository.get("p", "slack"))?.clientRegistered).toBe(true);
   });
 
+  it("round-trips the auth method the registration recorded", async () => {
+    // Written by the registration branch, read by the callback and the refresh;
+    // lost on the way back, every exchange fell to the entry's discovered
+    // method and the server that enforces its recorded one answered
+    // invalid_client on each.
+    await mcpConnectionRepository.put({
+      projectName: "p",
+      serverName: "slack",
+      clientId: "dcr-1",
+      clientSecret: "enc:s",
+      clientRegistered: true,
+      tokenEndpointAuthMethod: "client_secret_basic",
+      issuer: "https://auth.example.com",
+      resource: "https://mcp.slack.com",
+      scopes: [],
+      status: "needs_auth",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect((await mcpConnectionRepository.get("p", "slack"))?.tokenEndpointAuthMethod).toBe("client_secret_basic");
+  });
+
   it("leaves both flags absent for a client the owner entered", async () => {
     await mcpConnectionRepository.put({
       projectName: "p",

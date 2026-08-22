@@ -20,8 +20,7 @@ import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
 import { RETENTION, expiresAtSeconds, isExpired } from "@/infrastructure/db/ttl";
 
-/** States a task never transitions away from; a stored one must not be regressed. */
-const TERMINAL_STATES = ["completed", "canceled", "failed", "rejected"] as const;
+import { A2A_TERMINAL_STATES as TERMINAL_STATES } from "@/domain/a2a/task";
 
 /**
  * Headroom under the 400KB DynamoDB item limit, measured against the whole

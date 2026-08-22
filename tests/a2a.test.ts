@@ -936,8 +936,9 @@ describe("buildAgentCard — what a peer needs to call us", () => {
     expect(card.capabilities).toEqual({ streaming: true, pushNotifications: false, stateTransitionHistory: false });
     expect(card.defaultInputModes).toEqual(["text/plain", "image/png", "image/jpeg", "image/webp"]);
     expect(card.skills[0]?.tags).toEqual(["agent-studio", "agent"]);
+    // An image project takes a picture to edit beside its prompt.
     const image = await buildAgentCard(projectFixture({ projectType: "image" }), versionFixture());
-    expect(image.defaultInputModes).toEqual(["text/plain"]);
+    expect(image.defaultInputModes).toEqual(["text/plain", "image/png", "image/jpeg", "image/webp"]);
   });
 });
 
@@ -1063,6 +1064,39 @@ describe("sendA2aMessage — the task's state decides", () => {
 });
 
 describe("ProjectA2aExecutor — what a message may carry", () => {
+  it("hands an image project the picture it was sent, to edit rather than ignore", async () => {
+    const deps = executionDepsFixture(new FakeChannel([]));
+    const sources: unknown[] = [];
+    deps.imageChannel.editImage = (async (params: { images: unknown[] }) => {
+      sources.push(...params.images);
+      return {
+        b64: "aW1n",
+        mimeType: "image/png",
+        usage: { textInputTokens: 1, imageInputTokens: 1, imageOutputTokens: 1 },
+      };
+    }) as ExecutionDeps["imageChannel"]["editImage"];
+    const executor = new ProjectA2aExecutor(
+      deps,
+      projectFixture({ projectType: "image" }),
+      versionFixture({ model: "openai/gpt-image-2" }),
+      fakeStore(),
+    );
+    const bus = new CollectingBus();
+    const message: Message = {
+      kind: "message",
+      messageId: "m1",
+      role: "user",
+      parts: [
+        { kind: "text", text: "make it blue" },
+        { kind: "file", file: { bytes: "AAAA", mimeType: "image/png", name: "p.png" } },
+      ],
+    };
+    await executor.execute(new RequestContext(message, "t1", "c1"), bus);
+    expect(sources).toEqual([{ b64: "AAAA", mimeType: "image/png" }]);
+    const last = bus.events.at(-1);
+    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
+  });
+
   it("hands an image file part to the model beside the text, and closes the artifact", async () => {
     const channel = new FakeChannel([[contentChunk("a cat")]]);
     const executor = new ProjectA2aExecutor(

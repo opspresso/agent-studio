@@ -18,11 +18,12 @@ const OUTPUT_MODES: Record<Project["projectType"], string[]> = {
 };
 /**
  * What a message to this agent may carry. A text or agent project runs a
- * model that may read a picture; an image project takes a prompt.
+ * model that may read a picture; an image project takes a prompt and,
+ * beside it, the picture to edit.
  */
 const INPUT_MODES: Record<Project["projectType"], string[]> = {
   llm: ["text/plain", ...IMAGE_MODES],
-  image: ["text/plain"],
+  image: ["text/plain", ...IMAGE_MODES],
   agent: ["text/plain", ...IMAGE_MODES],
 };
 /**

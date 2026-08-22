@@ -459,8 +459,9 @@ describe("a run against an OAuth-required server", () => {
 });
 
 describe("markUnauthorized with a scope challenge", () => {
-  it("widens the connection's scopes and asks for a reconnect", async () => {
+  it("widens the connection's scopes and asks for a reconnect, through the compare-and-set", async () => {
     const puts: unknown[] = [];
+    const updates: Array<{ expected: unknown; next: Record<string, unknown> }> = [];
     let stored = connectionFixture({ scopes: ["files:read"], status: "connected" });
     const provider = createMcpAuthProvider({
       connections: {
@@ -468,10 +469,13 @@ describe("markUnauthorized with a scope challenge", () => {
         listByProject: async () => [stored],
         put: async (next: typeof stored) => {
           puts.push(next);
-          stored = next;
         },
         delete: async () => {},
-        updateTokens: async () => true,
+        updateTokens: async (_p: string, _s: string, expected: unknown, next: Record<string, unknown>) => {
+          updates.push({ expected, next });
+          stored = { ...stored, ...(next as object) };
+          return true;
+        },
       },
       oauth: {
         register: async () => ({ clientId: "x" }),
@@ -483,7 +487,11 @@ describe("markUnauthorized with a scope challenge", () => {
 
     await provider.markUnauthorized("p", "slack", "files:write files:read");
 
-    expect(puts).toHaveLength(1);
+    // Never an unconditional put: a reconnect landing between the read and
+    // this write would be overwritten with the stale row.
+    expect(puts).toHaveLength(0);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.expected).toBe(stored.refreshToken);
     expect(stored.scopes).toEqual(["files:read", "files:write"]);
     expect(stored.status).toBe("needs_reauth");
   });

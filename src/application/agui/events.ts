@@ -40,6 +40,9 @@ import {
 import { fileRefOf, resolveProducedFile } from "@/application/artifact/producedFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 
+/** How the engine names a transfer's result: the tool, a colon, the agent it went to. */
+const TRANSFER_RESULT_PREFIX = "transfer_to_agent: ";
+
 export interface AguiRunIdentity {
   threadId: string;
   runId: string;
@@ -151,6 +154,15 @@ class RunTranslator {
   private textOpen = false;
   private openReasoning: string | undefined;
   private readonly openSteps: string[] = [];
+  /**
+   * What each subagent said, by author, until the parent's transfer result
+   * arrives. The engine marks that result display-only — in the context the
+   * child's answer enters as a "For context" turn — but a client replays only
+   * tool results, so the marker alone would tell the next run the delegation
+   * returned nothing (the chat surface filters the marker for the same
+   * reason). The answer goes out as the result instead.
+   */
+  private readonly childText = new Map<string, string>();
   private readonly warnings: string[] = [];
   private readonly usage: UsageTotals = {
     inputTokens: 0,
@@ -267,7 +279,7 @@ class RunTranslator {
         type: "TOOL_CALL_RESULT",
         messageId: this.newId(),
         toolCallId: chunk.toolResult.toolCallId,
-        content: chunk.toolResult.content,
+        content: this.resultContent(chunk.toolResult),
         role: "tool",
       };
     }
@@ -278,6 +290,25 @@ class RunTranslator {
       this.termination = termination;
       yield* this.closeAll();
     }
+  }
+
+  /**
+   * What a tool result says on the wire. A display-only result is the engine's
+   * marker for a transfer whose answer arrived by another route; here that
+   * route does not exist, so the child's answer stands in for the marker.
+   */
+  private resultContent(result: NonNullable<EngineChunk["toolResult"]>): string {
+    if (!result.displayOnly) {
+      return result.content;
+    }
+    const agent = result.name.startsWith(TRANSFER_RESULT_PREFIX)
+      ? result.name.slice(TRANSFER_RESULT_PREFIX.length)
+      : undefined;
+    const answer = agent ? this.childText.get(agent)?.trim() : undefined;
+    if (agent) {
+      this.childText.delete(agent);
+    }
+    return answer || result.content;
   }
 
   /** A loss, said once as it happens and kept for the ending. `collectedWarning` owns which count. */
@@ -292,6 +323,11 @@ class RunTranslator {
   private async *observeAuthored(chunk: EngineChunk): AsyncGenerator<AguiEvent> {
     if (chunk.author === undefined) {
       return;
+    }
+    // Only the outermost child's words: a grandchild's answer returns to its
+    // own parent, which folds it into what it says.
+    if (chunk.delta?.content && (chunk.authorPath?.length ?? 1) === 1) {
+      this.childText.set(chunk.author, (this.childText.get(chunk.author) ?? "") + chunk.delta.content);
     }
     // The chain, not the innermost name: two children of one agent dispatched
     // at once would otherwise share a step, and the first to return would

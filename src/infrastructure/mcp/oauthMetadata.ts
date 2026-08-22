@@ -18,6 +18,7 @@ import type {
 } from "@/domain/mcp/oauth";
 import { McpMetadataError } from "@/domain/mcp/oauth";
 import { extractWWWAuthenticateParams } from "@modelcontextprotocol/client";
+import { LEGACY_PROTOCOL_VERSION, MCP_CLIENT_INFO } from "./session";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
 
@@ -65,9 +66,24 @@ export function authorizationServerCandidates(issuer: string): string[] {
   ];
 }
 
-/** Two issuer spellings that name one server: the trailing slash is not a difference. */
+/**
+ * Two issuer spellings that name one server. Compared as URLs — scheme and
+ * host case-insensitive, a default port dropped, a trailing slash ignored —
+ * because those are spellings of one identifier, not two. What is *not*
+ * tolerated is a different path: Entra's `…/common/v2.0` resource answering
+ * with a tenant issuer is the server naming another issuer, and the spec
+ * says not to use that document (`docs/design/mcp.md`).
+ */
 function sameIssuer(a: string, b: string): boolean {
-  return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+  const canonical = (value: string): string => {
+    try {
+      const url = new URL(value);
+      return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`.toLowerCase();
+    } catch {
+      return value.replace(/\/+$/, "").toLowerCase();
+    }
+  };
+  return canonical(a) === canonical(b);
 }
 
 /**
@@ -95,9 +111,11 @@ async function challengedMetadataUrl(mcpUrl: string, loopback: boolean): Promise
         id: 0,
         method: "initialize",
         params: {
-          protocolVersion: "2025-11-25",
+          // The legacy revision on purpose: a 2025-era server answers it, and
+          // a modern one answers a 401 to either.
+          protocolVersion: LEGACY_PROTOCOL_VERSION,
           capabilities: {},
-          clientInfo: { name: "agent-studio", version: "discovery" },
+          clientInfo: MCP_CLIENT_INFO,
         },
       }),
       signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
@@ -107,7 +125,16 @@ async function challengedMetadataUrl(mcpUrl: string, loopback: boolean): Promise
       return undefined;
     }
     const { resourceMetadataUrl } = extractWWWAuthenticateParams(response);
-    return resourceMetadataUrl?.href;
+    if (!resourceMetadataUrl) {
+      return undefined;
+    }
+    // A declared-internal server is dialed past the guard, and this address is
+    // the server's own choice: past the guard it may name anything on the
+    // network. Same origin as the server is what the bypass was granted for.
+    if (loopback && resourceMetadataUrl.origin !== new URL(mcpUrl).origin) {
+      return undefined;
+    }
+    return resourceMetadataUrl.href;
   } catch {
     // The well-known paths are still there to try; a probe that failed says
     // nothing about them.

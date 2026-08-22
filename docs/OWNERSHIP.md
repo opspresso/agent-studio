@@ -124,6 +124,7 @@
 | AG-UI 의 와이어 형태 — 받는 `RunAgentInput` 과 내보내는 이벤트 | `src/domain/agui/types.ts` (SDK 대신 직접 선언한 이유가 파일 머리에 있다); 입력 검증은 `src/app/api/agui/_lib/schema.ts` |
 | AG-UI 메시지와 `context`·`state` 가 엔진 메시지가 되는 방식 | `src/application/agui/input.ts` |
 | OAuth authorization 서버 메타데이터를 찾는 주소와 순서 | `src/infrastructure/mcp/oauthMetadata.ts` 의 `authorizationServerCandidates` |
+| A2A task 의 종단·실패·대기 상태가 무엇인가 | `src/domain/a2a/task.ts` — 프로토콜이 정한 사실이라 domain 에 있고, executor·taskStore·client·requestHandler 가 전부 여기를 읽는다 |
 | 인바운드 A2A 메시지가 실을 수 있는 part | `src/application/a2a/requestHandler.ts` 의 `unsupportedPart` — card 의 `defaultInputModes` 와 같은 답이어야 한다 |
 | 어떤 페이지가 공개인가 | `src/proxy.ts` |
 | chunk 가 top-level 인지 여부 | `src/domain/llm/types.ts` 의 `isTopLevelChunk()` |

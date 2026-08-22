@@ -67,8 +67,12 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   const { project, version, card } = exposed;
 
   const store = createA2aTaskStore(project.name);
+  // The reader leaving ends a resubscribe's polling; a run itself is not
+  // cancelled by it — `tasks/cancel` is how a task is cancelled.
+  const abortController = new AbortController();
   const requestHandler = new ProjectRequestHandler(
     store,
+    { signal: abortController.signal },
     card,
     store,
     new ProjectA2aExecutor(executionDeps, project, version, store, actor),
@@ -86,7 +90,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       // A refusal on the first pull is a JSON-RPC error; one after the stream
       // has begun is a JSON-RPC error *frame*, which is what every frame of
       // this stream is.
-      return await sseResponseRaw(result, undefined, {
+      return await sseResponseRaw(result, abortController, {
         errorFrame: (message) => ({
           jsonrpc: "2.0",
           id,

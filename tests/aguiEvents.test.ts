@@ -377,3 +377,20 @@ describe("toAguiEvents — identity and naming", () => {
     ]);
   });
 });
+
+describe("toAguiEvents — a transfer's result", () => {
+  it("carries the child's answer, not the engine's display-only marker", async () => {
+    // A client replays tool results and nothing else, so the marker alone
+    // would tell the next run the delegation returned nothing.
+    const events = await translate([
+      { delta: { toolCalls: [{ id: "c1", type: "function", function: { name: "transfer_to_agent", arguments: "{}" } }] } },
+      { author: "helper", authorPath: ["helper"], delta: { content: "The answer " } },
+      { author: "helper", authorPath: ["helper"], delta: { content: "is 42." } },
+      { author: "helper", authorPath: ["helper"], authorDone: true },
+      { toolResult: { toolCallId: "c1", name: "transfer_to_agent: helper", content: "Transferred to 'helper'; its answer follows.", displayOnly: true } },
+      { done: true },
+    ]);
+    const result = events.find((event) => event.type === "TOOL_CALL_RESULT");
+    expect(result).toMatchObject({ toolCallId: "c1", content: "The answer is 42." });
+  });
+});
