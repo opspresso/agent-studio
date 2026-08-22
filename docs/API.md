@@ -534,15 +534,22 @@ admin 전용이다. 멤버는 이 워크스페이스에 로그인한 적이 있�
 Chat 은 소유자에게만 비공개이고, agent project 에 대해서만 실행된다.
 
 ```
-GET    /api/chats                            → { chats }
+GET    /api/chats?limit=                     → { chats, hasMore }
 POST   /api/chats                            { projectName, firstMessage, images?, documents? } → SSE
-GET    /api/chats/{chatId}                   → { chat, messages, activeRun? }
+GET    /api/chats/{chatId}?sinceSeq=         → { chat, messages, activeRun? }
 DELETE /api/chats/{chatId}                   → 204
 POST   /api/chats/{chatId}/messages          { content, images?, documents? } → SSE
 GET    /api/chats/{chatId}/runs/{runId}/stream → SSE
 GET    /api/chats/{chatId}/runs/{runId}      → { active }
 DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 ```
+
+두 목록 읽기 모두 범위를 좁힐 수 있고, 사이드바와 스레드가 실제로 그렇게 읽는다. `limit` 은
+최신 순으로 몇 개인지이며 기본 50, 상한 500 이다 — `hasMore` 가 참이면 더 큰 `limit` 으로 다시
+묻는다(커서가 아닌 이유는 [design/chat.md](design/chat.md#사이드바와-스레드가-읽는-범위)).
+`sinceSeq` 는 그 시퀀스 *다음* 부터의 메시지만 돌려준다 — 런이 끝났을 때 스레드가 묻는 것이고,
+없으면 전체 기록을 읽고 그 안의 이미지·파일 주소를 매번 다시 서명한다. `sinceSeq=0` 은 "없음"이
+아니라 유효한 경계다(첫 메시지의 시퀀스가 0 이다).
 
 두 런 스트림 모두 head 프레임으로 시작하고 — `{ chat?, runId, userSeq }`, 새로 만들 때는 새
 `chatId` 를 싣는다 — `{ "ended": true }` 로 닫힌다. 끝난 런과 끊긴 연결을 구별해 주는 것은 그

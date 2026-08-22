@@ -24,6 +24,15 @@ import classes from "./ChatSidebar.module.css";
 
 const NEW_CHAT_EVENT = "chats:new";
 
+/**
+ * How many chats a press asks for, and the first ask.
+ *
+ * The server has its own default and its own ceiling; this is the step the
+ * sidebar takes, kept here because it is a property of this list rather than
+ * of the endpoint.
+ */
+const PAGE = 50;
+
 /** Subscribe to the "New chat" press. The button routes to /chats, but a panel
  * that swapped the URL to /chats/<id> without a route change is already that
  * segment — the router keeps it mounted, so the navigation alone resets
@@ -39,6 +48,18 @@ export function ChatSidebar() {
   const t = useT();
   const [chats, setChats] = useState<Chat[]>([]);
   const [loaded, setLoaded] = useState(false);
+  /**
+   * How many rows this sidebar is asking for.
+   *
+   * The endpoint is bounded now, and "show more" raises this rather than
+   * carrying a cursor: the chat partition sorts on `updatedAt` alone, which
+   * does not identify a row, so a cursor built from it would skip or repeat a
+   * chat touched in the same millisecond as its neighbour. Re-reading the rows
+   * it already had is the cheaper wrong thing, and it happens only when a
+   * person presses the button.
+   */
+  const [limit, setLimit] = useState(PAGE);
+  const [hasMore, setHasMore] = useState(false);
   const [drawerOpen, drawer] = useDisclosure(false);
   // Keys, not chat ids: a chat still being created counts under its placeholder,
   // so a first message refused before it learned its id still reloads this list
@@ -47,21 +68,28 @@ export function ChatSidebar() {
   const running = useRunningKeys();
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/chats");
+    const res = await fetch(`/api/chats?limit=${limit}`);
     if (res.ok) {
-      const data = (await res.json()) as { chats?: Chat[] };
+      const data = (await res.json()) as { chats?: Chat[]; hasMore?: boolean };
       setChats(data.chats ?? []);
+      setHasMore(data.hasMore ?? false);
     }
     setLoaded(true);
-  }, []);
+  }, [limit]);
 
   // Reloads when a run starts or ends, because the running set only changes
   // then. The sidebar is mounted for the whole `/chats` segment, which is why it
   // is the right place to notice: a run can now finish with no thread on screen,
   // and a view that told the sidebar itself would never fire.
+  //
+  // Deliberately *not* on `pathname`. Opening a chat changes which row is
+  // highlighted, which this component works out from the path without asking
+  // the server anything — and a chat that appears while reading is a chat whose
+  // run started, which the running set already reports. Reloading on every
+  // navigation meant a third full read of the list per turn.
   useEffect(() => {
     void load();
-  }, [load, pathname, running]);
+  }, [load, running]);
 
   // A tap that opens a chat has done what the drawer was opened for. Depend on
   // the stable `close` callback, not the handlers object — useDisclosure
@@ -133,6 +161,16 @@ export function ChatSidebar() {
             </ActionIcon>
           </div>
         ))}
+        {hasMore && (
+          <Button
+            variant="subtle"
+            size="compact-xs"
+            mt="xs"
+            onClick={() => setLimit((current) => current + PAGE)}
+          >
+            {t("chat.more")}
+          </Button>
+        )}
       </Stack>
     </ScrollArea>
   );

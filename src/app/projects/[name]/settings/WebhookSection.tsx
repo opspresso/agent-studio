@@ -19,6 +19,7 @@ import {
   type TriggerRun,
   type TriggerView,
 } from "../../lib/api";
+import { reportError } from "@/app/_lib/reportError";
 
 /**
  * The project's webhook: one address, turned on and off.
@@ -79,7 +80,7 @@ export function WebhookSection({ projectName }: { projectName: string }) {
       await action();
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
+      setError(reportError(e, "Failed"));
     } finally {
       setBusy(false);
     }

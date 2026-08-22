@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { ActionIcon, Badge, Box, FileButton, Group, Image, Stack, Text } from "@mantine/core";
+import { ActionIcon, Badge, Box, FileButton, Group, Image, Overlay, Stack, Text } from "@mantine/core";
 import { IconFileText, IconPaperclip, IconX } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import {
@@ -108,6 +108,120 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
     removeDocumentAt,
     clear,
   };
+}
+
+/**
+ * The files a paste or a drop carries, and nothing else.
+ *
+ * A transfer with no files is text — a copied paragraph, a dragged link — and
+ * must keep its native behaviour, so the caller checks the length before
+ * calling `preventDefault`. `dataTransfer.files` is the one list both gestures
+ * fill: a screenshot pasted from the OS clipboard arrives there exactly as a
+ * dragged file does, which is what lets one reader handle both.
+ */
+export function transferredFiles(data: DataTransfer | null): File[] {
+  return data ? Array.from(data.files) : [];
+}
+
+/** Whether a drag is carrying files, decided before it is over the target. */
+function draggingFiles(data: DataTransfer | null): boolean {
+  return Array.from(data?.types ?? []).includes("Files");
+}
+
+/**
+ * Drag-and-drop for a region that stages attachments.
+ *
+ * `dragenter`/`dragleave` fire for every child the pointer crosses, so a plain
+ * boolean flickers off the moment the cursor passes over the textarea inside
+ * the drop zone. The depth counter is what makes the highlight survive the
+ * crossing — it is the standard fix for a well-known DOM behaviour, not a
+ * workaround for anything here.
+ *
+ * `onDragOver` must call `preventDefault` or the browser refuses the drop and
+ * navigates to the file instead, which is the failure this hook exists to
+ * avoid: the console would be replaced by whatever was dragged onto it.
+ */
+export function useFileDrop(onFiles: (files: File[]) => void, disabled = false) {
+  const [dragging, setDragging] = useState(false);
+  const depth = useRef(0);
+
+  const reset = useCallback(() => {
+    depth.current = 0;
+    setDragging(false);
+  }, []);
+
+  const handlers = {
+    onDragEnter: (event: React.DragEvent) => {
+      if (disabled || !draggingFiles(event.dataTransfer)) {
+        return;
+      }
+      event.preventDefault();
+      depth.current += 1;
+      setDragging(true);
+    },
+    onDragOver: (event: React.DragEvent) => {
+      if (disabled || !draggingFiles(event.dataTransfer)) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    onDragLeave: (event: React.DragEvent) => {
+      if (disabled || !draggingFiles(event.dataTransfer)) {
+        return;
+      }
+      depth.current -= 1;
+      if (depth.current <= 0) {
+        reset();
+      }
+    },
+    onDrop: (event: React.DragEvent) => {
+      if (disabled || !draggingFiles(event.dataTransfer)) {
+        return;
+      }
+      event.preventDefault();
+      reset();
+      const files = transferredFiles(event.dataTransfer);
+      if (files.length > 0) {
+        onFiles(files);
+      }
+    },
+  };
+
+  return { dragging, handlers };
+}
+
+/**
+ * Paste-to-attach: a screenshot on the clipboard becomes an attachment.
+ *
+ * Text pastes fall through untouched — the guard is the file count, because
+ * `preventDefault` on a text paste would swallow what the reader was pasting.
+ */
+export function onFilePaste(onFiles: (files: File[]) => void, disabled = false) {
+  return (event: React.ClipboardEvent) => {
+    if (disabled) {
+      return;
+    }
+    const files = transferredFiles(event.clipboardData);
+    if (files.length > 0) {
+      event.preventDefault();
+      onFiles(files);
+    }
+  };
+}
+
+/** The "drop here" wash drawn over a region while files are being dragged onto it. */
+export function DropHint() {
+  const t = useT();
+  return (
+    <Overlay color="var(--mantine-color-body)" backgroundOpacity={0.75} zIndex={2} radius="lg">
+      <Group justify="center" align="center" h="100%">
+        <Text fz="sm" fw={500} c="dimmed">
+          {t("attach.drop")}
+        </Text>
+      </Group>
+    </Overlay>
+  );
 }
 
 export function AttachmentBar({

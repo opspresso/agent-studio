@@ -20,7 +20,14 @@ import {
 } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { onModEnter } from "@/app/_lib/modEnter";
-import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
+import {
+  AttachButton,
+  AttachmentBar,
+  DropHint,
+  onFilePaste,
+  useAttachments,
+  useFileDrop,
+} from "@/app/_components/ImageAttachments";
 import { useT } from "@/app/_i18n/provider";
 import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
@@ -281,6 +288,11 @@ export function RunPanel({
     }
   }
 
+  // The panel's own attachments are the source images an `image` project edits,
+  // so a screenshot pasted into the prompt is the gesture this surface is for.
+  const attach = (files: File[]) => void addFiles(files);
+  const { dragging, handlers } = useFileDrop(attach, running);
+
   return (
     <Stack
       gap="md"
@@ -289,7 +301,10 @@ export function RunPanel({
           void run();
         }
       })}
+      {...handlers}
+      style={{ position: "relative" }}
     >
+      {dragging && <DropHint />}
       {versionName === null ? (
         <Alert color="yellow" variant="light" fz="xs">
           Save a version to run it.
@@ -314,6 +329,7 @@ export function RunPanel({
           }
           value={message}
           onChange={(e) => setMessage(e.currentTarget.value)}
+          onPaste={onFilePaste(attach, running)}
           autosize
           minRows={4}
           maxRows={16}

@@ -30,6 +30,7 @@ import {
   telegramDestinationLabel,
   telegramDestinationValue,
 } from "./telegramDestinations";
+import { reportError } from "@/app/_lib/reportError";
 
 /**
  * Schedules: a cron in a timezone, and what recent firings did.
@@ -136,7 +137,7 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
       await action();
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
+      setError(reportError(e, "Failed"));
     } finally {
       setBusy(false);
     }

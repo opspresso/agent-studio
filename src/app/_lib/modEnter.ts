@@ -13,3 +13,26 @@ export function onModEnter(action: () => void) {
     }
   };
 }
+
+/**
+ * Whether an Enter keydown is the reader asking, or an IME confirming.
+ *
+ * A composing input — Hangul, Kana, Pinyin — answers the Enter that commits a
+ * candidate with a keydown of its own, and the browser marks it
+ * `isComposing`. Reading that keystroke as "send" fires a turn the reader was
+ * still typing, and fires it *before* React has the committed syllable in
+ * state, so the message goes out missing its last character. The console's
+ * primary readers type Korean, so this is the composer's default path rather
+ * than an edge case.
+ *
+ * `keyCode === 229` is the same signal from browsers that report the
+ * composition on the key rather than on the event; both are checked because a
+ * miss here is silent — the text simply leaves without its ending.
+ */
+export function isSubmitEnter(event: React.KeyboardEvent): boolean {
+  if (event.key !== "Enter") {
+    return false;
+  }
+  const native = event.nativeEvent as KeyboardEvent | undefined;
+  return !native?.isComposing && native?.keyCode !== 229;
+}

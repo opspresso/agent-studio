@@ -11,6 +11,7 @@ import { formatDateTime } from "@/shared/date";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 type MemberView = Member & { tierLocked: boolean };
 
@@ -36,7 +37,7 @@ export default function MembersPage() {
       );
       setMembers((prev) => prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to update tier");
+      setError(reportError(saveError, "Failed to update tier"));
     } finally {
       setSavingId(null);
     }

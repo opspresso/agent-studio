@@ -3,10 +3,18 @@
 import { useState } from "react";
 import { ActionIcon, Group, Stack, Textarea } from "@mantine/core";
 import { IconPlayerStopFilled, IconSend } from "@tabler/icons-react";
-import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
+import {
+  AttachButton,
+  AttachmentBar,
+  DropHint,
+  onFilePaste,
+  useAttachments,
+  useFileDrop,
+} from "@/app/_components/ImageAttachments";
 import { useT } from "@/app/_i18n/provider";
 import type { Attachment } from "@/app/_lib/imageAttachments";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
+import { isSubmitEnter } from "@/app/_lib/modEnter";
 
 /**
  * The one composer.
@@ -64,6 +72,13 @@ export function Composer({
 
   const empty = !value.trim() && attachments.length === 0 && documents.length === 0;
 
+  // Both gestures land on the same reader as the paperclip: `addFiles` is what
+  // decides which of a dropped batch is a picture and which is a document, and
+  // what reports the ones over the cap. Neither is offered while a reply is
+  // running, for the same reason the send button is not.
+  const attach = (files: File[]) => void addFiles(files);
+  const { dragging, handlers } = useFileDrop(attach, disabled);
+
   function submit() {
     if (empty || disabled) {
       return;
@@ -81,7 +96,10 @@ export function Composer({
         event.preventDefault();
         submit();
       }}
+      {...handlers}
+      style={{ position: "relative" }}
     >
+      {dragging && <DropHint />}
       <Stack gap="xs">
         {leading}
         {status}
@@ -97,8 +115,9 @@ export function Composer({
           <Textarea
             value={value}
             onChange={(event) => setValue(event.currentTarget.value)}
+            onPaste={onFilePaste(attach, disabled)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (isSubmitEnter(event) && !event.shiftKey) {
                 event.preventDefault();
                 submit();
               }

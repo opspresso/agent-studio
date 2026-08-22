@@ -8,6 +8,11 @@ import { log } from "@/shared/logger";
 
 export interface ChatWithMessages {
   chat: Chat;
+  /**
+   * The chat's messages — all of them, or only those after `sinceSeq` when the
+   * caller named one. A caller that asks for the tail is a caller that already
+   * holds the head, and it merges rather than replaces.
+   */
   messages: ChatMessage[];
   /**
    * The run in flight, when there is one — what a browser that reloaded mid-run
@@ -45,17 +50,31 @@ function forReading(message: ChatMessage): ChatMessage {
   };
 }
 
-/** Load a chat's meta and messages. Non-owner access is indistinguishable from missing. */
+/**
+ * Load a chat's meta and messages. Non-owner access is indistinguishable from
+ * missing.
+ *
+ * `sinceSeq` narrows the read to the rows written after it — what the thread
+ * asks for when a run finishes, having watched that run arrive. Without it the
+ * whole transcript is read and every stored image and file in it re-signed, on
+ * every turn, at a cost that grows with the chat. The chat row and the run
+ * claim are read either way: the title can have been written mid-run, and
+ * whether a run is still going is the other half of what the caller asked.
+ */
 export async function getChat(
   deps: ChatDeps,
   chatId: string,
   userEmail: string,
+  options: { sinceSeq?: number } = {},
 ): Promise<ChatWithMessages> {
   const chat = await deps.chats.get(chatId);
   if (!chat || chat.ownerEmail !== userEmail) {
     throw new ChatNotFoundError();
   }
-  const messages = await deps.chats.listMessages(chatId);
+  const messages = await deps.chats.listMessages(
+    chatId,
+    options.sinceSeq === undefined ? {} : { sinceSeq: options.sinceSeq },
+  );
   const active = await deps.chats.getActiveRun(chatId);
   const running = isLiveClaim(active, Date.now());
   // Signed for the reader who is about to look at them. A stored row holds an

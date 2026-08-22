@@ -28,6 +28,7 @@ import {
 import { IconArrowDown } from "@tabler/icons-react";
 import { BADGE } from "@/app/_components/badgeColors";
 import classes from "./ChatThread.module.css";
+import { highestSeq, mergeMessages } from "../_lib/mergeMessages";
 
 interface Fetched {
   messages: ChatMessage[];
@@ -65,6 +66,14 @@ export function ChatThread({ chatId }: { chatId: string }) {
   const [sessionImagesBySeq, setSessionImagesBySeq] = useState<
     Record<number, ChatMessageImage[]>
   >({});
+  /**
+   * The newest sequence this view holds — what a tail read asks from.
+   *
+   * A ref and not state: it is read inside `syncFromServer` and never
+   * rendered, and as a dependency it would re-fire the mount fetch on every
+   * message the thread gains.
+   */
+  const held = useRef<number | undefined>(undefined);
   const [status, setStatus] = useState<"loading" | "ready" | "not-found">("loading");
   const [error, setError] = useState<string | null>(null);
   /**
@@ -128,32 +137,59 @@ export function ChatThread({ chatId }: { chatId: string }) {
 
   // Two syncs can be in flight — the mount's and a finished turn's — and the
   // slower one must not overwrite fresher messages with staler ones.
-  const syncFromServer = useCallback(async (): Promise<Fetched | null> => {
-    const ticket = ++syncSeq.current;
-    const res = await fetch(`/api/chats/${chatId}`);
-    if (ticket !== syncSeq.current) {
-      return null;
-    }
-    if (res.status === 404) {
-      setStatus("not-found");
-      return null;
-    }
-    if (!res.ok) {
-      return null;
-    }
-    const data = (await res.json()) as {
-      chat?: Chat;
-      messages?: ChatMessage[];
-      activeRun?: { runId: string };
-    };
-    setChat(data.chat ?? null);
-    setMessages(data.messages ?? []);
-    setStatus("ready");
-    return {
-      messages: data.messages ?? [],
-      ...(data.activeRun ? { activeRun: data.activeRun } : {}),
-    };
-  }, [chatId]);
+  const syncFromServer = useCallback(
+    async ({ tail = false } = {}): Promise<Fetched | null> => {
+      const ticket = ++syncSeq.current;
+      // The tail read asks only for what was written after the newest row this
+      // view holds. Read from a ref rather than from `messages` on purpose: as
+      // a dependency it would give this callback a new identity on every
+      // arriving row, and the mount effect that depends on it would re-fetch
+      // the thread each time it grew.
+      const since = tail ? held.current : undefined;
+      const res = await fetch(
+        since === undefined ? `/api/chats/${chatId}` : `/api/chats/${chatId}?sinceSeq=${since}`,
+      );
+      if (ticket !== syncSeq.current) {
+        return null;
+      }
+      if (res.status === 404) {
+        setStatus("not-found");
+        return null;
+      }
+      if (!res.ok) {
+        return null;
+      }
+      const data = (await res.json()) as {
+        chat?: Chat;
+        messages?: ChatMessage[];
+        activeRun?: { runId: string };
+      };
+      const fetched = data.messages ?? [];
+      setChat(data.chat ?? null);
+      setMessages((prev) => (since === undefined ? fetched : mergeMessages(prev, fetched)));
+      // Outside the updater, which React may run twice and which must stay
+      // pure. A full read replaces what is held; a tail read can only extend
+      // it, and `Math.max` is what keeps an out-of-order arrival from moving
+      // the marker backwards onto rows already merged in.
+      const newest = highestSeq(fetched);
+      if (newest !== undefined) {
+        held.current = since === undefined || held.current === undefined
+          ? newest
+          : Math.max(held.current, newest);
+      } else if (since === undefined) {
+        held.current = undefined;
+      }
+      setStatus("ready");
+      // The *fetched* rows, not the merged thread: what pins this turn's images
+      // is a backwards scan for the newest user and assistant rows, and on a
+      // tail read those are exactly what came back.
+      return {
+        messages: fetched,
+        ...(data.activeRun ? { activeRun: data.activeRun } : {}),
+      };
+    },
+    [chatId],
+  );
 
   /**
    * Pick up a run this view did not start — a reload mid-reply, a second window,
@@ -191,6 +227,11 @@ export function ChatThread({ chatId }: { chatId: string }) {
 
   useEffect(() => {
     let dropped = false;
+    // A different chat holds different sequences, and this component is reused
+    // across a navigation between two of them. Clearing here rather than in the
+    // fetch is what keeps a retire that fires in the round-trip from asking the
+    // new chat for the old one's tail.
+    held.current = undefined;
     void (async () => {
       const fresh = await syncFromServer();
       if (dropped || !fresh) {
@@ -218,7 +259,10 @@ export function ChatThread({ chatId }: { chatId: string }) {
       // the store's own eviction takes the finished answer off the screen with
       // no error and nothing to click.
       for (let attempt = 0; ; attempt += 1) {
-        const fresh = await syncFromServer();
+        // A tail read: this view watched the run arrive and holds every turn
+        // before it. The whole transcript used to be re-read here on every
+        // finished turn, re-signing each stored image with it.
+        const fresh = await syncFromServer({ tail: true });
         // Still the retire in charge of this turn? Deliberately this rather than
         // a flag an effect cleanup sets: the re-run does not redo the work — the
         // guard above returns early — so a cleanup flag would abandon the retire

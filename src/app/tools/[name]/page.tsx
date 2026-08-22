@@ -42,6 +42,7 @@ import { CredentialBadges } from "../_components/CredentialBadges";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 /**
  * How long the console watches a restart, and how often it asks.
@@ -168,7 +169,7 @@ export default function McpDetailPage() {
         `Still no answer from "${name}" after ${RESTART_WATCH_MS / 60_000} minutes. The restart may yet be running; reload to see where it got to.`,
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to restart container");
+      setError(reportError(e, "Failed to restart container"));
     } finally {
       if (!abandoned.current) {
         setRestarting(false);
@@ -197,7 +198,7 @@ export default function McpDetailPage() {
       await (managed ? removeManagedMcp(name) : deleteMcp(name));
       router.push("/tools");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete MCP server");
+      setError(reportError(e, "Failed to delete MCP server"));
     }
   }
 
@@ -483,7 +484,7 @@ function OAuthSection({
       await clearMcpAuth(server.name);
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to clear OAuth configuration");
+      setError(reportError(e, "Failed to clear OAuth configuration"));
     } finally {
       setBusy(false);
     }
@@ -673,7 +674,7 @@ function EditMcpForm({
       }
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(reportError(err, "Failed to save"));
     } finally {
       setSubmitting(false);
     }

@@ -5,6 +5,7 @@ import { Alert, Badge, Button, Group, Radio, Stack, TagsInput, Text } from "@man
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { getProject, updateProject, type ProjectVisibility } from "../../lib/api";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 /**
  * Who may see and run the project. Public is what every project was before
@@ -59,7 +60,7 @@ export function VisibilitySection({ projectName }: { projectName: string }) {
       setMemberEmails(project.memberEmails ?? []);
       setSaved(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
+      setError(reportError(e, "Failed to save"));
     } finally {
       setSaving(false);
     }

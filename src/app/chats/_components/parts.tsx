@@ -14,6 +14,7 @@ import {
   Stack,
   Text,
   Typography,
+  VisuallyHidden,
 } from "@mantine/core";
 import { IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
@@ -429,6 +430,26 @@ function RunProgress({ startedAtMs }: { startedAtMs?: number | undefined }) {
   );
 }
 
+/**
+ * That the answer has arrived, for a reader who cannot see it land.
+ *
+ * The answer text itself is deliberately *not* a live region: it grows a token
+ * at a time, and a screen reader given that region re-announces the reply from
+ * the top on every frame — unusable long before the run ends. What is worth
+ * announcing is the transition, once, so the counterpart to `RunProgress`'s
+ * "running" is this line at the finish.
+ *
+ * Rendered only after the run stops, so mounting it *is* the announcement;
+ * `VisuallyHidden` keeps it out of the layout, which the finished turn already
+ * fills with its duration badge.
+ */
+function AnswerAnnouncement() {
+  const t = useT();
+  return (
+    <VisuallyHidden role="status">{t("chat.answerReady")}</VisuallyHidden>
+  );
+}
+
 export function LiveAssistant({
   turn,
   running,
@@ -495,6 +516,7 @@ export function LiveAssistant({
         // clock that stepped back, and `0s` would be a wrong answer where
         // silence is merely no answer.
         <Group h={PROGRESS_LINE_HEIGHT} align="center">
+          <AnswerAnnouncement />
           {startedAtMs !== undefined && endedAtMs !== undefined && endedAtMs >= startedAtMs && (
             <AnswerDuration durationMs={endedAtMs - startedAtMs} />
           )}

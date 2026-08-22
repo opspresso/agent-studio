@@ -401,8 +401,26 @@ async function main() {
     const messages = await chatRepository.listMessages(chatId);
     assert.equal(messages.length, 2, "chat messages round-trip");
     assert.equal(messages[0]?.role, "user");
+    // The tail read the thread does on every finished turn. A real
+    // KeyConditionExpression is the whole point: a fake document client
+    // evaluates neither the range nor its upper bound, and without that bound
+    // the query runs past the messages into the run log rows written below,
+    // which live in this same partition and sort after them.
+    const tail = await chatRepository.listMessages(chatId, { sinceSeq: 1 });
+    assert.equal(tail.length, 1, "a tail read returns only what came after");
+    assert.equal(tail[0]?.seq, 2, "and it is the newer row");
+    assert.equal(
+      (await chatRepository.listMessages(chatId, { sinceSeq: 2 })).length,
+      0,
+      "a tail read caught up returns nothing rather than the whole thread",
+    );
     const ownChats = await chatRepository.listByOwner("it@example.com");
     assert.ok(ownChats.some((c) => c.chatId === chatId), "chat owner GSI listing");
+    assert.equal(
+      (await chatRepository.listByOwner("it@example.com", { limit: 1 })).length,
+      1,
+      "the sidebar's page size bounds the read",
+    );
     pass("chat meta/messages/owner listing");
 
     // ---------- chat run lease + cancel ----------

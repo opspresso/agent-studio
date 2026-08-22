@@ -24,6 +24,7 @@ import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 export default function SkillDetailPage() {
   const t = useT();
@@ -70,7 +71,7 @@ export default function SkillDetailPage() {
       await deleteSkill(name);
       router.push("/skills");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete skill");
+      setError(reportError(e, "Failed to delete skill"));
     }
   }
 
@@ -211,7 +212,7 @@ function EditSkillForm({
       await updateSkill(skill.name, { description, content });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(reportError(err, "Failed to save"));
     } finally {
       setSubmitting(false);
     }

@@ -28,6 +28,19 @@ export const keys = {
     SK: `MSG#${String(seq).padStart(6, "0")}`,
   }),
   chatMessagePrefix: () => "MSG#",
+  /**
+   * Sort-key bounds for reading a chat's messages from `fromSeq` on — what a
+   * thread that already holds the turns before it asks for.
+   *
+   * A range rather than the prefix, for the same reason `chatRunLogRange` is
+   * one: `SK > MSG#…` alone would run past the message rows into the run log,
+   * which sorts after them in the same partition. `999999` is the widest a
+   * six-digit sequence can be.
+   */
+  chatMessageRange: (fromSeq: number) => ({
+    from: `MSG#${String(fromSeq).padStart(6, "0")}`,
+    to: "MSG#999999",
+  }),
   chatOwnerPartition: (email: string) => `CHATOWNER#${email}`,
   /**
    * A batch of a run's stream, kept just long enough for a reader that lost the

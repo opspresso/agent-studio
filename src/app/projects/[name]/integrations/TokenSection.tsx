@@ -15,6 +15,7 @@ import { Alert, Badge, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { stateColor } from "@/app/_components/badgeColors";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDate } from "@/shared/date";
+import { reportError } from "@/app/_lib/reportError";
 
 export function TokenSection({ projectName }: { projectName: string }) {
   const t = useT();
@@ -58,7 +59,7 @@ export function TokenSection({ projectName }: { projectName: string }) {
       setFreshlyIssued(true);
       setStatus({ configured: true, masked, createdAt, revealable: true });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate token");
+      setError(reportError(e, "Failed to generate token"));
     } finally {
       setBusy(false);
     }
@@ -82,7 +83,7 @@ export function TokenSection({ projectName }: { projectName: string }) {
       setRawToken(null);
       setFreshlyIssued(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to revoke token");
+      setError(reportError(e, "Failed to revoke token"));
     } finally {
       setBusy(false);
     }
@@ -95,7 +96,7 @@ export function TokenSection({ projectName }: { projectName: string }) {
       setRawToken(await revealProjectToken(projectName));
       setFreshlyIssued(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reveal token");
+      setError(reportError(e, "Failed to reveal token"));
     } finally {
       setBusy(false);
     }
