@@ -80,10 +80,23 @@ async function awaitFirstChunkBriefly(pending: Promise<unknown>): Promise<void> 
  * emitted first, so the stream is byte-identical. Nothing is buffered beyond
  * that one chunk.
  */
+/**
+ * How a failure after the response exists is framed.
+ *
+ * The default is the `{error}` frame every OpenAI-shaped and chat stream
+ * reads. A protocol with its own vocabulary — AG-UI's `RUN_ERROR` — hands in
+ * the frame its clients parse, because a frame outside the protocol's schema
+ * is not an error to them but a stream they reject.
+ */
+export interface SseOptions {
+  errorFrame?: (message: string) => unknown;
+}
+
 async function createSseResponse(
   generator: AsyncGenerator<unknown>,
   includeDone: boolean,
   abortController?: AbortController,
+  options: SseOptions = {},
 ): Promise<Response> {
   const pending = generator.next();
   // A refusal throws out of here and never reaches the response below.
@@ -115,7 +128,8 @@ async function createSseResponse(
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "stream error";
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`));
+          const frame = options.errorFrame ? options.errorFrame(message) : { error: message };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`));
         }
       } finally {
         clearInterval(keepalive);
@@ -148,8 +162,9 @@ async function createSseResponse(
 export function sseResponseRaw(
   generator: AsyncGenerator<unknown>,
   abortController?: AbortController,
+  options?: SseOptions,
 ): Promise<Response> {
-  return createSseResponse(generator, false, abortController);
+  return createSseResponse(generator, false, abortController, options);
 }
 
 export function sseResponse(

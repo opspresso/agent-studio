@@ -1494,7 +1494,8 @@ POST /api/agui/{project}    Authorization: Bearer <project token>  (또는 sessi
 ```
 
 요청은 프로토콜의 `RunAgentInput` 이다: `threadId`, `runId`, `messages` (1개 이상 —
-`developer` / `system` / `user` / `assistant` / `tool`; `reasoning` 과 `activity` 는 받되 버린다),
+`developer` / `system` / `user` / `assistant` / `tool`; `reasoning` 은 뒤따르는 assistant 턴의
+`reasoning_content` 가 되고, `activity` 는 받되 버린다),
 `tools` (`{ name, description, parameters? }`), `context` (`{ description, value }`), 그리고 받아만
 두는 `state` / `forwardedProps`. `user` 턴의 parts 는 `text` 와 `image` (`data` 소스 또는 https
 `url` 소스) 만이고, 이미지는 메시지당 `MAX_ATTACHMENTS` 개까지다.

@@ -281,3 +281,61 @@ describe("toAguiEvents — reasoning, steps and the other axes", () => {
     });
   });
 });
+
+describe("toAguiEvents — what the ending has to wait for and close", () => {
+  it("delivers a warning that arrives after the terminal chunk, and finishes only when the source is exhausted", async () => {
+    // The artifact recorder says what it could not keep only after the engine's
+    // stream ended — after `done` — so a finish on the terminal chunk loses it.
+    const events = await translate([
+      { delta: { content: "drawn" } },
+      { done: true },
+      { warning: "The image was drawn but not kept: object storage refused the write." },
+    ]);
+    expect(types(events)).toEqual([
+      "RUN_STARTED",
+      "TEXT_MESSAGE_START",
+      "TEXT_MESSAGE_CONTENT",
+      "TEXT_MESSAGE_END",
+      "CUSTOM",
+      "RUN_FINISHED",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      result: {
+        termination: "completed",
+        warnings: ["The image was drawn but not kept: object storage refused the write."],
+      },
+    });
+  });
+
+  it("says the surface's own warnings right after RUN_STARTED and collects them", async () => {
+    const events = await collect(
+      toAguiEvents(chunks([{ done: true }]), RUN, { warnings: ["2 application tool(s) were not offered"] }),
+    );
+    expect(events[1]).toEqual({
+      type: "CUSTOM",
+      name: "agent-studio.warning",
+      value: { message: "2 application tool(s) were not offered" },
+    });
+    expect(events.at(-1)).toMatchObject({ result: { warnings: ["2 application tool(s) were not offered"] } });
+  });
+
+  it("closes the source when the reader leaves at RUN_STARTED", async () => {
+    // The first thing every run sends is a yield nothing delegates through: a
+    // `return()` parked there must still reach the run, or its bracket never
+    // closes and the concurrency slot is held until the deadline.
+    let closed = false;
+    async function* source(): AsyncGenerator<EngineChunk> {
+      try {
+        yield { delta: { content: "x" } };
+        yield { done: true };
+      } finally {
+        closed = true;
+      }
+    }
+    const events = toAguiEvents(source(), RUN);
+    expect((await events.next()).value).toEqual({ type: "RUN_STARTED", threadId: "t1", runId: "r1" });
+    expect(closed).toBe(false);
+    await events.return(undefined);
+    expect(closed).toBe(true);
+  });
+});

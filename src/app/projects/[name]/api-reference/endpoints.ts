@@ -50,6 +50,27 @@ const CONVERSATION_HEADER = { "X-Conversation-Id": "$CONVERSATION_ID" } as const
 const CONVERSATION_NOTE =
   " Send the same X-Conversation-Id on the follow-up questions of one conversation: the run then carries it — an A2A subagent it transfers to continues the remote conversation the first question opened, and every MCP server it calls is told which conversation is asking. Optional; without it each request is its own conversation.";
 
+/**
+ * The shortest `@ag-ui/client` program that talks to a project — shown on the
+ * API Reference and on the Integrations tab, from one place so the two cannot
+ * drift. A placeholder stands for the token, never a value.
+ */
+export function aguiClientExample(url: string): string {
+  return [
+    'import { HttpAgent } from "@ag-ui/client";',
+    "",
+    "const agent = new HttpAgent({",
+    `  url: "${url}",`,
+    `  headers: { Authorization: "Bearer ${PLACEHOLDERS.token}" },`,
+    "});",
+    "",
+    "const result = await agent.runAgent({",
+    '  tools: [{ name: "showMap", description: "Show a place on the map", parameters: { type: "object", properties: { place: { type: "string" } } } }],',
+    "});",
+    "console.log(result.newMessages);",
+  ].join("\n");
+}
+
 /** A request/response field row. `type` is a display string, not a real TS type. */
 export interface FieldSpec {
   name: string;
@@ -489,23 +510,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       errorCodes: [400, 401, 404],
       codeExamples: [
         curlExample({ method: "POST", url: abs(aguiPath), auth: "token", body: aguiBody, streaming: true }),
-        {
-          language: "javascript",
-          label: "@ag-ui/client",
-          code: [
-            'import { HttpAgent } from "@ag-ui/client";',
-            "",
-            "const agent = new HttpAgent({",
-            `  url: "${abs(aguiPath)}",`,
-            `  headers: { Authorization: "Bearer ${PLACEHOLDERS.token}" },`,
-            "});",
-            "",
-            "const result = await agent.runAgent({",
-            '  tools: [{ name: "showMap", description: "Show a place on the map", parameters: { type: "object", properties: { place: { type: "string" } } } }],',
-            "});",
-            "console.log(result.newMessages);",
-          ].join("\n"),
-        },
+        { language: "javascript", label: "@ag-ui/client", code: aguiClientExample(abs(aguiPath)) },
       ],
     });
   }

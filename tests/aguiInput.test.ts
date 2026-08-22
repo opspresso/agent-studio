@@ -84,3 +84,39 @@ describe("toEngineMessages", () => {
     ]);
   });
 });
+
+describe("toEngineMessages — the client's record of the thinking", () => {
+  it("puts a reasoning message back on the assistant turn that follows it", () => {
+    expect(
+      toEngineMessages(
+        [
+          { id: "1", role: "user", content: "hi" },
+          { id: "2", role: "reasoning", content: "first thought" },
+          { id: "3", role: "reasoning", content: "second thought" },
+          {
+            id: "4",
+            role: "assistant",
+            toolCalls: [{ id: "c1", type: "function", function: { name: "showMap", arguments: "{}" } }],
+          },
+          { id: "5", role: "tool", content: "shown", toolCallId: "c1" },
+          // Thinking that precedes nothing of the assistant's is dropped.
+          { id: "6", role: "reasoning", content: "stray" },
+          { id: "7", role: "user", content: "thanks" },
+          { id: "8", role: "assistant", content: "welcome" },
+        ],
+        [],
+      ),
+    ).toEqual([
+      { role: "user", content: "hi" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{ id: "c1", type: "function", function: { name: "showMap", arguments: "{}" } }],
+        reasoning_content: "first thought\n\nsecond thought",
+      },
+      { role: "tool", content: "shown", tool_call_id: "c1" },
+      { role: "user", content: "thanks" },
+      { role: "assistant", content: "welcome" },
+    ]);
+  });
+});

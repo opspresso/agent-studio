@@ -1842,20 +1842,6 @@ export async function* runAgent(
       return;
     }
 
-    if (outputCut && !outputCutReported) {
-      // The provider cut this turn at its output cap while the model was
-      // calling tools. The loop goes on — the model reads the error results
-      // below and can retry — but the cut is announced: a truncated call plan
-      // executed silently is the same defect as a truncated answer reported
-      // as a finish.
-      outputCutReported = true;
-      yield {
-        author,
-        warning:
-          "The model's turn was cut at its output limit while it was calling tools; the run continues.",
-      };
-    }
-
     // All tool calls of one response aggregate into ONE assistant message.
     const wireToolCalls: ChannelToolCall[] = [];
     const toolMessages: ChannelMessage[] = [];
@@ -1878,14 +1864,39 @@ export async function* runAgent(
     // but never dispatched: running it with `{}` would report a call the
     // model never made as a success.
     const prepared = prepareToolCalls(calls, builtinNames, clientToolNames, filter);
-    for (const { call, args, displayArgs, malformed } of prepared) {
+    // Whether this turn is the run's last: a call to a client tool hands the
+    // turn to the application (see `RunAgentInput.clientTools`). Decided before
+    // anything runs, because two things below are done differently for a turn
+    // nothing here will continue.
+    const endsOnClientCall = prepared.some((entry) => entry.client);
+    if (outputCut && !outputCutReported) {
+      // The provider cut this turn at its output cap while the model was
+      // calling tools. The loop goes on — the model reads the error results
+      // below and can retry — but the cut is announced: a truncated call plan
+      // executed silently is the same defect as a truncated answer reported
+      // as a finish. Unless the turn is the run's last, when nothing goes on:
+      // the application receives a call plan that may be incomplete, and the
+      // ending below says `output-limit` rather than a finish.
+      outputCutReported = true;
+      yield {
+        author,
+        warning: endsOnClientCall
+          ? "The model's turn was cut at its output limit while it was calling tools, one of them an application tool; the run ends here and the calls may be incomplete."
+          : "The model's turn was cut at its output limit while it was calling tools; the run continues.",
+      };
+    }
+    for (const { call, args, displayArgs, malformed, client } of prepared) {
       if (malformed) {
         // The model's own text is the only truthful record of arguments that
         // did not parse — re-encoding `{}` would claim it asked for nothing.
+        // A client tool's copy is not cut: the announced text is the call.
         const wireCall: ChannelToolCall = {
           id: call.id,
           type: "function",
-          function: { name: call.name, arguments: boundArgumentText(call.arguments) },
+          function: {
+            name: call.name,
+            arguments: client ? call.arguments : boundArgumentText(call.arguments),
+          },
         };
         wireToolCalls.push(wireCall);
         yield {
@@ -1896,11 +1907,20 @@ export async function* runAgent(
       }
       // Both copies bounded, and each from its own source: `args` is masked and
       // goes back to the provider, `displayArgs` has the values restored and is
-      // what a person reads.
+      // what a person reads. A client tool's announced copy is the exception:
+      // for every other tool the real call was made with the whole value and
+      // the announcement only describes it, but a client tool's call *is* the
+      // announcement — nothing else carries the arguments to the application
+      // that runs it — so a value swapped for its size would be the value the
+      // tool receives.
       wireToolCalls.push(toWireToolCall(call.id, call.name, boundToolArgs(args)));
       yield {
         author,
-        delta: { toolCalls: [toWireToolCall(call.id, call.name, boundToolArgs(displayArgs))] },
+        delta: {
+          toolCalls: [
+            toWireToolCall(call.id, call.name, client ? displayArgs : boundToolArgs(displayArgs)),
+          ],
+        },
       };
     }
 
@@ -2006,18 +2026,6 @@ export async function* runAgent(
             : deps.runSubagent(agentName, message, turn + 1, maxTurn, childImages, transcript),
           outcome,
         );
-        // A successful transfer used to leave no trace at all: only its failures
-        // yielded a result, so a reader of the finished conversation could not
-        // tell which agent had answered. Marked display-only — the child's
-        // answer returns as its own message, and replaying this marker in its
-        // place would say the delegation came back empty.
-        yield toolResult(call, `Transferred to '${agentName}'; its answer follows.`, {
-          name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
-          displayOnly: true,
-          // No `fit`: an explicit `stored` is always charged whole, since the
-          // engine wrote it and it is the same string every time.
-          stored: JSON.stringify({ result: null }),
-        });
         // A transfer's answer used to enter the context with no bound at all —
         // the one unbudgeted spot. The user already saw the child's full
         // answer stream by; only what re-enters the parent's context is cut.
@@ -2039,6 +2047,27 @@ export async function* runAgent(
         const childReply =
           answer ||
           (outcome.error ? `Error: ${outcome.error}` : "Error: the agent returned no answer.");
+        if (endsOnClientCall) {
+          // The "For context" turn below dies with the run, and the
+          // application's replay of this turn carries tool results and nothing
+          // else — so on the run's last turn the answer goes out *as* the
+          // transfer's result, where the next run will find it. Fitted like
+          // any child-sized text.
+          yield toolResult(call, childReply, { name: `${TRANSFER_TOOL_NAME}: ${agentName}` });
+        } else {
+          // A successful transfer used to leave no trace at all: only its
+          // failures yielded a result, so a reader of the finished conversation
+          // could not tell which agent had answered. Marked display-only — the
+          // child's answer returns as its own message, and replaying this
+          // marker in its place would say the delegation came back empty.
+          yield toolResult(call, `Transferred to '${agentName}'; its answer follows.`, {
+            name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
+            displayOnly: true,
+            // No `fit`: an explicit `stored` is always charged whole, since the
+            // engine wrote it and it is the same string every time.
+            stored: JSON.stringify({ result: null }),
+          });
+        }
         if (!answer) {
           // The reason reaches the reader, not only the model. Every consumer
           // drops an authored `error` chunk on the grounds that the parent
@@ -2523,12 +2552,22 @@ export async function* runAgent(
     // were fitted or inserted.
     contextBudget?.chargeMessage(assistantMessage);
     messages.push(assistantMessage, ...toolMessages, ...postContextMessages);
-    if (prepared.some((entry) => entry.client)) {
+    if (endsOnClientCall) {
       // The application holds the rest of this turn: it runs the call and
       // sends the result back as the next run's history, where this turn's
-      // own results already are. Ended as a finish, not a limit — the model
-      // stopped because it asked for something only the other side can do.
-      yield { author, done: true };
+      // own results already are. What cannot follow is said: a picture a tool
+      // returned rides on a user turn that only this loop holds, so the model
+      // will not see it again, though the reader already has it.
+      if (attachedImages.length > 0) {
+        yield {
+          author,
+          warning: `${attachedImages.length} image(s) tools returned this turn were delivered, but the model will not see them on the next run: the run ends here for the application to act.`,
+        };
+      }
+      // A finish when the model stopped because it asked for something only
+      // the other side can do; the provider's cut when it did not get to
+      // finish asking — `done` would claim a complete call plan.
+      yield outputCut ? { author, finishReason: "output-limit" } : { author, done: true };
       return;
     }
     turn = nextTurn;

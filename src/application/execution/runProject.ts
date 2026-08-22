@@ -160,6 +160,20 @@ function imageRunRefusal(projectName: string): ValidationError {
 }
 
 /**
+ * Client tools are calls the agent loop ends on, and a run with no loop has
+ * nothing to end: a single-shot answer cannot stop for the application, and an
+ * image model is offered no tools at all. Offered silently they would be
+ * tools the client waits on forever, so the facade refuses them for those
+ * types — a surface that means to declare them checks the strategy first, as
+ * the AG-UI one does, and strips them with a warning.
+ */
+function clientToolsRefusal(project: Project): ValidationError {
+  return new ValidationError(
+    `Project "${project.name}" is a ${project.projectType} project; application tools can only be offered to an agent project's tool loop`,
+  );
+}
+
+/**
  * The tool loop runs agent projects, and every other type reaching it is a
  * misdispatch rather than a degraded run.
  *
@@ -211,6 +225,9 @@ export async function* streamProjectRun(
   input: ExecuteProjectInput,
 ): AsyncGenerator<EngineChunk> {
   if (runStrategyFor(input.project) === "image") {
+    if (input.clientTools && input.clientTools.length > 0) {
+      throw clientToolsRefusal(input.project);
+    }
     // An image run's prompt is one string. A chunk consumer's history is the
     // conversation, and only its last user turn can be the thing to draw.
     const prompt = latestUserText(input.messages);
@@ -264,6 +281,9 @@ export function executeProjectStream(
   }
   if (runStrategyFor(input.project) === "agent") {
     return executeAgent(deps, toRunInput(input));
+  }
+  if (input.clientTools && input.clientTools.length > 0) {
+    throw clientToolsRefusal(input.project);
   }
   return executeVersionStream(deps, { ...toRunInput(input), variables: input.variables });
 }
@@ -444,6 +464,9 @@ export async function executeProject(
   }
   if (runStrategyFor(input.project) === "agent") {
     return collectRun(executeAgent(deps, toRunInput(input)), input.version.model);
+  }
+  if (input.clientTools && input.clientTools.length > 0) {
+    throw clientToolsRefusal(input.project);
   }
   const result = await executeVersion(deps, {
     ...toRunInput(input),

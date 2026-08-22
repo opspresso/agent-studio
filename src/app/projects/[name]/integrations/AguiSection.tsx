@@ -6,6 +6,7 @@ import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { stateColor } from "@/app/_components/badgeColors";
 import { useT } from "@/app/_i18n/provider";
+import { aguiClientExample } from "../api-reference/endpoints";
 
 /**
  * How an application embeds this project through AG-UI: the endpoint, what
@@ -17,18 +18,6 @@ export function AguiSection({ projectName, published }: { projectName: string; p
   const t = useT();
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const url = `${origin}/api/agui/${projectName}`;
-  const client = [
-    'import { HttpAgent } from "@ag-ui/client";',
-    "",
-    "const agent = new HttpAgent({",
-    `  url: "${url}",`,
-    '  headers: { Authorization: "Bearer $PROJECT_API_TOKEN" },',
-    "});",
-    "",
-    "await agent.runAgent({",
-    '  tools: [{ name: "showMap", description: "Show a place on the map", parameters: { type: "object", properties: { place: { type: "string" } } } }],',
-    "});",
-  ].join("\n");
 
   return (
     <CollapsibleSection
@@ -41,19 +30,20 @@ export function AguiSection({ projectName, published }: { projectName: string; p
     >
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>
-          The published version answers AG-UI runs at this address — an application sends a{" "}
-          <Code>RunAgentInput</Code> and reads an event stream. Callers authenticate with the
-          project&apos;s API token in <Code>Authorization: Bearer</Code>; the thread id they send is
-          the run&apos;s conversation, and any tools they declare are offered to the run and executed
-          on their side.
+          {t("pint.aguiLede")} <Code>Authorization: Bearer</Code>
         </Text>
         {!published && (
           <Text fz="sm" c="dimmed">
-            Publish a version to expose this project over AG-UI.
+            {t("pint.aguiPublish")}
           </Text>
         )}
         <CopyableUrl url={url} />
-        <CollapsibleCode title="@ag-ui/client" language="javascript" code={client} copyLabel="Copy example" />
+        <CollapsibleCode
+          title="@ag-ui/client"
+          language="javascript"
+          code={aguiClientExample(url)}
+          copyLabel={t("pint.aguiCopy")}
+        />
       </Stack>
     </CollapsibleSection>
   );

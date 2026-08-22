@@ -159,10 +159,10 @@ count one request may declare are all a provider's or a stored item's number —
 discovers them. The turn ceiling, the subagent depth, the transfer transcript budget and how
 many tool calls run at once are this platform's own policy, and each is read by exactly the
 loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for a while: the
-ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 120 only
+ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 115 only
 because the engine's builtins are added after the MCP tools are cut and need the room.
 
-**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 130 decisions across two
+**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 133 decisions across two
 tables, the second holding the ones the test cannot express as a pattern but that the same
 rule governs. `tests/architecture.test.ts` is what enforces both.
 

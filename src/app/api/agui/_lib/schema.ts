@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { AguiRunInput } from "@/domain/agui/types";
-import { base64Chars, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import {
+  base64Chars,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS,
+  SUPPORTED_IMAGE_TYPES,
+} from "@/domain/llm/imageLimits";
 
 /**
  * The protocol's `RunAgentInput`, validated with this app's zod rather than
@@ -22,7 +27,7 @@ const imageSourceSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("data"),
     value: z.string().max(base64Chars(MAX_ATTACHMENT_BYTES), "image payload is too large"),
-    mimeType: z.string().regex(/^image\//, "an image part must carry an image/* mime type"),
+    mimeType: z.enum(SUPPORTED_IMAGE_TYPES),
   }),
   z.object({
     type: z.literal("url"),
@@ -89,7 +94,7 @@ const contextSchema = z.object({
   value: z.string().max(20_000),
 });
 
-export const runAgentInputSchema = z.object({
+export const runAgentInputSchema: z.ZodType<AguiRunInput> = z.object({
   threadId: z.string().min(1).max(LONGEST_ID),
   runId: z.string().min(1).max(LONGEST_ID),
   messages: z.array(messageSchema).min(1),
@@ -99,7 +104,3 @@ export const runAgentInputSchema = z.object({
   forwardedProps: z.unknown().optional(),
 });
 
-/** The validated body is the domain's input; the assertion keeps the two from drifting. */
-export type RunAgentInputBody = z.infer<typeof runAgentInputSchema>;
-const _assertable: AguiRunInput = {} as RunAgentInputBody;
-void _assertable;

@@ -42,6 +42,16 @@ export interface AguiEventDeps {
   sign?: SignObjectUrl;
   /** Mints message ids; injected so a test can read a deterministic stream. */
   newId?: () => string;
+  /**
+   * What the surface itself could not do for this run — said right after
+   * `RUN_STARTED`, and collected onto `RUN_FINISHED.result` like the run's own.
+   */
+  warnings?: readonly string[];
+}
+
+/** The run failing, as the protocol says it — for the translator and for a failure it never saw. */
+export function runErrorEvent(message: string): AguiEvent {
+  return { type: "RUN_ERROR", message };
 }
 
 /**
@@ -53,34 +63,45 @@ export interface AguiEventDeps {
  * begun would deliver the refusal as `RUN_ERROR` inside a 200. Anything thrown
  * after that point is the run failing mid-way and is reported as `RUN_ERROR`,
  * the way every other streaming surface turns it into an `{error}` frame.
+ *
+ * `RUN_FINISHED` is emitted when the source is **exhausted**, not when the
+ * terminal chunk passes: the artifact recorder says what it could not keep
+ * only after the engine's stream has ended, so a finish on the `done` chunk
+ * would drop the one warning about a picture that was drawn and lost.
+ *
+ * The source is closed in a `finally`, whichever yield the reader left at.
+ * A client that hangs up returns *this* generator, and a `return()` reaches
+ * the source only while the loop is delegating to it — not while
+ * `RUN_STARTED` or a leading warning is the pending yield, which is the first
+ * thing every run sends. Left unclosed there, the bracket never closes and
+ * the run's concurrency slot is held until its deadline.
  */
 export async function* toAguiEvents(
   source: AsyncGenerator<EngineChunk>,
   run: AguiRunIdentity,
   deps: AguiEventDeps = {},
 ): AsyncGenerator<AguiEvent> {
-  const { value: head } = await source.next();
-  yield { type: "RUN_STARTED", threadId: run.threadId, runId: run.runId };
-  const translator = new RunTranslator(run, deps);
   try {
-    if (head !== undefined) {
-      yield* translator.observe(head);
-      for await (const chunk of source) {
-        yield* translator.observe(chunk);
-        // Nothing after the run's ending is for the reader, but the stream is
-        // drained rather than returned: returning a generator mid-way runs its
-        // cleanup as a cancellation, and the bracket would record a finished
-        // run as one the caller abandoned.
+    // Outside the catch below on purpose: a refusal has to reach the route.
+    const { value: head } = await source.next();
+    const translator = new RunTranslator(run, deps);
+    try {
+      yield { type: "RUN_STARTED", threadId: run.threadId, runId: run.runId };
+      for (const warning of deps.warnings ?? []) {
+        yield* translator.collect({ warning });
       }
+      if (head !== undefined) {
+        yield* translator.observe(head);
+        for await (const chunk of source) {
+          yield* translator.observe(chunk);
+        }
+      }
+      yield* translator.finish();
+    } catch (error) {
+      yield* translator.fail(error instanceof Error ? error.message : String(error));
     }
-    if (!translator.ended) {
-      yield* translator.finish("completed");
-    }
-  } catch (error) {
-    if (translator.ended) {
-      return;
-    }
-    yield* translator.fail(error instanceof Error ? error.message : String(error));
+  } finally {
+    await source.return(undefined);
   }
 }
 
@@ -96,6 +117,8 @@ interface UsageTotals {
 class RunTranslator {
   /** `RUN_FINISHED` or `RUN_ERROR` has been emitted; nothing follows either. */
   ended = false;
+  /** How the engine said the run ended, held until the source is exhausted. */
+  private termination: AguiRunResult["termination"] | undefined;
   private openText: string | undefined;
   private openReasoning: string | undefined;
   /**
@@ -132,11 +155,7 @@ class RunTranslator {
       this.usage.cachedTokens += chunk.usage.cachedTokens ?? 0;
       this.usage.calls += 1;
     }
-    const warning = collectedWarning(chunk, this.warnings);
-    if (warning) {
-      this.warnings.push(warning);
-      yield { type: "CUSTOM", name: "agent-studio.warning", value: { message: warning } };
-    }
+    yield* this.collect(chunk);
     if (chunk.image) {
       yield {
         type: "CUSTOM",
@@ -162,11 +181,7 @@ class RunTranslator {
       if (outcome.file) {
         yield { type: "CUSTOM", name: "agent-studio.file", value: outcome.file };
       }
-      const lost = outcome.warning && collectedWarning({ warning: outcome.warning }, this.warnings);
-      if (lost) {
-        this.warnings.push(lost);
-        yield { type: "CUSTOM", name: "agent-studio.warning", value: { message: lost } };
-      }
+      yield* this.collect(outcome);
     }
     if (!isTopLevelChunk(chunk)) {
       yield* this.observeAuthored(chunk);
@@ -236,7 +251,19 @@ class RunTranslator {
     }
     const termination = runTermination(chunk);
     if (termination !== undefined && termination !== "error" && termination !== "cancelled") {
-      yield* this.finish(termination);
+      // The answer is over, so what is open closes now; the ending itself
+      // waits for the source, which may still have a loss to report.
+      this.termination = termination;
+      yield* this.closeAll();
+    }
+  }
+
+  /** A loss, said once as it happens and kept for the ending. `collectedWarning` owns which count. */
+  async *collect(loss: { warning?: string }): AsyncGenerator<AguiEvent> {
+    const warning = collectedWarning(loss, this.warnings);
+    if (warning) {
+      this.warnings.push(warning);
+      yield { type: "CUSTOM", name: "agent-studio.warning", value: { message: warning } };
     }
   }
 
@@ -256,7 +283,11 @@ class RunTranslator {
     }
   }
 
-  async *finish(termination: AguiRunResult["termination"]): AsyncGenerator<AguiEvent> {
+  /** The run's ending, once the source has nothing more to say. A stream that never said how it ended completed. */
+  async *finish(): AsyncGenerator<AguiEvent> {
+    if (this.ended) {
+      return;
+    }
     yield* this.closeAll();
     this.ended = true;
     const usage = this.usageReport();
@@ -265,15 +296,18 @@ class RunTranslator {
       threadId: this.run.threadId,
       runId: this.run.runId,
       outcome: { type: "success" },
-      result: { termination, warnings: [...this.warnings] },
+      result: { termination: this.termination ?? "completed", warnings: [...this.warnings] },
       ...(usage ? { usage: [usage] } : {}),
     };
   }
 
   async *fail(message: string): AsyncGenerator<AguiEvent> {
+    if (this.ended) {
+      return;
+    }
     yield* this.closeAll();
     this.ended = true;
-    yield { type: "RUN_ERROR", message };
+    yield runErrorEvent(message);
   }
 
   private async *closeAll(): AsyncGenerator<AguiEvent> {

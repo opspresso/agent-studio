@@ -10,7 +10,7 @@ import {
   type AgentDeps,
   type RunAgentInput,
 } from "@/application/llm/engine";
-import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+import { contentChunk, FakeChannel, finishReasonChunk, toolCallChunk, usageChunk } from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -178,5 +178,92 @@ describe("client tools in the assembly", () => {
     const deps: AgentDeps = { channel, recordUsage: async () => {} };
     const chunks = await collect(runAgent(deps, input({ clientTools: [clientTool("getWeather")] })));
     expect(chunks[0]?.warning).toContain("getWeather");
+  });
+});
+
+describe("a turn that ends on a client tool", () => {
+  it("announces a client tool's arguments whole, however large", async () => {
+    // The announced copy is the call: nothing else carries it to the application.
+    const content = "x".repeat(20 * 1024);
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "insertDocument", JSON.stringify({ content })), usageChunk(10, 5)],
+    ]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const chunks = await collect(runAgent(deps, input({ clientTools: [clientTool("insertDocument")] })));
+    const announced = chunks.find((c) => c.delta?.toolCalls)?.delta?.toolCalls?.[0];
+    expect(JSON.parse(announced?.function?.arguments ?? "{}")).toEqual({ content });
+    expect(announced?.function?.arguments).not.toContain("elided");
+  });
+
+  it("ends at the provider's output limit when the cut turn called a client tool, and says so", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "showMap", '{"city":"Se'), finishReasonChunk("length"), usageChunk(10, 5)],
+      [contentChunk("never reached")],
+    ]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const chunks = await collect(runAgent(deps, input()));
+    expect(channel.calls).toBe(1);
+    expect(chunks.find((c) => c.warning)?.warning).toContain("the run ends here");
+    expect(runTermination(chunks.at(-1)!)).toBe("output-limit");
+    // Announced as the model wrote it, parsed or not.
+    expect(chunks.find((c) => c.delta?.toolCalls)?.delta?.toolCalls?.[0]?.function?.arguments).toBe('{"city":"Se');
+  });
+
+  it("hands a transfer's answer out as its result when the same turn called a client tool", async () => {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "c1", "transfer_to_agent", '{"agent_name":"child","message":"go"}'),
+        toolCallChunk(1, "c2", "showMap", "{}"),
+        usageChunk(10, 5),
+      ],
+      [contentChunk("never reached")],
+    ]);
+    const runSubagent = vi.fn(async function* (): AsyncGenerator<EngineChunk, string> {
+      yield { author: "child", delta: { content: "child says hi" } };
+      return "child says hi";
+    });
+    const deps: AgentDeps = { channel, recordUsage: async () => {}, runSubagent };
+    const chunks = await collect(
+      runAgent(
+        deps,
+        input({
+          mcpTools: [],
+          subagents: [{ name: "child", description: "a child agent", type: "local" }],
+        }),
+      ),
+    );
+    expect(runSubagent).toHaveBeenCalledTimes(1);
+    const result = chunks.find((c) => c.toolResult?.toolCallId === "c1")?.toolResult;
+    // The "For context" turn dies with the run; the answer has to be where the
+    // application's replay will carry it.
+    expect(result?.content).toBe("child says hi");
+    expect(result?.displayOnly).toBeUndefined();
+    expect(channel.calls).toBe(1);
+    expect(runTermination(chunks.at(-1)!)).toBe("completed");
+  });
+
+  it("warns that a picture a tool returned this turn will not reach the model again", async () => {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "c1", "screenshot", "{}"),
+        toolCallChunk(1, "c2", "showMap", "{}"),
+        usageChunk(10, 5),
+      ],
+      [contentChunk("never reached")],
+    ]);
+    const callMcpTool = vi.fn(async () => ({ text: "shot", images: [{ b64: "AAAA", mimeType: "image/png" }] }));
+    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const chunks = await collect(
+      runAgent(
+        deps,
+        input({
+          mcpTools: [{ type: "function", function: { name: "screenshot", description: "", parameters: {} } }],
+        }),
+      ),
+    );
+    expect(chunks.some((c) => c.image)).toBe(true);
+    expect(chunks.map((c) => c.warning).filter(Boolean)).toEqual([
+      "1 image(s) tools returned this turn were delivered, but the model will not see them on the next run: the run ends here for the application to act.",
+    ]);
   });
 });

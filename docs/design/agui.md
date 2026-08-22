@@ -46,7 +46,7 @@ prompt project 는 한 번 답하고, image project 는 그림을 그린다 — 
 | `file` (author 무관) | `CUSTOM` `agent-studio.file` `{ name, mimeType, url, byteSize? }` — 바이트는 브래킷이 걷어냈으므로 `VIEW_URL_TTL_SECONDS` 로 서명한 주소. 주소를 만들 수 없으면 경고가 된다 |
 | `warning` (author 무관, `collectedWarning` 으로 중복 제거) | `CUSTOM` `agent-studio.warning` `{ message }` — 그리고 `RUN_FINISHED.result.warnings` 에 모인다 |
 | `usage` (모든 호출) | 합산해 `RUN_FINISHED.usage[0]` (`inputTokens`, `outputTokens`, `totalTokens`, `reasoningTokens?`, `cachedInputTokens?`) |
-| top-level `done` / `finishReason` | 열린 것을 전부 닫고 `RUN_FINISHED` — `result.termination` 은 엔진의 어휘(`completed` / `turn-limit` / `output-limit`) 그대로 |
+| top-level `done` / `finishReason` | 열린 것을 전부 닫고 종료 사유를 기억해 둔다. `RUN_FINISHED` 는 **소스가 소진될 때** 나간다 — artifact recorder 는 엔진 스트림이 끝난 *뒤에* 보관하지 못한 그림을 말하므로, `done` 에서 끝내면 그 경고 하나를 잃는다. `result.termination` 은 엔진의 어휘(`completed` / `turn-limit` / `output-limit`) 그대로 |
 | top-level `error`, 또는 스트림 도중의 throw | 열린 것을 전부 닫고 `RUN_ERROR` |
 
 프로토콜에는 경고 프레임도 종료 사유 필드도 없는데, 둘 다 답을 읽는 데 필요하다 — 턴 한도에서
@@ -56,9 +56,17 @@ prompt project 는 한 번 답하고, image project 는 그림을 그린다 — 
 **첫 청크는 `RUN_STARTED` 보다 먼저 당긴다.** 런은 첫 `next()` 에서 거절된다 — 비용 가드,
 동시성 가드 — 그리고 라우트는 그 throw 를 429 와 `Retry-After` 로 바꾼다. 이벤트 스트림이
 이미 시작돼 있었다면 거절은 200 안의 `RUN_ERROR` 가 됐을 것이다. 그 뒤의 throw 는 런의 실패이고
-`RUN_ERROR` 로 보고된다. 같은 이유로 스트림은 끝까지 **소진** 하지 중간에 return 하지 않는다:
-제너레이터를 중간에 return 하면 그 정리가 취소로 돌고, 브래킷은 끝난 런을 호출자가 버린
-런으로 기록한다.
+`RUN_ERROR` 로 보고된다 — 번역기가 보지 못한 실패(첫 청크가 `FIRST_CHUNK_GRACE_MS` 를 넘긴
+뒤 실패한 경우, 응답은 이미 만들어져 있다)도 라우트가 `sseResponseRaw` 의 `errorFrame` 으로
+같은 프레임을 쓴다; 프로토콜 밖의 `{error}` 프레임은 클라이언트에게 에러가 아니라 거부할
+스트림이다. 같은 이유로 스트림은 끝까지 **소진** 하지 중간에 return 하지 않는다: 제너레이터를
+중간에 return 하면 그 정리가 취소로 돌고, 브래킷은 끝난 런을 호출자가 버린 런으로 기록한다.
+
+**독자가 떠나면 소스를 닫는다.** 끊긴 클라이언트는 *이* 제너레이터를 return 시키고, 그것이
+소스에 닿는 것은 루프가 소스에 위임하고 있는 동안뿐이다 — `RUN_STARTED` 나 선행 경고가
+대기 중인 yield 일 때는 아니고, 그것이 모든 런이 가장 먼저 보내는 것이다. 번역기의 `finally`
+가 어느 yield 에서 떠났든 `source.return()` 을 부르므로 브래킷과 MCP 세션이 닫힌다; 그러지
+않으면 동시성 슬롯이 데드라인까지 붙들린다.
 
 ## 클라이언트 tool
 
@@ -71,14 +79,20 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
   올 수 없는 호출을 기다리고 있을 것이기 때문이다.
 - 런 자신의 tool 뒤에 붙고, 요청 전체 `MAX_TOOLS_PER_REQUEST`(프로바이더의 128) 에 남은
   자리만큼만 제공되며, 빌트인이나 MCP alias 가 이미 쓰는 이름은 제공되지 않는다 — 루프가 둘을
-  구분할 수 없다. 어느 쪽이든 경고가 된다.
+  구분할 수 없다. 어느 쪽이든 경고가 된다. 파사드는 prompt·image project 에 client tool 이
+  오면 **거절** 한다(`ValidationError`) — 확인하지 않은 호출자를 위한 것이고, 이 표면은
+  확인한 뒤 걷어내며 경고한다.
 - 시스템 프롬프트의 `## Application Tools` 섹션이 한 가지만 말한다: 이 tool 은 상대편에서
   돌고, 부르면 턴이 끝나며, 결과는 대화와 함께 돌아온다.
-- **클라이언트 tool 을 부른 턴이 런의 마지막 턴이다.** 호출은 모두 알려지고, 그 턴의 런
-  자신의 호출(MCP, 빌트인)은 평소처럼 돌아 결과를 보고한 뒤, 루프는 `done` 으로 끝난다.
-  클라이언트 호출에는 결과를 만들지 않는다 — 앱의 답이 history 에 들어갈 결과다. 다음 런의
-  `messages` 는 그 assistant 턴(`toolCalls`)과 tool 메시지들(앱이 만든 것, 그리고
-  `TOOL_CALL_RESULT` 로 받은 서버 쪽 것)을 싣고, 엔진은 거기서 이어 간다.
+- **클라이언트 tool 을 부른 턴이 런의 마지막 턴이다.** 호출은 모두 알려지고 — 클라이언트
+  호출의 인자는 **자르지 않는다**, 알림이 곧 호출이라서 — 그 턴의 런 자신의 호출(MCP, 빌트인)은
+  평소처럼 돌아 결과를 보고한 뒤, 루프는 `done` 으로 끝난다(프로바이더가 턴을 출력 한도에서
+  잘랐으면 `output-limit`: `done` 은 완전한 호출 계획을 주장한다). 같은 턴의 transfer 는 답을
+  display-only 마커 대신 **자기 결과로** 내보낸다 — "For context" 턴은 런과 함께 죽고, 앱의
+  재생은 tool 결과만 싣기 때문이다; MCP tool 이 돌려준 그림은 모델이 다시 보지 못한다고
+  경고한다(독자는 이미 받았다). 클라이언트 호출에는 결과를 만들지 않는다 — 앱의 답이 history
+  에 들어갈 결과다. 다음 런의 `messages` 는 그 assistant 턴(`toolCalls`)과 tool 메시지들(앱이
+  만든 것, 그리고 `TOOL_CALL_RESULT` 로 받은 서버 쪽 것)을 싣고, 엔진은 거기서 이어 간다.
 
 ## 입력
 
@@ -87,8 +101,10 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
   그 이름을 대며 거절한다: 보지 못한 첨부에 대해 답하는 런보다 낫다. `assistant` 의
   `toolCalls` → `tool_calls`, `tool` 의 `toolCallId` → `tool_call_id`, `error` 가 있으면
   엔진 규약대로 `Error: ` 접두사.
-- `reasoning`·`activity` 메시지는 버린다. 클라이언트가 앞선 런에서 본 것의 기록이지 대화의
-  턴이 아니다 — 이 플랫폼이 내보낸 추론이 다음 런에 `reasoning` 메시지로 돌아온다.
+- `reasoning` 메시지는 바로 뒤의 assistant 턴에 `reasoning_content` 로 되돌린다 — 엔진은 턴의
+  사고를 그 턴과 그 턴이 선언한 tool 호출에 붙여 두고, 클라이언트 tool 로 끝난 턴이 정확히
+  다음 런이 재생하는 턴이다. assistant 턴이 뒤따르지 않는 것은 버린다. `activity` 메시지는
+  앞선 런이 보여 준 것의 기록이라 버린다.
 - `context` (`{ description, value }[]`) 는 history **앞** 의 system 턴 하나가 된다. 앱이
   세션에 대해 아는 사실 — 지금 보는 페이지, 열어 둔 레코드 — 이고, 답하는 턴 밖에 두어야
   검색 질의나 이미지 프롬프트가 그것을 요청으로 읽지 않는다.

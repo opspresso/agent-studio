@@ -1,4 +1,5 @@
 import { aguiDeps } from "@/lib/container";
+import { runErrorEvent } from "@/application/agui/events";
 import { resolveAguiProject, streamAguiRun } from "@/application/agui/run";
 import { runAgentInputSchema } from "@/app/api/agui/_lib/schema";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
@@ -55,6 +56,10 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
         signal: abortController.signal,
       }),
       abortController,
+      // A failure the translator never saw — the run's first pull failing
+      // after the response was already built — still answers in the
+      // protocol's frame, which a client accepts as the first event.
+      { errorFrame: runErrorEvent },
     );
   } catch (error) {
     return apiError(error, request);

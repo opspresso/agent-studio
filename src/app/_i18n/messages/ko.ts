@@ -539,6 +539,10 @@ export const ko: Messages = {
   "pint.lede":
     "다른 시스템이 이 프로젝트에 닿는 방법입니다 — API 호출자가 내는 토큰, 봇이 이 프로젝트를 실행하는 채팅 플랫폼, A2A·AG-UI 노출. 프로젝트 자체·비용 한도·트리거는 설정 탭에 있습니다.",
   "pint.ownerOnly": "프로젝트 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
+  "pint.aguiLede":
+    "published 된 version 이 이 주소에서 AG-UI 런에 답합니다 — 애플리케이션이 RunAgentInput 을 보내고 이벤트 스트림을 읽습니다. 보내는 thread id 가 런의 대화가 되고, 선언한 tool 은 런에 제공되어 애플리케이션 쪽에서 실행됩니다. 호출자는 프로젝트의 API 토큰을 다음 헤더로 제시합니다:",
+  "pint.aguiPublish": "version 을 publish 하면 이 프로젝트가 AG-UI 로 노출됩니다.",
+  "pint.aguiCopy": "예시 복사",
 
   "pset.dangerZone": "위험 구역",
   "pset.visibility": "공개 범위",

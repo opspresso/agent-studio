@@ -2488,3 +2488,42 @@ describe("a transfer carries who is asking", () => {
     expect(prompt).toContain("You are answering Bruce.");
   });
 });
+
+describe("client tools off the agent loop", () => {
+  const tool = {
+    type: "function" as const,
+    function: { name: "showMap", description: "Show a map", parameters: {} },
+  };
+
+  async function drain(source: AsyncGenerator<EngineChunk>): Promise<void> {
+    for await (const chunk of source) {
+      void chunk;
+    }
+  }
+
+  it("are refused for a prompt project on both dispatch points", async () => {
+    const { deps } = executionDepsFixture(new FakeChannel([]));
+    const input = {
+      project: { ...projectFixture(), projectType: "llm" as const },
+      version: versionFixture({ piiFiltering: false }),
+      messages: [{ role: "user" as const, content: "hi" }],
+      clientTools: [tool],
+    };
+    expect(() => executeProjectStream(deps, input)).toThrow(ValidationError);
+    await expect(executeProject(deps, input)).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("are refused for an image project", async () => {
+    const { deps } = executionDepsFixture(new FakeChannel([]));
+    await expect(
+      drain(
+        streamProjectRun(deps, {
+          project: { ...projectFixture(), projectType: "image" },
+          version: { ...versionFixture({ piiFiltering: false }), model: DEFAULT_IMAGE_MODEL! },
+          messages: [{ role: "user", content: "a fox" }],
+          clientTools: [tool],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+});

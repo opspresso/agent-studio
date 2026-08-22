@@ -14,6 +14,14 @@ import { imageDataUrl, type ChatMessageInput, type ContentPart } from "@/domain/
 /**
  * The conversation plus what the application asked the run to know.
  *
+ * A `reasoning` message is the client's record of the thinking this platform
+ * streamed before an assistant turn, and it goes back onto that turn as
+ * `reasoning_content` — the engine keeps a turn's thinking attached to the
+ * turn that produced it and to the tool calls it declared, and the turn a
+ * client-tool call ended on is exactly the one the next run replays. One that
+ * precedes nothing of the assistant's is dropped; so is an `activity`
+ * message, which records what an earlier run showed rather than what was said.
+ *
  * `context` becomes one `system` turn ahead of the history. The protocol
  * defines it as facts the application holds about the session — the page the
  * person is on, the record they have open — which is what a system turn is
@@ -21,20 +29,28 @@ import { imageDataUrl, type ChatMessageInput, type ContentPart } from "@/domain/
  * answered, where a search query or an image prompt would read it as the
  * request. Empty means no turn at all: nothing is inserted for a client that
  * sent nothing.
- *
- * `activity` and `reasoning` messages are dropped. Both are the client's
- * record of what an earlier run showed it — the reasoning this platform
- * emitted comes back as a `reasoning` message on the next run — and neither is
- * something the model said to the user or the user said to the model.
  */
 export function toEngineMessages(
   messages: readonly AguiMessage[],
   context: readonly AguiContext[],
 ): ChatMessageInput[] {
-  const history = messages.flatMap((message) => {
+  const history: ChatMessageInput[] = [];
+  let pendingReasoning: string | undefined;
+  for (const message of messages) {
+    if (message.role === "reasoning") {
+      pendingReasoning = pendingReasoning ? `${pendingReasoning}\n\n${message.content}` : message.content;
+      continue;
+    }
     const mapped = toEngineMessage(message);
-    return mapped ? [mapped] : [];
-  });
+    if (mapped) {
+      history.push(
+        mapped.role === "assistant" && pendingReasoning
+          ? { ...mapped, reasoning_content: pendingReasoning }
+          : mapped,
+      );
+    }
+    pendingReasoning = undefined;
+  }
   const contextTurn = contextMessage(context);
   return contextTurn ? [contextTurn, ...history] : history;
 }

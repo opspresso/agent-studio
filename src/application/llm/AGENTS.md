@@ -238,14 +238,26 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   never under a name a builtin or an MCP alias already holds — the loop could not tell the
   two apart, so such a tool is not offered and the assembly says so (`assembleAgentRun`
   returns `clientToolNames` and `warnings`, and the loop yields the warnings before its first
-  turn). A turn that calls one is the run's last: every call is announced as usual, the
-  run's **own** calls in that turn still run and report — a provider rejects an assistant
-  message whose calls lack results, and the application's next run replays this turn —
-  and the loop ends with `done` instead of recursing. No result is produced for the client
-  call, parsed or malformed: its arguments went out as the model wrote them and the
-  application's answer is the one that belongs in the history. Never handed to a subagent
-  (a child cannot end the run the person is waiting on); the single-shot path has no loop
-  to end, so the AG-UI use case reports tools declared against a non-agent project instead.
+  turn). A turn that calls one is the run's last (`endsOnClientCall`), and four things are
+  done differently for a turn nothing here will continue. **The client call's announced
+  arguments are not bounded**: for every other tool the real call was made with the whole
+  value and the announcement only describes it, but a client tool's call *is* the
+  announcement — nothing else carries it — so `boundToolArgs` would hand the application
+  the placeholder as the value. The run's **own** calls in that turn still run and report —
+  a provider rejects an assistant message whose calls lack results, and the application's
+  next run replays this turn. **A transfer's answer goes out as the transfer's own result**
+  instead of the display-only marker: the "For context" turn it would otherwise enter dies
+  with the run, and the replay carries tool results and nothing else; a picture an MCP tool
+  returned rides on a user turn the same way and is announced as lost to the model (the
+  reader already has it). Then the loop ends — with `done`, or with `output-limit` when the
+  provider cut the turn mid-plan, since `done` would claim a complete call plan (the cut
+  warning says "the run ends here" rather than "the run continues" for the same reason). No
+  result is produced for the client call, parsed or malformed: the application's answer is
+  the one that belongs in the history. Never handed to a subagent (a child cannot end the
+  run the person is waiting on); a run with no loop cannot stop for the application, so
+  `executeProjectStream` / `executeProject` / `streamProjectRun` **refuse** client tools for
+  a prompt or image project, and a surface that means to declare them checks the strategy
+  first — the AG-UI use case strips them with a warning.
 - **The last turn is a wrap-up**: at `turn === maxTurn - 1` a run that has tools is offered
   none and told why (`finalTurnNotice`, carried as a `user` turn like every other statement
   the loop inserts). Withholding them is the mechanism, not the notice — a model still
