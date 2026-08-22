@@ -5,6 +5,7 @@
  */
 
 import type { Message, Part, Task, TaskState } from "@a2a-js/sdk";
+import { imageDataUrl, type ContentPart } from "@/domain/llm/types";
 import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Project, Version } from "@/domain/project/types";
 import { collectedWarning, isTopLevelChunk, messageText } from "@/domain/llm/types";
@@ -42,6 +43,30 @@ function userMessageText(message: Message): string {
     .join("");
 }
 
+/**
+ * The message as the engine takes it: its text, and any picture it carried
+ * as an image part — bytes inline, or an https address the model's channel
+ * fetches. A part the handler did not admit never reaches here
+ * (`ProjectRequestHandler`), so nothing is dropped silently.
+ */
+function userMessageContent(message: Message): ChatMessageInput["content"] {
+  const images: ContentPart[] = message.parts.flatMap((part) => {
+    if (part.kind !== "file" || !part.file.mimeType?.startsWith("image/")) {
+      return [];
+    }
+    const url =
+      "bytes" in part.file
+        ? imageDataUrl({ b64: part.file.bytes, mimeType: part.file.mimeType })
+        : part.file.uri;
+    return [{ type: "image_url" as const, image_url: { url } }];
+  });
+  const text = userMessageText(message);
+  if (images.length === 0) {
+    return text;
+  }
+  return [...(text ? [{ type: "text" as const, text }] : []), ...images];
+}
+
 export class ProjectA2aExecutor implements AgentExecutor {
   constructor(
     private readonly deps: ExecutionDeps,
@@ -66,9 +91,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
     }
     this.publishStatus(eventBus, taskId, contextId, "working", false);
 
-    const messages: ChatMessageInput[] = [
-      { role: "user", content: userMessageText(userMessage) },
-    ];
+    const messages: ChatMessageInput[] = [{ role: "user", content: userMessageContent(userMessage) }];
 
     // A cancel may be persisted by another request or instance (the executor is
     // per request, so an in-memory flag never reaches a running loop). Poll the
@@ -104,6 +127,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
             ],
           },
           append: false,
+          lastChunk: true,
         });
         await this.publishTerminal(eventBus, taskId, contextId, controller);
         return;
@@ -171,6 +195,19 @@ export class ProjectA2aExecutor implements AgentExecutor {
           append: !isFirstChunk,
         });
         isFirstChunk = false;
+      }
+      // The artifact's end, said as the protocol says it: a client assembling
+      // chunks reads `lastChunk`, and nothing above knows a chunk is the last
+      // until the stream has ended. An empty append closes it.
+      if (!isFirstChunk) {
+        eventBus.publish({
+          kind: "artifact-update",
+          taskId,
+          contextId,
+          artifact: { artifactId: RESULT_ARTIFACT_ID, name: RESULT_ARTIFACT_ID, parts: [] },
+          append: true,
+          lastChunk: true,
+        });
       }
       // A limited run still completes the task — the partial answer was
       // delivered — but the caller is told what the run reported (its turn or

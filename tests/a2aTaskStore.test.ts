@@ -152,10 +152,11 @@ describe("createA2aTaskStore", () => {
     expect(loaded?.status.state).toBe("completed");
   });
 
-  it("degrades to state + metadata when non-byte content exceeds the item limit", async () => {
+  it("drops the history before the artifacts when non-byte content exceeds the item limit", async () => {
     // History/text with no inline file bytes can still blow the 400KB item
-    // limit; stripping bytes alone would leave it oversized, so the store must
-    // drop history/artifacts and keep the task retrievable rather than throw.
+    // limit; stripping bytes alone would leave it oversized. The artifacts are
+    // the answer, so they are the last thing to go: a `completed` task read
+    // back with no artifact looks like a run that produced nothing.
     const s = createA2aTaskStore("proj-a");
     const task = makeTask("t1", "completed");
     task.history = [
@@ -166,10 +167,22 @@ describe("createA2aTaskStore", () => {
     await expect(s.save(task)).resolves.toBeUndefined();
 
     const loaded = await s.load("t1");
-    // State + metadata stay retrievable; the bulky collections are dropped.
     expect(loaded?.status.state).toBe("completed");
     expect(loaded?.id).toBe("t1");
     expect(loaded?.contextId).toBe("ctx-1");
+    expect(loaded?.history).toBeUndefined();
+    expect(loaded?.artifacts).toEqual([{ artifactId: "a1", parts: [{ kind: "text", text: "small" }] }]);
+  });
+
+  it("degrades to state + metadata when the artifacts alone exceed the item limit", async () => {
+    const s = createA2aTaskStore("proj-a");
+    const task = makeTask("t1", "completed");
+    task.artifacts = [{ artifactId: "a1", parts: [{ kind: "text", text: "x".repeat(400_000) }] }];
+
+    await expect(s.save(task)).resolves.toBeUndefined();
+
+    const loaded = await s.load("t1");
+    expect(loaded?.status.state).toBe("completed");
     expect(loaded?.history).toBeUndefined();
     expect(loaded?.artifacts).toBeUndefined();
   });

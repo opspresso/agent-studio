@@ -640,10 +640,10 @@ export async function* runRemoteSubagent(
     deps.remoteConversations && agent.protocol === "a2a" && projectName && key
       ? { store: deps.remoteConversations, projectName, key }
       : undefined;
-  let contextId: string | null = null;
+  let hint: { contextId: string; taskId?: string } | null = null;
   if (continuity) {
     try {
-      contextId = await continuity.store.get(continuity.projectName, agentName, continuity.key);
+      hint = await continuity.store.get(continuity.projectName, agentName, continuity.key);
     } catch (error) {
       log.warn("run", `remote conversation lookup failed for '${agentName}'; starting cold`, error);
     }
@@ -654,7 +654,7 @@ export async function* runRemoteSubagent(
       target,
       message,
       signal,
-      contextId ? { contextId } : undefined,
+      hint ? { contextId: hint.contextId, ...(hint.taskId ? { taskId: hint.taskId } : {}) } : undefined,
     );
   } catch (error) {
     signal?.throwIfAborted();
@@ -663,11 +663,21 @@ export async function* runRemoteSubagent(
   }
   signal?.throwIfAborted();
   if (!reply.ok) {
-    // A continuation that failed drops its hint: the remote may have retired
-    // the context, and a wrong hint kept costs every transfer until it expires
-    // where one dropped costs a single cold start. Not retried now — the remote
-    // may already be working, and a second send would run the delegation twice.
-    if (continuity && contextId) {
+    if (continuity && reply.continuation) {
+      // Not a failure but a question: the remote parked its task to ask, and
+      // the next transfer from this conversation has to answer *that* task
+      // rather than open another beside it. The question reaches the parent
+      // as the tool error, which is what it can relay to the person.
+      try {
+        await continuity.store.put(continuity.projectName, agentName, continuity.key, reply.continuation);
+      } catch (error) {
+        log.warn("run", `remote conversation for '${agentName}' could not be remembered`, error);
+      }
+    } else if (continuity && hint) {
+      // A continuation that failed drops its hint: the remote may have retired
+      // the context, and a wrong hint kept costs every transfer until it expires
+      // where one dropped costs a single cold start. Not retried now — the remote
+      // may already be working, and a second send would run the delegation twice.
       await continuity.store
         .forget(continuity.projectName, agentName, continuity.key)
         .catch((error: unknown) =>
@@ -678,10 +688,13 @@ export async function* runRemoteSubagent(
     return "";
   }
   // Remembered after every successful reply, not only the first: the remote may
-  // move a conversation to a new context, and the window is refreshed on use.
+  // move a conversation to a new context, and the window is refreshed on use. A
+  // task the conversation was parked on is answered now, so none is kept.
   if (continuity && reply.contextId) {
     try {
-      await continuity.store.put(continuity.projectName, agentName, continuity.key, reply.contextId);
+      await continuity.store.put(continuity.projectName, agentName, continuity.key, {
+        contextId: reply.contextId,
+      });
     } catch (error) {
       log.warn("run", `remote conversation for '${agentName}' could not be remembered`, error);
     }

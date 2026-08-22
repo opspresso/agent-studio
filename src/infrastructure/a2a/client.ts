@@ -49,7 +49,12 @@ export type A2aSendResult =
        */
       contextId?: string;
     }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      /** The task the remote parked to ask for input — see `RemoteAgentReply`. */
+      continuation?: { contextId: string; taskId: string };
+    };
 
 export interface A2aSendOptions {
   /**
@@ -60,6 +65,8 @@ export interface A2aSendOptions {
    * this option existed.
    */
   contextId?: string;
+  /** The task an earlier reply left `input-required`; this message answers it. */
+  taskId?: string;
 }
 
 const AGENT_CARD_SUFFIX = "/.well-known/agent-card.json";
@@ -75,6 +82,15 @@ const AGENT_CARD_SUFFIX = "/.well-known/agent-card.json";
 const IDLE_TIMEOUT_MS = 120_000;
 /** An Agent Card is a small JSON document; nothing here reads a body unbounded. */
 const MAX_CARD_BYTES = 1_000_000;
+/**
+ * The most of a reply that is kept. A remote's artifacts accumulate in memory
+ * as they stream and enter the parent's context as text, so a bound belongs
+ * here as it does on every other remote answer (`docs/CONFIGURATION.md`).
+ */
+const MAX_REPLY_BYTES = 2 * 1024 * 1024;
+/** How often a blocking send that was answered with a live task asks again. */
+const TASK_POLL_MS = 2000;
+const FAILED_STATES = new Set(["failed", "rejected", "canceled"]);
 
 /** Accepts either the card URL itself or the agent base URL. */
 export function normalizeAgentCardUrl(url: string): string {
@@ -103,6 +119,11 @@ function partsImages(parts: Part[]): A2aImage[] {
       },
     ];
   });
+}
+
+/** What a reply weighs, counted as the bytes its parts serialise to. */
+function partsBytes(parts: Part[]): number {
+  return parts.reduce((total, part) => total + JSON.stringify(part).length, 0);
 }
 
 function resultParts(result: Message | Task): Part[] {
@@ -241,6 +262,14 @@ async function collectStream(
         }
         case "artifact-update":
           task = mergeArtifact(ensureTask(task, event), event);
+          // Bounded as it accumulates, not after: the whole point of a bound
+          // on a streamed reply is that it stops the stream.
+          if (partsBytes(resultParts(task)) > MAX_REPLY_BYTES) {
+            return {
+              result: null,
+              error: `A2A reply exceeds ${MAX_REPLY_BYTES / (1024 * 1024)}MB`,
+            };
+          }
           break;
       }
     }
@@ -281,8 +310,32 @@ async function loadAgentCard(cardUrl: string, fetchImpl: typeof fetch): Promise<
   }
 }
 
+/**
+ * The reply as the run reads it. The task's state decides first: a `failed`
+ * task carries its reason in a status message, and read for its text alone
+ * that reason became the answer — the parent model relayed "Agent execution
+ * error: …" as what the remote said. An `input-required` task is the remote
+ * asking a question, which is not an answer either; the question goes out as
+ * the error and the task ids with it, so the next transfer can answer it.
+ */
 function toResult(result: Message | Task): A2aSendResult {
+  if (partsBytes(resultParts(result)) > MAX_REPLY_BYTES) {
+    return { ok: false, error: `A2A reply exceeds ${MAX_REPLY_BYTES / (1024 * 1024)}MB` };
+  }
   const text = extractA2aText(result);
+  if (result.kind === "task") {
+    const state = result.status.state;
+    if (FAILED_STATES.has(state)) {
+      return { ok: false, error: `Remote task ${state}${text ? `: ${text}` : ""}` };
+    }
+    if (state === "input-required") {
+      return {
+        ok: false,
+        error: `Remote agent needs input before it can continue${text ? `: ${text}` : ""}`,
+        ...(result.contextId ? { continuation: { contextId: result.contextId, taskId: result.id } } : {}),
+      };
+    }
+  }
   const images = extractA2aImages(result);
   if (!text && images.length === 0) {
     const state = result.kind === "task" ? result.status.state : "message";
@@ -344,6 +397,7 @@ export async function sendA2aMessage(
       role: "user",
       parts: [{ kind: "text", text: message }],
       ...(options.contextId ? { contextId: options.contextId } : {}),
+      ...(options.taskId ? { taskId: options.taskId } : {}),
     },
     configuration: {
       acceptedOutputModes: ["text/plain", "image/png", "image/jpeg", "image/webp"],
@@ -351,7 +405,20 @@ export async function sendA2aMessage(
   };
 
   try {
-    const card = await loadAgentCard(normalizeAgentCardUrl(url), fetchImpl);
+    const cardUrl = normalizeAgentCardUrl(url);
+    const card = await loadAgentCard(cardUrl, fetchImpl);
+    // The operator's headers are credentials for the address the entry was
+    // registered at. The guard refuses a cross-origin *redirect* for exactly
+    // that reason, and a card naming another origin as its endpoint is the
+    // same thing said in JSON: a card is a document a third party serves.
+    const cardOrigin = new URL(cardUrl).origin;
+    const endpointOrigin = safeOrigin(card.url);
+    if (endpointOrigin !== cardOrigin) {
+      return {
+        ok: false,
+        error: `Agent Card names an endpoint on ${endpointOrigin ?? "an unreadable address"}, not on ${cardOrigin}; the registered headers are not sent there`,
+      };
+    }
     const client = new A2AClient(card, { fetchImpl });
     keepAwake();
     if (card.capabilities?.streaming) {
@@ -368,10 +435,48 @@ export async function sendA2aMessage(
     if ("error" in response) {
       return { ok: false, error: `A2A error ${response.error.code}: ${response.error.message}` };
     }
-    return toResult(response.result);
+    return toResult(await settled(client, response.result, requestSignal));
   } catch (error) {
     return { ok: false, error: errorText(error, controller.signal, signal) };
   } finally {
     clearTimeout(idleTimer);
   }
+}
+
+/** The origin of an address, or nothing for one that does not parse. */
+function safeOrigin(url: string): string | undefined {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A blocking send may be answered with a task still running — the protocol
+ * lets a server return early and expects the caller to poll — so a live task
+ * is followed through `tasks/get` until it settles. Bounded by the request's
+ * own signals: the idle timer is the whole-request bound on this path.
+ */
+async function settled(client: A2AClient, result: Message | Task, signal: AbortSignal): Promise<Message | Task> {
+  let current = result;
+  while (current.kind === "task" && !TERMINAL_STATES.has(current.status.state) && current.status.state !== "input-required") {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, TASK_POLL_MS);
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
+        },
+        { once: true },
+      );
+    });
+    const polled = await client.getTask({ id: current.id });
+    if ("error" in polled) {
+      throw new Error(`A2A error ${polled.error.code}: ${polled.error.message}`);
+    }
+    current = polled.result;
+  }
+  return current;
 }

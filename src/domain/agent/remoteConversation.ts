@@ -16,19 +16,29 @@
  * the next transfer a cold start, which is exactly what every transfer got
  * before this existed.
  */
+/**
+ * What is remembered: the remote's `contextId`, and — when the remote stopped
+ * to ask for input — the task that question belongs to, so the next transfer
+ * answers it instead of opening a new task beside it.
+ */
+export interface RemoteConversationHint {
+  contextId: string;
+  taskId?: string;
+}
+
 export interface RemoteConversationRepository {
-  /** The remote `contextId` last seen for this triple, if any and not expired. */
-  get(projectName: string, agentName: string, conversationKey: string): Promise<string | null>;
+  /** The hint last seen for this triple, if any and not expired. */
+  get(projectName: string, agentName: string, conversationKey: string): Promise<RemoteConversationHint | null>;
   /**
-   * Remember the remote's `contextId` for this triple, restarting its window.
-   * Called after every successful transfer, so a live conversation stays
-   * continuable for as long as it stays live.
+   * Remember the remote's `contextId` (and a task waiting for input) for this
+   * triple, restarting its window. Called after every reply that named one,
+   * so a live conversation stays continuable for as long as it stays live.
    */
   put(
     projectName: string,
     agentName: string,
     conversationKey: string,
-    contextId: string,
+    hint: RemoteConversationHint,
   ): Promise<void>;
   /**
    * Drop the remembered `contextId` for this triple, so the next transfer

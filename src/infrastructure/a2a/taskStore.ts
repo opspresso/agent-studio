@@ -63,9 +63,13 @@ function dropBulkParts(task: Task): Task {
 
 /**
  * Pick the largest representation whose FULL stored item fits under
- * {@link MAX_ITEM_BYTES}: whole → without inline file bytes → without history and
- * artifacts. The last form is returned even if still over (best effort), because
- * a retrievable state beats a rejected write.
+ * {@link MAX_ITEM_BYTES}: whole → without inline file bytes → without history →
+ * without artifacts either. History goes before artifacts because the
+ * artifacts *are* the answer: a `completed` task a `tasks/get` returns with no
+ * artifact reads as a run that produced nothing, where one with no history
+ * has only lost the echo of what it was asked. The last form is returned even
+ * if still over (best effort), because a retrievable state beats a rejected
+ * write.
  */
 function fitTask(task: Task, wrapper: Record<string, unknown>): Task {
   const fits = (candidate: Task) =>
@@ -76,6 +80,10 @@ function fitTask(task: Task, wrapper: Record<string, unknown>): Task {
   const withoutBytes = stripFileBytes(task);
   if (fits(withoutBytes)) {
     return withoutBytes;
+  }
+  const withoutHistory = { ...withoutBytes, history: undefined };
+  if (fits(withoutHistory)) {
+    return withoutHistory;
   }
   return dropBulkParts(task);
 }

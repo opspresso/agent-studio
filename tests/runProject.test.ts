@@ -1842,9 +1842,12 @@ describe("executeAgent remote A2A conversation continuity", () => {
           }
         : null) as ExecutionDeps["externalAgents"]["get"];
     deps.remoteConversations = {
-      get: async (project, agent, key) => rows.get(`${project}|${agent}|${key}`) ?? null,
-      put: async (project, agent, key, contextId) => {
-        rows.set(`${project}|${agent}|${key}`, contextId);
+      get: async (project, agent, key) => {
+        const contextId = rows.get(`${project}|${agent}|${key}`);
+        return contextId ? { contextId } : null;
+      },
+      put: async (project, agent, key, hint) => {
+        rows.set(`${project}|${agent}|${key}`, hint.contextId);
       },
       forget: async (project, agent, key) => {
         rows.delete(`${project}|${agent}|${key}`);

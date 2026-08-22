@@ -923,3 +923,174 @@ describe("ProjectA2aExecutor cancel", () => {
     }
   });
 });
+
+// --- protocol audit: card, outbound states, inbound parts ------------------
+
+describe("buildAgentCard — what a peer needs to call us", () => {
+  it("declares the X-A2A-Key scheme the endpoint requires, and what it can take", async () => {
+    const card = await buildAgentCard(projectFixture({ projectType: "agent" }), versionFixture());
+    expect(card.securitySchemes).toEqual({
+      a2aKey: { type: "apiKey", in: "header", name: "X-A2A-Key" },
+    });
+    expect(card.security).toEqual([{ a2aKey: [] }]);
+    expect(card.capabilities).toEqual({ streaming: true, pushNotifications: false, stateTransitionHistory: false });
+    expect(card.defaultInputModes).toEqual(["text/plain", "image/png", "image/jpeg", "image/webp"]);
+    expect(card.skills[0]?.tags).toEqual(["agent-studio", "agent"]);
+    const image = await buildAgentCard(projectFixture({ projectType: "image" }), versionFixture());
+    expect(image.defaultInputModes).toEqual(["text/plain"]);
+  });
+});
+
+describe("sendA2aMessage — the task's state decides", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("reports a failed task as a failure, with its reason, never as the answer", async () => {
+    stubRemote(agentCard(true), (_method, id) =>
+      sseResponse(
+        sseFrames(id, [
+          TASK_EVENT,
+          {
+            kind: "status-update",
+            taskId: "t1",
+            contextId: "c1",
+            final: true,
+            status: {
+              state: "failed",
+              message: { kind: "message", role: "agent", messageId: "e1", parts: [{ kind: "text", text: "Agent execution error: boom" }] },
+            },
+          },
+        ]),
+      ),
+    );
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual({
+      ok: false,
+      error: "Remote task failed: Agent execution error: boom",
+    });
+  });
+
+  it("hands an input-required task back as a question with the ids to answer it", async () => {
+    stubRemote(agentCard(true), (_method, id) =>
+      sseResponse(
+        sseFrames(id, [
+          TASK_EVENT,
+          {
+            kind: "status-update",
+            taskId: "t1",
+            contextId: "c1",
+            final: true,
+            status: {
+              state: "input-required",
+              message: { kind: "message", role: "agent", messageId: "q1", parts: [{ kind: "text", text: "Which year?" }] },
+            },
+          },
+        ]),
+      ),
+    );
+    await expect(sendA2aMessage(RPC_URL, {}, "sales?")).resolves.toEqual({
+      ok: false,
+      error: "Remote agent needs input before it can continue: Which year?",
+      continuation: { contextId: "c1", taskId: "t1" },
+    });
+  });
+
+  it("sends the parked task's id back when answering it", async () => {
+    const bodies: unknown[] = [];
+    stubRemote(agentCard(true), (_method, id, _signal, body) => {
+      bodies.push(body);
+      return sseResponse(sseFrames(id, [TASK_EVENT, ARTIFACT_OPEN, FINAL_STATUS]));
+    });
+    await sendA2aMessage(RPC_URL, {}, "2025", undefined, { contextId: "c1", taskId: "t1" });
+    expect(bodies[0]).toMatchObject({ params: { message: { contextId: "c1", taskId: "t1" } } });
+  });
+
+  it("refuses a card whose endpoint is on another origin, before any credential is sent", async () => {
+    const methods = stubRemote(
+      Response.json({
+        protocolVersion: "0.3.0",
+        name: "Remote",
+        description: "",
+        url: "https://elsewhere.test/a2a",
+        version: "1",
+        capabilities: { streaming: true },
+        defaultInputModes: ["text/plain"],
+        defaultOutputModes: ["text/plain"],
+        skills: [],
+      }),
+      (_method, id) => sseResponse(sseFrames(id, [TASK_EVENT, FINAL_STATUS])),
+    );
+    const result = await sendA2aMessage(RPC_URL, { Authorization: "Bearer secret" }, "hello");
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("https://elsewhere.test") });
+    expect(methods).toEqual([]);
+  });
+
+  it("follows a blocking send that was answered with a live task until it settles", async () => {
+    vi.useFakeTimers();
+    const methods = stubRemote(agentCard(false), (method, id) => {
+      if (method === "message/send") {
+        return Response.json({ jsonrpc: "2.0", id, result: { ...TASK_EVENT, status: { state: "submitted" } } });
+      }
+      return Response.json({ jsonrpc: "2.0", id, result: FINAL_TASK });
+    });
+    const pending = sendA2aMessage(RPC_URL, {}, "hello");
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(pending).resolves.toMatchObject({ ok: true, text: "the answer" });
+    expect(methods).toEqual(["message/send", "tasks/get"]);
+  });
+
+  it("stops a reply that grows past the bound instead of holding it", async () => {
+    stubRemote(agentCard(true), (_method, id) =>
+      sseResponse(
+        sseFrames(id, [
+          TASK_EVENT,
+          {
+            kind: "artifact-update",
+            taskId: "t1",
+            contextId: "c1",
+            artifact: { artifactId: "big", parts: [{ kind: "text", text: "x".repeat(2 * 1024 * 1024 + 1) }] },
+          },
+          FINAL_STATUS,
+        ]),
+      ),
+    );
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual({
+      ok: false,
+      error: "A2A reply exceeds 2MB",
+    });
+  });
+});
+
+describe("ProjectA2aExecutor — what a message may carry", () => {
+  it("hands an image file part to the model beside the text, and closes the artifact", async () => {
+    const channel = new FakeChannel([[contentChunk("a cat")]]);
+    const executor = new ProjectA2aExecutor(
+      executionDepsFixture(channel),
+      projectFixture({ projectType: "agent" }),
+      versionFixture({ model: "google/gemini-2.5-flash" }),
+      fakeStore(),
+    );
+    const bus = new CollectingBus();
+    const message: Message = {
+      kind: "message",
+      messageId: "m1",
+      role: "user",
+      parts: [
+        { kind: "text", text: "what is this?" },
+        { kind: "file", file: { bytes: "AAAA", mimeType: "image/png", name: "p.png" } },
+      ],
+    };
+    await executor.execute(new RequestContext(message, "t1", "c1"), bus);
+
+    const sent = channel.seenParams[0]!.messages.at(-1)!.content;
+    expect(sent).toEqual([
+      { type: "text", text: "what is this?" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+    ]);
+    const updates = bus.events.filter((event) => event.kind === "artifact-update");
+    const last = updates.at(-1);
+    expect(last && "lastChunk" in last ? last.lastChunk : undefined).toBe(true);
+    expect(last && "append" in last ? last.append : undefined).toBe(true);
+  });
+});
