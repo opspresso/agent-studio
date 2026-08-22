@@ -122,7 +122,9 @@
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` |
 | 페이지네이션된 목록 읽기 | `src/infrastructure/db/query.ts` 의 `queryAll()` |
 | AG-UI 의 와이어 형태 — 받는 `RunAgentInput` 과 내보내는 이벤트 | `src/domain/agui/types.ts` (SDK 대신 직접 선언한 이유가 파일 머리에 있다); 입력 검증은 `src/app/api/agui/_lib/schema.ts` |
-| AG-UI 메시지와 `context` 가 엔진 메시지가 되는 방식 | `src/application/agui/input.ts` |
+| AG-UI 메시지와 `context`·`state` 가 엔진 메시지가 되는 방식 | `src/application/agui/input.ts` |
+| OAuth authorization 서버 메타데이터를 찾는 주소와 순서 | `src/infrastructure/mcp/oauthMetadata.ts` 의 `authorizationServerCandidates` |
+| 인바운드 A2A 메시지가 실을 수 있는 part | `src/application/a2a/requestHandler.ts` 의 `unsupportedPart` — card 의 `defaultInputModes` 와 같은 답이어야 한다 |
 | 어떤 페이지가 공개인가 | `src/proxy.ts` |
 | chunk 가 top-level 인지 여부 | `src/domain/llm/types.ts` 의 `isTopLevelChunk()` |
 | 런이 어떤 Version 을 실행하는가 | `src/application/project/` 의 `resolveRunnableVersion` |

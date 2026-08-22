@@ -22,13 +22,30 @@ MCP 와 마찬가지로 SSRF 가드를 거친다.
 
 **Inbound**: 표면이 켜져 있는 배포에서는(공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키가
 하나 이상 — 아니면 두 라우트 모두 503 으로 답한다) published 된 Version 을 가진 모든 Project
-가 공개 Agent Card 와 JSON-RPC 엔드포인트를 제공한다. Task 상태는 Project 단위로 단일
+가 공개 Agent Card 와 JSON-RPC 엔드포인트를 제공한다. 카드는 엔드포인트가 요구하는
+`X-A2A-Key` 스킴을 `securitySchemes`/`security` 로 선언하고 401 은 `WWW-Authenticate` 로 같은
+것을 말한다 — 카드에서 자격 증명을 고르는 표준 클라이언트가 그것 없이는 매 호출 401 을 받았다.
+SDK 의 request handler 는 세 가지 결정을 덧씌운다(`ProjectRequestHandler`): 읽을 수 없는 part
+(data, 그림 아닌 file)는 `ContentTypeNotSupported` 로 **실행 전에** 거절하고, 아직 `working` 인
+task 를 `taskId` 로 잇는 메시지는 거절하며(이 executor 는 메시지마다 자기 런을 돌리고
+`input-required` 에 들어가지 않으므로, 둘째 런이 같은 `result` artifact 를 서로 리셋했을
+것이다), `tasks/resubscribe` 는 요청별 event bus 대신 **저장소를 따라간다** — 스냅샷, 도착하는
+artifact, 종단 status — 인스턴스가 달라도 되는 유일한 방식이다. 스트리밍 메서드가 첫 이벤트
+전에 거절되면 라우트가 JSON-RPC 에러로 답한다(HTTP 500 이 아니라). 그림은 `image/*` file part
+로 들어와 모델에 닿고, `result` artifact 는 `lastChunk: true` 인 빈 append 로 닫힌다. Task 상태는 Project 단위로 단일
 테이블에 저장되므로(`createA2aTaskStore`) 재배포를 견디고 인스턴스 간에 공유되며, terminal
 상태를 지키는 조건부 쓰기가 붙어 있어 동시에 들어온 complete/cancel 이 이미 끝난 task 를
 되돌리는 일이 없다. 행은 TTL 로 만료된다.
 
 **Outbound**: 프로토콜 `A2A` 와 자신의 Agent Card URL 로 등록된 agent 다. 커스텀 헤더는 카드
-해석과 RPC 호출에 함께 보낸다. transfer 는 **`message/stream`** 을 요청하고, 받은 이벤트들을
+해석과 RPC 호출에 함께 보낸다 — 단 **카드가 지목한 `url` 의 origin 이 등록된 카드 URL 의
+origin 과 같을 때만**: 헤더는 등록된 주소를 위한 자격 증명이고, 다른 origin 을 지목하는 카드는
+제3자가 서빙하는 문서가 리다이렉트와 같은 말을 JSON 으로 한 것이다. **task 의 상태가 먼저
+결정한다.** `failed`/`rejected`/`canceled` 는 그 status 메시지를 이유로 한 실패이고(텍스트만
+읽으면 "Agent execution error: …" 가 부모 모델의 답이 됐다), `input-required` 는 질문이다 —
+질문이 tool 에러로 부모에 닿고, `taskId` 가 `contextId` 옆에 기억되어 같은 대화의 다음 transfer
+가 새 task 를 여는 대신 그 task 에 답한다. 블로킹 `message/send` 가 아직 살아 있는 task 로
+답하면 `tasks/get` 으로 종단까지 따라가고, 응답은 누적 중에도 2MB 에서 끊는다. transfer 는 **`message/stream`** 을 요청하고, 받은 이벤트들을
 blocking send 였다면 돌려받았을 task 로 도로 접어 넣는다. 그래서 두 경로를 같은 두 extractor
 가 읽고, artifacts-over-status 규칙의 사본이 둘로 갈리지 않는다. `capabilities.streaming` 이
 없는 카드는 blocking `message/send` 한 번으로 폴백한다 — SDK 가 요청이 나가기 전에 거절하고,

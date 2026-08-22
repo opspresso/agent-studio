@@ -285,6 +285,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다 — 직접 서빙�
 |---|---|---|---|
 | `MCP_DISCOVERY_CACHE_TTL_MS` | `60000` | — | 바인딩된 서버의 도구 목록을 얼마나 오래 재사용하는지. 키는 `url + headers` 다. 캐시가 따뜻하면 세션이 지연 연결될 수도 있어서, 도구를 하나도 부르지 않는 턴은 MCP 요청을 아예 하지 않는다. `0` 은 캐싱을 통째로 끄며, 어떤 서버 힌트도 그것을 다시 켤 수 없다. 밀리초 정수. |
 | `MCP_MAX_SERVER_TTL_MS` | `300000` (5분) | — | 서버가 `tools/list` 에서 요청할 수 있는 `ttlMs` 의 상한 (SEP-2549). `0` 은 서버 힌트를 완전히 무시하고 모든 항목을 로컬 TTL 로 되돌린다. 밀리초 정수. |
+| `MCP_OAUTH_ALLOW_UNADVERTISED_PKCE` | `false` | — | `true` 면 `code_challenge_methods_supported` 를 광고하지 않는 OAuth authorization 서버를 받아들인다. 명세는 거부하라고 하지만(PKCE 다운그레이드 방어), 광고 없이 PKCE 를 지원하는 서버가 흔하다. 배포 단위의 결정이라 env 다 — [SECURITY.md](SECURITY.md#mcp-oauth). |
 | `MCP_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | 사설 주소로 resolve 되더라도 MCP 항목이 쓸 수 있는 호스트의 DNS suffix 목록, 쉼표 구분 — 보통 `<namespace>.svc.cluster.local`. 비어 있으면 SSRF 가드는 원래 그대로다. [SECURITY.md](SECURITY.md#선언된-내부-호스트) 를 보라. |
 | `MANAGED_MCP_INSTANCE_ID` | 미설정 | — | managed MCP 컨테이너가 SSM Run Command 를 통해 기동되는 호스트. 문자 그대로의 값 `local` 은 대신 이 머신에서 Docker 를 돌린다 — 그러면 앱과 컨테이너가 loopback 인터페이스를 직접 공유하는데, 그것이 EC2 없이 이 경로를 실행해 볼 수 있는 유일한 방법이다. |
 | `MANAGED_MCP_REGISTRY` | 미설정 | — | `docker login` 이 인증하는 레지스트리. 덕분에 이 계정 자신의 이미지는 자격증명을 타이핑하지 않고도 pull 된다. 호스트가 pull 할 수 있는 다른 어떤 레지스트리의 이미지도 허용되며, 그것들에 대해서는 로그인만 건너뛴다. |

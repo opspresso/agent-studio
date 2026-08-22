@@ -42,16 +42,28 @@ prompt project 는 한 번 답하고, image project 는 그림을 그린다 — 
 | top-level `delta.toolCalls` | 호출마다 `TOOL_CALL_START` → `TOOL_CALL_ARGS` (인자가 있을 때) → `TOOL_CALL_END`. 그 턴이 호출 전에 말한 텍스트 메시지가 `parentMessageId`; 호출만 한 턴은 부모가 없고, 클라이언트가 그 자리에 assistant 메시지를 만든다 |
 | top-level `toolResult` | `TOOL_CALL_RESULT` (`role: "tool"`). transfer 의 display-only 마커도 그대로 — 다음 런에 tool 메시지로 돌아와도 해가 없다 |
 | authored 청크의 첫 등장 / `authorDone` | `STEP_STARTED` / `STEP_FINISHED` (`stepName` 은 author). 자식의 텍스트와 호출은 이벤트가 되지 않는다 — 그 답은 부모의 tool 결과로 돌아온다 |
-| `image` (author 무관) | `CUSTOM` `agent-studio.image` `{ mimeType, dataUrl, prompt?, model?, artifactId? }` |
-| `file` (author 무관) | `CUSTOM` `agent-studio.file` `{ name, mimeType, url, byteSize? }` — 바이트는 브래킷이 걷어냈으므로 `VIEW_URL_TTL_SECONDS` 로 서명한 주소. 주소를 만들 수 없으면 경고가 된다 |
+| `image` (author 무관) | `ACTIVITY_SNAPSHOT` `activityType: "agent-studio.image"`, `content: { mimeType, dataUrl, prompt?, model?, artifactId? }` |
+| `file` (author 무관) | `ACTIVITY_SNAPSHOT` `activityType: "agent-studio.file"`, `content: { name, mimeType, url, byteSize? }` — 바이트는 브래킷이 걷어냈으므로 `VIEW_URL_TTL_SECONDS` 로 서명한 주소. 주소를 만들 수 없으면 경고가 된다 |
 | `warning` (author 무관, `collectedWarning` 으로 중복 제거) | `CUSTOM` `agent-studio.warning` `{ message }` — 그리고 `RUN_FINISHED.result.warnings` 에 모인다 |
 | `usage` (모든 호출) | 합산해 `RUN_FINISHED.usage[0]` (`inputTokens`, `outputTokens`, `totalTokens`, `reasoningTokens?`, `cachedInputTokens?`) |
 | top-level `done` / `finishReason` | 열린 것을 전부 닫고 종료 사유를 기억해 둔다. `RUN_FINISHED` 는 **소스가 소진될 때** 나간다 — artifact recorder 는 엔진 스트림이 끝난 *뒤에* 보관하지 못한 그림을 말하므로, `done` 에서 끝내면 그 경고 하나를 잃는다. `result.termination` 은 엔진의 어휘(`completed` / `turn-limit` / `output-limit`) 그대로 |
 | top-level `error`, 또는 스트림 도중의 throw | 열린 것을 전부 닫고 `RUN_ERROR` |
 
 프로토콜에는 경고 프레임도 종료 사유 필드도 없는데, 둘 다 답을 읽는 데 필요하다 — 턴 한도에서
-잘린 런과 끝까지 간 런은 텍스트 축에서 똑같아 보인다. 그래서 `CUSTOM` 이벤트 셋은
-`agent-studio.` 로 네임스페이스를 갖고, `RUN_FINISHED.result` 가 종료 사유와 잃은 것을 싣는다.
+잘린 런과 끝까지 간 런은 텍스트 축에서 똑같아 보인다. 그래서 경고는 `agent-studio.` 로
+네임스페이스를 가진 `CUSTOM` 이벤트이고, `RUN_FINISHED.result` 가 종료 사유와 잃은 것을 싣는다.
+
+**그림과 파일은 `CUSTOM` 이 아니라 `ACTIVITY_SNAPSHOT` 이다.** 클라이언트의 `apply` 는 custom
+이벤트를 subscriber 에게만 전하고 스레드에는 넣지 않는다 — image project 를 AG-UI 로 부르면
+화면은 빈 런이었다. activity 는 스레드의 메시지가 되고(`activityType` 별 렌더러), 클라이언트가
+다음 런 입력에서 제거하므로 "바이트는 모델로 돌아가지 않는다" 는 설계가 그대로 성립한다.
+
+**턴 하나는 assistant 메시지 하나다.** 턴이 처음 말하거나 부르는 순간 id 를 만들고, 그 턴의 모든
+`TOOL_CALL_START` 가 그것을 `parentMessageId` 로 싣는다 — 턴이 먼저 말했든 아니든. parent 없는
+호출을 받은 클라이언트는 호출마다 assistant 메시지를 지어내므로, tool 둘만 부른 턴이 빈 말풍선
+둘이 되고 다음 런의 history 도 둘로 쪼개졌다. tool 결과가 오면 턴이 끝나고, 다음 말은 다음
+메시지다. step 이름은 `authorPath` 를 `/` 로 이은 체인이라, 한 agent 의 자식 둘이 동시에 돌아도
+step 하나를 나눠 쓰지 않는다.
 
 **첫 청크는 `RUN_STARTED` 보다 먼저 당긴다.** 런은 첫 `next()` 에서 거절된다 — 비용 가드,
 동시성 가드 — 그리고 라우트는 그 throw 를 429 와 `Retry-After` 로 바꾼다. 이벤트 스트림이
@@ -96,9 +108,11 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
 
 ## 입력
 
-- `developer`·`system` → system 턴. `user` 는 문자열이거나 parts — `text` 와 `image` 만
-  (data 소스는 `data:` URL 로, url 소스는 https 만). audio·video·document part 는 400 으로
-  그 이름을 대며 거절한다: 보지 못한 첨부에 대해 답하는 런보다 낫다. `assistant` 의
+- `developer`·`system` → system 턴. `user` 는 문자열이거나 parts — `text`, `image` (data 소스는
+  `data:` URL 로, url 소스는 https 만), `document` (data 소스만; chat 첨부와 같은 `DocumentExtractor`
+  와 예산으로 텍스트가 되어 `turnContent` 의 순서대로 턴 앞에 선다; 읽지 못한 것은 경고).
+  audio·video part 와 URL 로 온 document 는 400 으로 그 이름을 대며 거절한다: 보지 못한 첨부에
+  대해 답하는 런보다 낫다. `messages` 는 비어 있어도 된다. `assistant` 의
   `toolCalls` → `tool_calls`, `tool` 의 `toolCallId` → `tool_call_id`, `error` 가 있으면
   엔진 규약대로 `Error: ` 접두사.
 - `reasoning` 메시지는 바로 뒤의 assistant 턴에 `reasoning_content` 로 되돌린다 — 엔진은 턴의
@@ -108,7 +122,10 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
 - `context` (`{ description, value }[]`) 는 history **앞** 의 system 턴 하나가 된다. 앱이
   세션에 대해 아는 사실 — 지금 보는 페이지, 열어 둔 레코드 — 이고, 답하는 턴 밖에 두어야
   검색 질의나 이미지 프롬프트가 그것을 요청으로 읽지 않는다.
-- `state`·`forwardedProps` 는 받아들이고 무시한다. 런 사이에 상태를 보관하지 않는다.
+- `state` 는 비어 있지 않으면 context 와 같은 system 턴에 읽기 전용 JSON 으로 실린다(20,000자
+  상한, 잘리면 표시). CopilotKit 의 `useCoAgent` 가 준 상태를 모델이 읽기는 하지만 **갱신하지는
+  않는다** — `STATE_SNAPSHOT`/`STATE_DELTA` 는 나가지 않고, 턴이 그렇게 말한다. `forwardedProps`
+  는 받아들이고 무시한다. `parentRunId` 는 `RUN_STARTED` 에 되돌려 준다.
 
 ## SDK 를 쓰지 않는 이유
 

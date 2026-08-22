@@ -1458,7 +1458,19 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send,
 
 `503` (설정되지 않음) 은 표면이 완전히 꺼져 있을 때만 답한다: 공유 키도 없고 **그리고** 클라이언트
 키도 없을 때다. 켜져 있는 표면에서 키가 틀리거나 없으면 `401` 이다 — 공유 키는 상수 시간으로
-비교하고, 클라이언트 키는 해시로 해석한다.
+비교하고, 클라이언트 키는 해시로 해석한다. 그 401 은 `WWW-Authenticate: ApiKey realm="a2a",
+header="X-A2A-Key"` 를 싣고, Agent Card 는 같은 스킴을 `securitySchemes`/`security` 로 선언한다 —
+`card.security` 에서 자격 증명을 고르는 클라이언트가 그것을 읽는다.
+
+메시지는 `text` part 와 `image/*` file part(bytes 또는 https uri)를 실을 수 있다 — card 의
+`defaultInputModes` 가 그것을 말한다. `data` part 나 다른 타입의 file part 는
+`ContentTypeNotSupported` (`-32005`) 로 거절된다. `taskId` 로 아직 `working` 인 task 를 이어 가는
+메시지는 `-32602` 로 거절된다: 이 agent 는 메시지마다 자기 task 를 돌리고 `input-required` 에
+들어가지 않으므로, 대화를 잇는 것은 `contextId` 다. `message/stream` 과 `tasks/resubscribe` 가
+첫 이벤트 전에 거절되면 JSON-RPC 에러 객체(200)로 답하고, 스트림 도중의 실패는 JSON-RPC 에러
+프레임이다. `tasks/resubscribe` 는 저장된 task 를 따라간다 — 스냅샷, 그 뒤 도착하는 artifact,
+종단 status — 런을 돌리는 인스턴스가 달라도 동작한다. `result` artifact 의 마지막 조각은
+`lastChunk: true` 인 빈 append 다.
 
 제시된 키는 공유 `A2A_API_KEY` (런은 `a2a:shared-key` 에 귀속) 이거나 **이름 붙은 클라이언트
 키** (`asc_…`, 런은 `a2a:{client}` 에 귀속 — 클라이언트별 귀속과 동시성 한도) 일 수 있다.
@@ -1493,21 +1505,32 @@ POST /api/agui/{project}    Authorization: Bearer <project token>  (또는 sessi
                             | 401 | 404 (project 없음 또는 published version 없음) | 429 (Retry-After)
 ```
 
-요청은 프로토콜의 `RunAgentInput` 이다: `threadId`, `runId`, `messages` (1개 이상 —
-`developer` / `system` / `user` / `assistant` / `tool`; `reasoning` 은 뒤따르는 assistant 턴의
-`reasoning_content` 가 되고, `activity` 는 받되 버린다),
-`tools` (`{ name, description, parameters? }`), `context` (`{ description, value }`), 그리고 받아만
-두는 `state` / `forwardedProps`. `user` 턴의 parts 는 `text` 와 `image` (`data` 소스 또는 https
-`url` 소스) 만이고, 이미지는 메시지당 `MAX_ATTACHMENTS` 개까지다.
+요청은 프로토콜의 `RunAgentInput` 이다: `threadId`, `runId`, `parentRunId?`, `messages` (비어
+있어도 된다 — `developer` / `system` / `user` / `assistant` / `tool`; `reasoning` 은 뒤따르는
+assistant 턴의 `reasoning_content` 가 되고, `activity` 는 받되 버린다), `tools`
+(`{ name, description, parameters? }`), `context` (`{ description, value }`), `state` (비어 있지
+않으면 읽기 전용 JSON 으로 context 와 함께 system 턴에 실린다 — 갱신은 되지 않고
+`STATE_SNAPSHOT` 도 나가지 않는다), 그리고 받아만 두는 `forwardedProps`. `user` 턴의 parts 는
+`text`, `image` (`data` 소스 또는 https `url` 소스, 메시지당 `MAX_ATTACHMENTS` 개), `document`
+(`data` 소스만, `metadata.name`/`filename` 이 이름, 메시지당 `MAX_DOCUMENTS` 개 — chat 첨부와
+같은 추출기로 텍스트가 된다) 이고, audio·video 와 URL 로 온 document 는 400 이다.
 
 응답 스트림: `RUN_STARTED` → (`TEXT_MESSAGE_*` | `REASONING_*` | `TOOL_CALL_START/ARGS/END` +
-`TOOL_CALL_RESULT` | `STEP_STARTED/FINISHED` | `CUSTOM`)* → `RUN_FINISHED` 또는 `RUN_ERROR`.
-`RUN_FINISHED` 는 `outcome: { type: "success" }`, `result: { termination, warnings }`
-(`termination` 은 `completed` / `turn-limit` / `output-limit`), `usage: [{ inputTokens,
-outputTokens, totalTokens, reasoningTokens?, cachedInputTokens? }]` 를 싣는다. `CUSTOM` 이벤트의
-`name` 은 `agent-studio.image` (`{ mimeType, dataUrl, prompt?, model?, artifactId? }`),
-`agent-studio.file` (`{ name, mimeType, url, byteSize? }` — 15분 서명 URL), `agent-studio.warning`
-(`{ message }`) 이다.
+`TOOL_CALL_RESULT` | `STEP_STARTED/FINISHED` | `ACTIVITY_SNAPSHOT` | `CUSTOM`)* → `RUN_FINISHED`
+또는 `RUN_ERROR`. 한 턴의 모든 `TOOL_CALL_START` 는 그 턴의 assistant 메시지 id 를
+`parentMessageId` 로 싣는다(턴이 말을 하지 않았어도). `RUN_FINISHED` 는
+`outcome: { type: "success" }`, `result: { termination, warnings }` (`termination` 은 `completed` /
+`turn-limit` / `output-limit`), `usage: [{ model, inputTokens, outputTokens, totalTokens,
+reasoningTokens?, cachedInputTokens? }]` 를 싣는다. `RUN_ERROR` 의 `code` 는 타입이 있는 실패의
+클래스명(`RateLimitedError`, `UpstreamError` 등)이다. 런이 만든 그림과 파일은
+`ACTIVITY_SNAPSHOT` — `activityType` 이 `agent-studio.image` (`content: { mimeType, dataUrl,
+prompt?, model?, artifactId? }`) 또는 `agent-studio.file` (`content: { name, mimeType, url,
+byteSize? }` — 15분 서명 URL) — 로 스레드의 메시지가 되고, 클라이언트가 다음 런 입력에서
+제거하므로 바이트는 모델로 돌아가지 않는다. `CUSTOM` 은 `agent-studio.warning` (`{ message }`)
+하나다.
+
+토큰은 서버 자격 증명이다 — 브라우저가 아니라 자체 서버(CopilotKit runtime 등)에서 호출한다;
+엔드포인트는 CORS 헤더를 보내지 않는다.
 
 `threadId` 는 런의 conversation(`agui:{caller}:{threadId}`)이다 — 한 스레드의 모든 런에 같은
 값을 보낸다. `tools` 는 agent project 에 제공되고 클라이언트가 실행한다: 하나를 부른 턴이 런의

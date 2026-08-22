@@ -261,6 +261,9 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 — skill 과 MCP 서버 — 를 모두 쓴다. 저장소가 선언한 이름을 채택하고 provenance 를 그것으로 다시
 쓴다. 그것은 프로브가 아니라 쓰기 자격 증명으로 범위를 잡고 회전시켜라.
 
+A2A 의 401 은 `WWW-Authenticate: ApiKey realm="a2a", header="X-A2A-Key"` 를 싣고 카드가 같은
+스킴을 선언하므로, 표준 클라이언트는 무엇을 제시할지 카드에서 읽는다.
+
 형제 중 하나는 자격 증명을 아예 지니지 않는다. published 된 project 의 A2A **Agent Card**
 (`/.well-known/agent-card.json`)는 표면이 켜져 있기만 하면 — 공유 `A2A_API_KEY` 또는 최소 하나의
 이름 있는 클라이언트 키 — 누구에게나 제공된다. 그것이 agent 를 발견 가능하게 만드는 것이고, A2A
@@ -474,7 +477,24 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
 
 강제되는 속성:
 
-- **PKCE S256 은 필수다.** `state` 는 10분 TTL 의 일회용이다.
+- **PKCE S256 은 필수다.** `state` 는 10분 TTL 의 일회용이다. 명세의 MUST 대로,
+  `code_challenge_methods_supported` 를 광고하지 않는 authorization 서버는 **기본적으로 거부**한다
+  — `code_challenge` 를 무시하는 서버에 대고 진행하는 것은 code injection 방어를 조용히 내려놓는
+  것이다. 광고 없이 PKCE 를 지원하는 서버는 흔하므로 `MCP_OAUTH_ALLOW_UNADVERTISED_PKCE=true` 가
+  배포 단위로 그 위험을 받아들인다 — 항목 단위가 아니라, 한 번.
+- **authorization 서버 메타데이터는 명세의 순서로 찾고, `issuer` 를 검증한다.** 경로가 있는
+  issuer 는 RFC 8414 path-inserted → OpenID path-inserted → OpenID path-appended 이고 root 형은
+  시도하지 않는다; `issuer` 가 요청한 것과 다르거나 없는 문서는 쓰지 않는다. 예전에는 root 로
+  폴백해 Keycloak realm 이나 Okta custom AS 가 **다른 issuer 의 문서에 조용히 바인딩**됐다.
+  resource metadata 는 well-known 경로가 모두 빗나가면 서버 자신의 401 `WWW-Authenticate` 가
+  지목하는 `resource_metadata` 주소를 읽는다(RFC 9728).
+- **`WWW-Authenticate` 는 런타임에도 읽는다.** 403 `insufficient_scope` 가 이름 댄 scope 는
+  연결의 scope 에 합쳐지고 연결은 `needs_reauth` 가 되어, 콘솔의 재연결이 서버가 방금 거절한
+  것과 같은 grant 대신 넓어진 grant 를 요청한다(step-up). 전에는 403 이 "unreachable" 로 보여
+  소유자가 scope 를 줄 길이 없었다.
+- **동적 등록은 토큰 요청이 쓸 인증 방식으로 등록한다**, 그리고 서버가 기록한 방식이 돌아오면
+  그것을 연결에 적는다. `client_secret_post` 로 등록해 놓고 `client_secret_basic` 으로 교환하던
+  것은 기록된 방식을 강제하는 서버(Keycloak, Authentik 등)에서 `invalid_client` 루프였다.
 - **RFC 8707 `resource`** 는 모든 authorization 요청과 token 요청에 실린다. 명세가 그것을
   무조건으로 규정하며, 한 MCP 서버용으로 발급된 token 이 다른 서버에 재사용되는 것을 막는 것이
   바로 그것이다.
