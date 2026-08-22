@@ -1570,9 +1570,12 @@ LLM 채널을 찔러 보고 (짧은 타임아웃, 상세는 드러내지 않는�
 SIGTERM 이후 draining 중이면 503 을 돌려준다.
 
 `/api/metrics` 는 Prometheus scrape 이고 `agent_studio_active_runs`,
+`agent_studio_oldest_active_run_seconds`, `agent_studio_build_info`,
 `agent_studio_runs_{started,finished,failed}_total`, `agent_studio_run_duration_seconds`,
 `agent_studio_unknown_model_calls_total`, `agent_studio_unknown_models`,
-`agent_studio_draining` 을 노출한다. 어떤 지표에도 project·사용자·모델 라벨은 붙지 않는다.
+`agent_studio_draining` 과 Node.js process CPU·메모리·event loop 지표를 노출한다. 어떤 지표에도
+project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 범위가 제한된 `version`·`stage`
+라벨을 지닌다.
 
 셋 다 일부러 비인증이고 의존성이 가볍다 — 세션이 없는 인프라가 이것들을 찔러 보기 때문이다.
 연결하는 방법은 [OPERATIONS.md](OPERATIONS.md#헬스-프로브) 를 보라.

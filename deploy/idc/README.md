@@ -107,12 +107,21 @@ mcp-cloudwatch 가 받아 주는 것은 그 이름이 이미 각자의 Host 화�
 
 `scripts/setup-grafana.sh` 는 Grafana 공식 apt 저장소에서 Alloy 를 설치하고
 `grafana/config.alloy` 를 `/etc/alloy/config.alloy` 에 적용한다. 기존 설정이 다르면 같은 경로 옆에
-UTC 시각이 붙은 백업을 먼저 남긴다. 다음 두 대상을 Grafana Cloud Prometheus 로 보낸다.
+UTC 시각이 붙은 백업을 먼저 남긴다. 다음 세 대상을 Grafana Cloud Prometheus 로 보낸다.
 
 | job | 대상 | 주기 |
 |---|---|---:|
 | `integrations/node_exporter` | 호스트 CPU, 메모리, swap, 디스크, 네트워크 | 15초 |
 | `agent-studio` | `https://studio.opspresso.com/api/metrics` | 30초 |
+| `integrations/cadvisor` | `agent-studio` Compose service별 CPU, 메모리, network, disk I/O, OOM | 30초 |
+
+cAdvisor는 Alloy process 안에서 실행하고 Compose project·service 두 label만 허용한다. container
+ID·image·name은 remote write 전에 제거해 컨테이너 재생성마다 시계열이 늘지 않게 한다. Docker
+상태를 읽기 위해 설치 스크립트가 `alloy` 사용자를 `docker` 그룹에 추가한다. 이 그룹은 host에서
+root에 준하는 권한이므로 Alloy 설정과 service 계정을 관리자만 변경할 수 있게 유지하라.
+Docker 29의 containerd snapshotter도 읽을 수 있도록 containerd socket의 group을 같은 `docker`로
+맞추며, systemd override가 containerd 재시작 뒤에도 이 권한을 복원한다. Docker 그룹은 이미
+host root에 준하는 주체이므로 별도 사용자를 이 그룹에 추가하지 마라.
 
 Grafana Cloud의 Alloy 온보딩에서 발급한 access policy token을 준비하고 호스트에서 실행하라.
 스크립트가 터미널에서 값을 숨겨 입력받고 `/etc/alloy/agent-studio.env`에 root 전용 `0600`으로
@@ -128,11 +137,12 @@ curl -fsS http://127.0.0.1:12345/-/ready
 
 자동 실행에서는 `GCLOUD_RW_API_KEY`를 환경변수로 넘길 수 있다. 기본 collector ID는 이 호스트의
 Grafana Fleet ID인 `byforce-318260`이고, 다른 호스트에는 `GCLOUD_FM_COLLECTOR_ID`를 명시하라.
-Explore에서 datasource `grafanacloud-nalbam-prom`을 고르고 다음 두 쿼리가 각각 `1`인지 확인한다.
+Explore에서 datasource `grafanacloud-nalbam-prom`을 고르고 다음 세 쿼리가 결과를 내는지 확인한다.
 
 ```promql
 up{job="integrations/node_exporter", instance="byforce-318260"}
 up{job="agent-studio", instance="byforce-318260"}
+count by (service) (container_last_seen{job="integrations/cadvisor", instance="byforce-318260"})
 ```
 
 ### 대시보드
@@ -140,8 +150,9 @@ up{job="agent-studio", instance="byforce-318260"}
 `grafana/dashboards/agent-studio-idc.json`은
 `argocd-env-addons/charts/grafana/dashboards/kube-cluster.json`과 `kube-workload.json`의 구성 규칙을
 IDC 메트릭에 맞춘 대시보드다. datasource/instance 변수, 30초 갱신, 상태 stat, 자원 gauge,
-시계열 패널과 같은 임계치 색상 규칙을 사용한다. UID `agent-studio-idc`는 바꾸지 마라. 같은 UID로
-다시 올리면 새 대시보드를 늘리지 않고 기존 대시보드를 갱신한다.
+시계열 패널과 같은 임계치 색상 규칙을 사용한다. host 전체, Agent Studio process·run, Docker
+service별 사용량을 한 화면에 둔다. UID `agent-studio-idc`는 바꾸지 마라. 같은 UID로 다시 올리면
+새 대시보드를 늘리지 않고 기존 대시보드를 갱신한다.
 
 업로드에는 Alloy의 metrics writer token이 아니라 Grafana Service Account token이 필요하다.
 Grafana Cloud에서 dashboard 쓰기 권한이 있는 Service Account를 만들고 토큰을 셸에 읽은 뒤

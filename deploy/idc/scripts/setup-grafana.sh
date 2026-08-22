@@ -8,11 +8,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 config_source="$PWD/grafana/config.alloy"
+containerd_override_source="$PWD/grafana/containerd-alloy-metrics.conf"
 config_target=/etc/alloy/config.alloy
 environment_file=/etc/alloy/agent-studio.env
 service_override=/etc/systemd/system/alloy.service.d/zz-agent-studio.conf
+legacy_service_override=/etc/systemd/system/alloy.service.d/env.conf
+containerd_override=/etc/systemd/system/containerd.service.d/alloy-metrics.conf
 
-[[ -f "$config_source" ]] || { echo "$config_source is missing." >&2; exit 1; }
+for required_file in "$config_source" "$containerd_override_source"; do
+  [[ -f "$required_file" ]] || { echo "$required_file is missing." >&2; exit 1; }
+done
 
 if ((EUID == 0)); then
   SUDO=()
@@ -57,6 +62,15 @@ printf 'deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com st
 "${SUDO[@]}" apt-get update
 "${SUDO[@]}" apt-get install -y alloy
 
+getent group docker >/dev/null || {
+  echo "The docker group is missing; run scripts/setup-host.sh first." >&2
+  exit 1
+}
+if ! id -nG alloy | tr ' ' '\n' | grep -qx docker; then
+  "${SUDO[@]}" usermod -aG docker alloy
+  echo "   granted Alloy access to Docker container metrics"
+fi
+
 "${SUDO[@]}" env \
   GCLOUD_RW_API_KEY="$GCLOUD_RW_API_KEY" \
   GCLOUD_FM_COLLECTOR_ID="$GCLOUD_FM_COLLECTOR_ID" \
@@ -79,7 +93,6 @@ escape_environment_value() {
 printf '%s\n' \
   '[Service]' \
   'EnvironmentFile=/etc/alloy/agent-studio.env' > "$temp_dir/agent-studio.conf"
-
 echo "== Alloy configuration"
 if [[ -f "$config_target" ]] && ! cmp -s "$config_source" "$config_target"; then
   backup="${config_target}.bak-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -89,6 +102,16 @@ fi
 "${SUDO[@]}" install -D -m 0644 "$config_source" "$config_target"
 "${SUDO[@]}" install -D -m 0600 "$temp_dir/agent-studio.env" "$environment_file"
 "${SUDO[@]}" install -D -m 0644 "$temp_dir/agent-studio.conf" "$service_override"
+"${SUDO[@]}" install -D -m 0644 "$containerd_override_source" "$containerd_override"
+if [[ -f "$legacy_service_override" ]] &&
+  grep -q '^Environment=GCLOUD_\(RW_API_KEY\|FM_COLLECTOR_ID\)=' "$legacy_service_override"; then
+  legacy_backup="${legacy_service_override}.migrated-$(date -u +%Y%m%dT%H%M%SZ)"
+  "${SUDO[@]}" mv "$legacy_service_override" "$legacy_backup"
+  "${SUDO[@]}" chmod 0600 "$legacy_backup"
+  echo "   migrated the legacy Alloy token drop-in to $legacy_backup"
+fi
+"${SUDO[@]}" chgrp docker /run/containerd/containerd.sock
+"${SUDO[@]}" chmod 0660 /run/containerd/containerd.sock
 
 echo "== Alloy service"
 "${SUDO[@]}" systemctl daemon-reload
@@ -111,3 +134,4 @@ fi
 echo "Collector ID: $GCLOUD_FM_COLLECTOR_ID"
 echo 'Verify in Grafana Explore with: up{job="integrations/node_exporter"}'
 echo 'Verify application metrics with: up{job="agent-studio"}'
+echo 'Verify container metrics with: count by (service) (container_last_seen{job="integrations/cadvisor"})'

@@ -742,8 +742,8 @@ Slack 채널에서 그것은 묻는 사람만이 아니다 — 봇이 볼 수 �
   `piiFiltering` 을 켠 버전에서도 추론은 걸러지지 않은 채 chat 행에 앉는다. 추론은 요청을 모델
   자신의 말로 되풀이하는 자리라 입력이 실어 온 것을 그대로 품기 쉽다 — 옵트인인 이유가 이것이고,
   보존 기간은 chat 행과 같다(`RETENTION.chatDays`).
-- `/api/metrics` 는 project, 사용자, model 을 지목하지 않는다. 어떤 메트릭이든 지니는 라벨은
-  히스토그램의 `le` 뿐이다.
+- `/api/metrics` 는 project, 사용자, model 을 지목하지 않는다. 메트릭 라벨은 히스토그램의
+  `le` 와 build 정보의 유한한 `version`·`stage`뿐이다.
 - 로그 라인은 런의 correlation id 를 실을 뿐, 프롬프트 내용은 결코 싣지 않는다.
 - Trace, usage 행, chat, trigger 배달, 인바운드 A2A 태스크는 모두 DynamoDB TTL 로 만료된다 —
   [OPERATIONS.md](OPERATIONS.md#행-보존) 참고.

@@ -1484,7 +1484,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // what this catches. The pattern matches the *call*, not the definition in
     // `lib/runMetrics.ts`.
     what: "what wraps a top-level run",
-    pattern: /^\s*beginRun\(\);/m,
+    pattern: /^\s*(?:const\s+\w+\s*=\s*)?beginRun\([^)]*\);/m,
     owner: "src/application/run/runBracket.ts",
   },
   {

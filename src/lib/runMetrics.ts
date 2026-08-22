@@ -30,7 +30,7 @@
  */
 export const DURATION_BUCKETS_SECONDS = [0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600];
 
-let activeRuns = 0;
+const activeRunStarts = new Map<symbol, number>();
 let runsStarted = 0;
 let runsFinished = 0;
 let runsFailed = 0;
@@ -38,10 +38,16 @@ let durationSumSeconds = 0;
 let durationObservations = 0;
 let bucketCounts = new Array<number>(DURATION_BUCKETS_SECONDS.length).fill(0);
 
-/** Call when a top-level run starts; pair with {@link endRun} in a `finally`. */
-export function beginRun(): void {
-  activeRuns += 1;
+export interface RunMetricHandle {
+  readonly id: symbol;
+}
+
+/** Call when a top-level run starts; pair its handle with {@link endRun} in a `finally`. */
+export function beginRun(startedAtMs = Date.now()): RunMetricHandle {
+  const handle = { id: Symbol("runMetric") };
+  activeRunStarts.set(handle.id, startedAtMs);
   runsStarted += 1;
+  return handle;
 }
 
 /**
@@ -52,10 +58,13 @@ export function beginRun(): void {
  * hung up — is not a failure and must not be counted as one, or a page full of
  * users navigating away reads as an outage.
  */
-export function endRun(outcome: { durationMs?: number; failed?: boolean } = {}): void {
-  // Clamped: a stray extra end would otherwise drive the gauge negative and
-  // permanently understate load to the autoscaler.
-  activeRuns = Math.max(0, activeRuns - 1);
+export function endRun(
+  handle: RunMetricHandle,
+  outcome: { durationMs?: number; failed?: boolean } = {},
+): void {
+  if (!activeRunStarts.delete(handle.id)) {
+    return;
+  }
   runsFinished += 1;
   if (outcome.failed) {
     runsFailed += 1;
@@ -82,23 +91,27 @@ export interface RunMetricsSnapshot {
   durationBuckets: number[];
   /** Every observation — the histogram's `_count` and its `+Inf` bucket. */
   durationCount: number;
+  /** Age of the oldest in-flight run, or zero when the instance is idle. */
+  oldestActiveRunSeconds: number;
 }
 
-export function runMetricsSnapshot(): RunMetricsSnapshot {
+export function runMetricsSnapshot(nowMs = Date.now()): RunMetricsSnapshot {
+  const oldestStartedAt = activeRunStarts.size > 0 ? Math.min(...activeRunStarts.values()) : nowMs;
   return {
-    activeRuns,
+    activeRuns: activeRunStarts.size,
     runsStarted,
     runsFinished,
     runsFailed,
     durationSumSeconds,
     durationBuckets: [...bucketCounts],
     durationCount: durationObservations,
+    oldestActiveRunSeconds: Math.max(0, (nowMs - oldestStartedAt) / 1000),
   };
 }
 
 /** Test seam — production code never resets counters. */
 export function resetRunMetrics(): void {
-  activeRuns = 0;
+  activeRunStarts.clear();
   runsStarted = 0;
   runsFinished = 0;
   runsFailed = 0;

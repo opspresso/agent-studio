@@ -85,7 +85,9 @@ standalone 서버는 진행 중인 요청을 끝낸다. 이 모듈은 결코 `pr
 
 | 메트릭 | 타입 | 용도 |
 |---|---|---|
+| `agent_studio_build_info` | gauge | 배포된 package version·stage. |
 | `agent_studio_active_runs` | gauge | **오토스케일링 신호.** |
+| `agent_studio_oldest_active_run_seconds` | gauge | 멈추거나 deadline에 접근한 런 감지. |
 | `agent_studio_runs_started_total` | counter | 처리량. |
 | `agent_studio_runs_finished_total` | counter | 처리량. |
 | `agent_studio_runs_failed_total` | counter | **알림 신호.** 취소는 실패가 아니다. |
@@ -93,9 +95,18 @@ standalone 서버는 진행 중인 요청을 끝낸다. 이 모듈은 결코 `pr
 | `agent_studio_unknown_model_calls_total` | counter | 정확성 신호 — 아래 참고. |
 | `agent_studio_unknown_models` | gauge | 관측된 미등록 model id 의 가짓수. |
 | `agent_studio_draining` | gauge | 셧다운이 시작되면 `1`. |
+| `process_resident_memory_bytes` | gauge | Node.js process RSS. |
+| `process_cpu_seconds_total` | counter | Node.js process 누적 user+system CPU. |
+| `nodejs_heap_size_{total,used}_bytes` | gauge | V8 heap 할당·사용량. |
+| `nodejs_external_memory_bytes` | gauge | Buffer 등 V8 heap 밖의 메모리. |
+| `nodejs_eventloop_delay_{p95,max}_seconds` | gauge | 메트릭 수집 시작 이후 event loop 지연. |
 
 **CPU 가 아니라 `agent_studio_active_runs` 로 오토스케일하라.** 런은 I/O 바운드다 — 런으로
 포화된 인스턴스도 CPU 는 유휴로 읽힌다.
+
+`agent_studio_oldest_active_run_seconds` 는 동시 런을 시작 handle 별로 추적한다. 새 런이 먼저
+끝나도 더 오래된 런의 나이를 잃지 않으며, active run이 없으면 `0`이다. 600초를 넘으면 기본
+run deadline과 어긋난 실행이므로 원인을 조사하라.
 
 **리더가 떠났다고 chat 런이 더는 스스로 떨어져 나가지 않는다.** 탭을 닫은 것은 리더가 떠났다는
 뜻이지 중단이 아니므로 ([design/chat.md](design/chat.md#런은-자기-연결보다-오래-산다) 참고),
@@ -119,9 +130,10 @@ Slack 에는 여전히 해당하며, 이들은 caller 의 signal 을 받아 실�
 model id` 를 한 번씩 로그로 남기기도 한다. `UNKNOWN_MODEL_POLICY=refuse` (env 또는 런타임
 설정)는 이 카운터를 거부로 바꾼다: 런 브래킷이 어떤 가드보다도 먼저 `400` 을 답한다.
 
-카운터는 프로세스 단위이며 **project 도 user 도 model 도 이름 붙이지 않는다**; 이들이 지니는
-유일한 레이블은 히스토그램의 `le` 뿐이다. 값의 범위가 무한한 레이블은 메트릭 하나를 값마다
-하나씩의 시계열로 바꿔 놓는데, unknown model id 를 레이블로 달지 않고 카운트하는 이유도 그것이다.
+카운터는 프로세스 단위이며 **project 도 user 도 model 도 이름 붙이지 않는다**. 라벨은
+히스토그램의 `le`와 build 정보의 유한한 `version`·`stage`뿐이다. 값의 범위가 무한한 라벨은
+메트릭 하나를 값마다 하나씩의 시계열로 바꿔 놓는데, unknown model id 를 라벨로 달지 않고
+카운트하는 이유도 그것이다.
 
 ## 로깅
 
