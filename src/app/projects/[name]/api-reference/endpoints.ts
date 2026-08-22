@@ -493,18 +493,18 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: aguiPath,
       title: "AG-UI run",
       description:
-        "Runs the published version for an AG-UI client (CopilotKit, @ag-ui/client) and streams the protocol's events: RUN_STARTED, TEXT_MESSAGE_*, TOOL_CALL_* with TOOL_CALL_RESULT, REASONING_* when the version records its thinking, STEP_* for subagents, CUSTOM (agent-studio.image / .file / .warning) for what the protocol has no frame for, and RUN_FINISHED carrying usage and result.termination, or RUN_ERROR. " +
-        "threadId is the run's conversation — send the same one on every run of a thread. Tools the client declares are offered to an agent project and executed by the client: a turn that calls one ends the run, and the results come back as tool messages in the next run's history. " +
-        "The stream closes after the terminal event, with no [DONE] frame.",
+        "Runs the published version for an AG-UI client (CopilotKit, @ag-ui/client) and streams the protocol's events: RUN_STARTED, TEXT_MESSAGE_*, TOOL_CALL_* with TOOL_CALL_RESULT, REASONING_* when the version records its thinking, STEP_* for subagents, ACTIVITY_SNAPSHOT (activityType agent-studio.image / agent-studio.file) for a picture or a file the run produced, CUSTOM agent-studio.warning for what the run lost, and RUN_FINISHED carrying usage and result.termination, or RUN_ERROR. " +
+        "threadId is the run's conversation — send the same one on every run of a thread. Tools the client declares are offered to an agent project and executed by the client: a turn that calls one ends the run, and the results come back as tool messages in the next run's history. A user turn may carry text, image and document parts; context and a non-empty state reach the model as a read-only system turn. " +
+        "Call it from your own server (a CopilotKit runtime, a backend): the token is a server credential and the endpoint sends no CORS headers. The stream closes after the terminal event, with no [DONE] frame.",
       auth: "token",
       streaming: true,
       requestFields: [
         { name: "threadId", type: "string", required: true, description: "The client's conversation id; the run's conversation." },
         { name: "runId", type: "string", required: true, description: "The client's id for this run; echoed on RUN_STARTED and RUN_FINISHED." },
-        { name: "messages", type: "array[object]", required: true, description: "AG-UI messages (developer, system, user, assistant, tool). A user turn may carry text and image parts." },
+        { name: "messages", type: "array[object]", required: true, description: "AG-UI messages (developer, system, user, assistant, tool, reasoning). A user turn may carry text, image and document parts; may be empty." },
         { name: "tools", type: "array[object]", description: "Tools the client executes: { name, description, parameters }. Offered to agent projects only." },
         { name: "context", type: "array[object]", description: "{ description, value } facts the application holds; placed ahead of the history as a system turn." },
-        { name: "state", type: "any", description: "Accepted and ignored: no state is kept between runs here." },
+        { name: "state", type: "any", description: "Shared with the model read-only, as JSON in the system turn. Never updated: no STATE_SNAPSHOT is sent back." },
         { name: "forwardedProps", type: "any", description: "Accepted and ignored." },
       ],
       errorCodes: [400, 401, 404],

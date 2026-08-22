@@ -8,8 +8,28 @@
  * the run `/agent` would have started from the same history.
  */
 
-import type { AguiContext, AguiMessage } from "@/domain/agui/types";
+import type { AguiContext, AguiInputContent, AguiMessage } from "@/domain/agui/types";
+import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { imageDataUrl, type ChatMessageInput, type ContentPart } from "@/domain/llm/types";
+import {
+  readDocuments,
+  turnContent,
+  type AttachedDocument,
+} from "@/application/llm/documentParts";
+
+export interface AguiInputDeps {
+  /** Turns a document part into text, the way every other surface's attachment becomes text. */
+  documents: DocumentExtractor;
+  /** What reading the input lost — an unreadable file, a budget spent — for the surface to report. */
+  warnings: string[];
+}
+
+/**
+ * The most of the application's `state` the prompt carries. A cap we chose,
+ * beside the mechanism that spends it: the state is the application's own
+ * object, unbounded by the protocol, and it enters the context once per run.
+ */
+const MAX_STATE_CHARS = 20_000;
 
 /**
  * The conversation plus what the application asked the run to know.
@@ -22,18 +42,27 @@ import { imageDataUrl, type ChatMessageInput, type ContentPart } from "@/domain/
  * precedes nothing of the assistant's is dropped; so is an `activity`
  * message, which records what an earlier run showed rather than what was said.
  *
- * `context` becomes one `system` turn ahead of the history. The protocol
- * defines it as facts the application holds about the session — the page the
- * person is on, the record they have open — which is what a system turn is
- * for, and putting it ahead of the history keeps it out of the turn being
- * answered, where a search query or an image prompt would read it as the
- * request. Empty means no turn at all: nothing is inserted for a client that
- * sent nothing.
+ * `context` and `state` become one `system` turn ahead of the history. The
+ * protocol defines context as facts the application holds about the session
+ * — the page the person is on, the record they have open — and state as the
+ * object the application shares with the agent; both are what a system turn
+ * is for, and putting them ahead of the history keeps them out of the turn
+ * being answered, where a search query or an image prompt would read them as
+ * the request. The state is read-only here — no `STATE_SNAPSHOT` ever goes
+ * back — and the turn says so, because a model told it can change a thing it
+ * cannot will claim to have. Empty means no turn at all.
+ *
+ * A `document` part is read at this surface, through the same extractor and
+ * budgets as a chat attachment, and its text leads the turn the way it does
+ * there (`turnContent` owns the order). What could not be read is a warning,
+ * never a silent absence.
  */
-export function toEngineMessages(
+export async function toEngineMessages(
   messages: readonly AguiMessage[],
   context: readonly AguiContext[],
-): ChatMessageInput[] {
+  state: unknown,
+  deps: AguiInputDeps,
+): Promise<ChatMessageInput[]> {
   const history: ChatMessageInput[] = [];
   let pendingReasoning: string | undefined;
   for (const message of messages) {
@@ -41,7 +70,7 @@ export function toEngineMessages(
       pendingReasoning = pendingReasoning ? `${pendingReasoning}\n\n${message.content}` : message.content;
       continue;
     }
-    const mapped = toEngineMessage(message);
+    const mapped = await toEngineMessage(message, deps);
     if (mapped) {
       history.push(
         mapped.role === "assistant" && pendingReasoning
@@ -51,22 +80,62 @@ export function toEngineMessages(
     }
     pendingReasoning = undefined;
   }
-  const contextTurn = contextMessage(context);
+  const contextTurn = contextMessage(context, state);
   return contextTurn ? [contextTurn, ...history] : history;
 }
 
-function contextMessage(context: readonly AguiContext[]): ChatMessageInput | null {
-  if (context.length === 0) {
+function contextMessage(context: readonly AguiContext[], state: unknown): ChatMessageInput | null {
+  const sections: string[] = [];
+  if (context.length > 0) {
+    sections.push(
+      ["Context provided by the application:", ...context.map((entry) => `- ${entry.description}: ${entry.value}`)].join(
+        "\n",
+      ),
+    );
+  }
+  const stateText = stateJson(state);
+  if (stateText !== undefined) {
+    sections.push(
+      [
+        "Application state, shared with you read-only — you cannot change it, so do not claim to have:",
+        "```json",
+        stateText,
+        "```",
+      ].join("\n"),
+    );
+  }
+  if (sections.length === 0) {
     return null;
   }
-  const lines = context.map((entry) => `- ${entry.description}: ${entry.value}`);
-  return {
-    role: "system",
-    content: ["Context provided by the application:", ...lines].join("\n"),
-  };
+  return { role: "system", content: sections.join("\n\n") };
 }
 
-function toEngineMessage(message: AguiMessage): ChatMessageInput | null {
+/** The state as JSON, or nothing for an absent or empty one. Bounded, with the cut named. */
+function stateJson(state: unknown): string | undefined {
+  if (state === undefined || state === null) {
+    return undefined;
+  }
+  if (typeof state === "object" && Object.keys(state as object).length === 0) {
+    return undefined;
+  }
+  let text: string;
+  try {
+    text = JSON.stringify(state, null, 2) ?? "";
+  } catch {
+    return undefined;
+  }
+  if (!text) {
+    return undefined;
+  }
+  return text.length > MAX_STATE_CHARS
+    ? `${text.slice(0, MAX_STATE_CHARS)}\n…[state truncated at ${MAX_STATE_CHARS} characters]`
+    : text;
+}
+
+async function toEngineMessage(
+  message: Exclude<AguiMessage, { role: "reasoning" }>,
+  deps: AguiInputDeps,
+): Promise<ChatMessageInput | null> {
   switch (message.role) {
     case "developer":
     case "system":
@@ -75,7 +144,7 @@ function toEngineMessage(message: AguiMessage): ChatMessageInput | null {
       return {
         role: "user",
         content:
-          typeof message.content === "string" ? message.content : message.content.map(toContentPart),
+          typeof message.content === "string" ? message.content : await userContent(message.content, deps),
       };
     case "assistant":
       return {
@@ -106,13 +175,60 @@ function toEngineMessage(message: AguiMessage): ChatMessageInput | null {
   }
 }
 
-function toContentPart(part: Extract<AguiMessage, { role: "user" }>["content"][number] & object): ContentPart {
-  if (part.type === "text") {
-    return { type: "text", text: part.text };
+/**
+ * A user turn's parts as the engine takes them: documents read to text and
+ * leading, then the text, then the images — `turnContent`'s order, so a turn
+ * that arrived over AG-UI reads like one that arrived in a chat.
+ */
+async function userContent(
+  parts: readonly AguiInputContent[],
+  deps: AguiInputDeps,
+): Promise<string | ContentPart[]> {
+  const text = parts
+    .flatMap((part) => (part.type === "text" ? [part.text] : []))
+    .join("\n\n");
+  const images: ContentPart[] = parts.flatMap((part) =>
+    part.type === "image"
+      ? [
+          {
+            type: "image_url" as const,
+            image_url: {
+              url:
+                part.source.type === "data"
+                  ? imageDataUrl({ b64: part.source.value, mimeType: part.source.mimeType })
+                  : part.source.value,
+            },
+          },
+        ]
+      : [],
+  );
+  const attached: AttachedDocument[] = parts.flatMap((part, index) =>
+    part.type === "document"
+      ? [
+          {
+            bytes: Buffer.from(part.source.value, "base64"),
+            mimeType: part.source.mimeType,
+            name: documentName(part.metadata, part.source.mimeType, index),
+          },
+        ]
+      : [],
+  );
+  const documents = await readDocuments(deps.documents, attached, deps.warnings);
+  return turnContent(documents, text, images);
+}
+
+/**
+ * What to call a document the protocol leaves unnamed. `metadata` is open, and
+ * the two spellings an application is likely to use are read; otherwise the
+ * media type's own subtype, so the extractor and the model see *a* name.
+ */
+function documentName(metadata: Record<string, unknown> | undefined, mimeType: string, index: number): string {
+  for (const key of ["name", "filename"]) {
+    const value = metadata?.[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
   }
-  const url =
-    part.source.type === "data"
-      ? imageDataUrl({ b64: part.source.value, mimeType: part.source.mimeType })
-      : part.source.value;
-  return { type: "image_url", image_url: { url } };
+  const subtype = mimeType.split("/")[1]?.split(";")[0]?.trim() || "bin";
+  return `document-${index + 1}.${subtype}`;
 }

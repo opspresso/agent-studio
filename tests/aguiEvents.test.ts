@@ -155,6 +155,7 @@ describe("toAguiEvents — tool calls", () => {
       { type: "TOOL_CALL_ARGS", toolCallId: "call_1", delta: '{"city":"Seoul"}' },
       { type: "TOOL_CALL_END", toolCallId: "call_1" },
       { type: "TOOL_CALL_RESULT", messageId: "id2", toolCallId: "call_1", content: "sunny", role: "tool" },
+      // A new turn is a new assistant message.
       { type: "TEXT_MESSAGE_START", messageId: "id3", role: "assistant" },
       { type: "TEXT_MESSAGE_CONTENT", messageId: "id3", delta: "\n" },
       { type: "TEXT_MESSAGE_CONTENT", messageId: "id3", delta: "It is sunny." },
@@ -162,7 +163,7 @@ describe("toAguiEvents — tool calls", () => {
     ]);
   });
 
-  it("gives a turn that only called no parent message, and keeps one parent across its calls", async () => {
+  it("parents every call of a turn to one assistant message, whether or not the turn spoke", async () => {
     const events = await translate([
       { delta: { content: "hi" } },
       { delta: { toolCalls: [{ id: "c1", type: "function", function: { name: "a", arguments: "{}" } }] } },
@@ -176,7 +177,9 @@ describe("toAguiEvents — tool calls", () => {
     expect(starts).toEqual([
       { type: "TOOL_CALL_START", toolCallId: "c1", toolCallName: "a", parentMessageId: "id1" },
       { type: "TOOL_CALL_START", toolCallId: "c2", toolCallName: "b", parentMessageId: "id1" },
-      { type: "TOOL_CALL_START", toolCallId: "c3", toolCallName: "c" },
+      // The next turn called without speaking: still one message, a fresh one,
+      // rather than a client-invented bubble per call.
+      { type: "TOOL_CALL_START", toolCallId: "c3", toolCallName: "c", parentMessageId: "id4" },
     ]);
     // Empty arguments are not an ARGS frame.
     expect(events.filter((event) => event.type === "TOOL_CALL_ARGS").map((event) => event.toolCallId)).toEqual([
@@ -228,7 +231,7 @@ describe("toAguiEvents — reasoning, steps and the other axes", () => {
       "TOOL_CALL_END",
       "STEP_STARTED",
       "CUSTOM",
-      "CUSTOM",
+      "ACTIVITY_SNAPSHOT",
       "STEP_FINISHED",
       "TOOL_CALL_RESULT",
       "TEXT_MESSAGE_START",
@@ -239,9 +242,10 @@ describe("toAguiEvents — reasoning, steps and the other axes", () => {
     expect(events[4]).toEqual({ type: "STEP_STARTED", stepName: "painter" });
     expect(events[5]).toEqual({ type: "CUSTOM", name: "agent-studio.warning", value: { message: "child lost a binding" } });
     expect(events[6]).toEqual({
-      type: "CUSTOM",
-      name: "agent-studio.image",
-      value: { mimeType: "image/png", dataUrl: "data:image/png;base64,AAAA", model: "x/img" },
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: "id2",
+      activityType: "agent-studio.image",
+      content: { mimeType: "image/png", dataUrl: "data:image/png;base64,AAAA", model: "x/img" },
     });
     // The child's text never became a message; its failure never ended the run.
     expect(events.some((event) => event.type === "TEXT_MESSAGE_CONTENT" && event.delta === "child text")).toBe(false);
@@ -260,9 +264,10 @@ describe("toAguiEvents — reasoning, steps and the other axes", () => {
     const file = { mimeType: "application/pdf", name: "report.pdf", source: "mcp: render", key: "k1", byteSize: 12 };
     const signed = await translate([{ file }, { done: true }], async (key) => `https://files/${key}`);
     expect(signed[1]).toEqual({
-      type: "CUSTOM",
-      name: "agent-studio.file",
-      value: { name: "report.pdf", mimeType: "application/pdf", byteSize: 12, url: "https://files/k1" },
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: "id1",
+      activityType: "agent-studio.file",
+      content: { name: "report.pdf", mimeType: "application/pdf", byteSize: 12, url: "https://files/k1" },
     });
 
     const unsigned = await translate([{ file }, { done: true }]);
@@ -337,5 +342,38 @@ describe("toAguiEvents — what the ending has to wait for and close", () => {
     expect(closed).toBe(false);
     await events.return(undefined);
     expect(closed).toBe(true);
+  });
+});
+
+describe("toAguiEvents — identity and naming", () => {
+  it("echoes parentRunId, names the model on usage, and codes a typed failure", async () => {
+    async function* failing(): AsyncGenerator<EngineChunk> {
+      yield { usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 } };
+      throw new RateLimitedError("over", 1);
+    }
+    const events = await collect(
+      toAguiEvents(failing(), { ...RUN, parentRunId: "r0" }, { newId: ids(), model: "openai/gpt-5-mini" }),
+    );
+    expect(events[0]).toEqual({ type: "RUN_STARTED", threadId: "t1", runId: "r1", parentRunId: "r0" });
+    expect(events.at(-1)).toEqual({ type: "RUN_ERROR", message: "over", code: "RateLimitedError" });
+
+    const finished = await collect(
+      toAguiEvents(chunks([{ usage: { inputTokens: 2, outputTokens: 3, costUsd: 0 }, done: true }]), RUN, {
+        model: "openai/gpt-5-mini",
+      }),
+    );
+    expect(finished.at(-1)).toMatchObject({ usage: [{ model: "openai/gpt-5-mini", totalTokens: 5 }] });
+  });
+
+  it("names a step by its chain, so two children of one agent do not share one", async () => {
+    const events = await translate([
+      { author: "b", authorPath: ["a", "b"], delta: { content: "…" } },
+      { author: "b", authorPath: ["a", "b"], authorDone: true },
+      { done: true },
+    ]);
+    expect(events.slice(1, 3)).toEqual([
+      { type: "STEP_STARTED", stepName: "a/b" },
+      { type: "STEP_FINISHED", stepName: "a/b" },
+    ]);
   });
 });

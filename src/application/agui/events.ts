@@ -9,6 +9,14 @@
  * end arrives, reasoning closes when the answer begins, and both close before
  * `RUN_FINISHED`.
  *
+ * **A turn is one assistant message.** The id is minted the moment a turn
+ * first speaks or calls, and every `TOOL_CALL_START` of that turn names it as
+ * `parentMessageId` — whether or not the turn said anything first. A client
+ * that receives a call with no parent invents an assistant message per call,
+ * so a turn that only called two tools became two empty bubbles and the next
+ * run's history replayed them as two assistant turns. The turn ends when a
+ * tool result arrives: the next words are the next turn's message.
+ *
  * Only a top-level chunk drives the lifecycle. A subagent's chunks are its own
  * run — its text returns to the parent as a tool result, its calls are its
  * business — and they surface here as a step (`STEP_STARTED` when the author
@@ -35,6 +43,8 @@ import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 export interface AguiRunIdentity {
   threadId: string;
   runId: string;
+  /** Echoed on `RUN_STARTED` when the client sent one. */
+  parentRunId?: string;
 }
 
 export interface AguiEventDeps {
@@ -47,11 +57,22 @@ export interface AguiEventDeps {
    * `RUN_STARTED`, and collected onto `RUN_FINISHED.result` like the run's own.
    */
   warnings?: readonly string[];
+  /** The version's model, named on the usage `RUN_FINISHED` reports. */
+  model?: string;
 }
 
-/** The run failing, as the protocol says it — for the translator and for a failure it never saw. */
-export function runErrorEvent(message: string): AguiEvent {
-  return { type: "RUN_ERROR", message };
+/**
+ * The run failing, as the protocol says it — for the translator and for a
+ * failure it never saw. `code` is the error's class when it has one worth
+ * naming (`RateLimitedError`, `UpstreamError`), so a client can branch without
+ * parsing the sentence; a bare `Error` carries none.
+ */
+export function runErrorEvent(message: string, code?: string): AguiEvent {
+  return { type: "RUN_ERROR", message, ...(code ? { code } : {}) };
+}
+
+function errorCode(error: unknown): string | undefined {
+  return error instanceof Error && error.name && error.name !== "Error" ? error.name : undefined;
 }
 
 /**
@@ -86,7 +107,12 @@ export async function* toAguiEvents(
     const { value: head } = await source.next();
     const translator = new RunTranslator(run, deps);
     try {
-      yield { type: "RUN_STARTED", threadId: run.threadId, runId: run.runId };
+      yield {
+        type: "RUN_STARTED",
+        threadId: run.threadId,
+        runId: run.runId,
+        ...(run.parentRunId ? { parentRunId: run.parentRunId } : {}),
+      };
       for (const warning of deps.warnings ?? []) {
         yield* translator.collect({ warning });
       }
@@ -98,7 +124,7 @@ export async function* toAguiEvents(
       }
       yield* translator.finish();
     } catch (error) {
-      yield* translator.fail(error instanceof Error ? error.message : String(error));
+      yield* translator.fail(error instanceof Error ? error.message : String(error), errorCode(error));
     }
   } finally {
     await source.return(undefined);
@@ -119,14 +145,11 @@ class RunTranslator {
   ended = false;
   /** How the engine said the run ended, held until the source is exhausted. */
   private termination: AguiRunResult["termination"] | undefined;
-  private openText: string | undefined;
+  /** The assistant message the current turn is, once it has said or called anything. */
+  private turn: string | undefined;
+  /** Whether the turn's text message is open right now. */
+  private textOpen = false;
   private openReasoning: string | undefined;
-  /**
-   * The assistant message the turn's tool calls belong to: the text message
-   * the first call closed. Several calls of one response arrive as separate
-   * chunks, so it is held until something other than a call arrives.
-   */
-  private callParent: string | undefined;
   private readonly openSteps: string[] = [];
   private readonly warnings: string[] = [];
   private readonly usage: UsageTotals = {
@@ -158,9 +181,10 @@ class RunTranslator {
     yield* this.collect(chunk);
     if (chunk.image) {
       yield {
-        type: "CUSTOM",
-        name: "agent-studio.image",
-        value: {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: this.newId(),
+        activityType: "agent-studio.image",
+        content: {
           mimeType: chunk.image.mimeType,
           dataUrl: imageDataUrl(chunk.image),
           ...(chunk.image.prompt !== undefined ? { prompt: chunk.image.prompt } : {}),
@@ -179,7 +203,12 @@ class RunTranslator {
         VIEW_URL_TTL_SECONDS,
       );
       if (outcome.file) {
-        yield { type: "CUSTOM", name: "agent-studio.file", value: outcome.file };
+        yield {
+          type: "ACTIVITY_SNAPSHOT",
+          messageId: this.newId(),
+          activityType: "agent-studio.file",
+          content: { ...outcome.file },
+        };
       }
       yield* this.collect(outcome);
     }
@@ -193,7 +222,6 @@ class RunTranslator {
     }
     if (chunk.delta?.reasoningContent) {
       yield* this.closeText();
-      this.callParent = undefined;
       if (this.openReasoning === undefined) {
         this.openReasoning = this.newId();
         yield { type: "REASONING_START", messageId: this.openReasoning };
@@ -207,29 +235,22 @@ class RunTranslator {
     }
     if (chunk.delta?.content) {
       yield* this.closeReasoning();
-      this.callParent = undefined;
-      if (this.openText === undefined) {
-        this.openText = this.newId();
-        yield { type: "TEXT_MESSAGE_START", messageId: this.openText, role: "assistant" };
+      if (!this.textOpen) {
+        this.textOpen = true;
+        yield { type: "TEXT_MESSAGE_START", messageId: this.turnId(), role: "assistant" };
       }
-      yield { type: "TEXT_MESSAGE_CONTENT", messageId: this.openText, delta: chunk.delta.content };
+      yield { type: "TEXT_MESSAGE_CONTENT", messageId: this.turnId(), delta: chunk.delta.content };
     }
     if (chunk.delta?.toolCalls) {
       yield* this.closeReasoning();
-      // The text this turn spoke before calling is the message the calls
-      // hang off; a turn that only called gets a message of its own on the
-      // client, which is what an absent parent means there.
-      if (this.openText !== undefined) {
-        this.callParent = this.openText;
-        yield* this.closeText();
-      }
+      yield* this.closeText();
       for (const call of chunk.delta.toolCalls) {
         const toolCallId = call.id ?? this.newId();
         yield {
           type: "TOOL_CALL_START",
           toolCallId,
           toolCallName: call.function?.name ?? "",
-          ...(this.callParent !== undefined ? { parentMessageId: this.callParent } : {}),
+          parentMessageId: this.turnId(),
         };
         if (call.function?.arguments) {
           yield { type: "TOOL_CALL_ARGS", toolCallId, delta: call.function.arguments };
@@ -240,7 +261,8 @@ class RunTranslator {
     if (chunk.toolResult) {
       yield* this.closeReasoning();
       yield* this.closeText();
-      this.callParent = undefined;
+      // The results end the turn: what the model says next is its next message.
+      this.turn = undefined;
       yield {
         type: "TOOL_CALL_RESULT",
         messageId: this.newId(),
@@ -268,18 +290,21 @@ class RunTranslator {
   }
 
   private async *observeAuthored(chunk: EngineChunk): AsyncGenerator<AguiEvent> {
-    const author = chunk.author;
-    if (author === undefined) {
+    if (chunk.author === undefined) {
       return;
     }
-    if (!this.openSteps.includes(author)) {
+    // The chain, not the innermost name: two children of one agent dispatched
+    // at once would otherwise share a step, and the first to return would
+    // close it under the other.
+    const step = (chunk.authorPath ?? [chunk.author]).join("/");
+    if (!this.openSteps.includes(step)) {
       yield* this.closeReasoning();
       yield* this.closeText();
-      this.openSteps.push(author);
-      yield { type: "STEP_STARTED", stepName: author };
+      this.openSteps.push(step);
+      yield { type: "STEP_STARTED", stepName: step };
     }
     if (chunk.authorDone) {
-      yield* this.closeStep(author);
+      yield* this.closeStep(step);
     }
   }
 
@@ -301,27 +326,34 @@ class RunTranslator {
     };
   }
 
-  async *fail(message: string): AsyncGenerator<AguiEvent> {
+  async *fail(message: string, code?: string): AsyncGenerator<AguiEvent> {
     if (this.ended) {
       return;
     }
     yield* this.closeAll();
     this.ended = true;
-    yield runErrorEvent(message);
+    yield runErrorEvent(message, code);
+  }
+
+  private turnId(): string {
+    if (this.turn === undefined) {
+      this.turn = this.newId();
+    }
+    return this.turn;
   }
 
   private async *closeAll(): AsyncGenerator<AguiEvent> {
     yield* this.closeReasoning();
     yield* this.closeText();
-    for (const author of [...this.openSteps].reverse()) {
-      yield* this.closeStep(author);
+    for (const step of [...this.openSteps].reverse()) {
+      yield* this.closeStep(step);
     }
   }
 
   private async *closeText(): AsyncGenerator<AguiEvent> {
-    if (this.openText !== undefined) {
-      yield { type: "TEXT_MESSAGE_END", messageId: this.openText };
-      this.openText = undefined;
+    if (this.textOpen && this.turn !== undefined) {
+      yield { type: "TEXT_MESSAGE_END", messageId: this.turn };
+      this.textOpen = false;
     }
   }
 
@@ -333,11 +365,11 @@ class RunTranslator {
     }
   }
 
-  private async *closeStep(author: string): AsyncGenerator<AguiEvent> {
-    const index = this.openSteps.indexOf(author);
+  private async *closeStep(step: string): AsyncGenerator<AguiEvent> {
+    const index = this.openSteps.indexOf(step);
     if (index >= 0) {
       this.openSteps.splice(index, 1);
-      yield { type: "STEP_FINISHED", stepName: author };
+      yield { type: "STEP_FINISHED", stepName: step };
     }
   }
 
@@ -346,6 +378,7 @@ class RunTranslator {
       return undefined;
     }
     return {
+      ...(this.deps.model ? { model: this.deps.model } : {}),
       inputTokens: this.usage.inputTokens,
       outputTokens: this.usage.outputTokens,
       totalTokens: this.usage.inputTokens + this.usage.outputTokens,

@@ -611,7 +611,7 @@ export const en = {
     "How other systems reach this project — the token an API caller presents, the chat platforms whose bots run it, and its A2A and AG-UI exposure. What the project itself is, its cost limits and its triggers stay under Settings.",
   "pint.ownerOnly": "Only the project owner ({owner}) or an admin can change these integrations.",
   "pint.aguiLede":
-    "The published version answers AG-UI runs at this address — an application sends a RunAgentInput and reads an event stream. The thread id it sends is the run’s conversation, and any tools it declares are offered to the run and executed on its side. Callers present the project’s API token in",
+    "The published version answers AG-UI runs at this address — an application sends a RunAgentInput and reads an event stream. The thread id it sends is the run’s conversation, and any tools it declares are offered to the run and executed on its side. Call it from a server of your own — the token is a server credential — presenting it in",
   "pint.aguiPublish": "Publish a version to expose this project over AG-UI.",
   "pint.aguiCopy": "Copy example",
 

@@ -65,7 +65,10 @@ export interface AguiRunRequest {
  * because the facade refuses them for those types: that refusal is for a
  * caller that did not check, and this one did.
  */
-export function streamAguiRun(deps: AguiDeps, request: AguiRunRequest): AsyncGenerator<AguiEvent> {
+export async function* streamAguiRun(
+  deps: AguiDeps,
+  request: AguiRunRequest,
+): AsyncGenerator<AguiEvent> {
   const clientTools = request.input.tools.map(toChannelTool);
   const toolsApply = runStrategyFor(request.project) === "agent";
   const warnings =
@@ -74,20 +77,30 @@ export function streamAguiRun(deps: AguiDeps, request: AguiRunRequest): AsyncGen
           `${clientTools.length} application tool(s) were not offered: only an agent project can call tools, and "${request.project.name}" is a ${request.project.projectType} project.`,
         ]
       : [];
+  // Documents are read here, before the run opens: an unreadable attachment
+  // is a warning beside the answer, reported with the surface's own.
+  const messages = await toEngineMessages(request.input.messages, request.input.context, request.input.state, {
+    documents: deps.execution.documents,
+    warnings,
+  });
   const source = streamProjectRun(deps.execution, {
     project: request.project,
     version: request.version,
-    messages: toEngineMessages(request.input.messages, request.input.context),
+    messages,
     actor: request.actor,
     ...(request.caller ? { caller: request.caller } : {}),
     ...(request.conversation ? { conversation: request.conversation } : {}),
     ...(toolsApply && clientTools.length > 0 ? { clientTools } : {}),
     ...(request.signal ? { signal: request.signal } : {}),
   });
-  return toAguiEvents(
+  yield* toAguiEvents(
     source,
-    { threadId: request.input.threadId, runId: request.input.runId },
-    { sign: deps.execution.artifacts?.objects.sign, warnings },
+    {
+      threadId: request.input.threadId,
+      runId: request.input.runId,
+      ...(request.input.parentRunId ? { parentRunId: request.input.parentRunId } : {}),
+    },
+    { sign: deps.execution.artifacts?.objects.sign, warnings, model: request.version.model },
   );
 }
 

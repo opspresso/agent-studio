@@ -40,12 +40,22 @@ export interface AguiToolCall {
   function: AguiFunctionCall;
 }
 
-/** One part of a user turn. Only text and image parts reach the model here. */
+/**
+ * One part of a user turn. Text and images reach the model as they are; a
+ * document becomes text at this surface, the way every other surface's
+ * attachment does. Audio and video have no path to a model here.
+ */
 export type AguiInputContent =
   | { type: "text"; text: string }
   | {
       type: "image";
       source: { type: "data"; value: string; mimeType: string } | { type: "url"; value: string };
+    }
+  | {
+      type: "document";
+      source: { type: "data"; value: string; mimeType: string };
+      /** The protocol leaves this open; a `name` or `filename` in it names the file. */
+      metadata?: Record<string, unknown>;
     };
 
 export type AguiMessage =
@@ -61,6 +71,8 @@ export type AguiMessage =
 export interface AguiRunInput {
   threadId: string;
   runId: string;
+  /** The run this one continues from, echoed on `RUN_STARTED`. */
+  parentRunId?: string;
   messages: AguiMessage[];
   tools: AguiTool[];
   context: AguiContext[];
@@ -83,7 +95,7 @@ export interface AguiTokenUsage {
  * field; it is left off — a frame's arrival order is its order.
  */
 export type AguiEvent =
-  | { type: "RUN_STARTED"; threadId: string; runId: string }
+  | { type: "RUN_STARTED"; threadId: string; runId: string; parentRunId?: string }
   | {
       type: "RUN_FINISHED";
       threadId: string;
@@ -94,6 +106,13 @@ export type AguiEvent =
       usage?: AguiTokenUsage[];
     }
   | { type: "RUN_ERROR"; message: string; code?: string }
+  | {
+      type: "ACTIVITY_SNAPSHOT";
+      messageId: string;
+      activityType: AguiActivityType;
+      content: Record<string, unknown>;
+      replace?: boolean;
+    }
   | { type: "STEP_STARTED"; stepName: string }
   | { type: "STEP_FINISHED"; stepName: string }
   | { type: "TEXT_MESSAGE_START"; messageId: string; role: "assistant" }
@@ -125,14 +144,28 @@ export interface AguiRunResult {
 }
 
 /**
- * The `CUSTOM` events this platform defines, namespaced so a client can tell
- * them from its own. Each carries what the protocol has no frame for.
+ * What a run produced besides words, as `ACTIVITY_SNAPSHOT` messages.
  *
- * - `agent-studio.image` — a picture the run produced, inline as a `data:` URL
- *   (`{ mimeType, dataUrl, prompt?, model?, artifactId? }`).
- * - `agent-studio.file` — a file a tool produced, addressed for download
- *   (`{ name, mimeType, url, byteSize? }`); its bytes never travel.
- * - `agent-studio.warning` — a loss the run reported (`{ message }`), said as
- *   it happens; the same text is collected onto `RUN_FINISHED.result`.
+ * An activity is a message in the client's thread — rendered where the
+ * answer is, by a renderer registered for its `activityType` — and it is
+ * dropped from the messages a client sends back, so the bytes never reach
+ * the model on the next run. That is exactly the pair of properties a picture
+ * and a file need, and what a `CUSTOM` event lacks: a custom event reaches a
+ * subscriber and nothing else, so an image project called over AG-UI showed
+ * the client an empty run.
+ *
+ * - `agent-studio.image` — `{ mimeType, dataUrl, prompt?, model?, artifactId? }`,
+ *   the picture inline as a `data:` URL.
+ * - `agent-studio.file` — `{ name, mimeType, url, byteSize? }`, a signed
+ *   download address; the bytes stayed at the bracket.
  */
-export type AguiCustomEventName = "agent-studio.image" | "agent-studio.file" | "agent-studio.warning";
+export type AguiActivityType = "agent-studio.image" | "agent-studio.file";
+
+/**
+ * The one `CUSTOM` event this platform defines, namespaced so a client can
+ * tell it from its own: `agent-studio.warning` — a loss the run reported
+ * (`{ message }`), said as it happens; the same text is collected onto
+ * `RUN_FINISHED.result`. A custom event reaches a subscriber and not the
+ * thread, which is where a warning belongs.
+ */
+export type AguiCustomEventName = "agent-studio.warning";

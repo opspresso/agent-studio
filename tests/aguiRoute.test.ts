@@ -25,7 +25,13 @@ vi.mock("@/lib/config", async (importOriginal) => {
 });
 
 vi.mock("@/lib/container", async () => ({
-  aguiDeps: { projects: projectRepo, versions: versionRepo, execution: {} },
+  aguiDeps: {
+    projects: projectRepo,
+    versions: versionRepo,
+    execution: {
+      documents: { extract: async ({ name }: { name: string }) => ({ text: `<${name}>` }) },
+    },
+  },
   apiTokenUseCases: (
     await import("@/application/project/apiTokenUseCases")
   ).createApiTokenUseCases({ getApiToken: async () => null } as never, {} as never),
@@ -172,9 +178,48 @@ describe("POST /api/agui/[name]", () => {
   });
 
   it("refuses a body that is not a RunAgentInput", async () => {
-    const response = await POST(req({ threadId: "t", runId: "r", messages: [] }), ctx);
+    const response = await POST(req({ threadId: "t", messages: [] }), ctx);
     expect(response.status).toBe(400);
     expect(runs).toHaveLength(0);
+  });
+
+  it("accepts an empty history, as the protocol does", async () => {
+    const response = await POST(req({ ...input, messages: [] }), ctx);
+    expect(response.status).toBe(200);
+    await frames(response);
+    expect(runs[0]).toMatchObject({ messages: [] });
+  });
+
+  it("reads a document part to text through the deployment's extractor", async () => {
+    const body = {
+      ...input,
+      messages: [
+        {
+          id: "m1",
+          role: "user",
+          content: [
+            { type: "text", text: "what does it say?" },
+            { type: "document", source: { type: "data", value: "aGk=", mimeType: "text/plain" }, metadata: { name: "a.txt" } },
+          ],
+        },
+      ],
+    };
+    await frames(await POST(req(body), ctx));
+    expect((runs[0] as { messages: Array<{ content: string }> }).messages[0]?.content).toContain("<a.txt>");
+  });
+
+  it("refuses a document it cannot read, by name", async () => {
+    const body = {
+      ...input,
+      messages: [
+        {
+          id: "m1",
+          role: "user",
+          content: [{ type: "document", source: { type: "data", value: "aGk=", mimeType: "application/zip" } }],
+        },
+      ],
+    };
+    expect((await POST(req(body), ctx)).status).toBe(400);
   });
 
   it("refuses a content part it cannot hand to the model", async () => {
