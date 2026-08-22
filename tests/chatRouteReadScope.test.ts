@@ -59,6 +59,8 @@ describe("GET /api/chats", () => {
 
   it("falls back to the default rather than reading nonsense as a page size", async () => {
     chats.listByOwner.mockClear();
+    await listGet(new Request("http://x/api/chats?limit="));
+    expect(chats.listByOwner).toHaveBeenCalledWith("owner@x.com", { limit: 50 });
     await listGet(new Request("http://x/api/chats?limit=nope"));
     expect(chats.listByOwner).toHaveBeenCalledWith("owner@x.com", { limit: 50 });
     await listGet(new Request("http://x/api/chats?limit=0"));
@@ -106,6 +108,16 @@ describe("GET /api/chats/{chatId}", () => {
     chats.listMessages.mockClear();
     await readGet(new Request("http://x/api/chats/c1?sinceSeq=0"), context);
     expect(chats.listMessages).toHaveBeenCalledWith("c1", { sinceSeq: 0 });
+  });
+
+  it("reads an empty sinceSeq as absent, not as zero", async () => {
+    // `Number("")` is 0, and 0 is the first message's sequence: parsed that
+    // way, `?sinceSeq=` would answer with the transcript minus its opening
+    // turn.
+    chats.get.mockResolvedValue(chat() as never);
+    chats.listMessages.mockClear();
+    await readGet(new Request("http://x/api/chats/c1?sinceSeq="), context);
+    expect(chats.listMessages).toHaveBeenCalledWith("c1", {});
   });
 
   it("ignores a bound it cannot read rather than refusing the request", async () => {

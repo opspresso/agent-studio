@@ -9,6 +9,7 @@
  * day and had already disagreed about whether the digest is shown.
  */
 
+import { useEffect } from "react";
 import { Alert, Button, Card, Group, Stack, Text } from "@mantine/core";
 import { IconAlertTriangle, IconReload } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
@@ -21,6 +22,14 @@ export function ErrorCard({
   reset: () => void;
 }) {
   const t = useT();
+  // The only record there is. A throw that happens in the browser never
+  // reaches the server log, and React hands the boundary a `digest` only for
+  // one it rendered on the server — so an operator reading logs alone would
+  // see nothing at all for the failures this component exists to catch.
+  useEffect(() => {
+    console.error("[console] page render failed", error);
+  }, [error]);
+
   return (
     <Card withBorder padding="lg" radius="lg">
       <Stack gap="md">

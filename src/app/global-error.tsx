@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 /**
  * The last resort: a throw in the root layout itself.
  *
@@ -41,6 +43,12 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // Same reason as `ErrorCard`: a client-side throw leaves no server log line,
+  // and this boundary catches the ones with the least else to go on.
+  useEffect(() => {
+    console.error("[console] root layout failed", error);
+  }, [error]);
+
   return (
     <html lang="en">
       <head>

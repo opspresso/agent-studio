@@ -1461,9 +1461,20 @@ const SINGLE_OWNERS: SingleOwner[] = [
     pattern: /(?:^|[\s;{(])console\.(?:log|warn|error|info)\(/m,
     owner: "src/shared/logger.ts",
     alsoAllowedIn: ["domain"],
-    // The API-reference page ships a Node.js SDK sample *containing* a
-    // `console.log` call. It is text shown to a user, not a call this app makes.
-    alsoAllowedUnder: ["src/app/projects/[name]/api-reference/"],
+    alsoAllowedUnder: [
+      // The API-reference page ships a Node.js SDK sample *containing* a
+      // `console.log` call. It is text shown to a user, not a call this app
+      // makes.
+      "src/app/projects/[name]/api-reference/",
+      // The error boundaries, for the same reason `domain` is exempt: they
+      // cannot reach the owner. `logger.ts` imports `node:async_hooks` for the
+      // run correlation id, which no browser has — and a boundary that caught
+      // a client-side render throw is the one failure with no server log line
+      // and often no digest either, so writing nothing would leave an operator
+      // with no record of it at all.
+      "src/app/_components/ErrorCard.tsx",
+      "src/app/global-error.tsx",
+    ],
   },
   {
     // Four functions admit a top-level run, and each used to open the in-flight

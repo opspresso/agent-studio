@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Button,
@@ -54,6 +54,8 @@ export function ChatSidebar() {
   const [limit, setLimit] = useState(CHAT_PAGE);
   const [hasMore, setHasMore] = useState(false);
   const [drawerOpen, drawer] = useDisclosure(false);
+  /** Which read is the current one; an older one that lands late is dropped. */
+  const loadSeq = useRef(0);
   // Keys, not chat ids: a chat still being created counts under its placeholder,
   // so a first message refused before it learned its id still reloads this list
   // — the chat and its user turn are already on the server by then. Matching
@@ -61,9 +63,21 @@ export function ChatSidebar() {
   const running = useRunningKeys();
 
   const load = useCallback(async () => {
+    // Ticketed like the thread's own sync. Two reads are in flight whenever
+    // "show more" is pressed while a run start is reloading the list, and the
+    // smaller one landing last would put the list back to a page the reader
+    // has already grown past — while `limit` stayed raised, so the next press
+    // would skip a page rather than repeat one.
+    const ticket = ++loadSeq.current;
     const res = await fetch(`/api/chats?limit=${limit}`);
+    if (ticket !== loadSeq.current) {
+      return;
+    }
     if (res.ok) {
       const data = (await res.json()) as ChatListResponse;
+      if (ticket !== loadSeq.current) {
+        return;
+      }
       setChats(data.chats ?? []);
       setHasMore(data.hasMore ?? false);
     }

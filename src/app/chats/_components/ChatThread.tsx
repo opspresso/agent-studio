@@ -29,6 +29,7 @@ import { IconArrowDown } from "@tabler/icons-react";
 import { BADGE } from "@/app/_components/badgeColors";
 import classes from "./ChatThread.module.css";
 import { highestSeq, mergeMessages } from "../_lib/mergeMessages";
+import { SIGNATURE_REFRESH_MS } from "../_lib/refresh";
 
 interface Fetched {
   messages: ChatMessage[];
@@ -74,6 +75,20 @@ export function ChatThread({ chatId }: { chatId: string }) {
    * message the thread gains.
    */
   const held = useRef<number | undefined>(undefined);
+  /**
+   * The chat on screen right now, for the async work that outlives a
+   * navigation to read. The retire loop below holds the `chatId` it started
+   * for, and everything it touches afterwards — `held`, `chat`, `messages` —
+   * belongs to whichever chat is current, not to that one.
+   */
+  const showing = useRef(chatId);
+  showing.current = chatId;
+  /**
+   * When this view last read the whole thread — which is the last time every
+   * stored image and file in it was signed. `refresh.ts` says why that has a
+   * ceiling.
+   */
+  const lastFullRead = useRef(0);
   const [status, setStatus] = useState<"loading" | "ready" | "not-found">("loading");
   const [error, setError] = useState<string | null>(null);
   /**
@@ -145,7 +160,11 @@ export function ChatThread({ chatId }: { chatId: string }) {
       // a dependency it would give this callback a new identity on every
       // arriving row, and the mount effect that depends on it would re-fetch
       // the thread each time it grew.
-      const since = tail ? held.current : undefined;
+      // A tail read only when one is still safe: the signatures on the rows
+      // already on screen were minted by the last full read, and past
+      // `SIGNATURE_REFRESH_MS` the cheap read would leave them to expire.
+      const stale = Date.now() - lastFullRead.current >= SIGNATURE_REFRESH_MS;
+      const since = tail && !stale ? held.current : undefined;
       const res = await fetch(
         since === undefined ? `/api/chats/${chatId}` : `/api/chats/${chatId}?sinceSeq=${since}`,
       );
@@ -174,6 +193,9 @@ export function ChatThread({ chatId }: { chatId: string }) {
         return null;
       }
       const fetched = data.messages ?? [];
+      if (since === undefined) {
+        lastFullRead.current = Date.now();
+      }
       setChat(data.chat ?? null);
       setMessages((prev) => (since === undefined ? fetched : mergeMessages(prev, fetched)));
       // Outside the updater, which React may run twice and which must stay
@@ -187,6 +209,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           : Math.max(held.current, newest);
       } else if (since === undefined) {
         held.current = undefined;
+    lastFullRead.current = 0;
       }
       setStatus("ready");
       // The *fetched* rows, not the merged thread: what pins this turn's images
@@ -260,6 +283,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
     }
     consuming.current = shown.id;
     const turn = shown;
+    const forChat = chatId;
     void (async () => {
       // A sync that cannot answer — a transient 5xx, or one overtaken by a
       // fresher request — is tried again rather than dropped. Nothing re-fires
@@ -268,6 +292,14 @@ export function ChatThread({ chatId }: { chatId: string }) {
       // the store's own eviction takes the finished answer off the screen with
       // no error and nothing to click.
       for (let attempt = 0; ; attempt += 1) {
+        // The retire that outlived its chat stops here rather than at its
+        // sync's ticket: the retry *takes* the newest ticket, so nothing
+        // downstream can tell it is stale. It would ask this chat's endpoint
+        // for a tail measured against another chat's sequence, then commit
+        // the answer over the thread the reader is actually looking at.
+        if (showing.current !== forChat) {
+          return;
+        }
         // A tail read: this view watched the run arrive and holds every turn
         // before it. The whole transcript used to be re-read here on every
         // finished turn, re-signing each stored image with it.

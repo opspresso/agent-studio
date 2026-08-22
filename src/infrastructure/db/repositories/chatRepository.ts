@@ -236,7 +236,11 @@ export const chatRepository: ChatRepository = {
     const { sinceSeq } = options;
     // Past `sinceSeq` the query is a range rather than the prefix — the bounds
     // come from `keys` either way, and `chatMessageRange` says why the upper
-    // one has to be there.
+    // one has to be there. It answers `null` for a sequence past the last one
+    // a key can hold, which is an empty tail and not a query to run.
+    if (sinceSeq !== undefined && keys.chatMessageRange(sinceSeq + 1) === null) {
+      return [];
+    }
     const range = sinceSeq === undefined ? null : keys.chatMessageRange(sinceSeq + 1);
     const messages: ChatMessage[] = [];
     let lastKey: LastKey;

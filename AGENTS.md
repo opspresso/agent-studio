@@ -237,8 +237,9 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 - **Errors** — `AppError` subclasses before a stream starts, `{error}` chunks after the first one
   → [ARCHITECTURE.md](docs/ARCHITECTURE.md#에러-처리)
 - **Logging** — `src/shared/logger.ts` is the only writer (`domain`'s one bare `[cost]` warn
-  excepted, since it imports nothing); lines carry the run's correlation id, deliberately *not*
-  the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#로깅)
+  excepted, since it imports nothing, and the two error boundaries, since the logger imports
+  `node:async_hooks` and they run in a browser); lines carry the run's correlation id,
+  deliberately *not* the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#로깅)
 
 ## Conventions that bite
 

@@ -519,12 +519,26 @@ async function main() {
       0,
       "a tail read caught up returns nothing rather than the run log after it",
     );
-    // A sequence past the end is an empty answer, not a rejected query: the
-    // bounds of a BETWEEN cannot invert, and the route accepts any number.
+    // The last sequence a key can hold, written so the boundary is exercised
+    // against a real row rather than against an empty partition: asking for
+    // what comes *after* it must be empty, and must not be that row again —
+    // which is what clamping the range's lower bound would have returned.
+    await chatRepository.appendMessage({
+      chatId,
+      seq: 999_999,
+      role: "assistant",
+      content: "last",
+      createdAt: now,
+    });
+    assert.equal(
+      (await chatRepository.listMessages(chatId, { sinceSeq: 999_998 })).length,
+      1,
+      "the last possible sequence is readable as a tail",
+    );
     assert.equal(
       (await chatRepository.listMessages(chatId, { sinceSeq: 999_999 })).length,
       0,
-      "a tail read past the last possible sequence is empty rather than an error",
+      "a tail read past the last possible sequence is empty, not that row again",
     );
     pass("chat run log append/replay/tail + cascade delete");
 

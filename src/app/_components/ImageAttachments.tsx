@@ -33,6 +33,17 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
   const [documents, setDocuments] = useState<DocumentAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const t = useT();
+  /**
+   * How many slots are already spoken for, counted as they are claimed rather
+   * than as React commits them.
+   *
+   * There are three ways in now — the paperclip, a paste and a drop — and two
+   * of them can land inside the same `await` of reading a file. Both calls
+   * would then read the same `attachments.length`, both would decide they fit,
+   * and the updater would silently drop the second batch past the cap with no
+   * `attachError` to say so. Claiming against a ref closes that window.
+   */
+  const claimed = useRef({ images: 0, documents: 0 });
 
   const addFiles = useCallback(
     async (files: File[]) => {
@@ -64,36 +75,47 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
       // Reported from here, not from inside the updater: the updater runs after
       // the checks below, so a message pushed there would never be shown — what
       // is over the cap would just disappear.
-      if (added.length > Math.max(MAX_ATTACHMENTS - attachments.length, 0)) {
+      //
+      // Counted against the claim rather than the rendered length, so two
+      // gestures resolving in the same tick cannot both spend the last slot.
+      const imageRoom = Math.max(MAX_ATTACHMENTS - claimed.current.images, 0);
+      const documentRoom = Math.max(MAX_DOCUMENTS - claimed.current.documents, 0);
+      if (added.length > imageRoom) {
         failures.push(t("attach.tooManyImages", { count: MAX_ATTACHMENTS }));
       }
-      if (addedDocuments.length > Math.max(MAX_DOCUMENTS - documents.length, 0)) {
+      if (addedDocuments.length > documentRoom) {
         failures.push(t("attach.tooManyDocuments", { count: MAX_DOCUMENTS }));
       }
-      setAttachments((prev) => [
-        ...prev,
-        ...added.slice(0, Math.max(MAX_ATTACHMENTS - prev.length, 0)),
-      ]);
-      setDocuments((prev) => [
-        ...prev,
-        ...addedDocuments.slice(0, Math.max(MAX_DOCUMENTS - prev.length, 0)),
-      ]);
+      const takenImages = added.slice(0, imageRoom);
+      const takenDocuments = addedDocuments.slice(0, documentRoom);
+      claimed.current = {
+        images: claimed.current.images + takenImages.length,
+        documents: claimed.current.documents + takenDocuments.length,
+      };
+      setAttachments((prev) => [...prev, ...takenImages]);
+      setDocuments((prev) => [...prev, ...takenDocuments]);
       if (failures.length > 0) {
         setAttachError(failures.join(" · "));
       }
     },
-    [allowDocuments, attachments.length, documents.length, t],
+    // The rendered lengths are no longer read here, so this identity holds
+    // across a staged file — which is what lets the composer memoise the
+    // handlers built from it.
+    [allowDocuments, t],
   );
 
   const removeAt = useCallback((index: number) => {
+    claimed.current.images = Math.max(claimed.current.images - 1, 0);
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   const removeDocumentAt = useCallback((index: number) => {
+    claimed.current.documents = Math.max(claimed.current.documents - 1, 0);
     setDocuments((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   const clear = useCallback(() => {
+    claimed.current = { images: 0, documents: 0 };
     setAttachments([]);
     setDocuments([]);
     setAttachError(null);

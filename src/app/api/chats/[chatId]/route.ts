@@ -12,11 +12,12 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
   // and merges what comes back. Anything that is not a non-negative number is
   // read as "no bound" rather than refused — the whole transcript is always a
   // correct answer to this request, just a more expensive one.
-  // Read as a string first: `Number(null)` is 0, and 0 is a *valid* sequence
-  // here — the first message of a chat has it — so an absent parameter parsed
-  // that way would silently drop the opening turn.
+  // Read as a string first, and treat an empty one as absent: `Number(null)`
+  // and `Number("")` are both 0, and 0 is a *valid* sequence here — the first
+  // message of a chat has it — so `?sinceSeq=` parsed as a number would
+  // silently drop the opening turn.
   const raw = new URL(request.url).searchParams.get("sinceSeq");
-  const asked = raw === null ? Number.NaN : Number(raw);
+  const asked = raw === null || raw.trim() === "" ? Number.NaN : Number(raw);
   const sinceSeq = Number.isFinite(asked) && asked >= 0 ? Math.floor(asked) : undefined;
   try {
     const result = await getChat(

@@ -8,7 +8,10 @@ import { CHAT_PAGE } from "@/domain/chat/repository";
 import { highestSeq, mergeMessages } from "@/app/chats/_lib/mergeMessages";
 import { isSubmitEnter } from "@/app/_lib/modEnter";
 import { onFilePaste } from "@/app/_components/ImageAttachments";
-import { keys } from "@/infrastructure/db/keys";
+import { onModEnter } from "@/app/_lib/modEnter";
+import { SIGNATURE_REFRESH_MS } from "@/app/chats/_lib/refresh";
+import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { CHAT_MESSAGE_MAX_SEQ, keys } from "@/infrastructure/db/keys";
 
 function message(seq: number, content: string): ChatMessage {
   return {
@@ -135,19 +138,22 @@ describe("listChats", () => {
 
 describe("chatMessageRange", () => {
   it("starts at the padded sequence, so 10 sorts after 9", () => {
-    expect(keys.chatMessageRange(10).from).toBe("MSG#000010");
-    expect(keys.chatMessageRange(10).from > keys.chatMessage("c1", 9).SK).toBe(true);
+    expect(keys.chatMessageRange(10)?.from).toBe("MSG#000010");
+    expect((keys.chatMessageRange(10)?.from ?? "") > keys.chatMessage("c1", 9).SK).toBe(true);
   });
 
   it("stops before the run log, which sorts after the messages in the same partition", () => {
-    const { to } = keys.chatMessageRange(0);
-    expect(to).toBe("MSG#999999");
+    const to = keys.chatMessageRange(0)?.to ?? "";
+    expect(to).toBe(`MSG#${CHAT_MESSAGE_MAX_SEQ}`);
     expect(keys.chatRunLog("c1", "r1", 0).SK > to).toBe(true);
   });
 
-  it("never inverts its bounds, which DynamoDB refuses outright", () => {
-    const range = keys.chatMessageRange(1_000_000);
-    expect(range.from <= range.to).toBe(true);
+  it("has no range past the last sequence a key can hold", () => {
+    // Not a clamp: clamping would answer "nothing after the last row" with
+    // that row itself, and leaving it alone would invert the bounds, which
+    // DynamoDB refuses outright.
+    expect(keys.chatMessageRange(CHAT_MESSAGE_MAX_SEQ + 1)).toBeNull();
+    expect(keys.chatMessageRange(CHAT_MESSAGE_MAX_SEQ)).not.toBeNull();
   });
 });
 
@@ -192,6 +198,16 @@ describe("onFilePaste", () => {
   });
 });
 
+describe("SIGNATURE_REFRESH_MS", () => {
+  it("re-reads the thread before the signatures on it expire", () => {
+    // The client cannot import the TTL — it lives in `application/` — so the
+    // relationship the tail read depends on is asserted here instead. A
+    // refresh at or past the TTL is a window in which an image on screen is
+    // already dead.
+    expect(SIGNATURE_REFRESH_MS).toBeLessThan(VIEW_URL_TTL_SECONDS * 1000);
+  });
+});
+
 describe("isSubmitEnter", () => {
   const event = (init: { key: string; isComposing?: boolean; keyCode?: number }) =>
     ({
@@ -216,5 +232,43 @@ describe("isSubmitEnter", () => {
 
   it("ignores every other key", () => {
     expect(isSubmitEnter(event({ key: "a" }))).toBe(false);
+  });
+});
+
+describe("onModEnter", () => {
+  const modEvent = (init: { isComposing?: boolean; metaKey?: boolean }) => {
+    const state = { prevented: false };
+    const event = {
+      key: "Enter",
+      metaKey: init.metaKey ?? true,
+      ctrlKey: false,
+      preventDefault: () => {
+        state.prevented = true;
+      },
+      nativeEvent: { isComposing: init.isComposing ?? false, keyCode: 13 },
+    } as unknown as React.KeyboardEvent;
+    return { event, state };
+  };
+
+  it("runs the panel's action on the shortcut", () => {
+    let ran = 0;
+    const { event } = modEvent({});
+    onModEnter(() => (ran += 1))(event);
+    expect(ran).toBe(1);
+  });
+
+  it("does not run it mid-composition, where the panel would read a stale message", () => {
+    let ran = 0;
+    const { event, state } = modEvent({ isComposing: true });
+    onModEnter(() => (ran += 1))(event);
+    expect(ran).toBe(0);
+    expect(state.prevented).toBe(false);
+  });
+
+  it("leaves a plain Enter to its own meaning", () => {
+    let ran = 0;
+    const { event } = modEvent({ metaKey: false });
+    onModEnter(() => (ran += 1))(event);
+    expect(ran).toBe(0);
   });
 });
