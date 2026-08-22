@@ -65,6 +65,16 @@ describe("GET /api/chats", () => {
     expect(chats.listByOwner).toHaveBeenLastCalledWith("owner@x.com", { limit: 50 });
   });
 
+  it("settles at the ceiling rather than offering more forever", async () => {
+    // 600 chats, sidebar already at the cap: the server can only ever answer
+    // with 500, so comparing against what came back would keep the button on
+    // screen and keep the list the same size every time it is pressed.
+    chats.listByOwner.mockResolvedValueOnce(Array.from({ length: 500 }, chat) as never);
+    const capped = await listGet(new Request("http://x/api/chats?limit=550"));
+    expect(chats.listByOwner).toHaveBeenLastCalledWith("owner@x.com", { limit: 500 });
+    expect(await capped.json()).toMatchObject({ hasMore: false });
+  });
+
   it("says whether asking for more could return more", async () => {
     chats.listByOwner.mockResolvedValueOnce([chat(), chat()] as never);
     const full = await listGet(new Request("http://x/api/chats?limit=2"));

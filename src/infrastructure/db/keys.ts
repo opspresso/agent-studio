@@ -35,10 +35,13 @@ export const keys = {
    * A range rather than the prefix, for the same reason `chatRunLogRange` is
    * one: `SK > MSG#…` alone would run past the message rows into the run log,
    * which sorts after them in the same partition. `999999` is the widest a
-   * six-digit sequence can be.
+   * six-digit sequence can be — and the lower bound is clamped to it, because
+   * DynamoDB refuses a `BETWEEN` whose bounds are inverted. A caller may name
+   * any sequence, and one past the end has to mean "nothing after this",
+   * which an empty range says and a `ValidationException` does not.
    */
   chatMessageRange: (fromSeq: number) => ({
-    from: `MSG#${String(fromSeq).padStart(6, "0")}`,
+    from: `MSG#${String(Math.min(fromSeq, 999999)).padStart(6, "0")}`,
     to: "MSG#999999",
   }),
   chatOwnerPartition: (email: string) => `CHATOWNER#${email}`,

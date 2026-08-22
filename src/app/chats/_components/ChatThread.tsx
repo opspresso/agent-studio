@@ -164,6 +164,15 @@ export function ChatThread({ chatId }: { chatId: string }) {
         messages?: ChatMessage[];
         activeRun?: { runId: string };
       };
+      // Checked again, after the body: the first check only proves no fresher
+      // request had *started* when the headers arrived. A mount's full read
+      // parked on `res.json()` while a retire's tail read overtook it would
+      // otherwise land here and replace the merged thread with its own older
+      // copy — and rewind `held` with it, so the next tail asks for rows
+      // already on screen.
+      if (ticket !== syncSeq.current) {
+        return null;
+      }
       const fetched = data.messages ?? [];
       setChat(data.chat ?? null);
       setMessages((prev) => (since === undefined ? fetched : mergeMessages(prev, fetched)));

@@ -38,6 +38,7 @@ import { LoadingText } from "@/app/_components/PageState";
 import { ProducedFile } from "@/app/_components/ProducedFile";
 import { createTextPacer } from "@/app/_lib/textPacer";
 import { ReasoningRow } from "@/app/_components/ReasoningRow";
+import { reportError } from "@/app/_lib/reportError";
 
 /**
  * One side's outcome, folded from the same chunk stream the playground reads —
@@ -272,7 +273,7 @@ export default function ComparePage() {
         }
       }
     } catch (e) {
-      const failure = e instanceof Error ? e.message : "Run failed";
+      const failure = reportError(e, "Run failed");
       setSide((prev) => ({ ...prev, error: failure }));
     } finally {
       reasoningPacer.flush();

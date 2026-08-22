@@ -614,7 +614,7 @@ export default function ModelsPage() {
       result = {
         ok: false,
         latencyMs: 0,
-        error: testError instanceof Error ? testError.message : "Test request failed",
+        error: reportError(testError, "Test request failed"),
       };
     }
     setTests((prev) => ({ ...prev, [id]: { running: false, result } }));

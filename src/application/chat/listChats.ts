@@ -1,21 +1,20 @@
 import type { Chat } from "@/domain/chat/types";
+import { CHAT_PAGE } from "@/domain/chat/repository";
 import type { ChatDeps } from "./deps";
 
 /**
- * The sidebar's page size when a caller does not name one.
+ * List a user's chats, newest first (ordering provided by the repository GSI).
  *
- * The list is re-read on every run start and finish, so its cost is paid per
- * turn rather than per visit — which is what an unbounded read made expensive
- * for exactly the people who use the console most. Fifty is well past what the
- * sidebar shows without scrolling, and "show more" asks for a larger one.
+ * Bounded by default: the sidebar re-reads this on every run start and finish,
+ * so its cost is paid per turn rather than per visit — which is what an
+ * unbounded read made expensive for exactly the people who use the console
+ * most. The size itself is `CHAT_PAGE`, which the endpoint and the sidebar
+ * read too.
  */
-export const DEFAULT_CHAT_PAGE = 50;
-
-/** List a user's chats, newest first (ordering provided by the repository GSI). */
 export async function listChats(
   deps: ChatDeps,
   userEmail: string,
-  limit: number = DEFAULT_CHAT_PAGE,
+  limit: number = CHAT_PAGE,
 ): Promise<Chat[]> {
   return deps.chats.listByOwner(userEmail, { limit });
 }

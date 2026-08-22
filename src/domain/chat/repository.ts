@@ -14,6 +14,22 @@ export interface ChatListOptions {
   limit?: number;
 }
 
+/**
+ * How many chats a listing hands back when nobody says, and the most it will.
+ *
+ * Here rather than beside either mechanism because *three* of them spend it —
+ * the use case's default, the endpoint's ceiling, and the step the sidebar's
+ * "show more" takes — and a page size written three times is a page size
+ * raised in one place and left at fifty in the other two. `domain` is where
+ * they can all reach it: it is pure TS, so the client bundle may hold it, and
+ * neither the route nor the sidebar may import the other.
+ *
+ * The ceiling is what stops a caller asking for the unbounded read the page
+ * size exists to prevent.
+ */
+export const CHAT_PAGE = 50;
+export const MAX_CHAT_PAGE = 500;
+
 export interface ChatRepository {
   get(chatId: string): Promise<Chat | null>;
   /**

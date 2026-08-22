@@ -186,13 +186,15 @@ export const en = {
   "cost.activeGroups": "Active groups",
   "cost.dailyCost": "Daily cost",
 
-  // Staged attachments, shared by the chat composers and the run panel.
+  // Page-level failures: the segment error boundaries and the missing page.
   "error.pageTitle": "This page could not be shown",
   "error.pageBody": "Something failed while rendering. Try again — if it keeps failing, the digest below identifies it in the server log.",
   "error.retry": "Try again",
   "error.notFoundTitle": "Page not found",
   "error.notFoundBody": "The address does not match any page in this console.",
   "error.backHome": "Back to overview",
+
+  // Staged attachments, shared by the chat composers and the run panel.
   "attach.drop": "Drop to attach",
   "attach.images": "Attach images",
   "attach.imagesOrDocuments": "Attach images or documents",

@@ -401,19 +401,6 @@ async function main() {
     const messages = await chatRepository.listMessages(chatId);
     assert.equal(messages.length, 2, "chat messages round-trip");
     assert.equal(messages[0]?.role, "user");
-    // The tail read the thread does on every finished turn. A real
-    // KeyConditionExpression is the whole point: a fake document client
-    // evaluates neither the range nor its upper bound, and without that bound
-    // the query runs past the messages into the run log rows written below,
-    // which live in this same partition and sort after them.
-    const tail = await chatRepository.listMessages(chatId, { sinceSeq: 1 });
-    assert.equal(tail.length, 1, "a tail read returns only what came after");
-    assert.equal(tail[0]?.seq, 2, "and it is the newer row");
-    assert.equal(
-      (await chatRepository.listMessages(chatId, { sinceSeq: 2 })).length,
-      0,
-      "a tail read caught up returns nothing rather than the whole thread",
-    );
     const ownChats = await chatRepository.listByOwner("it@example.com");
     assert.ok(ownChats.some((c) => c.chatId === chatId), "chat owner GSI listing");
     assert.equal(
@@ -518,6 +505,26 @@ async function main() {
       await chatRunLogRepository.read(sweptChatId, "run-1", 0),
       [],
       "deleting a chat sweeps its run log",
+    );
+    // The tail read the thread does on every finished turn, asserted *here*
+    // rather than beside the message round-trip above: the bound this is
+    // about is the upper one, and what it excludes is the RUNLOG# rows this
+    // section just wrote into the same partition. Asserted before they exist,
+    // dropping the bound entirely would still have passed.
+    const tail = await chatRepository.listMessages(chatId, { sinceSeq: 1 });
+    assert.equal(tail.length, 1, "a tail read returns only what came after");
+    assert.equal(tail[0]?.seq, 2, "and it is the newer row, not a run log entry");
+    assert.equal(
+      (await chatRepository.listMessages(chatId, { sinceSeq: 2 })).length,
+      0,
+      "a tail read caught up returns nothing rather than the run log after it",
+    );
+    // A sequence past the end is an empty answer, not a rejected query: the
+    // bounds of a BETWEEN cannot invert, and the route accepts any number.
+    assert.equal(
+      (await chatRepository.listMessages(chatId, { sinceSeq: 999_999 })).length,
+      0,
+      "a tail read past the last possible sequence is empty rather than an error",
     );
     pass("chat run log append/replay/tail + cascade delete");
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon, Badge, Box, FileButton, Group, Image, Overlay, Stack, Text } from "@mantine/core";
 import { IconFileText, IconPaperclip, IconX } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
@@ -144,49 +144,82 @@ function draggingFiles(data: DataTransfer | null): boolean {
 export function useFileDrop(onFiles: (files: File[]) => void, disabled = false) {
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
+  // The newest reader, held rather than closed over: see the dependency note
+  // on `handlers` below.
+  const onFilesRef = useRef(onFiles);
+  onFilesRef.current = onFiles;
 
   const reset = useCallback(() => {
     depth.current = 0;
     setDragging(false);
   }, []);
 
-  const handlers = {
-    onDragEnter: (event: React.DragEvent) => {
-      if (disabled || !draggingFiles(event.dataTransfer)) {
-        return;
-      }
-      event.preventDefault();
-      depth.current += 1;
-      setDragging(true);
-    },
-    onDragOver: (event: React.DragEvent) => {
-      if (disabled || !draggingFiles(event.dataTransfer)) {
-        return;
-      }
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
-    },
-    onDragLeave: (event: React.DragEvent) => {
-      if (disabled || !draggingFiles(event.dataTransfer)) {
-        return;
-      }
-      depth.current -= 1;
-      if (depth.current <= 0) {
-        reset();
-      }
-    },
-    onDrop: (event: React.DragEvent) => {
-      if (disabled || !draggingFiles(event.dataTransfer)) {
-        return;
-      }
-      event.preventDefault();
+  // A run can start while a file is being dragged over the composer, and the
+  // `dragleave` that would have balanced the counter is then a `dragleave` the
+  // disabled handler ignores — leaving the depth above zero and the overlay
+  // sitting on top of the textarea until some later drag happens to balance
+  // it. Clearing on the flip is what bounds that to the frame it happens in.
+  useEffect(() => {
+    if (disabled) {
       reset();
-      const files = transferredFiles(event.dataTransfer);
-      if (files.length > 0) {
-        onFiles(files);
-      }
-    },
-  };
+    }
+  }, [disabled, reset]);
+
+  const handlers = useMemo(
+    () => ({
+      onDragEnter: (event: React.DragEvent) => {
+        if (disabled || !draggingFiles(event.dataTransfer)) {
+          return;
+        }
+        event.preventDefault();
+        depth.current += 1;
+        setDragging(true);
+      },
+      onDragOver: (event: React.DragEvent) => {
+        if (disabled || !draggingFiles(event.dataTransfer)) {
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      },
+      // The bookkeeping runs whether or not this is disabled *now*: the enter
+      // that raised the counter may have happened while it was enabled, and a
+      // leave that returns early is a counter that never comes back down.
+      onDragLeave: (event: React.DragEvent) => {
+        if (!draggingFiles(event.dataTransfer)) {
+          return;
+        }
+        depth.current -= 1;
+        if (depth.current <= 0) {
+          reset();
+        }
+      },
+      onDrop: (event: React.DragEvent) => {
+        if (!draggingFiles(event.dataTransfer)) {
+          return;
+        }
+        // Prevented and cleared even when disabled — the browser's own default
+        // for an unhandled file drop is to navigate to the file, replacing the
+        // console with it.
+        event.preventDefault();
+        reset();
+        if (disabled) {
+          return;
+        }
+        const files = transferredFiles(event.dataTransfer);
+        if (files.length > 0) {
+          onFilesRef.current(files);
+        }
+      },
+    }),
+    // `onFiles` is rebuilt by its caller every render, so it is deliberately
+    // not a dependency: this hook is used by the chat composer, which
+    // re-renders once per stream frame, and a new handler object per frame is
+    // exactly the per-frame churn this view is careful about. The identity
+    // held here calls whatever `onFiles` was current when the drop happened,
+    // through the ref above.
+    [disabled, reset],
+  );
 
   return { dragging, handlers };
 }
@@ -194,12 +227,21 @@ export function useFileDrop(onFiles: (files: File[]) => void, disabled = false) 
 /**
  * Paste-to-attach: a screenshot on the clipboard becomes an attachment.
  *
- * Text pastes fall through untouched — the guard is the file count, because
- * `preventDefault` on a text paste would swallow what the reader was pasting.
+ * **A clipboard carrying text is a text paste, even when it also carries a
+ * picture.** Copying a spreadsheet range, a slide, a Figma frame or an image
+ * with its caption puts `text/plain`, `text/html` *and* an `image/png` in one
+ * transfer, so a file count alone would `preventDefault` the reader's text
+ * away and stage a screenshot of it instead — losing what they meant to paste
+ * and attaching something they did not ask for. Only a files-only clipboard,
+ * which is what a screenshot and a copied file are, becomes an attachment.
  */
 export function onFilePaste(onFiles: (files: File[]) => void, disabled = false) {
   return (event: React.ClipboardEvent) => {
     if (disabled) {
+      return;
+    }
+    const types = Array.from(event.clipboardData?.types ?? []);
+    if (types.some((type) => type.startsWith("text/"))) {
       return;
     }
     const files = transferredFiles(event.clipboardData);

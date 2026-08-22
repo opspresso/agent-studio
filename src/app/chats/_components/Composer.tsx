@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ActionIcon, Group, Stack, Textarea } from "@mantine/core";
 import { IconPlayerStopFilled, IconSend } from "@tabler/icons-react";
 import {
@@ -76,8 +76,9 @@ export function Composer({
   // decides which of a dropped batch is a picture and which is a document, and
   // what reports the ones over the cap. Neither is offered while a reply is
   // running, for the same reason the send button is not.
-  const attach = (files: File[]) => void addFiles(files);
+  const attach = useCallback((files: File[]) => void addFiles(files), [addFiles]);
   const { dragging, handlers } = useFileDrop(attach, disabled);
+  const onPaste = useMemo(() => onFilePaste(attach, disabled), [attach, disabled]);
 
   function submit() {
     if (empty || disabled) {
@@ -115,7 +116,7 @@ export function Composer({
           <Textarea
             value={value}
             onChange={(event) => setValue(event.currentTarget.value)}
-            onPaste={onFilePaste(attach, disabled)}
+            onPaste={onPaste}
             onKeyDown={(event) => {
               if (isSubmitEnter(event) && !event.shiftKey) {
                 event.preventDefault();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
@@ -290,8 +290,9 @@ export function RunPanel({
 
   // The panel's own attachments are the source images an `image` project edits,
   // so a screenshot pasted into the prompt is the gesture this surface is for.
-  const attach = (files: File[]) => void addFiles(files);
+  const attach = useCallback((files: File[]) => void addFiles(files), [addFiles]);
   const { dragging, handlers } = useFileDrop(attach, running);
+  const onPaste = useMemo(() => onFilePaste(attach, running), [attach, running]);
 
   return (
     <Stack
@@ -329,7 +330,7 @@ export function RunPanel({
           }
           value={message}
           onChange={(e) => setMessage(e.currentTarget.value)}
-          onPaste={onFilePaste(attach, running)}
+          onPaste={onPaste}
           autosize
           minRows={4}
           maxRows={16}

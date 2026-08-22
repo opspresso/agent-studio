@@ -116,7 +116,7 @@ export default function McpDetailPage() {
     try {
       setTools(await testMcpConnection(name));
     } catch (e) {
-      setTestError(e instanceof Error ? e.message : "Connection failed");
+      setTestError(reportError(e, "Connection failed"));
     } finally {
       setTesting(false);
     }
@@ -471,7 +471,7 @@ function OAuthSection({
       setChoices(null);
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Discovery failed");
+      setError(reportError(e, "Discovery failed"));
     } finally {
       setBusy(false);
     }

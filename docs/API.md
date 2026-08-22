@@ -545,8 +545,9 @@ DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 ```
 
 두 목록 읽기 모두 범위를 좁힐 수 있고, 사이드바와 스레드가 실제로 그렇게 읽는다. `limit` 은
-최신 순으로 몇 개인지이며 기본 50, 상한 500 이다 — `hasMore` 가 참이면 더 큰 `limit` 으로 다시
-묻는다(커서가 아닌 이유는 [design/chat.md](design/chat.md#사이드바와-스레드가-읽는-범위)).
+최신 순으로 몇 개인지이며 기본값과 상한은 `CHAT_PAGE` / `MAX_CHAT_PAGE`
+(`src/domain/chat/repository.ts`) 가 정한다 — `hasMore` 가 참이면 더 큰 `limit` 으로 다시
+묻고, 상한에 닿으면 거짓이 되어 멈춘다(커서가 아닌 이유는 [design/chat.md](design/chat.md#사이드바와-스레드가-읽는-범위)).
 `sinceSeq` 는 그 시퀀스 *다음* 부터의 메시지만 돌려준다 — 런이 끝났을 때 스레드가 묻는 것이고,
 없으면 전체 기록을 읽고 그 안의 이미지·파일 주소를 매번 다시 서명한다. `sinceSeq=0` 은 "없음"이
 아니라 유효한 경계다(첫 메시지의 시퀀스가 0 이다).

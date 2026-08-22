@@ -18,8 +18,9 @@
  */
 
 import dynamic from "next/dynamic";
+import type { ComponentProps } from "react";
 import { Skeleton } from "@mantine/core";
-import type { CostSeriesPoint } from "@/app/_lib/usage";
+import type CostBarChartViewType from "./CostBarChartView";
 
 /** Matches the chart's own height, so the page does not jump when it lands. */
 const CHART_HEIGHT = 288;
@@ -29,10 +30,11 @@ const CostBarChartView = dynamic(() => import("./CostBarChartView"), {
   loading: () => <Skeleton height={CHART_HEIGHT} radius="md" />,
 });
 
-export function CostBarChart(props: {
-  data: CostSeriesPoint[];
-  keys: string[];
-  empty?: string;
-}) {
+/**
+ * Props are taken from the view rather than restated: this wrapper is the only
+ * module allowed to import it, so a prop declared there and not here is a prop
+ * nothing can pass and nothing reports.
+ */
+export function CostBarChart(props: ComponentProps<typeof CostBarChartViewType>) {
   return <CostBarChartView {...props} />;
 }

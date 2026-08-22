@@ -3,9 +3,11 @@ import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatDeps } from "@/application/chat/deps";
 import { getChat } from "@/application/chat/getChat";
-import { DEFAULT_CHAT_PAGE, listChats } from "@/application/chat/listChats";
+import { listChats } from "@/application/chat/listChats";
+import { CHAT_PAGE } from "@/domain/chat/repository";
 import { highestSeq, mergeMessages } from "@/app/chats/_lib/mergeMessages";
 import { isSubmitEnter } from "@/app/_lib/modEnter";
+import { onFilePaste } from "@/app/_components/ImageAttachments";
 import { keys } from "@/infrastructure/db/keys";
 
 function message(seq: number, content: string): ChatMessage {
@@ -121,7 +123,7 @@ describe("listChats", () => {
   it("bounds the read even when the caller names no page size", async () => {
     const { repo, asked } = recordingRepo([]);
     await listChats({ chats: repo } as unknown as ChatDeps, "owner@x.com");
-    expect(asked).toEqual([{ limit: DEFAULT_CHAT_PAGE }]);
+    expect(asked).toEqual([{ limit: CHAT_PAGE }]);
   });
 
   it("passes the caller's page size through", async () => {
@@ -141,6 +143,52 @@ describe("chatMessageRange", () => {
     const { to } = keys.chatMessageRange(0);
     expect(to).toBe("MSG#999999");
     expect(keys.chatRunLog("c1", "r1", 0).SK > to).toBe(true);
+  });
+
+  it("never inverts its bounds, which DynamoDB refuses outright", () => {
+    const range = keys.chatMessageRange(1_000_000);
+    expect(range.from <= range.to).toBe(true);
+  });
+});
+
+describe("onFilePaste", () => {
+  const paste = (types: string[], files: File[]) => {
+    const prevented = { value: false };
+    const event = {
+      clipboardData: { types, files },
+      preventDefault: () => {
+        prevented.value = true;
+      },
+    } as unknown as React.ClipboardEvent;
+    return { event, prevented };
+  };
+  const png = () => new File(["x"], "s.png", { type: "image/png" });
+
+  it("attaches a screenshot, which arrives as files and nothing else", () => {
+    const staged: File[][] = [];
+    const { event, prevented } = paste(["Files"], [png()]);
+    onFilePaste((files) => staged.push(files))(event);
+    expect(staged).toHaveLength(1);
+    expect(prevented.value).toBe(true);
+  });
+
+  it("leaves a rich paste alone even when it carries a picture too", () => {
+    // A copied spreadsheet range, slide or Figma frame: text/plain, text/html
+    // and an image/png in one transfer. Staging the picture here would swallow
+    // the text the reader meant to paste.
+    const staged: File[][] = [];
+    const { event, prevented } = paste(["text/plain", "text/html", "Files"], [png()]);
+    onFilePaste((files) => staged.push(files))(event);
+    expect(staged).toHaveLength(0);
+    expect(prevented.value).toBe(false);
+  });
+
+  it("does nothing while the composer is disabled", () => {
+    const staged: File[][] = [];
+    const { event, prevented } = paste(["Files"], [png()]);
+    onFilePaste((files) => staged.push(files), true)(event);
+    expect(staged).toHaveLength(0);
+    expect(prevented.value).toBe(false);
   });
 });
 

@@ -209,7 +209,7 @@ function MessageTester({ name }: { name: string }) {
     try {
       setReply(await sendAgentMessage(name, message));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(reportError(err, "Request failed"));
     } finally {
       setSending(false);
     }

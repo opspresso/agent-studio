@@ -20,6 +20,7 @@ import {
   type PluginSyncResult,
   type PluginSyncSelection,
 } from "./api";
+import { reportError } from "@/app/_lib/reportError";
 
 export default function PluginsPage() {
   const t = useT();
@@ -75,7 +76,7 @@ export default function PluginsPage() {
               try {
                 await runSync();
               } catch (e) {
-                setError(e instanceof Error ? e.message : "Sync failed");
+                setError(reportError(e, "Sync failed"));
               } finally {
                 setSyncing(false);
               }
