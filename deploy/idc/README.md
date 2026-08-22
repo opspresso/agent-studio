@@ -45,20 +45,29 @@ Google OAuth 클라이언트의 승인된 리디렉션 URI 에
 
 ### 3. 호스트
 
-RAM 3.8GB 에 앱과 MCP 서버들이 함께 올라간다. **스왑을 먼저 잡아라.**
+RAM 3.8GB 에 앱과 MCP 서버들이 함께 올라간다. `scripts/setup-host.sh` 가 Ubuntu 24.04 호스트에
+Docker Engine/Compose, AWS CLI, 배포 도구, 4GB 스왑과 `/opt/agent-studio` 를 준비한다. 이미 설치된
+항목은 다시 만들어도 같은 상태를 유지하므로 최초 설치가 중간에 끊겼다면 그대로 재실행하라.
 
 ```bash
-sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+# 로컬 저장소에서
+scp -i ~/.ssh/id_ed25519_bruce -r deploy/idc \
+  ubuntu@115.68.216.99:/tmp/agent-studio-idc
+
+# 호스트에서
+/tmp/agent-studio-idc/scripts/setup-host.sh
+sudo cp -a /tmp/agent-studio-idc/. /opt/agent-studio/
+sudo chown -R ubuntu:ubuntu /opt/agent-studio
 ```
+
+스크립트가 `ubuntu` 를 `docker` 그룹에 처음 넣었다면 로그아웃한 뒤 다시 접속하라. 방화벽은 SSH
+접속을 끊을 수 있어 이 스크립트가 바꾸지 않는다. 호스트 방화벽이 켜져 있으면 SSH 를 유지한 채
+Caddy 가 받을 TCP 80/443 을 별도로 허용하라.
 
 ## 설치
 
 ```bash
 # 호스트에서
-sudo mkdir -p /opt/agent-studio && sudo chown ubuntu:ubuntu /opt/agent-studio
-# deploy/idc/ 의 내용을 /opt/agent-studio 로 복사한 뒤
 cd /opt/agent-studio
 cp .env.aws.example .env.aws      # 액세스 키를 채운다 — 사람이 만드는 파일은 이것 하나다
 
@@ -91,6 +100,65 @@ svc.cluster.local/mcp`)이 여기서도 그대로 해석된다 — 레지스트�
 `MCP_INTERNAL_HOST_SUFFIXES` 가 SSRF 가드에 그 suffix 를 선언하기 때문이고, mcp-grafana 와
 mcp-cloudwatch 가 받아 주는 것은 그 이름이 이미 각자의 Host 화이트리스트에 **포트 없이**
 들어 있기 때문이다.
+
+## Grafana Cloud
+
+### Alloy 설치와 메트릭 수집
+
+`scripts/setup-grafana.sh` 는 Grafana 공식 apt 저장소에서 Alloy 를 설치하고
+`grafana/config.alloy` 를 `/etc/alloy/config.alloy` 에 적용한다. 기존 설정이 다르면 같은 경로 옆에
+UTC 시각이 붙은 백업을 먼저 남긴다. 다음 두 대상을 Grafana Cloud Prometheus 로 보낸다.
+
+| job | 대상 | 주기 |
+|---|---|---:|
+| `integrations/node_exporter` | 호스트 CPU, 메모리, swap, 디스크, 네트워크 | 15초 |
+| `agent-studio` | `https://studio.opspresso.com/api/metrics` | 30초 |
+
+Grafana Cloud의 Alloy 온보딩에서 발급한 access policy token을 준비하고 호스트에서 실행하라.
+스크립트가 터미널에서 값을 숨겨 입력받고 `/etc/alloy/agent-studio.env`에 root 전용 `0600`으로
+저장한다. 토큰을 명령행 인수, Alloy 설정 또는 저장소에 넣지 마라.
+
+```bash
+cd /opt/agent-studio
+scripts/setup-grafana.sh
+
+systemctl status alloy --no-pager
+curl -fsS http://127.0.0.1:12345/-/ready
+```
+
+자동 실행에서는 `GCLOUD_RW_API_KEY`를 환경변수로 넘길 수 있다. 기본 collector ID는 이 호스트의
+Grafana Fleet ID인 `byforce-318260`이고, 다른 호스트에는 `GCLOUD_FM_COLLECTOR_ID`를 명시하라.
+Explore에서 datasource `grafanacloud-nalbam-prom`을 고르고 다음 두 쿼리가 각각 `1`인지 확인한다.
+
+```promql
+up{job="integrations/node_exporter", instance="byforce-318260"}
+up{job="agent-studio", instance="byforce-318260"}
+```
+
+### 대시보드
+
+`grafana/dashboards/agent-studio-idc.json`은
+`argocd-env-addons/charts/grafana/dashboards/kube-cluster.json`과 `kube-workload.json`의 구성 규칙을
+IDC 메트릭에 맞춘 대시보드다. datasource/instance 변수, 30초 갱신, 상태 stat, 자원 gauge,
+시계열 패널과 같은 임계치 색상 규칙을 사용한다. UID `agent-studio-idc`는 바꾸지 마라. 같은 UID로
+다시 올리면 새 대시보드를 늘리지 않고 기존 대시보드를 갱신한다.
+
+업로드에는 Alloy의 metrics writer token이 아니라 Grafana Service Account token이 필요하다.
+Grafana Cloud에서 dashboard 쓰기 권한이 있는 Service Account를 만들고 토큰을 셸에 읽은 뒤
+실행하라. `--dry-run`은 인증 없이 API payload만 검사한다.
+
+```bash
+deploy/idc/scripts/upload-grafana-dashboard.sh --dry-run | jq . >/dev/null
+
+read -rsp 'Grafana Service Account token: ' GRAFANA_SERVICE_ACCOUNT_TOKEN; echo
+export GRAFANA_SERVICE_ACCOUNT_TOKEN
+deploy/idc/scripts/upload-grafana-dashboard.sh
+unset GRAFANA_SERVICE_ACCOUNT_TOKEN
+```
+
+업로드가 끝나면 `https://nalbam.grafana.net/d/agent-studio-idc`에서 확인한다. 대시보드 JSON을
+Grafana UI에서 직접 수정하면 다음 스크립트 실행 때 저장소의 정의로 덮어쓰므로 변경은 JSON에
+반영하라.
 
 ## 운영
 
