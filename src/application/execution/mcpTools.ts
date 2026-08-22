@@ -209,7 +209,7 @@ export async function buildMcpTools(
       }
       flagged.add(serverName);
       await deps.mcpAuth
-        .markUnauthorized(version.projectName, serverName)
+        .markUnauthorized(version.projectName, serverName, toolManager.scopeChallenges?.get(serverName))
         .catch((error: unknown) => {
           log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });

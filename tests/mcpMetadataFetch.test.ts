@@ -17,7 +17,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 }));
 
 import { McpMetadataError } from "@/domain/mcp/oauth";
-import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
+import { authorizationServerCandidates, oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 
 const INTERNAL_URL = "http://mcp-memory.agent-mcps.svc.cluster.local/mcp";
 const RESOURCE_DOC = {
@@ -189,5 +189,68 @@ describe("what an authorization server's document says", () => {
     );
 
     expect(metadata.clientIdMetadataDocumentSupported).toBeUndefined();
+  });
+});
+
+describe("where an authorization server's document is looked for", () => {
+  it("tries the spec's three forms for a path issuer, and never the root", () => {
+    expect(authorizationServerCandidates("https://kc.example/realms/foo")).toEqual([
+      "https://kc.example/.well-known/oauth-authorization-server/realms/foo",
+      "https://kc.example/.well-known/openid-configuration/realms/foo",
+      "https://kc.example/realms/foo/.well-known/openid-configuration",
+    ]);
+    expect(authorizationServerCandidates("https://auth.example.com/")).toEqual([
+      "https://auth.example.com/.well-known/oauth-authorization-server",
+      "https://auth.example.com/.well-known/openid-configuration",
+    ]);
+  });
+
+  it("refuses a document whose issuer is not the one it was fetched for", async () => {
+    // The first two candidates answer with another realm's document; the
+    // path-appended one is the realm's own. Used, the wrong one would bind
+    // this server to the wrong authorization server for every flow after.
+    guardedFetch.mockImplementation(async (input: string) =>
+      String(input).endsWith("/realms/foo/.well-known/openid-configuration")
+        ? jsonResponse({ ...AS_DOC, issuer: "https://kc.example/realms/foo" })
+        : jsonResponse({ ...AS_DOC, issuer: "https://kc.example/realms/other" }),
+    );
+    const metadata = await oauthMetadataClient.fetchAuthorizationServer("https://kc.example/realms/foo");
+    expect(metadata.issuer).toBe("https://kc.example/realms/foo");
+    expect(guardedFetch).toHaveBeenCalledTimes(3);
+
+    guardedFetch.mockReset();
+    guardedFetch.mockResolvedValue(jsonResponse({ ...AS_DOC, issuer: "https://kc.example/realms/other" }));
+    await expect(
+      oauthMetadataClient.fetchAuthorizationServer("https://kc.example/realms/foo"),
+    ).rejects.toBeInstanceOf(McpMetadataError);
+  });
+
+  it("refuses a document that names no issuer at all", async () => {
+    const { issuer: _dropped, ...anonymous } = AS_DOC;
+    guardedFetch.mockResolvedValue(jsonResponse(anonymous));
+    await expect(
+      oauthMetadataClient.fetchAuthorizationServer("https://auth.example.com"),
+    ).rejects.toBeInstanceOf(McpMetadataError);
+  });
+});
+
+describe("where the resource metadata is looked for", () => {
+  it("reads the address the server's own 401 challenge names when the well-known paths miss", async () => {
+    guardedFetch.mockImplementation(async (input: string, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "https://mcp.example.com/mcp" && init?.method === "POST") {
+        return new Response(null, {
+          status: 401,
+          headers: { "WWW-Authenticate": 'Bearer resource_metadata="https://mcp.example.com/oauth/prm"' },
+        });
+      }
+      if (url === "https://mcp.example.com/oauth/prm") {
+        return jsonResponse({ resource: "https://mcp.example.com", authorization_servers: ["https://auth.example.com"] });
+      }
+      return new Response("nope", { status: 404 });
+    });
+    const metadata = await oauthMetadataClient.fetchProtectedResource("https://mcp.example.com/mcp");
+    expect(metadata.resource).toBe("https://mcp.example.com");
+    expect(guardedFetch.mock.calls.map((call) => String(call[0])).at(-1)).toBe("https://mcp.example.com/oauth/prm");
   });
 });

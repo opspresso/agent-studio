@@ -202,14 +202,32 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         ...(connection.clientSecret
           ? { clientSecret: deps.cipher.decrypt(connection.clientSecret) }
           : {}),
-        tokenEndpointAuthMethod: auth.tokenEndpointAuthMethod,
+        tokenEndpointAuthMethod: connection.tokenEndpointAuthMethod ?? auth.tokenEndpointAuthMethod,
         resource: auth.resource,
       });
     },
 
-    async markUnauthorized(projectName, serverName) {
+    async markUnauthorized(projectName, serverName, scope) {
       const connection = await deps.connections.get(projectName, serverName);
-      if (!connection || connection.status === "needs_reauth") {
+      if (!connection) {
+        return;
+      }
+      // A challenge that named scopes is the server saying what the next
+      // authorization has to ask for: the union goes on the row, so the
+      // reconnect the console offers requests it rather than the same grant
+      // the server just refused (step-up, 2026-07-28 scope-challenge handling).
+      const asked = scope ? scope.split(/\s+/).filter(Boolean) : [];
+      const widened = asked.filter((name) => !connection.scopes.includes(name));
+      if (widened.length > 0) {
+        await deps.connections.put({
+          ...connection,
+          scopes: [...connection.scopes, ...widened],
+          status: "needs_reauth",
+          updatedAt: new Date().toISOString(),
+        });
+        return;
+      }
+      if (connection.status === "needs_reauth") {
         return;
       }
       await deps.connections.updateTokens(projectName, serverName, connection.refreshToken, {

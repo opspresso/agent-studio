@@ -17,6 +17,7 @@ import type {
   ProtectedResourceMetadata,
 } from "@/domain/mcp/oauth";
 import { McpMetadataError } from "@/domain/mcp/oauth";
+import { extractWWWAuthenticateParams } from "@modelcontextprotocol/client";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
 
@@ -37,6 +38,81 @@ export function wellKnownCandidates(base: string, suffix: string): string[] {
   }
   candidates.push(`${url.origin}/.well-known/${suffix}`);
   return candidates;
+}
+
+/**
+ * The authorization server's metadata addresses, in the order the spec
+ * requires a client to try them (2026-07-28, authorization-server-discovery):
+ * for an issuer with a path, RFC 8414 path-inserted, then OpenID path-inserted,
+ * then OpenID path-appended; for a bare origin, the two root forms. Never the
+ * root form for a path issuer — the document there belongs to another issuer,
+ * and reading it was how a Keycloak realm or an Okta custom authorization
+ * server silently bound to the wrong one.
+ */
+export function authorizationServerCandidates(issuer: string): string[] {
+  const url = new URL(issuer);
+  const path = url.pathname.replace(/\/+$/, "");
+  if (!path) {
+    return [
+      `${url.origin}/.well-known/oauth-authorization-server`,
+      `${url.origin}/.well-known/openid-configuration`,
+    ];
+  }
+  return [
+    `${url.origin}/.well-known/oauth-authorization-server${path}`,
+    `${url.origin}/.well-known/openid-configuration${path}`,
+    `${url.origin}${path}/.well-known/openid-configuration`,
+  ];
+}
+
+/** Two issuer spellings that name one server: the trailing slash is not a difference. */
+function sameIssuer(a: string, b: string): boolean {
+  return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+}
+
+/**
+ * Where the server itself says its resource metadata is.
+ *
+ * RFC 9728 lets a server publish the document at any address and name it in
+ * the `WWW-Authenticate` challenge of a 401. A server that only names it —
+ * one whose metadata sits behind a gateway path — was undiscoverable while
+ * only the well-known paths were tried. Asked after those paths rather than
+ * before: the paths are where nearly every server publishes, and an extra
+ * request per discovery against all of them buys nothing there. The probe is
+ * the request a client would make first anyway: an `initialize`.
+ */
+async function challengedMetadataUrl(mcpUrl: string, loopback: boolean): Promise<string | undefined> {
+  const send = loopback ? fetch : fetchPublicUrl;
+  try {
+    const response = await send(mcpUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 0,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          clientInfo: { name: "agent-studio", version: "discovery" },
+        },
+      }),
+      signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
+    });
+    await response.body?.cancel().catch(() => {});
+    if (response.status !== 401) {
+      return undefined;
+    }
+    const { resourceMetadataUrl } = extractWWWAuthenticateParams(response);
+    return resourceMetadataUrl?.href;
+  } catch {
+    // The well-known paths are still there to try; a probe that failed says
+    // nothing about them.
+    return undefined;
+  }
 }
 
 async function fetchJson(url: string, loopback: boolean): Promise<Record<string, unknown> | null> {
@@ -100,76 +176,86 @@ function asStringArray(value: unknown): string[] | undefined {
 
 export const oauthMetadataClient: OAuthMetadataClient = {
   async fetchProtectedResource(mcpUrl, loopback = false) {
-    return firstUsable(
-      wellKnownCandidates(mcpUrl, "oauth-protected-resource"),
-      (doc): ProtectedResourceMetadata | null => {
-        const resource = asString(doc.resource);
-        const authorizationServers = asStringArray(doc.authorization_servers);
-        // Both are required by RFC 9728; a document missing either cannot drive
-        // an authorization, so it is a miss rather than a partial success.
-        if (!resource || !authorizationServers || authorizationServers.length === 0) {
-          return null;
-        }
-        const scopesSupported = asStringArray(doc.scopes_supported);
-        return {
-          resource,
-          authorizationServers,
-          ...(scopesSupported ? { scopesSupported } : {}),
-        };
-      },
-      "protected resource metadata",
-      loopback,
-    );
+    const wellKnown = wellKnownCandidates(mcpUrl, "oauth-protected-resource");
+    let candidates = wellKnown;
+    try {
+      return await firstUsable(wellKnown, parseProtectedResource, "protected resource metadata", loopback);
+    } catch (error) {
+      const challenged = await challengedMetadataUrl(mcpUrl, loopback);
+      if (!challenged || wellKnown.includes(challenged)) {
+        throw error;
+      }
+      candidates = [challenged];
+    }
+    return firstUsable(candidates, parseProtectedResource, "protected resource metadata", loopback);
   },
 
   async fetchAuthorizationServer(issuer) {
     return firstUsable(
-      [
-        ...wellKnownCandidates(issuer, "oauth-authorization-server"),
-        // Providers that only publish an OIDC document still carry the three
-        // endpoints this flow needs.
-        ...wellKnownCandidates(issuer, "openid-configuration"),
-      ],
-      (doc): AuthorizationServerMetadata | null => {
-        const authorizationEndpoint = asString(doc.authorization_endpoint);
-        const tokenEndpoint = asString(doc.token_endpoint);
-        if (!authorizationEndpoint || !tokenEndpoint) {
-          return null;
-        }
-        const registrationEndpoint = asString(doc.registration_endpoint);
-        const tokenEndpointAuthMethodsSupported = asStringArray(
-          doc.token_endpoint_auth_methods_supported,
-        );
-        const codeChallengeMethodsSupported = asStringArray(doc.code_challenge_methods_supported);
-        const scopesSupported = asStringArray(doc.scopes_supported);
-        const grantTypesSupported = asStringArray(doc.grant_types_supported);
-        return {
-          issuer: asString(doc.issuer) ?? issuer,
-          authorizationEndpoint,
-          tokenEndpoint,
-          ...(registrationEndpoint ? { registrationEndpoint } : {}),
-          ...(tokenEndpointAuthMethodsSupported ? { tokenEndpointAuthMethodsSupported } : {}),
-          ...(codeChallengeMethodsSupported ? { codeChallengeMethodsSupported } : {}),
-          ...(scopesSupported ? { scopesSupported } : {}),
-          ...(grantTypesSupported ? { grantTypesSupported } : {}),
-          // Only `true` counts. RFC 9207 §2.3 makes this the signal that a
-          // response *without* `iss` must be rejected, so anything that is not
-          // an explicit boolean true leaves that rejection switched off.
-          ...(doc.authorization_response_iss_parameter_supported === true
-            ? { issParameterSupported: true }
-            : {}),
-          // Read at registration like everything else here, so the run path
-          // never pays for it. A server that adds support later is picked up
-          // when an admin re-runs discovery — the same moment every other
-          // endpoint on this document would move.
-          ...(doc.client_id_metadata_document_supported === true
-            ? { clientIdMetadataDocumentSupported: true }
-            : {}),
-        };
-      },
+      authorizationServerCandidates(issuer),
+      parseAuthorizationServer(issuer),
       "authorization server metadata",
       // Never the loopback path: see the port's note on this method.
       false,
     );
   },
 };
+
+const parseProtectedResource = (doc: Record<string, unknown>): ProtectedResourceMetadata | null => {
+  const resource = asString(doc.resource);
+  const authorizationServers = asStringArray(doc.authorization_servers);
+  // Both are required by RFC 9728; a document missing either cannot drive
+  // an authorization, so it is a miss rather than a partial success.
+  if (!resource || !authorizationServers || authorizationServers.length === 0) {
+    return null;
+  }
+  const scopesSupported = asStringArray(doc.scopes_supported);
+  return {
+    resource,
+    authorizationServers,
+    ...(scopesSupported ? { scopesSupported } : {}),
+  };
+};
+
+const parseAuthorizationServer =
+  (issuer: string) =>
+  (doc: Record<string, unknown>): AuthorizationServerMetadata | null => {
+    const authorizationEndpoint = asString(doc.authorization_endpoint);
+    const tokenEndpoint = asString(doc.token_endpoint);
+    if (!authorizationEndpoint || !tokenEndpoint) {
+      return null;
+    }
+    // RFC 8414 §3.3 / OpenID Discovery §4.3: a document whose `issuer` is
+    // not the one it was fetched for MUST NOT be used. One that names none
+    // cannot be checked and is treated the same way — the next candidate
+    // may be the right document, and a wrong one bound here is a wrong
+    // server for every authorization that follows.
+    const declaredIssuer = asString(doc.issuer);
+    if (!declaredIssuer || !sameIssuer(declaredIssuer, issuer)) {
+      return null;
+    }
+    const registrationEndpoint = asString(doc.registration_endpoint);
+    const tokenEndpointAuthMethodsSupported = asStringArray(doc.token_endpoint_auth_methods_supported);
+    const codeChallengeMethodsSupported = asStringArray(doc.code_challenge_methods_supported);
+    const scopesSupported = asStringArray(doc.scopes_supported);
+    const grantTypesSupported = asStringArray(doc.grant_types_supported);
+    return {
+      issuer: declaredIssuer,
+      authorizationEndpoint,
+      tokenEndpoint,
+      ...(registrationEndpoint ? { registrationEndpoint } : {}),
+      ...(tokenEndpointAuthMethodsSupported ? { tokenEndpointAuthMethodsSupported } : {}),
+      ...(codeChallengeMethodsSupported ? { codeChallengeMethodsSupported } : {}),
+      ...(scopesSupported ? { scopesSupported } : {}),
+      ...(grantTypesSupported ? { grantTypesSupported } : {}),
+      // Only `true` counts. RFC 9207 §2.3 makes this the signal that a
+      // response *without* `iss` must be rejected, so anything that is not
+      // an explicit boolean true leaves that rejection switched off.
+      ...(doc.authorization_response_iss_parameter_supported === true ? { issParameterSupported: true } : {}),
+      // Read at registration like everything else here, so the run path
+      // never pays for it. A server that adds support later is picked up
+      // when an admin re-runs discovery — the same moment every other
+      // endpoint on this document would move.
+      ...(doc.client_id_metadata_document_supported === true ? { clientIdMetadataDocumentSupported: true } : {}),
+    };
+  };

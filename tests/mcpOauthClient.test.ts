@@ -194,7 +194,8 @@ describe("dynamic client registration", () => {
     clientName: "Agent Studio — p",
     redirectUri: "https://studio.example.com/api/mcps/oauth/callback",
     scopes: ["chat:write"],
-  };
+  tokenEndpointAuthMethod: "client_secret_post" as const,
+};
 
   it("declares application_type so the server does not apply its own default", async () => {
     // SEP-837. The redirect is always this deployment's https callback, never a
@@ -233,6 +234,30 @@ describe("dynamic client registration", () => {
     stub(201, { client_secret: "orphan" });
 
     await expect(oauthClient.register(registration)).rejects.toThrow(/no client_id/);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("dynamic client registration, the method", () => {
+  it("registers the method the token requests will use, and keeps the one the server recorded", async () => {
+    const sent = stub(201, {
+      client_id: "c-1",
+      client_secret: "s-1",
+      token_endpoint_auth_method: "client_secret_basic",
+    });
+    const registered = await oauthClient.register({
+      registrationEndpoint: "https://auth.example.com/register",
+      clientName: "Agent Studio — proj",
+      redirectUri: "https://studio.example.com/cb",
+      scopes: [],
+      tokenEndpointAuthMethod: "client_secret_post",
+    });
+    expect(sent[0]?.json.token_endpoint_auth_method).toBe("client_secret_post");
+    expect(registered).toEqual({
+      clientId: "c-1",
+      clientSecret: "s-1",
+      tokenEndpointAuthMethod: "client_secret_basic",
+    });
     vi.unstubAllGlobals();
   });
 });

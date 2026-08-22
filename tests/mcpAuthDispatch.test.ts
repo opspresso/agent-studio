@@ -457,3 +457,34 @@ describe("a run against an OAuth-required server", () => {
     }
   });
 });
+
+describe("markUnauthorized with a scope challenge", () => {
+  it("widens the connection's scopes and asks for a reconnect", async () => {
+    const puts: unknown[] = [];
+    let stored = connectionFixture({ scopes: ["files:read"], status: "connected" });
+    const provider = createMcpAuthProvider({
+      connections: {
+        get: async () => stored,
+        listByProject: async () => [stored],
+        put: async (next: typeof stored) => {
+          puts.push(next);
+          stored = next;
+        },
+        delete: async () => {},
+        updateTokens: async () => true,
+      },
+      oauth: {
+        register: async () => ({ clientId: "x" }),
+        exchangeCode: async () => ({ accessToken: "x" }),
+        refresh: async () => ({ accessToken: "x" }),
+      } as never,
+      cipher,
+    });
+
+    await provider.markUnauthorized("p", "slack", "files:write files:read");
+
+    expect(puts).toHaveLength(1);
+    expect(stored.scopes).toEqual(["files:read", "files:write"]);
+    expect(stored.status).toBe("needs_reauth");
+  });
+});

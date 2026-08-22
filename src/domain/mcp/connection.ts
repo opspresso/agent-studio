@@ -1,3 +1,4 @@
+import type { TokenEndpointAuthMethod } from "./types";
 /**
  * One project's OAuth connection to a shared registry MCP server, and the
  * short-lived record of an authorization still in flight.
@@ -26,6 +27,11 @@ export interface McpConnection {
   clientSecret?: string;
   /** True when RFC 7591 issued the credentials, so they can be re-registered. */
   clientRegistered?: boolean;
+  /**
+   * How this client proves itself at the token endpoint, when the registration
+   * recorded a method of its own. Absent means the entry's discovered method.
+   */
+  tokenEndpointAuthMethod?: TokenEndpointAuthMethod;
   /**
    * True when `clientId` is this deployment's own Client ID Metadata Document
    * URL rather than something an authorization server issued.

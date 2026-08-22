@@ -46,6 +46,12 @@ export interface McpToolSession {
    * the server.
    */
   readonly unauthorizedServers: readonly string[];
+  /**
+   * For a server in {@link unauthorizedServers} that answered a scope
+   * challenge, the scopes it asked for — what the next authorization has to
+   * request. Absent on a session that tracks none.
+   */
+  readonly scopeChallenges?: ReadonlyMap<string, string>;
   callTool(aliasName: string, args: Record<string, unknown>): Promise<McpToolResult>;
   /**
    * The offered name of one server's own tool, or nothing when that server did

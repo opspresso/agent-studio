@@ -2,6 +2,8 @@
  * server advertises; absent when it declares none. */
 export interface McpTool {
   name: string;
+  /** A human-readable name, when the server gives one beside the identifier. */
+  title?: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
 }

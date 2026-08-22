@@ -35,6 +35,7 @@ function useCases(
     blocked?: string[];
     server?: McpServer;
     internalHostSuffixes?: string[];
+    allowUnadvertisedPkce?: boolean;
   } = {},
 ) {
   const server = opts.server ?? SERVER;
@@ -73,6 +74,9 @@ function useCases(
     authProvider: {} as never,
     publicBaseUrl: async () => undefined,
     ...(opts.internalHostSuffixes ? { internalHostSuffixes: opts.internalHostSuffixes } : {}),
+    // The fixtures above predate the spec's refusal and say nothing about PKCE;
+    // the default here accepts them, and the refusal has its own tests below.
+    allowUnadvertisedPkce: opts.allowUnadvertisedPkce ?? true,
   };
   return { useCases: createMcpAuthUseCases(deps), stored };
 }
@@ -482,5 +486,32 @@ describe("a metadata read that fails", () => {
     const error = await uc.discover("slack").catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ValidationError);
+  });
+});
+
+describe("PKCE the server did not advertise", () => {
+  const { codeChallengeMethodsSupported: _advertised, ...SILENT_AS } = SLACK_AS;
+
+  it("is refused by default, as the spec requires", async () => {
+    const { useCases: uc } = useCases(
+      {
+        fetchProtectedResource: async () => SLACK_RESOURCE,
+        fetchAuthorizationServer: async () => SILENT_AS,
+      },
+      { allowUnadvertisedPkce: false },
+    );
+    await expect(uc.discover("slack")).rejects.toThrow(/does not advertise PKCE/);
+  });
+
+  it("is accepted when the deployment says so", async () => {
+    const { useCases: uc, stored } = useCases(
+      {
+        fetchProtectedResource: async () => SLACK_RESOURCE,
+        fetchAuthorizationServer: async () => SILENT_AS,
+      },
+      { allowUnadvertisedPkce: true },
+    );
+    await uc.discover("slack");
+    expect(stored).toHaveLength(1);
   });
 });

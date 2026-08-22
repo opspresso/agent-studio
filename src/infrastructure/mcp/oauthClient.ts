@@ -134,7 +134,7 @@ async function postForm(
 }
 
 export const oauthClient: OAuthClient = {
-  async register({ registrationEndpoint, clientName, redirectUri, scopes }) {
+  async register({ registrationEndpoint, clientName, redirectUri, scopes, tokenEndpointAuthMethod }) {
     const response = await fetchPublicUrl(registrationEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -143,7 +143,7 @@ export const oauthClient: OAuthClient = {
         redirect_uris: [redirectUri],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        token_endpoint_auth_method: "client_secret_post",
+        token_endpoint_auth_method: tokenEndpointAuthMethod,
         // SEP-837. The redirect is always this deployment's own https callback,
         // built from the configured public base URL — never a loopback one — so
         // `web` is the accurate declaration. Sent rather than left to the OpenID
@@ -167,7 +167,16 @@ export const oauthClient: OAuthClient = {
       throw new Error("Registration response carried no client_id");
     }
     const clientSecret = asString(body.client_secret);
-    return { clientId, ...(clientSecret ? { clientSecret } : {}) } satisfies RegisteredClient;
+    const recorded = asString(body.token_endpoint_auth_method);
+    const method =
+      recorded === "client_secret_basic" || recorded === "client_secret_post" || recorded === "none"
+        ? recorded
+        : undefined;
+    return {
+      clientId,
+      ...(clientSecret ? { clientSecret } : {}),
+      ...(method ? { tokenEndpointAuthMethod: method } : {}),
+    } satisfies RegisteredClient;
   },
 
   async exchangeCode(target, { code, redirectUri, codeVerifier }) {

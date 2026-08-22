@@ -357,6 +357,15 @@ export const config = {
     return parseList(process.env.MCP_INTERNAL_HOST_SUFFIXES ?? "");
   },
   /**
+   * Accept an OAuth authorization server that does not advertise PKCE. The
+   * spec says a client MUST refuse one; a server that supports PKCE without
+   * saying so is common enough that an operator may decide to accept the
+   * downgrade risk for their deployment — once, here, never per entry.
+   */
+  get mcpOauthAllowUnadvertisedPkce(): boolean {
+    return process.env.MCP_OAUTH_ALLOW_UNADVERTISED_PKCE === "true";
+  },
+  /**
    * What a Slack reply carries while it is still being written.
    *
    * The default is a built-in emoji, because a custom name a workspace has not

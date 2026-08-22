@@ -92,6 +92,11 @@ export interface DiscoveryFailure {
   reason: string;
   unauthorized: boolean;
   /**
+   * The scopes a 403 `insufficient_scope` challenge asked for, when it did.
+   * Carried so the reconnect the console offers requests them (step-up).
+   */
+  scope?: string;
+  /**
    * Present when the server answered but this client cannot use what it said —
    * a revision too new to speak, or a reply that breaks the schema. A host that
    * is up and replying, which is why it must not be reported as an unreachable

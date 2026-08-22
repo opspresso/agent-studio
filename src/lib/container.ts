@@ -381,6 +381,7 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   authProvider: mcpAuthProvider,
   publicBaseUrl: getPublicBaseUrl,
   internalHostSuffixes: config.mcpInternalHostSuffixes,
+  allowUnadvertisedPkce: config.mcpOauthAllowUnadvertisedPkce,
 });
 export const skillUseCases = createSkillUseCases(skillRepository);
 

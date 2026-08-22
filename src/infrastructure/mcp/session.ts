@@ -49,6 +49,8 @@ import {
   type Tool,
 } from "@modelcontextprotocol/client";
 import type { McpTool } from "@/domain/mcp/types";
+import { extractWWWAuthenticateParams } from "@modelcontextprotocol/client";
+import { version as APP_VERSION } from "../../../package.json";
 export type { McpTool };
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { cutCodePoints } from "@/shared/utf8Text";
@@ -105,8 +107,26 @@ const MAX_TOOL_PAGES = 64;
  */
 const MAX_MCP_RESPONSE_BYTES = 14_500_000;
 
-/** How this client names itself to a server. */
-const CLIENT_INFO = { name: "agent-studio", version: "0.1.0" } as const;
+/** How this client names itself to a server: the deployment's own version, not a frozen one. */
+const CLIENT_INFO = { name: "agent-studio", version: APP_VERSION } as const;
+
+/**
+ * What a 401 or 403 said in `WWW-Authenticate`, kept by the session that
+ * received it. The SDK's errors carry the status and the body, not the
+ * header, and the header is where a server names the scopes it wants
+ * (`insufficient_scope`) — the one answer that turns "unreachable" into
+ * "needs a wider grant".
+ */
+export interface McpChallenge {
+  status: number;
+  scope?: string;
+  error?: string;
+}
+
+/** Whether a challenge is the server asking for a wider grant rather than refusing the token. */
+export function isScopeChallenge(challenge: McpChallenge | undefined): challenge is McpChallenge {
+  return challenge?.status === 403 && challenge.error === "insufficient_scope";
+}
 
 /**
  * What one discovery learned: the catalogue, and how long the server says it
@@ -131,10 +151,18 @@ export interface McpDiscovery {
  * ceiling is applied to the stream rather than after it, because "read it and
  * check the length" spends the memory before it decides.
  */
-function boundedFetch(loopback: boolean, runSignal: () => AbortSignal | undefined): FetchLike {
+function boundedFetch(
+  loopback: boolean,
+  runSignal: () => AbortSignal | undefined,
+  onChallenge: (challenge: McpChallenge) => void,
+): FetchLike {
   const send = loopback ? fetch : fetchPublicUrl;
   return async (url, init) => {
     const response = await send(url, withSignal(init, runSignal()));
+    if (response.status === 401 || response.status === 403) {
+      const { scope, error } = extractWWWAuthenticateParams(response);
+      onChallenge({ status: response.status, ...(scope ? { scope } : {}), ...(error ? { error } : {}) });
+    }
     const declared = Number(response.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > MAX_MCP_RESPONSE_BYTES) {
       await response.body?.cancel().catch(() => {});
@@ -196,6 +224,12 @@ export class McpSession {
    * release, and releasing it is the one request that must outlive the run.
    */
   private tearingDown = false;
+  /** The last 401/403 challenge this session's transport received, if any. */
+  private _challenge: McpChallenge | undefined;
+
+  get challenge(): McpChallenge | undefined {
+    return this._challenge;
+  }
 
   constructor(
     private readonly url: string,
@@ -243,7 +277,13 @@ export class McpSession {
 
   private async connect(): Promise<Client> {
     const transport = new StreamableHTTPClientTransport(new URL(this.url), {
-      fetch: boundedFetch(this.loopback, () => (this.tearingDown ? undefined : this.signal)),
+      fetch: boundedFetch(
+        this.loopback,
+        () => (this.tearingDown ? undefined : this.signal),
+        (challenge) => {
+          this._challenge = challenge;
+        },
+      ),
       // The registry entry's own headers — a bearer token, a tenant id. Applied
       // as transport defaults so every request carries them, including the
       // era probe, which is the first request a server ever sees from us.

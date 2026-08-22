@@ -7,7 +7,7 @@
  * server's authorization server lives and what it accepts.
  */
 
-import type { McpServerAuth } from "./types";
+import type { McpServerAuth, TokenEndpointAuthMethod } from "./types";
 
 /** RFC 9728 protected-resource metadata, narrowed to the fields we act on. */
 export interface ProtectedResourceMetadata {
@@ -99,10 +99,17 @@ export interface OAuthMetadataClient {
   fetchAuthorizationServer(issuer: string): Promise<AuthorizationServerMetadata>;
 }
 
-/** What an RFC 7591 registration hands back. A public client gets no secret. */
+/**
+ * What an RFC 7591 registration hands back. A public client gets no secret.
+ * The method is the one the server *recorded*, which is the one its token
+ * endpoint will enforce — a server may register a different method than the
+ * one asked for, and a request proving itself the other way is refused as
+ * `invalid_client` on every exchange.
+ */
 export interface RegisteredClient {
   clientId: string;
   clientSecret?: string;
+  tokenEndpointAuthMethod?: TokenEndpointAuthMethod;
 }
 
 export interface TokenSet {
@@ -180,7 +187,7 @@ export interface McpAuthProvider {
    * Record that the server rejected this connection's token, so the console can
    * offer a reconnect instead of reporting the server as down.
    */
-  markUnauthorized(projectName: string, serverName: string): Promise<void>;
+  markUnauthorized(projectName: string, serverName: string, scope?: string): Promise<void>;
 }
 
 export interface OAuthClient {
@@ -190,6 +197,8 @@ export interface OAuthClient {
     clientName: string;
     redirectUri: string;
     scopes: string[];
+    /** The method the token requests will use, so the registration says the same. */
+    tokenEndpointAuthMethod: TokenEndpointAuthMethod;
   }): Promise<RegisteredClient>;
   /** @throws {OAuthGrantError} when the provider rejects the code itself. */
   exchangeCode(

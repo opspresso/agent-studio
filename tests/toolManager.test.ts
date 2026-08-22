@@ -93,6 +93,8 @@ interface ServerScript {
   callOmitsContent?: boolean;
   /** When set, tools/call answers 401 — a token revoked after discovery succeeded. */
   callUnauthorized?: boolean;
+  /** When set, tools/call answers 403 `insufficient_scope` naming these scopes. */
+  callNeedsScope?: string;
   /**
    * Refuse the era probe with `-32022`, naming the revisions this server does
    * support. The case no probe can rescue: a server newer than the client, which
@@ -271,6 +273,12 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     }
     if (script.callUnauthorized && body.method === "tools/call") {
       return new Response("Unauthorized", { status: 401 });
+    }
+    if (script.callNeedsScope && body.method === "tools/call") {
+      return new Response("Forbidden", {
+        status: 403,
+        headers: { "WWW-Authenticate": `Bearer error="insufficient_scope", scope="${script.callNeedsScope}"` },
+      });
     }
     let payload: RpcEnvelope;
     if (body.method === "tools/list") {
@@ -2027,6 +2035,20 @@ describe("ToolManager mid-run authorization failure", () => {
     // so this is the only place a token revoked since then can surface.
     expect(result.text.startsWith("Error:")).toBe(true);
     expect(manager.unauthorizedServers).toEqual(["a"]);
+  });
+
+  it("reads the scopes a 403 challenge asks for, so the reconnect can request them", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "write" }], callNeedsScope: "files:write" },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("write", {});
+
+    expect(result.text.startsWith("Error:")).toBe(true);
+    expect(manager.unauthorizedServers).toEqual(["a"]);
+    expect(manager.scopeChallenges.get("a")).toBe("files:write");
   });
 
   it("names a server once however many of its calls are rejected", async () => {
