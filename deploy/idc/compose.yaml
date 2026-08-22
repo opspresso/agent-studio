@@ -197,9 +197,12 @@ services:
     image: quay.io/argoprojlabs/mcp-for-argocd:${MCP_ARGOCD_TAG}
     env_file:
       - .env.mcp
-    # The image declares no ENTRYPOINT — its whole command line is CMD — so
-    # `command` has to name the interpreter, not just the flags.
-    command: ["node", "dist/index.js", "http", "--port", "80", "--stateless"]
+    # The image declares `node dist/index.js` as its ENTRYPOINT, so `command`
+    # starts with the transport. The server also binds loopback by default and
+    # requires an explicit security choice when widened. This service has no
+    # published port and is reachable only on the private Compose network, so
+    # preserve that boundary explicitly.
+    command: ["http", "--port", "80", "--stateless", "--bind-address", "0.0.0.0", "--allow-unauthenticated", "--allowed-host-header", "mcp-argocd.agent-mcps.svc.cluster.local", "--allowed-host-header", "mcp-argocd"]
     mem_limit: 256m
     networks:
       default:
