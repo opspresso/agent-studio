@@ -20,7 +20,7 @@ export interface AguiTool {
   name: string;
   description: string;
   /** A JSON Schema object, as OpenAI-shaped function parameters are. */
-  parameters?: unknown;
+  parameters?: Record<string, unknown>;
 }
 
 /** A fact the application wants the run to know, beside the conversation. */

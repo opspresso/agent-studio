@@ -630,6 +630,7 @@ export async function* executeAgent(
       subagents,
       mcpTools: mcp.mcpTools,
       mcpServers: mcp.mcpServers,
+      ...(input.clientTools ? { clientTools: input.clientTools } : {}),
       signal: runSignal,
     }))) {
       recorder?.observe(chunk);

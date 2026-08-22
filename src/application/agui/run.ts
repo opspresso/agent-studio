@@ -11,11 +11,17 @@
  * any of the three.
  */
 
-import type { AguiEvent, AguiRunInput } from "@/domain/agui/types";
+import type { AguiEvent, AguiRunInput, AguiTool } from "@/domain/agui/types";
+import type { ChannelToolDef } from "@/domain/llm/channel";
+import type { EngineChunk } from "@/domain/llm/types";
 import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
-import { streamProjectRun, type ExecutionDeps } from "@/application/execution/runProject";
+import {
+  runStrategyFor,
+  streamProjectRun,
+  type ExecutionDeps,
+} from "@/application/execution/runProject";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { toAguiEvents } from "./events";
 import { toEngineMessages } from "./input";
@@ -49,20 +55,66 @@ export interface AguiRunRequest {
   signal?: AbortSignal;
 }
 
-/** Run the project and answer in AG-UI events. */
+/**
+ * Run the project and answer in AG-UI events.
+ *
+ * The application's tools reach the agent loop and nothing else: a prompt
+ * project answers in one call and an image project draws, and neither has a
+ * turn a tool call could end. Declared against one of those, they are
+ * reported rather than dropped — the client offered them and would otherwise
+ * wait for calls that can never come.
+ */
 export function streamAguiRun(deps: AguiDeps, request: AguiRunRequest): AsyncGenerator<AguiEvent> {
-  const source = streamProjectRun(deps.execution, {
+  const clientTools = request.input.tools.map(toChannelTool);
+  const toolsApply = runStrategyFor(request.project) === "agent";
+  const run = streamProjectRun(deps.execution, {
     project: request.project,
     version: request.version,
     messages: toEngineMessages(request.input.messages, request.input.context),
     actor: request.actor,
     ...(request.caller ? { caller: request.caller } : {}),
     ...(request.conversation ? { conversation: request.conversation } : {}),
+    ...(toolsApply && clientTools.length > 0 ? { clientTools } : {}),
     ...(request.signal ? { signal: request.signal } : {}),
   });
+  const source =
+    !toolsApply && clientTools.length > 0
+      ? withLeadingWarning(
+          run,
+          `${clientTools.length} application tool(s) were not offered: only an agent project can call tools, and "${request.project.name}" is a ${request.project.projectType} project.`,
+        )
+      : run;
   return toAguiEvents(
     source,
     { threadId: request.input.threadId, runId: request.input.runId },
     { sign: deps.execution.artifacts?.objects.sign },
   );
+}
+
+function toChannelTool(tool: AguiTool): ChannelToolDef {
+  return {
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      ...(tool.parameters !== undefined ? { parameters: tool.parameters } : {}),
+    },
+  };
+}
+
+/**
+ * A warning ahead of the run's own chunks — after the run's first chunk, so a
+ * refusal on that first pull still reaches the route as a throw rather than
+ * a warning followed by an error frame.
+ */
+async function* withLeadingWarning(
+  run: AsyncGenerator<EngineChunk>,
+  warning: string,
+): AsyncGenerator<EngineChunk> {
+  const { value: head } = await run.next();
+  yield { warning };
+  if (head !== undefined) {
+    yield head;
+    yield* run;
+  }
 }

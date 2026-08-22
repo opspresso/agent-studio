@@ -75,10 +75,13 @@ const messageSchema = z.discriminatedUnion("role", [
   }),
 ]);
 
+/** A function name as providers accept it; anything else is rejected before a run is refused for it. */
+const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
 const toolSchema = z.object({
-  name: z.string().min(1).max(64),
+  name: z.string().regex(TOOL_NAME, "a tool name is 1–64 letters, digits, _ or -"),
   description: z.string(),
-  parameters: z.unknown().optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
 });
 
 const contextSchema = z.object({

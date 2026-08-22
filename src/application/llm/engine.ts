@@ -243,6 +243,15 @@ export interface RunAgentInput {
   mcpTools?: ChannelToolDef[];
   /** Per-server grouping of the MCP tools, for the system prompt overview. */
   mcpServers?: McpServerInfo[];
+  /**
+   * Tools the application the person is using executes on its side (AG-UI's
+   * frontend tools). A turn that calls one is the run's last: the calls are
+   * announced, the run's own calls in that turn still run and report, and the
+   * loop then ends with `done` so the application can answer its own — the
+   * results come back as `tool` messages in the next run's history. Never
+   * handed to a subagent: a child cannot end the run the person is waiting on.
+   */
+  clientTools?: ChannelToolDef[];
   signal?: AbortSignal;
 }
 
@@ -1006,6 +1015,8 @@ interface PreparedToolCall {
   displayArgs: Record<string, unknown>;
   malformed: boolean;
   builtin: boolean;
+  /** Served by the application the person is using, never here. */
+  client: boolean;
 }
 
 type SettledToolResult = { ok: McpToolResult } | { err: unknown };
@@ -1013,6 +1024,7 @@ type SettledToolResult = { ok: McpToolResult } | { err: unknown };
 function prepareToolCalls(
   calls: AccumulatedCall[],
   builtinNames: Set<string>,
+  clientToolNames: Set<string>,
   filter: PiiFilter | undefined,
 ): PreparedToolCall[] {
   return calls.map((call) => {
@@ -1024,6 +1036,7 @@ function prepareToolCalls(
       displayArgs: filter ? (restoreValues(filter, args) as Record<string, unknown>) : args,
       malformed: parsedArgs === null,
       builtin: builtinNames.has(call.name),
+      client: clientToolNames.has(call.name),
     };
   });
 }
@@ -1038,8 +1051,10 @@ async function dispatchConcurrentTools(
   const fetchDispatch = deps.fetchUrl;
   const saveDispatch = deps.saveFile;
   const settled = new Map<string, SettledToolResult>();
+  // A client tool's call is the application's to run, so it is never dispatched
+  // here — not even as the "not available" answer an unknown name gets.
   const mcpCalls = mcpDispatch
-    ? prepared.filter((entry) => !entry.builtin && !entry.malformed)
+    ? prepared.filter((entry) => !entry.builtin && !entry.malformed && !entry.client)
     : [];
   const fetchCalls: PreparedToolCall[] = [];
   if (fetchDispatch) {
@@ -1435,8 +1450,11 @@ export async function* runAgent(
     canEdit,
     canTransfer,
     images,
+    clientToolNames,
+    warnings: assemblyWarnings,
   } = assembleAgentRun(deps, {
     ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+    ...(input.clientTools ? { clientTools: input.clientTools } : {}),
     messages: input.messages,
     skills,
     ...(input.subagents ? { subagents: input.subagents } : {}),
@@ -1456,6 +1474,13 @@ export async function* runAgent(
    * transfer's target already do; what the context receives is the content and a
    * call id, never this.
    */
+  // What the assembly could not offer — an application tool shadowing a name
+  // the run already has, or past the request's room. Said before the first
+  // turn like the facade's own resolve warnings, so a tool the model never
+  // sees is not a tool the reader never hears about.
+  for (const warning of assemblyWarnings) {
+    yield { author, warning };
+  }
   const serverByTool = new Map<string, string>();
   for (const server of input.mcpServers ?? []) {
     for (const toolName of server.toolNames) {
@@ -1852,7 +1877,7 @@ export async function* runAgent(
     // provider cut the turn, or a model defect — is announced and answered
     // but never dispatched: running it with `{}` would report a call the
     // model never made as a success.
-    const prepared = prepareToolCalls(calls, builtinNames, filter);
+    const prepared = prepareToolCalls(calls, builtinNames, clientToolNames, filter);
     for (const { call, args, displayArgs, malformed } of prepared) {
       if (malformed) {
         // The model's own text is the only truthful record of arguments that
@@ -1903,7 +1928,14 @@ export async function* runAgent(
     // four steps are not a sequence any branch gets to spell out for itself.
     const toolResult = createToolResultEmitter(author, toolMessages, resultBudget, filter);
 
-    for (const { call, args, displayArgs, builtin, malformed } of prepared) {
+    for (const { call, args, displayArgs, builtin, malformed, client } of prepared) {
+      if (client) {
+        // Announced above and answered by the application: a result from here
+        // would sit beside the real one in the next run's history. Its
+        // arguments went out as the model wrote them, parsed or not — what
+        // to make of them is the application's call.
+        continue;
+      }
       if (malformed) {
         const errorText = outputCut
           ? `Error: the arguments of this call were cut at the model's output limit and did not parse; the call was not executed. Retry it with complete arguments.`
@@ -2491,6 +2523,14 @@ export async function* runAgent(
     // were fitted or inserted.
     contextBudget?.chargeMessage(assistantMessage);
     messages.push(assistantMessage, ...toolMessages, ...postContextMessages);
+    if (prepared.some((entry) => entry.client)) {
+      // The application holds the rest of this turn: it runs the call and
+      // sends the result back as the next run's history, where this turn's
+      // own results already are. Ended as a finish, not a limit — the model
+      // stopped because it asked for something only the other side can do.
+      yield { author, done: true };
+      return;
+    }
     turn = nextTurn;
   }
 }

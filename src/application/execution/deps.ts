@@ -9,6 +9,7 @@ import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
 import type { LlmChannel } from "@/domain/llm/channel";
+import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ChatMessageInput, EngineParameters } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
@@ -159,6 +160,8 @@ export interface ExecuteAgentInput {
    * mailbox into it would answer a different question than the one this asks.
    */
   ownerEmail?: string;
+  /** Tools the calling application executes on its side — see the engine's `RunAgentInput.clientTools`. */
+  clientTools?: ChannelToolDef[];
   signal?: AbortSignal;
 }
 
@@ -174,6 +177,12 @@ export interface ExecuteProjectInput {
   caller?: RunCaller;
   /** See {@link ExecuteVersionInput.conversation}. */
   conversation?: RunConversation;
+  /**
+   * See {@link ExecuteAgentInput.clientTools}. Reaches the agent loop only: a
+   * single-shot run has no loop to end, and an image run no model to offer
+   * them to — a surface with tools to declare checks the strategy first.
+   */
+  clientTools?: ChannelToolDef[];
   signal?: AbortSignal;
 }
 
@@ -211,7 +220,7 @@ export function toRunInput(
   input: ExecuteProjectInput,
 ): Pick<
   ExecuteAgentInput,
-  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "signal"
+  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal"
 > {
   return {
     project: input.project,
@@ -220,6 +229,7 @@ export function toRunInput(
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
     ...(input.conversation ? { conversation: input.conversation } : {}),
+    ...(input.clientTools ? { clientTools: input.clientTools } : {}),
     signal: input.signal,
   };
 }

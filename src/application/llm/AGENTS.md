@@ -232,6 +232,20 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
     task came back empty; a child never throws, it yields an `error` chunk and returns `""`.
   - The message a task carries comes from `args`, **not** `displayArgs` — see the PII
     boundaries below. A child is on the far side of that boundary, like a transfer's.
+- **A call to a client tool ends the run.** `input.clientTools` are the tools the application
+  the person is using declared for this run (AG-UI's frontend tools) and executes on its
+  side. They are offered last, cut to the request's room under `MAX_TOOLS_PER_REQUEST`, and
+  never under a name a builtin or an MCP alias already holds — the loop could not tell the
+  two apart, so such a tool is not offered and the assembly says so (`assembleAgentRun`
+  returns `clientToolNames` and `warnings`, and the loop yields the warnings before its first
+  turn). A turn that calls one is the run's last: every call is announced as usual, the
+  run's **own** calls in that turn still run and report — a provider rejects an assistant
+  message whose calls lack results, and the application's next run replays this turn —
+  and the loop ends with `done` instead of recursing. No result is produced for the client
+  call, parsed or malformed: its arguments went out as the model wrote them and the
+  application's answer is the one that belongs in the history. Never handed to a subagent
+  (a child cannot end the run the person is waiting on); the single-shot path has no loop
+  to end, so the AG-UI use case reports tools declared against a non-agent project instead.
 - **The last turn is a wrap-up**: at `turn === maxTurn - 1` a run that has tools is offered
   none and told why (`finalTurnNotice`, carried as a `user` turn like every other statement
   the loop inserts). Withholding them is the mechanism, not the notice — a model still
