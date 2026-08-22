@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
+import { isSubmitEnter } from "@/app/_lib/modEnter";
 
 type ConfirmOptions = {
   title: string;
@@ -61,7 +62,7 @@ export function useConfirm() {
             value={typed}
             onChange={(e) => setTyped(e.currentTarget.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !blocked) {
+              if (isSubmitEnter(e) && !blocked) {
                 close(true);
               }
             }}

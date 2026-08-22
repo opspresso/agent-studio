@@ -3,6 +3,9 @@
  * See docs/ARCHITECTURE.md for the full key map.
  */
 
+/** The widest sequence a six-digit message sort key can hold. */
+export const CHAT_MESSAGE_MAX_SEQ = 999999;
+
 export const keys = {
   auth: (model: string, id: string) => ({ PK: `AUTH#${model}#${id}`, SK: "ITEM" }),
   authModelPartition: (model: string) => `AUTH#${model}`,
@@ -28,6 +31,26 @@ export const keys = {
     SK: `MSG#${String(seq).padStart(6, "0")}`,
   }),
   chatMessagePrefix: () => "MSG#",
+  /**
+   * Sort-key bounds for reading a chat's messages from `fromSeq` on — what a
+   * thread that already holds the turns before it asks for.
+   *
+   * A range rather than the prefix, for the same reason `chatRunLogRange` is
+   * one: `SK > MSG#…` alone would run past the message rows into the run log,
+   * which sorts after them in the same partition. `CHAT_MESSAGE_MAX_SEQ` is
+   * the widest a six-digit sequence can be, and a `fromSeq` past it has no
+   * range at all — clamping there would answer "nothing after the last row"
+   * with the last row itself, and not clamping would build a `BETWEEN` whose
+   * bounds invert, which DynamoDB refuses outright. The caller reads `null`
+   * as the empty answer it is.
+   */
+  chatMessageRange: (fromSeq: number) =>
+    fromSeq > CHAT_MESSAGE_MAX_SEQ
+      ? null
+      : {
+          from: `MSG#${String(fromSeq).padStart(6, "0")}`,
+          to: `MSG#${CHAT_MESSAGE_MAX_SEQ}`,
+        },
   chatOwnerPartition: (email: string) => `CHATOWNER#${email}`,
   /**
    * A batch of a run's stream, kept just long enough for a reader that lost the

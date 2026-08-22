@@ -16,6 +16,7 @@ import { BADGE } from "@/app/_components/badgeColors";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { useLocale, useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 export default function VersionsPage() {
   const t = useT();
@@ -57,7 +58,7 @@ export default function VersionsPage() {
       const project = await publishVersion(name, versionName);
       setPublished(project.publishedVersion);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to publish");
+      setError(reportError(e, "Failed to publish"));
     } finally {
       setBusy(null);
     }
@@ -81,7 +82,7 @@ export default function VersionsPage() {
       await deleteVersion(name, versionName);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete");
+      setError(reportError(e, "Failed to delete"));
     } finally {
       setBusy(null);
     }

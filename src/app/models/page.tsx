@@ -45,6 +45,7 @@ import {
   type SortDirection,
   type FilterCapability,
 } from "./modelTable";
+import { reportError } from "@/app/_lib/reportError";
 
 interface CatalogProvider {
   name: string;
@@ -295,7 +296,7 @@ function SelfHostedSection({
       await Promise.all([onChanged(), loadView()]);
       setForm(null);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to save");
+      setError(reportError(saveError, "Failed to save"));
     } finally {
       setBusy(false);
     }
@@ -556,7 +557,7 @@ export default function ModelsPage() {
       await loadCatalog();
     } catch (refreshError) {
       setError(
-        refreshError instanceof Error ? refreshError.message : "Failed to refresh the catalog",
+        reportError(refreshError, "Failed to refresh the catalog"),
       );
     } finally {
       setRefreshing(false);
@@ -580,7 +581,7 @@ export default function ModelsPage() {
       setModels(nextModels);
       setSource(nextSource);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to save");
+      setError(reportError(saveError, "Failed to save"));
     } finally {
       setBusy(false);
     }
@@ -613,7 +614,7 @@ export default function ModelsPage() {
       result = {
         ok: false,
         latencyMs: 0,
-        error: testError instanceof Error ? testError.message : "Test request failed",
+        error: reportError(testError, "Test request failed"),
       };
     }
     setTests((prev) => ({ ...prev, [id]: { running: false, result } }));

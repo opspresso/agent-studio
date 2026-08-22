@@ -15,6 +15,7 @@ import { Alert, Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@
 import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 export function TeamsSection({
   projectName,
@@ -73,7 +74,7 @@ export function TeamsSection({
       setEnabled(next.enabled);
       setStatus("Saved");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(reportError(e, "Save failed"));
     } finally {
       setBusy(false);
     }
@@ -87,7 +88,7 @@ export function TeamsSection({
       const result = await testProjectTeams(projectName);
       setStatus(`Connected: token issued for ${result.appId}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Connection test failed");
+      setError(reportError(e, "Connection test failed"));
     } finally {
       setBusy(false);
     }
@@ -114,7 +115,7 @@ export function TeamsSection({
       setEnabled(false);
       setStatus("Disconnected");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Disconnect failed");
+      setError(reportError(e, "Disconnect failed"));
     } finally {
       setBusy(false);
     }

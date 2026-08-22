@@ -24,6 +24,7 @@ import {
   telegramDestinationLabel,
   telegramDestinationValue,
 } from "./telegramDestinations";
+import { reportError } from "@/app/_lib/reportError";
 
 export function costLimitsForSave(limits: CostLimits): CostLimits | null {
   const hasThreshold =
@@ -135,7 +136,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
       await updateProject(projectName, { costLimits: costLimitsForSave(limits) });
       setSaved(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save cost limits");
+      setError(reportError(e, "Failed to save cost limits"));
     } finally {
       setSaving(false);
     }

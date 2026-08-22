@@ -11,6 +11,7 @@ import { toSlug } from "@/domain/naming";
 // type-only import, erased before the browser sees anything.
 import type { A2aClientKeyView } from "@/application/a2a/clientKeyUseCases";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 /**
  * Named inbound-A2A client keys, beside the shared key: each key names its
@@ -53,7 +54,7 @@ export function A2aClientKeysSection() {
       await run();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(reportError(err, "Request failed"));
     } finally {
       setBusy(false);
     }

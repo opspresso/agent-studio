@@ -534,15 +534,23 @@ admin 전용이다. 멤버는 이 워크스페이스에 로그인한 적이 있�
 Chat 은 소유자에게만 비공개이고, agent project 에 대해서만 실행된다.
 
 ```
-GET    /api/chats                            → { chats }
+GET    /api/chats?limit=                     → { chats, hasMore }
 POST   /api/chats                            { projectName, firstMessage, images?, documents? } → SSE
-GET    /api/chats/{chatId}                   → { chat, messages, activeRun? }
+GET    /api/chats/{chatId}?sinceSeq=         → { chat, messages, activeRun? }
 DELETE /api/chats/{chatId}                   → 204
 POST   /api/chats/{chatId}/messages          { content, images?, documents? } → SSE
 GET    /api/chats/{chatId}/runs/{runId}/stream → SSE
 GET    /api/chats/{chatId}/runs/{runId}      → { active }
 DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 ```
+
+두 목록 읽기 모두 범위를 좁힐 수 있고, 사이드바와 스레드가 실제로 그렇게 읽는다. `limit` 은
+최신 순으로 몇 개인지이며 기본값과 상한은 `CHAT_PAGE` / `MAX_CHAT_PAGE`
+(`src/domain/chat/repository.ts`) 가 정한다 — `hasMore` 가 참이면 더 큰 `limit` 으로 다시
+묻고, 상한에 닿으면 거짓이 되어 멈춘다(커서가 아닌 이유는 [design/chat.md](design/chat.md#사이드바와-스레드가-읽는-범위)).
+`sinceSeq` 는 그 시퀀스 *다음* 부터의 메시지만 돌려준다 — 런이 끝났을 때 스레드가 묻는 것이고,
+없으면 전체 기록을 읽고 그 안의 이미지·파일 주소를 매번 다시 서명한다. `sinceSeq=0` 은 "없음"이
+아니라 유효한 경계다(첫 메시지의 시퀀스가 0 이다).
 
 두 런 스트림 모두 head 프레임으로 시작하고 — `{ chat?, runId, userSeq }`, 새로 만들 때는 새
 `chatId` 를 싣는다 — `{ "ended": true }` 로 닫힌다. 끝난 런과 끊긴 연결을 구별해 주는 것은 그
@@ -1562,9 +1570,12 @@ LLM 채널을 찔러 보고 (짧은 타임아웃, 상세는 드러내지 않는�
 SIGTERM 이후 draining 중이면 503 을 돌려준다.
 
 `/api/metrics` 는 Prometheus scrape 이고 `agent_studio_active_runs`,
+`agent_studio_oldest_active_run_seconds`, `agent_studio_build_info`,
 `agent_studio_runs_{started,finished,failed}_total`, `agent_studio_run_duration_seconds`,
 `agent_studio_unknown_model_calls_total`, `agent_studio_unknown_models`,
-`agent_studio_draining` 을 노출한다. 어떤 지표에도 project·사용자·모델 라벨은 붙지 않는다.
+`agent_studio_draining` 과 Node.js process CPU·메모리·event loop 지표를 노출한다. 어떤 지표에도
+project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 범위가 제한된 `version`·`stage`
+라벨을 지닌다.
 
 셋 다 일부러 비인증이고 의존성이 가볍다 — 세션이 없는 인프라가 이것들을 찔러 보기 때문이다.
 연결하는 방법은 [OPERATIONS.md](OPERATIONS.md#헬스-프로브) 를 보라.

@@ -18,6 +18,7 @@ import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_component
 import { createManagedMcp } from "../api";
 import { MANAGED_NAME } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 
 export function ManagedMcpModal({
@@ -88,7 +89,7 @@ export function ManagedMcpModal({
       reset();
       onCreated();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to start the server");
+      setError(reportError(e, "Failed to start the server"));
     } finally {
       setSubmitting(false);
     }

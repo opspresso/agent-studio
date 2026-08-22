@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
@@ -20,7 +20,14 @@ import {
 } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { onModEnter } from "@/app/_lib/modEnter";
-import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
+import {
+  AttachButton,
+  AttachmentBar,
+  DropHint,
+  onFilePaste,
+  useAttachments,
+  useFileDrop,
+} from "@/app/_components/ImageAttachments";
 import { useT } from "@/app/_i18n/provider";
 import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
@@ -281,6 +288,12 @@ export function RunPanel({
     }
   }
 
+  // The panel's own attachments are the source images an `image` project edits,
+  // so a screenshot pasted into the prompt is the gesture this surface is for.
+  const attach = useCallback((files: File[]) => void addFiles(files), [addFiles]);
+  const { dragging, handlers } = useFileDrop(attach, running);
+  const onPaste = useMemo(() => onFilePaste(attach, running), [attach, running]);
+
   return (
     <Stack
       gap="md"
@@ -289,7 +302,10 @@ export function RunPanel({
           void run();
         }
       })}
+      {...handlers}
+      style={{ position: "relative" }}
     >
+      {dragging && <DropHint />}
       {versionName === null ? (
         <Alert color="yellow" variant="light" fz="xs">
           Save a version to run it.
@@ -314,6 +330,7 @@ export function RunPanel({
           }
           value={message}
           onChange={(e) => setMessage(e.currentTarget.value)}
+          onPaste={onPaste}
           autosize
           minRows={4}
           maxRows={16}

@@ -29,6 +29,7 @@ import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 export default function ToolsPage() {
   const t = useT();
@@ -177,7 +178,7 @@ function RegisterMcpModal({
       reset();
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to register MCP server");
+      setError(reportError(err, "Failed to register MCP server"));
     } finally {
       setSubmitting(false);
     }

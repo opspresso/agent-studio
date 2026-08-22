@@ -164,7 +164,7 @@ export async function openRun(
   await assertWithinMemberCostLimit(deps, actor, tier);
   const slot = await acquireRunSlot(deps, actor, tier);
   const startedAt = Date.now();
-  beginRun();
+  const runMetric = beginRun(startedAt);
   let closed = false;
   return {
     runId: context.runId,
@@ -189,7 +189,7 @@ export async function openRun(
         return;
       }
       closed = true;
-      endRun({ durationMs: Date.now() - startedAt, ...outcome });
+      endRun(runMetric, { durationMs: Date.now() - startedAt, ...outcome });
       await slot.release();
       await settleCostLimit(deps, project);
     },

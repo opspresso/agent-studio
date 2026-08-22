@@ -158,6 +158,14 @@ export const ko: Messages = {
   "cost.activeGroups": "활성 그룹",
   "cost.dailyCost": "일별 비용",
 
+  "error.pageTitle": "페이지를 표시할 수 없습니다",
+  "error.pageBody": "화면을 그리는 중 오류가 발생했습니다. 다시 시도해 보고, 계속 실패하면 아래 digest 로 서버 로그에서 원인을 찾을 수 있습니다.",
+  "error.retry": "다시 시도",
+  "error.notFoundTitle": "페이지를 찾을 수 없습니다",
+  "error.notFoundBody": "이 주소에 해당하는 페이지가 콘솔에 없습니다.",
+  "error.backHome": "개요로 돌아가기",
+
+  "attach.drop": "놓아서 첨부",
   "attach.images": "이미지 첨부",
   "attach.imagesOrDocuments": "이미지 또는 문서 첨부",
   "attach.remove": "{name} 제거",
@@ -185,6 +193,8 @@ export const ko: Messages = {
     "프로젝트는 프롬프트·에이전트·이미지 작업을 담고, 배포할 수 있는 버전으로 저장합니다. 하나를 만들어 버전에 Skill 과 MCP 도구를 붙인 뒤 Playground 에서, 에이전트 프로젝트라면 대화에서 시험해 보세요.",
   "overview.browseSkills": "Skills 둘러보기",
 
+  "chat.more": "이전 대화 더 보기",
+  "chat.answerReady": "답변 완료",
   "chat.new": "새 대화",
   "chat.list": "대화 목록",
   "chat.none": "아직 대화가 없습니다.",

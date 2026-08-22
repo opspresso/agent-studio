@@ -1,4 +1,6 @@
 import { withAuth } from "@/lib/session";
+import type { Chat } from "@/domain/chat/types";
+import { CHAT_PAGE, MAX_CHAT_PAGE } from "@/domain/chat/repository";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { turnBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -9,9 +11,42 @@ import { chatDeps } from "./_deps";
 import { detachedRunResponse } from "./_lib/detachedRun";
 import { createChatSchema } from "./_lib/schemas";
 
-export const GET = withAuth(async (user) => {
-  const chats = await listChats(chatDeps, user.email);
-  return Response.json({ chats });
+/**
+ * A page of the reader's chats.
+ *
+ * Declared here because the route builds it: `hasMore` is not something the
+ * use case returns, it is this endpoint comparing what came back against what
+ * was asked for. The sidebar imports the type rather than restating it.
+ */
+export interface ChatListResponse {
+  chats: Chat[];
+  /**
+   * Whether asking for a larger page could return more.
+   *
+   * Compared against the size the caller *asked for*, not the size actually
+   * read: past the ceiling those differ, and comparing against the ceiling
+   * leaves a reader with 600 chats pressing "show more" forever against a
+   * list that cannot grow.
+   */
+  hasMore: boolean;
+}
+
+export const GET = withAuth(async (user, request: Request) => {
+  // An empty `?limit=` is an absent one: `Number("")` is 0, which would fall
+  // through to the default here but reads as a deliberate zero at a glance.
+  const raw = new URL(request.url).searchParams.get("limit");
+  const asked = raw === null || raw.trim() === "" ? Number.NaN : Number(raw);
+  const wanted = Number.isFinite(asked) && asked > 0 ? Math.floor(asked) : CHAT_PAGE;
+  const limit = Math.min(wanted, MAX_CHAT_PAGE);
+  const chats = await listChats(chatDeps, user.email, limit);
+  // A full page is indistinguishable from a full page that happens to be the
+  // last one, so this is a guess by design — "show more" may come back with
+  // the same list. That is a cheaper wrong answer than a count query on every
+  // sidebar refresh. What it is *not* allowed to be is permanently true: at
+  // the ceiling, `wanted` keeps rising while `limit` cannot, and the
+  // comparison against `wanted` is what makes the button settle.
+  const body: ChatListResponse = { chats, hasMore: chats.length >= wanted };
+  return Response.json(body);
 });
 
 export const POST = withAuth(async (user, request: Request) => {

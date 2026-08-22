@@ -29,6 +29,7 @@ import { createProject, listProjects, type SanitizedProject, type ProjectType } 
 import { CardGrid } from "@/app/_components/CardGrid";
 import { PROJECT_TYPE_COLOR } from "@/app/_components/badgeColors";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { reportError } from "@/app/_lib/reportError";
 
 const TYPE_OPTIONS = [
   { value: "llm", label: "projects.type.llm" },
@@ -184,7 +185,7 @@ function CreateProjectModal({
       reset();
       onCreated(project.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("projects.createFailed"));
+      setError(reportError(err, t("projects.createFailed")));
     } finally {
       setSubmitting(false);
     }

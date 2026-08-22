@@ -44,6 +44,7 @@ import {
   type ArtifactFileType,
 } from "@/app/artifacts/_lib/fileType";
 import { isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
+import { reportError } from "@/app/_lib/reportError";
 
 type KindFilter = "all" | "image" | "document";
 
@@ -146,7 +147,7 @@ export function ArtifactGallery({
       await deleteArtifact(artifact.artifactId);
       setArtifacts((current) => current.filter((a) => a.artifactId !== artifact.artifactId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete");
+      setError(reportError(e, "Failed to delete"));
     }
   }
 

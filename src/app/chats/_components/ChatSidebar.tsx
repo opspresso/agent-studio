@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Button,
@@ -17,6 +17,8 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { IconMessages, IconPlus, IconX } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
+import { CHAT_PAGE } from "@/domain/chat/repository";
+import type { ChatListResponse } from "@/app/api/chats/route";
 import type { Chat } from "../_lib/types";
 import { useRunningKeys } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
@@ -39,7 +41,21 @@ export function ChatSidebar() {
   const t = useT();
   const [chats, setChats] = useState<Chat[]>([]);
   const [loaded, setLoaded] = useState(false);
+  /**
+   * How many rows this sidebar is asking for.
+   *
+   * The endpoint is bounded, and "show more" raises this by a page rather
+   * than carrying a cursor: the chat partition sorts on `updatedAt` alone, which
+   * does not identify a row, so a cursor built from it would skip or repeat a
+   * chat touched in the same millisecond as its neighbour. Re-reading the rows
+   * it already had is the cheaper wrong thing, and it happens only when a
+   * person presses the button.
+   */
+  const [limit, setLimit] = useState(CHAT_PAGE);
+  const [hasMore, setHasMore] = useState(false);
   const [drawerOpen, drawer] = useDisclosure(false);
+  /** Which read is the current one; an older one that lands late is dropped. */
+  const loadSeq = useRef(0);
   // Keys, not chat ids: a chat still being created counts under its placeholder,
   // so a first message refused before it learned its id still reloads this list
   // — the chat and its user turn are already on the server by then. Matching
@@ -47,21 +63,40 @@ export function ChatSidebar() {
   const running = useRunningKeys();
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/chats");
+    // Ticketed like the thread's own sync. Two reads are in flight whenever
+    // "show more" is pressed while a run start is reloading the list, and the
+    // smaller one landing last would put the list back to a page the reader
+    // has already grown past — while `limit` stayed raised, so the next press
+    // would skip a page rather than repeat one.
+    const ticket = ++loadSeq.current;
+    const res = await fetch(`/api/chats?limit=${limit}`);
+    if (ticket !== loadSeq.current) {
+      return;
+    }
     if (res.ok) {
-      const data = (await res.json()) as { chats?: Chat[] };
+      const data = (await res.json()) as ChatListResponse;
+      if (ticket !== loadSeq.current) {
+        return;
+      }
       setChats(data.chats ?? []);
+      setHasMore(data.hasMore ?? false);
     }
     setLoaded(true);
-  }, []);
+  }, [limit]);
 
   // Reloads when a run starts or ends, because the running set only changes
   // then. The sidebar is mounted for the whole `/chats` segment, which is why it
   // is the right place to notice: a run can now finish with no thread on screen,
   // and a view that told the sidebar itself would never fire.
+  //
+  // Deliberately *not* on `pathname`. Opening a chat changes which row is
+  // highlighted, which this component works out from the path without asking
+  // the server anything — and a chat that appears while reading is a chat whose
+  // run started, which the running set already reports. Reloading on every
+  // navigation meant a third full read of the list per turn.
   useEffect(() => {
     void load();
-  }, [load, pathname, running]);
+  }, [load, running]);
 
   // A tap that opens a chat has done what the drawer was opened for. Depend on
   // the stable `close` callback, not the handlers object — useDisclosure
@@ -133,6 +168,16 @@ export function ChatSidebar() {
             </ActionIcon>
           </div>
         ))}
+        {hasMore && (
+          <Button
+            variant="subtle"
+            size="compact-xs"
+            mt="xs"
+            onClick={() => setLimit((current) => current + CHAT_PAGE)}
+          >
+            {t("chat.more")}
+          </Button>
+        )}
       </Stack>
     </ScrollArea>
   );

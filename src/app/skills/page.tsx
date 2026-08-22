@@ -26,6 +26,7 @@ import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 export default function SkillsPage() {
   const t = useT();
@@ -150,7 +151,7 @@ function CreateSkillModal({
       reset();
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create skill");
+      setError(reportError(err, "Failed to create skill"));
     } finally {
       setSubmitting(false);
     }

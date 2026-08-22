@@ -403,6 +403,11 @@ async function main() {
     assert.equal(messages[0]?.role, "user");
     const ownChats = await chatRepository.listByOwner("it@example.com");
     assert.ok(ownChats.some((c) => c.chatId === chatId), "chat owner GSI listing");
+    assert.equal(
+      (await chatRepository.listByOwner("it@example.com", { limit: 1 })).length,
+      1,
+      "the sidebar's page size bounds the read",
+    );
     pass("chat meta/messages/owner listing");
 
     // ---------- chat run lease + cancel ----------
@@ -500,6 +505,40 @@ async function main() {
       await chatRunLogRepository.read(sweptChatId, "run-1", 0),
       [],
       "deleting a chat sweeps its run log",
+    );
+    // The tail read the thread does on every finished turn, asserted *here*
+    // rather than beside the message round-trip above: the bound this is
+    // about is the upper one, and what it excludes is the RUNLOG# rows this
+    // section just wrote into the same partition. Asserted before they exist,
+    // dropping the bound entirely would still have passed.
+    const tail = await chatRepository.listMessages(chatId, { sinceSeq: 1 });
+    assert.equal(tail.length, 1, "a tail read returns only what came after");
+    assert.equal(tail[0]?.seq, 2, "and it is the newer row, not a run log entry");
+    assert.equal(
+      (await chatRepository.listMessages(chatId, { sinceSeq: 2 })).length,
+      0,
+      "a tail read caught up returns nothing rather than the run log after it",
+    );
+    // The last sequence a key can hold, written so the boundary is exercised
+    // against a real row rather than against an empty partition: asking for
+    // what comes *after* it must be empty, and must not be that row again —
+    // which is what clamping the range's lower bound would have returned.
+    await chatRepository.appendMessage({
+      chatId,
+      seq: 999_999,
+      role: "assistant",
+      content: "last",
+      createdAt: now,
+    });
+    assert.equal(
+      (await chatRepository.listMessages(chatId, { sinceSeq: 999_998 })).length,
+      1,
+      "the last possible sequence is readable as a tail",
+    );
+    assert.equal(
+      (await chatRepository.listMessages(chatId, { sinceSeq: 999_999 })).length,
+      0,
+      "a tail read past the last possible sequence is empty, not that row again",
     );
     pass("chat run log append/replay/tail + cascade delete");
 

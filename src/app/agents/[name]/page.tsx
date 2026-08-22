@@ -30,6 +30,7 @@ import {
 import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 export default function AgentDetailPage() {
   const t = useT();
@@ -76,7 +77,7 @@ export default function AgentDetailPage() {
       await deleteAgent(name);
       router.push("/agents");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete agent");
+      setError(reportError(e, "Failed to delete agent"));
     }
   }
 
@@ -208,7 +209,7 @@ function MessageTester({ name }: { name: string }) {
     try {
       setReply(await sendAgentMessage(name, message));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(reportError(err, "Request failed"));
     } finally {
       setSending(false);
     }
@@ -288,7 +289,7 @@ function EditAgentForm({
       await updateAgent(agent.name, { url, protocol, description, headers: rowsToRecord(rows) });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(reportError(err, "Failed to save"));
     } finally {
       setSubmitting(false);
     }

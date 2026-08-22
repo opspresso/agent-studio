@@ -141,22 +141,22 @@ describe("run correlation", () => {
 describe("run metrics", () => {
   it("counts failures apart from cancellations", () => {
     resetRunMetrics();
-    beginRun();
-    endRun({ failed: true });
-    beginRun();
+    const failed = beginRun();
+    endRun(failed, { failed: true });
+    const cancelled = beginRun();
     // A client that hung up is not an outage.
-    endRun({ failed: false });
-    beginRun();
-    endRun();
+    endRun(cancelled, { failed: false });
+    const succeeded = beginRun();
+    endRun(succeeded);
     expect(runMetricsSnapshot()).toMatchObject({ runsFinished: 3, runsFailed: 1 });
   });
 
   it("observes durations into cumulative buckets", () => {
     resetRunMetrics();
-    beginRun();
-    endRun({ durationMs: 1_500 });
-    beginRun();
-    endRun({ durationMs: 45_000 });
+    const short = beginRun();
+    endRun(short, { durationMs: 1_500 });
+    const long = beginRun();
+    endRun(long, { durationMs: 45_000 });
     const snapshot = runMetricsSnapshot();
     expect(snapshot.durationCount).toBe(2);
     expect(snapshot.durationSumSeconds).toBeCloseTo(46.5, 6);
@@ -169,8 +169,8 @@ describe("run metrics", () => {
 
   it("does not observe a duration that was never measured", () => {
     resetRunMetrics();
-    beginRun();
-    endRun({ failed: true });
+    const run = beginRun();
+    endRun(run, { failed: true });
     expect(runMetricsSnapshot().durationCount).toBe(0);
   });
 });
@@ -178,8 +178,8 @@ describe("run metrics", () => {
 describe("/api/metrics", () => {
   it("exposes the failure counter and a well-formed histogram", async () => {
     resetRunMetrics();
-    beginRun();
-    endRun({ durationMs: 3_000, failed: true });
+    const run = beginRun();
+    endRun(run, { durationMs: 3_000, failed: true });
     const body = await metricsRoute().text();
     expect(body).toContain("agent_studio_runs_failed_total 1");
     expect(body).toContain("# TYPE agent_studio_run_duration_seconds histogram");
@@ -190,14 +190,14 @@ describe("/api/metrics", () => {
 
   it("names no project, user or model in any label", async () => {
     resetRunMetrics();
-    beginRun();
-    endRun({ durationMs: 1_000 });
+    const run = beginRun();
+    endRun(run, { durationMs: 1_000 });
     const body = await metricsRoute().text();
     // A label whose values are unbounded turns one metric into a series per
     // value — the same reason unknown models are counted rather than labelled.
     const labels = [...body.matchAll(/\{([^}]*)\}/g)].map((m) => m[1] ?? "");
     for (const label of labels) {
-      expect(label).toMatch(/^le="[^"]+"$/);
+      expect(label).toMatch(/^(?:le="[^"]+"|version="[^"]+",stage="(?:local|alpha|prod)")$/);
     }
   });
 });

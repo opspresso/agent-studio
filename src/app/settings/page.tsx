@@ -24,6 +24,7 @@ import { BADGE } from "@/app/_components/badgeColors";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { A2aClientKeysSection } from "./A2aClientKeysSection";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 
 type SettingSource = "override" | "env" | "default" | "unset";
@@ -203,7 +204,7 @@ export default function SettingsPage() {
       applyView(data);
       setSaved(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(reportError(err, "Failed to save"));
     } finally {
       setSaving(false);
     }
@@ -239,7 +240,7 @@ export default function SettingsPage() {
       setA2aKeyFreshlyIssued(true);
       applyView(data.view);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate A2A key");
+      setError(reportError(err, "Failed to generate A2A key"));
     } finally {
       setIssuingA2aKey(false);
     }
@@ -258,7 +259,7 @@ export default function SettingsPage() {
       setA2aKeyShown(data.key);
       setA2aKeyFreshlyIssued(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reveal A2A key");
+      setError(reportError(err, "Failed to reveal A2A key"));
     } finally {
       setIssuingA2aKey(false);
     }

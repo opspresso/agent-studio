@@ -13,6 +13,7 @@ import { SchedulesSection } from "./SchedulesSection";
 import { WebhookSection } from "./WebhookSection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 export default function SettingsPage() {
   const t = useT();
@@ -72,7 +73,7 @@ export default function SettingsPage() {
       });
       setSaved(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(reportError(err, "Failed to save"));
     } finally {
       setSaving(false);
     }
@@ -94,7 +95,7 @@ export default function SettingsPage() {
       await deleteProject(name);
       router.push("/projects");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete");
+      setError(reportError(err, "Failed to delete"));
       setDeleting(false);
     }
   }

@@ -9,6 +9,7 @@ import { FormModal } from "@/app/_components/FormModal";
 import { toSlug } from "@/domain/naming";
 import { useT } from "@/app/_i18n/provider";
 import { cloneProject } from "../../lib/api";
+import { reportError } from "@/app/_lib/reportError";
 
 /**
  * Clone this project into one the caller owns. Anyone who can see the project
@@ -44,7 +45,7 @@ export function CloneProjectButton({ sourceName }: { sourceName: string }) {
       close();
       router.push(`/projects/${project.name}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("projects.cloneFailed"));
+      setError(reportError(err, t("projects.cloneFailed")));
     } finally {
       setSubmitting(false);
     }

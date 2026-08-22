@@ -18,6 +18,7 @@ import { stateColor } from "@/app/_components/badgeColors";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
 import { parseList } from "@/shared/parseList";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 /**
  * A fixed grid of empty rows rather than add/remove buttons: Slack takes at
@@ -106,7 +107,7 @@ export function SlackSection({
       setKeywords(next.channelKeywords.join(", "));
       setStatus("Saved");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(reportError(e, "Save failed"));
     } finally {
       setBusy(false);
     }
@@ -146,7 +147,7 @@ export function SlackSection({
       setPrompts(emptyPrompts([]));
       setStatus("Disconnected");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Disconnect failed");
+      setError(reportError(e, "Disconnect failed"));
     } finally {
       setBusy(false);
     }

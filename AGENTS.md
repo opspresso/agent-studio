@@ -237,8 +237,9 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 - **Errors** — `AppError` subclasses before a stream starts, `{error}` chunks after the first one
   → [ARCHITECTURE.md](docs/ARCHITECTURE.md#에러-처리)
 - **Logging** — `src/shared/logger.ts` is the only writer (`domain`'s one bare `[cost]` warn
-  excepted, since it imports nothing); lines carry the run's correlation id, deliberately *not*
-  the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#로깅)
+  excepted, since it imports nothing, and the two error boundaries, since the logger imports
+  `node:async_hooks` and they run in a browser); lines carry the run's correlation id,
+  deliberately *not* the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#로깅)
 
 ## Conventions that bite
 
@@ -352,6 +353,25 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   `parts.module.css`), and the **store notifies on a collection window rather than per frame**
   — `MessageView` is memoised against reference-stable messages for the same reason, since
   re-parsing every message's markdown per token is what made the reply judder.
+- **An Enter that submits goes through `isSubmitEnter`.** `event.key === "Enter"` is also
+  the keystroke that commits an IME composition, and the console's readers type Korean: a
+  bare check sends the turn the reader was still typing, and sends it before React has the
+  committed syllable in state, so the message arrives missing its last character.
+  `src/app/_lib/modEnter.ts` owns both halves of the guard (`isComposing` and the
+  `keyCode === 229` browsers report it on) because a miss is silent — nothing errors, the
+  text just leaves without its ending.
+- **The chat sidebar and the thread read a *bounded* slice, and both reads happen per
+  turn.** The sidebar re-reads on every run start and finish, the thread on every retire,
+  so an unbounded read there is paid per answer rather than per visit — which is what made
+  the console slowest for the people using it most. The thread asks for the tail
+  (`?sinceSeq=`, merged by `mergeMessages`) and the sidebar for a page (`?limit=`, raised
+  by "show more" rather than followed by a cursor, since that partition's sort key is
+  `updatedAt` alone and does not identify a row). Two traps: **`sinceSeq=0` is a real
+  bound**, not an absent one — the first message of a chat has sequence 0, so parsing an
+  absent parameter with `Number(null)` drops the opening turn — and the thread's marker is
+  **cleared when `chatId` changes**, or a retire firing inside the navigation asks the new
+  chat for the old one's tail. Why each, in
+  [design/chat.md](docs/design/chat.md#사이드바와-스레드가-읽는-범위).
 - **The chat run log is a buffer, not a record.** Its ordering is the contract a resume rests
   on — **persist → terminal entry → release the lease** — which is why the lease release lives
   in `runLog.ts` rather than in `runAndPersist`. What it cannot do, and why it is written only

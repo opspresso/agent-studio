@@ -186,7 +186,16 @@ export const en = {
   "cost.activeGroups": "Active groups",
   "cost.dailyCost": "Daily cost",
 
+  // Page-level failures: the segment error boundaries and the missing page.
+  "error.pageTitle": "This page could not be shown",
+  "error.pageBody": "Something failed while rendering. Try again — if it keeps failing, the digest below identifies it in the server log.",
+  "error.retry": "Try again",
+  "error.notFoundTitle": "Page not found",
+  "error.notFoundBody": "The address does not match any page in this console.",
+  "error.backHome": "Back to overview",
+
   // Staged attachments, shared by the chat composers and the run panel.
+  "attach.drop": "Drop to attach",
   "attach.images": "Attach images",
   "attach.imagesOrDocuments": "Attach images or documents",
   "attach.remove": "Remove {name}",
@@ -217,6 +226,8 @@ export const en = {
 
   // Chats: the sidebar, the thread, the composer and the parts a turn is drawn
   // from.
+  "chat.more": "Show older chats",
+  "chat.answerReady": "Answer complete",
   "chat.new": "New chat",
   "chat.list": "Chats",
   "chat.none": "No chats yet.",

@@ -39,6 +39,7 @@ import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
+import { reportError } from "@/app/_lib/reportError";
 
 export default function AgentsPage() {
   const t = useT();
@@ -276,7 +277,7 @@ function RegisterAgentModal({
       reset();
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to register agent");
+      setError(reportError(err, "Failed to register agent"));
     } finally {
       setSubmitting(false);
     }

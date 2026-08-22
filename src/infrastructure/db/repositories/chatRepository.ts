@@ -134,9 +134,10 @@ export const chatRepository: ChatRepository = {
     return fromChatItem(res.Item);
   },
 
-  async listByOwner(ownerEmail) {
+  async listByOwner(ownerEmail, options = {}) {
     const client = getDocumentClient();
     const table = getTableName();
+    const { limit } = options;
     const chats: Chat[] = [];
     let lastKey: LastKey;
     do {
@@ -148,14 +149,19 @@ export const chatRepository: ChatRepository = {
           ExpressionAttributeValues: { ":pk": keys.chatOwnerPartition(ownerEmail) },
           ScanIndexForward: false,
           ExclusiveStartKey: lastKey,
+          ...(limit !== undefined ? { Limit: limit } : {}),
         }),
       );
       for (const item of notExpired(res.Items ?? [], Date.now())) {
         chats.push(fromChatItem(item));
       }
       lastKey = res.LastEvaluatedKey;
-    } while (lastKey);
-    return chats;
+      // `Limit` bounds what DynamoDB *reads*, and expired rows are dropped
+      // after it, so a page can come back short of a limit there are rows for.
+      // Keep pulling until the limit is genuinely filled — and stop the moment
+      // it is, which is the whole point of asking for one.
+    } while (lastKey && (limit === undefined || chats.length < limit));
+    return limit === undefined ? chats : chats.slice(0, limit);
   },
 
   async create(chat) {
@@ -224,20 +230,37 @@ export const chatRepository: ChatRepository = {
     );
   },
 
-  async listMessages(chatId) {
+  async listMessages(chatId, options = {}) {
     const client = getDocumentClient();
     const table = getTableName();
+    const { sinceSeq } = options;
+    // Past `sinceSeq` the query is a range rather than the prefix — the bounds
+    // come from `keys` either way, and `chatMessageRange` says why the upper
+    // one has to be there. It answers `null` for a sequence past the last one
+    // a key can hold, which is an empty tail and not a query to run.
+    if (sinceSeq !== undefined && keys.chatMessageRange(sinceSeq + 1) === null) {
+      return [];
+    }
+    const range = sinceSeq === undefined ? null : keys.chatMessageRange(sinceSeq + 1);
     const messages: ChatMessage[] = [];
     let lastKey: LastKey;
     do {
       const res = await client.send(
         new QueryCommand({
           TableName: table,
-          KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-          ExpressionAttributeValues: {
-            ":pk": keys.chat(chatId).PK,
-            ":sk": keys.chatMessagePrefix(),
-          },
+          KeyConditionExpression: range
+            ? "PK = :pk AND SK BETWEEN :from AND :to"
+            : "PK = :pk AND begins_with(SK, :sk)",
+          ExpressionAttributeValues: range
+            ? {
+                ":pk": keys.chat(chatId).PK,
+                ":from": range.from,
+                ":to": range.to,
+              }
+            : {
+                ":pk": keys.chat(chatId).PK,
+                ":sk": keys.chatMessagePrefix(),
+              },
           ScanIndexForward: true,
           ExclusiveStartKey: lastKey,
           // The client refetches this list the moment a stream finishes; an

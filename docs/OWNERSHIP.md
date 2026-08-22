@@ -138,6 +138,9 @@
 | AWS 로 나가는 요청에 서명하기 | `src/infrastructure/llm/awsSigner.ts` — 대신 `tests/awsSigner.test.ts` 가 못박는다. 이 파일이 만들어 내는 서명을 고정해 두는 테스트다 |
 | 서명된 오브젝트 URL 이 읽는 주체별로 얼마나 사는가 | `src/application/artifact/urlTtl.ts` |
 | Chat 의 run lease 를 누가 놓는가 | `src/application/chat/runLog.ts` 의 `teeToRunLog` |
+| Chat 목록을 한 번에 몇 개 읽는가, 그리고 최대 몇 개까지 허용하는가 | `src/domain/chat/repository.ts` 의 `CHAT_PAGE` / `MAX_CHAT_PAGE` — use case 의 기본값, 엔드포인트의 상한, 사이드바 "더 보기"의 증가폭이 모두 같은 결정이고, `domain` 은 셋 다 닿을 수 있는 유일한 계층이다(순수 TS 라 클라이언트 번들에 들어가도 된다) |
+| Chat 메시지를 꼬리부터 읽는 정렬 키 범위 | `src/infrastructure/db/keys.ts` 의 `chatMessageRange` — 하한 클램프까지 포함해서 |
+| 꼬리로 읽어 온 메시지를 화면의 것과 어떻게 합치는가 | `src/app/chats/_lib/mergeMessages.ts` |
 | chat 런이 브라우저에 어떻게 닿는가 | `src/app/api/chats/_lib/detachedRun.ts` |
 | 행의 TTL | `src/infrastructure/db/ttl.ts` |
 | usage 행의 키가 되는 UTC 날짜 | `src/shared/date.ts` 의 `utcDay` |

@@ -2,7 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Badge,
@@ -14,6 +14,7 @@ import {
   Stack,
   Text,
   Typography,
+  VisuallyHidden,
 } from "@mantine/core";
 import { IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
@@ -429,6 +430,40 @@ function RunProgress({ startedAtMs }: { startedAtMs?: number | undefined }) {
   );
 }
 
+/**
+ * That the answer has arrived, for a reader who cannot see it land.
+ *
+ * The answer text itself is deliberately *not* a live region: it grows a token
+ * at a time, and a screen reader given that region re-announces the reply from
+ * the top on every frame — unusable long before the run ends. What is worth
+ * announcing is the transition, once, so the counterpart to `RunProgress`'s
+ * "running" is this line at the finish.
+ *
+ * **The region is always mounted and starts empty.** Assistive technology
+ * registers a live region when it enters the accessibility tree and speaks
+ * what changes *after* that; a region mounted with its text already inside is
+ * announced by nothing, which is what the first version of this did. Filling
+ * an already-registered region is the mutation that gets spoken.
+ *
+ * And only for a run this view watched end. A thread opened onto a turn that
+ * finished long ago would otherwise be told the answer just completed, so the
+ * text is set on the *transition* from running rather than on the state.
+ */
+function AnswerAnnouncement({ running }: { running: boolean }) {
+  const t = useT();
+  const [announcement, setAnnouncement] = useState("");
+  const wasRunning = useRef(running);
+
+  useEffect(() => {
+    if (wasRunning.current && !running) {
+      setAnnouncement(t("chat.answerReady"));
+    }
+    wasRunning.current = running;
+  }, [running, t]);
+
+  return <VisuallyHidden role="status">{announcement}</VisuallyHidden>;
+}
+
 export function LiveAssistant({
   turn,
   running,
@@ -444,6 +479,9 @@ export function LiveAssistant({
   const t = useT();
   return (
     <Stack gap={4} align="flex-start">
+      {/* Outside the running/finished branch below, because a live region has
+          to be in the tree *before* the thing it announces happens. */}
+      <AnswerAnnouncement running={running} />
       {turn.warnings.map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}
