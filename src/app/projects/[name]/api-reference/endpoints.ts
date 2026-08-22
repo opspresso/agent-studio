@@ -454,6 +454,62 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     }
   }
 
+  // AG-UI: every published project, whatever its type — the run goes through
+  // `streamProjectRun`, so a chat panel can show a prompt project's answer and
+  // an image project's picture as readily as an agent's tool loop.
+  if (publishedVersion) {
+    const aguiPath = `/api/agui/${projectName}`;
+    const aguiBody = {
+      threadId: "thread-1",
+      runId: "run-1",
+      messages: [{ id: "m1", role: "user", content: "hi" }],
+      tools: [],
+      context: [],
+    };
+    endpoints.push({
+      id: "agui",
+      method: "POST",
+      path: aguiPath,
+      title: "AG-UI run",
+      description:
+        "Runs the published version for an AG-UI client (CopilotKit, @ag-ui/client) and streams the protocol's events: RUN_STARTED, TEXT_MESSAGE_*, TOOL_CALL_* with TOOL_CALL_RESULT, REASONING_* when the version records its thinking, STEP_* for subagents, CUSTOM (agent-studio.image / .file / .warning) for what the protocol has no frame for, and RUN_FINISHED carrying usage and result.termination, or RUN_ERROR. " +
+        "threadId is the run's conversation — send the same one on every run of a thread. Tools the client declares are offered to an agent project and executed by the client: a turn that calls one ends the run, and the results come back as tool messages in the next run's history. " +
+        "The stream closes after the terminal event, with no [DONE] frame.",
+      auth: "token",
+      streaming: true,
+      requestFields: [
+        { name: "threadId", type: "string", required: true, description: "The client's conversation id; the run's conversation." },
+        { name: "runId", type: "string", required: true, description: "The client's id for this run; echoed on RUN_STARTED and RUN_FINISHED." },
+        { name: "messages", type: "array[object]", required: true, description: "AG-UI messages (developer, system, user, assistant, tool). A user turn may carry text and image parts." },
+        { name: "tools", type: "array[object]", description: "Tools the client executes: { name, description, parameters }. Offered to agent projects only." },
+        { name: "context", type: "array[object]", description: "{ description, value } facts the application holds; placed ahead of the history as a system turn." },
+        { name: "state", type: "any", description: "Accepted and ignored: no state is kept between runs here." },
+        { name: "forwardedProps", type: "any", description: "Accepted and ignored." },
+      ],
+      errorCodes: [400, 401, 404],
+      codeExamples: [
+        curlExample({ method: "POST", url: abs(aguiPath), auth: "token", body: aguiBody, streaming: true }),
+        {
+          language: "javascript",
+          label: "@ag-ui/client",
+          code: [
+            'import { HttpAgent } from "@ag-ui/client";',
+            "",
+            "const agent = new HttpAgent({",
+            `  url: "${abs(aguiPath)}",`,
+            `  headers: { Authorization: "Bearer ${PLACEHOLDERS.token}" },`,
+            "});",
+            "",
+            "const result = await agent.runAgent({",
+            '  tools: [{ name: "showMap", description: "Show a place on the map", parameters: { type: "object", properties: { place: { type: "string" } } } }],',
+            "});",
+            "console.log(result.newMessages);",
+          ].join("\n"),
+        },
+      ],
+    });
+  }
+
   // The project webhook: shown once it is switched on, and deliberately not
   // gated on a published version — the address is live either way, and what it
   // answers without one is the `no-published-version` status documented below.

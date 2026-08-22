@@ -537,7 +537,7 @@ export const ko: Messages = {
 
   // 프로젝트의 연동 탭: 다른 시스템이 이 프로젝트에 닿는 방법.
   "pint.lede":
-    "다른 시스템이 이 프로젝트에 닿는 방법입니다 — API 호출자가 내는 토큰, 봇이 이 프로젝트를 실행하는 채팅 플랫폼, A2A 노출. 프로젝트 자체·비용 한도·트리거는 설정 탭에 있습니다.",
+    "다른 시스템이 이 프로젝트에 닿는 방법입니다 — API 호출자가 내는 토큰, 봇이 이 프로젝트를 실행하는 채팅 플랫폼, A2A·AG-UI 노출. 프로젝트 자체·비용 한도·트리거는 설정 탭에 있습니다.",
   "pint.ownerOnly": "프로젝트 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
 
   "pset.dangerZone": "위험 구역",
@@ -550,6 +550,7 @@ export const ko: Messages = {
   "pset.invitedMembersHint": "이메일 주소를 태그로 입력합니다. Enter, 쉼표, 공백으로 추가합니다.",
   "pset.visibilitySave": "공개 범위 저장",
   "pset.a2a": "A2A",
+  "pset.agui": "AG-UI",
   "pset.agentCard": "Agent Card",
   "pset.apiToken": "API 토큰",
   "pset.costLimits": "비용 한도",

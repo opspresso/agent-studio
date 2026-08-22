@@ -608,7 +608,7 @@ export const en = {
 
   // The project's Integrations tab: how other systems reach it.
   "pint.lede":
-    "How other systems reach this project — the token an API caller presents, the chat platforms whose bots run it, and its A2A exposure. What the project itself is, its cost limits and its triggers stay under Settings.",
+    "How other systems reach this project — the token an API caller presents, the chat platforms whose bots run it, and its A2A and AG-UI exposure. What the project itself is, its cost limits and its triggers stay under Settings.",
   "pint.ownerOnly": "Only the project owner ({owner}) or an admin can change these integrations.",
 
   // A project's settings tab: the sections and their forms.
@@ -622,6 +622,7 @@ export const en = {
   "pset.invitedMembersHint": "Email addresses, one per tag. Press Enter, comma or space to add.",
   "pset.visibilitySave": "Save visibility",
   "pset.a2a": "A2A",
+  "pset.agui": "AG-UI",
   "pset.agentCard": "Agent Card",
   "pset.apiToken": "API token",
   "pset.costLimits": "Cost limits",

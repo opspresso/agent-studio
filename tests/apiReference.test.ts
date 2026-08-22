@@ -33,16 +33,16 @@ function codeOf(endpoint: ApiEndpoint, language: string): string | undefined {
 
 describe("buildApiReference — endpoint selection by project type", () => {
   it("agent project exposes predict, chat/completions, and agent", () => {
-    expect(ids({ projectType: "agent" })).toEqual(["predict", "chat-completions", "agent"]);
+    expect(ids({ projectType: "agent" })).toEqual(["predict", "chat-completions", "agent", "agui"]);
   });
 
   it("llm project exposes predict and chat/completions only (no agent/chat)", () => {
-    expect(ids({ projectType: "llm" })).toEqual(["predict", "chat-completions"]);
+    expect(ids({ projectType: "llm" })).toEqual(["predict", "chat-completions", "agui"]);
   });
 
   it("image project exposes only the image predict endpoint", () => {
     const endpoints = buildApiReference(ctx({ projectType: "image" }));
-    expect(endpoints.map((e) => e.id)).toEqual(["predict-image"]);
+    expect(endpoints.map((e) => e.id)).toEqual(["predict-image", "agui"]);
     expect(endpoints[0]?.requestFields?.some((f) => f.name === "prompt")).toBe(true);
     expect(endpoints[0]?.responseFields?.some((f) => f.name === "imageBase64")).toBe(true);
   });
