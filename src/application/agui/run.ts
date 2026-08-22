@@ -100,7 +100,7 @@ export async function* streamAguiRun(
       runId: request.input.runId,
       ...(request.input.parentRunId ? { parentRunId: request.input.parentRunId } : {}),
     },
-    { sign: deps.execution.artifacts?.objects.sign, warnings, model: request.version.model },
+    { sign: deps.execution.artifacts?.objects.sign, warnings },
   );
 }
 

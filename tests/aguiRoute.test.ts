@@ -183,6 +183,12 @@ describe("POST /api/agui/[name]", () => {
     expect(runs).toHaveLength(0);
   });
 
+  it("refuses protocol resume input until interrupt state is implemented", async () => {
+    const response = await POST(req({ ...input, resume: { interruptId: "i1" } }), ctx);
+    expect(response.status).toBe(400);
+    expect(runs).toHaveLength(0);
+  });
+
   it("accepts an empty history, as the protocol does", async () => {
     const response = await POST(req({ ...input, messages: [] }), ctx);
     expect(response.status).toBe(200);

@@ -344,7 +344,8 @@ describe("reading a metadata document", () => {
     const result = await oauthMetadataClient.fetchProtectedResource("https://mcp.example.com/mcp");
 
     expect(result.resource).toBe("https://mcp.example.com");
-    expect(calls).toHaveLength(2);
+    // Probe for an authoritative challenge, then the two well-known forms.
+    expect(calls).toHaveLength(3);
     vi.unstubAllGlobals();
   });
 

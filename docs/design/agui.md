@@ -39,15 +39,15 @@ prompt project 는 한 번 답하고, image project 는 그림을 그린다 — 
 |---|---|
 | top-level `delta.content` | `TEXT_MESSAGE_START` (처음) → `TEXT_MESSAGE_CONTENT` … → `TEXT_MESSAGE_END` (tool 호출·step·종료가 닫는다) |
 | top-level `delta.reasoningContent` (version 이 `reasoningTrace` 를 켰을 때만 온다) | `REASONING_START` + `REASONING_MESSAGE_START` → `REASONING_MESSAGE_CONTENT` … → `REASONING_MESSAGE_END` + `REASONING_END` (답변이 시작되면 닫힌다) |
-| top-level `delta.toolCalls` | 호출마다 `TOOL_CALL_START` → `TOOL_CALL_ARGS` (인자가 있을 때) → `TOOL_CALL_END`. 그 턴이 호출 전에 말한 텍스트 메시지가 `parentMessageId`; 호출만 한 턴은 부모가 없고, 클라이언트가 그 자리에 assistant 메시지를 만든다 |
-| top-level `toolResult` | `TOOL_CALL_RESULT` (`role: "tool"`). transfer 의 display-only 마커도 그대로 — 다음 런에 tool 메시지로 돌아와도 해가 없다 |
-| authored 청크의 첫 등장 / `authorDone` | `STEP_STARTED` / `STEP_FINISHED` (`stepName` 은 author). 자식의 텍스트와 호출은 이벤트가 되지 않는다 — 그 답은 부모의 tool 결과로 돌아온다 |
+| top-level `delta.toolCalls` | 호출마다 `TOOL_CALL_START` → `TOOL_CALL_ARGS` (인자가 있을 때) → `TOOL_CALL_END`. 그 턴이 처음 말하거나 부를 때 만든 assistant 메시지 id 를 모든 호출이 `parentMessageId` 로 공유한다 |
+| top-level `toolResult` | `TOOL_CALL_RESULT` (`role: "tool"`). transfer 의 display-only 마커는 클라이언트가 다음 런에서 재생할 실제 자식 답으로 바꾼다 |
+| authored 청크의 첫 등장 / `authorDone` | `STEP_STARTED` / `STEP_FINISHED` (`stepName` 은 `authorPath` 체인). 자식의 텍스트와 호출은 이벤트가 되지 않는다 — 그 답은 부모의 tool 결과로 돌아온다 |
 | `image` (author 무관) | `ACTIVITY_SNAPSHOT` `activityType: "agent-studio.image"`, `content: { mimeType, dataUrl, prompt?, model?, artifactId? }` |
 | `file` (author 무관) | `ACTIVITY_SNAPSHOT` `activityType: "agent-studio.file"`, `content: { name, mimeType, url, byteSize? }` — 바이트는 브래킷이 걷어냈으므로 `VIEW_URL_TTL_SECONDS` 로 서명한 주소. 주소를 만들 수 없으면 경고가 된다 |
 | `warning` (author 무관, `collectedWarning` 으로 중복 제거) | `CUSTOM` `agent-studio.warning` `{ message }` — 그리고 `RUN_FINISHED.result.warnings` 에 모인다 |
-| `usage` (모든 호출) | 합산해 `RUN_FINISHED.usage[0]` (`inputTokens`, `outputTokens`, `totalTokens`, `reasoningTokens?`, `cachedInputTokens?`) |
+| `usage` (모든 호출) | 합산해 `RUN_FINISHED.usage[0]` (`inputTokens`, `outputTokens`, `totalTokens`, `reasoningTokens?`, `cachedInputTokens?`). 실제 호출 모델을 청크가 밝히지 않으므로 aggregate 에 `model` 을 잘못 붙이지 않는다 |
 | top-level `done` / `finishReason` | 열린 것을 전부 닫고 종료 사유를 기억해 둔다. `RUN_FINISHED` 는 **소스가 소진될 때** 나간다 — artifact recorder 는 엔진 스트림이 끝난 *뒤에* 보관하지 못한 그림을 말하므로, `done` 에서 끝내면 그 경고 하나를 잃는다. `result.termination` 은 엔진의 어휘(`completed` / `turn-limit` / `output-limit`) 그대로 |
-| top-level `error`, 또는 스트림 도중의 throw | 열린 것을 전부 닫고 `RUN_ERROR` |
+| top-level `error`, 스트림 도중의 throw, terminal 청크 없는 소스 종료 | 열린 것을 전부 닫고 `RUN_ERROR` |
 
 프로토콜에는 경고 프레임도 종료 사유 필드도 없는데, 둘 다 답을 읽는 데 필요하다 — 턴 한도에서
 잘린 런과 끝까지 간 런은 텍스트 축에서 똑같아 보인다. 그래서 경고는 `agent-studio.` 로
@@ -125,7 +125,9 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
 - `state` 는 비어 있지 않으면 context 와 같은 system 턴에 읽기 전용 JSON 으로 실린다(20,000자
   상한, 잘리면 표시). CopilotKit 의 `useCoAgent` 가 준 상태를 모델이 읽기는 하지만 **갱신하지는
   않는다** — `STATE_SNAPSHOT`/`STATE_DELTA` 는 나가지 않고, 턴이 그렇게 말한다. `forwardedProps`
-  는 받아들이고 무시한다. `parentRunId` 는 `RUN_STARTED` 에 되돌려 준다.
+  는 받아들이고 무시한다. `parentRunId` 는 `RUN_STARTED` 에 되돌려 준다. 프로토콜의 `resume`
+  입력은 interrupt 상태를 보관하고 이어 가는 구현이 없으므로 400 으로 명시적으로 거절한다 —
+  값을 걷어내고 새 런으로 실행하지 않는다.
 
 ## SDK 를 쓰지 않는 이유
 

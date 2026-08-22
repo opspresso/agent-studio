@@ -40,11 +40,16 @@ function authHeaders(target: TokenRequestTarget): Record<string, string> {
   }
   if (target.tokenEndpointAuthMethod === "client_secret_basic") {
     const credentials = Buffer.from(
-      `${encodeURIComponent(target.clientId)}:${encodeURIComponent(target.clientSecret)}`,
+      `${formEncode(target.clientId)}:${formEncode(target.clientSecret)}`,
     ).toString("base64");
     return { Authorization: `Basic ${credentials}` };
   }
   return {};
+}
+
+/** RFC 6749 §2.3.1 uses HTML form encoding, where a space is `+`, not `%20`. */
+function formEncode(value: string): string {
+  return new URLSearchParams({ value }).toString().slice("value=".length);
 }
 
 function authBodyParams(target: TokenRequestTarget): Record<string, string> {

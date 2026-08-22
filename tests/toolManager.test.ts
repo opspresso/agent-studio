@@ -93,8 +93,8 @@ interface ServerScript {
   callOmitsContent?: boolean;
   /** When set, tools/call answers 401 — a token revoked after discovery succeeded. */
   callUnauthorized?: boolean;
-  /** When set, tools/call answers 403 `insufficient_scope` naming these scopes. */
-  callNeedsScope?: string;
+  /** When set, matching tools/call answers 403 `insufficient_scope` naming these scopes. */
+  callNeedsScope?: string | ((params: Record<string, unknown> | undefined) => string | undefined);
   /**
    * Refuse the era probe with `-32022`, naming the revisions this server does
    * support. The case no probe can rescue: a server newer than the client, which
@@ -274,10 +274,14 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     if (script.callUnauthorized && body.method === "tools/call") {
       return new Response("Unauthorized", { status: 401 });
     }
-    if (script.callNeedsScope && body.method === "tools/call") {
+    const neededScope =
+      typeof script.callNeedsScope === "function"
+        ? script.callNeedsScope(body.params)
+        : script.callNeedsScope;
+    if (neededScope && body.method === "tools/call") {
       return new Response("Forbidden", {
         status: 403,
-        headers: { "WWW-Authenticate": `Bearer error="insufficient_scope", scope="${script.callNeedsScope}"` },
+        headers: { "WWW-Authenticate": `Bearer error="insufficient_scope", scope="${neededScope}"` },
       });
     }
     let payload: RpcEnvelope;
@@ -2048,6 +2052,27 @@ describe("ToolManager mid-run authorization failure", () => {
 
     expect(result.text.startsWith("Error:")).toBe(true);
     expect(manager.unauthorizedServers).toEqual(["a"]);
+    expect(manager.scopeChallenges.get("a")).toBe("files:write");
+  });
+
+  it("binds a scope challenge to its failed call while another call succeeds", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "write" }, { name: "read" }],
+        callNeedsScope: (params) => (params?.name === "write" ? "files:write" : undefined),
+        callContent: [textBlock("read ok")],
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    const [write, read] = await Promise.all([
+      manager.callTool("write", {}),
+      manager.callTool("read", {}),
+    ]);
+
+    expect(write.text.startsWith("Error:")).toBe(true);
+    expect(read.text).toBe("read ok");
     expect(manager.scopeChallenges.get("a")).toBe("files:write");
   });
 

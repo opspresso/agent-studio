@@ -34,8 +34,8 @@ export function wellKnownCandidates(base: string, suffix: string): string[] {
   const url = new URL(base);
   const path = url.pathname.replace(/\/+$/, "");
   const candidates: string[] = [];
-  if (path) {
-    candidates.push(`${url.origin}/.well-known/${suffix}${path}`);
+  if (path || url.search) {
+    candidates.push(`${url.origin}/.well-known/${suffix}${path}${url.search}`);
   }
   candidates.push(`${url.origin}/.well-known/${suffix}`);
   return candidates;
@@ -66,24 +66,9 @@ export function authorizationServerCandidates(issuer: string): string[] {
   ];
 }
 
-/**
- * Two issuer spellings that name one server. Compared as URLs — scheme and
- * host case-insensitive, a default port dropped, a trailing slash ignored —
- * because those are spellings of one identifier, not two. What is *not*
- * tolerated is a different path: Entra's `…/common/v2.0` resource answering
- * with a tenant issuer is the server naming another issuer, and the spec
- * says not to use that document (`docs/design/mcp.md`).
- */
+/** RFC 8414 requires a code-point-for-code-point match with the requested issuer. */
 function sameIssuer(a: string, b: string): boolean {
-  const canonical = (value: string): string => {
-    try {
-      const url = new URL(value);
-      return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`.toLowerCase();
-    } catch {
-      return value.replace(/\/+$/, "").toLowerCase();
-    }
-  };
-  return canonical(a) === canonical(b);
+  return a === b;
 }
 
 /**
@@ -92,10 +77,9 @@ function sameIssuer(a: string, b: string): boolean {
  * RFC 9728 lets a server publish the document at any address and name it in
  * the `WWW-Authenticate` challenge of a 401. A server that only names it —
  * one whose metadata sits behind a gateway path — was undiscoverable while
- * only the well-known paths were tried. Asked after those paths rather than
- * before: the paths are where nearly every server publishes, and an extra
- * request per discovery against all of them buys nothing there. The probe is
- * the request a client would make first anyway: an `initialize`.
+ * only the well-known paths were tried. MCP makes this address authoritative
+ * when present, so the probe precedes constructed well-known fallbacks. It is
+ * the request a legacy client would make first anyway: an `initialize`.
  */
 async function challengedMetadataUrl(mcpUrl: string, loopback: boolean): Promise<string | undefined> {
   const send = loopback ? fetch : fetchPublicUrl;
@@ -167,7 +151,7 @@ async function fetchJson(url: string, loopback: boolean): Promise<Record<string,
 
 async function firstUsable<T>(
   candidates: string[],
-  parse: (doc: Record<string, unknown>) => T | null,
+  parse: (doc: Record<string, unknown>, url: string) => T | null,
   what: string,
   loopback: boolean,
 ): Promise<T> {
@@ -180,7 +164,7 @@ async function firstUsable<T>(
       failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
       continue;
     }
-    const parsed = doc ? parse(doc) : null;
+    const parsed = doc ? parse(doc, url) : null;
     if (parsed) {
       return parsed;
     }
@@ -204,17 +188,34 @@ function asStringArray(value: unknown): string[] | undefined {
 export const oauthMetadataClient: OAuthMetadataClient = {
   async fetchProtectedResource(mcpUrl, loopback = false) {
     const wellKnown = wellKnownCandidates(mcpUrl, "oauth-protected-resource");
-    let candidates = wellKnown;
-    try {
-      return await firstUsable(wellKnown, parseProtectedResource, "protected resource metadata", loopback);
-    } catch (error) {
-      const challenged = await challengedMetadataUrl(mcpUrl, loopback);
-      if (!challenged || wellKnown.includes(challenged)) {
-        throw error;
-      }
-      candidates = [challenged];
+    // MCP makes the challenge authoritative when it is present; constructed
+    // well-known paths are the fallback only. Reversing that order can bind a
+    // client to a generic gateway document while the MCP resource names its
+    // tenant-specific metadata in the 401.
+    const challenged = await challengedMetadataUrl(mcpUrl, loopback);
+    if (challenged) {
+      return firstUsable(
+        [challenged],
+        (doc) => parseProtectedResource(doc, mcpUrl),
+        "protected resource metadata",
+        loopback,
+      );
     }
-    return firstUsable(candidates, parseProtectedResource, "protected resource metadata", loopback);
+    const endpoint = new URL(mcpUrl);
+    const endpointPath = endpoint.pathname.replace(/\/+$/, "");
+    const endpointResource = `${endpoint.origin}${endpointPath}${endpoint.search}`;
+    return firstUsable(
+      wellKnown,
+      (doc, url) =>
+        parseProtectedResource(
+          doc,
+          url === `${endpoint.origin}/.well-known/oauth-protected-resource`
+            ? endpoint.origin
+            : endpointResource,
+        ),
+      "protected resource metadata",
+      loopback,
+    );
   },
 
   async fetchAuthorizationServer(issuer) {
@@ -228,12 +229,20 @@ export const oauthMetadataClient: OAuthMetadataClient = {
   },
 };
 
-const parseProtectedResource = (doc: Record<string, unknown>): ProtectedResourceMetadata | null => {
+const parseProtectedResource = (
+  doc: Record<string, unknown>,
+  expectedResource: string,
+): ProtectedResourceMetadata | null => {
   const resource = asString(doc.resource);
   const authorizationServers = asStringArray(doc.authorization_servers);
-  // Both are required by RFC 9728; a document missing either cannot drive
-  // an authorization, so it is a miss rather than a partial success.
-  if (!resource || !authorizationServers || authorizationServers.length === 0) {
+  // MCP requires the authorization server list. RFC 9728 §3.3 additionally
+  // forbids using a document whose resource is not the exact identifier from
+  // which its well-known URL was derived, or the URL that issued a challenge.
+  if (
+    resource !== expectedResource ||
+    !authorizationServers ||
+    authorizationServers.length === 0
+  ) {
     return null;
   }
   const scopesSupported = asStringArray(doc.scopes_supported);

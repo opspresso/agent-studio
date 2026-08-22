@@ -491,10 +491,16 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
 - **`WWW-Authenticate` 는 런타임에도 읽는다.** 403 `insufficient_scope` 가 이름 댄 scope 는
   연결의 scope 에 합쳐지고 연결은 `needs_reauth` 가 되어, 콘솔의 재연결이 서버가 방금 거절한
   것과 같은 grant 대신 넓어진 grant 를 요청한다(step-up). 전에는 403 이 "unreachable" 로 보여
-  소유자가 scope 를 줄 길이 없었다.
+  소유자가 scope 를 줄 길이 없었다. challenge 는 SDK 가 해당 요청의 typed error 에 붙인다. 한
+  turn 에서 병렬 호출된 다른 tool 의 성공이나 403 이 이를 지우거나 바꿀 수 없다.
+- **protected-resource metadata 는 resource 에 묶는다.** challenge 가 지목한 문서는 challenge 를
+  일으킨 MCP URL, well-known 문서는 그 주소를 도출한 resource identifier 와 `resource` 값이
+  정확히 같아야 쓴다(RFC 9728 §3.3). 다른 audience 의 token 을 받아 공격자 resource 에 보내는
+  impersonation/confused-deputy 경로를 닫는다.
 - **동적 등록은 토큰 요청이 쓸 인증 방식으로 등록한다**, 그리고 서버가 기록한 방식이 돌아오면
   그것을 연결에 적는다. `client_secret_post` 로 등록해 놓고 `client_secret_basic` 으로 교환하던
   것은 기록된 방식을 강제하는 서버(Keycloak, Authentik 등)에서 `invalid_client` 루프였다.
+  `client_secret_basic` 의 ID 와 secret 은 RFC 6749 가 정한 form encoding 후 Base64 로 인코딩한다.
 - **RFC 8707 `resource`** 는 모든 authorization 요청과 token 요청에 실린다. 명세가 그것을
   무조건으로 규정하며, 한 MCP 서버용으로 발급된 token 이 다른 서버에 재사용되는 것을 막는 것이
   바로 그것이다.

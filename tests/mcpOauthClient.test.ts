@@ -114,6 +114,26 @@ describe("token requests", () => {
     }
   });
 
+  it("form-encodes Basic credentials before base64 encoding them", async () => {
+    const sent = stub(200, { access_token: "at" });
+
+    await oauthClient.exchangeCode(
+      {
+        ...target,
+        clientId: "client id+%",
+        clientSecret: "s e/c:r?et",
+        tokenEndpointAuthMethod: "client_secret_basic",
+      },
+      code,
+    );
+
+    const authorization = sent[0]?.headers.get("authorization") ?? "";
+    expect(Buffer.from(authorization.slice("Basic ".length), "base64").toString("utf-8")).toBe(
+      "client+id%2B%25:s+e%2Fc%3Ar%3Fet",
+    );
+    vi.unstubAllGlobals();
+  });
+
   it("sends nothing to prove with when there is no secret, whatever was configured", async () => {
     // A public client has nothing else to send; announcing `basic` with an empty
     // secret would produce a header the server can only reject.

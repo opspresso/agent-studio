@@ -10,9 +10,15 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
-import type { Message, Task } from "@a2a-js/sdk";
+import {
+  AgentCard,
+  SendMessageResponse,
+  StreamResponse,
+  Task as TaskCodec,
+  type Message,
+  type Task,
+} from "@a2a-js/sdk";
 import type { AgentExecutionEvent, ExecutionEventBus, TaskStore } from "@a2a-js/sdk/server";
-import { RequestContext } from "@a2a-js/sdk/server";
 import { buildAgentCard, buildProjectA2aRpcUrl } from "@/infrastructure/a2a/cards";
 import {
   extractA2aImages,
@@ -27,6 +33,21 @@ import type { LlmChannel } from "@/domain/llm/channel";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import type { Trace } from "@/domain/trace/types";
 import { fakeSkillRepository } from "./fakeSkills";
+import {
+  Role,
+  TaskState,
+  agentMessageFixture,
+  artifact,
+  artifactEvents,
+  cardFixture,
+  fakeTaskStore,
+  messageFixture,
+  requestContext,
+  statusEvent,
+  taskFixture as protocolTaskFixture,
+  taskStatus,
+  textPart,
+} from "./a2aFixtures";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -61,22 +82,11 @@ function versionFixture(overrides: Partial<Version> = {}): Version {
 }
 
 function userMessage(text: string): Message {
-  return {
-    kind: "message",
-    messageId: "m1",
-    role: "user",
-    parts: [{ kind: "text", text }],
-  };
+  return messageFixture(text);
 }
 
 function taskFixture(overrides: Partial<Task> = {}): Task {
-  return {
-    kind: "task",
-    id: "t1",
-    contextId: "c1",
-    status: { state: "completed" },
-    ...overrides,
-  };
+  return protocolTaskFixture(overrides);
 }
 
 class CollectingBus implements ExecutionEventBus {
@@ -106,8 +116,8 @@ describe("buildAgentCard", () => {
     const card = await buildAgentCard(projectFixture(), versionFixture());
     expect(card.name).toBe("Helper");
     expect(card.version).toBe("v1");
-    expect(card.capabilities.streaming).toBe(true);
-    expect(card.url).toBe(await buildProjectA2aRpcUrl("helper"));
+    expect(card.capabilities?.streaming).toBe(true);
+    expect(card.supportedInterfaces[0]?.url).toBe(await buildProjectA2aRpcUrl("helper"));
     expect(card.skills).toHaveLength(1);
     expect(card.skills[0]?.id).toBe("helper");
   });
@@ -142,56 +152,42 @@ describe("extractA2aText", () => {
   it("returns message part text", () => {
     expect(
       extractA2aText({
-        kind: "message",
         messageId: "m2",
-        role: "agent",
-        parts: [
-          { kind: "text", text: "hello " },
-          { kind: "text", text: "world" },
-        ],
+        contextId: "c1",
+        taskId: "t1",
+        role: Role.ROLE_AGENT,
+        parts: [textPart("hello "), textPart("world")],
+        metadata: undefined,
+        extensions: [],
+        referenceTaskIds: [],
       }),
     ).toBe("hello world");
   });
 
   it("prefers artifacts over the final status message", () => {
     const task = taskFixture({
-      artifacts: [{ artifactId: "result", parts: [{ kind: "text", text: "artifact answer" }] }],
-      status: {
-        state: "completed",
-        message: {
-          kind: "message",
-          messageId: "m3",
-          role: "agent",
-          parts: [{ kind: "text", text: "summary repeated" }],
-        },
-      },
+      artifacts: [artifact("result", [textPart("artifact answer")])],
+      status: taskStatus(
+        TaskState.TASK_STATE_COMPLETED,
+        agentMessageFixture("summary repeated", "m3"),
+      ),
     });
     expect(extractA2aText(task)).toBe("artifact answer");
   });
 
   it("falls back to status message, then agent history", () => {
     const statusOnly = taskFixture({
-      status: {
-        state: "completed",
-        message: {
-          kind: "message",
-          messageId: "m4",
-          role: "agent",
-          parts: [{ kind: "text", text: "from status" }],
-        },
-      },
+      status: taskStatus(
+        TaskState.TASK_STATE_COMPLETED,
+        agentMessageFixture("from status", "m4"),
+      ),
     });
     expect(extractA2aText(statusOnly)).toBe("from status");
 
     const historyOnly = taskFixture({
       history: [
         userMessage("question"),
-        {
-          kind: "message",
-          messageId: "m5",
-          role: "agent",
-          parts: [{ kind: "text", text: "from history" }],
-        },
+        agentMessageFixture("from history", "m5"),
       ],
     });
     expect(extractA2aText(historyOnly)).toBe("from history");
@@ -202,19 +198,20 @@ describe("extractA2aImages", () => {
   it("extracts base64 image file parts from artifacts", () => {
     const task = taskFixture({
       artifacts: [
-        {
-          artifactId: "image",
-          parts: [
-            {
-              kind: "file",
-              file: { bytes: "aW1n", mimeType: "image/png", name: "generated.png" },
-            },
-            {
-              kind: "file",
-              file: { bytes: "cGRm", mimeType: "application/pdf", name: "ignored.pdf" },
-            },
-          ],
-        },
+        artifact("image", [
+          {
+            content: { $case: "raw", value: Buffer.from("aW1n", "base64") },
+            mediaType: "image/png",
+            filename: "generated.png",
+            metadata: undefined,
+          },
+          {
+            content: { $case: "raw", value: Buffer.from("cGRm", "base64") },
+            mediaType: "application/pdf",
+            filename: "ignored.pdf",
+            metadata: undefined,
+          },
+        ]),
       ],
     });
     expect(extractA2aImages(task)).toEqual([
@@ -240,64 +237,122 @@ const RPC_URL = "https://remote.test/a2a";
 const CARD_URL = `${RPC_URL}/.well-known/agent-card.json`;
 
 function agentCard(streaming: boolean): Response {
-  return Response.json({
-    protocolVersion: "0.3.0",
-    name: "Remote",
-    description: "A remote agent",
-    url: RPC_URL,
-    version: "1.0.0",
-    capabilities: { streaming },
-    defaultInputModes: ["text/plain"],
-    defaultOutputModes: ["text/plain"],
-    skills: [],
-  });
+  return Response.json(AgentCard.toJSON(cardFixture(streaming, RPC_URL)));
 }
 
 /** The events a task-based remote sends: text in two chunks, then a picture. */
-const TASK_EVENT = { kind: "task", id: "t1", contextId: "c1", status: { state: "working" } };
-const ARTIFACT_OPEN = {
-  kind: "artifact-update",
-  taskId: "t1",
-  contextId: "c1",
-  artifact: { artifactId: "a1", parts: [{ kind: "text", text: "the " }] },
-};
-const ARTIFACT_APPEND = {
-  kind: "artifact-update",
-  taskId: "t1",
-  contextId: "c1",
-  append: true,
-  artifact: { artifactId: "a1", parts: [{ kind: "text", text: "answer" }] },
-};
-const ARTIFACT_IMAGE = {
-  kind: "artifact-update",
-  taskId: "t1",
-  contextId: "c1",
-  artifact: {
-    artifactId: "a2",
-    parts: [{ kind: "file", file: { bytes: "aGk=", mimeType: "image/png", name: "p.png" } }],
+const TASK_EVENT = StreamResponse.toJSON({
+  payload: {
+    $case: "task",
+    value: taskFixture({ status: taskStatus(TaskState.TASK_STATE_WORKING) }),
   },
-};
-const FINAL_STATUS = {
-  kind: "status-update",
-  taskId: "t1",
-  contextId: "c1",
-  final: true,
-  status: { state: "completed" },
-};
-/** What the blocking path returns for the same exchange. */
-const FINAL_TASK = {
-  kind: "task",
-  id: "t1",
-  contextId: "c1",
-  status: { state: "completed" },
-  artifacts: [
-    { artifactId: "a1", parts: [{ kind: "text", text: "the answer" }] },
-    {
-      artifactId: "a2",
-      parts: [{ kind: "file", file: { bytes: "aGk=", mimeType: "image/png", name: "p.png" } }],
+});
+const ARTIFACT_OPEN = StreamResponse.toJSON({
+  payload: {
+    $case: "artifactUpdate",
+    value: {
+      taskId: "t1",
+      contextId: "c1",
+      artifact: artifact("a1", [textPart("the ")]),
+      append: false,
+      lastChunk: false,
+      metadata: undefined,
     },
+  },
+});
+const ARTIFACT_APPEND = StreamResponse.toJSON({
+  payload: {
+    $case: "artifactUpdate",
+    value: {
+      taskId: "t1",
+      contextId: "c1",
+      artifact: artifact("a1", [textPart("answer")]),
+      append: true,
+      lastChunk: true,
+      metadata: undefined,
+    },
+  },
+});
+const ARTIFACT_IMAGE = StreamResponse.toJSON({
+  payload: {
+    $case: "artifactUpdate",
+    value: {
+      taskId: "t1",
+      contextId: "c1",
+      artifact: artifact("a2", [
+        {
+          content: { $case: "raw", value: Buffer.from("aGk=", "base64") },
+          mediaType: "image/png",
+          filename: "p.png",
+          metadata: undefined,
+        },
+      ]),
+      append: false,
+      lastChunk: true,
+      metadata: undefined,
+    },
+  },
+});
+const FINAL_STATUS = StreamResponse.toJSON({
+  payload: {
+    $case: "statusUpdate",
+    value: {
+      taskId: "t1",
+      contextId: "c1",
+      status: taskStatus(TaskState.TASK_STATE_COMPLETED),
+      metadata: undefined,
+    },
+  },
+});
+
+function statusWire(state: TaskState, text?: string): unknown {
+  return StreamResponse.toJSON({
+    payload: {
+      $case: "statusUpdate",
+      value: {
+        taskId: "t1",
+        contextId: "c1",
+        status: taskStatus(state, text ? agentMessageFixture(text) : undefined),
+        metadata: undefined,
+      },
+    },
+  });
+}
+
+function artifactWire(artifactId: string, text: string): unknown {
+  return StreamResponse.toJSON({
+    payload: {
+      $case: "artifactUpdate",
+      value: {
+        taskId: "t1",
+        contextId: "c1",
+        artifact: artifact(artifactId, [textPart(text)]),
+        append: false,
+        lastChunk: true,
+        metadata: undefined,
+      },
+    },
+  });
+}
+/** What the blocking path returns for the same exchange. */
+const FINAL_TASK_VALUE = taskFixture({
+  artifacts: [
+    artifact("a1", [textPart("the answer")]),
+    artifact("a2", [
+      {
+        content: { $case: "raw", value: Buffer.from("aGk=", "base64") },
+        mediaType: "image/png",
+        filename: "p.png",
+        metadata: undefined,
+      },
+    ]),
   ],
-};
+});
+const FINAL_TASK = TaskCodec.toJSON(FINAL_TASK_VALUE);
+
+function sendMessageResult(task: Task): unknown {
+  return SendMessageResponse.toJSON({ payload: { $case: "task", value: task } });
+}
 
 const STREAMED_REPLY = {
   ok: true,
@@ -385,14 +440,32 @@ describe("sendA2aMessage", () => {
 
   it("falls back to a blocking send for a card that cannot stream", async () => {
     const methods = stubRemote(agentCard(false), (_method, id) =>
-      Response.json({ jsonrpc: "2.0", id, result: FINAL_TASK }),
+      Response.json({
+        jsonrpc: "2.0",
+        id,
+        result: sendMessageResult(
+          taskFixture({
+            artifacts: [
+              artifact("a1", [textPart("the answer")]),
+              artifact("a2", [
+                {
+                  content: { $case: "raw", value: Buffer.from("aGk=", "base64") },
+                  mediaType: "image/png",
+                  filename: "p.png",
+                  metadata: undefined,
+                },
+              ]),
+            ],
+          }),
+        ),
+      }),
     );
 
     // The same answer as the streamed path: both read the reply back through
     // `extractA2aText`/`extractA2aImages`, so neither can drift from the other.
     await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual(STREAMED_REPLY);
     // The SDK refuses before any request goes out, so nothing ran twice.
-    expect(methods).toEqual(["message/send"]);
+    expect(methods).toEqual(["SendMessage"]);
   });
 
   it("reports a stream that broke before the task finished, without re-sending it", async () => {
@@ -406,7 +479,7 @@ describe("sendA2aMessage", () => {
     const result = await sendA2aMessage(RPC_URL, {}, "hello");
 
     expect(result.ok).toBe(false);
-    expect(methods).toEqual(["message/stream"]);
+    expect(methods).toEqual(["SendStreamingMessage"]);
   });
 
   it("keeps an answer whose stream broke after the task reached a terminal state", async () => {
@@ -431,25 +504,24 @@ describe("sendA2aMessage", () => {
     const result = await sendA2aMessage(RPC_URL, {}, "hello");
 
     expect(result.ok).toBe(false);
-    expect(methods).toEqual(["message/stream"]);
+    expect(methods).toEqual(["SendStreamingMessage"]);
   });
 
   it("reads an answer a remote put in a status message rather than an artifact", async () => {
-    const answering = {
-      kind: "status-update",
-      taskId: "t1",
-      contextId: "c1",
-      final: false,
-      status: {
-        state: "working",
-        message: {
-          kind: "message",
-          messageId: "m1",
-          role: "agent",
-          parts: [{ kind: "text", text: "the answer" }],
+    const answering = StreamResponse.toJSON({
+      payload: {
+        $case: "statusUpdate",
+        value: {
+          taskId: "t1",
+          contextId: "c1",
+          status: taskStatus(
+            TaskState.TASK_STATE_WORKING,
+            agentMessageFixture("the answer", "m1"),
+          ),
+          metadata: undefined,
         },
       },
-    };
+    });
     stubRemote(agentCard(true), (_method, id) =>
       // The terminal event carries no message, so the reply survives only if
       // the earlier status message reached the task's history — which is where
@@ -471,7 +543,7 @@ describe("sendA2aMessage", () => {
     // fetches it afresh — as a real transfer does.
     const answer = (_method: string, id: number, _signal?: AbortSignal, body?: unknown) => {
       bodies.push(body);
-      return Response.json({ jsonrpc: "2.0", id, result: FINAL_TASK });
+      return Response.json({ jsonrpc: "2.0", id, result: sendMessageResult(FINAL_TASK_VALUE) });
     };
     stubRemote(agentCard(false), answer);
     await sendA2aMessage(RPC_URL, {}, "hello");
@@ -619,11 +691,7 @@ function executionDepsFixture(channel: FakeChannel): ExecutionDeps {
 }
 
 function fakeStore(overrides: Partial<TaskStore> = {}): TaskStore {
-  return {
-    load: async () => undefined,
-    save: async () => {},
-    ...overrides,
-  };
+  return fakeTaskStore(overrides);
 }
 
 /** A streaming channel that never yields until its signal aborts, then throws —
@@ -654,19 +722,16 @@ describe("ProjectA2aExecutor", () => {
       fakeStore(),
     );
     const bus = new CollectingBus();
-    await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+    await executor.execute(requestContext(userMessage("hi")), bus);
 
     const kinds = bus.events.map((event) => event.kind);
     expect(kinds[0]).toBe("task");
-    expect(kinds).toContain("artifact-update");
+    expect(kinds).toContain("artifactUpdate");
     const last = bus.events.at(-1);
-    expect(last?.kind).toBe("status-update");
-    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
+    expect(last?.kind).toBe("statusUpdate");
+    expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
 
-    const artifact = bus.events.find((event) => event.kind === "artifact-update");
-    expect(artifact && "artifact" in artifact ? artifact.artifact.parts : []).toEqual([
-      { kind: "text", text: "streamed answer" },
-    ]);
+    expect(artifactEvents(bus.events)[0]?.artifact?.parts).toEqual([textPart("streamed answer")]);
   });
 
   it("runs image projects through the image channel and publishes a file artifact", async () => {
@@ -677,17 +742,17 @@ describe("ProjectA2aExecutor", () => {
       fakeStore(),
     );
     const bus = new CollectingBus();
-    await executor.execute(new RequestContext(userMessage("고양이를 그려줘"), "t1", "c1"), bus);
+    await executor.execute(requestContext(userMessage("고양이를 그려줘")), bus);
 
-    const artifact = bus.events.find((event) => event.kind === "artifact-update");
-    expect(artifact && "artifact" in artifact ? artifact.artifact.parts : []).toEqual([
+    expect(artifactEvents(bus.events)[0]?.artifact?.parts).toEqual([
       {
-        kind: "file",
-        file: { bytes: "aW1n", mimeType: "image/png", name: "generated.png" },
+        content: { $case: "raw", value: Buffer.from("aW1n", "base64") },
+        mediaType: "image/png",
+        filename: "generated.png",
+        metadata: undefined,
       },
     ]);
-    const last = bus.events.at(-1);
-    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
+    expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
   });
 
   it("completes past an authored (subagent) error instead of failing the task", async () => {
@@ -718,14 +783,13 @@ describe("ProjectA2aExecutor", () => {
       fakeStore(),
     );
     const bus = new CollectingBus();
-    await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+    await executor.execute(requestContext(userMessage("hi")), bus);
 
     const last = bus.events.at(-1);
-    expect(last?.kind).toBe("status-update");
-    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
-    const artifact = bus.events.find((event) => event.kind === "artifact-update");
-    expect(artifact && "artifact" in artifact ? artifact.artifact.parts : []).toEqual([
-      { kind: "text", text: "recovered without the child" },
+    expect(last?.kind).toBe("statusUpdate");
+    expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+    expect(artifactEvents(bus.events)[0]?.artifact?.parts).toEqual([
+      textPart("recovered without the child"),
     ]);
   });
 
@@ -740,12 +804,12 @@ describe("ProjectA2aExecutor", () => {
       fakeStore(),
     );
     const bus = new CollectingBus();
-    await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+    await executor.execute(requestContext(userMessage("hi")), bus);
 
-    const last = bus.events.at(-1);
-    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
-    const message = last && "status" in last ? last.status.message : undefined;
-    const text = message?.parts.map((part) => (part.kind === "text" ? part.text : "")).join("");
+    expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+    const text = statusEvent(bus.events)?.status?.message?.parts
+      .map((part) => (part.content?.$case === "text" ? part.content.value : ""))
+      .join("");
     expect(text).toContain("turn limit");
   });
 });
@@ -772,7 +836,7 @@ describe("ProjectA2aExecutor conversation", () => {
       { kind: "a2a", id: "billing-bot" },
     );
     const bus = new CollectingBus();
-    await executor.execute(new RequestContext(userMessage("hi"), "t1", "ctx-77"), bus);
+    await executor.execute(requestContext(userMessage("hi"), "t1", "ctx-77"), bus);
 
     expect(traces[0]?.conversation).toBe("a2a:billing-bot:ctx-77");
   });
@@ -782,7 +846,8 @@ describe("ProjectA2aExecutor cancel", () => {
   it("persists a canceled state and publishes canceled on cancelTask", async () => {
     const saved: Task[] = [];
     const store = fakeStore({
-      load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "working" } }),
+      load: async () =>
+        taskFixture({ id: "t1", contextId: "c1", status: taskStatus(TaskState.TASK_STATE_WORKING) }),
       save: async (task: Task) => {
         saved.push(task);
       },
@@ -797,16 +862,16 @@ describe("ProjectA2aExecutor cancel", () => {
     await executor.cancelTask("t1", bus);
 
     expect(saved).toHaveLength(1);
-    expect(saved[0]?.status.state).toBe("canceled");
+    expect(saved[0]?.status?.state).toBe(TaskState.TASK_STATE_CANCELED);
     const last = bus.events.at(-1);
-    expect(last?.kind).toBe("status-update");
-    expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
+    expect(last?.kind).toBe("statusUpdate");
+    expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_CANCELED);
   });
 
   it("is a no-op when the task is already terminal", async () => {
     const save = vi.fn(async () => {});
     const store = fakeStore({
-      load: async () => taskFixture({ id: "t1", status: { state: "completed" } }),
+      load: async () => taskFixture({ id: "t1", status: taskStatus(TaskState.TASK_STATE_COMPLETED) }),
       save,
     });
     const executor = new ProjectA2aExecutor(
@@ -828,7 +893,8 @@ describe("ProjectA2aExecutor cancel", () => {
     // the authoritative store rather than the lagging local signal.
     const channel = new FakeChannel([[contentChunk("answer")]]);
     const store = fakeStore({
-      load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
+      load: async () =>
+        taskFixture({ id: "t1", contextId: "c1", status: taskStatus(TaskState.TASK_STATE_CANCELED) }),
     });
     const executor = new ProjectA2aExecutor(
       executionDepsFixture(channel),
@@ -837,15 +903,15 @@ describe("ProjectA2aExecutor cancel", () => {
       store,
     );
     const bus = new CollectingBus();
-    await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+    await executor.execute(requestContext(userMessage("hi")), bus);
 
-    const last = bus.events.at(-1);
-    expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
+    expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_CANCELED);
   });
 
   it("publishes canceled for an image run when a cancel raced into the store", async () => {
     const store = fakeStore({
-      load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
+      load: async () =>
+        taskFixture({ id: "t1", contextId: "c1", status: taskStatus(TaskState.TASK_STATE_CANCELED) }),
     });
     const executor = new ProjectA2aExecutor(
       executionDepsFixture(new FakeChannel([])),
@@ -854,10 +920,9 @@ describe("ProjectA2aExecutor cancel", () => {
       store,
     );
     const bus = new CollectingBus();
-    await executor.execute(new RequestContext(userMessage("draw"), "t1", "c1"), bus);
+    await executor.execute(requestContext(userMessage("draw")), bus);
 
-    const last = bus.events.at(-1);
-    expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
+    expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_CANCELED);
   });
 
   it("aborts a hung streaming run when a cancel is persisted (no new chunks)", async () => {
@@ -868,19 +933,19 @@ describe("ProjectA2aExecutor cancel", () => {
         channel: hangingChannel(),
       } as unknown as ExecutionDeps;
       const store = fakeStore({
-        load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
+        load: async () =>
+          taskFixture({ id: "t1", contextId: "c1", status: taskStatus(TaskState.TASK_STATE_CANCELED) }),
       });
       const executor = new ProjectA2aExecutor(deps, projectFixture(), versionFixture(), store);
       const bus = new CollectingBus();
-      const done = executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+      const done = executor.execute(requestContext(userMessage("hi")), bus);
       // The provider never yields; advance time so the background poll reads the
       // store, sees canceled, and aborts the run.
       await vi.advanceTimersByTimeAsync(2100);
       await done;
 
-      const last = bus.events.at(-1);
-      expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
-      expect(bus.events.some((event) => event.kind === "artifact-update")).toBe(false);
+      expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_CANCELED);
+      expect(bus.events.some((event) => event.kind === "artifactUpdate")).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -902,7 +967,8 @@ describe("ProjectA2aExecutor cancel", () => {
         imageChannel,
       } as unknown as ExecutionDeps;
       const store = fakeStore({
-        load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
+        load: async () =>
+          taskFixture({ id: "t1", contextId: "c1", status: taskStatus(TaskState.TASK_STATE_CANCELED) }),
       });
       const executor = new ProjectA2aExecutor(
         deps,
@@ -911,13 +977,12 @@ describe("ProjectA2aExecutor cancel", () => {
         store,
       );
       const bus = new CollectingBus();
-      const done = executor.execute(new RequestContext(userMessage("draw a cat"), "t1", "c1"), bus);
+      const done = executor.execute(requestContext(userMessage("draw a cat")), bus);
       await vi.advanceTimersByTimeAsync(2100);
       await done;
 
-      const last = bus.events.at(-1);
-      expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
-      expect(bus.events.some((event) => event.kind === "artifact-update")).toBe(false);
+      expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_CANCELED);
+      expect(bus.events.some((event) => event.kind === "artifactUpdate")).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -930,10 +995,25 @@ describe("buildAgentCard — what a peer needs to call us", () => {
   it("declares the X-A2A-Key scheme the endpoint requires, and what it can take", async () => {
     const card = await buildAgentCard(projectFixture({ projectType: "agent" }), versionFixture());
     expect(card.securitySchemes).toEqual({
-      a2aKey: { type: "apiKey", in: "header", name: "X-A2A-Key" },
+      a2aKey: {
+        scheme: {
+          $case: "apiKeySecurityScheme",
+          value: {
+            description: "Agent Studio A2A client key",
+            location: "header",
+            name: "X-A2A-Key",
+          },
+        },
+      },
     });
-    expect(card.security).toEqual([{ a2aKey: [] }]);
-    expect(card.capabilities).toEqual({ streaming: true, pushNotifications: false, stateTransitionHistory: false });
+    expect(card.securityRequirements).toEqual([
+      { schemes: { a2aKey: { list: [] } } },
+    ]);
+    expect(card.capabilities).toEqual({
+      streaming: true,
+      pushNotifications: false,
+      extensions: [],
+    });
     expect(card.defaultInputModes).toEqual(["text/plain", "image/png", "image/jpeg", "image/webp"]);
     expect(card.skills[0]?.tags).toEqual(["agent-studio", "agent"]);
     // An image project takes a picture to edit beside its prompt.
@@ -953,16 +1033,7 @@ describe("sendA2aMessage — the task's state decides", () => {
       sseResponse(
         sseFrames(id, [
           TASK_EVENT,
-          {
-            kind: "status-update",
-            taskId: "t1",
-            contextId: "c1",
-            final: true,
-            status: {
-              state: "failed",
-              message: { kind: "message", role: "agent", messageId: "e1", parts: [{ kind: "text", text: "Agent execution error: boom" }] },
-            },
-          },
+          statusWire(TaskState.TASK_STATE_FAILED, "Agent execution error: boom"),
         ]),
       ),
     );
@@ -977,16 +1048,7 @@ describe("sendA2aMessage — the task's state decides", () => {
       sseResponse(
         sseFrames(id, [
           TASK_EVENT,
-          {
-            kind: "status-update",
-            taskId: "t1",
-            contextId: "c1",
-            final: true,
-            status: {
-              state: "input-required",
-              message: { kind: "message", role: "agent", messageId: "q1", parts: [{ kind: "text", text: "Which year?" }] },
-            },
-          },
+          statusWire(TaskState.TASK_STATE_INPUT_REQUIRED, "Which year?"),
         ]),
       ),
     );
@@ -1009,17 +1071,7 @@ describe("sendA2aMessage — the task's state decides", () => {
 
   it("refuses a card whose endpoint is on another origin, before any credential is sent", async () => {
     const methods = stubRemote(
-      Response.json({
-        protocolVersion: "0.3.0",
-        name: "Remote",
-        description: "",
-        url: "https://elsewhere.test/a2a",
-        version: "1",
-        capabilities: { streaming: true },
-        defaultInputModes: ["text/plain"],
-        defaultOutputModes: ["text/plain"],
-        skills: [],
-      }),
+      Response.json(AgentCard.toJSON(cardFixture(true, "https://elsewhere.test/a2a"))),
       (_method, id) => sseResponse(sseFrames(id, [TASK_EVENT, FINAL_STATUS])),
     );
     const result = await sendA2aMessage(RPC_URL, { Authorization: "Bearer secret" }, "hello");
@@ -1030,15 +1082,21 @@ describe("sendA2aMessage — the task's state decides", () => {
   it("follows a blocking send that was answered with a live task until it settles", async () => {
     vi.useFakeTimers();
     const methods = stubRemote(agentCard(false), (method, id) => {
-      if (method === "message/send") {
-        return Response.json({ jsonrpc: "2.0", id, result: { ...TASK_EVENT, status: { state: "submitted" } } });
+      if (method === "SendMessage") {
+        return Response.json({
+          jsonrpc: "2.0",
+          id,
+          result: sendMessageResult(
+            taskFixture({ status: taskStatus(TaskState.TASK_STATE_SUBMITTED) }),
+          ),
+        });
       }
       return Response.json({ jsonrpc: "2.0", id, result: FINAL_TASK });
     });
     const pending = sendA2aMessage(RPC_URL, {}, "hello");
     await vi.advanceTimersByTimeAsync(2_000);
     await expect(pending).resolves.toMatchObject({ ok: true, text: "the answer" });
-    expect(methods).toEqual(["message/send", "tasks/get"]);
+    expect(methods).toEqual(["SendMessage", "GetTask"]);
   });
 
   it("stops a reply that grows past the bound instead of holding it", async () => {
@@ -1046,12 +1104,7 @@ describe("sendA2aMessage — the task's state decides", () => {
       sseResponse(
         sseFrames(id, [
           TASK_EVENT,
-          {
-            kind: "artifact-update",
-            taskId: "t1",
-            contextId: "c1",
-            artifact: { artifactId: "big", parts: [{ kind: "text", text: "x".repeat(2 * 1024 * 1024 + 1) }] },
-          },
+          artifactWire("big", "x".repeat(2 * 1024 * 1024 + 1)),
           FINAL_STATUS,
         ]),
       ),
@@ -1083,18 +1136,20 @@ describe("ProjectA2aExecutor — what a message may carry", () => {
     );
     const bus = new CollectingBus();
     const message: Message = {
-      kind: "message",
-      messageId: "m1",
-      role: "user",
+      ...messageFixture("make it blue"),
       parts: [
-        { kind: "text", text: "make it blue" },
-        { kind: "file", file: { bytes: "AAAA", mimeType: "image/png", name: "p.png" } },
+        textPart("make it blue"),
+        {
+          content: { $case: "raw", value: Buffer.from("AAAA", "base64") },
+          mediaType: "image/png",
+          filename: "p.png",
+          metadata: undefined,
+        },
       ],
     };
-    await executor.execute(new RequestContext(message, "t1", "c1"), bus);
+    await executor.execute(requestContext(message), bus);
     expect(sources).toEqual([{ b64: "AAAA", mimeType: "image/png" }]);
-    const last = bus.events.at(-1);
-    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
+    expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
   });
 
   it("hands an image file part to the model beside the text, and closes the artifact", async () => {
@@ -1107,24 +1162,26 @@ describe("ProjectA2aExecutor — what a message may carry", () => {
     );
     const bus = new CollectingBus();
     const message: Message = {
-      kind: "message",
-      messageId: "m1",
-      role: "user",
+      ...messageFixture("what is this?"),
       parts: [
-        { kind: "text", text: "what is this?" },
-        { kind: "file", file: { bytes: "AAAA", mimeType: "image/png", name: "p.png" } },
+        textPart("what is this?"),
+        {
+          content: { $case: "raw", value: Buffer.from("AAAA", "base64") },
+          mediaType: "image/png",
+          filename: "p.png",
+          metadata: undefined,
+        },
       ],
     };
-    await executor.execute(new RequestContext(message, "t1", "c1"), bus);
+    await executor.execute(requestContext(message), bus);
 
     const sent = channel.seenParams[0]!.messages.at(-1)!.content;
     expect(sent).toEqual([
       { type: "text", text: "what is this?" },
       { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
     ]);
-    const updates = bus.events.filter((event) => event.kind === "artifact-update");
-    const last = updates.at(-1);
-    expect(last && "lastChunk" in last ? last.lastChunk : undefined).toBe(true);
-    expect(last && "append" in last ? last.append : undefined).toBe(true);
+    const last = artifactEvents(bus.events).at(-1);
+    expect(last?.lastChunk).toBe(true);
+    expect(last?.append).toBe(false);
   });
 });

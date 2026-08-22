@@ -32,7 +32,7 @@ import {
   setCachedFailure,
   setCachedTools,
 } from "./discoveryCache";
-import { isScopeChallenge, isUnauthorized, McpSession, unusableServerReason, type McpTool } from "./session";
+import { isUnauthorized, McpSession, scopeChallengeOf, unusableServerReason, type McpTool } from "./session";
 import { log } from "@/shared/logger";
 import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
 
@@ -195,7 +195,7 @@ export class ToolManager {
           // A 403 that names scopes is not the server being down and not the
           // token being refused outright: it is the project's grant being too
           // narrow, which the project can fix — with the scopes the server named.
-          const stepUp = isScopeChallenge(session.challenge) ? session.challenge : undefined;
+          const stepUp = scopeChallengeOf(error);
           log.warn(
             "mcp",
             `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
@@ -438,7 +438,7 @@ export class ToolManager {
       };
     } catch (error) {
       this.signal?.throwIfAborted();
-      const stepUp = isScopeChallenge(session.challenge) ? session.challenge : undefined;
+      const stepUp = scopeChallengeOf(error);
       if (isUnauthorized(error) || stepUp) {
         // Discovery is cached, so a run whose cache is warm makes its first
         // request *here* — meaning this is the only place a token revoked since

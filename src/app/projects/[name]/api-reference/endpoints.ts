@@ -62,11 +62,10 @@ export function aguiClientExample(url: string): string {
     "const agent = new HttpAgent({",
     `  url: "${url}",`,
     `  headers: { Authorization: "Bearer ${PLACEHOLDERS.token}" },`,
+    '  initialMessages: [{ id: crypto.randomUUID(), role: "user", content: "Hello" }],',
     "});",
     "",
-    "const result = await agent.runAgent({",
-    '  tools: [{ name: "showMap", description: "Show a place on the map", parameters: { type: "object", properties: { place: { type: "string" } } } }],',
-    "});",
+    "const result = await agent.runAgent();",
     "console.log(result.newMessages);",
   ].join("\n");
 }
@@ -574,7 +573,13 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       responseExample: pretty({
         name: projectName,
         description: "…",
-        url: abs(`/api/a2a/${projectName}`),
+        supportedInterfaces: [
+          {
+            url: abs(`/api/a2a/${projectName}`),
+            protocolBinding: "JSONRPC",
+            protocolVersion: "1.0",
+          },
+        ],
       }),
       errorCodes: [404],
       codeExamples: [curlExample({ method: "GET", url: abs(cardPath), auth: "public" })],
@@ -584,8 +589,14 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     const rpcBody = {
       jsonrpc: "2.0",
       id: 1,
-      method: "message/send",
-      params: { message: { role: "user", parts: [{ kind: "text", text: "hi" }] } },
+      method: "SendMessage",
+      params: {
+        message: {
+          messageId: "message-1",
+          role: "ROLE_USER",
+          parts: [{ text: "hi", mediaType: "text/plain" }],
+        },
+      },
     };
     endpoints.push({
       id: "a2a-rpc",
@@ -593,16 +604,30 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: rpcPath,
       title: "A2A JSON-RPC",
       description:
-        "JSON-RPC endpoint (message/send, message/stream, tasks/get, tasks/cancel), authenticated with the X-A2A-Key header.",
+        "A2A 1.0 JSON-RPC endpoint, authenticated with X-A2A-Key and negotiated with A2A-Version: 1.0.",
       auth: "a2a-key",
       streaming: false,
       requestFields: [
         { name: "jsonrpc", type: "string", required: true, description: 'Must be "2.0".' },
-        { name: "method", type: "string", required: true, description: "message/send | message/stream | tasks/get | tasks/cancel." },
+        {
+          name: "method",
+          type: "string",
+          required: true,
+          description:
+            "SendMessage | SendStreamingMessage | GetTask | CancelTask | ResubscribeTask | ListTasks.",
+        },
         { name: "params", type: "object", required: true, description: "Method params (e.g. the A2A message)." },
       ],
       errorCodes: [401, 503],
-      codeExamples: [curlExample({ method: "POST", url: abs(rpcPath), auth: "a2a-key", body: rpcBody })],
+      codeExamples: [
+        curlExample({
+          method: "POST",
+          url: abs(rpcPath),
+          auth: "a2a-key",
+          body: rpcBody,
+          extraHeaders: { "A2A-Version": "1.0" },
+        }),
+      ],
     });
   }
 

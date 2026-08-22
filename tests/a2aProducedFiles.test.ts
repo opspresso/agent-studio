@@ -10,11 +10,17 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { Task } from "@a2a-js/sdk";
 import type { AgentExecutionEvent, ExecutionEventBus } from "@a2a-js/sdk/server";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
+import {
+  artifactEvents,
+  fakeTaskStore,
+  messageFixture,
+  requestContext,
+  statusEvent,
+} from "./a2aFixtures";
 
 const { chunks } = vi.hoisted(() => ({ chunks: [] as EngineChunk[] }));
 
@@ -28,7 +34,6 @@ vi.mock("@/application/execution/runProject", async (importOriginal) => ({
 }));
 
 const { ProjectA2aExecutor } = await import("@/application/a2a/executor");
-const { RequestContext } = await import("@a2a-js/sdk/server");
 
 const project: Project = {
   name: "reporter",
@@ -89,21 +94,12 @@ function depsWith(artifacts: unknown): ExecutionDeps {
   return { artifacts } as unknown as ExecutionDeps;
 }
 
-function userMessage(text: string) {
-  return {
-    kind: "message" as const,
-    messageId: "m1",
-    role: "user" as const,
-    parts: [{ kind: "text" as const, text }],
-  };
-}
-
-const store = { load: async (): Promise<Task | undefined> => undefined, save: async () => {} };
+const store = fakeTaskStore();
 
 async function run(deps: ExecutionDeps): Promise<CollectingBus> {
   const executor = new ProjectA2aExecutor(deps, project, version, store);
   const bus = new CollectingBus();
-  await executor.execute(new RequestContext(userMessage("write the report"), "t1", "c1"), bus);
+  await executor.execute(requestContext(messageFixture("write the report")), bus);
   return bus;
 }
 
@@ -115,21 +111,16 @@ describe("a file a run produced, on the A2A surface", () => {
       depsWith({ objects: { sign: async (key: string) => `https://signed/${key}` } }),
     );
 
-    const parts = bus.events
-      .filter((event) => event.kind === "artifact-update")
-      .flatMap((event) => ("artifact" in event ? event.artifact.parts : []));
+    const parts = artifactEvents(bus.events).flatMap((event) => event.artifact?.parts ?? []);
     // `bytes` is not an option — the bracket stored the document and dropped the
     // payload long before this saw it.
     expect(parts).toContainEqual({
-      kind: "file",
-      file: {
-        uri: "https://signed/objects/report.docx",
-        mimeType: "application/msword",
-        name: "report.docx",
-      },
+      content: { $case: "url", value: "https://signed/objects/report.docx" },
+      mediaType: "application/msword",
+      filename: "report.docx",
+      metadata: undefined,
     });
-    const last = bus.events.at(-1);
-    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
+    expect(statusEvent(bus.events)?.status?.state).toBe(3);
   });
 
   it("completes with the reason instead when there is no address to give", async () => {
@@ -137,18 +128,14 @@ describe("a file a run produced, on the A2A surface", () => {
     chunks.push(rendered, { done: true });
     const bus = await run(depsWith(undefined));
 
-    const parts = bus.events
-      .filter((event) => event.kind === "artifact-update")
-      .flatMap((event) => ("artifact" in event ? event.artifact.parts : []));
+    const parts = artifactEvents(bus.events).flatMap((event) => event.artifact?.parts ?? []);
     expect(parts).toEqual([]);
     // The task still completed — the run did what it was asked — but a caller
     // reading a bare artifact must be able to tell this from a run that had
     // nothing to produce.
-    const last = bus.events.at(-1);
-    const message =
-      last && "status" in last && last.status.message
-        ? last.status.message.parts.map((part) => (part.kind === "text" ? part.text : "")).join("")
-        : "";
+    const message = statusEvent(bus.events)?.status?.message?.parts
+      .map((part) => (part.content?.$case === "text" ? part.content.value : ""))
+      .join("");
     expect(message).toContain("were not kept");
   });
 });

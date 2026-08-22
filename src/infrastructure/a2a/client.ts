@@ -5,7 +5,7 @@
  * precedence over the final status message, which some remote agents use to
  * repeat or summarize artifact content).
  *
- * **Streaming is what lets a long delegation finish.** A blocking `message/send`
+ * **Streaming is what lets a long delegation finish.** A blocking `SendMessage`
  * puts nothing on the connection while the remote works, and a gateway reads
  * that silence as idle and cuts it — a remote investigation that runs for
  * minutes returns a timeout rather than an answer. Status updates keep bytes
@@ -21,13 +21,21 @@
 import type {
   AgentCard,
   Message,
-  MessageSendParams,
   Part,
+  SendMessageRequest,
+  StreamResponse,
   Task,
   TaskArtifactUpdateEvent,
 } from "@a2a-js/sdk";
-import { A2AClient } from "@a2a-js/sdk/client";
-import { awaitsInput, isFailedTaskState, isLiveTaskState, isTerminalTaskState } from "@/domain/a2a/task";
+import { A2A_PROTOCOL_VERSION, A2A_VERSION_HEADER, Part as PartCodec, Role, TaskState } from "@a2a-js/sdk";
+import {
+  ClientFactory,
+  DefaultAgentCardResolver,
+  JsonRpcTransportFactory,
+  type Client,
+} from "@a2a-js/sdk/client";
+import { awaitsInput, isFailedTaskState, isLiveTaskState, isTerminalTaskState, taskStateName } from "@/domain/a2a/task";
+import { partText, textPart, userMessage } from "@/domain/a2a/protocol";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
 
@@ -100,23 +108,22 @@ export function normalizeAgentCardUrl(url: string): string {
 }
 
 function partsText(parts: Part[]): string {
-  return parts.map((part) => (part.kind === "text" ? part.text : "")).join("");
+  return parts.map(partText).join("");
 }
 
 function partsImages(parts: Part[]): A2aImage[] {
   return parts.flatMap((part) => {
-    if (part.kind !== "file" || !("bytes" in part.file)) {
+    if (part.content?.$case !== "raw") {
       return [];
     }
-    const file = part.file;
-    if (!file.mimeType?.startsWith("image/")) {
+    if (!part.mediaType.startsWith("image/")) {
       return [];
     }
     return [
       {
-        b64: file.bytes,
-        mimeType: file.mimeType,
-        ...(file.name ? { name: file.name } : {}),
+        b64: Buffer.from(part.content.value).toString("base64"),
+        mimeType: part.mediaType,
+        ...(part.filename ? { name: part.filename } : {}),
       },
     ];
   });
@@ -124,18 +131,22 @@ function partsImages(parts: Part[]): A2aImage[] {
 
 /** What a reply weighs, counted as the bytes its parts serialise to. */
 function partsBytes(parts: Part[]): number {
-  return parts.reduce((total, part) => total + JSON.stringify(part).length, 0);
+  return parts.reduce(
+    (total, part) =>
+      total + Buffer.byteLength(JSON.stringify(PartCodec.toJSON(part)), "utf8"),
+    0,
+  );
 }
 
 function resultParts(result: Message | Task): Part[] {
-  if (result.kind === "message") {
+  if ("messageId" in result) {
     return result.parts;
   }
   return (result.artifacts ?? []).flatMap((artifact) => artifact.parts);
 }
 
 export function extractA2aText(result: Message | Task): string {
-  if (result.kind === "message") {
+  if ("messageId" in result) {
     return partsText(result.parts);
   }
   const artifactText = (result.artifacts ?? [])
@@ -144,14 +155,14 @@ export function extractA2aText(result: Message | Task): string {
   if (artifactText) {
     return artifactText;
   }
-  if (result.status.message) {
+  if (result.status?.message) {
     const statusText = partsText(result.status.message.parts);
     if (statusText) {
       return statusText;
     }
   }
   for (const message of [...(result.history ?? [])].reverse()) {
-    if (message.role === "agent") {
+    if (message.role === Role.ROLE_AGENT) {
       const text = partsText(message.parts);
       if (text) {
         return text;
@@ -178,24 +189,30 @@ type TaskArtifact = NonNullable<Task["artifacts"]>[number];
 function ensureTask(task: Task | null, event: { taskId: string; contextId: string }): Task {
   return (
     task ?? {
-      kind: "task",
       id: event.taskId,
       contextId: event.contextId,
-      status: { state: "working" },
+      status: { state: TaskState.TASK_STATE_WORKING, message: undefined, timestamp: undefined },
+      artifacts: [],
+      history: [],
+      metadata: undefined,
     }
   );
 }
 
 /** `append` continues an artifact already sent; anything else replaces it. */
 function mergeArtifact(task: Task, event: TaskArtifactUpdateEvent): Task {
+  if (!event.artifact) {
+    return task;
+  }
+  const update = event.artifact;
   const artifacts = task.artifacts ?? [];
-  const existing = artifacts.find((a) => a.artifactId === event.artifact.artifactId);
+  const existing = artifacts.find((a) => a.artifactId === update.artifactId);
   if (!existing) {
-    return { ...task, artifacts: [...artifacts, event.artifact] };
+    return { ...task, artifacts: [...artifacts, update] };
   }
   const merged: TaskArtifact = event.append
-    ? { ...existing, ...event.artifact, parts: [...existing.parts, ...event.artifact.parts] }
-    : event.artifact;
+    ? { ...existing, ...update, parts: [...existing.parts, ...update.parts] }
+    : update;
   return { ...task, artifacts: artifacts.map((a) => (a === existing ? merged : a)) };
 }
 
@@ -215,8 +232,8 @@ interface StreamCollected {
  * answers identical.
  */
 async function collectStream(
-  client: A2AClient,
-  params: MessageSendParams,
+  client: Client,
+  params: SendMessageRequest,
   onEvent: () => void,
   idle: AbortSignal,
   caller?: AbortSignal,
@@ -227,17 +244,25 @@ async function collectStream(
   // event; an upper bound, since a replaced artifact is counted again.
   let received = 0;
   try {
-    for await (const event of client.sendMessageStream(params)) {
+    for await (const response of client.sendMessageStream(params)) {
       onEvent();
-      switch (event.kind) {
+      const payload = response.payload;
+      if (!payload) {
+        continue;
+      }
+      switch (payload.$case) {
         case "message":
-          message = event;
+          message = payload.value;
           break;
         case "task":
-          task = event;
+          task = payload.value;
           break;
-        case "status-update": {
+        case "statusUpdate": {
+          const event = payload.value;
           const base = ensureTask(task, event);
+          if (!event.status) {
+            break;
+          }
           task = {
             ...base,
             status: event.status,
@@ -259,16 +284,17 @@ async function collectStream(
            * would otherwise cost the whole idle bound — and then time out with
            * the finished answer already in hand.
            */
-          if (event.final) {
+          if (isTerminalTaskState(event.status.state) || awaitsInput(event.status.state)) {
             return { result: task };
           }
           break;
         }
-        case "artifact-update":
+        case "artifactUpdate": {
+          const event = payload.value;
           task = mergeArtifact(ensureTask(task, event), event);
           // Bounded as it accumulates, not after: the whole point of a bound
           // on a streamed reply is that it stops the stream.
-          received += partsBytes(event.artifact.parts);
+          received += partsBytes(event.artifact?.parts ?? []);
           if (received > MAX_REPLY_BYTES) {
             return {
               result: null,
@@ -276,6 +302,7 @@ async function collectStream(
             };
           }
           break;
+        }
       }
     }
   } catch (error) {
@@ -285,7 +312,7 @@ async function collectStream(
      * SDK cannot parse, must not discard a task that is already complete.
      * Anything short of terminal is a genuine loss and reported as one.
      */
-    if (task && isTerminalTaskState(task.status.state)) {
+    if (task?.status && isTerminalTaskState(task.status.state)) {
       return { result: task };
     }
     return { result: null, error: errorText(error, idle, caller) };
@@ -301,7 +328,9 @@ async function collectStream(
  * the SDK helper does — it ends in this same constructor.
  */
 async function loadAgentCard(cardUrl: string, fetchImpl: typeof fetch): Promise<AgentCard> {
-  const response = await fetchImpl(cardUrl, { headers: { Accept: "application/json" } });
+  const response = await fetchImpl(cardUrl, {
+    headers: { Accept: "application/json", [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION },
+  });
   if (!response.ok) {
     throw new Error(
       `Failed to fetch Agent Card from ${cardUrl}: ${response.status} ${response.statusText}`,
@@ -309,9 +338,9 @@ async function loadAgentCard(cardUrl: string, fetchImpl: typeof fetch): Promise<
   }
   const body = await readBodyText(response, MAX_CARD_BYTES);
   try {
-    return JSON.parse(body) as AgentCard;
+    return new DefaultAgentCardResolver().normalizeAgentCard(JSON.parse(body));
   } catch {
-    throw new Error(`Agent Card at ${cardUrl} is not JSON`);
+    throw new Error(`Agent Card at ${cardUrl} is not a valid A2A 1.0 Agent Card`);
   }
 }
 
@@ -328,10 +357,10 @@ function toResult(result: Message | Task): A2aSendResult {
     return { ok: false, error: `A2A reply exceeds ${MAX_REPLY_BYTES / (1024 * 1024)}MB` };
   }
   const text = extractA2aText(result);
-  if (result.kind === "task") {
+  if (!("messageId" in result) && result.status) {
     const state = result.status.state;
     if (isFailedTaskState(state)) {
-      return { ok: false, error: `Remote task ${state}${text ? `: ${text}` : ""}` };
+      return { ok: false, error: `Remote task ${taskStateName(state)}${text ? `: ${text}` : ""}` };
     }
     if (awaitsInput(state)) {
       return {
@@ -343,7 +372,11 @@ function toResult(result: Message | Task): A2aSendResult {
   }
   const images = extractA2aImages(result);
   if (!text && images.length === 0) {
-    const state = result.kind === "task" ? result.status.state : "message";
+    const state = "messageId" in result
+      ? "message"
+      : result.status
+        ? taskStateName(result.status.state)
+        : "unspecified";
     return { ok: false, error: `A2A reply contained no supported content (state: ${state})` };
   }
   // Both shapes carry one; the field is optional on a message and the SDK
@@ -395,18 +428,16 @@ export async function sendA2aMessage(
       signal: requestSignal,
     });
 
-  const params: MessageSendParams = {
-    message: {
-      kind: "message",
-      messageId: crypto.randomUUID(),
-      role: "user",
-      parts: [{ kind: "text", text: message }],
-      ...(options.contextId ? { contextId: options.contextId } : {}),
-      ...(options.taskId ? { taskId: options.taskId } : {}),
-    },
+  const params: SendMessageRequest = {
+    tenant: "",
+    message: userMessage(crypto.randomUUID(), [textPart(message)], options),
     configuration: {
       acceptedOutputModes: ["text/plain", "image/png", "image/jpeg", "image/webp"],
+      taskPushNotificationConfig: undefined,
+      historyLength: undefined,
+      returnImmediately: false,
     },
+    metadata: undefined,
   };
 
   try {
@@ -417,14 +448,20 @@ export async function sendA2aMessage(
     // that reason, and a card naming another origin as its endpoint is the
     // same thing said in JSON: a card is a document a third party serves.
     const cardOrigin = new URL(cardUrl).origin;
-    const endpointOrigin = safeOrigin(card.url);
+    const jsonRpcInterface = card.supportedInterfaces.find(
+      (entry) => entry.protocolBinding === "JSONRPC" && entry.protocolVersion === A2A_PROTOCOL_VERSION,
+    );
+    const endpointOrigin = safeOrigin(jsonRpcInterface?.url ?? "");
     if (endpointOrigin !== cardOrigin) {
       return {
         ok: false,
         error: `Agent Card names an endpoint on ${endpointOrigin ?? "an unreadable address"}, not on ${cardOrigin}; the registered headers are not sent there`,
       };
     }
-    const client = new A2AClient(card, { fetchImpl });
+    const client = await new ClientFactory({
+      transports: [new JsonRpcTransportFactory({ fetchImpl })],
+      preferredTransports: ["JSONRPC"],
+    }).createFromAgentCard(card);
     keepAwake();
     if (card.capabilities?.streaming) {
       const streamed = await collectStream(client, params, keepAwake, controller.signal, signal);
@@ -433,14 +470,8 @@ export async function sendA2aMessage(
         : { ok: false, error: streamed.error ?? "A2A stream ended with no reply" };
     }
     // No events to reset the idle bound, so here it is the whole-request one.
-    const response = await client.sendMessage({
-      ...params,
-      configuration: { ...params.configuration, blocking: true },
-    });
-    if ("error" in response) {
-      return { ok: false, error: `A2A error ${response.error.code}: ${response.error.message}` };
-    }
-    return toResult(await settled(client, response.result, requestSignal));
+    const response = await client.sendMessage(params, { signal: requestSignal });
+    return toResult(await settled(client, response, requestSignal));
   } catch (error) {
     return { ok: false, error: errorText(error, controller.signal, signal) };
   } finally {
@@ -460,18 +491,14 @@ function safeOrigin(url: string): string | undefined {
 /**
  * A blocking send may be answered with a task still running — the protocol
  * lets a server return early and expects the caller to poll — so a live task
- * is followed through `tasks/get` until it settles. Bounded by the request's
+ * is followed through `GetTask` until it settles. Bounded by the request's
  * own signals: the idle timer is the whole-request bound on this path.
  */
-async function settled(client: A2AClient, result: Message | Task, signal: AbortSignal): Promise<Message | Task> {
+async function settled(client: Client, result: Message | Task, signal: AbortSignal): Promise<Message | Task> {
   let current = result;
-  while (current.kind === "task" && isLiveTaskState(current.status.state)) {
+  while (!("messageId" in current) && current.status && isLiveTaskState(current.status.state)) {
     await sleepUnlessAborted(TASK_POLL_MS, signal);
-    const polled = await client.getTask({ id: current.id });
-    if ("error" in polled) {
-      throw new Error(`A2A error ${polled.error.code}: ${polled.error.message}`);
-    }
-    current = polled.result;
+    current = await client.getTask({ tenant: "", id: current.id, historyLength: undefined }, { signal });
   }
   return current;
 }

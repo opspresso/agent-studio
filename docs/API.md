@@ -1448,8 +1448,9 @@ GET  /api/models/selfhosted → 200 { served: [ { name, contextWindow?, vision? 
 ```
 GET  /api/a2a                                           (session) → { enabled, projects }
 GET  /api/a2a/{project}/.well-known/agent-card.json     (public)
-POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send, message/stream,
-                                                         tasks/get, tasks/cancel)
+POST /api/a2a/{project}     X-A2A-Key: <key>            (A2A 1.0 JSON-RPC: SendMessage,
+                            A2A-Version: 1.0             SendStreamingMessage, GetTask,
+                                                         CancelTask, ResubscribeTask, ListTasks)
 ```
 
 `GET /api/a2a` 는 A2A 로 노출된 publish 된 project 들을 나열한다: `enabled` 는 그 표면이 켜져
@@ -1459,18 +1460,19 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send,
 `503` (설정되지 않음) 은 표면이 완전히 꺼져 있을 때만 답한다: 공유 키도 없고 **그리고** 클라이언트
 키도 없을 때다. 켜져 있는 표면에서 키가 틀리거나 없으면 `401` 이다 — 공유 키는 상수 시간으로
 비교하고, 클라이언트 키는 해시로 해석한다. 그 401 은 `WWW-Authenticate: ApiKey realm="a2a",
-header="X-A2A-Key"` 를 싣고, Agent Card 는 같은 스킴을 `securitySchemes`/`security` 로 선언한다 —
-`card.security` 에서 자격 증명을 고르는 클라이언트가 그것을 읽는다.
+header="X-A2A-Key"` 를 싣고, Agent Card 는 같은 스킴을
+`securitySchemes`/`securityRequirements` 로 선언한다 — 표준 클라이언트가 이 요구사항을 읽어
+자격 증명을 고른다.
 
-메시지는 `text` part 와 `image/*` file part(bytes 또는 https uri)를 실을 수 있다 — card 의
-`defaultInputModes` 가 그것을 말한다. `data` part 나 다른 타입의 file part 는
-`ContentTypeNotSupported` (`-32005`) 로 거절된다. `taskId` 로 아직 `working` 인 task 를 이어 가는
+메시지는 A2A 1.0 `Part` 의 `text`, 또는 `image/*` 인 `raw`/https `url` 을 실을 수 있다. 단 image
+project 는 편집 원본을 바이트로 받아야 하므로 `raw` 만 받는다. `data`, 다른 media type, 지원하지
+않는 URL part 는 `ContentTypeNotSupported` (`-32005`) 로 거절된다. `taskId` 로 아직 working 인 task 를 이어 가는
 메시지는 `-32602` 로 거절된다: 이 agent 는 메시지마다 자기 task 를 돌리고 `input-required` 에
-들어가지 않으므로, 대화를 잇는 것은 `contextId` 다. `message/stream` 과 `tasks/resubscribe` 가
+들어가지 않으므로, 대화를 잇는 것은 `contextId` 다. `SendStreamingMessage` 와 `ResubscribeTask` 가
 첫 이벤트 전에 거절되면 JSON-RPC 에러 객체(200)로 답하고, 스트림 도중의 실패는 JSON-RPC 에러
-프레임이다. `tasks/resubscribe` 는 저장된 task 를 따라간다 — 스냅샷, 그 뒤 도착하는 artifact,
+프레임이다. `ResubscribeTask` 는 저장된 task 를 따라간다 — 스냅샷, 그 뒤 도착하는 artifact,
 종단 status — 런을 돌리는 인스턴스가 달라도 동작한다. `result` artifact 의 마지막 조각은
-`lastChunk: true` 인 빈 append 다.
+비어 있지 않은 실제 artifact 이고 `lastChunk: true` 다. A2A 1.0은 빈 Artifact 를 허용하지 않는다.
 
 제시된 키는 공유 `A2A_API_KEY` (런은 `a2a:shared-key` 에 귀속) 이거나 **이름 붙은 클라이언트
 키** (`asc_…`, 런은 `a2a:{client}` 에 귀속 — 클라이언트별 귀속과 동시성 한도) 일 수 있다.
@@ -1486,10 +1488,13 @@ POST   /api/settings/a2a-keys/{name}/reveal    (admin) → { key, createdAt }   
 클라이언트 키의 `name` 은 최대 64자의 slug 이고 `shared-key` 는 앱 전역 키를 위해 예약돼 있다.
 각각 어기면 `400` 이다. 이미 발급된 이름은 `409` 다.
 
-Agent Card URL 은 `PUBLIC_BASE_URL` 로 만들어진다. Task 상태(`message/send` →
-`tasks/get`/`tasks/cancel`)는 project 별로 DynamoDB 에 저장되므로 재배포를 넘어 살아남고 인스턴스
-간에 공유된다. 종단 상태를 지키는 조건부 쓰기가, 동시에 일어난 complete/cancel 이 끝난 task 를
-되돌리는 것을 막는다. 행은 TTL(`A2A_TASK_RETENTION_DAYS`, 기본 1일)로 만료된다.
+Agent Card URL 은 `PUBLIC_BASE_URL` 로 만들어진다. Task 상태(`SendMessage` →
+`GetTask`/`CancelTask`/`ListTasks`)는 project·tenant·인증된 client 별로 DynamoDB 에 격리되어
+저장되므로 재배포를 넘어 살아남고 인스턴스 간에 공유된다. 종단 상태를 지키는 조건부 쓰기가,
+동시에 일어난 complete/cancel 이 끝난 task 를 되돌리는 것을 막는다. 행은
+TTL(`A2A_TASK_RETENTION_DAYS`, 기본 1일)로 만료된다. `ListTasks` 는 status timestamp 내림차순이고
+같은 timestamp 에서는 task id 로 순서를 고정하며, opaque cursor 를 써서 페이지 사이에 새 task 가
+생겨도 앞 페이지의 항목이 중복되지 않는다.
 
 ## AG-UI (인바운드)
 
@@ -1514,14 +1519,18 @@ assistant 턴의 `reasoning_content` 가 되고, `activity` 는 받되 버린다
 `text`, `image` (`data` 소스 또는 https `url` 소스, 메시지당 `MAX_ATTACHMENTS` 개), `document`
 (`data` 소스만, `metadata.name`/`filename` 이 이름, 메시지당 `MAX_DOCUMENTS` 개 — chat 첨부와
 같은 추출기로 텍스트가 된다) 이고, audio·video 와 URL 로 온 document 는 400 이다.
+interrupt 상태를 이어 가는 구현은 아직 없으므로 `resume` 이 있으면 400 이다. 값을 무시하고 새
+런으로 실행하지 않는다.
 
 응답 스트림: `RUN_STARTED` → (`TEXT_MESSAGE_*` | `REASONING_*` | `TOOL_CALL_START/ARGS/END` +
 `TOOL_CALL_RESULT` | `STEP_STARTED/FINISHED` | `ACTIVITY_SNAPSHOT` | `CUSTOM`)* → `RUN_FINISHED`
 또는 `RUN_ERROR`. 한 턴의 모든 `TOOL_CALL_START` 는 그 턴의 assistant 메시지 id 를
 `parentMessageId` 로 싣는다(턴이 말을 하지 않았어도). `RUN_FINISHED` 는
 `outcome: { type: "success" }`, `result: { termination, warnings }` (`termination` 은 `completed` /
-`turn-limit` / `output-limit`), `usage: [{ model, inputTokens, outputTokens, totalTokens,
-reasoningTokens?, cachedInputTokens? }]` 를 싣는다. `RUN_ERROR` 의 `code` 는 타입이 있는 실패의
+`turn-limit` / `output-limit`), `usage: [{ inputTokens, outputTokens, totalTokens,
+reasoningTokens?, cachedInputTokens? }]` 를 싣는다. usage 는 fallback·subagent 를 포함한 모든
+모델 호출의 합계이고, 청크가 실제 모델을 밝히지 않으므로 잘못 귀속하지 않도록 `model` 을 붙이지
+않는다. `RUN_ERROR` 의 `code` 는 타입이 있는 실패의
 클래스명(`RateLimitedError`, `UpstreamError` 등)이다. 런이 만든 그림과 파일은
 `ACTIVITY_SNAPSHOT` — `activityType` 이 `agent-studio.image` (`content: { mimeType, dataUrl,
 prompt?, model?, artifactId? }`) 또는 `agent-studio.file` (`content: { name, mimeType, url,

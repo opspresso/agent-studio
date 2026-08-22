@@ -39,6 +39,7 @@
 
 import {
   Client,
+  InsufficientScopeError,
   SdkError,
   SdkErrorCode,
   SdkHttpError,
@@ -49,7 +50,6 @@ import {
   type Tool,
 } from "@modelcontextprotocol/client";
 import type { McpTool } from "@/domain/mcp/types";
-import { extractWWWAuthenticateParams } from "@modelcontextprotocol/client";
 import { version as APP_VERSION } from "../../../package.json";
 export type { McpTool };
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
@@ -154,19 +154,10 @@ export interface McpDiscovery {
 function boundedFetch(
   loopback: boolean,
   runSignal: () => AbortSignal | undefined,
-  onChallenge: (challenge: McpChallenge | undefined) => void,
 ): FetchLike {
   const send = loopback ? fetch : fetchPublicUrl;
   return async (url, init) => {
     const response = await send(url, withSignal(init, runSignal()));
-    if (response.status === 401 || response.status === 403) {
-      const { scope, error } = extractWWWAuthenticateParams(response);
-      onChallenge({ status: response.status, ...(scope ? { scope } : {}), ...(error ? { error } : {}) });
-    } else if (response.ok) {
-      // A challenge describes the response that carried it; one the server
-      // has since stopped sending must not classify a later failure.
-      onChallenge(undefined);
-    }
     const declared = Number(response.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > MAX_MCP_RESPONSE_BYTES) {
       await response.body?.cancel().catch(() => {});
@@ -228,13 +219,6 @@ export class McpSession {
    * release, and releasing it is the one request that must outlive the run.
    */
   private tearingDown = false;
-  /** The last 401/403 challenge this session's transport received, if any. */
-  private _challenge: McpChallenge | undefined;
-
-  get challenge(): McpChallenge | undefined {
-    return this._challenge;
-  }
-
   constructor(
     private readonly url: string,
     private readonly headers: Record<string, string>,
@@ -284,10 +268,12 @@ export class McpSession {
       fetch: boundedFetch(
         this.loopback,
         () => (this.tearingDown ? undefined : this.signal),
-        (challenge) => {
-          this._challenge = challenge;
-        },
       ),
+      // This deployment owns OAuth outside the SDK. Let the transport parse
+      // the exact response's challenge and return it as a typed error; a
+      // session-global "last challenge" races when one model turn calls tools
+      // concurrently.
+      onInsufficientScope: "throw",
       // The registry entry's own headers — a bearer token, a tenant id. Applied
       // as transport defaults so every request carries them, including the
       // era probe, which is the first request a server ever sees from us.
@@ -529,6 +515,8 @@ export class McpHttpError extends Error {
     /** The request this failed, kept so a reading may depend on which one it was. */
     readonly method: string,
     message?: string,
+    /** The authentication challenge from this request, never another concurrent call's. */
+    readonly challenge?: McpChallenge,
   ) {
     super(message ?? `${method} failed: HTTP ${status}`);
     this.name = "McpHttpError";
@@ -555,6 +543,14 @@ const MAX_FAILURE_TEXT_CHARS = 400;
  * unbounded at the source.
  */
 function asMcpError(error: unknown, method: string): unknown {
+  if (error instanceof InsufficientScopeError) {
+    const challenge: McpChallenge = {
+      status: 403,
+      error: "insufficient_scope",
+      ...(error.requiredScope ? { scope: error.requiredScope } : {}),
+    };
+    return new McpHttpError(403, method, boundedFailure(method, 403, error.message), challenge);
+  }
   if (error instanceof UnauthorizedError) {
     return new McpHttpError(401, method, boundedFailure(method, 401, error.message));
   }
@@ -598,6 +594,11 @@ export function isTimeout(error: unknown): boolean {
  */
 export function isUnauthorized(error: unknown): boolean {
   return error instanceof McpHttpError && error.status === 401;
+}
+
+/** The wider OAuth grant this exact failed request asked for, if it did. */
+export function scopeChallengeOf(error: unknown): McpChallenge | undefined {
+  return error instanceof McpHttpError && isScopeChallenge(error.challenge) ? error.challenge : undefined;
 }
 
 /**

@@ -84,6 +84,14 @@ describe("buildApiReference — request/response field specs", () => {
 });
 
 describe("buildApiReference — code examples (curl + Python + Node.js)", () => {
+  it("AG-UI sample starts from a user message", () => {
+    const agui = buildApiReference(ctx()).find((e) => e.id === "agui");
+    const code = codeOf(agui!, "javascript") ?? "";
+    expect(code).toContain("initialMessages");
+    expect(code).toContain('role: "user"');
+    expect(code).toContain("await agent.runAgent()");
+  });
+
   it("chat/completions offers curl, Python, Node.js, and their streaming variants", () => {
     const cc = buildApiReference(ctx()).find((e) => e.id === "chat-completions");
     expect(cc?.codeExamples.map((c) => c.label)).toEqual([

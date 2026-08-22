@@ -60,8 +60,6 @@ export interface AguiEventDeps {
    * `RUN_STARTED`, and collected onto `RUN_FINISHED.result` like the run's own.
    */
   warnings?: readonly string[];
-  /** The version's model, named on the usage `RUN_FINISHED` reports. */
-  model?: string;
 }
 
 /**
@@ -344,9 +342,13 @@ class RunTranslator {
     }
   }
 
-  /** The run's ending, once the source has nothing more to say. A stream that never said how it ended completed. */
+  /** The run's ending, once the source has nothing more to say. */
   async *finish(): AsyncGenerator<AguiEvent> {
     if (this.ended) {
+      return;
+    }
+    if (this.termination === undefined) {
+      yield* this.fail("Run ended without a terminal chunk.");
       return;
     }
     yield* this.closeAll();
@@ -357,7 +359,7 @@ class RunTranslator {
       threadId: this.run.threadId,
       runId: this.run.runId,
       outcome: { type: "success" },
-      result: { termination: this.termination ?? "completed", warnings: [...this.warnings] },
+      result: { termination: this.termination, warnings: [...this.warnings] },
       ...(usage ? { usage: [usage] } : {}),
     };
   }
@@ -414,7 +416,6 @@ class RunTranslator {
       return undefined;
     }
     return {
-      ...(this.deps.model ? { model: this.deps.model } : {}),
       inputTokens: this.usage.inputTokens,
       outputTokens: this.usage.outputTokens,
       totalTokens: this.usage.inputTokens + this.usage.outputTokens,

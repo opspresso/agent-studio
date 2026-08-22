@@ -229,7 +229,7 @@ flowchart LR
     sev["SLACKEVENT#{eventId}"]
     sthread["SLACKTHREAD#{project}#{channel}#{ts}"]
     transcript["PROJECT 파티션 안: TELEGRAMUPDATE#… · TELEGRAMALBUM#… · TEAMSACTIVITY#… · TRANSCRIPT#{conversation}#TURN#…"]
-    a2atask["A2ATASK#{project}#{taskId}"]
+    a2atask["A2ATASK#{project}#{tenant:client}<br/>TASK#{taskId}"]
   end
 ```
 

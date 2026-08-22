@@ -15,8 +15,8 @@ importers:
   .:
     dependencies:
       '@a2a-js/sdk':
-        specifier: ^0.3.14
-        version: 0.3.14
+        specifier: ^1.0.1
+        version: 1.0.1
       '@aws-sdk/client-bedrock-runtime':
         specifier: ^3.1106.0
         version: 3.1111.0
@@ -141,9 +141,9 @@ importers:
 
 packages:
 
-  '@a2a-js/sdk@0.3.14':
-    resolution: {integrity: sha512-F6Ew1AtPzCLhTn8h9yiqTe7DiDf6XVrSnq9V1YqSl9eWqPm6anMveTiKdCSb/76cW0YiJc24rNaUrVezFFHbqQ==}
-    engines: {node: '>=18'}
+  '@a2a-js/sdk@1.0.1':
+    resolution: {integrity: sha512-CJQdh3Wzwo8qIx5UUkSJ7+7BEI16PB+MXMHHNSmx8JQsQed2HlQgvx1ENOiKUfYA3PlcEvxIwv14dBblhDuPmw==}
+    engines: {node: '>=20'}
     peerDependencies:
       '@bufbuild/protobuf': ^2.10.2
       '@grpc/grpc-js': ^1.11.0
@@ -2354,8 +2354,9 @@ packages:
 
 snapshots:
 
-  '@a2a-js/sdk@0.3.14':
+  '@a2a-js/sdk@1.0.1':
     dependencies:
+      jose: 6.2.9
       uuid: 11.1.1
 
   '@aws-sdk/checksums@3.1000.28':

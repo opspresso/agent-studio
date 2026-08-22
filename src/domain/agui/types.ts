@@ -80,7 +80,7 @@ export interface AguiRunInput {
   forwardedProps?: unknown;
 }
 
-/** The protocol's token usage shape, one entry per model on `RUN_FINISHED`. */
+/** The protocol's token usage shape on `RUN_FINISHED`; model identity is optional. */
 export interface AguiTokenUsage {
   model?: string;
   inputTokens?: number;

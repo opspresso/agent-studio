@@ -1,18 +1,30 @@
-import { JsonRpcTransportHandler, A2AError } from "@a2a-js/sdk/server";
+import { A2A_VERSION_HEADER } from "@a2a-js/sdk";
+import {
+  JsonRpcTransportHandler,
+  ServerCallContext,
+  validateVersion,
+  type User,
+} from "@a2a-js/sdk/server";
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import { ProjectRequestHandler } from "@/application/a2a/requestHandler";
 import { a2aExposureDeps, createA2aTaskStore, executionDeps } from "@/lib/container";
 import { resolveExposedProject } from "@/application/a2a/exposure";
 import { authenticateA2a } from "@/app/api/a2a/_lib/auth";
+import {
+  a2aJsonParseError,
+  tenantFromA2aJsonRpcRequest,
+  withRequiredA2aDefaults,
+} from "@/app/api/a2a/_lib/jsonRpc";
+import { bodyTooLarge, BodyTooLargeError, MAX_TURN_BODY_BYTES } from "@/app/api/_lib/body";
 import { sseResponseRaw } from "@/app/api/_lib/sse";
-import { turnBody } from "@/app/api/_lib/body";
+import { readBodyText } from "@/shared/httpBody";
 import { unauthorized } from "@/shared/unauthorized";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
 /**
  * Task state is persisted in DynamoDB (per-project namespace, TTL-expired) so
- * `tasks/get`/`tasks/cancel` work after `message/send` across instance restarts
+ * `GetTask`/`CancelTask` work after `SendMessage` across instance restarts
  * and horizontal scaling. See `@/infrastructure/a2a/taskStore`.
  */
 
@@ -30,6 +42,14 @@ function requestIdOf(body: unknown): string | number | null {
   return typeof id === "string" || typeof id === "number" ? id : null;
 }
 
+function parseJsonRpcEnvelope(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * A failure as a JSON-RPC error response, status 200 like the reference
  * server's. The SDK's transport answers its own validation this way; what it
@@ -38,17 +58,13 @@ function requestIdOf(body: unknown): string | number | null {
  * not an error a JSON-RPC client can read.
  */
 function jsonRpcError(id: string | number | null, error: unknown): Response {
-  const a2aError =
-    error instanceof A2AError
-      ? error
-      : A2AError.internalError(error instanceof Error ? error.message : "Internal error");
-  return Response.json({ jsonrpc: "2.0", id, error: a2aError.toJSONRPCError() });
+  return Response.json({ jsonrpc: "2.0", id, error: JsonRpcTransportHandler.mapToJSONRPCError(error) });
 }
 
 /** The scheme the card declares, so a client reading the challenge learns what to present. */
 const A2A_CHALLENGE = 'ApiKey realm="a2a", header="X-A2A-Key"';
 
-/** A2A JSON-RPC endpoint (message/send, message/stream, tasks/get, tasks/cancel, tasks/resubscribe). */
+/** Native A2A 1.0 JSON-RPC endpoint. */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
   const auth = await authenticateA2a(request.headers.get("x-a2a-key") ?? "");
   if (auth.status === "unconfigured") {
@@ -66,26 +82,58 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   }
   const { project, version, card } = exposed;
 
+  let rawBody: string;
+  try {
+    rawBody = await readBodyText(request, MAX_TURN_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      return bodyTooLarge(error);
+    }
+    throw error;
+  }
+  const body = parseJsonRpcEnvelope(rawBody);
+  const id = requestIdOf(body);
+  if (body === undefined) {
+    // The SDK currently maps SyntaxError to RequestMalformed (-32600), while
+    // A2A 1.0 explicitly reserves -32700 for an invalid JSON payload.
+    return Response.json(a2aJsonParseError());
+  }
+
   const store = createA2aTaskStore(project.name);
+  const user: User = {
+    get isAuthenticated() {
+      return true;
+    },
+    get userName() {
+      return actor.id;
+    },
+  };
+  const callContext = new ServerCallContext({
+    user,
+    tenant: tenantFromA2aJsonRpcRequest(body),
+    requestedVersion: request.headers.get(A2A_VERSION_HEADER) ?? undefined,
+  });
   // The reader leaving ends a resubscribe's polling; a run itself is not
-  // cancelled by it — `tasks/cancel` is how a task is cancelled.
+  // cancelled by it — `CancelTask` is how a task is cancelled.
   const abortController = new AbortController();
   const requestHandler = new ProjectRequestHandler(
     store,
-    { signal: abortController.signal },
+    {
+      signal: abortController.signal,
+      acceptImageUrls: project.projectType !== "image",
+    },
     card,
     store,
-    new ProjectA2aExecutor(executionDeps, project, version, store, actor),
+    new ProjectA2aExecutor(executionDeps, project, version, store, actor, callContext),
   );
   const transport = new JsonRpcTransportHandler(requestHandler);
 
-  const body = await turnBody(request);
-  if (body instanceof Response) {
-    return body;
-  }
-  const id = requestIdOf(body);
   try {
-    const result = await transport.handle(body);
+    // A2A 1.0 requires version negotiation through the service parameter.
+    // Missing means 0.3 in the SDK context and is rejected because this
+    // unopened service intentionally exposes only the native 1.0 contract.
+    validateVersion(callContext.requestedVersion, card, "JSONRPC");
+    const result = await transport.handle(rawBody, callContext);
     if (isAsyncGenerator(result)) {
       // A refusal on the first pull is a JSON-RPC error; one after the stream
       // has begun is a JSON-RPC error *frame*, which is what every frame of
@@ -94,11 +142,13 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
         errorFrame: (message) => ({
           jsonrpc: "2.0",
           id,
-          error: A2AError.internalError(message).toJSONRPCError(),
+          error: JsonRpcTransportHandler.mapToJSONRPCError(new Error(message)),
         }),
       });
     }
-    return Response.json(result);
+    return Response.json(
+      withRequiredA2aDefaults((body as { method?: unknown } | null)?.method, result),
+    );
   } catch (error) {
     return jsonRpcError(id, error);
   }

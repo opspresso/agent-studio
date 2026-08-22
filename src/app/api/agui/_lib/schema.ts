@@ -135,5 +135,8 @@ export const runAgentInputSchema: z.ZodType<AguiRunInput> = z.object({
   context: z.array(contextSchema).default([]),
   state: z.unknown().optional(),
   forwardedProps: z.unknown().optional(),
+  // Interrupt/resume needs persisted interrupt state and this surface has no
+  // such implementation. Refuse it explicitly instead of zod stripping it
+  // and silently starting an unrelated fresh run.
+  resume: z.never().optional(),
 });
-

@@ -55,15 +55,19 @@ describe("toAguiEvents — lifecycle", () => {
     ]);
   });
 
-  it("finishes a stream that ended without a terminal chunk", async () => {
+  it("reports a stream that ended without a terminal chunk as an error", async () => {
     const events = await translate([{ delta: { content: "x" } }]);
     expect(types(events)).toEqual([
       "RUN_STARTED",
       "TEXT_MESSAGE_START",
       "TEXT_MESSAGE_CONTENT",
       "TEXT_MESSAGE_END",
-      "RUN_FINISHED",
+      "RUN_ERROR",
     ]);
+    expect(events.at(-1)).toEqual({
+      type: "RUN_ERROR",
+      message: "Run ended without a terminal chunk.",
+    });
   });
 
   it("carries the engine's termination reason and warnings on RUN_FINISHED", async () => {
@@ -346,23 +350,22 @@ describe("toAguiEvents — what the ending has to wait for and close", () => {
 });
 
 describe("toAguiEvents — identity and naming", () => {
-  it("echoes parentRunId, names the model on usage, and codes a typed failure", async () => {
+  it("echoes parentRunId, reports unlabelled aggregate usage, and codes a typed failure", async () => {
     async function* failing(): AsyncGenerator<EngineChunk> {
       yield { usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 } };
       throw new RateLimitedError("over", 1);
     }
     const events = await collect(
-      toAguiEvents(failing(), { ...RUN, parentRunId: "r0" }, { newId: ids(), model: "openai/gpt-5-mini" }),
+      toAguiEvents(failing(), { ...RUN, parentRunId: "r0" }, { newId: ids() }),
     );
     expect(events[0]).toEqual({ type: "RUN_STARTED", threadId: "t1", runId: "r1", parentRunId: "r0" });
     expect(events.at(-1)).toEqual({ type: "RUN_ERROR", message: "over", code: "RateLimitedError" });
 
     const finished = await collect(
-      toAguiEvents(chunks([{ usage: { inputTokens: 2, outputTokens: 3, costUsd: 0 }, done: true }]), RUN, {
-        model: "openai/gpt-5-mini",
-      }),
+      toAguiEvents(chunks([{ usage: { inputTokens: 2, outputTokens: 3, costUsd: 0 }, done: true }]), RUN),
     );
-    expect(finished.at(-1)).toMatchObject({ usage: [{ model: "openai/gpt-5-mini", totalTokens: 5 }] });
+    expect(finished.at(-1)).toMatchObject({ usage: [{ totalTokens: 5 }] });
+    expect(finished.at(-1)).not.toMatchObject({ usage: [{ model: expect.anything() }] });
   });
 
   it("names a step by its chain, so two children of one agent do not share one", async () => {

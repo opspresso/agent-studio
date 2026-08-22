@@ -15,7 +15,7 @@
  * (`ContentTypeNotSupported`, -32005); dropping the part would run the message
  * as if it had never been attached.
  *
- * **`tasks/resubscribe` has no bus to attach to.** The executor publishes on
+ * **`ResubscribeTask` has no bus to attach to.** The executor publishes on
  * an event bus the SDK keeps per *request*, and a resubscribe is a different
  * request — on a scaled deployment, usually a different instance. The store
  * is what both share, so a resubscribe follows the store: the snapshot, then
@@ -25,15 +25,20 @@
 
 import type {
   Message,
-  MessageSendParams,
   Part,
+  SendMessageRequest,
+  StreamResponse,
+  SubscribeToTaskRequest,
   Task,
-  TaskArtifactUpdateEvent,
-  TaskIdParams,
-  TaskStatusUpdateEvent,
 } from "@a2a-js/sdk";
-import { A2AError, DefaultRequestHandler, type ServerCallContext, type TaskStore } from "@a2a-js/sdk/server";
-import { isLiveTaskState, isTerminalTaskState } from "@/domain/a2a/task";
+import {
+  ContentTypeNotSupportedError,
+  RequestMalformedError,
+  TaskNotFoundError,
+  UnsupportedOperationError,
+} from "@a2a-js/sdk/errors";
+import { DefaultRequestHandler, type ServerCallContext, type TaskStore } from "@a2a-js/sdk/server";
+import { isLiveTaskState, isTerminalTaskState, taskStateName } from "@/domain/a2a/task";
 import {
   base64ByteLength,
   MAX_ATTACHMENT_BYTES,
@@ -42,8 +47,6 @@ import {
 } from "@/domain/llm/imageLimits";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 
-/** JSON-RPC code the protocol assigns to an unsupported content type. */
-const CONTENT_TYPE_NOT_SUPPORTED = -32005;
 /** How often a resubscribe re-reads the store. The same cadence the executor's cancel watch uses. */
 const RESUBSCRIBE_POLL_MS = 2000;
 
@@ -53,28 +56,30 @@ const RESUBSCRIBE_POLL_MS = 2000;
  * is one, names the part so the caller can fix it.
  */
 export function unsupportedPart(part: Part): string | null {
-  if (part.kind === "text") {
+  if (part.content?.$case === "text") {
     return null;
   }
-  if (part.kind === "file") {
-    const mimeType = part.file.mimeType ?? "unknown";
+  if (part.content?.$case === "raw" || part.content?.$case === "url") {
+    const mimeType = part.mediaType || "unknown";
     if (!(SUPPORTED_IMAGE_TYPES as readonly string[]).includes(mimeType)) {
       return `file part of type ${mimeType}`;
     }
-    if ("uri" in part.file) {
-      return part.file.uri.startsWith("https://") ? null : "file part by a non-https uri";
+    if (part.content.$case === "url") {
+      return part.content.value.startsWith("https://") ? null : "file part by a non-https url";
     }
-    if (base64ByteLength(part.file.bytes) > MAX_ATTACHMENT_BYTES) {
+    if (part.content.value.byteLength > MAX_ATTACHMENT_BYTES) {
       return `image larger than ${MAX_ATTACHMENT_BYTES / (1024 * 1024)}MB`;
     }
     return null;
   }
-  return "data part";
+  return part.content?.$case === "data" ? "data part" : "part with no content";
 }
 
 export interface ProjectRequestHandlerOptions {
   /** The request's own end: a resubscribe stops following the store when the reader is gone. */
   signal?: AbortSignal;
+  /** Image generation/editing takes source bytes; it cannot dereference an A2A URL part. */
+  acceptImageUrls?: boolean;
 }
 
 export class ProjectRequestHandler extends DefaultRequestHandler {
@@ -86,16 +91,16 @@ export class ProjectRequestHandler extends DefaultRequestHandler {
     super(...rest);
   }
 
-  override async sendMessage(params: MessageSendParams, context?: ServerCallContext): Promise<Message | Task> {
-    await this.admit(params);
+  override async sendMessage(params: SendMessageRequest, context: ServerCallContext): Promise<Message | Task> {
+    await this.admit(params, context);
     return super.sendMessage(params, context);
   }
 
   override async *sendMessageStream(
-    params: MessageSendParams,
-    context?: ServerCallContext,
-  ): AsyncGenerator<Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent, void, undefined> {
-    await this.admit(params);
+    params: SendMessageRequest,
+    context: ServerCallContext,
+  ): AsyncGenerator<StreamResponse, void, undefined> {
+    await this.admit(params, context);
     yield* super.sendMessageStream(params, context);
   }
 
@@ -106,85 +111,131 @@ export class ProjectRequestHandler extends DefaultRequestHandler {
    * reader that leaves stops the polling with it.
    */
   override async *resubscribe(
-    params: TaskIdParams,
-    _context?: ServerCallContext,
-  ): AsyncGenerator<Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent, void, undefined> {
+    params: SubscribeToTaskRequest,
+    context: ServerCallContext,
+  ): AsyncGenerator<StreamResponse, void, undefined> {
     const signal = this.options.signal;
-    let task = await this.store.load(params.id);
+    let task = await this.store.load(params.id, context);
     if (!task) {
-      throw A2AError.taskNotFound(params.id);
+      throw new TaskNotFoundError(`Task ${params.id} was not found.`);
     }
-    yield task;
+    if (task.status && isTerminalTaskState(task.status.state)) {
+      throw new UnsupportedOperationError(
+        `Task ${params.id} is already ${taskStateName(task.status.state)} and cannot be resubscribed.`,
+      );
+    }
+    yield { payload: { $case: "task", value: task } };
     let seen = artifactSignatures(task);
+    let seenStatus = statusSignature(task);
     const deadline = Date.now() + MAX_RUN_DURATION_MS;
-    while (!isTerminalTaskState(task.status.state)) {
+    while (!task.status || !isTerminalTaskState(task.status.state)) {
       if (Date.now() >= deadline) {
-        throw A2AError.internalError(
-          `Task ${params.id} did not settle within the run deadline; it is still ${task.status.state}.`,
+        throw new Error(
+          `Task ${params.id} did not settle within the run deadline; it is still ${task.status ? taskStateName(task.status.state) : "unspecified"}.`,
         );
       }
       if (!(await pollDelay(RESUBSCRIBE_POLL_MS, signal))) {
         return;
       }
-      const next = await this.store.load(params.id);
+      const next = await this.store.load(params.id, context);
       if (!next) {
-        throw A2AError.taskNotFound(params.id);
+        throw new TaskNotFoundError(`Task ${params.id} was not found.`);
       }
       task = next;
       const now = artifactSignatures(task);
       for (const artifact of task.artifacts ?? []) {
         if (seen.get(artifact.artifactId) !== now.get(artifact.artifactId)) {
           yield {
-            kind: "artifact-update",
-            taskId: task.id,
-            contextId: task.contextId,
-            artifact,
-            append: false,
+            payload: {
+              $case: "artifactUpdate",
+              value: {
+                taskId: task.id,
+                contextId: task.contextId,
+                artifact,
+                append: false,
+                lastChunk: false,
+                metadata: undefined,
+              },
+            },
           };
         }
       }
       seen = now;
+      const nextStatus = statusSignature(task);
+      if (
+        nextStatus !== seenStatus &&
+        task.status &&
+        !isTerminalTaskState(task.status.state)
+      ) {
+        yield {
+          payload: {
+            $case: "statusUpdate",
+            value: {
+              taskId: task.id,
+              contextId: task.contextId,
+              status: task.status,
+              metadata: undefined,
+            },
+          },
+        };
+      }
+      seenStatus = nextStatus;
     }
-    // Every artifact is closed as the protocol closes one — an empty append
-    // marked last — whether or not its final change landed in the same poll
-    // as the terminal status.
+    // Re-send the final full artifact as a replacement carrying `lastChunk`.
+    // A2A 1.0 requires a non-empty Artifact; an empty append cannot be used as
+    // an end marker.
     for (const artifact of task.artifacts ?? []) {
       yield {
-        kind: "artifact-update",
-        taskId: task.id,
-        contextId: task.contextId,
-        artifact: { artifactId: artifact.artifactId, name: artifact.name, parts: [] },
-        append: true,
-        lastChunk: true,
+        payload: {
+          $case: "artifactUpdate",
+          value: {
+            taskId: task.id,
+            contextId: task.contextId,
+            artifact,
+            append: false,
+            lastChunk: true,
+            metadata: undefined,
+          },
+        },
       };
     }
     yield {
-      kind: "status-update",
-      taskId: task.id,
-      contextId: task.contextId,
-      status: task.status,
-      final: true,
+      payload: {
+        $case: "statusUpdate",
+        value: {
+          taskId: task.id,
+          contextId: task.contextId,
+          status: task.status,
+          metadata: undefined,
+        },
+      },
     };
   }
 
   /** Refuse what the executor could not honour, before a task is created for it. */
-  private async admit(params: MessageSendParams): Promise<void> {
+  private async admit(params: SendMessageRequest, context: ServerCallContext): Promise<void> {
+    if (!params.message) {
+      throw new RequestMalformedError("SendMessage requires a message.");
+    }
     let pictures = 0;
     for (const part of params.message.parts) {
       const reason = unsupportedPart(part);
       if (reason) {
-        throw new A2AError(
-          CONTENT_TYPE_NOT_SUPPORTED,
+        throw new ContentTypeNotSupportedError(
           `This agent accepts text parts and image file parts (${SUPPORTED_IMAGE_TYPES.join(", ")}, up to ${MAX_ATTACHMENT_BYTES / (1024 * 1024)}MB each, ${MAX_ATTACHMENTS} per message); the message carries a ${reason}.`,
         );
       }
-      if (part.kind === "file") {
+      if (part.content?.$case === "url" && this.options.acceptImageUrls === false) {
+        throw new ContentTypeNotSupportedError(
+          "This image agent accepts inline image bytes, not image URL parts.",
+        );
+      }
+      if (part.content?.$case === "raw" || part.content?.$case === "url") {
         pictures += 1;
       }
     }
     if (pictures > MAX_ATTACHMENTS) {
-      throw new A2AError(
-        CONTENT_TYPE_NOT_SUPPORTED,
+      throw new ContentTypeNotSupportedError(
         `This agent accepts at most ${MAX_ATTACHMENTS} images per message; the message carries ${pictures}.`,
       );
     }
@@ -192,10 +243,10 @@ export class ProjectRequestHandler extends DefaultRequestHandler {
     if (!taskId) {
       return;
     }
-    const task = await this.store.load(taskId);
-    if (task && isLiveTaskState(task.status.state)) {
-      throw A2AError.invalidParams(
-        `Task ${taskId} is ${task.status.state}; this agent runs each message as its own task and never waits for input. Send the message without taskId — keep contextId ${task.contextId} to stay in the conversation.`,
+    const task = await this.store.load(taskId, context);
+    if (task?.status && isLiveTaskState(task.status.state)) {
+      throw new RequestMalformedError(
+        `Task ${taskId} is ${taskStateName(task.status.state)}; this agent runs each message as its own task and never waits for input. Send the message without taskId — keep contextId ${task.contextId} to stay in the conversation.`,
       );
     }
   }
@@ -227,4 +278,8 @@ function artifactSignatures(task: Task): Map<string, string> {
       `${artifact.parts.length}:${JSON.stringify(artifact.parts).length}`,
     ]),
   );
+}
+
+function statusSignature(task: Task): string {
+  return JSON.stringify(task.status);
 }

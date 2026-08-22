@@ -44,7 +44,7 @@ export const RETENTION = {
     return retentionDays("TRIGGER_RUN_RETENTION_DAYS", 30);
   },
   /** Inbound A2A task state — ephemeral job state, kept just long enough for
-   * `tasks/get`/`tasks/cancel` after `message/send`. */
+   * `GetTask`/`CancelTask` after `SendMessage`. */
   get a2aTaskDays(): number {
     return retentionDays("A2A_TASK_RETENTION_DAYS", 1);
   },
