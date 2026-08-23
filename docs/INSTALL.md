@@ -121,7 +121,9 @@ v0.86 이전 배포는 DynamoDB + S3 + S3 Vectors 를 썼다. 순서:
    DATABASE_URL=postgres://… pnpm tsx scripts/import-dynamodb-export.ts export.json
    ```
    개발 머신에서 ssh 터널(`ssh -L 15432:127.0.0.1:5432 <host>`, compose 라면 postgres 포트를 잠시
-   127.0.0.1 에 공개)로 실행하면 된다. 멱등이라 다시 돌려도 된다.
+   127.0.0.1 에 공개)로 실행하면 된다. 멱등이라 다시 돌려도 된다. 1단계의 첫 부팅이 만든
+   부트스트랩 관리자가 내보낸 사용자와 같은 이메일이면 그 행은 내보낸 행으로 대체되고
+   (스크립트가 한 줄 남긴다), 다음 부팅이 비밀번호를 다시 붙인다.
 4. 오브젝트를 옮긴다: `scripts/migrate-objects.sh s3://<bucket>` (`aws s3 sync` → `mc mirror`).
 5. 케이퍼빌리티 카탈로그는 옮기지 않는다 — `POST /api/catalog/reindex` 한 번이면 다시 만들어진다.
 6. 세션은 그대로 유효하다(같은 `BETTER_AUTH_SECRET`, 같은 session 행). OAuth 콜백 URL 을 새 호스트로

@@ -91,7 +91,15 @@ async function main(): Promise<void> {
   const { withTransaction, closePool } = await import("@/infrastructure/db/client");
   const { toStoredJson } = await import("@/infrastructure/db/store");
 
-  const counts = { items: 0, user: 0, session: 0, account: 0, verification: 0, dropped: 0 };
+  const counts = {
+    items: 0,
+    user: 0,
+    session: 0,
+    account: 0,
+    verification: 0,
+    dropped: 0,
+    replacedUsers: 0,
+  };
 
   for (const file of files) {
     const items = readItems(file);
@@ -109,6 +117,24 @@ async function main(): Promise<void> {
       items.filter((item) => rank(item) === 0).map((item) => String(item.id)),
     );
     await withTransaction(async (client) => {
+      // `email` is unique and the upsert below matches on `id`: a user row the
+      // new deployment already made for one of these addresses — the bootstrap
+      // administrator a first boot creates — would fail the whole file. That
+      // row is the same person with a fresh id and nothing of theirs on it, so
+      // it gives way to the exported one; the next boot finds the imported
+      // user by email and adds the password back.
+      const emails = items
+        .filter((item) => rank(item) === 0)
+        .map((item) => String(item.email ?? "").toLowerCase())
+        .filter(Boolean);
+      const replaced = await client.query<{ id: string; email: string }>(
+        `DELETE FROM "user" WHERE lower("email") = ANY($1) AND NOT ("id" = ANY($2)) RETURNING "id", "email"`,
+        [emails, [...userIds]],
+      );
+      for (const row of replaced.rows) {
+        console.log(`replacing user ${row.email} (${row.id}) with the exported row`);
+      }
+      counts.replacedUsers = replaced.rowCount ?? 0;
       for (const item of items) {
         const pk = String(item.PK ?? "");
         const sk = String(item.SK ?? "");
@@ -242,7 +268,7 @@ async function main(): Promise<void> {
     });
   }
   console.log(
-    `imported ${counts.items} item(s), ${counts.user} user(s), ${counts.session} session(s), ` +
+    `imported ${counts.items} item(s), ${counts.user} user(s) (${counts.replacedUsers} replaced), ${counts.session} session(s), ` +
       `${counts.account} account(s), ${counts.verification} verification(s); dropped ${counts.dropped}`,
   );
   await closePool();
