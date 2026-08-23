@@ -100,6 +100,7 @@ async function main(): Promise<void> {
     dropped: 0,
     replacedUsers: 0,
     droppedEnvRefs: 0,
+    droppedSettings: 0,
   };
 
   // Every file's users before any file's sessions: an export paged by
@@ -266,12 +267,9 @@ async function main(): Promise<void> {
           }
           continue;
         }
-        // Through the store's own encoding, so a legacy row carrying a NUL
-        // lands the way a fresh write would rather than aborting the file.
-        await client.query(
-          "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
-          [pk, sk, toStoredJson(item)],
-        );
+        // Two fields name something about the *old* deployment, and both are
+        // fixed before the row is written rather than after — the row is what
+        // the new deployment reads at its next boot.
         if (Array.isArray(item.envRefs) && item.envRefs.length > 0) {
           // A managed server's `envRefs` were SSM parameter names on the old
           // deployment; here they are env-file paths on the app's host, and
@@ -280,15 +278,36 @@ async function main(): Promise<void> {
           console.log(
             `dropping envRefs of ${pk} (${item.envRefs.map(String).join(", ")}): SSM names, not host paths`,
           );
-          item = { ...item, envRefs: undefined };
+          const { envRefs: _envRefs, ...rest } = item;
+          item = rest;
           counts.droppedEnvRefs += 1;
         }
+        if (typeof item.artifactAccessMode === "string") {
+          // The runtime settings row wins over the environment, so the old
+          // deployment's answer to "how does a reader reach an object" would
+          // outlive the store it was true of: `public` sends browsers straight
+          // at a bucket that is now a MinIO the app alone can reach. Dropped,
+          // so the new deployment's ARTIFACT_ACCESS_MODE decides; an admin can
+          // set it again on /settings.
+          console.log(
+            `dropping artifactAccessMode=${item.artifactAccessMode} of ${pk}: it described the old object store`,
+          );
+          const { artifactAccessMode: _mode, ...rest } = item;
+          item = rest;
+          counts.droppedSettings += 1;
+        }
+        // Through the store's own encoding, so a legacy row carrying a NUL
+        // lands the way a fresh write would rather than aborting the file.
+        await client.query(
+          "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
+          [pk, sk, toStoredJson(item)],
+        );
         counts.items += 1;
       }
     });
   }
   console.log(
-    `imported ${counts.items} item(s) (${counts.droppedEnvRefs} with envRefs dropped), ${counts.user} user(s) (${counts.replacedUsers} replaced), ${counts.session} session(s), ` +
+    `imported ${counts.items} item(s) (${counts.droppedEnvRefs} with envRefs dropped, ${counts.droppedSettings} with a stale artifactAccessMode), ${counts.user} user(s) (${counts.replacedUsers} replaced), ${counts.session} session(s), ` +
       `${counts.account} account(s), ${counts.verification} verification(s); dropped ${counts.dropped}`,
   );
   await closePool();
