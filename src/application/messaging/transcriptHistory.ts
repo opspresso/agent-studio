@@ -4,6 +4,7 @@ import type {
   TranscriptTurn,
 } from "@/domain/messaging/transcript";
 import { log, type LogScope } from "@/shared/logger";
+import { cutCodePoints } from "@/shared/utf8Text";
 
 /**
  * How a chat-bot surface with no platform history remembers a conversation:
@@ -95,7 +96,7 @@ export async function rememberTurn(
   }
   const content =
     turn.content.length > MAX_TRANSCRIPT_TURN_CHARS
-      ? `${turn.content.slice(0, MAX_TRANSCRIPT_TURN_CHARS)}\n…[truncated]`
+      ? `${cutCodePoints(turn.content, MAX_TRANSCRIPT_TURN_CHARS)}\n…[truncated]`
       : turn.content;
   await transcripts
     .append(projectName, conversationKey, { ...turn, content })

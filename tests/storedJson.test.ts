@@ -26,4 +26,11 @@ describe("toStoredJson", () => {
     const stored = toStoredJson({ PK: "P", SK: "S", text: "\\\u0000" });
     expect(JSON.parse(stored).text).toBe("\\\uFFFD");
   });
+
+  it("replaces a lone surrogate, and only a lone one", () => {
+    const stored = toStoredJson({ PK: "P", SK: "S", text: "🙂 \ud83d", title: "🙂" });
+    const parsed = JSON.parse(stored);
+    expect(parsed.text).toBe("🙂 \uFFFD");
+    expect(parsed.title).toBe("🙂");
+  });
 });
