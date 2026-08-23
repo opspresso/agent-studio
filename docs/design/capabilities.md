@@ -42,7 +42,7 @@ GitHub 의 트리 API 와 **admin 이 올린 아카이브**(`POST /api/plugins/s
 파일을 어떻게 나열하고 읽는지만 건넨다: GitHub 클라이언트는 가져오기만 하고(`GITHUB_API_URL`
 로 GitHub Enterprise 도 된다), `archiveSnapshot.ts` 는 tar 를 풀어 같은 스냅샷을 만든다 —
 provenance 는 설정된 저장소 아니면 `archive`(`archiveSyncRepo`), 브랜치는 `archive`, commit
-은 아카이브의 sha256 이라 같은 파일을 다시 올리면 unchanged 로 보고된다. 지원되는 텍스트 첨부 파일은 각
+은 아카이브의 sha256 이다(업로드의 이름일 뿐, 바뀌었는지는 행마다 내용으로 판정한다). 지원되는 텍스트 첨부 파일은 각
 skill 루트 아래에서 수집되며 (`src/domain/skill/files.ts`: `ALLOWED_SKILL_FILE_EXTENSIONS`),
 파일당·skill 당·파일 개수 상한으로 제한되고 (값은
 [CONFIGURATION.md](../CONFIGURATION.md#코드에-고정된-제한) 에 있다) 심볼릭 링크는 제외된다 —

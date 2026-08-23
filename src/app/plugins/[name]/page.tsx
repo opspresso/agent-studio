@@ -84,6 +84,11 @@ export default function PluginDetailPage() {
 
   const repoUrl = `https://github.com/${plugin.repo}`;
   const treeUrl = `${repoUrl}/tree/${plugin.commitSha}${plugin.rootPath ? `/${plugin.rootPath}` : ""}`;
+  // A row an uploaded archive wrote carries the archive's sha256 as its
+  // commit — 64 hex characters where git's are 40 — and nothing on GitHub
+  // answers to it, so the links are text there.
+  const onGitHub = /^[0-9a-f]{40}$/.test(plugin.commitSha);
+  const location = `${plugin.repo}${plugin.rootPath ? `/${plugin.rootPath}` : ""}`;
 
   return (
     <Stack gap="lg">
@@ -106,14 +111,21 @@ export default function PluginDetailPage() {
           </Text>
         )}
         <Text fz="xs" c="dimmed" mt={6}>
-          <Anchor href={treeUrl} target="_blank" fz="xs">
-            {plugin.repo}
-            {plugin.rootPath ? `/${plugin.rootPath}` : ""}
-          </Anchor>
+          {onGitHub ? (
+            <Anchor href={treeUrl} target="_blank" fz="xs">
+              {location}
+            </Anchor>
+          ) : (
+            location
+          )}
           {" · "}
-          <Anchor href={`${repoUrl}/commit/${plugin.commitSha}`} target="_blank" fz="xs">
-            {plugin.commitSha.slice(0, 7)}
-          </Anchor>
+          {onGitHub ? (
+            <Anchor href={`${repoUrl}/commit/${plugin.commitSha}`} target="_blank" fz="xs">
+              {plugin.commitSha.slice(0, 7)}
+            </Anchor>
+          ) : (
+            plugin.commitSha.slice(0, 7)
+          )}
           {" · synced "}
           {formatDateTime(plugin.syncedAt, locale)}
         </Text>

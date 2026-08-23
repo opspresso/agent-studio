@@ -648,7 +648,7 @@ POST /api/plugins/sync/upload        multipart/form-data: file (.tar.gz | .tgz |
 클라이언트가 만드는 것과 같은 스냅샷이 되어 **같은 sync** 를 지난다. `repo` 는 그 행들이 지닐
 provenance 이고 비우면 설정된 `PLUGINS_REPO`, 그것도 없으면 `archive` 다 — 그래서 GitHub 가
 닿던 시절의 행은 같은 저장소가 손으로 와도 주인을 유지한다. 스냅샷의 `branch` 는 `archive`,
-`commitSha` 는 아카이브의 sha256 이라 같은 파일을 다시 올리면 unchanged 로 답한다. `PLUGINS_REPO`
+`commitSha` 는 아카이브의 sha256 이다 — 업로드를 식별할 뿐, 바뀌었는지는 행마다 내용으로 판정한다(GitHub sync 와 같다). `PLUGINS_REPO`
 도 `GITHUB_TOKEN` 도 필요 없고, `GET /api/plugins/sync` 의 `last` 는 같은 이름 아래에서 읽힌다.
 심볼릭 링크는 GitHub 트리와 같은 모드(`120000`)로 보고되어 같은 규칙으로 건너뛴다.
 
