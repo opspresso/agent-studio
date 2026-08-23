@@ -180,22 +180,27 @@ services:
           - mcp-brave-search.agent-mcps.svc.cluster.local
 
   # --- MCP servers that need an AWS account (profile `aws`) ---------------
-  # mcp-memory keeps its memories in S3 Vectors and S3, which have no
-  # on-premises equivalent yet; mcp-cloudwatch reads CloudWatch. Both take the
-  # access key in .env.aws.
+  # mcp-memory keeps its memories in this host's PostgreSQL — a database of
+  # its own beside the app's, created by `deploy/postgres/init.sql` on a first
+  # boot (an existing volume needs it created by hand: `CREATE DATABASE
+  # mcp_memory OWNER agent_studio`). What still needs AWS is the *embedder*:
+  # the memories already written are Titan vectors, and pgvector refuses to
+  # compare two models' output, so the key in .env.aws stays until a
+  # deployment re-embeds against its own endpoint. mcp-cloudwatch reads
+  # CloudWatch and takes the same key.
 
   mcp-memory:
     <<: *mcp
-    profiles: [aws]
     image: ${IMAGE_REGISTRY}/mcp-memory:${MCP_MEMORY_TAG}
     env_file:
       - .env.aws
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       PORT: "80"
       AWS_REGION: ${AWS_REGION}
-      VECTOR_BUCKET: ${MEMORY_VECTOR_BUCKET}
-      VECTOR_INDEX: memories
-      STATE_BUCKET: ${MEMORY_STATE_BUCKET}
+      DATABASE_URL: postgres://agent_studio:${POSTGRES_PASSWORD}@postgres:5432/mcp_memory
       # Titan, not the catalog's embedding: two indexes, each queried by the
       # model that wrote it.
       EMBEDDING_PROVIDER: bedrock

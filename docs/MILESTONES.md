@@ -6,7 +6,6 @@
 
 | slug | 무엇 | 완료 조건 |
 |---|---|---|
-| `memory-on-prem` | mcp-memory 가 AWS 없이 돈다. 지금은 S3 Vectors + S3 + Bedrock 에 묶여 있어 폐쇄망에서는 메모리 기능을 끈다(`deploy/idc/compose.yaml` 의 `aws` 프로파일). pgvector 백엔드와 OpenAI 호환 임베딩만으로 기동하는 모드가 필요하다 — 구현은 [mcp-memory#4](https://github.com/opspresso/mcp-memory/pull/4) | mcp-memory#4 가 릴리즈되고, `deploy/idc/compose.yaml` 의 mcp-memory 가 `DATABASE_URL` 로 `aws` 프로파일 밖으로 나온다 |
 | `plugin-archive-link` | 아카이브로 sync 된 플러그인의 상세 페이지가 `https://github.com/<repo>/tree/<sha256>` 이라는 죽은 링크를 그린다. `Plugin` 행에 `branch` 를 저장하고 `archive` 면 링크를 숨긴다 | `tests/` 에 archive 출처 플러그인의 상세 응답에 링크가 없음을 고정하는 테스트 |
 
 ## 닫지 않기로 한 갭

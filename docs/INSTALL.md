@@ -104,7 +104,7 @@ helm upgrade --install agent-studio deploy/helm/agent-studio \
 | 모델이 읽는 URL(`FetchUrl`) | 공인 주소만 | `URL_FETCH_INTERNAL_HOST_SUFFIXES` 에 사내 도메인 접미사를 선언한다. MCP 서버 주소는 별개 목록 `MCP_INTERNAL_HOST_SUFFIXES` |
 | 임베딩(케이퍼빌리티 카탈로그) | Cohere/Bedrock/OpenAI | `EMBEDDING_PROVIDER=openai` 로 사내 OpenAI 호환 임베딩 엔드포인트(vLLM·TEI·Ollama). `CATALOG_MIN_SCORE` 를 다시 잰다. 필요 없으면 `CATALOG_ENABLED` 를 끈다 |
 | Slack · Teams · Telegram · Bedrock · A2A 외부 에이전트 | 설정 시 동작 | 본질이 외부 SaaS 다 — 설정하지 않으면 메뉴가 숨고 부팅에 영향이 없다 |
-| 메모리(mcp-memory) | S3 Vectors + Bedrock | 아직 AWS 에 묶여 있다(`profile: aws`). 폐쇄망에서는 끈다; pgvector 백엔드는 [MILESTONES.md](MILESTONES.md) |
+| 메모리(mcp-memory) | 이 호스트의 PostgreSQL(`mcp_memory` 데이터베이스) | 저장은 폐쇄망에서 그대로 돈다. 남는 외부 의존은 **임베더**다 — 기본은 Bedrock Titan 이고, 사내 OpenAI 호환 엔드포인트를 쓰려면 `EMBEDDING_PROVIDER=openai` 로 바꾸고 **다시 임베딩한다**(pgvector 는 서로 다른 모델의 벡터를 비교하지 않는다). `search_docs` 의 Bedrock Knowledge Base 는 그대로 선택이다 |
 
 이미지 **빌드**는 npm 레지스트리와 Google Fonts(`next/font/google`, 빌드 시 1회)가 필요하다 — 빌드는
 밖에서 하고 이미지를 들여온다.
