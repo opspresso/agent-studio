@@ -32,7 +32,7 @@ export async function snapshotFromArchive(
   // checkout directory itself is the archive's first entry, slash-less, and
   // would otherwise keep the directory on every path.
   const { files: content } = stripLeadingDirectory(
-    readTarArchive(archive).filter((file) => !file.path.split("/").at(-1)?.startsWith("._")),
+    (await readTarArchive(archive)).filter((file) => !file.path.split("/").at(-1)?.startsWith("._")),
   );
   const tree: PluginTreeFile[] = content.map((file) => ({
     path: file.path,

@@ -17,7 +17,8 @@
  * one is hostile or broken, and neither deserves a partial sync.
  */
 
-import { gunzipSync } from "node:zlib";
+import { gunzip } from "node:zlib";
+import { promisify } from "node:util";
 import { normalizeSkillFilePath } from "@/domain/skill/files";
 
 /** Ceiling on the archive once inflated; the reader stops inflating at it. */
@@ -48,15 +49,24 @@ export class TarArchiveError extends Error {
 
 const BLOCK = 512;
 
+/** Entry types that carry metadata about the next entry rather than content. */
+const METADATA_TYPES = new Set(["L", "K", "x", "g"]);
+
 /** Byte offsets of the header fields this reader needs. */
 const Field = { Name: 0, Size: 124, Checksum: 148, Type: 156, Magic: 257, Prefix: 345 } as const;
 
-/** Read the archive — gzip-compressed or plain — into its regular files. */
-export function readTarArchive(
+/**
+ * Read the archive — gzip-compressed or plain — into its regular files.
+ *
+ * Asynchronous for the inflate alone: this runs on the request path of an
+ * admin's upload, and `gunzipSync` on tens of megabytes holds the event loop
+ * for all of it — every in-flight chat stream on the instance with it.
+ */
+export async function readTarArchive(
   input: Uint8Array,
   limits: TarLimits = { maxBytes: MAX_ARCHIVE_BYTES, maxEntries: MAX_ARCHIVE_ENTRIES },
-): TarFile[] {
-  const bytes = inflate(input, limits.maxBytes);
+): Promise<TarFile[]> {
+  const bytes = await inflate(input, limits.maxBytes);
   if (bytes.byteLength > limits.maxBytes) {
     throw new TarArchiveError(`archive exceeds ${limits.maxBytes} bytes uncompressed`);
   }
@@ -161,14 +171,16 @@ export function stripLeadingDirectory(files: TarFile[]): {
   };
 }
 
-function inflate(input: Uint8Array, maxBytes: number): Buffer {
+const gunzipAsync = promisify(gunzip);
+
+async function inflate(input: Uint8Array, maxBytes: number): Promise<Buffer> {
   if (input[0] !== 0x1f || input[1] !== 0x8b) {
     return Buffer.from(input.buffer, input.byteOffset, input.byteLength);
   }
   try {
     // zlib stops at the cap rather than inflating first and measuring after,
     // which is what makes a 64MB ceiling mean something for a gzip bomb.
-    return gunzipSync(input, { maxOutputLength: maxBytes });
+    return await gunzipAsync(input, { maxOutputLength: maxBytes });
   } catch (error) {
     if (error instanceof RangeError) {
       throw new TarArchiveError(`archive exceeds ${maxBytes} bytes uncompressed`);
