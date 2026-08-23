@@ -2,7 +2,7 @@
  * Starting and stopping the containers behind managed MCP servers.
  *
  * A port, not a runtime. The only adapter that exists runs Docker on this
- * app's own host through SSM, but nothing above this file may know that: the
+ * app's own host, but nothing above this file may know that: the
  * milestone's rule is one adapter now and a contract for the rest.
  *
  * What a provisioner may be asked for is deliberately small. It takes an
@@ -32,7 +32,7 @@ export interface ManagedWorkloadSpec {
    */
   containerPort?: number;
   /**
-   * SSM parameter names whose contents become the container's environment.
+   * Host paths of env files whose contents become the container's environment.
    * References, so secrets never pass through this app or its table.
    */
   envRefs?: string[];

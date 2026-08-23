@@ -1,10 +1,12 @@
 /**
- * The same port, driven by the local Docker CLI.
+ * The provisioner port, driven by the Docker CLI on the app's own host.
  *
- * For running this feature on a developer's machine, where the app and the
- * container share a loopback interface and SSM is neither present nor wanted.
- * The SSM adapter is what production uses; this one exists so the loopback path
- * can be exercised at all without an EC2 instance in the loop.
+ * The one runtime there is: a managed server is a container beside this app,
+ * published on the host's loopback, which is what lets the registry entry
+ * name `127.0.0.1`. It assumes one app instance per host — a second host
+ * has no such container — and a `docker` binary the process can run (a
+ * Kubernetes-native adapter would be a second implementation of the same
+ * port, not a branch here).
  *
  * Arguments are passed as an array, never a shell string. Pattern checks still
  * protect the values used structurally by the Docker CLI.
@@ -64,17 +66,16 @@ export function createDockerProvisioner(): McpProvisioner {
         "512m",
         "-p",
         `127.0.0.1:${port}:${target}`,
-        // Say which port, rather than hope. The SSM adapter writes `PORT` into
-        // the container's environment and the image obeys it; without the same
-        // here, a mapping to a port nobody was told to bind publishes nothing —
+        // Say which port, rather than hope. `PORT` goes into the container's
+        // environment and the image obeys it; without it, a mapping to a port
+        // nobody was told to bind publishes nothing —
         // and a container that was merely stranded comes back definitively
         // broken. `-e` beats `--env-file`, so an operator who set `PORT` there
         // and a `containerPort` that disagrees gets the one the mapping uses.
         // Checked, like the image and the name beside it. Nothing here can
-        // inject a flag — this is an argv array, not a shell string — but the
-        // SSM adapter has always validated the same field, and two adapters
-        // disagreeing about what a reference may be is a difference neither
-        // of them can justify.
+        // inject a flag — this is an argv array, not a shell string — but a
+        // reference is a path the CLI opens, and `MANAGED_ENV_REF` is where
+        // what a path may look like is decided once.
         ...(spec.envRefs ?? []).flatMap((ref) => [
           "--env-file",
           assertSafe(ref, MANAGED_ENV_REF, "env reference"),

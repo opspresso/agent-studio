@@ -7,15 +7,6 @@
 export const CHAT_MESSAGE_MAX_SEQ = 999999;
 
 export const keys = {
-  auth: (model: string, id: string) => ({ PK: `AUTH#${model}#${id}`, SK: "ITEM" }),
-  authModelPartition: (model: string) => `AUTH#${model}`,
-  authUniqueLookup: (model: string, field: string, value: string) =>
-    `AUTH#${model}#${field}#${value}`,
-  authUnique: (model: string, field: string, value: string) => ({
-    PK: `AUTHUNIQUE#${model}#${field}#${value}`,
-    SK: "LOCK",
-  }),
-
   project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
   projectPartition: (name: string) => `PROJECT#${name}`,
   projectApiToken: (name: string) => ({ PK: `PROJECT#${name}`, SK: "APITOKEN" }),

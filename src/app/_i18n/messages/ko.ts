@@ -545,7 +545,7 @@ export const ko: Messages = {
   "managed.port": "컨테이너 포트",
   "managed.envRefs": "환경변수 참조",
   "managed.envRefsPlaceholder": "/env/prod/mcp-image-fetch",
-  "managed.envRefsHint": "값이 아니라 SSM 파라미터 이름입니다 — 시크릿은 여기를 거치지 않습니다.",
+  "managed.envRefsHint": "값이 아니라 호스트의 env 파일 경로입니다 — 시크릿은 여기를 거치지 않습니다.",
   "managed.envVars": "환경변수",
   "managed.envVarsEmpty": "직접 지정한 환경변수가 없습니다.",
   "managed.addVariable": "+ 변수 추가",

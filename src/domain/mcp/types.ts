@@ -151,7 +151,7 @@ export interface McpServer {
    */
   image?: string;
   /**
-   * Managed only: names of SSM parameters holding the container's environment.
+   * Managed only: host env-file paths holding the container's environment.
    * References, not values: the secrets never enter this table.
    */
   envRefs?: string[];

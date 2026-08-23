@@ -9,11 +9,11 @@ Agent Studio 를 로컬에서 셋업하고, 실행하고, 검증하는 방법.
 ## 사전 준비
 
 - **Node.js 24+** (`engines: >=24`)
-- **pnpm 11.10.0**, `packageManager` 로 고정 — 전역 설치 대신 corepack 을 쓴다
+- **pnpm 11.22.0**, `packageManager` 로 고정 — 전역 설치 대신 corepack 을 쓴다
 - **Docker**, PostgreSQL(pgvector) 용 — 그리고 artifact 를 시험한다면 MinIO 용
 
 ```bash
-corepack enable && corepack prepare pnpm@11.10.0 --activate
+corepack enable && corepack prepare pnpm@11.22.0 --activate
 pnpm install
 ```
 

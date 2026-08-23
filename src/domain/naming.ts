@@ -28,7 +28,7 @@ export const SLUG_RULE = "must be a slug (lowercase letters, digits, hyphens)";
 /**
  * The managed-workload name rule: a slug that is also a valid DNS label —
  * starts alphanumeric, 63 characters at most — because the name is reused as
- * the Docker container's name and inside an SSM parameter path. Four call
+ * the Docker container's name and inside an env-file path. Four call
  * sites (the create route, both provisioners, the console form) each spelled
  * it out before it had an owner.
  */

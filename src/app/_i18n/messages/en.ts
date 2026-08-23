@@ -617,7 +617,7 @@ export const en = {
   "managed.envRefs": "Environment references",
   "managed.envRefsPlaceholder": "/env/prod/mcp-image-fetch",
   "managed.envRefsHint":
-    "SSM parameter names, not values — the secrets never pass through here.",
+    "Paths of env files on the host, not values — the secrets never pass through here.",
   "managed.envVars": "Environment variables",
   "managed.envVarsEmpty": "No direct environment variables.",
   "managed.addVariable": "+ Add variable",

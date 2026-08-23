@@ -414,7 +414,7 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.
   Documents have their own caps in `src/domain/llm/documentLimits.ts`, kept separate because
   they bound a different thing: an image is bounded by what a provider accepts, a document by
-  the prompt its text has to fit and by the 400KB item a chat message is stored as.
+  the prompt its text has to fit and by the row a chat message is stored as and replayed from on every later turn.
 - **A run's bytes are kept at the bracket, never at the producer.** `openRun` is what all four
   entry points call, so the recorder is built there with the run's identity already bound.
   Attaching it to `generateImage` instead covers a quarter of the cases: the chat surface's

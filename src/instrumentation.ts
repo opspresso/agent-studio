@@ -21,7 +21,7 @@ import { log } from "@/shared/logger";
 /**
  * Restart any managed MCP container this process cannot reach.
  *
- * Deliberately not awaited. A single restart pulls an image and polls SSM for up
+ * Deliberately not awaited. A single restart pulls an image and waits on the container for up
  * to five minutes; blocking on that would hold the server before it listens, and
  * the container healthcheck (`GET /api/health`) would fail the very deployment
  * that was trying to fix things.

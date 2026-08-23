@@ -312,7 +312,6 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다 — 직접 서빙�
 | `URL_FETCH_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | `FetchUrl` 빌트인이 사설 주소로 resolve 되는데도 읽어도 되는 호스트의 DNS suffix 목록 — 사내 위키, 내부 API. **위와 의도적으로 별개의 목록이다**: 이 앱이 부르는 서비스라고 해서 모델이 설득당해 읽어도 되는 페이지인 것은 아니다. 같은 매칭 규칙(`isDeclaredInternalHost` — 레이블 경계, 단일 레이블 거부, IP 리터럴 거부), 같은 이유로 env 전용. [SECURITY.md](SECURITY.md#모델이-고른-url). |
 | `MANAGED_MCP_RUNTIME` | 미설정 | — | managed MCP 컨테이너를 어떻게 띄우는가. 유일한 값은 `docker` — 앱이 자기 호스트의 Docker CLI 를 직접 구동해 `127.0.0.1:<port>` 로 포트를 게시하고 그 주소를 등록한다. 다른 값은 경고와 함께 무시되어 기능이 꺼진다. |
 | `MANAGED_MCP_REGISTRY` | 미설정 | — | `docker login` 이 인증하는 레지스트리. 덕분에 이 계정 자신의 이미지는 자격증명을 타이핑하지 않고도 pull 된다. 호스트가 pull 할 수 있는 다른 어떤 레지스트리의 이미지도 허용되며, 그것들에 대해서는 로그인만 건너뛴다. |
-| `MANAGED_MCP_NETWORK_CONTAINER` | `agent-studio` | — | `config.ts` 에 선언돼 있으나 Docker 프로비저너는 읽지 않는다 — 포트 매핑을 게시하므로 네트워크 네임스페이스를 공유할 컨테이너가 없다. |
 
 `MANAGED_MCP_RUNTIME` 과 `MANAGED_MCP_REGISTRY` 가 둘 다 설정되지 않으면 managed-MCP 라우트는
 기능을 절반만 켜는 대신 `503` 으로 답한다. 컨테이너의 환경은 두 경로로 들어간다: `envRefs` 는
