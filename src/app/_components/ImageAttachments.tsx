@@ -247,30 +247,39 @@ export function useFileDrop(onFiles: (files: File[]) => void, disabled = false) 
 }
 
 /**
- * Paste-to-attach: a screenshot on the clipboard becomes an attachment.
+ * Paste-to-attach: a picture or a file on the clipboard becomes an attachment.
  *
- * **A clipboard carrying text is a text paste, even when it also carries a
- * picture.** Copying a spreadsheet range, a slide, a Figma frame or an image
- * with its caption puts `text/plain`, `text/html` *and* an `image/png` in one
- * transfer, so a file count alone would `preventDefault` the reader's text
- * away and stage a screenshot of it instead — losing what they meant to paste
- * and attaching something they did not ask for. Only a files-only clipboard,
- * which is what a screenshot and a copied file are, becomes an attachment.
+ * **`text/plain` is what decides, because it is the only thing a textarea can
+ * receive.** Copying a spreadsheet range, a slide or a Figma frame puts
+ * `text/plain`, `text/html` *and* an `image/png` in one transfer, and there
+ * the reader means the words: staging the rendered picture instead would lose
+ * what they copied and attach something they never asked for. So a clipboard
+ * carrying text stays a text paste.
+ *
+ * Every other type beside the file is a *description* of that file, not
+ * something anybody can paste as words — Chrome's "Copy image", and the same
+ * gesture in Slack or Notion, put an `<img>` tag in `text/html` next to the
+ * bytes and no `text/plain` at all. Refusing those (which reading any `text/*`
+ * as text did) made the paste do **nothing whatsoever**: no attachment,
+ * because we returned, and no text either, because there was none to insert.
+ * A screenshot and a copied file arrive with no text type at all and have
+ * always worked; this is the same gesture with a caption attached.
  */
 export function onFilePaste(onFiles: (files: File[]) => void, disabled = false) {
   return (event: React.ClipboardEvent) => {
     if (disabled) {
       return;
     }
-    const types = Array.from(event.clipboardData?.types ?? []);
-    if (types.some((type) => type.startsWith("text/"))) {
+    const files = transferredFiles(event.clipboardData);
+    if (files.length === 0) {
       return;
     }
-    const files = transferredFiles(event.clipboardData);
-    if (files.length > 0) {
-      event.preventDefault();
-      onFiles(files);
+    const types = Array.from(event.clipboardData?.types ?? []);
+    if (types.includes("text/plain")) {
+      return;
     }
+    event.preventDefault();
+    onFiles(files);
   };
 }
 
