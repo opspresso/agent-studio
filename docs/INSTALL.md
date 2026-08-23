@@ -87,7 +87,10 @@ helm upgrade --install agent-studio deploy/helm/agent-studio \
   파일에 둔다** — 차트가 생성하지 않는다(GitOps 렌더마다 달라져 DB 에서 잠기는 것을 막기 위해). initdb 가
   볼륨에 써 넣으므로 이후 바꾸지 않는다. 앱은 `ARTIFACT_ACCESS_MODE=proxied` 로 오브젝트를 직접 서빙하므로
   MinIO 는 클러스터 밖으로 나가지 않는다.
-- 레플리카를 늘려도 된다 — 런 상태는 전부 DB 에 있다. 단 managed MCP 는 호스트당 인스턴스 하나를 전제한다.
+- 레플리카를 늘려도 된다 — 런 상태는 전부 DB 에 있다. 단 managed MCP(`MANAGED_MCP_RUNTIME=docker`)는
+  여기서도 compose 에서도 **그대로는 동작하지 않는다**: 앱 이미지에 `docker` CLI 가 없고, 앱이 호스트
+  네트워크·Docker 소켓에 닿지 않는다. 켜려면 CLI 를 넣은 이미지와 소켓 마운트, 호스트 loopback 에
+  닿는 네트워크가 필요하다 — 기본은 꺼짐이며, 켠 채로 조건이 빠지면 항목마다 `spawn docker ENOENT` 다.
 
 ## 폐쇄망(air-gapped)에서
 
