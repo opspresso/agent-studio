@@ -85,6 +85,7 @@ const MIGRATIONS: Migration[] = [
         "id" text PRIMARY KEY,
         "accountId" text NOT NULL,
         "providerId" text NOT NULL,
+        "issuer" text NOT NULL,
         "userId" text NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
         "accessToken" text,
         "refreshToken" text,
@@ -97,6 +98,9 @@ const MIGRATIONS: Migration[] = [
         "updatedAt" timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE INDEX IF NOT EXISTS "account_userId_idx" ON "account" ("userId")`,
+      // An account is addressed by issuer + accountId (`findAccountByKey`):
+      // the namespace an identity belongs to, and its id there.
+      `CREATE INDEX IF NOT EXISTS "account_issuer_accountId_idx" ON "account" ("issuer", "accountId")`,
       `CREATE TABLE IF NOT EXISTS "verification" (
         "id" text PRIMARY KEY,
         "identifier" text NOT NULL,
@@ -122,6 +126,23 @@ const MIGRATIONS: Migration[] = [
         embedding vector NOT NULL,
         metadata jsonb NOT NULL DEFAULT '{}'::jsonb
       )`,
+    ],
+  },
+  {
+    version: 4,
+    name: "account_issuer",
+    // Better Auth 1.7 addresses an account by issuer + accountId. A database
+    // whose `account` table predates the column gets it here, backfilled with
+    // the library's own namespaces: `local:credential` for a password
+    // account, `local:oauth:<provider>` for a built-in social provider. A
+    // fresh database already has the column from version 2 and skips the
+    // `ADD`; the backfill then matches nothing.
+    statements: [
+      `ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "issuer" text NOT NULL DEFAULT ''`,
+      `UPDATE "account" SET "issuer" = CASE WHEN "providerId" = 'credential' THEN 'local:credential'
+         ELSE 'local:oauth:' || "providerId" END WHERE "issuer" = ''`,
+      `ALTER TABLE "account" ALTER COLUMN "issuer" DROP DEFAULT`,
+      `CREATE INDEX IF NOT EXISTS "account_issuer_accountId_idx" ON "account" ("issuer", "accountId")`,
     ],
   },
 ];

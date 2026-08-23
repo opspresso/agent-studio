@@ -159,13 +159,19 @@ export async function ensureBootstrapAdmin(): Promise<void> {
   }
   const ctx = await auth.$context;
   const existing = await ctx.internalAdapter.findUserByEmail(bootstrap.email);
-  if (existing) {
+  // A user who already has a password account is done — theirs to manage. A
+  // user without one is a bootstrap that stopped between the two writes (or
+  // an account that arrived some other way and now needs a password to
+  // break glass with): the credential is added, the user row left alone.
+  if (existing && (await ctx.internalAdapter.findCredentialAccount(existing.user.id))) {
     return;
   }
-  const user = await ctx.internalAdapter.createUser(
-    { email: bootstrap.email, name: "Administrator", emailVerified: true },
-    { method: "email-password" },
-  );
+  const user =
+    existing?.user ??
+    (await ctx.internalAdapter.createUser(
+      { email: bootstrap.email, name: "Administrator", emailVerified: true },
+      { method: "email-password" },
+    ));
   // The shape the library's own sign-up writes for a password account: a
   // `credential` provider under its local issuer namespace.
   await ctx.internalAdapter.linkAccount({
@@ -175,5 +181,5 @@ export async function ensureBootstrapAdmin(): Promise<void> {
     accountId: user.id,
     password: await ctx.password.hash(bootstrap.password),
   });
-  log.info("authz", `created bootstrap administrator ${bootstrap.email}`);
+  log.info("authz", `${existing ? "added a password to" : "created"} bootstrap administrator ${bootstrap.email}`);
 }

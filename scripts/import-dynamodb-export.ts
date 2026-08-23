@@ -149,11 +149,22 @@ async function main(): Promise<void> {
               );
               counts.session += 1;
               break;
-            case "account":
+            case "account": {
+              // Better Auth 1.7 addresses an account by issuer + accountId; rows
+              // written by the 1.6 adapter carry no issuer. The library's own
+              // namespaces: a password account is `local:credential`, a
+              // built-in social provider (Google here) `local:oauth:<id>`.
+              const providerId = String(item.providerId ?? "");
+              const issuer =
+                typeof item.issuer === "string" && item.issuer !== ""
+                  ? item.issuer
+                  : providerId === "credential"
+                    ? "local:credential"
+                    : `local:oauth:${encodeURIComponent(providerId)}`;
               await client.query(
-                `INSERT INTO "account" ("id", "accountId", "providerId", "userId", "accessToken", "refreshToken", "idToken",
+                `INSERT INTO "account" ("id", "accountId", "providerId", "issuer", "userId", "accessToken", "refreshToken", "idToken",
                    "accessTokenExpiresAt", "refreshTokenExpiresAt", "scope", "password", "createdAt", "updatedAt")
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                  ON CONFLICT ("id") DO UPDATE SET "accessToken" = EXCLUDED."accessToken",
                    "refreshToken" = EXCLUDED."refreshToken", "idToken" = EXCLUDED."idToken",
                    "accessTokenExpiresAt" = EXCLUDED."accessTokenExpiresAt",
@@ -162,7 +173,8 @@ async function main(): Promise<void> {
                 [
                   item.id,
                   item.accountId,
-                  item.providerId,
+                  providerId,
+                  issuer,
                   item.userId,
                   item.accessToken ?? null,
                   item.refreshToken ?? null,
@@ -177,6 +189,7 @@ async function main(): Promise<void> {
               );
               counts.account += 1;
               break;
+            }
             case "verification":
               await client.query(
                 `INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt")

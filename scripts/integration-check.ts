@@ -213,7 +213,7 @@ async function main() {
         now,
       ),
       (error: unknown) =>
-        error instanceof Error && error.name === "ConditionalCheckFailedException",
+        error instanceof Error && error.name === "ConditionalWriteFailed",
     );
     pass("project optimistic write conflict");
 
