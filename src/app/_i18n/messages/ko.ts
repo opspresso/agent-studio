@@ -53,19 +53,19 @@ export const ko: Messages = {
   "auth.signOut": "로그아웃",
   "auth.account": "계정",
   "login.title": "로그인이 필요합니다",
-  "login.product": "Agent Studio, 사내에 설치해 쓰는 에이전트 플랫폼입니다.",
+  "login.product": "Agent Studio, 설치형 에이전트 플랫폼입니다.",
   "login.domains": "이 배포가 허용한 도메인의 계정으로 로그인하세요.",
 
   "home.eyebrow": "프로젝트 · 버전 · 배포",
   "home.headline": "AI 에이전트를 만들고",
-  "home.headlineAccent": " 사내 서버에서 운영합니다.",
+  "home.headlineAccent": " 우리 서버에서 운영합니다.",
   "home.lede":
-    "Agent Studio 는 회사 네트워크 안에 설치해 쓰는 에이전트 플랫폼입니다. 프롬프트나 에이전트를 프로젝트로 만들어 버전을 배포하고, 콘솔·HTTP·챗봇·다른 에이전트에서 호출합니다. 로그인과 실행, 콘솔은 인터넷이 끊긴 망에서도 그대로 동작합니다.",
+    "Agent Studio 는 설치형 에이전트 플랫폼입니다. 우리 네트워크 안에 올려 두고, 프롬프트나 에이전트를 프로젝트로 만들어 버전을 배포한 뒤 콘솔·HTTP·챗봇·다른 에이전트에서 호출합니다. 로그인과 실행, 콘솔은 인터넷이 끊긴 망에서도 그대로 동작합니다.",
   "home.signInHint": "이 배포가 허용한 도메인의 계정으로 로그인합니다.",
-  "home.proof.network": "사내 서버에서 동작",
+  "home.proof.network": "설치한 서버에서 동작",
   "home.proof.networkNote": "PostgreSQL 과 OpenAI 호환 엔드포인트",
   "home.proof.engine": "모델은 프로토콜 하나로",
-  "home.proof.engineNote": "라우터, 사내 서빙, 외부 API",
+  "home.proof.engineNote": "라우터, 자체 서빙, 외부 API",
   "home.proof.cost": "실행마다 비용과 기록",
   "home.proof.costNote": "시작한 사람 기준으로 집계",
   "home.streamLabel": "에이전트 실행 스트림 예시",
@@ -116,11 +116,11 @@ export const ko: Messages = {
     "pgvector 를 켠 PostgreSQL 하나와, 모델을 서빙하는 OpenAI 호환 엔드포인트 하나입니다. 스키마는 앱이 부팅할 때 직접 만듭니다.",
   "home.install.offline": "폐쇄망에서",
   "home.install.offlineNote":
-    "모델 카탈로그와 플러그인은 내려받는 대신 업로드하고, 컨테이너 이미지는 사내 레지스트리로 미러링하며, 임베딩도 사내 엔드포인트를 쓸 수 있습니다.",
+    "모델 카탈로그와 플러그인은 내려받는 대신 업로드하고, 컨테이너 이미지는 내부 레지스트리로 미러링하며, 임베딩도 직접 띄운 엔드포인트를 쓸 수 있습니다.",
   "home.install.optional": "선택 항목",
   "home.install.optionalNote":
     "Slack·Telegram·Teams, 나가는 A2A 호출, 외부 모델 API 는 각각 따로 설정합니다. 설정하지 않으면 그 기능만 꺼지고 나머지는 그대로 돕니다.",
-  "home.product": "사내에 설치해 쓰는 에이전트 플랫폼입니다.",
+  "home.product": "설치형 에이전트 플랫폼입니다.",
 
   "common.loading": "불러오는 중…",
   "common.cancel": "취소",
