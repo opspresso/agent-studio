@@ -149,11 +149,15 @@ const MIGRATIONS: Migration[] = [
 
 /** Bring the database to the current schema. Safe to call on every boot. */
 export async function migrate(): Promise<void> {
-  await sql(
-    "CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY, name text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())",
-  );
   await withTransaction(async (client) => {
+    // The lock first, the ledger table second: `CREATE TABLE IF NOT EXISTS`
+    // is not itself safe against a concurrent creator, so two instances
+    // booting against an empty database would race it and one would crash
+    // at boot — which is exactly the case the lock exists for.
     await client.query("SELECT pg_advisory_xact_lock($1)", [MIGRATION_LOCK]);
+    await client.query(
+      "CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY, name text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())",
+    );
     const applied = new Set(
       (await client.query<{ version: number }>("SELECT version FROM schema_migrations")).rows.map(
         (row) => row.version,

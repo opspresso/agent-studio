@@ -26,7 +26,13 @@ export async function snapshotFromArchive(
   repo: string,
 ): Promise<PluginsRepoSnapshot> {
   const { files } = stripLeadingDirectory(readTarArchive(archive));
-  const tree: PluginTreeFile[] = files.map((file) => ({
+  // `tar czf` on macOS writes an AppleDouble `._<name>` beside every file
+  // that carries extended attributes: a binary sidecar with the original's
+  // extension, which the walker would select as a `.md` attachment and then
+  // refuse as broken text. They are metadata, never content — dropped here,
+  // not reported, so a checkout archived on a Mac syncs like one from Linux.
+  const content = files.filter((file) => !file.path.split("/").at(-1)?.startsWith("._"));
+  const tree: PluginTreeFile[] = content.map((file) => ({
     path: file.path,
     size: file.bytes.byteLength,
     // The mode git would report, so a symlink is refused — and reported — by

@@ -252,16 +252,22 @@ function parseNumeric(field: Uint8Array, offset: number): number {
 
 /** pax records are `<decimal length> <key>=<value>\n`, the length counting the whole record. */
 function parsePaxRecords(data: Uint8Array, offset: number): { path?: string; size?: number } {
-  const text = Buffer.from(data).toString("utf8");
+  // A record is `<length> <key>=<value>\n` and `<length>` counts *bytes*,
+  // the whole record included — so the walk stays on the bytes, and only a
+  // record's contents are decoded. Counting decoded characters instead
+  // refused every archive with a non-ASCII name, which bsdtar (macOS) emits
+  // a pax record for whether or not the name is long.
+  const bytes = Buffer.from(data);
   const records: { path?: string; size?: number } = {};
   let at = 0;
-  while (at < text.length) {
-    const space = text.indexOf(" ", at);
-    const length = space > at ? Number.parseInt(text.slice(at, space), 10) : Number.NaN;
-    if (!Number.isInteger(length) || length <= 0 || at + length > text.length) {
+  while (at < bytes.length) {
+    const space = bytes.indexOf(0x20, at);
+    const length =
+      space > at ? Number.parseInt(bytes.toString("latin1", at, space), 10) : Number.NaN;
+    if (!Number.isInteger(length) || length <= 0 || at + length > bytes.length) {
       throw new TarArchiveError(`corrupt pax header before byte ${offset}`);
     }
-    const record = text.slice(space + 1, at + length - 1);
+    const record = bytes.toString("utf8", space + 1, at + length - 1);
     const equals = record.indexOf("=");
     if (equals > 0) {
       const key = record.slice(0, equals);

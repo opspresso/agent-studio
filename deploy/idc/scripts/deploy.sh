@@ -147,17 +147,20 @@ MCP_SECRETS=(
 )
 
 # quote_line VAR VALUE — one `VAR='value'` line, quoted so a value carrying
-# `$`, `#` or a space survives compose's env-file parser unchanged.
+# `$`, `#` or a space survives compose's env-file parser unchanged. The
+# value travels through the environment, never the command line: an
+# argument is visible to every local user in `ps` for as long as the
+# interpreter runs.
 quote_line() {
-  python3 -c '
-import sys
-var, value = sys.argv[1], sys.argv[2]
+  QL_VAR="$1" QL_VALUE="$2" python3 -c '
+import os
+var, value = os.environ["QL_VAR"], os.environ["QL_VALUE"]
 if "\x27" not in value:
     print(f"{var}=\x27{value}\x27")
 else:
     escaped = value.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "$$")
     print(f"{var}=\"{escaped}\"")
-' "$1" "$2"
+'
 }
 
 # ssm_lines VAR=PATH... — one quoted line per argument, fetched ten at a time

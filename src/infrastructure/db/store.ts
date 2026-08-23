@@ -88,6 +88,19 @@ async function lockRow(client: Runner, key: Key): Promise<Item | null> {
   return rowData(result.rows);
 }
 
+/**
+ * The document as the column takes it. `jsonb` refuses `\u0000` (NUL) inside a
+ * string — the one character JSON can carry that PostgreSQL text cannot —
+ * and a tool result or a pasted message does occasionally carry one. It is
+ * replaced with U+FFFD rather than refused: the alternative is the write
+ * failing after the reply already streamed, which is the loss the message
+ * budget exists to prevent. `JSON.stringify` has already escaped it, so the
+ * replacement is on the escape, keys included.
+ */
+export function toStoredJson(item: Item): string {
+  return JSON.stringify(item).replace(/\\u0000/g, "�");
+}
+
 async function upsert(client: Runner, item: Item): Promise<void> {
   const { PK, SK } = item as Key;
   if (typeof PK !== "string" || typeof SK !== "string") {
@@ -96,7 +109,7 @@ async function upsert(client: Runner, item: Item): Promise<void> {
   await client.query(
     "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) " +
       "ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
-    [PK, SK, JSON.stringify(item)],
+    [PK, SK, toStoredJson(item)],
   );
 }
 

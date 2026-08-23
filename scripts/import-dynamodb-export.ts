@@ -89,6 +89,7 @@ async function main(): Promise<void> {
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
   const { withTransaction, closePool } = await import("@/infrastructure/db/client");
+  const { toStoredJson } = await import("@/infrastructure/db/store");
 
   const counts = { items: 0, user: 0, session: 0, account: 0, verification: 0, dropped: 0 };
 
@@ -210,9 +211,11 @@ async function main(): Promise<void> {
           }
           continue;
         }
+        // Through the store's own encoding, so a legacy row carrying a NUL
+        // lands the way a fresh write would rather than aborting the file.
         await client.query(
           "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
-          [pk, sk, JSON.stringify(item)],
+          [pk, sk, toStoredJson(item)],
         );
         counts.items += 1;
       }

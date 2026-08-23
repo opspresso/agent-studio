@@ -19,7 +19,12 @@ spec:
       labels:
         {{- include "agent-studio.selectorLabels" . | nindent 8 }}
       annotations:
+        # Both rendered files, so a rotated secret rolls the pods that read it
+        # through `envFrom` — a Secret object changing on its own restarts
+        # nothing. An `existingSecret` the operator manages is outside this
+        # hash; rotating it is their `kubectl rollout restart`.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

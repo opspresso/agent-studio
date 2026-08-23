@@ -56,8 +56,10 @@ export function writeTar(entries: TarFixtureEntry[]): Buffer {
       if (entry.longName === "pax") {
         const record = ` path=${name}\n`;
         // The length counts itself; two passes settle the digit count.
-        let length = record.length + 1;
-        length = String(length).length + record.length;
+        // Bytes, not characters — a Korean name is three bytes a syllable.
+        const recordBytes = Buffer.byteLength(record, "utf8");
+        let length = recordBytes + 1;
+        length = String(length).length + recordBytes;
         const pax = Buffer.from(`${length}${record}`, "utf8");
         parts.push(tarHeader("PaxHeader/x", pax.byteLength, "x"), padded(pax));
       } else {

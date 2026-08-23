@@ -32,25 +32,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
-A value kept across upgrades: the one already in the named Secret when there
-is one, else the configured value, else a fresh random string. What makes a
-bundled database's password survive `helm upgrade`.
+The bundled stores' passwords are the operator's, never generated here. A
+chart that minted one would have to read it back on every render to keep it,
+and `lookup` answers nothing under `helm template`, `--dry-run` and every
+GitOps renderer — each sync would then rewrite the Secret while the data
+volume kept the password initdb saw, and the app would be locked out of its
+own database. A value the operator set is the same on every render.
 */}}
-{{- define "agent-studio.keep" -}}
-{{- $secret := lookup "v1" "Secret" .ns .name -}}
-{{- if and $secret (index $secret.data .key) -}}
-{{- index $secret.data .key | b64dec -}}
-{{- else if .value -}}
-{{- .value -}}
-{{- else -}}
-{{- randAlphaNum 32 -}}
-{{- end -}}
-{{- end -}}
-
 {{- define "agent-studio.postgresPassword" -}}
-{{- include "agent-studio.keep" (dict "ns" .Release.Namespace "name" (printf "%s-postgres" (include "agent-studio.fullname" .)) "key" "POSTGRES_PASSWORD" "value" .Values.postgres.password) -}}
+{{- required "postgres.password is required when postgres.enabled (openssl rand -hex 24); it is written into the volume at first start and must not change" .Values.postgres.password -}}
 {{- end -}}
 
 {{- define "agent-studio.minioPassword" -}}
-{{- include "agent-studio.keep" (dict "ns" .Release.Namespace "name" (printf "%s-minio" (include "agent-studio.fullname" .)) "key" "MINIO_ROOT_PASSWORD" "value" .Values.minio.rootPassword) -}}
+{{- required "minio.rootPassword is required when minio.enabled (openssl rand -hex 24)" .Values.minio.rootPassword -}}
 {{- end -}}
