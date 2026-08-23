@@ -47,9 +47,20 @@ export const OBJECTS_PATH = "/api/objects";
 const SIGNING_KEY_INFO = "agent-studio/object-url/v1";
 const SIGNING_KEY_BYTES = 32;
 
+/**
+ * Derived once. In `proxied` mode every stored object a reader sees is signed
+ * here and verified here again, so the derivation is on the request path of
+ * every image the console draws; the master key is read at boot and never
+ * changes within a process.
+ */
+let derived: Buffer | undefined;
+
 function signingKey(): Buffer {
-  const master = Buffer.from(config.aesEncryptionKey, "base64");
-  return Buffer.from(hkdfSync("sha256", master, "", SIGNING_KEY_INFO, SIGNING_KEY_BYTES));
+  if (!derived) {
+    const master = Buffer.from(config.aesEncryptionKey, "base64");
+    derived = Buffer.from(hkdfSync("sha256", master, "", SIGNING_KEY_INFO, SIGNING_KEY_BYTES));
+  }
+  return derived;
 }
 
 /**
