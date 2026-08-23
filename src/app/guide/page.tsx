@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import {
   IconBook2,
@@ -12,6 +13,7 @@ import type { TablerIcon } from "@tabler/icons-react";
 import { PageHeader } from "@/app/_components/PageHeader";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { getT } from "@/app/_i18n/server";
+import classes from "./page.module.css";
 
 /**
  * The one page whose content *is* its text: what this console is for and the
@@ -21,6 +23,11 @@ import { getT } from "@/app/_i18n/server";
  * first paint rather than after hydration — this page is nothing but strings,
  * and a flash of the wrong language would be the whole page. Nothing here is
  * interactive, which is what makes that free.
+ *
+ * The links are `next/link` and bare `<a>` with a class, not Mantine's
+ * `Anchor`: `component={Link}` hands a *function* to a client component, which
+ * React refuses across the RSC boundary — the page 500s at request time while
+ * `pnpm build` stays green, since nothing renders it during the build.
  *
  * Every entry below is a pair of message keys, and the page is the seven lists.
  * That is deliberate: a section is added by writing its two catalogue entries
@@ -35,6 +42,16 @@ interface Entry {
   title: MessageKey;
   body: MessageKey;
 }
+
+const SECTION_LINKS = [
+  { id: "start", title: "guide.start.title" },
+  { id: "words", title: "guide.words.title" },
+  { id: "types", title: "guide.types.title" },
+  { id: "reach", title: "guide.reach.title" },
+  { id: "surfaces", title: "guide.surfaces.title" },
+  { id: "limits", title: "guide.limits.title" },
+  { id: "trouble", title: "guide.trouble.title" },
+] as const satisfies ReadonlyArray<{ id: string; title: MessageKey }>;
 
 const STEPS = [
   { title: "guide.start.step1", body: "guide.start.step1Body" },
@@ -99,12 +116,14 @@ export default async function GuidePage() {
    * a shared one would have to grow a prop for each of the differences below.
    */
   const section = (
+    id: string,
     heading: MessageKey,
     Icon: TablerIcon,
     lede: MessageKey | null,
     children: React.ReactNode,
+    links: ReadonlyArray<{ href: string; label: MessageKey }> = [],
   ) => (
-    <Card component="section" padding="lg">
+    <Card component="section" id={id} padding="lg" className={classes.prose}>
       <Group gap="sm" wrap="nowrap" align="center">
         <ThemeIcon variant="light" color="brand" size={34} radius="md">
           <Icon size={19} stroke={1.7} />
@@ -119,6 +138,16 @@ export default async function GuidePage() {
         </Text>
       )}
       {children}
+      {links.length > 0 && (
+        /* The pages the section just described, one click away. */
+        <Group gap="sm" mt="lg">
+          {links.map((link) => (
+            <Link key={link.href} href={link.href} className={classes.link}>
+              {t(link.label)} →
+            </Link>
+          ))}
+        </Group>
+      )}
     </Card>
   );
 
@@ -141,7 +170,17 @@ export default async function GuidePage() {
     <Stack gap="lg">
       <PageHeader title={t("guide.title")} description={t("guide.lede")} Icon={IconCompass} />
 
+      {/* Seven sections is more than fits a screen, so they are listed once. */}
+      <Group gap="md" wrap="wrap">
+        {SECTION_LINKS.map((link) => (
+          <a key={link.id} href={`#${link.id}`} className={classes.link}>
+            {t(link.title)}
+          </a>
+        ))}
+      </Group>
+
       {section(
+        "start",
         "guide.start.title",
         IconRoute,
         "guide.start.body",
@@ -165,11 +204,15 @@ export default async function GuidePage() {
             </Group>
           ))}
         </Stack>,
+        [{ href: "/projects", label: "nav.projects" }],
       )}
 
-      {section("guide.words.title", IconVocabulary, null, entries(WORDS))}
+      {section("words", "guide.words.title", IconVocabulary, null, entries(WORDS), [
+        { href: "/profile", label: "nav.profile" },
+      ])}
 
       {section(
+        "types",
         "guide.types.title",
         IconBook2,
         null,
@@ -187,15 +230,29 @@ export default async function GuidePage() {
         </SimpleGrid>,
       )}
 
-      {section("guide.reach.title", IconPlugConnected, "guide.reach.body", entries(REACH))}
+      {section("reach", "guide.reach.title", IconPlugConnected, "guide.reach.body", entries(REACH), [
+        { href: "/skills", label: "nav.skills" },
+        { href: "/tools", label: "nav.tools" },
+        { href: "/agents", label: "nav.agents" },
+        { href: "/plugins", label: "nav.plugins" },
+      ])}
 
-      {section("guide.surfaces.title", IconRoute, "guide.surfaces.body", entries(SURFACES))}
+      {section("surfaces", "guide.surfaces.title", IconRoute, "guide.surfaces.body", entries(SURFACES), [
+        { href: "/chats", label: "nav.chats" },
+      ])}
 
-      {section("guide.limits.title", IconCoin, null, entries(LIMITS))}
+      {section("limits", "guide.limits.title", IconCoin, null, entries(LIMITS), [
+        { href: "/", label: "nav.overview" },
+        { href: "/profile", label: "nav.profile" },
+        { href: "/artifacts", label: "nav.artifacts" },
+      ])}
 
-      {section("guide.trouble.title", IconLifebuoy, null, entries(TROUBLE))}
+      {section("trouble", "guide.trouble.title", IconLifebuoy, null, entries(TROUBLE), [
+        { href: "/models", label: "nav.models" },
+        { href: "/tools", label: "nav.tools" },
+      ])}
 
-      {section("guide.more.title", IconBook2, "guide.more.body", null)}
+      {section("more", "guide.more.title", IconBook2, "guide.more.body", null)}
     </Stack>
   );
 }

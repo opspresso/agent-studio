@@ -1,5 +1,17 @@
 /* The signed-out hero's example stream. Colours mark what each line is. */
 
+/*
+ * Korean has no spaces inside a noun phrase, so the default break rule splits
+ * words mid-syllable-block — the headline read "사내 서 / 버에서". `keep-all`
+ * moves the break to a space, which is how Korean copy is set. English is
+ * unaffected: it already breaks at spaces.
+ */
+.hero,
+.domainCard,
+.installPanel {
+  word-break: keep-all;
+}
+
 .eyebrow {
   border: 1px solid color-mix(in oklab, var(--mantine-color-brand-5) 24%, transparent);
   background: color-mix(in oklab, var(--mantine-color-brand-5) 9%, transparent);
@@ -78,18 +90,6 @@
   background-color: color-mix(in oklab, var(--studio-surface-raised) 58%, transparent);
 }
 
-.liveBadge {
-  border-radius: var(--mantine-radius-xl);
-  background-color: var(--mantine-color-teal-light);
-}
-
-.floatingBadge {
-  position: absolute;
-  right: -6px;
-  bottom: 36px;
-  box-shadow: var(--surface-shadow);
-}
-
 .trace {
   width: 100%;
   max-width: 100%;
@@ -147,11 +147,6 @@
 
   .console {
     transform: none;
-  }
-
-  .floatingBadge {
-    right: 8px;
-    bottom: 12px;
   }
 }
 
