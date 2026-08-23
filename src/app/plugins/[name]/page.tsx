@@ -22,6 +22,7 @@ import { listMcps, type McpServer } from "@/app/tools/api";
 import { getPlugin, type Plugin } from "../api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
+import { isArchiveSync } from "@/domain/plugin/sync";
 
 export default function PluginDetailPage() {
   const t = useT();
@@ -84,10 +85,9 @@ export default function PluginDetailPage() {
 
   const repoUrl = `https://github.com/${plugin.repo}`;
   const treeUrl = `${repoUrl}/tree/${plugin.commitSha}${plugin.rootPath ? `/${plugin.rootPath}` : ""}`;
-  // A row an uploaded archive wrote carries the archive's sha256 as its
-  // commit — 64 hex characters where git's are 40 — and nothing on GitHub
-  // answers to it, so the links are text there.
-  const onGitHub = /^[0-9a-f]{40}$/.test(plugin.commitSha);
+  // A row an uploaded archive wrote carries the archive's digest as its
+  // commit, and nothing on GitHub answers to it — so the links are text there.
+  const onGitHub = !isArchiveSync(plugin.commitSha);
   const location = `${plugin.repo}${plugin.rootPath ? `/${plugin.rootPath}` : ""}`;
 
   return (

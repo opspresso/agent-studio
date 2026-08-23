@@ -6,6 +6,7 @@ import { config } from "@/lib/config";
 import { log } from "@/shared/logger";
 import { timingSafeEqualString } from "@/shared/timingSafe";
 import { unauthorized } from "@/shared/unauthorized";
+import { isArchiveSync } from "@/domain/plugin/sync";
 
 /**
  * The plugins-sync tick. A Kubernetes CronJob (or anything able to POST)
@@ -42,6 +43,13 @@ export async function POST(request: Request): Promise<Response> {
       pluginsRepoHeadSha(repoConfig),
       lastPluginSync(repoConfig.repo),
     ]);
+    // An uploaded archive is a person's decision, and it stands: its commit
+    // is the archive's digest, which no GitHub head will ever equal, so the
+    // tick would otherwise replace the upload within the minute. A sync run
+    // on purpose (`POST /api/plugins/sync`) is how GitHub takes over again.
+    if (last && isArchiveSync(last.report.commitSha)) {
+      return Response.json({ started: false, held: "archive" });
+    }
     if (last && head === last.report.commitSha && !reportHasFailures(last.report)) {
       return Response.json({ started: false, upToDate: true });
     }

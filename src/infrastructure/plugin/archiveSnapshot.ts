@@ -13,14 +13,11 @@
  */
 
 import { createHash } from "node:crypto";
-import type { PluginsRepoSnapshot } from "@/domain/plugin/sync";
+import { ARCHIVE_BRANCH, type PluginsRepoSnapshot } from "@/domain/plugin/sync";
 import { SYMLINK_MODE } from "@/domain/skill/files";
 import { decodeUtf8Text } from "@/shared/utf8Text";
 import { readTarArchive, stripLeadingDirectory, TarArchiveError } from "@/infrastructure/archive/tar";
 import { collectRepoPlugins, type PluginTreeFile } from "./snapshot";
-
-/** What the snapshot's `branch` says when the source was an archive. */
-export const ARCHIVE_BRANCH = "archive";
 
 export async function snapshotFromArchive(
   archive: Uint8Array,

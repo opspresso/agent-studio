@@ -633,27 +633,28 @@ POST /api/plugins/sync
   most 500 names) | 409 (a sync is already running) | 503 (not configured)
 
 POST /api/plugins/sync/scan          (X-Scan-Token: SCHEDULE_SCAN_TOKEN)
-→ 202 { started } | 200 { upToDate } | 401 | 503
+→ 202 { started } | 200 { upToDate } | 200 { held: "archive" } | 401 | 503
 
 POST /api/plugins/sync/upload        multipart/form-data: file (.tar.gz | .tgz | .tar),
-                                     repo? (provenance), selection? (the removal JSON below)
+                                     selection? (the removal JSON below)
 → the same sync report | 400 (not multipart, no `file`, empty archive, unreadable archive —
-  a path that leaves the tree, a non-UTF-8 text entry —, bad `repo`, bad selection)
+  a path that leaves the tree, a non-UTF-8 text entry —, bad selection)
   | 409 (a sync is already running) | 413 (over 32 MB as sent; 64 MB inflated or 20,000
   entries refuse inside the reader as 400)
 ```
 
 `/sync/upload` 는 GitHub 에 닿지 않는 배포의 sync 다: 체크아웃의 아카이브(`git archive
 --format=tar.gz HEAD` 든 `tar czf` 든 — 맨 앞의 공통 디렉터리는 벗겨 낸다)를 올리면 GitHub
-클라이언트가 만드는 것과 같은 스냅샷이 되어 **같은 sync** 를 지난다. `repo` 는 그 행들이 지닐
-provenance 이고 비우면 설정된 `PLUGINS_REPO`, 그것도 없으면 `archive` 다 — 그래서 GitHub 가
-닿던 시절의 행은 같은 저장소가 손으로 와도 주인을 유지한다. 스냅샷의 `branch` 는 `archive`,
+클라이언트가 만드는 것과 같은 스냅샷이 되어 **같은 sync** 를 지난다. 행들이 지닐 provenance 는
+설정된 `PLUGINS_REPO`, 그것도 없으면 `archive` 다 — `GET /sync` 가 마지막 리포트를 읽는 바로 그
+이름이고, 그래서 GitHub 가 닿던 시절의 행은 같은 저장소가 손으로 와도 주인을 유지한다. 스냅샷의 `branch` 는 `archive`,
 `commitSha` 는 아카이브의 sha256 이다 — 업로드를 식별할 뿐, 바뀌었는지는 행마다 내용으로 판정한다(GitHub sync 와 같다). `PLUGINS_REPO`
 도 `GITHUB_TOKEN` 도 필요 없고, `GET /api/plugins/sync` 의 `last` 는 같은 이름 아래에서 읽힌다.
 심볼릭 링크는 GitHub 트리와 같은 모드(`120000`)로 보고되어 같은 규칙으로 건너뛴다.
 
 `/sync/scan` 은 CronJob 의 tick 이다: 브랜치 head 를 마지막 리포트와 비교해, 머지된 것이 없으면
-스냅샷 비용을 치르지 않고 `upToDate` 로 답한다 (그 리포트가 `write-failed` skip 을 싣고 있었다면
+스냅샷 비용을 치르지 않고 `upToDate` 로 답한다. 마지막 리포트가 아카이브 업로드의 것이면 `held` 로
+답하고 GitHub 를 보지 않는다 — 사람이 올린 것은 다음 `POST /api/plugins/sync` 까지 선다 (그 리포트가 `write-failed` skip 을 싣고 있었다면
 예외다 — 그것은 다시 돌려야만 복구된다). tick 은 `scheduler` 로서 sync 하고, 절대 삭제하지
 않으며 (제거 선택은 콘솔에만 있다), schedule ticker 의 토큰을 공유한다 — 배포당 CronJob 인증
 정보는 하나다.
