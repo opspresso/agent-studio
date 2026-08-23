@@ -23,8 +23,14 @@ app.kubernetes.io/name: {{ include "agent-studio.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{/*
+Images are tagged with the git tag, `v`-prefixed (`release.yml`); the chart's
+appVersion is the bare version, as Helm convention has it. The default tag
+bridges the two.
+*/}}
 {{- define "agent-studio.image" -}}
-{{- printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag) -}}
+{{- $tag := default (printf "v%s" (trimPrefix "v" .Chart.AppVersion)) .Values.image.tag -}}
+{{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
 
 {{- define "agent-studio.secretName" -}}

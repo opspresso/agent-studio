@@ -8,7 +8,7 @@
 
 image:
   repository: ghcr.io/opspresso/agent-studio
-  tag: ""            # defaults to the chart's appVersion
+  tag: ""            # defaults to v<appVersion> — images carry the git tag
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
