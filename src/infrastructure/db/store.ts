@@ -61,6 +61,17 @@ export const conditions = {
 
 type Runner = Pick<PoolClient, "query">;
 
+/**
+ * The exclusive upper bound of "every key starting with `prefix`" under
+ * `COLLATE "C"` byte order. U+10FFFF is the last code point there is — UTF-8
+ * F4 8F BF BF — so nothing that starts with the prefix sorts past it; U+FFFF
+ * (EF BF BF) did not reach a key whose next character is astral, an emoji
+ * say, which every 4-byte sequence (F0…) sorts after.
+ */
+function prefixUpperBound(prefix: string): string {
+  return `${prefix}\u{10FFFF}`;
+}
+
 function rowData(rows: { data: Item }[]): Item | null {
   return rows[0]?.data ?? null;
 }
@@ -311,7 +322,7 @@ export async function queryItems(input: QueryInput): Promise<Item[]> {
       where.push(`${columns.sk} = ${bind(sk.eq)}`);
     } else if ("prefix" in sk) {
       where.push(`${columns.sk} >= ${bind(sk.prefix)}`);
-      where.push(`${columns.sk} < ${bind(`${sk.prefix}￿`)}`);
+      where.push(`${columns.sk} < ${bind(prefixUpperBound(sk.prefix))}`);
     } else if ("between" in sk) {
       where.push(`${columns.sk} BETWEEN ${bind(sk.between[0])} AND ${bind(sk.between[1])}`);
     } else {
@@ -350,7 +361,7 @@ export async function deletePartition(
     where.push(`NOT (sk = ANY($${params.length}::text[]))`);
   }
   if (options.prefix !== undefined) {
-    params.push(options.prefix, `${options.prefix}￿`);
+    params.push(options.prefix, prefixUpperBound(options.prefix));
     where.push(`sk >= $${params.length - 1}`, `sk < $${params.length}`);
   }
   const rows = await sql<{ n: string }>(
