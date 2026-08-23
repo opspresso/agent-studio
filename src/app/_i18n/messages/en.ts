@@ -316,7 +316,7 @@ export const en = {
     "Switches on the version: draw and edit images, read a URL the model chose, save a file the reader can download, read Slack history where a bot is connected.",
   "guide.reach.memory": "Memory",
   "guide.reach.memoryBody":
-    "What earlier runs stored, recalled before the first token — available when this deployment registered a memory server. Without one the switch is inert and the run says so.",
+    "What earlier runs stored, recalled before the first token — when the version binds a memory server that offers a recall tool. Without one the switch is inert, and every run says so rather than starting quietly without a memory.",
 
   "guide.surfaces.title": "Where it can answer",
   "guide.surfaces.body":
@@ -366,7 +366,7 @@ export const en = {
     "Check the version's binding — one narrowed to a list of tools hides the rest — and that the server answered discovery, which the Tools page shows. A run that could not reach a bound server says so in its answer.",
   "guide.trouble.slack": "The Slack bot stays silent",
   "guide.trouble.slackBody":
-    "It answers mentions, direct messages, and channel messages matching the keywords you gave it; anything else it ignores on purpose. The Integrations tab has a test button that posts as the bot.",
+    "It answers mentions, direct messages, and channel messages matching the keywords you gave it; anything else it ignores on purpose. The Integrations tab has a test button that checks the bot token, and lists the channels the bot has been invited to.",
   "guide.trouble.tab": "I closed the tab mid-answer",
   "guide.trouble.tabBody":
     "The run keeps going — the browser leaving means the reader left, not stop. Reopen the chat and the answer is there.",
