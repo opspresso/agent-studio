@@ -57,6 +57,47 @@ function stripFileBytes(task: Task): Task {
   };
 }
 
+/**
+ * Raw part bytes across the JSON boundary. The store keeps a document, and
+ * `JSON.stringify` turns a `Buffer` into `{type:"Buffer",data:[…]}` — an
+ * object that reads back as an object, not as bytes: `byteLength` is
+ * `undefined`, so a reloaded oversized part is never stripped on re-save and
+ * the SDK serialises the wrong shape. Base64 on the way in, bytes on the way
+ * out, applied to every part a task carries.
+ */
+function mapParts(task: Task, map: (part: Part) => Part): Task {
+  return {
+    ...task,
+    artifacts: task.artifacts?.map((artifact) => ({
+      ...artifact,
+      parts: artifact.parts?.map(map),
+    })),
+    history: task.history?.map((message) => ({ ...message, parts: message.parts?.map(map) })),
+  };
+}
+
+const BASE64_CASE = "raw-base64";
+
+function toStoredTask(task: Task): Task {
+  return mapParts(task, (part) =>
+    part.content?.$case === "raw"
+      ? ({
+          ...part,
+          content: { $case: BASE64_CASE, value: Buffer.from(part.content.value).toString("base64") },
+        } as unknown as Part)
+      : part,
+  );
+}
+
+function fromStoredTask(stored: Task): Task {
+  return mapParts(stored, (part) => {
+    const content = part.content as { $case?: string; value?: unknown } | undefined;
+    return content?.$case === BASE64_CASE && typeof content.value === "string"
+      ? { ...part, content: { $case: "raw" as const, value: Buffer.from(content.value, "base64") } }
+      : part;
+  });
+}
+
 /** Last resort: keep the task's state + metadata, drop the bulky collections so
  * the item fits and `GetTask` still resolves. */
 function dropBulkParts(task: Task): Task {
@@ -98,7 +139,7 @@ export function createA2aTaskStore(projectName: string): TaskStore {
       if (!item || isExpired(item.expiresAt, Date.now())) {
         return undefined;
       }
-      return item.task as Task;
+      return fromStoredTask(item.task as Task);
     },
 
     async save(task: Task, context: ServerCallContext): Promise<void> {
@@ -115,7 +156,7 @@ export function createA2aTaskStore(projectName: string): TaskStore {
       };
       try {
         await putItem(
-          { ...wrapper, task: fitTask(task, wrapper) },
+          { ...wrapper, task: toStoredTask(fitTask(task, wrapper)) },
           (row) =>
             row === null || !(TERMINAL_STATES as readonly unknown[]).includes(row.state),
         );
@@ -139,7 +180,7 @@ export function createA2aTaskStore(projectName: string): TaskStore {
         : undefined;
       const matching = items
         .filter((item) => !isExpired(item.expiresAt, now))
-        .map((item) => item.task as Task)
+        .map((item) => fromStoredTask(item.task as Task))
         .filter((task) => !params.contextId || task.contextId === params.contextId)
         .filter(
           (task) =>
