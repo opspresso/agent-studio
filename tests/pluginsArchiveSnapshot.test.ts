@@ -70,6 +70,23 @@ afterEach(() => {
 });
 
 describe("snapshotFromArchive", () => {
+  it("drops the checkout directory even when its AppleDouble sidecar comes first", async () => {
+    // bsdtar on a Mac writes `._<dir>` ahead of `<dir>/` — a slash-less first
+    // entry — so the prefix has to be decided after the sidecars are gone.
+    const withSidecars: TarFixtureEntry[] = [
+      { path: "._agent-plugins", content: "\u0000\u0005\u0016\u0007" },
+      ARCHIVE_ENTRIES[0]!,
+      { path: "agent-plugins/._README.md", content: "\u0000\u0005\u0016\u0007" },
+      ...ARCHIVE_ENTRIES.slice(1),
+    ];
+    const snapshot = await snapshotFromArchive(writeTarGz(withSidecars), "opspresso/agent-plugins");
+    const plain = await snapshotFromArchive(writeTarGz(ARCHIVE_ENTRIES), "opspresso/agent-plugins");
+    expect(snapshot.plugins.map((plugin) => plugin.rootPath)).toEqual(
+      plain.plugins.map((plugin) => plugin.rootPath),
+    );
+    expect(snapshot.plugins.map((plugin) => plugin.rootPath).join()).not.toContain("agent-plugins/");
+  });
+
   it("builds the snapshot the GitHub client builds from the same tree", async () => {
     stubGitHub();
     const fromGitHub = await fetchPluginsRepoSnapshot({

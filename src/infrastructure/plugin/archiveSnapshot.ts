@@ -8,7 +8,8 @@
  * so rows keep the owner they had when GitHub was reachable), the branch is
  * fixed to {@link ARCHIVE_BRANCH} because the archive does not say, and the
  * commit is the archive's own digest — the one fact about it this side can
- * verify, and what lets an unchanged upload report as unchanged.
+ * verify. It names the upload; whether anything changed is decided per row,
+ * by content, the same way it is for a GitHub sync.
  */
 
 import { createHash } from "node:crypto";
@@ -25,13 +26,17 @@ export async function snapshotFromArchive(
   archive: Uint8Array,
   repo: string,
 ): Promise<PluginsRepoSnapshot> {
-  const { files } = stripLeadingDirectory(readTarArchive(archive));
   // `tar czf` on macOS writes an AppleDouble `._<name>` beside every file
   // that carries extended attributes: a binary sidecar with the original's
   // extension, which the walker would select as a `.md` attachment and then
   // refuse as broken text. They are metadata, never content — dropped here,
   // not reported, so a checkout archived on a Mac syncs like one from Linux.
-  const content = files.filter((file) => !file.path.split("/").at(-1)?.startsWith("._"));
+  // Dropped *before* the leading directory is decided: the sidecar of the
+  // checkout directory itself is the archive's first entry, slash-less, and
+  // would otherwise keep the directory on every path.
+  const { files: content } = stripLeadingDirectory(
+    readTarArchive(archive).filter((file) => !file.path.split("/").at(-1)?.startsWith("._")),
+  );
   const tree: PluginTreeFile[] = content.map((file) => ({
     path: file.path,
     size: file.bytes.byteLength,
