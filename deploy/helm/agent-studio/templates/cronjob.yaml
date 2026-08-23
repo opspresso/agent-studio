@@ -1,4 +1,12 @@
 {{- if .Values.ticker.enabled }}
+{{- /*
+The Secret omits empty values, so a missing token would not render a key the
+CronJob below reads — the pod then fails to start, and the scan endpoint would
+refuse every tick anyway. An operator-managed Secret is trusted to carry it.
+*/}}
+{{- if not .Values.secrets.existingSecret }}
+{{- $_ := required "secrets.SCHEDULE_SCAN_TOKEN is required when ticker.enabled (openssl rand -hex 32)" .Values.secrets.SCHEDULE_SCAN_TOKEN }}
+{{- end }}
 # The scheduler tick. Each minute: schedule triggers (which also sweeps
 # expired rows) and the plugins-sync check; each hour: the catalog reindex.
 # The token is the app's SCHEDULE_SCAN_TOKEN, from the same Secret.
