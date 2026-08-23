@@ -14,7 +14,7 @@ import {
 } from "@mantine/core";
 import {
   IconArrowsShuffle,
-  IconBolt,
+  IconVersions,
   IconBook2,
   IconRobot,
   IconChartBar,
@@ -179,13 +179,13 @@ export default async function Home() {
         arrives as `undefined` and the page 500s at render.
       */}
       <Grid gap={40} align="center" style={{ marginInline: 0, width: "100%" }}>
-        <GridCol span={{ base: 12, lg: 6 }} style={{ minWidth: 0 }}>
+        <GridCol span={{ base: 12, lg: 6 }} className={classes.hero} style={{ minWidth: 0 }}>
           <Badge
             variant="light"
             color="brand"
             radius="xl"
             size="lg"
-            leftSection={<IconBolt size={14} />}
+            leftSection={<IconVersions size={14} />}
             className={classes.eyebrow}
           >
             {t("home.eyebrow")}
@@ -214,12 +214,6 @@ export default async function Home() {
               <Text fw={650}>{t("home.proof.engine")}</Text>
               <Text fz="xs" c="dimmed">
                 {t("home.proof.engineNote")}
-              </Text>
-            </div>
-            <div>
-              <Text fw={650}>{t("home.proof.traces")}</Text>
-              <Text fz="xs" c="dimmed">
-                {t("home.proof.tracesNote")}
               </Text>
             </div>
             <div>
@@ -253,15 +247,7 @@ export default async function Home() {
                 <Text ff="monospace" fz="xs" c="dimmed">
                   {t("home.streamCaption")}
                 </Text>
-                <Text
-                  ff="monospace"
-                  fz={10}
-                  tt="uppercase"
-                  c="teal"
-                  px={8}
-                  py={2}
-                  className={classes.liveBadge}
-                >
+                <Text ff="monospace" fz={10} tt="uppercase" c="dimmed" px={8} py={2}>
                   {t("home.streamLive")}
                 </Text>
               </Group>
@@ -277,9 +263,6 @@ export default async function Home() {
                 </div>
               </pre>
             </Paper>
-            <Badge className={classes.floatingBadge} color="teal" variant="light" radius="xl">
-              {t("home.agentOnline")}
-            </Badge>
           </div>
         </GridCol>
       </Grid>
@@ -325,7 +308,13 @@ export default async function Home() {
         installs, not a service it subscribes to. It sits after them because a
         reader wants to know what the thing does before where it runs.
       */}
-      <Paper component="section" withBorder radius="lg" p={{ base: "lg", md: "xl" }}>
+      <Paper
+        component="section"
+        withBorder
+        radius="lg"
+        p={{ base: "lg", md: "xl" }}
+        className={classes.installPanel}
+      >
         <Title order={2} fz="h3">
           {t("home.install.title")}
         </Title>

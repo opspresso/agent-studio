@@ -38,7 +38,7 @@ export const en = {
   "theme.dark": "Dark",
 
   // App chrome: the header, the sidebar and its groups.
-  "chrome.tagline": "Build and operate production AI agents",
+  "chrome.tagline": "Self-hosted agent platform",
   "chrome.navLabel": "Workspace navigation",
   "chrome.openProjects": "Open projects",
   "chrome.status": "Workspace online · v{version}",
@@ -70,78 +70,75 @@ export const en = {
   "auth.or": "or",
   "auth.signOut": "Sign out",
   "login.title": "Sign in to continue",
-  "login.product": "Agent Studio — build and operate production AI agents.",
+  "login.product": "Agent Studio, a self-hosted platform for building and running agents.",
   "login.domains": "Use an account on one of this deployment’s allowed domains.",
 
   // The signed-out landing page.
-  "home.eyebrow": "Self-hosted · your network",
-  "home.headline": "Production AI agents,",
-  "home.headlineAccent": " inside your own network.",
+  "home.eyebrow": "Project · version · publish",
+  "home.headline": "Build AI agents",
+  "home.headlineAccent": " and run them on your own servers.",
   "home.lede":
-    "Installed, not subscribed — one company per install, on your own hardware. Author prompts and agents as versions, publish one, and call it from anywhere: the console, an OpenAI-compatible endpoint, chat bots, other agents. Booting, signing in, and running need nothing outside.",
+    "Agent Studio is installed inside a company's own network. Write a prompt or an agent as a project, publish a version, then call it from the console, an HTTP endpoint, a chat bot, or another agent. Sign-in, runs, and the console keep working with no internet connection.",
   "home.signInHint": "Your account, on one of this deployment’s allowed domains.",
-  "home.proof.network": "Your network",
-  "home.proof.networkNote": "Boot, sign in, run — zero outbound",
-  "home.proof.engine": "One engine",
-  "home.proof.engineNote": "Every model, every surface",
-  "home.proof.traces": "Live traces",
-  "home.proof.tracesNote": "Every agent handoff",
-  "home.proof.cost": "Exact cost",
-  "home.proof.costNote": "Every call attributed",
-  "home.streamLabel": "Example agent run stream",
+  "home.proof.network": "Runs on your servers",
+  "home.proof.networkNote": "PostgreSQL and an OpenAI-compatible endpoint",
+  "home.proof.engine": "One protocol for every model",
+  "home.proof.engineNote": "A router, your own serving stack, or a provider API",
+  "home.proof.cost": "Cost and traces per run",
+  "home.proof.costNote": "Counted against whoever started it",
+  "home.streamLabel": "Example of an agent run stream",
   "home.streamCaption": "agent run · text/event-stream",
-  "home.streamLive": "live",
-  "home.agentOnline": "● agent online",
+  "home.streamLive": "example",
   "home.coverage": "What Agent Studio covers",
   "home.domain.projects": "Projects & versions",
   "home.domain.projectsBody":
-    "Author prompts, agents, and image projects as named versions. Publish one; callers pin a version or follow the pointer.",
+    "Write a prompt, an agent, or an image project and save it as a named version. Publish one version; callers either follow it or pin a version number.",
   "home.domain.agent": "Agent loop",
   "home.domain.agentBody":
-    "A multi-turn tool loop with turn and context budgets, on-demand skills, subagent transfers, and opt-in URL reading — streamed end to end.",
+    "A multi-turn tool loop. It loads skills, calls MCP tools, hands work to a subagent, and reads a URL when the version allows it. Turn and context budgets bound each run.",
   "home.domain.mcp": "MCP tools",
   "home.domain.mcpBody":
-    "Register a server once; versions bind it, narrow its tools, and override headers — with per-project OAuth, secrets encrypted at rest.",
+    "Register a server once and bind it from any version. A binding can narrow the tool list and replace the outbound headers. Per-project OAuth is supported, and secrets are stored encrypted.",
   "home.domain.skills": "Skills",
   "home.domain.skillsBody":
-    "Markdown behavior packs, listed to the model and loaded only when it asks.",
+    "Instructions written in Markdown. The prompt carries the names and descriptions, and the model loads a body when it needs one.",
   "home.domain.plugins": "Agent Plugins",
   "home.domain.pluginsBody":
-    "Skills and MCP servers sync from one plugins repo — the source of truth for every name it declares.",
+    "Skills and MCP servers sync from one plugins repository. In an air-gapped install the same sync takes an uploaded archive.",
   "home.domain.catalog": "Capability catalog",
   "home.domain.catalogBody":
-    "One searchable index of skills, MCP tools, and external agents. A version that opts in has its bindings widened per run by what the prompt and the request ask for.",
+    "One searchable index of skills, MCP tools, and agents. A version that opts in searches it each run and adds what matches to its bindings.",
   "home.domain.chats": "Chats",
   "home.domain.chatsBody":
-    "Talk to any agent project — attach images and documents, replies stream, tool traffic stays inline, and a run outlives the tab that started it.",
+    "Talk to an agent project in the console. Attach images and documents, watch the reply stream, and see tool calls in place. Closing the tab does not stop the run.",
   "home.domain.images": "Images",
   "home.domain.imagesBody":
-    "Draw or edit from a prompt — as a project type, agent builtins, or an image subagent; an edit can address any image the run has seen.",
+    "Draw or edit a picture from a prompt: as an image project, as agent built-ins, or through an image subagent. An edit can point at any image the run has seen.",
   "home.domain.artifacts": "Artifacts",
   "home.domain.artifactsBody":
-    "Every image or file a run produced, stored under a signed address and listed per project and per person — whichever surface it came from.",
+    "Images and files a run produced, kept under a signed address and listed per project and per person.",
   "home.domain.surfaces": "Slack, A2A & webhooks",
   "home.domain.surfacesBody":
-    "Per-project Slack bots that answer mentions, DMs, and keyword-matched channel messages, A2A in both directions, webhook and schedule triggers — every entry point runs the same engine.",
+    "Slack, Telegram, and Teams bots per project, webhook and schedule triggers, and A2A in both directions. They all run the same engine on the published version.",
   "home.domain.cost": "Cost & guards",
   "home.domain.costBody":
-    "Every call priced — what the channel charged, or the model registry's rate — and rolled up per project, per caller, per day. Daily and monthly thresholds warn, then refuse; concurrency and member tiers bound the rest.",
+    "Each run is priced from what the channel charged, or the registry rate for that model, and rolled up per project, per caller, and per day. Daily and monthly thresholds alert, then refuse.",
   "home.domain.traces": "Traces & audit",
   "home.domain.tracesBody":
-    "Every agent run traced turn by turn, tool traffic included, and reachable from its project. Secret reveals, admin overrides, and deletions each leave an audit row.",
-  "home.install.title": "Installed, not subscribed",
+    "Runs are traced turn by turn, tool calls included, from the project they belong to. Secret reveals, admin edits, and deletions leave an audit row.",
+  "home.install.title": "Installing it",
   "home.install.body":
-    "Agent Studio ships as a container — one host with Docker Compose, or Kubernetes with the Helm chart. What it asks of you is small, and what it reaches outside is yours to decide.",
-  "home.install.floor": "PostgreSQL is the floor",
+    "Agent Studio ships as a container image. One host runs it with Docker Compose; a cluster runs it from the Helm chart.",
+  "home.install.floor": "What it needs",
   "home.install.floorNote":
-    "One database with pgvector, and an OpenAI-compatible endpoint for the models — your own vLLM, LM Studio, or router counts. The app migrates its schema at boot.",
-  "home.install.offline": "Air-gapped works",
+    "A PostgreSQL database with pgvector, and an OpenAI-compatible endpoint for the models. The app creates its schema at boot.",
+  "home.install.offline": "Without internet access",
   "home.install.offlineNote":
-    "The model catalog and the plugin registry are uploaded instead of fetched, the container images mirror into your own registry, and embeddings can come from an endpoint you host.",
-  "home.install.optional": "Every connection is a choice",
+    "The model catalog and the plugin registry are uploaded instead of fetched, container images mirror into an internal registry, and embeddings can come from an endpoint you host.",
+  "home.install.optional": "What stays optional",
   "home.install.optionalNote":
-    "Slack, Telegram, Teams, outbound A2A, hosted model APIs — each is a switch, and leaving one off disables only itself.",
-  "home.product": "Build and operate production AI agents.",
+    "Slack, Telegram, Teams, outbound A2A, and external model APIs are configured one by one. Leaving one out disables that feature and nothing else.",
+  "home.product": "A self-hosted platform for building and running agents.",
 
   // Vocabulary more than one page uses. A word here is one a reader meets on
   // several screens and should not have to re-learn.
