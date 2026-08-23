@@ -73,12 +73,14 @@ export const en = {
   "login.domains": "Use an account on one of this deployment’s allowed domains.",
 
   // The signed-out landing page.
-  "home.eyebrow": "Version · publish · run",
-  "home.headline": "Build and operate",
-  "home.headlineAccent": " production AI agents.",
+  "home.eyebrow": "Self-hosted · your network",
+  "home.headline": "Production AI agents,",
+  "home.headlineAccent": " inside your own network.",
   "home.lede":
-    "Build agents with models, skills, MCP, workflows, tracing, evaluation, and governance.",
+    "Installed, not subscribed — one company per install, on your own hardware. Author prompts and agents as versions, publish one, and call it from anywhere: the console, an OpenAI-compatible endpoint, chat bots, other agents. Booting, signing in, and running need nothing outside.",
   "home.signInHint": "Your account, on one of this deployment’s allowed domains.",
+  "home.proof.network": "Your network",
+  "home.proof.networkNote": "Boot, sign in, run — zero outbound",
   "home.proof.engine": "One engine",
   "home.proof.engineNote": "Every model, every surface",
   "home.proof.traces": "Live traces",
@@ -126,6 +128,18 @@ export const en = {
   "home.domain.traces": "Traces & audit",
   "home.domain.tracesBody":
     "Every agent run traced turn by turn, tool traffic included, and reachable from its project. Secret reveals, admin overrides, and deletions each leave an audit row.",
+  "home.install.title": "Installed, not subscribed",
+  "home.install.body":
+    "Agent Studio ships as a container — one host with Docker Compose, or Kubernetes with the Helm chart. What it asks of you is small, and what it reaches outside is yours to decide.",
+  "home.install.floor": "PostgreSQL is the floor",
+  "home.install.floorNote":
+    "One database with pgvector, and an OpenAI-compatible endpoint for the models — your own vLLM, LM Studio, or router counts. The app migrates its schema at boot.",
+  "home.install.offline": "Air-gapped works",
+  "home.install.offlineNote":
+    "The model catalog, the plugin registry, and the container images each have an offline path: upload the snapshot instead of fetching it.",
+  "home.install.optional": "Every connection is a choice",
+  "home.install.optionalNote":
+    "Slack, Telegram, Teams, outbound A2A, hosted model APIs — each is a switch, and leaving one off disables only itself.",
   "home.product": "Build and operate production AI agents.",
 
   // Vocabulary more than one page uses. A word here is one a reader meets on

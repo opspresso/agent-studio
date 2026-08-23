@@ -54,12 +54,14 @@ export const ko: Messages = {
   "login.product": "Agent Studio — 프로덕션 AI 에이전트를 만들고 운영하는 플랫폼입니다.",
   "login.domains": "이 배포가 허용한 도메인의 계정으로 로그인하세요.",
 
-  "home.eyebrow": "버전 · 배포 · 실행",
-  "home.headline": "프로덕션 AI 에이전트를",
-  "home.headlineAccent": " 만들고 운영하세요.",
+  "home.eyebrow": "설치형 · 우리 네트워크 안",
+  "home.headline": "우리 네트워크 안에서 만들고 운영하는",
+  "home.headlineAccent": " 프로덕션 AI 에이전트.",
   "home.lede":
-    "모델·스킬·MCP·워크플로·트레이싱·평가·거버넌스로 에이전트를 만드세요.",
+    "구독이 아니라 설치입니다 — 한 설치가 한 기업을 담고, 우리 하드웨어 위에서 돕니다. 프롬프트와 에이전트를 버전으로 만들어 하나를 배포하고 콘솔·OpenAI 호환 엔드포인트·챗봇·다른 에이전트 어디서든 호출하세요. 부팅·로그인·실행에는 바깥이 필요 없습니다.",
   "home.signInHint": "이 배포가 허용한 도메인의 계정이 필요합니다.",
+  "home.proof.network": "우리 네트워크",
+  "home.proof.networkNote": "부팅·로그인·실행에 아웃바운드 0",
   "home.proof.engine": "하나의 엔진",
   "home.proof.engineNote": "모든 모델, 모든 창구",
   "home.proof.traces": "실시간 트레이스",
@@ -107,6 +109,18 @@ export const ko: Messages = {
   "home.domain.traces": "트레이스와 감사",
   "home.domain.tracesBody":
     "모든 에이전트 실행을 도구 호출까지 턴 단위로 기록해 프로젝트에서 열어 볼 수 있습니다. 시크릿 열람, 관리자 대리 수정, 삭제는 각각 감사 기록을 남깁니다.",
+  "home.install.title": "구독이 아니라 설치입니다",
+  "home.install.body":
+    "Agent Studio 는 컨테이너로 배포됩니다. Docker Compose 로 호스트 한 대에, 또는 Helm 차트로 쿠버네티스에 올리세요. 요구하는 것은 적고, 밖으로 무엇을 연결할지는 여러분이 정합니다.",
+  "home.install.floor": "최소 구성은 PostgreSQL 하나",
+  "home.install.floorNote":
+    "pgvector 를 켠 데이터베이스 하나와, 모델이 있는 OpenAI 호환 엔드포인트 하나면 됩니다 — 사내 vLLM·LM Studio·라우터도 같은 프로토콜입니다. 스키마는 앱이 부팅할 때 직접 만듭니다.",
+  "home.install.offline": "폐쇄망에서도 돕니다",
+  "home.install.offlineNote":
+    "모델 카탈로그·플러그인 레지스트리·컨테이너 이미지에는 각각 오프라인 경로가 있습니다. 내려받는 대신 스냅샷을 업로드하세요.",
+  "home.install.optional": "밖으로 나가는 연결은 전부 선택",
+  "home.install.optionalNote":
+    "Slack·Telegram·Teams, 나가는 A2A 호출, 외부 모델 API 는 각각 스위치입니다. 켜지 않으면 그 기능만 꺼집니다.",
   "home.product": "프로덕션 AI 에이전트를 만들고 운영하는 플랫폼입니다.",
 
   "common.loading": "불러오는 중…",
