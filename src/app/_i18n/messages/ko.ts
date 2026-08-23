@@ -21,7 +21,7 @@ export const ko: Messages = {
   "theme.light": "라이트",
   "theme.dark": "다크",
 
-  "chrome.tagline": "사내 설치형 에이전트 플랫폼",
+  "chrome.tagline": "설치형 에이전트 플랫폼",
   "chrome.navLabel": "워크스페이스 내비게이션",
   "chrome.openProjects": "Projects 열기",
   "chrome.status": "워크스페이스 온라인 · v{version}",
@@ -51,6 +51,7 @@ export const ko: Messages = {
   "auth.passwordFailed": "이메일 또는 비밀번호가 올바르지 않습니다.",
   "auth.or": "또는",
   "auth.signOut": "로그아웃",
+  "auth.account": "계정",
   "login.title": "로그인이 필요합니다",
   "login.product": "Agent Studio, 사내에 설치해 쓰는 에이전트 플랫폼입니다.",
   "login.domains": "이 배포가 허용한 도메인의 계정으로 로그인하세요.",

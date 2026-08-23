@@ -69,6 +69,7 @@ export const en = {
   "auth.passwordFailed": "Email or password is incorrect.",
   "auth.or": "or",
   "auth.signOut": "Sign out",
+  "auth.account": "Account",
   "login.title": "Sign in to continue",
   "login.product": "Agent Studio, a self-hosted platform for building and running agents.",
   "login.domains": "Use an account on one of this deployment’s allowed domains.",
