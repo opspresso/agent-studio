@@ -1,4 +1,3 @@
-import { sql } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
 import {
   conditions,
@@ -97,14 +96,9 @@ export const projectRepository: ProjectRepository = {
     );
     const partition = keys.projectPartition(name);
     await deletePartition(keys.usage(name, "").PK);
+    // Every trace row carries the project's index partition, so this is the
+    // cascade for them; the references in the project partition go below.
     await deleteIndexPartition("GSI1", keys.traceProjectPartition(name));
-    // Trace rows a project-partition reference points at: the trace lives in
-    // its own partition, and the reference is the only thing that names it.
-    await sql(
-      "DELETE FROM items AS t USING items AS p " +
-        "WHERE p.pk = $1 AND t.pk = p.data->>'tracePK' AND t.sk = p.data->>'traceSK'",
-      [partition],
-    );
     await deletePartition(partition, { keep: [keys.project(name).SK] });
     await deleteItem(
       keys.project(name),
