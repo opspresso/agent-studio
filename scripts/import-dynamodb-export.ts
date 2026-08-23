@@ -96,6 +96,18 @@ async function main(): Promise<void> {
   for (const file of files) {
     const items = readItems(file);
     console.log(`${file}: ${items.length} item(s)`);
+    // A scan comes back in no order, and a session or account row references
+    // its user: users first, then the rest of the auth rows, then everything
+    // else. A row whose user the export does not carry is an orphan the old
+    // adapter could hold and the foreign key cannot — dropped and counted.
+    const rank = (item: Record<string, unknown>): number => {
+      const pk = String(item.PK ?? "");
+      return pk.startsWith("AUTH#user#") ? 0 : pk.startsWith("AUTH#") ? 1 : 2;
+    };
+    items.sort((a, b) => rank(a) - rank(b));
+    const userIds = new Set(
+      items.filter((item) => rank(item) === 0).map((item) => String(item.id)),
+    );
     await withTransaction(async (client) => {
       for (const item of items) {
         const pk = String(item.PK ?? "");
@@ -133,6 +145,10 @@ async function main(): Promise<void> {
               counts.user += 1;
               break;
             case "session":
+              if (!userIds.has(String(item.userId))) {
+                counts.dropped += 1;
+                break;
+              }
               await client.query(
                 `INSERT INTO "session" ("id", "expiresAt", "token", "createdAt", "updatedAt", "ipAddress", "userAgent", "userId")
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -151,6 +167,10 @@ async function main(): Promise<void> {
               counts.session += 1;
               break;
             case "account": {
+              if (!userIds.has(String(item.userId))) {
+                counts.dropped += 1;
+                break;
+              }
               // Better Auth 1.7 addresses an account by issuer + accountId; rows
               // written by the 1.6 adapter carry no issuer. The library's own
               // namespaces: a password account is `local:credential`, a
