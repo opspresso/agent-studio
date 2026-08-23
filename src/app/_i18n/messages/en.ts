@@ -50,6 +50,7 @@ export const en = {
   "nav.chats": "Chats",
   "nav.artifacts": "Artifacts",
   "nav.profile": "Profile",
+  "nav.guide": "Guide",
   "nav.plugins": "Plugins",
   "nav.skills": "Skills",
   "nav.tools": "Tools",
@@ -73,12 +74,14 @@ export const en = {
   "login.domains": "Use an account on one of this deployment’s allowed domains.",
 
   // The signed-out landing page.
-  "home.eyebrow": "Version · publish · run",
-  "home.headline": "Build and operate",
-  "home.headlineAccent": " production AI agents.",
+  "home.eyebrow": "Self-hosted · your network",
+  "home.headline": "Production AI agents,",
+  "home.headlineAccent": " inside your own network.",
   "home.lede":
-    "Build agents with models, skills, MCP, workflows, tracing, evaluation, and governance.",
+    "Installed, not subscribed — one company per install, on your own hardware. Author prompts and agents as versions, publish one, and call it from anywhere: the console, an OpenAI-compatible endpoint, chat bots, other agents. Booting, signing in, and running need nothing outside.",
   "home.signInHint": "Your account, on one of this deployment’s allowed domains.",
+  "home.proof.network": "Your network",
+  "home.proof.networkNote": "Boot, sign in, run — zero outbound",
   "home.proof.engine": "One engine",
   "home.proof.engineNote": "Every model, every surface",
   "home.proof.traces": "Live traces",
@@ -92,7 +95,7 @@ export const en = {
   "home.coverage": "What Agent Studio covers",
   "home.domain.projects": "Projects & versions",
   "home.domain.projectsBody":
-    "Author prompts, agents, and image projects as immutable versions. Publish one; callers pin it or follow the pointer.",
+    "Author prompts, agents, and image projects as named versions. Publish one; callers pin a version or follow the pointer.",
   "home.domain.agent": "Agent loop",
   "home.domain.agentBody":
     "A multi-turn tool loop with turn and context budgets, on-demand skills, subagent transfers, and opt-in URL reading — streamed end to end.",
@@ -126,6 +129,18 @@ export const en = {
   "home.domain.traces": "Traces & audit",
   "home.domain.tracesBody":
     "Every agent run traced turn by turn, tool traffic included, and reachable from its project. Secret reveals, admin overrides, and deletions each leave an audit row.",
+  "home.install.title": "Installed, not subscribed",
+  "home.install.body":
+    "Agent Studio ships as a container — one host with Docker Compose, or Kubernetes with the Helm chart. What it asks of you is small, and what it reaches outside is yours to decide.",
+  "home.install.floor": "PostgreSQL is the floor",
+  "home.install.floorNote":
+    "One database with pgvector, and an OpenAI-compatible endpoint for the models — your own vLLM, LM Studio, or router counts. The app migrates its schema at boot.",
+  "home.install.offline": "Air-gapped works",
+  "home.install.offlineNote":
+    "The model catalog and the plugin registry are uploaded instead of fetched, the container images mirror into your own registry, and embeddings can come from an endpoint you host.",
+  "home.install.optional": "Every connection is a choice",
+  "home.install.optionalNote":
+    "Slack, Telegram, Teams, outbound A2A, hosted model APIs — each is a switch, and leaving one off disables only itself.",
   "home.product": "Build and operate production AI agents.",
 
   // Vocabulary more than one page uses. A word here is one a reader meets on
@@ -229,6 +244,136 @@ export const en = {
   "overview.getStartedBody":
     "A project holds a prompt, an agent, or an image workload, saved as versions you can publish. Create one, attach skills and MCP tools to a version, then try it in the Playground — or in a chat, for an agent project.",
   "overview.browseSkills": "Browse skills",
+
+  // The guide page: what this console is for, and the shortest path through it.
+  // Longer prose than anywhere else here, and deliberately so — it is the one
+  // page whose content *is* the text.
+  "guide.title": "Guide",
+  "guide.lede":
+    "What Agent Studio does, and how to get from an empty project to an agent your team can call. Every page named here is in the sidebar.",
+
+  "guide.start.title": "Start here",
+  "guide.start.body":
+    "Four steps, each on a tab of your project. Publishing decides which version a caller gets when the request does not name one. A saved version can also be called by its own name.",
+  "guide.start.step1": "Create a project",
+  "guide.start.step1Body":
+    "Go to Projects and click New project. The name is the identifier callers use, and you cannot change it later. Pick the type at the same time: llm, agent, or image.",
+  "guide.start.step2": "Write a version in the Playground",
+  "guide.start.step2Body":
+    "A version holds the model, the prompts, the limits, and everything the run can use. Save it, then run it in the panel next to the editor. Edit and save again as often as you need.",
+  "guide.start.step3": "Publish one",
+  "guide.start.step3Body":
+    "Publishing points the project at that version. Callers that ask for the published version get it from then on. Callers that named a version number keep the version they named.",
+  "guide.start.step4": "Let something call it",
+  "guide.start.step4Body":
+    "The API Reference tab lists this project's endpoints with a curl example you can copy. The Integrations tab issues the project token and connects Slack, Telegram, Teams, A2A, and AG-UI.",
+
+  "guide.words.title": "Words this console uses",
+  "guide.words.project": "Project",
+  "guide.words.projectBody":
+    "A unit of work with a name and one type. It holds its versions, cost limits, integrations, and who can see it.",
+  "guide.words.version": "Version",
+  "guide.words.versionBody":
+    "A named snapshot of a project: model, prompts, tools, turn and token limits. Saving an edit overwrites that version in place instead of creating a new one. The published version works the same way, so callers see the change on their next run. Publishing marks one version as the default answer.",
+  "guide.words.run": "Run",
+  "guide.words.runBody":
+    "One execution of a version. Each run gets a price, an owner, a deadline, and a trace.",
+  "guide.words.caller": "Caller",
+  "guide.words.callerBody":
+    "Whoever started the run: you in the console, a project token, or a person in Slack. Spend and concurrent runs are counted per caller as well as per project.",
+  "guide.words.tier": "Tier",
+  "guide.words.tierBody":
+    "Your level: guest, member, or admin. It sets whether you can create projects and issue tokens, how many runs you can have at once, and how much you can spend per month. Your own numbers are on the Profile page.",
+
+  "guide.types.title": "Three kinds of project",
+  "guide.types.llm": "llm: one prompt, one answer",
+  "guide.types.llmBody":
+    "A user prompt template with {{variables}} filled in when the run starts. No tools, and no turns after the first.",
+  "guide.types.agent": "agent: a multi-turn tool loop",
+  "guide.types.agentBody":
+    "The model keeps working until it has an answer. It can load skills, call MCP tools, pass work to a subagent, draw images, and read a URL. The version decides which of those are available.",
+  "guide.types.image": "image: draw or edit pictures",
+  "guide.types.imageBody":
+    "A picture from a prompt, or an edit of one you attach. There is no chat completion to return, so the endpoints that answer with one reject this type. The console, chats, and A2A return the image itself.",
+
+  "guide.reach.title": "What a version can use",
+  "guide.reach.body":
+    "Everything here is off until the version turns it on. When a run cannot use something you enabled, it reports that in the answer.",
+  "guide.reach.skills": "Skills",
+  "guide.reach.skillsBody":
+    "Instructions written in Markdown. The prompt lists only the name and description of each, and the model loads a body when it needs one. The Skills page shows what is available here.",
+  "guide.reach.tools": "MCP tools",
+  "guide.reach.toolsBody":
+    "Servers registered on the Tools page. A version binds a server, chooses which of its tools to offer, and can replace the outbound headers. Secrets are stored encrypted.",
+  "guide.reach.subagents": "Subagents",
+  "guide.reach.subagentsBody":
+    "Another project, or an entry on the Agents page, that a run can hand a task to. The reply is labelled with the subagent that wrote it, and the cost goes to the same caller.",
+  "guide.reach.catalog": "Capability catalog",
+  "guide.reach.catalogBody":
+    "A searchable index of every skill, tool, and agent. With “Find capabilities for each request” on, each run searches the index and adds what matches to the version's bindings. Nothing is removed from them.",
+  "guide.reach.builtins": "Built-ins",
+  "guide.reach.builtinsBody":
+    "Switches on the version: draw and edit images, read a URL the model picked, save a file the reader can download, and read Slack history where a bot is connected.",
+  "guide.reach.memory": "Memory",
+  "guide.reach.memoryBody":
+    "What earlier runs stored, loaded before the run starts. It works when the version binds a memory server that offers a recall tool. Without one the switch does nothing, and each run reports that.",
+
+  "guide.surfaces.title": "Where it can answer",
+  "guide.surfaces.body":
+    "All of these run the same engine and land in the same cost and trace records. They use the published version unless the caller names one. The Playground is the exception: it runs the version you have open.",
+  "guide.surfaces.console": "The console",
+  "guide.surfaces.consoleBody":
+    "Use the Playground for a version you are still writing, and Chats to talk to a published agent. Chats take attachments, stream the reply, and show tool calls in place. A chat run continues after you close the tab.",
+  "guide.surfaces.http": "HTTP",
+  "guide.surfaces.httpBody":
+    "Three endpoints on the API Reference tab: this app's predict endpoint, an OpenAI-compatible chat completions endpoint, and an agent endpoint that streams tool calls. All three accept the project token.",
+  "guide.surfaces.chatbots": "Slack, Telegram, Teams",
+  "guide.surfaces.chatbotsBody":
+    "One bot per project, set up on the Integrations tab. Each answers mentions and direct messages, follows the thread it is in, and edits a single message as the answer grows.",
+  "guide.surfaces.triggers": "Webhooks and schedules",
+  "guide.surfaces.triggersBody":
+    "On the Settings tab: one webhook URL for an outside system to call, and as many cron schedules as you need. Both run the published version, and their history is on the same tab.",
+  "guide.surfaces.a2a": "A2A",
+  "guide.surfaces.a2aBody":
+    "Publish this project as an A2A agent for another system to call, or register other agents to send work to. Both are on the Integrations tab.",
+  "guide.surfaces.agui": "AG-UI",
+  "guide.surfaces.aguiBody":
+    "Embed a published project in your own app. The client sends its thread and receives the protocol's events, so the agent runs inside your product.",
+
+  "guide.limits.title": "Cost, limits, and records",
+  "guide.limits.cost": "Every run is priced",
+  "guide.limits.costBody":
+    "The price is what the channel charged, or the registry rate for that model. The overview groups it by project and model, a project's Usage tab groups it by caller, and the Profile page shows your own spend.",
+  "guide.limits.guards": "Thresholds alert, then refuse",
+  "guide.limits.guardsBody":
+    "A project's daily and monthly limits are on its Settings tab. Crossing the alert threshold sends one notification to the channels the project lists, and runs continue. Crossing the block threshold refuses new runs until the window resets: UTC midnight for the day, the first of the month for the month.",
+  "guide.limits.tier": "Your tier applies too",
+  "guide.limits.tierBody":
+    "A monthly cap across every project, and a limit on how many runs you can have at once. Both are on the Profile page, and an admin can change them.",
+  "guide.limits.records": "What a run leaves behind",
+  "guide.limits.recordsBody":
+    "A trace with its turns and tool calls on the project's Traces tab, and any image or file it produced under Artifacts. Your own are on the Artifacts page in the sidebar. The project's are on its Artifacts tab.",
+
+  "guide.trouble.title": "When something does not work",
+  "guide.trouble.refused": "A run was refused over cost",
+  "guide.trouble.refusedBody":
+    "It hit the project's daily or monthly threshold, or your tier's monthly cap. The project's Settings tab shows the first, the Profile page the second. An admin can raise either.",
+  "guide.trouble.model": "The model I want is missing",
+  "guide.trouble.modelBody":
+    "The Models page lists what this deployment can reach, and only an admin can enable one. A model the catalog does not carry still runs, but its usage is recorded at zero cost.",
+  "guide.trouble.tool": "The model never calls my MCP tool",
+  "guide.trouble.toolBody":
+    "Check the version's binding first: one limited to a list of tools hides the others. Then check that the server answered discovery, which the Tools page shows. When a run cannot reach a bound server, it reports that in the answer.",
+  "guide.trouble.slack": "The Slack bot stays silent",
+  "guide.trouble.slackBody":
+    "The bot answers mentions, direct messages, and channel messages that match the keywords you set. It ignores everything else. The Integrations tab has a test button that checks the bot token and lists the channels the bot was invited to.",
+  "guide.trouble.tab": "I closed the tab while it was answering",
+  "guide.trouble.tabBody":
+    "The run continues. Open the chat again and the answer is there.",
+
+  "guide.more.title": "Where to read more",
+  "guide.more.body":
+    "Each project's API Reference tab covers that project. The install, configuration, security, and operations documents ship with the source under docs/: INSTALL.md, CONFIGURATION.md, SECURITY.md, and OPERATIONS.md. They are readable on a deployment with no internet access.",
 
   // Chats: the sidebar, the thread, the composer and the parts a turn is drawn
   // from.

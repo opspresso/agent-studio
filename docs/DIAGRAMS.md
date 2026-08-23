@@ -1,6 +1,6 @@
 # 아키텍처 다이어그램
 
-Agent Studio 전체를 그림으로 본다. 각 그림은 요약이고, 정본은 옆에 링크한 문서다 — 그림과 문서가
+Agent Studio 전체를 그림으로 본다. 각 그림은 요약이고, 정본은 옆에 링크한 문서다. 그림과 문서가
 어긋나면 문서가 맞다. 그림은 [ARCHITECTURE.md](ARCHITECTURE.md) 의 순서를 따른다: 계층 → 요청
 흐름 → 런 브래킷 → 엔진 루프 → 메시징 표면 → 조립 지점 → 저장 모델.
 
@@ -34,7 +34,7 @@ flowchart TB
   lib --> shared
 ```
 
-## 2. 요청 흐름 — 열 진입점, 하나의 파사드
+## 2. 요청 흐름: 열 진입점, 하나의 파사드
 
 모든 실행은 `src/application/execution/runProject.ts` 로 모인다. 표면은 *어떻게 들어오는지*
 (HTTP 형태, 인증, 응답 모양)만 결정하고, *어떤 프로젝트 타입이 어떻게 도는지*는 파사드가
@@ -98,7 +98,7 @@ flowchart LR
 이벤트, AG-UI 는 프로토콜의 이벤트 스트림, 트리거는 이력 행. 청크의 계약은
 [ARCHITECTURE.md#enginechunk-계약](ARCHITECTURE.md#enginechunk-계약).
 
-## 3. 런 브래킷 — 최상위 런을 감싸는 한 곳
+## 3. 런 브래킷: 최상위 런을 감싸는 한 곳
 
 네 함수(`executeVersion` · `executeVersionStream` · `executeAgent` · `generateImage`)가 최상위
 런을 admit 하고, 각각 브래킷을 연다. 가드는 메트릭 *앞*에서, `close()` 는 사용량 flush *뒤*에서
@@ -128,7 +128,7 @@ sequenceDiagram
   F->>F: usage.flush() → bracket.close() → settleTransferred → finishTrace
 ```
 
-## 4. 메시징 표면 — 게이트웨이와 어댑터
+## 4. 메시징 표면: 게이트웨이와 어댑터
 
 Slack·Telegram·Teams 는 같은 파이프라인 위에 있다. 어댑터는 플랫폼이 결정하는 것만 갖고,
 파이프라인은 플랫폼과 무관한 것을 한 번 갖는다 ([design/messaging.md](design/messaging.md),
@@ -171,7 +171,7 @@ flowchart LR
   after -.-> p4
 ```
 
-## 5. 조립 지점 — 일곱 곳
+## 5. 조립 지점: 일곱 곳
 
 유스케이스는 어댑터 위에 정확히 일곱 곳에서 조립된다. 라우트는 조립된 객체를 받는다
 ([ARCHITECTURE.md#조립은-의도적으로-고른-몇-곳에서만](ARCHITECTURE.md#조립은-의도적으로-고른-몇-곳에서만)).
@@ -194,7 +194,7 @@ flowchart TB
   boot -.->|"런타임이 Node 서버일 때만 로드"| container
 ```
 
-## 6. 저장 모델 — PostgreSQL 하나와 오브젝트 스토어
+## 6. 저장 모델: PostgreSQL 하나와 오브젝트 스토어
 
 데이터베이스 하나에 아이템 테이블 `items`(`pk`/`sk` + JSONB `data`, 파생 컬럼 `gsi1*`/`gsi2*`/
 `expires_at`), Better Auth 의 테이블, 그리고 `catalog_vectors`(pgvector). 런이 만든 바이트는
