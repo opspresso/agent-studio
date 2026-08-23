@@ -55,13 +55,11 @@ spec:
                 name: {{ include "agent-studio.secretName" . }}
           env:
             {{- if .Values.postgres.enabled }}
-            - name: POSTGRES_PASSWORD
+            - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ include "agent-studio.fullname" . }}-postgres
-                  key: POSTGRES_PASSWORD
-            - name: DATABASE_URL
-              value: postgres://{{ .Values.postgres.username }}:$(POSTGRES_PASSWORD)@{{ include "agent-studio.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}
+                  key: DATABASE_URL
             {{- end }}
             {{- if .Values.minio.enabled }}
             - name: S3_ENDPOINT
