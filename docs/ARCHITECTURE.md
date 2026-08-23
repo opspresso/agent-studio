@@ -20,6 +20,15 @@
 Agent Studio 는 **project, llm, agents(subagent + 외부 agent registry), skills, mcp, chat,
 cost/usage** 도메인을 아우르는 하나의 Next.js 16 풀스택 애플리케이션이다.
 
+그리고 그 애플리케이션은 **기업이 자기 네트워크 안에 설치해 운영하는** 것이다. 한 설치는 한
+기업이고 멀티테넌시가 없으며, 부팅·로그인·런·콘솔은 바깥으로 나가는 경로가 없는 IDC 에서도
+동작해야 한다. 이 문장은 취향이 아니라 아래 구조 전부의 이유다 — 헥사고날 포트가 이렇게 많은
+것도, 모든 provider 트래픽이 OpenAI 호환 프로토콜 하나로 좁혀진 것도, 저장소가 PostgreSQL
+하나로 모이고 벡터마저 같은 데이터베이스 안에 있는 것도, 밖으로 나가는 연결이 하나같이
+*배포가 켜는 옵션* 인 것도 같은 제약에서 나온다. 그 제약을 코드에서 어떻게 지키는지는
+[AGENTS.md](../AGENTS.md#conventions-that-bite) 의 첫 항목이, 설치하는 쪽에서 무엇을 뜻하는지는
+[INSTALL.md](INSTALL.md) 가 답한다.
+
 ## 스택
 
 - Node.js 24, pnpm 11 (`packageManager` 로 고정)

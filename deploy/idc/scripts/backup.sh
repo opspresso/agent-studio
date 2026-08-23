@@ -2,7 +2,7 @@
 #
 # A point-in-time copy of everything this host keeps:
 #
-#   /opt/agent-studio/scripts/backup.sh [DEST_DIR]      # default: ./backups
+#   /opt/compose/apps/agent-studio/scripts/backup.sh [DEST_DIR]      # default: ./backups
 #
 # Writes `<dest>/<timestamp>/db.sql.gz` (a `pg_dump` of the database, custom
 # format through gzip) and `<dest>/<timestamp>/objects/` (every object in the

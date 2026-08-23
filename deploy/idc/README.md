@@ -11,7 +11,7 @@ alpha 호스트에만 해당하는 사실을 담는다.
 |---|---|
 | 호스트 | `ubuntu@115.68.216.99` — Ubuntu 24.04, 4 vCPU, 3.8GB RAM |
 | 주소 | `https://studio.opspresso.com` |
-| 설치 경로 | `/opt/agent-studio` (관례일 뿐, compose 는 어디서든 돈다) |
+| 설치 경로 | `/opt/compose/apps/agent-studio` (관례일 뿐, compose 는 어디서든 돈다) |
 | 데이터 | 이 호스트의 `postgres-data`·`minio-data` 볼륨. 다른 어디에도 없다 — `scripts/backup.sh` |
 
 ## 파일
@@ -29,17 +29,25 @@ alpha 호스트에만 해당하는 사실을 담는다.
 
 ### 호스트
 
-`scripts/setup-host.sh` 가 Ubuntu 24.04 호스트에 Docker Engine/Compose, AWS CLI, 배포 도구, 4GB 스왑과
-`/opt/agent-studio` 를 준비한다. 멱등이라 중간에 끊겼으면 그대로 재실행한다.
+호스트 준비는 이 저장소가 하지 않는다 — [nalbam/dotfiles](https://github.com/nalbam/dotfiles) 의
+`linux/init.sh` 가 Ubuntu 24.04 에 Docker Engine/Compose, AWS CLI, `jq`·`python3`, 4GB 스왑,
+`/opt/compose/{apps,data,backup}` 을 놓고 `ubuntu` 계정에 root 의 SSH 키와 `docker` 그룹을 넘긴다.
+멱등이라 중간에 끊겼으면 그대로 재실행한다.
+
+```bash
+# 호스트에서, root 로 한 번
+curl -fsSL nalbam.github.io/dotfiles/linux/init.sh | bash
+```
+
+이후 작업은 전부 `ubuntu` 계정으로 한다.
 
 ```bash
 # 로컬 저장소에서
 scp -r deploy/idc ubuntu@<host>:/tmp/agent-studio-idc
 
-# 호스트에서
-/tmp/agent-studio-idc/scripts/setup-host.sh
-sudo cp -a /tmp/agent-studio-idc/. /opt/agent-studio/
-sudo chown -R ubuntu:ubuntu /opt/agent-studio
+# 호스트에서, ubuntu 로
+mkdir -p /opt/compose/apps/agent-studio
+cp -a /tmp/agent-studio-idc/. /opt/compose/apps/agent-studio/
 ```
 
 방화벽은 SSH 를 유지한 채 Caddy 가 받을 TCP 80/443 만 허용한다. ACME 가 닿지 않는 망이면
@@ -48,7 +56,7 @@ sudo chown -R ubuntu:ubuntu /opt/agent-studio
 ### 시크릿
 
 ```bash
-cd /opt/agent-studio
+cd /opt/compose/apps/agent-studio
 cp .env.secrets.example .env.secrets && chmod 600 .env.secrets
 ```
 
@@ -81,8 +89,11 @@ alpha 핀을 따른다; `FOLLOW_VERSIONS=false` 면 example 의 핀), 시크릿 
 걸어도 된다:
 
 ```
-*/10 * * * * /opt/agent-studio/scripts/deploy.sh >> /var/log/agent-studio-deploy.log 2>&1
+*/10 * * * * /opt/compose/apps/agent-studio/scripts/deploy.sh >> /var/log/agent-studio-deploy.log 2>&1
 ```
+
+`ubuntu` 의 crontab 이므로 로그 파일은 미리 그 계정 소유로 만들어 둔다 —
+`sudo install -m 0644 -o ubuntu -g ubuntu /dev/null /var/log/agent-studio-deploy.log`.
 
 확인:
 
@@ -103,7 +114,7 @@ docker compose exec app wget -qO- \
 ## 데이터
 
 - **백업** — `scripts/backup.sh [DEST]`: `pg_dump` + 오브젝트 미러 + `.env.host`. 최신 7개 보관.
-  복원 절차는 스크립트 머리에. cron 에 하루 한 번.
+  복원 절차는 스크립트 머리에. cron 에 하루 한 번, DEST 는 `/opt/compose/backup`.
 - **DynamoDB 에서 이관** — `docs/INSTALL.md` 의 절차. 테이블은 `aws dynamodb scan` 으로 내보내
   `scripts/import-dynamodb-export.ts` 로, 오브젝트는 `scripts/migrate-objects.sh s3://<bucket>` 으로.
 - **보존** — 만료 행은 티커가 쓸어 낸다(`COMPOSE_PROFILES` 에 `ticker`). 끄면 schedule 도, 정리도 멈춘다.
@@ -140,7 +151,7 @@ Grafana Cloud의 Alloy 온보딩에서 발급한 access policy token을 준비�
 저장한다. 토큰을 명령행 인수, Alloy 설정 또는 저장소에 넣지 마라.
 
 ```bash
-cd /opt/agent-studio
+cd /opt/compose/apps/agent-studio
 scripts/setup-grafana.sh
 
 systemctl status alloy --no-pager

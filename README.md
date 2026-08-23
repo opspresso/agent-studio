@@ -1,12 +1,14 @@
 # ✨ Agent Studio
 
-**Build and operate production AI agents.** 모델·스킬·MCP·워크플로·트레이싱·평가·거버넌스로
-에이전트를 만들고 운영한다 — 프롬프트·에이전트·비용 관리를 위한 사내 LLM 플랫폼이자,
-프로덕션 수준의 Next.js 풀스택 애플리케이션 하나다.
+**기업이 자기 네트워크 안에 설치해 운영하는 에이전트 플랫폼이다.** 프롬프트나 에이전트를
+**project** 로 만들고, **version** 으로 다듬고, 하나를 publish 한 뒤 어디서든 호출한다:
+콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, Teams, webhook, A2A 로 연결된 다른 에이전트,
+또는 AG-UI 로 임베드한 앱. 모든 런은 귀속되고, 값이 매겨지고, 경계가 지어진다.
 
-프롬프트나 에이전트를 **project** 로 만들고, **version** 으로 다듬고, 하나를 publish 한
-뒤 어디서든 호출한다: 콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, Teams, webhook, A2A 로
-연결된 다른 에이전트, 또는 AG-UI 로 임베드한 앱. 모든 런은 귀속되고, 값이 매겨지고, 경계가 지어진다.
+**한 설치 = 한 기업이다.** 멀티테넌시가 없고, 외부 네트워크가 끊긴 IDC 에서도 부팅·로그인·런이
+된다 — 밖으로 나가는 연결은 전부 선택이므로 Slack·Teams·Telegram, 외부 모델 제공자, 모델
+카탈로그와 플러그인 자동 sync 는 켜는 만큼만 붙는다. 최소 구성은 **PostgreSQL 하나**이고,
+설치는 [docs/INSTALL.md](docs/INSTALL.md) 가 처음부터 끝까지 안내한다.
 
 ## 무엇이 들어 있나
 
@@ -30,9 +32,6 @@
 - Better Auth 1.7 — 표준 OIDC(Keycloak · Entra ID · Okta …), Google, 또는 비밀번호
 - Clean Architecture (`domain` / `application` / `infrastructure` / `app`), 테스트로 강제된다
 - PostgreSQL + pgvector 하나 — 모든 행과 케이퍼빌리티 카탈로그. 아티팩트는 S3 호환 스토어(선택)
-
-**설치형이다.** 기업이 자기 네트워크 안에 설치해 운영하고, 외부 네트워크 없이도 부팅·로그인·런이
-된다 — 밖으로 나가는 연결은 전부 선택이다. 설치는 [docs/INSTALL.md](docs/INSTALL.md).
 
 ## 빠른 시작
 

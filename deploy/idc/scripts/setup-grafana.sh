@@ -63,7 +63,7 @@ printf 'deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com st
 "${SUDO[@]}" apt-get install -y alloy
 
 getent group docker >/dev/null || {
-  echo "The docker group is missing; run scripts/setup-host.sh first." >&2
+  echo "The docker group is missing; prepare the host first (see README.md)." >&2
   exit 1
 }
 if ! id -nG alloy | tr ' ' '\n' | grep -qx docker; then
