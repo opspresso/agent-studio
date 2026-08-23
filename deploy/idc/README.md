@@ -9,10 +9,11 @@ alpha 호스트에만 해당하는 사실을 담는다.
 
 | | |
 |---|---|
-| 호스트 | `ubuntu@115.68.216.99` — Ubuntu 24.04, 4 vCPU, 3.8GB RAM |
+| 호스트 | `ubuntu@115.68.228.117` — Ubuntu 24.04, 4 vCPU, 7.8GB RAM (2026-08-23 `115.68.216.99` 에서 이전) |
 | 주소 | `https://studio.opspresso.com` |
 | 설치 경로 | `/opt/compose/apps/agent-studio` (관례일 뿐, compose 는 어디서든 돈다) |
 | 데이터 | 이 호스트의 `postgres-data`·`minio-data` 볼륨. 다른 어디에도 없다 — `scripts/backup.sh` |
+| Grafana | Alloy collector `byforce-318755` — `setup-grafana.sh` 의 기본값이 아니므로 `GCLOUD_FM_COLLECTOR_ID` 를 준다 |
 
 ## 파일
 
@@ -85,8 +86,8 @@ scripts/deploy.sh
 
 한 스크립트가 전부다: `.env.example` 에서 `.env` 생성(GitHub 이 닿으면 이미지 태그는 argocd-env-demo 의
 alpha 핀을 따른다; `FOLLOW_VERSIONS=false` 면 example 의 핀), 시크릿 덧붙이기, 첫 실행이면 `.env.host`
-생성, ECR 이면 로그인, pull, `compose up -d`. 바뀐 것이 없는 실행은 아무것도 재생성하지 않으므로 타이머에
-걸어도 된다:
+생성, ECR 이면 로그인, pull, mcp-memory 의 `mcp_memory` 데이터베이스 확인(없으면 생성), `compose up -d`.
+바뀐 것이 없는 실행은 아무것도 재생성하지 않으므로 타이머에 걸어도 된다:
 
 ```
 */10 * * * * /opt/compose/apps/agent-studio/scripts/deploy.sh >> /var/log/agent-studio-deploy.log 2>&1
@@ -109,15 +110,91 @@ docker compose exec app wget -qO- \
 여기서도 그대로 해석된다. 앱이 그 사설 주소에 닿는 것은 `MCP_INTERNAL_HOST_SUFFIXES` 가 SSRF 가드에
 그 suffix 를 선언하기 때문이다.
 
-호스트에서 이미지를 빌드하지 마라 — RAM 3.8GB 에서 `next build` 는 OOM 으로 끝난다.
+호스트에서 이미지를 빌드하지 마라 — 빌드는 릴리즈 파이프라인 몫이다. 옛 3.8GB 호스트에서 `next build`
+는 OOM 으로 끝났고, RAM 이 늘어난 지금도 서비스가 도는 호스트에서 할 일은 아니다.
 
 ## 데이터
 
-- **백업** — `scripts/backup.sh [DEST]`: `pg_dump` + 오브젝트 미러 + `.env.host`. 최신 7개 보관.
-  복원 절차는 스크립트 머리에. cron 에 하루 한 번, DEST 는 `/opt/compose/backup`.
+- **백업** — `scripts/backup.sh [DEST]`: 두 데이터베이스(`agent_studio` 와 mcp-memory 의 `mcp_memory`)
+  의 `pg_dump` + 오브젝트 미러 + `.env.host`. 최신 7개 보관. 복원 절차는 스크립트 머리에.
+  cron 에 하루 한 번, DEST 는 `/opt/compose/backup`.
 - **DynamoDB 에서 이관** — `docs/INSTALL.md` 의 절차. 테이블은 `aws dynamodb scan` 으로 내보내
   `scripts/import-dynamodb-export.ts` 로, 오브젝트는 `scripts/migrate-objects.sh s3://<bucket>` 으로.
 - **보존** — 만료 행은 티커가 쓸어 낸다(`COMPOSE_PROFILES` 에 `ticker`). 끄면 schedule 도, 정리도 멈춘다.
+
+## 호스트 이전
+
+옛 호스트를 끄고 새 호스트로 옮기는 순서. 2026-08-23 `115.68.216.99` → `115.68.228.117` 이 이
+순서였고, 서비스가 멈춘 구간은 **4번부터 8번까지** — 데이터가 작아(테이블 21MB, 오브젝트 134MB)
+몇 분이면 끝난다. 시크릿이 SSM 에 있고 `AES_ENCRYPTION_KEY`·`BETTER_AUTH_SECRET` 이 그대로이므로
+로그인한 사람은 다시 로그인하지 않는다 — `session` 행까지 옮겨 가기 때문이다.
+
+1. **새 호스트 준비** — [사전 준비](#사전-준비)의 `init.sh` 와 `deploy/idc` 복사. 이어서 `.env.aws`
+   와 **`.env.host` 를 옛 호스트에서 그대로 가져온다**. `.env.host` 를 새로 민팅하면 복원해 넣을
+   데이터와 자격 증명이 어긋난다.
+
+   ```bash
+   for f in .env.aws .env.host; do
+     ssh ubuntu@<old> "cat /opt/compose/apps/agent-studio/$f" |
+       ssh ubuntu@<new> "umask 077; cat > /opt/compose/apps/agent-studio/$f"
+   done
+   ```
+
+2. **데이터 계층만 먼저** — 새 호스트에서 `ONLY="postgres minio minio-init" scripts/deploy.sh`.
+   `.env` 가 만들어지고 볼륨과 버킷이 생긴다.
+
+3. **오브젝트를 미리 한 번** — 부피가 큰 쪽을 서비스가 살아 있는 동안 옮겨 두면 전환 창이 짧아진다.
+   옛 호스트에서 `backup.sh` 와 같은 방식으로 디렉터리에 내린 뒤 tar 로 보내고, 새 호스트에서
+   `mc mirror` 로 넣는다. 두 번째 실행은 바뀐 것만 옮기므로 4번 뒤에 한 번 더 돌린다.
+
+4. **쓰는 쪽을 멈춘다** — 옛 호스트에서 `docker compose stop app ticker mcp-memory`.
+   **여기부터 서비스 중단이다.** 티커가 살아 있으면 옛 데이터베이스가 계속 앞서 나간다.
+
+5. **데이터베이스** — 두 개다. 하나만 옮기면 기억이 사라진 채로 정상으로 보인다.
+
+   ```bash
+   for db in agent_studio mcp_memory; do
+     ssh ubuntu@<old> "cd /opt/compose/apps/agent-studio &&
+       docker compose exec -T postgres pg_dump -U agent_studio --clean --if-exists $db | gzip" |
+     gunzip | ssh ubuntu@<new> "cd /opt/compose/apps/agent-studio &&
+       docker compose exec -T postgres psql -U agent_studio -v ON_ERROR_STOP=1 -q $db"
+   done
+   ```
+
+   그리고 3번의 오브젝트 미러를 한 번 더 — 마지막 복사 이후 생긴 것이 빠진다.
+
+6. **인증서** — Caddy 의 볼륨을 통째로 옮기면 DNS 를 돌린 직후 ACME 를 기다리지 않아도 된다.
+
+   ```bash
+   ssh ubuntu@<old> 'docker run --rm -v agent-studio_caddy-data:/data alpine tar cf - -C /data .' |
+     ssh ubuntu@<new> 'docker volume create agent-studio_caddy-data >/dev/null &&
+       docker run --rm -i -v agent-studio_caddy-data:/data alpine tar xf - -C /data'
+   ```
+
+7. **전체 기동과 확인** — 새 호스트에서 `scripts/deploy.sh`. DNS 를 바꾸기 *전에* 새 주소로 직접
+   확인한다.
+
+   ```bash
+   curl -fsS --resolve studio.opspresso.com:443:<new-ip> https://studio.opspresso.com/api/health
+   ```
+
+   행 수를 양쪽에서 세어 맞춰 보고(`items`, `catalog_vectors`, `user`, `session`, `memories`,
+   `objects`), 옮겨 온 **런타임 설정 행이 `.env` 를 이긴다**는 것을 기억하라 — `SETTINGS#app|META`
+   의 `artifactAccessMode` 나 `a2aApiKey` 는 새 호스트의 `.env` 값이 아니라 그 행이 답이다.
+
+8. **DNS** — Route 53 에서 `studio.opspresso.com` A 레코드를 새 IP 로 UPSERT 한다. TTL 을 함께
+   낮춰 두면(60초) 되돌릴 일이 생겼을 때 빠르다.
+
+9. **메시징 표면** — 웹훅 주소는 도메인이라 DNS 를 따라가지만, **Telegram 은 그 도메인의 IP 를
+   캐시한다** — `getWebhookInfo` 의 `ip_address` 가 옛 호스트로 남고, 다음 메시지 배달이 실패하고
+   나서야 다시 찾는다. 켜져 있는 봇마다 콘솔의 *Register webhook* 을 누르거나(같은 URL·같은
+   시크릿으로 `setWebhook` 을 다시 부른다) 그에 해당하는 호출을 한 번 해 주고, `ip_address` 가
+   새 호스트인지 확인한다. Slack·Teams 는 요청마다 도메인을 다시 찾으므로 할 일이 없다.
+
+10. **뒷정리** — 옛 호스트에서 `docker compose stop` 과 `sudo systemctl disable --now alloy`
+    (그러지 않으면 두 collector 가 같은 `/api/metrics` 를 긁는다). **볼륨은 지우지 마라** — 되돌릴
+    곳이다. 새 호스트에서는 `scripts/setup-grafana.sh` 로 Alloy 를 올리고, `backup.sh` 를 cron 에
+    건다.
 
 ## 프로파일
 
@@ -158,8 +235,11 @@ systemctl status alloy --no-pager
 curl -fsS http://127.0.0.1:12345/-/ready
 ```
 
-기본 collector ID는 이 호스트의 Grafana Fleet ID인 `byforce-318260`이고, 다른 호스트에는
-`GCLOUD_FM_COLLECTOR_ID`를 명시하라.
+스크립트의 기본 collector ID는 `byforce-318260`(옛 호스트의 Grafana Fleet ID)이므로 **지금의 alpha
+호스트를 포함해** 다른 호스트에서는 `GCLOUD_FM_COLLECTOR_ID`를 명시하라 — 이 호스트는
+`byforce-318755`다. 호스트가 Grafana Cloud 온보딩으로 이미 Alloy 를 갖고 있으면 토큰은 그 안에 있다:
+`sudo cat /etc/systemd/system/alloy.service.d/env.conf`(설치 스크립트가 실행되면 이 파일을
+`/etc/alloy/agent-studio.env`로 옮기고 원본은 `.migrated-<시각>`으로 남긴다).
 
 ### 대시보드
 
