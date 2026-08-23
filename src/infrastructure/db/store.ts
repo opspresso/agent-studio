@@ -98,7 +98,11 @@ async function lockRow(client: Runner, key: Key): Promise<Item | null> {
  * replacement is on the escape, keys included.
  */
 export function toStoredJson(item: Item): string {
-  return JSON.stringify(item).replace(/\\u0000/g, "�");
+  // Only the escape JSON.stringify wrote for a NUL character — one preceded by
+  // an even number of backslashes. A string that *contains* the six characters
+  // `\u0000` is serialised as `\\u0000`, and rewriting that would leave a
+  // lone backslash before `�`: invalid JSON, refused by the database.
+  return JSON.stringify(item).replace(/(?<=(?:^|[^\\])(?:\\\\)*)\\u0000/g, "�");
 }
 
 async function upsert(client: Runner, item: Item): Promise<void> {
