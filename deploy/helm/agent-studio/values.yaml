@@ -66,10 +66,12 @@ secrets:
   SCHEDULE_SCAN_TOKEN: ""       # openssl rand -hex 32 — the ticker's credential
   A2A_API_KEY: ""
   GITHUB_TOKEN: ""
-  # When the bundled services are off, the external ones' credentials:
+  # When the bundled services are off, the external ones' credentials. The
+  # object store's pair is its own (S3_*), never AWS_* — that pair belongs to
+  # every other AWS client in the process (Bedrock, when a deployment uses it).
   DATABASE_URL: ""              # postgres://user:pass@host:5432/db
-  AWS_ACCESS_KEY_ID: ""
-  AWS_SECRET_ACCESS_KEY: ""
+  S3_ACCESS_KEY_ID: ""
+  S3_SECRET_ACCESS_KEY: ""
   extra: {}
 
 service:

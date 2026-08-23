@@ -54,7 +54,7 @@ lock 아래에서 멱등하게 적용하므로 따로 만들 것이 없다 — p
 > (다른 저장소가 띄운 컨테이너까지 없앤다) 는 절대 실행하지 마라.
 
 MinIO 를 쓰려면 `.env.local` 에 `S3_BUCKET_NAME`, `S3_ENDPOINT=http://localhost:9000`,
-`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`(compose 의 값), 그리고 `ARTIFACT_ACCESS_MODE=proxied`
+`S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`(compose 의 값), 그리고 `ARTIFACT_ACCESS_MODE=proxied`
 를 두고 버킷은 콘솔(:9001)이나 `mc mb` 로 한 번 만든다 — 주석 처리된 예가 `.env.example` 에 있다.
 
 ## 로컬 MCP (deploy/local)

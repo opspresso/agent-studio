@@ -20,9 +20,11 @@ let s3Client: S3Client | undefined;
 function getS3Client(): S3Client {
   if (!s3Client) {
     const endpoint = config.s3Endpoint;
+    const credentials = config.s3Credentials;
     s3Client = new S3Client({
       region: config.awsRegion,
       ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
+      ...(credentials ? { credentials } : {}),
     });
   }
   return s3Client;

@@ -889,7 +889,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다 — 봇이 볼 수 �
   그것을 비워 두면 모든 요청이 같은 홉으로 해석돼 하나의 공유 버킷에 떨어지므로, 리미터는
   남용자가 아니라 함대 전체를 조인다.
 - **AWS 자격 증명은 AWS 를 쓰는 기능에만 필요하고**(Bedrock, AWS S3 자체), 역할이나 표준
-  `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 쌍으로 온다 — MinIO 같은 S3 호환 스토어의
-  자격 증명도 같은 이름의 쌍이다. 키를 이미지에 굽지 마라.
+  `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 쌍으로 온다. MinIO 같은 S3 호환 스토어의
+  자격 증명은 그것과 다른 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 쌍이다 — 한 프로세스가 둘 다 쓸 수 있다. 키를 이미지에 굽지 마라.
 - **`AES_ENCRYPTION_KEY` 를 회전하면 저장된 시크릿만이 아니라 proxied 오브젝트 주소도 전부
   무효가 된다** — 서명 키가 거기서 파생된다. Slack 스레드에 적힌 7일짜리 링크가 그날로 죽는다.

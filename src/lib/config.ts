@@ -183,6 +183,19 @@ export const config = {
     return optionalEnv(process.env.S3_ENDPOINT);
   },
   /**
+   * The object store's own key pair (`S3_ACCESS_KEY_ID` /
+   * `S3_SECRET_ACCESS_KEY`). Unset falls back to the SDK's default chain —
+   * the `AWS_*` pair, an instance role — which is right for AWS itself. A
+   * MinIO's key must not sit in `AWS_ACCESS_KEY_ID`: that is the pair every
+   * other AWS client in the process reads, and a deployment that also signs
+   * Bedrock requests would be sending MinIO's key to AWS.
+   */
+  get s3Credentials(): { accessKeyId: string; secretAccessKey: string } | undefined {
+    const accessKeyId = optionalEnv(process.env.S3_ACCESS_KEY_ID);
+    const secretAccessKey = optionalEnv(process.env.S3_SECRET_ACCESS_KEY);
+    return accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined;
+  },
+  /**
    * The base readers reach public objects at, when it differs from the
    * endpoint the app uploads through — a MinIO behind a reverse proxy, say.
    * Unset derives it from the endpoint (or AWS's virtual-host form).

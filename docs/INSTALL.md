@@ -80,7 +80,8 @@ helm upgrade --install agent-studio deploy/helm/agent-studio \
 ```
 
 - 조직의 Postgres 를 쓰려면 `postgres.enabled=false` + `secrets.DATABASE_URL`. 기존 S3 호환
-  스토어는 `minio.enabled=false` + `config.extra.S3_ENDPOINT` + `secrets.AWS_ACCESS_KEY_ID/SECRET`.
+  스토어는 `minio.enabled=false` + `config.extra.S3_ENDPOINT` + `secrets.S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY`
+  (오브젝트 스토어의 키는 `AWS_*` 가 아니라 `S3_*` 다 — `AWS_*` 는 Bedrock 같은 다른 AWS 클라이언트의 몫).
 - 시크릿을 직접 만들어 두었다면 `secrets.existingSecret=<name>` (같은 키 이름으로).
 - 번들 Postgres·MinIO 의 비밀번호(`postgres.password`, `minio.rootPassword`)는 **설치자가 한 번 정해 값
   파일에 둔다** — 차트가 생성하지 않는다(GitOps 렌더마다 달라져 DB 에서 잠기는 것을 막기 위해). initdb 가
