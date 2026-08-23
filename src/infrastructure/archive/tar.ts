@@ -99,7 +99,12 @@ export async function readTarArchive(
     }
 
     const type = String.fromCharCode(header[Field.Type] ?? 0);
-    const size = pax.size ?? parseNumeric(header.subarray(Field.Size, Field.Size + 12), offset);
+    const headerSize = parseNumeric(header.subarray(Field.Size, Field.Size + 12), offset);
+    // A pax `size` record describes the *file* the records belong to. An
+    // extension block carries its own length, so two of them in a row — a
+    // global header and then a per-entry one — must not read the first one's
+    // record as the second's length, which walked the reader into mid-data.
+    const size = METADATA_TYPES.has(type) ? headerSize : (pax.size ?? headerSize);
     const dataStart = offset + BLOCK;
     const dataEnd = dataStart + size;
     if (dataEnd > bytes.byteLength) {

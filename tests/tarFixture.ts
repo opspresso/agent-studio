@@ -13,6 +13,12 @@ export interface TarFixtureEntry {
   type?: "file" | "dir" | "symlink" | "hardlink";
   /** How a name longer than 100 bytes is carried; default is the GNU entry. */
   longName?: "gnu" | "pax";
+  /**
+   * Extended-header records written as their own block ahead of this entry —
+   * `["size=12"]` becomes one pax record. `scope` picks the block type: `x`
+   * applies to the next entry, `g` to the rest of the archive.
+   */
+  paxRecords?: { scope: "x" | "g"; records: string[] };
 }
 
 const BLOCK = 512;
@@ -51,6 +57,21 @@ export function writeTar(entries: TarFixtureEntry[]): Buffer {
   for (const entry of entries) {
     const type = entry.type ?? "file";
     const data = Buffer.from(entry.content ?? "", "utf8");
+    if (entry.paxRecords) {
+      const body = Buffer.concat(
+        entry.paxRecords.records.map((record) => {
+          const text = ` ${record}\n`;
+          const bytes = Buffer.byteLength(text, "utf8");
+          // The length counts its own digits; two passes settle them.
+          const length = String(bytes + 1).length + bytes;
+          return Buffer.from(`${length}${text}`, "utf8");
+        }),
+      );
+      parts.push(
+        tarHeader("PaxHeader/x", body.byteLength, entry.paxRecords.scope),
+        padded(body),
+      );
+    }
     let name = entry.path;
     if (name.length > 100) {
       if (entry.longName === "pax") {
