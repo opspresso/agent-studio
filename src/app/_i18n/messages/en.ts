@@ -95,7 +95,7 @@ export const en = {
   "home.coverage": "What Agent Studio covers",
   "home.domain.projects": "Projects & versions",
   "home.domain.projectsBody":
-    "Author prompts, agents, and image projects as immutable versions. Publish one; callers pin it or follow the pointer.",
+    "Author prompts, agents, and image projects as named versions. Publish one; callers pin a version or follow the pointer.",
   "home.domain.agent": "Agent loop",
   "home.domain.agentBody":
     "A multi-turn tool loop with turn and context budgets, on-demand skills, subagent transfers, and opt-in URL reading — streamed end to end.",
@@ -254,7 +254,7 @@ export const en = {
 
   "guide.start.title": "Start here",
   "guide.start.body":
-    "Four steps, each on a tab of your own project. Nothing you save is reachable from outside until you publish it.",
+    "Four steps, each on a tab of your own project. Publishing decides which version a caller gets when it does not name one — a saved version is already runnable by its own name.",
   "guide.start.step1": "Create a project",
   "guide.start.step1Body":
     "Projects → New project. The name is the identifier every caller uses and cannot be changed afterwards; the type — llm, agent, or image — is chosen here too.",
@@ -274,7 +274,7 @@ export const en = {
     "One named unit of work, with one type. It owns its versions, its cost limits, its integrations, and who may see it.",
   "guide.words.version": "Version",
   "guide.words.versionBody":
-    "An immutable snapshot of a project: model, prompts, tools, budgets. Publishing marks one of them as the answer to a request that does not name a number.",
+    "One named snapshot of a project: model, prompts, tools, turn and token limits. Editing one rewrites it in place rather than making a new one, so a change to the version callers pin — the published one included — reaches them on their next run. Publishing marks one as the answer to a request that names no number.",
   "guide.words.run": "Run",
   "guide.words.runBody":
     "One execution of a version. Every run is priced, attributed to whoever caused it, bounded by a deadline, and recorded as a trace.",
@@ -320,7 +320,7 @@ export const en = {
 
   "guide.surfaces.title": "Where it can answer",
   "guide.surfaces.body":
-    "Every entry point below runs the same engine on the same published version, and every run lands in the same cost and trace records.",
+    "Every entry point below runs the same engine and lands in the same cost and trace records. Each takes the published version unless the caller names one — the Playground is the exception, since it runs the version you have open.",
   "guide.surfaces.console": "The console",
   "guide.surfaces.consoleBody":
     "The Playground for a version you are still writing, and Chats for a conversation with a published agent — attachments, streamed replies, tool traffic in line. A chat run outlives the tab that started it.",

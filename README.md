@@ -17,7 +17,7 @@
 
 | | |
 |---|---|
-| **Projects & versions** | 세 가지 project type — `llm`(단발성 프롬프트), `agent`(멀티턴 tool 루프), `image`(생성/편집). Version 은 불변 스냅샷이고, 포인터가 publish 된 것을 가리킨다. |
+| **Projects & versions** | 세 가지 project type — `llm`(단발성 프롬프트), `agent`(멀티턴 tool 루프), `image`(생성/편집). Version 은 이름 붙인 스냅샷이고(고치면 그 자리에서 덮어쓴다), 포인터가 publish 된 것을 가리킨다. |
 | **LLM engine** | 모든 provider 에 대해 하나의 OpenAI 호환 프로토콜. 멀티턴 tool 루프, subagent transfer, 턴별 예산, 1회 재시도 fallback, 어디서나 스트리밍. |
 | **Skills** | 필요할 때 로드되는 마크다운 동작 지침 — 시스템 프롬프트는 이름/설명 표만 담는다. Agent Plugins 저장소에서 sync 할 수 있다. |
 | **MCP tools** | MCP 서버의 공유 레지스트리. 버전별 binding 이 tool 목록을 좁히고 아웃바운드 헤더를 덮어쓸 수 있다. Managed 서버와 OAuth 를 지원한다(아래). |
