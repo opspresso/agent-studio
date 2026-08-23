@@ -647,14 +647,23 @@ async function* runSubagentWithPii(
       ) {
         delete restored.delta;
       }
+      // Every axis a chunk can carry on its own, because a chunk that carries
+      // only the one nobody listed here is dropped and nothing says so. `file`
+      // was missing: a `piiFiltering` parent that transferred to a child which
+      // rendered a document had that document swallowed here, so it never
+      // reached `captureRunArtifacts` at the bracket — neither stored nor
+      // delivered, while the same run with the filter off worked. `authorDone`
+      // was missing the same way, leaving a finished chain drawn as active.
       if (
         restored.delta ||
         restored.image ||
+        restored.file ||
         restored.toolResult ||
         restored.usage ||
         restored.error ||
         restored.warning ||
         restored.finishReason ||
+        restored.authorDone ||
         restored.done
       ) {
         yield restored;

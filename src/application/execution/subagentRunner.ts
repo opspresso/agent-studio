@@ -248,17 +248,31 @@ export async function* authored(
   agentName: string,
   source: AsyncGenerator<EngineChunk, string>,
 ): AsyncGenerator<EngineChunk, string> {
-  while (true) {
-    const step = await source.next();
-    if (step.done) {
-      return step.value;
+  let completed = false;
+  try {
+    while (true) {
+      const step = await source.next();
+      if (step.done) {
+        completed = true;
+        return step.value;
+      }
+      const chunk = step.value;
+      yield {
+        ...chunk,
+        author: chunk.author ?? agentName,
+        authorPath: [agentName, ...(chunk.authorPath ?? [])],
+      };
     }
-    const chunk = step.value;
-    yield {
-      ...chunk,
-      author: chunk.author ?? agentName,
-      authorPath: [agentName, ...(chunk.authorPath ?? [])],
-    };
+  } finally {
+    // A hand-written loop does not pass a `return()` on, and this one sits in
+    // the middle of the close chain: `observeChildFailure` and
+    // `runSubagentWithPii` both guard for exactly this and both are outside it.
+    // Without this the cancel stops here — `runLocalSubagent` stays suspended,
+    // so its `finally` never closes the child's MCP sessions or writes its
+    // trace, and a run deadline firing mid-transfer leaks both.
+    if (!completed) {
+      await source.return("");
+    }
   }
 }
 
@@ -554,10 +568,17 @@ export async function* runLocalSubagent(
       // and the caller comes off the origin that descended the chain.
       ...callerFor({ version, ...(origin.caller ? { caller: origin.caller } : {}) }),
       ...memory.input,
-      // Clamped to the parent's ceiling: the child continues the parent's turn
-      // counter (`startTurn`), so a child version configured with a larger
-      // maxTurn would raise the limit the whole run was started under.
-      maxTurn: Math.min(version.maxTurn ?? maxTurn, maxTurn),
+      // The child continues the parent's turn counter (`startTurn`), so its own
+      // `maxTurn` is **how many turns it gets**, not a point on that counter.
+      // Reading it as a point made a specialised child a parent transfers to
+      // late — say `maxTurn: 10`, entered on turn 12 — trip `turn >= maxTurn`
+      // on entry: it never called its model and answered `""`, which the parent
+      // reported as "returned no answer". The parent's own transfer guard only
+      // checks the parent's ceiling, so nothing saw it coming.
+      //
+      // Still clamped to that ceiling, which is the part a child may not raise:
+      // the whole run was started under it.
+      maxTurn: Math.min(version.maxTurn === undefined ? maxTurn : turn + version.maxTurn, maxTurn),
       startTurn: turn,
       skills,
       subagents,

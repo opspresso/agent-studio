@@ -2087,8 +2087,15 @@ describe("what a run produced", () => {
   });
 
   it("is read on both axes wherever it is read at all", () => {
+    // The receiver is a chunk whatever it was bound to, and a wildcard cannot
+    // say that: `.image` is a container image and `.file` is a Teams
+    // attachment in seventeen files that have nothing to do with this. So the
+    // bindings are named, and a new one is added here on purpose — which is
+    // what `restored` cost: `runSubagentWithPii` read `restored.image` and
+    // this check, looking only for `chunk.`, never saw that `restored.file`
+    // was missing from the gate beside it.
     const reads = (text: string, field: "image" | "file") =>
-      new RegExp(String.raw`chunk\.${field}\b`).test(text);
+      new RegExp(String.raw`\b(?:chunk|restored)\.${field}\b`).test(text);
     const oneAxis = SOURCE_FILES.filter((file) => {
       if (!file.path.startsWith("src/") || ONE_AXIS_ON_PURPOSE.includes(file.path)) {
         return false;

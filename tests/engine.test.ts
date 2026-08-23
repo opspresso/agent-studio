@@ -1884,3 +1884,50 @@ describe("empty provider errors", () => {
     expect(chunks.at(-1)?.error).toBe("unknown error");
   });
 });
+
+/**
+ * What a filtered transfer is allowed to swallow.
+ *
+ * `runSubagentWithPii` re-emits a child's chunks after restoring the masked
+ * values, and it decides what to re-emit by listing the axes a chunk can carry
+ * on its own. A chunk carrying only an axis nobody listed is dropped, and
+ * nothing says so: the run finishes, the prose describes a report, and the
+ * report is not there. Turning the filter off makes the same run work, which is
+ * the shape that makes it hard to see.
+ */
+describe("a transfer under PII filtering", () => {
+  it("forwards a file the child produced, which is neither stored nor delivered otherwise", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "c1", "transfer_to_agent", '{"agent_name":"writer","message":"write it"}'), usageChunk(1, 1)],
+      [contentChunk("보고서를 만들었습니다."), usageChunk(1, 1)],
+    ]);
+    const chunks = await collect(
+      runAgent(
+        {
+          channel,
+          runSubagent: async function* () {
+            yield {
+              author: "writer",
+              file: { b64: "AAAA", mimeType: "application/pdf", name: "report.pdf", source: "mcp: render_document" },
+            } as EngineChunk;
+            yield { author: "writer", authorDone: true } as EngineChunk;
+            return "done";
+          },
+        },
+        {
+          projectName: "p",
+          model: MODEL,
+          messages: [{ role: "user", content: "mail me at a@b.com" }],
+          parameters: { piiFiltering: true },
+          subagents: [{ name: "writer", description: "writes", type: "local" }],
+        },
+      ),
+    );
+
+    const file = chunks.find((chunk) => chunk.file);
+    expect(file?.file?.name).toBe("report.pdf");
+    expect(file?.file?.b64).toBe("AAAA");
+    // The chain has to stop being drawn as active, too.
+    expect(chunks.some((chunk) => chunk.authorDone)).toBe(true);
+  });
+});
