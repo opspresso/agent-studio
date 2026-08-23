@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { ChannelMessage } from "@/domain/llm/channel";
+import type { ChannelMessage, ChannelParams } from "@/domain/llm/channel";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
 import { FETCH_URL_TOOL_NAME } from "@/application/llm/agentAssembly";
 import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
@@ -212,5 +212,71 @@ describe("running alongside MCP calls", () => {
       "c1",
       "c2",
     ]);
+  });
+});
+
+/**
+ * A masked URL is not an address.
+ *
+ * The filter rewrites strings, and a URL is a string: `PHONE_PATTERN` matches a
+ * digit run in a path, so a wiki page under `/page/2024-0115-3823` reaches the
+ * model with a random replacement in place of that segment. The model then
+ * calls `fetch_url` with **what it was shown**, and the engine has to undo that
+ * before the address goes out — which is what `displayArgs` is for, and what
+ * the `SaveFile` and MCP dispatches beside this one already used.
+ *
+ * A scripted channel cannot show this: it would hand back the real URL the test
+ * wrote rather than the masked one the model saw, and both paths then agree.
+ * So the channel here does what a model does — it calls with the string in the
+ * prompt it was given.
+ */
+describe("reading a page under PII filtering", () => {
+  it("requests the address the reader is shown, not the masked one", async () => {
+    const url = "https://wiki.corp/page/2024-0115-3823";
+    const seen: string[] = [];
+    let call = 0;
+    const channel = {
+      chatCompletion: async () => {
+        throw new Error("the agent loop streams");
+      },
+      async *chatCompletionStream(params: ChannelParams) {
+        const prompt = JSON.stringify(params.messages);
+        const shown = /https:\/\/wiki\.corp\/page\/[^"\\ ]+/.exec(prompt)?.[0] ?? "";
+        if (call++ === 0) {
+          seen.push(shown);
+          yield toolCallChunk(0, "c1", FETCH_URL_TOOL_NAME, JSON.stringify({ url: shown }));
+          yield usageChunk(10, 5);
+          return;
+        }
+        yield contentChunk("read");
+        yield usageChunk(8, 4);
+      },
+    } as unknown as FakeChannel;
+
+    const asked: string[] = [];
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      fetchUrl: async (target: string) => {
+        asked.push(target);
+        return { text: "ok" };
+      },
+    };
+    await collect(
+      runAgent(
+        deps,
+        input({
+          parameters: { piiFiltering: true },
+          messages: [{ role: "user", content: `read ${url}` }],
+        }),
+      ),
+    );
+
+    // The model really was shown a replacement — otherwise this test proves
+    // nothing about restoring one.
+    expect(seen[0]).not.toBe(url);
+    expect(seen[0]).toContain("[[PII:");
+    // And the address that went out is the one the author wrote.
+    expect(asked).toEqual([url]);
   });
 });

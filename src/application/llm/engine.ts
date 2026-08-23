@@ -1071,7 +1071,17 @@ async function dispatchConcurrentTools(
       if (entry.malformed || !entry.builtin || entry.call.name !== FETCH_URL_TOOL_NAME) {
         continue;
       }
-      const url = typeof entry.args.url === "string" ? entry.args.url.trim() : "";
+      // From `displayArgs`, not `args`, for the reason `SaveFile` and the MCP
+      // dispatch below both give: `args` is the masked copy. A URL is a string
+      // like any other to the filter, and `PHONE_PATTERN` matches a digit run
+      // in a path — `https://wiki.corp/page/2024-0115-3823` becomes
+      // `…/page/[[PII:1837-4402-9911]]`, so the run fetched an address nobody
+      // wrote, reported "could not read that address", and showed the reader
+      // the *correct* URL beside it, because the announced call has always come
+      // from `displayArgs`. The result text is masked again on its way into the
+      // conversation (`toolResultBudget`), so the real address never reaches
+      // the model.
+      const url = typeof entry.displayArgs.url === "string" ? entry.displayArgs.url.trim() : "";
       if (!url) {
         settled.set(entry.call.id, {
           ok: { text: `Error: ${FETCH_URL_TOOL_NAME} requires a url.` },
@@ -1137,7 +1147,8 @@ async function dispatchConcurrentTools(
         if (!fetch) {
           return { ok: await mcpDispatch!(entry.call.name, entry.displayArgs) };
         }
-        const url = String(entry.args.url);
+        // The same value the gate above admitted, trimmed and restored.
+        const url = String(entry.displayArgs.url).trim();
         const read = await fetchDispatch!(url);
         return {
           ok: {

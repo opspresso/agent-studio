@@ -259,10 +259,10 @@ export function ChatThread({ chatId }: { chatId: string }) {
 
   useEffect(() => {
     let dropped = false;
-    // A different chat holds different sequences, and this component is reused
-    // across a navigation between two of them. Clearing here rather than in the
-    // fetch is what keeps a retire that fires in the round-trip from asking the
-    // new chat for the old one's tail.
+    // A different chat holds different sequences, so a retire firing inside the
+    // round-trip must not ask the new chat for the old one's tail. The page
+    // keys this view by `chatId` now, so a navigation remounts and this starts
+    // undefined anyway — it stays because the effect also re-runs without one.
     held.current = undefined;
     void (async () => {
       const fresh = await syncFromServer();
