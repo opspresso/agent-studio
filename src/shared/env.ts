@@ -14,7 +14,7 @@
  * compared as the token.
  *
  * Deliberately not applied to the `??`-defaulted reads (`STAGE`,
- * `DYNAMODB_TABLE_NAME`, `AWS_REGION`): those never decided that blank means
+ * `AWS_REGION`): those never decided that blank means
  * unset, and for `STAGE` the current answer is the safe one — an empty value
  * throws, where falling back to `local` would skip `assertAccessControlConfig`
  * on a deployed stage.

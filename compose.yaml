@@ -1,10 +1,10 @@
-# The two DynamoDB Local containers are shared with every other project on this
-# machine, so the compose project name is fixed here instead of being derived
-# from the directory. Another repository running `docker compose up -d dynamodb`
-# finds them already up and leaves them alone — as long as its service block is
-# identical to this one, which is why the block below is copied verbatim from the
-# nextjs-init skill rather than adjusted per project. Table names, not ports,
-# keep the projects apart.
+# The PostgreSQL container is shared with every other project on this machine,
+# so the compose project name is fixed here instead of being derived from the
+# directory. Another repository running `docker compose up -d postgres` finds it
+# already up and leaves it alone — as long as its service block is identical to
+# this one. Database names, not ports, keep the projects apart: this app uses
+# `agent_studio` for development and `agent_studio_test` for the integration
+# check, both created by `deploy/postgres/init.sql` on the volume's first start.
 #
 # Never `docker compose down -v` here: the volume belongs to every project. Nor
 # `--remove-orphans`, which would take out containers another repository started.
@@ -18,39 +18,58 @@ services:
     env_file:
       - .env.local
     environment:
-      # Inside the compose network the local DynamoDB is reachable by service name.
-      DYNAMODB_ENDPOINT: http://dynamodb:8000
+      # Inside the compose network the database is reachable by service name.
+      DATABASE_URL: postgres://agent_studio:agent_studio@postgres:5432/agent_studio
     depends_on:
-      - dynamodb
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
-  # Development instance — what `pnpm dev` and `pnpm init-local-table` talk to.
-  # -sharedDb + -dbPath + the volume keep tables and sessions across restarts.
-  # user: root because Docker creates the mount point root-owned while the image
-  # runs as uid 1000, which fails silently — the container shows Up but SQLite
-  # can't open its file and clients hang.
-  dynamodb:
-    image: amazon/dynamodb-local:3.3.0
-    user: root
-    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "./data"]
-    working_dir: /home/dynamodblocal
+  # PostgreSQL with the pgvector extension — the one store this app needs. The
+  # image is the upstream postgres image plus the extension, so anything an
+  # install would run (RDS, a managed Postgres, a bare server with pgvector
+  # installed) behaves the same.
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: agent_studio
+      POSTGRES_PASSWORD: agent_studio
+      POSTGRES_DB: agent_studio
     volumes:
-      - dynamodb-data:/home/dynamodblocal/data
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "8083:8000"
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_studio -d agent_studio"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
-  # Integration-test instance, kept separate so `pnpm test:integration` — which
-  # writes and cascade-deletes — can never touch data the dev app is using. It is
-  # wiped on every start, so `pnpm init-local-table:test` has to recreate the
-  # table. -inMemory and -dbPath are mutually exclusive, which is why this block
-  # differs from the one above.
-  dynamodb-test:
-    image: amazon/dynamodb-local:3.3.0
-    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+  # An S3-compatible object store for what runs produce (images, documents).
+  # Optional — artifact persistence is off without `S3_BUCKET_NAME` — and under
+  # a profile so `docker compose up -d postgres` alone stays the minimum.
+  #   docker compose --profile objects up -d
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    profiles: ["objects"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: agent_studio
+      MINIO_ROOT_PASSWORD: agent_studio_secret
+    volumes:
+      - minio-data:/data
     ports:
-      - "8084:8000"
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
 volumes:
-  dynamodb-data:
+  postgres-data:
+  minio-data:

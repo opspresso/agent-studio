@@ -20,7 +20,7 @@ let configuredAdminCheck: AdminCheck = async () => false;
  * Wire the admin-list reader the override consults. Called once by the
  * composition root. Pushed in rather than imported, because the reader lives in
  * `lib/runtime-settings` on top of the settings store — a static import here
- * would pull the DynamoDB client into the application layer through the side
+ * would pull the database client into the application layer through the side
  * door. And pushed once rather than threaded through call sites, because a
  * caller that forgot the argument would silently narrow the rule back to
  * owner-only for its path alone.

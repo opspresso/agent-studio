@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { FakeStore } from "./fakeStore";
 
 /**
  * `put` writes the whole settings object, but `fromItem` reads back only what
@@ -8,15 +9,16 @@ import { describe, expect, it, vi } from "vitest";
  * bracket never saw again. This pins the read against the fields the runtime
  * consumes, non-string shapes included.
  */
-const send = vi.fn();
-vi.mock("@/infrastructure/db/client", () => ({
-  getDocumentClient: () => ({ send }),
-  getTableName: () => "test-table",
-}));
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
+const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
 const { settingsRepository } = await import(
   "@/infrastructure/db/repositories/settingsRepository"
 );
+
+beforeEach(() => {
+  store.rows.clear();
+});
 
 describe("settingsRepository.get", () => {
   it("reads back what put writes — every AppSettings field, by construction", async () => {
@@ -55,15 +57,16 @@ describe("settingsRepository.get", () => {
       ],
       updatedAt: "2026-01-01T00:00:00Z",
     };
-    send.mockResolvedValueOnce({
-      Item: { PK: "SETTINGS#app", SK: "META", entityType: "SETTINGS", ...stored },
-    });
+    await settingsRepository.put(stored);
 
+    // The row lives at the one settings address, typed, with nothing lost.
+    expect(store.all()).toEqual([
+      { PK: "SETTINGS#app", SK: "META", entityType: "SETTINGS", ...stored },
+    ]);
     await expect(settingsRepository.get()).resolves.toEqual(stored);
   });
 
   it("returns null when no settings item exists", async () => {
-    send.mockResolvedValueOnce({});
     await expect(settingsRepository.get()).resolves.toBeNull();
   });
 });

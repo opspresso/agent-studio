@@ -27,37 +27,39 @@
 - Node.js 24, pnpm 11
 - Next.js 16 (App Router), React 19, TypeScript strict
 - Mantine 9 (컴포넌트 + 테마)
-- Better Auth 1.6 + Google OAuth (커스텀 DynamoDB 어댑터)
+- Better Auth 1.7 — 표준 OIDC(Keycloak · Entra ID · Okta …), Google, 또는 비밀번호
 - Clean Architecture (`domain` / `application` / `infrastructure` / `app`), 테스트로 강제된다
-- AWS DynamoDB 단일 테이블 설계
+- PostgreSQL + pgvector 하나 — 모든 행과 케이퍼빌리티 카탈로그. 아티팩트는 S3 호환 스토어(선택)
+
+**설치형이다.** 기업이 자기 네트워크 안에 설치해 운영하고, 외부 네트워크 없이도 부팅·로그인·런이
+된다 — 밖으로 나가는 연결은 전부 선택이다. 설치는 [docs/INSTALL.md](docs/INSTALL.md).
 
 ## 빠른 시작
 
 ```bash
 # 1. Install
-corepack enable && corepack prepare pnpm@11.10.0 --activate
+corepack enable && corepack prepare pnpm@11.22.0 --activate
 pnpm install
 
 # 2. Environment
 cp .env.example .env.local
 # LLM_BASE_URL, LLM_API_KEY, AES_ENCRYPTION_KEY (32바이트 base64) 를 채우고,
-# 실제 로그인이 필요하면 BETTER_AUTH_SECRET 과 GOOGLE_CLIENT_ID/SECRET 도 채운다.
+# 실제 로그인이 필요하면 BETTER_AUTH_SECRET 과 로그인 방식 하나(OIDC / Google / 비밀번호)도 채운다.
 
-# 3. Local DynamoDB
-docker compose up -d dynamodb
-pnpm init-local-table
+# 3. Local PostgreSQL (스키마는 앱이 부팅 때 만든다)
+docker compose up -d postgres
 
 # 4. Run
 pnpm dev            # http://localhost:3000
 ```
 
-LLM provider 도 Google 계정도 마땅치 않은가? `scripts/mock-llm.ts` 와
+LLM provider 도 신원 제공자도 마땅치 않은가? `scripts/mock-llm.ts` 와
 `scripts/dev-session.ts` 가 둘 다 대신한다 —
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#실제-자격-증명-없이-작업하기) 를 보라.
 
-> DynamoDB Local 컨테이너는 **이 머신의 다른 모든 프로젝트와 공유된다**. 포트가 아니라
-> 테이블 이름이 그것들을 갈라 놓는다 — `docker compose down -v` 는 절대 실행하지 마라.
-> 자세한 내용은 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#로컬-dynamodb) 에 있다.
+> PostgreSQL 컨테이너는 **이 머신의 다른 모든 프로젝트와 공유된다**. 포트가 아니라
+> 데이터베이스 이름이 그것들을 갈라 놓는다 — `docker compose down -v` 는 절대 실행하지 마라.
+> 자세한 내용은 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#로컬-postgresql) 에 있다.
 
 ```bash
 pnpm typecheck      # tsc --noEmit (strict)
@@ -71,7 +73,8 @@ lint 단계는 없다. `typecheck` + `test` + `build` 가 검사다.
 
 | 문서 | 무엇에 답하나 |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 어떻게 만들어졌고 **왜** 그런가 — 레이어, 단일 테이블 키 맵, 진입점에서 엔진까지의 경로 |
+| [docs/INSTALL.md](docs/INSTALL.md) | 설치 — 호스트 하나(Compose), Kubernetes(Helm), 폐쇄망에서의 대체 경로, AWS 배포에서 옮겨 오기 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 어떻게 만들어졌고 **왜** 그런가 — 레이어, 아이템 테이블 키 맵, 진입점에서 엔진까지의 경로 |
 | [docs/DIAGRAMS.md](docs/DIAGRAMS.md) | 같은 모양을 그림으로 — 레이어, 요청 흐름, 런 브래킷, 메시징 표면, wiring site, 스토리지 |
 | [docs/design/](docs/design/) | 서브시스템마다 파일 하나 — 엔진, MCP, 메시징 표면(Slack, Telegram, Teams), capability, trigger, chat, 기록, A2A |
 | [docs/OWNERSHIP.md](docs/OWNERSHIP.md) | 소유 파일이 하나씩 정해진 모든 결정. `tests/architecture.test.ts` 가 강제한다 |
@@ -119,10 +122,10 @@ Skill 은 [Agent Plugins](https://agent-plugins.org/) 저장소(`PLUGINS_REPO`)�
 좁히고 레지스트리의 헤더 위에 자기 헤더를 덧입힐 수 있어, 공유 서버 하나가 서로 다른 자격
 증명으로 여러 project 를 서빙한다.
 
-**Managed 서버** — Agent Studio 는 SSM 을 통해 자기 호스트에서 MCP 서버 컨테이너를 띄우고
+**Managed 서버** — Agent Studio 는 Docker 로 자기 호스트에서 MCP 서버 컨테이너를 띄우고
 loopback 으로 도달할 수 있다. 그래서 공개 엔드포인트가 없는 서버도 쓸 수 있다. 부팅 시
 버려진 컨테이너를 자동으로 복구하는데, 이 앱을 교체하는 일이야말로 그것들을 깨뜨리는
-일이기 때문이다. `MANAGED_MCP_INSTANCE_ID` / `MANAGED_MCP_REGISTRY` 로 설정하며, 설정하지
+일이기 때문이다. `MANAGED_MCP_RUNTIME` / `MANAGED_MCP_REGISTRY` 로 설정하며, 설정하지
 않으면 절반만 켜진 상태가 아니라 기능이 꺼진 것이다.
 
 **OAuth** — admin 이 레지스트리 항목에 대해 discovery 를 돌리고(RFC 9728 → RFC 8414), 그

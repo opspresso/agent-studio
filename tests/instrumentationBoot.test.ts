@@ -50,6 +50,10 @@ vi.mock("@/infrastructure/db/repositories/auditRepository", () => ({
 // Reached off the awaited path; undefined means "this deployment cannot start
 // containers", which is the branch that does nothing.
 vi.mock("@/lib/container", () => ({ managedMcpUseCases: undefined }));
+// The schema and the bootstrap administrator are a database's business; this
+// test has none.
+vi.mock("@/infrastructure/db/migrations", () => ({ migrate: async () => {} }));
+vi.mock("@/lib/auth", () => ({ ensureBootstrapAdmin: async () => {} }));
 
 const { register } = await import("@/instrumentation");
 const { auditSink, setAuditSink } = await import("@/application/audit/recordAudit");

@@ -346,8 +346,10 @@ export function createSettingsUseCases(
         }
         const value = raw.trim();
         if (spec.key === "artifactAccessMode" && value !== "") {
-          if (value !== "authenticated" && value !== "public") {
-            throw new ValidationError("Artifact access mode must be authenticated or public");
+          if (value !== "authenticated" && value !== "public" && value !== "proxied") {
+            throw new ValidationError(
+              "Artifact access mode must be authenticated, public or proxied",
+            );
           }
           if (value === spec.env()) {
             delete next.artifactAccessMode;

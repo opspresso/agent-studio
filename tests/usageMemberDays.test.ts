@@ -1,20 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UsageDelta } from "@/domain/usage/types";
+import { keys } from "@/infrastructure/db/keys";
+import type { FakeStore } from "./fakeStore";
 
-const { send, queryAll } = vi.hoisted(() => ({ send: vi.fn(), queryAll: vi.fn() }));
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
+const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
-vi.mock("@/infrastructure/db/client", () => ({
-  getTableName: () => "test-table",
-  getDocumentClient: () => ({ send }),
-}));
-vi.mock("@/infrastructure/db/query", () => ({ queryAll }));
+const { PostgresUsageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
 
-const { DynamoUsageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
+const NOW_MS = Date.parse("2026-08-13T12:00:00Z");
 
-const delta = (actor?: string): UsageDelta => ({
+const delta = (actor?: string, model = "m"): UsageDelta => ({
   projectName: "p",
   date: "2026-08-13",
-  model: "m",
+  model,
   calls: 1,
   inputTokens: 10,
   outputTokens: 5,
@@ -22,81 +21,118 @@ const delta = (actor?: string): UsageDelta => ({
   ...(actor ? { actor } : {}),
 });
 
-const sentInputs = () =>
-  send.mock.calls.map((call) => call[0]?.input ?? {});
+const memberRows = () =>
+  store.all().filter((row) => String(row.PK).startsWith("USAGEMEMBER#"));
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  send.mockResolvedValue({});
-  queryAll.mockResolvedValue([]);
+  store.rows.clear();
+  // Every usage write checks the project is live first, so the partition it
+  // lands in is not one a cascade delete is sweeping.
+  store.seed([{ ...keys.project("p"), entityType: "PROJECT", name: "p" }]);
+  vi.spyOn(Date, "now").mockReturnValue(NOW_MS);
 });
 
 describe("the member day row", () => {
-  it("is written third, keyed by email, UTC day and project, for a user actor", async () => {
-    await new DynamoUsageRepository().record(delta("user:a@x.com"));
+  it("is written beside the project and actor rows, keyed by email, UTC day and project, for a user actor", async () => {
+    await new PostgresUsageRepository().record(delta("user:a@x.com"));
 
-    const memberWrites = sentInputs().filter((input) => input.Key?.PK === "USAGEMEMBER#a@x.com");
-    expect(memberWrites).toHaveLength(2);
-    expect(memberWrites[0]?.Key).toEqual({ PK: "USAGEMEMBER#a@x.com", SK: "DATE#2026-08-13#p" });
-    expect(memberWrites[0]?.UpdateExpression).toContain("if_not_exists(costUsd");
-    expect(memberWrites[1]?.UpdateExpression).toContain("ADD calls.#model");
-    expect(memberWrites[1]?.ExpressionAttributeValues).toMatchObject({ ":cost": 0.5 });
+    expect(memberRows()).toHaveLength(1);
+    expect(memberRows()[0]).toMatchObject({
+      PK: "USAGEMEMBER#a@x.com",
+      SK: "DATE#2026-08-13#p",
+      entityType: "UsageMember",
+      email: "a@x.com",
+      projectName: "p",
+      date: "2026-08-13",
+      calls: { m: 1 },
+      inputTokens: { m: 10 },
+      outputTokens: { m: 5 },
+      cachedTokens: { m: 0 },
+      costUsd: { m: 0.5 },
+    });
+    expect(typeof memberRows()[0]?.expiresAt).toBe("number");
+    // Additive, not a replacement of the project's own accounting: the
+    // project total and the actor row are written too.
+    expect(store.all().map((row) => `${row.PK} ${row.SK}`)).toEqual(
+      expect.arrayContaining([
+        "USAGE#p DATE#2026-08-13",
+        "USAGE#p ACTOR#2026-08-13#user:a@x.com",
+        "USAGEMEMBER#a@x.com DATE#2026-08-13#p",
+      ]),
+    );
+  });
+
+  it("adds a second record for the same day into the same per-model maps", async () => {
+    const repo = new PostgresUsageRepository();
+    await repo.record(delta("user:a@x.com"));
+    await repo.record(delta("user:a@x.com"));
+    await repo.record(delta("user:a@x.com", "other"));
+
+    expect(memberRows()).toHaveLength(1);
+    expect(memberRows()[0]).toMatchObject({
+      calls: { m: 2, other: 1 },
+      costUsd: { m: 1, other: 0.5 },
+    });
   });
 
   it("is not written for project tokens, machine actors, or unattributed spend", async () => {
     // A token spends against its project's limits, never its owner's budget.
-    await new DynamoUsageRepository().record(delta("project-token:a@x.com"));
-    await new DynamoUsageRepository().record(delta("slack:U1"));
-    await new DynamoUsageRepository().record(delta());
-    expect(
-      sentInputs().some((input) => String(input.Key?.PK ?? "").startsWith("USAGEMEMBER#")),
-    ).toBe(false);
+    await new PostgresUsageRepository().record(delta("project-token:a@x.com"));
+    await new PostgresUsageRepository().record(delta("slack:U1"));
+    await new PostgresUsageRepository().record(delta());
+    expect(memberRows()).toHaveLength(0);
   });
 });
 
 describe("listMemberDays", () => {
-  it("queries the member's own partition across the day range", async () => {
-    queryAll.mockResolvedValue([
-      {
-        email: "a@x.com",
-        projectName: "p",
-        date: "2026-08-13",
-        costUsd: { m: 3 },
-        calls: { m: 2 },
-      },
+  it("reads the member's own partition across the day range, every project on the last day included", async () => {
+    const nowSeconds = Math.floor(NOW_MS / 1000);
+    const row = (date: string, projectName: string, extra: Record<string, unknown> = {}) => ({
+      ...keys.usageMember("a@x.com", date, projectName),
+      entityType: "UsageMember",
+      email: "a@x.com",
+      projectName,
+      date,
+      costUsd: { m: 3 },
+      calls: { m: 2 },
+      expiresAt: nowSeconds + 86_400,
+      ...extra,
+    });
+    store.seed([
+      row("2026-07-31", "p"),
+      row("2026-08-01", "p"),
+      // Past the first project name on the last day — the bound is the day,
+      // not any project guessed for it.
+      row("2026-08-13", "p"),
+      row("2026-08-13", "zzz"),
+      row("2026-08-14", "p"),
+      // Swept late: an expired row must not count against the window.
+      row("2026-08-10", "p", { expiresAt: nowSeconds - 1 }),
+      { ...keys.usageMember("b@x.com", "2026-08-13", "p"), email: "b@x.com", projectName: "p", date: "2026-08-13" },
     ]);
 
+    const shape = (date: string, projectName: string) => ({
+      email: "a@x.com",
+      projectName,
+      date,
+      calls: { m: 2 },
+      inputTokens: {},
+      outputTokens: {},
+      cachedTokens: {},
+      costUsd: { m: 3 },
+    });
     await expect(
-      new DynamoUsageRepository().listMemberDays("a@x.com", "2026-08-01", "2026-08-13"),
+      new PostgresUsageRepository().listMemberDays("a@x.com", "2026-08-01", "2026-08-13"),
     ).resolves.toEqual([
-      {
-        email: "a@x.com",
-        projectName: "p",
-        date: "2026-08-13",
-        calls: { m: 2 },
-        inputTokens: {},
-        outputTokens: {},
-        cachedTokens: {},
-        costUsd: { m: 3 },
-      },
+      shape("2026-08-01", "p"),
+      shape("2026-08-13", "p"),
+      shape("2026-08-13", "zzz"),
     ]);
-    expect(queryAll).toHaveBeenCalledWith(
-      expect.objectContaining({
-        TableName: "test-table",
-        KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
-        ExpressionAttributeValues: {
-          ":pk": "USAGEMEMBER#a@x.com",
-          ":from": "DATE#2026-08-01",
-          // Past every project name on the last day.
-          ":to": "DATE#2026-08-13\uffff",
-        },
-      }),
-    );
   });
 
   it("answers an empty list when nothing was spent", async () => {
     await expect(
-      new DynamoUsageRepository().listMemberDays("a@x.com", "2026-08-01", "2026-08-13"),
+      new PostgresUsageRepository().listMemberDays("a@x.com", "2026-08-01", "2026-08-13"),
     ).resolves.toEqual([]);
   });
 });

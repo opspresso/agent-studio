@@ -64,6 +64,7 @@ describe("assertAccessControlConfig", () => {
     set("STAGE", "prod");
     set("ADMIN_EMAILS", "ops@example.com");
     set("ALLOWED_EMAIL_DOMAINS", undefined);
+    set("AUTH_PASSWORD", "true");
     expect(() => assertAccessControlConfig()).not.toThrow();
     expect(warn).not.toHaveBeenCalled();
   });
@@ -73,7 +74,31 @@ describe("assertAccessControlConfig", () => {
     set("STAGE", "prod");
     set("ADMIN_EMAILS", "ops@example.com");
     set("ALLOWED_EMAIL_DOMAINS", "example.com");
+    set("AUTH_PASSWORD", "true");
     expect(() => assertAccessControlConfig()).not.toThrow();
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  // A deployed stage with no identity provider and no password sign-in has
+  // no way for anyone to reach the console at all — refused at boot rather
+  // than discovered at the first sign-in attempt.
+  it.each(["alpha", "prod"])("refuses %s with no way to sign in", (stage) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    set("STAGE", stage);
+    set("ADMIN_EMAILS", "ops@example.com");
+    set("AUTH_PASSWORD", undefined);
+    set("OIDC_ISSUER", undefined);
+    set("GOOGLE_CLIENT_ID", undefined);
+    expect(() => assertAccessControlConfig()).toThrow(/no way to sign in/);
+  });
+
+  it("accepts an OIDC provider as the way in", () => {
+    set("STAGE", "prod");
+    set("ADMIN_EMAILS", "ops@example.com");
+    set("AUTH_PASSWORD", undefined);
+    set("OIDC_ISSUER", "https://sso.example/realms/corp");
+    set("OIDC_CLIENT_ID", "agent-studio");
+    set("OIDC_CLIENT_SECRET", "secret");
+    expect(() => assertAccessControlConfig()).not.toThrow();
   });
 });

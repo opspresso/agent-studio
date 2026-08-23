@@ -1,19 +1,12 @@
-import { GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
-import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
+import { conditions, getItem, queryItems, transact } from "@/infrastructure/db/store";
 import type { VersionRepository } from "@/domain/project/repository";
 import type { McpBinding, Version } from "@/domain/project/types";
 
 const ENTITY_TYPE = "VERSION";
 const PUBLISHED = "published";
 
-interface VersionItem extends Version {
-  PK: string;
-  SK: string;
-  entityType: typeof ENTITY_TYPE;
-}
-
-function toItem(version: Version): VersionItem {
+function toItem(version: Version): Record<string, unknown> {
   const key = keys.version(version.projectName, version.versionName);
   return {
     ...version,
@@ -86,16 +79,14 @@ function fromItem(item: Record<string, unknown>): Version {
 
 /** Resolve the concrete version name a project's "published" pointer refers to. */
 async function resolvePublished(projectName: string): Promise<string | null> {
-  const result = await getDocumentClient().send(
-    new GetCommand({
-      TableName: getTableName(),
-      Key: keys.project(projectName),
-      ProjectionExpression: "publishedVersion",
-    }),
-  );
-  const pointer = result.Item?.publishedVersion as string | undefined;
-  return pointer ?? null;
+  const project = await getItem(keys.project(projectName));
+  const pointer = project?.publishedVersion;
+  return typeof pointer === "string" ? pointer : null;
 }
+
+/** The project row a version write may land in: present and not being deleted. */
+const projectLive = (row: Record<string, unknown> | null): boolean =>
+  row !== null && row.deletingAt === undefined;
 
 export const versionRepository: VersionRepository = {
   async get(projectName: string, versionName: string): Promise<Version | null> {
@@ -107,84 +98,30 @@ export const versionRepository: VersionRepository = {
       }
       resolved = pointer;
     }
-
-    const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.version(projectName, resolved) }),
-    );
-    return result.Item ? fromItem(result.Item) : null;
+    const item = await getItem(keys.version(projectName, resolved));
+    return item ? fromItem(item) : null;
   },
 
   async list(projectName: string): Promise<Version[]> {
-    const client = getDocumentClient();
-    const table = getTableName();
-    const versions: Version[] = [];
-
-    let lastKey: Record<string, unknown> | undefined;
-    do {
-      const page = await client.send(
-        new QueryCommand({
-          TableName: table,
-          KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-          ExpressionAttributeValues: {
-            ":pk": keys.projectPartition(projectName),
-            ":prefix": keys.versionPrefix(),
-          },
-          ExclusiveStartKey: lastKey,
-        }),
-      );
-      for (const item of page.Items ?? []) {
-        versions.push(fromItem(item));
-      }
-      lastKey = page.LastEvaluatedKey;
-    } while (lastKey);
-
-    return versions;
+    const items = await queryItems({
+      pk: keys.projectPartition(projectName),
+      sk: { prefix: keys.versionPrefix() },
+    });
+    return items.map(fromItem);
   },
 
   async put(version: Version): Promise<void> {
-    await getDocumentClient().send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            ConditionCheck: {
-              TableName: getTableName(),
-              Key: keys.project(version.projectName),
-              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
-            },
-          },
-          {
-            Put: {
-              TableName: getTableName(),
-              Item: toItem(version),
-              ConditionExpression: "attribute_exists(PK)",
-            },
-          },
-        ],
-      }),
-    );
+    await transact([
+      { kind: "check", key: keys.project(version.projectName), condition: projectLive },
+      { kind: "put", item: toItem(version), condition: conditions.exists },
+    ]);
   },
 
   async create(version: Version): Promise<void> {
-    await getDocumentClient().send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            ConditionCheck: {
-              TableName: getTableName(),
-              Key: keys.project(version.projectName),
-              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
-            },
-          },
-          {
-            Put: {
-              TableName: getTableName(),
-              Item: toItem(version),
-              ConditionExpression: "attribute_not_exists(PK)",
-            },
-          },
-        ],
-      }),
-    );
+    await transact([
+      { kind: "check", key: keys.project(version.projectName), condition: projectLive },
+      { kind: "put", item: toItem(version), condition: conditions.notExists },
+    ]);
   },
 
   async delete(
@@ -192,30 +129,16 @@ export const versionRepository: VersionRepository = {
     versionName: string,
     expectedProjectUpdatedAt: string,
   ): Promise<void> {
-    await getDocumentClient().send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            ConditionCheck: {
-              TableName: getTableName(),
-              Key: keys.project(projectName),
-              ConditionExpression:
-                "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND updatedAt = :expectedUpdatedAt AND (attribute_not_exists(publishedVersion) OR publishedVersion <> :versionName)",
-              ExpressionAttributeValues: {
-                ":expectedUpdatedAt": expectedProjectUpdatedAt,
-                ":versionName": versionName,
-              },
-            },
-          },
-          {
-            Delete: {
-              TableName: getTableName(),
-              Key: keys.version(projectName, versionName),
-              ConditionExpression: "attribute_exists(PK)",
-            },
-          },
-        ],
-      }),
-    );
+    await transact([
+      {
+        kind: "check",
+        key: keys.project(projectName),
+        condition: (row) =>
+          projectLive(row) &&
+          row?.updatedAt === expectedProjectUpdatedAt &&
+          (row?.publishedVersion === undefined || row?.publishedVersion !== versionName),
+      },
+      { kind: "delete", key: keys.version(projectName, versionName), condition: conditions.exists },
+    ]);
   },
 };

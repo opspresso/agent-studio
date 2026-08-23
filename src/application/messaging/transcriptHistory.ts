@@ -27,8 +27,8 @@ export const MAX_HISTORY_CHARS = 100_000;
 /**
  * How much of one turn is written down. A turn is kept for the *next*
  * question's context, and past this a single answer would be most of that
- * context on its own — and a row is one DynamoDB item, which a very long answer
- * would otherwise be the first thing to overflow. Cut on a character count,
+ * context on its own — and a row is read whole on every later turn, which a very long answer
+ * would otherwise be the first thing to bloat. Cut on a character count,
  * marked, so the model reads a turn that says it was cut rather than one that
  * ends mid-sentence.
  */

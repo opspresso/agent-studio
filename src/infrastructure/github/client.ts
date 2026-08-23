@@ -2,8 +2,11 @@
  * The GitHub REST access the plugins sync needs: read a repository's tree,
  * read a blob. Kept apart from the plugins client so the API version pinned
  * and how a base64 blob is decoded stay decided once, whatever reads a repo
- * next.
+ * next. The host comes from `GITHUB_API_URL`, so a GitHub Enterprise Server
+ * or an on-premises mirror stands in for github.com without a second client.
  */
+
+import { config } from "@/lib/config";
 
 /** One entry of a recursive git tree listing. */
 export interface GitTreeEntry {
@@ -21,7 +24,7 @@ export interface GitTreeEntry {
 const GITHUB_TIMEOUT_MS = 15_000;
 
 export async function githubApi<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(`https://api.github.com${path}`, {
+  const res = await fetch(`${config.githubApiUrl}${path}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",

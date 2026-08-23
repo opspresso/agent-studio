@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agent-studio.fullname" . }}
+  labels:
+    {{- include "agent-studio.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := omit .Values.config "extra" }}
+  {{- if ne (toString $value) "" }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- end }}
+  {{- if .Values.config.PUBLIC_BASE_URL }}
+  BETTER_AUTH_URL: {{ .Values.config.PUBLIC_BASE_URL | quote }}
+  {{- end }}
+  {{- range $key, $value := .Values.config.extra }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

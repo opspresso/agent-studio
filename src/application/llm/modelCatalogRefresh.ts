@@ -19,7 +19,7 @@ import {
   modelCatalogUpdatedAt,
   type ModelCatalogLoadReport,
 } from "@/domain/llm/models";
-import type { ModelCatalogSource } from "@/domain/llm/modelCatalogSource";
+import type { ModelCatalogRead, ModelCatalogSource } from "@/domain/llm/modelCatalogSource";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
 
@@ -57,6 +57,13 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
   let timer: ReturnType<typeof setInterval> | undefined;
   /** The refresh in flight, so a slow fetch and the next tick cannot interleave installs. */
   let inFlight: Promise<boolean> | undefined;
+  /**
+   * The revision of the upload this refresher installed last, if the registry
+   * holds one — per refresher rather than per process, so the boot refresher
+   * and the console's re-install an upload the other landed exactly once,
+   * which an atomic install makes harmless.
+   */
+  let installedUpload: string | undefined;
 
   async function refreshOnce(): Promise<boolean> {
     const installed = await refreshCatalog();
@@ -96,9 +103,9 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
   }
 
   async function refreshCatalog(): Promise<boolean> {
-    let document: unknown;
+    let read: ModelCatalogRead | undefined;
     try {
-      document = await deps.source.load();
+      read = await deps.source.load();
     } catch (error) {
       log.warn(
         "models",
@@ -106,24 +113,50 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
       );
       return false;
     }
-    // `updatedAt` moves only when the content does (agent-models' contract),
-    // so an equal stamp is the quiet hourly case — no reinstall, no log line —
-    // and an older one is a stale read (a lagging CDN node) that must not
-    // roll the registry back.
-    const incoming = (document as { updatedAt?: unknown } | null)?.updatedAt;
-    const current = modelCatalogUpdatedAt();
-    if (typeof incoming === "string" && current !== "" && incoming <= current) {
-      if (incoming < current) {
-        log.warn(
-          "models",
-          `model catalog from ${deps.source.description} is older than the registry (${incoming} < ${current}); keeping the newer one`,
-        );
-      }
+    if (read === undefined) {
+      // Nothing to install and nothing wrong: no published catalog is read
+      // and no upload has landed. The registry — the snapshot, or whatever
+      // last installed — stands, and a warning here would fire every tick of
+      // an air-gapped deployment that is behaving exactly as configured.
       return false;
+    }
+    const { document } = read;
+    if (read.upload !== undefined) {
+      // An operator's upload is installed on its own authority: its stamp may
+      // be older than the snapshot's (a catalog produced offline, from an
+      // older checkout) and it may be far smaller than the registry (only the
+      // models this deployment serves) — both rules below exist for a
+      // *publisher* that lagged or truncated, not for a person who chose.
+      // What keeps the hourly tick quiet is the upload itself, not its stamp.
+      if (read.upload.revision === installedUpload) {
+        return false;
+      }
+    } else {
+      // `updatedAt` moves only when the content does (agent-models' contract),
+      // so an equal stamp is the quiet hourly case — no reinstall, no log line —
+      // and an older one is a stale read (a lagging CDN node) that must not
+      // roll the registry back.
+      const incoming = (document as { updatedAt?: unknown } | null)?.updatedAt;
+      const current = modelCatalogUpdatedAt();
+      if (typeof incoming === "string" && current !== "" && incoming <= current) {
+        if (incoming < current) {
+          log.warn(
+            "models",
+            `model catalog from ${deps.source.description} is older than the registry (${incoming} < ${current}); keeping the newer one`,
+          );
+        }
+        return false;
+      }
     }
     let report: ModelCatalogLoadReport;
     try {
-      report = loadModelCatalog(document);
+      // The shrink guard measures a publish against the last *published*
+      // registry. An upload is exempt (above), and so is the first publish
+      // after one: a registry holding an operator's five models is not a
+      // baseline a catalog of eighty can "truncate".
+      const unguarded = read.upload !== undefined || installedUpload !== undefined;
+      report = loadModelCatalog(document, unguarded ? { maxDropFraction: 1 } : undefined);
+      installedUpload = read.upload?.revision;
     } catch (error) {
       log.warn(
         "models",

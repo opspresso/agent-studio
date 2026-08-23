@@ -12,7 +12,7 @@ const MAX_SPANS = 100;
 const MAX_WARNINGS = 20;
 /**
  * How many discovered capability names a `prepare` span may name. Bounded for
- * the same reason every accumulator here is — a trace is one DynamoDB item —
+ * the same reason every accumulator here is — a trace is one row, read whole —
  * and the count beside the list is the total found, so a shorter list under a
  * larger count says how many are not shown.
  */

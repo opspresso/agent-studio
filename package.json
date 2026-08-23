@@ -16,17 +16,13 @@
     "test:watch": "vitest",
     "check-models": "tsx scripts/check-models.ts",
     "sync-models": "tsx scripts/sync-models.ts",
-    "init-local-table": "tsx scripts/init-local-table.ts",
-    "init-local-table:test": "DYNAMODB_ENDPOINT=http://localhost:8084 DYNAMODB_TABLE_NAME=agent-studio-test tsx scripts/init-local-table.ts"
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:migrate:test": "DATABASE_URL=postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test tsx scripts/db-migrate.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.0.1",
     "@aws-sdk/client-bedrock-runtime": "^3.1106.0",
-    "@aws-sdk/client-dynamodb": "^3.1090.0",
     "@aws-sdk/client-s3": "^3.1091.0",
-    "@aws-sdk/client-s3vectors": "^3.1106.0",
-    "@aws-sdk/client-ssm": "^3.1095.0",
-    "@aws-sdk/lib-dynamodb": "^3.1090.0",
     "@aws-sdk/s3-request-presigner": "^3.1101.0",
     "@mantine/charts": "^9.5.0",
     "@mantine/core": "^9.5.0",
@@ -43,6 +39,7 @@
     "better-auth": "^1.6.23",
     "next": "^16.2.11",
     "openai": "^7.4.0",
+    "pg": "^8.23.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0",
@@ -55,6 +52,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "postcss": "^8.5.23",

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: agent-studio
+description: Agent Studio — an on-premises agent platform. The app, its scheduler tick, and optionally a bundled PostgreSQL (pgvector) and MinIO.
+type: application
+version: 0.1.0
+appVersion: "0.87.0"
+keywords:
+  - agents
+  - llm
+  - mcp
+home: https://github.com/opspresso/agent-studio
+sources:
+  - https://github.com/opspresso/agent-studio

@@ -331,8 +331,9 @@ export default function SettingsPage() {
                         }
                         allowDeselect={false}
                         data={[
-                          { value: "authenticated", label: "Authenticated · presigned URL" },
-                          { value: "public", label: "Public · direct S3 URL" },
+                          { value: "authenticated", label: t("settings.artifactAccess.authenticated") },
+                          { value: "public", label: t("settings.artifactAccess.public") },
+                          { value: "proxied", label: t("settings.artifactAccess.proxied") },
                         ]}
                         styles={monoInput}
                       />

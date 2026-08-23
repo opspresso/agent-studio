@@ -44,6 +44,8 @@ const catalog = (models: unknown[], extra: Record<string, unknown> = {}) => ({
 
 /** Install without the shrink guard — tests swap between registries nothing published. */
 const install = (catalog: unknown) => loadModelCatalog(catalog, { maxDropFraction: 1 });
+/** A source over a mock that answers raw documents — the published-catalog shape of a read. */
+const read = (load: () => Promise<unknown>) => async () => ({ document: await load() });
 
 afterEach(() => {
   loadSelfHostedModels([]);
@@ -180,7 +182,7 @@ describe("createModelCatalogRefresher", () => {
   it("installs what the source answers, and keeps the registry when it cannot", async () => {
     install(catalog([model("openai/keep"), model("openai/old")], { updatedAt: "2026-08-20T00:00:00.000Z" }));
     const load = vi.fn<() => Promise<unknown>>();
-    const refresher = createModelCatalogRefresher({ source: { description: "test", load }, intervalMs: 0 });
+    const refresher = createModelCatalogRefresher({ source: { description: "test", load: read(load) }, intervalMs: 0 });
     load.mockRejectedValueOnce(new Error("down"));
     expect(await refresher.refresh()).toBe(false);
     expect(getModelConfig("openai/old")).toBeDefined();
@@ -198,7 +200,7 @@ describe("createModelCatalogRefresher", () => {
   it("neither reinstalls an unchanged catalog nor rolls back to a stale one", async () => {
     install(catalog([model("openai/keep")], { updatedAt: "2026-08-21T00:00:00.000Z" }));
     const load = vi.fn<() => Promise<unknown>>();
-    const refresher = createModelCatalogRefresher({ source: { description: "test", load }, intervalMs: 0 });
+    const refresher = createModelCatalogRefresher({ source: { description: "test", load: read(load) }, intervalMs: 0 });
     // Same stamp: the quiet hourly case — nothing installed, nothing logged.
     load.mockResolvedValueOnce(catalog([model("openai/keep")], { updatedAt: "2026-08-21T00:00:00.000Z" }));
     expect(await refresher.refresh()).toBe(false);
@@ -233,7 +235,7 @@ describe("createModelCatalogRefresher", () => {
     );
     const localModels = vi.fn(async (): Promise<unknown> => [DECLARED]);
     const refresher = createModelCatalogRefresher({
-      source: { description: "test", load },
+      source: { description: "test", load: read(load) },
       intervalMs: 0,
       localModels,
     });
@@ -255,7 +257,7 @@ describe("createModelCatalogRefresher", () => {
   it("shares one in-flight refresh instead of interleaving installs", async () => {
     let resolveLoad!: (value: unknown) => void;
     const load = vi.fn(() => new Promise((resolve) => (resolveLoad = resolve)));
-    const refresher = createModelCatalogRefresher({ source: { description: "test", load }, intervalMs: 0 });
+    const refresher = createModelCatalogRefresher({ source: { description: "test", load: read(load) }, intervalMs: 0 });
     const first = refresher.refresh();
     const second = refresher.refresh();
     expect(load).toHaveBeenCalledTimes(1);
@@ -271,7 +273,7 @@ describe("createModelCatalogRefresher", () => {
     const load = vi.fn(async () =>
       catalog([model("openai/tick")], { updatedAt: `2026-08-2${(stamp += 1)}T00:00:00.000Z` }),
     );
-    const refresher = createModelCatalogRefresher({ source: { description: "test", load }, intervalMs: 1000 });
+    const refresher = createModelCatalogRefresher({ source: { description: "test", load: read(load) }, intervalMs: 1000 });
     refresher.start();
     refresher.start();
     await vi.advanceTimersByTimeAsync(2500);
@@ -279,7 +281,7 @@ describe("createModelCatalogRefresher", () => {
     refresher.stop();
     await vi.advanceTimersByTimeAsync(2000);
     expect(load).toHaveBeenCalledTimes(2);
-    const idle = createModelCatalogRefresher({ source: { description: "test", load }, intervalMs: 0 });
+    const idle = createModelCatalogRefresher({ source: { description: "test", load: read(load) }, intervalMs: 0 });
     idle.start();
     await vi.advanceTimersByTimeAsync(5000);
     expect(load).toHaveBeenCalledTimes(2);
@@ -291,7 +293,9 @@ describe("createHttpModelCatalogSource", () => {
     const fetchFn = vi.fn(async (url: string | URL | Request) =>
       String(url).endsWith("ok") ? new Response(JSON.stringify({ version: 1 })) : new Response("", { status: 503, statusText: "Unavailable" }),
     ) as unknown as typeof fetch;
-    await expect(createHttpModelCatalogSource("https://x/ok", fetchFn).load()).resolves.toEqual({ version: 1 });
+    await expect(createHttpModelCatalogSource("https://x/ok", fetchFn).load()).resolves.toEqual({
+      document: { version: 1 },
+    });
     await expect(createHttpModelCatalogSource("https://x/down", fetchFn).load()).rejects.toThrow(/503 Unavailable/);
   });
 });

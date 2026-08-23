@@ -1,21 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { behavior, fakeClient } = vi.hoisted(() => {
-  const behavior = { mode: "ok" as "ok" | "boom" };
-  const fakeClient = {
-    async send() {
-      if (behavior.mode === "boom") {
-        throw new Error("throttled");
-      }
-      return { Item: undefined };
-    },
-  };
-  return { behavior, fakeClient };
-});
+const { behavior } = vi.hoisted(() => ({ behavior: { mode: "ok" as "ok" | "boom" } }));
 
+// The probe is one statement through the client; the pool itself is never
+// opened here (tests/setup.ts stubs it), so only `sql` decides the answer.
 vi.mock("@/infrastructure/db/client", () => ({
-  getDocumentClient: () => fakeClient,
-  getTableName: () => "test-table",
+  sql: async () => {
+    if (behavior.mode === "boom") {
+      throw new Error("throttled");
+    }
+    return [];
+  },
 }));
 
 // The channel config is injected, so the probe reaches no settings module.

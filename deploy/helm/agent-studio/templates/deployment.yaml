@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agent-studio.fullname" . }}
+  labels:
+    {{- include "agent-studio.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "agent-studio.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agent-studio.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # At least MAX_RUN_DURATION_MS: the app turns SIGTERM into draining and
+      # never exits on its own, so the grace period is the whole budget.
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+      containers:
+        - name: app
+          image: {{ include "agent-studio.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: {{ include "agent-studio.fullname" . }}
+            - secretRef:
+                name: {{ include "agent-studio.secretName" . }}
+          env:
+            {{- if .Values.postgres.enabled }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agent-studio.fullname" . }}-postgres
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgres://{{ .Values.postgres.username }}:$(POSTGRES_PASSWORD)@{{ include "agent-studio.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}
+            {{- end }}
+            {{- if .Values.minio.enabled }}
+            - name: S3_ENDPOINT
+              value: http://{{ include "agent-studio.fullname" . }}-minio:9000
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.minio.rootUser | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agent-studio.fullname" . }}-minio
+                  key: MINIO_ROOT_PASSWORD
+            {{- end }}
+          # /api/health is cheap; /api/ready probes the database and the LLM
+          # channel and is deliberately not used here — a heavy reindex once
+          # made it time out and took the only backend down.
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "10"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

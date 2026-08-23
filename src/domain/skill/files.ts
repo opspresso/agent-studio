@@ -128,7 +128,8 @@ export interface SkippedAttachment {
   reason: AttachmentSkip;
 }
 
-const SYMLINK_MODE = "120000";
+/** git's mode for a symlink — the one entry type the attachment collector refuses outright. */
+export const SYMLINK_MODE = "120000";
 
 /**
  * Decide which tree blobs become attachments for each skill root, applying the

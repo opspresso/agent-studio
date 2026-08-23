@@ -57,7 +57,7 @@ export function userTurnContent(
  * The bytes are read exactly once. What comes back is both what the model sees
  * now and what the chat keeps, which is what lets a follow-up question still
  * have the document — the file itself is never stored, because a chat message is
- * one DynamoDB item and a 10MB PDF does not fit in one.
+ * one row, read whole on every later turn, and a 10MB PDF has no place in one.
  */
 export async function readMessageDocuments(
   deps: ChatDeps,
@@ -216,7 +216,7 @@ export async function storeAttachedImages(
 }
 
 /**
- * A single chat message is one DynamoDB item (400KB hard limit). Truncate on a
+ * A single chat message is one row that every later turn replays. Truncate on a
  * byte budget so one oversized tool result / answer can't fail the whole turn's
  * persistence and lose the reply the user already saw streamed.
  */

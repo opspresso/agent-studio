@@ -48,30 +48,29 @@ There is **no lint step** (no ESLint config); `typecheck` + `test` are the check
 integration test → build.
 
 ```bash
-docker compose up -d dynamodb              # dev DynamoDB on :8083
-pnpm init-local-table                      # create table + GSIs (uses AWS_REGION, default ap-northeast-2)
+docker compose up -d postgres              # dev PostgreSQL (pgvector) on :5432 — the app migrates the schema at boot
+pnpm db:migrate                            # apply the schema without starting the app (CI, a first boot)
 
 pnpm tsx scripts/mock-llm.ts                             # mock OpenAI-compatible LLM (LLM_BASE_URL=http://127.0.0.1:8002/v1)
-pnpm tsx --env-file=.env.local scripts/dev-session.ts    # print a signed session cookie (bypasses Google OAuth)
+pnpm tsx --env-file=.env.local scripts/dev-session.ts    # print a signed session cookie (bypasses any identity provider)
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts    # seed sample skills
 
-# Integration check — a *separate* instance on :8084 and the `agent-studio-test`
-# table, because it cascade-deletes what it writes. Never point it at :8083 (the
-# script refuses).
-docker compose up -d dynamodb-test
-pnpm init-local-table:test
-pnpm test:integration                      # CI runs this same pair
+# Integration check — a *separate* database, `agent_studio_test` on the same
+# server, because it cascade-deletes what it writes. The script refuses any
+# database whose name does not end in `_test`.
+pnpm test:integration                      # CI runs this against a fresh service container
 ```
 
-> **Both DynamoDB Local containers are shared with every other project on this machine.**
+> **The PostgreSQL container is shared with every other project on this machine.**
 > `compose.yaml` pins the compose project name to `localdev`, so `docker compose up -d
-> dynamodb` from another repository reuses these. Table names, not ports, separate the
-> projects: never widen a cleanup past `DYNAMODB_TABLE_NAME`, and **never run
+> postgres` from another repository reuses it. Database names, not ports, separate the
+> projects (`deploy/postgres/init.sql` creates this app's two), and **never run
 > `docker compose down -v`** (or `--remove-orphans`).
 
 Required env for any real run (validated fail-fast at boot by `src/instrumentation.ts`):
-`LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` (32-byte base64). `STAGE=alpha|prod`
-additionally requires `ADMIN_EMAILS`, and `NODE_ENV=production` (which the `Dockerfile` sets)
+`DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` (32-byte base64).
+`STAGE=alpha|prod` additionally requires `ADMIN_EMAILS` and at least one way to sign in
+(OIDC, Google, or `AUTH_PASSWORD=true`), and `NODE_ENV=production` (which the `Dockerfile` sets)
 refuses to boot without an explicit `STAGE`. An empty `ALLOWED_EMAIL_DOMAINS` is fail-open the
 same way and means unrestricted sign-in: an open sign-up is a deployment's to choose, while a
 runtime override may still narrow the list.
@@ -88,7 +87,8 @@ runtime override may still narrow the list.
   nothing else**, with `@a2a-js/sdk` the one named exception (the A2A protocol *is* the
   contract, and a port would restate its task lifecycle to gain nothing). A second SDK is
   argued for in `tests/architecture.test.ts`, next to that one.
-- `src/infrastructure/` — adapters: DynamoDB repositories, LLM channel, MCP client, Slack,
+- `src/infrastructure/` — adapters: PostgreSQL repositories (over the item store in
+  `db/store.ts`), pgvector, the S3-compatible object store, LLM channel, MCP client, Slack,
   Telegram, Teams, A2A, GitHub, net/crypto helpers.
 - `src/app/` — App Router pages + API route handlers. **Do not import `infrastructure/`
   directly**; get repositories and `executionDeps` from a wiring site. A **`"use client"`
@@ -144,7 +144,7 @@ to that list as its slice is converted, never before.
 
 The layer rules say which direction an import may point. They say nothing about the same
 decision being written twice, which is the failure this codebase kept hitting: `McpTool`
-reached four definitions that had already drifted apart, the DynamoDB conditional-write error
+reached four definitions that had already drifted apart, the store's conditional-write error
 name was spelled at seven call sites — only one of which handled the transactional form — and
 the image-usage collapse was derived independently four times.
 
@@ -187,8 +187,10 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   [design/execution.md](docs/design/execution.md#artifacts)
 - **Reading a URL** — the `FetchUrl` builtin, off unless a version opts in; the one adapter that
   requests an address the *model* chose → [SECURITY.md](docs/SECURITY.md#모델이-고른-url)
-- **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2` →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-단일-테이블-설계)
+- **PostgreSQL, one item table** — every entity is a JSONB document addressed by `PK`/`SK`
+  with `GSI1`/`GSI2` as indexed columns; Better Auth's tables and `catalog_vectors`
+  (pgvector) beside it; the schema migrates at boot →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#postgresql-아이템-테이블-설계)
 - **Auth & authorization** — `withAuth`/`withMemberAuth`/`withAdminAuth` for routes,
   `src/proxy.ts` for pages;
   **`isAdminEmail` and `isConfiguredAdmin` are not interchangeable** →
@@ -244,14 +246,26 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 ## Conventions that bite
 
 - **Domain purity.** Nothing in `src/domain/` imports infrastructure, framework or AWS.
-- **Never hand-write a DynamoDB key string.** They come from
+- **Never hand-write a row key string.** They come from
   `src/infrastructure/db/keys.ts` — with one named exception, because it is not only a key:
-  an artifact listing's GSI sort key *is* the page cursor the API hands a reader, so
+  an artifact listing's index sort key *is* the page cursor the API hands a reader, so
   `artifactCursor` (`src/domain/artifact/repository.ts`) spells it, in the one layer both the
   adapter that writes it and the route that answers with it may import. Partitions still
   come from `keys.ts`; a sort key that never leaves the adapter still belongs there.
-- **Never leave a list query unpaginated.** A single Query page caps at 1MB and silently
-  truncates. Use `queryAll()`.
+- **A repository writes through `src/infrastructure/db/store.ts`, never raw SQL against
+  `items`.** The store is where a condition is evaluated under the row lock, where a
+  transaction locks its rows in key order, and where the `￿` upper bound of a prefix
+  query is spelled; a second `SELECT … FOR UPDATE` is a second place for those to drift.
+  `queryItems` answers the whole match — the page ceiling the old store imposed is gone
+  with it — so a list that can grow without bound takes `limit`, and one that filters
+  after reading passes `notExpiredAt` so the filter runs before the limit counts. Plain
+  SQL is for the tables the store does not own: Better Auth's (`memberRepository`),
+  `catalog_vectors` (`pgVectorStore`), and `skillRepository.describe`'s projection.
+- **Retention is a tick, not a table feature.** Every expiring row carries `expiresAt`
+  (`src/infrastructure/db/ttl.ts`); `sweepExpiredRows` on the schedule-scan tick deletes
+  them, and reads still filter because a tick is a minute apart. A deployment without a
+  ticker (`SCHEDULE_SCAN_TOKEN` unset) never purges anything, and nothing says so but the
+  table's size — say it in the install docs, not in a warning the app cannot raise.
 - **Resolving a version's tools without `discoveryQueries` silently disables discovery.**
   `resolveRunTools` takes its queries as an optional fourth argument, so a caller that omits
   them gets a run where the version's `dynamicCapabilities` still reads as on, the bindings
@@ -443,11 +457,13 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   turn. It returns `discovered` beside `warnings` now. `collectedWarning` owns what a run lost;
   a feature that is silently inert — a version asking for discovery where the deployment has no
   catalog — is a loss and does belong there.
-- **Tests mock at boundaries**: `fetch` via `vi.stubGlobal`, the DynamoDB doc client via
-  `vi.mock("@/infrastructure/db/client")`. Keep them deterministic — no real `Date.now`,
-  timers, randomness, or network. Repository integration lives in
-  `scripts/integration-check.ts`, run against a local DynamoDB in its own CI step, outside
-  vitest.
+- **Tests mock at boundaries**: `fetch` via `vi.stubGlobal`, the item store via
+  `vi.mock("@/infrastructure/db/store", …)` with `tests/fakeStore.ts` — an in-memory store
+  with the real one's semantics (byte-ordered keys, conditions, the error names), which
+  `tests/setup.ts` installs by default, and the connection pool stubbed so nothing opens a
+  socket. Keep them deterministic — no real `Date.now`, timers, randomness, or network.
+  Repository integration lives in `scripts/integration-check.ts`, run against a local
+  PostgreSQL in its own CI step, outside vitest.
 - **Secrets on update**: a masked or empty value preserves what is stored; a masked value with
   no stored counterpart is dropped. A mask can only confirm a secret, never create one.
 - **An `@modelcontextprotocol/client` bump is a protocol change, not a dependency update.**

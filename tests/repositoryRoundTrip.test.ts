@@ -1,80 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { FakeStore } from "./fakeStore";
 
-// --- Fake document client: a Map keyed by `PK|SK`, plus a command log -------
+// --- The item store, in memory: every adapter under test writes through it, and
+// a test asserts on what it left in `rows` rather than on the statements sent.
 
-const { store, commands, fakeClient } = vi.hoisted(() => {
-  const store = new Map<string, Record<string, unknown>>();
-  const commands: Array<Record<string, unknown>> = [];
-  const fakeClient = {
-    async send(command: { input: Record<string, unknown> }) {
-      const input = command.input;
-      commands.push(input);
-      if (input.TransactItems) {
-        for (const item of input.TransactItems as Array<{
-          Put?: { Item?: Record<string, unknown> };
-          Update?: Record<string, unknown>;
-        }>) {
-          if (item.Put?.Item) {
-            const stored = item.Put.Item as { PK: string; SK: string };
-            store.set(`${stored.PK}|${stored.SK}`, item.Put.Item);
-          }
-          if (item.Update) {
-            commands.push(item.Update);
-          }
-        }
-        return {};
-      }
-      if (input.Item) {
-        const item = input.Item as { PK: string; SK: string };
-        store.set(`${item.PK}|${item.SK}`, input.Item as Record<string, unknown>);
-        return {};
-      }
-      if (input.UpdateExpression) {
-        const expression = String(input.UpdateExpression);
-        if (expression.includes("nextSeq")) {
-          const key = input.Key as { PK: string; SK: string };
-          const storeKey = `${key.PK}|${key.SK}`;
-          const item = store.get(storeKey) ?? { ...key };
-          if (expression === "SET nextSeq = :initial") {
-            item.nextSeq = (input.ExpressionAttributeValues as Record<string, number>)[":initial"];
-            store.set(storeKey, item);
-            return {};
-          }
-          if (expression === "ADD nextSeq :one") {
-            const old = Number(item.nextSeq ?? 0);
-            item.nextSeq = old + 1;
-            store.set(storeKey, item);
-            return { Attributes: { nextSeq: old } };
-          }
-        }
-        return {};
-      }
-      if (input.KeyConditionExpression) {
-        const values = (input.ExpressionAttributeValues ?? {}) as Record<string, unknown>;
-        const pk = values[":pk"];
-        const prefix = values[":sk"];
-        return {
-          Items: [...store.values()].filter(
-            (item) =>
-              item.PK === pk &&
-              (typeof prefix !== "string" || String(item.SK).startsWith(prefix)),
-          ),
-        };
-      }
-      if (input.Key) {
-        const key = input.Key as { PK: string; SK: string };
-        return { Item: store.get(`${key.PK}|${key.SK}`) };
-      }
-      return {};
-    },
-  };
-  return { store, commands, fakeClient };
-});
-
-vi.mock("@/infrastructure/db/client", () => ({
-  getDocumentClient: () => fakeClient,
-  getTableName: () => "test-table",
-}));
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
+const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
 import type { ChatMessage } from "@/domain/chat/types";
 import { keys } from "@/infrastructure/db/keys";
@@ -88,8 +19,28 @@ import { traceRepository } from "@/infrastructure/db/repositories/traceRepositor
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
+import { expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 
 const NOW = "2026-01-01T00:00:00.000Z";
+const NOW_SECONDS = Math.floor(Date.parse(NOW) / 1000);
+
+/** A live project row a version, usage or trace write may land in. */
+function seedProject(name: string, over: Record<string, unknown> = {}): void {
+  store.seed([
+    {
+      ...keys.project(name),
+      entityType: "PROJECT",
+      name,
+      displayName: name,
+      description: "",
+      projectType: "agent",
+      ownerEmail: "owner@example.com",
+      createdAt: NOW,
+      updatedAt: NOW,
+      ...over,
+    },
+  ]);
+}
 
 describe("telegramDestinationRepository", () => {
   it("keeps destinations separate by bot and lists the newest first", async () => {
@@ -156,6 +107,7 @@ describe("project/version atomic writes", () => {
     // The write spreads the whole entity, but the read maps fields by name —
     // which is exactly how these two were stored and then dropped on every
     // read: the console saved visibility with a 200 and got "public" back.
+    seedProject(project.name);
     await projectRepository.update(
       { ...project, visibility: "private", memberEmails: ["invited@example.com"] },
       NOW,
@@ -166,75 +118,107 @@ describe("project/version atomic writes", () => {
   });
 
   it("guards project replacement with the previously read timestamp", async () => {
-    commands.length = 0;
-    await projectRepository.update(project, NOW);
+    seedProject(project.name);
 
-    expect(commands[0]).toMatchObject({
-      ConditionExpression:
-        "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND updatedAt = :expectedUpdatedAt",
-      ExpressionAttributeValues: { ":expectedUpdatedAt": NOW },
-    });
+    // A snapshot someone else has since replaced is refused, and the row keeps
+    // what the other writer put there.
+    await expect(projectRepository.update(project, "2025-12-31T00:00:00.000Z")).rejects.toThrow(
+      expect.objectContaining({ name: store.CONDITIONAL_WRITE_FAILED }),
+    );
+    expect((await projectRepository.get(project.name))?.updatedAt).toBe(NOW);
+
+    // So is a project mid-deletion, whatever timestamp the caller read.
+    seedProject(project.name, { deletingAt: NOW });
+    await expect(projectRepository.update(project, NOW)).rejects.toThrow(
+      expect.objectContaining({ name: store.CONDITIONAL_WRITE_FAILED }),
+    );
+
+    seedProject(project.name);
+    await projectRepository.update(project, NOW);
+    expect((await projectRepository.get(project.name))?.updatedAt).toBe(project.updatedAt);
   });
 
   it("publishes only when both the version exists and the project snapshot is current", async () => {
-    commands.length = 0;
-    await projectRepository.publish({ ...project, publishedVersion: "1" }, "1", NOW);
+    seedProject(project.name);
+    const published = { ...project, publishedVersion: "1" };
 
-    expect(commands[0]?.TransactItems).toMatchObject([
-      {
-        ConditionCheck: {
-          Key: keys.version("atomic", "1"),
-          ConditionExpression: "attribute_exists(PK)",
-        },
-      },
-      {
-        Put: {
-          ExpressionAttributeValues: { ":expectedUpdatedAt": NOW },
-        },
-      },
-    ]);
+    // No version "1" yet: the pointer must not be written to a version that
+    // does not exist, and the project row is left exactly as it was.
+    await expect(projectRepository.publish(published, "1", NOW)).rejects.toThrow(
+      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
+    );
+    expect((await projectRepository.get(project.name))?.publishedVersion).toBeUndefined();
+
+    store.seed([{ ...keys.version(project.name, "1"), entityType: "VERSION" }]);
+    await expect(projectRepository.publish(published, "1", "stale")).rejects.toThrow(
+      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
+    );
+    expect((await projectRepository.get(project.name))?.publishedVersion).toBeUndefined();
+
+    await projectRepository.publish(published, "1", NOW);
+    expect((await projectRepository.get(project.name))?.publishedVersion).toBe("1");
   });
 
   it("deletes only when the project snapshot is current and the version is unpublished", async () => {
-    commands.length = 0;
-    await versionRepository.delete("atomic", "1", NOW);
-
-    expect(commands[0]?.TransactItems).toMatchObject([
-      {
-        ConditionCheck: {
-          Key: keys.project("atomic"),
-          ExpressionAttributeValues: {
-            ":expectedUpdatedAt": NOW,
-            ":versionName": "1",
-          },
-        },
-      },
-      {
-        Delete: {
-          Key: keys.version("atomic", "1"),
-          ConditionExpression: "attribute_exists(PK)",
-        },
-      },
+    seedProject(project.name, { publishedVersion: "1" });
+    store.seed([
+      { ...keys.version(project.name, "1"), entityType: "VERSION" },
+      { ...keys.version(project.name, "2"), entityType: "VERSION" },
     ]);
+
+    // The published version is what the project answers with; deleting it
+    // would leave the pointer dangling.
+    await expect(versionRepository.delete(project.name, "1", NOW)).rejects.toThrow(
+      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
+    );
+    expect(await store.getItem(keys.version(project.name, "1"))).not.toBeNull();
+
+    await expect(versionRepository.delete(project.name, "2", "stale")).rejects.toThrow(
+      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
+    );
+    expect(await store.getItem(keys.version(project.name, "2"))).not.toBeNull();
+
+    await versionRepository.delete(project.name, "2", NOW);
+    expect(await store.getItem(keys.version(project.name, "2"))).toBeNull();
+
+    // And a version that is not there is a failed delete, not a silent one.
+    await expect(versionRepository.delete(project.name, "2", NOW)).rejects.toThrow(
+      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
+    );
   });
 });
 
 describe("runSlotRepository ownership", () => {
   it("releases only the acquisition that owns the reused index", async () => {
-    commands.length = 0;
-    const slot = await runSlotRepository.acquire("user:u@example.com", 1, 200);
+    const actor = "user:u@example.com";
+    const leaseUntil = NOW_SECONDS + 60;
 
-    expect(slot?.token).toBeTruthy();
-    expect(commands[1]).toMatchObject({
-      Item: { slotIndex: 0, token: slot?.token },
+    const first = await runSlotRepository.acquire(actor, 1, leaseUntil);
+    expect(first?.token).toBeTruthy();
+    expect(await store.getItem(keys.runSlot(actor, 0))).toMatchObject({
+      slotIndex: 0,
+      token: first?.token,
+      leaseUntil,
+      // A lease, so the row disappears on its own if its holder dies.
+      expiresAt: leaseUntil,
     });
+    // The limit is exact: the one slot is held, so a second acquire is refused.
+    expect(await runSlotRepository.acquire(actor, 1, leaseUntil)).toBeNull();
 
-    await runSlotRepository.release("user:u@example.com", slot!);
-    expect(commands[2]).toMatchObject({
-      ConditionExpression: "#token = :token",
-      ExpressionAttributeNames: { "#token": "token" },
-      ExpressionAttributeValues: { ":token": slot?.token },
-    });
+    await runSlotRepository.release(actor, first!);
+    expect(await store.getItem(keys.runSlot(actor, 0))).toBeNull();
+
+    // The index is reused by the next acquisition, under a new token…
+    const second = await runSlotRepository.acquire(actor, 1, leaseUntil);
+    expect(second).toMatchObject({ index: 0 });
+    expect(second?.token).not.toBe(first?.token);
+
+    // …so a late release from the first holder must not free the second's slot.
+    await runSlotRepository.release(actor, first!);
+    expect(await store.getItem(keys.runSlot(actor, 0))).toMatchObject({ token: second?.token });
+
+    await runSlotRepository.release(actor, second!);
+    expect(await store.getItem(keys.runSlot(actor, 0))).toBeNull();
   });
 });
 
@@ -300,20 +284,22 @@ describe("versionRepository mcpList normalization", () => {
   const legacyKey = keys.version("legacy", "1");
 
   function writeRaw(mcpList: unknown): void {
-    store.set(`${legacyKey.PK}|${legacyKey.SK}`, {
-      ...legacyKey,
-      entityType: "VERSION",
-      projectName: "legacy",
-      versionName: "1",
-      systemPrompt: "",
-      userPromptTemplate: "",
-      model: "openai/gpt-5-mini",
-      parameters: { piiFiltering: false },
-      mcpList,
-      skillList: [],
-      subagentList: [],
-      createdAt: NOW,
-    });
+    store.seed([
+      {
+        ...legacyKey,
+        entityType: "VERSION",
+        projectName: "legacy",
+        versionName: "1",
+        systemPrompt: "",
+        userPromptTemplate: "",
+        model: "openai/gpt-5-mini",
+        parameters: { piiFiltering: false },
+        mcpList,
+        skillList: [],
+        subagentList: [],
+        createdAt: NOW,
+      },
+    ]);
   }
 
   it("reads a row written before overrides existed as bindings with none", async () => {
@@ -384,17 +370,27 @@ describe("mcpRepository round-trip", () => {
       createdAt: NOW,
       updatedAt: NOW,
     };
+    const refused = expect.objectContaining({ name: store.CONDITIONAL_WRITE_FAILED });
 
-    commands.length = 0;
+    // An update cannot materialise a server that was never created.
+    await expect(mcpRepository.update(server)).rejects.toThrow(refused);
+    expect(await mcpRepository.get(server.name)).toBeNull();
+
     await mcpRepository.create(server);
-    await mcpRepository.update(server);
-    await mcpRepository.delete(server.name);
+    expect(await mcpRepository.get(server.name)).toMatchObject({ url: server.url });
+    // Nor can a create silently replace one that exists.
+    await expect(mcpRepository.create({ ...server, url: "https://other.example" })).rejects.toThrow(
+      refused,
+    );
+    expect((await mcpRepository.get(server.name))?.url).toBe(server.url);
 
-    expect(commands.map((command) => command.ConditionExpression)).toEqual([
-      "attribute_not_exists(PK)",
-      "attribute_exists(PK)",
-      "attribute_exists(PK)",
-    ]);
+    await mcpRepository.update({ ...server, description: "changed" });
+    expect((await mcpRepository.get(server.name))?.description).toBe("changed");
+
+    await mcpRepository.delete(server.name);
+    expect(await mcpRepository.get(server.name)).toBeNull();
+    // Deleting what is already gone is a failure, not a no-op.
+    await expect(mcpRepository.delete(server.name)).rejects.toThrow(refused);
   });
 
   it("preserves stored headers through put + get", async () => {
@@ -415,14 +411,15 @@ describe("mcpRepository round-trip", () => {
   });
 
   it("defaults absent headers to an empty object on read", async () => {
-    const key = keys.mcp("legacy");
-    store.set(`${key.PK}|${key.SK}`, {
-      ...key,
-      name: "legacy",
-      url: "https://mcp.example/mcp",
-      createdAt: NOW,
-      updatedAt: NOW,
-    });
+    store.seed([
+      {
+        ...keys.mcp("legacy"),
+        name: "legacy",
+        url: "https://mcp.example/mcp",
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
     const loaded = await mcpRepository.get("legacy");
     expect(loaded?.headers).toEqual({});
   });
@@ -450,38 +447,36 @@ describe("externalAgentRepository round-trip", () => {
 
 describe("chatRepository message round-trip", () => {
   it("claims and releases a chat run with ownership conditions", async () => {
-    commands.length = 0;
+    const chat = keys.chat("c-run");
+    // A cancel the previous run left behind: the claim must clear it, or the
+    // next run stops before it has produced a token.
+    store.seed([{ ...chat, entityType: "Chat", cancelRequestedAt: "2025-12-31T00:00:00.000Z" }]);
 
     await expect(chatRepository.claimRun("c-run", "run-1", 100, 200)).resolves.toBe(true);
-    await chatRepository.releaseRun("c-run", "run-1");
+    expect(await store.getItem(chat)).toMatchObject({ activeRunId: "run-1", activeRunExpiresAt: 200 });
+    expect((await store.getItem(chat))?.cancelRequestedAt).toBeUndefined();
 
-    expect(commands[0]).toMatchObject({
-      // The claim clears any cancel the previous run left behind, or the next
-      // run stops before it has produced a token.
-      UpdateExpression:
-        "SET activeRunId = :runId, activeRunExpiresAt = :expiresAt REMOVE cancelRequestedAt",
-      ExpressionAttributeValues: {
-        ":runId": "run-1",
-        ":now": 100,
-        ":expiresAt": 200,
-      },
-    });
-    expect(commands[1]).toMatchObject({
-      UpdateExpression: "REMOVE activeRunId, activeRunExpiresAt, cancelRequestedAt",
-      ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
-      ExpressionAttributeValues: { ":runId": "run-1" },
-    });
+    // A live claim is held against a second run; one whose lease ran out is not.
+    await expect(chatRepository.claimRun("c-run", "run-2", 150, 250)).resolves.toBe(false);
+    expect((await store.getItem(chat))?.activeRunId).toBe("run-1");
+    await expect(chatRepository.claimRun("c-run", "run-2", 201, 300)).resolves.toBe(true);
+    expect((await store.getItem(chat))?.activeRunId).toBe("run-2");
+
+    // Only the run that holds the claim may release it.
+    await chatRepository.releaseRun("c-run", "run-1");
+    expect((await store.getItem(chat))?.activeRunId).toBe("run-2");
+    await chatRepository.releaseRun("c-run", "run-2");
+    const released = await store.getItem(chat);
+    expect(released?.activeRunId).toBeUndefined();
+    expect(released?.activeRunExpiresAt).toBeUndefined();
   });
 
   it("reports the stored claim, and scopes a cancel to the run named", async () => {
     const claimed = keys.chat("c-claimed");
-    store.set(`${claimed.PK}|${claimed.SK}`, {
-      ...claimed,
-      activeRunId: "run-1",
-      activeRunExpiresAt: 200,
-    });
-    const idle = keys.chat("c-idle");
-    store.set(`${idle.PK}|${idle.SK}`, { ...idle });
+    store.seed([
+      { ...claimed, activeRunId: "run-1", activeRunExpiresAt: 200 },
+      { ...keys.chat("c-idle") },
+    ]);
 
     // Returned as stored, expiry included: only a reader holding the current
     // time can say whether the claim still means a run is in flight.
@@ -491,21 +486,21 @@ describe("chatRepository message round-trip", () => {
     });
     await expect(chatRepository.getActiveRun("c-idle")).resolves.toBeNull();
 
-    commands.length = 0;
-    await chatRepository.requestCancel("c-claimed", "run-1");
     // A stop pressed on a run that has since finished must not reach whatever
-    // the chat is doing now — the condition is what enforces it. (The fake
-    // client evaluates none; `scripts/integration-check.ts` covers the refusal.)
-    expect(commands[0]).toMatchObject({
-      UpdateExpression: "SET cancelRequestedAt = :now",
-      ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
-      ExpressionAttributeValues: { ":runId": "run-1" },
+    // the chat is doing now.
+    await expect(chatRepository.requestCancel("c-claimed", "run-0")).resolves.toBe(false);
+    expect((await store.getItem(claimed))?.cancelRequestedAt).toBeUndefined();
+
+    await expect(chatRepository.requestCancel("c-claimed", "run-1")).resolves.toBe(true);
+    await expect(chatRepository.getActiveRun("c-claimed")).resolves.toEqual({
+      runId: "run-1",
+      expiresAtSeconds: 200,
+      cancelRequestedAt: NOW,
     });
   });
 
   it("atomically reserves distinct message sequence numbers", async () => {
-    const key = keys.chat("c-seq");
-    store.set(`${key.PK}|${key.SK}`, { ...key, nextSeq: 4 });
+    store.seed([{ ...keys.chat("c-seq"), nextSeq: 4 }]);
 
     await expect(
       Promise.all([
@@ -513,11 +508,22 @@ describe("chatRepository message round-trip", () => {
         chatRepository.reserveMessageSeq("c-seq"),
       ]),
     ).resolves.toEqual([4, 5]);
+    expect((await store.getItem(keys.chat("c-seq")))?.nextSeq).toBe(6);
+  });
+
+  it("starts the counter past the newest message of a chat written before it existed", async () => {
+    store.seed([
+      { ...keys.chat("c-legacy") },
+      { ...keys.chatMessage("c-legacy", 0), seq: 0 },
+      { ...keys.chatMessage("c-legacy", 7), seq: 7 },
+    ]);
+
+    await expect(chatRepository.reserveMessageSeq("c-legacy")).resolves.toBe(8);
+    await expect(chatRepository.reserveMessageSeq("c-legacy")).resolves.toBe(9);
   });
 
   it("preserves every role's fields through appendMessage + listMessages", async () => {
-    const chatKey = keys.chat("c1");
-    store.set(`${chatKey.PK}|${chatKey.SK}`, { ...chatKey, entityType: "Chat" });
+    store.seed([{ ...keys.chat("c1"), entityType: "Chat" }]);
     // A user turn carries the images it attached. Reading them back is what
     // makes an attachment survive a reload — dropping them here left the upload
     // succeeding, the item holding the urls, and the chat showing nothing.
@@ -567,10 +573,10 @@ describe("chatRepository message round-trip", () => {
   });
 });
 
-describe("usageRepository.record two-step ADD", () => {
-  it("materialises the row then ADDs into per-model maps under the same key", async () => {
-    commands.length = 0;
-    await usageRepository.record({
+describe("usageRepository.record", () => {
+  it("materialises the row then adds into per-model maps under the same key", async () => {
+    seedProject("p");
+    const delta = {
       projectName: "p",
       date: "2026-01-01",
       model: "openai/gpt-5-mini",
@@ -579,41 +585,66 @@ describe("usageRepository.record two-step ADD", () => {
       outputTokens: 5,
       cachedTokens: 4,
       costUsd: 0.001,
-    });
+    };
+    await usageRepository.record(delta);
 
-    const updates = commands.filter((c) => c.UpdateExpression);
-    expect(updates).toHaveLength(2);
-    const [materialize, add] = updates as [Record<string, unknown>, Record<string, unknown>];
-
-    const expectedKey = keys.usage("p", "2026-01-01");
-    expect(materialize.Key).toEqual(expectedKey);
-    expect(add.Key).toEqual(expectedKey);
-    expect(String(materialize.UpdateExpression)).toContain("if_not_exists(calls");
-    expect(String(add.UpdateExpression)).toContain("ADD calls.#model");
-    // The model id (containing "/") must go through ExpressionAttributeNames.
-    expect(add.ExpressionAttributeNames).toEqual({ "#model": "openai/gpt-5-mini" });
-    expect(add.ExpressionAttributeValues).toEqual({
-      ":calls": 1,
-      ":in": 10,
-      ":out": 5,
+    const key = keys.usage("p", "2026-01-01");
+    expect(await store.getItem(key)).toMatchObject({
+      entityType: "Usage",
+      projectName: "p",
+      date: "2026-01-01",
+      GSI1PK: keys.usageDatePartition("2026-01-01"),
+      GSI1SK: "p",
+      expiresAt: expiresAtSeconds("2026-01-01T00:00:00Z", RETENTION.usageDays),
+      // The model id, "/" included, is the map key as written.
+      calls: { "openai/gpt-5-mini": 1 },
+      inputTokens: { "openai/gpt-5-mini": 10 },
+      outputTokens: { "openai/gpt-5-mini": 5 },
       // Of the 10 input tokens, 4 came from the provider's cache — the one
       // number that says whether the prompt is still cacheable.
-      ":cached": 4,
-      ":cost": 0.001,
+      cachedTokens: { "openai/gpt-5-mini": 4 },
+      costUsd: { "openai/gpt-5-mini": 0.001 },
+    });
+
+    // A second call lands in the same row: its model accumulates, a new one
+    // joins the map, and the identity written first is left alone.
+    await usageRepository.record(delta);
+    await usageRepository.record({ ...delta, model: "anthropic/claude-haiku-4-5", calls: 2 });
+    expect(await store.getItem(key)).toMatchObject({
+      calls: { "openai/gpt-5-mini": 2, "anthropic/claude-haiku-4-5": 2 },
+      inputTokens: { "openai/gpt-5-mini": 20, "anthropic/claude-haiku-4-5": 10 },
+      cachedTokens: { "openai/gpt-5-mini": 8, "anthropic/claude-haiku-4-5": 4 },
     });
   });
 
+  it("refuses to land a row in a project being cascade deleted", async () => {
+    seedProject("going", { deletingAt: NOW });
+    await expect(
+      usageRepository.record({
+        projectName: "going",
+        date: "2026-01-01",
+        model: "openai/gpt-5-mini",
+        calls: 1,
+        inputTokens: 1,
+        outputTokens: 1,
+        costUsd: 0,
+      }),
+    ).rejects.toThrow(expect.objectContaining({ name: store.TRANSACTION_CANCELLED }));
+    expect(await store.getItem(keys.usage("going", "2026-01-01"))).toBeNull();
+  });
+
   it("maps raw items through toUsageRow with empty-map defaults", async () => {
-    const key = keys.usage("p2", "2026-01-02");
-    store.set(`${key.PK}|${key.SK}`, {
-      ...key,
-      projectName: "p2",
-      date: "2026-01-02",
-      calls: { "openai/gpt-5-mini": 2 },
-      // inputTokens/outputTokens/cachedTokens/costUsd absent: must default to
-      // {} — which is also what every row written before cachedTokens existed
-      // reads as.
-    });
+    store.seed([
+      {
+        ...keys.usage("p2", "2026-01-02"),
+        projectName: "p2",
+        date: "2026-01-02",
+        calls: { "openai/gpt-5-mini": 2 },
+        // inputTokens/outputTokens/cachedTokens/costUsd absent: must default to
+        // {} — which is also what every row written before cachedTokens existed
+        // reads as.
+      },
+    ]);
     const rows = await usageRepository.listByProject("p2", "2026-01-01", "2026-01-03");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual({
@@ -630,6 +661,7 @@ describe("usageRepository.record two-step ADD", () => {
 
 describe("traceRepository round-trip", () => {
   it("persists and loads a typed trace", async () => {
+    seedProject("p");
     const trace = {
       traceId: "trace-1",
       projectName: "p",

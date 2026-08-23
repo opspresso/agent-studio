@@ -7,10 +7,17 @@
  * and `docs/SECURITY.md` says as much. Here there is no first control, so the
  * rules below are load-bearing rather than defence in depth:
  *
- * - **The internal-host exemption is never consulted.** `skipsUrlGuard` exists so
- *   this app can reach its own cluster MCP services; honouring it here would let
- *   one prompt injection read `http://mcp-argocd.agent-mcps.svc.cluster.local/`.
- *   `tests/architecture.test.ts` fails if this file so much as imports it.
+ * - **The MCP internal-host exemption is never consulted.** `skipsUrlGuard` exists
+ *   so this app can reach its own cluster MCP services; honouring it here would
+ *   let one prompt injection read `http://mcp-argocd.agent-mcps.svc.cluster.local/`.
+ *   `tests/architecture.test.ts` fails if this file so much as imports it, or
+ *   reads the MCP list. The list this adapter *does* honour is its own —
+ *   `URL_FETCH_INTERNAL_HOST_SUFFIXES`, injected by the composition root and
+ *   widened only by a deploy — for an on-premises install where the pages a
+ *   model should read are private by construction. A host under one of those
+ *   suffixes is fetched without the address guard, but with the same timeout,
+ *   the same headers, the same redirect cap, and a redirect that leaves the
+ *   declared set or its origin refused.
  * - **Nothing authenticates.** No tenant header, no MCP OAuth token, no Slack
  *   token, no caller headers forwarded. Always GET, never a body.
  * - **Refusals are generalised on the way out.** `PublicFetchError` names the
@@ -24,6 +31,7 @@ import {
   type HttpResource,
   type HttpResourceReader,
 } from "@/domain/net/httpResource";
+import { isDeclaredInternalHost } from "@/domain/security/internalHosts";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { log } from "@/shared/logger";
@@ -31,6 +39,10 @@ import { BodyTooLargeError, readBodyBytes } from "@/shared/httpBody";
 
 /** Long enough for a slow site, short enough not to hold a turn open. */
 const FETCH_TIMEOUT_MS = 15_000;
+
+/** The same cap `fetchPublicUrl` applies on the guarded path. */
+const MAX_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 // A fixed string rather than the app version: this is sent to third parties on
 // a model's say-so, and there is no reason to tell them which build asked.
@@ -101,46 +113,113 @@ function originOf(url: string): string {
   }
 }
 
-export const httpResourceReader: HttpResourceReader = {
-  async read({ url, accept, maxBytes }): Promise<HttpResource> {
-    let response: Response;
-    try {
-      response = await fetchPublicUrl(url, {
+/** A refusal, said the same way whichever path refused: the reason names a
+ * host or an address, which is exactly what must not reach a model that may
+ * have been talked into asking. */
+function refused(url: string, reason: string): HttpResourceError {
+  log.warn("fetch", `refused ${originOf(url)}`, reason);
+  return new HttpResourceError("that address is not reachable from here");
+}
+
+/**
+ * A declared internal host, fetched without the address guard — the guard would
+ * refuse every one of them, which is the whole reason the suffix was declared.
+ *
+ * What `fetchPublicUrl` does around the guard is kept: native following is off,
+ * hops are capped, and a redirect may not leave the origin it started from. Here
+ * it also may not leave the declared set, which the same-origin rule already
+ * implies and which is checked anyway — the exemption is the one thing a
+ * redirect must not be able to widen.
+ */
+async function fetchDeclaredInternal(
+  url: string,
+  init: { signal: AbortSignal; headers: Record<string, string> },
+  suffixes: readonly string[],
+): Promise<{ response: Response; url: string }> {
+  let current = new URL(url);
+  const originalOrigin = current.origin;
+  for (let redirects = 0; ; redirects += 1) {
+    const response = await fetch(current, { ...init, redirect: "manual" });
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return { response, url: response.url || current.href };
+    }
+    if (redirects >= MAX_REDIRECTS) {
+      await response.body?.cancel().catch(() => {});
+      throw refused(url, `too many redirects from ${originalOrigin}`);
+    }
+    const location = response.headers.get("location");
+    if (!location) {
+      return { response, url: response.url || current.href };
+    }
+    await response.body?.cancel().catch(() => {});
+    const next = new URL(location, current);
+    if (!isDeclaredInternalHost(next.href, suffixes)) {
+      throw refused(url, `redirect leaves the declared internal hosts: ${originOf(next.href)}`);
+    }
+    if (next.origin !== originalOrigin) {
+      throw refused(url, `cross-origin redirect: ${originalOrigin} -> ${next.origin}`);
+    }
+    current = next;
+  }
+}
+
+/**
+ * `internalHostSuffixes` is the `FetchUrl` list — never the MCP one. The
+ * composition root hands it in so this file reads no configuration of its own;
+ * an empty list is the default and means every address faces the guard.
+ */
+export function createHttpResourceReader(deps: {
+  internalHostSuffixes?: readonly string[];
+}): HttpResourceReader {
+  const suffixes = deps.internalHostSuffixes ?? [];
+  return {
+    async read({ url, accept, maxBytes }): Promise<HttpResource> {
+      const init = {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         // The only two headers. Nothing here identifies this deployment's
         // tenants or carries any stored credential.
         headers: { Accept: accept, "User-Agent": USER_AGENT },
-      });
-    } catch (error) {
-      if (error instanceof SsrfError) {
-        // The reason names a host or an address, which is exactly what must not
-        // reach a model that may have been talked into asking.
-        log.warn("fetch", `refused ${originOf(url)}`, error.message);
-        throw new HttpResourceError("that address is not reachable from here");
+      };
+      let response: Response;
+      let finalUrl: string;
+      try {
+        if (isDeclaredInternalHost(url, suffixes)) {
+          ({ response, url: finalUrl } = await fetchDeclaredInternal(url, init, suffixes));
+        } else {
+          response = await fetchPublicUrl(url, init);
+          finalUrl = response.url || url;
+        }
+      } catch (error) {
+        if (error instanceof HttpResourceError) {
+          throw error;
+        }
+        if (error instanceof SsrfError) {
+          throw refused(url, error.message);
+        }
+        const timedOut =
+          error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+        log.warn("fetch", `failed ${originOf(url)}`, error);
+        throw new HttpResourceError(
+          timedOut ? "the request timed out" : "the request failed",
+        );
       }
-      const timedOut =
-        error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
-      log.warn("fetch", `failed ${originOf(url)}`, error);
-      throw new HttpResourceError(
-        timedOut ? "the request timed out" : "the request failed",
-      );
-    }
 
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
-      throw new HttpResourceError(`the server answered ${response.status}`);
-    }
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        throw new HttpResourceError(`the server answered ${response.status}`);
+      }
 
-    const bytes = await readCapped(response, maxBytes);
-    const { mimeType, charset } = parseContentType(response.headers.get("content-type"));
-    // The header wins; the document's own declaration is the fallback, which is
-    // what a browser does and what Korean sites in particular rely on.
-    const declared = charset ?? charsetFromHtml(bytes);
-    return {
-      bytes,
-      mimeType,
-      ...(declared ? { charset: declared } : {}),
-      finalUrl: response.url || url,
-    };
-  },
-};
+      const bytes = await readCapped(response, maxBytes);
+      const { mimeType, charset } = parseContentType(response.headers.get("content-type"));
+      // The header wins; the document's own declaration is the fallback, which is
+      // what a browser does and what Korean sites in particular rely on.
+      const declared = charset ?? charsetFromHtml(bytes);
+      return {
+        bytes,
+        mimeType,
+        ...(declared ? { charset: declared } : {}),
+        finalUrl,
+      };
+    },
+  };
+}

@@ -50,11 +50,16 @@ const nextConfig: NextConfig = {
    *
    * The exclusion is written as a negative lookahead rather than by narrowing
    * the console rule, so a page added tomorrow is covered by default and only
-   * the address that sets its own policy is left alone.
+   * the addresses that set their own policy are left alone. `/api/objects/`
+   * is the second: in proxied access mode it answers with a stored object's
+   * bytes on this origin, and carries the same sandbox for the same reason.
    */
   async headers() {
     return [
-      { source: "/((?!api/artifacts/[^/]+/view$).*)", headers: SECURITY_HEADERS },
+      {
+        source: "/((?!api/artifacts/[^/]+/view$|api/objects/).*)",
+        headers: SECURITY_HEADERS,
+      },
     ];
   },
 };

@@ -11,7 +11,7 @@
  *
  * - **Written only after the reader leaves.** While someone is attached they are
  *   already seeing every frame, so writing them down as well would cost a
- *   DynamoDB write per half-second of every run for the sake of the few that get
+ *   database write per half-second of every run for the sake of the few that get
  *   abandoned. The tee buffers instead, and flushes what it has the moment the
  *   connection drops.
  * - **Frames come in batches.** One row carries several, because the flush at

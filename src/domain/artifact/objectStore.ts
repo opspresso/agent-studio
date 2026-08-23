@@ -30,9 +30,26 @@ export type SignObjectUrl = (
   options?: { downloadAs?: string },
 ) => Promise<string>;
 
+/**
+ * What `read` rejects with for a key the store holds nothing under.
+ *
+ * Named here so a caller can answer "not there" rather than "failed" without
+ * knowing the adapter's own error names — the proxied object route turns this
+ * into a 404 and everything else into a 500.
+ */
+export class ObjectNotFoundError extends Error {
+  constructor(key: string) {
+    super(`No stored object at ${key}`);
+    this.name = "ObjectNotFoundError";
+  }
+}
+
 export interface ArtifactObjectStore {
   put(input: { key: string; bytes: Uint8Array; mimeType: string }): Promise<void>;
-  /** Read an object without allowing the adapter to buffer past the caller's cap. */
+  /**
+   * Read an object without allowing the adapter to buffer past the caller's
+   * cap. Rejects with {@link ObjectNotFoundError} when there is no such key.
+   */
   read(key: string, maxBytes: number): Promise<{ bytes: Uint8Array; mimeType: string }>;
   sign: SignObjectUrl;
   /**

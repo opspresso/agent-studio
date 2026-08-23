@@ -1,25 +1,24 @@
 /**
- * DynamoDB usage repository. Daily per-project rows hold per-model maps
- * (`calls`, `inputTokens`, `outputTokens`, `cachedTokens`, `costUsd`)
- * incremented with atomic `ADD`.
+ * Usage repository. Daily per-project rows hold per-model maps (`calls`,
+ * `inputTokens`, `outputTokens`, `cachedTokens`, `costUsd`) incremented
+ * under the row lock, so two runs finishing at once both land.
  *
- * DynamoDB cannot `ADD` into a nested attribute of a map that does not exist
- * yet, so `record()` is a two-step: first `SET ... = if_not_exists(...)` to
- * materialise the maps + metadata, then a second `UpdateItem` that `ADD`s into
- * the now-guaranteed maps. `date` is a reserved word and goes through
- * `ExpressionAttributeNames`.
- *
- * A map added after rows already existed materialises on the row's next write
- * — `if_not_exists` is per attribute, not per item — so a day that saw one
- * more call carries it and an older day reads as `{}`. No backfill: the
- * question `cachedTokens` answers is "is the cache working *now*".
+ * A map added after rows already existed materialises on the row's next
+ * write, so a day that saw one more call carries it and an older day reads as
+ * `{}`. No backfill: the question `cachedTokens` answers is "is the cache
+ * working *now*".
  */
 
-import { GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
-import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
-import { expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
+import {
+  CONDITIONAL_WRITE_FAILED,
+  getItem,
+  queryItems,
+  transact,
+  updateItem,
+  type Item,
+} from "@/infrastructure/db/store";
+import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { memberEmailFromActorKey } from "@/domain/execution/actor";
 import { utcDay } from "@/shared/date";
@@ -34,6 +33,8 @@ const ALERT_MARKER: Record<CostAlertKind, string> = {
   block: "blockedAt",
 };
 
+const COUNTERS = ["calls", "inputTokens", "outputTokens", "cachedTokens", "costUsd"] as const;
+
 function eachDate(from: string, to: string): string[] {
   const dates: string[] = [];
   const start = new Date(`${from}T00:00:00Z`);
@@ -44,7 +45,7 @@ function eachDate(from: string, to: string): string[] {
   return dates;
 }
 
-function toUsageRow(item: Record<string, unknown>): UsageRow {
+function toUsageRow(item: Item): UsageRow {
   return {
     projectName: String(item.projectName ?? ""),
     date: String(item.date ?? ""),
@@ -58,16 +59,52 @@ function toUsageRow(item: Record<string, unknown>): UsageRow {
   };
 }
 
-function toActorUsageRow(item: Record<string, unknown>): ActorUsageRow {
+function toActorUsageRow(item: Item): ActorUsageRow {
   return {
     ...toUsageRow(item),
     actor: String(item.actor ?? ""),
   };
 }
 
-export class DynamoUsageRepository implements UsageRepository {
+/**
+ * The row after `delta` is added into it. Metadata and `extra` are written
+ * only where the row has none — the row's identity is set once — and every
+ * counter map gains the delta's model.
+ */
+function added(row: Item | null, delta: UsageDelta, extra: Item): Item {
+  const next: Item = {
+    ...row,
+    entityType: row?.entityType ?? extra.entityType,
+    projectName: row?.projectName ?? delta.projectName,
+    date: row?.date ?? delta.date,
+    // Retention runs from the usage date, so a day's row is never purged
+    // mid-aggregation and backfilled dates don't linger.
+    expiresAt: row?.expiresAt ?? expiresAtSeconds(`${delta.date}T00:00:00Z`, RETENTION.usageDays),
+  };
+  for (const [name, value] of Object.entries(extra)) {
+    next[name] = row?.[name] ?? value;
+  }
+  const amounts: Record<(typeof COUNTERS)[number], number> = {
+    calls: delta.calls,
+    inputTokens: delta.inputTokens,
+    outputTokens: delta.outputTokens,
+    cachedTokens: delta.cachedTokens ?? 0,
+    costUsd: delta.costUsd,
+  };
+  for (const counter of COUNTERS) {
+    const map = { ...((row?.[counter] as Record<string, number> | undefined) ?? {}) };
+    map[delta.model] = (map[delta.model] ?? 0) + amounts[counter];
+    next[counter] = map;
+  }
+  return next;
+}
+
+const projectLive = (row: Item | null): boolean => row !== null && row.deletingAt === undefined;
+
+export class PostgresUsageRepository implements UsageRepository {
   async record(delta: UsageDelta): Promise<void> {
     await this.addTo(keys.usage(delta.projectName, delta.date), delta, {
+      entityType: "Usage",
       GSI1PK: keys.usageDatePartition(delta.date),
       GSI1SK: delta.projectName,
     });
@@ -75,11 +112,10 @@ export class DynamoUsageRepository implements UsageRepository {
       // After the project total, and separately: attribution is additive, so a
       // failure to write who spent it must not lose the fact that it was spent.
       // No GSI entry — this row is only ever read within its project.
-      await this.addTo(
-        keys.usageActor(delta.projectName, delta.date, delta.actor),
-        delta,
-        { actor: delta.actor },
-      );
+      await this.addTo(keys.usageActor(delta.projectName, delta.date, delta.actor), delta, {
+        entityType: "Usage",
+        actor: delta.actor,
+      });
       // Third and last, same additive reasoning: the member's own daily row,
       // which the tier cap and the profile page both read. Only a `user` actor
       // writes one — a machine caller has no personal budget, and a project
@@ -87,184 +123,36 @@ export class DynamoUsageRepository implements UsageRepository {
       // owner's.
       const email = memberEmailFromActorKey(delta.actor);
       if (email) {
-        await this.addToMemberDay(email, delta);
+        await updateItem(keys.usageMember(email, delta.date, delta.projectName), (row) =>
+          added(row, delta, { entityType: "UsageMember", email }),
+        );
       }
     }
   }
 
   /**
-   * The two-step atomic ADD, for one row.
-   *
-   * DynamoDB cannot `ADD` into a nested attribute of a map that does not exist,
-   * so the maps are materialised first. `extra` carries whatever identifies this
-   * particular row (the dashboard GSI keys, or the actor) and is written with
-   * the same `if_not_exists` guard as the rest of the metadata.
+   * One row's increment, refused while the project is being cascade deleted
+   * so a usage row cannot land in a partition the delete is sweeping. The
+   * member row above is a *person's* spend in their own partition, which no
+   * project deletion touches, so it carries no such check.
    */
-  private async addTo(
-    key: { PK: string; SK: string },
-    delta: UsageDelta,
-    extra: Record<string, string>,
-  ): Promise<void> {
-    const doc = getDocumentClient();
-    const table = getTableName();
-    const extraNames = Object.keys(extra);
-    const extraSet = extraNames
-      .map((name) => `#x_${name} = if_not_exists(#x_${name}, :x_${name})`)
-      .join(", ");
-    const extraAttrNames = Object.fromEntries(extraNames.map((name) => [`#x_${name}`, name]));
-    const extraAttrValues = Object.fromEntries(
-      extraNames.map((name) => [`:x_${name}`, extra[name]!]),
-    );
-
-    // Step 1: materialise the maps + metadata if the row is new.
-    await doc.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            ConditionCheck: {
-              TableName: table,
-              Key: keys.project(delta.projectName),
-              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
-            },
-          },
-          {
-            Update: {
-              TableName: table,
-              Key: key,
-              UpdateExpression:
-                "SET calls = if_not_exists(calls, :empty), " +
-                "inputTokens = if_not_exists(inputTokens, :empty), " +
-                "outputTokens = if_not_exists(outputTokens, :empty), " +
-                "cachedTokens = if_not_exists(cachedTokens, :empty), " +
-                "costUsd = if_not_exists(costUsd, :empty), " +
-                "projectName = if_not_exists(projectName, :pn), " +
-                "#date = if_not_exists(#date, :date), " +
-                "entityType = if_not_exists(entityType, :et), " +
-                `${extraSet}, ` +
-                "expiresAt = if_not_exists(expiresAt, :exp)",
-              ExpressionAttributeNames: { "#date": "date", ...extraAttrNames },
-              ExpressionAttributeValues: {
-                ":empty": {},
-                ":pn": delta.projectName,
-                ":date": delta.date,
-                ":et": "Usage",
-                ...extraAttrValues,
-                // Retention runs from the usage date, so a day's row is never
-                // purged mid-aggregation and backfilled dates don't linger.
-                ":exp": expiresAtSeconds(`${delta.date}T00:00:00Z`, RETENTION.usageDays),
-              },
-            },
-          },
-        ],
-      }),
-    );
-
-    // Step 2: atomic ADD into the now-guaranteed nested maps.
-    await doc.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            ConditionCheck: {
-              TableName: table,
-              Key: keys.project(delta.projectName),
-              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
-            },
-          },
-          {
-            Update: {
-              TableName: table,
-              Key: key,
-              UpdateExpression:
-                "ADD calls.#model :calls, inputTokens.#model :in, " +
-                "outputTokens.#model :out, cachedTokens.#model :cached, costUsd.#model :cost",
-              ExpressionAttributeNames: { "#model": delta.model },
-              ExpressionAttributeValues: {
-                ":calls": delta.calls,
-                ":in": delta.inputTokens,
-                ":out": delta.outputTokens,
-                ":cached": delta.cachedTokens ?? 0,
-                ":cost": delta.costUsd,
-              },
-            },
-          },
-        ],
-      }),
-    );
-  }
-
-  /**
-   * The member counterpart of {@link addTo}: the same two-step atomic ADD, but
-   * plain updates rather than a transaction. The project-row ConditionCheck up
-   * there keeps usage rows out of a partition being cascade deleted; this row
-   * is a *person's* spend in their own partition, which no project deletion
-   * touches, so tying the write to the project's fate would only drop spend
-   * the cap should have counted.
-   */
-  private async addToMemberDay(email: string, delta: UsageDelta): Promise<void> {
-    const doc = getDocumentClient();
-    const table = getTableName();
-    const key = keys.usageMember(email, delta.date, delta.projectName);
-    await doc.send(
-      new UpdateCommand({
-        TableName: table,
-        Key: key,
-        UpdateExpression:
-          "SET calls = if_not_exists(calls, :empty), " +
-          "inputTokens = if_not_exists(inputTokens, :empty), " +
-          "outputTokens = if_not_exists(outputTokens, :empty), " +
-          "cachedTokens = if_not_exists(cachedTokens, :empty), " +
-          "costUsd = if_not_exists(costUsd, :empty), " +
-          "email = if_not_exists(email, :email), " +
-          "projectName = if_not_exists(projectName, :pn), " +
-          "#date = if_not_exists(#date, :date), " +
-          "entityType = if_not_exists(entityType, :et), " +
-          "expiresAt = if_not_exists(expiresAt, :exp)",
-        ExpressionAttributeNames: { "#date": "date" },
-        ExpressionAttributeValues: {
-          ":empty": {},
-          ":email": email,
-          ":pn": delta.projectName,
-          ":date": delta.date,
-          ":et": "UsageMember",
-          // Retention runs from the usage date, exactly as the project rows'
-          // does, so a person's history and their projects' expire together.
-          ":exp": expiresAtSeconds(`${delta.date}T00:00:00Z`, RETENTION.usageDays),
-        },
-      }),
-    );
-    await doc.send(
-      new UpdateCommand({
-        TableName: table,
-        Key: key,
-        UpdateExpression:
-          "ADD calls.#model :calls, inputTokens.#model :in, " +
-          "outputTokens.#model :out, cachedTokens.#model :cached, costUsd.#model :cost",
-        ExpressionAttributeNames: { "#model": delta.model },
-        ExpressionAttributeValues: {
-          ":calls": delta.calls,
-          ":in": delta.inputTokens,
-          ":out": delta.outputTokens,
-          ":cached": delta.cachedTokens ?? 0,
-          ":cost": delta.costUsd,
-        },
-      }),
-    );
+  private async addTo(key: { PK: string; SK: string }, delta: UsageDelta, extra: Item): Promise<void> {
+    await transact([
+      { kind: "check", key: keys.project(delta.projectName), condition: projectLive },
+      { kind: "update", key, patch: (row) => added(row, delta, extra) },
+    ]);
   }
 
   async listMemberDays(email: string, from: string, to: string): Promise<MemberUsageRow[]> {
-    const items = await queryAll({
-      TableName: getTableName(),
-      KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
-      ExpressionAttributeValues: {
-        ":pk": keys.usageMemberPartition(email),
-        ":from": keys.usageMemberPrefix(from),
-        // The project follows the date in the sort key, so the upper bound has
-        // to sort after every project on `to` — bound by the prefix rather
-        // than by any project name guessed for it.
-        ":to": `${keys.usageMemberPrefix(to)}￿`,
-      },
+    const items = await queryItems({
+      pk: keys.usageMemberPartition(email),
+      // The project follows the date in the sort key, so the upper bound has
+      // to sort after every project on `to` — bound by the prefix rather
+      // than by any project name guessed for it.
+      sk: { between: [keys.usageMemberPrefix(from), `${keys.usageMemberPrefix(to)}￿`] },
+      notExpiredAt: Math.floor(Date.now() / 1000),
     });
-    return notExpired(items, Date.now()).map((item) => ({
+    return items.map((item) => ({
       email: String(item.email ?? email),
       projectName: String(item.projectName ?? ""),
       date: String(item.date ?? ""),
@@ -281,54 +169,41 @@ export class DynamoUsageRepository implements UsageRepository {
     from: string,
     to: string,
   ): Promise<ActorUsageRow[]> {
-    const items = await queryAll({
-      TableName: getTableName(),
-      KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
-      ExpressionAttributeValues: {
-        ":pk": keys.usage(projectName, from).PK,
-        ":from": keys.usageActorPrefix(from),
-        // The upper bound has to sort after every actor on `to`, and actor ids
-        // are unbounded strings — so bound by the prefix of the day after,
-        // exclusive, rather than by any suffix guessed for `to` itself.
-        ":to": `${keys.usageActorPrefix(to)}￿`,
-      },
+    const items = await queryItems({
+      pk: keys.usage(projectName, from).PK,
+      // The upper bound has to sort after every actor on `to`, and actor ids
+      // are unbounded strings — so bound by the prefix of the day after,
+      // exclusive, rather than by any suffix guessed for `to` itself.
+      sk: { between: [keys.usageActorPrefix(from), `${keys.usageActorPrefix(to)}￿`] },
+      notExpiredAt: Math.floor(Date.now() / 1000),
     });
-    return notExpired(items, Date.now()).map(toActorUsageRow);
+    return items.map(toActorUsageRow);
   }
 
   async getDay(projectName: string, date: string): Promise<UsageRow | null> {
-    const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.usage(projectName, date) }),
-    );
-    const item = result.Item;
+    const item = await getItem(keys.usage(projectName, date));
     if (!item) {
       return null;
     }
-    // The TTL purge is only eventually consistent, so an expired row can still
-    // be read. Counting it would charge a project for a day that has already
-    // been retired.
-    return notExpired([item], Date.now()).length === 0 ? null : toUsageRow(item);
+    // The sweep is periodic, so an expired row can still be read. Counting it
+    // would charge a project for a day that has already been retired.
+    return isExpired(item.expiresAt, Date.now()) ? null : toUsageRow(item);
   }
 
   async claimAlert(projectName: string, date: string, kind: CostAlertKind): Promise<boolean> {
     const marker = ALERT_MARKER[kind];
     try {
-      await getDocumentClient().send(
-        new UpdateCommand({
-          TableName: getTableName(),
-          Key: keys.usage(projectName, date),
-          // The row exists by construction — the guard only claims after reading
-          // spend off it — but requiring it here keeps a claim from materialising
-          // a usage row for a project that never ran.
-          ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(#marker)",
-          UpdateExpression: "SET #marker = :now",
-          ExpressionAttributeNames: { "#marker": marker },
-          ExpressionAttributeValues: { ":now": new Date().toISOString() },
-        }),
+      await updateItem(
+        keys.usage(projectName, date),
+        (row) => ({ ...row, [marker]: new Date().toISOString() }),
+        // The row exists by construction — the guard only claims after reading
+        // spend off it — but requiring it here keeps a claim from materialising
+        // a usage row for a project that never ran.
+        (row) => row !== null && row[marker] === undefined,
       );
       return true;
     } catch (error) {
-      if ((error as { name?: string }).name === "ConditionalCheckFailedException") {
+      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
         return false;
       }
       throw error;
@@ -342,28 +217,23 @@ export class DynamoUsageRepository implements UsageRepository {
   ): Promise<boolean> {
     const marker = ALERT_MARKER[kind];
     try {
-      await getDocumentClient().send(
-        new UpdateCommand({
-          TableName: getTableName(),
-          Key: keys.usageMonthClaim(projectName, month),
-          // Unlike the daily claim, this row does not exist by construction —
-          // the first claim of a month materialises it, retained as long as the
-          // usage rows whose window it closes.
-          ConditionExpression: "attribute_not_exists(#marker)",
-          UpdateExpression:
-            "SET #marker = :now, entityType = if_not_exists(entityType, :et), " +
-            "expiresAt = if_not_exists(expiresAt, :exp)",
-          ExpressionAttributeNames: { "#marker": marker },
-          ExpressionAttributeValues: {
-            ":now": new Date().toISOString(),
-            ":et": "UsageMonthClaim",
-            ":exp": expiresAtSeconds(`${month}-01T00:00:00Z`, RETENTION.usageDays),
-          },
+      await updateItem(
+        keys.usageMonthClaim(projectName, month),
+        // Unlike the daily claim, this row does not exist by construction —
+        // the first claim of a month materialises it, retained as long as the
+        // usage rows whose window it closes.
+        (row) => ({
+          ...row,
+          [marker]: new Date().toISOString(),
+          entityType: row?.entityType ?? "UsageMonthClaim",
+          expiresAt:
+            row?.expiresAt ?? expiresAtSeconds(`${month}-01T00:00:00Z`, RETENTION.usageDays),
         }),
+        (row) => row === null || row[marker] === undefined,
       );
       return true;
     } catch (error) {
-      if ((error as { name?: string }).name === "ConditionalCheckFailedException") {
+      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
         return false;
       }
       throw error;
@@ -373,35 +243,28 @@ export class DynamoUsageRepository implements UsageRepository {
   async listByProject(projectName: string, from: string, to: string): Promise<UsageRow[]> {
     const fromKey = keys.usage(projectName, from);
     const toKey = keys.usage(projectName, to);
-    const items = await queryAll({
-      TableName: getTableName(),
-      KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
-      ExpressionAttributeValues: {
-        ":pk": fromKey.PK,
-        ":from": fromKey.SK,
-        ":to": toKey.SK,
-      },
+    const items = await queryItems({
+      pk: fromKey.PK,
+      sk: { between: [fromKey.SK, toKey.SK] },
+      notExpiredAt: Math.floor(Date.now() / 1000),
     });
-    return notExpired(items, Date.now()).map(toUsageRow);
+    return items.map(toUsageRow);
   }
 
   async listByDateRange(from: string, to: string): Promise<UsageRow[]> {
-    const table = getTableName();
     const rows: UsageRow[] = [];
+    const now = Math.floor(Date.now() / 1000);
     for (const date of eachDate(from, to)) {
-      const items = await queryAll({
-        TableName: table,
-        IndexName: "GSI1",
-        KeyConditionExpression: "GSI1PK = :pk",
-        ExpressionAttributeValues: { ":pk": keys.usageDatePartition(date) },
+      const items = await queryItems({
+        index: "GSI1",
+        pk: keys.usageDatePartition(date),
+        notExpiredAt: now,
       });
-      for (const item of notExpired(items, Date.now())) {
-        rows.push(toUsageRow(item));
-      }
+      rows.push(...items.map(toUsageRow));
     }
     return rows;
   }
 }
 
 /** Shared singleton wired into the composition root. */
-export const usageRepository = new DynamoUsageRepository();
+export const usageRepository = new PostgresUsageRepository();

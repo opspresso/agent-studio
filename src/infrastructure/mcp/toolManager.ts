@@ -556,7 +556,7 @@ function resourceLinkText(link: {
  * How much of a name is kept.
  *
  * A URI path segment has no length limit, and this name is stored on a chat
- * message — one DynamoDB item, capped at 400KB — four times over at worst. Long
+ * message — one row, replayed on every turn — four times over at worst. Long
  * enough that a real filename is never cut, short enough that a pathological one
  * costs nothing.
  */
@@ -762,7 +762,7 @@ function asErrorResult(output: string): string {
  * only one that did not use it, while eight others do. A raw slice can land
  * between the halves of a non-BMP character — an emoji, CJK ext-B — and what
  * comes back is not well-formed text at all, so it reaches the model's context
- * and DynamoDB as a lone surrogate.
+ * and storage as a lone surrogate.
  *
  * The suffix counts characters because that is what the limit counts. It used to
  * say "100KB", which was never the same number and drifted further with every

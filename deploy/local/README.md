@@ -49,7 +49,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 | `brave` | mcp-brave-search | `.env` 의 `BRAVE_API_KEY` | |
 | `ticker` | 스케줄·플러그인 sync·카탈로그 리인덱스 | `.env` 의 `SCHEDULE_SCAN_TOKEN` (`.env.local` 과 같은 값) | `../idc/scripts/tick.sh` 를 그대로 마운트하고 호스트의 `pnpm dev`(:3000)를 두드린다 — 컨테이너에는 이 토큰 하나만 들어간다 |
 
-managed MCP(`MANAGED_MCP_INSTANCE_ID=local`)는 별개의 경로다: 앱이 직접 docker CLI 로 컨테이너를 띄우고 루프백으로 등록한다 (`docs/CONFIGURATION.md`). 이 compose 는 *레지스트리(agent-plugins)의* 서버들을 실제 배포와 같은 이름으로 띄우는 쪽이다 — 두 방식은 공존할 수 있다.
+managed MCP(`MANAGED_MCP_RUNTIME=docker`)는 별개의 경로다: 앱이 직접 docker CLI 로 컨테이너를 띄우고 루프백으로 등록한다 (`docs/CONFIGURATION.md`). 이 compose 는 *레지스트리(agent-plugins)의* 서버들을 실제 배포와 같은 이름으로 띄우는 쪽이다 — 두 방식은 공존할 수 있다.
 
 ## 정리
 

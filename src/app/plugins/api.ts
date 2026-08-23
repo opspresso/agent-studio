@@ -29,6 +29,23 @@ export function syncPlugins(selection: PluginSyncSelection = {}): Promise<Plugin
   }).then((r) => readJson<PluginSyncResult>(r));
 }
 
+/**
+ * The same sync from an archive of the repository, for a deployment that
+ * cannot reach GitHub. Multipart because a file and a JSON selection travel
+ * together; the answer is the report the GitHub sync gives.
+ */
+export function uploadPluginsArchive(
+  file: File,
+  selection: PluginSyncSelection = {},
+): Promise<PluginSyncResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("selection", JSON.stringify(selection));
+  return fetch("/api/plugins/sync/upload", { method: "POST", body: form }).then((r) =>
+    readJson<PluginSyncResult>(r),
+  );
+}
+
 export function getPluginsSyncConfig(): Promise<PluginsSyncConfig> {
   return fetch("/api/plugins/sync").then((r) => readJson<PluginsSyncConfig>(r));
 }

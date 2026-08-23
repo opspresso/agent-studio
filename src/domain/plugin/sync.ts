@@ -129,3 +129,19 @@ export interface PluginSyncResult {
   orphanedPlugins: string[];
   removedPlugins: string[];
 }
+
+/**
+ * The provenance an uploaded archive's rows carry. Every component a sync
+ * writes says which repository owns it, and the next sync — whichever way it
+ * arrives — adopts what that name claims and orphans what it no longer
+ * declares. An archive does not say where it came from, so the deployment's
+ * configured repository is the default: rows synced from GitHub while it was
+ * reachable keep their owner when the same repository later arrives by hand.
+ * With no repository configured, the one fixed name keeps each upload
+ * continuing the last rather than starting a registry of its own.
+ */
+export const ARCHIVE_SYNC_REPO = "archive";
+
+export function archiveSyncRepo(configuredRepo: string | undefined): string {
+  return configuredRepo ?? ARCHIVE_SYNC_REPO;
+}

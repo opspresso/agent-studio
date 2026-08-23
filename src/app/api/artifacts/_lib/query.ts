@@ -94,7 +94,7 @@ function pageSize(options: ListArtifactsOptions): number {
  *
  * Without it every non-empty page carried a cursor, because the only thing this
  * file could see was that some row was last — so a gallery holding three
- * pictures offered "Load more", and the click cost up to five DynamoDB queries
+ * pictures offered "Load more", and the click cost up to five index queries
  * and a signing fan-out to answer with nothing.
  *
  * The probe row is fetched, never rendered and never signed. At

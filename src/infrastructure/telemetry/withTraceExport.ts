@@ -10,7 +10,7 @@ import { log } from "@/shared/logger";
  * OTEL SDK — the exporter arrives as a (possibly lazily imported) function.
  *
  * `put` persists first, and an export failure is logged and swallowed: a
- * collector outage must not fail runs — the row in DynamoDB is the record.
+ * collector outage must not fail runs — the row in the database is the record.
  * What the catch sees is the enqueue path (a failed lazy import, a rejected
  * setup); the actual OTLP POST fails later inside the batch processor and is
  * reported through the OTEL diag channel, which the adapter routes to this

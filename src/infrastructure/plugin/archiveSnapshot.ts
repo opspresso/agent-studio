@@ -1,0 +1,55 @@
+/**
+ * The plugins repository as an uploaded archive — `git archive` or a `tar`
+ * of a checkout — turned into the same snapshot the GitHub client builds.
+ * For a deployment with no route to GitHub: the archive travels by hand, and
+ * from here on the sync cannot tell the two apart.
+ *
+ * Provenance is the caller's to name (the repository the archive came from,
+ * so rows keep the owner they had when GitHub was reachable), the branch is
+ * fixed to {@link ARCHIVE_BRANCH} because the archive does not say, and the
+ * commit is the archive's own digest — the one fact about it this side can
+ * verify, and what lets an unchanged upload report as unchanged.
+ */
+
+import { createHash } from "node:crypto";
+import type { PluginsRepoSnapshot } from "@/domain/plugin/sync";
+import { SYMLINK_MODE } from "@/domain/skill/files";
+import { decodeUtf8Text } from "@/shared/utf8Text";
+import { readTarArchive, stripLeadingDirectory, TarArchiveError } from "@/infrastructure/archive/tar";
+import { collectRepoPlugins, type PluginTreeFile } from "./snapshot";
+
+/** What the snapshot's `branch` says when the source was an archive. */
+export const ARCHIVE_BRANCH = "archive";
+
+export async function snapshotFromArchive(
+  archive: Uint8Array,
+  repo: string,
+): Promise<PluginsRepoSnapshot> {
+  const { files } = stripLeadingDirectory(readTarArchive(archive));
+  const tree: PluginTreeFile[] = files.map((file) => ({
+    path: file.path,
+    size: file.bytes.byteLength,
+    // The mode git would report, so a symlink is refused — and reported — by
+    // the same rule on both sources.
+    ...(file.symlink ? { mode: SYMLINK_MODE } : {}),
+    read: async () => {
+      // A file the walker selected is by extension a text type, so bytes that
+      // are not UTF-8 are a broken archive, not a binary to step over.
+      const text = decodeUtf8Text(file.bytes);
+      if (text === null) {
+        throw new TarArchiveError(`archive entry "${file.path}" is not UTF-8 text`);
+      }
+      return text;
+    },
+  }));
+  const { plugins, nestedRoots } = await collectRepoPlugins(tree);
+  return {
+    repo,
+    branch: ARCHIVE_BRANCH,
+    commitSha: createHash("sha256").update(archive).digest("hex"),
+    plugins,
+    nestedRoots,
+  };
+}
+
+export { TarArchiveError };

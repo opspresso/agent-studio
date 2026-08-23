@@ -125,4 +125,13 @@ describe("artifactObjectStore access modes", () => {
     expect(mocks.getSignedUrl).toHaveBeenCalledOnce();
   });
 
+  it("names a missing object with the port's error rather than the SDK's", async () => {
+    const { ObjectNotFoundError } = await import("@/domain/artifact/objectStore");
+    mocks.send.mockRejectedValue(Object.assign(new Error("The specified key does not exist."), { name: "NoSuchKey" }));
+    await expect(artifactObjectStore.read("artifacts/image/gone.png", 10)).rejects.toBeInstanceOf(
+      ObjectNotFoundError,
+    );
+    mocks.send.mockRejectedValue(Object.assign(new Error("denied"), { name: "AccessDenied" }));
+    await expect(artifactObjectStore.read("artifacts/image/gone.png", 10)).rejects.toThrow("denied");
+  });
 });

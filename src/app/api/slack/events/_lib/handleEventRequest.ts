@@ -46,7 +46,7 @@ const MAX_SLACK_BODY_BYTES = 1_000_000;
  * **The gate is ahead of the claim, and that is a cost contract.** The bot
  * receives every message in every channel it belongs to, and the great majority
  * are not for it; deciding that before the claim is what keeps an ignored
- * message from writing a DynamoDB row. `classifySlackEvent` owns the decision
+ * message from writing a row. `classifySlackEvent` owns the decision
  * and spends nothing — the one branch that needs storage says so by returning
  * `engagedThread`, and only a threaded message can reach it.
  */

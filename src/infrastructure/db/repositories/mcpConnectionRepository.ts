@@ -1,20 +1,16 @@
-import { DeleteCommand, GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { getDocumentClient, getTableName } from "../client";
+import { CONDITIONAL_WRITE_FAILED, deleteItem, getItem, putItem, queryItems, updateItem } from "../store";
 import { keys } from "../keys";
-import { queryAll } from "../query";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
 import type { TokenEndpointAuthMethod } from "@/domain/mcp/types";
 
 const ENTITY_TYPE = "MCPCONNECTION";
 
 /**
- * The domain's ISO `expiresAt` is parked under this name for the same reason
- * `authAdapter` parks Better Auth's: the `expiresAt` attribute is the table's
- * unix-seconds TTL, and DynamoDB silently ignores a string there. Nothing was
- * ever deleted by the collision — a connection must outlive its token anyway —
- * but a numeric write under that name would silently enrol the row in the TTL
- * sweep. Legacy rows still carry the string under `expiresAt`; reads fall back
- * to it and every write clears it.
+ * The domain's ISO `expiresAt` is parked under this name: the `expiresAt`
+ * attribute is the store's unix-seconds TTL, and a connection must outlive
+ * its token — a numeric write under that name would enrol the row in the
+ * sweep. Legacy rows still carry the string under `expiresAt`; reads fall
+ * back to it and every write clears it.
  */
 const EXPIRES_AT_ISO = "expiresAtIso";
 
@@ -85,95 +81,70 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
 
 export const mcpConnectionRepository: McpConnectionRepository = {
   async get(projectName, serverName) {
-    const result = await getDocumentClient().send(
-      new GetCommand({
-        TableName: getTableName(),
-        Key: keys.mcpConnection(projectName, serverName),
-      }),
-    );
-    return result.Item ? fromItem(result.Item) : null;
+    const item = await getItem(keys.mcpConnection(projectName, serverName));
+    return item ? fromItem(item) : null;
   },
 
   async listByProject(projectName) {
-    const items = await queryAll({
-      TableName: getTableName(),
-      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-      ExpressionAttributeValues: {
-        ":pk": keys.projectPartition(projectName),
-        ":prefix": keys.mcpConnectionPrefix(),
-      },
+    const items = await queryItems({
+      pk: keys.projectPartition(projectName),
+      sk: { prefix: keys.mcpConnectionPrefix() },
     });
     return items.map(fromItem).filter((connection) => connection !== null);
   },
 
   async put(connection) {
-    await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: toItem(connection) }),
-    );
+    await putItem(toItem(connection));
   },
 
   /**
-   * Compare-and-set on the refresh token. `attribute_not_exists` covers both a
-   * connection that never had one and the first write after authorization, so a
-   * caller that refreshed from "no refresh token" still cannot clobber a token
-   * another instance has since stored.
+   * Compare-and-set on the refresh token. An absent expectation covers both a
+   * connection that never had one and the first write after authorization, so
+   * a caller that refreshed from "no refresh token" still cannot clobber a
+   * token another instance has since stored.
    */
   async updateTokens(projectName, serverName, expectedRefreshToken, next) {
-    const expected =
-      expectedRefreshToken === undefined
-        ? { condition: "attribute_not_exists(refreshToken)", values: {} }
-        : {
-            condition: "refreshToken = :expected",
-            values: { ":expected": expectedRefreshToken },
-          };
-    // Absent values are REMOVEd, never written as null: `attribute_not_exists`
-    // above is the condition that decides a race, and a stored NULL would
-    // satisfy `attribute_exists` while carrying no token.
-    const sets = ["#status = :status", "updatedAt = :updatedAt"];
-    // Legacy attribute cleanup: rows written before the rename hold the ISO
-    // string under the TTL attribute name, which would shadow a later REMOVE
-    // of `expiresAtIso` through the read fallback.
-    const removes: string[] = ["expiresAt"];
-    const values: Record<string, unknown> = {
-      ...expected.values,
-      ":status": next.status,
-      ":updatedAt": next.updatedAt,
-    };
-    // Widened by a scope challenge, under the same condition as the tokens:
-    // an unconditional put here clobbered a reconnect that landed between
-    // the read and the write.
-    if (next.scopes !== undefined) {
-      sets.push("scopes = :scopes");
-      values[":scopes"] = next.scopes;
-    }
-    for (const [name, value] of [
-      ["accessToken", next.accessToken],
-      ["refreshToken", next.refreshToken],
-      [EXPIRES_AT_ISO, next.expiresAt],
-    ] as const) {
-      if (value === undefined) {
-        removes.push(name);
-      } else {
-        sets.push(`${name} = :${name}`);
-        values[`:${name}`] = value;
-      }
-    }
     try {
-      await getDocumentClient().send(
-        new UpdateCommand({
-          TableName: getTableName(),
-          Key: keys.mcpConnection(projectName, serverName),
-          UpdateExpression: `SET ${sets.join(", ")}${removes.length > 0 ? ` REMOVE ${removes.join(", ")}` : ""}`,
-          // The row must still exist: a connection deleted mid-refresh must not
-          // be resurrected by the refresh that was already in flight.
-          ConditionExpression: `attribute_exists(PK) AND (${expected.condition})`,
-          ExpressionAttributeNames: { "#status": "status" },
-          ExpressionAttributeValues: values,
-        }),
+      await updateItem(
+        keys.mcpConnection(projectName, serverName),
+        (row) => {
+          // Absent values are removed, never written as null: the presence of
+          // `refreshToken` is the condition that decides a race, and a stored
+          // NULL would read as present while carrying no token. The legacy
+          // `expiresAt` string goes too — it would shadow a removed
+          // `expiresAtIso` through the read fallback.
+          const {
+            accessToken: _a,
+            refreshToken: _r,
+            [EXPIRES_AT_ISO]: _e,
+            expiresAt: _legacy,
+            ...rest
+          } = row ?? {};
+          void _a, _r, _e, _legacy;
+          return {
+            ...rest,
+            status: next.status,
+            updatedAt: next.updatedAt,
+            // Widened by a scope challenge, under the same condition as the
+            // tokens: an unconditional put here clobbered a reconnect that
+            // landed between the read and the write.
+            ...(next.scopes !== undefined ? { scopes: next.scopes } : {}),
+            ...(next.accessToken !== undefined ? { accessToken: next.accessToken } : {}),
+            ...(next.refreshToken !== undefined ? { refreshToken: next.refreshToken } : {}),
+            ...(next.expiresAt !== undefined ? { [EXPIRES_AT_ISO]: next.expiresAt } : {}),
+          };
+        },
+        // The row must still exist: a connection deleted mid-refresh must not
+        // be resurrected by the refresh that was already in flight.
+        (row) =>
+          row !== null &&
+          (expectedRefreshToken === undefined
+            ? row.refreshToken === undefined
+            : row.refreshToken === expectedRefreshToken),
       );
       return true;
     } catch (error) {
-      if ((error as { name?: string }).name === "ConditionalCheckFailedException") {
+      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
         return false;
       }
       throw error;
@@ -181,11 +152,6 @@ export const mcpConnectionRepository: McpConnectionRepository = {
   },
 
   async delete(projectName, serverName) {
-    await getDocumentClient().send(
-      new DeleteCommand({
-        TableName: getTableName(),
-        Key: keys.mcpConnection(projectName, serverName),
-      }),
-    );
+    await deleteItem(keys.mcpConnection(projectName, serverName));
   },
 };

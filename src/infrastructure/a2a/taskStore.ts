@@ -1,5 +1,5 @@
 /**
- * DynamoDB-backed A2A task store. Replaces the SDK's in-memory store so inbound
+ * Database-backed A2A task store. Replaces the SDK's in-memory store so inbound
  * A2A task state (`SendMessage` → `GetTask`/`CancelTask`) survives instance
  * restarts and is shared across horizontally-scaled instances.
  *
@@ -16,19 +16,20 @@
 import { TaskState, type ListTasksRequest, type ListTasksResponse, type Message, type Part, type Task } from "@a2a-js/sdk";
 import type { ServerCallContext, TaskStore } from "@a2a-js/sdk/server";
 import { RequestMalformedError } from "@a2a-js/sdk/errors";
-import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
+import { CONDITIONAL_WRITE_FAILED, getItem, putItem, queryItems } from "@/infrastructure/db/store";
 import { RETENTION, expiresAtSeconds, isExpired } from "@/infrastructure/db/ttl";
-import { queryAll } from "@/infrastructure/db/query";
 
 import { A2A_TERMINAL_STATES as TERMINAL_STATES } from "@/domain/a2a/task";
 
 /**
- * Headroom under the 400KB DynamoDB item limit, measured against the whole
- * stored item. When a task exceeds it, {@link fitTask} degrades the payload in
- * steps — drop inline file bytes, then drop history/artifacts — so the task's
- * state and metadata always stay retrievable rather than failing the write.
+ * The most a stored task may weigh, measured against the whole stored item.
+ * A task is read whole on every `GetTask` and every row of a `ListTasks`
+ * page, so the bound keeps those reads cheap; it is the ceiling the store
+ * used to impose, kept because nothing above it was ever wanted. When a task
+ * exceeds it, {@link fitTask} degrades the payload in steps — drop inline
+ * file bytes, then drop history/artifacts — so the task's state and metadata
+ * always stay retrievable rather than failing the write.
  */
 const MAX_ITEM_BYTES = 350_000;
 
@@ -89,17 +90,11 @@ function fitTask(task: Task, wrapper: Record<string, unknown>): Task {
   return dropBulkParts(task);
 }
 
-/** A DynamoDB {@link TaskStore} scoped to a single project. */
+/** A database-backed {@link TaskStore} scoped to a single project. */
 export function createA2aTaskStore(projectName: string): TaskStore {
   return {
     async load(taskId: string, context: ServerCallContext): Promise<Task | undefined> {
-      const result = await getDocumentClient().send(
-        new GetCommand({
-          TableName: getTableName(),
-          Key: keys.a2aTask(projectName, ownerScope(context), taskId),
-        }),
-      );
-      const item = result.Item;
+      const item = await getItem(keys.a2aTask(projectName, ownerScope(context), taskId));
       if (!item || isExpired(item.expiresAt, Date.now())) {
         return undefined;
       }
@@ -119,25 +114,15 @@ export function createA2aTaskStore(projectName: string): TaskStore {
         expiresAt: expiresAtSeconds(now, RETENTION.a2aTaskDays),
       };
       try {
-        await getDocumentClient().send(
-          new PutCommand({
-            TableName: getTableName(),
-            Item: { ...wrapper, task: fitTask(task, wrapper) },
-            ConditionExpression:
-              "attribute_not_exists(PK) OR NOT (#state IN (:s0, :s1, :s2, :s3))",
-            ExpressionAttributeNames: { "#state": "state" },
-            ExpressionAttributeValues: {
-              ":s0": TERMINAL_STATES[0],
-              ":s1": TERMINAL_STATES[1],
-              ":s2": TERMINAL_STATES[2],
-              ":s3": TERMINAL_STATES[3],
-            },
-          }),
+        await putItem(
+          { ...wrapper, task: fitTask(task, wrapper) },
+          (row) =>
+            row === null || !(TERMINAL_STATES as readonly unknown[]).includes(row.state),
         );
       } catch (error) {
         // Losing side of a complete/cancel race: the stored terminal state wins,
         // so this write is a no-op. Any other failure propagates.
-        if ((error as { name?: string }).name === "ConditionalCheckFailedException") {
+        if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
           return;
         }
         throw error;
@@ -148,12 +133,7 @@ export function createA2aTaskStore(projectName: string): TaskStore {
       validateListRequest(params);
       const partition = keys.a2aTask(projectName, ownerScope(context), "").PK;
       const now = Date.now();
-      const items = await queryAll({
-        TableName: getTableName(),
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :task)",
-        ExpressionAttributeValues: { ":pk": partition, ":task": "TASK#" },
-        ConsistentRead: true,
-      });
+      const items = await queryItems({ pk: partition, sk: { prefix: "TASK#" } });
       const statusTimestampAfter = params.statusTimestampAfter
         ? Date.parse(params.statusTimestampAfter)
         : undefined;
@@ -257,7 +237,7 @@ function isAfterCursor(task: Task, cursor: TaskPageCursor): boolean {
 
 function validateListRequest(params: ListTasksRequest): void {
   if (params.pageToken) {
-    // Validate before reading DynamoDB so an invalid request has no side effects.
+    // Validate before reading the store so an invalid request has no side effects.
     pageCursor(params.pageToken);
   }
   if (params.pageSize !== undefined && (params.pageSize < 1 || params.pageSize > 100)) {

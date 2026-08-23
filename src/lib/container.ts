@@ -1,5 +1,5 @@
 /**
- * Composition root. Wires domain repository ports to their DynamoDB adapters and
+ * Composition root. Wires domain repository ports to their PostgreSQL adapters and
  * exposes the `executionDeps` bundle consumed by the execution facade
  * (`@/application/execution/runProject`). Route handlers and pages import repos
  * and deps from here — never from `infrastructure/` directly.
@@ -34,7 +34,7 @@ import type { OtelTraceExport } from "@/infrastructure/telemetry/otelTraceExport
 import { onShutdown } from "@/shared/lifecycle";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
-import { httpResourceReader } from "@/infrastructure/net/httpResource";
+import { createHttpResourceReader } from "@/infrastructure/net/httpResource";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
 import { config } from "./config";
@@ -50,6 +50,10 @@ import {
   artifactObjectStore,
   isObjectStoreConfigured,
 } from "@/infrastructure/storage/s3ObjectStore";
+import {
+  createProxiedObjectAccess,
+  withArtifactAccessMode,
+} from "@/infrastructure/storage/artifactAccess";
 import { auditRepository } from "@/infrastructure/db/repositories/auditRepository";
 import { memberRepository } from "@/infrastructure/db/repositories/memberRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
@@ -61,7 +65,6 @@ import { checkReadiness } from "@/application/health/readiness";
 import { createAgentUseCases } from "@/application/agent/agentUseCases";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
-import { createSsmProvisioner } from "@/infrastructure/mcp/ssmProvisioner";
 import { createDockerProvisioner } from "@/infrastructure/mcp/dockerProvisioner";
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
@@ -70,7 +73,7 @@ import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
 import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
 import { ConflictError, ValidationError } from "@/application/errors";
-import type { PluginSyncSelection } from "@/domain/plugin/sync";
+import type { PluginsRepoSnapshot, PluginSyncSelection } from "@/domain/plugin/sync";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import {
   pluginSyncLock,
@@ -81,7 +84,10 @@ import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createTestModel } from "@/application/llm/testModel";
 import { createModelCatalogRefresher } from "@/application/llm/modelCatalogRefresh";
+import { createCompositeModelCatalogSource } from "@/application/llm/modelCatalogStoredSource";
+import { createModelCatalogDocumentUseCases } from "@/application/llm/modelCatalogDocument";
 import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
+import { modelCatalogRepository } from "@/infrastructure/db/repositories/modelCatalogRepository";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
 import type { AguiDeps } from "@/application/agui/run";
 import type { PostCostAlert } from "@/application/usage/costGuard";
@@ -95,7 +101,8 @@ import { log } from "@/shared/logger";
 import { bedrockEmbeddings } from "@/infrastructure/llm/bedrockEmbeddings";
 import { cohereEmbeddings } from "@/infrastructure/llm/cohereEmbeddings";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
-import { createS3VectorsStore } from "@/infrastructure/vector/s3VectorsStore";
+import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
+import { deleteExpired } from "@/infrastructure/db/store";
 import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
@@ -152,7 +159,7 @@ import { composeCloneProject } from "@/application/project/cloneProjectFlow";
 
 // The write override's admin list is pushed into the use case here rather than
 // imported by it — a static import would drag the settings store (and its
-// DynamoDB client) into the application layer. The effective form, so a
+// database client) into the application layer. The effective form, so a
 // tier-admin may override a project write exactly as a listed admin does.
 setAdminCheck(isEffectiveConfiguredAdminByEmail);
 
@@ -176,7 +183,17 @@ setAuditSink(auditRepository);
  * takes when this deployment has no vector bucket.
  */
 export const artifactStorage = isObjectStoreConfigured()
-  ? { rows: artifactRepository, objects: artifactObjectStore }
+  ? { rows: artifactRepository, objects: withArtifactAccessMode(artifactObjectStore) }
+  : undefined;
+
+/**
+ * Serving a stored object on a proxied address: the token check and the read,
+ * bound together so the route that answers `/api/objects` takes one object
+ * from here rather than the store and the verifier separately. Undefined
+ * when this deployment keeps nothing, like everything else built on the pair.
+ */
+export const proxiedObjects = artifactStorage
+  ? createProxiedObjectAccess(artifactStorage.objects)
   : undefined;
 
 /**
@@ -232,12 +249,31 @@ export const testModel = createTestModel(channel);
  * intervalMs 0 keeps this instance tickless — the boot path owns the schedule.
  */
 export const refreshModelCatalog = createModelCatalogRefresher({
-  source: createHttpModelCatalogSource(config.modelsCatalogUrl),
+  // The same precedence the boot path composes: an admin's uploaded document
+  // over the published catalog, and under `MODELS_CATALOG_URL=none` the
+  // upload alone.
+  source: createCompositeModelCatalogSource({
+    stored: modelCatalogRepository,
+    remote:
+      config.modelsCatalogUrl === undefined
+        ? undefined
+        : createHttpModelCatalogSource(config.modelsCatalogUrl),
+  }),
   intervalMs: 0,
   // The same deadline the boot path gives this read — request-scoped here,
   // but a hung settings table should time a refresh out, not hold it.
   localModels: () => withTimeout(getSelfHostedModels(), 10_000),
 }).refresh;
+
+/**
+ * The uploaded catalog document: install, inspect, remove — the /models
+ * console's offline path. Refreshes through the same bound refresher above,
+ * so an upload is in the registry before its request is answered.
+ */
+export const modelCatalogDocumentUseCases = createModelCatalogDocumentUseCases(
+  modelCatalogRepository,
+  refreshModelCatalog,
+);
 
 /**
  * What the self-hosted channel is serving right now — the declaration aid on
@@ -340,21 +376,14 @@ export const mcpUseCases = createMcpUseCases(
  * exists, which is honest about a half-configured environment.
  */
 export const managedMcpUseCases =
-  config.managedMcpInstanceId && config.managedMcpRegistry
+  config.managedMcpRuntime && config.managedMcpRegistry
     ? createManagedMcpUseCases({
         repo: mcpRepository,
-        // `local` runs Docker here instead of reaching an instance through SSM:
-        // the app and the container share a loopback interface on a developer's
-        // machine, which is the only way to exercise this path without EC2.
-        provisioner:
-          config.managedMcpInstanceId === "local"
-            ? createDockerProvisioner()
-            : createSsmProvisioner({
-                instanceId: config.managedMcpInstanceId,
-                region: config.awsRegion,
-                registry: config.managedMcpRegistry,
-                networkContainer: config.managedMcpNetworkContainer,
-              }),
+        // Docker on this host: the app and the container share a loopback
+        // interface, which is what lets a managed server register at
+        // `127.0.0.1`. The one runtime there is; a Kubernetes-native one would
+        // be a second adapter behind the same port.
+        provisioner: createDockerProvisioner(),
         probe: mcpToolProbe,
         // Reachability is checked with the entry's own headers, which are
         // encrypted at rest — the probe needs them the way a dispatch does.
@@ -398,17 +427,18 @@ const EMBEDDINGS = {
 } as const;
 
 /**
- * The capability catalog, when this deployment has a vector store to hold it.
- * Undefined where it does not: the reindex endpoint answers 503 and a run
- * resolves exactly the bindings its version names — which is what every run did
- * before the catalog existed, so the feature is off rather than half-present.
+ * The capability catalog, when this deployment turned it on. Undefined where
+ * it did not: the reindex endpoint answers 503 and a run resolves exactly the
+ * bindings its version names — which is what every run did before the catalog
+ * existed, so the feature is off rather than half-present. Off by default
+ * because it needs an embedding model the deployment's channel can serve,
+ * which nothing here can verify at boot.
  *
  * One bag serves indexing and search: search needs two of these fields, and a
- * second object naming the same two would be a second place to keep the index
- * name and the embedding model agreeing.
+ * second object naming the same two would be a second place to keep the table
+ * and the embedding model agreeing.
  */
-const vectorBucket = config.vectorBucketName;
-export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = vectorBucket
+export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = config.catalogEnabled
   ? {
       skills: skillRepository,
       mcps: mcpRepository,
@@ -435,10 +465,20 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = v
           ? async () => `${(await getLlmChannelConfig()).baseUrl}|${config.embeddingModel}`
           : () => config.embeddingModel,
       ),
-      catalog: createS3VectorsStore(vectorBucket, config.catalogIndexName),
+      catalog: createPgVectorStore("catalog_vectors"),
       minScore: config.catalogMinScore,
     }
   : undefined;
+
+/**
+ * Retention, as a tick. Every row that expires carries `expiresAt`; the
+ * managed store used to purge those on its own, and here the scheduler tick
+ * does it — bounded per call, so a backlog drains over several ticks rather
+ * than holding one long lock.
+ */
+export async function sweepExpiredRows(now: Date = new Date()): Promise<number> {
+  return deleteExpired(Math.floor(now.getTime() / 1000));
+}
 export const pluginUseCases = createPluginUseCases(pluginRepository);
 /**
  * The project slice, which route handlers used to compose for themselves:
@@ -481,12 +521,17 @@ export const settingsUseCases = createSettingsUseCases(settingsRepository, secre
 /** How long a crashed sync may hold the door shut. Syncs finish in seconds. */
 const PLUGIN_SYNC_LEASE_MS = 5 * 60_000;
 
-export const syncPluginsFromRepo = async (
-  repoConfig: Awaited<ReturnType<typeof getPluginsRepoConfig>>,
+/**
+ * What both entry points share: the lease, the deps bag, the persisted report
+ * and the reindex. Only how the snapshot is obtained differs, and keeping that
+ * the single variable is what lets the archive path stay the same sync.
+ */
+const runPluginSync = async (
+  repo: string,
+  loadSnapshot: () => Promise<PluginsRepoSnapshot>,
   actorEmail: string,
   selection?: PluginSyncSelection,
 ) => {
-  const repo = repoConfig.repo ?? "";
   // One sync per repo at a time: a second one would double every GitHub read
   // and leave two contradicting reports.
   const lease = await pluginSyncLock.acquire(repo, PLUGIN_SYNC_LEASE_MS);
@@ -494,7 +539,6 @@ export const syncPluginsFromRepo = async (
     throw new ConflictError("A plugins sync is already running; wait for it to finish.");
   }
   try {
-    const { fetchPluginsRepoSnapshot } = await import("@/infrastructure/github/pluginsRepoClient");
     const result = await syncPluginsFromSnapshot(
       {
         plugins: pluginRepository,
@@ -510,7 +554,7 @@ export const syncPluginsFromRepo = async (
             mcpServers,
           ),
       },
-      await fetchPluginsRepoSnapshot(repoConfig),
+      await loadSnapshot(),
       actorEmail,
       selection,
     );
@@ -528,6 +572,51 @@ export const syncPluginsFromRepo = async (
     await pluginSyncLock.release(repo, lease);
   }
 };
+
+export const syncPluginsFromRepo = async (
+  repoConfig: Awaited<ReturnType<typeof getPluginsRepoConfig>>,
+  actorEmail: string,
+  selection?: PluginSyncSelection,
+) =>
+  runPluginSync(
+    repoConfig.repo ?? "",
+    async () =>
+      (await import("@/infrastructure/github/pluginsRepoClient")).fetchPluginsRepoSnapshot(repoConfig),
+    actorEmail,
+    selection,
+  );
+
+/**
+ * The same sync from an archive an admin uploaded — the way a repository
+ * reaches a deployment that cannot reach GitHub. `repo` is the provenance
+ * its rows carry (`archiveSyncRepo` in `@/domain/plugin/sync` says what it
+ * defaults to); one that cannot be read is a `ValidationError`, so the route
+ * answers 400 rather than blaming an upstream that was never called.
+ */
+export const syncPluginsFromArchive = async (
+  archive: Uint8Array,
+  repo: string,
+  actorEmail: string,
+  selection?: PluginSyncSelection,
+) =>
+  runPluginSync(
+    repo,
+    async () => {
+      const { snapshotFromArchive, TarArchiveError } = await import(
+        "@/infrastructure/plugin/archiveSnapshot"
+      );
+      try {
+        return await snapshotFromArchive(archive, repo);
+      } catch (error) {
+        if (error instanceof TarArchiveError) {
+          throw new ValidationError(error.message);
+        }
+        throw error;
+      }
+    },
+    actorEmail,
+    selection,
+  );
 
 /**
  * Refresh the capability catalog once a sync has applied the repository.
@@ -768,7 +857,7 @@ export const traceUseCases = createTraceUseCases({
   projects: projectRepository,
 });
 
-/** Readiness snapshot for the /api/ready probe (DynamoDB + LLM channel). */
+/** Readiness snapshot for the /api/ready probe (database + LLM channel). */
 export const readinessReport = () =>
   checkReadiness({ checkDb: dbReachable, checkLlm: () => llmReachable(getLlmChannelConfig) });
 
@@ -872,7 +961,9 @@ export const executionDeps: ExecutionDeps = {
   imageChannel,
   cipher: secretCipher,
   urlPolicy,
-  http: httpResourceReader,
+  // The FetchUrl list, not the MCP one: a model-chosen URL is let past the
+  // guard only by a suffix declared for exactly that.
+  http: createHttpResourceReader({ internalHostSuffixes: config.urlFetchInternalHostSuffixes }),
   // The same adapter the chat routes wire: an attachment and a fetched page
   // become text the same way, which is what keeps one owner for extraction.
   documents: documentExtractor,

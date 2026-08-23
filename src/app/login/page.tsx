@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Alert, Card, Center, Stack, Text, Title } from "@mantine/core";
 import { SignInButton } from "@/components/SignInButton";
+import { config } from "@/lib/config";
 import { getSessionUser } from "@/lib/session";
 import { safeNextPath } from "@/shared/safeNextPath";
 import { signInErrorMessage } from "@/shared/signInError";
@@ -55,7 +56,7 @@ export default async function LoginPage({
           <Text fz="sm" c="dimmed" lh={1.6}>
             {t("login.domains")}
           </Text>
-          <SignInButton callbackURL={next} />
+          <SignInButton providers={config.authProviders} callbackURL={next} />
         </Stack>
       </Card>
     </Center>

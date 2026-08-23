@@ -9,7 +9,7 @@ import { slackMessageText } from "@/domain/slack/messageText";
  * that name it. Most of those are none of its business, and deciding that has
  * to be **cheap and early**: the route classifies before it claims the event id,
  * so a message nobody asked about costs a signature check and nothing else — no
- * DynamoDB write, no run, and no reply message that would have to be taken back.
+ * database write, no run, and no reply message that would have to be taken back.
  *
  * That ordering is also what answers "a run that decides not to answer". A
  * channel run opens its reply as a progress note the moment it starts, so a

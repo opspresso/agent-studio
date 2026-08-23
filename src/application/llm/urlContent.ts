@@ -30,7 +30,7 @@ export const MAX_FETCH_BYTES = 5 * 1024 * 1024;
  * How much of the text is kept.
  *
  * Far above the attachment cap on purpose — `documentLimits.ts` says why: an
- * attachment is inlined into a turn and stored as one DynamoDB item, while this
+ * attachment is inlined into a turn and stored as one row every later turn replays, while this
  * is a transient tool result. Matched to what the `mcp-url-fetch` server
  * returned, so replacing it is a replacement rather than a downgrade.
  *

@@ -1,21 +1,23 @@
 /**
- * Create a local development user + session directly in DynamoDB and print a
- * signed session cookie for exercising authenticated API routes without the
- * Google OAuth round-trip. Local development only.
+ * Create a local development user + session directly in the database and
+ * print a signed session cookie for exercising authenticated API routes
+ * without an identity-provider round-trip. Local development only.
  *
- *   pnpm tsx scripts/dev-session.ts        # dev instance on :8083
+ *   pnpm tsx scripts/dev-session.ts        # dev database on :5432
  */
 process.env.STAGE ??= "local";
-process.env.DYNAMODB_ENDPOINT ??= "http://localhost:8083";
+process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio";
 process.env.BETTER_AUTH_SECRET ??= "dev-secret";
 
-const endpoint = process.env.DYNAMODB_ENDPOINT;
-if (!endpoint.includes("localhost") && !endpoint.includes("127.0.0.1")) {
-  console.error(`Refusing to run against non-local endpoint: ${endpoint}`);
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl.includes("localhost") && !databaseUrl.includes("127.0.0.1")) {
+  console.error(`Refusing to run against a non-local database: ${databaseUrl}`);
   process.exit(1);
 }
 
 async function main() {
+  const { migrate } = await import("@/infrastructure/db/migrations");
+  await migrate();
   const { auth } = await import("@/lib/auth");
   const { createHmac } = await import("node:crypto");
 
@@ -25,11 +27,10 @@ async function main() {
 
   let user = await ctx.internalAdapter.findUserByEmail(email).then((r) => r?.user ?? null);
   if (!user) {
-    user = await ctx.internalAdapter.createUser({
-      email,
-      name: "Local Dev",
-      emailVerified: true,
-    });
+    user = await ctx.internalAdapter.createUser(
+      { email, name: "Local Dev", emailVerified: true },
+      { method: "admin" },
+    );
   }
   const session = await ctx.internalAdapter.createSession(user.id, false);
   // Matches better-call's signCookieValue: HMAC-SHA256 over the token,
@@ -44,6 +45,8 @@ async function main() {
   }
   console.log(`verified session for ${verified.user.email}`);
   console.log(`COOKIE=${cookie}`);
+  const { closePool } = await import("@/infrastructure/db/client");
+  await closePool();
 }
 
 main().catch((error) => {
