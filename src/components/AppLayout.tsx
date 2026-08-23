@@ -62,22 +62,23 @@ const NAV_GROUPS = [
       { href: "/projects", label: "nav.projects", Icon: IconFolder },
       { href: "/chats", label: "nav.chats", Icon: IconMessageCircle },
       { href: "/artifacts", label: "nav.artifacts", Icon: IconPhoto },
-      { href: "/profile", label: "nav.profile", Icon: IconUser },
-      { href: "/guide", label: "nav.guide", Icon: IconCompass },
     ],
   },
   {
     key: "intelligence",
     label: "nav.group.intelligence",
+    // The registries a version draws on, in the order a version binds them:
+    // skills and MCP tools first, then the agents it can hand work to, then
+    // the models it may run on. `Plugins` is last because it is the *source*
+    // that fills the first two rather than a catalogue of its own — the model
+    // registry is a catalogue of what this deployment can reach, read from the
+    // member rung; only the toggles and the probe on it stay admin's.
     items: [
-      { href: "/plugins", label: "nav.plugins", Icon: IconPackage },
       { href: "/skills", label: "nav.skills", Icon: IconBook2 },
       { href: "/tools", label: "nav.tools", Icon: IconTool },
       { href: "/agents", label: "nav.agents", Icon: IconRobot },
-      // The model registry is a catalogue of what this deployment can reach,
-      // like the four above it — read from the member rung; only the toggles
-      // and the probe on it stay admin's.
       { href: "/models", label: "nav.models", Icon: IconCpu },
+      { href: "/plugins", label: "nav.plugins", Icon: IconPackage },
     ],
   },
   {
@@ -93,6 +94,25 @@ const NAV_GROUPS = [
   key: string;
   label: MessageKey;
   items: ReadonlyArray<{ href: string; label: MessageKey; Icon: typeof IconChartBar }>;
+}>;
+
+/**
+ * The reader's own two pages, kept out of the groups above and pinned to the
+ * foot of the sidebar.
+ *
+ * Neither is a thing the workspace holds: one is the account looking at it and
+ * the other is how to use it. Sitting in the workspace group they pushed the
+ * registries down and read as more work to do. The profile link stays here
+ * rather than moving into the header entirely, because the header's own link
+ * to it is `visibleFrom="lg"` and would disappear on a laptop.
+ */
+const PERSONAL_ITEMS = [
+  { href: "/profile", label: "nav.profile", Icon: IconUser },
+  { href: "/guide", label: "nav.guide", Icon: IconCompass },
+] as const satisfies ReadonlyArray<{
+  href: string;
+  label: MessageKey;
+  Icon: typeof IconChartBar;
 }>;
 
 /**
@@ -151,6 +171,43 @@ export function AppLayout({
    * signed-out visitor watched it vanish. The root layout says why.
    */
   const showNav = viewer !== null;
+
+  const navLink = ({
+    href,
+    label,
+    Icon,
+  }: {
+    href: string;
+    label: MessageKey;
+    Icon: typeof IconChartBar;
+  }) => {
+    const active = isActive(pathname, href);
+    return (
+      <UnstyledButton
+        key={href}
+        component={Link}
+        href={href}
+        className={classes.navLink}
+        data-active={active || undefined}
+        aria-current={active ? "page" : undefined}
+        onClick={close}
+      >
+        <ThemeIcon
+          variant={active ? "gradient" : "transparent"}
+          gradient={{ from: "brand.6", to: "violet.5", deg: 135 }}
+          color={active ? undefined : "gray"}
+          size={30}
+          radius="md"
+        >
+          <Icon size={17} stroke={1.8} />
+        </ThemeIcon>
+        <Text fz="sm" fw={active ? 600 : 450}>
+          {t(label)}
+        </Text>
+        <IconChevronRight className={classes.navArrow} size={14} />
+      </UnstyledButton>
+    );
+  };
 
   return (
     <AppShell
@@ -220,38 +277,14 @@ export function AppLayout({
                 <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.12em" px="sm">
                   {t(group.label)}
                 </Text>
-                {group.items.map(({ href, label, Icon }) => {
-                  const active = isActive(pathname, href);
-                  return (
-                    <UnstyledButton
-                      key={href}
-                      component={Link}
-                      href={href}
-                      className={classes.navLink}
-                      data-active={active || undefined}
-                      aria-current={active ? "page" : undefined}
-                      onClick={close}
-                    >
-                      <ThemeIcon
-                        variant={active ? "gradient" : "transparent"}
-                        gradient={{ from: "brand.6", to: "violet.5", deg: 135 }}
-                        color={active ? undefined : "gray"}
-                        size={30}
-                        radius="md"
-                      >
-                        <Icon size={17} stroke={1.8} />
-                      </ThemeIcon>
-                      <Text fz="sm" fw={active ? 600 : 450}>
-                        {t(label)}
-                      </Text>
-                      <IconChevronRight className={classes.navArrow} size={14} />
-                    </UnstyledButton>
-                  );
-                })}
+                {group.items.map(navLink)}
               </Stack>
             ))}
           </Stack>
         </ScrollArea>
+        <Stack gap={6} className={classes.navPersonal}>
+          {PERSONAL_ITEMS.map(navLink)}
+        </Stack>
         <div className={classes.navFooter}>
           <span className={classes.statusDot} />
           <Text fz="xs" c="dimmed">

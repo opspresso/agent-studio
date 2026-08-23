@@ -26,7 +26,7 @@ export const ko: Messages = {
   "chrome.openProjects": "Projects 열기",
   "chrome.status": "워크스페이스 온라인 · v{version}",
   "nav.group.workspace": "워크스페이스",
-  "nav.group.intelligence": "인텔리전스",
+  "nav.group.intelligence": "레지스트리",
   "nav.group.system": "시스템",
   "nav.overview": "개요",
   "nav.projects": "Projects",

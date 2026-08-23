@@ -43,7 +43,7 @@ export const en = {
   "chrome.openProjects": "Open projects",
   "chrome.status": "Workspace online · v{version}",
   "nav.group.workspace": "Workspace",
-  "nav.group.intelligence": "Intelligence",
+  "nav.group.intelligence": "Registries",
   "nav.group.system": "System",
   "nav.overview": "Overview",
   "nav.projects": "Projects",
