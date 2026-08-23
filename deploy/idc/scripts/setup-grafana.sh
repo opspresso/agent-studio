@@ -23,7 +23,12 @@ if ((EUID == 0)); then
   SUDO=()
 else
   command -v sudo >/dev/null || { echo "sudo is required." >&2; exit 1; }
-  sudo -v
+  # `sudo -v` is not the check to make here: on a host whose rule is
+  # NOPASSWD it still asks for a password, and over `ssh host script` there
+  # is no terminal to ask on — the run dies before installing anything.
+  # A no-op through sudo answers the real question, and only when that fails
+  # is a password prompt worth having.
+  sudo -n true 2>/dev/null || sudo -v
   SUDO=(sudo)
 fi
 
@@ -103,8 +108,12 @@ fi
 "${SUDO[@]}" install -D -m 0600 "$temp_dir/agent-studio.env" "$environment_file"
 "${SUDO[@]}" install -D -m 0644 "$temp_dir/agent-studio.conf" "$service_override"
 "${SUDO[@]}" install -D -m 0644 "$containerd_override_source" "$containerd_override"
-if [[ -f "$legacy_service_override" ]] &&
-  grep -q '^Environment=GCLOUD_\(RW_API_KEY\|FM_COLLECTOR_ID\)=' "$legacy_service_override"; then
+# Through sudo, both halves: the legacy drop-in holds a token and is
+# root-only, so an unprivileged `grep` reports "Permission denied" and the
+# migration quietly does not happen — leaving the token where this script
+# says it no longer keeps it.
+if "${SUDO[@]}" test -f "$legacy_service_override" &&
+  "${SUDO[@]}" grep -q '^Environment=GCLOUD_\(RW_API_KEY\|FM_COLLECTOR_ID\)=' "$legacy_service_override"; then
   legacy_backup="${legacy_service_override}.migrated-$(date -u +%Y%m%dT%H%M%SZ)"
   "${SUDO[@]}" mv "$legacy_service_override" "$legacy_backup"
   "${SUDO[@]}" chmod 0600 "$legacy_backup"
