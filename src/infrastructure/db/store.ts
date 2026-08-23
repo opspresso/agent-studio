@@ -62,11 +62,13 @@ export const conditions = {
 type Runner = Pick<PoolClient, "query">;
 
 /**
- * The exclusive upper bound of "every key starting with `prefix`" under
- * `COLLATE "C"` byte order. U+10FFFF is the last code point there is — UTF-8
- * F4 8F BF BF — so nothing that starts with the prefix sorts past it; U+FFFF
- * (EF BF BF) did not reach a key whose next character is astral, an emoji
- * say, which every 4-byte sequence (F0…) sorts after.
+ * The upper bound of "every key starting with `prefix`" under `COLLATE "C"`
+ * byte order: the prefix followed by U+10FFFF, the last code point there is
+ * (UTF-8 F4 8F BF BF). It is exclusive, so the one key it does not cover is
+ * that exact string — no builder in `keys.ts` can produce one, and no valid
+ * UTF-8 string sorts between it and the bound. U+FFFF (EF BF BF) was the
+ * previous bound and did not reach a key whose next character is astral, an
+ * emoji say, which every 4-byte sequence (F0…) sorts after.
  */
 function prefixUpperBound(prefix: string): string {
   return `${prefix}\u{10FFFF}`;
