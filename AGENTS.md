@@ -5,6 +5,9 @@ Working rules for coding agents in this repository (`CLAUDE.md` is a symlink to 
 Agent Studio is a single Next.js 16 full-stack app: an internal LLM platform for
 prompt / agent / cost management (projects & versions, an LLM engine, agents
 (subagents + external registry), skills, MCP tools, chats, cost dashboard).
+**A company installs it inside its own network** — one install holds one company, and
+booting, signing in, running, and the console all work with zero outbound. What that
+forbids an edit to do is under [Conventions that bite](#conventions-that-bite).
 
 **This file is the working contract — what to run, what not to break, and where a decision
 lives.** It is not a description of the system; that is
@@ -16,6 +19,7 @@ authoritative and this file must not restate it — an entry below earns its pla
 | Need | Read |
 |---|---|
 | The shape every run passes through | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| What this product is, and what that forbids | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#무엇을-위한-시스템인가) |
 | The same shape as pictures | [docs/DIAGRAMS.md](docs/DIAGRAMS.md) |
 | Why one subsystem decides what it does | [docs/design/](docs/design/) — one file each |
 | Who owns a decision that must exist once | [docs/OWNERSHIP.md](docs/OWNERSHIP.md) |
@@ -245,6 +249,15 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 
 ## Conventions that bite
 
+- **The required path takes no new outbound dependency.** Booting, signing in, running, and
+  the console have to finish with the network unplugged — that is what "a company installs
+  it" means, and it is the one identity constraint an ordinary-looking edit breaks. A new
+  host, managed service, or SDK goes behind a port as an *optional* adapter, and its absence
+  disables that feature and says so. The four paths and what they stand on are
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#무엇을-위한-시스템인가); what replaces each optional
+  one in an air-gapped install is [INSTALL.md](docs/INSTALL.md#폐쇄망air-gapped에서). A
+  default that reaches a public address is allowed only where turning it off is a documented
+  setting — `MODELS_CATALOG_URL=none` is the shape of that.
 - **Domain purity.** Nothing in `src/domain/` imports infrastructure, framework or AWS.
 - **Never hand-write a row key string.** They come from
   `src/infrastructure/db/keys.ts` — with one named exception, because it is not only a key:

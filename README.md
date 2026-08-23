@@ -1,8 +1,13 @@
 # ✨ Agent Studio
 
-**Build and operate production AI agents.** 모델·스킬·MCP·워크플로·트레이싱·평가·거버넌스로
-에이전트를 만들고 운영한다 — 프롬프트·에이전트·비용 관리를 위한 사내 LLM 플랫폼이자,
-프로덕션 수준의 Next.js 풀스택 애플리케이션 하나다.
+**기업이 자기 네트워크 안에서 AI 에이전트를 만들고 운영하는 플랫폼.**
+모델·스킬·MCP·워크플로·트레이싱·평가·거버넌스를 한곳에 두고 프롬프트·에이전트·비용을 관리한다.
+
+**설치형이다.** 고객에게 파는 SaaS 가 아니라 기업이 자기 IDC·VPC 에 올려 쓰는 소프트웨어이고,
+한 설치가 한 기업을 담는다. 부팅·로그인·런·콘솔은 외부 네트워크 없이 동작하며 밖으로 나가는
+연결은 전부 선택이다 — 그것이 무엇을 강제하는지는
+[ARCHITECTURE.md](docs/ARCHITECTURE.md#무엇을-위한-시스템인가), 폐쇄망에서 무엇을 대신하는지는
+[INSTALL.md](docs/INSTALL.md#폐쇄망air-gapped에서) 가 답한다.
 
 프롬프트나 에이전트를 **project** 로 만들고, **version** 으로 다듬고, 하나를 publish 한
 뒤 어디서든 호출한다: 콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, Teams, webhook, A2A 로
@@ -31,8 +36,8 @@
 - Clean Architecture (`domain` / `application` / `infrastructure` / `app`), 테스트로 강제된다
 - PostgreSQL + pgvector 하나 — 모든 행과 케이퍼빌리티 카탈로그. 아티팩트는 S3 호환 스토어(선택)
 
-**설치형이다.** 기업이 자기 네트워크 안에 설치해 운영하고, 외부 네트워크 없이도 부팅·로그인·런이
-된다 — 밖으로 나가는 연결은 전부 선택이다. 설치는 [docs/INSTALL.md](docs/INSTALL.md).
+설치는 [docs/INSTALL.md](docs/INSTALL.md) — 호스트 하나(Compose)든 Kubernetes(Helm)든,
+최소 구성은 PostgreSQL 하나와 OpenAI 호환 엔드포인트 하나다.
 
 ## 빠른 시작
 

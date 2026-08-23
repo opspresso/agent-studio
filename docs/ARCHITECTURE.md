@@ -20,6 +20,32 @@
 Agent Studio 는 **project, llm, agents(subagent + 외부 agent registry), skills, mcp, chat,
 cost/usage** 도메인을 아우르는 하나의 Next.js 16 풀스택 애플리케이션이다.
 
+## 무엇을 위한 시스템인가
+
+Agent Studio 는 **기업이 자기 네트워크 안에 설치해 운영하는 사내 에이전트 플랫폼**이다. 고객에게
+파는 SaaS 가 아니고, 한 설치가 한 기업을 담는다 — 테넌트 격리 축이 없는 것은 빠진 기능이 아니라
+이 결정이다. 그 안의 접근은 멤버 등급과 프로젝트 공개 범위로 갈린다([SECURITY.md](SECURITY.md#인가-모델)).
+
+이 정체성이 아키텍처에 강제하는 것은 하나다: **필수 경로는 밖으로 나가지 않는다.** 부팅·로그인·
+런·콘솔은 아웃바운드 0 으로 끝까지 동작하고, 밖으로 나가는 연결은 전부 선택이다.
+
+| 필수 경로 | 무엇 위에 서는가 |
+|---|---|
+| 부팅 | PostgreSQL 하나. 스키마는 앱이 부팅 때 만든다 |
+| 로그인 | 배포가 켠 방식 하나 — 사내 OIDC(Keycloak · Entra ID · Okta …) 또는 비밀번호 |
+| 런 | OpenAI 호환 엔드포인트 하나. 사내 vLLM · LM Studio · Ollama 도 같은 프로토콜이다 |
+| 콘솔 | 앱 자신 |
+
+나머지는 전부 선택이고, 없으면 **그 기능만** 꺼진다 — 아티팩트를 담을 S3 호환 스토어, 모델
+카탈로그의 원격 읽기, 플러그인 저장소 sync, MCP 서버, Slack · Telegram · Teams, 나가는 A2A 호출,
+`FetchUrl`, Bedrock 임베딩. 각각을 폐쇄망에서 무엇으로 대신하는지는
+[INSTALL.md](INSTALL.md#폐쇄망air-gapped에서) 의 표가 소유한다.
+
+**그래서 변경에 걸리는 규칙**: 위 네 경로에 새 외부 호스트나 관리형 서비스를 넣는 변경은 정체성
+위반이다. 새 의존은 포트 뒤 선택 어댑터로 두고, 그것이 없을 때 무엇이 꺼지는지를 말한다 —
+말하지 않은 채 조용히 비활성이 되는 기능은 이 저장소에서 손실로 친다(AGENTS.md 의 *Report what
+was lost*).
+
 ## 스택
 
 - Node.js 24, pnpm 11 (`packageManager` 로 고정)
