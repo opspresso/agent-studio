@@ -1,18 +1,16 @@
 # ✨ Agent Studio
 
-**기업이 자기 네트워크 안에서 AI 에이전트를 만들고 운영하는 플랫폼.**
-모델·스킬·MCP·워크플로·트레이싱·평가·거버넌스를 한곳에 두고 프롬프트·에이전트·비용을 관리한다.
+**기업이 자기 네트워크 안에 설치해 운영하는 에이전트 플랫폼이다.** 프롬프트나 에이전트를
+**project** 로 만들고, **version** 으로 다듬고, 하나를 publish 한 뒤 어디서든 호출한다. 호출
+창구는 콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, Teams, webhook, A2A 로 연결된 다른
+에이전트, AG-UI 로 임베드한 앱이다. 모든 런은 귀속되고, 값이 매겨지고, 경계가 지어진다.
 
-**설치형이다.** 고객에게 파는 SaaS 가 아니라 기업이 자기 IDC·VPC 에 올려 쓰는 소프트웨어이고,
-한 설치가 한 기업을 담는다. 부팅·로그인·런·콘솔은 외부 네트워크 없이 동작하며 밖으로 나가는
-연결은 전부 선택이다. 그것이 무엇을 강제하는지는
-[ARCHITECTURE.md](docs/ARCHITECTURE.md#무엇을-위한-시스템인가) 에, 폐쇄망에서 무엇을 대신하는지는
-[INSTALL.md](docs/INSTALL.md#폐쇄망air-gapped에서) 에 있다.
-
-프롬프트나 에이전트를 **project** 로 만들고, **version** 으로 다듬고, 하나를 publish 한
-뒤 어디서든 호출한다. 호출 창구는 콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, Teams,
-webhook, A2A 로 연결된 다른 에이전트, AG-UI 로 임베드한 앱이다. 모든 런은 귀속되고, 값이
-매겨지고, 경계가 지어진다.
+**한 설치 = 한 기업이다.** 멀티테넌시가 없고, 외부 네트워크가 끊긴 IDC 에서도 부팅·로그인·런이
+된다. 밖으로 나가는 연결은 전부 선택이므로 Slack·Teams·Telegram, 외부 모델 제공자, 모델
+카탈로그와 플러그인 자동 sync 는 켜는 만큼만 붙는다. 최소 구성은 **PostgreSQL 하나**이고,
+설치는 [docs/INSTALL.md](docs/INSTALL.md) 가 처음부터 끝까지 안내한다. 그 정체성이 구조에
+무엇을 강제하는지는 [ARCHITECTURE.md](docs/ARCHITECTURE.md#무엇을-위한-시스템인가) 에,
+폐쇄망에서 무엇을 대신하는지는 [INSTALL.md](docs/INSTALL.md#폐쇄망air-gapped에서) 에 있다.
 
 ## 무엇이 들어 있나
 
@@ -36,9 +34,6 @@ webhook, A2A 로 연결된 다른 에이전트, AG-UI 로 임베드한 앱이다
 - Better Auth 1.7 (표준 OIDC(Keycloak · Entra ID · Okta …), Google, 또는 비밀번호)
 - Clean Architecture (`domain` / `application` / `infrastructure` / `app`), 테스트로 강제된다
 - PostgreSQL + pgvector 하나에 모든 행과 케이퍼빌리티 카탈로그. 아티팩트는 S3 호환 스토어(선택)
-
-설치 방법은 [docs/INSTALL.md](docs/INSTALL.md) 에 있다. 호스트 하나(Compose)든 Kubernetes(Helm)든
-최소 구성은 PostgreSQL 하나와 OpenAI 호환 엔드포인트 하나다.
 
 ## 빠른 시작
 

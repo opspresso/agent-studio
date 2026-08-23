@@ -3,7 +3,7 @@
 # One-time migration of what runs produced, from an S3 bucket into this host's
 # MinIO:
 #
-#   /opt/agent-studio/scripts/migrate-objects.sh s3://agent-studio-static
+#   /opt/compose/apps/agent-studio/scripts/migrate-objects.sh s3://agent-studio-static
 #
 # Two steps, so neither store needs to reach the other: `aws s3 sync` brings
 # the bucket's `artifacts/` and `images/` prefixes (the only ones the app

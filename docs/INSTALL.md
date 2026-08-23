@@ -24,11 +24,11 @@ Agent Studio 는 기업이 **자기 네트워크 안에 설치해 운영하는**
 서버들 + 티커로 이뤄진다. 호스트 한 대(4 vCPU / 8GB 권장, 4GB 는 동작하지만 빌드는 못 한다)에:
 
 ```bash
-# 호스트 준비 (Ubuntu 24.04): docker, compose, jq, python3
-sudo bash deploy/idc/scripts/setup-host.sh
+# 호스트에 Docker Engine/Compose 와 jq·python3 를 먼저 놓는다 (ECR·SSM 을 쓰면 AWS CLI 도).
+# opspresso 의 호스트는 deploy/idc/README.md 의 한 줄 부트스트랩을 쓴다.
 
-# 저장소의 deploy/idc 를 /opt/agent-studio 로 복사한 뒤
-cd /opt/agent-studio
+# 저장소의 deploy/idc 를 /opt/compose/apps/agent-studio 로 복사한 뒤
+cd /opt/compose/apps/agent-studio
 cp .env.secrets.example .env.secrets && chmod 600 .env.secrets
 # AES_ENCRYPTION_KEY, BETTER_AUTH_SECRET, LLM_API_KEY, BOOTSTRAP_ADMIN_PASSWORD 또는 OIDC 클라이언트를 채운다
 vi .env.secrets

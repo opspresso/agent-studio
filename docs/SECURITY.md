@@ -797,7 +797,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   - **`proxied`**. 스토어는 앱에게만 닿고 독자는 앱의 주소
     `PUBLIC_BASE_URL/api/objects/<key>?exp=<unix>&sig=<hmac>[&dl=<filename>]` 를 받는다
     (`src/infrastructure/storage/objectUrlToken.ts`). 모델 제공자도 그 독자의 하나라
-    `PUBLIC_BASE_URL` 에 닿아야 한다([CONFIGURATION.md](CONFIGURATION.md#설정-변수)). **그 라우트는 세션을 요구하지 않으며
+    `PUBLIC_BASE_URL` 에 닿아야 한다([CONFIGURATION.md](CONFIGURATION.md#핵심)). **그 라우트는 세션을 요구하지 않으며
     그것이 계약이다**: 주소를 쥐는 것은 `<img>` 태그, Slack 메시지, 재생된 턴을 가져가는 모델
     제공자라 쿠키를 낼 수 없다. 토큰이 자격 증명이다. 키·만료·파일명을 함께 덮는 HMAC-SHA256
     이고, 서명 키는 `AES_ENCRYPTION_KEY` 에서 HKDF(`agent-studio/object-url/v1`)로 파생되어 그
