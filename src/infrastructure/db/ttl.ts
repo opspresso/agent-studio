@@ -140,24 +140,7 @@ export function expiresAtFromNow(seconds: number, nowMs: number = Date.now()): n
   return Math.floor(nowMs / 1000) + seconds;
 }
 
-/**
- * Unix-seconds TTL for a row whose expiry is already fixed as an ISO instant
- * rather than derived from a retention window — the Better Auth session and
- * verification rows, whose lifetime the auth library decides. Returns undefined
- * for an unparseable value: better to leave the row without a TTL than to write
- * a NaN the put would reject or a 1970 timestamp that deletes it immediately.
- */
-export function expiresAtFromIso(iso: string): number | undefined {
-  const parsed = Date.parse(iso);
-  return Number.isNaN(parsed) ? undefined : Math.floor(parsed / 1000);
-}
-
 /** True once the row's TTL has passed. Absent `expiresAt` never expires. */
 export function isExpired(expiresAt: unknown, nowMs: number): boolean {
   return typeof expiresAt === "number" && expiresAt * 1000 <= nowMs;
-}
-
-/** Drop rows whose TTL has already passed (physical purge lags). */
-export function notExpired<T extends Record<string, unknown>>(items: T[], nowMs: number): T[] {
-  return items.filter((item) => !isExpired(item.expiresAt, nowMs));
 }
