@@ -2,8 +2,7 @@ import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import { MAX_SAVED_FILE_BYTES } from "@/domain/artifact/types";
 import { MAX_DOCUMENT_BYTES } from "@/domain/llm/documentLimits";
 import { MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
-import { resolvePublicBaseUrl } from "@/lib/public-url";
-import { getArtifactAccessMode } from "@/lib/runtime-settings";
+import { getArtifactAccessMode, getPublicBaseUrl } from "@/lib/runtime-settings";
 import { proxiedObjectPath, verifyObjectUrlToken, type ObjectUrlClaims } from "./objectUrlToken";
 
 /**
@@ -30,7 +29,11 @@ export function withArtifactAccessMode(store: ArtifactObjectStore): ArtifactObje
       const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
       // An empty filename is no filename, which is how the adapter reads it too.
       const downloadAs = options?.downloadAs || undefined;
-      return `${await resolvePublicBaseUrl()}${proxiedObjectPath({ key, exp, downloadAs })}`;
+      // A deployment that has not said its address gets a path, not a guess:
+      // the console is same-origin and resolves it, where the dev default
+      // `http://localhost:3000` would have sent every other reader nowhere.
+      const base = (await getPublicBaseUrl())?.replace(/\/+$/, "") ?? "";
+      return `${base}${proxiedObjectPath({ key, exp, downloadAs })}`;
     },
   };
 }
