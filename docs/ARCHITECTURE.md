@@ -307,8 +307,9 @@ artifact 의 두 번째 축 하나를 위한 것이다: `ARTIFACTOWNER#{email}` 
   때문이고, 또 usage 행은 이미 자기 날짜에 만료되므로 마커도 함께 물러나기 때문이다.
 - **무한히 늘어나는 행은 `expiresAt` 를 갖는다**(`src/infrastructure/db/ttl.ts`). 만료는
   테이블의 기능이 아니라 **틱**이다: schedule-scan 틱마다 `sweepExpiredRows`
-  (`store.deleteExpired`, 호출당 5,000행)가 지난 행을 지우고, 틱은 1분 간격이므로 읽기
-  쪽도 여전히 만료 행을 거른다. 티커가 없는 배포(`SCHEDULE_SCAN_TOKEN` 미설정)는
+  (`store.deleteExpired`, 호출당 5,000행 — Better Auth 의 `session` 테이블은
+  `memberRepository.deleteExpiredSessions` 가 같은 틱에서)가 지난 행을 지우고, 틱은 1분
+  간격이므로 읽기 쪽도 여전히 만료 행을 거른다. 티커가 없는 배포(`SCHEDULE_SCAN_TOKEN` 미설정)는
   아무것도 지우지 않는다 — [OPERATIONS.md](OPERATIONS.md#행-보존).
 - **목록 쿼리는 `queryItems()` 가 매치 전체를 답한다** — 페이지 상한은 예전 스토어의
   것이었지 호출자의 것이 아니었다. 그래서 경계 없이 자랄 수 있는 목록은 `limit` 을

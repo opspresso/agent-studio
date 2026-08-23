@@ -19,7 +19,9 @@ vi.mock("@/infrastructure/db/client", () => ({
   closePool: async () => {},
 }));
 
-const { memberRepository } = await import("@/infrastructure/db/repositories/memberRepository");
+const { memberRepository, deleteExpiredSessions } = await import(
+  "@/infrastructure/db/repositories/memberRepository"
+);
 
 /** The statement text and parameters of the one query a call issued. */
 const issued = () => {
@@ -139,5 +141,16 @@ describe("member repository", () => {
       sql.mockRejectedValue(new Error("throttled"));
       await expect(memberRepository.setTier("u1", "admin")).rejects.toThrow("throttled");
     });
+  });
+
+  it("sweeps expired sessions by the row's own timestamp, bounded per call", async () => {
+    sql.mockResolvedValue([{ id: "s1" }, { id: "s2" }]);
+    const now = new Date("2026-08-23T06:00:00.000Z");
+    await expect(deleteExpiredSessions(now, 100)).resolves.toBe(2);
+    const { text, params } = issued();
+    expect(text).toContain('DELETE FROM "session"');
+    expect(text).toContain('"expiresAt" <= $1');
+    expect(text).toContain("LIMIT $2");
+    expect(params).toEqual([now, 100]);
   });
 });

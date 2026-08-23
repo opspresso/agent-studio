@@ -209,7 +209,7 @@ flush 되므로, 롤아웃에서도 마지막 span 은 남는다.
 ## 행 보존
 
 트레이스, usage 행, chat 과 그 메시지, 아티팩트 행, 트리거 전달, 인바운드 A2A 태스크,
-Slack·Telegram·Teams 중복 제거 claim, Better Auth 세션 행은 모두 유닉스 초 단위 `expiresAt` 을
+Slack·Telegram·Teams 중복 제거 claim 은 모두 유닉스 초 단위 `expiresAt` 을
 지니며, 수명이 고정된 여섯 종류의 행도 마찬가지다: webhook 멱등 claim (24h), Slack 스레드 참여
 (1일 — 봇이 답한 스레드가 "봇의 것" 으로 남아 있는 구간), 원격 대화 (7일, 사용할 때마다 갱신 —
 A2A 에이전트의 `contextId` 가 우리 쪽 대화 하나를 위해 이어지는 구간이며, 그것을 넘기면 다음
@@ -219,7 +219,9 @@ transfer 는 맨바닥에서 시작한다), Telegram·Teams 대화 트랜스크�
 
 > **만료는 테이블의 기능이 아니라 틱이다.** schedule-scan 틱(`POST /api/triggers/scan`)이 돌
 > 때마다 `sweepExpiredRows` 가 `expiresAt` 이 지난 행을 지운다 — 한 번에 최대 5,000행이라
-> 밀린 분량은 다음 틱들이 나눠 가져가고, 실패해도 스캔은 실패하지 않는다.
+> 밀린 분량은 다음 틱들이 나눠 가져가고, 실패해도 스캔은 실패하지 않는다. Better Auth 의
+> `session` 테이블도 같은 틱이 쓴다(자기 `expiresAt` 기준, 같은 상한): 라이브러리는 만료된
+> 세션을 그 쿠키가 다시 올 때만 지우므로, 돌아오지 않은 브라우저의 행은 틱이 아니면 영원히 남는다.
 > **`SCHEDULE_SCAN_TOKEN` 이 없는 배포는 티커가 없고, 따라서 아무것도 지우지 않는다.** 앱은
 > 그 사실을 경고로 올릴 길이 없다 — 테이블 크기만이 말해 준다. Compose 는 `ticker`
 > 프로파일, Helm 은 CronJob 이 그 틱이다 ([Schedule 티커](#schedule-티커)).

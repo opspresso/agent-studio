@@ -80,3 +80,20 @@ export const memberRepository: MemberRepository = {
     return { member, previousTier: toMemberTier(row.previousTier ?? undefined) };
   },
 };
+
+/**
+ * Better Auth deletes an expired session only when its cookie comes back —
+ * a browser that cleared its data, or a sign-in that lapsed before the person
+ * returned, leaves its row forever. The retention tick sweeps those here, in
+ * the one module that may speak SQL to Better Auth's tables. Bounded per
+ * call like the item store's sweep, so a backlog drains over several ticks.
+ * (`verification` needs no sweep: the library purges expired rows on every
+ * lookup.)
+ */
+export async function deleteExpiredSessions(now: Date, limit = 5_000): Promise<number> {
+  const rows = await sql<{ id: string }>(
+    `DELETE FROM "session" WHERE "id" = ANY(ARRAY(SELECT "id" FROM "session" WHERE "expiresAt" <= $1 LIMIT $2)) RETURNING "id"`,
+    [now, limit],
+  );
+  return rows.length;
+}

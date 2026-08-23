@@ -55,7 +55,10 @@ import {
   withArtifactAccessMode,
 } from "@/infrastructure/storage/artifactAccess";
 import { auditRepository } from "@/infrastructure/db/repositories/auditRepository";
-import { memberRepository } from "@/infrastructure/db/repositories/memberRepository";
+import {
+  deleteExpiredSessions,
+  memberRepository,
+} from "@/infrastructure/db/repositories/memberRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
@@ -477,7 +480,12 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
  * than holding one long lock.
  */
 export async function sweepExpiredRows(now: Date = new Date()): Promise<number> {
-  return deleteExpired(Math.floor(now.getTime() / 1000));
+  // Two tables expire rows: the item table by its unix-second `expiresAt`,
+  // and Better Auth's `session` by its own timestamp — which the library
+  // itself purges only when that session's cookie is presented again.
+  const items = await deleteExpired(Math.floor(now.getTime() / 1000));
+  const sessions = await deleteExpiredSessions(now);
+  return items + sessions;
 }
 export const pluginUseCases = createPluginUseCases(pluginRepository);
 /**
