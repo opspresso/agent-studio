@@ -259,4 +259,4 @@ Compose(`deploy/idc/`)와 Kubernetes 의 Helm 차트(`deploy/helm/agent-studio`)
 
 실서비스는 IDC 호스트 하나 위의 Docker Compose 인 **alpha** 이고, Kubernetes 쪽 **prod** 는
 차트만 있고 클러스터는 현재 없다. 무엇을 나누고 무엇을 나누지 않는지는
-[docs/OPERATIONS.md](docs/OPERATIONS.md#두-환경--alpha-와-prod) 에 있다.
+[docs/OPERATIONS.md](docs/OPERATIONS.md#두-환경-alpha-와-prod) 에 있다.
