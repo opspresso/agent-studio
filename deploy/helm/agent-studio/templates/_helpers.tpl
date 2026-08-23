@@ -18,9 +18,21 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- end -}}
 
+{{/*
+The labels every workload of this release shares. On their own they are a
+*prefix* of what the bundled PostgreSQL and MinIO pods carry, so nothing may
+select on them alone: a selector is a subset match, and the app's Deployment
+and Service would claim the database's pods as well. Each workload adds its
+own `app.kubernetes.io/component`, and every selector names one.
+*/}}
 {{- define "agent-studio.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "agent-studio.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{- define "agent-studio.appSelectorLabels" -}}
+{{ include "agent-studio.selectorLabels" . }}
+app.kubernetes.io/component: app
 {{- end -}}
 
 {{/*

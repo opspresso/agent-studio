@@ -13,11 +13,11 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      {{- include "agent-studio.selectorLabels" . | nindent 6 }}
+      {{- include "agent-studio.appSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "agent-studio.selectorLabels" . | nindent 8 }}
+        {{- include "agent-studio.appSelectorLabels" . | nindent 8 }}
       annotations:
         # Both rendered files, so a rotated secret rolls the pods that read it
         # through `envFrom` — a Secret object changing on its own restarts

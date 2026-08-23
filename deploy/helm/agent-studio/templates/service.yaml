@@ -11,4 +11,4 @@ spec:
       port: {{ .Values.service.port }}
       targetPort: http
   selector:
-    {{- include "agent-studio.selectorLabels" . | nindent 4 }}
+    {{- include "agent-studio.appSelectorLabels" . | nindent 4 }}
