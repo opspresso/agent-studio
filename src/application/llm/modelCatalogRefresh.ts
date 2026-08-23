@@ -136,9 +136,18 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
       // so an equal stamp is the quiet hourly case — no reinstall, no log line —
       // and an older one is a stale read (a lagging CDN node) that must not
       // roll the registry back.
+      // The first publish after an upload is exempt here as it is from the
+      // shrink guard below: the stamp the registry holds is the upload's own,
+      // and a trimmed copy of the published document carries the publisher's
+      // stamp unchanged — so "not newer" would keep the removed upload live.
       const incoming = (document as { updatedAt?: unknown } | null)?.updatedAt;
       const current = modelCatalogUpdatedAt();
-      if (typeof incoming === "string" && current !== "" && incoming <= current) {
+      if (
+        installedUpload === undefined &&
+        typeof incoming === "string" &&
+        current !== "" &&
+        incoming <= current
+      ) {
         if (incoming < current) {
           log.warn(
             "models",

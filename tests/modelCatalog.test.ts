@@ -179,6 +179,30 @@ describe("createModelCatalogRefresher", () => {
     vi.useRealTimers();
   });
 
+  it("follows the published catalog again once an upload is removed, even at the same stamp", async () => {
+    const published = catalog([model("openai/a"), model("openai/b"), model("openai/c")], {
+      updatedAt: "2026-08-20T00:00:00.000Z",
+    });
+    // An operator's trimmed copy of that document keeps its stamp.
+    const trimmed = catalog([model("openai/a")], { updatedAt: "2026-08-20T00:00:00.000Z" });
+    const reads: Array<{ document: unknown; upload?: { revision: string } }> = [
+      { document: trimmed, upload: { revision: "r1" } },
+      { document: published },
+      { document: published },
+    ];
+    const refresher = createModelCatalogRefresher({
+      source: { description: "test", load: async () => reads.shift()! },
+      intervalMs: 0,
+    });
+    expect(await refresher.refresh()).toBe(true);
+    expect(getModelConfig("openai/b")).toBeUndefined();
+    // Removed: the next refresh reads the published document, same stamp.
+    expect(await refresher.refresh()).toBe(true);
+    expect(getModelConfig("openai/b")).toBeDefined();
+    // And from then on an equal stamp is the quiet case again.
+    expect(await refresher.refresh()).toBe(false);
+  });
+
   it("installs what the source answers, and keeps the registry when it cannot", async () => {
     install(catalog([model("openai/keep"), model("openai/old")], { updatedAt: "2026-08-20T00:00:00.000Z" }));
     const load = vi.fn<() => Promise<unknown>>();
