@@ -1,12 +1,11 @@
 import { after } from "next/server";
 import { lastPluginSync, pluginsRepoHeadSha, syncPluginsFromRepo } from "@/lib/container";
 import { getPluginsRepoConfig } from "@/lib/runtime-settings";
-import { reportHasFailures } from "@/domain/plugin/sync";
+import { isArchiveSync, reportHasFailures } from "@/domain/plugin/sync";
 import { config } from "@/lib/config";
 import { log } from "@/shared/logger";
 import { timingSafeEqualString } from "@/shared/timingSafe";
 import { unauthorized } from "@/shared/unauthorized";
-import { isArchiveSync } from "@/domain/plugin/sync";
 
 /**
  * The plugins-sync tick. A Kubernetes CronJob (or anything able to POST)
@@ -35,21 +34,29 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "PLUGINS_REPO and GITHUB_TOKEN are not configured" }, { status: 503 });
   }
 
+  // An uploaded archive is a person's decision, and it stands: its commit is
+  // the archive's digest, which no GitHub head will ever equal, so the tick
+  // would otherwise replace the upload within the minute. A sync run on
+  // purpose (`POST /api/plugins/sync`) is how GitHub takes over again.
+  //
+  // Decided on the stored report alone, and *before* the head read: an archive
+  // is uploaded precisely where GitHub cannot be reached, and a head read that
+  // throws must not carry the hold away with it.
+  let last: Awaited<ReturnType<typeof lastPluginSync>> = null;
+  try {
+    last = await lastPluginSync(repoConfig.repo);
+  } catch (error) {
+    log.warn("plugins", "sync tick could not read the last report; running the full sync", error);
+  }
+  if (last && isArchiveSync(last.report.commitSha)) {
+    return Response.json({ started: false, held: "archive" });
+  }
+
   // A minute-by-minute tick must not pay for a full snapshot when nothing
   // moved: one head read against ~30 blob reads. A report carrying a fenced
   // write failure disqualifies the shortcut — only a re-run repairs it.
   try {
-    const [head, last] = await Promise.all([
-      pluginsRepoHeadSha(repoConfig),
-      lastPluginSync(repoConfig.repo),
-    ]);
-    // An uploaded archive is a person's decision, and it stands: its commit
-    // is the archive's digest, which no GitHub head will ever equal, so the
-    // tick would otherwise replace the upload within the minute. A sync run
-    // on purpose (`POST /api/plugins/sync`) is how GitHub takes over again.
-    if (last && isArchiveSync(last.report.commitSha)) {
-      return Response.json({ started: false, held: "archive" });
-    }
+    const head = await pluginsRepoHeadSha(repoConfig);
     if (last && head === last.report.commitSha && !reportHasFailures(last.report)) {
       return Response.json({ started: false, upToDate: true });
     }
