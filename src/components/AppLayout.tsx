@@ -147,12 +147,19 @@ function isActive(pathname: string, href: string): boolean {
 export function AppLayout({
   version,
   viewer,
+  userImage,
   signInProviders,
   children,
 }: {
   version: string;
   /** Resolved by the root layout; `null` when nobody is signed in. */
   viewer: Viewer | null;
+  /**
+   * The identity provider's picture for this account, or `null`. It rides
+   * beside the viewer rather than inside it: `Viewer` is what `GET /api/me`
+   * answers with and what the pages gate on, and a face is neither.
+   */
+  userImage: string | null;
   /** What the header's sign-in control offers a signed-out visitor. */
   signInProviders: SignInProviders;
   children: React.ReactNode;
@@ -240,7 +247,11 @@ export function AppLayout({
             <Group gap="xs" ml="auto" wrap="nowrap">
               <LocaleToggle />
               <ThemeToggle />
-              <UserMenu email={viewer?.email ?? null} signInProviders={signInProviders} />
+              <UserMenu
+                email={viewer?.email ?? null}
+                image={userImage}
+                signInProviders={signInProviders}
+              />
             </Group>
           </Group>
       </AppShell.Header>

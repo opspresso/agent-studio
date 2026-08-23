@@ -27,9 +27,17 @@ import { SignInButton, type SignInProviders } from "./SignInButton";
  */
 export function UserMenu({
   email,
+  image,
   signInProviders,
 }: {
   email: string | null;
+  /**
+   * The identity provider's picture, when it gave one. Mantine falls back to
+   * the initial below whenever the URL is absent *or* fails to load, which is
+   * what an install with no route to the provider's CDN gets: a letter, not a
+   * broken image.
+   */
+  image: string | null;
   signInProviders: SignInProviders;
 }) {
   const [signingOut, setSigningOut] = useState(false);
@@ -54,9 +62,16 @@ export function UserMenu({
   return (
     <Menu position="bottom-end" width={240} withinPortal>
       <Menu.Target>
-        <ActionIcon variant="default" size="lg" aria-label={t("auth.account")} title={email}>
-          {/* The initial, not a photo: no identity provider here supplies one. */}
-          <Avatar size={22} radius="xl" color="brand" variant="light">
+        <ActionIcon
+          variant="default"
+          size="lg"
+          radius="xl"
+          aria-label={t("auth.account")}
+          title={email}
+        >
+          {/* Filling the round button, so a photo reads as the account rather
+              than as a picture someone put in a box. */}
+          <Avatar src={image} size={26} radius="xl" color="brand" variant="light">
             {email.slice(0, 1).toUpperCase()}
           </Avatar>
         </ActionIcon>
