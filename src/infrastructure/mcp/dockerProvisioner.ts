@@ -13,7 +13,10 @@
  */
 
 import { execFile } from "node:child_process";
-import { MANAGED_ENV_REF, MANAGED_IMAGE, managedPortFor } from "./managedPort";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { MANAGED_ENV_KEY, MANAGED_ENV_REF, MANAGED_IMAGE, managedPortFor } from "./managedPort";
 import { promisify } from "node:util";
 import { MANAGED_NAME } from "@/domain/naming";
 import type {
@@ -35,8 +38,40 @@ function assertSafe(value: string, pattern: RegExp, what: string): string {
 
 
 async function docker(args: string[]): Promise<string> {
-  const { stdout } = await run("docker", args, { timeout: 300_000 });
-  return stdout.trim();
+  try {
+    const { stdout } = await run("docker", args, { timeout: 300_000 });
+    return stdout.trim();
+  } catch (error) {
+    // execFile's own message repeats the whole command line, and a `docker
+    // run` line used to carry every decrypted environment value. What is
+    // worth keeping is what the CLI said on stderr; the argv is ours already.
+    const failed = error as { stderr?: unknown; code?: unknown };
+    const stderr = typeof failed.stderr === "string" ? failed.stderr.trim() : "";
+    const reason =
+      stderr ||
+      (failed.code === "ENOENT"
+        ? "the docker binary is not on this host's PATH"
+        : `exit ${String(failed.code ?? "unknown")}`);
+    throw new Error(`docker ${args[0] ?? ""} failed: ${reason}`);
+  }
+}
+
+/**
+ * The container's environment as an env-file: one `KEY=VALUE` per line, which
+ * is why a value cannot hold a line break. Written to a 0600 file the CLI
+ * reads at start and removed once it has — never passed as `-e KEY=VALUE`,
+ * which put each secret on a command line `ps` and the error path could show.
+ */
+function envFileContent(environment: Record<string, string>): string {
+  return Object.entries(environment)
+    .map(([key, value]) => {
+      assertSafe(key, MANAGED_ENV_KEY, "environment variable name");
+      if (/[\r\n]/.test(value)) {
+        throw new Error(`Refusing an environment value with a line break: ${key}`);
+      }
+      return `${key}=${value}\n`;
+    })
+    .join("");
 }
 
 export function createDockerProvisioner(): McpProvisioner {
@@ -55,7 +90,21 @@ export function createDockerProvisioner(): McpProvisioner {
         // if it genuinely is not there.
       });
       await docker(["rm", "-f", name]).catch(() => {});
-      await docker([
+      const environment = spec.environment ?? {};
+      const envDir = await mkdtemp(join(tmpdir(), "agent-studio-mcp-"));
+      const envFile = join(envDir, "env");
+      try {
+        await writeFile(envFile, envFileContent(environment), { mode: 0o600 });
+        await startContainer(envFile);
+      } finally {
+        await rm(envDir, { recursive: true, force: true });
+      }
+      const state = await docker(["inspect", "-f", "{{.Id}} {{.State.Running}}", name]);
+      const [identity = "", running = "false"] = state.split(/\s+/);
+      return { name, address: `http://127.0.0.1:${port}`, identity, running: running === "true" };
+
+      async function startContainer(environmentFile: string): Promise<void> {
+        await docker([
         "run",
         "-d",
         "--name",
@@ -80,18 +129,14 @@ export function createDockerProvisioner(): McpProvisioner {
           "--env-file",
           assertSafe(ref, MANAGED_ENV_REF, "env reference"),
         ]),
-        ...Object.entries(spec.environment ?? {}).flatMap(([key, value]) => [
-          "-e",
-          `${key}=${value}`,
-        ]),
+        // After the operator's references, so an entry's own environment wins.
+        ...(Object.keys(environment).length > 0 ? ["--env-file", environmentFile] : []),
         "-e",
         `PORT=${target}`,
         image,
         ...args,
       ]);
-      const state = await docker(["inspect", "-f", "{{.Id}} {{.State.Running}}", name]);
-      const [identity = "", running = "false"] = state.split(/\s+/);
-      return { name, address: `http://127.0.0.1:${port}`, identity, running: running === "true" };
+      }
     },
 
     async stop(name: string): Promise<void> {
