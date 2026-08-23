@@ -278,6 +278,36 @@ fi
 echo "== pulling"
 docker compose pull --quiet --ignore-pull-failures
 
+# --- The database mcp-memory keeps its memories in -------------------------
+
+# Beside the app's, in the same server. `deploy/postgres/init.sql` creates it
+# for a checkout of this repository, but a host holds only `deploy/idc/` — and
+# an image's initdb hook fires on a first boot alone anyway, never on the host
+# that already has a volume. A server pointed at a database that is not there
+# restarts on a connection error for as long as it is left running, and says
+# nothing else. So it is ensured here, on every run, which costs one query.
+echo "== databases"
+docker compose up -d --no-deps postgres > /dev/null
+ready=false
+for _ in {1..60}; do
+  if docker compose exec -T postgres pg_isready -U agent_studio -d agent_studio > /dev/null 2>&1; then
+    ready=true
+    break
+  fi
+  sleep 1
+done
+if [[ "$ready" != true ]]; then
+  echo "postgres did not become ready — see docker compose logs postgres" >&2
+  exit 1
+fi
+if docker compose exec -T postgres psql -U agent_studio -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname = 'mcp_memory'" | grep -q 1; then
+  echo "   mcp_memory: present"
+else
+  docker compose exec -T postgres createdb -U agent_studio -O agent_studio mcp_memory
+  echo "   mcp_memory: created"
+fi
+
 # ONLY=<services> brings up those services and nothing else — how a migration
 # starts the new database and object store beside the running app, fills
 # them, and only then switches the app over with a plain run.

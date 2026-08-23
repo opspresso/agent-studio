@@ -181,9 +181,10 @@ services:
 
   # --- MCP servers that need an AWS account (profile `aws`) ---------------
   # mcp-memory keeps its memories in this host's PostgreSQL — a database of
-  # its own beside the app's, created by `deploy/postgres/init.sql` on a first
-  # boot (an existing volume needs it created by hand: `CREATE DATABASE
-  # mcp_memory OWNER agent_studio`). What still needs AWS is the *embedder*:
+  # its own beside the app's, which `scripts/deploy.sh` ensures on every run.
+  # Nothing here can: a host holds only `deploy/idc/`, so the repository's
+  # `deploy/postgres/init.sql` never reaches it, and an initdb hook would fire
+  # on a first boot alone anyway. What still needs AWS is the *embedder*:
   # the memories already written are Titan vectors, and pgvector refuses to
   # compare two models' output, so the key in .env.aws stays until a
   # deployment re-embeds against its own endpoint. mcp-cloudwatch reads

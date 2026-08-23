@@ -54,8 +54,8 @@ docker compose ps                         # app healthy, postgres healthy, minio
 그 이메일은 `ADMIN_EMAILS` 에도). OIDC 를 붙이면 비밀번호 로그인은 비상용으로 남겨 두거나
 `AUTH_PASSWORD` 를 끈다.
 
-백업은 `scripts/backup.sh [DEST]` 로 한다. `pg_dump` + 오브젝트 미러 + `.env.host` 를 담는다. 복원
-절차는 스크립트 머리에 있다.
+백업은 `scripts/backup.sh [DEST]` 로 한다. 두 데이터베이스(앱의 `agent_studio`, mcp-memory 의
+`mcp_memory`)의 `pg_dump` + 오브젝트 미러 + `.env.host` 를 담는다. 복원 절차는 스크립트 머리에 있다.
 
 ## Kubernetes 에 설치 (Helm)
 

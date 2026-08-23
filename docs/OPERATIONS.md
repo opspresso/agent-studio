@@ -483,7 +483,8 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오는 �
         손으로 등록한 Skill 이나 서버는 영영 발견되지 않는다
       - `PLUGINS_REPO` 가 설정됐다면 `/api/plugins/sync/scan`. 할 일이 없는 틱은 head SHA
         하나만 읽으므로 1분 간격이어도 괜찮다
-- [ ] **백업.** Compose: `deploy/idc/scripts/backup.sh [DEST]`. `pg_dump` + 오브젝트 미러 +
+- [ ] **백업.** Compose: `deploy/idc/scripts/backup.sh [DEST]`. 두 데이터베이스(`agent_studio`
+      와 mcp-memory 의 `mcp_memory`)의 `pg_dump` + 오브젝트 미러 +
       `.env.host`, 최신 `KEEP`(기본 7)개 유지, 복원 절차는 스크립트 머리. Helm: 조직의
       Postgres 백업과 오브젝트 스토어 백업이 그 역할이고, `catalog_vectors` 는 복원 대신
       재색인으로도 충분하다

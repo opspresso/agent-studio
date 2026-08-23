@@ -4,13 +4,17 @@
 #
 #   /opt/compose/apps/agent-studio/scripts/backup.sh [DEST_DIR]      # default: ./backups
 #
-# Writes `<dest>/<timestamp>/db.sql.gz` (a `pg_dump` of the database, custom
-# format through gzip) and `<dest>/<timestamp>/objects/` (every object in the
+# Writes `<dest>/<timestamp>/db.sql.gz` (a `pg_dump` of the app's database
+# through gzip), `<dest>/<timestamp>/mcp-memory.sql.gz` (the same for the
+# database mcp-memory keeps its memories in — a second database on the same
+# server, and a backup that skipped it lost every remembered thing while
+# reporting success), and `<dest>/<timestamp>/objects/` (every object in the
 # bucket, as files), plus a copy of `.env.host` — the credentials the data
 # needs. Keeps the newest KEEP (default 7) backups.
 #
 # Restore, on a fresh host with compose up and `.env.host` restored:
 #   gunzip -c db.sql.gz | docker compose exec -T postgres psql -U agent_studio agent_studio
+#   gunzip -c mcp-memory.sql.gz | docker compose exec -T postgres psql -U agent_studio mcp_memory
 #   docker compose run --rm --entrypoint sh -v "$PWD/objects:/restore:ro" minio-init \
 #     -c 'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc mirror /restore "local/$S3_BUCKET_NAME"'
 
@@ -30,6 +34,16 @@ bucket="$(grep -E '^S3_BUCKET_NAME=' .env | head -1 | cut -d= -f2-)"
 echo "== database"
 docker compose exec -T postgres pg_dump -U agent_studio --clean --if-exists agent_studio |
   gzip -9 > "$out/db.sql.gz"
+
+# A database the app never opens, and the only copy of what agents remember.
+# Absent on a host that has never run the `aws` profile — that is not a
+# failure, and an empty file would be a worse answer than no file.
+if docker compose exec -T postgres psql -U agent_studio -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname = 'mcp_memory'" | grep -q 1; then
+  echo "== database (mcp-memory)"
+  docker compose exec -T postgres pg_dump -U agent_studio --clean --if-exists mcp_memory |
+    gzip -9 > "$out/mcp-memory.sql.gz"
+fi
 
 echo "== objects ($bucket)"
 mkdir -p "$out/objects"
