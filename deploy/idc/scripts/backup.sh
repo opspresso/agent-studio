@@ -11,8 +11,8 @@
 #
 # Restore, on a fresh host with compose up and `.env.host` restored:
 #   gunzip -c db.sql.gz | docker compose exec -T postgres psql -U agent_studio agent_studio
-#   docker compose run --rm -v "$PWD/objects:/restore:ro" minio-init \
-#     sh -c 'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc mirror /restore "local/$S3_BUCKET_NAME"'
+#   docker compose run --rm --entrypoint sh -v "$PWD/objects:/restore:ro" minio-init \
+#     -c 'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc mirror /restore "local/$S3_BUCKET_NAME"'
 
 set -euo pipefail
 
@@ -33,8 +33,10 @@ docker compose exec -T postgres pg_dump -U agent_studio --clean --if-exists agen
 
 echo "== objects ($bucket)"
 mkdir -p "$out/objects"
-docker compose run --rm -T -v "$(realpath "$out/objects"):/backup" minio-init \
-  sh -c 'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc mirror --quiet "local/$S3_BUCKET_NAME" /backup' \
+# `--entrypoint sh`: the service's own entrypoint is the bucket-creating
+# script, and `run` would append the command to it rather than replace it.
+docker compose run --rm -T --entrypoint sh -v "$(realpath "$out/objects"):/backup" minio-init \
+  -c 'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc mirror --quiet "local/$S3_BUCKET_NAME" /backup' \
   > /dev/null
 
 cp .env.host "$out/env.host"
