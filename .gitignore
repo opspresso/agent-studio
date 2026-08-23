@@ -12,6 +12,7 @@ build/
 # env
 .env
 .env.local
+.env.local.*
 .env.*.local
 
 # deploy — the filled-in copies of deploy/*/*.example, and the kubeconfig the
