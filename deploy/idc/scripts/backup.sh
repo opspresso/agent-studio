@@ -35,7 +35,10 @@ echo "== objects ($bucket)"
 mkdir -p "$out/objects"
 # `--entrypoint sh`: the service's own entrypoint is the bucket-creating
 # script, and `run` would append the command to it rather than replace it.
-docker compose run --rm -T --entrypoint sh -v "$(realpath "$out/objects"):/backup" minio-init \
+# `--user`: the image runs as root, and a root-owned mirror is one this
+# script's own prune cannot delete. `mc` needs a writable config dir then.
+docker compose run --rm -T --entrypoint sh --user "$(id -u):$(id -g)" -e MC_CONFIG_DIR=/tmp/mc \
+  -v "$(realpath "$out/objects"):/backup" minio-init \
   -c 'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc mirror --quiet "local/$S3_BUCKET_NAME" /backup' \
   > /dev/null
 
