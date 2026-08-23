@@ -2,7 +2,7 @@
 #
 # The whole update procedure for this host, in one script:
 #
-#   /opt/agent-studio/scripts/deploy.sh
+#   /opt/compose/apps/agent-studio/scripts/deploy.sh
 #
 # It rewrites `.env` and `.env.mcp` from three sources — the checked-in
 # examples for configuration, argocd-env-demo for image versions (when GitHub
