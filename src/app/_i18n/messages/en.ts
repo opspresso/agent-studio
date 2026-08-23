@@ -250,130 +250,130 @@ export const en = {
   // page whose content *is* the text.
   "guide.title": "Guide",
   "guide.lede":
-    "How Agent Studio works, and the shortest path from an empty project to an agent other people can call. Every page it names is in the sidebar.",
+    "What Agent Studio does, and how to get from an empty project to an agent your team can call. Every page named here is in the sidebar.",
 
   "guide.start.title": "Start here",
   "guide.start.body":
-    "Four steps, each on a tab of your own project. Publishing decides which version a caller gets when it does not name one — a saved version is already runnable by its own name.",
+    "Four steps, each on a tab of your project. Publishing decides which version a caller gets when the request does not name one. A saved version can also be called by its own name.",
   "guide.start.step1": "Create a project",
   "guide.start.step1Body":
-    "Projects → New project. The name is the identifier every caller uses and cannot be changed afterwards; the type — llm, agent, or image — is chosen here too.",
+    "Go to Projects and click New project. The name is the identifier callers use, and you cannot change it later. Pick the type at the same time: llm, agent, or image.",
   "guide.start.step2": "Write a version in the Playground",
   "guide.start.step2Body":
-    "A version holds the model, the prompts, the budgets, and everything the run may reach. Save it and run it in the panel beside the editor. A saved version is a snapshot, not a deployment, so change it as often as you like.",
+    "A version holds the model, the prompts, the limits, and everything the run can use. Save it, then run it in the panel next to the editor. Edit and save again as often as you need.",
   "guide.start.step3": "Publish one",
   "guide.start.step3Body":
-    "Publishing moves a pointer. A caller that asks for the published version follows it from then on; a caller that pinned a version number stays exactly where it was.",
+    "Publishing points the project at that version. Callers that ask for the published version get it from then on. Callers that named a version number keep the version they named.",
   "guide.start.step4": "Let something call it",
   "guide.start.step4Body":
-    "The API Reference tab documents this project's own endpoints with a copyable curl for each. The Integrations tab issues the project token and connects Slack, Telegram, Teams, A2A, and AG-UI.",
+    "The API Reference tab lists this project's endpoints with a curl example you can copy. The Integrations tab issues the project token and connects Slack, Telegram, Teams, A2A, and AG-UI.",
 
-  "guide.words.title": "The words this console uses",
+  "guide.words.title": "Words this console uses",
   "guide.words.project": "Project",
   "guide.words.projectBody":
-    "One named unit of work, with one type. It owns its versions, its cost limits, its integrations, and who may see it.",
+    "A unit of work with a name and one type. It holds its versions, cost limits, integrations, and who can see it.",
   "guide.words.version": "Version",
   "guide.words.versionBody":
-    "One named snapshot of a project: model, prompts, tools, turn and token limits. Editing one rewrites it in place rather than making a new one, so a change to the version callers pin — the published one included — reaches them on their next run. Publishing marks one as the answer to a request that names no number.",
+    "A named snapshot of a project: model, prompts, tools, turn and token limits. Saving an edit overwrites that version in place instead of creating a new one. The published version works the same way, so callers see the change on their next run. Publishing marks one version as the default answer.",
   "guide.words.run": "Run",
   "guide.words.runBody":
-    "One execution of a version. Every run is priced, attributed to whoever caused it, bounded by a deadline, and recorded as a trace.",
+    "One execution of a version. Each run gets a price, an owner, a deadline, and a trace.",
   "guide.words.caller": "Caller",
   "guide.words.callerBody":
-    "Who caused a run — you in the console, a project token, a person in Slack. Spend and concurrent runs are counted against the caller, not the project alone.",
+    "Whoever started the run: you in the console, a project token, or a person in Slack. Spend and concurrent runs are counted per caller as well as per project.",
   "guide.words.tier": "Tier",
   "guide.words.tierBody":
-    "Your rung: guest, member, or admin. It decides whether you may create projects and issue tokens, how many runs you may have in flight, and what you may spend in a month. Your own numbers are on the Profile page.",
+    "Your level: guest, member, or admin. It sets whether you can create projects and issue tokens, how many runs you can have at once, and how much you can spend per month. Your own numbers are on the Profile page.",
 
   "guide.types.title": "Three kinds of project",
-  "guide.types.llm": "llm — a single-shot prompt",
+  "guide.types.llm": "llm: one prompt, one answer",
   "guide.types.llmBody":
-    "A user prompt template with {{variables}} filled in at run time, answered once. No tools, no turns after the first.",
-  "guide.types.agent": "agent — a multi-turn tool loop",
+    "A user prompt template with {{variables}} filled in when the run starts. No tools, and no turns after the first.",
+  "guide.types.agent": "agent: a multi-turn tool loop",
   "guide.types.agentBody":
-    "The model works until it has an answer: loading skills, calling MCP tools, handing work to a subagent, drawing images, reading a URL. Which of those it may do is the version's decision, not the model's.",
-  "guide.types.image": "image — draw or edit",
+    "The model keeps working until it has an answer. It can load skills, call MCP tools, pass work to a subagent, draw images, and read a URL. The version decides which of those are available.",
+  "guide.types.image": "image: draw or edit pictures",
   "guide.types.imageBody":
-    "A picture from a prompt, or an edit of one you attach. There is no chat completion to hand back, so the endpoints that answer with one refuse this type; the console, chats, and A2A return the image itself.",
+    "A picture from a prompt, or an edit of one you attach. There is no chat completion to return, so the endpoints that answer with one reject this type. The console, chats, and A2A return the image itself.",
 
-  "guide.reach.title": "What a version may reach",
+  "guide.reach.title": "What a version can use",
   "guide.reach.body":
-    "All of it is off until a version turns it on, and a run that could not use something says so in its answer rather than staying quiet about it.",
+    "Everything here is off until the version turns it on. When a run cannot use something you enabled, it reports that in the answer.",
   "guide.reach.skills": "Skills",
   "guide.reach.skillsBody":
-    "Behaviour written as Markdown. The prompt carries only the name and description of each; the model loads a body when it decides it needs one. The Skills page lists what this deployment has.",
+    "Instructions written in Markdown. The prompt lists only the name and description of each, and the model loads a body when it needs one. The Skills page shows what is available here.",
   "guide.reach.tools": "MCP tools",
   "guide.reach.toolsBody":
-    "Servers registered on the Tools page. A version binds one, narrows which of its tools are offered, and can override the headers sent outbound — secrets included, stored encrypted.",
+    "Servers registered on the Tools page. A version binds a server, chooses which of its tools to offer, and can replace the outbound headers. Secrets are stored encrypted.",
   "guide.reach.subagents": "Subagents",
   "guide.reach.subagentsBody":
-    "Another project, or an entry on the Agents page, that a run can hand a task to. The answer streams back marked with the subagent that wrote it, and its cost is attributed to the same caller.",
+    "Another project, or an entry on the Agents page, that a run can hand a task to. The reply is labelled with the subagent that wrote it, and the cost goes to the same caller.",
   "guide.reach.catalog": "Capability catalog",
   "guide.reach.catalogBody":
-    "One searchable index of every skill, tool, and agent. Turn on “Find capabilities for each request” and each run searches it for what the request is actually about — which widens the version's bindings for that run and never replaces them.",
+    "A searchable index of every skill, tool, and agent. With “Find capabilities for each request” on, each run searches the index and adds what matches to the version's bindings. Nothing is removed from them.",
   "guide.reach.builtins": "Built-ins",
   "guide.reach.builtinsBody":
-    "Switches on the version: draw and edit images, read a URL the model chose, save a file the reader can download, read Slack history where a bot is connected.",
+    "Switches on the version: draw and edit images, read a URL the model picked, save a file the reader can download, and read Slack history where a bot is connected.",
   "guide.reach.memory": "Memory",
   "guide.reach.memoryBody":
-    "What earlier runs stored, recalled before the first token — when the version binds a memory server that offers a recall tool. Without one the switch is inert, and every run says so rather than starting quietly without a memory.",
+    "What earlier runs stored, loaded before the run starts. It works when the version binds a memory server that offers a recall tool. Without one the switch does nothing, and each run reports that.",
 
   "guide.surfaces.title": "Where it can answer",
   "guide.surfaces.body":
-    "Every entry point below runs the same engine and lands in the same cost and trace records. Each takes the published version unless the caller names one — the Playground is the exception, since it runs the version you have open.",
+    "All of these run the same engine and land in the same cost and trace records. They use the published version unless the caller names one. The Playground is the exception: it runs the version you have open.",
   "guide.surfaces.console": "The console",
   "guide.surfaces.consoleBody":
-    "The Playground for a version you are still writing, and Chats for a conversation with a published agent — attachments, streamed replies, tool traffic in line. A chat run outlives the tab that started it.",
+    "Use the Playground for a version you are still writing, and Chats to talk to a published agent. Chats take attachments, stream the reply, and show tool calls in place. A chat run continues after you close the tab.",
   "guide.surfaces.http": "HTTP",
   "guide.surfaces.httpBody":
-    "Three shapes on the API Reference tab: this app's own predict endpoint, an OpenAI-compatible chat completions endpoint, and the agent endpoint that streams tool traffic. A project token authenticates them.",
+    "Three endpoints on the API Reference tab: this app's predict endpoint, an OpenAI-compatible chat completions endpoint, and an agent endpoint that streams tool calls. All three accept the project token.",
   "guide.surfaces.chatbots": "Slack, Telegram, Teams",
   "guide.surfaces.chatbotsBody":
-    "A bot per project, connected on the Integrations tab. Each answers mentions and direct messages, keeps a thread's history, and replies by editing one message as the answer grows.",
+    "One bot per project, set up on the Integrations tab. Each answers mentions and direct messages, follows the thread it is in, and edits a single message as the answer grows.",
   "guide.surfaces.triggers": "Webhooks and schedules",
   "guide.surfaces.triggersBody":
-    "On the Settings tab: one webhook URL for something outside to fire, and any number of cron schedules. Both run the published version and keep their history beside them.",
+    "On the Settings tab: one webhook URL for an outside system to call, and as many cron schedules as you need. Both run the published version, and their history is on the same tab.",
   "guide.surfaces.a2a": "A2A",
   "guide.surfaces.a2aBody":
-    "Publish this project as an A2A agent for another system to call, and register other agents to hand work to. Both directions are on the Integrations tab.",
+    "Publish this project as an A2A agent for another system to call, or register other agents to send work to. Both are on the Integrations tab.",
   "guide.surfaces.agui": "AG-UI",
   "guide.surfaces.aguiBody":
-    "Embed a published project in your own app: the client sends its thread and gets the protocol's events back, so the agent runs inside a product rather than beside it.",
+    "Embed a published project in your own app. The client sends its thread and receives the protocol's events, so the agent runs inside your product.",
 
-  "guide.limits.title": "Cost, limits, and what is kept",
+  "guide.limits.title": "Cost, limits, and records",
   "guide.limits.cost": "Every run is priced",
   "guide.limits.costBody":
-    "What the channel charged, or the registry's rate for that model. The overview rolls it up per project and per model, a project's Usage tab per caller, and your Profile page shows your own.",
+    "The price is what the channel charged, or the registry rate for that model. The overview groups it by project and model, a project's Usage tab groups it by caller, and the Profile page shows your own spend.",
   "guide.limits.guards": "Thresholds alert, then refuse",
   "guide.limits.guardsBody":
-    "A project's daily and monthly limits live on its Settings tab. Crossing the alert threshold posts one notification to the channels the project named and runs carry on; crossing the block threshold refuses them until the window rolls over — UTC midnight for the day, the first for the month.",
-  "guide.limits.tier": "Your tier bounds you too",
+    "A project's daily and monthly limits are on its Settings tab. Crossing the alert threshold sends one notification to the channels the project lists, and runs continue. Crossing the block threshold refuses new runs until the window resets: UTC midnight for the day, the first of the month for the month.",
+  "guide.limits.tier": "Your tier applies too",
   "guide.limits.tierBody":
-    "A monthly cap across every project, and a ceiling on how many runs you may have in flight at once. The Profile page shows both, and an admin can move them.",
+    "A monthly cap across every project, and a limit on how many runs you can have at once. Both are on the Profile page, and an admin can change them.",
   "guide.limits.records": "What a run leaves behind",
   "guide.limits.recordsBody":
-    "A trace per run with its turns and tool calls on the project's Traces tab, and every image or file it produced under Artifacts — yours on the sidebar's Artifacts page, the project's on its own tab.",
+    "A trace with its turns and tool calls on the project's Traces tab, and any image or file it produced under Artifacts. Your own are on the Artifacts page in the sidebar. The project's are on its Artifacts tab.",
 
   "guide.trouble.title": "When something does not work",
   "guide.trouble.refused": "A run was refused over cost",
   "guide.trouble.refusedBody":
-    "Either the project's daily or monthly threshold, or your tier's monthly cap. The project's Settings tab shows the first, your Profile the second; an admin can raise either.",
-  "guide.trouble.model": "The model I want is not in the list",
+    "It hit the project's daily or monthly threshold, or your tier's monthly cap. The project's Settings tab shows the first, the Profile page the second. An admin can raise either.",
+  "guide.trouble.model": "The model I want is missing",
   "guide.trouble.modelBody":
-    "The Models page lists what this deployment can reach, and only an admin turns one on. A model the catalog does not carry still runs, but its usage is recorded at zero cost.",
+    "The Models page lists what this deployment can reach, and only an admin can enable one. A model the catalog does not carry still runs, but its usage is recorded at zero cost.",
   "guide.trouble.tool": "The model never calls my MCP tool",
   "guide.trouble.toolBody":
-    "Check the version's binding — one narrowed to a list of tools hides the rest — and that the server answered discovery, which the Tools page shows. A run that could not reach a bound server says so in its answer.",
+    "Check the version's binding first: one limited to a list of tools hides the others. Then check that the server answered discovery, which the Tools page shows. When a run cannot reach a bound server, it reports that in the answer.",
   "guide.trouble.slack": "The Slack bot stays silent",
   "guide.trouble.slackBody":
-    "It answers mentions, direct messages, and channel messages matching the keywords you gave it; anything else it ignores on purpose. The Integrations tab has a test button that checks the bot token, and lists the channels the bot has been invited to.",
-  "guide.trouble.tab": "I closed the tab mid-answer",
+    "The bot answers mentions, direct messages, and channel messages that match the keywords you set. It ignores everything else. The Integrations tab has a test button that checks the bot token and lists the channels the bot was invited to.",
+  "guide.trouble.tab": "I closed the tab while it was answering",
   "guide.trouble.tabBody":
-    "The run keeps going — the browser leaving means the reader left, not stop. Reopen the chat and the answer is there.",
+    "The run continues. Open the chat again and the answer is there.",
 
   "guide.more.title": "Where to read more",
   "guide.more.body":
-    "Each project's API Reference tab documents that project. The install, configuration, security, and operations documents ship with the source under docs/ — INSTALL.md, CONFIGURATION.md, SECURITY.md, OPERATIONS.md — so they are readable on a deployment with no internet at all.",
+    "Each project's API Reference tab covers that project. The install, configuration, security, and operations documents ship with the source under docs/: INSTALL.md, CONFIGURATION.md, SECURITY.md, and OPERATIONS.md. They are readable on a deployment with no internet access.",
 
   // Chats: the sidebar, the thread, the composer and the parts a turn is drawn
   // from.
