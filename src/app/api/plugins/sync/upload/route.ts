@@ -15,9 +15,6 @@ import { selectionSchema } from "../_lib/selection";
  */
 const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 
-/** Provenance is a `github:<repo>#<plugin>` segment: no `#`, nothing exotic. */
-const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,199}$/;
-
 const badRequest = (error: string): Response => Response.json({ error }, { status: 400 });
 
 /**
@@ -60,16 +57,10 @@ export const POST = withAdminAuth(async (user, request: Request) => {
     return badRequest("The archive is empty");
   }
 
-  const repoField = form.get("repo");
-  let repo: string;
-  if (typeof repoField === "string" && repoField.trim() !== "") {
-    if (!REPO_NAME.test(repoField.trim())) {
-      return badRequest("Invalid `repo`: letters, digits, `.`, `_`, `-` and `/` only");
-    }
-    repo = repoField.trim();
-  } else {
-    repo = archiveSyncRepo((await getPluginsRepoConfig()).repo);
-  }
+  // One name, the same one `GET /api/plugins/sync` reads the last report
+  // under: the configured repository, else `archive`. A caller-chosen name
+  // used to be accepted here, and stored a report the console never showed.
+  const repo = archiveSyncRepo((await getPluginsRepoConfig()).repo);
 
   const selectionField = form.get("selection");
   let selectionJson: unknown = {};

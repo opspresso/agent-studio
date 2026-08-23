@@ -88,14 +88,16 @@ describe("POST /api/plugins/sync/upload", () => {
     expect(syncPluginsFromArchive.mock.calls[0]?.[3]).toEqual({});
   });
 
-  it("takes an explicit provenance name and refuses one that cannot be a source segment", async () => {
+  it("stores the report under the name the console reads it back from, whatever the form says", async () => {
+    // `GET /api/plugins/sync` reads the last report under the configured
+    // repository (else `archive`); a caller-chosen name used to be accepted
+    // here and stored a report that page never showed.
     await upload({ file: new Blob([ARCHIVE]), repo: "mirror/agent-plugins" });
-    expect(syncPluginsFromArchive.mock.calls[0]?.[1]).toBe("mirror/agent-plugins");
+    expect(syncPluginsFromArchive.mock.calls[0]?.[1]).toBe("opspresso/agent-plugins");
 
-    const res = await upload({ file: new Blob([ARCHIVE]), repo: "bad#name" });
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/Invalid `repo`/);
-    expect(syncPluginsFromArchive).toHaveBeenCalledTimes(1);
+    repoConfig.value = { repo: undefined, branch: "main", token: undefined };
+    await upload({ file: new Blob([ARCHIVE]) });
+    expect(syncPluginsFromArchive.mock.calls[1]?.[1]).toBe("archive");
   });
 
   it("answers 400 for a body that is not multipart, has no file, or an empty file", async () => {
