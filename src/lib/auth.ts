@@ -182,12 +182,25 @@ export async function ensureBootstrapAdmin(): Promise<void> {
   if (existing && (await ctx.internalAdapter.findCredentialAccount(existing.user.id))) {
     return;
   }
+  // `email` is unique, and every instance runs this at boot: two starting
+  // together both read "nobody", both create, and the loser used to fail its
+  // whole boot over a row the winner had just written. The loser reads it
+  // back instead — the account exists either way, which is all this promises.
   const user =
     existing?.user ??
-    (await ctx.internalAdapter.createUser(
-      { email: bootstrap.email, name: "Administrator", emailVerified: true },
-      { method: "email-password" },
-    ));
+    (await ctx.internalAdapter
+      .createUser(
+        { email: bootstrap.email, name: "Administrator", emailVerified: true },
+        { method: "email-password" },
+      )
+      .catch(async (error: unknown) => {
+        const raced = await ctx.internalAdapter.findUserByEmail(bootstrap.email);
+        if (!raced) {
+          throw error;
+        }
+        log.info("authz", `bootstrap administrator ${bootstrap.email} was created by another instance`);
+        return raced.user;
+      }));
   // The shape the library's own sign-up writes for a password account: a
   // `credential` provider under its local issuer namespace.
   await ctx.internalAdapter.linkAccount({
