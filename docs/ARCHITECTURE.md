@@ -732,6 +732,8 @@ SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건
 /skills  /tools (MCP)  /agents  /plugins  (각각 + /[name] 상세 페이지)
 /dashboard            `/` 로 리다이렉트, `/` 가 마지막 섹션으로 비용 대시보드를 담는다
 /profile              내 tier, 그것이 제한하는 것, 이번 UTC 달의 지출
+/guide                콘솔을 처음 쓰는 사람을 위한 가이드 — 개념, 첫 프로젝트,
+                      호출 창구, 비용과 한도. 두 언어 모두 메시지 카탈로그에 있다
 /members              admin 전용 워크스페이스 멤버 목록, 가입·마지막 로그인 시각 포함
 /models               모델 레지스트리, member tier 이상 읽기 가능; enable 토글과
                       모델별 도달성 테스트는 admin 전용

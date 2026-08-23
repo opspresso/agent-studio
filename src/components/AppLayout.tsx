@@ -19,6 +19,7 @@ import {
   IconBook2,
   IconChartBar,
   IconChevronRight,
+  IconCompass,
   IconCpu,
   IconFolder,
   IconMessageCircle,
@@ -62,6 +63,7 @@ const NAV_GROUPS = [
       { href: "/chats", label: "nav.chats", Icon: IconMessageCircle },
       { href: "/artifacts", label: "nav.artifacts", Icon: IconPhoto },
       { href: "/profile", label: "nav.profile", Icon: IconUser },
+      { href: "/guide", label: "nav.guide", Icon: IconCompass },
     ],
   },
   {
