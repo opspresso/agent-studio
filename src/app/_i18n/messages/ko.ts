@@ -674,6 +674,11 @@ export const ko: Messages = {
   "artifacts.kindImage": "이미지",
   "artifacts.kindDocument": "문서",
 
+  "viewer.showInfo": "정보 보기",
+  "viewer.hideInfo": "정보 숨기기",
+  "viewer.copyPrompt": "프롬프트 복사",
+  "viewer.close": "닫기",
+
   "managed.title": "관리형 MCP 서버 실행",
   "managed.start": "시작",
   "managed.hint": "이 호스트에서만 접근할 수 있는 컨테이너를 띄웁니다.",

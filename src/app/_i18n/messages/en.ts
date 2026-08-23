@@ -746,6 +746,13 @@ export const en = {
   "artifacts.kindImage": "image",
   "artifacts.kindDocument": "document",
 
+  // The full-screen image viewer every surface opens a picture in. Its own
+  // namespace rather than `artifacts.`: the gallery is one of four callers.
+  "viewer.showInfo": "Show details",
+  "viewer.hideInfo": "Hide details",
+  "viewer.copyPrompt": "Copy prompt",
+  "viewer.close": "Close",
+
   // Managed MCP: a container this host runs. The start dialog and the server's
   // own settings edit the same fields, so the wording is shared.
   "managed.title": "Run a managed MCP server",
