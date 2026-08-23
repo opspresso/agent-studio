@@ -10,7 +10,7 @@
  *
  * The pod needs no credentials of its own: an EKS Pod Identity association
  * binds the service account to a role carrying `bedrock:InvokeModel`, the same
- * way the DynamoDB and S3 clients here are already authorized.
+ * way the S3 client here is already authorized.
  */
 
 import { InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";

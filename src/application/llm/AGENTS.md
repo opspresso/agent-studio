@@ -40,9 +40,11 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   message, so a megabyte of `SaveFile` content is ~350k tokens per turn and past the window of
   most of the catalog: an unretryable 400 mid-run, after the file was delivered. The
   **announced copy** is rendered by the chat view, buffered by the run log, and persisted onto
-  one 400KB DynamoDB item whose write fails *silently*, taking the reply the reader just
-  watched stream — content and reasoning are truncated onto that item, `tool_calls` is the axis
-  that is not. `boundToolArgs` swaps any value past `MAX_TOOL_ARG_BYTES` for its size, and
+  one chat message row — a row every later turn replays whole, which is why
+  `src/application/chat/run.ts` spends a byte budget of its own on it and why a write that
+  overruns it is caught and logged rather than thrown, taking the reply the reader just
+  watched stream — content and reasoning are truncated onto that budget, `tool_calls` is the
+  axis that is not. `boundToolArgs` swaps any value past `MAX_TOOL_ARG_BYTES` for its size, and
   `boundArgumentText` cuts a call whose arguments never parsed, which is how an oversize one
   most often arrives (the provider cuts the turn mid-file; the accumulator has no cap).
   **Keyed to size, never to a tool name** — a document renderer takes the document's text, and

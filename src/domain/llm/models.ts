@@ -536,6 +536,26 @@ export function loadModelCatalog(
   return { ...parsed.report, removed };
 }
 
+/** What a catalog document holds, read without installing it. */
+export interface ModelCatalogSummary {
+  /** Entries the registry would install. */
+  models: number;
+  /** `id — reason`, one per entry the registry would refuse. */
+  skipped: string[];
+  updatedAt: string;
+}
+
+/**
+ * The same reading `loadModelCatalog` gives a document, without touching the
+ * registry — what an upload is checked against before it is stored, so a
+ * document that is not a catalog is refused at the door rather than at the
+ * next refresh. Throws the loader's own reason for one that cannot be loaded.
+ */
+export function validateModelCatalog(catalog: unknown): ModelCatalogSummary {
+  const { report } = parseCatalog(catalog);
+  return { models: report.loaded, skipped: report.skipped, updatedAt: report.updatedAt };
+}
+
 /**
  * Every model the registry currently holds, hidden ones included, in catalog
  * order — which agent-models states deliberately (providers in its

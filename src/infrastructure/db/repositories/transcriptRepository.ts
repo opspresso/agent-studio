@@ -1,15 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import type {
   ConversationTranscriptRepository,
   TranscriptTurn,
 } from "@/domain/messaging/transcript";
-import { getDocumentClient, getTableName } from "../client";
+import { putItem, queryItems } from "../store";
 import { keys } from "../keys";
-import { expiresAtFromNow, notExpired, TRANSCRIPT_TTL_SECONDS } from "../ttl";
-
-/** Bound on extra pages fetched to refill a list thinned by expired rows. */
-const MAX_LIST_PAGES = 3;
+import { expiresAtFromNow, TRANSCRIPT_TTL_SECONDS } from "../ttl";
 
 /**
  * A conversation's turns, one row each, in the project's partition under a
@@ -24,55 +20,34 @@ const MAX_LIST_PAGES = 3;
 export const transcriptRepository: ConversationTranscriptRepository = {
   async append(projectName, conversationKey, turn) {
     const seq = randomUUID().slice(0, 8);
-    await getDocumentClient().send(
-      new PutCommand({
-        TableName: getTableName(),
-        Item: {
-          ...keys.transcriptTurn(projectName, conversationKey, turn.createdAt, seq),
-          entityType: "transcriptTurn",
-          projectName,
-          conversationKey,
-          role: turn.role,
-          content: turn.content,
-          ...(turn.userId ? { userId: turn.userId } : {}),
-          ...(turn.speaker ? { speaker: turn.speaker } : {}),
-          createdAt: turn.createdAt,
-          // TTL attribute; enable table TTL on `expiresAt` to purge old rows.
-          expiresAt: expiresAtFromNow(TRANSCRIPT_TTL_SECONDS),
-        },
-      }),
-    );
+    await putItem({
+      ...keys.transcriptTurn(projectName, conversationKey, turn.createdAt, seq),
+      entityType: "transcriptTurn",
+      projectName,
+      conversationKey,
+      role: turn.role,
+      content: turn.content,
+      ...(turn.userId ? { userId: turn.userId } : {}),
+      ...(turn.speaker ? { speaker: turn.speaker } : {}),
+      createdAt: turn.createdAt,
+      expiresAt: expiresAtFromNow(TRANSCRIPT_TTL_SECONDS),
+    });
   },
 
   async recent(projectName, conversationKey, limit) {
     const pageLimit = Math.min(Math.max(limit, 1), 100);
-    const client = getDocumentClient();
-    const turns: TranscriptTurn[] = [];
-    let lastKey: Record<string, unknown> | undefined;
-    // Newest first, bounded, and refilled past expired rows the purge has not
-    // reached yet — the same shape the trace list uses, for the same reason.
-    for (let page = 0; page < MAX_LIST_PAGES; page += 1) {
-      const result = await client.send(
-        new QueryCommand({
-          TableName: getTableName(),
-          KeyConditionExpression: "PK = :pk AND begins_with(SK, :turn)",
-          ExpressionAttributeValues: {
-            ":pk": keys.transcriptTurnPrefix(projectName, conversationKey).PK,
-            ":turn": keys.transcriptTurnPrefix(projectName, conversationKey).prefix,
-          },
-          ScanIndexForward: false,
-          Limit: pageLimit,
-          ExclusiveStartKey: lastKey,
-        }),
-      );
-      turns.push(...notExpired(result.Items ?? [], Date.now()).map(fromItem));
-      lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-      if (turns.length >= pageLimit || !lastKey) {
-        break;
-      }
-    }
+    const prefix = keys.transcriptTurnPrefix(projectName, conversationKey);
+    // Newest first, bounded, with expired rows left out before the bound
+    // counts — the sweep is periodic.
+    const items = await queryItems({
+      pk: prefix.PK,
+      sk: { prefix: prefix.prefix },
+      forward: false,
+      limit: pageLimit,
+      notExpiredAt: Math.floor(Date.now() / 1000),
+    });
     // Oldest first: that is the order a history is read in.
-    return turns.slice(0, pageLimit).reverse();
+    return items.map(fromItem).reverse();
   },
 };
 

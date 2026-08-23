@@ -23,7 +23,7 @@ import { unauthorized } from "@/shared/unauthorized";
 type RouteContext = { params: Promise<{ name: string }> };
 
 /**
- * Task state is persisted in DynamoDB (per-project namespace, TTL-expired) so
+ * Task state is persisted in the database (per-project namespace, TTL-expired) so
  * `GetTask`/`CancelTask` work after `SendMessage` across instance restarts
  * and horizontal scaling. See `@/infrastructure/a2a/taskStore`.
  */

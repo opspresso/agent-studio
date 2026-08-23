@@ -174,7 +174,7 @@ flowchart TB
 - **비용**은 channel 이 말해 줄 때는 channel 이 청구한 값이고(`usage.cost_usd`, router 가
   보고하며 그것만이 청구서와 일치한다), 아니면 호출 지점에서 계산한 registry 가격이다
   (`src/domain/llm/models.ts` 의 `calculateCost` / `calculateImageCost`). 어느 쪽이든
-  `recordUsage` 로 전달되고, 그것이 usage repository 의 원자적 `ADD` 에 넘긴다. 단발성 런은
+  `recordUsage` 로 전달되고, 그것이 usage repository 의 행 잠금 아래 합산에 넘긴다. 단발성 런은
   호출마다 기록하고, agent 런은 `createUsageAggregator` 에 턴별 usage 를 모아 런이 끝날 때 한 번
   flush 한다.
 - **Model registry** `src/domain/llm/models.ts`:
@@ -261,7 +261,7 @@ Completions 와 달리, Images API 는 하나의 형태가 *아니다*. Port 의
 
 **mime type 은 읽는 것이지 결코 가정하는 것이 아니다.** 예전에는 `image/png` 로 하드코딩돼
 있었고, 그것은 OpenAI 의 기본 출력 형식이라서만 성립했다. xAI 는 JPEG 로 답한다. 이 값은
-겉치레가 아니다 — 불변 캐시 헤더 아래 S3 오브젝트의 확장자와 `Content-Type` 이 되고, *두 번째*
+겉치레가 아니다 — 불변 캐시 헤더 아래 저장 오브젝트의 확장자와 `Content-Type` 이 되고, *두 번째*
 모델에게 돌려주는 바이트의 `data:` 접두사가 되며, Slack 업로드의 파일명과 A2A artifact 의 type
 이 된다.
 
@@ -282,10 +282,13 @@ provider 는 이미 그림을 그렸고 청구했으므로, 쓰기 실패는 결
 렌더링되고, 빈자리를 남기는 대신 그렇다고 말한다.
 
 **저장된 이미지는 키이고, 그 주소는 읽을 때마다 해석된다.** 행은 접근 정책을 확정하지 않는다.
-`ARTIFACT_ACCESS_MODE=authenticated` 는 키를 시간 제한이 있는 서명 URL 로 해석하고, `public` 은
-지역 S3 직접 URL 로 해석한다. 이미지는 *보여지는* 것이라 파일명을 요구하지 않으며 서명 없는
-주소로 충분하다. **문서**는 자기 이름을 달고 가져가는 것이고 S3 는 서명된 요청에서만 그것을
-받아 주므로, 문서는 어느 모드에서든 미리 서명된다. `resolveImageUrl`
+`ARTIFACT_ACCESS_MODE=proxied` 는 키를 이 앱의 서명 주소(`/api/objects`, HMAC 토큰)로,
+`authenticated` 는 스토어의 시간 제한이 있는 pre-signed URL 로, `public` 은 스토어의 직접 URL 로
+해석한다 — 앞의 둘은 수명이 같고(`urlTtl.ts`), 셋 모두 `withArtifactAccessMode`
+(`src/infrastructure/storage/artifactAccess.ts`)가 S3 어댑터 위에서 호출마다 고르므로 설정
+페이지의 전환은 다음 서명에 반영된다. 이미지는 *보여지는* 것이라 파일명을 요구하지 않으며
+public 에서는 서명 없는 주소로 충분하다. **문서**는 자기 이름을 달고 가져가는 것이고 S3 는
+서명된 요청에서만 그것을 받아 주므로, 문서는 어느 모드에서든 서명된다. `resolveImageUrl`
 (`src/domain/chat/imageRefs.ts`)이 단 하나의 호환 규칙을 소유한다 — `key` 는 해석하고 레거시
 `url` 은 그대로 통과시킨다 — 묻는 독자가 둘이고, 두 번째 표기가 생기는 순간 그중 하나가 조용히
 이미지의 절반을 보여 주지 않게 되기 때문이다. 둘 다 매핑 *전에* 해석하며, 그것이
@@ -296,15 +299,15 @@ authenticated 모드에서 두 수명이 다른 데에는 거꾸로 이해하기
 넘기고, provider 는 `MAX_RUN_DURATION_MS` 만큼 이어질 수 있는 런의 어느 시점에든 그것을
 가져간다. 그래서 replay 수명은 적어 두는 대신 런 마감에서 도출한다. 그러지 않으면 마감을 올렸을
 때, 사용자가 자기 대화 기록에서 볼 수 있는 이미지에 대해 턴이 조용히 실패하기 시작할 것이다.
-세 번째 수명 — SigV4 상한인 7일 — 은 Slack 스레드나 저장된 A2A task 처럼 지속되는 무언가에
+세 번째 수명 — SigV4 pre-sign 의 상한인 7일, proxied 토큰도 같은 값 — 은 Slack 스레드나 저장된 A2A task 처럼 지속되는 무언가에
 적히는 링크를 위한 것이고, 런이 끝나고 한참 뒤에 읽힌다(셋 다
 `src/application/artifact/urlTtl.ts` 가 소유한다). 서명할 수 없는 이미지는 메시지에서 빠진다:
 replay 경로에서는 가져올 수 없는 URL 이 턴 전체를 실패시킨다.
 
-**chat 은 결코 오브젝트를 삭제하지 않는다.** chat 행은 DynamoDB TTL 로 만료되는데 애플리케이션은
-그것을 결코 관측하지 않으므로, cascade 할 수 있는 순간 자체가 없다 — 만료는 버킷의 lifecycle
-규칙이고, [OPERATIONS.md](../OPERATIONS.md#새-배포를-위한-운영-체크리스트) 의 배포
-체크리스트에 있다.
+**chat 은 결코 오브젝트를 삭제하지 않는다.** chat 행은 `expiresAt` 이 지나면 틱의 sweep 이
+`DELETE` 한 문장으로 지우는데 애플리케이션은 어느 행이 갔는지 관측하지 않으므로, cascade 할 수
+있는 순간 자체가 없다 — 만료는 오브젝트 스토어의 lifecycle 규칙이고,
+[OPERATIONS.md](../OPERATIONS.md#운영-체크리스트) 의 체크리스트에 있다.
 
 의도적인 제거는 이 경로가 아니라 artifact 갤러리의 몫이다: artifact 행이 오브젝트를 가리키고,
 `artifactUseCases.remove` 는 재시도가 수렴하도록 행보다 오브젝트를 *먼저* 삭제한다
@@ -316,7 +319,7 @@ replay 경로에서는 가져올 수 없는 URL 이 턴 전체를 실패시킨�
 ## Artifacts
 
 런이 남긴 것: 저장된 오브젝트당 행 하나. 그래서 바이트를 목록으로 볼 수 있고, 미리 볼 수 있고,
-제거할 수 있다. 그 전에는 재고 목록이 아예 없었다 — 생성된 이미지는 무작위 UUID 아래로 S3 에
+제거할 수 있다. 그 전에는 재고 목록이 아예 없었다 — 생성된 이미지는 무작위 UUID 아래로 버킷에
 갔고 그 키는 마침 열려 있던 chat 메시지에 쓰였다. 그래서 무엇도 그것을 열거할 수 없었고, 무엇도
 삭제할 수 없었으며, trigger 나 A2A 호출이 그린 그림은 아무 데도 가지 못했다.
 
@@ -410,11 +413,11 @@ GSI2 속성을 쓰지 않는다.
 오브젝트 키는 행 id 에서 도출되며(`artifacts/{kind}/{id}.{ext}`), 그것이 오브젝트와 그 행이
 서로를 찾게 해 준다. 레거시 `images/{uuid}` 키는 아무것도 참조하지 않아서, 그 배치 아래의 고아는
 다시는 식별할 수 없다. kind 로 나누는 것은 접두사에 적용되는 lifecycle 규칙 때문이다. 스토리지
-adapter 는 모든 독자를 런타임 artifact 접근 모드로 해석한다: 비공개 버킷이면 서명 URL, 공개
-버킷이면 S3 직접 URL.
+adapter 는 모든 독자를 런타임 artifact 접근 모드로 해석한다: 앱에게만 닿는 스토어면 이 앱의
+proxied 주소, 비공개 버킷이면 pre-signed URL, 공개 버킷이면 직접 URL.
 
 **삭제는 오브젝트 먼저다.** 그 순서가 남길 수 있는 것은 미리보기가 깨진 행뿐이고 — 삭제를 다시
-누르면 해결된다. S3 는 없는 키에 204 로 답하기 때문이다 — 반대 순서는 어떤 재고 목록도 이름
+누르면 해결된다. S3 호환 스토어는 없는 키에 204 로 답하기 때문이다 — 반대 순서는 어떤 재고 목록도 이름
 붙이지 않는, 영영 닿을 수 없는 바이트를 남긴다. 읽기와 삭제는 하나의 술어를 쓴다(생성자, 아니면
 `assertProjectWritable`). 각각에 다른 규칙을 두면 삭제 버튼이 403 으로 답하는 행들을 나열하는
 갤러리가 나오기 때문이다. 남의 출력을 제거하는 것은 `artifact.delete` 를 기록하고, 자기 것을

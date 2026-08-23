@@ -26,7 +26,7 @@ export function createHttpModelCatalogSource(
       if (!response.ok) {
         throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
       }
-      return response.json();
+      return { document: await response.json() };
     },
   };
 }

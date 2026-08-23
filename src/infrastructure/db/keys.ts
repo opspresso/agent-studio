@@ -1,5 +1,5 @@
 /**
- * Single-table key builders. Never hand-write key strings outside this module.
+ * Item-store key builders: the partition/sort address of every row. Never hand-write key strings outside this module.
  * See docs/ARCHITECTURE.md for the full key map.
  */
 
@@ -7,15 +7,6 @@
 export const CHAT_MESSAGE_MAX_SEQ = 999999;
 
 export const keys = {
-  auth: (model: string, id: string) => ({ PK: `AUTH#${model}#${id}`, SK: "ITEM" }),
-  authModelPartition: (model: string) => `AUTH#${model}`,
-  authUniqueLookup: (model: string, field: string, value: string) =>
-    `AUTH#${model}#${field}#${value}`,
-  authUnique: (model: string, field: string, value: string) => ({
-    PK: `AUTHUNIQUE#${model}#${field}#${value}`,
-    SK: "LOCK",
-  }),
-
   project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
   projectPartition: (name: string) => `PROJECT#${name}`,
   projectApiToken: (name: string) => ({ PK: `PROJECT#${name}`, SK: "APITOKEN" }),
@@ -41,7 +32,7 @@ export const keys = {
    * the widest a six-digit sequence can be, and a `fromSeq` past it has no
    * range at all — clamping there would answer "nothing after the last row"
    * with the last row itself, and not clamping would build a `BETWEEN` whose
-   * bounds invert, which DynamoDB refuses outright. The caller reads `null`
+   * bounds invert, which a range query answers with nothing. The caller reads `null`
    * as the empty answer it is.
    */
   chatMessageRange: (fromSeq: number) =>
@@ -72,6 +63,8 @@ export const keys = {
   }),
 
   settings: () => ({ PK: "SETTINGS#app", SK: "META" }),
+  /** The one catalog document an admin installed by hand (`domain/llm/catalogDocument.ts`). */
+  modelCatalog: () => ({ PK: "MODELCATALOG#doc", SK: "META" }),
 
   skill: (name: string) => ({ PK: `SKILL#${name}`, SK: "META" }),
   mcp: (name: string) => ({ PK: `MCP#${name}`, SK: "META" }),

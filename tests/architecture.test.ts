@@ -1011,12 +1011,14 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // host's suffix in this deployment's configuration). Six call sites ask —
     // registration, update, the console's two probes, the OAuth metadata read,
     // and dispatch — and a seventh that answered for itself would be a hole in
-    // the outbound boundary rather than a duplicated constant. The pattern
-    // matches the suffix match itself, which is the part a copy would get
-    // subtly wrong.
+    // the outbound boundary rather than a duplicated constant. The declaration
+    // half is one predicate over two lists — the MCP list and the FetchUrl list
+    // — so it sits in a neutral domain module rather than with `skipsUrlGuard`.
+    // The pattern matches the suffix match itself, which is the part a copy
+    // would get subtly wrong.
     what: "which hosts may skip the outbound URL guard",
     pattern: /endsWith\(`\.\$\{/,
-    owner: "src/domain/mcp/types.ts",
+    owner: "src/domain/security/internalHosts.ts",
   },
   {
     // Every recorded act goes through it, and each is the kind of code written once and read
@@ -1074,10 +1076,20 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/infrastructure/storage/s3ObjectStore.ts",
   },
   {
+    // The address a proxied object is reached at and the token that opens it
+    // are one format: the route parses exactly what the signer wrote, and a
+    // second writer of either would be free to disagree about what the HMAC
+    // covers — which is a link that stops answering, or one that answers
+    // with a filename it was not signed for.
+    what: "the proxied object URL and its token",
+    pattern: /"\/api\/objects"/,
+    owner: "src/infrastructure/storage/objectUrlToken.ts",
+  },
+  {
     what: "which storage errors mean a lost conditional write",
-    pattern: /ConditionalCheckFailedException/,
+    pattern: /"ConditionalWriteFailed"/,
     owner: "src/application/errors.ts",
-    // The adapters raise it; only the application layer must not re-derive it.
+    // The store raises it; only the application layer must not re-derive it.
     alsoAllowedIn: ["infrastructure"],
   },
   {
@@ -1132,8 +1144,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // metric it was not built with, which surfaces only as a ranking that is
     // subtly wrong.
     what: "talking to the vector store",
-    pattern: /new S3VectorsClient\(/,
-    owner: "src/infrastructure/vector/s3VectorsStore.ts",
+    pattern: /embedding <=>/,
+    owner: "src/infrastructure/vector/pgVectorStore.ts",
   },
   {
     // A reindex derives this key to write an entry, and deletes whatever it did
@@ -1675,7 +1687,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // second copy of the lease condition is the seven spellings of the
     // conditional-write error name again.
     what: "the claim-and-settle contract behind exactly-once inbound events",
-    pattern: /leaseExpiresAt < :now/,
+    pattern: /leaseExpiresAt \?\? 0\) < nowSeconds/,
     owner: "src/infrastructure/db/repositories/inboundClaimRepository.ts",
   },
   {
@@ -1934,11 +1946,14 @@ const ARTIFACT_CAPTURE_SITES = [
  * narrowing — not closing — the window between them. A URL a model named has no
  * first control at all, so this adapter is the whole defence.
  *
- * The internal-host exemption is the specific thing that must never reach it.
- * `skipsUrlGuard` exists so this app can talk to its own cluster MCP services;
- * one line honouring it here turns a prompt injection into a read of
+ * The MCP internal-host exemption is the specific thing that must never reach
+ * it. `skipsUrlGuard` exists so this app can talk to its own cluster MCP
+ * services; one line honouring it here turns a prompt injection into a read of
  * `http://mcp-argocd.agent-mcps.svc.cluster.local/`. Cheap to check, and the
- * kind of line that looks like a consistency fix to whoever adds it.
+ * kind of line that looks like a consistency fix to whoever adds it. The
+ * adapter has a list of its own (`URL_FETCH_INTERNAL_HOST_SUFFIXES`), and the
+ * point of it being a second list is that this file never reads the first —
+ * nor any configuration at all: its list is injected by the composition root.
  */
 const MODEL_CHOSEN_URL_FETCHER = "src/infrastructure/net/httpResource.ts";
 
@@ -1958,11 +1973,17 @@ describe("URLs the model chose", () => {
     expect(importers).toEqual(["src/application/execution/urlTool.ts"]);
   });
 
-  it("never consult the internal-host exemption", () => {
+  it("never consult the MCP internal-host exemption", () => {
     const text = file?.text ?? "";
-    const names = parseImports(text).flatMap((i) => i.names);
+    const imports = parseImports(text);
+    const names = imports.flatMap((i) => i.names);
     expect(names).not.toContain("skipsUrlGuard");
-    expect(stripComments(text)).not.toMatch(/skipsUrlGuard|internalHostSuffixes|loopback/);
+    expect(imports.map((i) => resolveSpec(i.spec, MODEL_CHOSEN_URL_FETCHER))).not.toContain(
+      "@/lib/config",
+    );
+    expect(stripComments(text)).not.toMatch(
+      /skipsUrlGuard|mcpInternalHostSuffixes|MCP_INTERNAL_HOST_SUFFIXES|loopback|process\.env/,
+    );
   });
 
   it("carry no credential of this deployment's", () => {

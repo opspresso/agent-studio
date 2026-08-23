@@ -23,10 +23,10 @@ export interface UsageRow {
  *
  * A separate row rather than another dimension on {@link UsageRow}: that row
  * holds a map per metric keyed by model, and keying those by `actor|model`
- * instead would grow one item with the number of distinct callers — a busy
- * project would approach DynamoDB's 400KB item limit within a day, and the
- * dashboard would pay for every caller on every read whether it wanted them or
- * not. Splitting keeps both reads exactly as wide as their question.
+ * instead would grow one row with the number of distinct callers — a busy
+ * project's daily row would be rewritten whole for every caller's every call,
+ * and the dashboard would pay for every caller on every read whether it wanted
+ * them or not. Splitting keeps both reads exactly as wide as their question.
  */
 export interface ActorUsageRow {
   projectName: string;

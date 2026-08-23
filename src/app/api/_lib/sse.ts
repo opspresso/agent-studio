@@ -19,7 +19,7 @@ const KEEPALIVE_FRAME = encoder.encode(": keepalive\n\n");
  * How long the first chunk may take before the response is built without it.
  *
  * Two different things happen before an agent run's first chunk, and they are
- * nothing like the same length. The guards are settings and DynamoDB reads —
+ * nothing like the same length. The guards are settings and database reads —
  * milliseconds. `resolveRunTools` is not: it opens every bound MCP server and
  * lists its tools, which `CONFIGURATION.md` bounds at ~20s for one slow server,
  * and with `dynamicCapabilities` on it also embeds and searches the catalog. A

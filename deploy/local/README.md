@@ -8,7 +8,7 @@ agent-plugins 레지스트리가 등록하는 MCP URL 은 `http://mcp-<name>.age
 
 ## 사전 조건
 
-- 로컬 개발 셋업 (`docs/DEVELOPMENT.md`): dev DynamoDB(:8083), `.env.local`, `pnpm dev`.
+- 로컬 개발 셋업 (`docs/DEVELOPMENT.md`): dev PostgreSQL(:5432, 루트 `compose.yaml` 의 `postgres`), `.env.local`, `pnpm dev`.
 - `.env.local` 에 한 줄 추가 — 이것이 없으면 SSRF 가드가 MCP URL 을 전부 거부하고, plugins sync 는 모든 서버를 `invalid-url` 로 스킵한다:
 
   ```
@@ -45,11 +45,11 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 | 프로필 | 서비스 | 필요한 것 | 주의 |
 |---|---|---|---|
-| `aws` | mcp-memory, mcp-cloudwatch | `cp .env.aws.example .env.aws` 후 액세스 키 | mcp-memory 는 **알파와 같은** 메모리 버킷(`agent-studio-vector`/`agent-studio-memory`)을 읽고 쓴다 — 로컬 S3 Vectors 는 없다 |
+| `aws` | mcp-memory, mcp-cloudwatch | `cp .env.aws.example .env.aws` 후 액세스 키 | mcp-memory 는 **알파와 같은** 메모리 버킷(`agent-studio-vector`/`agent-studio-memory`)을 읽고 쓴다 — mcp-memory 자신이 아직 S3 Vectors 에 묶여 있고(`docs/MILESTONES.md` 의 `memory-on-prem`), 로컬 S3 Vectors 는 없다 |
 | `brave` | mcp-brave-search | `.env` 의 `BRAVE_API_KEY` | |
 | `ticker` | 스케줄·플러그인 sync·카탈로그 리인덱스 | `.env` 의 `SCHEDULE_SCAN_TOKEN` (`.env.local` 과 같은 값) | `../idc/scripts/tick.sh` 를 그대로 마운트하고 호스트의 `pnpm dev`(:3000)를 두드린다 — 컨테이너에는 이 토큰 하나만 들어간다 |
 
-managed MCP(`MANAGED_MCP_INSTANCE_ID=local`)는 별개의 경로다: 앱이 직접 docker CLI 로 컨테이너를 띄우고 루프백으로 등록한다 (`docs/CONFIGURATION.md`). 이 compose 는 *레지스트리(agent-plugins)의* 서버들을 실제 배포와 같은 이름으로 띄우는 쪽이다 — 두 방식은 공존할 수 있다.
+managed MCP(`MANAGED_MCP_RUNTIME=docker`)는 별개의 경로다: 앱이 직접 docker CLI 로 컨테이너를 띄우고 루프백으로 등록한다 (`docs/CONFIGURATION.md`). 이 compose 는 *레지스트리(agent-plugins)의* 서버들을 실제 배포와 같은 이름으로 띄우는 쪽이다 — 두 방식은 공존할 수 있다.
 
 ## 정리
 
@@ -57,4 +57,4 @@ managed MCP(`MANAGED_MCP_INSTANCE_ID=local`)는 별개의 경로다: 앱이 직�
 cd deploy/local && docker compose --profile '*' down
 ```
 
-`--profile '*'` 는 지금 꺼져 있는 프로필의 컨테이너(예: `aws` 를 켰다가 끈 뒤 남은 mcp-memory)까지 내린다. 이 프로젝트(`agent-studio-local`)의 컨테이너만 내려간다. 레포 루트의 `localdev` 프로젝트(공유 DynamoDB)와는 무관하며, 그쪽은 [루트 compose.yaml 의 경고](../../compose.yaml)대로 `down -v` 를 절대 쓰지 않는다.
+`--profile '*'` 는 지금 꺼져 있는 프로필의 컨테이너(예: `aws` 를 켰다가 끈 뒤 남은 mcp-memory)까지 내린다. 이 프로젝트(`agent-studio-local`)의 컨테이너만 내려간다. 레포 루트의 `localdev` 프로젝트(공유 PostgreSQL)와는 무관하며, 그쪽은 [루트 compose.yaml 의 경고](../../compose.yaml)대로 `down -v` 를 절대 쓰지 않는다.

@@ -1,5 +1,4 @@
-import { DeleteCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { getDocumentClient, getTableName } from "../client";
+import { deleteItem, putItem } from "../store";
 import { keys } from "../keys";
 import { expiresAtFromNow, isExpired } from "../ttl";
 import type { McpOAuthState, McpOAuthStateRepository } from "@/domain/mcp/connection";
@@ -8,37 +7,24 @@ const ENTITY_TYPE = "MCPOAUTHSTATE";
 
 export const mcpOAuthStateRepository: McpOAuthStateRepository = {
   async put(state, ttlSeconds) {
-    await getDocumentClient().send(
-      new PutCommand({
-        TableName: getTableName(),
-        Item: {
-          ...keys.mcpOAuthState(state.state),
-          entityType: ENTITY_TYPE,
-          ...state,
-          // TTL attribute shared with the other short-lived rows in this table.
-          expiresAt: expiresAtFromNow(ttlSeconds),
-        },
-      }),
-    );
+    await putItem({
+      ...keys.mcpOAuthState(state.state),
+      entityType: ENTITY_TYPE,
+      ...state,
+      expiresAt: expiresAtFromNow(ttlSeconds),
+    });
   },
 
   /**
-   * Consumed by deleting and reading what was deleted, in one round trip:
-   * `ReturnValues: "ALL_OLD"` makes the delete itself the single-use guard, so
-   * two callbacks racing the same `state` cannot both come away with it.
+   * Consumed by deleting and reading what was deleted, in one round trip: the
+   * delete itself is the single-use guard, so two callbacks racing the same
+   * `state` cannot both come away with it.
    *
-   * A row past its TTL is treated as absent — the physical purge lags by up to
-   * ~48h, and an expired authorization has no business completing.
+   * A row past its TTL is treated as absent — the sweep is periodic, and an
+   * expired authorization has no business completing.
    */
   async consume(state) {
-    const result = await getDocumentClient().send(
-      new DeleteCommand({
-        TableName: getTableName(),
-        Key: keys.mcpOAuthState(state),
-        ReturnValues: "ALL_OLD",
-      }),
-    );
-    const item = result.Attributes;
+    const item = await deleteItem(keys.mcpOAuthState(state));
     if (!item || isExpired(item.expiresAt, Date.now())) {
       return null;
     }

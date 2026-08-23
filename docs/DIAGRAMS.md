@@ -14,7 +14,7 @@ flowchart TB
   app["<b>app</b><br/>페이지 · API 라우트 핸들러 · 콘솔 컴포넌트"]
   application["<b>application</b><br/>유스케이스 · LLM 엔진 · 실행 파사드 · 표면(chat/slack/telegram/a2a/trigger) · messaging"]
   domain["<b>domain</b><br/>엔티티 · 리포지토리 포트 · 한계값 — 순수 TS"]
-  infrastructure["<b>infrastructure</b><br/>DynamoDB · LLM 채널 · MCP · Slack · Telegram · Teams · A2A · S3 · net · crypto"]
+  infrastructure["<b>infrastructure</b><br/>PostgreSQL · pgvector · S3 호환 오브젝트 스토어 · LLM 채널 · MCP · Slack · Telegram · Teams · A2A · net · crypto"]
   lib["<b>lib</b><br/>composition root(container.ts) · auth/session · runtime settings · config"]
   shared["<b>shared</b><br/>의존성 없는 헬퍼 — @/ 를 import 하지 않는다"]
 
@@ -184,7 +184,7 @@ flowchart TB
   tgdeps["src/app/api/telegram/webhook/_lib/<br/>TelegramEventDeps"]
   teamsdeps["src/app/api/teams/messages/_lib/<br/>TeamsEventDeps"]
   a2aroute["src/app/api/a2a/[name]/route.ts<br/>요청별 A2A SDK 핸들러 조립"]
-  boot["src/instrumentation.ts<br/>부트: 설정 검증 · 감사 싱크 · managed MCP 재개"]
+  boot["src/instrumentation.ts<br/>부트: 설정 검증 · 스키마 마이그레이션 · 부트스트랩 관리자 · 감사 싱크 · 모델 카탈로그 refresher · managed MCP 재개"]
 
   container --> chatdeps
   container --> slackdeps
@@ -194,10 +194,26 @@ flowchart TB
   boot -.->|"런타임이 Node 서버일 때만 로드"| container
 ```
 
-## 6. 저장 모델 — 단일 테이블
+## 6. 저장 모델 — PostgreSQL 하나와 오브젝트 스토어
 
-한 테이블(`PK`/`SK` + `GSI1`/`GSI2`). 항목 단위 접근은 기본 키로, "종류별 목록" 은 GSI1 로.
-전체 키 맵은 [ARCHITECTURE.md#dynamodb-단일-테이블-설계](ARCHITECTURE.md#dynamodb-단일-테이블-설계).
+데이터베이스 하나에 아이템 테이블 `items`(`pk`/`sk` + JSONB `data`, 파생 컬럼 `gsi1*`/`gsi2*`/
+`expires_at`), Better Auth 의 테이블, 그리고 `catalog_vectors`(pgvector). 런이 만든 바이트는
+S3 호환 오브젝트 스토어(선택)에 있고 행이 그 키를 지목한다. 항목 단위 접근은 기본 키로,
+"종류별 목록" 은 GSI1 로. 전체 키 맵은
+[ARCHITECTURE.md#postgresql-아이템-테이블-설계](ARCHITECTURE.md#postgresql-아이템-테이블-설계).
+
+```mermaid
+flowchart LR
+  subgraph db["PostgreSQL — DATABASE_URL"]
+    items["items — 아래 파티션 전부 (pk · sk · data jsonb)"]
+    auth["user · session · account · verification (Better Auth)"]
+    vectors["catalog_vectors (pgvector — capability 카탈로그)"]
+  end
+  subgraph objects["S3 호환 오브젝트 스토어 — S3_BUCKET_NAME (선택)"]
+    objs["artifacts/{kind}/{id}.{ext} — ARTIFACT 행이 키를 지목<br/>독자에게는 proxied(/api/objects, HMAC 토큰) · pre-signed · 직접 URL 중 ARTIFACT_ACCESS_MODE"]
+  end
+  items -.-> objs
+```
 
 ```mermaid
 flowchart LR
@@ -233,5 +249,7 @@ flowchart LR
   end
 ```
 
-키 문자열은 `src/infrastructure/db/keys.ts` 만 만든다. 자라는 행은 `expiresAt` 을 갖고
-([OPERATIONS.md#행-보존](OPERATIONS.md#행-보존)), 목록 조회는 페이지네이션한다.
+키 문자열은 `src/infrastructure/db/keys.ts` 만 만들고, 모든 리포지토리는 `store.ts` 의 아이템
+스토어를 지난다(조건은 행 잠금 아래에서, 트랜잭션은 키 순서로). 자라는 행은 `expiresAt` 을
+갖고 schedule-scan 틱이 쓸어낸다 ([OPERATIONS.md#행-보존](OPERATIONS.md#행-보존)); 경계 없이
+자랄 수 있는 목록은 `limit` 을 넘긴다.

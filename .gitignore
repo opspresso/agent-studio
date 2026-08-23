@@ -12,9 +12,14 @@ build/
 # env
 .env
 .env.local
+.env.local.*
 .env.*.local
 
 # deploy — the filled-in copies of deploy/*/*.example, and the kubeconfig the
+# What deploy.sh mints or the operator writes beside a deployment's `.env`:
+# the host's database and object-store credentials, and the secrets file.
+.env.host
+.env.secrets
 # eks profile mounts. `.env` above already covers each deployment's `.env`.
 deploy/idc/.env.aws
 deploy/idc/.env.mcp

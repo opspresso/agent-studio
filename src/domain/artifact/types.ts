@@ -236,7 +236,7 @@ export function savedFileName(name: string, mimeType: string): string {
     .trim();
   // Cut by **character**, never through one. `slice` counts UTF-16 units, so a
   // name of 80-plus emoji ended in half a character: not well-formed text, and
-  // DynamoDB will not store the row as written — after the object is already in
+  // the store refuses the row as written — after the object is already in
   // the bucket, so the file is lost over its name. Spreading is the whole rule
   // here rather than a second copy of `cutCodePoints`: this layer imports
   // nothing, `shared` included, and a name is short enough that iterating it is

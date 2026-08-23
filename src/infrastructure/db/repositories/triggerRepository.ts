@@ -2,16 +2,21 @@
  * Triggers and their delivery history.
  *
  * Both live in the project partition, so the project cascade delete already
- * removes them and a trigger's runs are one `begins_with` query. Run rows carry
- * a TTL: delivery history is an operational log, not a record to keep, and an
+ * removes them and a trigger's runs are one prefix query. Run rows carry a
+ * TTL: delivery history is an operational log, not a record to keep, and an
  * untrimmed one would grow the project partition without bound.
  */
 
-import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
-import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
-import { expiresAtFromNow, expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
+import {
+  CONDITIONAL_WRITE_FAILED,
+  conditions,
+  deleteItem,
+  getItem,
+  putItem,
+  queryItems,
+} from "@/infrastructure/db/store";
+import { expiresAtFromNow, expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type { ScheduleTrigger, Trigger, TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
 
@@ -100,72 +105,48 @@ function runItem(run: TriggerRun): Record<string, unknown> {
 
 export const triggerRepository: TriggerRepository = {
   async get(projectName, triggerId) {
-    const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.trigger(projectName, triggerId) }),
-    );
-    return result.Item ? toTrigger(result.Item) : null;
+    const item = await getItem(keys.trigger(projectName, triggerId));
+    return item ? toTrigger(item) : null;
   },
 
   async listByProject(projectName) {
-    const items = await queryAll({
-      TableName: getTableName(),
-      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-      ExpressionAttributeValues: {
-        ":pk": keys.projectPartition(projectName),
-        ":prefix": keys.triggerPrefix(),
-      },
+    const items = await queryItems({
+      pk: keys.projectPartition(projectName),
+      sk: { prefix: keys.triggerPrefix() },
     });
     return items.map(toTrigger);
   },
 
   async listSchedules() {
-    const items = await queryAll({
-      TableName: getTableName(),
-      IndexName: "GSI1",
-      KeyConditionExpression: "GSI1PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.typePartition("SCHEDULE") },
-    });
+    const items = await queryItems({ index: "GSI1", pk: keys.typePartition("SCHEDULE") });
     return items.map(toTrigger).filter((t): t is ScheduleTrigger => t.kind === "schedule");
   },
 
   async create(trigger) {
-    await getDocumentClient().send(
-      new PutCommand({
-        TableName: getTableName(),
-        Item: triggerItem(trigger),
-        ConditionExpression: "attribute_not_exists(PK)",
-      }),
-    );
+    await putItem(triggerItem(trigger), conditions.notExists);
   },
 
   async put(trigger) {
-    await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: triggerItem(trigger) }),
-    );
+    await putItem(triggerItem(trigger));
   },
 
   async delete(projectName, triggerId) {
-    await getDocumentClient().send(
-      new DeleteCommand({ TableName: getTableName(), Key: keys.trigger(projectName, triggerId) }),
-    );
+    await deleteItem(keys.trigger(projectName, triggerId));
   },
 
   async claimIdempotencyKey(projectName, triggerId, key) {
     try {
-      await getDocumentClient().send(
-        new PutCommand({
-          TableName: getTableName(),
-          Item: {
-            ...keys.triggerIdempotency(projectName, triggerId, key),
-            entityType: "TriggerIdempotency",
-            expiresAt: expiresAtFromNow(IDEMPOTENCY_TTL_SECONDS),
-          },
-          ConditionExpression: "attribute_not_exists(PK)",
-        }),
+      await putItem(
+        {
+          ...keys.triggerIdempotency(projectName, triggerId, key),
+          entityType: "TriggerIdempotency",
+          expiresAt: expiresAtFromNow(IDEMPOTENCY_TTL_SECONDS),
+        },
+        conditions.notExists,
       );
       return true;
     } catch (error) {
-      if ((error as { name?: string }).name === "ConditionalCheckFailedException") {
+      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
         return false;
       }
       throw error;
@@ -173,28 +154,19 @@ export const triggerRepository: TriggerRepository = {
   },
 
   async appendRun(run) {
-    await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: runItem(run) }),
-    );
+    await putItem(runItem(run));
   },
 
   async finishRun(run) {
     // A plain overwrite of the same key: the row was written when the run
     // started, and only this run's own completion ever rewrites it.
-    await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: runItem(run) }),
-    );
+    await putItem(runItem(run));
   },
 
   async listRuns(projectName, triggerId, limit, opts = {}) {
-    // Bounded rather than paginated with `queryAll`: this is the newest N of a
-    // log that grows with every delivery, and reading all of it to show ten
-    // rows would get worse the more the trigger is used.
-    //
-    // `Limit` applies before the expired-row filter below, so a page can come
-    // back short — but the sort key leads with the start time and this reads
-    // backwards, so expired rows sort last and essentially never appear in a
-    // page of the newest ones. No refill loop for a gap that cannot open.
+    // Bounded rather than whole: this is the newest N of a log that grows with
+    // every delivery, and reading all of it to show ten rows would get worse
+    // the more the trigger is used.
     //
     // `startedBefore` bounds the sort key rather than filtering what came back.
     // The start time leads the key, so the range *is* the window: the read costs
@@ -202,21 +174,15 @@ export const triggerRepository: TriggerRepository = {
     // the newest `limit` rows and discard them, which is exactly the way a busy
     // trigger's stranded row stays invisible.
     const prefix = keys.triggerRunPrefix(triggerId);
-    const result = await getDocumentClient().send(
-      new QueryCommand({
-        TableName: getTableName(),
-        KeyConditionExpression: opts.startedBefore
-          ? "PK = :pk AND SK BETWEEN :prefix AND :before"
-          : "PK = :pk AND begins_with(SK, :prefix)",
-        ExpressionAttributeValues: {
-          ":pk": keys.projectPartition(projectName),
-          ":prefix": prefix,
-          ...(opts.startedBefore ? { ":before": `${prefix}${opts.startedBefore}` } : {}),
-        },
-        ScanIndexForward: false,
-        Limit: limit,
-      }),
-    );
-    return notExpired(result.Items ?? [], Date.now()).map(toRun);
+    const items = await queryItems({
+      pk: keys.projectPartition(projectName),
+      sk: opts.startedBefore
+        ? { between: [prefix, `${prefix}${opts.startedBefore}`] }
+        : { prefix },
+      forward: false,
+      limit,
+      notExpiredAt: Math.floor(Date.now() / 1000),
+    });
+    return items.map(toRun);
   },
 };

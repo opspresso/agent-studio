@@ -60,11 +60,17 @@ export const en = {
   "nav.settings": "Settings",
 
   // Sign in and out.
-  "auth.signIn": "Sign in with Google",
+  "auth.signIn": "Sign in",
+  "auth.signInWith": "Sign in with {provider}",
+  "auth.signInWithPassword": "Sign in with password",
+  "auth.email": "Email",
+  "auth.password": "Password",
+  "auth.passwordFailed": "Email or password is incorrect.",
+  "auth.or": "or",
   "auth.signOut": "Sign out",
   "login.title": "Sign in to continue",
   "login.product": "Agent Studio — build and operate production AI agents.",
-  "login.domains": "Use your Google account on one of this deployment’s allowed domains.",
+  "login.domains": "Use an account on one of this deployment’s allowed domains.",
 
   // The signed-out landing page.
   "home.eyebrow": "Version · publish · run",
@@ -72,7 +78,7 @@ export const en = {
   "home.headlineAccent": " production AI agents.",
   "home.lede":
     "Build agents with models, skills, MCP, workflows, tracing, evaluation, and governance.",
-  "home.signInHint": "Your Google account, on one of this deployment’s allowed domains.",
+  "home.signInHint": "Your account, on one of this deployment’s allowed domains.",
   "home.proof.engine": "One engine",
   "home.proof.engineNote": "Every model, every surface",
   "home.proof.traces": "Live traces",
@@ -562,6 +568,11 @@ export const en = {
   "plugins.empty": "No plugins yet. Add the repository and token in Settings, then sync.",
   "plugins.noSkills": "This plugin declares no skills.",
   "plugins.noServers": "This plugin declares no MCP servers.",
+  "plugins.uploadArchive": "Upload archive",
+  "plugins.uploadArchiveHint":
+    "A .tar.gz of the plugins repository (git archive or tar of a checkout) — for a deployment that cannot reach GitHub.",
+  "plugins.archiveSource": "Archive: {name}",
+  "plugins.uploadFailed": "Upload failed",
 
   // Artifacts.
   "artifacts.lede":
@@ -606,7 +617,7 @@ export const en = {
   "managed.envRefs": "Environment references",
   "managed.envRefsPlaceholder": "/env/prod/mcp-image-fetch",
   "managed.envRefsHint":
-    "SSM parameter names, not values — the secrets never pass through here.",
+    "Paths of env files on the host, not values — the secrets never pass through here.",
   "managed.envVars": "Environment variables",
   "managed.envVarsEmpty": "No direct environment variables.",
   "managed.addVariable": "+ Add variable",
@@ -732,6 +743,17 @@ export const en = {
   "models.filter": "Filter models…",
   "models.catalogUpdated": "catalog updated",
   "models.refreshNow": "Refresh now",
+  "models.catalogFile.title": "Catalog document",
+  "models.catalogFile.lede":
+    "A catalog JSON installed here is the registry, ahead of the published catalog — for a deployment without a route to it. Remove it to follow the published catalog again.",
+  "models.catalogFile.none":
+    "No document is installed; the registry follows the published catalog or the built-in snapshot.",
+  "models.catalogFile.installed":
+    "Installed by {by} on {at} — {count} models, catalog updated {updated}",
+  "models.catalogFile.skipped": "{count} entries the registry refuses",
+  "models.catalogFile.choose": "Catalog JSON",
+  "models.catalogFile.upload": "Install",
+  "models.catalogFile.remove": "Remove",
   "models.selfHosted.title": "Self-hosted models",
   "models.selfHosted.lede":
     "Models this deployment serves itself, declared here and dispatched through the selfhosted channel. The list is what the channel reports; a declared model joins the registry at zero price.",
@@ -761,6 +783,9 @@ export const en = {
   "settings.lede":
     "Overrides are stored in the database and take precedence over environment variables. Masked values keep the stored secret; clear a field to fall back to env.",
   "settings.keepPrefix": "keep prefix",
+  "settings.artifactAccess.authenticated": "Authenticated · presigned URL",
+  "settings.artifactAccess.public": "Public · direct S3 URL",
+  "settings.artifactAccess.proxied": "Proxied · served by this app",
   "settings.providerPlaceholder": "provider…",
   "settings.baseUrlPlaceholder": "base URL",
   "settings.clientName": "Client name",

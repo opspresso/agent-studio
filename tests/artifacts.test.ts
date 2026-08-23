@@ -1,39 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { FakeStore } from "./fakeStore";
+import { artifactCursor } from "@/domain/artifact/repository";
 import { artifactObjectKey, artifactOwnerEmail } from "@/domain/artifact/types";
+import { keys } from "@/infrastructure/db/keys";
 import { RETENTION } from "@/infrastructure/db/ttl";
 import type { Artifact } from "@/domain/artifact/types";
 
-interface Captured {
-  constructor: { name: string };
-  input: Record<string, any>;
-}
-
-const { state, fakeClient } = vi.hoisted(() => {
-  const state = {
-    sent: [] as Captured[],
-    getItem: undefined as Record<string, unknown> | undefined,
-    queryPages: [] as Array<{ Items: Record<string, unknown>[]; LastEvaluatedKey?: unknown }>,
-  };
-  const fakeClient = {
-    async send(command: Captured) {
-      state.sent.push(command);
-      const name = command.constructor?.name;
-      if (name === "GetCommand") {
-        return { Item: state.getItem };
-      }
-      if (name === "QueryCommand") {
-        return state.queryPages.shift() ?? { Items: [], LastEvaluatedKey: undefined };
-      }
-      return {};
-    },
-  };
-  return { state, fakeClient };
-});
-
-vi.mock("@/infrastructure/db/client", () => ({
-  getDocumentClient: () => fakeClient,
-  getTableName: () => "test-table",
-}));
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
+const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
 const { artifactRepository } = await import("@/infrastructure/db/repositories/artifactRepository");
 
@@ -58,22 +32,32 @@ function artifact(over: Partial<Artifact> = {}): Artifact {
   };
 }
 
-/** What the repository would read back, as DynamoDB would hand it over. */
-function item(over: Partial<Artifact> & Record<string, unknown> = {}): Record<string, unknown> {
-  return { ...artifact(over as Partial<Artifact>), expiresAt: freshSec, ...over };
+/** An artifact as the repository stores it: under its own key and both indexes. */
+function row(over: Partial<Artifact> = {}, expiresAt = freshSec): Record<string, unknown> {
+  const stored = artifact(over);
+  const owner = artifactOwnerEmail(stored.actor, stored.ownerEmail);
+  return {
+    ...stored,
+    ...keys.artifact(stored.artifactId),
+    entityType: "ARTIFACT",
+    GSI1PK: keys.artifactProjectPartition(stored.projectName),
+    GSI1SK: artifactCursor(stored),
+    ...(owner
+      ? { GSI2PK: keys.artifactOwnerPartition(owner), GSI2SK: artifactCursor(stored) }
+      : {}),
+    expiresAt,
+  };
 }
 
-function lastPut(): Record<string, any> {
-  const puts = state.sent.filter((c) => c.constructor.name === "PutCommand");
-  return puts[puts.length - 1]?.input.Item ?? {};
+/** Seconds after CREATED, as an ISO timestamp — for rows that must sort apart. */
+function createdPlus(seconds: number): string {
+  return new Date(Date.parse(CREATED) + seconds * 1000).toISOString();
 }
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(NOW_ISO));
-  state.sent = [];
-  state.getItem = undefined;
-  state.queryPages = [];
+  store.rows.clear();
 });
 
 afterEach(() => {
@@ -141,7 +125,7 @@ describe("artifactOwnerEmail", () => {
 describe("put", () => {
   it("indexes by project, which is the only axis every artifact has", async () => {
     await artifactRepository.put(artifact());
-    expect(lastPut()).toMatchObject({
+    expect(await store.getItem(keys.artifact("a1"))).toMatchObject({
       PK: "ARTIFACT#a1",
       SK: "META",
       entityType: "ARTIFACT",
@@ -152,7 +136,7 @@ describe("put", () => {
 
   it("also indexes by owner when the actor names an email", async () => {
     await artifactRepository.put(artifact());
-    expect(lastPut()).toMatchObject({
+    expect(await store.getItem(keys.artifact("a1"))).toMatchObject({
       GSI2PK: "ARTIFACTOWNER#bruce@daangn.com",
       GSI2SK: `${CREATED}#a1`,
     });
@@ -162,16 +146,16 @@ describe("put", () => {
     // Sparse rather than a placeholder: a Slack artifact is reachable through
     // its project, and a row under a fake owner would be listed for nobody.
     await artifactRepository.put(artifact({ actor: { kind: "slack", id: "U123" } }));
-    const stored = lastPut();
-    expect(stored.GSI2PK).toBeUndefined();
-    expect(stored.GSI2SK).toBeUndefined();
+    const stored = await store.getItem(keys.artifact("a1"));
+    expect(stored?.GSI2PK).toBeUndefined();
+    expect(stored?.GSI2SK).toBeUndefined();
     // Still findable, which is the whole reason the project index is not optional.
-    expect(stored.GSI1PK).toBe("ARTIFACTPROJECT#poster-bot");
+    expect(stored?.GSI1PK).toBe("ARTIFACTPROJECT#poster-bot");
   });
 
   it("expires the row on the artifact retention window", async () => {
     await artifactRepository.put(artifact());
-    expect(lastPut().expiresAt).toBe(
+    expect((await store.getItem(keys.artifact("a1")))?.expiresAt).toBe(
       Math.floor(Date.parse(CREATED) / 1000) + RETENTION.artifactDays * 86_400,
     );
   });
@@ -186,7 +170,7 @@ describe("put", () => {
 
 describe("get", () => {
   it("reads a row back whole", async () => {
-    state.getItem = item({ filename: "report.pdf", kind: "document", prompt: "요약해줘" });
+    store.seed([row({ filename: "report.pdf", kind: "document", prompt: "요약해줘" })]);
     const found = await artifactRepository.get("a1");
     expect(found).toMatchObject({
       artifactId: "a1",
@@ -197,8 +181,8 @@ describe("get", () => {
     });
   });
 
-  it("treats an expired row as gone — the physical purge lags by up to 48h", async () => {
-    state.getItem = { ...item(), expiresAt: expiredSec };
+  it("treats an expired row as gone — the physical purge is a periodic sweep", async () => {
+    store.seed([row({}, expiredSec)]);
     expect(await artifactRepository.get("a1")).toBeNull();
   });
 
@@ -208,101 +192,107 @@ describe("get", () => {
 });
 
 describe("listing", () => {
-  it("queries the project index newest first", async () => {
-    state.queryPages = [{ Items: [item()], LastEvaluatedKey: undefined }];
-    await artifactRepository.listByProject("poster-bot");
-    const query = state.sent.find((c) => c.constructor.name === "QueryCommand")!;
-    expect(query.input.IndexName).toBe("GSI1");
-    expect(query.input.ScanIndexForward).toBe(false);
-    expect(query.input.ExpressionAttributeValues[":pk"]).toBe("ARTIFACTPROJECT#poster-bot");
+  it("lists a project's artifacts newest first, and nobody else's", async () => {
+    store.seed([
+      row({ artifactId: "older", createdAt: createdPlus(0) }),
+      row({ artifactId: "newer", createdAt: createdPlus(60) }),
+      row({ artifactId: "elsewhere", projectName: "other-bot", createdAt: createdPlus(120) }),
+    ]);
+    const found = await artifactRepository.listByProject("poster-bot");
+    expect(found.map((a) => a.artifactId)).toEqual(["newer", "older"]);
   });
 
-  it("queries the owner index for a person", async () => {
-    state.queryPages = [{ Items: [item()], LastEvaluatedKey: undefined }];
-    await artifactRepository.listByOwner("bruce@daangn.com");
-    const query = state.sent.find((c) => c.constructor.name === "QueryCommand")!;
-    expect(query.input.IndexName).toBe("GSI2");
-    expect(query.input.ExpressionAttributeValues[":pk"]).toBe("ARTIFACTOWNER#bruce@daangn.com");
+  it("lists a person's artifacts through the owner index", async () => {
+    store.seed([
+      row({ artifactId: "mine" }),
+      row({ artifactId: "theirs", actor: { kind: "user", id: "someone@daangn.com" } }),
+      // A Slack run names no mailbox, so it is in nobody's gallery — only its
+      // project's listing reaches it.
+      row({ artifactId: "nobodys", actor: { kind: "slack", id: "U123" } }),
+    ]);
+    const found = await artifactRepository.listByOwner("bruce@daangn.com");
+    expect(found.map((a) => a.artifactId)).toEqual(["mine"]);
   });
 
-  it("drops expired rows the query still returned", async () => {
-    state.queryPages = [
-      {
-        Items: [item({ artifactId: "fresh" }), { ...item({ artifactId: "old" }), expiresAt: expiredSec }],
-        LastEvaluatedKey: undefined,
-      },
-    ];
+  it("drops expired rows the purge has not reached", async () => {
+    store.seed([row({ artifactId: "fresh" }), row({ artifactId: "old" }, expiredSec)]);
     const found = await artifactRepository.listByProject("poster-bot");
     expect(found.map((a) => a.artifactId)).toEqual(["fresh"]);
   });
 
   it("refills a page thinned by a kind filter instead of returning it short", async () => {
-    // DynamoDB applies Limit before anything here can filter, so "images only"
-    // would ask for 2 and get 1 without the refill loop.
-    state.queryPages = [
-      {
-        Items: [item({ artifactId: "doc1", kind: "document" }), item({ artifactId: "img1" })],
-        LastEvaluatedKey: { PK: "cursor" },
-      },
-      { Items: [item({ artifactId: "img2" })], LastEvaluatedKey: undefined },
-    ];
+    // The store applies the limit before anything here can filter, so "images
+    // only" would ask for 2 and get 1 without the refill loop.
+    store.seed([
+      row({ artifactId: "doc1", kind: "document", createdAt: createdPlus(120) }),
+      row({ artifactId: "img1", createdAt: createdPlus(60) }),
+      row({ artifactId: "img2", createdAt: createdPlus(0) }),
+    ]);
     const found = await artifactRepository.listByProject("poster-bot", { limit: 2, kind: "image" });
     expect(found.map((a) => a.artifactId)).toEqual(["img1", "img2"]);
   });
 
   it("filters by source as well", async () => {
-    state.queryPages = [
-      {
-        Items: [item({ artifactId: "gen" }), item({ artifactId: "att", source: "attachment" })],
-        LastEvaluatedKey: undefined,
-      },
-    ];
+    store.seed([
+      row({ artifactId: "gen", createdAt: createdPlus(60) }),
+      row({ artifactId: "att", source: "attachment", createdAt: createdPlus(0) }),
+    ]);
     const found = await artifactRepository.listByProject("poster-bot", { source: "attachment" });
     expect(found.map((a) => a.artifactId)).toEqual(["att"]);
   });
 
-  it("stops after the page bound so a partition of expired rows is not a full scan", async () => {
-    state.queryPages = Array.from({ length: 12 }, () => ({
-      Items: [{ ...item(), expiresAt: expiredSec }],
-      LastEvaluatedKey: { PK: "cursor" },
-    }));
-    await artifactRepository.listByProject("poster-bot", { limit: 5 });
-    expect(state.sent.filter((c) => c.constructor.name === "QueryCommand")).toHaveLength(5);
+  it("stops after the page bound so a filter matching nothing is not a full scan", async () => {
+    store.seed(
+      Array.from({ length: 12 }, (_, i) =>
+        row({ artifactId: `doc${i}`, kind: "document", createdAt: createdPlus(i) }),
+      ),
+    );
+    const query = vi.spyOn(store, "queryItems");
+    const found = await artifactRepository.listByProject("poster-bot", { limit: 1, kind: "image" });
+    expect(found).toEqual([]);
+    expect(query).toHaveBeenCalledTimes(5);
   });
 
   it("pages with the previous page's last sort key, and does not repeat that row", async () => {
-    const cursor = `${CREATED}#a1`;
-    state.queryPages = [
-      {
-        Items: [item({ artifactId: "a1" }), item({ artifactId: "a0", createdAt: "2026-07-30T00:00:00.000Z" })],
-        LastEvaluatedKey: undefined,
-      },
-    ];
+    store.seed([
+      row({ artifactId: "a1" }),
+      row({ artifactId: "a0", createdAt: "2026-07-30T00:00:00.000Z" }),
+    ]);
+    const cursor = artifactCursor(artifact({ artifactId: "a1" }));
+    expect(cursor).toBe(`${CREATED}#a1`);
     const found = await artifactRepository.listByProject("poster-bot", { before: cursor });
-    const query = state.sent.find((c) => c.constructor.name === "QueryCommand")!;
-    expect(query.input.ExpressionAttributeValues[":to"]).toBe(cursor);
     expect(found.map((a) => a.artifactId)).toEqual(["a0"]);
   });
 
   it("includes the whole 'to' day rather than only its midnight", async () => {
-    state.queryPages = [{ Items: [], LastEvaluatedKey: undefined }];
-    await artifactRepository.listByProject("poster-bot", { from: "2026-08-01", to: "2026-08-12" });
-    const query = state.sent.find((c) => c.constructor.name === "QueryCommand")!;
-    expect(query.input.ExpressionAttributeValues[":to"]).toBe("2026-08-12￿");
+    store.seed([
+      row({ artifactId: "on-the-day", createdAt: "2026-08-12T15:00:00.000Z" }),
+      row({ artifactId: "day-after", createdAt: "2026-08-13T00:00:00.000Z" }),
+      row({ artifactId: "before", createdAt: "2026-07-31T23:59:59.000Z" }),
+    ]);
+    const found = await artifactRepository.listByProject("poster-bot", {
+      from: "2026-08-01",
+      to: "2026-08-12",
+    });
+    expect(found.map((a) => a.artifactId)).toEqual(["on-the-day"]);
   });
 
   it("caps the page at 100 however much a caller asks for", async () => {
-    state.queryPages = [{ Items: [], LastEvaluatedKey: undefined }];
-    await artifactRepository.listByProject("poster-bot", { limit: 5000 });
-    const query = state.sent.find((c) => c.constructor.name === "QueryCommand")!;
-    expect(query.input.Limit).toBe(100);
+    store.seed(
+      Array.from({ length: 101 }, (_, i) =>
+        row({ artifactId: `a${String(i).padStart(3, "0")}`, createdAt: createdPlus(i) }),
+      ),
+    );
+    const found = await artifactRepository.listByProject("poster-bot", { limit: 5000 });
+    expect(found).toHaveLength(100);
   });
 });
 
 describe("delete", () => {
   it("removes the row by its own key", async () => {
+    store.seed([row({ artifactId: "a1" }), row({ artifactId: "a2" })]);
     await artifactRepository.delete("a1");
-    const deleted = state.sent.find((c) => c.constructor.name === "DeleteCommand")!;
-    expect(deleted.input.Key).toEqual({ PK: "ARTIFACT#a1", SK: "META" });
+    expect(await store.getItem(keys.artifact("a1"))).toBeNull();
+    expect(await store.getItem(keys.artifact("a2"))).not.toBeNull();
   });
 });

@@ -5,6 +5,9 @@ import type { AuditEvent } from "@/domain/audit/types";
 import type { McpServer } from "@/domain/mcp/types";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 import type { ManagedWorkload, ManagedWorkloadSpec, McpProvisioner } from "@/domain/mcp/provisioner";
+// The store module is the in-memory fake (tests/setup.ts), which raises the
+// same error the real one does for a lost precondition.
+import { ConditionalWriteError } from "@/infrastructure/db/store";
 
 const REACHABLE: ListToolsResult = { ok: true, tools: [] };
 const REFUSED: ListToolsResult = { ok: false, error: "fetch failed" };
@@ -90,9 +93,7 @@ function fixture(
     // depends on that condition to refuse resurrecting a deleted entry.
     update: async (server: McpServer) => {
       if (!rows.has(server.name)) {
-        throw Object.assign(new Error("The conditional request failed"), {
-          name: "ConditionalCheckFailedException",
-        });
+        throw new ConditionalWriteError("The conditional request failed");
       }
       rows.set(server.name, server);
     },

@@ -1,29 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { keys } from "@/infrastructure/db/keys";
+import type { FakeStore } from "./fakeStore";
 
-// Fake document client: records what it was sent and fails on demand, so the
-// tests can pin the conditional-write contract without DynamoDB.
-const { behavior, sent, fakeClient } = vi.hoisted(() => {
-  const behavior = { mode: "ok" as "ok" | "conflict" | "boom" };
-  const sent: { name: string; input: Record<string, unknown> }[] = [];
-  const fakeClient = {
-    async send(command: { constructor: { name: string }; input: Record<string, unknown> }) {
-      sent.push({ name: command.constructor.name, input: command.input });
-      if (behavior.mode === "conflict") {
-        throw Object.assign(new Error("exists"), { name: "ConditionalCheckFailedException" });
-      }
-      if (behavior.mode === "boom") {
-        throw new Error("network partition");
-      }
-      return {};
-    },
-  };
-  return { behavior, sent, fakeClient };
-});
-
-vi.mock("@/infrastructure/db/client", () => ({
-  getDocumentClient: () => fakeClient,
-  getTableName: () => "test-table",
-}));
+// In-memory store: the tests pin the claim-and-settle contract — what a row
+// holds, which rows a claim may take — without a database. A storage fault is
+// injected by failing the one store call the operation makes.
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
+const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
 const { slackEventRepository } = await import(
   "@/infrastructure/db/repositories/slackEventRepository"
@@ -32,9 +15,13 @@ const { slackEventRepository } = await import(
 const NOW = 1_700_000_000;
 const LEASE_UNTIL = NOW + 660;
 
+const row = (eventId: string) => store.getItem(keys.slackEvent(eventId));
+const seed = (eventId: string, attributes: Record<string, unknown>) =>
+  store.seed([{ ...keys.slackEvent(eventId), entityType: "slackEvent", ...attributes }]);
+
 beforeEach(() => {
-  behavior.mode = "ok";
-  sent.length = 0;
+  store.rows.clear();
+  vi.restoreAllMocks();
 });
 
 describe("slackEventRepository.claim", () => {
@@ -43,12 +30,17 @@ describe("slackEventRepository.claim", () => {
   });
 
   it("returns false when the event is settled or another instance holds the lease", async () => {
-    behavior.mode = "conflict";
-    expect(await slackEventRepository.claim("evt-1", NOW, LEASE_UNTIL)).toBe(false);
+    seed("evt-done", { state: "done", leaseExpiresAt: 0 });
+    seed("evt-held", { state: "claimed", leaseExpiresAt: NOW + 100 });
+    expect(await slackEventRepository.claim("evt-done", NOW, LEASE_UNTIL)).toBe(false);
+    expect(await slackEventRepository.claim("evt-held", NOW, LEASE_UNTIL)).toBe(false);
+    // And the refused claim left the rows as they were.
+    expect(await row("evt-done")).toMatchObject({ state: "done" });
+    expect(await row("evt-held")).toMatchObject({ state: "claimed", leaseExpiresAt: NOW + 100 });
   });
 
   it("rethrows non-conditional errors instead of treating them as duplicates", async () => {
-    behavior.mode = "boom";
+    vi.spyOn(store, "putItem").mockRejectedValueOnce(new Error("network partition"));
     await expect(slackEventRepository.claim("evt-1", NOW, LEASE_UNTIL)).rejects.toThrow(
       /network partition/,
     );
@@ -65,56 +57,60 @@ describe("slackEventRepository.claim", () => {
    * never be reclaimed, or a handled event would be replayed.
    */
   it("admits a claim whose lease expired or whose attempt failed, and never a settled one", async () => {
-    await slackEventRepository.claim("evt-1", NOW, LEASE_UNTIL);
-    const put = sent.at(-1);
-    expect(put?.name).toBe("PutCommand");
-    expect(put?.input.ConditionExpression).toBe(
-      "attribute_not_exists(PK) OR #state = :failed OR (#state = :claimed AND leaseExpiresAt < :now)",
-    );
-    expect(put?.input.ExpressionAttributeValues).toMatchObject({
-      ":claimed": "claimed",
-      ":failed": "failed",
-      ":now": NOW,
-    });
+    seed("evt-expired", { state: "claimed", leaseExpiresAt: NOW - 1 });
+    seed("evt-failed", { state: "failed", leaseExpiresAt: 0 });
+    seed("evt-done", { state: "done", leaseExpiresAt: 0 });
+    seed("evt-legacy", {});
+
+    expect(await slackEventRepository.claim("evt-expired", NOW, LEASE_UNTIL)).toBe(true);
+    expect(await slackEventRepository.claim("evt-failed", NOW, LEASE_UNTIL)).toBe(true);
+    expect(await slackEventRepository.claim("evt-done", NOW, LEASE_UNTIL)).toBe(false);
+    expect(await slackEventRepository.claim("evt-legacy", NOW, LEASE_UNTIL)).toBe(false);
+
+    // A lease that runs out exactly now is not yet expired.
+    seed("evt-edge", { state: "claimed", leaseExpiresAt: NOW });
+    expect(await slackEventRepository.claim("evt-edge", NOW, LEASE_UNTIL)).toBe(false);
   });
 
   it("writes the lease deadline and a claimed state on the row", async () => {
     await slackEventRepository.claim("evt-1", NOW, LEASE_UNTIL);
-    expect(sent.at(-1)?.input.Item).toMatchObject({
+    expect(await row("evt-1")).toMatchObject({
+      entityType: "slackEvent",
       state: "claimed",
       leaseExpiresAt: LEASE_UNTIL,
       expiresAt: NOW + 60 * 60 * 24,
     });
+    expect(typeof (await row("evt-1"))?.claimedAt).toBe("string");
   });
 });
 
 describe("slackEventRepository.settle", () => {
   it("retires a completed claim and leaves no live lease", async () => {
+    await slackEventRepository.claim("evt-1", NOW, LEASE_UNTIL);
     await slackEventRepository.settle("evt-1", "done");
-    const update = sent.at(-1);
-    expect(update?.name).toBe("UpdateCommand");
-    expect(update?.input.ExpressionAttributeValues).toMatchObject({
-      ":state": "done",
-      ":lease": 0,
-    });
+    expect(await row("evt-1")).toMatchObject({ state: "done", leaseExpiresAt: 0 });
+    expect(typeof (await row("evt-1"))?.settledAt).toBe("string");
+    // Unreclaimable from here on, however late the redelivery.
+    expect(await slackEventRepository.claim("evt-1", NOW + 10_000, LEASE_UNTIL + 10_000)).toBe(false);
   });
 
   /** A failed attempt must stay retryable, not look like a success. */
   it("marks a failed attempt failed so a redelivery can reclaim it", async () => {
+    await slackEventRepository.claim("evt-1", NOW, LEASE_UNTIL);
     await slackEventRepository.settle("evt-1", "failed");
-    expect(sent.at(-1)?.input.ExpressionAttributeValues).toMatchObject({
-      ":state": "failed",
-      ":lease": 0,
-    });
+    expect(await row("evt-1")).toMatchObject({ state: "failed", leaseExpiresAt: 0 });
+    expect(await slackEventRepository.claim("evt-1", NOW, LEASE_UNTIL)).toBe(true);
   });
 
   it("ignores a missing row (TTL purge) rather than failing the delivered response", async () => {
-    behavior.mode = "conflict";
     await expect(slackEventRepository.settle("evt-1", "done")).resolves.toBeUndefined();
+    // And does not materialise one: a settled row with no claim behind it
+    // would be a handled event nothing handled.
+    expect(await row("evt-1")).toBeNull();
   });
 
   it("rethrows non-conditional errors", async () => {
-    behavior.mode = "boom";
+    vi.spyOn(store, "updateItem").mockRejectedValueOnce(new Error("network partition"));
     await expect(slackEventRepository.settle("evt-1", "done")).rejects.toThrow(
       /network partition/,
     );

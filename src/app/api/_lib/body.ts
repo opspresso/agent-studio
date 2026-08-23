@@ -81,6 +81,19 @@ export async function turnBody(request: Request): Promise<unknown | Response> {
   return boundedBody(request, MAX_TURN_BODY_BYTES);
 }
 
+/**
+ * Ceiling on an uploaded model catalog. The published one is under 100KB;
+ * this leaves room for a deployment that declares far more routes than
+ * agent-models does, and is still small enough that the JSON a 4xx is
+ * decided on was never worth refusing earlier.
+ */
+export const MAX_CATALOG_BODY_BYTES = 4 * 1024 * 1024;
+
+/** A catalog document an admin uploads, or the response that refuses it. */
+export async function catalogBody(request: Request): Promise<unknown | Response> {
+  return boundedBody(request, MAX_CATALOG_BODY_BYTES);
+}
+
 async function boundedBody(request: Request, maxBytes: number): Promise<unknown | Response> {
   try {
     return JSON.parse(await readBodyText(request, maxBytes));

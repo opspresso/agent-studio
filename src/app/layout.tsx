@@ -4,6 +4,7 @@ import { Notifications } from "@mantine/notifications";
 import { Chakra_Petch, Figtree, JetBrains_Mono } from "next/font/google";
 import { AppLayout } from "@/components/AppLayout";
 import { ImageViewerProvider } from "./_components/ImageViewer";
+import { config } from "@/lib/config";
 import { getSessionUser } from "@/lib/session";
 import { resolveViewer } from "@/lib/viewer";
 import { I18nProvider } from "./_i18n/provider";
@@ -101,7 +102,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <I18nProvider locale={locale}>
             <Notifications position="top-right" />
             <ImageViewerProvider>
-              <AppLayout version={version} viewer={viewer}>
+              <AppLayout
+                version={version}
+                viewer={viewer}
+                signInProviders={config.authProviders}
+              >
                 {children}
               </AppLayout>
             </ImageViewerProvider>

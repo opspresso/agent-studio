@@ -1,10 +1,25 @@
-import { UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { MemberRepository } from "@/domain/member/repository";
 import { toMemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
-import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
-import { keys } from "@/infrastructure/db/keys";
-import { queryAll } from "@/infrastructure/db/query";
+import { sql } from "@/infrastructure/db/client";
+
+/**
+ * Members are Better Auth's `user` rows, read here directly: the auth library
+ * owns the table and its writes, and this is the one other reader. Column
+ * names are the library's (`src/infrastructure/db/migrations.ts` creates
+ * them), which is why they are quoted.
+ */
+interface UserRow {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  tier: string | null;
+  createdAt: Date | string;
+  lastLoginAt: Date | string | null;
+}
+
+const COLUMNS = `"id", "name", "email", "image", "tier", "createdAt", "lastLoginAt"`;
 
 function iso(value: unknown): string | null {
   if (typeof value !== "string" && !(value instanceof Date)) return null;
@@ -12,89 +27,73 @@ function iso(value: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function toMember(item: Record<string, unknown>): Member | null {
-  const joinedAt = iso(item.createdAt);
-  if (
-    typeof item.id !== "string" ||
-    typeof item.name !== "string" ||
-    typeof item.email !== "string" ||
-    !joinedAt
-  ) {
+function toMember(row: UserRow): Member | null {
+  const joinedAt = iso(row.createdAt);
+  if (!joinedAt) {
     return null;
   }
   return {
-    id: item.id,
-    name: item.name,
-    email: item.email,
-    image: typeof item.image === "string" ? item.image : null,
-    tier: toMemberTier(item.tier),
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    image: row.image,
+    tier: toMemberTier(row.tier ?? undefined),
     joinedAt,
-    lastLoginAt: iso(item.lastLoginAt),
+    lastLoginAt: iso(row.lastLoginAt),
   };
 }
 
 export const memberRepository: MemberRepository = {
   async list() {
-    const items = await queryAll({
-      TableName: getTableName(),
-      IndexName: "GSI1",
-      KeyConditionExpression: "GSI1PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.authModelPartition("user") },
-    });
-    return items.flatMap((item): Member[] => {
-      const member = toMember(item);
+    const rows = await sql<UserRow>(`SELECT ${COLUMNS} FROM "user" ORDER BY "createdAt"`);
+    return rows.flatMap((row): Member[] => {
+      const member = toMember(row);
       return member ? [member] : [];
     });
   },
 
   async getByEmail(email) {
-    // The user row itself carries the unique-lookup GSI2 attributes (see
-    // `buildItem` in the auth adapter), so this is one query — no lock-row hop.
-    const items = await queryAll({
-      TableName: getTableName(),
-      IndexName: "GSI2",
-      KeyConditionExpression: "GSI2PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.authUniqueLookup("user", "email", email) },
-    });
-    for (const item of items) {
-      const member = toMember(item);
-      if (member) {
-        return member;
-      }
-    }
-    return null;
+    const rows = await sql<UserRow>(`SELECT ${COLUMNS} FROM "user" WHERE "email" = $1`, [email]);
+    const row = rows[0];
+    return row ? toMember(row) : null;
   },
 
   async setTier(id, tier) {
-    // Atomic on the one attribute on purpose: the auth adapter's `update` is
-    // read-modify-replace of the *whole item*, and routing a tier write through
-    // it would let a concurrent `lastLoginAt` write revert the tier wholesale.
-    // The converse race — the adapter's replace overwriting a tier committed
-    // inside its read window — remains, but is bounded to that user's own
-    // sign-in and a milliseconds-wide window.
-    let attributes: Record<string, unknown>;
-    try {
-      const result = await getDocumentClient().send(
-        new UpdateCommand({
-          TableName: getTableName(),
-          Key: keys.auth("user", id),
-          ConditionExpression: "attribute_exists(PK)",
-          UpdateExpression: "SET tier = :tier",
-          ExpressionAttributeValues: { ":tier": tier },
-          ReturnValues: "ALL_OLD",
-        }),
-      );
-      attributes = result.Attributes ?? {};
-    } catch (error) {
-      if ((error as { name?: string }).name === "ConditionalCheckFailedException") {
-        return null;
-      }
-      throw error;
-    }
-    const before = toMember(attributes);
-    if (!before) {
+    // One column, atomically: the auth library's own update is a
+    // read-modify-replace of the whole row, and routing a tier write through
+    // it would let a concurrent `lastLoginAt` write revert the tier.
+    const rows = await sql<UserRow & { previousTier: string | null }>(
+      `UPDATE "user" AS u SET "tier" = $2 ` +
+        `FROM (SELECT "id", "tier" AS "previousTier" FROM "user" WHERE "id" = $1 FOR UPDATE) AS before ` +
+        `WHERE u."id" = before."id" ` +
+        `RETURNING u."id", u."name", u."email", u."image", u."tier", u."createdAt", u."lastLoginAt", before."previousTier"`,
+      [id, tier],
+    );
+    const row = rows[0];
+    if (!row) {
       return null;
     }
-    return { member: { ...before, tier }, previousTier: before.tier };
+    const member = toMember(row);
+    if (!member) {
+      return null;
+    }
+    return { member, previousTier: toMemberTier(row.previousTier ?? undefined) };
   },
 };
+
+/**
+ * Better Auth deletes an expired session only when its cookie comes back —
+ * a browser that cleared its data, or a sign-in that lapsed before the person
+ * returned, leaves its row forever. The retention tick sweeps those here, in
+ * the one module that may speak SQL to Better Auth's tables. Bounded per
+ * call like the item store's sweep, so a backlog drains over several ticks.
+ * (`verification` needs no sweep: the library purges expired rows on every
+ * lookup.)
+ */
+export async function deleteExpiredSessions(now: Date, limit = 5_000): Promise<number> {
+  const rows = await sql<{ id: string }>(
+    `DELETE FROM "session" WHERE "id" = ANY(ARRAY(SELECT "id" FROM "session" WHERE "expiresAt" <= $1 LIMIT $2)) RETURNING "id"`,
+    [now, limit],
+  );
+  return rows.length;
+}

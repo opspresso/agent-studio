@@ -1,26 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
-
-let stored: Record<string, unknown> = {};
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { keys } from "@/infrastructure/db/keys";
+import type { FakeStore } from "./fakeStore";
 
 /** Records what was written and answers reads from it. */
-const fakeClient = {
-  async send(command: { input: Record<string, unknown>; constructor: { name: string } }) {
-    const name = command.constructor.name;
-    if (name === "PutCommand") {
-      stored = command.input.Item as Record<string, unknown>;
-      return {};
-    }
-    if (name === "GetCommand") {
-      return { Item: stored };
-    }
-    return {};
-  },
-};
-
-vi.mock("@/infrastructure/db/client", () => ({
-  getDocumentClient: () => fakeClient,
-  getTableName: () => "test-table",
-}));
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
+const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
 const { mcpRepository } = await import("@/infrastructure/db/repositories/mcpRepository");
 const { mcpConnectionRepository } = await import(
@@ -28,6 +12,10 @@ const { mcpConnectionRepository } = await import(
 );
 import type { McpServer } from "@/domain/mcp/types";
 import type { McpConnection } from "@/domain/mcp/connection";
+
+beforeEach(() => {
+  store.rows.clear();
+});
 
 /**
  * The mapper names its fields one by one, so a field added to the entity is
@@ -52,12 +40,13 @@ describe("mcp repository mapping", () => {
     };
     await mcpRepository.put(server);
 
-    expect(stored.runtime).toBe("managed");
-    expect(stored.image).toBe("mcp-image-fetch:local");
-    expect(stored.envRefs).toEqual(["/env/prod/mcp-image-fetch"]);
-    expect(stored.environment).toEqual({ API_TOKEN: "enc:v1:ciphertext" });
-    expect(stored.args).toEqual(["--transport", "streamable-http"]);
-    expect(stored.endpointPath).toBe("/custom-mcp");
+    const stored = await store.getItem(keys.mcp("image-fetch"));
+    expect(stored?.runtime).toBe("managed");
+    expect(stored?.image).toBe("mcp-image-fetch:local");
+    expect(stored?.envRefs).toEqual(["/env/prod/mcp-image-fetch"]);
+    expect(stored?.environment).toEqual({ API_TOKEN: "enc:v1:ciphertext" });
+    expect(stored?.args).toEqual(["--transport", "streamable-http"]);
+    expect(stored?.endpointPath).toBe("/custom-mcp");
 
     const read = await mcpRepository.get("image-fetch");
     expect(read?.runtime).toBe("managed");
@@ -69,13 +58,16 @@ describe("mcp repository mapping", () => {
   });
 
   it("reads a row written before managed servers existed as remote", async () => {
-    stored = {
-      name: "github",
-      url: "https://api.githubcopilot.com/mcp/",
-      headers: {},
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    };
+    store.seed([
+      {
+        ...keys.mcp("github"),
+        name: "github",
+        url: "https://api.githubcopilot.com/mcp/",
+        headers: {},
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
     const read = await mcpRepository.get("github");
     expect(read?.runtime).toBeUndefined();
   });
@@ -174,34 +166,36 @@ describe("connections written before the checks existed", () => {
     // There is nothing safe to assume for it. The old fallback — "it belongs to
     // whatever the entry points at now" — is the assumption the field exists to
     // stop making, and a token checked against a guess is not checked.
-    stored = {
-      PK: "PROJECT#p",
-      SK: "MCPCONN#slack",
-      projectName: "p",
-      serverName: "slack",
-      clientId: "old",
-      resource: "https://mcp.slack.com",
-      scopes: [],
-      status: "connected",
-      accessToken: "enc:token",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    };
+    store.seed([
+      {
+        ...keys.mcpConnection("p", "slack"),
+        projectName: "p",
+        serverName: "slack",
+        clientId: "old",
+        resource: "https://mcp.slack.com",
+        scopes: [],
+        status: "connected",
+        accessToken: "enc:token",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
 
     expect(await mcpConnectionRepository.get("p", "slack")).toBeNull();
   });
 
   it("reads a row missing its resource the same way", async () => {
-    stored = {
-      PK: "PROJECT#p",
-      SK: "MCPCONN#slack",
-      projectName: "p",
-      serverName: "slack",
-      clientId: "old",
-      issuer: "https://auth.example.com",
-      scopes: [],
-      status: "connected",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    };
+    store.seed([
+      {
+        ...keys.mcpConnection("p", "slack"),
+        projectName: "p",
+        serverName: "slack",
+        clientId: "old",
+        issuer: "https://auth.example.com",
+        scopes: [],
+        status: "connected",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
 
     expect(await mcpConnectionRepository.get("p", "slack")).toBeNull();
   });

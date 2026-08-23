@@ -6,7 +6,7 @@ import {
   scanSchedules,
   scheduleInput,
 } from "@/application/trigger/scanSchedules";
-import { triggerRunnerDeps } from "@/lib/container";
+import { sweepExpiredRows, triggerRunnerDeps } from "@/lib/container";
 import { config } from "@/lib/config";
 import { log } from "@/shared/logger";
 import { timingSafeEqualString } from "@/shared/timingSafe";
@@ -48,6 +48,19 @@ export async function POST(request: Request): Promise<Response> {
     `scan: checked=${summary.checked} fired=${summary.fired} alreadyClaimed=${summary.alreadyClaimed}` +
       ` skipped=${summary.skipped} repaired=${summary.repaired} invalid=${summary.invalid}` +
       ` errors=${summary.errors}`,
+  );
+  // Retention rides on the same tick: the one thing that already runs once a
+  // minute on every deployment that has a ticker. Best-effort — a sweep that
+  // fails leaves rows for the next tick, and must not fail the scan.
+  after(() =>
+    sweepExpiredRows().then(
+      (swept) => {
+        if (swept > 0) {
+          log.info("trigger", `retention: swept ${swept} expired row(s)`);
+        }
+      },
+      (error: unknown) => log.error("trigger", "retention sweep failed", error),
+    ),
   );
   after(() =>
     // Bounded, not one task per firing: a 09:00 shared by every project must

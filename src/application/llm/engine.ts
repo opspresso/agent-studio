@@ -7,7 +7,7 @@
  *
  * Pure application logic: the channel, usage recorder, MCP dispatcher, skill
  * loader and subagent runner are all injected so the loop is testable without
- * network or DynamoDB.
+ * network or database.
  */
 
 import type {
@@ -959,8 +959,8 @@ function elidedArg(bytes: number): string {
  * and nothing can cut them, so one megabyte of `content` is about 350k tokens
  * re-sent per turn, past the window of most models in the catalog: a 400 from
  * the provider, mid-run, after the file was already delivered. And **the
- * announced copy is persisted onto one 400KB DynamoDB item**, whose write is
- * caught and logged, taking the reply the reader just watched stream.
+ * announced copy is persisted onto one chat-message row** under a byte budget,
+ * the cut caught and logged, taking the reply the reader just watched stream.
  *
  * So the value is swapped for its size, in both copies. The model is not
  * deprived of anything it needs: the tool result on the very same turn says the

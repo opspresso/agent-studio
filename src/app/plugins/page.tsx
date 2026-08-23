@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { Alert, Badge, Button, Card, Group, Stack, Text } from "@mantine/core";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Badge, Button, Card, FileButton, Group, Stack, Text } from "@mantine/core";
 import { IconPackage } from "@tabler/icons-react";
 import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
 import { CardGrid } from "@/app/_components/CardGrid";
@@ -15,6 +15,7 @@ import {
   getPluginsSyncConfig,
   listPlugins,
   syncPlugins,
+  uploadPluginsArchive,
   type Plugin,
   type PluginsSyncConfig,
   type PluginSyncResult,
@@ -32,11 +33,33 @@ export default function PluginsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<PluginSyncResult | null>(null);
   const [syncConfig, setSyncConfig] = useState<PluginsSyncConfig | null>(null);
+  /**
+   * The archive behind the report on screen, when there is one. Applying a
+   * deletion re-runs the sync that reported the orphan, and an archive sync
+   * has nothing to re-read but the file — so it stays until the next press of
+   * either button decides what the next report comes from.
+   */
+  const [archive, setArchive] = useState<File | null>(null);
+  const resetFilePicker = useRef<() => void>(null);
   const [filter, setFilter] = useState("");
 
-  async function runSync(selection: PluginSyncSelection = {}) {
-    setSyncResult(await syncPlugins(selection));
+  async function runSync(selection: PluginSyncSelection = {}, source: File | null = archive) {
+    setSyncResult(await (source ? uploadPluginsArchive(source, selection) : syncPlugins(selection)));
     await refresh();
+  }
+
+  async function syncFrom(source: File | null) {
+    setSyncing(true);
+    setSyncResult(null);
+    setError(null);
+    setArchive(source);
+    try {
+      await runSync({}, source);
+    } catch (e) {
+      setError(reportError(e, source ? t("plugins.uploadFailed") : "Sync failed"));
+    } finally {
+      setSyncing(false);
+    }
   }
 
   async function refresh() {
@@ -65,25 +88,38 @@ export default function PluginsPage() {
         Icon={IconPackage}
       >
         {viewer?.isAdmin && (
-          <Button
-            variant="default"
-            loading={syncing}
-            disabled={!syncConfig?.configured}
-            onClick={async () => {
-              setSyncing(true);
-              setSyncResult(null);
-              setError(null);
-              try {
-                await runSync();
-              } catch (e) {
-                setError(reportError(e, "Sync failed"));
-              } finally {
-                setSyncing(false);
-              }
-            }}
-          >
-            Sync from GitHub
-          </Button>
+          <Group gap="xs">
+            <FileButton
+              resetRef={resetFilePicker}
+              accept=".tar.gz,.tgz,.tar,application/gzip,application/x-gzip,application/x-tar"
+              onChange={(file) => {
+                resetFilePicker.current?.();
+                if (file) {
+                  void syncFrom(file);
+                }
+              }}
+            >
+              {(props) => (
+                <Button
+                  {...props}
+                  variant="default"
+                  loading={syncing && archive !== null}
+                  disabled={syncing}
+                  title={t("plugins.uploadArchiveHint")}
+                >
+                  {t("plugins.uploadArchive")}
+                </Button>
+              )}
+            </FileButton>
+            <Button
+              variant="default"
+              loading={syncing && archive === null}
+              disabled={syncing || !syncConfig?.configured}
+              onClick={() => void syncFrom(null)}
+            >
+              Sync from GitHub
+            </Button>
+          </Group>
         )}
       </CatalogHeader>
 
@@ -94,6 +130,7 @@ export default function PluginsPage() {
             : "Plugin sync is not configured. Add the repository and token in Settings."}
           {syncConfig.last &&
             ` · last synced ${formatDateTime(syncConfig.last.finishedAt, locale)} by ${syncConfig.last.actorEmail}`}
+          {archive && syncResult && ` · ${t("plugins.archiveSource", { name: archive.name })}`}
         </Text>
       )}
 

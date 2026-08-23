@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   Checkbox,
+  FileInput,
   Group,
   NumberInput,
   Select,
@@ -24,8 +25,9 @@ import {
   selfHostedModelToInput,
   type SelfHostedModelInput,
 } from "@/domain/llm/selfHostedModels";
+import type { ModelCatalogDocumentStatus } from "@/application/llm/modelCatalogDocument";
 import { formatUsd } from "@/app/_lib/formatUsd";
-import { formatDate } from "@/shared/date";
+import { formatDate, formatDateTime } from "@/shared/date";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
@@ -477,6 +479,132 @@ function SelfHostedSection({
   );
 }
 
+/**
+ * The catalog document an admin installs by hand (`/api/models/catalog/document`)
+ * — the registry's offline source, ahead of the published catalog. Either
+ * verb refreshes the registry before it answers, so the page re-reads the
+ * models right after.
+ */
+function CatalogDocumentSection({ onChanged }: { onChanged: () => Promise<void> }) {
+  const t = useT();
+  const locale = useLocale();
+  const [status, setStatus] = useState<ModelCatalogDocumentStatus | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    setStatus(
+      await readJson<ModelCatalogDocumentStatus>(await fetch("/api/models/catalog/document")),
+    );
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadStatus().catch(
+      (loadError) =>
+        !cancelled &&
+        setError(loadError instanceof Error ? loadError.message : "Failed to read the document"),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [loadStatus]);
+
+  async function send(init: RequestInit, fallback: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/models/catalog/document", init);
+      setStatus(await readJson<ModelCatalogDocumentStatus>(res));
+      setFile(null);
+      await onChanged();
+    } catch (sendError) {
+      setError(reportError(sendError, fallback));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function install() {
+    if (file === null) return;
+    // The file's text as the body: the server parses and validates it, so a
+    // file that is not JSON is refused with the same 400 any other body gets.
+    await send(
+      { method: "PUT", headers: jsonHeaders, body: await file.text() },
+      "Failed to install the catalog",
+    );
+  }
+
+  return (
+    <Card withBorder>
+      <Stack gap="sm">
+        <div>
+          <Text fw={600}>{t("models.catalogFile.title")}</Text>
+          <Text fz="sm" c="dimmed">
+            {t("models.catalogFile.lede")}
+          </Text>
+        </div>
+        {error && (
+          <Alert color="orange" variant="light" withCloseButton onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+        {status?.stored === true ? (
+          <Group gap="xs" wrap="wrap">
+            <Text fz="sm">
+              {t("models.catalogFile.installed", {
+                by: status.uploadedBy,
+                at: formatDateTime(status.uploadedAt, locale),
+                count: status.modelCount,
+                updated: status.updatedAt ? formatDate(status.updatedAt, locale) : "—",
+              })}
+            </Text>
+            {status.skipped.length > 0 && (
+              <Tooltip multiline maw={420} label={status.skipped.join("\n")}>
+                <Badge size="sm" variant="light" color={BADGE.attention}>
+                  {t("models.catalogFile.skipped", { count: status.skipped.length })}
+                </Badge>
+              </Tooltip>
+            )}
+          </Group>
+        ) : (
+          status !== null && (
+            <Text fz="sm" c="dimmed">
+              {t("models.catalogFile.none")}
+            </Text>
+          )
+        )}
+        <Group gap="sm" align="flex-end" wrap="wrap">
+          <FileInput
+            size="xs"
+            label={t("models.catalogFile.choose")}
+            accept="application/json,.json"
+            value={file}
+            onChange={setFile}
+            clearable
+            disabled={busy}
+            w={280}
+          />
+          <Button size="compact-sm" loading={busy} disabled={file === null} onClick={() => void install()}>
+            {t("models.catalogFile.upload")}
+          </Button>
+          {status?.stored === true && (
+            <Button
+              size="compact-sm"
+              variant="default"
+              disabled={busy}
+              onClick={() => void send({ method: "DELETE" }, "Failed to remove the catalog")}
+            >
+              {t("models.catalogFile.remove")}
+            </Button>
+          )}
+        </Group>
+      </Stack>
+    </Card>
+  );
+}
+
 export default function ModelsPage() {
   const t = useT();
   const locale = useLocale();
@@ -653,6 +781,8 @@ export default function ModelsPage() {
           </Group>
         )}
       </CatalogHeader>
+
+      {canEdit && <CatalogDocumentSection onChanged={loadCatalog} />}
 
       {canEdit && providerByName.get("selfhosted")?.dedicated === true && (
         <SelfHostedSection

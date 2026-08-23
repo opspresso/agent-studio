@@ -5,15 +5,28 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
+import { ObjectNotFoundError, type ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import { config } from "@/lib/config";
 import { getArtifactAccessMode } from "@/lib/runtime-settings";
+import { sniffImageType } from "@/domain/llm/imageSniff";
 
 let s3Client: S3Client | undefined;
 
+/**
+ * Any S3-compatible store. `S3_ENDPOINT` names one other than AWS — a MinIO,
+ * a Garage, a Ceph gateway inside the network — addressed path-style,
+ * because a self-hosted endpoint rarely resolves bucket subdomains. Unset,
+ * the SDK's own region/credential resolution applies, exactly as before.
+ */
 function getS3Client(): S3Client {
   if (!s3Client) {
-    s3Client = new S3Client({ region: config.awsRegion });
+    const endpoint = config.s3Endpoint;
+    const credentials = config.s3Credentials;
+    s3Client = new S3Client({
+      region: config.awsRegion,
+      ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
+      ...(credentials ? { credentials } : {}),
+    });
   }
   return s3Client;
 }
@@ -30,9 +43,24 @@ export function isObjectStoreConfigured(): boolean {
   return config.objectBucketName !== undefined;
 }
 
+/**
+ * Where a reader fetches a public object from. `S3_PUBLIC_BASE_URL` when the
+ * store is reached through a different address than the app uploads to (a
+ * reverse proxy in front of MinIO); otherwise the endpoint, path-style; and
+ * for AWS itself the virtual-host form.
+ */
 export function artifactPublicUrl(key: string): string {
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-  return `https://${requireBucket()}.s3.${config.awsRegion}.amazonaws.com/${encodedKey}`;
+  const bucket = requireBucket();
+  const base = config.s3PublicBaseUrl?.replace(/\/+$/, "");
+  if (base) {
+    return `${base}/${encodedKey}`;
+  }
+  const endpoint = config.s3Endpoint?.replace(/\/+$/, "");
+  if (endpoint) {
+    return `${endpoint}/${bucket}/${encodedKey}`;
+  }
+  return `https://${bucket}.s3.${config.awsRegion}.amazonaws.com/${encodedKey}`;
 }
 
 /**
@@ -55,9 +83,16 @@ export const artifactObjectStore: ArtifactObjectStore = {
   },
 
   async read(key, maxBytes) {
-    const object = await getS3Client().send(
-      new GetObjectCommand({ Bucket: requireBucket(), Key: key }),
-    );
+    const object = await getS3Client()
+      .send(new GetObjectCommand({ Bucket: requireBucket(), Key: key }))
+      .catch((error: unknown) => {
+        // The port's name for it. `NoSuchKey` is what S3 and every compatible
+        // store answer a GET on a missing key with.
+        if ((error as { name?: string }).name === "NoSuchKey") {
+          throw new ObjectNotFoundError(key);
+        }
+        throw error;
+      });
     if (object.ContentLength === undefined) {
       throw new Error("stored object has no content length");
     }
@@ -71,7 +106,15 @@ export const artifactObjectStore: ArtifactObjectStore = {
     if (bytes.byteLength > maxBytes) {
       throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
     }
-    return { bytes, mimeType: object.ContentType ?? "application/octet-stream" };
+    // The header is the only place the type lives, and a filesystem hop loses
+    // it: a migration's `aws s3 sync` → `mc mirror`, a backup restored the
+    // same way, both re-guess from the extension — which an `images/<uuid>`
+    // key has none of. A picture says what it is in its first bytes; for one,
+    // that answer wins over a header that says nothing.
+    const declared = object.ContentType;
+    const generic = declared === undefined || declared === "application/octet-stream";
+    const mimeType = (generic ? sniffImageType(bytes) : undefined) ?? declared ?? "application/octet-stream";
+    return { bytes, mimeType };
   },
 
   /**

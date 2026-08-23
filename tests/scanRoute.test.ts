@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
-vi.mock("@/lib/container", () => ({ triggerRunnerDeps: {} }));
+vi.mock("@/lib/container", () => ({
+  triggerRunnerDeps: {},
+  sweepExpiredRows: async () => 0,
+}));
 
 const scanSchedules = vi.fn((_deps: unknown, _at: Date): Promise<unknown> => Promise.resolve(null));
 const executeFiring = vi.fn((_deps: unknown, _firing: unknown, _input: unknown) =>

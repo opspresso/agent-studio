@@ -42,18 +42,24 @@ export const ko: Messages = {
   "nav.models": "Models",
   "nav.settings": "설정",
 
-  "auth.signIn": "Google 계정으로 로그인",
+  "auth.signIn": "로그인",
+  "auth.signInWith": "{provider} 계정으로 로그인",
+  "auth.signInWithPassword": "비밀번호로 로그인",
+  "auth.email": "이메일",
+  "auth.password": "비밀번호",
+  "auth.passwordFailed": "이메일 또는 비밀번호가 올바르지 않습니다.",
+  "auth.or": "또는",
   "auth.signOut": "로그아웃",
   "login.title": "로그인이 필요합니다",
   "login.product": "Agent Studio — 프로덕션 AI 에이전트를 만들고 운영하는 플랫폼입니다.",
-  "login.domains": "이 배포가 허용한 도메인의 Google 계정으로 로그인하세요.",
+  "login.domains": "이 배포가 허용한 도메인의 계정으로 로그인하세요.",
 
   "home.eyebrow": "버전 · 배포 · 실행",
   "home.headline": "프로덕션 AI 에이전트를",
   "home.headlineAccent": " 만들고 운영하세요.",
   "home.lede":
     "모델·스킬·MCP·워크플로·트레이싱·평가·거버넌스로 에이전트를 만드세요.",
-  "home.signInHint": "이 배포가 허용한 도메인의 Google 계정이 필요합니다.",
+  "home.signInHint": "이 배포가 허용한 도메인의 계정이 필요합니다.",
   "home.proof.engine": "하나의 엔진",
   "home.proof.engineNote": "모든 모델, 모든 창구",
   "home.proof.traces": "실시간 트레이스",
@@ -495,6 +501,11 @@ export const ko: Messages = {
   "plugins.empty": "아직 플러그인이 없습니다. 설정에서 저장소와 토큰을 등록한 뒤 동기화하세요.",
   "plugins.noSkills": "이 플러그인은 Skill 을 선언하지 않습니다.",
   "plugins.noServers": "이 플러그인은 MCP 서버를 선언하지 않습니다.",
+  "plugins.uploadArchive": "아카이브 업로드",
+  "plugins.uploadArchiveHint":
+    "플러그인 저장소의 .tar.gz (git archive 또는 체크아웃의 tar) — GitHub 에 닿을 수 없는 배포를 위한 경로입니다.",
+  "plugins.archiveSource": "아카이브: {name}",
+  "plugins.uploadFailed": "업로드에 실패했습니다",
 
   "artifacts.lede":
     "실행이 만들어 낸 이미지와 문서입니다. Slack·트리거·A2A 호출로 시작된 실행의 결과물은 해당 프로젝트에 속하며, 프로젝트 탭에서 볼 수 있습니다.",
@@ -534,7 +545,7 @@ export const ko: Messages = {
   "managed.port": "컨테이너 포트",
   "managed.envRefs": "환경변수 참조",
   "managed.envRefsPlaceholder": "/env/prod/mcp-image-fetch",
-  "managed.envRefsHint": "값이 아니라 SSM 파라미터 이름입니다 — 시크릿은 여기를 거치지 않습니다.",
+  "managed.envRefsHint": "값이 아니라 호스트의 env 파일 경로입니다 — 시크릿은 여기를 거치지 않습니다.",
   "managed.envVars": "환경변수",
   "managed.envVarsEmpty": "직접 지정한 환경변수가 없습니다.",
   "managed.addVariable": "+ 변수 추가",
@@ -656,6 +667,17 @@ export const ko: Messages = {
   "models.filter": "Model 검색…",
   "models.catalogUpdated": "카탈로그 갱신",
   "models.refreshNow": "지금 갱신",
+  "models.catalogFile.title": "카탈로그 문서",
+  "models.catalogFile.lede":
+    "여기 설치한 카탈로그 JSON 이 발행된 카탈로그보다 우선해 레지스트리가 됩니다 — 발행 카탈로그에 닿을 수 없는 배포를 위한 경로입니다. 제거하면 다시 발행 카탈로그를 따릅니다.",
+  "models.catalogFile.none":
+    "설치된 문서가 없습니다. 레지스트리는 발행된 카탈로그 또는 내장 스냅샷을 따릅니다.",
+  "models.catalogFile.installed":
+    "{by} 가 {at} 에 설치 — 모델 {count}개, 카탈로그 갱신 {updated}",
+  "models.catalogFile.skipped": "레지스트리가 거부한 항목 {count}개",
+  "models.catalogFile.choose": "카탈로그 JSON",
+  "models.catalogFile.upload": "설치",
+  "models.catalogFile.remove": "제거",
   "models.selfHosted.title": "Self-hosted 모델",
   "models.selfHosted.lede":
     "이 배포가 직접 서빙하는 모델 — 여기서 선언하고 selfhosted 채널로 디스패치한다. 목록은 채널이 보고한 것이고, 선언한 모델은 0 가격으로 레지스트리에 올라간다.",
@@ -684,6 +706,9 @@ export const ko: Messages = {
   "settings.lede":
     "재정의 값은 데이터베이스에 저장되며 환경변수보다 우선합니다. 가려진 값은 저장된 시크릿을 유지하고, 필드를 비우면 환경변수로 되돌아갑니다.",
   "settings.keepPrefix": "접두사 유지",
+  "settings.artifactAccess.authenticated": "인증 · pre-signed URL",
+  "settings.artifactAccess.public": "공개 · S3 직접 URL",
+  "settings.artifactAccess.proxied": "프록시 · 앱이 직접 서빙",
   "settings.providerPlaceholder": "프로바이더…",
   "settings.baseUrlPlaceholder": "base URL",
   "settings.clientName": "클라이언트 이름",

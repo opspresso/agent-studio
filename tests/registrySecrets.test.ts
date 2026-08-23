@@ -56,6 +56,9 @@ import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
 import { ConflictError, NotFoundError } from "@/application/errors";
+// The store module is the in-memory fake (tests/setup.ts), which raises the
+// same error the real one does for a lost precondition.
+import { ConditionalWriteError } from "@/infrastructure/db/store";
 import { isEncrypted, isMasked } from "@/infrastructure/crypto/secretEncryption";
 
 /** The display contract is "maskSecret produced this", not any one glyph —
@@ -263,9 +266,7 @@ describe("registry conditional write errors", () => {
   it("maps a concurrent create to ConflictError", async () => {
     const { repo } = makeMcpRepo();
     repo.create = async () => {
-      const error = new Error("conditional check failed");
-      error.name = "ConditionalCheckFailedException";
-      throw error;
+      throw new ConditionalWriteError("conditional check failed");
     };
 
     await expect(
@@ -288,9 +289,7 @@ describe("registry conditional write errors", () => {
       },
     ]);
     repo.update = async () => {
-      const error = new Error("conditional check failed");
-      error.name = "ConditionalCheckFailedException";
-      throw error;
+      throw new ConditionalWriteError("conditional check failed");
     };
 
     await expect(
@@ -309,9 +308,7 @@ describe("registry conditional write errors", () => {
       },
     ]);
     repo.delete = async () => {
-      const error = new Error("conditional check failed");
-      error.name = "ConditionalCheckFailedException";
-      throw error;
+      throw new ConditionalWriteError("conditional check failed");
     };
 
     await expect(createMcpUseCases(repo).remove("m", "admin@example.com")).rejects.toBeInstanceOf(NotFoundError);

@@ -1,16 +1,17 @@
-import {
-  BatchWriteCommand,
-  type BatchWriteCommandInput,
-  DeleteCommand,
-  GetCommand,
-  QueryCommand,
-  TransactWriteCommand,
-  UpdateCommand,
-  type QueryCommandOutput,
-} from "@aws-sdk/lib-dynamodb";
-import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
-import { expiresAtSeconds, isExpired, notExpired, RETENTION } from "@/infrastructure/db/ttl";
+import {
+  CONDITIONAL_WRITE_FAILED,
+  conditions,
+  deleteItem,
+  deletePartition,
+  getItem,
+  putItem,
+  queryItems,
+  transact,
+  updateItem,
+  type Item,
+} from "@/infrastructure/db/store";
+import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type {
   Chat,
@@ -25,11 +26,11 @@ import type { ChannelToolCall } from "@/domain/llm/types";
 const CHAT_ENTITY = "Chat";
 const MESSAGE_ENTITY = "ChatMessage";
 
-type DynamoItem = Record<string, unknown>;
-type LastKey = QueryCommandOutput["LastEvaluatedKey"];
-type WriteRequests = NonNullable<BatchWriteCommandInput["RequestItems"]>[string];
+function lostCondition(error: unknown): boolean {
+  return error instanceof Error && error.name === CONDITIONAL_WRITE_FAILED;
+}
 
-function fromChatItem(item: DynamoItem): Chat {
+function fromChatItem(item: Item): Chat {
   return {
     chatId: item.chatId as string,
     title: item.title as string,
@@ -40,35 +41,30 @@ function fromChatItem(item: DynamoItem): Chat {
   };
 }
 
-function chatUpdate(chat: Chat, condition: string): UpdateCommand {
-  return new UpdateCommand({
-    TableName: getTableName(),
-    Key: keys.chat(chat.chatId),
-    UpdateExpression:
-      "SET GSI1PK = :gsi1pk, GSI1SK = :gsi1sk, entityType = :entityType, " +
-      "chatId = :chatId, title = :title, ownerEmail = :ownerEmail, " +
-      "projectName = :projectName, createdAt = :createdAt, updatedAt = :updatedAt, " +
-      "expiresAt = :expiresAt, nextSeq = if_not_exists(nextSeq, :zero)",
-    ExpressionAttributeValues: {
-      ":gsi1pk": keys.chatOwnerPartition(chat.ownerEmail),
-      ":gsi1sk": chat.updatedAt,
-      ":entityType": CHAT_ENTITY,
-      ":chatId": chat.chatId,
-      ":title": chat.title,
-      ":ownerEmail": chat.ownerEmail,
-      ":projectName": chat.projectName ?? null,
-      ":createdAt": chat.createdAt,
-      ":updatedAt": chat.updatedAt,
-      // Retention runs from last activity — each update pushes the expiry out,
-      // so an active chat is never purged mid-run.
-      ":expiresAt": expiresAtSeconds(chat.updatedAt, RETENTION.chatDays),
-      ":zero": 0,
-    },
-    ConditionExpression: condition,
-  });
+/**
+ * The chat's own fields written over whatever else the row carries — the run
+ * lease, the sequence counter, a deletion mark are the run's and survive.
+ */
+function chatFields(chat: Chat): Item {
+  return {
+    GSI1PK: keys.chatOwnerPartition(chat.ownerEmail),
+    GSI1SK: chat.updatedAt,
+    entityType: CHAT_ENTITY,
+    chatId: chat.chatId,
+    title: chat.title,
+    ownerEmail: chat.ownerEmail,
+    projectName: chat.projectName ?? null,
+    createdAt: chat.createdAt,
+    updatedAt: chat.updatedAt,
+    // Retention runs from last activity — each update pushes the expiry out,
+    // so an active chat is never purged mid-run.
+    expiresAt: expiresAtSeconds(chat.updatedAt, RETENTION.chatDays),
+  };
 }
 
-function toMessageItem(message: ChatMessage) {
+const live = (row: Item | null): boolean => row !== null && row.deletingAt === undefined;
+
+function toMessageItem(message: ChatMessage): Item {
   const { PK, SK } = keys.chatMessage(message.chatId, message.seq);
   return {
     PK,
@@ -79,7 +75,7 @@ function toMessageItem(message: ChatMessage) {
   };
 }
 
-function fromMessageItem(item: DynamoItem): ChatMessage {
+function fromMessageItem(item: Item): ChatMessage {
   const base = {
     chatId: item.chatId as string,
     seq: item.seq as number,
@@ -125,114 +121,51 @@ function fromMessageItem(item: DynamoItem): ChatMessage {
 
 export const chatRepository: ChatRepository = {
   async get(chatId) {
-    const res = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.chat(chatId) }),
-    );
-    if (!res.Item || isExpired(res.Item.expiresAt, Date.now())) {
+    const item = await getItem(keys.chat(chatId));
+    if (!item || isExpired(item.expiresAt, Date.now())) {
       return null;
     }
-    return fromChatItem(res.Item);
+    return fromChatItem(item);
   },
 
   async listByOwner(ownerEmail, options = {}) {
-    const client = getDocumentClient();
-    const table = getTableName();
-    const { limit } = options;
-    const chats: Chat[] = [];
-    let lastKey: LastKey;
-    do {
-      const res = await client.send(
-        new QueryCommand({
-          TableName: table,
-          IndexName: "GSI1",
-          KeyConditionExpression: "GSI1PK = :pk",
-          ExpressionAttributeValues: { ":pk": keys.chatOwnerPartition(ownerEmail) },
-          ScanIndexForward: false,
-          ExclusiveStartKey: lastKey,
-          ...(limit !== undefined ? { Limit: limit } : {}),
-        }),
-      );
-      for (const item of notExpired(res.Items ?? [], Date.now())) {
-        chats.push(fromChatItem(item));
-      }
-      lastKey = res.LastEvaluatedKey;
-      // `Limit` bounds what DynamoDB *reads*, and expired rows are dropped
-      // after it, so a page can come back short of a limit there are rows for.
-      // Keep pulling until the limit is genuinely filled — and stop the moment
-      // it is, which is the whole point of asking for one.
-    } while (lastKey && (limit === undefined || chats.length < limit));
-    return limit === undefined ? chats : chats.slice(0, limit);
+    const items = await queryItems({
+      index: "GSI1",
+      pk: keys.chatOwnerPartition(ownerEmail),
+      forward: false,
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
+      notExpiredAt: Math.floor(Date.now() / 1000),
+    });
+    return items.map(fromChatItem);
   },
 
   async create(chat) {
-    await getDocumentClient().send(chatUpdate(chat, "attribute_not_exists(PK)"));
+    await updateItem(
+      keys.chat(chat.chatId),
+      () => ({ ...chatFields(chat), nextSeq: 0 }),
+      conditions.notExists,
+    );
   },
 
   async update(chat) {
-    await getDocumentClient().send(
-      chatUpdate(chat, "attribute_exists(PK) AND attribute_not_exists(deletingAt)"),
+    await updateItem(
+      keys.chat(chat.chatId),
+      (row) => ({ ...row, ...chatFields(chat), nextSeq: row?.nextSeq ?? 0 }),
+      live,
     );
   },
 
   async delete(chatId) {
-    const client = getDocumentClient();
-    const table = getTableName();
-    await client.send(
-      new UpdateCommand({
-        TableName: table,
-        Key: keys.chat(chatId),
-        UpdateExpression: "SET deletingAt = if_not_exists(deletingAt, :now)",
-        ConditionExpression: "attribute_exists(PK)",
-        ExpressionAttributeValues: { ":now": new Date().toISOString() },
-      }),
+    await updateItem(
+      keys.chat(chatId),
+      (row) => ({ ...row, deletingAt: row?.deletingAt ?? new Date().toISOString() }),
+      conditions.exists,
     );
-    const toRemove: { PK: string; SK: string }[] = [];
-    let lastKey: LastKey;
-    do {
-      const res = await client.send(
-        new QueryCommand({
-          TableName: table,
-          KeyConditionExpression: "PK = :pk",
-          ExpressionAttributeValues: { ":pk": keys.chat(chatId).PK },
-          ProjectionExpression: "PK, SK",
-          ExclusiveStartKey: lastKey,
-          ConsistentRead: true,
-        }),
-      );
-      for (const item of res.Items ?? []) {
-        if (item.SK !== "META") {
-          toRemove.push({ PK: item.PK as string, SK: item.SK as string });
-        }
-      }
-      lastKey = res.LastEvaluatedKey;
-    } while (lastKey);
-
-    for (let i = 0; i < toRemove.length; i += 25) {
-      let pending: WriteRequests = toRemove
-        .slice(i, i + 25)
-        .map((Key) => ({ DeleteRequest: { Key } }));
-      for (let attempt = 0; pending.length > 0 && attempt < 5; attempt += 1) {
-        const res = await client.send(
-          new BatchWriteCommand({ RequestItems: { [table]: pending } }),
-        );
-        pending = res.UnprocessedItems?.[table] ?? [];
-      }
-      if (pending.length > 0) {
-        throw new Error(`Failed to delete all chat messages after 5 attempts (${pending.length} remain)`);
-      }
-    }
-    await client.send(
-      new DeleteCommand({
-        TableName: table,
-        Key: keys.chat(chatId),
-        ConditionExpression: "attribute_exists(PK) AND attribute_exists(deletingAt)",
-      }),
-    );
+    await deletePartition(keys.chat(chatId).PK, { keep: [keys.chat(chatId).SK] });
+    await deleteItem(keys.chat(chatId), (row) => row !== null && row.deletingAt !== undefined);
   },
 
   async listMessages(chatId, options = {}) {
-    const client = getDocumentClient();
-    const table = getTableName();
     const { sinceSeq } = options;
     // Past `sinceSeq` the query is a range rather than the prefix — the bounds
     // come from `keys` either way, and `chatMessageRange` says why the upper
@@ -242,87 +175,39 @@ export const chatRepository: ChatRepository = {
       return [];
     }
     const range = sinceSeq === undefined ? null : keys.chatMessageRange(sinceSeq + 1);
-    const messages: ChatMessage[] = [];
-    let lastKey: LastKey;
-    do {
-      const res = await client.send(
-        new QueryCommand({
-          TableName: table,
-          KeyConditionExpression: range
-            ? "PK = :pk AND SK BETWEEN :from AND :to"
-            : "PK = :pk AND begins_with(SK, :sk)",
-          ExpressionAttributeValues: range
-            ? {
-                ":pk": keys.chat(chatId).PK,
-                ":from": range.from,
-                ":to": range.to,
-              }
-            : {
-                ":pk": keys.chat(chatId).PK,
-                ":sk": keys.chatMessagePrefix(),
-              },
-          ScanIndexForward: true,
-          ExclusiveStartKey: lastKey,
-          // The client refetches this list the moment a stream finishes; an
-          // eventually-consistent read can miss the just-persisted assistant
-          // message and make the answer vanish from the thread.
-          ConsistentRead: true,
-        }),
-      );
-      for (const item of notExpired(res.Items ?? [], Date.now())) {
-        messages.push(fromMessageItem(item));
-      }
-      lastKey = res.LastEvaluatedKey;
-    } while (lastKey);
-    return messages;
+    const items = await queryItems({
+      pk: keys.chat(chatId).PK,
+      sk: range ? { between: [range.from, range.to] } : { prefix: keys.chatMessagePrefix() },
+      notExpiredAt: Math.floor(Date.now() / 1000),
+    });
+    return items.map(fromMessageItem);
   },
 
   async appendMessage(message) {
-    await getDocumentClient().send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            ConditionCheck: {
-              TableName: getTableName(),
-              Key: keys.chat(message.chatId),
-              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
-            },
-          },
-          {
-            Put: {
-              TableName: getTableName(),
-              Item: toMessageItem(message),
-              ConditionExpression: "attribute_not_exists(PK)",
-            },
-          },
-        ],
-      }),
-    );
+    await transact([
+      { kind: "check", key: keys.chat(message.chatId), condition: live },
+      { kind: "put", item: toMessageItem(message), condition: conditions.notExists },
+    ]);
   },
 
   async claimRun(chatId, runId, nowSeconds, expiresAtSeconds) {
     try {
-      await getDocumentClient().send(
-        new UpdateCommand({
-          TableName: getTableName(),
-          Key: keys.chat(chatId),
+      await updateItem(
+        keys.chat(chatId),
+        (row) => {
           // The cancel flag is cleared with the claim: left behind by the
           // previous run, it would stop this one before it produced a token.
-          UpdateExpression:
-            "SET activeRunId = :runId, activeRunExpiresAt = :expiresAt REMOVE cancelRequestedAt",
-          ConditionExpression:
-            "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND " +
-            "(attribute_not_exists(activeRunId) OR activeRunExpiresAt < :now)",
-          ExpressionAttributeValues: {
-            ":runId": runId,
-            ":now": nowSeconds,
-            ":expiresAt": expiresAtSeconds,
-          },
-        }),
+          const { cancelRequestedAt: _cleared, ...rest } = row ?? {};
+          void _cleared;
+          return { ...rest, activeRunId: runId, activeRunExpiresAt: expiresAtSeconds };
+        },
+        (row) =>
+          live(row) &&
+          (row?.activeRunId === undefined || Number(row?.activeRunExpiresAt ?? 0) < nowSeconds),
       );
       return true;
     } catch (error) {
-      if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+      if (lostCondition(error)) {
         return false;
       }
       throw error;
@@ -331,63 +216,49 @@ export const chatRepository: ChatRepository = {
 
   async releaseRun(chatId, runId) {
     try {
-      await getDocumentClient().send(
-        new UpdateCommand({
-          TableName: getTableName(),
-          Key: keys.chat(chatId),
-          UpdateExpression: "REMOVE activeRunId, activeRunExpiresAt, cancelRequestedAt",
-          ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
-          ExpressionAttributeValues: { ":runId": runId },
-        }),
+      await updateItem(
+        keys.chat(chatId),
+        (row) => {
+          const { activeRunId: _id, activeRunExpiresAt: _exp, cancelRequestedAt: _cancel, ...rest } =
+            row ?? {};
+          void _id, _exp, _cancel;
+          return rest;
+        },
+        conditions.existsWith("activeRunId", runId),
       );
     } catch (error) {
-      if (!(error instanceof Error) || error.name !== "ConditionalCheckFailedException") {
+      if (!lostCondition(error)) {
         throw error;
       }
     }
   },
 
   async getActiveRun(chatId) {
-    const res = await getDocumentClient().send(
-      new GetCommand({
-        TableName: getTableName(),
-        Key: keys.chat(chatId),
-        ProjectionExpression: "activeRunId, activeRunExpiresAt, cancelRequestedAt",
-        // The two readers of this both need an answer that is current: a run
-        // polling for its own cancel, and a browser asking whether the run it
-        // is about to attach to still exists. A tiny projection makes the
-        // consistent read cheap enough not to trade one for the other.
-        ConsistentRead: true,
-      }),
-    );
-    const runId = res.Item?.activeRunId;
+    const item = await getItem(keys.chat(chatId));
+    const runId = item?.activeRunId;
     if (typeof runId !== "string") {
       return null;
     }
-    const cancelRequestedAt = res.Item?.cancelRequestedAt;
+    const cancelRequestedAt = item?.cancelRequestedAt;
     return {
       runId,
-      expiresAtSeconds: Number(res.Item?.activeRunExpiresAt ?? 0),
+      expiresAtSeconds: Number(item?.activeRunExpiresAt ?? 0),
       ...(typeof cancelRequestedAt === "string" ? { cancelRequestedAt } : {}),
     };
   },
 
   async requestCancel(chatId, runId) {
     try {
-      await getDocumentClient().send(
-        new UpdateCommand({
-          TableName: getTableName(),
-          Key: keys.chat(chatId),
-          UpdateExpression: "SET cancelRequestedAt = :now",
-          // Scoped to the named run: a stop pressed on a run that has since
-          // finished must not reach whatever the chat is doing now.
-          ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
-          ExpressionAttributeValues: { ":runId": runId, ":now": new Date().toISOString() },
-        }),
+      await updateItem(
+        keys.chat(chatId),
+        (row) => ({ ...row, cancelRequestedAt: new Date().toISOString() }),
+        // Scoped to the named run: a stop pressed on a run that has since
+        // finished must not reach whatever the chat is doing now.
+        conditions.existsWith("activeRunId", runId),
       );
       return true;
     } catch (error) {
-      if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+      if (lostCondition(error)) {
         return false;
       }
       throw error;
@@ -395,65 +266,39 @@ export const chatRepository: ChatRepository = {
   },
 
   async reserveMessageSeq(chatId) {
-    const client = getDocumentClient();
-    const table = getTableName();
     const key = keys.chat(chatId);
-
+    // Taken under the row lock every caller competes on, so two reservations
+    // never answer the same number. A row written before the counter existed
+    // has none; it is initialised from the newest message — read only in that
+    // case, since every chat created since carries the counter — and the
+    // reservation retried, because another caller may have initialised it
+    // meanwhile and this one must count from what they wrote.
     for (;;) {
-      const meta = await client.send(
-        new GetCommand({
-          TableName: table,
-          Key: key,
-          ProjectionExpression: "nextSeq",
-          ConsistentRead: true,
-        }),
+      const { before } = await updateItem(
+        key,
+        (row) => (typeof row?.nextSeq === "number" ? { ...row, nextSeq: row.nextSeq + 1 } : { ...row }),
+        live,
       );
-      if (typeof meta.Item?.nextSeq !== "number") {
-        const latest = await client.send(
-          new QueryCommand({
-            TableName: table,
-            KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-            ExpressionAttributeValues: {
-              ":pk": key.PK,
-              ":sk": keys.chatMessagePrefix(),
-            },
-            ProjectionExpression: "seq",
-            ScanIndexForward: false,
-            Limit: 1,
-            ConsistentRead: true,
-          }),
-        );
-        const initial = Number(latest.Items?.[0]?.seq ?? -1) + 1;
-        try {
-          await client.send(
-            new UpdateCommand({
-              TableName: table,
-              Key: key,
-              UpdateExpression: "SET nextSeq = :initial",
-              ConditionExpression:
-                "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND attribute_not_exists(nextSeq)",
-              ExpressionAttributeValues: { ":initial": initial },
-            }),
-          );
-        } catch (error) {
-          if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
-            continue;
-          }
+      if (typeof before?.nextSeq === "number") {
+        return before.nextSeq;
+      }
+      const latest = await queryItems({
+        pk: key.PK,
+        sk: { prefix: keys.chatMessagePrefix() },
+        forward: false,
+        limit: 1,
+      });
+      const initial = Number(latest[0]?.seq ?? -1) + 1;
+      await updateItem(
+        key,
+        (row) => ({ ...row, nextSeq: initial }),
+        (row) => live(row) && row?.nextSeq === undefined,
+      ).catch((error: unknown) => {
+        // Someone else initialised it first; the retry counts from theirs.
+        if (!lostCondition(error)) {
           throw error;
         }
-      }
-
-      const reserved = await client.send(
-        new UpdateCommand({
-          TableName: table,
-          Key: key,
-          UpdateExpression: "ADD nextSeq :one",
-          ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
-          ExpressionAttributeValues: { ":one": 1 },
-          ReturnValues: "UPDATED_OLD",
-        }),
-      );
-      return Number(reserved.Attributes?.nextSeq ?? 0);
+      });
     }
   },
 };

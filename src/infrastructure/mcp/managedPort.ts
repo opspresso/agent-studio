@@ -1,13 +1,13 @@
 /**
  * The port a managed MCP container binds, and the image name it may run.
  *
- * Shared by both provisioners because the two have to *agree*, not merely
- * behave alike. A managed server is provisioned by whichever adapter this
- * deployment selected and then reached by name at dispatch: if the Docker
- * adapter and the SSM adapter derived different ports for the same name, the
- * container would start, report healthy, and be unreachable — a failure with no
- * error anywhere. They were byte-identical copies, doc comment included, which
- * is exactly how two values that must agree begin to disagree.
+ * Its own module rather than a detail of the provisioner, because the port is
+ * derived twice: once when a container is started, and again when it is
+ * reached by name at dispatch or repaired after a restart. If the two
+ * derivations ever differed, the container would start, report healthy, and
+ * be unreachable — a failure with no error anywhere. When there were two
+ * provisioners they carried byte-identical copies of this, which is exactly
+ * how two values that must agree begin to disagree.
  */
 
 /** Ports handed to managed containers. Above the ephemeral range this app uses. */
@@ -17,13 +17,13 @@ const PORT_BASE = 3100;
 export const MANAGED_IMAGE = /^[A-Za-z0-9._\-/]+(?::[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$/;
 
 /**
- * An SSM parameter path, or a host path an env file may be read from.
- *
- * Only the SSM adapter validated its `envRefs`; the Docker adapter passed them
- * straight to `--env-file`, so the two disagreed about what a reference may be
- * for no reason either could state.
+ * A host path an env file is read from (`--env-file`). Absolute, and nothing
+ * a shell or the Docker CLI would read as anything but a path — the values
+ * an operator types are the one input here that reaches a command line.
  */
 export const MANAGED_ENV_REF = /^\/[A-Za-z0-9._\-/]+$/;
+/** An environment variable's name, as the env-file format and a shell agree on one. */
+export const MANAGED_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** Deterministic per name, so a restart re-derives the port it already bound. */
 export function managedPortFor(name: string): number {

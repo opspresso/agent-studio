@@ -128,7 +128,7 @@ export async function openRun(
   if (deps.unknownModelPolicy) {
     // Fail open on the *read*, exactly like the cost guard below — and for the
     // reason it states: the guard exists to bound something, not to be a second
-    // way for a storage blip to take the platform down. This read is a DynamoDB
+    // way for a storage blip to take the platform down. This read is a database
     // settings lookup, so an unguarded rejection would have failed the run with
     // a raw 500 while the guard one line down was deliberately allowing runs
     // through the same outage.

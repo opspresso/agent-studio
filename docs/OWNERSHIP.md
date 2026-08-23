@@ -11,7 +11,7 @@
 | 결정 | 소유자 |
 |---|---|
 | MCP tool 의 형태 | `src/domain/mcp/types.ts` |
-| 어떤 호스트가 아웃바운드 URL 가드를 건너뛸 수 있는가 | `src/domain/mcp/types.ts` |
+| 어떤 호스트가 아웃바운드 URL 가드를 건너뛸 수 있는가 — 선언된 suffix 에 이름을 맞추는 술어 하나 | `src/domain/security/internalHosts.ts` 의 `isDeclaredInternalHost`. MCP 목록과 `FetchUrl` 목록이 같은 술어를 지나고, provenance(managed 루프백)와 합친 형태는 `src/domain/mcp/types.ts` 의 `skipsUrlGuard` 다 |
 | Project 의 client ID 메타데이터 문서가 서빙되는 주소 | `src/application/mcp/mcpAuthUseCases.ts` 의 `clientMetadataUrl` — 여기서 어긋나는 것은 명세상 치명적이다: 문서 자신의 `client_id` 가 그것을 가져온 URL 과 다르면 authorization server 는 거부한다 |
 | `plugin.json`/`mcp.json` 의 해석, 그리고 Plugin 이 어떤 MCP transport 를 바인딩할 수 있는가 | `src/domain/plugin/types.ts` |
 | Agent Plugins 이름 규칙 | `src/domain/plugin/types.ts` 의 `isPluginName` |
@@ -31,12 +31,13 @@
 | 한 호출의 인자를 얼마나 보관하고 되풀이하는가 (알려지는 쪽과 프로바이더로 돌아가는 쪽 둘 다) | `src/application/llm/engine.ts` 의 `MAX_TOOL_ARG_BYTES` / `boundToolArgs` / `boundArgumentText` |
 | 프로젝트 산출물을 읽을 수 있는 사람 — 쓰기와 같은 규칙, 기록만 하지 않는다 | `src/application/project/projectUseCases.ts` 의 `assertProjectOutputReadable` |
 | 저장된 오브젝트를 삭제하기 | `src/infrastructure/storage/s3ObjectStore.ts` |
+| proxied 오브젝트 주소와 그 토큰 — `/api/objects/<key>?exp=&sig=[&dl=]`, HMAC 이 무엇을 덮는가 | `src/infrastructure/storage/objectUrlToken.ts` — 서명자와 라우트가 여기서 합의한다. 두 번째 작성자는 HMAC 이 파일명을 덮는지에 대해 다르게 답할 수 있고, 그것은 답하지 않는 링크이거나 서명되지 않은 이름으로 내려가는 링크다 |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` |
 | provider 에 embedding 을 요청하기 | `src/infrastructure/llm/embeddings.ts` |
 | Bedrock 에 닿기 | `src/infrastructure/llm/bedrockClient.ts` |
-| vector store 와 이야기하기 | `src/infrastructure/vector/s3VectorsStore.ts` |
+| vector store 와 이야기하기 — cosine 거리 `<=>`, 점수 = 1 − 거리 | `src/infrastructure/vector/pgVectorStore.ts` |
 | capability 가 색인되는 키 | `src/domain/catalog/types.ts` 의 `capabilityKey` |
 | capability 가 어떤 텍스트로 embedding 되는가 | `src/domain/catalog/types.ts` 의 `capabilityText` |
 | 검색이 한 런에 얼마나 더할 수 있는가 | `src/application/execution/bindings.ts` 의 `DISCOVERY_LIMITS` |
@@ -44,7 +45,7 @@
 | 런이 무엇으로 카탈로그를 검색하는가 | `src/application/execution/bindings.ts` 의 `discoveryQueries` |
 | 마크다운 frontmatter 블록의 파싱 | `src/domain/plugin/frontmatter.ts` |
 | repo 소유 컴포넌트의 provenance 문자열(`github:<repo>#<plugin>`) | `src/domain/plugin/types.ts` 의 `pluginSourcePrefix`(sync 가 `startsWith`/`slice` 로 기대는 쪽)·`pluginSource`·`parsePluginSource` |
-| 아티팩트 목록의 페이지 커서(= GSI 정렬 키) 철자 — 아래 "모든 DynamoDB 키 문자열" 의 유일한 예외이고, API 가 독자에게 건네는 커서이기도 하기 때문이다 | `src/domain/artifact/repository.ts` 의 `artifactCursor` |
+| 아티팩트 목록의 페이지 커서(= GSI 정렬 키) 철자 — 아래 "모든 행 키 문자열" 의 유일한 예외이고, API 가 독자에게 건네는 커서이기도 하기 때문이다 | `src/domain/artifact/repository.ts` 의 `artifactCursor` |
 | subagent 중첩 한도 | `src/application/execution/subagentRunner.ts` |
 | 런당 MCP tool 상한 | `src/domain/llm/toolLimits.ts` |
 | 각 member tier 가 쓸 수 있는 금액 | `src/domain/member/tiers.ts` 의 `TIER_LIMITS` |
@@ -114,13 +115,23 @@
 
 | 결정 | 소유자 |
 |---|---|
-| 모든 DynamoDB 키 문자열 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외 — 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` |
+| 모든 행 키 문자열 — 아이템 테이블의 `PK`/`SK`/GSI 주소 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외 — 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` |
+| 아이템 테이블에 쓰는 방법 — 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(`￿`), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 `items` 에 raw SQL 을 쓰지 않는다 — 두 번째 `SELECT … FOR UPDATE` 는 그 셋이 어긋날 두 번째 자리다 |
+| 스키마 — `items` 와 그 파생 컬럼·부분 인덱스, Better Auth 의 테이블, `catalog_vectors`, 그리고 어느 버전이 적용됐는지 | `src/infrastructure/db/migrations.ts` — 추가만 하는 목록, advisory lock 아래에서 부팅마다 |
+| 만료 행을 지우는 틱 | `src/lib/container.ts` 의 `sweepExpiredRows` 가 `store.deleteExpired`(아이템 테이블)와 `memberRepository.deleteExpiredSessions`(Better Auth `session`)를 schedule-scan 틱에서 부른다 (`src/app/api/triggers/scan/route.ts`) |
 | Model 이 무엇이고, 어떤 route 가 그것을 서빙하는가 | **이 저장소 밖** — [opspresso/agent-models](https://github.com/opspresso/agent-models) 의 `models/` (family/offering), `https://models.opspresso.com/models.json` 으로 발행된다. 앱에서는 `src/domain/llm/models.ts` 의 `loadModelCatalog` 가 받아들이는 *유일한 입구* 이고, 숫자는 절대 여기 쓰지 않는다 (`tests/models.test.ts` 가 막는다) |
 | 떠나 버린 소비자로부터 스트림을 떼어내기 | `src/shared/detachOnReturn.ts` |
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` |
 | tool 의 파일이 실려 다니는 이름과 media type | `src/infrastructure/mcp/toolManager.ts` 의 `safeFileName`/`baseMediaType` |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` |
-| 페이지네이션된 목록 읽기 | `src/infrastructure/db/query.ts` 의 `queryAll()` |
+| 목록 읽기 — 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt` | `src/infrastructure/db/store.ts` 의 `queryItems()` |
+| Better Auth 의 `user` 행을 멤버로 읽기 — 스토어가 소유하지 않는 테이블에 대한 plain SQL | `src/infrastructure/db/repositories/memberRepository.ts` |
+| 저장소 트리 하나를 plugins 스냅샷으로 — 어느 디렉터리가 plugin·skill·확장 문서인가 | `src/infrastructure/plugin/snapshot.ts` 의 `collectRepoPlugins`. GitHub 클라이언트와 업로드 아카이브는 파일을 어떻게 나열하고 읽는지만 건넨다 |
+| 업로드 아카이브로 sync 된 행의 provenance — 설정된 저장소, 없으면 `archive` | `src/domain/plugin/sync.ts` 의 `archiveSyncRepo` / `ARCHIVE_SYNC_REPO`; 브랜치 `archive` 와 commit = sha256 은 `src/infrastructure/plugin/archiveSnapshot.ts` |
+| tar 아카이브 읽기 — gzip 여부, GNU/pax 긴 이름, 트리를 벗어나는 경로의 거부, 크기·엔트리 상한 | `src/infrastructure/archive/tar.ts` 의 `readTarArchive` |
+| 심볼릭 링크의 git 모드 — 첨부 수집기가 거부하는 한 가지 엔트리 타입 | `src/domain/skill/files.ts` 의 `SYMLINK_MODE`. GitHub 트리와 아카이브가 같은 값으로 보고한다 |
+| admin 이 올린 모델 카탈로그 문서의 자리, 그리고 그것이 발행 카탈로그보다 우선한다는 규칙 | `src/infrastructure/db/keys.ts` 의 `modelCatalog` (행 `MODELCATALOG#doc`), 우선순위는 `src/application/llm/modelCatalogStoredSource.ts` 의 `createCompositeModelCatalogSource` — 부팅 refresher 와 콘솔의 refresh 버튼이 같은 조합을 쓴다 |
+| 어떤 로그인 수단이 켜져 있는가 | `src/lib/config.ts` 의 `authProviders` — `auth.ts` 가 그대로 조립하고 로그인 페이지가 그대로 그린다 |
 | AG-UI 의 와이어 형태 — 받는 `RunAgentInput` 과 내보내는 이벤트 | `src/domain/agui/types.ts` (SDK 대신 직접 선언한 이유가 파일 머리에 있다); 입력 검증은 `src/app/api/agui/_lib/schema.ts` |
 | AG-UI 메시지와 `context`·`state` 가 엔진 메시지가 되는 방식 | `src/application/agui/input.ts` |
 | OAuth authorization 서버 메타데이터를 찾는 주소와 순서 | `src/infrastructure/mcp/oauthMetadata.ts` 의 `authorizationServerCandidates` |
@@ -142,7 +153,7 @@
 | Chat 메시지를 꼬리부터 읽는 정렬 키 범위 | `src/infrastructure/db/keys.ts` 의 `chatMessageRange` — 하한 클램프까지 포함해서 |
 | 꼬리로 읽어 온 메시지를 화면의 것과 어떻게 합치는가 | `src/app/chats/_lib/mergeMessages.ts` |
 | chat 런이 브라우저에 어떻게 닿는가 | `src/app/api/chats/_lib/detachedRun.ts` |
-| 행의 TTL | `src/infrastructure/db/ttl.ts` |
+| 행의 `expiresAt` — 보존 창과 그것을 초로 바꾸는 헬퍼 | `src/infrastructure/db/ttl.ts` |
 | usage 행의 키가 되는 UTC 날짜 | `src/shared/date.ts` 의 `utcDay` |
 | repo sync 가 무엇을 했고, 무엇을 사람에게 남겼는가 | `src/domain/sync/types.ts` |
 | 브랜드 팔레트와 컴포넌트 기본값 | `src/app/theme.ts` |

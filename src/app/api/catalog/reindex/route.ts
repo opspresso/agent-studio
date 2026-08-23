@@ -31,7 +31,7 @@ export async function POST(request: Request): Promise<Response> {
   }
   const deps = catalogDeps;
   if (!deps) {
-    return Response.json({ error: "VECTOR_BUCKET is not configured" }, { status: 503 });
+    return Response.json({ error: "CATALOG_ENABLED is not set" }, { status: 503 });
   }
 
   after(async () => {

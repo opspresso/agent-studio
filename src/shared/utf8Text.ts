@@ -41,7 +41,7 @@ function isHighSurrogate(code: number): boolean {
  * A JS string is UTF-16, so `slice` at an arbitrary index can land between the
  * two halves of a non-BMP character — an emoji, CJK ext-B, a maths symbol. What
  * comes back is then not well-formed text at all: it does not survive a UTF-8
- * round trip, DynamoDB will not store it as written, and it goes on the wire to
+ * round trip, the store refuses it as written, and it goes on the wire to
  * a provider as a lone surrogate escape. Backing off one unit costs a character
  * and keeps the string a string.
  */
@@ -58,7 +58,7 @@ export function cutCodePoints(text: string, maxChars: number): string {
  * Cut `text` to at most `maxBytes` of UTF-8, never through a character.
  *
  * The byte-budget sibling of {@link cutCodePoints}, for callers bounded by
- * storage rather than by characters (a DynamoDB item, a request body). A bare
+ * storage rather than by characters (a stored row, a request body). A bare
  * `Buffer.subarray(0, n).toString("utf-8")` cuts through whatever multi-byte
  * sequence straddles `n` and hands back U+FFFD where the boundary fell —
  * persisted as content, which is exactly the corruption `decodeUtf8Text`

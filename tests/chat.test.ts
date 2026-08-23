@@ -258,6 +258,15 @@ describe("titleFromMessage", () => {
     expect(title.endsWith("…")).toBe(true);
   });
 
+  it("never cuts through an emoji at the boundary", () => {
+    // 48 ASCII characters, then an emoji whose two UTF-16 units straddle the
+    // cut at index 49: a bare `slice` would leave a lone high surrogate, which
+    // the store refuses as invalid text.
+    const title = titleFromMessage(`${"a".repeat(48)}🙂 and more words after`);
+    expect(title).toBe(`${"a".repeat(48)}…`);
+    expect(title.isWellFormed()).toBe(true);
+  });
+
   it("falls back to a default for empty input", () => {
     expect(titleFromMessage("   ")).toBe("New chat");
   });

@@ -47,7 +47,7 @@ export function ManagedMcpModal({
   /**
    * The modal is mounted for the life of the page — `opened` is a prop, not a
    * mount — so the draft that just started a container is still here when the
-   * next one opens, image and SSM refs included.
+   * next one opens, image and env refs included.
    */
   function reset() {
     setName("");

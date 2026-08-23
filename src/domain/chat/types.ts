@@ -103,8 +103,9 @@ export interface ChatMessageFile {
  *
  * The text is what the turn actually carried, so storing it is what lets a
  * follow-up question — "and what does section 3 say?" — still have the document.
- * Storing the bytes instead would answer a question nobody asks and would not
- * fit: a chat message is one DynamoDB item, capped at 400KB.
+ * Storing the bytes instead would answer a question nobody asks and would make
+ * every replay carry the file: a chat message is one row, read whole on each
+ * later turn.
  */
 export interface ChatMessageDocument {
   name: string;

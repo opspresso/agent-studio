@@ -26,8 +26,11 @@ function inMemoryRepo(): A2aClientKeyRepository & { rows: Map<string, A2aClientK
     },
     async create(key) {
       if (rows.has(key.name)) {
+        // The name the store gives a transaction one of whose conditions
+        // failed — the real repository writes the pair transactionally, and
+        // `isConditionalWriteFailure` reads it with `includeTransaction`.
         const error = new Error("conditional write lost");
-        error.name = "TransactionCanceledException";
+        error.name = "TransactionCancelled";
         throw error;
       }
       rows.set(key.name, key);

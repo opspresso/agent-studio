@@ -22,6 +22,7 @@ import { listMcps, type McpServer } from "@/app/tools/api";
 import { getPlugin, type Plugin } from "../api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
+import { isArchiveSync } from "@/domain/plugin/sync";
 
 export default function PluginDetailPage() {
   const t = useT();
@@ -84,6 +85,10 @@ export default function PluginDetailPage() {
 
   const repoUrl = `https://github.com/${plugin.repo}`;
   const treeUrl = `${repoUrl}/tree/${plugin.commitSha}${plugin.rootPath ? `/${plugin.rootPath}` : ""}`;
+  // A row an uploaded archive wrote carries the archive's digest as its
+  // commit, and nothing on GitHub answers to it — so the links are text there.
+  const onGitHub = !isArchiveSync(plugin.commitSha);
+  const location = `${plugin.repo}${plugin.rootPath ? `/${plugin.rootPath}` : ""}`;
 
   return (
     <Stack gap="lg">
@@ -106,14 +111,21 @@ export default function PluginDetailPage() {
           </Text>
         )}
         <Text fz="xs" c="dimmed" mt={6}>
-          <Anchor href={treeUrl} target="_blank" fz="xs">
-            {plugin.repo}
-            {plugin.rootPath ? `/${plugin.rootPath}` : ""}
-          </Anchor>
+          {onGitHub ? (
+            <Anchor href={treeUrl} target="_blank" fz="xs">
+              {location}
+            </Anchor>
+          ) : (
+            location
+          )}
           {" · "}
-          <Anchor href={`${repoUrl}/commit/${plugin.commitSha}`} target="_blank" fz="xs">
-            {plugin.commitSha.slice(0, 7)}
-          </Anchor>
+          {onGitHub ? (
+            <Anchor href={`${repoUrl}/commit/${plugin.commitSha}`} target="_blank" fz="xs">
+              {plugin.commitSha.slice(0, 7)}
+            </Anchor>
+          ) : (
+            plugin.commitSha.slice(0, 7)
+          )}
           {" · synced "}
           {formatDateTime(plugin.syncedAt, locale)}
         </Text>

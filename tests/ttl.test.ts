@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  expiresAtFromIso,
-  expiresAtSeconds,
-  isExpired,
-  notExpired,
-  RETENTION,
-} from "@/infrastructure/db/ttl";
+import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 
 const DAY = 86_400;
 
@@ -19,17 +13,6 @@ describe("expiresAtSeconds", () => {
   it("is deterministic for the same base and retention (index co-expiry)", () => {
     const base = "2026-03-15T12:34:56Z";
     expect(expiresAtSeconds(base, 180)).toBe(expiresAtSeconds(base, 180));
-  });
-});
-
-describe("expiresAtFromIso", () => {
-  it("is the ISO instant itself, in unix seconds", () => {
-    const iso = "2026-02-01T00:00:00.000Z";
-    expect(expiresAtFromIso(iso)).toBe(Date.parse(iso) / 1000);
-  });
-
-  it("is undefined for an unparseable value, so no NaN reaches a put", () => {
-    expect(expiresAtFromIso("not-a-date")).toBeUndefined();
   });
 });
 
@@ -48,20 +31,6 @@ describe("isExpired", () => {
   it("never expires a row without an expiresAt", () => {
     expect(isExpired(undefined, now)).toBe(false);
     expect(isExpired("nope", now)).toBe(false);
-  });
-});
-
-describe("notExpired", () => {
-  const now = Date.parse("2026-07-01T00:00:00Z");
-  const nowSec = Math.floor(now / 1000);
-
-  it("keeps fresh and un-tagged rows, drops expired ones", () => {
-    const rows = [
-      { id: "fresh", expiresAt: nowSec + DAY },
-      { id: "expired", expiresAt: nowSec - DAY },
-      { id: "legacy" },
-    ];
-    expect(notExpired(rows, now).map((r) => r.id)).toEqual(["fresh", "legacy"]);
   });
 });
 

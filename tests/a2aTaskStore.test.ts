@@ -1,56 +1,12 @@
 import { TaskState, type Task } from "@a2a-js/sdk";
 import { ServerCallContext } from "@a2a-js/sdk/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { FakeStore } from "./fakeStore";
 import { agentMessage, artifact, rawPart, taskStatus, textPart } from "@/domain/a2a/protocol";
+import { keys } from "@/infrastructure/db/keys";
 
-const { store, behavior, fakeClient } = vi.hoisted(() => {
-  const store = new Map<string, Record<string, unknown>>();
-  const behavior = { boom: false };
-  const keyOf = (key: { PK: string; SK: string }) => `${key.PK}|${key.SK}`;
-  const fakeClient = {
-    async send(command: { input: Record<string, unknown> }) {
-      const input = command.input;
-      if (input.Item) {
-        if (behavior.boom) {
-          throw new Error("network partition");
-        }
-        const item = input.Item as Record<string, unknown> & { PK: string; SK: string };
-        const existing = store.get(keyOf(item));
-        if (input.ConditionExpression && existing) {
-          const terminal = Object.values(input.ExpressionAttributeValues ?? {});
-          if (terminal.includes(existing.state)) {
-            throw Object.assign(new Error("conditional"), {
-              name: "ConditionalCheckFailedException",
-            });
-          }
-        }
-        store.set(keyOf(item), item);
-        return {};
-      }
-      if (input.Key) {
-        return { Item: store.get(keyOf(input.Key as { PK: string; SK: string })) };
-      }
-      if (input.KeyConditionExpression) {
-        const values = input.ExpressionAttributeValues as Record<string, string>;
-        return {
-          Items: [...store.values()].filter(
-            (item) =>
-              item.PK === values[":pk"] &&
-              typeof item.SK === "string" &&
-              item.SK.startsWith(values[":task"] ?? ""),
-          ),
-        };
-      }
-      return {};
-    },
-  };
-  return { store, behavior, fakeClient };
-});
-
-vi.mock("@/infrastructure/db/client", () => ({
-  getDocumentClient: () => fakeClient,
-  getTableName: () => "test-table",
-}));
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
+const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
 const { createA2aTaskStore } = await import("@/infrastructure/a2a/taskStore");
 
@@ -75,8 +31,7 @@ function makeTask(id: string, state: TaskState): Task {
 }
 
 beforeEach(() => {
-  store.clear();
-  behavior.boom = false;
+  store.rows.clear();
 });
 
 describe("createA2aTaskStore", () => {
@@ -100,13 +55,16 @@ describe("createA2aTaskStore", () => {
   it("returns undefined for a missing or expired task", async () => {
     const tasks = createA2aTaskStore("proj-a");
     expect(await tasks.load("missing", ALICE)).toBeUndefined();
-    store.set("A2ATASK#proj-a#tenant-a%3Aalice|TASK#t1", {
-      PK: "A2ATASK#proj-a#tenant-a%3Aalice",
-      SK: "TASK#t1",
-      state: TaskState.TASK_STATE_COMPLETED,
-      task: makeTask("t1", TaskState.TASK_STATE_COMPLETED),
-      expiresAt: 1,
-    });
+    // The scope is `${tenant}:${user}`, and the purge is a periodic sweep — a
+    // row past its TTL can still be there and must read as gone.
+    store.seed([
+      {
+        ...keys.a2aTask("proj-a", "tenant-a:alice", "t1"),
+        state: TaskState.TASK_STATE_COMPLETED,
+        task: makeTask("t1", TaskState.TASK_STATE_COMPLETED),
+        expiresAt: 1,
+      },
+    ]);
     expect(await tasks.load("t1", ALICE)).toBeUndefined();
   });
 
@@ -138,10 +96,13 @@ describe("createA2aTaskStore", () => {
   });
 
   it("propagates non-conditional write errors", async () => {
-    behavior.boom = true;
+    // Only a lost precondition is the losing side of a race; any other failure
+    // of the write is the caller's to see.
+    vi.spyOn(store, "putItem").mockRejectedValueOnce(new Error("network partition"));
     await expect(
       createA2aTaskStore("proj-a").save(makeTask("t1", TaskState.TASK_STATE_WORKING), ALICE),
     ).rejects.toThrow(/network partition/);
+    expect(store.rows.size).toBe(0);
   });
 
   it("preserves small raw parts", async () => {
@@ -162,7 +123,9 @@ describe("createA2aTaskStore", () => {
     await tasks.save(task, ALICE);
     const loaded = await tasks.load("t1", ALICE);
     const part = loaded?.artifacts[0]?.parts[0];
-    expect(part?.content?.$case === "raw" ? part.content.value.byteLength : -1).toBe(0);
+    // Read through Buffer.from, as the small-part case does: the store keeps
+    // the task as JSON, so the bytes come back in Buffer's JSON form.
+    expect(part?.content?.$case === "raw" ? Buffer.from(part.content.value).byteLength : -1).toBe(0);
     expect(part?.mediaType).toBe("image/png");
     expect(loaded?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
   });

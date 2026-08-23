@@ -19,8 +19,8 @@ name: Check models
 
 on:
   schedule:
-    # Mondays 00:00 UTC — after a weekend of provider releases, before the week's work.
-    - cron: "0 0 * * 1"
+    # Weekdays 08:00 KST (Sunday–Thursday 23:00 UTC).
+    - cron: "0 23 * * 0-4"
   workflow_dispatch:
 
 permissions:

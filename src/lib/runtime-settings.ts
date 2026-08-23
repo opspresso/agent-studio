@@ -140,7 +140,7 @@ export async function getPublicBaseUrl(): Promise<string | undefined> {
 
 export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {
   const value = (await loadSettings())?.artifactAccessMode ?? process.env.ARTIFACT_ACCESS_MODE;
-  return value === "public" ? "public" : "authenticated";
+  return value === "public" || value === "proxied" ? value : "authenticated";
 }
 
 /**

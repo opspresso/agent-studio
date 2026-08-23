@@ -31,10 +31,13 @@ vi.mock("@/infrastructure/net/publicFetch", async () => {
   };
 });
 
-const { httpResourceReader, parseContentType, charsetFromHtml } = await import(
+const { createHttpResourceReader, parseContentType, charsetFromHtml } = await import(
   "@/infrastructure/net/httpResource"
 );
 const { SsrfError } = await import("@/infrastructure/net/ssrfGuard");
+
+/** No declared suffix: every address faces the guard, which is the default. */
+const httpResourceReader = createHttpResourceReader({});
 
 const read = (over: { maxBytes?: number } = {}) =>
   httpResourceReader.read({
@@ -149,5 +152,135 @@ describe("the adapter", () => {
         headers: { "content-type": "text/html" },
       });
     expect((await read()).charset).toBe("euc-kr");
+  });
+});
+
+/**
+ * The one way past the guard, for an on-premises install where the pages a
+ * model should read are private by construction. The list is injected — the
+ * adapter reads no configuration — and it is the FetchUrl list, not the MCP
+ * one. Here the *global* fetch is stubbed, because that is what the unguarded
+ * path uses: `fetchPublicUrl` must not be touched for a declared host, and must
+ * still be the only path for everything else.
+ */
+describe("a declared internal host", () => {
+  const INTERNAL = ["corp.internal"];
+  const reader = createHttpResourceReader({ internalHostSuffixes: INTERNAL });
+  const fetched: Array<{ url: string; init?: RequestInit }> = [];
+  let direct = async (_url: string, _init?: RequestInit): Promise<Response> =>
+    new Response("hello", { status: 200, headers: { "content-type": "text/plain" } });
+
+  beforeEach(() => {
+    fetched.length = 0;
+    direct = async () =>
+      new Response("hello", { status: 200, headers: { "content-type": "text/plain" } });
+    vi.stubGlobal("fetch", async (input: URL | string, init?: RequestInit) => {
+      fetched.push({ url: String(input), init });
+      return direct(String(input), init);
+    });
+    // The guard must not be reached at all for a declared host; if it is, it
+    // refuses, which is how the assertion below also catches a wrong path.
+    stub.impl = async () => {
+      throw new SsrfError("URL host resolves to a private or reserved address: corp.internal");
+    };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const readInternal = (url = "http://wiki.corp.internal/page") =>
+    reader.read({ url, accept: "text/*", maxBytes: 1_000_000 });
+
+  it("is fetched without the address guard", async () => {
+    const resource = await readInternal();
+    expect(Buffer.from(resource.bytes).toString()).toBe("hello");
+    expect(resource.finalUrl).toBe("http://wiki.corp.internal/page");
+    expect(fetched.map((f) => f.url)).toEqual(["http://wiki.corp.internal/page"]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("sends the same two headers, follows nothing natively, and is bounded by a timeout", async () => {
+    await readInternal();
+    const init = fetched[0]?.init;
+    const headers = new Headers(init?.headers);
+    expect([...headers.keys()].sort()).toEqual(["accept", "user-agent"]);
+    expect(headers.get("authorization")).toBeNull();
+    expect(init?.redirect).toBe("manual");
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("still sends every other address through the guard", async () => {
+    // A private address that is not a declared name, a name adjacent to the
+    // suffix, and an IP literal: none of them is the exemption.
+    for (const url of [
+      "http://10.0.0.5/admin",
+      "http://evil-corp.internal/",
+      "http://corp.internal.evil.test/",
+      "http://192.168.1.1/",
+    ]) {
+      fetched.length = 0;
+      calls.length = 0;
+      await expect(readInternal(url)).rejects.toThrow("that address is not reachable from here");
+      expect(fetched).toHaveLength(0);
+      expect(calls.map((c) => c.url)).toEqual([url]);
+    }
+  });
+
+  it("follows a redirect that stays on the declared host", async () => {
+    direct = async (url) =>
+      url.endsWith("/page")
+        ? new Response(null, { status: 302, headers: { location: "/moved" } })
+        : new Response("moved", { status: 200, headers: { "content-type": "text/plain" } });
+    const resource = await readInternal();
+    expect(Buffer.from(resource.bytes).toString()).toBe("moved");
+    expect(resource.finalUrl).toBe("http://wiki.corp.internal/moved");
+    expect(fetched.map((f) => f.url)).toEqual([
+      "http://wiki.corp.internal/page",
+      "http://wiki.corp.internal/moved",
+    ]);
+  });
+
+  it("refuses a redirect that leaves the declared set, without following it", async () => {
+    direct = async () =>
+      new Response(null, { status: 302, headers: { location: "https://attacker.example/" } });
+    const error = await readInternal().catch((e) => e);
+    expect(error).toBeInstanceOf(HttpResourceError);
+    expect(error.message).toBe("that address is not reachable from here");
+    expect(error.message).not.toContain("attacker");
+    expect(fetched.map((f) => f.url)).toEqual(["http://wiki.corp.internal/page"]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses a redirect to another declared host, because it is another origin", async () => {
+    // Still inside the set, but a redirect may not change origin any more than
+    // the guarded path lets it — the exemption is not a licence to hop.
+    direct = async () =>
+      new Response(null, { status: 302, headers: { location: "http://docs.corp.internal/" } });
+    await expect(readInternal()).rejects.toThrow("that address is not reachable from here");
+    expect(fetched).toHaveLength(1);
+  });
+
+  it("caps the number of hops", async () => {
+    direct = async () =>
+      new Response(null, { status: 302, headers: { location: "/again" } });
+    await expect(readInternal()).rejects.toThrow("that address is not reachable from here");
+    expect(fetched).toHaveLength(6);
+  });
+
+  it("reports a non-2xx and a timeout the same way as the guarded path", async () => {
+    direct = async () => new Response("nope", { status: 503 });
+    await expect(readInternal()).rejects.toThrow("the server answered 503");
+
+    direct = async () => {
+      throw Object.assign(new Error("aborted"), { name: "TimeoutError" });
+    };
+    await expect(readInternal()).rejects.toThrow("the request timed out");
+  });
+
+  it("is not admitted by an empty list", async () => {
+    await expect(httpResourceReader.read({ url: "http://wiki.corp.internal/page", accept: "*/*", maxBytes: 1 }))
+      .rejects.toThrow("that address is not reachable from here");
+    expect(fetched).toHaveLength(0);
   });
 });

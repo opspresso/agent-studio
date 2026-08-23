@@ -1,17 +1,12 @@
-import { GetCommand } from "@aws-sdk/lib-dynamodb";
-import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
-import { keys } from "@/infrastructure/db/keys";
+import { sql } from "@/infrastructure/db/client";
 import { withTimeout } from "@/shared/withTimeout";
 
 const DB_TIMEOUT_MS = 2000;
 const LLM_TIMEOUT_MS = 2000;
 
-/** A low-cost GetItem that confirms the table, credentials, and connectivity. */
+/** A low-cost read that confirms the schema, credentials, and connectivity. */
 export async function dbReachable(): Promise<void> {
-  await withTimeout(
-    getDocumentClient().send(new GetCommand({ TableName: getTableName(), Key: keys.settings() })),
-    DB_TIMEOUT_MS,
-  );
+  await withTimeout(sql("SELECT 1 FROM items LIMIT 1"), DB_TIMEOUT_MS);
 }
 
 /**

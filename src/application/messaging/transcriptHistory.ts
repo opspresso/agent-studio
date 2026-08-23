@@ -4,6 +4,7 @@ import type {
   TranscriptTurn,
 } from "@/domain/messaging/transcript";
 import { log, type LogScope } from "@/shared/logger";
+import { cutCodePoints } from "@/shared/utf8Text";
 
 /**
  * How a chat-bot surface with no platform history remembers a conversation:
@@ -27,8 +28,8 @@ export const MAX_HISTORY_CHARS = 100_000;
 /**
  * How much of one turn is written down. A turn is kept for the *next*
  * question's context, and past this a single answer would be most of that
- * context on its own — and a row is one DynamoDB item, which a very long answer
- * would otherwise be the first thing to overflow. Cut on a character count,
+ * context on its own — and a row is read whole on every later turn, which a very long answer
+ * would otherwise be the first thing to bloat. Cut on a character count,
  * marked, so the model reads a turn that says it was cut rather than one that
  * ends mid-sentence.
  */
@@ -95,7 +96,7 @@ export async function rememberTurn(
   }
   const content =
     turn.content.length > MAX_TRANSCRIPT_TURN_CHARS
-      ? `${turn.content.slice(0, MAX_TRANSCRIPT_TURN_CHARS)}\n…[truncated]`
+      ? `${cutCodePoints(turn.content, MAX_TRANSCRIPT_TURN_CHARS)}\n…[truncated]`
       : turn.content;
   await transcripts
     .append(projectName, conversationKey, { ...turn, content })

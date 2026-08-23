@@ -1,24 +1,10 @@
-import { z } from "zod";
 import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError } from "@/app/api/_lib/http";
 import { AppError, UpstreamError } from "@/application/errors";
+import { archiveSyncRepo } from "@/domain/plugin/sync";
 import { getPluginsRepoConfig } from "@/lib/runtime-settings";
 import { lastPluginSync, syncPluginsFromRepo } from "@/lib/container";
-
-/**
- * The repository's content applies automatically; deletion is the one act
- * that needs a person. These name what a previous report listed as orphaned —
- * kind-qualified, because the skills and MCP registries may hold one name.
- */
-const selectionSchema = z.object({
-  remove: z
-    .object({
-      skills: z.array(z.string()).max(500).optional(),
-      mcpServers: z.array(z.string()).max(500).optional(),
-      plugins: z.array(z.string()).max(500).optional(),
-    })
-    .optional(),
-});
+import { selectionSchema } from "./_lib/selection";
 
 export const GET = withMemberAuth(async () => {
   const { repo, branch, token } = await getPluginsRepoConfig();
@@ -27,8 +13,10 @@ export const GET = withMemberAuth(async () => {
     repo: repo ?? null,
     branch,
     // The last report survives the browser that ran the sync; a reload or a
-    // proxy timeout must not lose the only copy of what happened.
-    last: repo ? await lastPluginSync(repo) : null,
+    // proxy timeout must not lose the only copy of what happened. Read under
+    // the name an archive upload would use, which is the configured repo when
+    // there is one — so a deployment syncing by upload alone still sees it.
+    last: await lastPluginSync(archiveSyncRepo(repo)),
   });
 });
 

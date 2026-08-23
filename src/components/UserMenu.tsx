@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Anchor, Button, Group } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { signOut } from "@/lib/auth-client";
-import { SignInButton } from "./SignInButton";
+import { SignInButton, type SignInProviders } from "./SignInButton";
 
 /**
  * `email` comes from the root layout's server-resolved viewer, not from
@@ -13,7 +13,13 @@ import { SignInButton } from "./SignInButton";
  * loading skeleton on the client over a server-rendered sign-out button —
  * a hydration mismatch on every page. See `src/app/layout.tsx`.
  */
-export function UserMenu({ email }: { email: string | null }) {
+export function UserMenu({
+  email,
+  signInProviders,
+}: {
+  email: string | null;
+  signInProviders: SignInProviders;
+}) {
   const [signingOut, setSigningOut] = useState(false);
   const t = useT();
 
@@ -28,7 +34,9 @@ export function UserMenu({ email }: { email: string | null }) {
   }
 
   if (email === null) {
-    return <SignInButton compact />;
+    // The header offers the providers only; the password form is the login
+    // page's, where there is room for it.
+    return <SignInButton compact providers={{ ...signInProviders, password: false }} />;
   }
 
   return (

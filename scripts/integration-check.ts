@@ -1,35 +1,32 @@
 /**
- * End-to-end integration check against DynamoDB Local and a mock LLM server.
- * Exercises every repository round-trip plus the execution engine (single-shot
- * and agent loop with the builtin Skill tool).
+ * End-to-end integration check against a local PostgreSQL and a mock LLM
+ * server. Exercises every repository round-trip plus the execution engine
+ * (single-shot and agent loop with the builtin Skill tool).
  *
- * Runs against the *test* DynamoDB Local instance (8084), never the dev one
- * (8083): this check writes fixtures and cascade-deletes them.
+ * Runs against the *test* database (`agent_studio_test`), never the dev one
+ * (`agent_studio`): this check writes fixtures and cascade-deletes them.
  *
- *   docker compose up -d dynamodb-test
- *   pnpm init-local-table:test
+ *   docker compose up -d postgres
  *   pnpm test:integration
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 
 process.env.STAGE ??= "local";
-process.env.DYNAMODB_ENDPOINT ??= "http://localhost:8084";
-// The `-test` table is the second layer under the port guard below: both
-// instances are shared with the other projects on this machine, so the table
-// name is what separates them, and a mistake about *which* instance still
-// cannot reach the table `pnpm dev` writes to.
-process.env.DYNAMODB_TABLE_NAME ??= "agent-studio-test";
+process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test";
 
-// Refuse anything but the local test instance. This check cascade-deletes what
-// it writes, and `--env-file=.env.local` (which carries the dev endpoint) is an
-// easy way to aim it at 8083 by accident — where it would take the dev app's
-// data with it. `init-local-table.ts` guards the same way, one port over.
-const endpoint = new URL(process.env.DYNAMODB_ENDPOINT);
-if (!["localhost", "127.0.0.1"].includes(endpoint.hostname) || endpoint.port !== "8084") {
+// Refuse anything but a local test database. This check cascade-deletes what
+// it writes, and `--env-file=.env.local` (which carries the dev URL) is an
+// easy way to aim it at the dev database by accident — where it would take
+// the dev app's data with it.
+const database = new URL(process.env.DATABASE_URL);
+if (
+  !["localhost", "127.0.0.1"].includes(database.hostname) ||
+  !database.pathname.endsWith("_test")
+) {
   console.error(
-    `Refusing to run against ${endpoint.origin}: this check writes and deletes, so it ` +
-      `only runs against the local test instance (http://localhost:8084).`,
+    `Refusing to run against ${database.host}${database.pathname}: this check writes and ` +
+      "deletes, so it only runs against a local database whose name ends in `_test`.",
   );
   process.exit(1);
 }
@@ -41,6 +38,8 @@ process.env.LLM_API_KEY = "test";
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
 async function main() {
+  const { migrate } = await import("@/infrastructure/db/migrations");
+  await migrate();
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
   const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
@@ -214,7 +213,7 @@ async function main() {
         now,
       ),
       (error: unknown) =>
-        error instanceof Error && error.name === "ConditionalCheckFailedException",
+        error instanceof Error && error.name === "ConditionalWriteFailed",
     );
     pass("project optimistic write conflict");
 
@@ -950,6 +949,62 @@ async function main() {
     );
     pass("A2A client key: transactional pair, hash lookup, full deletion");
 
+    // ---------- transact lock modes (a checked key does not serialise) ----------
+    // A `check` op asserts something elsewhere is still live; the exclusive
+    // lock it used to take made every usage row, trace and version write in a
+    // project queue on that project's one META row. The two directions that
+    // matter: a shared holder must not block a checker, and an exclusive one
+    // must still block it — that is the delete the check exists to catch.
+    {
+      const { transact, conditions } = await import("@/infrastructure/db/store");
+      const { getPool } = await import("@/infrastructure/db/client");
+      const { keys } = await import("@/infrastructure/db/keys");
+      const projectKey = keys.project(projectName);
+      const probeKey = keys.trace(`lock-probe-${suffix}`);
+      const probe = { ...probeKey, entityType: "TRACE", projectName, createdAt: now };
+      const holder = await getPool().connect();
+      const waited = <T,>(promise: Promise<T>) =>
+        Promise.race([
+          promise.then(() => "done" as const),
+          new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 1_500)),
+        ]);
+      try {
+        await holder.query("BEGIN");
+        await holder.query(
+          "SELECT pg_advisory_xact_lock_shared(hashtext($1::text), hashtext($2::text))",
+          [projectKey.PK, projectKey.SK],
+        );
+        await holder.query("SELECT data FROM items WHERE pk = $1 AND sk = $2 FOR SHARE", [
+          projectKey.PK,
+          projectKey.SK,
+        ]);
+        assert.equal(
+          await waited(
+            transact([
+              { kind: "check", key: projectKey, condition: conditions.exists },
+              { kind: "put", item: probe },
+            ]),
+          ),
+          "done",
+          "a checked key is taken share-mode, so another reader does not block it",
+        );
+        // Same key, but written this time: that one waits for the shared holder.
+        // An `update` rather than a `put`, so the row keeps what the fixture
+        // wrote and the checks after this one still read it.
+        const writer = transact([
+          { kind: "update", key: projectKey, patch: (row) => ({ ...(row ?? {}) }) },
+        ]);
+        assert.equal(await waited(writer), "waiting", "a write on the key still waits on a reader");
+        await holder.query("ROLLBACK");
+        await writer;
+      } finally {
+        holder.release();
+      }
+      const { deleteItem } = await import("@/infrastructure/db/store");
+      await deleteItem(probeKey).catch(() => {});
+      pass("transact: a checked key locks share-mode, a written one exclusively");
+    }
+
     // ---------- concurrency slots (conditional claim + lease reclaim) ----------
     const slotActor = `user:slots-${suffix}@example.com`;
     const nowSeconds = Math.floor(Date.now() / 1000);
@@ -1039,31 +1094,22 @@ async function main() {
       await artifactRepository.delete(artifactId).catch(() => {});
     }
     if (auditFixtures.length > 0 || memberDayFixtures.length > 0) {
-      const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
-      const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");
+      const { deleteItem } = await import("@/infrastructure/db/store");
       const { keys } = await import("@/infrastructure/db/keys");
       for (const fixture of auditFixtures) {
-        await getDocumentClient()
-          .send(
-            new DeleteCommand({
-              TableName: getTableName(),
-              Key: keys.auditEvent(fixture.day, fixture.createdAt, fixture.eventId),
-            }),
-          )
-          .catch(() => {});
+        await deleteItem(keys.auditEvent(fixture.day, fixture.createdAt, fixture.eventId)).catch(
+          () => {},
+        );
       }
       for (const fixture of memberDayFixtures) {
-        await getDocumentClient()
-          .send(
-            new DeleteCommand({
-              TableName: getTableName(),
-              Key: keys.usageMember(fixture.email, fixture.date, fixture.project),
-            }),
-          )
-          .catch(() => {});
+        await deleteItem(keys.usageMember(fixture.email, fixture.date, fixture.project)).catch(
+          () => {},
+        );
       }
     }
     mock.close();
+    const { closePool } = await import("@/infrastructure/db/client");
+    await closePool();
   }
 
   console.log(`\n${results.length} integration checks passed`);

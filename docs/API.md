@@ -11,8 +11,8 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 
 - **Content type**: 따로 언급하지 않는 한 요청과 응답은 JSON 이다. 스트리밍 응답은
   `text/event-stream` 이다.
-- **Auth**: 애플리케이션 라우트는 Better Auth 세션 쿠키를 요구한다 (Google OAuth 로그인.
-  로컬 개발에서는 `scripts/dev-session.ts` 가 하나 출력해 준다). 세션이 없거나 유효하지 않으면 →
+- **Auth**: 애플리케이션 라우트는 Better Auth 세션 쿠키를 요구한다 (OIDC · Google · 비밀번호
+  중 배포가 켠 수단으로 로그인한다. 로컬 개발에서는 `scripts/dev-session.ts` 가 하나 출력해 준다). 세션이 없거나 유효하지 않으면 →
   `401 { "error": "Unauthorized" }`. 로그인 플로우 자체는 `/api/auth/*` 아래에 있다
   (Better Auth catch-all). 실행 엔드포인트 셋(`predict`, `chat/completions`,
   `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **project 별 API 토큰**도
@@ -116,6 +116,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/plugins` | `GET` | member |
 | `/api/plugins/{name}` | `GET` | member |
 | `/api/plugins/sync` | `GET` `POST` | member / admin |
+| `/api/plugins/sync/upload` | `POST` | admin |
 | `/api/mcps/{name}/tools` | `POST` | member |
 | `/api/mcps/{name}/auth` | `POST` `DELETE` | admin |
 | `/api/mcps/managed` | `POST` | admin |
@@ -140,6 +141,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/models/catalog` | `GET` | member |
+| `/api/models/catalog/document` | `GET` `PUT` `DELETE` | admin |
 | `/api/models/test` | `POST` | admin |
 | `/api/models/refresh` | `POST` | admin |
 | `/api/models/selfhosted` | `GET` | admin |
@@ -169,6 +171,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/telegram/webhook/{project}` | `POST` | `X-Telegram-Bot-Api-Secret-Token` |
 | `/api/teams/messages/{project}` | `POST` | Bot Framework bearer 토큰 |
 | `/api/webhook/{project}` | `POST` | `X-Trigger-Secret` |
+| `/api/objects/{...key}` | `GET` | 주소의 서명 토큰 (`exp`, `sig`) — 세션 없음 |
 | `/api/triggers/scan` | `POST` | `X-Scan-Token` |
 | `/api/catalog/reindex` | `POST` | `X-Scan-Token` |
 | `/api/plugins/sync/scan` | `POST` | `X-Scan-Token` |
@@ -324,7 +327,7 @@ slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 그것을 밀어내거나 잘라낼 수 없다. 자기 OAuth 연결이 필요한 MCP 서버는 그 project 가 이미
 인가해 둔 경우에만 추가되고, 그렇지 않으면 런이 그렇다고 말한다. *찾아낸* 것은 warning 이
 아니다 — 런은 그것을 로그에 남기고, `POST /api/projects/{name}/preview` 는 `warnings` 와 분리해
-`discovered` 로 돌려준다. `VECTOR_BUCKET` 이 없으면 플래그는 저장되고 런이 그 사실도 말한다.
+`discovered` 로 돌려준다. `CATALOG_ENABLED` 가 아니면 플래그는 저장되고 런이 그 사실도 말한다.
 검색이 아무것도 못 찾은 것처럼 굴지 않는다. [design/capabilities.md](design/capabilities.md#케이퍼빌리티-카탈로그)
 를 보라.
 
@@ -630,11 +633,28 @@ POST /api/plugins/sync
   most 500 names) | 409 (a sync is already running) | 503 (not configured)
 
 POST /api/plugins/sync/scan          (X-Scan-Token: SCHEDULE_SCAN_TOKEN)
-→ 202 { started } | 200 { upToDate } | 401 | 503
+→ 202 { started } | 200 { upToDate } | 200 { held: "archive" } | 401 | 503
+
+POST /api/plugins/sync/upload        multipart/form-data: file (.tar.gz | .tgz | .tar),
+                                     selection? (the removal JSON below)
+→ the same sync report | 400 (not multipart, no `file`, empty archive, unreadable archive —
+  a path that leaves the tree, a non-UTF-8 text entry —, bad selection)
+  | 409 (a sync is already running) | 413 (over 32 MB as sent; 64 MB inflated or 20,000
+  entries refuse inside the reader as 400)
 ```
 
+`/sync/upload` 는 GitHub 에 닿지 않는 배포의 sync 다: 체크아웃의 아카이브(`git archive
+--format=tar.gz HEAD` 든 `tar czf` 든 — 맨 앞의 공통 디렉터리는 벗겨 낸다)를 올리면 GitHub
+클라이언트가 만드는 것과 같은 스냅샷이 되어 **같은 sync** 를 지난다. 행들이 지닐 provenance 는
+설정된 `PLUGINS_REPO`, 그것도 없으면 `archive` 다 — `GET /sync` 가 마지막 리포트를 읽는 바로 그
+이름이고, 그래서 GitHub 가 닿던 시절의 행은 같은 저장소가 손으로 와도 주인을 유지한다. 스냅샷의 `branch` 는 `archive`,
+`commitSha` 는 아카이브의 sha256 이다 — 업로드를 식별할 뿐, 바뀌었는지는 행마다 내용으로 판정한다(GitHub sync 와 같다). `PLUGINS_REPO`
+도 `GITHUB_TOKEN` 도 필요 없고, `GET /api/plugins/sync` 의 `last` 는 같은 이름 아래에서 읽힌다.
+심볼릭 링크는 GitHub 트리와 같은 모드(`120000`)로 보고되어 같은 규칙으로 건너뛴다.
+
 `/sync/scan` 은 CronJob 의 tick 이다: 브랜치 head 를 마지막 리포트와 비교해, 머지된 것이 없으면
-스냅샷 비용을 치르지 않고 `upToDate` 로 답한다 (그 리포트가 `write-failed` skip 을 싣고 있었다면
+스냅샷 비용을 치르지 않고 `upToDate` 로 답한다. 마지막 리포트가 아카이브 업로드의 것이면 `held` 로
+답하고 GitHub 를 보지 않는다 — 사람이 올린 것은 다음 `POST /api/plugins/sync` 까지 선다 (그 리포트가 `write-failed` skip 을 싣고 있었다면
 예외다 — 그것은 다시 돌려야만 복구된다). tick 은 `scheduler` 로서 sync 하고, 절대 삭제하지
 않으며 (제거 선택은 콘솔에만 있다), schedule ticker 의 토큰을 공유한다 — 배포당 CronJob 인증
 정보는 하나다.
@@ -819,8 +839,8 @@ activity 는 아무것도 claim 하지 않은 빈 200, 재전송은 빈 200, 그
 
 ## 관리형 MCP 서버
 
-managed 서버는 이 배포가 SSM Run Command 로 자기 호스트에서 직접 띄우고 loopback 으로 닿는
-컨테이너다. 네 엔드포인트 모두 **admin 전용**이고, `MANAGED_MCP_INSTANCE_ID` /
+managed 서버는 이 배포가 자기 호스트의 Docker CLI 로 직접 띄우고 loopback 으로 닿는
+컨테이너다. 네 엔드포인트 모두 **admin 전용**이고, `MANAGED_MCP_RUNTIME=docker` /
 `MANAGED_MCP_REGISTRY` 가 설정돼 있지 않으면 넷 다
 `503 { "error": "This deployment is not configured to run managed MCP servers." }` 로 답한다 —
 반쯤 켜진 상태가 아니라 기능이 꺼진 것이다.
@@ -838,7 +858,7 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
 ```json
 { "name": "my-tool", "image": "…/my-mcp:1.4.0", "containerPort": 8080,
   "args": ["--port", "{{PORT}}"]?, "endpointPath": "/mcp"?,
-  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/agent-studio/my-tool/API_KEY"]?,
+  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/etc/agent-studio/my-tool.env"]?,
   "description": ""?, "content": ""?, "headers": {}? }
 ```
 
@@ -1297,7 +1317,7 @@ POST /api/catalog/reindex
 → 200 { started: true }
 → 401 (wrong or missing token)
 → 503 (SCHEDULE_SCAN_TOKEN not configured — answered before the token is compared, so a
-       deployment missing it gets this rather than a 401) | 503 (VECTOR_BUCKET not configured)
+       deployment missing it gets this rather than a 401) | 503 ("CATALOG_ENABLED is not set")
 ```
 
 전역 capability 인덱스를 레지스트리에서 다시 만든다 — 모든 skill, 모든 MCP 서버와 그것이 제공하는
@@ -1351,6 +1371,21 @@ sandbox 가 필요 없고, 다운로드는 애초에 신뢰를 요구하지 않�
 서명된 오브젝트 URL 로는 그 헤더를 실을 수 없고, 건네진 주소는 그것을 연 사람의 권한보다
 오래 산다 — public 모드에서는 영구다. 그래서 페이지만은 앱을 통해 나간다. 읽기 상한은
 2 MB 이고, 권한 술어는 삭제와 같다.
+
+```
+GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
+→ 200 <the object's bytes, its Content-Type> | 403 (invalid or expired) | 404 (not stored,
+  or artifact storage is not configured)
+```
+
+`/api/objects` 는 `ARTIFACT_ACCESS_MODE=proxied` 에서 모든 서명 `url` 이 가리키는 곳이다 —
+스토어가 앱에게만 닿는 배포에서 독자에게 건네는 주소. **세션을 보지 않는다**: 주소를 쥐는
+것은 `<img>`, Slack 메시지, 재생된 턴을 가져가는 모델 제공자이고, 토큰이 자격 증명이다(키·
+만료·파일명을 덮는 HMAC — [SECURITY.md](SECURITY.md#데이터-노출과-보존)). `dl` 이 있으면
+`Content-Disposition: attachment` 로 그 이름에 내려가고, 없으면 인라인이다. 응답은
+`Cache-Control: private, max-age=<토큰의 남은 초>` 를 싣고, 브라우저가 문서로 그릴 수 있는
+타입은 `/view` 와 같은 `sandbox; default-src 'none'` 아래로 나간다. 한 번에 읽는 상한은 저장될
+수 있는 오브젝트의 최대인 10 MB 다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
 `byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의
@@ -1417,6 +1452,12 @@ GET  /api/models/selfhosted → 200 { served: [ { name, contextWindow?, vision? 
                                     servedError?,
                                     declarations: [ <selfHostedModel> ],
                                     installed: [ <id> ] } | 400
+GET    /api/models/catalog/document → 200 { stored: false }
+                                    | 200 { stored: true, uploadedBy, uploadedAt, updatedAt,
+                                            modelCount, skipped: [ "id — reason" ] }
+PUT    /api/models/catalog/document   <the catalog JSON, at most 4 MB>
+                                    → 200 { …the status above, refreshed } | 400 | 413
+DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
 ```
 
 - `catalog` 는 `member` 등급부터 읽을 수 있고 (`withMemberAuth` — Intelligence 섹션의 다른
@@ -1446,6 +1487,16 @@ GET  /api/models/selfhosted → 200 { served: [ { name, contextWindow?, vision? 
   `servedError` 로 실린다: 서빙 스택이 죽어 있어도 선언은 admin 이 편집할 수 있어야 한다.
   채널이 아예 설정돼 있지 않으면 `400`. 선언 자체는 `PUT /api/settings` 의
   `selfHostedModels` 로 한다.
+- `catalog/document` 는 admin 이 **손으로 설치하는 카탈로그** — 발행된 카탈로그에 닿지
+  못하는 배포(`MODELS_CATALOG_URL=none`)의 길이지만, 어느 배포에서든 업로드는 지울 때까지
+  네트워크보다 우선한다. `GET` 은 "설치된 것 없음" 을 실패가 아니라 상태로 답한다(콘솔이
+  그린다). `PUT` 은 refresh 가 검증하는 방식 그대로 먼저 검증해 — 로더의 이유를 담은 400 —
+  올린 사람의 주소와 시각과 함께 저장하고, 답하기 전에 레지스트리를 갱신한다. `stored: true`
+  옆의 `refreshed: false` 는 레지스트리가 이미 이 업로드를 들고 있었다는 뜻이다. `DELETE` 는
+  문서를 지우고 갱신한다 — 읽을 발행 카탈로그가 있으면 그것을 따르고, 없으면 프로세스가
+  재시작해 스냅샷으로 돌아갈 때까지 마지막 설치본을 유지한다(레지스트리는 결코 비워지지
+  않는다). `GET /api/models/catalog` 에 동사를 더하는 대신 형제 주소인 이유: 그쪽은 *레지스트리*
+  의 member 등급 뷰이고, 이쪽은 레지스트리를 먹이는 *소스 하나* 에 대한 admin 의 뷰다.
 
 ## A2A (인바운드)
 
@@ -1497,7 +1548,7 @@ POST   /api/settings/a2a-keys/{name}/reveal    (admin) → { key, createdAt }   
 각각 어기면 `400` 이다. 이미 발급된 이름은 `409` 다.
 
 Agent Card URL 은 `PUBLIC_BASE_URL` 로 만들어진다. Task 상태(`SendMessage` →
-`GetTask`/`CancelTask`/`ListTasks`)는 project·tenant·인증된 client 별로 DynamoDB 에 격리되어
+`GetTask`/`CancelTask`/`ListTasks`)는 project·tenant·인증된 client 별로 데이터베이스에 격리되어
 저장되므로 재배포를 넘어 살아남고 인스턴스 간에 공유된다. 종단 상태를 지키는 조건부 쓰기가,
 동시에 일어난 complete/cancel 이 끝난 task 를 되돌리는 것을 막는다. 행은
 TTL(`A2A_TASK_RETENTION_DAYS`, 기본 1일)로 만료된다. `ListTasks` 는 status timestamp 내림차순이고
@@ -1565,7 +1616,7 @@ GET /api/metrics  → 200 text/plain; version=0.0.4
 ```
 
 `/api/health` 는 liveness 다 — "프로세스가 서빙하고 있는가"에 답하는 정적 200 이고, 의존성이
-없어서 하류의 순간적인 문제가 재시작을 유발하지 않는다. `/api/ready` 는 readiness 다 — DynamoDB 와
+없어서 하류의 순간적인 문제가 재시작을 유발하지 않는다. `/api/ready` 는 readiness 다 — PostgreSQL 과
 LLM 채널을 찔러 보고 (짧은 타임아웃, 상세는 드러내지 않는다), 하류에 닿을 수 없거나 인스턴스가
 SIGTERM 이후 draining 중이면 503 을 돌려준다.
 

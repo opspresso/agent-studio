@@ -9,15 +9,22 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     services:
-      # `services:` cannot pass command arguments, so the compose flags are
-      # absent here — and neither is needed: a fresh container per job is already
-      # empty (-inMemory), and one job holds a single credential and region, so
-      # there is no second DB to split off (-sharedDb). The host port must be
-      # 8084, which is what the integration check connects to.
-      dynamodb:
-        image: amazon/dynamodb-local:3.3.0
+      # A fresh database per job. The name ends in `_test`, which is what the
+      # integration check insists on before it writes and cascade-deletes; the
+      # check applies the schema itself.
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: agent_studio
+          POSTGRES_PASSWORD: agent_studio
+          POSTGRES_DB: agent_studio_test
         ports:
-          - 8084:8000
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agent_studio -d agent_studio_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
 
@@ -39,12 +46,10 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      # Both scripts carry the test endpoint and table themselves, so there is
-      # nothing to set here — and nothing to keep in step with them.
+      # The script carries the test database URL itself, so there is nothing
+      # to set here — and nothing to keep in step with it.
       - name: Integration tests
-        run: |
-          pnpm init-local-table:test
-          pnpm test:integration
+        run: pnpm test:integration
 
       - name: Build
         run: pnpm build

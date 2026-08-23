@@ -1,0 +1,84 @@
+{{- if .Values.ticker.enabled }}
+{{- /*
+The Secret omits empty values, so a missing token would not render a key the
+CronJob below reads — the pod then fails to start, and the scan endpoint would
+refuse every tick anyway. An operator-managed Secret is trusted to carry it.
+*/}}
+{{- if not .Values.secrets.existingSecret }}
+{{- $_ := required "secrets.SCHEDULE_SCAN_TOKEN is required when ticker.enabled (openssl rand -hex 32)" .Values.secrets.SCHEDULE_SCAN_TOKEN }}
+{{- end }}
+# The scheduler tick. Each minute: schedule triggers (which also sweeps
+# expired rows) and the plugins-sync check; each hour: the catalog reindex.
+# The token is the app's SCHEDULE_SCAN_TOKEN, from the same Secret.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "agent-studio.fullname" . }}-scan
+  labels:
+    {{- include "agent-studio.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.ticker.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 55
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: tick
+              image: {{ .Values.ticker.image }}
+              env:
+                - name: SCHEDULE_SCAN_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "agent-studio.secretName" . }}
+                      key: SCHEDULE_SCAN_TOKEN
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  app=http://{{ include "agent-studio.fullname" . }}:{{ .Values.service.port }}
+                  curl -fsS -X POST -H "X-Scan-Token: $SCHEDULE_SCAN_TOKEN" "$app/api/triggers/scan"
+                  curl -fsS -X POST -H "X-Scan-Token: $SCHEDULE_SCAN_TOKEN" "$app/api/plugins/sync/scan" || true
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "agent-studio.fullname" . }}-reindex
+  labels:
+    {{- include "agent-studio.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.ticker.reindexSchedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: reindex
+              image: {{ .Values.ticker.image }}
+              env:
+                - name: SCHEDULE_SCAN_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "agent-studio.secretName" . }}
+                      key: SCHEDULE_SCAN_TOKEN
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  app=http://{{ include "agent-studio.fullname" . }}:{{ .Values.service.port }}
+                  # 503 is "no catalog on this deployment", not a failure.
+                  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Scan-Token: $SCHEDULE_SCAN_TOKEN" "$app/api/catalog/reindex")
+                  case "$code" in 2*|503) exit 0 ;; *) echo "reindex answered $code"; exit 1 ;; esac
+{{- end }}

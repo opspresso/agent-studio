@@ -36,6 +36,7 @@ import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
 import { tierAtLeast } from "@/domain/member/tiers";
 import type { Viewer } from "@/lib/viewer";
+import type { SignInProviders } from "./SignInButton";
 import { LocaleToggle } from "./LocaleToggle";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
@@ -124,11 +125,14 @@ function isActive(pathname: string, href: string): boolean {
 export function AppLayout({
   version,
   viewer,
+  signInProviders,
   children,
 }: {
   version: string;
   /** Resolved by the root layout; `null` when nobody is signed in. */
   viewer: Viewer | null;
+  /** What the header's sign-in control offers a signed-out visitor. */
+  signInProviders: SignInProviders;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -177,7 +181,7 @@ export function AppLayout({
             <Group gap="xs" ml="auto" wrap="nowrap">
               <LocaleToggle />
               <ThemeToggle />
-              <UserMenu email={viewer?.email ?? null} />
+              <UserMenu email={viewer?.email ?? null} signInProviders={signInProviders} />
             </Group>
           </Group>
       </AppShell.Header>

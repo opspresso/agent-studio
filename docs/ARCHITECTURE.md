@@ -1,6 +1,6 @@
 # 아키텍처
 
-**모든 런이 지나는 형태**, 그리고 왜 그 형태인지 — 레이어, 하나의 테이블, 진입점에서
+**모든 런이 지나는 형태**, 그리고 왜 그 형태인지 — 레이어, 하나의 데이터베이스, 진입점에서
 엔진까지의 경로, 그리고 실패가 어떻게 밖으로 되돌아 나오는지를 다룬다. 코드를 고치기 전에
 읽을 문서다.
 
@@ -25,8 +25,9 @@ cost/usage** 도메인을 아우르는 하나의 Next.js 16 풀스택 애플리�
 - Node.js 24, pnpm 11 (`packageManager` 로 고정)
 - Next.js 16 App Router, React 19, TypeScript strict (`noUncheckedIndexedAccess`)
 - Mantine 9 (`@mantine/core` + hooks/form/notifications/charts, `@tabler/icons-react`)
-- Better Auth 1.6 + Google OAuth (커스텀 DynamoDB 어댑터)
-- AWS DynamoDB 단일 테이블 설계
+- Better Auth 1.6 — 자기 Postgres 테이블 위에서, OIDC · Google · 비밀번호 중 배포가 켠 것으로
+- PostgreSQL 16+ (pgvector) 하나 — 아이템 테이블 `items`, Better Auth 의 테이블, `catalog_vectors`
+- 런이 만든 것을 담는 S3 호환 오브젝트 스토어 (선택 — MinIO, S3, Ceph RGW …)
 
 ## 레이어
 
@@ -54,15 +55,19 @@ src/
     project/  registry/  skill/  mcp/  agent/  usage/  trace/  settings/  health/
     plugin/  member/
   infrastructure/   # 어댑터 (app 쪽 코드는 composition root 를 통해 닿는다).
-    db/             # 단일 테이블 클라이언트, 키 빌더, 리포지토리
+    db/             # 커넥션 풀, 아이템 스토어(store.ts), 스키마 마이그레이션, 키 빌더,
+                    # 리포지토리
     llm/            # OpenAI 호환 프로바이더 채널, 스트리밍
-    mcp/            # MCP HTTP 클라이언트, 세션, 디스커버리 캐시
-    vector/         # capability 카탈로그가 인덱싱되는 S3 Vectors 스토어
+    mcp/            # MCP HTTP 클라이언트, 세션, 디스커버리 캐시, Docker 프로비저너
+    vector/         # capability 카탈로그가 인덱싱되는 pgvector 스토어 (catalog_vectors)
+    plugin/  archive/
+                    # 저장소 트리 → plugins 스냅샷 워커 (GitHub 와 업로드 아카이브가 공유),
+                    # 업로드된 tar 리더
     a2a/  agent/  slack/  telegram/  teams/  github/  storage/  net/  crypto/
     health/  telemetry/
                     # A2A + 외부 에이전트 클라이언트, Slack, Telegram, Teams, plugins 저장소
-                    # 클라이언트, S3 아티팩트 스토어, SSRF 가드, AES, readiness 프로브,
-                    # OTel 트레이스 내보내기
+                    # 클라이언트, S3 호환 오브젝트 스토어와 proxied 주소의 토큰, SSRF 가드,
+                    # AES, readiness 프로브, OTel 트레이스 내보내기
   app/              # Next.js App Router: 페이지 + 라우트 핸들러 (프레젠테이션)
     api/            # 라우트 핸들러는 application 유스케이스를 부르지, 리포지토리를 직접 부르지 않는다
       _lib/         # 라우트 핸들러 접착제: SSE 프레이밍, `apiError`, 본문 크기 제한, 모든
@@ -118,7 +123,7 @@ flowchart TB
   app["app<br/>페이지 · API 라우트 핸들러"]
   application["application<br/>유스케이스 · LLM 엔진 · 실행 파사드"]
   domain["domain<br/>엔티티 · 리포지토리 포트 — 순수 TS"]
-  infrastructure["infrastructure<br/>DynamoDB · LLM 채널 · MCP · Slack · Telegram · Teams · A2A · net · crypto"]
+  infrastructure["infrastructure<br/>PostgreSQL · pgvector · 오브젝트 스토어 · LLM 채널 · MCP · Slack · Telegram · Teams · A2A · net · crypto"]
   lib["lib<br/>composition root · 인증/세션 · 런타임 설정"]
   shared["shared<br/>의존성 없는 헬퍼 — @/ 에서 아무것도 import 하지 않는다"]
 
@@ -143,8 +148,8 @@ flowchart TB
 조립(composition)은 한 파일에 모으지 않고 분산돼 있다. 실행 표면마다 정말로 다른 bag 이
 필요하기 때문이다. **일곱 곳이 어댑터 위에 유스케이스를 조립하며, 그 외에는 어디서도
 하면 안 된다.** composition root 말고도 세 개의 `lib` 모듈이 어댑터에 직접 닿는다 —
-`auth.ts`(Better Auth 스토리지 어댑터), `runtime-settings.ts` 와 `memberAccess.ts`(각각
-캐시 뒤에서 리포지토리 하나를 감싼다) — 그리고 `tests/architecture.test.ts` 가 정확히 그
+`auth.ts`(Better Auth 를 이 앱의 커넥션 풀 위에 조립한다), `runtime-settings.ts` 와
+`memberAccess.ts`(각각 캐시 뒤에서 리포지토리 하나를 감싼다) — 그리고 `tests/architecture.test.ts` 가 정확히 그
 셋만을 `lib` 의 wiring 모듈로 지정한다. 나머지 `lib` 파일은 전부 리프다.
 
 | Wiring site | 조립하는 것 |
@@ -155,7 +160,7 @@ flowchart TB
 | `src/app/api/telegram/webhook/_lib/` | `TelegramEventDeps` bag (바인딩된 `runAgent` + `TelegramClientPort` + transcript 저장소), Slack 쪽과 같은 모양 — 셋 다 모든 chat-bot 표면이 공통으로 지니는 절반인 `MessagingDeps` 를 확장한다 |
 | `src/app/api/teams/messages/_lib/` | `TeamsEventDeps` bag (바인딩된 `runAgent` + `TeamsClientPort` + transcript 저장소), 같은 모양 |
 | `src/app/api/a2a/[name]/route.ts` | 요청마다 이뤄지는 A2A 조립: `executionDeps` 위의 `ProjectA2aExecutor` 를 감싸는 SDK 의 request/transport 핸들러 — 핸들러가 프로젝트 하나의 카드를 중심으로 만들어지므로 요청 단위다 |
-| `src/instrumentation.ts` | 부팅 경로: `auditRepository` 위의 audit sink, 그리고 managed MCP 재개. 구조상 wiring site 다 — 이 파일이 런타임을 Node 서버라고 판단하기 전까지 composition root 자체가 로드되지 않고, audit sink 는 **await 되는** 부팅 경로에서 wiring 돼야 하기 때문이다 ([감사 기록](design/observability.md#audit-기록) 참고) |
+| `src/instrumentation.ts` | 부팅 경로: 스키마 마이그레이션(advisory lock 아래), 부트스트랩 관리자, `auditRepository` 위의 audit sink, 저장된 문서와 HTTP 소스 위에 조립한 모델 카탈로그 refresher, 그리고 managed MCP 재개. 구조상 wiring site 다 — 이 파일이 런타임을 Node 서버라고 판단하기 전까지 composition root 자체가 로드되지 않고, audit sink 는 **await 되는** 부팅 경로에서 wiring 돼야 하기 때문이다 ([감사 기록](design/observability.md#audit-기록) 참고) |
 
 두 가지 DI 스타일을 의도적으로 함께 쓴다:
 
@@ -177,22 +182,37 @@ flowchart TB
 것이기 때문이다). 소유자 목록은 [OWNERSHIP.md](OWNERSHIP.md) 다.
 
 단일 소유자 규칙이 있는 이유는 이 코드베이스가 실제로 계속 겪은 실패가 그것이기
-때문이다: `McpTool` 은 이미 서로 어긋난 정의 네 개에 이르렀고, DynamoDB 조건부 쓰기 에러
+때문이다: `McpTool` 은 이미 서로 어긋난 정의 네 개에 이르렀고, 스토어의 조건부 쓰기 에러
 이름은 일곱 개 호출 지점에 적혀 있었는데 그중 트랜잭션 형태를 처리한 것은 하나뿐이었으며,
 이미지 usage 접기(collapse)는 각각 따로 네 번 유도됐다.
 
 **위반을 조용히 추가하는 것은 불가능하다. import 를 고쳐라. 규칙을 넓히지 마라.**
 
-## DynamoDB 단일 테이블 설계
+## PostgreSQL 아이템 테이블 설계
 
-테이블 하나(`DYNAMODB_TABLE_NAME`, 기본값 `agent-studio`), 키는 `PK` (S) / `SK` (S) 이며
-`GSI1`(`GSI1PK`/`GSI1SK`)과 `GSI2`(`GSI2PK`/`GSI2SK`)를 둔다. 모든 아이템은 `entityType`
-을 갖는다.
+데이터베이스 하나(`DATABASE_URL`, pgvector 확장 포함)에 테이블 세 묶음이 있고, 스키마는
+앱이 부팅 때 `src/infrastructure/db/migrations.ts` 로 만든다 — 버전별로 멱등한 문장들이
+`schema_migrations` 에 기록되고, 인스턴스가 여럿이어도 advisory lock 아래에서 한 번만
+적용된다. `pnpm db:migrate` 는 앱을 띄우지 않고 같은 일을 한다.
+
+- **`items`** — 이 앱의 모든 엔티티가 들어가는 *아이템 테이블*. 행은 `pk`/`sk`(둘 다
+  `COLLATE "C"` — 정렬 키는 바이트 순서로 쓰인 문자열이라 로케일 정렬이 범위 쿼리를 깨뜨린다)
+  와 JSONB 문서 `data` 이고, `GSI1PK`/`GSI1SK`/`GSI2PK`/`GSI2SK` 와 `expiresAt` 은 문서에서
+  파생되는 **generated column**(`gsi1pk` …, `expires_at`)으로 부분 인덱스를 받는다. 키
+  카탈로그(`keys.ts`)와 접근 패턴은 단일 테이블 설계 그대로이고, 리포지토리는 전부
+  `src/infrastructure/db/store.ts` 의 *키 주소 스토어*를 지난다 — 아래 [관례](#관례).
+- **Better Auth 의 테이블** — `user`, `session`, `account`, `verification`. 라이브러리 자신의
+  Postgres 어댑터가 소유하고, 유니크 제약은 진짜 제약이다. `memberRepository` 가 `user` 를
+  테이블로 읽는 유일한 다른 독자다.
+- **`catalog_vectors`** — capability 카탈로그의 임베딩(`key`, `embedding vector`,
+  `metadata jsonb`). 폭을 선언하지 않는다: 폭은 `EMBEDDING_DIM` 이고 재색인이 모든 행을
+  다시 쓴다. 수천 행이라 인덱스 없이 정확 스캔한다 (`src/infrastructure/vector/pgVectorStore.ts`).
+
+아이템 테이블의 키는 `PK` / `SK` 이며 `GSI1`(`GSI1PK`/`GSI1SK`)과 `GSI2`(`GSI2PK`/`GSI2SK`)
+를 둔다. 모든 아이템은 `entityType` 을 갖는다.
 
 | 엔티티 | PK | SK | GSI1PK | GSI1SK |
 |---|---|---|---|---|
-| Auth (better-auth 모델 행) | `AUTH#{model}#{id}` | `ITEM` | `AUTH#{model}` | `{id}` |
-| Auth 유니크 락 (email, token, …) | `AUTHUNIQUE#{model}#{field}#{value}` | `LOCK` | — | — |
 | Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
 | Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
 | Project API 토큰 | `PROJECT#{name}` | `APITOKEN` | — | — |
@@ -230,22 +250,33 @@ flowchart TB
 | Trace 삭제 참조 | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
 | 감사 기록 | `AUDIT#{yyyy-MM-dd}` | `{createdAt ISO}#{eventId}` | — | — |
 | 앱 설정 (환경변수 오버라이드) | `SETTINGS#app` | `META` | — | — |
+| admin 이 업로드한 모델 카탈로그 문서 (배포당 하나, 발행 카탈로그보다 우선) | `MODELCATALOG#doc` | `META` | — | — |
 
-**왜 테이블 하나에 GSI 둘인가.** 아이템 범위의 모든 접근은 기본 키로 충분하다: 프로젝트와
+**왜 테이블 하나에 인덱스 둘인가.** 아이템 범위의 모든 접근은 기본 키로 충분하다: 프로젝트와
 그 버전들이 파티션을 공유하고, chat 과 그 메시지들이 파티션을 공유하므로 캐스케이드 삭제가
-쿼리 하나다. `GSI1` 은 이질적인 "종류별 목록" 패턴을 담당한다 — `TYPE#*` 카탈로그 목록,
-`CHATOWNER#{email}`(사용자의 chat 을 최신순으로), `USAGEDATE#{date}`(대시보드를 위한
+`DELETE` 한 문장이다. `GSI1` 은 이질적인 "종류별 목록" 패턴을 담당한다 — `TYPE#*` 카탈로그
+목록, `CHATOWNER#{email}`(사용자의 chat 을 최신순으로), `USAGEDATE#{date}`(대시보드를 위한
 프로젝트 횡단 일간 비용), `TRACEPROJECT#{name}`, `ARTIFACTPROJECT#{name}`. `GSI2` 는
-artifact 가 두 번째 축을 필요로 하기 전까지는 Better Auth 의 유니크 필드 조회만 담당했다:
-`ARTIFACTOWNER#{email}` 은 메일함을 지목하는 행에만 **한정해서** 기록된다 — 사용자나
-프로젝트 토큰이면 actor 자신의 주소, Slack 런이면 질문한 사람의 해석된 주소 — 그래서 A2A
-나 trigger 의 artifact 는 자리표시자 아래 놓이는 대신 그 인덱스에 아예 없다
-([Artifacts](design/execution.md#artifacts) 참고).
+artifact 의 두 번째 축 하나를 위한 것이다: `ARTIFACTOWNER#{email}` 은 메일함을 지목하는
+행에만 **한정해서** 기록된다 — 사용자나 프로젝트 토큰이면 actor 자신의 주소, Slack 런이면
+질문한 사람의 해석된 주소 — 그래서 A2A 나 trigger 의 artifact 는 자리표시자 아래 놓이는
+대신 그 인덱스에 아예 없다 ([Artifacts](design/execution.md#artifacts) 참고). 두 인덱스
+모두 `WHERE gsiNpk IS NOT NULL` 인 부분 인덱스라, 속성을 쓰지 않은 행은 인덱스에 존재하지
+않는다.
 
 ### 관례
 
 - **키 문자열은 `src/infrastructure/db/keys.ts` 에서 온다.** 다른 곳에서 직접 손으로 쓰지
   마라.
+- **리포지토리는 `items` 에 raw SQL 을 쓰지 않고 `src/infrastructure/db/store.ts` 를
+  지난다.** 스토어가 조건을 행 잠금(`SELECT … FOR UPDATE`) 아래에서 평가하고, 트랜잭션이
+  행을 키 순서로 잠가 교착을 막으며, 접두사 쿼리의 상한(`prefix` + `￿`)을 철자하는 자리다 —
+  두 번째 `FOR UPDATE` 는 그 셋이 어긋날 두 번째 자리다. 조건은 저장된 행에 대한 술어
+  (`conditions.exists` / `notExists` / `existsWith` / `existsWithout`)이고, 깨진 전제는
+  `ConditionalWriteFailed`(트랜잭션 안에서는 `TransactionCancelled`)로 올라오며 그 이름을
+  application 에서 읽는 유일한 곳은 `src/application/errors.ts` 다. 스토어가 소유하지 않는
+  테이블만 plain SQL 을 쓴다: Better Auth 의 테이블(`memberRepository`), `catalog_vectors`
+  (`pgVectorStore`), 그리고 `skillRepository.describe` 의 프로젝션.
 - **이름을 키로 갖는 registry 엔티티는 CRUD 를 `createKeyedRepository` 에서 받는다**
   (`keyedRepository.ts`): 아이템 하나짜리 파티션, SK 는 `META`, 목록은
   `TYPE#<entityType>` GSI1 파티션에서 읽으며, create / update / delete 각각이 파티션이
@@ -259,30 +290,32 @@ artifact 가 두 번째 축을 필요로 하기 전까지는 Better Auth 의 유
   이다.
 - Chat `META` 가 원자적 `nextSeq` 를 소유한다. 메시지 행은 조건부로 생성되는 시퀀스 키를
   쓴다.
-- Auth 의 유니크 필드는 전용 락 아이템으로 트랜잭션 claim 된다. `GSI2` 는 락이 생기기 전에
-  만들어진 행을 위한 호환 조회로 남아 있고, 이제는 희소한 artifact-owner 인덱스도 함께
-  담는다.
+- **인증 행은 아이템 테이블에 없다.** Better Auth 는 자기 테이블에 쓰고, email·token 의
+  유일성은 테이블의 유니크 제약이 지킨다 — 잠금 아이템도 호환 조회도 없다.
 - Trace 생성은 프로젝트 파티션에 삭제 참조를 트랜잭션으로 함께 쓴다. 프로젝트 삭제는
-  프로젝트를 먼저 표시해, 자식 정리 전에 새 버전·trace 가 생기는 것을 막는다.
-- **Usage 행은 모델별로 원자적 `ADD` 를 쓴다** — `calls.{model}`, `inputTokens.{model}`,
-  `outputTokens.{model}`, `cachedTokens.{model}`, `costUsd.{model}` — 두 단계로: 먼저
-  `SET … if_not_exists` 로 맵을 실체화하고, 그다음 중첩된 숫자 속성에 `ADD` 한다. 행이
-  이미 존재한 뒤에 추가된 맵은 각 행의 다음 쓰기 때 실체화되므로, 지난 날짜는 `{}` 로
-  읽히고 소급 채워지지 않는다. 이 행들은 비용 가드의 하루 한 번짜리 알림 claim(`alertedAt`,
-  `blockedAt`)도 함께 지니며, 조건부 쓰기로 취득된다. 그 claim 이 프로젝트 아이템이 아니라
-  여기 사는 이유는, 프로젝트 아이템의 `updatedAt` 이 모든 프로젝트 쓰기의 낙관적 동시성
-  조건이라 거기에 백그라운드 마커를 두면 동시 편집을 실패시키기 때문이고, 또 usage 행은
-  이미 자기 날짜에 만료되므로 마커도 함께 물러나기 때문이다.
-- **무한히 늘어나는 행은 `expiresAt` 를 갖는다**(`src/infrastructure/db/ttl.ts`). 테이블의
-  TTL 속성이다. 보존 기간과 프로덕션 테이블에서 TTL 을 켜야 한다는 요구 사항은
-  [OPERATIONS.md](OPERATIONS.md#행-보존) 에 있다.
-- **목록 쿼리는 페이지네이션한다.** 대부분은 `queryAll()`
-  (`src/infrastructure/db/query.ts`)을 거친다: Query 한 페이지는 1MB 에서 잘리므로,
-  페이지네이션하지 않은 목록은 조용히 잘린다. `chatRepository` 는 자체
-  `LastEvaluatedKey` 루프를 돌리고, `traceRepository` 는 의도적으로 `Limit` 으로 상위 N
-  개로 제한하되 그 한도를 **살아 있는** 행으로 채우기 위해 최대 다섯 페이지까지
-  당겨온다 — DynamoDB 가 앱 쪽 만료 행 필터보다 `Limit` 을 먼저 적용하기 때문이다. 그렇게
-  경계를 두었으므로 만료된 행으로 가득한 파티션이 목록 하나를 스캔으로 바꿔 놓지 못한다.
+  프로젝트를 먼저 표시해 자식 정리 전에 새 버전·trace 가 생기는 것을 막고, 그다음 usage
+  파티션, `TRACEPROJECT#` 인덱스 파티션이 닿는 trace 행(`deleteIndexPartition`), 참조가
+  지목하는 trace 행, 프로젝트 파티션의 나머지 순으로 지운 뒤 `META` 를 마지막에 지운다.
+- **Usage 행은 행 잠금 아래에서 read-modify-write 로 더해진다** — 모델별 맵
+  `calls.{model}`, `inputTokens.{model}`, `outputTokens.{model}`, `cachedTokens.{model}`,
+  `costUsd.{model}` 에 델타를 더한 행을 통째로 다시 쓰므로, 동시에 끝난 두 런이 모두
+  실린다. 행이 이미 존재한 뒤에 추가된 맵은 각 행의 다음 쓰기 때 실체화되므로, 지난 날짜는
+  `{}` 로 읽히고 소급 채워지지 않는다. 이 행들은 비용 가드의 하루 한 번짜리 알림
+  claim(`alertedAt`, `blockedAt`)도 함께 지니며, 조건부 쓰기로 취득된다. 그 claim 이
+  프로젝트 아이템이 아니라 여기 사는 이유는, 프로젝트 아이템의 `updatedAt` 이 모든 프로젝트
+  쓰기의 낙관적 동시성 조건이라 거기에 백그라운드 마커를 두면 동시 편집을 실패시키기
+  때문이고, 또 usage 행은 이미 자기 날짜에 만료되므로 마커도 함께 물러나기 때문이다.
+- **무한히 늘어나는 행은 `expiresAt` 를 갖는다**(`src/infrastructure/db/ttl.ts`). 만료는
+  테이블의 기능이 아니라 **틱**이다: schedule-scan 틱마다 `sweepExpiredRows`
+  (`store.deleteExpired`, 호출당 5,000행 — Better Auth 의 `session` 테이블은
+  `memberRepository.deleteExpiredSessions` 가 같은 틱에서)가 지난 행을 지우고, 틱은 1분
+  간격이므로 읽기 쪽도 여전히 만료 행을 거른다. 티커가 없는 배포(`SCHEDULE_SCAN_TOKEN` 미설정)는
+  아무것도 지우지 않는다 — [OPERATIONS.md](OPERATIONS.md#행-보존).
+- **목록 쿼리는 `queryItems()` 가 매치 전체를 답한다** — 페이지 상한은 예전 스토어의
+  것이었지 호출자의 것이 아니었다. 그래서 경계 없이 자랄 수 있는 목록은 `limit` 을
+  넘기고, 읽은 뒤 거르던 목록은 `notExpiredAt` 을 넘겨 필터가 `LIMIT` 보다 먼저 돌게 한다:
+  `traceRepository` 는 상위 N 개를 그렇게 **살아 있는** 행으로 채우고, `chatRepository` 의
+  사이드바·스레드 읽기도 같은 두 인자를 쓴다.
 
 ## 요청 흐름
 
@@ -337,7 +370,7 @@ flowchart LR
   channel["OpenAI 호환 채널"]
   imagechannel["이미지 채널"]
   tools["MCP tool 동시 5개 이하 · Skill 로드<br/>transfer_to_agent / dispatch_agents · 이미지 빌트인"]
-  usage["usage 기록<br/>agent 런은 버퍼링, 한 번 flush → 원자적 ADD"]
+  usage["usage 기록<br/>agent 런은 버퍼링, 한 번 flush → 행 잠금 아래 합산"]
   trace["trace 기록<br/>agent 런은 항상, 나머지는 샘플링"]
 
   predict --> facade
@@ -534,8 +567,8 @@ project 는 자기가 갖고 있지도 않은 시스템 메시지 대신 style �
 프레임으로 전달하게 되어, SSE 호출자는 429 도 그 `Retry-After` 도 영영 보지 못한다. chunk
 하나를 붙들고 있으면 그 throw 가 `apiError` 에 닿는다. 그 밖에 data 프레임은 달라지지
 않지만, 스트림은 15초마다 `: keepalive` 주석 프레임도 함께 나른다 — 유휴 중간
-장비(배포된 앱 앞의 ALB)는 60초 동안 바이트가 없는 연결을 끊는데 그것은 이미지 생성 한 번보다
-짧고, SSE 파서는 주석 프레임을 버리기 때문이다.
+장비(배포된 앱 앞의 리버스 프록시·로드밸런서)는 흔히 60초 동안 바이트가 없는 연결을 끊는데
+그것은 이미지 생성 한 번보다 짧고, SSE 파서는 주석 프레임을 버리기 때문이다.
 
 ### EngineChunk 계약
 
@@ -553,7 +586,7 @@ chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. *
 | `delta.toolCalls` | 턴이 툴을 요청할 때 엔진이 (표시용 인자와 함께) | 클라이언트의 툴 호출 렌더링, chat 봇의 진행 표시(Slack 의 상태 줄이나 체크리스트, Telegram·Teams 의 입력 중 표시), AG-UI 의 `TOOL_CALL_*` |
 | `toolResult` | 각 툴이 끝난 뒤 엔진이 | chat 의 툴 행(화면에 표시되고, 최근 N 턴에 대해서는 컨텍스트로 리플레이된다), 클라이언트 툴 패널, AG-UI 의 `TOOL_CALL_RESULT` |
 | `warning` | 런이 무언가를 잃는 모든 자리: 셋업 시점에는 쓸 수 없었던 바인딩(삭제된 skill/subagent, 도달 불가하거나 차단된 MCP 서버, 런당 상한을 넘은 tool), 런 도중에는 턴 또는 출력 한도, 컨텍스트 예산 절단, 잘린 transfer transcript, 실패한 transfer, 버려진 document | chat 경고 배너, chat 봇의 경고 꼬리말(Slack, Telegram, Teams), `Trace.warnings`, AG-UI 의 `CUSTOM` 경고 이벤트(그리고 `RUN_FINISHED.result.warnings`). 절대 스트림을 끝내지 않는다 |
-| `image` | GenerateImage / EditImage 빌트인, 그리고 image project subagent | **author 와 무관하게** 소비된다(agent 가 그림을 그리는 방법이 곧 image subagent 에 위임하는 것이다): chat 이미지 영속화(S3), chat 봇의 업로드(Slack, Telegram, Teams), OpenAI `images` 확장, AG-UI 의 `ACTIVITY_SNAPSHOT`(`agent-studio.image`), 클라이언트 갤러리 |
+| `image` | GenerateImage / EditImage 빌트인, 그리고 image project subagent | **author 와 무관하게** 소비된다(agent 가 그림을 그리는 방법이 곧 image subagent 에 위임하는 것이다): chat 이미지 영속화(오브젝트 스토어), chat 봇의 업로드(Slack, Telegram, Teams), OpenAI `images` 확장, AG-UI 의 `ACTIVITY_SNAPSHOT`(`agent-studio.image`), 클라이언트 갤러리 |
 | `file` | 그림이 아닌 바이트를 반환한 툴 — 렌더링된 문서, 내보내기 파일 | `image` 의 열 개 소비자가 이것을 절대 보지 않도록 정확히 그 이유로 별도의 축이다: chat 은 참조를 영속화하고 다운로드로 제공하며(assistant 메시지의 `files`, 저장될 파일 이름과 함께 읽을 때마다 서명된다), 런 로그는 대신 메모를 넣는다. 바이트는 그것을 저장한 브래킷이 걷어내며 **모델의 컨텍스트에 절대 들어가지 않는다** — 파일을 지목하는 것은 툴 결과 텍스트다. 이름과 media type 은 서버에서 오므로, 그것으로 무언가를 만들기 전에 둘 다 방어적으로 읽는다(`safeFileName`/`baseMediaType`). `image` 를 읽는 모든 표면은 이것도 읽는다 — `/predict` 와 두 OpenAI 모양은 `files` 확장으로 싣고, `/agent` 는 프레임에서 키를 서명된 `url` 로 바꾸며, A2A 는 서명된 주소의 URL part 를 발행하고, AG-UI 는 서명된 주소를 `ACTIVITY_SNAPSHOT`(`agent-studio.file`)으로 싣고, messaging 파이프라인은 Slack·Telegram·Teams 응답 아래 링크하며, trigger 의 행은 그것을 이름으로 적는다. 해석은 `producedFiles.ts` 가 소유한다. 한 축을 읽으면서 다른 축을 읽지 않는 모듈은 `tests/architecture.test.ts` 를 실패시킨다 |
 | `usage` | 모델 호출마다 한 번씩 엔진이 | `collectRun` 의 응답 usage. DB 기록은 별개다(엔진 루프 안의 `recordUsage` / 애그리게이터) |
 | `error` | 실패 시 엔진이(스트림 도중 — 재시도 없음). transfer 가 실패하면 authored 로 나간다 | **top-level** 에러만 스트림을 끝낸다. authored 인 것은 거의 모든 소비자가 *버린다*(messaging 파이프라인과 trace recorder 는 예외) — 부모가 그것을 지나쳐 답하기 때문이다. 그래서 실패한 transfer 가 잃은 것은 이 필드가 아니라 그 transfer 의 `warning` 으로 독자에게, "For context" 턴으로 모델에게 닿는다 |

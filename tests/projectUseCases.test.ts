@@ -17,6 +17,7 @@ beforeEach(() => {
   admins.emails = [];
 });
 import type { Project, Version } from "@/domain/project/types";
+import type { FakeStore } from "./fakeStore";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type {
   CreateVersionInput,
@@ -61,76 +62,16 @@ const OWNER = "owner@x.com";
 const OTHER = "intruder@x.com";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 
-// --- Fake single-table store, injected in place of the real DynamoDB client ---
-
-type ItemKey = { PK: string; SK: string };
-
-const { store, fakeClient, batchFailuresRemaining } = vi.hoisted(() => {
-  const store = new Map<string, ItemKey[]>();
-  const batchFailuresRemaining = { value: 0 };
-  const fakeClient = {
-    async send(command: { input: Record<string, unknown> }) {
-      const input = command.input;
-      const requestItems = input.RequestItems as
-        | Record<string, Array<{ DeleteRequest?: { Key: ItemKey } }>>
-        | undefined;
-      if (requestItems) {
-        if (batchFailuresRemaining.value > 0) {
-          batchFailuresRemaining.value -= 1;
-          return { UnprocessedItems: requestItems };
-        }
-        for (const requests of Object.values(requestItems)) {
-          for (const request of requests) {
-            const key = request.DeleteRequest?.Key;
-            if (!key) {
-              continue;
-            }
-            const partition = store.get(key.PK);
-            if (partition) {
-              const next = partition.filter((k) => k.SK !== key.SK);
-              if (next.length === 0) {
-                store.delete(key.PK);
-              } else {
-                store.set(key.PK, next);
-              }
-            }
-          }
-        }
-        return { UnprocessedItems: {} };
-      }
-      if (input.KeyConditionExpression) {
-        const values = input.ExpressionAttributeValues as Record<string, string>;
-        const pk = values[":pk"] ?? "";
-        return { Items: [...(store.get(pk) ?? [])], LastEvaluatedKey: undefined };
-      }
-      if (input.UpdateExpression) {
-        return {};
-      }
-      if (input.Key) {
-        const key = input.Key as ItemKey;
-        const partition = store.get(key.PK);
-        if (partition) {
-          const next = partition.filter((item) => item.SK !== key.SK);
-          if (next.length === 0) {
-            store.delete(key.PK);
-          } else {
-            store.set(key.PK, next);
-          }
-        }
-        return {};
-      }
-      return {};
-    },
-  };
-  return { store, fakeClient, batchFailuresRemaining };
-});
+// --- Fake item store, injected in place of the real one --------------------
 
 // The mock is hoisted above imports by vitest, so projectRepository (imported
-// at the top) binds to this fake client.
-vi.mock("@/infrastructure/db/client", () => ({
-  getDocumentClient: () => fakeClient,
-  getTableName: () => "test-table",
-}));
+// at the top) binds to this store. A file-level reference rather than the
+// default in tests/setup.ts, because the cascade cases seed and inspect rows.
+vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
+const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
+// What the fakes below raise is what the store raises, so the use cases'
+// mapping is exercised against the real error names.
+const { ConditionalWriteError, TransactionCancelledError } = store;
 
 // --- Fixtures & fake ports --------------------------------------------------
 
@@ -228,9 +169,7 @@ function makeVersionRepo(initial: Version[] = []): VersionRepository {
           (v) => v.projectName === version.projectName && v.versionName === version.versionName,
         )
       ) {
-        const error = new Error("The conditional request failed");
-        error.name = "ConditionalCheckFailedException";
-        throw error;
+        throw new ConditionalWriteError("The conditional request failed");
       }
       versions = [...versions, version];
     },
@@ -361,9 +300,7 @@ describe("createVersion naming", () => {
   it("maps a lost conditional-create race to ConflictError", async () => {
     const versions = makeVersionRepo();
     versions.create = async () => {
-      const error = new Error("The conditional request failed");
-      error.name = "ConditionalCheckFailedException";
-      throw error;
+      throw new ConditionalWriteError("The conditional request failed");
     };
 
     await expect(
@@ -838,9 +775,7 @@ describe("publishVersion", () => {
   it("maps a concurrent project change to ConflictError", async () => {
     const projects = makeProjectRepo([projectFixture("p")]);
     projects.publish = async () => {
-      const error = new Error("transaction cancelled");
-      error.name = "TransactionCanceledException";
-      throw error;
+      throw new TransactionCancelledError("transaction cancelled");
     };
     await expect(
       publishVersion(projects, makeVersionRepo([versionFixture("p", "1")]), "p", "1", OWNER),
@@ -972,9 +907,7 @@ describe("updateProject ownership", () => {
   it("maps a stale project snapshot to ConflictError", async () => {
     const repo = makeProjectRepo([projectFixture("p")]);
     repo.update = async () => {
-      const error = new Error("conditional check failed");
-      error.name = "ConditionalCheckFailedException";
-      throw error;
+      throw new ConditionalWriteError("conditional check failed");
     };
     await expect(
       updateProject(repo, "p", { displayName: "Renamed" }, OWNER),
@@ -983,37 +916,38 @@ describe("updateProject ownership", () => {
 });
 
 describe("projectRepository.delete cascade", () => {
+  const row = (PK: string, SK: string) => ({ PK, SK });
+  const keysOf = () => store.all().map(({ PK, SK }) => ({ PK, SK }));
+
   it("removes the project META, all its versions, and its usage rows", async () => {
-    store.clear();
-    store.set("PROJECT#p", [
-      { PK: "PROJECT#p", SK: "META" },
-      { PK: "PROJECT#p", SK: "VERSION#1" },
-      { PK: "PROJECT#p", SK: "VERSION#2" },
+    store.rows.clear();
+    store.seed([
+      row("PROJECT#p", "META"),
+      row("PROJECT#p", "VERSION#1"),
+      row("PROJECT#p", "VERSION#2"),
+      row("USAGE#p", "DATE#2026-01-01"),
+      row("USAGE#p", "DATE#2026-01-02"),
+      // An unrelated project must survive the cascade.
+      row("PROJECT#other", "META"),
     ]);
-    store.set("USAGE#p", [
-      { PK: "USAGE#p", SK: "DATE#2026-01-01" },
-      { PK: "USAGE#p", SK: "DATE#2026-01-02" },
-    ]);
-    // An unrelated project must survive the cascade.
-    store.set("PROJECT#other", [{ PK: "PROJECT#other", SK: "META" }]);
 
     await projectRepository.delete("p");
 
-    expect(store.has("PROJECT#p")).toBe(false);
-    expect(store.has("USAGE#p")).toBe(false);
-    expect(store.get("PROJECT#other")).toHaveLength(1);
+    expect(keysOf()).toEqual([row("PROJECT#other", "META")]);
   });
 
-  it("fails without deleting META when DynamoDB keeps returning unprocessed children", async () => {
-    store.clear();
-    store.set("PROJECT#p", [
-      { PK: "PROJECT#p", SK: "META" },
-      { PK: "PROJECT#p", SK: "VERSION#1" },
-    ]);
-    batchFailuresRemaining.value = 5;
+  it("leaves META marked, and present, when a child delete fails midway", async () => {
+    // The cascade marks META `deletingAt` first and removes it last, so a
+    // failure in between leaves a row that says a deletion is under way —
+    // never a project that looks live with half its children gone, and never
+    // one that vanished with children still attached to its name.
+    store.rows.clear();
+    store.seed([row("PROJECT#p", "META"), row("PROJECT#p", "VERSION#1")]);
+    vi.spyOn(store, "deletePartition").mockRejectedValueOnce(new Error("connection reset"));
 
-    await expect(projectRepository.delete("p")).rejects.toThrow(/Failed to delete all/);
-    expect(store.get("PROJECT#p")).toContainEqual({ PK: "PROJECT#p", SK: "META" });
+    await expect(projectRepository.delete("p")).rejects.toThrow(/connection reset/);
+    expect(keysOf()).toEqual([row("PROJECT#p", "META"), row("PROJECT#p", "VERSION#1")]);
+    expect((await store.getItem(row("PROJECT#p", "META")))?.deletingAt).toEqual(expect.any(String));
   });
 });
 
@@ -1021,9 +955,7 @@ describe("createProject race", () => {
   it("maps a lost conditional-put race to ConflictError (409)", async () => {
     const repo = makeProjectRepo();
     repo.create = async () => {
-      const error = new Error("The conditional request failed");
-      error.name = "ConditionalCheckFailedException";
-      throw error;
+      throw new ConditionalWriteError("The conditional request failed");
     };
     await expect(
       createProject(repo, {
@@ -1114,9 +1046,7 @@ describe("updateVersion / deleteVersion boundaries", () => {
   it("maps a publish race during deletion to ConflictError", async () => {
     const versions = makeVersionRepo([versionFixture("p", "1")]);
     versions.delete = async () => {
-      const error = new Error("transaction cancelled");
-      error.name = "TransactionCanceledException";
-      throw error;
+      throw new TransactionCancelledError("transaction cancelled");
     };
     await expect(
       deleteVersion(versions, makeProjectRepo([projectFixture("p")]), "p", "1", OWNER),

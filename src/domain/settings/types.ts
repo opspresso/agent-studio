@@ -26,7 +26,12 @@ export interface LlmProviderSetting {
   auth?: ChannelAuth;
 }
 
-export type ArtifactAccessMode = "authenticated" | "public";
+/**
+ * How a stored artifact's address is answered. `authenticated` and `public`
+ * hand out the store's own address (pre-signed, or direct); `proxied` hands
+ * out this app's, for a deployment whose store nobody but the app can reach.
+ */
+export type ArtifactAccessMode = "authenticated" | "public" | "proxied";
 
 /**
  * One deployment-declared self-hosted model, stored as the full catalog-shaped
@@ -53,7 +58,7 @@ export interface AppSettings {
   /** Secret. */
   a2aApiKey?: string;
   publicBaseUrl?: string;
-  /** `authenticated` (default) or `public`; controls how stored artifact URLs are resolved. */
+  /** An {@link ArtifactAccessMode} (`authenticated` by default); controls how stored artifact URLs are resolved. */
   artifactAccessMode?: string;
   /**
    * `allow` (the default) or `refuse` — whether a run may execute a model the

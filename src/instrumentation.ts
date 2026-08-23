@@ -21,7 +21,7 @@ import { log } from "@/shared/logger";
 /**
  * Restart any managed MCP container this process cannot reach.
  *
- * Deliberately not awaited. A single restart pulls an image and polls SSM for up
+ * Deliberately not awaited. A single restart pulls an image and waits on the container for up
  * to five minutes; blocking on that would hold the server before it listens, and
  * the container healthcheck (`GET /api/health`) would fail the very deployment
  * that was trying to fix things.
@@ -61,6 +61,15 @@ export async function register(): Promise<void> {
     assertAccessControlConfig();
     const { registerShutdownSignals } = await import("@/shared/lifecycle");
     registerShutdownSignals();
+    // The schema before anything reads it. Awaited and fatal: a process that
+    // cannot reach its database has nothing to serve, and an instance racing
+    // another's migration waits on the advisory lock rather than failing.
+    const { migrate } = await import("@/infrastructure/db/migrations");
+    await migrate();
+    // The first administrator of an installation with no identity provider
+    // reachable yet. A no-op everywhere else.
+    const { ensureBootstrapAdmin } = await import("@/lib/auth");
+    await ensureBootstrapAdmin();
     // Awaited, unlike the composition root below. The sink is what makes
     // `recordAudit` write anything, and the root wires it only as a side effect
     // of being imported — which the A2A-key reveal route never does, since it
@@ -86,13 +95,32 @@ export async function register(): Promise<void> {
     // the catalog rather than the snapshot, and bounded by the source's own
     // deadline; a failure keeps the snapshot and is logged, never fatal. The
     // refresher then re-reads on its interval for the life of the process.
-    const [{ createModelCatalogRefresher }, { createHttpModelCatalogSource }, { config }] = await Promise.all([
+    const [
+      { createModelCatalogRefresher },
+      { createCompositeModelCatalogSource },
+      { createHttpModelCatalogSource },
+      { modelCatalogRepository },
+      { config },
+    ] = await Promise.all([
       import("@/application/llm/modelCatalogRefresh"),
+      import("@/application/llm/modelCatalogStoredSource"),
       import("@/infrastructure/llm/modelCatalogHttpSource"),
+      import("@/infrastructure/db/repositories/modelCatalogRepository"),
       import("@/lib/config"),
     ]);
     const modelCatalog = createModelCatalogRefresher({
-      source: createHttpModelCatalogSource(config.modelsCatalogUrl),
+      // An admin's uploaded document over the published catalog, and under
+      // `MODELS_CATALOG_URL=none` (answered as `undefined`) the upload alone:
+      // no fetch leaves this process, and a tick with nothing stored is
+      // silent. The same composition the console's refresh button uses
+      // (`lib/container.ts`).
+      source: createCompositeModelCatalogSource({
+        stored: modelCatalogRepository,
+        remote:
+          config.modelsCatalogUrl === undefined
+            ? undefined
+            : createHttpModelCatalogSource(config.modelsCatalogUrl),
+      }),
       intervalMs: config.modelsCatalogRefreshMs,
       // The second publisher: this deployment's own self-hosted declarations,
       // re-read on the same schedule so a settings write on another instance

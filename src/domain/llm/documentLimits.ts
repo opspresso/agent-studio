@@ -6,7 +6,8 @@
  * Kept apart from `imageLimits` because the constraints are different in kind.
  * An image is bounded by what a provider will accept. A document becomes *text
  * inside the turn*, so it is bounded by the prompt it has to fit and — in a
- * console chat — by the single DynamoDB item the message is stored as.
+ * console chat — by the single row the message is stored as and replayed
+ * from on every later turn.
  */
 
 /** Documents one turn may carry. */
@@ -20,9 +21,9 @@ export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
  *
  * Deliberately far below what a URL-fetching tool returns for the same file. A
  * tool result is transient; an attached document is inlined into a turn, and a
- * console chat stores that turn as one DynamoDB item capped at 400KB — where
- * Korean text costs three bytes per character. Truncation is reported, so what
- * this costs is visible rather than silent.
+ * console chat stores that turn as one row it reads back whole on every later
+ * turn — where Korean text costs three bytes per character. Truncation is
+ * reported, so what this costs is visible rather than silent.
  */
 export const MAX_DOCUMENT_CHARS = 20_000;
 

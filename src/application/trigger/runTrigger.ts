@@ -508,8 +508,8 @@ async function finishFiring(
     ...run,
     status: outcome.error ? "failed" : "succeeded",
     endedAt: new Date().toISOString(),
-    // Cut on a character boundary: these land in a DynamoDB row, which will
-    // not store a lone surrogate as written.
+    // Cut on a character boundary: these land in a stored row, and a lone
+    // surrogate does not survive the JSON round trip as written.
     ...(outcome.text ? { result: cutCodePoints(outcome.text, MAX_RESULT_CHARS) } : {}),
     ...(outcome.error ? { error: cutCodePoints(outcome.error, MAX_RESULT_CHARS) } : {}),
     ...(outcome.warning ? { warning: cutCodePoints(outcome.warning, MAX_RESULT_CHARS) } : {}),

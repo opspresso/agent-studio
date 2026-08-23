@@ -1,4 +1,4 @@
-name: Release (ecr)
+name: Release
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  packages: write
 
 # One build per tag.
 concurrency:
@@ -77,6 +78,16 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # GHCR as well: the pull path an installation outside this AWS account
+      # uses (`IMAGE_REGISTRY=ghcr.io/opspresso` in deploy/idc/.env.example),
+      # and the one a mirror into an air-gapped registry starts from.
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -99,6 +110,8 @@ jobs:
           tags: |
             ${{ env.ECR_REPOSITORY }}:${{ github.ref_name }}
             ${{ env.ECR_REPOSITORY }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

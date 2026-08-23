@@ -28,6 +28,7 @@ export type LogScope =
   | "concurrency"
   | "config"
   | "cost-guard"
+  | "db"
   | "engine"
   | "fetch"
   | "image"

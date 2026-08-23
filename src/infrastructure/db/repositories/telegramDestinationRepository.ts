@@ -1,11 +1,9 @@
-import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import type {
   TelegramDestination,
   TelegramDestinationRepository,
 } from "@/domain/telegram/destination";
-import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
-import { queryAll } from "@/infrastructure/db/query";
+import { putItem, queryItems } from "@/infrastructure/db/store";
 
 function fromItem(item: Record<string, unknown>): TelegramDestination | null {
   if (
@@ -28,32 +26,18 @@ function fromItem(item: Record<string, unknown>): TelegramDestination | null {
 
 export const telegramDestinationRepository: TelegramDestinationRepository = {
   async put(projectName, botId, destination) {
-    await getDocumentClient().send(
-      new PutCommand({
-        TableName: getTableName(),
-        Item: {
-          ...keys.telegramDestination(
-            projectName,
-            botId,
-            destination.chatId,
-            destination.threadId,
-          ),
-          entityType: "telegramDestination",
-          projectName,
-          botId,
-          ...destination,
-        },
-      }),
-    );
+    await putItem({
+      ...keys.telegramDestination(projectName, botId, destination.chatId, destination.threadId),
+      entityType: "telegramDestination",
+      projectName,
+      botId,
+      ...destination,
+    });
   },
 
   async list(projectName, botId) {
     const key = keys.telegramDestinationPrefix(projectName, botId);
-    const items = await queryAll({
-      TableName: getTableName(),
-      KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-      ExpressionAttributeValues: { ":pk": key.PK, ":sk": key.prefix },
-    });
+    const items = await queryItems({ pk: key.PK, sk: { prefix: key.prefix } });
     return items
       .flatMap((item): TelegramDestination[] => {
         const destination = fromItem(item);

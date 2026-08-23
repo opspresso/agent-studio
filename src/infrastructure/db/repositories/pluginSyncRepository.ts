@@ -1,50 +1,40 @@
 import { randomUUID } from "node:crypto";
-import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type {
   PluginSyncLock,
   PluginSyncRecord,
   PluginSyncReportRepository,
 } from "@/domain/plugin/repository";
 import type { PluginSyncResult } from "@/domain/plugin/sync";
-import { getDocumentClient, getTableName } from "../client";
+import { CONDITIONAL_WRITE_FAILED, conditions, deleteItem, getItem, putItem } from "../store";
 import { keys } from "../keys";
 
 // The adapter layer may name the storage error it raises; interpreting one is
 // the application layer's job (`isConditionalWriteFailure`), which this file
 // must not import — infrastructure depends on domain only.
-const CONDITIONAL_WRITE_FAILED = "ConditionalCheckFailedException";
-
 function lostCondition(error: unknown): boolean {
   return error instanceof Error && error.name === CONDITIONAL_WRITE_FAILED;
 }
 
 export const pluginSyncReportRepository: PluginSyncReportRepository = {
   async get(repo) {
-    const res = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.pluginSyncReport(repo) }),
-    );
-    if (!res.Item) {
+    const item = await getItem(keys.pluginSyncReport(repo));
+    if (!item) {
       return null;
     }
     return {
-      repo: res.Item.repo as string,
-      report: res.Item.report as PluginSyncResult,
-      actorEmail: res.Item.actorEmail as string,
-      finishedAt: res.Item.finishedAt as string,
-    };
+      repo: item.repo as string,
+      report: item.report as PluginSyncResult,
+      actorEmail: item.actorEmail as string,
+      finishedAt: item.finishedAt as string,
+    } satisfies PluginSyncRecord;
   },
 
   async put(record) {
-    await getDocumentClient().send(
-      new PutCommand({
-        TableName: getTableName(),
-        Item: {
-          ...keys.pluginSyncReport(record.repo),
-          entityType: "PLUGINSYNC",
-          ...record,
-        },
-      }),
-    );
+    await putItem({
+      ...keys.pluginSyncReport(record.repo),
+      entityType: "PLUGINSYNC",
+      ...record,
+    });
   },
 };
 
@@ -56,19 +46,16 @@ export const pluginSyncReportRepository: PluginSyncReportRepository = {
 export const pluginSyncLock: PluginSyncLock = {
   async acquire(repo, leaseMs) {
     const token = randomUUID();
+    const now = Date.now();
     try {
-      await getDocumentClient().send(
-        new PutCommand({
-          TableName: getTableName(),
-          Item: {
-            ...keys.pluginSyncLock(repo),
-            entityType: "PLUGINSYNC",
-            token,
-            leaseUntil: Date.now() + leaseMs,
-          },
-          ConditionExpression: "attribute_not_exists(PK) OR leaseUntil < :now",
-          ExpressionAttributeValues: { ":now": Date.now() },
-        }),
+      await putItem(
+        {
+          ...keys.pluginSyncLock(repo),
+          entityType: "PLUGINSYNC",
+          token,
+          leaseUntil: now + leaseMs,
+        },
+        (row) => row === null || Number(row.leaseUntil ?? 0) < now,
       );
       return token;
     } catch (error) {
@@ -81,15 +68,7 @@ export const pluginSyncLock: PluginSyncLock = {
 
   async release(repo, token) {
     try {
-      await getDocumentClient().send(
-        new DeleteCommand({
-          TableName: getTableName(),
-          Key: keys.pluginSyncLock(repo),
-          ConditionExpression: "#token = :token",
-          ExpressionAttributeNames: { "#token": "token" },
-          ExpressionAttributeValues: { ":token": token },
-        }),
-      );
+      await deleteItem(keys.pluginSyncLock(repo), conditions.existsWith("token", token));
     } catch (error) {
       if (!lostCondition(error)) {
         throw error;

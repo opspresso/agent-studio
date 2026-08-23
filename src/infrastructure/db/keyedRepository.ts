@@ -1,6 +1,4 @@
-import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { getDocumentClient, getTableName } from "./client";
-import { queryAll } from "./query";
+import { conditions, deleteItem, getItem, putItem, queryItems } from "./store";
 import { keys } from "./keys";
 
 /**
@@ -23,56 +21,32 @@ export function createKeyedRepository<T extends { name: string }>(opts: {
 } {
   return {
     async get(name) {
-      const res = await getDocumentClient().send(
-        new GetCommand({ TableName: getTableName(), Key: opts.key(name) }),
-      );
-      return res.Item ? opts.fromItem(res.Item) : null;
+      const item = await getItem(opts.key(name));
+      return item ? opts.fromItem(item) : null;
     },
 
     async list() {
-      const items = await queryAll({
-        TableName: getTableName(),
-        IndexName: "GSI1",
-        KeyConditionExpression: "GSI1PK = :pk",
-        ExpressionAttributeValues: { ":pk": keys.typePartition(opts.entityType) },
+      const items = await queryItems({
+        index: "GSI1",
+        pk: keys.typePartition(opts.entityType),
       });
       return items.map(opts.fromItem);
     },
 
     async put(entity) {
-      await getDocumentClient().send(
-        new PutCommand({ TableName: getTableName(), Item: opts.toItem(entity) }),
-      );
+      await putItem(opts.toItem(entity));
     },
 
     async create(entity) {
-      await getDocumentClient().send(
-        new PutCommand({
-          TableName: getTableName(),
-          Item: opts.toItem(entity),
-          ConditionExpression: "attribute_not_exists(PK)",
-        }),
-      );
+      await putItem(opts.toItem(entity), conditions.notExists);
     },
 
     async update(entity) {
-      await getDocumentClient().send(
-        new PutCommand({
-          TableName: getTableName(),
-          Item: opts.toItem(entity),
-          ConditionExpression: "attribute_exists(PK)",
-        }),
-      );
+      await putItem(opts.toItem(entity), conditions.exists);
     },
 
     async delete(name) {
-      await getDocumentClient().send(
-        new DeleteCommand({
-          TableName: getTableName(),
-          Key: opts.key(name),
-          ConditionExpression: "attribute_exists(PK)",
-        }),
-      );
+      await deleteItem(opts.key(name), conditions.exists);
     },
   };
 }

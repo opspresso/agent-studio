@@ -20,7 +20,12 @@ function required(name: string): string {
  * Google OAuth creds are intentionally excluded — the local dev-session flow
  * bypasses OAuth.
  */
-const BOOT_REQUIRED_ENV = ["LLM_BASE_URL", "LLM_API_KEY", "AES_ENCRYPTION_KEY"] as const;
+const BOOT_REQUIRED_ENV = [
+  "DATABASE_URL",
+  "LLM_BASE_URL",
+  "LLM_API_KEY",
+  "AES_ENCRYPTION_KEY",
+] as const;
 
 export function assertRequiredConfig(): void {
   const missing = BOOT_REQUIRED_ENV.filter((name) => optionalEnv(process.env[name]) === undefined);
@@ -48,6 +53,13 @@ export function assertAccessControlConfig(): void {
   }
   if (config.adminEmails.length === 0) {
     throw new Error(`STAGE=${config.stage} requires access-control config; set: ADMIN_EMAILS`);
+  }
+  const providers = config.authProviders;
+  if (!providers.google && !providers.oidc && !providers.password) {
+    throw new Error(
+      `STAGE=${config.stage} has no way to sign in; set OIDC_ISSUER/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET, ` +
+        "GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET, or AUTH_PASSWORD=true",
+    );
   }
 }
 
@@ -131,32 +143,78 @@ export const config = {
     }
     return stage;
   },
-  get tableName(): string {
-    return process.env.DYNAMODB_TABLE_NAME ?? "agent-studio";
+  /**
+   * The PostgreSQL connection string; every row this app keeps lives behind
+   * it. Optional here and required at boot (`BOOT_REQUIRED_ENV`): the pool is
+   * constructed when `lib/auth.ts` is evaluated, which `next build` does
+   * while collecting page data with no database in sight, and a pool that
+   * has not connected yet costs nothing. The first query without a URL fails
+   * — after boot has already refused to start without one.
+   */
+  get databaseUrl(): string | undefined {
+    return optionalEnv(process.env.DATABASE_URL);
   },
-  get dynamodbEndpoint(): string | undefined {
-    return optionalEnv(process.env.DYNAMODB_ENDPOINT);
+  /**
+   * Connections one instance holds open. Ten is generous for the request
+   * shapes here — a run holds a connection for milliseconds at a time, never
+   * across a model call — and small enough that a fleet stays under a default
+   * `max_connections` of 100.
+   */
+  get databasePoolSize(): number {
+    return positiveIntEnv("DATABASE_POOL_SIZE", 10, 1);
   },
   get awsRegion(): string {
     return process.env.AWS_REGION ?? "ap-northeast-2";
   },
-  /** S3 bucket holding what runs produce. Unset disables artifact persistence. */
+  /**
+   * The bucket holding what runs produce, on any S3-compatible store. Unset
+   * disables artifact persistence.
+   *
+   * `S3_ENDPOINT` names a store other than AWS (MinIO, Garage, Ceph RGW — an
+   * on-premises install's own), addressed path-style because a self-hosted
+   * endpoint rarely resolves bucket subdomains. Credentials come from the
+   * standard `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` pair every S3 client
+   * reads, or from the instance role where there is one.
+   */
   get objectBucketName(): string | undefined {
     return optionalEnv(process.env.S3_BUCKET_NAME);
   },
-  /**
-   * S3 Vectors bucket holding the capability catalog, and the index within it.
-   *
-   * Unset means this deployment has no catalog: indexing refuses and a run
-   * resolves exactly the bindings its version names, which is what every run did
-   * before. The feature is off rather than half-configured — the same shape
-   * `objectBucketName` and `managedMcpInstanceId` already use.
-   */
-  get vectorBucketName(): string | undefined {
-    return optionalEnv(process.env.VECTOR_BUCKET);
+  get s3Endpoint(): string | undefined {
+    return optionalEnv(process.env.S3_ENDPOINT);
   },
-  get catalogIndexName(): string {
-    return optionalEnv(process.env.CATALOG_INDEX) ?? "capabilities";
+  /**
+   * The object store's own key pair (`S3_ACCESS_KEY_ID` /
+   * `S3_SECRET_ACCESS_KEY`). Unset falls back to the SDK's default chain —
+   * the `AWS_*` pair, an instance role — which is right for AWS itself. A
+   * MinIO's key must not sit in `AWS_ACCESS_KEY_ID`: that is the pair every
+   * other AWS client in the process reads, and a deployment that also signs
+   * Bedrock requests would be sending MinIO's key to AWS.
+   */
+  get s3Credentials(): { accessKeyId: string; secretAccessKey: string } | undefined {
+    const accessKeyId = optionalEnv(process.env.S3_ACCESS_KEY_ID);
+    const secretAccessKey = optionalEnv(process.env.S3_SECRET_ACCESS_KEY);
+    return accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined;
+  },
+  /**
+   * The base readers reach public objects at, when it differs from the
+   * endpoint the app uploads through — a MinIO behind a reverse proxy, say.
+   * Unset derives it from the endpoint (or AWS's virtual-host form).
+   */
+  get s3PublicBaseUrl(): string | undefined {
+    return optionalEnv(process.env.S3_PUBLIC_BASE_URL);
+  },
+  /**
+   * Whether this deployment keeps a capability catalog (`CATALOG_ENABLED`).
+   *
+   * Off means indexing refuses and a run resolves exactly the bindings its
+   * version names, which is what every run did before. Off by default because
+   * the catalog needs an embedding model the deployment's channel can serve
+   * — a self-hosted router without one would index nothing and say so only
+   * in a log line — so turning it on is a statement that there is one. The
+   * vectors live in the database (`catalog_vectors`); nothing else to point at.
+   */
+  get catalogEnabled(): boolean {
+    return process.env.CATALOG_ENABLED === "true";
   },
   /**
    * Which service embeds. `bedrock` needs no credentials of its own — the pod
@@ -165,7 +223,7 @@ export const config = {
    *
    * Anything unrecognised falls back to `openai` rather than throwing: an
    * embedding provider is not worth refusing to boot over, and a deployment
-   * without `VECTOR_BUCKET` never reaches either adapter.
+   * with the catalog off never reaches either adapter.
    */
   get embeddingProvider(): "cohere" | "bedrock" | "openai" {
     const raw = optionalEnv(process.env.EMBEDDING_PROVIDER)?.toLowerCase();
@@ -217,30 +275,25 @@ export const config = {
     return fractionEnv("CATALOG_MIN_SCORE", DEFAULT_MIN_SCORE);
   },
   /**
-   * The instance managed MCP containers run on, and the registry their images
-   * must come from. Both unset means this deployment cannot start containers,
-   * and managed servers are simply unavailable — the feature is off rather
-   * than half-configured.
+   * How managed MCP containers are started (`MANAGED_MCP_RUNTIME=docker`, the
+   * one runtime there is — the app drives the Docker CLI on its own host), and
+   * the registry their images must come from. Either unset means this
+   * deployment cannot start containers, and managed servers are simply
+   * unavailable — the feature is off rather than half-configured.
    */
-  get managedMcpInstanceId(): string | undefined {
-    return optionalEnv(process.env.MANAGED_MCP_INSTANCE_ID);
+  get managedMcpRuntime(): "docker" | undefined {
+    const raw = optionalEnv(process.env.MANAGED_MCP_RUNTIME);
+    if (raw === undefined) {
+      return undefined;
+    }
+    if (raw !== "docker") {
+      warnOnce("MANAGED_MCP_RUNTIME", raw, `ignoring unknown MANAGED_MCP_RUNTIME="${raw}"; managed MCP is off`);
+      return undefined;
+    }
+    return raw;
   },
   get managedMcpRegistry(): string | undefined {
     return optionalEnv(process.env.MANAGED_MCP_REGISTRY);
-  },
-  /**
-   * The container managed workloads share a network namespace with — this app's
-   * own. Every container has its own 127.0.0.1, so a loopback address only
-   * means anything if both ends are in the same namespace.
-   *
-   * Sharing a namespace means one app instance per host: a container joins
-   * exactly one, so a second instance would not see the managed servers at all.
-   * The name is also resolved to a container id when the workload starts, so a
-   * redeploy strands what is already running — see `reconcile` in
-   * `managedMcpUseCases`, which is what puts it back.
-   */
-  get managedMcpNetworkContainer(): string {
-    return optionalEnv(process.env.MANAGED_MCP_NETWORK_CONTAINER) ?? "agent-studio";
   },
   get llmBaseUrl(): string {
     return required("LLM_BASE_URL");
@@ -357,6 +410,24 @@ export const config = {
     return parseList(process.env.MCP_INTERNAL_HOST_SUFFIXES ?? "");
   },
   /**
+   * DNS suffixes whose hosts the `FetchUrl` builtin may read despite resolving
+   * privately — an on-premises wiki or an internal API, on a network where what
+   * a model should be allowed to read is private by construction.
+   *
+   * A *separate* list from `MCP_INTERNAL_HOST_SUFFIXES`, on purpose. That one
+   * names services this app is meant to call; this one names pages a model may
+   * be talked into reading, and a prompt injection must not be able to read a
+   * cluster-internal MCP service because a deploy declared it reachable for a
+   * different reason. Same matching (`isDeclaredInternalHost`), same caveats —
+   * no IP literals, no single-label suffixes — and env-only for the same reason:
+   * widening what a model-chosen URL can reach should take a deploy, not a form.
+   *
+   * Empty (the default) leaves every model-chosen URL facing the guard.
+   */
+  get urlFetchInternalHostSuffixes(): string[] {
+    return parseList(process.env.URL_FETCH_INTERNAL_HOST_SUFFIXES ?? "");
+  },
+  /**
    * Accept an OAuth authorization server that does not advertise PKCE. The
    * spec says a client MUST refuse one; a server that supports PKCE without
    * saying so is common enough that an operator may decide to accept the
@@ -410,9 +481,20 @@ export const config = {
    * boot and on `modelsCatalogRefreshMs`; the committed snapshot
    * (`src/domain/llm/catalog.json`) serves until then and whenever the fetch
    * fails.
+   *
+   * `none` (case-insensitive) turns the remote read off altogether and is
+   * answered as `undefined`: no fetch at boot, none on the interval, and no
+   * warning about a site that was never meant to be reached — the
+   * air-gapped install, whose catalog is the snapshot or the document an
+   * admin uploads (`PUT /api/models/catalog/document`). The interval itself
+   * stays on, since it is also how an upload on another instance and a
+   * self-hosted declaration reach this process; under `none` a tick reads
+   * the database and nothing else.
    */
-  get modelsCatalogUrl(): string {
-    return optionalEnv(process.env.MODELS_CATALOG_URL) ?? "https://models.opspresso.com/models.json";
+  get modelsCatalogUrl(): string | undefined {
+    const value =
+      optionalEnv(process.env.MODELS_CATALOG_URL) ?? "https://models.opspresso.com/models.json";
+    return value.toLowerCase() === "none" ? undefined : value;
   },
   /** How often the catalog is re-read; 0 disables the interval (the boot read still happens). */
   get modelsCatalogRefreshMs(): number {
@@ -428,10 +510,64 @@ export const config = {
   get githubToken(): string | undefined {
     return optionalEnv(process.env.GITHUB_TOKEN);
   },
-  get googleClientId(): string {
-    return required("GOOGLE_CLIENT_ID");
+  /**
+   * Where the GitHub REST API answers — `https://api.github.com` unless a
+   * GitHub Enterprise Server or a mirror stands in for it (`https://<host>/api/v3`).
+   * A trailing slash is dropped so the client's `/repos/...` paths join cleanly.
+   */
+  get githubApiUrl(): string {
+    return (optionalEnv(process.env.GITHUB_API_URL) ?? "https://api.github.com").replace(/\/+$/, "");
   },
-  get googleClientSecret(): string {
-    return required("GOOGLE_CLIENT_SECRET");
+  /**
+   * The ways a person may sign in. Every one is optional, because an
+   * installation decides which identity provider it has: a standard OIDC
+   * provider (Keycloak, Entra ID, Okta, Authentik — anything with a discovery
+   * document), Google, or a local password — which exists for the first
+   * administrator of an installation with no identity provider reachable yet,
+   * and for break-glass access when the provider is down.
+   */
+  get googleOAuth(): { clientId: string; clientSecret: string } | undefined {
+    const clientId = optionalEnv(process.env.GOOGLE_CLIENT_ID);
+    const clientSecret = optionalEnv(process.env.GOOGLE_CLIENT_SECRET);
+    return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+  },
+  get oidc():
+    | { issuer: string; clientId: string; clientSecret: string; displayName: string; scopes: string[] }
+    | undefined {
+    const issuer = optionalEnv(process.env.OIDC_ISSUER);
+    const clientId = optionalEnv(process.env.OIDC_CLIENT_ID);
+    const clientSecret = optionalEnv(process.env.OIDC_CLIENT_SECRET);
+    if (!issuer || !clientId || !clientSecret) {
+      return undefined;
+    }
+    return {
+      issuer: issuer.replace(/\/+$/, ""),
+      clientId,
+      clientSecret,
+      displayName: optionalEnv(process.env.OIDC_DISPLAY_NAME) ?? "SSO",
+      scopes: (optionalEnv(process.env.OIDC_SCOPES) ?? "openid email profile").split(/\s+/),
+    };
+  },
+  get passwordAuth(): boolean {
+    return process.env.AUTH_PASSWORD === "true";
+  },
+  /**
+   * An administrator account created on first boot when password sign-in is
+   * on and no user with that email exists. The email should also be in
+   * `ADMIN_EMAILS` — the account is an ordinary user otherwise.
+   */
+  get bootstrapAdmin(): { email: string; password: string } | undefined {
+    const email = optionalEnv(process.env.BOOTSTRAP_ADMIN_EMAIL);
+    const password = optionalEnv(process.env.BOOTSTRAP_ADMIN_PASSWORD);
+    return email && password ? { email, password } : undefined;
+  },
+  /** What the sign-in page offers — the providers above, as switches. */
+  get authProviders(): { google: boolean; oidc: { displayName: string } | undefined; password: boolean } {
+    const oidc = config.oidc;
+    return {
+      google: config.googleOAuth !== undefined,
+      oidc: oidc ? { displayName: oidc.displayName } : undefined,
+      password: config.passwordAuth,
+    };
   },
 };

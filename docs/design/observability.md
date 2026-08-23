@@ -47,13 +47,13 @@ root 자신의 import 에 맡기지 않고 **await 되는** 부팅 경로에서 
 
 행은 그 일이 일어난 **UTC 일자**로 키가 매겨지고 하루씩 읽는다. usage 가 이미 쓰고 있는
 모양이며 — 한 배포의 전체 이력이 한 파티션에 계속 덧붙는 것을 막아 준다. 앱 안의 어떤 것도
-행을 갱신하거나 삭제하지 않는다. 만료는 테이블의 TTL 이 맡는다. 그 대상이 고칠 수 있는 기록은
+행을 갱신하거나 삭제하지 않는다. 만료는 `expiresAt` 과 틱의 sweep 이 맡는다. 그 대상이 고칠 수 있는 기록은
 기록이 아니고, *삭제된* project 의 소유자에게도 여전히 책임을 물을 수 있게 하는 것이 바로 이
 점이다 — 그 사실을 알고 있던 다른 행은 cascade 가 전부 가져가기 때문이다.
 
 ## 사용량과 비용 귀속
 
-project 별·model 별 일일 집계다 ([키 맵](../ARCHITECTURE.md#dynamodb-단일-테이블-설계)
+project 별·model 별 일일 집계다 ([키 맵](../ARCHITECTURE.md#postgresql-아이템-테이블-설계)
 참고). 대시보드는 범위에 걸쳐 `USAGEDATE#{date}` GSI 파티션을 읽고 클라이언트 쪽에서
 project / provider / model 로 다시 묶는다.
 
@@ -84,7 +84,7 @@ chunk 에도) 일일 행에 `cachedTokens.{model}` 로 들어가고, trace 의 �
 
 별도의 `ACTOR#{date}#{actor}` 행으로 나눈 것은 의도적이다. `UsageRow` 는 지표마다 model 로
 키가 매겨진 맵을 갖는다. 그것을 대신 `actor|model` 로 키를 매기면 서로 다른 호출자 수만큼
-아이템 하나가 커지고, 바쁜 project 는 하루 안에 400KB 아이템 한도에 근접한다 — 그러면서
+행 하나가 커지고, 그 행은 모델 호출마다 행 잠금 아래에서 통째로 다시 쓰인다 — 그러면서
 언제나 project 합계만 묻는 대시보드는 매 요청마다 모든 호출자를 읽는 비용을 치른다. 같은
 파티션의 별도 행은 두 읽기 모두를 각자의 질문만큼만 넓게 유지하고, project cascade 는 이미
 파티션 전체를 삭제한다.
@@ -176,7 +176,8 @@ recorder 는 resolve 보다 먼저 만들어지므로(그래야 resolve 가 던�
 transfer 는 두 span 으로 남는다. 그러면 사슬은 양방향으로 읽힌다: `ancestry` 로는 위로
 top-level 런까지, span 의 subagent trace id 로는 아래로 자식 자신의 trace 까지.
 
-**모든 누적기에는 한도가 있다.** trace 가 DynamoDB 아이템 하나이기 때문이다: span 100 개,
+**모든 누적기에는 한도가 있다.** trace 가 행 하나로 쓰이고 행 하나로 읽히기 때문이다 —
+상세 페이지는 통째로 받고, 목록은 상위 N 개를 통째로 받는다: span 100 개,
 나머지는 사라지는 대신 `spansDropped` 에 세어진다. warning 20 개. 그리고 error 나 warning
 문자열 하나당 1,000자.
 

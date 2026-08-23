@@ -3,6 +3,7 @@
  *
  *   pnpm sync-models                  # write src/domain/llm/catalog.json
  *   pnpm sync-models --check          # exit 1 if the snapshot is behind
+ *   pnpm sync-models --from <file>    # read a local catalog instead of the URL
  *
  * The snapshot is what the unit tests run against and what a boot falls back
  * to when https://models.opspresso.com/models.json cannot be fetched; the
@@ -20,13 +21,23 @@ import { config } from "@/lib/config";
 
 const SNAPSHOT = new URL("../src/domain/llm/catalog.json", import.meta.url);
 const check = process.argv.includes("--check");
+const fromIndex = process.argv.indexOf("--from");
+const fromFile = fromIndex === -1 ? undefined : process.argv[fromIndex + 1];
 
-async function main(): Promise<void> {
+async function readCatalog(): Promise<unknown> {
+  if (fromFile !== undefined) {
+    return JSON.parse(readFileSync(fromFile, "utf-8"));
+  }
+  if (config.modelsCatalogUrl === undefined) {
+    throw new Error("MODELS_CATALOG_URL is none; pass --from <file>");
+  }
   // The same source, URL resolution and deadline the runtime refresh uses —
   // a second fetch here is how the two drift on a moved host or a stall.
-  const catalog = (await createHttpModelCatalogSource(config.modelsCatalogUrl).load()) as {
-    updatedAt?: string;
-  };
+  return (await createHttpModelCatalogSource(config.modelsCatalogUrl).load())?.document;
+}
+
+async function main(): Promise<void> {
+  const catalog = (await readCatalog()) as { updatedAt?: string };
   const report = loadModelCatalog(catalog);
   if (report.skipped.length > 0) {
     console.warn(`! ${report.skipped.length} entries the registry would skip:\n  - ${report.skipped.join("\n  - ")}`);

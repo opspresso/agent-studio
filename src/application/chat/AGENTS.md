@@ -63,7 +63,7 @@ buffer rather than a record, and why the viewport belongs to a library is
   left in `runAndPersist` it produced one write's worth of "no claim, no terminal entry",
   and a tail that lands in that window reports a finished run as lost.
 - **The log is written only after the reader leaves.** While someone is attached they see
-  every frame, so writing them down as well would cost a DynamoDB write every half-second
+  every frame, so writing them down as well would cost a database write every half-second
   of every run to serve the few that get abandoned. `teeToRunLog` buffers instead and
   flushes the whole run so far the moment the connection drops. What it costs: while a
   window is attached the log is empty, so a *second* window watching the same run has
@@ -85,8 +85,9 @@ buffer rather than a record, and why the viewport belongs to a library is
   assistant messages are still not reconstructed — every turn's calls hang off the single
   flattened assistant message.
   - **`toolCalls` is stored unbudgeted**, unlike `content` and `reasoning` — nothing truncates
-    it onto the 400KB item, and a write that overruns is caught and logged, taking the reply
-    the reader just watched stream. What arrives here is already bounded: the engine swaps any
+    it onto the message's byte budget (`MAX_PERSISTED_CONTENT_BYTES` in `run.ts`, this app's
+    own number: one message row is replayed whole on every later turn), and a write that fails
+    is caught and logged, taking the reply the reader just watched stream. What arrives here is already bounded: the engine swaps any
     argument past `MAX_TOOL_ARG_BYTES` for its size before the call is announced, keyed to
     size rather than to a tool name — see `src/application/llm/AGENTS.md`. Do not add a
     truncation here instead; cutting a call at this end would put arguments the model never
@@ -127,8 +128,9 @@ buffer rather than a record, and why the viewport belongs to a library is
   `storeAttachedImages` writes it through `storeArtifact` (`ChatDeps.artifacts`, wired when
   `S3_BUCKET_NAME` is set); before that it went to the same bucket with no row at all, which
   made attachments the one class of stored object nothing could list or delete. Either way the
-  message keeps `images: [{ key, prompt? }]` — the b64 payload is far past the DynamoDB item
-  limit. The view signs each key with its own lifetime (`@/application/artifact/urlTtl`). A run
+  message keeps `images: [{ key, prompt? }]` — the b64 payload would be megabytes replayed on
+  every later turn, far past the message's byte budget. The view signs each key with its own
+  lifetime (`@/application/artifact/urlTtl`). A run
   instead reads the newest four stored images back under `MAX_ATTACHMENT_BYTES` and sends them
   as data URLs, which is what registers both user attachments and assistant-produced images as
   editable handles; older images stay visible through replay-lifetime signed URLs. Rows written

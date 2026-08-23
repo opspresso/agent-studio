@@ -28,6 +28,7 @@ import {
   IconTool,
 } from "@tabler/icons-react";
 import { SignInButton } from "@/components/SignInButton";
+import { config } from "@/lib/config";
 import { getSessionUser } from "@/lib/session";
 import type { MessageKey } from "./_i18n/messages/en";
 import { getT } from "./_i18n/server";
@@ -187,7 +188,7 @@ export default async function Home() {
             {t("home.lede")}
           </Text>
           <Group mt="xl" gap="md" wrap="wrap">
-            <SignInButton />
+            <SignInButton providers={{ ...config.authProviders, password: false }} />
             <Text fz="sm" c="dimmed">
               {t("home.signInHint")}
             </Text>

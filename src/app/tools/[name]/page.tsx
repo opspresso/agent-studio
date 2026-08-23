@@ -48,7 +48,7 @@ import { reportError } from "@/app/_lib/reportError";
  * How long the console watches a restart, and how often it asks.
  *
  * Sized against the work rather than against patience: starting a container
- * pulls an image through SSM, which the provisioner allows five minutes for,
+ * pulls an image, which the provisioner allows five minutes for,
  * and the settle probes add a few seconds after that. Watching for less would
  * report every cold image pull as a restart that failed.
  */

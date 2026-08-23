@@ -16,7 +16,7 @@
  * that lands in it reports a finished run as lost.
  *
  * **Nothing is written while someone is reading.** They are already seeing every
- * frame; writing them down as well would cost a DynamoDB write every half-second
+ * frame; writing them down as well would cost a database write every half-second
  * of every run, to serve the few that get abandoned. The frames are buffered
  * instead, and the whole run so far is flushed the moment the reader leaves.
  * The cost of that choice: while a reader is attached the log is empty, so a
@@ -72,7 +72,7 @@ function warningFrame(message: string): string {
 }
 
 /**
- * A frame's size as DynamoDB counts it.
+ * A frame's size in bytes, as storage counts it.
  *
  * `String.length` counts UTF-16 units, and `JSON.stringify` leaves non-ASCII
  * text alone — so a Korean run measured that way is three times the size it

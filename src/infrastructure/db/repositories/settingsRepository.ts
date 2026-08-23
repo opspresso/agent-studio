@@ -1,11 +1,10 @@
-import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type {
   AppSettings,
   LlmProviderSetting,
   SelfHostedModelSetting,
 } from "@/domain/settings/types";
-import { getDocumentClient, getTableName } from "../client";
+import { getItem, putItem } from "../store";
 import { keys } from "../keys";
 
 const ENTITY_TYPE = "SETTINGS" as const;
@@ -31,7 +30,11 @@ function fromItem(item: Record<string, unknown>): AppSettings {
       settings[field] = value;
     }
   }
-  if (item.artifactAccessMode === "authenticated" || item.artifactAccessMode === "public") {
+  if (
+    item.artifactAccessMode === "authenticated" ||
+    item.artifactAccessMode === "public" ||
+    item.artifactAccessMode === "proxied"
+  ) {
     settings.artifactAccessMode = item.artifactAccessMode;
   }
   if (Array.isArray(item.llmProviders)) {
@@ -48,18 +51,11 @@ function fromItem(item: Record<string, unknown>): AppSettings {
 
 export const settingsRepository: SettingsRepository = {
   async get() {
-    const res = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.settings() }),
-    );
-    return res.Item ? fromItem(res.Item) : null;
+    const item = await getItem(keys.settings());
+    return item ? fromItem(item) : null;
   },
 
   async put(settings) {
-    await getDocumentClient().send(
-      new PutCommand({
-        TableName: getTableName(),
-        Item: { ...keys.settings(), entityType: ENTITY_TYPE, ...settings },
-      }),
-    );
+    await putItem({ ...keys.settings(), entityType: ENTITY_TYPE, ...settings });
   },
 };
