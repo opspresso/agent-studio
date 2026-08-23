@@ -42,19 +42,23 @@ export async function sql<T extends Row = Row>(text: string, params: unknown[] =
  */
 export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await getPool().connect();
+  // Set when the rollback itself failed: the connection is then still inside a
+  // transaction (or gone), and returning it to the pool clean would hand the
+  // next borrower an open — possibly aborted — one. `release(error)` is what
+  // makes the pool destroy it instead.
+  let broken: Error | undefined;
   try {
     await client.query("BEGIN");
     const result = await fn(client);
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => {
-      // The connection is already broken; releasing it with the error below
-      // makes the pool discard it.
+    await client.query("ROLLBACK").catch((rollbackError: unknown) => {
+      broken = rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError));
     });
     throw error;
   } finally {
-    client.release();
+    client.release(broken);
   }
 }
 
