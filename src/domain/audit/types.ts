@@ -24,6 +24,13 @@ export type AuditAction =
   | "settings.update"
   /** A project and everything in its partition were deleted. */
   | "project.delete"
+  /**
+   * An admin installed a model catalog document by hand, which from then on
+   * decides which models exist and what they cost — or removed it. `detail`
+   * records how many models it carried.
+   */
+  | "catalog.install"
+  | "catalog.remove"
   /** A shared registry entry (skill, MCP server, external agent) was deleted. */
   | "registry.delete"
   /**

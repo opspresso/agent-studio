@@ -9,6 +9,7 @@
 
 import type { ModelCatalogDocumentRepository } from "@/domain/llm/catalogDocument";
 import { validateModelCatalog } from "@/domain/llm/models";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { ValidationError } from "@/application/errors";
 
 /** What the console shows about the stored document, and what `install` answers. */
@@ -44,7 +45,7 @@ export interface ModelCatalogDocumentUseCases {
    * registry is never emptied, and the snapshot is not re-installable at
    * runtime on purpose (it is the floor, not a source).
    */
-  remove(): Promise<{ stored: false; refreshed: boolean }>;
+  remove(actorEmail: string): Promise<{ stored: false; refreshed: boolean }>;
 }
 
 export function createModelCatalogDocumentUseCases(
@@ -83,12 +84,26 @@ export function createModelCatalogDocumentUseCases(
       }
       await repository.put({ document, uploadedBy: actorEmail, uploadedAt: now().toISOString() });
       const refreshed = await refresh();
-      return { ...(await status()), refreshed };
+      const result = { ...(await status()), refreshed };
+      // What a deployment prices and permits follows this document from here
+      // on — the act that changed it is worth a row, like a settings write.
+      await recordAudit({
+        actorEmail,
+        action: "catalog.install",
+        target: auditTarget("catalog", "document"),
+        detail: result.stored ? `${result.modelCount} model(s)` : undefined,
+      });
+      return result;
     },
 
-    async remove() {
+    async remove(actorEmail) {
       await repository.delete();
       const refreshed = await refresh();
+      await recordAudit({
+        actorEmail,
+        action: "catalog.remove",
+        target: auditTarget("catalog", "document"),
+      });
       return { stored: false, refreshed };
     },
   };

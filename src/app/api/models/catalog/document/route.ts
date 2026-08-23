@@ -48,9 +48,9 @@ export const PUT = withAdminAuth(async (user, request: Request) => {
   }
 });
 
-export const DELETE = withAdminAuth(async () => {
+export const DELETE = withAdminAuth(async (user) => {
   try {
-    return Response.json(await modelCatalogDocumentUseCases.remove());
+    return Response.json(await modelCatalogDocumentUseCases.remove(user.email));
   } catch (error) {
     return apiError(error);
   }
