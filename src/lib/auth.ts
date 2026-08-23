@@ -9,10 +9,26 @@ import { EMAIL_DOMAIN_NOT_ALLOWED } from "@/shared/signInError";
 import { config } from "./config";
 import { getAllowedEmailDomains, isConfiguredAdmin } from "./runtime-settings";
 
+/**
+ * The bootstrap administrator is the one address the operator named outright,
+ * and the account for when everything else locks people out — a provider
+ * down, an allowed-domain list narrowed too far. So the list does not apply
+ * to it: a first boot with `BOOTSTRAP_ADMIN_EMAIL` outside
+ * `ALLOWED_EMAIL_DOMAINS` used to crash in `ensureBootstrapAdmin` (the
+ * create-user hook refused it), and the same person could never sign in.
+ */
+export function isBootstrapAdminEmail(email: string): boolean {
+  const bootstrap = config.passwordAuth ? config.bootstrapAdmin : undefined;
+  return bootstrap !== undefined && email.toLowerCase() === bootstrap.email.toLowerCase();
+}
+
 /** The `providerId` the OIDC provider signs in under — what the client names. */
 export const OIDC_PROVIDER_ID = "oidc";
 
 async function assertAllowedEmailDomain(email: string): Promise<void> {
+  if (isBootstrapAdminEmail(email)) {
+    return;
+  }
   const allowed = await getAllowedEmailDomains();
   if (allowed.length === 0) {
     return;
