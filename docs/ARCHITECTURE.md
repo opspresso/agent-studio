@@ -51,7 +51,7 @@ was lost*).
 - Node.js 24, pnpm 11 (`packageManager` 로 고정)
 - Next.js 16 App Router, React 19, TypeScript strict (`noUncheckedIndexedAccess`)
 - Mantine 9 (`@mantine/core` + hooks/form/notifications/charts, `@tabler/icons-react`)
-- Better Auth 1.6 — 자기 Postgres 테이블 위에서, OIDC · Google · 비밀번호 중 배포가 켠 것으로
+- Better Auth 1.7 — 자기 Postgres 테이블 위에서, OIDC · Google · 비밀번호 중 배포가 켠 것으로
 - PostgreSQL 16+ (pgvector) 하나 — 아이템 테이블 `items`, Better Auth 의 테이블, `catalog_vectors`
 - 런이 만든 것을 담는 S3 호환 오브젝트 스토어 (선택 — MinIO, S3, Ceph RGW …)
 

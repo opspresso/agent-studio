@@ -8,7 +8,7 @@
 
 ## 인증
 
-Better Auth 1.6 이 이 앱의 커넥션 풀 위에서 라이브러리 자신의 Postgres 어댑터로 돈다 —
+Better Auth 1.7 이 이 앱의 커넥션 풀 위에서 라이브러리 자신의 Postgres 어댑터로 돈다 —
 `user`, `session`, `account`, `verification` 은 그것이 소유하는 테이블이고(`migrations.ts` 가
 만든다), email·token 의 유일성은 테이블의 유니크 제약이다. 로그인 수단은 **전부 선택**이고
 설치가 고른다 (`src/lib/config.ts` 의 `authProviders`, 그대로 `auth.ts` 와 로그인 페이지로):
