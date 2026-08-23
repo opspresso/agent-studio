@@ -118,7 +118,7 @@ export const ko: Messages = {
     "pgvector 를 켠 데이터베이스 하나와, 모델이 있는 OpenAI 호환 엔드포인트 하나면 됩니다 — 사내 vLLM·LM Studio·라우터도 같은 프로토콜입니다. 스키마는 앱이 부팅할 때 직접 만듭니다.",
   "home.install.offline": "폐쇄망에서도 돕니다",
   "home.install.offlineNote":
-    "모델 카탈로그·플러그인 레지스트리·컨테이너 이미지에는 각각 오프라인 경로가 있습니다. 내려받는 대신 스냅샷을 업로드하세요.",
+    "모델 카탈로그와 플러그인 레지스트리는 내려받는 대신 업로드하고, 컨테이너 이미지는 사내 레지스트리로 미러링하며, 임베딩도 직접 띄운 엔드포인트에서 받을 수 있습니다.",
   "home.install.optional": "밖으로 나가는 연결은 전부 선택",
   "home.install.optionalNote":
     "Slack·Telegram·Teams, 나가는 A2A 호출, 외부 모델 API 는 각각 스위치입니다. 켜지 않으면 그 기능만 꺼집니다.",

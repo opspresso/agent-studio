@@ -137,7 +137,7 @@ export const en = {
     "One database with pgvector, and an OpenAI-compatible endpoint for the models — your own vLLM, LM Studio, or router counts. The app migrates its schema at boot.",
   "home.install.offline": "Air-gapped works",
   "home.install.offlineNote":
-    "The model catalog, the plugin registry, and the container images each have an offline path: upload the snapshot instead of fetching it.",
+    "The model catalog and the plugin registry are uploaded instead of fetched, the container images mirror into your own registry, and embeddings can come from an endpoint you host.",
   "home.install.optional": "Every connection is a choice",
   "home.install.optionalNote":
     "Slack, Telegram, Teams, outbound A2A, hosted model APIs — each is a switch, and leaving one off disables only itself.",
