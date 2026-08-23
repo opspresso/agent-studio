@@ -275,9 +275,19 @@ fi
 echo "== pulling"
 docker compose pull --quiet --ignore-pull-failures
 
-# Recreates only the services whose image or environment actually changed.
-echo "== up"
-docker compose up -d
+# ONLY=<services> brings up those services and nothing else — how a migration
+# starts the new database and object store beside the running app, fills
+# them, and only then switches the app over with a plain run.
+if [[ -n "${ONLY:-}" ]]; then
+  # shellcheck disable=SC2086
+  echo "== up ($ONLY)"
+  # shellcheck disable=SC2086
+  docker compose up -d --no-deps $ONLY
+else
+  # Recreates only the services whose image or environment actually changed.
+  echo "== up"
+  docker compose up -d
+fi
 
 echo
 docker compose ps
