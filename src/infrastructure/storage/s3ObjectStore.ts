@@ -8,6 +8,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { ObjectNotFoundError, type ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import { config } from "@/lib/config";
 import { getArtifactAccessMode } from "@/lib/runtime-settings";
+import { sniffImageType } from "@/domain/llm/imageSniff";
 
 let s3Client: S3Client | undefined;
 
@@ -105,7 +106,15 @@ export const artifactObjectStore: ArtifactObjectStore = {
     if (bytes.byteLength > maxBytes) {
       throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
     }
-    return { bytes, mimeType: object.ContentType ?? "application/octet-stream" };
+    // The header is the only place the type lives, and a filesystem hop loses
+    // it: a migration's `aws s3 sync` → `mc mirror`, a backup restored the
+    // same way, both re-guess from the extension — which an `images/<uuid>`
+    // key has none of. A picture says what it is in its first bytes; for one,
+    // that answer wins over a header that says nothing.
+    const declared = object.ContentType;
+    const generic = declared === undefined || declared === "application/octet-stream";
+    const mimeType = (generic ? sniffImageType(bytes) : undefined) ?? declared ?? "application/octet-stream";
+    return { bytes, mimeType };
   },
 
   /**

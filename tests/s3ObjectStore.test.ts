@@ -63,6 +63,29 @@ describe("artifactObjectStore access modes", () => {
     expect(command.input.Key).toBe("artifacts/image/id.png");
   });
 
+  it("reads a picture's type off its bytes when the header lost it", async () => {
+    // What `aws s3 sync` → `mc mirror` leaves on an extensionless `images/<uuid>`
+    // key: the generic type. The bytes still say PNG.
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
+    mocks.send.mockResolvedValue({
+      ContentLength: png.byteLength,
+      ContentType: "application/octet-stream",
+      Body: { transformToByteArray: vi.fn().mockResolvedValue(png) },
+    });
+    await expect(artifactObjectStore.read("images/abc", 100)).resolves.toMatchObject({
+      mimeType: "image/png",
+    });
+
+    // Bytes that are no picture keep the generic type rather than a guess.
+    mocks.send.mockResolvedValue({
+      ContentLength: 3,
+      Body: { transformToByteArray: vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3])) },
+    });
+    await expect(artifactObjectStore.read("artifacts/file/x.bin", 100)).resolves.toMatchObject({
+      mimeType: "application/octet-stream",
+    });
+  });
+
   it("rejects an oversized object before buffering its body", async () => {
     const transformToByteArray = vi.fn();
     mocks.send.mockResolvedValue({
