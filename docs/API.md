@@ -858,7 +858,7 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
 ```json
 { "name": "my-tool", "image": "…/my-mcp:1.4.0", "containerPort": 8080,
   "args": ["--port", "{{PORT}}"]?, "endpointPath": "/mcp"?,
-  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/agent-studio/my-tool/API_KEY"]?,
+  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/etc/agent-studio/my-tool.env"]?,
   "description": ""?, "content": ""?, "headers": {}? }
 ```
 

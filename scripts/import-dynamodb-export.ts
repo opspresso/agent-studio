@@ -99,8 +99,20 @@ async function main(): Promise<void> {
     verification: 0,
     dropped: 0,
     replacedUsers: 0,
+    droppedEnvRefs: 0,
   };
 
+  // Every file's users before any file's sessions: an export paged by
+  // `--starting-token` puts a session and its user wherever the page boundary
+  // fell, and a session whose user is in another page is not an orphan.
+  const userIds = new Set<string>();
+  for (const file of files) {
+    for (const item of readItems(file)) {
+      if (String(item.PK ?? "").startsWith("AUTH#user#")) {
+        userIds.add(String(item.id));
+      }
+    }
+  }
   for (const file of files) {
     const items = readItems(file);
     console.log(`${file}: ${items.length} item(s)`);
@@ -113,9 +125,6 @@ async function main(): Promise<void> {
       return pk.startsWith("AUTH#user#") ? 0 : pk.startsWith("AUTH#") ? 1 : 2;
     };
     items.sort((a, b) => rank(a) - rank(b));
-    const userIds = new Set(
-      items.filter((item) => rank(item) === 0).map((item) => String(item.id)),
-    );
     await withTransaction(async (client) => {
       // `email` is unique and the upsert below matches on `id`: a user row the
       // new deployment already made for one of these addresses — the bootstrap
@@ -135,7 +144,7 @@ async function main(): Promise<void> {
         console.log(`replacing user ${row.email} (${row.id}) with the exported row`);
       }
       counts.replacedUsers = replaced.rowCount ?? 0;
-      for (const item of items) {
+      for (let item of items) {
         const pk = String(item.PK ?? "");
         const sk = String(item.SK ?? "");
         if (!pk || !sk) {
@@ -263,12 +272,23 @@ async function main(): Promise<void> {
           "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
           [pk, sk, toStoredJson(item)],
         );
+        if (Array.isArray(item.envRefs) && item.envRefs.length > 0) {
+          // A managed server's `envRefs` were SSM parameter names on the old
+          // deployment; here they are env-file paths on the app's host, and
+          // the old names would be opened as paths at every boot. Dropped,
+          // named, for the operator to re-enter as files.
+          console.log(
+            `dropping envRefs of ${pk} (${item.envRefs.map(String).join(", ")}): SSM names, not host paths`,
+          );
+          item = { ...item, envRefs: undefined };
+          counts.droppedEnvRefs += 1;
+        }
         counts.items += 1;
       }
     });
   }
   console.log(
-    `imported ${counts.items} item(s), ${counts.user} user(s) (${counts.replacedUsers} replaced), ${counts.session} session(s), ` +
+    `imported ${counts.items} item(s) (${counts.droppedEnvRefs} with envRefs dropped), ${counts.user} user(s) (${counts.replacedUsers} replaced), ${counts.session} session(s), ` +
       `${counts.account} account(s), ${counts.verification} verification(s); dropped ${counts.dropped}`,
   );
   await closePool();
