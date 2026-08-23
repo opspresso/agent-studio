@@ -145,11 +145,26 @@ export async function putItem(item: Item, condition?: Condition): Promise<void> 
     return;
   }
   await withTransaction(async (client) => {
+    const { PK, SK } = item as Key;
     const existing = await lockRow(client, item as Key);
     if (!condition(existing)) {
-      throw new ConditionalWriteError(`put ${(item as Key).PK}/${(item as Key).SK}`);
+      throw new ConditionalWriteError(`put ${PK}/${SK}`);
     }
-    await upsert(client, item);
+    if (existing !== null) {
+      await upsert(client, item);
+      return;
+    }
+    // The advisory lock serialises the *conditional* writers; an unconditional
+    // upsert takes no lock and can commit the same key between the read above
+    // and the write below. Inserting-or-nothing makes that a refusal, as the
+    // condition promised, rather than an update that swallows the other write.
+    const inserted = await client.query(
+      "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO NOTHING",
+      [PK, SK, toStoredJson(item)],
+    );
+    if (inserted.rowCount !== 1) {
+      throw new ConditionalWriteError(`put ${PK}/${SK}`);
+    }
   });
 }
 
