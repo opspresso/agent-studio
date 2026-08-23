@@ -2,9 +2,12 @@
 
 Working rules for coding agents in this repository (`CLAUDE.md` is a symlink to this file).
 
-Agent Studio is a single Next.js 16 full-stack app: an internal LLM platform for
-prompt / agent / cost management (projects & versions, an LLM engine, agents
-(subagents + external registry), skills, MCP tools, chats, cost dashboard).
+Agent Studio is a single Next.js 16 full-stack app: the agent platform **an enterprise
+installs inside its own network** (projects & versions, an LLM engine, agents (subagents +
+external registry), skills, MCP tools, chats, cost dashboard). One install is one company —
+there is no multi-tenancy — and boot, sign-in, and a run must work with the public internet
+unreachable. What that costs an edit is the first entry under
+[Conventions that bite](#conventions-that-bite).
 
 **This file is the working contract — what to run, what not to break, and where a decision
 lives.** It is not a description of the system; that is
@@ -245,6 +248,20 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 
 ## Conventions that bite
 
+- **Nothing on the required path may need the public internet.** Booting, signing in,
+  running a project and using the console have to work in an IDC with no route out, which
+  makes every outbound connection an *option a deployment turns on* — Slack, Telegram,
+  Teams, an external model provider, the agent-models catalog, the agent-plugins sync, the
+  MCP servers a registry entry points at. Adding a fetch to a fixed host, an SDK that phones
+  home, or a font/script/image loaded from a CDN puts a network dependency on that path, and
+  the failure is not an error message but a deployment that cannot start. The shape that
+  keeps it legal is the one the existing ones use: a port with an adapter the composition
+  root wires only when its configuration is present, and a documented offline substitute
+  where the data is really needed — a committed catalog snapshot
+  (`src/domain/llm/catalog.json`), an uploaded plugins bundle, a `selfhosted` channel. The
+  same rule is why the three Google faces in `src/app/layout.tsx` are `next/font`-hosted at
+  build time rather than linked. [INSTALL.md](docs/INSTALL.md) is where a new option says
+  what it needs and what happens without it.
 - **Domain purity.** Nothing in `src/domain/` imports infrastructure, framework or AWS.
 - **Never hand-write a row key string.** They come from
   `src/infrastructure/db/keys.ts` — with one named exception, because it is not only a key:
