@@ -50,7 +50,10 @@ lock 아래에서 멱등하게 적용하므로 따로 만들 것이 없다 — p
 >
 > **프로젝트를 갈라놓는 것은 포트가 아니라 데이터베이스 이름이다.** 이 앱의 둘
 > (`agent_studio`, `agent_studio_test`)은 볼륨이 처음 초기화될 때 `deploy/postgres/init.sql`
-> 이 만든다. `docker compose down -v` (볼륨은 모든 프로젝트의 것이다) 나 `--remove-orphans`
+> 이 만든다 — 이 저장소가 볼륨을 초기화한 쪽일 때만이다. initdb 는 두 번 돌지 않으므로,
+> 다른 저장소가 먼저 볼륨을 만들었다면 `docker compose exec postgres psql -U <그 저장소의
+> 사용자> -f deploy/postgres/init.sql` 처럼 역할과 데이터베이스를 직접 만든다(서비스 블록은
+> 글자 그대로 같아야 compose 가 컨테이너를 재생성하지 않는다). `docker compose down -v` (볼륨은 모든 프로젝트의 것이다) 나 `--remove-orphans`
 > (다른 저장소가 띄운 컨테이너까지 없앤다) 는 절대 실행하지 마라.
 
 MinIO 를 쓰려면 `.env.local` 에 `S3_BUCKET_NAME`, `S3_ENDPOINT=http://localhost:9000`,

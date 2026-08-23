@@ -4,7 +4,10 @@
 # already up and leaves it alone — as long as its service block is identical to
 # this one. Database names, not ports, keep the projects apart: this app uses
 # `agent_studio` for development and `agent_studio_test` for the integration
-# check, both created by `deploy/postgres/init.sql` on the volume's first start.
+# check. `deploy/postgres/init.sql` creates them only when *this* repository is
+# the one that initialises the volume; a repository that comes second creates
+# its own role and databases itself (initdb never runs again), and the block
+# stays word-for-word the same so compose does not recreate the container.
 #
 # Never `docker compose down -v` here: the volume belongs to every project. Nor
 # `--remove-orphans`, which would take out containers another repository started.
