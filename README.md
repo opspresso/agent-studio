@@ -10,8 +10,6 @@
 카탈로그와 플러그인 자동 sync 는 켜는 만큼만 붙는다. 최소 구성은 **PostgreSQL 하나**이고,
 설치는 [docs/INSTALL.md](docs/INSTALL.md) 가 처음부터 끝까지 안내한다.
 
-서비스 소개는 [docs/kr/](docs/kr/) (한국어) · [docs/en/](docs/en/) (English) 에 있다.
-
 ## 무엇이 들어 있나
 
 | | |
@@ -74,7 +72,6 @@ lint 단계는 없다. `typecheck` + `test` + `build` 가 검사다.
 
 | 문서 | 무엇에 답하나 |
 |---|---|
-| [docs/kr/](docs/kr/) · [docs/en/](docs/en/) | 이 서비스가 무엇인가 — 소개, 핵심 개념, 처음 해 보기 (한국어 · English) |
 | [docs/INSTALL.md](docs/INSTALL.md) | 설치 — 호스트 하나(Compose), Kubernetes(Helm), 폐쇄망에서의 대체 경로, AWS 배포에서 옮겨 오기 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 어떻게 만들어졌고 **왜** 그런가 — 레이어, 아이템 테이블 키 맵, 진입점에서 엔진까지의 경로 |
 | [docs/DIAGRAMS.md](docs/DIAGRAMS.md) | 같은 모양을 그림으로 — 레이어, 요청 흐름, 런 브래킷, 메시징 표면, wiring site, 스토리지 |
