@@ -10,7 +10,7 @@ Agent Studio 는 기업이 **자기 네트워크 안에 설치해 운영하는**
 
 | | 필수 | 대안 |
 |---|---|---|
-| **PostgreSQL 16+ with pgvector** | 모든 행이 여기 있다. 스키마는 앱이 부팅 때 만든다 | 번들(compose · Helm) 또는 조직의 DB. `pgvector` 확장이 만들어질 수 있어야 한다(`pgvector/pgvector` 이미지, RDS·Supabase·Neon 은 기본 지원) |
+| **PostgreSQL 16+ with pgvector** | 모든 행이 여기 있다. 스키마는 앱이 부팅 때 만든다 | 번들(compose · Helm) 또는 조직의 DB. `pgvector` 확장이 만들어질 수 있어야 한다(`pgvector/pgvector` 이미지, RDS·Supabase·Neon 은 기본 지원). `vector` 는 trusted 확장이 아니라 생성에 superuser 가 필요하다 — 조직의 DB 라면 DBA 가 `CREATE EXTENSION vector` 를 미리 해 두면 앱 역할은 일반 권한으로 충분하다 |
 | **OpenAI 호환 LLM 엔드포인트** | 런이 말을 거는 곳 | vLLM · LM Studio · Ollama · 사내 라우터 · 외부 API. 폐쇄망은 `selfhosted` 채널(모델은 `/models` 콘솔에서 선언) |
 | S3 호환 오브젝트 스토어 | 런이 만든 이미지·문서. 없으면 artifact 기능만 꺼진다 | 번들 MinIO · Garage · Ceph RGW · S3. `ARTIFACT_ACCESS_MODE=proxied` 면 앱만 닿으면 된다 |
 | 신원 제공자 | 로그인 | 표준 OIDC(Keycloak · Entra ID · Okta · Authentik …), Google, 또는 비밀번호(첫 관리자·비상용) |
