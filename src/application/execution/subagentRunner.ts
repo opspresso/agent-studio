@@ -578,7 +578,13 @@ export async function* runLocalSubagent(
       //
       // Still clamped to that ceiling, which is the part a child may not raise:
       // the whole run was started under it.
-      maxTurn: Math.min(version.maxTurn === undefined ? maxTurn : turn + version.maxTurn, maxTurn),
+      //
+      // Truthiness rather than `=== undefined`, because `fromItem` casts
+      // `item.maxTurn` blind out of JSONB: a stored `null` is typed `undefined`
+      // and is not, so `turn + null === turn` would trip the child on entry —
+      // the same failure from a different input. `0` is unreachable (the schema
+      // says `positive()`) and would mean the same thing anyway.
+      maxTurn: Math.min(version.maxTurn ? turn + version.maxTurn : maxTurn, maxTurn),
       startTurn: turn,
       skills,
       subagents,

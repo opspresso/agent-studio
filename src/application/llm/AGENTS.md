@@ -292,7 +292,8 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT
   charged against the parent's budget — the parent always resumes at `turn + 2` — but the
   child's ceiling is clamped to the parent's in `subagentRunner.ts`
-  (`Math.min(turn + version.maxTurn, maxTurn)`), so a child version with a larger
+  (`Math.min(version.maxTurn ? turn + version.maxTurn : maxTurn, maxTurn)` — truthiness,
+  because a `maxTurn` stored as JSONB `null` is typed `undefined` and is not), so a child version with a larger
   `maxTurn` cannot raise the limit the run started under. **A child's own `maxTurn` is
   how many turns it gets, not a point on the shared counter** — read as a point, a
   child configured with `maxTurn: 10` and entered on turn 12 tripped `turn >= maxTurn`

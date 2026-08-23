@@ -98,3 +98,46 @@ describe("runLocalSubagent with a nested transfer", () => {
     expect(text).toBe("child-answer");
   });
 });
+
+/**
+ * The ceiling a child runs under.
+ *
+ * A child continues the parent's turn counter, so its own `maxTurn` is how many
+ * turns it gets rather than a point on that counter. Read as a point, a
+ * specialised agent transferred to late never called its model at all: it
+ * tripped `turn >= maxTurn` on entry and answered `""`, which the parent
+ * reported as "returned no answer".
+ */
+describe("runLocalSubagent and the child's own maxTurn", () => {
+  const child = (overrides: Partial<Version>) => {
+    const channel = new FakeChannel([[contentChunk("answered"), usageChunk(1, 1)]]);
+    const projects = new Map([["child", project("child")]]);
+    const versions = new Map([["child", version("child", overrides)]]);
+    const deps = {
+      channel,
+      projects: { get: async (name: string) => projects.get(name) ?? null },
+      versions: { get: async (name: string) => versions.get(name) ?? null },
+      skills: { get: async () => null, list: async () => [] },
+      externalAgents: { get: async () => null },
+    } as unknown as ExecutionDeps;
+    const origin = {
+      actor: { kind: "user", id: "u@example.com" },
+      ancestry: ["parent", "child"],
+    } as unknown as RunOrigin;
+    // Entered on turn 13 of a run whose own ceiling is 50 — past a child
+    // configured with 10, if that 10 were a point on the shared counter.
+    return collect(runLocalSubagent(deps, "child", "hi", 13, 50, async () => {}, origin));
+  };
+
+  it("gives a child transferred to late the turns its version asks for", async () => {
+    expect((await child({ maxTurn: 10 })).text).toBe("answered");
+  });
+
+  it("treats a maxTurn stored as null the way an absent one is treated", async () => {
+    // `versionRepository.fromItem` casts `item.maxTurn` blind out of JSONB, so
+    // a stored null arrives typed `undefined` and is not — and `turn + null` is
+    // `turn`, which trips the child on entry.
+    expect((await child({ maxTurn: null as unknown as number })).text).toBe("answered");
+    expect((await child({})).text).toBe("answered");
+  });
+});
