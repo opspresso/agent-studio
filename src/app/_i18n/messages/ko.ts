@@ -213,11 +213,11 @@ export const ko: Messages = {
 
   "guide.title": "가이드",
   "guide.lede":
-    "Agent Studio 가 무엇을 하는 도구인지, 그리고 빈 프로젝트에서 팀이 호출할 수 있는 에이전트까지 가는 방법을 정리했습니다. 여기서 말하는 페이지는 모두 사이드바에 있습니다.",
+    "Agent Studio 가 어떤 도구인지, 빈 프로젝트에서 팀이 호출하는 에이전트까지 어떻게 가는지 정리했습니다. 본문에서 말하는 페이지는 각 절 끝의 링크로 바로 갑니다.",
 
-  "guide.start.title": "여기서 시작하세요",
+  "guide.start.title": "처음이라면",
   "guide.start.body":
-    "네 단계이고, 각 단계는 프로젝트의 탭 하나에서 진행합니다. 배포는 버전을 지정하지 않은 호출자가 어느 버전을 받을지 정하는 설정입니다. 저장한 버전은 이름을 지정해 호출할 수 있습니다.",
+    "네 단계로 끝나고, 각 단계는 프로젝트의 탭 하나에서 합니다. 배포는 버전을 지정하지 않은 호출자가 어느 버전을 받을지 정하는 설정입니다. 저장만 한 버전도 이름을 지정하면 호출됩니다.",
   "guide.start.step1": "프로젝트를 만듭니다",
   "guide.start.step1Body":
     "Projects 페이지에서 New project 를 누릅니다. 이름은 호출자가 쓰는 식별자이고 나중에 바꿀 수 없습니다. 타입(llm, agent, image)도 이때 정합니다.",
@@ -231,7 +231,7 @@ export const ko: Messages = {
   "guide.start.step4Body":
     "API Reference 탭에 이 프로젝트의 엔드포인트와 복사해 쓸 수 있는 curl 예제가 있습니다. Integrations 탭에서 프로젝트 토큰을 발급하고 Slack, Telegram, Teams, A2A, AG-UI 를 연결합니다.",
 
-  "guide.words.title": "콘솔에서 쓰는 용어",
+  "guide.words.title": "콘솔에서 쓰는 말",
   "guide.words.project": "Project",
   "guide.words.projectBody":
     "이름과 타입을 가진 작업 단위입니다. 버전, 비용 한도, 연동 설정, 열람 범위를 함께 담습니다.",
@@ -240,13 +240,13 @@ export const ko: Messages = {
     "이름이 붙은 프로젝트 스냅샷이며 모델, 프롬프트, 도구, 턴과 토큰 상한이 들어갑니다. 고쳐서 저장하면 새 버전이 생기지 않고 그 버전을 덮어씁니다. 배포된 버전도 같아서 호출자는 다음 실행부터 바뀐 내용을 받습니다. 배포는 그중 한 버전을 기본 응답으로 지정하는 설정입니다.",
   "guide.words.run": "Run",
   "guide.words.runBody":
-    "버전을 한 번 실행한 것입니다. 실행마다 비용, 실행 주체, 마감 시간, 트레이스가 남습니다.",
+    "버전을 한 번 실행한 것입니다. 실행마다 비용, 실행 주체, 제한 시간, 트레이스가 남습니다.",
   "guide.words.caller": "Caller",
   "guide.words.callerBody":
-    "실행을 시작한 주체입니다. 콘솔의 사용자, 프로젝트 토큰, Slack 의 사용자가 여기 해당합니다. 지출과 동시 실행 수는 프로젝트뿐 아니라 호출자 단위로도 셉니다.",
+    "실행을 시작한 주체입니다. 콘솔의 사용자, 프로젝트 토큰, Slack 의 사용자가 여기 해당합니다. 비용과 동시 실행 수는 프로젝트뿐 아니라 호출자 단위로도 집계합니다.",
   "guide.words.tier": "Tier",
   "guide.words.tierBody":
-    "사용자 등급이며 guest, member, admin 이 있습니다. 프로젝트 생성과 토큰 발급 가능 여부, 동시 실행 개수, 월 사용 한도를 정합니다. 본인 수치는 프로필 페이지에 있습니다.",
+    "사용자 등급이며 guest, member, admin 이 있습니다. 프로젝트를 만들 수 있는지, 토큰을 발급할 수 있는지, 동시 실행 개수와 월 사용 한도가 얼마인지를 정합니다. 내 등급과 한도는 프로필 페이지에서 봅니다.",
 
   "guide.types.title": "프로젝트 세 종류",
   "guide.types.llm": "llm: 프롬프트 한 번, 답 한 번",
@@ -257,7 +257,7 @@ export const ko: Messages = {
     "모델이 답을 낼 때까지 반복합니다. Skill 을 불러오고, MCP 도구를 호출하고, 서브에이전트에 작업을 넘기고, 이미지를 그리고, URL 을 읽습니다. 이 중 무엇을 쓸 수 있는지는 버전에서 정합니다.",
   "guide.types.image": "image: 이미지 생성과 편집",
   "guide.types.imageBody":
-    "프롬프트로 이미지를 만들거나 첨부한 이미지를 고칩니다. 돌려줄 채팅 완성이 없어서 그 형식으로 답하는 엔드포인트는 이 타입을 거절합니다. 콘솔, 챗, A2A 는 이미지를 그대로 돌려줍니다.",
+    "프롬프트로 이미지를 만들거나 첨부한 이미지를 고칩니다. 돌려줄 chat completion 이 없어서 그 형식으로 답하는 엔드포인트는 이 타입을 거절합니다. 콘솔, Chats, A2A 는 이미지를 그대로 돌려줍니다.",
 
   "guide.reach.title": "버전이 쓸 수 있는 것",
   "guide.reach.body":
@@ -271,12 +271,12 @@ export const ko: Messages = {
   "guide.reach.subagents": "서브에이전트",
   "guide.reach.subagentsBody":
     "실행이 작업을 넘길 수 있는 다른 프로젝트나 Agents 페이지의 항목입니다. 답변에는 그것을 쓴 서브에이전트가 표시되고, 비용은 같은 호출자에게 붙습니다.",
-  "guide.reach.catalog": "Capability catalog",
+  "guide.reach.catalog": "케이퍼빌리티 카탈로그",
   "guide.reach.catalogBody":
     "Skill, 도구, 에이전트를 모두 담은 검색 인덱스입니다. “요청마다 필요한 기능 찾기”를 켜면 실행마다 인덱스를 검색해 맞는 항목을 버전의 바인딩에 더합니다. 기존 바인딩은 그대로 남습니다.",
-  "guide.reach.builtins": "빌트인",
+  "guide.reach.builtins": "기본 제공 도구",
   "guide.reach.builtinsBody":
-    "버전에서 켜는 기능입니다. 이미지 생성과 편집, 모델이 고른 URL 읽기, 사용자가 내려받을 파일 저장, 봇이 연결된 곳의 Slack 기록 읽기가 있습니다.",
+    "버전에서 하나씩 켭니다. 이미지 생성과 편집, 모델이 고른 URL 읽기, 사용자가 내려받을 파일 저장, 봇이 연결된 곳의 Slack 기록 읽기가 있습니다.",
   "guide.reach.memory": "메모리",
   "guide.reach.memoryBody":
     "이전 실행이 저장해 둔 내용을 실행 전에 불러옵니다. recall 도구를 제공하는 메모리 서버를 버전에서 바인딩했을 때 동작합니다. 바인딩이 없으면 아무 일도 하지 않고, 실행마다 그 사실을 알려 줍니다.",
@@ -286,7 +286,7 @@ export const ko: Messages = {
     "아래 창구는 모두 같은 엔진으로 실행하고, 같은 비용과 트레이스 기록에 남습니다. 호출자가 버전을 지정하지 않으면 배포된 버전을 실행합니다. Playground 만 예외로 지금 열어 둔 버전을 실행합니다.",
   "guide.surfaces.console": "콘솔",
   "guide.surfaces.consoleBody":
-    "작성 중인 버전은 Playground 에서 실행하고, 배포된 에이전트와 이야기할 때는 Chats 를 씁니다. Chats 는 첨부를 받고, 답변을 스트리밍하고, 도구 호출을 대화 안에 보여 줍니다. 탭을 닫아도 실행은 계속됩니다.",
+    "작성 중인 버전은 Playground 에서 실행하고, 배포된 에이전트와 이야기할 때는 Chats 를 씁니다. Chats 에서는 파일을 첨부하고, 답변을 스트리밍으로 받고, 도구 호출도 대화 안에서 봅니다. 탭을 닫아도 실행은 계속됩니다.",
   "guide.surfaces.http": "HTTP",
   "guide.surfaces.httpBody":
     "API Reference 탭에 엔드포인트 세 개가 있습니다. 이 앱의 predict 엔드포인트, OpenAI 호환 chat completions 엔드포인트, 도구 호출까지 스트리밍하는 agent 엔드포인트입니다. 세 곳 모두 프로젝트 토큰으로 인증합니다.",
@@ -298,21 +298,21 @@ export const ko: Messages = {
     "Settings 탭에 있습니다. 외부에서 호출하는 웹훅 URL 하나와, 필요한 만큼 만드는 cron 스케줄입니다. 둘 다 배포된 버전을 실행하고 실행 이력도 같은 탭에 남습니다.",
   "guide.surfaces.a2a": "A2A",
   "guide.surfaces.a2aBody":
-    "이 프로젝트를 A2A 에이전트로 공개해 다른 시스템이 호출하게 하거나, 다른 에이전트를 등록해 작업을 넘길 수 있습니다. 둘 다 Integrations 탭에 있습니다.",
+    "이 프로젝트를 A2A 에이전트로 공개해 다른 시스템이 호출하게 하거나, 반대로 다른 에이전트를 등록해 작업을 넘길 수 있습니다. 둘 다 Integrations 탭에 있습니다.",
   "guide.surfaces.agui": "AG-UI",
   "guide.surfaces.aguiBody":
-    "배포된 프로젝트를 자체 앱에 붙입니다. 클라이언트가 스레드를 보내면 프로토콜 이벤트를 돌려받으므로, 에이전트가 제품 안에서 동작합니다.",
+    "배포된 프로젝트를 우리 앱 안에 붙입니다. 클라이언트가 스레드를 보내면 프로토콜 이벤트가 돌아오므로, 에이전트가 제품 화면 안에서 동작합니다.",
 
   "guide.limits.title": "비용, 한도, 기록",
-  "guide.limits.cost": "실행마다 비용이 붙습니다",
+  "guide.limits.cost": "실행마다 비용이 매겨집니다",
   "guide.limits.costBody":
-    "채널이 청구한 금액을 쓰고, 없으면 레지스트리에 적힌 모델 단가를 씁니다. 개요 페이지는 프로젝트와 모델별로, 프로젝트의 Usage 탭은 호출자별로 묶어 보여 주며, 프로필 페이지에는 본인 사용량이 있습니다.",
+    "채널이 청구한 금액을 쓰고, 없으면 레지스트리에 적힌 모델 단가를 씁니다. 개요 페이지는 프로젝트와 모델별로, 프로젝트의 Usage 탭은 호출자별로 묶어 보여 주고, 프로필 페이지에는 내 사용량이 있습니다.",
   "guide.limits.guards": "한도는 알린 뒤 차단합니다",
   "guide.limits.guardsBody":
     "프로젝트의 일간, 월간 한도는 Settings 탭에 있습니다. 알림 임계값을 넘으면 프로젝트에 지정한 창구로 알림을 한 번 보내고 실행은 계속됩니다. 차단 임계값을 넘으면 기간이 바뀔 때까지 새 실행을 거절합니다. 일간은 UTC 자정, 월간은 다음 달 1일에 바뀝니다.",
   "guide.limits.tier": "등급 한도도 함께 적용됩니다",
   "guide.limits.tierBody":
-    "모든 프로젝트를 합친 월 한도와, 동시에 띄울 수 있는 실행 개수 제한입니다. 둘 다 프로필 페이지에 있고 관리자가 조정할 수 있습니다.",
+    "모든 프로젝트를 합친 월 한도와 동시 실행 개수 제한이 있습니다. 둘 다 프로필 페이지에서 확인하고, 조정은 관리자가 합니다.",
   "guide.limits.records": "실행이 남기는 기록",
   "guide.limits.recordsBody":
     "턴과 도구 호출이 담긴 트레이스는 프로젝트의 Traces 탭에, 실행이 만든 이미지와 파일은 Artifacts 에 남습니다. 본인 것은 사이드바의 Artifacts 페이지, 프로젝트 것은 프로젝트의 Artifacts 탭에 있습니다.",
@@ -320,7 +320,7 @@ export const ko: Messages = {
   "guide.trouble.title": "문제가 생겼을 때",
   "guide.trouble.refused": "비용 때문에 실행이 거절됐습니다",
   "guide.trouble.refusedBody":
-    "프로젝트의 일간이나 월간 임계값, 또는 본인 등급의 월 한도에 걸린 경우입니다. 앞의 것은 프로젝트 Settings 탭, 뒤의 것은 프로필 페이지에서 확인합니다. 둘 다 관리자가 올릴 수 있습니다.",
+    "프로젝트의 일간·월간 임계값이나 내 등급의 월 한도에 걸린 경우입니다. 앞의 것은 프로젝트 Settings 탭, 뒤의 것은 프로필 페이지에서 확인하고, 둘 다 관리자가 올릴 수 있습니다.",
   "guide.trouble.model": "쓰려는 모델이 목록에 없습니다",
   "guide.trouble.modelBody":
     "Models 페이지에는 이 배포가 호출할 수 있는 모델이 있고, 켜는 것은 관리자만 할 수 있습니다. 카탈로그에 없는 모델도 실행은 되지만 사용량이 비용 0 으로 기록됩니다.",
@@ -332,11 +332,11 @@ export const ko: Messages = {
     "봇은 멘션, 다이렉트 메시지, 지정한 키워드가 들어간 채널 메시지에만 답하고 나머지는 무시합니다. Integrations 탭의 테스트 버튼으로 봇 토큰을 확인할 수 있고, 봇이 초대된 채널 목록도 볼 수 있습니다.",
   "guide.trouble.tab": "답변 중에 탭을 닫았습니다",
   "guide.trouble.tabBody":
-    "실행은 계속됩니다. 챗을 다시 열면 답변이 남아 있습니다.",
+    "실행은 계속됩니다. Chats 에서 그 대화를 다시 열면 답변이 남아 있습니다.",
 
   "guide.more.title": "더 읽을 곳",
   "guide.more.body":
-    "프로젝트별 API Reference 탭에 그 프로젝트를 호출하는 방법이 있습니다. 설치, 설정, 보안, 운영 문서는 소스와 함께 docs/ 아래에 있습니다. INSTALL.md, CONFIGURATION.md, SECURITY.md, OPERATIONS.md 이며 인터넷이 없는 배포에서도 읽을 수 있습니다.",
+    "프로젝트마다 API Reference 탭에 그 프로젝트를 호출하는 방법이 있습니다. 설치·설정·보안·운영 문서는 소스와 함께 docs/ 아래에 들어 있어서 인터넷이 없는 배포에서도 읽을 수 있습니다(INSTALL.md, CONFIGURATION.md, SECURITY.md, OPERATIONS.md).",
 
   "chat.more": "이전 대화 더 보기",
   "chat.answerReady": "답변 완료",

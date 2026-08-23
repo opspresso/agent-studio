@@ -29,7 +29,12 @@ export function PageHeader({
           width: Members and the audit trail put tables under it that use the
           whole shell, and a sentence stretched to match them is unreadable.
         */}
-        <Text fz="sm" c="dimmed" mt={4} maw={720}>
+        {/*
+          `keep-all` because these lines are mostly Korean: the default rule
+          breaks Hangul between syllable blocks, so a description ends up split
+          mid-word. English keeps breaking at spaces either way.
+        */}
+        <Text fz="sm" c="dimmed" mt={4} maw={720} style={{ wordBreak: "keep-all" }}>
           {description}
         </Text>
       </div>

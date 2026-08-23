@@ -247,9 +247,9 @@ export const en = {
   // page whose content *is* the text.
   "guide.title": "Guide",
   "guide.lede":
-    "What Agent Studio does, and how to get from an empty project to an agent your team can call. Every page named here is in the sidebar.",
+    "What Agent Studio is, and how to get from an empty project to an agent your team can call. Each section links to the pages it mentions.",
 
-  "guide.start.title": "Start here",
+  "guide.start.title": "If this is your first time",
   "guide.start.body":
     "Four steps, each on a tab of your project. Publishing decides which version a caller gets when the request does not name one. A saved version can also be called by its own name.",
   "guide.start.step1": "Create a project",
@@ -274,13 +274,13 @@ export const en = {
     "A named snapshot of a project: model, prompts, tools, turn and token limits. Saving an edit overwrites that version in place instead of creating a new one. The published version works the same way, so callers see the change on their next run. Publishing marks one version as the default answer.",
   "guide.words.run": "Run",
   "guide.words.runBody":
-    "One execution of a version. Each run gets a price, an owner, a deadline, and a trace.",
+    "One execution of a version. Each run gets a price, an owner, a time limit, and a trace.",
   "guide.words.caller": "Caller",
   "guide.words.callerBody":
     "Whoever started the run: you in the console, a project token, or a person in Slack. Spend and concurrent runs are counted per caller as well as per project.",
   "guide.words.tier": "Tier",
   "guide.words.tierBody":
-    "Your level: guest, member, or admin. It sets whether you can create projects and issue tokens, how many runs you can have at once, and how much you can spend per month. Your own numbers are on the Profile page.",
+    "Your level: guest, member, or admin. It sets whether you can create projects, whether you can issue tokens, how many runs you can have at once, and how much you can spend per month. Your own numbers are on the Profile page.",
 
   "guide.types.title": "Three kinds of project",
   "guide.types.llm": "llm: one prompt, one answer",
@@ -291,7 +291,7 @@ export const en = {
     "The model keeps working until it has an answer. It can load skills, call MCP tools, pass work to a subagent, draw images, and read a URL. The version decides which of those are available.",
   "guide.types.image": "image: draw or edit pictures",
   "guide.types.imageBody":
-    "A picture from a prompt, or an edit of one you attach. There is no chat completion to return, so the endpoints that answer with one reject this type. The console, chats, and A2A return the image itself.",
+    "A picture from a prompt, or an edit of one you attach. There is no chat completion to return, so the endpoints that answer with one reject this type. The console, Chats, and A2A return the image itself.",
 
   "guide.reach.title": "What a version can use",
   "guide.reach.body":
@@ -308,9 +308,9 @@ export const en = {
   "guide.reach.catalog": "Capability catalog",
   "guide.reach.catalogBody":
     "A searchable index of every skill, tool, and agent. With “Find capabilities for each request” on, each run searches the index and adds what matches to the version's bindings. Nothing is removed from them.",
-  "guide.reach.builtins": "Built-ins",
+  "guide.reach.builtins": "Built-in tools",
   "guide.reach.builtinsBody":
-    "Switches on the version: draw and edit images, read a URL the model picked, save a file the reader can download, and read Slack history where a bot is connected.",
+    "Turned on one by one in the version: draw and edit images, read a URL the model picked, save a file the reader can download, and read Slack history where a bot is connected.",
   "guide.reach.memory": "Memory",
   "guide.reach.memoryBody":
     "What earlier runs stored, loaded before the run starts. It works when the version binds a memory server that offers a recall tool. Without one the switch does nothing, and each run reports that.",
@@ -320,7 +320,7 @@ export const en = {
     "All of these run the same engine and land in the same cost and trace records. They use the published version unless the caller names one. The Playground is the exception: it runs the version you have open.",
   "guide.surfaces.console": "The console",
   "guide.surfaces.consoleBody":
-    "Use the Playground for a version you are still writing, and Chats to talk to a published agent. Chats take attachments, stream the reply, and show tool calls in place. A chat run continues after you close the tab.",
+    "Use the Playground for a version you are still writing, and Chats to talk to a published agent. In Chats you attach files, watch the reply stream, and see tool calls in the conversation. A chat run continues after you close the tab.",
   "guide.surfaces.http": "HTTP",
   "guide.surfaces.httpBody":
     "Three endpoints on the API Reference tab: this app's predict endpoint, an OpenAI-compatible chat completions endpoint, and an agent endpoint that streams tool calls. All three accept the project token.",
@@ -332,10 +332,10 @@ export const en = {
     "On the Settings tab: one webhook URL for an outside system to call, and as many cron schedules as you need. Both run the published version, and their history is on the same tab.",
   "guide.surfaces.a2a": "A2A",
   "guide.surfaces.a2aBody":
-    "Publish this project as an A2A agent for another system to call, or register other agents to send work to. Both are on the Integrations tab.",
+    "Publish this project as an A2A agent for another system to call, or register other agents and send work to them. Both are on the Integrations tab.",
   "guide.surfaces.agui": "AG-UI",
   "guide.surfaces.aguiBody":
-    "Embed a published project in your own app. The client sends its thread and receives the protocol's events, so the agent runs inside your product.",
+    "Embed a published project in your own app. The client sends its thread and gets the protocol's events back, so the agent runs inside your product's own screens.",
 
   "guide.limits.title": "Cost, limits, and records",
   "guide.limits.cost": "Every run is priced",
@@ -346,7 +346,7 @@ export const en = {
     "A project's daily and monthly limits are on its Settings tab. Crossing the alert threshold sends one notification to the channels the project lists, and runs continue. Crossing the block threshold refuses new runs until the window resets: UTC midnight for the day, the first of the month for the month.",
   "guide.limits.tier": "Your tier applies too",
   "guide.limits.tierBody":
-    "A monthly cap across every project, and a limit on how many runs you can have at once. Both are on the Profile page, and an admin can change them.",
+    "A monthly cap across every project, and a limit on how many runs you can have at once. Both are on the Profile page; an admin changes them.",
   "guide.limits.records": "What a run leaves behind",
   "guide.limits.recordsBody":
     "A trace with its turns and tool calls on the project's Traces tab, and any image or file it produced under Artifacts. Your own are on the Artifacts page in the sidebar. The project's are on its Artifacts tab.",
@@ -354,7 +354,7 @@ export const en = {
   "guide.trouble.title": "When something does not work",
   "guide.trouble.refused": "A run was refused over cost",
   "guide.trouble.refusedBody":
-    "It hit the project's daily or monthly threshold, or your tier's monthly cap. The project's Settings tab shows the first, the Profile page the second. An admin can raise either.",
+    "It hit the project's daily or monthly threshold, or your tier's monthly cap. The project's Settings tab shows the first and the Profile page the second, and an admin can raise either.",
   "guide.trouble.model": "The model I want is missing",
   "guide.trouble.modelBody":
     "The Models page lists what this deployment can reach, and only an admin can enable one. A model the catalog does not carry still runs, but its usage is recorded at zero cost.",
@@ -366,11 +366,11 @@ export const en = {
     "The bot answers mentions, direct messages, and channel messages that match the keywords you set. It ignores everything else. The Integrations tab has a test button that checks the bot token and lists the channels the bot was invited to.",
   "guide.trouble.tab": "I closed the tab while it was answering",
   "guide.trouble.tabBody":
-    "The run continues. Open the chat again and the answer is there.",
+    "The run continues. Open that conversation again in Chats and the answer is there.",
 
   "guide.more.title": "Where to read more",
   "guide.more.body":
-    "Each project's API Reference tab covers that project. The install, configuration, security, and operations documents ship with the source under docs/: INSTALL.md, CONFIGURATION.md, SECURITY.md, and OPERATIONS.md. They are readable on a deployment with no internet access.",
+    "Each project has an API Reference tab that covers calling it. The install, configuration, security, and operations documents ship with the source under docs/, so they are readable on a deployment with no internet access (INSTALL.md, CONFIGURATION.md, SECURITY.md, OPERATIONS.md).",
 
   // Chats: the sidebar, the thread, the composer and the parts a turn is drawn
   // from.
