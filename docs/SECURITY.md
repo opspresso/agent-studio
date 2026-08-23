@@ -8,13 +8,23 @@
 
 ## 인증
 
-단일 테이블 위의 커스텀 DynamoDB 어댑터(`src/infrastructure/db/authAdapter.ts`)를 쓰는
-Better Auth 1.6, **Google OAuth 만** 쓴다. 로그인은 `ALLOWED_EMAIL_DOMAINS` 로 제한된다. 빈
-목록은 모든 도메인을 허용한다 — `STAGE=alpha|prod` 도 그 상태로 정상 부팅한다
-([부팅 시 검증](CONFIGURATION.md#부팅-시-검증) 참고).
+Better Auth 1.6 이 이 앱의 커넥션 풀 위에서 라이브러리 자신의 Postgres 어댑터로 돈다 —
+`user`, `session`, `account`, `verification` 은 그것이 소유하는 테이블이고(`migrations.ts` 가
+만든다), email·token 의 유일성은 테이블의 유니크 제약이다. 로그인 수단은 **전부 선택**이고
+설치가 고른다 (`src/lib/config.ts` 의 `authProviders`, 그대로 `auth.ts` 와 로그인 페이지로):
 
-Auth 의 유니크 필드(email, token)는 확인 후 쓰기가 아니라 전용 잠금 아이템으로 트랜잭션
-안에서 선점한다. `GSI2` 는 그 잠금이 생기기 전에 만들어진 행을 위한 호환용 조회로 남아 있다.
+| 수단 | 켜는 것 | 성질 |
+|---|---|---|
+| 표준 OIDC | `OIDC_ISSUER` + `OIDC_CLIENT_ID` + `OIDC_CLIENT_SECRET` | `genericOAuth` 로 discovery 문서에서 찾고 PKCE 를 쓴다. 배포당 하나 — 기업의 디렉터리는 하나이고, 두 번째 제공자는 사람이 누구인지에 대한 두 번째 정본이다. 콜백 `/api/auth/callback/oidc` |
+| Google | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | 콜백 `/api/auth/callback/google` |
+| 이메일 + 비밀번호 | `AUTH_PASSWORD=true` | **가입 폼이 없다**(`disableSignUp`): 신원 제공자가 보증하는 사람은 첫 로그인으로 사용자가 되지만, 비밀번호 계정은 아무도 보증하지 않으므로 부트스트랩 관리자(`BOOTSTRAP_ADMIN_EMAIL`/`PASSWORD`, 부팅 때 한 번)와 관리자가 의도적으로 만든 계정뿐이다. 첫 관리자와 제공자가 죽었을 때의 비상 접근용이다 |
+
+`STAGE=alpha|prod` 는 셋 중 하나도 없으면 부팅을 거부한다(`assertAccessControlConfig`);
+`local` 은 `scripts/dev-session.ts` 가 세션을 만들어 주므로 없어도 된다. 로그인은 수단과
+무관하게 `ALLOWED_EMAIL_DOMAINS` 로 제한된다 — 사용자 생성과 세션 생성 양쪽의 훅에서, 그래서
+이미 있는 사용자도 도메인이 목록에서 빠지면 다음 로그인에 거절된다. 빈 목록은 모든 도메인을
+허용한다 — `STAGE=alpha|prod` 도 그 상태로 정상 부팅한다
+([부팅 시 검증](CONFIGURATION.md#부팅-시-검증) 참고).
 
 admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt` 은 가입 시각이고,
 `lastLoginAt` 은 세션 생성에 성공한 뒤 갱신된다. 그 이전부터 있던 사용자는 다시 로그인하기
@@ -345,6 +355,13 @@ MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
 주소 대역이 넓어지는 것은 아니다** — 다른 모든 항목은 여전히 원래 받던 검사를 받는다. 이것은
 가드를 느슨하게 하는 것이 아니라 managed 루프백 옆에 놓인 두 번째 좁은 예외다.
 
+이름을 맞추는 술어는 하나다 — `src/domain/security/internalHosts.ts` 의
+`isDeclaredInternalHost` — 그리고 목록은 둘이다. `MCP_INTERNAL_HOST_SUFFIXES` 는 이 앱이
+부르기로 되어 있는 서비스를, [`URL_FETCH_INTERNAL_HOST_SUFFIXES`](#모델이-고른-url) 는 모델이
+읽어도 되는 페이지를 말하고, 두 목록은 의도적으로 서로를 모른다. 술어가 domain 의 중립 모듈에
+있는 이유가 그것이다: `skipsUrlGuard`(MCP 쪽, provenance 와 합친 형태) 옆에 두면 `FetchUrl`
+리더가 MCP 모듈을 import 하게 되는데, 그 리더는 MCP 목록을 읽어서는 안 된다.
+
 그 좁음이 설계의 전부이고, 각 부분은 `tests/internalHosts.test.ts` 가 고정한다:
 
 - **설정으로만.** 목록은 환경에서 온다. 레지스트리 항목이 자기 예외를 스스로 지정할 수 없고,
@@ -381,8 +398,11 @@ managed MCP 서버(`runtime: "managed"`)는 이 앱이 자기 호스트에서 �
   그것이 지목한 컨테이너를 정지시킨다.
 
 프로비저너는 이미지 레퍼런스, 포트, 그리고 선택적인 **argv 배열** 을 받는다. 셸 명령은 결코 받지
-않는다. 로컬 어댑터는 argv 를 Docker 에 그대로 넘긴다. SSM 어댑터는 설정된 AWS 리전과 레지스트리
-호스트를 검증한 뒤, 그것들과 모든 런타임 인자를 셸 인용부호로 감싸고 나서 명령을 조립한다.
+않는다. 유일한 런타임인 Docker 프로비저너(`MANAGED_MCP_RUNTIME=docker`,
+`src/infrastructure/mcp/dockerProvisioner.ts`)는 argv 를 `execFile` 로 Docker CLI 에 배열째
+넘기고, 구조적으로 쓰이는 값 — 이름(`MANAGED_NAME`), 이미지 레퍼런스, `--env-file` 로 건네는
+env 참조(호스트의 절대 경로) — 은 패턴으로 검사한다. 항목을 편집할 수 있는 운영자가 그것으로
+호스트에서 임의 코드를 돌릴 수는 없어야 한다.
 
 ### MCP 서버가 호출자에 대해 듣는 것
 
@@ -430,10 +450,21 @@ token 이 그 서버를 연결한 사람의 grant 를 지닌다는 것이다.
 `src/infrastructure/net/httpResource.ts` 가 그런 주소를 요청하는 유일한 자리이며, 그 규칙들은
 심층 방어가 아니라 하중을 지고 있다:
 
-- **내부 호스트 예외는 결코 참조하지 않는다.** `MCP_INTERNAL_HOST_SUFFIXES` 는 이 앱이 자기
+- **MCP 의 내부 호스트 예외는 결코 참조하지 않는다.** `MCP_INTERNAL_HOST_SUFFIXES` 는 이 앱이 자기
   클러스터의 MCP 서비스에 닿을 수 있게 하려고 존재한다. 여기서 그것을 존중하면 프롬프트 인젝션
   하나가 `http://mcp-argocd.agent-mcps.svc.cluster.local/` 을 읽는 일로 바뀐다. 어댑터가
-  `skipsUrlGuard` 를 import 하기만 해도 `tests/architecture.test.ts` 가 실패한다.
+  `skipsUrlGuard` 를 import 하거나 그 목록·`process.env`·`lib/config` 에 닿기만 해도
+  `tests/architecture.test.ts` 가 실패한다.
+- **자기 목록은 따로 있다 — `URL_FETCH_INTERNAL_HOST_SUFFIXES`.** 사내 위키나 내부 API 가
+  구조상 사설 주소인 설치형 네트워크를 위한 것이고, composition root 가 주입하며 배포로만
+  넓어진다. 그 접미사 아래의 호스트(`isDeclaredInternalHost` — 같은 술어, 같은 주의: 레이블
+  경계, 단일 레이블 거부, IP 리터럴 거부, `http(s)` 만)는 **주소 가드 없이** 요청되지만, 나머지는
+  그대로다: 같은 15초 타임아웃, 같은 두 헤더, 같은 리다이렉트 상한(5)이고, 리다이렉트는
+  네이티브 추종 없이 홉마다 확인되어 **선언된 집합을 벗어나거나 출발 origin 을 벗어나면
+  거부된다** — 예외가 리다이렉트 한 번으로 넓어져서는 안 되는 유일한 것이기 때문이다. 빈
+  목록(기본)은 모든 모델 선택 URL 이 가드를 마주한다는 뜻이다. 그 대가는 MCP 목록의 것과
+  같다: 접미사 아래의 모든 페이지가 프롬프트 인젝션 하나로 읽힌다. 정말로 모델이 읽어도 되는
+  존만큼 좁게 선언하라.
 - **아무것도 인증하지 않는다.** 테넌트 헤더 없음, MCP OAuth token 없음, Slack token 없음,
   호출자 헤더 전달 없음. 항상 GET 이고 본문은 결코 없다. 교차 출처 리다이렉트는 애초에 붙지
   않은 것을 전달할 수 없고 — `fetchPublicUrl` 이 어차피 그것을 거부한다.
@@ -453,7 +484,7 @@ token 이 그 서버를 연결한 사람의 grant 를 지닌다는 것이다.
 점이다.
 
 **그리고 그 대가.** 이 노출은 예전에도 있었지만, 자기 자격 증명이 하나도 없는 별도의 파드에
-있었다. 이제는 AES 마스터 키, DynamoDB 역할, Slack token 을 쥐고 있는 앱 프로세스 안에서 돈다 —
+있었다. 이제는 AES 마스터 키, 데이터베이스 자격 증명, Slack token 을 쥐고 있는 앱 프로세스 안에서 돈다 —
 그래서 SSRF 인접 결함의 폭발 반경이 더 크고, 앱의 이그레스 정책은 열린 웹에 닿을 만큼 넓어야
 한다. 완화된 것이지 제거된 것이 아니다.
 
@@ -745,7 +776,8 @@ Slack 채널에서 그것은 묻는 사람만이 아니다 — 봇이 볼 수 �
 - `/api/metrics` 는 project, 사용자, model 을 지목하지 않는다. 메트릭 라벨은 히스토그램의
   `le` 와 build 정보의 유한한 `version`·`stage`뿐이다.
 - 로그 라인은 런의 correlation id 를 실을 뿐, 프롬프트 내용은 결코 싣지 않는다.
-- Trace, usage 행, chat, trigger 배달, 인바운드 A2A 태스크는 모두 DynamoDB TTL 로 만료된다 —
+- Trace, usage 행, chat, trigger 배달, 인바운드 A2A 태스크는 모두 `expiresAt` 을 지니고
+  schedule-scan 틱의 sweep 이 지운다 — 티커가 없는 배포는 아무것도 지우지 않는다.
   [OPERATIONS.md](OPERATIONS.md#행-보존) 참고.
 - **Telegram·Teams 대화 트랜스크립트** 는 project 의 봇과 주고받은 모든 턴의 *텍스트* 를 7일간
   보관한다 — 대화별로 질문과 답을 — 두 플랫폼 모두 히스토리를 돌려주지 않아 후속 질문이 그 앞의
@@ -755,18 +787,36 @@ Slack 채널에서 그것은 묻는 사람만이 아니다 — 봇이 볼 수 �
   버전은 이전에 저장된 이름도 읽지 않는다. 행은 project 파티션에 있어 project 를 지우면 함께
   지워진다.
 - **생성된 이미지** 는 `S3_BUCKET_NAME` 이 설정돼 있으면 추측할 수 없는 UUID 키 아래 저장되고,
-  chat 행은 주소가 아니라 **오브젝트 키** 를 보관한다. `ARTIFACT_ACCESS_MODE=authenticated`
-  (기본값)는 읽기 시점에 URL 을 미리 서명하며, 수명은 독자에 맞춰 고른다. chat 뷰에는 15분,
-  재생(replay)에는 런 마감 시각 전체에 여유를 더한 값 — URL 을 가져가는 것이 *모델 제공자* 이고
-  런 중 어느 시점에 그 턴에 닿을지 모르기 때문이다 — 그리고 Slack 스레드나 저장된 A2A 태스크처럼
-  지속되는 무언가에 쓰이는 링크에는 SigV4 상한인 7일. 그 링크는 그것이 함께 온 답을 이미 읽을 수
-  있던 청중이 쥔다(`src/application/artifact/urlTtl.ts`). 버킷은 비공개로 유지된다. 대신
-  `public` 은 영구적인 직접 S3 URL 을 반환한다. 그 모드는 명시적인 공개 읽기 버킷 정책을 요구하고
-  URL 을 얻은 누구에게나 바이트를 노출한다. 애플리케이션 인증은 여전히 갤러리 메타데이터와
-  삭제를 보호하지만 오브젝트는 보호하지 않는다. **주소가 보기가 아니라 다운로드인 곳에서는
-  어쨌든 미리 서명한다** — 브라우저가 저장할 파일 이름은 `ResponseContentDisposition` 이 실어
-  나르는데 S3 는 익명 GET 에서 그것을 거부하므로, 서명되지 않은 링크는 오브젝트를 UUID 키로만
-  저장할 수 있다.
+  chat 행은 주소가 아니라 **오브젝트 키** 를 보관한다. 읽기 시점에 키가 주소가 되며, 수명은
+  독자에 맞춰 고른다 — chat 뷰에는 15분, 재생(replay)에는 런 마감 시각 전체에 여유를 더한 값
+  (URL 을 가져가는 것이 *모델 제공자* 이고 런 중 어느 시점에 그 턴에 닿을지 모르기 때문이다),
+  그리고 Slack 스레드나 저장된 A2A 태스크처럼 지속되는 무언가에 쓰이는 링크에는 7일(SigV4
+  pre-sign 의 상한이고, proxied 토큰도 같은 값을 쓴다). 그 링크는 그것이 함께 온 답을 이미 읽을
+  수 있던 청중이 쥔다(`src/application/artifact/urlTtl.ts`). 주소의 *모양* 은
+  `ARTIFACT_ACCESS_MODE` 가 정한다:
+  - **`proxied`** — 스토어는 앱에게만 닿고 독자는 앱의 주소
+    `PUBLIC_BASE_URL/api/objects/<key>?exp=<unix>&sig=<hmac>[&dl=<filename>]` 를 받는다
+    (`src/infrastructure/storage/objectUrlToken.ts`). **그 라우트는 세션을 요구하지 않으며
+    그것이 계약이다**: 주소를 쥐는 것은 `<img>` 태그, Slack 메시지, 재생된 턴을 가져가는 모델
+    제공자라 쿠키를 낼 수 없다. 토큰이 자격 증명이다 — 키·만료·파일명을 함께 덮는 HMAC-SHA256
+    이고, 서명 키는 `AES_ENCRYPTION_KEY` 에서 HKDF(`agent-studio/object-url/v1`)로 파생되어 그
+    바이트가 저장된 토큰을 암호화하는 바이트와 결코 같지 않다. 증명하는 것은 *이 배포가 이
+    키에 대해 이 수명과 이 파일명으로 발행했다* 는 사실뿐이다. 파일명은 장식이 아니라 서명에
+    묶여 있어 `dl` 을 떼어 다운로드를 인라인 보기로 바꿀 수 없고, 만료와 서명 불일치는 하나의
+    403 으로 답한다(둘을 구별해 주면 위조자에게 어느 쪽을 고칠지 알려 준다). 없어진 오브젝트는
+    404, 읽기는 `MAX_PROXIED_OBJECT_BYTES` 에서 끊기며, `Cache-Control: private` 의 max-age 는
+    토큰의 남은 수명을 넘지 않는다. 바이트는 콘솔의 origin 에서 나가므로 브라우저가 문서로
+    렌더할 수 있는 타입(HTML, SVG, 텍스트)은 `/view` 와 같은 `sandbox; default-src 'none'` 아래
+    불투명 origin 에 놓이고, 래스터 이미지와 PDF 만 `frame-ancestors 'none'` 으로 끝난다 —
+    `next.config.ts` 가 이 주소를 콘솔 헤더에서 제외하는 이유가 그것이다.
+  - **`authenticated`** — 스토어의 pre-signed URL. 스토어가 브라우저에서 닿아야 하고 버킷은
+    비공개로 남는다.
+  - **`public`** — 영구적인 직접 URL. 명시적인 공개 읽기 버킷 정책을 요구하고 URL 을 얻은
+    누구에게나 바이트를 노출한다. 애플리케이션 인증은 여전히 갤러리 메타데이터와 삭제를
+    보호하지만 오브젝트는 보호하지 않는다. **주소가 보기가 아니라 다운로드인 곳에서는 어쨌든
+    미리 서명한다** — 브라우저가 저장할 파일 이름은 `ResponseContentDisposition` 이 실어
+    나르는데 S3 는 익명 GET 에서 그것을 거부하므로, 서명되지 않은 링크는 오브젝트를 UUID 키로만
+    저장할 수 있다.
   - 레거시 행은 공개 `url` 을 지니고 있을 수 있고 그대로 되읽힌다. 그것을 다시 쓴다고 해서 이미
     공개인 그 오브젝트들에 누가 닿을 수 있는지는 아무것도 바뀌지 않는다 — 그러니 **버킷이 한
     번이라도 공개 읽기였다면, 그 안의 기존 오브젝트는 지금도 공개다.** 비공개로 만드는 것은
@@ -807,11 +857,10 @@ Slack 채널에서 그것은 묻는 사람만이 아니다 — 봇이 볼 수 �
     제외한다 — 콘솔 규칙을 좁히는 대신 그렇게 한 이유는, 내일 추가되는 페이지는 기본으로
     보호받고 자기 정책을 세우는 주소만 비켜 가야 하기 때문이다. **응답 헤더를 라우트에서
     세우는 변경은 이 파일과 충돌하지 않는지 확인하라.**
-  - **앱 안의 어떤 것도 오브젝트를 만료시키지 않는다.** DynamoDB TTL 은 행을 조용히 지우고 —
-    앱은 그 만료를 결코 관측하지 않는다 — 그래서 같은 시계로 오브젝트를 만료시킬 수 있는 것은
-    버킷뿐이다. 접두사별로 라이프사이클 규칙을 붙여라. 그것은
-    [OPERATIONS.md](OPERATIONS.md#새-배포를-위한-운영-체크리스트) 의 배포
-    체크리스트에 있다.
+  - **앱 안의 어떤 것도 오브젝트를 만료시키지 않는다.** 틱의 sweep 은 행을 `DELETE` 한 문장으로
+    지우고 — 앱은 어느 행이 갔는지 관측하지 않는다 — 그래서 같은 시계로 오브젝트를 만료시킬 수
+    있는 것은 오브젝트 스토어뿐이다. 접두사별로 라이프사이클 규칙을 붙여라. 그것은
+    [OPERATIONS.md](OPERATIONS.md#운영-체크리스트) 의 체크리스트에 있다.
 - **Artifact 행** 은 런이 만들어 낸 모든 오브젝트를 지목하고, 그것이 저장된 이미지나 문서를
   나열하고 지울 수 있게 만드는 전부다. 언급할 만한 귀결이 셋 있다:
   - 행은 갤러리를 읽을 수 있게 하려고 **프롬프트의 500자 발췌** 를 보관한다. 그것은
@@ -839,4 +888,8 @@ Slack 채널에서 그것은 묻는 사람만이 아니다 — 봇이 볼 수 �
   [CONFIGURATION.md](CONFIGURATION.md#인증과-접근-제어) 참고. 프록시 둘 뒤에서
   그것을 비워 두면 모든 요청이 같은 홉으로 해석돼 하나의 공유 버킷에 떨어지므로, 리미터는
   남용자가 아니라 함대 전체를 조인다.
-- **AWS 자격 증명은 태스크/인스턴스 역할에서 온다** — 키를 이미지에 굽지 마라.
+- **AWS 자격 증명은 AWS 를 쓰는 기능에만 필요하고**(Bedrock, AWS S3 자체), 역할이나 표준
+  `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 쌍으로 온다 — MinIO 같은 S3 호환 스토어의
+  자격 증명도 같은 이름의 쌍이다. 키를 이미지에 굽지 마라.
+- **`AES_ENCRYPTION_KEY` 를 회전하면 저장된 시크릿만이 아니라 proxied 오브젝트 주소도 전부
+  무효가 된다** — 서명 키가 거기서 파생된다. Slack 스레드에 적힌 7일짜리 링크가 그날로 죽는다.

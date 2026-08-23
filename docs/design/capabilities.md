@@ -35,10 +35,19 @@ plugins sync (`syncPluginsFromSnapshot`, `src/application/plugin/syncPlugins.ts`
 skill 은 그 `skills/` 디렉터리의 직계 자식 중 Agent Skills 스펙을 따르는 SKILL.md 를 가진 것들이다
 — frontmatter 의 `name` 이 디렉터리 이름과 일치하고, `description` 이 있으며 스펙의 상한 안에 들어야
 한다. `plugin.json` 과 `mcp.json` 의 해석은 domain 이 소유하고
-(`src/domain/plugin/types.ts`), GitHub 클라이언트는 가져오기만 한다. 지원되는 텍스트 첨부 파일은 각
+(`src/domain/plugin/types.ts`), 트리에서 어느 파일이 plugin·skill·확장 문서인지를 고르는 것은
+`src/infrastructure/plugin/snapshot.ts` 의 워커 하나다 — 저장소가 이 배포에 도달하는 두 길,
+GitHub 의 트리 API 와 **admin 이 올린 아카이브**(`POST /api/plugins/sync/upload`, GitHub 에 닿지
+않는 배포의 sync)가 그것을 공유하므로 어느 디렉터리가 무엇인지는 한 번만 정해진다. 각 소스는
+파일을 어떻게 나열하고 읽는지만 건넨다: GitHub 클라이언트는 가져오기만 하고(`GITHUB_API_URL`
+로 GitHub Enterprise 도 된다), `archiveSnapshot.ts` 는 tar 를 풀어 같은 스냅샷을 만든다 —
+provenance 는 설정된 저장소 아니면 `archive`(`archiveSyncRepo`), 브랜치는 `archive`, commit
+은 아카이브의 sha256 이라 같은 파일을 다시 올리면 unchanged 로 보고된다. 지원되는 텍스트 첨부 파일은 각
 skill 루트 아래에서 수집되며 (`src/domain/skill/files.ts`: `ALLOWED_SKILL_FILE_EXTENSIONS`),
 파일당·skill 당·파일 개수 상한으로 제한되고 (값은
-[CONFIGURATION.md](../CONFIGURATION.md#코드에-고정된-제한) 에 있다) 심볼릭 링크는 제외된다.
+[CONFIGURATION.md](../CONFIGURATION.md#코드에-고정된-제한) 에 있다) 심볼릭 링크는 제외된다 —
+두 소스 모두 git 의 모드 `120000`(`SYMLINK_MODE`)으로 보고하므로 같은 규칙으로 건너뛰고 같은
+이유로 보고된다.
 `file_path` 는 정규화되어 skill 루트 안에 갇힌다: 절대 경로 없음, `..` 없음, skill 간 접근 없음.
 덮어쓰기는 skill 항목 전체를 교체하므로 낡은 첨부 파일도 함께 사라진다. 건너뛴 파일은 이유와 함께
 보고된다.
@@ -67,6 +76,15 @@ CapabilityEntry { kind: 'skill' | 'mcpServer' | 'mcpTool' | 'agent', name, toolN
 key = kind#name  (or kind#name#toolName)          — src/domain/catalog/types.ts
 ```
 
+인덱스는 다른 모든 행과 같은 데이터베이스의 `catalog_vectors` 테이블에 산다
+(`src/infrastructure/vector/pgVectorStore.ts`, `CATALOG_ENABLED=true` 로 켠다): 키, pgvector
+의 `embedding`, 그리고 본문을 실은 `metadata` — mcp-memory 가 정착시킨 방식대로 본문이 행에
+타므로 검색이 텍스트를 이미 쥔 채 답하고 fan-out 할 조회가 없다. 거리는 cosine(`<=>`)이고
+점수는 그 보수(1 − 거리)라 `CATALOG_MIN_SCORE` 의 의미는 스토어에 붙지 않는다. 벡터 컬럼은
+폭을 선언하지 않으며 — 폭은 임베딩 모델의 것, 배포의 설정이다 — 수천 행이라 HNSW 없이 정확
+스캔한다. 임베딩 자체는 `EMBEDDING_PROVIDER` 가 정하는 대로 OpenAI 호환 `/embeddings`
+엔드포인트(폐쇄망의 vLLM · TEI · Ollama 포함)나 Bedrock 에서 온다.
+
 MCP 서버는 **두 번** 등장하고, 둘은 서로 다른 질문에 답한다. `mcpTool` 항목은 요청이 매칭되는
 대상이고 — "PR 에 코멘트를 남긴다" 는 툴의 description 에 있지 다른 어디에도 없다 — `mcpServer` 는
 버전이 실제로 바인딩할 수 있는 대상이다. discovery 를 거부하는 서버도 두 번째 항목은 얻는다: 아무도
@@ -84,8 +102,9 @@ MCP 서버는 **두 번** 등장하고, 둘은 서로 다른 질문에 답한다
 번에 가장 많이 움직이는 단일 사건이다 — 머지 하나가 skill 과 서버 열댓 개를 한꺼번에 추가·개명·폐기할
 수 있다 — 그래서 최대 한 시간을 기다린다는 것은 레지스트리에 더 이상 없는 skill 을 런이 discover
 한다는 뜻이 된다. reindex 하는 시점이면 sync 는 이미 커밋됐고 그 보고서도 이미 저장돼 있으므로,
-실패해도 바뀌는 것이 없어 로그만 남기고 삼킨다. 다음 tick 이 그것을 고친다. 또한 CronJob 은
-클러스터에만 있으므로, **로컬** 배포가 조금이라도 갱신되는 유일한 경로이기도 하다.
+실패해도 바뀌는 것이 없어 로그만 남기고 삼킨다. 다음 tick 이 그것을 고친다. 또한 티커가
+없는 배포 — `ticker` 프로파일을 켜지 않은 **로컬** — 가 조금이라도 갱신되는 유일한
+경로이기도 하다.
 
 검색은 **여러 개의 쿼리**를 받는다. 런이 자기에게 필요한 것에 대해 할 말이 두 가지이기 때문이다:
 버전의 시스템 프롬프트(이 agent 가 대체로 무엇을 위한 것인지)와 가장 최근의 사용자 턴들(지금 무엇을

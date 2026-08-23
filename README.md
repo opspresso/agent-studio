@@ -241,17 +241,19 @@ project 카탈로그를 공유한다는 것은 project 이름이 "누가 이걸 
 
 ```bash
 docker build -t agent-studio .        # 멀티스테이지, Next standalone 출력
-docker compose up --build             # 로컬 컨테이너 + DynamoDB Local 두 인스턴스
+docker compose up --build             # 로컬 컨테이너 + PostgreSQL (+ --profile objects 로 MinIO)
 ```
 
 이미지는 `NODE_ENV=production` 을 설정하고, 이것은 명시적인 `STAGE` 없이는 부팅을 거부한다
 — compose 서비스는 그것을 `.env.local` 에서 읽는다(`.env.example` 에는 `STAGE=local`).
 
-버전 태그(`v*`)는 GitHub OIDC 를 통해 ECR 로 빌드·푸시하고 GitOps 배포를 트리거한다. 로드
-밸런서는 `/api/ready` 를, 재시작 검사는 `/api/health` 를 가리키게 하고, `/api/metrics` 를
-스크랩하며, 테이블의 `expiresAt` 속성에 DynamoDB TTL 을 켜라. 전체 체크리스트는
-[docs/OPERATIONS.md](docs/OPERATIONS.md#새-배포를-위한-운영-체크리스트) 에 있다.
+버전 태그(`v*`)는 `ghcr.io/opspresso/agent-studio` 와 ECR 에 빌드·푸시하고 GitOps 배포를
+트리거한다. 설치는 [docs/INSTALL.md](docs/INSTALL.md) — 호스트 하나의 Docker Compose
+(`deploy/idc/`)와 Kubernetes 의 Helm 차트(`deploy/helm/agent-studio`). 로드 밸런서는
+`/api/ready` 를, 재시작 검사는 `/api/health` 를 가리키게 하고, `/api/metrics` 를 스크랩하며,
+`SCHEDULE_SCAN_TOKEN` 으로 티커를 켜라 — 만료 행을 쓸어내는 것이 그 틱이다. 운영 체크리스트는
+[docs/OPERATIONS.md](docs/OPERATIONS.md#운영-체크리스트) 에 있다.
 
-배포는 둘이다 — EKS 클러스터가 **prod**, IDC 호스트 하나 위의 Docker Compose(`deploy/idc/`)가
-**alpha**. 코드는 같고 테이블과 버킷은 다르다. 무엇을 나누고 무엇을 나누지 않는지는
+실서비스는 IDC 호스트 하나 위의 Docker Compose 인 **alpha** 이고, Kubernetes 쪽 **prod** 는
+차트만 있고 클러스터는 현재 없다. 무엇을 나누고 무엇을 나누지 않는지는
 [docs/OPERATIONS.md](docs/OPERATIONS.md#두-환경--alpha-와-prod) 에 있다.

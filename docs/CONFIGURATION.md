@@ -13,13 +13,13 @@ Agent Studio 가 환경에서 읽는 모든 값, 그리고 코드에 고정돼 �
 한 설정은 세 곳에서 올 수 있고, 그 값을 가진 첫 번째가 이긴다:
 
 ```
-DynamoDB SETTINGS#app override   →   environment variable   →   built-in default
+SETTINGS#app 행의 override (데이터베이스)   →   environment variable   →   built-in default
 ```
 
 오버라이드 계층은 admin 전용 `/settings` 페이지다. 아래 표에서 **runtime** 으로 표시된 키만
 거기서 오버라이드할 수 있고, 나머지는 전부 env 전용이다 — settings 행을 읽기 전에 필요한
 값이거나(`AES_ENCRYPTION_KEY` 가 그 행을 복호화한다) 프로세스가 이미 묶여 있는
-인프라이기 때문이다(`STAGE`, DynamoDB, Better Auth).
+인프라이기 때문이다(`STAGE`, `DATABASE_URL`, Better Auth).
 
 읽기는 `src/lib/runtime-settings.ts` 를 지나가며, dispatch 시점에 `process.env` 를 직접
 읽는 일은 결코 없다 — 그러지 않으면 오버라이드가 settings 페이지에서만 적용되고 다른
@@ -33,11 +33,11 @@ admin 이나 회전된 A2A 키가 그 쓰기를 처리하지 않은 인스턴스
 `/settings` 에서 빈 칸을 저장하면 오버라이드가 제거되고, `A2A_API_KEY=" "` 는 키가 아니다 — 부팅
 시점도 포함해서이며, 거기서는 없는 것으로 보고된다. 이것이 가장 중요한 곳은 파일에서
 마운트된 시크릿이다. 헤더가 나를 수 없는 개행이 끝에 붙어 오기 때문이다. 규칙은
-`src/shared/env.ts` 가 소유하고, 거기서 돌려주는 값은 trim 돼 있다. `STAGE`,
-`DYNAMODB_TABLE_NAME`, `AWS_REGION` 은 예외로, 빈 값을 문자 그대로 받는다. `STAGE` 에서
+`src/shared/env.ts` 가 소유하고, 거기서 돌려주는 값은 trim 돼 있다. `STAGE` 와
+`AWS_REGION` 은 예외로, 빈 값을 문자 그대로 받는다. `STAGE` 에서
 그것은 의도적이다: 빈 값은 throw 하는데, `local` 로 폴백하면 배포된 stage 에서
 `assertAccessControlConfig` 를 건너뛰게 되기 때문이다. `ARTIFACT_ACCESS_MODE` 는 trim
-없이 읽는다: 정확히 `public` 이 아닌 것은 무엇이든 `authenticated` 로 읽힌다.
+없이 읽는다: 정확히 `public` 이나 `proxied` 가 아닌 것은 무엇이든 `authenticated` 로 읽힌다.
 다만 프로덕션 Node 프로세스에서 `STAGE` 를 비워 두는 것은 그 자체로 부팅 에러다. 로컬
 컨테이너는 `STAGE=local` 로 명시적으로 남고, 배포된 이미지가 변수 하나가 빠졌다는 이유로
 fail-open 이 될 수는 없다.
@@ -49,44 +49,52 @@ fail-open 이 될 수는 없다.
 
 | 검사 | 규칙 |
 |---|---|
-| `assertRequiredConfig` | `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` 가 모든 stage 에서 설정돼 있어야 한다. |
-| `assertAccessControlConfig` | `NODE_ENV=production` 은 명시적인 `STAGE` 를 요구한다. `STAGE=alpha` 또는 `prod` 는 추가로 `ADMIN_EMAILS` 를 요구한다. 빈 `ALLOWED_EMAIL_DOMAINS` 는 모든 도메인을 허용하는 정상 설정이다. |
+| `assertRequiredConfig` | `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` 가 모든 stage 에서 설정돼 있어야 한다. |
+| `assertAccessControlConfig` | `NODE_ENV=production` 은 명시적인 `STAGE` 를 요구한다. `STAGE=alpha` 또는 `prod` 는 추가로 `ADMIN_EMAILS` 와 **로그인 수단 하나 이상**(`OIDC_ISSUER`/`OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, 또는 `AUTH_PASSWORD=true`)을 요구한다. 빈 `ALLOWED_EMAIL_DOMAINS` 는 모든 도메인을 허용하는 정상 설정이다. |
+
+두 검사 뒤에 부팅 경로는 스키마를 적용하고(`migrate`, advisory lock 아래에서 — 인스턴스가
+여럿이어도 한 번) `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` 가 있으면 그 계정을
+만든다. 데이터베이스에 닿지 못하는 부팅은 치명적이다 — 서빙할 것이 없다.
 
 두 번째 검사가 있는 이유는 두 목록 모두 비어 있을 때 fail-open 이기 때문이다 —
 `ADMIN_EMAILS` 가 설정되지 않으면 로그인한 모든 사용자가 공유 레지스트리에 대한 admin 이
-되고, `ALLOWED_EMAIL_DOMAINS` 가 설정되지 않으면 아무 Google 계정이나 로그인할 수 있다.
+되고, `ALLOWED_EMAIL_DOMAINS` 가 설정되지 않으면 설정된 신원 제공자의 아무 계정이나 로그인할
+수 있다.
 앞의 것은 무설정 로컬 개발에만 옳은 기본값이라 `local` 은 그대로 두고 배포된 stage 들이
 부팅을 거부한다. 뒤의 것은 배포가 고르는 것이다 — 열린 가입을 의도한 배포가 있고, 이
 검사가 읽는 것은 env 인 반면 `getAllowedEmailDomains` 는 여기서 보이지 않는 저장된
 오버라이드를 우선하므로 거부는 콘솔에서 도메인을 설정한 배포까지 함께 막는다. 빈 값은
 모든 도메인을 허용하는 명시적인 정책으로 취급하고 정상 부팅한다.
 
-Google OAuth 자격증명은 의도적으로 부팅 필수가 *아니다*: 로컬 dev-session 흐름
-(`scripts/dev-session.ts`)은 OAuth 를 통째로 우회한다.
+`STAGE=local` 에서는 로그인 수단이 하나도 없어도 부팅한다: 로컬 dev-session 흐름
+(`scripts/dev-session.ts`)이 신원 제공자를 통째로 우회한다. 어느 제공자를 켜는지는
+[인증과 접근 제어](#인증과-접근-제어).
 
 ## 핵심
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `STAGE` | production 밖에서는 `local` | — | `local` \| `alpha` \| `prod`. 그 밖의 값은 부팅 시 throw 하며, 프로덕션 프로세스는 이 값을 명시적으로 설정해야 한다. 위의 접근 제어 검사를 게이트한다. |
-| `AWS_REGION` | `ap-northeast-2` | — | 모든 AWS 클라이언트가 쓰는 리전. DynamoDB Local 은 액세스 키 **와** 리전으로 테이블 네임스페이스를 나누므로, 앱과 `pnpm init-local-table` 이 서로 일치해야 한다. |
-| `DYNAMODB_TABLE_NAME` | `agent-studio` | — | 단일 테이블. 공유 로컬 DynamoDB 에서는 포트가 아니라 이것이 프로젝트들을 갈라놓는다. |
-| `DYNAMODB_ENDPOINT` | 미설정 | — | DynamoDB Local 전용. **alpha/prod 에서는 반드시 비어 있어야 한다.** 남아 있는 값은 앱을 존재하지도 않는 localhost 로 향하게 한다. |
-| `AES_ENCRYPTION_KEY` | — (필수) | — | 32바이트 base64. 저장되는 모든 시크릿을 암호화한다. [SECURITY.md](SECURITY.md#저장된-시크릿) 를 보라. |
-| `S3_BUCKET_NAME` | 미설정 | — | 런이 만들어 낸 것 — 생성된 이미지와 저장된 문서 — 이 `artifacts/<kind>/` 아래로 들어가는 버킷. 행에는 오브젝트 키가 저장되고 URL 은 절대 저장되지 않는다. 역할의 권한은 (레거시 `images/*` 만이 아니라) **`artifacts/*`** 를 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` 로 덮어야 한다. 설정하지 않으면 영속화가 통째로 꺼진다: 런은 여전히 그림을 그리고, 바이트는 표면까지 도달했다가 거기서 멈추며, artifact 갤러리는 404 로 답한다. |
-| `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | `authenticated` 는 유효 기간이 있는 pre-signed URL 을 돌려주고 버킷을 비공개로 유지한다. `public` 은 영구적인 S3 직접 URL 을 돌려주는데, 버킷 정책과 S3 Block Public Access 설정이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 어느 모드에서든 pre-signed 다.** 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다 — 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
-| `VECTOR_BUCKET` | 미설정 | — | capability 카탈로그를 담는 S3 Vectors 버킷. 설정하지 않았다면 그 배포에 카탈로그가 없다는 뜻이다: `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 버전이 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 역할에는 인덱스에 대한 `s3vectors:PutVectors`, `QueryVectors`, `GetVectors`, `ListVectors`, `DeleteVectors` 가 필요하다 — `GetVectors` 가 필요한 이유는 검색이 각 매치의 메타데이터를 요구하는데 쿼리가 그 액션 아래에서만 그것을 돌려주기 때문이다. 이것이 빠진 역할은 **재색인은 성공하고 그다음 모든 조회에 실패한다**: 쓰기는 통과하고, 콘솔에는 건강한 카탈로그가 보이는 채로 런마다 `capability discovery failed; running with bindings only` 를 로그에 남긴다. |
-| `CATALOG_INDEX` | `capabilities` | — | 그 버킷 안의 인덱스. 차원이 `EMBEDDING_MODEL` 의 것과 맞아야 하고 metric 은 cosine 이어야 한다. |
-| `EMBEDDING_PROVIDER` | `openai` | — | `cohere` \| `bedrock` \| `openai`. 앞의 둘은 Bedrock 이라 자격증명이 필요 없고 — pod 역할이 `bedrock:InvokeModel` 을 들고 있다 — `openai` 는 `LLM_BASE_URL`/`LLM_API_KEY` 를 재사용하며 그 엔드포인트가 `/embeddings` 를 제공할 것을 요구한다. 인식되지 않는 값은 무엇이든 `openai` 로 읽힌다. **데모 클러스터는 `cohere` 로 돈다.** 아래 표를 보라. |
-| `EMBEDDING_MODEL` | provider 별로: `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0`, `text-embedding-3-small` | — | 이 값을 바꾸는 것은 **인덱스를 다시 만드는 것**을 뜻한다 — 두 모델에서 나온 벡터는 비교할 수 없고, 섞인 인덱스에서는 아무것도 그 사실을 알려 주지 않는다. 점수가 그냥 틀릴 뿐이다. Cohere v4 는 **inference profile** 을 통해 도달한다. 맨 모델 id 는 on-demand 호출을 아예 거부한다. |
-| `EMBEDDING_DIM` | `1024` | — | 인덱스를 만들 때 쓴 폭이며, 모든 경로에서 이 값을 요청한다. Cohere v4, Titan v2, OpenAI 의 v3 모델은 각각 여러 폭을 제공하는데 그 기본값 중 1024 인 것은 하나도 없다 — `text-embedding-3-small` 은 원래 1536 이다 — 그래서 provider 를 기본값에 맡기면 인덱스가 거부하는 벡터로 답하고, 카탈로그는 이유를 말해 주는 것이라곤 백그라운드 로그 한 줄뿐인 채로 비어 있게 된다. |
+| `DATABASE_URL` | — (필수) | — | PostgreSQL 접속 문자열 (`postgres://user:pass@host:5432/db`). 이 앱의 모든 행 — 아이템 테이블, Better Auth 의 테이블, capability 카탈로그의 벡터 — 이 여기 있다. 서버에 `pgvector` 확장을 *만들 수 있어야* 한다 (`CREATE EXTENSION IF NOT EXISTS vector` 를 부팅 때 앱이 실행한다). 스키마는 부팅 때 마이그레이션된다. |
+| `DATABASE_POOL_SIZE` | `10` | — | 인스턴스 하나가 열어 두는 커넥션 수. 런은 모델 호출 동안 커넥션을 쥐지 않고 밀리초 단위로만 빌리므로 10 이면 넉넉하고, 함대 전체가 기본 `max_connections` 100 아래에 남을 만큼 작다. 하한 `1`. |
+| `AWS_REGION` | `ap-northeast-2` | — | AWS 를 쓰는 기능 — Bedrock 임베딩, `S3_ENDPOINT` 없이 AWS S3 자체를 쓸 때의 클라이언트 — 이 쓰는 리전. 그 밖에는 읽히지 않는다. |
+| `AES_ENCRYPTION_KEY` | — (필수) | — | 32바이트 base64. 저장되는 모든 시크릿을 암호화하고, proxied 오브젝트 주소의 서명 키도 여기서 HKDF 로 파생된다. [SECURITY.md](SECURITY.md#저장된-시크릿) 를 보라. |
+| `S3_BUCKET_NAME` | 미설정 | — | 런이 만들어 낸 것 — 생성된 이미지와 저장된 문서 — 이 `artifacts/<kind>/` 아래로 들어가는 버킷. 어느 S3 호환 스토어든 된다 (MinIO, Garage, Ceph RGW, AWS S3). 행에는 오브젝트 키가 저장되고 URL 은 절대 저장되지 않는다. 자격증명은 모든 S3 클라이언트가 읽는 표준 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 쌍이거나, AWS 라면 인스턴스 역할이다; 그 주체에게는 (레거시 `images/*` 만이 아니라) **`artifacts/*`** 의 put·get·delete 가 있어야 한다. 설정하지 않으면 영속화가 통째로 꺼진다: 런은 여전히 그림을 그리고, 바이트는 표면까지 도달했다가 거기서 멈추며, artifact 갤러리는 404 로 답한다. |
+| `S3_ENDPOINT` | 미설정 | — | AWS 가 아닌 스토어의 주소 (`http://minio:9000`). 설정되면 path-style 로 주소를 만든다 — 자체 호스팅 엔드포인트는 버킷 서브도메인을 해석하지 못하는 것이 보통이다. 비어 있으면 SDK 자신의 리전·자격증명 해석으로 AWS S3 에 간다. |
+| `S3_PUBLIC_BASE_URL` | 미설정 | — | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
+| `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`** — 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이고, `deploy/idc`·Helm 차트의 기본값이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`** — 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`** — 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다 — 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
+| `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다 — 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 버전이 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다 — 켜는 것은 그 모델이 있다는 선언이다. |
+| `EMBEDDING_PROVIDER` | `openai` | — | `openai` \| `cohere` \| `bedrock`. `openai` 는 `LLM_BASE_URL`/`LLM_API_KEY` 를 재사용하며 그 엔드포인트가 `/embeddings` 를 제공할 것을 요구한다 — OpenAI 호환이면 무엇이든 되므로 폐쇄망의 vLLM · TEI · Ollama 가 여기 해당한다. `cohere` 와 `bedrock` 은 Bedrock 을 통해 가고 프로세스의 AWS 자격증명(`bedrock:InvokeModel`)을 쓴다. 인식되지 않는 값은 무엇이든 `openai` 로 읽힌다. 어느 모델을 고를지는 아래 표의 실측을 보라. |
+| `EMBEDDING_MODEL` | provider 별로: `text-embedding-3-small`, `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0` | — | 이 값을 바꾸는 것은 **인덱스를 다시 만드는 것**을 뜻한다 — 두 모델에서 나온 벡터는 비교할 수 없고, 섞인 인덱스에서는 아무것도 그 사실을 알려 주지 않는다. 점수가 그냥 틀릴 뿐이다. `catalog_vectors` 의 벡터 컬럼은 폭을 선언하지 않으므로 재색인이 모든 행을 새 모델로 다시 쓰는 것으로 충분하다. Cohere v4 는 **inference profile** 을 통해 도달한다. 맨 모델 id 는 on-demand 호출을 아예 거부한다. |
+| `EMBEDDING_DIM` | `1024` | — | 모든 경로에서 provider 에 요청하는 폭. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산한다. Cohere v4, Titan v2, OpenAI 의 v3 모델은 각각 여러 폭을 제공하는데 그 기본값 중 1024 인 것은 하나도 없다 — `text-embedding-3-small` 은 원래 1536 이다 — 그래서 provider 를 기본값에 맡기면 질의 벡터와 저장된 벡터의 폭이 어긋나고, 카탈로그는 이유를 말해 주는 것이라곤 백그라운드 로그 한 줄뿐인 채로 답하지 않게 된다. |
 | `CATALOG_MIN_SCORE` | `0.25` | — | 관련성 하한, 범위는 `(0, 1]`. 이 값은 검색이 아니라 **임베딩 모델**에 속한다 — `EMBEDDING_MODEL` 이 바뀔 때마다 다시 측정하라. 그러지 않으면 카탈로그가 전부 답하거나 아무것도 답하지 않는다. 아래 표를 보라. `TRACE_SAMPLE_RATE` 처럼 폴백하는 대신 경고와 함께 `0`–`1` 로 **clamp** 된다. 숫자가 아닌 값은 기본값을 쓴다. 이것은 컷의 절반일 뿐이고 — 나머지 절반은 그 쿼리 자신의 최고 점수에 대한 쿼리별 비율이며, 둘 중 높은 쪽이 이긴다 — 그래서 `0` 으로 clamp 된 값이 전부를 통과시키지는 않는다. 비율이 볼 수 없는 경우, 즉 카탈로그에 맞는 것이 아예 하나도 없다는 경우에 대한 답을 없앨 뿐이다. |
 | `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`, 없으면 요청 origin, 그것도 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (A2A Agent Card, Slack 매니페스트, OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 곳에서만 적용된다 — A2A Agent Card 경로에는 요청이 없어서, 두 변수 모두 설정되지 않으면 카드가 `localhost` 를 광고한다. **메타데이터 문서는 올바르기만 해서는 안 되고 공개적으로 fetch 가능해야 하는 소비자다**: 그 URL 이 곧 OAuth `client_id` 이고, authorization server 가 그것을 가져간다. 거기에 loopback 이나 평문 http 값이 있으면 흐름이 시작되기 전에 거부되고, provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다 — [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
 
 ### 임베딩 모델 선택
 
-영어로 기술돼 있고 한국어로 질의되는 이 배포의 레지스트리를 대상으로, 파이프라인 전체를
-통과시켜 측정했다:
+영어로 기술돼 있고 한국어로 질의되는 opspresso 의 레지스트리를 대상으로, 파이프라인 전체를
+통과시켜 측정했다 (셋 중 Titan 과 Cohere 는 Bedrock 경유, `3-large` 는 OpenAI 호환 엔드포인트
+— 폐쇄망의 자체 임베딩 서버도 같은 `openai` 경로로 붙고 같은 방법으로 다시 재면 된다):
 
 | 모델 | 정답 | 무관 | 한국어 질의, 영어 설명 |
 |---|---|---|---|
@@ -108,11 +116,15 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`npx @better-auth/cli secret`). |
+| `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`openssl rand -base64 32`). |
 | `BETTER_AUTH_URL` | — | — | Better Auth 가 콜백을 만들 때 기준으로 삼는 base URL. |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | — | 실제 로그인에만 필요하다. |
-| `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 비어 있으면 아무 도메인이나 허용한다. |
-| `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: ALB 와 Istio 가 둘 다 `X-Forwarded-For` 에 덧붙일 때의 VPC CIDR). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | — | 표준 OIDC 제공자 — Keycloak, Entra ID, Okta, Authentik, `<issuer>/.well-known/openid-configuration` 을 내놓는 것이면 무엇이든. 셋이 모두 있을 때만 켜진다(Better Auth 의 `genericOAuth`, PKCE). 콜백은 `PUBLIC_BASE_URL/api/auth/callback/oidc` 이고 제공자에 그 리디렉션 URI 를 등록한다. 배포당 하나: 기업에는 디렉터리가 하나이고, 두 번째 제공자는 사람이 누구인지에 대한 두 번째 정본이다. |
+| `OIDC_DISPLAY_NAME` / `OIDC_SCOPES` | `SSO` / `openid email profile` | — | 로그인 버튼의 이름, 그리고 공백으로 구분한 scope. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | — | Google 로그인. 둘 다 있을 때만 켜진다. 콜백은 `/api/auth/callback/google`. |
+| `AUTH_PASSWORD` | `false` | — | `true` 면 이메일 + 비밀번호 로그인. **가입 폼은 없다** — 아무도 보증하지 않는 계정이므로 부트스트랩 관리자는 부팅 때 만들어지고, 그 밖의 비밀번호 계정은 관리자의 의도적인 행위다. 신원 제공자가 아직 닿지 않는 설치의 첫 관리자와, 제공자가 죽었을 때의 비상 접근을 위한 것이다. |
+| `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | — | — | `AUTH_PASSWORD=true` 일 때 첫 부팅에 만들어지는 계정 (`ensureBootstrapAdmin`). 같은 이메일의 사용자가 이미 있으면 아무것도 하지 않고, 나중에 값을 바꿔도 아무것도 바뀌지 않는다 — 그때부터 계정은 그 사람의 것이다. 이메일은 `ADMIN_EMAILS` 에도 넣어야 admin 이 된다. `AUTH_PASSWORD` 없이 설정하면 경고만 남기고 만들지 않는다. |
+| `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록 — 세 제공자 모두에 적용된다(사용자 생성과 세션 생성의 훅). 비어 있으면 아무 도메인이나 허용한다. |
+| `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: Caddy 와 ingress controller 처럼 두 홉이 `X-Forwarded-For` 에 덧붙일 때). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
 | `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 프로젝트에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *제한 없음*, 프로젝트 오버라이드에는 *아무도 아님* 을 뜻한다 — 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
 
 ## LLM 채널
@@ -125,7 +137,7 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 | `LLM_API_KEY` | — (필수) | **runtime** | 그 채널의 자격증명. |
 | `LLM_PROVIDER_<NAME>_BASE_URL` | 미설정 | **runtime** | provider 별 채널을 등록한다. `<NAME>` 은 모델 id 의 provider 접두사를 대문자로 쓴 것이다. 레지스트리의 provider 는 `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`, `BEDROCK`, `OPENROUTER`, `SELFHOSTED` 다. env 파서는 `[A-Z0-9_]+` 형태의 이름이면 무엇이든 받지만, 그 목록 밖의 채널은 어떤 모델 id 와도 절대 매치될 수 없다 — `/settings` 오버라이드 경로는 그런 것을 아예 거부한다. |
 | `LLM_PROVIDER_<NAME>_API_KEY` | 미설정 | **runtime** | 그 채널의 자격증명. `_AUTH=sigv4` 가 아닌 한 필수다: 키가 없는 채널은 **조용히 건너뛰어지고**, 그 모델들은 기본 채널로 떨어진다. |
-| `LLM_PROVIDER_<NAME>_AUTH` | `bearer` | **runtime** | `bearer` \| `sigv4`. `sigv4` 는 프로세스의 AWS 자격증명(클러스터에서는 Pod Identity, 로컬에서는 `AWS_PROFILE`)으로 매 요청에 서명하고 API 키를 **받지 않는다**. 문자 그대로의 `sigv4` 가 아닌 값은 전부 `bearer` 로 읽히므로, 오타가 서명도 키도 없는 채널을 만들어 낼 수는 없다. |
+| `LLM_PROVIDER_<NAME>_AUTH` | `bearer` | **runtime** | `bearer` \| `sigv4`. `sigv4` 는 프로세스의 AWS 자격증명(역할, 또는 `AWS_ACCESS_KEY_ID`/`AWS_PROFILE` — SDK 의 표준 해석 순서)으로 매 요청에 서명하고 API 키를 **받지 않는다**. 문자 그대로의 `sigv4` 가 아닌 값은 전부 `bearer` 로 읽히므로, 오타가 서명도 키도 없는 채널을 만들어 낼 수는 없다. |
 | `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | provider 채널은 맨 모델 이름(`provider/` 접두사를 벗긴 것)을 받는다. 그 채널 자체가 전체 id 를 기대하는 라우터일 때 이 값을 켜라. |
 
 > base URL 에는 provider 가 서비스하는 API 버전 경로가 포함돼야 한다 — 어댑터는 거기에
@@ -191,6 +203,16 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
   (`application/llm/modelCatalogRefresh.ts`). 실패는 로그를 남기고 레지스트리를 그대로 둔다 —
   정적 사이트가 내려갔다고 부팅을 거부하는 것은 낡은 가격을 무서비스와 바꾸는 일이다.
 
+- **admin 이 업로드한 문서** — 발행된 카탈로그에 닿지 못하는 배포의 길이다. `/models` 콘솔에서
+  카탈로그 JSON 을 올리면 (`PUT /api/models/catalog/document`, 최대 4MB) refresh 가 검증하는
+  방식 그대로 먼저 검증해 거절하거나, 올린 사람과 시각과 함께 `MODELCATALOG#doc` 행에 저장하고
+  바로 레지스트리를 갱신한다. **업로드는 어느 배포에서든 네트워크보다 우선한다** — 문서가
+  있는 동안 refresher 는 그것만 읽고(`modelCatalogStoredSource.ts`), 지우면(`DELETE`) 다음
+  refresh 부터 발행 카탈로그를 다시 읽으며, 읽을 발행 카탈로그가 없으면 프로세스가 재시작해
+  스냅샷으로 돌아갈 때까지 마지막 설치본을 유지한다 — 레지스트리는 결코 비워지지 않는다.
+  우선순위는 부팅 때 한 번이 아니라 **읽을 때마다** 결정되므로, 다른 인스턴스의 업로드도 한
+  틱 안에 도달한다. 로컬 스냅샷을 그 문서로 맞추려면 `pnpm sync-models --from <file>`.
+
 `loadModelCatalog` (`src/domain/llm/models.ts`) 가 유일한 입구다: 버전을 확인하고, 항목마다 런이
 읽는 필드(가격이 숫자인지, 윈도가 양의 정수인지, `provider` 가 이 앱이 가진 채널인지 —
 `SUPPORTED_PROVIDERS` 는 카탈로그가 아니라 코드다)를 검증해 맞지 않는 것은 이유와 함께 건너뛰고,
@@ -202,7 +224,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다 — 직접 서빙�
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `MODELS_CATALOG_URL` | `https://models.opspresso.com/models.json` | boot | 발행된 카탈로그의 주소. 구성값이지 사용자가 친 주소가 아니라서 SSRF 가드를 지나지 않는다. |
+| `MODELS_CATALOG_URL` | `https://models.opspresso.com/models.json` | boot | 발행된 카탈로그의 주소. 구성값이지 사용자가 친 주소가 아니라서 SSRF 가드를 지나지 않는다. **`none`**(대소문자 무관)은 원격 읽기를 통째로 끈다 — 부팅에도 간격에도 fetch 가 없고, 닿지 않을 사이트에 대한 경고도 없다. 폐쇄망의 설정이며, 그때의 카탈로그는 스냅샷과 admin 의 업로드뿐이다. 간격 자체는 켜져 있다: 다른 인스턴스의 업로드와 self-hosted 선언이 이 프로세스에 닿는 길이기도 하므로, `none` 아래의 틱은 데이터베이스만 읽는다. |
 | `MODELS_CATALOG_REFRESH_MS` | `3600000` (1시간) | boot | 다시 읽는 간격. `0` 이면 간격을 끄고 부팅 때만 읽는다. |
 
 **Bedrock 의 모델 목록은 이 프로토콜이 도달할 수 있는 모델의 목록이 아니다.** OpenAI 호환
@@ -286,13 +308,16 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다 — 직접 서빙�
 | `MCP_DISCOVERY_CACHE_TTL_MS` | `60000` | — | 바인딩된 서버의 도구 목록을 얼마나 오래 재사용하는지. 키는 `url + headers` 다. 캐시가 따뜻하면 세션이 지연 연결될 수도 있어서, 도구를 하나도 부르지 않는 턴은 MCP 요청을 아예 하지 않는다. `0` 은 캐싱을 통째로 끄며, 어떤 서버 힌트도 그것을 다시 켤 수 없다. 밀리초 정수. |
 | `MCP_MAX_SERVER_TTL_MS` | `300000` (5분) | — | 서버가 `tools/list` 에서 요청할 수 있는 `ttlMs` 의 상한 (SEP-2549). `0` 은 서버 힌트를 완전히 무시하고 모든 항목을 로컬 TTL 로 되돌린다. 밀리초 정수. |
 | `MCP_OAUTH_ALLOW_UNADVERTISED_PKCE` | `false` | — | `true` 면 `code_challenge_methods_supported` 를 광고하지 않는 OAuth authorization 서버를 받아들인다. 명세는 거부하라고 하지만(PKCE 다운그레이드 방어), 광고 없이 PKCE 를 지원하는 서버가 흔하다. 배포 단위의 결정이라 env 다 — [SECURITY.md](SECURITY.md#mcp-oauth). |
-| `MCP_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | 사설 주소로 resolve 되더라도 MCP 항목이 쓸 수 있는 호스트의 DNS suffix 목록, 쉼표 구분 — 보통 `<namespace>.svc.cluster.local`. 비어 있으면 SSRF 가드는 원래 그대로다. [SECURITY.md](SECURITY.md#선언된-내부-호스트) 를 보라. |
-| `MANAGED_MCP_INSTANCE_ID` | 미설정 | — | managed MCP 컨테이너가 SSM Run Command 를 통해 기동되는 호스트. 문자 그대로의 값 `local` 은 대신 이 머신에서 Docker 를 돌린다 — 그러면 앱과 컨테이너가 loopback 인터페이스를 직접 공유하는데, 그것이 EC2 없이 이 경로를 실행해 볼 수 있는 유일한 방법이다. |
+| `MCP_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | 사설 주소로 resolve 되더라도 MCP 항목이 쓸 수 있는 호스트의 DNS suffix 목록, 쉼표 구분 — `<namespace>.svc.cluster.local` 이나 사내 존. 비어 있으면 SSRF 가드는 원래 그대로다. [SECURITY.md](SECURITY.md#선언된-내부-호스트) 를 보라. |
+| `URL_FETCH_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | `FetchUrl` 빌트인이 사설 주소로 resolve 되는데도 읽어도 되는 호스트의 DNS suffix 목록 — 사내 위키, 내부 API. **위와 의도적으로 별개의 목록이다**: 이 앱이 부르는 서비스라고 해서 모델이 설득당해 읽어도 되는 페이지인 것은 아니다. 같은 매칭 규칙(`isDeclaredInternalHost` — 레이블 경계, 단일 레이블 거부, IP 리터럴 거부), 같은 이유로 env 전용. [SECURITY.md](SECURITY.md#모델이-고른-url). |
+| `MANAGED_MCP_RUNTIME` | 미설정 | — | managed MCP 컨테이너를 어떻게 띄우는가. 유일한 값은 `docker` — 앱이 자기 호스트의 Docker CLI 를 직접 구동해 `127.0.0.1:<port>` 로 포트를 게시하고 그 주소를 등록한다. 다른 값은 경고와 함께 무시되어 기능이 꺼진다. |
 | `MANAGED_MCP_REGISTRY` | 미설정 | — | `docker login` 이 인증하는 레지스트리. 덕분에 이 계정 자신의 이미지는 자격증명을 타이핑하지 않고도 pull 된다. 호스트가 pull 할 수 있는 다른 어떤 레지스트리의 이미지도 허용되며, 그것들에 대해서는 로그인만 건너뛴다. |
-| `MANAGED_MCP_NETWORK_CONTAINER` | `agent-studio` | — | managed 워크로드가 네트워크 네임스페이스를 공유하는 컨테이너 — 이 앱 자신이다. 모든 컨테이너는 자기만의 `127.0.0.1` 을 가지므로, loopback 주소는 양쪽 끝이 같은 네임스페이스에 있을 때만 의미가 있다. |
+| `MANAGED_MCP_NETWORK_CONTAINER` | `agent-studio` | — | `config.ts` 에 선언돼 있으나 Docker 프로비저너는 읽지 않는다 — 포트 매핑을 게시하므로 네트워크 네임스페이스를 공유할 컨테이너가 없다. |
 
-`MANAGED_MCP_INSTANCE_ID` 와 `MANAGED_MCP_REGISTRY` 가 설정되지 않으면 managed-MCP 라우트는
-기능을 절반만 켜는 대신 `503` 으로 답한다.
+`MANAGED_MCP_RUNTIME` 과 `MANAGED_MCP_REGISTRY` 가 둘 다 설정되지 않으면 managed-MCP 라우트는
+기능을 절반만 켜는 대신 `503` 으로 답한다. 컨테이너의 환경은 두 경로로 들어간다: `envRefs` 는
+호스트의 절대 경로인 `--env-file` 이고(값은 테이블에 들어오지 않는다), `environment` 는
+저장 시 암호화되는 값들이다. `PORT` 는 런타임이 써 넣으므로 거부된다.
 
 **discovery TTL 에 손잡이가 둘인 이유.** 항목의 수명은 숫자 하나로 두 질문에 답한다. 서버의
 힌트는 첫 번째에 답한다 — 자기 카탈로그가 얼마나 신선한가 — 그리고 그건 이 앱보다 서버가 더
@@ -316,6 +341,17 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다 — 직접 서빙�
 | `PLUGINS_REPO` | 미설정 | **runtime** | [Agent Plugins 1.0.0](https://agent-plugins.org/) 저장소의 `owner/repo`. `plugin.json` 을 가진 모든 디렉터리가 — 저장소 루트를 포함해 — 하나의 plugin 이다. 다른 루트 안에 중첩된 루트는 거부된다. plugin 당: `skills/<name>/SKILL.md` (Agent Skills 스펙 — frontmatter 의 `name` 이 디렉터리와 일치해야 하고 `description` 은 필수), `mcp.json` (`type: "streamable-http"` 서버만 바인딩된다. `stdio` 와 `sse` 항목은 보고되고 건너뛰며 결코 실행되지 않는다), 그리고 닫힌 mcp.json 스키마에는 자리가 없는 각 서버의 설명(frontmatter)과 운영 노트(본문)를 담는 `org.opspresso.agent-studio/mcp/<server>.md` 확장 문서. |
 | `PLUGINS_REPO_BRANCH` | `main` | **runtime** | |
 | `GITHUB_TOKEN` | 미설정 | **runtime** | plugins 저장소에 대한 contents 읽기 권한이 필요하다. |
+| `GITHUB_API_URL` | `https://api.github.com` | — | GitHub REST API 가 답하는 곳. GitHub Enterprise Server 나 미러라면 `https://<host>/api/v3`. 끝의 슬래시는 떼어 낸다. |
+
+**GitHub 에 닿지 않는 배포는 저장소를 아카이브로 올린다.** `/plugins` 의 업로드
+(`POST /api/plugins/sync/upload`, 체크아웃의 `.tar.gz`/`.tgz`/`.tar` — `git archive` 든
+`tar czf` 든)는 *같은 sync* 에 입력만 다르게 넣는 것이다: 트리를 스냅샷으로 만드는 워커
+(`src/infrastructure/plugin/snapshot.ts`)를 GitHub 클라이언트와 공유하므로 어느 디렉터리가
+무엇인지는 한 번만 정해진다. 행의 provenance 는 설정된 `PLUGINS_REPO`, 없으면 고정 이름
+`archive` 이고(`archiveSyncRepo`) — 그래서 GitHub 가 닿던 시절 sync 된 행은 같은 저장소가
+손으로 도착해도 주인을 유지한다 — `branch` 는 `archive`, `commitSha` 는 아카이브의 sha256
+이라 같은 파일을 다시 올리면 unchanged 로 보고된다. `PLUGINS_REPO` 없이도 동작하고,
+`GITHUB_TOKEN` 은 필요 없다. 상한은 [코드에 고정된 제한](#코드에-고정된-제한).
 
 **저장소는 자기가 선언한 것을 — 이름으로 — 소유하고, 삭제는 사람이 소유한다.** sync 가 만든
 항목, 다른 출처에서 입양한 항목(provenance 는 plugin 단위로 `github:<repo>#<plugin>`), 그리고
@@ -382,10 +418,10 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `TRACE_SAMPLE_RATE` | `0.1` | — | `0`–`1`, top-level predict 런과 이미지 런에 적용된다. agent 런은 항상 trace 된다. 위의 제한들과 달리, 범위를 벗어난 값은 폴백하는 대신 범위 안으로 **clamp** 된다 — `2` 라는 비율은 "가능한 한 많이" 를 뜻한다 — 반면 숫자가 아닌 값은 기본값을 쓴다. 둘 다 로그에 그렇게 남긴다: 조용히 다른 값이 돼 버린 샘플링 비율은 배포가 기록한 적도 없는 trace 로부터 추론하게 만드는 방식이다. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | 미설정 | — | OTLP HTTP base 엔드포인트 (없으면 `/v1/traces` 를 덧붙인다). 설정되면 플랫폼이 영속화하는 모든 trace 가 DynamoDB 쓰기 이후에 OTEL span 으로도 내보내진다. export 실패는 `[otel]` 로그 라인으로 드러날 뿐, 결코 런으로 드러나지 않는다. 설정하지 않으면 export 자체가 없고 OTEL SDK 는 로드되지도 않는다. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | 미설정 | — | OTLP HTTP base 엔드포인트 (없으면 `/v1/traces` 를 덧붙인다). 설정되면 플랫폼이 영속화하는 모든 trace 가 데이터베이스 쓰기 이후에 OTEL span 으로도 내보내진다. export 실패는 `[otel]` 로그 라인으로 드러날 뿐, 결코 런으로 드러나지 않는다. 설정하지 않으면 export 자체가 없고 OTEL SDK 는 로드되지도 않는다. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | 미설정 | — | 표준 `key=value,key2=value2` 형식이며 모든 OTLP 요청에 실려 간다. 대소문자를 보존한다: 값들이 collector 자격증명이고, 정규화된 bearer 토큰은 다른 토큰, 즉 틀린 토큰이 되기 때문이다. |
 | `SETTINGS_CACHE_TTL_MS` | `5000` | — | settings 행의 인메모리 TTL. 모든 runtime 오버라이드의 인스턴스 간 낡음에 한계를 둔다 — [해석 순서](#해석-순서) 를 보라. 하한이 `1` 이라 `0` 은 캐시를 끄는 대신 기본값으로 떨어진다. |
-| `TRACE_RETENTION_DAYS` | `30` | — | 행의 `expiresAt` 에 걸리는 DynamoDB TTL. |
+| `TRACE_RETENTION_DAYS` | `30` | — | 행의 `expiresAt` 까지의 일수. 지난 행은 schedule-scan 틱이 쓸어낸다. |
 | `USAGE_RETENTION_DAYS` | `400` | — | 대시보드의 184일 질의 창보다 한참 길게 유지한다. 하한은 `31` — 한 달 전체 — 인데, 월간 비용 가드가 그 달의 일별 행들을 합산하기 때문이다. 더 짧은 창은 월말로 갈수록 지출을 조용히 적게 세게 된다. |
 | `CHAT_RETENTION_DAYS` | `180` | — | chat 의 마지막 활동 시점부터 잰다. |
 | `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | 전달 이력은 운영 로그이지 보관할 기록이 아니다. |
@@ -395,9 +431,10 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 
 보존 값은 일 단위 정수이고 최소 `1` 이다. 그 밖의 값은 여기 다른 모든 숫자 설정과 마찬가지로
 **경고와 함께** 기본값으로 떨어진다 — 운영자가 잘못 넣은 그 값이 바로 행이 얼마나 오래
-살아남을지를 정하는 값이라, 조용한 폴백은 최악의 종류다. TTL 은 **프로덕션 테이블의
-`expiresAt` 속성에 대해 활성화돼 있어야 한다** — [OPERATIONS.md](OPERATIONS.md#행-보존)
-를 보라.
+살아남을지를 정하는 값이라, 조용한 폴백은 최악의 종류다. 만료된 행을 실제로 지우는 것은
+**schedule-scan 틱**(`POST /api/triggers/scan`)에 얹힌 sweep 이다 — 그래서
+`SCHEDULE_SCAN_TOKEN` 이 없는 배포는 이 창들을 설정해 두고도 아무것도 지우지 않는다.
+[OPERATIONS.md](OPERATIONS.md#행-보존) 를 보라.
 
 ## 로컬 스크립트 전용
 
@@ -431,6 +468,10 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `/view` 가 메모리로 읽어 들이는 artifact | `2 MB` | `src/domain/artifact/types.ts` |
 | `/view` 가 CSV 에서 그리는 행 수 | `2,000` | `src/app/api/artifacts/[artifactId]/view/_lib/viewPage.tsx` |
 | `SaveFile` 하나가 쓸 수 있는 텍스트 | `1 MB` | `src/domain/artifact/types.ts` |
+| `/api/objects` 가 proxied 주소 하나에 대해 메모리로 읽어 들이는 오브젝트 — 고른 숫자가 아니라 저장될 수 있는 것의 최대(첨부 · 문서 · 저장 파일 상한 중 큰 쪽) | `10 MB` | `src/infrastructure/storage/artifactAccess.ts` 의 `MAX_PROXIED_OBJECT_BYTES` |
+| admin 이 올리는 모델 카탈로그 문서 | `4 MB` | `src/app/api/_lib/body.ts` |
+| 올리는 plugins 아카이브 — 전송 크기 / 풀었을 때 / 엔트리 수 (헤더 기준, 파일·디렉터리·확장 레코드 모두) | `32 MB` / `64 MB` / `20,000` | `src/app/api/plugins/sync/upload/route.ts`, `src/infrastructure/archive/tar.ts` |
+| 한 틱의 retention sweep 이 지우는 행 수 (나머지는 다음 틱) | `5,000` | `src/infrastructure/db/store.ts` 의 `deleteExpired` |
 | 한 런이 쓸 수 있는 파일 수 (`SaveFile`) | `10` | `src/application/llm/engine.ts` |
 | 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (skill / 외부 agent / MCP 서버) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
 | 각 MCP 인덱스에 요청하는 카탈로그 매치 수. 그 상한을 넘겨 oversampling 한다 — 여러 도구 행이 한 서버로 합쳐지고, 런이 바인딩할 수 없는 후보가 슬롯을 잡아먹어서는 안 되기 때문이다 | MCP 서버 상한의 `4×`(tool 인덱스) / `3×`(server 인덱스) | `src/application/execution/bindings.ts` |

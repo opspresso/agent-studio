@@ -1,9 +1,12 @@
 # 운영
 
-배포하고, 프로브하고, 스케일링하고, 테이블을 유한하게 유지하는 일.
+배포하고, 프로브하고, 스케일링하고, 데이터베이스를 유한하게 유지하는 일.
 
-관련 문서: 여기 이름이 나오는 모든 변수는 [CONFIGURATION.md](CONFIGURATION.md), 자격 증명
-취급은 [SECURITY.md](SECURITY.md), 로컬 루프는 [DEVELOPMENT.md](DEVELOPMENT.md).
+관련 문서: 설치 자체 — 무엇이 필요하고, 호스트 하나(Compose)와 Kubernetes(Helm)에 어떻게
+올리며, 폐쇄망에서는 무엇을 대신하고, 옛 AWS 배포에서 어떻게 옮겨 오는지 — 는
+[INSTALL.md](INSTALL.md) 다. 여기 이름이 나오는 모든 변수는
+[CONFIGURATION.md](CONFIGURATION.md), 자격 증명 취급은 [SECURITY.md](SECURITY.md), 로컬
+루프는 [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## 빌드 아티팩트
 
@@ -12,16 +15,18 @@
 
 ```bash
 docker build -t agent-studio .
-docker compose up --build          # 로컬 컨테이너 + DynamoDB Local
+docker compose up --build          # 로컬 컨테이너 + PostgreSQL (+ --profile objects 로 MinIO)
 ```
 
 런타임 스테이지는 비-root `app` 사용자로 실행되고 `/api/health` 에 대한 `HEALTHCHECK` 를
-선언한다.
+선언한다. 이미지 **빌드**에는 npm 레지스트리와 Google Fonts(`next/font/google`)가 닿아야
+한다 — 폐쇄망은 밖에서 빌드한 이미지를 들여온다 ([INSTALL.md](INSTALL.md#폐쇄망air-gapped에서)).
 
 **node 가 PID 1 로 실행된다** (exec 형식 `CMD`). 그래서 `SIGTERM` 이 셸에 삼켜지지 않고
 곧바로 node 에 도달한다. 롤링 배포 중에 진행 중인 SSE 스트림이 빠져나갈 수 있는 이유가 그것이다.
 
-AWS 자격 증명은 태스크/인스턴스 role 에서 온다. 키를 이미지에 구워 넣지 마라.
+AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필요하고, 역할이나 표준
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 쌍으로 온다. 키를 이미지에 구워 넣지 마라.
 
 ## 릴리스 파이프라인
 
@@ -32,17 +37,20 @@ AWS 자격 증명은 태스크/인스턴스 role 에서 온다. 키를 이미지
    `git log` 로 생성된다 (`chore: release` 커밋은 걸러낸다). 이것이 이 프로젝트의 변경
    이력이다: 완료된 마일스톤은 [MILESTONES.md](MILESTONES.md) 에 보관되는 것이 아니라
    *삭제*되므로, git log 와 Releases 페이지가 그 기록이다.
-3. **release** — GitHub OIDC 로 AWS role 을 assume 하고(장기 키 없음), ECR 에 로그인해
-   `linux/amd64` 를 빌드하고 `:{tag}` 와 `:latest` 를 푸시한다.
+3. **release** — `linux/amd64` 를 한 번 빌드해 두 레지스트리에 `:{tag}` 와 `:latest` 로
+   푸시한다: **`ghcr.io/opspresso/agent-studio`**(`GITHUB_TOKEN` 으로 로그인 — 이 AWS 계정 밖의
+   설치가 pull 하는 경로이고, 폐쇄망 레지스트리로 미러링을 시작하는 지점이다)와 ECR(GitHub
+   OIDC 로 AWS role 을 assume, 장기 키 없음).
 4. **GitOps 트리거** — `argocd-env-demo` 저장소 하나로만 범위가 좁혀진 단명 GitHub App
    installation 토큰을 발급해 `repository_dispatch` 를 보내고, 그것이 `alpha` phase 의 이미지
    태그를 올린다. 여기서 `GITHUB_TOKEN` 은 쓸 수 없다: 워크플로가 실행되는 저장소로 범위가
-   한정되기 때문이다.
+   한정되기 때문이다. IDC 호스트의 `deploy.sh` 는 GitHub 이 닿으면 그 핀을 따라간다
+   ([두 환경](#두-환경--alpha-와-prod)).
 
 자명하지 않은 빌드 설정이 둘 있다:
 
-- **amd64 전용.** 유일한 배포 대상이 amd64 노드에서 돌고, 무료 arm64 호스티드 러너는 프라이빗
-  저장소에서 제공되지 않는다.
+- **amd64 전용.** 배포 대상들이 amd64 이고, 무료 arm64 호스티드 러너는 프라이빗 저장소에서
+  제공되지 않는다.
 - **`provenance: false`, `sbom: false`.** BuildKit 은 기본적으로 provenance attestation 을
   붙이는데, attestation 은 이미지 인덱스 안의 추가 매니페스트로 실려 간다 — 그래서 단일 플랫폼
   빌드조차 인덱스 하나와 태그 없는 자식 둘을 푸시했다. 릴리스마다 ECR 엔트리가 하나가 아니라
@@ -54,7 +62,7 @@ AWS 자격 증명은 태스크/인스턴스 role 에서 온다. 키를 이미지
 | 엔드포인트 | 종류 | 동작 |
 |---|---|---|
 | `GET /api/health` | liveness | 정적 `200`. 의존성이 없고 인증도 없다. "프로세스가 서빙 중인가" 에 답한다. |
-| `GET /api/ready` | readiness | DynamoDB 와 LLM 채널을 프로브한다 (짧은 타임아웃, 상세는 노출하지 않는다). 다운스트림에 닿을 수 없거나 **또는** 인스턴스가 draining 중이면 `503`. |
+| `GET /api/ready` | readiness | PostgreSQL(`SELECT 1 FROM items LIMIT 1` — 연결·자격 증명·스키마를 한 번에)과 LLM 채널을 프로브한다 (각 2초 타임아웃, 상세는 노출하지 않는다). 다운스트림에 닿을 수 없거나 **또는** 인스턴스가 draining 중이면 `503`. |
 
 재시작 검사는 `/api/health` 에, 로드 밸런서는 `/api/ready` 에 붙여라.
 
@@ -193,7 +201,7 @@ Agent 런은 **항상** 트레이싱된다. 비-agent 런과 이미지 predict �
 타임스탬프, 앱의 trace id 를 `app.trace_id` 속성으로(그리고 `app.actor` 를, 대화 안에 있는
 런이라면 `app.conversation` 도 함께 — MCP 헤더가 나르는 것과 같은 키라서 메모리 서버의 로그와
 런의 span 을 그것으로 join 할 수 있다), 그리고 같은 유한 메타데이터를 담아서 나간다. 기록으로
-남는 것은 여전히 DynamoDB 행이다; collector 장애의 대가는 `[otel]` 로그 라인이지(SDK 의 내부
+남는 것은 여전히 데이터베이스 행이다; collector 장애의 대가는 `[otel]` 로그 라인이지(SDK 의 내부
 에러 채널은 앱 로거로 흘려보낸다) 런이 아니다. export 배치는 인스턴스가 draining 을 시작할 때
 flush 되므로, 롤아웃에서도 마지막 span 은 남는다.
 
@@ -208,9 +216,12 @@ transfer 는 맨바닥에서 시작한다), Telegram·Teams 대화 트랜스크�
 돌려주지 않으므로 후속 메시지가 나르는 컨텍스트), MCP OAuth 진행 중 state (10분), 그리고 런
 동시성 슬롯 (리스 길이 — TTL 이 없어도 동시성은 정확하지만, 행이 런당 하나씩 쌓인다).
 
-> **프로덕션 테이블의 `expiresAt` 속성에 TTL 을 켜라.** 애플리케이션에는 이 일을 하는 것이
-> 없다; `scripts/init-local-table.ts` 가 로컬에 한해 해 준다. 켜지 않으면 위의 모든 행이
-> 영원히 쌓인다.
+> **만료는 테이블의 기능이 아니라 틱이다.** schedule-scan 틱(`POST /api/triggers/scan`)이 돌
+> 때마다 `sweepExpiredRows` 가 `expiresAt` 이 지난 행을 지운다 — 한 번에 최대 5,000행이라
+> 밀린 분량은 다음 틱들이 나눠 가져가고, 실패해도 스캔은 실패하지 않는다.
+> **`SCHEDULE_SCAN_TOKEN` 이 없는 배포는 티커가 없고, 따라서 아무것도 지우지 않는다.** 앱은
+> 그 사실을 경고로 올릴 길이 없다 — 테이블 크기만이 말해 준다. Compose 는 `ticker`
+> 프로파일, Helm 은 CronJob 이 그 틱이다 ([Schedule 티커](#schedule-티커)).
 
 | 행 | 기본값 | 변수 | 기준 시점 |
 |---|---|---|---|
@@ -230,16 +241,17 @@ usage 와 감사 행이 가장 오래 남는다 — 대시보드는 최대 184�
 그 구간은 설정되는 것이 아니라 `MAX_RUN_DURATION_MS` 에서 파생된다 — 런보다 짧게 설정될 수
 있는 값이라면 resume 한가운데에 구멍을 남길 것이기 때문이다.
 
-DynamoDB 의 물리적 삭제는 결과적 일관성만 보장하므로(최대 ~48h), **읽기 쪽에서도 이미 만료된
-행을 걸러낸다**. `traceRepository` 는 `Limit` 이 살아 있는 행으로 찰 때까지 유한한 페이지를 계속
-당겨 온다. DynamoDB 가 앱 쪽 필터보다 먼저 `Limit` 을 적용하기 때문이다.
+틱은 1분 간격이므로 행은 만료 뒤 한 틱까지 살아 있을 수 있고, 그래서 **읽기 쪽에서도 이미
+만료된 행을 걸러낸다** — `queryItems` 의 `notExpiredAt` 이 `LIMIT` 보다 먼저 도는 `WHERE`
+라, `traceRepository` 의 상위 N 개는 살아 있는 행으로 찬다.
 
-런이 만들어 낸 것은 테이블 밖에 살고, **거기서의 만료는 버킷의 몫이다**. 아티팩트 행은
-오브젝트를 지목하고 의도적으로 삭제할 수도 있지만(갤러리의 삭제 버튼이 정확히 그렇게 한다),
-만료를 훑는 것은 아무것도 없다: 행은 DynamoDB TTL 로 사라지고 애플리케이션은 그것을 결코
-관측하지 못하므로, 연쇄 삭제를 걸 순간 자체가 없다.
+런이 만들어 낸 것은 데이터베이스 밖에 살고, **거기서의 만료는 오브젝트 스토어의 몫이다**.
+아티팩트 행은 오브젝트를 지목하고 의도적으로 삭제할 수도 있지만(갤러리의 삭제 버튼이 정확히
+그렇게 한다), 만료를 훑는 것은 아무것도 없다: sweep 은 `DELETE` 한 문장으로 행을 지우고
+애플리케이션은 어느 행이 갔는지 관측하지 못하므로, 연쇄 삭제를 걸 순간 자체가 없다.
 
-**각 prefix 에 lifecycle 규칙을 붙여라**, 행의 구간에 맞춰서:
+**각 prefix 에 lifecycle 규칙을 붙여라**, 행의 구간에 맞춰서 — AWS S3 는 버킷 lifecycle,
+MinIO 는 `mc ilm rule add --expire-days …`:
 
 | Prefix | 구간 | 담는 것 |
 |---|---|---|
@@ -250,9 +262,9 @@ DynamoDB 의 물리적 삭제는 결과적 일관성만 보장하므로(최대 ~
 이 두 설정은 앱이 맞춰 줄 수 없고, 어긋나는 두 방향 모두 눈에 보인다: 행이 먼저 만료되면
 아무것도 이름 붙이지 않는 오브젝트가 남고 — 인벤토리로만 다시 찾을 수 있으니 보이지 않는
 누수다 — 오브젝트가 먼저 만료되면 갤러리가 404 나는 미리보기를 나열한다. UI 는 두 번째 경우를
-깨진 이미지가 아니라 "더 이상 사용할 수 없음" 으로 렌더링한다. 아티팩트 이전의 오브젝트에
-행을 만들어 주려면 `scripts/backfill-artifacts.ts` 를 한 번 실행하고, 아니면 `images/` 규칙에
-맡겨라. [SECURITY.md](SECURITY.md#데이터-노출과-보존) 를 보라.
+깨진 이미지가 아니라 "더 이상 사용할 수 없음" 으로 렌더링한다. 아티팩트 이전의 `images/`
+오브젝트는 어떤 행도 지목하지 않으므로 그 prefix 의 규칙에 맡겨라.
+[SECURITY.md](SECURITY.md#데이터-노출과-보존) 를 보라.
 
 ## 지출 가드와 부하 가드
 
@@ -299,7 +311,7 @@ caller 당 `MAX_CONCURRENT_RUNS_PER_ACTOR` (기본 10); 인바운드 A2A 는 act
 `429` 와 짧은 `Retry-After` 로 거부되는데, **시작되기 전에** 거부되므로 usage 도 트레이스도
 남기지 않는다.
 
-운영상 중요한 성질이 둘이다. 슬롯은 프로세스 메모리가 아니라 **DynamoDB 의 리스된 행**이므로
+운영상 중요한 성질이 둘이다. 슬롯은 프로세스 메모리가 아니라 **데이터베이스의 리스된 행**이므로
 한도가 정확하고 인스턴스 수만큼 **곱해지지 않으며**, 런 도중에 죽은 인스턴스는 그 점유를
 영원히 흘리는 대신 리스가 만료될 때 놓는다. 그리고 이 가드는 **fail-closed** 다 — 스토어에
 닿을 수 없을 때 열어 주는 것은 스토어가 감당할 수 없는 바로 그 순간에 부하를 더하는 일이다.
@@ -313,8 +325,10 @@ caller 당 `MAX_CONCURRENT_RUNS_PER_ACTOR` (기본 10); 인바운드 A2A 는 act
 ## Schedule 티커
 
 Schedule 트리거는 무언가가 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN` 과 함께
-`POST /api/triggers/scan` 을 틱할 때에만 발화한다 — EKS 대상에서는 Kubernetes CronJob 이 그
-일을 한다 (매니페스트는 GitOps 저장소에 있다). 티커가 만족해야 하는 계약은 다음이 전부다:
+`POST /api/triggers/scan` 을 틱할 때에만 발화한다 — Compose 배포에서는 `ticker` 프로파일의
+컨테이너(`deploy/idc/scripts/tick.sh`, 토큰 하나만 쥔 `curl` 루프), Helm 에서는 차트의
+CronJob 이 그 일을 한다. **행 보존의 sweep 도 이 틱에 얹혀 있다** — 1분마다 이미 도는 유일한
+것이기 때문이다. 티커가 만족해야 하는 계약은 다음이 전부다:
 
 - **주기 ≤ 1분.** 스캔은 고정된 10분짜리 만회 윈도우를 되돌아보므로, 틱을 한 번 놓치거나 짧게
   장애가 나도 잃는 것이 없다; 윈도우보다 긴 장애는 그 발생분들을 영영 버린다 (의도적으로 유한하게
@@ -346,8 +360,10 @@ Schedule 트리거는 무언가가 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN` 과 함�
   있는 것은 예상된 일이다: 서버 수준에서는 여전히 색인되고, 다만 그 도구들이 없을 뿐이다.
 - 503 에는 두 가지 원인이 있고 이 순서로 확인된다: `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우 —
   엔드포인트에 티커를 인증할 자격 증명이 없다는 뜻이므로 누가 요청하든 스캔을 거부한다 —,
-  그다음 `VECTOR_BUCKET` 이 설정되지 않은 경우인데, 이는 결함이 아니라 카탈로그가 없는 배포다.
-  그러면 런은 자기 버전이 묶어 둔 것만 정확히 제공한다. 어느 쪽인지는 응답 body 가 이름을 밝힌다.
+  그다음 `CATALOG_ENABLED` 가 설정되지 않은 경우(`CATALOG_ENABLED is not set`)인데, 이는 결함이
+  아니라 카탈로그가 없는 배포다. 그러면 런은 자기 버전이 묶어 둔 것만 정확히 제공한다. 어느
+  쪽인지는 응답 body 가 이름을 밝힌다. 인덱스는 같은 데이터베이스의 `catalog_vectors` 에 있으므로
+  백업과 복원에 따라오고, 옮겨 갈 때는 옮기지 않고 재색인 한 번으로 다시 만든다.
 - **완료된 plugins sync 도 재색인한다**, 두 경로(콘솔과 분 단위 틱) 모두에서. 그래서 plugins
   저장소로의 머지는 한 시간을 기다리지 않고도 발견된다. 그 재색인은 sync 가 커밋되고 그 리포트가
   저장된 뒤에 실행되므로, 실패는 로그에 남고 삼켜진다 — 로그의
@@ -375,20 +391,19 @@ Schedule 트리거는 무언가가 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN` 과 함�
 - 결과는 저장된 리포트(`GET /api/plugins/sync`)와 로그 라인에 남는다.
 - 503 은 `SCHEDULE_SCAN_TOKEN` 이 설정되지 않았거나, `PLUGINS_REPO`/`GITHUB_TOKEN` 이 설정되지
   않았다는 뜻이다.
+- **GitHub 에 닿지 않는 배포에는 이 틱이 없다.** 그런 배포는 admin 이 `/plugins` 에서
+  체크아웃의 `.tar.gz` 를 올리는 것이 sync 이고(`POST /api/plugins/sync/upload`), 같은 리포트와
+  같은 리스를 쓴다 — GitHub 쪽 sync 와 동시에 돌 수 없다. 저장된 마지막 리포트는 설정된
+  저장소 이름, 없으면 `archive` 아래에서 읽힌다.
 
 ## 두 환경 — alpha 와 prod
 
-배포는 둘이고, **스토리지를 나누지 않는다.**
+배포 모양은 둘이고, 실서비스는 하나다.
 
 | | 배포 | 주소 | 스토리지 |
 |---|---|---|---|
-| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`) | `studio.opspresso.com` | `agent-studio`, `agent-studio-static`, `agent-studio-vector`, `agent-studio-memory` |
-| **prod** | EKS 클러스터 (`argocd-env-demo` 의 `charts/agent-studio`) | 현재 DNS 미연결 | `agent-studio-prod`, `agent-studio-prod-static`, `agent-studio-prod-vector`, `agent-studio-prod-memory` — **아직 만들지 않았다** |
-
-모든 이름은 `terraform-env-demo` 의 `demo/9-agent-studio` 가 관리한다 — 테이블·버킷·S3 Vectors
-인덱스·Knowledge Base·ECR·IDC 의 IAM 사용자까지 한 모듈에 있고, 환경은 그 `envs` 맵의 줄
-하나다. prod 세트는 이름만 정해 두고 주석으로 남겨 두었으므로, 클러스터 배포는 그 줄을 풀어
-apply 하기 전에는 닿을 테이블이 없다.
+| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`) — opspresso 의 실서비스 | `studio.opspresso.com` | 그 호스트의 PostgreSQL(`postgres-data`)과 MinIO(`minio-data`) 볼륨. 다른 어디에도 없다 — `deploy/idc/scripts/backup.sh` 가 백업이다 |
+| **prod** | Kubernetes — `deploy/helm/agent-studio` 차트(앱 + 티커 CronJob + 선택적 번들 Postgres/MinIO). `argocd-env-demo` 의 차트도 같은 모양으로 맞춰 두었으나 **EKS 클러스터는 현재 없다** | — | 차트가 번들하는 StatefulSet, 또는 조직의 Postgres·S3 호환 스토어 |
 
 **한쪽에서 만든 프로젝트는 다른 쪽에 보이지 않는다.** 버전도, 채팅도, 사용량도, 레지스트리
 편집도 그렇다. 두 배포는 다른 데이터를 보는 같은 코드다.
@@ -397,26 +412,28 @@ apply 하기 전에는 닿을 테이블이 없다.
 
 | | |
 |---|---|
-| SSM 의 시크릿 (`/k8s/common/agent-studio/*`) | 같은 값을 읽는다. `AES_ENCRYPTION_KEY` 가 같은 것은 편의가 아니라 요구다 — 각자의 테이블에 든 암호화된 자격증명을 푸는 키다 |
-| Google OAuth 클라이언트 | 하나를 공유하고, 리디렉션 URI 에 두 주소가 모두 있어야 한다 |
-| agent-plugins 레지스트리 | 스킬·MCP 서버의 정의는 SSOT 하나다. 각 배포가 자기 테이블에 sync 한다 |
-| ECR | 같은 이미지를 끌어간다 |
+| 시크릿 | alpha 는 호스트의 `.env.secrets`, 없으면 `.env.aws` 의 키로 SSM(`/k8s/common/agent-studio/*`)에서 같은 이름들을 읽는다(`deploy.sh`). `AES_ENCRYPTION_KEY` 를 옮겨 갈 때 그대로 가져가는 것은 편의가 아니라 요구다 — 저장된 자격증명을 푸는 키다 |
+| 신원 제공자 | 하나를 공유할 수 있고, 그러면 리디렉션 URI(`/api/auth/callback/oidc` 또는 `/google`)에 두 주소가 모두 있어야 한다 |
+| agent-plugins 레지스트리 | 스킬·MCP 서버의 정의는 SSOT 하나다. 각 배포가 자기 데이터베이스에 sync 한다 |
+| 이미지 | `ghcr.io/opspresso/agent-studio` 와 ECR 에 같은 태그가 올라간다 |
 
-**티커는 클러스터만 돌린다.** alpha 의 compose 는 `ticker` 프로파일을 꺼 둔 채 온다 — 이제
-테이블이 다르므로 alpha 의 schedule·카탈로그 재색인·plugins sync 는 아무도 돌리지 않는다는
-뜻이기도 하다. alpha 에서 그것들이 필요하면 `docker compose --profile ticker up -d`.
+**티커는 배포마다 하나씩이다.** alpha 의 `.env.example` 은 `COMPOSE_PROFILES=ticker,aws` 로
+온다 — `ticker` 가 없으면 그 배포의 schedule·카탈로그 재색인·plugins sync·**행 보존의
+sweep** 을 아무도 돌리지 않는다. Helm 에서는 CronJob 이 같은 토큰으로 같은 세 주소를 두드린다.
 
-**Slack·Telegram·Teams 는 등록된 webhook URL 하나가 받는다.** 지금은 클러스터다. MCP OAuth
-connection 도 `PUBLIC_BASE_URL` 기반이라 alpha 에서 새로 연결하면 그 project 의 저장된
-connection 을 덮어쓴다 — 다만 이제 project 자체가 서로 다른 테이블에 있으므로, 두 배포에서
-같은 이름의 project 를 만들었을 때만 헷갈릴 여지가 있다.
+**Slack·Telegram·Teams 는 등록된 webhook URL 하나가 받는다.** MCP OAuth connection 도
+`PUBLIC_BASE_URL` 기반이다 — 두 배포에서 같은 이름의 project 를 만들었을 때만 헷갈릴 여지가
+있고, project 자체는 서로 다른 데이터베이스에 있다.
 
-설치와 운영 절차는 [deploy/idc/README.md](../deploy/idc/README.md).
+IDC 호스트의 파일·절차는 [deploy/idc/README.md](../deploy/idc/README.md), 설치 전체는
+[INSTALL.md](INSTALL.md).
 
 ## 다중 인스턴스 주의사항
 
-아래는 **한 배포 안에서 파드가 여럿일 때**의 이야기다 — 같은 테이블을 보는 프로세스들 사이의
-문제이고, 위의 두 환경 사이에는 적용되지 않는다. 그쪽은 테이블조차 공유하지 않는다.
+아래는 **한 배포 안에서 파드가 여럿일 때**의 이야기다 — 같은 데이터베이스를 보는 프로세스들
+사이의 문제이고, 위의 두 환경 사이에는 적용되지 않는다. 그쪽은 데이터베이스조차 공유하지
+않는다. 런 상태는 전부 데이터베이스에 있으므로 레플리카를 늘려도 되고, 스키마 마이그레이션은
+부팅 때 advisory lock 아래에서 한 번만 돈다 — 먼저 뜬 인스턴스가 적용하고 나머지는 기다린다.
 
 | 동작 | 무엇에 묶이는가 | 결과 |
 |---|---|---|
@@ -428,17 +445,15 @@ connection 을 덮어쓴다 — 다만 이제 project 자체가 서로 다른 �
 
 ### 재배포 이후의 관리형 MCP
 
-SSM 어댑터에서는(`MANAGED_MCP_INSTANCE_ID` 가 인스턴스를 지목한다) 관리형 컨테이너가 이 앱
-자신의 네트워크 네임스페이스에 합류하는데(`--network container:<MANAGED_MCP_NETWORK_CONTAINER>`),
-그것이 루프백 주소가 양쪽 끝에서 같은 것을 뜻하게 하는 유일한 방법이다. Docker 는 워크로드가
-시작될 때 그 이름을 컨테이너 **id** 로 해석하고 다시는 재해석하지 않는다 — 그래서 이 앱을
-교체하면 컨테이너는 아무도 주소를 댈 수 없는 네임스페이스에서 계속 돌아간다: `docker inspect`
-에는 건강해 보이고, 아무도 닿을 수 없다. (`local` 어댑터는 대신 `127.0.0.1:<port>` 매핑을
-공개하므로 잃을 네임스페이스가 없다.)
+관리형 컨테이너는 앱이 자기 호스트의 Docker CLI 로 띄우고(`MANAGED_MCP_RUNTIME=docker`)
+`127.0.0.1:<port>` 매핑을 **게시**하므로, 앱 프로세스와 컨테이너가 같은 루프백을 봐야 한다 —
+앱이 호스트에서 돌거나, 컨테이너라면 호스트 네트워크를 공유해야 한다. 네임스페이스를 합류시키는
+방식이 아니라서 앱을 교체해도 컨테이너의 주소는 그대로이고, 같은 이유로 **호스트당 앱 인스턴스
+하나**가 전제다.
 
 `reconcile` (`src/application/mcp/managedMcpUseCases.ts`) 은 부팅 시 `instrumentation.ts` 에서
 발화되며 **결코 await 되지 않는다**: 모든 관리형 항목을 프로브해 답하지 않는 것들을 재시작한다.
-await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오고 SSM 을 최대 5분까지 폴링하기 때문이고,
+await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오는 데 몇 분이 걸릴 수 있기 때문이고,
 거기서 블록하면 서버가 listen 하기 전에 붙들려 — 배포가 의존하는 바로 그 컨테이너 헬스체크를
 실패시킨다.
 
@@ -446,36 +461,47 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오고 SS
 `status` 가 도달 가능성(reachability)을 liveness 와 따로 보고하는 이유도 같다 — liveness 만
 보고하던 것이 이 부류의 실패를 보이지 않게 만든 원인이다.
 
-## 새 배포를 위한 운영 체크리스트
+## 운영 체크리스트
 
-- [ ] `STAGE=alpha|prod` 와 `ADMIN_EMAILS` 설정 (아니면 부팅을 거부한다)
-- [ ] `ALLOWED_EMAIL_DOMAINS` 정책 확인 — 비워 두면 아무 Google 계정이나 로그인할 수 있다
-- [ ] `DYNAMODB_ENDPOINT` 는 **비워 둘 것**
-- [ ] `AES_ENCRYPTION_KEY` 를 시크릿으로 프로비저닝하고 백업할 것 — 잃어버리면 저장된 모든 자격 증명을 읽을 수 없게 된다
-- [ ] `PK`/`SK`, `GSI1`, `GSI2` 를 갖춘 DynamoDB 테이블을 만들고 **`expiresAt` 에 TTL 을 켤 것**
-- [ ] `PUBLIC_BASE_URL` 설정 (Agent Card, Slack 매니페스트, Telegram webhook, Teams messaging endpoint 표시, OAuth 콜백)
-- [ ] 태스크/인스턴스 role 이 DynamoDB 를, 그리고 해당 기능을 쓴다면 S3 와 SSM 을 허용할 것
-- [ ] `S3_BUCKET_NAME` 이 설정된 경우: role 의 S3 권한이 **`images/*` 뿐 아니라 `artifacts/*`
-      까지** 덮고, `s3:PutObject`·`s3:GetObject`·`s3:DeleteObject` 셋 모두를 포함할 것.
-      이 둘 각각이 프로덕션에서 한 번씩 틀렸던 적이 있다:
-      - **prefix.** 런은 `artifacts/<kind>/<id>.<ext>` 에 쓴다; `images/` 는 아티팩트 이전의
-        레이아웃일 뿐이고, 아직 읽지만 결코 쓰지는 않는다. `images/*` 로 범위를 좁힌 권한은
-        모든 쓰기를 `AccessDenied` 로 실패시키는데, 런은 그것을 겪고도 *살아남는다* — 그림은
-        보여 주고 보관되지 않았다는 경고가 뜨므로, 죽은 것도 없고 저장된 것도 없다.
-      - **액션.** `GetObject` 은 선택 사항이 아니다: 읽기 URL 은 role 자신의 자격 증명으로
-        pre-sign 되므로, 그것이 없으면 **모든** 이미지가 403 이 된다 — 갤러리도 chat
-        트랜스크립트도 마찬가지이며, 이전에 쓰인 행까지 포함해서. `DeleteObject` 은 갤러리의
-        삭제 버튼이 필요로 하는 것이고, 없으면 삭제가 실패하고 행이 남는다.
-- [ ] `S3_BUCKET_NAME` 이 설정된 경우: `ARTIFACT_ACCESS_MODE` 를 고를 것. `authenticated` 라면
-      버킷을 비공개로 유지하고, `public` 이라면 `artifacts/*` 와 레거시 `images/*` 에 공개
-      `s3:GetObject` 를 명시적으로 허용한 뒤 S3 Block Public Access 가 그 정책을 허용하는지
-      확인할 것. 어느 모드든 `artifacts/image/`, `artifacts/document/`, 그리고 레거시
-      `images/` prefix 에 lifecycle 규칙을 추가할 것 — [행 보존](#행-보존) 참고. 새
-      prefix 에 규칙이 빠지면 조용한 누수가 된다: 행은 만료되는데 오브젝트는 만료되지 않는다
+설치 — 무엇을 띄우고 어떤 값을 채우는지 — 는 [INSTALL.md](INSTALL.md) 가 단계별로 답한다.
+아래는 설치가 끝난 배포를 *운영하는* 쪽의 항목이다.
+
+- [ ] **시크릿.** `AES_ENCRYPTION_KEY` 와 `BETTER_AUTH_SECRET` 을 시크릿으로 프로비저닝하고
+      백업할 것 — 앞의 것을 잃으면 저장된 모든 자격 증명을 읽을 수 없고, proxied 오브젝트
+      주소도 전부 무효가 된다(서명 키가 거기서 파생된다). Compose 호스트의 `.env.host`
+      (Postgres·MinIO 자격 증명, 다시 생성되지 않는다)도 같은 급이다
+- [ ] **티커.** 다음 중 하나라도 쓴다면 `SCHEDULE_SCAN_TOKEN` 을 시크릿으로 프로비저닝하고
+      Compose 의 `ticker` 프로파일 또는 Helm 의 CronJob 을 켤 것 — 토큰 하나가 세 틱을 모두
+      인증하고, 그중 하나(plugins sync)는 두 레지스트리에 쓴다:
+      - `/api/triggers/scan` 을 최대 1분 간격으로 — schedule 트리거, **그리고 행 보존의 sweep**.
+        티커 없는 배포는 `expiresAt` 이 지난 행을 영원히 쌓는다
+      - `CATALOG_ENABLED=true` 라면 `/api/catalog/reindex` 를 매시간 — 레지스트리 쓰기는 결코
+        재색인하지 않으므로, 이 틱이 없으면 인덱스를 갱신하는 것은 완료된 plugins sync 뿐이고,
+        손으로 등록한 Skill 이나 서버는 영영 발견되지 않는다
+      - `PLUGINS_REPO` 가 설정됐다면 `/api/plugins/sync/scan` — 할 일이 없는 틱은 head SHA
+        하나만 읽으므로 1분 간격이어도 괜찮다
+- [ ] **백업.** Compose: `deploy/idc/scripts/backup.sh [DEST]` — `pg_dump` + 오브젝트 미러 +
+      `.env.host`, 최신 `KEEP`(기본 7)개 유지, 복원 절차는 스크립트 머리. Helm: 조직의
+      Postgres 백업과 오브젝트 스토어 백업이 그 역할이고, `catalog_vectors` 는 복원 대신
+      재색인으로도 충분하다
+- [ ] **보존.** `*_RETENTION_DAYS` 를 정하고 — 기본값은 [행 보존](#행-보존) — 오브젝트 스토어의
+      `artifacts/image/`, `artifacts/document/`, 레거시 `images/` prefix 에 같은 구간의
+      lifecycle 규칙을 붙일 것. 새 prefix 에 규칙이 빠지면 조용한 누수가 된다: 행은 만료되는데
+      오브젝트는 만료되지 않는다
+- [ ] **오브젝트 스토어.** `S3_BUCKET_NAME` 을 쓴다면 `ARTIFACT_ACCESS_MODE` 를 고를 것 —
+      설치형은 `proxied`(스토어가 앱에게만 닿으면 된다). `authenticated` 라면 브라우저가 스토어에
+      직접 닿아야 하고, `public` 이라면 `artifacts/*` 와 레거시 `images/*` 에 공개 읽기를
+      명시적으로 허용해야 한다. 어느 모드든 스토어 자격 증명에는 `artifacts/*` 의 put·get·delete
+      가 있어야 한다: `images/*` 로 좁힌 권한은 모든 쓰기를 실패시키는데 런은 그것을 겪고도
+      *살아남고*(그림은 보여 주고 보관되지 않았다는 경고만 뜬다), get 이 없으면 갤러리와 chat
+      트랜스크립트의 **모든** 이미지가 403 이 되며, delete 가 없으면 갤러리의 삭제가 실패하고
+      행이 남는다
+- [ ] **프록시.** `PUBLIC_BASE_URL` 을 바깥에서 보이는 주소로(Agent Card, Slack 매니페스트,
+      Telegram webhook, Teams messaging endpoint 표시, OAuth 콜백, proxied 오브젝트 주소),
+      `TRUSTED_PROXY_CIDRS` 에 앞단 프록시의 범위를(비워 두면 프록시 둘 뒤에서 rate limit 이
+      함대 전체를 하나의 버킷으로 조인다), 그리고 프록시의 idle timeout 을 SSE keepalive(15초)
+      보다 길게
 - [ ] LB 헬스 체크 → `/api/ready` (확장된 플릿에서는 `/api/health`), 재시작 검사 → `/api/health`
-- [ ] 컨테이너 `stopTimeout` ≥ `MAX_RUN_DURATION_MS`
+- [ ] 컨테이너 `stopTimeout` ≥ `MAX_RUN_DURATION_MS` (Compose 는 `stop_grace_period: 660s`)
 - [ ] Prometheus 가 `/api/metrics` 를 스크레이프할 것; `agent_studio_runs_failed_total`, `agent_studio_run_duration_seconds`, `agent_studio_unknown_model_calls_total` 에 알림
-- [ ] 아래 세 가지 틱 중 하나라도 쓴다면 `SCHEDULE_SCAN_TOKEN` 을 시크릿으로 프로비저닝할 것 — 셋 모두를 인증하고, 그중 하나(plugins sync)는 두 레지스트리에 쓴다
-- [ ] Schedule 트리거를 쓴다면: `/api/triggers/scan` 을 최대 1분 간격으로 틱하는 CronJob
-- [ ] `VECTOR_BUCKET` 이 설정된 경우: `/api/catalog/reindex` 를 매시간 틱하는 CronJob — 레지스트리 쓰기는 결코 재색인하지 않으므로, 이 틱이 없으면 인덱스를 갱신하는 것은 완료된 plugins sync 뿐이고, 손으로 등록한 Skill 이나 서버는 영영 발견되지 않는다
-- [ ] `PLUGINS_REPO` 가 설정된 경우: `/api/plugins/sync/scan` 을 틱하는 CronJob; 할 일이 없는 틱은 head SHA 하나만 읽으므로 1분 간격이어도 괜찮다
+- [ ] 관리형 MCP 를 쓴다면 호스트당 앱 인스턴스 하나, 그리고 앱이 호스트의 Docker CLI 와 루프백에 닿을 것
