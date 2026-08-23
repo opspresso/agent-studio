@@ -1,13 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 /**
- * `tests/setup.ts` replaces the item store with the in-memory fake; the
- * serialiser under test is the real one, so it is taken from the actual
- * module. PostgreSQL's jsonb refuses `\\u0000`, which is what the function
- * exists to keep out — without touching a string that merely spells it.
+ * PostgreSQL's jsonb refuses `\\u0000`, which is what the function exists to
+ * keep out — without touching a string that merely spells it. The in-memory
+ * store the unit tests run on applies the same rule, so a test reads back what
+ * the database would have kept rather than what the caller wrote.
  */
-const { toStoredJson } =
-  await vi.importActual<typeof import("@/infrastructure/db/store")>("@/infrastructure/db/store");
+const { toStoredJson } = await import("@/infrastructure/db/storedJson");
+const { createFakeStore } = await import("./fakeStore");
 
 describe("toStoredJson", () => {
   it("replaces a NUL character with U+FFFD", () => {
@@ -32,5 +32,16 @@ describe("toStoredJson", () => {
     const parsed = JSON.parse(stored);
     expect(parsed.text).toBe("🙂 \uFFFD");
     expect(parsed.title).toBe("🙂");
+  });
+
+  it("is what the fake store keeps, so a test sees the database's copy", async () => {
+    const store = createFakeStore();
+    await store.putItem({ PK: "P", SK: "S", text: "a\u0000b", half: "\ud83d" });
+    expect(await store.getItem({ PK: "P", SK: "S" })).toEqual({
+      PK: "P",
+      SK: "S",
+      text: "a\uFFFDb",
+      half: "\uFFFD",
+    });
   });
 });

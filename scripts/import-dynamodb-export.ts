@@ -89,7 +89,7 @@ async function main(): Promise<void> {
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
   const { withTransaction, closePool } = await import("@/infrastructure/db/client");
-  const { toStoredJson } = await import("@/infrastructure/db/store");
+  const { toStoredJson } = await import("@/infrastructure/db/storedJson");
 
   const counts = {
     items: 0,
