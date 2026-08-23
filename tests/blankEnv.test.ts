@@ -68,9 +68,9 @@ describe("optional config", () => {
 
   it.each(BLANK)("falls back to the built-in default on %o", (raw) => {
     set("PLUGINS_REPO_BRANCH", raw);
-    set("MANAGED_MCP_NETWORK_CONTAINER", raw);
+    set("GITHUB_API_URL", raw);
     expect(config.pluginsRepoBranch).toBe("main");
-    expect(config.managedMcpNetworkContainer).toBe("agent-studio");
+    expect(config.githubApiUrl).toBe("https://api.github.com");
   });
 
   it("trims the value it returns, not just the test", () => {
