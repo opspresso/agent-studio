@@ -91,19 +91,26 @@ export function createDockerProvisioner(): McpProvisioner {
       });
       await docker(["rm", "-f", name]).catch(() => {});
       const environment = spec.environment ?? {};
-      const envDir = await mkdtemp(join(tmpdir(), "agent-studio-mcp-"));
-      const envFile = join(envDir, "env");
-      try {
-        await writeFile(envFile, envFileContent(environment), { mode: 0o600 });
-        await startContainer(envFile);
-      } finally {
-        await rm(envDir, { recursive: true, force: true });
+      if (Object.keys(environment).length === 0) {
+        // Nothing to hand over, so no file to write — and none to leave behind
+        // if the run throws. The `--env-file` below is skipped for the same
+        // reason.
+        await startContainer(undefined);
+      } else {
+        const envDir = await mkdtemp(join(tmpdir(), "agent-studio-mcp-"));
+        const envFile = join(envDir, "env");
+        try {
+          await writeFile(envFile, envFileContent(environment), { mode: 0o600 });
+          await startContainer(envFile);
+        } finally {
+          await rm(envDir, { recursive: true, force: true });
+        }
       }
       const state = await docker(["inspect", "-f", "{{.Id}} {{.State.Running}}", name]);
       const [identity = "", running = "false"] = state.split(/\s+/);
       return { name, address: `http://127.0.0.1:${port}`, identity, running: running === "true" };
 
-      async function startContainer(environmentFile: string): Promise<void> {
+      async function startContainer(environmentFile: string | undefined): Promise<void> {
         await docker([
         "run",
         "-d",
@@ -130,7 +137,7 @@ export function createDockerProvisioner(): McpProvisioner {
           assertSafe(ref, MANAGED_ENV_REF, "env reference"),
         ]),
         // After the operator's references, so an entry's own environment wins.
-        ...(Object.keys(environment).length > 0 ? ["--env-file", environmentFile] : []),
+        ...(environmentFile !== undefined ? ["--env-file", environmentFile] : []),
         "-e",
         `PORT=${target}`,
         image,
