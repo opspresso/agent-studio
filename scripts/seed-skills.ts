@@ -6,11 +6,15 @@
  */
 process.env.STAGE ??= "local";
 
-const endpoint = process.env.DYNAMODB_ENDPOINT ?? "";
-if (!endpoint.includes("localhost") && !endpoint.includes("127.0.0.1")) {
-  console.error(
-    `Refusing to run against non-local endpoint: ${endpoint || "(unset — pass --env-file=.env.local)"}`,
-  );
+// Sample rows belong in a local database only.
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error("DATABASE_URL is unset — pass --env-file=.env.local");
+  process.exit(1);
+}
+const database = new URL(databaseUrl);
+if (!["localhost", "127.0.0.1"].includes(database.hostname)) {
+  console.error(`Refusing to seed a non-local database: ${database.host}${database.pathname}`);
   process.exit(1);
 }
 
