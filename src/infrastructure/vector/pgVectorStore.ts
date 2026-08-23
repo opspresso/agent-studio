@@ -59,6 +59,14 @@ export function createPgVectorStore(table: string): VectorStorePort {
             params,
           );
         }
+        // The column is untyped, so rows of two widths can share the table —
+        // and `<=>` fails the whole query the moment it reaches one of the
+        // other width. A write is the one moment the intended width is known:
+        // whatever was embedded at a previous dimension goes with this batch.
+        const width = records[0]?.vector.length;
+        if (width !== undefined && width > 0) {
+          await client.query(`DELETE FROM ${table} WHERE vector_dims(embedding) <> $1`, [width]);
+        }
       });
     },
 
