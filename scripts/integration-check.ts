@@ -949,6 +949,62 @@ async function main() {
     );
     pass("A2A client key: transactional pair, hash lookup, full deletion");
 
+    // ---------- transact lock modes (a checked key does not serialise) ----------
+    // A `check` op asserts something elsewhere is still live; the exclusive
+    // lock it used to take made every usage row, trace and version write in a
+    // project queue on that project's one META row. The two directions that
+    // matter: a shared holder must not block a checker, and an exclusive one
+    // must still block it — that is the delete the check exists to catch.
+    {
+      const { transact, conditions } = await import("@/infrastructure/db/store");
+      const { getPool } = await import("@/infrastructure/db/client");
+      const { keys } = await import("@/infrastructure/db/keys");
+      const projectKey = keys.project(projectName);
+      const probeKey = keys.trace(`lock-probe-${suffix}`);
+      const probe = { ...probeKey, entityType: "TRACE", projectName, createdAt: now };
+      const holder = await getPool().connect();
+      const waited = <T,>(promise: Promise<T>) =>
+        Promise.race([
+          promise.then(() => "done" as const),
+          new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 1_500)),
+        ]);
+      try {
+        await holder.query("BEGIN");
+        await holder.query(
+          "SELECT pg_advisory_xact_lock_shared(hashtext($1::text), hashtext($2::text))",
+          [projectKey.PK, projectKey.SK],
+        );
+        await holder.query("SELECT data FROM items WHERE pk = $1 AND sk = $2 FOR SHARE", [
+          projectKey.PK,
+          projectKey.SK,
+        ]);
+        assert.equal(
+          await waited(
+            transact([
+              { kind: "check", key: projectKey, condition: conditions.exists },
+              { kind: "put", item: probe },
+            ]),
+          ),
+          "done",
+          "a checked key is taken share-mode, so another reader does not block it",
+        );
+        // Same key, but written this time: that one waits for the shared holder.
+        // An `update` rather than a `put`, so the row keeps what the fixture
+        // wrote and the checks after this one still read it.
+        const writer = transact([
+          { kind: "update", key: projectKey, patch: (row) => ({ ...(row ?? {}) }) },
+        ]);
+        assert.equal(await waited(writer), "waiting", "a write on the key still waits on a reader");
+        await holder.query("ROLLBACK");
+        await writer;
+      } finally {
+        holder.release();
+      }
+      const { deleteItem } = await import("@/infrastructure/db/store");
+      await deleteItem(probeKey).catch(() => {});
+      pass("transact: a checked key locks share-mode, a written one exclusively");
+    }
+
     // ---------- concurrency slots (conditional claim + lease reclaim) ----------
     const slotActor = `user:slots-${suffix}@example.com`;
     const nowSeconds = Math.floor(Date.now() / 1000);

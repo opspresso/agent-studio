@@ -87,14 +87,29 @@ function rowData(rows: { data: Item }[]): Item | null {
  * lock is on the key string, so an absent row has something to serialise
  * on; it is transaction-scoped and released with the commit. A hash
  * collision only makes two unrelated keys take turns.
+ *
+ * `shared` is for a key a transaction only *reads a condition off* — the
+ * `check` op, which asserts a project or chat is still live while writing
+ * somewhere else. Two of those have nothing to say to each other, and the
+ * exclusive form made every usage row, trace and version write in a project
+ * queue on that project's one META row. A shared holder still blocks, and is
+ * blocked by, an exclusive one, so the delete the check guards against is
+ * still serialised against it.
  */
-async function lockRow(client: Runner, key: Key): Promise<Item | null> {
-  await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))", [
-    key.PK,
-    key.SK,
-  ]);
+async function lockRow(
+  client: Runner,
+  key: Key,
+  mode: "exclusive" | "shared" = "exclusive",
+): Promise<Item | null> {
+  const shared = mode === "shared";
+  await client.query(
+    shared
+      ? "SELECT pg_advisory_xact_lock_shared(hashtext($1::text), hashtext($2::text))"
+      : "SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))",
+    [key.PK, key.SK],
+  );
   const result = await client.query<{ data: Item }>(
-    "SELECT data FROM items WHERE pk = $1 AND sk = $2 FOR UPDATE",
+    `SELECT data FROM items WHERE pk = $1 AND sk = $2 ${shared ? "FOR SHARE" : "FOR UPDATE"}`,
     [key.PK, key.SK],
   );
   return rowData(result.rows);
@@ -231,12 +246,17 @@ export async function transact(ops: TransactOp[]): Promise<void> {
       const kb = opKey(b);
       return ka.PK < kb.PK ? -1 : ka.PK > kb.PK ? 1 : ka.SK < kb.SK ? -1 : ka.SK > kb.SK ? 1 : 0;
     });
+    // A key only ever checked takes the shared lock; one this transaction also
+    // writes takes the exclusive one, whichever op comes first.
+    const written = new Set(
+      ordered.filter((op) => op.kind !== "check").map((op) => `${opKey(op).PK} ${opKey(op).SK}`),
+    );
     const locked = new Map<string, Item | null>();
     for (const op of ordered) {
       const key = opKey(op);
       const id = `${key.PK} ${key.SK}`;
       if (!locked.has(id)) {
-        locked.set(id, await lockRow(client, key));
+        locked.set(id, await lockRow(client, key, written.has(id) ? "exclusive" : "shared"));
       }
     }
     for (const op of ops) {
