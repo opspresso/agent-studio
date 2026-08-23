@@ -344,9 +344,9 @@ export const en = {
   "guide.limits.cost": "Every run is priced",
   "guide.limits.costBody":
     "What the channel charged, or the registry's rate for that model. The overview rolls it up per project and per model, a project's Usage tab per caller, and your Profile page shows your own.",
-  "guide.limits.guards": "Thresholds warn, then refuse",
+  "guide.limits.guards": "Thresholds alert, then refuse",
   "guide.limits.guardsBody":
-    "A project's daily and monthly limits live on its Settings tab. Past the warning line a run says so and continues; past the limit it is refused before it starts.",
+    "A project's daily and monthly limits live on its Settings tab. Crossing the alert threshold posts one notification to the channels the project named and runs carry on; crossing the block threshold refuses them until the window rolls over — UTC midnight for the day, the first for the month.",
   "guide.limits.tier": "Your tier bounds you too",
   "guide.limits.tierBody":
     "A monthly cap across every project, and a ceiling on how many runs you may have in flight at once. The Profile page shows both, and an admin can move them.",
