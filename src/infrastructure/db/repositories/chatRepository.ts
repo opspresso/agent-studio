@@ -267,24 +267,38 @@ export const chatRepository: ChatRepository = {
 
   async reserveMessageSeq(chatId) {
     const key = keys.chat(chatId);
-    // The counter is initialised from the newest message for a row written
-    // before it existed, then taken under the same row lock every caller
-    // competes on — so two reservations never answer the same number.
-    const latest = await queryItems({
-      pk: key.PK,
-      sk: { prefix: keys.chatMessagePrefix() },
-      forward: false,
-      limit: 1,
-    });
-    const fallback = Number(latest[0]?.seq ?? -1) + 1;
-    const { before } = await updateItem(
-      key,
-      (row) => {
-        const current = typeof row?.nextSeq === "number" ? row.nextSeq : fallback;
-        return { ...row, nextSeq: current + 1 };
-      },
-      live,
-    );
-    return typeof before?.nextSeq === "number" ? before.nextSeq : fallback;
+    // Taken under the row lock every caller competes on, so two reservations
+    // never answer the same number. A row written before the counter existed
+    // has none; it is initialised from the newest message — read only in that
+    // case, since every chat created since carries the counter — and the
+    // reservation retried, because another caller may have initialised it
+    // meanwhile and this one must count from what they wrote.
+    for (;;) {
+      const { before } = await updateItem(
+        key,
+        (row) => (typeof row?.nextSeq === "number" ? { ...row, nextSeq: row.nextSeq + 1 } : { ...row }),
+        live,
+      );
+      if (typeof before?.nextSeq === "number") {
+        return before.nextSeq;
+      }
+      const latest = await queryItems({
+        pk: key.PK,
+        sk: { prefix: keys.chatMessagePrefix() },
+        forward: false,
+        limit: 1,
+      });
+      const initial = Number(latest[0]?.seq ?? -1) + 1;
+      await updateItem(
+        key,
+        (row) => ({ ...row, nextSeq: initial }),
+        (row) => live(row) && row?.nextSeq === undefined,
+      ).catch((error: unknown) => {
+        // Someone else initialised it first; the retry counts from theirs.
+        if (!lostCondition(error)) {
+          throw error;
+        }
+      });
+    }
   },
 };
