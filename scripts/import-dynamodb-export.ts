@@ -144,7 +144,7 @@ async function main(): Promise<void> {
       for (const row of replaced.rows) {
         console.log(`replacing user ${row.email} (${row.id}) with the exported row`);
       }
-      counts.replacedUsers = replaced.rowCount ?? 0;
+      counts.replacedUsers += replaced.rowCount ?? 0;
       for (let item of items) {
         const pk = String(item.PK ?? "");
         const sk = String(item.SK ?? "");
