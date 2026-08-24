@@ -17,6 +17,7 @@ import { selectSkillAttachments, type SkillTreeEntry } from "@/domain/skill/file
 import { isSlug } from "@/domain/naming";
 import {
   excludeSubtrees,
+  groupEntriesByRoot,
   mcpDocServerName,
   selectPluginRoots,
   selectPluginSkillRoots,
@@ -59,26 +60,33 @@ export async function collectRepoPlugins(
   // plugin's skill or attachment, or one repo would mean two things.
   const entries = excludeSubtrees(tree, nested);
 
+  // Each root's own files, decided in one pass over the tree: every walk below
+  // is per plugin, and running each of them over the whole listing is what made
+  // a monorepo's sync cost the square of its size.
+  const entriesByRoot = groupEntriesByRoot(entries, roots);
+
   const plugins: RepoPlugin[] = [];
   for (const root of roots) {
-    const manifestEntry = entries.find((entry) => entry.path === root.manifestPath);
+    const owned = entriesByRoot.get(root.rootPath) ?? [];
+    const ownedByPath = new Map(owned.map((entry) => [entry.path, entry]));
+    const manifestEntry = ownedByPath.get(root.manifestPath);
     if (!manifestEntry) {
       continue;
     }
 
     const mcpJsonPath = root.rootPath === "" ? "mcp.json" : `${root.rootPath}/mcp.json`;
-    const mcpJsonEntry = entries.find((entry) => entry.path === mcpJsonPath);
+    const mcpJsonEntry = ownedByPath.get(mcpJsonPath);
 
     // A directory name that is not a slug cannot become a registry entry name.
     // Reported rather than dropped: a document nobody ever sees is the failure
     // the plugin convention exists to prevent.
-    const discovered = selectPluginSkillRoots(root, entries);
+    const discovered = selectPluginSkillRoots(root, owned);
     const skillRoots = discovered.filter((candidate) => isSlug(candidate.name));
     const badNames = discovered
       .filter((candidate) => !isSlug(candidate.name))
       .map((candidate) => candidate.skillMdPath);
-    const { selected, skipped } = selectSkillAttachments(entries, skillRoots);
-    const docEntries = entries.filter((entry) => mcpDocServerName(entry.path, root) !== null);
+    const { selected, skipped } = selectSkillAttachments(owned, skillRoots);
+    const docEntries = owned.filter((entry) => mcpDocServerName(entry.path, root) !== null);
 
     // One plugin's files read together — a serial walk multiplied every
     // network round trip by the file count, which is what let a slow GitHub
@@ -94,7 +102,7 @@ export async function collectRepoPlugins(
       ),
       Promise.all(
         skillRoots.map(async (skillRoot) => {
-          const skillMd = entries.find((entry) => entry.path === skillRoot.skillMdPath);
+          const skillMd = ownedByPath.get(skillRoot.skillMdPath);
           return skillMd ? { skillRoot, content: await read(skillMd.path) } : null;
         }),
       ),

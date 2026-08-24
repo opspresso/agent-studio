@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   excludeSubtrees,
+  groupEntriesByRoot,
   mcpDocServerName,
   selectPluginRoots,
   selectPluginSkillRoots,
@@ -52,6 +53,47 @@ describe("selectPluginRoots", () => {
     ]);
     expect(roots.map((root) => root.rootPath)).toEqual([""]);
     expect(nested.map((root) => root.rootPath)).toEqual(["plugins/devops"]);
+  });
+});
+
+describe("groupEntriesByRoot", () => {
+  it("gives each plugin its own files and no one else's", () => {
+    const roots: PluginRoot[] = [
+      { rootPath: "plugins/devops", manifestPath: "plugins/devops/plugin.json" },
+      { rootPath: "plugins/research", manifestPath: "plugins/research/plugin.json" },
+    ];
+    const grouped = groupEntriesByRoot(
+      [
+        blob("README.md"),
+        blob("plugins/devops/plugin.json"),
+        blob("plugins/devops/skills/gitops/SKILL.md"),
+        blob("plugins/devops/skills/gitops/deep/ref.md"),
+        blob("plugins/research/plugin.json"),
+      ],
+      roots,
+    );
+    expect(grouped.get("plugins/devops")?.map((entry) => entry.path)).toEqual([
+      "plugins/devops/plugin.json",
+      "plugins/devops/skills/gitops/SKILL.md",
+      "plugins/devops/skills/gitops/deep/ref.md",
+    ]);
+    expect(grouped.get("plugins/research")?.map((entry) => entry.path)).toEqual([
+      "plugins/research/plugin.json",
+    ]);
+  });
+
+  it("gives a repository that is one plugin the whole tree", () => {
+    const entries = [blob("plugin.json"), blob("README.md"), blob("skills/a/SKILL.md")];
+    const grouped = groupEntriesByRoot(entries, [{ rootPath: "", manifestPath: "plugin.json" }]);
+    expect(grouped.get("")).toEqual(entries);
+  });
+
+  it("returns an empty list for a root with no files, and drops what no root owns", () => {
+    const grouped = groupEntriesByRoot(
+      [blob("README.md"), blob("docs/guide.md")],
+      [{ rootPath: "plugins/devops", manifestPath: "plugins/devops/plugin.json" }],
+    );
+    expect(grouped.get("plugins/devops")).toEqual([]);
   });
 });
 

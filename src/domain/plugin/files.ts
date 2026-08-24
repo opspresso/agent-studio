@@ -58,6 +58,45 @@ export function selectPluginRoots(entries: SkillTreeEntry[]): {
   return { roots, nested };
 }
 
+/**
+ * The tree split by which plugin owns each file, keyed by `rootPath`.
+ *
+ * The roots {@link selectPluginRoots} returns are disjoint — one inside
+ * another is refused as `nested` — so a file belongs to at most one, and a
+ * plugin's walk then costs its own files rather than the whole repository's.
+ * Walking the entry's own parent directories rather than testing it against
+ * every root is what keeps this linear in the tree: a monorepo of eighty
+ * plugins over twelve thousand files had each of the four per-root passes
+ * re-read the entire listing, which is a second of blocked event loop spent
+ * deciding which file was whose.
+ *
+ * A file under no root is left out; nothing downstream has a plugin to
+ * attribute it to.
+ */
+export function groupEntriesByRoot(
+  entries: SkillTreeEntry[],
+  roots: readonly PluginRoot[],
+): Map<string, SkillTreeEntry[]> {
+  const byRoot = new Map(roots.map((root) => [root.rootPath, [] as SkillTreeEntry[]]));
+  // A repository that is one plugin at its root owns everything, and no parent
+  // walk would ever reach the empty path.
+  const wholeTree = byRoot.get("");
+  if (wholeTree) {
+    wholeTree.push(...entries);
+    return byRoot;
+  }
+  for (const entry of entries) {
+    for (let at = entry.path.lastIndexOf("/"); at > 0; at = entry.path.lastIndexOf("/", at - 1)) {
+      const owner = byRoot.get(entry.path.slice(0, at));
+      if (owner) {
+        owner.push(entry);
+        break;
+      }
+    }
+  }
+  return byRoot;
+}
+
 /** Drop everything under the given roots — used to blind a walk to refused subtrees. */
 export function excludeSubtrees(
   entries: SkillTreeEntry[],
