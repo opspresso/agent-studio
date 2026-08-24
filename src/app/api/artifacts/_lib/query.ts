@@ -34,9 +34,10 @@ function oneOf<T extends string>(raw: string | null, allowed: readonly T[]): T |
 
 export function parseArtifactQuery(url: string): ParsedQuery {
   const params = new URL(url).searchParams;
-  // The clamp the use case already owns. Spelled here as literals, the route
-  // and the use case were free to disagree about page size — which this file's
-  // own header warns about for every other filter it parses.
+  // The bounds the use case owns, read by the rule every other list endpoint
+  // reads by. Spelled out here — as three of them once were — the route and
+  // the use case were free to disagree about page size, which this file's own
+  // header warns about for every other filter it parses.
   const { limit } = parsePageLimit(params.get("limit"), {
     fallback: DEFAULT_ARTIFACT_PAGE,
     max: MAX_ARTIFACT_PAGE,
@@ -84,7 +85,7 @@ export interface ArtifactPage {
   nextBefore?: string;
 }
 
-/** The page size a request asked for, clamped exactly as the use case clamps it. */
+/** The page size a request asked for, bounded by the rule the use case binds it with. */
 function pageSize(options: ListArtifactsOptions): number {
   return boundedPageLimit(options.limit ?? DEFAULT_ARTIFACT_PAGE, MAX_ARTIFACT_PAGE);
 }

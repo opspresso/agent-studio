@@ -22,7 +22,6 @@ export interface AuditQuery {
   to?: string;
 }
 
-
 /**
  * Every UTC day from `from` to `to`, inclusive, newest first.
  *
