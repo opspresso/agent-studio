@@ -3,8 +3,6 @@
  * rule lives, so the in-memory store the unit tests run on (`tests/fakeStore.ts`)
  * can apply the same one and a test sees what PostgreSQL would have kept.
  */
-import type { Item } from "./store";
-
 /**
  * The document as the column takes it. `jsonb` refuses `\u0000` (NUL) inside a
  * string — the one character JSON can carry that PostgreSQL text cannot —
@@ -17,7 +15,7 @@ import type { Item } from "./store";
  * `JSON.stringify` writes exactly those (never a whole pair) as a `\ud800`…
  * `\udfff` escape, so it is caught at the same place.
  */
-export function toStoredJson(item: Item): string {
+export function toStoredJson(item: Record<string, unknown>): string {
   // Only the escapes JSON.stringify wrote — ones preceded by an even number of
   // backslashes. A string that *contains* the six characters `\u0000` is
   // serialised as `\\u0000`, and rewriting that would leave a lone backslash

@@ -7,7 +7,8 @@ import {
   type ScheduleFiring,
 } from "@/application/trigger/scanSchedules";
 import { REPAIR_AFTER_SECONDS } from "@/application/trigger/repairLostRuns";
-import { executeFiring, type FiringDeps } from "@/application/trigger/runTrigger";
+import { executeFiring } from "@/application/trigger/runTrigger";
+import type { FiringDeps } from "@/application/trigger/deps";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
