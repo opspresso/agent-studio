@@ -29,7 +29,7 @@
 import type { Trigger, TriggerRun } from "@/domain/trigger/types";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
-import type { FiringDeps } from "./runTrigger";
+import type { FiringDeps } from "./deps";
 
 /**
  * How far past a run's lease a `running` row must sit before it is declared

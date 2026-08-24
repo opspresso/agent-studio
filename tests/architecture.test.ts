@@ -808,6 +808,58 @@ function applicationSliceOf(pathOrSpec: string): string | null {
   return match?.[1] ?? null;
 }
 
+/** Report every back edge as the dependency path that closes it. */
+function cyclesInGraph(edges: Map<string, Set<string>>): string[] {
+  const cycles: string[] = [];
+  const done = new Set<string>();
+  const visit = (node: string, path: string[]): void => {
+    const at = path.indexOf(node);
+    if (at >= 0) {
+      cycles.push([...path.slice(at), node].join(" -> "));
+      return;
+    }
+    if (done.has(node)) {
+      return;
+    }
+    for (const next of edges.get(node) ?? []) {
+      visit(next, [...path, node]);
+    }
+    done.add(node);
+  };
+  for (const node of [...edges.keys()].sort()) {
+    visit(node, []);
+  }
+  return cycles.sort();
+}
+
+/**
+ * Layer and slice rules still allow two files in one slice to depend on each
+ * other. Type-only edges count: they keep the modules structurally inseparable
+ * even when the runtime erases one direction. Dynamic imports are deferred and
+ * do not join the static module graph.
+ */
+describe("module graph", () => {
+  it("has no cycles", () => {
+    const edges = new Map<string, Set<string>>();
+    for (const file of SOURCE_FILES) {
+      const targets = parseImports(file.text)
+        .filter((imported) => !imported.dynamic)
+        .map((imported) => fileFor(resolveSpec(imported.spec, file.path))?.path)
+        .filter((path): path is string => path !== undefined);
+      edges.set(file.path, new Set(targets));
+    }
+    expect(cyclesInGraph(edges)).toEqual([]);
+  });
+
+  it("reports the path that closes a cycle", () => {
+    const edges = new Map([
+      ["a", new Set(["b"])],
+      ["b", new Set(["a"])],
+    ]);
+    expect(cyclesInGraph(edges)).toEqual(["a -> b -> a"]);
+  });
+});
+
 /**
  * The layer rules govern edges *between* layers; nothing governed the edges
  * between application slices, and two cycles had formed before anything said
@@ -836,28 +888,7 @@ describe("application slice graph", () => {
         }
       }
     }
-    // DFS with a path stack; a back edge into the stack is a cycle, reported
-    // as the chain that closes it so the failure names the import to break.
-    const cycles: string[] = [];
-    const done = new Set<string>();
-    const walk = (slice: string, path: string[]): void => {
-      const at = path.indexOf(slice);
-      if (at >= 0) {
-        cycles.push([...path.slice(at), slice].join(" -> "));
-        return;
-      }
-      if (done.has(slice)) {
-        return;
-      }
-      done.add(slice);
-      for (const next of edges.get(slice) ?? []) {
-        walk(next, [...path, slice]);
-      }
-    };
-    for (const slice of [...edges.keys()].sort()) {
-      walk(slice, []);
-    }
-    expect(cycles.sort()).toEqual([]);
+    expect(cyclesInGraph(edges)).toEqual([]);
   });
 
   it("still sees the graph it governs", () => {

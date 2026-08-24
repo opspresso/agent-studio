@@ -83,7 +83,7 @@ import {
   pluginSyncReportRepository,
 } from "@/infrastructure/db/repositories/pluginSyncRepository";
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
-import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
+import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createTestModel } from "@/application/llm/testModel";
 import { createModelCatalogRefresher } from "@/application/llm/modelCatalogRefresh";

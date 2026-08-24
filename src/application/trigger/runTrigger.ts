@@ -16,16 +16,10 @@
 import { randomUUID } from "node:crypto";
 import { cutCodePoints } from "@/shared/utf8Text";
 import type { RunActor } from "@/domain/execution/actor";
-import type { RunSlotRepository } from "@/domain/execution/runSlot";
-import type { EngineChunk } from "@/domain/llm/types";
 import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { TriggerRepository } from "@/domain/trigger/repository";
 import {
   PROJECT_WEBHOOK_ID,
-  type ScheduleDelivery,
   type ScheduleDeliveryResult,
   type Trigger,
   type TriggerRun,
@@ -35,36 +29,12 @@ import { resolveRunnableVersion } from "@/application/project/resolveRunnableVer
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import { repairTriggerRuns } from "./repairLostRuns";
+import type { FiringDeps, TriggerRunnerDeps } from "./deps";
 
 /** Bounded preview of a run's answer, kept on the firing row. */
 const MAX_RESULT_CHARS = 2_000;
 /** Bounded serialisation of a payload into the user message. */
 const MAX_PAYLOAD_CHARS = 20_000;
-
-export interface TriggerRunnerDeps {
-  triggers: TriggerRepository;
-  projects: ProjectRepository;
-  versions: VersionRepository;
-  cipher: SecretCipher;
-  /** Runs the resolved version; the composition root binds the facade. */
-  run: (input: {
-    project: Project;
-    version: Version;
-    variables?: Record<string, string>;
-    message?: string;
-    actor: RunActor;
-  }) => AsyncGenerator<EngineChunk>;
-  /**
-   * Reused to enforce `allowConcurrent: false` — "at most one in flight, and a
-   * dead instance's hold expires" is exactly what a run slot already is.
-   */
-  runSlots?: RunSlotRepository;
-  /** Sends a completed schedule report; platform credentials stay in the composition root. */
-  deliverReport?: (project: Project, delivery: ScheduleDelivery, text: string) => Promise<void>;
-}
-
-/** What `admitRun` reads: everything but the webhook secret's cipher. */
-export type FiringDeps = Omit<TriggerRunnerDeps, "cipher">;
 
 /** An admitted firing: everything `executeFiring` needs to proceed. */
 export interface AdmittedFiring<T extends Trigger = Trigger> {

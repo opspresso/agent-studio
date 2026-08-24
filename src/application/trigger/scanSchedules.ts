@@ -27,7 +27,8 @@ import type { ScheduleTrigger } from "@/domain/trigger/types";
 import { dueSlots, isValidTimezone, parseCron } from "@/domain/trigger/cron";
 import { log } from "@/shared/logger";
 import { repairLostRuns } from "./repairLostRuns";
-import { admitRun, recordSkip, type AdmittedFiring, type FiringDeps } from "./runTrigger";
+import { admitRun, recordSkip, type AdmittedFiring } from "./runTrigger";
+import type { FiringDeps } from "./deps";
 
 /**
  * How far back a tick looks. Occurrences older than this were missed for good

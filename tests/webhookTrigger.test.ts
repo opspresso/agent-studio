@@ -4,8 +4,8 @@ import {
   executeDelivery,
   payloadInput,
   triggerActor,
-  type TriggerRunnerDeps,
 } from "@/application/trigger/runTrigger";
+import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { REPAIR_AFTER_SECONDS } from "@/application/trigger/repairLostRuns";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { EngineChunk } from "@/domain/llm/types";
