@@ -835,15 +835,15 @@ function cyclesInGraph(edges: Map<string, Set<string>>): string[] {
 /**
  * Layer and slice rules still allow two files in one slice to depend on each
  * other. Type-only edges count: they keep the modules structurally inseparable
- * even when the runtime erases one direction. Dynamic imports are deferred and
- * do not join the static module graph.
+ * even when the runtime erases one direction. Dynamic imports count too: they
+ * defer loading but still couple the two modules, and the scanner cannot tell
+ * them apart from a type-position `import("…").T` without a parser.
  */
 describe("module graph", () => {
   it("has no cycles", () => {
     const edges = new Map<string, Set<string>>();
     for (const file of SOURCE_FILES) {
       const targets = parseImports(file.text)
-        .filter((imported) => !imported.dynamic)
         .map((imported) => fileFor(resolveSpec(imported.spec, file.path))?.path)
         .filter((path): path is string => path !== undefined);
       edges.set(file.path, new Set(targets));
