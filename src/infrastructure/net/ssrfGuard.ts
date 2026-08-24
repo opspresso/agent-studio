@@ -56,30 +56,119 @@ function isBlockedIpv4(ip: string): boolean {
   return BLOCKED_IPV4.some(([base, bits]) => inCidr(ipLong, base, bits));
 }
 
+/**
+ * The eight 16-bit groups of an IPv6 literal, or `null` when the text is not
+ * one this can read — which {@link isBlockedAddress} treats as unsafe.
+ *
+ * Written out rather than pattern-matched on the text because an IPv6 address
+ * has many spellings of the same value: `::`, a dotted IPv4 tail, and a
+ * resolver or URL parser that compresses differently than the operator typed.
+ * Prefix tests below compare numbers, so every spelling reaches the same answer.
+ */
+function ipv6Groups(ip: string): number[] | null {
+  if (isIP(ip) !== 6) {
+    return null;
+  }
+  const halves = ip.toLowerCase().split("::");
+  if (halves.length > 2) {
+    return null;
+  }
+  const expand = (part: string): number[] => {
+    if (part === "") {
+      return [];
+    }
+    const pieces = part.split(":");
+    const tail = pieces[pieces.length - 1] ?? "";
+    if (!tail.includes(".")) {
+      return pieces.map((piece) => parseInt(piece, 16));
+    }
+    // A dotted IPv4 tail (`::ffff:127.0.0.1`) is the low two groups.
+    const octets = tail.split(".").map(Number);
+    return [
+      ...pieces.slice(0, -1).map((piece) => parseInt(piece, 16)),
+      ((octets[0] ?? 0) << 8) | (octets[1] ?? 0),
+      ((octets[2] ?? 0) << 8) | (octets[3] ?? 0),
+    ];
+  };
+  const head = expand(halves[0] ?? "");
+  if (halves.length === 1) {
+    return head.length === 8 ? head : null;
+  }
+  const tail = expand(halves[1] ?? "");
+  const fill = 8 - head.length - tail.length;
+  return fill < 0 ? null : [...head, ...new Array<number>(fill).fill(0), ...tail];
+}
+
+function inIpv6Cidr(groups: number[], base: readonly number[], bits: number): boolean {
+  for (let index = 0; index < 8; index += 1) {
+    const remaining = bits - index * 16;
+    if (remaining <= 0) {
+      return true;
+    }
+    const mask = remaining >= 16 ? 0xffff : (0xffff << (16 - remaining)) & 0xffff;
+    if (((groups[index] ?? 0) & mask) !== ((base[index] ?? 0) & mask)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Parsed once; the prefixes below are literals this file owns. */
+function prefix(ip: string, bits: number): { base: readonly number[]; bits: number } {
+  const base = ipv6Groups(ip);
+  if (!base) {
+    throw new Error(`ssrfGuard: ${ip} is not an IPv6 prefix`);
+  }
+  return { base, bits };
+}
+
+/**
+ * IPv6 ranges that must never be dispatched to — the IPv4 list's counterpart.
+ * Multicast is here for the same reason `224.0.0.0/4` is there, and Teredo is
+ * a tunnel to an IPv4 address this guard would otherwise never see.
+ */
+const BLOCKED_IPV6 = [
+  prefix("100::", 64), // discard-only
+  prefix("2001::", 32), // Teredo
+  prefix("2001:db8::", 32), // documentation
+  prefix("fc00::", 7), // unique local
+  prefix("fe80::", 10), // link-local
+  prefix("ff00::", 8), // multicast
+];
+
+/**
+ * IPv6 prefixes that carry an IPv4 address, and the group it starts at.
+ *
+ * Judged by the address *inside* them rather than blocked wholesale, because
+ * these are how an IPv6-only network — which is what a deployment inside a
+ * modern enterprise may well be — reaches IPv4 at all: `64:ff9b::8.8.8.8` is an
+ * ordinary public address there, and `64:ff9b::10.0.0.1` is exactly the request
+ * this guard exists to refuse. Only the mapped form was read before, so every
+ * other spelling of an internal address went through unexamined.
+ *
+ * `::/96` covers the unspecified and loopback addresses as well: their embedded
+ * IPv4 is in `0.0.0.0/8`, which the IPv4 list already refuses.
+ */
+const EMBEDDED_IPV4 = [
+  { ...prefix("::", 96), at: 6 }, // IPv4-compatible (RFC 4291, deprecated)
+  { ...prefix("::ffff:0:0", 96), at: 6 }, // IPv4-mapped
+  { ...prefix("64:ff9b::", 96), at: 6 }, // NAT64 well-known prefix (RFC 6052)
+  { ...prefix("2002::", 16), at: 1 }, // 6to4 (RFC 3056)
+];
+
 function isBlockedIpv6(ip: string): boolean {
-  const addr = ip.toLowerCase();
-  if (addr === "::1" || addr === "::") {
+  const groups = ipv6Groups(ip);
+  if (!groups) {
     return true;
   }
-  // IPv4-mapped (::ffff:a.b.c.d). The WHATWG URL parser normalises the tail to
-  // hex (::ffff:a9fe:a9fe), so accept both the dotted and hex forms.
-  if (addr.startsWith("::ffff:")) {
-    const tail = addr.slice("::ffff:".length);
-    if (isIP(tail) === 4) {
-      return isBlockedIpv4(tail);
-    }
-    const hextets = tail.split(":");
-    const [hi, lo] = hextets;
-    if (hextets.length === 2 && hi !== undefined && lo !== undefined) {
-      const high = parseInt(hi, 16);
-      const low = parseInt(lo, 16);
-      if (Number.isInteger(high) && Number.isInteger(low)) {
-        return isBlockedIpv4(`${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`);
-      }
+  for (const { base, bits, at } of EMBEDDED_IPV4) {
+    if (inIpv6Cidr(groups, base, bits)) {
+      const high = groups[at] ?? 0;
+      const low = groups[at + 1] ?? 0;
+      return isBlockedIpv4(`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`);
     }
   }
-  // fc00::/7 unique-local, fe80::/10 link-local.
-  return /^f[cd]/.test(addr) || /^fe[89ab]/.test(addr);
+  return BLOCKED_IPV6.some(({ base, bits }) => inIpv6Cidr(groups, base, bits));
 }
 
 function isBlockedAddress(ip: string): boolean {

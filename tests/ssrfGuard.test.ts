@@ -41,6 +41,37 @@ describe("assertPublicUrl with IP literals", () => {
     await expect(assertPublicUrl(url)).rejects.toBeInstanceOf(SsrfError);
   });
 
+  // Every one of these is an internal address written as IPv6. The mapped form
+  // was the only spelling the guard read, so the rest reached the network.
+  it.each([
+    "http://[::7f00:1]/", // IPv4-compatible ::127.0.0.1
+    "http://[::a9fe:a9fe]/", // IPv4-compatible ::169.254.169.254
+    "http://[64:ff9b::7f00:1]/", // NAT64 to 127.0.0.1
+    "http://[64:ff9b::a00:1]/", // NAT64 to 10.0.0.1
+    "http://[2002:a00:1::]/", // 6to4 carrying 10.0.0.1
+    "http://[ff02::1]/", // link-local all-nodes multicast
+    "http://[fd12:3456::1]/", // unique local, fd half of fc00::/7
+    "http://[2001:db8::1]/", // documentation
+    "http://[100::1]/", // discard-only
+  ])("blocks an internal address spelled as IPv6: %s", async (url) => {
+    await expect(assertPublicUrl(url)).rejects.toBeInstanceOf(SsrfError);
+  });
+
+  // The transition prefixes are judged by the IPv4 inside them, not refused
+  // wholesale: an IPv6-only deployment reaches the public internet through one.
+  it.each([
+    "http://[64:ff9b::8.8.8.8]/", // NAT64 to a public address
+    "http://[2002:808:808::]/", // 6to4 carrying 8.8.8.8
+  ])("allows a public address spelled as IPv6: %s", async (url) => {
+    await expect(assertPublicUrl(url)).resolves.toBeUndefined();
+  });
+
+  it("blocks an IPv6 address a resolver returns uncompressed", async () => {
+    await expect(
+      assertPublicUrl("https://evil.example.com", resolvesTo("0:0:0:0:0:ffff:127.0.0.1")),
+    ).rejects.toBeInstanceOf(SsrfError);
+  });
+
   it.each(["http://8.8.8.8/", "https://1.1.1.1/", "http://[2606:4700::1]/"])(
     "allows public literal %s",
     async (url) => {

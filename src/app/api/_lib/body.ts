@@ -31,18 +31,6 @@ export function bodyTooLarge(error: BodyTooLargeError): Response {
 }
 
 /**
- * Read and parse a turn body, refusing one that is too large *before* it is held
- * in memory. `readBodyText` checks the declared length first and then cuts the
- * stream, so a lying `content-length` cannot decide how much is read.
- *
- * @throws {BodyTooLargeError}
- */
-export async function readTurnBody(request: Request): Promise<unknown> {
-  const text = await readBodyText(request, MAX_TURN_BODY_BYTES);
-  return JSON.parse(text);
-}
-
-/**
  * Ceiling on a body that carries no attachments.
  *
  * Derived from the largest thing a management route legitimately holds — a
