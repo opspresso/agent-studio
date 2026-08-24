@@ -96,6 +96,7 @@
 | 모든 chat-bot 표면이 구현하는 답변 port | `src/domain/messaging/reply.ts` 의 `ReplySink` / `ReplyChannel`. 파이프라인이 그것을 호출하고, 각 어댑터가 그것을 렌더하며, 어느 쪽도 다른 쪽을 import 하지 않는다 |
 | 인바운드 이벤트를 정확히 한 번 처리하게 하는 claim-and-settle 계약 | `src/infrastructure/db/repositories/inboundClaimRepository.ts` 의 `createInboundClaimRepository`. Slack 은 `event_id` 로, Telegram 은 project·봇·`update_id` 로, Teams 는 project·App ID·activity id 로 키를 잡고, port 는 `src/domain/messaging/inboundClaims.ts` 의 `InboundEventClaims` 이다 |
 | 모든 chat 플랫폼이 공유하는 webhook 꼬리. claim, ack, 이벤트의 id 아래에서 작업, settle | `src/app/api/_lib/inboundEvent.ts` 의 `admitInboundEvent` |
+| 인바운드 delivery 가 얼마나 클 수 있는가, 그리고 넘쳤을 때의 거부 | `src/app/api/_lib/inboundEvent.ts` 의 `MAX_INBOUND_EVENT_BYTES` 와 `readEventBody`. webhook 넷(Slack·Telegram·Teams·프로젝트 자신의 것)이 각자 같은 1MB 를 이름 붙이고 있었고, 413 도 저마다 적어 상한을 말하지 않는 유일한 거부가 됐다. 413 본문은 `body.ts` 의 `bodyTooLarge` 가 소유한다 |
 | Telegram 답변이 어떻게 전달되는가. Bot API 호출, 4,096자, HTML 로 한 번 렌더하고 plain fallback | `src/application/telegram/replyChannel.ts` (장부는 위의 `editInPlaceReply.ts`) |
 | Teams 답변이 어떻게 전달되는가. activity 를 보내고 갱신하며, Markdown 은 그대로, 그림은 inline `data:` 첨부 | `src/application/teams/replyChannel.ts` |
 | 전달된 Bot Framework activity 중 어떤 것이 봇에게 온 것인가 | `src/application/teams/engagement.ts` 의 `classifyTeamsActivity` |

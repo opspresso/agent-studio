@@ -30,9 +30,6 @@ const teamsEventDeps: TeamsEventDeps = {
   transcripts: transcriptRepository,
 };
 
-/** A payload larger than this is not an activity; the Bot Framework's own are a few KB. */
-const MAX_TEAMS_BODY_BYTES = 1_000_000;
-
 /**
  * The Teams messaging pipeline: check the Bot Framework's token → gate →
  * exactly-once claim → ack immediately and process in the background. The Bot
@@ -48,7 +45,7 @@ export async function handleTeamsActivityRequest(
   request: Request,
   binding: TeamsEventBinding,
 ): Promise<Response> {
-  const body = await readEventBody(request, MAX_TEAMS_BODY_BYTES);
+  const body = await readEventBody(request);
   if (body instanceof Response) {
     return body;
   }

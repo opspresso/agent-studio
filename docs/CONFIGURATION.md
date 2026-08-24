@@ -513,7 +513,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | chat 메시지 하나가 보관하는 추론. 답변 **뒤에**, 같은 아이템 예산에서 | `40,000` 바이트 | `src/application/chat/run.ts` |
 | 컨텍스트로 리플레이되는 chat 이력 | `200` 메시지 / `200,000` 자 | `src/application/chat/messageMapping.ts` |
 | 컨텍스트로 리플레이되는 chat 도구 트래픽 | `3` 턴 / `20,000` 자 | `src/application/chat/messageMapping.ts` |
-| 인바운드 webhook / Slack 이벤트 / Telegram update / Teams activity 본문 | 각 `1MB` | `src/app/api/webhook/[project]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts`, `src/app/api/telegram/webhook/_lib/handleUpdateRequest.ts`, `src/app/api/teams/messages/_lib/handleActivityRequest.ts` |
+| 인바운드 webhook / Slack 이벤트 / Telegram update / Teams activity 본문 | 넷이 함께 `1MB` | `src/app/api/_lib/inboundEvent.ts` 의 `MAX_INBOUND_EVENT_BYTES` |
 | 컨텍스트로 쓰는 Slack 스레드 턴 수 | `50` | `src/application/slack/handleSlackEvent.ts` |
 | 컨텍스트로 쓰는 transcript 턴 수 / 합계 문자 수 / 한 턴에서 유지하는 문자 수 (Telegram, Teams) | `50` / `100,000` / `20,000` | `src/application/messaging/transcriptHistory.ts` |
 | Telegram 앨범의 캡션 없는 멤버가 claim 전에 기다리는 시간 | `1s` | `src/application/telegram/handleUpdate.ts` |
