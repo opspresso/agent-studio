@@ -59,7 +59,11 @@ type CatalogModel = ModelConfig & { enabled: boolean };
 
 /** A maker's label, or its id for one the loaded catalog does not name. */
 function makerLabel(makers: Record<string, string>, maker: string): string {
-  return makers[maker] ?? maker;
+  // Own keys only. The catalog names the maker, this object is parsed from its
+  // JSON, and a plain lookup answers `constructor` with a function off
+  // `Object.prototype` — which `??` reads as a label and React is handed as a
+  // tooltip and an `alt`.
+  return (Object.hasOwn(makers, maker) ? makers[maker] : undefined) ?? maker;
 }
 
 interface Catalog {

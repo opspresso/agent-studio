@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { BackLink } from "@/app/_components/BackLink";
-import { createLatestOnly } from "@/app/_lib/latestOnly";
 import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 import {
   deleteMcp,
   getManagedMcpStatus,

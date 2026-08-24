@@ -5,9 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { deleteSkill, getSkill, updateSkill, type Skill } from "../api";
 import { BackLink } from "@/app/_components/BackLink";
-import { createLatestOnly } from "@/app/_lib/latestOnly";
 import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 import {
   Alert,
   Badge,

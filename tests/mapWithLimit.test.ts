@@ -61,6 +61,12 @@ describe("mapWithLimit", () => {
     expect(await mapWithLimit([1, 2, 3], -5, async (v) => v * 2)).toEqual([2, 4, 6]);
   });
 
+  it("still runs everything when the limit is not a number", async () => {
+    // NaN survives Math.max and Math.min alike, and `Array.from({ length: NaN })`
+    // is the empty array — zero workers, by a route a clamp does not close.
+    expect(await mapWithLimit([1, 2, 3], Number.NaN, async (v) => v * 2)).toEqual([2, 4, 6]);
+  });
+
   it("answers an empty input with an empty array", async () => {
     expect(await mapWithLimit([], 4, async (v) => v)).toEqual([]);
   });

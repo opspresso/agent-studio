@@ -22,8 +22,12 @@ export async function mapWithLimit<T, R>(
   let next = 0;
   // At least one worker. A `limit` of zero or less would otherwise start none,
   // and `Promise.all([])` settles immediately with an array of holes — every
-  // call answered with nothing, and no error anywhere to say so.
-  const workerCount = Math.min(Math.max(Math.floor(limit), 1), items.length);
+  // call answered with nothing, and no error anywhere to say so. `NaN` is named
+  // rather than clamped: it survives both `Math.max` and `Math.min`, and
+  // `Array.from({ length: NaN })` is the empty array — the same silence by
+  // another route.
+  const wanted = Number.isFinite(limit) ? Math.floor(limit) : 1;
+  const workerCount = Math.min(Math.max(wanted, 1), items.length);
   const workers = Array.from({ length: workerCount }, async () => {
     for (;;) {
       const index = next;
