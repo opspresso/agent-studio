@@ -11,7 +11,7 @@
  * Next standalone build that carries no `src/` tree to read them from.
  */
 
-import { sql, withTransaction } from "./client";
+import { withTransaction } from "./client";
 import { log } from "@/shared/logger";
 
 interface Migration {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
@@ -84,34 +84,41 @@ export default function UsagePage() {
   }, [name]);
   const maySeeActors = canEditProject(viewer, ownerEmail);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { items } = await usageSummary(name, range.from, range.to);
-      setRows([...items].sort((a, b) => b.date.localeCompare(a.date)));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load usage");
-    } finally {
-      setLoading(false);
-    }
-    // Separately, and never fatal: a breakdown that fails should cost the
-    // totals nothing.
-    if (!maySeeActors) {
-      setActorRows([]);
-      return;
-    }
-    try {
-      const { items } = await usageActors(name, range.from, range.to);
-      setActorRows(items);
-    } catch {
-      setActorRows([]);
-    }
-  }, [name, range.from, range.to, maySeeActors]);
-
   useEffect(() => {
+    // Only the newest request may write. Two ranges picked in a row are two
+    // requests in flight, they resolve in arrival order rather than in the
+    // order they were asked, and without this the slower first answer lands
+    // last — showing the reader a range they are no longer asking for.
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { items } = await usageSummary(name, range.from, range.to);
+        if (!cancelled) setRows([...items].sort((a, b) => b.date.localeCompare(a.date)));
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load usage");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+      // Separately, and never fatal: a breakdown that fails should cost the
+      // totals nothing.
+      if (!maySeeActors) {
+        if (!cancelled) setActorRows([]);
+        return;
+      }
+      try {
+        const { items } = await usageActors(name, range.from, range.to);
+        if (!cancelled) setActorRows(items);
+      } catch {
+        if (!cancelled) setActorRows([]);
+      }
+    }
     void load();
-  }, [load]);
+    return () => {
+      cancelled = true;
+    };
+  }, [name, range.from, range.to, maySeeActors]);
 
   const daily = useMemo(
     () => buildDailySeries(rows, groupBy, range.from, range.to),

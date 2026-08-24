@@ -87,7 +87,7 @@ pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```bash
 pnpm dev              # next dev
 pnpm build            # 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
-pnpm typecheck        # tsc --noEmit, strict + noUncheckedIndexedAccess
+pnpm typecheck        # tsc --noEmit, strict + 추가 검사 (아래)
 pnpm test             # vitest run
 pnpm test:watch       # vitest watch
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test) 에 대한 리포지토리 + 엔진 검사
@@ -105,6 +105,11 @@ pnpm exec vitest run -t "streamWithFallback"
 **lint 단계는 없다**. ESLint 설정 자체가 존재하지 않는다. 검사는 `typecheck` + `test` 다.
 `build` 가 세 번째다: 잘못된 라우트 핸들러 시그니처나 깨진 instrumentation import 를 잡아내는
 것이 이 단계다.
+
+`typecheck` 가 lint 자리를 대신하므로 `tsconfig.json` 은 `strict` 위에
+`noUncheckedIndexedAccess`, `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`,
+`noImplicitOverride`, `noFallthroughCasesInSwitch`, `verbatimModuleSyntax` 를 켠다. 죽은 import,
+빠진 return, switch fallthrough 는 여기서 잡힌다 — 별도 린터를 두는 대신이다.
 
 ## 스크립트
 

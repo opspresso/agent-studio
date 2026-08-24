@@ -96,7 +96,9 @@ function mimeOfFileType(fileType: string | undefined, name: string | undefined):
     gif: "image/gif",
     webp: "image/webp",
   };
-  return known[ext] ?? "";
+  // Own keys only: the extension comes off a filename Teams was given, and a
+  // plain lookup answers `constructor` with a function where a mime type goes.
+  return (Object.hasOwn(known, ext) ? known[ext] : undefined) ?? "";
 }
 
 /**

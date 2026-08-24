@@ -36,7 +36,6 @@ import { tierAtLeast } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import type { ModelConfig, ProjectType, VersionInput, VersionParameters } from "../../lib/api";
 import {
-  LabeledField,
   McpBindingInput,
   NumberField,
   SearchSelectInput,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
@@ -20,21 +20,31 @@ export default function TracesPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setTraces((await listTraces(name, range)).traces);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load traces");
-    } finally {
-      setLoading(false);
-    }
-  }, [name, range]);
-
   useEffect(() => {
+    // Only the newest request may write. Two ranges picked in a row are two
+    // requests in flight, they resolve in arrival order rather than in the
+    // order they were asked, and without this the slower first answer lands
+    // last — showing the reader a range they are no longer asking for.
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const page = await listTraces(name, range);
+        if (!cancelled) setTraces(page.traces);
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Failed to load traces");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
     void load();
-  }, [load]);
+    return () => {
+      cancelled = true;
+    };
+  }, [name, range]);
 
   return (
     <Stack gap="md">

@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { artifactFileType } from "@/app/artifacts/_lib/fileType";
 
 describe("artifactFileType", () => {
+  it("reads a mime type or extension named after an Object.prototype member as generic", () => {
+    // Both keys come from outside — a server's declared type, a model's
+    // filename — and a plain lookup answers them with a function off the
+    // prototype, which the truthy check reads as a file type.
+    expect(artifactFileType("constructor", "report.bin")).toBe("generic");
+    expect(artifactFileType("application/x-tar", "report.constructor")).toBe("generic");
+  });
+
   it.each([
     ["application/pdf", "report.bin", "pdf"],
     [

@@ -75,12 +75,19 @@ export function artifactFileType(
   // The bare type, the same reading `isInlineViewable` gives it on the same
   // card: a row an MCP tool wrote as `text/html; charset=euc-kr` was getting a
   // View link and a blank tile.
-  const byMime = MIME_TYPES[baseMimeType(mimeType)];
+  // Own keys only, here and for the alias below: both keys come from outside —
+  // an MCP server's mime type, a model's filename — and a plain lookup answers
+  // `constructor` with a function off `Object.prototype`, which the truthy
+  // check reads as a file type.
+  const mime = baseMimeType(mimeType);
+  const byMime = Object.hasOwn(MIME_TYPES, mime) ? MIME_TYPES[mime] : undefined;
   if (byMime) {
     return byMime;
   }
   const extension = (filename ?? key)?.split(".").at(-1)?.toLowerCase() ?? "";
-  const aliased = EXTENSION_ALIASES[extension];
+  const aliased = Object.hasOwn(EXTENSION_ALIASES, extension)
+    ? EXTENSION_ALIASES[extension]
+    : undefined;
   if (aliased) {
     return aliased;
   }

@@ -127,8 +127,22 @@ const INLINE_VIEWS: Record<string, InlineView> = {
   "text/plain": "text",
 };
 
+/**
+ * Own keys only, for every table here.
+ *
+ * A mime type and a file extension both arrive from outside — an MCP server's
+ * declaration, a model's filename — and a plain lookup answers `constructor`
+ * or `toString` with a function off `Object.prototype`. Every caller below
+ * reads that as a hit: a type nothing can render is reported viewable, and an
+ * object key ends in a function's source. `domain/trigger/cron.ts` refuses the
+ * same shape for the same reason.
+ */
+function own<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
 export function inlineViewOf(mimeType: string): InlineView | undefined {
-  return INLINE_VIEWS[baseMimeType(mimeType)];
+  return own(INLINE_VIEWS, baseMimeType(mimeType));
 }
 
 export function isInlineViewable(mimeType: string): boolean {
@@ -243,7 +257,7 @@ export function savedFileName(name: string, mimeType: string): string {
   // the simplest thing that cannot split a character.
   const cleaned = [...stripped].slice(0, 80).join("").trim();
   const safe = cleaned === "" ? "file" : cleaned;
-  const extension = EXTENSIONS[baseMimeType(mimeType)];
+  const extension = own(EXTENSIONS, baseMimeType(mimeType));
   if (!extension) {
     return safe;
   }
@@ -268,7 +282,7 @@ export function artifactObjectKey(
   artifactId: string,
   mimeType: string,
 ): string {
-  const extension = EXTENSIONS[mimeType.toLowerCase()] ?? "bin";
+  const extension = own(EXTENSIONS, mimeType.toLowerCase()) ?? "bin";
   return `artifacts/${kind}/${artifactId}.${extension}`;
 }
 

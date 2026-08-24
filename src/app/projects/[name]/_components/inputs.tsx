@@ -330,7 +330,6 @@ function ToolSelector({
     // name but is rebuilt every render, so depending on it would refetch on
     // every keystroke elsewhere in the form. `reloadOn` is the explicit signal
     // that something the answer depends on actually changed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadOn]);
 
   if (error) {

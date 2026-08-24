@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   deleteAgent,
   getAgent,
@@ -14,6 +14,7 @@ import { BackLink } from "@/app/_components/BackLink";
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 import {
   Alert,
   Badge,
@@ -44,21 +45,28 @@ export default function AgentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
 
+  // `refresh` is called from the effect below *and* by hand after an edit, so
+  // the answer that arrives is not necessarily the one still being waited for.
+  const latestOnly = useRef(createLatestOnly()).current;
+
   async function refresh() {
+    const isCurrent = latestOnly();
     setLoading(true);
     setError(null);
     try {
-      setAgent(await getAgent(name));
+      const loaded = await getAgent(name);
+      if (isCurrent()) setAgent(loaded);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load agent");
+      if (isCurrent()) setError(e instanceof Error ? e.message : "Failed to load agent");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }
 
+  // `refresh` is deliberately not a dependency: it is rebuilt every render, and
+  // the name is the only thing the answer depends on.
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name]);
 
   const { confirm, confirmModal } = useConfirm();

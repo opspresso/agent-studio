@@ -25,7 +25,6 @@ import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import { config, positiveIntEnv } from "./config";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
-import { log } from "@/shared/logger";
 
 const DEFAULT_TTL_MS = 5_000;
 

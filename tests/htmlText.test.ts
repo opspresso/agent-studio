@@ -9,11 +9,9 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { decodeEntities, htmlToText, MAX_HTML_SOURCE_CHARS } from "@/infrastructure/llm/htmlText";
+import { decodeEntities, htmlToText } from "@/infrastructure/llm/htmlText";
 
 const expectEqual = (actual: unknown, expected: unknown) => expect(actual).toEqual(expected);
-const expectMatch = (actual: string, pattern: RegExp) => expect(actual).toMatch(pattern);
-const expectOk = (actual: unknown) => expect(actual).toBeTruthy();
 
 describe("htmlToText", () => {
 
@@ -106,6 +104,17 @@ it("decodes an escaped ampersand last", () => {
 
 it("leaves an unknown entity alone", () => {
   expectEqual(decodeEntities("&notanentity; &copy;"), "&notanentity; &copy;");
+});
+
+it("treats an entity named after an Object.prototype member as unknown", () => {
+  // The pattern is `[a-z]+`, so these are entity names like any other. A plain
+  // lookup on the table answers them with a function off the prototype, which
+  // reads as a hit — and a fetched page saying "&constructor;" would put
+  // "function Object() { [native code] }" into what the model is handed.
+  expectEqual(
+    decodeEntities("&constructor; &toString; &valueOf;"),
+    "&constructor; &toString; &valueOf;",
+  );
 });
 
 it("drops an out-of-range numeric reference instead of emitting U+FFFD", () => {

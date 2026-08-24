@@ -187,7 +187,6 @@ function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
 }
 
 export default function ApiReferencePage() {
-  const t = useT();
   const { name } = useParams<{ name: string }>();
   const viewer = useViewer();
   const [endpoints, setEndpoints] = useState<ApiEndpoint[] | null>(null);

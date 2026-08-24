@@ -99,6 +99,16 @@ describe("artifactObjectKey", () => {
   it("reads the mime type case-insensitively", () => {
     expect(artifactObjectKey("image", "a1", "Image/PNG")).toBe("artifacts/image/a1.png");
   });
+
+  it("stays addressable for a mime type named after an Object.prototype member", () => {
+    // The type is whatever a producer declared — an MCP server's word for its
+    // own bytes. A plain lookup answers "constructor" with a function, which the
+    // `?? "bin"` fallback reads as a hit and interpolates into the key.
+    expect(artifactObjectKey("document", "d4", "constructor")).toBe(
+      "artifacts/document/d4.bin",
+    );
+    expect(artifactObjectKey("document", "d5", "toString")).toBe("artifacts/document/d5.bin");
+  });
 });
 
 describe("artifactOwnerEmail", () => {

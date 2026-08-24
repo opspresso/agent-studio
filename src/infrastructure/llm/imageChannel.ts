@@ -119,7 +119,10 @@ const XAI_ASPECT_RATIO: Record<string, string> = {
 };
 
 function xaiDimensions(size?: string): { aspect_ratio?: string; resolution?: string } {
-  const aspectRatio = size ? XAI_ASPECT_RATIO[size] : undefined;
+  // Own keys only: `size` reaches here from a request body, and a plain lookup
+  // answers `constructor` with a function that JSON drops on the way out —
+  // sending a resolution with no aspect ratio instead of neither.
+  const aspectRatio = size && Object.hasOwn(XAI_ASPECT_RATIO, size) ? XAI_ASPECT_RATIO[size] : undefined;
   return aspectRatio ? { aspect_ratio: aspectRatio, resolution: "1k" } : {};
 }
 

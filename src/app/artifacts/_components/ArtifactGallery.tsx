@@ -93,27 +93,36 @@ export function ArtifactGallery({
     [kind],
   );
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const page = await load(query());
-      setArtifacts(page.artifacts);
-      setNextBefore(page.nextBefore);
-    } catch (e) {
-      // English on purpose, like every other error in this console: the message
-      // that usually lands here is an `AppError`'s, which `application` and
-      // `domain` carry as a plain string and cannot translate. A localised
-      // fallback beside an English real message is the worse of the two.
-      setError(e instanceof Error ? e.message : "Failed to load artifacts");
-    } finally {
-      setLoading(false);
-    }
-  }, [load, query]);
-
   useEffect(() => {
+    // Only the newest request may write. Two kinds picked in a row are two
+    // requests in flight, they resolve in arrival order rather than in the
+    // order they were asked, and without this the slower first answer lands
+    // last — showing the reader a kind they are no longer asking for.
+    let cancelled = false;
+    async function refresh() {
+      setLoading(true);
+      setError(null);
+      try {
+        const page = await load(query());
+        if (!cancelled) {
+          setArtifacts(page.artifacts);
+          setNextBefore(page.nextBefore);
+        }
+      } catch (e) {
+        // English on purpose, like every other error in this console: the message
+        // that usually lands here is an `AppError`'s, which `application` and
+        // `domain` carry as a plain string and cannot translate. A localised
+        // fallback beside an English real message is the worse of the two.
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load artifacts");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
     void refresh();
-  }, [refresh]);
+    return () => {
+      cancelled = true;
+    };
+  }, [load, query]);
 
   async function loadMore() {
     if (!nextBefore) {

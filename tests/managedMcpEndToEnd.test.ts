@@ -1,7 +1,7 @@
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
 import { buildMcpTools } from "@/application/execution/mcpTools";

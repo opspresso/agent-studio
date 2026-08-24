@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Alert, Badge, Card, Stack, Table, Text } from "@mantine/core";
+import { useEffect, useState } from "react";
+import { Alert, Badge, Stack, Table, Text } from "@mantine/core";
 import { IconShieldCheck } from "@tabler/icons-react";
 import type { AuditEvent } from "@/domain/audit/types";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -22,26 +22,34 @@ export default function AuditPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!viewer?.isAdmin) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const query = new URLSearchParams({ from: range.from, to: range.to });
-      const data = await fetch(`/api/audit?${query}`).then((res) =>
-        readJson<{ events: AuditEvent[] }>(res),
-      );
-      setEvents(data.events);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load audit events");
-    } finally {
-      setLoading(false);
-    }
-  }, [range, viewer?.isAdmin]);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    // Only the newest request may write. Two ranges picked in a row are two
+    // requests in flight, they resolve in arrival order rather than in the
+    // order they were asked, and without this the slower first answer lands
+    // last — showing the reader a range they are no longer asking for.
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const query = new URLSearchParams({ from: range.from, to: range.to });
+        const data = await fetch(`/api/audit?${query}`).then((res) =>
+          readJson<{ events: AuditEvent[] }>(res),
+        );
+        if (!cancelled) setEvents(data.events);
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Failed to load audit events");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    if (viewer?.isAdmin) void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [range, viewer?.isAdmin]);
 
   if (viewer === null) {
     return <LoadingText />;

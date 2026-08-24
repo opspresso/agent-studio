@@ -13,7 +13,7 @@ import {
 } from "@/application/artifact/artifactUseCases";
 import { artifactCursor } from "@/domain/artifact/repository";
 import type { ListArtifactsOptions } from "@/domain/artifact/repository";
-import type { Artifact, ArtifactKind, ArtifactSource } from "@/domain/artifact/types";
+import type { Artifact } from "@/domain/artifact/types";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
 import { isUtcDay } from "@/shared/date";
 

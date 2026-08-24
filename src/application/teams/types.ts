@@ -1,5 +1,4 @@
 import type { MessagingDeps } from "@/application/messaging/handleTurn";
-import type { InboundEventClaims } from "@/domain/messaging/inboundClaims";
 import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
 import type { TeamsClientPort, TeamsCredentials, TeamsOutboundActivity } from "@/domain/teams/client";
 
