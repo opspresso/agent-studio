@@ -218,6 +218,14 @@ export function createFakeStore(): FakeStore {
           (row) => typeof row.expiresAt !== "number" || row.expiresAt > now,
         );
       }
+      // `data ->> attr = value`: the column's text rendering, so a row that
+      // does not carry the attribute at all is simply not a match.
+      for (const [attribute, value] of Object.entries(input.filter ?? {})) {
+        matches = matches.filter((row) => {
+          const held = row[attribute];
+          return typeof held === "string" ? held === value : false;
+        });
+      }
       matches.sort(
         (a, b) =>
           compareBytes(String(a[skAttr] ?? ""), String(b[skAttr] ?? "")) ||

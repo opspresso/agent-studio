@@ -127,7 +127,7 @@
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` |
 | tool 의 파일이 실려 다니는 이름과 media type | `src/infrastructure/mcp/toolManager.ts` 의 `safeFileName`/`baseMediaType` |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` |
-| 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt` | `src/infrastructure/db/store.ts` 의 `queryItems()` |
+| 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt`, 호출자가 가져온 필터도 같은 자리에서 도는 `filter` | `src/infrastructure/db/store.ts` 의 `queryItems()`. `LIMIT` 뒤에서 거르는 목록은 존재하는 행보다 짧게 답하고, 거기서 회복하는 길은 둘 다 틀렸다 — 짧게 답하거나, 어딘가에서 포기해야 하는 루프로 다시 묻거나. 포기한 목록은 끝에 닿은 목록과 똑같이 보인다 |
 | Better Auth 의 `user` 행을 멤버로 읽기. 스토어가 소유하지 않는 테이블에 대한 plain SQL | `src/infrastructure/db/repositories/memberRepository.ts` |
 | 저장소 트리 하나를 plugins 스냅샷으로. 어느 디렉터리가 plugin·skill·확장 문서인가 | `src/infrastructure/plugin/snapshot.ts` 의 `collectRepoPlugins`. GitHub 클라이언트와 업로드 아카이브는 파일을 어떻게 나열하고 읽는지만 건넨다 |
 | 업로드 아카이브로 sync 된 행의 provenance. 설정된 저장소, 없으면 `archive` | `src/domain/plugin/sync.ts` 의 `archiveSyncRepo` / `ARCHIVE_SYNC_REPO`; 브랜치 `archive` 와 commit = sha256 은 `src/infrastructure/plugin/archiveSnapshot.ts` |

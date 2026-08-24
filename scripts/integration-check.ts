@@ -904,6 +904,68 @@ async function main() {
     );
     pass("artifact paging: the cursor is the sort key, exclusive and lossless");
 
+    // A filtered page counts *matches*, not rows read. The listing used to
+    // filter over what came back and pull up to five extra pages to refill,
+    // which meant a match further back than that was invisible — and an empty
+    // gallery with no cursor is indistinguishable from having reached the end.
+    // Its own project, so the ordering the assertions above pin is untouched.
+    const filterProject = `it-filter-${suffix}`;
+    const filterBase = Date.parse(now);
+    for (let i = 0; i < 40; i += 1) {
+      const id = `it-art-fill-${i}-${suffix}`;
+      await artifactRepository.put({
+        artifactId: id,
+        kind: "image" as const,
+        source: "generated" as const,
+        key: `artifacts/image/${id}.png`,
+        mimeType: "image/png",
+        byteSize: 128,
+        projectName: filterProject,
+        versionName: "1",
+        actor: { kind: "user" as const, id: "it@example.com" },
+        createdAt: new Date(filterBase + 1000 + i * 1000).toISOString(),
+      });
+      artifactFixtures.push(id);
+    }
+    const buriedId = `it-art-buried-${suffix}`;
+    await artifactRepository.put({
+      artifactId: buriedId,
+      kind: "document" as const,
+      source: "attachment" as const,
+      key: `artifacts/document/${buriedId}.pdf`,
+      mimeType: "application/pdf",
+      byteSize: 1024,
+      projectName: filterProject,
+      versionName: "1",
+      actor: { kind: "user" as const, id: "it@example.com" },
+      createdAt: new Date(filterBase).toISOString(),
+    });
+    artifactFixtures.push(buriedId);
+    assert.deepEqual(
+      (await artifactRepository.listByProject(filterProject, { limit: 24, kind: "document" })).map(
+        (a) => a.artifactId,
+      ),
+      [buriedId],
+      "a document behind forty images is found, not paged past",
+    );
+    assert.deepEqual(
+      (
+        await artifactRepository.listByProject(filterProject, {
+          limit: 5,
+          kind: "image",
+          source: "generated",
+        })
+      ).length,
+      5,
+      "a filtered page is full at the limit, not thinned by the filter",
+    );
+    assert.deepEqual(
+      await artifactRepository.listByProject(filterProject, { kind: "document", source: "generated" }),
+      [],
+      "two filters are an AND, so a generated document is not the attached one",
+    );
+    pass("artifact filters: the store filters before the limit counts");
+
     await artifactRepository.delete(artifactIds[0]!);
     assert.equal(
       await artifactRepository.get(artifactIds[0]!),

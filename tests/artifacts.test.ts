@@ -230,9 +230,9 @@ describe("listing", () => {
     expect(found.map((a) => a.artifactId)).toEqual(["fresh"]);
   });
 
-  it("refills a page thinned by a kind filter instead of returning it short", async () => {
-    // The store applies the limit before anything here can filter, so "images
-    // only" would ask for 2 and get 1 without the refill loop.
+  it("fills a page a kind filter would thin, because the store filters first", async () => {
+    // The limit counts matches, not rows: "images only" asked for 2 and got 1
+    // when the filter ran over what had already come back.
     store.seed([
       row({ artifactId: "doc1", kind: "document", createdAt: createdPlus(120) }),
       row({ artifactId: "img1", createdAt: createdPlus(60) }),
@@ -251,7 +251,7 @@ describe("listing", () => {
     expect(found.map((a) => a.artifactId)).toEqual(["att"]);
   });
 
-  it("stops after the page bound so a filter matching nothing is not a full scan", async () => {
+  it("answers a filter that matches nothing in one read, not a walk of the partition", async () => {
     store.seed(
       Array.from({ length: 12 }, (_, i) =>
         row({ artifactId: `doc${i}`, kind: "document", createdAt: createdPlus(i) }),
@@ -260,7 +260,43 @@ describe("listing", () => {
     const query = vi.spyOn(store, "queryItems");
     const found = await artifactRepository.listByProject("poster-bot", { limit: 1, kind: "image" });
     expect(found).toEqual([]);
-    expect(query).toHaveBeenCalledTimes(5);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it("reaches matches that lie past a page of non-matches", async () => {
+    // The refill loop this replaced pulled at most five pages and then gave
+    // up, and giving up looked exactly like reaching the end: an empty
+    // gallery with no cursor to page past. A project holding a few hundred
+    // images and a handful of older documents is the ordinary shape of it.
+    store.seed([
+      ...Array.from({ length: 600 }, (_, i) =>
+        row({ artifactId: `img${String(i).padStart(3, "0")}`, createdAt: createdPlus(100 + i) }),
+      ),
+      row({ artifactId: "doc-old", kind: "document", createdAt: createdPlus(0) }),
+    ]);
+    const found = await artifactRepository.listByProject("poster-bot", {
+      limit: 24,
+      kind: "document",
+    });
+    expect(found.map((a) => a.artifactId)).toEqual(["doc-old"]);
+  });
+
+  it("keeps a source filter exact alongside a kind one", async () => {
+    store.seed([
+      row({ artifactId: "gen-img", createdAt: createdPlus(90) }),
+      row({ artifactId: "att-img", source: "attachment", createdAt: createdPlus(60) }),
+      row({
+        artifactId: "att-doc",
+        kind: "document",
+        source: "attachment",
+        createdAt: createdPlus(30),
+      }),
+    ]);
+    const found = await artifactRepository.listByProject("poster-bot", {
+      kind: "image",
+      source: "attachment",
+    });
+    expect(found.map((a) => a.artifactId)).toEqual(["att-img"]);
   });
 
   it("pages with the previous page's last sort key, and does not repeat that row", async () => {

@@ -317,6 +317,21 @@ export interface QueryInput {
    * that exist — this filters before the limit counts.
    */
   notExpiredAt?: number;
+  /**
+   * Keep only rows whose named top-level attributes hold these exact strings.
+   *
+   * The same reasoning as `notExpiredAt`, for the filters a caller brings: a
+   * list that thins its page *after* the limit counted comes back short of
+   * rows that exist, and the only recoveries from that are asking again — a
+   * refill loop, which has to give up somewhere and then cannot tell "no more
+   * matches" from "I stopped looking" — or answering short. Filtering here
+   * makes the limit mean what it says.
+   *
+   * Equality on a stored string only, which is what a facet filter is. The
+   * attribute name is bound as a parameter like the value, so no caller can
+   * put anything of its own into the statement.
+   */
+  filter?: Record<string, string>;
 }
 
 const INDEX_COLUMNS = {
@@ -357,6 +372,12 @@ export async function queryItems(input: QueryInput): Promise<Item[]> {
   }
   if (input.notExpiredAt !== undefined) {
     where.push(`(expires_at IS NULL OR expires_at > ${bind(input.notExpiredAt)})`);
+  }
+  for (const [attribute, value] of Object.entries(input.filter ?? {})) {
+    // `::text` on the key: `->>` is overloaded on `jsonb ->> text` and
+    // `jsonb ->> integer`, and an untyped bind parameter leaves PostgreSQL
+    // unable to choose between them.
+    where.push(`data ->> ${bind(attribute)}::text = ${bind(value)}`);
   }
   const order = `ORDER BY ${columns.sk} ${forward ? "ASC" : "DESC"}, sk ${forward ? "ASC" : "DESC"}`;
   const limit = input.limit !== undefined ? `LIMIT ${bind(input.limit)}` : "";
