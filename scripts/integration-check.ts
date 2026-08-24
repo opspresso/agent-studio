@@ -964,6 +964,32 @@ async function main() {
       [],
       "two filters are an AND, so a generated document is not the attached one",
     );
+    // `->>` renders whatever is stored as *text*, so a filter matches a number
+    // by its digits and matches nothing at all on a row that does not carry the
+    // attribute. `tests/fakeStore.ts` claims to answer both the same way, and
+    // this is the round trip that would notice if it stopped.
+    const { queryItems } = await import("@/infrastructure/db/store");
+    const { keys } = await import("@/infrastructure/db/keys");
+    assert.deepEqual(
+      (
+        await queryItems({
+          index: "GSI1",
+          pk: keys.artifactProjectPartition(filterProject),
+          filter: { byteSize: "1024" },
+        })
+      ).map((row) => row.artifactId),
+      [buriedId],
+      "a numeric attribute is matched by its text rendering",
+    );
+    assert.deepEqual(
+      await queryItems({
+        index: "GSI1",
+        pk: keys.artifactProjectPartition(filterProject),
+        filter: { nosuchfield: "anything" },
+      }),
+      [],
+      "a row that does not carry the attribute is not a match",
+    );
     pass("artifact filters: the store filters before the limit counts");
 
     await artifactRepository.delete(artifactIds[0]!);

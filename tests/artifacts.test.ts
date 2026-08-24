@@ -342,3 +342,31 @@ describe("delete", () => {
     expect(await store.getItem(keys.artifact("a2"))).not.toBeNull();
   });
 });
+
+describe("the store filter the listing rides on", () => {
+  // Asserted against the fake because the listing rides on it; the integration
+  // check pins the same three answers against real SQL.
+  it("renders a stored value as text, the way `->>` does", async () => {
+    store.seed([
+      { PK: "F#1", SK: "META", kind: "image", byteSize: 42 },
+      { PK: "F#1", SK: "META2", kind: "document", byteSize: 7 },
+    ]);
+    const [byNumber] = await store.queryItems({ pk: "F#1", filter: { byteSize: "42" } });
+    expect(byNumber?.SK).toBe("META");
+  });
+
+  it("does not match a row that lacks the attribute", async () => {
+    store.seed([{ PK: "F#2", SK: "META" }]);
+    expect(await store.queryItems({ pk: "F#2", filter: { kind: "image" } })).toEqual([]);
+  });
+
+  it("runs before the limit, not over its result", async () => {
+    store.seed([
+      { PK: "F#3", SK: "a", kind: "image" },
+      { PK: "F#3", SK: "b", kind: "image" },
+      { PK: "F#3", SK: "c", kind: "document" },
+    ]);
+    const found = await store.queryItems({ pk: "F#3", limit: 1, filter: { kind: "document" } });
+    expect(found.map((row) => row.SK)).toEqual(["c"]);
+  });
+});
