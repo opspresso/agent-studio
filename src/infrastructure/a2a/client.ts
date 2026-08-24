@@ -23,7 +23,6 @@ import type {
   Message,
   Part,
   SendMessageRequest,
-  StreamResponse,
   Task,
   TaskArtifactUpdateEvent,
 } from "@a2a-js/sdk";

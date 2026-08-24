@@ -13,7 +13,6 @@ import {
   listModelMakers,
   listModels,
   loadModelCatalog,
-  modelCatalogUpdatedAt,
   offeredModels,
   resetUnknownModelMetrics,
   unknownModelSnapshot,

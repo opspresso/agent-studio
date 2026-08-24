@@ -404,7 +404,7 @@ describe("runAgent context budget", () => {
       mcpTools: TOOL,
     };
 
-    const chunks = await collect(runAgent(deps, input));
+    await collect(runAgent(deps, input));
 
     // What goes on the wire is the masked, budget-fitted text: within what the
     // ~8k-token budget prices (~24k ASCII chars), not that plus mask growth.

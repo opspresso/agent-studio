@@ -1,6 +1,6 @@
 import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
-import { assertProjectWritable, getProject } from "@/application/project/projectUseCases";
+import { assertProjectWritable } from "@/application/project/projectUseCases";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";

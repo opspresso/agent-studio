@@ -5,7 +5,6 @@ import {
   deleteItem,
   deletePartition,
   getItem,
-  putItem,
   queryItems,
   transact,
   updateItem,

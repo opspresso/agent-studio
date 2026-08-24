@@ -16,7 +16,7 @@ process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
  * counted as configured on the other.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { assertRequiredConfig, config } from "@/lib/config";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";

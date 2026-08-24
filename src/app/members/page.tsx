@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Avatar, Card, Group, Select, Stack, Table, Text } from "@mantine/core";
+import { Alert, Avatar, Group, Select, Stack, Table, Text } from "@mantine/core";
 import { IconUsers } from "@tabler/icons-react";
 import { MEMBER_TIERS, type MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";

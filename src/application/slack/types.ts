@@ -1,10 +1,8 @@
 import type { MessagingDeps } from "@/application/messaging/handleTurn";
-import type { RunCaller } from "@/domain/execution/actor";
 import type { SlackThreadRepository } from "@/domain/slack/repository";
 import type { SlackReaderPort } from "@/domain/slack/reader";
 import type {
   SlackChunk,
-  SlackMessage,
   SlackMessageContent,
   SlackSuggestedPrompt,
   SlackTaskDisplayMode,

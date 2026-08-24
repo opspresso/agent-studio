@@ -9,11 +9,9 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { decodeEntities, htmlToText, MAX_HTML_SOURCE_CHARS } from "@/infrastructure/llm/htmlText";
+import { decodeEntities, htmlToText } from "@/infrastructure/llm/htmlText";
 
 const expectEqual = (actual: unknown, expected: unknown) => expect(actual).toEqual(expected);
-const expectMatch = (actual: string, pattern: RegExp) => expect(actual).toMatch(pattern);
-const expectOk = (actual: unknown) => expect(actual).toBeTruthy();
 
 describe("htmlToText", () => {
 

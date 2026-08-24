@@ -40,7 +40,6 @@ import {
 import { DefaultRequestHandler, type ServerCallContext, type TaskStore } from "@a2a-js/sdk/server";
 import { isLiveTaskState, isTerminalTaskState, taskStateName } from "@/domain/a2a/task";
 import {
-  base64ByteLength,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
   SUPPORTED_IMAGE_TYPES,

@@ -10,7 +10,6 @@ import {
   Progress,
   SimpleGrid,
   Stack,
-  Table,
   Text,
 } from "@mantine/core";
 import { IconActivity, IconCoins, IconUser } from "@tabler/icons-react";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Badge, Card, Stack, Table, Text } from "@mantine/core";
+import { Alert, Badge, Stack, Table, Text } from "@mantine/core";
 import { IconShieldCheck } from "@tabler/icons-react";
 import type { AuditEvent } from "@/domain/audit/types";
 import { PageHeader } from "@/app/_components/PageHeader";

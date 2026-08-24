@@ -26,7 +26,7 @@ import {
   calculateCost,
   describeImageInputReject,
 } from "@/domain/llm/models";
-import { hasImageParts, imageDataUrl, parseImageDataUrl } from "@/domain/llm/types";
+import { hasImageParts, imageDataUrl } from "@/domain/llm/types";
 import type {
   ChatMessageInput,
   EngineChunk,
@@ -37,10 +37,9 @@ import type {
 } from "@/domain/llm/types";
 import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { ValidationError } from "@/application/errors";
-import { createRunContextBudget, type RunContextBudget } from "./contextBudget";
+import { createRunContextBudget } from "./contextBudget";
 import { PiiFilter } from "./pii";
 import { renderTemplate } from "@/shared/template";
-import { formatRunClock } from "@/shared/date";
 import { mergeGenerators } from "@/shared/mergeGenerators";
 import { log } from "@/shared/logger";
 import { cutCodePoints, cutUtf8Bytes } from "@/shared/utf8Text";

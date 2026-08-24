@@ -17,7 +17,7 @@
  * and an HNSW index needs the fixed width this table deliberately lacks.
  */
 
-import type { VectorMatch, VectorRecord, VectorStorePort } from "@/domain/vector/types";
+import type { VectorMatch, VectorStorePort } from "@/domain/vector/types";
 import { sql, withTransaction } from "@/infrastructure/db/client";
 
 /** pgvector's text form: `[0.1,0.2,…]`. */
