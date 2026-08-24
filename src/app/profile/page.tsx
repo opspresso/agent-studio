@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -66,23 +66,32 @@ export default function ProfilePage() {
     return () => { cancelled = true; };
   }, []);
 
-  const loadUsage = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { items } = await readJson<{ items: MemberUsageRow[] }>(
-        await fetch(`/api/me/usage?from=${range.from}&to=${range.to}`),
-      );
-      setRows([...items].sort((a, b) => b.date.localeCompare(a.date)));
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load usage");
-    } finally {
-      setLoading(false);
-    }
-  }, [range.from, range.to]);
-
   useEffect(() => {
+    // Only the newest request may write. Two ranges picked in a row are two
+    // requests in flight, they resolve in arrival order rather than in the
+    // order they were asked, and without this the slower first answer lands
+    // last — showing the reader a range they are no longer asking for.
+    let cancelled = false;
+    async function loadUsage() {
+      setLoading(true);
+      try {
+        const { items } = await readJson<{ items: MemberUsageRow[] }>(
+          await fetch(`/api/me/usage?from=${range.from}&to=${range.to}`),
+        );
+        if (!cancelled) setRows([...items].sort((a, b) => b.date.localeCompare(a.date)));
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Failed to load usage");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
     void loadUsage();
-  }, [loadUsage]);
+    return () => {
+      cancelled = true;
+    };
+  }, [range.from, range.to]);
 
   const daily = useMemo(
     () => buildDailySeries(rows, groupBy, range.from, range.to),
