@@ -51,6 +51,13 @@ describe("parsePageLimit", () => {
     });
   });
 
+  it("never hands back an empty page, whatever default it was given", () => {
+    // A zero-length page is trivially "full", which is how the sidebar came to
+    // offer "load more" against a list that could not grow. The reading above
+    // cannot produce one; a bad default should not either.
+    expect(parsePageLimit(null, { fallback: 0 }).limit).toBe(1);
+  });
+
   it("caps at the shared ceiling when the caller names none", () => {
     expect(parsePageLimit("1000", { fallback: 20 }).limit).toBe(MAX_PAGE_LIMIT);
   });

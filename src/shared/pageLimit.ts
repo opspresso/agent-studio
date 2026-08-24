@@ -74,5 +74,8 @@ export function parsePageLimit(
   const max = options.max ?? MAX_PAGE_LIMIT;
   const asked = raw === null || raw.trim() === "" ? Number.NaN : Number(raw);
   const wanted = Number.isFinite(asked) && asked >= 1 ? Math.floor(asked) : options.fallback;
-  return { wanted, limit: Math.min(wanted, max) };
+  // Through the clamp rather than a bare `Math.min`, so "a page holds at least
+  // one row" holds whatever an endpoint declared as its default. For every
+  // `wanted` that got here from the line above the two are the same number.
+  return { wanted, limit: boundedPageLimit(wanted, max) };
 }

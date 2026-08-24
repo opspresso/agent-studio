@@ -57,11 +57,15 @@ async function list(
   // a handful of older documents answered "documents only" with an empty
   // gallery and no cursor to page past it.
   //
-  // The cost is that a filter matching nothing walks its partition's index
-  // rather than stopping after a fixed number of pages. The partition is the
-  // bound — one project or one mailbox, inside the retention window and any
-  // `from`/`to` the caller gave — and it is a bound on one indexed read
-  // rather than on five round trips.
+  // The cost is at the other end: a filter that matches *nothing* now walks
+  // its partition's index — one project or one mailbox, over
+  // `ARTIFACT_RETENTION_DAYS` — instead of stopping after a fixed number of
+  // pages. It is one indexed descending read that stops at the first full
+  // page, so the ordinary case (matches somewhere recent) is cheaper than the
+  // five round trips it replaces; only "no such kind in six months" pays for
+  // the whole partition, and that case answered empty before too. A
+  // deployment that ever measures it wants an index over the facet, not the
+  // page bound back — the page bound is what made the answer wrong.
   const items = await queryItems({
     index,
     pk: partition,
