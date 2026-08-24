@@ -23,7 +23,10 @@ export function renderTemplate(
     return "";
   }
   return template.replace(VARIABLE_PATTERN, (_full, name: string) => {
-    const value = variables[name];
+    // Own keys only: `{{constructor}}` is \w+ like any other placeholder, and a
+    // plain lookup answers it with `Object.prototype.constructor` — a function
+    // whose source would be rendered into the prompt where "" belongs.
+    const value = Object.hasOwn(variables, name) ? variables[name] : undefined;
     return value === undefined || value === null ? "" : String(value);
   });
 }

@@ -139,8 +139,13 @@ export function mergeHeaderUpdate(
   const merged: Record<string, string> = {};
   for (const [key, value] of Object.entries(update)) {
     if (isMasked(value) || value === "") {
-      if (stored[key] !== undefined) {
-        merged[key] = stored[key];
+      // Own keys only. A header may be named anything an operator types, and a
+      // plain lookup answers `constructor` with a function off
+      // `Object.prototype` — carried through as a stored secret until
+      // `decryptSecret` is handed a function at dispatch time.
+      const previous = Object.hasOwn(stored, key) ? stored[key] : undefined;
+      if (previous !== undefined) {
+        merged[key] = previous;
       }
       continue;
     }
@@ -197,7 +202,8 @@ export function mergeHeaderOverrideUpdate(
       continue;
     }
     if (isMasked(value) || value === "") {
-      const previous = stored[key];
+      // Own keys only, as in {@link mergeHeaderUpdate}.
+      const previous = Object.hasOwn(stored, key) ? stored[key] : undefined;
       if (previous !== undefined) {
         merged[key] = previous;
       }

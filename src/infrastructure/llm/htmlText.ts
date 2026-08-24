@@ -48,13 +48,24 @@ const NAMED_ENTITIES: Record<string, string> = {
   nbsp: " ",
 };
 
+/**
+ * Own keys only. `&constructor;` is letters like any other entity name, so the
+ * pattern below matches it and a plain lookup answers with
+ * `Object.prototype.constructor` — a function `??` reads as a hit and
+ * stringifies into the extracted text, from any page that contains the word.
+ * `domain/trigger/cron.ts` refuses the same shape for the same reason.
+ */
+function namedEntity(name: string): string | undefined {
+  return Object.hasOwn(NAMED_ENTITIES, name) ? NAMED_ENTITIES[name] : undefined;
+}
+
 /** Decode the entity forms that actually appear in prose. */
 export function decodeEntities(value: string): string {
   return (
     value
       .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => codePoint(parseInt(hex, 16)))
       .replace(/&#(\d+);/g, (_, dec: string) => codePoint(Number(dec)))
-      .replace(/&([a-z]+);/gi, (match, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? match)
+      .replace(/&([a-z]+);/gi, (match, name: string) => namedEntity(name.toLowerCase()) ?? match)
       // Last: an escaped ampersand may itself introduce an entity that was never
       // meant to be decoded.
       .replace(/&amp;/gi, "&")

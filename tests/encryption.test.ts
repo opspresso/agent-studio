@@ -201,6 +201,32 @@ describe("MCP header overrides", () => {
   });
 });
 
+describe("header names that name an Object.prototype member", () => {
+  // A header may be called anything an operator types. A plain lookup on the
+  // stored map answers "constructor" with a function, which is not undefined —
+  // so the merge carried a function forward as a stored secret, and
+  // `decryptSecret` was handed one at dispatch time.
+  it("does not resurrect a prototype member as a stored header", () => {
+    expect(mergeHeaderUpdate({}, { constructor: maskSecret("x".repeat(24)) })).toEqual({});
+    expect(mergeHeaderUpdate({}, { toString: "" })).toEqual({});
+  });
+
+  it("does not resurrect a prototype member as a stored override", () => {
+    expect(mergeHeaderOverrideUpdate({}, { constructor: maskSecret("x".repeat(24)) })).toEqual({});
+    expect(mergeHeaderOverrideUpdate({}, { valueOf: "" })).toEqual({});
+  });
+
+  it("still keeps a real stored value under such a name", () => {
+    // Read through a variable, not `stored.constructor`: the compiler resolves
+    // that name to Object's own member and types it `Function`, which is the
+    // same confusion the code under test had to be taught out of.
+    const name = "constructor";
+    const stored = encryptHeaders({ [name]: "Bearer real" });
+    const merged = mergeHeaderUpdate(stored, { [name]: maskSecret(stored[name]!) });
+    expect(decryptHeadersForOutbound(merged)).toEqual({ [name]: "Bearer real" });
+  });
+});
+
 describe("mergeOutboundHeaders", () => {
   const registry = encryptHeaders({
     Authorization: "Bearer registry-default",

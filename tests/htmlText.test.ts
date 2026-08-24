@@ -106,6 +106,17 @@ it("leaves an unknown entity alone", () => {
   expectEqual(decodeEntities("&notanentity; &copy;"), "&notanentity; &copy;");
 });
 
+it("treats an entity named after an Object.prototype member as unknown", () => {
+  // The pattern is `[a-z]+`, so these are entity names like any other. A plain
+  // lookup on the table answers them with a function off the prototype, which
+  // reads as a hit — and a fetched page saying "&constructor;" would put
+  // "function Object() { [native code] }" into what the model is handed.
+  expectEqual(
+    decodeEntities("&constructor; &toString; &valueOf;"),
+    "&constructor; &toString; &valueOf;",
+  );
+});
+
 it("drops an out-of-range numeric reference instead of emitting U+FFFD", () => {
   expectEqual(decodeEntities("a&#xD800;b"), "ab");
   expectEqual(decodeEntities("a&#1114112;b"), "ab");

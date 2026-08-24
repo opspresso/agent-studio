@@ -32,6 +32,13 @@ describe("signInErrorMessage", () => {
     expect(signInErrorMessage("access_denied")).toContain("Try again");
   });
 
+  it("folds a code named after an Object.prototype member into the generic line", () => {
+    // `?error=constructor` is a value anyone can put in the address bar, and a
+    // plain lookup answers it with a function rather than with nothing.
+    expect(signInErrorMessage("constructor")).toBe(signInErrorMessage("anything-else"));
+    expect(signInErrorMessage("toString")).toContain("Try again");
+  });
+
   it("never echoes what the server sent", () => {
     // The shape a deployment redirected before this mapping existed still
     // produces: a whole sentence, naming the domains it allows.

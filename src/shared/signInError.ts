@@ -39,5 +39,8 @@ export function signInErrorMessage(code: string | undefined): string | undefined
   if (!code) {
     return undefined;
   }
-  return MESSAGES[code] ?? GENERIC;
+  // Own keys only: `?error=constructor` would otherwise find
+  // `Object.prototype.constructor` and print a function's source where the
+  // generic line belongs — the address bar is where this value comes from.
+  return (Object.hasOwn(MESSAGES, code) ? MESSAGES[code] : undefined) ?? GENERIC;
 }
