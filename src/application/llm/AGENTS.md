@@ -392,8 +392,14 @@ format-preserving `[[PII:…]]` tokens:
   **not** what a third-party MCP server sees. Keep it that way deliberately, or make it a
   per-server choice; do not change it by accident.
 - **Restored on the way in**: every yielded `delta` is restored through a
-  `PiiStreamRestorer`, which buffers the longest suffix that could be a partial
+  `PiiStreamRestorer`, which buffers the tail that could still complete a
   replacement token across chunk boundaries. Flush restorers on error paths too.
+- **Every scan is marker-driven, never table-driven.** `mask`, `restore` and the
+  stream restorer look for `[[PII:` and `]]` and then ask the mapping about the one
+  span they found. Scanning for each entry instead is the same answer at a cost that
+  grows with the mapping — thousands of small chunks re-scanning thousands of entries
+  is seconds of blocked event loop per turn. A marker-shaped span the mapping does not
+  know is text, not a token, so a value inside one is still masked.
 - The same filter instance crosses subagent transfers (`runSubagentWithPii`), so a child's
   output restores with the parent's mapping.
 - Off-toggle must remain byte-identical to the unfiltered path

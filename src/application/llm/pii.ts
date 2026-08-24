@@ -54,6 +54,54 @@ function randomLetter(source: string): string {
   return String.fromCharCode(base + randomInt(26));
 }
 
+/**
+ * What a replacement is wrapped in — the writer below and the three readers
+ * further down are the only things that know this shape, and they have to agree
+ * on it.
+ *
+ * The wrapping is what makes every scan **marker-driven**: a reader looks for
+ * `[[PII:` and then for `]]`, and asks the table about the one span it found.
+ * Asking the table for *every* entry instead is the same answer at a cost that
+ * grows with the mapping: a run that masked four thousand addresses spent five
+ * seconds of blocked event loop restoring one turn's stream, because each of
+ * the thousands of small chunks re-scanned the whole table twice. Neither
+ * marker can occur inside a replacement — no pattern this file matches admits a
+ * bracket — so the span a reader finds is unambiguous.
+ */
+const TOKEN_OPEN = "[[PII:";
+const TOKEN_CLOSE = "]]";
+
+/**
+ * The next span of `value` at or after `from` that this table minted, or
+ * nothing. A marker-shaped span the table does not know is **not** a token: it
+ * is text this filter never wrote, and the scan resumes inside it so a real
+ * token starting there is still found. That distinction is what keeps a literal
+ * `[[PII:a@b.co]]` in a model's output masked rather than waved through.
+ */
+function nextToken(
+  value: string,
+  from: number,
+  minted: ReadonlyMap<string, string>,
+): { start: number; end: number; text: string } | undefined {
+  for (let scan = from; ; ) {
+    const open = value.indexOf(TOKEN_OPEN, scan);
+    if (open < 0) {
+      return undefined;
+    }
+    const close = value.indexOf(TOKEN_CLOSE, open + TOKEN_OPEN.length);
+    if (close < 0) {
+      // No close anywhere after this open, so no later open has one either.
+      return undefined;
+    }
+    const end = close + TOKEN_CLOSE.length;
+    const text = value.slice(open, end);
+    if (minted.has(text)) {
+      return { start: open, end, text };
+    }
+    scan = open + TOKEN_OPEN.length;
+  }
+}
+
 function formatPreservingReplacement(value: string): string {
   const replacement = [...value]
     .map((char) => {
@@ -66,38 +114,34 @@ function formatPreservingReplacement(value: string): string {
       return char;
     })
     .join("");
-  return `[[PII:${replacement}]]`;
+  return `${TOKEN_OPEN}${replacement}${TOKEN_CLOSE}`;
 }
 
 export class PiiFilter {
   private readonly replacementByOriginal = new Map<string, string>();
   private readonly originalByReplacement = new Map<string, string>();
+  /** The longest token minted so far; how far a stream restorer may hold. */
+  private longestToken = 0;
 
+  /**
+   * Text already carrying this filter's own tokens is masked again — a child
+   * shares its parent's filter, so a transferred answer arrives holding them
+   * and the parent masks it once more on the way into its own context. A token
+   * therefore has to survive the pass untouched; what sits between two of them
+   * is ordinary text and is scanned like any other.
+   */
   mask(value: string): string {
     let masked = "";
-    let cursor = 0;
-
-    while (cursor < value.length) {
-      let earliestIndex = -1;
-      let earliestReplacement = "";
-      for (const replacement of this.originalByReplacement.keys()) {
-        const index = value.indexOf(replacement, cursor);
-        if (index >= 0 && (earliestIndex < 0 || index < earliestIndex)) {
-          earliestIndex = index;
-          earliestReplacement = replacement;
-        }
-      }
-
-      const segmentEnd = earliestIndex >= 0 ? earliestIndex : value.length;
-      masked += this.maskSegment(value.slice(cursor, segmentEnd));
-      if (earliestIndex < 0) {
+    let segmentStart = 0;
+    for (;;) {
+      const token = nextToken(value, segmentStart, this.originalByReplacement);
+      if (!token) {
         break;
       }
-      masked += earliestReplacement;
-      cursor = earliestIndex + earliestReplacement.length;
+      masked += this.maskSegment(value.slice(segmentStart, token.start)) + token.text;
+      segmentStart = token.end;
     }
-
-    return masked;
+    return masked + this.maskSegment(value.slice(segmentStart));
   }
 
   private maskSegment(value: string): string {
@@ -132,65 +176,81 @@ export class PiiFilter {
     }
     this.replacementByOriginal.set(original, replacement);
     this.originalByReplacement.set(replacement, original);
+    this.longestToken = Math.max(this.longestToken, replacement.length);
     return replacement;
   }
 
   restore(value: string): string {
-    let restored = value;
-    for (const [replacement, original] of this.originalByReplacement) {
-      restored = restored.replaceAll(replacement, original);
+    let restored = "";
+    let at = 0;
+    for (;;) {
+      const token = nextToken(value, at, this.originalByReplacement);
+      if (!token) {
+        return at === 0 ? value : restored + value.slice(at);
+      }
+      restored += value.slice(at, token.start) + this.originalByReplacement.get(token.text);
+      at = token.end;
     }
-    return restored;
   }
 
   createStreamRestorer(): PiiStreamRestorer {
-    return new PiiStreamRestorer(this.originalByReplacement);
+    // Read live rather than copied: the mapping keeps growing while a turn
+    // streams, and a restorer holding a snapshot of its longest token would
+    // release a partial one that was about to complete.
+    return new PiiStreamRestorer(this.originalByReplacement, () => this.longestToken);
   }
 }
 
 export class PiiStreamRestorer {
   private pending = "";
 
-  constructor(private readonly originalByReplacement: ReadonlyMap<string, string>) {}
+  constructor(
+    private readonly originalByReplacement: ReadonlyMap<string, string>,
+    private readonly longestToken: () => number,
+  ) {}
 
+  /**
+   * The restored text this chunk completes, holding back only what the next one
+   * could still finish: a token whose close has not arrived, or a prefix of the
+   * opening marker at the very end.
+   */
   push(chunk: string): string {
     this.pending += chunk;
     let output = "";
-
-    while (this.pending) {
-      let earliestIndex = -1;
-      let earliestReplacement = "";
-      for (const replacement of this.originalByReplacement.keys()) {
-        const index = this.pending.indexOf(replacement);
-        if (index >= 0 && (earliestIndex < 0 || index < earliestIndex)) {
-          earliestIndex = index;
-          earliestReplacement = replacement;
-        }
+    let emitted = 0;
+    // Where the next chunk's scan resumes. Everything before it is settled.
+    let settled = this.pending.length;
+    for (let scan = 0; scan < this.pending.length; ) {
+      const open = this.pending.indexOf(TOKEN_OPEN, scan);
+      if (open < 0) {
+        break;
       }
-
-      if (earliestIndex >= 0) {
-        output += this.pending.slice(0, earliestIndex);
-        output += this.originalByReplacement.get(earliestReplacement) ?? earliestReplacement;
-        this.pending = this.pending.slice(earliestIndex + earliestReplacement.length);
+      const close = this.pending.indexOf(TOKEN_CLOSE, open + TOKEN_OPEN.length);
+      if (close < 0) {
+        // Its close may be in the next chunk — unless what has accumulated is
+        // already longer than any token minted, in which case it is text.
+        if (this.pending.length - open <= this.longestToken()) {
+          settled = open;
+          break;
+        }
+        scan = open + TOKEN_OPEN.length;
         continue;
       }
-
-      let suffixLength = 0;
-      for (const replacement of this.originalByReplacement.keys()) {
-        const maxLength = Math.min(this.pending.length, replacement.length - 1);
-        for (let length = maxLength; length > suffixLength; length -= 1) {
-          if (replacement.startsWith(this.pending.slice(-length))) {
-            suffixLength = length;
-            break;
-          }
-        }
+      const end = close + TOKEN_CLOSE.length;
+      const original = this.originalByReplacement.get(this.pending.slice(open, end));
+      if (original === undefined) {
+        scan = open + TOKEN_OPEN.length;
+        continue;
       }
-
-      output += this.pending.slice(0, this.pending.length - suffixLength);
-      this.pending = this.pending.slice(this.pending.length - suffixLength);
-      break;
+      output += this.pending.slice(emitted, open) + original;
+      emitted = end;
+      scan = end;
     }
-
+    if (settled === this.pending.length) {
+      settled -= partialOpenLength(this.pending);
+    }
+    output += this.pending.slice(emitted, settled);
+    this.pending = this.pending.slice(settled);
     return output;
   }
 
@@ -199,4 +259,19 @@ export class PiiStreamRestorer {
     this.pending = "";
     return output;
   }
+}
+
+/**
+ * How much of `text`'s tail is a prefix of the opening marker — the only thing
+ * left worth holding once no token is pending. At most five characters, so a
+ * stream that never carries a token is never buffered.
+ */
+function partialOpenLength(text: string): number {
+  const longest = Math.min(TOKEN_OPEN.length - 1, text.length);
+  for (let length = longest; length > 0; length -= 1) {
+    if (TOKEN_OPEN.startsWith(text.slice(text.length - length))) {
+      return length;
+    }
+  }
+  return 0;
 }
