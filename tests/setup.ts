@@ -4,7 +4,7 @@ import { createFakeStore } from "./fakeStore";
 /**
  * No unit test reaches a database.
  *
- * `vitest.config.ts` loads this before every test file, so the connection
+ * `vitest.config.mts` loads this before every test file, so the connection
  * pool is a stub that refuses, and the item store every repository writes
  * through is an in-memory one. Repository integration is covered by
  * `scripts/integration-check.ts` against a local PostgreSQL, outside vitest —

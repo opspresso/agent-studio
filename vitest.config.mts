@@ -1,3 +1,12 @@
+/**
+ * `.mts` rather than `.ts`: this file is ESM (`import.meta.url`) and the
+ * package is not declared one, so a `.ts` config is loaded as CommonJS. Vite's
+ * compatibility loader still reads it today and warns that the native loader —
+ * the planned default — will not, which is a test run that stops working on a
+ * dependency bump. The extension says what the file is, and needs no `type`
+ * field that would reinterpret every other `.js` in the repository.
+ */
+
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
