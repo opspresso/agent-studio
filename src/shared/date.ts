@@ -88,6 +88,54 @@ export function isUtcDay(day: string): boolean {
   return !Number.isNaN(at) && utcDay(new Date(at)) === day;
 }
 
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * How many UTC days `[from, to]` spans, both endpoints counted.
+ *
+ * The arithmetic behind every "that range is too wide" refusal, and it has to
+ * be *counted* rather than enumerated: the audit and usage budgets exist so a
+ * few thousand years of days is refused, and a check that had to build the
+ * list first would spend the seconds and the memory it is there to prevent.
+ *
+ * A day that cannot be read yields `NaN`, which is false against any budget —
+ * the refusal, which is the safe direction. Callers that also need the range
+ * to be real check it with {@link isUtcDay} first, since `NaN` and "too wide"
+ * deserve different sentences.
+ */
+export function daySpan(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  return Math.round((end - start) / MS_PER_DAY) + 1;
+}
+
+/**
+ * Every UTC day of `[from, to]`, oldest first, both endpoints included.
+ *
+ * Three readers walked a range for themselves — the audit trail, the usage
+ * rows' per-day partitions, and the console's cost chart — and a day the
+ * three do not agree on is a partition queried under a key nothing was
+ * written to, or a gap in a chart that reads as a day with no spend. Ordering
+ * is the one thing a caller does own: an audit reads newest first, a chart
+ * oldest first, so the direction is a `reverse()` at the call site and not a
+ * second walk.
+ *
+ * Unbounded by design, like the partition reads it feeds: the endpoints that
+ * accept a range from outside refuse a wide one with {@link daySpan} before
+ * they get here.
+ */
+export function daysBetween(from: string, to: string): string[] {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  const days: string[] = [];
+  // A day that cannot be read makes this `NaN <= NaN`, so the range is empty
+  // rather than infinite.
+  for (let at = start; at <= end; at += MS_PER_DAY) {
+    days.push(utcDay(new Date(at)));
+  }
+  return days;
+}
+
 /** YYYY-MM in UTC — the month a monthly cost window is keyed by. */
 export function utcMonth(date: Date): string {
   return date.toISOString().slice(0, 7);

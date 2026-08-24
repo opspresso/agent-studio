@@ -6,7 +6,7 @@
 import { ValidationError } from "@/application/errors";
 import type { AuditRepository } from "@/domain/audit/repository";
 import type { AuditEvent } from "@/domain/audit/types";
-import { isUtcDay, utcDay } from "@/shared/date";
+import { daySpan, daysBetween, isUtcDay } from "@/shared/date";
 
 /**
  * How many days one query may span. A range is read a partition at a time, so
@@ -22,31 +22,16 @@ export interface AuditQuery {
   to?: string;
 }
 
-const MS_PER_DAY = 86_400_000;
 
 /**
- * The instant a `YYYY-MM-DD` names, or `undefined` when it names no day.
+ * Every UTC day from `from` to `to`, inclusive, newest first.
  *
- * The shape check is not the same question as the calendar one, and only the
- * second is load-bearing here: `2026-13-01` would make the range loop produce
- * nothing and answer `200 {events: []}` — an audit reader told "that is
- * everything" by a query that never ran — and `2026-02-31` would silently
- * widen the range past the month that was asked for. `isUtcDay` owns the
- * distinction.
+ * The direction is this reader's — an audit is read from what just happened
+ * backwards — and it is all that is this reader's: the walk itself is shared
+ * with the usage rows and the cost chart, which read the other way.
  */
-function dayStart(day: string): number | undefined {
-  return isUtcDay(day) ? Date.parse(`${day}T00:00:00Z`) : undefined;
-}
-
-/** Every UTC day from `from` to `to`, inclusive, newest first. */
 export function daysInRange(from: string, to: string): string[] {
-  const start = Date.parse(`${from}T00:00:00Z`);
-  const end = Date.parse(`${to}T00:00:00Z`);
-  const days: string[] = [];
-  for (let at = end; at >= start; at -= MS_PER_DAY) {
-    days.push(utcDay(new Date(at)));
-  }
-  return days;
+  return daysBetween(from, to).reverse();
 }
 
 export interface AuditUseCases {
@@ -58,12 +43,19 @@ export function createAuditUseCases(repo: AuditRepository): AuditUseCases {
     async list(query) {
       const from = query.from;
       const to = query.to ?? from;
-      const start = dayStart(from);
-      const end = dayStart(to);
-      if (start === undefined || end === undefined) {
+      // The shape check is not the same question as the calendar one, and only
+      // the second is load-bearing here: `2026-13-01` would make the range walk
+      // produce nothing and answer `200 {events: []}` — an audit reader told
+      // "that is everything" by a query that never ran — and `2026-02-31` would
+      // silently widen the range past the month that was asked for. `isUtcDay`
+      // owns the distinction.
+      if (!isUtcDay(from) || !isUtcDay(to)) {
         throw new ValidationError("from and to must be a real UTC day, as YYYY-MM-DD");
       }
-      if (end < start) {
+      // Both are days the calendar has, and `YYYY-MM-DD` sorts the way the
+      // calendar does — the same comparison the usage range makes, rather than
+      // a second pair of instants to keep in step with the walk below.
+      if (to < from) {
         throw new ValidationError("to must not be earlier than from");
       }
       // Counted, not enumerated. `daysInRange` allocates a Date and a string per
@@ -71,7 +63,7 @@ export function createAuditUseCases(repo: AuditRepository): AuditUseCases {
       // event loop and hundreds of megabytes before this line got to refuse it —
       // a rejected query that costs more than an accepted one is a way to take
       // the instance down through an endpoint that answers 400.
-      const dayCount = Math.round((end - start) / MS_PER_DAY) + 1;
+      const dayCount = daySpan(from, to);
       if (dayCount > MAX_AUDIT_RANGE_DAYS) {
         throw new ValidationError(
           `A query may span at most ${MAX_AUDIT_RANGE_DAYS} days; asked for ${dayCount}`,

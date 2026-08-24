@@ -1852,6 +1852,18 @@ const SINGLE_OWNERS: SingleOwner[] = [
     alsoAllowedUnder: ["src/shared/mapWithLimit.ts", "src/lib/config.ts"],
   },
   {
+    // Turning a `YYYY-MM-DD` into an instant, and how long a day is. Three
+    // readers walked a range for themselves — the audit trail, the usage rows'
+    // per-day partitions, and the console's cost chart — plus a fourth that
+    // counted the span so it could refuse a wide one. A day the four do not
+    // agree on is a partition queried under a key nothing was written to, or
+    // a column in a chart drawn beside rows filed elsewhere. Direction is the
+    // one thing a caller still owns, and a `reverse()` is not a second walk.
+    what: "reading a UTC day as an instant, and walking a range of them",
+    pattern: /86_?400_?000|T00:00:00Z`\)/,
+    owner: "src/shared/date.ts",
+  },
+  {
     // Not a duplicated definition but a duplicated *copy of undici*, which is
     // the same failure one layer down. A `dispatcher` is a private contract
     // between a fetch implementation and its `Agent`, and the runtime ships its

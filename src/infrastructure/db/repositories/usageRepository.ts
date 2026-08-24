@@ -21,7 +21,7 @@ import {
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { memberEmailFromActorKey } from "@/domain/execution/actor";
-import { utcDay } from "@/shared/date";
+import { daysBetween } from "@/shared/date";
 import type { ActorUsageRow, MemberUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
 
 /**
@@ -34,16 +34,6 @@ const ALERT_MARKER: Record<CostAlertKind, string> = {
 };
 
 const COUNTERS = ["calls", "inputTokens", "outputTokens", "cachedTokens", "costUsd"] as const;
-
-function eachDate(from: string, to: string): string[] {
-  const dates: string[] = [];
-  const start = new Date(`${from}T00:00:00Z`);
-  const end = new Date(`${to}T00:00:00Z`);
-  for (let d = start; d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-    dates.push(utcDay(d));
-  }
-  return dates;
-}
 
 function toUsageRow(item: Item): UsageRow {
   return {
@@ -254,7 +244,7 @@ export class PostgresUsageRepository implements UsageRepository {
   async listByDateRange(from: string, to: string): Promise<UsageRow[]> {
     const rows: UsageRow[] = [];
     const now = Math.floor(Date.now() / 1000);
-    for (const date of eachDate(from, to)) {
+    for (const date of daysBetween(from, to)) {
       const items = await queryItems({
         index: "GSI1",
         pk: keys.usageDatePartition(date),
