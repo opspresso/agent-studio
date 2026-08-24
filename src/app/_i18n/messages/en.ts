@@ -31,7 +31,6 @@ export const en = {
   "locale.change": "Change language",
 
   // Colour-scheme toggle.
-  "theme.label": "Theme",
   "theme.current": "Theme: {name}",
   "theme.system": "System",
   "theme.light": "Light",
@@ -811,8 +810,6 @@ export const en = {
   "pset.monthlyBlock": "Monthly block threshold (USD)",
   "pset.monthlyBlockHint": "Refuse runs for the rest of the month",
   "pset.slackChannel": "Slack channel",
-  "pset.slackChannelHint":
-    "Where notifications are posted, using this project’s own bot. Without it the thresholds still block.",
   "pset.slackChannelUnavailable": "Enable the project bot and invite it to a channel first",
   "pset.notificationDestinations": "Notification destinations",
   "pset.notificationDestinationsHint":

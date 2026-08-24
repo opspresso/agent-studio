@@ -15,7 +15,6 @@ export const ko: Messages = {
   "locale.label": "언어",
   "locale.change": "언어 변경",
 
-  "theme.label": "테마",
   "theme.current": "테마: {name}",
   "theme.system": "시스템",
   "theme.light": "라이트",
@@ -733,8 +732,6 @@ export const ko: Messages = {
   "pset.monthlyBlock": "월간 차단 기준 (USD)",
   "pset.monthlyBlockHint": "그달 남은 실행을 거절합니다",
   "pset.slackChannel": "Slack 채널",
-  "pset.slackChannelHint":
-    "이 프로젝트의 봇으로 알림을 보낼 채널입니다. 지정하지 않아도 차단은 그대로 동작합니다.",
   "pset.slackChannelUnavailable": "프로젝트 봇을 활성화하고 채널에 먼저 초대하세요",
   "pset.notificationDestinations": "알림 목적지",
   "pset.notificationDestinationsHint":
