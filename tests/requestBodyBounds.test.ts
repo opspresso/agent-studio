@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { editorBody, MAX_TURN_BODY_BYTES, turnBody } from "@/app/api/_lib/body";
+import { MAX_INBOUND_EVENT_BYTES, readEventBody } from "@/app/api/_lib/inboundEvent";
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
 
@@ -61,5 +62,31 @@ describe("editorBody", () => {
     const files = { files: [{ path: "a.md", content: "x".repeat(180 * 1024) }] };
 
     expect(await editorBody(post(JSON.stringify(files)))).toEqual(files);
+  });
+});
+
+describe("readEventBody", () => {
+  it("hands back a delivery within the cap", async () => {
+    expect(await readEventBody(post('{"type":"event_callback"}'))).toBe('{"type":"event_callback"}');
+  });
+
+  it("refuses one over it with a 413 that names the bound", async () => {
+    // Four webhooks — Slack, Telegram, Teams and a project's own — each named
+    // their own megabyte and then wrote a flat "Request body too large", the
+    // only 413 on the platform that did not say what the limit was. A caller
+    // that cannot read the bound out of the refusal learns it from a 500.
+    const result = await readEventBody(post("a".repeat(MAX_INBOUND_EVENT_BYTES + 1)));
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(413);
+    await expect((result as Response).json()).resolves.toEqual({
+      error: `HTTP body exceeds ${MAX_INBOUND_EVENT_BYTES} bytes`,
+    });
+  });
+
+  it("leaves parsing to the caller, so a malformed body is not its refusal", async () => {
+    // Each platform reads its own payload shape and answers 400 in its own
+    // vocabulary; this only decides how much may be read.
+    expect(await readEventBody(post("{not json"))).toBe("{not json");
   });
 });

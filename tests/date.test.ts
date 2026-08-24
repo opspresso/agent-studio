@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  daySpan,
+  daysBetween,
   formatDate,
   formatDateTime,
   formatRunClock,
@@ -116,5 +118,59 @@ describe("isUtcDay", () => {
   it("rejects a malformed string", () => {
     expect(isUtcDay("2026-7-1")).toBe(false);
     expect(isUtcDay("not a day")).toBe(false);
+  });
+});
+
+describe("daySpan", () => {
+  it("counts both endpoints", () => {
+    expect(daySpan("2026-01-01", "2026-01-01")).toBe(1);
+    expect(daySpan("2026-01-01", "2026-01-02")).toBe(2);
+    expect(daySpan("2026-03-01", "2026-03-31")).toBe(31);
+  });
+
+  it("counts across a month and a year boundary", () => {
+    expect(daySpan("2026-02-27", "2026-03-02")).toBe(4);
+    expect(daySpan("2026-12-30", "2027-01-02")).toBe(4);
+  });
+
+  it("yields NaN for a day it cannot read, so a budget check refuses", () => {
+    // The budgets are spelled `daySpan(...) <= MAX`, and NaN is false against
+    // any of them. Answering 0 would have passed every one of them.
+    expect(Number.isNaN(daySpan("2026-13-01", "2026-13-02"))).toBe(true);
+    expect(daySpan("2026-13-01", "2026-13-02") <= 184).toBe(false);
+  });
+});
+
+describe("daysBetween", () => {
+  it("walks a range oldest first, both endpoints included", () => {
+    expect(daysBetween("2026-08-01", "2026-08-03")).toEqual([
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+    ]);
+  });
+
+  it("answers one day for a range that starts and ends on it", () => {
+    expect(daysBetween("2026-08-01", "2026-08-01")).toEqual(["2026-08-01"]);
+  });
+
+  it("crosses a month boundary without inventing a day", () => {
+    expect(daysBetween("2026-02-27", "2026-03-01")).toEqual([
+      "2026-02-27",
+      "2026-02-28",
+      "2026-03-01",
+    ]);
+  });
+
+  it("is empty for a reversed range", () => {
+    expect(daysBetween("2026-08-03", "2026-08-01")).toEqual([]);
+  });
+
+  it("is empty rather than endless for a day it cannot read", () => {
+    expect(daysBetween("2026-13-01", "2026-13-05")).toEqual([]);
+  });
+
+  it("agrees with the span it is bounded by", () => {
+    expect(daysBetween("2026-01-01", "2026-03-15")).toHaveLength(daySpan("2026-01-01", "2026-03-15"));
   });
 });

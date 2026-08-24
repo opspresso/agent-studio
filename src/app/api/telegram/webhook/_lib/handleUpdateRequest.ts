@@ -34,9 +34,6 @@ const telegramEventDeps: TelegramEventDeps = {
   albums: (projectName, botId) => telegramUpdateRepository.forBot(projectName, botId).albums,
 };
 
-/** A payload larger than this is not an update; Telegram's own are a few KB. */
-const MAX_TELEGRAM_BODY_BYTES = 1_000_000;
-
 /**
  * The Telegram webhook pipeline: check the secret → gate → exactly-once claim
  * → ack immediately and process in the background. Telegram retries a delivery
@@ -52,7 +49,7 @@ export async function handleTelegramUpdateRequest(
   request: Request,
   binding: TelegramEventBinding,
 ): Promise<Response> {
-  const body = await readEventBody(request, MAX_TELEGRAM_BODY_BYTES);
+  const body = await readEventBody(request);
   if (body instanceof Response) {
     return body;
   }

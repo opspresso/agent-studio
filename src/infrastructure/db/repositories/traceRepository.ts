@@ -3,6 +3,7 @@ import type { Trace } from "@/domain/trace/types";
 import { keys } from "@/infrastructure/db/keys";
 import { conditions, getItem, queryItems, transact, type SortKeyMatch } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 const MAX_SPANS = 100;
 
@@ -93,7 +94,7 @@ export class PostgresTraceRepository implements TraceRepository {
       pk: keys.traceProjectPartition(projectName),
       sk,
       forward: false,
-      limit: Math.min(Math.max(limit, 1), 100),
+      limit: boundedPageLimit(limit),
       notExpiredAt: Math.floor(Date.now() / 1000),
     });
     return items.map(fromItem);

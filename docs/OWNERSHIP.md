@@ -46,6 +46,8 @@
 | 마크다운 frontmatter 블록의 파싱 | `src/domain/plugin/frontmatter.ts` |
 | repo 소유 컴포넌트의 provenance 문자열(`github:<repo>#<plugin>`) | `src/domain/plugin/types.ts` 의 `pluginSourcePrefix`(sync 가 `startsWith`/`slice` 로 기대는 쪽)·`pluginSource`·`parsePluginSource` |
 | 아티팩트 목록의 페이지 커서(= GSI 정렬 키) 철자. 아래 "모든 행 키 문자열" 의 유일한 예외이고, API 가 독자에게 건네는 커서이기도 하기 때문이다 | `src/domain/artifact/repository.ts` 의 `artifactCursor` |
+| 호출자가 요청한 페이지 크기를 읽는 법과, 한 페이지가 커질 수 있는 상한 | `src/shared/pageLimit.ts` 의 `parsePageLimit` / `boundedPageLimit` / `MAX_PAGE_LIMIT`. 목록 엔드포인트 넷이 각자 읽던 것이고, 사본들은 정수가 아닌 모든 입력에서 서로 달랐다 — 빈 `?limit=` 은 `Number("")` 가 0 이라 1 로 클램프되어, 갤러리 한 장을 요청한 페이지라고 답했다. 갤러리·chat 사이드바처럼 페이지 크기 자체가 하나의 결정인 곳은 자기 `max` 를 건네고, 리포지토리는 들어오는 값을 같은 규칙으로 다시 묶는다 |
+| UTC 날짜를 시각으로 읽는 법, 하루의 길이, 그리고 날짜 범위를 걸어가는 법 | `src/shared/date.ts` 의 `isUtcDay` / `daySpan` / `daysBetween`. 감사 로그·usage 일별 파티션·콘솔 비용 차트가 각자 범위를 걸었고, 넷째는 넓은 범위를 거절하려고 일수를 따로 셌다. 넷이 어긋난 날 하나는 아무것도 쓰이지 않은 키로 던지는 쿼리이거나, 다른 곳에 적힌 행 옆에 그려지는 차트의 기둥이다. 방향(오래된 쪽부터/최근 쪽부터)만 호출자의 것이고, `reverse()` 는 두 번째 걷기가 아니다 |
 | subagent 중첩 한도 | `src/application/execution/subagentRunner.ts` |
 | 런당 MCP tool 상한 | `src/domain/llm/toolLimits.ts` |
 | 각 member tier 가 쓸 수 있는 금액 | `src/domain/member/tiers.ts` 의 `TIER_LIMITS` |
@@ -94,6 +96,7 @@
 | 모든 chat-bot 표면이 구현하는 답변 port | `src/domain/messaging/reply.ts` 의 `ReplySink` / `ReplyChannel`. 파이프라인이 그것을 호출하고, 각 어댑터가 그것을 렌더하며, 어느 쪽도 다른 쪽을 import 하지 않는다 |
 | 인바운드 이벤트를 정확히 한 번 처리하게 하는 claim-and-settle 계약 | `src/infrastructure/db/repositories/inboundClaimRepository.ts` 의 `createInboundClaimRepository`. Slack 은 `event_id` 로, Telegram 은 project·봇·`update_id` 로, Teams 는 project·App ID·activity id 로 키를 잡고, port 는 `src/domain/messaging/inboundClaims.ts` 의 `InboundEventClaims` 이다 |
 | 모든 chat 플랫폼이 공유하는 webhook 꼬리. claim, ack, 이벤트의 id 아래에서 작업, settle | `src/app/api/_lib/inboundEvent.ts` 의 `admitInboundEvent` |
+| 인바운드 delivery 가 얼마나 클 수 있는가, 그리고 넘쳤을 때의 거부 | `src/app/api/_lib/inboundEvent.ts` 의 `MAX_INBOUND_EVENT_BYTES` 와 `readEventBody`. webhook 넷(Slack·Telegram·Teams·프로젝트 자신의 것)이 각자 같은 1MB 를 이름 붙이고 있었고, 413 도 저마다 적어 상한을 말하지 않는 유일한 거부가 됐다. 413 본문은 `body.ts` 의 `bodyTooLarge` 가 소유한다 |
 | Telegram 답변이 어떻게 전달되는가. Bot API 호출, 4,096자, HTML 로 한 번 렌더하고 plain fallback | `src/application/telegram/replyChannel.ts` (장부는 위의 `editInPlaceReply.ts`) |
 | Teams 답변이 어떻게 전달되는가. activity 를 보내고 갱신하며, Markdown 은 그대로, 그림은 inline `data:` 첨부 | `src/application/teams/replyChannel.ts` |
 | 전달된 Bot Framework activity 중 어떤 것이 봇에게 온 것인가 | `src/application/teams/engagement.ts` 의 `classifyTeamsActivity` |
@@ -124,7 +127,7 @@
 | 바이트 상한 아래에서 HTTP 본문 읽기 | `src/shared/httpBody.ts` |
 | tool 의 파일이 실려 다니는 이름과 media type | `src/infrastructure/mcp/toolManager.ts` 의 `safeFileName`/`baseMediaType` |
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` |
-| 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt` | `src/infrastructure/db/store.ts` 의 `queryItems()` |
+| 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt`, 호출자가 가져온 필터도 같은 자리에서 도는 `filter` | `src/infrastructure/db/store.ts` 의 `queryItems()`. `LIMIT` 뒤에서 거르는 목록은 존재하는 행보다 짧게 답하고, 거기서 회복하는 길은 둘 다 틀렸다 — 짧게 답하거나, 어딘가에서 포기해야 하는 루프로 다시 묻거나. 포기한 목록은 끝에 닿은 목록과 똑같이 보인다 |
 | Better Auth 의 `user` 행을 멤버로 읽기. 스토어가 소유하지 않는 테이블에 대한 plain SQL | `src/infrastructure/db/repositories/memberRepository.ts` |
 | 저장소 트리 하나를 plugins 스냅샷으로. 어느 디렉터리가 plugin·skill·확장 문서인가 | `src/infrastructure/plugin/snapshot.ts` 의 `collectRepoPlugins`. GitHub 클라이언트와 업로드 아카이브는 파일을 어떻게 나열하고 읽는지만 건넨다 |
 | 업로드 아카이브로 sync 된 행의 provenance. 설정된 저장소, 없으면 `archive` | `src/domain/plugin/sync.ts` 의 `archiveSyncRepo` / `ARCHIVE_SYNC_REPO`; 브랜치 `archive` 와 commit = sha256 은 `src/infrastructure/plugin/archiveSnapshot.ts` |

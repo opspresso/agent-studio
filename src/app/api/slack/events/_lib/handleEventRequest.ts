@@ -34,8 +34,6 @@ const slackEventDeps: SlackEventDeps = {
   loadingIndicator: config.slackLoadingIndicator,
 };
 
-const MAX_SLACK_BODY_BYTES = 1_000_000;
-
 /**
  * Shared Slack Events pipeline: verify signature → url_verification →
  * engagement gate → exactly-once claim → ack immediately and process in the
@@ -60,7 +58,7 @@ export async function handleSlackEventRequest(
     engagement?: EngagementPolicy;
   },
 ): Promise<Response> {
-  const body = await readEventBody(request, MAX_SLACK_BODY_BYTES);
+  const body = await readEventBody(request);
   if (body instanceof Response) {
     return body;
   }

@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import type { InboundEventClaims } from "@/domain/messaging/inboundClaims";
 import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
+import { bodyTooLarge } from "@/app/api/_lib/body";
 import { log, type LogScope } from "@/shared/logger";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { withRunContext } from "@/shared/runContext";
@@ -19,14 +20,35 @@ import { withRunContext } from "@/shared/runContext";
  */
 
 /**
- * The request body as text, bounded, or the 413 that says it was not an event.
+ * How large an inbound delivery may be.
+ *
+ * Every platform's own are a few kilobytes — a message, its metadata, and URLs
+ * standing in for whatever was attached — so a megabyte is generous by a wide
+ * margin and anything past it is not an event. It is one number rather than
+ * four because it answers one question, and four copies of it are four
+ * different sizes the day one of them is raised for a payload nobody has
+ * measured: the endpoints do not differ, and a body this size is refused
+ * before a byte of it is parsed.
  */
-export async function readEventBody(request: Request, maxBytes: number): Promise<string | Response> {
+export const MAX_INBOUND_EVENT_BYTES = 1_000_000;
+
+/**
+ * The request body as text, bounded, or the 413 that says it was not an event.
+ *
+ * The bound is not the caller's to pass. Taking it as an argument is what let
+ * each webhook name its own.
+ *
+ * The refusal is `bodyTooLarge`, like every other route's. Spelled here as a
+ * flat "Request body too large", the four webhooks were the only endpoints
+ * whose 413 did not say what the bound *was* — which is the whole point of
+ * answering 413 rather than dropping the connection.
+ */
+export async function readEventBody(request: Request): Promise<string | Response> {
   try {
-    return await readBodyText(request, maxBytes);
+    return await readBodyText(request, MAX_INBOUND_EVENT_BYTES);
   } catch (error) {
     if (error instanceof BodyTooLargeError) {
-      return Response.json({ error: "Request body too large" }, { status: 413 });
+      return bodyTooLarge(error);
     }
     throw error;
   }

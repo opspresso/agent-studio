@@ -12,7 +12,7 @@ import {
   totalCost,
   type DailyCostRow,
 } from "@/app/_lib/usage";
-import { inclusiveDays, summaryQuerySchema } from "@/app/api/usages/summary/validation";
+import { summaryQuerySchema } from "@/app/api/usages/summary/validation";
 
 const rows: UsageRow[] = [
   {
@@ -179,14 +179,6 @@ describe("toChartColumns / toChartData", () => {
   });
 });
 
-describe("inclusiveDays", () => {
-  it("counts both endpoints", () => {
-    expect(inclusiveDays("2026-01-01", "2026-01-01")).toBe(1);
-    expect(inclusiveDays("2026-01-01", "2026-01-02")).toBe(2);
-    expect(inclusiveDays("2026-03-01", "2026-03-31")).toBe(31);
-  });
-});
-
 describe("summaryQuerySchema", () => {
   it("accepts a valid range and leaves project optional", () => {
     const result = summaryQuerySchema.safeParse({ from: "2026-05-01", to: "2026-05-10" });
@@ -237,7 +229,7 @@ describe("summaryQuerySchema", () => {
   });
 
   it("rejects a day the calendar does not have", () => {
-    // A shape regex let 2026-02-31 through, and `inclusiveDays` read it as
+    // A shape regex let 2026-02-31 through, and the span arithmetic read it as
     // March 3rd — a range the caller never asked about, answered `{items: []}`.
     const result = summaryQuerySchema.safeParse({ from: "2026-02-31", to: "2026-03-05" });
     expect(result.success).toBe(false);

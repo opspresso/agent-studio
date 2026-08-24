@@ -1,5 +1,5 @@
 import type { UsageRow } from "@/domain/usage/types";
-import { toISODate } from "./dateRange";
+import { daysBetween } from "@/shared/date";
 
 export type { UsageRow };
 
@@ -243,17 +243,13 @@ export function buildDailySeries(
   const { keys, hasOthers } = topSeries(totals);
   const seriesKeys = hasOthers ? [...keys, OTHERS_KEY] : keys;
 
-  const data: CostSeriesPoint[] = [];
-  const cursor = new Date(`${from}T00:00:00Z`);
-  const end = new Date(`${to}T00:00:00Z`);
-  if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime())) {
-    return { data, keys: seriesKeys };
-  }
-  while (cursor <= end) {
-    const date = toISODate(cursor);
-    data.push(pointFrom(date, byDate.get(date), keys, hasOthers));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
+  // The chart plots a point per day of the range whether or not a row exists
+  // for it — a missing day is a day with no spend, not a gap. The walk is the
+  // one the audit trail and the usage partitions use; a day this disagreed
+  // with is a column drawn against rows filed under a different key.
+  const data = daysBetween(from, to).map((date) =>
+    pointFrom(date, byDate.get(date), keys, hasOthers),
+  );
 
   return { data, keys: seriesKeys };
 }

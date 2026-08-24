@@ -218,6 +218,19 @@ export function createFakeStore(): FakeStore {
           (row) => typeof row.expiresAt !== "number" || row.expiresAt > now,
         );
       }
+      // `data ->> attr = value`. `->>` renders whatever is stored *as text* —
+      // a number matches its digits — and answers NULL for an attribute the
+      // row does not carry, which equals nothing. Comparing only strings here
+      // would let this pass a filter PostgreSQL matches.
+      for (const [attribute, value] of Object.entries(input.filter ?? {})) {
+        matches = matches.filter((row) => {
+          const held = row[attribute];
+          if (held === undefined || held === null) {
+            return false;
+          }
+          return (typeof held === "object" ? JSON.stringify(held) : String(held)) === value;
+        });
+      }
       matches.sort(
         (a, b) =>
           compareBytes(String(a[skAttr] ?? ""), String(b[skAttr] ?? "")) ||

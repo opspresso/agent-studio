@@ -1,14 +1,11 @@
 import { after } from "next/server";
 import { admitDelivery, executeDelivery } from "@/application/trigger/runTrigger";
 import { triggerRunnerDeps } from "@/lib/container";
-import { readBodyText, BodyTooLargeError } from "@/shared/httpBody";
+import { readEventBody } from "@/app/api/_lib/inboundEvent";
 import { unauthorized } from "@/shared/unauthorized";
 import { withRunContext } from "@/shared/runContext";
 
 type RouteContext = { params: Promise<{ project: string }> };
-
-/** A payload larger than this is not a webhook event, it is a file upload. */
-const MAX_BODY_BYTES = 1_000_000;
 
 /**
  * A project's webhook: `POST /api/webhook/{project}`.
@@ -30,14 +27,11 @@ const MAX_BODY_BYTES = 1_000_000;
  */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
   const { project } = await ctx.params;
-  let body: string;
-  try {
-    body = await readBodyText(request, MAX_BODY_BYTES);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) {
-      return Response.json({ error: "Request body too large" }, { status: 413 });
-    }
-    throw error;
+  // Bounded and refused by the same rule as every chat platform's webhook: a
+  // payload larger than this is not a webhook event, it is a file upload.
+  const body = await readEventBody(request);
+  if (body instanceof Response) {
+    return body;
   }
   let payload: unknown;
   if (body.trim()) {

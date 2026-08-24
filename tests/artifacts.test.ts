@@ -230,9 +230,9 @@ describe("listing", () => {
     expect(found.map((a) => a.artifactId)).toEqual(["fresh"]);
   });
 
-  it("refills a page thinned by a kind filter instead of returning it short", async () => {
-    // The store applies the limit before anything here can filter, so "images
-    // only" would ask for 2 and get 1 without the refill loop.
+  it("fills a page a kind filter would thin, because the store filters first", async () => {
+    // The limit counts matches, not rows: "images only" asked for 2 and got 1
+    // when the filter ran over what had already come back.
     store.seed([
       row({ artifactId: "doc1", kind: "document", createdAt: createdPlus(120) }),
       row({ artifactId: "img1", createdAt: createdPlus(60) }),
@@ -251,7 +251,7 @@ describe("listing", () => {
     expect(found.map((a) => a.artifactId)).toEqual(["att"]);
   });
 
-  it("stops after the page bound so a filter matching nothing is not a full scan", async () => {
+  it("answers a filter that matches nothing in one read, not a walk of the partition", async () => {
     store.seed(
       Array.from({ length: 12 }, (_, i) =>
         row({ artifactId: `doc${i}`, kind: "document", createdAt: createdPlus(i) }),
@@ -260,7 +260,43 @@ describe("listing", () => {
     const query = vi.spyOn(store, "queryItems");
     const found = await artifactRepository.listByProject("poster-bot", { limit: 1, kind: "image" });
     expect(found).toEqual([]);
-    expect(query).toHaveBeenCalledTimes(5);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it("reaches matches that lie past a page of non-matches", async () => {
+    // The refill loop this replaced pulled at most five pages and then gave
+    // up, and giving up looked exactly like reaching the end: an empty
+    // gallery with no cursor to page past. A project holding a few hundred
+    // images and a handful of older documents is the ordinary shape of it.
+    store.seed([
+      ...Array.from({ length: 600 }, (_, i) =>
+        row({ artifactId: `img${String(i).padStart(3, "0")}`, createdAt: createdPlus(100 + i) }),
+      ),
+      row({ artifactId: "doc-old", kind: "document", createdAt: createdPlus(0) }),
+    ]);
+    const found = await artifactRepository.listByProject("poster-bot", {
+      limit: 24,
+      kind: "document",
+    });
+    expect(found.map((a) => a.artifactId)).toEqual(["doc-old"]);
+  });
+
+  it("keeps a source filter exact alongside a kind one", async () => {
+    store.seed([
+      row({ artifactId: "gen-img", createdAt: createdPlus(90) }),
+      row({ artifactId: "att-img", source: "attachment", createdAt: createdPlus(60) }),
+      row({
+        artifactId: "att-doc",
+        kind: "document",
+        source: "attachment",
+        createdAt: createdPlus(30),
+      }),
+    ]);
+    const found = await artifactRepository.listByProject("poster-bot", {
+      kind: "image",
+      source: "attachment",
+    });
+    expect(found.map((a) => a.artifactId)).toEqual(["att-img"]);
   });
 
   it("pages with the previous page's last sort key, and does not repeat that row", async () => {
@@ -304,5 +340,33 @@ describe("delete", () => {
     await artifactRepository.delete("a1");
     expect(await store.getItem(keys.artifact("a1"))).toBeNull();
     expect(await store.getItem(keys.artifact("a2"))).not.toBeNull();
+  });
+});
+
+describe("the store filter the listing rides on", () => {
+  // Asserted against the fake because the listing rides on it; the integration
+  // check pins the same three answers against real SQL.
+  it("renders a stored value as text, the way `->>` does", async () => {
+    store.seed([
+      { PK: "F#1", SK: "META", kind: "image", byteSize: 42 },
+      { PK: "F#1", SK: "META2", kind: "document", byteSize: 7 },
+    ]);
+    const [byNumber] = await store.queryItems({ pk: "F#1", filter: { byteSize: "42" } });
+    expect(byNumber?.SK).toBe("META");
+  });
+
+  it("does not match a row that lacks the attribute", async () => {
+    store.seed([{ PK: "F#2", SK: "META" }]);
+    expect(await store.queryItems({ pk: "F#2", filter: { kind: "image" } })).toEqual([]);
+  });
+
+  it("runs before the limit, not over its result", async () => {
+    store.seed([
+      { PK: "F#3", SK: "a", kind: "image" },
+      { PK: "F#3", SK: "b", kind: "image" },
+      { PK: "F#3", SK: "c", kind: "document" },
+    ]);
+    const found = await store.queryItems({ pk: "F#3", limit: 1, filter: { kind: "document" } });
+    expect(found.map((row) => row.SK)).toEqual(["c"]);
   });
 });

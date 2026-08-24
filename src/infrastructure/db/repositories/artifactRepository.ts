@@ -5,10 +5,9 @@ import { artifactOwnerEmail } from "@/domain/artifact/types";
 import { keys } from "@/infrastructure/db/keys";
 import { deleteItem, getItem, putItem, queryItems, type SortKeyMatch } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 const ARTIFACT_ENTITY = "ARTIFACT";
-/** Bound on extra pages fetched to refill a list thinned by a kind/source filter. */
-const MAX_LIST_PAGES = 5;
 
 function fromItem(item: Record<string, unknown>): Artifact {
   return {
@@ -50,40 +49,36 @@ async function list(
     sk = { between: ["", upper] };
   }
 
-  const pageLimit = Math.min(Math.max(limit, 1), 100);
-  const artifacts: Artifact[] = [];
-  let after = before;
-  // A `kind`/`source` filter thins a page after the limit counts — "images
-  // only" would ask for 24 and get 3 — so pages are pulled until the caller's
-  // limit is genuinely filled, bounded so a filter matching nothing cannot
-  // become a scan of the partition.
-  for (let page = 0; page < MAX_LIST_PAGES; page += 1) {
-    const items = await queryItems({
-      index,
-      pk: partition,
-      sk,
-      forward: false,
-      limit: pageLimit,
-      after,
-      notExpiredAt: Math.floor(Date.now() / 1000),
-    });
-    for (const item of items) {
-      const artifact = fromItem(item);
-      if (kind && artifact.kind !== kind) {
-        continue;
-      }
-      if (source && artifact.source !== source) {
-        continue;
-      }
-      artifacts.push(artifact);
-    }
-    const last = items[items.length - 1];
-    if (artifacts.length >= pageLimit || items.length < pageLimit || !last) {
-      break;
-    }
-    after = artifactCursor(fromItem(last));
-  }
-  return artifacts.slice(0, pageLimit);
+  // The filter goes to the store, not over what came back. Applied here it
+  // would thin the page *after* the limit counted, and the only recoveries
+  // from that are both wrong: answering short, or asking again in a loop that
+  // has to give up somewhere — and a listing that gave up looked exactly like
+  // one that had reached the end. A project holding a few hundred images and
+  // a handful of older documents answered "documents only" with an empty
+  // gallery and no cursor to page past it.
+  //
+  // The cost is at the other end: a filter that matches *nothing* now walks
+  // its partition's index — one project or one mailbox, over
+  // `ARTIFACT_RETENTION_DAYS` — instead of stopping after a fixed number of
+  // pages. It is one indexed descending read that stops at the first full
+  // page, so the ordinary case (matches somewhere recent) is cheaper than the
+  // five round trips it replaces; only "no such kind in six months" pays for
+  // the whole partition, and that case answered empty before too. A
+  // deployment that ever measures it wants an index over the facet, not the
+  // page bound back — the page bound is what made the answer wrong.
+  const items = await queryItems({
+    index,
+    pk: partition,
+    sk,
+    forward: false,
+    limit: boundedPageLimit(limit),
+    ...(before !== undefined ? { after: before } : {}),
+    notExpiredAt: Math.floor(Date.now() / 1000),
+    ...(kind || source
+      ? { filter: { ...(kind ? { kind } : {}), ...(source ? { source } : {}) } }
+      : {}),
+  });
+  return items.map(fromItem);
 }
 
 export class PostgresArtifactRepository implements ArtifactRepository {
