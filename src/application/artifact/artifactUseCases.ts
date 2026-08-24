@@ -23,6 +23,7 @@ import {
   MAX_INLINE_VIEW_BYTES,
 } from "@/domain/artifact/types";
 import type { Artifact, InlineView } from "@/domain/artifact/types";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 /** How many artifacts one page may carry. A gallery page, not a bulk export. */
 export const MAX_ARTIFACT_PAGE = 100;
@@ -175,6 +176,6 @@ export function createArtifactUseCases(
 }
 
 function bounded(options: ListArtifactsOptions): ListArtifactsOptions {
-  const limit = Math.min(Math.max(options.limit ?? DEFAULT_ARTIFACT_PAGE, 1), MAX_ARTIFACT_PAGE);
+  const limit = boundedPageLimit(options.limit ?? DEFAULT_ARTIFACT_PAGE, MAX_ARTIFACT_PAGE);
   return { ...options, limit };
 }

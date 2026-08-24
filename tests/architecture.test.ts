@@ -1839,6 +1839,19 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/markdownFence.ts",
   },
   {
+    // Four list endpoints each read `?limit=` for themselves, and the copies
+    // disagreed about every input that is not a plain integer — an empty
+    // `?limit=` answered a gallery with one row and called it the page that
+    // was asked for. The rule is spelled as the shape of the mistake rather
+    // than the definition, because a copy does not call `boundedPageLimit`,
+    // it clamps by hand. The two other clamps in the tree are named: one
+    // bounds workers and one bounds a ratio, and neither is a page.
+    what: "reading a caller's page size, and how large a page may get",
+    pattern: /Math\.min\(Math\.max\(/,
+    owner: "src/shared/pageLimit.ts",
+    alsoAllowedUnder: ["src/shared/mapWithLimit.ts", "src/lib/config.ts"],
+  },
+  {
     // Not a duplicated definition but a duplicated *copy of undici*, which is
     // the same failure one layer down. A `dispatcher` is a private contract
     // between a fetch implementation and its `Agent`, and the runtime ships its

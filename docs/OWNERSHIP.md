@@ -46,6 +46,7 @@
 | 마크다운 frontmatter 블록의 파싱 | `src/domain/plugin/frontmatter.ts` |
 | repo 소유 컴포넌트의 provenance 문자열(`github:<repo>#<plugin>`) | `src/domain/plugin/types.ts` 의 `pluginSourcePrefix`(sync 가 `startsWith`/`slice` 로 기대는 쪽)·`pluginSource`·`parsePluginSource` |
 | 아티팩트 목록의 페이지 커서(= GSI 정렬 키) 철자. 아래 "모든 행 키 문자열" 의 유일한 예외이고, API 가 독자에게 건네는 커서이기도 하기 때문이다 | `src/domain/artifact/repository.ts` 의 `artifactCursor` |
+| 호출자가 요청한 페이지 크기를 읽는 법과, 한 페이지가 커질 수 있는 상한 | `src/shared/pageLimit.ts` 의 `parsePageLimit` / `boundedPageLimit` / `MAX_PAGE_LIMIT`. 목록 엔드포인트 넷이 각자 읽던 것이고, 사본들은 정수가 아닌 모든 입력에서 서로 달랐다 — 빈 `?limit=` 은 `Number("")` 가 0 이라 1 로 클램프되어, 갤러리 한 장을 요청한 페이지라고 답했다. 갤러리·chat 사이드바처럼 페이지 크기 자체가 하나의 결정인 곳은 자기 `max` 를 건네고, 리포지토리는 들어오는 값을 같은 규칙으로 다시 묶는다 |
 | subagent 중첩 한도 | `src/application/execution/subagentRunner.ts` |
 | 런당 MCP tool 상한 | `src/domain/llm/toolLimits.ts` |
 | 각 member tier 가 쓸 수 있는 금액 | `src/domain/member/tiers.ts` 의 `TIER_LIMITS` |

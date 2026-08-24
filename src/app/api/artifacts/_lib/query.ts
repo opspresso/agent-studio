@@ -16,6 +16,7 @@ import type { ListArtifactsOptions } from "@/domain/artifact/repository";
 import type { Artifact } from "@/domain/artifact/types";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
 import { isUtcDay } from "@/shared/date";
+import { boundedPageLimit, parsePageLimit } from "@/shared/pageLimit";
 
 export type ParsedQuery =
   | { ok: true; options: ListArtifactsOptions }
@@ -36,10 +37,10 @@ export function parseArtifactQuery(url: string): ParsedQuery {
   // The clamp the use case already owns. Spelled here as literals, the route
   // and the use case were free to disagree about page size — which this file's
   // own header warns about for every other filter it parses.
-  const rawLimit = Number(params.get("limit") ?? DEFAULT_ARTIFACT_PAGE);
-  const limit = Number.isInteger(rawLimit)
-    ? Math.min(Math.max(rawLimit, 1), MAX_ARTIFACT_PAGE)
-    : DEFAULT_ARTIFACT_PAGE;
+  const { limit } = parsePageLimit(params.get("limit"), {
+    fallback: DEFAULT_ARTIFACT_PAGE,
+    max: MAX_ARTIFACT_PAGE,
+  });
   const from = params.get("from") || undefined;
   const to = params.get("to") || undefined;
   // `isUtcDay`, not a shape regex: `2026-02-31` would otherwise ride into the
@@ -85,7 +86,7 @@ export interface ArtifactPage {
 
 /** The page size a request asked for, clamped exactly as the use case clamps it. */
 function pageSize(options: ListArtifactsOptions): number {
-  return Math.min(Math.max(options.limit ?? DEFAULT_ARTIFACT_PAGE, 1), MAX_ARTIFACT_PAGE);
+  return boundedPageLimit(options.limit ?? DEFAULT_ARTIFACT_PAGE, MAX_ARTIFACT_PAGE);
 }
 
 /**

@@ -5,6 +5,7 @@ import { artifactOwnerEmail } from "@/domain/artifact/types";
 import { keys } from "@/infrastructure/db/keys";
 import { deleteItem, getItem, putItem, queryItems, type SortKeyMatch } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 const ARTIFACT_ENTITY = "ARTIFACT";
 /** Bound on extra pages fetched to refill a list thinned by a kind/source filter. */
@@ -50,7 +51,7 @@ async function list(
     sk = { between: ["", upper] };
   }
 
-  const pageLimit = Math.min(Math.max(limit, 1), 100);
+  const pageLimit = boundedPageLimit(limit);
   const artifacts: Artifact[] = [];
   let after = before;
   // A `kind`/`source` filter thins a page after the limit counts — "images

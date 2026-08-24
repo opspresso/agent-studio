@@ -4,6 +4,7 @@ import { CHAT_PAGE, MAX_CHAT_PAGE } from "@/domain/chat/repository";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { turnBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { parsePageLimit } from "@/shared/pageLimit";
 import { createChat } from "@/application/chat/createChat";
 import { listChats } from "@/application/chat/listChats";
 import { watchChatCancel } from "@/application/chat/cancelRun";
@@ -32,12 +33,10 @@ export interface ChatListResponse {
 }
 
 export const GET = withAuth(async (user, request: Request) => {
-  // An empty `?limit=` is an absent one: `Number("")` is 0, which would fall
-  // through to the default here but reads as a deliberate zero at a glance.
-  const raw = new URL(request.url).searchParams.get("limit");
-  const asked = raw === null || raw.trim() === "" ? Number.NaN : Number(raw);
-  const wanted = Number.isFinite(asked) && asked > 0 ? Math.floor(asked) : CHAT_PAGE;
-  const limit = Math.min(wanted, MAX_CHAT_PAGE);
+  const { wanted, limit } = parsePageLimit(new URL(request.url).searchParams.get("limit"), {
+    fallback: CHAT_PAGE,
+    max: MAX_CHAT_PAGE,
+  });
   const chats = await listChats(chatDeps, user.email, limit);
   // A full page is indistinguishable from a full page that happens to be the
   // last one, so this is a guess by design — "show more" may come back with

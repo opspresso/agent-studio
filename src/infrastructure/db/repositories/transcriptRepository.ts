@@ -6,6 +6,7 @@ import type {
 import { putItem, queryItems } from "../store";
 import { keys } from "../keys";
 import { expiresAtFromNow, TRANSCRIPT_TTL_SECONDS } from "../ttl";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 /**
  * A conversation's turns, one row each, in the project's partition under a
@@ -35,7 +36,7 @@ export const transcriptRepository: ConversationTranscriptRepository = {
   },
 
   async recent(projectName, conversationKey, limit) {
-    const pageLimit = Math.min(Math.max(limit, 1), 100);
+    const pageLimit = boundedPageLimit(limit);
     const prefix = keys.transcriptTurnPrefix(projectName, conversationKey);
     // Newest first, bounded, with expired rows left out before the bound
     // counts — the sweep is periodic.
