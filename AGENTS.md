@@ -2,550 +2,233 @@
 
 Working rules for coding agents in this repository (`CLAUDE.md` is a symlink to this file).
 
-Agent Studio is a single Next.js 16 full-stack app: the agent platform **an enterprise
-installs inside its own network** (projects & versions, an LLM engine, agents (subagents +
-external registry), skills, MCP tools, chats, cost dashboard). One install is one company —
-there is no multi-tenancy — and boot, sign-in, and a run must work with the public internet
-unreachable. What that costs an edit is the first entry under
-[Conventions that bite](#conventions-that-bite).
+Agent Studio is a single Next.js 16 full-stack application installed inside one enterprise
+network. One install is one company; there is no multi-tenancy. Boot, sign-in, project runs,
+and the console must work with the public internet unreachable.
 
-**This file is the working contract — what to run, what not to break, and where a decision
-lives.** It is not a description of the system; that is
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the per-subsystem files under
-[docs/design/](docs/design/). When something here is a summary, the linked document is
-authoritative and this file must not restate it — an entry below earns its place by being a
-**trap an edit falls into**, not by explaining how something works.
+This file is a routing contract: what to read, what not to break, and where each decision is
+owned. System explanations belong in `docs/`; historical failure narratives belong in git.
 
-| Need | Read |
+## Start here
+
+Read only the documents relevant to the change, but read every required local instruction
+before editing its subsystem.
+
+| Change area | Authority |
 |---|---|
-| The shape every run passes through | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| What this product is, and what that forbids | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#무엇을-위한-시스템인가) |
-| The same shape as pictures | [docs/DIAGRAMS.md](docs/DIAGRAMS.md) |
-| Why one subsystem decides what it does | [docs/design/](docs/design/) — one file each |
-| Who owns a decision that must exist once | [docs/OWNERSHIP.md](docs/OWNERSHIP.md) |
-| An endpoint's contract | [docs/API.md](docs/API.md) |
-| An env var or a fixed limit | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
-| Deploy / probe / scale / retention | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| End-to-end run shape, product boundary | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Visual system maps | [docs/DIAGRAMS.md](docs/DIAGRAMS.md) |
+| Subsystem decisions | [docs/design/](docs/design/) |
+| Single-owner decisions | [docs/OWNERSHIP.md](docs/OWNERSHIP.md) |
+| API contracts | [docs/API.md](docs/API.md) |
+| Environment and fixed limits | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| Deploy, probes, retention | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
 | Auth, secrets, SSRF, PII | [docs/SECURITY.md](docs/SECURITY.md) |
-| Local setup, scripts, CI | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
-| What is still unbuilt | [docs/MILESTONES.md](docs/MILESTONES.md) |
-| The engine's loop invariants | `src/application/llm/AGENTS.md` |
-| Chat persistence and replay | `src/application/chat/AGENTS.md` |
+| Setup, scripts, CI | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Unbuilt work only | [docs/MILESTONES.md](docs/MILESTONES.md) |
+| LLM engine | `src/application/llm/AGENTS.md`, then [design/execution.md](docs/design/execution.md) |
+| Chat persistence and replay | `src/application/chat/AGENTS.md`, then [design/chat.md](docs/design/chat.md) |
 
 ## Commands
 
 ```bash
-pnpm dev            # next dev (http://localhost:3000)
-pnpm build          # production build (Next standalone) — validates route handlers + instrumentation
-pnpm typecheck      # tsc --noEmit, strict + noUncheckedIndexedAccess
-pnpm test           # vitest run (unit tests in tests/)
-pnpm test:watch     # vitest watch
+pnpm dev            # next dev on :3000
+pnpm typecheck      # strict tsc --noEmit
+pnpm test           # vitest unit tests
+pnpm build          # production build; validates route signatures and instrumentation
 
-# run a single test file / by name
 pnpm exec vitest run tests/engine.test.ts
 pnpm exec vitest run -t "streamWithFallback"
 ```
 
-There is **no lint step** (no ESLint config); `typecheck` + `test` are the checks, and
-`build` is the third — it is what catches an invalid route handler signature. Node 24
-(`engines >=24`), pnpm 11 (pinned via `packageManager`). CI runs typecheck → test →
-integration test → build.
+There is no lint step. CI runs typecheck → test → integration test → build. Node 24 and pnpm
+11 are required (`packageManager` is pinned).
 
 ```bash
-docker compose up -d postgres              # dev PostgreSQL (pgvector) on :5432 — the app migrates the schema at boot
-pnpm db:migrate                            # apply the schema without starting the app (CI, a first boot)
+docker compose up -d postgres
+pnpm db:migrate
+pnpm test:integration
 
-pnpm tsx scripts/mock-llm.ts                             # mock OpenAI-compatible LLM (LLM_BASE_URL=http://127.0.0.1:8002/v1)
-pnpm tsx --env-file=.env.local scripts/dev-session.ts    # print a signed session cookie (bypasses any identity provider)
-pnpm tsx --env-file=.env.local scripts/seed-skills.ts    # seed sample skills
-
-# Integration check — a *separate* database, `agent_studio_test` on the same
-# server, because it cascade-deletes what it writes. The script refuses any
-# database whose name does not end in `_test`.
-pnpm test:integration                      # CI runs this against a fresh service container
+pnpm tsx scripts/mock-llm.ts
+pnpm tsx --env-file=.env.local scripts/dev-session.ts
+pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
-> **The PostgreSQL container is shared with every other project on this machine.**
-> `compose.yaml` pins the compose project name to `localdev`, so `docker compose up -d
-> postgres` from another repository reuses it. Database names, not ports, separate the
-> projects (`deploy/postgres/init.sql` creates this app's two), and **never run
-> `docker compose down -v`** (or `--remove-orphans`).
+The PostgreSQL container is shared with other projects and compose project name `localdev` is
+pinned. Database names separate projects. Never run `docker compose down -v` or
+`--remove-orphans`. Integration checks may use only a database whose name ends in `_test`.
 
-Required env for any real run (validated fail-fast at boot by `src/instrumentation.ts`):
-`DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` (32-byte base64).
-`STAGE=alpha|prod` additionally requires `ADMIN_EMAILS` and at least one way to sign in
-(OIDC, Google, or `AUTH_PASSWORD=true`), and `NODE_ENV=production` (which the `Dockerfile` sets)
-refuses to boot without an explicit `STAGE`. An empty `ALLOWED_EMAIL_DOMAINS` is fail-open the
-same way and means unrestricted sign-in: an open sign-up is a deployment's to choose, while a
-runtime override may still narrow the list.
+Any real run requires `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, and a 32-byte base64
+`AES_ENCRYPTION_KEY`. Alpha/prod also requires `ADMIN_EMAILS` plus a sign-in method. Production
+refuses to boot without an explicit `STAGE`. See [CONFIGURATION.md](docs/CONFIGURATION.md).
 
-## The dependency rule
+## Architecture contract
+
+### Dependency direction
 
 **`app → application → domain ← infrastructure`**
 
-- `src/domain/` — entities + repository ports. Pure TS, **no framework/AWS/React imports**,
-  not even `shared`.
-- `src/application/` — use cases. Depend on domain ports only. Orchestration lives here, and
-  it **must not import `container.ts`** — deps are injected, never pulled. Third-party
-  packages are banned outright, not by blocklist: **the domain and the standard library, and
-  nothing else**, with `@a2a-js/sdk` the one named exception (the A2A protocol *is* the
-  contract, and a port would restate its task lifecycle to gain nothing). A second SDK is
-  argued for in `tests/architecture.test.ts`, next to that one.
-- `src/infrastructure/` — adapters: PostgreSQL repositories (over the item store in
-  `db/store.ts`), pgvector, the S3-compatible object store, LLM channel, MCP client, Slack,
-  Telegram, Teams, A2A, GitHub, net/crypto helpers.
-- `src/app/` — App Router pages + API route handlers. **Do not import `infrastructure/`
-  directly**; get repositories and `executionDeps` from a wiring site. A **`"use client"`
-  file may not import `application/` or `infrastructure/` at all** — the boundary there is
-  the runtime it compiles for, not the directory it sits in, so the rule reads the
-  directive. Reaching across is how the engine ends up in the browser bundle. **A
-  type-only import is the one thing that is not reaching across**: it is erased before any
-  bundle exists, which is what lets the console take its response shapes from the modules
-  that build them (below). Values are the rule; a helper both a client and a use case *run*
-  goes to `src/shared/` — which is what `template.ts` did — or to `domain/` when it is a
-  rule a domain type owns.
-- `src/lib/` — cross-cutting glue: composition root, auth, session, config, runtime-settings.
-  Infrastructure may import it; application may reach only its pure leaves (today
-  `runMetrics`); domain never touches it.
-- `src/shared/` — dependency-free helpers. The bottom of the graph: it imports nothing from
-  `@/`. Before adding here, ask whether the helper is really domain vocabulary — a name
-  rule, a format a domain type owns: that belongs in `domain/`, which is pure TS and
-  client-bundle-safe, so "a client component needs it too" is never by itself a reason to
-  put a rule at the bottom. `shared` is for helpers no layer owns (stream plumbing, text
-  cutting, timers).
+- `src/domain/` owns entities, value rules, and repository ports. It is pure TypeScript and
+  imports no framework, AWS, infrastructure, or `shared` module.
+- `src/application/` owns use cases and orchestration. It imports domain and the standard
+  library only. `@a2a-js/sdk` is the single third-party exception; the pure `runMetrics` leaf is
+  the only current `lib` import. It never imports `container.ts`; dependencies are injected.
+- `src/infrastructure/` owns adapters: PostgreSQL/item store, vectors, object store, LLM, MCP,
+  messaging, A2A, GitHub, network, and crypto.
+- `src/app/` owns App Router presentation. It does not import infrastructure directly; routes
+  receive bound use cases or dependencies from a wiring site.
+- A `"use client"` file may not import application or infrastructure values. Type-only imports
+  are allowed because they are erased. Shared runtime helpers go to `src/shared/`; domain
+  vocabulary and rules stay in domain even when a client uses them.
+- `src/lib/` is cross-cutting server glue: composition root, auth, session, config, and runtime
+  settings. Infrastructure may import it; application may import only named pure leaves.
+- `src/shared/` is the dependency-free bottom of the graph and imports nothing from `@/`.
 
-Composition happens at exactly seven wiring sites: `src/lib/container.ts` (repositories, the
-domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
-`src/app/api/chats/_deps.ts` (`ChatDeps`), `src/app/api/slack/events/_lib/`
-(`SlackEventDeps`), `src/app/api/telegram/webhook/_lib/` (`TelegramEventDeps`),
-`src/app/api/teams/messages/_lib/` (`TeamsEventDeps`),
-`src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
-handler assembly over `executionDeps`), and `src/instrumentation.ts` (the boot path, which
-wires the audit sink straight from its adapter and assembles the model-catalog refresher
-over its HTTP source — the composition root is not loaded until this file decides the
-runtime is the Node server — and resumes the managed MCP containers).
-Three `lib` modules besides the root reach one adapter each without composing a use case —
-`auth.ts`, `runtime-settings.ts`, `memberAccess.ts` — and `tests/architecture.test.ts` names
-exactly those as `lib`'s wiring modules; every other `lib` file is a leaf.
+`tests/architecture.test.ts` enforces these boundaries with empty allowlists. Fix the import;
+never widen an allowlist to make a failure disappear.
 
-**A use case is composed once, not per route.** A slice exports a `createXUseCases` factory,
-the composition root calls it, and a route handler imports the bound object — which is what
-keeps the wiring-site list above at five. The free functions those factories wrap stay
-exported, and the split between the two forms is not a preference: **a route takes the bound
-object; an application module that already holds the repository calls the function.** A use
-case passing its own injected repository to a sibling in the same layer is ordinary; a route
-handler choosing which repository, which cipher, or which registry lookups a version's
-references are validated against is the presentation layer making a composition decision.
-Twenty of them did, and nothing said so, because importing a repository from the composition
-root breaks no rule above. `REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE` in
-`tests/architecture.test.ts` now keeps the converted ones out of `src/app`; a name is added
-to that list as its slice is converted, never before.
+### Composition
 
-`tests/architecture.test.ts` enforces all of this with **empty allowlists**. When it fails,
-**fix the import — do not widen the rule.**
+Composition is limited to these wiring sites:
 
-## Single-owner invariants
+1. `src/lib/container.ts`
+2. `src/app/api/chats/_deps.ts`
+3. `src/app/api/slack/events/_lib/`
+4. `src/app/api/telegram/webhook/_lib/`
+5. `src/app/api/teams/messages/_lib/`
+6. `src/app/api/a2a/[name]/route.ts`
+7. `src/instrumentation.ts`
 
-The layer rules say which direction an import may point. They say nothing about the same
-decision being written twice, which is the failure this codebase kept hitting: `McpTool`
-reached four definitions that had already drifted apart, the store's conditional-write error
-name was spelled at seven call sites — only one of which handled the transactional form — and
-the image-usage collapse was derived independently four times.
+Only `auth.ts`, `runtime-settings.ts`, and `memberAccess.ts` are additional `lib` adapter-facing
+wiring modules. A use-case slice exports `createXUseCases`; the composition root binds it once,
+and routes import the bound object. Application modules that already hold a repository call the
+exported free function. Routes do not choose repositories, ciphers, or registry validation.
 
-Each such decision has one owning file. `tests/architecture.test.ts` fails on a second copy
-**and** on the owner losing the definition. Before writing any of these, check whether you are
-about to make copy number two.
+### Single ownership
 
-**Which layer owns a limit** is a question the list answers case by case, so the rule behind
-it: **a cap something else imposes on us belongs in `domain/`; a cap we chose belongs beside
-the mechanism that spends it.** An image size, a document's extracted characters and the tool
-count one request may declare are all a provider's or a stored item's number — a run only
-discovers them. The turn ceiling, the subagent depth, the transfer transcript budget and how
-many tool calls run at once are this platform's own policy, and each is read by exactly the
-loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for a while: the
-ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 115 only
-because the engine's builtins are added after the MCP tools are cut and need the room.
+Dependency direction does not prevent duplicate decisions. Before adding a constant, wire shape,
+key, cap, formatter, error identity, or collapse rule, search
+[docs/OWNERSHIP.md](docs/OWNERSHIP.md) and `tests/architecture.test.ts`.
 
-**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 133 decisions across two
-tables, the second holding the ones the test cannot express as a pattern but that the same
-rule governs. `tests/architecture.test.ts` is what enforces both.
+- A cap imposed by a provider or stored item belongs in domain.
+- A platform policy cap belongs beside the mechanism that spends it.
+- A decision is defined once; consumers import it rather than restating it.
+- Bounded caller/site lists in architecture tests are contracts. Add a new site deliberately and
+  update the named set in the same change.
 
-## Subsystem map
+## Required invariants
 
-One line each; the link is the authority. What is worth knowing *before* an edit is under
-[Conventions that bite](#conventions-that-bite), not here.
+### Offline and infrastructure
 
-- **LLM engine** — pure logic, everything injected, tested with no network or DB via
-  `tests/fakeChannel.ts` → `src/application/llm/AGENTS.md`, then
-  [design/execution.md](docs/design/execution.md#llm-engine)
-- **Model registry** — loaded from agent-models' published catalog, never written here;
-  `loadModelCatalog` is the one way in →
-  [CONFIGURATION.md](docs/CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)
-- **Run bracket** — the one thing every top-level run passes through: model policy, cost guard,
-  tier cap, concurrency slot, metric, correlation id, artifact recorder →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#런-브래킷)
-- **Images** — three paths that draw meet at one `ImageChannel` port (an MCP tool's picture is a
-  fourth producer and never touches it); source bytes decide edit vs generate →
-  [design/execution.md](docs/design/execution.md#images)
-- **Artifacts** — what a run left behind, captured at the bracket, one row per stored object →
-  [design/execution.md](docs/design/execution.md#artifacts)
-- **Reading a URL** — the `FetchUrl` builtin, off unless a version opts in; the one adapter that
-  requests an address the *model* chose → [SECURITY.md](docs/SECURITY.md#모델이-고른-url)
-- **PostgreSQL, one item table** — every entity is a JSONB document addressed by `PK`/`SK`
-  with `GSI1`/`GSI2` as indexed columns; Better Auth's tables and `catalog_vectors`
-  (pgvector) beside it; the schema migrates at boot →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#postgresql-아이템-테이블-설계)
-- **Auth & authorization** — `withAuth`/`withMemberAuth`/`withAdminAuth` for routes,
-  `src/proxy.ts` for pages;
-  **`isAdminEmail` and `isConfiguredAdmin` are not interchangeable** →
-  [SECURITY.md](docs/SECURITY.md#인가-모델)
-- **Secrets** — AES-256-GCM at rest (`enc:v1:`), masked on read, four revealable via POST →
-  [SECURITY.md](docs/SECURITY.md#저장된-시크릿)
-- **Runtime settings** — DB override → env fallback; never read those env vars at dispatch, go
-  through `src/lib/runtime-settings.ts` →
-  [CONFIGURATION.md](docs/CONFIGURATION.md#해석-순서)
-- **MCP** — one session owner over `@modelcontextprotocol/client`, probing each server's
-  protocol era; discovery cached per `url + headers`; managed servers on loopback by provenance;
-  per-project OAuth → [design/mcp.md](docs/design/mcp.md)
-- **Capability catalog** — one global index rebuilt by a CronJob tick, never on a registry
-  write; a version opting in has its lists widened, never displaced →
-  [design/capabilities.md](docs/design/capabilities.md#케이퍼빌리티-카탈로그)
-- **Memory** — lives behind MCP (mcp-memory), not in this app; `memoryRecall` asks `recall`
-  before the first token → [design/capabilities.md](docs/design/capabilities.md#메모리)
-- **PII filtering** — opt-in per version; bounds what the LLM sees, **not** what an MCP server or
-  the catalog's embedding provider receives →
-  [SECURITY.md](docs/SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳)
-- **SSRF guard** — operator URLs checked at registration *and* dispatch, through
-  `fetchPublicUrl` → [SECURITY.md](docs/SECURITY.md#아웃바운드-요청-ssrf)
-- **Messaging surfaces** — what every chat bot shares: `handleTurn` runs a normalised turn and
-  delivers the reply through the `ReplyChannel` port; an adapter decides which events are for
-  the bot, how history is read, who is asking, and how a reply is rendered →
-  [design/messaging.md](docs/design/messaging.md)
-- **Slack** — per-project bots; `classifySlackEvent` decides which received messages are for the
-  bot **ahead of the dedup claim**; six read-only workspace tools behind an opt-in →
-  [design/slack.md](docs/design/slack.md)
-- **Telegram** — per-project bots on the same pipeline; a reply edited in place and split at
-  4,096 characters, rendered once with a plain fallback; a transcript store because the Bot API
-  hands back no history → [design/telegram.md](docs/design/telegram.md)
-- **Teams** — per-project Azure Bot registrations on the same pipeline; the Bot Framework's
-  token is the whole authentication (signature, issuer, audience, `serviceUrl`); Markdown
-  natively, edits in place, the same transcript store → [design/teams.md](docs/design/teams.md)
-- **A2A** — both directions; a transfer continues the remote conversation →
-  [design/agents-a2a.md](docs/design/agents-a2a.md)
-- **AG-UI** — a published project inside a user-facing app: `RunAgentInput` in, the
-  protocol's events out, the client's `threadId` as the conversation; a tool the client
-  declares ends the turn when called → [design/agui.md](docs/design/agui.md)
-- **Triggers** — one webhook, any number of schedules, published-only, deduplicated by
-  conditional claims; a CronJob ticks the scan → [design/triggers.md](docs/design/triggers.md)
-- **Attribution** — `RunActor { kind, id }` names who caused a run; `RunOrigin` carries it down
-  every transfer hop →
-  [design/observability.md](docs/design/observability.md#사용량과-비용-귀속)
-- **Errors** — `AppError` subclasses before a stream starts, `{error}` chunks after the first one
-  → [ARCHITECTURE.md](docs/ARCHITECTURE.md#에러-처리)
-- **Logging** — `src/shared/logger.ts` is the only writer (`domain`'s one bare `[cost]` warn
-  excepted, since it imports nothing, and the two error boundaries, since the logger imports
-  `node:async_hooks` and they run in a browser); lines carry the run's correlation id,
-  deliberately *not* the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#로깅)
+- Required paths never depend on the public internet. Optional outbound integrations use a port,
+  a configuration-gated adapter, and a documented offline fallback. No fixed-host fetches,
+  phone-home SDKs, or CDN runtime assets. Document new options in `docs/INSTALL.md`.
+- Row keys come from `src/infrastructure/db/keys.ts`. The sole cross-layer cursor exception is
+  `artifactCursor` in `src/domain/artifact/repository.ts`.
+- Repositories use `src/infrastructure/db/store.ts`, never raw SQL against `items`. Plain SQL is
+  limited to Better Auth tables, `catalog_vectors`, and `skillRepository.describe` projection.
+- Unbounded lists take `limit`; post-read expiry filtering passes `notExpiredAt` so filtering
+  occurs before the limit counts.
+- Expiring rows carry `expiresAt`; `sweepExpiredRows` performs retention on the schedule tick and
+  reads still filter expired values. Without `SCHEDULE_SCAN_TOKEN`, nothing is purged; document
+  that deployment consequence.
 
-## Conventions that bite
+### Execution and streams
 
-- **Nothing on the required path may need the public internet.** Booting, signing in,
-  running a project and using the console have to work in an IDC with no route out, which
-  makes every outbound connection an *option a deployment turns on* — Slack, Telegram,
-  Teams, an external model provider, the agent-models catalog, the agent-plugins sync, the
-  MCP servers a registry entry points at. Adding a fetch to a fixed host, an SDK that phones
-  home, or a font/script/image loaded from a CDN puts a network dependency on that path, and
-  the failure is not an error message but a deployment that cannot start. The shape that
-  keeps it legal is the one the existing ones use: a port with an adapter the composition
-  root wires only when its configuration is present, and a documented offline substitute
-  where the data is really needed — a committed catalog snapshot
-  (`src/domain/llm/catalog.json`), an uploaded plugins bundle, a `selfhosted` channel. The
-  same rule is why the three Google faces in `src/app/layout.tsx` are `next/font`-hosted at
-  build time rather than linked. [INSTALL.md](docs/INSTALL.md) is where a new option says
-  what it needs and what happens without it.
-- **Domain purity.** Nothing in `src/domain/` imports infrastructure, framework or AWS.
-- **Never hand-write a row key string.** They come from
-  `src/infrastructure/db/keys.ts` — with one named exception, because it is not only a key:
-  an artifact listing's index sort key *is* the page cursor the API hands a reader, so
-  `artifactCursor` (`src/domain/artifact/repository.ts`) spells it, in the one layer both the
-  adapter that writes it and the route that answers with it may import. Partitions still
-  come from `keys.ts`; a sort key that never leaves the adapter still belongs there.
-- **A repository writes through `src/infrastructure/db/store.ts`, never raw SQL against
-  `items`.** The store is where a condition is evaluated under the row lock, where a
-  transaction locks its rows in key order, and where the `￿` upper bound of a prefix
-  query is spelled; a second `SELECT … FOR UPDATE` is a second place for those to drift.
-  `queryItems` answers the whole match — the page ceiling the old store imposed is gone
-  with it — so a list that can grow without bound takes `limit`, and one that filters
-  after reading passes `notExpiredAt` so the filter runs before the limit counts. Plain
-  SQL is for the tables the store does not own: Better Auth's (`memberRepository`),
-  `catalog_vectors` (`pgVectorStore`), and `skillRepository.describe`'s projection.
-- **Retention is a tick, not a table feature.** Every expiring row carries `expiresAt`
-  (`src/infrastructure/db/ttl.ts`); `sweepExpiredRows` on the schedule-scan tick deletes
-  them, and reads still filter because a tick is a minute apart. A deployment without a
-  ticker (`SCHEDULE_SCAN_TOKEN` unset) never purges anything, and nothing says so but the
-  table's size — say it in the install docs, not in a warning the app cannot raise.
-- **Resolving a version's tools without `discoveryQueries` silently disables discovery.**
-  `resolveRunTools` takes its queries as an optional fourth argument, so a caller that omits
-  them gets a run where the version's `dynamicCapabilities` still reads as on, the bindings
-  still resolve, and nothing says the search never happened. Two of the three call sites
-  shipped that way — a transferred-to child ran on its bindings alone, and the preview
-  described a smaller prompt than the run it stands for. `TOOL_RESOLUTION_SITES` in
-  `tests/architecture.test.ts` bounds the list and checks each one names the helper; a fourth
-  is added there on purpose.
-- **A new execution entry point calls the facade** rather than re-encoding the `projectType`
-  dispatch, and opens the run bracket. Which one says what the surface can render:
-  `streamProjectRun` for a consumer that takes a run as chunks, image included;
-  `executeProjectStream` / `executeProject` for one that answers with a completion, which
-  **refuse an image project** — an image has no chat completion, so there is no answer to
-  send. A trigger has one: the picture is billed, traced, and recorded on the firing's row,
-  even though the row carries text and the bytes stop there. That pair is two contracts,
-  not a flag; a boolean deciding whether a project type is refused would be the bug the
-  refusal prevents. Three call sites used to answer the dispatch question for themselves, the
-  two non-streaming routes had diverged on the image case, and a fourth copy lived in the
-  composition root. A surface that calls `executeAgent` directly — chats, Slack, Telegram,
-  Teams, `/agent` — gets the same answer from the facade, which **refuses a non-agent project**: the loop has
-  nowhere to put an `llm` project's `userPromptTemplate` and would answer from a bare system
-  prompt *successfully*. `/agent` was the one caller with no check of its own.
-  **Those five are a bounded list, like the image one** (`AGENT_RUN_ENTRY_POINTS` in
-  `tests/architecture.test.ts`), because the cost of `executeAgent` being safe to call
-  directly is that *how a run is entered* has five homes while *which project type runs
-  which way* has one. A policy belonging at the entry — a per-surface input cap, a rate
-  limit — has to be put in all five, so a sixth is added on purpose.
-- **The image use case has a bounded caller list, not an owner.** Three surfaces reach
-  `application/image/generateImage` directly because each answers in a shape no other can
-  (chunks, `{ imageBase64, model, usage }`, an A2A `image` artifact);
-  `tests/architecture.test.ts` names them, so a fourth is added on purpose. A surface that
-  only needs chunks belongs behind `streamProjectRun`.
-- **`caller` reaches the prompt through `callerFor`, and nowhere else.** The version's
-  `callerContext` opt-in is the gate, applied once at the engine-input boundary; the facade
-  forwards the caller unconditionally through `toRunInput`. Two dispatch points rebuilding
-  the executor's input per branch is how it got dropped for `/predict` and
-  `/chat/completions` while working on every surface that calls `executeAgent` directly.
-  **A transfer carries it too**, on `RunOrigin` beside the actor — a child is answering the
-  same person as its parent — and the child's own `callerContext` decides its own prompt. The
-  field said so from the day it was written while nothing populated or read it, so a child
-  that opted in ran anonymously: the checkbox on, the block missing, nothing saying so. Both
-  child prompt assemblies (`runLocalSubagent`, `runPromptSubagent`) go through `callerFor`.
-- **A version's `reasoningTrace` gates the `delta.reasoningContent` yield, and nothing
-  else.** The turn's own `reasoning_content` goes back to the provider on that turn's
-  assistant message either way — the thinking has to stay attached to the turn that
-  produced it and to the tool calls that turn declared — so deleting the accumulation
-  behind the gate because it "looks unused when the flag is off" changes what the model is
-  sent. The gate sits at the emission site for the same reason `callerFor` sits at the
-  input boundary: filtering downstream would put one parameter in nine places, the run
-  log included, whose 350KB replay buffer a token-at-a-time axis fills on its own —
-  evicting the front of the *answer*. Two strings are live at that site: the accumulator
-  holds the masked copy the provider gets back, the chunk holds the restored one a
-  person reads. Persistence takes the chunk (`src/application/chat/AGENTS.md`).
-- **Folding a run's reasoning has a bounded list, like the image and agent-entry
-  ones.** `delta.reasoningContent` is the one output axis a version can switch
-  off, so a surface cannot tell "this run did not think" from "I am not reading
-  it" — which is how it reached nowhere at all for as long as it did. The five
-  sites (`REASONING_FOLD_SITES` in `tests/architecture.test.ts`) each pair the
-  same three decisions: `isTopLevelChunk` only, the token count carried beside
-  the text (the common OpenAI shape reports a count and streams nothing), and —
-  for the two that hold it in component state — `createTextPacer`, because a
-  commit per token re-renders a string that only grows. The fifth, the AG-UI
-  translator, forwards it as the protocol's `REASONING_*` events and holds nothing
-  in state. A sixth is added there on purpose.
-- **An SSE stream's keepalive cannot start until its first chunk decides the
-  status.** `createSseResponse` awaits `generator.next()` before building the
-  `Response`, because a refused run throws there and that is what makes it a 429
-  instead of a `200` with the refusal in a data frame. Nothing can flow during
-  that await — so a run whose first chunk is far away spends the 60s idle budget
-  in silence and is cut mid-run. Two do: an image, whose bytes arrive in one
-  chunk at the end, and a reasoning model on a version not recording its
-  thinking, whose first chunk is the end-of-turn usage. The wait is therefore
-  bounded (`FIRST_CHUNK_GRACE_MS`); past it the response is built and the chunk
-  is awaited inside the stream. **Anything that removes an axis from the wire
-  has to be checked against this**, which is how gating `delta.reasoningContent`
-  turned every unrecorded reasoning run into a silent connection.
-- **Stream author contract.** Top-level chunks are unauthored; only subagent chunks carry
-  `author`. Filter with `isTopLevelChunk()` — never re-derive.
-- **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three
-  traps: storage order within a turn is the *reverse* of the wire order, call/result pairing
-  is scoped to one run (ids are unique only there), and three separate budgets bound the
-  context — only the history budget warns; a truncated tool result carries an inline
-  `…[truncated]` marker, and turns past the replay window drop silently by design. Read
-  `src/application/chat/AGENTS.md` before
-  changing `run.ts` or `messageMapping.ts`; the mechanics are in
-  [design/chat.md](docs/design/chat.md).
-- **A chat run outlives the connection that started it** — the browser hanging up means "the
-  reader left", not "stop" ([design/chat.md](docs/design/chat.md#런은-자기-연결보다-오래-산다)
-  says why). Three edits look like tidying up and each one puts the old behaviour back. **A
-  chat route must not pass an `AbortController` to `sseResponse`.** **The wrapper that
-  detaches must be the outermost thing the response consumes**, because a plain
-  `async function*` above it swallows the `return()` that carries the disconnect
-  (`mergeGenerators.ts` says why). And **the client must not abort its `fetch` on unmount**,
-  which is the same mistake from the other end.
-- **Nothing in the chat view scrolls the viewport on its own** — `use-stick-to-bottom` owns
-  it, and the reasoning is in [design/chat.md](docs/design/chat.md#런은-자기-연결보다-오래-산다).
-  What that costs a change here: **nothing inside the thread may be a scroll container on both
-  axes** or it swallows the wheel events the library follows (see `.markdown pre` in
-  `parts.module.css`), and the **store notifies on a collection window rather than per frame**
-  — `MessageView` is memoised against reference-stable messages for the same reason, since
-  re-parsing every message's markdown per token is what made the reply judder.
-- **An Enter that submits goes through `isSubmitEnter`.** `event.key === "Enter"` is also
-  the keystroke that commits an IME composition, and the console's readers type Korean: a
-  bare check sends the turn the reader was still typing, and sends it before React has the
-  committed syllable in state, so the message arrives missing its last character.
-  `src/app/_lib/modEnter.ts` owns both halves of the guard (`isComposing` and the
-  `keyCode === 229` browsers report it on) because a miss is silent — nothing errors, the
-  text just leaves without its ending.
-- **The chat sidebar and the thread read a *bounded* slice, and both reads happen per
-  turn.** The sidebar re-reads on every run start and finish, the thread on every retire,
-  so an unbounded read there is paid per answer rather than per visit — which is what made
-  the console slowest for the people using it most. The thread asks for the tail
-  (`?sinceSeq=`, merged by `mergeMessages`) and the sidebar for a page (`?limit=`, raised
-  by "show more" rather than followed by a cursor, since that partition's sort key is
-  `updatedAt` alone and does not identify a row). Two traps: **`sinceSeq=0` is a real
-  bound**, not an absent one — the first message of a chat has sequence 0, so parsing an
-  absent parameter with `Number(null)` drops the opening turn — and the thread's marker is
-  **cleared when `chatId` changes**, or a retire firing inside the navigation asks the new
-  chat for the old one's tail. Why each, in
-  [design/chat.md](docs/design/chat.md#사이드바와-스레드가-읽는-범위).
-- **The chat run log is a buffer, not a record.** Its ordering is the contract a resume rests
-  on — **persist → terminal entry → release the lease** — which is why the lease release lives
-  in `runLog.ts` rather than in `runAndPersist`. What it cannot do, and why it is written only
-  after the reader leaves, is in [design/chat.md](docs/design/chat.md#런은-자기-연결보다-오래-산다).
-- **The model registry is not in this repository.** `src/domain/llm/models.ts` *loads* the
-  catalog [opspresso/agent-models](https://github.com/opspresso/agent-models) publishes
-  (`https://models.opspresso.com/models.json`) — at boot, on an interval, and from the
-  committed snapshot `src/domain/llm/catalog.json` until then or when the fetch fails — and
-  it states no price, window or flag of its own (`tests/models.test.ts` fails if one
-  appears). Adding a model, retiring one, correcting a rate: agent-models, never here. What
-  this repository owns is the *shape* the loader accepts and `SUPPORTED_PROVIDERS` — a
-  provider is a channel this app can dispatch through, so a catalog entry under another
-  prefix is skipped on load, with its reason logged. `pnpm sync-models` refreshes the
-  snapshot; a test that needs a model the catalog gained runs it first
-  ([CONFIGURATION.md](docs/CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)).
-  **Self-hosted models are the one exception, with a second publisher: the deployment
-  itself.** Which models a `selfhosted` channel serves is a fact about one deployment's
-  hardware, so those entries come from the deployment's declarations (runtime settings,
-  managed on the /models console) through `loadSelfHostedModels` into a registry overlay a
-  catalog refresh never touches — never from agent-models, and never as catalog entries
-  here. Same shape, same loader validation; a declaration's `family` is the serving
-  stack's own model name, slashes included, because LM Studio answers a near-miss name
-  with whatever model is loaded rather than a 404.
-- **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client
-  composers, API bodies and the messaging pipeline all read them) and the `data:` encoding in
-  `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.
-  Documents have their own caps in `src/domain/llm/documentLimits.ts`, kept separate because
-  they bound a different thing: an image is bounded by what a provider accepts, a document by
-  the prompt its text has to fit and by the row a chat message is stored as and replayed from on every later turn.
-- **A run's bytes are kept at the bracket, never at the producer.** `openRun` is what all four
-  entry points call, so the recorder is built there with the run's identity already bound.
-  Attaching it to `generateImage` instead covers a quarter of the cases: the chat surface's
-  images are mostly builtin and subagent output, which never pass through that use case.
-  `ARTIFACT_CAPTURE_SITES` in `tests/architecture.test.ts` bounds the list, and a second check
-  fails any `openRun` caller that does not also capture — a fifth entry point that forgot would
-  drop its output silently, which is exactly how chat-only storage stayed invisible.
-- **A file a tool produced is not an image, and the two axes travel together.**
-  `EngineChunk.file` is its own axis because ten consumers know `chunk.image` and would upload
-  a DOCX to Slack as a picture or draw it in an `<img>`. The asymmetry: a file's bytes **never
-  enter the model's context** — no image budget, no fallback rule, no follow-up message — and
-  they are stripped from the chunk once stored, since a download link is what a reader needs.
-  Being its own axis is also how it went missing: the field was added for the chat view and
-  reached nowhere else, so `/predict`, both OpenAI shapes, `/agent`, A2A, Slack, a trigger's
-  history row and the console's Playground and compare view each read the image beside it and
-  dropped the file. The document was stored and the caller was never told it existed. **A
-  module that reads one output axis now reads the other**, which `tests/architecture.test.ts`
-  enforces as a pairing rather than a list — what a surface *does* with each is its own
-  business. `src/application/artifact/producedFiles.ts` owns turning a reference into an
-  address, the sentence for one that could not be kept, and the raw-chunk stream transform
-  (`withAddressedFiles`) that swaps the object key for a signed URL on the way out — applied by
-  `/agent` and streaming `/predict`, a pair `RAW_CHUNK_STREAM_ROUTES` in
-  `tests/architecture.test.ts` bounds because they have to agree.
-- **An attachment that is not an image becomes text, at the surface that received it.** A
-  model id here may be served by the default router or by its own provider's
-  OpenAI-compatible endpoint, and those disagree about file content parts — while capability
-  is modelled per *model*, which cannot express a difference that belongs to the channel.
-  Text needs no capability gate and survives persistence, replay and the PII filter unchanged.
-  `src/application/llm/documentParts.ts` owns the framing; extraction is a port
-  (`DocumentExtractor`) because it needs a PDF parser.
-- **Bytes are text only when they really are.** `Buffer.toString("utf-8")` never throws — it
-  turns a PDF into replacement characters and reports success — so `decodeUtf8Text`
-  (`src/shared/utf8Text.ts`) decides, and a caller that cannot use the answer says what it
-  dropped. A `try/catch` around a decode is the shape of the bug, not a guard against it.
-- **Report what was lost — and only what was lost.** Truncation goes in the tool-result text; a
-  binding that could not be used, a truncated transcript, a dropped history run — all become
-  `warning` chunks. Silent loss is the bug, not the truncation. **A gain is not a warning**, and
-  the channel stops meaning anything if it carries both: capability discovery reported what it
-  *found* this way, so every healthy run of a version with it on raised a yellow alert on every
-  turn. It returns `discovered` beside `warnings` now. `collectedWarning` owns what a run lost;
-  a feature that is silently inert — a version asking for discovery where the deployment has no
-  catalog — is a loss and does belong there.
-- **Tests mock at boundaries**: `fetch` via `vi.stubGlobal`, the item store via
-  `vi.mock("@/infrastructure/db/store", …)` with `tests/fakeStore.ts` — an in-memory store
-  with the real one's semantics (byte-ordered keys, conditions, the error names), which
-  `tests/setup.ts` installs by default, and the connection pool stubbed so nothing opens a
-  socket. Keep them deterministic — no real `Date.now`, timers, randomness, or network.
-  Repository integration lives in `scripts/integration-check.ts`, run against a local
-  PostgreSQL in its own CI step, outside vitest.
-- **Secrets on update**: a masked or empty value preserves what is stored; a masked value with
-  no stored counterpart is dropped. A mask can only confirm a secret, never create one.
-- **An `@modelcontextprotocol/client` bump is a protocol change, not a dependency update.**
-  Four of its behaviours are load-bearing and none is covered by semver: which revision
-  `LATEST_PROTOCOL_VERSION` names, what `mode: "auto"` falls back to, that `listMaxPages`
-  throws rather than truncating, and the `SdkErrorCode` values `unusableServerReason` reads.
-  Check all four on any bump — a lockfile refresh included
-  ([design/mcp.md](docs/design/mcp.md#transport-와-세션) says why each matters).
-- **The plugins sync applies the repository; a person owns deletion.** The contract is
-  [design/capabilities.md](docs/design/capabilities.md#skills) and, endpoint-side,
-  [API.md](docs/API.md#레지스트리연동-오퍼레이션). Four things constrain a change to
-  `syncPluginsFromSnapshot` (`src/application/plugin/syncPlugins.ts`). **A deletion the sync
-  performs goes through the use case and names the person who asked for it** — hence the
-  required `actorEmail`, since `remove` is the single owner of the `registry.delete` row and a
-  deletion around it leaves no trace at all. **Two asymmetries are load-bearing**: skills write
-  straight to the repository (that is how `files` and `source` survive) while servers go
-  through `mcpUseCases` (that is how every synced URL faces the SSRF guard). **Headers declared
-  in `mcp.json` are never imported** — a secret does not belong in git — with the dropped names
-  reported. And the console's side of the same contract is `src/app/api/_lib/repoOwned.ts`, the
-  single owner of the 403 a route answers on a repo-owned entry — a route-layer policy on
-  purpose, because the sync reaches the same use cases and must stay able to.
-- **The console speaks English and Korean, and the catalogue is TypeScript for a
-  reason.** `src/app/_i18n/messages/en.ts` is the source of truth; `ko.ts` is typed as
-  `Record<keyof typeof en, string>`, so a key added to one and not the other fails
-  `pnpm typecheck` rather than rendering an English string inside a Korean page — there is
-  no second tool keeping them in step. A client component reads `useT()`, a server one
-  `await getT()`, and both resolve through the same `translator()`. **The language is a
-  cookie, not a route segment**: a `[locale]` prefix would move 29 pages and 14 layouts and
-  rewrite `src/proxy.ts`'s matcher and `PUBLIC_PATHS`, which is the single owner of which
-  pages are public. Two things are deliberately *not* translated. **Error messages stay in
-  English** — `AppError` carries its message as a string through `application` and
-  `domain`, neither of which may import a framework, so translating them means giving every
-  error a code and rewriting well over a hundred throw sites; the console is internal and
-  operators read them. And **product nouns stay in English in both catalogues** — Project,
-  Skill, Agent, Tool, Plugin, Chat, Model, MCP are each an API resource and a URL segment, so
-  a console that renamed its copy would make one thing answer to two words.
-- **A response shape is declared where the response is built, and the console takes it from
-  there** — type-only, so nothing of the server reaches the browser bundle. Eighteen wire
-  shapes were declared twice before that: once by the producer, once again by the browser
-  client, with nothing linking the copies. They drift the moment a field is added on one
-  side, and the drift is invisible until a page renders a field the response does not carry
-  — which is what the Slack settings page did after a mutation answered with a narrower
-  shape than the read, and what made the console drop the "drawn but not kept" warning
-  every other image surface shows. Two homes: **the producer's own type** when the answer
-  is what it returned (`ApiTokenStatus`, `ManagedMcpStatus`, `GenerateImageOutput`, the
-  domain's `TelegramDestination`), and **a route-declared `…Response`** when the route
-  builds the shape — because it adds what only a request knows (`eventsUrl`, `webhookUrl`,
-  `messagingUrl`, a manifest), because it reads a runtime setting (both A2A routes'
-  `enabled`), or because it maps a summary (`SkillSummary`). A route-built shape is
-  `satisfies`-checked, and what that checks is worth knowing: the keys the object literal
-  writes and the fields the type requires — **never what a spread carries in**. So
-  `…Response extends` a use-case view plus `...view` publishes every field that view has,
-  now and later: the view is the boundary, and on the messaging surfaces it is a *masked*
-  one for exactly that reason. `tests/architecture.test.ts` checks the half that must not
-  restate — no client-reachable `app` module declares a type a producer already exports —
-  and deliberately exempts request shapes, where a console input is often narrower than
-  what the use case accepts.
-- **A timestamp is formatted with a locale, never without one.** `toLocaleString()` with no
-  argument means the *runtime's* default, so the server writes `8/14/2026` where a Korean
-  browser writes `2026. 8. 14.` — a hydration mismatch wherever a date reaches the first
-  render, and a format that follows the browser rather than the language the reader chose.
-  `formatDate`/`formatDateTime`/`formatShortDateTime` (`src/shared/date.ts`) take it; call
-  sites pass `useLocale()`. The parameter is optional only so `utcDay` and its neighbours —
-  storage keys, not prose — stay unchanged.
-- **Docs record the current state, not history.** Completed milestones are deleted from
-  `docs/MILESTONES.md`; git log and the per-tag GitHub Release are the record. Do not
-  accumulate changelogs in comments or docs.
+- Every new execution entry uses the facade and opens the run bracket. Use `streamProjectRun` for
+  chunk consumers, including image; `executeProjectStream`/`executeProject` for completion
+  consumers, which refuse image projects. Direct `executeAgent` entry points refuse non-agent
+  projects. See `AGENT_RUN_ENTRY_POINTS` in the architecture test.
+- A surface needing only chunks stays behind `streamProjectRun`. Direct callers of
+  `application/image/generateImage` are a deliberately bounded list.
+- `resolveRunTools` receives `discoveryQueries`; omitting them silently disables dynamic discovery.
+  Keep `TOOL_RESOLUTION_SITES` accurate.
+- The facade forwards `caller` through `toRunInput`; `callerFor` is the only prompt gate.
+  `RunOrigin` carries caller through transfers, and each child applies its own `callerContext`.
+- `reasoningTrace` gates only emission of `delta.reasoningContent`. Provider-facing reasoning
+  accumulation always remains attached to its turn. Surfaces fold top-level reasoning with
+  `isTopLevelChunk`, preserve token counts, and use `createTextPacer` for component state. Keep
+  `REASONING_FOLD_SITES` complete.
+- `createSseResponse` waits briefly for the first chunk to preserve pre-stream HTTP status, then
+  uses `FIRST_CHUNK_GRACE_MS`. Any change that removes an output axis must recheck silent-first-
+  chunk behavior.
+- Top-level chunks are unauthored; only subagent chunks carry `author`. Never rederive the check;
+  use `isTopLevelChunk()`.
+- Loss becomes a warning: unusable bindings, truncated transcript/tool result, or dropped history.
+  Gains such as discovered capabilities are not warnings. `collectedWarning` owns run loss.
+
+### Chat and console
+
+- Before editing chat `run.ts` or `messageMapping.ts`, read `src/application/chat/AGENTS.md`.
+  Replay preserves tool traffic; within-turn storage order is reverse wire order, call/result ids
+  are scoped to one run, and three independent context budgets apply.
+- A chat run outlives its initiating connection. Routes do not pass an `AbortController` to SSE;
+  the detach wrapper remains outermost; clients do not abort the fetch on unmount.
+- `use-stick-to-bottom` alone owns chat viewport scrolling. Thread descendants cannot scroll on
+  both axes. Store notifications remain collection-windowed and messages reference-stable.
+- Enter submission goes through `isSubmitEnter` to preserve IME composition, including keyCode
+  229 behavior.
+- Sidebar and thread reads remain bounded. `sinceSeq=0` is a real bound, and the tail marker is
+  cleared when `chatId` changes.
+- Run-log ordering is **persist → terminal entry → release lease**. Lease release stays in
+  `runLog.ts`.
+- Console translations use `en.ts` as the key source and typed `ko.ts`. Client components use
+  `useT`, server components use `getT`; locale is a cookie, not a route segment. Error messages
+  and API product nouns remain English.
+- Format reader-facing timestamps through `src/shared/date.ts` with an explicit `useLocale()`
+  locale. Bare `toLocaleString()` can cause hydration drift.
+
+### Models, media, and artifacts
+
+- Published model facts come from `opspresso/agent-models`, not this repository. This repo owns
+  loader shape and `SUPPORTED_PROVIDERS`; `pnpm sync-models` refreshes the committed offline
+  snapshot. Self-hosted declarations are a deployment-owned overlay via `loadSelfHostedModels`.
+- Image caps and data-URL rules live in `src/domain/llm/imageLimits.ts`; document caps live in
+  `documentLimits.ts`. Never copy either locally.
+- Run output bytes are captured at `openRun`, never at an individual producer. Keep
+  `ARTIFACT_CAPTURE_SITES` complete.
+- `EngineChunk.file` and `.image` are distinct output axes but consumers inspect both. File bytes
+  never enter model context and are removed after storage; `producedFiles.ts` owns addressing and
+  loss text. Raw chunk routes use `withAddressedFiles` and remain bounded by
+  `RAW_CHUNK_STREAM_ROUTES`.
+- Non-image attachments become framed text at the receiving surface through
+  `documentParts.ts`/`DocumentExtractor`. `decodeUtf8Text` decides whether bytes are UTF-8;
+  `Buffer.toString("utf-8")` plus `try/catch` is not validation.
+
+### Integrations, contracts, and secrets
+
+- Routes use `withAuth`, `withMemberAuth`, or `withAdminAuth` as documented; `isAdminEmail` and
+  `isConfiguredAdmin` are not interchangeable. Dispatch reads operator overrides through
+  `src/lib/runtime-settings.ts`, never directly from environment variables.
+- Operator URLs are checked at registration and dispatch through `fetchPublicUrl`. Logging goes
+  through `src/shared/logger.ts` except the documented domain warning and browser error boundaries.
+- A masked or empty secret update preserves stored data; a mask with no stored counterpart is
+  dropped. A mask never creates a secret.
+- Treat every `@modelcontextprotocol/client` bump as a protocol change. Verify protocol revision,
+  `mode: "auto"` fallback, `listMaxPages` throw behavior, and `SdkErrorCode` mapping.
+- Plugin sync never owns deletion. Deletions pass through the use case with `actorEmail`; skills
+  write through their repository, servers through `mcpUseCases` for SSRF validation; `mcp.json`
+  headers are never imported; `repoOwned.ts` owns the route-layer 403.
+- Response types live where responses are built. Client modules import producer types type-only;
+  route-built shapes use a named `…Response` and `satisfies`. Spreads do not prove their extra
+  fields, so exported use-case views must already be safe/masked boundaries.
+
+### Tests and documentation
+
+- Unit tests mock at boundaries: global `fetch`, item store through `tests/fakeStore.ts`, and the
+  connection pool. They use no real network, clock, timer, or randomness. Repository integration
+  stays in `scripts/integration-check.ts` against the dedicated PostgreSQL test database.
+- New behavior and bug fixes include focused regression coverage. Run typecheck and tests; run
+  build when route signatures, instrumentation, or production bundling can be affected.
+- Docs describe current state only. Delete completed milestones; git history and releases record
+  the past.
+
+## Change checklist
+
+Before finishing:
+
+- Read the authority and any nested `AGENTS.md` for the changed subsystem.
+- Confirm every import follows the dependency direction and every new decision has one owner.
+- Confirm required paths still work offline and no secret or unbounded read was introduced.
+- Run the checks appropriate to the risk, then inspect the complete diff.
+- If `tests/architecture.test.ts` fails, fix the architecture; do not relax the contract.
