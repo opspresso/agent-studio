@@ -1009,6 +1009,7 @@ async function main() {
     const { a2aClientKeyRepository } = await import(
       "@/infrastructure/db/repositories/a2aClientKeyRepository"
     );
+    const { listA2aClientKeys } = await import("@/application/a2a/clientKeyUseCases");
     const clientKeyName = `client-${suffix}`;
     const clientKey = {
       name: clientKeyName,
@@ -1028,7 +1029,7 @@ async function main() {
       "a duplicate name is refused by the conditional pair",
     );
     assert.ok(
-      (await a2aClientKeyRepository.list()).some((k) => k.name === clientKeyName),
+      (await listA2aClientKeys(a2aClientKeyRepository)).some((k) => k.name === clientKeyName),
       "key listed from the TYPE partition",
     );
     await a2aClientKeyRepository.delete(clientKeyName);

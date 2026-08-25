@@ -10,6 +10,7 @@
 import { keys } from "@/infrastructure/db/keys";
 import { conditions, getItem, queryItems, transact } from "@/infrastructure/db/store";
 import type { A2aClientKey, A2aClientKeyRepository } from "@/domain/a2a/clientKey";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 const ENTITY_TYPE = "A2ACLIENT";
 
@@ -45,9 +46,20 @@ export const a2aClientKeyRepository: A2aClientKeyRepository = {
     return item ? fromItem(item) : null;
   },
 
-  async list() {
-    const items = await queryItems({ index: "GSI1", pk: keys.typePartition(ENTITY_TYPE) });
-    return items.map(fromItem);
+  async list(limit, after) {
+    const items = await queryItems({
+      index: "GSI1",
+      pk: keys.typePartition(ENTITY_TYPE),
+      limit: boundedPageLimit(limit),
+      ...(after ? { after } : {}),
+    });
+    return items.map((item) => {
+      const key = fromItem(item);
+      if (key.name !== item.GSI1SK) {
+        throw new Error("A2A client key name does not match its index key");
+      }
+      return key;
+    });
   },
 
   async create(key) {

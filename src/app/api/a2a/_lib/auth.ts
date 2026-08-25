@@ -13,7 +13,7 @@ import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
  */
 
 async function hasClientKeys(): Promise<boolean> {
-  return (await a2aClientKeyUseCases.list()).length > 0;
+  return a2aClientKeyUseCases.hasAny();
 }
 
 /**

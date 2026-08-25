@@ -12,7 +12,7 @@
  * row transactionally.
  */
 
-import type { A2aClientKeyRepository } from "@/domain/a2a/clientKey";
+import type { A2aClientKey, A2aClientKeyRepository } from "@/domain/a2a/clientKey";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import {
   ConflictError,
@@ -55,10 +55,28 @@ export interface A2aClientKeyUseCases {
     actorEmail: string,
   ): Promise<{ key: string; view: A2aClientKeyView }>;
   list(): Promise<A2aClientKeyView[]>;
+  hasAny(): Promise<boolean>;
   reveal(name: string, actorEmail: string): Promise<{ key: string; createdAt: string }>;
   revoke(name: string, actorEmail: string): Promise<void>;
   /** The client name a raw key resolves to, or `null` for anything else. */
   verify(value: string): Promise<string | null>;
+}
+
+export const A2A_CLIENT_KEY_LIST_PAGE_SIZE = 100;
+
+export async function listA2aClientKeys(
+  repo: Pick<A2aClientKeyRepository, "list">,
+): Promise<A2aClientKey[]> {
+  const keys: A2aClientKey[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await repo.list(A2A_CLIENT_KEY_LIST_PAGE_SIZE, after);
+    keys.push(...page);
+    if (page.length < A2A_CLIENT_KEY_LIST_PAGE_SIZE) {
+      return keys;
+    }
+    after = page.at(-1)!.name;
+  }
 }
 
 export function createA2aClientKeyUseCases(
@@ -104,10 +122,14 @@ export function createA2aClientKeyUseCases(
     },
 
     async list() {
-      const stored = await repo.list();
+      const stored = await listA2aClientKeys(repo);
       return stored
         .map(toView)
         .sort((a, b) => a.name.localeCompare(b.name));
+    },
+
+    async hasAny() {
+      return (await repo.list(1)).length > 0;
     },
 
     async reveal(name, actorEmail) {
