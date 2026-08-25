@@ -106,6 +106,24 @@ describe("fetchPublicUrl", () => {
     expect(undiciFetch).toHaveBeenCalledTimes(2);
     expect(String(undiciFetch.mock.calls[1]?.[0])).toBe("https://93.184.216.34/next");
   });
+
+  it("cancels every redirect body when the redirect limit is exceeded", async () => {
+    const cancel = vi.fn();
+    undiciFetch.mockImplementation(
+      async () =>
+        new Response(new ReadableStream({ cancel }), {
+          status: 302,
+          headers: { location: "/again" },
+        }),
+    );
+
+    await expect(fetchPublicUrl("https://93.184.216.34/start")).rejects.toBeInstanceOf(
+      PublicFetchError,
+    );
+
+    expect(undiciFetch).toHaveBeenCalledTimes(6);
+    expect(cancel).toHaveBeenCalledTimes(6);
+  });
 });
 
 describe("fetchPublicUrl transport pairing", () => {

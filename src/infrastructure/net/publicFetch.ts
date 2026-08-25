@@ -149,6 +149,7 @@ export async function fetchPublicUrl(
       return asGlobalResponse(response);
     }
     if (redirects >= MAX_REDIRECTS) {
+      await response.body?.cancel();
       throw new PublicFetchError(`Too many redirects from ${originalOrigin}`);
     }
     const location = response.headers.get("location");
