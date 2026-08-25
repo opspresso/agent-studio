@@ -14,6 +14,7 @@
 
 import OpenAI from "openai";
 import { AWS_SIGNING_SERVICE, createSignedFetch } from "./awsSigner";
+import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
 import type { ResolvedTarget, TargetResolver } from "./providers";
 import type {
   ChannelChunk,
@@ -24,10 +25,11 @@ import type {
   LlmChannel,
 } from "@/domain/llm/channel";
 
-const clients = new Map<string, OpenAI>();
+const clients = createLlmClientCache<OpenAI>();
 
 /**
- * Keyed by baseUrl|auth|apiKey so a runtime settings change gets a fresh client.
+ * Keyed by a credential fingerprint so a runtime settings change gets a fresh
+ * client without retaining raw keys in the cache index.
  *
  * A `sigv4` target carries no key, so its per-request credential is the signing
  * `fetch` rather than anything in the constructor — the SDK still wants an
@@ -35,7 +37,7 @@ const clients = new Map<string, OpenAI>();
  * rewrites the headers.
  */
 function getClient(target: ResolvedTarget): OpenAI {
-  const key = `${target.baseUrl}|${target.auth}|${target.apiKey}`;
+  const key = llmClientCacheKey(target.baseUrl, target.auth, target.apiKey);
   let client = clients.get(key);
   if (!client) {
     client = target.auth === "sigv4"

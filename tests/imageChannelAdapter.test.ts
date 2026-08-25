@@ -17,7 +17,7 @@ import { base64Chars, MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
 
 /**
  * The OpenAI base url is per-test on purpose, exactly as `channelAdapter.test.ts`
- * does it: the adapter caches one SDK client per `baseUrl|apiKey`, and a cached
+ * does it: the adapter caches one SDK client per credential fingerprint, and a cached
  * client holds the `fetch` that was global when it was built — so a second test
  * reusing the url would silently answer from the first test's stub.
  */

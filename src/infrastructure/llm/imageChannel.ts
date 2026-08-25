@@ -15,6 +15,7 @@
  */
 
 import OpenAI, { toFile } from "openai";
+import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
 import type { ResolvedTarget, TargetResolver } from "./providers";
 import {
   base64ByteLength,
@@ -33,13 +34,14 @@ import type {
   ImageGenerationResult,
 } from "@/domain/llm/imageChannel";
 
-const clients = new Map<string, OpenAI>();
+const clients = createLlmClientCache<OpenAI>();
 
 /** One base64 image plus ample room for usage metadata and provider envelopes. */
 export const MAX_IMAGE_API_RESPONSE_BYTES = base64Chars(MAX_ATTACHMENT_BYTES) + 256_000;
 
 /**
- * Keyed by baseUrl|apiKey so a runtime settings change gets a fresh client.
+ * Keyed by a credential fingerprint so a runtime settings change gets a fresh
+ * client without retaining raw keys in the cache index.
  *
  * A SigV4 channel is refused here rather than sent unsigned. The text channel
  * signs a JSON body; this one posts multipart for an edit, which cannot be
@@ -53,7 +55,7 @@ function getClient(target: ResolvedTarget): OpenAI {
       `Image channel "${target.providerName ?? "default"}" is configured for SigV4, which the images API does not support`,
     );
   }
-  const key = `${target.baseUrl}|${target.apiKey}`;
+  const key = llmClientCacheKey(target.baseUrl, target.apiKey);
   let client = clients.get(key);
   if (!client) {
     client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey });

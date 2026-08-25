@@ -222,6 +222,24 @@ describe("talking to the Bot Framework", () => {
     expect(tokenCalls).toBe(3);
   });
 
+  it("bounds tokens retained across credential rotation", async () => {
+    let tokenCalls = 0;
+    stubFetch((url) => {
+      if (url.includes("/oauth2/v2.0/token")) {
+        tokenCalls += 1;
+        return jsonResponse({ access_token: `tok-${tokenCalls}`, expires_in: 3600 });
+      }
+      return undefined;
+    });
+
+    for (let index = 0; index < 33; index += 1) {
+      await teamsClient.authenticate({ ...CREDS, appPassword: `rotation-${index}` });
+    }
+    await teamsClient.authenticate({ ...CREDS, appPassword: "rotation-0" });
+
+    expect(tokenCalls).toBe(34);
+  });
+
   it("accepts an upper-case App ID against the service's lower-case audience", async () => {
     stubFetch();
     const verdict = await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, {

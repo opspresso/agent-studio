@@ -32,7 +32,7 @@ function respondWith(body: unknown): void {
   );
 }
 
-// The adapter caches one client per baseUrl|apiKey, and a client binds the
+// The adapter caches one client per credential fingerprint, and a client binds the
 // `fetch` that was global when it was built — so a test reusing an address would
 // keep talking to the previous test's stub. A fresh address per test is what
 // `channelAdapter.test.ts` does for the same reason.
