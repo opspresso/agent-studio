@@ -15,16 +15,18 @@
 import { randomUUID } from "node:crypto";
 import { CONDITIONAL_WRITE_FAILED, conditions, deleteItem, putItem, queryItems } from "../store";
 import { keys } from "../keys";
-import { MAX_RUN_SLOTS, type RunSlot, type RunSlotRepository } from "@/domain/execution/runSlot";
+import {
+  boundedRunSlotLimit,
+  type RunSlot,
+  type RunSlotRepository,
+} from "@/domain/execution/runSlot";
 
 /** Bounded retries when another instance claims the index this one picked. */
 const MAX_ACQUIRE_ATTEMPTS = 3;
 
 export const runSlotRepository: RunSlotRepository = {
   async acquire(actor, limit, leaseUntilSeconds): Promise<RunSlot | null> {
-    const slotLimit = Number.isFinite(limit)
-      ? Math.min(Math.max(Math.floor(limit), 0), MAX_RUN_SLOTS)
-      : 0;
+    const slotLimit = boundedRunSlotLimit(limit);
     if (slotLimit <= 0) {
       return null;
     }
