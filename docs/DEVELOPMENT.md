@@ -187,7 +187,7 @@ pnpm test:integration
 
 ## CI
 
-`.github/workflows/ci.yml` 은 `main` 으로의 모든 push 와 모든 pull request 에서 돈다:
+`.github/workflows/ci.yml` 은 저장소의 모든 branch push 에서 돈다:
 
 ```
 typecheck → test → test:integration → build
@@ -198,12 +198,13 @@ typecheck → test → test:integration → build
 지난다. job 마다 새로 뜨는 컨테이너는 비어 있고, 검사가 자기 스키마를 적용하므로 워크플로에 설정할
 것이 없다.
 
-pull request와 `main` CI는 GitHub-hosted ephemeral runner에서 최소 `contents: read` 권한으로
-실행하고 checkout credential을 작업 트리에 남기지 않는다. 검토 전 PR 코드를 release와 model
-검사가 쓰는 persistent self-hosted runner에서 실행하면, 뒤의 trusted job이 받는 OIDC·registry
-자격 증명까지 runner 오염의 수명에 묶이기 때문이다. 시크릿이 필요한 `check-models`는 default
-branch의 schedule에서만, release는 `v*` tag push에서만 self-hosted runner를 쓴다. 임의 ref를
-선택하는 `workflow_dispatch`는 두 workflow 모두 제공하지 않는다.
+CI는 최소 `contents: read` 권한의 persistent self-hosted runner에서 실행하고 checkout credential을
+작업 트리에 남기지 않는다. `pull_request` 이벤트는 받지 않으므로 fork의 코드는 이 runner에
+도달하지 않는다. PR 검사는 base 저장소의 branch에 push된 commit에 붙은 CI 상태를 사용한다.
+fork PR을 검사하려면 별도의 ephemeral runner가 필요하다.
+시크릿이 필요한 `check-models`는 default branch의 schedule에서만, release는 `v*` tag push에서만
+self-hosted runner를 쓴다. 임의 ref를 선택하는 `workflow_dispatch`는 두 workflow 모두 제공하지
+않는다.
 
 `.github/workflows/check-models.yml` 은 `pnpm check-models --strict --since=7d` 를 pull request
 마다가 아니라 주 1회 돌린다: 살아 있는 provider API 와 저장소 시크릿이

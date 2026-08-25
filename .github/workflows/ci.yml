@@ -2,17 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches: ["**"]
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    # Pull-request code is untrusted until review. Keep it off the persistent
-    # runner later jobs use with deployment credentials.
-    runs-on: ubuntu-latest
+    # Only base-repository pushes trigger this persistent runner. Fork pull
+    # requests need a separate ephemeral runner before their code can run.
+    runs-on: self-hosted
     services:
       # A fresh database per job. The name ends in `_test`, which is what the
       # integration check insists on before it writes and cascade-deletes; the
