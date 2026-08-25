@@ -64,7 +64,7 @@ AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필�
 | 엔드포인트 | 종류 | 동작 |
 |---|---|---|
 | `GET /api/health` | liveness | 정적 `200`. 의존성이 없고 인증도 없다. "프로세스가 서빙 중인가" 에 답한다. |
-| `GET /api/ready` | readiness | PostgreSQL(`SELECT 1 FROM items LIMIT 1`, 연결·자격 증명·스키마를 한 번에)과 LLM 채널을 프로브한다 (각 2초 타임아웃, 상세는 노출하지 않는다). 다운스트림에 닿을 수 없거나 **또는** 인스턴스가 draining 중이면 `503`. |
+| `GET /api/ready` | readiness | PostgreSQL(`SELECT 1 FROM items LIMIT 1`, 연결·자격 증명·스키마를 한 번에)과 LLM 채널을 프로브한다 (각 2초 타임아웃, 상세는 노출하지 않는다). DB 프로브는 전용 connection 하나에서 연결 대기·클라이언트 응답·서버 실행을 모두 제한하고, 시간 초과 connection을 폐기한다. 다운스트림에 닿을 수 없거나 **또는** 인스턴스가 draining 중이면 `503`. |
 
 재시작 검사는 `/api/health` 에, 로드 밸런서는 `/api/ready` 에 붙여라.
 

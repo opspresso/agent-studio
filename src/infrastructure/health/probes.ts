@@ -1,12 +1,10 @@
-import { sql } from "@/infrastructure/db/client";
-import { withTimeout } from "@/shared/withTimeout";
+import { readinessSql } from "@/infrastructure/db/client";
 
-const DB_TIMEOUT_MS = 2000;
 const LLM_TIMEOUT_MS = 2000;
 
 /** A low-cost read that confirms the schema, credentials, and connectivity. */
 export async function dbReachable(): Promise<void> {
-  await withTimeout(sql("SELECT 1 FROM items LIMIT 1"), DB_TIMEOUT_MS);
+  await readinessSql("SELECT 1 FROM items LIMIT 1");
 }
 
 /**

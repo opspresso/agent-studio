@@ -31,6 +31,7 @@ vi.mock("@/infrastructure/db/client", async () => {
   return {
     getPool: () => pool,
     sql: async () => [],
+    readinessSql: async () => {},
     withTransaction: async () => {
       throw new Error("unit tests do not open database connections");
     },

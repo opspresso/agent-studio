@@ -1,15 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { behavior } = vi.hoisted(() => ({ behavior: { mode: "ok" as "ok" | "boom" } }));
+const { behavior, readinessSql } = vi.hoisted(() => ({
+  behavior: { mode: "ok" as "ok" | "boom" },
+  readinessSql: vi.fn(async (_text: string) => {}),
+}));
 
 // The probe is one statement through the client; the pool itself is never
-// opened here (tests/setup.ts stubs it), so only `sql` decides the answer.
+// opened here (tests/setup.ts stubs it), so only `readinessSql` decides the answer.
 vi.mock("@/infrastructure/db/client", () => ({
-  sql: async () => {
+  readinessSql: async (text: string) => {
     if (behavior.mode === "boom") {
       throw new Error("throttled");
     }
-    return [];
+    await readinessSql(text);
   },
 }));
 
@@ -26,6 +29,7 @@ describe("dbReachable", () => {
   it("resolves when the datastore responds", async () => {
     behavior.mode = "ok";
     await expect(dbReachable()).resolves.toBeUndefined();
+    expect(readinessSql).toHaveBeenCalledWith("SELECT 1 FROM items LIMIT 1");
   });
 
   it("rejects when the datastore errors", async () => {
