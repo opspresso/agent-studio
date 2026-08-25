@@ -34,6 +34,7 @@ import {
 } from "./discoveryCache";
 import { isUnauthorized, McpSession, scopeChallengeOf, unusableServerReason, type McpTool } from "./session";
 import { log } from "@/shared/logger";
+import { urlOriginForLog } from "@/shared/url";
 import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
@@ -198,7 +199,7 @@ export class ToolManager {
           const stepUp = scopeChallengeOf(error);
           log.warn(
             "mcp",
-            `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
+            `discovery failed for '${server.name}' (${urlOriginForLog(server.url)}); its tools are unavailable this run:`,
             unusable ?? reason,
           );
           const failure: DiscoveryFailure = {

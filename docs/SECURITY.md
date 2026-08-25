@@ -364,7 +364,10 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
   호스트는 풀링된 디스패처에 닿기 전에 거부되고, 다른 곳으로 해석되는 호스트는 다른 키를
   받는다.
 
-공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라.
+공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라. Registry endpoint URL 은
+query parameter 와 fragment 를 받지 않는다. 둘은 멤버가 읽는 registry view 와 운영 로그에서
+자격 증명을 노출하기 쉬우므로, 인증 정보는 encrypted header 또는 OAuth 연결에 둔다. 이전 행에
+남은 query 와 fragment 는 dispatch 에만 쓰이고 reader-facing view 에서는 제거한다.
 외부 A2A Agent Card 의 실패 메시지는 origin 만 남긴다. query string 을 비롯한 전체 URL 자체가
 자격 증명일 수 있으므로 authored error, chat, trace 에 등록 주소를 복사하지 않는다.
 

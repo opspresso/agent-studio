@@ -3,12 +3,14 @@ import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
 import { NotFoundError } from "@/application/errors";
 import {
   assertAllowedUrl,
+  assertCredentialFreeRegistryUrl,
   createRegistryUseCases,
   type RegistryUseCases,
 } from "@/application/registry/registryUseCases";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { RemoteAgentDispatcher, RemoteAgentProbeReply } from "@/domain/agent/dispatcher";
+import { urlWithoutQueryOrFragment } from "@/shared/url";
 
 export interface CreateAgentInput {
   name: string;
@@ -33,7 +35,11 @@ export interface AgentUseCases
 
 /** Client-safe projection: encrypted header values are replaced with a mask. */
 function masked(cipher: SecretCipher, agent: ExternalAgent): ExternalAgent {
-  return { ...agent, headers: cipher.maskHeaders(agent.headers) };
+  return {
+    ...agent,
+    url: urlWithoutQueryOrFragment(agent.url),
+    headers: cipher.maskHeaders(agent.headers),
+  };
 }
 
 export function createAgentUseCases(
@@ -48,6 +54,7 @@ export function createAgentUseCases(
     repo,
     view: (agent) => masked(cipher, agent),
     async build(input, now) {
+      assertCredentialFreeRegistryUrl(input.url);
       await assertAllowedUrl(policy, input.url);
       return {
         name: input.name,
@@ -61,6 +68,7 @@ export function createAgentUseCases(
     },
     async apply(existing, patch, now) {
       if (patch.url !== undefined) {
+        assertCredentialFreeRegistryUrl(patch.url);
         await assertAllowedUrl(policy, patch.url);
       }
       const movedAddress = patch.url !== undefined && patch.url !== existing.url;

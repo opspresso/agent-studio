@@ -11,6 +11,21 @@ import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
+/** Registry endpoints carry credentials in headers or OAuth, never in their visible URL. */
+export function assertCredentialFreeRegistryUrl(rawUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new ValidationError("Registry URL is invalid");
+  }
+  if (url.search || url.hash) {
+    throw new ValidationError(
+      "Registry URLs cannot include query parameters or fragments; use headers or OAuth for credentials",
+    );
+  }
+}
+
 /** Minimal repository shape shared by the registry slices. */
 export interface RegistryRepository<T> {
   get(name: string): Promise<T | null>;

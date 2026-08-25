@@ -3,6 +3,7 @@ import { skipsUrlGuard, type McpServer } from "@/domain/mcp/types";
 import { NotFoundError, ValidationError } from "@/application/errors";
 import {
   assertAllowedUrl,
+  assertCredentialFreeRegistryUrl,
   createRegistryUseCases,
   type RegistryUseCases,
 } from "@/application/registry/registryUseCases";
@@ -10,6 +11,7 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ListToolsResult, McpToolProbe } from "@/domain/mcp/toolProbe";
 import { log } from "@/shared/logger";
+import { urlOriginForLog, urlWithoutQueryOrFragment } from "@/shared/url";
 
 export interface CreateMcpInput {
   name: string;
@@ -43,6 +45,7 @@ export interface McpUseCases extends RegistryUseCases<McpServer, CreateMcpInput,
 function masked(cipher: SecretCipher, server: McpServer): McpServer {
   return {
     ...server,
+    url: urlWithoutQueryOrFragment(server.url),
     headers: cipher.maskHeaders(server.headers),
     ...(server.environment
       ? { environment: cipher.maskHeaders(server.environment) }
@@ -68,6 +71,7 @@ export function createMcpUseCases(
     repo,
     view: (server) => masked(cipher, server),
     async build(input, now) {
+      assertCredentialFreeRegistryUrl(input.url);
       // A new entry is `remote` by definition — nothing has provisioned it — so
       // the only way past the guard here is a suffix this deployment declared.
       if (!skipsUrlGuard({ url: input.url }, internalHostSuffixes)) {
@@ -85,6 +89,9 @@ export function createMcpUseCases(
       };
     },
     async apply(existing, patch, now) {
+      if (patch.url !== undefined) {
+        assertCredentialFreeRegistryUrl(patch.url);
+      }
       // A managed entry's address is the whole basis for trusting it: it was
       // recorded after the provisioner bound the port, not typed by anyone. An
       // edit that could move it would turn "we started this" back into "someone
@@ -137,7 +144,7 @@ export function createMcpUseCases(
       if (movedAddress && (discarded || Object.keys(existing.headers).length > 0)) {
         log.warn(
           "mcp",
-          `'${existing.name}' moved to ${updated.url}; its stored credentials were dropped and must be re-entered`,
+          `'${existing.name}' moved to ${urlOriginForLog(updated.url)}; its stored credentials were dropped and must be re-entered`,
         );
       }
       // A new url or new credentials can mean a different tool list, so an
