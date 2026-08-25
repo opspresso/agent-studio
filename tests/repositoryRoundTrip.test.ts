@@ -44,6 +44,7 @@ function seedProject(name: string, over: Record<string, unknown> = {}): void {
 
 describe("telegramDestinationRepository", () => {
   it("keeps destinations separate by bot and lists the newest first", async () => {
+    seedProject("telegram-project");
     await telegramDestinationRepository.put("telegram-project", 42, {
       chatId: 100,
       chatType: "private",
@@ -82,6 +83,7 @@ describe("telegramDestinationRepository", () => {
   });
 
   it("lists observed destinations beyond one storage page", async () => {
+    seedProject("many-destinations");
     for (let index = 0; index < 205; index++) {
       await telegramDestinationRepository.put("many-destinations", 42, {
         chatId: index + 1,
@@ -254,6 +256,7 @@ describe("runSlotRepository ownership", () => {
 
 describe("triggerRepository messaging destination round-trip", () => {
   it("preserves schedule destinations through put + get", async () => {
+    seedProject("destination-round-trip");
     await triggerRepository.put({
       projectName: "destination-round-trip",
       triggerId: "daily",
@@ -284,6 +287,7 @@ describe("triggerRepository messaging destination round-trip", () => {
   });
 
   it("preserves per-destination results through append + list", async () => {
+    seedProject("destination-result-round-trip");
     await triggerRepository.appendRun({
       projectName: "destination-result-round-trip",
       triggerId: "daily",

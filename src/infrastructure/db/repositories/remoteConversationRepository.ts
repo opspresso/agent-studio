@@ -1,6 +1,7 @@
 import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
-import { deleteItem, getItem, putItem } from "../store";
+import { deleteItem, getItem } from "../store";
 import { keys } from "../keys";
+import { putProjectItem } from "../projectLifecycle";
 import { expiresAtFromNow, isExpired, REMOTE_CONVERSATION_TTL_SECONDS } from "../ttl";
 
 /**
@@ -28,7 +29,7 @@ export const remoteConversationRepository: RemoteConversationRepository = {
   },
 
   async put(projectName, agentName, conversationKey, { contextId, taskId }) {
-    await putItem({
+    await putProjectItem(projectName, {
       ...keys.remoteConversation(projectName, agentName, conversationKey),
       entityType: "remoteConversation",
       projectName,

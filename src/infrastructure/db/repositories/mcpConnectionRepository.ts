@@ -1,5 +1,6 @@
-import { CONDITIONAL_WRITE_FAILED, deleteItem, getItem, putItem, queryItems, updateItem } from "../store";
+import { CONDITIONAL_WRITE_FAILED, deleteItem, getItem, queryItems, updateItem } from "../store";
 import { keys } from "../keys";
+import { putProjectItem } from "../projectLifecycle";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
 import type { TokenEndpointAuthMethod } from "@/domain/mcp/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
@@ -120,7 +121,7 @@ export const mcpConnectionRepository: McpConnectionRepository = {
   },
 
   async put(connection) {
-    await putItem(toItem(connection));
+    await putProjectItem(connection.projectName, toItem(connection));
   },
 
   /**

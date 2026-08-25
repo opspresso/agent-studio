@@ -247,6 +247,7 @@ flowchart TB
 | 엔티티 | PK | SK | GSI1PK | GSI1SK |
 |---|---|---|---|---|
 | Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
+| 삭제된 Project 이름 tombstone | `PROJECT#{name}` | `META` | — | — |
 | Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
 | Project API 토큰 | `PROJECT#{name}` | `APITOKEN` | — | — |
 | Project 의 MCP OAuth 연결 | `PROJECT#{name}` | `MCPCONN#{server}` | — | — |
@@ -325,10 +326,15 @@ artifact 의 두 번째 축 하나를 위한 것이다: `ARTIFACTOWNER#{email}` 
   쓴다.
 - **인증 행은 아이템 테이블에 없다.** Better Auth 는 자기 테이블에 쓰고, email·token 의
   유일성은 테이블의 유니크 제약이 지킨다. 잠금 아이템도 호환 조회도 없다.
-- Trace 생성은 프로젝트 파티션에 삭제 참조를 트랜잭션으로 함께 쓴다. 프로젝트 삭제는
-  프로젝트를 먼저 표시해 자식 정리 전에 새 버전·trace 가 생기는 것을 막고, 그다음 usage
-  파티션, `TRACEPROJECT#` 인덱스 파티션이 닿는 trace 행(`deleteIndexPartition`), 참조가
-  지목하는 trace 행, 프로젝트 파티션의 나머지 순으로 지운 뒤 `META` 를 마지막에 지운다.
+- Trace 생성은 프로젝트 파티션에 삭제 참조를 트랜잭션으로 함께 쓴다. 프로젝트 삭제는 live
+  `META` 를 먼저 목록 인덱스에서 빼고 `deletingAt` 으로 표시한다. 프로젝트 소유 자식 쓰기는
+  같은 `META` 의 live 상태를 트랜잭션 안에서 확인하므로 표시 뒤에는 새 version·token·trigger·
+  connection·transcript·trace·usage 가 생기지 않는다. 그다음 usage 파티션,
+  `TRACEPROJECT#` 인덱스 파티션이 닿는 trace 행(`deleteIndexPartition`), 참조가 지목하는 trace
+  행, 프로젝트 파티션의 나머지를 지우고 `META` 는 소유자와 설정을 제거한
+  `PROJECT_TOMBSTONE` 으로 바꾼다. 이름은 다시 쓰지 않는다. artifact·chat처럼 project 삭제보다
+  오래 보존되는 행이 이름으로 연결되므로, 다른 소유자에게 같은 이름을 주면 서로 다른 생애의
+  데이터가 합쳐지기 때문이다.
 - **Usage 행은 행 잠금 아래에서 read-modify-write 로 더해진다**. 모델별 맵
   `calls.{model}`, `inputTokens.{model}`, `outputTokens.{model}`, `cachedTokens.{model}`,
   `costUsd.{model}` 에 델타를 더한 행을 통째로 다시 쓰므로, 동시에 끝난 두 런이 모두

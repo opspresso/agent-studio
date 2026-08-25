@@ -24,6 +24,7 @@ import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { memberEmailFromActorKey } from "@/domain/execution/actor";
 import { daysBetween } from "@/shared/date";
 import type { ActorUsageRow, MemberUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
+import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
 
 /**
  * Attribute the once-per-day notification claim is written to. One per kind, so
@@ -109,8 +110,6 @@ function added(row: Item | null, delta: UsageDelta, extra: Item): Item {
   return next;
 }
 
-const projectLive = (row: Item | null): boolean => row !== null && row.deletingAt === undefined;
-
 export class PostgresUsageRepository implements UsageRepository {
   async record(delta: UsageDelta): Promise<void> {
     await this.addTo(keys.usage(delta.projectName, delta.date), delta, {
@@ -148,7 +147,7 @@ export class PostgresUsageRepository implements UsageRepository {
    */
   private async addTo(key: { PK: string; SK: string }, delta: UsageDelta, extra: Item): Promise<void> {
     await transact([
-      { kind: "check", key: keys.project(delta.projectName), condition: projectLive },
+      { kind: "check", key: keys.project(delta.projectName), condition: projectIsLive },
       { kind: "update", key, patch: (row) => added(row, delta, extra) },
     ]);
   }

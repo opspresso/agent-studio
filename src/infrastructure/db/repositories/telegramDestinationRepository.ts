@@ -3,7 +3,8 @@ import type {
   TelegramDestinationRepository,
 } from "@/domain/telegram/destination";
 import { keys } from "@/infrastructure/db/keys";
-import { putItem, queryItems } from "@/infrastructure/db/store";
+import { queryItems } from "@/infrastructure/db/store";
+import { putProjectItem } from "@/infrastructure/db/projectLifecycle";
 
 /** Observed chats read per storage query before the adapter continues. */
 const DESTINATION_PAGE_SIZE = 100;
@@ -29,7 +30,7 @@ function fromItem(item: Record<string, unknown>): TelegramDestination | null {
 
 export const telegramDestinationRepository: TelegramDestinationRepository = {
   async put(projectName, botId, destination) {
-    await putItem({
+    await putProjectItem(projectName, {
       ...keys.telegramDestination(projectName, botId, destination.chatId, destination.threadId),
       entityType: "telegramDestination",
       projectName,

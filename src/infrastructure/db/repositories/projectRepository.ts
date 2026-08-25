@@ -13,8 +13,10 @@ import {
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectApiToken } from "@/domain/project/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
+import { projectIsLive, putProjectItem } from "@/infrastructure/db/projectLifecycle";
 
 const ENTITY_TYPE = "PROJECT";
+const TOMBSTONE_ENTITY_TYPE = "PROJECT_TOMBSTONE";
 
 function toItem(project: Project): Record<string, unknown> {
   const key = keys.project(project.name);
@@ -51,13 +53,13 @@ function fromItem(item: Record<string, unknown>): Project {
 /** The live, unmodified project row a write may build on. */
 function liveAt(expectedUpdatedAt: string) {
   return (row: Record<string, unknown> | null): boolean =>
-    row !== null && row.deletingAt === undefined && row.updatedAt === expectedUpdatedAt;
+    projectIsLive(row) && row?.updatedAt === expectedUpdatedAt;
 }
 
 export const projectRepository: ProjectRepository = {
   async get(name: string): Promise<Project | null> {
     const item = await getItem(keys.project(name));
-    return item ? fromItem(item) : null;
+    return item && projectIsLive(item) ? fromItem(item) : null;
   },
 
   async list(limit, after): Promise<Project[]> {
@@ -67,7 +69,7 @@ export const projectRepository: ProjectRepository = {
       limit: boundedPageLimit(limit),
       ...(after ? { after } : {}),
     });
-    return items.map(fromItem);
+    return items.filter(projectIsLive).map(fromItem);
   },
 
   async create(project: Project): Promise<void> {
@@ -90,14 +92,18 @@ export const projectRepository: ProjectRepository = {
   },
 
   /**
-   * Cascade delete: project META, all its versions (same partition), all usage
-   * rows, and all trace rows. Chats are owned by users, not the project, so they
-   * are intentionally left intact.
+   * Cascade delete: all project-owned rows, then replace META with a minimal
+   * tombstone. A project name is an external identity and remains reserved;
+   * reusing it would attach retained artifacts and chats to a different owner.
    */
   async delete(name: string): Promise<void> {
     await updateItem(
       keys.project(name),
-      (row) => ({ ...row, deletingAt: row?.deletingAt ?? new Date().toISOString() }),
+      (row) => {
+        const { GSI1PK: _pk, GSI1SK: _sk, ...rest } = row ?? {};
+        void _pk, _sk;
+        return { ...rest, deletingAt: row?.deletingAt ?? new Date().toISOString() };
+      },
       conditions.exists,
     );
     const partition = keys.projectPartition(name);
@@ -106,8 +112,13 @@ export const projectRepository: ProjectRepository = {
     // cascade for them; the references in the project partition go below.
     await deleteIndexPartition("GSI1", keys.traceProjectPartition(name));
     await deletePartition(partition, { keep: [keys.project(name).SK] });
-    await deleteItem(
+    await updateItem(
       keys.project(name),
+      (row) => ({
+        entityType: TOMBSTONE_ENTITY_TYPE,
+        name,
+        deletedAt: row?.deletingAt,
+      }),
       (row) => row !== null && row.deletingAt !== undefined,
     );
   },
@@ -127,7 +138,7 @@ export const projectRepository: ProjectRepository = {
   },
 
   async setApiToken(name: string, token: ProjectApiToken): Promise<void> {
-    await putItem({
+    await putProjectItem(name, {
       ...keys.projectApiToken(name),
       entityType: "APITOKEN",
       // Written as one whole item, so regenerating an encrypted token over a

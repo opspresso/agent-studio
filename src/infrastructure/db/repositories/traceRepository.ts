@@ -4,6 +4,7 @@ import { keys } from "@/infrastructure/db/keys";
 import { conditions, getItem, queryItems, transact, type SortKeyMatch } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
+import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
 
 const MAX_SPANS = 100;
 
@@ -40,7 +41,7 @@ export class PostgresTraceRepository implements TraceRepository {
       {
         kind: "check",
         key: keys.project(trace.projectName),
-        condition: (row) => row !== null && row.deletingAt === undefined,
+        condition: projectIsLive,
       },
       {
         kind: "put",

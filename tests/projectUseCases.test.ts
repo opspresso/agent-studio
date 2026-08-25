@@ -978,7 +978,7 @@ describe("projectRepository.delete cascade", () => {
   const row = (PK: string, SK: string) => ({ PK, SK });
   const keysOf = () => store.all().map(({ PK, SK }) => ({ PK, SK }));
 
-  it("removes the project META, all its versions, and its usage rows", async () => {
+  it("removes child rows and leaves a name-reserving tombstone", async () => {
     store.rows.clear();
     store.seed([
       row("PROJECT#p", "META"),
@@ -992,7 +992,11 @@ describe("projectRepository.delete cascade", () => {
 
     await projectRepository.delete("p");
 
-    expect(keysOf()).toEqual([row("PROJECT#other", "META")]);
+    expect(keysOf()).toEqual([row("PROJECT#other", "META"), row("PROJECT#p", "META")]);
+    expect(await projectRepository.get("p")).toBeNull();
+    await expect(projectRepository.create(projectFixture("p"))).rejects.toThrow(
+      expect.objectContaining({ name: store.CONDITIONAL_WRITE_FAILED }),
+    );
   });
 
   it("leaves META marked, and present, when a child delete fails midway", async () => {
@@ -1001,12 +1005,20 @@ describe("projectRepository.delete cascade", () => {
     // never a project that looks live with half its children gone, and never
     // one that vanished with children still attached to its name.
     store.rows.clear();
-    store.seed([row("PROJECT#p", "META"), row("PROJECT#p", "VERSION#1")]);
+    store.seed([
+      { ...row("PROJECT#p", "META"), GSI1PK: "TYPE#PROJECT", GSI1SK: "p" },
+      row("PROJECT#p", "VERSION#1"),
+    ]);
     vi.spyOn(store, "deletePartition").mockRejectedValueOnce(new Error("connection reset"));
 
     await expect(projectRepository.delete("p")).rejects.toThrow(/connection reset/);
     expect(keysOf()).toEqual([row("PROJECT#p", "META"), row("PROJECT#p", "VERSION#1")]);
-    expect((await store.getItem(row("PROJECT#p", "META")))?.deletingAt).toEqual(expect.any(String));
+    const marked = await store.getItem(row("PROJECT#p", "META"));
+    expect(marked?.deletingAt).toEqual(expect.any(String));
+    expect(marked).not.toHaveProperty("GSI1PK");
+    expect(marked).not.toHaveProperty("GSI1SK");
+    await expect(projectRepository.get("p")).resolves.toBeNull();
+    await expect(projectRepository.list(100)).resolves.toEqual([]);
   });
 });
 

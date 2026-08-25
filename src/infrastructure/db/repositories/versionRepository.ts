@@ -3,6 +3,7 @@ import { conditions, getItem, queryItems, transact } from "@/infrastructure/db/s
 import type { VersionRepository } from "@/domain/project/repository";
 import type { McpBinding, Version } from "@/domain/project/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
+import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
 
 const ENTITY_TYPE = "VERSION";
 const PUBLISHED = "published";
@@ -93,10 +94,6 @@ async function resolvePublished(projectName: string): Promise<string | null> {
   return typeof pointer === "string" ? pointer : null;
 }
 
-/** The project row a version write may land in: present and not being deleted. */
-const projectLive = (row: Record<string, unknown> | null): boolean =>
-  row !== null && row.deletingAt === undefined;
-
 export const versionRepository: VersionRepository = {
   async get(projectName: string, versionName: string): Promise<Version | null> {
     let resolved = versionName;
@@ -132,14 +129,14 @@ export const versionRepository: VersionRepository = {
 
   async put(version: Version): Promise<void> {
     await transact([
-      { kind: "check", key: keys.project(version.projectName), condition: projectLive },
+      { kind: "check", key: keys.project(version.projectName), condition: projectIsLive },
       { kind: "put", item: toItem(version), condition: conditions.exists },
     ]);
   },
 
   async create(version: Version): Promise<void> {
     await transact([
-      { kind: "check", key: keys.project(version.projectName), condition: projectLive },
+      { kind: "check", key: keys.project(version.projectName), condition: projectIsLive },
       { kind: "put", item: toItem(version), condition: conditions.notExists },
     ]);
   },
@@ -154,7 +151,7 @@ export const versionRepository: VersionRepository = {
         kind: "check",
         key: keys.project(projectName),
         condition: (row) =>
-          projectLive(row) &&
+          projectIsLive(row) &&
           row?.updatedAt === expectedProjectUpdatedAt &&
           (row?.publishedVersion === undefined || row?.publishedVersion !== versionName),
       },

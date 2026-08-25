@@ -13,9 +13,10 @@ import {
   conditions,
   deleteItem,
   getItem,
-  putItem,
   queryItems,
+  TRANSACTION_CANCELLED,
 } from "@/infrastructure/db/store";
+import { putProjectItem } from "@/infrastructure/db/projectLifecycle";
 import { expiresAtFromNow, expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
 import type { TriggerRepository } from "@/domain/trigger/repository";
@@ -148,11 +149,11 @@ export const triggerRepository: TriggerRepository = {
   },
 
   async create(trigger) {
-    await putItem(triggerItem(trigger), conditions.notExists);
+    await putProjectItem(trigger.projectName, triggerItem(trigger), conditions.notExists);
   },
 
   async put(trigger) {
-    await putItem(triggerItem(trigger));
+    await putProjectItem(trigger.projectName, triggerItem(trigger));
   },
 
   async delete(projectName, triggerId) {
@@ -161,7 +162,8 @@ export const triggerRepository: TriggerRepository = {
 
   async claimIdempotencyKey(projectName, triggerId, key) {
     try {
-      await putItem(
+      await putProjectItem(
+        projectName,
         {
           ...keys.triggerIdempotency(projectName, triggerId, key),
           entityType: "TriggerIdempotency",
@@ -171,7 +173,10 @@ export const triggerRepository: TriggerRepository = {
       );
       return true;
     } catch (error) {
-      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
+      if (
+        (error as { name?: string }).name === CONDITIONAL_WRITE_FAILED ||
+        (error as { name?: string }).name === TRANSACTION_CANCELLED
+      ) {
         return false;
       }
       throw error;
@@ -179,13 +184,13 @@ export const triggerRepository: TriggerRepository = {
   },
 
   async appendRun(run) {
-    await putItem(runItem(run));
+    await putProjectItem(run.projectName, runItem(run));
   },
 
   async finishRun(run) {
     // A plain overwrite of the same key: the row was written when the run
     // started, and only this run's own completion ever rewrites it.
-    await putItem(runItem(run));
+    await putProjectItem(run.projectName, runItem(run));
   },
 
   async listRuns(projectName, triggerId, limit, opts = {}) {

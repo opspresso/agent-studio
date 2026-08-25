@@ -3,8 +3,9 @@ import type {
   ConversationTranscriptRepository,
   TranscriptTurn,
 } from "@/domain/messaging/transcript";
-import { putItem, queryItems } from "../store";
+import { queryItems } from "../store";
 import { keys } from "../keys";
+import { putProjectItem } from "../projectLifecycle";
 import { expiresAtFromNow, TRANSCRIPT_TTL_SECONDS } from "../ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
 
@@ -21,7 +22,7 @@ import { boundedPageLimit } from "@/shared/pageLimit";
 export const transcriptRepository: ConversationTranscriptRepository = {
   async append(projectName, conversationKey, turn) {
     const seq = randomUUID().slice(0, 8);
-    await putItem({
+    await putProjectItem(projectName, {
       ...keys.transcriptTurn(projectName, conversationKey, turn.createdAt, seq),
       entityType: "transcriptTurn",
       projectName,

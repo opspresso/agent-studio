@@ -1158,6 +1158,10 @@ async function main() {
     // ---------- cascade delete ----------
     await projectRepository.delete(projectName);
     assert.equal(await projectRepository.get(projectName), null, "project deleted");
+    await assert.rejects(
+      () => projectRepository.create(project),
+      "a deleted project name remains reserved by its tombstone",
+    );
     assert.equal(await versionRepository.get(projectName, "1"), null, "versions deleted");
     assert.equal(
       (await usageRepository.listByProject(projectName, today, today)).length,
@@ -1169,7 +1173,7 @@ async function main() {
       0,
       "transcript turns deleted with the project",
     );
-    pass("project cascade delete (meta + versions + usage + transcript)");
+    pass("project cascade delete (name tombstone + versions + usage + transcript)");
   } finally {
     // cleanup non-cascading fixtures
     await skillRepository.delete("integration-skill").catch(() => {});

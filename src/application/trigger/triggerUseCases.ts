@@ -272,7 +272,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       try {
         await deps.triggers.create(trigger);
       } catch (error) {
-        if (isConditionalWriteFailure(error)) {
+        if (isConditionalWriteFailure(error, { includeTransaction: true })) {
           throw new ConflictError(`Trigger "${input.triggerId}" already exists`);
         }
         throw error;

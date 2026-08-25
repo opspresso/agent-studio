@@ -15,6 +15,7 @@ import type { McpConnection } from "@/domain/mcp/connection";
 
 beforeEach(() => {
   store.rows.clear();
+  store.seed([{ ...keys.project("p"), entityType: "PROJECT", name: "p" }]);
 });
 
 /**
