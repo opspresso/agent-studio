@@ -8,11 +8,18 @@
  */
 
 import { keys } from "@/infrastructure/db/keys";
-import { conditions, getItem, queryItems, transact } from "@/infrastructure/db/store";
+import {
+  conditions,
+  getItem,
+  queryItems,
+  transact,
+  TRANSACTION_CANCELLED,
+} from "@/infrastructure/db/store";
 import type { A2aClientKey, A2aClientKeyRepository } from "@/domain/a2a/clientKey";
 import { boundedPageLimit } from "@/shared/pageLimit";
 
 const ENTITY_TYPE = "A2ACLIENT";
+const MAX_DELETE_ATTEMPTS = 3;
 
 function toItem(key: A2aClientKey): Record<string, unknown> {
   return {
@@ -81,15 +88,34 @@ export const a2aClientKeyRepository: A2aClientKeyRepository = {
   },
 
   async delete(name) {
-    const stored = await this.get(name);
-    if (!stored) {
-      return false;
+    let lastRace: unknown;
+    for (let attempt = 0; attempt < MAX_DELETE_ATTEMPTS; attempt += 1) {
+      const stored = await this.get(name);
+      if (!stored) {
+        return false;
+      }
+      try {
+        await transact([
+          {
+            kind: "delete",
+            key: keys.a2aClientKey(name),
+            condition: conditions.existsWith("tokenHash", stored.tokenHash),
+          },
+          {
+            kind: "delete",
+            key: keys.a2aClientKeyHash(stored.tokenHash),
+            condition: (row) => row === null || row.clientName === name,
+          },
+        ]);
+        return true;
+      } catch (error) {
+        if (!(error instanceof Error) || error.name !== TRANSACTION_CANCELLED) {
+          throw error;
+        }
+        lastRace = error;
+      }
     }
-    await transact([
-      { kind: "delete", key: keys.a2aClientKey(name) },
-      { kind: "delete", key: keys.a2aClientKeyHash(stored.tokenHash) },
-    ]);
-    return true;
+    throw lastRace;
   },
 
   async findNameByHash(tokenHash) {
