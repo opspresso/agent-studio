@@ -100,7 +100,8 @@ cron 지식도 갖지 않는다: 어떤 발생(occurrence)이 도래했는지, �
 - schedule 행만이 `GSI1` (`TYPE#SCHEDULE`) 을 갖는다. 그래서 이 인덱스를 Project 경계 없이
   100행씩 순회할 수 있고, 한 DB 응답과 메모리 배열이 전체 schedule 수만큼 커지지 않는다.
   webhook 행은 발화 스캔에 보이지 않는다. 아래의 복구 스윕은 다른 경로로, 그럴 이유가 있어서
-  둘 다에 닿는다.
+  둘 다에 닿는다. 설정 화면이 각 schedule의 최근 이력을 읽을 때도 동시에 최대 8개 요청만
+  보낸다.
 - schedule 에는 **시크릿도 payload 도 없다**: 외부에서 자격 증명을 제시하는 것이 없고, 모든
   발화는 트리거의 고정된 `variables`/`message` 를 published 버전에 대해 실행하며 `schedule`
   actor kind 로 귀속된다.
