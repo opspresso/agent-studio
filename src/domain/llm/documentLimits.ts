@@ -10,6 +10,8 @@
  * from on every later turn.
  */
 
+import { baseMimeType } from "@/domain/artifact/types";
+
 /** Documents one turn may carry. */
 export const MAX_DOCUMENTS = 4;
 
@@ -103,7 +105,7 @@ function extensionOf(name: string): string {
  * reaching this one would be read as bytes rather than looked at.
  */
 export function documentKind(mimeType: string, name = ""): DocumentKind | null {
-  const mime = mimeType.toLowerCase().split(";")[0]?.trim() ?? "";
+  const mime = baseMimeType(mimeType);
   const extension = extensionOf(name);
   if (mime.startsWith("image/")) {
     return null;
