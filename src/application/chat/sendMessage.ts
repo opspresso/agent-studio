@@ -17,6 +17,7 @@ import {
 } from "./run";
 import { claimChatRun } from "./runLease";
 import { teeToRunLog } from "./runLog";
+import { listChatMessages } from "./messageList";
 
 export interface SendMessageInput {
   chatId: string;
@@ -89,7 +90,7 @@ export async function sendMessage(
 
   const runId = await claimChatRun(deps.chats, input.chatId);
   try {
-    const existing = await deps.chats.listMessages(input.chatId);
+    const existing = await listChatMessages(deps.chats, input.chatId);
     const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
     const startedAt = new Date();
     const now = startedAt.toISOString();

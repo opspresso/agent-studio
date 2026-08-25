@@ -15,6 +15,7 @@ buffer rather than a record, and why the viewport belongs to a library is
 - `errors.ts` — `ChatError` subclasses carry the HTTP status the route surfaces.
 - `title.ts` — first-message → title, truncated to 50 chars.
 - `messageMapping.ts` — stored `ChatMessage[]` → OpenAI-shaped engine messages.
+- `messageList.ts` — full transcript/tail reads over bounded sequence pages.
 - `run.ts` — `resolveVersion` (published → latest fallback) and `runAndPersist`
   (tee the engine stream to the client, persist afterward). It does **not** release the
   run lease; `runLog.ts` wraps it and does.

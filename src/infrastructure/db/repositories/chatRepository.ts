@@ -12,6 +12,7 @@ import {
 } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { ChatRepository } from "@/domain/chat/repository";
+import { boundedPageLimit, MAX_PAGE_LIMIT } from "@/shared/pageLimit";
 import type {
   Chat,
   ChatMessage,
@@ -177,9 +178,16 @@ export const chatRepository: ChatRepository = {
     const items = await queryItems({
       pk: keys.chat(chatId).PK,
       sk: range ? { between: [range.from, range.to] } : { prefix: keys.chatMessagePrefix() },
+      limit: boundedPageLimit(options.limit ?? MAX_PAGE_LIMIT),
       notExpiredAt: Math.floor(Date.now() / 1000),
     });
-    return items.map(fromMessageItem);
+    return items.map((item) => {
+      const message = fromMessageItem(item);
+      if (keys.chatMessage(chatId, message.seq).SK !== item.SK) {
+        throw new Error("chat message identity does not match its key");
+      }
+      return message;
+    });
   },
 
   async appendMessage(message) {

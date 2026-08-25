@@ -5,6 +5,7 @@ import { resolveMessageImages } from "./resolveImages";
 import { resolveMessageFiles } from "./resolveFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { log } from "@/shared/logger";
+import { listChatMessages } from "./messageList";
 
 export interface ChatWithMessages {
   chat: Chat;
@@ -71,10 +72,7 @@ export async function getChat(
   if (!chat || chat.ownerEmail !== userEmail) {
     throw new ChatNotFoundError();
   }
-  const messages = await deps.chats.listMessages(
-    chatId,
-    options.sinceSeq === undefined ? {} : { sinceSeq: options.sinceSeq },
-  );
+  const messages = await listChatMessages(deps.chats, chatId, options.sinceSeq);
   const active = await deps.chats.getActiveRun(chatId);
   const running = isLiveClaim(active, Date.now());
   // Signed for the reader who is about to look at them. A stored row holds an

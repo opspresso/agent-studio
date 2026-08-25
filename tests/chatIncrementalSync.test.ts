@@ -3,6 +3,7 @@ import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatDeps } from "@/application/chat/deps";
 import { getChat } from "@/application/chat/getChat";
+import { CHAT_MESSAGE_PAGE_SIZE } from "@/application/chat/messageList";
 import { listChats } from "@/application/chat/listChats";
 import { CHAT_PAGE } from "@/domain/chat/repository";
 import { highestSeq, mergeMessages } from "@/app/chats/_lib/mergeMessages";
@@ -44,11 +45,15 @@ function recordingRepo(messages: ChatMessage[]) {
       asked.push({ ...(options.limit === undefined ? {} : { limit: options.limit }) });
       return options.limit === undefined ? [chat()] : [chat()].slice(0, options.limit);
     },
-    async listMessages(_chatId: string, options: { sinceSeq?: number } = {}) {
-      asked.push({ ...(options.sinceSeq === undefined ? {} : { sinceSeq: options.sinceSeq }) });
-      return options.sinceSeq === undefined
+    async listMessages(_chatId: string, options: { sinceSeq?: number; limit?: number } = {}) {
+      asked.push({
+        ...(options.sinceSeq === undefined ? {} : { sinceSeq: options.sinceSeq }),
+        ...(options.limit === undefined ? {} : { limit: options.limit }),
+      });
+      const found = options.sinceSeq === undefined
         ? messages
         : messages.filter((m) => m.seq > (options.sinceSeq as number));
+      return options.limit === undefined ? found : found.slice(0, options.limit);
     },
     async getActiveRun() {
       return null;
@@ -104,21 +109,37 @@ describe("getChat", () => {
     const { deps: d, asked } = deps([message(0, "a"), message(1, "b")]);
     const result = await getChat(d, "c1", "owner@x.com");
     expect(result.messages.map((m) => m.seq)).toEqual([0, 1]);
-    expect(asked).toEqual([{}]);
+    expect(asked).toEqual([{ limit: CHAT_MESSAGE_PAGE_SIZE }]);
   });
 
   it("reads only what was written after sinceSeq", async () => {
     const { deps: d, asked } = deps([message(0, "a"), message(1, "b"), message(2, "c")]);
     const result = await getChat(d, "c1", "owner@x.com", { sinceSeq: 1 });
     expect(result.messages.map((m) => m.seq)).toEqual([2]);
-    expect(asked).toEqual([{ sinceSeq: 1 }]);
+    expect(asked).toEqual([{ sinceSeq: 1, limit: CHAT_MESSAGE_PAGE_SIZE }]);
   });
 
   it("treats sinceSeq 0 as a bound, not as its absence", async () => {
     const { deps: d, asked } = deps([message(0, "a"), message(1, "b")]);
     const result = await getChat(d, "c1", "owner@x.com", { sinceSeq: 0 });
     expect(result.messages.map((m) => m.seq)).toEqual([1]);
-    expect(asked).toEqual([{ sinceSeq: 0 }]);
+    expect(asked).toEqual([{ sinceSeq: 0, limit: CHAT_MESSAGE_PAGE_SIZE }]);
+  });
+
+  it("reads a long transcript through bounded sequence pages", async () => {
+    const messages = Array.from(
+      { length: CHAT_MESSAGE_PAGE_SIZE + 2 },
+      (_, seq) => message(seq, String(seq)),
+    );
+    const { deps: d, asked } = deps(messages);
+
+    await expect(getChat(d, "c1", "owner@x.com")).resolves.toMatchObject({
+      messages,
+    });
+    expect(asked).toEqual([
+      { limit: CHAT_MESSAGE_PAGE_SIZE },
+      { sinceSeq: CHAT_MESSAGE_PAGE_SIZE - 1, limit: CHAT_MESSAGE_PAGE_SIZE },
+    ]);
   });
 });
 

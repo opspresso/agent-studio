@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CHAT_MESSAGE_PAGE_SIZE } from "@/application/chat/messageList";
 
 // Route-handler test: the repositories behind `chatDeps` are mocked, so the
 // assertions are about what these two routes *decide* — how they read the
@@ -93,21 +94,27 @@ describe("GET /api/chats/{chatId}", () => {
     chats.get.mockResolvedValue(chat() as never);
     chats.listMessages.mockClear();
     await readGet(new Request("http://x/api/chats/c1"), context);
-    expect(chats.listMessages).toHaveBeenCalledWith("c1", {});
+    expect(chats.listMessages).toHaveBeenCalledWith("c1", { limit: CHAT_MESSAGE_PAGE_SIZE });
   });
 
   it("passes a tail bound through", async () => {
     chats.get.mockResolvedValue(chat() as never);
     chats.listMessages.mockClear();
     await readGet(new Request("http://x/api/chats/c1?sinceSeq=3"), context);
-    expect(chats.listMessages).toHaveBeenCalledWith("c1", { sinceSeq: 3 });
+    expect(chats.listMessages).toHaveBeenCalledWith("c1", {
+      sinceSeq: 3,
+      limit: CHAT_MESSAGE_PAGE_SIZE,
+    });
   });
 
   it("treats sinceSeq=0 as the bound it is, not as an absent one", async () => {
     chats.get.mockResolvedValue(chat() as never);
     chats.listMessages.mockClear();
     await readGet(new Request("http://x/api/chats/c1?sinceSeq=0"), context);
-    expect(chats.listMessages).toHaveBeenCalledWith("c1", { sinceSeq: 0 });
+    expect(chats.listMessages).toHaveBeenCalledWith("c1", {
+      sinceSeq: 0,
+      limit: CHAT_MESSAGE_PAGE_SIZE,
+    });
   });
 
   it("reads an empty sinceSeq as absent, not as zero", async () => {
@@ -117,15 +124,17 @@ describe("GET /api/chats/{chatId}", () => {
     chats.get.mockResolvedValue(chat() as never);
     chats.listMessages.mockClear();
     await readGet(new Request("http://x/api/chats/c1?sinceSeq="), context);
-    expect(chats.listMessages).toHaveBeenCalledWith("c1", {});
+    expect(chats.listMessages).toHaveBeenCalledWith("c1", { limit: CHAT_MESSAGE_PAGE_SIZE });
   });
 
   it("ignores a bound it cannot read rather than refusing the request", async () => {
     chats.get.mockResolvedValue(chat() as never);
     chats.listMessages.mockClear();
     await readGet(new Request("http://x/api/chats/c1?sinceSeq=nope"), context);
-    expect(chats.listMessages).toHaveBeenCalledWith("c1", {});
+    expect(chats.listMessages).toHaveBeenCalledWith("c1", { limit: CHAT_MESSAGE_PAGE_SIZE });
     await readGet(new Request("http://x/api/chats/c1?sinceSeq=-2"), context);
-    expect(chats.listMessages).toHaveBeenLastCalledWith("c1", {});
+    expect(chats.listMessages).toHaveBeenLastCalledWith("c1", {
+      limit: CHAT_MESSAGE_PAGE_SIZE,
+    });
   });
 });
