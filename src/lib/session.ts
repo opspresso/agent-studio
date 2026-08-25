@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { auth } from "./auth";
 import { isEffectiveAdmin } from "./memberAccess";
 import { isConfiguredAdmin } from "./runtime-settings";
+import { resolvePublicBaseUrl } from "./public-url";
 
 export interface SessionUser {
   id: string;
@@ -31,6 +32,51 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   };
 }
 
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Whether a browser request may spend a session cookie on a mutation.
+ *
+ * Bearer- and signature-authenticated routes do not call this. For a session
+ * route the browser-supplied Origin must name this deployment exactly; absent
+ * Origin is refused because HTML forms can spend cookies without custom
+ * headers. The public URL covers a reverse proxy whose external origin differs
+ * from the server-side request URL.
+ */
+export async function isSameOriginMutation(
+  request: Request,
+  resolveBaseUrl: (fallbackOrigin?: string) => Promise<string> = resolvePublicBaseUrl,
+): Promise<boolean> {
+  if (SAFE_METHODS.has(request.method.toUpperCase())) {
+    return true;
+  }
+  const rawOrigin = request.headers.get("origin");
+  if (!rawOrigin || rawOrigin === "null") {
+    return false;
+  }
+  try {
+    const origin = new URL(rawOrigin).origin;
+    // The Origin grammar is scheme + authority only. Normalising an attacker-
+    // supplied URL with a path into an allowed origin would accept a malformed
+    // header that no browser emits.
+    if (rawOrigin !== origin) {
+      return false;
+    }
+    const requestOrigin = new URL(request.url).origin;
+    if (origin === requestOrigin) {
+      return true;
+    }
+    return origin === new URL(await resolveBaseUrl(requestOrigin)).origin;
+  } catch {
+    return false;
+  }
+}
+
+/** A session exists, but this browser origin may not spend it. */
+export function crossOriginForbidden(): Response {
+  return Response.json({ error: "Cross-origin mutation refused" }, { status: 403 });
+}
+
 /**
  * Wrap a route handler with session enforcement.
  * Usage: `export const GET = withAuth(async (user, request, ctx) => Response.json(...))`
@@ -42,6 +88,10 @@ export function withAuth<T extends unknown[]>(
     const user = await getSessionUser();
     if (!user) {
       return unauthorized();
+    }
+    const request = args[0];
+    if (request instanceof Request && !(await isSameOriginMutation(request))) {
+      return crossOriginForbidden();
     }
     return handler(user, ...args);
   };

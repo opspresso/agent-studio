@@ -1,18 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { verify, getMemberTier, getSessionUser, assertAccessible } = vi.hoisted(() => ({
-  verify: vi.fn(),
-  getMemberTier: vi.fn(),
-  getSessionUser: vi.fn(),
-  assertAccessible: vi.fn(),
-}));
+const { verify, getMemberTier, getSessionUser, assertAccessible, isSameOriginMutation } = vi.hoisted(
+  () => ({
+    verify: vi.fn(),
+    getMemberTier: vi.fn(),
+    getSessionUser: vi.fn(),
+    assertAccessible: vi.fn(),
+    isSameOriginMutation: vi.fn(async () => true),
+  }),
+);
 
 vi.mock("@/lib/container", () => ({
   apiTokenUseCases: { verify },
   projectUseCases: { assertAccessible },
 }));
 vi.mock("@/lib/memberAccess", () => ({ getMemberTier }));
-vi.mock("@/lib/session", () => ({ getSessionUser }));
+vi.mock("@/lib/session", () => ({
+  getSessionUser,
+  isSameOriginMutation,
+  crossOriginForbidden: () =>
+    Response.json({ error: "Cross-origin mutation refused" }, { status: 403 }),
+}));
 
 const { authenticateExecution } = await import("@/app/api/projects/_lib/executionAuth");
 
@@ -34,6 +42,7 @@ describe("authenticateExecution with a bearer token", () => {
       email: "owner@x.com",
       viaToken: true,
     });
+    expect(isSameOriginMutation).not.toHaveBeenCalled();
   });
 
   it("403s a valid token whose owner's tier does not allow tokens", async () => {
@@ -73,6 +82,7 @@ describe("authenticateExecution with a session", () => {
     assertAccessible.mockResolvedValue({ name: "p" });
     const principal = await authenticateExecution(request(), "p");
     expect(principal).toMatchObject({ email: "u@x.com", viaToken: false });
+    expect(isSameOriginMutation).toHaveBeenCalledOnce();
     expect(getMemberTier).not.toHaveBeenCalled();
     expect(assertAccessible).toHaveBeenCalledWith("p", "u@x.com");
   });
@@ -96,5 +106,22 @@ describe("authenticateExecution with a session", () => {
     getSessionUser.mockResolvedValue(null);
     const result = await authenticateExecution(request(), "p");
     expect((result as Response).status).toBe(401);
+  });
+
+  it("403s a cross-origin session before checking project visibility", async () => {
+    getSessionUser.mockResolvedValue({
+      id: "u1",
+      email: "u@x.com",
+      name: "U",
+      image: null,
+      tier: "member",
+    });
+    isSameOriginMutation.mockResolvedValueOnce(false);
+
+    const result = await authenticateExecution(request(), "p");
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(403);
+    expect(assertAccessible).not.toHaveBeenCalled();
   });
 });

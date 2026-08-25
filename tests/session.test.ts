@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SessionUser } from "@/lib/session";
 
 // The auth wrapper is the enforcement point every route handler shares. Mock the
 // Better Auth session lookup; run the real wrappers *and* the real admin rule.
@@ -14,7 +15,9 @@ const { authMock } = vi.hoisted(() => ({ authMock: { getSession: vi.fn() } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: authMock.getSession } } }));
 
-const { withAuth, withMemberAuth, withAdminAuth, isAdmin } = await import("@/lib/session");
+const { isAdmin, isSameOriginMutation, withAuth, withMemberAuth, withAdminAuth } = await import(
+  "@/lib/session"
+);
 
 const okHandler = vi.fn(async () => Response.json({ ok: true }));
 const session = (email: string, tier?: string) => ({
@@ -59,6 +62,56 @@ describe("withAuth", () => {
     const res = await withAuth(okHandler)();
     expect(res.status).toBe(200);
     expect(okHandler).toHaveBeenCalledWith(expect.objectContaining({ email: "u@x.com" }));
+  });
+
+  it("refuses a cross-origin mutation before calling the session handler", async () => {
+    authMock.getSession.mockResolvedValue(session("u@x.com"));
+    const handler = vi.fn(async (_user: SessionUser, _request: Request) =>
+      Response.json({ ok: true }),
+    );
+    const request = new Request("https://studio.test/api/settings", {
+      method: "PUT",
+      headers: { Origin: "https://attacker.test" },
+    });
+
+    const res = await withAuth(handler)(request);
+
+    expect(res.status).toBe(403);
+    expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe("session mutation origin", () => {
+  const request = (method: string, origin?: string) =>
+    new Request("https://internal.test/api/settings", {
+      method,
+      ...(origin ? { headers: { Origin: origin } } : {}),
+    });
+  const publicBase = async () => "https://studio.test/base";
+
+  it("allows safe methods without an Origin", async () => {
+    await expect(isSameOriginMutation(request("GET"), publicBase)).resolves.toBe(true);
+  });
+
+  it("allows the request origin and the configured public origin", async () => {
+    await expect(
+      isSameOriginMutation(request("POST", "https://internal.test"), publicBase),
+    ).resolves.toBe(true);
+    await expect(
+      isSameOriginMutation(request("DELETE", "https://studio.test"), publicBase),
+    ).resolves.toBe(true);
+  });
+
+  it("refuses absent, opaque, malformed, and cross-site mutation origins", async () => {
+    for (const origin of [
+      undefined,
+      "null",
+      "not a URL",
+      "https://internal.test/path",
+      "https://attacker.test",
+    ]) {
+      await expect(isSameOriginMutation(request("POST", origin), publicBase)).resolves.toBe(false);
+    }
   });
 });
 

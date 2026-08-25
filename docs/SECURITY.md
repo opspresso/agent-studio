@@ -308,6 +308,19 @@ JSON 본문은 schema 검증 전에 bounded reader를 지난다. 관리·편집 
 거부한다. Zod의 필드 크기 검사는 파싱 뒤의 값 규칙이지, 파싱 전에 발생하는 메모리 할당 제한이
 아니다.
 
+## Session mutation과 CSRF
+
+Cookie session으로 인증하는 `POST`·`PUT`·`PATCH`·`DELETE`는 `Origin`이 request origin 또는
+설정된 `PUBLIC_BASE_URL` origin과 정확히 같아야 한다. Origin이 없거나 `null`이거나 URL로
+해석되지 않으면 403이다. 세 session wrapper가 일반 console API를 한 번에 보호하고, project
+실행 API는 bearer project token을 먼저 검증한 뒤 cookie session으로 fallback할 때 같은 검사를
+적용한다. bearer token, webhook signature, A2A key처럼 cookie를 쓰지 않는 머신 호출에는 CSRF
+검사를 적용하지 않는다.
+
+리버스 프록시 밖의 origin과 앱이 보는 request origin이 다르면 `PUBLIC_BASE_URL`을 반드시
+설정하라. 이 값은 외부 callback URL뿐 아니라 어떤 browser origin이 session cookie를 쓸 수
+있는지 결정한다.
+
 ## 응답 헤더
 
 `next.config.ts` 에서 모든 경로에 설정한다. `frame-ancestors 'none'` 과

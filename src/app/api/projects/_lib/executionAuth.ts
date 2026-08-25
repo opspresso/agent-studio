@@ -3,7 +3,7 @@ import { tierMayUseApiTokens } from "@/domain/member/tiers";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { unauthorized } from "@/shared/unauthorized";
 import { getMemberTier } from "@/lib/memberAccess";
-import { getSessionUser } from "@/lib/session";
+import { crossOriginForbidden, getSessionUser, isSameOriginMutation } from "@/lib/session";
 import { apiError } from "@/app/api/_lib/http";
 import { apiTokenUseCases, projectUseCases } from "@/lib/container";
 
@@ -68,6 +68,9 @@ export async function authenticateExecution(
   const user = await getSessionUser();
   if (!user) {
     return unauthorized();
+  }
+  if (!(await isSameOriginMutation(request))) {
+    return crossOriginForbidden();
   }
   try {
     // The visibility gate, for the person path only. A bearer token skipped it
