@@ -110,10 +110,10 @@ export async function register(): Promise<void> {
     ]);
     const modelCatalog = createModelCatalogRefresher({
       // An admin's uploaded document over the published catalog, and under
-      // `MODELS_CATALOG_URL=none` (answered as `undefined`) the upload alone:
-      // no fetch leaves this process, and a tick with nothing stored is
-      // silent. The same composition the console's refresh button uses
-      // (`lib/container.ts`).
+      // no `MODELS_CATALOG_URL` or `none` (answered as `undefined`) means the
+      // upload alone: no fetch leaves this process, and a tick with nothing
+      // stored is silent. The same composition the console's refresh button
+      // uses (`lib/container.ts`).
       source: createCompositeModelCatalogSource({
         stored: modelCatalogRepository,
         remote:

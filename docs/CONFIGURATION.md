@@ -199,7 +199,7 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
   `next build` 가 보는 것이고, 발행된 카탈로그를 못 가져온 부팅이 기대는 것이다.
   `pnpm sync-models` 가 갱신하고(`--check` 는 뒤처졌으면 1 로 종료), 릴리즈 전이나 테스트가 새
   모델을 봐야 할 때 돌린다. agent-models 가 바뀔 때마다는 아니다.
-- **발행된 카탈로그**. 부팅 때 `MODELS_CATALOG_URL` 에서 읽어(`src/instrumentation.ts`, 첫 요청
+- **발행된 카탈로그**. `MODELS_CATALOG_URL` 을 설정하면 부팅 때 읽어(`src/instrumentation.ts`, 첫 요청
   전에 await, 소스 자체의 10초 데드라인), 이후 `MODELS_CATALOG_REFRESH_MS` 마다 다시 읽는다
   (`application/llm/modelCatalogRefresh.ts`). 실패는 로그를 남기고 레지스트리를 그대로 둔다.
   정적 사이트가 내려갔다고 부팅을 거부하는 것은 낡은 가격을 무서비스와 바꾸는 일이다.
@@ -225,7 +225,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `MODELS_CATALOG_URL` | `https://models.opspresso.com/models.json` | boot | 발행된 카탈로그의 주소. 구성값이지 사용자가 친 주소가 아니라서 SSRF 가드를 지나지 않는다. **`none`**(대소문자 무관)은 원격 읽기를 통째로 끈다. 부팅에도 간격에도 fetch 가 없고, 닿지 않을 사이트에 대한 경고도 없다. 폐쇄망의 설정이며, 그때의 카탈로그는 스냅샷과 admin 의 업로드뿐이다. 간격 자체는 켜져 있다: 다른 인스턴스의 업로드와 self-hosted 선언이 이 프로세스에 닿는 길이기도 하므로, `none` 아래의 틱은 데이터베이스만 읽는다. |
+| `MODELS_CATALOG_URL` | — (원격 읽기 꺼짐) | boot | 발행된 카탈로그의 주소. 명시한 배포만 부팅과 간격마다 읽는다. 구성값이지 사용자가 친 주소가 아니라서 SSRF 가드를 지나지 않는다. 미설정 또는 **`none`**(대소문자 무관)이면 fetch 가 없고, 카탈로그는 스냅샷과 admin 의 업로드뿐이다. 간격 자체는 켜져 있다: 다른 인스턴스의 업로드와 self-hosted 선언이 이 프로세스에 닿는 길이므로, URL 없는 틱은 데이터베이스만 읽는다. |
 | `MODELS_CATALOG_REFRESH_MS` | `3600000` (1시간) | boot | 다시 읽는 간격. `0` 이면 간격을 끄고 부팅 때만 읽는다. |
 
 **Bedrock 의 모델 목록은 이 프로토콜이 도달할 수 있는 모델의 목록이 아니다.** OpenAI 호환

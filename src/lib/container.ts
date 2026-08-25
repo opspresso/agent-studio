@@ -253,8 +253,8 @@ export const testModel = createTestModel(channel);
  */
 export const refreshModelCatalog = createModelCatalogRefresher({
   // The same precedence the boot path composes: an admin's uploaded document
-  // over the published catalog, and under `MODELS_CATALOG_URL=none` the
-  // upload alone.
+  // over the published catalog, and without `MODELS_CATALOG_URL` (or with
+  // `none`) the upload alone.
   source: createCompositeModelCatalogSource({
     stored: modelCatalogRepository,
     remote:

@@ -2,18 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { config } from "@/lib/config";
 
 /**
- * `MODELS_CATALOG_URL`: the published catalog's address, with `none` as the
- * one value that is not an address — the air-gapped install, answered as
- * `undefined` so neither wiring site builds a remote source at all.
+ * `MODELS_CATALOG_URL`: the published catalog's address. Unset and `none` are
+ * answered as `undefined` so neither wiring site builds a remote source.
  */
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe("config.modelsCatalogUrl", () => {
-  it("defaults to the published catalog and takes an address as given", () => {
+  it("does not read remotely by default and takes an address as given", () => {
     vi.stubEnv("MODELS_CATALOG_URL", "");
-    expect(config.modelsCatalogUrl).toBe("https://models.opspresso.com/models.json");
+    expect(config.modelsCatalogUrl).toBeUndefined();
     vi.stubEnv("MODELS_CATALOG_URL", "https://mirror.internal/models.json");
     expect(config.modelsCatalogUrl).toBe("https://mirror.internal/models.json");
   });

@@ -1488,8 +1488,8 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
   채널이 아예 설정돼 있지 않으면 `400`. 선언 자체는 `PUT /api/settings` 의
   `selfHostedModels` 로 한다.
 - `catalog/document` 는 admin 이 **손으로 설치하는 카탈로그**. 발행된 카탈로그에 닿지
-  못하는 배포(`MODELS_CATALOG_URL=none`)의 길이지만, 어느 배포에서든 업로드는 지울 때까지
-  네트워크보다 우선한다. `GET` 은 "설치된 것 없음" 을 실패가 아니라 상태로 답한다(콘솔이
+  못하는 배포(`MODELS_CATALOG_URL` 미설정 또는 `none`)의 길이지만, 어느 배포에서든 업로드는
+  지울 때까지 네트워크보다 우선한다. `GET` 은 "설치된 것 없음" 을 실패가 아니라 상태로 답한다(콘솔이
   그린다). `PUT` 은 refresh 가 검증하는 방식 그대로 먼저 검증해. 로더의 이유를 담은 400.
   올린 사람의 주소와 시각과 함께 저장하고, 답하기 전에 레지스트리를 갱신한다. `stored: true`
   옆의 `refreshed: false` 는 레지스트리가 이미 이 업로드를 들고 있었다는 뜻이다. `DELETE` 는

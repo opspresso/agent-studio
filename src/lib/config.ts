@@ -482,19 +482,18 @@ export const config = {
    * (`src/domain/llm/catalog.json`) serves until then and whenever the fetch
    * fails.
    *
-   * `none` (case-insensitive) turns the remote read off altogether and is
-   * answered as `undefined`: no fetch at boot, none on the interval, and no
-   * warning about a site that was never meant to be reached — the
-   * air-gapped install, whose catalog is the snapshot or the document an
-   * admin uploads (`PUT /api/models/catalog/document`). The interval itself
-   * stays on, since it is also how an upload on another instance and a
-   * self-hosted declaration reach this process; under `none` a tick reads
-   * the database and nothing else.
+   * Unset or `none` (case-insensitive) turns the remote read off altogether
+   * and is answered as `undefined`: no fetch at boot, none on the interval,
+   * and no warning about a site that was never configured. The catalog is
+   * then the snapshot or the document an admin uploads
+   * (`PUT /api/models/catalog/document`). The interval itself stays on,
+   * since it is also how an upload on another instance and a self-hosted
+   * declaration reach this process; without a URL a tick reads the database
+   * and nothing else.
    */
   get modelsCatalogUrl(): string | undefined {
-    const value =
-      optionalEnv(process.env.MODELS_CATALOG_URL) ?? "https://models.opspresso.com/models.json";
-    return value.toLowerCase() === "none" ? undefined : value;
+    const value = optionalEnv(process.env.MODELS_CATALOG_URL);
+    return value === undefined || value.toLowerCase() === "none" ? undefined : value;
   },
   /** How often the catalog is re-read; 0 disables the interval (the boot read still happens). */
   get modelsCatalogRefreshMs(): number {

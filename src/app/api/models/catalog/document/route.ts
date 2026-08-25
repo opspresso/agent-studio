@@ -6,8 +6,8 @@ import { withAdminAuth } from "@/lib/session";
 /**
  * The catalog document an admin installs by hand — the offline path for a
  * deployment with no route to agent-models' published catalog
- * (`MODELS_CATALOG_URL=none`), though an upload wins over the network on any
- * deployment until it is removed.
+ * (no `MODELS_CATALOG_URL`, or `none`), though an upload wins over the network
+ * on any deployment until it is removed.
  *
  * Three verbs on one address:
  *
