@@ -138,6 +138,32 @@ describe("runtime settings precedence", () => {
     expect(mockGet).toHaveBeenCalledTimes(2);
   });
 
+  it("shares one database read across concurrent cache misses", async () => {
+    let resolveRead!: (value: AppSettings) => void;
+    mockGet.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+
+    const admins = getAdminEmails();
+    const channel = getLlmChannelConfig();
+    expect(mockGet).toHaveBeenCalledTimes(1);
+
+    resolveRead({
+      adminEmails: "admin@example.com",
+      llmBaseUrl: "https://llm.example.com/v1",
+      llmApiKey: encryptSecret("sk-db"),
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    await expect(admins).resolves.toEqual(["admin@example.com"]);
+    await expect(channel).resolves.toEqual({
+      baseUrl: "https://llm.example.com/v1",
+      apiKey: "sk-db",
+    });
+    expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
   it("does not let an earlier read repopulate the cache after invalidation", async () => {
     let resolveFirst!: (value: AppSettings) => void;
     mockGet
