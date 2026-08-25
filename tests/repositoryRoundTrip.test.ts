@@ -16,6 +16,7 @@ import { projectRepository } from "@/infrastructure/db/repositories/projectRepos
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
+import { artifactRepository } from "@/infrastructure/db/repositories/artifactRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
@@ -666,6 +667,43 @@ describe("chatRepository message round-trip", () => {
     expect(messages.find((m) => m.role === "user")).toEqual(userMessage);
     expect(messages.find((m) => m.role === "tool")).toEqual(toolMessage);
     expect(messages.find((m) => m.role === "assistant")).toEqual(assistantMessage);
+  });
+});
+
+describe("artifactRepository round-trip", () => {
+  /**
+   * The write spreads the whole artifact; the read names its fields. A field
+   * left out of the read stores fine, type-checks fine and comes back
+   * `undefined` — and `ownerEmail` is the one ownership is decided from, so
+   * losing it turns a person's own artifact into a row they may neither open
+   * nor delete. Every optional field is asserted, not only that one.
+   */
+  it("reads back every field it was given", async () => {
+    const artifact = {
+      artifactId: "a1",
+      kind: "image" as const,
+      source: "generated" as const,
+      key: "artifacts/image/a1.png",
+      mimeType: "image/png",
+      filename: "chart.png",
+      byteSize: 1234,
+      projectName: "p1",
+      versionName: "v1",
+      actor: { kind: "slack" as const, id: "U0ABCDEF" },
+      // A Slack run looks the asker's address up so their pictures land in
+      // their own gallery; the actor stays the Slack id.
+      ownerEmail: "asker@example.com",
+      ancestry: ["p1", "child"],
+      producedBy: "child",
+      model: "openai/gpt-image-1",
+      runId: "r1",
+      prompt: "a bar chart",
+      createdAt: NOW,
+    };
+
+    await artifactRepository.put(artifact);
+
+    expect(await artifactRepository.get("a1")).toEqual(artifact);
   });
 });
 
