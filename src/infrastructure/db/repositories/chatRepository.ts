@@ -11,7 +11,7 @@ import {
   type Item,
 } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
-import type { ChatRepository } from "@/domain/chat/repository";
+import { CHAT_PAGE, MAX_CHAT_PAGE, type ChatRepository } from "@/domain/chat/repository";
 import { boundedPageLimit, MAX_PAGE_LIMIT } from "@/shared/pageLimit";
 import type {
   Chat,
@@ -133,7 +133,7 @@ export const chatRepository: ChatRepository = {
       index: "GSI1",
       pk: keys.chatOwnerPartition(ownerEmail),
       forward: false,
-      ...(options.limit !== undefined ? { limit: options.limit } : {}),
+      limit: boundedPageLimit(options.limit ?? CHAT_PAGE, MAX_CHAT_PAGE),
       notExpiredAt: Math.floor(Date.now() / 1000),
     });
     return items.map(fromChatItem);

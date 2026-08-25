@@ -3,6 +3,7 @@ import type { FakeStore } from "./fakeStore";
 import { keys } from "@/infrastructure/db/keys";
 import { expiresAtSeconds, RETENTION, RUN_LOG_TTL_SECONDS } from "@/infrastructure/db/ttl";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
+import { CHAT_PAGE, MAX_CHAT_PAGE } from "@/domain/chat/repository";
 
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
@@ -147,6 +148,20 @@ describe("usage TTL", () => {
 
 describe("chat TTL", () => {
   const chat = { chatId: "c1", title: "t", ownerEmail: "u@e.com", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-06-15T00:00:00Z" };
+
+  it("bounds owner listings even when called without the API guard", async () => {
+    const query = vi.spyOn(store, "queryItems");
+
+    await chatRepository.listByOwner("u@e.com");
+    expect(query).toHaveBeenLastCalledWith(
+      expect.objectContaining({ limit: CHAT_PAGE }),
+    );
+
+    await chatRepository.listByOwner("u@e.com", { limit: MAX_CHAT_PAGE + 1_000 });
+    expect(query).toHaveBeenLastCalledWith(
+      expect.objectContaining({ limit: MAX_CHAT_PAGE }),
+    );
+  });
 
   it("refreshes chat expiresAt from updatedAt on write", async () => {
     await chatRepository.create({ ...chat, updatedAt: chat.createdAt });
