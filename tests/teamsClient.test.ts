@@ -192,6 +192,18 @@ describe("talking to the Bot Framework", () => {
     expect(calls.some((c) => c.url === "https://contoso.sharepoint.com/dl/x")).toBe(false);
   });
 
+  it("does not send the bot token over HTTP even when the attachment host matches", async () => {
+    const calls = stubFetch();
+    const downgraded = "http://smba.trafficmanager.net/emea/v3/attachments/1";
+
+    const body = await teamsClient.downloadAttachment(CREDS, SERVICE, downgraded, 100);
+
+    expect(body.toString()).toBe("public bytes");
+    expect(publicFetches).toEqual([downgraded]);
+    expect(calls.some((call) => call.url.includes("/oauth2/v2.0/token"))).toBe(false);
+    expect(calls.some((call) => call.url === downgraded)).toBe(false);
+  });
+
   it("does not answer a rotated or mistyped secret from the cache", async () => {
     let tokenCalls = 0;
     stubFetch((url) => {

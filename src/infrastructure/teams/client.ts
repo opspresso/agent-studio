@@ -278,21 +278,22 @@ export const teamsClient: TeamsClientPort = {
    * to the model.
    */
   async downloadAttachment(credentials, serviceUrl, url, maxBytes) {
-    let host: string;
+    let attachmentUrl: URL;
     try {
-      host = new URL(url).host;
+      attachmentUrl = new URL(url);
     } catch {
       throw new Error("Teams attachment url is not a URL");
     }
-    const serviceHost = (() => {
+    const serviceOrigin = (() => {
       try {
-        return new URL(serviceUrl).host;
+        const parsed = new URL(serviceUrl);
+        return parsed.protocol === "https:" ? parsed.origin : "";
       } catch {
         return "";
       }
     })();
     const res =
-      host === serviceHost && serviceHost !== ""
+      attachmentUrl.protocol === "https:" && attachmentUrl.origin === serviceOrigin
         ? await teamsFetch(
             url,
             { headers: { Authorization: `Bearer ${(await appToken(credentials)).token}` } },
