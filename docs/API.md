@@ -807,7 +807,7 @@ agent 가 아닌 project 에 대한 `PUT` 은 400 이고, 저장되거나 전달
 마찬가지다. `test` 는 `{ ok: true, botId, botUsername }` 을 돌려주고, Telegram 이 설정되지
 않았거나 꺼져 있으면 `400`, Bot API 실패면 `502` 다. `webhook` 도 같은 방식으로 답한다.
 `chats` 는 현재 설정된 봇이 실제로 응답 대상으로 받은 chat 과 포럼 topic 을 최근에 본 순서로
-`{ chats: [{ chatId, chatType, title, threadId?, lastSeenAt }] }` 에 담아 돌려준다. Telegram Bot API
+최근 100개까지 `{ chats: [{ chatId, chatType, title, threadId?, lastSeenAt }] }` 에 담아 돌려준다. Telegram Bot API
 에는 봇의 chat 목록을 조회하는 호출이 없으므로, 아직 이 봇과 대화하지 않은 목적지는 나타나지
 않는다. 토큰을 바꾸면 새 봇의 목록만 보인다.
 

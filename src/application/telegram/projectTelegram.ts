@@ -42,6 +42,9 @@ export interface ProjectTelegramUpdate {
   enabled?: boolean;
 }
 
+/** Observed chats the settings surface may render in one bounded selector. */
+export const MAX_TELEGRAM_DESTINATIONS = 100;
+
 /** What `getMe` says about a token, as far as this slice needs it. */
 export interface TelegramBotIdentity {
   id: number;
@@ -96,7 +99,9 @@ export async function listProjectTelegramDestinations(
   const project = await assertProjectWritable(repo, name, userEmail);
   const runtime = resolveProjectTelegramCredentials(cipher, project);
   const botId = runtime ? botIdFromToken(runtime.botToken) : undefined;
-  return botId === undefined ? [] : destinations.list(project.name, botId);
+  return botId === undefined
+    ? []
+    : destinations.list(project.name, botId, MAX_TELEGRAM_DESTINATIONS);
 }
 
 async function updateProject(

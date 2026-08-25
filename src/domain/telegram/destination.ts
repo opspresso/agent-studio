@@ -12,5 +12,9 @@ export interface TelegramDestinationRepository {
     botId: number | string,
     destination: TelegramDestination,
   ): Promise<void>;
-  list(projectName: string, botId: number | string): Promise<TelegramDestination[]>;
+  list(
+    projectName: string,
+    botId: number | string,
+    limit: number,
+  ): Promise<TelegramDestination[]>;
 }

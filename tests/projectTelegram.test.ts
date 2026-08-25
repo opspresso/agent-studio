@@ -236,7 +236,7 @@ describe("runtime, binding, test and webhook", () => {
     await expect(
       listProjectTelegramDestinations(repo, destinations, "bot-proj", OWNER, secretCipher),
     ).resolves.toHaveLength(1);
-    expect(list).toHaveBeenCalledWith("bot-proj", 42);
+    expect(list).toHaveBeenCalledWith("bot-proj", 42, 100);
     await expect(
       listProjectTelegramDestinations(repo, destinations, "bot-proj", OTHER, secretCipher),
     ).rejects.toThrow(ForbiddenError);

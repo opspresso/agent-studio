@@ -65,7 +65,7 @@ describe("telegramDestinationRepository", () => {
       lastSeenAt: "2026-01-03T00:00:00.000Z",
     });
 
-    expect(await telegramDestinationRepository.list("telegram-project", 42)).toEqual([
+    expect(await telegramDestinationRepository.list("telegram-project", 42, 100)).toEqual([
       {
         chatId: -5,
         chatType: "supergroup",
@@ -82,7 +82,7 @@ describe("telegramDestinationRepository", () => {
     ]);
   });
 
-  it("lists observed destinations beyond one storage page", async () => {
+  it("bounds observed destinations to the newest application page", async () => {
     seedProject("many-destinations");
     for (let index = 0; index < 205; index++) {
       await telegramDestinationRepository.put("many-destinations", 42, {
@@ -93,11 +93,13 @@ describe("telegramDestinationRepository", () => {
       });
     }
 
-    const destinations = await telegramDestinationRepository.list("many-destinations", 42);
-    expect(destinations).toHaveLength(205);
+    const destinations = await telegramDestinationRepository.list("many-destinations", 42, 100);
+    expect(destinations).toHaveLength(100);
     expect(destinations[0]?.chatId).toBe(205);
-    expect(destinations.at(-1)?.chatId).toBe(1);
-    await expect(telegramDestinationRepository.list("many-destinations", 43)).resolves.toEqual([]);
+    expect(destinations.at(-1)?.chatId).toBe(106);
+    await expect(telegramDestinationRepository.list("many-destinations", 43, 100)).resolves.toEqual(
+      [],
+    );
   });
 });
 

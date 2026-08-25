@@ -199,6 +199,9 @@ export const keys = {
     PK: `PROJECT#${projectName}`,
     prefix: `TELEGRAMDESTINATION#${botId}#`,
   }),
+  telegramDestinationIndexPrefix: (projectName: string, botId: number | string) => ({
+    GSI2PK: `TELEGRAMDESTINATION#${projectName}#${botId}`,
+  }),
   telegramDestination: (
     projectName: string,
     botId: number | string,
