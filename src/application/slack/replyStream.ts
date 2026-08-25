@@ -180,14 +180,18 @@ function usingPhrase(title: string): string {
  * only when it has any, and a `markdown_text: ""` on every healthy run is a
  * payload Slack was never sent before.
  */
-function textChunks(text: string): SlackChunk[] {
-  const chunks: SlackChunk[] = [];
+function textPieces(text: string): string[] {
+  const pieces: string[] = [];
   for (let at = 0; at < text.length; ) {
     const cut = cutPoint(text, at, MAX_STREAM_TEXT, MAX_STREAM_TEXT / 10);
-    chunks.push({ type: "markdown_text", text: text.slice(at, cut) });
+    pieces.push(text.slice(at, cut));
     at = cut;
   }
-  return chunks;
+  return pieces;
+}
+
+function textChunks(text: string): SlackChunk[] {
+  return textPieces(text).map((piece) => ({ type: "markdown_text", text: piece }));
 }
 
 function withSuffix(text: string, suffix: string): string {
@@ -874,19 +878,45 @@ export function createReplySink(
           // Split, because what is left here is unbounded: every append that
           // Slack refused is still owed, so a run whose writes all failed
           // arrives at the close holding the entire answer.
-          const closing: SlackChunk[] = [...closingChunks, ...textChunks(remaining)];
-          await slack.stopStream(token, {
-            channel: messageChannel,
-            ts: messageTs,
-            ...(payload === "chunks"
-              ? closing.length > 0
-                ? { chunks: closing }
-                : {}
-              : remaining
-                ? { markdown_text: remaining.slice(0, MAX_STREAM_TEXT) }
-                : {}),
-          });
-          flushed = fullText.length;
+          if (payload === "chunks") {
+            const closing: SlackChunk[] = [...closingChunks, ...textChunks(remaining)];
+            await slack.stopStream(token, {
+              channel: messageChannel,
+              ts: messageTs,
+              ...(closing.length > 0 ? { chunks: closing } : {}),
+            });
+            flushed = fullText.length;
+          } else {
+            // An assistant thread closes with one `markdown_text`, and one holds
+            // at most `MAX_STREAM_TEXT` characters — so on this side the split
+            // above has nowhere to put its second piece. Cutting to the cap
+            // instead dropped the rest of the answer without a word, in exactly
+            // the case the split exists for: a run whose appends were all
+            // refused arrives here holding all of it. The tail follows as its
+            // own messages, cut on the same boundaries.
+            const pieces = textPieces(remaining);
+            const [head, ...rest] = pieces;
+            await slack.stopStream(token, {
+              channel: messageChannel,
+              ts: messageTs,
+              ...(head ? { markdown_text: head } : {}),
+            });
+            flushed = fullText.length;
+            for (const piece of rest) {
+              // Its own failure, never the close's: the stream is stopped and
+              // `flushed` has moved, so the recovery below would re-send an
+              // answer the reader is already holding.
+              await slack
+                .postMessage(token, {
+                  channel: target.channel,
+                  thread_ts: target.threadTs,
+                  text: piece,
+                })
+                .catch((error) =>
+                  log.error("slack", "a continuation of the final reply failed", error),
+                );
+            }
+          }
         } else {
           // An opened message must not be left holding the loading indicator,
           // so unlike the unopened case this always writes something.
