@@ -31,6 +31,23 @@ import { cutCodePoints } from "@/shared/utf8Text";
  * before this runs, and dropping it afterwards is what stops it appearing twice
  * in a document that has no `<head>` for the removal below to catch.
  */
+/**
+ * How far a tag's attributes may run before this stops reading it as a tag.
+ *
+ * The bound is on the *work*, not on the markup: `[^>]*` after an element name
+ * scans to the end of the input at every position the name appears, so a page
+ * of `<svg` with no `>` anywhere costs one full pass per occurrence — quadratic,
+ * and measured at 24 seconds of blocked event loop for a document inside the
+ * source cap below. That is the failure the cap was supposed to prevent, and a
+ * cap on length cannot: the work is what has to be bounded. A kilobyte covers
+ * every tag a page really writes (a `style`, a `srcset`, a `data-` payload) and
+ * takes the pathological case from quadratic to linear-with-a-constant.
+ *
+ * A tag whose attributes run past it is left alone here and removed by
+ * `stripTags`, which scans rather than backtracks and has no bound at all.
+ */
+const MAX_TAG_CHARS = 1024;
+
 const DROPPED_ELEMENTS = ["script", "style", "noscript", "svg", "template", "iframe", "title"];
 
 /** Blocks that read as paragraphs: one blank line between them. */
@@ -98,7 +115,26 @@ function collapseSource(value: string): string {
 
 /** Also drops a trailing unterminated tag, which has no `>` to match. */
 function stripTags(value: string): string {
-  return value.replace(/<[^>]*>/g, "").replace(/<[^>]*$/, "");
+  // A scan rather than `/<[^>]*>/g`: that pattern re-reads the rest of the
+  // input from every `<` that has no `>` after it, which is the same quadratic
+  // the tag bound above exists to stop — and this is the pass that has to take
+  // a tag of any length, because a page inlines a `data:` image as one. Two
+  // cursors and `indexOf` read each character once, and answer exactly what the
+  // pattern answered: a tag removed, a trailing unterminated one dropped.
+  let out = "";
+  let at = 0;
+  for (;;) {
+    const open = value.indexOf("<", at);
+    if (open < 0) {
+      return out + value.slice(at);
+    }
+    out += value.slice(at, open);
+    const close = value.indexOf(">", open + 1);
+    if (close < 0) {
+      return out;
+    }
+    at = close + 1;
+  }
 }
 
 /**
@@ -106,7 +142,7 @@ function stripTags(value: string): string {
  * the only statement of what the document *is*.
  */
 function titleOf(html: string): string | undefined {
-  const match = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const match = new RegExp(`<title[^>]{0,${MAX_TAG_CHARS}}>([\\s\\S]*?)<\\/title>`, "i").exec(html);
   const title = match?.[1] ? decodeEntities(stripTags(collapseSource(match[1]))).trim() : "";
   return title || undefined;
 }
@@ -152,25 +188,25 @@ export function htmlToText(source: string): string {
   // an element that ran to the end of the page.
   for (const element of DROPPED_ELEMENTS) {
     text = text.replace(
-      new RegExp(`<${element}\\b[^>]*(?<!/)>[\\s\\S]*?(?:<\\/${element}\\s*>|$)`, "gi"),
+      new RegExp(`<${element}\\b[^>]{0,${MAX_TAG_CHARS}}(?<!/)>[\\s\\S]*?(?:<\\/${element}\\s*>|$)`, "gi"),
       " ",
     );
   }
 
-  text = collapseSource(text.replace(/<head\b[^>]*>[\s\S]*?<\/head\s*>/gi, " "));
+  text = collapseSource(text.replace(new RegExp(`<head\\b[^>]{0,${MAX_TAG_CHARS}}>[\\s\\S]*?<\\/head\\s*>`, "gi"), " "));
 
   text = text
     // Single-newline boundaries: these group rather than separate.
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(tr|dt|dd)\s*>/gi, "\n")
-    .replace(/<li\b[^>]*>/gi, "\n- ")
+    .replace(new RegExp(`<li\\b[^>]{0,${MAX_TAG_CHARS}}>`, "gi"), "\n- ")
     // Cell boundaries carry meaning in a table — a row of values run together
     // is not readable as a row.
     .replace(/<\/t[dh]\s*>/gi, " | ")
     // Paragraph boundaries, both ends: a block is separated from its neighbour
     // whether the markup closed the previous one or not.
     .replace(new RegExp(`<\\/(${PARAGRAPH_ELEMENTS})\\s*>`, "gi"), "\n\n")
-    .replace(new RegExp(`<(${PARAGRAPH_ELEMENTS})\\b[^>]*>`, "gi"), "\n\n");
+    .replace(new RegExp(`<(${PARAGRAPH_ELEMENTS})\\b[^>]{0,${MAX_TAG_CHARS}}>`, "gi"), "\n\n");
 
   const body = normalize(decodeEntities(stripTags(text)));
 
