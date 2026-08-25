@@ -1,8 +1,7 @@
 import { Agent, fetch as undiciFetch, type Response as UndiciResponse } from "undici";
+import { MAX_OUTBOUND_REDIRECTS, OUTBOUND_REDIRECT_STATUSES } from "./redirectPolicy";
 import { resolvePublicUrl, SsrfError } from "./ssrfGuard";
 
-const MAX_REDIRECTS = 5;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_CACHED_AGENTS = 64;
 
 /**
@@ -145,10 +144,10 @@ export async function fetchPublicUrl(
       ...requestInit,
       dispatcher,
     } as Parameters<typeof undiciFetch>[1]);
-    if (!REDIRECT_STATUSES.has(response.status)) {
+    if (!OUTBOUND_REDIRECT_STATUSES.has(response.status)) {
       return asGlobalResponse(response);
     }
-    if (redirects >= MAX_REDIRECTS) {
+    if (redirects >= MAX_OUTBOUND_REDIRECTS) {
       await response.body?.cancel();
       throw new PublicFetchError(`Too many redirects from ${originalOrigin}`);
     }
