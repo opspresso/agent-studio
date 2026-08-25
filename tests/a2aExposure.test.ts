@@ -38,6 +38,7 @@ const project = (
 
 function makeDeps(
   projects: Project[],
+  missingVersions: ReadonlySet<string> = new Set(),
 ): A2aExposureDeps & {
   buildCard: ReturnType<typeof vi.fn>;
   projectReads: () => number;
@@ -64,6 +65,9 @@ function makeDeps(
       // Mirrors the real port: the repository resolves the literal "published"
       // through the project's pointer, so a project without one gets null.
       get: async (projectName: string, versionName: string) => {
+        if (missingVersions.has(`${projectName}/${versionName}`)) {
+          return null;
+        }
         if (versionName !== "published") {
           return version(versionName);
         }
@@ -132,6 +136,12 @@ describe("A2A exposure", () => {
       },
     ]);
     expect(deps.projectLists()).toBe(1);
+  });
+
+  it("omits a project whose published version row is missing", async () => {
+    const deps = makeDeps([project("dangling", "3")], new Set(["dangling/3"]));
+
+    await expect(listExposedProjects(deps, "viewer@example.com")).resolves.toEqual([]);
   });
 
   it("hides the card url when A2A is not configured, but still previews the card", async () => {

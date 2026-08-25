@@ -67,16 +67,21 @@ export async function listExposedProjects(
   userEmail: string,
 ): Promise<A2aProjectListItem[]> {
   const projects = await listAccessibleProjects(deps.projects, userEmail);
-  return Promise.all(
-    projects
-      .filter((project) => project.publishedVersion)
-      .map(async (project) => ({
+  const exposed = await Promise.all(
+    projects.map(async (project) => {
+      const version = await resolveRunnableVersion(deps.versions, project);
+      if (!version) {
+        return null;
+      }
+      return {
         name: project.name,
         displayName: project.displayName,
         description: project.description,
         cardUrl: await deps.cardUrlFor(project.name),
-      })),
+      };
+    }),
   );
+  return exposed.filter((project): project is A2aProjectListItem => project !== null);
 }
 
 /** What the console shows on a project's A2A tab. Null when the project is gone. */
