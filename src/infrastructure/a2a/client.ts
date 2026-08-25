@@ -102,8 +102,12 @@ const TASK_POLL_MS = 2000;
 
 /** Accepts either the card URL itself or the agent base URL. */
 export function normalizeAgentCardUrl(url: string): string {
-  const trimmed = url.replace(/\/+$/, "");
-  return trimmed.endsWith(AGENT_CARD_SUFFIX) ? trimmed : `${trimmed}${AGENT_CARD_SUFFIX}`;
+  const parsed = new URL(url);
+  parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+  if (!parsed.pathname.endsWith(AGENT_CARD_SUFFIX)) {
+    parsed.pathname += AGENT_CARD_SUFFIX;
+  }
+  return parsed.toString();
 }
 
 function partsText(parts: Part[]): string {
@@ -327,19 +331,20 @@ async function collectStream(
  * the SDK helper does — it ends in this same constructor.
  */
 async function loadAgentCard(cardUrl: string, fetchImpl: typeof fetch): Promise<AgentCard> {
+  const source = safeOrigin(cardUrl) ?? "the registered endpoint";
   const response = await fetchImpl(cardUrl, {
     headers: { Accept: "application/json", [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION },
   });
   if (!response.ok) {
     throw new Error(
-      `Failed to fetch Agent Card from ${cardUrl}: ${response.status} ${response.statusText}`,
+      `Failed to fetch Agent Card from ${source}: ${response.status} ${response.statusText}`,
     );
   }
   const body = await readBodyText(response, MAX_CARD_BYTES);
   try {
     return new DefaultAgentCardResolver().normalizeAgentCard(JSON.parse(body));
   } catch {
-    throw new Error(`Agent Card at ${cardUrl} is not a valid A2A 1.0 Agent Card`);
+    throw new Error(`Agent Card from ${source} is not a valid A2A 1.0 Agent Card`);
   }
 }
 

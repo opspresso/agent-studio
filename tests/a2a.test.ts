@@ -229,6 +229,17 @@ describe("normalizeAgentCardUrl", () => {
       "https://x.test/api/a2a/p/.well-known/agent-card.json",
     );
   });
+
+  it("appends the card path before a signed query and preserves the query", () => {
+    expect(normalizeAgentCardUrl("https://x.test/api/a2a/p?token=secret")).toBe(
+      "https://x.test/api/a2a/p/.well-known/agent-card.json?token=secret",
+    );
+    expect(
+      normalizeAgentCardUrl(
+        "https://x.test/api/a2a/p/.well-known/agent-card.json?token=secret",
+      ),
+    ).toBe("https://x.test/api/a2a/p/.well-known/agent-card.json?token=secret");
+  });
 });
 
 // --- outbound send ----------------------------------------------------------
@@ -436,6 +447,37 @@ describe("sendA2aMessage", () => {
     );
 
     await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual(STREAMED_REPLY);
+  });
+
+  it("does not expose a signed card URL when fetching the card fails", async () => {
+    const signedCardUrl = `${CARD_URL}?token=card-secret`;
+    vi.stubGlobal(
+      "fetch",
+      async () => new Response(null, { status: 502, statusText: "Bad Gateway" }),
+    );
+
+    const result = await sendA2aMessage(signedCardUrl, {}, "hello");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Failed to fetch Agent Card from https://remote.test: 502 Bad Gateway",
+    });
+    expect(JSON.stringify(result)).not.toContain("card-secret");
+    expect(JSON.stringify(result)).not.toContain("/.well-known/");
+  });
+
+  it("does not expose a signed card URL when the card is invalid", async () => {
+    const signedCardUrl = `${CARD_URL}?token=card-secret`;
+    vi.stubGlobal("fetch", async () => new Response("not-json", { status: 200 }));
+
+    const result = await sendA2aMessage(signedCardUrl, {}, "hello");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Agent Card from https://remote.test is not a valid A2A 1.0 Agent Card",
+    });
+    expect(JSON.stringify(result)).not.toContain("card-secret");
+    expect(JSON.stringify(result)).not.toContain("/.well-known/");
   });
 
   it("falls back to a blocking send for a card that cannot stream", async () => {

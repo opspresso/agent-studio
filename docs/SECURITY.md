@@ -337,6 +337,8 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
   받는다.
 
 공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라.
+외부 A2A Agent Card 의 실패 메시지는 origin 만 남긴다. query string 을 비롯한 전체 URL 자체가
+자격 증명일 수 있으므로 authored error, chat, trace 에 등록 주소를 복사하지 않는다.
 
 MCP 클라이언트는 `@modelcontextprotocol/client` 위에서 돌고, 가드는 그 옆에 놓이는 대신 그 안으로
 **주입된다**. 트랜스포트에 `fetch` 로 주어지는 것이
