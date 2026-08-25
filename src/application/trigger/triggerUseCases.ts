@@ -414,5 +414,3 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     },
   };
 }
-
-export type TriggerUseCases = ReturnType<typeof createTriggerUseCases>;
