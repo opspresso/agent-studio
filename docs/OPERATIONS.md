@@ -50,6 +50,22 @@ dispatch 는 persistent self-hosted runner와 OIDC·registry·GitOps 자격 증�
    한정되기 때문이다. IDC 호스트의 `deploy.sh` 는 GitHub 이 닿으면 그 핀을 따라간다
    ([두 환경](#두-환경-alpha-와-prod)).
 
+### 실패한 릴리스를 다시 돌리기
+
+수동 dispatch 가 없으므로 재실행은 **태그를 다시 밀어** 한다. 어느 job 이 실패했는지에 따라
+둘 중 하나다.
+
+- **같은 커밋을 다시**: 원격 태그를 지우고 같은 커밋에 다시 단다.
+  `git push origin :refs/tags/vX.Y.Z && git push origin vX.Y.Z`. `github-release` 가 이미
+  성공한 뒤였다면 그 Release 를 먼저 지운다 (`gh release delete vX.Y.Z`). ECR·GHCR push 는
+  같은 태그를 덮어쓰므로 그대로 두면 된다.
+- **고칠 것이 있으면 다음 patch 태그로**: 수정 커밋을 올리고 `vX.Y.Z+1` 을 단다. 태그를 옮기는
+  것보다 이쪽이 기본값이다 — 태그가 가리키는 커밋이 바뀌면 이미 그 태그를 pull 한 설치와
+  이력이 어긋난다.
+
+Actions 자체가 막혀 있으면(결제 한도, 러너 다운) 릴리스는 로컬에서 같은 순서로 할 수 있다:
+검증 → 태그 → `linux/amd64` 빌드 → ECR·GHCR push → GitOps 이미지 태그 범프 → IDC `deploy.sh`.
+
 자명하지 않은 빌드 설정이 둘 있다:
 
 - **amd64 전용.** 배포 대상들이 amd64 이고, 무료 arm64 호스티드 러너는 프라이빗 저장소에서
