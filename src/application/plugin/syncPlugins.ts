@@ -7,6 +7,7 @@ import type { PluginRepository } from "@/domain/plugin/repository";
 import type { PluginUseCases } from "./pluginUseCases";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
+import { listRegistry } from "@/application/registry/registryUseCases";
 import { parseFrontmatter } from "@/domain/plugin/frontmatter";
 import { isSlug } from "@/domain/naming";
 import { log } from "@/shared/logger";
@@ -231,7 +232,7 @@ export async function syncPluginsFromSnapshot(
     parsed.push(...claimants);
   }
 
-  const storedRows = await deps.plugins.list();
+  const storedRows = await listRegistry(deps.plugins);
   const rowsByName = new Map(storedRows.map((row) => [row.name, row]));
 
   const sections = new Map<string, PluginSyncSection>();
@@ -309,7 +310,9 @@ export async function syncPluginsFromSnapshot(
     }
   }
 
-  const storedSkills = new Map((await deps.skillRepo.list()).map((skill) => [skill.name, skill]));
+  const storedSkills = new Map(
+    (await listRegistry(deps.skillRepo)).map((skill) => [skill.name, skill]),
+  );
   const storedServers = new Map((await deps.mcps.list()).map((server) => [server.name, server]));
 
   /**

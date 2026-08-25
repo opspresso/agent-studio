@@ -3,7 +3,7 @@ import type { PluginSyncResult } from "./sync";
 
 export interface PluginRepository {
   get(name: string): Promise<Plugin | null>;
-  list(): Promise<Plugin[]>;
+  list(limit: number, after?: string): Promise<Plugin[]>;
   /**
    * Upsert. A plugin row is a pure projection of the repository — nothing on
    * it is operator-authored — so unlike every other registry write there is no

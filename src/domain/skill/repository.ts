@@ -23,7 +23,7 @@ export interface SkillRepository {
    * it.
    */
   describe(names: readonly string[]): Promise<SkillDescription[]>;
-  list(): Promise<Skill[]>;
+  list(limit: number, after?: string): Promise<Skill[]>;
   create(skill: Skill): Promise<void>;
   update(skill: Skill): Promise<void>;
   put(skill: Skill): Promise<void>;

@@ -1,5 +1,6 @@
 import { conditions, deleteItem, getItem, putItem, queryItems } from "./store";
 import { keys } from "./keys";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 /**
  * CRUD over a name-keyed registry entity (single-item partition, SK `META`)
@@ -13,7 +14,7 @@ export function createKeyedRepository<T extends { name: string }>(opts: {
   fromItem(item: Record<string, unknown>): T;
 }): {
   get(name: string): Promise<T | null>;
-  list(): Promise<T[]>;
+  list(limit: number, after?: string): Promise<T[]>;
   create(entity: T): Promise<void>;
   update(entity: T): Promise<void>;
   put(entity: T): Promise<void>;
@@ -25,12 +26,20 @@ export function createKeyedRepository<T extends { name: string }>(opts: {
       return item ? opts.fromItem(item) : null;
     },
 
-    async list() {
+    async list(limit, after) {
       const items = await queryItems({
         index: "GSI1",
         pk: keys.typePartition(opts.entityType),
+        limit: boundedPageLimit(limit),
+        ...(after ? { after } : {}),
       });
-      return items.map(opts.fromItem);
+      return items.map((item) => {
+        const entity = opts.fromItem(item);
+        if (entity.name !== item.GSI1SK) {
+          throw new Error(`${opts.entityType} registry row name does not match its index key`);
+        }
+        return entity;
+      });
     },
 
     async put(entity) {

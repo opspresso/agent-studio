@@ -14,10 +14,28 @@ import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 /** Minimal repository shape shared by the registry slices. */
 export interface RegistryRepository<T> {
   get(name: string): Promise<T | null>;
-  list(): Promise<T[]>;
+  list(limit: number, after?: string): Promise<T[]>;
   create(entity: T): Promise<void>;
   update(entity: T): Promise<void>;
   delete(name: string): Promise<void>;
+}
+
+export const REGISTRY_LIST_PAGE_SIZE = 100;
+
+/** Read a complete name-keyed registry through bounded repository pages. */
+export async function listRegistry<T extends { name: string }>(
+  repo: Pick<RegistryRepository<T>, "list">,
+): Promise<T[]> {
+  const entries: T[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await repo.list(REGISTRY_LIST_PAGE_SIZE, after);
+    entries.push(...page);
+    if (page.length < REGISTRY_LIST_PAGE_SIZE) {
+      return entries;
+    }
+    after = page.at(-1)!.name;
+  }
 }
 
 /** SSRF policy at the write boundary: a blocked URL is invalid input (400). */
@@ -79,7 +97,7 @@ export function createRegistryUseCases<
 
   return {
     async list() {
-      return (await opts.repo.list()).map(view);
+      return (await listRegistry(opts.repo)).map(view);
     },
 
     async get(name) {

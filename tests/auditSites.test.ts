@@ -12,7 +12,10 @@ import {
 } from "@/application/project/apiTokenUseCases";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
-import { createRegistryUseCases } from "@/application/registry/registryUseCases";
+import {
+  REGISTRY_LIST_PAGE_SIZE,
+  createRegistryUseCases,
+} from "@/application/registry/registryUseCases";
 import type { AuditEvent } from "@/domain/audit/types";
 import type { AuditRepository } from "@/domain/audit/repository";
 import type { Project } from "@/domain/project/types";
@@ -302,6 +305,37 @@ describe("webhook trigger secrets", () => {
 });
 
 describe("shared registry entries", () => {
+  it("reads the complete registry through bounded name-key pages", async () => {
+    const entries = Array.from({ length: REGISTRY_LIST_PAGE_SIZE + 2 }, (_, index) => ({
+      name: `entry-${String(index).padStart(3, "0")}`,
+    }));
+    const pageSizes: number[] = [];
+    const useCases = createRegistryUseCases<
+      (typeof entries)[number],
+      (typeof entries)[number],
+      object
+    >({
+      label: "Skill",
+      auditKind: "skill",
+      repo: {
+        get: async () => null,
+        list: async (limit, after) => {
+          const page = entries.filter((entry) => !after || entry.name > after).slice(0, limit);
+          pageSizes.push(page.length);
+          return page;
+        },
+        create: async () => {},
+        update: async () => {},
+        delete: async () => {},
+      },
+      build: (input) => input,
+      apply: (existing) => existing,
+    });
+
+    await expect(useCases.list()).resolves.toHaveLength(entries.length);
+    expect(pageSizes).toEqual([REGISTRY_LIST_PAGE_SIZE, 2]);
+  });
+
   it("records a deletion against the kind that was deleted", async () => {
     const entry = { name: "pdf-reader" };
     const useCases = createRegistryUseCases<typeof entry, typeof entry, object>({

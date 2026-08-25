@@ -17,6 +17,7 @@
  */
 
 import type { McpRepository } from "@/domain/mcp/repository";
+import { listRegistry } from "@/application/registry/registryUseCases";
 import { isManagedLoopback, type McpServer } from "@/domain/mcp/types";
 import type { McpProvisioner, ManagedWorkloadSpec } from "@/domain/mcp/provisioner";
 import type { McpToolProbe } from "@/domain/mcp/toolProbe";
@@ -529,7 +530,9 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     },
 
     async reconcile() {
-      const entries = (await deps.repo.list()).filter((server) => server.runtime === "managed");
+      const entries = (await listRegistry(deps.repo)).filter(
+        (server) => server.runtime === "managed",
+      );
       const outcomes: ReconcileOutcome[] = [];
       // Sequential: these pull images and restart containers on one small host,
       // and a sweep that runs in the background has nothing to gain from racing

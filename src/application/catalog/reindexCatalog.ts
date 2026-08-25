@@ -22,6 +22,7 @@ import type { SkillRepository } from "@/domain/skill/repository";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { EmbeddingPort, VectorRecord, VectorStorePort } from "@/domain/vector/types";
 import { log } from "@/shared/logger";
+import { listRegistry } from "@/application/registry/registryUseCases";
 
 /**
  * Discovering one server's tools, or `undefined` when it could not be reached.
@@ -58,9 +59,9 @@ async function collectEntries(
   deps: CatalogIndexDeps,
 ): Promise<{ entries: CapabilityEntry[]; undiscovered: string[] }> {
   const [skills, servers, agents] = await Promise.all([
-    deps.skills.list(),
-    deps.mcps.list(),
-    deps.externalAgents.list(),
+    listRegistry(deps.skills),
+    listRegistry(deps.mcps),
+    listRegistry(deps.externalAgents),
   ]);
   const entries: CapabilityEntry[] = [];
   for (const skill of skills) {
