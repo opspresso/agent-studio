@@ -1482,7 +1482,9 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
 - `refresh` 는 발행된 카탈로그를 시간별 틱을 기다리지 않고 지금 당겨온다. agent-models 가 방금
   발행한 것을 콘솔에서 바로 보기 위한 것이다. `refreshed: false` 는 "이미 최신"과 "가져오기 실패"
   둘 다를 덮는다 (이유는 서버 로그에 있고, 어느 쪽이든 레지스트리는 그대로다). `test` 처럼
-  설치한 것이 없는 갱신은 실패가 아니라 결과라서 `5xx` 를 돌려주지 않는다.
+  설치한 것이 없는 갱신은 실패가 아니라 결과라서 `5xx` 를 돌려주지 않는다. boot refresh 와
+  겹치면 그 결과에 합류하지 않고 직렬화된 다음 읽기를 기다리므로, 방금 저장한 upload/delete 가
+  오래 걸리던 이전 읽기에 덮이지 않는다.
 - `selfhosted` 는 `/models` 콘솔 Self-hosted 섹션의 전체 그림이다: **저장된** 선언
   (`declarations`, 편집의 기준이다: 레지스트리가 설치를 거부한 선언도 여기 보여야 다음
   full-replace 저장이 그것을 조용히 지우지 않는다), 그중 설치된 id(`installed`), 그리고

@@ -212,7 +212,9 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
   refresh 부터 발행 카탈로그를 다시 읽으며, 읽을 발행 카탈로그가 없으면 프로세스가 재시작해
   스냅샷으로 돌아갈 때까지 마지막 설치본을 유지한다. 레지스트리는 결코 비워지지 않는다.
   우선순위는 부팅 때 한 번이 아니라 **읽을 때마다** 결정되므로, 다른 인스턴스의 업로드도 한
-  틱 안에 도달한다. 로컬 스냅샷을 그 문서로 맞추려면 `pnpm sync-models --from <file>`.
+  틱 안에 도달한다. 같은 프로세스의 boot 틱과 console refresh 는 하나의 coordinator 로
+  직렬화되고, 진행 중인 읽기 사이에 업로드나 삭제가 오면 뒤따르는 읽기를 한 번 더 수행한다.
+  로컬 스냅샷을 그 문서로 맞추려면 `pnpm sync-models --from <file>`.
 
 `loadModelCatalog` (`src/domain/llm/models.ts`) 가 유일한 입구다: 버전을 확인하고, 항목마다 런이
 읽는 필드(가격이 숫자인지, 윈도가 양의 정수인지, `provider` 가 이 앱이 가진 채널인지.

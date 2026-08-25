@@ -86,7 +86,10 @@ import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { createTestModel } from "@/application/llm/testModel";
-import { createModelCatalogRefresher } from "@/application/llm/modelCatalogRefresh";
+import {
+  createModelCatalogRefresher,
+  processModelCatalogRefreshCoordinator,
+} from "@/application/llm/modelCatalogRefresh";
 import { createCompositeModelCatalogSource } from "@/application/llm/modelCatalogStoredSource";
 import { createModelCatalogDocumentUseCases } from "@/application/llm/modelCatalogDocument";
 import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
@@ -246,9 +249,9 @@ export const testModel = createTestModel(channel);
 /**
  * "Pull the published catalog now", for the /models console's refresh button —
  * the moment right after agent-models publishes, when the hourly tick is up to
- * an hour away. A second refresher beside the boot one is safe on purpose:
- * installs are atomic and stamp-guarded (`modelCatalogRefresh.ts`), so the
- * worst a concurrent tick costs is one redundant fetch of a static document.
+ * an hour away. This and the boot refresher share a process coordinator:
+ * installs are serialized, and a request arriving during a read queues one
+ * trailing read so an upload or deletion cannot be hidden by an older result.
  * intervalMs 0 keeps this instance tickless — the boot path owns the schedule.
  */
 export const refreshModelCatalog = createModelCatalogRefresher({
@@ -263,6 +266,7 @@ export const refreshModelCatalog = createModelCatalogRefresher({
         : createHttpModelCatalogSource(config.modelsCatalogUrl),
   }),
   intervalMs: 0,
+  coordinator: processModelCatalogRefreshCoordinator(),
   // The same deadline the boot path gives this read — request-scoped here,
   // but a hung settings table should time a refresh out, not hold it.
   localModels: () => withTimeout(getSelfHostedModels(), 10_000),

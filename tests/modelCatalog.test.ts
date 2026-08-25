@@ -278,16 +278,65 @@ describe("createModelCatalogRefresher", () => {
     expect(getModelConfig("selfhosted/qwen/local-x")).toBeDefined();
   });
 
-  it("shares one in-flight refresh instead of interleaving installs", async () => {
-    let resolveLoad!: (value: unknown) => void;
-    const load = vi.fn(() => new Promise((resolve) => (resolveLoad = resolve)));
+  it("serializes an in-flight refresh and coalesces callers into one trailing read", async () => {
+    const resolveLoads: Array<(value: unknown) => void> = [];
+    const load = vi.fn(
+      () => new Promise((resolve) => resolveLoads.push(resolve)),
+    );
     const refresher = createModelCatalogRefresher({ source: { description: "test", load: read(load) }, intervalMs: 0 });
     const first = refresher.refresh();
     const second = refresher.refresh();
     expect(load).toHaveBeenCalledTimes(1);
-    resolveLoad({ version: 1, models: [] });
+    resolveLoads.shift()!({ version: 1, models: [] });
     expect(await first).toBe(false);
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    const third = refresher.refresh();
+    expect(load).toHaveBeenCalledTimes(2);
+    resolveLoads.shift()!({ version: 1, models: [] });
     expect(await second).toBe(false);
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    resolveLoads.shift()!({ version: 1, models: [] });
+    expect(await third).toBe(false);
+  });
+
+  it("keeps separate refreshers from overwriting a newer upload", async () => {
+    install(catalog([model("openai/base")], { updatedAt: "2026-08-20T00:00:00.000Z" }));
+    let resolvePublished!: (value: unknown) => void;
+    const coordinator = {};
+    const boot = createModelCatalogRefresher({
+      source: {
+        description: "published",
+        load: read(() => new Promise((resolve) => (resolvePublished = resolve))),
+      },
+      intervalMs: 0,
+      coordinator,
+    });
+    const uploaded = createModelCatalogRefresher({
+      source: {
+        description: "operator upload",
+        load: async () => ({
+          document: catalog([model("openai/uploaded")], {
+            updatedAt: "2026-08-01T00:00:00.000Z",
+          }),
+          upload: { revision: "upload-1" },
+        }),
+      },
+      intervalMs: 0,
+      coordinator,
+    });
+
+    const bootResult = boot.refresh();
+    const uploadResult = uploaded.refresh();
+    resolvePublished(
+      catalog([model("openai/base"), model("openai/published")], {
+        updatedAt: "2026-08-21T00:00:00.000Z",
+      }),
+    );
+
+    expect(await bootResult).toBe(true);
+    expect(await uploadResult).toBe(true);
+    expect(getModelConfig("openai/uploaded")).toBeDefined();
+    expect(getModelConfig("openai/published")).toBeUndefined();
   });
 
   it("re-reads on its interval until stopped, and not at all when the interval is 0", async () => {

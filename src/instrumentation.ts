@@ -96,7 +96,7 @@ export async function register(): Promise<void> {
     // deadline; a failure keeps the snapshot and is logged, never fatal. The
     // refresher then re-reads on its interval for the life of the process.
     const [
-      { createModelCatalogRefresher },
+      { createModelCatalogRefresher, processModelCatalogRefreshCoordinator },
       { createCompositeModelCatalogSource },
       { createHttpModelCatalogSource },
       { modelCatalogRepository },
@@ -122,6 +122,9 @@ export async function register(): Promise<void> {
             : createHttpModelCatalogSource(config.modelsCatalogUrl),
       }),
       intervalMs: config.modelsCatalogRefreshMs,
+      // Shared with the console refresher even when Next evaluates the two
+      // composition sites from separate server bundles.
+      coordinator: processModelCatalogRefreshCoordinator(),
       // The second publisher: this deployment's own self-hosted declarations,
       // re-read on the same schedule so a settings write on another instance
       // reaches this process within a tick. Deadlined like the catalog fetch —
