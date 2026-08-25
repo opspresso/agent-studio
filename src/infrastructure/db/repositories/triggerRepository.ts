@@ -110,12 +110,23 @@ export const triggerRepository: TriggerRepository = {
     return item ? toTrigger(item) : null;
   },
 
-  async listByProject(projectName) {
+  async listByProject(projectName, limit, after) {
     const items = await queryItems({
       pk: keys.projectPartition(projectName),
       sk: { prefix: keys.triggerPrefix() },
+      limit: boundedPageLimit(limit),
+      ...(after ? { after: keys.trigger(projectName, after).SK } : {}),
     });
-    return items.map(toTrigger);
+    return items.map((item) => {
+      const trigger = toTrigger(item);
+      if (
+        trigger.projectName !== projectName ||
+        keys.trigger(projectName, trigger.triggerId).SK !== item.SK
+      ) {
+        throw new Error("trigger row identity does not match its key");
+      }
+      return trigger;
+    });
   },
 
   async listSchedules(limit, after) {

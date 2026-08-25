@@ -162,6 +162,24 @@ function newSecret(): string {
   return generateSecretValue("triggerSecret");
 }
 
+export const TRIGGER_LIST_PAGE_SIZE = 100;
+
+export async function listProjectTriggers(
+  repo: Pick<TriggerRepository, "listByProject">,
+  projectName: string,
+): Promise<Trigger[]> {
+  const triggers: Trigger[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await repo.listByProject(projectName, TRIGGER_LIST_PAGE_SIZE, after);
+    triggers.push(...page);
+    if (page.length < TRIGGER_LIST_PAGE_SIZE) {
+      return triggers;
+    }
+    after = page.at(-1)!.triggerId;
+  }
+}
+
 export function createTriggerUseCases(deps: TriggerDeps) {
   async function load(projectName: string, triggerId: string): Promise<Trigger> {
     const trigger = await deps.triggers.get(projectName, triggerId);
@@ -174,7 +192,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
   return {
     async list(projectName: string, userEmail: string): Promise<TriggerView[]> {
       await assertProjectWritable(deps.projects, projectName, userEmail);
-      const triggers = await deps.triggers.listByProject(projectName);
+      const triggers = await listProjectTriggers(deps.triggers, projectName);
       return triggers.map((trigger) => toView(trigger, deps.cipher));
     },
 

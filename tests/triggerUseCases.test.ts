@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
+import {
+  TRIGGER_LIST_PAGE_SIZE,
+  createTriggerUseCases,
+} from "@/application/trigger/triggerUseCases";
 import { createTriggerSchema } from "@/app/api/projects/_lib/schemas";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { toSlug } from "@/domain/naming";
@@ -25,7 +28,11 @@ function fixture() {
   const stored = new Map<string, Trigger>();
   const triggers: TriggerRepository = {
     get: async (_p, id) => stored.get(id) ?? null,
-    listByProject: async () => [...stored.values()],
+    listByProject: async (_projectName, limit, after) =>
+      [...stored.values()]
+        .sort((a, b) => a.triggerId.localeCompare(b.triggerId))
+        .filter((trigger) => !after || trigger.triggerId > after)
+        .slice(0, limit),
     listSchedules: async () =>
       [...stored.values()].filter((t) => t.kind === "schedule"),
     create: async (t) => void stored.set(t.triggerId, t),
@@ -46,6 +53,7 @@ function fixture() {
   };
   return {
     stored,
+    triggers,
     storedWebhook,
     useCases: createTriggerUseCases({ triggers, projects, cipher: secretCipher }),
   };
@@ -192,6 +200,35 @@ describe("schedule triggers", () => {
     timezone: "Asia/Seoul",
     message: "Summarise yesterday.",
   };
+
+  it("lists every trigger through bounded repository pages", async () => {
+    const { stored, triggers, useCases } = fixture();
+    for (let index = 0; index < TRIGGER_LIST_PAGE_SIZE + 2; index += 1) {
+      const triggerId = `schedule-${String(index).padStart(3, "0")}`;
+      stored.set(triggerId, {
+        projectName: "p",
+        triggerId,
+        kind: "schedule",
+        description: "",
+        enabled: true,
+        cron: "0 9 * * *",
+        timezone: "Asia/Seoul",
+        allowConcurrent: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+    }
+    const listByProject = triggers.listByProject.bind(triggers);
+    const pageSizes: number[] = [];
+    triggers.listByProject = async (projectName, limit, after) => {
+      const page = await listByProject(projectName, limit, after);
+      pageSizes.push(page.length);
+      return page;
+    };
+
+    await expect(useCases.list("p", "owner@example.com")).resolves.toHaveLength(stored.size);
+    expect(pageSizes).toEqual([TRIGGER_LIST_PAGE_SIZE, 2]);
+  });
 
   it("creates without a secret and shows its own fields", async () => {
     const { useCases } = fixture();

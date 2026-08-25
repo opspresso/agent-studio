@@ -2,7 +2,7 @@ import type { ScheduleTrigger, Trigger, TriggerRun } from "./types";
 
 export interface TriggerRepository {
   get(projectName: string, triggerId: string): Promise<Trigger | null>;
-  listByProject(projectName: string): Promise<Trigger[]>;
+  listByProject(projectName: string, limit: number, after?: string): Promise<Trigger[]>;
   /** One page of every project's schedule triggers — the rows a scan tick walks. */
   listSchedules(
     limit: number,

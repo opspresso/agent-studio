@@ -32,6 +32,7 @@ import { mapWithLimit } from "@/shared/mapWithLimit";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import type { FiringDeps } from "./deps";
+import { listProjectTriggers } from "./triggerUseCases";
 
 /**
  * How far past a run's lease a `running` row must sit before it is declared
@@ -96,7 +97,7 @@ export async function repairLostRuns(deps: FiringDeps, at: Date): Promise<Repair
       const summary: RepairSummary = { repaired: 0, errors: 0 };
       let triggers: Trigger[];
       try {
-        triggers = await deps.triggers.listByProject(projectName);
+        triggers = await listProjectTriggers(deps.triggers, projectName);
       } catch (error) {
         log.warn("trigger", `could not list triggers of '${projectName}' for repair`, error);
         return { repaired: 0, errors: 1 };
