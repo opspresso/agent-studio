@@ -96,7 +96,8 @@ MCP 서버는 **두 번** 등장하고, 둘은 서로 다른 질문에 답한다
 하나가 빠진 구간을 남겨 검색이 조용히 덜 답하게 만든다. schedule scan·plugins sync 와 같은 CronJob
 토큰으로 돌고 (`POST /api/catalog/reindex`), 레지스트리 쓰기에서는 절대 돌지 않는다 — 성공한 저장이
 인덱싱 실패 때문에 500 이 되어서는 안 되고, 카탈로그는 런이 *discover 하는* 것에만 영향을 주기
-때문이다. MCP tool discovery는 registry 순서를 유지한 채 동시에 최대 8개 서버만 probe한다.
+때문이다. prune snapshot은 key를 500개씩 읽고, MCP tool discovery는 registry 순서를 유지한 채
+동시에 최대 8개 서버만 probe한다.
 
 **완료된 plugins sync 가 유일한 예외**이고, 차이는 실패가 치를 대가에 있다. sync 는 레지스트리를 한
 번에 가장 많이 움직이는 단일 사건이다 — 머지 하나가 skill 과 서버 열댓 개를 한꺼번에 추가·개명·폐기할
