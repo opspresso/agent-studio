@@ -190,7 +190,14 @@ export function createA2aTaskStore(projectName: string): TaskStore {
         if (page.length < A2A_TASK_SCAN_PAGE_SIZE) {
           break;
         }
-        after = String(page.at(-1)?.SK ?? "");
+        // Never a fallback: an empty cursor is `sk > ''`, which matches the
+        // whole partition again rather than ending the walk, so a row without
+        // a sort key would spin here instead of failing.
+        const cursor = page.at(-1)?.SK;
+        if (typeof cursor !== "string" || cursor === "") {
+          throw new Error("A2A task row has no sort key to page from");
+        }
+        after = cursor;
       }
       const statusTimestampAfter = params.statusTimestampAfter
         ? Date.parse(params.statusTimestampAfter)

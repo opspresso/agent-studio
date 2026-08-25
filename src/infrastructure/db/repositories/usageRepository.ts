@@ -52,7 +52,14 @@ async function listUsageItems(
     if (page.length < USAGE_PAGE_SIZE) {
       return found;
     }
-    after = String(page.at(-1)?.[cursorAttribute] ?? "");
+    // Never a fallback: an empty cursor is `sk > ''`, which matches the whole
+    // partition again rather than ending the walk, so a row missing the
+    // attribute would spin here instead of failing.
+    const cursor = page.at(-1)?.[cursorAttribute];
+    if (typeof cursor !== "string" || cursor === "") {
+      throw new Error(`usage row has no ${cursorAttribute} to page from`);
+    }
+    after = cursor;
   }
 }
 
