@@ -67,18 +67,14 @@ const NAV_GROUPS = [
   {
     key: "intelligence",
     label: "nav.group.intelligence",
-    // The registries a version draws on, in the order a version binds them:
-    // skills and MCP tools first, then the agents it can hand work to, then
-    // the models it may run on. `Plugins` is last because it is the *source*
-    // that fills the first two rather than a catalogue of its own — the model
-    // registry is a catalogue of what this deployment can reach, read from the
-    // member rung; only the toggles and the probe on it stay admin's.
+    // Plugins are the source that fills the skill and tool registries, followed
+    // by the other registries a version can draw on.
     items: [
+      { href: "/plugins", label: "nav.plugins", Icon: IconPackage },
       { href: "/skills", label: "nav.skills", Icon: IconBook2 },
       { href: "/tools", label: "nav.tools", Icon: IconTool },
       { href: "/agents", label: "nav.agents", Icon: IconRobot },
       { href: "/models", label: "nav.models", Icon: IconCpu },
-      { href: "/plugins", label: "nav.plugins", Icon: IconPackage },
     ],
   },
   {
