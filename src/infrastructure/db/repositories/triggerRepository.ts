@@ -17,6 +17,7 @@ import {
   queryItems,
 } from "@/infrastructure/db/store";
 import { expiresAtFromNow, expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
+import { boundedPageLimit } from "@/shared/pageLimit";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type { ScheduleTrigger, Trigger, TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
 
@@ -117,9 +118,22 @@ export const triggerRepository: TriggerRepository = {
     return items.map(toTrigger);
   },
 
-  async listSchedules() {
-    const items = await queryItems({ index: "GSI1", pk: keys.typePartition("SCHEDULE") });
-    return items.map(toTrigger).filter((t): t is ScheduleTrigger => t.kind === "schedule");
+  async listSchedules(limit, after) {
+    const items = await queryItems({
+      index: "GSI1",
+      pk: keys.typePartition("SCHEDULE"),
+      limit: boundedPageLimit(limit),
+      ...(after
+        ? { after: keys.scheduleIndex(after.projectName, after.triggerId).GSI1SK }
+        : {}),
+    });
+    return items.map((item) => {
+      const trigger = toTrigger(item);
+      if (trigger.kind !== "schedule") {
+        throw new Error("schedule index contains a non-schedule trigger");
+      }
+      return trigger;
+    });
   },
 
   async create(trigger) {

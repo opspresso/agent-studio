@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_CONCURRENT_SCHEDULE_SCANS,
   SCHEDULE_CATCHUP_WINDOW_MS,
+  SCHEDULE_SCAN_PAGE_SIZE,
   driveFirings,
   scanSchedules,
   scheduleInput,
@@ -133,7 +134,15 @@ function fixture(
   const triggers: TriggerRepository = {
     get: async () => null,
     listByProject: async () => stored,
-    listSchedules: async () => schedules,
+    listSchedules: async (limit, after) => {
+      const start = after
+        ? schedules.findIndex(
+            (trigger) =>
+              trigger.projectName === after.projectName && trigger.triggerId === after.triggerId,
+          ) + 1
+        : 0;
+      return schedules.slice(start, start + limit);
+    },
     create: async () => {},
     put: async () => {},
     delete: async () => {},
@@ -597,6 +606,25 @@ describe("scanSchedules", () => {
     await expect(scan).resolves.toMatchObject({
       summary: { checked: schedules.length, alreadyClaimed: schedules.length },
     });
+  });
+
+  it("reads the schedule index in bounded pages without dropping triggers", async () => {
+    const schedules = Array.from({ length: SCHEDULE_SCAN_PAGE_SIZE + 2 }, (_, index) =>
+      schedule({ triggerId: `schedule-${index}`, enabled: false }),
+    );
+    const f = fixture({ schedules });
+    const listSchedules = f.deps.triggers.listSchedules.bind(f.deps.triggers);
+    const pageSizes: number[] = [];
+    f.deps.triggers.listSchedules = async (limit, after) => {
+      const page = await listSchedules(limit, after);
+      pageSizes.push(page.length);
+      return page;
+    };
+
+    const { summary } = await scanSchedules(f.deps, new Date(AT.getTime() + 60_000));
+
+    expect(summary.checked).toBe(schedules.length);
+    expect(pageSizes).toEqual([SCHEDULE_SCAN_PAGE_SIZE, 2]);
   });
 
   it("records a run that failed mid-stream as failed with the error preserved", async () => {

@@ -3,8 +3,11 @@ import type { ScheduleTrigger, Trigger, TriggerRun } from "./types";
 export interface TriggerRepository {
   get(projectName: string, triggerId: string): Promise<Trigger | null>;
   listByProject(projectName: string): Promise<Trigger[]>;
-  /** Every project's schedule triggers — the rows a scan tick walks. */
-  listSchedules(): Promise<ScheduleTrigger[]>;
+  /** One page of every project's schedule triggers — the rows a scan tick walks. */
+  listSchedules(
+    limit: number,
+    after?: { projectName: string; triggerId: string },
+  ): Promise<ScheduleTrigger[]>;
   /** Create; fails if the id is taken within the project. */
   create(trigger: Trigger): Promise<void>;
   put(trigger: Trigger): Promise<void>;

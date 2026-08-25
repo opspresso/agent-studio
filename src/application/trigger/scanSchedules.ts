@@ -51,6 +51,9 @@ export const MAX_CONCURRENT_FIRINGS = 8;
 /** Schedule triggers whose occurrences one tick may admit concurrently. */
 export const MAX_CONCURRENT_SCHEDULE_SCANS = 8;
 
+/** Schedule rows read from the cross-project index at once. */
+export const SCHEDULE_SCAN_PAGE_SIZE = 100;
+
 /**
  * Repair walks every project's triggers and reads their history; firing due
  * occurrences does neither. Gating the sweep to every fifth minute keeps the
@@ -140,50 +143,59 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
     summary.repaired += repair.repaired;
     summary.errors += repair.errors;
   }
-  const scans = await mapWithLimit(
-    await deps.triggers.listSchedules(),
-    MAX_CONCURRENT_SCHEDULE_SCANS,
-    async (trigger): Promise<ScheduleScanResult> => {
-      const triggerSummary: ScheduleScanSummary = {
-        checked: 1,
-        fired: 0,
-        alreadyClaimed: 0,
-        skipped: 0,
-        repaired: 0,
-        invalid: 0,
-        errors: 0,
-      };
-      const triggerFirings: ScheduleFiring[] = [];
-      if (trigger.enabled) {
-        try {
-          await fireDueOccurrences(
-            deps,
-            trigger,
-            windowStart,
-            at,
-            triggerSummary,
-            triggerFirings,
-          );
-        } catch (error) {
-          log.error(
-            "trigger",
-            `scan of schedule '${trigger.projectName}/${trigger.triggerId}' failed`,
-            error,
-          );
-          triggerSummary.errors += 1;
+  let after: { projectName: string; triggerId: string } | undefined;
+  for (;;) {
+    const triggers = await deps.triggers.listSchedules(SCHEDULE_SCAN_PAGE_SIZE, after);
+    const scans = await mapWithLimit(
+      triggers,
+      MAX_CONCURRENT_SCHEDULE_SCANS,
+      async (trigger): Promise<ScheduleScanResult> => {
+        const triggerSummary: ScheduleScanSummary = {
+          checked: 1,
+          fired: 0,
+          alreadyClaimed: 0,
+          skipped: 0,
+          repaired: 0,
+          invalid: 0,
+          errors: 0,
+        };
+        const triggerFirings: ScheduleFiring[] = [];
+        if (trigger.enabled) {
+          try {
+            await fireDueOccurrences(
+              deps,
+              trigger,
+              windowStart,
+              at,
+              triggerSummary,
+              triggerFirings,
+            );
+          } catch (error) {
+            log.error(
+              "trigger",
+              `scan of schedule '${trigger.projectName}/${trigger.triggerId}' failed`,
+              error,
+            );
+            triggerSummary.errors += 1;
+          }
         }
-      }
-      return { summary: triggerSummary, firings: triggerFirings };
-    },
-  );
-  for (const scan of scans) {
-    summary.checked += scan.summary.checked;
-    summary.fired += scan.summary.fired;
-    summary.alreadyClaimed += scan.summary.alreadyClaimed;
-    summary.skipped += scan.summary.skipped;
-    summary.invalid += scan.summary.invalid;
-    summary.errors += scan.summary.errors;
-    firings.push(...scan.firings);
+        return { summary: triggerSummary, firings: triggerFirings };
+      },
+    );
+    for (const scan of scans) {
+      summary.checked += scan.summary.checked;
+      summary.fired += scan.summary.fired;
+      summary.alreadyClaimed += scan.summary.alreadyClaimed;
+      summary.skipped += scan.summary.skipped;
+      summary.invalid += scan.summary.invalid;
+      summary.errors += scan.summary.errors;
+      firings.push(...scan.firings);
+    }
+    if (triggers.length < SCHEDULE_SCAN_PAGE_SIZE) {
+      break;
+    }
+    const last = triggers.at(-1)!;
+    after = { projectName: last.projectName, triggerId: last.triggerId };
   }
   return { summary, firings };
 }
