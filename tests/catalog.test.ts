@@ -13,6 +13,7 @@ import {
   reindexCatalog,
   type CatalogIndexDeps,
 } from "@/application/catalog/reindexCatalog";
+import { catalogDescription } from "@/domain/catalog/types";
 import { searchCapabilities } from "@/application/catalog/searchCatalog";
 import type { McpServer } from "@/domain/mcp/types";
 import type { Skill } from "@/domain/skill/types";
@@ -79,6 +80,17 @@ function indexDeps(overrides: Partial<CatalogIndexDeps> = {}): CatalogIndexDeps 
     ...overrides,
   };
 }
+
+describe("catalogDescription", () => {
+  it("caps a description by character, never through one", () => {
+    // The text is embedded, stored and offered to the model. Half a character
+    // is not text on any of those three routes, and the description comes from
+    // a plugin repository rather than from this app.
+    const capped = catalogDescription(`x${"\uD83D\uDE00".repeat(1_000)}`);
+    expect(capped.endsWith("…")).toBe(true);
+    expect(capped.isWellFormed()).toBe(true);
+  });
+});
 
 describe("reindexCatalog", () => {
   it("indexes a server and each of its tools, keyed so a rerun is an upsert", async () => {

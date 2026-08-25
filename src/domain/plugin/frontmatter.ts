@@ -61,5 +61,8 @@ export function parseFrontmatter(raw: string): Frontmatter {
  */
 export function firstHeadingOrLine(text: string): string {
   const firstLine = text.split(/\r?\n/).find((l) => l.trim() !== "") ?? "";
-  return firstLine.replace(/^#+\s*/, "").slice(0, 200);
+  // By character, never through one — see `savedFileName` for why this layer
+  // spreads instead of importing `cutCodePoints`. What comes out of here is a
+  // description the run puts in front of the model.
+  return [...firstLine.replace(/^#+\s*/, "")].slice(0, 200).join("");
 }

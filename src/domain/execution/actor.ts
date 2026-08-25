@@ -115,7 +115,15 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return flattened ? flattened.slice(0, MAX_CALLER_NAME_LENGTH) : undefined;
+  // Cut by **character**, never through one — the same rule and the same
+  // spelling as `savedFileName`, which records why this layer spreads rather
+  // than reaching for `cutCodePoints`. It matters more here than anywhere:
+  // a display name is set by whoever is asking, so a name of 59 letters and
+  // one emoji ends in half a character *by their choice*, and the half goes
+  // into the system prompt — on the wire as a lone `\ud800`-range escape a
+  // provider may refuse the whole request over. That is a caller able to stop
+  // their own runs, and on a shared thread everyone else's.
+  return flattened ? [...flattened].slice(0, MAX_CALLER_NAME_LENGTH).join("") : undefined;
 }
 
 /**

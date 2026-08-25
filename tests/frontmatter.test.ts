@@ -43,4 +43,10 @@ describe("firstHeadingOrLine", () => {
   it("caps the length so it stays usable as a one-line summary", () => {
     expect(firstHeadingOrLine("x".repeat(500))).toHaveLength(200);
   });
+
+  it("caps it by character, so a description never ends in half of one", () => {
+    // What comes out of here is the description a run puts in front of the
+    // model; half a character is not text a provider has to accept.
+    expect(firstHeadingOrLine(`x${"\uD83D\uDE00".repeat(400)}`).isWellFormed()).toBe(true);
+  });
 });
