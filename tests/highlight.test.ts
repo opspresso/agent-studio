@@ -54,3 +54,27 @@ describe("tokenize — classification", () => {
     expect(tokens.some((t) => t.type === "keyword" && t.value === "true")).toBe(true);
   });
 });
+
+/**
+ * `\w*(?=\()` reads to the end of the input at every letter it starts on and
+ * then gives the characters back one at a time, re-asking for the bracket — one
+ * pass per character, on the browser's one thread. 200,000 word characters
+ * measured 36 seconds before the bound.
+ */
+describe("a long run of word characters", () => {
+  it("is tokenized in linear time", () => {
+    for (const language of ["javascript", "python"] as const) {
+      const started = process.hrtime.bigint();
+      tokenize(language, "a".repeat(200_000));
+      const elapsed = Number(process.hrtime.bigint() - started) / 1e6;
+      expect(elapsed, `${language} took ${elapsed.toFixed(0)}ms`).toBeLessThan(2_000);
+    }
+  });
+
+  it("still finds a call", () => {
+    expect(tokenize("javascript", "doThing(1)")).toContainEqual({
+      type: "function",
+      value: "doThing",
+    });
+  });
+});

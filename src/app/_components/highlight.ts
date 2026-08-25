@@ -28,6 +28,20 @@ interface Rule {
 }
 
 // String bodies may embed $PLACEHOLDER tokens we want colored distinctly.
+/**
+ * How long an identifier may run before this stops looking for the `(` that
+ * would make it a call.
+ *
+ * `\w*(?=\()` reads to the end of the input at every letter it starts on, then
+ * gives the characters back one at a time re-asking for the bracket — so a run
+ * of word characters with no bracket in it costs one pass per character.
+ * Measured: 200,000 of them took 36 seconds, on the browser's one thread. The
+ * highlighter only ever sees code this app wrote today, which is why nothing
+ * has hit it; a bound is what keeps that from being load-bearing. No real
+ * identifier comes near it.
+ */
+const MAX_IDENTIFIER_CHARS = 127;
+
 const PLACEHOLDER_RE = /\$[A-Za-z_]\w*/g;
 
 function pushString(tokens: Token[], value: string): void {
@@ -64,7 +78,7 @@ const PYTHON: Rule[] = [
     re: /\b(?:from|import|as|for|in|if|elif|else|def|return|class|with|await|async|and|or|not|None|True|False)\b/y,
   },
   { type: "number", re: /\b\d+(?:\.\d+)?\b/y },
-  { type: "function", re: /[A-Za-z_]\w*(?=\()/y },
+  { type: "function", re: new RegExp(`[A-Za-z_]\\w{0,${MAX_IDENTIFIER_CHARS}}(?=\\()`, "y") },
 ];
 
 const JAVASCRIPT: Rule[] = [
@@ -77,7 +91,7 @@ const JAVASCRIPT: Rule[] = [
     re: /\b(?:import|from|const|let|var|await|async|new|for|of|return|function|if|else|true|false|null|console)\b/y,
   },
   { type: "number", re: /\b\d+(?:\.\d+)?\b/y },
-  { type: "function", re: /[A-Za-z_]\w*(?=\()/y },
+  { type: "function", re: new RegExp(`[A-Za-z_]\\w{0,${MAX_IDENTIFIER_CHARS}}(?=\\()`, "y") },
 ];
 
 const JSON_RULES: Rule[] = [
