@@ -148,6 +148,7 @@ import { createMemberUseCases } from "@/application/member/memberUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import {
   getEnabledModels,
+  getAdminEmails,
   getLlmChannelConfig,
   getLlmProviderConfigs,
   getPluginsRepoConfig,
@@ -215,7 +216,11 @@ export const proxiedObjects = artifactStorage
 export const signArtifactUrl: SignObjectUrl | undefined = artifactStorage?.objects.sign;
 
 export const auditUseCases = createAuditUseCases(auditRepository);
-export const memberUseCases = createMemberUseCases(memberRepository, isConfiguredAdmin);
+export const memberUseCases = createMemberUseCases(
+  memberRepository,
+  isConfiguredAdmin,
+  getAdminEmails,
+);
 
 /**
  * Reading and removing what runs produced. Undefined when this deployment keeps

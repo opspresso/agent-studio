@@ -3,6 +3,7 @@ import { ForbiddenError, NotFoundError } from "@/application/errors";
 import type { MemberRepository } from "@/domain/member/repository";
 import type { MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
+import { mapWithLimit } from "@/shared/mapWithLimit";
 
 export interface MemberUseCases {
   list(): Promise<Member[]>;
@@ -24,6 +25,9 @@ export interface MemberUseCases {
 }
 
 type AdminEmailCheck = (email: string) => Promise<boolean>;
+type AdminEmailsReader = () => Promise<string[]>;
+
+export const MEMBER_RECONCILE_CONCURRENCY = 8;
 
 export const MEMBER_LIST_PAGE_SIZE = 100;
 
@@ -44,9 +48,16 @@ export async function listMembers(repository: Pick<MemberRepository, "list">): P
 export function createMemberUseCases(
   repository: MemberRepository,
   isAdminEmail: AdminEmailCheck = async () => false,
+  readAdminEmails?: AdminEmailsReader,
 ): MemberUseCases {
-  const effectiveMember = async (member: Member): Promise<Member> => {
-    if (member.tier === "admin" || !(await isAdminEmail(member.email))) {
+  const effectiveMember = async (
+    member: Member,
+    configuredAdmins?: ReadonlySet<string>,
+  ): Promise<Member> => {
+    const configured = configuredAdmins
+      ? configuredAdmins.has(member.email.toLowerCase())
+      : await isAdminEmail(member.email);
+    if (member.tier === "admin" || !configured) {
       return member;
     }
     return (await repository.setTier(member.id, "admin"))?.member ?? member;
@@ -54,7 +65,14 @@ export function createMemberUseCases(
 
   return {
     async list() {
-      const members = await Promise.all((await listMembers(repository)).map(effectiveMember));
+      const configuredAdmins = readAdminEmails
+        ? new Set((await readAdminEmails()).map((email) => email.toLowerCase()))
+        : undefined;
+      const members = await mapWithLimit(
+        await listMembers(repository),
+        MEMBER_RECONCILE_CONCURRENCY,
+        (member) => effectiveMember(member, configuredAdmins),
+      );
       return members.sort((a, b) => (b.lastLoginAt ?? "").localeCompare(a.lastLoginAt ?? ""));
     },
 
