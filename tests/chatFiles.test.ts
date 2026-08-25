@@ -6,7 +6,10 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { collectGeneratedFiles, runAndPersist } from "@/application/chat/run";
 import { resolveFileUrl } from "@/domain/chat/fileRefs";
-import { resolveMessageFiles } from "@/application/chat/resolveFiles";
+import {
+  MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS,
+  resolveMessageFiles,
+} from "@/application/chat/resolveFiles";
 import { toEngineMessages } from "@/application/chat/messageMapping";
 import { reduceChunk } from "@/app/chats/_lib/stream";
 import { EMPTY_TURN } from "@/app/chats/_lib/types";
@@ -93,6 +96,36 @@ describe("resolveMessageFiles", () => {
     expect(dropped).toBe(1);
     expect(messages[0]?.role === "assistant" && messages[0].files).toEqual([]);
     vi.restoreAllMocks();
+  });
+
+  it("bounds signer concurrency across the full transcript", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const release: Array<() => void> = [];
+    const signer = async (key: string) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise<void>((resolve) => release.push(resolve));
+      active -= 1;
+      return `https://signed.example/${key}`;
+    };
+    const messages = Array.from(
+      { length: MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS + 2 },
+      (_, index) =>
+        assistantWith([
+          { key: `file-${index}`, name: `${index}.pdf`, mimeType: "application/pdf" },
+        ]),
+    );
+
+    const pending = resolveMessageFiles(messages, signer, VIEW_URL_TTL_SECONDS);
+    await vi.waitFor(() => expect(active).toBe(MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS));
+    while (release.length > 0) {
+      release.shift()?.();
+      await Promise.resolve();
+    }
+    await pending;
+
+    expect(maxActive).toBe(MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS);
   });
 });
 

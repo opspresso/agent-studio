@@ -18,6 +18,9 @@ import type { ChatMessage, ChatMessageFile } from "@/domain/chat/types";
 import { resolveFileUrl } from "@/domain/chat/fileRefs";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
 import { log } from "@/shared/logger";
+import { mapWithLimit } from "@/shared/mapWithLimit";
+
+export const MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS = 8;
 
 async function resolveOne(
   file: ChatMessageFile,
@@ -60,20 +63,40 @@ export async function resolveMessageFiles(
   sign: SignObjectUrl | undefined,
   ttlSeconds: number,
 ): Promise<ResolvedFileMessages> {
+  const pending = messages.flatMap((message, messageIndex) =>
+    message.role === "assistant"
+      ? (message.files ?? []).map((file) => ({ messageIndex, file }))
+      : [],
+  );
+  const resolved = await mapWithLimit(
+    pending,
+    MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS,
+    async ({ messageIndex, file }) => ({
+      messageIndex,
+      file: await resolveOne(file, sign, ttlSeconds),
+    }),
+  );
+  const byMessage = new Map<number, ChatMessageFile[]>();
   let dropped = 0;
-  const resolvedMessages = await Promise.all(
-    messages.map(async (message) => {
+  for (const entry of resolved) {
+    if (!entry.file) {
+      dropped += 1;
+      continue;
+    }
+    const files = byMessage.get(entry.messageIndex) ?? [];
+    files.push(entry.file);
+    byMessage.set(entry.messageIndex, files);
+  }
+
+  return {
+    messages: messages.map((message, messageIndex) => {
       // Only an assistant turn produces files. Narrowing rather than casting is
       // what keeps the union's claim true instead of working around it.
       if (message.role !== "assistant" || !message.files?.length) {
         return message;
       }
-      const resolved = (
-        await Promise.all(message.files.map((file) => resolveOne(file, sign, ttlSeconds)))
-      ).filter((file): file is ChatMessageFile => file !== undefined);
-      dropped += message.files.length - resolved.length;
-      return { ...message, files: resolved };
+      return { ...message, files: byMessage.get(messageIndex) ?? [] };
     }),
-  );
-  return { messages: resolvedMessages, dropped };
+    dropped,
+  };
 }
