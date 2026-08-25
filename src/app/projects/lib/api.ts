@@ -32,6 +32,11 @@ import type { ProjectTeamsResponse } from "@/app/api/projects/[name]/teams/route
 import type { PromptPreview } from "@/application/execution/deps";
 import type { GenerateImageOutput } from "@/application/image/generateImage";
 import type { ApiTokenStatus } from "@/application/project/apiTokenUseCases";
+import type {
+  CreateVersionInput,
+  UpdateVersionInput,
+  VersionInput,
+} from "@/application/project/versionUseCases";
 import type { TelegramDestination } from "@/domain/telegram/destination";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
@@ -128,22 +133,7 @@ export function getTrace(name: string, traceId: string): Promise<Trace> {
 
 // --- Versions -------------------------------------------------------------
 
-export interface VersionInput {
-  systemPrompt: string;
-  userPromptTemplate: string;
-  model: string;
-  fallbackModel?: string;
-  parameters: VersionParameters;
-  mcpList: McpBinding[];
-  skillList: string[];
-  subagentList: SubagentRef[];
-  maxTurn?: number;
-}
-
-export type UpdateVersionInput = Partial<Omit<VersionInput, "fallbackModel" | "maxTurn">> & {
-  fallbackModel?: string | null;
-  maxTurn?: number | null;
-};
+export type { UpdateVersionInput, VersionInput };
 
 export function listVersions(name: string): Promise<Version[]> {
   return fetch(`/api/projects/${name}/versions`).then((r) => readJson<Version[]>(r));
@@ -155,7 +145,7 @@ export function getVersion(name: string, version: string): Promise<Version> {
 
 export function createVersion(
   name: string,
-  input: VersionInput & { versionName?: string },
+  input: CreateVersionInput,
 ): Promise<Version> {
   return fetch(`/api/projects/${name}/versions`, {
     method: "POST",

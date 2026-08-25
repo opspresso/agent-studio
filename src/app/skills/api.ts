@@ -1,21 +1,15 @@
 import type { Skill } from "@/domain/skill/types";
+import type {
+  CreateSkillInput,
+  UpdateSkillInput,
+} from "@/application/skill/skillUseCases";
 import type { SkillSummary } from "@/app/api/skills/route";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 export type { Skill };
 
 export type { SkillSummary };
-
-export interface CreateSkillInput {
-  name: string;
-  description: string;
-  content: string;
-}
-
-export interface UpdateSkillInput {
-  description?: string;
-  content?: string;
-}
+export type { CreateSkillInput, UpdateSkillInput };
 
 export function listSkills(): Promise<SkillSummary[]> {
   return fetch("/api/skills").then((r) => readJson<SkillSummary[]>(r));
