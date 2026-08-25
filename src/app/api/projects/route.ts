@@ -4,6 +4,7 @@ import { createProjectWithInitialVersion, projectUseCases } from "@/lib/containe
 import { createProjectSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sanitizeProject } from "@/app/api/projects/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 
 export const GET = withAuth(async (user) => {
   // One argument on purpose: `map` would otherwise pass the index where
@@ -21,7 +22,11 @@ export const POST = withAuth(async (user, request: Request) => {
   if (!tierMayCreateProjects(user.tier)) {
     return Response.json({ error: "Your tier does not allow creating projects" }, { status: 403 });
   }
-  const parsed = createProjectSchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = createProjectSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

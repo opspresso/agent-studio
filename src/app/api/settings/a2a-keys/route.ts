@@ -3,6 +3,7 @@ import { a2aClientKeyUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 import { withAdminAuth } from "@/lib/session";
 import { ValidationError } from "@/application/errors";
+import { editorBody } from "@/app/api/_lib/body";
 
 /**
  * Named inbound-A2A client keys. Admin-only, like the shared key beside them:
@@ -29,7 +30,11 @@ export const GET = withAdminAuth(async () => {
 /** Issue a key for a new client. The raw key comes back exactly once. */
 export const POST = withAdminAuth(async (user, request: Request) => {
   try {
-    const parsed = createSchema.safeParse(await request.json().catch(() => null));
+    const body = await editorBody(request);
+    if (body instanceof Response) {
+      return body;
+    }
+    const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
       throw new ValidationError("name is required and must be at most 64 characters");
     }

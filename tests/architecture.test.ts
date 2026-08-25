@@ -396,6 +396,19 @@ const SOURCE_FILES = walk(SRC).map((absolute) => ({
   text: readFileSync(absolute, "utf8"),
 }));
 
+describe("API request body allocation", () => {
+  it("bounds JSON before parsing it in every route", () => {
+    const direct = SOURCE_FILES.filter(
+      (file) =>
+        file.path.startsWith("src/app/api/") &&
+        file.path.endsWith("/route.ts") &&
+        /request\.(?:json|formData)\s*\(/.test(stripComments(file.text)),
+    ).map((file) => file.path);
+
+    expect(direct).toEqual([]);
+  });
+});
+
 function governs(rule: Rule, relPath: string): boolean {
   const layer = layerOf(relPath);
   return layer !== null && (Array.isArray(rule.from) ? rule.from : [rule.from]).includes(layer);

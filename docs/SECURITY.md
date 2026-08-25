@@ -296,6 +296,18 @@ claim-and-settle 저장소). 그 claim 은 나중에 정산되는 **리스** 이
 인스턴스는 아무도 처리하지 않았는데 처리된 것으로 기록된 이벤트가 아니라 다시 가져갈 수 있는
 claim 을 남긴다. Webhook 배달도 같은 방식으로 `Idempotency-Key` 를 선점한다.
 
+## 인바운드 요청 크기
+
+JSON 본문은 schema 검증 전에 bounded reader를 지난다. 관리·편집 요청은 Skill 전체 파일 한도에서
+파생한 editor 한도, 이미지·문서를 실을 수 있는 실행 요청은 attachment 한도에서 파생한 turn
+한도, model catalog 업로드는 catalog 한도를 쓴다. webhook 네 종류는 서명 검증에 필요한 raw
+본문을 공통 1MB 한도 아래에서 읽는다. 선언된 `Content-Length`가 한도를 넘으면 body를 읽지 않고
+413을 답하고, chunked body는 누적 바이트가 한도를 넘는 즉시 stream을 취소한다.
+
+`tests/architecture.test.ts`는 API route의 직접 `request.json()`과 `request.formData()` 호출을
+거부한다. Zod의 필드 크기 검사는 파싱 뒤의 값 규칙이지, 파싱 전에 발생하는 메모리 할당 제한이
+아니다.
+
 ## 응답 헤더
 
 `next.config.ts` 에서 모든 경로에 설정한다. `frame-ancestors 'none'` 과

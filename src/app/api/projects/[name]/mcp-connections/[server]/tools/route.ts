@@ -2,6 +2,7 @@ import { z } from "zod";
 import { mcpAuthUseCases } from "@/lib/container";
 import { withAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string; server: string }> };
 
@@ -22,7 +23,11 @@ const bodySchema = z.object({
 export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name, server } = await ctx.params;
   // An empty body is a valid request: a binding with no overrides sends none.
-  const parsed = bodySchema.safeParse((await request.json().catch(() => null)) ?? {});
+  const body = await editorBody(request, { empty: {} });
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

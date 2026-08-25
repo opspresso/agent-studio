@@ -2,6 +2,7 @@ import { z } from "zod";
 import { mcpAuthUseCases } from "@/lib/container";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -17,7 +18,11 @@ const discoverSchema = z.object({
  */
 export const POST = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
-  const parsed = discoverSchema.safeParse(await request.json().catch(() => ({})));
+  const body = await editorBody(request, { empty: {} });
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = discoverSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

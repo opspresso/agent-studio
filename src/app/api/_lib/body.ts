@@ -47,8 +47,11 @@ const EDITOR_ALLOWANCE = MAX_SKILL_TOTAL_BYTES + PROSE_ALLOWANCE;
  * gap between them is three orders of magnitude: a turn may carry four 10MB
  * attachments, and nothing a person types into the console comes close.
  */
-export async function editorBody(request: Request): Promise<unknown | Response> {
-  return boundedBody(request, EDITOR_ALLOWANCE);
+export async function editorBody(
+  request: Request,
+  options: { empty?: unknown } = {},
+): Promise<unknown | Response> {
+  return boundedBody(request, EDITOR_ALLOWANCE, options);
 }
 
 /**
@@ -82,9 +85,17 @@ export async function catalogBody(request: Request): Promise<unknown | Response>
   return boundedBody(request, MAX_CATALOG_BODY_BYTES);
 }
 
-async function boundedBody(request: Request, maxBytes: number): Promise<unknown | Response> {
+async function boundedBody(
+  request: Request,
+  maxBytes: number,
+  options: { empty?: unknown } = {},
+): Promise<unknown | Response> {
   try {
-    return JSON.parse(await readBodyText(request, maxBytes));
+    const text = await readBodyText(request, maxBytes);
+    if (text.trim() === "" && Object.hasOwn(options, "empty")) {
+      return options.empty;
+    }
+    return JSON.parse(text);
   } catch (error) {
     return error instanceof BodyTooLargeError
       ? bodyTooLarge(error)

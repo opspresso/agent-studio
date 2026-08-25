@@ -63,6 +63,13 @@ describe("editorBody", () => {
 
     expect(await editorBody(post(JSON.stringify(files)))).toEqual(files);
   });
+
+  it("uses an explicit empty-body value without accepting malformed JSON as empty", async () => {
+    await expect(editorBody(post(""), { empty: {} })).resolves.toEqual({});
+
+    const malformed = await editorBody(post("{"), { empty: {} });
+    expect((malformed as Response).status).toBe(400);
+  });
 });
 
 describe("readEventBody", () => {

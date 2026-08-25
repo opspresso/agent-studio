@@ -2,6 +2,7 @@ import { z } from "zod";
 import { agentUseCases } from "@/lib/container";
 import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -22,7 +23,11 @@ export const GET = withMemberAuth(async (_user, _request: Request, ctx: RouteCon
 });
 
 export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
-  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

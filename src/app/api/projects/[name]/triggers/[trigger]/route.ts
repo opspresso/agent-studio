@@ -2,12 +2,17 @@ import { withAuth } from "@/lib/session";
 import { triggerUseCases } from "@/lib/container";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { updateTriggerSchema } from "@/app/api/projects/_lib/schemas";
+import { editorBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string; trigger: string }> };
 
 export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name, trigger } = await ctx.params;
-  const parsed = updateTriggerSchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = updateTriggerSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

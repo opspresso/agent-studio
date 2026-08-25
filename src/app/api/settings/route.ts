@@ -4,6 +4,7 @@ import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
+import { editorBody } from "@/app/api/_lib/body";
 
 const updateSchema = z.object({
   adminEmails: z.string().max(4000).optional(),
@@ -74,7 +75,11 @@ export const GET = withAdminAuth(async () => {
 });
 
 export const PUT = withAdminAuth(async (user, request: Request) => {
-  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     // `invalidRequest` puts the first issue's path in the error text — the
     // form shows only that string, and "Invalid input" alone left an admin
