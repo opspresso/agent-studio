@@ -27,6 +27,7 @@
  */
 
 import type { Trigger, TriggerRun } from "@/domain/trigger/types";
+import { mapWithLimit } from "@/shared/mapWithLimit";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import type { FiringDeps } from "./deps";
@@ -54,6 +55,9 @@ export const REPAIR_AFTER_SECONDS = RUN_LEASE_SECONDS + REPAIR_MARGIN_SECONDS;
  */
 export const REPAIR_SCAN_LIMIT = 50;
 
+/** Project partitions read concurrently by one repair tick. */
+export const REPAIR_PROJECT_CONCURRENCY = 8;
+
 /** What a repaired row says happened, in the place an operator will read it. */
 export const LOST_RUN_ERROR =
   "The instance running this firing was lost; its lease expired without a result.";
@@ -75,7 +79,6 @@ function merge(into: RepairSummary, from: RepairSummary): void {
  * inside a tick whose other work must survive a single unreadable partition.
  */
 export async function repairLostRuns(deps: FiringDeps, at: Date): Promise<RepairSummary> {
-  const summary: RepairSummary = { repaired: 0, errors: 0 };
   let projectNames: string[];
   try {
     projectNames = (await deps.projects.list()).map((project) => project.name);
@@ -85,20 +88,29 @@ export async function repairLostRuns(deps: FiringDeps, at: Date): Promise<Repair
     log.warn("trigger", "could not list projects to repair lost firings", error);
     return { repaired: 0, errors: 1 };
   }
-  for (const projectName of projectNames) {
-    let triggers: Trigger[];
-    try {
-      triggers = await deps.triggers.listByProject(projectName);
-    } catch (error) {
-      log.warn("trigger", `could not list triggers of '${projectName}' for repair`, error);
-      summary.errors += 1;
-      continue;
-    }
-    for (const trigger of triggers) {
-      // Regardless of `enabled`: disabling a trigger must not strand the row its
-      // last firing left behind.
-      merge(summary, await repairTriggerRuns(deps, trigger, at));
-    }
+  const projectSummaries = await mapWithLimit(
+    projectNames,
+    REPAIR_PROJECT_CONCURRENCY,
+    async (projectName): Promise<RepairSummary> => {
+      const summary: RepairSummary = { repaired: 0, errors: 0 };
+      let triggers: Trigger[];
+      try {
+        triggers = await deps.triggers.listByProject(projectName);
+      } catch (error) {
+        log.warn("trigger", `could not list triggers of '${projectName}' for repair`, error);
+        return { repaired: 0, errors: 1 };
+      }
+      for (const trigger of triggers) {
+        // Regardless of `enabled`: disabling a trigger must not strand the row its
+        // last firing left behind.
+        merge(summary, await repairTriggerRuns(deps, trigger, at));
+      }
+      return summary;
+    },
+  );
+  const summary: RepairSummary = { repaired: 0, errors: 0 };
+  for (const projectSummary of projectSummaries) {
+    merge(summary, projectSummary);
   }
   return summary;
 }

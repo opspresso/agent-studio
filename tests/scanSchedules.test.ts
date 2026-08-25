@@ -6,7 +6,11 @@ import {
   scheduleInput,
   type ScheduleFiring,
 } from "@/application/trigger/scanSchedules";
-import { REPAIR_AFTER_SECONDS } from "@/application/trigger/repairLostRuns";
+import {
+  REPAIR_AFTER_SECONDS,
+  REPAIR_PROJECT_CONCURRENCY,
+  repairLostRuns,
+} from "@/application/trigger/repairLostRuns";
 import { executeFiring } from "@/application/trigger/runTrigger";
 import type { FiringDeps } from "@/application/trigger/deps";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -579,6 +583,44 @@ describe("scheduleInput", () => {
     // configuration explaining it.
     expect(scheduleInput(schedule({ message: undefined }))).toEqual({});
     expect(scheduleInput(schedule({ message: "  " }))).toEqual({});
+  });
+});
+
+describe("repairLostRuns", () => {
+  it("bounds concurrent project partition reads", async () => {
+    const f = fixture({ schedules: [] });
+    const projects = Array.from({ length: REPAIR_PROJECT_CONCURRENCY + 2 }, (_, index) => ({
+      ...project,
+      name: `p-${index}`,
+    }));
+    let active = 0;
+    let maxActive = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reached!: () => void;
+    const atLimit = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    f.deps.projects.list = async () => projects;
+    f.deps.triggers.listByProject = async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (active === REPAIR_PROJECT_CONCURRENCY) {
+        reached();
+      }
+      await gate;
+      active -= 1;
+      return [];
+    };
+
+    const repair = repairLostRuns(f.deps, AT);
+    await atLimit;
+    expect(maxActive).toBe(REPAIR_PROJECT_CONCURRENCY);
+    release();
+
+    await expect(repair).resolves.toEqual({ repaired: 0, errors: 0 });
   });
 });
 
