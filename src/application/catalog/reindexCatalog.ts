@@ -54,6 +54,9 @@ export interface ReindexReport {
   undiscovered: string[];
 }
 
+/** Remote MCP discovery calls allowed in flight during one rebuild. */
+export const MAX_CONCURRENT_CATALOG_PROBES = 8;
+
 /** Everything the registries currently hold, as entries. */
 async function collectEntries(
   deps: CatalogIndexDeps,
@@ -71,8 +74,9 @@ async function collectEntries(
     entries.push({ kind: "agent", name: agent.name, description: agent.description });
   }
 
-  // Probed in parallel: each is a round trip to someone else's server, and a
-  // reindex walks every one of them.
+  // Probed concurrently: each is a round trip to someone else's server, and a
+  // reindex walks every one of them. A fixed worker count keeps a large registry
+  // from opening every connection at once.
   //
   // Fenced per server, the way the plugins sync fences a write. `probeMcpTools`
   // is `testConnection`, which *throws* rather than answering for a server
@@ -82,14 +86,34 @@ async function collectEntries(
   // fixed the one bad row. A server that cannot be probed is the case
   // `undiscovered` already exists for.
   const undiscovered: string[] = [];
-  const probed = await Promise.all(
-    servers.map(async (server) => ({
-      server,
-      tools: await deps.probeMcpTools(server.name).catch((error: unknown) => {
-        log.warn("catalog", `probing '${server.name}' failed; indexing it without its tools`, error);
-        return undefined;
-      }),
-    })),
+  const probed: Array<{ server: (typeof servers)[number]; tools: readonly McpTool[] | undefined }> =
+    new Array(servers.length);
+  let nextServer = 0;
+  async function probeNext(): Promise<void> {
+    for (;;) {
+      const index = nextServer++;
+      const server = servers[index];
+      if (!server) {
+        return;
+      }
+      probed[index] = {
+        server,
+        tools: await deps.probeMcpTools(server.name).catch((error: unknown) => {
+          log.warn(
+            "catalog",
+            `probing '${server.name}' failed; indexing it without its tools`,
+            error,
+          );
+          return undefined;
+        }),
+      };
+    }
+  }
+  await Promise.all(
+    Array.from(
+      { length: Math.min(MAX_CONCURRENT_CATALOG_PROBES, servers.length) },
+      () => probeNext(),
+    ),
   );
   for (const { server, tools } of probed) {
     // Always present, whether or not its tools could be listed: this is the
