@@ -25,6 +25,20 @@ env:
 jobs:
   verify:
     runs-on: self-hosted
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: agent_studio
+          POSTGRES_PASSWORD: agent_studio
+          POSTGRES_DB: agent_studio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agent_studio -d agent_studio_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -35,6 +49,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test:integration
 
   github-release:
     needs: verify

@@ -33,7 +33,8 @@ AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필�
 
 `.github/workflows/release.yml`, `v*` 태그(또는 수동 dispatch)로 트리거된다:
 
-1. **verify**. `pnpm typecheck` + `pnpm test`.
+1. **verify**. 전용 PostgreSQL test database 에 대해 `pnpm typecheck` + `pnpm test` +
+   `pnpm test:integration`.
 2. **github-release**. GitHub Release 를 만든다. 릴리스 노트는 직전 태그와 이번 태그 사이의
    `git log` 로 생성된다 (`chore: release` 커밋은 걸러낸다). 이것이 이 프로젝트의 변경
    이력이다: 완료된 마일스톤은 [MILESTONES.md](MILESTONES.md) 에 보관되는 것이 아니라
