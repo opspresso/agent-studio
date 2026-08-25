@@ -23,6 +23,10 @@ import {
   selectPluginSkillRoots,
 } from "@/domain/plugin/files";
 import type { RepoPlugin, RepoPluginDoc, RepoPluginSkill } from "@/domain/plugin/sync";
+import { mapWithLimit } from "@/shared/mapWithLimit";
+
+/** Selected repository blobs read concurrently during one plugin walk. */
+export const MAX_CONCURRENT_PLUGIN_READS = 8;
 
 /** One regular file of the repository tree, read on demand. */
 export interface PluginTreeFile {
@@ -88,32 +92,41 @@ export async function collectRepoPlugins(
     const { selected, skipped } = selectSkillAttachments(owned, skillRoots);
     const docEntries = owned.filter((entry) => mcpDocServerName(entry.path, root) !== null);
 
-    // One plugin's files read together — a serial walk multiplied every
-    // network round trip by the file count, which is what let a slow GitHub
-    // read push the whole sync past the proxy's idle timeout.
-    const [manifestRaw, mcpJsonRaw, attachments, skillMds, docs] = await Promise.all([
-      read(manifestEntry.path),
-      mcpJsonEntry ? read(mcpJsonEntry.path) : Promise.resolve(undefined),
-      Promise.all(
-        selected.map(async (attachment) => ({
-          attachment,
-          content: await read(attachment.sha),
-        })),
-      ),
-      Promise.all(
-        skillRoots.map(async (skillRoot) => {
-          const skillMd = ownedByPath.get(skillRoot.skillMdPath);
-          return skillMd ? { skillRoot, content: await read(skillMd.path) } : null;
-        }),
-      ),
-      Promise.all(
-        docEntries.map(async (entry) => ({
-          server: mcpDocServerName(entry.path, root) ?? "",
-          path: entry.path,
-          content: await read(entry.path),
-        })),
-      ),
-    ]);
+    // One plugin's selected files share a worker queue. A serial walk multiplied
+    // every network round trip by the file count; an unbounded `Promise.all`
+    // turned a large repository into the same number of simultaneous GitHub
+    // blob requests.
+    const selectedPaths = [
+      manifestEntry.path,
+      ...(mcpJsonEntry ? [mcpJsonEntry.path] : []),
+      ...selected.map((attachment) => attachment.sha),
+      ...skillRoots.flatMap((skillRoot) => {
+        const skillMd = ownedByPath.get(skillRoot.skillMdPath);
+        return skillMd ? [skillMd.path] : [];
+      }),
+      ...docEntries.map((entry) => entry.path),
+    ];
+    const loaded = new Map(
+      await mapWithLimit(selectedPaths, MAX_CONCURRENT_PLUGIN_READS, async (path) => [
+        path,
+        await read(path),
+      ] as const),
+    );
+    const manifestRaw = loaded.get(manifestEntry.path)!;
+    const mcpJsonRaw = mcpJsonEntry ? loaded.get(mcpJsonEntry.path) : undefined;
+    const attachments = selected.map((attachment) => ({
+      attachment,
+      content: loaded.get(attachment.sha)!,
+    }));
+    const skillMds = skillRoots.map((skillRoot) => {
+      const skillMd = ownedByPath.get(skillRoot.skillMdPath);
+      return skillMd ? { skillRoot, content: loaded.get(skillMd.path)! } : null;
+    });
+    const docs = docEntries.map((entry) => ({
+      server: mcpDocServerName(entry.path, root) ?? "",
+      path: entry.path,
+      content: loaded.get(entry.path)!,
+    }));
 
     const attachmentsByName = new Map<string, SkillFile[]>();
     for (const { attachment, content } of attachments) {

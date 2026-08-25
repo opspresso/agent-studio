@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchPluginsRepoSnapshot } from "@/infrastructure/github/pluginsRepoClient";
+import {
+  collectRepoPlugins,
+  MAX_CONCURRENT_PLUGIN_READS,
+} from "@/infrastructure/plugin/snapshot";
 
 interface TreeEntry {
   path: string;
@@ -47,6 +51,35 @@ afterEach(() => {
 });
 
 describe("fetchPluginsRepoSnapshot", () => {
+  it("bounds selected blob reads within a plugin", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const paths = [
+      "plugin.json",
+      ...Array.from(
+        { length: MAX_CONCURRENT_PLUGIN_READS + 2 },
+        (_, index) => `skills/skill-${index}/SKILL.md`,
+      ),
+    ];
+
+    const snapshot = await collectRepoPlugins(
+      paths.map((path) => ({
+        path,
+        size: 10,
+        async read() {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await Promise.resolve();
+          active -= 1;
+          return path === "plugin.json" ? '{"name":"root"}' : "---\ndescription: test\n---";
+        },
+      })),
+    );
+
+    expect(maxActive).toBe(MAX_CONCURRENT_PLUGIN_READS);
+    expect(snapshot.plugins[0]?.skills).toHaveLength(MAX_CONCURRENT_PLUGIN_READS + 2);
+  });
+
   it("collects each plugin root's manifest, skills with attachments, mcp.json and extension docs", async () => {
     stubGitHub(
       [
