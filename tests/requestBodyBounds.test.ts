@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { editorBody, MAX_TURN_BODY_BYTES, turnBody } from "@/app/api/_lib/body";
+import { describe, expect, it, vi } from "vitest";
+import {
+  editorBody,
+  LARGE_TURN_BODY_BYTES,
+  MAX_CONCURRENT_LARGE_TURN_BODIES,
+  MAX_TURN_BODY_BYTES,
+  withTurnBody,
+} from "@/app/api/_lib/body";
 import { MAX_INBOUND_EVENT_BYTES, readEventBody } from "@/app/api/_lib/inboundEvent";
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
@@ -15,15 +21,23 @@ function post(body: string, headers: Record<string, string> = {}): Request {
   return new Request("https://x.test/api/thing", { method: "POST", body, headers });
 }
 
-describe("turnBody", () => {
+function parseTurn(request: Request): Promise<unknown | Response> {
+  return withTurnBody(request, async (body) => body);
+}
+
+function largeTurnBody(): string {
+  return JSON.stringify({ pad: "a".repeat(LARGE_TURN_BODY_BYTES) });
+}
+
+describe("withTurnBody", () => {
   it("parses a body within the cap", async () => {
-    expect(await turnBody(post(JSON.stringify({ prompt: "hi" })))).toEqual({ prompt: "hi" });
+    expect(await parseTurn(post(JSON.stringify({ prompt: "hi" })))).toEqual({ prompt: "hi" });
   });
 
   it("refuses one over it with a 413 rather than parsing it", async () => {
     const oversized = JSON.stringify({ pad: "a".repeat(MAX_TURN_BODY_BYTES) });
 
-    const result = await turnBody(post(oversized));
+    const result = await parseTurn(post(oversized));
 
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(413);
@@ -31,7 +45,7 @@ describe("turnBody", () => {
 
   it("answers a malformed body with 400, not 413", async () => {
     // The two are different problems and a caller acts differently on each.
-    const result = await turnBody(post("{not json"));
+    const result = await parseTurn(post("{not json"));
 
     expect((result as Response).status).toBe(400);
   });
@@ -43,6 +57,100 @@ describe("turnBody", () => {
       MAX_DOCUMENT_BYTES * MAX_DOCUMENTS + MAX_ATTACHMENT_BYTES * MAX_ATTACHMENTS;
 
     expect(MAX_TURN_BODY_BYTES).toBeGreaterThan(attachments);
+  });
+
+  it("bounds concurrent pre-run body allocation and releases the slot", async () => {
+    let releaseConsumers = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      releaseConsumers = resolve;
+    });
+    let started = 0;
+    const largeBody = largeTurnBody();
+    const pending = Array.from({ length: MAX_CONCURRENT_LARGE_TURN_BODIES }, () =>
+      withTurnBody(post(largeBody), async (body) => {
+        started += 1;
+        await held;
+        return body;
+      }),
+    );
+    await vi.waitFor(() => expect(started).toBe(MAX_CONCURRENT_LARGE_TURN_BODIES));
+
+    await expect(parseTurn(post('{"prompt":"small requests remain available"}'))).resolves.toEqual({
+      prompt: "small requests remain available",
+    });
+
+    let refusedBodyCancelled = false;
+    const refused = await parseTurn(
+      new Request("https://x.test/api/thing", {
+        method: "POST",
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(largeBody));
+          },
+          cancel() {
+            refusedBodyCancelled = true;
+          },
+        }),
+        duplex: "half",
+      } as RequestInit),
+    );
+    expect(refused).toBeInstanceOf(Response);
+    expect((refused as Response).status).toBe(429);
+    expect((refused as Response).headers.get("retry-after")).toBe("1");
+    expect(refusedBodyCancelled).toBe(true);
+
+    releaseConsumers();
+    await Promise.all(pending);
+    await expect(parseTurn(post('{"prompt":"after"}'))).resolves.toEqual({ prompt: "after" });
+  });
+
+  it("retains large-body slots until streamed responses close or cancel", async () => {
+    const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const responses = await Promise.all(
+      Array.from({ length: MAX_CONCURRENT_LARGE_TURN_BODIES }, () =>
+        withTurnBody(
+          post(largeTurnBody()),
+          async () =>
+            new Response(
+              new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controllers.push(controller);
+                },
+              }),
+              { headers: { "Content-Type": "text/event-stream" } },
+            ),
+        ),
+      ),
+    );
+
+    const refused = await parseTurn(post(largeTurnBody()));
+    expect((refused as Response).status).toBe(429);
+
+    const first = (responses[0]! as Response).text();
+    controllers[0]!.close();
+    await first;
+    await (responses[1]! as Response).body?.cancel();
+
+    await expect(parseTurn(post(largeTurnBody()))).resolves.toEqual({
+      pad: "a".repeat(LARGE_TURN_BODY_BYTES),
+    });
+  });
+
+  it("releases a detached-work slot when retained work rejects", async () => {
+    let rejectWork = (_error: Error): void => {};
+    const work = new Promise<void>((_resolve, reject) => {
+      rejectWork = reject;
+    });
+    await withTurnBody(post(largeTurnBody()), async (_body, admission) => {
+      admission.retainUntil(work);
+      return Response.json({ accepted: true });
+    });
+
+    rejectWork(new Error("detached run failed"));
+    await Promise.resolve();
+    await expect(parseTurn(post(largeTurnBody()))).resolves.toEqual({
+      pad: "a".repeat(LARGE_TURN_BODY_BYTES),
+    });
   });
 });
 

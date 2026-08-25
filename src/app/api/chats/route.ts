@@ -2,7 +2,7 @@ import { withAuth } from "@/lib/session";
 import type { Chat } from "@/domain/chat/types";
 import { CHAT_PAGE, MAX_CHAT_PAGE } from "@/domain/chat/repository";
 import { sessionCaller } from "@/app/api/_lib/caller";
-import { turnBody } from "@/app/api/_lib/body";
+import { withTurnBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { parsePageLimit } from "@/shared/pageLimit";
 import { createChat } from "@/application/chat/createChat";
@@ -48,42 +48,41 @@ export const GET = withAuth(async (user, request: Request) => {
   return Response.json(body);
 });
 
-export const POST = withAuth(async (user, request: Request) => {
-  const body = await turnBody(request);
-  if (body instanceof Response) {
-    return body;
-  }
+export const POST = withAuth(async (user, request: Request) =>
+  withTurnBody(request, async (body, admission) => {
+    const parsed = createChatSchema.safeParse(body);
+    if (!parsed.success) {
+      return invalidRequest(parsed.error);
+    }
 
-  const parsed = createChatSchema.safeParse(body);
-  if (!parsed.success) {
-    return invalidRequest(parsed.error);
-  }
-
-  const caller = sessionCaller(user);
-  try {
-    // Wired to the cancel watch, not to the connection: a browser that hangs up
-    // no longer stops the run, so a Stop press is the only thing that does.
-    const abortController = new AbortController();
-    const { chat, runId, userSeq, startedAtMs, stream, onClientGone } = await createChat(
-      chatDeps,
-      {
-        projectName: parsed.data.projectName,
-        firstMessage: parsed.data.firstMessage,
-        ...(parsed.data.images ? { images: parsed.data.images } : {}),
-        ...(parsed.data.documents ? { documents: parsed.data.documents } : {}),
-        userEmail: user.email,
-        ...(caller ? { caller } : {}),
-        signal: abortController.signal,
-      },
-    );
-    const stopWatch = watchChatCancel(chatDeps.chats, chat.chatId, runId, abortController);
-    return await detachedRunResponse({
-      head: { chat, runId, userSeq, elapsedMs: Date.now() - startedAtMs },
-      stream,
-      onClientGone,
-      onDrained: stopWatch,
-    });
-  } catch (error) {
-    return apiError(error);
-  }
-});
+    const caller = sessionCaller(user);
+    try {
+      // Wired to the cancel watch, not to the connection: a browser that hangs up
+      // no longer stops the run, so a Stop press is the only thing that does.
+      const abortController = new AbortController();
+      const { chat, runId, userSeq, startedAtMs, stream, onClientGone } = await createChat(
+        chatDeps,
+        {
+          projectName: parsed.data.projectName,
+          firstMessage: parsed.data.firstMessage,
+          ...(parsed.data.images ? { images: parsed.data.images } : {}),
+          ...(parsed.data.documents ? { documents: parsed.data.documents } : {}),
+          userEmail: user.email,
+          ...(caller ? { caller } : {}),
+          signal: abortController.signal,
+        },
+      );
+      const stopWatch = watchChatCancel(chatDeps.chats, chat.chatId, runId, abortController);
+      const detached = await detachedRunResponse({
+        head: { chat, runId, userSeq, elapsedMs: Date.now() - startedAtMs },
+        stream,
+        onClientGone,
+        onDrained: stopWatch,
+      });
+      admission.retainUntil(detached.drained);
+      return detached.response;
+    } catch (error) {
+      return apiError(error);
+    }
+  }),
+);

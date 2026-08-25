@@ -7,7 +7,7 @@ import { agentSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { requestConversation } from "@/app/api/projects/_lib/conversation";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
-import { turnBody } from "@/app/api/_lib/body";
+import { withTurnBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 
@@ -17,41 +17,39 @@ export const POST = async (request: Request, ctx: RouteContext) => {
   if (principal instanceof Response) {
     return principal;
   }
-  const body = await turnBody(request);
-  if (body instanceof Response) {
-    return body;
-  }
-  const parsed = agentSchema.safeParse(body);
-  if (!parsed.success) {
-    return invalidRequest(parsed.error);
-  }
-  try {
-    const project = await projectUseCases.get(name);
-    const versionEntity = await versionUseCases.get(name, version);
-    const conversation = requestConversation(request, principalActor(principal));
-    const abortController = new AbortController();
-    return await sseResponse(
-      // A file chunk leaves here addressed: the object key and artifact id the
-      // bracket put on it are this platform's own bookkeeping, and a caller
-      // holding them can do nothing but wonder. The console's Playground and
-      // compare view read this stream too, which is how both of them ended up
-      // drawing the picture a run made and saying nothing about the document.
-      withAddressedFiles(
-        executeAgent(executionDeps, {
-          project,
-          version: versionEntity,
-          messages: parsed.data.messages,
-          actor: principalActor(principal),
-          ...(principal.caller ? { caller: principal.caller } : {}),
-          ...(conversation ? { conversation } : {}),
-          signal: abortController.signal,
-        }),
-        signArtifactUrl,
-        VIEW_URL_TTL_SECONDS,
-      ),
-      abortController,
-    );
-  } catch (error) {
-    return apiError(error, request);
-  }
+  return withTurnBody(request, async (body) => {
+    const parsed = agentSchema.safeParse(body);
+    if (!parsed.success) {
+      return invalidRequest(parsed.error);
+    }
+    try {
+      const project = await projectUseCases.get(name);
+      const versionEntity = await versionUseCases.get(name, version);
+      const conversation = requestConversation(request, principalActor(principal));
+      const abortController = new AbortController();
+      return await sseResponse(
+        // A file chunk leaves here addressed: the object key and artifact id the
+        // bracket put on it are this platform's own bookkeeping, and a caller
+        // holding them can do nothing but wonder. The console's Playground and
+        // compare view read this stream too, which is how both of them ended up
+        // drawing the picture a run made and saying nothing about the document.
+        withAddressedFiles(
+          executeAgent(executionDeps, {
+            project,
+            version: versionEntity,
+            messages: parsed.data.messages,
+            actor: principalActor(principal),
+            ...(principal.caller ? { caller: principal.caller } : {}),
+            ...(conversation ? { conversation } : {}),
+            signal: abortController.signal,
+          }),
+          signArtifactUrl,
+          VIEW_URL_TTL_SECONDS,
+        ),
+        abortController,
+      );
+    } catch (error) {
+      return apiError(error, request);
+    }
+  });
 };

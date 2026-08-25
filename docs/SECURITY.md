@@ -303,6 +303,11 @@ JSON 본문은 schema 검증 전에 bounded reader를 지난다. 관리·편집 
 한도, model catalog 업로드는 catalog 한도를 쓴다. webhook 네 종류는 서명 검증에 필요한 raw
 본문을 공통 1MB 한도 아래에서 읽는다. 선언된 `Content-Length`가 한도를 넘으면 body를 읽지 않고
 413을 답하고, chunked body는 누적 바이트가 한도를 넘는 즉시 stream을 취소한다.
+256KiB prose allowance를 넘는 큰 실행 본문은 프로세스마다 동시에 둘만 보유한다. permit은
+파싱부터 run 또는 stream이 입력을 놓을 때까지 유지되고, 연결에서 분리되어 계속 도는 chat은
+내부 drain 완료까지 유지한다. 일반 text turn은 permit을 쓰지 않는다. 큰 본문 permit이 모두
+사용 중이면 body를 취소한 뒤 `Retry-After`를 포함한 429를 답한다. A2A raw JSON 경로도 같은
+게이트를 지난다.
 
 `tests/architecture.test.ts`는 API route의 직접 `request.json()`과 `request.formData()` 호출을
 거부한다. Zod의 필드 크기 검사는 파싱 뒤의 값 규칙이지, 파싱 전에 발생하는 메모리 할당 제한이

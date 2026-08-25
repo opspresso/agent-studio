@@ -15,9 +15,8 @@ import {
   tenantFromA2aJsonRpcRequest,
   withRequiredA2aDefaults,
 } from "@/app/api/a2a/_lib/jsonRpc";
-import { bodyTooLarge, BodyTooLargeError, MAX_TURN_BODY_BYTES } from "@/app/api/_lib/body";
+import { withTurnBodyText } from "@/app/api/_lib/body";
 import { sseResponseRaw } from "@/app/api/_lib/sse";
-import { readBodyText } from "@/shared/httpBody";
 import { unauthorized } from "@/shared/unauthorized";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -82,74 +81,67 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   }
   const { project, version, card } = exposed;
 
-  let rawBody: string;
-  try {
-    rawBody = await readBodyText(request, MAX_TURN_BODY_BYTES);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) {
-      return bodyTooLarge(error);
+  return withTurnBodyText(request, async (rawBody) => {
+    const body = parseJsonRpcEnvelope(rawBody);
+    const id = requestIdOf(body);
+    if (body === undefined) {
+      // The SDK currently maps SyntaxError to RequestMalformed (-32600), while
+      // A2A 1.0 explicitly reserves -32700 for an invalid JSON payload.
+      return Response.json(a2aJsonParseError());
     }
-    throw error;
-  }
-  const body = parseJsonRpcEnvelope(rawBody);
-  const id = requestIdOf(body);
-  if (body === undefined) {
-    // The SDK currently maps SyntaxError to RequestMalformed (-32600), while
-    // A2A 1.0 explicitly reserves -32700 for an invalid JSON payload.
-    return Response.json(a2aJsonParseError());
-  }
 
-  const store = createA2aTaskStore(project.name);
-  const user: User = {
-    get isAuthenticated() {
-      return true;
-    },
-    get userName() {
-      return actor.id;
-    },
-  };
-  const callContext = new ServerCallContext({
-    user,
-    tenant: tenantFromA2aJsonRpcRequest(body),
-    requestedVersion: request.headers.get(A2A_VERSION_HEADER) ?? undefined,
-  });
-  // The reader leaving ends a resubscribe's polling; a run itself is not
-  // cancelled by it — `CancelTask` is how a task is cancelled.
-  const abortController = new AbortController();
-  const requestHandler = new ProjectRequestHandler(
-    store,
-    {
-      signal: abortController.signal,
-      acceptImageUrls: project.projectType !== "image",
-    },
-    card,
-    store,
-    new ProjectA2aExecutor(executionDeps, project, version, store, actor, callContext),
-  );
-  const transport = new JsonRpcTransportHandler(requestHandler);
-
-  try {
-    // A2A 1.0 requires version negotiation through the service parameter.
-    // Missing means 0.3 in the SDK context and is rejected because this
-    // unopened service intentionally exposes only the native 1.0 contract.
-    validateVersion(callContext.requestedVersion, card, "JSONRPC");
-    const result = await transport.handle(rawBody, callContext);
-    if (isAsyncGenerator(result)) {
-      // A refusal on the first pull is a JSON-RPC error; one after the stream
-      // has begun is a JSON-RPC error *frame*, which is what every frame of
-      // this stream is.
-      return await sseResponseRaw(result, abortController, {
-        errorFrame: (message) => ({
-          jsonrpc: "2.0",
-          id,
-          error: JsonRpcTransportHandler.mapToJSONRPCError(new Error(message)),
-        }),
-      });
-    }
-    return Response.json(
-      withRequiredA2aDefaults((body as { method?: unknown } | null)?.method, result),
+    const store = createA2aTaskStore(project.name);
+    const user: User = {
+      get isAuthenticated() {
+        return true;
+      },
+      get userName() {
+        return actor.id;
+      },
+    };
+    const callContext = new ServerCallContext({
+      user,
+      tenant: tenantFromA2aJsonRpcRequest(body),
+      requestedVersion: request.headers.get(A2A_VERSION_HEADER) ?? undefined,
+    });
+    // The reader leaving ends a resubscribe's polling; a run itself is not
+    // cancelled by it — `CancelTask` is how a task is cancelled.
+    const abortController = new AbortController();
+    const requestHandler = new ProjectRequestHandler(
+      store,
+      {
+        signal: abortController.signal,
+        acceptImageUrls: project.projectType !== "image",
+      },
+      card,
+      store,
+      new ProjectA2aExecutor(executionDeps, project, version, store, actor, callContext),
     );
-  } catch (error) {
-    return jsonRpcError(id, error);
-  }
+    const transport = new JsonRpcTransportHandler(requestHandler);
+
+    try {
+      // A2A 1.0 requires version negotiation through the service parameter.
+      // Missing means 0.3 in the SDK context and is rejected because this
+      // unopened service intentionally exposes only the native 1.0 contract.
+      validateVersion(callContext.requestedVersion, card, "JSONRPC");
+      const result = await transport.handle(rawBody, callContext);
+      if (isAsyncGenerator(result)) {
+        // A refusal on the first pull is a JSON-RPC error; one after the stream
+        // has begun is a JSON-RPC error *frame*, which is what every frame of
+        // this stream is.
+        return await sseResponseRaw(result, abortController, {
+          errorFrame: (message) => ({
+            jsonrpc: "2.0",
+            id,
+            error: JsonRpcTransportHandler.mapToJSONRPCError(new Error(message)),
+          }),
+        });
+      }
+      return Response.json(
+        withRequiredA2aDefaults((body as { method?: unknown } | null)?.method, result),
+      );
+    } catch (error) {
+      return jsonRpcError(id, error);
+    }
+  });
 }
