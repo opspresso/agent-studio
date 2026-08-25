@@ -14,6 +14,21 @@ import { daySpan, daysBetween, isUtcDay } from "@/shared/date";
  * actually asks about ("last week", "that Tuesday") fits inside it comfortably.
  */
 export const MAX_AUDIT_RANGE_DAYS = 31;
+export const AUDIT_DAY_PAGE_SIZE = 100;
+
+export async function listAuditDay(repo: AuditRepository, day: string): Promise<AuditEvent[]> {
+  const events: AuditEvent[] = [];
+  let after: { createdAt: string; eventId: string } | undefined;
+  for (;;) {
+    const page = await repo.listByDay(day, AUDIT_DAY_PAGE_SIZE, after);
+    events.push(...page);
+    if (page.length < AUDIT_DAY_PAGE_SIZE) {
+      return events;
+    }
+    const last = page.at(-1)!;
+    after = { createdAt: last.createdAt, eventId: last.eventId };
+  }
+}
 
 export interface AuditQuery {
   /** Inclusive UTC day, `YYYY-MM-DD`. */
@@ -74,7 +89,7 @@ export function createAuditUseCases(repo: AuditRepository): AuditUseCases {
       // table sees for no gain in a page a person reads.
       const events: AuditEvent[] = [];
       for (const day of days) {
-        events.push(...(await repo.listByDay(day)));
+        events.push(...(await listAuditDay(repo, day)));
       }
       return events;
     },

@@ -63,6 +63,7 @@ async function main() {
   const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
   const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
   const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
+  const { listAuditDay } = await import("@/application/audit/auditUseCases");
   const { artifactRepository } = await import(
     "@/infrastructure/db/repositories/artifactRepository"
   );
@@ -798,7 +799,7 @@ async function main() {
       await auditRepository.append(row);
       auditFixtures.push({ day: auditDay, createdAt: row.createdAt, eventId: row.eventId });
     }
-    const dayRows = await auditRepository.listByDay(auditDay);
+    const dayRows = await listAuditDay(auditRepository, auditDay);
     const mine = dayRows.filter((row) => row.eventId.endsWith(suffix));
     assert.deepEqual(
       mine.map((row) => row.eventId),

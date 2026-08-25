@@ -7,6 +7,7 @@ import {
   setAuditSink,
 } from "@/application/audit/recordAudit";
 import {
+  AUDIT_DAY_PAGE_SIZE,
   createAuditUseCases,
   daysInRange,
   MAX_AUDIT_RANGE_DAYS,
@@ -24,8 +25,20 @@ function memorySink(): AuditRepository & { rows: AuditEvent[] } {
     async append(event) {
       rows.push(event);
     },
-    async listByDay(day) {
-      return rows.filter((row) => row.createdAt.startsWith(day)).reverse();
+    async listByDay(day, limit, after) {
+      return rows
+        .filter((row) => row.createdAt.startsWith(day))
+        .sort(
+          (a, b) =>
+            b.createdAt.localeCompare(a.createdAt) || b.eventId.localeCompare(a.eventId),
+        )
+        .filter(
+          (row) =>
+            !after ||
+            row.createdAt < after.createdAt ||
+            (row.createdAt === after.createdAt && row.eventId < after.eventId),
+        )
+        .slice(0, limit);
     },
   };
 }
@@ -163,6 +176,28 @@ describe("reading a range", () => {
     );
     expect(await useCases.list({ from: "2026-08-03" })).toHaveLength(1);
     expect(await useCases.list({ from: "2026-08-02" })).toHaveLength(0);
+  });
+
+  it("reads a busy audit day through bounded createdAt and eventId pages", async () => {
+    sink.rows.push(
+      ...Array.from({ length: AUDIT_DAY_PAGE_SIZE + 2 }, (_, index) => ({
+        eventId: `event-${String(index).padStart(3, "0")}`,
+        actorEmail: "admin@example.com",
+        action: "settings.update" as const,
+        target: "settings:app",
+        createdAt: "2026-08-03T10:00:00.000Z",
+      })),
+    );
+    const listByDay = sink.listByDay.bind(sink);
+    const pageSizes: number[] = [];
+    sink.listByDay = async (day, limit, after) => {
+      const page = await listByDay(day, limit, after);
+      pageSizes.push(page.length);
+      return page;
+    };
+
+    await expect(useCases.list({ from: "2026-08-03" })).resolves.toHaveLength(sink.rows.length);
+    expect(pageSizes).toEqual([AUDIT_DAY_PAGE_SIZE, 2]);
   });
 
   it("refuses a malformed day rather than querying a partition that cannot exist", async () => {

@@ -14,6 +14,7 @@ import { expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 import { utcDay } from "@/shared/date";
 import type { AuditRepository } from "@/domain/audit/repository";
 import type { AuditAction, AuditEvent } from "@/domain/audit/types";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 const AUDIT_ENTITY = "AuditEvent";
 
@@ -39,15 +40,20 @@ export const auditRepository: AuditRepository = {
     });
   },
 
-  async listByDay(day) {
-    // Newest first, and whole rather than bounded top-N: the day is already
-    // the bound, and an audit answer that silently stopped short would be
-    // worse than no answer — it reads as "that is everything".
+  async listByDay(day, limit, after) {
     const items = await queryItems({
       pk: keys.auditDayPartition(day),
       forward: false,
+      limit: boundedPageLimit(limit),
+      ...(after ? { after: keys.auditEvent(day, after.createdAt, after.eventId).SK } : {}),
       notExpiredAt: Math.floor(Date.now() / 1000),
     });
-    return items.map(toEvent);
+    return items.map((item) => {
+      const event = toEvent(item);
+      if (keys.auditEvent(day, event.createdAt, event.eventId).SK !== item.SK) {
+        throw new Error("audit event identity does not match its key");
+      }
+      return event;
+    });
   },
 };
