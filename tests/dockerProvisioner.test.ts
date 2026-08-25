@@ -10,6 +10,7 @@ const cli = vi.hoisted(() => ({
   calls: [] as string[][],
   envFileSeen: null as null | { mode: number; content: string },
   fail: null as null | Record<string, unknown>,
+  failCommand: "run",
 }));
 
 vi.mock("node:child_process", async () => {
@@ -27,9 +28,9 @@ vi.mock("node:child_process", async () => {
             content: await readFile(path, "utf8"),
           };
         }
-        if (cli.fail) {
-          throw Object.assign(new Error(`Command failed: docker ${args.join(" ")}`), cli.fail);
-        }
+      }
+      if (cli.fail && args[0] === cli.failCommand) {
+        throw Object.assign(new Error(`Command failed: docker ${args.join(" ")}`), cli.fail);
       }
       return { stdout: args[0] === "inspect" ? "abc123 true" : "", stderr: "" };
     },
@@ -50,6 +51,7 @@ beforeEach(() => {
   cli.calls = [];
   cli.envFileSeen = null;
   cli.fail = null;
+  cli.failCommand = "run";
 });
 
 describe("docker provisioner", () => {
@@ -80,5 +82,21 @@ describe("docker provisioner", () => {
     await expect(
       createDockerProvisioner().start({ ...spec, environment: { TOKEN: "two\nlines" } }),
     ).rejects.toThrow(/line break: TOKEN$/);
+  });
+
+  it("treats an already absent container as stopped", async () => {
+    cli.failCommand = "rm";
+    cli.fail = { stderr: "Error response from daemon: No such container: my-tool\n", code: 1 };
+
+    await expect(createDockerProvisioner().stop("my-tool")).resolves.toBeUndefined();
+  });
+
+  it("reports a real remove failure instead of claiming the container stopped", async () => {
+    cli.failCommand = "rm";
+    cli.fail = { stderr: "permission denied while trying to connect to the Docker daemon\n", code: 1 };
+
+    await expect(createDockerProvisioner().stop("my-tool")).rejects.toThrow(
+      /docker rm failed: permission denied/,
+    );
   });
 });

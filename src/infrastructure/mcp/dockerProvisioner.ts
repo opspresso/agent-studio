@@ -29,6 +29,17 @@ const run = promisify(execFile);
 
 const NAME = MANAGED_NAME;
 
+class DockerCommandError extends Error {
+  constructor(
+    action: string,
+    reason: string,
+    readonly stderr: string,
+  ) {
+    super(`docker ${action} failed: ${reason}`);
+    this.name = "DockerCommandError";
+  }
+}
+
 function assertSafe(value: string, pattern: RegExp, what: string): string {
   if (!pattern.test(value)) {
     throw new Error(`Refusing an unsafe ${what}: ${value}`);
@@ -52,8 +63,12 @@ async function docker(args: string[]): Promise<string> {
       (failed.code === "ENOENT"
         ? "the docker binary is not on this host's PATH"
         : `exit ${String(failed.code ?? "unknown")}`);
-    throw new Error(`docker ${args[0] ?? ""} failed: ${reason}`);
+    throw new DockerCommandError(args[0] ?? "", reason, stderr);
   }
+}
+
+function isMissingContainer(error: unknown): boolean {
+  return error instanceof DockerCommandError && error.stderr.includes("No such container:");
 }
 
 /**
@@ -147,7 +162,13 @@ export function createDockerProvisioner(): McpProvisioner {
     },
 
     async stop(name: string): Promise<void> {
-      await docker(["rm", "-f", assertSafe(name, NAME, "name")]).catch(() => {});
+      try {
+        await docker(["rm", "-f", assertSafe(name, NAME, "name")]);
+      } catch (error) {
+        if (!isMissingContainer(error)) {
+          throw error;
+        }
+      }
     },
 
     async inspect(name: string): Promise<ManagedWorkload | null> {

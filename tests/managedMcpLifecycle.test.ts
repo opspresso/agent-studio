@@ -34,6 +34,7 @@ function fixture(
     existing?: McpServer;
     /** What the provisioner reports for `inspect`. */
     running?: boolean;
+    stopError?: Error;
     /**
      * Make `start` block until `releaseStart()`. Starting a container really
      * does run for minutes, and a test about what happens *while* one is in
@@ -71,6 +72,9 @@ function fixture(
     },
     async stop(name) {
       stopped.push(name);
+      if (opts.stopError) {
+        throw opts.stopError;
+      }
     },
     async inspect(name) {
       return rows.has(name)
@@ -230,6 +234,16 @@ describe("managed MCP lifecycle", () => {
     expect(stopped).toEqual(["image-fetch"]);
     expect(rows.has("image-fetch")).toBe(false);
     expect(invalidated).toEqual(["http://127.0.0.1:3001/mcp"]);
+  });
+
+  it("keeps the registry entry when the container could not be stopped", async () => {
+    const f = fixture({ existing: managedRow(), stopError: new Error("docker daemon unavailable") });
+
+    await expect(f.useCases.remove("image-fetch", "admin@example.com")).rejects.toThrow(
+      "docker daemon unavailable",
+    );
+    expect(f.rows.has("image-fetch")).toBe(true);
+    expect(f.invalidated).toEqual([]);
   });
 
   it("leaves the same audit row an unmanaged deletion does", async () => {
