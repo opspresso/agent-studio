@@ -2316,6 +2316,34 @@ describe("private project visibility gate", () => {
     expect(mutes).toEqual([{ threadTs: "1.0", muted: true }]);
   });
 
+  it("does not run a command when the project visibility cannot be read", async () => {
+    const { slack, posted } = makeSlackFake();
+    const deps = privateDeps(slack);
+    deps.projects = {
+      get: async () => {
+        throw new Error("project store unavailable");
+      },
+    } as unknown as ProjectRepository;
+    const event: SlackEventBody = {
+      event_id: "Ev9",
+      event: {
+        type: "app_mention",
+        channel: "C1",
+        ts: "2.0",
+        thread_ts: "1.0",
+        text: "<@U0> !mute",
+        user: "U2",
+      },
+    };
+
+    await expect(handleSlackEvent(deps, event, BINDING)).rejects.toThrow(
+      "project store unavailable",
+    );
+
+    expect(mutes).toHaveLength(0);
+    expect(posted).toHaveLength(0);
+  });
+
   it("answers an invited member, matching email case-insensitively", async () => {
     const { slack, posted, reactions, emails } = makeSlackFake();
     emails.set("U2", "Invited@X.com");

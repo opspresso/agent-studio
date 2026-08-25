@@ -347,11 +347,11 @@ export async function handleSlackEvent(
   // reaches for it. Not ahead of the visibility gate: a command writes the
   // project's engagement state, so an uninvited user muting a private
   // project's thread would be exactly the acted-on message the gate exists to
-  // prevent. A project row that cannot be read keeps the old behaviour — the
-  // command still answers.
+  // prevent. A project repository failure must not erase that gate: only a
+  // successful lookup may distinguish a public or missing project.
   const command = parseSlackCommand(message);
   if (command) {
-    const commandProject = await deps.projects.get(projectName).catch(() => null);
+    const commandProject = await deps.projects.get(projectName);
     if (
       commandProject &&
       !(await slackSenderMayAccess(deps, token, commandProject, {
