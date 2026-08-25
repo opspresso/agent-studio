@@ -1,5 +1,6 @@
-import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
+import { ValidationError } from "@/application/errors";
 import { MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
+import { persistProjectUpdate } from "@/application/project/projectUpdate";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, SlackIntegration } from "@/domain/project/types";
@@ -155,21 +156,6 @@ function mergeSecret(
   return cipher.encrypt(input);
 }
 
-async function updateProject(
-  repo: ProjectRepository,
-  updated: Project,
-  expectedUpdatedAt: string,
-): Promise<void> {
-  try {
-    await repo.update(updated, expectedUpdatedAt);
-  } catch (error) {
-    if (isConditionalWriteFailure(error)) {
-      throw new ConflictError(`Project "${updated.name}" was modified by another request`);
-    }
-    throw error;
-  }
-}
-
 export async function updateProjectSlack(
   repo: ProjectRepository,
   name: string,
@@ -200,7 +186,7 @@ export async function updateProjectSlack(
     throw new ValidationError("Bot token and signing secret are required to enable Slack");
   }
   const updated: Project = { ...project, slack, updatedAt: nextUpdatedAt(project.updatedAt) };
-  await updateProject(repo, updated, project.updatedAt);
+  await persistProjectUpdate(repo, updated, project.updatedAt);
   return { project: updated, view: maskedView(cipher, updated) };
 }
 
@@ -216,7 +202,7 @@ export async function disconnectProjectSlack(
     slack: undefined,
     updatedAt: nextUpdatedAt(project.updatedAt),
   };
-  await updateProject(repo, updated, project.updatedAt);
+  await persistProjectUpdate(repo, updated, project.updatedAt);
   return { project: updated, view: maskedView(cipher, updated) };
 }
 

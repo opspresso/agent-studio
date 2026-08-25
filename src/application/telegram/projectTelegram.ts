@@ -1,4 +1,5 @@
-import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
+import { ValidationError } from "@/application/errors";
+import { persistProjectUpdate } from "@/application/project/projectUpdate";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { nextUpdatedAt } from "@/application/project/timestamps";
 import { botIdFromToken } from "@/application/telegram/engagement";
@@ -104,21 +105,6 @@ export async function listProjectTelegramDestinations(
     : destinations.list(project.name, botId, MAX_TELEGRAM_DESTINATIONS);
 }
 
-async function updateProject(
-  repo: ProjectRepository,
-  updated: Project,
-  expectedUpdatedAt: string,
-): Promise<void> {
-  try {
-    await repo.update(updated, expectedUpdatedAt);
-  } catch (error) {
-    if (isConditionalWriteFailure(error)) {
-      throw new ConflictError(`Project "${updated.name}" was modified by another request`);
-    }
-    throw error;
-  }
-}
-
 /** The three Bot API calls the settings slice makes; injected so it stays free of the HTTP client. */
 export interface TelegramWebhookCalls {
   getMe: (botToken: string) => Promise<TelegramBotIdentity>;
@@ -204,7 +190,7 @@ export async function updateProjectTelegram(
     throw new ValidationError("A bot token is required to enable Telegram");
   }
   const updated: Project = { ...project, telegram, updatedAt: nextUpdatedAt(project.updatedAt) };
-  await updateProject(repo, updated, project.updatedAt);
+  await persistProjectUpdate(repo, updated, project.updatedAt);
 
   const wasEnabled = stored?.enabled === true;
   const runtime = resolveProjectTelegramCredentials(cipher, updated);
@@ -256,7 +242,7 @@ export async function disconnectProjectTelegram(
     telegram: undefined,
     updatedAt: nextUpdatedAt(project.updatedAt),
   };
-  await updateProject(repo, updated, project.updatedAt);
+  await persistProjectUpdate(repo, updated, project.updatedAt);
   return { project: updated, view: maskedView(cipher, updated) };
 }
 

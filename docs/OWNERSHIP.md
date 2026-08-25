@@ -68,6 +68,7 @@
 | 런의 trace 를 샘플링할지 여부 | `src/application/run/traceLifecycle.ts` |
 | schedule 이 언제 발화하는지 판정하기 | `src/domain/trigger/cron.ts` |
 | Project 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `projectWebhookPath` |
+| Project optimistic update 가 경쟁에서 졌을 때의 오류 계약 | `src/application/project/projectUpdate.ts` 의 `persistProjectUpdate` |
 | managed workload 이름 규칙 | `src/domain/naming.ts` 의 `MANAGED_NAME` |
 | 동시에 도는 generator 를 병합하기 | `src/shared/mergeGenerators.ts` |
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/app/_lib/authorPaths.ts` |

@@ -6,7 +6,7 @@ import {
   updateProjectTeams,
 } from "@/application/teams/projectTeams";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
-import { ForbiddenError, ValidationError } from "@/application/errors";
+import { ConflictError, ForbiddenError, ValidationError } from "@/application/errors";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 
@@ -89,6 +89,19 @@ describe("updateProjectTeams", () => {
     const llm = fakeRepo(makeProject({ projectType: "llm" }));
     await expect(update(llm.repo, { appId: APP, appPassword: "x" })).rejects.toThrow(ValidationError);
     await expect(update(repo, { appId: APP, appPassword: "x" }, OTHER)).rejects.toThrow(ForbiddenError);
+  });
+
+  it("maps a stale project snapshot to ConflictError", async () => {
+    const { repo } = fakeRepo(makeProject());
+    repo.update = async () => {
+      throw Object.assign(new Error("conditional check failed"), {
+        name: "ConditionalWriteFailed",
+      });
+    };
+
+    await expect(update(repo, { appId: APP, appPassword: "x" })).rejects.toBeInstanceOf(
+      ConflictError,
+    );
   });
 });
 

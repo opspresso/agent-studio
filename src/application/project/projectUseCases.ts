@@ -3,6 +3,7 @@ import type { CostLimits, Project, ProjectType, ProjectVisibility } from "@/doma
 import { mayAccessProject, normalizeMemberEmails } from "@/domain/project/access";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "./timestamps";
+import { persistProjectUpdate } from "./projectUpdate";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
@@ -312,14 +313,7 @@ export async function updateProject(
       : { memberEmails: normalizeMemberEmails(input.memberEmails, existing.ownerEmail) }),
     updatedAt: nextUpdatedAt(existing.updatedAt),
   };
-  try {
-    await repo.update(updated, existing.updatedAt);
-  } catch (error) {
-    if (isConditionalWriteFailure(error)) {
-      throw new ConflictError(`Project "${name}" was modified by another request`);
-    }
-    throw error;
-  }
+  await persistProjectUpdate(repo, updated, existing.updatedAt);
   return updated;
 }
 
