@@ -14,7 +14,7 @@
 
 import type { ChatRepository } from "@/domain/chat/repository";
 import { log } from "@/shared/logger";
-import { unrefTimer } from "@/shared/unrefTimer";
+import { startSequentialPoll } from "@/shared/sequentialPoll";
 import type { ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError } from "./errors";
 
@@ -96,25 +96,23 @@ export function watchChatCancel(
   runId: string,
   controller: AbortController,
 ): () => void {
-  const timer = setInterval(() => {
-    void chats.getActiveRun(chatId).then(
-      (active) => {
-        // A lease that no longer names this run ends it too — the chat was
-        // deleted, or something else has taken it over, and this run is
-        // finishing into nothing either way. Said under its own reason, because
-        // nobody pressed anything.
-        if (active === null || active.runId !== runId) {
-          controller.abort(SUPERSEDED_REASON);
-        } else if (active.cancelRequestedAt) {
-          controller.abort(STOP_REASON);
-        }
-      },
-      (error) => {
-        log.error("chat", "cancel poll failed", error);
-      },
-    );
-  }, CANCEL_POLL_MS);
-  // Never a reason to hold the process open by itself.
-  unrefTimer(timer);
-  return () => clearInterval(timer);
+  return startSequentialPoll({
+    intervalMs: CANCEL_POLL_MS,
+    async poll(signal) {
+      const active = await chats.getActiveRun(chatId);
+      if (signal.aborted) {
+        return;
+      }
+      // A lease that no longer names this run ends it too — the chat was
+      // deleted, or something else has taken it over, and this run is
+      // finishing into nothing either way. Said under its own reason, because
+      // nobody pressed anything.
+      if (active === null || active.runId !== runId) {
+        controller.abort(SUPERSEDED_REASON);
+      } else if (active.cancelRequestedAt) {
+        controller.abort(STOP_REASON);
+      }
+    },
+    onError: (error) => log.error("chat", "cancel poll failed", error),
+  });
 }

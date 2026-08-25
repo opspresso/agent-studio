@@ -1531,6 +1531,38 @@ describe("stopping a run", () => {
       vi.useRealTimers();
     }
   });
+
+  it("waits for each cancel read and ignores one that finishes after stop", async () => {
+    vi.useFakeTimers();
+    try {
+      let activeReads = 0;
+      let maxActiveReads = 0;
+      let reads = 0;
+      const repo = {
+        getActiveRun: async () => {
+          reads += 1;
+          activeReads += 1;
+          maxActiveReads = Math.max(maxActiveReads, activeReads);
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+          activeReads -= 1;
+          return { runId: "run-1", expiresAt: "2026-01-01T00:00:00.000Z" };
+        },
+      } as unknown as ChatRepository;
+      const controller = new AbortController();
+      const stop = watchChatCancel(repo, "c1", "run-1", controller);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(maxActiveReads).toBe(1);
+
+      stop();
+      const readsAtStop = reads;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(reads).toBe(readsAtStop);
+      expect(controller.signal.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("run stream frames", () => {

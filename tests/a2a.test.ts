@@ -993,6 +993,41 @@ describe("ProjectA2aExecutor cancel", () => {
     }
   });
 
+  it("does not overlap slow cancel-store reads", async () => {
+    vi.useFakeTimers();
+    try {
+      let activeReads = 0;
+      let maxActiveReads = 0;
+      const deps = {
+        ...executionDepsFixture(new FakeChannel([])),
+        channel: hangingChannel(),
+      } as unknown as ExecutionDeps;
+      const store = fakeStore({
+        load: async () => {
+          activeReads += 1;
+          maxActiveReads = Math.max(maxActiveReads, activeReads);
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+          activeReads -= 1;
+          return taskFixture({
+            id: "t1",
+            contextId: "c1",
+            status: taskStatus(TaskState.TASK_STATE_CANCELED),
+          });
+        },
+      });
+      const executor = new ProjectA2aExecutor(deps, projectFixture(), versionFixture(), store);
+      const done = executor.execute(requestContext(userMessage("hi")), new CollectingBus());
+
+      await vi.advanceTimersByTimeAsync(5_100);
+      await done;
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      expect(maxActiveReads).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("aborts a hung image run when a cancel is persisted", async () => {
     vi.useFakeTimers();
     try {

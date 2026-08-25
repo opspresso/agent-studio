@@ -34,7 +34,9 @@ chat 의 append-only 히스토리를 교차 기록하지 못하게 막는다.
 만드는 controller 는 대신 취소 감시(cancel watch)에 연결된다.
 
 그 결과 런을 멈추는 일은 명시적인 행위가 된다: `DELETE /api/chats/{chatId}/runs/{runId}` 가
-chat 행에 `cancelRequestedAt` 을 쓰고 `watchChatCancel` 이 그것을 폴링한다. 누름을 받아 준
+chat 행에 `cancelRequestedAt` 을 쓰고 `watchChatCancel` 이 그것을 순차 폴링한다. 이전 읽기가
+끝난 뒤에만 다음 타이머를 잡으므로 느린 저장소에서 같은 run 의 조회가 겹치지 않는다. 누름을
+받아 준
 인스턴스가 답을 실행 중인 인스턴스라는 보장이 없기 때문이며 — A2A executor 가
 `CancelTask` 에 쓰는 것과 같은 모양이다. 엔진은 자기가 받은 abort 를 그대로 다시 던지므로
 그것이 *어느* 종류였는지가 signal 의 reason 에 남아 살아남고, `endNoticeFor` 가 그것을

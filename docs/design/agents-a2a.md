@@ -40,6 +40,10 @@ artifact, 종단 status — 인스턴스가 달라도 되는 유일한 방식이
 되돌리는 일이 없다. 행은 TTL 로 만료된다. `ListTasks` 는 인증된 client 의 partition 안에서
 status timestamp 내림차순의 opaque cursor 로 페이지를 잇는다.
 
+실행 중 cancel 은 공유 task store 를 순차 폴링한다. 한 읽기가 끝난 뒤 다음 간격을 시작하므로
+저장소가 느려져도 같은 task 의 조회가 중첩되지 않고, 실행이 끝난 뒤 돌아온 읽기는 상태를
+바꾸지 않는다.
+
 **Outbound**: 프로토콜 `A2A` 와 자신의 Agent Card URL 로 등록된 agent 다. 커스텀 헤더는 카드
 해석과 RPC 호출에 함께 보낸다 — 단 **카드가 지목한 `url` 의 origin 이 등록된 카드 URL 의
 origin 과 같을 때만**: 헤더는 등록된 주소를 위한 자격 증명이고, 다른 origin 을 지목하는 카드는
