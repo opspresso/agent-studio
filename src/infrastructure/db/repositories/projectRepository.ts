@@ -30,15 +30,47 @@ function toItem(project: Project): Record<string, unknown> {
   };
 }
 
+function requiredString(item: Record<string, unknown>, field: string): string {
+  const value = item[field];
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`project row has invalid ${field}`);
+  }
+  return value;
+}
+
+function projectType(value: unknown): Project["projectType"] {
+  if (value === "llm" || value === "agent" || value === "image") {
+    return value;
+  }
+  throw new Error("project row has invalid projectType");
+}
+
+function visibility(value: unknown): Project["visibility"] {
+  if (value === undefined || value === "public" || value === "private") {
+    return value;
+  }
+  throw new Error("project row has invalid project visibility");
+}
+
+function memberEmails(value: unknown): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (Array.isArray(value) && value.every((email) => typeof email === "string")) {
+    return value;
+  }
+  throw new Error("project row has invalid memberEmails");
+}
+
 function fromItem(item: Record<string, unknown>): Project {
   return {
-    name: item.name as string,
-    displayName: item.displayName as string,
-    description: item.description as string,
-    projectType: item.projectType as Project["projectType"],
-    ownerEmail: item.ownerEmail as string,
-    visibility: item.visibility as Project["visibility"] | undefined,
-    memberEmails: item.memberEmails as string[] | undefined,
+    name: requiredString(item, "name"),
+    displayName: requiredString(item, "displayName"),
+    description: typeof item.description === "string" ? item.description : "",
+    projectType: projectType(item.projectType),
+    ownerEmail: requiredString(item, "ownerEmail"),
+    visibility: visibility(item.visibility),
+    memberEmails: memberEmails(item.memberEmails),
     departmentCode: item.departmentCode as string | undefined,
     publishedVersion: item.publishedVersion as string | undefined,
     slack: item.slack as Project["slack"] | undefined,

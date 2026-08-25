@@ -136,6 +136,29 @@ describe("project/version atomic writes", () => {
     expect(read?.memberEmails).toEqual(["invited@example.com"]);
   });
 
+  it("refuses an invalid stored visibility instead of treating it as public", async () => {
+    store.seed([
+      {
+        ...keys.project("corrupt-visibility"),
+        entityType: "PROJECT",
+        GSI1PK: keys.typePartition("PROJECT"),
+        GSI1SK: "corrupt-visibility",
+        name: "corrupt-visibility",
+        displayName: "Corrupt",
+        description: "",
+        projectType: "agent",
+        ownerEmail: "owner@example.com",
+        visibility: "privte",
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+
+    await expect(projectRepository.get("corrupt-visibility")).rejects.toThrow(
+      /invalid project visibility/,
+    );
+  });
+
   it("guards project replacement with the previously read timestamp", async () => {
     seedProject(project.name);
 
