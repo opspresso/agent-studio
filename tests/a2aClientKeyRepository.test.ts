@@ -40,3 +40,31 @@ describe("a2aClientKeyRepository.delete", () => {
     await expect(a2aClientKeyRepository.findNameByHash(newKey.tokenHash)).resolves.toBeNull();
   });
 });
+
+describe("a2aClientKeyRepository.findNameByHash", () => {
+  it("refuses a legacy hash row whose primary key row is gone", async () => {
+    store.seed([
+      {
+        ...keys.a2aClientKeyHash("orphan-hash"),
+        entityType: "A2AKEYHASH",
+        clientName: "partner",
+      },
+    ]);
+
+    await expect(a2aClientKeyRepository.findNameByHash("orphan-hash")).resolves.toBeNull();
+  });
+
+  it("refuses a hash row that no longer matches the recreated primary key", async () => {
+    await a2aClientKeyRepository.create(key("current-hash"));
+    store.seed([
+      {
+        ...keys.a2aClientKeyHash("stale-hash"),
+        entityType: "A2AKEYHASH",
+        clientName: "partner",
+      },
+    ]);
+
+    await expect(a2aClientKeyRepository.findNameByHash("stale-hash")).resolves.toBeNull();
+    await expect(a2aClientKeyRepository.findNameByHash("current-hash")).resolves.toBe("partner");
+  });
+});

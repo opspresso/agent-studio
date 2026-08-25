@@ -119,7 +119,13 @@ export const a2aClientKeyRepository: A2aClientKeyRepository = {
   },
 
   async findNameByHash(tokenHash) {
-    const item = await getItem(keys.a2aClientKeyHash(tokenHash));
-    return item ? String(item.clientName) : null;
+    const hashItem = await getItem(keys.a2aClientKeyHash(tokenHash));
+    if (typeof hashItem?.clientName !== "string") {
+      return null;
+    }
+    const primary = await getItem(keys.a2aClientKey(hashItem.clientName));
+    return primary?.entityType === ENTITY_TYPE && primary.tokenHash === tokenHash
+      ? hashItem.clientName
+      : null;
   },
 };
