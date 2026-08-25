@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_CONCURRENT_SCHEDULE_SCANS,
   SCHEDULE_CATCHUP_WINDOW_MS,
   driveFirings,
   scanSchedules,
@@ -560,6 +561,42 @@ describe("scanSchedules", () => {
     const { summary } = await scanAndExecute(f);
     expect(summary.invalid).toBe(1);
     expect(summary.fired).toBe(1);
+  });
+
+  it("bounds concurrent schedule admission while checking every trigger", async () => {
+    const schedules = Array.from({ length: MAX_CONCURRENT_SCHEDULE_SCANS + 2 }, (_, index) =>
+      schedule({ triggerId: `schedule-${index}` }),
+    );
+    const f = fixture({ schedules });
+    let active = 0;
+    let maxActive = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reached!: () => void;
+    const atLimit = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    f.deps.triggers.claimIdempotencyKey = async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (active === MAX_CONCURRENT_SCHEDULE_SCANS) {
+        reached();
+      }
+      await gate;
+      active -= 1;
+      return false;
+    };
+
+    const scan = scanSchedules(f.deps, AT);
+    await atLimit;
+    expect(maxActive).toBe(MAX_CONCURRENT_SCHEDULE_SCANS);
+    release();
+
+    await expect(scan).resolves.toMatchObject({
+      summary: { checked: schedules.length, alreadyClaimed: schedules.length },
+    });
   });
 
   it("records a run that failed mid-stream as failed with the error preserved", async () => {
