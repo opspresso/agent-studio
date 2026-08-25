@@ -5,6 +5,7 @@ import {
   assertAllowedUrl,
   assertCredentialFreeRegistryUrl,
   createRegistryUseCases,
+  resolveRegistryUrlPatch,
   type RegistryUseCases,
 } from "@/application/registry/registryUseCases";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -89,15 +90,24 @@ export function createMcpUseCases(
       };
     },
     async apply(existing, patch, now) {
-      if (patch.url !== undefined) {
-        assertCredentialFreeRegistryUrl(patch.url);
+      const patchedUrl =
+        patch.url === undefined ? undefined : resolveRegistryUrlPatch(existing.url, patch.url);
+      // The address this save moves to, or nothing. Only a change is checked:
+      // re-submitting the stored one — verbatim, or as the redaction the
+      // console shows — is not a registration, and refusing it would make a
+      // legacy entry that predates the credential-free rule uneditable rather
+      // than migratable.
+      const movedTo = patchedUrl !== undefined && patchedUrl !== existing.url ? patchedUrl : undefined;
+      const movedAddress = movedTo !== undefined;
+      if (movedTo !== undefined) {
+        assertCredentialFreeRegistryUrl(movedTo);
       }
       // A managed entry's address is the whole basis for trusting it: it was
       // recorded after the provisioner bound the port, not typed by anyone. An
       // edit that could move it would turn "we started this" back into "someone
       // said so", which is exactly the claim the loopback bypass must not rest
       // on. Managed rows are changed by the provisioner, not through here.
-      if (existing.runtime === "managed" && patch.url !== undefined && patch.url !== existing.url) {
+      if (existing.runtime === "managed" && movedAddress) {
         throw new ValidationError(
           `MCP server "${existing.name}" is managed: its address is set when the container starts and cannot be edited.`,
         );
@@ -108,11 +118,11 @@ export function createMcpUseCases(
       // every *other* field, which is how editing a managed server's headers
       // became impossible.
       if (
-        patch.url !== undefined &&
+        movedTo !== undefined &&
         !skipsUrlGuard(existing, internalHostSuffixes) &&
-        !skipsUrlGuard({ url: patch.url }, internalHostSuffixes)
+        !skipsUrlGuard({ url: movedTo }, internalHostSuffixes)
       ) {
-        await assertAllowedUrl(policy, patch.url);
+        await assertAllowedUrl(policy, movedTo);
       }
       // Credentials belong to the address they were entered for. The OAuth
       // block was read out of the *old* address's well-known documents — its
@@ -126,11 +136,10 @@ export function createMcpUseCases(
       // header echoes cannot resurrect the old secrets either — against an
       // empty base, a mask confirms nothing; only a value typed in the same
       // save survives the move.
-      const movedAddress = patch.url !== undefined && patch.url !== existing.url;
       const { auth: discarded, ...withoutAuth } = existing;
       const updated: McpServer = {
         ...(movedAddress ? withoutAuth : existing),
-        url: patch.url ?? existing.url,
+        url: patchedUrl ?? existing.url,
         description: patch.description ?? existing.description,
         content: patch.content ?? existing.content,
         source: patch.source ?? existing.source,

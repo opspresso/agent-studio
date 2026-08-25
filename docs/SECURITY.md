@@ -372,7 +372,11 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
 공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라. Registry endpoint URL 은
 query parameter 와 fragment 를 받지 않는다. 둘은 멤버가 읽는 registry view 와 운영 로그에서
 자격 증명을 노출하기 쉬우므로, 인증 정보는 encrypted header 또는 OAuth 연결에 둔다. 이전 행에
-남은 query 와 fragment 는 dispatch 에만 쓰이고 reader-facing view 에서는 제거한다.
+남은 query 와 fragment 는 dispatch 에만 쓰이고 reader-facing view 에서는 제거한다. 이 규칙은
+**주소가 실제로 바뀔 때만** 적용한다. 저장된 주소를 그대로, 또는 콘솔이 보여 준 redacted 형태로
+되돌려 보내는 저장은 이동이 아니므로 거절하지도, 저장된 credential 을 버리지도 않는다
+(`resolveRegistryUrlPatch`). 그러지 않으면 편집 폼이 자기가 읽은 값을 되돌려 보내는 것만으로
+레거시 항목이 다른 endpoint 를 가리키게 되고, 원래 주소는 다시 입력할 수도 없다.
 외부 A2A Agent Card 의 실패 메시지는 origin 만 남긴다. query string 을 비롯한 전체 URL 자체가
 자격 증명일 수 있으므로 authored error, chat, trace 에 등록 주소를 복사하지 않는다.
 

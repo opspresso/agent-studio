@@ -59,7 +59,12 @@ import { ConflictError, NotFoundError, ValidationError } from "@/application/err
 // The store module is the in-memory fake (tests/setup.ts), which raises the
 // same error the real one does for a lost precondition.
 import { ConditionalWriteError } from "@/infrastructure/db/store";
-import { isEncrypted, isMasked } from "@/infrastructure/crypto/secretEncryption";
+import {
+  decryptHeadersForOutbound,
+  encryptHeaders,
+  isEncrypted,
+  isMasked,
+} from "@/infrastructure/crypto/secretEncryption";
 
 /** The display contract is "maskSecret produced this", not any one glyph —
  * asserting the shape would re-break every time the reveal tiers change. */
@@ -139,6 +144,42 @@ describe("MCP registry secret contract", () => {
     await expect(useCases.get("legacy")).resolves.toMatchObject({
       url: "https://mcp.example/mcp",
     });
+  });
+
+  it("keeps a legacy address when the console echoes back its redacted view", async () => {
+    const legacyUrl = "https://mcp.example/mcp?tenant=acme";
+    const { repo, store } = makeMcpRepo([
+      {
+        name: "legacy",
+        url: legacyUrl,
+        headers: encryptHeaders({ Authorization: "Bearer stored" }),
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+    const useCases = createMcpUseCases(repo);
+
+    // What the edit form holds: the url it was seeded with from the masked
+    // view, sent back beside the field the operator actually changed.
+    const view = await useCases.get("legacy");
+    await useCases.update("legacy", {
+      url: view.url,
+      description: "edited elsewhere",
+      headers: { Authorization: "********" },
+    });
+
+    const stored = store.get("legacy")!;
+    expect(stored.url).toBe(legacyUrl);
+    expect(stored.description).toBe("edited elsewhere");
+    expect(decryptHeadersForOutbound(stored.headers)).toEqual({ Authorization: "Bearer stored" });
+
+    // A real move is still refused when it carries credentials, and still
+    // drops what the old address was trusted with.
+    await expect(
+      useCases.update("legacy", { url: "https://other.example/mcp?api_key=secret" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await useCases.update("legacy", { url: "https://other.example/mcp" });
+    expect(store.get("legacy")!.headers).toEqual({});
   });
 
   it("returns masked headers on create/get/list and stores ciphertext", async () => {
@@ -364,6 +405,33 @@ describe("external agent registry secret contract", () => {
     await expect(useCases.list()).resolves.toMatchObject([
       { url: "https://agent.example/v1" },
     ]);
+  });
+
+  it("keeps a legacy address when the console echoes back its redacted view", async () => {
+    const legacyUrl = "https://agent.example/v1?tenant=acme";
+    const { repo, store } = makeAgentRepo([
+      {
+        name: "legacy",
+        url: legacyUrl,
+        description: "",
+        headers: encryptHeaders({ Authorization: "Bearer stored" }),
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+    const useCases = createAgentUseCases(repo);
+
+    const view = await useCases.get("legacy");
+    await useCases.update("legacy", {
+      url: view.url,
+      description: "edited elsewhere",
+      headers: { Authorization: "********" },
+    });
+
+    const stored = store.get("legacy")!;
+    expect(stored.url).toBe(legacyUrl);
+    expect(stored.description).toBe("edited elsewhere");
+    expect(decryptHeadersForOutbound(stored.headers)).toEqual({ Authorization: "Bearer stored" });
   });
 
   it("returns masked headers on create/get/list and stores ciphertext", async () => {

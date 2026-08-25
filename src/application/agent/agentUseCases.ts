@@ -5,6 +5,7 @@ import {
   assertAllowedUrl,
   assertCredentialFreeRegistryUrl,
   createRegistryUseCases,
+  resolveRegistryUrlPatch,
   type RegistryUseCases,
 } from "@/application/registry/registryUseCases";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
@@ -67,14 +68,21 @@ export function createAgentUseCases(
       };
     },
     async apply(existing, patch, now) {
-      if (patch.url !== undefined) {
-        assertCredentialFreeRegistryUrl(patch.url);
-        await assertAllowedUrl(policy, patch.url);
+      const patchedUrl =
+        patch.url === undefined ? undefined : resolveRegistryUrlPatch(existing.url, patch.url);
+      // Only an address that actually changes is checked. Re-submitting the
+      // stored one — whether verbatim or as the redaction the console shows —
+      // is not a registration, and refusing it would make a legacy entry that
+      // predates the credential-free rule uneditable rather than migratable.
+      const movedTo = patchedUrl !== undefined && patchedUrl !== existing.url ? patchedUrl : undefined;
+      const movedAddress = movedTo !== undefined;
+      if (movedTo !== undefined) {
+        assertCredentialFreeRegistryUrl(movedTo);
+        await assertAllowedUrl(policy, movedTo);
       }
-      const movedAddress = patch.url !== undefined && patch.url !== existing.url;
       return {
         ...existing,
-        url: patch.url ?? existing.url,
+        url: patchedUrl ?? existing.url,
         protocol: patch.protocol ?? existing.protocol,
         description: patch.description ?? existing.description,
         headers: movedAddress
