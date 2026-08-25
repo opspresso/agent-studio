@@ -13,6 +13,7 @@ import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { RunCaller } from "@/domain/execution/actor";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import { MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS } from "@/domain/slack/reader";
 
 const NOW = 1_750_000_000_000;
 
@@ -1521,6 +1522,34 @@ describe("telling the run who is asking", () => {
     expect(profileLookups).not.toContain("U-old-0");
     expect(profileLookups).toContain("U2");
     expect(profileLookups.length).toBeLessThanOrEqual(51);
+  });
+
+  it("bounds concurrent profile lookups for a multi-speaker thread", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, replies } = makeSlackFake();
+    let active = 0;
+    let maxActive = 0;
+    slack.userProfile = async (_token, userId) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await Promise.resolve();
+      active -= 1;
+      return { displayName: userId };
+    };
+    for (let index = 0; index < MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS + 2; index += 1) {
+      replies.push({ ts: `0.${index}`, user: `U${index}`, text: `turn ${index}` });
+    }
+    const deps = makeDeps([{ done: true }], slack);
+    withCallerContext(deps, true);
+
+    await handleSlackEvent(
+      deps,
+      { ...DM_EVENT, event: { ...DM_EVENT.event, thread_ts: "0.0", user: "current" } },
+      BINDING,
+    );
+
+    expect(maxActive).toBe(MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS);
   });
 
   it("labels nothing when only one human is in the thread", async () => {

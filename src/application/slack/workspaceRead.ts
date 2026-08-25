@@ -1,5 +1,9 @@
 import type { SlackChannelInfo, SlackMessage, SlackUserDetail } from "@/domain/slack/types";
-import type { SlackReaderPort, SlackWorkspaceReader } from "@/domain/slack/reader";
+import {
+  MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS,
+  type SlackReaderPort,
+  type SlackWorkspaceReader,
+} from "@/domain/slack/reader";
 import { mapWithLimit } from "@/shared/mapWithLimit";
 // The names live with every other builtin's, which is the single owner of what
 // a builtin may be called — a run's alias table is built from that list before
@@ -57,8 +61,6 @@ const MAX_CHANNELS = 200;
  * name and far better than a tool call that took ten seconds.
  */
 const MAX_PROFILE_LOOKUPS = 25;
-/** How many of those may be in flight. A burst is what trips a per-minute limit. */
-const MAX_CONCURRENT_LOOKUPS = 5;
 /**
  * Pages of `users.list` one name search walks, and how many matches it prints.
  *
@@ -119,7 +121,7 @@ async function resolveNames(
 ): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   const wanted = [...new Set(ids)].slice(0, MAX_PROFILE_LOOKUPS);
-  await mapWithLimit(wanted, MAX_CONCURRENT_LOOKUPS, async (id) => {
+  await mapWithLimit(wanted, MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS, async (id) => {
     const profile = await slack.userProfile(token, id).catch(() => null);
     if (profile) {
       names.set(id, profile.displayName);

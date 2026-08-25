@@ -14,7 +14,9 @@ import type { RunCaller } from "@/domain/execution/actor";
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import type { ChatMessageInput } from "@/domain/llm/types";
+import { MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS } from "@/domain/slack/reader";
 import { log } from "@/shared/logger";
+import { mapWithLimit } from "@/shared/mapWithLimit";
 /** How much of the opening question names the thread in the agent's history. */
 const MAX_THREAD_TITLE_LENGTH = 60;
 /**
@@ -248,8 +250,10 @@ async function resolveSpeakers(
   // Only the asker's profile is needed to name the caller; the others are
   // fetched solely to tell speakers apart, so a single-speaker thread skips them.
   const wanted = humans.size > 1 ? [...humans] : currentUser ? [currentUser] : [];
-  const resolved = await Promise.all(
-    wanted.map(async (userId) => [userId, await deps.slack.userProfile(token, userId)] as const),
+  const resolved = await mapWithLimit(
+    wanted,
+    MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS,
+    async (userId) => [userId, await deps.slack.userProfile(token, userId)] as const,
   );
 
   const nameByUser = new Map<string, string>();
