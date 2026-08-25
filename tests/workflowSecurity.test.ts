@@ -20,4 +20,16 @@ describe("workflow supply chain", () => {
 
     expect(unpinned).toEqual([]);
   });
+
+  it("never runs pull-request code on a persistent self-hosted runner", () => {
+    const unsafe: string[] = [];
+    for (const name of readdirSync(WORKFLOWS).filter((file) => /\.ya?ml$/.test(file))) {
+      const text = readFileSync(join(WORKFLOWS, name), "utf8");
+      if (/^\s{2}pull_request\s*:/m.test(text) && /^\s+runs-on:\s*self-hosted\s*$/m.test(text)) {
+        unsafe.push(name);
+      }
+    }
+
+    expect(unsafe).toEqual([]);
+  });
 });
