@@ -32,4 +32,21 @@ describe("workflow supply chain", () => {
 
     expect(unsafe).toEqual([]);
   });
+
+  it("does not expose privileged self-hosted workflows to arbitrary-ref dispatch", () => {
+    for (const name of ["check-models.yml", "release.yml"]) {
+      const text = readFileSync(join(WORKFLOWS, name), "utf8");
+      expect(text, name).not.toMatch(/^\s{2}workflow_dispatch\s*:/m);
+    }
+  });
+
+  it("gates every release job on a version tag", () => {
+    const text = readFileSync(join(WORKFLOWS, "release.yml"), "utf8");
+    const jobBlocks = text.split(/^  (?=[a-z][a-z-]+:\s*$)/m).slice(1);
+    const unguarded = jobBlocks
+      .filter((block) => /runs-on:\s*self-hosted/.test(block))
+      .filter((block) => !/if:\s*startsWith\(github\.ref, 'refs\/tags\/v'\)/.test(block));
+
+    expect(unguarded).toEqual([]);
+  });
 });

@@ -200,12 +200,12 @@ typecheck → test → test:integration → build
 pull request와 `main` CI는 GitHub-hosted ephemeral runner에서 최소 `contents: read` 권한으로
 실행하고 checkout credential을 작업 트리에 남기지 않는다. 검토 전 PR 코드를 release와 model
 검사가 쓰는 persistent self-hosted runner에서 실행하면, 뒤의 trusted job이 받는 OIDC·registry
-자격 증명까지 runner 오염의 수명에 묶이기 때문이다. 시크릿이 필요한 `check-models`와 release는
-schedule·수동 실행 또는 tag push처럼 repository write 권한이 필요한 trigger에서만 self-hosted
-runner를 쓴다.
+자격 증명까지 runner 오염의 수명에 묶이기 때문이다. 시크릿이 필요한 `check-models`는 default
+branch의 schedule에서만, release는 `v*` tag push에서만 self-hosted runner를 쓴다. 임의 ref를
+선택하는 `workflow_dispatch`는 두 workflow 모두 제공하지 않는다.
 
 `.github/workflows/check-models.yml` 은 `pnpm check-models --strict --since=7d` 를 pull request
-마다가 아니라 주 1회(그리고 필요할 때 수동으로) 돌린다: 살아 있는 provider API 와 저장소 시크릿이
+마다가 아니라 주 1회 돌린다: 살아 있는 provider API 와 저장소 시크릿이
 필요하기 때문이다(드리프트는 런이 실패하기 전에 Slack 으로 전송된다). provider 장애나 시크릿 없는
 fork 가 PR 을 실패시켜서는 안 된다.
 

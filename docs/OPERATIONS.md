@@ -31,7 +31,8 @@ AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필�
 
 ## 릴리스 파이프라인
 
-`.github/workflows/release.yml`, `v*` 태그(또는 수동 dispatch)로 트리거된다:
+`.github/workflows/release.yml`, `v*` 태그 push 로만 트리거된다. 임의 ref 를 고를 수 있는 수동
+dispatch 는 persistent self-hosted runner와 OIDC·registry·GitOps 자격 증명 경계에 두지 않는다:
 
 1. **verify**. 전용 PostgreSQL test database 에 대해 `pnpm typecheck` + `pnpm test` +
    `pnpm test:integration`.
