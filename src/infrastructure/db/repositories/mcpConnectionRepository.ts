@@ -2,6 +2,7 @@ import { CONDITIONAL_WRITE_FAILED, deleteItem, getItem, putItem, queryItems, upd
 import { keys } from "../keys";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
 import type { TokenEndpointAuthMethod } from "@/domain/mcp/types";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 const ENTITY_TYPE = "MCPCONNECTION";
 
@@ -85,12 +86,37 @@ export const mcpConnectionRepository: McpConnectionRepository = {
     return item ? fromItem(item) : null;
   },
 
-  async listByProject(projectName) {
-    const items = await queryItems({
-      pk: keys.projectPartition(projectName),
-      sk: { prefix: keys.mcpConnectionPrefix() },
-    });
-    return items.map(fromItem).filter((connection) => connection !== null);
+  async listByProject(projectName, limit, after) {
+    const wanted = boundedPageLimit(limit);
+    const connections: McpConnection[] = [];
+    let cursor = after ? keys.mcpConnection(projectName, after).SK : undefined;
+    while (connections.length < wanted) {
+      const readLimit = wanted - connections.length;
+      const items = await queryItems({
+        pk: keys.projectPartition(projectName),
+        sk: { prefix: keys.mcpConnectionPrefix() },
+        limit: readLimit,
+        ...(cursor ? { after: cursor } : {}),
+      });
+      for (const item of items) {
+        const connection = fromItem(item);
+        if (!connection) {
+          continue;
+        }
+        if (
+          connection.projectName !== projectName ||
+          keys.mcpConnection(projectName, connection.serverName).SK !== item.SK
+        ) {
+          throw new Error("MCP connection row identity does not match its key");
+        }
+        connections.push(connection);
+      }
+      if (items.length < readLimit) {
+        break;
+      }
+      cursor = String(items.at(-1)!.SK);
+    }
+    return connections;
   },
 
   async put(connection) {

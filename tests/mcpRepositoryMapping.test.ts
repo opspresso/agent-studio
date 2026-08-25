@@ -162,6 +162,35 @@ describe("mcp connection mapping", () => {
 });
 
 describe("connections written before the checks existed", () => {
+  it("fills a bounded page past unusable legacy rows", async () => {
+    const valid = (serverName: string): McpConnection => ({
+      projectName: "p",
+      serverName,
+      clientId: "client",
+      issuer: `https://${serverName}.example.com`,
+      resource: `https://${serverName}.example.com`,
+      scopes: [],
+      status: "needs_auth",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await mcpConnectionRepository.put(valid("a"));
+    store.seed([
+      {
+        ...keys.mcpConnection("p", "b"),
+        projectName: "p",
+        serverName: "b",
+        clientId: "old",
+        status: "connected",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    await mcpConnectionRepository.put(valid("c"));
+
+    const listed = await mcpConnectionRepository.listByProject("p", 2);
+
+    expect(listed.map((connection) => connection.serverName)).toEqual(["a", "c"]);
+  });
+
   it("reads a row missing its issuer as no connection at all", async () => {
     // There is nothing safe to assume for it. The old fallback — "it belongs to
     // whatever the entry points at now" — is the assumption the field exists to

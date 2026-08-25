@@ -15,6 +15,7 @@ import {
   MCP_OAUTH_CALLBACK_PATH,
   type McpAuthUseCasesDeps,
 } from "@/application/mcp/mcpAuthUseCases";
+import { MCP_CONNECTION_LIST_PAGE_SIZE } from "@/application/mcp/listConnections";
 import { ForbiddenError, ValidationError } from "@/application/errors";
 import { isMasked, maskSecret } from "@/infrastructure/crypto/secretEncryption";
 import type { McpConnection, McpOAuthState } from "@/domain/mcp/connection";
@@ -136,7 +137,12 @@ function harness(
     } as never,
     connections: {
       get: async (project: string, srv: string) => connections.get(`${project}/${srv}`) ?? null,
-      listByProject: async () => [...connections.values()],
+      listByProject: async (projectName: string, limit: number, after?: string) =>
+        [...connections.values()]
+          .filter((connection) => connection.projectName === projectName)
+          .sort((a, b) => a.serverName.localeCompare(b.serverName))
+          .filter((connection) => !after || connection.serverName > after)
+          .slice(0, limit),
       put: async (connection: McpConnection) => {
         connections.set(`${connection.projectName}/${connection.serverName}`, connection);
       },
@@ -946,6 +952,34 @@ describe("saveClientCredentials", () => {
     for (const secret of ["CLIENT-SECRET-VALUE", "ACCESS-TOKEN-VALUE", "REFRESH-TOKEN-VALUE"]) {
       expect(serialized).not.toContain(secret);
     }
+  });
+
+  it("lists every project connection through bounded repository pages", async () => {
+    const h = harness({});
+    for (let index = 0; index < MCP_CONNECTION_LIST_PAGE_SIZE + 2; index += 1) {
+      const serverName = `server-${String(index).padStart(3, "0")}`;
+      h.connections.set(`p/${serverName}`, {
+        projectName: "p",
+        serverName,
+        clientId: "client",
+        issuer: `https://${serverName}.example.com`,
+        resource: `https://${serverName}.example.com`,
+        scopes: [],
+        status: "needs_auth",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+    }
+    const listByProject = h.deps.connections.listByProject.bind(h.deps.connections);
+    const pageSizes: number[] = [];
+    h.deps.connections.listByProject = async (projectName, limit, after) => {
+      const page = await listByProject(projectName, limit, after);
+      pageSizes.push(page.length);
+      return page;
+    };
+
+    const uc = createMcpAuthUseCases(h.deps);
+    await expect(uc.listConnections("p", OWNER)).resolves.toHaveLength(h.connections.size);
+    expect(pageSizes).toEqual([MCP_CONNECTION_LIST_PAGE_SIZE, 2]);
   });
 });
 

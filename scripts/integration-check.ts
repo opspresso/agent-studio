@@ -55,6 +55,7 @@ async function main() {
   const { mcpConnectionRepository } = await import(
     "@/infrastructure/db/repositories/mcpConnectionRepository"
   );
+  const { listProjectMcpConnections } = await import("@/application/mcp/listConnections");
   const { mcpOAuthStateRepository } = await import(
     "@/infrastructure/db/repositories/mcpOAuthStateRepository"
   );
@@ -295,7 +296,7 @@ async function main() {
     assert.equal(conn.issuer, "https://auth.example.com", "credential issuer round-trip");
     assert.equal(conn.resource, "https://mcp.example.com", "token resource round-trip");
     assert.equal(
-      (await mcpConnectionRepository.listByProject(projectName)).length,
+      (await listProjectMcpConnections(mcpConnectionRepository, projectName)).length,
       1,
       "connection listed under its project partition",
     );

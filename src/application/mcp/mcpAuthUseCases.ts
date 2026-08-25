@@ -28,6 +28,7 @@ import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCiph
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { listProjectMcpConnections } from "./listConnections";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
 import { skipsUrlGuard } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
@@ -560,7 +561,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
 
     async listConnections(projectName, userEmail) {
       await assertProjectWritable(deps.projects, projectName, userEmail);
-      return (await deps.connections.listByProject(projectName)).map((connection) =>
+      return (await listProjectMcpConnections(deps.connections, projectName)).map((connection) =>
         toConnectionView(deps.cipher, connection),
       );
     },
