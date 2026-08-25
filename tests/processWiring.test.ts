@@ -43,4 +43,19 @@ describe("process-wide application wiring", () => {
 
     await expect(second.userMayAccessProject(project, "admin@example.com")).resolves.toBe(true);
   });
+
+  it("keeps managed MCP lifecycle claims across duplicate module evaluations", async () => {
+    const first = await import("@/application/mcp/managedMcpUseCases");
+    const claims = first.processManagedMcpLifecycleClaims();
+    claims.add("shared-container");
+    try {
+      vi.resetModules();
+      const second = await import("@/application/mcp/managedMcpUseCases");
+
+      expect(second.processManagedMcpLifecycleClaims()).toBe(claims);
+      expect(second.processManagedMcpLifecycleClaims().has("shared-container")).toBe(true);
+    } finally {
+      claims.delete("shared-container");
+    }
+  });
 });

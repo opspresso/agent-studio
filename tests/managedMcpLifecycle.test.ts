@@ -36,6 +36,8 @@ function fixture(
     running?: boolean;
     stopError?: Error;
     inspectError?: Error;
+    createError?: Error;
+    startError?: Error;
     /**
      * Make `start` block until `releaseStart()`. Starting a container really
      * does run for minutes, and a test about what happens *while* one is in
@@ -63,6 +65,9 @@ function fixture(
       startedSpecs.push(spec);
       if (held) {
         await held;
+      }
+      if (opts.startError) {
+        throw opts.startError;
       }
       return {
         name: spec.name,
@@ -95,6 +100,12 @@ function fixture(
     get: async (name: string) => rows.get(name) ?? null,
     list: async () => [...rows.values()],
     create: async (server: McpServer) => {
+      if (opts.createError) {
+        throw opts.createError;
+      }
+      if (rows.has(server.name)) {
+        throw new ConditionalWriteError("The conditional request failed");
+      }
       rows.set(server.name, server);
     },
     // Conditional on the row existing, like the real one — the restart path
@@ -155,6 +166,7 @@ function fixture(
     sleep: async (ms: number) => {
       sleeps.push(ms);
     },
+    lifecycleClaims: new Set<string>(),
   });
   return {
     useCases,
@@ -305,6 +317,52 @@ describe("managed MCP lifecycle", () => {
     await expect(useCases.create(input)).rejects.toThrow(/already exists/);
     // nothing was started for a name that could not be registered
     expect(started).toEqual([]);
+  });
+
+  it("claims a name before starting so concurrent creates cannot replace each other's container", async () => {
+    const f = fixture({ holdStart: true });
+    const first = f.useCases.create(input);
+    await vi.waitFor(() => expect(f.started).toEqual(["image-fetch"]));
+
+    await expect(
+      f.useCases.create({ ...input, image: "ecr/img:rival" }),
+    ).rejects.toThrow(/lifecycle operation/);
+    expect(f.started).toEqual(["image-fetch"]);
+
+    f.releaseStart();
+    await expect(first).resolves.toMatchObject({ image: "ecr/img:v1" });
+    expect(f.stopped).toEqual([]);
+    expect(f.rows.get("image-fetch")?.image).toBe("ecr/img:v1");
+  });
+
+  it("stops the workload when a competing registry writer wins the conditional create", async () => {
+    const f = fixture({ createError: new ConditionalWriteError("The conditional request failed") });
+
+    await expect(f.useCases.create(input)).rejects.toThrow(/already exists/);
+
+    expect(f.started).toEqual(["image-fetch"]);
+    expect(f.stopped).toEqual(["image-fetch"]);
+    expect(f.rows.has("image-fetch")).toBe(false);
+  });
+
+  it("attempts cleanup when start fails after the runtime may have accepted the workload", async () => {
+    const f = fixture({ startError: new Error("inspect failed") });
+
+    await expect(f.useCases.create(input)).rejects.toThrow("inspect failed");
+
+    expect(f.started).toEqual(["image-fetch"]);
+    expect(f.stopped).toEqual(["image-fetch"]);
+    expect(f.rows.has("image-fetch")).toBe(false);
+  });
+
+  it("surfaces a failed compensation when registration and container cleanup both fail", async () => {
+    const f = fixture({
+      createError: new Error("database unavailable"),
+      stopError: new Error("docker daemon unavailable"),
+    });
+
+    await expect(f.useCases.create(input)).rejects.toThrow(/could not be stopped/);
+    expect(f.stopped).toEqual(["image-fetch"]);
   });
 
   it("keeps the port the operator typed, so a restart can rebuild the spec", async () => {
