@@ -51,7 +51,7 @@ const STATIC_IMPORT_RE = /(?:^|\n)[ \t]*(?:import|export)\b([^;]*?)from[ \t]*["'
  * binds the two modules exactly as a top-level import does, so a rule that
  * could not see them would be trivial to step around.
  */
-const INLINE_IMPORT_RE = /\bimport[ \t]*\([ \t]*["']([^"']+)["']/g;
+const INLINE_IMPORT_RE = /\bimport[ \t]*\([ \t]*["']([^"']+)["'][ \t]*\)/g;
 
 /**
  * `import "x"` — a side-effect import binds no name and carries no `from`, so
@@ -107,6 +107,38 @@ function parseNames(clause: string): string[] {
     .filter((name) => name.length > 0);
 }
 
+/** Export names selected from one `import()` expression. */
+function dynamicImportNames(code: string, match: RegExpMatchArray): string[] {
+  const index = match.index ?? 0;
+  const before = code.slice(Math.max(0, index - 500), index);
+  const after = code.slice(index + match[0].length, index + match[0].length + 100);
+  const destructured = /(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:await\s*)?$/.exec(before)?.[1];
+  if (destructured !== undefined) {
+    return destructured
+      .split(",")
+      .map((entry) => entry.trim().replace(/^\.\.\./, "").split(/\s*[:=]\s*/)[0] ?? "")
+      .filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
+  }
+  const thenDestructured = /^\s*\.then\s*\(\s*\(?\s*\{([^}]*)\}/.exec(after)?.[1];
+  if (thenDestructured !== undefined) {
+    return thenDestructured
+      .split(",")
+      .map((entry) => entry.trim().split(/\s*[:=]\s*/)[0] ?? "")
+      .filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
+  }
+  // `(await import("x")).foo`, `import("x").Foo` in a type position, and
+  // their extra-parenthesis variants all select one export directly.
+  const property = /^\s*\)*\s*\.\s*([A-Za-z_$][\w$]*)/.exec(after)?.[1];
+  if (property) {
+    return [property];
+  }
+  // Holding the module object gives the later code every export. A bare
+  // `import()` handed to a loader binds none in this module.
+  return /(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*(?:await\s*)?$/.test(before)
+    ? [NAMESPACE_IMPORT]
+    : [];
+}
+
 /** Does this import bring `name` into scope, whether by clause or wholesale? */
 function bindsName(imported: ModuleImport, name: string): boolean {
   return imported.names.includes(name) || imported.names.includes(NAMESPACE_IMPORT);
@@ -138,11 +170,10 @@ export function parseImports(source: string): ModuleImport[] {
       // parser. The stricter reading wins: a banned target is reported either way.
       typeOnly: false,
       dynamic: true,
-      // A dynamic import's bindings are in the destructuring that follows, not
-      // in a clause. Left empty rather than guessed: `["*"]` would make every
-      // by-name query match `container.ts`, which imports this same facade for
-      // a different export.
-      names: [],
+      // Dynamic bindings live around the expression rather than inside it.
+      // Parse destructuring, property and namespace-assignment forms. A bare
+      // promise handed to a loader binds no export in this module.
+      names: dynamicImportNames(code, match),
     })),
     ...[...code.matchAll(SIDE_EFFECT_IMPORT_RE)].map((match) => ({
       spec: match[1]!,
@@ -395,6 +426,19 @@ const SOURCE_FILES = walk(SRC).map((absolute) => ({
   path: relative(ROOT, absolute).split("\\").join("/"),
   text: readFileSync(absolute, "utf8"),
 }));
+
+describe("API request body allocation", () => {
+  it("bounds JSON before parsing it in every route", () => {
+    const direct = SOURCE_FILES.filter(
+      (file) =>
+        file.path.startsWith("src/app/api/") &&
+        file.path.endsWith("/route.ts") &&
+        /request\.(?:json|formData)\s*\(/.test(stripComments(file.text)),
+    ).map((file) => file.path);
+
+    expect(direct).toEqual([]);
+  });
+});
 
 function governs(rule: Rule, relPath: string): boolean {
   const layer = layerOf(relPath);
@@ -2627,10 +2671,26 @@ describe("scanner", () => {
       ].join("\n"),
     );
     expect(parsed).toEqual([
-      // No names: the bindings are in the destructuring, not in a clause. See
-      // `parseImports` for why they are not guessed at.
-      { spec: "@/lib/config", typeOnly: false, dynamic: true, names: [] },
-      { spec: "@/infrastructure/db/client", typeOnly: false, dynamic: true, names: [] },
+      { spec: "@/lib/config", typeOnly: false, dynamic: true, names: ["a"] },
+      { spec: "@/infrastructure/db/client", typeOnly: false, dynamic: true, names: ["Foo"] },
+    ]);
+  });
+
+  it("reads dynamic destructuring aliases, direct properties, and namespace access", () => {
+    const parsed = parseImports(
+      [
+        `const { executeAgent: run, streamProjectRun } = await import("@/application/execution/runProject");`,
+        `(await import("@/application/execution/runProject")).executeAgent;`,
+        `const engine = await import("@/application/llm/engine");`,
+        `import("@/application/execution/runProject").then(({ executeAgent: run }) => run);`,
+      ].join("\n"),
+    );
+
+    expect(parsed.map((item) => item.names)).toEqual([
+      ["executeAgent", "streamProjectRun"],
+      ["executeAgent"],
+      ["*"],
+      ["executeAgent"],
     ]);
   });
 

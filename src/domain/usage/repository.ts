@@ -21,8 +21,8 @@ export interface UsageRepository {
   getDay(projectName: string, date: string): Promise<UsageRow | null>;
   /**
    * One member's own daily rows across a date range — the tier cap's window
-   * and the profile page's, read the same way. One bounded query in that
-   * member's own partition, like `listByProject`.
+   * and the profile page's, read the same way. Bounded pages in that member's
+   * own partition, like `listByProject`.
    */
   listMemberDays(email: string, from: string, to: string): Promise<MemberUsageRow[]>;
   /**

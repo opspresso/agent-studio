@@ -28,7 +28,7 @@ import { RECORD_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
 import { a2aConversation } from "@/domain/a2a/conversation";
 import { log } from "@/shared/logger";
-import { unrefTimer } from "@/shared/unrefTimer";
+import { startSequentialPoll } from "@/shared/sequentialPoll";
 import { agentMessage, artifact, partText, rawPart, taskStatus, textPart, urlPart } from "@/domain/a2a/protocol";
 
 /**
@@ -283,20 +283,16 @@ export class ProjectA2aExecutor implements AgentExecutor {
     controller: AbortController,
     context: ServerCallContext,
   ): () => void {
-    const timer = setInterval(() => {
-      void this.store.load(taskId, context).then(
-        (task) => {
-          if (task?.status?.state === TaskState.TASK_STATE_CANCELED) {
-            controller.abort();
-          }
-        },
-        (error) => {
-          log.error("a2a", "cancel poll failed", error);
-        },
-      );
-    }, CANCEL_POLL_MS);
-    unrefTimer(timer);
-    return () => clearInterval(timer);
+    return startSequentialPoll({
+      intervalMs: CANCEL_POLL_MS,
+      poll: async (signal) => {
+        const task = await this.store.load(taskId, context);
+        if (!signal.aborted && task?.status?.state === TaskState.TASK_STATE_CANCELED) {
+          controller.abort();
+        }
+      },
+      onError: (error) => log.error("a2a", "cancel poll failed", error),
+    });
   }
 
   async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {

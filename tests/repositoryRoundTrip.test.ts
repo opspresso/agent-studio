@@ -16,9 +16,11 @@ import { projectRepository } from "@/infrastructure/db/repositories/projectRepos
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
+import { artifactRepository } from "@/infrastructure/db/repositories/artifactRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
+import { withTelegramDestinationIndex } from "@/infrastructure/db/telegramDestinationIndex";
 import { expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 
 const NOW = "2026-01-01T00:00:00.000Z";
@@ -44,6 +46,7 @@ function seedProject(name: string, over: Record<string, unknown> = {}): void {
 
 describe("telegramDestinationRepository", () => {
   it("keeps destinations separate by bot and lists the newest first", async () => {
+    seedProject("telegram-project");
     await telegramDestinationRepository.put("telegram-project", 42, {
       chatId: 100,
       chatType: "private",
@@ -64,7 +67,7 @@ describe("telegramDestinationRepository", () => {
       lastSeenAt: "2026-01-03T00:00:00.000Z",
     });
 
-    expect(await telegramDestinationRepository.list("telegram-project", 42)).toEqual([
+    expect(await telegramDestinationRepository.list("telegram-project", 42, 100)).toEqual([
       {
         chatId: -5,
         chatType: "supergroup",
@@ -79,6 +82,50 @@ describe("telegramDestinationRepository", () => {
         lastSeenAt: "2026-01-01T00:00:00.000Z",
       },
     ]);
+  });
+
+  it("bounds observed destinations to the newest application page", async () => {
+    seedProject("many-destinations");
+    for (let index = 0; index < 205; index++) {
+      await telegramDestinationRepository.put("many-destinations", 42, {
+        chatId: index + 1,
+        chatType: "private",
+        title: `Chat ${index}`,
+        lastSeenAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+      });
+    }
+
+    const destinations = await telegramDestinationRepository.list("many-destinations", 42, 100);
+    expect(destinations).toHaveLength(100);
+    expect(destinations[0]?.chatId).toBe(205);
+    expect(destinations.at(-1)?.chatId).toBe(106);
+    await expect(telegramDestinationRepository.list("many-destinations", 43, 100)).resolves.toEqual(
+      [],
+    );
+  });
+
+  it("returns the actual newest page after legacy rows gain the recency index", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => {
+      const chatId = index + 1;
+      return withTelegramDestinationIndex({
+        ...keys.telegramDestination("legacy-destinations", 42, chatId),
+        entityType: "telegramDestination",
+        projectName: "legacy-destinations",
+        botId: 42,
+        chatId,
+        chatType: "private",
+        title: `Chat ${chatId}`,
+        lastSeenAt: new Date(Date.UTC(2026, 0, 1, 0, 0, 101 - index)).toISOString(),
+      });
+    });
+    store.seed(rows);
+
+    const destinations = await telegramDestinationRepository.list("legacy-destinations", 42, 100);
+
+    expect(destinations).toHaveLength(100);
+    expect(destinations[0]?.chatId).toBe(1);
+    expect(destinations.at(-1)?.chatId).toBe(100);
+    expect(destinations.some((destination) => destination.chatId === 101)).toBe(false);
   });
 });
 
@@ -115,6 +162,29 @@ describe("project/version atomic writes", () => {
     const read = await projectRepository.get(project.name);
     expect(read?.visibility).toBe("private");
     expect(read?.memberEmails).toEqual(["invited@example.com"]);
+  });
+
+  it("refuses an invalid stored visibility instead of treating it as public", async () => {
+    store.seed([
+      {
+        ...keys.project("corrupt-visibility"),
+        entityType: "PROJECT",
+        GSI1PK: keys.typePartition("PROJECT"),
+        GSI1SK: "corrupt-visibility",
+        name: "corrupt-visibility",
+        displayName: "Corrupt",
+        description: "",
+        projectType: "agent",
+        ownerEmail: "owner@example.com",
+        visibility: "privte",
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+
+    await expect(projectRepository.get("corrupt-visibility")).rejects.toThrow(
+      /invalid project visibility/,
+    );
   });
 
   it("guards project replacement with the previously read timestamp", async () => {
@@ -189,6 +259,19 @@ describe("project/version atomic writes", () => {
 });
 
 describe("runSlotRepository ownership", () => {
+  it("bounds the live-slot scan to the supported limit", async () => {
+    const actor = "user:bounded@example.com";
+    const query = vi.spyOn(store, "queryItems");
+
+    await runSlotRepository.acquire(actor, 2, NOW_SECONDS + 60);
+
+    expect(query).toHaveBeenCalledWith({
+      pk: keys.runSlotPartition(actor),
+      notExpiredAt: NOW_SECONDS,
+      limit: 2,
+    });
+  });
+
   it("releases only the acquisition that owns the reused index", async () => {
     const actor = "user:u@example.com";
     const leaseUntil = NOW_SECONDS + 60;
@@ -224,6 +307,7 @@ describe("runSlotRepository ownership", () => {
 
 describe("triggerRepository messaging destination round-trip", () => {
   it("preserves schedule destinations through put + get", async () => {
+    seedProject("destination-round-trip");
     await triggerRepository.put({
       projectName: "destination-round-trip",
       triggerId: "daily",
@@ -254,6 +338,7 @@ describe("triggerRepository messaging destination round-trip", () => {
   });
 
   it("preserves per-destination results through append + list", async () => {
+    seedProject("destination-result-round-trip");
     await triggerRepository.appendRun({
       projectName: "destination-result-round-trip",
       triggerId: "daily",
@@ -333,12 +418,24 @@ describe("versionRepository mcpList normalization", () => {
   });
 
   it("carries a narrowing and an override together", async () => {
-    writeRaw([{ name: "alpha", headers: { "X-Tenant": "acme" }, tools: ["search"] }]);
+    writeRaw([
+      {
+        name: "alpha",
+        headers: { "X-Tenant": "acme" },
+        headerTarget: "sha256-target",
+        tools: ["search"],
+      },
+    ]);
 
     const version = await versionRepository.get("legacy", "1");
 
     expect(version?.mcpList).toEqual([
-      { name: "alpha", headers: { "X-Tenant": "acme" }, tools: ["search"] },
+      {
+        name: "alpha",
+        headers: { "X-Tenant": "acme" },
+        headerTarget: "sha256-target",
+        tools: ["search"],
+      },
     ]);
   });
 
@@ -570,6 +667,43 @@ describe("chatRepository message round-trip", () => {
     expect(messages.find((m) => m.role === "user")).toEqual(userMessage);
     expect(messages.find((m) => m.role === "tool")).toEqual(toolMessage);
     expect(messages.find((m) => m.role === "assistant")).toEqual(assistantMessage);
+  });
+});
+
+describe("artifactRepository round-trip", () => {
+  /**
+   * The write spreads the whole artifact; the read names its fields. A field
+   * left out of the read stores fine, type-checks fine and comes back
+   * `undefined` — and `ownerEmail` is the one ownership is decided from, so
+   * losing it turns a person's own artifact into a row they may neither open
+   * nor delete. Every optional field is asserted, not only that one.
+   */
+  it("reads back every field it was given", async () => {
+    const artifact = {
+      artifactId: "a1",
+      kind: "image" as const,
+      source: "generated" as const,
+      key: "artifacts/image/a1.png",
+      mimeType: "image/png",
+      filename: "chart.png",
+      byteSize: 1234,
+      projectName: "p1",
+      versionName: "v1",
+      actor: { kind: "slack" as const, id: "U0ABCDEF" },
+      // A Slack run looks the asker's address up so their pictures land in
+      // their own gallery; the actor stays the Slack id.
+      ownerEmail: "asker@example.com",
+      ancestry: ["p1", "child"],
+      producedBy: "child",
+      model: "openai/gpt-image-1",
+      runId: "r1",
+      prompt: "a bar chart",
+      createdAt: NOW,
+    };
+
+    await artifactRepository.put(artifact);
+
+    expect(await artifactRepository.get("a1")).toEqual(artifact);
   });
 });
 

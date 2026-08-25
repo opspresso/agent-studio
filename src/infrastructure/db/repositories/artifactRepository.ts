@@ -21,6 +21,13 @@ function fromItem(item: Record<string, unknown>): Artifact {
     projectName: String(item.projectName ?? ""),
     versionName: String(item.versionName ?? ""),
     ...(item.actor ? { actor: item.actor as Artifact["actor"] } : {}),
+    // Read by name like every other field. The write spreads the whole artifact,
+    // so a field missing from here stores fine, type-checks fine and comes back
+    // `undefined` — and this is the field ownership is decided from: an artifact
+    // filed under someone's address by a surface that resolved it (a Slack run
+    // looks the asker up) then appears in their gallery as a row they may
+    // neither open nor delete.
+    ...(typeof item.ownerEmail === "string" ? { ownerEmail: item.ownerEmail } : {}),
     ...(Array.isArray(item.ancestry) ? { ancestry: item.ancestry as string[] } : {}),
     ...(typeof item.producedBy === "string" ? { producedBy: item.producedBy } : {}),
     ...(typeof item.model === "string" ? { model: item.model } : {}),

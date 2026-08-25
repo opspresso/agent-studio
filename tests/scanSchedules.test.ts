@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_CONCURRENT_SCHEDULE_SCANS,
   SCHEDULE_CATCHUP_WINDOW_MS,
+  SCHEDULE_SCAN_PAGE_SIZE,
   driveFirings,
   scanSchedules,
   scheduleInput,
   type ScheduleFiring,
 } from "@/application/trigger/scanSchedules";
-import { REPAIR_AFTER_SECONDS } from "@/application/trigger/repairLostRuns";
+import {
+  REPAIR_AFTER_SECONDS,
+  REPAIR_PROJECT_CONCURRENCY,
+  repairLostRuns,
+} from "@/application/trigger/repairLostRuns";
 import { executeFiring } from "@/application/trigger/runTrigger";
 import type { FiringDeps } from "@/application/trigger/deps";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -128,7 +134,15 @@ function fixture(
   const triggers: TriggerRepository = {
     get: async () => null,
     listByProject: async () => stored,
-    listSchedules: async () => schedules,
+    listSchedules: async (limit, after) => {
+      const start = after
+        ? schedules.findIndex(
+            (trigger) =>
+              trigger.projectName === after.projectName && trigger.triggerId === after.triggerId,
+          ) + 1
+        : 0;
+      return schedules.slice(start, start + limit);
+    },
     create: async () => {},
     put: async () => {},
     delete: async () => {},
@@ -558,6 +572,61 @@ describe("scanSchedules", () => {
     expect(summary.fired).toBe(1);
   });
 
+  it("bounds concurrent schedule admission while checking every trigger", async () => {
+    const schedules = Array.from({ length: MAX_CONCURRENT_SCHEDULE_SCANS + 2 }, (_, index) =>
+      schedule({ triggerId: `schedule-${index}` }),
+    );
+    const f = fixture({ schedules });
+    let active = 0;
+    let maxActive = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reached!: () => void;
+    const atLimit = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    f.deps.triggers.claimIdempotencyKey = async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (active === MAX_CONCURRENT_SCHEDULE_SCANS) {
+        reached();
+      }
+      await gate;
+      active -= 1;
+      return false;
+    };
+
+    const scan = scanSchedules(f.deps, AT);
+    await atLimit;
+    expect(maxActive).toBe(MAX_CONCURRENT_SCHEDULE_SCANS);
+    release();
+
+    await expect(scan).resolves.toMatchObject({
+      summary: { checked: schedules.length, alreadyClaimed: schedules.length },
+    });
+  });
+
+  it("reads the schedule index in bounded pages without dropping triggers", async () => {
+    const schedules = Array.from({ length: SCHEDULE_SCAN_PAGE_SIZE + 2 }, (_, index) =>
+      schedule({ triggerId: `schedule-${index}`, enabled: false }),
+    );
+    const f = fixture({ schedules });
+    const listSchedules = f.deps.triggers.listSchedules.bind(f.deps.triggers);
+    const pageSizes: number[] = [];
+    f.deps.triggers.listSchedules = async (limit, after) => {
+      const page = await listSchedules(limit, after);
+      pageSizes.push(page.length);
+      return page;
+    };
+
+    const { summary } = await scanSchedules(f.deps, new Date(AT.getTime() + 60_000));
+
+    expect(summary.checked).toBe(schedules.length);
+    expect(pageSizes).toEqual([SCHEDULE_SCAN_PAGE_SIZE, 2]);
+  });
+
   it("records a run that failed mid-stream as failed with the error preserved", async () => {
     const f = fixture({ chunks: [{ delta: { content: "part" } }, { error: "provider died" }] });
     await scanAndExecute(f);
@@ -579,6 +648,44 @@ describe("scheduleInput", () => {
     // configuration explaining it.
     expect(scheduleInput(schedule({ message: undefined }))).toEqual({});
     expect(scheduleInput(schedule({ message: "  " }))).toEqual({});
+  });
+});
+
+describe("repairLostRuns", () => {
+  it("bounds concurrent project partition reads", async () => {
+    const f = fixture({ schedules: [] });
+    const projects = Array.from({ length: REPAIR_PROJECT_CONCURRENCY + 2 }, (_, index) => ({
+      ...project,
+      name: `p-${index}`,
+    }));
+    let active = 0;
+    let maxActive = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reached!: () => void;
+    const atLimit = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    f.deps.projects.list = async () => projects;
+    f.deps.triggers.listByProject = async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (active === REPAIR_PROJECT_CONCURRENCY) {
+        reached();
+      }
+      await gate;
+      active -= 1;
+      return [];
+    };
+
+    const repair = repairLostRuns(f.deps, AT);
+    await atLimit;
+    expect(maxActive).toBe(REPAIR_PROJECT_CONCURRENCY);
+    release();
+
+    await expect(repair).resolves.toEqual({ repaired: 0, errors: 0 });
   });
 });
 

@@ -95,7 +95,7 @@ export async function readMessageDocuments(
  * saying it twice would be the noise, and only the unconfigured case speaks.
  */
 export function collectGeneratedImages(
-  images: Array<{ b64: string; mimeType: string; prompt?: string; key?: string }>,
+  images: Array<{ prompt?: string; key?: string }>,
   storageConfigured: boolean,
 ): { stored: ChatMessageImage[]; warnings: string[] } {
   const stored: ChatMessageImage[] = [];
@@ -329,9 +329,14 @@ export async function* runAndPersist(
   // and hanging them off this assistant message would claim results this turn
   // never produced.
   const toolCalls: ChannelToolCall[] = [];
-  const generatedImages: { b64: string; mimeType: string; prompt?: string; key?: string }[] = [];
-  // No bytes here, unlike the images beside them: the bracket strips a file's
-  // payload as it stores it, so what arrives is already the reference.
+  // The reference, never the bytes — for both of these, and for the same
+  // reason. The chunk carrying an image keeps its base64 all the way to the
+  // reader, because that is what draws it live; a file keeps its own whenever
+  // no object storage is configured to strip it. Either payload pushed onto
+  // these arrays is then held for the whole run by a surface that reads nothing
+  // but the key when it persists — a run that draws twenty pictures is twenty
+  // pictures of heap per chat in flight, for no reader at all.
+  const generatedImages: { prompt?: string; key?: string }[] = [];
   const generatedFiles: {
     name: string;
     mimeType: string;
@@ -472,10 +477,19 @@ export async function* runAndPersist(
         note(chunk.warning);
       }
       if (chunk.image) {
-        generatedImages.push(chunk.image);
+        generatedImages.push({
+          ...(chunk.image.prompt !== undefined ? { prompt: chunk.image.prompt } : {}),
+          ...(chunk.image.key !== undefined ? { key: chunk.image.key } : {}),
+        });
       }
       if (chunk.file) {
-        generatedFiles.push(chunk.file);
+        generatedFiles.push({
+          name: chunk.file.name,
+          mimeType: chunk.file.mimeType,
+          ...(chunk.file.byteSize !== undefined ? { byteSize: chunk.file.byteSize } : {}),
+          ...(chunk.file.key !== undefined ? { key: chunk.file.key } : {}),
+          ...(chunk.file.artifactId !== undefined ? { artifactId: chunk.file.artifactId } : {}),
+        });
       }
       yield chunk;
     }

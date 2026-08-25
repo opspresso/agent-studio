@@ -3,6 +3,7 @@ import type { CostLimits, Project, ProjectType, ProjectVisibility } from "@/doma
 import { mayAccessProject, normalizeMemberEmails } from "@/domain/project/access";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "./timestamps";
+import { persistProjectUpdate } from "./projectUpdate";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
@@ -14,7 +15,13 @@ type AdminCheck = (userEmail: string) => Promise<boolean>;
  * writes — the same posture as a deployment with no admin list — rather than
  * opening every project or crashing.
  */
-let configuredAdminCheck: AdminCheck = async () => false;
+const ADMIN_CHECK = Symbol.for("opspresso.agent-studio.project-admin-check");
+const denyAdmin: AdminCheck = async () => false;
+type ProjectProcessGlobal = typeof globalThis & { [ADMIN_CHECK]?: AdminCheck };
+
+function adminCheck(): AdminCheck {
+  return (globalThis as ProjectProcessGlobal)[ADMIN_CHECK] ?? denyAdmin;
+}
 
 /**
  * Wire the admin-list reader the override consults. Called once by the
@@ -26,7 +33,7 @@ let configuredAdminCheck: AdminCheck = async () => false;
  * owner-only for its path alone.
  */
 export function setAdminCheck(check: AdminCheck): void {
-  configuredAdminCheck = check;
+  (globalThis as ProjectProcessGlobal)[ADMIN_CHECK] = check;
 }
 
 export interface CreateProjectInput {
@@ -55,8 +62,19 @@ export interface UpdateProjectInput {
   memberEmails?: string[];
 }
 
-export function listProjects(repo: ProjectRepository): Promise<Project[]> {
-  return repo.list();
+export const PROJECT_LIST_PAGE_SIZE = 100;
+
+export async function listProjects(repo: Pick<ProjectRepository, "list">): Promise<Project[]> {
+  const projects: Project[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await repo.list(PROJECT_LIST_PAGE_SIZE, after);
+    projects.push(...page);
+    if (page.length < PROJECT_LIST_PAGE_SIZE) {
+      return projects;
+    }
+    after = page.at(-1)!.name;
+  }
 }
 
 /**
@@ -69,7 +87,7 @@ export async function listAccessibleProjects(
   repo: ProjectRepository,
   userEmail: string,
 ): Promise<Project[]> {
-  const projects = await repo.list();
+  const projects = await listProjects(repo);
   if (await isAdminOverride(userEmail)) {
     return projects;
   }
@@ -111,19 +129,19 @@ export async function assertProjectWritable(
 ): Promise<Project> {
   const { project, override } = await writeAccess(repo, name, userEmail);
   if (override) {
-    // The owner cannot see this happen from the data — a deleted project takes
-    // the row that would have named who deleted it — so the override is the
-    // thing worth recording, not the eventual write. Recorded twice on purpose:
-    // the row is what a later question can query, the line is what survives the
-    // audit store itself being unavailable.
-    await recordAudit({
-      actorEmail: userEmail,
-      action: "project.admin-override",
-      target: auditTarget("project", name),
-      detail: `owned by ${project.ownerEmail}`,
-    });
+    await recordAdminOverride(project, userEmail);
   }
   return project;
+}
+
+/** The owner cannot see an override from the project data, so preserve it outside that row. */
+async function recordAdminOverride(project: Project, userEmail: string): Promise<void> {
+  await recordAudit({
+    actorEmail: userEmail,
+    action: "project.admin-override",
+    target: auditTarget("project", project.name),
+    detail: `owned by ${project.ownerEmail}`,
+  });
 }
 
 /**
@@ -155,8 +173,12 @@ async function writeAccess(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
+  options?: { includeDeleting?: boolean },
 ): Promise<{ project: Project; override: boolean }> {
-  const project = await getProject(repo, name);
+  const project = await repo.get(name, options);
+  if (!project) {
+    throw new NotFoundError(`Project "${name}" not found`);
+  }
   if (project.ownerEmail === userEmail) {
     return { project, override: false };
   }
@@ -229,7 +251,7 @@ export async function userMayAccessProject(project: Project, userEmail: string):
  */
 async function isAdminOverride(userEmail: string): Promise<boolean> {
   try {
-    return await configuredAdminCheck(userEmail);
+    return await adminCheck()(userEmail);
   } catch (error) {
     log.error("authz", "admin list unavailable; denying the override", error);
     return false;
@@ -295,14 +317,7 @@ export async function updateProject(
       : { memberEmails: normalizeMemberEmails(input.memberEmails, existing.ownerEmail) }),
     updatedAt: nextUpdatedAt(existing.updatedAt),
   };
-  try {
-    await repo.update(updated, existing.updatedAt);
-  } catch (error) {
-    if (isConditionalWriteFailure(error)) {
-      throw new ConflictError(`Project "${name}" was modified by another request`);
-    }
-    throw error;
-  }
+  await persistProjectUpdate(repo, updated, existing.updatedAt);
   return updated;
 }
 
@@ -320,7 +335,12 @@ export async function deleteProject(
   userEmail: string,
   beforeDelete?: BeforeProjectDelete,
 ): Promise<void> {
-  const project = await assertProjectWritable(repo, name, userEmail);
+  const { project, override } = await writeAccess(repo, name, userEmail, {
+    includeDeleting: true,
+  });
+  if (override) {
+    await recordAdminOverride(project, userEmail);
+  }
   // Before the row goes, while what it holds can still be acted on — and best
   // effort by contract: nothing the hook does may make a project undeletable.
   // The hook already catches its own network failure; this catches the rest

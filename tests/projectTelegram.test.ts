@@ -10,7 +10,7 @@ import {
   updateProjectTelegram,
 } from "@/application/telegram/projectTelegram";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
-import { ForbiddenError, ValidationError } from "@/application/errors";
+import { ConflictError, ForbiddenError, ValidationError } from "@/application/errors";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { TelegramDestinationRepository } from "@/domain/telegram/destination";
@@ -194,6 +194,19 @@ describe("updateProjectTelegram", () => {
     await expect(update(llm.repo, { botToken: "42:x" }, OWNER)).rejects.toThrow(ValidationError);
     await expect(update(repo, { botToken: "42:x" }, OTHER)).rejects.toThrow(ForbiddenError);
   });
+
+  it("maps a stale project snapshot to ConflictError", async () => {
+    const { repo } = fakeRepo(makeProject());
+    repo.update = async () => {
+      throw Object.assign(new Error("conditional check failed"), {
+        name: "ConditionalWriteFailed",
+      });
+    };
+
+    await expect(update(repo, { botToken: "42:x" }, OWNER)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+  });
 });
 
 describe("runtime, binding, test and webhook", () => {
@@ -236,7 +249,7 @@ describe("runtime, binding, test and webhook", () => {
     await expect(
       listProjectTelegramDestinations(repo, destinations, "bot-proj", OWNER, secretCipher),
     ).resolves.toHaveLength(1);
-    expect(list).toHaveBeenCalledWith("bot-proj", 42);
+    expect(list).toHaveBeenCalledWith("bot-proj", 42, 100);
     await expect(
       listProjectTelegramDestinations(repo, destinations, "bot-proj", OTHER, secretCipher),
     ).rejects.toThrow(ForbiddenError);

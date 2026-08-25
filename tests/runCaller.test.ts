@@ -33,6 +33,17 @@ describe("callerFrom", () => {
     expect(callerFrom({ displayName: "x".repeat(500) })?.displayName).toHaveLength(60);
   });
 
+  it("bounds it by character, so a caller cannot cut their own name in half", () => {
+    // The bound is whatever the person asking chose to put at it. 59 letters
+    // and an emoji leave half a character where `slice` would cut, and the
+    // half goes into the system prompt — on the wire as a lone surrogate a
+    // provider can refuse the whole request over, which is that caller able to
+    // stop their own runs and, on a shared thread, everyone else's.
+    const name = callerFrom({ displayName: `${"x".repeat(59)}\uD83D\uDE00` })?.displayName;
+    expect(name).toBeDefined();
+    expect((name as string).isWellFormed()).toBe(true);
+  });
+
   it("is nobody rather than a blank when nothing survives", () => {
     expect(callerFrom({ displayName: "   \n\t  " })).toBeNull();
     expect(callerFrom({})).toBeNull();

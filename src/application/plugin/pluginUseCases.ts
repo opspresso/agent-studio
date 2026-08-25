@@ -2,6 +2,7 @@ import { NotFoundError } from "@/application/errors";
 import type { PluginRepository } from "@/domain/plugin/repository";
 import type { Plugin } from "@/domain/plugin/types";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
+import { listRegistry } from "@/application/registry/registryUseCases";
 
 /**
  * The plugin slice. Deliberately not `createRegistryUseCases`: that factory's
@@ -25,7 +26,7 @@ export interface PluginUseCases {
 export function createPluginUseCases(repo: PluginRepository): PluginUseCases {
   return {
     async list() {
-      return repo.list();
+      return listRegistry(repo);
     },
 
     async get(name) {

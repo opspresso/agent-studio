@@ -31,9 +31,11 @@ AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필�
 
 ## 릴리스 파이프라인
 
-`.github/workflows/release.yml`, `v*` 태그(또는 수동 dispatch)로 트리거된다:
+`.github/workflows/release.yml`, `v*` 태그 push 로만 트리거된다. 임의 ref 를 고를 수 있는 수동
+dispatch 는 persistent self-hosted runner와 OIDC·registry·GitOps 자격 증명 경계에 두지 않는다:
 
-1. **verify**. `pnpm typecheck` + `pnpm test`.
+1. **verify**. 전용 PostgreSQL test database 에 대해 `pnpm typecheck` + `pnpm test` +
+   `pnpm test:integration`.
 2. **github-release**. GitHub Release 를 만든다. 릴리스 노트는 직전 태그와 이번 태그 사이의
    `git log` 로 생성된다 (`chore: release` 커밋은 걸러낸다). 이것이 이 프로젝트의 변경
    이력이다: 완료된 마일스톤은 [MILESTONES.md](MILESTONES.md) 에 보관되는 것이 아니라
@@ -47,6 +49,22 @@ AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필�
    태그를 올린다. 여기서 `GITHUB_TOKEN` 은 쓸 수 없다: 워크플로가 실행되는 저장소로 범위가
    한정되기 때문이다. IDC 호스트의 `deploy.sh` 는 GitHub 이 닿으면 그 핀을 따라간다
    ([두 환경](#두-환경-alpha-와-prod)).
+
+### 실패한 릴리스를 다시 돌리기
+
+수동 dispatch 가 없으므로 재실행은 **태그를 다시 밀어** 한다. 어느 job 이 실패했는지에 따라
+둘 중 하나다.
+
+- **같은 커밋을 다시**: 원격 태그를 지우고 같은 커밋에 다시 단다.
+  `git push origin :refs/tags/vX.Y.Z && git push origin vX.Y.Z`. `github-release` 가 이미
+  성공한 뒤였다면 그 Release 를 먼저 지운다 (`gh release delete vX.Y.Z`). ECR·GHCR push 는
+  같은 태그를 덮어쓰므로 그대로 두면 된다.
+- **고칠 것이 있으면 다음 patch 태그로**: 수정 커밋을 올리고 `vX.Y.Z+1` 을 단다. 태그를 옮기는
+  것보다 이쪽이 기본값이다 — 태그가 가리키는 커밋이 바뀌면 이미 그 태그를 pull 한 설치와
+  이력이 어긋난다.
+
+Actions 자체가 막혀 있으면(결제 한도, 러너 다운) 릴리스는 로컬에서 같은 순서로 할 수 있다:
+검증 → 태그 → `linux/amd64` 빌드 → ECR·GHCR push → GitOps 이미지 태그 범프 → IDC `deploy.sh`.
 
 자명하지 않은 빌드 설정이 둘 있다:
 
@@ -63,7 +81,7 @@ AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필�
 | 엔드포인트 | 종류 | 동작 |
 |---|---|---|
 | `GET /api/health` | liveness | 정적 `200`. 의존성이 없고 인증도 없다. "프로세스가 서빙 중인가" 에 답한다. |
-| `GET /api/ready` | readiness | PostgreSQL(`SELECT 1 FROM items LIMIT 1`, 연결·자격 증명·스키마를 한 번에)과 LLM 채널을 프로브한다 (각 2초 타임아웃, 상세는 노출하지 않는다). 다운스트림에 닿을 수 없거나 **또는** 인스턴스가 draining 중이면 `503`. |
+| `GET /api/ready` | readiness | PostgreSQL(`SELECT 1 FROM items LIMIT 1`, 연결·자격 증명·스키마를 한 번에)과 LLM 채널을 프로브한다 (각 2초 타임아웃, 상세는 노출하지 않는다). DB 프로브는 전용 connection 하나에서 연결 대기·클라이언트 응답·서버 실행을 모두 제한하고, 시간 초과 connection을 폐기한다. 다운스트림에 닿을 수 없거나 **또는** 인스턴스가 draining 중이면 `503`. |
 
 재시작 검사는 `/api/health` 에, 로드 밸런서는 `/api/ready` 에 붙여라.
 
@@ -312,7 +330,7 @@ actor 에 대해 프로젝트의 비용 가드 다음, 슬롯 이전에 검사�
 caller 당 `MAX_CONCURRENT_RUNS_PER_ACTOR` (기본 10); 인바운드 A2A 는 actor id 가 상수이므로
 자체의 `MAX_CONCURRENT_RUNS_A2A` (기본 50)를 쓴다. `0` 은 그 한도를 끈다. 한도를 넘으면 런은
 `429` 와 짧은 `Retry-After` 로 거부되는데, **시작되기 전에** 거부되므로 usage 도 트레이스도
-남기지 않는다.
+남기지 않는다. 두 설정의 최대값은 저장 slot index가 표현하는 1000이다.
 
 운영상 중요한 성질이 둘이다. 슬롯은 프로세스 메모리가 아니라 **데이터베이스의 리스된 행**이므로
 한도가 정확하고 인스턴스 수만큼 **곱해지지 않으며**, 런 도중에 죽은 인스턴스는 그 점유를
@@ -358,6 +376,8 @@ CronJob 이 그 일을 한다. **행 보존의 sweep 도 이 틱에 얹혀 있�
 
 - **중복은 안전하다.** 키는 항목에서 파생되므로, 두 번째 패스는 같은 레코드를 쓰고 같은 잔여물을
   계산한다.
+- MCP tool discovery는 동시에 최대 8개 서버만 진행한다. registry 크기가 그대로 outbound 연결
+  burst가 되지 않게 하는 실행 상한이다.
 - 틱은 작업을 넘기자마자 반환한다; 결과는 로그 라인에 있다. `indexed`, `removed`, 그리고 도구
   목록을 가져오지 못한 서버를 이름 붙이는 `undiscovered`. OAuth 연결이 필요한 서버가 그 목록에
   있는 것은 예상된 일이다: 서버 수준에서는 여전히 색인되고, 다만 그 도구들이 없을 뿐이다.

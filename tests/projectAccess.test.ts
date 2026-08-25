@@ -11,6 +11,7 @@ import {
 } from "@/domain/project/access";
 import {
   assertProjectAccessible,
+  listProjects,
   listAccessibleProjects,
   setAdminCheck,
   updateProject,
@@ -50,7 +51,11 @@ function fakeRepo(projects: Project[]): ProjectRepository {
   const byName = new Map(projects.map((p) => [p.name, p]));
   return {
     get: async (name) => byName.get(name) ?? null,
-    list: async () => [...byName.values()],
+    list: async (limit, after) =>
+      [...byName.values()]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .filter((p) => !after || p.name > after)
+        .slice(0, limit),
     create: async (p) => void byName.set(p.name, p),
     update: async (p) => void byName.set(p.name, p),
     publish: async () => {
@@ -159,6 +164,25 @@ describe("listAccessibleProjects", () => {
     admins.emails = [ADMIN];
     const names = (await listAccessibleProjects(repos(), ADMIN)).map((p) => p.name).sort();
     expect(names).toEqual(["hidden", "invited", "mine", "proj"]);
+  });
+});
+
+describe("listProjects", () => {
+  it("reads every project through bounded repository pages", async () => {
+    const projects = Array.from({ length: 102 }, (_, index) =>
+      project({ name: `project-${String(index).padStart(3, "0")}` }),
+    );
+    const repo = fakeRepo(projects);
+    const list = repo.list.bind(repo);
+    const pageSizes: number[] = [];
+    repo.list = async (limit, after) => {
+      const page = await list(limit, after);
+      pageSizes.push(page.length);
+      return page;
+    };
+
+    await expect(listProjects(repo)).resolves.toHaveLength(projects.length);
+    expect(pageSizes).toEqual([100, 2]);
   });
 });
 

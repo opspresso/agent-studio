@@ -4,6 +4,7 @@ import { previewPrompt } from "@/application/execution/runProject";
 import { previewPromptSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sessionCaller } from "@/app/api/_lib/caller";
+import { editorBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -29,7 +30,11 @@ type RouteContext = { params: Promise<{ name: string }> };
  */
 export const POST = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
-  const parsed = previewPromptSchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = previewPromptSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

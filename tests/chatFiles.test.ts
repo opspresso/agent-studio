@@ -6,7 +6,10 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { collectGeneratedFiles, runAndPersist } from "@/application/chat/run";
 import { resolveFileUrl } from "@/domain/chat/fileRefs";
-import { resolveMessageFiles } from "@/application/chat/resolveFiles";
+import {
+  MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS,
+  resolveMessageFiles,
+} from "@/application/chat/resolveFiles";
 import { toEngineMessages } from "@/application/chat/messageMapping";
 import { reduceChunk } from "@/app/chats/_lib/stream";
 import { EMPTY_TURN } from "@/app/chats/_lib/types";
@@ -93,6 +96,36 @@ describe("resolveMessageFiles", () => {
     expect(dropped).toBe(1);
     expect(messages[0]?.role === "assistant" && messages[0].files).toEqual([]);
     vi.restoreAllMocks();
+  });
+
+  it("bounds signer concurrency across the full transcript", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const release: Array<() => void> = [];
+    const signer = async (key: string) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise<void>((resolve) => release.push(resolve));
+      active -= 1;
+      return `https://signed.example/${key}`;
+    };
+    const messages = Array.from(
+      { length: MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS + 2 },
+      (_, index) =>
+        assistantWith([
+          { key: `file-${index}`, name: `${index}.pdf`, mimeType: "application/pdf" },
+        ]),
+    );
+
+    const pending = resolveMessageFiles(messages, signer, VIEW_URL_TTL_SECONDS);
+    await vi.waitFor(() => expect(active).toBe(MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS));
+    while (release.length > 0) {
+      release.shift()?.();
+      await Promise.resolve();
+    }
+    await pending;
+
+    expect(maxActive).toBe(MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS);
   });
 });
 
@@ -230,6 +263,48 @@ describe("runAndPersist", () => {
         name: "deployment-method-summary.pdf",
         mimeType: "application/pdf",
         byteSize: 1_605_516,
+      },
+    ]);
+  });
+
+  it("keeps the reference a chunk carried, not the chunk's own payload object", async () => {
+    // The surface reads nothing but the key when it persists, so holding the
+    // chunk's `image`/`file` object keeps every produced byte alive for the
+    // whole run — a run that draws twenty pictures is twenty pictures of heap
+    // per chat in flight, for no reader at all. Aliasing is what this can
+    // observe: a later frame edits the objects the earlier ones carried, and a
+    // surface holding them would persist the edit instead of what arrived.
+    const fixture = deps();
+    const drawn = { b64: "AAAA", mimeType: "image/png", key: "artifacts/image/a1.png" };
+    const rendered = {
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      source: "mcp: render_document",
+      b64: "BBBB",
+      key: "artifacts/document/d1.pdf",
+    };
+
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { image: drawn };
+      yield { file: rendered };
+      drawn.key = "artifacts/image/OVERWRITTEN.png";
+      rendered.key = "artifacts/document/OVERWRITTEN.pdf";
+      yield { delta: { content: "done" } };
+    }
+
+    for await (const _ of runAndPersist(fixture.deps, CHAT, source())) {
+      // drained for its side effects
+    }
+
+    const assistant = fixture.messages.find((message) => message.role === "assistant");
+    expect(assistant?.role === "assistant" && assistant.images).toEqual([
+      { key: "artifacts/image/a1.png" },
+    ]);
+    expect(assistant?.role === "assistant" && assistant.files).toEqual([
+      {
+        key: "artifacts/document/d1.pdf",
+        name: "report.pdf",
+        mimeType: "application/pdf",
       },
     ]);
   });

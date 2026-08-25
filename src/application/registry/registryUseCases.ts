@@ -10,14 +10,64 @@ import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailur
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
+import { urlWithoutQueryOrFragment } from "@/shared/url";
+
+/** Registry endpoints carry credentials in headers or OAuth, never in their visible URL. */
+export function assertCredentialFreeRegistryUrl(rawUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new ValidationError("Registry URL is invalid");
+  }
+  if (url.search || url.hash) {
+    throw new ValidationError(
+      "Registry URLs cannot include query parameters or fragments; use headers or OAuth for credentials",
+    );
+  }
+}
+
+/**
+ * The address a registry patch actually names.
+ *
+ * A member-facing view strips query and fragment from a stored URL
+ * (`urlWithoutQueryOrFragment`), and the console seeds its edit form from that
+ * view — so a save that never touched the address sends the *redacted* one
+ * back. Taken at face value that reads as a move: the entry would be stored
+ * pointing somewhere else, its credentials dropped for having followed an
+ * address change, and the credential-free rule would then refuse to let anyone
+ * type the original back. A patch that is the stored URL's own redaction is
+ * therefore the same address, not a new one.
+ */
+export function resolveRegistryUrlPatch(existing: string, patch: string): string {
+  return patch === urlWithoutQueryOrFragment(existing) ? existing : patch;
+}
 
 /** Minimal repository shape shared by the registry slices. */
 export interface RegistryRepository<T> {
   get(name: string): Promise<T | null>;
-  list(): Promise<T[]>;
+  list(limit: number, after?: string): Promise<T[]>;
   create(entity: T): Promise<void>;
   update(entity: T): Promise<void>;
   delete(name: string): Promise<void>;
+}
+
+export const REGISTRY_LIST_PAGE_SIZE = 100;
+
+/** Read a complete name-keyed registry through bounded repository pages. */
+export async function listRegistry<T extends { name: string }>(
+  repo: Pick<RegistryRepository<T>, "list">,
+): Promise<T[]> {
+  const entries: T[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await repo.list(REGISTRY_LIST_PAGE_SIZE, after);
+    entries.push(...page);
+    if (page.length < REGISTRY_LIST_PAGE_SIZE) {
+      return entries;
+    }
+    after = page.at(-1)!.name;
+  }
 }
 
 /** SSRF policy at the write boundary: a blocked URL is invalid input (400). */
@@ -79,7 +129,7 @@ export function createRegistryUseCases<
 
   return {
     async list() {
-      return (await opts.repo.list()).map(view);
+      return (await listRegistry(opts.repo)).map(view);
     },
 
     async get(name) {

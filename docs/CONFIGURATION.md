@@ -199,7 +199,7 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
   `next build` 가 보는 것이고, 발행된 카탈로그를 못 가져온 부팅이 기대는 것이다.
   `pnpm sync-models` 가 갱신하고(`--check` 는 뒤처졌으면 1 로 종료), 릴리즈 전이나 테스트가 새
   모델을 봐야 할 때 돌린다. agent-models 가 바뀔 때마다는 아니다.
-- **발행된 카탈로그**. 부팅 때 `MODELS_CATALOG_URL` 에서 읽어(`src/instrumentation.ts`, 첫 요청
+- **발행된 카탈로그**. `MODELS_CATALOG_URL` 을 설정하면 부팅 때 읽어(`src/instrumentation.ts`, 첫 요청
   전에 await, 소스 자체의 10초 데드라인), 이후 `MODELS_CATALOG_REFRESH_MS` 마다 다시 읽는다
   (`application/llm/modelCatalogRefresh.ts`). 실패는 로그를 남기고 레지스트리를 그대로 둔다.
   정적 사이트가 내려갔다고 부팅을 거부하는 것은 낡은 가격을 무서비스와 바꾸는 일이다.
@@ -212,7 +212,9 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
   refresh 부터 발행 카탈로그를 다시 읽으며, 읽을 발행 카탈로그가 없으면 프로세스가 재시작해
   스냅샷으로 돌아갈 때까지 마지막 설치본을 유지한다. 레지스트리는 결코 비워지지 않는다.
   우선순위는 부팅 때 한 번이 아니라 **읽을 때마다** 결정되므로, 다른 인스턴스의 업로드도 한
-  틱 안에 도달한다. 로컬 스냅샷을 그 문서로 맞추려면 `pnpm sync-models --from <file>`.
+  틱 안에 도달한다. 같은 프로세스의 boot 틱과 console refresh 는 하나의 coordinator 로
+  직렬화되고, 진행 중인 읽기 사이에 업로드나 삭제가 오면 뒤따르는 읽기를 한 번 더 수행한다.
+  로컬 스냅샷을 그 문서로 맞추려면 `pnpm sync-models --from <file>`.
 
 `loadModelCatalog` (`src/domain/llm/models.ts`) 가 유일한 입구다: 버전을 확인하고, 항목마다 런이
 읽는 필드(가격이 숫자인지, 윈도가 양의 정수인지, `provider` 가 이 앱이 가진 채널인지.
@@ -225,7 +227,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `MODELS_CATALOG_URL` | `https://models.opspresso.com/models.json` | boot | 발행된 카탈로그의 주소. 구성값이지 사용자가 친 주소가 아니라서 SSRF 가드를 지나지 않는다. **`none`**(대소문자 무관)은 원격 읽기를 통째로 끈다. 부팅에도 간격에도 fetch 가 없고, 닿지 않을 사이트에 대한 경고도 없다. 폐쇄망의 설정이며, 그때의 카탈로그는 스냅샷과 admin 의 업로드뿐이다. 간격 자체는 켜져 있다: 다른 인스턴스의 업로드와 self-hosted 선언이 이 프로세스에 닿는 길이기도 하므로, `none` 아래의 틱은 데이터베이스만 읽는다. |
+| `MODELS_CATALOG_URL` | — (원격 읽기 꺼짐) | boot | 발행된 카탈로그의 주소. 명시한 배포만 부팅과 간격마다 읽는다. 구성값이지 사용자가 친 주소가 아니라서 SSRF 가드를 지나지 않는다. 미설정 또는 **`none`**(대소문자 무관)이면 fetch 가 없고, 카탈로그는 스냅샷과 admin 의 업로드뿐이다. 간격 자체는 켜져 있다: 다른 인스턴스의 업로드와 self-hosted 선언이 이 프로세스에 닿는 길이므로, URL 없는 틱은 데이터베이스만 읽는다. |
 | `MODELS_CATALOG_REFRESH_MS` | `3600000` (1시간) | boot | 다시 읽는 간격. `0` 이면 간격을 끄고 부팅 때만 읽는다. |
 
 **Bedrock 의 모델 목록은 이 프로토콜이 도달할 수 있는 모델의 목록이 아니다.** OpenAI 호환
@@ -280,11 +282,11 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack 경로는 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 이 값과 함께 움직이는 파생값이 셋 있다: 런 슬롯 lease(이 값 + 60초), MCP OAuth 토큰 갱신 여유(이 값 + 5분), 리플레이 signed URL 수명(이 값 + 15분, `src/application/artifact/urlTtl.ts`). |
-| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | 한 호출자가 동시에 진행할 수 있는 런 수. `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, 프로젝트 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
-| `MAX_CONCURRENT_RUNS_A2A` | `50` | — | **공유** A2A 키로 이뤄진 호출을 위한 별도 상한. 그 actor id 는 상수라서, 하나의 정체성이 거기의 모든 기계 호출자를 대표한다. 그러지 않으면 호출자별 제한이 A2A 표면 전체에 상한을 씌우게 된다. 이름이 붙은 클라이언트 키는 호출자 하나이며 사람과 마찬가지로 `MAX_CONCURRENT_RUNS_PER_ACTOR` 아래에 놓인다. |
+| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, 프로젝트 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
+| `MAX_CONCURRENT_RUNS_A2A` | `50` | — | **공유** A2A 키로 이뤄진 호출을 위한 별도 상한(최대 `1000`). 그 actor id 는 상수라서, 하나의 정체성이 거기의 모든 기계 호출자를 대표한다. 그러지 않으면 호출자별 제한이 A2A 표면 전체에 상한을 씌우게 된다. 이름이 붙은 클라이언트 키는 호출자 하나이며 사람과 마찬가지로 `MAX_CONCURRENT_RUNS_PER_ACTOR` 아래에 놓인다. |
 | `SCHEDULE_SCAN_TOKEN` | 미설정 | — | 모든 ticker 가 제시하는 단 하나의 자격증명(`X-Scan-Token`)이며, CronJob 이 POST 하는 세 엔드포인트가 공유한다: `/api/triggers/scan`(schedule), `/api/plugins/sync/scan`(plugins 저장소), `/api/catalog/reindex`(capability 카탈로그). 설정하지 않으면 이 배포에 ticker 가 없다는 뜻이다: 셋 다 503 으로 답하고 schedule 트리거는 결코 발화하지 않는다. 열리는 대신 꺼진다. |
 
-유효하지 않은 값(정수가 아니거나 음수)은 `0` 이 아니라 경고와 함께 기본값으로 떨어진다.
+유효하지 않은 값(정수가 아니거나 음수, 또는 위 동시성 상한 초과)은 `0` 이 아니라 경고와 함께 기본값으로 떨어진다.
 `Number("abc") || 0` 은 "제한 꺼짐" 으로 읽히는데, 그것은 오타가 뜻해야 하는 바의 정반대다.
 
 **이 문서의 거의 모든 숫자 설정이 그렇게 동작한다**: 이들은 `positiveIntEnv` 를 지나가며,
@@ -485,6 +487,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | MCP 서버 하나에서 읽는 `tools/list` 페이지 수 (상한에 닿으면 그 discovery 는 실패한다, SDK 는 부분 카탈로그를 남기지 않는다) | `64` | `src/infrastructure/mcp/session.ts` |
 | MCP OAuth 메타데이터 / 토큰 응답 | 각 `256KB` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | MCP discovery 캐시 항목 수 | `200` | `src/infrastructure/mcp/discoveryCache.ts` |
+| 호스트당 managed MCP 서버 수 / 컨테이너당 메모리·swap·CPU·PID·writable tmpfs | `8` / `512MiB`·`512MiB`·`1`·`256`·`64MiB` | `src/application/mcp/managedMcpUseCases.ts`, `src/infrastructure/mcp/dockerProvisioner.ts` |
 | 원격 agent(A2A / 외부)의 응답 | `2MB` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts` |
 | MCP 도구 호출 하나, 모델에 타임아웃 에러가 건네지기 전까지 (도구가 정당하게 몇 분씩 걸릴 수도 있다) | `120s` | `src/infrastructure/mcp/session.ts` |
 | MCP discovery. 모든 런의 첫 토큰이 지나는 크리티컬 패스 위에 있어서, 빠르게 실패하고 그 서버의 도구만 잃는다. **요청당**: 연결과 `tools/list` 가 각각 이 값을 받는다 (그래서 느린 서버 하나에 최대 ~20초). 캐시로 제공된 세션의 첫 도구 호출에서 일어나는 지연 연결도 이 값을 받는다 | `10s` | `src/infrastructure/mcp/session.ts` |
@@ -497,13 +500,16 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | Telegram Bot API 호출 하나 / Telegram 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/telegram/client.ts` |
 | Bot Framework(Teams) 호출 하나 / 첨부 전송 하나 | `30s` / `120s` | `src/infrastructure/teams/client.ts` |
 | Bot Framework 서명 키 캐시 / 모르는 `kid` 에 대한 재조회 최소 간격 / 토큰 시각 skew / 앱 토큰 만료 여유 | `24h` / `60s` / `5m` / `60s` | `src/infrastructure/teams/client.ts` |
+| OpenAI-compatible SDK client cache (text / image / embedding, adapter별) / Teams 앱 token cache | 각 `16` / `32` | `src/infrastructure/llm/clientCache.ts`, `src/infrastructure/teams/client.ts` |
+| 프로젝트 설정에 표시하는 최근 Telegram destination | `100` | `src/application/telegram/projectTelegram.ts` |
 | GitHub API 요청 하나 (plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
 | 모델 응답당 동시 MCP 호출 수 | `5` | `src/application/llm/engine.ts` |
 | 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
-| 턴당 이미지 수 / 각 바이트 | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
+| 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP) | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | 턴당 문서 수 / 각 바이트 | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | 유지하는 추출 텍스트, 문서당 / 턴당 | `20,000` / `40,000` 자 | `src/domain/llm/documentLimits.ts` |
 | 턴을 나르는 요청 본문 (첨부 상한에서 파생) | ~`80MB` | `src/app/api/_lib/body.ts` |
+| 프로세스가 동시에 보유하는 attachment-scale turn 본문 바이트 (`256KiB` 초과분만 과금, 상한은 최대 turn 본문의 2배) | ~`168MB` | `src/app/api/_lib/body.ts` |
 | Skill 첨부. 파일당 바이트 / skill 당 파일 수 / skill 당 바이트 (어느 하나라도 넘는 파일은 sync 에서 건너뛰고 이유를 보고한다) | `64KB` / `20` / `200KB` | `src/domain/skill/files.ts` |
 | 레지스트리 또는 버전 편집의 요청 본문 (skill 파일 상한에서 파생) | `456KB` | `src/app/api/_lib/body.ts` |
 | 턴이 넘칠 때 유지하는 transfer transcript 한 줄 | 최소 `500` 자 | `src/application/llm/engine.ts` |

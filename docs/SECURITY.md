@@ -208,6 +208,9 @@ webhook trigger 시크릿, 그리고 시크릿인 앱 설정(LLM API 키와 plug
 업데이트 시 마스킹된 값이나 빈 값은 **저장된 시크릿을 보존한다**. 저장된 상대가 없는 키에 온
 마스킹된 값은 **버린다**. 마스크는 이미 있는 시크릿을 확인해 줄 수만 있고, 만들어 낼 수는
 없다. 헤더 오버라이드 맵의 `null` 은 명시적 제거로 그대로 통과한다. 제거는 시크릿이 아니다.
+버전별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerprint 와 함께 보관한다. 같은
+이름의 URL 이 바뀌거나 fingerprint 가 없는 예전 값이면 옛 시크릿을 보내지 않는다. 새 endpoint
+용 자격 증명을 다시 입력해야 한다.
 
 ### reveal 엔드포인트
 
@@ -293,6 +296,41 @@ claim-and-settle 저장소). 그 claim 은 나중에 정산되는 **리스** 이
 인스턴스는 아무도 처리하지 않았는데 처리된 것으로 기록된 이벤트가 아니라 다시 가져갈 수 있는
 claim 을 남긴다. Webhook 배달도 같은 방식으로 `Idempotency-Key` 를 선점한다.
 
+## 인바운드 요청 크기
+
+JSON 본문은 schema 검증 전에 bounded reader를 지난다. 관리·편집 요청은 Skill 전체 파일 한도에서
+파생한 editor 한도, 이미지·문서를 실을 수 있는 실행 요청은 attachment 한도에서 파생한 turn
+한도, model catalog 업로드는 catalog 한도를 쓴다. webhook 네 종류는 서명 검증에 필요한 raw
+본문을 공통 1MB 한도 아래에서 읽는다. 선언된 `Content-Length`가 한도를 넘으면 body를 읽지 않고
+413을 답하고, chunked body는 누적 바이트가 한도를 넘는 즉시 stream을 취소한다.
+256KiB prose allowance를 넘는 큰 실행 본문은 프로세스 단위의 **바이트 예산**에 과금된다.
+예산은 최대 turn 본문 두 개 분량이고, 요청은 자기가 실제로 읽은 바이트만큼만 쓴다. 과금은
+파싱부터 run 또는 stream이 입력을 놓을 때까지 유지되고, 연결에서 분리되어 계속 도는 chat은
+내부 drain 완료까지 유지한다. 일반 text turn은 아무것도 쓰지 않는다. 예산이 모자라면 body를
+취소한 뒤 `Retry-After`를 포함한 429를 답한다. A2A raw JSON 경로도 같은 게이트를 지난다.
+
+**개수가 아니라 바이트인 이유**: 큰 본문의 크기는 두 자릿수 배 차이가 난다. 요청 수로 세면
+스크린샷 한 장(수백 KB)을 실은 대화가 84MB 짜리 문서 네 개짜리 턴과 같은 permit 을 쓰고,
+permit 은 런이 끝날 때까지 유지되므로 그런 대화 둘이 도는 동안 나머지 전원이 최대
+`MAX_RUN_DURATION_MS` 동안 429 를 받는다. 막아야 하는 것은 heap 이므로 heap 을 센다.
+
+`tests/architecture.test.ts`는 API route의 직접 `request.json()`과 `request.formData()` 호출을
+거부한다. Zod의 필드 크기 검사는 파싱 뒤의 값 규칙이지, 파싱 전에 발생하는 메모리 할당 제한이
+아니다.
+
+## Session mutation과 CSRF
+
+Cookie session으로 인증하는 `POST`·`PUT`·`PATCH`·`DELETE`는 `Origin`이 request origin 또는
+설정된 `PUBLIC_BASE_URL` origin과 정확히 같아야 한다. Origin이 없거나 `null`이거나 URL로
+해석되지 않으면 403이다. 세 session wrapper가 일반 console API를 한 번에 보호하고, project
+실행 API는 bearer project token을 먼저 검증한 뒤 cookie session으로 fallback할 때 같은 검사를
+적용한다. bearer token, webhook signature, A2A key처럼 cookie를 쓰지 않는 머신 호출에는 CSRF
+검사를 적용하지 않는다.
+
+리버스 프록시 밖의 origin과 앱이 보는 request origin이 다르면 `PUBLIC_BASE_URL`을 반드시
+설정하라. 이 값은 외부 callback URL뿐 아니라 어떤 browser origin이 session cookie를 쓸 수
+있는지 결정한다.
+
 ## 응답 헤더
 
 `next.config.ts` 에서 모든 경로에 설정한다. `frame-ancestors 'none'` 과
@@ -317,6 +355,12 @@ userinfo 를 실은 URL(`https://user:pass@host`, 주소 안의 자격 증명은
 사설·루프백·링크로컬(클라우드 메타데이터 주소 `169.254.169.254` 포함) 또는 그 밖의 예약 대역으로
 해석되는 호스트.
 
+IPv6 는 주소 하나에 철자가 여럿이므로, 텍스트가 아니라 8개 그룹으로 펼친 값으로 판정한다.
+IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/96`, 6to4
+`2002::/16`)는 통째로 막지 않고 **담긴 IPv4 로** 판정한다 — IPv6 전용 망에서 공인 주소에
+닿는 정상 경로가 그것이기 때문이다. `64:ff9b::8.8.8.8` 은 통과하고 `64:ff9b::10.0.0.1` 은
+거부된다.
+
 디스패치는 `fetchPublicUrl`(`src/infrastructure/net/publicFetch.ts`)을 거치고, 그것이 단일
 아웃바운드 경계다:
 
@@ -330,7 +374,16 @@ userinfo 를 실은 URL(`https://user:pass@host`, 주소 안의 자격 증명은
   호스트는 풀링된 디스패처에 닿기 전에 거부되고, 다른 곳으로 해석되는 호스트는 다른 키를
   받는다.
 
-공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라.
+공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라. Registry endpoint URL 은
+query parameter 와 fragment 를 받지 않는다. 둘은 멤버가 읽는 registry view 와 운영 로그에서
+자격 증명을 노출하기 쉬우므로, 인증 정보는 encrypted header 또는 OAuth 연결에 둔다. 이전 행에
+남은 query 와 fragment 는 dispatch 에만 쓰이고 reader-facing view 에서는 제거한다. 이 규칙은
+**주소가 실제로 바뀔 때만** 적용한다. 저장된 주소를 그대로, 또는 콘솔이 보여 준 redacted 형태로
+되돌려 보내는 저장은 이동이 아니므로 거절하지도, 저장된 credential 을 버리지도 않는다
+(`resolveRegistryUrlPatch`). 그러지 않으면 편집 폼이 자기가 읽은 값을 되돌려 보내는 것만으로
+레거시 항목이 다른 endpoint 를 가리키게 되고, 원래 주소는 다시 입력할 수도 없다.
+외부 A2A Agent Card 의 실패 메시지는 origin 만 남긴다. query string 을 비롯한 전체 URL 자체가
+자격 증명일 수 있으므로 authored error, chat, trace 에 등록 주소를 복사하지 않는다.
 
 MCP 클라이언트는 `@modelcontextprotocol/client` 위에서 돌고, 가드는 그 옆에 놓이는 대신 그 안으로
 **주입된다**. 트랜스포트에 `fetch` 로 주어지는 것이
@@ -403,6 +456,13 @@ managed MCP 서버(`runtime: "managed"`)는 이 앱이 자기 호스트에서 �
 넘기고, 구조적으로 쓰이는 값. 이름(`MANAGED_NAME`), 이미지 레퍼런스, `--env-file` 로 건네는
 env 참조(호스트의 절대 경로). 은 패턴으로 검사한다. 항목을 편집할 수 있는 운영자가 그것으로
 호스트에서 임의 코드를 돌릴 수는 없어야 한다.
+
+컨테이너는 각각 메모리와 memory+swap을 모두 512MiB, CPU 1개, PID 256개로 제한하고 Linux
+capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesystem은 read-only이고
+`/tmp`만 `noexec,nosuid` 64MiB tmpfs로 쓸 수 있다. 따라서 managed image는 영속 로컬 쓰기를
+가정하면 안 된다. 한 호스트에는 managed 항목을 8개까지만 만들 수 있고 서로 다른 이름의 동시
+생성도 count-then-create 구간에서 직렬화된다. 기존 항목의 restart·reconcile은 이 상한 때문에
+막히지 않는다.
 
 ### MCP 서버가 호출자에 대해 듣는 것
 

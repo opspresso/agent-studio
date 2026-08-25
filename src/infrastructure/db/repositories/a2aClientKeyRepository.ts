@@ -8,10 +8,18 @@
  */
 
 import { keys } from "@/infrastructure/db/keys";
-import { conditions, getItem, queryItems, transact } from "@/infrastructure/db/store";
+import {
+  conditions,
+  getItem,
+  queryItems,
+  transact,
+  TRANSACTION_CANCELLED,
+} from "@/infrastructure/db/store";
 import type { A2aClientKey, A2aClientKeyRepository } from "@/domain/a2a/clientKey";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 const ENTITY_TYPE = "A2ACLIENT";
+const MAX_DELETE_ATTEMPTS = 3;
 
 function toItem(key: A2aClientKey): Record<string, unknown> {
   return {
@@ -45,9 +53,20 @@ export const a2aClientKeyRepository: A2aClientKeyRepository = {
     return item ? fromItem(item) : null;
   },
 
-  async list() {
-    const items = await queryItems({ index: "GSI1", pk: keys.typePartition(ENTITY_TYPE) });
-    return items.map(fromItem);
+  async list(limit, after) {
+    const items = await queryItems({
+      index: "GSI1",
+      pk: keys.typePartition(ENTITY_TYPE),
+      limit: boundedPageLimit(limit),
+      ...(after ? { after } : {}),
+    });
+    return items.map((item) => {
+      const key = fromItem(item);
+      if (key.name !== item.GSI1SK) {
+        throw new Error("A2A client key name does not match its index key");
+      }
+      return key;
+    });
   },
 
   async create(key) {
@@ -69,19 +88,44 @@ export const a2aClientKeyRepository: A2aClientKeyRepository = {
   },
 
   async delete(name) {
-    const stored = await this.get(name);
-    if (!stored) {
-      return false;
+    let lastRace: unknown;
+    for (let attempt = 0; attempt < MAX_DELETE_ATTEMPTS; attempt += 1) {
+      const stored = await this.get(name);
+      if (!stored) {
+        return false;
+      }
+      try {
+        await transact([
+          {
+            kind: "delete",
+            key: keys.a2aClientKey(name),
+            condition: conditions.existsWith("tokenHash", stored.tokenHash),
+          },
+          {
+            kind: "delete",
+            key: keys.a2aClientKeyHash(stored.tokenHash),
+            condition: (row) => row === null || row.clientName === name,
+          },
+        ]);
+        return true;
+      } catch (error) {
+        if (!(error instanceof Error) || error.name !== TRANSACTION_CANCELLED) {
+          throw error;
+        }
+        lastRace = error;
+      }
     }
-    await transact([
-      { kind: "delete", key: keys.a2aClientKey(name) },
-      { kind: "delete", key: keys.a2aClientKeyHash(stored.tokenHash) },
-    ]);
-    return true;
+    throw lastRace;
   },
 
   async findNameByHash(tokenHash) {
-    const item = await getItem(keys.a2aClientKeyHash(tokenHash));
-    return item ? String(item.clientName) : null;
+    const hashItem = await getItem(keys.a2aClientKeyHash(tokenHash));
+    if (typeof hashItem?.clientName !== "string") {
+      return null;
+    }
+    const primary = await getItem(keys.a2aClientKey(hashItem.clientName));
+    return primary?.entityType === ENTITY_TYPE && primary.tokenHash === tokenHash
+      ? hashItem.clientName
+      : null;
   },
 };

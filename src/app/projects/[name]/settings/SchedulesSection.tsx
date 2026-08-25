@@ -16,7 +16,6 @@ import {
   getProjectTeams,
   getProjectTelegram,
   listProjectTelegramChats,
-  listTriggerRuns,
   listProjectSlackChannels,
   listTriggers,
   updateTrigger,
@@ -31,6 +30,7 @@ import {
   telegramDestinationValue,
 } from "./telegramDestinations";
 import { reportError } from "@/app/_lib/reportError";
+import { loadScheduleRuns } from "./scheduleRuns";
 
 /**
  * Schedules: a cron in a timezone, and what recent firings did.
@@ -71,13 +71,7 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
         (trigger) => trigger.kind !== "schedule" && trigger.triggerId !== PROJECT_WEBHOOK_ID,
       ),
     );
-    const entries = await Promise.all(
-      listed.map(async (trigger) => {
-        const { runs: recent } = await listTriggerRuns(projectName, trigger.triggerId);
-        return [trigger.triggerId, recent] as const;
-      }),
-    );
-    setRuns(Object.fromEntries(entries));
+    setRuns(await loadScheduleRuns(projectName, listed));
   }, [projectName]);
 
   useEffect(() => {

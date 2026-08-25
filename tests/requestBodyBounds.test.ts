@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { editorBody, MAX_TURN_BODY_BYTES, turnBody } from "@/app/api/_lib/body";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  editorBody,
+  LARGE_TURN_BODY_BYTES,
+  MAX_CONCURRENT_LARGE_TURN_BYTES,
+  MAX_TURN_BODY_BYTES,
+  setTurnBodyBudgetBytes,
+  withTurnBody,
+} from "@/app/api/_lib/body";
 import { MAX_INBOUND_EVENT_BYTES, readEventBody } from "@/app/api/_lib/inboundEvent";
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
@@ -15,15 +22,36 @@ function post(body: string, headers: Record<string, string> = {}): Request {
   return new Request("https://x.test/api/thing", { method: "POST", body, headers });
 }
 
-describe("turnBody", () => {
+function parseTurn(request: Request): Promise<unknown | Response> {
+  return withTurnBody(request, async (body) => body);
+}
+
+function largeTurnBody(): string {
+  return JSON.stringify({ pad: "a".repeat(LARGE_TURN_BODY_BYTES) });
+}
+
+/**
+ * The budget shrunk to hold two of these bodies, so the refusal below is
+ * reached without allocating the hundred and sixty megabytes the real budget is
+ * worth. What is being tested is the accounting, not the number.
+ */
+function budgetForTwoLargeBodies(): void {
+  setTurnBodyBudgetBytes(2 * largeTurnBody().length);
+}
+
+describe("withTurnBody", () => {
+  afterEach(() => {
+    setTurnBodyBudgetBytes();
+  });
+
   it("parses a body within the cap", async () => {
-    expect(await turnBody(post(JSON.stringify({ prompt: "hi" })))).toEqual({ prompt: "hi" });
+    expect(await parseTurn(post(JSON.stringify({ prompt: "hi" })))).toEqual({ prompt: "hi" });
   });
 
   it("refuses one over it with a 413 rather than parsing it", async () => {
     const oversized = JSON.stringify({ pad: "a".repeat(MAX_TURN_BODY_BYTES) });
 
-    const result = await turnBody(post(oversized));
+    const result = await parseTurn(post(oversized));
 
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(413);
@@ -31,7 +59,7 @@ describe("turnBody", () => {
 
   it("answers a malformed body with 400, not 413", async () => {
     // The two are different problems and a caller acts differently on each.
-    const result = await turnBody(post("{not json"));
+    const result = await parseTurn(post("{not json"));
 
     expect((result as Response).status).toBe(400);
   });
@@ -43,6 +71,131 @@ describe("turnBody", () => {
       MAX_DOCUMENT_BYTES * MAX_DOCUMENTS + MAX_ATTACHMENT_BYTES * MAX_ATTACHMENTS;
 
     expect(MAX_TURN_BODY_BYTES).toBeGreaterThan(attachments);
+  });
+
+  it("charges bytes rather than requests, so a small attachment is not a whole permit", async () => {
+    // The budget is worth two maximal turns. A body just past the prose
+    // allowance is a three-hundredth of one, and used to spend the same permit
+    // — two screenshots in flight 429'd everyone else for the length of a run.
+    const largeBody = largeTurnBody();
+
+    expect(MAX_CONCURRENT_LARGE_TURN_BYTES).toBe(2 * MAX_TURN_BODY_BYTES);
+    expect(Math.floor(MAX_CONCURRENT_LARGE_TURN_BYTES / largeBody.length)).toBeGreaterThan(100);
+
+    let releaseConsumers = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      releaseConsumers = resolve;
+    });
+    let started = 0;
+    const concurrent = 8;
+    const pending = Array.from({ length: concurrent }, () =>
+      withTurnBody(post(largeBody), async (body) => {
+        started += 1;
+        await held;
+        return body;
+      }),
+    );
+    await vi.waitFor(() => expect(started).toBe(concurrent));
+
+    releaseConsumers();
+    await Promise.all(pending);
+  });
+
+  it("refuses a body the budget cannot hold and releases what it charged", async () => {
+    budgetForTwoLargeBodies();
+    let releaseConsumers = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      releaseConsumers = resolve;
+    });
+    let started = 0;
+    const largeBody = largeTurnBody();
+    const pending = Array.from({ length: 2 }, () =>
+      withTurnBody(post(largeBody), async (body) => {
+        started += 1;
+        await held;
+        return body;
+      }),
+    );
+    await vi.waitFor(() => expect(started).toBe(2));
+
+    await expect(parseTurn(post('{"prompt":"small requests remain available"}'))).resolves.toEqual({
+      prompt: "small requests remain available",
+    });
+
+    let refusedBodyCancelled = false;
+    const refused = await parseTurn(
+      new Request("https://x.test/api/thing", {
+        method: "POST",
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(largeBody));
+          },
+          cancel() {
+            refusedBodyCancelled = true;
+          },
+        }),
+        duplex: "half",
+      } as RequestInit),
+    );
+    expect(refused).toBeInstanceOf(Response);
+    expect((refused as Response).status).toBe(429);
+    expect((refused as Response).headers.get("retry-after")).toBe("1");
+    expect(refusedBodyCancelled).toBe(true);
+
+    releaseConsumers();
+    await Promise.all(pending);
+    await expect(parseTurn(post('{"prompt":"after"}'))).resolves.toEqual({ prompt: "after" });
+  });
+
+  it("retains a large body's charge until streamed responses close or cancel", async () => {
+    budgetForTwoLargeBodies();
+    const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const responses = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        withTurnBody(
+          post(largeTurnBody()),
+          async () =>
+            new Response(
+              new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controllers.push(controller);
+                },
+              }),
+              { headers: { "Content-Type": "text/event-stream" } },
+            ),
+        ),
+      ),
+    );
+
+    const refused = await parseTurn(post(largeTurnBody()));
+    expect((refused as Response).status).toBe(429);
+
+    const first = (responses[0]! as Response).text();
+    controllers[0]!.close();
+    await first;
+    await (responses[1]! as Response).body?.cancel();
+
+    await expect(parseTurn(post(largeTurnBody()))).resolves.toEqual({
+      pad: "a".repeat(LARGE_TURN_BODY_BYTES),
+    });
+  });
+
+  it("releases a detached-work charge when retained work rejects", async () => {
+    budgetForTwoLargeBodies();
+    let rejectWork = (_error: Error): void => {};
+    const work = new Promise<void>((_resolve, reject) => {
+      rejectWork = reject;
+    });
+    await withTurnBody(post(largeTurnBody()), async (_body, admission) => {
+      admission.retainUntil(work);
+      return Response.json({ accepted: true });
+    });
+
+    rejectWork(new Error("detached run failed"));
+    await Promise.resolve();
+    await expect(parseTurn(post(largeTurnBody()))).resolves.toEqual({
+      pad: "a".repeat(LARGE_TURN_BODY_BYTES),
+    });
   });
 });
 
@@ -62,6 +215,13 @@ describe("editorBody", () => {
     const files = { files: [{ path: "a.md", content: "x".repeat(180 * 1024) }] };
 
     expect(await editorBody(post(JSON.stringify(files)))).toEqual(files);
+  });
+
+  it("uses an explicit empty-body value without accepting malformed JSON as empty", async () => {
+    await expect(editorBody(post(""), { empty: {} })).resolves.toEqual({});
+
+    const malformed = await editorBody(post("{"), { empty: {} });
+    expect((malformed as Response).status).toBe(400);
   });
 });
 

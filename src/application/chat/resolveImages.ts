@@ -29,6 +29,9 @@ import {
 } from "@/domain/llm/imageLimits";
 import { imageDataUrl } from "@/domain/llm/types";
 import { log } from "@/shared/logger";
+import { mapWithLimit } from "@/shared/mapWithLimit";
+
+export const MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS = 8;
 
 async function resolveOne(
   image: ChatMessageImage,
@@ -62,6 +65,51 @@ export interface RunResolvedMessages extends ResolvedMessages {
   notEditable: number;
 }
 
+interface PendingImage {
+  messageIndex: number;
+  image: ChatMessageImage;
+}
+
+interface ResolvedImage {
+  messageIndex: number;
+  image: ChatMessageImage | undefined;
+}
+
+function pendingImages(messages: ChatMessage[]): PendingImage[] {
+  return messages.flatMap((message, messageIndex) =>
+    message.role === "tool"
+      ? []
+      : (message.images ?? []).map((image) => ({ messageIndex, image })),
+  );
+}
+
+function rebuildMessages(
+  messages: ChatMessage[],
+  resolved: ResolvedImage[],
+): ResolvedMessages {
+  const byMessage = new Map<number, ChatMessageImage[]>();
+  let dropped = 0;
+  for (const entry of resolved) {
+    if (!entry.image) {
+      dropped += 1;
+      continue;
+    }
+    const images = byMessage.get(entry.messageIndex) ?? [];
+    images.push(entry.image);
+    byMessage.set(entry.messageIndex, images);
+  }
+
+  return {
+    messages: messages.map((message, messageIndex) => {
+      if (message.role === "tool" || !message.images?.length) {
+        return message;
+      }
+      return { ...message, images: byMessage.get(messageIndex) ?? [] };
+    }),
+    dropped,
+  };
+}
+
 /**
  * Every message's images resolved. Messages without images pass through
  * untouched, so a chat that has none costs nothing.
@@ -71,22 +119,15 @@ export async function resolveMessageImages(
   sign: SignImageUrl | undefined,
   ttlSeconds: number,
 ): Promise<ResolvedMessages> {
-  let dropped = 0;
-  const resolvedMessages = await Promise.all(
-    messages.map(async (message) => {
-      // A tool row cannot carry images at all — the union says so, and narrowing
-      // here is what keeps that true rather than casting it away.
-      if (message.role === "tool" || !message.images?.length) {
-        return message;
-      }
-      const resolved = (
-        await Promise.all(message.images.map((image) => resolveOne(image, sign, ttlSeconds)))
-      ).filter((image): image is ChatMessageImage => image !== undefined);
-      dropped += message.images.length - resolved.length;
-      return { ...message, images: resolved };
+  const resolved = await mapWithLimit(
+    pendingImages(messages),
+    MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS,
+    async ({ messageIndex, image }) => ({
+      messageIndex,
+      image: await resolveOne(image, sign, ttlSeconds),
     }),
   );
-  return { messages: resolvedMessages, dropped };
+  return rebuildMessages(messages, resolved);
 }
 
 /**
@@ -119,43 +160,39 @@ export async function resolveRunMessageImages(
     }
   }
 
-  let dropped = 0;
   let notEditable = 0;
-  const resolvedMessages = await Promise.all(
-    messages.map(async (message) => {
-      if (message.role === "tool" || !message.images?.length) {
-        return message;
+  const resolved = await mapWithLimit(
+    pendingImages(messages),
+    MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS,
+    async ({ messageIndex, image }) => {
+      if (objects && image.key && inline.has(image)) {
+        try {
+          const stored = await objects.read(image.key, MAX_ATTACHMENT_BYTES);
+          if (!(SUPPORTED_IMAGE_TYPES as readonly string[]).includes(stored.mimeType)) {
+            throw new Error(`stored object has unsupported image type: ${stored.mimeType}`);
+          }
+          const url = imageDataUrl({
+            b64: Buffer.from(stored.bytes).toString("base64"),
+            mimeType: stored.mimeType,
+          });
+          return {
+            messageIndex,
+            image: image.prompt === undefined ? { url } : { url, prompt: image.prompt },
+          };
+        } catch (error) {
+          notEditable += 1;
+          log.error(
+            "chat",
+            "could not load a stored image for editing; using its address",
+            error,
+          );
+        }
       }
-      const resolved = (
-        await Promise.all(
-          message.images.map(async (image) => {
-            if (objects && image.key && inline.has(image)) {
-              try {
-                const stored = await objects.read(image.key, MAX_ATTACHMENT_BYTES);
-                if (!(SUPPORTED_IMAGE_TYPES as readonly string[]).includes(stored.mimeType)) {
-                  throw new Error(`stored object has unsupported image type: ${stored.mimeType}`);
-                }
-                const url = imageDataUrl({
-                  b64: Buffer.from(stored.bytes).toString("base64"),
-                  mimeType: stored.mimeType,
-                });
-                return image.prompt === undefined ? { url } : { url, prompt: image.prompt };
-              } catch (error) {
-                notEditable += 1;
-                log.error(
-                  "chat",
-                  "could not load a stored image for editing; using its address",
-                  error,
-                );
-              }
-            }
-            return resolveOne(image, objects?.sign, ttlSeconds);
-          }),
-        )
-      ).filter((image): image is ChatMessageImage => image !== undefined);
-      dropped += message.images.length - resolved.length;
-      return { ...message, images: resolved };
-    }),
+      return {
+        messageIndex,
+        image: await resolveOne(image, objects?.sign, ttlSeconds),
+      };
+    },
   );
-  return { messages: resolvedMessages, dropped, notEditable };
+  return { ...rebuildMessages(messages, resolved), notEditable };
 }

@@ -16,6 +16,7 @@ import {
   turnContent,
   type AttachedDocument,
 } from "@/application/llm/documentParts";
+import { cutCodePoints } from "@/shared/utf8Text";
 
 export interface AguiInputDeps {
   /** Turns a document part into text, the way every other surface's attachment becomes text. */
@@ -127,8 +128,12 @@ function stateJson(state: unknown): string | undefined {
   if (!text) {
     return undefined;
   }
+  // `cutCodePoints`, not `slice`: this block becomes a system message, and a
+  // cut between the halves of a non-BMP character — an emoji or CJK ext-B in
+  // the application's own state — leaves a lone surrogate that goes on the wire
+  // as a `\ud800`-range escape a provider can refuse the whole request over.
   return text.length > MAX_STATE_CHARS
-    ? `${text.slice(0, MAX_STATE_CHARS)}\n…[state truncated at ${MAX_STATE_CHARS} characters]`
+    ? `${cutCodePoints(text, MAX_STATE_CHARS)}\n…[state truncated at ${MAX_STATE_CHARS} characters]`
     : text;
 }
 

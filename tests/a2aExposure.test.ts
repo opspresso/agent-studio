@@ -12,6 +12,7 @@ import type { ProjectRepository, VersionRepository } from "@/domain/project/repo
 import {
   describeProjectA2a,
   listExposedProjects,
+  MAX_CONCURRENT_A2A_EXPOSURE_READS,
   resolveExposedProject,
   type A2aExposureDeps,
 } from "@/application/a2a/exposure";
@@ -19,7 +20,11 @@ import {
 const version = (name: string): Version =>
   ({ versionName: name, systemPrompt: "", userPromptTemplate: "", model: "openai/gpt-5-mini" }) as Version;
 
-const project = (name: string, publishedVersion?: string): Project =>
+const project = (
+  name: string,
+  publishedVersion?: string,
+  overrides: Partial<Project> = {},
+): Project =>
   ({
     name,
     displayName: name,
@@ -29,27 +34,41 @@ const project = (name: string, publishedVersion?: string): Project =>
     publishedVersion,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
   }) as Project;
 
 function makeDeps(
   projects: Project[],
-): A2aExposureDeps & { buildCard: ReturnType<typeof vi.fn>; projectReads: () => number } {
+  missingVersions: ReadonlySet<string> = new Set(),
+): A2aExposureDeps & {
+  buildCard: ReturnType<typeof vi.fn>;
+  projectReads: () => number;
+  projectLists: () => number;
+} {
   const byName = new Map(projects.map((p) => [p.name, p]));
   const buildCard = vi.fn(async (p: Project) => ({ name: p.name }) as unknown as AgentCard);
   let reads = 0;
+  let lists = 0;
   return {
     projectReads: () => reads,
+    projectLists: () => lists,
     projects: {
       get: async (name: string) => {
         reads += 1;
         return byName.get(name) ?? null;
       },
-      list: async () => projects,
+      list: async () => {
+        lists += 1;
+        return projects;
+      },
     } as unknown as ProjectRepository,
     versions: {
       // Mirrors the real port: the repository resolves the literal "published"
       // through the project's pointer, so a project without one gets null.
       get: async (projectName: string, versionName: string) => {
+        if (missingVersions.has(`${projectName}/${versionName}`)) {
+          return null;
+        }
         if (versionName !== "published") {
           return version(versionName);
         }
@@ -69,7 +88,7 @@ describe("A2A exposure", () => {
     // The JSON-RPC endpoint and the public Agent Card both gate on this.
     expect(await resolveExposedProject(deps, "draft-only")).toBeNull();
     // The list surface omits it.
-    expect(await listExposedProjects(deps)).toEqual([]);
+    expect(await listExposedProjects(deps, "viewer@example.com")).toEqual([]);
     // The console tab reports it as unpublished with nothing to preview.
     expect(await describeProjectA2a(deps, "draft-only", true)).toEqual({
       published: false,
@@ -87,7 +106,7 @@ describe("A2A exposure", () => {
     expect(exposed?.version.versionName).toBe("3");
     expect(exposed?.card).toEqual({ name: "live" });
 
-    expect(await listExposedProjects(deps)).toEqual([
+    expect(await listExposedProjects(deps, "viewer@example.com")).toEqual([
       {
         name: "live",
         displayName: "live",
@@ -99,6 +118,59 @@ describe("A2A exposure", () => {
     const described = await describeProjectA2a(deps, "live", true);
     expect(described?.published).toBe(true);
     expect(described?.card).toEqual({ name: "live" });
+  });
+
+  it("lists only projects the viewer may access in one catalog pass", async () => {
+    const visible = project("visible", "1");
+    const hidden = project("hidden", "1", {
+      visibility: "private",
+      ownerEmail: "owner@example.com",
+    });
+    const deps = makeDeps([visible, hidden]);
+
+    await expect(listExposedProjects(deps, "viewer@example.com")).resolves.toEqual([
+      {
+        name: "visible",
+        displayName: "visible",
+        description: "visible description",
+        cardUrl: "https://studio.example.com/api/a2a/visible/.well-known/agent-card.json",
+      },
+    ]);
+    expect(deps.projectLists()).toBe(1);
+  });
+
+  it("bounds the version reads a listing keeps in flight", async () => {
+    // Deciding "runnable" costs a read per project, so this listing's cost is
+    // the deployment's size — and for an admin that is every project there is.
+    const projects = Array.from({ length: 40 }, (_unused, index) =>
+      project(`p${String(index).padStart(2, "0")}`, "3"),
+    );
+    const deps = makeDeps(projects);
+    let inFlight = 0;
+    let peak = 0;
+    const inner = deps.versions.get.bind(deps.versions);
+    deps.versions.get = async (projectName: string, versionName: string) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      try {
+        await Promise.resolve();
+        return await inner(projectName, versionName);
+      } finally {
+        inFlight -= 1;
+      }
+    };
+
+    const listed = await listExposedProjects(deps, "owner@example.com");
+
+    expect(listed.map((item) => item.name)).toEqual(projects.map((p) => p.name));
+    expect(peak).toBeLessThanOrEqual(MAX_CONCURRENT_A2A_EXPOSURE_READS);
+    expect(peak).toBeGreaterThan(1);
+  });
+
+  it("omits a project whose published version row is missing", async () => {
+    const deps = makeDeps([project("dangling", "3")], new Set(["dangling/3"]));
+
+    await expect(listExposedProjects(deps, "viewer@example.com")).resolves.toEqual([]);
   });
 
   it("hides the card url when A2A is not configured, but still previews the card", async () => {

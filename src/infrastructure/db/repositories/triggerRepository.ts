@@ -13,10 +13,12 @@ import {
   conditions,
   deleteItem,
   getItem,
-  putItem,
   queryItems,
+  TRANSACTION_CANCELLED,
 } from "@/infrastructure/db/store";
+import { putProjectItem } from "@/infrastructure/db/projectLifecycle";
 import { expiresAtFromNow, expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
+import { boundedPageLimit } from "@/shared/pageLimit";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type { ScheduleTrigger, Trigger, TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
 
@@ -109,25 +111,49 @@ export const triggerRepository: TriggerRepository = {
     return item ? toTrigger(item) : null;
   },
 
-  async listByProject(projectName) {
+  async listByProject(projectName, limit, after) {
     const items = await queryItems({
       pk: keys.projectPartition(projectName),
       sk: { prefix: keys.triggerPrefix() },
+      limit: boundedPageLimit(limit),
+      ...(after ? { after: keys.trigger(projectName, after).SK } : {}),
     });
-    return items.map(toTrigger);
+    return items.map((item) => {
+      const trigger = toTrigger(item);
+      if (
+        trigger.projectName !== projectName ||
+        keys.trigger(projectName, trigger.triggerId).SK !== item.SK
+      ) {
+        throw new Error("trigger row identity does not match its key");
+      }
+      return trigger;
+    });
   },
 
-  async listSchedules() {
-    const items = await queryItems({ index: "GSI1", pk: keys.typePartition("SCHEDULE") });
-    return items.map(toTrigger).filter((t): t is ScheduleTrigger => t.kind === "schedule");
+  async listSchedules(limit, after) {
+    const items = await queryItems({
+      index: "GSI1",
+      pk: keys.typePartition("SCHEDULE"),
+      limit: boundedPageLimit(limit),
+      ...(after
+        ? { after: keys.scheduleIndex(after.projectName, after.triggerId).GSI1SK }
+        : {}),
+    });
+    return items.map((item) => {
+      const trigger = toTrigger(item);
+      if (trigger.kind !== "schedule") {
+        throw new Error("schedule index contains a non-schedule trigger");
+      }
+      return trigger;
+    });
   },
 
   async create(trigger) {
-    await putItem(triggerItem(trigger), conditions.notExists);
+    await putProjectItem(trigger.projectName, triggerItem(trigger), conditions.notExists);
   },
 
   async put(trigger) {
-    await putItem(triggerItem(trigger));
+    await putProjectItem(trigger.projectName, triggerItem(trigger));
   },
 
   async delete(projectName, triggerId) {
@@ -136,7 +162,8 @@ export const triggerRepository: TriggerRepository = {
 
   async claimIdempotencyKey(projectName, triggerId, key) {
     try {
-      await putItem(
+      await putProjectItem(
+        projectName,
         {
           ...keys.triggerIdempotency(projectName, triggerId, key),
           entityType: "TriggerIdempotency",
@@ -146,7 +173,10 @@ export const triggerRepository: TriggerRepository = {
       );
       return true;
     } catch (error) {
-      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
+      if (
+        (error as { name?: string }).name === CONDITIONAL_WRITE_FAILED ||
+        (error as { name?: string }).name === TRANSACTION_CANCELLED
+      ) {
         return false;
       }
       throw error;
@@ -154,13 +184,13 @@ export const triggerRepository: TriggerRepository = {
   },
 
   async appendRun(run) {
-    await putItem(runItem(run));
+    await putProjectItem(run.projectName, runItem(run));
   },
 
   async finishRun(run) {
     // A plain overwrite of the same key: the row was written when the run
     // started, and only this run's own completion ever rewrites it.
-    await putItem(runItem(run));
+    await putProjectItem(run.projectName, runItem(run));
   },
 
   async listRuns(projectName, triggerId, limit, opts = {}) {

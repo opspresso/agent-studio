@@ -42,9 +42,9 @@ export function createStoredModelCatalogSource(
 export interface CompositeModelCatalogSourceDeps {
   stored: ModelCatalogDocumentRepository;
   /**
-   * The published catalog, when this deployment reads one — `undefined` under
-   * `MODELS_CATALOG_URL=none`, where the only catalogs are the committed
-   * snapshot and an upload.
+   * The published catalog, when this deployment reads one — `undefined` when
+   * `MODELS_CATALOG_URL` is unset or `none`, where the only catalogs are the
+   * committed snapshot and an upload.
    */
   remote: ModelCatalogSource | undefined;
 }

@@ -1,4 +1,5 @@
-import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
+import { ValidationError } from "@/application/errors";
+import { persistProjectUpdate } from "@/application/project/projectUpdate";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { nextUpdatedAt } from "@/application/project/timestamps";
 import { botIdFromToken } from "@/application/telegram/engagement";
@@ -41,6 +42,9 @@ export interface ProjectTelegramUpdate {
   botToken?: string;
   enabled?: boolean;
 }
+
+/** Observed chats the settings surface may render in one bounded selector. */
+export const MAX_TELEGRAM_DESTINATIONS = 100;
 
 /** What `getMe` says about a token, as far as this slice needs it. */
 export interface TelegramBotIdentity {
@@ -96,22 +100,9 @@ export async function listProjectTelegramDestinations(
   const project = await assertProjectWritable(repo, name, userEmail);
   const runtime = resolveProjectTelegramCredentials(cipher, project);
   const botId = runtime ? botIdFromToken(runtime.botToken) : undefined;
-  return botId === undefined ? [] : destinations.list(project.name, botId);
-}
-
-async function updateProject(
-  repo: ProjectRepository,
-  updated: Project,
-  expectedUpdatedAt: string,
-): Promise<void> {
-  try {
-    await repo.update(updated, expectedUpdatedAt);
-  } catch (error) {
-    if (isConditionalWriteFailure(error)) {
-      throw new ConflictError(`Project "${updated.name}" was modified by another request`);
-    }
-    throw error;
-  }
+  return botId === undefined
+    ? []
+    : destinations.list(project.name, botId, MAX_TELEGRAM_DESTINATIONS);
 }
 
 /** The three Bot API calls the settings slice makes; injected so it stays free of the HTTP client. */
@@ -199,7 +190,7 @@ export async function updateProjectTelegram(
     throw new ValidationError("A bot token is required to enable Telegram");
   }
   const updated: Project = { ...project, telegram, updatedAt: nextUpdatedAt(project.updatedAt) };
-  await updateProject(repo, updated, project.updatedAt);
+  await persistProjectUpdate(repo, updated, project.updatedAt);
 
   const wasEnabled = stored?.enabled === true;
   const runtime = resolveProjectTelegramCredentials(cipher, updated);
@@ -251,7 +242,7 @@ export async function disconnectProjectTelegram(
     telegram: undefined,
     updatedAt: nextUpdatedAt(project.updatedAt),
   };
-  await updateProject(repo, updated, project.updatedAt);
+  await persistProjectUpdate(repo, updated, project.updatedAt);
   return { project: updated, view: maskedView(cipher, updated) };
 }
 

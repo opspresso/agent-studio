@@ -49,6 +49,7 @@ async function refuseDeclaredLength(
 export async function readBodyText(
   message: Pick<Request | Response, "body" | "headers">,
   maxBytes: number,
+  options: { onBytes?: (totalBytes: number) => void | Promise<void> } = {},
 ): Promise<string> {
   await refuseDeclaredLength(message, maxBytes);
   if (!message.body) {
@@ -70,6 +71,7 @@ export async function readBodyText(
         await reader.cancel();
         throw new BodyTooLargeError(maxBytes);
       }
+      await options.onBytes?.(total);
       text += decoder.decode(value, { stream: true });
     }
   } finally {

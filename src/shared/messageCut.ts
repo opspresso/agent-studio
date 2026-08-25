@@ -32,7 +32,9 @@ const SENTENCE_END = /[.!?][)\]"'”’]*\s/g;
  * is longer than a message.
  *
  * The returned index is where the *next* message starts; the separator stays
- * with the message being closed, so nothing is dropped at a boundary.
+ * with the message being closed, so nothing is dropped at a boundary. It is
+ * always **greater than `from`** when a cut is needed at all — callers loop on
+ * it, so standing still is an unbounded loop rather than a short message.
  */
 export function cutPoint(text: string, from: number, limit: number, window: number): number {
   const hard = from + limit;
@@ -61,7 +63,24 @@ export function cutPoint(text: string, from: number, limit: number, window: numb
     return start + space + 1;
   }
   const code = text.charCodeAt(hard - 1);
-  return code >= 0xd800 && code <= 0xdbff ? hard - 1 : hard;
+  const backed = code >= 0xd800 && code <= 0xdbff ? hard - 1 : hard;
+  if (backed > from) {
+    return backed;
+  }
+  // Never `from` itself. `layout` in `editInPlaceReply` feeds each answer back
+  // as the next `from` and loops until the remainder fits, so a cut that does
+  // not advance is not one short message — it is an unbounded loop on the
+  // request thread of a reply the platform is waiting for. (`splitMessages`
+  // notices the same thing and stops, which is why only one caller was ever
+  // exposed.)
+  //
+  // Both ways in are a cap too small to hold one character: a `limit` of 1 in
+  // front of a surrogate pair, which the back-off above would erase entirely,
+  // and a `limit` of zero or less. The whole character — one unit over the cap
+  // — is the only answer that is still text, and an oversized piece is the
+  // platform's to refuse, which is already how the caller treats one.
+  const first = text.charCodeAt(from);
+  return first >= 0xd800 && first <= 0xdbff && from + 1 < text.length ? from + 2 : from + 1;
 }
 
 /** One message's worth of an answer. */

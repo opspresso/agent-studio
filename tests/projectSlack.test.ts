@@ -15,7 +15,7 @@ const resolveProjectSlackRuntime = (
 const updateProjectSlack = (repo: Upd[0], name: Upd[1], update: Upd[2], email: Upd[3]) =>
   updateProjectSlackImpl(repo, name, update, email, secretCipher);
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
-import { ForbiddenError } from "@/application/errors";
+import { ConflictError, ForbiddenError } from "@/application/errors";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 
@@ -123,6 +123,19 @@ describe("updateProjectSlack", () => {
     await expect(
       updateProjectSlack(repo, "bot-proj", { botToken: "x", signingSecret: "y" }, OTHER),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("maps a stale project snapshot to ConflictError", async () => {
+    const { repo } = fakeRepo(makeProject());
+    repo.update = async () => {
+      throw Object.assign(new Error("conditional check failed"), {
+        name: "ConditionalWriteFailed",
+      });
+    };
+
+    await expect(
+      updateProjectSlack(repo, "bot-proj", { botToken: "x", signingSecret: "y" }, OWNER),
+    ).rejects.toBeInstanceOf(ConflictError);
   });
 });
 

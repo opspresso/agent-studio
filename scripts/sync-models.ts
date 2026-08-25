@@ -15,16 +15,24 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { loadModelCatalog } from "@/domain/llm/models";
 import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
 import { config } from "@/lib/config";
 
 const SNAPSHOT = new URL("../src/domain/llm/catalog.json", import.meta.url);
-const check = process.argv.includes("--check");
-const fromIndex = process.argv.indexOf("--from");
-const fromFile = fromIndex === -1 ? undefined : process.argv[fromIndex + 1];
 
-async function readCatalog(): Promise<unknown> {
+export function parseArgs(argv: string[]): { check: boolean; fromFile?: string } {
+  const fromIndex = argv.indexOf("--from");
+  const fromFile = fromIndex === -1 ? undefined : argv[fromIndex + 1];
+  if (fromIndex !== -1 && (fromFile === undefined || fromFile.startsWith("--"))) {
+    throw new Error("--from expects a file path");
+  }
+  return { check: argv.includes("--check"), fromFile };
+}
+
+async function readCatalog(fromFile?: string): Promise<unknown> {
   if (fromFile !== undefined) {
     return JSON.parse(readFileSync(fromFile, "utf-8"));
   }
@@ -37,7 +45,8 @@ async function readCatalog(): Promise<unknown> {
 }
 
 async function main(): Promise<void> {
-  const catalog = (await readCatalog()) as { updatedAt?: string };
+  const { check, fromFile } = parseArgs(process.argv.slice(2));
+  const catalog = (await readCatalog(fromFile)) as { updatedAt?: string };
   const report = loadModelCatalog(catalog);
   if (report.skipped.length > 0) {
     console.warn(`! ${report.skipped.length} entries the registry would skip:\n  - ${report.skipped.join("\n  - ")}`);
@@ -58,7 +67,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+const isMain =
+  process.argv[1] !== undefined && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+
+if (isMain) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

@@ -22,5 +22,3 @@ export const summaryQuerySchema = z
     message: `date range must be ${MAX_RANGE_DAYS} days or less`,
     path: ["to"],
   });
-
-export type SummaryQuery = z.infer<typeof summaryQuerySchema>;

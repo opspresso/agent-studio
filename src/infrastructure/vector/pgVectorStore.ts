@@ -37,6 +37,9 @@ function toScore(distance: number): number {
 /** Rows one statement inserts; a reindex writes the whole catalog otherwise. */
 const PUT_BATCH = 200;
 
+/** Keys read per statement while a reindex takes its prune snapshot. */
+const KEY_PAGE = 500;
+
 export function createPgVectorStore(table: string): VectorStorePort {
   if (!/^[a-z_][a-z0-9_]*$/.test(table)) {
     throw new Error(`vector table name must be a plain identifier: ${table}`);
@@ -95,8 +98,19 @@ export function createPgVectorStore(table: string): VectorStorePort {
     },
 
     async listKeys() {
-      const rows = await sql<{ key: string }>(`SELECT key FROM ${table} ORDER BY key`);
-      return rows.map((row) => row.key);
+      const keys: string[] = [];
+      let after = "";
+      for (;;) {
+        const rows = await sql<{ key: string }>(
+          `SELECT key FROM ${table} WHERE key > $1 ORDER BY key LIMIT $2`,
+          [after, KEY_PAGE],
+        );
+        keys.push(...rows.map((row) => row.key));
+        if (rows.length < KEY_PAGE) {
+          return keys;
+        }
+        after = rows.at(-1)!.key;
+      }
     },
   };
 }

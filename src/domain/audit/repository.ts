@@ -9,5 +9,9 @@ export interface AuditRepository {
    * path spread across partitions instead of appending every row of the
    * deployment's history to one.
    */
-  listByDay(day: string): Promise<AuditEvent[]>;
+  listByDay(
+    day: string,
+    limit: number,
+    after?: { createdAt: string; eventId: string },
+  ): Promise<AuditEvent[]>;
 }

@@ -97,7 +97,9 @@ export function composeCloneProject(
           // Binding names and tool selections copy; header overrides do not —
           // their values are the source owner's secrets, and a clone that kept
           // them would hand those to whoever cloned.
-          mcpList: copied.mcpList.map(({ headers: _dropped, ...binding }) => binding),
+          mcpList: copied.mcpList.map(
+            ({ headers: _dropped, headerTarget: _droppedTarget, ...binding }) => binding,
+          ),
           skillList: copied.skillList,
           subagentList: copied.subagentList,
           maxTurn: copied.maxTurn,

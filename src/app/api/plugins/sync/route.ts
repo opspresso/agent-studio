@@ -5,6 +5,7 @@ import { archiveSyncRepo } from "@/domain/plugin/sync";
 import { getPluginsRepoConfig } from "@/lib/runtime-settings";
 import { lastPluginSync, syncPluginsFromRepo } from "@/lib/container";
 import { selectionSchema } from "./_lib/selection";
+import { editorBody } from "@/app/api/_lib/body";
 
 export const GET = withMemberAuth(async () => {
   const { repo, branch, token } = await getPluginsRepoConfig();
@@ -28,7 +29,11 @@ export const POST = withAdminAuth(async (user, request: Request) => {
       { status: 503 },
     );
   }
-  const parsed = selectionSchema.safeParse(await request.json().catch(() => ({})));
+  const body = await editorBody(request, { empty: {} });
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = selectionSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: "Invalid selection" }, { status: 400 });
   }

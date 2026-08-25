@@ -6,6 +6,7 @@ import type { ChatMessageInput } from "@/domain/llm/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
+import { listProjectMcpConnections } from "@/application/mcp/listConnections";
 import { searchCapabilitiesByKind, type CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
@@ -278,10 +279,13 @@ async function discoverCapabilities(
   // One read for the whole run, not one per candidate. `needs_auth` and
   // `needs_reauth` are connections in name only — the console shows both as
   // something a person still has to finish — so only `connected` counts.
+  const connections = deps.mcpConnections
+    ? await listProjectMcpConnections(deps.mcpConnections, version.projectName)
+    : [];
   const connected = new Set<string>(
-    (await deps.mcpConnections?.listByProject(version.projectName))
-      ?.filter((connection) => connection.status === "connected")
-      .map((connection) => connection.serverName) ?? [],
+    connections
+      .filter((connection) => connection.status === "connected")
+      .map((connection) => connection.serverName),
   );
 
   // One candidate per server, scored by the best evidence from either index,

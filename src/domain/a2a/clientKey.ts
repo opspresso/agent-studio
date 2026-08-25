@@ -19,7 +19,7 @@ export interface A2aClientKey {
 
 export interface A2aClientKeyRepository {
   get(name: string): Promise<A2aClientKey | null>;
-  list(): Promise<A2aClientKey[]>;
+  list(limit: number, after?: string): Promise<A2aClientKey[]>;
   /** Conditional create of the key and its hash row; rejects an existing name. */
   create(key: A2aClientKey): Promise<void>;
   /** Removes the key and its hash row. False when there was no such key. */

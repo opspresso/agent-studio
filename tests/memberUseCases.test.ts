@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createMemberUseCases } from "@/application/member/memberUseCases";
+import {
+  MEMBER_LIST_PAGE_SIZE,
+  MEMBER_RECONCILE_CONCURRENCY,
+  createMemberUseCases,
+} from "@/application/member/memberUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { NotFoundError } from "@/application/errors";
 import type { AuditEvent } from "@/domain/audit/types";
@@ -7,6 +11,7 @@ import type { MemberRepository } from "@/domain/member/repository";
 import type { Member } from "@/domain/member/types";
 
 const unusedRepositoryRest = {
+  getById: async () => null,
   getByEmail: async () => null,
   setTier: async () => null,
 };
@@ -39,6 +44,80 @@ describe("member use cases", () => {
 
     expect(result.map((m) => m.id)).toEqual(["recent", "old", "never"]);
     expect(stored.map((m) => m.id)).toEqual(["old", "never", "recent"]);
+  });
+
+  it("lists every member through bounded joinedAt and id pages", async () => {
+    const stored = Array.from({ length: MEMBER_LIST_PAGE_SIZE + 2 }, (_, index) =>
+      member({ id: `u-${String(index).padStart(3, "0")}` }),
+    );
+    const pageSizes: number[] = [];
+    const repository: MemberRepository = {
+      ...unusedRepositoryRest,
+      list: async (limit, after) => {
+        const page = stored
+          .filter(
+            (candidate) =>
+              !after ||
+              candidate.joinedAt > after.joinedAt ||
+              (candidate.joinedAt === after.joinedAt && candidate.id > after.id),
+          )
+          .slice(0, limit);
+        pageSizes.push(page.length);
+        return page;
+      },
+    };
+
+    await expect(createMemberUseCases(repository).list()).resolves.toHaveLength(stored.length);
+    expect(pageSizes).toEqual([MEMBER_LIST_PAGE_SIZE, 2]);
+  });
+
+  it("reads admin settings once and bounds tier reconciliation writes", async () => {
+    const stored = Array.from({ length: MEMBER_RECONCILE_CONCURRENCY + 2 }, (_, index) =>
+      member({ id: `u-${index}`, tier: "guest" }),
+    );
+    let active = 0;
+    let maxActive = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reached!: () => void;
+    const atLimit = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const repository: MemberRepository = {
+      ...unusedRepositoryRest,
+      list: async () => stored,
+      setTier: async (id, tier) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        if (active === MEMBER_RECONCILE_CONCURRENCY) {
+          reached();
+        }
+        await gate;
+        active -= 1;
+        return { member: member({ id, tier }), previousTier: "guest" };
+      },
+    };
+    let settingsReads = 0;
+    const useCases = createMemberUseCases(
+      repository,
+      async () => {
+        throw new Error("the per-member admin check must not run for a list");
+      },
+      async () => {
+        settingsReads += 1;
+        return [member().email];
+      },
+    );
+
+    const listed = useCases.list();
+    await atLimit;
+    expect(maxActive).toBe(MEMBER_RECONCILE_CONCURRENCY);
+    release();
+
+    await expect(listed).resolves.toHaveLength(stored.length);
+    expect(settingsReads).toBe(1);
   });
 
   describe("me", () => {
@@ -83,7 +162,10 @@ describe("member use cases", () => {
       const events: AuditEvent[] = [];
       setAuditSink({ append: async (event) => void events.push(event), listByDay: async () => [] });
       const repository: MemberRepository = {
-        list: async () => [member()],
+        list: async () => {
+          throw new Error("setTier must not list every member");
+        },
+        getById: async (id) => (id === "u1" ? member() : null),
         getByEmail: async () => null,
         setTier: async (id, tier) =>
           id === "u1" ? { member: member({ tier }), previousTier: "member" } : null,
@@ -112,7 +194,10 @@ describe("member use cases", () => {
       const useCases = createMemberUseCases(
         {
           ...unusedRepositoryRest,
-          list: async () => [member({ tier: "guest" })],
+          list: async () => {
+            throw new Error("setTier must not list every member");
+          },
+          getById: async () => member({ tier: "guest" }),
           setTier,
         },
         async () => true,

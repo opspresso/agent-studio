@@ -362,6 +362,7 @@ export default function PlaygroundPage() {
           */}
           <CollapsibleSection title={t("playground.run")} defaultOpen>
             <RunPanel
+              key={`${name}/${selectedName || "unsaved"}`}
               projectName={name}
               versionName={dirty && selectedName === "" ? null : selectedName || null}
               projectType={project.projectType}

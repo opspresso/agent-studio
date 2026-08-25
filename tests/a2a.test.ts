@@ -229,6 +229,17 @@ describe("normalizeAgentCardUrl", () => {
       "https://x.test/api/a2a/p/.well-known/agent-card.json",
     );
   });
+
+  it("appends the card path before a signed query and preserves the query", () => {
+    expect(normalizeAgentCardUrl("https://x.test/api/a2a/p?token=secret")).toBe(
+      "https://x.test/api/a2a/p/.well-known/agent-card.json?token=secret",
+    );
+    expect(
+      normalizeAgentCardUrl(
+        "https://x.test/api/a2a/p/.well-known/agent-card.json?token=secret",
+      ),
+    ).toBe("https://x.test/api/a2a/p/.well-known/agent-card.json?token=secret");
+  });
 });
 
 // --- outbound send ----------------------------------------------------------
@@ -436,6 +447,37 @@ describe("sendA2aMessage", () => {
     );
 
     await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual(STREAMED_REPLY);
+  });
+
+  it("does not expose a signed card URL when fetching the card fails", async () => {
+    const signedCardUrl = `${CARD_URL}?token=card-secret`;
+    vi.stubGlobal(
+      "fetch",
+      async () => new Response(null, { status: 502, statusText: "Bad Gateway" }),
+    );
+
+    const result = await sendA2aMessage(signedCardUrl, {}, "hello");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Failed to fetch Agent Card from https://remote.test: 502 Bad Gateway",
+    });
+    expect(JSON.stringify(result)).not.toContain("card-secret");
+    expect(JSON.stringify(result)).not.toContain("/.well-known/");
+  });
+
+  it("does not expose a signed card URL when the card is invalid", async () => {
+    const signedCardUrl = `${CARD_URL}?token=card-secret`;
+    vi.stubGlobal("fetch", async () => new Response("not-json", { status: 200 }));
+
+    const result = await sendA2aMessage(signedCardUrl, {}, "hello");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Agent Card from https://remote.test is not a valid A2A 1.0 Agent Card",
+    });
+    expect(JSON.stringify(result)).not.toContain("card-secret");
+    expect(JSON.stringify(result)).not.toContain("/.well-known/");
   });
 
   it("falls back to a blocking send for a card that cannot stream", async () => {
@@ -946,6 +988,41 @@ describe("ProjectA2aExecutor cancel", () => {
 
       expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_CANCELED);
       expect(bus.events.some((event) => event.kind === "artifactUpdate")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not overlap slow cancel-store reads", async () => {
+    vi.useFakeTimers();
+    try {
+      let activeReads = 0;
+      let maxActiveReads = 0;
+      const deps = {
+        ...executionDepsFixture(new FakeChannel([])),
+        channel: hangingChannel(),
+      } as unknown as ExecutionDeps;
+      const store = fakeStore({
+        load: async () => {
+          activeReads += 1;
+          maxActiveReads = Math.max(maxActiveReads, activeReads);
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+          activeReads -= 1;
+          return taskFixture({
+            id: "t1",
+            contextId: "c1",
+            status: taskStatus(TaskState.TASK_STATE_CANCELED),
+          });
+        },
+      });
+      const executor = new ProjectA2aExecutor(deps, projectFixture(), versionFixture(), store);
+      const done = executor.execute(requestContext(userMessage("hi")), new CollectingBus());
+
+      await vi.advanceTimersByTimeAsync(5_100);
+      await done;
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      expect(maxActiveReads).toBe(1);
     } finally {
       vi.useRealTimers();
     }

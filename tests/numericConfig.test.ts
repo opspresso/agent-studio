@@ -19,6 +19,8 @@ const TOUCHED = [
   "USAGE_RETENTION_DAYS",
   "MCP_DISCOVERY_CACHE_TTL_MS",
   "MCP_MAX_SERVER_TTL_MS",
+  "MAX_CONCURRENT_RUNS_PER_ACTOR",
+  "MAX_CONCURRENT_RUNS_A2A",
 ] as const;
 const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
 
@@ -61,6 +63,13 @@ describe("positiveIntEnv", () => {
     expect(positiveIntEnv("PROBE_NUMBER", 7)).toBe(0);
     expect(positiveIntEnv("PROBE_NUMBER", 7, 1)).toBe(7);
   });
+
+  it("honours a storage ceiling", () => {
+    set("PROBE_NUMBER", "1000");
+    expect(positiveIntEnv("PROBE_NUMBER", 7, 0, 1000)).toBe(1000);
+    set("PROBE_NUMBER", "1001");
+    expect(positiveIntEnv("PROBE_NUMBER", 7, 0, 1000)).toBe(7);
+  });
 });
 
 describe("fractionEnv", () => {
@@ -95,6 +104,18 @@ describe("fractionEnv", () => {
 });
 
 describe("the settings that used to parse their own", () => {
+  it("keeps concurrency settings inside the stored slot-key range", () => {
+    set("MAX_CONCURRENT_RUNS_PER_ACTOR", "1000");
+    set("MAX_CONCURRENT_RUNS_A2A", "1000");
+    expect(config.maxConcurrentRunsPerActor).toBe(1000);
+    expect(config.maxConcurrentRunsA2a).toBe(1000);
+
+    set("MAX_CONCURRENT_RUNS_PER_ACTOR", "1001");
+    set("MAX_CONCURRENT_RUNS_A2A", "1001");
+    expect(config.maxConcurrentRunsPerActor).toBe(10);
+    expect(config.maxConcurrentRunsA2a).toBe(50);
+  });
+
   it("reads the trace sample rate through config, clamped", () => {
     set("TRACE_SAMPLE_RATE", "5");
     expect(config.traceSampleRate).toBe(1);

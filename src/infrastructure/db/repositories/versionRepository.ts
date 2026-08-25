@@ -2,6 +2,8 @@ import { keys } from "@/infrastructure/db/keys";
 import { conditions, getItem, queryItems, transact } from "@/infrastructure/db/store";
 import type { VersionRepository } from "@/domain/project/repository";
 import type { McpBinding, Version } from "@/domain/project/types";
+import { boundedPageLimit } from "@/shared/pageLimit";
+import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
 
 const ENTITY_TYPE = "VERSION";
 const PUBLISHED = "published";
@@ -38,7 +40,12 @@ function toMcpBindings(raw: unknown): McpBinding[] {
       return entry ? [{ name: entry }] : [];
     }
     if (entry && typeof entry === "object") {
-      const binding = entry as { name?: unknown; headers?: unknown; tools?: unknown };
+      const binding = entry as {
+        name?: unknown;
+        headers?: unknown;
+        headerTarget?: unknown;
+        tools?: unknown;
+      };
       if (typeof binding.name === "string" && binding.name) {
         // An empty list means the same as no list — every tool — so it is
         // dropped rather than stored as a narrowing that offers nothing.
@@ -50,6 +57,9 @@ function toMcpBindings(raw: unknown): McpBinding[] {
             name: binding.name,
             ...(binding.headers && typeof binding.headers === "object"
               ? { headers: binding.headers as McpBinding["headers"] }
+              : {}),
+            ...(typeof binding.headerTarget === "string"
+              ? { headerTarget: binding.headerTarget }
               : {}),
             ...(tools.length > 0 ? { tools } : {}),
           },
@@ -84,10 +94,6 @@ async function resolvePublished(projectName: string): Promise<string | null> {
   return typeof pointer === "string" ? pointer : null;
 }
 
-/** The project row a version write may land in: present and not being deleted. */
-const projectLive = (row: Record<string, unknown> | null): boolean =>
-  row !== null && row.deletingAt === undefined;
-
 export const versionRepository: VersionRepository = {
   async get(projectName: string, versionName: string): Promise<Version | null> {
     let resolved = versionName;
@@ -102,24 +108,35 @@ export const versionRepository: VersionRepository = {
     return item ? fromItem(item) : null;
   },
 
-  async list(projectName: string): Promise<Version[]> {
+  async list(projectName, limit, after): Promise<Version[]> {
     const items = await queryItems({
       pk: keys.projectPartition(projectName),
       sk: { prefix: keys.versionPrefix() },
+      limit: boundedPageLimit(limit),
+      ...(after ? { after: keys.version(projectName, after).SK } : {}),
     });
-    return items.map(fromItem);
+    return items.map((item) => {
+      const version = fromItem(item);
+      if (
+        version.projectName !== projectName ||
+        keys.version(projectName, version.versionName).SK !== item.SK
+      ) {
+        throw new Error("version row identity does not match its key");
+      }
+      return version;
+    });
   },
 
   async put(version: Version): Promise<void> {
     await transact([
-      { kind: "check", key: keys.project(version.projectName), condition: projectLive },
+      { kind: "check", key: keys.project(version.projectName), condition: projectIsLive },
       { kind: "put", item: toItem(version), condition: conditions.exists },
     ]);
   },
 
   async create(version: Version): Promise<void> {
     await transact([
-      { kind: "check", key: keys.project(version.projectName), condition: projectLive },
+      { kind: "check", key: keys.project(version.projectName), condition: projectIsLive },
       { kind: "put", item: toItem(version), condition: conditions.notExists },
     ]);
   },
@@ -134,7 +151,7 @@ export const versionRepository: VersionRepository = {
         kind: "check",
         key: keys.project(projectName),
         condition: (row) =>
-          projectLive(row) &&
+          projectIsLive(row) &&
           row?.updatedAt === expectedProjectUpdatedAt &&
           (row?.publishedVersion === undefined || row?.publishedVersion !== versionName),
       },

@@ -6,6 +6,9 @@ import type {
   SlackUserDetail,
 } from "./types";
 
+/** Cold `users.info` requests allowed in flight from one Slack read. */
+export const MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS = 5;
+
 /**
  * The reads a run's Slack tools are served from.
  *

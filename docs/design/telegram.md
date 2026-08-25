@@ -102,7 +102,9 @@ Telegram 의 제한 두 가지가 나머지를 결정하고, 둘 다
 개인 chat 은 메시지를 하나 보내고, 그룹과 topic 은 봇을 mention 하거나 봇 메시지에 답해야
 목록에 나타난다. 행은 project 파티션에 현재 봇 ID 로 구분해 둔다. 토큰을 바꾼 뒤 옛 봇의
 목적지가 새 봇의 선택 목록에 섞이지 않고, project 를 지우면 함께 지워진다. 이 기록이 실패해도
-메시지 답변은 계속하며, 설정 화면에는 chat/topic 선택과 수동 ID 입력을 함께 둔다.
+메시지 답변은 계속하며, 설정 화면에는 chat/topic 선택과 수동 ID 입력을 함께 둔다. 선택 목록은
+`lastSeenAt` recency index 에서 최신 100개를 읽는다. index 도입 전 행은 schema migration 과
+DynamoDB import 가 같은 index 를 채우므로 chat ID 순서에 따라 최신 목적지가 누락되지 않는다.
 
 **앨범은 한 번만 답한다.** Telegram 은 `media_group_id` 를 공유하는 사진 여러 장을 사진마다
 update 하나로, 캡션은 그중 많아야 하나에 실어 배달한다. 각각에 답하면 질문 하나에 과금되는 런

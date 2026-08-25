@@ -15,8 +15,16 @@
  */
 
 import OpenAI, { toFile } from "openai";
+import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
 import type { ResolvedTarget, TargetResolver } from "./providers";
+import {
+  base64ByteLength,
+  base64Chars,
+  MAX_ATTACHMENT_BYTES,
+  SUPPORTED_IMAGE_TYPES,
+} from "@/domain/llm/imageLimits";
 import { imageDataUrl } from "@/domain/llm/types";
+import { readBodyText } from "@/shared/httpBody";
 import { log } from "@/shared/logger";
 import type {
   ImageBytes,
@@ -26,10 +34,14 @@ import type {
   ImageGenerationResult,
 } from "@/domain/llm/imageChannel";
 
-const clients = new Map<string, OpenAI>();
+const clients = createLlmClientCache<OpenAI>();
+
+/** One base64 image plus ample room for usage metadata and provider envelopes. */
+export const MAX_IMAGE_API_RESPONSE_BYTES = base64Chars(MAX_ATTACHMENT_BYTES) + 256_000;
 
 /**
- * Keyed by baseUrl|apiKey so a runtime settings change gets a fresh client.
+ * Keyed by a credential fingerprint so a runtime settings change gets a fresh
+ * client without retaining raw keys in the cache index.
  *
  * A SigV4 channel is refused here rather than sent unsigned. The text channel
  * signs a JSON body; this one posts multipart for an edit, which cannot be
@@ -43,7 +55,7 @@ function getClient(target: ResolvedTarget): OpenAI {
       `Image channel "${target.providerName ?? "default"}" is configured for SigV4, which the images API does not support`,
     );
   }
-  const key = `${target.baseUrl}|${target.apiKey}`;
+  const key = llmClientCacheKey(target.baseUrl, target.apiKey);
   let client = clients.get(key);
   if (!client) {
     client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey });
@@ -60,6 +72,23 @@ interface ImagesApiResponse {
     output_tokens?: number;
     input_tokens_details?: { text_tokens?: number; image_tokens?: number };
   };
+}
+
+function checkedImageBytes(
+  b64: string,
+  mimeType: string,
+  what: string,
+): { b64: string; mimeType: string } {
+  if (!(SUPPORTED_IMAGE_TYPES as readonly string[]).includes(mimeType)) {
+    throw new Error(`Image ${what} returned unsupported image type ${mimeType}`);
+  }
+  const byteLength = base64ByteLength(b64);
+  if (byteLength > MAX_ATTACHMENT_BYTES) {
+    throw new Error(
+      `Image ${what} returned ${byteLength.toLocaleString("en-US")} bytes, over the ${MAX_ATTACHMENT_BYTES.toLocaleString("en-US")} byte limit`,
+    );
+  }
+  return { b64, mimeType };
 }
 
 /**
@@ -80,11 +109,11 @@ function toImageResult(payload: unknown, what: string): ImageGenerationResult {
   if (!b64) {
     throw new Error(`Image ${what} returned no image data`);
   }
+  const imageBytes = checkedImageBytes(b64, image.mime_type ?? "image/png", what);
   const usage = response.usage;
   const textInputTokens = usage?.input_tokens_details?.text_tokens ?? usage?.input_tokens ?? 0;
   return {
-    b64,
-    mimeType: image.mime_type ?? "image/png",
+    ...imageBytes,
     usage: {
       // xAI reports no token counts for these models at all — it prices per
       // image and says so as `cost_in_usd_ticks`. Zeros are the honest answer:
@@ -157,13 +186,22 @@ async function jsonImageRequest(
     body: JSON.stringify(body),
     ...(signal ? { signal } : {}),
   });
+  const responseText = await readBodyText(response, MAX_IMAGE_API_RESPONSE_BYTES);
   if (!response.ok) {
     // The SDK's error text is what every other provider's failure reads like in
     // a tool result, so match its shape: status, then whatever the body says.
-    const detail = await response.text().catch(() => "");
-    throw new Error(`${response.status} ${providerErrorMessage(detail) || response.statusText}`);
+    throw new Error(
+      `${response.status} ${providerErrorMessage(responseText) || response.statusText}`,
+    );
   }
-  return parse(await response.json(), what);
+  try {
+    return parse(JSON.parse(responseText) as unknown, what);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Image ${what} returned invalid JSON`);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -225,6 +263,7 @@ function toOpenRouterImageResult(payload: unknown, what: string): ImageGeneratio
   if (!b64) {
     throw new Error(`Image ${what} returned no image data`);
   }
+  const imageBytes = checkedImageBytes(b64, image.media_type ?? "image/png", what);
   const usage = response.usage;
   const imageOutputTokens =
     usage?.completion_tokens_details?.image_tokens ?? usage?.completion_tokens ?? 0;
@@ -240,8 +279,7 @@ function toOpenRouterImageResult(payload: unknown, what: string): ImageGeneratio
     );
   }
   return {
-    b64,
-    mimeType: image.media_type ?? "image/png",
+    ...imageBytes,
     usage: {
       textInputTokens: usage?.prompt_tokens ?? 0,
       imageInputTokens: 0,

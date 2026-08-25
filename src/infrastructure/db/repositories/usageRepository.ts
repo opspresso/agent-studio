@@ -17,12 +17,14 @@ import {
   transact,
   updateItem,
   type Item,
+  type QueryInput,
 } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { memberEmailFromActorKey } from "@/domain/execution/actor";
 import { daysBetween } from "@/shared/date";
 import type { ActorUsageRow, MemberUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
+import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
 
 /**
  * Attribute the once-per-day notification claim is written to. One per kind, so
@@ -34,6 +36,32 @@ const ALERT_MARKER: Record<CostAlertKind, string> = {
 };
 
 const COUNTERS = ["calls", "inputTokens", "outputTokens", "cachedTokens", "costUsd"] as const;
+
+/** Rows read at once while a usage view drains a bounded date range. */
+const USAGE_PAGE_SIZE = 100;
+
+async function listUsageItems(
+  input: QueryInput,
+  cursorAttribute: "SK" | "GSI1SK" = "SK",
+): Promise<Item[]> {
+  const found: Item[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await queryItems({ ...input, after, limit: USAGE_PAGE_SIZE });
+    found.push(...page);
+    if (page.length < USAGE_PAGE_SIZE) {
+      return found;
+    }
+    // Never a fallback: an empty cursor is `sk > ''`, which matches the whole
+    // partition again rather than ending the walk, so a row missing the
+    // attribute would spin here instead of failing.
+    const cursor = page.at(-1)?.[cursorAttribute];
+    if (typeof cursor !== "string" || cursor === "") {
+      throw new Error(`usage row has no ${cursorAttribute} to page from`);
+    }
+    after = cursor;
+  }
+}
 
 function toUsageRow(item: Item): UsageRow {
   return {
@@ -89,8 +117,6 @@ function added(row: Item | null, delta: UsageDelta, extra: Item): Item {
   return next;
 }
 
-const projectLive = (row: Item | null): boolean => row !== null && row.deletingAt === undefined;
-
 export class PostgresUsageRepository implements UsageRepository {
   async record(delta: UsageDelta): Promise<void> {
     await this.addTo(keys.usage(delta.projectName, delta.date), delta, {
@@ -128,13 +154,13 @@ export class PostgresUsageRepository implements UsageRepository {
    */
   private async addTo(key: { PK: string; SK: string }, delta: UsageDelta, extra: Item): Promise<void> {
     await transact([
-      { kind: "check", key: keys.project(delta.projectName), condition: projectLive },
+      { kind: "check", key: keys.project(delta.projectName), condition: projectIsLive },
       { kind: "update", key, patch: (row) => added(row, delta, extra) },
     ]);
   }
 
   async listMemberDays(email: string, from: string, to: string): Promise<MemberUsageRow[]> {
-    const items = await queryItems({
+    const items = await listUsageItems({
       pk: keys.usageMemberPartition(email),
       // The project follows the date in the sort key, so the upper bound has
       // to sort after every project on `to` — bound by the prefix rather
@@ -159,7 +185,7 @@ export class PostgresUsageRepository implements UsageRepository {
     from: string,
     to: string,
   ): Promise<ActorUsageRow[]> {
-    const items = await queryItems({
+    const items = await listUsageItems({
       pk: keys.usage(projectName, from).PK,
       // The upper bound has to sort after every actor on `to`, and actor ids
       // are unbounded strings — so bound by the prefix of the day after,
@@ -233,7 +259,7 @@ export class PostgresUsageRepository implements UsageRepository {
   async listByProject(projectName: string, from: string, to: string): Promise<UsageRow[]> {
     const fromKey = keys.usage(projectName, from);
     const toKey = keys.usage(projectName, to);
-    const items = await queryItems({
+    const items = await listUsageItems({
       pk: fromKey.PK,
       sk: { between: [fromKey.SK, toKey.SK] },
       notExpiredAt: Math.floor(Date.now() / 1000),
@@ -245,11 +271,14 @@ export class PostgresUsageRepository implements UsageRepository {
     const rows: UsageRow[] = [];
     const now = Math.floor(Date.now() / 1000);
     for (const date of daysBetween(from, to)) {
-      const items = await queryItems({
-        index: "GSI1",
-        pk: keys.usageDatePartition(date),
-        notExpiredAt: now,
-      });
+      const items = await listUsageItems(
+        {
+          index: "GSI1",
+          pk: keys.usageDatePartition(date),
+          notExpiredAt: now,
+        },
+        "GSI1SK",
+      );
       rows.push(...items.map(toUsageRow));
     }
     return rows;

@@ -283,6 +283,8 @@ export interface SubagentRef {
 export interface McpBinding {
   name: string;
   headers?: Record<string, string | null>;
+  /** Internal fingerprint of the registry URL that encrypted header values belong to. */
+  headerTarget?: string;
   /**
    * Which of the server's tools this version offers the model. Absent means all
    * of them — the shape every binding had before, and the right default for a

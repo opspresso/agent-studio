@@ -352,6 +352,7 @@ function makeStreamingChannelFake() {
   const stopped: Array<{ markdown_text?: string }> = [];
   const deleted: string[] = [];
   const posted: string[] = [];
+  const statuses: string[] = [];
   function record(at: "start" | "append" | "stop", list: SlackChunk[] | undefined): void {
     for (const chunk of list ?? []) {
       // Text is text whichever envelope carried it — a test about the answer
@@ -392,8 +393,13 @@ function makeStreamingChannelFake() {
     async deleteMessage(_token: string, args: { ts: string }) {
       deleted.push(args.ts);
     },
+    // An assistant thread carries its progress as a status rather than as task
+    // rows, so a DM target reaches for this on the way in and on the way out.
+    async setStatus(_token: string, args: { status: string }) {
+      statuses.push(args.status);
+    },
   } as unknown as SlackClientPort;
-  return { slack, streamStarts, chunks, appended, stopped, deleted, posted };
+  return { slack, streamStarts, chunks, appended, stopped, deleted, posted, statuses };
 }
 
 /**
@@ -739,6 +745,26 @@ describe("an answer longer than one write", () => {
     // Every write is within the cap, and the whole answer still arrives.
     expect(appended.every((piece) => piece.length <= 12_000)).toBe(true);
     expect(appended.join("")).toBe(LONG);
+  });
+
+  it("splits what the close still owes in an assistant thread too", async () => {
+    // A DM closes with one `markdown_text` rather than chunks, and one holds at
+    // most 12,000 characters. The close is the last write there is, so a run
+    // that arrives holding all of it had the rest cut off with nothing saying
+    // so — the same case the chunked close beside it splits for.
+    const { slack, appended, stopped, posted } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", DM);
+    // The first push opens the stream and takes one write's worth; every append
+    // after it is refused by the pacing clock, so the close is owed the rest.
+    await sink.push(LONG);
+
+    await sink.finish(LONG, "");
+
+    const delivered = [...appended, stopped[0]?.markdown_text ?? "", ...posted].join("");
+    expect(stopped).toHaveLength(1);
+    expect((stopped[0]?.markdown_text ?? "").length).toBeLessThanOrEqual(12_000);
+    expect(posted.every((piece) => piece.length <= 12_000)).toBe(true);
+    expect(delivered).toBe(LONG);
   });
 
   it("splits what the close still owes", async () => {

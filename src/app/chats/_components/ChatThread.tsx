@@ -209,7 +209,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           : Math.max(held.current, newest);
       } else if (since === undefined) {
         held.current = undefined;
-    lastFullRead.current = 0;
+        lastFullRead.current = 0;
       }
       setStatus("ready");
       // The *fetched* rows, not the merged thread: what pins this turn's images

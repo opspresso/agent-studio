@@ -98,7 +98,14 @@ export const MAX_DESCRIPTION_CHARS = 500;
 /** A description reduced to what the catalog carries: one line, bounded. */
 export function catalogDescription(description: string): string {
   const flat = description.replace(/\s+/g, " ").trim();
-  return flat.length > MAX_DESCRIPTION_CHARS ? `${flat.slice(0, MAX_DESCRIPTION_CHARS)}…` : flat;
+  if (flat.length <= MAX_DESCRIPTION_CHARS) {
+    return flat;
+  }
+  // By character, never through one: this text is embedded, stored and offered
+  // to the model, and half a character is not text on any of those three
+  // routes. Spread rather than `cutCodePoints` for the reason `savedFileName`
+  // records — this layer imports nothing, `shared` included.
+  return `${[...flat].slice(0, MAX_DESCRIPTION_CHARS).join("")}…`;
 }
 
 /**

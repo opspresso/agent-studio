@@ -20,12 +20,14 @@
  *   AUTHUNIQUE#…   → dropped (the unique locks the old adapter needed; the
  *                     tables have unique constraints)
  *   everything else → the `items` table, unchanged — same PK/SK, same
- *                     document, so every repository reads it as before
+ *                     document, except legacy Telegram destinations gain the
+ *                     recency index current reads require
  *
  * Idempotent: rerunning upserts. Run against an empty database or accept that
  * rows present in both are replaced by the export's copy.
  */
 import { readFileSync } from "node:fs";
+import { withTelegramDestinationIndex } from "@/infrastructure/db/telegramDestinationIndex";
 
 process.env.STAGE ??= "local";
 
@@ -298,6 +300,7 @@ async function main(): Promise<void> {
         }
         // Through the store's own encoding, so a legacy row carrying a NUL
         // lands the way a fresh write would rather than aborting the file.
+        item = withTelegramDestinationIndex(item);
         await client.query(
           "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
           [pk, sk, toStoredJson(item)],

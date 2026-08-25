@@ -1,12 +1,14 @@
 /** Minimal Bot Framework (Microsoft Teams) client over fetch — no SDK dependency. */
 
-import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
+import { createPublicKey, verify as verifySignature } from "node:crypto";
 import type {
   TeamsClientPort,
   TeamsCredentials,
   TeamsOutboundActivity,
 } from "@/domain/teams/client";
+import { credentialCacheKey } from "@/infrastructure/credentialCacheKey";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+import { BoundedCache } from "@/shared/boundedCache";
 import { readBodyBytes } from "@/shared/httpBody";
 
 /** A signing key as the JWKS document lists it. */
@@ -36,6 +38,8 @@ const KEYS_TTL_MS = 24 * 60 * 60 * 1000;
 const CLOCK_SKEW_SECONDS = 5 * 60;
 /** How far ahead of expiry a cached app token is dropped. */
 const TOKEN_EXPIRY_MARGIN_SECONDS = 60;
+/** Rotated bot credentials cannot make process memory grow without bound. */
+const MAX_TOKEN_CACHE_ENTRIES = 32;
 
 function teamsFetch(url: string, init: RequestInit = {}, timeoutMs = TEAMS_TIMEOUT_MS) {
   return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
@@ -48,11 +52,16 @@ function teamsFetch(url: string, init: RequestInit = {}, timeoutMs = TEAMS_TIMEO
  * earned, or the console's *Test connection* answers "works" for an hour
  * after the credentials stopped working.
  */
-const tokens = new Map<string, { token: string; expiresAt: number }>();
+const tokens = new BoundedCache<string, { token: string; expiresAt: number }>(
+  MAX_TOKEN_CACHE_ENTRIES,
+);
 
 function credentialKey(credentials: TeamsCredentials): string {
-  const secret = createHash("sha256").update(credentials.appPassword).digest("hex").slice(0, 16);
-  return `${credentials.appId}|${credentials.tenantId ?? ""}|${secret}`;
+  return credentialCacheKey(
+    credentials.appId,
+    credentials.tenantId ?? "",
+    credentials.appPassword,
+  );
 }
 
 async function appToken(credentials: TeamsCredentials): Promise<{ token: string; expiresInSeconds: number }> {
@@ -61,6 +70,9 @@ async function appToken(credentials: TeamsCredentials): Promise<{ token: string;
   const now = Date.now();
   if (cached && cached.expiresAt > now) {
     return { token: cached.token, expiresInSeconds: Math.floor((cached.expiresAt - now) / 1000) };
+  }
+  if (cached) {
+    tokens.delete(key);
   }
   const tenant = credentials.tenantId ?? "botframework.com";
   const res = await teamsFetch(`${TOKEN_HOST}/${tenant}/oauth2/v2.0/token`, {
@@ -278,21 +290,22 @@ export const teamsClient: TeamsClientPort = {
    * to the model.
    */
   async downloadAttachment(credentials, serviceUrl, url, maxBytes) {
-    let host: string;
+    let attachmentUrl: URL;
     try {
-      host = new URL(url).host;
+      attachmentUrl = new URL(url);
     } catch {
       throw new Error("Teams attachment url is not a URL");
     }
-    const serviceHost = (() => {
+    const serviceOrigin = (() => {
       try {
-        return new URL(serviceUrl).host;
+        const parsed = new URL(serviceUrl);
+        return parsed.protocol === "https:" ? parsed.origin : "";
       } catch {
         return "";
       }
     })();
     const res =
-      host === serviceHost && serviceHost !== ""
+      attachmentUrl.protocol === "https:" && attachmentUrl.origin === serviceOrigin
         ? await teamsFetch(
             url,
             { headers: { Authorization: `Bearer ${(await appToken(credentials)).token}` } },

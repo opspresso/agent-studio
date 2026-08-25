@@ -1,5 +1,6 @@
 import type { VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
+import { listVersions } from "./versionUseCases";
 
 /**
  * Resolve the version a run should execute — the single owner of this rule.
@@ -29,7 +30,7 @@ export async function resolveRunnableVersion(
   if (!opts.allowDraftFallback) {
     return null;
   }
-  const all = await versions.list(project.name);
+  const all = await listVersions(versions, project.name);
   if (all.length === 0) {
     return null;
   }

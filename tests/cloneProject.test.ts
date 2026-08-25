@@ -42,7 +42,12 @@ function sourceVersion(overrides: Partial<Version> = {}): Version {
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: true },
     mcpList: [
-      { name: "docs", headers: { "X-Api-Key": "enc:v1:secret" }, tools: ["search"] },
+      {
+        name: "docs",
+        headers: { "X-Api-Key": "enc:v1:secret" },
+        headerTarget: "sha256-target",
+        tools: ["search"],
+      },
     ],
     skillList: ["summarize"],
     subagentList: [{ name: "helper", type: "local" }],
@@ -69,8 +74,12 @@ function makeRepos(projects: Project[], versions: Version[]) {
         stored.find((v) => v.projectName === projectName && v.versionName === versionName) ?? null
       );
     },
-    async list(projectName: string) {
-      return stored.filter((v) => v.projectName === projectName);
+    async list(projectName: string, limit: number, after?: string) {
+      return stored
+        .filter((v) => v.projectName === projectName)
+        .sort((a, b) => a.versionName.localeCompare(b.versionName))
+        .filter((v) => !after || v.versionName > after)
+        .slice(0, limit);
     },
     async create(version: Version) {
       stored.push(version);

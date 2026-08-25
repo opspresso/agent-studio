@@ -8,7 +8,12 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { reindexCatalog, type CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
+import {
+  MAX_CONCURRENT_CATALOG_PROBES,
+  reindexCatalog,
+  type CatalogIndexDeps,
+} from "@/application/catalog/reindexCatalog";
+import { catalogDescription } from "@/domain/catalog/types";
 import { searchCapabilities } from "@/application/catalog/searchCatalog";
 import type { McpServer } from "@/domain/mcp/types";
 import type { Skill } from "@/domain/skill/types";
@@ -75,6 +80,17 @@ function indexDeps(overrides: Partial<CatalogIndexDeps> = {}): CatalogIndexDeps 
     ...overrides,
   };
 }
+
+describe("catalogDescription", () => {
+  it("caps a description by character, never through one", () => {
+    // The text is embedded, stored and offered to the model. Half a character
+    // is not text on any of those three routes, and the description comes from
+    // a plugin repository rather than from this app.
+    const capped = catalogDescription(`x${"\uD83D\uDE00".repeat(1_000)}`);
+    expect(capped.endsWith("…")).toBe(true);
+    expect(capped.isWellFormed()).toBe(true);
+  });
+});
 
 describe("reindexCatalog", () => {
   it("indexes a server and each of its tools, keyed so a rerun is an upsert", async () => {
@@ -208,6 +224,36 @@ describe("reindexCatalog", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it("bounds concurrent MCP probes while preserving every server", async () => {
+    const servers = Array.from(
+      { length: MAX_CONCURRENT_CATALOG_PROBES + 2 },
+      (_, index) => server(`server-${index}`, "Server"),
+    );
+    let active = 0;
+    let maxActive = 0;
+    const recorded = fakeStore();
+
+    const report = await reindexCatalog(
+      indexDeps({
+        catalog: recorded.store,
+        mcps: { list: async () => servers },
+        probeMcpTools: async () => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await Promise.resolve();
+          active -= 1;
+          return [];
+        },
+      }),
+    );
+
+    expect(maxActive).toBe(MAX_CONCURRENT_CATALOG_PROBES);
+    expect(report.indexed).toBe(servers.length);
+    expect(recorded.upserted.map((record) => record.key)).toEqual(
+      servers.map((entry) => `mcpServer#${entry.name}`),
+    );
   });
 
   it("keeps an entry whose vector was missing rather than pruning it", async () => {

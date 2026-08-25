@@ -28,8 +28,14 @@ export interface DetachedRun {
   onDrained: () => void;
 }
 
+export interface DetachedRunResponse {
+  response: Response;
+  /** Settles only after detached work releases the input it retained. */
+  drained: Promise<void>;
+}
+
 /** Stream a chat run, detached from the connection carrying it. */
-export async function detachedRunResponse(run: DetachedRun): Promise<Response> {
+export async function detachedRunResponse(run: DetachedRun): Promise<DetachedRunResponse> {
   // `withRunFrames` is a plain generator and must stay *inside* the detach: a
   // generator parked at an `await` cannot answer `return()`, so layered above it
   // the disconnect would never reach the wrapper that handles it.
@@ -53,5 +59,5 @@ export async function detachedRunResponse(run: DetachedRun): Promise<Response> {
   } catch (error) {
     log.warn("chat", "detached run is not registered with the runtime", error);
   }
-  return response;
+  return { response, drained };
 }

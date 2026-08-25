@@ -1,4 +1,5 @@
-import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
+import { ValidationError } from "@/application/errors";
+import { persistProjectUpdate } from "@/application/project/projectUpdate";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { nextUpdatedAt } from "@/application/project/timestamps";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -73,21 +74,6 @@ export async function getProjectTeams(
   return { project, view: maskedView(cipher, project) };
 }
 
-async function updateProject(
-  repo: ProjectRepository,
-  updated: Project,
-  expectedUpdatedAt: string,
-): Promise<void> {
-  try {
-    await repo.update(updated, expectedUpdatedAt);
-  } catch (error) {
-    if (isConditionalWriteFailure(error)) {
-      throw new ConflictError(`Project "${updated.name}" was modified by another request`);
-    }
-    throw error;
-  }
-}
-
 /** A GUID, which is what an App ID and a tenant id are. */
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -135,7 +121,7 @@ export async function updateProjectTeams(
     throw new ValidationError("An App ID and a client secret are required to enable Teams");
   }
   const updated: Project = { ...project, teams, updatedAt: nextUpdatedAt(project.updatedAt) };
-  await updateProject(repo, updated, project.updatedAt);
+  await persistProjectUpdate(repo, updated, project.updatedAt);
   return { project: updated, view: maskedView(cipher, updated) };
 }
 
@@ -148,7 +134,7 @@ export async function disconnectProjectTeams(
 ): Promise<ProjectTeamsResult> {
   const project = await assertProjectWritable(repo, name, userEmail);
   const updated: Project = { ...project, teams: undefined, updatedAt: nextUpdatedAt(project.updatedAt) };
-  await updateProject(repo, updated, project.updatedAt);
+  await persistProjectUpdate(repo, updated, project.updatedAt);
   return { project: updated, view: maskedView(cipher, updated) };
 }
 

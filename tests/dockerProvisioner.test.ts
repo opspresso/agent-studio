@@ -10,6 +10,7 @@ const cli = vi.hoisted(() => ({
   calls: [] as string[][],
   envFileSeen: null as null | { mode: number; content: string },
   fail: null as null | Record<string, unknown>,
+  failCommand: "run",
 }));
 
 vi.mock("node:child_process", async () => {
@@ -27,9 +28,9 @@ vi.mock("node:child_process", async () => {
             content: await readFile(path, "utf8"),
           };
         }
-        if (cli.fail) {
-          throw Object.assign(new Error(`Command failed: docker ${args.join(" ")}`), cli.fail);
-        }
+      }
+      if (cli.fail && args[0] === cli.failCommand) {
+        throw Object.assign(new Error(`Command failed: docker ${args.join(" ")}`), cli.fail);
       }
       return { stdout: args[0] === "inspect" ? "abc123 true" : "", stderr: "" };
     },
@@ -50,6 +51,7 @@ beforeEach(() => {
   cli.calls = [];
   cli.envFileSeen = null;
   cli.fail = null;
+  cli.failCommand = "run";
 });
 
 describe("docker provisioner", () => {
@@ -59,6 +61,25 @@ describe("docker provisioner", () => {
     const run = cli.calls.find((args) => args[0] === "run")!;
     expect(run.join(" ")).not.toContain("s3cret-value");
     expect(cli.envFileSeen).toEqual({ mode: 0o600, content: "API_KEY=s3cret-value\n" });
+    expect(run).toEqual(
+      expect.arrayContaining([
+        "--memory",
+        "512m",
+        "--memory-swap",
+        "512m",
+        "--cpus",
+        "1",
+        "--pids-limit",
+        "256",
+        "--security-opt",
+        "no-new-privileges",
+        "--cap-drop",
+        "ALL",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=64m",
+      ]),
+    );
     // `-e PORT` still beats the file, as the mapping requires.
     expect(run).toContain("PORT=8080");
   });
@@ -80,5 +101,37 @@ describe("docker provisioner", () => {
     await expect(
       createDockerProvisioner().start({ ...spec, environment: { TOKEN: "two\nlines" } }),
     ).rejects.toThrow(/line break: TOKEN$/);
+  });
+
+  it("treats an already absent container as stopped", async () => {
+    cli.failCommand = "rm";
+    cli.fail = { stderr: "Error response from daemon: No such container: my-tool\n", code: 1 };
+
+    await expect(createDockerProvisioner().stop("my-tool")).resolves.toBeUndefined();
+  });
+
+  it("reports a real remove failure instead of claiming the container stopped", async () => {
+    cli.failCommand = "rm";
+    cli.fail = { stderr: "permission denied while trying to connect to the Docker daemon\n", code: 1 };
+
+    await expect(createDockerProvisioner().stop("my-tool")).rejects.toThrow(
+      /docker rm failed: permission denied/,
+    );
+  });
+
+  it("returns no workload when inspect says the container is absent", async () => {
+    cli.failCommand = "inspect";
+    cli.fail = { stderr: "Error: No such container: my-tool\n", code: 1 };
+
+    await expect(createDockerProvisioner().inspect("my-tool")).resolves.toBeNull();
+  });
+
+  it("reports a real inspect failure instead of calling the container absent", async () => {
+    cli.failCommand = "inspect";
+    cli.fail = { stderr: "permission denied while trying to connect to the Docker daemon\n", code: 1 };
+
+    await expect(createDockerProvisioner().inspect("my-tool")).rejects.toThrow(
+      /docker inspect failed: permission denied/,
+    );
   });
 });

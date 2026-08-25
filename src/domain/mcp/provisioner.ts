@@ -59,10 +59,9 @@ export interface ManagedWorkload {
 
 export interface McpProvisioner {
   /**
-   * Start the workload and report the address it bound. Idempotent by name: a
-   * second call must adopt the running container rather than start a rival,
-   * because two of these would race for the same port and one would die
-   * holding the entry's address.
+   * Start or replace the workload and report the address it bound. Lifecycle
+   * callers serialize operations by name before reaching this port; replacing
+   * is what applies an updated image or repairs an unreachable container.
    */
   start(spec: ManagedWorkloadSpec): Promise<ManagedWorkload>;
   /** Stop and remove it. Absent is success — deletion has to be retryable. */

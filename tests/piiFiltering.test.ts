@@ -262,6 +262,41 @@ describe("PiiFilter", () => {
     expect(filter.mask(orderId)).toBe(orderId);
   });
 
+  it("masks a value inside marker-shaped text this filter never wrote", () => {
+    const filter = new PiiFilter();
+    // Scanning for `[[PII:` rather than for every entry of the table is what
+    // keeps this fast; a span the table does not know is therefore text, not a
+    // token, and the value inside it has to be masked like any other.
+    const masked = filter.mask("[[PII:a@b.co]] and [[PII: unterminated");
+
+    expect(masked).not.toContain("a@b.co");
+    expect(masked).toContain("[[PII: unterminated");
+  });
+
+  it("restores a stream whatever the mapping's size", () => {
+    const filter = new PiiFilter();
+    // Every chunk used to be scanned against the whole mapping, twice — so a
+    // run that masked a few thousand addresses spent seconds of blocked event
+    // loop restoring one turn. The ceiling is far above the linear cost and far
+    // below the quadratic one.
+    const source = Array.from(
+      { length: 4_000 },
+      (_, index) => `user${index}@example.com wrote something.`,
+    ).join("\n");
+    const masked = filter.mask(source);
+
+    const restorer = filter.createStreamRestorer();
+    const startedAt = Date.now();
+    let restored = "";
+    for (let at = 0; at < masked.length; at += 8) {
+      restored += restorer.push(masked.slice(at, at + 8));
+    }
+    restored += restorer.flush();
+
+    expect(restored).toBe(source);
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
   it("distinguishes a real value from the contents of an existing placeholder", () => {
     const filter = new PiiFilter();
     const firstMasked = filter.mask("111-111-1111");

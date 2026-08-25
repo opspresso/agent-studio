@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
@@ -117,6 +117,7 @@ export function RunPanel({
   >([]);
   const [size, setSize] = useState("1024x1024");
   const [quality, setQuality] = useState("medium");
+  const activeRequest = useRef<AbortController | null>(null);
   const { attachments, attachError, addFiles, removeAt } = useAttachments();
   const t = useT();
   const view = useImageViewer();
@@ -134,15 +135,30 @@ export function RunPanel({
         : t("run.attachHintGenerate")
       : t("run.attachHintLook");
 
+  useEffect(
+    () => () => {
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+    },
+    [],
+  );
+
   async function run() {
-    if (versionName === null) {
+    if (versionName === null || activeRequest.current !== null) {
       return;
     }
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    const isCurrent = () => activeRequest.current === controller;
     setRunning(true);
     // Reasoning arrives token by token and can run far longer than the answer,
     // so it is committed in batches rather than per token — the same rule the
     // chat thread's store applies to what it draws.
-    const reasoningPacer = createTextPacer((batch) => setReasoning((prev) => prev + batch));
+    const reasoningPacer = createTextPacer((batch) => {
+      if (isCurrent()) {
+        setReasoning((prev) => prev + batch);
+      }
+    });
     setText("");
     setReasoning("");
     setReasoningTokens(0);
@@ -161,12 +177,20 @@ export function RunPanel({
 
     try {
       if (projectType === "image") {
-        const result = await predictImage(projectName, versionName, {
-          prompt: message,
-          size,
-          quality,
-          images: toRequestImages(attachments),
-        });
+        const result = await predictImage(
+          projectName,
+          versionName,
+          {
+            prompt: message,
+            size,
+            quality,
+            images: toRequestImages(attachments),
+          },
+          controller.signal,
+        );
+        if (!isCurrent()) {
+          return;
+        }
         setImage(result);
         setCost(result.usage.costUsd);
         // A picture that was drawn and not kept is a loss like any other, and
@@ -183,25 +207,41 @@ export function RunPanel({
       }));
       const res =
         projectType === "agent"
-          ? await streamAgent(projectName, versionName, [
+          ? await streamAgent(
+              projectName,
+              versionName,
+              [
+                {
+                  role: "user",
+                  content:
+                    imageParts.length > 0
+                      ? [
+                          ...(message ? [{ type: "text" as const, text: message }] : []),
+                          ...imageParts,
+                        ]
+                      : message,
+                },
+              ],
+              controller.signal,
+            )
+          : await streamPredict(
+              projectName,
+              versionName,
               {
-                role: "user",
-                content:
-                  imageParts.length > 0
-                    ? [...(message ? [{ type: "text" as const, text: message }] : []), ...imageParts]
-                    : message,
+                variables,
+                // The prompt itself comes from the template; an attachment rides
+                // along as an extra user turn for the model to look at.
+                ...(imageParts.length > 0
+                  ? { messages: [{ role: "user", content: imageParts }] }
+                  : {}),
               },
-            ])
-          : await streamPredict(projectName, versionName, {
-              variables,
-              // The prompt itself comes from the template; an attachment rides
-              // along as an extra user turn for the model to look at.
-              ...(imageParts.length > 0
-                ? { messages: [{ role: "user", content: imageParts }] }
-                : {}),
-            });
+              controller.signal,
+            );
 
       for await (const chunk of readSse(res) as AsyncGenerator<EngineChunk>) {
+        if (!isCurrent()) {
+          break;
+        }
         if (chunk.error) {
           // A subagent failure is reported to the parent as a tool error and the
           // parent may still answer; only a top-level error is the run's — an
@@ -279,12 +319,17 @@ export function RunPanel({
         }
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("run.failed"));
+      if (isCurrent()) {
+        setError(e instanceof Error ? e.message : t("run.failed"));
+      }
     } finally {
       // Whatever the last batch was holding, on every exit path: a run that
       // ends mid-interval would otherwise leave its last thought unshown.
       reasoningPacer.flush();
-      setRunning(false);
+      if (isCurrent()) {
+        activeRequest.current = null;
+        setRunning(false);
+      }
     }
   }
 

@@ -193,7 +193,7 @@ flowchart TB
 | `src/app/api/telegram/webhook/_lib/` | `TelegramEventDeps` bag (바인딩된 `runAgent` + `TelegramClientPort` + transcript 저장소), Slack 쪽과 같은 모양. 셋 다 모든 chat-bot 표면이 공통으로 지니는 절반인 `MessagingDeps` 를 확장한다 |
 | `src/app/api/teams/messages/_lib/` | `TeamsEventDeps` bag (바인딩된 `runAgent` + `TeamsClientPort` + transcript 저장소), 같은 모양 |
 | `src/app/api/a2a/[name]/route.ts` | 요청마다 이뤄지는 A2A 조립: `executionDeps` 위의 `ProjectA2aExecutor` 를 감싸는 SDK 의 request/transport 핸들러. 핸들러가 프로젝트 하나의 카드를 중심으로 만들어지므로 요청 단위다 |
-| `src/instrumentation.ts` | 부팅 경로: 스키마 마이그레이션(advisory lock 아래), 부트스트랩 관리자, `auditRepository` 위의 audit sink, 저장된 문서와 HTTP 소스 위에 조립한 모델 카탈로그 refresher, 그리고 managed MCP 재개. 구조상 wiring site 다. 이 파일이 런타임을 Node 서버라고 판단하기 전까지 composition root 자체가 로드되지 않고, audit sink 는 **await 되는** 부팅 경로에서 wiring 돼야 하기 때문이다 ([감사 기록](design/observability.md#audit-기록) 참고) |
+| `src/instrumentation.ts` | 부팅 경로: 스키마 마이그레이션(advisory lock 아래), 부트스트랩 관리자, `auditRepository` 위의 process-wide audit sink, 저장된 문서와 HTTP 소스 위에 조립한 모델 카탈로그 refresher, 그리고 managed MCP 재개. 구조상 wiring site 다. 이 파일이 런타임을 Node 서버라고 판단하기 전까지 composition root 자체가 로드되지 않고, audit sink 는 **await 되는** 부팅 경로에서 wiring 돼야 하기 때문이다 ([감사 기록](design/observability.md#audit-기록) 참고) |
 
 두 가지 DI 스타일을 의도적으로 함께 쓴다:
 
@@ -247,6 +247,7 @@ flowchart TB
 | 엔티티 | PK | SK | GSI1PK | GSI1SK |
 |---|---|---|---|---|
 | Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
+| 삭제된 Project 이름 tombstone | `PROJECT#{name}` | `META` | — | — |
 | Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
 | Project API 토큰 | `PROJECT#{name}` | `APITOKEN` | — | — |
 | Project 의 MCP OAuth 연결 | `PROJECT#{name}` | `MCPCONN#{server}` | — | — |
@@ -272,13 +273,14 @@ flowchart TB
 | Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
 | Telegram 업데이트 중복 제거 (`update_id` 는 봇마다의 카운터이므로 봇으로 한정한다) | `PROJECT#{name}` | `TELEGRAMUPDATE#{botId}#{updateId}` | — | — |
 | Telegram 앨범 claim (한 `media_group_id` 에 한 번 답한다) | `PROJECT#{name}` | `TELEGRAMALBUM#{botId}#{mediaGroupId}` | — | — |
+| Telegram destination | `PROJECT#{name}` | `TELEGRAMDESTINATION#{botId}#{chatId}#{threadId}` | — | `TELEGRAMDESTINATION#{name}#{botId}` / `{lastSeenAt ISO}` |
 | Teams activity 중복 제거 (App ID 로 한정; activity id 는 대화 안에서만 유일하므로 대화 id 를 앞에 붙인다) | `PROJECT#{name}` | `TEAMSACTIVITY#{appId}#{conversationId}#{activityId}` | — | — |
 | 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면, Telegram, Teams; project 파티션에 있어 cascade 가 지운다) | `PROJECT#{name}` | `TRANSCRIPT#{conversationKey}#TURN#{createdAt ISO}#{seq}` | — | — |
 | Artifact (런이 만들어 낸 것. GSI2 는 `ARTIFACTOWNER#{email}` / `{createdAt ISO}#{artifactId}`, 희소) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
 | A2A 태스크 (수신) | `A2ATASK#{projectName}#{urlencode(tenant:client)}` | `TASK#{taskId}` | — | — |
 | 원격 대화 (송신 A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
 | A2A 클라이언트 키 | `A2ACLIENT#{name}` | `META` | `TYPE#A2ACLIENT` | `{name}` |
-| A2A 클라이언트 키 해시 (검증용) | `A2AKEYHASH#{sha256}` | `META` | — | — |
+| A2A 클라이언트 키 해시 (검증용. 인증은 이 행이 지목한 primary 의 동일 hash 도 확인한다) | `A2AKEYHASH#{sha256}` | `META` | — | — |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
 | Trace 삭제 참조 | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
 | 감사 기록 | `AUDIT#{yyyy-MM-dd}` | `{createdAt ISO}#{eventId}` | — | — |
@@ -325,10 +327,16 @@ artifact 의 두 번째 축 하나를 위한 것이다: `ARTIFACTOWNER#{email}` 
   쓴다.
 - **인증 행은 아이템 테이블에 없다.** Better Auth 는 자기 테이블에 쓰고, email·token 의
   유일성은 테이블의 유니크 제약이 지킨다. 잠금 아이템도 호환 조회도 없다.
-- Trace 생성은 프로젝트 파티션에 삭제 참조를 트랜잭션으로 함께 쓴다. 프로젝트 삭제는
-  프로젝트를 먼저 표시해 자식 정리 전에 새 버전·trace 가 생기는 것을 막고, 그다음 usage
-  파티션, `TRACEPROJECT#` 인덱스 파티션이 닿는 trace 행(`deleteIndexPartition`), 참조가
-  지목하는 trace 행, 프로젝트 파티션의 나머지 순으로 지운 뒤 `META` 를 마지막에 지운다.
+- Trace 생성은 프로젝트 파티션에 삭제 참조를 트랜잭션으로 함께 쓴다. 프로젝트 삭제는 live
+  `META` 를 먼저 목록 인덱스에서 빼고 `deletingAt` 으로 표시한다. 프로젝트 소유 자식 쓰기는
+  같은 `META` 의 live 상태를 트랜잭션 안에서 확인하므로 표시 뒤에는 새 version·token·trigger·
+  connection·transcript·trace·usage 가 생기지 않는다. 그다음 usage 파티션,
+  `TRACEPROJECT#` 인덱스 파티션이 닿는 trace 행(`deleteIndexPartition`), 참조가 지목하는 trace
+  행, 프로젝트 파티션의 나머지를 지우고 `META` 는 소유자와 설정을 제거한
+  `PROJECT_TOMBSTONE` 으로 바꾼다. 중간 단계가 실패하면 `deletingAt` 행에 소유권 정보가 남고,
+  같은 owner/admin 의 다음 DELETE 가 그 cascade 를 이어서 완료한다. 이름은 다시 쓰지 않는다. artifact·chat처럼 project 삭제보다
+  오래 보존되는 행이 이름으로 연결되므로, 다른 소유자에게 같은 이름을 주면 서로 다른 생애의
+  데이터가 합쳐지기 때문이다.
 - **Usage 행은 행 잠금 아래에서 read-modify-write 로 더해진다**. 모델별 맵
   `calls.{model}`, `inputTokens.{model}`, `outputTokens.{model}`, `cachedTokens.{model}`,
   `costUsd.{model}` 에 델타를 더한 행을 통째로 다시 쓰므로, 동시에 끝난 두 런이 모두

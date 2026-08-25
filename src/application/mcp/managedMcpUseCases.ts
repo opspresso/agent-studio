@@ -17,6 +17,7 @@
  */
 
 import type { McpRepository } from "@/domain/mcp/repository";
+import { listRegistry } from "@/application/registry/registryUseCases";
 import { isManagedLoopback, type McpServer } from "@/domain/mcp/types";
 import type { McpProvisioner, ManagedWorkloadSpec } from "@/domain/mcp/provisioner";
 import type { McpToolProbe } from "@/domain/mcp/toolProbe";
@@ -85,6 +86,19 @@ export interface ManagedMcpDeps {
   now: () => string;
   /** Injected so tests settle instantly and stay deterministic. */
   sleep: (ms: number) => Promise<void>;
+  /** Process-wide in production; injectable so isolated fixtures do not share claims. */
+  lifecycleClaims?: Set<string>;
+}
+
+const PROCESS_LIFECYCLE_CLAIMS = Symbol.for("opspresso.agent-studio.managed-mcp-lifecycle");
+
+/** Shared across route bundles that operate the same host's container names. */
+export function processManagedMcpLifecycleClaims(): Set<string> {
+  const processGlobal = globalThis as typeof globalThis & {
+    [PROCESS_LIFECYCLE_CLAIMS]?: Set<string>;
+  };
+  processGlobal[PROCESS_LIFECYCLE_CLAIMS] ??= new Set<string>();
+  return processGlobal[PROCESS_LIFECYCLE_CLAIMS];
 }
 
 /**
@@ -110,6 +124,10 @@ const SETTLE_INTERVAL_MS = 1_000;
  */
 const REACHABILITY_TIMEOUT_MS = 3_000;
 const DEFAULT_ENDPOINT_PATH = "/mcp";
+/** One host retains at most 4GiB of managed MCP memory limits. */
+export const MAX_MANAGED_MCP_SERVERS = 8;
+/** Not a valid managed name; serialises count-then-create across distinct names. */
+const MANAGED_CREATE_CLAIM = "\0managed-create";
 
 export interface ManagedMcpUseCases {
   create(input: CreateManagedInput): Promise<McpServer>;
@@ -137,19 +155,21 @@ export interface ManagedMcpUseCases {
 
 export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCases {
   /**
-   * Names with a restart in flight, held by whichever path is doing the work.
-   * Two teardowns of one container racing is worse than refusing the second, and
-   * an operator watching an unreachable server is exactly the person who presses
-   * the button twice — or presses it while the boot sweep is already on it.
+   * Names with a lifecycle operation in flight, held by whichever path is doing
+   * the work. Two starts or teardowns of one container racing is worse than
+   * refusing the second, whether they came from create, update, a button, or the
+   * boot sweep.
    *
-   * Both paths claim here, so `restart` and `reconcile` exclude each other as
+   * Every container-changing path claims here, so they exclude each other as
    * well as themselves. A claim is taken with no `await` between the check and
    * the add, which is what makes it a claim rather than a suggestion.
    *
-   * Process-local, like the settings cache — managed servers already assume one
-   * app instance per host, because a container joins exactly one namespace.
+   * Process-wide rather than module-local because Next can evaluate route
+   * bundles separately. Managed servers already assume one app process per
+   * host; the database condition still arbitrates unsupported cross-process
+   * writers.
    */
-  const restarting = new Set<string>();
+  const lifecycleClaims = deps.lifecycleClaims ?? processManagedMcpLifecycleClaims();
 
   function view(entry: McpServer): McpServer {
     return {
@@ -291,59 +311,107 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       } catch (error) {
         log.error("managed-mcp", `restart of ${entry.name} failed`, error);
       } finally {
-        restarting.delete(entry.name);
+        lifecycleClaims.delete(entry.name);
       }
     })();
   }
 
   return {
     async create(input) {
-      if (await deps.repo.get(input.name)) {
-        throw new ConflictError(`MCP server "${input.name}" already exists`);
-      }
-      const spec: ManagedWorkloadSpec = {
-        name: input.name,
-        image: input.image,
-        containerPort: input.containerPort,
-        ...(input.envRefs ? { envRefs: input.envRefs } : {}),
-        ...(input.environment ? { environment: input.environment } : {}),
-        ...(input.args ? { args: input.args } : {}),
-      };
-      endpointPath(input.endpointPath);
-      const workload = await deps.provisioner.start(spec);
-      const server: McpServer = {
-        name: input.name,
-        runtime: "managed",
-        url: `${workload.address}${endpointPath(input.endpointPath)}`,
-        image: input.image,
-        containerPort: input.containerPort,
-        ...(input.envRefs ? { envRefs: input.envRefs } : {}),
-        ...(input.environment
-          ? { environment: deps.cipher.encryptHeaders(input.environment) }
-          : {}),
-        ...(input.args ? { args: input.args } : {}),
-        ...(input.endpointPath ? { endpointPath: input.endpointPath } : {}),
-        ...(input.description ? { description: input.description } : {}),
-        ...(input.content ? { content: input.content } : {}),
-        headers: deps.cipher.encryptHeaders(input.headers ?? {}),
-        createdAt: deps.now(),
-        updatedAt: deps.now(),
-      };
-      // The provisioner is the only source of this address, but it is not the
-      // only thing that must agree it is safe. If what came back is not
-      // loopback, the entry would be stored carrying a bypass it does not
-      // deserve — so it is refused here, and the container it named is stopped
-      // rather than left running behind a row that was never written.
-      if (!isManagedLoopback(server)) {
-        await deps.provisioner.stop(input.name).catch(() => {});
-        throw new ValidationError(
-          `The provisioner returned ${workload.address}, which is not a loopback address; the server was not registered.`,
+      // Claimed before the first read. A conditional row write alone is too
+      // late: two starts under one Docker name each remove what the other just
+      // created, then the losing write leaves the winner's row describing the
+      // wrong container.
+      if (lifecycleClaims.has(input.name) || lifecycleClaims.has(MANAGED_CREATE_CLAIM)) {
+        throw new ConflictError(
+          `MCP server "${input.name}" already exists or has a lifecycle operation in progress`,
         );
       }
-      // `create` rather than `put`: a conditional write, so two operators
-      // pressing the button together produce one entry, not two.
-      await deps.repo.create(server);
-      return view(server);
+      lifecycleClaims.add(input.name);
+      lifecycleClaims.add(MANAGED_CREATE_CLAIM);
+      let cleanUpWorkload = false;
+      try {
+        if (await deps.repo.get(input.name)) {
+          throw new ConflictError(`MCP server "${input.name}" already exists`);
+        }
+        const managedCount = (await listRegistry(deps.repo)).filter(
+          (server) => server.runtime === "managed",
+        ).length;
+        if (managedCount >= MAX_MANAGED_MCP_SERVERS) {
+          throw new ValidationError(
+            `A host may run at most ${MAX_MANAGED_MCP_SERVERS} managed MCP servers.`,
+          );
+        }
+        const spec: ManagedWorkloadSpec = {
+          name: input.name,
+          image: input.image,
+          containerPort: input.containerPort,
+          ...(input.envRefs ? { envRefs: input.envRefs } : {}),
+          ...(input.environment ? { environment: input.environment } : {}),
+          ...(input.args ? { args: input.args } : {}),
+        };
+        endpointPath(input.endpointPath);
+        // `start` can fail after the runtime accepted the container, so cleanup
+        // is armed before it is called. `stop` treats an absent workload as
+        // success.
+        cleanUpWorkload = true;
+        const workload = await deps.provisioner.start(spec);
+        const server: McpServer = {
+          name: input.name,
+          runtime: "managed",
+          url: `${workload.address}${endpointPath(input.endpointPath)}`,
+          image: input.image,
+          containerPort: input.containerPort,
+          ...(input.envRefs ? { envRefs: input.envRefs } : {}),
+          ...(input.environment
+            ? { environment: deps.cipher.encryptHeaders(input.environment) }
+            : {}),
+          ...(input.args ? { args: input.args } : {}),
+          ...(input.endpointPath ? { endpointPath: input.endpointPath } : {}),
+          ...(input.description ? { description: input.description } : {}),
+          ...(input.content ? { content: input.content } : {}),
+          headers: deps.cipher.encryptHeaders(input.headers ?? {}),
+          createdAt: deps.now(),
+          updatedAt: deps.now(),
+        };
+        // The provisioner is the only source of this address, but it is not the
+        // only thing that must agree it is safe. If what came back is not
+        // loopback, the entry would be stored carrying a bypass it does not
+        // deserve.
+        if (!isManagedLoopback(server)) {
+          throw new ValidationError(
+            `The provisioner returned ${workload.address}, which is not a loopback address; the server was not registered.`,
+          );
+        }
+        // Still conditional: another registry writer does not share this
+        // process claim. Its win stops this workload rather than leaving a
+        // container whose settings disagree with the stored row.
+        try {
+          await deps.repo.create(server);
+        } catch (error) {
+          if (isConditionalWriteFailure(error)) {
+            throw new ConflictError(`MCP server "${input.name}" already exists`);
+          }
+          throw error;
+        }
+        cleanUpWorkload = false;
+        return view(server);
+      } catch (error) {
+        if (cleanUpWorkload) {
+          try {
+            await deps.provisioner.stop(input.name);
+          } catch (cleanupError) {
+            throw new AggregateError(
+              [error, cleanupError],
+              `Managed MCP server "${input.name}" failed to register and its container could not be stopped.`,
+            );
+          }
+        }
+        throw error;
+      } finally {
+        lifecycleClaims.delete(input.name);
+        lifecycleClaims.delete(MANAGED_CREATE_CLAIM);
+      }
     },
 
     async update(name, input) {
@@ -387,17 +455,21 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         JSON.stringify(updated.environment ?? {}) !== JSON.stringify(existing.environment ?? {}) ||
         JSON.stringify(updated.args ?? []) !== JSON.stringify(existing.args ?? []) ||
         nextEndpointPath !== endpointPath(existing.endpointPath);
+      let claimed = false;
       if (workloadChanged) {
-        if (restarting.has(name)) {
+        if (lifecycleClaims.has(name)) {
           throw new ConflictError(`A restart of "${name}" is already running.`);
         }
         specFor(updated);
-        restarting.add(name);
+        lifecycleClaims.add(name);
+        claimed = true;
       }
       try {
         await deps.repo.update(updated);
       } catch (error) {
-        restarting.delete(name);
+        if (claimed) {
+          lifecycleClaims.delete(name);
+        }
         if (isConditionalWriteFailure(error)) {
           throw new NotFoundError(`MCP server "${name}" was removed while it was being updated.`);
         }
@@ -447,12 +519,12 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     },
 
     async restart(name) {
-      if (restarting.has(name)) {
+      if (lifecycleClaims.has(name)) {
         throw new ConflictError(`A restart of "${name}" is already running.`);
       }
       // Claimed before the first await, or two clicks arriving together both
       // get past the check and tear the same container down twice.
-      restarting.add(name);
+      lifecycleClaims.add(name);
       let entry: McpServer;
       try {
         entry = await requireManaged(name);
@@ -461,7 +533,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         // polling for minutes to learn what was knowable up front.
         specFor(entry);
       } catch (error) {
-        restarting.delete(name);
+        lifecycleClaims.delete(name);
         throw error;
       }
       // Everything past this point runs after the caller has been answered. The
@@ -472,7 +544,9 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     },
 
     async reconcile() {
-      const entries = (await deps.repo.list()).filter((server) => server.runtime === "managed");
+      const entries = (await listRegistry(deps.repo)).filter(
+        (server) => server.runtime === "managed",
+      );
       const outcomes: ReconcileOutcome[] = [];
       // Sequential: these pull images and restart containers on one small host,
       // and a sweep that runs in the background has nothing to gain from racing
@@ -483,7 +557,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         // second `docker rm -f` against the container this one is bringing up —
         // and an entry already claimed by that button is left alone here for the
         // same reason.
-        if (restarting.has(entry.name)) {
+        if (lifecycleClaims.has(entry.name)) {
           outcomes.push({
             name: entry.name,
             action: "skipped",
@@ -491,7 +565,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
           });
           continue;
         }
-        restarting.add(entry.name);
+        lifecycleClaims.add(entry.name);
         try {
           if (await reaches(entry)) {
             outcomes.push({ name: entry.name, action: "healthy" });
@@ -520,7 +594,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
             detail: error instanceof Error ? error.message : "restart failed",
           });
         } finally {
-          restarting.delete(entry.name);
+          lifecycleClaims.delete(entry.name);
         }
       }
       return outcomes;

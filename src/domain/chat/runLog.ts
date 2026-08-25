@@ -34,6 +34,6 @@ export interface RunLogEntry {
 export interface ChatRunLogRepository {
   /** Append entries, which must carry the sequence numbers they are stored at. */
   append(chatId: string, runId: string, entries: RunLogEntry[]): Promise<void>;
-  /** Every entry from `fromSeq` on, oldest first. */
-  read(chatId: string, runId: string, fromSeq: number): Promise<RunLogEntry[]>;
+  /** Up to `limit` entries from `fromSeq` on, oldest first. */
+  read(chatId: string, runId: string, fromSeq: number, limit?: number): Promise<RunLogEntry[]>;
 }

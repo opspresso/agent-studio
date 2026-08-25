@@ -30,14 +30,15 @@ beforeEach(() => {
 
 describe("transcriptRepository", () => {
   it("writes a turn into the project's partition under the conversation's prefix, expiring, with only what it was given", async () => {
+    store.seed([{ ...keys.project("painter"), entityType: "PROJECT", name: "painter" }]);
     await transcriptRepository.append("painter", "telegram:100", {
       role: "user",
       content: "hi",
       userId: "1",
       createdAt: "2026-08-17T00:00:00.000Z",
     });
-    const [item] = store.all();
-    expect(store.all()).toHaveLength(1);
+    const item = store.all().find((row) => row.entityType === "transcriptTurn");
+    expect(store.all()).toHaveLength(2);
     expect(item?.PK).toBe("PROJECT#painter");
     expect(String(item?.SK).startsWith("TRANSCRIPT#telegram:100#TURN#2026-08-17T00:00:00.000Z#")).toBe(true);
     expect(item).toMatchObject({ entityType: "transcriptTurn", role: "user", content: "hi", userId: "1" });

@@ -200,6 +200,8 @@ DELETE /api/skills/{name}     → 204                     | 404
   서버 표에서 모델이 보는 한 줄 요약이고, `content` 는 콘솔 전용이라 모델에 절대 닿지 않는다.
 - `agents` 는 `protocol` (`openai` | `a2a`, 기본값 `openai`) 을 갖는데, 이것이
   `POST /api/agents/{name}/message` 와 아웃바운드 transfer 가 원격을 어떻게 호출할지를 정한다.
+  URL 을 다른 주소로 바꾸면 저장된 headers 는 버린다. 같은 요청에서 새로 입력한 값만 새 주소에
+  저장한다.
 - **managed** MCP 항목은 그것을 소유하지 않은 공유 레지스트리 라우트에서 거절된다:
   `DELETE /api/mcps/{name}` 은 `400` 이고 (`/api/mcps/managed/{name}` 을 통해 지워야 컨테이너가
   행과 함께 멈춘다), `url` 을 옮기는 `PUT` 도 `400` 이다. 그 주소는 프로비저너가 준다.
@@ -371,6 +373,9 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
 - 오버라이드 값은 저장 시 AES 로 암호화되고 마스킹돼 돌아온다 (레지스트리 헤더와 같은 규칙).
   업데이트 때 마스킹된 값이나 빈 값은 저장된 secret 을 보존하고, 저장된 짝이 없는 헤더 아래의
   마스킹된 값은 버려진다. `null` 표식은 그대로 돌아온다. 제거는 secret 이 아니다.
+- 문자열 오버라이드는 저장 당시 registry URL 의 내부 fingerprint 에 묶인다. 같은 이름의 서버가
+  다른 URL 로 옮겨지면 옛 값은 전송하지 않고 warning 을 내며, 현재 endpoint 용 값을 다시
+  입력해야 한다. fingerprint 는 API 응답과 입력에 노출하지 않는다.
 - 오버라이드 편집은 다른 모든 version 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
 
 한 런은 통틀어 최대 120개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
@@ -802,7 +807,7 @@ agent 가 아닌 project 에 대한 `PUT` 은 400 이고, 저장되거나 전달
 마찬가지다. `test` 는 `{ ok: true, botId, botUsername }` 을 돌려주고, Telegram 이 설정되지
 않았거나 꺼져 있으면 `400`, Bot API 실패면 `502` 다. `webhook` 도 같은 방식으로 답한다.
 `chats` 는 현재 설정된 봇이 실제로 응답 대상으로 받은 chat 과 포럼 topic 을 최근에 본 순서로
-`{ chats: [{ chatId, chatType, title, threadId?, lastSeenAt }] }` 에 담아 돌려준다. Telegram Bot API
+최근 100개까지 `{ chats: [{ chatId, chatType, title, threadId?, lastSeenAt }] }` 에 담아 돌려준다. Telegram Bot API
 에는 봇의 chat 목록을 조회하는 호출이 없으므로, 아직 이 봇과 대화하지 않은 목적지는 나타나지
 않는다. 토큰을 바꾸면 새 봇의 목록만 보인다.
 
@@ -1477,7 +1482,9 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
 - `refresh` 는 발행된 카탈로그를 시간별 틱을 기다리지 않고 지금 당겨온다. agent-models 가 방금
   발행한 것을 콘솔에서 바로 보기 위한 것이다. `refreshed: false` 는 "이미 최신"과 "가져오기 실패"
   둘 다를 덮는다 (이유는 서버 로그에 있고, 어느 쪽이든 레지스트리는 그대로다). `test` 처럼
-  설치한 것이 없는 갱신은 실패가 아니라 결과라서 `5xx` 를 돌려주지 않는다.
+  설치한 것이 없는 갱신은 실패가 아니라 결과라서 `5xx` 를 돌려주지 않는다. boot refresh 와
+  겹치면 그 결과에 합류하지 않고 직렬화된 다음 읽기를 기다리므로, 방금 저장한 upload/delete 가
+  오래 걸리던 이전 읽기에 덮이지 않는다.
 - `selfhosted` 는 `/models` 콘솔 Self-hosted 섹션의 전체 그림이다: **저장된** 선언
   (`declarations`, 편집의 기준이다: 레지스트리가 설치를 거부한 선언도 여기 보여야 다음
   full-replace 저장이 그것을 조용히 지우지 않는다), 그중 설치된 id(`installed`), 그리고
@@ -1488,8 +1495,8 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
   채널이 아예 설정돼 있지 않으면 `400`. 선언 자체는 `PUT /api/settings` 의
   `selfHostedModels` 로 한다.
 - `catalog/document` 는 admin 이 **손으로 설치하는 카탈로그**. 발행된 카탈로그에 닿지
-  못하는 배포(`MODELS_CATALOG_URL=none`)의 길이지만, 어느 배포에서든 업로드는 지울 때까지
-  네트워크보다 우선한다. `GET` 은 "설치된 것 없음" 을 실패가 아니라 상태로 답한다(콘솔이
+  못하는 배포(`MODELS_CATALOG_URL` 미설정 또는 `none`)의 길이지만, 어느 배포에서든 업로드는
+  지울 때까지 네트워크보다 우선한다. `GET` 은 "설치된 것 없음" 을 실패가 아니라 상태로 답한다(콘솔이
   그린다). `PUT` 은 refresh 가 검증하는 방식 그대로 먼저 검증해. 로더의 이유를 담은 400.
   올린 사람의 주소와 시각과 함께 저장하고, 답하기 전에 레지스트리를 갱신한다. `stored: true`
   옆의 `refreshed: false` 는 레지스트리가 이미 이 업로드를 들고 있었다는 뜻이다. `DELETE` 는

@@ -3,12 +3,15 @@ import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
 import { NotFoundError } from "@/application/errors";
 import {
   assertAllowedUrl,
+  assertCredentialFreeRegistryUrl,
   createRegistryUseCases,
+  resolveRegistryUrlPatch,
   type RegistryUseCases,
 } from "@/application/registry/registryUseCases";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { RemoteAgentDispatcher, RemoteAgentProbeReply } from "@/domain/agent/dispatcher";
+import { urlWithoutQueryOrFragment } from "@/shared/url";
 
 export interface CreateAgentInput {
   name: string;
@@ -33,7 +36,11 @@ export interface AgentUseCases
 
 /** Client-safe projection: encrypted header values are replaced with a mask. */
 function masked(cipher: SecretCipher, agent: ExternalAgent): ExternalAgent {
-  return { ...agent, headers: cipher.maskHeaders(agent.headers) };
+  return {
+    ...agent,
+    url: urlWithoutQueryOrFragment(agent.url),
+    headers: cipher.maskHeaders(agent.headers),
+  };
 }
 
 export function createAgentUseCases(
@@ -48,6 +55,7 @@ export function createAgentUseCases(
     repo,
     view: (agent) => masked(cipher, agent),
     async build(input, now) {
+      assertCredentialFreeRegistryUrl(input.url);
       await assertAllowedUrl(policy, input.url);
       return {
         name: input.name,
@@ -60,16 +68,26 @@ export function createAgentUseCases(
       };
     },
     async apply(existing, patch, now) {
-      if (patch.url !== undefined) {
-        await assertAllowedUrl(policy, patch.url);
+      const patchedUrl =
+        patch.url === undefined ? undefined : resolveRegistryUrlPatch(existing.url, patch.url);
+      // Only an address that actually changes is checked. Re-submitting the
+      // stored one — whether verbatim or as the redaction the console shows —
+      // is not a registration, and refusing it would make a legacy entry that
+      // predates the credential-free rule uneditable rather than migratable.
+      const movedTo = patchedUrl !== undefined && patchedUrl !== existing.url ? patchedUrl : undefined;
+      const movedAddress = movedTo !== undefined;
+      if (movedTo !== undefined) {
+        assertCredentialFreeRegistryUrl(movedTo);
+        await assertAllowedUrl(policy, movedTo);
       }
       return {
         ...existing,
-        url: patch.url ?? existing.url,
+        url: patchedUrl ?? existing.url,
         protocol: patch.protocol ?? existing.protocol,
         description: patch.description ?? existing.description,
-        headers:
-          patch.headers !== undefined
+        headers: movedAddress
+          ? cipher.mergeHeaderUpdate({}, patch.headers ?? {})
+          : patch.headers !== undefined
             ? cipher.mergeHeaderUpdate(existing.headers, patch.headers)
             : existing.headers,
         updatedAt: now,

@@ -51,7 +51,7 @@ export interface ChatRepository {
    * transcript there cost a full paginated query and a signature per stored
    * image on every single turn, and grew with the chat.
    */
-  listMessages(chatId: string, options?: { sinceSeq?: number }): Promise<ChatMessage[]>;
+  listMessages(chatId: string, options?: { sinceSeq?: number; limit?: number }): Promise<ChatMessage[]>;
   claimRun(chatId: string, runId: string, nowSeconds: number, expiresAtSeconds: number): Promise<boolean>;
   releaseRun(chatId: string, runId: string): Promise<void>;
   /** The claim as stored, whether or not it has expired. */

@@ -14,15 +14,16 @@
  */
 
 import OpenAI from "openai";
+import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
 import type { EmbeddingPort } from "@/domain/vector/types";
 import { getLlmChannelConfig } from "@/lib/runtime-settings";
 import { config } from "@/lib/config";
 
-const clients = new Map<string, OpenAI>();
+const clients = createLlmClientCache<OpenAI>();
 
 /** Keyed like the chat channel's, so a settings change gets a fresh client. */
 function getClient(baseUrl: string, apiKey: string): OpenAI {
-  const key = `${baseUrl}|${apiKey}`;
+  const key = llmClientCacheKey(baseUrl, apiKey);
   let client = clients.get(key);
   if (!client) {
     client = new OpenAI({ baseURL: baseUrl, apiKey });

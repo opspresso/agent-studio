@@ -41,6 +41,7 @@ async function main() {
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
+  const { listProjects } = await import("@/application/project/projectUseCases");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
   const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
   const { mcpRepository } = await import("@/infrastructure/db/repositories/mcpRepository");
@@ -54,6 +55,7 @@ async function main() {
   const { mcpConnectionRepository } = await import(
     "@/infrastructure/db/repositories/mcpConnectionRepository"
   );
+  const { listProjectMcpConnections } = await import("@/application/mcp/listConnections");
   const { mcpOAuthStateRepository } = await import(
     "@/infrastructure/db/repositories/mcpOAuthStateRepository"
   );
@@ -61,6 +63,7 @@ async function main() {
   const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
   const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
   const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
+  const { listAuditDay } = await import("@/application/audit/auditUseCases");
   const { artifactRepository } = await import(
     "@/infrastructure/db/repositories/artifactRepository"
   );
@@ -76,6 +79,7 @@ async function main() {
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
+  const { keys: dbKeys } = await import("@/infrastructure/db/keys");
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -153,6 +157,8 @@ async function main() {
 
   const suffix = Date.now().toString(36);
   const projectName = `it-proj-${suffix}`;
+  const legacyDestinationProject = `it-telegram-migration-${suffix}`;
+  const legacyDestinationKey = dbKeys.telegramDestination(legacyDestinationProject, 42, 1);
   // Audit rows are the one fixture no repository can remove: the entity is
   // append-only on purpose — a record its subject could erase would not be one —
   // and it lives outside the project partition the cascade clears. Their keys
@@ -167,6 +173,44 @@ async function main() {
   const memberDayFixtures: Array<{ email: string; date: string; project: string }> = [];
 
   try {
+    // ---------- schema migration backfill ----------
+    const { withTransaction } = await import("@/infrastructure/db/client");
+    await withTransaction(async (client) => {
+      await client.query("DELETE FROM schema_migrations WHERE version = $1", [5]);
+      await client.query(
+        "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
+        [
+          legacyDestinationKey.PK,
+          legacyDestinationKey.SK,
+          JSON.stringify({
+            ...legacyDestinationKey,
+            entityType: "telegramDestination",
+            projectName: legacyDestinationProject,
+            botId: 42,
+            chatId: 1,
+            chatType: "private",
+            title: "Legacy chat",
+            lastSeenAt: now,
+          }),
+        ],
+      );
+    });
+    await migrate();
+    const { getItem } = await import("@/infrastructure/db/store");
+    assert.deepEqual(await getItem(legacyDestinationKey), {
+      ...legacyDestinationKey,
+      entityType: "telegramDestination",
+      projectName: legacyDestinationProject,
+      botId: 42,
+      chatId: 1,
+      chatType: "private",
+      title: "Legacy chat",
+      lastSeenAt: now,
+      ...dbKeys.telegramDestinationIndexPrefix(legacyDestinationProject, 42),
+      GSI2SK: now,
+    });
+    pass("migration backfills Telegram destination recency index");
+
     // ---------- project + version ----------
     await projectRepository.create({
       name: projectName,
@@ -180,7 +224,7 @@ async function main() {
     const project = await projectRepository.get(projectName);
     assert.ok(project, "project get");
     assert.equal(project.displayName, "Integration Project");
-    const listed = await projectRepository.list();
+    const listed = await listProjects(projectRepository);
     assert.ok(listed.some((p) => p.name === projectName), "project list contains created");
     pass("project create/get/list");
 
@@ -294,7 +338,7 @@ async function main() {
     assert.equal(conn.issuer, "https://auth.example.com", "credential issuer round-trip");
     assert.equal(conn.resource, "https://mcp.example.com", "token resource round-trip");
     assert.equal(
-      (await mcpConnectionRepository.listByProject(projectName)).length,
+      (await listProjectMcpConnections(mcpConnectionRepository, projectName)).length,
       1,
       "connection listed under its project partition",
     );
@@ -796,7 +840,7 @@ async function main() {
       await auditRepository.append(row);
       auditFixtures.push({ day: auditDay, createdAt: row.createdAt, eventId: row.eventId });
     }
-    const dayRows = await auditRepository.listByDay(auditDay);
+    const dayRows = await listAuditDay(auditRepository, auditDay);
     const mine = dayRows.filter((row) => row.eventId.endsWith(suffix));
     assert.deepEqual(
       mine.map((row) => row.eventId),
@@ -1007,6 +1051,7 @@ async function main() {
     const { a2aClientKeyRepository } = await import(
       "@/infrastructure/db/repositories/a2aClientKeyRepository"
     );
+    const { listA2aClientKeys } = await import("@/application/a2a/clientKeyUseCases");
     const clientKeyName = `client-${suffix}`;
     const clientKey = {
       name: clientKeyName,
@@ -1026,7 +1071,7 @@ async function main() {
       "a duplicate name is refused by the conditional pair",
     );
     assert.ok(
-      (await a2aClientKeyRepository.list()).some((k) => k.name === clientKeyName),
+      (await listA2aClientKeys(a2aClientKeyRepository)).some((k) => k.name === clientKeyName),
       "key listed from the TYPE partition",
     );
     await a2aClientKeyRepository.delete(clientKeyName);
@@ -1154,6 +1199,10 @@ async function main() {
     // ---------- cascade delete ----------
     await projectRepository.delete(projectName);
     assert.equal(await projectRepository.get(projectName), null, "project deleted");
+    await assert.rejects(
+      () => projectRepository.create(project),
+      "a deleted project name remains reserved by its tombstone",
+    );
     assert.equal(await versionRepository.get(projectName, "1"), null, "versions deleted");
     assert.equal(
       (await usageRepository.listByProject(projectName, today, today)).length,
@@ -1165,7 +1214,7 @@ async function main() {
       0,
       "transcript turns deleted with the project",
     );
-    pass("project cascade delete (meta + versions + usage + transcript)");
+    pass("project cascade delete (name tombstone + versions + usage + transcript)");
   } finally {
     // cleanup non-cascading fixtures
     await skillRepository.delete("integration-skill").catch(() => {});
@@ -1173,6 +1222,9 @@ async function main() {
     await externalAgentRepository.delete(`it-agent-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-swept-${suffix}`).catch(() => {});
+    await import("@/infrastructure/db/store")
+      .then(({ deleteItem }) => deleteItem(legacyDestinationKey))
+      .catch(() => {});
     // The A2A block deletes its own key on the happy path; an assert between
     // create and delete would otherwise leak the pair into the shared table.
     await import("@/infrastructure/db/repositories/a2aClientKeyRepository")

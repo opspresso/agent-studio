@@ -8,13 +8,6 @@
 
 import { config } from "@/lib/config";
 
-/** One entry of a recursive git tree listing. */
-export interface GitTreeEntry {
-  path: string;
-  type: string;
-  sha: string;
-}
-
 /**
  * Per-request deadline. Without one, a hung GitHub read holds the sync — and
  * the proxy in front of it — until something else gives up first; the known

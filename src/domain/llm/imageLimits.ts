@@ -1,12 +1,13 @@
 /**
- * Limits on user-supplied images, shared by every surface that takes them: the
- * composers and run panel (client), the chat/run API bodies, and Slack
- * attachments. One owner, because three copies had already drifted apart.
+ * Limits on image bytes, shared by every surface that takes or produces them:
+ * the composers and run panel (client), API bodies, messaging attachments,
+ * MCP tools, and image providers. One owner, because copies had already
+ * drifted apart.
  */
 
 /** Images one turn may carry. */
 export const MAX_ATTACHMENTS = 4;
-/** Decoded size of a single image. */
+/** Decoded size of a single input or generated image. */
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 /** Formats every provider on the registry accepts. */
 export const SUPPORTED_IMAGE_TYPES = [

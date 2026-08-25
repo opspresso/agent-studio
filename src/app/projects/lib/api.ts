@@ -32,6 +32,11 @@ import type { ProjectTeamsResponse } from "@/app/api/projects/[name]/teams/route
 import type { PromptPreview } from "@/application/execution/deps";
 import type { GenerateImageOutput } from "@/application/image/generateImage";
 import type { ApiTokenStatus } from "@/application/project/apiTokenUseCases";
+import type {
+  CreateVersionInput,
+  UpdateVersionInput,
+  VersionInput,
+} from "@/application/project/versionUseCases";
 import type { TelegramDestination } from "@/domain/telegram/destination";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
@@ -128,22 +133,7 @@ export function getTrace(name: string, traceId: string): Promise<Trace> {
 
 // --- Versions -------------------------------------------------------------
 
-export interface VersionInput {
-  systemPrompt: string;
-  userPromptTemplate: string;
-  model: string;
-  fallbackModel?: string;
-  parameters: VersionParameters;
-  mcpList: McpBinding[];
-  skillList: string[];
-  subagentList: SubagentRef[];
-  maxTurn?: number;
-}
-
-export type UpdateVersionInput = Partial<Omit<VersionInput, "fallbackModel" | "maxTurn">> & {
-  fallbackModel?: string | null;
-  maxTurn?: number | null;
-};
+export type { UpdateVersionInput, VersionInput };
 
 export function listVersions(name: string): Promise<Version[]> {
   return fetch(`/api/projects/${name}/versions`).then((r) => readJson<Version[]>(r));
@@ -155,7 +145,7 @@ export function getVersion(name: string, version: string): Promise<Version> {
 
 export function createVersion(
   name: string,
-  input: VersionInput & { versionName?: string },
+  input: CreateVersionInput,
 ): Promise<Version> {
   return fetch(`/api/projects/${name}/versions`, {
     method: "POST",
@@ -254,11 +244,13 @@ export async function streamPredict(
   name: string,
   version: string,
   body: { variables?: Record<string, string>; messages?: unknown[] },
+  signal?: AbortSignal,
 ): Promise<Response> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ ...body, stream: true }),
+    signal,
   });
   await assertOk(res);
   return res;
@@ -268,11 +260,13 @@ export async function streamAgent(
   name: string,
   version: string,
   messages: unknown[],
+  signal?: AbortSignal,
 ): Promise<Response> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/agent`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ messages }),
+    signal,
   });
   await assertOk(res);
   return res;
@@ -291,11 +285,13 @@ export async function predictImage(
     /** Source images to edit; omit to generate from the prompt alone. */
     images?: Array<{ b64: string; mimeType: string }>;
   },
+  signal?: AbortSignal,
 ): Promise<ImageResult> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => null)) as { error?: string } | null;

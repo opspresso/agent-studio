@@ -192,6 +192,18 @@ describe("talking to the Bot Framework", () => {
     expect(calls.some((c) => c.url === "https://contoso.sharepoint.com/dl/x")).toBe(false);
   });
 
+  it("does not send the bot token over HTTP even when the attachment host matches", async () => {
+    const calls = stubFetch();
+    const downgraded = "http://smba.trafficmanager.net/emea/v3/attachments/1";
+
+    const body = await teamsClient.downloadAttachment(CREDS, SERVICE, downgraded, 100);
+
+    expect(body.toString()).toBe("public bytes");
+    expect(publicFetches).toEqual([downgraded]);
+    expect(calls.some((call) => call.url.includes("/oauth2/v2.0/token"))).toBe(false);
+    expect(calls.some((call) => call.url === downgraded)).toBe(false);
+  });
+
   it("does not answer a rotated or mistyped secret from the cache", async () => {
     let tokenCalls = 0;
     stubFetch((url) => {
@@ -208,6 +220,24 @@ describe("talking to the Bot Framework", () => {
     expect(tokenCalls).toBe(2);
     await teamsClient.authenticate({ ...CREDS, tenantId: APP });
     expect(tokenCalls).toBe(3);
+  });
+
+  it("bounds tokens retained across credential rotation", async () => {
+    let tokenCalls = 0;
+    stubFetch((url) => {
+      if (url.includes("/oauth2/v2.0/token")) {
+        tokenCalls += 1;
+        return jsonResponse({ access_token: `tok-${tokenCalls}`, expires_in: 3600 });
+      }
+      return undefined;
+    });
+
+    for (let index = 0; index < 33; index += 1) {
+      await teamsClient.authenticate({ ...CREDS, appPassword: `rotation-${index}` });
+    }
+    await teamsClient.authenticate({ ...CREDS, appPassword: "rotation-0" });
+
+    expect(tokenCalls).toBe(34);
   });
 
   it("accepts an upper-case App ID against the service's lower-case audience", async () => {

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
+import {
+  A2A_CLIENT_KEY_LIST_PAGE_SIZE,
+  createA2aClientKeyUseCases,
+} from "@/application/a2a/clientKeyUseCases";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import type { A2aClientKey, A2aClientKeyRepository } from "@/domain/a2a/clientKey";
@@ -21,8 +24,11 @@ function inMemoryRepo(): A2aClientKeyRepository & { rows: Map<string, A2aClientK
     async get(name) {
       return rows.get(name) ?? null;
     },
-    async list() {
-      return [...rows.values()];
+    async list(limit, after) {
+      return [...rows.values()]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .filter((key) => !after || key.name > after)
+        .slice(0, limit);
     },
     async create(key) {
       if (rows.has(key.name)) {
@@ -82,6 +88,33 @@ describe("a2aClientKeyUseCases", () => {
     await expect(useCases.create("partner", undefined, "admin@x.com")).rejects.toThrow(
       ConflictError,
     );
+  });
+
+  it("lists every key through bounded repository pages", async () => {
+    const repo = inMemoryRepo();
+    for (let index = 0; index < A2A_CLIENT_KEY_LIST_PAGE_SIZE + 2; index += 1) {
+      const name = `client-${String(index).padStart(3, "0")}`;
+      repo.rows.set(name, {
+        name,
+        token: `enc:v1:${name}`,
+        tokenHash: hashSecret(name),
+        masked: `${name.slice(0, 4)}••••`,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+    }
+    const list = repo.list.bind(repo);
+    const pageSizes: number[] = [];
+    repo.list = async (limit, after) => {
+      const page = await list(limit, after);
+      pageSizes.push(page.length);
+      return page;
+    };
+    const useCases = createA2aClientKeyUseCases(repo, cipher);
+
+    await expect(useCases.list()).resolves.toHaveLength(repo.rows.size);
+    expect(pageSizes).toEqual([A2A_CLIENT_KEY_LIST_PAGE_SIZE, 2]);
+    await expect(useCases.hasAny()).resolves.toBe(true);
+    expect(pageSizes.at(-1)).toBe(1);
   });
 
   it("refuses a name that is not a slug", async () => {

@@ -125,4 +125,50 @@ it("drops an out-of-range numeric reference instead of emitting U+FFFD", () => {
 it("returns empty for markup with no prose", () => {
   expectEqual(htmlToText("<html><head><style>.a{}</style></head><body></body></html>"), "");
 });
+
+it("caps a very long page without splitting a character", () => {
+  // The source cap lands wherever 500,000 characters land, which for a page of
+  // emoji or CJK ext-B is the middle of one. What comes out of here is what a
+  // model reads, and a lone surrogate goes on the wire as a `\ud800`-range
+  // escape a provider can refuse the whole request over.
+  const text = htmlToText(`<p>${"\uD83D\uDE00".repeat(400_000)}</p>`);
+  expect(text.isWellFormed()).toBe(true);
+});
+});
+
+/**
+ * The source cap bounds how much markup is read; it does not bound the work of
+ * reading it. `[^>]*` after an element name re-reads the rest of the input from
+ * every position that name appears at, so a page of unterminated tags — well
+ * inside the cap — cost 24 seconds of blocked event loop, health probes and
+ * every other request on the instance included. That is the exact failure the
+ * cap was written to prevent.
+ */
+describe("markup that is nothing but openings", () => {
+  const under = (label: string, source: string, ms: number) => {
+    const started = process.hrtime.bigint();
+    htmlToText(source);
+    const elapsed = Number(process.hrtime.bigint() - started) / 1e6;
+    expect(elapsed, `${label} took ${elapsed.toFixed(0)}ms`).toBeLessThan(ms);
+  };
+
+  it("reads a page of unterminated tags in linear time", () => {
+    // Generous by two orders of magnitude against the failure it pins: these
+    // measure in the low hundreds of milliseconds, and measured in seconds
+    // before the bound.
+    under("'<script' with no '>'", "<script".repeat(70_000), 3_000);
+    under("'<svg' with no '>'", "<svg".repeat(125_000), 3_000);
+    under("'<p' with no '>'", "<p".repeat(250_000), 3_000);
+    // Every opening closed by one `>` at the very end: each attribute run still
+    // has a `>` to find, at the far end of the document.
+    under("'<script' closed once at the end", `${"<script".repeat(70_000)}>`, 3_000);
+  });
+
+  it("still takes a tag longer than the attribute bound off", () => {
+    // A saved page inlines an image as a `data:` URI, which runs past any bound
+    // worth putting on an attribute run — so the tag stripper scans rather than
+    // bounding, and this is what says so.
+    const page = `<p>before</p><img src="data:image/png;base64,${"A".repeat(200_000)}"><p>after</p>`;
+    expectEqual(htmlToText(page), "before\n\nafter");
+  });
 });

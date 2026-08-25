@@ -24,22 +24,62 @@ const ATTACHMENT_ALLOWANCE =
 const PROSE_ALLOWANCE = 256 * 1024;
 
 export const MAX_TURN_BODY_BYTES = ATTACHMENT_ALLOWANCE + PROSE_ALLOWANCE;
+/** Bodies above this allowance necessarily carry attachment-scale data. */
+export const LARGE_TURN_BODY_BYTES = PROSE_ALLOWANCE;
+
+/**
+ * Attachment-scale turn bytes one process retains at once.
+ *
+ * One legal turn is about 84MB on the wire and temporarily exists as both the
+ * decoded JSON text and parsed base64 strings. The execution concurrency guard
+ * opens only after this work, so it cannot protect the process from overlapping
+ * readers. A charge follows a large parsed body through its run or stream; a
+ * body within the prose allowance is free, so ordinary turns are never gated.
+ *
+ * **A budget rather than a count of requests, because the bodies differ by two
+ * orders of magnitude.** A chat carrying one 200KB screenshot is past the prose
+ * allowance and would have spent the same permit as a four-document 84MB turn.
+ * With permits held for the life of the run — the parsed base64 is in the
+ * messages the model is being shown — two people sending screenshots meant
+ * everyone else got a 429 for as long as those runs took, which on
+ * `MAX_RUN_DURATION_MS` is ten minutes. The heap is what has to be bounded, and
+ * charging actual bytes bounds exactly that: the worst case is unchanged, and
+ * small attachments now cost what they weigh.
+ */
+export const MAX_CONCURRENT_LARGE_TURN_BYTES = 2 * MAX_TURN_BODY_BYTES;
+const TURN_BODY_READ_STATE = Symbol.for("opspresso.agent-studio.turn-body-reads");
+type TurnBodyReadState = { activeBytes: number; budgetBytes: number };
+
+class TurnBodyBusyError extends Error {}
+
+export interface TurnBodyAdmission {
+  /** Keep a large body's byte charge until detached work has released its input. */
+  retainUntil(completion: PromiseLike<unknown>): void;
+}
+
+/** Shared even when separate route bundles evaluate this module more than once. */
+function turnBodyReadState(): TurnBodyReadState {
+  const processGlobal = globalThis as typeof globalThis & {
+    [TURN_BODY_READ_STATE]?: TurnBodyReadState;
+  };
+  processGlobal[TURN_BODY_READ_STATE] ??= {
+    activeBytes: 0,
+    budgetBytes: MAX_CONCURRENT_LARGE_TURN_BYTES,
+  };
+  return processGlobal[TURN_BODY_READ_STATE];
+}
+
+/**
+ * Test seam: the budget, so exhausting it does not mean allocating the hundred
+ * and sixty megabytes the real one is worth. Nothing in the app calls this.
+ */
+export function setTurnBodyBudgetBytes(bytes = MAX_CONCURRENT_LARGE_TURN_BYTES): void {
+  turnBodyReadState().budgetBytes = bytes;
+}
 
 /** A 413 with the limit named, so a caller learns the bound rather than guessing. */
 export function bodyTooLarge(error: BodyTooLargeError): Response {
   return Response.json({ error: error.message }, { status: 413 });
-}
-
-/**
- * Read and parse a turn body, refusing one that is too large *before* it is held
- * in memory. `readBodyText` checks the declared length first and then cuts the
- * stream, so a lying `content-length` cannot decide how much is read.
- *
- * @throws {BodyTooLargeError}
- */
-export async function readTurnBody(request: Request): Promise<unknown> {
-  const text = await readBodyText(request, MAX_TURN_BODY_BYTES);
-  return JSON.parse(text);
 }
 
 /**
@@ -55,12 +95,15 @@ const EDITOR_ALLOWANCE = MAX_SKILL_TOTAL_BYTES + PROSE_ALLOWANCE;
 /**
  * The body of a registry or version edit, or the response that refuses it.
  *
- * Separate from {@link turnBody} because the two bound different things and the
- * gap between them is three orders of magnitude: a turn may carry four 10MB
- * attachments, and nothing a person types into the console comes close.
+ * Separate from {@link withTurnBody} because the two bound different things
+ * and the gap between them is three orders of magnitude: a turn may carry four
+ * 10MB attachments, and nothing a person types into the console comes close.
  */
-export async function editorBody(request: Request): Promise<unknown | Response> {
-  return boundedBody(request, EDITOR_ALLOWANCE);
+export async function editorBody(
+  request: Request,
+  options: { empty?: unknown } = {},
+): Promise<unknown | Response> {
+  return boundedBody(request, EDITOR_ALLOWANCE, options);
 }
 
 /**
@@ -77,8 +120,133 @@ export async function editorBody(request: Request): Promise<unknown | Response> 
  * times, and a refusal spelled differently on one route is how a caller learns
  * a limit exists from a 500.
  */
-export async function turnBody(request: Request): Promise<unknown | Response> {
-  return boundedBody(request, MAX_TURN_BODY_BYTES);
+export async function withTurnBody<T>(
+  request: Request,
+  consume: (body: unknown, admission: TurnBodyAdmission) => T | Promise<T>,
+): Promise<T | Response> {
+  return withTurnBodyText(request, async (text, admission) => {
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return Response.json({ error: "invalid JSON body" }, { status: 400 });
+    }
+    return consume(body, admission);
+  });
+}
+
+function retainedStreamingResponse(response: Response, release: () => void): Response {
+  const source = response.body;
+  if (!source) {
+    release();
+    return response;
+  }
+  const reader = source.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          release();
+          controller.close();
+        } else {
+          controller.enqueue(value);
+        }
+      } catch (error) {
+        release();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        release();
+      }
+    },
+  });
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+/** Keep a raw attachment-scale body admitted until its consumer no longer retains it. */
+export async function withTurnBodyText<T>(
+  request: Request,
+  consume: (body: string, admission: TurnBodyAdmission) => T | Promise<T>,
+): Promise<T | Response> {
+  const state = turnBodyReadState();
+  // What this reader has taken out of the shared budget so far. The body grows
+  // as it is read, so the charge grows with it and a reader that runs the
+  // budget out mid-stream is refused then rather than after it is resident.
+  let charged = 0;
+  let retained = false;
+  let released = false;
+  const release = () => {
+    if (charged > 0 && !released) {
+      released = true;
+      state.activeBytes -= charged;
+    }
+  };
+  const admission: TurnBodyAdmission = {
+    retainUntil(completion) {
+      if (charged === 0 || retained) {
+        return;
+      }
+      retained = true;
+      void Promise.resolve(completion).then(release, release);
+    },
+  };
+  try {
+    let text: string;
+    try {
+      text = await readBodyText(request, MAX_TURN_BODY_BYTES, {
+        onBytes(totalBytes) {
+          if (totalBytes <= LARGE_TURN_BODY_BYTES) {
+            return;
+          }
+          const owed = totalBytes - charged;
+          if (owed <= 0) {
+            return;
+          }
+          if (state.activeBytes + owed > state.budgetBytes) {
+            throw new TurnBodyBusyError();
+          }
+          state.activeBytes += owed;
+          charged = totalBytes;
+        },
+      });
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        return bodyTooLarge(error);
+      }
+      if (error instanceof TurnBodyBusyError) {
+        await request.body?.cancel().catch(() => {});
+        return Response.json(
+          { error: "Too many large request bodies in progress" },
+          { status: 429, headers: { "Retry-After": "1" } },
+        );
+      }
+      throw error;
+    }
+    const result = await consume(text, admission);
+    if (
+      charged > 0 &&
+      !retained &&
+      result instanceof Response &&
+      result.headers.get("content-type")?.startsWith("text/event-stream")
+    ) {
+      retained = true;
+      return retainedStreamingResponse(result, release);
+    }
+    return result;
+  } finally {
+    if (!retained) {
+      release();
+    }
+  }
 }
 
 /**
@@ -94,9 +262,17 @@ export async function catalogBody(request: Request): Promise<unknown | Response>
   return boundedBody(request, MAX_CATALOG_BODY_BYTES);
 }
 
-async function boundedBody(request: Request, maxBytes: number): Promise<unknown | Response> {
+async function boundedBody(
+  request: Request,
+  maxBytes: number,
+  options: { empty?: unknown } = {},
+): Promise<unknown | Response> {
   try {
-    return JSON.parse(await readBodyText(request, maxBytes));
+    const text = await readBodyText(request, maxBytes);
+    if (text.trim() === "" && Object.hasOwn(options, "empty")) {
+      return options.empty;
+    }
+    return JSON.parse(text);
   } catch (error) {
     return error instanceof BodyTooLargeError
       ? bodyTooLarge(error)

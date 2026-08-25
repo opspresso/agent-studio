@@ -123,7 +123,7 @@ export interface McpOAuthState {
 
 export interface McpConnectionRepository {
   get(projectName: string, serverName: string): Promise<McpConnection | null>;
-  listByProject(projectName: string): Promise<McpConnection[]>;
+  listByProject(projectName: string, limit: number, after?: string): Promise<McpConnection[]>;
   put(connection: McpConnection): Promise<void>;
   /**
    * Replace the tokens only if the stored refresh token is still the one the

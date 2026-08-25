@@ -51,19 +51,30 @@ export interface ModelCatalogRefreshDeps {
    * is otherwise invisible to this process until it reboots.
    */
   localModels?: () => Promise<unknown>;
+  /** Process-wide state when more than one composition site can request a refresh. */
+  coordinator?: ModelCatalogRefreshCoordinator;
+}
+
+export interface ModelCatalogRefreshCoordinator {
+  inFlight?: Promise<boolean>;
+  queued?: Promise<boolean>;
+  installedUpload?: string;
+}
+
+const PROCESS_COORDINATOR = Symbol.for("opspresso.agent-studio.model-catalog-refresh");
+
+/** A stable slot shared even when the server bundle evaluates this module more than once. */
+export function processModelCatalogRefreshCoordinator(): ModelCatalogRefreshCoordinator {
+  const processGlobal = globalThis as typeof globalThis & {
+    [PROCESS_COORDINATOR]?: ModelCatalogRefreshCoordinator;
+  };
+  processGlobal[PROCESS_COORDINATOR] ??= {};
+  return processGlobal[PROCESS_COORDINATOR];
 }
 
 export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): ModelCatalogRefresher {
   let timer: ReturnType<typeof setInterval> | undefined;
-  /** The refresh in flight, so a slow fetch and the next tick cannot interleave installs. */
-  let inFlight: Promise<boolean> | undefined;
-  /**
-   * The revision of the upload this refresher installed last, if the registry
-   * holds one — per refresher rather than per process, so the boot refresher
-   * and the console's re-install an upload the other landed exactly once,
-   * which an atomic install makes harmless.
-   */
-  let installedUpload: string | undefined;
+  const coordinator = deps.coordinator ?? {};
 
   async function refreshOnce(): Promise<boolean> {
     const installed = await refreshCatalog();
@@ -128,7 +139,7 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
       // models this deployment serves) — both rules below exist for a
       // *publisher* that lagged or truncated, not for a person who chose.
       // What keeps the hourly tick quiet is the upload itself, not its stamp.
-      if (read.upload.revision === installedUpload) {
+      if (read.upload.revision === coordinator.installedUpload) {
         return false;
       }
     } else {
@@ -143,7 +154,7 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
       const incoming = (document as { updatedAt?: unknown } | null)?.updatedAt;
       const current = modelCatalogUpdatedAt();
       if (
-        installedUpload === undefined &&
+        coordinator.installedUpload === undefined &&
         typeof incoming === "string" &&
         current !== "" &&
         incoming <= current
@@ -163,9 +174,9 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
       // registry. An upload is exempt (above), and so is the first publish
       // after one: a registry holding an operator's five models is not a
       // baseline a catalog of eighty can "truncate".
-      const unguarded = read.upload !== undefined || installedUpload !== undefined;
+      const unguarded = read.upload !== undefined || coordinator.installedUpload !== undefined;
       report = loadModelCatalog(document, unguarded ? { maxDropFraction: 1 } : undefined);
-      installedUpload = read.upload?.revision;
+      coordinator.installedUpload = read.upload?.revision;
     } catch (error) {
       log.warn(
         "models",
@@ -191,11 +202,36 @@ export function createModelCatalogRefresher(deps: ModelCatalogRefreshDeps): Mode
     return true;
   }
 
-  function refresh(): Promise<boolean> {
-    inFlight ??= refreshOnce().finally(() => {
-      inFlight = undefined;
+  function beginRefresh(): Promise<boolean> {
+    const started = refreshOnce().finally(() => {
+      if (coordinator.inFlight === started) {
+        coordinator.inFlight = undefined;
+      }
     });
-    return inFlight;
+    coordinator.inFlight = started;
+    return started;
+  }
+
+  function refresh(): Promise<boolean> {
+    if (coordinator.inFlight === undefined) {
+      return beginRefresh();
+    }
+    if (coordinator.queued !== undefined) {
+      return coordinator.queued;
+    }
+    // A request that arrives during a read may reflect state written after that
+    // read began (an upload or deletion). Coalesce all such requests into one
+    // trailing read instead of letting them join a stale result or pile up.
+    const queued = coordinator.inFlight
+      .catch(() => false)
+      .then(() => {
+        if (coordinator.queued === queued) {
+          coordinator.queued = undefined;
+        }
+        return beginRefresh();
+      });
+    coordinator.queued = queued;
+    return queued;
   }
 
   return {

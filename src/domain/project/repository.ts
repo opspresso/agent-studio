@@ -1,8 +1,9 @@
 import type { Project, ProjectApiToken, Version } from "./types";
 
 export interface ProjectRepository {
-  get(name: string): Promise<Project | null>;
-  list(): Promise<Project[]>;
+  get(name: string, options?: { includeDeleting?: boolean }): Promise<Project | null>;
+  /** Projects ordered by name, strictly after `after` when supplied. */
+  list(limit: number, after?: string): Promise<Project[]>;
   create(project: Project): Promise<void>;
   update(project: Project, expectedUpdatedAt: string): Promise<void>;
   publish(project: Project, versionName: string, expectedUpdatedAt: string): Promise<void>;
@@ -18,7 +19,7 @@ export interface ProjectRepository {
 export interface VersionRepository {
   /** versionName may be the literal "published", resolved via the project's pointer. */
   get(projectName: string, versionName: string): Promise<Version | null>;
-  list(projectName: string): Promise<Version[]>;
+  list(projectName: string, limit: number, after?: string): Promise<Version[]>;
   create(version: Version): Promise<void>;
   put(version: Version): Promise<void>;
   delete(projectName: string, versionName: string, expectedProjectUpdatedAt: string): Promise<void>;

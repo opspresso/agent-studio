@@ -24,6 +24,11 @@ cd "$(dirname "$0")/.."
 
 dest="${1:-./backups}"
 keep="${KEEP:-7}"
+if [[ ! "$keep" =~ ^[0-9]+$ ]]; then
+  echo "KEEP must be a non-negative integer, got: $keep" >&2
+  exit 1
+fi
+keep=$((10#$keep))
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 out="$dest/$stamp"
 mkdir -p "$out"
@@ -61,8 +66,18 @@ cp .env.host "$out/env.host"
 echo "== wrote $out"
 du -sh "$out"
 
-# Prune: newest first, keep $keep.
-ls -1d "$dest"/*/ 2>/dev/null | sort -r | tail -n +"$((keep + 1))" | while read -r old; do
-  echo "== pruning $old"
-  rm -rf "$old"
+# Prune only the timestamp directories this script owns. DEST may be a shared
+# backup root, so its other directories are not ours to remove.
+backups=()
+for candidate in "$dest"/*/; do
+  [[ -d "$candidate" ]] || continue
+  name="${candidate%/}"
+  name="${name##*/}"
+  [[ "$name" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] && backups+=("$candidate")
+done
+
+remove_count=$((${#backups[@]} - keep))
+for ((i = 0; i < remove_count; i++)); do
+  echo "== pruning ${backups[$i]}"
+  rm -rf "${backups[$i]}"
 done

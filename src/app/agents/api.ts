@@ -1,4 +1,8 @@
 import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
+import type {
+  CreateAgentInput,
+  UpdateAgentInput,
+} from "@/application/agent/agentUseCases";
 // Each from the module that owns it: the item is the use case's, the list is
 // the route's — it is the route that says whether the surface is enabled.
 import type { A2aProjectListItem } from "@/application/a2a/exposure";
@@ -8,21 +12,7 @@ import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 // Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
 // each end, 21+ reveal 4) header values — never the full plaintext or ciphertext.
 export type { AgentProtocol, ExternalAgent };
-
-export interface CreateAgentInput {
-  name: string;
-  url: string;
-  protocol?: AgentProtocol;
-  description: string;
-  headers: Record<string, string>;
-}
-
-export interface UpdateAgentInput {
-  url?: string;
-  protocol?: AgentProtocol;
-  description?: string;
-  headers?: Record<string, string>;
-}
+export type { CreateAgentInput, UpdateAgentInput };
 
 export function listAgents(): Promise<ExternalAgent[]> {
   return fetch("/api/agents").then((r) => readJson<ExternalAgent[]>(r));

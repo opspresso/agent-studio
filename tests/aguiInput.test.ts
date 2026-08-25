@@ -165,6 +165,22 @@ describe("toEngineMessages — documents and state", () => {
     expect(warnings).toEqual([]);
   });
 
+  it("truncates oversized state without splitting a character", async () => {
+    // The block leaves as a system message. A cut through a surrogate pair is
+    // a lone surrogate on the wire, which a provider can refuse the whole
+    // request over — so the state a run carries must never be cut that way.
+    const filler = "\uD83D\uDE00".repeat(20_000);
+    const messages = await toEngineMessages([{ id: "1", role: "user", content: "hi" }], [], {
+      note: filler,
+    });
+    const state = messages[0]?.content;
+    expect(typeof state).toBe("string");
+    expect(state as string).toContain("[state truncated");
+    // Well-formed throughout: a lone surrogate survives neither a UTF-8 round
+    // trip nor `isWellFormed`.
+    expect((state as string).isWellFormed()).toBe(true);
+  });
+
   it("names an unnamed document from its media type and keeps images after the text", async () => {
     const messages = await toEngineMessages(
       [

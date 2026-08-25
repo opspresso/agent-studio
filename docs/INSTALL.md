@@ -99,7 +99,7 @@ helm upgrade --install agent-studio deploy/helm/agent-studio \
 
 | 기능 | 기본(온라인) | 폐쇄망에서 |
 |---|---|---|
-| 모델 카탈로그 | `MODELS_CATALOG_URL` 에서 매시간 | `MODELS_CATALOG_URL=none`. 관리자가 `/models` 에서 카탈로그 JSON 을 업로드한다(`PUT /api/models/catalog/document`). 업로드한 문서는 네트워크보다 우선한다. 실제 서빙 모델은 `selfhosted` 채널에 선언한다 |
+| 모델 카탈로그 | URL 을 설정한 배포만 `MODELS_CATALOG_URL` 에서 매시간 | 미설정 또는 `MODELS_CATALOG_URL=none`. 관리자가 `/models` 에서 카탈로그 JSON 을 업로드한다(`PUT /api/models/catalog/document`). 업로드한 문서는 네트워크보다 우선한다. 실제 서빙 모델은 `selfhosted` 채널에 선언한다 |
 | 스킬·MCP 레지스트리(agent-plugins) | GitHub API 로 sync | `/plugins` 에서 체크아웃의 `.tar.gz` 를 업로드한다(`POST /api/plugins/sync/upload`). 같은 sync 에 입력만 다르다. GitHub Enterprise 는 `GITHUB_API_URL` |
 | 컨테이너 이미지 | ghcr.io / ECR | 사내 레지스트리로 미러하고 `IMAGE_REGISTRY`(compose) 또는 `image.repository`(Helm) 를 가리킨다. 필요한 이미지: `agent-studio`, `pgvector/pgvector:pg17`, `minio/minio`, `minio/mc`, `caddy`, `curlimages/curl`, 쓰는 MCP 서버들 |
 | 모델이 읽는 URL(`FetchUrl`) | 공인 주소만 | `URL_FETCH_INTERNAL_HOST_SUFFIXES` 에 사내 도메인 접미사를 선언한다. MCP 서버 주소는 별개 목록 `MCP_INTERNAL_HOST_SUFFIXES` |

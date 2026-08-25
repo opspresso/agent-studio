@@ -26,6 +26,9 @@ import { ChatNotFoundError } from "./errors";
 /** How often the log is checked for new entries. */
 const POLL_INTERVAL_MS = 400;
 
+/** Rows drained per read before the replay checks whether the log is quiet. */
+const RUN_LOG_PAGE_SIZE = 100;
+
 /**
  * How long a live run may show nothing before the reader is told why.
  *
@@ -96,7 +99,12 @@ async function* replayRunLog(
   let noticed = false;
 
   for (;;) {
-    const entries = await deps.runLog.read(input.chatId, input.runId, nextSeq);
+    const entries = await deps.runLog.read(
+      input.chatId,
+      input.runId,
+      nextSeq,
+      RUN_LOG_PAGE_SIZE,
+    );
     for (const entry of entries) {
       // Rows that are not there, checked entry by entry rather than once per
       // read. Two things make a hole: the retention window taking the start of
@@ -127,6 +135,9 @@ async function* replayRunLog(
 
     if (entries.length > 0) {
       quietSince = Date.now();
+      if (entries.length === RUN_LOG_PAGE_SIZE) {
+        continue;
+      }
     } else {
       // Liveness is asked only when the log is quiet: a batch just delivered
       // means the run was alive to write it, and the claim is one

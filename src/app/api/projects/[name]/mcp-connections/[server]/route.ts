@@ -2,6 +2,7 @@ import { z } from "zod";
 import { mcpAuthUseCases } from "@/lib/container";
 import { withAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string; server: string }> };
 
@@ -14,7 +15,11 @@ const saveSchema = z.object({
 
 export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name, server } = await ctx.params;
-  const parsed = saveSchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = saveSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

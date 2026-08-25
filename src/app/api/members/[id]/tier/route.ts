@@ -4,6 +4,7 @@ import { memberUseCases } from "@/lib/container";
 import { invalidateMemberTierCache } from "@/lib/memberAccess";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -12,11 +13,9 @@ const updateSchema = z.object({
 });
 
 export const PUT = withAdminAuth(async (user, request: Request, ctx: RouteContext) => {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
   }
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {

@@ -2,6 +2,7 @@ import { withAuth } from "@/lib/session";
 import { projectUseCases, versionUseCases } from "@/lib/container";
 import { updateVersionSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 
@@ -18,7 +19,11 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
 
 export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name, version } = await ctx.params;
-  const parsed = updateVersionSchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = updateVersionSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

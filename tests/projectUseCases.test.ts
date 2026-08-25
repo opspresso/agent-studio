@@ -28,6 +28,7 @@ import type {
 import {
   createVersion as createVersionUseCase,
   deleteVersion,
+  listVersions,
   publishVersion,
   toVersionView as toVersionViewUseCase,
   updateVersion as updateVersionUseCase,
@@ -160,8 +161,12 @@ function makeVersionRepo(initial: Version[] = []): VersionRepository {
         versions.find((v) => v.projectName === projectName && v.versionName === versionName) ?? null
       );
     },
-    async list(projectName) {
-      return versions.filter((v) => v.projectName === projectName);
+    async list(projectName, limit, after) {
+      return versions
+        .filter((v) => v.projectName === projectName)
+        .sort((a, b) => a.versionName.localeCompare(b.versionName))
+        .filter((v) => !after || v.versionName > after)
+        .slice(0, limit);
     },
     async create(version) {
       if (
@@ -193,7 +198,7 @@ function makeVersionRepo(initial: Version[] = []): VersionRepository {
  * not about reference validation. Tests that are pass their own set. */
 const ALL_REFS_EXIST: VersionRefRepos = {
   skills: { get: async (name) => ({ name }) as never },
-  mcps: { get: async (name) => ({ name }) as never },
+  mcps: { get: async (name) => ({ name, url: `https://${name}.example/mcp` }) as never },
   externalAgents: { get: async (name) => ({ name }) as never },
   projects: { get: async (name) => ({ name }) as never },
 };
@@ -246,6 +251,25 @@ function updateVersion(
 }
 
 // --- Tests ------------------------------------------------------------------
+
+describe("listVersions", () => {
+  it("reads every version through bounded repository pages", async () => {
+    const stored = Array.from({ length: 102 }, (_, index) =>
+      versionFixture("p", `v-${String(index).padStart(3, "0")}`),
+    );
+    const repo = makeVersionRepo(stored);
+    const list = repo.list.bind(repo);
+    const pageSizes: number[] = [];
+    repo.list = async (projectName, limit, after) => {
+      const page = await list(projectName, limit, after);
+      pageSizes.push(page.length);
+      return page;
+    };
+
+    await expect(listVersions(repo, "p")).resolves.toHaveLength(stored.length);
+    expect(pageSizes).toEqual([100, 2]);
+  });
+});
 
 describe("createVersion naming", () => {
   it("auto-assigns '1' for the first version", async () => {
@@ -598,6 +622,41 @@ describe("MCP binding header overrides", () => {
     );
   });
 
+  it("drops preserved secrets when the registry endpoint moved", async () => {
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const versions = makeVersionRepo();
+    const created = await createVersion(
+      versions,
+      projects,
+      "p",
+      {
+        ...versionInput(),
+        mcpList: bindingWith({ Authorization: "Bearer old-endpoint-token" }),
+      },
+      OWNER,
+    );
+    const maskedView = toVersionView(created);
+    expect(maskedView.mcpList[0]?.headerTarget).toBeUndefined();
+    const movedRefs: VersionRefRepos = {
+      ...ALL_REFS_EXIST,
+      mcps: {
+        get: async (name) => ({ name, url: `https://moved-${name}.example/mcp` }) as never,
+      },
+    };
+
+    const updated = await updateVersion(
+      versions,
+      projects,
+      "p",
+      created.versionName,
+      { mcpList: maskedView.mcpList },
+      OWNER,
+      movedRefs,
+    );
+
+    expect(updated.mcpList).toEqual([{ name: "shared-mcp" }]);
+  });
+
   it("drops a masked value under a header with no stored counterpart", async () => {
     const created = await createVersion(
       makeVersionRepo(),
@@ -915,11 +974,40 @@ describe("updateProject ownership", () => {
   });
 });
 
+describe("projectRepository.list paging", () => {
+  it("fills a page rather than letting a dropped row end the walk", async () => {
+    // `listProjects` stops on a short page, so a page filtered down to fewer
+    // rows than were asked for reads as the end of the catalogue — and every
+    // project after it disappears from the console, the A2A listing and the
+    // repair sweep at once.
+    store.rows.clear();
+    const live = (name: string) => ({
+      PK: `PROJECT#${name}`,
+      SK: "META",
+      GSI1PK: "TYPE#PROJECT",
+      GSI1SK: name,
+      entityType: "PROJECT",
+      ...projectFixture(name),
+    });
+    store.seed([
+      live("a"),
+      // A row the index still reaches but the filter refuses.
+      { ...live("b"), deletingAt: "2026-01-01T00:00:00.000Z" },
+      live("c"),
+    ]);
+
+    await expect(projectRepository.list(2)).resolves.toMatchObject([
+      { name: "a" },
+      { name: "c" },
+    ]);
+  });
+});
+
 describe("projectRepository.delete cascade", () => {
   const row = (PK: string, SK: string) => ({ PK, SK });
   const keysOf = () => store.all().map(({ PK, SK }) => ({ PK, SK }));
 
-  it("removes the project META, all its versions, and its usage rows", async () => {
+  it("removes child rows and leaves a name-reserving tombstone", async () => {
     store.rows.clear();
     store.seed([
       row("PROJECT#p", "META"),
@@ -933,7 +1021,11 @@ describe("projectRepository.delete cascade", () => {
 
     await projectRepository.delete("p");
 
-    expect(keysOf()).toEqual([row("PROJECT#other", "META")]);
+    expect(keysOf()).toEqual([row("PROJECT#other", "META"), row("PROJECT#p", "META")]);
+    expect(await projectRepository.get("p")).toBeNull();
+    await expect(projectRepository.create(projectFixture("p"))).rejects.toThrow(
+      expect.objectContaining({ name: store.CONDITIONAL_WRITE_FAILED }),
+    );
   });
 
   it("leaves META marked, and present, when a child delete fails midway", async () => {
@@ -942,12 +1034,50 @@ describe("projectRepository.delete cascade", () => {
     // never a project that looks live with half its children gone, and never
     // one that vanished with children still attached to its name.
     store.rows.clear();
-    store.seed([row("PROJECT#p", "META"), row("PROJECT#p", "VERSION#1")]);
+    store.seed([
+      { ...row("PROJECT#p", "META"), GSI1PK: "TYPE#PROJECT", GSI1SK: "p" },
+      row("PROJECT#p", "VERSION#1"),
+    ]);
     vi.spyOn(store, "deletePartition").mockRejectedValueOnce(new Error("connection reset"));
 
     await expect(projectRepository.delete("p")).rejects.toThrow(/connection reset/);
     expect(keysOf()).toEqual([row("PROJECT#p", "META"), row("PROJECT#p", "VERSION#1")]);
-    expect((await store.getItem(row("PROJECT#p", "META")))?.deletingAt).toEqual(expect.any(String));
+    const marked = await store.getItem(row("PROJECT#p", "META"));
+    expect(marked?.deletingAt).toEqual(expect.any(String));
+    expect(marked).not.toHaveProperty("GSI1PK");
+    expect(marked).not.toHaveProperty("GSI1SK");
+    await expect(projectRepository.get("p")).resolves.toBeNull();
+    await expect(projectRepository.list(100)).resolves.toEqual([]);
+  });
+
+  it("lets the owner resume a cascade left marked by a partial failure", async () => {
+    store.rows.clear();
+    const project = projectFixture("recover-delete");
+    store.seed([
+      {
+        ...row("PROJECT#recover-delete", "META"),
+        ...project,
+        entityType: "PROJECT",
+        GSI1PK: "TYPE#PROJECT",
+        GSI1SK: project.name,
+      },
+      row("PROJECT#recover-delete", "VERSION#1"),
+    ]);
+    vi.spyOn(store, "deletePartition").mockRejectedValueOnce(new Error("connection reset"));
+
+    await expect(
+      deleteProject(projectRepository, project.name, OWNER),
+    ).rejects.toThrow("connection reset");
+    await expect(
+      deleteProject(projectRepository, project.name, OTHER),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(deleteProject(projectRepository, project.name, OWNER)).resolves.toBeUndefined();
+
+    expect(keysOf()).toEqual([row("PROJECT#recover-delete", "META")]);
+    expect(await store.getItem(row("PROJECT#recover-delete", "META"))).toMatchObject({
+      entityType: "PROJECT_TOMBSTONE",
+      name: project.name,
+    });
   });
 });
 

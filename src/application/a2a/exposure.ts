@@ -10,7 +10,9 @@
 import type { AgentCard } from "@a2a-js/sdk";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
+import { listAccessibleProjects } from "@/application/project/projectUseCases";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
+import { mapWithLimit } from "@/shared/mapWithLimit";
 
 export interface A2aExposureDeps {
   projects: ProjectRepository;
@@ -60,19 +62,40 @@ async function exposeProject(
   return { project, version, card: await deps.buildCard(project, version) };
 }
 
-/** Every project currently exposed over A2A. Derived — nothing is registered. */
-export async function listExposedProjects(deps: A2aExposureDeps): Promise<A2aProjectListItem[]> {
-  const projects = await deps.projects.list();
-  return Promise.all(
-    projects
-      .filter((project) => project.publishedVersion)
-      .map(async (project) => ({
+/**
+ * Version lookups this listing keeps in flight.
+ *
+ * Deciding "is this one runnable" costs a read per project — the published
+ * pointer, or the version list behind a draft fallback — so the listing's cost
+ * scales with the deployment rather than with the page. One `Promise.all` over
+ * every accessible project opens that many database round trips at once, and
+ * for an admin "every accessible project" is all of them.
+ */
+export const MAX_CONCURRENT_A2A_EXPOSURE_READS = 8;
+
+/** Every project this viewer may see that is currently exposed over A2A. */
+export async function listExposedProjects(
+  deps: A2aExposureDeps,
+  userEmail: string,
+): Promise<A2aProjectListItem[]> {
+  const projects = await listAccessibleProjects(deps.projects, userEmail);
+  const exposed = await mapWithLimit(
+    projects,
+    MAX_CONCURRENT_A2A_EXPOSURE_READS,
+    async (project) => {
+      const version = await resolveRunnableVersion(deps.versions, project);
+      if (!version) {
+        return null;
+      }
+      return {
         name: project.name,
         displayName: project.displayName,
         description: project.description,
         cardUrl: await deps.cardUrlFor(project.name),
-      })),
+      };
+    },
   );
+  return exposed.filter((project): project is A2aProjectListItem => project !== null);
 }
 
 /** What the console shows on a project's A2A tab. Null when the project is gone. */

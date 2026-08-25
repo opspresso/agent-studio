@@ -3,9 +3,10 @@ import type {
   TelegramDestinationRepository,
 } from "@/domain/telegram/destination";
 import { keys } from "@/infrastructure/db/keys";
-import { putItem, queryItems } from "@/infrastructure/db/store";
+import { queryItems } from "@/infrastructure/db/store";
+import { putProjectItem } from "@/infrastructure/db/projectLifecycle";
 
-function fromItem(item: Record<string, unknown>): TelegramDestination | null {
+function fromItem(item: Record<string, unknown>): TelegramDestination {
   if (
     typeof item.chatId !== "number" ||
     typeof item.chatType !== "string" ||
@@ -13,7 +14,7 @@ function fromItem(item: Record<string, unknown>): TelegramDestination | null {
     typeof item.title !== "string" ||
     typeof item.lastSeenAt !== "string"
   ) {
-    return null;
+    throw new Error("Stored Telegram destination is invalid");
   }
   return {
     chatId: item.chatId,
@@ -26,8 +27,10 @@ function fromItem(item: Record<string, unknown>): TelegramDestination | null {
 
 export const telegramDestinationRepository: TelegramDestinationRepository = {
   async put(projectName, botId, destination) {
-    await putItem({
+    await putProjectItem(projectName, {
       ...keys.telegramDestination(projectName, botId, destination.chatId, destination.threadId),
+      ...keys.telegramDestinationIndexPrefix(projectName, botId),
+      GSI2SK: destination.lastSeenAt,
       entityType: "telegramDestination",
       projectName,
       botId,
@@ -35,14 +38,14 @@ export const telegramDestinationRepository: TelegramDestinationRepository = {
     });
   },
 
-  async list(projectName, botId) {
-    const key = keys.telegramDestinationPrefix(projectName, botId);
-    const items = await queryItems({ pk: key.PK, sk: { prefix: key.prefix } });
-    return items
-      .flatMap((item): TelegramDestination[] => {
-        const destination = fromItem(item);
-        return destination ? [destination] : [];
-      })
-      .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+  async list(projectName, botId, limit) {
+    const index = keys.telegramDestinationIndexPrefix(projectName, botId);
+    const items = await queryItems({
+      index: "GSI2",
+      pk: index.GSI2PK,
+      forward: false,
+      limit,
+    });
+    return items.map(fromItem);
   },
 };

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { resolveImageUrl } from "@/domain/chat/imageRefs";
-import { resolveMessageImages } from "@/application/chat/resolveImages";
+import {
+  MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS,
+  resolveMessageImages,
+} from "@/application/chat/resolveImages";
 import {
   REPLAY_URL_TTL_SECONDS,
   VIEW_URL_TTL_SECONDS,
@@ -149,5 +152,32 @@ describe("resolveMessageImages", () => {
     };
     const { messages: [message] } = await resolveMessageImages([tool], signed, 60);
     expect(message).toBe(tool);
+  });
+
+  it("bounds signer concurrency across the full transcript", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const release: Array<() => void> = [];
+    const signer = async (key: string) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise<void>((resolve) => release.push(resolve));
+      active -= 1;
+      return `https://signed.example/${key}`;
+    };
+    const messages = Array.from(
+      { length: MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS + 2 },
+      (_, index) => assistant([{ key: `image-${index}` }]),
+    );
+
+    const pending = resolveMessageImages(messages, signer, VIEW_URL_TTL_SECONDS);
+    await expect.poll(() => active).toBe(MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS);
+    while (release.length > 0) {
+      release.shift()?.();
+      await Promise.resolve();
+    }
+    await pending;
+
+    expect(maxActive).toBe(MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS);
   });
 });

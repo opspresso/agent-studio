@@ -21,6 +21,7 @@
  *     ({@link ./session McpSession} serializes it).
  */
 
+import { baseMimeType } from "@/domain/artifact/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
@@ -34,6 +35,7 @@ import {
 } from "./discoveryCache";
 import { isUnauthorized, McpSession, scopeChallengeOf, unusableServerReason, type McpTool } from "./session";
 import { log } from "@/shared/logger";
+import { urlOriginForLog } from "@/shared/url";
 import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
@@ -198,7 +200,7 @@ export class ToolManager {
           const stepUp = scopeChallengeOf(error);
           log.warn(
             "mcp",
-            `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
+            `discovery failed for '${server.name}' (${urlOriginForLog(server.url)}); its tools are unavailable this run:`,
             unusable ?? reason,
           );
           const failure: DiscoveryFailure = {
@@ -626,11 +628,12 @@ function fileNameFor(resource: { uri?: string }, mimeType: string): string {
  * whole string travelled. It becomes `data:image/png; charset=binary;base64,…`
  * — not a valid data URL, and the turn it rides on is the thing that fails — and
  * it becomes the artifact's media type, where nothing matches it and the object
- * is stored as `.bin`. `documentKind` has always read a declared type this way;
- * this is the same reading, applied where the value arrives from someone else.
+ * is stored as `.bin`. The stripping itself is `baseMimeType`'s, so a server's
+ * type is read exactly as an artifact rule reads it; what is local here is only
+ * that a server may name no type at all.
  */
 function baseMediaType(value: string | undefined): string {
-  return value?.split(";")[0]?.trim().toLowerCase() ?? "";
+  return baseMimeType(value ?? "");
 }
 
 /**

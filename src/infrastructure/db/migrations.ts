@@ -12,6 +12,7 @@
  */
 
 import { withTransaction } from "./client";
+import { TELEGRAM_DESTINATION_INDEX_PREFIX } from "./keys";
 import { log } from "@/shared/logger";
 
 interface Migration {
@@ -143,6 +144,21 @@ const MIGRATIONS: Migration[] = [
          ELSE 'local:oauth:' || "providerId" END WHERE "issuer" = ''`,
       `ALTER TABLE "account" ALTER COLUMN "issuer" DROP DEFAULT`,
       `CREATE INDEX IF NOT EXISTS "account_issuer_accountId_idx" ON "account" ("issuer", "accountId")`,
+    ],
+  },
+  {
+    version: 5,
+    name: "telegram_destination_recency",
+    statements: [
+      `UPDATE items
+       SET data = data || jsonb_build_object(
+         'GSI2PK', '${TELEGRAM_DESTINATION_INDEX_PREFIX}' || (data->>'projectName') || '#' || (data->>'botId'),
+         'GSI2SK', data->>'lastSeenAt'
+       )
+       WHERE data->>'entityType' = 'telegramDestination'
+         AND jsonb_typeof(data->'projectName') = 'string'
+         AND jsonb_typeof(data->'botId') IN ('number', 'string')
+         AND jsonb_typeof(data->'lastSeenAt') = 'string'`,
     ],
   },
 ];

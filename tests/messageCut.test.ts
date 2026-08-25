@@ -49,6 +49,54 @@ describe("cutPoint", () => {
     const text = `${"a".repeat(20)}\n${"b".repeat(200)}`;
     expect(cutPoint(text, 100, 50, 500)).toBe(150);
   });
+
+  it.each([
+    // A cap of one unit in front of a surrogate pair: backing off the pair
+    // erases the whole cut, so the character goes whole, one unit over.
+    { text: "🙂ab", from: 0, limit: 1, expected: 2 },
+    // The same, further in: `from` is a previous cut, not necessarily zero.
+    { text: "ab🙂cd", from: 2, limit: 1, expected: 4 },
+    // A cap that holds nothing at all still has to move.
+    { text: "abc", from: 0, limit: 0, expected: 1 },
+    { text: "abc", from: 1, limit: -5, expected: 2 },
+  ])("advances past a cap too small for one character ($text, $limit)", ({ text, from, limit, expected }) => {
+    expect(cutPoint(text, from, limit, 0)).toBe(expected);
+  });
+
+  /**
+   * The layout loop in `createEditInPlaceReply` calls this until the remainder
+   * fits, taking each answer as the next `from`. A cut that does not move past
+   * `from` is therefore not one wrong message — it is a loop that never ends,
+   * on the request thread of a reply the platform is waiting for. The cases
+   * above each pin one boundary rule; this sweeps every combination of them,
+   * because the rule that has to hold is the one none of them is about.
+   */
+  it("always advances, for every boundary a window can land on", () => {
+    // Each separator is placed at every offset inside the window, so a cut
+    // lands on it from every direction: at the cap, at the window edge, and
+    // at `from` itself.
+    const separators = ["\n\n", "\n", ". ", "! ", " ", "🙂", "가", "a"];
+    for (const separator of separators) {
+      for (let offset = 0; offset < 12; offset += 1) {
+        const text = `${"a".repeat(offset)}${separator}${"b".repeat(40)}`;
+        for (let limit = 1; limit <= 12; limit += 1) {
+          for (const window of [0, 1, 3, 12, 400]) {
+            for (const from of [0, 1, 2]) {
+              if (text.length - from <= limit) {
+                continue;
+              }
+              const cut = cutPoint(text, from, limit, window);
+              expect(
+                cut,
+                `separator=${JSON.stringify(separator)} offset=${offset} limit=${limit} window=${window} from=${from}`,
+              ).toBeGreaterThan(from);
+              expect(cut).toBeLessThanOrEqual(text.length);
+            }
+          }
+        }
+      }
+    }
+  });
 });
 
 describe("splitMessages", () => {
