@@ -43,6 +43,7 @@ docker compose --profile objects up -d   # 선택: artifact 용 MinIO (:9000, �
 `.env.example` 의 `DATABASE_URL`(`postgres://agent_studio:agent_studio@localhost:5432/agent_studio`)
 이 이 컨테이너를 가리킨다. 스키마는 `src/infrastructure/db/migrations.ts` 가 부팅 때 advisory
 lock 아래에서 멱등하게 적용하므로 따로 만들 것이 없다. pgvector 확장도 거기서 만든다.
+고정 개발 자격 증명을 쓰는 PostgreSQL 과 MinIO 포트는 호스트 loopback 에만 공개된다.
 
 > **PostgreSQL 컨테이너는 이 머신의 다른 모든 프로젝트와 공유된다.** `compose.yaml` 이
 > compose 프로젝트 이름을 `localdev` 로 고정하므로, 다른 저장소에서
