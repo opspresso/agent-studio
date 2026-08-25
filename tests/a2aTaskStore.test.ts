@@ -8,7 +8,9 @@ import { keys } from "@/infrastructure/db/keys";
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
-const { createA2aTaskStore } = await import("@/infrastructure/a2a/taskStore");
+const { A2A_TASK_SCAN_PAGE_SIZE, createA2aTaskStore } = await import(
+  "@/infrastructure/a2a/taskStore"
+);
 
 const ALICE = new ServerCallContext({
   tenant: "tenant-a",
@@ -210,6 +212,43 @@ describe("createA2aTaskStore", () => {
     expect(next.tasks.map((task) => task.id)).toEqual(["t1"]);
     expect(next.tasks[0]?.artifacts).toHaveLength(1);
     expect(next.tasks[0]?.history).toEqual([]);
+  });
+
+  it("reads a large task partition in bounded database pages", async () => {
+    const taskCount = A2A_TASK_SCAN_PAGE_SIZE * 2 + 5;
+    store.seed(
+      Array.from({ length: taskCount }, (_, index) => {
+        const id = `t${index.toString().padStart(3, "0")}`;
+        return {
+          ...keys.a2aTask("proj-a", "tenant-a:alice", id),
+          state: TaskState.TASK_STATE_COMPLETED,
+          task: makeTask(id, TaskState.TASK_STATE_COMPLETED),
+        };
+      }),
+    );
+    const query = vi.spyOn(store, "queryItems");
+
+    const page = await createA2aTaskStore("proj-a").list(
+      {
+        tenant: "tenant-a",
+        contextId: "ctx-1",
+        status: TaskState.TASK_STATE_UNSPECIFIED,
+        pageSize: 100,
+        pageToken: "",
+        historyLength: 0,
+        statusTimestampAfter: undefined,
+        includeArtifacts: false,
+      },
+      ALICE,
+    );
+
+    expect(page.totalSize).toBe(taskCount);
+    expect(page.tasks).toHaveLength(100);
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls.every(([input]) => input.limit === A2A_TASK_SCAN_PAGE_SIZE)).toBe(true);
+    expect(query.mock.calls[1]?.[0].after).toBe("TASK#t099");
+    expect(query.mock.calls[2]?.[0].after).toBe("TASK#t199");
+    query.mockRestore();
   });
 
   it("rejects invalid ListTasks bounds and page tokens", async () => {

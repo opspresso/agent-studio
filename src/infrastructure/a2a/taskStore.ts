@@ -32,6 +32,8 @@ import { A2A_TERMINAL_STATES as TERMINAL_STATES } from "@/domain/a2a/task";
  * always stay retrievable rather than failing the write.
  */
 const MAX_ITEM_BYTES = 350_000;
+/** Rows read per database query while building an exact ListTasks response. */
+export const A2A_TASK_SCAN_PAGE_SIZE = 100;
 
 function stripPartBytes(parts: Part[] | undefined): Part[] | undefined {
   return parts?.map((part) =>
@@ -174,7 +176,22 @@ export function createA2aTaskStore(projectName: string): TaskStore {
       validateListRequest(params);
       const partition = keys.a2aTask(projectName, ownerScope(context), "").PK;
       const now = Date.now();
-      const items = await queryItems({ pk: partition, sk: { prefix: "TASK#" } });
+      const items = [];
+      let after: string | undefined;
+      for (;;) {
+        const page = await queryItems({
+          pk: partition,
+          sk: { prefix: "TASK#" },
+          limit: A2A_TASK_SCAN_PAGE_SIZE,
+          after,
+          notExpiredAt: Math.floor(now / 1000),
+        });
+        items.push(...page);
+        if (page.length < A2A_TASK_SCAN_PAGE_SIZE) {
+          break;
+        }
+        after = String(page.at(-1)?.SK ?? "");
+      }
       const statusTimestampAfter = params.statusTimestampAfter
         ? Date.parse(params.statusTimestampAfter)
         : undefined;
