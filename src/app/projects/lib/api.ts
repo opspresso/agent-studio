@@ -254,11 +254,13 @@ export async function streamPredict(
   name: string,
   version: string,
   body: { variables?: Record<string, string>; messages?: unknown[] },
+  signal?: AbortSignal,
 ): Promise<Response> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ ...body, stream: true }),
+    signal,
   });
   await assertOk(res);
   return res;
@@ -268,11 +270,13 @@ export async function streamAgent(
   name: string,
   version: string,
   messages: unknown[],
+  signal?: AbortSignal,
 ): Promise<Response> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/agent`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ messages }),
+    signal,
   });
   await assertOk(res);
   return res;
@@ -291,11 +295,13 @@ export async function predictImage(
     /** Source images to edit; omit to generate from the prompt alone. */
     images?: Array<{ b64: string; mimeType: string }>;
   },
+  signal?: AbortSignal,
 ): Promise<ImageResult> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => null)) as { error?: string } | null;
