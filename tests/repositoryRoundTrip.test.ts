@@ -19,6 +19,7 @@ import { traceRepository } from "@/infrastructure/db/repositories/traceRepositor
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
+import { withTelegramDestinationIndex } from "@/infrastructure/db/telegramDestinationIndex";
 import { expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 
 const NOW = "2026-01-01T00:00:00.000Z";
@@ -100,6 +101,30 @@ describe("telegramDestinationRepository", () => {
     await expect(telegramDestinationRepository.list("many-destinations", 43, 100)).resolves.toEqual(
       [],
     );
+  });
+
+  it("returns the actual newest page after legacy rows gain the recency index", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => {
+      const chatId = index + 1;
+      return withTelegramDestinationIndex({
+        ...keys.telegramDestination("legacy-destinations", 42, chatId),
+        entityType: "telegramDestination",
+        projectName: "legacy-destinations",
+        botId: 42,
+        chatId,
+        chatType: "private",
+        title: `Chat ${chatId}`,
+        lastSeenAt: new Date(Date.UTC(2026, 0, 1, 0, 0, 101 - index)).toISOString(),
+      });
+    });
+    store.seed(rows);
+
+    const destinations = await telegramDestinationRepository.list("legacy-destinations", 42, 100);
+
+    expect(destinations).toHaveLength(100);
+    expect(destinations[0]?.chatId).toBe(1);
+    expect(destinations.at(-1)?.chatId).toBe(100);
+    expect(destinations.some((destination) => destination.chatId === 101)).toBe(false);
   });
 });
 

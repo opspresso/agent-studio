@@ -5,6 +5,7 @@
 
 /** The widest sequence a six-digit message sort key can hold. */
 export const CHAT_MESSAGE_MAX_SEQ = 999999;
+export const TELEGRAM_DESTINATION_INDEX_PREFIX = "TELEGRAMDESTINATION#";
 
 export const keys = {
   project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
@@ -200,7 +201,7 @@ export const keys = {
     prefix: `TELEGRAMDESTINATION#${botId}#`,
   }),
   telegramDestinationIndexPrefix: (projectName: string, botId: number | string) => ({
-    GSI2PK: `TELEGRAMDESTINATION#${projectName}#${botId}`,
+    GSI2PK: `${TELEGRAM_DESTINATION_INDEX_PREFIX}${projectName}#${botId}`,
   }),
   telegramDestination: (
     projectName: string,

@@ -39,33 +39,13 @@ export const telegramDestinationRepository: TelegramDestinationRepository = {
   },
 
   async list(projectName, botId, limit) {
-    const key = keys.telegramDestinationPrefix(projectName, botId);
     const index = keys.telegramDestinationIndexPrefix(projectName, botId);
-    const indexed = await queryItems({
+    const items = await queryItems({
       index: "GSI2",
       pk: index.GSI2PK,
       forward: false,
       limit,
     });
-    // Rows written before the recency index existed remain selectable. One
-    // bounded primary-key read fills spare slots; observed destinations migrate
-    // into the index naturally the next time that chat sends a message.
-    const legacy =
-      indexed.length < limit
-        ? await queryItems({
-            pk: key.PK,
-            sk: { prefix: key.prefix },
-            forward: false,
-            limit,
-          })
-        : [];
-    const destinations = new Map<string, TelegramDestination>();
-    for (const item of [...indexed, ...legacy]) {
-      const destination = fromItem(item);
-      destinations.set(`${destination.chatId}:${destination.threadId ?? ""}`, destination);
-    }
-    return [...destinations.values()]
-      .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))
-      .slice(0, limit);
+    return items.map(fromItem);
   },
 };

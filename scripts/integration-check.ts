@@ -79,6 +79,7 @@ async function main() {
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
+  const { keys: dbKeys } = await import("@/infrastructure/db/keys");
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -156,6 +157,8 @@ async function main() {
 
   const suffix = Date.now().toString(36);
   const projectName = `it-proj-${suffix}`;
+  const legacyDestinationProject = `it-telegram-migration-${suffix}`;
+  const legacyDestinationKey = dbKeys.telegramDestination(legacyDestinationProject, 42, 1);
   // Audit rows are the one fixture no repository can remove: the entity is
   // append-only on purpose — a record its subject could erase would not be one —
   // and it lives outside the project partition the cascade clears. Their keys
@@ -170,6 +173,44 @@ async function main() {
   const memberDayFixtures: Array<{ email: string; date: string; project: string }> = [];
 
   try {
+    // ---------- schema migration backfill ----------
+    const { withTransaction } = await import("@/infrastructure/db/client");
+    await withTransaction(async (client) => {
+      await client.query("DELETE FROM schema_migrations WHERE version = $1", [5]);
+      await client.query(
+        "INSERT INTO items (pk, sk, data) VALUES ($1, $2, $3) ON CONFLICT (pk, sk) DO UPDATE SET data = EXCLUDED.data",
+        [
+          legacyDestinationKey.PK,
+          legacyDestinationKey.SK,
+          JSON.stringify({
+            ...legacyDestinationKey,
+            entityType: "telegramDestination",
+            projectName: legacyDestinationProject,
+            botId: 42,
+            chatId: 1,
+            chatType: "private",
+            title: "Legacy chat",
+            lastSeenAt: now,
+          }),
+        ],
+      );
+    });
+    await migrate();
+    const { getItem } = await import("@/infrastructure/db/store");
+    assert.deepEqual(await getItem(legacyDestinationKey), {
+      ...legacyDestinationKey,
+      entityType: "telegramDestination",
+      projectName: legacyDestinationProject,
+      botId: 42,
+      chatId: 1,
+      chatType: "private",
+      title: "Legacy chat",
+      lastSeenAt: now,
+      ...dbKeys.telegramDestinationIndexPrefix(legacyDestinationProject, 42),
+      GSI2SK: now,
+    });
+    pass("migration backfills Telegram destination recency index");
+
     // ---------- project + version ----------
     await projectRepository.create({
       name: projectName,
@@ -1181,6 +1222,9 @@ async function main() {
     await externalAgentRepository.delete(`it-agent-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-swept-${suffix}`).catch(() => {});
+    await import("@/infrastructure/db/store")
+      .then(({ deleteItem }) => deleteItem(legacyDestinationKey))
+      .catch(() => {});
     // The A2A block deletes its own key on the happy path; an assert between
     // create and delete would otherwise leak the pair into the shared table.
     await import("@/infrastructure/db/repositories/a2aClientKeyRepository")
