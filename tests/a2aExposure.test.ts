@@ -12,6 +12,7 @@ import type { ProjectRepository, VersionRepository } from "@/domain/project/repo
 import {
   describeProjectA2a,
   listExposedProjects,
+  MAX_CONCURRENT_A2A_EXPOSURE_READS,
   resolveExposedProject,
   type A2aExposureDeps,
 } from "@/application/a2a/exposure";
@@ -136,6 +137,34 @@ describe("A2A exposure", () => {
       },
     ]);
     expect(deps.projectLists()).toBe(1);
+  });
+
+  it("bounds the version reads a listing keeps in flight", async () => {
+    // Deciding "runnable" costs a read per project, so this listing's cost is
+    // the deployment's size — and for an admin that is every project there is.
+    const projects = Array.from({ length: 40 }, (_unused, index) =>
+      project(`p${String(index).padStart(2, "0")}`, "3"),
+    );
+    const deps = makeDeps(projects);
+    let inFlight = 0;
+    let peak = 0;
+    const inner = deps.versions.get.bind(deps.versions);
+    deps.versions.get = async (projectName: string, versionName: string) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      try {
+        await Promise.resolve();
+        return await inner(projectName, versionName);
+      } finally {
+        inFlight -= 1;
+      }
+    };
+
+    const listed = await listExposedProjects(deps, "owner@example.com");
+
+    expect(listed.map((item) => item.name)).toEqual(projects.map((p) => p.name));
+    expect(peak).toBeLessThanOrEqual(MAX_CONCURRENT_A2A_EXPOSURE_READS);
+    expect(peak).toBeGreaterThan(1);
   });
 
   it("omits a project whose published version row is missing", async () => {
