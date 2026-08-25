@@ -35,6 +35,7 @@ function fixture(
     /** What the provisioner reports for `inspect`. */
     running?: boolean;
     stopError?: Error;
+    inspectError?: Error;
     /**
      * Make `start` block until `releaseStart()`. Starting a container really
      * does run for minutes, and a test about what happens *while* one is in
@@ -77,6 +78,9 @@ function fixture(
       }
     },
     async inspect(name) {
+      if (opts.inspectError) {
+        throw opts.inspectError;
+      }
       return rows.has(name)
         ? {
             name,
@@ -388,6 +392,15 @@ describe("managed MCP status", () => {
       running: true,
       reachable: true,
     });
+  });
+
+  it("does not report a provisioner failure as a stopped container", async () => {
+    const f = fixture({
+      existing: managedRow(),
+      inspectError: new Error("docker daemon unavailable"),
+    });
+
+    await expect(f.useCases.status("image-fetch")).rejects.toThrow("docker daemon unavailable");
   });
 
   it("does not probe a container that is not running", async () => {

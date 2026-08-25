@@ -188,8 +188,11 @@ export function createDockerProvisioner(): McpProvisioner {
           running: running === "true",
           ...(detail ? { detail } : {}),
         };
-      } catch {
-        return null;
+      } catch (error) {
+        if (isMissingContainer(error)) {
+          return null;
+        }
+        throw error;
       }
     },
   };

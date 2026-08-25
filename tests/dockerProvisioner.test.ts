@@ -99,4 +99,20 @@ describe("docker provisioner", () => {
       /docker rm failed: permission denied/,
     );
   });
+
+  it("returns no workload when inspect says the container is absent", async () => {
+    cli.failCommand = "inspect";
+    cli.fail = { stderr: "Error: No such container: my-tool\n", code: 1 };
+
+    await expect(createDockerProvisioner().inspect("my-tool")).resolves.toBeNull();
+  });
+
+  it("reports a real inspect failure instead of calling the container absent", async () => {
+    cli.failCommand = "inspect";
+    cli.fail = { stderr: "permission denied while trying to connect to the Docker daemon\n", code: 1 };
+
+    await expect(createDockerProvisioner().inspect("my-tool")).rejects.toThrow(
+      /docker inspect failed: permission denied/,
+    );
+  });
 });
