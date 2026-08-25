@@ -32,8 +32,13 @@ import type { AuditRepository } from "@/domain/audit/repository";
 import type { AuditAction, AuditEvent } from "@/domain/audit/types";
 import { log } from "@/shared/logger";
 
-/** Unwired until the composition root says otherwise; recording is then a no-op. */
-let sink: AuditRepository | undefined;
+const AUDIT_SINK = Symbol.for("opspresso.agent-studio.audit-sink");
+
+type AuditProcessGlobal = typeof globalThis & { [AUDIT_SINK]?: AuditRepository };
+
+function processGlobal(): AuditProcessGlobal {
+  return globalThis as AuditProcessGlobal;
+}
 
 /**
  * Wire the store audit rows are appended to. Called once by the composition
@@ -41,12 +46,12 @@ let sink: AuditRepository | undefined;
  * composed the container must not fail on a missing table.
  */
 export function setAuditSink(repository: AuditRepository | undefined): void {
-  sink = repository;
+  processGlobal()[AUDIT_SINK] = repository;
 }
 
 /** Test seam: what is wired right now. */
 export function auditSink(): AuditRepository | undefined {
-  return sink;
+  return processGlobal()[AUDIT_SINK];
 }
 
 /**
@@ -64,17 +69,13 @@ export function auditSink(): AuditRepository | undefined {
  * a structural defect, and `instrumentation.ts` already fails fast on the other
  * guardrails.
  *
- * **What it actually proves is narrow, and worth stating exactly.** The caller
- * reads this back through the same module instance it pushed to, so it cannot
- * see a *second copy* of this module — the one every route imports — being left
- * empty. Nothing in-process can: a duplicate is a different `let`, reachable
- * only through a different import graph. What it does catch is the sink being
- * pushed as a falsy value — an adapter whose export failed to initialise, a
- * barrel that resolved to `undefined` — which otherwise surfaces as silence at
- * the first audited act instead of a refusal at boot.
+ * The sink lives in a `Symbol.for` process slot rather than a module-local
+ * variable. Next may evaluate instrumentation and route code from separate
+ * server bundles; both copies still read the same sink, so this assertion also
+ * proves that route-side recording sees what boot wired.
  */
 export function assertAuditSinkWired(): void {
-  if (!sink) {
+  if (!auditSink()) {
     throw new Error(
       "Audit sink is not wired: recordAudit would silently write nothing for the life of this process.",
     );
@@ -90,6 +91,7 @@ export interface AuditInput {
 
 /** Append one audit row. Never throws. */
 export async function recordAudit(input: AuditInput, now: Date = new Date()): Promise<void> {
+  const sink = auditSink();
   if (!sink) {
     return;
   }

@@ -34,7 +34,9 @@ root 가 **밀어 넣는다**: 그것을 넘겨야 하는 호출 지점은 잊�
 root 자신의 import 에 맡기지 않고 **await 되는** 부팅 경로에서 이를 연결한다: 기록하는 모든
 라우트가 컨테이너에서 무언가를 필요로 하지는 않고 — A2A 키 reveal 은 아무것도 필요로 하지
 않는다 — 그 떠 있는(floating) import 가 resolve 되기 전에 처리된 요청은 자격 증명을 노출하고
-아무것도 기록하지 않는다.
+아무것도 기록하지 않는다. sink 는 `Symbol.for` 로 이름 붙인 process-wide 슬롯에 있으므로 Next 가
+instrumentation 과 route module 을 서로 다른 server bundle 에서 평가해도 같은 저장소를 본다.
+project admin 판정 함수도 같은 이유로 process-wide 슬롯을 쓴다.
 
 **쓰기 실패는 로그로 남기고 throw 하지 않는다.** 행위는 이미 일어났다. 뒤늦게 거부하면
 저장소의 순간적인 장애가 모든 민감 작업이 한꺼번에 멈추는 장애로 바뀐다. 각 지점에 원래 있던
@@ -180,4 +182,3 @@ top-level 런까지, span 의 subagent trace id 로는 아래로 자식 자신�
 상세 페이지는 통째로 받고, 목록은 상위 N 개를 통째로 받는다: span 100 개,
 나머지는 사라지는 대신 `spansDropped` 에 세어진다. warning 20 개. 그리고 error 나 warning
 문자열 하나당 1,000자.
-

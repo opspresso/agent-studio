@@ -14,7 +14,13 @@ type AdminCheck = (userEmail: string) => Promise<boolean>;
  * writes — the same posture as a deployment with no admin list — rather than
  * opening every project or crashing.
  */
-let configuredAdminCheck: AdminCheck = async () => false;
+const ADMIN_CHECK = Symbol.for("opspresso.agent-studio.project-admin-check");
+const denyAdmin: AdminCheck = async () => false;
+type ProjectProcessGlobal = typeof globalThis & { [ADMIN_CHECK]?: AdminCheck };
+
+function adminCheck(): AdminCheck {
+  return (globalThis as ProjectProcessGlobal)[ADMIN_CHECK] ?? denyAdmin;
+}
 
 /**
  * Wire the admin-list reader the override consults. Called once by the
@@ -26,7 +32,7 @@ let configuredAdminCheck: AdminCheck = async () => false;
  * owner-only for its path alone.
  */
 export function setAdminCheck(check: AdminCheck): void {
-  configuredAdminCheck = check;
+  (globalThis as ProjectProcessGlobal)[ADMIN_CHECK] = check;
 }
 
 export interface CreateProjectInput {
@@ -229,7 +235,7 @@ export async function userMayAccessProject(project: Project, userEmail: string):
  */
 async function isAdminOverride(userEmail: string): Promise<boolean> {
   try {
-    return await configuredAdminCheck(userEmail);
+    return await adminCheck()(userEmail);
   } catch (error) {
     log.error("authz", "admin list unavailable; denying the override", error);
     return false;

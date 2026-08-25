@@ -193,7 +193,7 @@ flowchart TB
 | `src/app/api/telegram/webhook/_lib/` | `TelegramEventDeps` bag (바인딩된 `runAgent` + `TelegramClientPort` + transcript 저장소), Slack 쪽과 같은 모양. 셋 다 모든 chat-bot 표면이 공통으로 지니는 절반인 `MessagingDeps` 를 확장한다 |
 | `src/app/api/teams/messages/_lib/` | `TeamsEventDeps` bag (바인딩된 `runAgent` + `TeamsClientPort` + transcript 저장소), 같은 모양 |
 | `src/app/api/a2a/[name]/route.ts` | 요청마다 이뤄지는 A2A 조립: `executionDeps` 위의 `ProjectA2aExecutor` 를 감싸는 SDK 의 request/transport 핸들러. 핸들러가 프로젝트 하나의 카드를 중심으로 만들어지므로 요청 단위다 |
-| `src/instrumentation.ts` | 부팅 경로: 스키마 마이그레이션(advisory lock 아래), 부트스트랩 관리자, `auditRepository` 위의 audit sink, 저장된 문서와 HTTP 소스 위에 조립한 모델 카탈로그 refresher, 그리고 managed MCP 재개. 구조상 wiring site 다. 이 파일이 런타임을 Node 서버라고 판단하기 전까지 composition root 자체가 로드되지 않고, audit sink 는 **await 되는** 부팅 경로에서 wiring 돼야 하기 때문이다 ([감사 기록](design/observability.md#audit-기록) 참고) |
+| `src/instrumentation.ts` | 부팅 경로: 스키마 마이그레이션(advisory lock 아래), 부트스트랩 관리자, `auditRepository` 위의 process-wide audit sink, 저장된 문서와 HTTP 소스 위에 조립한 모델 카탈로그 refresher, 그리고 managed MCP 재개. 구조상 wiring site 다. 이 파일이 런타임을 Node 서버라고 판단하기 전까지 composition root 자체가 로드되지 않고, audit sink 는 **await 되는** 부팅 경로에서 wiring 돼야 하기 때문이다 ([감사 기록](design/observability.md#audit-기록) 참고) |
 
 두 가지 DI 스타일을 의도적으로 함께 쓴다:
 
