@@ -1,4 +1,5 @@
 import { DEFAULT_MIN_SCORE } from "@/domain/catalog/types";
+import { MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
 import { parseKeyValueList, parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { log } from "@/shared/logger";
@@ -96,15 +97,21 @@ export function resetConfigWarnings(): void {
  *
  * Exported for the one other numeric env read (`runtime-settings`' cache TTL),
  * which once kept a near-identical parser of its own; `min` is for values
- * where zero is not a configuration but an off-switch nothing intends.
+ * where zero is not a configuration but an off-switch nothing intends, and
+ * `max` is for a storage or protocol ceiling.
  */
-export function positiveIntEnv(name: string, fallback: number, min = 0): number {
+export function positiveIntEnv(
+  name: string,
+  fallback: number,
+  min = 0,
+  max = Number.MAX_SAFE_INTEGER,
+): number {
   const raw = optionalEnv(process.env[name]);
   if (raw === undefined) {
     return fallback;
   }
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < min) {
+  if (!Number.isInteger(value) || value < min || value > max) {
     warnOnce(name, raw, `ignoring invalid ${name}="${raw}"; using ${fallback}`);
     return fallback;
   }
@@ -355,10 +362,10 @@ export const config = {
    * than inherit from an unset variable.
    */
   get maxConcurrentRunsPerActor(): number {
-    return positiveIntEnv("MAX_CONCURRENT_RUNS_PER_ACTOR", 10);
+    return positiveIntEnv("MAX_CONCURRENT_RUNS_PER_ACTOR", 10, 0, MAX_RUN_SLOTS);
   },
   get maxConcurrentRunsA2a(): number {
-    return positiveIntEnv("MAX_CONCURRENT_RUNS_A2A", 50);
+    return positiveIntEnv("MAX_CONCURRENT_RUNS_A2A", 50, 0, MAX_RUN_SLOTS);
   },
   /**
    * The share of predict and image runs that record a trace. Agent runs are

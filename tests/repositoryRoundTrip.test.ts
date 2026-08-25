@@ -206,6 +206,19 @@ describe("project/version atomic writes", () => {
 });
 
 describe("runSlotRepository ownership", () => {
+  it("bounds the live-slot scan to the supported limit", async () => {
+    const actor = "user:bounded@example.com";
+    const query = vi.spyOn(store, "queryItems");
+
+    await runSlotRepository.acquire(actor, 2, NOW_SECONDS + 60);
+
+    expect(query).toHaveBeenCalledWith({
+      pk: keys.runSlotPartition(actor),
+      notExpiredAt: NOW_SECONDS,
+      limit: 2,
+    });
+  });
+
   it("releases only the acquisition that owns the reused index", async () => {
     const actor = "user:u@example.com";
     const leaseUntil = NOW_SECONDS + 60;

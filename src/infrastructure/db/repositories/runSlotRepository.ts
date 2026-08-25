@@ -15,26 +15,33 @@
 import { randomUUID } from "node:crypto";
 import { CONDITIONAL_WRITE_FAILED, conditions, deleteItem, putItem, queryItems } from "../store";
 import { keys } from "../keys";
-import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
+import { MAX_RUN_SLOTS, type RunSlot, type RunSlotRepository } from "@/domain/execution/runSlot";
 
 /** Bounded retries when another instance claims the index this one picked. */
 const MAX_ACQUIRE_ATTEMPTS = 3;
 
 export const runSlotRepository: RunSlotRepository = {
   async acquire(actor, limit, leaseUntilSeconds): Promise<RunSlot | null> {
-    if (limit <= 0) {
+    const slotLimit = Number.isFinite(limit)
+      ? Math.min(Math.max(Math.floor(limit), 0), MAX_RUN_SLOTS)
+      : 0;
+    if (slotLimit <= 0) {
       return null;
     }
     const nowSeconds = Math.floor(Date.now() / 1000);
     for (let attempt = 0; attempt < MAX_ACQUIRE_ATTEMPTS; attempt++) {
-      const items = await queryItems({ pk: keys.runSlotPartition(actor) });
+      const items = await queryItems({
+        pk: keys.runSlotPartition(actor),
+        notExpiredAt: nowSeconds,
+        limit: slotLimit,
+      });
       const held = new Set(
         items
           .filter((item) => Number(item.leaseUntil ?? 0) > nowSeconds)
           .map((item) => Number(item.slotIndex ?? -1)),
       );
       let index = -1;
-      for (let candidate = 0; candidate < limit; candidate++) {
+      for (let candidate = 0; candidate < slotLimit; candidate++) {
         if (!held.has(candidate)) {
           index = candidate;
           break;

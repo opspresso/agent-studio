@@ -49,6 +49,7 @@
 | 호출자가 요청한 페이지 크기를 읽는 법과, 한 페이지가 커질 수 있는 상한 | `src/shared/pageLimit.ts` 의 `parsePageLimit` / `boundedPageLimit` / `MAX_PAGE_LIMIT`. 목록 엔드포인트 넷이 각자 읽던 것이고, 사본들은 정수가 아닌 모든 입력에서 서로 달랐다 — 빈 `?limit=` 은 `Number("")` 가 0 이라 1 로 클램프되어, 갤러리 한 장을 요청한 페이지라고 답했다. 갤러리·chat 사이드바처럼 페이지 크기 자체가 하나의 결정인 곳은 자기 `max` 를 건네고, 리포지토리는 들어오는 값을 같은 규칙으로 다시 묶는다. Project·version·trigger·MCP connection 전체 열거, schedule scan, name-keyed registry와 A2A client key도 자연 키 cursor로 100개씩 읽는다. Better Auth member는 `createdAt + id`, audit day는 `createdAt + eventId`, chat transcript와 run-log replay는 `seq` cursor로 같은 크기를 읽는다. Usage 범위 집계와 Telegram destination 목록은 primary/GSI 정렬 키 cursor로 같은 크기를 내부 순회한다 |
 | UTC 날짜를 시각으로 읽는 법, 하루의 길이, 그리고 날짜 범위를 걸어가는 법 | `src/shared/date.ts` 의 `isUtcDay` / `daySpan` / `daysBetween`. 감사 로그·usage 일별 파티션·콘솔 비용 차트가 각자 범위를 걸었고, 넷째는 넓은 범위를 거절하려고 일수를 따로 셌다. 넷이 어긋난 날 하나는 아무것도 쓰이지 않은 키로 던지는 쿼리이거나, 다른 곳에 적힌 행 옆에 그려지는 차트의 기둥이다. 방향(오래된 쪽부터/최근 쪽부터)만 호출자의 것이고, `reverse()` 는 두 번째 걷기가 아니다 |
 | subagent 중첩 한도 | `src/application/execution/subagentRunner.ts` |
+| 호출자별 동시 실행 slot 수의 저장 상한 | `src/domain/execution/runSlot.ts` 의 `MAX_RUN_SLOTS`. 저장 키의 세 자리 index가 표현하는 `0..999`이며 config와 repository가 함께 적용한다 |
 | 런당 MCP tool 상한 | `src/domain/llm/toolLimits.ts` |
 | 각 member tier 가 쓸 수 있는 금액 | `src/domain/member/tiers.ts` 의 `TIER_LIMITS` |
 | MCP 서버가 보낸 401 이 뜻하는 것 | `src/infrastructure/mcp/session.ts` |
