@@ -124,6 +124,10 @@ const SETTLE_INTERVAL_MS = 1_000;
  */
 const REACHABILITY_TIMEOUT_MS = 3_000;
 const DEFAULT_ENDPOINT_PATH = "/mcp";
+/** One host retains at most 4GiB of managed MCP memory limits. */
+export const MAX_MANAGED_MCP_SERVERS = 8;
+/** Not a valid managed name; serialises count-then-create across distinct names. */
+const MANAGED_CREATE_CLAIM = "\0managed-create";
 
 export interface ManagedMcpUseCases {
   create(input: CreateManagedInput): Promise<McpServer>;
@@ -318,16 +322,25 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       // late: two starts under one Docker name each remove what the other just
       // created, then the losing write leaves the winner's row describing the
       // wrong container.
-      if (lifecycleClaims.has(input.name)) {
+      if (lifecycleClaims.has(input.name) || lifecycleClaims.has(MANAGED_CREATE_CLAIM)) {
         throw new ConflictError(
           `MCP server "${input.name}" already exists or has a lifecycle operation in progress`,
         );
       }
       lifecycleClaims.add(input.name);
+      lifecycleClaims.add(MANAGED_CREATE_CLAIM);
       let cleanUpWorkload = false;
       try {
         if (await deps.repo.get(input.name)) {
           throw new ConflictError(`MCP server "${input.name}" already exists`);
+        }
+        const managedCount = (await listRegistry(deps.repo)).filter(
+          (server) => server.runtime === "managed",
+        ).length;
+        if (managedCount >= MAX_MANAGED_MCP_SERVERS) {
+          throw new ValidationError(
+            `A host may run at most ${MAX_MANAGED_MCP_SERVERS} managed MCP servers.`,
+          );
         }
         const spec: ManagedWorkloadSpec = {
           name: input.name,
@@ -397,6 +410,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         throw error;
       } finally {
         lifecycleClaims.delete(input.name);
+        lifecycleClaims.delete(MANAGED_CREATE_CLAIM);
       }
     },
 

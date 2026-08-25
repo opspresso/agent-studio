@@ -448,6 +448,13 @@ managed MCP 서버(`runtime: "managed"`)는 이 앱이 자기 호스트에서 �
 env 참조(호스트의 절대 경로). 은 패턴으로 검사한다. 항목을 편집할 수 있는 운영자가 그것으로
 호스트에서 임의 코드를 돌릴 수는 없어야 한다.
 
+컨테이너는 각각 메모리와 memory+swap을 모두 512MiB, CPU 1개, PID 256개로 제한하고 Linux
+capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesystem은 read-only이고
+`/tmp`만 `noexec,nosuid` 64MiB tmpfs로 쓸 수 있다. 따라서 managed image는 영속 로컬 쓰기를
+가정하면 안 된다. 한 호스트에는 managed 항목을 8개까지만 만들 수 있고 서로 다른 이름의 동시
+생성도 count-then-create 구간에서 직렬화된다. 기존 항목의 restart·reconcile은 이 상한 때문에
+막히지 않는다.
+
 ### MCP 서버가 호출자에 대해 듣는 것
 
 런이 MCP 서버로 보내는 모든 요청은 호출하는 project 의 이름을 담은 `X-Tenant-Id` 를 싣는다

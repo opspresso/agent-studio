@@ -61,6 +61,25 @@ describe("docker provisioner", () => {
     const run = cli.calls.find((args) => args[0] === "run")!;
     expect(run.join(" ")).not.toContain("s3cret-value");
     expect(cli.envFileSeen).toEqual({ mode: 0o600, content: "API_KEY=s3cret-value\n" });
+    expect(run).toEqual(
+      expect.arrayContaining([
+        "--memory",
+        "512m",
+        "--memory-swap",
+        "512m",
+        "--cpus",
+        "1",
+        "--pids-limit",
+        "256",
+        "--security-opt",
+        "no-new-privileges",
+        "--cap-drop",
+        "ALL",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=64m",
+      ]),
+    );
     // `-e PORT` still beats the file, as the mapping requires.
     expect(run).toContain("PORT=8080");
   });

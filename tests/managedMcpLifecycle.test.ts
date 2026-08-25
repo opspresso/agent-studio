@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
+import {
+  createManagedMcpUseCases,
+  MAX_MANAGED_MCP_SERVERS,
+} from "@/application/mcp/managedMcpUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import type { AuditEvent } from "@/domain/audit/types";
 import type { McpServer } from "@/domain/mcp/types";
@@ -317,6 +320,39 @@ describe("managed MCP lifecycle", () => {
     await expect(useCases.create(input)).rejects.toThrow(/already exists/);
     // nothing was started for a name that could not be registered
     expect(started).toEqual([]);
+  });
+
+  it("refuses to start more containers than one host may retain", async () => {
+    const f = fixture();
+    for (let index = 0; index < MAX_MANAGED_MCP_SERVERS; index += 1) {
+      const name = `existing-${index}`;
+      f.rows.set(name, managedRow({ name, url: `http://127.0.0.1:${3002 + index}/mcp` }));
+    }
+
+    await expect(f.useCases.create(input)).rejects.toThrow(
+      `at most ${MAX_MANAGED_MCP_SERVERS} managed MCP servers`,
+    );
+    expect(f.started).toEqual([]);
+  });
+
+  it("serialises distinct-name creates at the host limit", async () => {
+    const f = fixture({ holdStart: true });
+    for (let index = 0; index < MAX_MANAGED_MCP_SERVERS - 1; index += 1) {
+      const name = `existing-${index}`;
+      f.rows.set(name, managedRow({ name, url: `http://127.0.0.1:${3002 + index}/mcp` }));
+    }
+
+    const last = f.useCases.create(input);
+    await vi.waitFor(() => expect(f.started).toEqual(["image-fetch"]));
+    await expect(
+      f.useCases.create({ ...input, name: "other-tool" }),
+    ).rejects.toThrow(/lifecycle operation/);
+
+    f.releaseStart();
+    await expect(last).resolves.toMatchObject({ name: "image-fetch" });
+    expect([...f.rows.values()].filter((row) => row.runtime === "managed")).toHaveLength(
+      MAX_MANAGED_MCP_SERVERS,
+    );
   });
 
   it("claims a name before starting so concurrent creates cannot replace each other's container", async () => {
