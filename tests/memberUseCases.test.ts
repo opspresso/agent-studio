@@ -7,6 +7,7 @@ import type { MemberRepository } from "@/domain/member/repository";
 import type { Member } from "@/domain/member/types";
 
 const unusedRepositoryRest = {
+  getById: async () => null,
   getByEmail: async () => null,
   setTier: async () => null,
 };
@@ -83,7 +84,10 @@ describe("member use cases", () => {
       const events: AuditEvent[] = [];
       setAuditSink({ append: async (event) => void events.push(event), listByDay: async () => [] });
       const repository: MemberRepository = {
-        list: async () => [member()],
+        list: async () => {
+          throw new Error("setTier must not list every member");
+        },
+        getById: async (id) => (id === "u1" ? member() : null),
         getByEmail: async () => null,
         setTier: async (id, tier) =>
           id === "u1" ? { member: member({ tier }), previousTier: "member" } : null,
@@ -112,7 +116,10 @@ describe("member use cases", () => {
       const useCases = createMemberUseCases(
         {
           ...unusedRepositoryRest,
-          list: async () => [member({ tier: "guest" })],
+          list: async () => {
+            throw new Error("setTier must not list every member");
+          },
+          getById: async () => member({ tier: "guest" }),
           setTier,
         },
         async () => true,

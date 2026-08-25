@@ -51,7 +51,7 @@ export function createMemberUseCases(
     },
 
     async setTier({ id, tier, actorEmail }) {
-      const member = (await repository.list()).find((candidate) => candidate.id === id);
+      const member = await repository.getById(id);
       if (!member) {
         throw new NotFoundError(`No member with id "${id}"`);
       }

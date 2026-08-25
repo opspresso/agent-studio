@@ -91,6 +91,16 @@ describe("member repository", () => {
     await expect(memberRepository.getByEmail("nobody@example.com")).resolves.toBeNull();
   });
 
+  it("finds one member by id without listing the table", async () => {
+    sql.mockResolvedValue([
+      { id: "u1", name: "M", email: "m@example.com", image: null, tier: null, createdAt: "2026-01-01T00:00:00.000Z", lastLoginAt: null },
+    ]);
+
+    await expect(memberRepository.getById("u1")).resolves.toMatchObject({ id: "u1" });
+    expect(issued().text).toMatch(/FROM "user" WHERE "id" = \$1/);
+    expect(issued().params).toEqual(["u1"]);
+  });
+
   describe("setTier", () => {
     it("writes only the tier column, in one statement, and answers the row it replaced", async () => {
       sql.mockResolvedValue([

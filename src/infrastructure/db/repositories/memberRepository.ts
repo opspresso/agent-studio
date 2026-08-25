@@ -58,6 +58,12 @@ export const memberRepository: MemberRepository = {
     return row ? toMember(row) : null;
   },
 
+  async getById(id) {
+    const rows = await sql<UserRow>(`SELECT ${COLUMNS} FROM "user" WHERE "id" = $1`, [id]);
+    const row = rows[0];
+    return row ? toMember(row) : null;
+  },
+
   async setTier(id, tier) {
     // One column, atomically: the auth library's own update is a
     // read-modify-replace of the whole row, and routing a tier write through
