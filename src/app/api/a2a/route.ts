@@ -1,4 +1,4 @@
-import { a2aExposureDeps, projectUseCases } from "@/lib/container";
+import { a2aExposureDeps } from "@/lib/container";
 import { listExposedProjects, type A2aProjectListItem } from "@/application/a2a/exposure";
 import { a2aSurfaceEnabled } from "@/app/api/a2a/_lib/auth";
 import { withAuth } from "@/lib/session";
@@ -15,13 +15,9 @@ export const GET = withAuth(async (user) => {
   const enabled = await a2aSurfaceEnabled();
   // The same visibility filter as the projects list: an exposed card carries
   // the project's name and description, so listing one is reading it.
-  const [projects, accessible] = await Promise.all([
-    listExposedProjects(a2aExposureDeps),
-    projectUseCases.listAccessible(user.email),
-  ]);
-  const visible = new Set(accessible.map((project) => project.name));
+  const projects = await listExposedProjects(a2aExposureDeps, user.email);
   return Response.json({
     enabled,
-    projects: projects.filter((project) => visible.has(project.name)),
+    projects,
   } satisfies A2aProjectListResponse);
 });
