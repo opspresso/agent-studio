@@ -80,6 +80,23 @@ describe("telegramDestinationRepository", () => {
       },
     ]);
   });
+
+  it("lists observed destinations beyond one storage page", async () => {
+    for (let index = 0; index < 205; index++) {
+      await telegramDestinationRepository.put("many-destinations", 42, {
+        chatId: index + 1,
+        chatType: "private",
+        title: `Chat ${index}`,
+        lastSeenAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+      });
+    }
+
+    const destinations = await telegramDestinationRepository.list("many-destinations", 42);
+    expect(destinations).toHaveLength(205);
+    expect(destinations[0]?.chatId).toBe(205);
+    expect(destinations.at(-1)?.chatId).toBe(1);
+    await expect(telegramDestinationRepository.list("many-destinations", 43)).resolves.toEqual([]);
+  });
 });
 
 // TTL read-filters compare each row's expiry against the wall clock; pin it to

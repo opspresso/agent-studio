@@ -5,6 +5,9 @@ import type {
 import { keys } from "@/infrastructure/db/keys";
 import { putItem, queryItems } from "@/infrastructure/db/store";
 
+/** Observed chats read per storage query before the adapter continues. */
+const DESTINATION_PAGE_SIZE = 100;
+
 function fromItem(item: Record<string, unknown>): TelegramDestination | null {
   if (
     typeof item.chatId !== "number" ||
@@ -37,7 +40,21 @@ export const telegramDestinationRepository: TelegramDestinationRepository = {
 
   async list(projectName, botId) {
     const key = keys.telegramDestinationPrefix(projectName, botId);
-    const items = await queryItems({ pk: key.PK, sk: { prefix: key.prefix } });
+    const items: Record<string, unknown>[] = [];
+    let after: string | undefined;
+    for (;;) {
+      const page = await queryItems({
+        pk: key.PK,
+        sk: { prefix: key.prefix },
+        after,
+        limit: DESTINATION_PAGE_SIZE,
+      });
+      items.push(...page);
+      if (page.length < DESTINATION_PAGE_SIZE) {
+        break;
+      }
+      after = String(page.at(-1)?.SK ?? "");
+    }
     return items
       .flatMap((item): TelegramDestination[] => {
         const destination = fromItem(item);
