@@ -22,6 +22,8 @@
  * (see `collapseSource` below); code fidelity is not what this is for.
  */
 
+import { cutCodePoints } from "@/shared/utf8Text";
+
 /**
  * Elements whose *contents* are markup, code, or metadata — never body prose.
  *
@@ -125,9 +127,11 @@ export function htmlToText(source: string): string {
   // Cut before the passes rather than after: the work below is linear in what it
   // is given, and the tail of a very long page contributes nothing once the text
   // budget is spent anyway. The element regexes below already tolerate input cut
-  // mid-element — that is what their `|$` alternatives are for.
-  const html =
-    source.length > MAX_HTML_SOURCE_CHARS ? source.slice(0, MAX_HTML_SOURCE_CHARS) : source;
+  // mid-element — that is what their `|$` alternatives are for. Not through a
+  // character, though: what comes out of here is what a model reads, and a cut
+  // between the halves of a non-BMP character goes on the wire as a lone
+  // surrogate escape that a provider may refuse the whole request over.
+  const html = cutCodePoints(source, MAX_HTML_SOURCE_CHARS);
   const title = titleOf(html);
 
   let text = html

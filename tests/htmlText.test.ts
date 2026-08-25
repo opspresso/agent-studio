@@ -125,4 +125,13 @@ it("drops an out-of-range numeric reference instead of emitting U+FFFD", () => {
 it("returns empty for markup with no prose", () => {
   expectEqual(htmlToText("<html><head><style>.a{}</style></head><body></body></html>"), "");
 });
+
+it("caps a very long page without splitting a character", () => {
+  // The source cap lands wherever 500,000 characters land, which for a page of
+  // emoji or CJK ext-B is the middle of one. What comes out of here is what a
+  // model reads, and a lone surrogate goes on the wire as a `\ud800`-range
+  // escape a provider can refuse the whole request over.
+  const text = htmlToText(`<p>${"\uD83D\uDE00".repeat(400_000)}</p>`);
+  expect(text.isWellFormed()).toBe(true);
+});
 });
