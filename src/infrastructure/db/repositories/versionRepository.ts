@@ -2,6 +2,7 @@ import { keys } from "@/infrastructure/db/keys";
 import { conditions, getItem, queryItems, transact } from "@/infrastructure/db/store";
 import type { VersionRepository } from "@/domain/project/repository";
 import type { McpBinding, Version } from "@/domain/project/types";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 const ENTITY_TYPE = "VERSION";
 const PUBLISHED = "published";
@@ -110,12 +111,23 @@ export const versionRepository: VersionRepository = {
     return item ? fromItem(item) : null;
   },
 
-  async list(projectName: string): Promise<Version[]> {
+  async list(projectName, limit, after): Promise<Version[]> {
     const items = await queryItems({
       pk: keys.projectPartition(projectName),
       sk: { prefix: keys.versionPrefix() },
+      limit: boundedPageLimit(limit),
+      ...(after ? { after: keys.version(projectName, after).SK } : {}),
     });
-    return items.map(fromItem);
+    return items.map((item) => {
+      const version = fromItem(item);
+      if (
+        version.projectName !== projectName ||
+        keys.version(projectName, version.versionName).SK !== item.SK
+      ) {
+        throw new Error("version row identity does not match its key");
+      }
+      return version;
+    });
   },
 
   async put(version: Version): Promise<void> {

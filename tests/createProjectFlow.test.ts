@@ -34,8 +34,12 @@ function makeRepos() {
     },
   } as ProjectRepository;
   const versionRepo = {
-    async list(projectName: string) {
-      return versions.filter((version) => version.projectName === projectName);
+    async list(projectName: string, limit: number, after?: string) {
+      return versions
+        .filter((version) => version.projectName === projectName)
+        .sort((a, b) => a.versionName.localeCompare(b.versionName))
+        .filter((version) => !after || version.versionName > after)
+        .slice(0, limit);
     },
     async create(version: Version) {
       versions.push(version);

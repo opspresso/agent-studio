@@ -364,8 +364,22 @@ function nextVersionName(existing: Version[]): string {
   return String(maxNumeric + 1);
 }
 
-export function listVersions(repo: VersionRepository, projectName: string): Promise<Version[]> {
-  return repo.list(projectName);
+export const VERSION_LIST_PAGE_SIZE = 100;
+
+export async function listVersions(
+  repo: Pick<VersionRepository, "list">,
+  projectName: string,
+): Promise<Version[]> {
+  const versions: Version[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await repo.list(projectName, VERSION_LIST_PAGE_SIZE, after);
+    versions.push(...page);
+    if (page.length < VERSION_LIST_PAGE_SIZE) {
+      return versions;
+    }
+    after = page.at(-1)!.versionName;
+  }
 }
 
 export async function getVersion(
@@ -397,7 +411,7 @@ export async function createVersion(
   assertUniqueReferences(input);
   await assertReferencesExist(refs, input);
   await assertSubagentProjectsAccessible(refs, input, userEmail);
-  const existing = await versions.list(projectName);
+  const existing = await listVersions(versions, projectName);
 
   const versionName = input.versionName ?? nextVersionName(existing);
   if (existing.some((version) => version.versionName === versionName)) {

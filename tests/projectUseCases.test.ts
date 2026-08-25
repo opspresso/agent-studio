@@ -28,6 +28,7 @@ import type {
 import {
   createVersion as createVersionUseCase,
   deleteVersion,
+  listVersions,
   publishVersion,
   toVersionView as toVersionViewUseCase,
   updateVersion as updateVersionUseCase,
@@ -160,8 +161,12 @@ function makeVersionRepo(initial: Version[] = []): VersionRepository {
         versions.find((v) => v.projectName === projectName && v.versionName === versionName) ?? null
       );
     },
-    async list(projectName) {
-      return versions.filter((v) => v.projectName === projectName);
+    async list(projectName, limit, after) {
+      return versions
+        .filter((v) => v.projectName === projectName)
+        .sort((a, b) => a.versionName.localeCompare(b.versionName))
+        .filter((v) => !after || v.versionName > after)
+        .slice(0, limit);
     },
     async create(version) {
       if (
@@ -246,6 +251,25 @@ function updateVersion(
 }
 
 // --- Tests ------------------------------------------------------------------
+
+describe("listVersions", () => {
+  it("reads every version through bounded repository pages", async () => {
+    const stored = Array.from({ length: 102 }, (_, index) =>
+      versionFixture("p", `v-${String(index).padStart(3, "0")}`),
+    );
+    const repo = makeVersionRepo(stored);
+    const list = repo.list.bind(repo);
+    const pageSizes: number[] = [];
+    repo.list = async (projectName, limit, after) => {
+      const page = await list(projectName, limit, after);
+      pageSizes.push(page.length);
+      return page;
+    };
+
+    await expect(listVersions(repo, "p")).resolves.toHaveLength(stored.length);
+    expect(pageSizes).toEqual([100, 2]);
+  });
+});
 
 describe("createVersion naming", () => {
   it("auto-assigns '1' for the first version", async () => {

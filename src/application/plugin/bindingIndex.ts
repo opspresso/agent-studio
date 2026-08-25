@@ -1,6 +1,7 @@
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { OrphanBindings } from "@/domain/plugin/sync";
 import { listProjects } from "@/application/project/projectUseCases";
+import { listVersions } from "@/application/project/versionUseCases";
 
 /**
  * Which versions bind the given registry names — the blast radius a delete
@@ -26,7 +27,7 @@ export async function findRegistryBindings(
   const wantedServers = new Set(mcpServers);
 
   for (const project of await listProjects(deps.projects)) {
-    for (const version of await deps.versions.list(project.name)) {
+    for (const version of await listVersions(deps.versions, project.name)) {
       const label = `${project.name}/${version.versionName}`;
       for (const name of version.skillList) {
         if (wantedSkills.has(name)) {
