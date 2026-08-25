@@ -1,7 +1,7 @@
 import type { Project, ProjectApiToken, Version } from "./types";
 
 export interface ProjectRepository {
-  get(name: string): Promise<Project | null>;
+  get(name: string, options?: { includeDeleting?: boolean }): Promise<Project | null>;
   /** Projects ordered by name, strictly after `after` when supplied. */
   list(limit: number, after?: string): Promise<Project[]>;
   create(project: Project): Promise<void>;

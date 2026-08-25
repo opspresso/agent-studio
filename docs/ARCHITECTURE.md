@@ -332,7 +332,8 @@ artifact 의 두 번째 축 하나를 위한 것이다: `ARTIFACTOWNER#{email}` 
   connection·transcript·trace·usage 가 생기지 않는다. 그다음 usage 파티션,
   `TRACEPROJECT#` 인덱스 파티션이 닿는 trace 행(`deleteIndexPartition`), 참조가 지목하는 trace
   행, 프로젝트 파티션의 나머지를 지우고 `META` 는 소유자와 설정을 제거한
-  `PROJECT_TOMBSTONE` 으로 바꾼다. 이름은 다시 쓰지 않는다. artifact·chat처럼 project 삭제보다
+  `PROJECT_TOMBSTONE` 으로 바꾼다. 중간 단계가 실패하면 `deletingAt` 행에 소유권 정보가 남고,
+  같은 owner/admin 의 다음 DELETE 가 그 cascade 를 이어서 완료한다. 이름은 다시 쓰지 않는다. artifact·chat처럼 project 삭제보다
   오래 보존되는 행이 이름으로 연결되므로, 다른 소유자에게 같은 이름을 주면 서로 다른 생애의
   데이터가 합쳐지기 때문이다.
 - **Usage 행은 행 잠금 아래에서 read-modify-write 로 더해진다**. 모델별 맵

@@ -129,19 +129,19 @@ export async function assertProjectWritable(
 ): Promise<Project> {
   const { project, override } = await writeAccess(repo, name, userEmail);
   if (override) {
-    // The owner cannot see this happen from the data — a deleted project takes
-    // the row that would have named who deleted it — so the override is the
-    // thing worth recording, not the eventual write. Recorded twice on purpose:
-    // the row is what a later question can query, the line is what survives the
-    // audit store itself being unavailable.
-    await recordAudit({
-      actorEmail: userEmail,
-      action: "project.admin-override",
-      target: auditTarget("project", name),
-      detail: `owned by ${project.ownerEmail}`,
-    });
+    await recordAdminOverride(project, userEmail);
   }
   return project;
+}
+
+/** The owner cannot see an override from the project data, so preserve it outside that row. */
+async function recordAdminOverride(project: Project, userEmail: string): Promise<void> {
+  await recordAudit({
+    actorEmail: userEmail,
+    action: "project.admin-override",
+    target: auditTarget("project", project.name),
+    detail: `owned by ${project.ownerEmail}`,
+  });
 }
 
 /**
@@ -173,8 +173,12 @@ async function writeAccess(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
+  options?: { includeDeleting?: boolean },
 ): Promise<{ project: Project; override: boolean }> {
-  const project = await getProject(repo, name);
+  const project = await repo.get(name, options);
+  if (!project) {
+    throw new NotFoundError(`Project "${name}" not found`);
+  }
   if (project.ownerEmail === userEmail) {
     return { project, override: false };
   }
@@ -331,7 +335,12 @@ export async function deleteProject(
   userEmail: string,
   beforeDelete?: BeforeProjectDelete,
 ): Promise<void> {
-  const project = await assertProjectWritable(repo, name, userEmail);
+  const { project, override } = await writeAccess(repo, name, userEmail, {
+    includeDeleting: true,
+  });
+  if (override) {
+    await recordAdminOverride(project, userEmail);
+  }
   // Before the row goes, while what it holds can still be acted on — and best
   // effort by contract: nothing the hook does may make a project undeletable.
   // The hook already catches its own network failure; this catches the rest

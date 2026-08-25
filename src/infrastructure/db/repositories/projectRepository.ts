@@ -89,9 +89,17 @@ function liveAt(expectedUpdatedAt: string) {
 }
 
 export const projectRepository: ProjectRepository = {
-  async get(name: string): Promise<Project | null> {
+  async get(name: string, options): Promise<Project | null> {
     const item = await getItem(keys.project(name));
-    return item && projectIsLive(item) ? fromItem(item) : null;
+    if (!item) {
+      return null;
+    }
+    const readable =
+      projectIsLive(item) ||
+      (options?.includeDeleting === true &&
+        item.entityType === ENTITY_TYPE &&
+        typeof item.deletingAt === "string");
+    return readable ? fromItem(item) : null;
   },
 
   async list(limit, after): Promise<Project[]> {

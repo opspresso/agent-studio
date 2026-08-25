@@ -1020,6 +1020,36 @@ describe("projectRepository.delete cascade", () => {
     await expect(projectRepository.get("p")).resolves.toBeNull();
     await expect(projectRepository.list(100)).resolves.toEqual([]);
   });
+
+  it("lets the owner resume a cascade left marked by a partial failure", async () => {
+    store.rows.clear();
+    const project = projectFixture("recover-delete");
+    store.seed([
+      {
+        ...row("PROJECT#recover-delete", "META"),
+        ...project,
+        entityType: "PROJECT",
+        GSI1PK: "TYPE#PROJECT",
+        GSI1SK: project.name,
+      },
+      row("PROJECT#recover-delete", "VERSION#1"),
+    ]);
+    vi.spyOn(store, "deletePartition").mockRejectedValueOnce(new Error("connection reset"));
+
+    await expect(
+      deleteProject(projectRepository, project.name, OWNER),
+    ).rejects.toThrow("connection reset");
+    await expect(
+      deleteProject(projectRepository, project.name, OTHER),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(deleteProject(projectRepository, project.name, OWNER)).resolves.toBeUndefined();
+
+    expect(keysOf()).toEqual([row("PROJECT#recover-delete", "META")]);
+    expect(await store.getItem(row("PROJECT#recover-delete", "META"))).toMatchObject({
+      entityType: "PROJECT_TOMBSTONE",
+      name: project.name,
+    });
+  });
 });
 
 describe("createProject race", () => {
