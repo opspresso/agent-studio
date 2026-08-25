@@ -63,13 +63,15 @@ export function createAgentUseCases(
       if (patch.url !== undefined) {
         await assertAllowedUrl(policy, patch.url);
       }
+      const movedAddress = patch.url !== undefined && patch.url !== existing.url;
       return {
         ...existing,
         url: patch.url ?? existing.url,
         protocol: patch.protocol ?? existing.protocol,
         description: patch.description ?? existing.description,
-        headers:
-          patch.headers !== undefined
+        headers: movedAddress
+          ? cipher.mergeHeaderUpdate({}, patch.headers ?? {})
+          : patch.headers !== undefined
             ? cipher.mergeHeaderUpdate(existing.headers, patch.headers)
             : existing.headers,
         updatedAt: now,

@@ -354,6 +354,38 @@ describe("external agent registry secret contract", () => {
     expect(store.get("a")!.headers["X-Api-Key"]).toBe(storedBefore);
   });
 
+  it("does not carry stored headers to a new agent address", async () => {
+    const { repo, store } = makeAgentRepo();
+    const useCases = createAgentUseCases(repo);
+    await useCases.create({
+      name: "a",
+      url: "https://agent.example/v1",
+      description: "",
+      headers: { Authorization: "Bearer old-token" },
+    });
+
+    await useCases.update("a", {
+      url: "https://other.example/v1",
+      headers: { Authorization: "********" },
+    });
+    expect(store.get("a")?.headers).toEqual({});
+
+    await useCases.sendMessage("a", "hello");
+    expect(sendAgentMessageMock).toHaveBeenLastCalledWith(
+      "https://other.example/v1",
+      {},
+      "hello",
+    );
+
+    await useCases.update("a", {
+      url: "https://third.example/v1",
+      headers: { Authorization: "Bearer new-token" },
+    });
+    expect(isEncrypted(store.get("a")!.headers.Authorization!)).toBe(true);
+    expect(store.get("a")!.headers.Authorization).not.toContain("old-token");
+    sendAgentMessageMock.mockClear();
+  });
+
   it("returns { ok: false } when the dispatch-time SSRF check rejects the URL", async () => {
     const { repo } = makeAgentRepo([
       {

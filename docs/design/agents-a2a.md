@@ -16,7 +16,8 @@ ExternalAgent { name, url, protocol?: 'openai' | 'a2a' (absent = openai),
 ```
 
 `type: 'remote'` subagent 로 쓸 수 있고, 테스트 메시지 엔드포인트로도 쓸 수 있다. `url` 은
-MCP 와 마찬가지로 SSRF 가드를 거친다.
+MCP 와 마찬가지로 SSRF 가드를 거친다. headers 는 등록된 주소에 귀속되므로 URL 이 바뀌면
+기존 값을 버리고 같은 저장에서 새로 입력한 값만 유지한다.
 
 ## A2A
 
