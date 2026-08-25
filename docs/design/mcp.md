@@ -80,7 +80,7 @@ era 를 구현하는지 감지해서 핸드셰이크나 요청별 `_meta` 봉투
 남겨 둔다.
 
 SDK 는 어댑터 계층의 의존성이고, 프로토콜 클라이언트가 있어야 할 자리가 거기다;
-[AGENTS.md](../../AGENTS.md#the-dependency-rule) 의 규칙이 그것을 `application` 과 `domain`
+[AGENTS.md](../../AGENTS.md#dependency-direction) 의 규칙이 그것을 `application` 과 `domain`
 밖에 붙들어 둔다. SDK 가 의견을 갖지 않는 것은 세션에 남으며, 아래 각각은 한 번씩 결함이었던
 것들이다: SSRF 가드(transport 의 `fetch` 로 주입되므로, 운영자가 준 MCP URL 이라도 메타데이터
 서비스를 지목할 수 없다), 한 응답이 메모리로 끌어올 수 있는 양의 상한, 아래의 lazy connect,

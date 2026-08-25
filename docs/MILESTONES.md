@@ -6,7 +6,7 @@
 
 | slug | 무엇 | 완료 조건 |
 |---|---|---|
-| `plugin-archive-link` | 아카이브로 sync 된 플러그인의 상세 페이지가 `https://github.com/<repo>/tree/<sha256>` 이라는 죽은 링크를 그린다. `Plugin` 행에 `branch` 를 저장하고 `archive` 면 링크를 숨긴다 | `tests/` 에 archive 출처 플러그인의 상세 응답에 링크가 없음을 고정하는 테스트 |
+| `plugin-archive-link` | 아카이브 sync 는 64자리 SHA-256으로 판별해 상세 페이지의 GitHub 링크를 숨기지만 `Plugin` 행에는 `branch` 가 없다. Git SHA-256과 아카이브 digest를 구별하도록 `branch` 를 저장하고 `archive` 면 링크를 숨긴다 | `tests/` 에 archive 출처 플러그인의 상세 응답에 링크가 없음을 고정하는 테스트 |
 
 ## 닫지 않기로 한 갭
 

@@ -200,6 +200,7 @@ services:
 
   mcp-memory:
     <<: *mcp
+    profiles: [aws]
     image: ${IMAGE_REGISTRY}/mcp-memory:${MCP_MEMORY_TAG}
     env_file:
       - .env.aws

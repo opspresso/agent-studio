@@ -26,7 +26,7 @@ cost/usage** 도메인을 아우르는 하나의 Next.js 16 풀스택 애플리�
 것도, 모든 provider 트래픽이 OpenAI 호환 프로토콜 하나로 좁혀진 것도, 저장소가 PostgreSQL
 하나로 모이고 벡터마저 같은 데이터베이스 안에 있는 것도, 밖으로 나가는 연결이 하나같이
 *배포가 켜는 옵션* 인 것도 같은 제약에서 나온다. 그 제약을 코드에서 어떻게 지키는지는
-[AGENTS.md](../AGENTS.md#conventions-that-bite) 의 첫 항목이, 설치하는 쪽에서 무엇을 뜻하는지는
+[AGENTS.md](../AGENTS.md#offline-and-infrastructure) 의 규칙이, 설치하는 쪽에서 무엇을 뜻하는지는
 [INSTALL.md](INSTALL.md) 가 답한다.
 
 ## 무엇을 위한 시스템인가
@@ -273,10 +273,10 @@ flowchart TB
 | Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
 | Telegram 업데이트 중복 제거 (`update_id` 는 봇마다의 카운터이므로 봇으로 한정한다) | `PROJECT#{name}` | `TELEGRAMUPDATE#{botId}#{updateId}` | — | — |
 | Telegram 앨범 claim (한 `media_group_id` 에 한 번 답한다) | `PROJECT#{name}` | `TELEGRAMALBUM#{botId}#{mediaGroupId}` | — | — |
-| Telegram destination | `PROJECT#{name}` | `TELEGRAMDESTINATION#{botId}#{chatId}#{threadId}` | — | `TELEGRAMDESTINATION#{name}#{botId}` / `{lastSeenAt ISO}` |
+| Telegram destination | `PROJECT#{name}` | `TELEGRAMDESTINATION#{botId}#{chatId}#{threadId}` | — | — |
 | Teams activity 중복 제거 (App ID 로 한정; activity id 는 대화 안에서만 유일하므로 대화 id 를 앞에 붙인다) | `PROJECT#{name}` | `TEAMSACTIVITY#{appId}#{conversationId}#{activityId}` | — | — |
 | 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면, Telegram, Teams; project 파티션에 있어 cascade 가 지운다) | `PROJECT#{name}` | `TRANSCRIPT#{conversationKey}#TURN#{createdAt ISO}#{seq}` | — | — |
-| Artifact (런이 만들어 낸 것. GSI2 는 `ARTIFACTOWNER#{email}` / `{createdAt ISO}#{artifactId}`, 희소) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
+| Artifact (런이 만들어 낸 것) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
 | A2A 태스크 (수신) | `A2ATASK#{projectName}#{urlencode(tenant:client)}` | `TASK#{taskId}` | — | — |
 | 원격 대화 (송신 A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
 | A2A 클라이언트 키 | `A2ACLIENT#{name}` | `META` | `TYPE#A2ACLIENT` | `{name}` |
@@ -287,17 +287,24 @@ flowchart TB
 | 앱 설정 (환경변수 오버라이드) | `SETTINGS#app` | `META` | — | — |
 | admin 이 업로드한 모델 카탈로그 문서 (배포당 하나, 발행 카탈로그보다 우선) | `MODELCATALOG#doc` | `META` | — | — |
 
+두 번째 인덱스는 다음 두 목록만 담당한다:
+
+| 엔티티 | GSI2PK | GSI2SK |
+|---|---|---|
+| Telegram destination | `TELEGRAMDESTINATION#{name}#{botId}` | `{lastSeenAt ISO}` |
+| Artifact (소유자 이메일이 있는 행만, 희소) | `ARTIFACTOWNER#{email}` | `{createdAt ISO}#{artifactId}` |
+
 **왜 테이블 하나에 인덱스 둘인가.** 아이템 범위의 모든 접근은 기본 키로 충분하다: 프로젝트와
 그 버전들이 파티션을 공유하고, chat 과 그 메시지들이 파티션을 공유하므로 캐스케이드 삭제가
 `DELETE` 한 문장이다. `GSI1` 은 이질적인 "종류별 목록" 패턴을 담당한다. `TYPE#*` 카탈로그
 목록, `CHATOWNER#{email}`(사용자의 chat 을 최신순으로), `USAGEDATE#{date}`(대시보드를 위한
-프로젝트 횡단 일간 비용), `TRACEPROJECT#{name}`, `ARTIFACTPROJECT#{name}`. `GSI2` 는
-artifact 의 두 번째 축 하나를 위한 것이다: `ARTIFACTOWNER#{email}` 은 메일함을 지목하는
-행에만 **한정해서** 기록된다. 사용자나 프로젝트 토큰이면 actor 자신의 주소, Slack 런이면
-질문한 사람의 해석된 주소. 그래서 A2A 나 trigger 의 artifact 는 자리표시자 아래 놓이는
-대신 그 인덱스에 아예 없다 ([Artifacts](design/execution.md#artifacts) 참고). 두 인덱스
-모두 `WHERE gsiNpk IS NOT NULL` 인 부분 인덱스라, 속성을 쓰지 않은 행은 인덱스에 존재하지
-않는다.
+프로젝트 횡단 일간 비용), `TRACEPROJECT#{name}`, `ARTIFACTPROJECT#{name}`. `GSI2` 는 Telegram
+destination 을 최근 활동순으로 읽는 목록과 artifact 의 소유자 축을 담당한다.
+`ARTIFACTOWNER#{email}` 은 메일함을 지목하는 행에만 **한정해서** 기록된다. 사용자나 프로젝트
+토큰이면 actor 자신의 주소, Slack 런이면 질문한 사람의 해석된 주소. 그래서 A2A 나 trigger 의
+artifact 는 자리표시자 아래 놓이는 대신 그 인덱스에 아예 없다
+([Artifacts](design/execution.md#artifacts) 참고). 두 인덱스 모두 `WHERE gsiNpk IS NOT NULL` 인
+부분 인덱스라, 속성을 쓰지 않은 행은 인덱스에 존재하지 않는다.
 
 ### 관례
 
@@ -360,7 +367,7 @@ artifact 의 두 번째 축 하나를 위한 것이다: `ARTIFACTOWNER#{email}` 
 
 ## 요청 흐름
 
-열 개의 실행 진입점이 `src/application/execution/runProject.ts` 로 모이고, 이 모듈은
+열한 개의 실행 진입점이 `src/application/execution/runProject.ts` 로 모이고, 이 모듈은
 서로 다른 두 질문을 두 층으로 답한다.
 
 | 층 | 함수 | 무엇을 결정하는가 |
@@ -439,10 +446,11 @@ flowchart LR
   engine --> trace
 ```
 
-점선 엣지가 이미지 분기다: 이미지를 그릴 수 있는 표면은 모두 `runStrategyFor` 에 물어보고,
-`image` project 라면 파사드에 묻기 *전에* `generateImage` 에 넘긴다. 파사드는 그것을
-거절하기 때문이다. 브래킷은 두 경로를 모두 admit 한다. 어떻게 시작됐든 top-level 런을
-감싸는 것이 브래킷이다.
+점선 엣지가 이미지 분기다. predict 와 A2A 는 자기 응답 형태를 만들기 위해 `generateImage` 에
+직접 닿고, chunk 소비자는 `streamProjectRun` 안에서 image project 를 `generateImageStream` 으로
+보낸다. 완성 응답을 만드는 `executeProjectStream` / `executeProject` 만 image project 를
+거절한다. 브래킷은 두 경로를 모두 admit 한다. 어떻게 시작됐든 top-level 런을 감싸는 것이
+브래킷이다.
 
 `generateImage`(`src/application/image/generateImage.ts`)는 이 모듈 밖에 있지만 런을 같은
 방식으로 시작한다. 파사드, predict 라우트, A2A executor 가 직접 닿으며, 그래서 아래의
@@ -760,7 +768,7 @@ SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건
 (`src/app/_i18n/`): `en.ts` 가 정본이고 `ko.ts` 는 그것에 대해 타입이 매겨져 있어서, 한쪽에만
 추가되고 다른 쪽에 없는 키는 한국어 페이지 안에 영어 문자열을 렌더링하는 대신 `pnpm
 typecheck` 를 실패시킨다. 에러 메시지와 제품 명사는 두 카탈로그 모두에서 영어로 남는다.
-근거와 새 문자열이 따라야 할 규칙은 [../AGENTS.md](../AGENTS.md#conventions-that-bite) 에
+근거와 새 문자열이 따라야 할 규칙은 [../AGENTS.md](../AGENTS.md#chat-and-console) 에
 있다. 구조와 스타일은 Mantine 컴포넌트가 제공한다. `src/app/theme.ts` 의 테마가 브랜드
 팔레트와, 예전에는 손으로 쓴 클래스 상수였던 컴포넌트 기본값의 **단일 소유자**이므로, 버튼이나
 입력이 호출 지점에서 스타일링되는 일은 없다. Mantine 이 표현할 수 없는 것. 차트 팔레트, 코드

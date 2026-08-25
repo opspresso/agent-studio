@@ -37,7 +37,7 @@ cp .env.example .env.local
 docker compose up -d postgres        # pgvector/pgvector:pg17 on :5432
 pnpm dev                             # http://localhost:3000 — 스키마는 부팅 때 앱이 만든다
 pnpm db:migrate                      # 앱을 띄우지 않고 스키마만 적용 (CI, 첫 부팅 전)
-docker compose --profile objects up -d   # 선택: artifact 용 MinIO (:9000, 콘솔 :9001)
+docker compose --profile objects up -d minio   # 선택: artifact 용 MinIO (:9000, 콘솔 :9001)
 ```
 
 `.env.example` 의 `DATABASE_URL`(`postgres://agent_studio:agent_studio@localhost:5432/agent_studio`)
@@ -53,8 +53,9 @@ lock 아래에서 멱등하게 적용하므로 따로 만들 것이 없다. pgve
 > (`agent_studio`, `agent_studio_test`)은 볼륨이 처음 초기화될 때 `deploy/postgres/init.sql`
 > 이 만드는데, 이 저장소가 볼륨을 초기화한 쪽일 때만 그렇다. initdb 는 두 번 돌지 않으므로,
 > 다른 저장소가 먼저 볼륨을 만들었다면 `docker compose exec postgres psql -U <그 저장소의
-> 사용자> -f deploy/postgres/init.sql` 처럼 역할과 데이터베이스를 직접 만든다(서비스 블록은
-> 글자 그대로 같아야 compose 가 컨테이너를 재생성하지 않는다). `docker compose down -v` (볼륨은 모든 프로젝트의 것이다) 나 `--remove-orphans`
+> 사용자> -f /docker-entrypoint-initdb.d/init.sql` 처럼 역할과 데이터베이스를 직접 만든다
+> (서비스 블록은 글자 그대로 같아야 compose 가 컨테이너를 재생성하지 않는다).
+> `docker compose down -v` (볼륨은 모든 프로젝트의 것이다) 나 `--remove-orphans`
 > (다른 저장소가 띄운 컨테이너까지 없앤다) 는 절대 실행하지 마라.
 
 MinIO 를 쓰려면 `.env.local` 에 `S3_BUCKET_NAME`, `S3_ENDPOINT=http://localhost:9000`,
@@ -94,7 +95,7 @@ pnpm test:watch       # vitest watch
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test) 에 대한 리포지토리 + 엔진 검사
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)
 pnpm check-models     # 카탈로그 스냅샷과 이 배포의 채널이 서빙하는 것의 차이
-pnpm sync-models      # 발행된 카탈로그로 스냅샷 갱신 (--from <file> 은 로컬 문서에서)
+pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원격은 MODELS_CATALOG_URL 설정)
 ```
 
 ```bash
@@ -134,7 +135,7 @@ pnpm exec vitest run -t "streamWithFallback"
 에 추가할 후보), 레지스트리에 있지만 어떤 채널도 서빙하지 않는 id (이 배포에서 쓸 수 없는 것).
 
 ```bash
-pnpm check-models              # 양방향 보고; 항상 0 으로 종료
+pnpm check-models              # 양방향 보고; 차이 자체로는 실패하지 않음
 pnpm check-models --since=90d  # 최근 90일 안에 출시된 모델만
 pnpm check-models --strict     # 제공되던 라우트가 사라졌거나 검사가 실행되지 못했으면 1 로 종료
 ```

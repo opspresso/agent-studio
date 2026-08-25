@@ -34,7 +34,7 @@ flowchart TB
   lib --> shared
 ```
 
-## 2. 요청 흐름: 열 진입점, 하나의 파사드
+## 2. 요청 흐름: 열한 진입점, 하나의 파사드
 
 모든 실행은 `src/application/execution/runProject.ts` 로 모인다. 표면은 *어떻게 들어오는지*
 (HTTP 형태, 인증, 응답 모양)만 결정하고, *어떤 프로젝트 타입이 어떻게 도는지*는 파사드가

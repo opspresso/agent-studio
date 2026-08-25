@@ -74,8 +74,9 @@ SSM 의 배포 시크릿 전부가 함께 열린다.**
 ### 설정
 
 `.env.example` 에서 도메인(`BETTER_AUTH_URL`, `PUBLIC_BASE_URL`, `Caddyfile`), `ADMIN_EMAILS`,
-`BOOTSTRAP_ADMIN_EMAIL`, LLM 주소, 로그인 방식, `COMPOSE_PROFILES` 를 맞춘다. OIDC 를 쓰면 IdP 에
-리디렉션 URI `https://<host>/api/auth/callback/oidc` 를, Google 이면
+`BOOTSTRAP_ADMIN_EMAIL`, LLM 주소, 로그인 방식, `IMAGE_REGISTRY`, `COMPOSE_PROFILES` 를 맞춘다.
+AWS 를 쓰지 않으면 `IMAGE_REGISTRY=ghcr.io/opspresso`, `COMPOSE_PROFILES=ticker` 로 둔다.
+OIDC 를 쓰면 IdP 에 리디렉션 URI `https://<host>/api/auth/callback/oidc` 를, Google 이면
 `https://<host>/api/auth/callback/google` 을 등록한다.
 
 ## 설치와 업데이트
@@ -201,7 +202,7 @@ docker compose exec app wget -qO- \
 | 프로파일 | 서비스 | 조건 |
 |---|---|---|
 | `ticker` | 스케줄·플러그인 sync·카탈로그 재색인·보존 스위프 | 항상 켠다 |
-| `aws` | mcp-memory(S3 Vectors·Bedrock KB), mcp-cloudwatch | `.env.aws` 와 그 IAM 권한. mcp-memory 는 아직 AWS 없이는 못 돈다 |
+| `aws` | mcp-memory(PostgreSQL 저장·Bedrock 임베딩/KB), mcp-cloudwatch | `.env.aws` 와 그 IAM 권한. mcp-memory 는 아직 AWS 없이는 못 돈다 |
 | `eks` | mcp-argocd, mcp-grafana, mcp-kubernetes | `.env.mcp.example` 의 주소와 kubeconfig. 채워지기 전에는 넣지 마라 — 컨테이너는 뜨고 도구 호출만 실패한다 |
 
 ## Grafana Cloud (alpha)

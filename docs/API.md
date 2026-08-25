@@ -75,6 +75,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 |---|---|---|
 | `/api/projects` | `GET` `POST` | session / session + project 를 만들 수 있는 tier |
 | `/api/projects/{name}` | `GET` `PUT` `DELETE` | session / owner |
+| `/api/projects/{name}/clone` | `POST` | session + project 를 만들 수 있는 tier |
 | `/api/projects/{name}/versions` | `GET` `POST` | session / owner |
 | `/api/projects/{name}/versions/{version}` | `GET` `PUT` `DELETE` | session / owner |
 | `/api/projects/{name}/publish` | `POST` | owner |
@@ -1402,9 +1403,11 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 주소를 만들 수 없으면 없으며, UI 는 그것을 깨진 이미지가 아니라 사용 불가로 렌더링한다.
 
 **두 목록은 한 집합의 두 가지 뷰가 아니다.** `/api/artifacts` 는 소유자 인덱스를 읽는데, 여기에는
-actor 가 이메일을 지목하는 행만 들어 있다. Slack·A2A·webhook·schedule 런은 그렇지 않다. 그런
-것들은 자기 project 를 통해서만 닿을 수 있고, 그래서 지울 수 있는 곳도 거기뿐이다. `from`/`to` 는
-실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의 `nextBefore` 다.
+actor 가 이메일을 지목하거나 표면이 소유자 이메일을 해석한 행만 들어 있다. Slack 런은 질문한
+사람의 이메일을 해석할 수 있으면 이 목록에도 들어가고, 조회가 실패하면 project 에만 남는다.
+A2A·webhook·schedule 런은 자기 project 를 통해서만 닿을 수 있고, 그래서 지울 수 있는 곳도
+거기뿐이다. `from`/`to` 는 실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의
+`nextBefore` 다.
 
 삭제는 생성자, 그 project 의 소유자, 그리고 설정된 admin 에게 허용된다. 남의 출력을 지우면
 `artifact.delete` 감사 행이 기록되고, 자기 것을 지우면 그렇지 않다. chat 메시지는 object key 의

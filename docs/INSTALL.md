@@ -33,6 +33,7 @@ cp .env.secrets.example .env.secrets && chmod 600 .env.secrets
 # AES_ENCRYPTION_KEY, BETTER_AUTH_SECRET, LLM_API_KEY, BOOTSTRAP_ADMIN_PASSWORD 또는 OIDC 클라이언트를 채운다
 vi .env.secrets
 # 도메인·관리자·LLM 주소·로그인 방식을 맞춘다
+# AWS 를 쓰지 않으면 IMAGE_REGISTRY=ghcr.io/opspresso, COMPOSE_PROFILES=ticker 로 바꾼다
 vi .env.example
 vi Caddyfile        # 호스트명; ACME 가 닿지 않으면 조직 인증서를 지정한다
 

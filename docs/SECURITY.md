@@ -179,11 +179,12 @@ admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘�
 
 ## 저장된 시크릿
 
-저장되는 모든 자격 증명. MCP 서버 헤더, 외부 agent 헤더, 버전별 헤더 오버라이드, Slack 봇
-token 과 서명 시크릿, Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿,
-앱 전역 A2A 키, project API token,
-webhook trigger 시크릿, 그리고 시크릿인 앱 설정(LLM API 키와 plugins 저장소의 GitHub token).
-은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM 암호화되어 `enc:v1:` 접두사 아래 저장된다
+저장되는 모든 자격 증명. MCP 서버 헤더, 외부 agent 헤더, 버전별 헤더 오버라이드, MCP OAuth 의
+access/refresh token·client secret·인가 중인 PKCE verifier, Slack 봇 token 과 서명 시크릿,
+Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, 앱 전역 A2A 키와
+이름 있는 A2A 클라이언트 키, project API token, webhook trigger 시크릿, 그리고 시크릿인 앱
+설정(LLM API 키와 plugins 저장소의 GitHub token)은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM
+암호화되어 `enc:v1:` 접두사 아래 저장된다
 (`src/infrastructure/crypto/secretEncryption.ts`).
 
 ### 읽을 때의 마스킹
@@ -333,7 +334,9 @@ Cookie session으로 인증하는 `POST`·`PUT`·`PATCH`·`DELETE`는 `Origin`�
 
 ## 응답 헤더
 
-`next.config.ts` 에서 모든 경로에 설정한다. `frame-ancestors 'none'` 과
+`next.config.ts` 에서 콘솔과 일반 API 경로에 기본으로 설정한다. 저장된 바이트를 응답하는
+`/api/artifacts/{id}/view` 와 `/api/objects/*` 는 제외되고 각자 sandbox CSP 를 설정한다.
+`frame-ancestors 'none'` 과
 `X-Frame-Options: DENY` 는 콘솔에 artifact 를 지우고 키를 회전시키는 버튼이 있고, 프레임에 넣은
 페이지가 바로 그 클릭을 수집하는 방법이기 때문이다. `X-Content-Type-Options: nosniff` 는 한
 라우트가 `text/html` 로 답하면서 인가 서버의 말을 거기에 싣기 때문이다. `Referrer-Policy:
@@ -341,10 +344,10 @@ strict-origin-when-cross-origin` 은 여기서는 URL 자체가 자격 증명인
 오브젝트 주소, webhook 경로. 전체 리퍼러는 그것을 독자가 다음에 클릭하는 곳에 건네주기
 때문이다.
 
-**아직 Content-Security-Policy 는 없다.** Mantine 과 Next 둘 다 인라인 스타일을 내보내므로
-쓸모 있는 정책에는 nonce 파이프라인이 필요하다. 잘못된 정책은 콘솔을 조용히 망가뜨리는데,
-그것은 없는 것보다 나쁘다. 그때까지 여기의 어떤 것도 주입된 스크립트에 대한 두 번째 방어선이
-아니다. 각 싱크에서의 이스케이핑이 유일한 방어선이다.
+일반 script/style 로드를 제한하는 CSP 는 아직 없다. 현재 정책은 framing 만 막는다. Mantine 과
+Next 둘 다 인라인 스타일을 내보내므로 쓸모 있는 정책에는 nonce 파이프라인이 필요하다. 잘못된
+정책은 콘솔을 조용히 망가뜨리는데, 그것은 없는 것보다 나쁘다. 그때까지 일반 경로의 CSP 는
+주입된 스크립트에 대한 두 번째 방어선이 아니다. 각 싱크에서의 이스케이핑이 유일한 방어선이다.
 
 ## 아웃바운드 요청 (SSRF)
 
