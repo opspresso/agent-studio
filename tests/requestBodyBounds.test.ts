@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   editorBody,
   LARGE_TURN_BODY_BYTES,
-  MAX_CONCURRENT_LARGE_TURN_BODIES,
+  MAX_CONCURRENT_LARGE_TURN_BYTES,
   MAX_TURN_BODY_BYTES,
+  setTurnBodyBudgetBytes,
   withTurnBody,
 } from "@/app/api/_lib/body";
 import { MAX_INBOUND_EVENT_BYTES, readEventBody } from "@/app/api/_lib/inboundEvent";
@@ -29,7 +30,20 @@ function largeTurnBody(): string {
   return JSON.stringify({ pad: "a".repeat(LARGE_TURN_BODY_BYTES) });
 }
 
+/**
+ * The budget shrunk to hold two of these bodies, so the refusal below is
+ * reached without allocating the hundred and sixty megabytes the real budget is
+ * worth. What is being tested is the accounting, not the number.
+ */
+function budgetForTwoLargeBodies(): void {
+  setTurnBodyBudgetBytes(2 * largeTurnBody().length);
+}
+
 describe("withTurnBody", () => {
+  afterEach(() => {
+    setTurnBodyBudgetBytes();
+  });
+
   it("parses a body within the cap", async () => {
     expect(await parseTurn(post(JSON.stringify({ prompt: "hi" })))).toEqual({ prompt: "hi" });
   });
@@ -59,21 +73,50 @@ describe("withTurnBody", () => {
     expect(MAX_TURN_BODY_BYTES).toBeGreaterThan(attachments);
   });
 
-  it("bounds concurrent pre-run body allocation and releases the slot", async () => {
+  it("charges bytes rather than requests, so a small attachment is not a whole permit", async () => {
+    // The budget is worth two maximal turns. A body just past the prose
+    // allowance is a three-hundredth of one, and used to spend the same permit
+    // — two screenshots in flight 429'd everyone else for the length of a run.
+    const largeBody = largeTurnBody();
+
+    expect(MAX_CONCURRENT_LARGE_TURN_BYTES).toBe(2 * MAX_TURN_BODY_BYTES);
+    expect(Math.floor(MAX_CONCURRENT_LARGE_TURN_BYTES / largeBody.length)).toBeGreaterThan(100);
+
     let releaseConsumers = (): void => {};
     const held = new Promise<void>((resolve) => {
       releaseConsumers = resolve;
     });
     let started = 0;
-    const largeBody = largeTurnBody();
-    const pending = Array.from({ length: MAX_CONCURRENT_LARGE_TURN_BODIES }, () =>
+    const concurrent = 8;
+    const pending = Array.from({ length: concurrent }, () =>
       withTurnBody(post(largeBody), async (body) => {
         started += 1;
         await held;
         return body;
       }),
     );
-    await vi.waitFor(() => expect(started).toBe(MAX_CONCURRENT_LARGE_TURN_BODIES));
+    await vi.waitFor(() => expect(started).toBe(concurrent));
+
+    releaseConsumers();
+    await Promise.all(pending);
+  });
+
+  it("refuses a body the budget cannot hold and releases what it charged", async () => {
+    budgetForTwoLargeBodies();
+    let releaseConsumers = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      releaseConsumers = resolve;
+    });
+    let started = 0;
+    const largeBody = largeTurnBody();
+    const pending = Array.from({ length: 2 }, () =>
+      withTurnBody(post(largeBody), async (body) => {
+        started += 1;
+        await held;
+        return body;
+      }),
+    );
+    await vi.waitFor(() => expect(started).toBe(2));
 
     await expect(parseTurn(post('{"prompt":"small requests remain available"}'))).resolves.toEqual({
       prompt: "small requests remain available",
@@ -104,10 +147,11 @@ describe("withTurnBody", () => {
     await expect(parseTurn(post('{"prompt":"after"}'))).resolves.toEqual({ prompt: "after" });
   });
 
-  it("retains large-body slots until streamed responses close or cancel", async () => {
+  it("retains a large body's charge until streamed responses close or cancel", async () => {
+    budgetForTwoLargeBodies();
     const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
     const responses = await Promise.all(
-      Array.from({ length: MAX_CONCURRENT_LARGE_TURN_BODIES }, () =>
+      Array.from({ length: 2 }, () =>
         withTurnBody(
           post(largeTurnBody()),
           async () =>
@@ -136,7 +180,8 @@ describe("withTurnBody", () => {
     });
   });
 
-  it("releases a detached-work slot when retained work rejects", async () => {
+  it("releases a detached-work charge when retained work rejects", async () => {
+    budgetForTwoLargeBodies();
     let rejectWork = (_error: Error): void => {};
     const work = new Promise<void>((_resolve, reject) => {
       rejectWork = reject;

@@ -28,23 +28,32 @@ export const MAX_TURN_BODY_BYTES = ATTACHMENT_ALLOWANCE + PROSE_ALLOWANCE;
 export const LARGE_TURN_BODY_BYTES = PROSE_ALLOWANCE;
 
 /**
- * Maximum number of attachment-scale turn bodies retained by one process.
+ * Attachment-scale turn bytes one process retains at once.
  *
  * One legal turn is about 84MB on the wire and temporarily exists as both the
  * decoded JSON text and parsed base64 strings. The execution concurrency guard
  * opens only after this work, so it cannot protect the process from overlapping
- * readers. A permit follows a large parsed body through its run or stream; a
- * body within the prose allowance takes no permit, so ordinary turns remain
- * available while two attachment runs are active.
+ * readers. A charge follows a large parsed body through its run or stream; a
+ * body within the prose allowance is free, so ordinary turns are never gated.
+ *
+ * **A budget rather than a count of requests, because the bodies differ by two
+ * orders of magnitude.** A chat carrying one 200KB screenshot is past the prose
+ * allowance and would have spent the same permit as a four-document 84MB turn.
+ * With permits held for the life of the run — the parsed base64 is in the
+ * messages the model is being shown — two people sending screenshots meant
+ * everyone else got a 429 for as long as those runs took, which on
+ * `MAX_RUN_DURATION_MS` is ten minutes. The heap is what has to be bounded, and
+ * charging actual bytes bounds exactly that: the worst case is unchanged, and
+ * small attachments now cost what they weigh.
  */
-export const MAX_CONCURRENT_LARGE_TURN_BODIES = 2;
+export const MAX_CONCURRENT_LARGE_TURN_BYTES = 2 * MAX_TURN_BODY_BYTES;
 const TURN_BODY_READ_STATE = Symbol.for("opspresso.agent-studio.turn-body-reads");
-type TurnBodyReadState = { active: number };
+type TurnBodyReadState = { activeBytes: number; budgetBytes: number };
 
 class TurnBodyBusyError extends Error {}
 
 export interface TurnBodyAdmission {
-  /** Keep a large-body permit until detached work has released its input. */
+  /** Keep a large body's byte charge until detached work has released its input. */
   retainUntil(completion: PromiseLike<unknown>): void;
 }
 
@@ -53,8 +62,19 @@ function turnBodyReadState(): TurnBodyReadState {
   const processGlobal = globalThis as typeof globalThis & {
     [TURN_BODY_READ_STATE]?: TurnBodyReadState;
   };
-  processGlobal[TURN_BODY_READ_STATE] ??= { active: 0 };
+  processGlobal[TURN_BODY_READ_STATE] ??= {
+    activeBytes: 0,
+    budgetBytes: MAX_CONCURRENT_LARGE_TURN_BYTES,
+  };
   return processGlobal[TURN_BODY_READ_STATE];
+}
+
+/**
+ * Test seam: the budget, so exhausting it does not mean allocating the hundred
+ * and sixty megabytes the real one is worth. Nothing in the app calls this.
+ */
+export function setTurnBodyBudgetBytes(bytes = MAX_CONCURRENT_LARGE_TURN_BYTES): void {
+  turnBodyReadState().budgetBytes = bytes;
 }
 
 /** A 413 with the limit named, so a caller learns the bound rather than guessing. */
@@ -158,18 +178,21 @@ export async function withTurnBodyText<T>(
   consume: (body: string, admission: TurnBodyAdmission) => T | Promise<T>,
 ): Promise<T | Response> {
   const state = turnBodyReadState();
-  let admitted = false;
+  // What this reader has taken out of the shared budget so far. The body grows
+  // as it is read, so the charge grows with it and a reader that runs the
+  // budget out mid-stream is refused then rather than after it is resident.
+  let charged = 0;
   let retained = false;
   let released = false;
   const release = () => {
-    if (admitted && !released) {
+    if (charged > 0 && !released) {
       released = true;
-      state.active -= 1;
+      state.activeBytes -= charged;
     }
   };
   const admission: TurnBodyAdmission = {
     retainUntil(completion) {
-      if (!admitted || retained) {
+      if (charged === 0 || retained) {
         return;
       }
       retained = true;
@@ -181,14 +204,18 @@ export async function withTurnBodyText<T>(
     try {
       text = await readBodyText(request, MAX_TURN_BODY_BYTES, {
         onBytes(totalBytes) {
-          if (admitted || totalBytes <= LARGE_TURN_BODY_BYTES) {
+          if (totalBytes <= LARGE_TURN_BODY_BYTES) {
             return;
           }
-          if (state.active >= MAX_CONCURRENT_LARGE_TURN_BODIES) {
+          const owed = totalBytes - charged;
+          if (owed <= 0) {
+            return;
+          }
+          if (state.activeBytes + owed > state.budgetBytes) {
             throw new TurnBodyBusyError();
           }
-          state.active += 1;
-          admitted = true;
+          state.activeBytes += owed;
+          charged = totalBytes;
         },
       });
     } catch (error) {
@@ -206,7 +233,7 @@ export async function withTurnBodyText<T>(
     }
     const result = await consume(text, admission);
     if (
-      admitted &&
+      charged > 0 &&
       !retained &&
       result instanceof Response &&
       result.headers.get("content-type")?.startsWith("text/event-stream")

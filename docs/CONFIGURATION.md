@@ -509,7 +509,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 턴당 문서 수 / 각 바이트 | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | 유지하는 추출 텍스트, 문서당 / 턴당 | `20,000` / `40,000` 자 | `src/domain/llm/documentLimits.ts` |
 | 턴을 나르는 요청 본문 (첨부 상한에서 파생) | ~`80MB` | `src/app/api/_lib/body.ts` |
-| 프로세스가 동시에 보유하는 attachment-scale turn 본문 (`256KiB` 초과) | `2` | `src/app/api/_lib/body.ts` |
+| 프로세스가 동시에 보유하는 attachment-scale turn 본문 바이트 (`256KiB` 초과분만 과금, 상한은 최대 turn 본문의 2배) | ~`168MB` | `src/app/api/_lib/body.ts` |
 | Skill 첨부. 파일당 바이트 / skill 당 파일 수 / skill 당 바이트 (어느 하나라도 넘는 파일은 sync 에서 건너뛰고 이유를 보고한다) | `64KB` / `20` / `200KB` | `src/domain/skill/files.ts` |
 | 레지스트리 또는 버전 편집의 요청 본문 (skill 파일 상한에서 파생) | `456KB` | `src/app/api/_lib/body.ts` |
 | 턴이 넘칠 때 유지하는 transfer transcript 한 줄 | 최소 `500` 자 | `src/application/llm/engine.ts` |
