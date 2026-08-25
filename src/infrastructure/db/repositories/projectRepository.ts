@@ -12,6 +12,7 @@ import {
 } from "@/infrastructure/db/store";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectApiToken } from "@/domain/project/types";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 const ENTITY_TYPE = "PROJECT";
 
@@ -59,8 +60,13 @@ export const projectRepository: ProjectRepository = {
     return item ? fromItem(item) : null;
   },
 
-  async list(): Promise<Project[]> {
-    const items = await queryItems({ index: "GSI1", pk: keys.typePartition("PROJECT") });
+  async list(limit, after): Promise<Project[]> {
+    const items = await queryItems({
+      index: "GSI1",
+      pk: keys.typePartition("PROJECT"),
+      limit: boundedPageLimit(limit),
+      ...(after ? { after } : {}),
+    });
     return items.map(fromItem);
   },
 

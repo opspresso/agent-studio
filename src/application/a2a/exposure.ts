@@ -10,6 +10,7 @@
 import type { AgentCard } from "@a2a-js/sdk";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
+import { listProjects } from "@/application/project/projectUseCases";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 
 export interface A2aExposureDeps {
@@ -62,7 +63,7 @@ async function exposeProject(
 
 /** Every project currently exposed over A2A. Derived — nothing is registered. */
 export async function listExposedProjects(deps: A2aExposureDeps): Promise<A2aProjectListItem[]> {
-  const projects = await deps.projects.list();
+  const projects = await listProjects(deps.projects);
   return Promise.all(
     projects
       .filter((project) => project.publishedVersion)

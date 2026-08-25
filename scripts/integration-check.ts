@@ -41,6 +41,7 @@ async function main() {
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
+  const { listProjects } = await import("@/application/project/projectUseCases");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
   const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
   const { mcpRepository } = await import("@/infrastructure/db/repositories/mcpRepository");
@@ -180,7 +181,7 @@ async function main() {
     const project = await projectRepository.get(projectName);
     assert.ok(project, "project get");
     assert.equal(project.displayName, "Integration Project");
-    const listed = await projectRepository.list();
+    const listed = await listProjects(projectRepository);
     assert.ok(listed.some((p) => p.name === projectName), "project list contains created");
     pass("project create/get/list");
 

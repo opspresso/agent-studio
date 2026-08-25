@@ -22,11 +22,12 @@
  * only rows written after the index existed, and a webhook trigger that predates
  * this repair is precisely the one most likely to have stranded a row already —
  * a durability fix that skips the rows it was written for is the wrong shape.
- * Walking `projects.list()` reads every row that exists today, needs no
- * backfill, and costs one query per project on a repair tick only.
+ * Walking `listProjects()` reads every row that exists today in bounded pages,
+ * needs no backfill, and costs one query per project on a repair tick only.
  */
 
 import type { Trigger, TriggerRun } from "@/domain/trigger/types";
+import { listProjects } from "@/application/project/projectUseCases";
 import { mapWithLimit } from "@/shared/mapWithLimit";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
@@ -81,7 +82,7 @@ function merge(into: RepairSummary, from: RepairSummary): void {
 export async function repairLostRuns(deps: FiringDeps, at: Date): Promise<RepairSummary> {
   let projectNames: string[];
   try {
-    projectNames = (await deps.projects.list()).map((project) => project.name);
+    projectNames = (await listProjects(deps.projects)).map((project) => project.name);
   } catch (error) {
     // Without the project list there is nothing to walk; the next repair tick
     // tries again, and the rows are not going anywhere.

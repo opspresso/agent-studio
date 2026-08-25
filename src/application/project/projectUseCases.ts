@@ -61,8 +61,19 @@ export interface UpdateProjectInput {
   memberEmails?: string[];
 }
 
-export function listProjects(repo: ProjectRepository): Promise<Project[]> {
-  return repo.list();
+export const PROJECT_LIST_PAGE_SIZE = 100;
+
+export async function listProjects(repo: Pick<ProjectRepository, "list">): Promise<Project[]> {
+  const projects: Project[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await repo.list(PROJECT_LIST_PAGE_SIZE, after);
+    projects.push(...page);
+    if (page.length < PROJECT_LIST_PAGE_SIZE) {
+      return projects;
+    }
+    after = page.at(-1)!.name;
+  }
 }
 
 /**
@@ -75,7 +86,7 @@ export async function listAccessibleProjects(
   repo: ProjectRepository,
   userEmail: string,
 ): Promise<Project[]> {
-  const projects = await repo.list();
+  const projects = await listProjects(repo);
   if (await isAdminOverride(userEmail)) {
     return projects;
   }
