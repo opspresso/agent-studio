@@ -25,6 +25,22 @@ export interface MemberUseCases {
 
 type AdminEmailCheck = (email: string) => Promise<boolean>;
 
+export const MEMBER_LIST_PAGE_SIZE = 100;
+
+export async function listMembers(repository: Pick<MemberRepository, "list">): Promise<Member[]> {
+  const members: Member[] = [];
+  let after: { joinedAt: string; id: string } | undefined;
+  for (;;) {
+    const page = await repository.list(MEMBER_LIST_PAGE_SIZE, after);
+    members.push(...page);
+    if (page.length < MEMBER_LIST_PAGE_SIZE) {
+      return members;
+    }
+    const last = page.at(-1)!;
+    after = { joinedAt: last.joinedAt, id: last.id };
+  }
+}
+
 export function createMemberUseCases(
   repository: MemberRepository,
   isAdminEmail: AdminEmailCheck = async () => false,
@@ -38,7 +54,7 @@ export function createMemberUseCases(
 
   return {
     async list() {
-      const members = await Promise.all((await repository.list()).map(effectiveMember));
+      const members = await Promise.all((await listMembers(repository)).map(effectiveMember));
       return members.sort((a, b) => (b.lastLoginAt ?? "").localeCompare(a.lastLoginAt ?? ""));
     },
 

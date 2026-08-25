@@ -51,7 +51,7 @@ describe("member repository", () => {
       { id: "broken" },
     ]);
 
-    await expect(memberRepository.list()).resolves.toEqual([{
+    await expect(memberRepository.list(100)).resolves.toEqual([{
       id: "u1",
       name: "Member",
       email: "member@example.com",
@@ -61,17 +61,28 @@ describe("member repository", () => {
       lastLoginAt: "2026-02-01T00:00:00.000Z",
     }]);
     expect(issued().text).toMatch(/FROM "user"/);
-    expect(issued().text).toMatch(/ORDER BY "createdAt"/);
+    expect(issued().text).toMatch(/ORDER BY "createdAt", "id" LIMIT \$1/);
+    expect(issued().params).toEqual([100]);
   });
 
   it("reads a row without a tier as the default tier", async () => {
     sql.mockResolvedValue([
       { id: "u1", name: "M", email: "m@example.com", image: null, tier: null, createdAt: "2026-01-01T00:00:00.000Z", lastLoginAt: null },
     ]);
-    const [member] = await memberRepository.list();
+    const [member] = await memberRepository.list(100);
     expect(member?.tier).toBe(DEFAULT_MEMBER_TIER);
     expect(member?.image).toBeNull();
     expect(member?.lastLoginAt).toBeNull();
+  });
+
+  it("continues after a createdAt and id cursor", async () => {
+    await memberRepository.list(25, {
+      joinedAt: "2026-01-01T00:00:00.000Z",
+      id: "u1",
+    });
+
+    expect(issued().text).toMatch(/WHERE \("createdAt", "id"\) > \(\$2::timestamptz, \$3\)/);
+    expect(issued().params).toEqual([25, "2026-01-01T00:00:00.000Z", "u1"]);
   });
 
   it("finds a member by email with a parameterised lookup", async () => {

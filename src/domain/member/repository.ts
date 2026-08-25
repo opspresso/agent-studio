@@ -2,7 +2,7 @@ import type { MemberTier } from "./tiers";
 import type { Member } from "./types";
 
 export interface MemberRepository {
-  list(): Promise<Member[]>;
+  list(limit: number, after?: { joinedAt: string; id: string }): Promise<Member[]>;
   /** The member with this Better Auth user id, or null when absent. */
   getById(id: string): Promise<Member | null>;
   /** The member a sign-in address belongs to, or null when nobody has it. */

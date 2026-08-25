@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createMemberUseCases } from "@/application/member/memberUseCases";
+import {
+  MEMBER_LIST_PAGE_SIZE,
+  createMemberUseCases,
+} from "@/application/member/memberUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { NotFoundError } from "@/application/errors";
 import type { AuditEvent } from "@/domain/audit/types";
@@ -40,6 +43,31 @@ describe("member use cases", () => {
 
     expect(result.map((m) => m.id)).toEqual(["recent", "old", "never"]);
     expect(stored.map((m) => m.id)).toEqual(["old", "never", "recent"]);
+  });
+
+  it("lists every member through bounded joinedAt and id pages", async () => {
+    const stored = Array.from({ length: MEMBER_LIST_PAGE_SIZE + 2 }, (_, index) =>
+      member({ id: `u-${String(index).padStart(3, "0")}` }),
+    );
+    const pageSizes: number[] = [];
+    const repository: MemberRepository = {
+      ...unusedRepositoryRest,
+      list: async (limit, after) => {
+        const page = stored
+          .filter(
+            (candidate) =>
+              !after ||
+              candidate.joinedAt > after.joinedAt ||
+              (candidate.joinedAt === after.joinedAt && candidate.id > after.id),
+          )
+          .slice(0, limit);
+        pageSizes.push(page.length);
+        return page;
+      },
+    };
+
+    await expect(createMemberUseCases(repository).list()).resolves.toHaveLength(stored.length);
+    expect(pageSizes).toEqual([MEMBER_LIST_PAGE_SIZE, 2]);
   });
 
   describe("me", () => {

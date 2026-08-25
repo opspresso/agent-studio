@@ -2,6 +2,7 @@ import type { MemberRepository } from "@/domain/member/repository";
 import { toMemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
 import { sql } from "@/infrastructure/db/client";
+import { boundedPageLimit } from "@/shared/pageLimit";
 
 /**
  * Members are Better Auth's `user` rows, read here directly: the auth library
@@ -44,8 +45,14 @@ function toMember(row: UserRow): Member | null {
 }
 
 export const memberRepository: MemberRepository = {
-  async list() {
-    const rows = await sql<UserRow>(`SELECT ${COLUMNS} FROM "user" ORDER BY "createdAt"`);
+  async list(limit, after) {
+    const bounded = boundedPageLimit(limit);
+    const rows = await sql<UserRow>(
+      `SELECT ${COLUMNS} FROM "user" ` +
+        (after ? `WHERE ("createdAt", "id") > ($2::timestamptz, $3) ` : "") +
+        `ORDER BY "createdAt", "id" LIMIT $1`,
+      after ? [bounded, after.joinedAt, after.id] : [bounded],
+    );
     return rows.flatMap((row): Member[] => {
       const member = toMember(row);
       return member ? [member] : [];
