@@ -2,6 +2,7 @@ import { keys } from "@/infrastructure/db/keys";
 import { putItem, queryItems } from "@/infrastructure/db/store";
 import { expiresAtFromNow, RUN_LOG_TTL_SECONDS } from "@/infrastructure/db/ttl";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
+import { boundedPageLimit, MAX_PAGE_LIMIT } from "@/shared/pageLimit";
 
 const ENTITY = "ChatRunLog";
 
@@ -29,14 +30,13 @@ export const chatRunLogRepository: ChatRunLogRepository = {
     }
   },
 
-  async read(chatId, runId, fromSeq) {
+  async read(chatId, runId, fromSeq, limit) {
     const range = keys.chatRunLogRange(runId, fromSeq);
-    // Whole rather than bounded: a reader catching up needs the whole run, and
-    // a truncated replay is an answer missing its middle.
     const items = await queryItems({
       pk: keys.chatRunLog(chatId, runId, 0).PK,
       sk: { between: [range.from, range.to] },
       notExpiredAt: Math.floor(Date.now() / 1000),
+      limit: boundedPageLimit(limit ?? MAX_PAGE_LIMIT),
     });
     return items.map(
       (item): RunLogEntry => ({

@@ -73,7 +73,8 @@ buffer rather than a record, and why the viewport belongs to a library is
   generated image's megabytes out of the buffer rather than held for a reader who is
   probably still there. A flush that fails is logged and dropped, and its sequence numbers
   are spent — which is why `replayRunLog` checks for a gap on every read and not just the
-  first: that hole lands in the middle.
+  first: that hole lands in the middle. Replay drains the log in bounded sequence pages and
+  only enters the polling delay after a short page.
   Image bytes never go in the log (a note goes in their place); the picture arrives with
   the persisted message, or — with no object storage configured — not at all, which the
   note says.

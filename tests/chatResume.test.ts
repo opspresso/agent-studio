@@ -36,8 +36,8 @@ function makeDeps(options: {
     async append(_chatId, _runId, appended) {
       entries.push(...appended);
     },
-    async read(_chatId, _runId, fromSeq) {
-      return entries.filter((entry) => entry.seq >= fromSeq);
+    async read(_chatId, _runId, fromSeq, limit = 100) {
+      return entries.filter((entry) => entry.seq >= fromSeq).slice(0, limit);
     },
   };
   const chats = {
@@ -113,6 +113,24 @@ describe("openRunLogReplay", () => {
       await openRunLogReplay(deps, { chatId: "c1", runId: "run-1", userEmail: "owner@x.com" }),
     );
     expect(seen).toEqual([{ delta: { content: "hello" } }, { delta: { content: " world" } }]);
+  });
+
+  it("drains a replay larger than one repository page", async () => {
+    const entries = Array.from({ length: 205 }, (_, seq) => frame(seq, String(seq)));
+    entries.push({ seq: entries.length, payload: "[]", terminal: true });
+    const { deps, activeReads } = makeDeps({
+      entries,
+      active: { runId: "run-1", expiresAtSeconds: LIVE_LEASE },
+    });
+
+    const seen = await collect(
+      await openRunLogReplay(deps, { chatId: "c1", runId: "run-1", userEmail: "owner@x.com" }),
+    );
+
+    expect(seen).toHaveLength(205);
+    expect(seen[0]).toEqual({ delta: { content: "0" } });
+    expect(seen.at(-1)).toEqual({ delta: { content: "204" } });
+    expect(activeReads()).toBe(0);
   });
 
   it("surfaces what ended a run that failed", async () => {
