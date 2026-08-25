@@ -974,6 +974,35 @@ describe("updateProject ownership", () => {
   });
 });
 
+describe("projectRepository.list paging", () => {
+  it("fills a page rather than letting a dropped row end the walk", async () => {
+    // `listProjects` stops on a short page, so a page filtered down to fewer
+    // rows than were asked for reads as the end of the catalogue — and every
+    // project after it disappears from the console, the A2A listing and the
+    // repair sweep at once.
+    store.rows.clear();
+    const live = (name: string) => ({
+      PK: `PROJECT#${name}`,
+      SK: "META",
+      GSI1PK: "TYPE#PROJECT",
+      GSI1SK: name,
+      entityType: "PROJECT",
+      ...projectFixture(name),
+    });
+    store.seed([
+      live("a"),
+      // A row the index still reaches but the filter refuses.
+      { ...live("b"), deletingAt: "2026-01-01T00:00:00.000Z" },
+      live("c"),
+    ]);
+
+    await expect(projectRepository.list(2)).resolves.toMatchObject([
+      { name: "a" },
+      { name: "c" },
+    ]);
+  });
+});
+
 describe("projectRepository.delete cascade", () => {
   const row = (PK: string, SK: string) => ({ PK, SK });
   const keysOf = () => store.all().map(({ PK, SK }) => ({ PK, SK }));

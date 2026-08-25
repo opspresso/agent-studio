@@ -102,14 +102,35 @@ export const projectRepository: ProjectRepository = {
     return readable ? fromItem(item) : null;
   },
 
+  /**
+   * A page is filled rather than filtered down to whatever survives.
+   *
+   * `listProjects` walks these pages and stops on a short one, so a page that
+   * dropped a row would read as the end of the catalogue and silently hide
+   * every project after it. A row being deleted leaves the index the moment it
+   * is marked — the mark strips its GSI keys — so today the filter drops
+   * nothing; the loop is what keeps "a short page means the end" true whatever
+   * a row turns out to be.
+   */
   async list(limit, after): Promise<Project[]> {
-    const items = await queryItems({
-      index: "GSI1",
-      pk: keys.typePartition("PROJECT"),
-      limit: boundedPageLimit(limit),
-      ...(after ? { after } : {}),
-    });
-    return items.filter(projectIsLive).map(fromItem);
+    const wanted = boundedPageLimit(limit);
+    const projects: Project[] = [];
+    let cursor = after;
+    while (projects.length < wanted) {
+      const readLimit = wanted - projects.length;
+      const items = await queryItems({
+        index: "GSI1",
+        pk: keys.typePartition("PROJECT"),
+        limit: readLimit,
+        ...(cursor ? { after: cursor } : {}),
+      });
+      projects.push(...items.filter(projectIsLive).map(fromItem));
+      if (items.length < readLimit) {
+        break;
+      }
+      cursor = String(items.at(-1)!.GSI1SK);
+    }
+    return projects;
   },
 
   async create(project: Project): Promise<void> {
