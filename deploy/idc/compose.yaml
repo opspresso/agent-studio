@@ -173,6 +173,14 @@ services:
       BRAVE_MCP_HOST: 0.0.0.0
       BRAVE_MCP_PORT: "80"
       BRAVE_MCP_STATELESS: "true"
+    # Upstream has no /health. Probe only its local listener: calling a search
+    # tool would spend quota and make liveness depend on the Brave API.
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s=require('node:net').connect(80,'127.0.0.1');s.once('connect',()=>{s.destroy();process.exit(0)});s.once('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     mem_limit: 512m
     networks:
       default:
