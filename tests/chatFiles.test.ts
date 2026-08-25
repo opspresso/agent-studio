@@ -267,6 +267,48 @@ describe("runAndPersist", () => {
     ]);
   });
 
+  it("keeps the reference a chunk carried, not the chunk's own payload object", async () => {
+    // The surface reads nothing but the key when it persists, so holding the
+    // chunk's `image`/`file` object keeps every produced byte alive for the
+    // whole run — a run that draws twenty pictures is twenty pictures of heap
+    // per chat in flight, for no reader at all. Aliasing is what this can
+    // observe: a later frame edits the objects the earlier ones carried, and a
+    // surface holding them would persist the edit instead of what arrived.
+    const fixture = deps();
+    const drawn = { b64: "AAAA", mimeType: "image/png", key: "artifacts/image/a1.png" };
+    const rendered = {
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      source: "mcp: render_document",
+      b64: "BBBB",
+      key: "artifacts/document/d1.pdf",
+    };
+
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { image: drawn };
+      yield { file: rendered };
+      drawn.key = "artifacts/image/OVERWRITTEN.png";
+      rendered.key = "artifacts/document/OVERWRITTEN.pdf";
+      yield { delta: { content: "done" } };
+    }
+
+    for await (const _ of runAndPersist(fixture.deps, CHAT, source())) {
+      // drained for its side effects
+    }
+
+    const assistant = fixture.messages.find((message) => message.role === "assistant");
+    expect(assistant?.role === "assistant" && assistant.images).toEqual([
+      { key: "artifacts/image/a1.png" },
+    ]);
+    expect(assistant?.role === "assistant" && assistant.files).toEqual([
+      {
+        key: "artifacts/document/d1.pdf",
+        name: "report.pdf",
+        mimeType: "application/pdf",
+      },
+    ]);
+  });
+
   it("persists a run whose only output was a file", async () => {
     // Nothing was said and nothing was drawn. Before files counted toward the
     // turn being worth writing, this run persisted no message at all — and the
