@@ -333,12 +333,24 @@ describe("versionRepository mcpList normalization", () => {
   });
 
   it("carries a narrowing and an override together", async () => {
-    writeRaw([{ name: "alpha", headers: { "X-Tenant": "acme" }, tools: ["search"] }]);
+    writeRaw([
+      {
+        name: "alpha",
+        headers: { "X-Tenant": "acme" },
+        headerTarget: "sha256-target",
+        tools: ["search"],
+      },
+    ]);
 
     const version = await versionRepository.get("legacy", "1");
 
     expect(version?.mcpList).toEqual([
-      { name: "alpha", headers: { "X-Tenant": "acme" }, tools: ["search"] },
+      {
+        name: "alpha",
+        headers: { "X-Tenant": "acme" },
+        headerTarget: "sha256-target",
+        tools: ["search"],
+      },
     ]);
   });
 

@@ -15,6 +15,7 @@ import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailur
 import { assertProjectWritable, userMayAccessProject } from "./projectUseCases";
 import { nextUpdatedAt } from "./timestamps";
 import { log } from "@/shared/logger";
+import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 
 /**
  * Registry lookups a version's references are checked against. A dangling
@@ -211,31 +212,50 @@ export interface VersionInput {
 /**
  * Resolve submitted MCP bindings to their stored form: header override values
  * are encrypted at rest, and a masked or empty value keeps the secret already
- * stored under the same server and header name. A binding with no overrides is
- * stored without the field, so an untouched version is byte-identical to what
- * it was before overrides existed.
+ * stored under the same server, header name, and endpoint fingerprint. A move
+ * drops preserved values; only credentials freshly entered for the current URL
+ * survive. A binding with no overrides is stored without either secret field.
  */
-function resolveMcpBindings(
+async function resolveMcpBindings(
   cipher: SecretCipher,
+  mcps: Pick<McpRepository, "get">,
   next: McpBinding[],
   existing: McpBinding[] = [],
-): McpBinding[] {
-  const storedByName = new Map(existing.map((binding) => [binding.name, binding.headers ?? {}]));
-  return next.map((binding) => {
-    // Carry the binding forward and replace only `headers`. Rebuilding it from
-    // `{ name, headers }` is what silently dropped `tools`: narrowing a server's
-    // tool list saved with a 200 and changed nothing, because the field never
-    // reached storage. Anything added to McpBinding survives this by default now.
-    const { headers: submitted, ...rest } = binding;
-    if (!submitted || Object.keys(submitted).length === 0) {
-      return rest;
-    }
-    const headers = cipher.mergeHeaderOverrideUpdate(
-      storedByName.get(binding.name) ?? {},
-      submitted,
-    );
-    return Object.keys(headers).length > 0 ? { ...rest, headers } : rest;
-  });
+): Promise<McpBinding[]> {
+  const storedByName = new Map(existing.map((binding) => [binding.name, binding]));
+  return Promise.all(
+    next.map(async (binding) => {
+      // Carry the binding forward and replace only the internal credential
+      // fields. Rebuilding it from `{ name, headers }` is what silently dropped
+      // `tools`; the submitted target is ignored because only the server can
+      // bind a newly entered secret to the current registry URL.
+      const { headers: submitted, headerTarget: _untrustedTarget, ...rest } = binding;
+      if (!submitted || Object.keys(submitted).length === 0) {
+        return rest;
+      }
+      const stored = storedByName.get(binding.name);
+      const current = await mcps.get(binding.name);
+      const hasNewSecret = Object.values(submitted).some(
+        (value) => typeof value === "string" && value !== "" && !cipher.isMasked(value),
+      );
+      if (!current && hasNewSecret) {
+        throw new ValidationError(
+          `MCP server "${binding.name}" does not exist; its header credentials cannot be bound to an endpoint.`,
+        );
+      }
+      const currentTarget = current ? mcpHeaderTarget(current.url) : undefined;
+      const storedHeaders =
+        !current || stored?.headerTarget === currentTarget ? stored?.headers ?? {} : {};
+      const headers = cipher.mergeHeaderOverrideUpdate(storedHeaders, submitted);
+      if (Object.keys(headers).length === 0) {
+        return rest;
+      }
+      const headerTarget = hasMcpHeaderSecrets(headers)
+        ? currentTarget ?? stored?.headerTarget
+        : undefined;
+      return { ...rest, headers, ...(headerTarget ? { headerTarget } : {}) };
+    }),
+  );
 }
 
 /**
@@ -248,38 +268,23 @@ function resolveMcpBindings(
  * sibling of that path: a third reading of what a mask means lived in a route
  * handler once, and the two had no reason to stay identical.
  *
- * Anything with no counterpart in the saved version is left as it came — a
- * freshly typed value is not a mask, and `mergeHeaderOverrideUpdate` drops a
- * mask that matches nothing rather than passing it on.
+ * A freshly typed value is bound to the registry's current URL. A mask whose
+ * saved target no longer matches is dropped rather than allowing an old
+ * endpoint's credential to follow a registry name to a new endpoint.
  */
 export async function resolveDraftMcpBindings(
   versions: Pick<VersionRepository, "get">,
+  mcps: Pick<McpRepository, "get">,
   cipher: SecretCipher,
   projectName: string,
   versionName: string | undefined,
   bindings: McpBinding[],
 ): Promise<McpBinding[]> {
-  if (!versionName || !bindings.some((binding) => binding.headers)) {
+  if (!bindings.some((binding) => binding.headers)) {
     return bindings;
   }
-  const saved = await versions.get(projectName, versionName);
-  if (!saved) {
-    // Editing a version that no longer exists. Nothing to resolve against, and
-    // the masks that remain are dropped at dispatch rather than sent.
-    return bindings;
-  }
-  const storedByName = new Map(saved.mcpList.map((binding) => [binding.name, binding]));
-  return bindings.map((binding) =>
-    binding.headers
-      ? {
-          ...binding,
-          headers: cipher.mergeHeaderOverrideUpdate(
-            storedByName.get(binding.name)?.headers ?? {},
-            binding.headers,
-          ),
-        }
-      : binding,
-  );
+  const saved = versionName ? await versions.get(projectName, versionName) : null;
+  return resolveMcpBindings(cipher, mcps, bindings, saved?.mcpList ?? []);
 }
 
 /**
@@ -293,7 +298,7 @@ export function toVersionView(cipher: SecretCipher, version: Version): Version {
     ...version,
     // Masked in place, for the same reason as the write path above: naming the
     // fields to keep is how the ones nobody thought of get lost.
-    mcpList: version.mcpList.map((binding) =>
+    mcpList: version.mcpList.map(({ headerTarget: _internal, ...binding }) =>
       binding.headers
         ? { ...binding, headers: cipher.maskHeaderOverrides(binding.headers) }
         : binding,
@@ -407,7 +412,7 @@ export async function createVersion(
     model: input.model,
     fallbackModel: input.fallbackModel,
     parameters: input.parameters,
-    mcpList: resolveMcpBindings(cipher, input.mcpList),
+    mcpList: await resolveMcpBindings(cipher, refs.mcps, input.mcpList),
     skillList: input.skillList,
     subagentList: input.subagentList,
     maxTurn: input.maxTurn,
@@ -457,7 +462,7 @@ export async function updateVersion(
       input.fallbackModel === null ? undefined : input.fallbackModel ?? existing.fallbackModel,
     parameters: input.parameters ?? existing.parameters,
     mcpList: input.mcpList
-      ? resolveMcpBindings(cipher, input.mcpList, existing.mcpList)
+      ? await resolveMcpBindings(cipher, refs.mcps, input.mcpList, existing.mcpList)
       : existing.mcpList,
     skillList: input.skillList ?? existing.skillList,
     subagentList: input.subagentList ?? existing.subagentList,
@@ -608,7 +613,14 @@ export function createVersionUseCases(deps: VersionUseCasesDeps): VersionUseCase
       versionName: string | undefined,
       bindings: McpBinding[],
     ): Promise<McpBinding[]> =>
-      resolveDraftMcpBindings(deps.versions, deps.cipher, projectName, versionName, bindings),
+      resolveDraftMcpBindings(
+        deps.versions,
+        deps.refs.mcps,
+        deps.cipher,
+        projectName,
+        versionName,
+        bindings,
+      ),
 
     /** See {@link toVersionView} — masks the secrets a response must not carry. */
     toView: (version: Version): Version => toVersionView(deps.cipher, version),

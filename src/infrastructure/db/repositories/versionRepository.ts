@@ -38,7 +38,12 @@ function toMcpBindings(raw: unknown): McpBinding[] {
       return entry ? [{ name: entry }] : [];
     }
     if (entry && typeof entry === "object") {
-      const binding = entry as { name?: unknown; headers?: unknown; tools?: unknown };
+      const binding = entry as {
+        name?: unknown;
+        headers?: unknown;
+        headerTarget?: unknown;
+        tools?: unknown;
+      };
       if (typeof binding.name === "string" && binding.name) {
         // An empty list means the same as no list — every tool — so it is
         // dropped rather than stored as a narrowing that offers nothing.
@@ -50,6 +55,9 @@ function toMcpBindings(raw: unknown): McpBinding[] {
             name: binding.name,
             ...(binding.headers && typeof binding.headers === "object"
               ? { headers: binding.headers as McpBinding["headers"] }
+              : {}),
+            ...(typeof binding.headerTarget === "string"
+              ? { headerTarget: binding.headerTarget }
               : {}),
             ...(tools.length > 0 ? { tools } : {}),
           },

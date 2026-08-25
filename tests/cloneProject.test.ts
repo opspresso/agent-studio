@@ -42,7 +42,12 @@ function sourceVersion(overrides: Partial<Version> = {}): Version {
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: true },
     mcpList: [
-      { name: "docs", headers: { "X-Api-Key": "enc:v1:secret" }, tools: ["search"] },
+      {
+        name: "docs",
+        headers: { "X-Api-Key": "enc:v1:secret" },
+        headerTarget: "sha256-target",
+        tools: ["search"],
+      },
     ],
     skillList: ["summarize"],
     subagentList: [{ name: "helper", type: "local" }],

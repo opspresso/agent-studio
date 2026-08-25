@@ -7,6 +7,7 @@ import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import { skipsUrlGuard } from "@/domain/mcp/types";
 import { MAX_MCP_TOOLS_PER_RUN } from "@/domain/llm/toolLimits";
 import * as engine from "@/application/llm/engine";
+import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
 
@@ -126,7 +127,21 @@ export async function buildMcpTools(
             return { warning: `MCP server '${mcp.name}' was blocked: ${reason}` };
           }
         }
-        const headers = deps.cipher.mergeOutboundHeaders(mcp.headers, binding.headers);
+        let overrides = binding.headers;
+        let credentialWarning: string | undefined;
+        if (
+          hasMcpHeaderSecrets(overrides) &&
+          binding.headerTarget !== mcpHeaderTarget(mcp.url)
+        ) {
+          overrides = Object.fromEntries(
+            Object.entries(overrides ?? {}).filter(([, value]) => value === null),
+          );
+          credentialWarning =
+            `MCP server '${mcp.name}' moved since its version header credentials were saved; ` +
+            "those credentials were not sent. Re-enter them for the current endpoint.";
+          log.warn("mcp", credentialWarning);
+        }
+        const headers = deps.cipher.mergeOutboundHeaders(mcp.headers, overrides);
         if (mcp.auth) {
           // A per-project credential, resolved and refreshed by the auth
           // provider. Applied last on purpose: a version must not be able to
@@ -146,7 +161,11 @@ export async function buildMcpTools(
             // reach. With headers of its own it is not: discovering OAuth on an
             // entry adds a way to authenticate it, and must not take away the
             // one the operator already configured.
-            return { warning: `${resolved.unavailable} Its tools were not offered.` };
+            return {
+              warning: [credentialWarning, `${resolved.unavailable} Its tools were not offered.`]
+                .filter(Boolean)
+                .join(" "),
+            };
           }
         }
         // Applied last: after the merge so neither the registry entry nor a
@@ -175,6 +194,7 @@ export async function buildMcpTools(
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
           },
           description: mcp.description ?? "",
+          ...(credentialWarning ? { warning: credentialWarning } : {}),
         };
       },
     ),

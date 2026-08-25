@@ -193,7 +193,7 @@ function makeVersionRepo(initial: Version[] = []): VersionRepository {
  * not about reference validation. Tests that are pass their own set. */
 const ALL_REFS_EXIST: VersionRefRepos = {
   skills: { get: async (name) => ({ name }) as never },
-  mcps: { get: async (name) => ({ name }) as never },
+  mcps: { get: async (name) => ({ name, url: `https://${name}.example/mcp` }) as never },
   externalAgents: { get: async (name) => ({ name }) as never },
   projects: { get: async (name) => ({ name }) as never },
 };
@@ -596,6 +596,41 @@ describe("MCP binding header overrides", () => {
     expect(updated.mcpList[0]?.headers?.Authorization).toBe(
       created.mcpList[0]?.headers?.Authorization,
     );
+  });
+
+  it("drops preserved secrets when the registry endpoint moved", async () => {
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const versions = makeVersionRepo();
+    const created = await createVersion(
+      versions,
+      projects,
+      "p",
+      {
+        ...versionInput(),
+        mcpList: bindingWith({ Authorization: "Bearer old-endpoint-token" }),
+      },
+      OWNER,
+    );
+    const maskedView = toVersionView(created);
+    expect(maskedView.mcpList[0]?.headerTarget).toBeUndefined();
+    const movedRefs: VersionRefRepos = {
+      ...ALL_REFS_EXIST,
+      mcps: {
+        get: async (name) => ({ name, url: `https://moved-${name}.example/mcp` }) as never,
+      },
+    };
+
+    const updated = await updateVersion(
+      versions,
+      projects,
+      "p",
+      created.versionName,
+      { mcpList: maskedView.mcpList },
+      OWNER,
+      movedRefs,
+    );
+
+    expect(updated.mcpList).toEqual([{ name: "shared-mcp" }]);
   });
 
   it("drops a masked value under a header with no stored counterpart", async () => {

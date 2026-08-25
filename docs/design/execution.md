@@ -39,8 +39,11 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
   registry 서버가 서로 다른 자격 증명으로 여러 project 를 섬긴다. 오버라이드 값은 registry
   헤더와 같은 AES 암호화/마스킹 수명주기를 따르며 — 이 때문에 version 은 시크릿을 갖는 첫
   엔티티가 된다: API 응답은 `toVersionView` 를 지나고, 실행 경로는 repository 값을 읽어
-  dispatch 시점에 복호화한다. 오버라이드가 생기기 전에 쓰인 행은 `mcpList` 를 `string[]` 로
-  저장했다. 읽을 때 정규화되고, API 도 여전히 그 형태를 받는다.
+  dispatch 시점에 복호화한다. 저장 시 registry URL 의 fingerprint 를 함께 기록하고 실행 시
+  다시 비교하므로 같은 이름의 서버가 이동해도 옛 endpoint 의 credential 은 따라가지 않는다.
+  fingerprint 가 없는 예전 secret 도 실패 폐쇄하며 다시 입력해야 한다. 오버라이드가 생기기
+  전에 쓰인 행은 `mcpList` 를 `string[]` 로 저장했다. 읽을 때 정규화되고, API 도 여전히 그
+  형태를 받는다.
 - 템플릿 변수 `{{var}}` 는 dispatch 전에 서버 측에서 렌더링된다.
 - Version 쓰기는 catalog 모델에 대해 **capability 적합성**을 검증한다(agent project 는
   `capabilities.tools` 를 요구하고, `structuredOutput` 은 그 capability 를 요구한다). 알 수

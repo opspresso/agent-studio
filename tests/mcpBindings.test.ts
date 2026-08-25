@@ -12,6 +12,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 // Injected rather than module-mocked, now that the policy is a port.
 const testUrlPolicy: UrlPolicy = { async assertAllowed() {} };
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
+import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 
 // MCP dispatch goes through the SSRF-guarded fetch; forward it to the stubbed
 // global so a scripted JSON-RPC server can answer without DNS or undici.
@@ -66,7 +67,11 @@ function versionFixture(projectName: string, mcpList: McpBinding[]): Version {
     userPromptTemplate: "",
     model: "gpt-test",
     parameters: { piiFiltering: false },
-    mcpList,
+    mcpList: mcpList.map((binding) =>
+      hasMcpHeaderSecrets(binding.headers) && !binding.headerTarget
+        ? { ...binding, headerTarget: mcpHeaderTarget(registryServer.url) }
+        : binding,
+    ),
     skillList: [],
     subagentList: [],
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -306,6 +311,33 @@ describe("per-project MCP header overrides at dispatch", () => {
     expect(headers.authorization).toBe("Bearer overwritten");
     expect(headers["x-tenant"]).toBe("acme");
     expect(headers["x-shared"]).toBeUndefined();
+  });
+
+  it("does not send version credentials after the registry endpoint moves", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const movedServer = {
+      ...registryServer,
+      url: "https://moved-mcp.test/mcp",
+      headers: {},
+    };
+
+    const headers = await dispatchHeaders(
+      "moved",
+      [
+        {
+          name: "shared-mcp",
+          headers: encryptHeaderOverrides({ Authorization: "Bearer old-endpoint-token" }),
+          headerTarget: mcpHeaderTarget(registryServer.url),
+        },
+      ],
+      { server: movedServer },
+    );
+
+    expect(headers.authorization).toBeUndefined();
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining("moved since its version header credentials were saved"),
+    );
+    warning.mockRestore();
   });
 
   it("keeps using the registry URL — a binding may redefine headers only", async () => {
