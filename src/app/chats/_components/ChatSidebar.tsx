@@ -69,19 +69,26 @@ export function ChatSidebar() {
     // has already grown past — while `limit` stayed raised, so the next press
     // would skip a page rather than repeat one.
     const ticket = ++loadSeq.current;
-    const res = await fetch(`/api/chats?limit=${limit}`);
-    if (ticket !== loadSeq.current) {
-      return;
-    }
-    if (res.ok) {
-      const data = (await res.json()) as ChatListResponse;
+    try {
+      const res = await fetch(`/api/chats?limit=${limit}`);
       if (ticket !== loadSeq.current) {
         return;
       }
-      setChats(data.chats ?? []);
-      setHasMore(data.hasMore ?? false);
+      if (res.ok) {
+        const data = (await res.json()) as ChatListResponse;
+        if (ticket !== loadSeq.current) {
+          return;
+        }
+        setChats(data.chats ?? []);
+        setHasMore(data.hasMore ?? false);
+      }
+    } catch {
+      // A navigation or a transient network loss can reject fetch itself.
+      // Keep the last good list; the next run transition retries this read.
     }
-    setLoaded(true);
+    if (ticket === loadSeq.current) {
+      setLoaded(true);
+    }
   }, [limit]);
 
   // Reloads when a run starts or ends, because the running set only changes

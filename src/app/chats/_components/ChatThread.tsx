@@ -165,9 +165,16 @@ export function ChatThread({ chatId }: { chatId: string }) {
       // `SIGNATURE_REFRESH_MS` the cheap read would leave them to expire.
       const stale = Date.now() - lastFullRead.current >= SIGNATURE_REFRESH_MS;
       const since = tail && !stale ? held.current : undefined;
-      const res = await fetch(
-        since === undefined ? `/api/chats/${chatId}` : `/api/chats/${chatId}?sinceSeq=${since}`,
-      );
+      let res: Response;
+      try {
+        res = await fetch(
+          since === undefined ? `/api/chats/${chatId}` : `/api/chats/${chatId}?sinceSeq=${since}`,
+        );
+      } catch {
+        // Match a transient non-ok response: the retire path retries it, while
+        // an initial read stays mounted for a later run transition to refresh.
+        return null;
+      }
       if (ticket !== syncSeq.current) {
         return null;
       }
@@ -178,11 +185,16 @@ export function ChatThread({ chatId }: { chatId: string }) {
       if (!res.ok) {
         return null;
       }
-      const data = (await res.json()) as {
+      let data: {
         chat?: Chat;
         messages?: ChatMessage[];
         activeRun?: { runId: string };
       };
+      try {
+        data = (await res.json()) as typeof data;
+      } catch {
+        return null;
+      }
       // Checked again, after the body: the first check only proves no fresher
       // request had *started* when the headers arrived. A mount's full read
       // parked on `res.json()` while a retire's tail read overtook it would
