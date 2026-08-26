@@ -9,6 +9,14 @@ and the console must work with the public internet unreachable.
 This file is a routing contract: what to read, what not to break, and where each decision is
 owned. System explanations belong in `docs/`; historical failure narratives belong in git.
 
+## Development status and compatibility
+
+This project is under active development. Backward compatibility is not required unless the
+user explicitly requests it. Prefer the clean current-state design over compatibility shims;
+breaking changes to APIs, configuration, schemas, and stored data formats are allowed. Any
+operation that destroys existing data or git history still requires explicit user approval and
+the applicable safety checks.
+
 ## Start here
 
 Read only the documents relevant to the change, but read every required local instruction
