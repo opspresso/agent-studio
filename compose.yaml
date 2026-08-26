@@ -33,13 +33,13 @@ services:
   # install would run (RDS, a managed Postgres, a bare server with pgvector
   # installed) behaves the same.
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:0.8.6-pg18-trixie
     environment:
       POSTGRES_USER: agent_studio
       POSTGRES_PASSWORD: agent_studio
       POSTGRES_DB: agent_studio
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres18-data:/var/lib/postgresql
       - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "127.0.0.1:5432:5432"
@@ -74,5 +74,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres-data:
+  postgres18-data:
   minio-data:

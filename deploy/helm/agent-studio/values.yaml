@@ -115,7 +115,7 @@ ticker:
 # `secrets.DATABASE_URL`.
 postgres:
   enabled: true
-  image: pgvector/pgvector:pg17
+  image: pgvector/pgvector:0.8.6-pg18-trixie
   database: agent_studio
   username: agent_studio
   # Required. Set once (openssl rand -hex 24) and keep it: initdb writes it

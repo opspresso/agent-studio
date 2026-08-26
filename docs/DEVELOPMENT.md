@@ -34,7 +34,7 @@ cp .env.example .env.local
 ## 로컬 PostgreSQL
 
 ```bash
-docker compose up -d postgres        # pgvector/pgvector:pg17 on :5432
+docker compose up -d postgres        # pgvector/pgvector:0.8.6-pg18-trixie on :5432
 pnpm dev                             # http://localhost:3000 — 스키마는 부팅 때 앱이 만든다
 pnpm db:migrate                      # 앱을 띄우지 않고 스키마만 적용 (CI, 첫 부팅 전)
 docker compose --profile objects up -d minio   # 선택: artifact 용 MinIO (:9000, 콘솔 :9001)
@@ -194,7 +194,7 @@ pnpm test:integration
 typecheck → test → test:integration → build
 ```
 
-`pgvector/pgvector:pg17` 서비스 컨테이너가 `POSTGRES_DB=agent_studio_test` 로 호스트 포트
+`pgvector/pgvector:0.8.6-pg18-trixie` 서비스 컨테이너가 `POSTGRES_DB=agent_studio_test` 로 호스트 포트
 `5432` 에 뜬다. 통합 체크가 기본값으로 접속하는 주소이고 이름이 `_test` 로 끝나므로 그 가드를
 지난다. job 마다 새로 뜨는 컨테이너는 비어 있고, 검사가 자기 스키마를 적용하므로 워크플로에 설정할
 것이 없다.

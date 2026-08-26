@@ -81,14 +81,14 @@ services:
   # Not published: only the app reaches either, over the compose network.
 
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:0.8.6-pg18-trixie
     restart: unless-stopped
     environment:
       POSTGRES_USER: agent_studio
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: agent_studio
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres18-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U agent_studio -d agent_studio"]
       interval: 10s
@@ -379,5 +379,5 @@ networks:
 volumes:
   caddy-data:
   caddy-config:
-  postgres-data:
+  postgres18-data:
   minio-data:

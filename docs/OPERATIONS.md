@@ -425,7 +425,7 @@ CronJob 이 그 일을 한다. **행 보존의 sweep 도 이 틱에 얹혀 있�
 
 | | 배포 | 주소 | 스토리지 |
 |---|---|---|---|
-| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`). opspresso 의 실서비스 | `studio.opspresso.com` | 그 호스트의 PostgreSQL(`postgres-data`)과 MinIO(`minio-data`) 볼륨. 다른 어디에도 없다. `deploy/idc/scripts/backup.sh` 가 백업이다 |
+| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`). opspresso 의 실서비스 | `studio.opspresso.com` | 그 호스트의 PostgreSQL(`postgres18-data`)과 MinIO(`minio-data`) 볼륨. 다른 어디에도 없다. `deploy/idc/scripts/backup.sh` 가 백업이다 |
 | **prod** | Kubernetes. `deploy/helm/agent-studio` 차트(앱 + 티커 CronJob + 선택적 번들 Postgres/MinIO). `argocd-env-demo` 의 차트도 같은 모양으로 맞춰 두었으나 **EKS 클러스터는 현재 없다** | — | 차트가 번들하는 StatefulSet, 또는 조직의 Postgres·S3 호환 스토어 |
 
 **한쪽에서 만든 프로젝트는 다른 쪽에 보이지 않는다.** 버전도, 채팅도, 사용량도, 레지스트리

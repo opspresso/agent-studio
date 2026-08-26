@@ -17,7 +17,7 @@ jobs:
       # integration check insists on before it writes and cascade-deletes; the
       # check applies the schema itself.
       postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:0.8.6-pg18-trixie
         env:
           POSTGRES_USER: agent_studio
           POSTGRES_PASSWORD: agent_studio

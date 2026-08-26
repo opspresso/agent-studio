@@ -12,7 +12,7 @@ alpha 호스트에만 해당하는 사실을 담는다.
 | 호스트 | `ubuntu@115.68.228.117` — Ubuntu 24.04, 4 vCPU, 7.8GB RAM (2026-08-23 `115.68.216.99` 에서 이전) |
 | 주소 | `https://studio.opspresso.com` |
 | 설치 경로 | `/opt/compose/apps/agent-studio` (관례일 뿐, compose 는 어디서든 돈다) |
-| 데이터 | 이 호스트의 `postgres-data`·`minio-data` 볼륨. 다른 어디에도 없다 — `scripts/backup.sh` |
+| 데이터 | 이 호스트의 `postgres18-data`·`minio-data` 볼륨. 다른 어디에도 없다 — `scripts/backup.sh` |
 | Grafana | Alloy collector `byforce-318755` — `setup-grafana.sh` 의 기본값이 아니므로 `GCLOUD_FM_COLLECTOR_ID` 를 준다 |
 
 ## 파일
@@ -122,6 +122,18 @@ docker compose exec app wget -qO- \
 - **DynamoDB 에서 이관** — `docs/INSTALL.md` 의 절차. 테이블은 `aws dynamodb scan` 으로 내보내
   `scripts/import-dynamodb-export.ts` 로, 오브젝트는 `scripts/migrate-objects.sh s3://<bucket>` 으로.
 - **보존** — 만료 행은 티커가 쓸어 낸다(`COMPOSE_PROFILES` 에 `ticker`). 끄면 schedule 도, 정리도 멈춘다.
+
+### PostgreSQL major upgrade
+
+Bundled PostgreSQL은 18과 `postgres18-data:/var/lib/postgresql` volume 계약을 사용한다. PostgreSQL 17의 `postgres-data` volume은 image tag만 바꿔 재사용할 수 없다. Major version을 올릴 때는 새 volume에 PostgreSQL 18을 초기화하고 PostgreSQL 18의 `pg_dump`로 기존 server를 읽어 논리 restore하라.
+
+1. `agent_studio`와 `mcp_memory`를 모두 backup하고 `.env.host`를 보존한다.
+2. App, ticker, mcp-memory처럼 database에 쓰는 service를 중지한다.
+3. 기존 `postgres-data`는 그대로 둔 채 새 `postgres18-data`를 초기화한다.
+4. 두 database를 restore하고 `vector` extension, table 수, 핵심 row 수를 확인한다.
+5. App과 mcp-memory health를 확인한 뒤 writer를 다시 연다.
+
+검증이 끝날 때까지 PostgreSQL 17 container와 `postgres-data` volume을 삭제하지 마라. Rollback은 writer를 다시 중지하고 Compose를 이전 image와 volume으로 돌린 뒤 기존 volume을 시작하는 것이다.
 
 ## 호스트 이전
 

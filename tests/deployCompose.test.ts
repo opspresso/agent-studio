@@ -5,6 +5,16 @@ const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ) as { version: string };
 const chart = readFileSync(new URL("../deploy/helm/agent-studio/Chart.yaml", import.meta.url), "utf8");
+const rootCompose = readFileSync(new URL("../compose.yaml", import.meta.url), "utf8");
+const idcCompose = readFileSync(new URL("../deploy/idc/compose.yaml", import.meta.url), "utf8");
+const helmValues = readFileSync(
+  new URL("../deploy/helm/agent-studio/values.yaml", import.meta.url),
+  "utf8",
+);
+const helmPostgres = readFileSync(
+  new URL("../deploy/helm/agent-studio/templates/postgres.yaml", import.meta.url),
+  "utf8",
+);
 
 const composeFiles = ["local", "idc"].map((target) => ({
   target,
@@ -38,5 +48,20 @@ describe("deployment configuration", () => {
 
   it("keeps the Helm default image tag aligned with the application version", () => {
     expect(chart).toContain(`appVersion: "${packageVersion.version}"`);
+  });
+
+  it("uses the PostgreSQL 18 image and volume contract in every bundled deployment", () => {
+    for (const text of [rootCompose, idcCompose, helmValues]) {
+      expect(text).toContain("pgvector/pgvector:0.8.6-pg18-trixie");
+      expect(text).not.toContain("pgvector/pgvector:pg17");
+    }
+
+    for (const text of [rootCompose, idcCompose]) {
+      expect(text).toContain("postgres18-data:/var/lib/postgresql");
+      expect(text).not.toContain("postgres-data:/var/lib/postgresql/data");
+    }
+
+    expect(helmPostgres).toContain("value: /var/lib/postgresql/18/docker");
+    expect(helmPostgres).toContain("mountPath: /var/lib/postgresql");
   });
 });

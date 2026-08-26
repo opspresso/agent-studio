@@ -10,7 +10,7 @@ Agent Studio 는 기업이 **자기 네트워크 안에 설치해 운영하는**
 
 | | 필수 | 대안 |
 |---|---|---|
-| **PostgreSQL 16+ with pgvector** | 모든 행이 여기 있다. 스키마는 앱이 부팅 때 만든다 | 번들(compose · Helm) 또는 조직의 DB. `pgvector` 확장이 만들어질 수 있어야 한다(`pgvector/pgvector` 이미지, RDS·Supabase·Neon 은 기본 지원). `vector` 는 trusted 확장이 아니라 생성에 superuser 가 필요하다. 조직의 DB 라면 DBA 가 `CREATE EXTENSION vector` 를 미리 해 두면 앱 역할은 일반 권한으로 충분하다 |
+| **PostgreSQL 18 with pgvector** | 모든 행이 여기 있다. 스키마는 앱이 부팅 때 만든다 | 번들(compose · Helm) 또는 조직의 DB. `pgvector` 확장이 만들어질 수 있어야 한다(`pgvector/pgvector` 이미지, RDS·Supabase·Neon 은 기본 지원). `vector` 는 trusted 확장이 아니라 생성에 superuser 가 필요하다. 조직의 DB 라면 DBA 가 `CREATE EXTENSION vector` 를 미리 해 두면 앱 역할은 일반 권한으로 충분하다 |
 | **OpenAI 호환 LLM 엔드포인트** | 런이 말을 거는 곳 | vLLM · LM Studio · Ollama · 사내 라우터 · 외부 API. 폐쇄망은 `selfhosted` 채널(모델은 `/models` 콘솔에서 선언) |
 | S3 호환 오브젝트 스토어 | 런이 만든 이미지·문서. 없으면 artifact 기능만 꺼진다 | 번들 MinIO · Garage · Ceph RGW · S3. `ARTIFACT_ACCESS_MODE=proxied` 면 앱만 닿으면 된다 |
 | 신원 제공자 | 로그인 | 표준 OIDC(Keycloak · Entra ID · Okta · Authentik …), Google, 또는 비밀번호(첫 관리자·비상용) |
@@ -102,7 +102,7 @@ helm upgrade --install agent-studio deploy/helm/agent-studio \
 |---|---|---|
 | 모델 카탈로그 | URL 을 설정한 배포만 `MODELS_CATALOG_URL` 에서 매시간 | 미설정 또는 `MODELS_CATALOG_URL=none`. 관리자가 `/models` 에서 카탈로그 JSON 을 업로드한다(`PUT /api/models/catalog/document`). 업로드한 문서는 네트워크보다 우선한다. 실제 서빙 모델은 `selfhosted` 채널에 선언한다 |
 | 스킬·MCP 레지스트리(agent-plugins) | GitHub API 로 sync | `/plugins` 에서 체크아웃의 `.tar.gz` 를 업로드한다(`POST /api/plugins/sync/upload`). 같은 sync 에 입력만 다르다. GitHub Enterprise 는 `GITHUB_API_URL` |
-| 컨테이너 이미지 | ghcr.io / ECR | 사내 레지스트리로 미러하고 `IMAGE_REGISTRY`(compose) 또는 `image.repository`(Helm) 를 가리킨다. 필요한 이미지: `agent-studio`, `pgvector/pgvector:pg17`, `minio/minio`, `minio/mc`, `caddy`, `curlimages/curl`, 쓰는 MCP 서버들 |
+| 컨테이너 이미지 | ghcr.io / ECR | 사내 레지스트리로 미러하고 `IMAGE_REGISTRY`(compose) 또는 `image.repository`(Helm) 를 가리킨다. 필요한 이미지: `agent-studio`, `pgvector/pgvector:0.8.6-pg18-trixie`, `minio/minio`, `minio/mc`, `caddy`, `curlimages/curl`, 쓰는 MCP 서버들 |
 | 모델이 읽는 URL(`FetchUrl`) | 공인 주소만 | `URL_FETCH_INTERNAL_HOST_SUFFIXES` 에 사내 도메인 접미사를 선언한다. MCP 서버 주소는 별개 목록 `MCP_INTERNAL_HOST_SUFFIXES` |
 | 임베딩(케이퍼빌리티 카탈로그) | Cohere/Bedrock/OpenAI | `EMBEDDING_PROVIDER=openai` 로 사내 OpenAI 호환 임베딩 엔드포인트(vLLM·TEI·Ollama). `CATALOG_MIN_SCORE` 를 다시 잰다. 필요 없으면 `CATALOG_ENABLED` 를 끈다 |
 | Slack · Teams · Telegram · Bedrock · A2A 외부 에이전트 | 설정 시 동작 | 본질이 외부 SaaS 다. 설정하지 않으면 메뉴가 숨고 부팅에 영향이 없다 |
