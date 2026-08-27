@@ -10,6 +10,8 @@
 	email me@nalbam.com
 }
 
+import /etc/caddy/sites/*.caddy
+
 studio.opspresso.com {
 	# Compression, listed rather than excluded: `encode`'s response matcher has
 	# no `not`, so the way to keep text/event-stream out is to not name it. An

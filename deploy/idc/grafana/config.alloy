@@ -35,6 +35,21 @@ prometheus.scrape "agent_studio" {
   forward_to = [prometheus.remote_write.metrics_service.receiver]
 }
 
+prometheus.scrape "agent_memory" {
+  targets = [{
+    "__address__" = "memory.opspresso.com:443",
+    "instance"    = sys.env("GCLOUD_FM_COLLECTOR_ID"),
+  }]
+
+  scheme          = "https"
+  metrics_path    = "/api/metrics"
+  scrape_interval = "30s"
+  scrape_timeout  = "10s"
+  job_name        = "agent-memory"
+
+  forward_to = [prometheus.remote_write.metrics_service.receiver]
+}
+
 prometheus.exporter.unix "integrations_node_exporter" {
   disable_collectors = ["ipvs", "btrfs", "infiniband", "xfs", "zfs"]
 
