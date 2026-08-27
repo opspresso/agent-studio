@@ -100,9 +100,9 @@ alpha 핀을 따른다; `FOLLOW_VERSIONS=false` 면 example 의 핀), 시크릿 
 확인:
 
 ```bash
-docker compose ps                                             # app·postgres·minio healthy
+docker compose ps                                             # agent-studio·postgres·minio healthy
 curl -fsS https://<host>/api/health                           # {"status":"ok"}
-docker compose exec app wget -qO- \
+docker compose exec agent-studio wget -qO- \
   http://mcp-document.agent-mcps.svc.cluster.local/health     # MCP 도달성
 ```
 
@@ -160,7 +160,7 @@ Bundled PostgreSQL은 18과 `postgres18-data:/var/lib/postgresql` volume 계약�
    옛 호스트에서 `backup.sh` 와 같은 방식으로 디렉터리에 내린 뒤 tar 로 보내고, 새 호스트에서
    `mc mirror` 로 넣는다. 두 번째 실행은 바뀐 것만 옮기므로 4번 뒤에 한 번 더 돌린다.
 
-4. **쓰는 쪽을 멈춘다** — 옛 호스트에서 `docker compose stop app ticker mcp-memory`.
+4. **쓰는 쪽을 멈춘다** — 옛 호스트에서 `docker compose stop agent-studio ticker mcp-memory`.
    **여기부터 서비스 중단이다.** 티커가 살아 있으면 옛 데이터베이스가 계속 앞서 나간다.
 
 5. **데이터베이스** — 두 개다. 하나만 옮기면 기억이 사라진 채로 정상으로 보인다.
@@ -272,5 +272,5 @@ unset GRAFANA_SERVICE_ACCOUNT_TOKEN
 - **드레이닝** — `stop_grace_period: 660s` 는 `MAX_RUN_DURATION_MS`(10분)에 맞춘 값이다. 앱은
   `SIGTERM` 을 드레이닝으로 바꿀 뿐 `process.exit` 를 부르지 않으므로, 이 유예가 진행 중인 SSE 스트림이
   빠져나갈 시간 전부다.
-- **로그** — `docker compose logs -f app`. 컨테이너당 10MB × 3 으로 회전한다.
+- **로그** — `docker compose logs -f agent-studio`. 컨테이너당 10MB × 3 으로 회전한다.
 - **Postgres 에 직접** — `docker compose exec postgres psql -U agent_studio agent_studio`.

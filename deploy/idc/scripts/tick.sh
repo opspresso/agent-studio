@@ -15,7 +15,7 @@
 
 set -u
 
-APP="${TICK_TARGET:-http://app:3000}"
+APP="${TICK_TARGET:-http://agent-studio:3000}"
 
 if [ -z "${SCHEDULE_SCAN_TOKEN:-}" ]; then
   echo "SCHEDULE_SCAN_TOKEN is unset — the scan endpoints answer 503; not ticking"

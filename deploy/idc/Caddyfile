@@ -28,7 +28,7 @@ studio.opspresso.com {
 		}
 	}
 
-	reverse_proxy app:3000 {
+	reverse_proxy agent-studio:3000 {
 		# Forward each write as it arrives rather than on a timer. -1 is
 		# unconditional; Caddy's default already does this for SSE responses it
 		# recognises, and this makes it not depend on that recognition.

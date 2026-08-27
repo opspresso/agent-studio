@@ -628,7 +628,7 @@
       "gridPos": { "h": 7, "w": 6, "x": 12, "y": 57 },
       "id": 40,
       "options": { "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "100 * sum(container_memory_working_set_bytes{job=\"integrations/cadvisor\",instance=~\"$instance\",service=\"app\"}) / sum(container_spec_memory_limit_bytes{job=\"integrations/cadvisor\",instance=~\"$instance\",service=\"app\"})", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "100 * sum(container_memory_working_set_bytes{job=\"integrations/cadvisor\",instance=~\"$instance\",service=\"agent-studio\"}) / sum(container_spec_memory_limit_bytes{job=\"integrations/cadvisor\",instance=~\"$instance\",service=\"agent-studio\"})", "refId": "A" }],
       "title": "App Memory / Limit",
       "type": "gauge"
     },
