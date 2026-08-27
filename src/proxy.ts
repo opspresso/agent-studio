@@ -51,5 +51,7 @@ export const config = {
    * the browser tab on `/login` asks for the favicon, gets a redirect back to
    * `/login`, and renders HTML where an image should be.
    */
-  matcher: ["/((?!api/|_next/|favicon.ico|icon.png|logo.png).*)"],
+  matcher: [
+    "/((?!api/|_next/|apple-touch-icon.png|favicon-32.png|favicon.ico|icon-192.png|icon.png|logo.png).*)",
+  ],
 };
