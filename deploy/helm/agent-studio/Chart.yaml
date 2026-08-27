@@ -3,7 +3,7 @@ name: agent-studio
 description: Agent Studio — an on-premises agent platform. The app, its scheduler tick, and optionally a bundled PostgreSQL (pgvector) and MinIO.
 type: application
 version: 0.1.0
-appVersion: "0.90.2"
+appVersion: "0.90.3"
 keywords:
   - agents
   - llm
