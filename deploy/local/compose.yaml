@@ -19,7 +19,7 @@
 # entries pointing them at 127.0.0.1 plus a Host-routing proxy on port 80 —
 # see README.md.
 
-name: agent-studio-local
+name: agent-studio-mcp-local
 
 x-mcp: &mcp
   restart: unless-stopped

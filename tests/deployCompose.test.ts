@@ -33,8 +33,8 @@ describe("deployment configuration", () => {
     expect(serviceBlock(localMcpCompose, "mcp-cloudwatch")).toContain("profiles: [aws]");
   });
 
-  it("owns PostgreSQL 18 and MinIO only in the root localdev compose", () => {
-    expect(rootCompose).toContain("name: localdev");
+  it("owns an independent PostgreSQL 18 and MinIO stack", () => {
+    expect(rootCompose).toContain("name: agent-studio-local");
     expect(rootCompose).toContain("pgvector/pgvector:0.8.6-pg18-trixie");
     expect(rootCompose).toContain("postgres18-data:/var/lib/postgresql");
     expect(rootCompose).toContain("minio:");

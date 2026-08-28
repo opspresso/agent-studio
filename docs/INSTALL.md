@@ -5,7 +5,7 @@ Agent Studio 는 기업이 자기 네트워크 안에 설치해 운영하는 플
 
 | 환경 | 소유 위치 | 이 저장소가 제공하는 것 |
 |---|---|---|
-| localdev | 이 저장소의 `compose.yaml`, `deploy/local/` | OrbStack Docker Compose 기반 PostgreSQL 18, MinIO, 로컬 MCP 서버 |
+| localdev | 이 저장소의 `compose.yaml`, `deploy/local/` | 독립 `agent-studio-local` PostgreSQL 18·MinIO와 로컬 MCP 서버 |
 | IDC | `../dockpad` | 릴리즈된 Agent Studio 이미지 |
 | EKS/Kubernetes | `../argocd-env-demo` | 릴리즈된 Agent Studio 이미지 |
 
@@ -34,9 +34,8 @@ pnpm install
 pnpm dev
 ```
 
-루트 compose project 이름은 `localdev`로 고정되어 있다. PostgreSQL 18과 MinIO volume은 다른
-로컬 프로젝트와 공유될 수 있으므로 `docker compose down -v`와 `--remove-orphans`를 사용하지
-않는다. 데이터베이스 이름으로 프로젝트를 분리한다.
+루트 compose project 이름은 `agent-studio-local`로 고정되어 있다. PostgreSQL 18과 MinIO volume은
+Agent Studio 전용이다. `docker compose down -v`는 이 로컬 데이터를 삭제하므로 주의한다.
 
 Agent Plugins가 등록하는 사설 DNS 이름 그대로 MCP를 시험하려면 OrbStack에서:
 

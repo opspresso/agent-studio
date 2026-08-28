@@ -1,17 +1,7 @@
-# The PostgreSQL container is shared with every other project on this machine,
-# so the compose project name is fixed here instead of being derived from the
-# directory. Another repository running `docker compose up -d postgres` finds it
-# already up and leaves it alone — as long as its service block is identical to
-# this one. Database names, not ports, keep the projects apart: this app uses
-# `agent_studio` for development and `agent_studio_test` for the integration
-# check. `deploy/postgres/init.sql` creates them only when *this* repository is
-# the one that initialises the volume; a repository that comes second creates
-# its own role and databases itself (initdb never runs again), and the block
-# stays word-for-word the same so compose does not recreate the container.
-#
-# Never `docker compose down -v` here: the volume belongs to every project. Nor
-# `--remove-orphans`, which would take out containers another repository started.
-name: localdev
+# Agent Studio owns this local stack. Agent Memory uses its own project, ports,
+# network and volumes, so either repository can start and stop independently.
+# `down -v` still deletes this project's development data and requires care.
+name: agent-studio-local
 
 services:
   app:
@@ -57,7 +47,7 @@ services:
       retries: 10
     restart: unless-stopped
 
-  # The localdev S3-compatible object store for generated images and documents.
+  # The Agent Studio local S3-compatible object store.
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: ["server", "/data", "--console-address", ":9001"]

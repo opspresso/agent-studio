@@ -62,9 +62,9 @@ pnpm tsx --env-file=.env.local scripts/dev-session.ts
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
-The PostgreSQL container is shared with other projects and compose project name `localdev` is
-pinned. Database names separate projects. Never run `docker compose down -v` or
-`--remove-orphans`. Integration checks may use only a database whose name ends in `_test`.
+The local Compose project is pinned to `agent-studio-local` and owns its PostgreSQL and MinIO
+volumes. Never run `docker compose down -v` without explicit approval. Integration checks may
+use only a database whose name ends in `_test`.
 
 Any real run requires `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, and a 32-byte base64
 `AES_ENCRYPTION_KEY`. Alpha/prod also requires `ADMIN_EMAILS` plus a sign-in method. Production

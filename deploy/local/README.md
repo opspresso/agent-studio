@@ -57,4 +57,4 @@ managed MCP(`MANAGED_MCP_RUNTIME=docker`)는 별개의 경로다: 앱이 직접 
 cd deploy/local && docker compose --profile '*' down
 ```
 
-`--profile '*'` 는 지금 꺼져 있는 프로필의 컨테이너(예: `aws` 를 켰다가 끈 뒤 남은 mcp-memory)까지 내린다. 이 프로젝트(`agent-studio-local`)의 컨테이너만 내려간다. 레포 루트의 `localdev` 프로젝트(공유 PostgreSQL)와는 무관하며, 그쪽은 [루트 compose.yaml 의 경고](../../compose.yaml)대로 `down -v` 를 절대 쓰지 않는다.
+`--profile '*'` 는 지금 꺼져 있는 프로필의 컨테이너(예: `aws` 를 켰다가 끈 뒤 남은 mcp-memory)까지 내린다. 이 프로젝트(`agent-studio-mcp-local`)의 컨테이너만 내려간다. 레포 루트의 `agent-studio-local` 프로젝트와는 무관하다.

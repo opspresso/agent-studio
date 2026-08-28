@@ -47,7 +47,7 @@ cp .env.example .env.local
 # LLM_BASE_URL, LLM_API_KEY, AES_ENCRYPTION_KEY (32바이트 base64) 를 채우고,
 # 실제 로그인이 필요하면 BETTER_AUTH_SECRET 과 로그인 방식 하나(OIDC / Google / 비밀번호)도 채운다.
 
-# 3. localdev PostgreSQL 18 + MinIO (bucket도 생성한다)
+# 3. agent-studio-local PostgreSQL 18 + MinIO (bucket도 생성한다)
 docker compose up -d postgres minio minio-init
 
 # 4. Run
@@ -253,5 +253,5 @@ manifest를 두지 않는다.
 스크랩하며, `SCHEDULE_SCAN_TOKEN` 으로 티커를 켜라. 만료 행을 쓸어내는 것이 그 틱이다.
 운영 체크리스트는 [docs/OPERATIONS.md](docs/OPERATIONS.md#운영-체크리스트) 에 있다.
 
-로컬 개발은 루트 `compose.yaml`의 `localdev` PostgreSQL 18·MinIO와 OrbStack 기반
+로컬 개발은 루트 `compose.yaml`의 `agent-studio-local` PostgreSQL 18·MinIO와 OrbStack 기반
 `deploy/local/` MCP compose를 사용한다. 자세한 소유권은 [docs/INSTALL.md](docs/INSTALL.md)에 있다.
