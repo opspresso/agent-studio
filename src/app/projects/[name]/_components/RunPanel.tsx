@@ -118,7 +118,14 @@ export function RunPanel({
   const [size, setSize] = useState("1024x1024");
   const [quality, setQuality] = useState("medium");
   const activeRequest = useRef<AbortController | null>(null);
-  const { attachments, attachError, addFiles, removeAt } = useAttachments();
+  const {
+    attachments,
+    documents,
+    attachError,
+    addFiles,
+    removeAt,
+    removeDocumentAt,
+  } = useAttachments({ documents: projectType !== "image" });
   const t = useT();
   const view = useImageViewer();
 
@@ -127,7 +134,7 @@ export function RunPanel({
   const canRun =
     versionName !== null &&
     !running &&
-    (!needsMessage || message.trim() !== "" || attachments.length > 0);
+    (!needsMessage || message.trim() !== "" || attachments.length > 0 || documents.length > 0);
   const attachHint =
     projectType === "image"
       ? attachments.length > 0
@@ -223,12 +230,14 @@ export function RunPanel({
                 },
               ],
               controller.signal,
+              documents,
             )
           : await streamPredict(
               projectName,
               versionName,
               {
                 variables,
+                documents,
                 // The prompt itself comes from the template; an attachment rides
                 // along as an extra user turn for the model to look at.
                 ...(imageParts.length > 0
@@ -424,9 +433,19 @@ export function RunPanel({
         inputWrapperOrder={["label", "description", "input"]}
       >
         <Stack gap={4} mt={4}>
-          <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
+          <AttachmentBar
+            attachments={attachments}
+            documents={documents}
+            attachError={attachError}
+            onRemove={removeAt}
+            onRemoveDocument={removeDocumentAt}
+          />
           <Group>
-            <AttachButton onPick={(files) => void addFiles(files)} disabled={running} />
+            <AttachButton
+              onPick={(files) => void addFiles(files)}
+              disabled={running}
+              documents={projectType !== "image"}
+            />
           </Group>
           {modelAcceptsImages === false && attachments.length > 0 && (
             <Text fz="xs" c="red">

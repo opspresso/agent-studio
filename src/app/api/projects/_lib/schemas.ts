@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
-import { attachedImagesSchema } from "@/app/api/_lib/attachments";
+import { attachedDocumentsSchema, attachedImagesSchema } from "@/app/api/_lib/attachments";
 import type { ChannelToolCall } from "@/domain/llm/types";
 import type { McpBinding } from "@/domain/project/types";
 
@@ -259,6 +259,7 @@ export const predictSchema = z.object({
   quality: z.string().optional(),
   /** Source images for an `image` project: present means edit, absent means draw. */
   images: attachedImagesSchema,
+  documents: attachedDocumentsSchema,
 });
 
 export const chatCompletionsSchema = z.object({
@@ -272,4 +273,5 @@ export const chatCompletionsSchema = z.object({
 
 export const agentSchema = z.object({
   messages: z.array(chatMessageSchema).min(1),
+  documents: attachedDocumentsSchema,
 });

@@ -19,6 +19,7 @@ import { filesNotKeptWarning } from "@/application/artifact/producedFiles";
 import { endNoticeFor } from "./cancelRun";
 import { log } from "@/shared/logger";
 import { cutUtf8Bytes } from "@/shared/utf8Text";
+import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 
 /**
  * Chat is an interactive surface, so it may fall back to the newest draft
@@ -60,7 +61,7 @@ export function userTurnContent(
  * one row, read whole on every later turn, and a 10MB PDF has no place in one.
  */
 export async function readMessageDocuments(
-  deps: ChatDeps,
+  extractor: DocumentExtractor,
   documents: AttachedDocumentInput[],
 ): Promise<{ stored: ChatMessageDocument[]; warnings: string[] }> {
   if (documents.length === 0) {
@@ -68,7 +69,7 @@ export async function readMessageDocuments(
   }
   const warnings: string[] = [];
   const stored = await readDocuments(
-    deps.documents,
+    extractor,
     documents.map((document) => ({
       bytes: Buffer.from(document.b64, "base64"),
       mimeType: document.mimeType,

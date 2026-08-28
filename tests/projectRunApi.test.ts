@@ -22,4 +22,22 @@ describe("project run API", () => {
       expect(call[1]).toMatchObject({ signal: controller.signal });
     }
   });
+
+  it("sends playground documents on agent and prompt runs", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Response.json({}),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const document = { b64: "AQID", mimeType: "application/octet-stream", name: "report.docx" };
+
+    await streamPredict("demo", "v1", { documents: [document] });
+    await streamAgent("demo", "v1", [{ role: "user", content: "read it" }], undefined, [document]);
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      documents: [document],
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      documents: [document],
+    });
+  });
 });

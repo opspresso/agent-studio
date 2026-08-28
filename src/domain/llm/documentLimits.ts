@@ -33,7 +33,37 @@ export const MAX_DOCUMENT_CHARS = 20_000;
 export const MAX_DOCUMENT_CHARS_PER_TURN = 40_000;
 
 /** What a document is read as. `null` is "not something this accepts". */
-export type DocumentKind = "text" | "pdf" | "html";
+export type DocumentKind = "text" | "pdf" | "html" | "office";
+
+/** Office formats whose structure is parsed by a bound read_document MCP capability. */
+const OFFICE_MIME_TYPES = new Set([
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/hwp+zip",
+  "application/vnd.hancom.hwpx",
+  "application/haansofthwpx",
+  "application/x-hwp",
+  "application/vnd.hancom.hwp",
+  "application/haansofthwp",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.oasis.opendocument.presentation",
+  "application/rtf",
+  "text/rtf",
+]);
+
+const OFFICE_EXTENSIONS = new Set([
+  "docx",
+  "xlsx",
+  "pptx",
+  "hwp",
+  "hwpx",
+  "odt",
+  "ods",
+  "odp",
+  "rtf",
+]);
 
 /**
  * Text types worth naming explicitly. Anything under `text/` is already covered;
@@ -89,6 +119,7 @@ export const SUPPORTED_DOCUMENT_TYPES = [
   "application/json",
   "application/xml",
   "application/yaml",
+  ...OFFICE_MIME_TYPES,
 ] as const;
 
 function extensionOf(name: string): string {
@@ -112,6 +143,9 @@ export function documentKind(mimeType: string, name = ""): DocumentKind | null {
   }
   if (mime === "application/pdf" || extension === "pdf") {
     return "pdf";
+  }
+  if (OFFICE_MIME_TYPES.has(mime) || OFFICE_EXTENSIONS.has(extension)) {
+    return "office";
   }
   // Ahead of the text branch, which `text/html` would otherwise satisfy. A page
   // handed over as raw markup is mostly tags the model has to read past to find

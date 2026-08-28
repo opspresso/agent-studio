@@ -243,7 +243,7 @@ export function readSse(response: Response): AsyncGenerator<EngineChunk> {
 export async function streamPredict(
   name: string,
   version: string,
-  body: { variables?: Record<string, string>; messages?: unknown[] },
+  body: { variables?: Record<string, string>; messages?: unknown[]; documents?: unknown[] },
   signal?: AbortSignal,
 ): Promise<Response> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
@@ -261,11 +261,12 @@ export async function streamAgent(
   version: string,
   messages: unknown[],
   signal?: AbortSignal,
+  documents?: unknown[],
 ): Promise<Response> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/agent`, {
     method: "POST",
     headers: jsonHeaders,
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, documents }),
     signal,
   });
   await assertOk(res);
