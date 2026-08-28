@@ -61,7 +61,7 @@ ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), mess
 ## Schedule
 
 **스케줄러 경계** — 이 기능이 기다리고 있던 배포 결정 — 는 **인증된 엔드포인트를 틱하는
-Kubernetes CronJob** (`POST /api/triggers/scan`, 공유 토큰, 1분에 한 번) 이다. 티커는 상태도
+외부 ticker** (`POST /api/triggers/scan`, 공유 토큰, 1분에 한 번) 이다. 티커는 상태도
 cron 지식도 갖지 않는다: 어떤 발생(occurrence)이 도래했는지, 각각을 누가 차지하는지, 무엇이
 실행되는지는 전부 `scanSchedules` 에서 결정되므로 두 번 틱하든, 두 곳에서 틱하든, 늦게
 틱하든 안전하다. 대안들은 상태 때문에 졌다: EventBridge Scheduler 는 트리거별 CRUD 를 AWS

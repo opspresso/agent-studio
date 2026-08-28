@@ -8,10 +8,10 @@ import { timingSafeEqualString } from "@/shared/timingSafe";
 import { unauthorized } from "@/shared/unauthorized";
 
 /**
- * The plugins-sync tick. A Kubernetes CronJob (or anything able to POST)
+ * The plugins-sync tick. A deployment-owned ticker (or anything able to POST)
  * calls this so a merge to the plugins repo lands without waiting for an
  * admin to visit the console. Authentication is the same shared token the
- * schedule scan uses — one CronJob credential per deployment — and ticking
+ * schedule scan uses — one ticker credential per deployment — and ticking
  * twice is safe: the sync lease turns the second tick into a no-op.
  *
  * The sync runs in the background, like schedule firings: the tick returns

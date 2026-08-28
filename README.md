@@ -47,8 +47,8 @@ cp .env.example .env.local
 # LLM_BASE_URL, LLM_API_KEY, AES_ENCRYPTION_KEY (32바이트 base64) 를 채우고,
 # 실제 로그인이 필요하면 BETTER_AUTH_SECRET 과 로그인 방식 하나(OIDC / Google / 비밀번호)도 채운다.
 
-# 3. Local PostgreSQL (스키마는 앱이 부팅 때 만든다)
-docker compose up -d postgres
+# 3. localdev PostgreSQL 18 + MinIO (bucket도 생성한다)
+docker compose up -d postgres minio minio-init
 
 # 4. Run
 pnpm dev            # http://localhost:3000
@@ -74,7 +74,7 @@ lint 단계는 없다. `typecheck` + `test` + `build` 가 검사다.
 
 | 문서 | 무엇에 답하나 |
 |---|---|
-| [docs/INSTALL.md](docs/INSTALL.md) | 설치. 호스트 하나(Compose), Kubernetes(Helm), 폐쇄망에서의 대체 경로, AWS 배포에서 옮겨 오기 |
+| [docs/INSTALL.md](docs/INSTALL.md) | localdev 설정, 배포 저장소 소유권, 폐쇄망과 데이터 이관 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 어떻게 만들어졌고 **왜** 그런가. 레이어, 아이템 테이블 키 맵, 진입점에서 엔진까지의 경로 |
 | [docs/DIAGRAMS.md](docs/DIAGRAMS.md) | 같은 모양을 그림으로. 레이어, 요청 흐름, 런 브래킷, 메시징 표면, wiring site, 스토리지 |
 | [docs/design/](docs/design/) | 서브시스템마다 파일 하나. 엔진, MCP, 메시징 표면(Slack, Telegram, Teams), capability, trigger, chat, 기록, A2A |
@@ -239,19 +239,19 @@ project 카탈로그를 공유하므로 project 이름만으로는 "누가 이�
 
 ```bash
 docker build -t agent-studio .        # 멀티스테이지, Next standalone 출력
-docker compose up --build             # 로컬 컨테이너 + PostgreSQL (+ --profile objects 로 MinIO)
+docker compose up --build             # 로컬 앱 + PostgreSQL 18 + MinIO
 ```
 
 이미지는 `NODE_ENV=production` 을 설정하고, 이것은 명시적인 `STAGE` 없이는 부팅을 거부한다.
 compose 서비스는 그 값을 `.env.local` 에서 읽는다(`.env.example` 에는 `STAGE=local`).
 
-버전 태그(`v*`)는 `ghcr.io/opspresso/agent-studio` 와 ECR 에 빌드·푸시하고 GitOps 배포를
-트리거한다. 설치 방법은 [docs/INSTALL.md](docs/INSTALL.md) 에 있다. 호스트 하나의 Docker
-Compose(`deploy/idc/`)와 Kubernetes 의 Helm 차트(`deploy/helm/agent-studio`) 두 가지다.
+버전 태그(`v*`)는 `ghcr.io/opspresso/agent-studio` 와 ECR 에 이미지를 빌드·푸시하고
+`argocd-env-demo`에 새 tag를 전달한다. 실제 배포 정의는 환경별 저장소가 소유한다: IDC는
+`../dockpad`, EKS/Kubernetes는 `../argocd-env-demo`다. 이 저장소에는 두 환경의 Compose나 Helm
+manifest를 두지 않는다.
 로드 밸런서는 `/api/ready` 를, 재시작 검사는 `/api/health` 를 가리키게 하고, `/api/metrics` 를
 스크랩하며, `SCHEDULE_SCAN_TOKEN` 으로 티커를 켜라. 만료 행을 쓸어내는 것이 그 틱이다.
 운영 체크리스트는 [docs/OPERATIONS.md](docs/OPERATIONS.md#운영-체크리스트) 에 있다.
 
-실서비스는 IDC 호스트 하나 위의 Docker Compose 인 **alpha** 이고, Kubernetes 쪽 **prod** 는
-차트만 있고 클러스터는 현재 없다. 무엇을 나누고 무엇을 나누지 않는지는
-[docs/OPERATIONS.md](docs/OPERATIONS.md#두-환경-alpha-와-prod) 에 있다.
+로컬 개발은 루트 `compose.yaml`의 `localdev` PostgreSQL 18·MinIO와 OrbStack 기반
+`deploy/local/` MCP compose를 사용한다. 자세한 소유권은 [docs/INSTALL.md](docs/INSTALL.md)에 있다.

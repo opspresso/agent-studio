@@ -53,7 +53,7 @@ There is no lint step. CI runs typecheck → test → integration test → build
 11 are required (`packageManager` is pinned).
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres minio minio-init
 pnpm db:migrate
 pnpm test:integration
 

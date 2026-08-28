@@ -10,7 +10,7 @@ name: Check models
 # this job compared the registry against a single provider-direct endpoint,
 # which serves bare ids — nothing matched, and every registered model was
 # reported as retired. So the five provider channels of
-# `argocd-env-demo/charts/agent-studio` are configured here too, Bedrock included:
+# Production-like provider channels are configured here too, Bedrock included:
 # it signs with SigV4, hence the OIDC role rather than a key.
 #
 # Requires repository/organization secrets: LLM_BASE_URL, LLM_API_KEY,

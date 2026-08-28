@@ -34,10 +34,9 @@ cp .env.example .env.local
 ## 로컬 PostgreSQL
 
 ```bash
-docker compose up -d postgres        # pgvector/pgvector:0.8.6-pg18-trixie on :5432
+docker compose up -d postgres minio minio-init # PostgreSQL 18 + MinIO + bucket
 pnpm dev                             # http://localhost:3000 — 스키마는 부팅 때 앱이 만든다
 pnpm db:migrate                      # 앱을 띄우지 않고 스키마만 적용 (CI, 첫 부팅 전)
-docker compose --profile objects up -d minio   # 선택: artifact 용 MinIO (:9000, 콘솔 :9001)
 ```
 
 `.env.example` 의 `DATABASE_URL`(`postgres://agent_studio:agent_studio@localhost:5432/agent_studio`)
@@ -58,9 +57,8 @@ lock 아래에서 멱등하게 적용하므로 따로 만들 것이 없다. pgve
 > `docker compose down -v` (볼륨은 모든 프로젝트의 것이다) 나 `--remove-orphans`
 > (다른 저장소가 띄운 컨테이너까지 없앤다) 는 절대 실행하지 마라.
 
-MinIO 를 쓰려면 `.env.local` 에 `S3_BUCKET_NAME`, `S3_ENDPOINT=http://localhost:9000`,
-`S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`(compose 의 값), 그리고 `ARTIFACT_ACCESS_MODE=proxied`
-를 두고 버킷은 콘솔(:9001)이나 `mc mb` 로 한 번 만든다. 주석 처리된 예가 `.env.example` 에 있다.
+`.env.example` 의 기본 object-store 설정은 localdev MinIO(:9000, console :9001)를 가리킨다.
+`minio-init`이 `agent-studio` bucket을 멱등하게 만든다.
 
 ## 로컬 MCP (deploy/local)
 
