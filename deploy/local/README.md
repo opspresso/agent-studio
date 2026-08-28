@@ -8,8 +8,7 @@ agent-plugins 레지스트리가 등록하는 MCP URL 은 `http://mcp-<name>.age
 
 ## 사전 조건
 
-- 로컬 개발 셋업 (`docs/DEVELOPMENT.md`): dev PostgreSQL(:5432, 루트 `compose.yaml` 의 `postgres`), `.env.local`, `pnpm dev`.
-- Bash 4+ (`brew install bash`; macOS 기본 Bash 3.2는 지원하지 않는다).
+- 로컬 개발 셋업 (`docs/DEVELOPMENT.md`): 루트 `compose.yaml` 의 PostgreSQL 18·MinIO, `.env.local`, `pnpm dev`.
 - `.env.local` 에 한 줄 추가 — 이것이 없으면 SSRF 가드가 MCP URL 을 전부 거부하고, plugins sync 는 모든 서버를 `invalid-url` 로 스킵한다:
 
   ```
@@ -23,7 +22,7 @@ agent-plugins 레지스트리가 등록하는 MCP URL 은 `http://mcp-<name>.age
 ```bash
 cd deploy/local
 scripts/deploy.sh    # 첫 실행: .env 생성 후 종료 — 검토하고 다시 실행
-scripts/deploy.sh    # 태그 갱신 + ECR 로그인 + 기동
+scripts/deploy.sh    # .env 에 고정한 태그로 ECR 로그인 + 기동
 pnpm dev             # 레포 루트에서 — http://localhost:3000
 ```
 
@@ -46,7 +45,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 | 프로필 | 서비스 | 필요한 것 | 주의 |
 |---|---|---|---|
-| `aws` | mcp-memory, mcp-cloudwatch | `cp .env.aws.example .env.aws` 후 액세스 키 | 이 로컬 compose 의 mcp-memory 는 S3 Vectors 버킷(`agent-studio-vector`/`agent-studio-memory`)을 읽고 쓴다. IDC 배포의 PostgreSQL 저장 경로와 다르며, 로컬 S3 Vectors 는 없다 |
+| `aws` | mcp-memory, mcp-cloudwatch | `cp .env.aws.example .env.aws` 후 액세스 키 | 이 로컬 compose 의 mcp-memory 는 S3 Vectors 버킷(`agent-studio-vector`/`agent-studio-memory`)을 읽고 쓴다. 로컬 MinIO는 S3 Vectors를 제공하지 않는다 |
 | `brave` | mcp-brave-search | `.env` 의 `BRAVE_API_KEY` | |
 | `ticker` | 스케줄·플러그인 sync·카탈로그 리인덱스 | `.env` 의 `SCHEDULE_SCAN_TOKEN` (`.env.local` 과 같은 값) | `scripts/tick.sh` 를 마운트하고 호스트의 `pnpm dev`(:3000)를 두드린다 — 컨테이너에는 이 토큰 하나만 들어간다 |
 
