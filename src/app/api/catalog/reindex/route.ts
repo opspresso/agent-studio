@@ -7,10 +7,10 @@ import { timingSafeEqualString } from "@/shared/timingSafe";
 import { unauthorized } from "@/shared/unauthorized";
 
 /**
- * The catalog tick. A Kubernetes CronJob (or anything able to POST) calls this
+ * The catalog tick. A deployment-owned ticker calls this
  * so a newly registered skill or MCP server becomes discoverable without an
  * admin doing anything. Authentication is the same shared token the schedule
- * scan and the plugins sync use — one CronJob credential per deployment.
+ * scan and the plugins sync use — one ticker credential per deployment.
  *
  * The reindex runs in the background for the same reason those two do: the tick
  * must return in milliseconds while probing every MCP server and embedding the

@@ -2,7 +2,7 @@
  * One scheduler tick: walk every schedule trigger, claim the occurrences that
  * came due, and admit a run for each claim won.
  *
- * The tick itself comes from outside the process — a Kubernetes CronJob hitting
+ * The tick itself comes from outside the process — a deployment-owned ticker hitting
  * the scan endpoint (docs/design/triggers.md records the decision). Everything the
  * tick finds is decided here, and every instance may be ticked concurrently:
  * the per-occurrence conditional-write claim is what makes "exactly once"

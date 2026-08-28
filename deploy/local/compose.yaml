@@ -2,8 +2,7 @@
 # stays `pnpm dev` on the host, so code changes are testable immediately at
 # http://localhost:3000.
 #
-# The MCP scheme is `deploy/idc/`'s, unchanged and for the same reason: the
-# registry rows agent-plugins syncs name `http://mcp-<name>.agent-mcps.svc.
+# The registry rows agent-plugins syncs name `http://mcp-<name>.agent-mcps.svc.
 # cluster.local/mcp` (no port = 80), so every service here **listens on 80**
 # and carries that cluster DNS name twice:
 #
@@ -20,7 +19,7 @@
 # entries pointing them at 127.0.0.1 plus a Host-routing proxy on port 80 —
 # see README.md.
 
-name: agent-studio-local
+name: agent-studio-mcp-local
 
 x-mcp: &mcp
   restart: unless-stopped
@@ -93,9 +92,8 @@ services:
         aliases:
           - mcp-memory.agent-mcps.svc.cluster.local
 
-  # Same launcher and healthcheck as IDC — see the long comments there for why
-  # `entrypoint` (not `command`) and why the image's own HEALTHCHECK is
-  # replaced.
+  # `entrypoint` starts the HTTP transport directly; the upstream image's
+  # default command is stdio-only and its healthcheck does not probe this port.
   mcp-cloudwatch:
     <<: *mcp
     profiles: [aws]
@@ -168,9 +166,8 @@ services:
           - mcp-brave-search.agent-mcps.svc.cluster.local
 
   # --- Ticker ------------------------------------------------------------
-  # IDC's tick loop, mounted from there rather than copied: without it nothing
-  # fires schedules, syncs plugins or reindexes the catalog locally. It ticks
-  # the `pnpm dev` server on the host.
+  # Without this loop nothing fires schedules, syncs plugins or reindexes the
+  # catalog locally. It ticks the `pnpm dev` server on the host.
   #
   # The token is interpolated from `.env` rather than env_file-ing the whole
   # `.env.local`: tick.sh reads exactly one secret, and a third-party curl
@@ -188,6 +185,6 @@ services:
       - "host.docker.internal:host-gateway"
     entrypoint: ["/bin/sh", "/tick.sh"]
     volumes:
-      - ../idc/scripts/tick.sh:/tick.sh:ro
+      - ./scripts/tick.sh:/tick.sh:ro
     mem_limit: 64m
     logging: *logging

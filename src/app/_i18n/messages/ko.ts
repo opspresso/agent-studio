@@ -109,7 +109,7 @@ export const ko: Messages = {
     "실행은 도구 호출까지 턴 단위로 기록되고 프로젝트에서 바로 열어 볼 수 있습니다. 시크릿 열람, 관리자 대리 수정, 삭제는 감사 로그로 남습니다.",
   "home.install.title": "설치",
   "home.install.body":
-    "컨테이너 이미지로 배포합니다. 호스트 한 대는 Docker Compose 로, 쿠버네티스 클러스터는 Helm 차트로 올립니다.",
+    "컨테이너 이미지로 배포합니다. 배포 manifest는 환경 저장소가 관리하고, 이 저장소는 localdev만 소유합니다.",
   "home.install.floor": "필요한 것",
   "home.install.floorNote":
     "pgvector 를 켠 PostgreSQL 하나와, 모델을 서빙하는 OpenAI 호환 엔드포인트 하나입니다. 스키마는 앱이 부팅할 때 직접 만듭니다.",

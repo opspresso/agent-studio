@@ -93,8 +93,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
       # GHCR as well: the pull path an installation outside this AWS account
-      # uses (`IMAGE_REGISTRY=ghcr.io/opspresso` in deploy/idc/.env.example),
-      # and the one a mirror into an air-gapped registry starts from.
+      # uses, and the one a mirror into an air-gapped registry starts from.
       - name: Login to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -129,23 +128,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Its own job so a deploy-trigger failure reads as exactly that — the image
-  # is already in ECR and rerunning this job alone redeploys without a rebuild.
-  # `needs: release` keeps the ordering the single job had: never point the
-  # GitOps repo at a tag whose image does not exist yet.
+  # Deployment manifests live in argocd-env-demo. This repository only sends
+  # the image tag after the image exists; it does not own the target manifests.
   gitops:
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, linux]
     timeout-minutes: 5
-    # No OIDC here — the only credential is the app installation token below.
     permissions:
       contents: read
     steps:
-      # A repository_dispatch to another repository cannot use GITHUB_TOKEN: it
-      # is scoped to the repository running the workflow. This mints a
-      # short-lived installation token instead, scoped to argocd-env-demo alone,
-      # so there is no long-lived PAT to rotate or over-scope.
       - name: Mint a token for the GitOps repository
         id: gitops-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -155,10 +147,6 @@ jobs:
           owner: opspresso
           repositories: argocd-env-demo
 
-      # `phase: alpha` is the deployed one, not a staging step: the ApplicationSet
-      # in apps/agent-studio.yaml loads values.yaml + values-alpha.yaml, and
-      # nothing reads values-prod.yaml. `container: app` is the top-level key in
-      # that values file — helm.py matches it by name to find the image tag.
       - name: Trigger GitOps 🚀
         env:
           GH_TOKEN: ${{ steps.gitops-token.outputs.token }}

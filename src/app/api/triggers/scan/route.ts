@@ -14,7 +14,7 @@ import { unauthorized } from "@/shared/unauthorized";
 import { withRunContext } from "@/shared/runContext";
 
 /**
- * The scheduler tick. A Kubernetes CronJob (or anything able to POST once a
+ * The scheduler tick. A deployment-owned ticker (or anything able to POST once a
  * minute) calls this; which occurrences are due, who wins each one, and what
  * runs is all decided inside `scanSchedules` — the ticker holds no state and
  * needs no cron knowledge, so ticking twice, from two places, or late is safe.

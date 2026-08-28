@@ -128,7 +128,7 @@ export const en = {
     "Runs are traced turn by turn, tool calls included, from the project they belong to. Secret reveals, admin edits, and deletions leave an audit row.",
   "home.install.title": "Installing it",
   "home.install.body":
-    "Agent Studio ships as a container image. One host runs it with Docker Compose; a cluster runs it from the Helm chart.",
+    "Agent Studio ships as a container image. Deployment manifests live in the environment repositories; this repository owns localdev only.",
   "home.install.floor": "What it needs",
   "home.install.floorNote":
     "A PostgreSQL database with pgvector, and an OpenAI-compatible endpoint for the models. The app creates its schema at boot.",

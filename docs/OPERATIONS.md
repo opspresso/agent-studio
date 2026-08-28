@@ -2,8 +2,7 @@
 
 배포하고, 프로브하고, 스케일링하고, 데이터베이스를 유한하게 유지하는 일.
 
-관련 문서: 설치 자체. 무엇이 필요하고, 호스트 하나(Compose)와 Kubernetes(Helm)에 어떻게
-올리며, 폐쇄망에서는 무엇을 대신하고, 옛 AWS 배포에서 어떻게 옮겨 오는지. 는
+관련 문서: localdev와 배포 저장소의 소유권, 폐쇄망 대체 경로, 옛 AWS 배포 이관은
 [INSTALL.md](INSTALL.md) 다. 여기 이름이 나오는 모든 변수는
 [CONFIGURATION.md](CONFIGURATION.md), 자격 증명 취급은 [SECURITY.md](SECURITY.md), 로컬
 루프는 [DEVELOPMENT.md](DEVELOPMENT.md).
@@ -15,7 +14,7 @@
 
 ```bash
 docker build -t agent-studio .
-docker compose up --build          # 로컬 컨테이너 + PostgreSQL (+ --profile objects 로 MinIO)
+docker compose up --build          # 로컬 앱 + PostgreSQL 18 + MinIO
 ```
 
 런타임 스테이지는 비-root `app` 사용자로 실행되고 `/api/health` 에 대한 `HEALTHCHECK` 를
@@ -44,11 +43,9 @@ dispatch 는 persistent self-hosted runner와 OIDC·registry·GitOps 자격 증�
    푸시한다: **`ghcr.io/opspresso/agent-studio`**(`GITHUB_TOKEN` 으로 로그인, 이 AWS 계정 밖의
    설치가 pull 하는 경로이고, 폐쇄망 레지스트리로 미러링을 시작하는 지점이다)와 ECR(GitHub
    OIDC 로 AWS role 을 assume, 장기 키 없음).
-4. **GitOps 트리거**. `argocd-env-demo` 저장소 하나로만 범위가 좁혀진 단명 GitHub App
-   installation 토큰을 발급해 `repository_dispatch` 를 보내고, 그것이 `alpha` phase 의 이미지
-   태그를 올린다. 여기서 `GITHUB_TOKEN` 은 쓸 수 없다: 워크플로가 실행되는 저장소로 범위가
-   한정되기 때문이다. IDC 호스트의 `deploy.sh` 는 GitHub 이 닿으면 그 핀을 따라간다
-   ([두 환경](#두-환경-alpha-와-prod)).
+
+4. **GitOps 트리거**. 이미지 push 뒤 `argocd-env-demo`에 새 tag를 전달한다. 배포 manifest와
+   rollout은 그 저장소가 소유하며, 이 저장소는 tag 전달만 담당한다.
 
 ### 실패한 릴리스를 다시 돌리기
 
@@ -64,7 +61,7 @@ dispatch 는 persistent self-hosted runner와 OIDC·registry·GitOps 자격 증�
   이력이 어긋난다.
 
 Actions 자체가 막혀 있으면(결제 한도, 러너 다운) 릴리스는 로컬에서 같은 순서로 할 수 있다:
-검증 → 태그 → `linux/amd64` 빌드 → ECR·GHCR push → GitOps 이미지 태그 범프 → IDC `deploy.sh`.
+검증 → 태그 → `linux/amd64` 빌드 → ECR·GHCR push → GitOps tag 전달.
 
 자명하지 않은 빌드 설정이 둘 있다:
 
@@ -241,8 +238,8 @@ transfer 는 맨바닥에서 시작한다), Telegram·Teams 대화 트랜스크�
 > `session` 테이블도 같은 틱이 쓴다(자기 `expiresAt` 기준, 같은 상한): 라이브러리는 만료된
 > 세션을 그 쿠키가 다시 올 때만 지우므로, 돌아오지 않은 브라우저의 행은 틱이 아니면 영원히 남는다.
 > **`SCHEDULE_SCAN_TOKEN` 이 없는 배포는 티커가 없고, 따라서 아무것도 지우지 않는다.** 앱은
-> 그 사실을 경고로 올릴 길이 없다. 테이블 크기만이 말해 준다. Compose 는 `ticker`
-> 프로파일, Helm 은 CronJob 이 그 틱이다 ([Schedule 티커](#schedule-티커)).
+> 그 사실을 경고로 올릴 길이 없다. 테이블 크기만이 말해 준다. 배포 저장소는 이 endpoint를
+> 호출하는 ticker를 반드시 구성해야 한다 ([Schedule 티커](#schedule-티커)).
 
 | 행 | 기본값 | 변수 | 기준 시점 |
 |---|---|---|---|
@@ -346,10 +343,10 @@ caller 당 `MAX_CONCURRENT_RUNS_PER_ACTOR` (기본 10); 인바운드 A2A 는 act
 ## Schedule 티커
 
 Schedule 트리거는 무언가가 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN` 과 함께
-`POST /api/triggers/scan` 을 틱할 때에만 발화한다. Compose 배포에서는 `ticker` 프로파일의
-컨테이너(`deploy/idc/scripts/tick.sh`, 토큰 하나만 쥔 `curl` 루프), Helm 에서는 차트의
-CronJob 이 그 일을 한다. **행 보존의 sweep 도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한
-것이기 때문이다. 티커가 만족해야 하는 계약은 다음이 전부다:
+`POST /api/triggers/scan` 을 틱할 때에만 발화한다. localdev는 `deploy/local/scripts/tick.sh`를
+사용하고, 실제 환경의 ticker는 `../dockpad`와 `../argocd-env-demo`가 소유한다. **행 보존의
+sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이기 때문이다. 티커가 만족해야 하는
+계약은 다음이 전부다:
 
 - **주기 ≤ 1분.** 스캔은 고정된 10분짜리 만회 윈도우를 되돌아보므로, 틱을 한 번 놓치거나 짧게
   장애가 나도 잃는 것이 없다; 윈도우보다 긴 장애는 그 발생분들을 영영 버린다 (의도적으로 유한하게
@@ -419,43 +416,19 @@ CronJob 이 그 일을 한다. **행 보존의 sweep 도 이 틱에 얹혀 있�
   같은 리스를 쓴다. GitHub 쪽 sync 와 동시에 돌 수 없다. 저장된 마지막 리포트는 설정된
   저장소 이름, 없으면 `archive` 아래에서 읽힌다.
 
-## 두 환경: alpha 와 prod
+## 배포 환경 소유권
 
-배포 모양은 둘이고, 실서비스는 하나다.
+이 저장소는 배포 manifest를 소유하지 않는다. IDC Compose, backup, secret, rollout은
+`../dockpad`가 관리하고 EKS/Kubernetes manifest와 GitOps rollout은 `../argocd-env-demo`가
+관리한다. Release workflow는 이미지를 ECR/GHCR에 발행하고 `argocd-env-demo`에 tag를 전달한다.
 
-| | 배포 | 주소 | 스토리지 |
-|---|---|---|---|
-| **alpha** | IDC 호스트 하나 위의 Docker Compose (`deploy/idc/`). opspresso 의 실서비스 | `studio.opspresso.com` | 그 호스트의 PostgreSQL(`postgres18-data`)과 MinIO(`minio-data`) 볼륨. 다른 어디에도 없다. `deploy/idc/scripts/backup.sh` 가 백업이다 |
-| **prod** | Kubernetes. `deploy/helm/agent-studio` 차트(앱 + 티커 CronJob + 선택적 번들 Postgres/MinIO). `argocd-env-demo` 의 차트도 같은 모양으로 맞춰 두었으나 **EKS 클러스터는 현재 없다** | — | 차트가 번들하는 StatefulSet, 또는 조직의 Postgres·S3 호환 스토어 |
-
-**한쪽에서 만든 프로젝트는 다른 쪽에 보이지 않는다.** 버전도, 채팅도, 사용량도, 레지스트리
-편집도 그렇다. 두 배포는 다른 데이터를 보는 같은 코드다.
-
-나누지 않는 것도 있다:
-
-| | |
-|---|---|
-| 시크릿 | alpha 는 호스트의 `.env.secrets`, 없으면 `.env.aws` 의 키로 SSM(`/k8s/common/agent-studio/*`)에서 같은 이름들을 읽는다(`deploy.sh`). `AES_ENCRYPTION_KEY` 를 옮겨 갈 때 그대로 가져가는 것은 편의가 아니라 요구다. 저장된 자격증명을 푸는 키다 |
-| 신원 제공자 | 하나를 공유할 수 있고, 그러면 리디렉션 URI(`/api/auth/callback/oidc` 또는 `/google`)에 두 주소가 모두 있어야 한다 |
-| agent-plugins 레지스트리 | 스킬·MCP 서버의 정의는 SSOT 하나다. 각 배포가 자기 데이터베이스에 sync 한다 |
-| 이미지 | `ghcr.io/opspresso/agent-studio` 와 ECR 에 같은 태그가 올라간다 |
-
-**티커는 배포마다 하나씩이다.** alpha 의 `.env.example` 은 `COMPOSE_PROFILES=ticker,aws` 로
-온다. `ticker` 가 없으면 그 배포의 schedule·카탈로그 재색인·plugins sync·**행 보존의
-sweep** 을 아무도 돌리지 않는다. Helm 에서는 CronJob 이 같은 토큰으로 같은 세 주소를 두드린다.
-
-**Slack·Telegram·Teams 는 등록된 webhook URL 하나가 받는다.** MCP OAuth connection 도
-`PUBLIC_BASE_URL` 기반이다. 두 배포에서 같은 이름의 project 를 만들었을 때만 헷갈릴 여지가
-있고, project 자체는 서로 다른 데이터베이스에 있다.
-
-IDC 호스트의 파일·절차는 [deploy/idc/README.md](../deploy/idc/README.md), 설치 전체는
-[INSTALL.md](INSTALL.md).
+환경마다 database, object store, secret, ticker, webhook URL, MCP OAuth callback을 독립적으로
+구성한다. `AES_ENCRYPTION_KEY`를 잃으면 그 환경의 저장 credential을 복호화할 수 없다.
 
 ## 다중 인스턴스 주의사항
 
-아래는 **한 배포 안에서 파드가 여럿일 때**의 이야기다. 같은 데이터베이스를 보는 프로세스들
-사이의 문제이고, 위의 두 환경 사이에는 적용되지 않는다. 그쪽은 데이터베이스조차 공유하지
-않는다. 런 상태는 전부 데이터베이스에 있으므로 레플리카를 늘려도 되고, 스키마 마이그레이션은
+아래는 **한 배포 안에서 인스턴스가 여럿일 때**의 이야기다. 같은 데이터베이스를 보는 프로세스들
+사이의 문제다. 런 상태는 전부 데이터베이스에 있으므로 레플리카를 늘려도 되고, 스키마 마이그레이션은
 부팅 때 advisory lock 아래에서 한 번만 돈다. 먼저 뜬 인스턴스가 적용하고 나머지는 기다린다.
 
 | 동작 | 무엇에 묶이는가 | 결과 |
@@ -491,10 +464,9 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오는 �
 
 - [ ] **시크릿.** `AES_ENCRYPTION_KEY` 와 `BETTER_AUTH_SECRET` 을 시크릿으로 프로비저닝하고
       백업할 것. 앞의 것을 잃으면 저장된 모든 자격 증명을 읽을 수 없고, proxied 오브젝트
-      주소도 전부 무효가 된다(서명 키가 거기서 파생된다). Compose 호스트의 `.env.host`
-      (Postgres·MinIO 자격 증명, 다시 생성되지 않는다)도 같은 급이다
+      주소도 전부 무효가 된다(서명 키가 거기서 파생된다)
 - [ ] **티커.** 다음 중 하나라도 쓴다면 `SCHEDULE_SCAN_TOKEN` 을 시크릿으로 프로비저닝하고
-      Compose 의 `ticker` 프로파일 또는 Helm 의 CronJob 을 켤 것. 토큰 하나가 세 틱을 모두
+      배포 저장소의 ticker를 켤 것. 토큰 하나가 세 틱을 모두
       인증하고, 그중 하나(plugins sync)는 두 레지스트리에 쓴다:
       - `/api/triggers/scan` 을 최대 1분 간격으로. schedule 트리거, **그리고 행 보존의 sweep**.
         티커 없는 배포는 `expiresAt` 이 지난 행을 영원히 쌓는다
@@ -503,11 +475,8 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오는 �
         손으로 등록한 Skill 이나 서버는 영영 발견되지 않는다
       - `PLUGINS_REPO` 가 설정됐다면 `/api/plugins/sync/scan`. 할 일이 없는 틱은 head SHA
         하나만 읽으므로 1분 간격이어도 괜찮다
-- [ ] **백업.** Compose: `deploy/idc/scripts/backup.sh [DEST]`. 두 데이터베이스(`agent_studio`
-      와 mcp-memory 의 `mcp_memory`)의 `pg_dump` + 오브젝트 미러 +
-      `.env.host`, 최신 `KEEP`(기본 7)개 유지, 복원 절차는 스크립트 머리. Helm: 조직의
-      Postgres 백업과 오브젝트 스토어 백업이 그 역할이고, `catalog_vectors` 는 복원 대신
-      재색인으로도 충분하다
+- [ ] **백업.** 배포 저장소가 PostgreSQL과 object store backup·restore 절차를 소유해야 한다.
+      `catalog_vectors`는 복원 대신 재색인으로도 충분하다
 - [ ] **보존.** `*_RETENTION_DAYS` 를 정하고. 기본값은 [행 보존](#행-보존). 오브젝트 스토어의
       `artifacts/image/`, `artifacts/document/`, 레거시 `images/` prefix 에 같은 구간의
       lifecycle 규칙을 붙일 것. 새 prefix 에 규칙이 빠지면 조용한 누수가 된다: 행은 만료되는데

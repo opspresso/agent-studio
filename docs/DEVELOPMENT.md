@@ -34,10 +34,9 @@ cp .env.example .env.local
 ## 로컬 PostgreSQL
 
 ```bash
-docker compose up -d postgres        # pgvector/pgvector:0.8.6-pg18-trixie on :5432
+docker compose up -d postgres minio minio-init # PostgreSQL 18 + MinIO + bucket
 pnpm dev                             # http://localhost:3000 — 스키마는 부팅 때 앱이 만든다
 pnpm db:migrate                      # 앱을 띄우지 않고 스키마만 적용 (CI, 첫 부팅 전)
-docker compose --profile objects up -d minio   # 선택: artifact 용 MinIO (:9000, 콘솔 :9001)
 ```
 
 `.env.example` 의 `DATABASE_URL`(`postgres://agent_studio:agent_studio@localhost:5432/agent_studio`)
@@ -45,22 +44,12 @@ docker compose --profile objects up -d minio   # 선택: artifact 용 MinIO (:90
 lock 아래에서 멱등하게 적용하므로 따로 만들 것이 없다. pgvector 확장도 거기서 만든다.
 고정 개발 자격 증명을 쓰는 PostgreSQL 과 MinIO 포트는 호스트 loopback 에만 공개된다.
 
-> **PostgreSQL 컨테이너는 이 머신의 다른 모든 프로젝트와 공유된다.** `compose.yaml` 이
-> compose 프로젝트 이름을 `localdev` 로 고정하므로, 다른 저장소에서
-> `docker compose up -d postgres` 를 실행하면 이미 떠 있는 이것을 찾아내고 그대로 둔다.
->
-> **프로젝트를 갈라놓는 것은 포트가 아니라 데이터베이스 이름이다.** 이 앱의 둘
-> (`agent_studio`, `agent_studio_test`)은 볼륨이 처음 초기화될 때 `deploy/postgres/init.sql`
-> 이 만드는데, 이 저장소가 볼륨을 초기화한 쪽일 때만 그렇다. initdb 는 두 번 돌지 않으므로,
-> 다른 저장소가 먼저 볼륨을 만들었다면 `docker compose exec postgres psql -U <그 저장소의
-> 사용자> -f /docker-entrypoint-initdb.d/init.sql` 처럼 역할과 데이터베이스를 직접 만든다
-> (서비스 블록은 글자 그대로 같아야 compose 가 컨테이너를 재생성하지 않는다).
-> `docker compose down -v` (볼륨은 모든 프로젝트의 것이다) 나 `--remove-orphans`
-> (다른 저장소가 띄운 컨테이너까지 없앤다) 는 절대 실행하지 마라.
+`compose.yaml`은 `agent-studio-local` project에 PostgreSQL 18과 MinIO 전용 volume을 만든다.
+Agent Memory는 별도 project와 포트를 사용하므로 서로 독립적으로 시작하고 종료할 수 있다.
+`docker compose down -v`는 Agent Studio의 로컬 데이터를 삭제하므로 명시적 확인 없이 실행하지 마라.
 
-MinIO 를 쓰려면 `.env.local` 에 `S3_BUCKET_NAME`, `S3_ENDPOINT=http://localhost:9000`,
-`S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`(compose 의 값), 그리고 `ARTIFACT_ACCESS_MODE=proxied`
-를 두고 버킷은 콘솔(:9001)이나 `mc mb` 로 한 번 만든다. 주석 처리된 예가 `.env.example` 에 있다.
+`.env.example` 의 기본 object-store 설정은 Agent Studio MinIO(:9000, console :9001)를 가리킨다.
+`minio-init`이 `agent-studio` bucket을 멱등하게 만든다.
 
 ## 로컬 MCP (deploy/local)
 
