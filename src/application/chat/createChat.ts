@@ -98,7 +98,24 @@ export async function createChat(
       { projectName: project.name, versionName: version.versionName },
       attachments,
     );
-    const read = await readMessageDocuments(deps, input.documents ?? []);
+    const documentInput = input.documents ?? [];
+    const documentSession =
+      documentInput.length > 0
+        ? await deps.openDocuments?.(
+            version,
+            input.signal,
+            { conversation: chatConversation(chat.chatId) },
+          )
+        : undefined;
+    let read: Awaited<ReturnType<typeof readMessageDocuments>>;
+    try {
+      read = await readMessageDocuments(
+        documentSession?.extractor ?? deps.documents,
+        documentInput,
+      );
+    } finally {
+      await documentSession?.close();
+    }
     const userSeq = await deps.chats.reserveMessageSeq(chat.chatId);
     const userMessage: ChatMessage = {
       chatId: chat.chatId,

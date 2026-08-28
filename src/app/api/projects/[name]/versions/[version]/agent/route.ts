@@ -8,6 +8,11 @@ import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/e
 import { requestConversation } from "@/app/api/projects/_lib/conversation";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { withTurnBody } from "@/app/api/_lib/body";
+import {
+  attachDocumentsToMessages,
+  readBoundExecutionDocuments,
+  withDocumentWarnings,
+} from "@/app/api/projects/_lib/documents";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 
@@ -26,6 +31,13 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       const project = await projectUseCases.get(name);
       const versionEntity = await versionUseCases.get(name, version);
       const conversation = requestConversation(request, principalActor(principal));
+      const read = await readBoundExecutionDocuments(
+        executionDeps,
+        versionEntity,
+        parsed.data.documents,
+        request.signal,
+        conversation ? { conversation } : undefined,
+      );
       const abortController = new AbortController();
       return await sseResponse(
         // A file chunk leaves here addressed: the object key and artifact id the
@@ -34,15 +46,18 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         // compare view read this stream too, which is how both of them ended up
         // drawing the picture a run made and saying nothing about the document.
         withAddressedFiles(
-          executeAgent(executionDeps, {
-            project,
-            version: versionEntity,
-            messages: parsed.data.messages,
-            actor: principalActor(principal),
-            ...(principal.caller ? { caller: principal.caller } : {}),
-            ...(conversation ? { conversation } : {}),
-            signal: abortController.signal,
-          }),
+          withDocumentWarnings(
+            read.warnings,
+            executeAgent(executionDeps, {
+              project,
+              version: versionEntity,
+              messages: attachDocumentsToMessages(parsed.data.messages, read.documents),
+              actor: principalActor(principal),
+              ...(principal.caller ? { caller: principal.caller } : {}),
+              ...(conversation ? { conversation } : {}),
+              signal: abortController.signal,
+            }),
+          ),
           signArtifactUrl,
           VIEW_URL_TTL_SECONDS,
         ),

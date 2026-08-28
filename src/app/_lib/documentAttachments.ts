@@ -33,6 +33,15 @@ export const ACCEPTED_DOCUMENT_TYPES: readonly string[] = [
   ".yaml",
   ".yml",
   ".log",
+  ".docx",
+  ".xlsx",
+  ".pptx",
+  ".hwp",
+  ".hwpx",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".rtf",
 ];
 
 /** True when this file should go down the document path rather than the image one. */

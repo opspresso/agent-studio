@@ -1792,6 +1792,40 @@ describe("attached documents", () => {
     expect(replayed.content).toContain('[Attached file "q3.txt"');
   });
 
+  it("resolves office parsing from the runnable version and closes it after extraction", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const close = vi.fn(async () => {});
+    const openDocuments = vi.fn(async () => ({
+      extractor: { extract: async () => ({ text: "| Quarter | Revenue |\n| --- | --- |\n| Q3 | 12 |" }) },
+      close,
+    }));
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      openDocuments,
+    });
+
+    const { stream } = await sendMessage(deps, {
+      chatId: "c1",
+      content: "analyse this",
+      documents: [{ b64: "AQID", mimeType: "application/octet-stream", name: "q3.xlsx" }],
+      userEmail: "owner@x.com",
+    });
+    for await (const _ of stream) {
+      // drain
+    }
+
+    expect(openDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ projectName: "agent", versionName: "1" }),
+      undefined,
+      { conversation: { surface: "chat", id: "c1" } },
+    );
+    expect(close).toHaveBeenCalledOnce();
+    expect((await repo.listMessages("c1")).find((message) => message.role === "user")).toMatchObject({
+      documents: [{ name: "q3.xlsx", text: expect.stringContaining("Revenue") }],
+    });
+  });
+
   it("answers, and says why, when the document could not be read", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const deps = makeDeps(repo, {

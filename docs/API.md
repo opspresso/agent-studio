@@ -597,7 +597,10 @@ publish 된 version 도 실행 가능한 초안도 없는 project 는 `400` 으�
 돌아오는 대신 메시지에서 빠진다.
 
 `documents` 는 보는 것이 아니라 읽는 파일이다. `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
-각각 10MB: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML, HTML 이다. `name` 은 필수이고,
+각각 10MB: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML, HTML, DOCX, XLSX, PPTX,
+HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 실행할 version에 바인딩된 MCP 중
+`read_document` capability를 제공하는 서버가 읽는다. 그런 binding이 없거나 호출이 실패하면
+그 파일이 빠졌다는 warning 을 돌려준다. `name` 은 필수이고,
 `mimeType` 이 `application/octet-stream` 일 때. 업로드는 흔히 이렇게 도착한다. 판단을 떠맡는다.
 읽을 수 없는 타입은 `400` 으로 거절된다. 서버는 **텍스트**를 추출하고. PDF 의 텍스트 레이어,
 텍스트 파일의 내용. 턴은 그것을 싣는다. 파일 자체는 절대 저장되지 않는다. 저장되는 것은 추출된

@@ -48,6 +48,22 @@ describe("documentKind", () => {
     expect(documentKind("application/octet-stream", "saved.html")).toBe("html");
   });
 
+  it("routes the office formats mcp-document reads", () => {
+    expect(documentKind("", "report.docx")).toBe("office");
+    expect(documentKind("application/octet-stream", "deck.pptx")).toBe("office");
+    expect(documentKind("application/vnd.hancom.hwp", "report")).toBe("office");
+    expect(documentKind("application/vnd.oasis.opendocument.spreadsheet", "sheet")).toBe(
+      "office",
+    );
+    expect(documentKind("text/rtf", "notes.rtf")).toBe("office");
+  });
+
+  it("does not offer unsupported legacy Office binaries", () => {
+    expect(documentKind("application/msword", "report.doc")).toBeNull();
+    expect(documentKind("application/vnd.ms-excel", "sheet.xls")).toBeNull();
+    expect(documentKind("application/vnd.ms-powerpoint", "deck.ppt")).toBeNull();
+  });
+
   it("is not a document for an image, whatever it is called", () => {
     // Images have their own path; one arriving here would be read as bytes
     // rather than looked at.

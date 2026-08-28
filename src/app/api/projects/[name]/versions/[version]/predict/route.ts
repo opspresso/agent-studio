@@ -16,6 +16,11 @@ import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/e
 import { requestConversation } from "@/app/api/projects/_lib/conversation";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { withTurnBody } from "@/app/api/_lib/body";
+import {
+  attachDocumentsToMessages,
+  readBoundExecutionDocuments,
+  withDocumentWarnings,
+} from "@/app/api/projects/_lib/documents";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 
@@ -49,11 +54,18 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         return Response.json(image);
       }
       const conversation = requestConversation(request, principalActor(principal));
+      const read = await readBoundExecutionDocuments(
+        executionDeps,
+        versionEntity,
+        parsed.data.documents,
+        request.signal,
+        conversation ? { conversation } : undefined,
+      );
       const params = {
         project,
         version: versionEntity,
         variables: parsed.data.variables,
-        messages: parsed.data.messages ?? [],
+        messages: attachDocumentsToMessages(parsed.data.messages ?? [], read.documents),
         actor: principalActor(principal),
         // Not on the image branch above: an image run's prompt is the rendered
         // template, with no system prompt for a caller block to live in.
@@ -71,7 +83,10 @@ export const POST = async (request: Request, ctx: RouteContext) => {
           // in raw chunks too, and a file frame carrying an object key is the
           // same non-answer there as it was here.
           withAddressedFiles(
-            executeProjectStream(executionDeps, { ...params, signal: abortController.signal }),
+            withDocumentWarnings(
+              read.warnings,
+              executeProjectStream(executionDeps, { ...params, signal: abortController.signal }),
+            ),
             signArtifactUrl,
             VIEW_URL_TTL_SECONDS,
           ),
@@ -88,7 +103,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         signArtifactUrl,
         VIEW_URL_TTL_SECONDS,
       );
-      const warnings = [...run.warnings, ...produced.warnings];
+      const warnings = [...read.warnings, ...run.warnings, ...produced.warnings];
       return Response.json({
         result: run.content,
         model: run.model,
