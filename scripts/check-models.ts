@@ -70,8 +70,8 @@ interface ServedModel {
 /**
  * Effective channel configuration. Runtime settings own the DB-override →
  * env-fallback precedence, so this asks them rather than reading the env
- * itself; when the settings row is unreachable (no AWS credentials, running
- * against a laptop with no DynamoDB) it degrades to the env channels instead of
+ * itself; when the settings row is unreachable (no database running on this
+ * machine) it degrades to the env channels instead of
  * refusing to run — a report from the env channels is still useful.
  */
 async function resolveChannels(): Promise<Channel[]> {

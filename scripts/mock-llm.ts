@@ -71,11 +71,19 @@ const server = createServer((req, res) => {
       res.writeHead(404).end();
       return;
     }
-    const body = JSON.parse(raw) as {
+    // A bad body must answer 400, not throw: this callback is async, so a
+    // throw here is an unhandled rejection that takes the whole server down.
+    let body: {
       stream?: boolean;
       tools?: unknown[];
       messages: Array<{ role: string; content?: unknown }>;
     };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      res.writeHead(400).end();
+      return;
+    }
     const hasToolResult = body.messages.some((m) => m.role === "tool");
     const skillName = /skill named "?([a-z0-9-]+)/i.exec(JSON.stringify(body.messages))?.[1];
     const wantsSkill = Boolean(!hasToolResult && body.tools?.length && skillName);

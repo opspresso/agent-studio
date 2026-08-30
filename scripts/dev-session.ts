@@ -10,7 +10,9 @@ process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:543
 process.env.BETTER_AUTH_SECRET ??= "dev-secret";
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl.includes("localhost") && !databaseUrl.includes("127.0.0.1")) {
+// Hostname, not substring: `postgres://prod-host/db?opt=localhost` must not
+// pass, since this script writes an account and a live session cookie.
+if (!["localhost", "127.0.0.1"].includes(new URL(databaseUrl).hostname)) {
   console.error(`Refusing to run against a non-local database: ${databaseUrl}`);
   process.exit(1);
 }
