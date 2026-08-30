@@ -92,6 +92,8 @@ import {
 } from "@/application/llm/modelCatalogRefresh";
 import { createCompositeModelCatalogSource } from "@/application/llm/modelCatalogStoredSource";
 import { createModelCatalogDocumentUseCases } from "@/application/llm/modelCatalogDocument";
+import { createModelPreferenceUseCases } from "@/application/llm/modelPreferences";
+import { modelPreferencesRepository } from "@/infrastructure/db/repositories/modelPreferencesRepository";
 import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
 import { modelCatalogRepository } from "@/infrastructure/db/repositories/modelCatalogRepository";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
@@ -147,7 +149,7 @@ import { createAuditUseCases } from "@/application/audit/auditUseCases";
 import { createMemberUseCases } from "@/application/member/memberUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import {
-  getEnabledModels,
+  getHiddenModels,
   getAdminEmails,
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -286,6 +288,7 @@ export const modelCatalogDocumentUseCases = createModelCatalogDocumentUseCases(
   modelCatalogRepository,
   refreshModelCatalog,
 );
+export const modelPreferenceUseCases = createModelPreferenceUseCases(modelPreferencesRepository);
 
 /**
  * What the self-hosted channel is serving right now — the declaration aid on
@@ -846,10 +849,10 @@ export const createProjectWithInitialVersion = composeCreateProjectWithInitialVe
   // Which model fits which project type is the flow's policy; this only feeds
   // it the runtime settings the application layer may not read.
   offered: async () => {
-    const [providers, enabled] = await Promise.all([getLlmProviderConfigs(), getEnabledModels()]);
+    const [providers, hidden] = await Promise.all([getLlmProviderConfigs(), getHiddenModels()]);
     return offeredModels(
       providers.map((provider) => provider.name),
-      enabled,
+      hidden,
     );
   },
 });

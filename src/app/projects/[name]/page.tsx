@@ -9,7 +9,7 @@ import {
   listVersions,
   publishVersion,
   updateVersion,
-  type ModelConfig,
+  type SelectableModel,
   type SanitizedProject,
   type Version,
   type VersionInput,
@@ -32,7 +32,7 @@ import classes from "./Playground.module.css";
  * is not in the fetched catalog, so an unlisted-but-valid model is not blocked.
  */
 function runImageCapability(
-  models: ModelConfig[],
+  models: SelectableModel[],
   modelId: string,
   projectType: SanitizedProject["projectType"],
 ): boolean | undefined {
@@ -63,7 +63,7 @@ function toInput(version: Version): VersionInput {
   };
 }
 
-function emptyInput(models: ModelConfig[]): VersionInput {
+function emptyInput(models: SelectableModel[]): VersionInput {
   return {
     systemPrompt: "",
     userPromptTemplate: "",
@@ -83,7 +83,7 @@ export default function PlaygroundPage() {
   const t = useT();
   const [project, setProject] = useState<SanitizedProject | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
-  const [models, setModels] = useState<ModelConfig[]>([]);
+  const [models, setModels] = useState<SelectableModel[]>([]);
   const [selectedName, setSelectedName] = useState<string>("");
   const [draft, setDraft] = useState<VersionInput>(emptyInput([]));
   const [snapshot, setSnapshot] = useState<string>("");

@@ -25,6 +25,7 @@ import type { McpConnectionView } from "@/application/mcp/mcpAuthUseCases";
 import type { ActorUsageView } from "@/application/usage/listActors";
 import type { ProjectA2aResponse } from "@/app/api/projects/[name]/a2a/route";
 import type { CloneProjectResponse } from "@/app/api/projects/[name]/clone/route";
+import type { ModelsResponse } from "@/app/api/models/route";
 import type { SanitizedProject } from "@/app/api/projects/_lib/http";
 import type { ProjectSlackResponse } from "@/app/api/projects/[name]/slack/route";
 import type { ProjectTelegramResponse } from "@/app/api/projects/[name]/telegram/route";
@@ -44,6 +45,7 @@ import { readSse as readSseFrames } from "@/app/_lib/sse";
 
 export type { CostLimits, McpBinding, Project, ProjectType, ProjectVisibility, SubagentRef, Version, VersionParameters };
 export type { ModelConfig, EngineChunk, UsageRow, Trace, SlackChannelInfo, SlackSuggestedPrompt };
+export type SelectableModel = ModelsResponse["models"][number];
 
 // --- Projects -------------------------------------------------------------
 
@@ -209,13 +211,13 @@ export function publishVersion(name: string, versionName: string): Promise<Sanit
 // --- Models ---------------------------------------------------------------
 
 /** Fetch the model registry. Returns [] if the endpoint is unavailable. */
-export async function listModels(): Promise<ModelConfig[]> {
+export async function listModels(): Promise<ModelsResponse["models"]> {
   try {
     const res = await fetch("/api/models");
     if (!res.ok) {
       return [];
     }
-    const data = (await res.json()) as { models?: ModelConfig[] };
+    const data = (await res.json()) as ModelsResponse;
     return data.models ?? [];
   } catch {
     return [];

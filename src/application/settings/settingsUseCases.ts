@@ -9,6 +9,8 @@ import type {
 import {
   getModelConfig,
   loadSelfHostedModels,
+  MAX_HIDDEN_MODELS,
+  offeredModels,
   selfHostedModelRejectReason,
   SUPPORTED_PROVIDERS,
 } from "@/domain/llm/models";
@@ -26,7 +28,7 @@ export type ParseProviderConfigs = (env: NodeJS.ProcessEnv) => ProviderChannelCo
 
 export type SettingKey = Exclude<
   keyof AppSettings,
-  "updatedAt" | "llmProviders" | "enabledModels" | "selfHostedModels"
+  "updatedAt" | "llmProviders" | "hiddenModels" | "selfHostedModels"
 >;
 
 interface FieldSpec {
@@ -129,8 +131,8 @@ export type { SelfHostedModelInput };
 export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
   /** Full replacement list; empty array removes the override (env fallback). */
   llmProviders?: LlmProviderInput[];
-  /** Full replacement list; empty array removes the override (every model offered). */
-  enabledModels?: string[];
+  /** Full replacement list; empty array removes the override (no models hidden). */
+  hiddenModels?: string[];
   /** Full replacement list; empty array removes every declaration. */
   selfHostedModels?: SelfHostedModelInput[];
 };
@@ -159,8 +161,8 @@ function changedKeys(specs: FieldSpec[], stored: AppSettings | null, next: AppSe
   if (JSON.stringify(stored?.llmProviders) !== JSON.stringify(next.llmProviders)) {
     changed.push("llmProviders");
   }
-  if (JSON.stringify(stored?.enabledModels) !== JSON.stringify(next.enabledModels)) {
-    changed.push("enabledModels");
+  if (JSON.stringify(stored?.hiddenModels) !== JSON.stringify(next.hiddenModels)) {
+    changed.push("hiddenModels");
   }
   if (JSON.stringify(stored?.selfHostedModels) !== JSON.stringify(next.selfHostedModels)) {
     changed.push("selfHostedModels");
@@ -413,18 +415,27 @@ export function createSettingsUseCases(
           }
           next.selfHostedModels = declarations;
         }
+        const declaredIds = new Set((next.selfHostedModels ?? []).map((entry) => entry.id));
+        if (next.hiddenModels !== undefined) {
+          next.hiddenModels = next.hiddenModels.filter(
+            (id) => !id.startsWith("selfhosted/") || declaredIds.has(id),
+          );
+          if (next.hiddenModels.length === 0) delete next.hiddenModels;
+        }
       }
 
-      if (patch.enabledModels !== undefined) {
-        if (patch.enabledModels.length === 0) {
-          delete next.enabledModels;
+      if (patch.hiddenModels !== undefined) {
+        if (patch.hiddenModels.length > MAX_HIDDEN_MODELS) {
+          throw new ValidationError(`At most ${MAX_HIDDEN_MODELS} models may be hidden`);
+        }
+        if (patch.hiddenModels.length === 0) {
+          delete next.hiddenModels;
         } else {
-          // Sorted and deduplicated so a resubmitted selection compares equal
+          // Sorted and deduplicated so a resubmitted hidden list compares equal
           // in `changedKeys` regardless of the order the toggles were flipped.
-          const ids = [...new Set(patch.enabledModels.map((id) => id.trim()))].sort();
+          const ids = [...new Set(patch.hiddenModels.map((id) => id.trim()))].sort();
           // A declaration in this same patch counts: it installs right after
-          // the write below, so one PUT may declare a model and enable it —
-          // the registry just cannot answer for it yet.
+          // the write below, so one PUT may declare and hide it together.
           const declaredNow = new Set((next.selfHostedModels ?? []).map((entry) => entry.id));
           const unknown = ids.filter(
             (id) => getModelConfig(id) === undefined && !declaredNow.has(id),
@@ -432,7 +443,22 @@ export function createSettingsUseCases(
           if (unknown.length > 0) {
             throw new ValidationError(`Unknown model ids: ${unknown.join(", ")}`);
           }
-          next.enabledModels = ids;
+          // Judged against what `/api/models` would actually offer — the same
+          // provider-channel narrowing (`offeredModels`, with this patch's
+          // provider override when it carries one) — so a deployment with one
+          // configured provider cannot hide that provider's whole list while
+          // models no channel dispatches keep the guard quiet.
+          const channelNames = (next.llmProviders ?? parseProviderConfigs(env)).map(
+            (provider) => provider.name,
+          );
+          const hidden = new Set(ids);
+          const remaining = offeredModels(channelNames, ids).filter(
+            (model) => patch.selfHostedModels === undefined || model.provider !== "selfhosted",
+          );
+          if (remaining.length === 0 && [...declaredNow].every((id) => hidden.has(id))) {
+            throw new ValidationError("At least one model must remain visible");
+          }
+          next.hiddenModels = ids;
         }
       }
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { settingsUseCases } from "@/lib/container";
-import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { MAX_HIDDEN_MODELS, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
@@ -43,8 +43,8 @@ const updateSchema = z.object({
   // field that cannot be cleared would fail the whole save, losing every other
   // edit in the form along with it.
   unknownModelPolicy: z.enum(["allow", "refuse", ""]).optional(),
-  // Full replacement; empty array clears the override (every model offered).
-  enabledModels: z.array(z.string().max(200)).max(200).optional(),
+  // Full replacement; empty array clears the override (no models hidden).
+  hiddenModels: z.array(z.string().max(200)).max(MAX_HIDDEN_MODELS).optional(),
   // Full replacement; empty array removes every declaration. Shape-level only —
   // the semantic rules (zero pricing, catalog collisions, family agreement)
   // are the registry loader's, applied in the use case.
