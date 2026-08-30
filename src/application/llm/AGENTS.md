@@ -44,7 +44,9 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   `src/application/chat/run.ts` spends a byte budget of its own on it and why a write that
   overruns it is caught and logged rather than thrown, taking the reply the reader just
   watched stream — content and reasoning are truncated onto that budget, `tool_calls` is the
-  axis that is not. `boundToolArgs` swaps any value past `MAX_TOOL_ARG_BYTES` for its size, and
+  axis that is not. `boundToolArgsPair` swaps any value past `MAX_TOOL_ARG_BYTES` for its size —
+  deciding per key on the larger of the two copies, so the mask tokens' length difference can
+  never elide one copy and keep the other — and
   `boundArgumentText` cuts a call whose arguments never parsed, which is how an oversize one
   most often arrives (the provider cuts the turn mid-file; the accumulator has no cap).
   **Keyed to size, never to a tool name** — a document renderer takes the document's text, and
@@ -244,7 +246,7 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   done differently for a turn nothing here will continue. **The client call's announced
   arguments are not bounded**: for every other tool the real call was made with the whole
   value and the announcement only describes it, but a client tool's call *is* the
-  announcement — nothing else carries it — so `boundToolArgs` would hand the application
+  announcement — nothing else carries it — so the bounded copy would hand the application
   the placeholder as the value. The run's **own** calls in that turn still run and report —
   a provider rejects an assistant message whose calls lack results, and the application's
   next run replays this turn. **A transfer's answer goes out as the transfer's own result**

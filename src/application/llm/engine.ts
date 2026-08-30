@@ -981,24 +981,43 @@ function elidedArg(bytes: number): string {
  * document's text, and a model that emits a long string as an array of lines
  * arrives here with a large value under a name nothing anticipated.
  */
-function boundToolArgs(args: Record<string, unknown>): Record<string, unknown> {
-  let bounded: Record<string, unknown> | undefined;
-  for (const [key, value] of Object.entries(args)) {
-    // A string is measured as itself, so the number a reader is shown is the
-    // one the tool result and the artifact row also report. Anything else — the
-    // shape a model reaches for when it cannot fit a string — is measured as it
-    // will be serialised, which is the cost it actually imposes.
-    const size =
-      typeof value === "string"
-        ? Buffer.byteLength(value, "utf8")
-        : Buffer.byteLength(JSON.stringify(value) ?? "null", "utf8");
-    if (size <= MAX_TOOL_ARG_BYTES) {
+// A string is measured as itself, so the number a reader is shown is the
+// one the tool result and the artifact row also report. Anything else — the
+// shape a model reaches for when it cannot fit a string — is measured as it
+// will be serialised, which is the cost it actually imposes.
+function argByteSize(value: unknown): number {
+  return typeof value === "string"
+    ? Buffer.byteLength(value, "utf8")
+    : Buffer.byteLength(JSON.stringify(value) ?? "null", "utf8");
+}
+
+/**
+ * One elision decision for both copies of a call's arguments.
+ *
+ * The PII mask tokens differ in length from the values they stand for, so a
+ * value near the bound can cross it in one copy and not the other — and then
+ * the arguments the provider replays and the arguments the reader was shown
+ * stop telling the same story. Elision is decided per key on the larger of
+ * the two measurements; each copy still reports its own true size.
+ */
+function boundToolArgsPair(
+  args: Record<string, unknown>,
+  displayArgs: Record<string, unknown>,
+): { wire: Record<string, unknown>; display: Record<string, unknown> } {
+  let wire: Record<string, unknown> | undefined;
+  let display: Record<string, unknown> | undefined;
+  for (const key of Object.keys(args)) {
+    const wireSize = argByteSize(args[key]);
+    const displaySize = argByteSize(displayArgs[key]);
+    if (Math.max(wireSize, displaySize) <= MAX_TOOL_ARG_BYTES) {
       continue;
     }
-    bounded ??= { ...args };
-    bounded[key] = elidedArg(size);
+    wire ??= { ...args };
+    display ??= { ...displayArgs };
+    wire[key] = elidedArg(wireSize);
+    display[key] = elidedArg(displaySize);
   }
-  return bounded ?? args;
+  return { wire: wire ?? args, display: display ?? displayArgs };
 }
 
 /**
@@ -1932,12 +1951,13 @@ export async function* runAgent(
       // announcement — nothing else carries the arguments to the application
       // that runs it — so a value swapped for its size would be the value the
       // tool receives.
-      wireToolCalls.push(toWireToolCall(call.id, call.name, boundToolArgs(args)));
+      const bounded = boundToolArgsPair(args, displayArgs);
+      wireToolCalls.push(toWireToolCall(call.id, call.name, bounded.wire));
       yield {
         author,
         delta: {
           toolCalls: [
-            toWireToolCall(call.id, call.name, client ? displayArgs : boundToolArgs(displayArgs)),
+            toWireToolCall(call.id, call.name, client ? displayArgs : bounded.display),
           ],
         },
       };
