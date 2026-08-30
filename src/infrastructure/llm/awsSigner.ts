@@ -130,6 +130,15 @@ export function createSignedFetch(service: string): typeof fetch {
     const headers = new Headers(init?.headers);
     const body = payloadOf(init?.body);
 
+    // Repeated keys stay repeated: `Object.fromEntries(url.searchParams)`
+    // would fold them to the last value, and a signature over fewer
+    // parameters than the wire carries is an opaque 403.
+    const query: Record<string, string | string[]> = {};
+    for (const key of new Set(url.searchParams.keys())) {
+      const values = url.searchParams.getAll(key);
+      query[key] = values.length === 1 ? (values[0] ?? "") : values;
+    }
+
     const signed = await signer.sign(
       {
         method,
@@ -137,7 +146,7 @@ export function createSignedFetch(service: string): typeof fetch {
         hostname: url.hostname,
         port: url.port === "" ? undefined : Number(url.port),
         path: url.pathname,
-        query: Object.fromEntries(url.searchParams),
+        query,
         headers: {
           ...Object.fromEntries(headers.entries()),
           host: url.host,

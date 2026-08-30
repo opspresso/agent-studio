@@ -61,7 +61,9 @@ describe("member repository", () => {
       lastLoginAt: "2026-02-01T00:00:00.000Z",
     }]);
     expect(issued().text).toMatch(/FROM "user"/);
-    expect(issued().text).toMatch(/ORDER BY "createdAt", "id" LIMIT \$1/);
+    expect(issued().text).toMatch(
+      /ORDER BY date_trunc\('milliseconds', "createdAt"\), "id" LIMIT \$1/,
+    );
     expect(issued().params).toEqual([100]);
   });
 
@@ -81,7 +83,12 @@ describe("member repository", () => {
       id: "u1",
     });
 
-    expect(issued().text).toMatch(/WHERE \("createdAt", "id"\) > \(\$2::timestamptz, \$3\)/);
+    // Truncated on both sides of the comparison: the cursor carries only
+    // millisecond precision, so a microsecond column value on the page
+    // boundary must not compare as "after the cursor" and repeat.
+    expect(issued().text).toMatch(
+      /WHERE \(date_trunc\('milliseconds', "createdAt"\), "id"\) > \(\$2::timestamptz, \$3\)/,
+    );
     expect(issued().params).toEqual([25, "2026-01-01T00:00:00.000Z", "u1"]);
   });
 
