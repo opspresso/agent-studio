@@ -37,7 +37,9 @@ export function parseFrontmatter(raw: string): Frontmatter {
     if (!kv?.[1] || kv[2] === undefined) {
       continue;
     }
-    let value = kv[2].replace(/^["']|["']$/g, "");
+    // A matched pair only: stripping each end independently would eat the
+    // apostrophe off `'til dawn` or the lone quote off `"abc'`.
+    let value = kv[2].replace(/^(["'])([\s\S]*)\1$/, "$2");
     // YAML folded/literal scalars (`key: >` or `key: |`): consume the
     // following indented lines and join them with spaces.
     if (value === ">" || value === "|" || value === ">-" || value === "|-") {

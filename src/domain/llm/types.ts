@@ -337,10 +337,12 @@ export function imageDataUrl(image: { b64: string; mimeType: string }): string {
 /**
  * Decode a `data:<mime>;base64,<payload>` url into bytes — the inverse of
  * `imageDataUrl`. Any other url form (an https image the provider fetches for
- * itself) returns null.
+ * itself) returns null. Parameters between the mime and `;base64` are
+ * tolerated and dropped: `imageDataUrl` never writes them, but an external
+ * caller's `data:image/png;charset=binary;base64,…` is still an image.
  */
 export function parseImageDataUrl(url: string): { b64: string; mimeType: string } | null {
-  const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);
+  const match = /^data:([^;,]+)(?:;[^;,]*)*;base64,(.+)$/s.exec(url);
   const mimeType = match?.[1];
   const b64 = match?.[2];
   if (!mimeType || !b64 || !mimeType.startsWith("image/")) {
