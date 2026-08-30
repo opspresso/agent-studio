@@ -2050,20 +2050,26 @@ export async function* runAgent(
         // through the `GenerateImage` builtin and vanished through a transfer to
         // an image project.
         const outcome: { error?: string } = {};
-        const childText = yield* observeChildFailure(
-          filter
-            ? runSubagentWithPii(
-                filter,
-                deps.runSubagent,
-                agentName,
-                message,
-                turn + 1,
-                maxTurn,
-                childImages,
-                transcript,
-              )
-            : deps.runSubagent(agentName, message, turn + 1, maxTurn, childImages, transcript),
-          outcome,
+        // `reportChildCompletion`, like a dispatched task's stream: without
+        // the `authorDone` a consumer keying on it (the AG-UI translator's
+        // STEP_FINISHED) held the transferred agent open until the run ended.
+        const childText = yield* reportChildCompletion(
+          observeChildFailure(
+            filter
+              ? runSubagentWithPii(
+                  filter,
+                  deps.runSubagent,
+                  agentName,
+                  message,
+                  turn + 1,
+                  maxTurn,
+                  childImages,
+                  transcript,
+                )
+              : deps.runSubagent(agentName, message, turn + 1, maxTurn, childImages, transcript),
+            outcome,
+          ),
+          agentName,
         );
         // A transfer's answer used to enter the context with no bound at all —
         // the one unbudgeted spot. The user already saw the child's full
