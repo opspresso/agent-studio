@@ -626,7 +626,10 @@ export async function* executeAgent(
     }
     // Before the first token: what this run lost is part of reading its answer.
     for (const warning of warnings) {
-      const chunk: EngineChunk = { warning };
+      const chunk: EngineChunk = {
+        warning,
+        ...(recorder ? { traceId: recorder.traceId } : {}),
+      };
       recorder?.observe(chunk);
       yield chunk;
     }
@@ -657,7 +660,13 @@ export async function* executeAgent(
       signal: runSignal,
     }))) {
       recorder?.observe(chunk);
-      yield chunk;
+      // The run's own id on its own chunks: a subagent's chunks already carry
+      // that child's trace, and until top-level chunks carried this one, a
+      // consumer joining "this run" to "its trace" (the trigger firing row)
+      // could only pick up the first child's id — the wrong trace.
+      yield recorder && isTopLevelChunk(chunk)
+        ? { ...chunk, traceId: recorder.traceId }
+        : chunk;
     }
     completed = true;
   } catch (caught) {

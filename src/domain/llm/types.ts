@@ -95,7 +95,10 @@ export type RunTerminationReason =
 
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
-  /** Internal correlation id for a traced subagent execution. */
+  /**
+   * The trace this chunk belongs to, when the run was sampled. A top-level
+   * chunk carries its own run's trace; an authored chunk carries the child's.
+   */
   traceId?: string;
   /**
    * Subagent that authored this chunk — the *innermost* one, so a nested

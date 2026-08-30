@@ -1934,6 +1934,28 @@ describe("execution tracing policy", () => {
     expect(traces[0]?.spans.some((span) => span.kind === "model")).toBe(true);
   });
 
+  it("stamps the run's own traceId on its top-level chunks", async () => {
+    // The one place a consumer can join "this run" to "its trace" from the
+    // stream alone — the trigger firing row does exactly that. A child's
+    // chunks carry the child's trace, so without this the first authored
+    // chunk's id was the only candidate, and it was the wrong trace.
+    const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    const traces = captureTraces(deps);
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: versionFixture({ piiFiltering: false }),
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    const topLevel = chunks.filter((chunk) => chunk.author === undefined);
+    expect(topLevel.length).toBeGreaterThan(0);
+    expect(topLevel.every((chunk) => chunk.traceId === traces[0]?.traceId)).toBe(true);
+  });
+
   it("records what the run did before its first model call, through the run itself", async () => {
     // The recorder's own arithmetic is covered in tests/trace.test.ts; what is
     // covered here is the wiring — that a real run emits the stage at all, and
