@@ -48,6 +48,7 @@ export const ko: Messages = {
   "auth.email": "이메일",
   "auth.password": "비밀번호",
   "auth.passwordFailed": "이메일 또는 비밀번호가 올바르지 않습니다.",
+  "auth.signInFailed": "로그인을 시작하지 못했습니다. 다시 시도하세요.",
   "auth.or": "또는",
   "auth.signOut": "로그아웃",
   "auth.account": "계정",

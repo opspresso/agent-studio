@@ -66,6 +66,7 @@ export const en = {
   "auth.email": "Email",
   "auth.password": "Password",
   "auth.passwordFailed": "Email or password is incorrect.",
+  "auth.signInFailed": "Sign-in did not start. Try again.",
   "auth.or": "or",
   "auth.signOut": "Sign out",
   "auth.account": "Account",

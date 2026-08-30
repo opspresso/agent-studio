@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Button, Divider, PasswordInput, Stack, TextInput } from "@mantine/core";
+import { Button, Divider, PasswordInput, Stack, Text, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { authClient, signIn, signInWithOidc } from "@/lib/auth-client";
+import { OIDC_PROVIDER_ID } from "@/shared/signInError";
 
 /** Which ways in this deployment offers; `config.authProviders` decides. */
 export interface SignInProviders {
@@ -40,12 +41,16 @@ export function SignInButton({
   const t = useT();
   const size = compact ? "xs" : "md";
 
+  // A provider redirect never resolves here, so success leaves `pending` on
+  // until the page unloads; only a refusal comes back, as a throw or as a
+  // resolved `{ error }`, and either one must release the button.
   async function withPending(action: () => Promise<unknown>) {
     setPending(true);
     setError(null);
     try {
       await action();
-    } catch {
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
       setPending(false);
     }
   }
@@ -58,7 +63,7 @@ export function SignInButton({
             key="oidc"
             size={size}
             loading={pending}
-            onClick={() => void withPending(() => signInWithOidc("oidc", callbackURL))}
+            onClick={() => void withPending(() => signInWithOidc(OIDC_PROVIDER_ID, callbackURL))}
           >
             {label ?? t("auth.signInWith", { provider: oidc.displayName })}
           </Button>,
@@ -71,7 +76,14 @@ export function SignInButton({
             size={size}
             variant={oidc ? "default" : "filled"}
             loading={pending}
-            onClick={() => void withPending(() => signIn.social({ provider: "google", callbackURL }))}
+            onClick={() =>
+              void withPending(async () => {
+                const result = await signIn.social({ provider: "google", callbackURL });
+                if (result.error) {
+                  throw new Error(result.error.message ?? t("auth.signInFailed"));
+                }
+              })
+            }
           >
             {label ?? t("auth.signInWith", { provider: "Google" })}
           </Button>,
@@ -90,7 +102,19 @@ export function SignInButton({
         </Button>
       );
     }
-    return buttons.length === 1 ? buttons[0] : <Stack gap="xs">{buttons}</Stack>;
+    if (buttons.length === 1 && !error) {
+      return buttons[0];
+    }
+    return (
+      <Stack gap="xs">
+        {buttons}
+        {error ? (
+          <Text c="red" size="sm">
+            {error}
+          </Text>
+        ) : null}
+      </Stack>
+    );
   }
 
   // Password sign-in is the last resort, shown under the providers: it is for
