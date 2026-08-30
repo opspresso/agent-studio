@@ -23,6 +23,13 @@
  * segment, and what the docs and the Slack bot call it; a console that renamed
  * its copy would make one thing answer to two words. What gets translated is
  * the prose around them: descriptions, actions, states and empty messages.
+ *
+ * **Operator maintenance surfaces may stay English** — the tools detail page,
+ * integration sections, and similar admin-only screens whose action buttons
+ * ("Save", "Test connection", "Disconnect") sit beside English error text and
+ * API vocabulary anyway. That is a policy, not drift: a screen is either in
+ * this catalogue or it is not, and a screen being migrated should move whole,
+ * never one label at a time.
  */
 export const en = {
   // Language toggle. Each language is named in itself — `LOCALE_LABELS` — so

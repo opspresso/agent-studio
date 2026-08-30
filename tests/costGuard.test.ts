@@ -22,7 +22,12 @@ import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageRow } from "@/domain/usage/types";
 import { fakeSkillRepository } from "./fakeSkills";
 
-const TODAY = new Date().toISOString().slice(0, 10);
+// A getter, not a module-load constant: the guard computes its own current
+// date at call time, and a suite that loads this module before UTC midnight
+// and runs the test after it would compare two different days.
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function project(costLimits?: CostLimits, slackEnabled = false): Project {
   return {
@@ -43,7 +48,7 @@ function project(costLimits?: CostLimits, slackEnabled = false): Project {
 function row(costUsd: Record<string, number>): UsageRow {
   return {
     projectName: "proj",
-    date: TODAY,
+    date: today(),
     calls: {},
     inputTokens: {},
     outputTokens: {},
@@ -266,7 +271,7 @@ describe("settleCostLimit", () => {
       f.deps,
       project({ alertThresholdUsd: 4, alertSlackChannel: "C1" }, true),
     );
-    expect(f.claims).toEqual([{ kind: "alert", date: TODAY }]);
+    expect(f.claims).toEqual([{ kind: "alert", date: today() }]);
     expect(f.posted).toHaveLength(1);
     expect(f.posted[0]).toMatchObject({ token: "token", channel: "C1" });
     expect(f.posted[0]?.text).toContain("$5.00 of $4.00");
@@ -329,7 +334,7 @@ describe("settleCostLimit", () => {
       deps,
       project({ monthlyAlertThresholdUsd: 10, alertSlackChannel: "C123" }, true),
     );
-    expect(claims).toEqual([{ kind: "alert", date: TODAY.slice(0, 7) }]);
+    expect(claims).toEqual([{ kind: "alert", date: today().slice(0, 7) }]);
     expect(posted).toHaveLength(1);
     expect(posted[0]?.text).toContain("monthly");
   });
@@ -340,7 +345,7 @@ describe("settleCostLimit", () => {
       f.deps,
       project({ monthlyAlertThresholdUsd: 10, alertSlackChannel: "C1" }, true),
     );
-    expect(f.claims).toEqual([{ kind: "alert", date: TODAY.slice(0, 7) }]);
+    expect(f.claims).toEqual([{ kind: "alert", date: today().slice(0, 7) }]);
   });
 
   it("derives the day from the month's rows rather than reading twice", async () => {
@@ -350,7 +355,7 @@ describe("settleCostLimit", () => {
       project({ alertThresholdUsd: 5, monthlyAlertThresholdUsd: 100, alertSlackChannel: "C1" }, true),
     );
     // The daily alert fired from the month's rows; `getDay` was never called.
-    expect(f.claims).toEqual([{ kind: "alert", date: TODAY }]);
+    expect(f.claims).toEqual([{ kind: "alert", date: today() }]);
   });
 
   it("a failed month read does not swallow the daily notification", async () => {
@@ -365,7 +370,7 @@ describe("settleCostLimit", () => {
         true,
       ),
     );
-    expect(f.claims).toEqual([{ kind: "alert", date: TODAY }]);
+    expect(f.claims).toEqual([{ kind: "alert", date: today() }]);
     error.mockRestore();
   });
 
