@@ -96,6 +96,7 @@ const MAX_CARD_BYTES = 1_000_000;
  * here as it does on every other remote answer (`docs/CONFIGURATION.md`).
  */
 const MAX_REPLY_BYTES = 2 * 1024 * 1024;
+const REPLY_TOO_LARGE = `A2A reply exceeds ${MAX_REPLY_BYTES / (1024 * 1024)}MB`;
 /** How often a blocking send that was answered with a live task asks again. */
 const TASK_POLL_MS = 2000;
 
@@ -141,11 +142,20 @@ function partsBytes(parts: Part[]): number {
   );
 }
 
+/**
+ * Every part `extractA2aText` may read — artifacts first, then the status
+ * message and history it falls back to. The size cap in `toResult` walks the
+ * same set, so no route into the text escapes the bound.
+ */
 function resultParts(result: Message | Task): Part[] {
   if ("messageId" in result) {
     return result.parts;
   }
-  return (result.artifacts ?? []).flatMap((artifact) => artifact.parts);
+  return [
+    ...(result.artifacts ?? []).flatMap((artifact) => artifact.parts),
+    ...(result.status?.message?.parts ?? []),
+    ...(result.history ?? []).flatMap((message) => message.parts),
+  ];
 }
 
 export function extractA2aText(result: Message | Task): string {
@@ -266,6 +276,16 @@ async function collectStream(
           if (!event.status) {
             break;
           }
+          // Status messages accumulate into `history` below and are what
+          // `extractA2aText` falls back to, so they spend the same reply
+          // budget artifacts do — otherwise a remote streaming its answer as
+          // status text has no bound at all until the run deadline.
+          if (event.status.message) {
+            received += partsBytes(event.status.message.parts);
+            if (received > MAX_REPLY_BYTES) {
+              return { result: null, error: REPLY_TOO_LARGE };
+            }
+          }
           task = {
             ...base,
             status: event.status,
@@ -299,10 +319,7 @@ async function collectStream(
           // on a streamed reply is that it stops the stream.
           received += partsBytes(event.artifact?.parts ?? []);
           if (received > MAX_REPLY_BYTES) {
-            return {
-              result: null,
-              error: `A2A reply exceeds ${MAX_REPLY_BYTES / (1024 * 1024)}MB`,
-            };
+            return { result: null, error: REPLY_TOO_LARGE };
           }
           break;
         }
@@ -358,7 +375,7 @@ async function loadAgentCard(cardUrl: string, fetchImpl: typeof fetch): Promise<
  */
 function toResult(result: Message | Task): A2aSendResult {
   if (partsBytes(resultParts(result)) > MAX_REPLY_BYTES) {
-    return { ok: false, error: `A2A reply exceeds ${MAX_REPLY_BYTES / (1024 * 1024)}MB` };
+    return { ok: false, error: REPLY_TOO_LARGE };
   }
   const text = extractA2aText(result);
   if (!("messageId" in result) && result.status) {

@@ -1176,6 +1176,26 @@ describe("sendA2aMessage — the task's state decides", () => {
     expect(methods).toEqual(["SendMessage", "GetTask"]);
   });
 
+  it("spends the same bound on status messages, which the extractors also read", async () => {
+    // Two non-terminal status updates whose messages together pass the cap:
+    // they accumulate into history exactly like artifact bytes accumulate, so
+    // they must not stream unbounded until the run deadline.
+    stubRemote(agentCard(true), (_method, id) =>
+      sseResponse(
+        sseFrames(id, [
+          TASK_EVENT,
+          statusWire(TaskState.TASK_STATE_WORKING, "x".repeat(1024 * 1024 + 1)),
+          statusWire(TaskState.TASK_STATE_WORKING, "x".repeat(1024 * 1024 + 1)),
+          FINAL_STATUS,
+        ]),
+      ),
+    );
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual({
+      ok: false,
+      error: "A2A reply exceeds 2MB",
+    });
+  });
+
   it("stops a reply that grows past the bound instead of holding it", async () => {
     stubRemote(agentCard(true), (_method, id) =>
       sseResponse(
