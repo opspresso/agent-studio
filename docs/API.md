@@ -379,7 +379,7 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
   입력해야 한다. fingerprint 는 API 응답과 입력에 노출하지 않는다.
 - 오버라이드 편집은 다른 모든 version 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
 
-한 런은 통틀어 최대 120개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
+한 런은 통틀어 최대 115개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
 보고한다.
 
 ### 프롬프트 미리보기
@@ -413,7 +413,7 @@ PUT /api/settings → 200 {…same shape…} | 400
 
 - 두 동사 모두 admin 전용이다. 키: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
   `llmApiKey`, `pluginsRepo`, `pluginsRepoBranch`, `githubToken`, `a2aApiKey`,
-  `publicBaseUrl`, `artifactAccessMode` (`authenticated` | `public` | `""`),
+  `publicBaseUrl`, `artifactAccessMode` (`authenticated` | `proxied` | `public` | `""`),
   `unknownModelPolicy` (`allow` | `refuse` | `""`). 이 둘은 enum 으로 검증된다.
   `pluginsRepo` 는 자기만의 형태를 가진 나머지 하나의 키다. `owner/repo`, 또는 비우면
   지운다. 나머지는 길이가 제한된 문자열이다.

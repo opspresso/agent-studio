@@ -226,8 +226,8 @@ buffer rather than a record, and why the viewport belongs to a library is
   it twice) and close with `{ ended: true }`. The trailing one exists because a closed body
   says nothing about *why* it closed: a client that cannot tell a finished run from a cut
   connection either reconnects to nothing or reports a truncated run as an answer.
-- **Ownership**: reads (`getChat`) treat non-owner as 404; mutations (`sendMessage`,
-  `deleteChat`) return 403 on owner mismatch, 404 when missing.
+- **Ownership**: reads and mutations alike treat a non-owner as 404 — a chat is private
+  to its owner, and a 403 would confirm the chatId exists (docs/API.md).
 
 ## Cross-domain contracts
 

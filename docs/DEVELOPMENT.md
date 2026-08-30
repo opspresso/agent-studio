@@ -9,11 +9,11 @@ Agent Studio 를 로컬에서 셋업하고, 실행하고, 검증하는 방법.
 ## 사전 준비
 
 - **Node.js 24+** (`engines: >=24`)
-- **pnpm 11.22.0**, `packageManager` 로 고정. 전역 설치 대신 corepack 을 쓴다
+- **pnpm 11.24.0**, `packageManager` 로 고정 (정확한 pin 은 package.json 이 정본). 전역 설치 대신 corepack 을 쓴다
 - **Docker** (PostgreSQL(pgvector) 용, artifact 를 시험한다면 MinIO 도)
 
 ```bash
-corepack enable && corepack prepare pnpm@11.22.0 --activate
+corepack enable && corepack prepare pnpm@11.24.0 --activate
 pnpm install
 ```
 
@@ -113,7 +113,7 @@ pnpm exec vitest run -t "streamWithFallback"
 | `scripts/integration-check.ts` | 저장소 왕복 전 구간 + 엔진(단발 실행과 agent 루프). |
 | `scripts/check-models.ts` | 카탈로그 스냅샷(`src/domain/llm/catalog.json`)을 *이 배포의* 채널들이 서빙하는 id 와 대조한다. agent-models 가 provider 의 공개 카탈로그는 스스로 보므로, 여기서 보는 것은 게이트웨이·Bedrock·키의 범위 같은 이 배포만의 차이다. |
 | `scripts/sync-models.ts` | 발행된 카탈로그로 스냅샷을 갱신한다 (`--check` 는 뒤처졌으면 1 로 종료, `--from <file>` 은 URL 대신 로컬 카탈로그 문서를 읽는다, `MODELS_CATALOG_URL` 이 없거나 `none` 인 환경에서는 이것이 필수다). 런타임은 카탈로그를 직접 읽으므로, 테스트가 새 모델을 봐야 하거나 릴리즈 전일 때 돌린다. |
-| `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키·같은 문서로 `items` 에. 멱등(upsert). 절차는 [INSTALL.md](INSTALL.md#기존-aws-배포에서-옮겨-오기). |
+| `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키·같은 문서로 `items` 에. 멱등(upsert). 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
 
 ### `check-models`
 
@@ -197,7 +197,7 @@ self-hosted runner를 쓴다. 임의 ref를 선택하는 `workflow_dispatch`는 
 않는다.
 
 `.github/workflows/check-models.yml` 은 `pnpm check-models --strict --since=7d` 를 pull request
-마다가 아니라 주 1회 돌린다: 살아 있는 provider API 와 저장소 시크릿이
+마다가 아니라 스케줄(cron `0 23 * * 0-4`, 일–목 23:00 UTC)로 돌린다: 살아 있는 provider API 와 저장소 시크릿이
 필요하기 때문이다(드리프트는 런이 실패하기 전에 Slack 으로 전송된다). provider 장애나 시크릿 없는
 fork 가 PR 을 실패시켜서는 안 된다.
 
