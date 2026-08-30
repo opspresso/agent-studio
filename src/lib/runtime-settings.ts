@@ -23,6 +23,7 @@ import { settingsRepository } from "@/infrastructure/db/repositories/settingsRep
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import { config, positiveIntEnv } from "./config";
+import { optionalEnv } from "@/shared/env";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
@@ -154,7 +155,8 @@ export async function getPublicBaseUrl(): Promise<string | undefined> {
 }
 
 export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {
-  const value = (await loadSettings())?.artifactAccessMode ?? process.env.ARTIFACT_ACCESS_MODE;
+  const value =
+    (await loadSettings())?.artifactAccessMode ?? optionalEnv(process.env.ARTIFACT_ACCESS_MODE);
   return value === "public" || value === "proxied" ? value : "authenticated";
 }
 
