@@ -781,6 +781,48 @@ describe("an answer longer than one write", () => {
   });
 });
 
+describe("a stream that failed to open and fell back to editing", () => {
+  it("stays in the note it opened instead of orphaning it with a late stream", async () => {
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const posted: string[] = [];
+    const updates: Array<{ ts: string; text: string }> = [];
+    const streamStarts: unknown[] = [];
+    let refuseStream = true;
+    const slack = {
+      async startStream(_token: string, args: Record<string, unknown>) {
+        if (refuseStream) {
+          refuseStream = false;
+          throw new Error("Slack chat.startStream failed: ratelimited");
+        }
+        streamStarts.push(args);
+        return { ts: "200.1", channel: "C1" };
+      },
+      async postMessage(_token: string, args: { channel: string; text: string }) {
+        posted.push(args.text);
+        return { ts: "100.1", channel: args.channel };
+      },
+      async updateMessage(_token: string, args: { ts: string; text: string }) {
+        updates.push({ ts: args.ts, text: args.text });
+        return { ts: args.ts };
+      },
+    } as unknown as SlackClientPort;
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    // The first status hits the stream refusal and posts the fallback note.
+    await sink.status("is thinking…");
+    expect(posted).toEqual([`_is thinking…_ ${INDICATOR}`]);
+
+    // The next one must edit that note. A retried startStream succeeding here
+    // used to move the reply into a brand-new message and leave the note —
+    // indicator and all — orphaned on screen.
+    clock += 5000;
+    await sink.status("is using search…");
+    expect(streamStarts).toEqual([]);
+    expect(updates).toEqual([{ ts: "100.1", text: `_is using search…_ ${INDICATOR}` }]);
+  });
+});
+
 /**
  * The edited path has to end a message somewhere, and where it ends is the part
  * a reader sees. It used to end nowhere: `chat.update` was sent the whole answer
