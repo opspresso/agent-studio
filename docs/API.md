@@ -437,10 +437,11 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   `openai | anthropic | google | xai | bedrock | openrouter | selfhosted` (`SUPPORTED_PROVIDERS`) 중
   하나여야 하고, `auth` 는 `bearer` (기본) 또는 `sigv4` 이며, 목록은 최대 50개까지고, 같은
   이름이 두 번 나오면 `400` 이다.
-- PUT 의 `enabledModels` 도 전체 교체 목록이다. `/api/models` 가 제공해도 되는 모델 id 들로,
-  정렬·중복 제거해 저장된다. 빈 배열은 오버라이드를 제거한다 (보이는 모델 전부가 제공된다.
-  env 폴백은 없다). 레지스트리에 없는 id 는 `400` 이다. 이것은 GET 뷰에 자리가 없다.
-  다시 읽는 곳은 `/api/models/catalog` 다.
+- PUT 의 `hiddenModels` 도 전체 교체 목록이다. `/api/models` 에서 숨길 모델 id 들로,
+  정렬·중복 제거해 저장된다. 빈 배열은 오버라이드를 제거한다 (숨기는 모델이 없다. env 폴백은
+  없다). 최대 500개이고 레지스트리에 없는 id 또는 보이는 모델 전부를 숨기는 목록은 `400` 이다.
+  denylist 이므로 카탈로그에 새로 들어온 모델은 기본적으로 보인다. 이것은 GET 설정 뷰에 자리가 없다. 다시 읽는 곳은
+  `/api/models/catalog` 다.
 - PUT 의 `selfHostedModels` 도 전체 교체 목록이다. 이 배포가 직접 서빙하는 모델의 선언
   (`{ family, displayName, maker?, contextWindow, maxTokens, capabilities }`, 최대 50개).
   저장 시 레지스트리 로더의 검증을 그대로 지나 (통과 못 하면 `400` 에 이유가 담긴다) 이
@@ -1444,19 +1445,22 @@ GET /api/projects/{name}/traces/{traceId}
 
 ## Models
 
-`GET /api/models` → `{ "models": [ { id, provider, displayName, pricing, capabilities, … } ] }`
+`GET /api/models` → `{ "models": [ { id, provider, displayName, pricing, capabilities, favorite, … } ] }`
 (`src/domain/llm/models.ts` 의 레지스트리이고, 숨김 항목은 제외한다). 프로바이더별 LLM 채널이
 설정돼 있으면 (설정 오버라이드 또는 `LLM_PROVIDER_*` env) 그 프로바이더들의 모델만 나열되고,
-아무것도 설정돼 있지 않으면 모든 모델이 나열된다. 그다음 `enabledModels` 설정 오버라이드 (콘솔의
-`/models` 페이지에서 관리한다) 가 목록을 그것이 지목하는 id 들로 좁힌다. enabled 는 선택 시점의
-필터일 뿐이다: 이미 비활성 모델을 쥐고 있는 version 은 계속 실행된다.
+아무것도 설정돼 있지 않으면 모든 모델이 나열된다. 그다음 admin 이 `/models` 에서 관리하는
+`hiddenModels` 를 제외한다. 숨김은 선택 시점의 필터일 뿐이다: 이미 그 모델을 쥔 version 은 계속
+실행된다. `favorite` 는 로그인한 사용자 자신의 값이고 picker 는 이 항목들을 `Favorites` 그룹으로
+맨 위에 놓는다.
 
 ```
 GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ],
-                                 models: [ { …model, enabled } ],
+                                 models: [ { …model, selectionHidden, favorite } ],
                                  makers: { <makerId>: label },
                                  updatedAt,
                                  source: "override" | "default" }
+GET  /api/models/favorites → 200 { models: [ <modelId> ] }
+PUT  /api/models/favorites { models: [ <modelId> ] } → 200 { models: [ <modelId> ] } | 400
 POST /api/models/test    → 200 { ok, latencyMs, error? } | 400
 POST /api/models/refresh → 200 { refreshed, updatedAt }
 GET  /api/models/selfhosted → 200 { served: [ { name, contextWindow?, vision? } ] | null,
@@ -1476,11 +1480,14 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
   `selfhosted` 는 admin 전용이다.
   `makers` 와 `updatedAt` 은 로드된 카탈로그의 것이다. maker 라벨과 카탈로그 내용이 마지막으로
   바뀐 시각으로, 레지스트리가 런타임 로드로 바뀐 뒤 클라이언트가 상수에서 가져올 수 없게 된
-  값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: 보이는 모든 모델과 그 enabled 플래그
-  (`/api/models` 가 숨기는 것을 정확히 나열한다, member 는 꺼진 모델을 볼 수는 있어도 고를 수는
+  값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: 보이는 모든 모델과 그 `selectionHidden` 플래그
+  (`/api/models` 가 숨기는 것을 정확히 나열한다, member 는 숨긴 모델을 볼 수는 있어도 고를 수는
   없다), 그리고 프로바이더별로 이 배포가 거기로 dispatch 할 수 있는지다. `dedicated` 는
   프로바이더별 채널이 설정돼 있다는 뜻이다. 하나도 없으면 모든 프로바이더가 기본 채널을 통해
-  `available` 이다. 선택을 바꾸는 것(`PUT /api/settings` 의 `enabledModels`)은 admin 의 일로 남는다.
+  `available` 이다. 숨김을 바꾸는 것(`PUT /api/settings` 의 `hiddenModels`)은 admin 의 일로 남는다.
+- `favorites` 는 로그인한 사용자의 Better Auth user id 로 분리한 개인 설정이다. PUT 은 전체 교체이고
+  최대 200개이며, 중복 제거·정렬해 저장한다. 다른 사용자의 id 를 받는 파라미터는 없다. 숨긴 모델의
+  즐겨찾기는 저장에 남지만 picker 에서는 숨김이 우선한다.
 - `test` 는 진짜 채널로 아주 작은 completion 하나를 보낸다 (`maxTokens` 16, 15초 타임아웃).
   프로바이더 해석, base URL, API 키, wire-id 치환까지 포함해서다. 실패한 프로브는 `5xx` 가 아니라
   `200` 본문이다 (`ok: false` 와 상류 에러). 레지스트리에 없는 id 만 `400` 이다. 프로브는 런

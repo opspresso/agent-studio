@@ -67,12 +67,11 @@ export interface AppSettings {
    */
   unknownModelPolicy?: string;
   /**
-   * When set, only these registry model ids are offered for selection (the
-   * /api/models list and every dropdown it feeds). Absent means every visible
-   * model. Selection-time only — a version already holding a disabled model
-   * keeps running.
+   * Registry model ids hidden from selection (the /api/models list and every
+   * dropdown it feeds). Absent means nothing is hidden. Selection-time only —
+   * a version already holding a hidden model keeps running.
    */
-  enabledModels?: string[];
+  hiddenModels?: string[];
   /**
    * Self-hosted models this deployment declares (the deployment is their
    * publisher — agent-models carries external routes only). Installed into the

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActionIcon,
   Alert,
   Badge,
   Box,
@@ -19,7 +20,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
-import { IconChevronDown, IconChevronUp, IconCpu } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronUp, IconCpu, IconStar } from "@tabler/icons-react";
 import { contextWindowLabel, type ModelConfig } from "@/domain/llm/models";
 import {
   selfHostedModelToInput,
@@ -48,14 +49,10 @@ import {
   type FilterCapability,
 } from "./modelTable";
 import { reportError } from "@/app/_lib/reportError";
+import type { ModelsCatalogResponse } from "@/app/api/models/catalog/route";
 
-interface CatalogProvider {
-  name: string;
-  available: boolean;
-  dedicated: boolean;
-}
-
-type CatalogModel = ModelConfig & { enabled: boolean };
+type CatalogProvider = ModelsCatalogResponse["providers"][number];
+type CatalogModel = ModelsCatalogResponse["models"][number];
 
 /** A maker's label, or its id for one the loaded catalog does not name. */
 function makerLabel(makers: Record<string, string>, maker: string): string {
@@ -66,14 +63,7 @@ function makerLabel(makers: Record<string, string>, maker: string): string {
   return (Object.hasOwn(makers, maker) ? makers[maker] : undefined) ?? maker;
 }
 
-interface Catalog {
-  providers: CatalogProvider[];
-  models: CatalogModel[];
-  /** Maker id → label, as the loaded catalog names them. */
-  makers: Record<string, string>;
-  updatedAt: string;
-  source: "override" | "default";
-}
+type Catalog = ModelsCatalogResponse;
 
 interface ModelTestResult {
   ok: boolean;
@@ -230,21 +220,13 @@ const DECLARABLE_CAPABILITIES = [
  * The deployment's own models: the stored declarations (the editing basis —
  * one the registry refused to install must still be visible here, or the next
  * full-replace save would delete it silently), what the channel serves, and
- * the gaps in both directions. Declaring is a settings write; when the
- * deployment restricts selection (`enabledIds` non-null) the same write keeps
- * the enabled list in step, so a new declaration is usable at once and a
- * removed one does not leave a stale id that blocks a later resubmission. The
- * serving stack stays the availability judge: the Test button on the model's
- * own card is what proves a run can actually use it.
+ * the gaps in both directions. Declaring is a settings write. Model hiding is
+ * a separate denylist, so a new declaration is usable at once; removing one
+ * also removes its id from that denylist in the settings use case. The serving
+ * stack stays the availability judge: the Test button on the model's own card
+ * is what proves a run can actually use it.
  */
-function SelfHostedSection({
-  enabledIds,
-  onChanged,
-}: {
-  /** The enabled-models override as ids, or null when the deployment has none. */
-  enabledIds: string[] | null;
-  onChanged: () => Promise<void>;
-}) {
+function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
   const t = useT();
   const [view, setView] = useState<SelfHostedView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -268,35 +250,14 @@ function SelfHostedSection({
     };
   }, [loadView]);
 
-  async function save(
-    next: SelfHostedModelInput[],
-    enabled: { add?: string; drop?: string } = {},
-  ) {
-    // With a selection override in place, the declaration change carries the
-    // matching enabled-list change in the same PUT (the API accepts a
-    // same-patch declare-and-enable on purpose).
-    let enabledPatch: { enabledModels?: string[] } = {};
-    if (enabledIds !== null) {
-      let ids = enabled.add ? [...new Set([...enabledIds, enabled.add])] : [...enabledIds];
-      if (enabled.drop) {
-        ids = ids.filter((id) => id !== enabled.drop);
-      }
-      // The same guard the page's enable toggles keep: an empty override is
-      // not "restrict to nothing" — the server reads it as "remove the
-      // restriction", silently opening every model for selection.
-      if (ids.length === 0) {
-        setError("At least one model must stay enabled.");
-        return;
-      }
-      enabledPatch = { enabledModels: ids };
-    }
+  async function save(next: SelfHostedModelInput[]) {
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: jsonHeaders,
-        body: JSON.stringify({ selfHostedModels: next, ...enabledPatch }),
+        body: JSON.stringify({ selfHostedModels: next }),
       });
       await readJson(res);
       await Promise.all([onChanged(), loadView()]);
@@ -359,10 +320,7 @@ function SelfHostedSection({
               variant="default"
               disabled={busy}
               onClick={() =>
-                void save(
-                  declarations.filter((m) => m.id !== model.id).map(selfHostedModelToInput),
-                  { drop: model.id },
-                )
+                void save(declarations.filter((m) => m.id !== model.id).map(selfHostedModelToInput))
               }
             >
               {t("models.selfHosted.remove")}
@@ -464,9 +422,7 @@ function SelfHostedSection({
                   size="compact-xs"
                   loading={busy}
                   onClick={() =>
-                    void save([...declarations.map(selfHostedModelToInput), form], {
-                      add: `selfhosted/${form.family}`,
-                    })
+                    void save([...declarations.map(selfHostedModelToInput), form])
                   }
                 >
                   {t("models.selfHosted.declare")}
@@ -620,6 +576,7 @@ export default function ModelsPage() {
   const [source, setSource] = useState<"override" | "default">("default");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
@@ -696,8 +653,8 @@ export default function ModelsPage() {
     }
   }
 
-  async function saveEnabled(
-    enabledIds: string[],
+  async function saveHidden(
+    hiddenIds: string[],
     nextModels: CatalogModel[],
     nextSource: "override" | "default",
   ) {
@@ -707,7 +664,7 @@ export default function ModelsPage() {
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: jsonHeaders,
-        body: JSON.stringify({ enabledModels: enabledIds }),
+        body: JSON.stringify({ hiddenModels: hiddenIds }),
       });
       await readJson(res);
       setModels(nextModels);
@@ -719,17 +676,39 @@ export default function ModelsPage() {
     }
   }
 
-  function toggleModel(id: string, on: boolean) {
-    const nextModels = models.map((model) => (model.id === id ? { ...model, enabled: on } : model));
-    const enabledIds = nextModels.filter((model) => model.enabled).map((model) => model.id);
-    if (enabledIds.length === 0) {
-      setError("At least one model must stay enabled.");
+  function toggleHidden(id: string, hidden: boolean) {
+    const nextModels = models.map((model) =>
+      model.id === id ? { ...model, selectionHidden: hidden } : model,
+    );
+    const hiddenIds = nextModels
+      .filter((model) => model.selectionHidden)
+      .map((model) => model.id);
+    if (hiddenIds.length === nextModels.length) {
+      setError(t("models.oneVisible"));
       return;
     }
-    // Everything on is the same policy as no override — store it as none, so a
-    // model added to the registry later is not silently disabled by a stale list.
-    const allOn = enabledIds.length === nextModels.length;
-    void saveEnabled(allOn ? [] : enabledIds, nextModels, allOn ? "default" : "override");
+    void saveHidden(hiddenIds, nextModels, hiddenIds.length === 0 ? "default" : "override");
+  }
+
+  async function toggleFavorite(id: string, favorite: boolean) {
+    const nextModels = models.map((model) => (model.id === id ? { ...model, favorite } : model));
+    setFavoriteBusy(id);
+    setError(null);
+    try {
+      const res = await fetch("/api/models/favorites", {
+        method: "PUT",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          models: nextModels.filter((model) => model.favorite).map((model) => model.id),
+        }),
+      });
+      await readJson(res);
+      setModels(nextModels);
+    } catch (saveError) {
+      setError(reportError(saveError, t("models.favoriteSaveFailed")));
+    } finally {
+      setFavoriteBusy(null);
+    }
   }
 
   async function runTest(id: string) {
@@ -762,20 +741,24 @@ export default function ModelsPage() {
           <Group gap="xs">
             {source === "override" && (
               <>
-                <Badge color={BADGE.attention}>selection restricted</Badge>
+                <Badge color={BADGE.attention}>
+                  {t("models.hiddenCount", {
+                    count: models.filter((model) => model.selectionHidden).length,
+                  })}
+                </Badge>
                 <Button
                   size="compact-xs"
                   variant="default"
                   disabled={busy}
                   onClick={() =>
-                    void saveEnabled(
+                    void saveHidden(
                       [],
-                      models.map((model) => ({ ...model, enabled: true })),
+                      models.map((model) => ({ ...model, selectionHidden: false })),
                       "default",
                     )
                   }
                 >
-                  Reset — allow all
+                  {t("models.showAll")}
                 </Button>
               </>
             )}
@@ -789,14 +772,7 @@ export default function ModelsPage() {
       {canEdit && <CatalogDocumentSection onChanged={loadCatalog} />}
 
       {canEdit && providerByName.get("selfhosted")?.dedicated === true && (
-        <SelfHostedSection
-          enabledIds={
-            source === "override"
-              ? models.filter((model) => model.enabled).map((model) => model.id)
-              : null
-          }
-          onChanged={loadCatalog}
-        />
+        <SelfHostedSection onChanged={loadCatalog} />
       )}
 
       {error && (
@@ -889,6 +865,22 @@ export default function ModelsPage() {
                         {model.id}
                       </Text>
                     </div>
+                    <Tooltip
+                      label={t(model.favorite ? "models.unfavorite" : "models.favorite")}
+                    >
+                      <ActionIcon
+                        variant={model.favorite ? "light" : "subtle"}
+                        color={model.favorite ? "yellow" : "gray"}
+                        disabled={favoriteBusy !== null}
+                        loading={favoriteBusy === model.id}
+                        aria-label={t(model.favorite ? "models.unfavorite" : "models.favorite")}
+                        aria-pressed={model.favorite}
+                        style={{ marginLeft: "auto", flexShrink: 0 }}
+                        onClick={() => void toggleFavorite(model.id, !model.favorite)}
+                      >
+                        <IconStar size={16} fill={model.favorite ? "currentColor" : "none"} />
+                      </ActionIcon>
+                    </Tooltip>
                   </Group>
                   <Group gap={6} mt="sm" wrap="wrap">
                     <Badge
@@ -919,9 +911,9 @@ export default function ModelsPage() {
                           </Badge>
                         ),
                     )}
-                    {!model.enabled && (
+                    {model.selectionHidden && (
                       <Badge size="sm" variant="light" color={BADGE.attention}>
-                        disabled
+                        {t("models.hidden")}
                       </Badge>
                     )}
                   </Group>
@@ -942,11 +934,11 @@ export default function ModelsPage() {
                   <Group justify="space-between" align="center" wrap="nowrap">
                     <Switch
                       size="sm"
-                      label="Enabled"
-                      checked={model.enabled}
+                      label={t("models.hidden")}
+                      checked={model.selectionHidden}
                       disabled={busy}
-                      aria-label={`Enable ${model.id}`}
-                      onChange={(event) => toggleModel(model.id, event.currentTarget.checked)}
+                      aria-label={t("models.hideModel", { model: model.id })}
+                      onChange={(event) => toggleHidden(model.id, event.currentTarget.checked)}
                     />
                     <Group gap="xs" wrap="nowrap">
                       {test?.result &&

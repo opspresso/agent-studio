@@ -159,12 +159,12 @@ export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {
 }
 
 /**
- * The enabled-model allowlist; `undefined` means no restriction. Read at
+ * The hidden-model denylist; `undefined` means no restriction. Read at
  * selection time only (the /api/models list) — the run bracket never sees it,
- * so a version already holding a disabled model keeps running.
+ * so a version already holding a hidden model keeps running.
  */
-export async function getEnabledModels(): Promise<string[] | undefined> {
-  return (await loadSettings())?.enabledModels;
+export async function getHiddenModels(): Promise<string[] | undefined> {
+  return (await loadSettings())?.hiddenModels;
 }
 
 /**

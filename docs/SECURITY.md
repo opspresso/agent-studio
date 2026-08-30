@@ -108,6 +108,7 @@ visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 �
 | Project usage 합계 | 로그인한 모든 사용자 | — |
 | Skill / MCP 서버 / 외부 agent / plugin | `member` tier 이상 (`withMemberAuth`; `guest` 는 403) | admin (`withAdminAuth`) |
 | 앱 설정 | admin | admin |
+| 모델 즐겨찾기 | 로그인한 사용자 본인 | 로그인한 사용자 본인 |
 | 멤버 디렉터리 | admin | admin (tier 변경, `member.set-tier` 로 감사) |
 | Chat | 소유자만 (소유자가 아니면 404) | 소유자만 |
 

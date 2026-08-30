@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getVisibleModels, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 
-const { getLlmProviderConfigs, getEnabledModels } = vi.hoisted(() => ({
+const { getLlmProviderConfigs, getHiddenModels, modelPreferenceUseCases } = vi.hoisted(() => ({
   getLlmProviderConfigs: vi.fn(),
-  getEnabledModels: vi.fn(),
+  getHiddenModels: vi.fn(),
+  modelPreferenceUseCases: { list: vi.fn() },
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -12,13 +13,14 @@ vi.mock("@/lib/session", () => ({
     (...args: unknown[]) =>
       handler({ id: "u1", email: "admin@example.com", name: "A", image: null }, ...args),
 }));
-vi.mock("@/lib/runtime-settings", () => ({ getLlmProviderConfigs, getEnabledModels }));
+vi.mock("@/lib/runtime-settings", () => ({ getLlmProviderConfigs, getHiddenModels }));
+vi.mock("@/lib/container", () => ({ modelPreferenceUseCases }));
 
 const { GET } = await import("@/app/api/models/catalog/route");
 
 interface CatalogBody {
   providers: Array<{ name: string; available: boolean; dedicated: boolean }>;
-  models: Array<{ id: string; enabled: boolean }>;
+  models: Array<{ id: string; selectionHidden: boolean; favorite: boolean }>;
   source: "override" | "default";
 }
 
@@ -31,11 +33,12 @@ async function catalog(): Promise<CatalogBody> {
 beforeEach(() => {
   vi.clearAllMocks();
   getLlmProviderConfigs.mockResolvedValue([]);
-  getEnabledModels.mockResolvedValue(undefined);
+  getHiddenModels.mockResolvedValue(undefined);
+  modelPreferenceUseCases.list.mockResolvedValue([]);
 });
 
 describe("GET /api/models/catalog", () => {
-  it("marks every provider available through the default channel and every model enabled", async () => {
+  it("marks every provider available through the default channel and every model visible", async () => {
     const body = await catalog();
 
     expect(body.providers).toEqual(
@@ -48,7 +51,8 @@ describe("GET /api/models/catalog", () => {
       })),
     );
     expect(body.models).toHaveLength(getVisibleModels().length);
-    expect(body.models.every((model) => model.enabled)).toBe(true);
+    expect(body.models.every((model) => !model.selectionHidden && !model.favorite)).toBe(true);
+    expect(body.models.every((model) => !Object.hasOwn(model, "hidden"))).toBe(true);
     expect(body.source).toBe("default");
   });
 
@@ -77,16 +81,23 @@ describe("GET /api/models/catalog", () => {
     });
   });
 
-  it("still lists disabled models, flagged, when an override is stored", async () => {
-    getEnabledModels.mockResolvedValue(["openai/gpt-5.4"]);
+  it("still lists hidden models, flagged, when an override is stored", async () => {
+    getHiddenModels.mockResolvedValue(["openai/gpt-5.4"]);
 
     const body = await catalog();
 
     expect(body.source).toBe("override");
     expect(body.models).toHaveLength(getVisibleModels().length);
-    expect(body.models.find((model) => model.id === "openai/gpt-5.4")?.enabled).toBe(true);
-    expect(body.models.find((model) => model.id === "anthropic/claude-fable-5")?.enabled).toBe(
-      false,
-    );
+    expect(body.models.find((model) => model.id === "openai/gpt-5.4")?.selectionHidden).toBe(true);
+    expect(
+      body.models.find((model) => model.id === "anthropic/claude-fable-5")?.selectionHidden,
+    ).toBe(false);
+  });
+
+  it("marks favorites for the signed-in user", async () => {
+    modelPreferenceUseCases.list.mockResolvedValue(["openai/gpt-5.4"]);
+    const body = await catalog();
+    expect(body.models.find((model) => model.id === "openai/gpt-5.4")?.favorite).toBe(true);
+    expect(modelPreferenceUseCases.list).toHaveBeenCalledWith("u1");
   });
 });

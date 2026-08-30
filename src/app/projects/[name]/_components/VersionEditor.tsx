@@ -34,7 +34,7 @@ import { monoInput } from "@/app/_components/monoInput";
 import { listProjects } from "../../lib/api";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
-import type { ModelConfig, ProjectType, VersionInput, VersionParameters } from "../../lib/api";
+import type { ProjectType, SelectableModel, VersionInput, VersionParameters } from "../../lib/api";
 import {
   McpBindingInput,
   NumberField,
@@ -59,8 +59,8 @@ export function VersionEditor({
 }: {
   projectName: string;
   projectType: ProjectType;
-  models: ModelConfig[];
-  imageModels: ModelConfig[];
+  models: SelectableModel[];
+  imageModels: SelectableModel[];
   value: VersionInput;
   onChange: (value: VersionInput) => void;
   /** Passed through to the MCP settings dialog, which covers the page's Save. */
@@ -186,9 +186,10 @@ export function VersionEditor({
           searchable
           data={modelSelectData(
             models,
-            // A stored model missing from the catalog stays selectable so a
+            // A stored model unavailable for new selection stays present so a
             // version can be saved without silently losing it.
             value.model && !selectedModel ? [{ value: value.model, label: value.model }] : [],
+            t("models.favorites"),
           )}
           renderOption={renderModelOption(models)}
           {...selectOnFocus}
@@ -218,7 +219,13 @@ export function VersionEditor({
             placeholder={t("version.none")}
             clearable
             searchable
-            data={modelSelectData(models)}
+            data={modelSelectData(
+              models,
+              value.fallbackModel && !fallbackModelConfig
+                ? [{ value: value.fallbackModel, label: value.fallbackModel }]
+                : [],
+              t("models.favorites"),
+            )}
             renderOption={renderModelOption(models)}
             {...selectOnFocus}
             description={fallbackModelConfig ? modelSummary(fallbackModelConfig) : undefined}
@@ -461,7 +468,16 @@ export function VersionEditor({
               value={value.parameters.imageModel ?? ""}
               onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
               allowDeselect={false}
-              data={modelSelectData(imageModels, [{ value: "", label: t("version.default") }])}
+              data={modelSelectData(
+                imageModels,
+                [
+                  { value: "", label: t("version.default") },
+                  ...(value.parameters.imageModel && !selectedImageModel
+                    ? [{ value: value.parameters.imageModel, label: value.parameters.imageModel }]
+                    : []),
+                ],
+                t("models.favorites"),
+              )}
               renderOption={renderModelOption(imageModels)}
               description={selectedImageModel ? modelSummary(selectedImageModel) : undefined}
             />

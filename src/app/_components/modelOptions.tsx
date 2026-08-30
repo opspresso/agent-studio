@@ -18,6 +18,8 @@ import type { ComboboxData, ComboboxItem } from "@mantine/core";
 import type { ModelConfig } from "@/domain/llm/models";
 import { formatUsd } from "@/app/_lib/formatUsd";
 
+type ModelOption = ModelConfig & { favorite?: boolean };
+
 /**
  * What a model costs, in the terms it is actually billed in.
  *
@@ -81,14 +83,16 @@ export const selectOnFocus = {
  * Options grouped by provider, in registry order within each group.
  *
  * `leading` is prepended ungrouped, for the pickers that offer something that
- * is not a model — "Default", or a stored id the catalog no longer knows.
+ * is not a selectable model — "Default", or a stored id now hidden or removed.
  */
 export function modelSelectData(
-  models: ModelConfig[],
-  leading: ComboboxItem[] = [],
+  models: ModelOption[],
+  leading: ComboboxItem[],
+  favoriteGroupLabel: string,
 ): ComboboxData {
   const groups = new Map<string, ComboboxItem[]>();
-  for (const model of models) {
+  const favorites = models.filter((model) => model.favorite === true);
+  for (const model of models.filter((model) => model.favorite !== true)) {
     groups.set(model.provider, [
       ...(groups.get(model.provider) ?? []),
       { value: model.id, label: modelOptionLabel(model) },
@@ -96,6 +100,14 @@ export function modelSelectData(
   }
   return [
     ...leading,
+    ...(favorites.length > 0
+      ? [
+          {
+            group: favoriteGroupLabel,
+            items: favorites.map((model) => ({ value: model.id, label: modelOptionLabel(model) })),
+          },
+        ]
+      : []),
     ...[...groups].map(([provider, items]) => ({ group: provider, items })),
   ];
 }
@@ -114,7 +126,7 @@ export function modelSelectData(
  * up by id — an option that is not a model (the leading entries above) falls
  * back to its plain label rather than rendering an empty price.
  */
-export function renderModelOption(models: ModelConfig[]) {
+export function renderModelOption(models: ModelOption[]) {
   const byId = new Map(models.map((model) => [model.id, model]));
   return function ModelOption({ option, checked }: { option: ComboboxItem; checked?: boolean }) {
     const model = byId.get(option.value);

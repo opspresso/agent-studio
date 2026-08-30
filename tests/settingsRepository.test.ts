@@ -41,7 +41,7 @@ describe("settingsRepository.get", () => {
       publicBaseUrl: "https://studio.example.com",
       artifactAccessMode: "public",
       unknownModelPolicy: "refuse",
-      enabledModels: ["openai/gpt-5.4"],
+      hiddenModels: ["openai/gpt-5.4"],
       selfHostedModels: [
         {
           id: "selfhosted/qwen/qwen3.8-27b",

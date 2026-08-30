@@ -2,6 +2,7 @@ process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSettingsUseCases as createSettingsUseCasesImpl } from "@/application/settings/settingsUseCases";
+import { getVisibleModels, MAX_HIDDEN_MODELS } from "@/domain/llm/models";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 
@@ -294,30 +295,55 @@ describe("settingsUseCases.update", () => {
     ).rejects.toThrow(/Unsupported LLM provider/);
   });
 
-  it("stores enabledModels sorted and deduplicated, and clears on empty list", async () => {
+  it("stores hiddenModels sorted and deduplicated, and clears on empty list", async () => {
     const { repo, current } = fakeRepo();
     const useCases = createSettingsUseCases(repo);
 
     await useCases.update(
-      { enabledModels: ["openai/gpt-5.4", "anthropic/claude-fable-5", "openai/gpt-5.4"] },
+      { hiddenModels: ["openai/gpt-5.4", "anthropic/claude-fable-5", "openai/gpt-5.4"] },
       ADMIN,
     );
-    expect(current()?.enabledModels).toEqual(["anthropic/claude-fable-5", "openai/gpt-5.4"]);
+    expect(current()?.hiddenModels).toEqual(["anthropic/claude-fable-5", "openai/gpt-5.4"]);
 
-    await useCases.update({ enabledModels: [] }, ADMIN);
-    expect(current()?.enabledModels).toBeUndefined();
+    await useCases.update({ hiddenModels: [] }, ADMIN);
+    expect(current()?.hiddenModels).toBeUndefined();
   });
 
-  it("rejects enabledModels ids the registry does not carry", async () => {
+  it("rejects hiddenModels ids the registry does not carry", async () => {
     const { repo, current } = fakeRepo();
 
     await expect(
       createSettingsUseCases(repo).update(
-        { enabledModels: ["openai/gpt-5.4", "openai/not-a-model"] },
+        { hiddenModels: ["openai/gpt-5.4", "openai/not-a-model"] },
         ADMIN,
       ),
     ).rejects.toThrow(/Unknown model ids: openai\/not-a-model/);
     expect(current()).toBeNull();
+  });
+
+  it("rejects an unbounded hidden model list", async () => {
+    const { repo } = fakeRepo();
+    await expect(
+      createSettingsUseCases(repo).update(
+        {
+          hiddenModels: Array.from(
+            { length: MAX_HIDDEN_MODELS + 1 },
+            (_, index) => `openai/model-${index}`,
+          ),
+        },
+        ADMIN,
+      ),
+    ).rejects.toThrow(`At most ${MAX_HIDDEN_MODELS}`);
+  });
+
+  it("refuses to hide every selectable model", async () => {
+    const { repo } = fakeRepo();
+    await expect(
+      createSettingsUseCases(repo).update(
+        { hiddenModels: getVisibleModels().map((model) => model.id) },
+        ADMIN,
+      ),
+    ).rejects.toThrow("At least one model must remain visible");
   });
 
   it("rejects an adminEmails override that would lock the caller out", async () => {
@@ -387,7 +413,7 @@ describe("settingsUseCases.update self-hosted declarations", () => {
     expect(getModelConfig("selfhosted/qwen/qwen3.8-27b")).toBeUndefined();
   });
 
-  it("lets one PUT declare a model and enable it together", async () => {
+  it("lets one PUT declare and hide a model together", async () => {
     const { repo, current } = fakeRepo();
     await createSettingsUseCases(repo).update(
       {
@@ -400,13 +426,16 @@ describe("settingsUseCases.update self-hosted declarations", () => {
             capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
           },
         ],
-        // The declaration installs only after the write, so the enabled check
+        // The declaration installs only after the write, so the hidden check
         // must count same-patch declarations rather than asking the registry.
-        enabledModels: ["openai/gpt-5.4", "selfhosted/gemma-4-e4b"],
+        hiddenModels: ["openai/gpt-5.4", "selfhosted/gemma-4-e4b"],
       },
       ADMIN,
     );
-    expect(current()?.enabledModels).toEqual(["openai/gpt-5.4", "selfhosted/gemma-4-e4b"]);
+    expect(current()?.hiddenModels).toEqual(["openai/gpt-5.4", "selfhosted/gemma-4-e4b"]);
+
+    await createSettingsUseCases(repo).update({ selfHostedModels: [] }, ADMIN);
+    expect(current()?.hiddenModels).toEqual(["openai/gpt-5.4"]);
   });
 
   it("fails the save on a declaration the registry would refuse", async () => {

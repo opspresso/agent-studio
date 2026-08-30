@@ -40,8 +40,8 @@ function fromItem(item: Record<string, unknown>): AppSettings {
   if (Array.isArray(item.llmProviders)) {
     settings.llmProviders = item.llmProviders as LlmProviderSetting[];
   }
-  if (Array.isArray(item.enabledModels)) {
-    settings.enabledModels = item.enabledModels as string[];
+  if (Array.isArray(item.hiddenModels)) {
+    settings.hiddenModels = item.hiddenModels as string[];
   }
   if (Array.isArray(item.selfHostedModels)) {
     settings.selfHostedModels = item.selfHostedModels as SelfHostedModelSetting[];

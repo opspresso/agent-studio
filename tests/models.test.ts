@@ -278,7 +278,7 @@ describe("contextWindowLabel", () => {
 });
 
 describe("offeredModels", () => {
-  it("offers every visible model with no provider channels and no enabled override", () => {
+  it("offers every visible model with no provider channels and no hidden override", () => {
     expect(offeredModels([], undefined)).toEqual(getVisibleModels());
   });
 
@@ -288,18 +288,16 @@ describe("offeredModels", () => {
     expect(offered.every((model) => model.provider === "anthropic")).toBe(true);
   });
 
-  it("narrows to the enabled override, ignoring a stale id", () => {
-    expect(offeredModels([], ["openai/gpt-5.4", "openai/retired-model"]).map((m) => m.id)).toEqual([
-      "openai/gpt-5.4",
-    ]);
+  it("excludes the hidden denylist and ignores a stale id", () => {
+    const offered = offeredModels([], ["openai/gpt-5.4", "openai/retired-model"]);
+    expect(offered.map((m) => m.id)).not.toContain("openai/gpt-5.4");
+    expect(offered.length).toBe(getVisibleModels().length - 1);
   });
 
-  it("intersects the provider filter with the enabled override", () => {
-    expect(
-      offeredModels(["anthropic"], ["openai/gpt-5.4", "anthropic/claude-fable-5"]).map(
-        (m) => m.id,
-      ),
-    ).toEqual(["anthropic/claude-fable-5"]);
+  it("intersects the provider filter with the hidden denylist", () => {
+    const offered = offeredModels(["anthropic"], ["anthropic/claude-fable-5"]);
+    expect(offered.every((model) => model.provider === "anthropic")).toBe(true);
+    expect(offered.map((model) => model.id)).not.toContain("anthropic/claude-fable-5");
   });
 
   /**

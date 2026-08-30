@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { modelPriceLabel } from "@/app/_components/modelOptions";
+import {
+  modelOptionLabel,
+  modelPriceLabel,
+  modelSelectData,
+} from "@/app/_components/modelOptions";
 import { listModels, getModelConfig } from "@/domain/llm/models";
 
 /**
@@ -60,5 +64,28 @@ describe("modelPriceLabel", () => {
       const label = modelPriceLabel(model.pricing);
       expect(label, `${model.id}: ${label}`).not.toMatch(/\$0\.00(?!\d)/);
     }
+  });
+});
+
+describe("modelSelectData", () => {
+  it("puts favorites from every provider in one group above regular models", () => {
+    const favorite = { ...getModelConfig("openai/gpt-5.4")!, favorite: true };
+    const regular = { ...getModelConfig("openai/gpt-5.4-mini")!, favorite: false };
+    const other = { ...getModelConfig("anthropic/claude-fable-5")!, favorite: false };
+
+    expect(modelSelectData([favorite, regular, other], [], "즐겨찾기")).toEqual([
+      {
+        group: "즐겨찾기",
+        items: [{ value: favorite.id, label: modelOptionLabel(favorite) }],
+      },
+      {
+        group: "openai",
+        items: [{ value: regular.id, label: modelOptionLabel(regular) }],
+      },
+      {
+        group: "anthropic",
+        items: [{ value: other.id, label: modelOptionLabel(other) }],
+      },
+    ]);
   });
 });

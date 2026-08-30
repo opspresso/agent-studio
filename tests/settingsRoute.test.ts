@@ -84,15 +84,15 @@ describe("PUT /api/settings", () => {
     expect(useCases.update).not.toHaveBeenCalled();
   });
 
-  it("forwards enabledModels, which the /api/models list reads", async () => {
-    const body = { enabledModels: ["openai/gpt-5.4"] };
+  it("forwards hiddenModels, which the /api/models list reads", async () => {
+    const body = { hiddenModels: ["openai/gpt-5.4"] };
     const res = await put(body);
     expect(res.status).toBe(200);
     expect(useCases.update).toHaveBeenCalledWith(body, "admin@example.com");
   });
 
-  it("400s on an enabledModels that is not a string array", async () => {
-    const res = await put({ enabledModels: "openai/gpt-5.4" });
+  it("400s on a hiddenModels that is not a string array", async () => {
+    const res = await put({ hiddenModels: "openai/gpt-5.4" });
     expect(res.status).toBe(400);
     expect(useCases.update).not.toHaveBeenCalled();
   });
