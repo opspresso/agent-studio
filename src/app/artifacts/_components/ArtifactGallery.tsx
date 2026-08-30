@@ -9,7 +9,7 @@
  * Slack, A2A or trigger run are ever reachable.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
@@ -84,6 +84,10 @@ export function ArtifactGallery({
   const [filter, setFilter] = useState("");
   const view = useImageViewer();
   const { confirm, confirmModal } = useConfirm();
+  // Bumped by every refresh, so a "load more" page that was still in flight
+  // when the kind changed cannot append the old kind's rows — or its cursor —
+  // to the new list.
+  const listGeneration = useRef(0);
 
   const query = useCallback(
     (before?: string): ArtifactQuery => ({
@@ -99,6 +103,7 @@ export function ArtifactGallery({
     // order they were asked, and without this the slower first answer lands
     // last — showing the reader a kind they are no longer asking for.
     let cancelled = false;
+    listGeneration.current += 1;
     async function refresh() {
       setLoading(true);
       setError(null);
@@ -128,13 +133,19 @@ export function ArtifactGallery({
     if (!nextBefore) {
       return;
     }
+    const generation = listGeneration.current;
     setLoadingMore(true);
     try {
       const page = await load(query(nextBefore));
+      if (listGeneration.current !== generation) {
+        return;
+      }
       setArtifacts((current) => [...current, ...page.artifacts]);
       setNextBefore(page.nextBefore);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load more");
+      if (listGeneration.current === generation) {
+        setError(e instanceof Error ? e.message : "Failed to load more");
+      }
     } finally {
       setLoadingMore(false);
     }

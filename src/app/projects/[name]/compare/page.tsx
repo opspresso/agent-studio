@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   getProject,
@@ -172,6 +172,18 @@ export default function ComparePage() {
 
   const needsMessage = project?.projectType === "agent" || project?.projectType === "image";
   const running = left.running || right.running;
+
+  // One controller covers both sides of a run; leaving the page must stop the
+  // streams, not let them download to completion into an unmounted component
+  // (the pattern RunPanel uses).
+  const activeRun = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      activeRun.current?.abort();
+      activeRun.current = null;
+    },
+    [],
+  );
   const canRun =
     project !== null &&
     leftName !== null &&
@@ -182,6 +194,7 @@ export default function ComparePage() {
   async function runOne(
     versionName: string,
     setSide: (update: (prev: SideResult) => SideResult) => void,
+    signal: AbortSignal,
   ) {
     if (!project) {
       return;
@@ -203,7 +216,7 @@ export default function ComparePage() {
     );
     try {
       if (project.projectType === "image") {
-        const result = await predictImage(name, versionName, { prompt: message });
+        const result = await predictImage(name, versionName, { prompt: message }, signal);
         setSide((prev) => ({
           ...prev,
           image: result,
@@ -214,8 +227,8 @@ export default function ComparePage() {
       }
       const res =
         project.projectType === "agent"
-          ? await streamAgent(name, versionName, [{ role: "user", content: message }])
-          : await streamPredict(name, versionName, { variables });
+          ? await streamAgent(name, versionName, [{ role: "user", content: message }], signal)
+          : await streamPredict(name, versionName, { variables }, signal);
       for await (const chunk of readSse(res) as AsyncGenerator<EngineChunk>) {
         if (chunk.error) {
           // Only a top-level error is the run's; an authored one is a subagent
@@ -273,11 +286,15 @@ export default function ComparePage() {
         }
       }
     } catch (e) {
-      const failure = reportError(e, "Run failed");
-      setSide((prev) => ({ ...prev, error: failure }));
+      if (!signal.aborted) {
+        const failure = reportError(e, "Run failed");
+        setSide((prev) => ({ ...prev, error: failure }));
+      }
     } finally {
       reasoningPacer.flush();
-      setSide((prev) => ({ ...prev, running: false, durationMs: Date.now() - startedAt }));
+      if (!signal.aborted) {
+        setSide((prev) => ({ ...prev, running: false, durationMs: Date.now() - startedAt }));
+      }
     }
   }
 
@@ -285,8 +302,10 @@ export default function ComparePage() {
     if (leftName === null || rightName === null) {
       return;
     }
-    void runOne(leftName, setLeft);
-    void runOne(rightName, setRight);
+    const controller = new AbortController();
+    activeRun.current = controller;
+    void runOne(leftName, setLeft, controller.signal);
+    void runOne(rightName, setRight, controller.signal);
   }
 
   if (loading) {
