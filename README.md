@@ -10,7 +10,7 @@
 카탈로그와 플러그인 자동 sync 는 켜는 만큼만 붙는다. 최소 구성은 **PostgreSQL 하나**이고,
 설치는 [docs/INSTALL.md](docs/INSTALL.md) 가 처음부터 끝까지 안내한다. 그 정체성이 구조에
 무엇을 강제하는지는 [ARCHITECTURE.md](docs/ARCHITECTURE.md#무엇을-위한-시스템인가) 에,
-폐쇄망에서 무엇을 대신하는지는 [INSTALL.md](docs/INSTALL.md#폐쇄망air-gapped에서) 에 있다.
+폐쇄망에서 무엇을 대신하는지는 [INSTALL.md](docs/INSTALL.md#폐쇄망) 에 있다.
 
 ## 무엇이 들어 있나
 
@@ -39,7 +39,7 @@
 
 ```bash
 # 1. Install
-corepack enable && corepack prepare pnpm@11.22.0 --activate
+corepack enable && corepack prepare pnpm@11.24.0 --activate
 pnpm install
 
 # 2. Environment
@@ -58,8 +58,8 @@ pnpm dev            # http://localhost:3000
 `scripts/dev-session.ts` 가 둘 다 대신한다.
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#실제-자격-증명-없이-작업하기) 를 보라.
 
-> PostgreSQL 컨테이너는 **이 머신의 다른 모든 프로젝트와 공유된다**. 포트가 아니라
-> 데이터베이스 이름이 그것들을 갈라 놓으므로 `docker compose down -v` 는 절대 실행하지 마라.
+> compose project `agent-studio-local` 이 PostgreSQL 과 MinIO 의 **전용 volume 을 소유한다**.
+> `docker compose down -v` 는 로컬 데이터를 지우므로 명시적 확인 없이 실행하지 마라.
 > 자세한 내용은 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#로컬-postgresql) 에 있다.
 
 ```bash

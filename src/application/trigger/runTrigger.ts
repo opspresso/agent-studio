@@ -351,12 +351,17 @@ export async function executeFiring(
         if (chunk.error) {
           error = chunk.error;
         }
+        // Top-level only: an authored chunk's traceId is the child's trace,
+        // and this row's contract is the trace of *this* run.
+        traceId ??= chunk.traceId;
       }
       // Counted from subagent turns too, like `collectRun`'s: an image
       // subagent is how an agent project delegates drawing, and behind the
       // gate above that delegation closed as an empty `succeeded` row — the
       // exact state `imagesOnlyResult` exists to prevent.
-      if (chunk.image) {
+      // A fetched picture was read, not drawn — "Generated N images" must not
+      // count a FetchUrl result as the firing's own work.
+      if (chunk.image && !chunk.image.fetched) {
         images += 1;
       }
       // Counted from subagent turns too, exactly like the images above.
@@ -370,7 +375,6 @@ export async function executeFiring(
       if (warning) {
         warnings.push(warning);
       }
-      traceId ??= chunk.traceId;
     }
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught);

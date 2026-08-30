@@ -47,10 +47,16 @@ function toMember(row: UserRow): Member | null {
 export const memberRepository: MemberRepository = {
   async list(limit, after) {
     const bounded = boundedPageLimit(limit);
+    // The cursor's joinedAt is an ISO string with millisecond precision while
+    // the column keeps microseconds, so both the comparison and the order
+    // truncate to the cursor's precision — a sub-ms row on a page boundary
+    // would otherwise repeat as the next page's first row.
     const rows = await sql<UserRow>(
       `SELECT ${COLUMNS} FROM "user" ` +
-        (after ? `WHERE ("createdAt", "id") > ($2::timestamptz, $3) ` : "") +
-        `ORDER BY "createdAt", "id" LIMIT $1`,
+        (after
+          ? `WHERE (date_trunc('milliseconds', "createdAt"), "id") > ($2::timestamptz, $3) `
+          : "") +
+        `ORDER BY date_trunc('milliseconds', "createdAt"), "id" LIMIT $1`,
       after ? [bounded, after.joinedAt, after.id] : [bounded],
     );
     return rows.flatMap((row): Member[] => {

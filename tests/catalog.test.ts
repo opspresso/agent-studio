@@ -90,6 +90,12 @@ describe("catalogDescription", () => {
     expect(capped.endsWith("…")).toBe(true);
     expect(capped.isWellFormed()).toBe(true);
   });
+
+  it("measures the cap in the units it cuts, so nothing gains a … without losing text", () => {
+    // 400 emoji: 800 UTF-16 units but only 401 code points — under the cap.
+    const description = `x${"😀".repeat(400)}`;
+    expect(catalogDescription(description)).toBe(description);
+  });
 });
 
 describe("reindexCatalog", () => {

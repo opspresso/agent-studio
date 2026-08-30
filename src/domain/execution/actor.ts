@@ -97,7 +97,7 @@ export function callerFrom(input: {
   return {
     displayName,
     ...(timezone ? { timezone } : {}),
-    // Only an http(s) URL: a `javascript:` or `data:` value in this position is
+    // Only an https URL: a `javascript:` or `data:` value in this position is
     // not an avatar, and the model is being handed it as a link.
     ...(input.avatarUrl && /^https:\/\/[^\s]+$/.test(input.avatarUrl)
       ? { avatarUrl: input.avatarUrl }

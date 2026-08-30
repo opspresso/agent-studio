@@ -31,8 +31,8 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
   `403 { "error": "You do not have permission to modify project \"…\"" }` 이다.
   다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 project 하위 리소스. 트레이스,
   Slack·Telegram 설정, API 토큰, trigger, 호출자별 사용량, MCP 연결. 은
-  *읽기*도 소유자와 admin 으로 제한된다. Chat 은 소유자에게만 비공개다 (소유자가 아닌 읽기는
-  404 를 돌려준다). MCP/agent/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
+  *읽기*도 소유자와 admin 으로 제한된다. Chat 은 소유자에게만 비공개다 (소유자가 아닌 읽기·변경은
+  모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/agent/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
   **`member` tier 이상**에게 읽기가 공유된다. 모든 가입자가 시작하는 tier 인 `guest` 는
   `403 { "error": "This resource is not available to your account" }` 을 받는다 (`withMemberAuth`).
   변경은 `ADMIN_EMAILS` 가 설정돼 있으면 그 목록에 속해야 하고 (설정되지 않았으면 로그인한
@@ -379,7 +379,7 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
   입력해야 한다. fingerprint 는 API 응답과 입력에 노출하지 않는다.
 - 오버라이드 편집은 다른 모든 version 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
 
-한 런은 통틀어 최대 120개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
+한 런은 통틀어 최대 115개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
 보고한다.
 
 ### 프롬프트 미리보기
@@ -413,7 +413,7 @@ PUT /api/settings → 200 {…same shape…} | 400
 
 - 두 동사 모두 admin 전용이다. 키: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
   `llmApiKey`, `pluginsRepo`, `pluginsRepoBranch`, `githubToken`, `a2aApiKey`,
-  `publicBaseUrl`, `artifactAccessMode` (`authenticated` | `public` | `""`),
+  `publicBaseUrl`, `artifactAccessMode` (`authenticated` | `proxied` | `public` | `""`),
   `unknownModelPolicy` (`allow` | `refuse` | `""`). 이 둘은 enum 으로 검증된다.
   `pluginsRepo` 는 자기만의 형태를 가진 나머지 하나의 키다. `owner/repo`, 또는 비우면
   지운다. 나머지는 길이가 제한된 문자열이다.

@@ -240,12 +240,26 @@ const contentPartSchema = z.union([
   }),
 ]);
 
+/**
+ * A replayed tool call, with the domain type's optionality — every field can
+ * be absent mid-accumulation. A real schema rather than `z.custom`, which
+ * with no check function passes anything and lets a non-object wear the type.
+ */
+const channelToolCallSchema: z.ZodType<ChannelToolCall> = z.object({
+  index: z.number().int().optional(),
+  id: z.string().optional(),
+  type: z.string().optional(),
+  function: z
+    .object({ name: z.string().optional(), arguments: z.string().optional() })
+    .optional(),
+});
+
 /** OpenAI-shaped chat message accepted on execution routes. */
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant", "tool"]),
   content: z.union([z.string(), z.array(contentPartSchema)]).nullable().optional(),
   name: z.string().optional(),
-  tool_calls: z.array(z.custom<ChannelToolCall>()).optional(),
+  tool_calls: z.array(channelToolCallSchema).optional(),
   tool_call_id: z.string().optional(),
   reasoning_content: z.string().optional(),
 });

@@ -5,7 +5,7 @@ import { genericOAuth } from "better-auth/plugins";
 import { DEFAULT_MEMBER_TIER } from "@/domain/member/tiers";
 import { getPool } from "@/infrastructure/db/client";
 import { log } from "@/shared/logger";
-import { EMAIL_DOMAIN_NOT_ALLOWED } from "@/shared/signInError";
+import { EMAIL_DOMAIN_NOT_ALLOWED, OIDC_PROVIDER_ID } from "@/shared/signInError";
 import { config } from "./config";
 import { getAllowedEmailDomains, isConfiguredAdmin } from "./runtime-settings";
 
@@ -21,9 +21,6 @@ export function isBootstrapAdminEmail(email: string): boolean {
   const bootstrap = config.passwordAuth ? config.bootstrapAdmin : undefined;
   return bootstrap !== undefined && email.toLowerCase() === bootstrap.email.toLowerCase();
 }
-
-/** The `providerId` the OIDC provider signs in under — what the client names. */
-export const OIDC_PROVIDER_ID = "oidc";
 
 async function assertAllowedEmailDomain(email: string): Promise<void> {
   if (isBootstrapAdminEmail(email)) {

@@ -320,6 +320,11 @@ export default function PlaygroundPage() {
             style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
           >
             <VersionEditor
+              // Remount on version switch, like RunPanel below: the editor
+              // holds per-version state initialised once (the schema text,
+              // the header-override rows), and carried across versions it
+              // would write version A's edits into version B's draft.
+              key={`${name}/${selectedName || "unsaved"}`}
               projectName={project.name}
               projectType={project.projectType}
               models={models.filter((m) =>

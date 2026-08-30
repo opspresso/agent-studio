@@ -76,9 +76,9 @@ export default function MembersPage() {
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Member</Table.Th>
-                <Table.Th>Tier</Table.Th>
-                <Table.Th>Joined</Table.Th>
+                <Table.Th>{t("members.member")}</Table.Th>
+                <Table.Th>{t("members.tier")}</Table.Th>
+                <Table.Th>{t("members.joined")}</Table.Th>
                 <Table.Th>{t("members.lastLogin")}</Table.Th>
               </Table.Tr>
             </Table.Thead>

@@ -24,6 +24,11 @@ describe("parseFrontmatter", () => {
     expect(parseFrontmatter(doc).fields.url).toBe("https://x.test/mcp");
   });
 
+  it("leaves an unpaired quote alone", () => {
+    const doc = "---\ndescription: 'til dawn\n---\nBody";
+    expect(parseFrontmatter(doc).fields.description).toBe("'til dawn");
+  });
+
   it("ignores a line that is not a flat key/value", () => {
     const doc = "---\nnested:\n  - a\ndescription: kept\n---\nBody";
     expect(parseFrontmatter(doc).fields.description).toBe("kept");

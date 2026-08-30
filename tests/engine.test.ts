@@ -439,6 +439,12 @@ describe("runAgent tool loop", () => {
       .map((c) => c.delta?.content)
       .join("");
     expect(topContent).toContain("parent answer");
+    // The child's stream ends with an authorDone, like a dispatched task's:
+    // a consumer keying a step's lifetime on it (the AG-UI translator) would
+    // otherwise show the transferred agent as running until the run ends.
+    expect(
+      chunks.some((c) => c.author === "child" && c.authorDone === true),
+    ).toBe(true);
   });
 });
 

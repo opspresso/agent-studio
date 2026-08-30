@@ -95,7 +95,10 @@ export type RunTerminationReason =
 
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
-  /** Internal correlation id for a traced subagent execution. */
+  /**
+   * The trace this chunk belongs to, when the run was sampled. A top-level
+   * chunk carries its own run's trace; an authored chunk carries the child's.
+   */
   traceId?: string;
   /**
    * Subagent that authored this chunk — the *innermost* one, so a nested
@@ -337,10 +340,12 @@ export function imageDataUrl(image: { b64: string; mimeType: string }): string {
 /**
  * Decode a `data:<mime>;base64,<payload>` url into bytes — the inverse of
  * `imageDataUrl`. Any other url form (an https image the provider fetches for
- * itself) returns null.
+ * itself) returns null. Parameters between the mime and `;base64` are
+ * tolerated and dropped: `imageDataUrl` never writes them, but an external
+ * caller's `data:image/png;charset=binary;base64,…` is still an image.
  */
 export function parseImageDataUrl(url: string): { b64: string; mimeType: string } | null {
-  const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);
+  const match = /^data:([^;,]+)(?:;[^;,]*)*;base64,(.+)$/s.exec(url);
   const mimeType = match?.[1];
   const b64 = match?.[2];
   if (!mimeType || !b64 || !mimeType.startsWith("image/")) {

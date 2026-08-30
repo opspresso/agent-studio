@@ -62,10 +62,13 @@ const upload = (document: unknown, uploadedAt: string): ModelCatalogDocumentReco
   uploadedAt,
 });
 
-const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+// Created per test, not at module scope: `restoreMocks: true` restores every
+// spy before each test, so a module-scoped spy is already detached from
+// `log.warn` when the first test runs — its assertions could never fail.
+let warn: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
-  warn.mockClear();
+  warn = vi.spyOn(log, "warn").mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -147,7 +150,13 @@ describe("createModelCatalogRefresher with an upload", () => {
     expect(getModelConfig("openai/only")).toBeDefined();
     expect(getModelConfig("openai/a")).toBeUndefined();
     expect(modelCatalogUpdatedAt()).toBe("2026-08-01T00:00:00.000Z");
-    expect(warn).not.toHaveBeenCalled();
+    // The shrink *guard* is exempt for an upload, but the drop *warning* is
+    // not: four ids vanished, and any stored version holding one now books
+    // usage at $0 — that loss is worth a line whoever installed the catalog.
+    expect(warn).toHaveBeenCalledWith(
+      "models",
+      expect.stringContaining("dropped 4 previously held model(s)"),
+    );
 
     // The hourly tick: same upload, nothing to do.
     expect(await refresher.refresh()).toBe(false);

@@ -126,6 +126,30 @@ export function createDockerProvisioner(): McpProvisioner {
       return { name, address: `http://127.0.0.1:${port}`, identity, running: running === "true" };
 
       async function startContainer(environmentFile: string | undefined): Promise<void> {
+        try {
+          await runContainer(environmentFile);
+        } catch (cause) {
+          // The port is a hash of the name over 400 slots, so two managed
+          // servers can collide — and Docker's bind error does not say with
+          // whom. Name the holder, which is the one fact the operator needs.
+          const holders = await docker([
+            "ps",
+            "--format",
+            "{{.Names}}",
+            "--filter",
+            `publish=${port}`,
+          ]).catch(() => "");
+          const other = holders.split(/\s+/).find((held) => held && held !== name);
+          if (other) {
+            throw new Error(
+              `Managed server "${name}" derives port ${port}, which container "${other}" already binds — rename one of the two servers`,
+            );
+          }
+          throw cause;
+        }
+      }
+
+      async function runContainer(environmentFile: string | undefined): Promise<void> {
         await docker([
         "run",
         "-d",

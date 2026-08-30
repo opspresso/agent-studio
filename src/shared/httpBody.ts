@@ -52,11 +52,12 @@ export async function readBodyText(
   options: { onBytes?: (totalBytes: number) => void | Promise<void> } = {},
 ): Promise<string> {
   await refuseDeclaredLength(message, maxBytes);
-  if (!message.body) {
+  const body = message.body;
+  if (!body) {
     return "";
   }
 
-  const reader = message.body.getReader();
+  const reader = body.getReader();
   const decoder = new TextDecoder();
   let total = 0;
   let text = "";
@@ -68,14 +69,16 @@ export async function readBodyText(
       }
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel();
         throw new BodyTooLargeError(maxBytes);
       }
       await options.onBytes?.(total);
       text += decoder.decode(value, { stream: true });
     }
   } finally {
+    // Same shape as `readBodyBytes` below: any exit — the cap, an `onBytes`
+    // throw — must cancel the body, or the connection cannot be reused.
     reader.releaseLock();
+    await body.cancel().catch(() => {});
   }
 }
 

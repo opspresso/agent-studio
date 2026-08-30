@@ -517,6 +517,13 @@ export function createReplySink(
         .catch(() => {});
       return;
     }
+    // A message already open as an edit stays an edit: a startStream that
+    // succeeds now would point `messageTs` at a brand-new message and orphan
+    // the one the reader is already watching, spinner and all.
+    if (mode === "edit") {
+      await showProgress(prose);
+      return;
+    }
     // Nothing open yet: the task is what opens the message, so a run that
     // spends minutes in tools before its first token is not a silent bot.
     try {

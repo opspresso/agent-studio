@@ -68,7 +68,9 @@ export async function sendMessage(
     throw new ChatNotFoundError();
   }
   if (chat.ownerEmail !== input.userEmail) {
-    throw new ChatForbiddenError();
+    // 404, as the reads answer: a 403 here would tell a non-owner the chatId
+    // exists, and a chat is private to its owner (docs/API.md).
+    throw new ChatNotFoundError();
   }
   if (!chat.projectName) {
     throw new ChatValidationError("chat is not bound to a project");

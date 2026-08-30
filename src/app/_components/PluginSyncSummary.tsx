@@ -11,6 +11,7 @@ import type {
   SyncWrite,
 } from "@/domain/plugin/sync";
 import { BADGE } from "@/app/_components/badgeColors";
+import { reportError } from "@/app/_lib/reportError";
 import { useT } from "@/app/_i18n/provider";
 
 /** What a skip means, in words an operator can act on. */
@@ -72,6 +73,7 @@ export function PluginSyncSummary({
   const [removeServers, setRemoveServers] = useState<string[]>([]);
   const [removePlugins, setRemovePlugins] = useState<string[]>([]);
   const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
 
   const totals = { created: 0, overwritten: 0, unchanged: 0, removed: 0, skipped: result.skipped.length };
   for (const section of result.plugins) {
@@ -93,6 +95,7 @@ export function PluginSyncSummary({
 
   async function apply() {
     setApplying(true);
+    setApplyError(null);
     try {
       await onApply({
         remove: {
@@ -104,6 +107,11 @@ export function PluginSyncSummary({
       setRemoveSkills([]);
       setRemoveServers([]);
       setRemovePlugins([]);
+    } catch (e) {
+      // `void apply()` is fire-and-forget: without this the failure is an
+      // unhandled rejection and the reader cannot tell whether anything was
+      // deleted.
+      setApplyError(reportError(e, "Delete failed"));
     } finally {
       setApplying(false);
     }
@@ -243,6 +251,11 @@ export function PluginSyncSummary({
             <Button size="xs" loading={applying} onClick={() => void apply()}>
               Delete {chosen} entr{chosen === 1 ? "y" : "ies"}
             </Button>
+            {applyError ? (
+              <Text size="sm" c="red">
+                {applyError}
+              </Text>
+            ) : null}
           </Group>
         )}
       </Stack>

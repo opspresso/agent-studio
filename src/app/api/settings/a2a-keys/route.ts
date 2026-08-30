@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { a2aClientKeyUseCases } from "@/lib/container";
-import { apiError } from "@/app/api/_lib/http";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { withAdminAuth } from "@/lib/session";
-import { ValidationError } from "@/application/errors";
 import { editorBody } from "@/app/api/_lib/body";
 
 /**
@@ -36,7 +35,9 @@ export const POST = withAdminAuth(async (user, request: Request) => {
     }
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
-      throw new ValidationError("name is required and must be at most 64 characters");
+      // The sibling routes' shape: the 400 names the failing field and rule
+      // (the slug rule itself is the use case's to enforce).
+      return invalidRequest(parsed.error);
     }
     const { key, view } = await a2aClientKeyUseCases.create(
       parsed.data.name,

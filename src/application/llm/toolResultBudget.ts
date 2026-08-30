@@ -86,13 +86,18 @@ export function createToolResultBudget(
     return content;
   };
   const fit = (content: string): string => {
-    if (remaining <= 0) {
+    // The floor the run-budget path already enforces, applied to the per-turn
+    // cut too: a 12-character fragment wearing a "kept 12 of 48231 chars"
+    // marker reads like data and carries none — the omission note says more.
+    const cutBelowFloor = content.length > remaining && remaining < MIN_KEPT_RESULT_CHARS;
+    if (remaining <= 0 || cutBelowFloor) {
       // The tool protocol forces a result message per call, so this string
       // enters the context regardless — charged, so the budget stays honest
       // about it instead of the gap widening silently.
       const omitted =
         "Error: tool result omitted — this turn's tool output budget is exhausted. Request less data, or call one tool at a time.";
       runBudget?.chargeText(omitted);
+      remaining -= omitted.length;
       return omitted;
     }
     // Never through a surrogate pair: half a character does not survive

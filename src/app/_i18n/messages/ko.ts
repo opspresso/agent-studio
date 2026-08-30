@@ -48,6 +48,7 @@ export const ko: Messages = {
   "auth.email": "이메일",
   "auth.password": "비밀번호",
   "auth.passwordFailed": "이메일 또는 비밀번호가 올바르지 않습니다.",
+  "auth.signInFailed": "로그인을 시작하지 못했습니다. 다시 시도하세요.",
   "auth.or": "또는",
   "auth.signOut": "로그아웃",
   "auth.account": "계정",
@@ -803,6 +804,9 @@ export const ko: Messages = {
   "audit.empty": "이 기간에는 감사 기록이 없습니다.",
   "members.lede": "이 워크스페이스에 로그인한 사람들입니다.",
   "members.empty": "아직 멤버가 없습니다.",
+  "members.member": "멤버",
+  "members.tier": "Tier",
+  "members.joined": "가입일",
   "members.lastLogin": "마지막 로그인",
   "members.neverRecorded": "기록 없음",
   "models.lede":

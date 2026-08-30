@@ -613,7 +613,8 @@ export function getVisibleModels(): ModelConfig[] {
 
 /** Token counts as a reader compares them: 1,048,576 → `1.05M`, 131,072 → `131K`. */
 function roundTokens(tokens: number): string {
-  if (tokens >= 1_000_000) {
+  // 999,500 up rounds to the M form, so nothing ever reads "1000K".
+  if (tokens >= 999_500) {
     const millions = Math.round(tokens / 10_000) / 100;
     return `${millions}M`;
   }
@@ -735,8 +736,15 @@ export function applyModelConstraints(params: ChannelParams): ChannelParams {
   return params;
 }
 
-const warnedUnknownModels = new Set<string>();
-let unknownModelCalls = 0;
+// On `globalThis` for the registry's reason (see `REGISTRY_SLOT`): a dev
+// re-evaluation of this module must not fork the counters `/api/metrics`
+// reads away from the instance the engine is incrementing.
+const UNKNOWN_MODEL_SLOT = Symbol.for("agent-studio.unknown-model-metrics");
+const unknownSlot = globalThis as {
+  [UNKNOWN_MODEL_SLOT]?: { warned: Set<string>; calls: number };
+};
+unknownSlot[UNKNOWN_MODEL_SLOT] ??= { warned: new Set<string>(), calls: 0 };
+const unknownModels = unknownSlot[UNKNOWN_MODEL_SLOT];
 
 /**
  * Record a model id missing from the catalog.
@@ -747,11 +755,11 @@ let unknownModelCalls = 0;
  * the log; the counter is what tells you the miss is still happening.
  */
 function warnUnknownModel(modelId: string): void {
-  unknownModelCalls += 1;
-  if (warnedUnknownModels.has(modelId)) {
+  unknownModels.calls += 1;
+  if (unknownModels.warned.has(modelId)) {
     return;
   }
-  warnedUnknownModels.add(modelId);
+  unknownModels.warned.add(modelId);
   console.warn(`[cost] unknown model id "${modelId}": usage is recorded with $0 cost`);
 }
 
@@ -768,13 +776,13 @@ export interface UnknownModelSnapshot {
  * in the log line above.
  */
 export function unknownModelSnapshot(): UnknownModelSnapshot {
-  return { calls: unknownModelCalls, models: warnedUnknownModels.size };
+  return { calls: unknownModels.calls, models: unknownModels.warned.size };
 }
 
 /** Test seam — production code never resets counters. */
 export function resetUnknownModelMetrics(): void {
-  warnedUnknownModels.clear();
-  unknownModelCalls = 0;
+  unknownModels.warned.clear();
+  unknownModels.calls = 0;
 }
 
 /** Compute USD cost for one call from registry pricing. Unknown model → warn + 0. */

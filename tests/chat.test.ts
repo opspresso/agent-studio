@@ -1015,10 +1015,11 @@ describe("ownership checks", () => {
     );
   });
 
-  it("deleteChat rejects a non-owner with 403 and does not delete", async () => {
+  it("deleteChat answers a non-owner with 404 and does not delete", async () => {
+    // The same answer the reads give: a 403 would confirm the chatId exists.
     const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
     await expect(deleteChat(makeDeps(repo), "c1", "intruder@x.com")).rejects.toBeInstanceOf(
-      ChatForbiddenError,
+      ChatNotFoundError,
     );
     expect(state.deleted).toBe(false);
   });
@@ -1029,11 +1030,11 @@ describe("ownership checks", () => {
     expect(state.deleted).toBe(true);
   });
 
-  it("sendMessage rejects a non-owner with 403 before touching the project", async () => {
+  it("sendMessage answers a non-owner with 404 before touching the project", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     await expect(
       sendMessage(makeDeps(repo), { chatId: "c1", content: "hey", userEmail: "intruder@x.com" }),
-    ).rejects.toBeInstanceOf(ChatForbiddenError);
+    ).rejects.toBeInstanceOf(ChatNotFoundError);
   });
 
   it("error statuses map to HTTP codes", () => {
@@ -1499,7 +1500,7 @@ describe("stopping a run", () => {
 
     await expect(
       cancelChatRun(deps, { chatId: "c1", runId, userEmail: "someone@x.com" }),
-    ).rejects.toBeInstanceOf(ChatForbiddenError);
+    ).rejects.toBeInstanceOf(ChatNotFoundError);
     await expect(
       cancelChatRun(deps, { chatId: "missing", runId, userEmail: "owner@x.com" }),
     ).rejects.toBeInstanceOf(ChatNotFoundError);

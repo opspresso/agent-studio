@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Badge, Code, Group, Paper, Stack, Text, UnstyledButton } from "@mantine/core";
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { describeTool, type ToolKind } from "@/app/_lib/toolCalls";
+import { useT } from "@/app/_i18n/provider";
 import type { ToolPair } from "@/app/_lib/toolPairs";
 import { SUBAGENT_COLOR } from "./badgeColors";
 import { JsonHighlight } from "./JsonHighlight";
@@ -30,6 +31,7 @@ const TOOL_KIND: Record<ToolKind, { label: string; color: string }> = {
  * each grown their own rendering of the same wire format.
  */
 export function ToolRow({ pair }: { pair: ToolPair }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const done = pair.content !== undefined;
   const described = describeTool(pair.name ?? "tool", pair.args);
@@ -54,7 +56,7 @@ export function ToolRow({ pair }: { pair: ToolPair }) {
           </Text>
           {pair.author && (
             <Text fz="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-              via {pair.author}
+              {t("chat.via", { path: pair.author })}
             </Text>
           )}
           <Text fz="xs" c="dimmed" ml="auto" style={{ whiteSpace: "nowrap" }}>

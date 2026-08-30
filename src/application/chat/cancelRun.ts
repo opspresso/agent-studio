@@ -16,7 +16,7 @@ import type { ChatRepository } from "@/domain/chat/repository";
 import { log } from "@/shared/logger";
 import { startSequentialPoll } from "@/shared/sequentialPoll";
 import type { ChatDeps } from "./deps";
-import { ChatForbiddenError, ChatNotFoundError } from "./errors";
+import { ChatNotFoundError } from "./errors";
 
 /**
  * How often a run checks whether it was asked to stop. Slow enough to be free
@@ -80,7 +80,9 @@ export async function cancelChatRun(
     throw new ChatNotFoundError();
   }
   if (chat.ownerEmail !== input.userEmail) {
-    throw new ChatForbiddenError();
+    // 404, as the reads answer: a 403 here would tell a non-owner the chatId
+    // exists, and a chat is private to its owner (docs/API.md).
+    throw new ChatNotFoundError();
   }
   return { cancelled: await deps.chats.requestCancel(input.chatId, input.runId) };
 }

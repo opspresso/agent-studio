@@ -221,7 +221,7 @@ export const config = {
    * vectors live in the database (`catalog_vectors`); nothing else to point at.
    */
   get catalogEnabled(): boolean {
-    return process.env.CATALOG_ENABLED === "true";
+    return optionalEnv(process.env.CATALOG_ENABLED) === "true";
   },
   /**
    * Which service embeds. `bedrock` needs no credentials of its own — the pod
@@ -441,7 +441,7 @@ export const config = {
    * downgrade risk for their deployment — once, here, never per entry.
    */
   get mcpOauthAllowUnadvertisedPkce(): boolean {
-    return process.env.MCP_OAUTH_ALLOW_UNADVERTISED_PKCE === "true";
+    return optionalEnv(process.env.MCP_OAUTH_ALLOW_UNADVERTISED_PKCE) === "true";
   },
   /**
    * What a Slack reply carries while it is still being written.
@@ -555,7 +555,7 @@ export const config = {
     };
   },
   get passwordAuth(): boolean {
-    return process.env.AUTH_PASSWORD === "true";
+    return optionalEnv(process.env.AUTH_PASSWORD) === "true";
   },
   /**
    * An administrator account created on first boot when password sign-in is
