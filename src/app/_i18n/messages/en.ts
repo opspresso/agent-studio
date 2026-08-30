@@ -885,6 +885,9 @@ export const en = {
   "audit.empty": "No audit events in this range.",
   "members.lede": "People who have signed in to this workspace.",
   "members.empty": "No members yet.",
+  "members.member": "Member",
+  "members.tier": "Tier",
+  "members.joined": "Joined",
   "members.lastLogin": "Last login",
   "members.neverRecorded": "Never recorded",
   "models.lede":

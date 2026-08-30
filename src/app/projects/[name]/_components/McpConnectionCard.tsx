@@ -153,7 +153,7 @@ export function McpConnectionCard({
   if (!loaded) {
     return (
       <Text fz="xs" c="dimmed">
-        Loading…
+        {t("common.loading")}
       </Text>
     );
   }

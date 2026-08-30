@@ -804,6 +804,9 @@ export const ko: Messages = {
   "audit.empty": "이 기간에는 감사 기록이 없습니다.",
   "members.lede": "이 워크스페이스에 로그인한 사람들입니다.",
   "members.empty": "아직 멤버가 없습니다.",
+  "members.member": "멤버",
+  "members.tier": "Tier",
+  "members.joined": "가입일",
   "members.lastLogin": "마지막 로그인",
   "members.neverRecorded": "기록 없음",
   "models.lede":
