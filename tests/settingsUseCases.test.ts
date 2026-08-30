@@ -346,6 +346,25 @@ describe("settingsUseCases.update", () => {
     ).rejects.toThrow("At least one model must remain visible");
   });
 
+  it("refuses to hide everything the configured provider channels offer", async () => {
+    // Only anthropic is configured, so hiding every anthropic model empties
+    // /api/models even though other providers' models stay catalog-visible.
+    const { repo } = fakeRepo({
+      llmProviders: [
+        { name: "anthropic", baseUrl: "https://a.example.com/v1", apiKey: encryptSecret("sk-a") },
+      ],
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    const anthropicIds = getVisibleModels()
+      .filter((model) => model.provider === "anthropic")
+      .map((model) => model.id);
+    await expect(
+      createSettingsUseCases(repo).update({ hiddenModels: anthropicIds }, ADMIN),
+    ).rejects.toThrow("At least one model must remain visible");
+
+    await createSettingsUseCases(repo).update({ hiddenModels: anthropicIds.slice(1) }, ADMIN);
+  });
+
   it("rejects an adminEmails override that would lock the caller out", async () => {
     const { repo, current } = fakeRepo();
     const useCases = createSettingsUseCases(repo);

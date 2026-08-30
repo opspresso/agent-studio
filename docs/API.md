@@ -439,7 +439,8 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   이름이 두 번 나오면 `400` 이다.
 - PUT 의 `hiddenModels` 도 전체 교체 목록이다. `/api/models` 에서 숨길 모델 id 들로,
   정렬·중복 제거해 저장된다. 빈 배열은 오버라이드를 제거한다 (숨기는 모델이 없다. env 폴백은
-  없다). 최대 500개이고 레지스트리에 없는 id 또는 보이는 모델 전부를 숨기는 목록은 `400` 이다.
+  없다). 최대 500개이고 레지스트리에 없는 id, 또는 `/api/models` 가 제공하는 모델
+  (provider 채널로 좁힌 뒤) 전부를 숨기는 목록은 `400` 이다.
   denylist 이므로 카탈로그에 새로 들어온 모델은 기본적으로 보인다. 이것은 GET 설정 뷰에 자리가 없다. 다시 읽는 곳은
   `/api/models/catalog` 다.
 - PUT 의 `selfHostedModels` 도 전체 교체 목록이다. 이 배포가 직접 서빙하는 모델의 선언

@@ -8,9 +8,9 @@ import type {
 } from "@/domain/settings/types";
 import {
   getModelConfig,
-  getVisibleModels,
   loadSelfHostedModels,
   MAX_HIDDEN_MODELS,
+  offeredModels,
   selfHostedModelRejectReason,
   SUPPORTED_PROVIDERS,
 } from "@/domain/llm/models";
@@ -443,16 +443,19 @@ export function createSettingsUseCases(
           if (unknown.length > 0) {
             throw new ValidationError(`Unknown model ids: ${unknown.join(", ")}`);
           }
-          const selectableIds = new Set(
-            getVisibleModels()
-              .filter(
-                (model) => patch.selfHostedModels === undefined || model.provider !== "selfhosted",
-              )
-              .map((model) => model.id),
+          // Judged against what `/api/models` would actually offer — the same
+          // provider-channel narrowing (`offeredModels`, with this patch's
+          // provider override when it carries one) — so a deployment with one
+          // configured provider cannot hide that provider's whole list while
+          // models no channel dispatches keep the guard quiet.
+          const channelNames = (next.llmProviders ?? parseProviderConfigs(env)).map(
+            (provider) => provider.name,
           );
-          for (const id of declaredNow) selectableIds.add(id);
           const hidden = new Set(ids);
-          if ([...selectableIds].every((id) => hidden.has(id))) {
+          const remaining = offeredModels(channelNames, ids).filter(
+            (model) => patch.selfHostedModels === undefined || model.provider !== "selfhosted",
+          );
+          if (remaining.length === 0 && [...declaredNow].every((id) => hidden.has(id))) {
             throw new ValidationError("At least one model must remain visible");
           }
           next.hiddenModels = ids;
