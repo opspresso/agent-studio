@@ -1,5 +1,5 @@
 import type { ChatDeps } from "./deps";
-import { ChatForbiddenError, ChatNotFoundError } from "./errors";
+import { ChatNotFoundError } from "./errors";
 
 /** Delete a chat and all its messages. Only the owner may delete. */
 export async function deleteChat(
@@ -12,7 +12,9 @@ export async function deleteChat(
     throw new ChatNotFoundError();
   }
   if (chat.ownerEmail !== userEmail) {
-    throw new ChatForbiddenError();
+    // 404, as the reads answer: a 403 here would tell a non-owner the chatId
+    // exists, and a chat is private to its owner (docs/API.md).
+    throw new ChatNotFoundError();
   }
   await deps.chats.delete(chatId);
 }
