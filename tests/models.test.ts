@@ -133,7 +133,8 @@ describe("model registry invariants", () => {
 
   it("keeps the output cap within the context window", () => {
     for (const model of listModels()) {
-      expect(model.maxTokens, `${model.id}: non-positive maxTokens`).toBeGreaterThan(0);
+      const minimum = model.capabilities.imageGeneration ? 0 : 1;
+      expect(model.maxTokens, `${model.id}: invalid maxTokens`).toBeGreaterThanOrEqual(minimum);
       expect(model.contextWindow, `${model.id}: maxTokens exceeds contextWindow`).toBeGreaterThanOrEqual(
         model.maxTokens,
       );
@@ -269,9 +270,9 @@ describe("contextWindowLabel", () => {
    */
   it("states both figures for every registered model", () => {
     for (const model of listModels()) {
-      expect(contextWindowLabel(model), model.id).toMatch(
-        /^Context \d[\d.]*[KM] · max out \d[\d.]*[KM]$/,
-      );
+      const count = model.capabilities.imageGeneration && model.contextWindow === 0 ? "0" : "\\d[\\d.]*[KM]";
+      const max = model.capabilities.imageGeneration && model.maxTokens === 0 ? "0" : "\\d[\\d.]*[KM]";
+      expect(contextWindowLabel(model), model.id).toMatch(new RegExp(`^Context ${count} · max out ${max}$`));
     }
   });
 });

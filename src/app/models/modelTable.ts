@@ -56,7 +56,7 @@ export function deserializeModelTableState(value: string | undefined): ModelTabl
 function primaryPrice(model: ModelConfig): number {
   return model.pricing.perImage
     ?? model.pricing.imageOutputPer1M
-    ?? model.pricing.inputPer1M;
+    ?? model.pricing.outputPer1M;
 }
 
 export function visibleModelRows<T extends ModelConfig>(

@@ -31,8 +31,8 @@ const model = (
 });
 
 const models = [
-  model("openai/z", "Zulu", 2),
-  model("anthropic/a", "Alpha", 3),
+  model("openai/z", "Zulu", 2, { outputPer1M: 10 }),
+  model("anthropic/a", "Alpha", 3, { outputPer1M: 1 }),
   model("openai/i", "Image", 0, { perImage: 0.04 }),
 ];
 
@@ -47,7 +47,7 @@ describe("models table", () => {
     expect(models.map((item) => item.id)).toEqual(["openai/z", "anthropic/a", "openai/i"]);
   });
 
-  it("sorts by provider, name, and the first displayed price", () => {
+  it("sorts by provider, name, and output price", () => {
     expect(visibleModelRows(models, {
       provider: null,
       capabilities: [],
@@ -65,7 +65,7 @@ describe("models table", () => {
       capabilities: [],
       sortKey: "price",
       direction: "asc",
-    }).map((item) => item.id)).toEqual(["openai/i", "openai/z", "anthropic/a"]);
+    }).map((item) => item.id)).toEqual(["openai/i", "anthropic/a", "openai/z"]);
   });
 
   it("requires every selected capability alongside the provider filter", () => {

@@ -245,7 +245,8 @@ function rejectReason(entry: unknown): string | null {
     const value = entry.capabilities[key];
     if (value !== undefined && typeof value !== "boolean") return `capabilities.${key} is not a boolean`;
   }
-  if (entry.capabilities.imageGeneration !== true) {
+  const imageGeneration = entry.capabilities.imageGeneration === true;
+  if (!imageGeneration) {
     // An unpriced text model is worse than a missing one: the lookup succeeds
     // and every call books at $0 with no warning. Self-hosted channels are the
     // deliberate exception — zero is their true price, and it is stated, not
@@ -262,8 +263,12 @@ function rejectReason(entry: unknown): string | null {
   ) {
     return "an image model needs imageOutputPer1M or perImage";
   }
-  if (!isCount(entry.contextWindow)) return "contextWindow is not a positive integer";
-  if (!isCount(entry.maxTokens)) return "maxTokens is not a positive integer";
+  if (!isCount(entry.contextWindow) && !(imageGeneration && entry.contextWindow === 0)) {
+    return "contextWindow is not a positive integer or zero for an image model";
+  }
+  if (!isCount(entry.maxTokens) && !(imageGeneration && entry.maxTokens === 0)) {
+    return "maxTokens is not a positive integer or zero for an image model";
+  }
   if (entry.maxTokens > entry.contextWindow) return "maxTokens exceeds contextWindow";
   // An explicit false means what absence means; only a non-boolean is malformed.
   if (entry.hidden !== undefined && typeof entry.hidden !== "boolean") return "hidden is not a boolean";

@@ -138,6 +138,25 @@ describe("loadModelCatalog", () => {
     expect(getModelConfig("selfhosted/qwen-local")?.pricing).toEqual({ inputPer1M: 0, outputPer1M: 0 });
   });
 
+  it("allows explicit zero limits only for image models", () => {
+    const report = install(
+      catalog([
+        model("openai/image-zero", {
+          pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.1 },
+          capabilities: { ...TEXT, imageGeneration: true },
+          contextWindow: 0,
+          maxTokens: 0,
+        }),
+        model("openai/text-zero", { contextWindow: 0, maxTokens: 0 }),
+      ]),
+    );
+    expect(report.loaded).toBe(1);
+    expect(report.skipped).toEqual([
+      "openai/text-zero — contextWindow is not a positive integer or zero for an image model",
+    ]);
+    expect(getModelConfig("openai/image-zero")).toMatchObject({ contextWindow: 0, maxTokens: 0 });
+  });
+
   it("reads an explicit hidden: false as what absence means", () => {
     install(catalog([model("openai/plain", { hidden: false })]));
     expect(getModelConfig("openai/plain")?.hidden).toBeUndefined();
