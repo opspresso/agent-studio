@@ -1819,7 +1819,10 @@ describe("attached documents", () => {
     expect(openDocuments).toHaveBeenCalledWith(
       expect.objectContaining({ projectName: "agent", versionName: "1" }),
       undefined,
-      { conversation: { surface: "chat", id: "c1" } },
+      {
+        actor: { kind: "user", id: "owner@x.com" },
+        conversation: { surface: "chat", id: "c1" },
+      },
     );
     expect(close).toHaveBeenCalledOnce();
     expect((await repo.listMessages("c1")).find((message) => message.role === "user")).toMatchObject({

@@ -31,7 +31,7 @@ export type AgentRunner = (params: AgentRunParams) => AsyncGenerator<EngineChunk
 export type OpenChatDocuments = (
   version: Version,
   signal?: AbortSignal,
-  origin?: Pick<RunOrigin, "conversation">,
+  origin?: Pick<RunOrigin, "actor" | "conversation">,
 ) => Promise<{ extractor: DocumentExtractor; close: () => Promise<void> }>;
 
 

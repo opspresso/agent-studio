@@ -1,7 +1,7 @@
 /** Rendering what a run would send, without dispatching it. */
 
 import type { Project, Version } from "@/domain/project/types";
-import type { RunCaller } from "@/domain/execution/actor";
+import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import { renderTemplate } from "@/shared/template";
 import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import * as engine from "@/application/llm/engine";
@@ -66,6 +66,8 @@ export async function previewPrompt(
      * the block unconditionally would be as wrong as one that never showed it.
      */
     caller?: RunCaller;
+    /** The signed-in user whose identity is sent to bound MCP servers. */
+    actor?: RunActor;
   },
 ): Promise<PromptPreview> {
   const { project, version } = input;
@@ -140,6 +142,7 @@ export async function previewPrompt(
     version,
     input.signal,
     discoveryQueries(version, input.message === undefined ? [] : [input.message]),
+    input.actor ? { actor: input.actor } : undefined,
   );
   try {
     // The same deps a run is given: whether the image section and the image

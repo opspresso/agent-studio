@@ -35,7 +35,7 @@ export async function openDocumentExtractor(
   deps: OpenDocumentExtractorDeps,
   version: Version,
   signal?: AbortSignal,
-  origin?: Pick<RunOrigin, "conversation">,
+  origin?: Pick<RunOrigin, "actor" | "conversation">,
 ): Promise<OpenedDocumentExtractor> {
   const resolved = await buildMcpTools(deps, version, signal, origin);
   const candidate = resolved.mcpServers

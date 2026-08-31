@@ -108,7 +108,10 @@ export async function sendMessage(
         ? await deps.openDocuments?.(
             version,
             input.signal,
-            { conversation: chatConversation(input.chatId) },
+            {
+              actor: { kind: "user", id: input.userEmail },
+              conversation: chatConversation(input.chatId),
+            },
           )
         : undefined;
     let read: Awaited<ReturnType<typeof readMessageDocuments>>;

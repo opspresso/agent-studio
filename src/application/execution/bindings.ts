@@ -414,11 +414,10 @@ export async function resolveRunTools(
   signal?: AbortSignal,
   queries?: readonly string[],
   /**
-   * Where the run came from. Only the conversation is read, and only by the
-   * MCP resolution, which names it to every server as a request header. The
-   * preview passes none: it stands for no conversation.
+   * Where the run came from. MCP resolution names an email actor and the
+   * conversation to every server as request headers.
    */
-  origin?: Pick<RunOrigin, "conversation">,
+  origin?: Pick<RunOrigin, "actor" | "conversation">,
 ): Promise<{
   skills: engine.SkillInfo[];
   subagents: engine.SubagentInfo[];

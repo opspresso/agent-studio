@@ -7,6 +7,7 @@ import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import { skipsUrlGuard } from "@/domain/mcp/types";
 import { MAX_MCP_TOOLS_PER_RUN } from "@/domain/llm/toolLimits";
 import * as engine from "@/application/llm/engine";
+import { applyMcpUserEmail, mcpUserEmail } from "@/application/mcpUserEmail";
 import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
@@ -72,8 +73,8 @@ export async function buildMcpTools(
   deps: McpToolDeps,
   version: Version,
   signal?: AbortSignal,
-  /** Where the run came from; only its conversation reaches the server, as a header. */
-  origin?: Pick<RunOrigin, "conversation">,
+  /** Where the run came from; its email actor and conversation reach the server as headers. */
+  origin?: Pick<RunOrigin, "actor" | "conversation">,
 ): Promise<{
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
@@ -183,6 +184,7 @@ export async function buildMcpTools(
             delete headers[name];
           }
         }
+        applyMcpUserEmail(headers, mcpUserEmail(origin?.actor));
         headers[TENANT_ID_HEADER] = version.projectName;
         return {
           server: {

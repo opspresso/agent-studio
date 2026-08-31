@@ -30,13 +30,14 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     try {
       const project = await projectUseCases.get(name);
       const versionEntity = await versionUseCases.get(name, version);
-      const conversation = requestConversation(request, principalActor(principal));
+      const actor = principalActor(principal);
+      const conversation = requestConversation(request, actor);
       const read = await readBoundExecutionDocuments(
         executionDeps,
         versionEntity,
         parsed.data.documents,
         request.signal,
-        conversation ? { conversation } : undefined,
+        { actor, ...(conversation ? { conversation } : {}) },
       );
       const abortController = new AbortController();
       return await sseResponse(
@@ -52,7 +53,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
               project,
               version: versionEntity,
               messages: attachDocumentsToMessages(parsed.data.messages, read.documents),
-              actor: principalActor(principal),
+              actor,
               ...(principal.caller ? { caller: principal.caller } : {}),
               ...(conversation ? { conversation } : {}),
               signal: abortController.signal,
