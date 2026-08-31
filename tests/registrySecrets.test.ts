@@ -325,6 +325,36 @@ describe("MCP registry secret contract", () => {
     expect(result).toMatchObject({ ok: false });
     expect(listMcpToolsMock).not.toHaveBeenCalled();
   });
+
+  it("sends the signed-in user email when testing a connection", async () => {
+    listMcpToolsMock.mockClear();
+    const { repo } = makeMcpRepo([
+      {
+        name: "m",
+        url: "https://mcp.example/mcp",
+        headers: { "x-user-email": "forged@example.com" },
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+    const useCases = createMcpUseCases(repo);
+
+    await useCases.testConnection("m", "Owner@Example.com");
+
+    expect(listMcpToolsMock).toHaveBeenCalledWith(
+      "https://mcp.example/mcp",
+      { "X-User-Email": "owner@example.com" },
+      false,
+    );
+
+    listMcpToolsMock.mockClear();
+    await useCases.testConnection("m");
+    expect(listMcpToolsMock).toHaveBeenCalledWith(
+      "https://mcp.example/mcp",
+      {},
+      false,
+    );
+  });
 });
 
 describe("registry conditional write errors", () => {

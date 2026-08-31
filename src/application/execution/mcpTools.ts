@@ -143,6 +143,7 @@ export async function buildMcpTools(
           log.warn("mcp", credentialWarning);
         }
         const headers = deps.cipher.mergeOutboundHeaders(mcp.headers, overrides);
+        applyMcpUserEmail(headers, undefined);
         if (mcp.auth) {
           // A per-project credential, resolved and refreshed by the auth
           // provider. Applied last on purpose: a version must not be able to

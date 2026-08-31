@@ -810,7 +810,8 @@ OpenAI 호환 엔드포인트에는 Python/Node.js SDK 샘플이 있다. 자격 
 - **MCP server** (`McpServer`, UI 의 `/tools` 페이지). 엔진이 그 tool 을 호출할 수 있는
   등록된 MCP 엔드포인트. "Tools" 만 쓰면 OpenAI 의 tool calling 메커니즘을 가리킨다.
 - **actor** (`RunActor`). 귀속을 위해, 누가 런을 일으켰는지. 그 런이 돌린 project 가
-  아니다.
+  아니다. `user` 와 `project-token` actor 의 id 는 email 이며 MCP 요청의 보호된 사용자
+  신원으로도 전달된다. 다른 actor 의 id 는 email 로 해석하지 않는다.
 - **런 브래킷**. top-level 런을 감싸는 것: 가드, 메트릭, correlation id.
 - 호출 동사: 라우트는 **predict** 라 하고, 파사드는 **execute** 라 하며
   (`executeVersion`/`executeAgent`/`executeProjectStream`), 엔진은 **run** 이라 한다
