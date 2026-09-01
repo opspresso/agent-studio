@@ -13,7 +13,7 @@ import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
 import { assertProjectWritable, userMayAccessProject } from "./projectUseCases";
-import { modelFitsProjectType } from "./modelCompatibility";
+import { modelCompatibilityRejectReason } from "./modelCompatibility";
 import { nextUpdatedAt } from "./timestamps";
 import { log } from "@/shared/logger";
 import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
@@ -344,7 +344,13 @@ function assertProjectModelType(project: Project, model: string): void {
   if (!cfg) {
     return;
   }
-  if (!modelFitsProjectType(project.projectType, cfg)) {
+  const reason = modelCompatibilityRejectReason(project.projectType, cfg);
+  if (reason === "tools") {
+    throw new ValidationError(
+      `Model does not support tool calling required by agent projects: ${model}`,
+    );
+  }
+  if (reason === "type") {
     throw new ValidationError(
       `Model type does not support ${project.projectType} projects: ${model}`,
     );
@@ -357,11 +363,6 @@ function assertModelSupports(project: Project, model: string, parameters: Versio
     return;
   }
   assertProjectModelType(project, model);
-  if (project.projectType === "agent" && !cfg.capabilities.tools) {
-    throw new ValidationError(
-      `Model does not support tool calling required by agent projects: ${model}`,
-    );
-  }
   if (parameters.structuredOutput && !cfg.capabilities.structuredOutput) {
     throw new ValidationError(`Model does not support structured output: ${model}`);
   }

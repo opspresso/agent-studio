@@ -451,6 +451,18 @@ describe("model type validation", () => {
       ),
     ).rejects.toThrow(/Model type does not support image projects/);
   });
+
+  it("reports a text model without tools as an agent capability mismatch", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        "p",
+        { ...versionInput(), model: "openai/o1-pro" },
+        OWNER,
+      ),
+    ).rejects.toThrow(/does not support tool calling required by agent projects/);
+  });
 });
 
 describe("version reference validation", () => {
