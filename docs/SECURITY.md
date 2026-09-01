@@ -482,11 +482,12 @@ mcp-memory 는 이것으로 자기 데이터를 스코프한다. project 별 등
 
 `user` 또는 `project-token` actor 가 일으킨 런은 `X-User-Email` 도 싣는다
 (`src/application/mcpUserEmail.ts`). 전자는 로그인 사용자, 후자는 token 이 대신하는 project
-owner 의 email 이다. 이 값은 레지스트리/바인딩/OAuth header 를 모두 조립한 뒤 마지막에 적용하고,
-어떤 대소문자 표기로 저장된 값도 먼저 제거한다. Email actor 가 없는 Slack·Telegram·Teams·A2A·
-trigger 런은 header 를 보내지 않으며, 정적 header 로 사용자를 사칭할 수도 없다. 이 값은 MCP
-서버가 Agent Memory 같은 사용자별 권한을 적용할 수 있게 하는 위임 신원이지, 그 자체가
-credential 은 아니다. 서버는 별도의 Bearer token 이나 OAuth grant 와 함께 검증해야 한다.
+owner 의 email 이다. Slack 은 workspace user id 를 actor 로 유지하되 profile 에서 해석한 질문자의
+email 을 별도로 싣는다. 이 값은 레지스트리/바인딩/OAuth header 를 모두 조립한 뒤 마지막에
+적용하고, 어떤 대소문자 표기로 저장된 값도 먼저 제거한다. Telegram·Teams·A2A·trigger 처럼
+email 을 알 수 없는 런은 header 를 보내지 않으며, 정적 header 로 사용자를 사칭할 수도 없다.
+이 값은 MCP 서버가 Agent Memory 같은 사용자별 권한을 적용할 수 있게 하는 위임 신원이지, 그
+자체가 credential 은 아니다. 서버는 별도의 Bearer token 이나 OAuth grant 와 함께 검증해야 한다.
 
 Email 은 서버가 권한별 tool catalog 를 내놓거나 요청 자체를 거부할 수 있는 identity 이므로
 `X-User-Email` 은 `X-Tenant-Id` 와 같은 세션 header 및 discovery cache key 에 포함한다. 권한 없는

@@ -36,7 +36,7 @@ export async function readBoundExecutionDocuments(
   version: Version,
   documents: DocumentInput[] = [],
   signal?: AbortSignal,
-  origin?: Pick<RunOrigin, "actor" | "conversation">,
+  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
 ): Promise<{ documents: ReadDocument[]; warnings: string[] }> {
   if (documents.length === 0) {
     return { documents: [], warnings: [] };

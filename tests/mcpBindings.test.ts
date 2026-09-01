@@ -140,6 +140,7 @@ async function dispatchHeaders(
   overrides: Parameters<typeof depsFixture>[1] & {
     actor?: RunActor;
     conversation?: RunConversation;
+    ownerEmail?: string;
   } = {},
 ): Promise<Record<string, string>> {
   const seen = stubMcpServer();
@@ -152,6 +153,7 @@ async function dispatchHeaders(
       messages: [{ role: "user", content: "hi" }],
       ...(overrides.actor ? { actor: overrides.actor } : {}),
       ...(overrides.conversation ? { conversation: overrides.conversation } : {}),
+      ...(overrides.ownerEmail ? { ownerEmail: overrides.ownerEmail } : {}),
     })) {
       chunks.push(chunk);
     }
@@ -230,6 +232,15 @@ describe("per-project MCP header overrides at dispatch", () => {
     );
 
     expect(headers["x-user-email"]).toBeUndefined();
+  });
+
+  it("uses a user email resolved separately from a non-email actor", async () => {
+    const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }], {
+      actor: { kind: "slack", id: "U123" },
+      ownerEmail: "Slack.User@Example.com",
+    });
+
+    expect(headers["x-user-email"]).toBe("slack.user@example.com");
   });
 
   it("names the run's conversation on every request, outside the discovery cache key", async () => {

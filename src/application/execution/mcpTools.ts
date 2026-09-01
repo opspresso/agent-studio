@@ -74,7 +74,7 @@ export async function buildMcpTools(
   version: Version,
   signal?: AbortSignal,
   /** Where the run came from; its email actor and conversation reach the server as headers. */
-  origin?: Pick<RunOrigin, "actor" | "conversation">,
+  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
 ): Promise<{
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
@@ -185,7 +185,7 @@ export async function buildMcpTools(
             delete headers[name];
           }
         }
-        applyMcpUserEmail(headers, mcpUserEmail(origin?.actor));
+        applyMcpUserEmail(headers, mcpUserEmail(origin?.actor, origin?.userEmail));
         headers[TENANT_ID_HEADER] = version.projectName;
         return {
           server: {

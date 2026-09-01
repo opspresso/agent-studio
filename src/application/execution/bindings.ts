@@ -417,7 +417,7 @@ export async function resolveRunTools(
    * Where the run came from. MCP resolution names an email actor and the
    * conversation to every server as request headers.
    */
-  origin?: Pick<RunOrigin, "actor" | "conversation">,
+  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
 ): Promise<{
   skills: engine.SkillInfo[];
   subagents: engine.SubagentInfo[];

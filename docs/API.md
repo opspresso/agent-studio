@@ -365,8 +365,9 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
   레지스트리 기본값을 제거한다. HTTP 헤더 이름이 그렇듯 매칭은 대소문자를 가리지 않는다.
 - `X-Tenant-Id`, `X-User-Email`, `X-Conversation-Id` 는 **예약돼 있다**. 세 header 의 모든
   표기가 병합 후에 버려진다. 첫째 자리에는 호출하는 project 의 이름이 찍힌다. 둘째 자리에는
-  actor 가 `user` 또는 `project-token` 일 때 그 actor 의 email 이 찍히고, 다른 actor 에서는
-  header 자체가 없다. 셋째 자리에는 런이 대화를 가질 때 그 런의 대화 키가 찍힌다. 따라서
+  actor 가 `user` 또는 `project-token` 일 때 그 actor 의 email 이 찍힌다. Slack 처럼 actor id 와
+  별도로 사용자 email 을 해석한 표면은 그 주소를 찍고, 주소를 알 수 없으면 header 자체가 없다.
+  셋째 자리에는 런이 대화를 가질 때 그 런의 대화 키가 찍힌다. 따라서
   레지스트리나 바인딩은 다른 project, 사용자, 대화를 사칭할 수 없다.
   [SECURITY.md](SECURITY.md#mcp-서버가-호출자에-대해-듣는-것) 를 보라.
 - `headers` 를 생략하면 (또는 `{}` 를 보내면) 레지스트리 헤더를 그대로 쓴다.

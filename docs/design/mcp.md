@@ -49,8 +49,9 @@ project 의 tenant 를 사칭할 수 없다 — 그리고 OAuth 가용성 검사
 별로 나뉘고, 그래서 tenant 마다 다른 tool 을 노출해도 되는 서버는 tenant 별로 캐시된다.
 **Email actor 가 있는 요청은 사용자도 밝힌다.** `X-User-Email`
 (`src/application/mcpUserEmail.ts` 의 `USER_EMAIL_HEADER`) 은 `user` 와 `project-token` actor 의
-정규화된 email 을 싣는다. 레지스트리/바인딩/OAuth header 뒤에 적용되므로 저장된 값으로 다른
-사용자를 사칭할 수 없고, email actor 가 없는 런에서는 모든 저장된 표기를 제거한다. 서버가
+정규화된 email 을 싣고, Slack 처럼 actor id 가 email 이 아닌 표면은 별도로 해석한 사용자의
+주소를 싣는다. 레지스트리/바인딩/OAuth header 뒤에 적용되므로 저장된 값으로 다른 사용자를
+사칭할 수 없고, email 을 알 수 없는 런에서는 모든 저장된 표기를 제거한다. 서버가
 사용자별로 catalog 와 권한을 달리할 수 있으므로 이 값은 identity header 이자 discovery cache
 key 다. 로그인 사용자가 시작한 두 tool probe 도 이를 보내고, 사용자 없는 system probe 는
 보내지 않는다.

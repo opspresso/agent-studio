@@ -2,11 +2,15 @@ import type { RunActor } from "@/domain/execution/actor";
 
 export const USER_EMAIL_HEADER = "X-User-Email";
 
-export function mcpUserEmail(actor: RunActor | undefined): string | undefined {
-  if (actor?.kind !== "user" && actor?.kind !== "project-token") {
-    return undefined;
+export function mcpUserEmail(
+  actor: RunActor | undefined,
+  resolvedUserEmail?: string,
+): string | undefined {
+  if (actor?.kind === "user" || actor?.kind === "project-token") {
+    const email = actor.id.trim().toLowerCase();
+    return email || undefined;
   }
-  const email = actor.id.trim().toLowerCase();
+  const email = resolvedUserEmail?.trim().toLowerCase();
   return email || undefined;
 }
 
