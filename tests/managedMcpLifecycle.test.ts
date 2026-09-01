@@ -558,6 +558,25 @@ describe("managed MCP reconcile", () => {
     expect(f.started).toEqual([]);
   });
 
+  it("probes with the entry's headers minus reserved metadata spellings", async () => {
+    // The health probe has no user, project, or conversation — a stored
+    // spelling of a reserved metadata header must not ride it claiming one.
+    const f = fixture({
+      existing: managedRow({
+        headers: {
+          Authorization: "enc:v1:Bearer static",
+          "X-User-Email": "enc:v1:forged@example.com",
+          "x-tenant-id": "enc:v1:forged-project",
+          "X-Conversation-Id": "enc:v1:chat:forged",
+        },
+      }),
+    });
+
+    await f.useCases.reconcile();
+
+    expect(f.probeCalls[0]?.headers).toEqual({ Authorization: "Bearer static" });
+  });
+
   it("treats a rejected credential as reached, and does not restart", async () => {
     // 401 is an answer: the server was there. Recreating the container fixes no
     // credential, and takes the server down to fail the same way.
