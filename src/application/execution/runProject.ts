@@ -500,6 +500,7 @@ export async function* executeAgent(
   const origin: RunOrigin = {
     ancestry: [input.project.name],
     ...(input.actor ? { actor: input.actor } : {}),
+    ...(input.ownerEmail ? { userEmail: input.ownerEmail } : {}),
     // Carried unconditionally, like the actor: a child is answering the same
     // person as its parent. Whether a *prompt* names them stays a per-version
     // question that `callerFor` answers at each engine-input boundary — this

@@ -39,14 +39,23 @@ Agent 런은 시스템 프롬프트에 **"Connected MCP Servers"** 표(서버 �
 없거나 tool 을 노출하지 않는 서버는 생략된다.
 
 **런이 하는 모든 요청은 자신을 호출한 project 의 이름을 밝힌다.** `X-Tenant-Id`
-(`src/application/execution/mcpTools.ts` 의 `TENANT_ID_HEADER`)로 나가므로, 멀티테넌트
-서버는 project 별 등록 없이도 자기 데이터를 project 단위로 스코프한다. 이 값은 헤더 병합
-**이후** 에 찍힌다 — 그래서 레지스트리 항목도, 버전의 override 도 어떤 철자로든 다른
-project 의 tenant 를 사칭할 수 없다 — 그리고 OAuth 가용성 검사 **이후** 이므로, 연결을 쓸 수
-없는 서버를 인증하는 수단으로 이 메타데이터가 인정되는 일은 결코 없다. 뒤에 project 가 없는
+(`src/application/mcpMetadataHeaders.ts` 의 `TENANT_ID_HEADER`)로 나가므로, 멀티테넌트
+서버는 project 별 등록 없이도 자기 데이터를 project 단위로 스코프한다. 세 예약 헤더의 저장된
+표기는 병합 직후, OAuth 가용성 검사가 헤더 맵을 읽기 **전에** 한꺼번에 제거되고
+(`stripMcpMetadataHeaders`) 플랫폼의 값은 그 뒤에 찍힌다 — 그래서 레지스트리 항목도, 버전의
+override 도 어떤 철자로든 다른 project 의 tenant 를 사칭할 수 없고, 연결을 쓸 수
+없는 서버를 인증하는 수단으로 이 메타데이터가 인정되는 일도 없다. 뒤에 project 가 없는
 호출자는 아무것도 보내지 않는다: 카탈로그 probe 와 "Test connection" 은 tenant 를 싣지
 않는다. 같은 헤더 맵에 실려 가기 때문에 [discovery 캐시](#discovery-캐시) 의 키도 project
 별로 나뉘고, 그래서 tenant 마다 다른 tool 을 노출해도 되는 서버는 tenant 별로 캐시된다.
+**Email actor 가 있는 요청은 사용자도 밝힌다.** `X-User-Email`
+(같은 파일의 `USER_EMAIL_HEADER`) 은 `user` 와 `project-token` actor 의
+정규화된 email 을 싣고, Slack 처럼 actor id 가 email 이 아닌 표면은 별도로 해석한 사용자의
+주소를 싣는다. 레지스트리/바인딩/OAuth header 뒤에 적용되므로 저장된 값으로 다른 사용자를
+사칭할 수 없고, email 을 알 수 없는 런에서는 모든 저장된 표기를 제거한다. 서버가
+사용자별로 catalog 와 권한을 달리할 수 있으므로 이 값은 identity header 이자 discovery cache
+key 다. 로그인 사용자가 시작한 두 tool probe 도 이를 보내고, 사용자 없는 system probe 는
+보내지 않는다.
 **그리고 자신의 conversation 의 이름도 밝힌다.** `X-Conversation-Id`(같은 파일의
 `CONVERSATION_ID_HEADER`)로, 런이 `conversationKey` 를 가진 경우 그것을 실어 보낸다 —
 memory 서버가 한 스레드의 작업 노트와 project 의 공유 지식을 구분하는 데 필요한 헤더다.
@@ -250,7 +259,7 @@ admin 소유인데 connection 은 owner 소유인 이유도 그것이다.
 connection 은 서버를 통제(gating)하는 것이 아니라 자격증명을 **공급** 한다. 해석된 토큰은
 dispatch 시점에 적용되는 마지막 **자격증명** 이며 — 레지스트리 항목의 헤더와 바인딩의 override
 위에 얹힌다 — 그래서 버전은 project 의 connection 자리에 자기 `Authorization` 을 대신 넣을 수
-없다. (`X-Tenant-Id` 는 그 뒤에 찍히지만 아무것도 인증하지 않는다.) 쓸 수 있는 connection 이
+없다. (`X-Tenant-Id` 와 `X-User-Email` 은 그 뒤에 찍히지만 자격증명은 아니다.) 쓸 수 있는 connection 이
 없으면 서버는 여전히 그 헤더들이 들고 있는 것으로 돈다; 그것들이 아무것도 들고 있지 않을
 때에만 경고와 함께 버려진다. 어떤 항목에서 OAuth 를 발견하는 것은 그것을 인증할 방법을
 *더하는* 일이지 운영자가 이미 설정해 둔 방법을 빼앗는 일이어서는 안 된다. 그래서 항목 하나가

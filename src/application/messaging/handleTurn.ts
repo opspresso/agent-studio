@@ -83,7 +83,7 @@ export interface TurnInput {
   /** Who is asking, when the surface resolved it. The facade gates it on the version. */
   caller?: RunCaller;
   conversation: RunConversation;
-  /** Whose gallery this run's output belongs in, when the surface knows an address. */
+  /** The user's gallery and MCP identity, when the surface knows an email address. */
   ownerEmail?: string;
   /**
    * What the surface lost before the run — a history it could not read. The

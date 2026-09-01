@@ -129,12 +129,17 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
 /**
  * Where a run came from: who caused it, and the transfer chain that reached it.
  *
- * The two travel together through every subagent hop — a child is caused by the
- * same person as its parent — so they are one value rather than two parameters
+ * These travel together through every subagent hop — a child is caused by the
+ * same person as its parent — so they are one value rather than separate parameters
  * threaded side by side through eight signatures.
  */
 export interface RunOrigin {
   actor?: RunActor;
+  /**
+   * A user email resolved by a surface whose actor id is not an email, such as
+   * Slack.
+   */
+  userEmail?: string;
   /**
    * Who the actor is, in words. Travels the transfer chain for the same reason
    * the actor does — a subagent is answering the same person as its parent.

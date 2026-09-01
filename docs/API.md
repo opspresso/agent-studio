@@ -363,10 +363,12 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
 
 - 문자열 값은 레지스트리 기본값을 대체하거나 새 헤더를 더한다. `null` 은 이 version 에 한해
   레지스트리 기본값을 제거한다. HTTP 헤더 이름이 그렇듯 매칭은 대소문자를 가리지 않는다.
-- `X-Tenant-Id` 와 `X-Conversation-Id` 는 **예약돼 있다**. 둘 중 어느 것이든 모든 표기가
-  병합 후에 버려진다. 첫째 자리에는 호출하는 project 의 이름이, 둘째 자리에는. 런이 대화를
-  가질 때. 그 런의 대화 키가 찍힌다. 그래서 어떤 바인딩도 다른 project 의 tenant 나 다른
-  대화를 지칭할 수 없다.
+- `X-Tenant-Id`, `X-User-Email`, `X-Conversation-Id` 는 **예약돼 있다**. 세 header 의 모든
+  표기가 병합 후에 버려진다. 첫째 자리에는 호출하는 project 의 이름이 찍힌다. 둘째 자리에는
+  actor 가 `user` 또는 `project-token` 일 때 그 actor 의 email 이 찍힌다. Slack 처럼 actor id 와
+  별도로 사용자 email 을 해석한 표면은 그 주소를 찍고, 주소를 알 수 없으면 header 자체가 없다.
+  셋째 자리에는 런이 대화를 가질 때 그 런의 대화 키가 찍힌다. 따라서
+  레지스트리나 바인딩은 다른 project, 사용자, 대화를 사칭할 수 없다.
   [SECURITY.md](SECURITY.md#mcp-서버가-호출자에-대해-듣는-것) 를 보라.
 - `headers` 를 생략하면 (또는 `{}` 를 보내면) 레지스트리 헤더를 그대로 쓴다.
 - 벌거벗은 문자열 항목. `"mcpList": ["shared-mcp"]`, 오버라이드가 생기기 전의 형태. 도
@@ -687,6 +689,7 @@ GET /api/projects/{name}/a2a
 
 sync 엔드포인트는 `GET` 은 member 에게 답하고 `POST` 는 admin 권한을 요구한다. 레지스트리 테스트
 오퍼레이션은 `member` tier 를 요구하고, 등록과 dispatch 때 쓰는 것과 같은 SSRF 가드를 적용한다.
+`POST /api/mcps/{name}/tools` 는 테스트를 요청한 사용자의 email 을 `X-User-Email` 로 서버에 보낸다.
 Plugin 에는 생성/수정 라우트가 없다: sync 가 유일한 writer 이고, plugin 행은 sync 자신의
 `remove` 선택을 거쳐 사라진다.
 
@@ -971,7 +974,9 @@ POST   /api/projects/{name}/mcp-connections/{server}/tools
   사라졌다는 뜻이다.
 - `/tools` 는 **이 project 가 보는 대로** 그 서버의 도구를 나열한다. project 자신의 연결과 그
   바인딩의 헤더 오버레이를 얹어서. 레지스트리 자신의 `POST /api/mcps/{name}/tools` 프로브와는
-  구별된다. 그쪽은 항목의 정적 헤더만 싣기 때문에 OAuth 서버에 대해서는 401 밖에 낼 수 없다.
+  구별된다. 그쪽은 항목의 정적 헤더와 요청 사용자 email 만 싣기 때문에 OAuth 서버에 대해서는
+  401 밖에 낼 수 없다.
+  두 probe 모두 요청한 사용자의 email 을 보호된 `X-User-Email` 로 추가한다.
   소유자 게이트인 이유도 같다: 그 project 의 연결을 소비한다. 그 `502` 는 서버에 아예 닿지 않는
   두 거절도 포함한다. 아웃바운드 가드가 막는 URL, 그리고 인증 정보를 해석할 수 없는 연결이다.
 

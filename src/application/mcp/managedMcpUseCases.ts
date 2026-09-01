@@ -29,6 +29,7 @@ import {
   isConditionalWriteFailure,
 } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
+import { stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import { log } from "@/shared/logger";
 
 export interface CreateManagedInput {
@@ -204,12 +205,11 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     if (!isManagedLoopback(entry)) {
       return false;
     }
-    const result = await deps.probe.listTools(
-      entry.url,
-      deps.cipher.decryptHeadersForOutbound(entry.headers),
-      true,
-      REACHABILITY_TIMEOUT_MS,
-    );
+    // This probe has no user, project, or conversation — a stored spelling of
+    // a reserved metadata header must not ride it claiming one.
+    const headers = deps.cipher.decryptHeadersForOutbound(entry.headers);
+    stripMcpMetadataHeaders(headers);
+    const result = await deps.probe.listTools(entry.url, headers, true, REACHABILITY_TIMEOUT_MS);
     return result.ok || result.unauthorized === true;
   }
 

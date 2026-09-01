@@ -59,6 +59,7 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
       variables,
       // What capability discovery searches with, when the version enables it.
       ...(message ? { message } : {}),
+      actor: { kind: "user", id: user.email },
       // The person looking at the preview is the one a run started from this
       // page would name. Without it the Playground showed a prompt one block
       // short of what the version actually sends.

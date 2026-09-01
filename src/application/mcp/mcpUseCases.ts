@@ -1,6 +1,7 @@
 import type { McpRepository } from "@/domain/mcp/repository";
 import { skipsUrlGuard, type McpServer } from "@/domain/mcp/types";
 import { NotFoundError, ValidationError } from "@/application/errors";
+import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import {
   assertAllowedUrl,
   assertCredentialFreeRegistryUrl,
@@ -38,8 +39,8 @@ export interface UpdateMcpInput {
 }
 
 export interface McpUseCases extends RegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput> {
-  /** Connects with decrypted headers. Throws {@link NotFoundError} when the server does not exist. */
-  testConnection(name: string): Promise<ListToolsResult>;
+  /** Connects with decrypted headers and an optional requesting user identity. */
+  testConnection(name: string, userEmail?: string): Promise<ListToolsResult>;
 }
 
 /** Client-safe projection: encrypted secret values are replaced with a mask. */
@@ -168,7 +169,7 @@ export function createMcpUseCases(
   return {
     ...registry,
 
-    async testConnection(name) {
+    async testConnection(name, userEmail) {
       const existing = await repo.get(name);
       if (!existing) {
         throw new NotFoundError(`MCP server not found: ${name}`);
@@ -184,11 +185,12 @@ export function createMcpUseCases(
           return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
         }
       }
-      return probe.listTools(
-        existing.url,
-        cipher.decryptHeadersForOutbound(existing.headers),
-        loopback,
-      );
+      const headers = cipher.decryptHeadersForOutbound(existing.headers);
+      // A registry entry's stored spelling of a reserved metadata header does
+      // not ride this probe impersonating a project, user, or conversation.
+      stripMcpMetadataHeaders(headers);
+      applyMcpUserEmail(headers, userEmail);
+      return probe.listTools(existing.url, headers, loopback);
     },
   };
 }

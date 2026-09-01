@@ -1819,12 +1819,49 @@ describe("attached documents", () => {
     expect(openDocuments).toHaveBeenCalledWith(
       expect.objectContaining({ projectName: "agent", versionName: "1" }),
       undefined,
-      { conversation: { surface: "chat", id: "c1" } },
+      {
+        actor: { kind: "user", id: "owner@x.com" },
+        conversation: { surface: "chat", id: "c1" },
+      },
     );
     expect(close).toHaveBeenCalledOnce();
     expect((await repo.listMessages("c1")).find((message) => message.role === "user")).toMatchObject({
       documents: [{ name: "q3.xlsx", text: expect.stringContaining("Revenue") }],
     });
+  });
+
+  it("names the signed-in user to bound document servers on the first message too", async () => {
+    const { repo } = makeChatRepo(null);
+    const close = vi.fn(async () => {});
+    const openDocuments = vi.fn(async () => ({
+      extractor: { extract: async () => ({ text: "revenue rose" }) },
+      close,
+    }));
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      openDocuments,
+    });
+
+    const { stream } = await createChat(deps, {
+      projectName: "agent",
+      firstMessage: "analyse this",
+      documents: [{ b64: "AQID", mimeType: "application/octet-stream", name: "q3.xlsx" }],
+      userEmail: "owner@x.com",
+    });
+    for await (const _ of stream) {
+      // drain
+    }
+
+    expect(openDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ projectName: "agent", versionName: "1" }),
+      undefined,
+      {
+        actor: { kind: "user", id: "owner@x.com" },
+        conversation: { surface: "chat", id: expect.any(String) },
+      },
+    );
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it("answers, and says why, when the document could not be read", async () => {

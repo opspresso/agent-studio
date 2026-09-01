@@ -1260,7 +1260,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // different tenants to the same server.
     what: "the header that names the calling project to an MCP server",
     pattern: /"X-Tenant-Id"/,
-    owner: "src/application/execution/mcpTools.ts",
+    owner: "src/application/mcpMetadataHeaders.ts",
+  },
+  {
+    // Its sibling: the header that names the run's user to an MCP server. A
+    // second literal is a second opinion on which identity a server was told,
+    // and on which stored spellings the strip must remove.
+    what: "the header that names the run's user to an MCP server",
+    pattern: /"X-User-Email"/,
+    owner: "src/application/mcpMetadataHeaders.ts",
   },
   {
     // Its sibling: the header that names the run's conversation to an MCP
@@ -1270,7 +1278,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // route handler grows a third.
     what: "the header that names the run's conversation to an MCP server",
     pattern: /"X-Conversation-Id"/,
-    owner: "src/application/execution/mcpTools.ts",
+    owner: "src/application/mcpMetadataHeaders.ts",
     // The API Reference tab *shows* the inbound spelling to a caller; it is a
     // client module and cannot import the route helper that owns it.
     alsoAllowedUnder: [

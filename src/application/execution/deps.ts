@@ -152,8 +152,9 @@ export interface ExecuteAgentInput {
   /** See {@link ExecuteVersionInput.conversation}. */
   conversation?: RunConversation;
   /**
-   * Whose gallery this run's output belongs in, when the surface can resolve an
-   * address the actor does not carry — a Slack actor is a workspace id.
+   * Which user this run belongs to when the surface resolves an address the
+   * actor does not carry — a Slack actor is a workspace id. It addresses the
+   * output gallery and user-authorized MCP requests.
    *
    * Separate from {@link actor} on purpose: that key groups usage by surface and
    * decides which tier's spend cap and concurrency limit apply, and folding a

@@ -25,7 +25,7 @@ import { encryptHeaderOverrides, encryptHeaders } from "@/infrastructure/crypto/
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { McpBinding, Project, Version } from "@/domain/project/types";
-import type { RunConversation } from "@/domain/execution/actor";
+import type { RunActor, RunConversation } from "@/domain/execution/actor";
 import { getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
 import type { UsageDelta } from "@/domain/usage/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
@@ -137,7 +137,11 @@ function stubMcpServer(toolNames: string[] = ["search"]): Array<Record<string, s
 async function dispatchHeaders(
   projectName: string,
   mcpList: McpBinding[],
-  overrides: Parameters<typeof depsFixture>[1] & { conversation?: RunConversation } = {},
+  overrides: Parameters<typeof depsFixture>[1] & {
+    actor?: RunActor;
+    conversation?: RunConversation;
+    ownerEmail?: string;
+  } = {},
 ): Promise<Record<string, string>> {
   const seen = stubMcpServer();
   try {
@@ -147,7 +151,9 @@ async function dispatchHeaders(
       project: projectFixture(projectName),
       version: versionFixture(projectName, mcpList),
       messages: [{ role: "user", content: "hi" }],
+      ...(overrides.actor ? { actor: overrides.actor } : {}),
       ...(overrides.conversation ? { conversation: overrides.conversation } : {}),
+      ...(overrides.ownerEmail ? { ownerEmail: overrides.ownerEmail } : {}),
     })) {
       chunks.push(chunk);
     }
@@ -179,6 +185,62 @@ describe("per-project MCP header overrides at dispatch", () => {
     const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }]);
 
     expect(headers["x-tenant-id"]).toBe("painter");
+  });
+
+  it.each([
+    [{ kind: "user", id: "Member@Example.com" }, "member@example.com"],
+    [{ kind: "project-token", id: "Owner@Example.com" }, "owner@example.com"],
+  ] as const)("names an email actor on every request", async (actor, email) => {
+    const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }], { actor });
+
+    expect(headers["x-user-email"]).toBe(email);
+    expect(
+      getCachedDiscovery(MCP_URL, {
+        Authorization: "Bearer registry-default",
+        "X-Shared": "shared-value",
+        "X-Tenant-Id": "painter",
+        "X-User-Email": email,
+      }),
+    ).toMatchObject({ kind: "tools" });
+  });
+
+  it("does not let configured headers impersonate a run actor", async () => {
+    const headers = await dispatchHeaders(
+      "painter",
+      [
+        {
+          name: "shared-mcp",
+          headers: encryptHeaderOverrides({ "x-user-email": "forged@example.com" }),
+        },
+      ],
+      { actor: { kind: "user", id: "member@example.com" } },
+    );
+
+    expect(headers["x-user-email"]).toBe("member@example.com");
+  });
+
+  it("removes configured user email when the run actor has none", async () => {
+    const headers = await dispatchHeaders(
+      "painter",
+      [
+        {
+          name: "shared-mcp",
+          headers: encryptHeaderOverrides({ "X-User-Email": "forged@example.com" }),
+        },
+      ],
+      { actor: { kind: "slack", id: "U123" } },
+    );
+
+    expect(headers["x-user-email"]).toBeUndefined();
+  });
+
+  it("uses a user email resolved separately from a non-email actor", async () => {
+    const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }], {
+      actor: { kind: "slack", id: "U123" },
+      ownerEmail: "Slack.User@Example.com",
+    });
+
+    expect(headers["x-user-email"]).toBe("slack.user@example.com");
   });
 
   it("names the run's conversation on every request, outside the discovery cache key", async () => {
@@ -259,6 +321,52 @@ describe("per-project MCP header overrides at dispatch", () => {
 
     expect(headers.authorization).toBe("Bearer registry-default");
     expect(headers["x-shared"]).toBe("shared-value");
+  });
+
+  it("drops an unavailable-auth server whose only stored headers are reserved metadata", async () => {
+    // A stored spelling of X-Tenant-Id or X-User-Email is not "a way to
+    // authenticate": stripped before the availability check, it leaves the
+    // header map empty and the server is skipped with the connection's reason
+    // — instead of being dispatched bare on the strength of headers that were
+    // about to be thrown away.
+    const oauthServer = {
+      ...registryServer,
+      headers: encryptHeaders({
+        "X-Tenant-Id": "forged-project",
+        "X-User-Email": "forged@example.com",
+      }),
+      auth: { type: "oauth2", resource: "https://shared-mcp.test" },
+    } as unknown as typeof registryServer;
+
+    const seen = stubMcpServer();
+    try {
+      const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+      const chunks: EngineChunk[] = [];
+      for await (const chunk of executeAgent(
+        depsFixture(channel, {
+          server: oauthServer,
+          mcpAuth: {
+            headersFor: async () => ({
+              headers: {},
+              unavailable:
+                "MCP server 'shared-mcp' requires authorization and this project has not connected it.",
+            }),
+            markUnauthorized: async () => {},
+          },
+        }),
+        {
+          project: projectFixture("no-connection"),
+          version: versionFixture("no-connection", [{ name: "shared-mcp" }]),
+          messages: [{ role: "user", content: "hi" }],
+        },
+      )) {
+        chunks.push(chunk);
+      }
+      expect(seen).toHaveLength(0);
+      expect(chunks.some((chunk) => chunk.warning?.includes("requires authorization"))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("prefers the project's connection over the entry's own header", async () => {

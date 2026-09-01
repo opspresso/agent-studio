@@ -7,60 +7,18 @@ import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import { skipsUrlGuard } from "@/domain/mcp/types";
 import { MAX_MCP_TOOLS_PER_RUN } from "@/domain/llm/toolLimits";
 import * as engine from "@/application/llm/engine";
+import {
+  applyMcpUserEmail,
+  CONVERSATION_ID_HEADER,
+  mcpUserEmail,
+  stripMcpMetadataHeaders,
+  TENANT_ID_HEADER,
+} from "@/application/mcpMetadataHeaders";
 import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
 
 export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
-
-/**
- * The header every MCP request names its calling project with — the project
- * name, as a tenant id.
- *
- * The platform's own metadata, in the spirit of the protocol's `Mcp-Method` /
- * `Mcp-Name`: derived from context, sent unconditionally, ignored by a server
- * that does not read it — and outside the `Mcp-` namespace because it is not
- * the protocol's. A multi-tenant server (mcp-memory) scopes its data by it
- * without any per-project registration.
- *
- * The generic name is deliberate, both halves of it. What the header carries
- * is a tenancy fact, not branding — a vendor-named header would have to chase
- * every product rename while meaning exactly the same thing — and the cost a
- * generic name buys into is accepted with eyes open: a third-party server that
- * already treats `X-Tenant-Id` as its tenancy switch will act on ours, which
- * is the behaviour wanted from a server that understands it at all.
- *
- * Applied *here* rather than in the session, which has no project to know
- * about — and riding in the session's header map is also what keys the
- * discovery cache per project, so a server free to expose different tools per
- * tenant is cached per tenant. The catalog probe and "Test connection" carry
- * no project and therefore no header; a server that requires one refuses those
- * listings and is indexed at server level only, which the reindex reports.
- */
-export const TENANT_ID_HEADER = "X-Tenant-Id";
-
-/**
- * The header every MCP request names its conversation with — the run's
- * `conversationKey`, when the surface has one.
- *
- * Same family as {@link TENANT_ID_HEADER} and the same reasoning for the
- * generic name, with one deliberate difference in how it travels: it is a
- * **request** fact rather than an identity one, so it rides
- * {@link McpServerConfig.contextHeaders} and is stamped on every request
- * *without* keying the discovery cache. A tenant decides which tools a server
- * exposes; a conversation never does, and putting it in the identity map would
- * pay a full discovery per thread for a catalogue that has not changed.
- *
- * What a server may do with it: a memory server can tell working notes for
- * one thread from knowledge shared by the project, and any stateful server can
- * keep per-conversation context. What it must not do is treat it as
- * authorization — like the tenant, it authenticates nothing.
- *
- * Absent when the run has no conversation (a firing, an API call that sent no
- * `X-Conversation-Id`) and on the catalog probe and "Test connection", which
- * have no run.
- */
-export const CONVERSATION_ID_HEADER = "X-Conversation-Id";
 
 /** What resolving a version's MCP bindings actually reads off the run's deps. */
 export type McpToolDeps = Pick<
@@ -72,8 +30,8 @@ export async function buildMcpTools(
   deps: McpToolDeps,
   version: Version,
   signal?: AbortSignal,
-  /** Where the run came from; only its conversation reaches the server, as a header. */
-  origin?: Pick<RunOrigin, "conversation">,
+  /** Where the run came from; its email actor and conversation reach the server as headers. */
+  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
 ): Promise<{
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
@@ -142,6 +100,11 @@ export async function buildMcpTools(
           log.warn("mcp", credentialWarning);
         }
         const headers = deps.cipher.mergeOutboundHeaders(mcp.headers, overrides);
+        // Before the availability check below: a stored spelling of a reserved
+        // metadata header must never count as "a way to authenticate" a server
+        // whose connection is unavailable, and must never impersonate another
+        // project, user, or conversation.
+        stripMcpMetadataHeaders(headers);
         if (mcp.auth) {
           // A per-project credential, resolved and refreshed by the auth
           // provider. Applied last on purpose: a version must not be able to
@@ -168,21 +131,10 @@ export async function buildMcpTools(
             };
           }
         }
-        // Applied last: after the merge so neither the registry entry nor a
-        // version's override can impersonate another project's tenant — in any
-        // spelling, since fetch folds two case-variants into one comma-joined
-        // value that reads as neither project — and after the OAuth check
-        // above, so a metadata header never counts as "a way to authenticate"
-        // a server whose connection is unavailable.
-        for (const name of Object.keys(headers)) {
-          const lower = name.toLowerCase();
-          if (
-            lower === TENANT_ID_HEADER.toLowerCase() ||
-            lower === CONVERSATION_ID_HEADER.toLowerCase()
-          ) {
-            delete headers[name];
-          }
-        }
+        // The platform's own values, applied last: the strip above already
+        // removed every stored spelling, so nothing merged from the registry
+        // or a binding survives to be folded with these.
+        applyMcpUserEmail(headers, mcpUserEmail(origin?.actor, origin?.userEmail));
         headers[TENANT_ID_HEADER] = version.projectName;
         return {
           server: {

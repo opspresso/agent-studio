@@ -471,19 +471,38 @@ capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesys
 ### MCP 서버가 호출자에 대해 듣는 것
 
 런이 MCP 서버로 보내는 모든 요청은 호출하는 project 의 이름을 담은 `X-Tenant-Id` 를 싣는다
-(`src/application/execution/mcpTools.ts` 의 `TENANT_ID_HEADER`). 이것은 멀티테넌트 서버가.
+(`src/application/mcpMetadataHeaders.ts` 의 `TENANT_ID_HEADER`). 이것은 멀티테넌트 서버가.
 mcp-memory 는 이것으로 자기 데이터를 스코프한다. project 별 등록 없이 project 마다 동작하도록
 존재한다. 그것을 읽지 않는 서버는 무시하고, 이미 `X-Tenant-Id` 를 자기 테넌시 스위치로 다루는
-서버는 우리 것에 반응하는데, 그게 이 일반적인 이름의 요점이다. 이 헤더는 레지스트리/바인딩 헤더
-병합 *이후* 에, 어떤 표기로 왔든 적용되므로 버전의 오버라이드가 다른 project 의 테넌트를 사칭할
-수 없고, 세션의 헤더 맵에 실려 discovery 캐시가 project 별로 키잉된 상태를 유지한다. 카탈로그
+서버는 우리 것에 반응하는데, 그게 이 일반적인 이름의 요점이다. 세 예약 헤더(`X-Tenant-Id`,
+`X-User-Email`, `X-Conversation-Id`)의 저장된 표기는 병합 직후, OAuth 가용성 판정이 헤더 맵을
+읽기 *전에* 한꺼번에 제거된다(`stripMcpMetadataHeaders`) — 그래서 저장된 metadata 헤더는 연결
+없는 서버를 "인증하는 수단"으로 계산되지 않고, 런이든 probe 든 다른 project·사용자·대화를
+사칭한 채 서버에 닿지 않는다. 플랫폼 자신의 값은 그 뒤에 찍히고, 테넌트는 세션의 헤더 맵에
+실려 discovery 캐시가 project 별로 키잉된 상태를 유지한다. 카탈로그
 재색인 프로브와 "Test connection" 은 project 를 지니지 않아 헤더를 보내지 않는다. 그것을
 요구하는 서버는 그 목록 조회를 거부하고 서버 수준으로만 색인된다.
 
+`user` 또는 `project-token` actor 가 일으킨 런은 `X-User-Email` 도 싣는다
+(`src/application/mcpMetadataHeaders.ts` 의 `USER_EMAIL_HEADER`). 전자는 로그인 사용자, 후자는 token 이 대신하는 project
+owner 의 email 이다. Slack 은 workspace user id 를 actor 로 유지하되 profile 에서 해석한 질문자의
+email 을 별도로 싣는다. 이 값은 레지스트리/바인딩/OAuth header 를 모두 조립한 뒤 마지막에
+적용하고, 어떤 대소문자 표기로 저장된 값도 먼저 제거한다. Telegram·Teams·A2A·trigger 처럼
+email 을 알 수 없는 런은 header 를 보내지 않으며, 정적 header 로 사용자를 사칭할 수도 없다.
+이 값은 MCP 서버가 Agent Memory 같은 사용자별 권한을 적용할 수 있게 하는 위임 신원이지, 그
+자체가 credential 은 아니다. 서버는 별도의 Bearer token 이나 OAuth grant 와 함께 검증해야 한다.
+
+Email 은 서버가 권한별 tool catalog 를 내놓거나 요청 자체를 거부할 수 있는 identity 이므로
+`X-User-Email` 은 `X-Tenant-Id` 와 같은 세션 header 및 discovery cache key 에 포함한다. 권한 없는
+사용자의 discovery 실패나 권한 있는 사용자의 catalog 가 다른 사용자에게 재사용되지 않는다.
+로그인 사용자가 시작하는 registry "Test connection", project 별 도구 목록, prompt preview 도
+같은 header 를 보낸다. 반면 catalog reindex 와 managed health probe 처럼 사용자가 없는 시스템
+호출은 보내지 않는다.
+
 콘솔의 project 별 도구 목록(`src/application/mcp/mcpAuthUseCases.ts` 의 `listTools`)은 project 를
-*가지고 있으면서도* 테넌트를 보내지 않는 유일한 프로브다. 그 project 의 OAuth token 을 해석하고
-런이 조립할 것과 같은 헤더를 조립하되, 이 하나만 뺀다. 테넌트별로 다른 도구를 노출하는 서버에서
-소유자에게 보이는 목록은 따라서 그의 런에 제공되는 목록과 반드시 같지는 않다.
+*가지고 있으면서도* 테넌트를 보내지 않는 유일한 프로브다. 그 project 의 OAuth token 과 요청
+사용자의 email 을 해석하고 런이 조립할 것과 같은 나머지 헤더를 조립한다. 테넌트별로 다른 도구를
+노출하는 서버에서 소유자에게 보이는 목록은 따라서 그의 런에 제공되는 목록과 반드시 같지는 않다.
 
 런이 대화 안에 있을 때는 그 옆에 헤더가 하나 더 실린다. `X-Conversation-Id`
 (`CONVERSATION_ID_HEADER`, 같은 파일)에 런의 대화 키가 담긴다. `chat:{chatId}`,
@@ -500,11 +519,11 @@ mcp-memory 는 이것으로 자기 데이터를 스코프한다. project 별 등
 프로브들도 보내지 않는다. 테넌트와 마찬가지로 이것은 아무것도 인증하지 않는다. 메모리 서버가
 이것으로 작업 노트를 스코프해도 좋지만, 인가로 다뤄서는 안 된다.
 
-이 두 헤더가 자동으로 전송되는 **유일한** 신원 메타데이터이고, 둘 다 사용자의 이름이나 email 을
-싣지 않는다. 테넌트는 project 이름이고, 대화는 불투명한 스레드 주소다. 서버가 그 너머로 알 수
-있는 것은 (a) 모델이 도구 인자에 써 넣는 무엇이든. *PII 필터링, 그리고 그것이 멈추는 곳* 참고.
-그리고 (b) OAuth 항목의 경우, 등록된 클라이언트의 이름이 `Agent Studio — <project>` 라는 것과
-token 이 그 서버를 연결한 사람의 grant 를 지닌다는 것이다.
+이 세 header 가 자동으로 전송되는 신원 메타데이터다. 테넌트는 project 이름, 사용자 header 는
+email actor 의 실제 주소, 대화는 불투명한 스레드 주소다. `X-User-Email` 은 PII filtering 보다
+앞선 MCP discovery 부터 평문으로 전송되며 masking 대상이 아니다. 따라서 MCP 서버 등록은 사용자
+email 공개를 포함하는 신뢰 결정이다. 서버는 그 밖에도 모델이 도구 인자에 넣은 값과, OAuth
+항목이면 `Agent Studio — <project>` 라는 client 이름 및 연결한 사람의 grant 를 볼 수 있다.
 
 ### 모델이 고른 URL
 

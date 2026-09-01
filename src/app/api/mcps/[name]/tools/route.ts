@@ -4,10 +4,10 @@ import { apiError, parseName } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
-export const POST = withMemberAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
-    const result = await mcpUseCases.testConnection(parseName(name));
+    const result = await mcpUseCases.testConnection(parseName(name), user.email);
     if (!result.ok) {
       return Response.json({ error: result.error }, { status: 502 });
     }
