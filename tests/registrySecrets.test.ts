@@ -332,7 +332,11 @@ describe("MCP registry secret contract", () => {
       {
         name: "m",
         url: "https://mcp.example/mcp",
-        headers: { "x-user-email": "forged@example.com" },
+        headers: {
+          "x-user-email": "forged@example.com",
+          "X-Tenant-Id": "forged-project",
+          "X-Conversation-Id": "chat:forged",
+        },
         createdAt: NOW,
         updatedAt: NOW,
       },

@@ -1043,6 +1043,8 @@ describe("listing a server's tools as the project", () => {
     await uc.listTools("p", "slack", OWNER, {
       "X-Tenant": "override",
       "X-Drop": null,
+      "X-Tenant-Id": "forged-project",
+      "X-Conversation-Id": "chat:forged",
       "X-User-Email": "forged@example.com",
       Authorization: "Bearer version-token",
     });
@@ -1050,6 +1052,11 @@ describe("listing a server's tools as the project", () => {
     expect(h.probes[0]?.headers["X-Tenant"]).toBe("override");
     expect(h.probes[0]?.headers["X-Drop"]).toBeUndefined();
     expect(h.probes[0]?.headers.Authorization).toBe("Bearer at");
+    // The reserved metadata trio: a stored spelling never rides the probe.
+    // This probe carries no project or conversation of its own, so the first
+    // two are simply absent; the user is the platform's own value.
+    expect(h.probes[0]?.headers["X-Tenant-Id"]).toBeUndefined();
+    expect(h.probes[0]?.headers["X-Conversation-Id"]).toBeUndefined();
     expect(h.probes[0]?.headers["X-User-Email"]).toBe(OWNER);
   });
 

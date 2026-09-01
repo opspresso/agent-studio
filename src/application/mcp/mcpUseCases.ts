@@ -1,7 +1,7 @@
 import type { McpRepository } from "@/domain/mcp/repository";
 import { skipsUrlGuard, type McpServer } from "@/domain/mcp/types";
 import { NotFoundError, ValidationError } from "@/application/errors";
-import { applyMcpUserEmail } from "@/application/mcpUserEmail";
+import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import {
   assertAllowedUrl,
   assertCredentialFreeRegistryUrl,
@@ -186,6 +186,9 @@ export function createMcpUseCases(
         }
       }
       const headers = cipher.decryptHeadersForOutbound(existing.headers);
+      // A registry entry's stored spelling of a reserved metadata header does
+      // not ride this probe impersonating a project, user, or conversation.
+      stripMcpMetadataHeaders(headers);
       applyMcpUserEmail(headers, userEmail);
       return probe.listTools(existing.url, headers, loopback);
     },

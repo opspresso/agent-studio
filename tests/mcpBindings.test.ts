@@ -323,6 +323,52 @@ describe("per-project MCP header overrides at dispatch", () => {
     expect(headers["x-shared"]).toBe("shared-value");
   });
 
+  it("drops an unavailable-auth server whose only stored headers are reserved metadata", async () => {
+    // A stored spelling of X-Tenant-Id or X-User-Email is not "a way to
+    // authenticate": stripped before the availability check, it leaves the
+    // header map empty and the server is skipped with the connection's reason
+    // — instead of being dispatched bare on the strength of headers that were
+    // about to be thrown away.
+    const oauthServer = {
+      ...registryServer,
+      headers: encryptHeaders({
+        "X-Tenant-Id": "forged-project",
+        "X-User-Email": "forged@example.com",
+      }),
+      auth: { type: "oauth2", resource: "https://shared-mcp.test" },
+    } as unknown as typeof registryServer;
+
+    const seen = stubMcpServer();
+    try {
+      const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+      const chunks: EngineChunk[] = [];
+      for await (const chunk of executeAgent(
+        depsFixture(channel, {
+          server: oauthServer,
+          mcpAuth: {
+            headersFor: async () => ({
+              headers: {},
+              unavailable:
+                "MCP server 'shared-mcp' requires authorization and this project has not connected it.",
+            }),
+            markUnauthorized: async () => {},
+          },
+        }),
+        {
+          project: projectFixture("no-connection"),
+          version: versionFixture("no-connection", [{ name: "shared-mcp" }]),
+          messages: [{ role: "user", content: "hi" }],
+        },
+      )) {
+        chunks.push(chunk);
+      }
+      expect(seen).toHaveLength(0);
+      expect(chunks.some((chunk) => chunk.warning?.includes("requires authorization"))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("prefers the project's connection over the entry's own header", async () => {
     // The connection is the more specific credential, so it wins where both
     // exist — the fallback is for projects that have not connected.

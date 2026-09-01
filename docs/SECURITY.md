@@ -471,17 +471,20 @@ capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesys
 ### MCP 서버가 호출자에 대해 듣는 것
 
 런이 MCP 서버로 보내는 모든 요청은 호출하는 project 의 이름을 담은 `X-Tenant-Id` 를 싣는다
-(`src/application/execution/mcpTools.ts` 의 `TENANT_ID_HEADER`). 이것은 멀티테넌트 서버가.
+(`src/application/mcpMetadataHeaders.ts` 의 `TENANT_ID_HEADER`). 이것은 멀티테넌트 서버가.
 mcp-memory 는 이것으로 자기 데이터를 스코프한다. project 별 등록 없이 project 마다 동작하도록
 존재한다. 그것을 읽지 않는 서버는 무시하고, 이미 `X-Tenant-Id` 를 자기 테넌시 스위치로 다루는
-서버는 우리 것에 반응하는데, 그게 이 일반적인 이름의 요점이다. 이 헤더는 레지스트리/바인딩 헤더
-병합 *이후* 에, 어떤 표기로 왔든 적용되므로 버전의 오버라이드가 다른 project 의 테넌트를 사칭할
-수 없고, 세션의 헤더 맵에 실려 discovery 캐시가 project 별로 키잉된 상태를 유지한다. 카탈로그
+서버는 우리 것에 반응하는데, 그게 이 일반적인 이름의 요점이다. 세 예약 헤더(`X-Tenant-Id`,
+`X-User-Email`, `X-Conversation-Id`)의 저장된 표기는 병합 직후, OAuth 가용성 판정이 헤더 맵을
+읽기 *전에* 한꺼번에 제거된다(`stripMcpMetadataHeaders`) — 그래서 저장된 metadata 헤더는 연결
+없는 서버를 "인증하는 수단"으로 계산되지 않고, 런이든 probe 든 다른 project·사용자·대화를
+사칭한 채 서버에 닿지 않는다. 플랫폼 자신의 값은 그 뒤에 찍히고, 테넌트는 세션의 헤더 맵에
+실려 discovery 캐시가 project 별로 키잉된 상태를 유지한다. 카탈로그
 재색인 프로브와 "Test connection" 은 project 를 지니지 않아 헤더를 보내지 않는다. 그것을
 요구하는 서버는 그 목록 조회를 거부하고 서버 수준으로만 색인된다.
 
 `user` 또는 `project-token` actor 가 일으킨 런은 `X-User-Email` 도 싣는다
-(`src/application/mcpUserEmail.ts`). 전자는 로그인 사용자, 후자는 token 이 대신하는 project
+(`src/application/mcpMetadataHeaders.ts` 의 `USER_EMAIL_HEADER`). 전자는 로그인 사용자, 후자는 token 이 대신하는 project
 owner 의 email 이다. Slack 은 workspace user id 를 actor 로 유지하되 profile 에서 해석한 질문자의
 email 을 별도로 싣는다. 이 값은 레지스트리/바인딩/OAuth header 를 모두 조립한 뒤 마지막에
 적용하고, 어떤 대소문자 표기로 저장된 값도 먼저 제거한다. Telegram·Teams·A2A·trigger 처럼
