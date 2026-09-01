@@ -413,6 +413,46 @@ describe("tool bindings on a project type that cannot run them", () => {
   });
 });
 
+describe("model type validation", () => {
+  const embedding = "openrouter/text-embedding-3-small";
+
+  it("rejects an embedding model as the primary model", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        { ...versionInput(), model: embedding },
+        OWNER,
+      ),
+    ).rejects.toThrow(/Model type does not support llm projects/);
+  });
+
+  it("rejects an embedding model as the fallback model", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        { ...versionInput(), fallbackModel: embedding },
+        OWNER,
+      ),
+    ).rejects.toThrow(/Model type does not support llm projects/);
+  });
+
+  it("requires an image model for an image project", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p", { projectType: "image" })]),
+        "p",
+        versionInput(),
+        OWNER,
+      ),
+    ).rejects.toThrow(/Model type does not support image projects/);
+  });
+});
+
 describe("version reference validation", () => {
   it("rejects local and remote agents with the same model-visible name", async () => {
     await expect(

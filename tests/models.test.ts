@@ -13,6 +13,7 @@ import {
   listModelMakers,
   listModels,
   loadModelCatalog,
+  modelType,
   offeredModels,
   resetUnknownModelMetrics,
   unknownModelSnapshot,
@@ -114,6 +115,8 @@ describe("model registry invariants", () => {
         );
         expect(route.capabilities.imageGeneration ?? false, `${family}: routes disagree on kind`)
           .toBe(first?.capabilities.imageGeneration ?? false);
+        expect(route.capabilities.embedding ?? false, `${family}: routes disagree on kind`)
+          .toBe(first?.capabilities.embedding ?? false);
       }
     }
   });
@@ -133,7 +136,7 @@ describe("model registry invariants", () => {
 
   it("keeps the output cap within the context window", () => {
     for (const model of listModels()) {
-      const minimum = model.capabilities.imageGeneration ? 0 : 1;
+      const minimum = modelType(model) === "text" ? 1 : 0;
       expect(model.maxTokens, `${model.id}: invalid maxTokens`).toBeGreaterThanOrEqual(minimum);
       expect(model.contextWindow, `${model.id}: maxTokens exceeds contextWindow`).toBeGreaterThanOrEqual(
         model.maxTokens,
@@ -151,10 +154,21 @@ describe("model registry invariants", () => {
     for (const model of listModels().filter(
       (m) =>
         !m.capabilities.imageGeneration &&
+        !m.capabilities.embedding &&
         !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(m.provider),
     )) {
       expect(model.pricing.inputPer1M, `${model.id}: no input price`).toBeGreaterThan(0);
       expect(model.pricing.outputPer1M, `${model.id}: no output price`).toBeGreaterThan(0);
+    }
+  });
+
+  it("prices every embedding model on input only", () => {
+    const embeddingModels = listModels().filter((model) => modelType(model) === "embedding");
+    expect(embeddingModels.length).toBeGreaterThan(0);
+    for (const model of embeddingModels) {
+      expect(model.pricing.inputPer1M, `${model.id}: no input price`).toBeGreaterThan(0);
+      expect(model.pricing.outputPer1M, `${model.id}: output must be free`).toBe(0);
+      expect(model.maxTokens, `${model.id}: embedding models produce no tokens`).toBe(0);
     }
   });
 
@@ -264,12 +278,32 @@ describe("contextWindowLabel", () => {
     );
   });
 
+  it("omits a generated-token limit for embedding models", () => {
+    expect(
+      contextWindowLabel({
+        contextWindow: 8192,
+        maxTokens: 0,
+        capabilities: {
+          tools: false,
+          structuredOutput: false,
+          imageInput: false,
+          reasoning: false,
+          embedding: true,
+        },
+      }),
+    ).toBe("Context 8K");
+  });
+
   /**
    * Drawn on every card in the model list, so a figure that rounds away to
    * nothing is a card reading `Context M` rather than a number.
    */
   it("states both figures for every registered model", () => {
     for (const model of listModels()) {
+      if (modelType(model) === "embedding") {
+        expect(contextWindowLabel(model), model.id).toMatch(/^Context \d[\d.]*[KM]?$/);
+        continue;
+      }
       const count = model.capabilities.imageGeneration && model.contextWindow === 0 ? "0" : "\\d[\\d.]*[KM]";
       const max = model.capabilities.imageGeneration && model.maxTokens === 0 ? "0" : "\\d[\\d.]*[KM]";
       expect(contextWindowLabel(model), model.id).toMatch(new RegExp(`^Context ${count} · max out ${max}$`));
@@ -278,8 +312,11 @@ describe("contextWindowLabel", () => {
 });
 
 describe("offeredModels", () => {
-  it("offers every visible model with no provider channels and no hidden override", () => {
-    expect(offeredModels([], undefined)).toEqual(getVisibleModels());
+  it("offers every visible execution model with no provider channels and no hidden override", () => {
+    expect(offeredModels([], undefined)).toEqual(
+      getVisibleModels().filter((model) => modelType(model) !== "embedding"),
+    );
+    expect(offeredModels([], undefined).every((model) => modelType(model) !== "embedding")).toBe(true);
   });
 
   it("narrows to the configured providers", () => {
@@ -291,7 +328,9 @@ describe("offeredModels", () => {
   it("excludes the hidden denylist and ignores a stale id", () => {
     const offered = offeredModels([], ["openai/gpt-5.4", "openai/retired-model"]);
     expect(offered.map((m) => m.id)).not.toContain("openai/gpt-5.4");
-    expect(offered.length).toBe(getVisibleModels().length - 1);
+    expect(offered.length).toBe(
+      getVisibleModels().filter((model) => modelType(model) !== "embedding").length - 1,
+    );
   });
 
   it("intersects the provider filter with the hidden denylist", () => {

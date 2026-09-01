@@ -15,7 +15,7 @@
 
 import { CheckIcon, Group, Text } from "@mantine/core";
 import type { ComboboxData, ComboboxItem } from "@mantine/core";
-import type { ModelConfig } from "@/domain/llm/models";
+import type { ModelConfig, ModelType } from "@/domain/llm/models";
 import { formatUsd } from "@/app/_lib/formatUsd";
 
 type ModelOption = ModelConfig & { favorite?: boolean };
@@ -34,8 +34,14 @@ type ModelOption = ModelConfig & { favorite?: boolean };
  * number is the registry's illustration of a typical image rather than a rate
  * (`ModelPricing.perImage` says which is which).
  */
-export function modelPriceLabel(pricing: ModelConfig["pricing"]): string {
+export function modelPriceLabel(
+  pricing: ModelConfig["pricing"],
+  type: ModelType = "text",
+): string {
   const { inputPer1M, outputPer1M, imageOutputPer1M, perImage } = pricing;
+  if (type === "embedding") {
+    return `${formatUsd(inputPer1M)} in per 1M`;
+  }
   if (imageOutputPer1M === undefined && perImage === undefined) {
     // Zero on both sides is a self-hosted model's stated price — the registry
     // refuses it everywhere else — and `$0.00 in · $0.00 out` reads like

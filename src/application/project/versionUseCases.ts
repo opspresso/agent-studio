@@ -13,6 +13,7 @@ import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
 import { assertProjectWritable, userMayAccessProject } from "./projectUseCases";
+import { modelFitsProjectType } from "./modelCompatibility";
 import { nextUpdatedAt } from "./timestamps";
 import { log } from "@/shared/logger";
 import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
@@ -338,11 +339,24 @@ function warnUnknownCatalogModel(projectName: string, model: string): void {
  * the warn-only path — a mismatch on a KNOWN model is a misconfiguration, not
  * a catalog lag.
  */
+function assertProjectModelType(project: Project, model: string): void {
+  const cfg = getModelConfig(model);
+  if (!cfg) {
+    return;
+  }
+  if (!modelFitsProjectType(project.projectType, cfg)) {
+    throw new ValidationError(
+      `Model type does not support ${project.projectType} projects: ${model}`,
+    );
+  }
+}
+
 function assertModelSupports(project: Project, model: string, parameters: VersionParameters): void {
   const cfg = getModelConfig(model);
   if (!cfg) {
     return;
   }
+  assertProjectModelType(project, model);
   if (project.projectType === "agent" && !cfg.capabilities.tools) {
     throw new ValidationError(
       `Model does not support tool calling required by agent projects: ${model}`,
@@ -406,6 +420,9 @@ export async function createVersion(
   const project = await assertProjectWritable(projects, projectName, userEmail);
   assertValidImageModel(input.parameters);
   assertModelSupports(project, input.model, input.parameters);
+  if (input.fallbackModel) {
+    assertProjectModelType(project, input.fallbackModel);
+  }
   warnUnknownCatalogModel(projectName, input.model);
   assertToolBindingsRunnable(project, input);
   assertUniqueReferences(input);
@@ -483,6 +500,9 @@ export async function updateVersion(
     maxTurn: input.maxTurn === null ? undefined : input.maxTurn ?? existing.maxTurn,
   };
   assertModelSupports(project, updated.model, updated.parameters);
+  if (updated.fallbackModel) {
+    assertProjectModelType(project, updated.fallbackModel);
+  }
   await versions.put(updated);
   return updated;
 }

@@ -15,7 +15,7 @@
 
 import { ValidationError } from "@/application/errors";
 import type { LlmChannel } from "@/domain/llm/channel";
-import { getModelConfig } from "@/domain/llm/models";
+import { getModelConfig, modelType } from "@/domain/llm/models";
 
 export interface ModelTestResult {
   ok: boolean;
@@ -32,8 +32,12 @@ export function createTestModel(channel: LlmChannel): TestModel {
     // Enabled or not is irrelevant — the point is testing a model *before*
     // enabling it — but an id the registry cannot price is a caller mistake,
     // not a test finding.
-    if (getModelConfig(modelId) === undefined) {
+    const model = getModelConfig(modelId);
+    if (model === undefined) {
       throw new ValidationError(`Unknown model "${modelId}"`);
+    }
+    if (modelType(model) === "embedding") {
+      throw new ValidationError(`Embedding model cannot be tested through chat completion: ${modelId}`);
     }
     const startedAt = Date.now();
     try {

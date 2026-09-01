@@ -14,10 +14,11 @@
 
 import type { ModelConfig } from "@/domain/llm/models";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, ProjectType } from "@/domain/project/types";
+import type { Project } from "@/domain/project/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { log } from "@/shared/logger";
 import { createProject, type CreateProjectInput } from "./projectUseCases";
+import { modelFitsProjectType } from "./modelCompatibility";
 import { createVersion, type VersionRefRepos } from "./versionUseCases";
 
 export interface CreateProjectFlowDeps {
@@ -35,18 +36,13 @@ export interface CreateProjectFlowDeps {
  * `assertModelSupports` enforces on save (an agent needs tools; a chat type
  * never starts on an image model).
  */
-const FITS: Record<ProjectType, (model: ModelConfig) => boolean> = {
-  image: (model) => model.capabilities.imageGeneration === true,
-  agent: (model) => model.capabilities.tools && model.capabilities.imageGeneration !== true,
-  llm: (model) => model.capabilities.imageGeneration !== true,
-};
-
 export function composeCreateProjectWithInitialVersion(
   deps: CreateProjectFlowDeps,
 ): (input: CreateProjectInput) => Promise<Project> {
   return async (input) => {
     const project = await createProject(deps.projects, input);
-    const model = (await deps.offered()).find(FITS[input.projectType])?.id ?? null;
+    const model = (await deps.offered())
+      .find((candidate) => modelFitsProjectType(input.projectType, candidate))?.id ?? null;
     if (model === null) {
       log.warn(
         "version",

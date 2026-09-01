@@ -21,7 +21,7 @@ import {
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { IconChevronDown, IconChevronUp, IconCpu, IconStar } from "@tabler/icons-react";
-import { contextWindowLabel, type ModelConfig } from "@/domain/llm/models";
+import { contextWindowLabel, type ModelConfig, type ModelType } from "@/domain/llm/models";
 import {
   selfHostedModelToInput,
   type SelfHostedModelInput,
@@ -78,8 +78,14 @@ const CAPABILITY_COLUMNS = [
   ["structuredOutput", "JSON"],
   ["imageInput", "Vision"],
   ["reasoning", "Reasoning"],
-  ["imageGeneration", "Image"],
 ] as const;
+
+const MODEL_TYPES: ModelType[] = ["text", "image", "embedding"];
+const MODEL_TYPE_COLORS: Record<ModelType, string> = {
+  text: "gray",
+  image: "blue",
+  embedding: "green",
+};
 
 /**
  * The registry's rates with a promotional discount backed out — the list
@@ -105,18 +111,21 @@ function undiscounted(pricing: ModelConfig["pricing"], discount: number): ModelC
  * as stated, which are already net of the discount. A discount that rounds to
  * 0% shows nothing — a "−0%" badge is noise wearing a number.
  */
-function PriceLine({ pricing }: { pricing: ModelConfig["pricing"] }) {
+function PriceLine({ model }: { model: CatalogModel }) {
   const t = useT();
+  const pricing = model.pricing;
   const discount = pricing.discount;
   const percent = discount === undefined ? 0 : Math.round(discount * 100);
   return (
     <Group gap={6} mt="sm" align="center" wrap="wrap">
-      <Text fz="sm">{modelPriceLabel(pricing)}</Text>
+      <Text fz="sm">{modelPriceLabel(pricing, model.type)}</Text>
       {discount !== undefined && percent > 0 && (
         <Tooltip
           multiline
           maw={320}
-          label={t("models.promoTooltip", { list: modelPriceLabel(undiscounted(pricing, discount)) })}
+          label={t("models.promoTooltip", {
+            list: modelPriceLabel(undiscounted(pricing, discount), model.type),
+          })}
         >
           <Badge size="sm" variant="light" color="green">
             −{percent}%
@@ -795,6 +804,20 @@ export default function ModelsPage() {
               clearable
               w={200}
             />
+            <Select
+              aria-label={t("models.type")}
+              placeholder={t("models.allTypes")}
+              data={MODEL_TYPES.map((type) => ({
+                value: type,
+                label: t(`models.type.${type}`),
+              }))}
+              value={tableState.type}
+              onChange={(type) =>
+                setTableState((current) => ({ ...current, type: type as ModelType | null }))
+              }
+              clearable
+              w={160}
+            />
             <Checkbox.Group
               aria-label="Capabilities"
               value={tableState.capabilities}
@@ -895,6 +918,9 @@ export default function ModelsPage() {
                           ? ""
                           : " · unavailable"}
                     </Badge>
+                    <Badge size="sm" variant="light" color={MODEL_TYPE_COLORS[model.type]}>
+                      {t(`models.type.${model.type}`)}
+                    </Badge>
                     {CAPABILITY_COLUMNS.filter(([key]) => model.capabilities[key]).map(
                       ([key, label]) =>
                         key === "reasoning" && model.capabilities.reasoningWithTools === false ? (
@@ -917,7 +943,7 @@ export default function ModelsPage() {
                       </Badge>
                     )}
                   </Group>
-                  <PriceLine pricing={model.pricing} />
+                  <PriceLine model={model} />
                   <Text fz="xs" c="dimmed" mt={2}>
                     {contextWindowLabel(model)}
                     {model.pricing.cachedInputPer1M !== undefined &&
@@ -949,14 +975,16 @@ export default function ModelsPage() {
                             <Badge color={BADGE.broken}>failed</Badge>
                           </Tooltip>
                         ))}
-                      <Button
-                        size="compact-xs"
-                        variant="default"
-                        loading={test?.running}
-                        onClick={() => void runTest(model.id)}
-                      >
-                        Test
-                      </Button>
+                      {model.type !== "embedding" && (
+                        <Button
+                          size="compact-xs"
+                          variant="default"
+                          loading={test?.running}
+                          onClick={() => void runTest(model.id)}
+                        >
+                          Test
+                        </Button>
+                      )}
                     </Group>
                   </Group>
                 )}

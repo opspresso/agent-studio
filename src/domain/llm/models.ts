@@ -114,6 +114,8 @@ export interface ModelCapabilities {
   imageInput: boolean;
   reasoning: boolean;
   imageGeneration?: boolean;
+  /** Produces vectors through an embeddings endpoint rather than generated tokens. */
+  embedding?: boolean;
   /**
    * False when the provider rejects `tools` together with `reasoning_effort`
    * on chat/completions (the provider's remedy is an explicit effort of
@@ -121,6 +123,8 @@ export interface ModelCapabilities {
    */
   reasoningWithTools?: boolean;
 }
+
+export type ModelType = "text" | "image" | "embedding";
 
 export interface ModelConfig {
   /** `provider/family`, e.g. `google/gemini-3.1-flash-lite`. */
@@ -198,7 +202,7 @@ const PRICING_RATE_KEYS = [
   "perInputImage",
 ] as const;
 const CAPABILITY_KEYS = ["tools", "structuredOutput", "imageInput", "reasoning"] as const;
-const OPTIONAL_CAPABILITY_KEYS = ["imageGeneration", "reasoningWithTools"] as const;
+const OPTIONAL_CAPABILITY_KEYS = ["imageGeneration", "embedding", "reasoningWithTools"] as const;
 
 /**
  * Why a catalog entry cannot be installed, or null when it can. Strict on the
@@ -248,7 +252,15 @@ function rejectReason(entry: unknown): string | null {
     if (value !== undefined && typeof value !== "boolean") return `capabilities.${key} is not a boolean`;
   }
   const imageGeneration = entry.capabilities.imageGeneration === true;
-  if (!imageGeneration) {
+  const embedding = entry.capabilities.embedding === true;
+  if (imageGeneration && embedding) {
+    return "a model may not be both imageGeneration and embedding";
+  }
+  if (embedding) {
+    if (!((entry.pricing.inputPer1M as number) > 0) || entry.pricing.outputPer1M !== 0) {
+      return "an embedding model needs an input price above zero and an output price of zero";
+    }
+  } else if (!imageGeneration) {
     // An unpriced text model is worse than a missing one: the lookup succeeds
     // and every call books at $0 with no warning. Self-hosted channels are the
     // deliberate exception — zero is their true price, and it is stated, not
@@ -268,10 +280,16 @@ function rejectReason(entry: unknown): string | null {
   if (!isCount(entry.contextWindow) && !(imageGeneration && entry.contextWindow === 0)) {
     return "contextWindow is not a positive integer or zero for an image model";
   }
-  if (!isCount(entry.maxTokens) && !(imageGeneration && entry.maxTokens === 0)) {
-    return "maxTokens is not a positive integer or zero for an image model";
+  if (
+    embedding
+      ? entry.maxTokens !== 0
+      : !isCount(entry.maxTokens) && !(imageGeneration && entry.maxTokens === 0)
+  ) {
+    return "maxTokens must be zero for an embedding model, otherwise a positive integer or zero for an image model";
   }
-  if (entry.maxTokens > entry.contextWindow) return "maxTokens exceeds contextWindow";
+  if ((entry.maxTokens as number) > (entry.contextWindow as number)) {
+    return "maxTokens exceeds contextWindow";
+  }
   // An explicit false means what absence means; only a non-boolean is malformed.
   if (entry.hidden !== undefined && typeof entry.hidden !== "boolean") return "hidden is not a boolean";
   if (entry.wireId !== undefined && (typeof entry.wireId !== "string" || entry.wireId === "")) {
@@ -375,7 +393,8 @@ function parseCatalog(catalog: unknown): { state: RegistryState; report: ModelCa
       first.displayName !== model.displayName ||
       first.maker !== model.maker ||
       first.contextWindow !== model.contextWindow ||
-      (first.capabilities.imageGeneration ?? false) !== (model.capabilities.imageGeneration ?? false);
+      (first.capabilities.imageGeneration ?? false) !== (model.capabilities.imageGeneration ?? false) ||
+      (first.capabilities.embedding ?? false) !== (model.capabilities.embedding ?? false);
     if (disagrees) {
       skipped.push(`${model.id} — disagrees with ${first.id} about what ${model.family} is`);
       byId.delete(model.id);
@@ -459,7 +478,8 @@ export function selfHostedModelRejectReason(entry: unknown): string | null {
       first.maker !== declared.maker ||
       first.contextWindow !== declared.contextWindow ||
       (first.capabilities.imageGeneration ?? false) !==
-        (declared.capabilities.imageGeneration ?? false);
+        (declared.capabilities.imageGeneration ?? false) ||
+      (first.capabilities.embedding ?? false) !== (declared.capabilities.embedding ?? false);
     if (disagrees) {
       return `disagrees with ${first.id} about what ${family} is`;
     }
@@ -611,6 +631,13 @@ export function getVisibleModels(): ModelConfig[] {
   return listModels().filter((m) => !m.hidden);
 }
 
+/** The catalog's three mutually exclusive model types, derived from capability flags. */
+export function modelType(model: Pick<ModelConfig, "capabilities">): ModelType {
+  if (model.capabilities.embedding === true) return "embedding";
+  if (model.capabilities.imageGeneration === true) return "image";
+  return "text";
+}
+
 /** Token counts as a reader compares them: 1,048,576 → `1.05M`, 131,072 → `131K`. */
 function roundTokens(tokens: number): string {
   // 999,500 up rounds to the M form, so nothing ever reads "1000K".
@@ -639,8 +666,12 @@ function roundTokens(tokens: number): string {
  * model's own numbers are the registry's vocabulary anyway.
  */
 export function contextWindowLabel(
-  model: Pick<ModelConfig, "contextWindow" | "maxTokens">,
+  model: Pick<ModelConfig, "contextWindow" | "maxTokens"> &
+    Partial<Pick<ModelConfig, "capabilities">>,
 ): string {
+  if (model.capabilities?.embedding === true) {
+    return `Context ${roundTokens(model.contextWindow)}`;
+  }
   return `Context ${roundTokens(model.contextWindow)} · max out ${roundTokens(model.maxTokens)}`;
 }
 
@@ -676,6 +707,7 @@ export function offeredModels(
   const hidden = new Set(hiddenIds ?? []);
   return getVisibleModels().filter(
     (model) =>
+      modelType(model) !== "embedding" &&
       providerOffered(model.provider, providers) &&
       !hidden.has(model.id),
   );

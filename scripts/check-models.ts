@@ -19,7 +19,7 @@
  *                                        #   or on a check that could not run
  *
  * The registry is a *curated* selection, not a mirror: a provider channel serves
- * its entire catalog — embeddings, speech, moderation, fine-tunes, every dated
+ * its entire catalog — speech, moderation, fine-tunes, every dated
  * snapshot and superseded generation — and almost none of it is a model this app
  * should offer. So the first list is long by nature and is sorted newest-first
  * with each model's release date, which is the ordering that puts "they shipped
@@ -226,7 +226,11 @@ async function fetchModels(channel: Channel): Promise<ServedModel[]> {
       });
     }
     if (body.has_more !== true || typeof body.last_id !== "string" || body.last_id === "") {
-      return [...collected, ...(await fetchImageModels(channel, request))];
+      const [imageModels, embeddingModels] = await Promise.all([
+        fetchSpecializedModels(channel, request, "images"),
+        fetchSpecializedModels(channel, request, "embeddings"),
+      ]);
+      return [...collected, ...imageModels, ...embeddingModels];
     }
     cursor = body.last_id;
   }
@@ -234,20 +238,23 @@ async function fetchModels(channel: Channel): Promise<ServedModel[]> {
 }
 
 /**
- * The drawing models a channel keeps in a second catalog.
+ * Models a channel keeps in a type-specific catalog.
  *
- * OpenRouter lists its dedicated image models at `/images/models` and *not* in
- * `/models`: `openai/gpt-image-2` and both Grok drawing models are registered
- * against that channel and appear only there. Without this they read as served
- * by nothing — "candidate to retire" for three models that work, and a
+ * OpenRouter lists dedicated image and embedding models at `/images/models`
+ * and `/embeddings/models`, not in `/models`. Without these reads they appear
+ * to be served by nothing, producing false retirement candidates and a
  * `--strict` failure on a healthy configuration.
  *
  * A channel without that catalog answers 404, which is an answer rather than a
  * failure — the four provider-direct channels and Bedrock's mantle endpoint all
  * do. Any other status is a channel not answering, and is raised like one.
  */
-async function fetchImageModels(channel: Channel, request: typeof globalThis.fetch): Promise<ServedModel[]> {
-  const url = `${channel.baseUrl.replace(/\/+$/, "")}/images/models`;
+async function fetchSpecializedModels(
+  channel: Channel,
+  request: typeof globalThis.fetch,
+  type: "images" | "embeddings",
+): Promise<ServedModel[]> {
+  const url = `${channel.baseUrl.replace(/\/+$/, "")}/${type}/models`;
   const response = await request(url, { headers: authHeaders(channel) });
   if (response.status === 404) {
     return [];
@@ -514,7 +521,7 @@ async function main(): Promise<void> {
   // What `--strict` is allowed to fail on.
   //
   // Not `missing`: that is the provider's entire catalog minus this app's
-  // curated selection — embeddings, realtime, moderation, internal codenames —
+  // curated selection — realtime, moderation, internal codenames —
   // so gating on it is an exit code that can never be green, which is the same
   // as no gate at all. `--since` narrows that list for a reader without changing
   // what it is: a router channel keeps shipping, and OpenRouter alone listed five

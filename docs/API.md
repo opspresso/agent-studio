@@ -1452,7 +1452,8 @@ GET /api/projects/{name}/traces/{traceId}
 ## Models
 
 `GET /api/models` → `{ "models": [ { id, provider, displayName, pricing, capabilities, favorite, … } ] }`
-(`src/domain/llm/models.ts` 의 레지스트리이고, 숨김 항목은 제외한다). 프로바이더별 LLM 채널이
+(`src/domain/llm/models.ts` 의 레지스트리에서 실행 가능한 Text·Image 모델이며, Embedding과 숨김
+항목은 제외한다). 프로바이더별 LLM 채널이
 설정돼 있으면 (설정 오버라이드 또는 `LLM_PROVIDER_*` env) 그 프로바이더들의 모델만 나열되고,
 아무것도 설정돼 있지 않으면 모든 모델이 나열된다. 그다음 admin 이 `/models` 에서 관리하는
 `hiddenModels` 를 제외한다. 숨김은 선택 시점의 필터일 뿐이다: 이미 그 모델을 쥔 version 은 계속
@@ -1461,7 +1462,8 @@ GET /api/projects/{name}/traces/{traceId}
 
 ```
 GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ],
-                                 models: [ { …model, selectionHidden, favorite } ],
+                                 models: [ { …model, type: "text" | "image" | "embedding",
+                                             selectionHidden, favorite } ],
                                  makers: { <makerId>: label },
                                  updatedAt,
                                  source: "override" | "default" }
@@ -1486,7 +1488,8 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
   `selfhosted` 는 admin 전용이다.
   `makers` 와 `updatedAt` 은 로드된 카탈로그의 것이다. maker 라벨과 카탈로그 내용이 마지막으로
   바뀐 시각으로, 레지스트리가 런타임 로드로 바뀐 뒤 클라이언트가 상수에서 가져올 수 없게 된
-  값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: 보이는 모든 모델과 그 `selectionHidden` 플래그
+  값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: Text·Image·Embedding 세 타입의
+  보이는 모든 모델과 그 `selectionHidden` 플래그
   (`/api/models` 가 숨기는 것을 정확히 나열한다, member 는 숨긴 모델을 볼 수는 있어도 고를 수는
   없다), 그리고 프로바이더별로 이 배포가 거기로 dispatch 할 수 있는지다. `dedicated` 는
   프로바이더별 채널이 설정돼 있다는 뜻이다. 하나도 없으면 모든 프로바이더가 기본 채널을 통해
@@ -1494,9 +1497,11 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
 - `favorites` 는 로그인한 사용자의 Better Auth user id 로 분리한 개인 설정이다. PUT 은 전체 교체이고
   최대 200개이며, 중복 제거·정렬해 저장한다. 다른 사용자의 id 를 받는 파라미터는 없다. 숨긴 모델의
   즐겨찾기는 저장에 남지만 picker 에서는 숨김이 우선한다.
-- `test` 는 진짜 채널로 아주 작은 completion 하나를 보낸다 (`maxTokens` 16, 15초 타임아웃).
+- `test` 는 Text·Image 모델에 대해 진짜 채널로 아주 작은 completion 하나를 보낸다 (`maxTokens` 16,
+  15초 타임아웃). Embedding은 completion endpoint로 검사할 수 없으므로 `400` 이고 콘솔도 Test
+  버튼을 표시하지 않는다.
   프로바이더 해석, base URL, API 키, wire-id 치환까지 포함해서다. 실패한 프로브는 `5xx` 가 아니라
-  `200` 본문이다 (`ok: false` 와 상류 에러). 레지스트리에 없는 id 만 `400` 이다. 프로브는 런
+  `200` 본문이다 (`ok: false` 와 상류 에러). 레지스트리에 없는 id도 `400` 이다. 프로브는 런
   브래킷 밖에서 돌아가므로 사용량 행을 기록하지 않는다.
 - `refresh` 는 발행된 카탈로그를 시간별 틱을 기다리지 않고 지금 당겨온다. agent-models 가 방금
   발행한 것을 콘솔에서 바로 보기 위한 것이다. `refreshed: false` 는 "이미 최신"과 "가져오기 실패"

@@ -1,11 +1,12 @@
-import type { ModelConfig } from "@/domain/llm/models";
+import type { ModelConfig, ModelType } from "@/domain/llm/models";
 
 export type ModelSortKey = "provider" | "name" | "price";
 export type SortDirection = "asc" | "desc";
-export type FilterCapability = "tools" | "structuredOutput" | "imageInput" | "reasoning" | "imageGeneration";
+export type FilterCapability = "tools" | "structuredOutput" | "imageInput" | "reasoning";
 
 export interface ModelTableState {
   provider: string | null;
+  type: ModelType | null;
   capabilities: FilterCapability[];
   sortKey: ModelSortKey;
   direction: SortDirection;
@@ -13,6 +14,7 @@ export interface ModelTableState {
 
 export const DEFAULT_MODEL_TABLE_STATE: ModelTableState = {
   provider: null,
+  type: null,
   capabilities: [],
   sortKey: "provider",
   direction: "asc",
@@ -23,8 +25,8 @@ const CAPABILITIES = new Set<FilterCapability>([
   "structuredOutput",
   "imageInput",
   "reasoning",
-  "imageGeneration",
 ]);
+const MODEL_TYPES = new Set<ModelType>(["text", "image", "embedding"]);
 const SORT_KEYS = new Set<ModelSortKey>(["provider", "name", "price"]);
 
 export function normalizeModelTableState(value: unknown): ModelTableState {
@@ -32,6 +34,7 @@ export function normalizeModelTableState(value: unknown): ModelTableState {
   const stored = value as Partial<Record<keyof ModelTableState, unknown>>;
   return {
     provider: typeof stored.provider === "string" ? stored.provider : null,
+    type: MODEL_TYPES.has(stored.type as ModelType) ? stored.type as ModelType : null,
     capabilities: Array.isArray(stored.capabilities)
       ? stored.capabilities.filter(
           (capability): capability is FilterCapability => CAPABILITIES.has(capability as FilterCapability),
@@ -53,21 +56,24 @@ export function deserializeModelTableState(value: string | undefined): ModelTabl
   }
 }
 
-function primaryPrice(model: ModelConfig): number {
+function primaryPrice(model: ModelConfig & { type: ModelType }): number {
+  if (model.type === "embedding") return model.pricing.inputPer1M;
   return model.pricing.perImage
     ?? model.pricing.imageOutputPer1M
     ?? model.pricing.outputPer1M;
 }
 
-export function visibleModelRows<T extends ModelConfig>(
+export function visibleModelRows<T extends ModelConfig & { type: ModelType }>(
   models: T[],
   state: ModelTableState,
 ): T[] {
   const providerRows = state.provider === null
     ? models
     : models.filter((model) => model.provider === state.provider);
-  const rows = providerRows.filter((model) =>
-    state.capabilities.every((capability) => model.capabilities[capability] === true),
+  const rows = providerRows.filter(
+    (model) =>
+      (state.type === null || model.type === state.type) &&
+      state.capabilities.every((capability) => model.capabilities[capability] === true),
   );
   const direction = state.direction === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {

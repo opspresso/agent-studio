@@ -2,9 +2,11 @@ import {
   getVisibleModels,
   listModelMakers,
   modelCatalogUpdatedAt,
+  modelType,
   providerOffered,
   SUPPORTED_PROVIDERS,
   type ModelConfig,
+  type ModelType,
 } from "@/domain/llm/models";
 import { modelPreferenceUseCases } from "@/lib/container";
 import { getHiddenModels, getLlmProviderConfigs } from "@/lib/runtime-settings";
@@ -12,7 +14,7 @@ import { withMemberAuth } from "@/lib/session";
 
 export interface ModelsCatalogResponse {
   providers: Array<{ name: string; available: boolean; dedicated: boolean }>;
-  models: Array<ModelConfig & { selectionHidden: boolean; favorite: boolean }>;
+  models: Array<ModelConfig & { type: ModelType; selectionHidden: boolean; favorite: boolean }>;
   makers: Record<string, string>;
   updatedAt: string;
   source: "override" | "default";
@@ -48,6 +50,7 @@ export const GET = withMemberAuth(async (user) => {
     })),
     models: getVisibleModels().map((model) => ({
       ...model,
+      type: modelType(model),
       selectionHidden: hidden.has(model.id),
       favorite: favorites.has(model.id),
     })),
