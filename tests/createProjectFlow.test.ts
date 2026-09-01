@@ -69,8 +69,9 @@ function config(id: string): ModelConfig {
 describe("createProjectWithInitialVersion", () => {
   it("creates the project and an empty version \"1\" on the first fitting offered model", async () => {
     const repos = makeRepos();
-    // An image model ahead of the chat model: an llm project must skip it.
+    // Embedding and image models ahead of the chat model must both be skipped.
     const flow = makeFlow(repos, async () => [
+      config("openrouter/text-embedding-3-small"),
       config("openai/gpt-image-2"),
       config("openai/gpt-5-mini"),
     ]);

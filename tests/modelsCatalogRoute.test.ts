@@ -20,7 +20,12 @@ const { GET } = await import("@/app/api/models/catalog/route");
 
 interface CatalogBody {
   providers: Array<{ name: string; available: boolean; dedicated: boolean }>;
-  models: Array<{ id: string; selectionHidden: boolean; favorite: boolean }>;
+  models: Array<{
+    id: string;
+    type: "text" | "image" | "embedding";
+    selectionHidden: boolean;
+    favorite: boolean;
+  }>;
   source: "override" | "default";
 }
 
@@ -53,6 +58,9 @@ describe("GET /api/models/catalog", () => {
     expect(body.models).toHaveLength(getVisibleModels().length);
     expect(body.models.every((model) => !model.selectionHidden && !model.favorite)).toBe(true);
     expect(body.models.every((model) => !Object.hasOwn(model, "hidden"))).toBe(true);
+    expect(new Set(body.models.map((model) => model.type))).toEqual(
+      new Set(["text", "image", "embedding"]),
+    );
     expect(body.source).toBe("default");
   });
 

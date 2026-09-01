@@ -15,3 +15,6 @@ maker. Official brand guidance was checked for
 [xAI](https://x.ai/legal/brand-guidelines), and
 [AWS](https://aws.amazon.com/architecture/icons/). Logos must not be modified or used to
 imply endorsement.
+
+When Lobe Icons has no mark for a catalog maker, the console uses a plain text monogram instead
+of borrowing another company's logo.

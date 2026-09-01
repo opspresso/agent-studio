@@ -60,4 +60,13 @@ describe("createTestModel", () => {
     );
     expect(channel.seenParams).toHaveLength(0);
   });
+
+  it("does not send an embedding model to chat completion", async () => {
+    const channel = new FakeChannel([[]]);
+
+    await expect(
+      createTestModel(channel)("openrouter/text-embedding-3-small"),
+    ).rejects.toThrow("Embedding model cannot be tested through chat completion");
+    expect(channel.seenParams).toHaveLength(0);
+  });
 });

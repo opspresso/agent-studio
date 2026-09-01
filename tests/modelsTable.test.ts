@@ -13,7 +13,8 @@ const model = (
   displayName: string,
   inputPer1M: number,
   pricing: Partial<ModelConfig["pricing"]> = {},
-): ModelConfig => ({
+  type: "text" | "image" | "embedding" = "text",
+): ModelConfig & { type: "text" | "image" | "embedding" } => ({
   id,
   provider: id.split("/")[0]!,
   family: id.split("/")[1]!,
@@ -28,44 +29,55 @@ const model = (
   },
   contextWindow: 1,
   maxTokens: 1,
+  type,
 });
 
 const models = [
   model("openai/z", "Zulu", 2, { outputPer1M: 10 }),
   model("anthropic/a", "Alpha", 3, { outputPer1M: 1 }),
-  model("openai/i", "Image", 0, { perImage: 0.04 }),
+  model("openai/i", "Image", 0, { perImage: 0.04 }, "image"),
+  model("openrouter/e", "Embedding", 0.02, { outputPer1M: 0 }, "embedding"),
 ];
 
 describe("models table", () => {
   it("filters one provider without mutating the catalog", () => {
     expect(visibleModelRows(models, {
       provider: "openai",
+      type: null,
       capabilities: [],
       sortKey: "name",
       direction: "asc",
     }).map((item) => item.id)).toEqual(["openai/i", "openai/z"]);
-    expect(models.map((item) => item.id)).toEqual(["openai/z", "anthropic/a", "openai/i"]);
+    expect(models.map((item) => item.id)).toEqual([
+      "openai/z",
+      "anthropic/a",
+      "openai/i",
+      "openrouter/e",
+    ]);
   });
 
   it("sorts by provider, name, and output price", () => {
     expect(visibleModelRows(models, {
       provider: null,
+      type: null,
       capabilities: [],
       sortKey: "provider",
       direction: "asc",
-    }).map((item) => item.id)).toEqual(["anthropic/a", "openai/i", "openai/z"]);
+    }).map((item) => item.id)).toEqual(["anthropic/a", "openai/i", "openai/z", "openrouter/e"]);
     expect(visibleModelRows(models, {
       provider: null,
+      type: null,
       capabilities: [],
       sortKey: "name",
       direction: "desc",
-    }).map((item) => item.displayName)).toEqual(["Zulu", "Image", "Alpha"]);
+    }).map((item) => item.displayName)).toEqual(["Zulu", "Image", "Embedding", "Alpha"]);
     expect(visibleModelRows(models, {
       provider: null,
+      type: null,
       capabilities: [],
       sortKey: "price",
       direction: "asc",
-    }).map((item) => item.id)).toEqual(["openai/i", "anthropic/a", "openai/z"]);
+    }).map((item) => item.id)).toEqual(["openrouter/e", "openai/i", "anthropic/a", "openai/z"]);
   });
 
   it("requires every selected capability alongside the provider filter", () => {
@@ -75,16 +87,28 @@ describe("models table", () => {
 
     expect(visibleModelRows(capable, {
       provider: "openai",
+      type: null,
       capabilities: ["tools", "reasoning"],
       sortKey: "name",
       direction: "asc",
     }).map((item) => item.id)).toEqual(["openai/z"]);
     expect(visibleModelRows(capable, {
       provider: "openai",
+      type: null,
       capabilities: ["tools", "imageInput"],
       sortKey: "name",
       direction: "asc",
     })).toEqual([]);
+  });
+
+  it("filters the three model types independently of capabilities", () => {
+    expect(visibleModelRows(models, {
+      provider: null,
+      type: "embedding",
+      capabilities: [],
+      sortKey: "name",
+      direction: "asc",
+    }).map((item) => item.id)).toEqual(["openrouter/e"]);
   });
 
   it("toggles the active key and starts a new key ascending", () => {
@@ -101,11 +125,13 @@ describe("models table", () => {
   it("restores valid browser preferences and drops invalid fields", () => {
     expect(normalizeModelTableState({
       provider: "openrouter",
+      type: "embedding",
       capabilities: ["tools", "bogus", "imageInput"],
       sortKey: "price",
       direction: "desc",
     })).toEqual({
       provider: "openrouter",
+      type: "embedding",
       capabilities: ["tools", "imageInput"],
       sortKey: "price",
       direction: "desc",

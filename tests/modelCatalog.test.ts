@@ -8,6 +8,7 @@ import {
   loadModelCatalog,
   loadSelfHostedModels,
   modelCatalogUpdatedAt,
+  modelType,
 } from "@/domain/llm/models";
 import { createModelCatalogRefresher } from "@/application/llm/modelCatalogRefresh";
 import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
@@ -136,6 +137,36 @@ describe("loadModelCatalog", () => {
       "selfhosted/renamed — a selfhosted entry must not carry a wireId — the family is the served name",
     ]);
     expect(getModelConfig("selfhosted/qwen-local")?.pricing).toEqual({ inputPer1M: 0, outputPer1M: 0 });
+  });
+
+  it("loads embedding models and enforces their type contract", () => {
+    const embedding = (id: string, extra: Record<string, unknown> = {}) =>
+      model(id, {
+        pricing: { inputPer1M: 0.02, outputPer1M: 0 },
+        capabilities: { ...TEXT, embedding: true },
+        maxTokens: 0,
+        ...extra,
+      });
+    const report = install(
+      catalog([
+        embedding("openai/embed-ok"),
+        embedding("openai/embed-output", { pricing: { inputPer1M: 0.02, outputPer1M: 1 } }),
+        embedding("openai/embed-max", { maxTokens: 1 }),
+        embedding("openai/embed-image", {
+          capabilities: { ...TEXT, imageGeneration: true, embedding: true },
+          pricing: { inputPer1M: 0.02, outputPer1M: 0, perImage: 0.1 },
+        }),
+      ]),
+    );
+
+    expect(report.loaded).toBe(1);
+    expect(report.skipped).toEqual([
+      "openai/embed-output — an embedding model needs an input price above zero and an output price of zero",
+      "openai/embed-max — maxTokens must be zero for an embedding model, otherwise a positive integer or zero for an image model",
+      "openai/embed-image — a model may not be both imageGeneration and embedding",
+    ]);
+    expect(getModelConfig("openai/embed-ok")?.capabilities.embedding).toBe(true);
+    expect(modelType(getModelConfig("openai/embed-ok")!)).toBe("embedding");
   });
 
   it("allows explicit zero limits only for image models", () => {

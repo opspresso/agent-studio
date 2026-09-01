@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getVisibleModels } from "@/domain/llm/models";
+import { offeredModels } from "@/domain/llm/models";
 
 const { getLlmProviderConfigs, getHiddenModels, modelPreferenceUseCases } = vi.hoisted(() => ({
   getLlmProviderConfigs: vi.fn(),
@@ -43,8 +43,8 @@ beforeEach(() => {
 });
 
 describe("GET /api/models", () => {
-  it("lists every visible model with no provider channels and no hidden override", async () => {
-    expect(await listedIds()).toEqual(getVisibleModels().map((model) => model.id));
+  it("lists every visible execution model with no provider channels and no hidden override", async () => {
+    expect(await listedIds()).toEqual(offeredModels([], undefined).map((model) => model.id));
   });
 
   it("excludes a hidden model", async () => {
@@ -62,7 +62,7 @@ describe("GET /api/models", () => {
 
   it("ignores a stale hidden id the registry no longer carries", async () => {
     getHiddenModels.mockResolvedValue(["openai/retired-model"]);
-    expect(await listedIds()).toEqual(getVisibleModels().map((model) => model.id));
+    expect(await listedIds()).toEqual(offeredModels([], undefined).map((model) => model.id));
   });
 
   it("marks only this user's favorite models", async () => {

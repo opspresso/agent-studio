@@ -180,7 +180,7 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
 
 ### 모델 레지스트리: agent-models 의 카탈로그
 
-선택 가능한 모델. 가격, 컨텍스트 윈도, 출력 상한, capability 플래그, 어떤 route 가 그것을
+Text, Image, Embedding 모델. 가격, 컨텍스트 윈도, 출력 상한, capability 플래그, 어떤 route 가 그것을
 서빙하는지. 는 **이 저장소에 있지 않다.** [opspresso/agent-models](https://github.com/opspresso/agent-models)
 가 관리한다: 모델마다 **family** 하나(표시 이름, 가격, 윈도, capability), 경로마다 **offering**
 하나(provider, wire 이름, 그 경로가 바꾸는 것), 그리고 provider 들의 공개 카탈로그로부터 매일
@@ -191,8 +191,12 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
 유일한 예외가 selfhosted 모델이다: 그 발행자는 배포 자신이고, 카탈로그가 아니라 배포의
 선언이 레지스트리 오버레이로 들어온다 (위 *LLM 채널* 절).
 
-카탈로그의 항목은 이 앱의 `ModelConfig` 그대로다 (id 는 `provider/family`, 같은 모델의 세 경로는
-같은 이름·윈도·kind 를 가진다, `wireId` 는 경로가 모델 이름을 다르게 쓸 때만). 두 벌이 프로세스에
+카탈로그의 항목은 이 앱의 `ModelConfig` 그대로다. 타입은 별도 필드가 아니라 capability 에서
+파생한다: `embedding: true` 는 Embedding, `imageGeneration: true` 는 Image, 둘 다 없으면 Text 다.
+두 플래그는 동시에 참일 수 없다. Embedding은 input 가격만 양수이고 `outputPer1M`·`maxTokens` 가
+0이다. `/models` 카탈로그에는 세 타입을 모두 표시하지만 version picker와 `/api/models` 는 실행
+가능한 Text·Image만 제공한다. id 는 `provider/family` 이고, 같은 모델의 세 경로는 같은
+이름·윈도·타입을 가진다. `wireId` 는 경로가 모델 이름을 다르게 쓸 때만 둔다. 두 벌이 프로세스에
 도달한다:
 
 - **스냅샷** `src/domain/llm/catalog.json`. 커밋된 사본. 모듈 평가 시 로드되어 단위 테스트와
@@ -219,7 +223,9 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
 `loadModelCatalog` (`src/domain/llm/models.ts`) 가 유일한 입구다: 버전을 확인하고, 항목마다 런이
 읽는 필드(가격이 숫자인지, 윈도가 양의 정수인지, `provider` 가 이 앱이 가진 채널인지.
 `SUPPORTED_PROVIDERS` 는 카탈로그가 아니라 코드다)를 검증해 맞지 않는 것은 이유와 함께 건너뛰고,
-레지스트리를 **원자적으로** 바꾼다. 텍스트 모델은 0보다 큰 가격을 요구하되 self-hosted
+레지스트리를 **원자적으로** 바꾼다. Text 모델은 양쪽 모두 0보다 큰 가격을 요구하고, Image는
+image output token 또는 장당 가격을 요구하며, Embedding은 input 가격과 0인 output 가격을
+요구한다. Text의 self-hosted
 provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하는 모델은 0 이 참값이라서
 명시적 0 은 통과하고, 가격 필드의 *부재*는 다른 provider 와 똑같이 거부된다. 진행 중인 런은 이미 해석한 config 를 그대로 쓴다. 쓸 수 있는
 항목이 하나도 없는 카탈로그는 거부되고 이전 상태가 남는다. 빈 레지스트리는 낡은 것보다 나쁜 유일한
