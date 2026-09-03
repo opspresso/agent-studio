@@ -93,7 +93,7 @@ key = kind#name  (or kind#name#toolName)          — src/domain/catalog/types.t
 `RERANKER_MIN_SCORE`와 그 query 최고 점수의 10% 중 높은 하한으로 다시 자른다. reranker를
 설정하지 않으면 기존 vector 점수와 순서가 그대로 남는다.
 
-활성 Embedding과 Reranker는 `/models`의 같은 레지스트리에서 각각 자기 type으로 선택한다.
+활성 Embedding과 Rerank는 `/models`의 같은 레지스트리에서 각각 자기 type으로 선택한다.
 env의 `EMBEDDING_MODEL`·`RERANKER_MODEL`은 배포 기본값이고 DB 선택이 우선한다. Embedding 변경은
 확인 뒤 설치 전역 lease 아래에서 동기 재색인하며 실패하면 이전 선택과 vector를 복원한다. 다른
 인스턴스의 동시 migration은 409로 거절한다. Reranker 변경은 저장 vector를 바꾸지 않으므로

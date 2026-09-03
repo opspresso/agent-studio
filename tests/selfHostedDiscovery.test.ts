@@ -49,8 +49,8 @@ describe("listServedSelfHostedModels", () => {
         : new Response("", { status: 404 }),
     ) as unknown as typeof fetch;
 
-    await expect(listServedSelfHostedModels(CHANNEL, "reranker", fetchFn)).resolves.toEqual([
-      { name: "qwen3-8b", type: "reranker", contextWindow: 32768 },
+    await expect(listServedSelfHostedModels(CHANNEL, "rerank", fetchFn)).resolves.toEqual([
+      { name: "qwen3-8b", type: "rerank", contextWindow: 32768 },
     ]);
   });
 

@@ -9,7 +9,7 @@ import { withAdminAuth } from "@/lib/session";
  * edits and displays: the **stored** declarations (the editing basis — a
  * declaration the registry refused to install must stay visible here, or the
  * next full-replace save deletes it silently), which of them are installed,
- * and what the configured text, embedding and reranker channels are serving
+ * and what the configured text, embedding and rerank channels are serving
  * right now (the declaration aid from each `/v1/models`, LM Studio-enriched).
  *
  * `served` is best-effort: a channel that does not answer becomes

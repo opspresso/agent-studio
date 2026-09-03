@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ModelConfig } from "@/domain/llm/models";
+import type { ModelConfig, ModelType } from "@/domain/llm/models";
 import {
   DEFAULT_MODEL_TABLE_STATE,
   deserializeModelTableState,
@@ -13,8 +13,8 @@ const model = (
   displayName: string,
   inputPer1M: number,
   pricing: Partial<ModelConfig["pricing"]> = {},
-  type: "text" | "image" | "embedding" | "reranker" = "text",
-): ModelConfig & { type: "text" | "image" | "embedding" | "reranker" } => ({
+  type: ModelType = "text",
+): ModelConfig & { type: ModelType } => ({
   id,
   provider: id.split("/")[0]!,
   family: id.split("/")[1]!,
@@ -37,7 +37,8 @@ const models = [
   model("anthropic/a", "Alpha", 3, { outputPer1M: 1 }),
   model("openai/i", "Image", 0, { perImage: 0.04 }, "image"),
   model("openrouter/e", "Embedding", 0.02, { outputPer1M: 0 }, "embedding"),
-  model("selfhosted/r", "Reranker", 0, { outputPer1M: 0 }, "reranker"),
+  model("selfhosted/r", "Rerank", 0, { outputPer1M: 0, perSearch: 0.001 }, "rerank"),
+  model("openrouter/t", "Transcription", 0, { outputPer1M: 0, perAudioMinute: 0.006 }, "transcription"),
 ];
 
 describe("models table", () => {
@@ -55,6 +56,7 @@ describe("models table", () => {
       "openai/i",
       "openrouter/e",
       "selfhosted/r",
+      "openrouter/t",
     ]);
   });
 
@@ -65,21 +67,21 @@ describe("models table", () => {
       capabilities: [],
       sortKey: "provider",
       direction: "asc",
-    }).map((item) => item.id)).toEqual(["anthropic/a", "openai/i", "openai/z", "openrouter/e", "selfhosted/r"]);
+    }).map((item) => item.id)).toEqual(["anthropic/a", "openai/i", "openai/z", "openrouter/e", "openrouter/t", "selfhosted/r"]);
     expect(visibleModelRows(models, {
       provider: null,
       type: null,
       capabilities: [],
       sortKey: "name",
       direction: "desc",
-    }).map((item) => item.displayName)).toEqual(["Zulu", "Reranker", "Image", "Embedding", "Alpha"]);
+    }).map((item) => item.displayName)).toEqual(["Zulu", "Transcription", "Rerank", "Image", "Embedding", "Alpha"]);
     expect(visibleModelRows(models, {
       provider: null,
       type: null,
       capabilities: [],
       sortKey: "price",
       direction: "asc",
-    }).map((item) => item.id)).toEqual(["selfhosted/r", "openrouter/e", "openai/i", "anthropic/a", "openai/z"]);
+    }).map((item) => item.id)).toEqual(["selfhosted/r", "openrouter/t", "openrouter/e", "openai/i", "anthropic/a", "openai/z"]);
   });
 
   it("requires every selected capability alongside the provider filter", () => {
@@ -113,11 +115,18 @@ describe("models table", () => {
     }).map((item) => item.id)).toEqual(["openrouter/e"]);
     expect(visibleModelRows(models, {
       provider: null,
-      type: "reranker",
+      type: "rerank",
       capabilities: [],
       sortKey: "name",
       direction: "asc",
     }).map((item) => item.id)).toEqual(["selfhosted/r"]);
+    expect(visibleModelRows(models, {
+      provider: null,
+      type: "transcription",
+      capabilities: [],
+      sortKey: "name",
+      direction: "asc",
+    }).map((item) => item.id)).toEqual(["openrouter/t"]);
   });
 
   it("toggles the active key and starts a new key ascending", () => {

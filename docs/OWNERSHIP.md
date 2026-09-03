@@ -36,7 +36,7 @@
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` |
 | provider 에 embedding 을 요청하기 | `src/infrastructure/llm/embeddings.ts` |
-| 배포 전역 Embedding/Reranker 모델 선택과 Embedding 변경 시 vector migration | `src/application/llm/modelSelection.ts`; env/DB 우선순위는 `src/lib/runtime-settings.ts` |
+| 배포 전역 Embedding/Rerank 모델 선택과 Embedding 변경 시 vector migration | `src/application/llm/modelSelection.ts`; env/DB 우선순위는 `src/lib/runtime-settings.ts` |
 | Capability catalog reindex의 설치 전역 직렬화 lease | `src/domain/catalog/reindexLock.ts` 계약과 `src/infrastructure/db/repositories/catalogReindexLock.ts` 구현 |
 | vector 후보를 2차 정렬하기 | 요청/응답 프로토콜은 `src/infrastructure/llm/reranker.ts`, 어느 후보·텍스트·과업 instruction을 보내고 상대 하한으로 자를지는 `src/application/catalog/searchCatalog.ts` |
 | Bedrock 에 닿기 | `src/infrastructure/llm/bedrockClient.ts` |

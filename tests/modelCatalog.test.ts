@@ -162,32 +162,63 @@ describe("loadModelCatalog", () => {
     expect(report.loaded).toBe(1);
     expect(report.skipped).toEqual([
       "openai/embed-output — an embedding model needs an input price above zero and an output price of zero",
-      "openai/embed-max — maxTokens must be zero for an embedding or reranker model, otherwise a positive integer or zero for an image model",
-      "openai/embed-image — a model may have only one of imageGeneration, embedding and reranking",
+      "openai/embed-max — maxTokens must be zero for an embedding or rerank model, otherwise a positive integer or zero for an image or transcription model",
+      "openai/embed-image — model types are mutually exclusive",
     ]);
     expect(getModelConfig("openai/embed-ok")?.capabilities.embedding).toBe(true);
     expect(modelType(getModelConfig("openai/embed-ok")!)).toBe("embedding");
   });
 
-  it("loads reranker models and enforces their type contract", () => {
+  it("loads rerank models and enforces their type contract", () => {
     const report = install(
       catalog([
         model("openai/rerank-ok", {
           pricing: { inputPer1M: 0.02, outputPer1M: 0 },
-          capabilities: { ...TEXT, reranking: true },
+          capabilities: { ...TEXT, rerank: true },
           maxTokens: 0,
         }),
         model("openai/rerank-output", {
           pricing: { inputPer1M: 0.02, outputPer1M: 1 },
-          capabilities: { ...TEXT, reranking: true },
+          capabilities: { ...TEXT, rerank: true },
           maxTokens: 0,
         }),
       ]),
     );
     expect(report.skipped).toEqual([
-      "openai/rerank-output — a reranker model needs an input price above zero and an output price of zero",
+      "openai/rerank-output — a rerank model needs an input price or perSearch above zero and an output price of zero",
     ]);
-    expect(modelType(getModelConfig("openai/rerank-ok")!)).toBe("reranker");
+    expect(modelType(getModelConfig("openai/rerank-ok")!)).toBe("rerank");
+  });
+
+  it("loads the specialized model types published by agent-models", () => {
+    const report = install(
+      catalog([
+        model("openai/embed", {
+          pricing: { inputPer1M: 0.02, outputPer1M: 0 },
+          capabilities: { ...TEXT, embedding: true },
+          maxTokens: 0,
+        }),
+        model("openai/rerank", {
+          pricing: { inputPer1M: 0, outputPer1M: 0, perSearch: 0.001 },
+          capabilities: { ...TEXT, rerank: true },
+          maxTokens: 0,
+        }),
+        model("openai/transcribe", {
+          pricing: { inputPer1M: 0, outputPer1M: 0, perAudioMinute: 0.006 },
+          capabilities: { ...TEXT, transcription: true },
+          contextWindow: 0,
+          maxTokens: 0,
+        }),
+      ]),
+    );
+
+    expect(report.skipped).toEqual([]);
+    expect(report.loaded).toBe(3);
+    expect(modelType(getModelConfig("openai/embed")!)).toBe("embedding");
+    expect(modelType(getModelConfig("openai/rerank")!)).toBe("rerank");
+    expect(modelType(getModelConfig("openai/transcribe")!)).toBe("transcription");
+    expect(getModelConfig("openai/rerank")?.pricing.perSearch).toBe(0.001);
+    expect(getModelConfig("openai/transcribe")?.pricing.perAudioMinute).toBe(0.006);
   });
 
   it("allows explicit zero limits only for image models", () => {
@@ -204,7 +235,7 @@ describe("loadModelCatalog", () => {
     );
     expect(report.loaded).toBe(1);
     expect(report.skipped).toEqual([
-      "openai/text-zero — contextWindow is not a positive integer or zero for an image model",
+      "openai/text-zero — contextWindow is not a positive integer or zero for an image or transcription model",
     ]);
     expect(getModelConfig("openai/image-zero")).toMatchObject({ contextWindow: 0, maxTokens: 0 });
   });

@@ -25,8 +25,8 @@ export interface ModelsCatalogResponse {
   makers: Record<string, string>;
   updatedAt: string;
   source: "override" | "default";
-  selections: { embedding: ModelSelection; reranker?: ModelSelection };
-  selectionAvailable: { embedding: boolean; reranker: boolean };
+  selections: { embedding: ModelSelection; rerank?: ModelSelection };
+  selectionAvailable: { embedding: boolean; rerank: boolean };
 }
 
 /**
@@ -48,7 +48,7 @@ export const GET = withMemberAuth(async (user) => {
     hiddenModels,
     favoriteModels,
     embedding,
-    reranker,
+    rerank,
   ] = await Promise.all([
     getLlmProviderConfigs(),
     getHiddenModels(),
@@ -74,10 +74,10 @@ export const GET = withMemberAuth(async (user) => {
     makers: listModelMakers(),
     updatedAt: modelCatalogUpdatedAt(),
     source: hiddenModels === undefined ? "default" : "override",
-    selections: { embedding, ...(reranker ? { reranker } : {}) },
+    selections: { embedding, ...(rerank ? { rerank } : {}) },
     selectionAvailable: {
       embedding: config.catalogEnabled,
-      reranker: config.reranker !== undefined,
+      rerank: config.reranker !== undefined,
     },
   } satisfies ModelsCatalogResponse);
 });

@@ -91,12 +91,13 @@ const CAPABILITY_COLUMNS = [
   ["reasoning", "Reasoning"],
 ] as const;
 
-const MODEL_TYPES: ModelType[] = ["text", "image", "embedding", "reranker"];
+const MODEL_TYPES: ModelType[] = ["text", "image", "embedding", "rerank", "transcription"];
 const MODEL_TYPE_COLORS: Record<ModelType, string> = {
   text: "gray",
   image: "blue",
   embedding: "green",
-  reranker: "violet",
+  rerank: "violet",
+  transcription: "cyan",
 };
 
 /**
@@ -113,6 +114,8 @@ function undiscounted(pricing: ModelConfig["pricing"], discount: number): ModelC
     outputPer1M: pricing.outputPer1M / (1 - discount),
     imageOutputPer1M: up(pricing.imageOutputPer1M),
     perImage: up(pricing.perImage),
+    perSearch: up(pricing.perSearch),
+    perAudioMinute: up(pricing.perAudioMinute),
   };
 }
 
@@ -496,7 +499,7 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
   );
 }
 
-type GlobalModelType = "embedding" | "reranker";
+type GlobalModelType = "embedding" | "rerank";
 
 function ModelSelectionSection({
   models,
@@ -569,7 +572,7 @@ function ModelSelectionSection({
         </div>
         {error && <Alert color="red">{error}</Alert>}
         {result && <Alert color="green">{result}</Alert>}
-        {(["embedding", "reranker"] as const).map((type) => {
+        {(["embedding", "rerank"] as const).map((type) => {
           const selection = selections[type];
           const options = models.filter(
             (model) =>
@@ -748,7 +751,7 @@ export default function ModelsPage() {
   const [selections, setSelections] = useState<Catalog["selections"] | null>(null);
   const [selectionAvailable, setSelectionAvailable] = useState<Catalog["selectionAvailable"]>({
     embedding: false,
-    reranker: false,
+    rerank: false,
   });
   const [updatedAt, setUpdatedAt] = useState("");
   const [source, setSource] = useState<"override" | "default">("default");
@@ -964,7 +967,7 @@ export default function ModelsPage() {
       {canEdit &&
         (providerByName.get("selfhosted")?.dedicated === true ||
           selectionAvailable.embedding ||
-          selectionAvailable.reranker) && (
+          selectionAvailable.rerank) && (
           <SelfHostedSection onChanged={loadCatalog} />
         )}
 
@@ -1159,7 +1162,7 @@ export default function ModelsPage() {
                             <Badge color={BADGE.broken}>failed</Badge>
                           </Tooltip>
                         ))}
-                      {model.type !== "embedding" && model.type !== "reranker" && (
+                      {(model.type === "text" || model.type === "image") && (
                         <Button
                           size="compact-xs"
                           variant="default"

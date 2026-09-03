@@ -26,7 +26,7 @@ const CAPABILITIES = new Set<FilterCapability>([
   "imageInput",
   "reasoning",
 ]);
-const MODEL_TYPES = new Set<ModelType>(["text", "image", "embedding", "reranker"]);
+const MODEL_TYPES = new Set<ModelType>(["text", "image", "embedding", "rerank", "transcription"]);
 const SORT_KEYS = new Set<ModelSortKey>(["provider", "name", "price"]);
 
 export function normalizeModelTableState(value: unknown): ModelTableState {
@@ -57,7 +57,11 @@ export function deserializeModelTableState(value: string | undefined): ModelTabl
 }
 
 function primaryPrice(model: ModelConfig & { type: ModelType }): number {
-  if (model.type === "embedding" || model.type === "reranker") return model.pricing.inputPer1M;
+  if (model.type === "embedding") return model.pricing.inputPer1M;
+  if (model.type === "rerank") return model.pricing.perSearch ?? model.pricing.inputPer1M;
+  if (model.type === "transcription") {
+    return model.pricing.perAudioMinute ?? model.pricing.outputPer1M;
+  }
   return model.pricing.perImage
     ?? model.pricing.imageOutputPer1M
     ?? model.pricing.outputPer1M;

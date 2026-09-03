@@ -760,7 +760,7 @@ SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건
 /guide                콘솔을 처음 쓰는 사람을 위한 가이드 — 개념, 첫 프로젝트,
                       호출 창구, 비용과 한도. 두 언어 모두 메시지 카탈로그에 있다
 /members              admin 전용 워크스페이스 멤버 목록, 가입·마지막 로그인 시각 포함
-/models               Text·Image·Embedding·Reranker 모델 레지스트리, member tier 이상 읽기 가능;
+/models               Text·Image·Embedding·Rerank·Transcription 모델 레지스트리, member tier 이상 읽기 가능;
                       enable 토글과 completion 모델별 도달성 테스트는 admin 전용
 /audit                admin 전용 민감 작업 감사 추적
 /settings             admin 전용 런타임 env-var 오버라이드

@@ -35,16 +35,16 @@ interface CatalogBody {
   providers: Array<{ name: string; available: boolean; dedicated: boolean }>;
   models: Array<{
     id: string;
-    type: "text" | "image" | "embedding" | "reranker";
+    type: "text" | "image" | "embedding" | "rerank" | "transcription";
     selectionHidden: boolean;
     favorite: boolean;
   }>;
   source: "override" | "default";
   selections: {
     embedding: { model: string; source: string };
-    reranker?: { model: string; source: string };
+    rerank?: { model: string; source: string };
   };
-  selectionAvailable: { embedding: boolean; reranker: boolean };
+  selectionAvailable: { embedding: boolean; rerank: boolean };
 }
 
 async function catalog(): Promise<CatalogBody> {
@@ -85,7 +85,7 @@ describe("GET /api/models/catalog", () => {
       model: "openrouter/qwen3-embedding-4b",
       source: "env",
     });
-    expect(body.selectionAvailable).toEqual({ embedding: false, reranker: false });
+    expect(body.selectionAvailable).toEqual({ embedding: false, rerank: false });
     expect(body.source).toBe("default");
   });
 
@@ -132,5 +132,19 @@ describe("GET /api/models/catalog", () => {
     const body = await catalog();
     expect(body.models.find((model) => model.id === "openai/gpt-5.4")?.favorite).toBe(true);
     expect(modelPreferenceUseCases.list).toHaveBeenCalledWith("u1");
+  });
+
+  it("exposes the active rerank selection under its model type", async () => {
+    getRerankerModelSelection.mockResolvedValue({
+      model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      source: "settings",
+    });
+
+    const body = await catalog();
+
+    expect(body.selections.rerank).toEqual({
+      model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      source: "settings",
+    });
   });
 });

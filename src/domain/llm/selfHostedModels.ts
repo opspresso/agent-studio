@@ -61,7 +61,8 @@ export function selfHostedModelFromInput(input: SelfHostedModelInput): SelfHoste
       : { tools: false, structuredOutput: false, imageInput: false, reasoning: false }),
     ...(input.type === "image" ? { imageGeneration: true } : {}),
     ...(input.type === "embedding" ? { embedding: true } : {}),
-    ...(input.type === "reranker" ? { reranking: true } : {}),
+    ...(input.type === "rerank" ? { rerank: true } : {}),
+    ...(input.type === "transcription" ? { transcription: true } : {}),
   };
   return {
     id: `selfhosted/${family}`,

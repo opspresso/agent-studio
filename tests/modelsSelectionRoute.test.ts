@@ -54,6 +54,21 @@ describe("PUT /api/models/selection", () => {
     expect(modelSelectionUseCases.select).not.toHaveBeenCalled();
   });
 
+  it("passes a rerank selection to the bound use case", async () => {
+    modelSelectionUseCases.select.mockResolvedValue({ settings: {} });
+    const res = await put({
+      type: "rerank",
+      model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+    });
+    expect(res.status).toBe(200);
+    expect(modelSelectionUseCases.select).toHaveBeenCalledWith(
+      "rerank",
+      "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      false,
+      "admin@example.com",
+    );
+  });
+
   it("maps a model type mismatch to 400", async () => {
     modelSelectionUseCases.select.mockRejectedValue(
       new ValidationError('Model "openai/gpt-5.4" is not an embedding model'),

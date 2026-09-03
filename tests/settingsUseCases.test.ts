@@ -455,7 +455,7 @@ describe("settingsUseCases.update self-hosted declarations", () => {
     expect(getModelConfig("selfhosted/qwen/qwen3.8-27b")).toBeUndefined();
   });
 
-  it("derives embedding and reranker registry types from the declaration type", async () => {
+  it("derives specialized registry types from the declaration type", async () => {
     const { repo } = fakeRepo();
     await createSettingsUseCases(repo).update(
       {
@@ -471,8 +471,16 @@ describe("settingsUseCases.update self-hosted declarations", () => {
           {
             family: "Qwen/Qwen3-Reranker-0.6B",
             displayName: "Qwen3 Reranker 0.6B",
-            type: "reranker",
+            type: "rerank",
             contextWindow: 32768,
+            maxTokens: 0,
+            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+          },
+          {
+            family: "whisper-large-v3",
+            displayName: "Whisper Large V3",
+            type: "transcription",
+            contextWindow: 0,
             maxTokens: 0,
             capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
           },
@@ -486,7 +494,11 @@ describe("settingsUseCases.update self-hosted declarations", () => {
     });
     expect(getModelConfig("selfhosted/Qwen/Qwen3-Reranker-0.6B")?.capabilities).toMatchObject({
       tools: false,
-      reranking: true,
+      rerank: true,
+    });
+    expect(getModelConfig("selfhosted/whisper-large-v3")?.capabilities).toMatchObject({
+      tools: false,
+      transcription: true,
     });
   });
 

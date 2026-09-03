@@ -75,7 +75,7 @@ describe("createTestModel", () => {
     expect(channel.seenParams).toHaveLength(0);
   });
 
-  it("does not send a reranker model to chat completion", async () => {
+  it("does not send a rerank model to chat completion", async () => {
     const channel = new FakeChannel([[]]);
     loadSelfHostedModels([
       {
@@ -90,14 +90,41 @@ describe("createTestModel", () => {
           structuredOutput: false,
           imageInput: false,
           reasoning: false,
-          reranking: true,
+          rerank: true,
         },
         contextWindow: 32768,
         maxTokens: 0,
       },
     ]);
     await expect(createTestModel(channel)("selfhosted/reranker")).rejects.toThrow(
-      "Reranker model cannot be tested through chat completion",
+      "Rerank model cannot be tested through chat completion",
+    );
+    expect(channel.seenParams).toHaveLength(0);
+  });
+
+  it("does not send a transcription model to chat completion", async () => {
+    const channel = new FakeChannel([[]]);
+    loadSelfHostedModels([
+      {
+        id: "selfhosted/transcriber",
+        provider: "selfhosted",
+        family: "transcriber",
+        maker: "local",
+        displayName: "Transcriber",
+        pricing: { inputPer1M: 0, outputPer1M: 0 },
+        capabilities: {
+          tools: false,
+          structuredOutput: false,
+          imageInput: false,
+          reasoning: false,
+          transcription: true,
+        },
+        contextWindow: 0,
+        maxTokens: 0,
+      },
+    ]);
+    await expect(createTestModel(channel)("selfhosted/transcriber")).rejects.toThrow(
+      "Transcription model cannot be tested through chat completion",
     );
     expect(channel.seenParams).toHaveLength(0);
   });

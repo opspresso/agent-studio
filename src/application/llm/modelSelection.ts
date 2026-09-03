@@ -11,7 +11,7 @@ import type {
   SettingsView,
 } from "@/application/settings/settingsUseCases";
 
-export type GlobalModelType = "embedding" | "reranker";
+export type GlobalModelType = "embedding" | "rerank";
 
 export interface ModelSelectionResult {
   settings: SettingsView;
@@ -62,7 +62,7 @@ export function createModelSelectionUseCases(
       if (model === await deps.current(type)) {
         return { settings: await deps.settings.getView() };
       }
-      if (type === "reranker") {
+      if (type === "rerank") {
         if (!deps.testReranker) {
           throw new ValidationError("The reranker endpoint is not configured");
         }

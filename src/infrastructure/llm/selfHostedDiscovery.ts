@@ -14,7 +14,7 @@
  *   404, which is an answer — the enrichment is skipped, never raised.
  * - **vLLM** decorates its `/v1/models` entries with `max_model_len`; the
  *   configured endpoint supplies the type because each pooling server has one
- *   job (embedding or reranking).
+ *   job (embedding or rerank).
  */
 
 import type { ProviderChannelConfig } from "@/domain/settings/types";

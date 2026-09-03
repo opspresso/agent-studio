@@ -100,6 +100,10 @@ export interface ModelPricing {
   perImage?: number;
   /** Flat charge for each source image supplied to an image edit. */
   perInputImage?: number;
+  /** Flat charge for one rerank search unit. */
+  perSearch?: number;
+  /** Flat charge for one minute of audio transcription. */
+  perAudioMinute?: number;
   /**
    * A promotional discount, as a fraction in (0, 1), that the rates above are
    * already net of — informational: cost is computed from the rates as stated.
@@ -116,8 +120,10 @@ export interface ModelCapabilities {
   imageGeneration?: boolean;
   /** Produces vectors through an embeddings endpoint rather than generated tokens. */
   embedding?: boolean;
-  /** Scores query/document pairs through a reranking endpoint. */
-  reranking?: boolean;
+  /** Scores documents through a rerank endpoint rather than generating text. */
+  rerank?: boolean;
+  /** Produces text from audio through a transcription endpoint. */
+  transcription?: boolean;
   /**
    * False when the provider rejects `tools` together with `reasoning_effort`
    * on chat/completions (the provider's remedy is an explicit effort of
@@ -126,7 +132,7 @@ export interface ModelCapabilities {
   reasoningWithTools?: boolean;
 }
 
-export type ModelType = "text" | "image" | "embedding" | "reranker";
+export type ModelType = "text" | "image" | "embedding" | "rerank" | "transcription";
 
 export interface ModelConfig {
   /** `provider/family`, e.g. `google/gemini-3.1-flash-lite`. */
@@ -202,12 +208,15 @@ const PRICING_RATE_KEYS = [
   "imageOutputPer1M",
   "perImage",
   "perInputImage",
+  "perSearch",
+  "perAudioMinute",
 ] as const;
 const CAPABILITY_KEYS = ["tools", "structuredOutput", "imageInput", "reasoning"] as const;
 const OPTIONAL_CAPABILITY_KEYS = [
   "imageGeneration",
   "embedding",
-  "reranking",
+  "rerank",
+  "transcription",
   "reasoningWithTools",
 ] as const;
 
@@ -260,45 +269,71 @@ function rejectReason(entry: unknown): string | null {
   }
   const imageGeneration = entry.capabilities.imageGeneration === true;
   const embedding = entry.capabilities.embedding === true;
-  const reranking = entry.capabilities.reranking === true;
-  if ([imageGeneration, embedding, reranking].filter(Boolean).length > 1) {
-    return "a model may have only one of imageGeneration, embedding and reranking";
+  const rerank = entry.capabilities.rerank === true;
+  const transcription = entry.capabilities.transcription === true;
+  if ([imageGeneration, embedding, rerank, transcription].filter(Boolean).length > 1) {
+    return "model types are mutually exclusive";
   }
-  if (embedding || reranking) {
+  const selfHosted = (SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider);
+  const specializedPrices = [entry.pricing.perSearch, entry.pricing.perAudioMinute]
+    .filter((value) => value !== undefined);
+  if (embedding) {
     if (
-      (!(SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider) &&
-        !((entry.pricing.inputPer1M as number) > 0)) ||
+      (!selfHosted && !((entry.pricing.inputPer1M as number) > 0)) ||
       entry.pricing.outputPer1M !== 0
     ) {
-      return `${embedding ? "an embedding" : "a reranker"} model needs an input price above zero and an output price of zero`;
+      return "an embedding model needs an input price above zero and an output price of zero";
     }
+    if (specializedPrices.length > 0) return "an embedding model may not carry rerank or transcription pricing";
+  } else if (rerank) {
+    if (
+      (!selfHosted &&
+        !((entry.pricing.inputPer1M as number) > 0) &&
+        !(((entry.pricing.perSearch as number | undefined) ?? 0) > 0)) ||
+      entry.pricing.outputPer1M !== 0
+    ) {
+      return "a rerank model needs an input price or perSearch above zero and an output price of zero";
+    }
+    if (entry.pricing.perAudioMinute !== undefined) return "a rerank model may not carry transcription pricing";
+  } else if (transcription) {
+    const tokenPriced = (entry.pricing.inputPer1M as number) > 0 && (entry.pricing.outputPer1M as number) > 0;
+    const minutePriced = ((entry.pricing.perAudioMinute as number | undefined) ?? 0) > 0
+      && entry.pricing.inputPer1M === 0
+      && entry.pricing.outputPer1M === 0;
+    if (!selfHosted && !tokenPriced && !minutePriced) {
+      return "a transcription model needs token prices or perAudioMinute above zero";
+    }
+    if (entry.pricing.perSearch !== undefined) return "a transcription model may not carry rerank pricing";
   } else if (!imageGeneration) {
     // An unpriced text model is worse than a missing one: the lookup succeeds
     // and every call books at $0 with no warning. Self-hosted channels are the
     // deliberate exception — zero is their true price, and it is stated, not
     // missing: absent prices already failed the pricing check above.
     if (
-      !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider) &&
+      !selfHosted &&
       (!((entry.pricing.inputPer1M as number) > 0) || !((entry.pricing.outputPer1M as number) > 0))
     ) {
       return "a text model needs input and output prices above zero";
     }
+    if (specializedPrices.length > 0) return "a text model may not carry rerank or transcription pricing";
   } else if (
-    !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider) &&
+    !selfHosted &&
     !(((entry.pricing.imageOutputPer1M as number | undefined) ?? 0) > 0) &&
     !(((entry.pricing.perImage as number | undefined) ?? 0) > 0)
   ) {
     return "an image model needs imageOutputPer1M or perImage";
+  } else if (specializedPrices.length > 0) {
+    return "an image model may not carry rerank or transcription pricing";
   }
-  if (!isCount(entry.contextWindow) && !(imageGeneration && entry.contextWindow === 0)) {
-    return "contextWindow is not a positive integer or zero for an image model";
+  if (!isCount(entry.contextWindow) && !((imageGeneration || transcription) && entry.contextWindow === 0)) {
+    return "contextWindow is not a positive integer or zero for an image or transcription model";
   }
   if (
-    embedding || reranking
+    embedding || rerank
       ? entry.maxTokens !== 0
-      : !isCount(entry.maxTokens) && !(imageGeneration && entry.maxTokens === 0)
+      : !isCount(entry.maxTokens) && !((imageGeneration || transcription) && entry.maxTokens === 0)
   ) {
-    return "maxTokens must be zero for an embedding or reranker model, otherwise a positive integer or zero for an image model";
+    return "maxTokens must be zero for an embedding or rerank model, otherwise a positive integer or zero for an image or transcription model";
   }
   if ((entry.maxTokens as number) > (entry.contextWindow as number)) {
     return "maxTokens exceeds contextWindow";
@@ -408,7 +443,8 @@ function parseCatalog(catalog: unknown): { state: RegistryState; report: ModelCa
       first.contextWindow !== model.contextWindow ||
       (first.capabilities.imageGeneration ?? false) !== (model.capabilities.imageGeneration ?? false) ||
       (first.capabilities.embedding ?? false) !== (model.capabilities.embedding ?? false) ||
-      (first.capabilities.reranking ?? false) !== (model.capabilities.reranking ?? false);
+      (first.capabilities.rerank ?? false) !== (model.capabilities.rerank ?? false) ||
+      (first.capabilities.transcription ?? false) !== (model.capabilities.transcription ?? false);
     if (disagrees) {
       skipped.push(`${model.id} — disagrees with ${first.id} about what ${model.family} is`);
       byId.delete(model.id);
@@ -494,7 +530,8 @@ export function selfHostedModelRejectReason(entry: unknown): string | null {
       (first.capabilities.imageGeneration ?? false) !==
         (declared.capabilities.imageGeneration ?? false) ||
       (first.capabilities.embedding ?? false) !== (declared.capabilities.embedding ?? false) ||
-      (first.capabilities.reranking ?? false) !== (declared.capabilities.reranking ?? false);
+      (first.capabilities.rerank ?? false) !== (declared.capabilities.rerank ?? false) ||
+      (first.capabilities.transcription ?? false) !== (declared.capabilities.transcription ?? false);
     if (disagrees) {
       return `disagrees with ${first.id} about what ${family} is`;
     }
@@ -649,7 +686,8 @@ export function getVisibleModels(): ModelConfig[] {
 /** The catalog's mutually exclusive model types, derived from capability flags. */
 export function modelType(model: Pick<ModelConfig, "capabilities">): ModelType {
   if (model.capabilities.embedding === true) return "embedding";
-  if (model.capabilities.reranking === true) return "reranker";
+  if (model.capabilities.rerank === true) return "rerank";
+  if (model.capabilities.transcription === true) return "transcription";
   if (model.capabilities.imageGeneration === true) return "image";
   return "text";
 }
@@ -685,7 +723,7 @@ export function contextWindowLabel(
   model: Pick<ModelConfig, "contextWindow" | "maxTokens"> &
     Partial<Pick<ModelConfig, "capabilities">>,
 ): string {
-  if (model.capabilities?.embedding === true || model.capabilities?.reranking === true) {
+  if (model.capabilities?.embedding === true || model.capabilities?.rerank === true) {
     return `Context ${roundTokens(model.contextWindow)}`;
   }
   return `Context ${roundTokens(model.contextWindow)} · max out ${roundTokens(model.maxTokens)}`;

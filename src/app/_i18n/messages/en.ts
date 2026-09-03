@@ -898,14 +898,15 @@ export const en = {
   "members.lastLogin": "Last login",
   "members.neverRecorded": "Never recorded",
   "models.lede":
-    "Text, image, embedding, and reranker models available through this deployment's AI providers.",
+    "Text, image, embedding, rerank, and transcription models available through this deployment's AI providers.",
   "models.filter": "Filter models…",
   "models.type": "Model type",
   "models.allTypes": "All types",
   "models.type.text": "Text",
   "models.type.image": "Image",
   "models.type.embedding": "Embedding",
-  "models.type.reranker": "Reranker",
+  "models.type.rerank": "Rerank",
+  "models.type.transcription": "Transcription",
   "models.selection.title": "Active retrieval models",
   "models.selection.lede":
     "Choose the registered model used for capability embedding and second-stage reranking. Environment variables remain the deployment defaults.",

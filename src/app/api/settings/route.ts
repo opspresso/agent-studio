@@ -56,7 +56,7 @@ const updateSchema = z.object({
         family: z.string().min(1).max(200).regex(/^\S+$/u, "must not contain whitespace"),
         displayName: z.string().min(1).max(200),
         maker: z.string().max(100).optional(),
-        type: z.enum(["text", "image", "embedding", "reranker"]),
+        type: z.enum(["text", "image", "embedding", "rerank", "transcription"]),
         contextWindow: z.number().int().nonnegative(),
         maxTokens: z.number().int().nonnegative(),
         capabilities: z.object({

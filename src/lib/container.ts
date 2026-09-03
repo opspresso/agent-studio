@@ -300,7 +300,7 @@ export const modelCatalogDocumentUseCases = createModelCatalogDocumentUseCases(
 export const modelPreferenceUseCases = createModelPreferenceUseCases(modelPreferencesRepository);
 
 /**
- * What the self-hosted text, embedding and reranker channels are serving right
+ * What the self-hosted text, embedding and rerank channels are serving right
  * now — the declaration aid on the /models console. Each channel's own
  * `/models` listing is the only party that knows; declaring is still the
  * admin's act through `PUT /api/settings`.
@@ -330,7 +330,7 @@ export const listSelfHostedServedModels = async () => {
               baseUrl: RERANKER.baseUrl,
               apiKey: RERANKER.apiKey ?? "",
             },
-            type: "reranker" as const,
+            type: "rerank" as const,
           },
         ]
       : []),

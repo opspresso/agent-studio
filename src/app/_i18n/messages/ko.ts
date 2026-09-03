@@ -810,14 +810,15 @@ export const ko: Messages = {
   "members.lastLogin": "마지막 로그인",
   "members.neverRecorded": "기록 없음",
   "models.lede":
-    "이 배포의 AI 프로바이더를 통해 사용할 수 있는 Text, Image, Embedding, Reranker 모델입니다.",
+    "이 배포의 AI 프로바이더를 통해 사용할 수 있는 Text, Image, Embedding, Rerank, Transcription 모델입니다.",
   "models.filter": "Model 검색…",
   "models.type": "Model type",
   "models.allTypes": "모든 type",
   "models.type.text": "Text",
   "models.type.image": "Image",
   "models.type.embedding": "Embedding",
-  "models.type.reranker": "Reranker",
+  "models.type.rerank": "Rerank",
+  "models.type.transcription": "Transcription",
   "models.selection.title": "활성 검색 모델",
   "models.selection.lede":
     "케이퍼빌리티 embedding과 2차 reranking에 사용할 등록 모델을 선택합니다. 환경변수는 배포 기본값으로 유지됩니다.",

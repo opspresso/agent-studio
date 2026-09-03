@@ -66,7 +66,7 @@ describe("loadSelfHostedModels", () => {
     ]);
   });
 
-  it("registers embedding and reranker models without offering them to projects", () => {
+  it("registers specialized models without offering them to projects", () => {
     loadSelfHostedModels([
       declaration("Qwen/Qwen3-Embedding-4B", {
         capabilities: {
@@ -84,13 +84,25 @@ describe("loadSelfHostedModels", () => {
           structuredOutput: false,
           imageInput: false,
           reasoning: false,
-          reranking: true,
+          rerank: true,
         },
+        maxTokens: 0,
+      }),
+      declaration("whisper-large-v3", {
+        capabilities: {
+          tools: false,
+          structuredOutput: false,
+          imageInput: false,
+          reasoning: false,
+          transcription: true,
+        },
+        contextWindow: 0,
         maxTokens: 0,
       }),
     ]);
     expect(getModelConfig("selfhosted/Qwen/Qwen3-Embedding-4B")?.capabilities.embedding).toBe(true);
-    expect(getModelConfig("selfhosted/Qwen/Qwen3-Reranker-0.6B")?.capabilities.reranking).toBe(true);
+    expect(getModelConfig("selfhosted/Qwen/Qwen3-Reranker-0.6B")?.capabilities.rerank).toBe(true);
+    expect(getModelConfig("selfhosted/whisper-large-v3")?.capabilities.transcription).toBe(true);
     expect(offeredModels(["selfhosted"], undefined)).toEqual([]);
   });
 

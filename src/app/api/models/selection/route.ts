@@ -5,7 +5,7 @@ import { editorBody } from "@/app/api/_lib/body";
 import { withAdminAuth } from "@/lib/session";
 
 const selectionSchema = z.object({
-  type: z.enum(["embedding", "reranker"]),
+  type: z.enum(["embedding", "rerank"]),
   model: z.string().min(1).max(200),
   migrate: z.boolean().optional(),
 });

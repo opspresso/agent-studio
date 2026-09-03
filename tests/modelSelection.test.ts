@@ -40,7 +40,7 @@ function installModels(): void {
         structuredOutput: false,
         imageInput: false,
         reasoning: false,
-        reranking: true,
+        rerank: true,
       },
       contextWindow: 32768,
       maxTokens: 0,
@@ -182,11 +182,11 @@ describe("modelSelectionUseCases", () => {
     expect(setup.invalidate).toHaveBeenCalledTimes(2);
   });
 
-  it("changes a reranker without rebuilding vectors and rejects the wrong type", async () => {
+  it("changes a rerank model without rebuilding vectors and rejects the wrong type", async () => {
     installModels();
     const setup = deps();
     await createModelSelectionUseCases(setup.deps).select(
-      "reranker",
+      "rerank",
       RERANKER,
       false,
       "admin@example.com",
