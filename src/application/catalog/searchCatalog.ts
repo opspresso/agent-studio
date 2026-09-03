@@ -14,12 +14,25 @@
  * the wrong quantities of each and hide it.
  */
 
-import { DEFAULT_MIN_SCORE, type CapabilityKind } from "@/domain/catalog/types";
-import type { EmbeddingPort, VectorMatch, VectorStorePort } from "@/domain/vector/types";
+import {
+  capabilityText,
+  DEFAULT_MIN_SCORE,
+  DEFAULT_RERANKER_MIN_SCORE,
+  type CapabilityEntry,
+  type CapabilityKind,
+} from "@/domain/catalog/types";
+import type {
+  EmbeddingPort,
+  RerankerPort,
+  VectorMatch,
+  VectorStorePort,
+} from "@/domain/vector/types";
 
 export interface CatalogSearchDeps {
   embeddings: EmbeddingPort;
   catalog: VectorStorePort;
+  reranker?: RerankerPort;
+  rerankerMinScore?: number;
   /**
    * The relevance floor — see `DEFAULT_MIN_SCORE`. Injected because it belongs
    * to the embedding model and this layer cannot read configuration; absent
@@ -55,6 +68,17 @@ const KEEP_RATIO = 0.7;
 
 /** Candidates pulled per query before ranking, as a multiple of the limit. */
 const OVERSAMPLE = 4;
+
+/** Reranker candidates kept relative to the best result for this query. */
+const RERANKER_KEEP_RATIO = 0.1;
+
+/**
+ * Capability descriptions say what can produce an answer; they are not answer
+ * passages. The default Qwen reranker instruction asks the latter question and
+ * assigns useful tools near-zero scores even while ordering them correctly.
+ */
+export const CAPABILITY_RERANK_INSTRUCTION =
+  "Find capabilities useful for completing the user request. The Document describes what a tool or skill can do, not an answer. Answer yes if using it could materially help fulfill the request.";
 
 /**
  * A name matched in the query counts for more than the embedding says.
@@ -148,13 +172,12 @@ export async function searchCapabilities(
   return (await searchCapabilitiesByKind(deps, queries, [request]))[0] ?? [];
 }
 
-function rank(
+async function rank(
   deps: CatalogSearchDeps,
   usable: readonly string[],
   request: { kind: CapabilityKind; limit: number },
   perQuery: VectorMatch[][],
-): CapabilityMatch[] {
-
+): Promise<CapabilityMatch[]> {
   // Each query is ranked and cut **against its own best**, and only then are the
   // survivors merged.
   //
@@ -166,21 +189,25 @@ function rank(
   // questions, and a proportional cut is only meaningful within one of them.
   const floor = deps.minScore ?? DEFAULT_MIN_SCORE;
   const best = new Map<string, CapabilityMatch>();
-  for (const matches of perQuery) {
-    const scored: Array<{ key: string; match: CapabilityMatch }> = [];
+  for (const [queryIndex, matches] of perQuery.entries()) {
+    const scored: Array<{ key: string; entry: CapabilityEntry; match: CapabilityMatch }> = [];
     for (const match of matches) {
       const name = asString(match.metadata.name);
       if (name === undefined) {
         continue;
       }
       const toolName = asString(match.metadata.toolName);
+      const entry: CapabilityEntry = {
+        kind: request.kind,
+        name,
+        ...(toolName !== undefined ? { toolName } : {}),
+        description: asString(match.metadata.description) ?? "",
+      };
       scored.push({
         key: match.key,
+        entry,
         match: {
-          kind: request.kind,
-          name,
-          ...(toolName !== undefined ? { toolName } : {}),
-          description: asString(match.metadata.description) ?? "",
+          ...entry,
           score: match.score * (namedIn(usable, [toolName, name]) ? NAME_BOOST : 1),
         },
       });
@@ -195,10 +222,30 @@ function rank(
     // cannot see at all — that nothing in the catalog matches this query, where
     // half of the best bad score is still a bad score.
     const cut = Math.max(top.match.score * KEEP_RATIO, floor);
-    for (const { key, match } of scored.slice(0, request.limit)) {
-      if (match.score < cut) {
-        break;
-      }
+    let candidates = scored.filter(({ match }) => match.score >= cut);
+    if (deps.reranker && candidates.length > 0) {
+      const scores = await deps.reranker.rerank(
+        usable[queryIndex] ?? "",
+        candidates.map(({ entry }) => capabilityText(entry)),
+        CAPABILITY_RERANK_INSTRUCTION,
+      );
+      const bestRerankerScore = Math.max(...scores);
+      const rerankerCut = Math.max(
+        bestRerankerScore * RERANKER_KEEP_RATIO,
+        deps.rerankerMinScore ?? DEFAULT_RERANKER_MIN_SCORE,
+      );
+      candidates = candidates
+        .map((candidate, index) => ({
+          ...candidate,
+          match: { ...candidate.match, score: scores[index] ?? 0 },
+        }))
+        .filter(
+          ({ match }) =>
+            match.score >= rerankerCut,
+        )
+        .sort((a, b) => b.match.score - a.match.score);
+    }
+    for (const { key, match } of candidates.slice(0, request.limit)) {
       // Best score across the queries, not the sum: an entry both reach is not
       // twice as relevant as one either reaches strongly, and summing would
       // rank breadth over fit.

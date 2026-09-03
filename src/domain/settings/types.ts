@@ -51,6 +51,10 @@ export interface AppSettings {
   llmApiKey?: string;
   /** When set, replaces the whole LLM_PROVIDER_* env-derived provider list. */
   llmProviders?: LlmProviderSetting[];
+  /** Active capability-catalog embedding model; absent falls back to EMBEDDING_MODEL. */
+  embeddingModel?: string;
+  /** Active capability-catalog reranker; absent falls back to RERANKER_MODEL. */
+  rerankerModel?: string;
   pluginsRepo?: string;
   pluginsRepoBranch?: string;
   /** Secret. */

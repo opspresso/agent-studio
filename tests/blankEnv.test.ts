@@ -36,6 +36,9 @@ const TOUCHED = [
   "LLM_BASE_URL",
   "LLM_API_KEY",
   "AES_ENCRYPTION_KEY",
+  "RERANKER_BASE_URL",
+  "RERANKER_API_KEY",
+  "RERANKER_MODEL",
 ] as const;
 const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
 
@@ -57,6 +60,19 @@ afterEach(() => {
 const BLANK = ["", " ", "\n", "  \t\n"];
 
 describe("optional config", () => {
+  it("requires a complete reranker endpoint and model pair", () => {
+    set("RERANKER_BASE_URL", "http://reranker.example/v1");
+    set("RERANKER_MODEL", undefined);
+    expect(() => config.reranker).toThrow(
+      "RERANKER_BASE_URL and RERANKER_MODEL must be configured together",
+    );
+    set("RERANKER_MODEL", "reranker");
+    expect(config.reranker).toEqual({
+      baseUrl: "http://reranker.example/v1",
+      model: "reranker",
+    });
+  });
+
   it.each(BLANK)("reads %o as unset", (raw) => {
     set("A2A_API_KEY", raw);
     set("S3_BUCKET_NAME", raw);

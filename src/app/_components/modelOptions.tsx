@@ -38,9 +38,21 @@ export function modelPriceLabel(
   pricing: ModelConfig["pricing"],
   type: ModelType = "text",
 ): string {
-  const { inputPer1M, outputPer1M, imageOutputPer1M, perImage } = pricing;
+  const {
+    inputPer1M,
+    outputPer1M,
+    imageOutputPer1M,
+    perImage,
+    perSearch,
+    perAudioMinute,
+  } = pricing;
   if (type === "embedding") {
     return `${formatUsd(inputPer1M)} in per 1M`;
+  }
+  if (type === "rerank" && perSearch !== undefined) return `${formatUsd(perSearch)} / search`;
+  if (type === "rerank") return `${formatUsd(inputPer1M)} in per 1M`;
+  if (type === "transcription" && perAudioMinute !== undefined) {
+    return `${formatUsd(perAudioMinute)} / audio minute`;
   }
   if (imageOutputPer1M === undefined && perImage === undefined) {
     // Zero on both sides is a self-hosted model's stated price — the registry

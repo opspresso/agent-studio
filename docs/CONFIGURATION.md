@@ -85,10 +85,14 @@ fail-open 이 될 수는 없다.
 | `S3_PUBLIC_BASE_URL` | 미설정 | — | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
 | `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만, Slack 같은 외부 독자에게는 주소가 아니다). **모델 제공자도 독자다**: 재생되는 과거 턴의 이미지 중 인라인 예산 밖의 것은 이 주소로 제공자에게 건네지므로, 사설망의 앱에 외부 제공자(`LLM_BASE_URL=api.openai.com` 등)를 붙였다면 제공자가 그 주소에 닿지 못해 그 턴이 실패한다. 그 조합은 `authenticated` 를 쓴다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
 | `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 버전이 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
-| `EMBEDDING_PROVIDER` | `openai` | — | `openai` \| `cohere` \| `bedrock`. `openai` 는 `LLM_BASE_URL`/`LLM_API_KEY` 를 재사용하며 그 엔드포인트가 `/embeddings` 를 제공할 것을 요구한다. OpenAI 호환이면 무엇이든 되므로 폐쇄망의 vLLM · TEI · Ollama 가 여기 해당한다. `cohere` 와 `bedrock` 은 Bedrock 을 통해 가고 프로세스의 AWS 자격증명(`bedrock:InvokeModel`)을 쓴다. 인식되지 않는 값은 무엇이든 `openai` 로 읽힌다. 어느 모델을 고를지는 아래 표의 실측을 보라. |
-| `EMBEDDING_MODEL` | provider 별로: `text-embedding-3-small`, `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0` | — | 이 값을 바꾸는 것은 **인덱스를 다시 만드는 것**을 뜻한다. 두 모델에서 나온 벡터는 비교할 수 없고, 섞인 인덱스에서는 아무것도 그 사실을 알려 주지 않는다. 점수가 그냥 틀릴 뿐이다. `catalog_vectors` 의 벡터 컬럼은 폭을 선언하지 않으므로 재색인이 모든 행을 새 모델로 다시 쓰는 것으로 충분하다. Cohere v4 는 **inference profile** 을 통해 도달한다. 맨 모델 id 는 on-demand 호출을 아예 거부한다. |
-| `EMBEDDING_DIM` | `1024` | — | 모든 경로에서 provider 에 요청하는 폭. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산한다. Cohere v4, Titan v2, OpenAI 의 v3 모델은 각각 여러 폭을 제공하는데 그 기본값 중 1024 인 것은 하나도 없다. `text-embedding-3-small` 은 원래 1536 이다. 그래서 provider 를 기본값에 맡기면 질의 벡터와 저장된 벡터의 폭이 어긋나고, 카탈로그는 이유를 말해 주는 것이라곤 백그라운드 로그 한 줄뿐인 채로 답하지 않게 된다. |
+| `EMBEDDING_PROVIDER` | `openai` | — | `openai` \| `cohere` \| `bedrock`. `openai` 는 `EMBEDDING_BASE_URL` 이 있으면 전용 채널을, 없으면 `LLM_BASE_URL`/`LLM_API_KEY` 를 재사용하며 그 엔드포인트가 `/embeddings` 를 제공할 것을 요구한다. OpenAI 호환이면 무엇이든 되므로 폐쇄망의 vLLM · TEI · Ollama 가 여기 해당한다. `cohere` 와 `bedrock` 은 Bedrock 을 통해 가고 프로세스의 AWS 자격증명(`bedrock:InvokeModel`)을 쓴다. 인식되지 않는 값은 무엇이든 `openai` 로 읽힌다. 어느 모델을 고를지는 아래 표의 실측을 보라. |
+| `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | 미설정 | — | OpenAI 호환 embedding 전용 채널. base URL 이 없으면 기본 LLM 채널을 재사용한다. base URL 만 설정한 인증 없는 endpoint에는 비밀이 아닌 placeholder credential을 보내며 LLM key를 전달하지 않는다. 인증이 필요하면 API key도 설정하라. |
+| `EMBEDDING_MODEL` | provider 별로: `text-embedding-3-small`, `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0` | **models** | 배포 기본값. `/models`에서 Embedding 타입의 등록 모델을 선택하면 DB override가 우선한다. 선택 변경은 승인 뒤 전체 인덱스를 다시 만들며, 실패하면 이전 선택과 vector를 복원한다. 두 모델에서 나온 벡터는 비교할 수 없다. Cohere v4 는 **inference profile** 을 통해 도달한다. |
+| `EMBEDDING_DIM` | `1024` | — | provider 에 요청하는 폭. `native` 는 폭 파라미터를 생략해 모델의 native dimension을 쓴다. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산하므로 값을 바꾼 뒤 반드시 재색인하라. Cohere v4, Titan v2, OpenAI v3처럼 폭 선택을 지원하는 모델은 명시값을 사용하고, 폭 파라미터를 거부하는 모델은 `native` 를 사용한다. |
 | `CATALOG_MIN_SCORE` | `0.25` | — | 관련성 하한, 범위는 `(0, 1]`. 이 값은 검색이 아니라 **임베딩 모델**에 속한다, `EMBEDDING_MODEL` 이 바뀔 때마다 다시 측정하라. 그러지 않으면 카탈로그가 전부 답하거나 아무것도 답하지 않는다. 아래 표를 보라. `TRACE_SAMPLE_RATE` 처럼 폴백하는 대신 경고와 함께 `0`–`1` 로 **clamp** 된다. 숫자가 아닌 값은 기본값을 쓴다. 이것은 컷의 절반일 뿐이고, 나머지 절반은 그 쿼리 자신의 최고 점수에 대한 쿼리별 비율이며, 둘 중 높은 쪽이 이긴다, 그래서 `0` 으로 clamp 된 값이 전부를 통과시키지는 않는다. 비율이 볼 수 없는 경우, 즉 카탈로그에 맞는 것이 아예 하나도 없다는 경우에 대한 답을 없앨 뿐이다. |
+| `RERANKER_BASE_URL` / `RERANKER_MODEL` | 미설정 | `RERANKER_MODEL`은 **models** | 둘을 함께 설정하면 vector 후보를 `/rerank`로 2차 정렬한다. `RERANKER_MODEL`은 배포 기본값이고 `/models`의 Rerank 타입 선택이 DB override한다. 하나만 설정하면 부팅을 거부한다. 미설정이면 기존 cosine/name 순위를 그대로 쓴다. |
+| `RERANKER_API_KEY` | 미설정 | — | reranker의 선택형 Bearer credential. 인증 없는 사내 vLLM endpoint는 비워 둔다. |
+| `RERANKER_MIN_SCORE` | `0.01` | — | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하라. |
 | `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`; 일반 URL 조립은 요청 origin, 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (A2A Agent Card, Slack 매니페스트, OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 일반 URL 조립에서만 적용된다. A2A Agent Card 경로에는 요청이 없어서, 두 변수 모두 설정되지 않으면 카드가 `localhost` 를 광고한다. **거부된 사인인의 리디렉션(`/login?error=`)은 부팅 시 env 값으로 고정된다**: Better Auth 옵션은 한 번만 평가되므로 runtime 설정을 보지 못하고, env 가 비어 있으면 상대 경로가 되어 프록시 뒤에서 bind 주소 기준으로 해석될 수 있다. OIDC/Google 사인인을 쓰는 배포는 env 로도 설정하라. **MCP client ID 메타데이터 문서는 예외다**: 설정된 base 가 없으면 요청 origin 이나 localhost 를 추측하지 않고 503 으로 답한다. 그 URL 이 곧 OAuth `client_id` 이고 authorization server 가 가져가므로, loopback 이나 평문 http 값이면 흐름이 시작되기 전에 거부되고 provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다. [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
 
 ### 임베딩 모델 선택
@@ -102,16 +106,18 @@ fail-open 이 될 수는 없다.
 | `amazon.titan-embed-text-v2:0` | 0.34–0.41 | 0.04–0.12 | **0.065**. 노이즈와 구별되지 않는다 |
 | `text-embedding-3-large` | 0.41–0.58 | 0.21–0.22 | 0.169. 노이즈보다 *아래* |
 | **`global.cohere.embed-v4:0`** | 0.30–0.53 | 0.21–0.24 | **0.393**. 노이즈에서 확실히 벗어난다 |
+| `Qwen/Qwen3-Embedding-4B` | 0.81–0.83 | 0.25–0.46 | **0.811**. `EMBEDDING_DIM=native`, `CATALOG_MIN_SCORE=0.5` |
 
-이 배포가 실제로 가진 케이스를 갈라내는 것은 Cohere 뿐이다. Titan 에서
+관리형 세 모델 중 실제 케이스를 갈라내는 것은 Cohere 뿐이다. Titan 에서
 "깃헙 레포 알려줘" 는 `github` 서버에 대해 0.065, 무관한 skill 에 대해 0.041 이 나와서
 어떤 임계값으로도 찾아낼 수 없다. `3-large` 에서는 무관한 행들보다 *낮은* 점수가 나온다. Cohere 는 토큰당 비용이
 `3-large` 와 비슷하고 Titan 의 몇 배인데, 카탈로그 규모에서 그것은 한 달에 1~2달러다.
 선택 기준은 가격이 아니라 정확도다.
 
 Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 것이고, 그래서 여기서
-`CATALOG_MIN_SCORE` 는 0.25 이며 Titan 이었다면 0.15 였을 것이다. 레지스트리와 요청이 같은
-언어를 쓰는 배포는 이 차이를 보지 못하며 셋 중 무엇을 써도 된다.
+`CATALOG_MIN_SCORE` 는 0.25 이며 Titan 이었다면 0.15 였을 것이다. 자체 호스팅한 Qwen3은
+한국어 질의도 정답과 잡음을 더 넓게 갈랐고 `0.5`를 쓴다. 레지스트리와 요청이 같은 언어를 쓰는
+배포는 이 차이를 덜 본다.
 
 ## 인증과 접근 제어
 
@@ -180,7 +186,7 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
 
 ### 모델 레지스트리: agent-models 의 카탈로그
 
-Text, Image, Embedding 모델. 가격, 컨텍스트 윈도, 출력 상한, capability 플래그, 어떤 route 가 그것을
+Text, Image, Embedding, Rerank, Transcription 모델. 가격, 컨텍스트 윈도, 출력 상한, capability 플래그, 어떤 route 가 그것을
 서빙하는지. 는 **이 저장소에 있지 않다.** [opspresso/agent-models](https://github.com/opspresso/agent-models)
 가 관리한다: 모델마다 **family** 하나(표시 이름, 가격, 윈도, capability), 경로마다 **offering**
 하나(provider, wire 이름, 그 경로가 바꾸는 것), 그리고 provider 들의 공개 카탈로그로부터 매일
@@ -192,9 +198,11 @@ Text, Image, Embedding 모델. 가격, 컨텍스트 윈도, 출력 상한, capab
 선언이 레지스트리 오버레이로 들어온다 (위 *LLM 채널* 절).
 
 카탈로그의 항목은 이 앱의 `ModelConfig` 그대로다. 타입은 별도 필드가 아니라 capability 에서
-파생한다: `embedding: true` 는 Embedding, `imageGeneration: true` 는 Image, 둘 다 없으면 Text 다.
-두 플래그는 동시에 참일 수 없다. Embedding은 input 가격만 양수이고 `outputPer1M`·`maxTokens` 가
-0이다. `/models` 카탈로그에는 세 타입을 모두 표시하지만 version picker와 `/api/models` 는 실행
+파생한다: `embedding: true` 는 Embedding, `rerank: true` 는 Rerank,
+`transcription: true` 는 Transcription, `imageGeneration: true` 는 Image, 모두 없으면 Text 다.
+네 플래그는 동시에 참일 수 없다. Embedding은 input token으로, Rerank는 input token 또는
+`perSearch`로, Transcription은 input/output token 또는 `perAudioMinute`로 가격을 표현한다.
+Embedding과 Rerank의 `outputPer1M`·`maxTokens`는 0이다. `/models` 카탈로그에는 다섯 타입을 모두 표시하지만 version picker와 `/api/models` 는 실행
 가능한 Text·Image만 제공한다. id 는 `provider/family` 이고, 같은 모델의 세 경로는 같은
 이름·윈도·타입을 가진다. `wireId` 는 경로가 모델 이름을 다르게 쓸 때만 둔다. 두 벌이 프로세스에
 도달한다:
@@ -225,7 +233,8 @@ Text, Image, Embedding 모델. 가격, 컨텍스트 윈도, 출력 상한, capab
 `SUPPORTED_PROVIDERS` 는 카탈로그가 아니라 코드다)를 검증해 맞지 않는 것은 이유와 함께 건너뛰고,
 레지스트리를 **원자적으로** 바꾼다. Text 모델은 양쪽 모두 0보다 큰 가격을 요구하고, Image는
 image output token 또는 장당 가격을 요구하며, Embedding은 input 가격과 0인 output 가격을
-요구한다. Text의 self-hosted
+요구한다. Rerank는 input 가격 또는 `perSearch`, Transcription은 양쪽 token 가격 또는
+`perAudioMinute`를 요구한다. self-hosted
 provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하는 모델은 0 이 참값이라서
 명시적 0 은 통과하고, 가격 필드의 *부재*는 다른 provider 와 똑같이 거부된다. 진행 중인 런은 이미 해석한 config 를 그대로 쓴다. 쓸 수 있는
 항목이 하나도 없는 카탈로그는 거부되고 이전 상태가 남는다. 빈 레지스트리는 낡은 것보다 나쁜 유일한

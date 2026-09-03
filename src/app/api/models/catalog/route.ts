@@ -9,8 +9,15 @@ import {
   type ModelType,
 } from "@/domain/llm/models";
 import { modelPreferenceUseCases } from "@/lib/container";
-import { getHiddenModels, getLlmProviderConfigs } from "@/lib/runtime-settings";
+import {
+  getEmbeddingModelSelection,
+  getHiddenModels,
+  getLlmProviderConfigs,
+  getRerankerModelSelection,
+  type ModelSelection,
+} from "@/lib/runtime-settings";
 import { withMemberAuth } from "@/lib/session";
+import { config } from "@/lib/config";
 
 export interface ModelsCatalogResponse {
   providers: Array<{ name: string; available: boolean; dedicated: boolean }>;
@@ -18,6 +25,8 @@ export interface ModelsCatalogResponse {
   makers: Record<string, string>;
   updatedAt: string;
   source: "override" | "default";
+  selections: { embedding: ModelSelection; rerank?: ModelSelection };
+  selectionAvailable: { embedding: boolean; rerank: boolean };
 }
 
 /**
@@ -34,10 +43,18 @@ export interface ModelsCatalogResponse {
  * that no longer exists.
  */
 export const GET = withMemberAuth(async (user) => {
-  const [providerConfigs, hiddenModels, favoriteModels] = await Promise.all([
+  const [
+    providerConfigs,
+    hiddenModels,
+    favoriteModels,
+    embedding,
+    rerank,
+  ] = await Promise.all([
     getLlmProviderConfigs(),
     getHiddenModels(),
     modelPreferenceUseCases.list(user.id),
+    getEmbeddingModelSelection(),
+    getRerankerModelSelection(),
   ]);
   const dedicated = new Set(providerConfigs.map((provider) => provider.name));
   const hidden = new Set(hiddenModels ?? []);
@@ -57,5 +74,10 @@ export const GET = withMemberAuth(async (user) => {
     makers: listModelMakers(),
     updatedAt: modelCatalogUpdatedAt(),
     source: hiddenModels === undefined ? "default" : "override",
+    selections: { embedding, ...(rerank ? { rerank } : {}) },
+    selectionAvailable: {
+      embedding: config.catalogEnabled,
+      rerank: config.reranker !== undefined,
+    },
   } satisfies ModelsCatalogResponse);
 });

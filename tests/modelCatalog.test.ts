@@ -113,7 +113,7 @@ describe("loadModelCatalog", () => {
         model("anthropic/claude-x.1"),
         // Zero is a self-hosted channel's true price — stated, it loads;
         // absent, it fails the same pricing check as everyone else's. The
-        // exemption is for *text* models only, and a selfhosted entry never
+        // exemption covers every model type, and a selfhosted entry never
         // carries a wireId — the family being the served name everywhere is
         // what lets one entry serve every deployment.
         model("selfhosted/qwen-local", { pricing: { inputPer1M: 0, outputPer1M: 0 } }),
@@ -133,10 +133,10 @@ describe("loadModelCatalog", () => {
       "openai/unpriced-draw — an image model needs imageOutputPer1M or perImage",
       'anthropic/claude-x.1 — a dotted Anthropic id needs wireId "claude-x-1"',
       "selfhosted/no-price — pricing lacks inputPer1M/outputPer1M",
-      "selfhosted/free-draw — an image model needs imageOutputPer1M or perImage",
       "selfhosted/renamed — a selfhosted entry must not carry a wireId — the family is the served name",
     ]);
     expect(getModelConfig("selfhosted/qwen-local")?.pricing).toEqual({ inputPer1M: 0, outputPer1M: 0 });
+    expect(modelType(getModelConfig("selfhosted/free-draw")!)).toBe("image");
   });
 
   it("loads embedding models and enforces their type contract", () => {
@@ -162,11 +162,63 @@ describe("loadModelCatalog", () => {
     expect(report.loaded).toBe(1);
     expect(report.skipped).toEqual([
       "openai/embed-output — an embedding model needs an input price above zero and an output price of zero",
-      "openai/embed-max — maxTokens must be zero for an embedding model, otherwise a positive integer or zero for an image model",
-      "openai/embed-image — a model may not be both imageGeneration and embedding",
+      "openai/embed-max — maxTokens must be zero for an embedding or rerank model, otherwise a positive integer or zero for an image or transcription model",
+      "openai/embed-image — model types are mutually exclusive",
     ]);
     expect(getModelConfig("openai/embed-ok")?.capabilities.embedding).toBe(true);
     expect(modelType(getModelConfig("openai/embed-ok")!)).toBe("embedding");
+  });
+
+  it("loads rerank models and enforces their type contract", () => {
+    const report = install(
+      catalog([
+        model("openai/rerank-ok", {
+          pricing: { inputPer1M: 0.02, outputPer1M: 0 },
+          capabilities: { ...TEXT, rerank: true },
+          maxTokens: 0,
+        }),
+        model("openai/rerank-output", {
+          pricing: { inputPer1M: 0.02, outputPer1M: 1 },
+          capabilities: { ...TEXT, rerank: true },
+          maxTokens: 0,
+        }),
+      ]),
+    );
+    expect(report.skipped).toEqual([
+      "openai/rerank-output — a rerank model needs an input price or perSearch above zero and an output price of zero",
+    ]);
+    expect(modelType(getModelConfig("openai/rerank-ok")!)).toBe("rerank");
+  });
+
+  it("loads the specialized model types published by agent-models", () => {
+    const report = install(
+      catalog([
+        model("openai/embed", {
+          pricing: { inputPer1M: 0.02, outputPer1M: 0 },
+          capabilities: { ...TEXT, embedding: true },
+          maxTokens: 0,
+        }),
+        model("openai/rerank", {
+          pricing: { inputPer1M: 0, outputPer1M: 0, perSearch: 0.001 },
+          capabilities: { ...TEXT, rerank: true },
+          maxTokens: 0,
+        }),
+        model("openai/transcribe", {
+          pricing: { inputPer1M: 0, outputPer1M: 0, perAudioMinute: 0.006 },
+          capabilities: { ...TEXT, transcription: true },
+          contextWindow: 0,
+          maxTokens: 0,
+        }),
+      ]),
+    );
+
+    expect(report.skipped).toEqual([]);
+    expect(report.loaded).toBe(3);
+    expect(modelType(getModelConfig("openai/embed")!)).toBe("embedding");
+    expect(modelType(getModelConfig("openai/rerank")!)).toBe("rerank");
+    expect(modelType(getModelConfig("openai/transcribe")!)).toBe("transcription");
+    expect(getModelConfig("openai/rerank")?.pricing.perSearch).toBe(0.001);
+    expect(getModelConfig("openai/transcribe")?.pricing.perAudioMinute).toBe(0.006);
   });
 
   it("allows explicit zero limits only for image models", () => {
@@ -183,7 +235,7 @@ describe("loadModelCatalog", () => {
     );
     expect(report.loaded).toBe(1);
     expect(report.skipped).toEqual([
-      "openai/text-zero — contextWindow is not a positive integer or zero for an image model",
+      "openai/text-zero — contextWindow is not a positive integer or zero for an image or transcription model",
     ]);
     expect(getModelConfig("openai/image-zero")).toMatchObject({ contextWindow: 0, maxTokens: 0 });
   });

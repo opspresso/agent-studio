@@ -12,19 +12,33 @@
  *   not under `/v1`) carrying `max_context_length` and a `type` that tells an
  *   embedding model from a chat one. A server that is not LM Studio answers
  *   404, which is an answer — the enrichment is skipped, never raised.
- * - **vLLM** decorates its `/v1/models` entries with `max_model_len`.
+ * - **vLLM** decorates its `/v1/models` entries with `max_model_len`; the
+ *   configured endpoint supplies the type because each pooling server has one
+ *   job (embedding or rerank).
  */
 
 import type { ProviderChannelConfig } from "@/domain/settings/types";
+import type { ModelType } from "@/domain/llm/models";
 
 /** One model the channel serves, with what the serving stack says about it. */
 export interface ServedSelfHostedModel {
   /** The serving stack's own name — what a declaration's `family` must be. */
   name: string;
+  type: ModelType;
   /** From the stack where it states one (LM Studio, vLLM); absent otherwise. */
   contextWindow?: number;
   /** True when the stack types the model as vision-capable (LM Studio `vlm`). */
   vision?: boolean;
+}
+
+export interface SelfHostedModelChannel {
+  channel: Pick<ProviderChannelConfig, "baseUrl" | "apiKey">;
+  type: ModelType;
+}
+
+export interface ServedSelfHostedModelsView {
+  served: ServedSelfHostedModel[] | null;
+  servedError?: string;
 }
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -76,6 +90,7 @@ async function lmStudioFacts(
 
 export async function listServedSelfHostedModels(
   channel: Pick<ProviderChannelConfig, "baseUrl" | "apiKey">,
+  type: ModelType = "text",
   fetchFn: typeof fetch = fetch,
 ): Promise<ServedSelfHostedModel[]> {
   const endpoint = `${channel.baseUrl.replace(/\/+$/, "")}/models`;
@@ -101,17 +116,33 @@ export async function listServedSelfHostedModels(
       continue;
     }
     const fact = facts.get(record.id);
-    // An embedding model has no chat completion to declare; LM Studio is the
-    // one stack that says which is which, so only there can this be filtered.
-    if (fact?.type === "embeddings") {
-      continue;
-    }
     const contextWindow = fact?.contextWindow ?? (isCount(record.max_model_len) ? record.max_model_len : undefined);
     served.push({
       name: record.id,
+      type: fact?.type === "embeddings" ? "embedding" : type,
       ...(contextWindow !== undefined ? { contextWindow } : {}),
       ...(fact?.type === "vlm" ? { vision: true } : {}),
     });
   }
   return served;
+}
+
+/** Keep healthy channel listings visible when a sibling endpoint is down. */
+export async function listServedSelfHostedChannels(
+  channels: readonly SelfHostedModelChannel[],
+  fetchFn: typeof fetch = fetch,
+): Promise<ServedSelfHostedModelsView> {
+  const results = await Promise.allSettled(
+    channels.map(({ channel, type }) => listServedSelfHostedModels(channel, type, fetchFn)),
+  );
+  const served = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  const errors = results.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [`${channels[index]?.type ?? "unknown"}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`]
+      : [],
+  );
+  return {
+    served: results.some((result) => result.status === "fulfilled") ? served : null,
+    ...(errors.length > 0 ? { servedError: errors.join("; ") } : {}),
+  };
 }

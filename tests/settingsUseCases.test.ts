@@ -28,6 +28,8 @@ const ENV_KEYS = [
   "A2A_API_KEY",
   "PUBLIC_BASE_URL",
   "ARTIFACT_ACCESS_MODE",
+  "EMBEDDING_MODEL",
+  "RERANKER_MODEL",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -132,6 +134,26 @@ describe("settingsUseCases.update access-control guards", () => {
 });
 
 describe("settingsUseCases.update", () => {
+  it("stores model selection overrides and clears them back to env", async () => {
+    process.env.EMBEDDING_MODEL = "openrouter/qwen3-embedding-4b";
+    process.env.RERANKER_MODEL = "selfhosted/env-reranker";
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    await useCases.update(
+      {
+        embeddingModel: "selfhosted/Qwen/Qwen3-Embedding-4B",
+        rerankerModel: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      },
+      ADMIN,
+    );
+    expect(current()?.embeddingModel).toBe("selfhosted/Qwen/Qwen3-Embedding-4B");
+    expect(current()?.rerankerModel).toBe("selfhosted/Qwen/Qwen3-Reranker-0.6B");
+
+    await useCases.update({ embeddingModel: "", rerankerModel: "" }, ADMIN);
+    expect(current()?.embeddingModel).toBeUndefined();
+    expect(current()?.rerankerModel).toBeUndefined();
+  });
+
   it("stores a public artifact mode override and clears it back to the environment", async () => {
     process.env.ARTIFACT_ACCESS_MODE = "authenticated";
     const { repo, current } = fakeRepo();
@@ -402,6 +424,7 @@ describe("settingsUseCases.update self-hosted declarations", () => {
           {
             family: "qwen/qwen3.8-27b",
             displayName: "Qwen3.8 27B",
+            type: "text",
             contextWindow: 262144,
             maxTokens: 8192,
             capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
@@ -432,6 +455,77 @@ describe("settingsUseCases.update self-hosted declarations", () => {
     expect(getModelConfig("selfhosted/qwen/qwen3.8-27b")).toBeUndefined();
   });
 
+  it("derives specialized registry types from the declaration type", async () => {
+    const { repo } = fakeRepo();
+    await createSettingsUseCases(repo).update(
+      {
+        selfHostedModels: [
+          {
+            family: "Qwen/Qwen3-Embedding-4B",
+            displayName: "Qwen3 Embedding 4B",
+            type: "embedding",
+            contextWindow: 32768,
+            maxTokens: 0,
+            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+          },
+          {
+            family: "Qwen/Qwen3-Reranker-0.6B",
+            displayName: "Qwen3 Reranker 0.6B",
+            type: "rerank",
+            contextWindow: 32768,
+            maxTokens: 0,
+            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+          },
+          {
+            family: "whisper-large-v3",
+            displayName: "Whisper Large V3",
+            type: "transcription",
+            contextWindow: 0,
+            maxTokens: 0,
+            capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+          },
+        ],
+      },
+      ADMIN,
+    );
+    expect(getModelConfig("selfhosted/Qwen/Qwen3-Embedding-4B")?.capabilities).toMatchObject({
+      tools: false,
+      embedding: true,
+    });
+    expect(getModelConfig("selfhosted/Qwen/Qwen3-Reranker-0.6B")?.capabilities).toMatchObject({
+      tools: false,
+      rerank: true,
+    });
+    expect(getModelConfig("selfhosted/whisper-large-v3")?.capabilities).toMatchObject({
+      tools: false,
+      transcription: true,
+    });
+  });
+
+  it("refuses to remove a selected self-hosted retrieval model", async () => {
+    process.env.EMBEDDING_MODEL = "selfhosted/Qwen/Qwen3-Embedding-4B";
+    const { repo } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    await useCases.update(
+      {
+        selfHostedModels: [
+          {
+            family: "Qwen/Qwen3-Embedding-4B",
+            displayName: "Qwen3 Embedding 4B",
+            type: "embedding",
+            contextWindow: 32768,
+            maxTokens: 0,
+            capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
+          },
+        ],
+      },
+      ADMIN,
+    );
+    await expect(useCases.update({ selfHostedModels: [] }, ADMIN)).rejects.toThrow(
+      "Selected self-hosted models must remain declared",
+    );
+  });
+
   it("lets one PUT declare and hide a model together", async () => {
     const { repo, current } = fakeRepo();
     await createSettingsUseCases(repo).update(
@@ -440,6 +534,7 @@ describe("settingsUseCases.update self-hosted declarations", () => {
           {
             family: "gemma-4-e4b",
             displayName: "Gemma 4 E4B",
+            type: "text",
             contextWindow: 131072,
             maxTokens: 8192,
             capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
@@ -466,6 +561,7 @@ describe("settingsUseCases.update self-hosted declarations", () => {
             {
               family: "big",
               displayName: "Big",
+              type: "text",
               contextWindow: 100,
               maxTokens: 200,
               capabilities: {

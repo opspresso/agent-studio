@@ -116,6 +116,55 @@ export async function getLlmChannelConfig(): Promise<{ baseUrl: string; apiKey: 
   };
 }
 
+export async function getEmbeddingChannelConfig(): Promise<{ baseUrl: string; apiKey: string }> {
+  if (config.embeddingBaseUrl) {
+    return {
+      baseUrl: config.embeddingBaseUrl,
+      // The OpenAI SDK requires a key even when a local endpoint does not.
+      // Never reuse the LLM secret for a separately addressed service.
+      apiKey: config.embeddingApiKey ?? "not-required",
+    };
+  }
+  return getLlmChannelConfig();
+}
+
+export interface ModelSelection {
+  model: string;
+  source: "override" | "env" | "default";
+}
+
+export async function getEmbeddingModelSelection(): Promise<ModelSelection> {
+  const stored = (await loadSettings())?.embeddingModel;
+  if (stored !== undefined) {
+    return { model: stored, source: "override" };
+  }
+  const fromEnv = optionalEnv(process.env.EMBEDDING_MODEL);
+  return fromEnv
+    ? { model: fromEnv, source: "env" }
+    : { model: config.embeddingModel, source: "default" };
+}
+
+export async function getEmbeddingModel(): Promise<string> {
+  return (await getEmbeddingModelSelection()).model;
+}
+
+export async function getRerankerModelSelection(): Promise<ModelSelection | undefined> {
+  const stored = (await loadSettings())?.rerankerModel;
+  if (stored !== undefined) {
+    return { model: stored, source: "override" };
+  }
+  const fromEnv = optionalEnv(process.env.RERANKER_MODEL);
+  return fromEnv ? { model: fromEnv, source: "env" } : undefined;
+}
+
+export async function getRerankerModel(): Promise<string> {
+  const selection = await getRerankerModelSelection();
+  if (!selection) {
+    throw new Error("RERANKER_MODEL not configured");
+  }
+  return selection.model;
+}
+
 export async function getLlmProviderConfigs(): Promise<ProviderChannelConfig[]> {
   const stored = (await loadSettings())?.llmProviders;
   if (stored !== undefined) {

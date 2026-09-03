@@ -14,7 +14,10 @@ import {
   type CatalogIndexDeps,
 } from "@/application/catalog/reindexCatalog";
 import { catalogDescription } from "@/domain/catalog/types";
-import { searchCapabilities } from "@/application/catalog/searchCatalog";
+import {
+  CAPABILITY_RERANK_INSTRUCTION,
+  searchCapabilities,
+} from "@/application/catalog/searchCatalog";
 import type { McpServer } from "@/domain/mcp/types";
 import type { Skill } from "@/domain/skill/types";
 import type { VectorMatch, VectorRecord, VectorStorePort } from "@/domain/vector/types";
@@ -380,6 +383,66 @@ describe("searchCapabilities", () => {
   it("honours an injected floor, since it belongs to the embedding model", async () => {
     const deps = { ...searchDeps([[match("skill#a", 0.2, { name: "a", description: "" })]]), minScore: 0.5 };
     expect(await searchCapabilities(deps, ["q"], { kind: "skill", limit: 5 })).toEqual([]);
+  });
+
+  it("reranks the vector candidates with the indexed capability text", async () => {
+    const rerank = vi.fn(async () => [0.1, 0.9, 0.01]);
+    const deps = {
+      ...searchDeps([
+        [
+          match("skill#vector-first", 0.9, {
+            name: "vector-first",
+            description: "First description",
+          }),
+          match("skill#reranked-first", 0.8, {
+            name: "reranked-first",
+            description: "Second description",
+          }),
+          match("skill#reranker-rejected", 0.7, {
+            name: "reranker-rejected",
+            description: "Rejected description",
+          }),
+          match("skill#below-cut", 0.2, { name: "below-cut", description: "Not relevant" }),
+        ],
+      ]),
+      reranker: { rerank },
+    };
+    const found = await searchCapabilities(deps, ["the request"], { kind: "skill", limit: 2 });
+    expect(found.map((entry) => entry.name)).toEqual(["reranked-first", "vector-first"]);
+    expect(rerank).toHaveBeenCalledWith(
+      "the request",
+      [
+        "vector-first\nFirst description",
+        "reranked-first\nSecond description",
+        "reranker-rejected\nRejected description",
+      ],
+      CAPABILITY_RERANK_INSTRUCTION,
+    );
+  });
+
+  it("keeps a low absolute reranker score when it clearly identifies an AWS capability", async () => {
+    const rerank = vi.fn(async () => [0.03, 0.0003]);
+    const found = await searchCapabilities(
+      {
+        ...searchDeps([
+          [
+            match("mcpServer#aws-knowledge", 0.62, {
+              name: "aws-knowledge",
+              description: "Search AWS documentation and API references",
+            }),
+            match("mcpServer#cloudwatch", 0.56, {
+              name: "cloudwatch",
+              description: "Query CloudWatch metrics and logs",
+            }),
+          ],
+        ]),
+        reranker: { rerank },
+        rerankerMinScore: 0.01,
+      },
+      ["aws eks 최신 버전 알려줘"],
+      { kind: "mcpServer", limit: 5 },
+    );
+    expect(found.map((entry) => entry.name)).toEqual(["aws-knowledge"]);
   });
 
   it("matches a hyphenated name written as separate words", async () => {

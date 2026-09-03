@@ -1,11 +1,10 @@
 /**
- * Embeddings over the same OpenAI-compatible channel the engine dispatches on.
+ * Embeddings over an OpenAI-compatible channel.
  *
- * Reuses `getLlmChannelConfig()` rather than taking credentials of its own: the
- * deployment already answered "which endpoint, which key" once, and a second
- * answer is a second thing to rotate. The model is separate because it has to
- * be — an embedding model is not a chat model, and its dimension has to match
- * the index the vectors go into.
+ * A deployment may give embeddings their own endpoint and credential, or omit
+ * that pair to reuse the default LLM channel. The model is separate because it
+ * has to be — an embedding model is not a chat model, and its dimension has to
+ * match the index the vectors go into.
  *
  * Not routed through `resolveProviderTarget`: that resolver exists to send a
  * `provider/model` id to that provider's own endpoint, and an embedding model
@@ -16,8 +15,9 @@
 import OpenAI from "openai";
 import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
 import type { EmbeddingPort } from "@/domain/vector/types";
-import { getLlmChannelConfig } from "@/lib/runtime-settings";
+import { getEmbeddingChannelConfig, getEmbeddingModel } from "@/lib/runtime-settings";
 import { config } from "@/lib/config";
+import { wireModelId } from "@/domain/llm/models";
 
 const clients = createLlmClientCache<OpenAI>();
 
@@ -49,13 +49,16 @@ export const openAiEmbeddings: EmbeddingPort = {
     if (texts.length === 0) {
       return [];
     }
-    const { baseUrl, apiKey } = await getLlmChannelConfig();
+    const [{ baseUrl, apiKey }, model] = await Promise.all([
+      getEmbeddingChannelConfig(),
+      getEmbeddingModel(),
+    ]);
     const client = getClient(baseUrl, apiKey);
     const vectors: number[][] = [];
     for (let start = 0; start < texts.length; start += BATCH) {
       const batch = texts.slice(start, start + BATCH);
       const response = await client.embeddings.create({
-        model: config.embeddingModel,
+        model: wireModelId(model),
         input: batch as string[],
         // Asked for explicitly, like both Bedrock adapters, because the index
         // fixes its dimension at creation and this model's native width is not
@@ -66,7 +69,9 @@ export const openAiEmbeddings: EmbeddingPort = {
         // background log line. The v3 models take this; a `dimensions` a model
         // or a router does not support is an error at the boundary, which is
         // where a mismatched index would have surfaced anyway.
-        dimensions: config.embeddingDimensions,
+        ...(config.embeddingDimensions !== undefined
+          ? { dimensions: config.embeddingDimensions }
+          : {}),
         // Stated rather than left to the SDK, which defaults to base64 and
         // decodes the answer itself. That default is a bandwidth optimization
         // against OpenAI; here the base URL is as likely to be a router or a

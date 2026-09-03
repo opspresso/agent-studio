@@ -23,6 +23,7 @@ import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { tierAtLeast } from "@/domain/member/tiers";
+import { modelType } from "@/domain/llm/models";
 import { Alert, Button, Grid, Group, Select, Stack, Text } from "@mantine/core";
 import classes from "./Playground.module.css";
 
@@ -328,11 +329,9 @@ export default function PlaygroundPage() {
               projectName={project.name}
               projectType={project.projectType}
               models={models.filter((m) =>
-                project.projectType === "image"
-                  ? m.capabilities.imageGeneration
-                  : !m.capabilities.imageGeneration,
+                modelType(m) === (project.projectType === "image" ? "image" : "text"),
               )}
-              imageModels={models.filter((m) => m.capabilities.imageGeneration)}
+              imageModels={models.filter((m) => modelType(m) === "image")}
               value={draft}
               onChange={setDraft}
               save={{

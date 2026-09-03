@@ -42,6 +42,23 @@ describe("modelPriceLabel", () => {
     );
   });
 
+  it("prices a rerank model on input only", () => {
+    expect(modelPriceLabel({ inputPer1M: 0.02, outputPer1M: 0 }, "rerank")).toBe(
+      "$0.02 in per 1M",
+    );
+  });
+
+  it("prices rerank searches and transcription audio in their native units", () => {
+    expect(modelPriceLabel(
+      { inputPer1M: 0, outputPer1M: 0, perSearch: 0.001 },
+      "rerank",
+    )).toBe("$0.0010 / search");
+    expect(modelPriceLabel(
+      { inputPer1M: 0, outputPer1M: 0, perAudioMinute: 0.006 },
+      "transcription",
+    )).toBe("$0.0060 / audio minute");
+  });
+
   it("marks a per-image figure as approximate when the model bills by token", () => {
     expect(
       modelPriceLabel({ inputPer1M: 2, outputPer1M: 12, imageOutputPer1M: 120, perImage: 0.134 }),
@@ -63,7 +80,9 @@ describe("modelPriceLabel", () => {
         model.pricing.inputPer1M > 0 ||
         model.pricing.outputPer1M > 0 ||
         (model.pricing.imageOutputPer1M ?? 0) > 0 ||
-        (model.pricing.perImage ?? 0) > 0;
+        (model.pricing.perImage ?? 0) > 0 ||
+        (model.pricing.perSearch ?? 0) > 0 ||
+        (model.pricing.perAudioMinute ?? 0) > 0;
       if (!priced) {
         continue;
       }

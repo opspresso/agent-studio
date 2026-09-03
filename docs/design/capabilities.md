@@ -86,6 +86,19 @@ key = kind#name  (or kind#name#toolName)          — src/domain/catalog/types.t
 스캔한다. 임베딩 자체는 `EMBEDDING_PROVIDER` 가 정하는 대로 OpenAI 호환 `/embeddings`
 엔드포인트(폐쇄망의 vLLM · TEI · Ollama 포함)나 Bedrock 에서 온다.
 
+`RERANKER_BASE_URL` 과 `RERANKER_MODEL` 을 함께 설정한 배포는 각 vector 검색의 오버샘플 후보를
+기존 cosine/name 하한으로 먼저 거른 뒤 `/rerank` 로 2차 정렬한다. 재평가하는 문서는 색인 때와
+같은 `capabilityText` 다. 이 문서는 답 passage가 아니라 답을 만들 수 있는 기능 설명이므로
+`searchCatalog.ts`가 그 과업을 명시한 instruction을 함께 보낸다. activation된 점수는
+`RERANKER_MIN_SCORE`와 그 query 최고 점수의 10% 중 높은 하한으로 다시 자른다. reranker를
+설정하지 않으면 기존 vector 점수와 순서가 그대로 남는다.
+
+활성 Embedding과 Rerank는 `/models`의 같은 레지스트리에서 각각 자기 type으로 선택한다.
+env의 `EMBEDDING_MODEL`·`RERANKER_MODEL`은 배포 기본값이고 DB 선택이 우선한다. Embedding 변경은
+확인 뒤 설치 전역 lease 아래에서 동기 재색인하며 실패하면 이전 선택과 vector를 복원한다. 다른
+인스턴스의 동시 migration은 409로 거절한다. Reranker 변경은 저장 vector를 바꾸지 않으므로
+재색인하지 않는다.
+
 MCP 서버는 **두 번** 등장하고, 둘은 서로 다른 질문에 답한다. `mcpTool` 항목은 요청이 매칭되는
 대상이고 — "PR 에 코멘트를 남긴다" 는 툴의 description 에 있지 다른 어디에도 없다 — `mcpServer` 는
 버전이 실제로 바인딩할 수 있는 대상이다. discovery 를 거부하는 서버도 두 번째 항목은 얻는다: 아무도
@@ -126,7 +139,8 @@ MCP 서버는 **두 번** 등장하고, 둘은 서로 다른 질문에 답한다
 말하면: 이 레지스트리는 영어로 서술되고 한국어로 질의되는데, 대안들이 풀지 못하는 경우가 바로
 그것이다.
 
-**각 쿼리는 자기 최고 점수를 기준으로 순위가 매겨지고 잘린 뒤, 살아남은 것들이 병합된다.** 하나의
+**각 쿼리는 자기 최고 점수를 기준으로 후보가 잘리고, 선택형 reranker로 재정렬된 뒤, 살아남은
+것들이 병합된다.** 하나의
 컷을 둘이 공유하면 강한 쿼리가 약한 쿼리를 지워 버린다: "당신은 Slack 어시스턴트" 라고 쓰인 시스템
 프롬프트는 `slack` 을 0.583 에 놓고, 그래서 합집합 위에서 잡은 비율은 0.408 이 되어 0.393 인
 `github` 을 떨어뜨린다 — 요청이 실제로 지목한 바로 그 항목을. 서로 다른 질문을 하는 두 쿼리는 비례

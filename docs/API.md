@@ -146,6 +146,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/models/test` | `POST` | admin |
 | `/api/models/refresh` | `POST` | admin |
 | `/api/models/selfhosted` | `GET` | admin |
+| `/api/models/selection` | `PUT` | admin |
 | `/api/me` | `GET` | session |
 | `/api/me/profile` | `GET` | session |
 | `/api/me/usage` | `GET` | session |
@@ -446,12 +447,14 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   denylist 이므로 카탈로그에 새로 들어온 모델은 기본적으로 보인다. 이것은 GET 설정 뷰에 자리가 없다. 다시 읽는 곳은
   `/api/models/catalog` 다.
 - PUT 의 `selfHostedModels` 도 전체 교체 목록이다. 이 배포가 직접 서빙하는 모델의 선언
-  (`{ family, displayName, maker?, contextWindow, maxTokens, capabilities }`, 최대 50개).
+  (`{ family, displayName, maker?, type, contextWindow, maxTokens, capabilities }`, 최대 50개)이다.
+  `type`은 `text | image | embedding | rerank | transcription` 중 하나다.
   저장 시 레지스트리 로더의 검증을 그대로 지나 (통과 못 하면 `400` 에 이유가 담긴다) 이
   프로세스의 오버레이에 즉시 설치되고, 다른 인스턴스는 카탈로그 refresh 틱에 따라온다. 빈
   배열은 전부 제거. env 폴백은 없다. 선언은 설정이 아니라 데이터다. 다시 읽는 곳은
   `GET /api/models/selfhosted` 의 `declarations` 이고, 관리 UI 는 `/models` 콘솔의
-  Self-hosted 섹션이다.
+  Self-hosted 섹션이다. 현재 Embedding 또는 Rerank 선택이 가리키는 self-hosted 선언은 먼저
+  다른 모델을 선택하기 전에는 제거할 수 없다.
 - `source` 는 `override` (DB) | `env` | `default` | `unset` 이다. secret 값은 언제나 마스킹된다
   (길이 보존. 9–20자는 양끝 2자씩, 21자 이상은 4자씩 드러낸다). PUT 의 마스킹된 값은 저장된
   secret 을 유지하고, 빈 문자열은 오버라이드를 제거한다 (env 폴백). 호출자를 제외하는 목록으로
@@ -1462,8 +1465,10 @@ GET /api/projects/{name}/traces/{traceId}
 
 ```
 GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ],
-                                 models: [ { …model, type: "text" | "image" | "embedding",
+                                 models: [ { …model, type: "text" | "image" | "embedding" | "rerank" | "transcription",
                                              selectionHidden, favorite } ],
+                                 selections: { embedding, rerank? },
+                                 selectionAvailable: { embedding, rerank },
                                  makers: { <makerId>: label },
                                  updatedAt,
                                  source: "override" | "default" }
@@ -1471,10 +1476,12 @@ GET  /api/models/favorites → 200 { models: [ <modelId> ] }
 PUT  /api/models/favorites { models: [ <modelId> ] } → 200 { models: [ <modelId> ] } | 400
 POST /api/models/test    → 200 { ok, latencyMs, error? } | 400
 POST /api/models/refresh → 200 { refreshed, updatedAt }
-GET  /api/models/selfhosted → 200 { served: [ { name, contextWindow?, vision? } ] | null,
+GET  /api/models/selfhosted → 200 { served: [ { name, type, contextWindow?, vision? } ] | null,
                                     servedError?,
                                     declarations: [ <selfHostedModel> ],
                                     installed: [ <id> ] } | 400
+PUT  /api/models/selection { type: "embedding" | "rerank", model, migrate? }
+                                 → 200 { settings, migration? } | 400 | 409 | 500
 GET    /api/models/catalog/document → 200 { stored: false }
                                     | 200 { stored: true, uploadedBy, uploadedAt, updatedAt,
                                             modelCount, skipped: [ "id — reason" ] }
@@ -1488,7 +1495,7 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
   `selfhosted` 는 admin 전용이다.
   `makers` 와 `updatedAt` 은 로드된 카탈로그의 것이다. maker 라벨과 카탈로그 내용이 마지막으로
   바뀐 시각으로, 레지스트리가 런타임 로드로 바뀐 뒤 클라이언트가 상수에서 가져올 수 없게 된
-  값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: Text·Image·Embedding 세 타입의
+  값들이다. `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: Text·Image·Embedding·Rerank·Transcription 다섯 타입의
   보이는 모든 모델과 그 `selectionHidden` 플래그
   (`/api/models` 가 숨기는 것을 정확히 나열한다, member 는 숨긴 모델을 볼 수는 있어도 고를 수는
   없다), 그리고 프로바이더별로 이 배포가 거기로 dispatch 할 수 있는지다. `dedicated` 는
@@ -1498,7 +1505,7 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
   최대 200개이며, 중복 제거·정렬해 저장한다. 다른 사용자의 id 를 받는 파라미터는 없다. 숨긴 모델의
   즐겨찾기는 저장에 남지만 picker 에서는 숨김이 우선한다.
 - `test` 는 Text·Image 모델에 대해 진짜 채널로 아주 작은 completion 하나를 보낸다 (`maxTokens` 16,
-  15초 타임아웃). Embedding은 completion endpoint로 검사할 수 없으므로 `400` 이고 콘솔도 Test
+  15초 타임아웃). Embedding·Rerank·Transcription은 completion endpoint로 검사할 수 없으므로 `400` 이고 콘솔도 Test
   버튼을 표시하지 않는다.
   프로바이더 해석, base URL, API 키, wire-id 치환까지 포함해서다. 실패한 프로브는 `5xx` 가 아니라
   `200` 본문이다 (`ok: false` 와 상류 에러). 레지스트리에 없는 id도 `400` 이다. 프로브는 런
@@ -1512,12 +1519,17 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
 - `selfhosted` 는 `/models` 콘솔 Self-hosted 섹션의 전체 그림이다: **저장된** 선언
   (`declarations`, 편집의 기준이다: 레지스트리가 설치를 거부한 선언도 여기 보여야 다음
   full-replace 저장이 그것을 조용히 지우지 않는다), 그중 설치된 id(`installed`), 그리고
-  채널이 *지금* 서빙하는 목록(`served`, 채널의 `/v1/models` 를 채널의 자격증명으로 읽고,
-  LM Studio 네이티브 카탈로그가 있으면 컨텍스트 길이·vision 을 보강하며 임베딩 모델을
-  걸러낸다). `served` 는 best-effort 다. 채널이 답하지 않으면 뷰를 실패시키는 대신
-  `servedError` 로 실린다: 서빙 스택이 죽어 있어도 선언은 admin 이 편집할 수 있어야 한다.
+  채널이 *지금* 서빙하는 목록(`served`, Text·Embedding·Rerank 채널의 `/v1/models` 를 각
+  채널의 자격증명으로 읽고 type을 붙이며, LM Studio 네이티브 카탈로그가 있으면 컨텍스트
+  길이·vision·embedding type을 보강한다). `served` 는 best-effort 다. 채널이 답하지 않으면 뷰를 실패시키는 대신
+  `servedError` 로 실리고, 다른 채널이 답했다면 그 `served` 목록은 그대로 남는다: 서빙 스택 하나가
+  죽어 있어도 건강한 모델과 선언은 admin 이 볼 수 있어야 한다.
   채널이 아예 설정돼 있지 않으면 `400`. 선언 자체는 `PUT /api/settings` 의
   `selfHostedModels` 로 한다.
+- `selection` 은 배포 전역의 Embedding/Rerank 활성 모델을 레지스트리 id로 선택한다.
+  Rerank는 타입과 endpoint 구성을 확인하고 실제 query/document pair를 시험한 뒤 바뀐다. Embedding은 `migrate: true`가 없으면
+  `400`이고, 승인된 요청은 전체 capability vector 재색인을 끝까지 기다린다. 실패하면 이전
+  선택을 복원하고 이전 모델로 다시 재색인한다. 같은 migration이 이미 진행 중이면 `409`다.
 - `catalog/document` 는 admin 이 **손으로 설치하는 카탈로그**. 발행된 카탈로그에 닿지
   못하는 배포(`MODELS_CATALOG_URL` 미설정 또는 `none`)의 길이지만, 어느 배포에서든 업로드는
   지울 때까지 네트워크보다 우선한다. `GET` 은 "설치된 것 없음" 을 실패가 아니라 상태로 답한다(콘솔이

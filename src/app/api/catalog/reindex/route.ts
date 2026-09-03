@@ -1,6 +1,5 @@
 import { after } from "next/server";
-import { reindexCatalog } from "@/application/catalog/reindexCatalog";
-import { catalogDeps } from "@/lib/container";
+import { catalogDeps, reindexCatalogNow } from "@/lib/container";
 import { config } from "@/lib/config";
 import { log } from "@/shared/logger";
 import { timingSafeEqualString } from "@/shared/timingSafe";
@@ -29,14 +28,13 @@ export async function POST(request: Request): Promise<Response> {
     log.warn("catalog", "reindex tick refused: wrong or missing token");
     return unauthorized();
   }
-  const deps = catalogDeps;
-  if (!deps) {
+  if (!catalogDeps) {
     return Response.json({ error: "CATALOG_ENABLED is not set" }, { status: 503 });
   }
 
   after(async () => {
     try {
-      const report = await reindexCatalog(deps);
+      const report = await reindexCatalogNow();
       log.info(
         "catalog",
         `reindex: indexed=${report.indexed} removed=${report.removed}` +

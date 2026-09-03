@@ -1,4 +1,4 @@
-import { DEFAULT_MIN_SCORE } from "@/domain/catalog/types";
+import { DEFAULT_MIN_SCORE, DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
 import { MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
 import { parseKeyValueList, parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
@@ -33,6 +33,7 @@ export function assertRequiredConfig(): void {
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
   }
+  void config.reranker;
 }
 
 /**
@@ -259,15 +260,27 @@ export const config = {
     }
   },
   /**
-   * How many dimensions to ask the model for.
-   *
-   * Every adapter sends it, because every provider here serves several widths
-   * from one model and none of their defaults is this one — `text-embedding-3-
-   * small` is natively 1536. An index fixes its width at creation, so a
-   * provider left to its default answers with vectors it rejects outright: the
-   * catalog stays empty and the only trace is a background log line.
+   * A dedicated OpenAI-compatible embedding channel. When absent, the default
+   * LLM channel remains the endpoint and credential source.
    */
-  get embeddingDimensions(): number {
+  get embeddingBaseUrl(): string | undefined {
+    return optionalEnv(process.env.EMBEDDING_BASE_URL);
+  },
+  get embeddingApiKey(): string | undefined {
+    return optionalEnv(process.env.EMBEDDING_API_KEY);
+  },
+  /**
+   * How many dimensions to ask the model for, or undefined for its native width.
+   *
+   * Providers that serve several widths need an explicit value — `text-
+   * embedding-3-small` is natively 1536. `native` omits the parameter for a
+   * model that does not expose a dimension choice. Every row still has to use
+   * one width, so changing either form requires a reindex.
+   */
+  get embeddingDimensions(): number | undefined {
+    if (optionalEnv(process.env.EMBEDDING_DIM)?.toLowerCase() === "native") {
+      return undefined;
+    }
     return positiveIntEnv("EMBEDDING_DIM", 1024, 1);
   },
   /**
@@ -280,6 +293,22 @@ export const config = {
    */
   get catalogMinScore(): number {
     return fractionEnv("CATALOG_MIN_SCORE", DEFAULT_MIN_SCORE);
+  },
+  /** A configured reranker is optional, but a partial pair is an error. */
+  get reranker(): { baseUrl: string; apiKey?: string; model: string } | undefined {
+    const baseUrl = optionalEnv(process.env.RERANKER_BASE_URL);
+    const model = optionalEnv(process.env.RERANKER_MODEL);
+    if (!baseUrl && !model) {
+      return undefined;
+    }
+    if (!baseUrl || !model) {
+      throw new Error("RERANKER_BASE_URL and RERANKER_MODEL must be configured together");
+    }
+    const apiKey = optionalEnv(process.env.RERANKER_API_KEY);
+    return { baseUrl, ...(apiKey ? { apiKey } : {}), model };
+  },
+  get rerankerMinScore(): number {
+    return fractionEnv("RERANKER_MIN_SCORE", DEFAULT_RERANKER_MIN_SCORE);
   },
   /**
    * How managed MCP containers are started (`MANAGED_MCP_RUNTIME=docker`, the

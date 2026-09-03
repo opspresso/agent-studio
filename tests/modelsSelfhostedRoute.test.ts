@@ -42,15 +42,17 @@ afterEach(() => {
 describe("GET /api/models/selfhosted", () => {
   it("answers with the stored declarations, what installed, and what the channel serves", async () => {
     loadSelfHostedModels([DECLARED]);
-    listSelfHostedServedModels.mockResolvedValue([
-      { name: "google/gemma-4-e4b", contextWindow: 131072, vision: true },
-    ]);
+    listSelfHostedServedModels.mockResolvedValue({
+      served: [
+        { name: "google/gemma-4-e4b", type: "text", contextWindow: 131072, vision: true },
+      ],
+    });
 
     const res = await GET();
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      served: [{ name: "google/gemma-4-e4b", contextWindow: 131072, vision: true }],
+      served: [{ name: "google/gemma-4-e4b", type: "text", contextWindow: 131072, vision: true }],
       declarations: [DECLARED],
       installed: ["selfhosted/google/gemma-4-e4b"],
     });
@@ -62,7 +64,10 @@ describe("GET /api/models/selfhosted", () => {
    * exactly when the admin most needs to see and prune it.
    */
   it("keeps the declarations editable when the channel does not answer", async () => {
-    listSelfHostedServedModels.mockRejectedValue(new Error("GET http://x/models → 503"));
+    listSelfHostedServedModels.mockResolvedValue({
+      served: null,
+      servedError: "text: GET http://x/models → 503",
+    });
 
     const res = await GET();
 
