@@ -21,6 +21,8 @@ const TOUCHED = [
   "MCP_MAX_SERVER_TTL_MS",
   "MAX_CONCURRENT_RUNS_PER_ACTOR",
   "MAX_CONCURRENT_RUNS_A2A",
+  "EMBEDDING_DIM",
+  "RERANKER_MIN_SCORE",
 ] as const;
 const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
 
@@ -104,6 +106,23 @@ describe("fractionEnv", () => {
 });
 
 describe("the settings that used to parse their own", () => {
+  it("allows an embedding model to choose its native dimension", () => {
+    set("EMBEDDING_DIM", "native");
+    expect(config.embeddingDimensions).toBeUndefined();
+    set("EMBEDDING_DIM", "2560");
+    expect(config.embeddingDimensions).toBe(2560);
+  });
+
+  it("clamps the reranker relevance floor", () => {
+    set("RERANKER_MIN_SCORE", "2");
+    expect(config.rerankerMinScore).toBe(1);
+  });
+
+  it("uses the measured capability reranker noise floor by default", () => {
+    set("RERANKER_MIN_SCORE", undefined);
+    expect(config.rerankerMinScore).toBe(0.01);
+  });
+
   it("keeps concurrency settings inside the stored slot-key range", () => {
     set("MAX_CONCURRENT_RUNS_PER_ACTOR", "1000");
     set("MAX_CONCURRENT_RUNS_A2A", "1000");

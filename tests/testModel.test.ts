@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createTestModel } from "@/application/llm/testModel";
 import { ValidationError } from "@/application/errors";
 import type { LlmChannel } from "@/domain/llm/channel";
 import { FakeChannel } from "./fakeChannel";
+import { loadSelfHostedModels } from "@/domain/llm/models";
 
 const KNOWN_MODEL = "openai/gpt-5.4";
+
+afterEach(() => {
+  loadSelfHostedModels([]);
+});
 
 function failingChannel(message: string): LlmChannel {
   return {
@@ -67,6 +72,33 @@ describe("createTestModel", () => {
     await expect(
       createTestModel(channel)("openrouter/text-embedding-3-small"),
     ).rejects.toThrow("Embedding model cannot be tested through chat completion");
+    expect(channel.seenParams).toHaveLength(0);
+  });
+
+  it("does not send a reranker model to chat completion", async () => {
+    const channel = new FakeChannel([[]]);
+    loadSelfHostedModels([
+      {
+        id: "selfhosted/reranker",
+        provider: "selfhosted",
+        family: "reranker",
+        maker: "local",
+        displayName: "Reranker",
+        pricing: { inputPer1M: 0, outputPer1M: 0 },
+        capabilities: {
+          tools: false,
+          structuredOutput: false,
+          imageInput: false,
+          reasoning: false,
+          reranking: true,
+        },
+        contextWindow: 32768,
+        maxTokens: 0,
+      },
+    ]);
+    await expect(createTestModel(channel)("selfhosted/reranker")).rejects.toThrow(
+      "Reranker model cannot be tested through chat completion",
+    );
     expect(channel.seenParams).toHaveLength(0);
   });
 });

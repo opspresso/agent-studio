@@ -66,6 +66,34 @@ describe("loadSelfHostedModels", () => {
     ]);
   });
 
+  it("registers embedding and reranker models without offering them to projects", () => {
+    loadSelfHostedModels([
+      declaration("Qwen/Qwen3-Embedding-4B", {
+        capabilities: {
+          tools: false,
+          structuredOutput: false,
+          imageInput: false,
+          reasoning: false,
+          embedding: true,
+        },
+        maxTokens: 0,
+      }),
+      declaration("Qwen/Qwen3-Reranker-0.6B", {
+        capabilities: {
+          tools: false,
+          structuredOutput: false,
+          imageInput: false,
+          reasoning: false,
+          reranking: true,
+        },
+        maxTokens: 0,
+      }),
+    ]);
+    expect(getModelConfig("selfhosted/Qwen/Qwen3-Embedding-4B")?.capabilities.embedding).toBe(true);
+    expect(getModelConfig("selfhosted/Qwen/Qwen3-Reranker-0.6B")?.capabilities.reranking).toBe(true);
+    expect(offeredModels(["selfhosted"], undefined)).toEqual([]);
+  });
+
   it("refuses a route that is not self-hosted", () => {
     const report = loadSelfHostedModels([
       {

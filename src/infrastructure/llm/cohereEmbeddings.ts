@@ -23,6 +23,8 @@ import { InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import type { EmbeddingPort, EmbeddingPurpose } from "@/domain/vector/types";
 import { bedrockRuntime } from "./bedrockClient";
 import { config } from "@/lib/config";
+import { getEmbeddingModel } from "@/lib/runtime-settings";
+import { wireModelId } from "@/domain/llm/models";
 
 /** Cohere's own names for the two sides of a search. */
 const INPUT_TYPE: Record<EmbeddingPurpose, string> = {
@@ -42,12 +44,13 @@ export const cohereEmbeddings: EmbeddingPort = {
     if (texts.length === 0) {
       return [];
     }
+    const model = wireModelId(await getEmbeddingModel());
     const vectors: number[][] = [];
     for (let start = 0; start < texts.length; start += BATCH) {
       const batch = texts.slice(start, start + BATCH);
       const response = await bedrockRuntime().send(
         new InvokeModelCommand({
-          modelId: config.embeddingModel,
+          modelId: model,
           contentType: "application/json",
           accept: "application/json",
           body: JSON.stringify({
@@ -55,7 +58,9 @@ export const cohereEmbeddings: EmbeddingPort = {
             input_type: INPUT_TYPE[purpose],
             embedding_types: ["float"],
             // The index was created for exactly one width; v4 serves several.
-            output_dimension: config.embeddingDimensions,
+            ...(config.embeddingDimensions !== undefined
+              ? { output_dimension: config.embeddingDimensions }
+              : {}),
           }),
         }),
       );
@@ -69,7 +74,7 @@ export const cohereEmbeddings: EmbeddingPort = {
       const batchVectors = Array.isArray(embeddings) ? embeddings : embeddings?.float;
       if (!batchVectors || batchVectors.length !== batch.length) {
         throw new Error(
-          `Cohere model ${config.embeddingModel} returned ${batchVectors?.length ?? 0} vectors for ${batch.length} inputs`,
+          `Cohere model ${model} returned ${batchVectors?.length ?? 0} vectors for ${batch.length} inputs`,
         );
       }
       vectors.push(...batchVectors);

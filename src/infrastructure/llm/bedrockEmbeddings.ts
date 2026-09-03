@@ -17,6 +17,8 @@ import { InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import type { EmbeddingPort } from "@/domain/vector/types";
 import { bedrockRuntime } from "./bedrockClient";
 import { config } from "@/lib/config";
+import { getEmbeddingModel } from "@/lib/runtime-settings";
+import { wireModelId } from "@/domain/llm/models";
 
 /**
  * Titan embeds **one text per request** — there is no batch form — so a reindex
@@ -26,10 +28,10 @@ import { config } from "@/lib/config";
  */
 const CONCURRENCY = 8;
 
-async function embedOne(text: string): Promise<number[]> {
+async function embedOne(text: string, model: string): Promise<number[]> {
   const response = await bedrockRuntime().send(
     new InvokeModelCommand({
-      modelId: config.embeddingModel,
+      modelId: model,
       contentType: "application/json",
       accept: "application/json",
       body: JSON.stringify({
@@ -37,7 +39,9 @@ async function embedOne(text: string): Promise<number[]> {
         // Titan v2 serves several dimensions from one model, and the index was
         // created for exactly one of them. Asking for it explicitly is what
         // keeps a default change from producing vectors the index rejects.
-        dimensions: config.embeddingDimensions,
+        ...(config.embeddingDimensions !== undefined
+          ? { dimensions: config.embeddingDimensions }
+          : {}),
         // Unit-length vectors, so cosine distance is the metric the index was
         // built with rather than something proportional to it.
         normalize: true,
@@ -50,7 +54,7 @@ async function embedOne(text: string): Promise<number[]> {
       ? (decoded as { embedding?: unknown }).embedding
       : undefined;
   if (!Array.isArray(embedding)) {
-    throw new Error(`Bedrock model ${config.embeddingModel} returned no embedding`);
+    throw new Error(`Bedrock model ${model} returned no embedding`);
   }
   return embedding as number[];
 }
@@ -60,10 +64,11 @@ export const bedrockEmbeddings: EmbeddingPort = {
   // read here. Stating it is still the caller's job — which model cares is the
   // adapter's business, not theirs.
   async embed(texts) {
+    const model = wireModelId(await getEmbeddingModel());
     const vectors: number[][] = new Array<number[]>(texts.length);
     for (let start = 0; start < texts.length; start += CONCURRENCY) {
       const wave = texts.slice(start, start + CONCURRENCY);
-      const embedded = await Promise.all(wave.map((text) => embedOne(text)));
+      const embedded = await Promise.all(wave.map((text) => embedOne(text, model)));
       // Written back by absolute position rather than pushed: `Promise.all`
       // preserves order within a wave, and the offset is what keeps the waves
       // in order too — a vector paired with the wrong entry is the failure this

@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getVisibleModels, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 
-const { getLlmProviderConfigs, getHiddenModels, modelPreferenceUseCases } = vi.hoisted(() => ({
+const {
+  getLlmProviderConfigs,
+  getHiddenModels,
+  getEmbeddingModelSelection,
+  getRerankerModelSelection,
+  modelPreferenceUseCases,
+} = vi.hoisted(() => ({
   getLlmProviderConfigs: vi.fn(),
   getHiddenModels: vi.fn(),
+  getEmbeddingModelSelection: vi.fn(),
+  getRerankerModelSelection: vi.fn(),
   modelPreferenceUseCases: { list: vi.fn() },
 }));
 
@@ -13,7 +21,12 @@ vi.mock("@/lib/session", () => ({
     (...args: unknown[]) =>
       handler({ id: "u1", email: "admin@example.com", name: "A", image: null }, ...args),
 }));
-vi.mock("@/lib/runtime-settings", () => ({ getLlmProviderConfigs, getHiddenModels }));
+vi.mock("@/lib/runtime-settings", () => ({
+  getLlmProviderConfigs,
+  getHiddenModels,
+  getEmbeddingModelSelection,
+  getRerankerModelSelection,
+}));
 vi.mock("@/lib/container", () => ({ modelPreferenceUseCases }));
 
 const { GET } = await import("@/app/api/models/catalog/route");
@@ -22,11 +35,16 @@ interface CatalogBody {
   providers: Array<{ name: string; available: boolean; dedicated: boolean }>;
   models: Array<{
     id: string;
-    type: "text" | "image" | "embedding";
+    type: "text" | "image" | "embedding" | "reranker";
     selectionHidden: boolean;
     favorite: boolean;
   }>;
   source: "override" | "default";
+  selections: {
+    embedding: { model: string; source: string };
+    reranker?: { model: string; source: string };
+  };
+  selectionAvailable: { embedding: boolean; reranker: boolean };
 }
 
 async function catalog(): Promise<CatalogBody> {
@@ -40,6 +58,8 @@ beforeEach(() => {
   getLlmProviderConfigs.mockResolvedValue([]);
   getHiddenModels.mockResolvedValue(undefined);
   modelPreferenceUseCases.list.mockResolvedValue([]);
+  getEmbeddingModelSelection.mockResolvedValue({ model: "openrouter/qwen3-embedding-4b", source: "env" });
+  getRerankerModelSelection.mockResolvedValue(undefined);
 });
 
 describe("GET /api/models/catalog", () => {
@@ -61,6 +81,11 @@ describe("GET /api/models/catalog", () => {
     expect(new Set(body.models.map((model) => model.type))).toEqual(
       new Set(["text", "image", "embedding"]),
     );
+    expect(body.selections.embedding).toEqual({
+      model: "openrouter/qwen3-embedding-4b",
+      source: "env",
+    });
+    expect(body.selectionAvailable).toEqual({ embedding: false, reranker: false });
     expect(body.source).toBe("default");
   });
 

@@ -39,7 +39,7 @@ export function modelPriceLabel(
   type: ModelType = "text",
 ): string {
   const { inputPer1M, outputPer1M, imageOutputPer1M, perImage } = pricing;
-  if (type === "embedding") {
+  if (type === "embedding" || type === "reranker") {
     return `${formatUsd(inputPer1M)} in per 1M`;
   }
   if (imageOutputPer1M === undefined && perImage === undefined) {

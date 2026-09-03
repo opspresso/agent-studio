@@ -67,7 +67,7 @@ Release workflow는 새 tag를 `argocd-env-demo`에 전달한다. Kubernetes man
 ## 폐쇄망
 
 부팅·로그인·런·콘솔은 public internet 없이 동작한다. 이미지는 외부에서 빌드해 사내 registry로
-mirror하고, 모델은 사내 OpenAI 호환 endpoint를 사용한다. 모델 catalog는 `/models`에서 문서를
+mirror하고, 모델은 사내 OpenAI 호환 LLM·embedding·reranker endpoint를 사용한다. 모델 catalog는 `/models`에서 문서를
 업로드할 수 있고, plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
 주소는 각각 `URL_FETCH_INTERNAL_HOST_SUFFIXES`, `MCP_INTERNAL_HOST_SUFFIXES`에 선언한다.
 

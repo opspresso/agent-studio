@@ -14,6 +14,8 @@ const FIELDS = [
   "allowedEmailDomains",
   "llmBaseUrl",
   "llmApiKey",
+  "embeddingModel",
+  "rerankerModel",
   "pluginsRepo",
   "pluginsRepoBranch",
   "githubToken",

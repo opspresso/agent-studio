@@ -9,7 +9,7 @@
  * the zero price that is a self-hosted route's defining fact.
  */
 
-import type { ModelConfig } from "./models";
+import { modelType, type ModelCapabilities, type ModelConfig, type ModelType } from "./models";
 
 /** What an operator states about one self-hosted model — the declaration form. */
 export interface SelfHostedModelInput {
@@ -18,6 +18,7 @@ export interface SelfHostedModelInput {
   displayName: string;
   /** Defaults to the family's vendor segment when it has one, else `local`. */
   maker?: string;
+  type: ModelType;
   contextWindow: number;
   maxTokens: number;
   capabilities: {
@@ -38,7 +39,7 @@ export interface SelfHostedModelDeclaration {
   displayName: string;
   /** Always zeros — running your own hardware bills no tokens. */
   pricing: { inputPer1M: number; outputPer1M: number };
-  capabilities: SelfHostedModelInput["capabilities"];
+  capabilities: ModelCapabilities;
   contextWindow: number;
   maxTokens: number;
 }
@@ -54,6 +55,14 @@ export function selfHostedModelFromInput(input: SelfHostedModelInput): SelfHoste
   const family = input.family.trim();
   const slash = family.indexOf("/");
   const maker = input.maker?.trim() || (slash > 0 ? family.slice(0, slash) : "local");
+  const capabilities: ModelCapabilities = {
+    ...(input.type === "text"
+      ? input.capabilities
+      : { tools: false, structuredOutput: false, imageInput: false, reasoning: false }),
+    ...(input.type === "image" ? { imageGeneration: true } : {}),
+    ...(input.type === "embedding" ? { embedding: true } : {}),
+    ...(input.type === "reranker" ? { reranking: true } : {}),
+  };
   return {
     id: `selfhosted/${family}`,
     provider: "selfhosted",
@@ -61,7 +70,7 @@ export function selfHostedModelFromInput(input: SelfHostedModelInput): SelfHoste
     maker,
     displayName: input.displayName.trim(),
     pricing: { inputPer1M: 0, outputPer1M: 0 },
-    capabilities: { ...input.capabilities },
+    capabilities,
     contextWindow: input.contextWindow,
     maxTokens: input.maxTokens,
   };
@@ -73,6 +82,7 @@ export function selfHostedModelToInput(model: ModelConfig): SelfHostedModelInput
     family: model.family,
     displayName: model.displayName,
     maker: model.maker,
+    type: modelType(model),
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,
     capabilities: {

@@ -42,6 +42,12 @@ describe("modelPriceLabel", () => {
     );
   });
 
+  it("prices a reranker on input only", () => {
+    expect(modelPriceLabel({ inputPer1M: 0.02, outputPer1M: 0 }, "reranker")).toBe(
+      "$0.02 in per 1M",
+    );
+  });
+
   it("marks a per-image figure as approximate when the model bills by token", () => {
     expect(
       modelPriceLabel({ inputPer1M: 2, outputPer1M: 12, imageOutputPer1M: 120, perImage: 0.134 }),

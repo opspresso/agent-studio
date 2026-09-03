@@ -117,6 +117,8 @@ describe("model registry invariants", () => {
           .toBe(first?.capabilities.imageGeneration ?? false);
         expect(route.capabilities.embedding ?? false, `${family}: routes disagree on kind`)
           .toBe(first?.capabilities.embedding ?? false);
+        expect(route.capabilities.reranking ?? false, `${family}: routes disagree on kind`)
+          .toBe(first?.capabilities.reranking ?? false);
       }
     }
   });
@@ -155,6 +157,7 @@ describe("model registry invariants", () => {
       (m) =>
         !m.capabilities.imageGeneration &&
         !m.capabilities.embedding &&
+        !m.capabilities.reranking &&
         !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(m.provider),
     )) {
       expect(model.pricing.inputPer1M, `${model.id}: no input price`).toBeGreaterThan(0);
@@ -300,7 +303,7 @@ describe("contextWindowLabel", () => {
    */
   it("states both figures for every registered model", () => {
     for (const model of listModels()) {
-      if (modelType(model) === "embedding") {
+      if (modelType(model) === "embedding" || modelType(model) === "reranker") {
         expect(contextWindowLabel(model), model.id).toMatch(/^Context \d[\d.]*[KM]?$/);
         continue;
       }
@@ -314,9 +317,9 @@ describe("contextWindowLabel", () => {
 describe("offeredModels", () => {
   it("offers every visible execution model with no provider channels and no hidden override", () => {
     expect(offeredModels([], undefined)).toEqual(
-      getVisibleModels().filter((model) => modelType(model) !== "embedding"),
+      getVisibleModels().filter((model) => ["text", "image"].includes(modelType(model))),
     );
-    expect(offeredModels([], undefined).every((model) => modelType(model) !== "embedding")).toBe(true);
+    expect(offeredModels([], undefined).every((model) => ["text", "image"].includes(modelType(model)))).toBe(true);
   });
 
   it("narrows to the configured providers", () => {
@@ -329,7 +332,7 @@ describe("offeredModels", () => {
     const offered = offeredModels([], ["openai/gpt-5.4", "openai/retired-model"]);
     expect(offered.map((m) => m.id)).not.toContain("openai/gpt-5.4");
     expect(offered.length).toBe(
-      getVisibleModels().filter((model) => modelType(model) !== "embedding").length - 1,
+      getVisibleModels().filter((model) => ["text", "image"].includes(modelType(model))).length - 1,
     );
   });
 

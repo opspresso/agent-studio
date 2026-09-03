@@ -296,7 +296,8 @@ async function discoverCapabilities(
   // discovered a document store. What a tool hit knows that a server hit does
   // not — which tools matched — is kept as the binding's narrowing below, not
   // as a ranking privilege. The scores are comparable: one embedding space,
-  // and each kind was already cut against its own best.
+  // or one reranker when configured, and each kind was already cut against its
+  // own best.
   const candidates = new Map<string, { score: number; tools: string[] }>();
   for (const match of toolHits) {
     const entry = candidates.get(match.name) ?? { score: 0, tools: [] };

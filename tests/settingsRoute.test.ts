@@ -6,7 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * stripped even though `SettingsUpdate` is typed over every `SettingKey`. That
  * happened once to the repo-sync keys: the view exposed them and the runtime
  * read the stored override, but no request could set it. This pins the schema
- * against the keys the runtime actually consumes.
+ * against the keys this general editor owns. Embedding and reranker selections
+ * intentionally use `/api/models/selection`, where type checks and migration
+ * approval cannot be bypassed.
  */
 const { useCases } = vi.hoisted(() => ({
   useCases: { update: vi.fn(), getView: vi.fn() },
@@ -89,6 +91,19 @@ describe("PUT /api/settings", () => {
     const res = await put(body);
     expect(res.status).toBe(200);
     expect(useCases.update).toHaveBeenCalledWith(body, "admin@example.com");
+  });
+
+  it("does not bypass model selection and embedding migration", async () => {
+    const res = await put({
+      pluginsRepo: "org/plugins",
+      embeddingModel: "selfhosted/other-embedding",
+      rerankerModel: "selfhosted/other-reranker",
+    });
+    expect(res.status).toBe(200);
+    expect(useCases.update).toHaveBeenCalledWith(
+      { pluginsRepo: "org/plugins" },
+      "admin@example.com",
+    );
   });
 
   it("400s on a hiddenModels that is not a string array", async () => {

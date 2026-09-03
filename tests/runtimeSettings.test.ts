@@ -11,8 +11,10 @@ import { settingsRepository } from "@/infrastructure/db/repositories/settingsRep
 import {
   getArtifactAccessMode,
   getAdminEmails,
+  getEmbeddingModelSelection,
   getLlmChannelConfig,
   getLlmProviderConfigs,
+  getRerankerModelSelection,
   invalidateSettingsCache,
   isAdminEmail,
   isConfiguredAdmin,
@@ -32,6 +34,8 @@ const ENV_KEYS = [
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
   "ARTIFACT_ACCESS_MODE",
+  "EMBEDDING_MODEL",
+  "RERANKER_MODEL",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -123,6 +127,35 @@ describe("runtime settings precedence", () => {
         auth: "bearer",
       },
     ]);
+  });
+
+  it("resolves embedding and reranker selections from DB before env", async () => {
+    process.env.EMBEDDING_MODEL = "openrouter/qwen3-embedding-4b";
+    process.env.RERANKER_MODEL = "selfhosted/env-reranker";
+    stub({
+      embeddingModel: "selfhosted/Qwen/Qwen3-Embedding-4B",
+      rerankerModel: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    await expect(getEmbeddingModelSelection()).resolves.toEqual({
+      model: "selfhosted/Qwen/Qwen3-Embedding-4B",
+      source: "override",
+    });
+    await expect(getRerankerModelSelection()).resolves.toEqual({
+      model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      source: "override",
+    });
+
+    invalidateSettingsCache();
+    stub(null);
+    await expect(getEmbeddingModelSelection()).resolves.toEqual({
+      model: "openrouter/qwen3-embedding-4b",
+      source: "env",
+    });
+    await expect(getRerankerModelSelection()).resolves.toEqual({
+      model: "selfhosted/env-reranker",
+      source: "env",
+    });
   });
 
   it("caches reads until invalidated", async () => {

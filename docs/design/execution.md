@@ -184,7 +184,8 @@ flowchart TB
   `ModelConfig { id, provider, family, maker, displayName, pricing { inputPer1M, outputPer1M,
   cachedInputPer1M?, imageInputPer1M?, imageOutputPer1M?, perImage?, perInputImage? },
   capabilities { tools, structuredOutput, imageInput, reasoning, reasoningWithTools?,
-  imageGeneration? }, contextWindow, maxTokens, hidden?, wireId? }`. `wireId` 와 drift 검사는
+  imageGeneration?, embedding?, reranking? }, contextWindow, maxTokens, hidden?, wireId? }`.
+  타입은 Text·Image·Embedding·Reranker 중 하나다. `wireId` 와 drift 검사는
   [CONFIGURATION.md](../CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그) 참고.
 
 ## Images

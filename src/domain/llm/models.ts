@@ -116,6 +116,8 @@ export interface ModelCapabilities {
   imageGeneration?: boolean;
   /** Produces vectors through an embeddings endpoint rather than generated tokens. */
   embedding?: boolean;
+  /** Scores query/document pairs through a reranking endpoint. */
+  reranking?: boolean;
   /**
    * False when the provider rejects `tools` together with `reasoning_effort`
    * on chat/completions (the provider's remedy is an explicit effort of
@@ -124,7 +126,7 @@ export interface ModelCapabilities {
   reasoningWithTools?: boolean;
 }
 
-export type ModelType = "text" | "image" | "embedding";
+export type ModelType = "text" | "image" | "embedding" | "reranker";
 
 export interface ModelConfig {
   /** `provider/family`, e.g. `google/gemini-3.1-flash-lite`. */
@@ -202,7 +204,12 @@ const PRICING_RATE_KEYS = [
   "perInputImage",
 ] as const;
 const CAPABILITY_KEYS = ["tools", "structuredOutput", "imageInput", "reasoning"] as const;
-const OPTIONAL_CAPABILITY_KEYS = ["imageGeneration", "embedding", "reasoningWithTools"] as const;
+const OPTIONAL_CAPABILITY_KEYS = [
+  "imageGeneration",
+  "embedding",
+  "reranking",
+  "reasoningWithTools",
+] as const;
 
 /**
  * Why a catalog entry cannot be installed, or null when it can. Strict on the
@@ -253,12 +260,17 @@ function rejectReason(entry: unknown): string | null {
   }
   const imageGeneration = entry.capabilities.imageGeneration === true;
   const embedding = entry.capabilities.embedding === true;
-  if (imageGeneration && embedding) {
-    return "a model may not be both imageGeneration and embedding";
+  const reranking = entry.capabilities.reranking === true;
+  if ([imageGeneration, embedding, reranking].filter(Boolean).length > 1) {
+    return "a model may have only one of imageGeneration, embedding and reranking";
   }
-  if (embedding) {
-    if (!((entry.pricing.inputPer1M as number) > 0) || entry.pricing.outputPer1M !== 0) {
-      return "an embedding model needs an input price above zero and an output price of zero";
+  if (embedding || reranking) {
+    if (
+      (!(SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider) &&
+        !((entry.pricing.inputPer1M as number) > 0)) ||
+      entry.pricing.outputPer1M !== 0
+    ) {
+      return `${embedding ? "an embedding" : "a reranker"} model needs an input price above zero and an output price of zero`;
     }
   } else if (!imageGeneration) {
     // An unpriced text model is worse than a missing one: the lookup succeeds
@@ -272,6 +284,7 @@ function rejectReason(entry: unknown): string | null {
       return "a text model needs input and output prices above zero";
     }
   } else if (
+    !(SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider) &&
     !(((entry.pricing.imageOutputPer1M as number | undefined) ?? 0) > 0) &&
     !(((entry.pricing.perImage as number | undefined) ?? 0) > 0)
   ) {
@@ -281,11 +294,11 @@ function rejectReason(entry: unknown): string | null {
     return "contextWindow is not a positive integer or zero for an image model";
   }
   if (
-    embedding
+    embedding || reranking
       ? entry.maxTokens !== 0
       : !isCount(entry.maxTokens) && !(imageGeneration && entry.maxTokens === 0)
   ) {
-    return "maxTokens must be zero for an embedding model, otherwise a positive integer or zero for an image model";
+    return "maxTokens must be zero for an embedding or reranker model, otherwise a positive integer or zero for an image model";
   }
   if ((entry.maxTokens as number) > (entry.contextWindow as number)) {
     return "maxTokens exceeds contextWindow";
@@ -394,7 +407,8 @@ function parseCatalog(catalog: unknown): { state: RegistryState; report: ModelCa
       first.maker !== model.maker ||
       first.contextWindow !== model.contextWindow ||
       (first.capabilities.imageGeneration ?? false) !== (model.capabilities.imageGeneration ?? false) ||
-      (first.capabilities.embedding ?? false) !== (model.capabilities.embedding ?? false);
+      (first.capabilities.embedding ?? false) !== (model.capabilities.embedding ?? false) ||
+      (first.capabilities.reranking ?? false) !== (model.capabilities.reranking ?? false);
     if (disagrees) {
       skipped.push(`${model.id} — disagrees with ${first.id} about what ${model.family} is`);
       byId.delete(model.id);
@@ -479,7 +493,8 @@ export function selfHostedModelRejectReason(entry: unknown): string | null {
       first.contextWindow !== declared.contextWindow ||
       (first.capabilities.imageGeneration ?? false) !==
         (declared.capabilities.imageGeneration ?? false) ||
-      (first.capabilities.embedding ?? false) !== (declared.capabilities.embedding ?? false);
+      (first.capabilities.embedding ?? false) !== (declared.capabilities.embedding ?? false) ||
+      (first.capabilities.reranking ?? false) !== (declared.capabilities.reranking ?? false);
     if (disagrees) {
       return `disagrees with ${first.id} about what ${family} is`;
     }
@@ -631,9 +646,10 @@ export function getVisibleModels(): ModelConfig[] {
   return listModels().filter((m) => !m.hidden);
 }
 
-/** The catalog's three mutually exclusive model types, derived from capability flags. */
+/** The catalog's mutually exclusive model types, derived from capability flags. */
 export function modelType(model: Pick<ModelConfig, "capabilities">): ModelType {
   if (model.capabilities.embedding === true) return "embedding";
+  if (model.capabilities.reranking === true) return "reranker";
   if (model.capabilities.imageGeneration === true) return "image";
   return "text";
 }
@@ -669,7 +685,7 @@ export function contextWindowLabel(
   model: Pick<ModelConfig, "contextWindow" | "maxTokens"> &
     Partial<Pick<ModelConfig, "capabilities">>,
 ): string {
-  if (model.capabilities?.embedding === true) {
+  if (model.capabilities?.embedding === true || model.capabilities?.reranking === true) {
     return `Context ${roundTokens(model.contextWindow)}`;
   }
   return `Context ${roundTokens(model.contextWindow)} · max out ${roundTokens(model.maxTokens)}`;
@@ -707,7 +723,7 @@ export function offeredModels(
   const hidden = new Set(hiddenIds ?? []);
   return getVisibleModels().filter(
     (model) =>
-      modelType(model) !== "embedding" &&
+      (modelType(model) === "text" || modelType(model) === "image") &&
       providerOffered(model.provider, providers) &&
       !hidden.has(model.id),
   );

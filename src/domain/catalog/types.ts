@@ -47,6 +47,9 @@ export type CapabilityKind = "skill" | "mcpServer" | "mcpTool" | "agent";
  */
 export const DEFAULT_MIN_SCORE = 0.25;
 
+/** Default relevance floor for an activation-scored reranker. */
+export const DEFAULT_RERANKER_MIN_SCORE = 0.01;
+
 export interface CapabilityEntry {
   kind: CapabilityKind;
   /** The registry name this is addressed by; for a tool, its server's name. */

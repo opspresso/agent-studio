@@ -93,6 +93,7 @@ import {
 import { createCompositeModelCatalogSource } from "@/application/llm/modelCatalogStoredSource";
 import { createModelCatalogDocumentUseCases } from "@/application/llm/modelCatalogDocument";
 import { createModelPreferenceUseCases } from "@/application/llm/modelPreferences";
+import { createModelSelectionUseCases } from "@/application/llm/modelSelection";
 import { modelPreferencesRepository } from "@/infrastructure/db/repositories/modelPreferencesRepository";
 import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
 import { modelCatalogRepository } from "@/infrastructure/db/repositories/modelCatalogRepository";
@@ -109,6 +110,7 @@ import { log } from "@/shared/logger";
 import { bedrockEmbeddings } from "@/infrastructure/llm/bedrockEmbeddings";
 import { cohereEmbeddings } from "@/infrastructure/llm/cohereEmbeddings";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
+import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
 import { deleteExpired } from "@/infrastructure/db/store";
 import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
@@ -151,18 +153,23 @@ import { createArtifactUseCases } from "@/application/artifact/artifactUseCases"
 import {
   getHiddenModels,
   getAdminEmails,
+  getEmbeddingChannelConfig,
+  getEmbeddingModel,
   getLlmChannelConfig,
   getLlmProviderConfigs,
   getPluginsRepoConfig,
   getPublicBaseUrl,
   getSelfHostedModels,
+  getRerankerModel,
+  getRerankerModelSelection,
   getUnknownModelPolicy,
+  invalidateSettingsCache,
   isConfiguredAdmin,
 } from "./runtime-settings";
 import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
 import { DEFAULT_MEMBER_TIER, type MemberTier } from "@/domain/member/tiers";
-import { offeredModels, SELF_HOSTED_PROVIDERS } from "@/domain/llm/models";
+import { offeredModels, SELF_HOSTED_PROVIDERS, wireModelId } from "@/domain/llm/models";
 import { composeCreateProjectWithInitialVersion } from "@/application/project/createProjectFlow";
 import { composeCloneProject } from "@/application/project/cloneProjectFlow";
 
@@ -291,21 +298,50 @@ export const modelCatalogDocumentUseCases = createModelCatalogDocumentUseCases(
 export const modelPreferenceUseCases = createModelPreferenceUseCases(modelPreferencesRepository);
 
 /**
- * What the self-hosted channel is serving right now — the declaration aid on
- * the /models console. Asks the channel's own `/models` listing, which is the
- * only party that knows; declaring is still the admin's act, through
- * `PUT /api/settings`.
+ * What the self-hosted text, embedding and reranker channels are serving right
+ * now — the declaration aid on the /models console. Each channel's own
+ * `/models` listing is the only party that knows; declaring is still the
+ * admin's act through `PUT /api/settings`.
  */
 export const listSelfHostedServedModels = async () => {
   const providers = await getLlmProviderConfigs();
   const channel = providers.find((provider) =>
     (SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider.name),
   );
-  if (channel === undefined) {
+  const channels = [
+    ...(channel ? [{ channel, type: "text" as const }] : []),
+    ...(config.embeddingProvider === "openai" && config.embeddingBaseUrl
+      ? [
+          {
+            channel: {
+              baseUrl: config.embeddingBaseUrl,
+              apiKey: config.embeddingApiKey ?? "not-required",
+            },
+            type: "embedding" as const,
+          },
+        ]
+      : []),
+    ...(RERANKER
+      ? [
+          {
+            channel: {
+              baseUrl: RERANKER.baseUrl,
+              apiKey: RERANKER.apiKey ?? "",
+            },
+            type: "reranker" as const,
+          },
+        ]
+      : []),
+  ];
+  if (channels.length === 0) {
     throw new ValidationError("No self-hosted provider channel is configured");
   }
   const { listServedSelfHostedModels } = await import("@/infrastructure/llm/selfHostedDiscovery");
-  return listServedSelfHostedModels(channel);
+  return (
+    await Promise.all(
+      channels.map(({ channel: target, type }) => listServedSelfHostedModels(target, type)),
+    )
+  ).flat();
 };
 
 const remoteAgents: RemoteAgentDispatcher = {
@@ -441,6 +477,8 @@ const EMBEDDINGS = {
   openai: openAiEmbeddings,
 } as const;
 
+const RERANKER = config.reranker;
+
 /**
  * The capability catalog, when this deployment turned it on. Undefined where
  * it did not: the reindex endpoint answers 503 and a run resolves exactly the
@@ -477,11 +515,20 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
       embeddings: cacheQueryEmbeddings(
         EMBEDDINGS[config.embeddingProvider],
         config.embeddingProvider === "openai"
-          ? async () => `${(await getLlmChannelConfig()).baseUrl}|${config.embeddingModel}`
-          : () => config.embeddingModel,
+          ? async () => `${(await getEmbeddingChannelConfig()).baseUrl}|${await getEmbeddingModel()}`
+          : getEmbeddingModel,
       ),
       catalog: createPgVectorStore("catalog_vectors"),
       minScore: config.catalogMinScore,
+      ...(RERANKER
+        ? {
+            reranker: createReranker({
+              ...RERANKER,
+              model: async () => wireModelId(await getRerankerModel()),
+            }),
+            rerankerMinScore: config.rerankerMinScore,
+          }
+        : {}),
     }
   : undefined;
 
@@ -528,6 +575,34 @@ export const triggerUseCases = createTriggerUseCases({
   cipher: secretCipher,
 });
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
+export const modelSelectionUseCases = createModelSelectionUseCases({
+  repository: settingsRepository,
+  settings: settingsUseCases,
+  current: async (type) =>
+    type === "embedding"
+      ? getEmbeddingModel()
+      : (await getRerankerModelSelection())?.model,
+  available: (type) =>
+    type === "embedding" ? catalogDeps !== undefined : RERANKER !== undefined,
+  hidden: getHiddenModels,
+  ...(RERANKER
+    ? {
+        testReranker: async (model: string) => {
+          await createReranker({
+            ...RERANKER,
+            model: () => wireModelId(model),
+          }).rerank("ping", ["ping"]);
+        },
+      }
+    : {}),
+  invalidate: invalidateSettingsCache,
+  ...(catalogDeps
+    ? {
+        reindex: async () =>
+          (await import("@/application/catalog/reindexCatalog")).reindexCatalog(catalogDeps),
+      }
+    : {}),
+});
 
 /**
  * Pull the Agent Plugins repo and sync every plugin's skills and MCP servers.

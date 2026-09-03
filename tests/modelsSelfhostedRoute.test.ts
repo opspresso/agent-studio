@@ -43,14 +43,14 @@ describe("GET /api/models/selfhosted", () => {
   it("answers with the stored declarations, what installed, and what the channel serves", async () => {
     loadSelfHostedModels([DECLARED]);
     listSelfHostedServedModels.mockResolvedValue([
-      { name: "google/gemma-4-e4b", contextWindow: 131072, vision: true },
+      { name: "google/gemma-4-e4b", type: "text", contextWindow: 131072, vision: true },
     ]);
 
     const res = await GET();
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      served: [{ name: "google/gemma-4-e4b", contextWindow: 131072, vision: true }],
+      served: [{ name: "google/gemma-4-e4b", type: "text", contextWindow: 131072, vision: true }],
       declarations: [DECLARED],
       installed: ["selfhosted/google/gemma-4-e4b"],
     });

@@ -62,6 +62,8 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
   },
   { key: "llmBaseUrl", secret: false, env: () => optionalEnv(env.LLM_BASE_URL) },
   { key: "llmApiKey", secret: true, env: () => optionalEnv(env.LLM_API_KEY) },
+  { key: "embeddingModel", secret: false, env: () => optionalEnv(env.EMBEDDING_MODEL) },
+  { key: "rerankerModel", secret: false, env: () => optionalEnv(env.RERANKER_MODEL) },
   { key: "pluginsRepo", secret: false, env: () => optionalEnv(env.PLUGINS_REPO) },
   {
     key: "pluginsRepoBranch",

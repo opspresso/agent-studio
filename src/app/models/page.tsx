@@ -21,7 +21,12 @@ import {
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { IconChevronDown, IconChevronUp, IconCpu, IconStar } from "@tabler/icons-react";
-import { contextWindowLabel, type ModelConfig, type ModelType } from "@/domain/llm/models";
+import {
+  contextWindowLabel,
+  modelType,
+  type ModelConfig,
+  type ModelType,
+} from "@/domain/llm/models";
 import {
   selfHostedModelToInput,
   type SelfHostedModelInput,
@@ -35,7 +40,12 @@ import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { LoadingText } from "@/app/_components/PageState";
 import { BADGE } from "@/app/_components/badgeColors";
-import { modelPriceLabel } from "@/app/_components/modelOptions";
+import {
+  modelSelectData,
+  modelPriceLabel,
+  renderModelOption,
+  selectOnFocus,
+} from "@/app/_components/modelOptions";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
@@ -50,6 +60,7 @@ import {
 } from "./modelTable";
 import { reportError } from "@/app/_lib/reportError";
 import type { ModelsCatalogResponse } from "@/app/api/models/catalog/route";
+import { useConfirm } from "@/app/_components/useConfirm";
 
 type CatalogProvider = ModelsCatalogResponse["providers"][number];
 type CatalogModel = ModelsCatalogResponse["models"][number];
@@ -80,11 +91,12 @@ const CAPABILITY_COLUMNS = [
   ["reasoning", "Reasoning"],
 ] as const;
 
-const MODEL_TYPES: ModelType[] = ["text", "image", "embedding"];
+const MODEL_TYPES: ModelType[] = ["text", "image", "embedding", "reranker"];
 const MODEL_TYPE_COLORS: Record<ModelType, string> = {
   text: "gray",
   image: "blue",
   embedding: "green",
+  reranker: "violet",
 };
 
 /**
@@ -203,6 +215,7 @@ function otherRoutes(models: CatalogModel[], model: CatalogModel): string[] {
 /** What the selfhosted channel reports it serves (`GET /api/models/selfhosted`). */
 interface ServedModel {
   name: string;
+  type: ModelType;
   contextWindow?: number;
   vision?: boolean;
 }
@@ -309,6 +322,9 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
               <Text fz="sm" ff="monospace">
                 {model.family}
               </Text>
+              <Badge size="sm" variant="outline">
+                {t(`models.type.${modelType(model)}`)}
+              </Badge>
               {!installed.has(model.id) && (
                 <Tooltip multiline maw={320} label={t("models.selfHosted.notInstalledHint")}>
                   <Badge size="sm" variant="light" color={BADGE.broken}>
@@ -343,7 +359,7 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                 {row.name}
               </Text>
               <Text fz="xs" c="dimmed">
-                {t("models.selfHosted.servedBy")}
+                {t(`models.type.${row.type}`)} · {t("models.selfHosted.servedBy")}
                 {row.contextWindow !== undefined && ` · ctx ${row.contextWindow}`}
                 {row.vision === true && " · vision"}
               </Text>
@@ -356,8 +372,10 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                 setForm({
                   family: row.name,
                   displayName: row.name.slice(row.name.lastIndexOf("/") + 1),
+                  type: row.type,
                   contextWindow: row.contextWindow ?? 32768,
-                  maxTokens: Math.min(8192, row.contextWindow ?? 32768),
+                  maxTokens:
+                    row.type === "text" ? Math.min(8192, row.contextWindow ?? 32768) : 0,
                   capabilities: {
                     tools: true,
                     structuredOutput: true,
@@ -383,6 +401,33 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                 {form.family}
               </Text>
               <Group gap="md" wrap="wrap" align="flex-end">
+                <Select
+                  size="xs"
+                  label={t("models.type")}
+                  value={form.type}
+                  data={MODEL_TYPES.map((type) => ({
+                    value: type,
+                    label: t(`models.type.${type}`),
+                  }))}
+                  onChange={(value) => {
+                    const type = (value ?? "text") as ModelType;
+                    setForm({
+                      ...form,
+                      type,
+                      maxTokens: type === "text" ? Math.max(form.maxTokens, 1) : 0,
+                      capabilities:
+                        type === "text"
+                          ? form.capabilities
+                          : {
+                              tools: false,
+                              structuredOutput: false,
+                              imageInput: false,
+                              reasoning: false,
+                            },
+                    });
+                  }}
+                  w={150}
+                />
                 <TextInput
                   size="xs"
                   label={t("models.selfHosted.displayName")}
@@ -402,30 +447,33 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                   size="xs"
                   label={t("models.selfHosted.maxOutput")}
                   value={form.maxTokens}
-                  min={1}
+                  min={form.type === "text" ? 1 : 0}
+                  disabled={form.type !== "text"}
                   onChange={(value) => setForm({ ...form, maxTokens: Number(value) || 0 })}
                   w={150}
                 />
               </Group>
-              <Group gap="md">
-                {DECLARABLE_CAPABILITIES.map(([key, label]) => (
-                  <Checkbox
-                    key={key}
-                    size="xs"
-                    label={label}
-                    checked={form.capabilities[key]}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        capabilities: {
-                          ...form.capabilities,
-                          [key]: event.currentTarget.checked,
-                        } as SelfHostedModelInput["capabilities"],
-                      })
-                    }
-                  />
-                ))}
-              </Group>
+              {form.type === "text" && (
+                <Group gap="md">
+                  {DECLARABLE_CAPABILITIES.map(([key, label]) => (
+                    <Checkbox
+                      key={key}
+                      size="xs"
+                      label={label}
+                      checked={form.capabilities[key]}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          capabilities: {
+                            ...form.capabilities,
+                            [key]: event.currentTarget.checked,
+                          } as SelfHostedModelInput["capabilities"],
+                        })
+                      }
+                    />
+                  ))}
+                </Group>
+              )}
               <Group gap="xs">
                 <Button
                   size="compact-xs"
@@ -443,6 +491,122 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
             </Stack>
           </Card>
         )}
+      </Stack>
+    </Card>
+  );
+}
+
+type GlobalModelType = "embedding" | "reranker";
+
+function ModelSelectionSection({
+  models,
+  providers,
+  selections,
+  available,
+  onChanged,
+}: {
+  models: CatalogModel[];
+  providers: CatalogProvider[];
+  selections: Catalog["selections"];
+  available: Catalog["selectionAvailable"];
+  onChanged: () => Promise<void>;
+}) {
+  const t = useT();
+  const { confirm, confirmModal } = useConfirm();
+  const [busy, setBusy] = useState<GlobalModelType | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const availableProviders = new Set(
+    providers.filter((provider) => provider.available).map((provider) => provider.name),
+  );
+
+  async function select(type: GlobalModelType, model: string | null) {
+    if (!model || model === selections[type]?.model) return;
+    if (
+      type === "embedding" &&
+      !(await confirm({
+        title: t("models.selection.embeddingConfirmTitle"),
+        message: t("models.selection.embeddingConfirmMessage"),
+        confirmLabel: t("models.selection.migrate"),
+        requireText: "MIGRATE",
+        color: "orange",
+      }))
+    ) {
+      return;
+    }
+    setBusy(type);
+    setError(null);
+    setResult(null);
+    try {
+      const response = await fetch("/api/models/selection", {
+        method: "PUT",
+        headers: jsonHeaders,
+        body: JSON.stringify({ type, model, migrate: type === "embedding" }),
+      });
+      const body = await readJson<{ migration?: { indexed: number } }>(response);
+      setResult(
+        body.migration
+          ? t("models.selection.migrated", { count: body.migration.indexed })
+          : t("models.selection.saved"),
+      );
+      await onChanged();
+    } catch (selectionError) {
+      setError(reportError(selectionError, t("models.selection.failed")));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card withBorder>
+      {confirmModal}
+      <Stack gap="sm">
+        <div>
+          <Text fw={600}>{t("models.selection.title")}</Text>
+          <Text fz="sm" c="dimmed">
+            {t("models.selection.lede")}
+          </Text>
+        </div>
+        {error && <Alert color="red">{error}</Alert>}
+        {result && <Alert color="green">{result}</Alert>}
+        {(["embedding", "reranker"] as const).map((type) => {
+          const selection = selections[type];
+          const options = models.filter(
+            (model) =>
+              model.type === type &&
+              !model.selectionHidden &&
+              availableProviders.has(model.provider),
+          );
+          const selected = options.find((model) => model.id === selection?.model);
+          return (
+            <Select
+              key={type}
+              label={t(`models.type.${type}`)}
+              value={selection?.model ?? null}
+              placeholder={t("models.selection.unconfigured")}
+              data={modelSelectData(
+                options,
+                selection?.model && !selected
+                  ? [{ value: selection.model, label: selection.model }]
+                  : [],
+                t("models.favorites"),
+              )}
+              renderOption={renderModelOption(options)}
+              description={
+                selected
+                  ? `${selected.provider} · ${modelPriceLabel(
+                      selected.pricing,
+                      selected.type,
+                    )} · ${selection?.source}`
+                  : selection?.source
+              }
+              disabled={!available[type] || options.length === 0 || busy !== null}
+              searchable
+              {...selectOnFocus}
+              onChange={(model) => void select(type, model)}
+            />
+          );
+        })}
       </Stack>
     </Card>
   );
@@ -581,6 +745,11 @@ export default function ModelsPage() {
   const [providers, setProviders] = useState<CatalogProvider[]>([]);
   const [models, setModels] = useState<CatalogModel[]>([]);
   const [makers, setMakers] = useState<Record<string, string>>({});
+  const [selections, setSelections] = useState<Catalog["selections"] | null>(null);
+  const [selectionAvailable, setSelectionAvailable] = useState<Catalog["selectionAvailable"]>({
+    embedding: false,
+    reranker: false,
+  });
   const [updatedAt, setUpdatedAt] = useState("");
   const [source, setSource] = useState<"override" | "default">("default");
   const [loading, setLoading] = useState(true);
@@ -627,6 +796,8 @@ export default function ModelsPage() {
     setProviders(data.providers);
     setModels(data.models);
     setMakers(data.makers ?? {});
+    setSelections(data.selections);
+    setSelectionAvailable(data.selectionAvailable);
     setUpdatedAt(data.updatedAt ?? "");
     setSource(data.source);
   }, []);
@@ -780,9 +951,22 @@ export default function ModelsPage() {
 
       {canEdit && <CatalogDocumentSection onChanged={loadCatalog} />}
 
-      {canEdit && providerByName.get("selfhosted")?.dedicated === true && (
-        <SelfHostedSection onChanged={loadCatalog} />
+      {canEdit && selections && (
+        <ModelSelectionSection
+          models={models}
+          providers={providers}
+          selections={selections}
+          available={selectionAvailable}
+          onChanged={loadCatalog}
+        />
       )}
+
+      {canEdit &&
+        (providerByName.get("selfhosted")?.dedicated === true ||
+          selectionAvailable.embedding ||
+          selectionAvailable.reranker) && (
+          <SelfHostedSection onChanged={loadCatalog} />
+        )}
 
       {error && (
         <Alert color="red" variant="light" withCloseButton onClose={() => setError(null)}>
@@ -975,7 +1159,7 @@ export default function ModelsPage() {
                             <Badge color={BADGE.broken}>failed</Badge>
                           </Tooltip>
                         ))}
-                      {model.type !== "embedding" && (
+                      {model.type !== "embedding" && model.type !== "reranker" && (
                         <Button
                           size="compact-xs"
                           variant="default"

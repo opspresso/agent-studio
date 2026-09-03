@@ -23,6 +23,18 @@ import { settingsRepository } from "@/infrastructure/db/repositories/settingsRep
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 
+const ORIGINAL_EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL;
+const ORIGINAL_EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY;
+const ORIGINAL_EMBEDDING_DIM = process.env.EMBEDDING_DIM;
+
+function set(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
 function respondWith(body: unknown): void {
   vi.stubGlobal("fetch", async () =>
     new Response(JSON.stringify(body), {
@@ -38,6 +50,9 @@ function respondWith(body: unknown): void {
 // `channelAdapter.test.ts` does for the same reason.
 let address = 0;
 beforeEach(() => {
+  delete process.env.EMBEDDING_BASE_URL;
+  delete process.env.EMBEDDING_API_KEY;
+  delete process.env.EMBEDDING_DIM;
   invalidateSettingsCache();
   address += 1;
   vi.mocked(settingsRepository.get).mockResolvedValue({
@@ -47,6 +62,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  set("EMBEDDING_BASE_URL", ORIGINAL_EMBEDDING_BASE_URL);
+  set("EMBEDDING_API_KEY", ORIGINAL_EMBEDDING_API_KEY);
+  set("EMBEDDING_DIM", ORIGINAL_EMBEDDING_DIM);
   vi.unstubAllGlobals();
 });
 
@@ -94,6 +112,39 @@ describe("openAiEmbeddings", () => {
     });
     await openAiEmbeddings.embed(["one"], "document");
     expect(sent).toMatchObject({ dimensions: 1024, encoding_format: "float" });
+  });
+
+  it("omits dimensions when the model requires its native width", async () => {
+    process.env.EMBEDDING_DIM = "native";
+    let sent: Record<string, unknown> = {};
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({ object: "list", data: [{ object: "embedding", index: 0, embedding: [0.1] }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    await openAiEmbeddings.embed(["one"], "document");
+    expect(sent).toMatchObject({ encoding_format: "float" });
+    expect(sent).not.toHaveProperty("dimensions");
+  });
+
+  it("uses a dedicated embedding channel without forwarding the LLM credential", async () => {
+    process.env.EMBEDDING_BASE_URL = `https://embedding-${address}.example/v1`;
+    let request: { url?: string; authorization?: string | null } = {};
+    vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => {
+      request = {
+        url: String(url),
+        authorization: new Headers(init?.headers).get("authorization"),
+      };
+      return new Response(
+        JSON.stringify({ object: "list", data: [{ object: "embedding", index: 0, embedding: [0.1] }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    await openAiEmbeddings.embed(["one"], "document");
+    expect(request.url).toBe(`https://embedding-${address}.example/v1/embeddings`);
+    expect(request.authorization).toBe("Bearer not-required");
   });
 
   it("makes no request at all for an empty batch", async () => {

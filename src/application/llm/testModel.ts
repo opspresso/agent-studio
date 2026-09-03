@@ -36,8 +36,11 @@ export function createTestModel(channel: LlmChannel): TestModel {
     if (model === undefined) {
       throw new ValidationError(`Unknown model "${modelId}"`);
     }
-    if (modelType(model) === "embedding") {
-      throw new ValidationError(`Embedding model cannot be tested through chat completion: ${modelId}`);
+    const type = modelType(model);
+    if (type === "embedding" || type === "reranker") {
+      throw new ValidationError(
+        `${type === "embedding" ? "Embedding" : "Reranker"} model cannot be tested through chat completion: ${modelId}`,
+      );
     }
     const startedAt = Date.now();
     try {
