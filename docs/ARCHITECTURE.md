@@ -285,6 +285,7 @@ flowchart TB
 | Trace 삭제 참조 | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
 | 감사 기록 | `AUDIT#{yyyy-MM-dd}` | `{createdAt ISO}#{eventId}` | — | — |
 | 앱 설정 (환경변수 오버라이드) | `SETTINGS#app` | `META` | — | — |
+| Capability catalog reindex lease | `CATALOGREINDEX#global` | `LOCK` | — | — |
 | 사용자별 모델 즐겨찾기 | `MODELPREFERENCES#{userId}` | `META` | — | — |
 | admin 이 업로드한 모델 카탈로그 문서 (배포당 하나, 발행 카탈로그보다 우선) | `MODELCATALOG#doc` | `META` | — | — |
 

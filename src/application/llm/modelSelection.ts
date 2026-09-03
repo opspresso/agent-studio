@@ -1,6 +1,10 @@
 import { ConflictError, ValidationError } from "@/application/errors";
 import type { ReindexReport } from "@/application/catalog/reindexCatalog";
 import { getModelConfig, modelType } from "@/domain/llm/models";
+import {
+  CATALOG_REINDEX_LEASE_MS,
+  type CatalogReindexLock,
+} from "@/domain/catalog/reindexLock";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type {
   SettingsUseCases,
@@ -16,6 +20,7 @@ export interface ModelSelectionResult {
 
 export interface ModelSelectionDeps {
   repository: SettingsRepository;
+  lock: CatalogReindexLock;
   settings: SettingsUseCases;
   current(type: GlobalModelType): Promise<string | undefined>;
   available(type: GlobalModelType): boolean;
@@ -37,7 +42,6 @@ export interface ModelSelectionUseCases {
 export function createModelSelectionUseCases(
   deps: ModelSelectionDeps,
 ): ModelSelectionUseCases {
-  let migrating = false;
   return {
     async select(type, model, migrate, actorEmail) {
       const selected = getModelConfig(model);
@@ -73,12 +77,12 @@ export function createModelSelectionUseCases(
       if (!deps.reindex) {
         throw new ValidationError("The capability catalog is not enabled");
       }
-      if (migrating) {
+      const lease = await deps.lock.acquire(CATALOG_REINDEX_LEASE_MS);
+      if (!lease) {
         throw new ConflictError("An embedding migration is already running");
       }
-      migrating = true;
-      const before = await deps.repository.get();
       try {
+        const before = await deps.repository.get();
         const settings = await deps.settings.update({ embeddingModel: model }, actorEmail);
         deps.invalidate();
         try {
@@ -107,7 +111,7 @@ export function createModelSelectionUseCases(
           throw migrationError;
         }
       } finally {
-        migrating = false;
+        await deps.lock.release(lease);
       }
     },
   };

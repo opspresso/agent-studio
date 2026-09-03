@@ -490,6 +490,30 @@ describe("settingsUseCases.update self-hosted declarations", () => {
     });
   });
 
+  it("refuses to remove a selected self-hosted retrieval model", async () => {
+    process.env.EMBEDDING_MODEL = "selfhosted/Qwen/Qwen3-Embedding-4B";
+    const { repo } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    await useCases.update(
+      {
+        selfHostedModels: [
+          {
+            family: "Qwen/Qwen3-Embedding-4B",
+            displayName: "Qwen3 Embedding 4B",
+            type: "embedding",
+            contextWindow: 32768,
+            maxTokens: 0,
+            capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
+          },
+        ],
+      },
+      ADMIN,
+    );
+    await expect(useCases.update({ selfHostedModels: [] }, ADMIN)).rejects.toThrow(
+      "Selected self-hosted models must remain declared",
+    );
+  });
+
   it("lets one PUT declare and hide a model together", async () => {
     const { repo, current } = fakeRepo();
     await createSettingsUseCases(repo).update(

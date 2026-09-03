@@ -1014,6 +1014,19 @@ describe("execution deps wiring", () => {
   });
 });
 
+describe("catalog reindex serialization", () => {
+  it("keeps every production reindex behind the composition-root lease", () => {
+    const callers = SOURCE_FILES.filter((file) =>
+      parseImports(file.text).some(
+        ({ spec, typeOnly }) =>
+          !typeOnly &&
+          resolveSpec(spec, file.path) === "@/application/catalog/reindexCatalog",
+      ),
+    ).map((file) => file.path);
+    expect(callers).toEqual(["src/lib/container.ts"]);
+  });
+});
+
 /**
  * Single-owner invariants.
  *

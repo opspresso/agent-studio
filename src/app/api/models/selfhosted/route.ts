@@ -1,4 +1,3 @@
-import { ValidationError } from "@/application/errors";
 import { selfHostedDeclarationIds } from "@/domain/llm/models";
 import { listSelfHostedServedModels } from "@/lib/container";
 import { getSelfHostedModels } from "@/lib/runtime-settings";
@@ -23,25 +22,11 @@ export const GET = withAdminAuth(async () => {
   try {
     const declarations = await getSelfHostedModels();
     const installed = selfHostedDeclarationIds();
-    try {
-      return Response.json({
-        served: await listSelfHostedServedModels(),
-        declarations,
-        installed,
-      });
-    } catch (error) {
-      // No channel configured is the caller's mistake; a channel that did not
-      // answer is a finding the section shows beside the editable list.
-      if (error instanceof ValidationError) {
-        throw error;
-      }
-      return Response.json({
-        served: null,
-        servedError: error instanceof Error ? error.message : String(error),
-        declarations,
-        installed,
-      });
-    }
+    return Response.json({
+      ...(await listSelfHostedServedModels()),
+      declarations,
+      installed,
+    });
   } catch (error) {
     return apiError(error);
   }

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { listServedSelfHostedModels } from "@/infrastructure/llm/selfHostedDiscovery";
+import {
+  listServedSelfHostedChannels,
+  listServedSelfHostedModels,
+} from "@/infrastructure/llm/selfHostedDiscovery";
 
 const CHANNEL = { baseUrl: "http://127.0.0.1:1234/v1", apiKey: "dummy" };
 
@@ -57,5 +60,31 @@ describe("listServedSelfHostedModels", () => {
     ) as unknown as typeof fetch;
 
     await expect(listServedSelfHostedModels(CHANNEL, "text", fetchFn)).rejects.toThrow(/503 Unavailable/);
+  });
+
+  it("keeps healthy models visible when another endpoint is down", async () => {
+    const fetchFn = vi.fn(async (url: string | URL | Request) => {
+      const value = String(url);
+      if (value === "http://llm.test/v1/models") {
+        return json({ data: [{ id: "qwen-text", max_model_len: 32768 }] });
+      }
+      if (value === "http://embedding.test/v1/models") {
+        return new Response("", { status: 503, statusText: "Unavailable" });
+      }
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      listServedSelfHostedChannels(
+        [
+          { channel: { baseUrl: "http://llm.test/v1", apiKey: "" }, type: "text" },
+          { channel: { baseUrl: "http://embedding.test/v1", apiKey: "" }, type: "embedding" },
+        ],
+        fetchFn,
+      ),
+    ).resolves.toEqual({
+      served: [{ name: "qwen-text", type: "text", contextWindow: 32768 }],
+      servedError: "embedding: GET http://embedding.test/v1/models → 503 Unavailable",
+    });
   });
 });

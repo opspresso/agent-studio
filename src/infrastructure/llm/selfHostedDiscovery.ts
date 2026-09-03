@@ -31,6 +31,16 @@ export interface ServedSelfHostedModel {
   vision?: boolean;
 }
 
+export interface SelfHostedModelChannel {
+  channel: Pick<ProviderChannelConfig, "baseUrl" | "apiKey">;
+  type: ModelType;
+}
+
+export interface ServedSelfHostedModelsView {
+  served: ServedSelfHostedModel[] | null;
+  servedError?: string;
+}
+
 const FETCH_TIMEOUT_MS = 10_000;
 
 function isCount(value: unknown): value is number {
@@ -115,4 +125,24 @@ export async function listServedSelfHostedModels(
     });
   }
   return served;
+}
+
+/** Keep healthy channel listings visible when a sibling endpoint is down. */
+export async function listServedSelfHostedChannels(
+  channels: readonly SelfHostedModelChannel[],
+  fetchFn: typeof fetch = fetch,
+): Promise<ServedSelfHostedModelsView> {
+  const results = await Promise.allSettled(
+    channels.map(({ channel, type }) => listServedSelfHostedModels(channel, type, fetchFn)),
+  );
+  const served = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  const errors = results.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [`${channels[index]?.type ?? "unknown"}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`]
+      : [],
+  );
+  return {
+    served: results.some((result) => result.status === "fulfilled") ? served : null,
+    ...(errors.length > 0 ? { servedError: errors.join("; ") } : {}),
+  };
 }

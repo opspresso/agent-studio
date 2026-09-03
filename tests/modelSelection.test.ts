@@ -72,6 +72,10 @@ function deps(initial: AppSettings | null = null): {
   const reindex = vi.fn(async () => ({ indexed: 12, removed: 0, undiscovered: [] }));
   const invalidate = vi.fn();
   const testReranker = vi.fn(async () => {});
+  const lock = {
+    acquire: vi.fn(async () => "lease-1" as string | null),
+    release: vi.fn(async () => {}),
+  };
   return {
     value: () => stored,
     update,
@@ -86,6 +90,7 @@ function deps(initial: AppSettings | null = null): {
           stored = settings;
         },
       },
+      lock,
       settings: { getView: vi.fn() as never, update: update as never },
       current: async () => undefined,
       available: () => true,
@@ -123,7 +128,39 @@ describe("modelSelectionUseCases", () => {
     expect(setup.value()?.embeddingModel).toBe(EMBEDDING);
     expect(setup.invalidate).toHaveBeenCalledOnce();
     expect(setup.reindex).toHaveBeenCalledOnce();
+    expect(setup.deps.lock.release).toHaveBeenCalledWith("lease-1");
     expect(result.migration?.indexed).toBe(12);
+  });
+
+  it("refuses an embedding migration while another instance holds the lease", async () => {
+    installModels();
+    const setup = deps();
+    vi.mocked(setup.deps.lock.acquire).mockResolvedValue(null);
+    await expect(
+      createModelSelectionUseCases(setup.deps).select(
+        "embedding",
+        EMBEDDING,
+        true,
+        "admin@example.com",
+      ),
+    ).rejects.toThrow("already running");
+    expect(setup.update).not.toHaveBeenCalled();
+    expect(setup.reindex).not.toHaveBeenCalled();
+  });
+
+  it("releases the lease when reading the previous selection fails", async () => {
+    installModels();
+    const setup = deps();
+    vi.spyOn(setup.deps.repository, "get").mockRejectedValue(new Error("settings unavailable"));
+    await expect(
+      createModelSelectionUseCases(setup.deps).select(
+        "embedding",
+        EMBEDDING,
+        true,
+        "admin@example.com",
+      ),
+    ).rejects.toThrow("settings unavailable");
+    expect(setup.deps.lock.release).toHaveBeenCalledWith("lease-1");
   });
 
   it("restores the previous selection and index when migration fails", async () => {

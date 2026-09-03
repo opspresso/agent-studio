@@ -452,7 +452,8 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   프로세스의 오버레이에 즉시 설치되고, 다른 인스턴스는 카탈로그 refresh 틱에 따라온다. 빈
   배열은 전부 제거. env 폴백은 없다. 선언은 설정이 아니라 데이터다. 다시 읽는 곳은
   `GET /api/models/selfhosted` 의 `declarations` 이고, 관리 UI 는 `/models` 콘솔의
-  Self-hosted 섹션이다.
+  Self-hosted 섹션이다. 현재 Embedding 또는 Reranker 선택이 가리키는 self-hosted 선언은 먼저
+  다른 모델을 선택하기 전에는 제거할 수 없다.
 - `source` 는 `override` (DB) | `env` | `default` | `unset` 이다. secret 값은 언제나 마스킹된다
   (길이 보존. 9–20자는 양끝 2자씩, 21자 이상은 4자씩 드러낸다). PUT 의 마스킹된 값은 저장된
   secret 을 유지하고, 빈 문자열은 오버라이드를 제거한다 (env 폴백). 호출자를 제외하는 목록으로
@@ -1520,7 +1521,8 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
   채널이 *지금* 서빙하는 목록(`served`, Text·Embedding·Reranker 채널의 `/v1/models` 를 각
   채널의 자격증명으로 읽고 type을 붙이며, LM Studio 네이티브 카탈로그가 있으면 컨텍스트
   길이·vision·embedding type을 보강한다). `served` 는 best-effort 다. 채널이 답하지 않으면 뷰를 실패시키는 대신
-  `servedError` 로 실린다: 서빙 스택이 죽어 있어도 선언은 admin 이 편집할 수 있어야 한다.
+  `servedError` 로 실리고, 다른 채널이 답했다면 그 `served` 목록은 그대로 남는다: 서빙 스택 하나가
+  죽어 있어도 건강한 모델과 선언은 admin 이 볼 수 있어야 한다.
   채널이 아예 설정돼 있지 않으면 `400`. 선언 자체는 `PUT /api/settings` 의
   `selfHostedModels` 로 한다.
 - `selection` 은 배포 전역의 Embedding/Reranker 활성 모델을 레지스트리 id로 선택한다.

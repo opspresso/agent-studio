@@ -97,6 +97,8 @@ import { createModelSelectionUseCases } from "@/application/llm/modelSelection";
 import { modelPreferencesRepository } from "@/infrastructure/db/repositories/modelPreferencesRepository";
 import { createHttpModelCatalogSource } from "@/infrastructure/llm/modelCatalogHttpSource";
 import { modelCatalogRepository } from "@/infrastructure/db/repositories/modelCatalogRepository";
+import { catalogReindexLock } from "@/infrastructure/db/repositories/catalogReindexLock";
+import { CATALOG_REINDEX_LEASE_MS } from "@/domain/catalog/reindexLock";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
 import type { AguiDeps } from "@/application/agui/run";
 import type { PostCostAlert } from "@/application/usage/costGuard";
@@ -336,12 +338,10 @@ export const listSelfHostedServedModels = async () => {
   if (channels.length === 0) {
     throw new ValidationError("No self-hosted provider channel is configured");
   }
-  const { listServedSelfHostedModels } = await import("@/infrastructure/llm/selfHostedDiscovery");
-  return (
-    await Promise.all(
-      channels.map(({ channel: target, type }) => listServedSelfHostedModels(target, type)),
-    )
-  ).flat();
+  const { listServedSelfHostedChannels } = await import(
+    "@/infrastructure/llm/selfHostedDiscovery"
+  );
+  return listServedSelfHostedChannels(channels);
 };
 
 const remoteAgents: RemoteAgentDispatcher = {
@@ -532,6 +532,23 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
     }
   : undefined;
 
+export async function reindexCatalogNow(): Promise<
+  import("@/application/catalog/reindexCatalog").ReindexReport
+> {
+  if (!catalogDeps) {
+    throw new ValidationError("The capability catalog is not enabled");
+  }
+  const lease = await catalogReindexLock.acquire(CATALOG_REINDEX_LEASE_MS);
+  if (!lease) {
+    throw new ConflictError("A capability catalog reindex is already running");
+  }
+  try {
+    return await (await import("@/application/catalog/reindexCatalog")).reindexCatalog(catalogDeps);
+  } finally {
+    await catalogReindexLock.release(lease);
+  }
+}
+
 /**
  * Retention, as a tick. Every row that expires carries `expiresAt`; the
  * managed store used to purge those on its own, and here the scheduler tick
@@ -577,6 +594,7 @@ export const triggerUseCases = createTriggerUseCases({
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
 export const modelSelectionUseCases = createModelSelectionUseCases({
   repository: settingsRepository,
+  lock: catalogReindexLock,
   settings: settingsUseCases,
   current: async (type) =>
     type === "embedding"
@@ -747,12 +765,10 @@ const reindexAfterSync = (): void => {
   if (!catalogDeps) {
     return;
   }
-  const deps = catalogDeps;
   try {
     after(async () => {
       try {
-        const { reindexCatalog } = await import("@/application/catalog/reindexCatalog");
-        const report = await reindexCatalog(deps);
+        const report = await reindexCatalogNow();
         log.info(
           "catalog",
           `reindex after plugins sync: indexed=${report.indexed} removed=${report.removed}` +

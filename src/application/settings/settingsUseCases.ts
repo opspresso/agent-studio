@@ -418,6 +418,18 @@ export function createSettingsUseCases(
           next.selfHostedModels = declarations;
         }
         const declaredIds = new Set((next.selfHostedModels ?? []).map((entry) => entry.id));
+        const missingSelections = [
+          next.embeddingModel ?? optionalEnv(env.EMBEDDING_MODEL),
+          next.rerankerModel ?? optionalEnv(env.RERANKER_MODEL),
+        ].filter(
+          (id): id is string =>
+            id?.startsWith("selfhosted/") === true && !declaredIds.has(id),
+        );
+        if (missingSelections.length > 0) {
+          throw new ValidationError(
+            `Selected self-hosted models must remain declared: ${missingSelections.join(", ")}`,
+          );
+        }
         if (next.hiddenModels !== undefined) {
           next.hiddenModels = next.hiddenModels.filter(
             (id) => !id.startsWith("selfhosted/") || declaredIds.has(id),
