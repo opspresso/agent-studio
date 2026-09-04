@@ -61,6 +61,8 @@ async function main() {
     "@/infrastructure/db/repositories/mcpOAuthStateRepository"
   );
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
+  const { memberRepository } = await import("@/infrastructure/db/repositories/memberRepository");
+  const { createPgVectorStore } = await import("@/infrastructure/vector/pgVectorStore");
   const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
   const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
   const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
@@ -164,6 +166,9 @@ async function main() {
   const a2aOwnerScope = `tenant-${suffix}:client-${suffix}`;
   const legacyDestinationProject = `it-telegram-migration-${suffix}`;
   const legacyDestinationKey = dbKeys.telegramDestination(legacyDestinationProject, 42, 1);
+  const integrationMemberId = `it-member-${suffix}`;
+  const integrationMemberEmail = `${integrationMemberId}@example.com`;
+  const vectorTable = `it_vectors_${suffix}`;
   // Audit rows are the one fixture no repository can remove: the entity is
   // append-only on purpose — a record its subject could erase would not be one —
   // and it lives outside the project partition the cascade clears. Their keys
@@ -288,6 +293,60 @@ async function main() {
       "skill describe returns the description and omits what is not there",
     );
     pass("skill describe (projected, reserved-word alias)");
+
+    // ---------- pgvector adapter ----------
+    await withTransaction(async (client) => {
+      await client.query(
+        `CREATE TABLE ${vectorTable} (key text PRIMARY KEY, embedding vector NOT NULL, metadata jsonb NOT NULL DEFAULT '{}'::jsonb)`,
+      );
+    });
+    const vectors = createPgVectorStore(vectorTable);
+    const vectorA = `${projectName}:a`;
+    const vectorB = `${projectName}:b`;
+    const vectorC = `${projectName}:c`;
+    await vectors.upsert([
+      { key: vectorA, vector: [1, 0, 0], metadata: { kind: "skill", label: "A" } },
+      { key: vectorB, vector: [0.8, 0.2, 0], metadata: { kind: "skill", label: "B" } },
+      { key: vectorC, vector: [0, 1, 0], metadata: { kind: "tool", label: "C" } },
+    ]);
+    assert.deepEqual(await vectors.listKeys(), [vectorA, vectorB, vectorC]);
+    const vectorMatches = await vectors.query([1, 0, 0], 2, { kind: "skill" });
+    assert.deepEqual(
+      vectorMatches.map((match) => match.key),
+      [vectorA, vectorB],
+      "cosine order and metadata filter",
+    );
+    assert.equal(vectorMatches[0]?.metadata.label, "A");
+    await vectors.deleteByKeys([vectorB]);
+    assert.deepEqual(await vectors.listKeys(), [vectorA, vectorC]);
+    pass("pgvector upsert/query/filter/list/delete");
+
+    // ---------- Better Auth member adapter ----------
+    await withTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt") VALUES ($1, $2, $3, true, $4, $4)`,
+        [integrationMemberId, "Integration Member", integrationMemberEmail, now],
+      );
+    });
+    const memberByEmail = await memberRepository.getByEmail(integrationMemberEmail);
+    assert.equal(memberByEmail?.id, integrationMemberId);
+    assert.equal(
+      (await memberRepository.getById(integrationMemberId))?.email,
+      integrationMemberEmail,
+    );
+    assert.ok(
+      (
+        await memberRepository.list(10, {
+          joinedAt: new Date(Date.parse(now) - 1_000).toISOString(),
+          id: "",
+        })
+      ).some((member) => member.id === integrationMemberId),
+      "member list contains inserted user",
+    );
+    const tierChange = await memberRepository.setTier(integrationMemberId, "member");
+    assert.equal(tierChange?.previousTier, "guest");
+    assert.equal(tierChange?.member.tier, "member");
+    pass("member get/list/atomic tier update");
 
     // ---------- mcp + external agent (encrypted headers) ----------
     const encrypted = encryptHeaders({ Authorization: "Bearer secret-token" });
@@ -1283,6 +1342,14 @@ async function main() {
     await import("@/infrastructure/db/store")
       .then(({ deleteItem }) => deleteItem(legacyDestinationKey))
       .catch(() => {});
+    await import("@/infrastructure/db/client")
+      .then(({ withTransaction }) =>
+        withTransaction(async (client) => {
+          await client.query(`DROP TABLE IF EXISTS ${vectorTable}`);
+          await client.query(`DELETE FROM "user" WHERE "id" = $1`, [integrationMemberId]);
+        }),
+      )
+      .catch(() => {});
     // The A2A block deletes its own key on the happy path; an assert between
     // create and delete would otherwise leak the pair into the shared table.
     await import("@/infrastructure/db/repositories/a2aClientKeyRepository")
@@ -1310,7 +1377,9 @@ async function main() {
         );
       }
     }
-    mock.close();
+    await new Promise<void>((resolve, reject) => {
+      mock.close((error) => (error ? reject(error) : resolve()));
+    });
     const { closePool } = await import("@/infrastructure/db/client");
     await closePool();
   }
