@@ -4,7 +4,7 @@ import type {
   LlmProviderSetting,
   SelfHostedModelSetting,
 } from "@/domain/settings/types";
-import { getItem, putItem } from "../store";
+import { getItem, updateItem } from "../store";
 import { keys } from "../keys";
 
 const ENTITY_TYPE = "SETTINGS" as const;
@@ -58,7 +58,14 @@ export const settingsRepository: SettingsRepository = {
     return item ? fromItem(item) : null;
   },
 
-  async put(settings) {
-    await putItem({ ...keys.settings(), entityType: ENTITY_TYPE, ...settings });
+  async update(mutate) {
+    const result = await updateItem(keys.settings(), (existing) => ({
+      entityType: ENTITY_TYPE,
+      ...mutate(existing ? fromItem(existing) : null),
+    }));
+    return {
+      before: result.before ? fromItem(result.before) : null,
+      after: fromItem(result.after),
+    };
   },
 };

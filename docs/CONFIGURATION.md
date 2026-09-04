@@ -28,6 +28,11 @@ SETTINGS#app 행의 override (데이터베이스)   →   environment variable  
 admin 이나 회전된 A2A 키가 그 쓰기를 처리하지 않은 인스턴스들에서 계속 동작하는 시간이다.
 기본값이 1분이 아니라 5초인 이유가 그것이다.
 
+settings 쓰기는 최신 `SETTINGS#app` 행을 row lock 아래에서 읽고 patch를 합친 뒤 같은 transaction
+에서 저장한다. 일반 설정 저장, A2A key 회전, Embedding/Rerank 선택이 동시에 도착해도 한 요청의
+오래된 full-row snapshot이 다른 요청의 필드를 되돌리지 않는다. 특히 Embedding migration이 만든
+vector와 그 뒤의 query model이 서로 다른 상태로 남는 것을 이 저장 경계가 막는다.
+
 오버라이드와 환경변수는 *"설정돼 있는가?"* 에 같은 방식으로 답한다: 비어 있거나 공백뿐인
 값은 **설정되지 않음**으로 치고, 유효 값이 되는 대신 다음 계층으로 떨어진다.
 `/settings` 에서 빈 칸을 저장하면 오버라이드가 제거되고, `A2A_API_KEY=" "` 는 키가 아니다. 부팅

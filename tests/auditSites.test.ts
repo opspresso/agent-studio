@@ -175,8 +175,11 @@ describe("app settings", () => {
     let current = stored;
     const repo: SettingsRepository = {
       get: async () => current,
-      put: async (next) => {
-        current = next;
+      update: async (mutate) => {
+        const before = current;
+        const after = mutate(current);
+        current = after;
+        return { before, after };
       },
     };
     return createSettingsUseCases(repo, cipher, {} as NodeJS.ProcessEnv, () => []);

@@ -160,7 +160,10 @@ describe("the settings view", () => {
     async get() {
       return null;
     },
-    async put() {},
+    async update(mutate) {
+      const after = mutate(null);
+      return { before: null, after };
+    },
   };
 
   // The env is injected, so these read nothing the process happens to carry.

@@ -61,8 +61,11 @@ function fakeRepo(initial: AppSettings | null = null): {
       async get() {
         return stored;
       },
-      async put(settings) {
-        stored = settings;
+      async update(mutate) {
+        const before = stored;
+        const after = mutate(stored);
+        stored = after;
+        return { before, after };
       },
     },
     current: () => stored,
@@ -135,6 +138,34 @@ describe("settingsUseCases.update access-control guards", () => {
 });
 
 describe("settingsUseCases.update", () => {
+  it("merges a patch against the latest row inside the repository update", async () => {
+    let stored: AppSettings = {
+      embeddingModel: "openai/text-embedding-3-small",
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+    const repo: SettingsRepository = {
+      get: async () => {
+        throw new Error("a settings write must not take a stale preliminary read");
+      },
+      update: async (mutate) => {
+        const before = stored;
+        const after = mutate(stored);
+        stored = after;
+        return { before, after };
+      },
+    };
+
+    await createSettingsUseCases(repo).update(
+      { publicBaseUrl: "https://studio.example.com" },
+      ADMIN,
+    );
+
+    expect(stored).toMatchObject({
+      embeddingModel: "openai/text-embedding-3-small",
+      publicBaseUrl: "https://studio.example.com",
+    });
+  });
+
   it("stores model selection overrides and clears them back to env", async () => {
     process.env.EMBEDDING_MODEL = "openrouter/qwen3-embedding-4b";
     process.env.RERANKER_MODEL = "selfhosted/env-reranker";

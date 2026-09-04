@@ -349,194 +349,197 @@ export function createSettingsUseCases(
      * copy would add.
      */
     async update(patch, userEmail) {
-      const stored = await repo.get();
-      const next: AppSettings = { ...(stored ?? { updatedAt: "" }) };
-      for (const spec of specs) {
-        const raw = patch[spec.key];
-        if (raw === undefined) {
-          continue;
-        }
-        const value = raw.trim();
-        if (spec.key === "rerankerMinScore" && value !== "") {
-          const score = Number(value);
-          if (!Number.isFinite(score) || score < 0 || score > 1) {
-            throw new ValidationError("Reranker minimum score must be between 0 and 1");
+      let changed: string[] = [];
+      const mutate = (stored: AppSettings | null): AppSettings => {
+        const next: AppSettings = { ...(stored ?? { updatedAt: "" }) };
+        for (const spec of specs) {
+          const raw = patch[spec.key];
+          if (raw === undefined) {
+            continue;
           }
-        }
-        if (spec.key === "artifactAccessMode" && value !== "") {
-          if (value !== "authenticated" && value !== "public" && value !== "proxied") {
-            throw new ValidationError(
-              "Artifact access mode must be authenticated, public or proxied",
-            );
+          const value = raw.trim();
+          if (spec.key === "rerankerMinScore" && value !== "") {
+            const score = Number(value);
+            if (!Number.isFinite(score) || score < 0 || score > 1) {
+              throw new ValidationError("Reranker minimum score must be between 0 and 1");
+            }
           }
-          if (value === spec.env()) {
-            delete next.artifactAccessMode;
-          } else {
-            next.artifactAccessMode = value;
+          if (spec.key === "artifactAccessMode" && value !== "") {
+            if (value !== "authenticated" && value !== "public" && value !== "proxied") {
+              throw new ValidationError(
+                "Artifact access mode must be authenticated, public or proxied",
+              );
+            }
+            if (value === spec.env()) {
+              delete next.artifactAccessMode;
+            } else {
+              next.artifactAccessMode = value;
+            }
+            continue;
           }
-          continue;
-        }
-        if (value === "") {
-          delete next[spec.key];
-        } else if (spec.secret) {
-          if (cipher.isMasked(value)) {
-            // A mask confirms what is stored; it says nothing to compare.
-          } else if (value === spec.env()) {
+          if (value === "") {
+            delete next[spec.key];
+          } else if (spec.secret) {
+            if (cipher.isMasked(value)) {
+              // A mask confirms what is stored; it says nothing to compare.
+            } else if (value === spec.env()) {
+              delete next[spec.key];
+            } else {
+              next[spec.key] = cipher.encrypt(value);
+            }
+          } else if (
+            value === spec.env() ||
+            (spec.key === "rerankerMinScore" &&
+              spec.env() === undefined &&
+              value === spec.defaultValue)
+          ) {
             delete next[spec.key];
           } else {
-            next[spec.key] = cipher.encrypt(value);
+            next[spec.key] = value;
           }
-        } else if (
-          value === spec.env() ||
-          (spec.key === "rerankerMinScore" &&
-            spec.env() === undefined &&
-            value === spec.defaultValue)
-        ) {
-          delete next[spec.key];
-        } else {
-          next[spec.key] = value;
         }
-      }
 
-      if (patch.llmProviders !== undefined) {
-        if (patch.llmProviders.length === 0) {
-          delete next.llmProviders;
-        } else {
-          const providers = patch.llmProviders.map((input) =>
-            toProviderSetting(cipher, env, parseProviderConfigs, input, stored?.llmProviders),
+        if (patch.llmProviders !== undefined) {
+          if (patch.llmProviders.length === 0) {
+            delete next.llmProviders;
+          } else {
+            const providers = patch.llmProviders.map((input) =>
+              toProviderSetting(cipher, env, parseProviderConfigs, input, stored?.llmProviders),
+            );
+            const names = new Set(providers.map((provider) => provider.name));
+            if (names.size !== providers.length) {
+              throw new ValidationError("LLM provider names must be unique");
+            }
+            next.llmProviders = providers;
+          }
+        }
+
+        if (patch.selfHostedModels !== undefined) {
+          if (patch.selfHostedModels.length === 0) {
+            delete next.selfHostedModels;
+          } else {
+            const declarations = patch.selfHostedModels.map(selfHostedModelFromInput);
+            // The same validation the install runs, surfaced as the save's
+            // error instead of a warning after it — a declaration that cannot
+            // install must fail the form, not silently vanish from the picker.
+            const problems = declarations
+              .map((entry) => {
+                const reason = selfHostedModelRejectReason(entry);
+                return reason === null ? null : `${entry.id} — ${reason}`;
+              })
+              .filter((problem): problem is string => problem !== null);
+            if (problems.length > 0) {
+              throw new ValidationError(`Invalid self-hosted model(s): ${problems.join("; ")}`);
+            }
+            const ids = new Set(declarations.map((entry) => entry.id));
+            if (ids.size !== declarations.length) {
+              throw new ValidationError("Self-hosted model families must be unique");
+            }
+            next.selfHostedModels = declarations;
+          }
+          const declarationsById = new Map(
+            (next.selfHostedModels ?? []).map((entry) => [entry.id, entry]),
           );
-          const names = new Set(providers.map((provider) => provider.name));
-          if (names.size !== providers.length) {
-            throw new ValidationError("LLM provider names must be unique");
+          for (const [selectionType, id] of [
+            ["embedding", next.embeddingModel ?? optionalEnv(env.EMBEDDING_MODEL)],
+            ["rerank", next.rerankerModel ?? optionalEnv(env.RERANKER_MODEL)],
+          ] as const) {
+            if (id?.startsWith("selfhosted/") !== true) continue;
+            const declaration = declarationsById.get(id);
+            if (!declaration) {
+              throw new ValidationError(`Selected self-hosted models must remain declared: ${id}`);
+            }
+            if (modelType(declaration) !== selectionType) {
+              throw new ValidationError(
+                `Selected self-hosted model must remain ${selectionType}: ${id}`,
+              );
+            }
           }
-          next.llmProviders = providers;
+          const declaredIds = new Set(declarationsById.keys());
+          if (next.hiddenModels !== undefined) {
+            next.hiddenModels = next.hiddenModels.filter(
+              (id) => !id.startsWith("selfhosted/") || declaredIds.has(id),
+            );
+            if (next.hiddenModels.length === 0) delete next.hiddenModels;
+          }
         }
-      }
 
-      if (patch.selfHostedModels !== undefined) {
-        if (patch.selfHostedModels.length === 0) {
-          delete next.selfHostedModels;
-        } else {
-          const declarations = patch.selfHostedModels.map(selfHostedModelFromInput);
-          // The same validation the install runs, surfaced as the save's
-          // error instead of a warning after it — a declaration that cannot
-          // install must fail the form, not silently vanish from the picker.
-          const problems = declarations
-            .map((entry) => {
-              const reason = selfHostedModelRejectReason(entry);
-              return reason === null ? null : `${entry.id} — ${reason}`;
-            })
-            .filter((problem): problem is string => problem !== null);
-          if (problems.length > 0) {
-            throw new ValidationError(`Invalid self-hosted model(s): ${problems.join("; ")}`);
+        if (patch.hiddenModels !== undefined) {
+          if (patch.hiddenModels.length > MAX_HIDDEN_MODELS) {
+            throw new ValidationError(`At most ${MAX_HIDDEN_MODELS} models may be hidden`);
           }
-          const ids = new Set(declarations.map((entry) => entry.id));
-          if (ids.size !== declarations.length) {
-            throw new ValidationError("Self-hosted model families must be unique");
+          if (patch.hiddenModels.length === 0) {
+            delete next.hiddenModels;
+          } else {
+            // Sorted and deduplicated so a resubmitted hidden list compares equal
+            // in `changedKeys` regardless of the order the toggles were flipped.
+            const ids = [...new Set(patch.hiddenModels.map((id) => id.trim()))].sort();
+            // A declaration in this same patch counts: it installs right after
+            // the write below, so one PUT may declare and hide it together.
+            const declaredNow = new Set((next.selfHostedModels ?? []).map((entry) => entry.id));
+            const unknown = ids.filter(
+              (id) => getModelConfig(id) === undefined && !declaredNow.has(id),
+            );
+            if (unknown.length > 0) {
+              throw new ValidationError(`Unknown model ids: ${unknown.join(", ")}`);
+            }
+            // Judged against what `/api/models` would actually offer — the same
+            // provider-channel narrowing (`offeredModels`, with this patch's
+            // provider override when it carries one) — so a deployment with one
+            // configured provider cannot hide that provider's whole list while
+            // models no channel dispatches keep the guard quiet.
+            const channelNames = (next.llmProviders ?? parseProviderConfigs(env)).map(
+              (provider) => provider.name,
+            );
+            const hidden = new Set(ids);
+            const remaining = offeredModels(channelNames, ids).filter(
+              (model) => patch.selfHostedModels === undefined || model.provider !== "selfhosted",
+            );
+            if (remaining.length === 0 && [...declaredNow].every((id) => hidden.has(id))) {
+              throw new ValidationError("At least one model must remain visible");
+            }
+            next.hiddenModels = ids;
           }
-          next.selfHostedModels = declarations;
         }
-        const declarationsById = new Map(
-          (next.selfHostedModels ?? []).map((entry) => [entry.id, entry]),
-        );
-        for (const [selectionType, id] of [
-          ["embedding", next.embeddingModel ?? optionalEnv(env.EMBEDDING_MODEL)],
-          ["rerank", next.rerankerModel ?? optionalEnv(env.RERANKER_MODEL)],
-        ] as const) {
-          if (id?.startsWith("selfhosted/") !== true) continue;
-          const declaration = declarationsById.get(id);
-          if (!declaration) {
-            throw new ValidationError(`Selected self-hosted models must remain declared: ${id}`);
-          }
-          if (modelType(declaration) !== selectionType) {
+
+        /*
+         * A stored access-control list that parses to nothing is never what the
+         * operator meant, and it is *not* the same as clearing the field: an absent
+         * override falls back to the env var, a present-but-empty one falls back to
+         * nothing.
+         *
+         * What it would fall back *to* is fail-open and silent. An empty admin list
+         * makes `isAdminEmail` true for everyone — every signed-in user could then
+         * mutate the shared registries and re-edit this very page — while making
+         * `isConfiguredAdmin` false for everyone, revoking the project override at
+         * the same moment; `assertAccessControlConfig` cannot catch it, because it
+         * reads the env var and never runs again. An empty allowed-domains list lets
+         * any Google account sign in, which a deployment chooses by leaving the env
+         * var unset, not by saving a value that reads as a list and is not one.
+         */
+        for (const key of ["adminEmails", "allowedEmailDomains"] as const) {
+          const stored = next[key];
+          if (stored !== undefined && parseList(stored).length === 0) {
             throw new ValidationError(
-              `Selected self-hosted model must remain ${selectionType}: ${id}`,
+              `${key} must name at least one entry — clear the field entirely to fall back to the environment variable`,
             );
           }
         }
-        const declaredIds = new Set(declarationsById.keys());
-        if (next.hiddenModels !== undefined) {
-          next.hiddenModels = next.hiddenModels.filter(
-            (id) => !id.startsWith("selfhosted/") || declaredIds.has(id),
-          );
-          if (next.hiddenModels.length === 0) delete next.hiddenModels;
-        }
-      }
 
-      if (patch.hiddenModels !== undefined) {
-        if (patch.hiddenModels.length > MAX_HIDDEN_MODELS) {
-          throw new ValidationError(`At most ${MAX_HIDDEN_MODELS} models may be hidden`);
-        }
-        if (patch.hiddenModels.length === 0) {
-          delete next.hiddenModels;
-        } else {
-          // Sorted and deduplicated so a resubmitted hidden list compares equal
-          // in `changedKeys` regardless of the order the toggles were flipped.
-          const ids = [...new Set(patch.hiddenModels.map((id) => id.trim()))].sort();
-          // A declaration in this same patch counts: it installs right after
-          // the write below, so one PUT may declare and hide it together.
-          const declaredNow = new Set((next.selfHostedModels ?? []).map((entry) => entry.id));
-          const unknown = ids.filter(
-            (id) => getModelConfig(id) === undefined && !declaredNow.has(id),
-          );
-          if (unknown.length > 0) {
-            throw new ValidationError(`Unknown model ids: ${unknown.join(", ")}`);
-          }
-          // Judged against what `/api/models` would actually offer — the same
-          // provider-channel narrowing (`offeredModels`, with this patch's
-          // provider override when it carries one) — so a deployment with one
-          // configured provider cannot hide that provider's whole list while
-          // models no channel dispatches keep the guard quiet.
-          const channelNames = (next.llmProviders ?? parseProviderConfigs(env)).map(
-            (provider) => provider.name,
-          );
-          const hidden = new Set(ids);
-          const remaining = offeredModels(channelNames, ids).filter(
-            (model) => patch.selfHostedModels === undefined || model.provider !== "selfhosted",
-          );
-          if (remaining.length === 0 && [...declaredNow].every((id) => hidden.has(id))) {
-            throw new ValidationError("At least one model must remain visible");
-          }
-          next.hiddenModels = ids;
-        }
-      }
-
-      /*
-       * A stored access-control list that parses to nothing is never what the
-       * operator meant, and it is *not* the same as clearing the field: an absent
-       * override falls back to the env var, a present-but-empty one falls back to
-       * nothing.
-       *
-       * What it would fall back *to* is fail-open and silent. An empty admin list
-       * makes `isAdminEmail` true for everyone — every signed-in user could then
-       * mutate the shared registries and re-edit this very page — while making
-       * `isConfiguredAdmin` false for everyone, revoking the project override at
-       * the same moment; `assertAccessControlConfig` cannot catch it, because it
-       * reads the env var and never runs again. An empty allowed-domains list lets
-       * any Google account sign in, which a deployment chooses by leaving the env
-       * var unset, not by saving a value that reads as a list and is not one.
-       */
-      for (const key of ["adminEmails", "allowedEmailDomains"] as const) {
-        const stored = next[key];
-        if (stored !== undefined && parseList(stored).length === 0) {
+        const effectiveAdmins = parseList(next.adminEmails ?? env.ADMIN_EMAILS ?? "");
+        if (effectiveAdmins.length > 0 && !effectiveAdmins.includes(userEmail.toLowerCase())) {
           throw new ValidationError(
-            `${key} must name at least one entry — clear the field entirely to fall back to the environment variable`,
+            `adminEmails must include your own email (${userEmail}) — otherwise you would lock yourself out`,
           );
         }
-      }
 
-      const effectiveAdmins = parseList(next.adminEmails ?? env.ADMIN_EMAILS ?? "");
-      if (effectiveAdmins.length > 0 && !effectiveAdmins.includes(userEmail.toLowerCase())) {
-        throw new ValidationError(
-          `adminEmails must include your own email (${userEmail}) — otherwise you would lock yourself out`,
-        );
-      }
-
-      // Before `updatedAt` moves, which every write bumps and no reader of this
-      // row cares about.
-      const changed = changedKeys(specs, stored, next);
-      next.updatedAt = new Date().toISOString();
-      await repo.put(next);
+        // Before `updatedAt` moves, which every write bumps and no reader of this
+        // row cares about.
+        changed = changedKeys(specs, stored, next);
+        next.updatedAt = new Date().toISOString();
+        return next;
+      };
+      const { after: next } = await repo.update(mutate);
       // Install what was just persisted: this process offers the declared
       // models immediately; other instances pick them up at their next
       // catalog tick, which re-reads the declarations (`localModels`).

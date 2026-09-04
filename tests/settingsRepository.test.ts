@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeStore } from "./fakeStore";
 
 /**
- * `put` writes the whole settings object, but `fromItem` reads back only what
+ * `update` writes the whole settings object, but `fromItem` reads back only what
  * it names — a field missing there is written and then silently dropped on the
  * next read, surviving exactly until the process restarts. `unknownModelPolicy`
  * shipped that way: the /settings page stored a `refuse` override that the run
@@ -20,8 +20,8 @@ beforeEach(() => {
   store.rows.clear();
 });
 
-describe("settingsRepository.get", () => {
-  it("reads back what put writes — every AppSettings field, by construction", async () => {
+describe("settingsRepository", () => {
+  it("reads back what update writes — every AppSettings field, by construction", async () => {
     // `Required<AppSettings>` is the recurrence killer: a field added to the
     // type without a value here fails `pnpm typecheck`, and a value here that
     // `fromItem` drops fails the equality below. `unknownModelPolicy` shipped
@@ -60,7 +60,7 @@ describe("settingsRepository.get", () => {
       ],
       updatedAt: "2026-01-01T00:00:00Z",
     };
-    await settingsRepository.put(stored);
+    await settingsRepository.update(() => stored);
 
     // The row lives at the one settings address, typed, with nothing lost.
     expect(store.all()).toEqual([
@@ -71,5 +71,25 @@ describe("settingsRepository.get", () => {
 
   it("returns null when no settings item exists", async () => {
     await expect(settingsRepository.get()).resolves.toBeNull();
+  });
+
+  it("merges concurrent mutations against the latest stored row", async () => {
+    await Promise.all([
+      settingsRepository.update((current) => ({
+        ...(current ?? { updatedAt: "" }),
+        publicBaseUrl: "https://studio.example.com",
+        updatedAt: "2026-01-01T00:00:00Z",
+      })),
+      settingsRepository.update((current) => ({
+        ...(current ?? { updatedAt: "" }),
+        embeddingModel: "openai/text-embedding-3-small",
+        updatedAt: "2026-01-01T00:00:01Z",
+      })),
+    ]);
+
+    await expect(settingsRepository.get()).resolves.toMatchObject({
+      publicBaseUrl: "https://studio.example.com",
+      embeddingModel: "openai/text-embedding-3-small",
+    });
   });
 });

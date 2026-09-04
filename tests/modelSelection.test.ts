@@ -86,8 +86,11 @@ function deps(initial: AppSettings | null = null): {
         async get() {
           return stored;
         },
-        async put(settings) {
-          stored = settings;
+        async update(mutate) {
+          const before = stored;
+          const after = mutate(stored);
+          stored = after;
+          return { before, after };
         },
       },
       lock,
