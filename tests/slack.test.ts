@@ -257,7 +257,7 @@ describe("slackClient.downloadFile", () => {
 
   /**
    * The caller's own pre-check reads Slack's declared `size`, which Slack is
-   * free to omit — and this used to answer `res.arrayBuffer()`, so a file with
+   * free to omit — and this would answer `res.arrayBuffer()`, so a file with
    * no declared size was fully resident before anything measured it.
    */
   it("refuses a declared length over the cap without reading the body", async () => {

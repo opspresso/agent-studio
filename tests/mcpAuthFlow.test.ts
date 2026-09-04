@@ -232,7 +232,7 @@ describe("beginAuthorization", () => {
   it("registers a client dynamically when the server offers it and none is stored", async () => {
     // The 2025-era path, and the reason it is still here: such a server offers
     // no metadata document, so without this the only way in is an owner
-    // registering an app by hand for a connection that used to just work.
+    // registering an app by hand for a connection that would just work.
     const h = harness({
       server: {
         ...SERVER,
@@ -860,7 +860,7 @@ describe("saveClientCredentials", () => {
 
   it("leaves a live connection alone when nothing was edited", async () => {
     // Both boxes arrive prefilled from the stored connection, so Save without an
-    // edit is the likeliest press there is — and it used to reset the whole
+    // edit is the likeliest press there is — and it would reset the whole
     // connection, costing the project the tokens those credentials authorized.
     const h = harness({
       connection: {

@@ -75,7 +75,7 @@ describe("withTurnBody", () => {
 
   it("charges bytes rather than requests, so a small attachment is not a whole permit", async () => {
     // The budget is worth two maximal turns. A body just past the prose
-    // allowance is a three-hundredth of one, and used to spend the same permit
+    // allowance is a three-hundredth of one, and would spend the same permit
     // — two screenshots in flight 429'd everyone else for the length of a run.
     const largeBody = largeTurnBody();
 

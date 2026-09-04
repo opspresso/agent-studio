@@ -86,8 +86,7 @@ describe("tierAtLeast", () => {
   it("puts a row that predates tiers below member", () => {
     // Worth stating rather than leaving to `toMemberTier`: a member row written
     // before the attribute existed carries no tier, and the `member` rung is
-    // the first gate whose default answer takes something away that used to be
-    // visible.
+    // the first gate whose default answer removes previously visible access.
     expect(tierAtLeast(toMemberTier(undefined), "member")).toBe(false);
   });
 });

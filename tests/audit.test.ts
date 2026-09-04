@@ -218,7 +218,7 @@ describe("reading a range", () => {
   });
 
   it("refuses a month that does not exist rather than answering that nothing happened", async () => {
-    // `2026-13-01` has the right shape and parses to NaN, which used to make the
+    // `2026-13-01` has the right shape and parses to NaN, which would make the
     // range empty — so the endpoint answered 200 with no events. For an
     // append-only trail "that is everything" is a worse answer than an error.
     setAuditSink(sink);

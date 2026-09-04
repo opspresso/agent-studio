@@ -117,7 +117,7 @@ describe("sseResponse keepalive", () => {
 
   /**
    * The keepalive cannot start until the response exists, so a generator whose
-   * *first* chunk is far away used to spend the whole 60s idle budget in
+   * *first* chunk is far away would spend the whole 60s idle budget in
    * silence and be cut mid-run. Two runs do exactly that: an image, whose bytes
    * arrive in one chunk at the end, and a reasoning model on a version that is
    * not recording its thinking — that stream's first chunk is the end-of-turn

@@ -642,7 +642,7 @@ describe("runStore", () => {
   /**
    * The refusal is reported, not swallowed: the composer has the typed message
    * in hand and clears it only on an accepted send — a silent no here is how a
-   * draft used to vanish when a run got in between the render and the press.
+   * draft would vanish when a run got in between the render and the press.
    */
   it("refuses a second turn while one is still streaming, and says so", async () => {
     stubFetch([() => sse([{ delta: { content: "first" } }], { close: true })]);

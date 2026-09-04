@@ -10,10 +10,9 @@ import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import type { ChatMessage, ChatMessageImage } from "@/domain/chat/types";
 
 /**
- * A generated image used to be stored as a public URL with a one-year immutable
- * cache and nothing that ever expired it, so anyone holding a transcript held a
- * working link forever. Rows now carry the object key and the address is minted
- * at read time.
+ * Generated image rows carry object keys and mint addresses at read time. A
+ * long-lived public URL in the row would give anyone holding a transcript a
+ * durable capability.
  */
 
 const signed = async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`;

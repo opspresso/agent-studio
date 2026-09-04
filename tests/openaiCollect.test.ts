@@ -340,7 +340,7 @@ describe("toChatCompletionChunks finish_reason", () => {
   });
 
   it("fails a stream that ends without announcing a termination", async () => {
-    // The inference this used to make ("no done → length") reported a
+    // The inference this would make ("no done → length") reported a
     // cancellation and a mid-stream error as a length stop. An unannounced
     // ending is a defect, not a length stop.
     await expect(async () => {

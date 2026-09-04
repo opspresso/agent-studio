@@ -90,7 +90,7 @@ describe("POST /api/plugins/sync/upload", () => {
 
   it("stores the report under the name the console reads it back from, whatever the form says", async () => {
     // `GET /api/plugins/sync` reads the last report under the configured
-    // repository (else `archive`); a caller-chosen name used to be accepted
+    // repository (else `archive`); a caller-chosen name would be accepted
     // here and stored a report that page never showed.
     await upload({ file: new Blob([ARCHIVE]), repo: "mirror/agent-plugins" });
     expect(syncPluginsFromArchive.mock.calls[0]?.[1]).toBe("opspresso/agent-plugins");

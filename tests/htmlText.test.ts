@@ -68,7 +68,7 @@ it("a comment cannot swallow the markup after it", () => {
 it("an unterminated dropped element does not leak its contents as prose", () => {
   // The source is cut at MAX_HTML_CHARS before it gets here, so this function
   // does receive markup that stops mid-element. A `<script>` whose `</script>`
-  // was cut off used to have only its opening tag removed, and its JavaScript
+  // was cut off would have only its opening tag removed, and its JavaScript
   // came back as the page's text.
   expectEqual(htmlToText(`<p>prose</p><script>var secret = "token"; // cut here`), "prose");
   expectEqual(htmlToText(`<p>prose</p><style>.a{color:red}`), "prose");

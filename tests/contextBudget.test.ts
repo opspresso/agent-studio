@@ -468,7 +468,7 @@ describe("runAgent context budget", () => {
   it("charges a refusal it wrote itself, but never replaces its reason with the budget's", async () => {
     // Two calls in one response: a 250k tool result that spends the whole
     // per-turn budget, then a call whose arguments did not parse. The refusal
-    // used to go through the same fit as the tool output, so once the budget
+    // would go through the same fit as the tool output, so once the budget
     // was gone it came back as "this turn's tool output budget is exhausted" —
     // telling the model to request less data about a call that failed to parse.
     // It is bounded by construction, so it is charged and handed back whole.

@@ -6,7 +6,7 @@ process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
  * `|| undefined` was the shape every optional env read took, so the empty string
  * already meant "not set" — and whitespace, which carries the same intent, did
  * not. A secret mounted from a file arrives with a trailing newline; one typed
- * with a stray space arrives with that. Both used to survive as values:
+ * with a stray space arrives with that. Without normalization both survive as values:
  * `A2A_API_KEY=" "` passed the boot guard, read as `source: "env"` on the
  * settings page, and then 401'd every request that presented it.
  *

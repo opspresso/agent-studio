@@ -359,7 +359,7 @@ describe("createVersion naming", () => {
 
 describe("tool bindings on a project type that cannot run them", () => {
   // Only agent projects run the tool loop; every other type is dispatched to a
-  // single-shot completion. A binding stored on one of those used to be
+  // single-shot completion. A binding stored on one of those would be
   // accepted, shown in the editor, and then silently ignored at run time.
   it("rejects an MCP server, skill or subagent added to a non-agent project", async () => {
     for (const input of [

@@ -371,7 +371,7 @@ describe("generateImage", () => {
 
 describe("generateImageStream", () => {
   it("delivers the picture, what it cost, and the ending", async () => {
-    // Every chunk matters. The webhook runner used to assemble these by hand in
+    // Every chunk matters. The webhook runner would assemble these by hand in
     // the composition root and emitted only the picture, so a consumer reading a
     // run's termination could never see this one end, and one totalling a run
     // off the stream — as collectRun does — would read it as free.

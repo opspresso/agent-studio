@@ -299,7 +299,7 @@ describe("per-project MCP header overrides at dispatch", () => {
   });
 
   it("still sends the registry headers when the entry has OAuth the project has not connected", async () => {
-    // Discovering OAuth on an entry adds a way to authenticate it. It used to
+    // Discovering OAuth on an entry adds a way to authenticate it. It would
     // take one away: any `auth` block made the run drop the server outright,
     // so an entry that had been working on a static Authorization header went
     // dark the moment an admin pressed Discover on it.

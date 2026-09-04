@@ -125,7 +125,7 @@ describe("pairToolTraffic", () => {
   });
 
   /**
-   * The regression that made this pairing worth testing. A call used to be
+   * The regression that made this pairing worth testing. A call would be
    * decorated for display — `Skill: deep-research` — while its result carries the
    * plain `Skill`, so matching by name split every skill call back into the two
    * rows the pairing exists to join.

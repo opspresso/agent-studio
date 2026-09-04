@@ -506,7 +506,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
   });
 
   it("records a successful transfer without replaying it as the answer", async () => {
-    // A transfer used to leave no trace at all — only its failures produced a
+    // A transfer would leave no trace at all — only its failures produced a
     // result — so a finished chat could not say which agent had answered.
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "hi" }),
@@ -807,7 +807,7 @@ describe("runAndPersist keeps the run's reasoning", () => {
 
   it("writes the message for a run that only thought", async () => {
     // The run a reviewer opened this feature for: it spent tokens and produced
-    // no answer, and the guard used to drop the whole turn as having nothing.
+    // no answer, and the guard would drop the whole turn as having nothing.
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     async function* source(): AsyncGenerator<EngineChunk> {
       yield { delta: { reasoningContent: "thought about it" } };
@@ -1459,7 +1459,7 @@ describe("chat run lease", () => {
 });
 
 /**
- * Closing the tab used to be the stop button. Now that a run outlives its
+ * Closing the tab would be the stop button. Now that a run outlives its
  * reader, stopping one is a deliberate act — and a persisted one, because the
  * instance answering the press is not necessarily the one running the answer.
  */

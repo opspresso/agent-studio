@@ -1,5 +1,5 @@
 /**
- * The reading four list endpoints used to each own.
+ * The shared parser for page sizes across list endpoints.
  *
  * The cases below are the three the copies disagreed about, and each of them
  * reaches a reader as a page that is wrong without looking wrong: a gallery of
@@ -78,7 +78,7 @@ describe("boundedPageLimit", () => {
   });
 
   it("reads an unreadable size as unstated, not as one row", () => {
-    // The repositories clamp defensively, and `LIMIT NaN` used to reach the
+    // The repositories clamp defensively, and `LIMIT NaN` would reach the
     // store as a query error. A page of one row is the worse of the two
     // recoveries: it looks like the end of the list.
     expect(boundedPageLimit(Number.NaN)).toBe(MAX_PAGE_LIMIT);

@@ -230,8 +230,8 @@ describe("extracting a document", () => {
   });
 
   it("takes the markup off an attached page", async () => {
-    // Behaviour change worth being explicit about: this file used to reach the
-    // model as raw markup, because `documentKind` called it text.
+    // An HTML attachment must reach the model as extracted prose, not raw
+    // markup merely because `documentKind` classifies it as text-like.
     const result = await documentExtractor.extract({
       bytes: Buffer.from(
         "<title>Report</title><body><script>var x=1</script><p>Revenue rose.</p></body>",
