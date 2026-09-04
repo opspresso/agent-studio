@@ -18,6 +18,7 @@ import {
 } from "@/domain/trigger/types";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { triggerSecretContext } from "@/domain/security/secretContext";
+import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
 
@@ -217,7 +218,7 @@ describe("admitDelivery", () => {
   });
 
   it("keeps a legacy v1 encrypted webhook secret usable during migration", async () => {
-    const f = fixture({ stored: trigger({ secret: secretCipher.encrypt(SECRET) }) });
+    const f = fixture({ stored: trigger({ secret: encryptSecret(SECRET) }) });
     expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("accepted");
   });
 

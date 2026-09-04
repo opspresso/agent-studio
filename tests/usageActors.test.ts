@@ -11,6 +11,7 @@ import type { RunCaller } from "@/domain/execution/actor";
 import type { Project } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { ActorUsageRow } from "@/domain/usage/types";
+import { slackSecretContext } from "@/domain/security/secretContext";
 
 beforeAll(() => {
   process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
@@ -28,8 +29,14 @@ function makeProject(withSlack: boolean): Project {
     ...(withSlack
       ? {
           slack: {
-            botToken: secretCipher.encrypt("xoxb-token"),
-            signingSecret: secretCipher.encrypt("secret"),
+            botToken: secretCipher.encrypt(
+              "xoxb-token",
+              slackSecretContext("painter", "bot-token"),
+            ),
+            signingSecret: secretCipher.encrypt(
+              "secret",
+              slackSecretContext("painter", "signing-secret"),
+            ),
             enabled: true,
           },
         }

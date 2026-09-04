@@ -189,7 +189,7 @@ function fieldSecretContext(
   key: SettingKey,
   settings: AppSettings | null,
   env: NodeJS.ProcessEnv,
-): string | undefined {
+): string {
   switch (key) {
     case "llmApiKey":
       return llmApiKeyContext(settings?.llmBaseUrl ?? optionalEnv(env.LLM_BASE_URL) ?? "");
@@ -198,7 +198,7 @@ function fieldSecretContext(
     case "a2aApiKey":
       return settingsSecretContext("a2a-api-key");
     default:
-      return undefined;
+      throw new Error(`No encryption context is defined for secret setting "${key}"`);
   }
 }
 
