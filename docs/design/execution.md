@@ -15,8 +15,9 @@ Project 가 무엇이고, Version 이 무엇을 선언하며, 하나가 실행�
 
 ```ts
 Project { name (slug, immutable id), displayName, description,
-          projectType: 'llm' | 'agent' | 'image', ownerEmail, departmentCode?,
-          publishedVersion?, slack?, costLimits?, createdAt, updatedAt }
+          projectType: 'llm' | 'agent' | 'image', ownerEmail,
+          visibility?, memberEmails?, departmentCode?, publishedVersion?,
+          slack?, telegram?, teams?, costLimits?, createdAt, updatedAt }
 
 Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fallbackModel?,
           parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,

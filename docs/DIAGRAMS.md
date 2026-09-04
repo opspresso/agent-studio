@@ -2,7 +2,7 @@
 
 Agent Studio 전체를 그림으로 본다. 각 그림은 요약이고, 정본은 옆에 링크한 문서다. 그림과 문서가
 어긋나면 문서가 맞다. 그림은 [ARCHITECTURE.md](ARCHITECTURE.md) 의 순서를 따른다: 계층 → 요청
-흐름 → 런 브래킷 → 엔진 루프 → 메시징 표면 → 조립 지점 → 저장 모델.
+흐름 → 런 브래킷 → 메시징 표면 → 조립 지점 → 저장 모델.
 
 ## 1. 계층과 의존 방향
 
@@ -34,11 +34,12 @@ flowchart TB
   lib --> shared
 ```
 
-## 2. 요청 흐름: 열한 진입점, 하나의 파사드
+## 2. 요청 흐름: 열한 진입점과 이미지 예외
 
-모든 실행은 `src/application/execution/runProject.ts` 로 모인다. 표면은 *어떻게 들어오는지*
-(HTTP 형태, 인증, 응답 모양)만 결정하고, *어떤 프로젝트 타입이 어떻게 도는지*는 파사드가
-한 번 결정한다 ([ARCHITECTURE.md#요청-흐름](ARCHITECTURE.md#요청-흐름)).
+chunk 소비자는 `src/application/execution/runProject.ts` 로 모인다. 완성된 이미지 응답을 직접
+만드는 predict 와 A2A 는 `generateImage` 로 갈라지고, 그 밖의 표면은 *어떻게 들어오는지*
+(HTTP 형태, 인증, 응답 모양)만 결정한다
+([ARCHITECTURE.md#요청-흐름](ARCHITECTURE.md#요청-흐름)).
 
 ```mermaid
 flowchart LR
@@ -59,9 +60,11 @@ flowchart LR
 
   subgraph facade["실행 파사드 — runProject.ts"]
     direction TB
-    dispatch["projectType 디스패치<br/>agent → 툴 루프 · llm → 단발 · image → generateImage"]
+    dispatch["projectType 디스패치<br/>agent → 툴 루프 · llm → 단발 · image → generateImageStream"]
     fns["streamProjectRun (청크 소비자, 이미지 포함)<br/>executeProjectStream / executeProject (완성 응답, 이미지 거부)<br/>executeAgent (에이전트 전용)"]
   end
+
+  imageuc["이미지 유스케이스 — generateImage"]
 
   bracket["런 브래킷 — openRun<br/>모델 정책 → 프로젝트 비용 가드 → 멤버 월 상한 → 동시성 슬롯 → 메트릭·상관 id·아티팩트 레코더"]
   resolve["바인딩 해석 (prepare span)<br/>스킬 · MCP 세션 · 서브에이전트 · (옵트인) 카탈로그 검색 · 메모리 회상"]
@@ -72,18 +75,21 @@ flowchart LR
   usage["사용량 기록 (런 종료 시 1회 flush)"]
   trace["트레이스 (에이전트 항상, 그 외 샘플링)"]
 
-  predict --> facade
+  predict -->|"agent / llm"| facade
+  predict -.->|"image"| imageuc
   cc --> facade
   agentsse --> facade
   chat -->|"ChatDeps.runAgent"| facade
   slack -->|"handleTurn → runAgent"| facade
   telegram -->|"handleTurn → runAgent"| facade
   teams -->|"handleTurn → runAgent"| facade
-  a2a --> facade
+  a2a -->|"agent / llm"| facade
+  a2a -.->|"image"| imageuc
   agui -->|"streamAguiRun"| facade
   webhook -->|"triggerRunnerDeps.run"| facade
   schedule -->|"triggerRunnerDeps.run"| facade
   facade --> bracket
+  imageuc --> bracket
   bracket -->|"agent"| resolve --> engine
   bracket -->|"llm"| engine
   bracket -->|"image"| imagechannel

@@ -22,8 +22,10 @@ MCP 와 마찬가지로 SSRF 가드를 거친다. headers 는 등록된 주소�
 ## A2A
 
 **Inbound**: 표면이 켜져 있는 배포에서는(공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키가
-하나 이상 — 아니면 두 라우트 모두 503 으로 답한다) published 된 Version 을 가진 모든 Project
-가 공개 Agent Card 와 JSON-RPC 엔드포인트를 제공한다. 카드는 엔드포인트가 요구하는
+하나 이상 — 아니면 두 라우트 모두 503 으로 답한다) published 된 Version 을 가진 Project 가
+JSON-RPC 엔드포인트를 제공한다. 공개 Agent Card 는 public Project 만 제공하며, private Project 는
+무인증 card 요청을 `404`로 숨긴다. 키를 가진 JSON-RPC 호출은 visibility 와 무관하게 허용된다.
+카드는 엔드포인트가 요구하는
 `X-A2A-Key` 스킴을 `securitySchemes`/`securityRequirements` 로 선언하고 401 은 `WWW-Authenticate` 로 같은
 것을 말한다 — 카드에서 자격 증명을 고르는 표준 클라이언트가 그것 없이는 매 호출 401 을 받았다.
 SDK 의 request handler 는 세 가지 결정을 덧씌운다(`ProjectRequestHandler`): 읽을 수 없는 part

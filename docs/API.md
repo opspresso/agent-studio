@@ -23,11 +23,15 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
   `/api/telegram/webhook/*` 는 Telegram 이 되돌려 주는 secret token, `/api/teams/messages/*` 는 Bot
   Framework 가 서명한 토큰, `/api/webhook/{project}` 는
   그 webhook 자신의 secret, `/api/triggers/scan` 은 배포의 `SCHEDULE_SCAN_TOKEN` 이다. `/api/health`, `/api/ready`, `/api/metrics` 는 열려 있다.
+- **Origin**: 세션 쿠키로 인증하는 `POST`/`PUT`/`PATCH`/`DELETE` 는 `Origin` 이 요청 origin 또는
+  `PUBLIC_BASE_URL` 의 origin 과 정확히 일치해야 한다. 헤더가 없거나 `null` 이거나 다르면
+  `403 { "error": "Cross-origin mutation refused" }` 이다. Bearer token 과 서명된 기계 표면은
+  각자의 자격 증명으로 보호되므로 이 검사를 적용하지 않는다.
 - **Authorization**: project 는 공개 범위를 갖는 공유 카탈로그다. `public`(기본값) 은
   로그인한 누구나 읽고 실행하고, `private` 은 소유자·초대 멤버·admin 만이다
   ([SECURITY.md](SECURITY.md#인가-모델), 그 외에는 `403 { "error": "Project \"…\" is private" }`).
   변경(수정/삭제/publish, version 생성/수정, Slack·Telegram 설정)은 공개 범위와 무관하게
-  소유자와 설정된 admin 만 할 수 있고, 그 외에는
+  소유자와 effective admin(저장된 `admin` tier 또는 설정된 admin) 만 할 수 있고, 그 외에는
   `403 { "error": "You do not have permission to modify project \"…\"" }` 이다.
   다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 project 하위 리소스. 트레이스,
   Slack·Telegram 설정, API 토큰, trigger, 호출자별 사용량, MCP 연결. 은
@@ -35,8 +39,9 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
   모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/agent/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
   **`member` tier 이상**에게 읽기가 공유된다. 모든 가입자가 시작하는 tier 인 `guest` 는
   `403 { "error": "This resource is not available to your account" }` 을 받는다 (`withMemberAuth`).
-  변경은 `ADMIN_EMAILS` 가 설정돼 있으면 그 목록에 속해야 하고 (설정되지 않았으면 로그인한
-  사용자 누구나 허용), 그렇지 않으면 `403 { "error": "Only admins can modify this resource" }` 이다.
+  변경은 저장된 `admin` tier 이거나 `ADMIN_EMAILS` 목록에 속해야 한다. 목록이 설정되지 않았으면
+  로그인한 사용자 누구나 허용하며, 그렇지 않으면
+  `403 { "error": "Only admins can modify this resource" }` 이다.
   project 생성도 마찬가지로 tier 능력이다: 그 능력이 없는 tier 는
   `403 { "error": "Your tier does not allow creating projects" }` 을 받는다.
 - **Errors**: `{ "error": string }` 이고, 스키마 검증 실패에는 `issues` 배열이 추가로 붙는다.
@@ -50,8 +55,10 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 - **List responses**: 리소스 컬렉션(`projects`, `skills`, `mcps`, `agents`)은 벌거벗은
   배열을 돌려준다. `chats`, `models`, `usages/summary`, `triggers`, `connections` 는 각자의
   것을 객체로 감싼다 (`{ chats }`, `{ models }`, `{ items }`, `{ triggers }`, `{ connections }`).
-- **Names** 는 slug (`^[a-z0-9-]+$`) 이고 `parseName` 이 검증한다. 실패 시
-  `ValidationError` 를 던져 `400` 이 된다.
+- **Names** 는 일반적으로 slug (`^[a-z0-9-]+$`) 이며 생성·변경 입력은 `parseName` 또는 같은
+  스키마가 검증해 `400` 으로 답한다. path parameter 의 조회는 리소스별 계약을 따른다: project
+  GET/PUT 은 찾지 못한 이름을 `404` 로 답하고 DELETE 는 잘못된 형식을 `400` 으로 거절한다.
+  Plugin 이름은 별도의 Agent Plugins 규칙을 따른다.
 - **SSE framing**: 각 이벤트는 `data: {json}\n\n` 이다. `sseResponse` 가 서빙하는 모든
   스트림은. OpenAI 형식의 것들과 chat 스트림 모두. `data: [DONE]\n\n` 으로 끝난다 (A2A
   엔드포인트의 JSON-RPC 스트림과 AG-UI 이벤트 스트림은 이것을 생략한다. 각자의 프로토콜이
@@ -66,8 +73,9 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 ## 라우트 색인
 
 `session` = Better Auth 세션 쿠키. `member` = 세션 + `member` tier 이상
-(`withMemberAuth`. `guest` 는 403 을 받는다). `admin` = 세션 + 유효 admin 목록에 속함.
-`owner` = 그 project 의 소유자 또는 설정된 admin.
+(`withMemberAuth`. `guest` 는 403 을 받는다). `admin` = 세션 + 저장된 `admin` tier 이거나 유효
+admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 project 의 소유자, 저장된
+`admin` tier, 또는 설정된 admin.
 
 ### Projects
 
@@ -141,6 +149,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 | `/api/artifacts/{artifactId}/view` | `GET` | 생성자, project 소유자, 또는 admin |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
+| `/api/models/favorites` | `GET` `PUT` | session |
 | `/api/models/catalog` | `GET` | member |
 | `/api/models/catalog/document` | `GET` `PUT` `DELETE` | admin |
 | `/api/models/test` | `POST` | admin |
@@ -166,7 +175,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 |---|---|---|
 | `/api/auth/{...all}` | `GET` `POST` | Better Auth 로그인 플로우 자신 |
 | `/api/a2a` | `GET` | session |
-| `/api/a2a/{project}/.well-known/agent-card.json` | `GET` | 공개 |
+| `/api/a2a/{project}/.well-known/agent-card.json` | `GET` | 공개(public project 만) |
 | `/api/a2a/{project}` | `POST` | `X-A2A-Key` |
 | `/api/agui/{project}` | `POST` | project 토큰 또는 session |
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
@@ -239,6 +248,11 @@ DELETE /api/skills/{name}     → 204                     | 404
 기반의 모든 읽기·실행 표면에서 소유자·초대 멤버·admin 외에 403 으로 거절되고, 목록
 (`GET /api/projects`) 에서는 보이지 않는다. 누가 게이트를 받고 누가 받지 않는지(API token,
 bot, Slack 의 이메일 판정)는 [SECURITY.md](SECURITY.md#인가-모델) 가 정본이다.
+
+`memberEmails` 는 초대받은 사람들의 주소이므로 모든 독자에게 노출하지 않는다. 단일 project
+GET 은 소유자나 effective configured admin 에게만 이 필드를 포함하고, 초대 멤버와 일반 독자에게는
+필드 자체를 제거한다. project 목록에서도 항상 제거한다. PUT 응답은 쓰기 권한을 지난 호출자에게
+정규화된 목록을 돌려준다.
 
 ```
 POST /api/projects/{name}/clone    { "name": "my-copy", "displayName": "My Copy" }
@@ -414,10 +428,13 @@ GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
 PUT /api/settings → 200 {…same shape…} | 400
 ```
 
-- 두 동사 모두 admin 전용이다. 키: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
-  `llmApiKey`, `pluginsRepo`, `pluginsRepoBranch`, `githubToken`, `a2aApiKey`,
-  `publicBaseUrl`, `artifactAccessMode` (`authenticated` | `proxied` | `public` | `""`),
-  `unknownModelPolicy` (`allow` | `refuse` | `""`). 이 둘은 enum 으로 검증된다.
+- 두 동사 모두 admin 전용이다. GET 의 `fields` 키는 `adminEmails`, `allowedEmailDomains`,
+  `llmBaseUrl`, `llmApiKey`, `embeddingModel`, `rerankerModel`, `rerankerMinScore`, `pluginsRepo`,
+  `pluginsRepoBranch`, `githubToken`, `a2aApiKey`, `publicBaseUrl`, `artifactAccessMode`,
+  `unknownModelPolicy`다. 이 중 Embedding/Rerank 선택 세 필드는 읽기 전용이며
+  `PUT /api/models/selection` 으로 변경한다. PUT 이 받는 `artifactAccessMode`
+  (`authenticated` | `proxied` | `public` | `""`)와 `unknownModelPolicy`
+  (`allow` | `refuse` | `""`)는 enum 으로 검증된다.
   `pluginsRepo` 는 자기만의 형태를 가진 나머지 하나의 키다. `owner/repo`, 또는 비우면
   지운다. 나머지는 길이가 제한된 문자열이다.
 
@@ -475,7 +492,8 @@ GET /api/audit?from=2026-08-01&to=2026-08-03
   날짜(`2026-02-31`, `2026-13-01`), 뒤집힌 범위, 또는 그보다 넓은 범위는 `400` 이다. 폭은
   범위를 열거해서가 아니라 날짜에서 바로 거절하므로, 터무니없는 폭도 다른 거절과 같은 비용이다.
 - 최신순이다. `action` 은 `secret.reveal` | `secret.rotate` | `secret.revoke` |
-  `project.admin-override` | `settings.update` | `project.delete` | `registry.delete` |
+  `project.admin-override` | `settings.update` | `project.delete` | `catalog.install` |
+  `catalog.remove` | `registry.delete` |
   `registry.adopt` (plugins sync 가 다른 출처가 만든 항목을 넘겨받는 것) |
   `artifact.delete` (다른 사람의 artifact) | `member.set-tier` 중 하나다. `target` 은
   `kind:name` 이다.
@@ -492,9 +510,10 @@ GET /api/me → 200 { email, isAdmin, isConfiguredAdmin, tier }
 `tier` 는 그 멤버의 tier 이고, 그래서 콘솔은 tier 범위의 행동(project 생성)을 라우트가 강제하는
 것과 같은 `tierMay*` 술어로 게이트한다. 두 플래그를 다 보내는 이유는 서로 다른 질문에 답하고
 콘솔이 둘 다 필요로 하기 때문이다:
-`isAdmin` (공유 레지스트리와 앱 설정을 변경해도 되는가, 빈 `ADMIN_EMAILS` 는 *제한 없음*을
-뜻한다) 과 `isConfiguredAdmin` (남이 소유한 project 를 써도 되는가. 빈 목록은 *아무도 안 됨*을
-뜻한다). 둘 다 브라우저에서 유도할 수 없고, 하나를 다른 하나에서 추론한 것이 한때 로그인한 모든
+`isAdmin` (공유 레지스트리와 앱 설정을 변경해도 되는가, 저장된 `admin` tier 이거나 빈
+`ADMIN_EMAILS` 는 허용) 과 `isConfiguredAdmin` (남이 소유한 project 를 써도 되는가, 저장된
+`admin` tier 이거나 목록에 있으면 허용. 빈 목록만으로는 아무도 추가하지 않음) 이다. 둘 다 브라우저에서
+유도할 수 없고, 하나를 다른 하나에서 추론한 것이 한때 로그인한 모든
 사용자에게 저장 시 403 이 나는 편집 폼을 내주었던 원인이다.
 [SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin) 를 보라.
 
@@ -649,7 +668,8 @@ POST /api/plugins/sync
   most 500 names) | 409 (a sync is already running) | 503 (not configured)
 
 POST /api/plugins/sync/scan          (X-Scan-Token: SCHEDULE_SCAN_TOKEN)
-→ 202 { started } | 200 { upToDate } | 200 { held: "archive" } | 401 | 503
+→ 202 { started: true } | 200 { started: false, upToDate: true }
+  | 200 { started: false, held: "archive" } | 401 | 503
 
 POST /api/plugins/sync/upload        multipart/form-data: file (.tar.gz | .tgz | .tar),
                                      selection? (the removal JSON below)
@@ -781,7 +801,7 @@ GET    /api/projects/{name}/slack/channels
 Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `eventsPath`, `eventsUrl`,
 `suggestedPrompts`, `channelKeywords`, 그리고 생성된 앱 manifest 를 돌려준다. 모든 동사가 그
 같은 뷰로 답한다.
-다섯 엔드포인트 모두 소유자와 설정된 admin 으로 제한된다 (그 외에는 403). 마스킹된 뷰도 봇
+다섯 엔드포인트 모두 소유자와 effective admin 으로 제한된다 (그 외에는 403). 마스킹된 뷰도 봇
 토큰 / signing secret 의 양끝은 드러내기 때문이다. 마스킹되거나 생략된 secret 은 업데이트에서
 보존되고, agent 가 아닌 project 에 대한 `PUT` 은 400 이다. Slack 봇은 agent project 에만
 붙는다. 저장된 것도 보낸 것도 없는 상태에서 봇 토큰과 signing secret 없이 `enabled: true` 를
@@ -805,7 +825,7 @@ POST   /api/projects/{name}/telegram/webhook
 
 설정의 다섯 동사는 같은 뷰로 답한다: `enabled`, `configured`, 마스킹된 `botToken`, 봇의
 `botUsername` (토큰을 저장할 때 알아낸 것. secret 이 아니다), `webhookPath`, `webhookUrl`.
-여섯 endpoint 모두 소유자와 설정된 admin 으로 제한된다. `PUT` 의 *새* 토큰은 저장하기 전에
+여섯 endpoint 모두 소유자와 effective admin 으로 제한된다. `PUT` 의 *새* 토큰은 저장하기 전에
 Telegram(`getMe`)으로 확인하고, Telegram 이 거부하면 400 이다. 마스킹되거나 빈 토큰은 저장된
 것을 유지한다. webhook secret 은 첫 토큰과 함께 이 플랫폼이 발행하며 절대 돌려주지 않는다.
 그것이 필요한 쪽은 Telegram 뿐이다. **webhook 은 `PUT` 이 스위치를 따라 관리한다**: `enabled`
@@ -840,7 +860,7 @@ POST   /api/projects/{name}/teams/test
 
 모든 동사가 같은 뷰로 답한다: `enabled`, `configured`, `appId`(secret 이 아니다, 모든 토큰의
 audience 다), 마스킹된 `appPassword`, `tenantId`, `messagingPath`, `messagingUrl`. Azure Bot 의
-messaging endpoint 로 붙여 넣을 주소다. 넷 모두 소유자와 설정된 admin 으로 제한된다. `PUT` 은
+messaging endpoint 로 붙여 넣을 주소다. 넷 모두 소유자와 effective admin 으로 제한된다. `PUT` 은
 App ID 와 테넌트 id 가 GUID 인지만 확인하고 Microsoft 에는 아무것도 묻지 않는다. 한 쌍이
 동작한다는 증거는 `test` 가 저장된 자격 증명으로 토큰을 받아 보는 것이고(`{ ok: true, appId,
 expiresInSeconds }`, 설정되지 않았거나 꺼져 있으면 `400`, Microsoft 가 거절하면 `502`), 저장이
@@ -1026,11 +1046,11 @@ DELETE /api/projects/{name}/token          → 204
 ```
 
 토큰은 `ast_` + 랜덤 32바이트(base64url)다. `masked` 는 생성 시점에 기록된 표시용 마스크
-(`ast_••••…••wXyZ`)다. 토큰 자체는 복구 불가능하게 남으므로, 콘솔이 복호화하지 않고 *어느*
-토큰이 설정돼 있는지 보여 줄 수 있는 유일한 방법이 이것이다. 마스크를 기록하기 전에 발급된
-토큰에는 없다. 검증이 접두사를 보는 일이 없으므로 그런 토큰도 계속 동작한다.
+(`ast_••••…••wXyZ`)다. 현재 토큰은 암호화되어 reveal 할 수 있고, 마스크는 routine status
+조회에서 복호화하지 않고 *어느* 토큰이 설정돼 있는지 보여 주기 위해 따로 저장한다. 암호화
+저장과 마스크 기록 전에 발급된 legacy 토큰에는 해시만 있어 복구할 수 없지만 계속 동작한다.
 
-넷 다 소유자와 설정된 admin 으로 제한된다 (그 외에는 403). `POST` 는 토큰을 생성하거나 재생성한다.
+넷 다 소유자와 effective admin 으로 제한된다 (그 외에는 403). `POST` 는 토큰을 생성하거나 재생성한다.
 재생성은 이전 토큰을 덮어쓰고, 그 토큰은 즉시 동작을 멈춘다. 토큰은 자기 project 범위로 한정된다
 (요청 경로의 `{name}` 에 대해 검증된다).
 
@@ -1368,7 +1388,8 @@ GET /api/artifacts/{artifactId}/view
 있느냐가 아니라 **독자가 여는 것이냐 보관하는 것이냐**다. 브라우저가 알아서 그리는 PDF 는
 sandbox 가 필요 없고, 다운로드는 애초에 신뢰를 요구하지 않는다.
 
-응답은 어느 쪽이든 `text/html; charset=utf-8` 이고, **파일 타입마다 그것답게** 나간다.
+응답은 어느 쪽이든 `text/html` 이고, **파일 타입마다 그것답게** 나간다. 앱이 렌더링한 view는
+UTF-8 이며, 저장된 `text/html` 은 MIME 에 선언된 charset 을 보존하고 없을 때 UTF-8 을 쓴다.
 
 | 저장된 타입 | 어떻게 보이는가 |
 |---|---|
@@ -1403,8 +1424,10 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 만료·파일명을 덮는 HMAC. [SECURITY.md](SECURITY.md#데이터-노출과-보존)). `dl` 이 있으면
 `Content-Disposition: attachment` 로 그 이름에 내려가고, 없으면 인라인이다. 응답은
 `Cache-Control: private, max-age=<토큰의 남은 초>` 를 싣고, 브라우저가 문서로 그릴 수 있는
-타입은 `/view` 와 같은 `sandbox; default-src 'none'` 아래로 나간다. 한 번에 읽는 상한은 저장될
-수 있는 오브젝트의 최대인 10 MB 다.
+타입 중 raster image 와 PDF 를 제외한 것은 `/view` 와 같은
+`sandbox; default-src 'none'` 아래로 나간다. raster image 와 PDF 는
+`frame-ancestors 'none'` 만 적용한다. 한 번에 읽는 상한은 저장될 수 있는 오브젝트의 최대인
+10 MB 다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
 `byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의
@@ -1422,7 +1445,7 @@ A2A·webhook·schedule 런은 자기 project 를 통해서만 닿을 수 있고,
 거기뿐이다. `from`/`to` 는 실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의
 `nextBefore` 다.
 
-삭제는 생성자, 그 project 의 소유자, 그리고 설정된 admin 에게 허용된다. 남의 출력을 지우면
+삭제는 생성자, 그 project 의 소유자, 그리고 effective admin 에게 허용된다. 남의 출력을 지우면
 `artifact.delete` 감사 행이 기록되고, 자기 것을 지우면 그렇지 않다. chat 메시지는 object key 의
 사본을 자기가 갖고 있으므로, 여기서 지운 이미지는 그것을 보여 주던 전사에서 사용 불가로 렌더링된다
 확인 절차가 그렇게 되기 전에 그 사실을 말해 준다.
@@ -1440,7 +1463,7 @@ GET /api/projects/{name}/traces/{traceId}
 형식의 날짜나 뒤집힌 범위는 `400` 이다. `limit` 의 기본값은 50 이고 1–100 으로 제한된다.
 다른 project 에 속한 `traceId` 는 남의 트레이스가 아니라 `404` 다.
 
-두 엔드포인트 모두 소유자와 설정된 admin 으로 제한된다 (그 외에는 403). 트레이스는 다른 사용자의
+두 엔드포인트 모두 소유자와 effective admin 으로 제한된다 (그 외에는 403). 트레이스는 다른 사용자의
 런타임 입력/출력을 담고 있다. agent 런은 언제나 트레이싱된다. 텍스트와 이미지 predict 런은
 `TRACE_SAMPLE_RATE` (0–1, 기본 `0.1`) 에 따라 샘플링된다. 트레이스 span 은 모델 토큰/비용 요약,
 도구 입출력 크기, 로컬 subagent 트레이스 링크, 그리고 첫 토큰 이전 준비 단계(`prepare`)가
@@ -1545,8 +1568,8 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
 ## A2A (인바운드)
 
 `A2A_API_KEY` 로 켜지거나, 공유 키가 아예 없어도 이름 붙은 클라이언트 키가 하나 이상 있으면
-켜진다. 그러면 publish 된 version 을 가진 각 project 가 공개 Agent Card 와 JSON-RPC 엔드포인트를
-서빙한다.
+켜진다. 그러면 publish 된 version 을 가진 project 가 JSON-RPC 엔드포인트를 서빙하고, public
+project 만 무인증 Agent Card 를 공개한다. private project 의 card 는 존재 여부를 숨기는 `404` 다.
 
 ```
 GET  /api/a2a                                           (session) → { enabled, projects }
@@ -1559,6 +1582,9 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (A2A 1.0 JSON-RPC: SendM
 `GET /api/a2a` 는 A2A 로 노출된 publish 된 project 들을 나열한다: `enabled` 는 그 표면이 켜져
 있는지를 알려 주고. 공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키 하나 이상. 각 project
 항목은 `{ name, displayName, description, cardUrl }` 을 싣는다.
+
+Agent Card GET 은 표면이 꺼져 있으면 `503`, project 가 private 이거나 publish 되지 않았으면
+`404`, 요청의 선택적인 `A2A-Version` 이 `1.0` 이 아니면 `400` 으로 답한다.
 
 `503` (설정되지 않음) 은 표면이 완전히 꺼져 있을 때만 답한다: 공유 키도 없고 **그리고** 클라이언트
 키도 없을 때다. 켜져 있는 표면에서 키가 틀리거나 없으면 `401` 이다. 공유 키는 상수 시간으로

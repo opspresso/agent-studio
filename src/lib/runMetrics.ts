@@ -25,8 +25,9 @@
  *
  * Chosen for the shape of this workload rather than a default ladder: a chat
  * turn is seconds, a multi-turn agent run is tens of seconds to minutes, and the
- * hard deadline is 600s — so the top finite bucket is the deadline itself, and
- * anything beyond it is a run that outlived its own limit.
+ * default hard deadline is 600s — so the top finite bucket matches the default.
+ * The bucket stays fixed when `MAX_RUN_DURATION_MS` is overridden, so anything
+ * beyond it is not necessarily a run that outlived its configured limit.
  */
 export const DURATION_BUCKETS_SECONDS = [0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600];
 

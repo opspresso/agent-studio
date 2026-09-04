@@ -1,8 +1,10 @@
 # 단일 소유자 불변식
 
-아래의 모든 결정에는 **소유 파일이 하나씩** 있다. `tests/architecture.test.ts` 는 사본이
-하나 더 생겨도 실패하고 **소유자가 정의를 잃어도** 실패한다. 규칙이 아무것도 매칭하지
-않게 되어 통과한 검사는 깨끗하게 통과한 검사와 똑같이 보이기 때문이다.
+아래의 모든 결정에는 **소유 파일이 하나씩** 있다. 첫 번째 표의 결정은
+`tests/architecture.test.ts` 가 기계적으로 검사한다: 사본이 하나 더 생겨도 실패하고
+**소유자가 정의를 잃어도** 실패한다. 규칙이 아무것도 매칭하지 않게 되어 통과한 검사는
+깨끗하게 통과한 검사와 똑같이 보이기 때문이다. 두 번째 표는 같은 원칙을 따르지만 패턴으로
+표현하지 못해 리뷰에서 확인하는 계약이다.
 
 이 목록이 존재하는 이유와, 어느 레이어가 어떤 한도를 소유하는지 정하는 규칙은
 [../AGENTS.md](../AGENTS.md#single-ownership) 에 있다. **이 중 어느 것이든 쓰기
@@ -152,7 +154,7 @@
 | OAuth authorization 서버 메타데이터를 찾는 주소와 순서 | `src/infrastructure/mcp/oauthMetadata.ts` 의 `authorizationServerCandidates` |
 | A2A task 의 종단·실패·대기 상태가 무엇인가 | `src/domain/a2a/task.ts`. 프로토콜이 정한 사실이라 domain 에 있고, executor·taskStore·client·requestHandler 가 전부 여기를 읽는다 |
 | 인바운드 A2A 메시지가 실을 수 있는 part | `src/application/a2a/requestHandler.ts` 의 `unsupportedPart`. card 의 `defaultInputModes` 와 같은 답이어야 한다 |
-| 어떤 페이지가 공개인가 | `src/proxy.ts` |
+| 어떤 페이지가 공개인가 | `src/shared/pageAccess.ts` 의 `isPublicPagePath` |
 | chunk 가 top-level 인지 여부 | `src/domain/llm/types.ts` 의 `isTopLevelChunk()` |
 | 런이 어떤 Version 을 실행하는가 | `src/application/project/` 의 `resolveRunnableVersion` |
 | 누가 project 에 접근할 수 있는가 (공개 범위·초대 목록의 판정) | `src/domain/project/access.ts` 의 `mayAccessProject`. admin 오버라이드를 합친 형태는 `projectUseCases.ts` 의 `assertProjectAccessible`/`userMayAccessProject` 뿐이고, 표면들은 그 둘을 지난다 ([SECURITY.md](SECURITY.md#인가-모델)) |

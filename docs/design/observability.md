@@ -69,8 +69,8 @@ chunk 에도) 일일 행에 `cachedTokens.{model}` 로 들어가고, trace 의 �
 — `0%` 는 그 필드를 아예 보고하지 않는 channel 에 대해 캐시가 cold 라고 주장하는 셈이 된다.
 
 **누가 썼는지는 두 번째 행이지, 첫 행에 붙는 또 하나의 차원이 아니다.** Project 는 공유
-카탈로그이고 — 로그인한 사용자라면 누구나 어떤 project 든 실행할 수 있다 — 그래서 project
-이름은 지출한 주체를 식별하지 못한다. `RunActor { kind, id }`
+카탈로그이고, 공개 project 는 로그인한 누구나 실행하며 private project 도 여러 멤버가 함께
+실행할 수 있다. 그래서 project 이름은 지출한 주체를 식별하지 못한다. `RunActor { kind, id }`
 (`src/domain/execution/actor.ts`) 가 그 주체를 지목한다:
 
 | Kind | Id | 이유 |
@@ -96,8 +96,8 @@ project 합계는 **먼저, 무조건** 쓰고 actor 행이 뒤따른다. 귀속
 
 **actor 는 런의 것이지 턴의 것이 아니다.** `createUsageAggregator` 는 그것과 한 번 묶이므로,
 subagent transfer 가 다른 project 에서 하는 호출도 여전히 런을 시작한 사람에게 귀속된다.
-`RunOrigin { actor?, caller?, conversation?, ancestry }` 가 모든 transfer hop 을 따라 이들을
-내려보낸다 — `caller` 는 caller context 를 켠 version 을 위해 actor 가 *말로* 누구인지를 담는
+`RunOrigin { actor?, userEmail?, caller?, conversation?, ancestry }` 가 모든 transfer hop 을 따라
+이들을 내려보낸다 — `caller` 는 caller context 를 켠 version 을 위해 actor 가 *말로* 누구인지를 담는
 값이다. subagent 는 부모와 같은 사람에게 답하고 같은 사람에게 비용을 물리므로, 값들은 여덟
 개의 시그니처를 나란히 꿰고 지나가는 파라미터가 아니라 언제나 하나로 함께 이동한다.
 
@@ -110,14 +110,18 @@ subagent transfer 가 다른 project 에서 하는 호출도 여전히 런을 �
 |---|---|---|
 | chat | `chat:{chatId}` | `chatConversation` (`src/domain/chat/conversation.ts`) |
 | Slack | `slack:{channel}:{threadTs}` — 루트 메시지를 포함한 그 스레드 | `slackConversation` (`src/domain/slack/conversation.ts`) |
+| Telegram | `telegram:{chatId}` 또는 `telegram:{chatId}:{threadId}` — 개인·그룹 chat 과 선택적인 topic | `telegramConversation` (`src/domain/telegram/conversation.ts`) |
+| Teams | `teams:{conversationId}` | `teamsConversation` (`src/domain/teams/conversation.ts`) |
 | inbound A2A | `a2a:{clientActorId}:{contextId}` — 호출자 아래에 놓인, 호출자의 묶음 | `a2aConversation` (`src/domain/a2a/conversation.ts`) |
+| AG-UI | `agui:{callerDigest}:{threadId}` | `aguiConversation` (`src/app/api/projects/_lib/conversation.ts`) |
 | `predict` / `chat/completions` / `agent` | `api:{callerDigest}:{X-Conversation-Id}` — opt-in 이며, 이메일을 담지 않고 호출자 범위로 한정된다 | `requestConversation` (`src/app/api/projects/_lib/conversation.ts`) |
 | webhook / schedule | — | firing 은 후속 질문을 받지 않으므로, 한 번짜리 대화조차 아니다 |
 
-이것을 읽는 소비자는 둘, 딱 둘이다: 첫 질문이 연 원격 대화를 이어 가는 outbound A2A transfer
+런 중에 이것을 읽는 소비자는 둘이다: 첫 질문이 연 원격 대화를 이어 가는 outbound A2A transfer
 ([A2A](agents-a2a.md#a2a)), 그리고 상태를 갖는 서버에 어느 대화가 묻고 있는지 알려 주는 MCP
 헤더 ([MCP](mcp.md)). actor(한 사람은 여러 대화에 있다)도 ancestry(턴의 사슬이 아니라 project
-의 사슬이다)도 이것을 대신할 수 없고, 그래서 자기 필드로 존재한다. trace 도 이 키를 기록한다
+의 사슬이다)도 이것을 대신할 수 없고, 그래서 자기 필드로 존재한다. 런 바깥에서는 trace 도 이
+키를 기록한다
 — trace 하나를 읽을 때 상관 짓기 위해서다. 아직 이것으로 인덱싱하거나 필터링하는 것은 없으니,
 "이 스레드의 모든 런"은 오늘 무엇도 답해 주지 못하는 질의다.
 

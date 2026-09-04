@@ -69,7 +69,7 @@ src/
   domain/           # 엔티티 + 리포지토리 포트. 순수 TS. 프레임워크/AWS import 없음.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
     execution/  security/  slack/  telegram/  teams/  messaging/  trigger/  sync/
-    audit/  plugin/  member/  a2a/  catalog/  vector/  artifact/  net/
+    audit/  plugin/  member/  a2a/  agui/  catalog/  vector/  artifact/  net/
   application/      # 유스케이스. 도메인 포트에만 의존하고, composition root 에는 절대
                     # 의존하지 않는다 — deps 는 주입되지, 끌어오지 않는다.
     llm/            # 엔진: 툴 루프, 에이전트 런 조립, 툴 결과 예산, PII 마스킹,
@@ -77,7 +77,7 @@ src/
     execution/      # 파사드, 바인딩 + MCP 툴 해석, 서브에이전트, 이미지 툴
     run/            # 최상위 런을 감싸는 것: 브래킷, 동시성 가드, 미등록 모델 정책,
                     # 트레이스 수명주기
-    chat/  slack/  telegram/  teams/  a2a/  trigger/  image/
+    chat/  slack/  telegram/  teams/  a2a/  agui/  trigger/  image/
                     # 런을 이끄는 표면들, 그리고 이미지 경로
     messaging/      # 모든 채팅봇 표면이 공유하는 것: 턴 파이프라인, 첨부 제한, 편집으로
                     # 답을 전달하는 장부, 플랫폼 히스토리가 없는 표면의 transcript 규칙 —
@@ -119,7 +119,7 @@ src/
                     # 텍스트 자르기, 로거). 이름 규칙이나 포맷처럼 도메인 타입이 소유하는
                     # 것은 여기가 아니라 domain/ 이다 — domain 은 이 층을 import 할 수 없다.
                     # 그래프의 바닥: `@/` 에서 아무것도 import 하지 않는다
-  proxy.ts          # 페이지 로그인 게이트, 그리고 어느 페이지가 공개인지의 단일 소유자
+  proxy.ts          # 페이지 로그인 게이트. 공개 페이지 판정은 shared/pageAccess.ts 를 읽는다
   instrumentation.ts
                     # 부트, 서버가 연결을 받기 전: fail-fast 설정 검증, 종료 시그널
                     # 핸들러, 감사 싱크, managed MCP 복구 스윕

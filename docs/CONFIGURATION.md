@@ -89,7 +89,7 @@ fail-open 이 될 수는 없다.
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | 미설정 | — | OpenAI 호환 embedding 전용 채널. base URL 이 없으면 기본 LLM 채널을 재사용한다. base URL 만 설정한 인증 없는 endpoint에는 비밀이 아닌 placeholder credential을 보내며 LLM key를 전달하지 않는다. 인증이 필요하면 API key도 설정하라. |
 | `EMBEDDING_MODEL` | provider 별로: `text-embedding-3-small`, `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0` | **models** | 배포 기본값. `/models`에서 Embedding 타입의 등록 모델을 선택하면 DB override가 우선한다. 선택 변경은 승인 뒤 전체 인덱스를 다시 만들며, 실패하면 이전 선택과 vector를 복원한다. 두 모델에서 나온 벡터는 비교할 수 없다. Cohere v4 는 **inference profile** 을 통해 도달한다. |
 | `EMBEDDING_DIM` | `1024` | — | provider 에 요청하는 폭. `native` 는 폭 파라미터를 생략해 모델의 native dimension을 쓴다. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산하므로 값을 바꾼 뒤 반드시 재색인하라. Cohere v4, Titan v2, OpenAI v3처럼 폭 선택을 지원하는 모델은 명시값을 사용하고, 폭 파라미터를 거부하는 모델은 `native` 를 사용한다. |
-| `CATALOG_MIN_SCORE` | `0.25` | — | 관련성 하한, 범위는 `(0, 1]`. 이 값은 검색이 아니라 **임베딩 모델**에 속한다, `EMBEDDING_MODEL` 이 바뀔 때마다 다시 측정하라. 그러지 않으면 카탈로그가 전부 답하거나 아무것도 답하지 않는다. 아래 표를 보라. `TRACE_SAMPLE_RATE` 처럼 폴백하는 대신 경고와 함께 `0`–`1` 로 **clamp** 된다. 숫자가 아닌 값은 기본값을 쓴다. 이것은 컷의 절반일 뿐이고, 나머지 절반은 그 쿼리 자신의 최고 점수에 대한 쿼리별 비율이며, 둘 중 높은 쪽이 이긴다, 그래서 `0` 으로 clamp 된 값이 전부를 통과시키지는 않는다. 비율이 볼 수 없는 경우, 즉 카탈로그에 맞는 것이 아예 하나도 없다는 경우에 대한 답을 없앨 뿐이다. |
+| `CATALOG_MIN_SCORE` | `0.25` | — | 관련성 하한, 범위는 `[0, 1]`. 이 값은 검색이 아니라 **임베딩 모델**에 속한다, `EMBEDDING_MODEL` 이 바뀔 때마다 다시 측정하라. 그러지 않으면 카탈로그가 전부 답하거나 아무것도 답하지 않는다. 아래 표를 보라. `TRACE_SAMPLE_RATE` 처럼 폴백하는 대신 경고와 함께 `0`–`1` 로 **clamp** 된다. 숫자가 아닌 값은 기본값을 쓴다. 이것은 컷의 절반일 뿐이고, 나머지 절반은 그 쿼리 자신의 최고 점수에 대한 쿼리별 비율이며, 둘 중 높은 쪽이 이긴다, 그래서 `0` 으로 clamp 된 값이 전부를 통과시키지는 않는다. 비율이 볼 수 없는 경우, 즉 카탈로그에 맞는 것이 아예 하나도 없다는 경우에 대한 답을 없앨 뿐이다. |
 | `RERANKER_BASE_URL` / `RERANKER_MODEL` | 미설정 | `RERANKER_MODEL`은 **models** | 둘을 함께 설정하면 query별로 모든 capability kind의 오버샘플 vector 후보를 한 `/rerank` 호출로 2차 정렬한다. endpoint 실패는 기존 cosine/name 순위로 격하되고, 사용자 취소는 즉시 전파된다. `RERANKER_MODEL`은 배포 기본값이고 `/models`의 Rerank 타입 선택이 DB override한다. 하나만 설정하면 부팅을 거부한다. 미설정이면 기존 cosine/name 순위를 그대로 쓴다. |
 | `RERANKER_API_KEY` | 미설정 | — | reranker의 선택형 Bearer credential. 인증 없는 사내 vLLM endpoint는 비워 둔다. |
 | `RERANKER_MIN_SCORE` | `0.01` | **models** | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 env 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하고 `/models`에서 함께 저장하라. DB override가 env보다 우선하며 다음 검색부터 적용된다. |
@@ -296,7 +296,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack 경로는 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 이 값과 함께 움직이는 파생값이 셋 있다: 런 슬롯 lease(이 값 + 60초), MCP OAuth 토큰 갱신 여유(이 값 + 5분), 리플레이 signed URL 수명(이 값 + 15분, `src/application/artifact/urlTtl.ts`). |
+| `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack·Telegram·Teams 경로는 공용 메시징 파이프라인에서 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 이 값과 함께 움직이는 파생값이 셋 있다: 런 슬롯 lease(이 값 + 60초), MCP OAuth 토큰 갱신 여유(이 값 + 5분), 리플레이 signed URL 수명(이 값 + 15분, `src/application/artifact/urlTtl.ts`). |
 | `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, 프로젝트 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
 | `MAX_CONCURRENT_RUNS_A2A` | `50` | — | **공유** A2A 키로 이뤄진 호출을 위한 별도 상한(최대 `1000`). 그 actor id 는 상수라서, 하나의 정체성이 거기의 모든 기계 호출자를 대표한다. 그러지 않으면 호출자별 제한이 A2A 표면 전체에 상한을 씌우게 된다. 이름이 붙은 클라이언트 키는 호출자 하나이며 사람과 마찬가지로 `MAX_CONCURRENT_RUNS_PER_ACTOR` 아래에 놓인다. |
 | `SCHEDULE_SCAN_TOKEN` | 미설정 | — | 모든 ticker 가 제시하는 단 하나의 자격증명(`X-Scan-Token`)이며, CronJob 이 POST 하는 세 엔드포인트가 공유한다: `/api/triggers/scan`(schedule), `/api/plugins/sync/scan`(plugins 저장소), `/api/catalog/reindex`(capability 카탈로그). 설정하지 않으면 이 배포에 ticker 가 없다는 뜻이다: 셋 다 503 으로 답하고 schedule 트리거는 결코 발화하지 않는다. 열리는 대신 꺼진다. |
@@ -331,7 +331,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 | `MANAGED_MCP_RUNTIME` | 미설정 | — | managed MCP 컨테이너를 어떻게 띄우는가. 유일한 값은 `docker`. 앱이 자기 호스트의 Docker CLI 를 직접 구동해 `127.0.0.1:<port>` 로 포트를 게시하고 그 주소를 등록한다. 다른 값은 경고와 함께 무시되어 기능이 꺼진다. 앱 프로세스가 `docker` 바이너리와 호스트 loopback 에 닿아야 한다. 기본 앱 이미지에는 Docker CLI가 없으므로 배포 저장소가 이미지와 네트워크를 명시적으로 구성해야 한다. |
 | `MANAGED_MCP_REGISTRY` | 미설정 | — | `docker login` 이 인증하는 레지스트리. 덕분에 이 계정 자신의 이미지는 자격증명을 타이핑하지 않고도 pull 된다. 호스트가 pull 할 수 있는 다른 어떤 레지스트리의 이미지도 허용되며, 그것들에 대해서는 로그인만 건너뛴다. |
 
-`MANAGED_MCP_RUNTIME` 과 `MANAGED_MCP_REGISTRY` 가 둘 다 설정되지 않으면 managed-MCP 라우트는
+`MANAGED_MCP_RUNTIME` 과 `MANAGED_MCP_REGISTRY` 중 하나라도 설정되지 않으면 managed-MCP 라우트는
 기능을 절반만 켜는 대신 `503` 으로 답한다. 컨테이너의 환경은 두 경로로 들어간다: `envRefs` 는
 호스트의 절대 경로인 `--env-file` 이고(값은 테이블에 들어오지 않는다), `environment` 는
 저장 시 암호화되는 값들이다. `PORT` 는 런타임이 써 넣으므로 거부된다.
@@ -488,7 +488,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `/api/objects` 가 proxied 주소 하나에 대해 메모리로 읽어 들이는 오브젝트. 고른 숫자가 아니라 저장될 수 있는 것의 최대(첨부 · 문서 · 저장 파일 상한 중 큰 쪽) | `10 MB` | `src/infrastructure/storage/artifactAccess.ts` 의 `MAX_PROXIED_OBJECT_BYTES` |
 | admin 이 올리는 모델 카탈로그 문서 | `4 MB` | `src/app/api/_lib/body.ts` |
 | 올리는 plugins 아카이브. 전송 크기 / 풀었을 때 / 엔트리 수 (헤더 기준, 파일·디렉터리·확장 레코드 모두) | `32 MB` / `64 MB` / `20,000` | `src/app/api/plugins/sync/upload/route.ts`, `src/infrastructure/archive/tar.ts` |
-| 한 틱의 retention sweep 이 지우는 행 수 (나머지는 다음 틱) | `5,000` | `src/infrastructure/db/store.ts` 의 `deleteExpired` |
+| 한 틱의 retention sweep 이 지우는 행 수 (나머지는 다음 틱) | `items` 최대 `5,000` + Better Auth session 최대 `5,000` | `src/infrastructure/db/store.ts` 의 `deleteExpired`, `src/infrastructure/db/repositories/memberRepository.ts` 의 `deleteExpiredSessions` |
 | 한 런이 쓸 수 있는 파일 수 (`SaveFile`) | `10` | `src/application/llm/engine.ts` |
 | 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (skill / 외부 agent / MCP 서버) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
 | 각 MCP 인덱스에 요청하는 카탈로그 매치 수. 그 상한을 넘겨 oversampling 한다. 여러 도구 행이 한 서버로 합쳐지고, 런이 바인딩할 수 없는 후보가 슬롯을 잡아먹어서는 안 되기 때문이다 | MCP 서버 상한의 `4×`(tool 인덱스) / `3×`(server 인덱스) | `src/application/execution/bindings.ts` |
@@ -535,6 +535,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 컨텍스트로 리플레이되는 chat 이력 | `200` 메시지 / `200,000` 자 | `src/application/chat/messageMapping.ts` |
 | 컨텍스트로 리플레이되는 chat 도구 트래픽 | `3` 턴 / `20,000` 자 | `src/application/chat/messageMapping.ts` |
 | 인바운드 webhook / Slack 이벤트 / Telegram update / Teams activity 본문 | 넷이 함께 `1MB` | `src/app/api/_lib/inboundEvent.ts` 의 `MAX_INBOUND_EVENT_BYTES` |
+| webhook 의 message-mode payload / 트리거 이력에 저장하는 result·error·warning 각각 | `20,000` 자 / `2,000` 자 | `src/application/trigger/runTrigger.ts` |
 | 컨텍스트로 쓰는 Slack 스레드 턴 수 | `50` | `src/application/slack/handleSlackEvent.ts` |
 | 컨텍스트로 쓰는 transcript 턴 수 / 합계 문자 수 / 한 턴에서 유지하는 문자 수 (Telegram, Teams) | `50` / `100,000` / `20,000` | `src/application/messaging/transcriptHistory.ts` |
 | Telegram 앨범의 캡션 없는 멤버가 claim 전에 기다리는 시간 | `1s` | `src/application/telegram/handleUpdate.ts` |
@@ -564,6 +565,8 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | scan tick 하나가 동시에 굴리는 schedule 발화 수 | `8` | `src/application/trigger/scanSchedules.ts` |
 | schedule 복구 스윕 주기 (잃어버린 런 회수) | `5` 분마다 | `src/application/trigger/scanSchedules.ts` |
 | 복구 스윕 하나가 훑는 행 수 | `50` | `src/application/trigger/repairLostRuns.ts` |
+| 트리거 런을 유실로 판정하는 시점 | 런 lease 만료 + `10` 분 | `src/application/trigger/repairLostRuns.ts` |
+| SSE 응답이 첫 chunk 를 기다리는 유예 | `25s` | `src/app/api/_lib/sse.ts` 의 `FIRST_CHUNK_GRACE_MS` |
 
 ### 런 전체의 컨텍스트 예산
 

@@ -282,11 +282,12 @@ skill 과 MCP 서버. 를 모두 쓴다. 저장소가 선언한 이름을 채택
 A2A 의 401 은 `WWW-Authenticate: ApiKey realm="a2a", header="X-A2A-Key"` 를 싣고 카드가 같은
 스킴을 선언하므로, 표준 클라이언트는 무엇을 제시할지 카드에서 읽는다.
 
-형제 중 하나는 자격 증명을 아예 지니지 않는다. published 된 project 의 A2A **Agent Card**
+형제 중 하나는 자격 증명을 아예 지니지 않는다. public project 의 A2A **Agent Card**
 (`/.well-known/agent-card.json`)는 표면이 켜져 있기만 하면. 공유 `A2A_API_KEY` 또는 최소 하나의
 이름 있는 클라이언트 키. 누구에게나 제공된다. 그것이 agent 를 발견 가능하게 만드는 것이고, A2A
-핸드셰이크는 카드에서 시작하기 때문이다. 카드는 project 의 이름, 설명, skill 을 노출한다.
-agent 를 호출하는 데는 여전히 키가 필요하다.
+핸드셰이크는 카드에서 시작하기 때문이다. 카드는 project 의 이름, 설명, skill 을 노출하므로
+private project 는 publish 돼 있어도 같은 `404`로 숨긴다. JSON-RPC endpoint 는 키 자체가
+project 의 자격 증명이므로 private project 도 호출할 수 있다.
 
 trigger 시크릿은 활성화 플래그를 읽기 **전에** 비교된다. 비활성 trigger 가 틀린 시크릿에 활성
 trigger 와 다르게 답할 수 없게 하기 위해서다. 그 차이는 어떤 trigger 가 존재하는지에 대한

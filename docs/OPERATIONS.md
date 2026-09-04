@@ -35,17 +35,19 @@ dispatch 는 persistent self-hosted runner와 OIDC·registry·GitOps 자격 증�
 
 1. **verify**. 전용 PostgreSQL test database 에 대해 `pnpm typecheck` + `pnpm test` +
    `pnpm test:integration`.
-2. **github-release**. GitHub Release 를 만든다. 릴리스 노트는 직전 태그와 이번 태그 사이의
-   `git log` 로 생성된다 (`chore: release` 커밋은 걸러낸다). 이것이 이 프로젝트의 변경
-   이력이다: 완료된 마일스톤은 [MILESTONES.md](MILESTONES.md) 에 보관되는 것이 아니라
-   *삭제*되므로, git log 와 Releases 페이지가 그 기록이다.
-3. **release**. `linux/amd64` 를 한 번 빌드해 두 레지스트리에 `:{tag}` 와 `:latest` 로
-   푸시한다: **`ghcr.io/opspresso/agent-studio`**(`GITHUB_TOKEN` 으로 로그인, 이 AWS 계정 밖의
-   설치가 pull 하는 경로이고, 폐쇄망 레지스트리로 미러링을 시작하는 지점이다)와 ECR(GitHub
-   OIDC 로 AWS role 을 assume, 장기 키 없음).
+2. verify 가 통과하면 다음 둘이 **병렬**로 돈다.
+   - **github-release**. GitHub Release 를 만든다. 릴리스 노트는 직전 태그와 이번 태그 사이의
+     `git log` 로 생성된다 (`chore: release` 커밋은 걸러낸다). 이것이 이 프로젝트의 변경
+     이력이다: 완료된 마일스톤은 [MILESTONES.md](MILESTONES.md) 에 보관되는 것이 아니라
+     *삭제*되므로, git log 와 Releases 페이지가 그 기록이다.
+   - **release**. `linux/amd64` 를 한 번 빌드해 두 레지스트리에 `:{tag}` 와 `:latest` 로
+     푸시한다: **`ghcr.io/opspresso/agent-studio`**(`GITHUB_TOKEN` 으로 로그인, 이 AWS 계정 밖의
+     설치가 pull 하는 경로이고, 폐쇄망 레지스트리로 미러링을 시작하는 지점이다)와 ECR(GitHub
+     OIDC 로 AWS role 을 assume, 장기 키 없음).
 
-4. **GitOps 트리거**. 이미지 push 뒤 `argocd-env-demo`에 새 tag를 전달한다. 배포 manifest와
-   rollout은 그 저장소가 소유하며, 이 저장소는 tag 전달만 담당한다.
+3. **GitOps 트리거**. `release` 의 이미지 push 뒤 `argocd-env-demo` 에 새 tag 를 전달한다.
+   `github-release` 의 성공 여부는 기다리지 않는다. 배포 manifest 와 rollout 은 그 저장소가
+   소유하며, 이 저장소는 tag 전달만 담당한다.
 
 ### 실패한 릴리스를 다시 돌리기
 
@@ -78,7 +80,7 @@ Actions 자체가 막혀 있으면(결제 한도, 러너 다운) 릴리스는 �
 | 엔드포인트 | 종류 | 동작 |
 |---|---|---|
 | `GET /api/health` | liveness | 정적 `200`. 의존성이 없고 인증도 없다. "프로세스가 서빙 중인가" 에 답한다. |
-| `GET /api/ready` | readiness | PostgreSQL(`SELECT 1 FROM items LIMIT 1`, 연결·자격 증명·스키마를 한 번에)과 LLM 채널을 프로브한다 (각 2초 타임아웃, 상세는 노출하지 않는다). DB 프로브는 전용 connection 하나에서 연결 대기·클라이언트 응답·서버 실행을 모두 제한하고, 시간 초과 connection을 폐기한다. 다운스트림에 닿을 수 없거나 **또는** 인스턴스가 draining 중이면 `503`. |
+| `GET /api/ready` | readiness | PostgreSQL(`SELECT 1 FROM items LIMIT 1`, 연결·자격 증명·스키마를 한 번에)과 LLM 채널을 프로브한다 (각 2초 타임아웃, 상세는 노출하지 않는다). DB 프로브는 전용 connection 하나에서 연결 대기·클라이언트 응답·서버 실행을 모두 제한하고, 시간 초과 connection을 폐기한다. LLM 프로브는 `/models`의 **HTTP 연결만** 확인하고 응답 status나 API key의 유효성은 검사하지 않는다. 네트워크로 다운스트림에 닿을 수 없거나 **또는** 인스턴스가 draining 중이면 `503`. |
 
 재시작 검사는 `/api/health` 에, 로드 밸런서는 `/api/ready` 에 붙여라.
 
@@ -129,8 +131,9 @@ standalone 서버는 진행 중인 요청을 끝낸다. 이 모듈은 결코 `pr
 포화된 인스턴스도 CPU 는 유휴로 읽힌다.
 
 `agent_studio_oldest_active_run_seconds` 는 동시 런을 시작 handle 별로 추적한다. 새 런이 먼저
-끝나도 더 오래된 런의 나이를 잃지 않으며, active run이 없으면 `0`이다. 600초를 넘으면 기본
-run deadline과 어긋난 실행이므로 원인을 조사하라.
+끝나도 더 오래된 런의 나이를 잃지 않으며, active run이 없으면 `0`이다. 기본 설정에서 600초를
+넘으면 run deadline과 어긋난 실행이므로 원인을 조사하라. `MAX_RUN_DURATION_MS`를 바꿨다면 그
+설정값을 기준으로 판단한다.
 
 **리더가 떠났다고 chat 런이 더는 스스로 떨어져 나가지 않는다.** 탭을 닫은 것은 리더가 떠났다는
 뜻이지 중단이 아니므로 ([design/chat.md](design/chat.md#런은-자기-연결보다-오래-산다) 참고),
@@ -144,9 +147,10 @@ run deadline과 어긋난 실행이므로 원인을 조사하라.
 클라이언트)은 의도적으로 실패로 세지 않는다. 그러지 않으면 사용자로 가득 찬 페이지에서 다들
 다른 곳으로 이동하는 것이 장애처럼 읽힌다. 이는 `/predict`, `/agent`, `/chat/completions`,
 Slack 에는 여전히 해당하며, 이들은 caller 의 signal 을 받아 실제로 abort 한다; chat 은 Stop 을
-눌렀을 때만 거기에 닿는다. 히스토그램에서 유한한 최상단 버킷은 `600`. 런 데드라인 그 자체.
-이므로 그것을 넘는 것은 자기 한계보다 오래 산 런이고, 데드라인까지 방치된 버려진 chat 런은
-거기에 *실패*로 떨어진다.
+눌렀을 때만 거기에 닿는다. 히스토그램에서 유한한 최상단 버킷은 고정된 `600`초이며 기본 런
+데드라인과 같다. `MAX_RUN_DURATION_MS`를 바꿔도 버킷은 바뀌지 않으므로, 그때는 `+Inf` 버킷과
+duration 합계를 실제 설정값에 맞춰 해석하라. 데드라인까지 방치된 버려진 chat 런은 *실패*로
+기록된다.
 
 **`agent_studio_unknown_model_calls_total` 의 rate 가 0 이 아니면 알림을 걸어라.**
 `src/domain/llm/models.ts` 에 없는 model id 도 실행은 되지만, 그 usage 는 **$0** 로 기록된다.
@@ -233,9 +237,10 @@ transfer 는 맨바닥에서 시작한다), Telegram·Teams 대화 트랜스크�
 동시성 슬롯 (리스 길이, TTL 이 없어도 동시성은 정확하지만, 행이 런당 하나씩 쌓인다).
 
 > **만료는 테이블의 기능이 아니라 틱이다.** schedule-scan 틱(`POST /api/triggers/scan`)이 돌
-> 때마다 `sweepExpiredRows` 가 `expiresAt` 이 지난 행을 지운다. 한 번에 최대 5,000행이라
-> 밀린 분량은 다음 틱들이 나눠 가져가고, 실패해도 스캔은 실패하지 않는다. Better Auth 의
-> `session` 테이블도 같은 틱이 쓴다(자기 `expiresAt` 기준, 같은 상한): 라이브러리는 만료된
+> 때마다 `sweepExpiredRows` 가 `expiresAt` 이 지난 행을 지운다. 한 번에 `items` 에서 최대
+> 5,000행, Better Auth `session` 에서 최대 5,000행을 각각 지우므로 총 상한은 10,000행이다.
+> 밀린 분량은 다음 틱들이 나눠 가져가고, 실패해도 스캔은 실패하지 않는다. `session` 은 자기
+> `expiresAt` 을 기준으로 쓴다: 라이브러리는 만료된
 > 세션을 그 쿠키가 다시 올 때만 지우므로, 돌아오지 않은 브라우저의 행은 틱이 아니면 영원히 남는다.
 > **`SCHEDULE_SCAN_TOKEN` 이 없는 배포는 티커가 없고, 따라서 아무것도 지우지 않는다.** 앱은
 > 그 사실을 경고로 올릴 길이 없다. 테이블 크기만이 말해 준다. 배포 저장소는 이 endpoint를
@@ -409,6 +414,9 @@ sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이�
   그것이 토큰 자체에 대해 무엇을 뜻하는지는
   [SECURITY.md](SECURITY.md#머신-호출자의-요청-인증) 를 보라.
 - 결과는 저장된 리포트(`GET /api/plugins/sync`)와 로그 라인에 남는다.
+- **아카이브가 마지막 sync 면 틱은 보류된다.** 사람이 올린 snapshot 을 다음 분의 자동 sync 가
+  덮지 않도록 `{ started: false, held: "archive" }` 로 답한다. GitHub 가 다시 소유하게 하려면
+  admin 이 `POST /api/plugins/sync` 를 명시적으로 실행한다.
 - 503 은 `SCHEDULE_SCAN_TOKEN` 이 설정되지 않았거나, `PLUGINS_REPO`/`GITHUB_TOKEN` 이 설정되지
   않았다는 뜻이다.
 - **GitHub 에 닿지 않는 배포에는 이 틱이 없다.** 그런 배포는 admin 이 `/plugins` 에서
@@ -495,6 +503,6 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오는 �
       함대 전체를 하나의 버킷으로 조인다), 그리고 프록시의 idle timeout 을 SSE keepalive(15초)
       보다 길게
 - [ ] LB 헬스 체크 → `/api/ready` (확장된 플릿에서는 `/api/health`), 재시작 검사 → `/api/health`
-- [ ] 컨테이너 `stopTimeout` ≥ `MAX_RUN_DURATION_MS` (Compose 는 `stop_grace_period: 660s`)
+- [ ] 컨테이너 `stopTimeout` ≥ `MAX_RUN_DURATION_MS` (Compose 예: `stop_grace_period: 660s`)
 - [ ] Prometheus 가 `/api/metrics` 를 스크레이프할 것; `agent_studio_runs_failed_total`, `agent_studio_run_duration_seconds`, `agent_studio_unknown_model_calls_total` 에 알림
 - [ ] 관리형 MCP 를 쓴다면 호스트당 앱 인스턴스 하나, 그리고 앱이 호스트의 Docker CLI 와 루프백에 닿을 것

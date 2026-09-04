@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 FROM node:24-alpine AS base
-RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.24.0 --activate
 WORKDIR /app
 
 FROM base AS deps

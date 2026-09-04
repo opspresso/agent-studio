@@ -205,7 +205,8 @@ endpoint 를 콘솔이 보여 주는 URL 로 가리킨다. 배달마다 Bot Fram
 
 [A2A 프로토콜](https://a2a-protocol.org)의 양방향을 모두 지원한다. **인바운드**:
 `A2A_API_KEY` 를 설정하거나 Settings 에서 이름 붙인 클라이언트 키를 발급하면, publish 된
-버전이 있는 모든 project 가 공개 Agent Card 와 JSON-RPC 엔드포인트를 서빙한다.
+버전이 있는 project 가 JSON-RPC 엔드포인트를 서빙한다. public project 만 공개 Agent Card 를
+제공하고, private project 는 키를 가진 호출자가 endpoint 를 직접 사용한다.
 **아웃바운드**: 프로토콜을 `A2A` 로 하고 Agent Card URL 을 적어 에이전트를 등록한 뒤, 원격
 subagent 로 쓴다.
 

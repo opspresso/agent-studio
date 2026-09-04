@@ -78,6 +78,7 @@ pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```bash
 pnpm dev              # next dev
 pnpm build            # 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
+pnpm start            # 이미 만든 Next.js production build 실행
 pnpm typecheck        # tsc --noEmit, strict + 추가 검사 (아래)
 pnpm test             # vitest run
 pnpm test:watch       # vitest watch
@@ -113,7 +114,7 @@ pnpm exec vitest run -t "streamWithFallback"
 | `scripts/integration-check.ts` | 저장소 왕복 전 구간 + 엔진(단발 실행과 agent 루프). |
 | `scripts/check-models.ts` | 카탈로그 스냅샷(`src/domain/llm/catalog.json`)을 *이 배포의* 채널들이 서빙하는 id 와 대조한다. agent-models 가 provider 의 공개 카탈로그는 스스로 보므로, 여기서 보는 것은 게이트웨이·Bedrock·키의 범위 같은 이 배포만의 차이다. |
 | `scripts/sync-models.ts` | 발행된 카탈로그로 스냅샷을 갱신한다 (`--check` 는 뒤처졌으면 1 로 종료, `--from <file>` 은 URL 대신 로컬 카탈로그 문서를 읽는다, `MODELS_CATALOG_URL` 이 없거나 `none` 인 환경에서는 이것이 필수다). 런타임은 카탈로그를 직접 읽으므로, 테스트가 새 모델을 봐야 하거나 릴리즈 전일 때 돌린다. |
-| `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키·같은 문서로 `items` 에. 멱등(upsert). 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
+| `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키로 `items` 에 upsert 한다. 새 배포에서 위험한 managed MCP `envRefs` 와 저장소 종속 `artifactAccessMode` 는 제거하고, 같은 이메일로 먼저 생긴 사용자는 export 의 원래 id 를 보존하기 위해 교체한다. 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
 
 ### `check-models`
 
@@ -283,6 +284,15 @@ fork 가 PR 을 실패시켜서는 안 된다.
 12. **생성 모달은 자기가 선언한 것을 초기화한다**. 생성 모달이 `useState` 로 들고 있는 모든 필드는
     `onCreated()` 전에 비워지므로, 다시 연 모달이 직전 항목의 값을 보여 주는 일이 없다.
 13. **스캐너 자신의 테스트**. 조용히 매칭을 멈춘 규칙을 잡아내기 위해서다.
+14. **요청 본문 할당**. JSON 라우트는 파싱 전에 공용 바이트 상한을 적용하고, 큰 본문을
+    `request.json()` 으로 먼저 메모리에 올리지 않는다.
+15. **응답 타입의 소유권**. 브라우저 모듈은 producer 가 선언한 response 타입을 type-only 로
+    import하며, 비교하는 양쪽을 스캐너가 실제로 읽었는지도 확인한다.
+16. **런 종료 분류**. deadline과 호출자 취소를 합성하는 모든 지점이 같은 종료 판정을 사용한다.
+17. **카탈로그 재색인 직렬화**. production 의 모든 reindex 가 composition root 의 설치 전역 lease 를
+    지나고, 우회 호출이 생기면 실패한다.
+18. **추론 fold**. `reasoningContent` 를 모으는 고정 지점만 허용하고, 모두 top-level chunk 만
+    접으며 component state 에 넣는 곳은 `createTextPacer` 를 사용한다.
 
 > 이 중 하나가 실패하면 **규칙을 넓히지 말고 import 를 고쳐라.** 허용 목록이 비어 있는 것은
 > 의도된 것이다: 위반을 추가하는 일은 조용한 결정이 아니라 눈에 보이는 결정이어야 한다.

@@ -62,8 +62,8 @@ export const RUN_LEASE_SECONDS = Math.ceil(MAX_RUN_DURATION_MS / 1000) + 60;
  * A run signal aborts for two very different reasons — the caller left, or this
  * backstop fired — and only the first is not a failure. The composed signal
  * cannot be asked: `AbortSignal.any` forwards whichever reason came first, and
- * a caller may abort with a `TimeoutError` of its own (the Slack surface caps a
- * run at three minutes that way), so the reason's *type* names the wrong limit
+ * a caller may abort with a `TimeoutError` of its own (the messaging surfaces cap
+ * a run at three minutes that way), so the reason's *type* names the wrong limit
  * as often as the right one. The deadline signal itself always knows.
  *
  * Read at the moment a run ends, which is what makes the plain read correct: a

@@ -2,8 +2,8 @@
  * Which languages the console speaks, and how a request's language is named.
  *
  * Deliberately not a route segment. A `[locale]` prefix would move all 29 pages
- * and 14 layouts, and rewrite `src/proxy.ts`'s matcher and `PUBLIC_PATHS` — the
- * single owner of which pages are public — to buy a shareable per-language URL
+ * and 14 layouts, and rewrite `src/proxy.ts`'s matcher and the public-page rule
+ * in `src/shared/pageAccess.ts` — to buy a shareable per-language URL
  * that an internal console has no use for. A cookie leaves the route tree and
  * the sign-in gate untouched.
  *

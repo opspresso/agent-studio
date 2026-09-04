@@ -284,7 +284,7 @@ export const config = {
     return positiveIntEnv("EMBEDDING_DIM", 1024, 1);
   },
   /**
-   * The catalog's relevance floor, in `(0, 1]`. Belongs to the **embedding
+   * The catalog's relevance floor, in `[0, 1]`. Belongs to the **embedding
    * model** rather than to the search: measured on Titan v2 a correct answer
    * scores 0.34–0.41 and an unrelated one under 0.12, and a threshold tuned for
    * a model whose correct answers sit near 0.8 would return nothing at all.
