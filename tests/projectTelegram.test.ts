@@ -14,6 +14,7 @@ import { ConflictError, ForbiddenError, ValidationError } from "@/application/er
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { TelegramDestinationRepository } from "@/domain/telegram/destination";
+import { telegramSecretContext } from "@/domain/security/secretContext";
 
 const OWNER = "t@example.com";
 const OTHER = "intruder@example.com";
@@ -109,9 +110,16 @@ describe("updateProjectTelegram", () => {
     expect(view.botToken).not.toContain("secrettoken");
     expect(view.webhookPath).toBe("/api/telegram/webhook/bot-proj");
     const stored = current().telegram;
-    expect(stored?.botToken.startsWith("enc:")).toBe(true);
-    expect(stored?.webhookSecret.startsWith("enc:")).toBe(true);
-    expect(secretCipher.decrypt(stored?.webhookSecret ?? "").startsWith("asg_")).toBe(true);
+    expect(stored?.botToken.startsWith("enc:v2:")).toBe(true);
+    expect(stored?.webhookSecret.startsWith("enc:v2:")).toBe(true);
+    expect(
+      secretCipher
+        .decrypt(
+          stored?.webhookSecret ?? "",
+          telegramSecretContext("bot-proj", "webhook-secret"),
+        )
+        .startsWith("asg_"),
+    ).toBe(true);
   });
 
   it("refuses a token Telegram does not accept, and stores nothing", async () => {
@@ -234,6 +242,13 @@ describe("runtime, binding, test and webhook", () => {
     expect(binding?.webhookSecret.startsWith("asg_")).toBe(true);
   });
 
+  it("refuses credentials moved under another project name", async () => {
+    const { current } = await configured();
+    expect(() =>
+      resolveProjectTelegramRuntime(secretCipher, { ...current(), name: "other" }),
+    ).toThrow();
+  });
+
   it("lists only the current bot's observed destinations for an owner", async () => {
     const { repo } = await configured();
     const list = vi.fn(async () => [
@@ -282,7 +297,10 @@ describe("runtime, binding, test and webhook", () => {
     expect(result).toEqual({ ok: true, url: "https://studio.example.com/api/telegram/webhook/bot-proj" });
     expect(calls[0]).toMatchObject({
       token: "42:tok",
-      secretToken: secretCipher.decrypt(current().telegram?.webhookSecret ?? ""),
+      secretToken: secretCipher.decrypt(
+        current().telegram?.webhookSecret ?? "",
+        telegramSecretContext("bot-proj", "webhook-secret"),
+      ),
       allowedUpdates: ["message"],
     });
   });

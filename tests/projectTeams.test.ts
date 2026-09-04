@@ -68,7 +68,7 @@ describe("updateProjectTeams", () => {
     const { view } = await update(repo, { appId: APP, appPassword: "s3cret-value", enabled: true });
     expect(view).toMatchObject({ enabled: true, configured: true, appId: APP, messagingPath: "/api/teams/messages/bot-proj" });
     expect(view.appPassword).not.toContain("s3cret");
-    expect(current().teams?.appPassword.startsWith("enc:")).toBe(true);
+    expect(current().teams?.appPassword.startsWith("enc:v2:")).toBe(true);
   });
 
   it("keeps the stored secret when the input is masked or empty", async () => {
@@ -117,6 +117,15 @@ describe("runtime, binding and test", () => {
     await update(repo, { enabled: false });
     expect(resolveProjectTeamsRuntime(secretCipher, current())).toBeNull();
     expect(await resolveTeamsEventBinding(repo, "bot-proj", secretCipher)).toBeNull();
+  });
+
+  it("refuses a client secret moved under another project name", async () => {
+    const { repo, current } = fakeRepo(makeProject());
+    await update(repo, { appId: APP, appPassword: "pw", enabled: true });
+
+    expect(() =>
+      resolveProjectTeamsRuntime(secretCipher, { ...current(), name: "other" }),
+    ).toThrow();
   });
 
   it("proves the registration by acquiring a token", async () => {

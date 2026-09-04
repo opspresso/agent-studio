@@ -192,9 +192,10 @@ Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시�
 값은 그대로 읽고, 저장 위치의 컨텍스트를 함께 인증하는 값은 `enc:v2:` 로 쓴다. v2 는 row 와
 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에 실패한다. 현재
 project API token, 이름 있는 A2A client key, webhook trigger secret 이 각각 project 이름,
-client 이름, `project + triggerId` 컨텍스트를 쓴다. 기존 v1 값은 재발급 전까지 계속 동작한다.
-나머지 시크릿은 각 저장·복사 경로가 같은 컨텍스트를 재구성하도록 전환하기 전까지 v1 형식을
-유지한다.
+client 이름, `project + triggerId` 컨텍스트를 쓴다. Slack 의 bot token·signing secret,
+Telegram 의 bot token·webhook secret, Teams 의 app password 도 `project + integration + field` 에
+묶인다. 기존 v1 값은 다시 저장하거나 재발급하기 전까지 계속 동작한다. 나머지 시크릿은 각
+저장·복사 경로가 같은 컨텍스트를 재구성하도록 전환하기 전까지 v1 형식을 유지한다.
 부팅, 저장 시크릿 암호화, proxied URL 서명은 모두 `decodeAes256Key` 를 거쳐 canonical base64 로
 인코딩된 정확히 32바이트 key 만 사용한다.
 

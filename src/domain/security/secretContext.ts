@@ -12,3 +12,21 @@ export function a2aClientKeyContext(name: string): string {
 export function triggerSecretContext(projectName: string, triggerId: string): string {
   return JSON.stringify(["project", projectName, "trigger", triggerId, "secret"]);
 }
+
+export function slackSecretContext(
+  projectName: string,
+  field: "bot-token" | "signing-secret",
+): string {
+  return JSON.stringify(["project", projectName, "slack", field]);
+}
+
+export function telegramSecretContext(
+  projectName: string,
+  field: "bot-token" | "webhook-secret",
+): string {
+  return JSON.stringify(["project", projectName, "telegram", field]);
+}
+
+export function teamsSecretContext(projectName: string): string {
+  return JSON.stringify(["project", projectName, "teams", "app-password"]);
+}

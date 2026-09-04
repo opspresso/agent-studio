@@ -15,6 +15,7 @@ const resolveProjectSlackRuntime = (
 const updateProjectSlack = (repo: Upd[0], name: Upd[1], update: Upd[2], email: Upd[3]) =>
   updateProjectSlackImpl(repo, name, update, email, secretCipher);
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
+import { slackSecretContext } from "@/domain/security/secretContext";
 import { ConflictError, ForbiddenError } from "@/application/errors";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -81,8 +82,10 @@ describe("updateProjectSlack", () => {
     expect(view.signingSecret).toBe("*".repeat("shhh".length));
     expect(view.enabled).toBe(true);
     const stored = current().slack;
-    expect(stored?.botToken.startsWith("enc:v1:")).toBe(true);
-    expect(decryptSecret(stored?.botToken ?? "")).toBe("xoxb-secret");
+    expect(stored?.botToken.startsWith("enc:v2:")).toBe(true);
+    expect(
+      decryptSecret(stored?.botToken ?? "", slackSecretContext("bot-proj", "bot-token")),
+    ).toBe("xoxb-secret");
   });
 
   it("keeps stored secrets when a masked value is echoed back", async () => {
@@ -101,7 +104,12 @@ describe("updateProjectSlack", () => {
       OWNER,
     );
     expect(current().slack?.botToken).toBe(before);
-    expect(decryptSecret(current().slack?.signingSecret ?? "")).toBe("sig-original");
+    expect(
+      decryptSecret(
+        current().slack?.signingSecret ?? "",
+        slackSecretContext("bot-proj", "signing-secret"),
+      ),
+    ).toBe("sig-original");
   });
 
   it("rejects enabling without credentials", async () => {
@@ -155,6 +163,18 @@ describe("resolveProjectSlackRuntime", () => {
     await updateProjectSlack(repo, "bot-proj", { enabled: false }, OWNER);
     expect(resolveProjectSlackRuntime(current())).toBeNull();
     expect(resolveProjectSlackRuntime(makeProject())).toBeNull();
+  });
+
+  it("refuses credentials moved under another project name", async () => {
+    const { repo, current } = fakeRepo(makeProject());
+    await updateProjectSlack(
+      repo,
+      "bot-proj",
+      { botToken: "xoxb-live", signingSecret: "sig-live", enabled: true },
+      OWNER,
+    );
+
+    expect(() => resolveProjectSlackRuntime({ ...current(), name: "other" })).toThrow();
   });
 });
 

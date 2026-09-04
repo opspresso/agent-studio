@@ -6,6 +6,7 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, TeamsIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { TeamsCredentials } from "@/domain/teams/client";
+import { teamsSecretContext } from "@/domain/security/secretContext";
 
 /**
  * A project's Microsoft Teams bot: what the console reads and writes, and what
@@ -48,7 +49,9 @@ function maskedView(cipher: SecretCipher, project: Project): ProjectTeamsView {
     enabled: teams?.enabled ?? false,
     configured: Boolean(teams?.appId && teams.appPassword),
     appId: teams?.appId ?? "",
-    appPassword: teams?.appPassword ? cipher.mask(teams.appPassword) : "",
+    appPassword: teams?.appPassword
+      ? cipher.mask(teams.appPassword, teamsSecretContext(project.name))
+      : "",
     tenantId: teams?.tenantId ?? "",
     messagingPath: messagingPathFor(project.name),
   };
@@ -110,7 +113,7 @@ export async function updateProjectTeams(
   const appPassword =
     incoming === undefined || incoming === "" || cipher.isMasked(incoming)
       ? (stored?.appPassword ?? "")
-      : cipher.encrypt(incoming.trim());
+      : cipher.encrypt(incoming.trim(), teamsSecretContext(name));
   const teams: TeamsIntegration = {
     appId,
     appPassword,
@@ -149,7 +152,7 @@ export function resolveProjectTeamsRuntime(
   }
   return {
     appId: teams.appId,
-    appPassword: cipher.decrypt(teams.appPassword),
+    appPassword: cipher.decrypt(teams.appPassword, teamsSecretContext(project.name)),
     ...(teams.tenantId ? { tenantId: teams.tenantId } : {}),
   };
 }

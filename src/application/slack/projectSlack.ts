@@ -16,6 +16,7 @@ import {
   MIN_KEYWORD_LENGTH,
 } from "@/domain/slack/types";
 import { nextUpdatedAt } from "@/application/project/timestamps";
+import { slackSecretContext } from "@/domain/security/secretContext";
 
 export interface ProjectSlackView {
   enabled: boolean;
@@ -46,8 +47,12 @@ function maskedView(cipher: SecretCipher, project: Project): ProjectSlackView {
   return {
     enabled: slack?.enabled ?? false,
     configured: Boolean(slack?.botToken && slack.signingSecret),
-    botToken: slack?.botToken ? cipher.mask(slack.botToken) : "",
-    signingSecret: slack?.signingSecret ? cipher.mask(slack.signingSecret) : "",
+    botToken: slack?.botToken
+      ? cipher.mask(slack.botToken, slackSecretContext(project.name, "bot-token"))
+      : "",
+    signingSecret: slack?.signingSecret
+      ? cipher.mask(slack.signingSecret, slackSecretContext(project.name, "signing-secret"))
+      : "",
     eventsPath: eventsPathFor(project.name),
     suggestedPrompts: slack?.suggestedPrompts ?? [],
     channelKeywords: slack?.channelKeywords ?? [],
@@ -149,11 +154,12 @@ function mergeSecret(
   cipher: SecretCipher,
   stored: string | undefined,
   input: string | undefined,
+  context: string,
 ): string {
   if (input === undefined || cipher.isMasked(input) || input === "") {
     return stored ?? "";
   }
-  return cipher.encrypt(input);
+  return cipher.encrypt(input, context);
 }
 
 export async function updateProjectSlack(
@@ -176,8 +182,18 @@ export async function updateProjectSlack(
       ? cleanKeywords(update.channelKeywords)
       : (project.slack?.channelKeywords ?? []);
   const slack: SlackIntegration = {
-    botToken: mergeSecret(cipher, project.slack?.botToken, update.botToken),
-    signingSecret: mergeSecret(cipher, project.slack?.signingSecret, update.signingSecret),
+    botToken: mergeSecret(
+      cipher,
+      project.slack?.botToken,
+      update.botToken,
+      slackSecretContext(name, "bot-token"),
+    ),
+    signingSecret: mergeSecret(
+      cipher,
+      project.slack?.signingSecret,
+      update.signingSecret,
+      slackSecretContext(name, "signing-secret"),
+    ),
     enabled: update.enabled ?? project.slack?.enabled ?? false,
     ...(prompts.length > 0 ? { suggestedPrompts: prompts } : {}),
     ...(keywords.length > 0 ? { channelKeywords: keywords } : {}),
@@ -216,8 +232,11 @@ export function resolveProjectSlackRuntime(
     return null;
   }
   return {
-    botToken: cipher.decrypt(slack.botToken),
-    signingSecret: cipher.decrypt(slack.signingSecret),
+    botToken: cipher.decrypt(slack.botToken, slackSecretContext(project.name, "bot-token")),
+    signingSecret: cipher.decrypt(
+      slack.signingSecret,
+      slackSecretContext(project.name, "signing-secret"),
+    ),
   };
 }
 
