@@ -555,6 +555,9 @@ export async function resolveRunTools(
           ...found.mcpList.map((binding) => binding.name),
         );
       } catch (error) {
+        // Cancellation is the caller ending the run, not an optional catalog
+        // outage. Falling back here would keep resolving tools after Stop.
+        signal?.throwIfAborted();
         // A catalog that is unreachable, unindexed, or refusing embeddings must
         // not take the run with it: the version's own bindings are still exactly
         // what it asked for, and running with them is the behaviour discovery was

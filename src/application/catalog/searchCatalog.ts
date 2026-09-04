@@ -174,6 +174,7 @@ export async function searchCapabilitiesByKind(
       rerank: emptyRerankReport(),
     };
   }
+  options.signal?.throwIfAborted();
   const rerankerMinScore = deps.reranker
     ? await Promise.resolve(deps.rerankerMinScore?.() ?? DEFAULT_RERANKER_MIN_SCORE)
     : DEFAULT_RERANKER_MIN_SCORE;

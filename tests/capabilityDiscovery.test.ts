@@ -328,6 +328,24 @@ describe("capability discovery", () => {
     expect(resolved.warnings.some((line) => line.includes("discovery failed"))).toBe(true);
   });
 
+  it("propagates caller cancellation instead of falling back to bindings", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("Stop pressed"));
+    const { deps, opened } = harness({
+      catalog: fakeCatalog({ skill: [found("discovered")] }),
+    });
+
+    await expect(
+      resolveRunTools(
+        deps,
+        version({ skillList: ["bound"] }),
+        controller.signal,
+        QUERIES,
+      ),
+    ).rejects.toThrow("Stop pressed");
+    expect(opened).toEqual([]);
+  });
+
   it("keeps vector-discovered capabilities when reranking fails", async () => {
     const catalog = fakeCatalog({ skill: [found("aws-knowledge")] });
     catalog.reranker = { rerank: async () => { throw new Error("reranker unavailable"); } };
