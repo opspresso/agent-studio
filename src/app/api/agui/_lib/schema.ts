@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AguiRunInput } from "@/domain/agui/types";
+import { base64ByteLength, isBase64Payload } from "@/domain/llm/base64";
 import {
   base64Chars,
   MAX_IMAGE_BYTES,
@@ -31,11 +32,18 @@ const toolCallSchema = z.object({
   function: z.object({ name: z.string().min(1), arguments: z.string() }),
 });
 
-const imageSourceSchema = z.object({
-  type: z.literal("data"),
-  value: z.string().max(base64Chars(MAX_IMAGE_BYTES), "image payload is too large"),
-  mimeType: z.enum(SUPPORTED_IMAGE_TYPES),
-});
+const imageSourceSchema = z
+  .object({
+    type: z.literal("data"),
+    value: z.string().max(base64Chars(MAX_IMAGE_BYTES), "image payload is too large"),
+    mimeType: z.enum(SUPPORTED_IMAGE_TYPES),
+  })
+  .refine(({ value }) => isBase64Payload(value), {
+    message: "image payload is not valid base64",
+  })
+  .refine(({ value }) => base64ByteLength(value) <= MAX_IMAGE_BYTES, {
+    message: "image payload is too large",
+  });
 
 /** A name an application put in the open `metadata`; the mapping reads `name` or `filename`. */
 const documentMetadataSchema = z.record(z.string(), z.unknown()).optional();
@@ -55,6 +63,14 @@ const documentPartSchema = z
       mimeType: z.string().max(255),
     }),
     metadata: documentMetadataSchema,
+  })
+  .refine(({ source }) => isBase64Payload(source.value), {
+    message: "document payload is not valid base64",
+    path: ["source", "value"],
+  })
+  .refine(({ source }) => base64ByteLength(source.value) <= MAX_DOCUMENT_BYTES, {
+    message: `document is larger than ${MAX_DOCUMENT_SIZE_LABEL}`,
+    path: ["source", "value"],
   })
   .refine(
     ({ source, metadata }) =>

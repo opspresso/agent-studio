@@ -162,6 +162,7 @@
 | 런이 어떤 Version 을 실행하는가 | `src/application/project/` 의 `resolveRunnableVersion` |
 | 누가 project 에 접근할 수 있는가 (공개 범위·초대 목록의 판정) | `src/domain/project/access.ts` 의 `mayAccessProject`. admin 오버라이드를 합친 형태는 `projectUseCases.ts` 의 `assertProjectAccessible`/`userMayAccessProject` 뿐이고, 표면들은 그 둘을 지난다 ([SECURITY.md](SECURITY.md#인가-모델)) |
 | 사용자 이미지의 상한 | `src/domain/llm/imageLimits.ts` |
+| inline payload의 base64 문법과 decoded byte 길이 계산 | `src/domain/llm/base64.ts`. 이미지 data URL, 일반 첨부, AG-UI가 같은 판정을 읽는다 |
 | `data:` 이미지 인코딩 | `src/domain/llm/types.ts` 의 `imageDataUrl`/`parseImageDataUrl` |
 | 저장된 이미지 참조를 주소로 바꾸기 | `src/domain/chat/imageRefs.ts` 의 `resolveImageUrl` |
 | 저장된 파일 참조를 다운로드 주소로 바꾸기 | `src/domain/chat/fileRefs.ts` 의 `resolveFileUrl` |

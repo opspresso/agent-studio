@@ -108,8 +108,9 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
 
 ## 입력
 
-- `developer`·`system` → system 턴. `user`는 문자열이거나 parts — `text`, `image` (data 소스만,
-  `data:` URL로 변환), `document` (data 소스만; chat 첨부와 같은 `DocumentExtractor`
+- `developer`·`system` → system 턴. `user`는 문자열이거나 parts — `text`, `image` (유효한 base64
+  data 소스만, `data:` URL로 변환), `document` (유효한 base64 data 소스만; chat 첨부와 같은
+  `DocumentExtractor`
   와 예산으로 텍스트가 되어 `turnContent` 의 순서대로 턴 앞에 선다; 읽지 못한 것은 경고).
   audio·video part 와 URL 로 온 document 는 400 으로 그 이름을 대며 거절한다: 보지 못한 첨부에
   대해 답하는 런보다 낫다. `messages` 는 비어 있어도 된다. `assistant` 의

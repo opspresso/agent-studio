@@ -617,14 +617,15 @@ publish 된 version 도 실행 가능한 초안도 없는 project 는 `400` 으�
 사람은 `error` 가 아니라 `warning` 프레임을 받는다.
 
 `images` 는 사용자의 첨부를 인라인 바이트로 담은 것이다. `[ { b64, mimeType } ]`, 턴당 최대
-4개, 각각 5MB, `image/png|jpeg|gif|webp`. 모델에는 content part 로 닿고, (오브젝트 스토리지가
+4개, 각각 5MB, `image/png|jpeg|gif|webp`. `b64`는 유효한 padded 또는 unpadded base64여야 한다.
+모델에는 content part 로 닿고, (오브젝트 스토리지가
 설정돼 있으면) 사용자 메시지에 **object key** 로 저장된다. 읽기는 그 응답을 위해 서명된 URL 로
 답하며, 그 뒤로도 계속 동작하는 URL 은 절대 아니다. 주소를 만들 수 없는 이미지는 깨진 채로
 돌아오는 대신 메시지에서 빠진다.
 
 `documents` 는 보는 것이 아니라 읽는 파일이다. `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
-각각 10MB: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML, HTML, DOCX, XLSX, PPTX,
-HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 실행할 version에 바인딩된 MCP 중
+각각 10MB이며 `b64` 형식도 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
+HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 실행할 version에 바인딩된 MCP 중
 `read_document` capability를 제공하는 서버가 읽는다. 그런 binding이 없거나 호출이 실패하면
 그 파일이 빠졌다는 warning 을 돌려준다. `name` 은 필수이고,
 `mimeType` 이 `application/octet-stream` 일 때. 업로드는 흔히 이렇게 도착한다. 판단을 떠맡는다.
@@ -1180,7 +1181,8 @@ completion 이 없다. 그것은 `/predict` 로 실행하라.
 
 **이미지 입력.** 메시지 본문은 문자열 대신 OpenAI content part 여도 된다. 이미지 바이트는
 `data:image/…;base64,…` URL 로 인라인 이동한다. PNG, JPEG, GIF, WebP만 받고 디코딩 크기는
-하나당 5MB로 제한한다. 원격 URL은 받지 않는다. 호출자가 고른 주소를 모델 제공자에게 넘기면
+하나당 5MB로 제한하며 base64 형식도 검증한다. 원격 URL은 받지 않는다. 호출자가 고른 주소를
+모델 제공자에게 넘기면
 이 배포의 SSRF 정책을 적용할 수 없기 때문이다. 그 version의 모델은 `imageInput` 능력을 가져야
 한다. 아니면 `400`이며, 이미지를 읽을 수 없는 `fallbackModel`은 그 요청에서 건너뛴다.
 
@@ -1652,8 +1654,8 @@ assistant 턴의 `reasoning_content` 가 되고, `activity` 는 받되 버린다
 (`{ name, description, parameters? }`), `context` (`{ description, value }`), `state` (비어 있지
 않으면 읽기 전용 JSON 으로 context 와 함께 system 턴에 실린다. 갱신은 되지 않고
 `STATE_SNAPSHOT` 도 나가지 않는다), 그리고 받아만 두는 `forwardedProps`. `user` 턴의 parts 는
-`text`, `image` (`data` 소스만, 메시지당 `MAX_IMAGES_PER_TURN`개), `document`
-(`data` 소스만, `metadata.name`/`filename` 이 이름, 메시지당 `MAX_DOCUMENTS` 개, chat 첨부와
+`text`, `image` (`data` 소스만, 유효한 base64, 메시지당 `MAX_IMAGES_PER_TURN`개), `document`
+(`data` 소스만, 유효한 base64, `metadata.name`/`filename` 이 이름, 메시지당 `MAX_DOCUMENTS` 개, chat 첨부와
 같은 추출기로 텍스트가 된다) 이고, audio·video 와 URL 로 온 document 는 400 이다.
 interrupt 상태를 이어 가는 구현은 아직 없으므로 `resume` 이 있으면 400 이다. 값을 무시하고 새
 런으로 실행하지 않는다.
