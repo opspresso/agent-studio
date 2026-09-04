@@ -1987,6 +1987,25 @@ describe("execution tracing policy", () => {
     expect(topLevel.every((chunk) => chunk.traceId === traces[0]?.traceId)).toBe(true);
   });
 
+  it("stamps a sampled prompt traceId on its top-level chunks", async () => {
+    const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    deps.traceSampleRate = 1;
+    deps.sample = () => 0;
+    const traces = captureTraces(deps);
+
+    const chunks = await collect(
+      executeProjectStream(deps, {
+        project: { ...projectFixture(), projectType: "llm" },
+        version: versionFixture({ piiFiltering: false }),
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(traces).toHaveLength(1);
+    expect(chunks.every((chunk) => chunk.traceId === traces[0]?.traceId)).toBe(true);
+  });
+
   it("records what the run did before its first model call, through the run itself", async () => {
     // The recorder's own arithmetic is covered in tests/trace.test.ts; what is
     // covered here is the wiring — that a real run emits the stage at all, and

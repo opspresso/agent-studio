@@ -133,7 +133,9 @@ export async function* executeVersionStream(
       },
     )) {
       recorder?.observe(chunk);
-      yield chunk;
+      yield recorder && isTopLevelChunk(chunk)
+        ? { ...chunk, traceId: recorder.traceId }
+        : chunk;
     }
     completed = true;
   } catch (caught) {

@@ -62,6 +62,8 @@ export interface GenerateImageOutput {
   key?: string;
   /** What was lost — here, that the picture was produced but not stored. */
   warning?: string;
+  /** Present when this run was sampled, so callers can join the response to its trace. */
+  traceId?: string;
 }
 
 /**
@@ -91,7 +93,9 @@ export async function* generateImageStream(
   input: GenerateImageInput,
 ): AsyncGenerator<EngineChunk> {
   const image = await generateImage(deps, input);
+  const trace = image.traceId ? { traceId: image.traceId } : {};
   yield {
+    ...trace,
     image: {
       b64: image.imageBase64,
       mimeType: image.mimeType,
@@ -100,10 +104,10 @@ export async function* generateImageStream(
     },
   };
   if (image.warning) {
-    yield { warning: image.warning };
+    yield { ...trace, warning: image.warning };
   }
-  yield { usage: image.usage };
-  yield { done: true };
+  yield { ...trace, usage: image.usage };
+  yield { ...trace, done: true };
 }
 
 export async function generateImage(
@@ -202,6 +206,7 @@ export async function generateImage(
       usage: recorded,
       ...(stored ? { artifactId: stored.artifactId, key: stored.key } : {}),
       ...(warning ? { warning } : {}),
+      ...(recorder ? { traceId: recorder.traceId } : {}),
     };
   } catch (caught) {
     // A deadline outranks a caller that left: the run was stopped, and the

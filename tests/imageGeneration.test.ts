@@ -395,6 +395,30 @@ describe("generateImageStream", () => {
     ]);
   });
 
+  it("stamps a sampled trace id on every image stream chunk", async () => {
+    const { deps } = fakeDeps();
+    const traces: Trace[] = [];
+    const chunks: EngineChunk[] = [];
+    for await (const chunk of generateImageStream(
+      {
+        ...deps,
+        traces: {
+          put: async (trace) => void traces.push(trace),
+          get: async () => null,
+          listByProject: async () => traces,
+        },
+        traceSampleRate: 1,
+        sample: () => 0,
+      },
+      { project, version: version("openai/gpt-image-2"), prompt: "a fox" },
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(traces).toHaveLength(1);
+    expect(chunks.every((chunk) => chunk.traceId === traces[0]?.traceId)).toBe(true);
+  });
+
   it("does not swallow a refusal into an empty stream", async () => {
     const { deps } = fakeDeps();
     const stream = generateImageStream(deps, { project, version: version("openai/gpt-5-mini") });
