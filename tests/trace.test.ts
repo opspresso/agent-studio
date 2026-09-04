@@ -111,6 +111,35 @@ describe("TraceRecorder", () => {
     expect(subagentSpans.map((span) => span.output?.subagentTraceId)).toEqual(["run-1", "run-2"]);
   });
 
+  it("keeps unsampled transfers separate and folds their completion chunks", async () => {
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "parent",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    recorder.observe({
+      author: "child",
+      transferId: "transfer-1",
+      usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+    });
+    recorder.observe({ author: "child", transferId: "transfer-1", authorDone: true });
+    recorder.observe({
+      author: "child",
+      transferId: "transfer-2",
+      usage: { inputTokens: 2, outputTokens: 2, costUsd: 0.002 },
+    });
+    recorder.observe({ author: "child", transferId: "transfer-2", authorDone: true });
+    await recorder.finish();
+
+    const subagentSpans = traces[0]?.spans.filter((span) => span.kind === "subagent") ?? [];
+    expect(subagentSpans).toHaveLength(2);
+    expect(subagentSpans.map((span) => span.output?.inputTokens)).toEqual([1, 2]);
+  });
+
   it("rolls a nested chain into the transfer that started it", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {

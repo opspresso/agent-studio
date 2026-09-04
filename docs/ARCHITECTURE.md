@@ -644,6 +644,7 @@ chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. *
 | `finishReason` | `done` 이 말할 수 없는 이유로 런이 끝날 때 엔진이. 턴 가드(`turn-limit`)와 프로바이더의 출력 절단(`output-limit`), 각각 그것을 이름 붙인 `warning` 과 함께 | `chunkTermination`/`runTermination` 을 통해 읽는다: OpenAI `finish_reason: "length"`, trace 상태 `turn-limit`, A2A 종단 상태 메시지, AG-UI 의 `RUN_FINISHED.result.termination`, predict 의 `finishReason` 필드 |
 | `author` | subagent chunk 만. **가장 안쪽** agent | 소비자는 `isTopLevelChunk` 로 거른다. 클라이언트는 지금 도는 agent 를 보여 준다 |
 | `authorPath` | subagent chunk 만. 바깥쪽부터 나열한 체인 | 클라이언트는 `sample-agent → simple-image` 로 렌더링한다. trace recorder 는 첫 원소로 transfer 를 묶는다 |
+| `transferId` | delegation 호출마다. trace sampling과 무관하게 자식의 모든 chunk와 `authorDone`에 같은 값 | trace recorder가 같은 agent로 간 여러 transfer를 각각 한 span으로 묶는다. `traceId`는 선택적인 하위 trace 링크일 뿐 identity가 아니다 |
 | `authorDone` | authored 런이 반환될 때 `runSubagent` 래퍼가 | 소비자는 그 체인을 더 이상 활성으로 표시하지 않는다 |
 | `traceId` | trace 가 있는 top-level chunk 와 subagent chunk. 각 실행 facade 가 자기 recorder id 를 찍는다 | trigger 이력은 top-level run 에, 클라이언트는 authored chunk 를 그 subagent 의 trace 에 연결한다 |
 

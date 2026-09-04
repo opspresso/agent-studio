@@ -87,11 +87,7 @@ export class TraceRecorder {
   private readonly spans: TraceSpan[] = [];
   private spansDropped = 0;
   private readonly pendingTools = new Map<string, { name: string; startedAt: Date; inputChars: number }>();
-  /**
-   * Keyed by the direct child + its trace id: one span per transfer this run
-   * made (a deeper hop rolls into it), and two transfers to the same agent stay
-   * two spans because each child run has its own trace id.
-   */
+  /** Keyed by the always-present delegation id; trace sampling is only a link. */
   private readonly subagents = new Map<string, SubagentEntry>();
   private readonly warnings: string[] = [];
   private error: string | undefined;
@@ -340,7 +336,7 @@ export class TraceRecorder {
     const path = chunk.authorPath ?? [author];
     // The hop this run made; anything below it belongs to the same transfer.
     const child = path[0] ?? author;
-    const key = `${child}#${chunk.traceId ?? "-"}`;
+    const key = chunk.transferId ?? `${child}#${chunk.traceId ?? "-"}`;
     // While a child streams, this run is not inside a model call — so its next
     // model span starts here, not before the transfer. Without this the child's
     // whole duration lands on the parent's next model span.

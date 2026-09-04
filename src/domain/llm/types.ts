@@ -104,6 +104,8 @@ export interface EngineChunk {
    * chunk carries its own run's trace; an authored chunk carries the child's.
    */
   traceId?: string;
+  /** Stable identity of one delegation call, present whether traces are sampled or not. */
+  transferId?: string;
   /**
    * Subagent that authored this chunk — the *innermost* one, so a nested
    * transfer reports who actually ran. Top-level chunks carry no author.
