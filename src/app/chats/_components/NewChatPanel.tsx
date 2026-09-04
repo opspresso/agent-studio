@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
 import { useT } from "@/app/_i18n/provider";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
+import { readJson } from "@/app/_lib/httpClient";
 import { EMPTY_TURN, type AgentProject } from "../_lib/types";
 import { useRunEntry } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
@@ -21,6 +22,7 @@ export function NewChatPanel() {
   const t = useT();
   const [projects, setProjects] = useState<AgentProject[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
   // The project a new chat runs against, remembered per browser so the next one
   // opens on the last pick. Not synced across tabs: a pick made in another tab
   // must not swap the project under a message being typed here.
@@ -45,14 +47,14 @@ export function NewChatPanel() {
   const chatId = entry?.chat?.chatId ?? handedOver;
 
   useEffect(() => {
+    let cancelled = false;
+
     async function loadProjects() {
-      const res = await fetch("/api/projects");
-      if (res.ok) {
-        const data: unknown = await res.json();
-        const list = Array.isArray(data)
-          ? (data as AgentProject[])
-          : ((data as { projects?: AgentProject[] }).projects ?? []);
-        const agents = list.filter((project) => project.projectType === "agent");
+      try {
+        const agents = (await readJson<AgentProject[]>(await fetch("/api/projects"))).filter(
+          (project) => project.projectType === "agent",
+        );
+        if (cancelled) return;
         setProjects(agents);
         if (agents.length > 0) {
           // The remembered project may have been deleted, renamed, or turned
@@ -61,10 +63,20 @@ export function NewChatPanel() {
             agents.some((project) => project.name === current) ? current : agents[0]!.name,
           );
         }
+      } catch (error) {
+        if (!cancelled) {
+          setProjectsError(
+            error instanceof Error ? error.message : t("projects.loadFailed"),
+          );
+        }
+      } finally {
+        if (!cancelled) setProjectsLoaded(true);
       }
-      setProjectsLoaded(true);
     }
     void loadProjects();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // The first turn swaps the URL to /chats/<id> without a route change, so this
@@ -125,10 +137,18 @@ export function NewChatPanel() {
     return (
       <Flex h="100%" align="center" justify="center">
         <Stack gap="xs" maw={420} ta="center">
-          <Text fw={500}>{t("chat.noAgentProjects")}</Text>
-          <Text fz="sm" c="dimmed">
-            {t("chat.noAgentProjectsBody")}
-          </Text>
+          {projectsError ? (
+            <Alert color="red" variant="light">
+              {projectsError}
+            </Alert>
+          ) : (
+            <>
+              <Text fw={500}>{t("chat.noAgentProjects")}</Text>
+              <Text fz="sm" c="dimmed">
+                {t("chat.noAgentProjectsBody")}
+              </Text>
+            </>
+          )}
         </Stack>
       </Flex>
     );
