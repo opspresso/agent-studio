@@ -133,6 +133,24 @@ describe("reading a channel", () => {
     expect(await read("SlackHistory", { channel: "C1" })).toContain("Ada: @Lin can you look?");
   });
 
+  it("reads and resolves mentions from attachment and Block Kit prose", async () => {
+    const { read } = makeSlackFake({
+      history: [
+        {
+          ts: TS_A,
+          bot_id: "B1",
+          attachments: [{ title: "Deploy failed", text: "Owner: <@U0ADA123>" }],
+          blocks: [{ type: "section", text: { text: "Rollback: <@U0LIN456>" } }],
+        },
+      ],
+    });
+
+    const result = await read("SlackHistory", { channel: "C1" });
+    expect(result).toContain("Deploy failed");
+    expect(result).toContain("Owner: @Ada");
+    expect(result).toContain("Rollback: @Lin");
+  });
+
   it("leaves an id alone when the lookup finds nobody", async () => {
     const { read } = makeSlackFake({ history: [{ ts: TS_A, user: "U0GHOST9", text: "hi" }] });
 

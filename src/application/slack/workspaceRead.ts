@@ -5,6 +5,7 @@ import {
   type SlackWorkspaceReader,
 } from "@/domain/slack/reader";
 import { mapWithLimit } from "@/shared/mapWithLimit";
+import { slackMessageText } from "@/domain/slack/messageText";
 // The names live with every other builtin's, which is the single owner of what
 // a builtin may be called — a run's alias table is built from that list before
 // this module is reached.
@@ -159,14 +160,19 @@ function messageTime(ts: string): string {
   return new Date(seconds * 1000).toISOString().slice(0, 16).replace("T", " ") + "Z";
 }
 
-/** Every user id a page of messages refers to — as an author or in the text. */
-function referencedUsers(messages: SlackMessage[]): string[] {
+interface ReadableMessage {
+  message: SlackMessage;
+  text: string;
+}
+
+/** Every user id a page of messages refers to — as an author or in its full prose. */
+function referencedUsers(messages: ReadableMessage[]): string[] {
   const ids = new Set<string>();
-  for (const message of messages) {
+  for (const { message, text } of messages) {
     if (message.user) {
       ids.add(message.user);
     }
-    for (const match of (message.text ?? "").matchAll(/<@([A-Z0-9]+)>/g)) {
+    for (const match of text.matchAll(/<@([A-Z0-9]+)>/g)) {
       if (match[1]) {
         ids.add(match[1]);
       }
@@ -190,11 +196,12 @@ async function transcript(
   if (messages.length === 0) {
     return "No messages.";
   }
-  const names = await resolveNames(slack, token, referencedUsers(messages));
+  const readable = messages.map((message) => ({ message, text: slackMessageText(message) }));
+  const names = await resolveNames(slack, token, referencedUsers(readable));
   const named = (userId: string): string => names.get(userId) ?? userId;
-  const lines = messages.map((message) => {
+  const lines = readable.map(({ message, text: sourceText }) => {
     const author = message.user ? named(message.user) : message.bot_id ? "(app)" : "(unknown)";
-    const text = (message.text ?? "")
+    const text = sourceText
       .replace(/<@([A-Z0-9]+)>/g, (_whole, id: string) => `@${named(id)}`)
       .trim();
     const files = (message.files ?? [])
