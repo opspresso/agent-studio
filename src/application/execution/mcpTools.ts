@@ -17,6 +17,10 @@ import {
 import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
+import {
+  mcpHeadersContext,
+  versionMcpHeadersContext,
+} from "@/domain/security/secretContext";
 
 export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
 
@@ -99,7 +103,16 @@ export async function buildMcpTools(
             "those credentials were not sent. Re-enter them for the current endpoint.";
           log.warn("mcp", credentialWarning);
         }
-        const headers = deps.cipher.mergeOutboundHeaders(mcp.headers, overrides);
+        const headers = deps.cipher.mergeOutboundHeaders(
+          mcp.headers,
+          overrides,
+          mcpHeadersContext(mcp.name),
+          versionMcpHeadersContext(
+            version.projectName,
+            version.versionName,
+            binding.name,
+          ),
+        );
         // Before the availability check below: a stored spelling of a reserved
         // metadata header must never count as "a way to authenticate" a server
         // whose connection is unavailable, and must never impersonate another

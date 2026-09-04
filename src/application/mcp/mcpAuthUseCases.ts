@@ -25,6 +25,7 @@ import type {
 } from "@/domain/mcp/connection";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
+import { mcpHeadersContext } from "@/domain/security/secretContext";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
@@ -898,7 +899,11 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // binding's overrides layered over the entry, then the project's
       // Authorization last so a version cannot substitute its own. A list built
       // any other way would be answering a question nobody asked.
-      const headers = deps.cipher.mergeOutboundHeaders(server.headers, headerOverrides);
+      const headers = deps.cipher.mergeOutboundHeaders(
+        server.headers,
+        headerOverrides,
+        mcpHeadersContext(server.name),
+      );
       // Before the availability check below, exactly as a run strips them: a
       // stored spelling of a reserved metadata header is not "a way to
       // authenticate", and this probe must not relay one either.

@@ -48,6 +48,7 @@ export interface SecretCipher {
     stored: HeaderOverrides,
     update: HeaderOverrides,
     context?: string,
+    storedContext?: string,
   ): HeaderOverrides;
 
   /**

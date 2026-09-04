@@ -42,3 +42,11 @@ export function managedMcpEnvironmentContext(name: string): string {
 export function externalAgentHeadersContext(name: string): string {
   return JSON.stringify(["external-agent", name, "headers"]);
 }
+
+export function versionMcpHeadersContext(
+  projectName: string,
+  versionName: string,
+  serverName: string,
+): string {
+  return JSON.stringify(["project", projectName, "version", versionName, "mcp", serverName]);
+}

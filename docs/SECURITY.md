@@ -199,7 +199,9 @@ environment 는 항목 이름과 변수 이름에 묶인다. HTTP header 이름�
 dispatch 의 override 병합만 대소문자를 무시하고, AAD 는 environment 와 같은 공통 map 규칙에
 따라 저장된 키 철자를 그대로 쓴다. 기존 v1 값은 다시 저장하거나 재발급하기 전까지 계속
 동작한다. 나머지 시크릿은 각 저장·복사 경로가 같은 컨텍스트를 재구성하도록 전환하기 전까지
-v1 형식을 유지한다.
+v1 형식을 유지한다. Version 의 MCP header override 는 `project + version + server + header` 에
+묶인다. 저장된 version 을 임시 preview draft 로 읽을 때는 값을 복호화해 `draft` 컨텍스트로 다시
+암호화하고, project clone 은 소유자의 override 를 애초에 복사하지 않는다.
 부팅, 저장 시크릿 암호화, proxied URL 서명은 모두 `decodeAes256Key` 를 거쳐 canonical base64 로
 인코딩된 정확히 32바이트 key 만 사용한다.
 

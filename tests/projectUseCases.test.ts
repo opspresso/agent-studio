@@ -30,15 +30,17 @@ import {
   deleteVersion,
   listVersions,
   publishVersion,
+  resolveDraftMcpBindings,
   toVersionView as toVersionViewUseCase,
   updateVersion as updateVersionUseCase,
 } from "@/application/project/versionUseCases";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import {
-  decryptSecret,
   isEncrypted,
   isMasked,
+  mergeOutboundHeaders,
 } from "@/infrastructure/crypto/secretEncryption";
+import { versionMcpHeadersContext } from "@/domain/security/secretContext";
 import {
   createProject,
   deleteProject,
@@ -624,7 +626,14 @@ describe("MCP binding header overrides", () => {
 
     const stored = created.mcpList[0]?.headers?.Authorization as string;
     expect(isEncrypted(stored)).toBe(true);
-    expect(decryptSecret(stored)).toBe("Bearer project-secret");
+    expect(
+      mergeOutboundHeaders(
+        {},
+        { Authorization: stored },
+        undefined,
+        versionMcpHeadersContext("p", "1", "shared-mcp"),
+      ).Authorization,
+    ).toBe("Bearer project-secret");
   });
 
   it("masks override values on the API view but keeps removals visible", async () => {
@@ -672,6 +681,40 @@ describe("MCP binding header overrides", () => {
     expect(updated.mcpList[0]?.headers?.Authorization).toBe(
       created.mcpList[0]?.headers?.Authorization,
     );
+  });
+
+  it("rebinds a saved override to the draft context for preview", async () => {
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const versions = makeVersionRepo();
+    const created = await createVersion(
+      versions,
+      projects,
+      "p",
+      {
+        ...versionInput(),
+        mcpList: bindingWith({ Authorization: "Bearer preview-secret" }),
+      },
+      OWNER,
+    );
+
+    const draft = await resolveDraftMcpBindings(
+      versions,
+      ALL_REFS_EXIST.mcps,
+      secretCipher,
+      "p",
+      created.versionName,
+      toVersionView(created).mcpList,
+    );
+    const rebound = draft[0]?.headers?.Authorization as string;
+    expect(rebound).not.toBe(created.mcpList[0]?.headers?.Authorization);
+    expect(
+      mergeOutboundHeaders(
+        {},
+        { Authorization: rebound },
+        undefined,
+        versionMcpHeadersContext("p", "draft", "shared-mcp"),
+      ).Authorization,
+    ).toBe("Bearer preview-secret");
   });
 
   it("drops preserved secrets when the registry endpoint moved", async () => {

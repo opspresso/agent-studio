@@ -223,6 +223,28 @@ describe("MCP header overrides", () => {
     );
   });
 
+  it("re-encrypts a preserved override when its containing version changes", () => {
+    const sourceContext = "project:p:version:1:mcp:m";
+    const targetContext = "project:p:version:draft:mcp:m";
+    const stored = encryptHeaderOverrides(
+      { Authorization: "Bearer saved" },
+      sourceContext,
+    );
+    const masked = maskHeaderOverrides(stored, sourceContext);
+    const rebound = mergeHeaderOverrideUpdate(
+      stored,
+      masked,
+      targetContext,
+      sourceContext,
+    );
+
+    expect(rebound.Authorization).not.toBe(stored.Authorization);
+    expect(mergeOutboundHeaders({}, rebound, undefined, targetContext)).toEqual({
+      Authorization: "Bearer saved",
+    });
+    expect(() => mergeOutboundHeaders({}, rebound, undefined, sourceContext)).toThrow();
+  });
+
   it("drops a masked value that has no stored counterpart", () => {
     // A mask can only confirm an existing secret, never create one.
     expect(mergeHeaderOverrideUpdate({}, { "X-New": "******" })).toEqual({});

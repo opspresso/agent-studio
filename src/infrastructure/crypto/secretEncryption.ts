@@ -229,6 +229,7 @@ export function mergeHeaderOverrideUpdate(
   stored: HeaderOverrides,
   update: HeaderOverrides,
   context?: string,
+  storedContext: string | undefined = context,
 ): HeaderOverrides {
   const merged: HeaderOverrides = {};
   for (const [key, value] of Object.entries(update)) {
@@ -240,7 +241,13 @@ export function mergeHeaderOverrideUpdate(
       // Own keys only, as in {@link mergeHeaderUpdate}.
       const previous = Object.hasOwn(stored, key) ? stored[key] : undefined;
       if (previous !== undefined) {
-        merged[key] = previous;
+        merged[key] =
+          context !== storedContext && previous !== null
+            ? encryptSecret(
+                decryptSecret(previous, headerContext(storedContext, key)),
+                headerContext(context, key),
+              )
+            : previous;
       }
       continue;
     }
