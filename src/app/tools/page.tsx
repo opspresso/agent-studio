@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toSlug } from "@/domain/naming";
 import { createMcp, listMcps, type McpServer } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
@@ -30,6 +30,7 @@ import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 export default function ToolsPage() {
   const t = useT();
@@ -40,16 +41,19 @@ export default function ToolsPage() {
   const [registerOpened, register] = useDisclosure(false);
   const [managedOpened, managed] = useDisclosure(false);
   const [filter, setFilter] = useState("");
+  const latestOnly = useRef(createLatestOnly()).current;
 
   async function refresh() {
+    const isCurrent = latestOnly();
     setLoading(true);
     setError(null);
     try {
-      setServers(await listMcps());
+      const loaded = await listMcps();
+      if (isCurrent()) setServers(loaded);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load MCP servers");
+      if (isCurrent()) setError(e instanceof Error ? e.message : "Failed to load MCP servers");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }
 
