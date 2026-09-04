@@ -50,6 +50,26 @@ describe("header encryption round-trip", () => {
     expect(() => decryptSecret(bound, "project:beta:token")).toThrow();
     expect(() => decryptSecret(bound)).toThrow("requires its encryption context");
   });
+
+  it("binds every map value to its map and exact stored key", () => {
+    const stored = encryptHeaders(
+      { Authorization: "Bearer secret", "X-Api-Key": "key" },
+      "mcp:alpha:headers",
+    );
+
+    expect(stored.Authorization?.startsWith("enc:v2:")).toBe(true);
+    expect(decryptHeadersForOutbound(stored, "mcp:alpha:headers")).toEqual({
+      Authorization: "Bearer secret",
+      "X-Api-Key": "key",
+    });
+    expect(() => decryptHeadersForOutbound(stored, "mcp:beta:headers")).toThrow();
+    expect(() =>
+      decryptHeadersForOutbound(
+        { authorization: stored.Authorization! },
+        "mcp:alpha:headers",
+      ),
+    ).toThrow();
+  });
 });
 
 describe("length-preserving masking", () => {

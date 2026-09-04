@@ -123,17 +123,27 @@ export function maskSecret(value: string, context?: string): string {
 }
 
 /** Encrypt all header values for storage. */
-export function encryptHeaders(headers: Record<string, string>): Record<string, string> {
+export function encryptHeaders(
+  headers: Record<string, string>,
+  context?: string,
+): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(headers).map(([k, v]) => [k, encryptSecret(v)]),
+    Object.entries(headers).map(([k, v]) => [k, encryptSecret(v, headerContext(context, k))]),
   );
 }
 
 /** Mask all header values for client reads. */
-export function maskHeaders(headers: Record<string, string>): Record<string, string> {
+export function maskHeaders(
+  headers: Record<string, string>,
+  context?: string,
+): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(headers).map(([k, v]) => [k, maskSecret(v)]),
+    Object.entries(headers).map(([k, v]) => [k, maskSecret(v, headerContext(context, k))]),
   );
+}
+
+function headerContext(context: string | undefined, name: string): string | undefined {
+  return context === undefined ? undefined : JSON.stringify([context, name]);
 }
 
 /**
@@ -145,6 +155,7 @@ export function maskHeaders(headers: Record<string, string>): Record<string, str
 export function mergeHeaderUpdate(
   stored: Record<string, string>,
   update: Record<string, string>,
+  context?: string,
 ): Record<string, string> {
   const merged: Record<string, string> = {};
   for (const [key, value] of Object.entries(update)) {
@@ -159,7 +170,7 @@ export function mergeHeaderUpdate(
       }
       continue;
     }
-    merged[key] = encryptSecret(value);
+    merged[key] = encryptSecret(value, headerContext(context, key));
   }
   return merged;
 }
@@ -167,9 +178,10 @@ export function mergeHeaderUpdate(
 /** Decrypt stored headers for outbound calls. Only call at dispatch time. */
 export function decryptHeadersForOutbound(
   headers: Record<string, string>,
+  context?: string,
 ): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(headers).map(([k, v]) => [k, decryptSecret(v)]),
+    Object.entries(headers).map(([k, v]) => [k, decryptSecret(v, headerContext(context, k))]),
   );
 }
 
@@ -182,15 +194,27 @@ export function decryptHeadersForOutbound(
 /** Values a header override map may hold; `null` removes a registry default. */
 export type HeaderOverrides = Record<string, string | null>;
 
-export function encryptHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides {
+export function encryptHeaderOverrides(
+  overrides: HeaderOverrides,
+  context?: string,
+): HeaderOverrides {
   return Object.fromEntries(
-    Object.entries(overrides).map(([k, v]) => [k, v === null ? null : encryptSecret(v)]),
+    Object.entries(overrides).map(([k, v]) => [
+      k,
+      v === null ? null : encryptSecret(v, headerContext(context, k)),
+    ]),
   );
 }
 
-export function maskHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides {
+export function maskHeaderOverrides(
+  overrides: HeaderOverrides,
+  context?: string,
+): HeaderOverrides {
   return Object.fromEntries(
-    Object.entries(overrides).map(([k, v]) => [k, v === null ? null : maskSecret(v)]),
+    Object.entries(overrides).map(([k, v]) => [
+      k,
+      v === null ? null : maskSecret(v, headerContext(context, k)),
+    ]),
   );
 }
 
@@ -204,6 +228,7 @@ export function maskHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides
 export function mergeHeaderOverrideUpdate(
   stored: HeaderOverrides,
   update: HeaderOverrides,
+  context?: string,
 ): HeaderOverrides {
   const merged: HeaderOverrides = {};
   for (const [key, value] of Object.entries(update)) {
@@ -219,7 +244,7 @@ export function mergeHeaderOverrideUpdate(
       }
       continue;
     }
-    merged[key] = encryptSecret(value);
+    merged[key] = encryptSecret(value, headerContext(context, key));
   }
   return merged;
 }
@@ -241,8 +266,10 @@ export function mergeHeaderOverrideUpdate(
 export function mergeOutboundHeaders(
   registryHeaders: Record<string, string>,
   overrides: HeaderOverrides | undefined,
+  registryContext?: string,
+  overrideContext?: string,
 ): Record<string, string> {
-  const merged = decryptHeadersForOutbound(registryHeaders);
+  const merged = decryptHeadersForOutbound(registryHeaders, registryContext);
   for (const [key, value] of Object.entries(overrides ?? {})) {
     // A mask is a display artifact a form echoed back, never a credential.
     // Sending one is wrong twice over: `fetch` rejects it outright, because the
@@ -259,7 +286,7 @@ export function mergeOutboundHeaders(
       }
     }
     if (value !== null) {
-      merged[key] = decryptSecret(value);
+      merged[key] = decryptSecret(value, headerContext(overrideContext, key));
     }
   }
   return merged;

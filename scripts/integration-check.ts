@@ -82,6 +82,9 @@ async function main() {
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
+  const { externalAgentHeadersContext, mcpHeadersContext } = await import(
+    "@/domain/security/secretContext"
+  );
   const { keys: dbKeys } = await import("@/infrastructure/db/keys");
   const { createA2aTaskStore } = await import("@/infrastructure/a2a/taskStore");
   const { TaskState } = await import("@a2a-js/sdk");
@@ -349,34 +352,47 @@ async function main() {
     pass("member get/list/atomic tier update");
 
     // ---------- mcp + external agent (encrypted headers) ----------
-    const encrypted = encryptHeaders({ Authorization: "Bearer secret-token" });
+    const serverName = `it-mcp-${suffix}`;
+    const agentName = `it-agent-${suffix}`;
+    const mcpHeaders = encryptHeaders(
+      { Authorization: "Bearer secret-token" },
+      mcpHeadersContext(serverName),
+    );
     await mcpRepository.put({
-      name: `it-mcp-${suffix}`,
+      name: serverName,
       url: "http://localhost:9999/mcp",
-      headers: encrypted,
+      headers: mcpHeaders,
       createdAt: now,
       updatedAt: now,
     });
-    const mcp = await mcpRepository.get(`it-mcp-${suffix}`);
+    const mcp = await mcpRepository.get(serverName);
     assert.ok(mcp, "mcp get");
     assert.equal(
-      decryptHeadersForOutbound(mcp.headers).Authorization,
+      decryptHeadersForOutbound(mcp.headers, mcpHeadersContext(serverName)).Authorization,
       "Bearer secret-token",
       "mcp header encryption round-trip",
     );
     await externalAgentRepository.put({
-      name: `it-agent-${suffix}`,
+      name: agentName,
       url: "http://localhost:9999/v1/chat/completions",
       description: "external",
-      headers: encrypted,
+      headers: encryptHeaders(
+        { Authorization: "Bearer secret-token" },
+        externalAgentHeadersContext(agentName),
+      ),
       createdAt: now,
       updatedAt: now,
     });
-    assert.ok(await externalAgentRepository.get(`it-agent-${suffix}`), "external agent get");
+    const agent = await externalAgentRepository.get(agentName);
+    assert.ok(agent, "external agent get");
+    assert.equal(
+      decryptHeadersForOutbound(agent.headers, externalAgentHeadersContext(agentName)).Authorization,
+      "Bearer secret-token",
+      "external agent header encryption round-trip",
+    );
     pass("mcp + external agent with encrypted headers");
 
     // ---------- mcp oauth connection + in-flight state ----------
-    const serverName = `it-mcp-${suffix}`;
     await mcpConnectionRepository.put({
       projectName,
       serverName,

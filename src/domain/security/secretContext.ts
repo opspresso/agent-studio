@@ -30,3 +30,15 @@ export function telegramSecretContext(
 export function teamsSecretContext(projectName: string): string {
   return JSON.stringify(["project", projectName, "teams", "app-password"]);
 }
+
+export function mcpHeadersContext(name: string): string {
+  return JSON.stringify(["mcp", name, "headers"]);
+}
+
+export function managedMcpEnvironmentContext(name: string): string {
+  return JSON.stringify(["mcp", name, "environment"]);
+}
+
+export function externalAgentHeadersContext(name: string): string {
+  return JSON.stringify(["external-agent", name, "headers"]);
+}

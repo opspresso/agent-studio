@@ -35,6 +35,10 @@ import {
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import { log } from "@/shared/logger";
+import {
+  managedMcpEnvironmentContext,
+  mcpHeadersContext,
+} from "@/domain/security/secretContext";
 
 export interface CreateManagedInput {
   name: string;
@@ -168,9 +172,14 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
   function view(entry: McpServer): McpServer {
     return {
       ...entry,
-      headers: deps.cipher.maskHeaders(entry.headers),
+      headers: deps.cipher.maskHeaders(entry.headers, mcpHeadersContext(entry.name)),
       ...(entry.environment
-        ? { environment: deps.cipher.maskHeaders(entry.environment) }
+        ? {
+            environment: deps.cipher.maskHeaders(
+              entry.environment,
+              managedMcpEnvironmentContext(entry.name),
+            ),
+          }
         : {}),
     };
   }
@@ -200,7 +209,10 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     }
     // This probe has no user, project, or conversation — a stored spelling of
     // a reserved metadata header must not ride it claiming one.
-    const headers = deps.cipher.decryptHeadersForOutbound(entry.headers);
+    const headers = deps.cipher.decryptHeadersForOutbound(
+      entry.headers,
+      mcpHeadersContext(entry.name),
+    );
     stripMcpMetadataHeaders(headers);
     const result = await deps.probe.listTools(entry.url, headers, true, REACHABILITY_TIMEOUT_MS);
     return result.ok || result.unauthorized === true;
@@ -234,7 +246,12 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       name: entry.name,
       image: entry.image,
       ...(entry.environment
-        ? { environment: deps.cipher.decryptHeadersForOutbound(entry.environment) }
+        ? {
+            environment: deps.cipher.decryptHeadersForOutbound(
+              entry.environment,
+              managedMcpEnvironmentContext(entry.name),
+            ),
+          }
         : {}),
       ...(entry.args ? { args: entry.args } : {}),
       ...(entry.containerPort !== undefined ? { containerPort: entry.containerPort } : {}),
@@ -380,13 +397,21 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
           image: input.image,
           containerPort: input.containerPort,
           ...(input.environment
-            ? { environment: deps.cipher.encryptHeaders(input.environment) }
+            ? {
+                environment: deps.cipher.encryptHeaders(
+                  input.environment,
+                  managedMcpEnvironmentContext(input.name),
+                ),
+              }
             : {}),
           ...(input.args ? { args: input.args } : {}),
           ...(input.endpointPath ? { endpointPath: input.endpointPath } : {}),
           ...(input.description ? { description: input.description } : {}),
           ...(input.content ? { content: input.content } : {}),
-          headers: deps.cipher.encryptHeaders(input.headers ?? {}),
+          headers: deps.cipher.encryptHeaders(
+            input.headers ?? {},
+            mcpHeadersContext(input.name),
+          ),
           createdAt: deps.now(),
           updatedAt: deps.now(),
         };
@@ -435,7 +460,11 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         input.environment === undefined
           ? existing.environment
           : Object.keys(input.environment).length > 0
-            ? deps.cipher.mergeHeaderUpdate(existing.environment ?? {}, input.environment)
+            ? deps.cipher.mergeHeaderUpdate(
+                existing.environment ?? {},
+                input.environment,
+                managedMcpEnvironmentContext(existing.name),
+              )
             : undefined;
       const nextEndpointPath = endpointPath(input.endpointPath ?? existing.endpointPath);
       const updated: McpServer = {
@@ -451,7 +480,11 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         headers:
           input.headers === undefined
             ? existing.headers
-            : deps.cipher.mergeHeaderUpdate(existing.headers, input.headers),
+            : deps.cipher.mergeHeaderUpdate(
+                existing.headers,
+                input.headers,
+                mcpHeadersContext(existing.name),
+              ),
         updatedAt: deps.now(),
       };
       const workloadChanged =

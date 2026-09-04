@@ -22,23 +22,33 @@ export interface SecretCipher {
   /** True when a submitted value is a mask echoed back, not a new secret. */
   isMasked(value: string): boolean;
 
-  encryptHeaders(headers: Record<string, string>): Record<string, string>;
-  maskHeaders(headers: Record<string, string>): Record<string, string>;
+  encryptHeaders(headers: Record<string, string>, context?: string): Record<string, string>;
+  maskHeaders(headers: Record<string, string>, context?: string): Record<string, string>;
   /** Masked/empty submitted values keep the stored secret; unmatched masks drop. */
   mergeHeaderUpdate(
     stored: Record<string, string>,
     update: Record<string, string>,
+    context?: string,
   ): Record<string, string>;
   /** Decrypt stored headers for an outbound call. Only at dispatch time. */
-  decryptHeadersForOutbound(headers: Record<string, string>): Record<string, string>;
+  decryptHeadersForOutbound(
+    headers: Record<string, string>,
+    context?: string,
+  ): Record<string, string>;
   /** Registry headers with a version's overrides layered on, decrypted. */
   mergeOutboundHeaders(
     registryHeaders: Record<string, string>,
     overrides: HeaderOverrides | undefined,
+    registryContext?: string,
+    overrideContext?: string,
   ): Record<string, string>;
 
-  maskHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides;
-  mergeHeaderOverrideUpdate(stored: HeaderOverrides, update: HeaderOverrides): HeaderOverrides;
+  maskHeaderOverrides(overrides: HeaderOverrides, context?: string): HeaderOverrides;
+  mergeHeaderOverrideUpdate(
+    stored: HeaderOverrides,
+    update: HeaderOverrides,
+    context?: string,
+  ): HeaderOverrides;
 
   /**
    * Decrypt `stored` and compare it to `candidate` in constant time.

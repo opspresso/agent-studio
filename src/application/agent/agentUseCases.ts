@@ -12,6 +12,7 @@ import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { RemoteAgentDispatcher, RemoteAgentProbeReply } from "@/domain/agent/dispatcher";
 import { urlWithoutQueryOrFragment } from "@/shared/url";
+import { externalAgentHeadersContext } from "@/domain/security/secretContext";
 
 export interface CreateAgentInput {
   name: string;
@@ -39,7 +40,7 @@ function masked(cipher: SecretCipher, agent: ExternalAgent): ExternalAgent {
   return {
     ...agent,
     url: urlWithoutQueryOrFragment(agent.url),
-    headers: cipher.maskHeaders(agent.headers),
+    headers: cipher.maskHeaders(agent.headers, externalAgentHeadersContext(agent.name)),
   };
 }
 
@@ -62,7 +63,7 @@ export function createAgentUseCases(
         url: input.url,
         ...(input.protocol ? { protocol: input.protocol } : {}),
         description: input.description,
-        headers: cipher.encryptHeaders(input.headers),
+        headers: cipher.encryptHeaders(input.headers, externalAgentHeadersContext(input.name)),
         createdAt: now,
         updatedAt: now,
       };
@@ -86,9 +87,17 @@ export function createAgentUseCases(
         protocol: patch.protocol ?? existing.protocol,
         description: patch.description ?? existing.description,
         headers: movedAddress
-          ? cipher.mergeHeaderUpdate({}, patch.headers ?? {})
+          ? cipher.mergeHeaderUpdate(
+              {},
+              patch.headers ?? {},
+              externalAgentHeadersContext(existing.name),
+            )
           : patch.headers !== undefined
-            ? cipher.mergeHeaderUpdate(existing.headers, patch.headers)
+            ? cipher.mergeHeaderUpdate(
+                existing.headers,
+                patch.headers,
+                externalAgentHeadersContext(existing.name),
+              )
             : existing.headers,
         updatedAt: now,
       };
@@ -112,7 +121,10 @@ export function createAgentUseCases(
         {
           url: existing.url,
           protocol: existing.protocol,
-          headers: cipher.decryptHeadersForOutbound(existing.headers),
+          headers: cipher.decryptHeadersForOutbound(
+            existing.headers,
+            externalAgentHeadersContext(existing.name),
+          ),
         },
         message,
       );

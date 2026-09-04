@@ -72,6 +72,10 @@ import {
   isEncrypted,
   isMasked,
 } from "@/infrastructure/crypto/secretEncryption";
+import {
+  externalAgentHeadersContext,
+  mcpHeadersContext,
+} from "@/domain/security/secretContext";
 
 /** The display contract is "maskSecret produced this", not any one glyph —
  * asserting the shape would re-break every time the reveal tiers change. */
@@ -200,6 +204,10 @@ describe("MCP registry secret contract", () => {
     });
     expectMasked(created?.headers.Authorization);
     expect(isEncrypted(store.get("m")!.headers.Authorization!)).toBe(true);
+    expect(store.get("m")!.headers.Authorization?.startsWith("enc:v2:")).toBe(true);
+    expect(
+      decryptHeadersForOutbound(store.get("m")!.headers, mcpHeadersContext("m")),
+    ).toEqual({ Authorization: "Bearer token-1" });
 
     const got = await useCases.get("m");
     const listed = await useCases.list();
@@ -487,6 +495,10 @@ describe("external agent registry secret contract", () => {
     });
     expectMasked(created?.headers["X-Api-Key"]);
     expect(isEncrypted(store.get("a")!.headers["X-Api-Key"]!)).toBe(true);
+    expect(store.get("a")!.headers["X-Api-Key"]?.startsWith("enc:v2:")).toBe(true);
+    expect(
+      decryptHeadersForOutbound(store.get("a")!.headers, externalAgentHeadersContext("a")),
+    ).toEqual({ "X-Api-Key": "plain-key" });
 
     const got = await useCases.get("a");
     const listed = await useCases.list();

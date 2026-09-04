@@ -38,6 +38,7 @@ import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools,
 import { memoryPrepared, recallForRun } from "./memoryRecall";
 import { log } from "@/shared/logger";
 import { runEnding } from "@/application/run/runDeadline";
+import { externalAgentHeadersContext } from "@/domain/security/secretContext";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 import { runDeadlineExceeded } from "@/shared/runDeadline";
 
@@ -657,7 +658,10 @@ export async function* runRemoteSubagent(
   const target = {
     url: agent.url,
     protocol: agent.protocol,
-    headers: deps.cipher.decryptHeadersForOutbound(agent.headers),
+    headers: deps.cipher.decryptHeadersForOutbound(
+      agent.headers,
+      externalAgentHeadersContext(agent.name),
+    ),
   };
   // The remote conversation to continue, if this one has been there before.
   // Only an A2A agent has one to continue, and only a run in a conversation
