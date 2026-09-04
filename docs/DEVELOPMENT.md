@@ -184,13 +184,19 @@ pnpm test:integration
 `.github/workflows/ci.yml` 은 저장소의 모든 branch push 에서 돈다:
 
 ```
-typecheck → test → test:integration → build
+typecheck → test → test:integration → build → production server smoke test
 ```
 
 `pgvector/pgvector:0.8.6-pg18-trixie` 서비스 컨테이너가 `POSTGRES_DB=agent_studio_test` 로 호스트 포트
 `5432` 에 뜬다. 통합 체크가 기본값으로 접속하는 주소이고 이름이 `_test` 로 끝나므로 그 가드를
 지난다. job 마다 새로 뜨는 컨테이너는 비어 있고, 검사가 자기 스키마를 적용하므로 워크플로에 설정할
 것이 없다.
+
+마지막 smoke test 는 Dockerfile 과 같이 `public` 및 `.next/static` 을 standalone 디렉터리에
+복사하고, 같은 entry point(`node .next/standalone/server.js`)로 build 산출물을 실제 실행한다.
+`/api/health`, 첫 화면, 로고, 대표 JavaScript chunk 의 200을 확인한다. 하류 상태를 보는
+`/api/ready` 가 아니라 liveness 를 쓰므로 mock LLM 서버는 필요 없다. 프로세스가 먼저 끝나거나
+30초 안에 응답하지 않으면 서버 로그를 출력하고 실패한다.
 
 CI는 최소 `contents: read` 권한의 일회용 GitHub-hosted runner에서 실행하고 checkout credential을
 작업 트리에 남기지 않는다. PR 검사는 base 저장소의 branch에 push된 commit에 붙은 CI 상태를

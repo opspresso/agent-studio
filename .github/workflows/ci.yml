@@ -57,3 +57,44 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Production server smoke test
+        env:
+          STAGE: local
+          DATABASE_URL: postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test
+          LLM_BASE_URL: http://127.0.0.1:9/v1
+          LLM_API_KEY: test
+          AES_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          BETTER_AUTH_SECRET: ci-smoke-test-secret-32-bytes!!!
+          BETTER_AUTH_URL: http://127.0.0.1:3000
+          HOSTNAME: 127.0.0.1
+          PORT: 3000
+        run: |
+          mkdir -p .next/standalone/.next/static .next/standalone/public
+          cp -R .next/static/. .next/standalone/.next/static/
+          cp -R public/. .next/standalone/public/
+          node .next/standalone/server.js > /tmp/agent-studio-production.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/api/health > /dev/null; then
+              curl --fail --silent --show-error http://127.0.0.1:3000/ > /dev/null
+              curl --fail --silent --show-error http://127.0.0.1:3000/logo.png > /dev/null
+              static_asset=$(find .next/static -type f -name '*.js' -print -quit)
+              static_url="/_next${static_asset#.next}"
+              curl --fail --silent --show-error "http://127.0.0.1:3000${static_url}" > /dev/null
+              sleep 1
+              if ! kill -0 "$server_pid" 2>/dev/null || grep -q "unhandledRejection" /tmp/agent-studio-production.log; then
+                cat /tmp/agent-studio-production.log
+                exit 1
+              fi
+              exit 0
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              cat /tmp/agent-studio-production.log
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/agent-studio-production.log
+          exit 1
