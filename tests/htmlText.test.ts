@@ -145,12 +145,15 @@ it("caps a very long page without splitting a character", () => {
  */
 describe("markup that is nothing but openings", () => {
   it("drops pathological unterminated openings without leaking markup", () => {
-    expectEqual(htmlToText("<script".repeat(70_000)), "");
-    expectEqual(htmlToText("<svg".repeat(125_000)), "");
-    expectEqual(htmlToText("<p".repeat(250_000)), "");
+    // Each input is far beyond the 1,024-character attribute scan bound. The
+    // result, rather than machine speed, proves the bounded path hands the rest
+    // to the linear tag stripper without leaking markup.
+    expectEqual(htmlToText("<script".repeat(2_000)), "");
+    expectEqual(htmlToText("<svg".repeat(2_000)), "");
+    expectEqual(htmlToText("<p".repeat(2_000)), "");
     // Every opening closed by one `>` at the very end: each attribute run still
     // has a `>` to find, at the far end of the document.
-    expectEqual(htmlToText(`${"<script".repeat(70_000)}>`), "");
+    expectEqual(htmlToText(`${"<script".repeat(2_000)}>`), "");
   });
 
   it("still takes a tag longer than the attribute bound off", () => {
