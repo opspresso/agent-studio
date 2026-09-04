@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { formatDateTime } from "@/shared/date";
@@ -17,6 +17,7 @@ import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 export default function VersionsPage() {
   const t = useT();
@@ -31,21 +32,25 @@ export default function VersionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const latestOnly = useRef(createLatestOnly()).current;
 
   const refresh = useCallback(async () => {
+    const isCurrent = latestOnly();
     setLoading(true);
     setError(null);
     try {
       const [project, vers] = await Promise.all([getProject(name), listVersions(name)]);
-      setPublished(project.publishedVersion);
-      setOwnerEmail(project.ownerEmail);
-      setVersions([...vers].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      if (isCurrent()) {
+        setPublished(project.publishedVersion);
+        setOwnerEmail(project.ownerEmail);
+        setVersions([...vers].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load versions");
+      if (isCurrent()) setError(e instanceof Error ? e.message : "Failed to load versions");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [name]);
+  }, [latestOnly, name]);
 
   useEffect(() => {
     void refresh();

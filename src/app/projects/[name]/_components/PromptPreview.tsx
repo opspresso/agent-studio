@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { findTemplateVariables } from "@/shared/template";
 import {
   previewPrompt,
@@ -23,6 +23,7 @@ import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { JsonHighlight } from "@/app/_components/JsonHighlight";
 import { onModEnter } from "@/app/_lib/modEnter";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 /** The whole assembled prompt as one block, for pasting elsewhere. */
 function promptText(preview: PromptPreview): string {
@@ -76,6 +77,7 @@ export function PromptPreview({
   const [error, setError] = useState<string | null>(null);
   const t = useT();
   const locale = useLocale();
+  const latestOnly = useRef(createLatestOnly()).current;
 
   // Only the user prompt template is rendered with variables — a {{var}} in
   // the system prompt reaches the model as literal text, and an agent run
@@ -93,6 +95,8 @@ export function PromptPreview({
   const stale = preview !== null && previewOf !== current;
 
   async function refresh() {
+    const isCurrent = latestOnly();
+    const requested = current;
     setLoading(true);
     setError(null);
     try {
@@ -102,12 +106,14 @@ export function PromptPreview({
         variables,
         ...(usesRequest && message.trim() ? { message } : {}),
       });
-      setPreview(result);
-      setPreviewOf(JSON.stringify({ draft, variables, message }));
+      if (isCurrent()) {
+        setPreview(result);
+        setPreviewOf(requested);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("preview.failed"));
+      if (isCurrent()) setError(e instanceof Error ? e.message : t("preview.failed"));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }
 

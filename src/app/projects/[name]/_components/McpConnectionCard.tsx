@@ -23,6 +23,7 @@ import { monoInput } from "@/app/_components/monoInput";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 const STATUS_LABEL: Record<McpConnectionView["status"], MessageKey> = {
   connected: "mcpConn.connected",
@@ -66,8 +67,10 @@ export function McpConnectionCard({
   // listener every render opens a window where the message lands on nothing.
   const changed = useRef(onConnectionChanged);
   changed.current = onConnectionChanged;
+  const latestOnly = useRef(createLatestOnly()).current;
 
   const refresh = useCallback(async () => {
+    const isCurrent = latestOnly();
     // Settled independently on purpose. Only the registry entry can say whether
     // this server needs authorization at all, so a failure to read the project's
     // *connections* — which is what a non-owner gets — must never be able to
@@ -76,10 +79,10 @@ export function McpConnectionCard({
       getMcp(serverName),
       listMcpConnections(projectName),
     ]);
-    if (entry.status === "fulfilled") {
+    if (isCurrent() && entry.status === "fulfilled") {
       setServer(entry.value);
     }
-    if (connections.status === "fulfilled") {
+    if (isCurrent() && connections.status === "fulfilled") {
       const found = connections.value.find((c) => c.serverName === serverName);
       setConnection(found);
       setClientId(found?.clientId ?? "");
@@ -91,6 +94,9 @@ export function McpConnectionCard({
     const failure = [entry, connections].find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
+    if (!isCurrent()) {
+      return;
+    }
     if (failure) {
       const reason: unknown = failure.reason;
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -98,7 +104,7 @@ export function McpConnectionCard({
       setError(null);
     }
     setLoaded(true);
-  }, [projectName, serverName]);
+  }, [latestOnly, projectName, serverName]);
 
   useEffect(() => {
     void refresh();

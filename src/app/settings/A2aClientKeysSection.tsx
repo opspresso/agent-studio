@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Code, Group, Stack, Table, Text, TextInput } from "@mantine/core";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { useConfirm } from "@/app/_components/useConfirm";
@@ -12,6 +12,7 @@ import { toSlug } from "@/domain/naming";
 import type { A2aClientKeyView } from "@/application/a2a/clientKeyUseCases";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 /**
  * Named inbound-A2A client keys, beside the shared key: each key names its
@@ -28,17 +29,23 @@ export function A2aClientKeysSection() {
   // The plaintext of the key just issued or revealed — held in component state
   // only, so leaving the page hides it again.
   const [shown, setShown] = useState<{ name: string; key: string } | null>(null);
+  const latestOnly = useRef(createLatestOnly()).current;
 
   async function refresh() {
-    // Throws on failure: a load that silently kept the stale list would render
-    // "no client keys" for a fetch that never answered.
-    const res = await fetch("/api/settings/a2a-keys");
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(data.error ?? `Request failed (${res.status})`);
+    const isCurrent = latestOnly();
+    try {
+      // Throws on failure: a load that silently kept the stale list would render
+      // "no client keys" for a fetch that never answered.
+      const res = await fetch("/api/settings/a2a-keys");
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? `Request failed (${res.status})`);
+      }
+      const data = (await res.json()) as { items?: A2aClientKeyView[] };
+      if (isCurrent()) setItems(data.items ?? []);
+    } catch (error) {
+      if (isCurrent()) throw error;
     }
-    const data = (await res.json()) as { items?: A2aClientKeyView[] };
-    setItems(data.items ?? []);
   }
 
   useEffect(() => {
