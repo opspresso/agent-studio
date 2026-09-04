@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_FETCH_BYTES, MAX_FETCHED_TEXT_CHARS, readUrlContent } from "@/application/llm/urlContent";
 import { HttpResourceError, type HttpResource } from "@/domain/net/httpResource";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
-import { MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
+import { MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_CHARS } from "@/domain/llm/documentLimits";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 
@@ -97,7 +97,7 @@ describe("reading a URL", () => {
 
   it("refuses an image the provider would not take, by the provider's own cap", async () => {
     const { ports: p } = ports({
-      bytes: Buffer.alloc(MAX_ATTACHMENT_BYTES + 1),
+      bytes: Buffer.alloc(MAX_IMAGE_BYTES + 1),
       mimeType: "image/png",
     });
     await expect(readUrlContent(p, "https://example.test/big.png")).rejects.toBeInstanceOf(

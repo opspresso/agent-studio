@@ -3,6 +3,8 @@
  * These are pure domain shapes with no framework/provider imports.
  */
 
+export { imageDataUrl, parseImageDataUrl } from "./imageLimits";
+
 /** Token + cost accounting for a single LLM call. */
 export interface UsageInfo {
   inputTokens: number;
@@ -223,9 +225,9 @@ export interface EngineChunk {
   done?: boolean;
   /**
    * Why the run ended, when `done` cannot say it. Normal completion stays
-   * `done: true` — byte-identical to what every existing consumer reads — and
-   * an ending that is *not* a normal completion carries its reason here
-   * instead, so a consumer written before this field behaves exactly as it did.
+   * `done: true`; an ending that is *not* a normal completion carries its reason
+   * here instead. Consumers that only understand `done` still see normal
+   * completion in the same shape.
    * Narrowed to the reasons only this field can say: `completed` is `done`,
    * `error` has its own field, and `cancelled` is never a chunk — so a
    * producer cannot write the ambiguous endings the reader exists to forbid.
@@ -250,8 +252,8 @@ export function isTopLevelChunk(chunk: { author?: string }): boolean {
  * The termination a chunk announces, or undefined for a chunk that is not a
  * run's ending. The single owned reader of the `done` / `finishReason` /
  * `error` fields — like {@link isTopLevelChunk}, consumers call this instead
- * of re-deriving the mapping, because the re-derivation every consumer used to
- * make ("no `done` → cut off at a limit") misreads a cancellation and a
+ * of re-deriving the mapping. The shortcut "no `done` → cut off at a limit"
+ * misreads a cancellation and a
  * mid-stream error as a length stop.
  *
  * Only a top-level chunk's termination speaks for the stream. An authored one
@@ -328,32 +330,6 @@ export function messageText(message: Pick<ChatMessageInput, "content">): string 
     .join("\n");
 }
 
-/**
- * Encode image bytes as the `data:` url an `image_url` content part carries.
- * Every surface that inlines an image goes through here, so the encoding has
- * one owner alongside the decoder below.
- */
-export function imageDataUrl(image: { b64: string; mimeType: string }): string {
-  return `data:${image.mimeType};base64,${image.b64}`;
-}
-
-/**
- * Decode a `data:<mime>;base64,<payload>` url into bytes — the inverse of
- * `imageDataUrl`. Any other url form (an https image the provider fetches for
- * itself) returns null. Parameters between the mime and `;base64` are
- * tolerated and dropped: `imageDataUrl` never writes them, but an external
- * caller's `data:image/png;charset=binary;base64,…` is still an image.
- */
-export function parseImageDataUrl(url: string): { b64: string; mimeType: string } | null {
-  const match = /^data:([^;,]+)(?:;[^;,]*)*;base64,(.+)$/s.exec(url);
-  const mimeType = match?.[1];
-  const b64 = match?.[2];
-  if (!mimeType || !b64 || !mimeType.startsWith("image/")) {
-    return null;
-  }
-  return { b64, mimeType };
-}
-
 /** True when a message body carries at least one image part. */
 export function hasImageParts(message: Pick<ChatMessageInput, "content">): boolean {
   return Array.isArray(message.content) && message.content.some((p) => p.type === "image_url");
@@ -387,8 +363,7 @@ export interface RunResult {
   toolCalls?: ChannelToolCall[];
   /**
    * Why the run ended — for a single-shot run, `completed` or `output-limit`
-   * (the provider cut the response at its output cap, which used to be
-   * indistinguishable from a finish).
+   * (the provider cut the response at its output cap rather than finishing).
    */
   termination?: RunTerminationReason;
 }

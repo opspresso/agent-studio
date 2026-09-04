@@ -11,6 +11,7 @@ import type {
 } from "@/domain/slack/types";
 import { log } from "@/shared/logger";
 import { readBodyBytes } from "@/shared/httpBody";
+import { neutralizeSlackMentions } from "@/domain/slack/outboundText";
 import { getCachedProfile, rememberProfile, type CachedSlackProfile } from "./profileCache";
 export type { SlackMessage };
 
@@ -166,6 +167,35 @@ async function slackApi<T>(
   return slackResult<T>(res, method);
 }
 
+function safeChunk(chunk: SlackChunk): SlackChunk {
+  if (chunk.type === "markdown_text") {
+    return { ...chunk, text: neutralizeSlackMentions(chunk.text) };
+  }
+  if (chunk.type === "plan_update") {
+    return { ...chunk, title: neutralizeSlackMentions(chunk.title) };
+  }
+  return {
+    ...chunk,
+    title: neutralizeSlackMentions(chunk.title),
+    ...(chunk.details === undefined
+      ? {}
+      : { details: neutralizeSlackMentions(chunk.details) }),
+    ...(chunk.output === undefined
+      ? {}
+      : { output: neutralizeSlackMentions(chunk.output) }),
+  };
+}
+
+function safeStreamArgs<T extends { markdown_text?: string; chunks?: SlackChunk[] }>(args: T): T {
+  return {
+    ...args,
+    ...(args.markdown_text === undefined
+      ? {}
+      : { markdown_text: neutralizeSlackMentions(args.markdown_text) }),
+    ...(args.chunks === undefined ? {} : { chunks: args.chunks.map(safeChunk) }),
+  };
+}
+
 /**
  * One `users.info`, cached per workspace, feeding three views: what a tool may
  * show, what the caller block may say, and the address attribution needs.
@@ -262,10 +292,8 @@ export const slackClient = {
     if (!res.ok) {
       throw new Error(`Slack file download failed: ${res.status}`);
     }
-    // Bounded here, not by the caller. It used to answer `res.arrayBuffer()` and
-    // let the caller compare the size afterwards, which is a check that runs
-    // once the memory is already spent — and the caller's own pre-check reads
-    // `file.size`, which Slack may omit entirely (the call site says so).
+    // Bounded while reading, not after buffering: a post-read comparison spends
+    // the memory before enforcing the limit, and Slack may omit `file.size`.
     return Buffer.from(await readBodyBytes(res, maxBytes));
   },
   authTest(token: string): Promise<{ team?: string; user?: string; bot_id?: string }> {
@@ -386,13 +414,19 @@ export const slackClient = {
     token: string,
     args: { channel: string; text: string; thread_ts?: string },
   ): Promise<{ ts: string; channel: string }> {
-    return slackApi(token, "chat.postMessage", args);
+    return slackApi(token, "chat.postMessage", {
+      ...args,
+      text: neutralizeSlackMentions(args.text),
+    });
   },
   updateMessage(
     token: string,
     args: { channel: string; ts: string; text: string },
   ): Promise<{ ts: string }> {
-    return slackApi(token, "chat.update", args);
+    return slackApi(token, "chat.update", {
+      ...args,
+      text: neutralizeSlackMentions(args.text),
+    });
   },
   async deleteMessage(token: string, args: { channel: string; ts: string }): Promise<void> {
     await slackApi(token, "chat.delete", args);
@@ -447,7 +481,7 @@ export const slackClient = {
       chunks?: SlackChunk[];
     },
   ): Promise<{ ts: string; channel: string }> {
-    return slackApi(token, "chat.startStream", args);
+    return slackApi(token, "chat.startStream", safeStreamArgs(args));
   },
   /**
    * Append to an open stream. `markdown_text` is a *delta*, not the accumulated
@@ -460,14 +494,14 @@ export const slackClient = {
     token: string,
     args: { channel: string; ts: string; markdown_text?: string; chunks?: SlackChunk[] },
   ): Promise<void> {
-    return slackApi(token, "chat.appendStream", args).then(() => undefined);
+    return slackApi(token, "chat.appendStream", safeStreamArgs(args)).then(() => undefined);
   },
   /** Close an open stream, optionally with one last delta and a final chunk. */
   stopStream(
     token: string,
     args: { channel: string; ts: string; markdown_text?: string; chunks?: SlackChunk[] },
   ): Promise<void> {
-    return slackApi(token, "chat.stopStream", args).then(() => undefined);
+    return slackApi(token, "chat.stopStream", safeStreamArgs(args)).then(() => undefined);
   },
   /**
    * The native "<App> is thinking…" line under an agent thread. It is not a

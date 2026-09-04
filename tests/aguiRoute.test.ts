@@ -245,6 +245,46 @@ describe("POST /api/agui/[name]", () => {
     expect(response.status).toBe(400);
   });
 
+  it("refuses remote image sources before a run starts", async () => {
+    const response = await POST(
+      req({
+        ...input,
+        messages: [
+          {
+            id: "m1",
+            role: "user",
+            content: [
+              { type: "image", source: { type: "url", value: "https://example.com/a.png" } },
+            ],
+          },
+        ],
+      }),
+      ctx,
+    );
+    expect(response.status).toBe(400);
+    expect(runs).toHaveLength(0);
+  });
+
+  it("refuses malformed inline bytes before a run starts", async () => {
+    const response = await POST(
+      req({
+        ...input,
+        messages: [
+          {
+            id: "m1",
+            role: "user",
+            content: [
+              { type: "image", source: { type: "data", value: "!!!!", mimeType: "image/png" } },
+            ],
+          },
+        ],
+      }),
+      ctx,
+    );
+    expect(response.status).toBe(400);
+    expect(runs).toHaveLength(0);
+  });
+
   it("answers 404 for a project with nothing published", async () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",

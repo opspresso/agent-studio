@@ -359,7 +359,7 @@ describe("createVersion naming", () => {
 
 describe("tool bindings on a project type that cannot run them", () => {
   // Only agent projects run the tool loop; every other type is dispatched to a
-  // single-shot completion. A binding stored on one of those used to be
+  // single-shot completion. A binding stored on one of those would be
   // accepted, shown in the editor, and then silently ignored at run time.
   it("rejects an MCP server, skill or subagent added to a non-agent project", async () => {
     for (const input of [
@@ -1446,23 +1446,36 @@ describe("chatMessageSchema content parts", () => {
     expect(parsed.data?.content).toEqual([{ type: "text", text: "what is this?" }, imagePart]);
   });
 
-  it("accepts an https image url", () => {
+  it("rejects remote image URLs", () => {
     const parsed = chatMessageSchema.safeParse({
       role: "user",
       content: [{ type: "image_url", image_url: { url: "https://example.com/a.png" } }],
     });
 
-    expect(parsed.success).toBe(true);
+    expect(parsed.success).toBe(false);
   });
 
-  it("rejects image urls with any other scheme", () => {
-    for (const url of ["file:///etc/passwd", "http://example.com/a.png", "data:text/html,x"]) {
+  it("rejects non-image and unsupported image data URLs", () => {
+    for (const url of [
+      "file:///etc/passwd",
+      "http://example.com/a.png",
+      "data:text/html,x",
+      "data:image/png;base64,!!!!",
+    ]) {
       const parsed = chatMessageSchema.safeParse({
         role: "user",
         content: [{ type: "image_url", image_url: { url } }],
       });
       expect(parsed.success, url).toBe(false);
     }
+    expect(
+      chatMessageSchema.safeParse({
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: "data:image/svg+xml;base64,PHN2Zz4=" } },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects an image payload over the size cap", () => {
@@ -1471,6 +1484,15 @@ describe("chatMessageSchema content parts", () => {
       content: [
         { type: "image_url", image_url: { url: `data:image/png;base64,${"A".repeat(11_000_000)}` } },
       ],
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects more images than one turn may carry", () => {
+    const parsed = chatMessageSchema.safeParse({
+      role: "user",
+      content: Array(5).fill(imagePart),
     });
 
     expect(parsed.success).toBe(false);

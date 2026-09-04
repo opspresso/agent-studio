@@ -63,7 +63,6 @@ describe("toEngineMessages", () => {
             content: [
               { type: "text", text: "what is this?" },
               { type: "image", source: { type: "data", value: "AAAA", mimeType: "image/png" } },
-              { type: "image", source: { type: "url", value: "https://example.com/a.png" } },
             ],
           },
         ],
@@ -75,7 +74,6 @@ describe("toEngineMessages", () => {
         content: [
           { type: "text", text: "what is this?" },
           { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
-          { type: "image_url", image_url: { url: "https://example.com/a.png" } },
         ],
       },
     ]);

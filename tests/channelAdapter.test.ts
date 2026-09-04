@@ -235,4 +235,24 @@ describe("OpenAI channel adapter", () => {
 
     expect(completion.usage).not.toHaveProperty("cost_usd");
   });
+
+  it("never delegates caller-controlled image fetching to the provider", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      channel.chatCompletion({
+        model: "openai/gpt-test",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image_url", image_url: { url: "https://internal.example/image.png" } },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow("LLM image inputs must contain bounded inline image bytes");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

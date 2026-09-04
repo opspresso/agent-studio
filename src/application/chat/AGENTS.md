@@ -29,8 +29,8 @@ buffer rather than a record, and why the viewport belongs to a library is
 - `cancelRun.ts` — `cancelChatRun` (persist the ask) and `watchChatCancel` (the running
   side's poll for it).
 - `resolveImages.ts` — resolve a stored image per reader: the view signs its key, while a run
-  restores the newest four as bounded inline bytes for editing and signs the rest; reports
-  images that could not be addressed or restored so the caller can say so.
+  restores the newest four as bounded inline bytes for editing and omits the rest; reports
+  images that could not be restored so the caller can say so.
 - `resolveFiles.ts` — the same for a file a run produced, carrying the filename to save as.
   Only the view calls it: a file's bytes never enter a replayed turn.
 - `createChat.ts` / `sendMessage.ts` / `listChats.ts` / `getChat.ts` / `deleteChat.ts`.
@@ -133,12 +133,12 @@ buffer rather than a record, and why the viewport belongs to a library is
   message keeps `images: [{ key, prompt? }]` — the b64 payload would be megabytes replayed on
   every later turn, far past the message's byte budget. The view signs each key with its own
   lifetime (`@/application/artifact/urlTtl`). A run
-  instead reads the newest four stored images back under `MAX_ATTACHMENT_BYTES` and sends them
+  instead reads the newest four stored images back under `MAX_IMAGE_BYTES` and sends them
   as data URLs, which is what registers both user attachments and assistant-produced images as
-  editable handles; older images stay visible through replay-lifetime signed URLs. Rows written
-  before keys existed carry a public `url` used as-is and remain visible but cannot become an
-  editable handle. A read or type failure falls back to that address and warns; an image that
-  cannot be addressed is dropped, never the message, and is reported too. With no object storage
+  editable handles; older images stay visible in the chat but are omitted from model context.
+  Rows written before keys existed carry a public `url` used by the view only. A read or type
+  failure is warned; an image that cannot be restored is dropped, never the message, and is
+  reported too. With no object storage
   configured, images render during the live stream only, which is reported.
 - **Files a run produced are references from the moment they arrive.** `EngineChunk.file` is
   a separate axis from `image` because everything that reads `image` *draws* it, and the run
@@ -147,10 +147,10 @@ buffer rather than a record, and why the viewport belongs to a library is
   `files: [{ key, name, mimeType, byteSize? }]`, `resolveFiles.ts` signs it per read, and the
   address carries the **filename to save as** — the object key is a UUID, and a browser handed
   one saves `c74d33ff-….pdf`. Three consequences. **Only the view resolves them**: a file's
-  bytes never enter the model's context, so the replay path signs images and deliberately not
+  bytes never enter the model's context, so the replay path restores images and deliberately not
   these. **A file counts toward the turn being worth persisting** — a run whose only output was
-  a document used to write no message at all, which left the document stored and unreachable
-  from the conversation that made it. And the unstored case reads differently from an image's:
+  a document must retain a message or the stored object is unreachable from the conversation
+  that made it. And the unstored case reads differently from an image's:
   an image that failed to store was still *seen*, while a file that failed has been nowhere, so
   the warning says the download does not exist rather than that it is temporary.
   A live frame carries no address (`LiveFile`) — signing one into every frame would put a
@@ -158,10 +158,11 @@ buffer rather than a record, and why the viewport belongs to a library is
   away and carries one.
 - **Attachments are sent twice over, deliberately.** The turn being run carries the
   attachment *bytes* as inline `data:` content parts (`userTurnContent`) — that is what
-  gives the engine a handle it can edit. Replayed history carries a *signed URL* resolved
-  from the stored key (`toEngineMessages`), which the provider fetches: visible to the model,
-  not editable. A turn with attachments and no text is a content-parts message with no text
-  part, never an empty user turn — and when none of its images can be addressed any more,
+  gives the engine a handle it can edit. Replayed history restores at most the newest four
+  stored objects to the same inline shape. Older, legacy-URL, or unreadable images are omitted
+  and reported; no provider receives a remote URL to fetch. A turn with attachments and no text
+  is a content-parts message with no text part, never an empty user turn — and when none of its
+  images can be addressed any more,
   `userMessage` substitutes a marker saying so, because an empty user turn is a shape some
   providers refuse outright.
 - **Documents are stored as their text, not as the file.** `readMessageDocuments` reads the

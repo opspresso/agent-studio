@@ -6,9 +6,9 @@ import { isPublicPagePath } from "@/shared/pageAccess";
  * The sign-in gate for pages. `pageAccess.ts` owns which pages are public.
  *
  * The API layer already refuses a request without a session (`withAuth`), but a
- * 401 only arrives *after* the page has rendered: a signed-out visitor used to
- * get the whole console — nav, tabs, empty tables — and an error box, with no
- * way in. Turning the navigation away before the route renders is both the
+ * 401 only arrives *after* the page has rendered. Without this gate a signed-out
+ * visitor receives the console shell and an error box despite having no way in.
+ * Turning the navigation away before the route renders is both the
  * correct answer to "you are not signed in" and the only one that does not leak
  * the shape of the workspace to someone who cannot use it.
  *

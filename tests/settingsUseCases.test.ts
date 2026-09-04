@@ -229,7 +229,7 @@ describe("settingsUseCases.update", () => {
   });
 
   /**
-   * The page posts every field on every save, so one save used to turn all ten
+   * The page posts every field on every save, so one save would turn all ten
    * into overrides — each reading `override` next to the value it was already
    * inheriting, and each one shadowing the env var from then on. A value equal
    * to the environment's is therefore not an override at all.

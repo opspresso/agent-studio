@@ -169,11 +169,9 @@ export function classifyMcpJsonServer(entry: unknown): McpServerClassification {
  * `github:<repo>#<plugin>`.
  *
  * Written by the plugins sync, read by {@link parsePluginSource} and by every
- * `startsWith` that asks "is this row this repository's?". Both sides used to
- * spell it out — the sync composed the prefix, this file sliced it apart, and a
- * comment here asked whoever changed one to remember the other. A prefix that
- * lost its `#` would not fail: the sync would adopt rows it does not own and
- * the console would stop calling them repo-owned.
+ * `startsWith` that asks "is this row this repository's?". Composition and
+ * parsing share this owner so a delimiter change cannot make sync adopt rows it
+ * does not own or make the console stop recognizing repo-owned rows.
  */
 const SOURCE_SCHEME = "github:";
 

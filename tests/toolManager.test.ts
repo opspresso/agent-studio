@@ -464,7 +464,7 @@ describe("ToolManager discovery validation", () => {
 
   it("refuses a whole catalogue when one tool's schema breaks the spec", async () => {
     // Where the line moved, and it is worth knowing: a tool declaring a
-    // non-object `inputSchema` used to be dropped on its own. The client now
+    // non-object `inputSchema` would be dropped on its own. The client now
     // validates the entire `tools/list` result, so one such tool costs that
     // server every tool it has. The trade is that the answer is *named* rather
     // than silently thinned — and the fix is on the server.
@@ -555,7 +555,7 @@ describe("ToolManager response parsing", () => {
 
 describe("ToolManager result truncation", () => {
   it("truncates a tool result longer than the cap, in the unit the cap counts", async () => {
-    // The suffix used to say "100KB" for a limit of 100,000 *characters* — never
+    // The suffix would say "100KB" for a limit of 100,000 *characters* — never
     // the same number, and further apart with every multi-byte character in the
     // result.
     const suffix = "...(truncated at 100,000 characters)";
@@ -746,7 +746,7 @@ describe("ToolManager era negotiation", () => {
 
   it("releases a legacy server's session on teardown, and mints none on a modern one", async () => {
     // A legacy connection's session lives on the server until it is released or
-    // its TTL passes, so every run that skipped the DELETE used to leak one.
+    // its TTL passes, so every run that skipped the DELETE would leak one.
     // The modern half of the assertion is the one that would rot quietly: this
     // revision has no session at all, and a DELETE to a server that never
     // issued one is a request with nothing to release.
@@ -1194,7 +1194,7 @@ describe("ToolManager per-binding tool allowlist", () => {
 
   it("does not read a 202 with no reply as an empty catalogue", async () => {
     // Streamable HTTP lets a server accept a request and answer elsewhere. Read
-    // as `undefined`, that used to become `tools ?? []` — a server with no tools
+    // as `undefined`, that would become `tools ?? []` — a server with no tools
     // rather than one this client never heard back from. The client now waits
     // for the answer instead of assuming one, so the run gives up on the
     // discovery budget; either way the catalogue is never invented.
@@ -1277,7 +1277,7 @@ describe("ToolManager per-binding tool allowlist", () => {
   it("keeps a paged catalogue for the life its first page asked for", async () => {
     // A behaviour change worth pinning rather than discovering later: the
     // aggregated walk keeps the first page's freshness hint, where this client
-    // used to take the shortest across pages. The per-page call that would show
+    // would take the shortest across pages. The per-page call that would show
     // the rest is selected by passing a cursor, and the first page has none.
     stubMcpFetch({
       "https://paged.test/mcp": {
@@ -1312,7 +1312,7 @@ describe("ToolManager per-binding tool allowlist", () => {
   });
 
   it("reports a server that connects but advertises nothing", async () => {
-    // The failure that used to be silent: a reachable server answering
+    // The failure that would be silent: a reachable server answering
     // `tools/list` with an empty array left the run with no tools, no error and
     // no server row, so there was nothing to diagnose it from.
     stubMcpFetch({ "https://empty.test/mcp": { listTools: [] } });
@@ -1344,7 +1344,7 @@ describe("ToolManager image results", () => {
   const PIXEL = "iVBORw0KGgo=";
 
   it("returns an image block's bytes instead of dropping the picture", async () => {
-    // A screenshot or chart tool used to come back as "[image result omitted]",
+    // A screenshot or chart tool would come back as "[image result omitted]",
     // which made those servers unusable even though the engine handles images.
     stubMcpFetch({
       "https://a.test/mcp": {
@@ -1519,7 +1519,7 @@ describe("listMcpTools (registry probe)", () => {
   it("names a silent server as a timeout rather than as a raw client error", async () => {
     // The protocol client raises its own error type for a deadline, so the
     // probe's reading of "timed out" has to ask rather than match on the DOM's
-    // error names — which is what it used to do, and what silently stopped
+    // error names — which is what it would do, and what silently stopped
     // matching anything.
     vi.useFakeTimers();
     try {
@@ -1754,7 +1754,7 @@ describe("ToolManager init concurrency", () => {
 
 describe("ToolManager teardown", () => {
   it("closes without sending anything, because there is no session to release", async () => {
-    // The DELETE this used to assert on belonged to a session id the revision
+    // The DELETE this would assert on belonged to a session id the revision
     // no longer mints. Closing is local; a teardown that still talked to the
     // server would be a request nobody asked for.
     const calls = stubMcpFetch({
@@ -1911,7 +1911,7 @@ describe("ToolManager result content blocks", () => {
     const result = await manager.callTool("find", {});
     expect(result.text).toContain("file:///project/src/main.rs");
     expect(result.text).toContain("main.rs");
-    // A pointer to something, which used to read as a broken server.
+    // A pointer to something, which would read as a broken server.
     expect(result.text).not.toContain("Invalid");
   });
 
@@ -1936,7 +1936,7 @@ describe("ToolManager result content blocks", () => {
   it("refuses a content type it does not know, rather than guessing at it", async () => {
     // A trade-off the SDK brings, recorded here because it is a behaviour
     // change: a block type outside the five the schema knows fails the whole
-    // result, where this client used to name the unknown type and pass the rest
+    // result, where this client would name the unknown type and pass the rest
     // through. A future revision adding a block type will need an SDK upgrade —
     // and the failure says so, which is the part that matters: the model is
     // told the call failed instead of being handed a partial answer.
@@ -2016,7 +2016,7 @@ describe("ToolManager empty and failed results", () => {
     const manager = new ToolManager([server("a", "https://a.test/mcp")]);
     await manager.init();
 
-    // A delete that removed something answers like this; it used to reach the
+    // A delete that removed something answers like this; it would reach the
     // model as the string "[]".
     const result = await manager.callTool("del", {});
     expect(result.text.startsWith("Error:")).toBe(false);

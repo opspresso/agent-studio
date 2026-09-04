@@ -8,7 +8,7 @@ import {
   withTurnBody,
 } from "@/app/api/_lib/body";
 import { MAX_INBOUND_EVENT_BYTES, readEventBody } from "@/app/api/_lib/inboundEvent";
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
 
 /**
@@ -68,14 +68,14 @@ describe("withTurnBody", () => {
     // The cap is derived, so this pins the derivation rather than a number: a
     // request at the documented limits must not be refused by the body reader.
     const attachments =
-      MAX_DOCUMENT_BYTES * MAX_DOCUMENTS + MAX_ATTACHMENT_BYTES * MAX_ATTACHMENTS;
+      MAX_DOCUMENT_BYTES * MAX_DOCUMENTS + MAX_IMAGE_BYTES * MAX_IMAGES_PER_TURN;
 
     expect(MAX_TURN_BODY_BYTES).toBeGreaterThan(attachments);
   });
 
   it("charges bytes rather than requests, so a small attachment is not a whole permit", async () => {
     // The budget is worth two maximal turns. A body just past the prose
-    // allowance is a three-hundredth of one, and used to spend the same permit
+    // allowance is a three-hundredth of one, and would spend the same permit
     // — two screenshots in flight 429'd everyone else for the length of a run.
     const largeBody = largeTurnBody();
 

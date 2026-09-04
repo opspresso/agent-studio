@@ -60,9 +60,7 @@ export async function listProjectActorsFor(
 
 /**
  * The slice bound to its repositories, cipher and Slack lookup, composed once
- * by the composition root. The actors route used to assemble this bundle per
- * request — the presentation layer choosing which cipher decrypts a bot token
- * and which client resolves a profile.
+ * so the presentation layer chooses neither cipher nor profile client.
  */
 export interface UsageUseCases {
   summary(from: string, to: string, projectName?: string): Promise<UsageRow[]>;

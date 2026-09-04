@@ -15,8 +15,8 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
   const { limit } = parsePageLimit(params.get("limit"), { fallback: DEFAULT_LIMIT });
   const from = params.get("from") || undefined;
   const to = params.get("to") || undefined;
-  // `isUtcDay`, not a shape regex: `2026-02-31` used to pass this route and
-  // ride into the GSI range condition as written.
+  // `isUtcDay`, not a shape regex: `2026-02-31` must not ride into the GSI range
+  // condition as written.
   if (
     (from && !isUtcDay(from)) ||
     (to && !isUtcDay(to)) ||

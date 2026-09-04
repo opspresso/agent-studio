@@ -191,10 +191,9 @@ project 가 그것을 써도 된다는 뜻이고, discovery 는 자격 증명을
 마찬가지인데, 그러지 않으면 검색이 그냥 아무것도 찾지 못한 경우와 구별되지 않는다.
 
 **무엇을 *찾아냈는가* 는 warning 이 아니다.** `resolveRunTools` 는 그것을 `discovered` 로 따로 반환한다.
-예전에는 `warning` chunk 였고, 그것은 discovery 를 켠 버전의 모든 정상 런이 warning 을 하나씩
-보고했다는 뜻이었다 — 모든 chat 턴에 노란 경고, 모든 응답에 비어 있지 않은 `warnings`, 그리고 "이
-런이 손실을 보고했는가" 를 기준으로 삼는 모든 것이 그 전부에서 발동했다. `collectedWarning` 은 런이
-잃은 것을 소유하는데, 케이퍼빌리티를 찾은 것은 그 반대다. 런은 그것을 로그로 남긴다. Playground
+discovery 성공을 `warning` chunk로 보내면 모든 정상 런이 손실을 보고한 것으로 표시된다.
+`collectedWarning`은 런이 잃은 것을 소유하는데, capability를 찾은 것은 그 반대다. 런은 그것을
+로그로 남긴다. Playground
 프리뷰는 그것을 따로 렌더링하는데, 작성자가 다른 방법으로는 볼 수 없는 유일한 자리이기 때문이다 —
 런이 실제로 *쓴* 것은 이미 그 툴 트래픽에 있다.
 

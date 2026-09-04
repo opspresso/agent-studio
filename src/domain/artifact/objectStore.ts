@@ -1,11 +1,9 @@
 /**
  * Where an artifact's bytes are kept.
  *
- * One port rather than the two this replaced. Writing used to be an application
- * type and signing a domain one, wired separately and held together by a comment
- * on the composition site saying "both or neither" — because storing a key
- * nobody can sign is the same as storing nothing. One interface makes that
- * structural.
+ * Writing and signing share one port because they must be wired together:
+ * storing a key nobody can sign is the same as storing nothing. One interface
+ * makes that requirement structural.
  *
  * The port takes a key rather than minting one: {@link artifactObjectKey} owns
  * the naming, so the adapter knows nothing about how objects are addressed.
@@ -15,8 +13,8 @@
  * A readable GET address for a stored object.
  *
  * The lifetime belongs to the reader, because the readers differ: a chat view is
- * read by a person with the page already open, while a replay hands the URL to a
- * model provider that fetches it at some point inside a run.
+ * read by a person with the page already open, while durable messaging records
+ * need a link that remains useful after the run has ended.
  *
  * The adapter may return a time-limited signed URL or a direct public URL.
  * `downloadAs` sets the filename a browser saves under, and asking for one is

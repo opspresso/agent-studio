@@ -1,9 +1,11 @@
 import type { Plugin } from "@/domain/plugin/types";
+import type { PluginResponse } from "@/app/api/plugins/[name]/route";
 import type { PluginSyncResult, PluginSyncSelection } from "@/domain/plugin/sync";
 import type { PluginSyncRecord } from "@/domain/plugin/repository";
 import { readJson } from "@/app/_lib/httpClient";
 
 export type { Plugin, PluginSyncRecord, PluginSyncResult, PluginSyncSelection };
+export type PluginDetail = PluginResponse;
 
 export interface PluginsSyncConfig {
   configured: boolean;
@@ -17,8 +19,8 @@ export function listPlugins(): Promise<Plugin[]> {
   return fetch("/api/plugins").then((r) => readJson<Plugin[]>(r));
 }
 
-export function getPlugin(name: string): Promise<Plugin> {
-  return fetch(`/api/plugins/${name}`).then((r) => readJson<Plugin>(r));
+export function getPlugin(name: string): Promise<PluginDetail> {
+  return fetch(`/api/plugins/${name}`).then((r) => readJson<PluginDetail>(r));
 }
 
 export function syncPlugins(selection: PluginSyncSelection = {}): Promise<PluginSyncResult> {

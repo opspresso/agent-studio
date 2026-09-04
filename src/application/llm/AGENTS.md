@@ -142,7 +142,7 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   `EngineChunk.file` already follows — and only the follow-up message is withheld, since
   sending parts a text-only model rejects fails the whole turn. Such a run still gets ids: a
   model that cannot see a picture can hand it to an agent that can. Capped by
-  `MAX_ATTACHMENTS` **per turn**, which bounds delivery too — nothing else bounds how many
+  `MAX_IMAGES_PER_TURN` **per turn**, which bounds delivery too — nothing else bounds how many
   pictures one call returns — and per turn rather than per run, because the cap bounds one
   request and spending it once would leave a screenshot agent blind after its first. Once
   images are in context a fallback model that cannot read them is dropped.
@@ -314,8 +314,8 @@ on a second caller of either builder.
 **A capability is derived from the deps, never from the version.** A builtin the run cannot
 actually perform is not offered and not described: no `loadSkillContent` means no `Skill` tool
 even with skills bound, and no `runSubagent` means no transfer tool, no `dispatch_agents`, and
-no delegation section in the prompt. Both of those used to be gated on the *list* being
-non-empty, so a run advertised them and then answered a call with an error about arguments.
+no delegation section in the prompt. Gating on a non-empty binding list alone would advertise
+capabilities the run cannot perform.
 
 ## System prompt assembly (`buildAgentSystemPrompt`)
 

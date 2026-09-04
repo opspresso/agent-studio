@@ -1,0 +1,68 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  generateProjectToken,
+  getProjectSlack,
+  predictImage,
+  updateProjectSlack,
+} from "@/app/projects/lib/api";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("project API client failures", () => {
+  it("uses the shared unauthorized redirect for integration reads", async () => {
+    const replace = vi.fn();
+    vi.stubGlobal("window", {
+      location: {
+        origin: "https://studio.example.com",
+        pathname: "/projects/demo/integrations",
+        search: "",
+        hash: "",
+        replace,
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "Unauthorized" }, { status: 401 })),
+    );
+
+    await expect(getProjectSlack("demo")).rejects.toThrow("Authentication required");
+    expect(replace).toHaveBeenCalledWith(
+      "/login?next=%2Fprojects%2Fdemo%2Fintegrations",
+    );
+  });
+
+  it("reports a stable fallback when an upstream error is not JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("bad gateway", { status: 502 })),
+    );
+
+    await expect(updateProjectSlack("demo", { enabled: true })).rejects.toThrow(
+      "Request failed (502)",
+    );
+  });
+
+  it("preserves server error details for image generation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "Image model is unavailable" }, { status: 503 })),
+    );
+
+    await expect(predictImage("demo", "v1", { prompt: "draw" })).rejects.toThrow(
+      "Image model is unavailable",
+    );
+  });
+
+  it("rejects a successful token response that omits the credential", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ masked: "ast_...", createdAt: "2026-09-04" })),
+    );
+
+    await expect(generateProjectToken("demo")).rejects.toThrow(
+      "Project API token response did not include a token",
+    );
+  });
+});

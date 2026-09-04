@@ -399,7 +399,7 @@ describe("capability discovery", () => {
   });
 
   it("picks servers by score, not by which index found them", async () => {
-    // "Tool hits lead" used to be source order: every tool hit outranked every
+    // "Tool hits lead" would be source order: every tool hit outranked every
     // server hit, so a persona prompt's incidental tool match at a low score
     // filled a slot ahead of the request's own servers. The narrowing a tool
     // hit knows is kept; the ranking privilege is not.

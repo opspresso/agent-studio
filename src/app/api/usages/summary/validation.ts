@@ -3,9 +3,8 @@ import { daySpan, isUtcDay } from "@/shared/date";
 
 export const MAX_RANGE_DAYS = 184;
 
-// `isUtcDay`, not a shape regex: `2026-02-31` used to pass here and reach
-// `inclusiveDays` as March 3rd, answering `{items: []}` for a range the
-// caller never asked about.
+// `isUtcDay`, not a shape regex: `2026-02-31` must not reach `inclusiveDays` as
+// March 3rd and answer for a range the caller never asked about.
 const dateSchema = z.string().refine(isUtcDay, "must be yyyy-MM-dd, naming a real UTC day");
 
 export const summaryQuerySchema = z

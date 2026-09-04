@@ -4,9 +4,9 @@ import type { MessageDestination } from "@/domain/messaging/destination";
 export type ProjectType = "llm" | "agent" | "image";
 
 /**
- * Who may see and run a project. `public` is the shared catalog every project
- * lived in before visibility existed: any signed-in user may read, run and
- * clone it. `private` narrows that to the owner and the emails on
+ * Who may see and run a project. `public` is the shared catalog: any signed-in
+ * user may read, run and clone it. A missing stored field has the same meaning.
+ * `private` narrows that to the owner and the emails on
  * `memberEmails`. Writing was never part of this axis — it stays owner-or-admin
  * either way (`assertProjectWritable`).
  */

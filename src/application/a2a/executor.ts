@@ -50,8 +50,7 @@ function userMessageText(message: Message): string {
 
 /**
  * The message as the engine takes it: its text, and any picture it carried
- * as an image part — raw bytes inline, or an https URL the model's channel
- * fetches. A part the handler did not admit never reaches here
+ * as an inline image part. A part the handler did not admit never reaches here
  * (`ProjectRequestHandler`), so nothing is dropped silently.
  */
 function userMessageContent(message: Message): ChatMessageInput["content"] {
@@ -61,9 +60,7 @@ function userMessageContent(message: Message): ChatMessageInput["content"] {
     }
     const url = part.content?.$case === "raw"
       ? imageDataUrl({ b64: Buffer.from(part.content.value).toString("base64"), mimeType: part.mediaType })
-      : part.content?.$case === "url"
-        ? part.content.value
-        : undefined;
+      : undefined;
     if (!url) {
       return [];
     }
@@ -77,10 +74,9 @@ function userMessageContent(message: Message): ChatMessageInput["content"] {
 }
 
 /**
- * The pictures an image project is handed to edit. Bytes only: the image use
- * case takes sources as bytes, and a URL part would have to be fetched by an
- * adapter this executor does not hold. The request handler therefore refuses
- * URL parts for an image project.
+ * The pictures an image project is handed to edit. The image use case takes
+ * source bytes, and the request handler refuses URL parts for every project so
+ * a model provider never dereferences caller-controlled input.
  */
 function sourceImages(message: Message): Array<{ b64: string; mimeType: string }> {
   return message.parts.flatMap((part) =>

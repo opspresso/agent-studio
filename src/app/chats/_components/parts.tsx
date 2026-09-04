@@ -67,9 +67,8 @@ function AnswerDuration({ durationMs }: { durationMs: number }) {
 }
 
 /**
- * Markdown inside a message. Mantine's `Typography` owns the element styles the
- * `.chat-markdown` stylesheet used to hand-write; only the wrapping and the
- * outer margin collapse are ours.
+ * Markdown inside a message. Mantine's `Typography` owns element styles; only
+ * the wrapping and outer margin collapse are ours.
  */
 function MarkdownContent({ content }: { content: string }) {
   return (
@@ -212,9 +211,8 @@ function WarningNote({ text }: { text: string }) {
  *
  * Memoised, and the thread hands it reference-stable messages so the memo can
  * hold: a reply streams through the store dozens of times a second, and every
- * one of those renders used to walk the whole conversation and re-parse each
- * message's markdown from scratch. Forty messages made that a thousand-odd
- * parses a second, which is the jank the streamed reply was juddering through.
+ * render must not walk the whole conversation and re-parse every message's
+ * Markdown. Reference stability limits work to the message that changed.
  * Nothing here depends on the turn in flight, so none of it needs redrawing
  * while one arrives.
  */

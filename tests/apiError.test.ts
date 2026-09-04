@@ -26,7 +26,7 @@ describe("apiError logging", () => {
     return { warn: warn.mock.calls.length, error: err.mock.calls.length, status };
   }
 
-  it("records a typed 5xx, which used to answer in full and leave no trace", () => {
+  it("records a typed 5xx as well as returning its detail", () => {
     const result = captured(new UpstreamError("404 The requested resource was not found."));
 
     expect(result.status).toBe(502);

@@ -404,7 +404,7 @@ function makeStreamingChannelFake() {
 
 /**
  * The two axes of a streaming message. Progress is not text, so it does not
- * compete with the answer for the reply's body — which is what used to force a
+ * compete with the answer for the reply's body — which is what would force a
  * channel run off streaming altogether.
  */
 describe("progress on a channel stream's task axis", () => {
@@ -537,7 +537,7 @@ describe("a channel's checklist", () => {
   });
 
   it("collapses repeated reaches for the same tool into one counted row", async () => {
-    // Five reads of the same channel used to be five identical rows. A
+    // Five reads of the same channel would be five identical rows. A
     // checklist is meant to say what the run is doing, and "SlackHistory ×5" is
     // that sentence — five copies of it are not.
     const { slack, chunks } = makeStreamingChannelFake();
@@ -814,7 +814,7 @@ describe("a stream that failed to open and fell back to editing", () => {
     expect(posted).toEqual([`_is thinking…_ ${INDICATOR}`]);
 
     // The next one must edit that note. A retried startStream succeeding here
-    // used to move the reply into a brand-new message and leave the note —
+    // would move the reply into a brand-new message and leave the note —
     // indicator and all — orphaned on screen.
     clock += 5000;
     await sink.status("is using search…");
@@ -825,7 +825,7 @@ describe("a stream that failed to open and fell back to editing", () => {
 
 /**
  * The edited path has to end a message somewhere, and where it ends is the part
- * a reader sees. It used to end nowhere: `chat.update` was sent the whole answer
+ * a reader sees. It would end nowhere: `chat.update` was sent the whole answer
  * every time, Slack refused it once it outgrew a message, and the run finished by
  * posting the remainder as error recovery — so the reply stopped at whatever
  * character the last accepted write had reached, and the message it stopped in

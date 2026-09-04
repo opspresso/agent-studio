@@ -262,7 +262,7 @@ describe("runAgent tool loop", () => {
 
     expect(callMcpTool).toHaveBeenCalledWith("getWeather", { city: "Seoul" });
     // The text that shared the delta still streams, and the loop continues.
-    // Two turns spoke, so a blank line separates them — this used to read
+    // Two turns spoke, so a blank line separates them — this would read
     // "Let me check. It is sunny." with the turns run together.
     const text = chunks
       .filter((c) => c.delta?.content)
@@ -367,7 +367,7 @@ describe("runAgent tool loop", () => {
 
   /**
    * The tool's `agent_name` is an enum, but an enum is advisory — a model that
-   * invents a name used to have the transfer attempted, refused a layer down as
+   * invents a name would have the transfer attempted, refused a layer down as
    * an authored `error`, and reported to the reader as a delegation that came
    * back empty. It is a call the model can retry, so it is answered like an
    * unloadable skill: a tool error naming what it could have asked for.
@@ -1554,7 +1554,7 @@ describe("runAgent separates what consecutive turns say", () => {
 });
 
 /**
- * A turn bigger than the whole transfer budget used to be dropped outright,
+ * A turn bigger than the whole transfer budget would be dropped outright,
  * which lost the question along with whatever made it long. A turn carrying an
  * attached document is exactly that shape — the document's text is flattened
  * into the same line — so every document turn evicted itself and the child never
@@ -1729,7 +1729,7 @@ describe("provider output cut (finish_reason: length)", () => {
 });
 
 /**
- * A run that spends its whole budget calling tools used to end with a warning
+ * A run that spends its whole budget calling tools would end with a warning
  * where the answer should be — every turn paid for, nothing to show. The last
  * turn is offered no tools and told so, which is the only way the wrap-up can
  * be relied on: a model that is still looping at the ceiling is exactly the one

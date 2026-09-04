@@ -51,7 +51,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 브라우저의 공통 응답 경계는 같은 origin의 `/api/*` 401을 받으면 현재 path·query·fragment를
 `next`로 보존해 `/login`으로 full navigation한다. Root layout이 이미 세션을 유효하지 않다고
 판정한 보호 페이지도 같은 경로를 탄다. 게이트가 없애는 것은 평범한 로그아웃 상태이며,
-예전에는 그 방문자에게 콘솔 전체와 에러 박스를 함께 건네주곤 했다.
+그 방문자에게 콘솔 shell이나 API error box를 렌더링하지 않는다.
 
 `/api` 는 matcher 밖에 있다. 그 라우트들은 스스로 인증하며, 프로그램 호출자에게는 HTML
 리다이렉트가 아니라 반드시 401 로 답해야 한다.
@@ -382,6 +382,13 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
   호스트는 풀링된 디스패처에 닿기 전에 거부되고, 다른 곳으로 해석되는 호스트는 다른 키를
   받는다.
 
+**모델 입력의 이미지는 URL로 가져가지 않는다.** OpenAI 호환 실행, AG-UI, A2A는 지원하는 이미지
+바이트를 요청 안에 인라인으로 받으며, LLM 채널은 모든 `image_url`이 bounded `data:` URL인지
+마지막으로 다시 확인한다. `https://`만 검사한 뒤 원격 URL을 제공자에게 그대로 넘기면 요청은 이
+앱이 아니라 제공자 네트워크에서 발생한다. 그 경로에는 `fetchPublicUrl`의 DNS·주소·redirect
+검사가 닿지 않으므로 허용하지 않는다. 모델이 웹의 이미지를 읽어야 하면 `FetchUrl` 도구가 이
+앱의 아웃바운드 경계로 바이트를 가져와 같은 inline 형식으로 돌려준다.
+
 공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라. Registry endpoint URL 은
 query parameter 와 fragment 를 받지 않는다. 둘은 멤버가 읽는 registry view 와 운영 로그에서
 자격 증명을 노출하기 쉬우므로, 인증 정보는 encrypted header 또는 OAuth 연결에 둔다. 이전 행에
@@ -463,8 +470,9 @@ managed MCP 서버(`runtime: "managed"`)는 이 앱이 자기 호스트에서 �
 않는다. 유일한 런타임인 Docker 프로비저너(`MANAGED_MCP_RUNTIME=docker`,
 `src/infrastructure/mcp/dockerProvisioner.ts`)는 argv 를 `execFile` 로 Docker CLI 에 배열째
 넘기고, 구조적으로 쓰이는 값. 이름(`MANAGED_NAME`), 이미지 레퍼런스, `--env-file` 로 건네는
-env 참조(호스트의 절대 경로). 은 패턴으로 검사한다. 항목을 편집할 수 있는 운영자가 그것으로
-호스트에서 임의 코드를 돌릴 수는 없어야 한다.
+env 참조(호스트의 절대 경로), 환경 키·값, argv, endpoint path. 은
+`src/domain/mcp/provisioner.ts`의 패턴으로 API 입력과 Docker 실행 양쪽에서 검사한다. 항목을
+편집할 수 있는 운영자가 그것으로 호스트에서 임의 코드를 돌릴 수는 없어야 한다.
 
 컨테이너는 각각 메모리와 memory+swap을 모두 512MiB, CPU 1개, PID 256개로 제한하고 Linux
 capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesystem은 read-only이고
@@ -603,8 +611,8 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
   배포 단위로 그 위험을 받아들인다. 항목 단위가 아니라, 한 번.
 - **authorization 서버 메타데이터는 명세의 순서로 찾고, `issuer` 를 검증한다.** 경로가 있는
   issuer 는 RFC 8414 path-inserted → OpenID path-inserted → OpenID path-appended 이고 root 형은
-  시도하지 않는다; `issuer` 가 요청한 것과 다르거나 없는 문서는 쓰지 않는다. 예전에는 root 로
-  폴백해 Keycloak realm 이나 Okta custom AS 가 **다른 issuer 의 문서에 조용히 바인딩**됐다.
+  시도하지 않는다; root 폴백은 Keycloak realm이나 Okta custom AS를 다른 issuer의 문서에
+  조용히 바인딩할 수 있기 때문이다. `issuer`가 요청한 것과 다르거나 없는 문서는 쓰지 않는다.
   resource metadata 는 well-known 경로가 모두 빗나가면 서버 자신의 401 `WWW-Authenticate` 가
   지목하는 `resource_metadata` 주소를 읽는다(RFC 9728).
 - **`WWW-Authenticate` 는 런타임에도 읽는다.** 403 `insufficient_scope` 가 이름 댄 scope 는
@@ -783,6 +791,19 @@ project 는 그것을 결코 보지 않는다. 해석된 프로필은 워크스�
 인젝션을 불가능하게 만들지는 않지만. 메시지 본문도 신뢰되지 않는다. 신원 메타데이터가 독자가
 볼 수 없는 지시를 숨길 자리가 되는 것은 막는다.
 
+## Slack 출력 알림
+
+LLM 답변과 tool 결과는 Slack mrkdwn으로 전달되므로 텍스트 안의 mention token은 단순한 표시가
+아니다. `<@U…>`는 사용자를, `<!subteam^…>`은 사용자 그룹을, `<!channel>`·`<!here>`·
+`<!everyone>`은 넓은 청중을 실제로 알릴 수 있다. 그 텍스트는 질문·외부 문서·도구 결과에 의해
+영향받으므로 알림 권한으로 취급하지 않는다.
+
+`neutralizeSlackMentions`(`src/domain/slack/outboundText.ts`)가 알림 가능한 완전한 token만
+escape한다. `slackClient`는 `chat.postMessage`, `chat.update`, 그리고 stream의 text/chunk 축을
+Slack에 쓰기 직전에 모두 이 함수를 통과시킨다. 따라서 streaming 실패 뒤 edit로 물러나거나
+마감 시 남은 답을 다시 보내는 경로도 같은 규칙을 받는다. 일반 Markdown, URL link, channel
+reference, 알림을 만들지 않는 date token은 보존한다.
+
 ## Slack 워크스페이스 읽기
 
 `parameters.slackWorkspace` 로 버전별 옵트인. 켜져 있으면 런은 자기 project 의 봇이 설치된
@@ -876,18 +897,16 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   지워진다.
 - **생성된 이미지** 는 `S3_BUCKET_NAME` 이 설정돼 있으면 추측할 수 없는 UUID 키 아래 저장되고,
   chat 행은 주소가 아니라 **오브젝트 키** 를 보관한다. 읽기 시점에 키가 주소가 되며, 수명은
-  독자에 맞춰 고른다. chat 뷰에는 15분, 재생(replay)에는 런 마감 시각 전체에 여유를 더한 값
-  (URL 을 가져가는 것이 *모델 제공자* 이고 런 중 어느 시점에 그 턴에 닿을지 모르기 때문이다),
-  그리고 Slack 스레드나 저장된 A2A 태스크처럼 지속되는 무언가에 쓰이는 링크에는 7일(SigV4
+  독자에 맞춰 고른다. chat 뷰에는 15분, Slack 스레드나 저장된 A2A 태스크처럼 지속되는
+  무언가에 쓰이는 링크에는 7일(SigV4
   pre-sign 의 상한이고, proxied 토큰도 같은 값을 쓴다). 그 링크는 그것이 함께 온 답을 이미 읽을
   수 있던 청중이 쥔다(`src/application/artifact/urlTtl.ts`). 주소의 *모양* 은
   `ARTIFACT_ACCESS_MODE` 가 정한다:
   - **`proxied`**. 스토어는 앱에게만 닿고 독자는 앱의 주소
     `PUBLIC_BASE_URL/api/objects/<key>?exp=<unix>&sig=<hmac>[&dl=<filename>]` 를 받는다
-    (`src/infrastructure/storage/objectUrlToken.ts`). 모델 제공자도 그 독자의 하나라
-    `PUBLIC_BASE_URL` 에 닿아야 한다([CONFIGURATION.md](CONFIGURATION.md#핵심)). **그 라우트는 세션을 요구하지 않으며
-    그것이 계약이다**: 주소를 쥐는 것은 `<img>` 태그, Slack 메시지, 재생된 턴을 가져가는 모델
-    제공자라 쿠키를 낼 수 없다. 토큰이 자격 증명이다. 키·만료·파일명을 함께 덮는 HMAC-SHA256
+    (`src/infrastructure/storage/objectUrlToken.ts`). **그 라우트는 세션을 요구하지 않으며
+    그것이 계약이다**: 주소를 쥐는 것은 `<img>` 태그, Slack 메시지, 저장된 A2A task라 쿠키를
+    낼 수 없다. 토큰이 자격 증명이다. 키·만료·파일명을 함께 덮는 HMAC-SHA256
     이고, 서명 키는 `AES_ENCRYPTION_KEY` 에서 HKDF(`agent-studio/object-url/v1`)로 파생되어 그
     바이트가 저장된 토큰을 암호화하는 바이트와 결코 같지 않다. 증명하는 것은 *이 배포가 이
     키에 대해 이 수명과 이 파일명으로 발행했다* 는 사실뿐이다. 파일명은 장식이 아니라 서명에

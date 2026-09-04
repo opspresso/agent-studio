@@ -18,7 +18,7 @@ const createSchema = z.object({
  * GET /api/skills/{name}.
  *
  * Declared here because this route is where the shape is built; the console
- * takes this type rather than restating it, which is what it used to do.
+ * imports the producer type rather than restating it.
  */
 export interface SkillSummary {
   name: string;

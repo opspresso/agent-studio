@@ -5,6 +5,7 @@ import type {
   UserChatMessage,
 } from "@/domain/chat/types";
 import type { ChannelToolCall, ChatMessageInput } from "@/domain/llm/types";
+import { isInlineImageDataUrl } from "@/domain/llm/imageLimits";
 import { turnContent } from "@/application/llm/documentParts";
 import { cutCodePoints } from "@/shared/utf8Text";
 
@@ -40,16 +41,17 @@ const MAX_HISTORY_MESSAGES = 200;
 /**
  * A stored user turn: text, or content parts when the turn carried attachments.
  * Stored image references have already been resolved upstream. Run replay
- * restores the newest objects as data URLs so they remain editable; older or
- * legacy images stay visible through fetchable URLs.
+ * restores the newest objects as data URLs so they remain editable; anything
+ * else is absent from the run context rather than fetched by the provider.
  */
 function userMessage(message: UserChatMessage): ChatMessageInput {
   const documents = message.documents ?? [];
-  // Resolved upstream (`resolveImages.ts`); one that could not be signed carries
-  // no url and is left out rather than sent as an address the provider would
-  // fail the turn on.
+  // Resolved upstream (`resolveImages.ts`); one that could not be restored
+  // carries no URL and is left out rather than handed to the provider.
   const images = (message.images ?? []).flatMap((image) =>
-    image.url ? [{ type: "image_url" as const, image_url: { url: image.url } }] : [],
+    image.url && isInlineImageDataUrl(image.url)
+      ? [{ type: "image_url" as const, image_url: { url: image.url } }]
+      : [],
   );
   // A turn whose whole content was an image replays as an empty user message
   // once that image can no longer be addressed — a shape some providers refuse
@@ -76,7 +78,9 @@ function userMessage(message: UserChatMessage): ChatMessageInput {
 
 function assistantImageMessage(message: AssistantChatMessage): ChatMessageInput | undefined {
   const images = (message.images ?? []).flatMap((image) =>
-    image.url ? [{ type: "image_url" as const, image_url: { url: image.url } }] : [],
+    image.url && isInlineImageDataUrl(image.url)
+      ? [{ type: "image_url" as const, image_url: { url: image.url } }]
+      : [],
   );
   if (images.length === 0) {
     return undefined;

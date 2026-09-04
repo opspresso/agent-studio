@@ -388,7 +388,7 @@ describe("versionRepository mcpList normalization", () => {
   }
 
   it("reads a row written before overrides existed as bindings with none", async () => {
-    // mcpList used to be a plain string[]; those rows are still valid bindings.
+    // Legacy rows carry a plain string[]; they are still valid bindings.
     writeRaw(["alpha", "beta"]);
 
     const version = await versionRepository.get("legacy", "1");

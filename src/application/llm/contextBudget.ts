@@ -51,8 +51,8 @@ const NON_ASCII_TOKENS_PER_2_CHARS = 3;
 /**
  * Flat token charge for one image content part, whatever its byte size. At the
  * top of the published provider range (OpenAI high-detail ~2,500; Anthropic
- * ~1,600) — the one estimate that used to round *for* the run, which let a
- * screenshot-heavy agent believe it had headroom right up to the provider 400.
+ * ~1,600), rounding against the run so screenshot-heavy context cannot claim
+ * headroom up to a provider 400.
  */
 export const IMAGE_PART_TOKENS = 2_500;
 /** Reserve for everything the character estimate cannot see. */
@@ -223,12 +223,9 @@ function inputCapacity(config: ModelConfig, maxOutputTokens: number | undefined)
  *
  * With a fallback configured the budget is the **smaller of the two capacities**,
  * because a mid-run switch must still fit what the other model had already
- * accumulated. Each capacity is that model's own — which is the correction: this
- * used to take the *minimum window* and subtract the *maximum output cap*, so a
- * primary's 128,000-token output reserve came out of a fallback's 200,000-token
- * window. A run on a 1,050,000-token model with a 200,000-token fallback got
- * 70,000 tokens — 6.7% of the window the model actually served every call from —
- * and answered a question about its own repository by truncating tool output.
+ * accumulated. Each capacity subtracts that model's own output cap from its own
+ * window; mixing the minimum window with the maximum cap can reduce a valid
+ * context to a small fraction of either model's capacity.
  *
  * The invariant it enforces is per model and always was: whichever one serves a
  * call, what has accumulated plus what that model may generate has to fit inside

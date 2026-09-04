@@ -193,7 +193,7 @@ describe("what the page will not spend or pretend", () => {
   });
 
   it("refuses an SVG that is not text instead of drawing nothing", () => {
-    // It used to skip the decode, so arbitrary bytes became an inert data URL
+    // It would skip the decode, so arbitrary bytes became an inert data URL
     // inside an <img> — a blank page with nothing saying why.
     const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x00, 0xff, 0xfe]);
     expect(viewPage("svg", pdf, "chart.svg")).toBeNull();

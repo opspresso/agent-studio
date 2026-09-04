@@ -60,12 +60,10 @@ const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", displ
  * The viewer is resolved here, before anything renders, and handed to the chrome
  * as a prop.
  *
- * `AppLayout` used to ask `useSession()` for it. That hook has no cookie during
- * SSR, so it answered `isPending` — which the layout counted as signed in, and
- * every visitor was served the whole navigation. A signed-out one then watched
- * it disappear once the session resolved: a flash, a hydration mismatch, and the
- * shape of the workspace handed to someone who cannot use it, which is exactly
- * what `src/proxy.ts` turns navigation away to avoid.
+ * A client `useSession()` has no cookie during SSR and answers `isPending`.
+ * Counting that as signed in serves every visitor the whole navigation, then
+ * removes it on hydration — a flash, a mismatch, and workspace shape leaked to
+ * someone `src/proxy.ts` turns away.
  *
  * The cost is that a per-viewer shell cannot be prerendered, so every route
  * renders on demand. The prerendered ones were only ever *wrong* — a shell built
@@ -91,9 +89,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     >
       <head>
         {/*
-         * Applies the stored colour scheme before first paint. Replaces the
-         * hand-written localStorage script this file used to inline; Mantine
-         * owns the key and the toggle now.
+         * Applies the stored colour scheme before first paint. Mantine owns the
+         * storage key and the toggle.
          */}
         <ColorSchemeScript defaultColorScheme="auto" />
       </head>

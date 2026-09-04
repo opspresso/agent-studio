@@ -144,7 +144,7 @@ describe("ProjectRequestHandler — what it admits", () => {
         filename: "",
         metadata: undefined,
       }),
-    ).toBeNull();
+    ).toBe("image file part by URL");
     expect(
       unsupportedPart({
         content: { $case: "url", value: "http://x/p.png" },
@@ -152,7 +152,7 @@ describe("ProjectRequestHandler — what it admits", () => {
         filename: "",
         metadata: undefined,
       }),
-    ).toBe("file part by a non-https url");
+    ).toBe("image file part by URL");
     expect(
       unsupportedPart({
         content: { $case: "data", value: { a: 1 } },
@@ -190,7 +190,7 @@ describe("ProjectRequestHandler — what it admits", () => {
     ).rejects.toBeInstanceOf(ContentTypeNotSupportedError);
   });
 
-  it("refuses URL image parts for an image project that requires source bytes", async () => {
+  it("refuses URL image parts for every project", async () => {
     const urlPart = {
       content: { $case: "url" as const, value: "https://x/p.png" },
       mediaType: "image/png",
@@ -198,13 +198,10 @@ describe("ProjectRequestHandler — what it admits", () => {
       metadata: undefined,
     };
     await expect(
-      handler(storeWith({}), { acceptImageUrls: false }).sendMessage(
-        request([urlPart]),
-        TEST_CALL_CONTEXT,
-      ),
+      handler(storeWith({})).sendMessage(request([urlPart]), TEST_CALL_CONTEXT),
     ).rejects.toMatchObject({
       name: ContentTypeNotSupportedError.name,
-      message: expect.stringContaining("inline image bytes"),
+      message: expect.stringContaining("image file part by URL"),
     });
   });
 

@@ -1,9 +1,8 @@
 /**
  * Stopping a chat run, and how a running one hears about it.
  *
- * Closing the tab used to be the stop button: the connection dropped, the SSE
- * layer aborted the run. Now that a run outlives its reader there has to be a
- * deliberate one, or a user who asked the wrong question holds a concurrency
+ * A run outlives its reader, so stopping it must be a deliberate action. Otherwise
+ * a user who asked the wrong question holds a concurrency
  * slot and the chat's run lease until the run deadline.
  *
  * The request is persisted rather than kept in memory because the instance

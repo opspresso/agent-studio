@@ -112,8 +112,7 @@ export interface McpOAuthState {
    * on the same record as the PKCE verifier, and the entry is exactly what a
    * re-discovery may have changed while the user was away at the provider.
    *
-   * Required. A state written before this field existed has nothing to compare
-   * against, and an unchecked `iss` is the mix-up this guards.
+   * Required because an unchecked `iss` is the mix-up this state guards.
    */
   issuer: string;
   /** RFC 9207 advertisement, snapshotted with {@link issuer} for the same reason. */

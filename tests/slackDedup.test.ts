@@ -51,7 +51,7 @@ describe("slackEventRepository.claim", () => {
    * `claimed` row behind, and a redelivery must be able to take it over rather
    * than be refused as a duplicate of work that never happened. A `failed`
    * attempt is reclaimable outright — that is what settling as failed is *for*,
-   * and the condition used to say only `claimed`, so a failed event was
+   * and the condition would say only `claimed`, so a failed event was
    * refused as a duplicate forever (the integration check is what caught it).
    * Equally, a row that is `done`, or written before claims carried state, must
    * never be reclaimed, or a handled event would be replayed.

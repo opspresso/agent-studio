@@ -328,7 +328,7 @@ describe("executeAgent GenerateImage opt-in", () => {
   });
 
   it("hands both builtins the same model when the stored one is stale", async () => {
-    // What `resolveImageModel` is for. The two builders used to compute this
+    // What `resolveImageModel` is for. The two builders would compute this
     // separately from the same inputs — the copy was the risk, not a behaviour
     // difference — so the invariant worth pinning is that a run's draw and its
     // redraw reach the same model, and that the fallback is reported.
@@ -937,7 +937,7 @@ describe("executeAgent registry bindings that no longer resolve", () => {
   });
 
   it("does not offer a skill whose registry entry is gone, and describes without reading a body", async () => {
-    // A deleted skill used to be advertised with an empty description and then
+    // A deleted skill would be advertised with an empty description and then
     // failed on load — a wasted turn. And the table's one line per skill cost
     // the whole item: every bound skill's body and attachments crossed the wire
     // before the first token, which is the opposite of what a tool the model
@@ -1636,7 +1636,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
 describe("executeAgent subagent turn budget", () => {
   it("clamps a child's maxTurn to the parent's ceiling", async () => {
     // The child continues the parent's turn counter, so a child version with a
-    // larger maxTurn used to raise the limit the whole run started under.
+    // larger maxTurn would raise the limit the whole run started under.
     const childCall = (id: string) => toolCallChunk(0, id, "ping", "{}");
     const channel = new FakeChannel([
       [

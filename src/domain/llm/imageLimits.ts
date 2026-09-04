@@ -5,10 +5,15 @@
  * drifted apart.
  */
 
+import { base64ByteLength, isBase64Payload } from "./base64";
+export { base64ByteLength, base64Chars } from "./base64";
+
 /** Images one turn may carry. */
-export const MAX_ATTACHMENTS = 4;
+export const MAX_IMAGES_PER_TURN = 4;
 /** Decoded size of a single input or generated image. */
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Reader-facing spelling of the byte cap above. */
+export const MAX_IMAGE_SIZE_LABEL = `${MAX_IMAGE_BYTES / (1024 * 1024)}MB`;
 /** Formats every provider on the registry accepts. */
 export const SUPPORTED_IMAGE_TYPES = [
   "image/png",
@@ -21,23 +26,42 @@ export const SUPPORTED_IMAGE_TYPES = [
 export type SupportedImageType = (typeof SUPPORTED_IMAGE_TYPES)[number];
 
 /**
- * Padded base64 length of a file of exactly `bytes` bytes — the wire cap for a
- * JSON body. Scaling `bytes` by 4/3 instead rounds a char short of a file at the
- * limit, rejecting an image the client had accepted.
+ * Whether an OpenAI-shaped image part carries bounded bytes inline.
+ *
+ * Remote URLs are intentionally excluded. Letting an LLM provider fetch a
+ * caller-controlled address moves the SSRF boundary to that provider, where
+ * this deployment cannot apply its DNS and redirect policy.
  */
-export function base64Chars(bytes: number): number {
-  return 4 * Math.ceil(bytes / 3);
+export function isInlineImageDataUrl(url: string): boolean {
+  const match = /^data:([^;,]+)(?:;[^;,]*)*;base64,(.+)$/s.exec(url);
+  const mimeType = match?.[1];
+  const b64 = match?.[2];
+  return Boolean(
+    mimeType &&
+      b64 &&
+      isBase64Payload(b64) &&
+      (SUPPORTED_IMAGE_TYPES as readonly string[]).includes(mimeType) &&
+      base64ByteLength(b64) <= MAX_IMAGE_BYTES,
+  );
+}
+
+/** Encode image bytes as the `data:` URL an `image_url` content part carries. */
+export function imageDataUrl(image: { b64: string; mimeType: string }): string {
+  return `data:${image.mimeType};base64,${image.b64}`;
 }
 
 /**
- * What a base64 string weighs decoded, without decoding it.
- *
- * The inverse of {@link base64Chars}, beside it so the two cannot disagree. A
- * caller checking a cap should not have to allocate ten megabytes to learn it is
- * over one — which is the whole reason the check was skipped where the bytes
- * arrive already encoded.
+ * Decode a supported, bounded inline image URL into its source fields.
+ * Parameters between the MIME type and `;base64` are tolerated and dropped.
  */
-export function base64ByteLength(b64: string): number {
-  const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
-  return Math.max(Math.floor((b64.length * 3) / 4) - padding, 0);
+export function parseImageDataUrl(
+  url: string,
+): { b64: string; mimeType: SupportedImageType } | null {
+  if (!isInlineImageDataUrl(url)) {
+    return null;
+  }
+  const match = /^data:([^;,]+)(?:;[^;,]*)*;base64,(.+)$/s.exec(url);
+  const mimeType = match?.[1] as SupportedImageType | undefined;
+  const b64 = match?.[2];
+  return mimeType && b64 ? { b64, mimeType } : null;
 }

@@ -1,5 +1,9 @@
 import type { McpServer, McpTool } from "@/domain/mcp/types";
-import type { ManagedMcpStatus } from "@/application/mcp/managedMcpUseCases";
+import type {
+  CreateManagedInput,
+  ManagedMcpStatus,
+  UpdateManagedInput,
+} from "@/application/mcp/managedMcpUseCases";
 import type { DiscoverAuthResult } from "@/application/mcp/mcpAuthUseCases";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
@@ -84,20 +88,8 @@ export async function clearMcpAuth(name: string): Promise<void> {
  * A managed entry names an image, never a url: the address is written by the
  * provisioner once the container is listening, and cannot be typed.
  */
-export interface CreateManagedMcpInput {
-  name: string;
-  image: string;
-  containerPort: number;
-  envRefs?: string[];
-  environment?: Record<string, string>;
-  args?: string[];
-  endpointPath?: string;
-  description?: string;
-  content?: string;
-  headers?: Record<string, string>;
-}
-
-export type UpdateManagedMcpInput = Omit<CreateManagedMcpInput, "name">;
+export type CreateManagedMcpInput = CreateManagedInput;
+export type UpdateManagedMcpInput = UpdateManagedInput;
 
 /**
  * Taken from the use case that answers with it rather than restated here: a

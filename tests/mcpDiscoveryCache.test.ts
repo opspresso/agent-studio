@@ -144,7 +144,7 @@ describe("ToolManager discovery over the cache", () => {
     vi.unstubAllGlobals();
 
     // Second run, same server and credentials: nothing on the wire. This is the
-    // whole point — every chat turn used to pay a connect even when the model
+    // whole point — every chat turn would pay a connect even when the model
     // called no tool at all.
     const second = stubMcpServer();
     const manager = new ToolManager([server()]);

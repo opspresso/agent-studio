@@ -1,30 +1,12 @@
-import { z } from "zod";
 import { managedMcpUseCases, mcpUseCases } from "@/lib/container";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 import { REPO_OWNED, repoOwnedRefusal } from "@/app/api/_lib/repoOwned";
 import { managedMcpUnavailable as unavailable } from "../_unavailable";
+import { updateManagedMcpSchema } from "../_schema";
 
 type RouteContext = { params: Promise<{ name: string }> };
-
-const updateSchema = z.object({
-  image: z.string().trim().min(1).optional(),
-  containerPort: z.number().int().min(1).max(65535).optional(),
-  envRefs: z.array(z.string().trim().min(1)).optional(),
-  environment: z
-    .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().max(16_384))
-    .refine((values) => values.PORT === undefined, "PORT is managed by the runtime")
-    .optional(),
-  args: z
-    .array(z.string().min(1).max(1024).regex(/^[^\u0000-\u001f\u007f]+$/))
-    .max(64)
-    .optional(),
-  endpointPath: z.string().trim().regex(/^\/(?!\/)[^\s?#]*$/).optional(),
-  description: z.string().optional(),
-  content: z.string().optional(),
-  headers: z.record(z.string(), z.string()).optional(),
-});
 
 /** What is actually running, which the stored entry cannot say on its own. */
 export const GET = withAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
@@ -48,7 +30,7 @@ export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteConte
   if (body instanceof Response) {
     return body;
   }
-  const parsed = updateSchema.safeParse(body);
+  const parsed = updateManagedMcpSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

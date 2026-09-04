@@ -16,7 +16,7 @@ import {
   readDocumentAttachment,
   type DocumentAttachment,
 } from "../_lib/documentAttachments";
-import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
 
 /**
@@ -78,10 +78,10 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
       //
       // Counted against the claim rather than the rendered length, so two
       // gestures resolving in the same tick cannot both spend the last slot.
-      const imageRoom = Math.max(MAX_ATTACHMENTS - claimed.current.images, 0);
+      const imageRoom = Math.max(MAX_IMAGES_PER_TURN - claimed.current.images, 0);
       const documentRoom = Math.max(MAX_DOCUMENTS - claimed.current.documents, 0);
       if (added.length > imageRoom) {
-        failures.push(t("attach.tooManyImages", { count: MAX_ATTACHMENTS }));
+        failures.push(t("attach.tooManyImages", { count: MAX_IMAGES_PER_TURN }));
       }
       if (addedDocuments.length > documentRoom) {
         failures.push(t("attach.tooManyDocuments", { count: MAX_DOCUMENTS }));

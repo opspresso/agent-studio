@@ -1,10 +1,8 @@
 /**
  * HTML to the text a model should read.
  *
- * Brought over from the `mcp-url-fetch` server this replaced, unchanged apart
- * from the source cap below. It sits behind `DocumentExtractor` rather than
- * beside the URL tool, so an attached `.html` file — which used to reach the
- * model as raw markup — reads the same way a fetched page does.
+ * It sits behind `DocumentExtractor` rather than beside the URL tool, so an
+ * attached `.html` file and a fetched page become text through the same path.
  *
  * This is a readability heuristic, not a DOM parser. A real parser would be a
  * dependency with its own attack surface, and the job here is narrow: strip the

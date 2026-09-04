@@ -16,13 +16,18 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MANAGED_ENV_KEY, MANAGED_ENV_REF, MANAGED_IMAGE, managedPortFor } from "./managedPort";
+import { managedPortFor } from "./managedPort";
 import { promisify } from "node:util";
 import { MANAGED_NAME } from "@/domain/naming";
-import type {
-  ManagedWorkload,
-  ManagedWorkloadSpec,
-  McpProvisioner,
+import {
+  MANAGED_ARG,
+  MANAGED_ENV_KEY,
+  MANAGED_ENV_REF,
+  MANAGED_ENV_VALUE,
+  MANAGED_IMAGE,
+  type ManagedWorkload,
+  type ManagedWorkloadSpec,
+  type McpProvisioner,
 } from "@/domain/mcp/provisioner";
 
 const run = promisify(execFile);
@@ -53,9 +58,8 @@ async function docker(args: string[]): Promise<string> {
     const { stdout } = await run("docker", args, { timeout: 300_000 });
     return stdout.trim();
   } catch (error) {
-    // execFile's own message repeats the whole command line, and a `docker
-    // run` line used to carry every decrypted environment value. What is
-    // worth keeping is what the CLI said on stderr; the argv is ours already.
+    // execFile's own message repeats the whole command line. A `docker run`
+    // argv can contain decrypted values, so keep only the CLI's stderr.
     const failed = error as { stderr?: unknown; code?: unknown };
     const stderr = typeof failed.stderr === "string" ? failed.stderr.trim() : "";
     const reason =
@@ -81,7 +85,7 @@ function envFileContent(environment: Record<string, string>): string {
   return Object.entries(environment)
     .map(([key, value]) => {
       assertSafe(key, MANAGED_ENV_KEY, "environment variable name");
-      if (/[\r\n]/.test(value)) {
+      if (!MANAGED_ENV_VALUE.test(value)) {
         throw new Error(`Refusing an environment value with a line break: ${key}`);
       }
       return `${key}=${value}\n`;
@@ -99,7 +103,12 @@ export function createDockerProvisioner(): McpProvisioner {
       // predates persisting it, and then the only port anyone knows is the one
       // being bound — so the mapping is onto itself.
       const target = spec.containerPort ?? port;
-      const args = (spec.args ?? []).map((arg) => arg.replaceAll("{{PORT}}", String(target)));
+      const args = (spec.args ?? []).map((arg) => {
+        if (!MANAGED_ARG.test(arg)) {
+          throw new Error("Refusing an unsafe container argument");
+        }
+        return arg.replaceAll("{{PORT}}", String(target));
+      });
       await docker(["pull", "-q", image]).catch(() => {
         // A locally built image has nothing to pull; the run below will say so
         // if it genuinely is not there.

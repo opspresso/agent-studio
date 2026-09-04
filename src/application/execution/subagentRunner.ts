@@ -45,9 +45,7 @@ import { runDeadlineExceeded } from "@/shared/runDeadline";
  * Assemble the injected engine dependencies for an agent run.
  *
  * `callMcpTool` is a parameter rather than something the caller patches on
- * afterwards. It used to be: two call sites assigned it onto the returned object,
- * which made this function return a complete-looking bag that was not one. The
- * declarations and the dispatcher then reached the engine by different routes —
+ * afterwards. The declarations and dispatcher must reach the engine together —
  * `mcpTools` as run input, the dispatcher as a mutation — so a third entry point
  * that forgot the second would offer the model every tool and answer every call
  * with "cannot be executed in this context". Taking it here makes that a type
@@ -72,10 +70,8 @@ export async function buildAgentDeps(
     channel,
     recordUsage: recordUsageFn,
     ...(callMcpTool ? { callMcpTool } : {}),
-    // Built here rather than handed in. It used to be a parameter because the
-    // binding resolve needed the same cache — that resolve reads descriptions
-    // now, so the loader is its only reader, and three call sites were passing
-    // a value along for a function that can make its own.
+    // Built here rather than handed in: only the loader needs this reader, and
+    // a function that can construct it should not require every caller to relay it.
     loadSkillContent: buildSkillLoader(createSkillReader(deps)),
     runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, origin, signal),
     generateImage: buildImageGenerator(deps, imageModel, projectName, recordUsageFn, signal),

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
 import { resolveProviderTarget } from "@/infrastructure/llm/providers";
-import { base64Chars, MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
+import { base64Chars, MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
 
 /**
  * The image adapter had no test at all, which is how four separate defects
@@ -224,7 +224,7 @@ describe("xAI image dialect", () => {
     stubFetch({
       data: [
         {
-          b64_json: "A".repeat(base64Chars(MAX_ATTACHMENT_BYTES + 1)),
+          b64_json: "A".repeat(base64Chars(MAX_IMAGE_BYTES + 1)),
           mime_type: "image/png",
         },
       ],

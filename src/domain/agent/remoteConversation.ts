@@ -2,10 +2,8 @@
  * Which remote conversation an external agent holds for one of ours.
  *
  * A2A continues a conversation by `contextId`: the remote mints one on the
- * first message and expects it back on the next. Without this a transfer sent
- * every message as a new conversation, so a second question from the same
- * Slack thread arrived at the remote agent cold — the gap MILESTONES carried
- * until the run knew which conversation it was in (`RunOrigin.conversation`).
+ * first message and expects it back on the next. This mapping keeps a second
+ * question from the same `RunOrigin.conversation` on that remote context.
  *
  * Keyed by the *transferring* project, the agent's registry name and our own
  * conversation key. The project is part of it on purpose: two projects' bots
@@ -13,8 +11,7 @@
  * and folding them into one remote context would show each the other's turns.
  *
  * A hint, never a record — the row expires on its own, and losing one costs
- * the next transfer a cold start, which is exactly what every transfer got
- * before this existed.
+ * only the next transfer's continuity.
  */
 /**
  * What is remembered: the remote's `contextId`, and — when the remote stopped

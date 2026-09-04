@@ -1,8 +1,8 @@
 /**
  * What a gallery page says about the page after it.
  *
- * The cursor used to be set for every non-empty page, because the mapper could
- * only see that some row was last — so three pictures offered "Load more" and
+ * A mapper that sees only the last returned row sets a cursor for every
+ * non-empty page — so three pictures offer "Load more" and
  * the click paid for up to five DynamoDB queries and a signing fan-out to come
  * back empty. The page is asked for one row past its size now, and that row is
  * the whole evidence.

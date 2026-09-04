@@ -1442,7 +1442,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/app/_lib/authorPaths.ts",
   },
   {
-    // Every stream consumer used to reason "no `done` seen → cut off at a
+    // Every stream consumer would reason "no `done` seen → cut off at a
     // limit", which misreports a cancellation and a mid-stream error as a
     // length stop. `chunkTermination` owns the done / finishReason / error →
     // reason mapping; a consumer reads the reason through it, never the raw
@@ -1585,7 +1585,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     ],
   },
   {
-    // Four functions admit a top-level run, and each used to open the in-flight
+    // Four functions admit a top-level run, and each would open the in-flight
     // metric for itself — which is exactly why the daily cost guard had four
     // places it could have been forgotten. `openRun` is now the one bracket, so
     // a fifth entry point that skips it is missing its metric too, and that is
@@ -1625,7 +1625,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/trigger/types.ts",
   },
   {
-    // Three call sites used to ask this for themselves, so a new project type
+    // Three call sites would ask this for themselves, so a new project type
     // meant finding all three. They now ask the facade and only decide how to
     // serialise its answer.
     what: "which project type runs which way",
@@ -1655,10 +1655,32 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/slack/types.ts",
   },
   {
+    // The route must reject the same structural values the lifecycle and
+    // Docker boundaries refuse. Separate regexes made an unsafe request a late
+    // provisioning failure instead of a coherent 400.
+    what: "managed workload input syntax",
+    pattern: /\bMANAGED_(?:IMAGE|ENV_REF|ENV_KEY|ENV_VALUE|ARG|ENDPOINT_PATH)\b/,
+    owner: "src/domain/mcp/provisioner.ts",
+    alsoAllowedUnder: [
+      "src/app/api/mcps/managed/_schema.ts",
+      "src/application/mcp/managedMcpUseCases.ts",
+      "src/infrastructure/mcp/dockerProvisioner.ts",
+    ],
+  },
+  {
+    // A reply can leave through post, edit, or either stream axis. Sanitising
+    // one path in its caller makes fallback and final-recovery paths notification
+    // capabilities, so the decision is named once and applied only at the wire.
+    what: "which outbound Slack mrkdwn tokens may notify people",
+    pattern: /neutralizeSlackMentions/,
+    owner: "src/domain/slack/outboundText.ts",
+    alsoAllowedUnder: ["src/infrastructure/slack/client.ts"],
+  },
+  {
     // With `message.channels` subscribed the bot receives its own replies, and
     // a reply lands in a thread the bot is engaged in — so a second copy of
     // this check that drifted would not merely answer something twice, it would
-    // answer itself without end. The handler used to carry its own copy, after
+    // answer itself without end. The handler would carry its own copy, after
     // the dedup claim, where it could no longer prevent the loop it names.
     what: "whether a Slack event is the bot talking to itself",
     pattern: /authorizations\?\.find/,
@@ -1687,7 +1709,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // project supports (a Slack bot, a chat, a tools capability), and that is a
     // different question from how a run is dispatched. Inside the execution
     // facade there is no second question, so the check is scoped to it — three
-    // modules there used to answer it for themselves.
+    // modules there would answer it for themselves.
     what: "how the execution facade dispatches an agent project",
     pattern: /projectType [!=]== "agent"/,
     owner: "src/application/execution/deps.ts",

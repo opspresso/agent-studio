@@ -2,7 +2,7 @@
  * Which outbound path a metadata read takes, and what a failed read is.
  *
  * "May this address be dialed" has one owner (`skipsUrlGuard`), and every other
- * caller — a run, the tool probe — carries its answer through. Discovery used to
+ * caller — a run, the tool probe — carries its answer through. Discovery would
  * reach for the guard directly instead, so a Kubernetes Service this deployment
  * declared internal could be registered and called by an agent, and never
  * discovered.

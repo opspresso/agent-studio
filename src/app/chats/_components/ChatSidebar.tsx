@@ -198,9 +198,8 @@ export function ChatSidebar() {
       </Stack>
 
       {/*
-       * Narrow: a drawer, not a squashed column. The list used to sit above the
-       * thread capped at ten rems, which gave the conversation less room the
-       * more chats there were and still showed only three of them.
+       * Narrow: a drawer, not a squashed column. A list above the thread steals
+       * conversation space as it grows while still showing only a few chats.
        */}
       <Group gap="xs" hiddenFrom="md" wrap="nowrap">
         <Button

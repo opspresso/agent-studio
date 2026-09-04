@@ -1,16 +1,15 @@
 /**
  * How a chat run reaches the browser — the one place that says it.
  *
- * A chat run is not the response that started it. The browser closing the
- * connection used to close the generator and unwind the run; now the stream
- * detaches instead (`src/shared/detachOnReturn.ts`) and the run finishes on its
+ * A chat run is not the response that started it. The stream detaches on a
+ * browser disconnect (`src/shared/detachOnReturn.ts`) and the run finishes on its
  * own, persisting its answer for whoever asks next. That makes one decision of
  * what was about to be two copies across two routes: the detach, and telling the
  * runtime the work outlives the response.
  *
  * The consequence to keep in mind everywhere else: **a chat route must not pass
- * an `AbortController` to `sseResponse`.** Doing so restores the old behaviour
- * exactly, and it looks like tidying up.
+ * an `AbortController` to `sseResponse`.** Doing so would couple the run back to
+ * the initiating connection.
  */
 
 import { after } from "next/server";

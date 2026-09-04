@@ -223,7 +223,7 @@ describe("PiiFilter", () => {
       "4111111111111111",
     ]) {
       const masked = filter.mask(original);
-      // The phone pattern used to partially match the separated forms and leave
+      // The phone pattern would partially match the separated forms and leave
       // the last group in the clear — the card entity must take the whole value.
       expect(masked).toMatch(/^\[\[PII:[\d .-]{16,19}\]\]$/);
       expect(filter.restore(masked)).toBe(original);
@@ -275,7 +275,7 @@ describe("PiiFilter", () => {
 
   it("restores a stream without scanning the whole mapping", () => {
     const filter = new PiiFilter();
-    // Every chunk used to be scanned against the whole mapping, twice — so a
+    // Every chunk would be scanned against the whole mapping, twice — so a
     // run that masked a few thousand addresses spent seconds of blocked event
     // loop restoring one turn. A structural assertion is deterministic where a
     // wall-clock ceiling depends on the machine running the suite.

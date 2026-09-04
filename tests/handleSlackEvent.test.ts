@@ -522,7 +522,7 @@ describe("handleSlackEvent", () => {
 
   it("does not let a tool-supplied filename break the link it sits in", async () => {
     // `safeFileName` takes out control characters and path separators; every
-    // character Slack reads as mrkdwn survives it. A name with a pipe used to
+    // character Slack reads as mrkdwn survives it. A name with a pipe would
     // truncate the visible label at the pipe — the reader was shown a name that
     // was not the file's.
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -1158,7 +1158,7 @@ describe("streaming a Slack reply", () => {
     const { slack, posted, tasks, appended, streamStarts, calls } = makeSlackFake();
     const deps = makeDeps(
       [
-        // A tool-only stretch: what used to leave the thread with nothing at
+        // A tool-only stretch: what would leave the thread with nothing at
         // all until the answer arrived.
         { delta: { toolCalls: [{ id: "c_search", function: { name: "search" } }] } },
         // The result is the completion boundary, and it names what the call

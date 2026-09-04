@@ -73,8 +73,8 @@ async function awaitFirstChunkBriefly(pending: Promise<unknown>): Promise<void> 
  * budget spent in silence. Two runs routinely produce nothing for longer than
  * that: an image, whose bytes arrive in one chunk at the end, and a reasoning
  * model whose thinking a version did not opt into recording — that stream's
- * first chunk is the end-of-turn usage. Both used to be cut mid-run for
- * looking idle while they were working.
+ * first chunk is the end-of-turn usage. The grace must not cut either run while
+ * it is working silently.
  *
  * It costs nothing for a run that starts normally: the chunk is held and
  * emitted first, so the stream is byte-identical. Nothing is buffered beyond

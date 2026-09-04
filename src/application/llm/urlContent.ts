@@ -11,7 +11,7 @@
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import { documentKind } from "@/domain/llm/documentLimits";
-import { MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_TYPES } from "@/domain/llm/imageLimits";
+import { MAX_IMAGE_BYTES, SUPPORTED_IMAGE_TYPES } from "@/domain/llm/imageLimits";
 import type { HttpResourceReader } from "@/domain/net/httpResource";
 import { HttpResourceError } from "@/domain/net/httpResource";
 
@@ -98,9 +98,9 @@ export async function readUrlContent(
         `that is a ${resource.mimeType} image, which cannot be read here`,
       );
     }
-    if (resource.bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+    if (resource.bytes.byteLength > MAX_IMAGE_BYTES) {
       throw new HttpResourceError(
-        `that image is larger than the ${MAX_ATTACHMENT_BYTES.toLocaleString("en-US")} byte limit`,
+        `that image is larger than the ${MAX_IMAGE_BYTES.toLocaleString("en-US")} byte limit`,
       );
     }
     return {

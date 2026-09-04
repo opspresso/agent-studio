@@ -19,7 +19,7 @@ import { LoadingText } from "@/app/_components/PageState";
 import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 import { listSkills, type SkillSummary } from "@/app/skills/api";
 import { listMcps, type McpServer } from "@/app/tools/api";
-import { getPlugin, type Plugin } from "../api";
+import { getPlugin, type PluginDetail } from "../api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
 import { isArchiveSync } from "@/domain/plugin/sync";
@@ -30,7 +30,7 @@ export default function PluginDetailPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
 
-  const [plugin, setPlugin] = useState<Plugin | null>(null);
+  const [plugin, setPlugin] = useState<PluginDetail | null>(null);
   const [skills, setSkills] = useState<Map<string, SkillSummary>>(new Map());
   const [servers, setServers] = useState<Map<string, McpServer>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -83,11 +83,12 @@ export default function PluginDetailPage() {
     );
   }
 
-  const repoUrl = `https://github.com/${plugin.repo}`;
-  const treeUrl = `${repoUrl}/tree/${plugin.commitSha}${plugin.rootPath ? `/${plugin.rootPath}` : ""}`;
   // A row an uploaded archive wrote carries the archive's digest as its
   // commit, and nothing on GitHub answers to it — so the links are text there.
-  const onGitHub = !isArchiveSync(plugin.commitSha);
+  const repoUrl = isArchiveSync(plugin.commitSha) ? null : plugin.repositoryUrl;
+  const treeUrl = repoUrl
+    ? `${repoUrl}/tree/${plugin.commitSha}${plugin.rootPath ? `/${plugin.rootPath}` : ""}`
+    : null;
   const location = `${plugin.repo}${plugin.rootPath ? `/${plugin.rootPath}` : ""}`;
 
   return (
@@ -111,16 +112,21 @@ export default function PluginDetailPage() {
           </Text>
         )}
         <Text fz="xs" c="dimmed" mt={6}>
-          {onGitHub ? (
-            <Anchor href={treeUrl} target="_blank" fz="xs">
+          {treeUrl ? (
+            <Anchor href={treeUrl} target="_blank" rel="noreferrer" fz="xs">
               {location}
             </Anchor>
           ) : (
             location
           )}
           {" · "}
-          {onGitHub ? (
-            <Anchor href={`${repoUrl}/commit/${plugin.commitSha}`} target="_blank" fz="xs">
+          {repoUrl ? (
+            <Anchor
+              href={`${repoUrl}/commit/${plugin.commitSha}`}
+              target="_blank"
+              rel="noreferrer"
+              fz="xs"
+            >
               {plugin.commitSha.slice(0, 7)}
             </Anchor>
           ) : (

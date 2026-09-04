@@ -213,7 +213,7 @@ describe("model registry invariants", () => {
    * the kind that drifts — and one that repeats its *own* provider prefix would
    * arrive double-prefixed.
    *
-   * A slash is not itself the problem, and the rule used to say it was: a router
+   * A slash is not itself the problem; rejecting all slashes would be wrong. A router
    * names models `vendor/model`, so `openrouter/claude-opus-4.8` reaches
    * OpenRouter as `anthropic/claude-opus-4.8` and the prefix belongs to the
    * vendor behind the route, not to the route.

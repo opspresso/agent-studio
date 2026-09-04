@@ -198,10 +198,7 @@ async function userContent(
           {
             type: "image_url" as const,
             image_url: {
-              url:
-                part.source.type === "data"
-                  ? imageDataUrl({ b64: part.source.value, mimeType: part.source.mimeType })
-                  : part.source.value,
+              url: imageDataUrl({ b64: part.source.value, mimeType: part.source.mimeType }),
             },
           },
         ]

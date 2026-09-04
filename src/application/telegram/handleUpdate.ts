@@ -8,7 +8,7 @@ import type {
   TelegramUser,
 } from "@/application/telegram/types";
 import { callerFrom, type RunCaller } from "@/domain/execution/actor";
-import { MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
+import { MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
 import type { InboundAttachment } from "@/domain/messaging/inbound";
 import { telegramConversation } from "@/domain/telegram/conversation";
 import type { TelegramDestination } from "@/domain/telegram/destination";
@@ -77,7 +77,7 @@ function destinationOf(message: TelegramMessage, threadId: number | undefined): 
  * downstream reports it rather than a silent drop.
  */
 function pickPhoto(sizes: TelegramPhotoSize[]): TelegramPhotoSize | undefined {
-  const fitting = sizes.filter((size) => (size.file_size ?? 0) <= MAX_ATTACHMENT_BYTES);
+  const fitting = sizes.filter((size) => (size.file_size ?? 0) <= MAX_IMAGE_BYTES);
   return fitting.at(-1) ?? sizes[0];
 }
 

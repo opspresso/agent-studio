@@ -30,13 +30,13 @@ import { unrefTimer } from "@/shared/unrefTimer";
  * - a channel has the stream's **task axis** — a `task_update` chunk, which
  *   Slack renders and animates in the same message the answer streams into.
  *
- * Modelling status as *the DM mechanism* is what used to cost the channel both.
- * The only thing left to imitate it with was text, text had to go in the reply,
+ * Modelling status as *the DM mechanism* would cost the channel both. The only
+ * thing left to imitate it with is text, text has to go in the reply,
  * and a note in the reply could not be replaced by what it stood in for
  * (`appendStream` only ever adds) — so every channel run that reported progress
- * was pushed onto edit-in-place and gave up streaming: no native rendering, and
+ * is pushed onto edit-in-place and gives up streaming: no native rendering, and
  * one edit per three seconds instead of a hundred appends a minute. The two
- * axes are independent, so none of that is true any more.
+ * axes remain independent.
  *
  * The text note survives as the fallback for a workspace that cannot stream at
  * all, which is the only place it was ever the *right* answer.

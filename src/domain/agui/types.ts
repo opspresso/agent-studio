@@ -49,7 +49,7 @@ export type AguiInputContent =
   | { type: "text"; text: string }
   | {
       type: "image";
-      source: { type: "data"; value: string; mimeType: string } | { type: "url"; value: string };
+      source: { type: "data"; value: string; mimeType: string };
     }
   | {
       type: "document";

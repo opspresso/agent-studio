@@ -170,11 +170,3 @@ export const artifactObjectStore: ArtifactObjectStore = {
     );
   },
 };
-
-// `storeImage` used to live here: an upload that minted `images/<uuid>` and
-// returned the key, kept while the chat surface still uploaded for itself. It
-// moved to `storeArtifact` — which derives the key from the row's id, so an
-// object and its row can find each other — and the last caller went with it.
-// Deleted rather than left for "when it is needed again": what it produced is
-// exactly the un-inventoried object the artifact row exists to stop, and an
-// exported function is an invitation to produce one.

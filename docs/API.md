@@ -617,14 +617,15 @@ publish 된 version 도 실행 가능한 초안도 없는 project 는 `400` 으�
 사람은 `error` 가 아니라 `warning` 프레임을 받는다.
 
 `images` 는 사용자의 첨부를 인라인 바이트로 담은 것이다. `[ { b64, mimeType } ]`, 턴당 최대
-4개, 각각 5MB, `image/png|jpeg|gif|webp`. 모델에는 content part 로 닿고, (오브젝트 스토리지가
+4개, 각각 5MB, `image/png|jpeg|gif|webp`. `b64`는 유효한 padded 또는 unpadded base64여야 한다.
+모델에는 content part 로 닿고, (오브젝트 스토리지가
 설정돼 있으면) 사용자 메시지에 **object key** 로 저장된다. 읽기는 그 응답을 위해 서명된 URL 로
 답하며, 그 뒤로도 계속 동작하는 URL 은 절대 아니다. 주소를 만들 수 없는 이미지는 깨진 채로
 돌아오는 대신 메시지에서 빠진다.
 
 `documents` 는 보는 것이 아니라 읽는 파일이다. `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
-각각 10MB: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML, HTML, DOCX, XLSX, PPTX,
-HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 실행할 version에 바인딩된 MCP 중
+각각 10MB이며 `b64` 형식도 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
+HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 실행할 version에 바인딩된 MCP 중
 `read_document` capability를 제공하는 서버가 읽는다. 그런 binding이 없거나 호출이 실패하면
 그 파일이 빠졌다는 warning 을 돌려준다. `name` 은 필수이고,
 `mimeType` 이 `application/octet-stream` 일 때. 업로드는 흔히 이렇게 도착한다. 판단을 떠맡는다.
@@ -656,7 +657,8 @@ GET  /api/plugins
       skills: ["name"], mcpServers: ["name"], syncedAt, createdAt, updatedAt } ]
 
 GET  /api/plugins/{name}
-→ 200 { …one of the above… } | 404 | 400   ({name} follows the Agent Plugins name rule,
+→ 200 { …one of the above…, repositoryUrl: string | null } | 404 | 400
+                                           ({name} follows the Agent Plugins name rule,
                                             which allows periods — not the registry slug)
 
 GET  /api/plugins/sync
@@ -906,17 +908,20 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
   않는 이미지를 위한 것이다.
 - `environment` 값은 레지스트리 행에서 암호화되고, 읽을 때 마스킹되며, 워크로드 스펙을 만들 때만
   복호화된다. `PORT` 는 거절된다. 그것은 런타임이 소유한다. 값이 Parameter Store 에 남아 있어야
-  하면 대신 `envRefs` 를 쓰라. 키는 `^[A-Za-z_][A-Za-z0-9_]*$` 이고 값은 16,384자까지 간다.
+  하면 대신 `envRefs` 를 쓰라. 키는 `^[A-Za-z_][A-Za-z0-9_]*$` 이고 값은 줄바꿈 없이
+  16,384자까지 간다. `envRefs`는 `/`로 시작하는 호스트 절대 경로다.
 - `endpointPath` 의 기본값은 `/mcp` 이고, query·fragment·공백이 없는 절대 경로여야 한다
   (`^\/(?!\/)[^\s?#]*$`). 그 밖의 것은 `400` 이다.
 - `PUT`/`DELETE` 의 `403` 은 모든 레지스트리 라우트가 답하는 repo 소유 거절이다: sync 된 항목의
   `description` 과 `content` 는 저장소의 것이고, 워크로드 필드(`image`, 포트, env)는 여기서 계속
   수정할 수 있다.
-- `image` 는 호스트가 pull 할 수 있는 어떤 레지스트리에서 와도 된다. `MANAGED_MCP_REGISTRY` 는
+- `PUT` 본문은 생성 본문에서 `name`을 뺀 필드의 부분 집합이다. workload 하나만 바꾸기 위해
+  `image`와 `containerPort`를 다시 보낼 필요가 없다.
+- `image` 는 안전한 Docker image reference 형식이어야 한다. `MANAGED_MCP_REGISTRY` 는
   `docker login` 이 인증하는 그 하나이고, 그 밖의 것에는 로그인을 건너뛴다.
 - `containerPort` 는 요청이지 보장이 아니다: 포트 매핑을 게시하는 어댑터만이 그것을 존중할 수
-  있다. 배포된 어댑터는 대신 네트워크 네임스페이스를 공유하므로, 컨테이너에 어느 포트로 bind 할지
-  (`PORT`) 알려 주고 저장된 값은 무시한다.
+  있다. 배포된 Docker 어댑터는 호스트 loopback의 결정적 포트를 `containerPort`에 매핑하고,
+  컨테이너에도 `PORT=<containerPort>`를 알려 준다.
 
 `GET` 은 **실제로 돌고 있는 것**을 보고한다. 저장된 항목만으로는 말할 수 없는 것이다.
 `running` 과 `reachable` 이 따로인 것은 일부러 그런 것이다: "돌고 있지만 닿을 수 없음"은 실재하는
@@ -1175,9 +1180,11 @@ completion 이 없다. 그것은 `/predict` 로 실행하라.
 ```
 
 **이미지 입력.** 메시지 본문은 문자열 대신 OpenAI content part 여도 된다. 이미지 바이트는
-`data:image/…;base64,…` url 로 인라인 이동한다. 원격 이미지는 `https://` 여야 한다. 페이로드
-하나는 10MB 로 제한되고, 그 version 의 모델은 `imageInput` 능력을 가져야 한다. 아니면 `400`
-이며, 이미지를 읽을 수 없는 `fallbackModel` 은 그 요청에서 건너뛴다.
+`data:image/…;base64,…` URL 로 인라인 이동한다. PNG, JPEG, GIF, WebP만 받고 디코딩 크기는
+하나당 5MB로 제한하며 base64 형식도 검증한다. 원격 URL은 받지 않는다. 호출자가 고른 주소를
+모델 제공자에게 넘기면
+이 배포의 SSRF 정책을 적용할 수 없기 때문이다. 그 version의 모델은 `imageInput` 능력을 가져야
+한다. 아니면 `400`이며, 이미지를 읽을 수 없는 `fallbackModel`은 그 요청에서 건너뛴다.
 
 ```json
 { "messages": [ { "role": "user", "content": [
@@ -1594,9 +1601,9 @@ header="X-A2A-Key"` 를 싣고, Agent Card 는 같은 스킴을
 `securitySchemes`/`securityRequirements` 로 선언한다. 표준 클라이언트가 이 요구사항을 읽어
 자격 증명을 고른다.
 
-메시지는 A2A 1.0 `Part` 의 `text`, 또는 `image/*` 인 `raw`/https `url` 을 실을 수 있다. 단 image
-project 는 편집 원본을 바이트로 받아야 하므로 `raw` 만 받는다. `data`, 다른 media type, 지원하지
-않는 URL part 는 `ContentTypeNotSupported` (`-32005`) 로 거절된다. `taskId` 로 아직 working 인 task 를 이어 가는
+메시지는 A2A 1.0 `Part`의 `text`, 또는 지원하는 `image/*`의 `raw` 바이트를 실을 수 있다.
+`url`, `data`, 다른 media type은 `ContentTypeNotSupported` (`-32005`)로 거절된다. 호출자가 고른
+이미지 URL을 모델 제공자에게 넘겨 이 배포의 SSRF 경계를 우회하지 않기 위한 계약이다. `taskId`로 아직 working인 task를 이어 가는
 메시지는 `-32602` 로 거절된다: 이 agent 는 메시지마다 자기 task 를 돌리고 `input-required` 에
 들어가지 않으므로, 대화를 잇는 것은 `contextId` 다. `SendStreamingMessage` 와 `ResubscribeTask` 가
 첫 이벤트 전에 거절되면 JSON-RPC 에러 객체(200)로 답하고, 스트림 도중의 실패는 JSON-RPC 에러
@@ -1647,8 +1654,8 @@ assistant 턴의 `reasoning_content` 가 되고, `activity` 는 받되 버린다
 (`{ name, description, parameters? }`), `context` (`{ description, value }`), `state` (비어 있지
 않으면 읽기 전용 JSON 으로 context 와 함께 system 턴에 실린다. 갱신은 되지 않고
 `STATE_SNAPSHOT` 도 나가지 않는다), 그리고 받아만 두는 `forwardedProps`. `user` 턴의 parts 는
-`text`, `image` (`data` 소스 또는 https `url` 소스, 메시지당 `MAX_ATTACHMENTS` 개), `document`
-(`data` 소스만, `metadata.name`/`filename` 이 이름, 메시지당 `MAX_DOCUMENTS` 개, chat 첨부와
+`text`, `image` (`data` 소스만, 유효한 base64, 메시지당 `MAX_IMAGES_PER_TURN`개), `document`
+(`data` 소스만, 유효한 base64, `metadata.name`/`filename` 이 이름, 메시지당 `MAX_DOCUMENTS` 개, chat 첨부와
 같은 추출기로 텍스트가 된다) 이고, audio·video 와 URL 로 온 document 는 400 이다.
 interrupt 상태를 이어 가는 구현은 아직 없으므로 `resume` 이 있으면 400 이다. 값을 무시하고 새
 런으로 실행하지 않는다.

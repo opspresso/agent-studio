@@ -103,6 +103,16 @@ describe("docker provisioner", () => {
     ).rejects.toThrow(/line break: TOKEN$/);
   });
 
+  it("refuses a control character in argv without echoing the argument", async () => {
+    const failure = await createDockerProvisioner()
+      .start({ ...spec, args: ["--token=secret\nnext"] })
+      .catch((error: Error) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("Refusing an unsafe container argument");
+    expect((failure as Error).message).not.toContain("secret");
+  });
+
   it("treats an already absent container as stopped", async () => {
     cli.failCommand = "rm";
     cli.fail = { stderr: "Error response from daemon: No such container: my-tool\n", code: 1 };

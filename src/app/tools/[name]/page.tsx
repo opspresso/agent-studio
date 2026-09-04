@@ -314,9 +314,8 @@ export default function McpDetailPage() {
                   running · reachable
                 </Text>
               ) : (
-                // The state this page used to call "running": the container is
-                // up and this app cannot address it. Restarting rejoins it to
-                // the network namespace we have now.
+                // The container is up but this app cannot address it.
+                // Restarting rejoins it to the current network namespace.
                 <Text fz="xs" c="red">
                   running · unreachable
                 </Text>

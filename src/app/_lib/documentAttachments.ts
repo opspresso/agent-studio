@@ -1,6 +1,7 @@
 import {
   documentKind,
   MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENT_SIZE_LABEL,
   SUPPORTED_DOCUMENT_TYPES,
 } from "@/domain/llm/documentLimits";
 
@@ -59,7 +60,7 @@ export async function readDocumentAttachment(file: File): Promise<DocumentAttach
     throw new Error(`${file.name}: not a document this can read`);
   }
   if (file.size > MAX_DOCUMENT_BYTES) {
-    throw new Error(`${file.name}: larger than 10MB`);
+    throw new Error(`${file.name}: larger than ${MAX_DOCUMENT_SIZE_LABEL}`);
   }
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();

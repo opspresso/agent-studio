@@ -402,9 +402,7 @@ export class McpSession {
    * Every page of the server's catalogue, not just the first — the SDK walks the
    * `nextCursor` chain, bounded by {@link MAX_TOOL_PAGES}.
    *
-   * One thing changed with the SDK and is worth knowing before trusting the
-   * hint: the freshness a paged catalogue comes back with is the **first
-   * page's**, where this client used to take the shortest of all of them. The
+   * The freshness a paged catalogue comes back with is the **first page's**. The
    * per-page call that would let us see the rest is unreachable — the SDK's
    * per-page path is selected by passing a cursor, and the first page has none —
    * so a server whose later pages ask for a shorter life is cached for longer
@@ -589,8 +587,7 @@ export function isTimeout(error: unknown): boolean {
  * other failure: a 401 asks the *project* to reconnect, while the rest ask an
  * operator to go and look at the server. Three places need the answer —
  * discovery, a tool call made against a session the discovery cache let through
- * unconnected, and the registry's probe — and each used to spell the pair out
- * for itself, so a fourth was free to get either half of it subtly wrong.
+ * unconnected, and the registry's probe — so they share this predicate.
  */
 export function isUnauthorized(error: unknown): boolean {
   return error instanceof McpHttpError && error.status === 401;

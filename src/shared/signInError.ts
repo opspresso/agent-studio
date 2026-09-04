@@ -4,9 +4,8 @@
  * Better Auth carries a refusal to the browser as a query parameter built from
  * the thrown error's *message*: the OAuth callback lifts it into `result.error`
  * and joins its words with underscores. The message is therefore a wire format
- * rather than prose — a sentence written there lands in the address bar, which
- * is how the deployment's allowed-domain list used to reach whoever had just
- * been turned away.
+ * rather than prose. A sentence written there lands in the address bar and can
+ * expose deployment policy to the person who was rejected.
  *
  * So the wire carries a code with no spaces in it, and the words a person reads
  * are chosen here instead of sent.

@@ -3,19 +3,16 @@ import { resolveImageUrl } from "@/domain/chat/imageRefs";
 import {
   MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS,
   resolveMessageImages,
+  resolveRunMessageImages,
 } from "@/application/chat/resolveImages";
-import {
-  REPLAY_URL_TTL_SECONDS,
-  VIEW_URL_TTL_SECONDS,
-} from "@/application/artifact/urlTtl";
-import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
+import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import type { ChatMessage, ChatMessageImage } from "@/domain/chat/types";
 
 /**
- * A generated image used to be stored as a public URL with a one-year immutable
- * cache and nothing that ever expired it, so anyone holding a transcript held a
- * working link forever. Rows now carry the object key and the address is minted
- * at read time.
+ * Generated image rows carry object keys and mint addresses at read time. A
+ * long-lived public URL in the row would give anyone holding a transcript a
+ * durable capability.
  */
 
 const signed = async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`;
@@ -58,27 +55,8 @@ describe("resolveImageUrl", () => {
   });
 });
 
-describe("the two lifetimes", () => {
-  it("gives a replay longer than a whole run can last", async () => {
-    // The provider fetches this URL, at whatever point in the run it reaches the
-    // turn — a signature that expired mid-run would fail a turn on an image the
-    // user can see in their own transcript.
-    expect(REPLAY_URL_TTL_SECONDS).toBeGreaterThan(MAX_RUN_DURATION_MS / 1000);
-  });
-
-  it("keeps the view's window short, since a person already has the page", () => {
-    expect(VIEW_URL_TTL_SECONDS).toBeLessThan(REPLAY_URL_TTL_SECONDS);
-  });
-
-  it("derives the replay window from the run deadline rather than hardcoding it", () => {
-    // A literal would silently become too short the first time someone raised
-    // MAX_RUN_DURATION_MS.
-    expect(REPLAY_URL_TTL_SECONDS).toBe(Math.ceil(MAX_RUN_DURATION_MS / 1000) + 15 * 60);
-  });
-});
-
 describe("resolveMessageImages", () => {
-  it("hands both readers a url, whichever form the row is in", async () => {
+  it("resolves either stored reference form for the view", async () => {
     const legacy = "https://bucket.s3.ap-northeast-2.amazonaws.com/images/old.png";
     const { messages: [message] } = await resolveMessageImages(
       [assistant([{ key: "images/new.png", prompt: "a cat" }, { url: legacy }])],
@@ -91,20 +69,8 @@ describe("resolveMessageImages", () => {
     ]);
   });
 
-  it("signs a replay with the replay's own lifetime", async () => {
-    const { messages: [message] } = await resolveMessageImages(
-      [assistant([{ key: "images/new.png" }])],
-      signed,
-      REPLAY_URL_TTL_SECONDS,
-    );
-    expect(message?.role === "assistant" && message.images?.[0]?.url).toContain(
-      `ttl=${REPLAY_URL_TTL_SECONDS}`,
-    );
-  });
-
   it("drops an image it could not sign instead of emitting a broken address", async () => {
-    // On the replay path an unfetchable URL fails the whole turn; in the view it
-    // tells the reader nothing.
+    // In the view an unfetchable URL tells the reader nothing.
     const failing = async () => {
       throw new Error("no credentials");
     };
@@ -179,5 +145,48 @@ describe("resolveMessageImages", () => {
     await pending;
 
     expect(maxActive).toBe(MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS);
+  });
+});
+
+describe("resolveRunMessageImages", () => {
+  it("inlines only the newest four stored images and never signs the rest", async () => {
+    const reads: string[] = [];
+    const sign = async () => {
+      throw new Error("run replay must not sign image URLs");
+    };
+    const objects: ArtifactObjectStore = {
+      put: async () => {},
+      read: async (key) => {
+        reads.push(key);
+        return { bytes: Buffer.from(key), mimeType: "image/png" };
+      },
+      sign,
+      delete: async () => {},
+    };
+    const messages = Array.from({ length: 6 }, (_, index) =>
+      assistant([{ key: `images/${index}.png` }]),
+    );
+
+    const resolved = await resolveRunMessageImages(messages, objects);
+
+    expect(reads).toEqual([
+      "images/2.png",
+      "images/3.png",
+      "images/4.png",
+      "images/5.png",
+    ]);
+    expect(resolved.dropped).toBe(2);
+    expect(JSON.stringify(resolved.messages)).not.toContain("https://");
+    expect(JSON.stringify(resolved.messages)).toContain("data:image/png;base64,");
+  });
+
+  it("drops a legacy remote URL instead of handing it to the model", async () => {
+    const resolved = await resolveRunMessageImages(
+      [assistant([{ url: "https://bucket.example/legacy.png" }])],
+      undefined,
+    );
+
+    expect(resolved.dropped).toBe(1);
+    expect(resolved.messages[0]?.role === "assistant" && resolved.messages[0].images).toEqual([]);
   });
 });

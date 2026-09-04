@@ -15,8 +15,8 @@ const { agentOptions, undiciFetch } = vi.hoisted(() => ({
 
 // `fetch` is mocked alongside `Agent` on purpose: the two travel together. A
 // `dispatcher` is a private contract between a fetch implementation and its
-// `Agent`, so stubbing the *global* fetch here — which is what this file used to
-// do — exercised a pairing the deployment never runs, and hid a runtime whose
+// `Agent`, so stubbing the *global* fetch would exercise a pairing the deployment
+// never runs and hide a runtime whose
 // bundled undici was a major behind the one in `package.json`.
 vi.mock("undici", () => ({
   Agent: class {

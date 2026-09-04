@@ -13,9 +13,9 @@ import { getAllowedEmailDomains, isConfiguredAdmin } from "./runtime-settings";
  * The bootstrap administrator is the one address the operator named outright,
  * and the account for when everything else locks people out — a provider
  * down, an allowed-domain list narrowed too far. So the list does not apply
- * to it: a first boot with `BOOTSTRAP_ADMIN_EMAIL` outside
- * `ALLOWED_EMAIL_DOMAINS` used to crash in `ensureBootstrapAdmin` (the
- * create-user hook refused it), and the same person could never sign in.
+ * to it: otherwise a first boot with `BOOTSTRAP_ADMIN_EMAIL` outside
+ * `ALLOWED_EMAIL_DOMAINS` fails in the create-user hook and the break-glass
+ * account can never sign in.
  */
 export function isBootstrapAdminEmail(email: string): boolean {
   const bootstrap = config.passwordAuth ? config.bootstrapAdmin : undefined;
@@ -180,9 +180,8 @@ export async function ensureBootstrapAdmin(): Promise<void> {
     return;
   }
   // `email` is unique, and every instance runs this at boot: two starting
-  // together both read "nobody", both create, and the loser used to fail its
-  // whole boot over a row the winner had just written. The loser reads it
-  // back instead — the account exists either way, which is all this promises.
+  // together can both read "nobody" and attempt creation. The loser reads the
+  // winning row back instead — the account exists either way.
   const user =
     existing?.user ??
     (await ctx.internalAdapter

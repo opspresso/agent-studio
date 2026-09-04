@@ -2,9 +2,9 @@
  * Resolve stored file references to addresses a reader can download from.
  *
  * A separate walk from `resolveImages.ts`, and the separation is the contract
- * rather than tidiness: **only the view calls this.** The replay path resolves
- * images because a provider fetches them into the turn; a file's bytes never
- * enter the model's context at all — the tool result text is what named it — so
+ * rather than tidiness: **only the view calls this.** The replay path restores
+ * image bytes into the turn; a file's bytes never enter the model's context at
+ * all — the tool result text is what named it — so
  * signing one there would spend a signature on a URL nothing reads, and would
  * leave the next reader of that path believing files are part of it.
  *

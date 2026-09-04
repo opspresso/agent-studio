@@ -15,10 +15,8 @@ import { createTheme, type MantineColorsTuple } from "@mantine/core";
 /**
  * The brand ramp: indigo-violet, at OKLCH hue 290.
  *
- * It used to sit at hue 259 — a blue inherited from the pre-Mantine Tailwind
- * theme — and the whole ramp was re-hued rather than re-picked, so every shade
- * keeps the lightness and chroma it already had and only the hue moved. That
- * matters because the shades are load-bearing beyond the accent: shade 6 is the
+ * Every shade shares the measured hue while preserving the ramp's lightness and
+ * chroma. That matters because the shades are load-bearing beyond the accent: shade 6 is the
  * light-mode primary and shade 7 the dark one, both chosen for white-on-brand
  * contrast, and shifting L would have quietly broken that.
  *

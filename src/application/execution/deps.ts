@@ -75,8 +75,7 @@ export interface ExecutionDeps extends RunBracketDeps {
   /**
    * Which remote conversation an external agent holds for one of ours, so a
    * second transfer from the same conversation continues it. Optional because
-   * a deployment without it loses only continuity: every transfer is then a
-   * cold start, which is what every transfer was before this existed.
+   * a deployment without it loses only continuity: every transfer is a cold start.
    */
   remoteConversations?: RemoteConversationRepository;
   /** MCP tool sessions — wired by the composition root; tests inject a fake. */
@@ -193,9 +192,7 @@ export interface ExecuteProjectInput {
  * run) must not be able to leak a name into a version that never asked for it.
  *
  * Here rather than beside the runners because the Playground preview asks the
- * same question, and it used to answer it with its own copy of the condition —
- * one that only ran on the agent branch, so a prompt project previewed
- * anonymously no matter what its version said.
+ * same question. One shared gate keeps prompt and agent previews aligned.
  */
 export function callerFor(input: { version: Version; caller?: RunCaller }): { caller?: RunCaller } {
   return input.version.parameters.callerContext && input.caller ? { caller: input.caller } : {};

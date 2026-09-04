@@ -549,10 +549,8 @@ export async function* executeAgent(
     // its queries and searches the catalog. The recorder bills it to a
     // `prepare` span instead of to the model that has not been called yet.
     const resolveStartedAt = new Date();
-    // Recorded on both outcomes, because the stage worth timing most is the one
-    // that never finished: a server that hangs until the run deadline used to
-    // leave a trace with no spans at all, so the run that asked "why was the
-    // first token so late" loudest was the one with no answer in it.
+    // Recorded on both outcomes: a server that hangs until the run deadline is
+    // the preparation stage most important to preserve in the trace.
     const prepared = await (async () => {
       const resolved = await resolveRunTools(
         deps,

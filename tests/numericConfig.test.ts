@@ -1,7 +1,7 @@
 /**
  * The two numeric env parsers, and the settings that go through them.
  *
- * Three modules used to parse their own: the MCP discovery TTLs froze theirs at
+ * These values must share parsers: otherwise MCP discovery TTLs freeze at
  * import, the retention windows fell back in silence, and the trace rate had a
  * second clamp in the composition root. What a wrong value does is now one
  * answer per shape — fall back for a limit, clamp for a rate — and it is said
@@ -105,7 +105,7 @@ describe("fractionEnv", () => {
   });
 });
 
-describe("the settings that used to parse their own", () => {
+describe("settings with shared numeric parsing", () => {
   it("allows an embedding model to choose its native dimension", () => {
     set("EMBEDDING_DIM", "native");
     expect(config.embeddingDimensions).toBeUndefined();
@@ -143,7 +143,7 @@ describe("the settings that used to parse their own", () => {
   });
 
   it("warns once on a retention window it had to ignore, not once per row", () => {
-    // Two things at once. It used to fall back in silence, so a typo deleted
+    // Two things at once. It would fall back in silence, so a typo deleted
     // rows a year early with nothing in the log to say the configured value had
     // not been used. And this is a getter read on *every* row write — once per
     // model call for usage — so warning from inside it without a memo turns one

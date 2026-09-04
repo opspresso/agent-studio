@@ -25,7 +25,7 @@ import { baseMimeType } from "@/domain/artifact/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
-import { base64ByteLength, MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
+import { base64ByteLength, MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
 import type { McpToolResult } from "@/domain/llm/types";
 import {
   type DiscoveryFailure,
@@ -461,8 +461,7 @@ export class ToolManager {
  *
  * MCP allows up to 128 characters and a dot — `admin.tools.list` is the spec's
  * own example — while a provider's function name is `[A-Za-z0-9_-]{1,64}`. The
- * two disagree, and refusing the difference used to cost a run every tool whose
- * name carried a dot. The alias machinery collisions already need is what makes
+ * two disagree. The alias machinery collisions already need is what makes
  * the difference survivable: `originalNameByAlias` keeps the server's own name,
  * so nothing about this reaches the wire.
  */
@@ -471,8 +470,7 @@ function providerToolName(name: string): string {
 }
 
 function invalidToolReason(tool: McpTool): string | undefined {
-  // A name with nothing a provider accepts cannot be aliased into one — and an
-  // absent name used to pass this check as the string "undefined".
+  // A missing name or one with nothing a provider accepts cannot be aliased.
   if (typeof tool.name !== "string" || providerToolName(tool.name) === "") {
     return "the name must contain at least one letter, digit, underscore or hyphen";
   }
@@ -640,7 +638,7 @@ function baseMediaType(value: string | undefined): string {
  * A picture a server returned, if a provider will take it.
  *
  * The size check is the same one a person's attachment meets, and it belongs
- * here for the same reason it belongs there: `MAX_ATTACHMENT_BYTES` is a bound
+ * here for the same reason it belongs there: `MAX_IMAGE_BYTES` is a bound
  * *providers* impose, so where the bytes came from does not change it. Only the
  * upload path enforced it, so a tool could hand back a picture no model would
  * accept — the count budget downstream bounds how many images a turn carries and
@@ -658,9 +656,9 @@ function imageBlock(data: string | undefined, declaredType: string | undefined):
     return { text: "[image result omitted]" };
   }
   const bytes = base64ByteLength(data);
-  if (bytes > MAX_ATTACHMENT_BYTES) {
+  if (bytes > MAX_IMAGE_BYTES) {
     return {
-      text: `[image omitted: ${mimeType}, ${bytes} bytes — over the ${MAX_ATTACHMENT_BYTES}-byte limit for one image. Ask the server for a smaller rendition.]`,
+      text: `[image omitted: ${mimeType}, ${bytes} bytes — over the ${MAX_IMAGE_BYTES}-byte limit for one image. Ask the server for a smaller rendition.]`,
     };
   }
   return { text: "[image]", image: { b64: data, mimeType } };
@@ -718,8 +716,7 @@ function extractBlock(block: unknown): ExtractedBlock {
       }
       if (bytes.byteLength <= MAX_TOOL_FILE_BYTES) {
         // Not text, but not nothing either: a rendered document is the whole
-        // answer to the call that produced it, and dropping it here is what
-        // used to make "write me a report" end with a file nobody received.
+        // answer to the call that produced it and must leave as a file.
         //
         // Every blob within the cap, rather than a mime allowlist: the protocol
         // has no field that says "this is an artifact", and a list of types
@@ -735,11 +732,9 @@ function extractBlock(block: unknown): ExtractedBlock {
       // `application/octet-stream` often enough that the declared type cannot
       // carry this, and they label text as octet-stream too.
       //
-      // This branch used to be a `catch`, which could never run —
-      // `toString("utf-8")` turns arbitrary bytes into replacement characters
-      // rather than throwing — so a PDF arrived as a page of U+FFFD presented as
-      // a successful result. Said plainly instead, in the same shape an omitted
-      // image takes, so a multi-block result still composes.
+      // `toString("utf-8")` never throws for arbitrary bytes, so explicit UTF-8
+      // validation is required to avoid presenting replacement characters as a
+      // successful text result. The omission still composes with other blocks.
       return {
         text: `[binary resource omitted: ${mime}, ${bytes.byteLength} bytes — not text, so it cannot be read here. Ask the server for a text representation.]`,
       };
@@ -767,9 +762,8 @@ function asErrorResult(output: string): string {
  * comes back is not well-formed text at all, so it reaches the model's context
  * and storage as a lone surrogate.
  *
- * The suffix counts characters because that is what the limit counts. It used to
- * say "100KB", which was never the same number and drifted further with every
- * Korean character in the result.
+ * The suffix says characters because that is what the limit counts; bytes would
+ * describe a different quantity, especially for Korean text.
  */
 function truncateResult(output: string): string {
   return output.length > MAX_TOOL_RESULT_LENGTH

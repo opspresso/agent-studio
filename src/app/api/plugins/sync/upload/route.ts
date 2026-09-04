@@ -57,9 +57,9 @@ export const POST = withAdminAuth(async (user, request: Request) => {
     return badRequest("The archive is empty");
   }
 
-  // One name, the same one `GET /api/plugins/sync` reads the last report
-  // under: the configured repository, else `archive`. A caller-chosen name
-  // used to be accepted here, and stored a report the console never showed.
+  // One name, the same one `GET /api/plugins/sync` reads the last report under:
+  // the configured repository, else `archive`. A caller-chosen name would store
+  // a report the console never reads.
   const repo = archiveSyncRepo((await getPluginsRepoConfig()).repo);
 
   const selectionField = form.get("selection");

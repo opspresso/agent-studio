@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * The boot path, executed rather than grepped.
  *
- * The audit guarantee used to rest on two `toContain` assertions over the source
- * text of `instrumentation.ts`, which a commented-out call or a branch that no
+ * Source-text `toContain` assertions are insufficient for the audit guarantee:
+ * a commented-out call or a branch that no
  * longer runs would satisfy just as well. Since `assertAuditSinkWired` proves
  * something narrow — that the push took, not that a duplicate module exists —
  * the part worth pinning is that `register()` actually reaches it and actually

@@ -1,6 +1,6 @@
 import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
 import { base64Chars } from "@/domain/llm/imageLimits";
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
 import { MAX_SKILL_TOTAL_BYTES } from "@/domain/skill/files";
 
@@ -19,7 +19,7 @@ import { MAX_SKILL_TOTAL_BYTES } from "@/domain/skill/files";
  */
 const ATTACHMENT_ALLOWANCE =
   base64Chars(MAX_DOCUMENT_BYTES) * MAX_DOCUMENTS +
-  base64Chars(MAX_ATTACHMENT_BYTES) * MAX_ATTACHMENTS;
+  base64Chars(MAX_IMAGE_BYTES) * MAX_IMAGES_PER_TURN;
 /** JSON quoting, field names, and the message itself. */
 const PROSE_ALLOWANCE = 256 * 1024;
 
@@ -109,16 +109,11 @@ export async function editorBody(
 /**
  * The body, or the response that refuses it.
  *
- * The bound above was worth nothing on the routes that never asked for it, and
- * for a while that was most of them: the chat surface read its body this way
- * while `/predict` — the same attachments, the same `attachedImagesSchema` —
- * called `request.json()` and let zod check the size once the string was already
- * resident. Every route that parses a turn now goes through here.
+ * Every route that parses a turn goes through here so the declared body length
+ * is checked before JSON and base64 strings are resident in memory.
  *
- * It answers with a `Response` rather than throwing because the eight lines of
- * try/catch that shape used to need were themselves about to be copied five
- * times, and a refusal spelled differently on one route is how a caller learns
- * a limit exists from a 500.
+ * It answers with a `Response` rather than throwing so every route shares one
+ * refusal shape and an oversize body cannot surface as a route-specific 500.
  */
 export async function withTurnBody<T>(
   request: Request,

@@ -90,7 +90,7 @@ const ERROR_HEADERS = {
   "X-Frame-Options": "DENY",
 } as const;
 
-/** An error response with the headers the config rule used to add. */
+/** An error response with the same headers as the console framing rule. */
 function withErrorHeaders(response: Response): Response {
   for (const [key, value] of Object.entries(ERROR_HEADERS)) {
     response.headers.set(key, value);

@@ -35,7 +35,7 @@ import type {
   RunResult,
   UsageInfo,
 } from "@/domain/llm/types";
-import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { ValidationError } from "@/application/errors";
 import { createRunContextBudget } from "./contextBudget";
 import { PiiFilter } from "./pii";
@@ -727,8 +727,8 @@ export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promis
     content,
     model: modelUsed,
     usage,
-    // The provider's own verdict: "length" is a response cut at the output
-    // cap, not a finish — the difference `finish_reason: "stop"` used to erase.
+    // The provider's own verdict: "length" is a response cut at the output cap,
+    // not the `finish_reason: "stop"` that represents completion.
     termination: choice?.finish_reason === "length" ? "output-limit" : "completed",
   };
   if (choice?.message.tool_calls && choice.message.tool_calls.length > 0) {
@@ -838,9 +838,8 @@ export async function* runPromptStream(
   }
   await recordUsageIfPossible(deps, input.projectName, state.model, usageInfo);
   if (outputCut) {
-    // The provider cut the answer at its output cap. `done` would claim the
-    // model finished on its own — the reason a truncated reply used to be
-    // reported as a normal stop.
+    // The provider cut the answer at its output cap. `done` would incorrectly
+    // claim the model finished on its own.
     yield { warning: "The answer was cut at the model's output limit before it finished." };
     yield { usage: usageInfo, finishReason: "output-limit" };
     return;
@@ -915,6 +914,133 @@ class ToolCallAccumulator {
     }
     return calls;
   }
+}
+
+interface AgentTurnStreamInput {
+  channel: LlmChannel;
+  params: ChannelParams;
+  fallbackModel?: string;
+  model: string;
+  signal?: AbortSignal;
+  author?: string;
+  filter?: PiiFilter;
+  traceReasoning: boolean;
+  usedCallIds: Set<string>;
+  saidSomething: boolean;
+  reasonedSomething: boolean;
+}
+
+interface AgentTurnStreamResult {
+  model: string;
+  assistantText: string;
+  reasoningText: string;
+  usage: ChannelUsage | null;
+  outputCut: boolean;
+  calls: AccumulatedCall[];
+  saidSomething: boolean;
+  reasonedSomething: boolean;
+}
+
+/** Stream and collect exactly one provider turn; `null` means its error was emitted. */
+async function* streamAgentTurn(
+  input: AgentTurnStreamInput,
+): AsyncGenerator<EngineChunk, AgentTurnStreamResult | null> {
+  const state = { model: input.model };
+  let assistantText = "";
+  let reasoningText = "";
+  let usage: ChannelUsage | null = null;
+  let outputCut = false;
+  let saidSomething = input.saidSomething;
+  let reasonedSomething = input.reasonedSomething;
+  const accumulator = new ToolCallAccumulator(input.usedCallIds);
+  const contentRestorer = input.filter?.createStreamRestorer();
+  const reasoningRestorer = input.traceReasoning
+    ? input.filter?.createStreamRestorer()
+    : undefined;
+
+  try {
+    for await (const chunk of streamWithFallback(
+      input.channel,
+      input.params,
+      input.fallbackModel,
+      state,
+    )) {
+      if (chunk.usage) {
+        usage = chunk.usage;
+      }
+      if (chunk.choices[0]?.finish_reason === "length") {
+        outputCut = true;
+      }
+      const delta = chunk.choices[0]?.delta;
+      if (!delta) {
+        continue;
+      }
+      // Content, reasoning, and calls may coexist in one provider delta.
+      if (delta.content) {
+        if (assistantText === "" && saidSomething) {
+          yield { author: input.author, delta: { content: TURN_SEPARATOR } };
+        }
+        assistantText += delta.content;
+        const content = contentRestorer?.push(delta.content) ?? delta.content;
+        if (content) {
+          saidSomething = true;
+          yield { author: input.author, delta: { content } };
+        }
+      }
+      if (delta.reasoning_content) {
+        if (input.traceReasoning && reasoningText === "" && reasonedSomething) {
+          yield { author: input.author, delta: { reasoningContent: TURN_SEPARATOR } };
+        }
+        // Kept even when not emitted: the provider receives it back with this turn.
+        reasoningText += delta.reasoning_content;
+        if (input.traceReasoning) {
+          const reasoningContent =
+            reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
+          if (reasoningContent) {
+            reasonedSomething = true;
+            yield { author: input.author, delta: { reasoningContent } };
+          }
+        }
+      }
+      for (const toolCall of delta.tool_calls ?? []) {
+        accumulator.add(toolCall);
+      }
+    }
+  } catch (error) {
+    input.signal?.throwIfAborted();
+    const remainingContent = contentRestorer?.flush();
+    if (remainingContent) {
+      yield { author: input.author, delta: { content: remainingContent } };
+    }
+    const remainingReasoning = reasoningRestorer?.flush();
+    if (remainingReasoning) {
+      yield { author: input.author, delta: { reasoningContent: remainingReasoning } };
+    }
+    yield { author: input.author, error: errorMessage(error) };
+    return null;
+  }
+
+  const remainingContent = contentRestorer?.flush();
+  if (remainingContent) {
+    saidSomething = true;
+    yield { author: input.author, delta: { content: remainingContent } };
+  }
+  const remainingReasoning = reasoningRestorer?.flush();
+  if (remainingReasoning) {
+    reasonedSomething = true;
+    yield { author: input.author, delta: { reasoningContent: remainingReasoning } };
+  }
+
+  return {
+    model: state.model,
+    assistantText,
+    reasoningText,
+    usage,
+    outputCut,
+    calls: accumulator.finalize(),
+    saidSomething,
+    reasonedSomething,
+  };
 }
 
 /**
@@ -1066,6 +1192,59 @@ function prepareToolCalls(
       client: clientToolNames.has(call.name),
     };
   });
+}
+
+/**
+ * Announce one turn's complete call plan before any call is dispatched.
+ *
+ * The returned copy is what goes back to the provider. Yielded copies are what
+ * the application or a person reads, so restored values and client-tool
+ * arguments follow their separate contracts here rather than in the execution
+ * loop below.
+ */
+async function* announceToolCalls(
+  prepared: PreparedToolCall[],
+  author: string | undefined,
+  filter: PiiFilter | undefined,
+): AsyncGenerator<EngineChunk, ChannelToolCall[]> {
+  const wireToolCalls: ChannelToolCall[] = [];
+  for (const { call, args, displayArgs, malformed, client } of prepared) {
+    if (malformed) {
+      // The model's own text is the only truthful record of arguments that did
+      // not parse — re-encoding `{}` would claim it asked for nothing. A client
+      // tool's copy is not cut: the announced text is the call.
+      const wireCall: ChannelToolCall = {
+        id: call.id,
+        type: "function",
+        function: {
+          name: call.name,
+          arguments: client ? call.arguments : boundArgumentText(call.arguments),
+        },
+      };
+      wireToolCalls.push(wireCall);
+      yield {
+        author,
+        delta: {
+          toolCalls: [filter ? (restoreValues(filter, wireCall) as ChannelToolCall) : wireCall],
+        },
+      };
+      continue;
+    }
+    // Both copies are bounded from their own source. A client tool's announced
+    // copy is the exception: its announcement is the call the application runs,
+    // so replacing a value with its size would replace the argument itself.
+    const bounded = boundToolArgsPair(args, displayArgs);
+    wireToolCalls.push(toWireToolCall(call.id, call.name, bounded.wire));
+    yield {
+      author,
+      delta: {
+        toolCalls: [
+          toWireToolCall(call.id, call.name, client ? displayArgs : bounded.display),
+        ],
+      },
+    };
+  }
+  return wireToolCalls;
 }
 
 async function dispatchConcurrentTools(
@@ -1280,8 +1459,7 @@ export function buildTransferTranscript(
       // One turn larger than the whole remaining budget. Dropping it outright
       // loses the *question* along with whatever made it long — a turn carrying
       // an attached document is a single line of tens of thousands of
-      // characters, so every such turn used to evict itself entirely and the
-      // child never learned the conversation was about a document at all.
+      // characters. Keeping its head preserves what the turn was about.
       // Keeping its head keeps what the turn was about; the budget is spent
       // either way, so nothing older fits after this.
       if (budget > MIN_TRANSFER_LINE_CHARS) {
@@ -1312,12 +1490,8 @@ export function buildTransferTranscript(
  * Both transfer tools enumerate the offered names in their schema, but an enum
  * is a request, not a guarantee — OpenAI-compatible gateways vary in whether
  * they constrain against one, and a model that invents a name is a routine
- * outcome, not a platform fault. Before this, such a call was *attempted*: the
- * runner refused it one layer down as an authored `error` chunk, which the
- * engine then reported as a lost delegation — a warning in the user's face for
- * a model typo, a tool-result line promising an answer that was never coming,
- * and, for the model, "the agent returned no answer" with no hint of what it
- * could have asked for instead.
+ * outcome, not a platform fault. Attempting it one layer down would turn a model
+ * typo into a lost-delegation warning and return no list of valid alternatives.
  *
  * Answered here the way an unloadable skill and an unknown image id already
  * are: a plain tool error naming the alternatives, which the model can act on
@@ -1398,8 +1572,8 @@ function turnLimitWarning(
  * Whether a delegation has room to run and come back.
  *
  * A child runs at `turn + 1` and the parent resumes at `turn + 2`, so two turns
- * must remain or the resume trips the initial guard. Both delegating builtins
- * encode that, and both used to encode it themselves.
+ * must remain or the resume trips the initial guard. Both delegation builtins
+ * share this decision.
  */
 function delegationTurnRefusal(
   turn: number,
@@ -1457,6 +1631,390 @@ async function loadSkillSafe(
   } catch (error) {
     return `Error: Failed to load skill '${skillName}'. ${errorMessage(error)}`;
   }
+}
+
+interface ImageBuiltinResult {
+  text: string;
+  /** False only when provider-authored error text must pass through the result budget. */
+  bounded: boolean;
+}
+
+async function* generateImageBuiltin(input: {
+  generate: NonNullable<AgentDeps["generateImage"]>;
+  canEdit: boolean;
+  args: Record<string, unknown>;
+  displayArgs: Record<string, unknown>;
+  images: ImageRegistry;
+  signal?: AbortSignal;
+  author?: string;
+}): AsyncGenerator<EngineChunk, ImageBuiltinResult> {
+  const maskedPrompt = typeof input.args.prompt === "string" ? input.args.prompt : "";
+  const displayPrompt =
+    typeof input.displayArgs.prompt === "string" ? input.displayArgs.prompt : "";
+  const size = typeof input.displayArgs.size === "string" ? input.displayArgs.size : undefined;
+  const quality =
+    typeof input.displayArgs.quality === "string" ? input.displayArgs.quality : undefined;
+  if (!maskedPrompt.trim()) {
+    return { text: "Error: GenerateImage requires a prompt.", bounded: true };
+  }
+  try {
+    const image = await input.generate(maskedPrompt, size, quality);
+    yield { author: input.author, image: { ...image, prompt: displayPrompt } };
+    const handle = input.canEdit
+      ? input.images.add(image, `generated: ${displayPrompt.slice(0, 60)}`)
+      : undefined;
+    return {
+      text: handle
+        ? `Image generated and delivered to the user (image id: ${handle.id}, editable with ${EDIT_IMAGE_TOOL_NAME}). Briefly describe what was drawn; do not claim you cannot show images.`
+        : "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.",
+      bounded: true,
+    };
+  } catch (error) {
+    input.signal?.throwIfAborted();
+    return { text: `Error: image generation failed. ${errorMessage(error)}`, bounded: false };
+  }
+}
+
+async function* editImageBuiltin(input: {
+  edit: NonNullable<AgentDeps["editImage"]>;
+  args: Record<string, unknown>;
+  displayArgs: Record<string, unknown>;
+  images: ImageRegistry;
+  signal?: AbortSignal;
+  author?: string;
+}): AsyncGenerator<EngineChunk, ImageBuiltinResult> {
+  const maskedPrompt = typeof input.args.prompt === "string" ? input.args.prompt : "";
+  const displayPrompt =
+    typeof input.displayArgs.prompt === "string" ? input.displayArgs.prompt : "";
+  const imageId =
+    typeof input.displayArgs.image_id === "string" ? input.displayArgs.image_id : "";
+  const size = typeof input.displayArgs.size === "string" ? input.displayArgs.size : undefined;
+  const quality =
+    typeof input.displayArgs.quality === "string" ? input.displayArgs.quality : undefined;
+  if (!maskedPrompt.trim()) {
+    return { text: `Error: ${EDIT_IMAGE_TOOL_NAME} requires a prompt.`, bounded: true };
+  }
+  const source = input.images.get(imageId);
+  if (!source) {
+    const known = input.images.list().map((handle) => handle.id);
+    return {
+      text: known.length
+        ? `Error: no image with id '${imageId}'. Available images: ${known.join(", ")}.`
+        : "Error: no image is available to edit yet. Generate one first, or ask the user to attach one.",
+      bounded: true,
+    };
+  }
+  try {
+    const image = await input.edit({
+      prompt: maskedPrompt,
+      images: [{ b64: source.b64, mimeType: source.mimeType }],
+      size,
+      quality,
+    });
+    yield { author: input.author, image: { ...image, prompt: displayPrompt } };
+    const handle = input.images.add(image, `edited from ${source.id}`);
+    return {
+      text: `Image edited and delivered to the user (image id: ${handle.id}). Briefly describe the change; do not claim you cannot show images.`,
+      bounded: true,
+    };
+  } catch (error) {
+    input.signal?.throwIfAborted();
+    return { text: `Error: image edit failed. ${errorMessage(error)}`, bounded: false };
+  }
+}
+
+type ToolResultEmitter = ReturnType<typeof createToolResultEmitter>;
+
+interface TransferBuiltinResult {
+  nextTurn?: number;
+  postContextMessage?: ChannelMessage;
+}
+
+/**
+ * Run one hand-off and return the context turn the parent resumes from.
+ *
+ * The child receives masked text and named image bytes, while its streamed
+ * chunks are restored for the reader. Its full answer is visible on that
+ * stream; only the copy re-entering the parent's context is fitted to the run
+ * budget. Validation failures stay ordinary tool results and consume no child
+ * turn.
+ */
+async function* runTransferBuiltin(input: {
+  call: AccumulatedCall;
+  args: Record<string, unknown>;
+  displayArgs: Record<string, unknown>;
+  runSubagent: AgentDeps["runSubagent"];
+  subagents: SubagentInfo[];
+  images: ImageRegistry;
+  turn: number;
+  maxTurn: number;
+  filter?: PiiFilter;
+  transcript?: string;
+  clippedTranscriptWarning: () => string | undefined;
+  endsOnClientCall: boolean;
+  contextBudget: ReturnType<typeof createRunContextBudget>;
+  toolResult: ToolResultEmitter;
+  author?: string;
+}): AsyncGenerator<EngineChunk, TransferBuiltinResult> {
+  const noRoom = delegationTurnRefusal(input.turn, input.maxTurn, "transfer");
+  if (noRoom) {
+    yield input.toolResult(input.call, noRoom, { bounded: true });
+    return {};
+  }
+  const agentName = typeof input.args.agent_name === "string" ? input.args.agent_name : "";
+  const message = typeof input.args.message === "string" ? input.args.message : "";
+  if (!agentName || !message.trim() || !input.runSubagent) {
+    yield input.toolResult(
+      input.call,
+      "Error: transfer_to_agent requires agent_name and message.",
+      { bounded: true },
+    );
+    return {};
+  }
+  const unreachable = unreachableAgent(agentName, input.subagents);
+  if (unreachable) {
+    yield input.toolResult(input.call, unreachable, { bounded: true });
+    return {};
+  }
+  const handed = handedImages(input.images, input.displayArgs.image_ids);
+  if ("failure" in handed) {
+    yield input.toolResult(input.call, handed.failure, { bounded: true });
+    return {};
+  }
+  const clipped = input.clippedTranscriptWarning();
+  if (clipped) {
+    yield { author: input.author, warning: clipped };
+  }
+  const outcome: { error?: string } = {};
+  const childText = yield* reportChildCompletion(
+    observeChildFailure(
+      input.filter
+        ? runSubagentWithPii(
+            input.filter,
+            input.runSubagent,
+            agentName,
+            message,
+            input.turn + 1,
+            input.maxTurn,
+            handed.childImages,
+            input.transcript,
+          )
+        : input.runSubagent(
+            agentName,
+            message,
+            input.turn + 1,
+            input.maxTurn,
+            handed.childImages,
+            input.transcript,
+          ),
+      outcome,
+    ),
+    agentName,
+  );
+  const answer = childText.trim();
+  const childReply =
+    answer || (outcome.error ? `Error: ${outcome.error}` : "Error: the agent returned no answer.");
+  if (input.endsOnClientCall) {
+    yield input.toolResult(input.call, childReply, {
+      name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
+    });
+  } else {
+    yield input.toolResult(input.call, `Transferred to '${agentName}'; its answer follows.`, {
+      name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
+      displayOnly: true,
+      stored: JSON.stringify({ result: null }),
+    });
+  }
+  if (!answer) {
+    yield {
+      author: input.author,
+      warning: outcome.error
+        ? `Agent '${agentName}' returned no answer: ${outcome.error}`
+        : `Agent '${agentName}' returned no answer.`,
+    };
+  }
+
+  // Charge the fixed wrapper first, then fit the masked answer into what
+  // remains. The messages array must receive exactly the text that was charged.
+  const maskedChildText = input.filter?.mask(childReply) ?? childReply;
+  input.contextBudget?.chargeText(subagentContextMessage(agentName, ""));
+  const fittedChild = input.contextBudget?.fitText(maskedChildText, {
+    suffix: "\n…[truncated: the run's context budget is exhausted]",
+    minKeepChars: MIN_KEPT_RESULT_CHARS,
+  }) ?? { text: maskedChildText, truncated: false, kept: true };
+  let childAnswer = fittedChild.text;
+  if (!fittedChild.kept) {
+    childAnswer =
+      "…[the agent's answer could not be included: the run's context budget is exhausted]";
+    input.contextBudget?.chargeText(childAnswer);
+  }
+  return {
+    nextTurn: input.turn + 2,
+    postContextMessage: {
+      role: "user",
+      content: subagentContextMessage(agentName, childAnswer),
+    },
+  };
+}
+
+interface DispatchBuiltinResult {
+  text: string;
+  bounded: boolean;
+  nextTurn?: number;
+}
+
+/**
+ * Fan out one dispatch plan and assemble its single tool result.
+ *
+ * Invalid tasks retain their position as refusal sections while runnable
+ * children stream concurrently. The result budget is divided over its
+ * remaining capacity after fixed headings/refusals, so one long child cannot
+ * erase the answers beside it.
+ */
+async function* runDispatchBuiltin(input: {
+  args: Record<string, unknown>;
+  runSubagent: NonNullable<AgentDeps["runSubagent"]>;
+  subagents: SubagentInfo[];
+  images: ImageRegistry;
+  turn: number;
+  maxTurn: number;
+  filter?: PiiFilter;
+  transcript?: string;
+  clippedTranscriptWarning: () => string | undefined;
+  resultBudget: ReturnType<typeof createToolResultBudget>;
+  author?: string;
+}): AsyncGenerator<EngineChunk, DispatchBuiltinResult> {
+  const noRoom = delegationTurnRefusal(input.turn, input.maxTurn, DISPATCH_TOOL_NAME);
+  if (noRoom) {
+    return { text: noRoom, bounded: true };
+  }
+  // Masked args cross into other models; displayArgs would restore PII.
+  const rawTasks = Array.isArray(input.args.tasks) ? input.args.tasks : [];
+  if (rawTasks.length === 0) {
+    return {
+      text: `Error: ${DISPATCH_TOOL_NAME} requires a non-empty tasks array; each task needs agent_name and message.`,
+      bounded: true,
+    };
+  }
+  const plans = rawTasks.map((raw, index): DispatchPlan => {
+    const task = (typeof raw === "object" && raw !== null ? raw : {}) as Record<
+      string,
+      unknown
+    >;
+    const agentName = typeof task.agent_name === "string" ? task.agent_name : "";
+    const label = agentName || `task ${index + 1}`;
+    if (index >= MAX_DISPATCH_TASKS) {
+      return {
+        agentName: label,
+        failure: `Error: not run — at most ${MAX_DISPATCH_TASKS} agents per ${DISPATCH_TOOL_NAME} call. Ask for this one again.`,
+      };
+    }
+    const message = typeof task.message === "string" ? task.message : "";
+    if (!agentName || !message.trim()) {
+      return {
+        agentName: label,
+        failure: "Error: each task needs agent_name and a non-empty message.",
+      };
+    }
+    const unreachable = unreachableAgent(agentName, input.subagents);
+    if (unreachable) {
+      return { agentName, failure: unreachable };
+    }
+    const handed = handedImages(input.images, task.image_ids);
+    return "failure" in handed
+      ? { agentName, failure: handed.failure }
+      : { agentName, message, childImages: handed.childImages };
+  });
+  const runnable = plans.flatMap((plan, index) =>
+    "failure" in plan ? [] : [{ plan, index, outcome: {} as { error?: string } }],
+  );
+  const clipped = runnable.length > 0 ? input.clippedTranscriptWarning() : undefined;
+  if (clipped) {
+    yield { author: input.author, warning: clipped };
+  }
+  const answers = yield* mergeGenerators(
+    runnable.map(({ plan, outcome }) =>
+      reportChildCompletion(
+        observeChildFailure(
+          input.filter
+            ? runSubagentWithPii(
+                input.filter,
+                input.runSubagent,
+                plan.agentName,
+                plan.message,
+                input.turn + 1,
+                input.maxTurn,
+                plan.childImages,
+                input.transcript,
+              )
+            : input.runSubagent(
+                plan.agentName,
+                plan.message,
+                input.turn + 1,
+                input.maxTurn,
+                plan.childImages,
+                input.transcript,
+              ),
+          outcome,
+        ),
+        plan.agentName,
+      ),
+    ),
+  );
+
+  const sectionHeading = (agentName: string) => `### ${agentName}\n`;
+  // Failure is determined by returned answers, not descendant error chunks: a
+  // child may recover from a nested failure and still return useful text.
+  const allFailed = runnable.every((_, position) => !(answers[position] ?? "").trim());
+  const groupPrefix = allFailed
+    ? `Error: no agent in this ${DISPATCH_TOOL_NAME} call produced an answer.\n\n`
+    : "";
+  const markerAllowance = turnTruncationMarker(
+    MAX_TOOL_RESULT_CHARS_PER_TURN,
+    Number.MAX_SAFE_INTEGER,
+  ).length;
+  const framingChars =
+    groupPrefix.length +
+    plans.reduce(
+      (total, plan) =>
+        total +
+        sectionHeading(plan.agentName).length +
+        ("failure" in plan ? plan.failure.length : 0),
+      0,
+    ) +
+    Math.max(0, plans.length - 1) * SECTION_SEPARATOR.length;
+  const perTask = Math.max(
+    1,
+    Math.floor(
+      Math.max(0, input.resultBudget.remaining() - framingChars) /
+        Math.max(1, runnable.length),
+    ) - markerAllowance,
+  );
+  const answerByIndex = new Map<number, string>();
+  runnable.forEach(({ index, outcome }, position) => {
+    const answer = (answers[position] ?? "").trim();
+    answerByIndex.set(
+      index,
+      createToolResultBudget(perTask).fit(
+        answer ||
+          (outcome.error ? `Error: ${outcome.error}` : "Error: the agent returned no answer."),
+      ),
+    );
+  });
+  const body = plans
+    .map((plan, index) =>
+      `${sectionHeading(plan.agentName)}${
+        "failure" in plan
+          ? plan.failure
+          : (answerByIndex.get(index) ?? "Error: the agent did not run.")
+      }`,
+    )
+    .join(SECTION_SEPARATOR);
+  return {
+    text: `${groupPrefix}${body}`,
+    bounded: false,
+    nextTurn: input.turn + 2,
+  };
 }
 
 export async function* runAgent(
@@ -1717,108 +2275,28 @@ export async function* runAgent(
           "This model does not reason while it can call tools, so little or none of this run's reasoning was recorded.",
       };
     }
-    const state = { model: input.model };
-    let assistantText = "";
-    let reasoningText = "";
-    let usage: ChannelUsage | null = null;
-    // The provider's own ending for this turn: "length" means the text was cut
-    // at the output cap — an ending `done` must not report as a finish.
-    let outputCut = false;
-    const accumulator = new ToolCallAccumulator(usedCallIds);
-    const contentRestorer = filter?.createStreamRestorer();
-    const reasoningRestorer = traceReasoning ? filter?.createStreamRestorer() : undefined;
-
-    try {
-      for await (const chunk of streamWithFallback(deps.channel, params, fallbackModel, state)) {
-        if (chunk.usage) {
-          usage = chunk.usage;
-        }
-        if (chunk.choices[0]?.finish_reason === "length") {
-          outputCut = true;
-        }
-        const delta = chunk.choices[0]?.delta;
-        if (!delta) {
-          continue;
-        }
-        // Independent checks, not a chain. The three delta fields are
-        // concurrent accumulation buffers on the wire, not mutually exclusive
-        // events: OpenAI-compatible gateways (vLLM, LiteLLM) and reasoning
-        // shims routinely emit content or reasoning_content alongside
-        // tool_calls in one delta, and an `else if` would silently drop the
-        // tool call — the loop would then finish as if the model never asked.
-        if (delta.content) {
-          // First visible word of a turn that follows one which already spoke:
-          // separate them. `assistantText` is this turn's own buffer, so it is
-          // empty exactly once per turn, and a turn that only calls tools never
-          // reaches here — no stray break before an answer that follows silence.
-          if (assistantText === "" && saidSomething) {
-            yield { author, delta: { content: TURN_SEPARATOR } };
-          }
-          assistantText += delta.content;
-          const content = contentRestorer?.push(delta.content) ?? delta.content;
-          if (content) {
-            saidSomething = true;
-            yield { author, delta: { content } };
-          }
-        }
-        if (delta.reasoning_content) {
-          if (traceReasoning && reasoningText === "" && reasonedSomething) {
-            // The answer's own rule, applied to the thinking: `reasoningText` is
-            // this turn's buffer, so it is empty exactly once per turn.
-            yield { author, delta: { reasoningContent: TURN_SEPARATOR } };
-          }
-          // Outside the gate on purpose: this is what goes back to the provider
-          // on this turn's assistant message, whether or not anyone reads it.
-          reasoningText += delta.reasoning_content;
-          if (traceReasoning) {
-            const reasoningContent =
-              reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
-            if (reasoningContent) {
-              reasonedSomething = true;
-              yield { author, delta: { reasoningContent } };
-            }
-          }
-        }
-        if (delta.tool_calls) {
-          for (const toolCall of delta.tool_calls) {
-            accumulator.add(toolCall);
-          }
-        }
-      }
-    } catch (error) {
-      input.signal?.throwIfAborted();
-      const remainingContent = contentRestorer?.flush();
-      if (remainingContent) {
-        yield { author, delta: { content: remainingContent } };
-      }
-      const remainingReasoning = reasoningRestorer?.flush();
-      if (remainingReasoning) {
-        yield { author, delta: { reasoningContent: remainingReasoning } };
-      }
-      yield { author, error: errorMessage(error) };
+    const streamed: AgentTurnStreamResult | null = yield* streamAgentTurn({
+      channel: deps.channel,
+      params,
+      ...(fallbackModel ? { fallbackModel } : {}),
+      model: input.model,
+      ...(input.signal ? { signal: input.signal } : {}),
+      author,
+      ...(filter ? { filter } : {}),
+      traceReasoning,
+      usedCallIds,
+      saidSomething,
+      reasonedSomething,
+    });
+    if (!streamed) {
       return;
     }
+    const { assistantText, reasoningText, outputCut, calls } = streamed;
+    saidSomething = streamed.saidSomething;
+    reasonedSomething = streamed.reasonedSomething;
 
-    const remainingContent = contentRestorer?.flush();
-    if (remainingContent) {
-      // Counted like any other visible word. The restorer holds back whatever
-      // suffix could still turn out to be half a replacement token, so a turn
-      // the provider cut just after `[[PII:` reaches the reader entirely
-      // through this flush — and a `saidSomething` set only in the loop above
-      // would leave the next turn's first word running straight into it.
-      saidSomething = true;
-      yield { author, delta: { content: remainingContent } };
-    }
-    const remainingReasoning = reasoningRestorer?.flush();
-    if (remainingReasoning) {
-      // Set here for the reason the content flush above gives: a turn whose
-      // whole thinking arrives through the flush must still break the next one.
-      reasonedSomething = true;
-      yield { author, delta: { reasoningContent: remainingReasoning } };
-    }
-
-    const usageInfo = toUsageInfo(state.model, usage);
-    await recordUsageIfPossible(deps, input.projectName, state.model, usageInfo);
+    const usageInfo = toUsageInfo(streamed.model, streamed.usage);
+    await recordUsageIfPossible(deps, input.projectName, streamed.model, usageInfo);
     yield { author, usage: usageInfo };
     if (
       traceReasoning &&
@@ -1829,8 +2307,6 @@ export async function* runAgent(
       reasoningWithheldNoted = true;
       yield { author, warning: REASONING_TEXT_WITHHELD_WARNING };
     }
-
-    const calls = accumulator.finalize();
     // Every ending of the loop, not just the clean one. A run whose words went
     // into its thinking is as blank when the turn guard stops it or the
     // provider cuts it — and there the *other* warning is actively misleading,
@@ -1881,7 +2357,6 @@ export async function* runAgent(
     }
 
     // All tool calls of one response aggregate into ONE assistant message.
-    const wireToolCalls: ChannelToolCall[] = [];
     const toolMessages: ChannelMessage[] = [];
     const postContextMessages: ChannelMessage[] = [];
     /** Pictures MCP tools returned this turn, attached after the tool results. */
@@ -1890,7 +2365,7 @@ export async function* runAgent(
     // the cap a user turn gets — they cost the same and arrive the same way.
     // Per turn, not per run: the cap bounds one request, and spending it once
     // would leave a screenshot agent blind for the rest of the run.
-    let imageBudget = MAX_ATTACHMENTS;
+    let imageBudget = MAX_IMAGES_PER_TURN;
     let nextTurn = turn + 1;
 
     // Announce every call before any of them runs: the client sees the whole
@@ -1923,45 +2398,7 @@ export async function* runAgent(
           : "The model's turn was cut at its output limit while it was calling tools; the run continues.",
       };
     }
-    for (const { call, args, displayArgs, malformed, client } of prepared) {
-      if (malformed) {
-        // The model's own text is the only truthful record of arguments that
-        // did not parse — re-encoding `{}` would claim it asked for nothing.
-        // A client tool's copy is not cut: the announced text is the call.
-        const wireCall: ChannelToolCall = {
-          id: call.id,
-          type: "function",
-          function: {
-            name: call.name,
-            arguments: client ? call.arguments : boundArgumentText(call.arguments),
-          },
-        };
-        wireToolCalls.push(wireCall);
-        yield {
-          author,
-          delta: { toolCalls: [filter ? (restoreValues(filter, wireCall) as ChannelToolCall) : wireCall] },
-        };
-        continue;
-      }
-      // Both copies bounded, and each from its own source: `args` is masked and
-      // goes back to the provider, `displayArgs` has the values restored and is
-      // what a person reads. A client tool's announced copy is the exception:
-      // for every other tool the real call was made with the whole value and
-      // the announcement only describes it, but a client tool's call *is* the
-      // announcement — nothing else carries the arguments to the application
-      // that runs it — so a value swapped for its size would be the value the
-      // tool receives.
-      const bounded = boundToolArgsPair(args, displayArgs);
-      wireToolCalls.push(toWireToolCall(call.id, call.name, bounded.wire));
-      yield {
-        author,
-        delta: {
-          toolCalls: [
-            toWireToolCall(call.id, call.name, client ? displayArgs : bounded.display),
-          ],
-        },
-      };
-    }
+    const wireToolCalls = yield* announceToolCalls(prepared, author, filter);
 
     // The MCP calls of one response are independent by construction — the model
     // asked for them together — so they run concurrently instead of adding up
@@ -2003,417 +2440,77 @@ export async function* runAgent(
         continue;
       }
       if (builtin && call.name === TRANSFER_TOOL_NAME) {
-        const noRoom = delegationTurnRefusal(turn, maxTurn, "transfer");
-        if (noRoom) {
-          yield toolResult(call, noRoom, { bounded: true });
-          continue;
-        }
-        const agentName = typeof args.agent_name === "string" ? args.agent_name : "";
-        const message = typeof args.message === "string" ? args.message : "";
-        if (!agentName || !message.trim() || !deps.runSubagent) {
-          yield toolResult(call, "Error: transfer_to_agent requires agent_name and message.", {
-            bounded: true,
-          });
-          continue;
-        }
-        // Checked before anything is spent on it, so a name the run never
-        // offered is a tool error the model can correct — not a transfer that
-        // is attempted, refused a layer down, and comes back to the reader as a
-        // warning about a delegation that never existed.
-        const unreachable = unreachableAgent(agentName, subagents);
-        if (unreachable) {
-          yield toolResult(call, unreachable, { bounded: true });
-          continue;
-        }
-        // Named images travel as bytes, so the child edits the real picture
-        // instead of a description of it.
-        const handed = handedImages(images, displayArgs.image_ids);
-        if ("failure" in handed) {
-          yield toolResult(call, handed.failure, { bounded: true });
-          continue;
-        }
-        const childImages = handed.childImages;
-        const clipped = clippedTranscriptWarning();
-        if (clipped) {
-          yield { author, warning: clipped };
-        }
-        // The model-written message plus the conversation it refers to. The
-        // runner decides where the transcript goes — a child's own kind governs
-        // that — and the child's final text returns as a "For context" message.
-        //
-        // Wrapped like a dispatched task's stream, and for the same reason: a
-        // child never throws — the runner turns its failures into `error` chunks
-        // and returns `""` — so this is the only way to say *why* it came back
-        // with nothing. Only `dispatch_agents` did it, so a refused transfer
-        // reached the parent as an empty answer carrying no reason, and the model
-        // answered by guessing at one. The same provider refusal reported itself
-        // through the `GenerateImage` builtin and vanished through a transfer to
-        // an image project.
-        const outcome: { error?: string } = {};
-        // `reportChildCompletion`, like a dispatched task's stream: without
-        // the `authorDone` a consumer keying on it (the AG-UI translator's
-        // STEP_FINISHED) held the transferred agent open until the run ended.
-        const childText = yield* reportChildCompletion(
-          observeChildFailure(
-            filter
-              ? runSubagentWithPii(
-                  filter,
-                  deps.runSubagent,
-                  agentName,
-                  message,
-                  turn + 1,
-                  maxTurn,
-                  childImages,
-                  transcript,
-                )
-              : deps.runSubagent(agentName, message, turn + 1, maxTurn, childImages, transcript),
-            outcome,
-          ),
-          agentName,
-        );
-        // A transfer's answer used to enter the context with no bound at all —
-        // the one unbudgeted spot. The user already saw the child's full
-        // answer stream by; only what re-enters the parent's context is cut.
-        // Masked *before* it is charged and fitted: the budget must price the
-        // exact string the messages array receives (mask tokens run longer
-        // than what they replace), and a fit that cut through a raw address
-        // would leave a fragment the mask no longer recognises. The wrapper
-        // is charged first and the marker is reserved inside the fit, so the
-        // whole message this pushes — wrapper, answer, marker — is inside the
-        // budget, not riding on its headroom.
-        //
-        // The answer decides whether the transfer failed, never the `error`
-        // chunks that went past — a child answers from a nested transfer's
-        // failure (it arrives as a tool error), and a deeper descendant's error
-        // travels out on this same stream. Only an empty answer is explained by
-        // what `observeChildFailure` caught, which is the rule a dispatched task
-        // already follows.
-        const answer = childText.trim();
-        const childReply =
-          answer ||
-          (outcome.error ? `Error: ${outcome.error}` : "Error: the agent returned no answer.");
-        if (endsOnClientCall) {
-          // The "For context" turn below dies with the run, and the
-          // application's replay of this turn carries tool results and nothing
-          // else — so on the run's last turn the answer goes out *as* the
-          // transfer's result, where the next run will find it. Fitted like
-          // any child-sized text.
-          yield toolResult(call, childReply, { name: `${TRANSFER_TOOL_NAME}: ${agentName}` });
-        } else {
-          // A successful transfer used to leave no trace at all: only its
-          // failures yielded a result, so a reader of the finished conversation
-          // could not tell which agent had answered. Marked display-only — the
-          // child's answer returns as its own message, and replaying this
-          // marker in its place would say the delegation came back empty.
-          yield toolResult(call, `Transferred to '${agentName}'; its answer follows.`, {
-            name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
-            displayOnly: true,
-            // No `fit`: an explicit `stored` is always charged whole, since the
-            // engine wrote it and it is the same string every time.
-            stored: JSON.stringify({ result: null }),
-          });
-        }
-        if (!answer) {
-          // The reason reaches the reader, not only the model. Every consumer
-          // drops an authored `error` chunk on the grounds that the parent
-          // answers past it — true, but the parent could not say what happened
-          // either, so the failure was legible in the trace and nowhere else.
-          // A warning because the run goes on; named in the text because
-          // warnings surface without author labels.
-          yield {
-            author,
-            warning: outcome.error
-              ? `Agent '${agentName}' returned no answer: ${outcome.error}`
-              : `Agent '${agentName}' returned no answer.`,
-          };
-        }
-        const maskedChildText = filter?.mask(childReply) ?? childReply;
-        contextBudget?.chargeText(subagentContextMessage(agentName, ""));
-        const fittedChild = contextBudget?.fitText(maskedChildText, {
-          suffix: "\n…[truncated: the run's context budget is exhausted]",
-          // Same floor as a tool result: a few dozen characters of a child's
-          // introduction read as its whole answer, which is worse than saying
-          // the answer could not be included.
-          minKeepChars: MIN_KEPT_RESULT_CHARS,
-        }) ?? { text: maskedChildText, truncated: false, kept: true };
-        let childAnswer = fittedChild.text;
-        if (!fittedChild.kept) {
-          childAnswer =
-            "…[the agent's answer could not be included: the run's context budget is exhausted]";
-          contextBudget?.chargeText(childAnswer);
-        }
-        postContextMessages.push({
-          role: "user",
-          content: subagentContextMessage(agentName, childAnswer),
+        const transferred = yield* runTransferBuiltin({
+          call,
+          args,
+          displayArgs,
+          runSubagent: deps.runSubagent,
+          subagents,
+          images,
+          turn,
+          maxTurn,
+          ...(filter ? { filter } : {}),
+          ...(transcript ? { transcript } : {}),
+          clippedTranscriptWarning,
+          endsOnClientCall,
+          contextBudget,
+          toolResult,
+          author,
         });
-        nextTurn = Math.max(nextTurn, turn + 2);
+        if (transferred.postContextMessage) {
+          postContextMessages.push(transferred.postContextMessage);
+        }
+        if (transferred.nextTurn !== undefined) {
+          nextTurn = Math.max(nextTurn, transferred.nextTurn);
+        }
         continue;
       }
 
       if (builtin && call.name === DISPATCH_TOOL_NAME && deps.runSubagent) {
-        const dispatchSubagent = deps.runSubagent;
-        // A group costs the parent exactly what one transfer costs, however
-        // many children there were.
-        const noRoomToDispatch = delegationTurnRefusal(turn, maxTurn, DISPATCH_TOOL_NAME);
-        if (noRoomToDispatch) {
-          yield toolResult(call, noRoomToDispatch, { bounded: true });
-          continue;
-        }
-        // From `args`, not `displayArgs`, for the same reason a transfer reads
-        // `args.message`: a child is on the far side of the PII boundary and must
-        // receive the **masked** text. `displayArgs` has the values restored — for
-        // display and for MCP dispatch, where the real address is the point — and
-        // handing that to another model would leak what the parent's own context
-        // is protected from. Image ids are not PII patterns, so they read the same
-        // either way and one source per task keeps this honest.
-        const rawTasks = Array.isArray(args.tasks) ? args.tasks : [];
-        if (rawTasks.length === 0) {
-          yield toolResult(
-            call,
-            `Error: ${DISPATCH_TOOL_NAME} requires a non-empty tasks array; each task needs agent_name and message.`,
-            { bounded: true },
-          );
-          continue;
-        }
-        // Validated per task, and one task that cannot run does not cancel the
-        // others — its own section says why. Tasks past the width limit are
-        // refused the same way rather than dropped: a silently shortened list
-        // makes the model answer for work that never ran.
-        const plans = rawTasks.map((raw, index): DispatchPlan => {
-          const task = (typeof raw === "object" && raw !== null ? raw : {}) as Record<
-            string,
-            unknown
-          >;
-          const agentName = typeof task.agent_name === "string" ? task.agent_name : "";
-          const label = agentName || `task ${index + 1}`;
-          if (index >= MAX_DISPATCH_TASKS) {
-            return {
-              agentName: label,
-              failure: `Error: not run — at most ${MAX_DISPATCH_TASKS} agents per ${DISPATCH_TOOL_NAME} call. Ask for this one again.`,
-            };
-          }
-          const message = typeof task.message === "string" ? task.message : "";
-          if (!agentName || !message.trim()) {
-            return {
-              agentName: label,
-              failure: "Error: each task needs agent_name and a non-empty message.",
-            };
-          }
-          // Same refusal a transfer makes, in the slot this shape already has
-          // for a task that cannot run: its section says why, and the tasks
-          // beside it still run.
-          const unreachable = unreachableAgent(agentName, subagents);
-          if (unreachable) {
-            return { agentName, failure: unreachable };
-          }
-          const handed = handedImages(images, task.image_ids);
-          if ("failure" in handed) {
-            return { agentName, failure: handed.failure };
-          }
-          return { agentName, message, childImages: handed.childImages };
+        const dispatched = yield* runDispatchBuiltin({
+          args,
+          runSubagent: deps.runSubagent,
+          subagents,
+          images,
+          turn,
+          maxTurn,
+          ...(filter ? { filter } : {}),
+          ...(transcript ? { transcript } : {}),
+          clippedTranscriptWarning,
+          resultBudget,
+          author,
         });
-        const runnable = plans.flatMap((plan, index) =>
-          "failure" in plan ? [] : [{ plan, index, outcome: {} as { error?: string } }],
-        );
-        // Same report a transfer makes, and for the same reason: these children
-        // receive the same conversation.
-        const clippedForDispatch = runnable.length > 0 ? clippedTranscriptWarning() : undefined;
-        if (clippedForDispatch) {
-          yield { author, warning: clippedForDispatch };
+        yield toolResult(call, dispatched.text, { bounded: dispatched.bounded });
+        if (dispatched.nextTurn !== undefined) {
+          nextTurn = Math.max(nextTurn, dispatched.nextTurn);
         }
-        // Every child advances at once; their chunks interleave, which is what
-        // `author`/`authorPath` on a subagent chunk is for. The returned texts
-        // come back at their own index, not in arrival order.
-        const answers = yield* mergeGenerators(
-          runnable.map(({ plan, outcome }) =>
-            reportChildCompletion(
-              observeChildFailure(
-                filter
-                  ? runSubagentWithPii(
-                      filter,
-                      dispatchSubagent,
-                      plan.agentName,
-                      plan.message,
-                      turn + 1,
-                      maxTurn,
-                      plan.childImages,
-                      transcript,
-                    )
-                  : dispatchSubagent(
-                      plan.agentName,
-                      plan.message,
-                      turn + 1,
-                      maxTurn,
-                      plan.childImages,
-                      transcript,
-                    ),
-                outcome,
-              ),
-              plan.agentName,
-            ),
-          ),
-        );
-        // Split evenly rather than spent in order: a first task that answers at
-        // length would otherwise starve every task after it, which is the whole
-        // point of having asked several at once.
-        //
-        // Divided over what this turn has **left**, not over the per-turn cap.
-        // The cap is what the turn started with, and a dispatch is one call
-        // among however many the model made in the same response — so sizing
-        // the shares against it produced a group larger than the budget
-        // remaining, which the single `fit` below then cut from the tail. The
-        // even split survived right up to the point where it mattered, and the
-        // tasks it exists to protect were the ones erased.
-        //
-        // What is not a task's answer comes off the top first: the group's
-        // `Error:` prefix when nothing succeeded, each section's heading, the
-        // blank line between sections, the reason a task the plan refused
-        // carries, and room for the marker `fit` appends after cutting a
-        // section to its share. Those are this engine's own short strings and
-        // are never the thing to cut. The reason a task that *ran* and failed
-        // carries is different: it is child- or provider-written text whose
-        // length nothing on this side decides, so it is fitted to the task's
-        // share like an answer — uncounted, one long provider error pushed the
-        // group past the budget and the final fit cut the tail: the good
-        // answers. The run's context budget can still bind tighter — it is
-        // measured in tokens, not characters — and when it does the same
-        // `fit` cuts and says so.
-        const sectionHeading = (agentName: string) => `### ${agentName}\n`;
-        // A failed group is prefixed before the shares are sized, so the
-        // prefix is known — and priced — here. The answer decides failure, not
-        // the error chunks that went past: a child whose nested transfer
-        // failed still answers from that tool error, and a descendant's
-        // failure surfaces on this same stream — treating either as the
-        // task's outcome would throw away the answer it actually produced,
-        // and one recovered failure per task would report the whole call
-        // failed.
-        const allFailed = runnable.every((_, position) => !(answers[position] ?? "").trim());
-        const groupPrefix = allFailed
-          ? `Error: no agent in this ${DISPATCH_TOOL_NAME} call produced an answer.\n\n`
-          : "";
-        // The widest marker a share's fit can append: kept never prints more
-        // digits than the turn cap, and no answer outgrows a safe integer.
-        const markerAllowance = turnTruncationMarker(
-          MAX_TOOL_RESULT_CHARS_PER_TURN,
-          Number.MAX_SAFE_INTEGER,
-        ).length;
-        const framingChars =
-          groupPrefix.length +
-          plans.reduce(
-            (total, plan) =>
-              total +
-              sectionHeading(plan.agentName).length +
-              ("failure" in plan ? plan.failure.length : 0),
-            0,
-          ) + Math.max(0, plans.length - 1) * SECTION_SEPARATOR.length;
-        const perTask = Math.max(
-          1,
-          Math.floor(
-            Math.max(0, resultBudget.remaining() - framingChars) / Math.max(1, runnable.length),
-          ) - markerAllowance,
-        );
-        const answerByIndex = new Map<number, string>();
-        runnable.forEach(({ index, outcome }, position) => {
-          const answer = (answers[position] ?? "").trim();
-          answerByIndex.set(
-            index,
-            createToolResultBudget(perTask).fit(
-              answer ||
-                (outcome.error ? `Error: ${outcome.error}` : "Error: the agent returned no answer."),
-            ),
-          );
-        });
-        const sections = plans.map((plan, index) => ({
-          agentName: plan.agentName,
-          text:
-            "failure" in plan
-              ? plan.failure
-              : (answerByIndex.get(index) ?? "Error: the agent did not run."),
-        }));
-        // Prefixed `Error:` only when nothing succeeded. A partial failure is not
-        // a failed call — the sections that answered are usable, and the trace
-        // reads this prefix to decide whether the span failed.
-        const body = sections
-          .map((section) => `${sectionHeading(section.agentName)}${section.text}`)
-          .join(SECTION_SEPARATOR);
-        const dispatchText = `${groupPrefix}${body}`;
-        // Through the turn budget like any other tool result, which is the reason
-        // the answers come back here instead of as an unbudgeted context message.
-        yield toolResult(call, dispatchText);
-        nextTurn = Math.max(nextTurn, turn + 2);
         continue;
       }
 
       if (builtin && call.name === IMAGE_TOOL_NAME && deps.generateImage) {
-        const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
-        const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
-        const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
-        const quality = typeof displayArgs.quality === "string" ? displayArgs.quality : undefined;
-        let resultText: string;
-        // Every outcome here is a string this engine wrote — only the provider's
-        // error body has a length nothing on this side decides.
-        let fromProvider = false;
-        if (!maskedPrompt.trim()) {
-          resultText = "Error: GenerateImage requires a prompt.";
-        } else {
-          try {
-            const image = await deps.generateImage(maskedPrompt, size, quality);
-            yield { author, image: { ...image, prompt: displayPrompt } };
-            const handle = deps.editImage
-              ? images.add(image, `generated: ${displayPrompt.slice(0, 60)}`)
-              : undefined;
-            resultText = handle
-              ? `Image generated and delivered to the user (image id: ${handle.id}, editable with ${EDIT_IMAGE_TOOL_NAME}). Briefly describe what was drawn; do not claim you cannot show images.`
-              : "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.";
-          } catch (error) {
-            input.signal?.throwIfAborted();
-            fromProvider = true;
-            resultText = `Error: image generation failed. ${errorMessage(error)}`;
-          }
-        }
-        // Only the provider's body is fitted. A refusal this engine wrote is
-        // charged whole, or a turn whose budget an earlier tool result spent
-        // would answer "request less data" to a call that forgot its prompt.
-        yield toolResult(call, resultText, { bounded: !fromProvider });
+        const result = yield* generateImageBuiltin({
+          generate: deps.generateImage,
+          canEdit: deps.editImage !== undefined,
+          args,
+          displayArgs,
+          images,
+          ...(input.signal ? { signal: input.signal } : {}),
+          author,
+        });
+        yield toolResult(call, result.text, { bounded: result.bounded });
         continue;
       }
 
       if (builtin && call.name === EDIT_IMAGE_TOOL_NAME && deps.editImage) {
-        const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
-        const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
-        const imageId = typeof displayArgs.image_id === "string" ? displayArgs.image_id : "";
-        const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
-        const quality = typeof displayArgs.quality === "string" ? displayArgs.quality : undefined;
-        const source = images.get(imageId);
-        let resultText: string;
-        /** See GenerateImage above. */
-        let fromProvider = false;
-        if (!maskedPrompt.trim()) {
-          resultText = `Error: ${EDIT_IMAGE_TOOL_NAME} requires a prompt.`;
-        } else if (!source) {
-          const known = images.list().map((handle) => handle.id);
-          resultText = known.length
-            ? `Error: no image with id '${imageId}'. Available images: ${known.join(", ")}.`
-            : `Error: no image is available to edit yet. Generate one first, or ask the user to attach one.`;
-        } else {
-          try {
-            const image = await deps.editImage({
-              prompt: maskedPrompt,
-              images: [{ b64: source.b64, mimeType: source.mimeType }],
-              size,
-              quality,
-            });
-            yield { author, image: { ...image, prompt: displayPrompt } };
-            const handle = images.add(image, `edited from ${source.id}`);
-            resultText = `Image edited and delivered to the user (image id: ${handle.id}). Briefly describe the change; do not claim you cannot show images.`;
-          } catch (error) {
-            input.signal?.throwIfAborted();
-            fromProvider = true;
-            resultText = `Error: image edit failed. ${errorMessage(error)}`;
-          }
-        }
-        // Same split as GenerateImage above.
-        yield toolResult(call, resultText, { bounded: !fromProvider });
+        const result = yield* editImageBuiltin({
+          edit: deps.editImage,
+          args,
+          displayArgs,
+          images,
+          ...(input.signal ? { signal: input.signal } : {}),
+          author,
+        });
+        yield toolResult(call, result.text, { bounded: result.bounded });
         continue;
       }
 
@@ -2484,11 +2581,7 @@ export async function* runAgent(
           if (produced.length > 0) {
             // A picture the tool produced reaches the person who asked for it,
             // and *whether it also enters the context* is the only thing the
-            // model's capability decides. A text-only model used to lose both
-            // at once: the screenshot the user asked for was never yielded, so
-            // it was never streamed, never stored as an artifact, and never
-            // part of the finished conversation — while the tool result told
-            // the model it had been "dropped", which by then it had. The rule
+            // model's capability decides. The rule
             // `EngineChunk.file` already follows says it plainly: bytes that
             // cannot enter the context are still the run's output.
             //
@@ -2536,8 +2629,8 @@ export async function* runAgent(
               // answer about a picture it will never see.
               content +=
                 accepted.length > 0
-                  ? ` ${dropped} more were dropped: at most ${MAX_ATTACHMENTS} images per turn.`
-                  : `\n\n${dropped} image(s) from this tool were dropped: this turn's limit of ${MAX_ATTACHMENTS} images is already spent.`;
+                  ? ` ${dropped} more were dropped: at most ${MAX_IMAGES_PER_TURN} images per turn.`
+                  : `\n\n${dropped} image(s) from this tool were dropped: this turn's limit of ${MAX_IMAGES_PER_TURN} images is already spent.`;
             }
           }
         }

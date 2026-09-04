@@ -25,9 +25,9 @@ chat 의 append-only 히스토리를 교차 기록하지 못하게 막는다.
 
 ## 런은 자기 연결보다 오래 산다
 
-예전에는 chat 런이 브라우저와 함께 끝났다. SSE 계층이 `cancel()` 에서 런을 abort 했기
-때문에, 새로고침·탭 닫기·하드 내비게이션은 반쯤 쓰인 답변과 매달린 사용자 턴을 남겼다.
-지금은 대신 **분리(detach)한다**: `detachOnReturn` (`src/shared/detachOnReturn.ts`) 이
+chat 런은 브라우저 연결과 **분리(detach)한다**. 연결 종료를 런 abort로 해석하면
+새로고침·탭 닫기·하드 내비게이션이 반쯤 쓰인 답변과 매달린 사용자 턴을 남기기 때문이다.
+`detachOnReturn` (`src/shared/detachOnReturn.ts`) 이
 소비자의 `return()` 을 "읽던 사람이 떠났다"로 바꾸고, 백그라운드에서 런을 완료까지 계속
 당기며, 라우트는 그 나머지를 `after()` 에 등록해 graceful shutdown 이 그것을 기다리게 한다.
 그래서 chat 라우트는 `sseResponse` 에 **`AbortController` 를 넘기지 않는다** — 라우트가
@@ -191,7 +191,8 @@ N개의 assistant 턴, tool 텍스트 budget, 그리고 런 전체 단위의 히
 모델이 거부하는 part 를 보내면 턴 전체가 실패한다. 새 턴을 재생할 때는 저장된 최신 이미지
 네 개를 객체 저장소에서 크기 제한 아래 다시 읽어 data URL 로 전달한다. assistant 가 만든
 이미지도 provider 호환 user 이미지 메시지로 이어 붙이므로 후속 턴에서 같은 핸들을 얻는다.
-그보다 오래됐거나 읽지 못한 이미지는 signed URL 로 문맥에는 남지만 편집 핸들은 얻지 못한다.
+그보다 오래됐거나 읽지 못한 이미지는 화면 기록에는 남지만 런 문맥에서는 빠지고 warning으로
+보고된다. 모델 제공자가 원격 URL을 직접 가져가게 두면 이 배포의 SSRF 경계를 우회하기 때문이다.
 
 **문서는 그것을 받은 표면에서 텍스트가 된다.** PDF, 평문 텍스트, Markdown, CSV/TSV, JSON,
 YAML, XML, HTML 은 로컬 extractor가 읽고, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 는

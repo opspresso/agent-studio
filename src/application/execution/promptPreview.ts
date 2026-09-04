@@ -119,9 +119,8 @@ export async function previewPrompt(
           userPromptTemplate: version.userPromptTemplate,
           variables: input.variables,
           now: runClock(deps),
-          // On the same opt-in a run applies. This branch used to skip the
-          // question entirely, so a prompt project previewed anonymously even
-          // where its version had asked to be told who is asking.
+          // The same opt-in a run applies, so prompt and agent previews agree
+          // about whether the caller is named.
           ...callerFor({ version, caller: input.caller }),
         }),
       ),

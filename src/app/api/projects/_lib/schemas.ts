@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { attachedDocumentsSchema, attachedImagesSchema } from "@/app/api/_lib/attachments";
+import {
+  isInlineImageDataUrl,
+  MAX_IMAGE_SIZE_LABEL,
+  MAX_IMAGES_PER_TURN,
+} from "@/domain/llm/imageLimits";
 import type { ChannelToolCall } from "@/domain/llm/types";
 import type { McpBinding } from "@/domain/project/types";
 
@@ -213,15 +218,8 @@ export const previewPromptSchema = versionInputSchema.extend({
 });
 
 /**
- * Cap on one inline image payload. A data URL is ~1 char per byte, so this
- * bounds a request that carries images to a few of them at a few MB each.
- */
-const MAX_IMAGE_URL_CHARS = 10 * 1024 * 1024;
-
-/**
  * One OpenAI content part. Image bytes arrive inline as `data:image/…;base64,…`;
- * a remote image must be https (the provider fetches it, so no other scheme is
- * useful and `file:`-style urls are never intended).
+ * remote URLs are refused so a provider never fetches a caller-controlled host.
  */
 const contentPartSchema = z.union([
   z.object({ type: z.literal("text"), text: z.string() }),
@@ -230,10 +228,9 @@ const contentPartSchema = z.union([
     image_url: z.object({
       url: z
         .string()
-        .max(MAX_IMAGE_URL_CHARS, "image payload is too large")
         .refine(
-          (url) => url.startsWith("data:image/") || url.startsWith("https://"),
-          "image url must be a data:image/… or https:// url",
+          isInlineImageDataUrl,
+          `image must be a supported data:image/…;base64,… payload no larger than ${MAX_IMAGE_SIZE_LABEL}`,
         ),
       detail: z.enum(["low", "high", "auto"]).optional(),
     }),
@@ -262,7 +259,12 @@ export const chatMessageSchema = z.object({
   tool_calls: z.array(channelToolCallSchema).optional(),
   tool_call_id: z.string().optional(),
   reasoning_content: z.string().optional(),
-});
+}).refine(
+  ({ content }) =>
+    !Array.isArray(content) ||
+    content.filter((part) => part.type === "image_url").length <= MAX_IMAGES_PER_TURN,
+  { message: `at most ${MAX_IMAGES_PER_TURN} images per message`, path: ["content"] },
+);
 
 export const predictSchema = z.object({
   variables: z.record(z.string(), z.string()).optional(),

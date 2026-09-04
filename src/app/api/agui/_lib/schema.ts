@@ -1,12 +1,18 @@
 import { z } from "zod";
 import type { AguiRunInput } from "@/domain/agui/types";
+import { base64ByteLength, isBase64Payload } from "@/domain/llm/base64";
 import {
   base64Chars,
-  MAX_ATTACHMENT_BYTES,
-  MAX_ATTACHMENTS,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGES_PER_TURN,
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
-import { documentKind, MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
+import {
+  documentKind,
+  MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENT_SIZE_LABEL,
+  MAX_DOCUMENTS,
+} from "@/domain/llm/documentLimits";
 
 /**
  * The protocol's `RunAgentInput`, validated with this app's zod rather than
@@ -26,17 +32,18 @@ const toolCallSchema = z.object({
   function: z.object({ name: z.string().min(1), arguments: z.string() }),
 });
 
-const imageSourceSchema = z.discriminatedUnion("type", [
-  z.object({
+const imageSourceSchema = z
+  .object({
     type: z.literal("data"),
-    value: z.string().max(base64Chars(MAX_ATTACHMENT_BYTES), "image payload is too large"),
+    value: z.string().max(base64Chars(MAX_IMAGE_BYTES), "image payload is too large"),
     mimeType: z.enum(SUPPORTED_IMAGE_TYPES),
-  }),
-  z.object({
-    type: z.literal("url"),
-    value: z.string().startsWith("https://", "image url must be an https:// url"),
-  }),
-]);
+  })
+  .refine(({ value }) => isBase64Payload(value), {
+    message: "image payload is not valid base64",
+  })
+  .refine(({ value }) => base64ByteLength(value) <= MAX_IMAGE_BYTES, {
+    message: "image payload is too large",
+  });
 
 /** A name an application put in the open `metadata`; the mapping reads `name` or `filename`. */
 const documentMetadataSchema = z.record(z.string(), z.unknown()).optional();
@@ -46,10 +53,24 @@ const documentPartSchema = z
     type: z.literal("document"),
     source: z.object({
       type: z.literal("data"),
-      value: z.string().min(1).max(base64Chars(MAX_DOCUMENT_BYTES), "document is larger than 10MB"),
+      value: z
+        .string()
+        .min(1)
+        .max(
+          base64Chars(MAX_DOCUMENT_BYTES),
+          `document is larger than ${MAX_DOCUMENT_SIZE_LABEL}`,
+        ),
       mimeType: z.string().max(255),
     }),
     metadata: documentMetadataSchema,
+  })
+  .refine(({ source }) => isBase64Payload(source.value), {
+    message: "document payload is not valid base64",
+    path: ["source", "value"],
+  })
+  .refine(({ source }) => base64ByteLength(source.value) <= MAX_DOCUMENT_BYTES, {
+    message: `document is larger than ${MAX_DOCUMENT_SIZE_LABEL}`,
+    path: ["source", "value"],
   })
   .refine(
     ({ source, metadata }) =>
@@ -79,8 +100,8 @@ const messageSchema = z.discriminatedUnion("role", [
       z
         .array(inputContentSchema)
         .refine(
-          (parts) => parts.filter((part) => part.type === "image").length <= MAX_ATTACHMENTS,
-          `at most ${MAX_ATTACHMENTS} images per message`,
+          (parts) => parts.filter((part) => part.type === "image").length <= MAX_IMAGES_PER_TURN,
+          `at most ${MAX_IMAGES_PER_TURN} images per message`,
         )
         .refine(
           (parts) => parts.filter((part) => part.type === "document").length <= MAX_DOCUMENTS,

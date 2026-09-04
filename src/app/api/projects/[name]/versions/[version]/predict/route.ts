@@ -98,7 +98,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       // Files carry a reference, not bytes — the bracket kept those — so the
       // address is minted here, where the reader is known. A file that cannot be
       // addressed joins the warnings rather than being dropped in silence: prose
-      // about a report with no report attached is what this endpoint used to send.
+      // about a report without the report is not a complete answer.
       const produced = await resolveProducedFiles(
         run.files,
         signArtifactUrl,

@@ -1,7 +1,7 @@
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
@@ -84,6 +84,10 @@ function entry(patch: Partial<McpServer>): McpServer {
 beforeEach(() => {
   clearMcpDiscoveryCache();
   stubMcpServer();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("managed loopback dispatch", () => {

@@ -410,7 +410,7 @@ describe("executeDelivery", () => {
 
   it("says a run drew, when drawing was the whole answer", async () => {
     // An image project on a trigger produces a picture, a usage row and a
-    // trace — and the history row carries text, so it used to close as
+    // trace — and the history row carries text, so it would close as
     // `succeeded` with an empty result, which is what a run that produced
     // nothing looks like. The bytes still stop here; the record of them does not.
     const f = fixture({

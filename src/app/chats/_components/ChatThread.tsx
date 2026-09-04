@@ -313,8 +313,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           return;
         }
         // A tail read: this view watched the run arrive and holds every turn
-        // before it. The whole transcript used to be re-read here on every
-        // finished turn, re-signing each stored image with it.
+        // before it, so a full transcript read would only re-sign stored images.
         const fresh = await syncFromServer({ tail: true });
         // Still the retire in charge of this turn? Deliberately this rather than
         // a flag an effect cleanup sets: the re-run does not redo the work — the

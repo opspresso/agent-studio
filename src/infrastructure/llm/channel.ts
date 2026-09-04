@@ -24,6 +24,7 @@ import type {
   ChannelUsage,
   LlmChannel,
 } from "@/domain/llm/channel";
+import { isInlineImageDataUrl } from "@/domain/llm/imageLimits";
 
 const clients = createLlmClientCache<OpenAI>();
 
@@ -54,6 +55,16 @@ function getClient(target: ResolvedTarget): OpenAI {
 
 /** Translate domain params into an OpenAI Chat Completions request body. */
 function toRequestBody(params: ChannelParams): Record<string, unknown> {
+  for (const message of params.messages) {
+    if (!Array.isArray(message.content)) {
+      continue;
+    }
+    for (const part of message.content) {
+      if (part.type === "image_url" && !isInlineImageDataUrl(part.image_url.url)) {
+        throw new Error("LLM image inputs must contain bounded inline image bytes");
+      }
+    }
+  }
   const body: Record<string, unknown> = {
     model: params.model,
     messages: params.messages,
