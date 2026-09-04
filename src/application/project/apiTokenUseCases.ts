@@ -1,5 +1,9 @@
 import type { ProjectRepository } from "@/domain/project/repository";
-import { tierMayUseApiTokens, type MemberTier } from "@/domain/member/tiers";
+import {
+  DEFAULT_MEMBER_TIER,
+  tierMayUseApiTokens,
+  type MemberTier,
+} from "@/domain/member/tiers";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { generateSecretValue, hashSecret, secretHashEquals } from "@/shared/generatedSecret";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -9,9 +13,8 @@ import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
 /**
  * How this slice learns a member's tier — injected by the composition root,
- * like the admin check in `projectUseCases`. `null` means unknown (no row, or
- * the read failed) and the gate fails open: the lookup failing must not take
- * token issuance down with it.
+ * like the admin check in `projectUseCases`. `null` means no member row and is
+ * treated as the default tier; storage failures reject instead.
  */
 export type MemberTierLookup = (email: string) => Promise<MemberTier | null>;
 
@@ -44,8 +47,8 @@ export async function generateApiToken(
     // owner, so the owner's tier decides whether the credential may exist —
     // an admin minting one for a guest-owned project would mint a token the
     // execution gate refuses anyway.
-    const ownerTier = await memberTier(project.ownerEmail);
-    if (ownerTier && !tierMayUseApiTokens(ownerTier)) {
+    const ownerTier = (await memberTier(project.ownerEmail)) ?? DEFAULT_MEMBER_TIER;
+    if (!tierMayUseApiTokens(ownerTier)) {
       throw new ForbiddenError(
         `The project owner's tier ("${ownerTier}") does not allow API tokens`,
       );

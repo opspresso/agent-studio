@@ -182,14 +182,14 @@ describe("generateApiToken", () => {
       expect(stored()).toBeNull();
     });
 
-    it("allows a member owner, and fails open on an unknown tier", async () => {
+    it("allows a member owner and treats a missing row as the default guest tier", async () => {
       const { repo } = makeRepo(project());
       await expect(
         generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async () => "member"),
       ).resolves.toBeTruthy();
       await expect(
         generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async () => null),
-      ).resolves.toBeTruthy();
+      ).rejects.toBeInstanceOf(ForbiddenError);
     });
   });
 });

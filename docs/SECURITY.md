@@ -163,8 +163,8 @@ project* 의 한도에서 지출한다. token 은 서비스 자격 증명이다.
 것은 token 게이트다. API token 권한이 없는 tier 는 token 을 발급할 수도 없고(소유자 범위,
 admin 포함) 이미 있는 token 으로 인증할 수도 없다. `authenticateExecution` 은 모든 bearer
 요청에서 소유자의 현재 tier 를 다시 확인하고 403 으로 답하므로, 강등은 그 소유자의 token 을
-즉시 멈춘다. 두 확인 모두 tier 를 읽지 못할 때는 fail-open 한다. 저장소의 일시적 장애가 모든
-token 을 내려서는 안 되며, 다른 모든 가드가 자기 읽기에 취하는 자세와 같다.
+즉시 멈춘다. 멤버 행이 없으면 기본 `guest` 로 거절하고, tier 저장소를 읽지 못하면 503 으로
+fail-closed 한다. 권한 저장소 장애가 이미 제한된 credential 을 다시 활성화해서는 안 된다.
 
 admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘기는 대신 `assertProjectWritable`
 *안에서* 확인된다. 규칙은 "소유자 또는 admin"이고, 한 호출자가 넘기는 것을 잊은 플래그는 그
