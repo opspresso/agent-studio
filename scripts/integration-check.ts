@@ -82,9 +82,12 @@ async function main() {
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
-  const { externalAgentHeadersContext, mcpHeadersContext } = await import(
-    "@/domain/security/secretContext"
-  );
+  const {
+    externalAgentHeadersContext,
+    mcpConnectionSecretContext,
+    mcpHeadersContext,
+    mcpOAuthStateContext,
+  } = await import("@/domain/security/secretContext");
   const { keys: dbKeys } = await import("@/infrastructure/db/keys");
   const { createA2aTaskStore } = await import("@/infrastructure/a2a/taskStore");
   const { TaskState } = await import("@a2a-js/sdk");
@@ -397,12 +400,21 @@ async function main() {
       projectName,
       serverName,
       clientId: "client-abc",
-      clientSecret: encryptSecret("client-secret"),
+      clientSecret: encryptSecret(
+        "client-secret",
+        mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+      ),
       issuer: "https://auth.example.com",
       resource: "https://mcp.example.com",
       scopes: ["chat:write"],
-      accessToken: encryptSecret("access-1"),
-      refreshToken: encryptSecret("refresh-1"),
+      accessToken: encryptSecret(
+        "access-1",
+        mcpConnectionSecretContext(projectName, serverName, "access-token"),
+      ),
+      refreshToken: encryptSecret(
+        "refresh-1",
+        mcpConnectionSecretContext(projectName, serverName, "refresh-token"),
+      ),
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       status: "connected",
       connectedBy: "owner@example.com",
@@ -411,7 +423,14 @@ async function main() {
     });
     const conn = await mcpConnectionRepository.get(projectName, serverName);
     assert.ok(conn, "mcp connection get");
-    assert.equal(decryptSecret(conn.clientSecret ?? ""), "client-secret", "client secret round-trip");
+    assert.equal(
+      decryptSecret(
+        conn.clientSecret ?? "",
+        mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+      ),
+      "client-secret",
+      "client secret round-trip",
+    );
     // Losing either would silently unbind the credentials and tokens from the
     // servers they belong to — the whole of SEP-2352, and of the audience check
     // that stops a repointed entry carrying them somewhere else.
@@ -428,8 +447,14 @@ async function main() {
     const stored = conn.refreshToken;
     assert.equal(
       await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
-        accessToken: encryptSecret("access-2"),
-        refreshToken: encryptSecret("refresh-2"),
+        accessToken: encryptSecret(
+          "access-2",
+          mcpConnectionSecretContext(projectName, serverName, "access-token"),
+        ),
+        refreshToken: encryptSecret(
+          "refresh-2",
+          mcpConnectionSecretContext(projectName, serverName, "refresh-token"),
+        ),
         expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
         status: "connected",
         updatedAt: new Date().toISOString(),
@@ -439,8 +464,14 @@ async function main() {
     );
     assert.equal(
       await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
-        accessToken: encryptSecret("access-3"),
-        refreshToken: encryptSecret("refresh-3"),
+        accessToken: encryptSecret(
+          "access-3",
+          mcpConnectionSecretContext(projectName, serverName, "access-token"),
+        ),
+        refreshToken: encryptSecret(
+          "refresh-3",
+          mcpConnectionSecretContext(projectName, serverName, "refresh-token"),
+        ),
         expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
         status: "connected",
         updatedAt: new Date().toISOString(),
@@ -449,7 +480,10 @@ async function main() {
       "refresh from a superseded refresh token is refused",
     );
     assert.equal(
-      decryptSecret((await mcpConnectionRepository.get(projectName, serverName))?.accessToken ?? ""),
+      decryptSecret(
+        (await mcpConnectionRepository.get(projectName, serverName))?.accessToken ?? "",
+        mcpConnectionSecretContext(projectName, serverName, "access-token"),
+      ),
       "access-2",
       "the winner's token survives the race",
     );
@@ -471,12 +505,13 @@ async function main() {
     assert.equal(revoked?.refreshToken, undefined, "cleared refresh token is absent, not null");
     assert.equal(revoked?.status, "needs_reauth", "status recorded");
 
+    const oauthState = `it-state-${suffix}`;
     await mcpOAuthStateRepository.put(
       {
-        state: `it-state-${suffix}`,
+        state: oauthState,
         projectName,
         serverName,
-        codeVerifier: encryptSecret("verifier"),
+        codeVerifier: encryptSecret("verifier", mcpOAuthStateContext(oauthState)),
         userEmail: "owner@example.com",
         issuer: "https://auth.example.com",
         issParameterSupported: true,
@@ -484,14 +519,19 @@ async function main() {
       },
       600,
     );
-    const consumed = await mcpOAuthStateRepository.consume(`it-state-${suffix}`);
+    const consumed = await mcpOAuthStateRepository.consume(oauthState);
     assert.equal(consumed?.userEmail, "owner@example.com", "oauth state consumed once");
     // The expected issuer has to survive the round trip or the RFC 9207 check at
     // the callback has nothing to compare against and fails the flow closed.
     assert.equal(consumed?.issuer, "https://auth.example.com", "expected issuer round-trips");
     assert.equal(consumed?.issParameterSupported, true, "iss advertisement round-trips");
     assert.equal(
-      await mcpOAuthStateRepository.consume(`it-state-${suffix}`),
+      decryptSecret(consumed?.codeVerifier ?? "", mcpOAuthStateContext(oauthState)),
+      "verifier",
+      "PKCE verifier context round-trip",
+    );
+    assert.equal(
+      await mcpOAuthStateRepository.consume(oauthState),
       null,
       "a replayed state is gone",
     );

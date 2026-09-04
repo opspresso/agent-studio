@@ -50,3 +50,15 @@ export function versionMcpHeadersContext(
 ): string {
   return JSON.stringify(["project", projectName, "version", versionName, "mcp", serverName]);
 }
+
+export function mcpConnectionSecretContext(
+  projectName: string,
+  serverName: string,
+  field: "client-secret" | "access-token" | "refresh-token",
+): string {
+  return JSON.stringify(["project", projectName, "mcp", serverName, field]);
+}
+
+export function mcpOAuthStateContext(state: string): string {
+  return JSON.stringify(["mcp-oauth-state", state, "pkce-verifier"]);
+}

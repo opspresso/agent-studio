@@ -202,6 +202,9 @@ dispatch 의 override 병합만 대소문자를 무시하고, AAD 는 environmen
 v1 형식을 유지한다. Version 의 MCP header override 는 `project + version + server + header` 에
 묶인다. 저장된 version 을 임시 preview draft 로 읽을 때는 값을 복호화해 `draft` 컨텍스트로 다시
 암호화하고, project clone 은 소유자의 override 를 애초에 복사하지 않는다.
+MCP OAuth connection 의 client secret·access token·refresh token 은 `project + server + field` 에,
+인가 중인 PKCE verifier 는 일회성 state 값에 묶인다. Token refresh의 compare-and-set은 암호문을
+읽은 그대로 비교하므로 v2의 무작위 IV와 AAD 전환 뒤에도 같은 동시성 규칙을 유지한다.
 부팅, 저장 시크릿 암호화, proxied URL 서명은 모두 `decodeAes256Key` 를 거쳐 canonical base64 로
 인코딩된 정확히 32바이트 key 만 사용한다.
 
