@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 const globals = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 const layout = readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
 const appLayout = readFileSync(new URL("../src/components/AppLayout.tsx", import.meta.url), "utf8");
+const appLayoutStyles = readFileSync(
+  new URL("../src/components/AppLayout.module.css", import.meta.url),
+  "utf8",
+);
 
 describe("disabled input legibility", () => {
   it("keeps every Mantine input shell at full opacity with readable ink", () => {
@@ -38,7 +42,15 @@ describe("disabled input legibility", () => {
   });
 
   it("uses AppShell's main landmark without nesting another one", () => {
-    expect(appLayout).toContain('<AppShell.Main className={classes.main} id="main-content">');
+    expect(appLayout).toContain('<AppShell.Main id="main-content">');
+    expect(appLayout).toContain('<div className={classes.main}>{children}</div>');
     expect(appLayout).not.toContain("<main");
+  });
+
+  it("collapses the brand wordmark before the signed-out header clips", () => {
+    expect(appLayout).toContain('<div className={classes.brandText}>');
+    expect(appLayoutStyles).toMatch(
+      /@media \(max-width: \$mantine-breakpoint-xs\)[\s\S]*?\.brandText \{[\s\S]*?display: none;/,
+    );
   });
 });

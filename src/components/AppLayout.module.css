@@ -29,6 +29,12 @@
   opacity: 0.78;
 }
 
+@media (max-width: $mantine-breakpoint-xs) {
+  .brandText {
+    display: none;
+  }
+}
+
 .navbar {
   display: flex;
   flex-direction: column;
