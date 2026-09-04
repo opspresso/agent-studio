@@ -48,7 +48,17 @@ export default function IntegrationsPage() {
     };
   }, [name]);
 
-  if (loading || viewer === null) {
+  if (loading) {
+    return <LoadingText />;
+  }
+  if (error) {
+    return (
+      <Alert color="red" variant="light" maw={640}>
+        {error}
+      </Alert>
+    );
+  }
+  if (viewer === null) {
     return <LoadingText />;
   }
   if (!canEditProject(viewer, ownerEmail)) {
@@ -64,12 +74,6 @@ export default function IntegrationsPage() {
       <Text fz="sm" c="dimmed">
         {t("pint.lede")}
       </Text>
-      {error && (
-        <Alert color="red" variant="light">
-          {error}
-        </Alert>
-      )}
-
       <TokenSection projectName={name} />
 
       <SlackSection projectName={name} projectType={projectType} />

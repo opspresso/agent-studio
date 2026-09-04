@@ -27,6 +27,7 @@ export default function SettingsPage() {
   const [departmentCode, setDepartmentCode] = useState("");
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -46,7 +47,7 @@ export default function SettingsPage() {
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load project");
+          setLoadError(e instanceof Error ? e.message : "Failed to load project");
         }
       } finally {
         if (!cancelled) {
@@ -100,7 +101,19 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading || viewer === null) {
+  if (loading) {
+    return <LoadingText />;
+  }
+
+  if (loadError) {
+    return (
+      <Alert color="red" variant="light" maw={640}>
+        {loadError}
+      </Alert>
+    );
+  }
+
+  if (viewer === null) {
     return <LoadingText />;
   }
 
