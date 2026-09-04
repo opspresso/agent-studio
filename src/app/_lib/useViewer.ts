@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Viewer } from "@/lib/viewer";
+import { redirectToLogin } from "./authRedirect";
 
 /**
  * Re-exported so a page keeps importing the viewer's shape from the hook that
@@ -26,14 +27,20 @@ export function useViewer(): Viewer | null {
   useEffect(() => {
     let cancelled = false;
     fetch("/api/me")
-      .then((res) => (res.ok ? (res.json() as Promise<Viewer>) : null))
+      .then((res) => {
+        if (res.status === 401) {
+          redirectToLogin();
+          return null;
+        }
+        return res.ok ? (res.json() as Promise<Viewer>) : null;
+      })
       .then((data) => {
         if (!cancelled && data) {
           setViewer(data);
         }
       })
       .catch(() => {
-        // Signed out, or the request failed; callers treat null as "cannot edit".
+        // A non-authentication failure leaves the caller in its loading/read-only state.
       });
     return () => {
       cancelled = true;

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import {
   ActionIcon,
   AppShell,
@@ -42,6 +43,8 @@ import { LocaleToggle } from "./LocaleToggle";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
 import classes from "./AppLayout.module.css";
+import { redirectToLogin } from "@/app/_lib/authRedirect";
+import { isPublicPagePath } from "@/shared/pageAccess";
 
 /*
  * Labels are message keys, resolved at render. `key` is separate from `label`
@@ -163,6 +166,17 @@ export function AppLayout({
   const pathname = usePathname();
   const t = useT();
   const [opened, { toggle, close }] = useDisclosure(false);
+  const requiresLogin = viewer === null && !isPublicPagePath(pathname);
+
+  useEffect(() => {
+    if (requiresLogin) {
+      redirectToLogin();
+    }
+  }, [pathname, viewer]);
+
+  if (requiresLogin) {
+    return null;
+  }
 
   /*
    * Every nav target is behind the sign-in gate, so offering them to a

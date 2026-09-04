@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
+import { isPublicPagePath } from "@/shared/pageAccess";
 
 /**
- * The sign-in gate for pages, and the single owner of which pages are public.
+ * The sign-in gate for pages. `pageAccess.ts` owns which pages are public.
  *
  * The API layer already refuses a request without a session (`withAuth`), but a
  * 401 only arrives *after* the page has rendered: a signed-out visitor used to
@@ -22,14 +23,12 @@ import { getSessionCookie } from "better-auth/cookies";
  * not be the authorization decision — that stays server-side in `withAuth` and
  * `assertProjectWritable`, which see the request that actually touches data. So a
  * cookie that is present but no longer valid reaches the page and gets its 401
- * from the API behind it; what this removes is the ordinary signed-out case,
- * which is all of them in practice.
+ * from the API behind it; the browser response boundary then sends the tab to
+ * `/login`. This gate removes the ordinary no-cookie case before render.
  */
-const PUBLIC_PATHS = new Set(["/", "/login"]);
-
 export function proxy(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
-  if (PUBLIC_PATHS.has(pathname) || getSessionCookie(request)) {
+  if (isPublicPagePath(pathname) || getSessionCookie(request)) {
     return NextResponse.next();
   }
 

@@ -38,8 +38,9 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 | 페이지 | `src/proxy.ts` | 로그아웃 상태의 방문자를 `/login?next=…` 로 리다이렉트 |
 | API 라우트 | `withAuth` / `withMemberAuth` / `withAdminAuth` (`src/lib/session.ts`) | 세션이 없으면 401, 요구 tier(`member`, `admin`) 미만이면 403; 핸들러에 `SessionUser` 를 건넨다 |
 
-`src/proxy.ts` 는 어떤 페이지가 공개인지에 대한 단일 소유자다. `/` 와 `/login`. matcher 가
-닿는 나머지 전부는 세션을 요구하므로 **새 라우트는 기본이 보호 상태** 다. 그 방향은
+`src/shared/pageAccess.ts` 는 어떤 페이지가 공개인지에 대한 단일 소유자다. `/` 와 `/login`.
+`src/proxy.ts`와 브라우저의 만료 세션 redirect가 같은 판정을 읽는다. matcher 가 닿는 나머지
+전부는 세션을 요구하므로 **새 라우트는 기본이 보호 상태** 다. 그 방향은
 의도적이다. 공개 페이지를 목록에 넣는 것을 잊으면 사용자가 1분 안에 신고하는 리다이렉트가
 생기지만, 비공개 페이지를 넣는 것을 잊으면 조용히 실패한다.
 
@@ -47,8 +48,10 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 내비게이션마다 세션을 읽어야 하고, 그러고도 그것은 인가 결정이 아니다. 인가는 실제로
 데이터를 만지는 요청을 보는 `withAuth` 와 `assertProjectWritable` 에서 서버 측에 남는다.
 따라서 존재하지만 유효하지 않은 쿠키는 페이지에 도달하고 그 뒤의 API 에서 401 을 받는다.
-게이트가 없애는 것은 평범한 로그아웃 상태이며, 예전에는 그 방문자에게 콘솔 전체와 에러 박스를
-함께 건네주곤 했다.
+브라우저의 공통 응답 경계는 같은 origin의 `/api/*` 401을 받으면 현재 path·query·fragment를
+`next`로 보존해 `/login`으로 full navigation한다. Root layout이 이미 세션을 유효하지 않다고
+판정한 보호 페이지도 같은 경로를 탄다. 게이트가 없애는 것은 평범한 로그아웃 상태이며,
+예전에는 그 방문자에게 콘솔 전체와 에러 박스를 함께 건네주곤 했다.
 
 `/api` 는 matcher 밖에 있다. 그 라우트들은 스스로 인증하며, 프로그램 호출자에게는 HTML
 리다이렉트가 아니라 반드시 401 로 답해야 한다.
