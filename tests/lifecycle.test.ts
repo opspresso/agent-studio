@@ -40,5 +40,12 @@ describe("lifecycle", () => {
     beginShutdown();
     expect(isShuttingDown()).toBe(true);
     expect(hooks).toBe(1);
+
+    let lateHooks = 0;
+    onShutdown(() => {
+      lateHooks += 1;
+    });
+    await Promise.resolve();
+    expect(lateHooks).toBe(1);
   });
 });

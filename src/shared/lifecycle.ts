@@ -16,12 +16,22 @@ export function isShuttingDown(): boolean {
 type ShutdownHook = () => void | Promise<void>;
 const hooks: ShutdownHook[] = [];
 
+function runShutdownHook(hook: ShutdownHook): void {
+  void Promise.resolve()
+    .then(hook)
+    .catch((error: unknown) => log.error("boot", "shutdown hook failed", error));
+}
+
 /**
  * Run `hook` when the instance begins draining — a last chance to flush a
  * buffer (OTLP spans) while requests finish. Best-effort: the drain never
  * waits on a hook, and a hook that throws is logged, not fatal.
  */
 export function onShutdown(hook: ShutdownHook): void {
+  if (draining) {
+    runShutdownHook(hook);
+    return;
+  }
   hooks.push(hook);
 }
 
@@ -32,9 +42,7 @@ export function beginShutdown(): void {
   }
   draining = true;
   for (const hook of hooks) {
-    void Promise.resolve()
-      .then(hook)
-      .catch((error: unknown) => log.error("boot", "shutdown hook failed", error));
+    runShutdownHook(hook);
   }
 }
 
