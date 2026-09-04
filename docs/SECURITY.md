@@ -188,8 +188,12 @@ access/refresh token·client secret·인가 중인 PKCE verifier, Slack 봇 toke
 Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, 앱 전역 A2A 키와
 이름 있는 A2A 클라이언트 키, project API token, webhook trigger 시크릿, 그리고 시크릿인 앱
 설정(LLM API 키와 plugins 저장소의 GitHub token)은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM
-암호화되어 `enc:v1:` 접두사 아래 저장된다
-(`src/infrastructure/crypto/secretEncryption.ts`).
+암호화된다(`src/infrastructure/crypto/secretEncryption.ts`). 형식은 두 가지다. 기존 `enc:v1:`
+값은 그대로 읽고, 저장 위치의 컨텍스트를 함께 인증하는 값은 `enc:v2:` 로 쓴다. v2 는 row 와
+field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에 실패한다. 현재
+project API token 이 `project + name + api-token` 컨텍스트를 쓰며, 기존 v1 token 은 재발급
+전까지 계속 동작한다. 나머지 시크릿은 각 저장·복사 경로가 같은 컨텍스트를 재구성하도록
+전환하기 전까지 v1 형식을 유지한다.
 부팅, 저장 시크릿 암호화, proxied URL 서명은 모두 `decodeAes256Key` 를 거쳐 canonical base64 로
 인코딩된 정확히 32바이트 key 만 사용한다.
 
@@ -215,7 +219,7 @@ Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시�
 업데이트 시 마스킹된 값이나 빈 값은 **저장된 시크릿을 보존한다**. 저장된 상대가 없는 키에 온
 마스킹된 값은 **버린다**. 마스크는 이미 있는 시크릿을 확인해 줄 수만 있고, 만들어 낼 수는
 없다. 헤더 오버라이드 맵의 `null` 은 명시적 제거로 그대로 통과한다. 제거는 시크릿이 아니다.
-새로 입력한 값은 `enc:v1:` 로 시작하더라도 평문으로 취급해 항상 새로 암호화한다. 암호문 접두사는
+새로 입력한 값은 `enc:v1:` 또는 `enc:v2:` 로 시작하더라도 평문으로 취급해 항상 새로 암호화한다. 암호문 접두사는
 저장소에서 읽은 값의 형식일 뿐, API 입력이 신뢰할 수 있는 저장 값이라는 증거가 아니다.
 버전별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerprint 와 함께 보관한다. 같은
 이름의 URL 이 바뀌거나 fingerprint 가 없는 예전 값이면 옛 시크릿을 보내지 않는다. 새 endpoint

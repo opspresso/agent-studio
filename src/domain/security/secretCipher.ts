@@ -14,11 +14,11 @@ export type HeaderOverrides = Record<string, string | null>;
 
 export interface SecretCipher {
   /** Encrypt new plaintext for storage, regardless of any prefix it contains. */
-  encrypt(plaintext: string): string;
+  encrypt(plaintext: string, context?: string): string;
   /** Decrypt a stored value. Plaintext input passes through unchanged. */
-  decrypt(value: string): string;
+  decrypt(value: string, context?: string): string;
   /** Length-preserving display mask; reveals edge characters on longer values. */
-  mask(value: string): string;
+  mask(value: string, context?: string): string;
   /** True when a submitted value is a mask echoed back, not a new secret. */
   isMasked(value: string): boolean;
 
@@ -47,5 +47,5 @@ export interface SecretCipher {
    * behind the port means a decrypted credential never exists as a value in the
    * application layer, and callers cannot accidentally compare with `===`.
    */
-  decryptEquals(stored: string, candidate: string): boolean;
+  decryptEquals(stored: string, candidate: string, context?: string): boolean;
 }

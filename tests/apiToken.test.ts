@@ -30,7 +30,12 @@ import {
   secretPrefix,
 } from "@/shared/generatedSecret";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import { decryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
+import {
+  decryptSecret,
+  encryptSecret,
+  isEncrypted,
+} from "@/infrastructure/crypto/secretEncryption";
+import { projectApiTokenContext } from "@/domain/security/secretContext";
 
 const OWNER = "owner@example.com";
 
@@ -116,7 +121,8 @@ describe("generateApiToken", () => {
     // with no hash left over from the form that could not be read back.
     expect(isEncrypted(stored()?.token ?? "")).toBe(true);
     expect(stored()?.token).not.toBe(token);
-    expect(decryptSecret(stored()?.token ?? "")).toBe(token);
+    expect(stored()?.token?.startsWith("enc:v2:")).toBe(true);
+    expect(decryptSecret(stored()?.token ?? "", projectApiTokenContext("my-bot"))).toBe(token);
     expect(stored()?.tokenHash).toBeUndefined();
 
     // The stored mask is what lets the console show which token is set without
@@ -205,6 +211,28 @@ describe("verifyProjectApiToken", () => {
     const { repo } = makeRepo(project());
     await generateApiToken(repo, "my-bot", OWNER);
     expect(await verifyProjectApiToken(repo, "my-bot", "ast_wrong")).toBeNull();
+  });
+
+  it("keeps a legacy v1 encrypted token usable during migration", async () => {
+    const { repo } = makeRepo(project());
+    const token = "ast_legacy-encrypted-token";
+    await repo.setApiToken("my-bot", {
+      token: encryptSecret(token),
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect(await verifyProjectApiToken(repo, "my-bot", token)).toBe(OWNER);
+    expect(await revealApiToken(repo, "my-bot", OWNER)).toMatchObject({ token });
+  });
+
+  it("does not authenticate ciphertext moved from another project row", async () => {
+    const source = makeRepo(project());
+    const { token } = await generateApiToken(source.repo, "my-bot", OWNER);
+    const target = makeRepo({ ...project(), name: "other-bot" });
+    await target.repo.setApiToken("other-bot", source.stored()!);
+
+    expect(await verifyProjectApiToken(target.repo, "other-bot", token)).toBeNull();
+    await expect(revealApiToken(target.repo, "other-bot", OWNER)).rejects.toThrow();
   });
 
   it("returns null when no token is configured", async () => {

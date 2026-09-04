@@ -38,6 +38,18 @@ describe("header encryption round-trip", () => {
     expect(stored).not.toBe(copiedCiphertext);
     expect(decryptSecret(stored)).toBe(copiedCiphertext);
   });
+
+  it("binds a v2 ciphertext to its storage context while still reading v1", () => {
+    const legacy = encryptSecret("legacy-secret");
+    const bound = encryptSecret("bound-secret", "project:alpha:token");
+
+    expect(legacy.startsWith("enc:v1:")).toBe(true);
+    expect(bound.startsWith("enc:v2:")).toBe(true);
+    expect(decryptSecret(legacy, "project:alpha:token")).toBe("legacy-secret");
+    expect(decryptSecret(bound, "project:alpha:token")).toBe("bound-secret");
+    expect(() => decryptSecret(bound, "project:beta:token")).toThrow();
+    expect(() => decryptSecret(bound)).toThrow("requires its encryption context");
+  });
 });
 
 describe("length-preserving masking", () => {
