@@ -952,6 +952,8 @@ export const en = {
     "Stored, but not installed in this instance's registry — a name the published catalog also carries, or, right after saving, a replica that has not run its next catalog tick. A refusal's reason is in the server log.",
   "models.selfHosted.empty": "The channel serves no models right now.",
   "models.selfHosted.declare": "Declare",
+  "models.selfHosted.edit": "Edit",
+  "models.selfHosted.save": "Save",
   "models.selfHosted.remove": "Remove",
   "models.selfHosted.cancel": "Cancel",
   "models.selfHosted.displayName": "Display name",

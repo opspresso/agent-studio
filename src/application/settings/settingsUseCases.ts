@@ -10,6 +10,7 @@ import {
   getModelConfig,
   loadSelfHostedModels,
   MAX_HIDDEN_MODELS,
+  modelType,
   offeredModels,
   selfHostedModelRejectReason,
   SUPPORTED_PROVIDERS,
@@ -417,19 +418,25 @@ export function createSettingsUseCases(
           }
           next.selfHostedModels = declarations;
         }
-        const declaredIds = new Set((next.selfHostedModels ?? []).map((entry) => entry.id));
-        const missingSelections = [
-          next.embeddingModel ?? optionalEnv(env.EMBEDDING_MODEL),
-          next.rerankerModel ?? optionalEnv(env.RERANKER_MODEL),
-        ].filter(
-          (id): id is string =>
-            id?.startsWith("selfhosted/") === true && !declaredIds.has(id),
+        const declarationsById = new Map(
+          (next.selfHostedModels ?? []).map((entry) => [entry.id, entry]),
         );
-        if (missingSelections.length > 0) {
-          throw new ValidationError(
-            `Selected self-hosted models must remain declared: ${missingSelections.join(", ")}`,
-          );
+        for (const [selectionType, id] of [
+          ["embedding", next.embeddingModel ?? optionalEnv(env.EMBEDDING_MODEL)],
+          ["rerank", next.rerankerModel ?? optionalEnv(env.RERANKER_MODEL)],
+        ] as const) {
+          if (id?.startsWith("selfhosted/") !== true) continue;
+          const declaration = declarationsById.get(id);
+          if (!declaration) {
+            throw new ValidationError(`Selected self-hosted models must remain declared: ${id}`);
+          }
+          if (modelType(declaration) !== selectionType) {
+            throw new ValidationError(
+              `Selected self-hosted model must remain ${selectionType}: ${id}`,
+            );
+          }
         }
+        const declaredIds = new Set(declarationsById.keys());
         if (next.hiddenModels !== undefined) {
           next.hiddenModels = next.hiddenModels.filter(
             (id) => !id.startsWith("selfhosted/") || declaredIds.has(id),

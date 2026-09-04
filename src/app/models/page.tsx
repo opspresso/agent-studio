@@ -29,6 +29,7 @@ import {
 } from "@/domain/llm/models";
 import {
   selfHostedModelToInput,
+  upsertSelfHostedModelInput,
   type SelfHostedModelInput,
 } from "@/domain/llm/selfHostedModels";
 import type { ModelCatalogDocumentStatus } from "@/application/llm/modelCatalogDocument";
@@ -344,16 +345,26 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                 </Tooltip>
               )}
             </Group>
-            <Button
-              size="compact-xs"
-              variant="default"
-              disabled={busy}
-              onClick={() =>
-                void save(declarations.filter((m) => m.id !== model.id).map(selfHostedModelToInput))
-              }
-            >
-              {t("models.selfHosted.remove")}
-            </Button>
+            <Group gap="xs" wrap="nowrap">
+              <Button
+                size="compact-xs"
+                variant="default"
+                disabled={busy}
+                onClick={() => setForm(selfHostedModelToInput(model))}
+              >
+                {t("models.selfHosted.edit")}
+              </Button>
+              <Button
+                size="compact-xs"
+                variant="default"
+                disabled={busy}
+                onClick={() =>
+                  void save(declarations.filter((m) => m.id !== model.id).map(selfHostedModelToInput))
+                }
+              >
+                {t("models.selfHosted.remove")}
+              </Button>
+            </Group>
           </Group>
         ))}
         {undeclared.map((row) => (
@@ -415,10 +426,13 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                   }))}
                   onChange={(value) => {
                     const type = (value ?? "text") as ModelType;
+                    const hasOutputTokens = type !== "embedding" && type !== "rerank";
                     setForm({
                       ...form,
                       type,
-                      maxTokens: type === "text" ? Math.max(form.maxTokens, 1) : 0,
+                      maxTokens: hasOutputTokens
+                        ? Math.max(form.maxTokens, type === "text" ? 1 : 0)
+                        : 0,
                       capabilities:
                         type === "text"
                           ? form.capabilities
@@ -443,7 +457,7 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                   size="xs"
                   label={t("models.selfHosted.context")}
                   value={form.contextWindow}
-                  min={1}
+                  min={form.type === "image" || form.type === "transcription" ? 0 : 1}
                   onChange={(value) => setForm({ ...form, contextWindow: Number(value) || 0 })}
                   w={150}
                 />
@@ -452,7 +466,7 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                   label={t("models.selfHosted.maxOutput")}
                   value={form.maxTokens}
                   min={form.type === "text" ? 1 : 0}
-                  disabled={form.type !== "text"}
+                  disabled={form.type === "embedding" || form.type === "rerank"}
                   onChange={(value) => setForm({ ...form, maxTokens: Number(value) || 0 })}
                   w={150}
                 />
@@ -483,10 +497,14 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                   size="compact-xs"
                   loading={busy}
                   onClick={() =>
-                    void save([...declarations.map(selfHostedModelToInput), form])
+                    void save(upsertSelfHostedModelInput(declarations, form))
                   }
                 >
-                  {t("models.selfHosted.declare")}
+                  {t(
+                    declaredFamilies.has(form.family)
+                      ? "models.selfHosted.save"
+                      : "models.selfHosted.declare",
+                  )}
                 </Button>
                 <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setForm(null)}>
                   {t("models.selfHosted.cancel")}

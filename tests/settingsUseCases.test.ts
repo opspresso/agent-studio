@@ -526,6 +526,35 @@ describe("settingsUseCases.update self-hosted declarations", () => {
     );
   });
 
+  it("refuses to change the type of a selected self-hosted retrieval model", async () => {
+    process.env.RERANKER_MODEL = "selfhosted/Qwen/model";
+    const { repo } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    const declaration = {
+      family: "Qwen/model",
+      displayName: "Qwen model",
+      type: "rerank" as const,
+      contextWindow: 32768,
+      maxTokens: 0,
+      capabilities: {
+        tools: false,
+        structuredOutput: false,
+        imageInput: false,
+        reasoning: false,
+      },
+    };
+    await useCases.update({ selfHostedModels: [declaration] }, ADMIN);
+
+    await expect(
+      useCases.update(
+        { selfHostedModels: [{ ...declaration, type: "embedding" }] },
+        ADMIN,
+      ),
+    ).rejects.toThrow(
+      "Selected self-hosted model must remain rerank: selfhosted/Qwen/model",
+    );
+  });
+
   it("lets one PUT declare and hide a model together", async () => {
     const { repo, current } = fakeRepo();
     await createSettingsUseCases(repo).update(

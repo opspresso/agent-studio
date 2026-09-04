@@ -864,6 +864,8 @@ export const ko: Messages = {
     "저장은 됐지만 이 인스턴스의 레지스트리에는 설치되지 않았다 — 발행 카탈로그가 같은 이름을 갖고 있거나, 방금 저장했다면 아직 다음 카탈로그 틱을 돌지 않은 다른 인스턴스다. 거부된 경우 서버 로그에 이유가 있다.",
   "models.selfHosted.empty": "채널이 지금 서빙하는 모델이 없다.",
   "models.selfHosted.declare": "선언",
+  "models.selfHosted.edit": "편집",
+  "models.selfHosted.save": "저장",
   "models.selfHosted.remove": "제거",
   "models.selfHosted.cancel": "취소",
   "models.selfHosted.displayName": "표시 이름",
