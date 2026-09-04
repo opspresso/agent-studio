@@ -243,6 +243,7 @@ async function discoverCapabilities(
   version: Version,
   queries: readonly string[],
   signal?: AbortSignal,
+  recordUsage?: engine.RecordUsageFn,
 ): Promise<{
   skillList: string[];
   subagentList: SubagentRef[];
@@ -283,6 +284,19 @@ async function discoverCapabilities(
     signal ? { signal } : {},
   );
   const [skills = [], agents = [], toolHits = [], serverHits = []] = search.matches;
+  if (recordUsage && search.rerank.usage.length > 0) {
+    await Promise.all(
+      search.rerank.usage.map((usage) =>
+        recordUsage({
+          projectName: version.projectName,
+          model: usage.model,
+          inputTokens: usage.inputTokens,
+          outputTokens: 0,
+          costUsd: usage.costUsd,
+        }),
+      ),
+    );
+  }
 
   const skillList = skills.map((match) => match.name).filter((name) => !boundSkills.has(name));
   // Every catalogued agent is an external one: a project is reachable as a
@@ -397,6 +411,15 @@ export function toolsPrepared(resolved: {
   warnings: readonly string[];
   rerank?: CatalogRerankReport;
 }): Record<string, unknown> {
+  const rerankModels = [...new Set(resolved.rerank?.usage.map((usage) => usage.model) ?? [])];
+  const rerankInputTokens = resolved.rerank?.usage.reduce(
+    (total, usage) => total + usage.inputTokens,
+    0,
+  ) ?? 0;
+  const rerankCostUsd = resolved.rerank?.usage.reduce(
+    (total, usage) => total + usage.costUsd,
+    0,
+  ) ?? 0;
   return {
     skills: resolved.skills.length,
     subagents: resolved.subagents.length,
@@ -413,6 +436,9 @@ export function toolsPrepared(resolved: {
       ? {
           rerankCalls: resolved.rerank.calls,
           rerankCandidates: resolved.rerank.candidates,
+          ...(rerankModels.length > 0 ? { rerankModels } : {}),
+          ...(rerankInputTokens > 0 ? { rerankInputTokens } : {}),
+          ...(rerankCostUsd > 0 ? { rerankCostUsd } : {}),
           ...(resolved.rerank.failed > 0 ? { rerankFailed: resolved.rerank.failed } : {}),
         }
       : {}),
@@ -443,6 +469,8 @@ export async function resolveRunTools(
    * conversation to every server as request headers.
    */
   origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
+  /** Records billable Rerank calls for a real run; previews leave it absent. */
+  recordRerankUsage?: engine.RecordUsageFn,
 ): Promise<{
   skills: engine.SkillInfo[];
   subagents: engine.SubagentInfo[];
@@ -479,7 +507,7 @@ export async function resolveRunTools(
 }> {
   const discoveryNotes: string[] = [];
   const discovered: string[] = [];
-  let rerank: CatalogRerankReport = { calls: 0, candidates: 0, failed: 0 };
+  let rerank: CatalogRerankReport = { calls: 0, candidates: 0, failed: 0, usage: [] };
   // A version that asked for discovery and did not get it says so, on the same
   // channel a failed search uses. Nothing else can tell the author: the checkbox
   // stays ticked, the bindings still resolve, the run answers normally, and the
@@ -506,6 +534,7 @@ export async function resolveRunTools(
           version,
           queries,
           signal,
+          recordRerankUsage,
         );
         version = {
           ...version,

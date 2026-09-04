@@ -489,6 +489,7 @@ export async function* runLocalSubagent(
         signal,
         discoveryQueries(version, [message]),
         origin,
+        recordUsageFn,
       );
       closeMcpSessions = resolved.mcp.close;
       // Inside the stage that resolved them: the dispatcher this builds reads a

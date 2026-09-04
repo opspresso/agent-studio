@@ -98,6 +98,11 @@ timeout, HTTP 오류, 잘못된 응답으로 실패하면 해당 query는 기존
 격하되고 런은 그 사실을 warning으로 보고한다. 사용자 취소는 격하하지 않고 즉시 전파한다.
 reranker를 설정하지 않으면 기존 vector 점수와 순서가 그대로 남는다.
 
+성공한 Rerank 호출은 endpoint가 보고한 input token과 실제 registry model id를 run의 usage
+aggregator에 기록한다. `perSearch` 가격이 있으면 호출당 그 값을, 없으면 input token 가격을 쓴다.
+따라서 Rerank 비용도 project·actor usage와 비용 guard에 포함된다. Prompt preview와 모델 선택
+probe는 실행 run이 아니므로 project usage를 만들지 않는다.
+
 활성 Embedding과 Rerank는 `/models`의 같은 레지스트리에서 각각 자기 type으로 선택한다.
 env의 `EMBEDDING_MODEL`·`RERANKER_MODEL`은 배포 기본값이고 DB 선택이 우선한다. Embedding 변경은
 확인 뒤 설치 전역 lease 아래에서 동기 재색인하며 실패하면 이전 선택과 vector를 복원한다. 다른

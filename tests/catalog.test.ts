@@ -308,6 +308,11 @@ const match = (key: string, score: number, metadata: Record<string, unknown>): V
   metadata,
 });
 
+const reranked = (scores: number[]) => ({
+  scores,
+  usage: { model: "selfhosted/reranker", inputTokens: 10, costUsd: 0 },
+});
+
 describe("searchCapabilities", () => {
   it("lifts an entry the query names above one that merely reads like it", async () => {
     // The gap an embedding cannot close: "slack" names a thing exactly, and a
@@ -387,7 +392,7 @@ describe("searchCapabilities", () => {
   });
 
   it("reranks the vector candidates with the indexed capability text", async () => {
-    const rerank = vi.fn(async () => [0.1, 0.9, 0.01, 0]);
+    const rerank = vi.fn(async () => reranked([0.1, 0.9, 0.01, 0]));
     const deps = {
       ...searchDeps([
         [
@@ -423,7 +428,7 @@ describe("searchCapabilities", () => {
   });
 
   it("batches every capability kind into one rerank call per query", async () => {
-    const rerank = vi.fn(async () => [0.8, 0.9]);
+    const rerank = vi.fn(async () => reranked([0.8, 0.9]));
     const deps = searchDeps([
       [match("skill#review", 0.8, { name: "review", description: "Review code" })],
       [match("agent#release", 0.7, { name: "release", description: "Release software" })],
@@ -444,7 +449,12 @@ describe("searchCapabilities", () => {
       ["review"],
       ["release"],
     ]);
-    expect(result.rerank).toEqual({ calls: 1, candidates: 2, failed: 0 });
+    expect(result.rerank).toEqual({
+      calls: 1,
+      candidates: 2,
+      failed: 0,
+      usage: [{ model: "selfhosted/reranker", inputTokens: 10, costUsd: 0 }],
+    });
   });
 
   it("falls back to vector ranking when reranking fails", async () => {
@@ -461,11 +471,11 @@ describe("searchCapabilities", () => {
     );
 
     expect(result.matches[0]?.map((entry) => entry.name)).toEqual(["first", "second"]);
-    expect(result.rerank).toEqual({ calls: 1, candidates: 2, failed: 1 });
+    expect(result.rerank).toEqual({ calls: 1, candidates: 2, failed: 1, usage: [] });
   });
 
   it("lets reranking rescue an oversampled candidate below the vector ratio cut", async () => {
-    const rerank = vi.fn(async () => [0.001, 0.9]);
+    const rerank = vi.fn(async () => reranked([0.001, 0.9]));
     const found = await searchCapabilities(
       {
         ...searchDeps([[
@@ -506,7 +516,7 @@ describe("searchCapabilities", () => {
     const controller = new AbortController();
     const rerank = vi.fn(
       async (_query: string, _documents: readonly string[], _instruction?: string, signal?: AbortSignal) =>
-        await new Promise<number[]>((_, reject) => {
+        await new Promise<ReturnType<typeof reranked>>((_, reject) => {
           signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
         }),
     );
@@ -525,7 +535,7 @@ describe("searchCapabilities", () => {
   });
 
   it("keeps a low absolute reranker score when it clearly identifies an AWS capability", async () => {
-    const rerank = vi.fn(async () => [0.03, 0.0003]);
+    const rerank = vi.fn(async () => reranked([0.03, 0.0003]));
     const found = await searchCapabilities(
       {
         ...searchDeps([

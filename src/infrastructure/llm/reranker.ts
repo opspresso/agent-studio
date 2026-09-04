@@ -1,14 +1,34 @@
 import type { RerankerPort } from "@/domain/vector/types";
+import { calculateRerankCost } from "@/domain/llm/models";
+
+interface ResolvedRerankerModel {
+  /** Registry id used for pricing and usage attribution. */
+  id: string;
+  /** Endpoint-native id sent on the wire. */
+  wireId: string;
+}
 
 interface RerankerConfig {
   baseUrl: string;
   apiKey?: string;
-  model: () => Promise<string> | string;
+  model: () => Promise<ResolvedRerankerModel> | ResolvedRerankerModel;
 }
 
 interface RerankResult {
   index?: unknown;
   relevance_score?: unknown;
+}
+
+function inputTokensOf(body: unknown): number {
+  if (typeof body !== "object" || body === null) {
+    return 0;
+  }
+  const usage = (body as { usage?: unknown }).usage;
+  if (typeof usage !== "object" || usage === null) {
+    return 0;
+  }
+  const tokens = (usage as { prompt_tokens?: unknown }).prompt_tokens;
+  return typeof tokens === "number" && Number.isInteger(tokens) && tokens >= 0 ? tokens : 0;
 }
 
 /** A catalog rerank must not hold the tools preparation stage indefinitely. */
@@ -39,7 +59,7 @@ export function createReranker(config: RerankerConfig): RerankerPort {
   return {
     async rerank(query, documents, instruction, signal) {
       if (documents.length === 0) {
-        return [];
+        return { scores: [] };
       }
       const timeout = AbortSignal.timeout(RERANKER_TIMEOUT_MS);
       const operationSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -53,7 +73,7 @@ export function createReranker(config: RerankerConfig): RerankerPort {
         headers,
         signal: operationSignal,
         body: JSON.stringify({
-          model,
+          model: model.wireId,
           query,
           documents,
           top_n: documents.length,
@@ -94,7 +114,15 @@ export function createReranker(config: RerankerConfig): RerankerPort {
       if (scores.some((score) => score === undefined)) {
         throw new Error("Reranker returned an incomplete result");
       }
-      return scores as number[];
+      const inputTokens = inputTokensOf(body);
+      return {
+        scores: scores as number[],
+        usage: {
+          model: model.id,
+          inputTokens,
+          costUsd: calculateRerankCost(model.id, inputTokens),
+        },
+      };
     },
   };
 }

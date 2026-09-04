@@ -16,6 +16,7 @@ describe("createReranker", () => {
       };
       return new Response(
         JSON.stringify({
+          usage: { prompt_tokens: 42, total_tokens: 42 },
           results: [
             { index: 1, relevance_score: 0.9 },
             { index: 0, relevance_score: 0.2 },
@@ -27,12 +28,22 @@ describe("createReranker", () => {
     const reranker = createReranker({
       baseUrl: "http://spark.test:8002/v1/",
       apiKey: "reranker-key",
-      model: () => "Qwen/Qwen3-Reranker-0.6B",
+      model: () => ({
+        id: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+        wireId: "Qwen/Qwen3-Reranker-0.6B",
+      }),
     });
 
     await expect(
       reranker.rerank("query", ["first", "second"], "Find useful capabilities"),
-    ).resolves.toEqual([0.2, 0.9]);
+    ).resolves.toEqual({
+      scores: [0.2, 0.9],
+      usage: {
+        model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+        inputTokens: 42,
+        costUsd: 0,
+      },
+    });
     expect(request).toEqual({
       url: "http://spark.test:8002/v1/rerank",
       authorization: "Bearer reranker-key",
@@ -53,7 +64,10 @@ describe("createReranker", () => {
         headers: { "content-type": "application/json" },
       }),
     );
-    const reranker = createReranker({ baseUrl: "http://spark.test/v1", model: () => "reranker" });
+    const reranker = createReranker({
+      baseUrl: "http://spark.test/v1",
+      model: () => ({ id: "selfhosted/reranker", wireId: "reranker" }),
+    });
     await expect(reranker.rerank("query", ["first", "second"])).rejects.toThrow(
       "returned 1 scores for 2 documents",
     );
@@ -62,8 +76,11 @@ describe("createReranker", () => {
   it("makes no request for an empty document list", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    const reranker = createReranker({ baseUrl: "http://spark.test/v1", model: () => "reranker" });
-    await expect(reranker.rerank("query", [])).resolves.toEqual([]);
+    const reranker = createReranker({
+      baseUrl: "http://spark.test/v1",
+      model: () => ({ id: "selfhosted/reranker", wireId: "reranker" }),
+    });
+    await expect(reranker.rerank("query", [])).resolves.toEqual({ scores: [] });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -74,7 +91,10 @@ describe("createReranker", () => {
         headers: { "content-type": "application/json" },
       }),
     );
-    const reranker = createReranker({ baseUrl: "http://spark.test/v1", model: () => "reranker" });
+    const reranker = createReranker({
+      baseUrl: "http://spark.test/v1",
+      model: () => ({ id: "selfhosted/reranker", wireId: "reranker" }),
+    });
     await expect(reranker.rerank("query", ["document"])).rejects.toThrow(
       "returned an invalid result",
     );
@@ -85,7 +105,7 @@ describe("createReranker", () => {
     vi.stubGlobal("fetch", fetchSpy);
     const reranker = createReranker({
       baseUrl: "http://spark.test/v1",
-      model: () => new Promise<string>(() => {}),
+      model: () => new Promise<never>(() => {}),
     });
     const controller = new AbortController();
     const pending = reranker.rerank("query", ["document"], undefined, controller.signal);

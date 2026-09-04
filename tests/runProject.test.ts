@@ -2239,6 +2239,56 @@ describe("executeAgent project type", () => {
   });
 });
 
+describe("executeAgent retrieval usage", () => {
+  it("flushes rerank calls through the run usage aggregator", async () => {
+    const channel = new FakeChannel([[contentChunk("done"), usageChunk(1, 1)]]);
+    const { deps, recorded } = executionDepsFixture(channel);
+    deps.skills = {
+      ...deps.skills,
+      describe: async (names) => names.map((name) => ({ name, description: "Search AWS documentation" })),
+    };
+    deps.catalog = {
+      embeddings: { embed: async (texts) => texts.map(() => [1]) },
+      catalog: {
+        upsert: async () => {},
+        deleteByKeys: async () => {},
+        listKeys: async () => [],
+        query: async (_vector, _topK, filter) =>
+          filter?.kind === "skill"
+            ? [{
+                key: "skill#aws-knowledge",
+                score: 0.9,
+                metadata: { name: "aws-knowledge", description: "Search AWS documentation" },
+              }]
+            : [],
+      },
+      reranker: {
+        rerank: async () => ({
+          scores: [0.9],
+          usage: { model: "openrouter/rerank-v3.5", inputTokens: 21, costUsd: 0.001 },
+        }),
+      },
+    };
+
+    await collect(executeAgent(deps, {
+      project: projectFixture(),
+      version: versionFixture({ piiFiltering: false, dynamicCapabilities: true }),
+      messages: [{ role: "user", content: "find the AWS docs" }],
+    }));
+
+    expect(recorded).toContainEqual({
+      projectName: "painter",
+      date: expect.any(String),
+      model: "openrouter/rerank-v3.5",
+      calls: 2,
+      inputTokens: 42,
+      outputTokens: 0,
+      cachedTokens: 0,
+      costUsd: 0.002,
+    });
+  });
+});
+
 /**
  * The chunk-stream entry point, for a surface that can render whatever a run
  * produces. Its image branch lived in the composition root, where nothing could

@@ -524,7 +524,10 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
         ? {
             reranker: createReranker({
               ...RERANKER,
-              model: async () => wireModelId(await getRerankerModel()),
+              model: async () => {
+                const id = await getRerankerModel();
+                return { id, wireId: wireModelId(id) };
+              },
             }),
             rerankerMinScore: config.rerankerMinScore,
           }
@@ -608,7 +611,7 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
         testReranker: async (model: string) => {
           await createReranker({
             ...RERANKER,
-            model: () => wireModelId(model),
+            model: () => ({ id: model, wireId: wireModelId(model) }),
           }).rerank("ping", ["ping"]);
         },
       }

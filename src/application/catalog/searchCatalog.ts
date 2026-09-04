@@ -24,6 +24,7 @@ import {
 import type {
   EmbeddingPort,
   RerankerPort,
+  RerankUsage,
   VectorMatch,
   VectorStorePort,
 } from "@/domain/vector/types";
@@ -53,6 +54,7 @@ export interface CatalogRerankReport {
   calls: number;
   candidates: number;
   failed: number;
+  usage: RerankUsage[];
 }
 
 export interface CapabilitySearchResult {
@@ -62,6 +64,10 @@ export interface CapabilitySearchResult {
 
 export interface CatalogSearchOptions {
   signal?: AbortSignal;
+}
+
+function emptyRerankReport(): CatalogRerankReport {
+  return { calls: 0, candidates: 0, failed: 0, usage: [] };
 }
 
 /**
@@ -165,7 +171,7 @@ export async function searchCapabilitiesByKind(
   if (usable.length === 0) {
     return {
       matches: requests.map(() => []),
-      rerank: { calls: 0, candidates: 0, failed: 0 },
+      rerank: emptyRerankReport(),
     };
   }
   const vectors = await deps.embeddings.embed(usable, "query");
@@ -200,11 +206,12 @@ export async function searchCapabilitiesByKind(
     ),
   );
   const best = requests.map(() => new Map<string, CapabilityMatch>());
-  const rerank = { calls: 0, candidates: 0, failed: 0 };
+  const rerank = emptyRerankReport();
   for (const result of queryResults) {
     rerank.calls += result.rerank.calls;
     rerank.candidates += result.rerank.candidates;
     rerank.failed += result.rerank.failed;
+    rerank.usage.push(...result.rerank.usage);
     for (const [requestIndex, candidates] of result.matches.entries()) {
       const selected = best[requestIndex];
       if (!selected) {
@@ -306,7 +313,7 @@ async function rankQuery(
       matches: candidatesByRequest.map((candidates, index) =>
         vectorSurvivors(candidates, floor).slice(0, requests[index]?.limit ?? 0),
       ),
-      rerank: { calls: 0, candidates: 0, failed: 0 },
+      rerank: emptyRerankReport(),
     };
   }
   // A configured second-stage ranker sees the whole oversampled field. Cutting
@@ -319,13 +326,13 @@ async function rankQuery(
   if (flattened.length === 0) {
     return {
       matches: requests.map(() => []),
-      rerank: { calls: 0, candidates: 0, failed: 0 },
+      rerank: emptyRerankReport(),
     };
   }
   try {
     options.signal?.throwIfAborted();
     const documents = flattened.map(({ candidate }) => capabilityText(candidate.entry));
-    const scores = options.signal
+    const response = options.signal
       ? await deps.reranker.rerank(
           query,
           documents,
@@ -333,6 +340,7 @@ async function rankQuery(
           options.signal,
         )
       : await deps.reranker.rerank(query, documents, CAPABILITY_RERANK_INSTRUCTION);
+    const scores = response.scores;
     if (scores.length !== flattened.length) {
       throw new Error(`Reranker returned ${scores.length} scores for ${flattened.length} documents`);
     }
@@ -350,7 +358,12 @@ async function rankQuery(
           deps.rerankerMinScore ?? DEFAULT_RERANKER_MIN_SCORE,
         ).slice(0, request.limit);
       }),
-      rerank: { calls: 1, candidates: flattened.length, failed: 0 },
+      rerank: {
+        calls: 1,
+        candidates: flattened.length,
+        failed: 0,
+        usage: response.usage ? [response.usage] : [],
+      },
     };
   } catch (error) {
     // User cancellation ends the run; an endpoint timeout or malformed answer
@@ -360,7 +373,7 @@ async function rankQuery(
       matches: candidatesByRequest.map((candidates, index) =>
         vectorSurvivors(candidates, floor).slice(0, requests[index]?.limit ?? 0),
       ),
-      rerank: { calls: 1, candidates: flattened.length, failed: 1 },
+      rerank: { calls: 1, candidates: flattened.length, failed: 1, usage: [] },
     };
   }
 }
