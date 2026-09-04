@@ -152,6 +152,10 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 | `LLM_PROVIDER_<NAME>_AUTH` | `bearer` | **runtime** | `bearer` \| `sigv4`. `sigv4` 는 프로세스의 AWS 자격증명(역할, 또는 `AWS_ACCESS_KEY_ID`/`AWS_PROFILE`, SDK 의 표준 해석 순서)으로 매 요청에 서명하고 API 키를 **받지 않는다**. 문자 그대로의 `sigv4` 가 아닌 값은 전부 `bearer` 로 읽히므로, 오타가 서명도 키도 없는 채널을 만들어 낼 수는 없다. |
 | `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | provider 채널은 맨 모델 이름(`provider/` 접두사를 벗긴 것)을 받는다. 그 채널 자체가 전체 id 를 기대하는 라우터일 때 이 값을 켜라. |
 
+`/settings` 에서 기본 채널의 URL, 또는 provider 채널의 URL·인증 방식을 바꿀 때는 새 API key 를
+같이 입력해야 한다. 마스킹된 key 는 같은 endpoint 와 인증 방식에서만 보존되며 새 주소로 이동하지
+않는다. 기본 URL 과 key override 를 함께 비우면 두 값 모두 env 설정으로 돌아간다.
+
 > base URL 에는 provider 가 서비스하는 API 버전 경로가 포함돼야 한다. 어댑터는 거기에
 > `/chat/completions` 와 `/images/generations` 를 글자 그대로 덧붙인다. `https://api.x.ai/v1`
 > 대신 `https://api.x.ai` 를 쓰면 그 provider 로 가는 **모든** 호출이 텍스트든 이미지든 404 가

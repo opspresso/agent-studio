@@ -453,7 +453,10 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   서버 측 로그 한 줄을 남긴다.
 - PUT 의 `llmProviders` 는 전체 교체 목록이다 (프로바이더별 LLM 채널). 빈 배열은 오버라이드를
   제거한다 (`LLM_PROVIDER_*` env 로 폴백). 마스킹된 `apiKey` 는 그 프로바이더 이름에 대해
-  지금 유효한 키를 유지한다. 프로바이더 `name` 은
+  endpoint 와 인증 방식이 그대로일 때만 지금 유효한 키를 유지한다. `baseUrl` 또는 `auth` 를
+  바꾸려면 새 API key 를 같은 요청에 평문으로 넣어야 한다. 기본 `LLM_BASE_URL` 도 바꾸려면
+  새 `LLM_API_KEY` 가 필요하며, 두 값을 함께 비우면 env 의 URL/key 쌍으로 돌아간다.
+  프로바이더 `name` 은
   `openai | anthropic | google | xai | bedrock | openrouter | selfhosted` (`SUPPORTED_PROVIDERS`) 중
   하나여야 하고, `auth` 는 `bearer` (기본) 또는 `sigv4` 이며, 목록은 최대 50개까지고, 같은
   이름이 두 번 나오면 `400` 이다.

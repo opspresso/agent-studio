@@ -110,6 +110,9 @@ export async function getAllowedEmailDomains(): Promise<string[]> {
 
 export async function getLlmChannelConfig(): Promise<{ baseUrl: string; apiKey: string }> {
   const stored = await loadSettings();
+  if (stored?.llmBaseUrl !== undefined && stored.llmApiKey === undefined) {
+    throw new Error("Stored LLM_BASE_URL has no matching LLM_API_KEY");
+  }
   return {
     baseUrl: stored?.llmBaseUrl ?? config.llmBaseUrl,
     apiKey: stored?.llmApiKey !== undefined ? decryptSecret(stored.llmApiKey) : config.llmApiKey,

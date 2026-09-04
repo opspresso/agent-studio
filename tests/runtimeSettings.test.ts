@@ -51,6 +51,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  invalidateSettingsCache();
+  mockGet.mockReset();
   for (const key of ENV_KEYS) {
     if (savedEnv[key] === undefined) {
       delete process.env[key];
@@ -96,6 +98,19 @@ describe("runtime settings precedence", () => {
       baseUrl: "https://env.example.com/v1",
       apiKey: "sk-env",
     });
+  });
+
+  it("never pairs a stored LLM endpoint with the environment key", async () => {
+    process.env.LLM_BASE_URL = "https://env.example.com/v1";
+    process.env.LLM_API_KEY = "sk-env";
+    stub({
+      llmBaseUrl: "https://stored.example.com/v1",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    await expect(getLlmChannelConfig()).rejects.toThrow(
+      "Stored LLM_BASE_URL has no matching LLM_API_KEY",
+    );
   });
 
   it("prefers stored LLM providers over LLM_PROVIDER_* env, decrypting keys", async () => {

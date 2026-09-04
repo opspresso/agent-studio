@@ -252,11 +252,7 @@ function toView(
   };
 }
 
-/**
- * Resolve one submitted provider row to its stored form. A masked apiKey keeps
- * the currently effective key for that provider name — from the existing
- * override first, else from the env-derived provider set.
- */
+/** Resolve one submitted provider row without moving a credential to a new target. */
 function toProviderSetting(
   cipher: SecretCipher,
   env: NodeJS.ProcessEnv,
@@ -294,20 +290,18 @@ function toProviderSetting(
     }
     storedKey = cipher.encrypt(apiKey);
   } else {
-    const existingStoredKey = stored?.find((provider) => provider.name === name)?.apiKey;
-    const envKey = parseProviderConfigs(env).find((provider) => provider.name === name)?.apiKey;
-    if (existingStoredKey !== undefined) {
-      return {
-        name,
-        baseUrl,
-        apiKey: existingStoredKey,
-        ...(input.keepModelPrefix ? { keepModelPrefix: true } : {}),
-      };
-    }
-    if (envKey === undefined) {
+    const existing = stored?.find((provider) => provider.name === name);
+    const fromEnv = parseProviderConfigs(env).find((provider) => provider.name === name);
+    const previous = existing ?? fromEnv;
+    if (!previous?.apiKey) {
       throw new ValidationError(`LLM provider "${name}" needs an API key (no stored value to keep)`);
     }
-    storedKey = cipher.encrypt(envKey);
+    if ((previous.auth ?? "bearer") !== "bearer" || previous.baseUrl !== baseUrl) {
+      throw new ValidationError(
+        `Changing LLM provider "${name}" endpoint or auth requires a new API key`,
+      );
+    }
+    storedKey = existing ? existing.apiKey : cipher.encrypt(previous.apiKey);
   }
   return {
     name,
@@ -352,6 +346,28 @@ export function createSettingsUseCases(
       let changed: string[] = [];
       const mutate = (stored: AppSettings | null): AppSettings => {
         const next: AppSettings = { ...(stored ?? { updatedAt: "" }) };
+        const envBaseUrl = optionalEnv(env.LLM_BASE_URL);
+        const envApiKey = optionalEnv(env.LLM_API_KEY);
+        const submittedBaseUrl = patch.llmBaseUrl?.trim();
+        const currentBaseUrl = stored?.llmBaseUrl ?? envBaseUrl;
+        const nextBaseUrl =
+          submittedBaseUrl === undefined
+            ? currentBaseUrl
+            : submittedBaseUrl === "" || submittedBaseUrl === envBaseUrl
+              ? envBaseUrl
+              : submittedBaseUrl;
+        const llmTargetChanged = nextBaseUrl !== currentBaseUrl;
+        const submittedApiKey = patch.llmApiKey?.trim();
+        const revertsLlmPairToEnv =
+          nextBaseUrl === envBaseUrl &&
+          (submittedApiKey === "" || submittedApiKey === envApiKey);
+        if (
+          llmTargetChanged &&
+          !revertsLlmPairToEnv &&
+          (!submittedApiKey || cipher.isMasked(submittedApiKey))
+        ) {
+          throw new ValidationError("Changing LLM_BASE_URL requires a new LLM_API_KEY");
+        }
         for (const spec of specs) {
           const raw = patch[spec.key];
           if (raw === undefined) {
@@ -382,7 +398,14 @@ export function createSettingsUseCases(
           } else if (spec.secret) {
             if (cipher.isMasked(value)) {
               // A mask confirms what is stored; it says nothing to compare.
-            } else if (value === spec.env()) {
+            } else if (
+              value === spec.env() &&
+              !(
+                spec.key === "llmApiKey" &&
+                llmTargetChanged &&
+                !revertsLlmPairToEnv
+              )
+            ) {
               delete next[spec.key];
             } else {
               next[spec.key] = cipher.encrypt(value);
@@ -397,6 +420,9 @@ export function createSettingsUseCases(
           } else {
             next[spec.key] = value;
           }
+        }
+        if (next.llmBaseUrl !== undefined && next.llmApiKey === undefined) {
+          throw new ValidationError("A stored LLM_BASE_URL requires a stored LLM_API_KEY");
         }
 
         if (patch.llmProviders !== undefined) {
