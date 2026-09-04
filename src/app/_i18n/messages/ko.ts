@@ -440,7 +440,7 @@ export const ko: Messages = {
     "재정의가 없고, 이 서버의 레지스트리 항목에도 헤더가 없습니다.",
   "bindings.noOverrides": "재정의가 없습니다 — 이 버전은 위 헤더를 그대로 씁니다.",
 
-  "version.invalidJson": "잘못된 JSON",
+  "version.invalidJson": "JSON 객체를 입력하세요",
   "version.model": "모델",
   "version.selectModel": "모델을 고르세요…",
   "version.modelUnlisted":

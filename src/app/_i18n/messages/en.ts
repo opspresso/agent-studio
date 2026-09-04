@@ -495,7 +495,7 @@ export const en = {
 
   // The version editor's form. The example JSON schema in the "Structured
   // output" dialog is not here: it is a snippet to copy, not prose to read.
-  "version.invalidJson": "Invalid JSON",
+  "version.invalidJson": "Enter a JSON object",
   "version.model": "Model",
   "version.selectModel": "Select a model…",
   "version.modelUnlisted":
