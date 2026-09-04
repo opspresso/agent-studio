@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { toSlug } from "@/domain/naming";
 import {
@@ -40,6 +40,7 @@ import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 export default function AgentsPage() {
   const t = useT();
@@ -51,18 +52,22 @@ export default function AgentsPage() {
   const [opened, { open, close }] = useDisclosure(false);
   const [filter, setFilter] = useState("");
   const [cardProject, setCardProject] = useState<A2aProjectListItem | null>(null);
+  const latestOnly = useRef(createLatestOnly()).current;
 
   async function refresh() {
+    const isCurrent = latestOnly();
     setLoading(true);
     setError(null);
     try {
       const [agentList, projectList] = await Promise.all([listAgents(), listA2aProjects()]);
-      setAgents(agentList);
-      setA2aProjects(projectList);
+      if (isCurrent()) {
+        setAgents(agentList);
+        setA2aProjects(projectList);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load agents");
+      if (isCurrent()) setError(e instanceof Error ? e.message : "Failed to load agents");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }
 

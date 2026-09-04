@@ -76,10 +76,9 @@ export function invalidateMemberTierCache(email?: string): void {
 }
 
 /**
- * The tier stored for this address, or `null` when no member has it — a
- * machine identity, or a row the read could not reach. Fail-soft: an error
- * resolves `null` and the caller falls back to list-only semantics, matching
- * how every other guard treats its own read failing.
+ * The tier stored for this address, or `null` when no member has it. A storage
+ * failure is distinct and fails closed: callers use this result for credential
+ * authorization, where "unknown" must not mean "allowed".
  */
 export async function getMemberTier(email: string): Promise<MemberTier | null> {
   const key = email.toLowerCase();
@@ -94,8 +93,10 @@ export async function getMemberTier(email: string): Promise<MemberTier | null> {
   try {
     tier = (await memberRepository.getByEmail(email))?.tier ?? null;
   } catch (error) {
-    log.warn("authz", `could not read member tier for ${email}; using the admin list alone`, error);
-    return null;
+    log.warn("authz", `could not read member tier for ${email}`, error);
+    throw new Error("Member tier is temporarily unavailable", {
+      cause: error,
+    });
   }
   if (generation !== tierCacheGeneration || keyGeneration !== (tierCacheGenerations.get(key) ?? 0)) {
     return tier;

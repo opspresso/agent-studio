@@ -105,6 +105,7 @@ const XAI_OK = {
 };
 
 afterEach(() => {
+  runtime.openaiBaseUrl = "https://openai.example/v1";
   vi.unstubAllGlobals();
 });
 

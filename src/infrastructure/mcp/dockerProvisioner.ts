@@ -22,7 +22,6 @@ import { MANAGED_NAME } from "@/domain/naming";
 import {
   MANAGED_ARG,
   MANAGED_ENV_KEY,
-  MANAGED_ENV_REF,
   MANAGED_ENV_VALUE,
   MANAGED_IMAGE,
   type ManagedWorkload,
@@ -187,17 +186,8 @@ export function createDockerProvisioner(): McpProvisioner {
         // environment and the image obeys it; without it, a mapping to a port
         // nobody was told to bind publishes nothing —
         // and a container that was merely stranded comes back definitively
-        // broken. `-e` beats `--env-file`, so an operator who set `PORT` there
-        // and a `containerPort` that disagrees gets the one the mapping uses.
-        // Checked, like the image and the name beside it. Nothing here can
-        // inject a flag — this is an argv array, not a shell string — but a
-        // reference is a path the CLI opens, and `MANAGED_ENV_REF` is where
-        // what a path may look like is decided once.
-        ...(spec.envRefs ?? []).flatMap((ref) => [
-          "--env-file",
-          assertSafe(ref, MANAGED_ENV_REF, "env reference"),
-        ]),
-        // After the operator's references, so an entry's own environment wins.
+        // broken. `-e` beats `--env-file`, so a stored `PORT` could not make
+        // the mapping and listener disagree even if it passed the API guard.
         ...(environmentFile !== undefined ? ["--env-file", environmentFile] : []),
         "-e",
         `PORT=${target}`,

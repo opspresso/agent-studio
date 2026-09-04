@@ -14,6 +14,7 @@ import {
   Stack,
   Text,
   Typography,
+  UnstyledButton,
   VisuallyHidden,
 } from "@mantine/core";
 import { IconFileText } from "@tabler/icons-react";
@@ -154,19 +155,26 @@ export function GeneratedImage({
           </Text>
         </Paper>
       ) : (
-        <Image
-          src={src}
-          alt={alt}
-          radius="md"
+        <UnstyledButton
+          type="button"
+          aria-label={label}
           h="100%"
           w="100%"
-          fit="contain"
           onClick={() =>
             view({ src, alt, title: label, ...(prompt ? { caption: prompt } : {}) })
           }
           style={{ cursor: "zoom-in" }}
-          onError={() => setGone(true)}
-        />
+        >
+          <Image
+            src={src}
+            alt={alt}
+            radius="md"
+            h="100%"
+            w="100%"
+            fit="contain"
+            onError={() => setGone(true)}
+          />
+        </UnstyledButton>
       )}
     </Box>
   );

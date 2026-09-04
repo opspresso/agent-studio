@@ -7,7 +7,7 @@ import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { CardHeading } from "@/app/_components/CardHeading";
 import { CostBarChart } from "@/app/_components/CostBarChart";
 import { DataTable } from "@/app/_components/DataTable";
-import { GroupByControl } from "@/app/_components/GroupByControl";
+import { GROUP_BY_LABEL, GroupByControl } from "@/app/_components/GroupByControl";
 import { StatCard } from "@/app/_components/StatCard";
 import { UsageBreakdown } from "@/app/_components/UsageBreakdown";
 import { defaultDateRange } from "@/app/_lib/dateRange";
@@ -63,6 +63,10 @@ export default function UsagePage() {
   const [groupBy, setGroupBy] = useState<GroupBy>("model");
   const [rows, setRows] = useState<UsageRow[]>([]);
   const [actorRows, setActorRows] = useState<ActorUsageView[]>([]);
+  const [actorTotal, setActorTotal] = useState(0);
+  const [actorTruncated, setActorTruncated] = useState(false);
+  const [actorLoading, setActorLoading] = useState(false);
+  const [actorError, setActorError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,9 +94,10 @@ export default function UsagePage() {
     // order they were asked, and without this the slower first answer lands
     // last — showing the reader a range they are no longer asking for.
     let cancelled = false;
-    async function load() {
+    async function loadSummary() {
       setLoading(true);
       setError(null);
+      setRows([]);
       try {
         const { items } = await usageSummary(name, range.from, range.to);
         if (!cancelled) setRows([...items].sort((a, b) => b.date.localeCompare(a.date)));
@@ -101,20 +106,55 @@ export default function UsagePage() {
       } finally {
         if (!cancelled) setLoading(false);
       }
-      // Separately, and never fatal: a breakdown that fails should cost the
-      // totals nothing.
-      if (!maySeeActors) {
-        if (!cancelled) setActorRows([]);
-        return;
-      }
+    }
+    void loadSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [name, range.from, range.to]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setActorRows([]);
+    setActorTotal(0);
+    setActorTruncated(false);
+    setActorError(null);
+    setActorLoading(maySeeActors);
+    if (!maySeeActors) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    // Separately, and never fatal: a breakdown that fails should cost the
+    // project totals nothing.
+    async function loadActors() {
       try {
-        const { items } = await usageActors(name, range.from, range.to);
-        if (!cancelled) setActorRows(items);
-      } catch {
-        if (!cancelled) setActorRows([]);
+        const { items, totalActors, truncated } = await usageActors(
+          name,
+          range.from,
+          range.to,
+        );
+        if (!cancelled) {
+          setActorRows(items);
+          setActorTotal(totalActors);
+          setActorTruncated(truncated);
+        }
+      } catch (actorLoadError) {
+        if (!cancelled) {
+          setActorRows([]);
+          setActorTotal(0);
+          setActorTruncated(false);
+          setActorError(
+            actorLoadError instanceof Error
+              ? actorLoadError.message
+              : "Failed to load caller usage",
+          );
+        }
+      } finally {
+        if (!cancelled) setActorLoading(false);
       }
     }
-    void load();
+    void loadActors();
     return () => {
       cancelled = true;
     };
@@ -149,26 +189,39 @@ export default function UsagePage() {
             <StatCard
               label={t("cost.totalCost")}
               value={formatUsd(totalCost)}
-              detail="Selected period"
+              detail={t("cost.selectedPeriod")}
               Icon={IconCoins}
             />
             <StatCard
               label={t("cost.totalCalls")}
               value={totalCalls.toLocaleString(locale)}
-              detail="Model invocations"
+              detail={t("cost.modelInvocations")}
               Icon={IconActivity}
             />
             <StatCard
               label={t("projectUsage.callers")}
-              value={callers.length.toLocaleString(locale)}
-              detail={callers.length === 0 ? "Owner or admin only" : "Distinct identities"}
+              value={actorLoading ? "—" : actorTotal.toLocaleString(locale)}
+              detail={
+                actorLoading
+                  ? t("common.loading")
+                  : actorError
+                    ? t("projectUsage.unavailable")
+                    : t(
+                        maySeeActors
+                          ? "projectUsage.distinctIdentities"
+                          : "projectUsage.ownerAdminOnly",
+                    )
+              }
               Icon={IconUsers}
             />
           </SimpleGrid>
 
           <Card>
             <Group justify="space-between" mb="md" gap="md" wrap="wrap">
-              <CardHeading title={t("cost.dailyCost")} subtitle={`Stacked by ${groupBy}`} />
+              <CardHeading
+                title={t("cost.dailyCost")}
+                subtitle={t("usage.stackedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
+              />
               <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
             </Group>
             <CostBarChart data={daily.data} keys={daily.keys} />
@@ -176,17 +229,31 @@ export default function UsagePage() {
 
           <UsageBreakdown groups={groups} label={groupBy} />
 
+          {actorError && (
+            <Alert color="yellow" variant="light">
+              {actorError}
+            </Alert>
+          )}
+
           {callers.length > 0 && (
             <Card padding={0}>
               <Group px="md" pt="md">
-                <CardHeading title={t("projectUsage.whoSpent")} subtitle="Per caller, this range" />
+                <CardHeading
+                  title={t("projectUsage.whoSpent")}
+                  subtitle={t(
+                    actorTruncated
+                      ? "projectUsage.topCallersRange"
+                      : "projectUsage.perCallerRange",
+                    { count: callers.length },
+                  )}
+                />
               </Group>
               <DataTable>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Caller</Table.Th>
-                    <Table.Th ta="right">Calls</Table.Th>
-                    <Table.Th ta="right">Cost</Table.Th>
+                    <Table.Th>{t("projectUsage.caller")}</Table.Th>
+                    <Table.Th ta="right">{t("usage.calls")}</Table.Th>
+                    <Table.Th ta="right">{t("usage.cost")}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>

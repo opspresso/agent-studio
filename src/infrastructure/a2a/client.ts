@@ -37,6 +37,7 @@ import { awaitsInput, isFailedTaskState, isLiveTaskState, isTerminalTaskState, t
 import { partText, textPart, userMessage } from "@/domain/a2a/protocol";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
+import { imageBytesRejectReason, parseImageBytes } from "@/domain/llm/imageLimits";
 
 export interface A2aImage {
   b64: string;
@@ -123,14 +124,24 @@ function partsImages(parts: Part[]): A2aImage[] {
     if (!part.mediaType.startsWith("image/")) {
       return [];
     }
-    return [
-      {
-        b64: Buffer.from(part.content.value).toString("base64"),
-        mimeType: part.mediaType,
-        ...(part.filename ? { name: part.filename } : {}),
-      },
-    ];
+    const image = parseImageBytes({
+      b64: Buffer.from(part.content.value).toString("base64"),
+      mimeType: part.mediaType,
+    });
+    return image ? [{ ...image, ...(part.filename ? { name: part.filename } : {}) }] : [];
   });
+}
+
+function invalidImagePart(parts: Part[]): string | undefined {
+  for (const part of parts) {
+    if (part.content?.$case !== "raw" || !part.mediaType.startsWith("image/")) continue;
+    const reason = imageBytesRejectReason({
+      b64: Buffer.from(part.content.value).toString("base64"),
+      mimeType: part.mediaType,
+    });
+    if (reason) return reason;
+  }
+  return undefined;
 }
 
 /** What a reply weighs, counted as the bytes its parts serialise to. */
@@ -374,8 +385,13 @@ async function loadAgentCard(cardUrl: string, fetchImpl: typeof fetch): Promise<
  * the error and the task ids with it, so the next transfer can answer it.
  */
 function toResult(result: Message | Task): A2aSendResult {
-  if (partsBytes(resultParts(result)) > MAX_REPLY_BYTES) {
+  const parts = resultParts(result);
+  if (partsBytes(parts) > MAX_REPLY_BYTES) {
     return { ok: false, error: REPLY_TOO_LARGE };
+  }
+  const invalidImage = invalidImagePart(parts);
+  if (invalidImage) {
+    return { ok: false, error: `A2A reply contained an unusable image: ${invalidImage}` };
   }
   const text = extractA2aText(result);
   if (!("messageId" in result) && result.status) {

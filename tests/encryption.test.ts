@@ -30,6 +30,46 @@ describe("header encryption round-trip", () => {
     const decrypted = decryptHeadersForOutbound(encrypted);
     expect(decrypted).toEqual(headers);
   });
+
+  it("encrypts input that resembles stored ciphertext instead of trusting its prefix", () => {
+    const copiedCiphertext = encryptSecret("victim-secret");
+    const stored = encryptSecret(copiedCiphertext);
+
+    expect(stored).not.toBe(copiedCiphertext);
+    expect(decryptSecret(stored)).toBe(copiedCiphertext);
+  });
+
+  it("binds a v2 ciphertext to its storage context while still reading v1", () => {
+    const legacy = encryptSecret("legacy-secret");
+    const bound = encryptSecret("bound-secret", "project:alpha:token");
+
+    expect(legacy.startsWith("enc:v1:")).toBe(true);
+    expect(bound.startsWith("enc:v2:")).toBe(true);
+    expect(decryptSecret(legacy, "project:alpha:token")).toBe("legacy-secret");
+    expect(decryptSecret(bound, "project:alpha:token")).toBe("bound-secret");
+    expect(() => decryptSecret(bound, "project:beta:token")).toThrow();
+    expect(() => decryptSecret(bound)).toThrow("requires its encryption context");
+  });
+
+  it("binds every map value to its map and exact stored key", () => {
+    const stored = encryptHeaders(
+      { Authorization: "Bearer secret", "X-Api-Key": "key" },
+      "mcp:alpha:headers",
+    );
+
+    expect(stored.Authorization?.startsWith("enc:v2:")).toBe(true);
+    expect(decryptHeadersForOutbound(stored, "mcp:alpha:headers")).toEqual({
+      Authorization: "Bearer secret",
+      "X-Api-Key": "key",
+    });
+    expect(() => decryptHeadersForOutbound(stored, "mcp:beta:headers")).toThrow();
+    expect(() =>
+      decryptHeadersForOutbound(
+        { authorization: stored.Authorization! },
+        "mcp:alpha:headers",
+      ),
+    ).toThrow();
+  });
 });
 
 describe("length-preserving masking", () => {
@@ -181,6 +221,28 @@ describe("MCP header overrides", () => {
     expect(mergeHeaderOverrideUpdate(stored, { Authorization: "" }).Authorization).toBe(
       stored.Authorization,
     );
+  });
+
+  it("re-encrypts a preserved override when its containing version changes", () => {
+    const sourceContext = "project:p:version:1:mcp:m";
+    const targetContext = "project:p:version:draft:mcp:m";
+    const stored = encryptHeaderOverrides(
+      { Authorization: "Bearer saved" },
+      sourceContext,
+    );
+    const masked = maskHeaderOverrides(stored, sourceContext);
+    const rebound = mergeHeaderOverrideUpdate(
+      stored,
+      masked,
+      targetContext,
+      sourceContext,
+    );
+
+    expect(rebound.Authorization).not.toBe(stored.Authorization);
+    expect(mergeOutboundHeaders({}, rebound, undefined, targetContext)).toEqual({
+      Authorization: "Bearer saved",
+    });
+    expect(() => mergeOutboundHeaders({}, rebound, undefined, sourceContext)).toThrow();
   });
 
   it("drops a masked value that has no stored counterpart", () => {

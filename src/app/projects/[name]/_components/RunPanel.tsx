@@ -43,6 +43,7 @@ import {
   Text,
   Textarea,
   TextInput,
+  UnstyledButton,
 } from "@mantine/core";
 import { BADGE, SUBAGENT_COLOR } from "@/app/_components/badgeColors";
 
@@ -122,6 +123,7 @@ export function RunPanel({
     attachments,
     documents,
     attachError,
+    reading,
     addFiles,
     removeAt,
     removeDocumentAt,
@@ -134,6 +136,7 @@ export function RunPanel({
   const canRun =
     versionName !== null &&
     !running &&
+    !reading &&
     (!needsMessage || message.trim() !== "" || attachments.length > 0 || documents.length > 0);
   const attachHint =
     projectType === "image"
@@ -475,7 +478,7 @@ export function RunPanel({
       )}
 
       <Group>
-        <Button onClick={run} loading={running} disabled={!canRun}>
+        <Button onClick={run} loading={running || reading} disabled={!canRun}>
           {t("playground.run")}
         </Button>
       </Group>
@@ -546,13 +549,24 @@ export function RunPanel({
       {projectType === "image" ? (
         <Paper withBorder p="sm" mih={96}>
           {image ? (
-            <Image
-              src={imageDataUrl({ b64: image.imageBase64, mimeType: image.mimeType })}
-              alt={t("chat.generatedImage")}
-              radius="sm"
-              onClick={(e) => view({ src: e.currentTarget.src, alt: e.currentTarget.alt })}
+            <UnstyledButton
+              type="button"
+              aria-label={t("chat.generatedImage")}
+              w="100%"
+              onClick={() =>
+                view({
+                  src: imageDataUrl({ b64: image.imageBase64, mimeType: image.mimeType }),
+                  alt: t("chat.generatedImage"),
+                })
+              }
               style={{ cursor: "zoom-in" }}
-            />
+            >
+              <Image
+                src={imageDataUrl({ b64: image.imageBase64, mimeType: image.mimeType })}
+                alt={t("chat.generatedImage")}
+                radius="sm"
+              />
+            </UnstyledButton>
           ) : (
             <Text fz="sm" c="dimmed">
               {running ? t("run.generating") : t("run.imageWillAppear")}
@@ -570,21 +584,27 @@ export function RunPanel({
       )}
 
       {agentImages.map((img, i) => (
-        <Image
+        <UnstyledButton
+          type="button"
           key={`image-${i}`}
-          src={imageDataUrl(img)}
-          alt={img.prompt ?? t("chat.generatedImage")}
-          radius="md"
-          onClick={(e) =>
+          aria-label={t("chat.generatedImage")}
+          w="100%"
+          onClick={() =>
             view({
-              src: e.currentTarget.src,
-              alt: e.currentTarget.alt,
+              src: imageDataUrl(img),
+              alt: img.prompt ?? t("chat.generatedImage"),
               title: t("chat.generatedImage"),
               ...(img.prompt ? { caption: img.prompt } : {}),
             })
           }
           style={{ cursor: "zoom-in" }}
-        />
+        >
+          <Image
+            src={imageDataUrl(img)}
+            alt={img.prompt ?? t("chat.generatedImage")}
+            radius="md"
+          />
+        </UnstyledButton>
       ))}
 
       {/* The same row the chat draws. A rendered document is part of the answer,

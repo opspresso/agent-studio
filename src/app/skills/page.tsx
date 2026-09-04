@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toSlug } from "@/domain/naming";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { createSkill, listSkills, type SkillSummary } from "./api";
@@ -27,6 +27,7 @@ import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 export default function SkillsPage() {
   const t = useT();
@@ -36,16 +37,19 @@ export default function SkillsPage() {
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
   const [filter, setFilter] = useState("");
+  const latestOnly = useRef(createLatestOnly()).current;
 
   async function refresh() {
+    const isCurrent = latestOnly();
     setLoading(true);
     setError(null);
     try {
-      setSkills(await listSkills());
+      const loaded = await listSkills();
+      if (isCurrent()) setSkills(loaded);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load skills");
+      if (isCurrent()) setError(e instanceof Error ? e.message : "Failed to load skills");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }
 

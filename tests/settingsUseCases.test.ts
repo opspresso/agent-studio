@@ -14,11 +14,18 @@ import { getModelConfig, loadSelfHostedModels } from "@/domain/llm/models";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";
 import { decryptSecret, encryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
+import {
+  llmApiKeyContext,
+  llmProviderApiKeyContext,
+  settingsSecretContext,
+} from "@/domain/security/secretContext";
 
 const ADMIN = "admin@example.com";
 
 const ENV_KEYS = [
   "ADMIN_EMAILS",
+  "LLM_BASE_URL",
+  "LLM_API_KEY",
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
   "ALLOWED_EMAIL_DOMAINS",
@@ -286,7 +293,9 @@ describe("settingsUseCases.update", () => {
     await useCases.update({ a2aApiKey: "a2a-secret", pluginsRepo: "org/repo" }, ADMIN);
     const storedKey = current()?.a2aApiKey;
     expect(isEncrypted(storedKey ?? "")).toBe(true);
-    expect(decryptSecret(storedKey ?? "")).toBe("a2a-secret");
+    expect(decryptSecret(storedKey ?? "", settingsSecretContext("a2a-api-key"))).toBe(
+      "a2a-secret",
+    );
 
     await useCases.update({ a2aApiKey: "*".repeat("a2a-secret".length) }, ADMIN);
     expect(current()?.a2aApiKey).toBe(storedKey);
@@ -305,7 +314,7 @@ describe("settingsUseCases.update", () => {
     const view = await useCases.update(
       {
         llmProviders: [
-          { name: "OpenAI", baseUrl: "https://proxy.example.com/v1", apiKey: "********" },
+          { name: "OpenAI", baseUrl: "https://api.openai.com/v1", apiKey: "********" },
           { name: "google", baseUrl: "https://g.example.com/v1", apiKey: "sk-new", keepModelPrefix: true },
         ],
       },
@@ -315,8 +324,18 @@ describe("settingsUseCases.update", () => {
     const stored = current()?.llmProviders;
     expect(stored).toHaveLength(2);
     expect(stored?.[0]?.name).toBe("openai");
-    expect(decryptSecret(stored?.[0]?.apiKey ?? "")).toBe("sk-env-openai");
-    expect(decryptSecret(stored?.[1]?.apiKey ?? "")).toBe("sk-new");
+    expect(
+      decryptSecret(
+        stored?.[0]?.apiKey ?? "",
+        llmProviderApiKeyContext("openai", "https://api.openai.com/v1"),
+      ),
+    ).toBe("sk-env-openai");
+    expect(
+      decryptSecret(
+        stored?.[1]?.apiKey ?? "",
+        llmProviderApiKeyContext("google", "https://g.example.com/v1"),
+      ),
+    ).toBe("sk-new");
     expect(stored?.[1]?.keepModelPrefix).toBe(true);
     expect(view.llmProviders.source).toBe("override");
     expect(view.llmProviders.items[1]?.apiKey).toBe("*".repeat("sk-new".length));
@@ -335,7 +354,7 @@ describe("settingsUseCases.update", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it("keeps an existing encrypted provider key without encrypting it again", async () => {
+  it("keeps an existing provider key only while its endpoint and auth stay the same", async () => {
     const encrypted = encryptSecret("sk-stored");
     const { repo, current } = fakeRepo({
       llmProviders: [
@@ -347,7 +366,7 @@ describe("settingsUseCases.update", () => {
     await createSettingsUseCases(repo).update(
       {
         llmProviders: [
-          { name: "openai", baseUrl: "https://new.example.com", apiKey: "*********" },
+          { name: "openai", baseUrl: "https://old.example.com", apiKey: "*********" },
         ],
       },
       ADMIN,
@@ -355,6 +374,100 @@ describe("settingsUseCases.update", () => {
 
     expect(current()?.llmProviders?.[0]?.apiKey).toBe(encrypted);
     expect(decryptSecret(current()?.llmProviders?.[0]?.apiKey ?? "")).toBe("sk-stored");
+  });
+
+  it("requires a new provider key when its endpoint changes", async () => {
+    const encrypted = encryptSecret("sk-stored");
+    const { repo, current } = fakeRepo({
+      llmProviders: [
+        { name: "openai", baseUrl: "https://old.example.com", apiKey: encrypted },
+      ],
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    const useCases = createSettingsUseCases(repo);
+
+    await expect(
+      useCases.update(
+        {
+          llmProviders: [
+            { name: "openai", baseUrl: "https://new.example.com", apiKey: "*********" },
+          ],
+        },
+        ADMIN,
+      ),
+    ).rejects.toThrow(/requires a new API key/);
+
+    await useCases.update(
+      {
+        llmProviders: [
+          { name: "openai", baseUrl: "https://new.example.com", apiKey: "sk-new" },
+        ],
+      },
+      ADMIN,
+    );
+    expect(
+      decryptSecret(
+        current()?.llmProviders?.[0]?.apiKey ?? "",
+        llmProviderApiKeyContext("openai", "https://new.example.com"),
+      ),
+    ).toBe("sk-new");
+  });
+
+  it("requires a new default key when LLM_BASE_URL changes", async () => {
+    process.env.LLM_BASE_URL = "https://env.example.com/v1";
+    process.env.LLM_API_KEY = "sk-env";
+    const { repo, current } = fakeRepo({
+      llmBaseUrl: "https://old.example.com/v1",
+      llmApiKey: encryptSecret("sk-old"),
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    const useCases = createSettingsUseCases(repo);
+
+    await expect(
+      useCases.update(
+        { llmBaseUrl: "https://new.example.com/v1", llmApiKey: "******" },
+        ADMIN,
+      ),
+    ).rejects.toThrow("Changing LLM_BASE_URL requires a new LLM_API_KEY");
+
+    await useCases.update(
+      { llmBaseUrl: "https://new.example.com/v1", llmApiKey: "sk-new" },
+      ADMIN,
+    );
+    expect(current()?.llmBaseUrl).toBe("https://new.example.com/v1");
+    expect(
+      decryptSecret(
+        current()?.llmApiKey ?? "",
+        llmApiKeyContext("https://new.example.com/v1"),
+      ),
+    ).toBe("sk-new");
+  });
+
+  it("refuses a stored default endpoint without its own key", async () => {
+    process.env.LLM_API_KEY = "sk-env";
+    const { repo } = fakeRepo({
+      llmBaseUrl: "https://stored.example.com/v1",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    await expect(
+      createSettingsUseCases(repo).update({ pluginsRepo: "org/repo" }, ADMIN),
+    ).rejects.toThrow("A stored LLM_BASE_URL requires a stored LLM_API_KEY");
+  });
+
+  it("can clear both default channel overrides back to the environment pair", async () => {
+    process.env.LLM_BASE_URL = "https://env.example.com/v1";
+    process.env.LLM_API_KEY = "sk-env";
+    const { repo, current } = fakeRepo({
+      llmBaseUrl: "https://stored.example.com/v1",
+      llmApiKey: encryptSecret("sk-stored"),
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    await createSettingsUseCases(repo).update({ llmBaseUrl: "", llmApiKey: "" }, ADMIN);
+
+    expect(current()?.llmBaseUrl).toBeUndefined();
+    expect(current()?.llmApiKey).toBeUndefined();
   });
 
   it("rejects providers outside the supported set", async () => {

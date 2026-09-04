@@ -238,8 +238,9 @@ export default function PlaygroundPage() {
     }
   }
 
-  // `viewer === null` is still loading, like the settings page: rendering
-  // before it resolves would flash the owner a read-only editor.
+  // A protected page never receives a signed-out viewer: the root shell starts
+  // the login redirect first. Keep the guard so an auth transition cannot draw
+  // project data while that redirect is taking over.
   if (loading || viewer === null) {
     return <LoadingText />;
   }

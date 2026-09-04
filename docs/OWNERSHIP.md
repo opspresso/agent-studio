@@ -35,6 +35,7 @@
 | 저장된 오브젝트를 삭제하기 | `src/infrastructure/storage/s3ObjectStore.ts` |
 | proxied 오브젝트 주소와 그 토큰. `/api/objects/<key>?exp=&sig=[&dl=]`, HMAC 이 무엇을 덮는가 | `src/infrastructure/storage/objectUrlToken.ts`. 서명자와 라우트가 여기서 합의한다. 두 번째 작성자는 HMAC 이 파일명을 덮는지에 대해 다르게 답할 수 있고, 그것은 답하지 않는 링크이거나 서명되지 않은 이름으로 내려가는 링크다 |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` |
+| `AES_ENCRYPTION_KEY` 의 base64 해석과 32바이트 검증 | `src/shared/aesKey.ts` 의 `decodeAes256Key` |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` |
 | provider 에 embedding 을 요청하기 | `src/infrastructure/llm/embeddings.ts` |
@@ -75,7 +76,7 @@
 | Project 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `projectWebhookPath` |
 | Project optimistic update 가 경쟁에서 졌을 때의 오류 계약 | `src/application/project/projectUpdate.ts` 의 `persistProjectUpdate` |
 | managed workload 이름 규칙 | `src/domain/naming.ts` 의 `MANAGED_NAME` |
-| managed workload의 image·env reference·환경 키·값·argv·endpoint path 문법 | `src/domain/mcp/provisioner.ts`. API가 400으로 거절하는 문법과 lifecycle/Docker 경계가 실행 직전에 방어하는 문법이 같다 |
+| managed workload의 image·환경 키·값·argv·endpoint path 문법 | `src/domain/mcp/provisioner.ts`. API가 400으로 거절하는 문법과 lifecycle/Docker 경계가 실행 직전에 방어하는 문법이 같다 |
 | plugin 상세의 repository·commit 링크가 향하는 GitHub web base | `src/lib/config.ts`의 `githubWebUrl`. public GitHub와 표준 GHES API 경로에서 도출하고, 그 밖에는 `GITHUB_WEB_URL`이 정한다. 브라우저는 상세 API가 만든 `repositoryUrl`만 읽는다 |
 | 동시에 도는 generator 를 병합하기 | `src/shared/mergeGenerators.ts` |
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/app/_lib/authorPaths.ts` |

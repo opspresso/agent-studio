@@ -414,7 +414,6 @@ describe("managed MCP lifecycle", () => {
     const updated = await f.useCases.update("image-fetch", {
       image: "ecr/img:v2",
       containerPort: 8080,
-      envRefs: ["/env/prod/image-fetch"],
       environment: { GRAFANA_TOKEN: "new-token" },
       args: ["--transport", "streamable-http"],
       endpointPath: "/custom-mcp",
@@ -426,7 +425,6 @@ describe("managed MCP lifecycle", () => {
     expect(f.rows.get("image-fetch")).toMatchObject({
       image: "ecr/img:v2",
       containerPort: 8080,
-      envRefs: ["/env/prod/image-fetch"],
       environment: { GRAFANA_TOKEN: "enc:v1:new-token" },
       args: ["--transport", "streamable-http"],
       endpointPath: "/custom-mcp",
@@ -440,7 +438,6 @@ describe("managed MCP lifecycle", () => {
         name: "image-fetch",
         image: "ecr/img:v2",
         containerPort: 8080,
-        envRefs: ["/env/prod/image-fetch"],
         environment: { GRAFANA_TOKEN: "new-token" },
         args: ["--transport", "streamable-http"],
       },
@@ -635,7 +632,7 @@ describe("managed MCP reconcile", () => {
 
   it("rebuilds the spec from the stored row", async () => {
     const f = fixture({
-      existing: managedRow({ containerPort: 8080, envRefs: ["/agent-studio/image-fetch"] }),
+      existing: managedRow({ containerPort: 8080 }),
     });
     f.answerWith((_url, call) => (call === 1 ? REFUSED : REACHABLE));
     await f.useCases.reconcile();
@@ -645,7 +642,6 @@ describe("managed MCP reconcile", () => {
         name: "image-fetch",
         image: "ecr/img:v1",
         containerPort: 8080,
-        envRefs: ["/agent-studio/image-fetch"],
       },
     ]);
   });

@@ -3,7 +3,7 @@ import type { UsageRepository } from "@/domain/usage/repository";
 import type { MemberUsageRow, UsageRow } from "@/domain/usage/types";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { memberMonthToDate } from "./memberCostGuard";
-import { listProjectActors, type ActorUsageView, type ListActorsDeps } from "./listActors";
+import { listProjectActors, type ListActorsDeps, type ProjectActorUsage } from "./listActors";
 
 /**
  * Usage rows over a date range — the dashboard read. One project's rows when a
@@ -53,7 +53,7 @@ export async function listProjectActorsFor(
   userEmail: string,
   from: string,
   to: string,
-): Promise<ActorUsageView[]> {
+): Promise<ProjectActorUsage> {
   const project = await assertProjectWritable(deps.projects, projectName, userEmail);
   return listProjectActors(deps, project, from, to);
 }
@@ -64,7 +64,12 @@ export async function listProjectActorsFor(
  */
 export interface UsageUseCases {
   summary(from: string, to: string, projectName?: string): Promise<UsageRow[]>;
-  actors(projectName: string, userEmail: string, from: string, to: string): Promise<ActorUsageView[]>;
+  actors(
+    projectName: string,
+    userEmail: string,
+    from: string,
+    to: string,
+  ): Promise<ProjectActorUsage>;
   memberUsage(email: string, from: string, to: string): Promise<MemberUsageRow[]>;
   /** This member's spend since the first of the UTC month — what the cap bounds. */
   memberMonthToDate(email: string, now?: Date): Promise<number>;

@@ -453,7 +453,10 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   서버 측 로그 한 줄을 남긴다.
 - PUT 의 `llmProviders` 는 전체 교체 목록이다 (프로바이더별 LLM 채널). 빈 배열은 오버라이드를
   제거한다 (`LLM_PROVIDER_*` env 로 폴백). 마스킹된 `apiKey` 는 그 프로바이더 이름에 대해
-  지금 유효한 키를 유지한다. 프로바이더 `name` 은
+  endpoint 와 인증 방식이 그대로일 때만 지금 유효한 키를 유지한다. `baseUrl` 또는 `auth` 를
+  바꾸려면 새 API key 를 같은 요청에 평문으로 넣어야 한다. 기본 `LLM_BASE_URL` 도 바꾸려면
+  새 `LLM_API_KEY` 가 필요하며, 두 값을 함께 비우면 env 의 URL/key 쌍으로 돌아간다.
+  프로바이더 `name` 은
   `openai | anthropic | google | xai | bedrock | openrouter | selfhosted` (`SUPPORTED_PROVIDERS`) 중
   하나여야 하고, `auth` 는 `bearer` (기본) 또는 `sigv4` 이며, 목록은 최대 50개까지고, 같은
   이름이 두 번 나오면 `400` 이다.
@@ -657,7 +660,7 @@ GET  /api/plugins
       skills: ["name"], mcpServers: ["name"], syncedAt, createdAt, updatedAt } ]
 
 GET  /api/plugins/{name}
-→ 200 { …one of the above…, repositoryUrl: string | null } | 404 | 400
+→ 200 { …one of the above…, branch, repositoryUrl: string | null } | 404 | 400
                                            ({name} follows the Agent Plugins name rule,
                                             which allows periods — not the registry slug)
 
@@ -685,8 +688,9 @@ POST /api/plugins/sync/upload        multipart/form-data: file (.tar.gz | .tgz |
 --format=tar.gz HEAD` 든 `tar czf` 든. 맨 앞의 공통 디렉터리는 벗겨 낸다)를 올리면 GitHub
 클라이언트가 만드는 것과 같은 스냅샷이 되어 **같은 sync** 를 지난다. 행들이 지닐 provenance 는
 설정된 `PLUGINS_REPO`, 그것도 없으면 `archive` 다. `GET /sync` 가 마지막 리포트를 읽는 바로 그
-이름이고, 그래서 GitHub 가 닿던 시절의 행은 같은 저장소가 손으로 와도 주인을 유지한다. 스냅샷의 `branch` 는 `archive`,
-`commitSha` 는 아카이브의 sha256 이다. 업로드를 식별할 뿐, 바뀌었는지는 행마다 내용으로 판정한다(GitHub sync 와 같다). `PLUGINS_REPO`
+이름이고, 그래서 GitHub 가 닿던 시절의 행은 같은 저장소가 손으로 와도 주인을 유지한다. 스냅샷과
+plugin 행의 `branch` 는 `archive`, `commitSha` 는 아카이브의 sha256 이다. 상세 응답은 이 branch 를
+근거로 존재하지 않는 GitHub 링크를 만들지 않는다. 업로드를 식별할 뿐, 바뀌었는지는 행마다 내용으로 판정한다(GitHub sync 와 같다). `PLUGINS_REPO`
 도 `GITHUB_TOKEN` 도 필요 없고, `GET /api/plugins/sync` 의 `last` 는 같은 이름 아래에서 읽힌다.
 심볼릭 링크는 GitHub 트리와 같은 모드(`120000`)로 보고되어 같은 규칙으로 건너뛴다.
 
@@ -898,7 +902,7 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
 ```json
 { "name": "my-tool", "image": "…/my-mcp:1.4.0", "containerPort": 8080,
   "args": ["--port", "{{PORT}}"]?, "endpointPath": "/mcp"?,
-  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/etc/agent-studio/my-tool.env"]?,
+  "environment": { "LOG_LEVEL": "info" }?,
   "description": ""?, "content": ""?, "headers": {}? }
 ```
 
@@ -907,9 +911,9 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
   없어야 한다. 인자 안의 `{{PORT}}` 는 실제 listen 포트로 치환된다. `PORT` 환경변수를 존중하지
   않는 이미지를 위한 것이다.
 - `environment` 값은 레지스트리 행에서 암호화되고, 읽을 때 마스킹되며, 워크로드 스펙을 만들 때만
-  복호화된다. `PORT` 는 거절된다. 그것은 런타임이 소유한다. 값이 Parameter Store 에 남아 있어야
-  하면 대신 `envRefs` 를 쓰라. 키는 `^[A-Za-z_][A-Za-z0-9_]*$` 이고 값은 줄바꿈 없이
-  16,384자까지 간다. `envRefs`는 `/`로 시작하는 호스트 절대 경로다.
+  복호화된다. Docker 에는 0600 임시 env file 로 전달하고 호출 뒤 제거한다. 호스트 파일 경로는
+  받지 않는다. `PORT` 는 거절된다. 그것은 런타임이 소유한다. 키는
+  `^[A-Za-z_][A-Za-z0-9_]*$` 이고 값은 줄바꿈 없이 16,384자까지 간다.
 - `endpointPath` 의 기본값은 `/mcp` 이고, query·fragment·공백이 없는 절대 경로여야 한다
   (`^\/(?!\/)[^\s?#]*$`). 그 밖의 것은 `400` 이다.
 - `PUT`/`DELETE` 의 `403` 은 모든 레지스트리 라우트가 답하는 repo 소유 거절이다: sync 된 항목의
@@ -1246,8 +1250,9 @@ GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
 
 ```
 GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
-→ 200 { "items": [ { projectName, date, actor, calls, inputTokens, outputTokens, cachedTokens,
-                     costUsd, display?: { name, avatarUrl? } }, … ] }
+→ 200 { "items": [ { projectName, actor, calls, inputTokens, outputTokens, cachedTokens,
+                     costUsd, display?: { name, avatarUrl? } }, … ],
+        "totalActors": 123, "truncated": true }
 ```
 
 `actor` 는 `{kind}:{id}` 다. `user:a@example.com`, `project-token:owner@example.com` (토큰은
@@ -1256,6 +1261,11 @@ GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 `slack:U123`, `telegram:123456`, `teams:{Entra object id}`, `a2a:shared-key`, 그리고 trigger 발화에는
 `webhook:{project}:{triggerId}` 또는 `schedule:{project}:{triggerId}` 다. 지표 필드는 위 요약과
 정확히 같이 모델별 맵이다.
+
+일별 행은 서버에서 `actor` 별로 합친 뒤 비용이 큰 순서로 최대 100명을 돌려준다. `totalActors` 는
+그보다 뒤에 생략된 사람까지 포함한 전체 호출자 수이고, `truncated` 는 `items` 가 상위 일부인지
+알려 준다. Slack 프로필도 반환하는 호출자만 해석한다. 한 요청이 읽어야 할 일별 actor 행이
+10,000개를 넘으면 조용히 일부만 집계하지 않고 400으로 거절하므로 기간을 좁혀 다시 요청하라.
 
 `display` 는 `slack:` 행에 얼굴을 붙여 준다. 그 project 자신의 봇 토큰으로 해석한다. 장식이며
 어떤 이유로든 없을 수 있다. Slack 봇 없음, 회수된 토큰, 비활성화된 사용자, Slack 장애. 그리고
@@ -1596,7 +1606,8 @@ Agent Card GET 은 표면이 꺼져 있으면 `503`, project 가 private 이거�
 
 `503` (설정되지 않음) 은 표면이 완전히 꺼져 있을 때만 답한다: 공유 키도 없고 **그리고** 클라이언트
 키도 없을 때다. 켜져 있는 표면에서 키가 틀리거나 없으면 `401` 이다. 공유 키는 상수 시간으로
-비교하고, 클라이언트 키는 해시로 해석한다. 그 401 은 `WWW-Authenticate: ApiKey realm="a2a",
+비교하고, 클라이언트 키는 해시로 primary row 를 찾은 뒤 client 이름에 결합된 token 을 다시
+확인한다. 그 401 은 `WWW-Authenticate: ApiKey realm="a2a",
 header="X-A2A-Key"` 를 싣고, Agent Card 는 같은 스킴을
 `securitySchemes`/`securityRequirements` 로 선언한다. 표준 클라이언트가 이 요구사항을 읽어
 자격 증명을 고른다.

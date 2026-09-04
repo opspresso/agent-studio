@@ -101,10 +101,12 @@ describe("isEffectiveConfiguredAdminByEmail", () => {
     expect(await isEffectiveConfiguredAdminByEmail("u@x.com")).toBe(false);
   });
 
-  it("falls back to list-only semantics when the read fails", async () => {
+  it("fails closed when the member read fails", async () => {
     setAdminEmails(["someone@x.com"]);
     getByEmail.mockRejectedValue(new Error("storage down"));
-    expect(await isEffectiveConfiguredAdminByEmail("u@x.com")).toBe(false);
+    await expect(isEffectiveConfiguredAdminByEmail("u@x.com")).rejects.toThrow(
+      "Member tier is temporarily unavailable",
+    );
   });
 });
 
@@ -148,7 +150,9 @@ describe("getMemberTier", () => {
 
   it("does not cache a failed read", async () => {
     getByEmail.mockRejectedValueOnce(new Error("storage down"));
-    expect(await getMemberTier("u@x.com")).toBeNull();
+    await expect(getMemberTier("u@x.com")).rejects.toThrow(
+      "Member tier is temporarily unavailable",
+    );
     getByEmail.mockResolvedValue(member("admin"));
     expect(await getMemberTier("u@x.com")).toBe("admin");
   });

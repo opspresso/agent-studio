@@ -20,7 +20,7 @@ import { MEMBER_TIER_COLOR } from "@/app/_components/badgeColors";
 import { CardHeading } from "@/app/_components/CardHeading";
 import { CostBarChart } from "@/app/_components/CostBarChart";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
-import { GroupByControl } from "@/app/_components/GroupByControl";
+import { GROUP_BY_LABEL, GroupByControl } from "@/app/_components/GroupByControl";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
 import { StatCard } from "@/app/_components/StatCard";
@@ -51,8 +51,9 @@ export default function ProfilePage() {
   const [range, setRange] = useState(defaultDateRange);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [rows, setRows] = useState<MemberUsageRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +62,7 @@ export default function ProfilePage() {
       .then((data) => !cancelled && setAccount(data))
       .catch((loadError) =>
         !cancelled &&
-        setError(loadError instanceof Error ? loadError.message : "Failed to load profile"),
+        setAccountError(loadError instanceof Error ? loadError.message : "Failed to load profile"),
       );
     return () => { cancelled = true; };
   }, []);
@@ -73,7 +74,9 @@ export default function ProfilePage() {
     // last — showing the reader a range they are no longer asking for.
     let cancelled = false;
     async function loadUsage() {
-      setLoading(true);
+      setUsageLoading(true);
+      setUsageError(null);
+      setRows([]);
       try {
         const { items } = await readJson<{ items: MemberUsageRow[] }>(
           await fetch(`/api/me/usage?from=${range.from}&to=${range.to}`),
@@ -81,10 +84,10 @@ export default function ProfilePage() {
         if (!cancelled) setRows([...items].sort((a, b) => b.date.localeCompare(a.date)));
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load usage");
+          setUsageError(loadError instanceof Error ? loadError.message : "Failed to load usage");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setUsageLoading(false);
       }
     }
     void loadUsage();
@@ -101,7 +104,7 @@ export default function ProfilePage() {
   const cost = useMemo(() => totalCost(rows), [rows]);
   const calls = useMemo(() => totalCalls(rows), [rows]);
 
-  if (error) return <Alert color="red" variant="light">{error}</Alert>;
+  if (accountError) return <Alert color="red" variant="light">{accountError}</Alert>;
   if (account === null) return <LoadingText />;
 
   const { member, monthToDateUsd } = account;
@@ -127,7 +130,7 @@ export default function ProfilePage() {
             <Text fz="sm" c="dimmed" truncate>{member.email}</Text>
             <Group gap="xl" mt="sm">
               <div>
-                <Text fz="xs" c="dimmed">Joined</Text>
+                <Text fz="xs" c="dimmed">{t("profile.joined")}</Text>
                 <Text fz="sm">{formatDateTime(member.joinedAt, locale)}</Text>
               </div>
               <div>
@@ -140,10 +143,17 @@ export default function ProfilePage() {
                 <Text fz="xs" c="dimmed">{t("profile.tierLimits")}</Text>
                 <Text fz="sm">
                   {limits.maxConcurrentRuns !== undefined
-                    ? `${limits.maxConcurrentRuns} concurrent ${limits.maxConcurrentRuns === 1 ? "run" : "runs"}`
-                    : "Workspace default concurrency"}
+                    ? t(
+                        limits.maxConcurrentRuns === 1
+                          ? "profile.concurrentRun"
+                          : "profile.concurrentRuns",
+                        { count: limits.maxConcurrentRuns },
+                      )
+                    : t("profile.workspaceConcurrency")}
                   {" · "}
-                  {cap !== undefined ? `${formatUsd(cap)}/month` : "uncapped"}
+                  {cap !== undefined
+                    ? t("profile.perMonth", { amount: formatUsd(cap) })
+                    : t("profile.uncapped")}
                 </Text>
               </div>
             </Group>
@@ -154,7 +164,7 @@ export default function ProfilePage() {
       {cap !== undefined && cap > 0 && (
         <Card>
           <Group justify="space-between" mb="xs">
-            <CardHeading title={t("profile.monthlyCap")} subtitle="This UTC month, whatever the range below" />
+            <CardHeading title={t("profile.monthlyCap")} subtitle={t("profile.capPeriod")} />
             <Text fz="sm" c="dimmed" ff="monospace">
               {formatUsd(monthToDateUsd)} / {formatUsd(cap)}
             </Text>
@@ -165,34 +175,43 @@ export default function ProfilePage() {
 
       <DateRangePicker value={range} onChange={setRange} />
 
+      {usageError && (
+        <Alert color="red" variant="light">
+          {usageError}
+        </Alert>
+      )}
+
       <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="md">
         <StatCard
           label={t("cost.totalCost")}
           value={formatUsd(cost)}
-          detail="Selected period"
+          detail={t("cost.selectedPeriod")}
           Icon={IconCoins}
         />
         <StatCard
           label={t("cost.totalCalls")}
           value={calls.toLocaleString(locale)}
-          detail="Model invocations"
+          detail={t("cost.modelInvocations")}
           Icon={IconActivity}
         />
       </SimpleGrid>
 
       <Card>
         <Group justify="space-between" mb="md" gap="md" wrap="wrap">
-          <CardHeading title={t("cost.dailyCost")} subtitle={`Stacked by ${groupBy}`} />
+          <CardHeading
+            title={t("cost.dailyCost")}
+            subtitle={t("usage.stackedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
+          />
           <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
         </Group>
         <CostBarChart
           data={daily.data}
           keys={daily.keys}
-          empty={loading ? "Loading…" : "No usage in this range."}
+          empty={usageLoading ? t("common.loading") : t("usage.none")}
         />
       </Card>
 
-      <UsageBreakdown groups={groups} label={groupBy} loading={loading} />
+      <UsageBreakdown groups={groups} label={groupBy} loading={usageLoading} />
     </Stack>
   );
 }

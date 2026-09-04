@@ -25,7 +25,7 @@ import { baseMimeType } from "@/domain/artifact/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
-import { base64ByteLength, MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
+import { imageBytesRejectReason } from "@/domain/llm/imageLimits";
 import type { McpToolResult } from "@/domain/llm/types";
 import {
   type DiscoveryFailure,
@@ -655,10 +655,10 @@ function imageBlock(data: string | undefined, declaredType: string | undefined):
   if (!data || !mimeType.startsWith("image/")) {
     return { text: "[image result omitted]" };
   }
-  const bytes = base64ByteLength(data);
-  if (bytes > MAX_IMAGE_BYTES) {
+  const reason = imageBytesRejectReason({ b64: data, mimeType });
+  if (reason) {
     return {
-      text: `[image omitted: ${mimeType}, ${bytes} bytes — over the ${MAX_IMAGE_BYTES}-byte limit for one image. Ask the server for a smaller rendition.]`,
+      text: `[image omitted: ${mimeType}, ${reason}. Ask the server for a supported, smaller rendition.]`,
     };
   }
   return { text: "[image]", image: { b64: data, mimeType } };

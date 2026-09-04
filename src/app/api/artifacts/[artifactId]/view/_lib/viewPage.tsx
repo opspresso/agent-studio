@@ -1,11 +1,11 @@
 /**
  * A stored artifact as a page a reader can open.
  *
- * `text/html` never comes through here — it is served as it was written, which
- * is the whole reason it is worth a sandbox. Everything else is a file a
- * browser would save, and this is what makes View mean the same thing for all
- * of them: the reader presses it and gets something to look at, rather than
- * learning that one kind of report opens and the rest land in Downloads.
+ * `text/html` never comes through here — `htmlSafety.ts` decodes and sanitizes
+ * it separately. Everything else is a file a browser would save, and this is
+ * what makes View mean the same thing for all of them: the reader presses it
+ * and gets something to look at, rather than learning that one kind of report
+ * opens and the rest land in Downloads.
  *
  * **Each type is shown as what it is, not as text that happens to be in it.**
  * Markdown is rendered, CSV becomes a table, JSON is re-indented, SVG is drawn,
@@ -20,10 +20,10 @@
  * raw HTML in the source as *text* rather than markup and strips dangerous URL
  * schemes, so the page carries no script by construction.
  *
- * Nothing built here does — which is why the view refuses `allow-scripts` for
- * every kind but HTML, and why an SVG is drawn through `<img>` rather than
- * inlined: an SVG loaded as an image cannot run script or fetch anything, by
- * specification, before any header has a say.
+ * Nothing built here has script, and `htmlSafety.ts` strips it from HTML too.
+ * Every view therefore receives the same sandbox with no `allow-*` grant. SVG
+ * is drawn through `<img>` rather than inlined: an SVG loaded as an image cannot
+ * run script or fetch anything, by specification, before any header has a say.
  *
  * **`react-dom/server.edge`, not `react-dom/server`, and not by preference.**
  * The App Router build refuses the latter outright ("You're importing a

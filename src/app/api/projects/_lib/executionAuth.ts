@@ -1,5 +1,5 @@
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
-import { tierMayUseApiTokens } from "@/domain/member/tiers";
+import { tierMayUseApiTokens, type MemberTier } from "@/domain/member/tiers";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { unauthorized } from "@/shared/unauthorized";
 import { getMemberTier } from "@/lib/memberAccess";
@@ -54,10 +54,18 @@ export async function authenticateExecution(
     // not personal spend": the budget exclusion is safe only because a tier
     // without token rights cannot present one. A 403 with the reason, not a
     // 401 — the credential is valid; the policy refuses it. Fails open on an
-    // unknown tier (`null`): the lookup failing must not take every token
-    // down with it.
-    const ownerTier = await getMemberTier(email);
-    if (ownerTier && !tierMayUseApiTokens(ownerTier)) {
+    // A missing member row has the default guest posture. A repository failure
+    // is a 503 rather than permission to use the credential.
+    let ownerTier: MemberTier | null;
+    try {
+      ownerTier = await getMemberTier(email);
+    } catch {
+      return Response.json(
+        { error: "Member tier is temporarily unavailable" },
+        { status: 503 },
+      );
+    }
+    if (ownerTier === null || !tierMayUseApiTokens(ownerTier)) {
       return Response.json(
         { error: "The project owner's tier does not allow API tokens" },
         { status: 403 },

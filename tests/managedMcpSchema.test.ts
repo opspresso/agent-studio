@@ -27,7 +27,7 @@ describe("managed MCP request schemas", () => {
 
   it.each([
     ["image", { image: "repo/image:latest;--privileged" }],
-    ["env file", { envRefs: ["relative.env"] }],
+    ["host env file", { envRefs: ["/etc/environment"] }],
     ["reserved port", { environment: { PORT: "9000" } }],
     ["multiline environment", { environment: { TOKEN: "first\nsecond" } }],
     ["control argument", { args: ["ok\nbad"] }],

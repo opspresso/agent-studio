@@ -13,7 +13,7 @@ McpServer { name, url, description?, content?, source?, runtime?: 'remote' | 'ma
             headers: Record<string, string>,   // 저장 시 암호화, 읽을 때 마스킹
             auth?,
             // managed 전용; `environment` 는 `headers` 처럼 저장 시 암호화
-            image?, args?, endpointPath?, containerPort?, environment?, envRefs?,
+            image?, args?, endpointPath?, containerPort?, environment?,
             createdAt, updatedAt }
 ```
 
@@ -219,11 +219,10 @@ Docker CLI 로(`MANAGED_MCP_RUNTIME=docker`, 유일한 런타임) 시작되고 `
 [SECURITY.md](../SECURITY.md#managed-루프백-예외) 를 보라.
 
 저장된 행은 `image`, `args`, `endpointPath`, `containerPort` 와 컨테이너의 환경을 싣는다 —
-재시작이 필요로 하는 전부다. 재시작 시점에는 다시 물어볼 운영자가 없기 때문이다. 환경이 두
-경로로 들어오는 것은 의도적이다: `envRefs` 는 호스트의 env 파일을 절대 경로로 가리켜
-`--env-file` 로 건네지므로 그 값들은 이 테이블에 아예 들어오지 않고, `environment` 는 달리 있을
-곳이 없던 값들을 들고 있으며 다른 모든 저장 자격증명과 마찬가지로 저장 시 암호화된다. 여기에
-`PORT` 는 거부되는데, 그것은 런타임이 소유하기 때문이다.
+재시작이 필요로 하는 전부다. 재시작 시점에는 다시 물어볼 운영자가 없기 때문이다. `environment`
+값은 다른 저장 자격증명과 마찬가지로 저장 시 암호화되고, Docker 를 호출하기 직전에만 0600 임시
+env file 로 복호화된다. 호스트 파일 경로를 받지 않으므로 다른 workload 의 파일을 컨테이너에
+주입할 수 없다. `PORT` 는 런타임이 소유하므로 입력에서 거부된다.
 
 `containerPort` 는 컨테이너가 리슨할 것으로 기대되는 포트다: 프로비저너는
 `127.0.0.1:<port>:<containerPort>` 매핑을 게시하고 `-e PORT=<containerPort>` 를 써 넣어 — 운영자가

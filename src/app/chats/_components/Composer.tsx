@@ -61,8 +61,16 @@ export function Composer({
 }) {
   const [value, setValue] = useState("");
   const t = useT();
-  const { attachments, documents, attachError, addFiles, removeAt, removeDocumentAt, clear } =
-    useAttachments({ documents: true });
+  const {
+    attachments,
+    documents,
+    attachError,
+    reading,
+    addFiles,
+    removeAt,
+    removeDocumentAt,
+    clear,
+  } = useAttachments({ documents: true });
 
   const empty = !value.trim() && attachments.length === 0 && documents.length === 0;
 
@@ -75,7 +83,7 @@ export function Composer({
   const onPaste = useMemo(() => onFilePaste(attach, disabled), [attach, disabled]);
 
   function submit() {
-    if (empty || disabled) {
+    if (empty || disabled || reading) {
       return;
     }
     if (!onSend(value.trim(), attachments, documents)) {
@@ -142,8 +150,8 @@ export function Composer({
               variant="filled"
               size="input-sm"
               radius="xl"
-              loading={disabled}
-              disabled={disabled || empty}
+              loading={disabled || reading}
+              disabled={disabled || reading || empty}
               aria-label={t("chat.send")}
             >
               <IconSend size={18} />

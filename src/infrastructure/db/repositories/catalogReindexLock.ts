@@ -4,8 +4,8 @@ import { log } from "@/shared/logger";
 import {
   CONDITIONAL_WRITE_FAILED,
   conditions,
-  deleteItem,
-  putItem,
+  getItem,
+  updateItem,
 } from "../store";
 import { keys } from "../keys";
 
@@ -19,14 +19,15 @@ export const catalogReindexLock: CatalogReindexLock = {
     const now = Date.now();
     const leaseUntil = now + leaseMs;
     try {
-      await putItem(
-        {
+      await updateItem(
+        keys.catalogReindexLock(),
+        (row) => ({
           ...keys.catalogReindexLock(),
           entityType: "CATALOGREINDEX",
+          generation: Number(row?.generation ?? 0) + 1,
           token,
           leaseUntil,
-          expiresAt: Math.ceil(leaseUntil / 1000),
-        },
+        }),
         (row) => row === null || Number(row.leaseUntil ?? 0) < now,
       );
       return token;
@@ -40,11 +41,26 @@ export const catalogReindexLock: CatalogReindexLock = {
 
   async release(token) {
     try {
-      await deleteItem(keys.catalogReindexLock(), conditions.existsWith("token", token));
+      await updateItem(
+        keys.catalogReindexLock(),
+        (row) => {
+          const { token: _token, leaseUntil: _leaseUntil, expiresAt: _expiresAt, ...state } = row!;
+          return state;
+        },
+        conditions.existsWith("token", token),
+      );
     } catch (error) {
       if (!lostCondition(error)) {
         log.warn("catalog", "failed to release the reindex lease", error);
       }
     }
+  },
+
+  async state() {
+    const row = await getItem(keys.catalogReindexLock());
+    return {
+      generation: Number(row?.generation ?? 0),
+      active: typeof row?.token === "string" && Number(row.leaseUntil ?? 0) >= Date.now(),
+    };
   },
 };

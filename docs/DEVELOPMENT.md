@@ -114,7 +114,7 @@ pnpm exec vitest run -t "streamWithFallback"
 | `scripts/integration-check.ts` | 저장소 왕복 전 구간 + 엔진(단발 실행과 agent 루프). |
 | `scripts/check-models.ts` | 카탈로그 스냅샷(`src/domain/llm/catalog.json`)을 *이 배포의* 채널들이 서빙하는 id 와 대조한다. agent-models 가 provider 의 공개 카탈로그는 스스로 보므로, 여기서 보는 것은 게이트웨이·Bedrock·키의 범위 같은 이 배포만의 차이다. |
 | `scripts/sync-models.ts` | 발행된 카탈로그로 스냅샷을 갱신한다 (`--check` 는 뒤처졌으면 1 로 종료, `--from <file>` 은 URL 대신 로컬 카탈로그 문서를 읽는다, `MODELS_CATALOG_URL` 이 없거나 `none` 인 환경에서는 이것이 필수다). 런타임은 카탈로그를 직접 읽으므로, 테스트가 새 모델을 봐야 하거나 릴리즈 전일 때 돌린다. |
-| `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키로 `items` 에 upsert 한다. 새 배포에서 위험한 managed MCP `envRefs` 와 저장소 종속 `artifactAccessMode` 는 제거하고, 같은 이메일로 먼저 생긴 사용자는 export 의 원래 id 를 보존하기 위해 교체한다. 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
+| `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키로 `items` 에 upsert 한다. 지원하지 않는 managed MCP host-file `envRefs` 와 저장소 종속 `artifactAccessMode` 는 제거하고, 같은 이메일로 먼저 생긴 사용자는 export 의 원래 id 를 보존하기 위해 교체한다. 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
 
 ### `check-models`
 
@@ -184,7 +184,7 @@ pnpm test:integration
 `.github/workflows/ci.yml` 은 저장소의 모든 branch push 에서 돈다:
 
 ```
-typecheck → test → test:integration → build
+typecheck → test → test:integration → build → production server smoke test
 ```
 
 `pgvector/pgvector:0.8.6-pg18-trixie` 서비스 컨테이너가 `POSTGRES_DB=agent_studio_test` 로 호스트 포트
@@ -192,10 +192,15 @@ typecheck → test → test:integration → build
 지난다. job 마다 새로 뜨는 컨테이너는 비어 있고, 검사가 자기 스키마를 적용하므로 워크플로에 설정할
 것이 없다.
 
-CI는 최소 `contents: read` 권한의 persistent self-hosted runner에서 실행하고 checkout credential을
-작업 트리에 남기지 않는다. `pull_request` 이벤트는 받지 않으므로 fork의 코드는 이 runner에
-도달하지 않는다. PR 검사는 base 저장소의 branch에 push된 commit에 붙은 CI 상태를 사용한다.
-fork PR을 검사하려면 별도의 ephemeral runner가 필요하다.
+마지막 smoke test 는 Dockerfile 과 같이 `public` 및 `.next/static` 을 standalone 디렉터리에
+복사하고, 같은 entry point(`node .next/standalone/server.js`)로 build 산출물을 실제 실행한다.
+`/api/health`, 첫 화면, 로고, 대표 JavaScript chunk 의 200을 확인한다. 하류 상태를 보는
+`/api/ready` 가 아니라 liveness 를 쓰므로 mock LLM 서버는 필요 없다. 프로세스가 먼저 끝나거나
+30초 안에 응답하지 않으면 서버 로그를 출력하고 실패한다.
+
+CI는 최소 `contents: read` 권한의 일회용 GitHub-hosted runner에서 실행하고 checkout credential을
+작업 트리에 남기지 않는다. PR 검사는 base 저장소의 branch에 push된 commit에 붙은 CI 상태를
+사용한다. 검토 전 branch 코드는 사내망에 연결된 persistent runner에 도달하지 않는다.
 시크릿이 필요한 `check-models`는 default branch의 schedule에서만, release는 `v*` tag push에서만
 self-hosted runner를 쓴다. 임의 ref를 선택하는 `workflow_dispatch`는 두 workflow 모두 제공하지
 않는다.
@@ -203,7 +208,8 @@ self-hosted runner를 쓴다. 임의 ref를 선택하는 `workflow_dispatch`는 
 `.github/workflows/check-models.yml` 은 `pnpm check-models --strict --since=7d` 를 pull request
 마다가 아니라 스케줄(cron `0 23 * * 0-4`, 일–목 23:00 UTC)로 돌린다: 살아 있는 provider API 와 저장소 시크릿이
 필요하기 때문이다(드리프트는 런이 실패하기 전에 Slack 으로 전송된다). provider 장애나 시크릿 없는
-fork 가 PR 을 실패시켜서는 안 된다.
+fork 가 PR 을 실패시켜서는 안 된다. 각 provider 요청은 30초에 중단되고 job 전체는 20분으로
+제한되어, 멈춘 채널 하나가 결과와 Slack 알림을 무기한 막지 못한다.
 
 **이 job 의 채널은 배포의 채널과 같아야 한다.** `LLM_BASE_URL` / `LLM_API_KEY` 만 주면 default
 채널 하나로 도는데, 이 배포에서 그것은 라우터가 아니라 provider 자신의 엔드포인트라 맨 id 를

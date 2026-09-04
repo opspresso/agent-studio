@@ -58,6 +58,12 @@ describe("workflow supply chain", () => {
     expect(unsafe).toEqual([]);
   });
 
+  it("keeps arbitrary branch pushes off persistent self-hosted runners", () => {
+    const text = readFileSync(join(WORKFLOWS, "ci.yml"), "utf8");
+    expect(text).toMatch(/branches:\s*\["\*\*"\]/);
+    expect(usesSelfHostedRunner(text)).toBe(false);
+  });
+
   it("recognizes every supported self-hosted runner spelling", () => {
     expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: self-hosted")).toBe(true);
     expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: [self-hosted, linux]")).toBe(true);
@@ -75,10 +81,11 @@ describe("workflow supply chain", () => {
   it("gates every release job on a version tag", () => {
     const text = readFileSync(join(WORKFLOWS, "release.yml"), "utf8");
     const jobBlocks = text.split(/^  (?=[a-z][a-z-]+:\s*$)/m).slice(1);
-    const unguarded = jobBlocks
-      .filter((block) => /runs-on:\s*self-hosted/.test(block))
+    const selfHosted = jobBlocks.filter(usesSelfHostedRunner);
+    const unguarded = selfHosted
       .filter((block) => !/if:\s*startsWith\(github\.ref, 'refs\/tags\/v'\)/.test(block));
 
+    expect(selfHosted.length).toBeGreaterThan(0);
     expect(unguarded).toEqual([]);
   });
 

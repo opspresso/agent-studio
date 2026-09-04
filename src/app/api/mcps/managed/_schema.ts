@@ -7,7 +7,6 @@ import {
   MANAGED_ARG,
   MANAGED_ENDPOINT_PATH,
   MANAGED_ENV_KEY,
-  MANAGED_ENV_REF,
   MANAGED_ENV_VALUE,
   MANAGED_IMAGE,
 } from "@/domain/mcp/provisioner";
@@ -16,7 +15,6 @@ import { MANAGED_NAME } from "@/domain/naming";
 const workloadSchema = z.object({
   image: z.string().trim().regex(MANAGED_IMAGE),
   containerPort: z.number().int().min(1).max(65535),
-  envRefs: z.array(z.string().trim().regex(MANAGED_ENV_REF)).optional(),
   environment: z
     .record(
       z.string().regex(MANAGED_ENV_KEY),
@@ -29,7 +27,7 @@ const workloadSchema = z.object({
   description: z.string().optional(),
   content: z.string().optional(),
   headers: z.record(z.string(), z.string()).optional(),
-});
+}).strict();
 
 export const createManagedMcpSchema: z.ZodType<CreateManagedInput> = workloadSchema.extend({
   name: z.string().regex(MANAGED_NAME),

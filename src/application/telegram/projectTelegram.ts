@@ -12,6 +12,7 @@ import type {
 } from "@/domain/telegram/destination";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { log } from "@/shared/logger";
+import { telegramSecretContext } from "@/domain/security/secretContext";
 
 /**
  * A project's Telegram bot: what the console reads and writes, and what the
@@ -61,7 +62,9 @@ function maskedView(cipher: SecretCipher, project: Project): ProjectTelegramView
   return {
     enabled: telegram?.enabled ?? false,
     configured: Boolean(telegram?.botToken && telegram.webhookSecret),
-    botToken: telegram?.botToken ? cipher.mask(telegram.botToken) : "",
+    botToken: telegram?.botToken
+      ? cipher.mask(telegram.botToken, telegramSecretContext(project.name, "bot-token"))
+      : "",
     botUsername: telegram?.botUsername ?? "",
     webhookPath: webhookPathFor(project.name),
   };
@@ -155,7 +158,12 @@ export async function updateProjectTelegram(
   const previous = resolveProjectTelegramCredentials(cipher, project);
   let botToken = stored?.botToken ?? "";
   let botUsername = stored?.botUsername;
-  let webhookSecret = stored?.webhookSecret ?? cipher.encrypt(generateSecretValue("telegramWebhookSecret"));
+  let webhookSecret =
+    stored?.webhookSecret ??
+    cipher.encrypt(
+      generateSecretValue("telegramWebhookSecret"),
+      telegramSecretContext(name, "webhook-secret"),
+    );
   let tokenChanged = false;
   const incoming = update.botToken;
   if (incoming !== undefined && incoming !== "" && !cipher.isMasked(incoming)) {
@@ -169,7 +177,7 @@ export async function updateProjectTelegram(
       );
     }
     tokenChanged = previous?.botToken !== token;
-    botToken = cipher.encrypt(token);
+    botToken = cipher.encrypt(token, telegramSecretContext(name, "bot-token"));
     botUsername = identity.username;
     if (tokenChanged && previous) {
       // The old bot must stop delivering here, and must stop being able to:
@@ -177,7 +185,10 @@ export async function updateProjectTelegram(
       await calls
         .deleteWebhook(previous.botToken)
         .catch((error) => log.warn("telegram", `could not delete the previous bot's webhook for ${name}`, error));
-      webhookSecret = cipher.encrypt(generateSecretValue("telegramWebhookSecret"));
+      webhookSecret = cipher.encrypt(
+        generateSecretValue("telegramWebhookSecret"),
+        telegramSecretContext(name, "webhook-secret"),
+      );
     }
   }
   const telegram: TelegramIntegration = {
@@ -256,8 +267,14 @@ function resolveProjectTelegramCredentials(
     return null;
   }
   return {
-    botToken: cipher.decrypt(telegram.botToken),
-    webhookSecret: cipher.decrypt(telegram.webhookSecret),
+    botToken: cipher.decrypt(
+      telegram.botToken,
+      telegramSecretContext(project.name, "bot-token"),
+    ),
+    webhookSecret: cipher.decrypt(
+      telegram.webhookSecret,
+      telegramSecretContext(project.name, "webhook-secret"),
+    ),
     ...(telegram.botUsername ? { botUsername: telegram.botUsername } : {}),
   };
 }

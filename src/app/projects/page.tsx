@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Badge,
@@ -30,6 +30,7 @@ import { CardGrid } from "@/app/_components/CardGrid";
 import { PROJECT_TYPE_COLOR } from "@/app/_components/badgeColors";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { reportError } from "@/app/_lib/reportError";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 const TYPE_OPTIONS = [
   { value: "llm", label: "projects.type.llm" },
@@ -46,16 +47,19 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
+  const latestOnly = useRef(createLatestOnly()).current;
 
   async function refresh() {
+    const isCurrent = latestOnly();
     setLoading(true);
     setError(null);
     try {
-      setProjects(await listProjects());
+      const loaded = await listProjects();
+      if (isCurrent()) setProjects(loaded);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("projects.loadFailed"));
+      if (isCurrent()) setError(e instanceof Error ? e.message : t("projects.loadFailed"));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }
 

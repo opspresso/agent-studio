@@ -75,6 +75,7 @@ function deps(initial: AppSettings | null = null): {
   const lock = {
     acquire: vi.fn(async () => "lease-1" as string | null),
     release: vi.fn(async () => {}),
+    state: vi.fn(async () => ({ generation: 0, active: false })),
   };
   return {
     value: () => stored,
@@ -165,6 +166,39 @@ describe("modelSelectionUseCases", () => {
       ),
     ).rejects.toThrow("settings unavailable");
     expect(setup.deps.lock.release).toHaveBeenCalledWith("lease-1");
+  });
+
+  it("does not turn a successful migration into a failure when lease cleanup fails", async () => {
+    installModels();
+    const setup = deps();
+    vi.mocked(setup.deps.lock.release).mockRejectedValue(new Error("release failed"));
+
+    await expect(
+      createModelSelectionUseCases(setup.deps).select(
+        "embedding",
+        EMBEDDING,
+        true,
+        "admin@example.com",
+      ),
+    ).resolves.toMatchObject({ migration: { indexed: 12 } });
+  });
+
+  it("preserves the migration error when lease cleanup also fails", async () => {
+    installModels();
+    const setup = deps({ embeddingModel: "legacy-model", updatedAt: "2026-01-01T00:00:00Z" });
+    setup.reindex
+      .mockRejectedValueOnce(new Error("migration failed"))
+      .mockResolvedValueOnce({ indexed: 12, removed: 0, undiscovered: [] });
+    vi.mocked(setup.deps.lock.release).mockRejectedValue(new Error("release failed"));
+
+    await expect(
+      createModelSelectionUseCases(setup.deps).select(
+        "embedding",
+        EMBEDDING,
+        true,
+        "admin@example.com",
+      ),
+    ).rejects.toThrow("migration failed");
   });
 
   it("restores the previous selection and index when migration fails", async () => {

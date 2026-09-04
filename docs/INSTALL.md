@@ -77,9 +77,11 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 `AES_ENCRYPTION_KEY`와 `BETTER_AUTH_SECRET`은 기존 값을 유지해야 저장된 credential과 session을
 계속 읽을 수 있다. Object는 배포 저장소가 소유하는 migration 절차로 대상 S3-compatible store에
 옮긴다. Capability catalog는 복사하지 않고 `/api/catalog/reindex`로 다시 만든다.
+페이지로 나눈 scan 파일은 한 번의 명령에 모두 넘긴다. 이관기는 전체 파일을 하나의 transaction으로
+처리하고 모든 user를 session·account보다 먼저 써서 page 경계가 참조 순서를 바꾸지 못하게 한다.
 
 이관기는 새 배포에서 그대로 쓰면 위험한 두 설정을 의도적으로 제거한다. managed MCP 의 옛
-`envRefs` 는 SSM parameter 이름이어서 현재 호스트의 env-file 경로로 사용할 수 없고,
+`envRefs` 는 더 이상 지원하지 않는 호스트 파일 참조이고,
 `artifactAccessMode` 는 이전 object store 의 도달성에 대한 답이므로 새 환경에서 다시 정해야 한다.
 같은 이메일로 새 DB에 먼저 만들어진 사용자가 있으면 export 의 원래 사용자 id 와 참조를 보존하기
 위해 그 행을 교체한다. 실행 결과가 제거·교체 건수를 출력하므로 이관 뒤 반드시 확인하라.

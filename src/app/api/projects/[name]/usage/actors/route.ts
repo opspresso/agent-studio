@@ -27,8 +27,9 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
     );
   }
   try {
-    const items = await usageUseCases.actors(name, user.email, parsed.data.from, parsed.data.to);
-    return Response.json({ items });
+    return Response.json(
+      await usageUseCases.actors(name, user.email, parsed.data.from, parsed.data.to),
+    );
   } catch (error) {
     return apiError(error);
   }

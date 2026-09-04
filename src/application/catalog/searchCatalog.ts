@@ -28,6 +28,7 @@ import type {
   VectorMatch,
   VectorStorePort,
 } from "@/domain/vector/types";
+import type { CatalogReindexState } from "@/domain/catalog/reindexLock";
 
 export interface CatalogSearchDeps {
   embeddings: EmbeddingPort;
@@ -40,6 +41,8 @@ export interface CatalogSearchDeps {
    * means the domain's measured default.
    */
   minScore?: number;
+  /** Search is withheld while an in-place vector rebuild overlaps this read. */
+  reindexState?: () => Promise<CatalogReindexState>;
 }
 
 export interface CapabilityMatch {
@@ -68,6 +71,17 @@ export interface CatalogSearchOptions {
 
 function emptyRerankReport(): CatalogRerankReport {
   return { calls: 0, candidates: 0, failed: 0, usage: [] };
+}
+
+function emptySearch(requests: ReadonlyArray<unknown>): CapabilitySearchResult {
+  return { matches: requests.map(() => []), rerank: emptyRerankReport() };
+}
+
+function reindexOverlapped(
+  started: CatalogReindexState,
+  current: CatalogReindexState,
+): boolean {
+  return started.active || current.active || started.generation !== current.generation;
 }
 
 /**
@@ -169,47 +183,71 @@ export async function searchCapabilitiesByKind(
 ): Promise<CapabilitySearchResult> {
   const usable = queries.map((query) => query.trim()).filter((query) => query !== "");
   if (usable.length === 0) {
-    return {
-      matches: requests.map(() => []),
-      rerank: emptyRerankReport(),
-    };
+    return emptySearch(requests);
+  }
+  const started = (await deps.reindexState?.()) ?? { generation: 0, active: false };
+  if (started.active) {
+    return emptySearch(requests);
   }
   options.signal?.throwIfAborted();
   const rerankerMinScore = deps.reranker
     ? await Promise.resolve(deps.rerankerMinScore?.() ?? DEFAULT_RERANKER_MIN_SCORE)
     : DEFAULT_RERANKER_MIN_SCORE;
-  const vectors = await deps.embeddings.embed(usable, "query");
-  const candidatesByRequest = await Promise.all(
-    requests.map(async (request) => {
-      if (request.limit <= 0) {
-        return usable.map(() => [] as RankedCandidate[]);
-      }
-      const topK = Math.max(request.limit * OVERSAMPLE, request.limit);
-      const perQuery = await Promise.all(
-        vectors.map((vector) => deps.catalog.query(vector, topK, { kind: request.kind })),
-      );
-      return perQuery.map((matches, queryIndex) =>
-        vectorCandidates(matches, request.kind, usable[queryIndex] ?? ""),
-      );
-    }),
-  );
+  let vectors: number[][];
+  let candidatesByRequest: RankedCandidate[][][];
+  try {
+    vectors = await deps.embeddings.embed(usable, "query");
+    candidatesByRequest = await Promise.all(
+      requests.map(async (request) => {
+        if (request.limit <= 0) {
+          return usable.map(() => [] as RankedCandidate[]);
+        }
+        const topK = Math.max(request.limit * OVERSAMPLE, request.limit);
+        const perQuery = await Promise.all(
+          vectors.map((vector) => deps.catalog.query(vector, topK, { kind: request.kind })),
+        );
+        return perQuery.map((matches, queryIndex) =>
+          vectorCandidates(matches, request.kind, usable[queryIndex] ?? ""),
+        );
+      }),
+    );
+  } catch (error) {
+    const failed = await deps.reindexState?.().catch(() => undefined);
+    if (failed && reindexOverlapped(started, failed)) {
+      return emptySearch(requests);
+    }
+    throw error;
+  }
+  const indexed = (await deps.reindexState?.()) ?? started;
+  if (reindexOverlapped(started, indexed)) {
+    return emptySearch(requests);
+  }
   // One rerank request per query, not per kind. The model scores each document
   // independently against the same query, so kind is a partition for the
   // result limits and cuts rather than a reason to pay another network round
   // trip. The query promises run together, bounding a healthy or timed-out
   // rerank stage to one adapter deadline instead of one per recent turn.
-  const queryResults = await Promise.all(
-    usable.map((query, queryIndex) =>
-      rankQuery(
-        deps,
-        query,
-        requests,
-        candidatesByRequest.map((perQuery) => perQuery[queryIndex] ?? []),
-        rerankerMinScore,
-        options,
+  let queryResults: Awaited<ReturnType<typeof rankQuery>>[];
+  try {
+    queryResults = await Promise.all(
+      usable.map((query, queryIndex) =>
+        rankQuery(
+          deps,
+          query,
+          requests,
+          candidatesByRequest.map((perQuery) => perQuery[queryIndex] ?? []),
+          rerankerMinScore,
+          options,
+        ),
       ),
-    ),
-  );
+    );
+  } catch (error) {
+    const failed = await deps.reindexState?.().catch(() => undefined);
+    if (failed && reindexOverlapped(started, failed)) {
+      return emptySearch(requests);
+    }
+    throw error;
+  }
   const best = requests.map(() => new Map<string, CapabilityMatch>());
   const rerank = emptyRerankReport();
   for (const result of queryResults) {
@@ -230,7 +268,7 @@ export async function searchCapabilitiesByKind(
       }
     }
   }
-  return {
+  const result = {
     matches: best.map((selected, index) =>
       [...selected.values()]
         .sort((a, b) => b.score - a.score)
@@ -238,6 +276,8 @@ export async function searchCapabilitiesByKind(
     ),
     rerank,
   };
+  const finished = (await deps.reindexState?.()) ?? indexed;
+  return reindexOverlapped(started, finished) ? emptySearch(requests) : result;
 }
 
 export async function searchCapabilities(

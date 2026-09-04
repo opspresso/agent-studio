@@ -19,6 +19,7 @@ import { OAuthGrantError } from "@/domain/mcp/oauth";
 import type { McpServerAuth } from "@/domain/mcp/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
+import { mcpConnectionSecretContext } from "@/domain/security/secretContext";
 
 /**
  * How much life a token must have left to be used as-is.
@@ -105,7 +106,17 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       };
     }
     try {
-      const tokens = await deps.oauth.refresh(target, deps.cipher.decrypt(stored));
+      const tokens = await deps.oauth.refresh(
+        target,
+        deps.cipher.decrypt(
+          stored,
+          mcpConnectionSecretContext(
+            connection.projectName,
+            connection.serverName,
+            "refresh-token",
+          ),
+        ),
+      );
       const now = Date.now();
       const won = await deps.connections.updateTokens(
         connection.projectName,
@@ -114,9 +125,25 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         // "has the row changed since I read it".
         stored,
         {
-          accessToken: deps.cipher.encrypt(tokens.accessToken),
+          accessToken: deps.cipher.encrypt(
+            tokens.accessToken,
+            mcpConnectionSecretContext(
+              connection.projectName,
+              connection.serverName,
+              "access-token",
+            ),
+          ),
           ...(tokens.refreshToken
-            ? { refreshToken: deps.cipher.encrypt(tokens.refreshToken) }
+            ? {
+                refreshToken: deps.cipher.encrypt(
+                  tokens.refreshToken,
+                  mcpConnectionSecretContext(
+                    connection.projectName,
+                    connection.serverName,
+                    "refresh-token",
+                  ),
+                ),
+              }
             : {}),
           ...(tokens.expiresInSeconds !== undefined
             ? { expiresAt: new Date(now + tokens.expiresInSeconds * 1000).toISOString() }
@@ -133,7 +160,18 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       // may be the losing branch — use whatever the winner stored.
       const current = await deps.connections.get(connection.projectName, connection.serverName);
       if (current?.accessToken) {
-        return { headers: bearer(deps.cipher.decrypt(current.accessToken)) };
+        return {
+          headers: bearer(
+            deps.cipher.decrypt(
+              current.accessToken,
+              mcpConnectionSecretContext(
+                current.projectName,
+                current.serverName,
+                "access-token",
+              ),
+            ),
+          ),
+        };
       }
       return {
         headers: {},
@@ -193,14 +231,26 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         };
       }
       if (!needsRefresh(connection, Date.now())) {
-        return { headers: bearer(deps.cipher.decrypt(connection.accessToken)) };
+        return {
+          headers: bearer(
+            deps.cipher.decrypt(
+              connection.accessToken,
+              mcpConnectionSecretContext(projectName, serverName, "access-token"),
+            ),
+          ),
+        };
       }
 
       return refresh(connection, {
         tokenEndpoint: auth.tokenEndpoint,
         clientId: connection.clientId,
         ...(connection.clientSecret
-          ? { clientSecret: deps.cipher.decrypt(connection.clientSecret) }
+          ? {
+              clientSecret: deps.cipher.decrypt(
+                connection.clientSecret,
+                mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+              ),
+            }
           : {}),
         tokenEndpointAuthMethod: connection.tokenEndpointAuthMethod ?? auth.tokenEndpointAuthMethod,
         resource: auth.resource,

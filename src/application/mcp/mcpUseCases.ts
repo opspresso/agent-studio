@@ -14,6 +14,10 @@ import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ListToolsResult, McpToolProbe } from "@/domain/mcp/toolProbe";
 import { log } from "@/shared/logger";
 import { urlOriginForLog, urlWithoutQueryOrFragment } from "@/shared/url";
+import {
+  managedMcpEnvironmentContext,
+  mcpHeadersContext,
+} from "@/domain/security/secretContext";
 
 export interface CreateMcpInput {
   name: string;
@@ -48,9 +52,14 @@ function masked(cipher: SecretCipher, server: McpServer): McpServer {
   return {
     ...server,
     url: urlWithoutQueryOrFragment(server.url),
-    headers: cipher.maskHeaders(server.headers),
+    headers: cipher.maskHeaders(server.headers, mcpHeadersContext(server.name)),
     ...(server.environment
-      ? { environment: cipher.maskHeaders(server.environment) }
+      ? {
+          environment: cipher.maskHeaders(
+            server.environment,
+            managedMcpEnvironmentContext(server.name),
+          ),
+        }
       : {}),
   };
 }
@@ -85,7 +94,7 @@ export function createMcpUseCases(
         description: input.description,
         content: input.content,
         source: input.source,
-        headers: cipher.encryptHeaders(input.headers),
+        headers: cipher.encryptHeaders(input.headers, mcpHeadersContext(input.name)),
         createdAt: now,
         updatedAt: now,
       };
@@ -145,9 +154,13 @@ export function createMcpUseCases(
         content: patch.content ?? existing.content,
         source: patch.source ?? existing.source,
         headers: movedAddress
-          ? cipher.mergeHeaderUpdate({}, patch.headers ?? {})
+          ? cipher.mergeHeaderUpdate({}, patch.headers ?? {}, mcpHeadersContext(existing.name))
           : patch.headers !== undefined
-            ? cipher.mergeHeaderUpdate(existing.headers, patch.headers)
+            ? cipher.mergeHeaderUpdate(
+                existing.headers,
+                patch.headers,
+                mcpHeadersContext(existing.name),
+              )
             : existing.headers,
         updatedAt: now,
       };
@@ -185,7 +198,10 @@ export function createMcpUseCases(
           return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
         }
       }
-      const headers = cipher.decryptHeadersForOutbound(existing.headers);
+      const headers = cipher.decryptHeadersForOutbound(
+        existing.headers,
+        mcpHeadersContext(existing.name),
+      );
       // A registry entry's stored spelling of a reserved metadata header does
       // not ride this probe impersonating a project, user, or conversation.
       stripMcpMetadataHeaders(headers);

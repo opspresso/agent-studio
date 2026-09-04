@@ -26,6 +26,11 @@ import { config, positiveIntEnv } from "./config";
 import { optionalEnv } from "@/shared/env";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
+import {
+  llmApiKeyContext,
+  llmProviderApiKeyContext,
+  settingsSecretContext,
+} from "@/domain/security/secretContext";
 
 const DEFAULT_TTL_MS = 5_000;
 
@@ -110,9 +115,16 @@ export async function getAllowedEmailDomains(): Promise<string[]> {
 
 export async function getLlmChannelConfig(): Promise<{ baseUrl: string; apiKey: string }> {
   const stored = await loadSettings();
+  if (stored?.llmBaseUrl !== undefined && stored.llmApiKey === undefined) {
+    throw new Error("Stored LLM_BASE_URL has no matching LLM_API_KEY");
+  }
+  const baseUrl = stored?.llmBaseUrl ?? config.llmBaseUrl;
   return {
-    baseUrl: stored?.llmBaseUrl ?? config.llmBaseUrl,
-    apiKey: stored?.llmApiKey !== undefined ? decryptSecret(stored.llmApiKey) : config.llmApiKey,
+    baseUrl,
+    apiKey:
+      stored?.llmApiKey !== undefined
+        ? decryptSecret(stored.llmApiKey, llmApiKeyContext(baseUrl))
+        : config.llmApiKey,
   };
 }
 
@@ -195,7 +207,13 @@ export async function getLlmProviderConfigs(): Promise<ProviderChannelConfig[]> 
       baseUrl: provider.baseUrl,
       // A `sigv4` row stores an empty key, which is not ciphertext — decrypting
       // it would be asking the cipher to answer a question it was never given.
-      apiKey: provider.apiKey === "" ? "" : decryptSecret(provider.apiKey),
+      apiKey:
+        provider.apiKey === ""
+          ? ""
+          : decryptSecret(
+              provider.apiKey,
+              llmProviderApiKeyContext(provider.name, provider.baseUrl),
+            ),
       keepModelPrefix: provider.keepModelPrefix ?? false,
       auth: provider.auth ?? "bearer",
     }));
@@ -212,13 +230,18 @@ export async function getPluginsRepoConfig(): Promise<{
   return {
     repo: stored?.pluginsRepo ?? config.pluginsRepo,
     branch: stored?.pluginsRepoBranch ?? config.pluginsRepoBranch,
-    token: stored?.githubToken !== undefined ? decryptSecret(stored.githubToken) : config.githubToken,
+    token:
+      stored?.githubToken !== undefined
+        ? decryptSecret(stored.githubToken, settingsSecretContext("github-token"))
+        : config.githubToken,
   };
 }
 
 export async function getA2aApiKey(): Promise<string | undefined> {
   const stored = (await loadSettings())?.a2aApiKey;
-  return stored !== undefined ? decryptSecret(stored) : config.a2aApiKey;
+  return stored !== undefined
+    ? decryptSecret(stored, settingsSecretContext("a2a-api-key"))
+    : config.a2aApiKey;
 }
 
 export async function getPublicBaseUrl(): Promise<string | undefined> {

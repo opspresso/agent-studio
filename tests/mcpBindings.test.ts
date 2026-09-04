@@ -27,6 +27,10 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { McpBinding, Project, Version } from "@/domain/project/types";
 import type { RunActor, RunConversation } from "@/domain/execution/actor";
 import { getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
+import {
+  mcpHeadersContext,
+  versionMcpHeadersContext,
+} from "@/domain/security/secretContext";
 import type { UsageDelta } from "@/domain/usage/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
@@ -172,6 +176,32 @@ beforeEach(() => {
 });
 
 describe("per-project MCP header overrides at dispatch", () => {
+  it("decrypts context-bound registry and version headers together", async () => {
+    const server = {
+      ...registryServer,
+      headers: encryptHeaders(
+        { Authorization: "Bearer registry", "X-Shared": "shared" },
+        mcpHeadersContext("shared-mcp"),
+      ),
+    };
+    const headers = await dispatchHeaders(
+      "bound",
+      [
+        {
+          name: "shared-mcp",
+          headers: encryptHeaderOverrides(
+            { Authorization: "Bearer project" },
+            versionMcpHeadersContext("bound", "v1", "shared-mcp"),
+          ),
+        },
+      ],
+      { server },
+    );
+
+    expect(headers.authorization).toBe("Bearer project");
+    expect(headers["x-shared"]).toBe("shared");
+  });
+
   it("sends the registry headers unchanged when a binding has no override", async () => {
     const headers = await dispatchHeaders("plain", [{ name: "shared-mcp" }]);
 

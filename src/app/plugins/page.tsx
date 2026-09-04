@@ -22,6 +22,7 @@ import {
   type PluginSyncSelection,
 } from "./api";
 import { reportError } from "@/app/_lib/reportError";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 
 export default function PluginsPage() {
   const t = useT();
@@ -42,6 +43,7 @@ export default function PluginsPage() {
   const [archive, setArchive] = useState<File | null>(null);
   const resetFilePicker = useRef<() => void>(null);
   const [filter, setFilter] = useState("");
+  const latestOnly = useRef(createLatestOnly()).current;
 
   async function runSync(selection: PluginSyncSelection = {}, source: File | null = archive) {
     setSyncResult(await (source ? uploadPluginsArchive(source, selection) : syncPlugins(selection)));
@@ -63,16 +65,19 @@ export default function PluginsPage() {
   }
 
   async function refresh() {
+    const isCurrent = latestOnly();
     setLoading(true);
     setError(null);
     try {
       const [nextPlugins, config] = await Promise.all([listPlugins(), getPluginsSyncConfig()]);
-      setPlugins(nextPlugins);
-      setSyncConfig(config);
+      if (isCurrent()) {
+        setPlugins(nextPlugins);
+        setSyncConfig(config);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load plugins");
+      if (isCurrent()) setError(e instanceof Error ? e.message : "Failed to load plugins");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }
 

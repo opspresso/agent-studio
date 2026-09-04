@@ -163,8 +163,8 @@ project* 의 한도에서 지출한다. token 은 서비스 자격 증명이다.
 것은 token 게이트다. API token 권한이 없는 tier 는 token 을 발급할 수도 없고(소유자 범위,
 admin 포함) 이미 있는 token 으로 인증할 수도 없다. `authenticateExecution` 은 모든 bearer
 요청에서 소유자의 현재 tier 를 다시 확인하고 403 으로 답하므로, 강등은 그 소유자의 token 을
-즉시 멈춘다. 두 확인 모두 tier 를 읽지 못할 때는 fail-open 한다. 저장소의 일시적 장애가 모든
-token 을 내려서는 안 되며, 다른 모든 가드가 자기 읽기에 취하는 자세와 같다.
+즉시 멈춘다. 멤버 행이 없으면 기본 `guest` 로 거절하고, tier 저장소를 읽지 못하면 503 으로
+fail-closed 한다. 권한 저장소 장애가 이미 제한된 credential 을 다시 활성화해서는 안 된다.
 
 admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘기는 대신 `assertProjectWritable`
 *안에서* 확인된다. 규칙은 "소유자 또는 admin"이고, 한 호출자가 넘기는 것을 잊은 플래그는 그
@@ -188,8 +188,29 @@ access/refresh token·client secret·인가 중인 PKCE verifier, Slack 봇 toke
 Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, 앱 전역 A2A 키와
 이름 있는 A2A 클라이언트 키, project API token, webhook trigger 시크릿, 그리고 시크릿인 앱
 설정(LLM API 키와 plugins 저장소의 GitHub token)은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM
-암호화되어 `enc:v1:` 접두사 아래 저장된다
-(`src/infrastructure/crypto/secretEncryption.ts`).
+암호화된다(`src/infrastructure/crypto/secretEncryption.ts`). 새 값은 모두 `enc:v2:` 로 쓴다.
+v2 는 row 와 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에
+실패한다. 기존 `enc:v1:` 값은 다시 저장하거나 재발급하기 전까지 그대로 읽는다.
+
+Project API token, 이름 있는 A2A client key, webhook trigger secret 은 각각 project 이름,
+client 이름, `project + triggerId` 에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
+token·webhook secret, Teams 의 app password 는 `project + integration + field` 를 쓴다.
+MCP·external agent 의 registry header 는 항목 이름과 header 이름에, managed MCP 의 environment 는
+항목 이름과 변수 이름에 묶인다. HTTP header의 override 병합만 이름의 대소문자를 무시하고,
+AAD 는 environment와 같은 공통 map 규칙에 따라 저장된 키 철자를 그대로 쓴다.
+
+Version 의 MCP header override 는 `project + version + server + header` 에 묶인다. 저장된 version 을
+임시 preview draft 로 읽을 때는 값을 복호화해 `draft` 컨텍스트로 다시 암호화하고, project clone 은
+소유자의 override 를 애초에 복사하지 않는다.
+MCP OAuth connection 의 client secret·access token·refresh token 은 `project + server + field` 에,
+인가 중인 PKCE verifier 는 일회성 state 값에 묶인다. Token refresh의 compare-and-set은 암호문을
+읽은 그대로 비교하므로 v2의 무작위 IV와 AAD 전환 뒤에도 같은 동시성 규칙을 유지한다.
+앱 설정의 기본 LLM key 는 effective base URL 에, provider별 key 는 `provider name + base URL` 에
+묶인다. 따라서 DB에서 key만 다른 endpoint로 옮기거나 저장 뒤 환경의 base URL만 바꾸면
+복호화되지 않으며 새 key를 입력해야 한다. GitHub token과 shared A2A key는 각각 고정된 settings
+field 컨텍스트를 쓴다.
+부팅, 저장 시크릿 암호화, proxied URL 서명은 모두 `decodeAes256Key` 를 거쳐 canonical base64 로
+인코딩된 정확히 32바이트 key 만 사용한다.
 
 ### 읽을 때의 마스킹
 
@@ -213,6 +234,8 @@ Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시�
 업데이트 시 마스킹된 값이나 빈 값은 **저장된 시크릿을 보존한다**. 저장된 상대가 없는 키에 온
 마스킹된 값은 **버린다**. 마스크는 이미 있는 시크릿을 확인해 줄 수만 있고, 만들어 낼 수는
 없다. 헤더 오버라이드 맵의 `null` 은 명시적 제거로 그대로 통과한다. 제거는 시크릿이 아니다.
+새로 입력한 값은 `enc:v1:` 또는 `enc:v2:` 로 시작하더라도 평문으로 취급해 항상 새로 암호화한다. 암호문 접두사는
+저장소에서 읽은 값의 형식일 뿐, API 입력이 신뢰할 수 있는 저장 값이라는 증거가 아니다.
 버전별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerprint 와 함께 보관한다. 같은
 이름의 URL 이 바뀌거나 fingerprint 가 없는 예전 값이면 옛 시크릿을 보내지 않는다. 새 endpoint
 용 자격 증명을 다시 입력해야 한다.
@@ -270,7 +293,7 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 | Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, project 별 시크릿 |
 | Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다. 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
-| 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회(actor `a2a:{client}`, 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
+| 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회 후 primary row 의 컨텍스트 결합 token 을 상수 시간으로 재확인(actor `a2a:{client}`, 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
 | Webhook trigger | `X-Trigger-Secret` | `cipher.decryptEquals` (상수 시간) |
 | CronJob 틱. schedule 스캔(`/api/triggers/scan`), 카탈로그 재색인(`/api/catalog/reindex`), plugins sync(`/api/plugins/sync/scan`) | `X-Scan-Token` | `SCHEDULE_SCAN_TOKEN` 과 `timingSafeEqualString` 비교. 설정돼 있지 않으면 503 으로 답하고, 거부된 token 은 셋 모두에서 경고를 로그에 남긴다 |
 
@@ -397,6 +420,9 @@ query parameter 와 fragment 를 받지 않는다. 둘은 멤버가 읽는 regis
 되돌려 보내는 저장은 이동이 아니므로 거절하지도, 저장된 credential 을 버리지도 않는다
 (`resolveRegistryUrlPatch`). 그러지 않으면 편집 폼이 자기가 읽은 값을 되돌려 보내는 것만으로
 레거시 항목이 다른 endpoint 를 가리키게 되고, 원래 주소는 다시 입력할 수도 없다.
+LLM 채널도 endpoint 와 credential 을 한 보안 단위로 취급한다. 기본 채널의 URL 또는 provider
+채널의 URL·인증 방식을 바꾸면 마스킹된 기존 key 를 새 주소로 옮기지 않고 새 key 입력을 요구한다.
+기본 URL override 와 key override 를 함께 비우는 것은 둘 다 env 쌍으로 되돌리는 명시적 예외다.
 외부 A2A Agent Card 의 실패 메시지는 origin 만 남긴다. query string 을 비롯한 전체 URL 자체가
 자격 증명일 수 있으므로 authored error, chat, trace 에 등록 주소를 복사하지 않는다.
 
@@ -469,10 +495,11 @@ managed MCP 서버(`runtime: "managed"`)는 이 앱이 자기 호스트에서 �
 프로비저너는 이미지 레퍼런스, 포트, 그리고 선택적인 **argv 배열** 을 받는다. 셸 명령은 결코 받지
 않는다. 유일한 런타임인 Docker 프로비저너(`MANAGED_MCP_RUNTIME=docker`,
 `src/infrastructure/mcp/dockerProvisioner.ts`)는 argv 를 `execFile` 로 Docker CLI 에 배열째
-넘기고, 구조적으로 쓰이는 값. 이름(`MANAGED_NAME`), 이미지 레퍼런스, `--env-file` 로 건네는
-env 참조(호스트의 절대 경로), 환경 키·값, argv, endpoint path. 은
+넘기고, 구조적으로 쓰이는 값. 이름(`MANAGED_NAME`), 이미지 레퍼런스, 환경 키·값, argv,
+endpoint path. 은
 `src/domain/mcp/provisioner.ts`의 패턴으로 API 입력과 Docker 실행 양쪽에서 검사한다. 항목을
-편집할 수 있는 운영자가 그것으로 호스트에서 임의 코드를 돌릴 수는 없어야 한다.
+편집할 수 있는 운영자가 그것으로 호스트에서 임의 코드를 돌릴 수는 없어야 한다. 호스트 파일
+경로는 입력으로 받지 않으며, 저장된 환경 값만 프로세스가 만든 0600 임시 env file 로 전달한다.
 
 컨테이너는 각각 메모리와 memory+swap을 모두 512MiB, CPU 1개, PID 256개로 제한하고 Linux
 capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesystem은 read-only이고
@@ -929,33 +956,26 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
     공개인 그 오브젝트들에 누가 닿을 수 있는지는 아무것도 바뀌지 않는다. 그러니 **버킷이 한
     번이라도 공개 읽기였다면, 그 안의 기존 오브젝트는 지금도 공개다.** 비공개로 만드는 것은
     운영자의 몫이고, 그렇게 하는 순간 옛 행들은 해석되지 않는다.
-  - **페이지는 오브젝트 주소로 나가지 않는다.** `SAVABLE_TYPES` 의 artifact. 런이 사람에게
-    읽히려고 쓰는 것들. 만은 `/view` 를 통해 앱이 바이트로 답한다. 서명한 오브젝트 URL 은 sandbox 헤더를 실을 수 없고,
+  - **페이지는 오브젝트 주소로 나가지 않는다.** `SAVABLE_TYPES` 에 포함된, 사람이 읽도록 만든
+    artifact 만 `/view` 를 통해 앱이 바이트로 답한다. 서명한 오브젝트 URL 은 sandbox 헤더를 실을 수 없고,
     한 번 건네지면 그것을 연 사람의 권한보다 오래 살며, `public` 모드에서는 영구다. 임의의
-    마크업이 실행되는 영구 주소는 저장소가 아니라 호스팅이다. `/view` 는 삭제와 같은 술어로
+    마크업이 실행되는 영구 주소는 저장소가 아니라 호스팅이다. `/view` 는 삭제와 같은 조건으로
     매 요청을 인가하고, `Content-Security-Policy` 의 `sandbox` 로 문서를 불투명 오리진에
     놓는다. 그래서 그 페이지는 콘솔의 쿠키·스토리지·DOM 에 닿지 못하고 서브리소스를 하나도
     불러오지 못하며, 같은 주소를 새 탭에서 열어도 그대로다. iframe 의 `sandbox` 속성으로는
     닿지 못하는 경우다. `nosniff` 를 함께 보내는 이유는 이 논증 전체가 우리가 선언한 타입 위에
     쓰였기 때문이다. 원격 이미지도 함께 막힌다(`img-src data:`). 모델이 고른 주소에서 가져오는
     그림은 그 호스트에게 "이 페이지가 열렸다"고, 그리고 누가 열었는지를 알려 준다.
-  - **막지 못하는 것: HTML view 가 스스로 떠나는 것.** sandbox 된 *최상위* 문서는 자기 자신을
-    이동시킬 수 있다. 출발지와 목적지가 같은 browsing context 이면 sandbox 의 이동 제한이
-    적용되지 않고, CSP 에는 그것을 막는 지시어가 (배포된 것 중에) 없다. 그러니 그 페이지가
-    실행하는 스크립트는 `location` 을 바꾸면서 문서의 본문을 함께 실어 보낼 수 있다. 이것은
-    **작성자의 스크립트를 돌려주는 일 자체에 딸린 값**이고, 그 작성자는 프롬프트 인젝션을 당할
-    수 있는 모델이거나 바이트를 돌려준 MCP 서버다. `text/html` 행을 누가 썼는지는 저장되지
-    않으므로 구별할 수단도 없다. **주장하는 것은 격리뿐이다**: 콘솔의 쿠키·스토리지·DOM 에
-    닿지 못하고 서브리소스를 못 부른다. "바깥으로 요청하지 못한다"고는 적지 마라. 나머지 view
-    들은 스크립트를 아예 받지 못하므로 여기에 해당하지 않는다.
-  - **모든 view 가 같은 정책을 받지는 않는다. `text/html` 하나만 다르다.** 그것은 쓰인 그대로
-    나가므로 `allow-scripts` 를 받는다. 표 정렬과 목차 추적이 다운로드 대신 그것을 여는
-    이유이고, 불투명 오리진이 그 허용을 싸게 만든다. 나머지는 전부 **앱이 바이트에서 만든
-    페이지**다. Markdown 은 원시 HTML 을 텍스트로 내보내고 위험한 URL 스킴을 떼는 렌더러를
-    지나고, CSV 는 이스케이프된 표가 되며, SVG 는 `<img>` 안에 놓인다. 이미지로 로드된 SVG 는
-    명세상 스크립트를 실행하지도 무언가를 가져오지도 못하므로, 헤더가 말하기 전에 이미 그렇다.
-    실행할 것이 없으니 그 허용을 주지 않는다. 보장을 렌더러의 이스케이프가 아니라 브라우저가
-    하게 두는 쪽이다.
+  - **HTML 도 정적 문서로 만든 뒤 보낸다.** `sanitize-html` allowlist 는 제목·문단·목록·표·코드·
+    data 이미지·안전한 링크를 남기고, script·event handler·`meta`·CSS·form·iframe/object·
+    SVG/MathML 을 제거한다. 원문 charset 으로 먼저 해석한 뒤 UTF-8 로 다시 보내므로, sanitizer 를
+    우회하려고 잘못된 인코딩을 섞은 바이트는 열리지 않는다. 외부 링크는 사용자가 직접 눌러야만
+    이동하며 `Referrer-Policy: no-referrer` 와 `rel=noreferrer` 를 함께 적용한다.
+  - **모든 view 가 같은 script 없는 정책을 받는다.** `sandbox` 에 어떤 `allow-*` 도 붙이지 않고
+    `default-src 'none'` 을 적용한다. Markdown 은 원시 HTML 을 텍스트로 내보내고 위험한 URL
+    스킴을 떼는 렌더러를 지나며, CSV 는 이스케이프된 표가 되고, SVG 는 `<img>` 안에 놓인다.
+    HTML 은 위 sanitizer 가 능동 콘텐츠를 제거한다. 애플리케이션 변환과 브라우저 sandbox 중
+    하나만 믿지 않고 둘을 함께 적용한다.
   - **`next.config.ts` 의 헤더가 라우트의 헤더를 이긴다. 이것이 sandbox 를 한 번 통째로
     무력화했다.** `headers()` 에 선언한 키는 라우트 핸들러가 세운 같은 키를 *대체*한다. 콘솔용
     `SECURITY_HEADERS` 가 `/:path*` 로 걸려 있었으므로 `/view` 의 응답은 sandbox 정책 대신

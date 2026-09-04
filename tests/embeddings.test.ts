@@ -22,6 +22,7 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
+import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
 const ORIGINAL_EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL;
 const ORIGINAL_EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY;
@@ -57,6 +58,7 @@ beforeEach(() => {
   address += 1;
   vi.mocked(settingsRepository.get).mockResolvedValue({
     llmBaseUrl: `https://router-${address}.example/v1`,
+    llmApiKey: encryptSecret("router-key"),
     updatedAt: "2026-01-01T00:00:00Z",
   });
 });

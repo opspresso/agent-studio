@@ -46,6 +46,18 @@ import type { VersionSave } from "./McpBindingSettings";
 import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
 import { SUBAGENT_KIND_COLOR } from "@/app/_components/badgeColors";
 
+/** Parse the JSON object the API accepts, without using a type assertion as validation. */
+export function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 type SubagentOption = PickerOption & { type: "local" | "remote" };
 
 export function VersionEditor({
@@ -166,11 +178,11 @@ export function VersionEditor({
       patchParams({ jsonSchema: undefined });
       return;
     }
-    try {
-      const parsed = JSON.parse(text) as Record<string, unknown>;
+    const parsed = parseJsonObject(text);
+    if (parsed) {
       setSchemaError(null);
       patchParams({ jsonSchema: parsed });
-    } catch {
+    } else {
       setSchemaError(t("version.invalidJson"));
     }
   }

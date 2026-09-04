@@ -410,12 +410,18 @@ describe("generateImageStream", () => {
         traceSampleRate: 1,
         sample: () => 0,
       },
-      { project, version: version("openai/gpt-image-2"), prompt: "a fox" },
+      {
+        project,
+        version: version("openai/gpt-image-2"),
+        prompt: "a fox",
+        conversation: { surface: "agui", id: "thread-1" },
+      },
     )) {
       chunks.push(chunk);
     }
 
     expect(traces).toHaveLength(1);
+    expect(traces[0]?.conversation).toBe("agui:thread-1");
     expect(chunks.every((chunk) => chunk.traceId === traces[0]?.traceId)).toBe(true);
   });
 

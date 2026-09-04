@@ -1,42 +1,51 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { config } from "@/lib/config";
+import { decodeAes256Key } from "@/shared/aesKey";
 
-const PREFIX = "enc:v1:";
+const V1_PREFIX = "enc:v1:";
+const V2_PREFIX = "enc:v2:";
 // Stored layout after the prefix: base64(iv(12) + tag(16) + ciphertext).
 const IV_AND_TAG_LENGTH = 28;
 
 function getKey(): Buffer {
-  const key = Buffer.from(config.aesEncryptionKey, "base64");
-  if (key.length !== 32) {
-    throw new Error("AES_ENCRYPTION_KEY must be 32 bytes base64-encoded");
-  }
-  return key;
+  return decodeAes256Key(config.aesEncryptionKey);
 }
 
 export function isEncrypted(value: string): boolean {
-  return value.startsWith(PREFIX);
+  return value.startsWith(V1_PREFIX) || value.startsWith(V2_PREFIX);
 }
 
-export function encryptSecret(plaintext: string): string {
-  if (isEncrypted(plaintext)) {
-    return plaintext;
+export function encryptSecret(plaintext: string, context?: string): string {
+  if (context === "") {
+    throw new Error("secret encryption context must not be empty");
   }
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", getKey(), iv);
+  if (context !== undefined) {
+    cipher.setAAD(Buffer.from(context, "utf8"));
+  }
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return PREFIX + Buffer.concat([iv, tag, encrypted]).toString("base64");
+  const prefix = context === undefined ? V1_PREFIX : V2_PREFIX;
+  return prefix + Buffer.concat([iv, tag, encrypted]).toString("base64");
 }
 
-export function decryptSecret(value: string): string {
+export function decryptSecret(value: string, context?: string): string {
   if (!isEncrypted(value)) {
     return value;
   }
-  const raw = Buffer.from(value.slice(PREFIX.length), "base64");
+  const prefix = value.startsWith(V2_PREFIX) ? V2_PREFIX : V1_PREFIX;
+  if (prefix === V2_PREFIX && !context) {
+    throw new Error("enc:v2 secret requires its encryption context");
+  }
+  const raw = Buffer.from(value.slice(prefix.length), "base64");
   const iv = raw.subarray(0, 12);
   const tag = raw.subarray(12, 28);
   const encrypted = raw.subarray(28);
   const decipher = createDecipheriv("aes-256-gcm", getKey(), iv);
+  if (prefix === V2_PREFIX) {
+    decipher.setAAD(Buffer.from(context!, "utf8"));
+  }
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
@@ -72,7 +81,8 @@ function plaintextByteLength(value: string): number {
   if (!isEncrypted(value)) {
     return Buffer.byteLength(value, "utf8");
   }
-  const raw = Buffer.from(value.slice(PREFIX.length), "base64");
+  const prefix = value.startsWith(V2_PREFIX) ? V2_PREFIX : V1_PREFIX;
+  const raw = Buffer.from(value.slice(prefix.length), "base64");
   return Math.max(raw.length - IV_AND_TAG_LENGTH, 0);
 }
 
@@ -98,7 +108,7 @@ function revealEdges(plaintext: string): string {
  * views that call this; if decryption fails the value is fully hidden instead.
  * Values too short to reveal anything are never decrypted.
  */
-export function maskSecret(value: string): string {
+export function maskSecret(value: string, context?: string): string {
   const byteLength = plaintextByteLength(value);
   // UTF-8 never uses fewer bytes than characters, so a byte length below the
   // shortest revealing tier settles the question without decrypting.
@@ -106,24 +116,34 @@ export function maskSecret(value: string): string {
     return HIDDEN_CHAR.repeat(byteLength);
   }
   try {
-    return revealEdges(isEncrypted(value) ? decryptSecret(value) : value);
+    return revealEdges(isEncrypted(value) ? decryptSecret(value, context) : value);
   } catch {
     return HIDDEN_CHAR.repeat(byteLength);
   }
 }
 
 /** Encrypt all header values for storage. */
-export function encryptHeaders(headers: Record<string, string>): Record<string, string> {
+export function encryptHeaders(
+  headers: Record<string, string>,
+  context?: string,
+): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(headers).map(([k, v]) => [k, encryptSecret(v)]),
+    Object.entries(headers).map(([k, v]) => [k, encryptSecret(v, headerContext(context, k))]),
   );
 }
 
 /** Mask all header values for client reads. */
-export function maskHeaders(headers: Record<string, string>): Record<string, string> {
+export function maskHeaders(
+  headers: Record<string, string>,
+  context?: string,
+): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(headers).map(([k, v]) => [k, maskSecret(v)]),
+    Object.entries(headers).map(([k, v]) => [k, maskSecret(v, headerContext(context, k))]),
   );
+}
+
+function headerContext(context: string | undefined, name: string): string | undefined {
+  return context === undefined ? undefined : JSON.stringify([context, name]);
 }
 
 /**
@@ -135,6 +155,7 @@ export function maskHeaders(headers: Record<string, string>): Record<string, str
 export function mergeHeaderUpdate(
   stored: Record<string, string>,
   update: Record<string, string>,
+  context?: string,
 ): Record<string, string> {
   const merged: Record<string, string> = {};
   for (const [key, value] of Object.entries(update)) {
@@ -149,7 +170,7 @@ export function mergeHeaderUpdate(
       }
       continue;
     }
-    merged[key] = encryptSecret(value);
+    merged[key] = encryptSecret(value, headerContext(context, key));
   }
   return merged;
 }
@@ -157,9 +178,10 @@ export function mergeHeaderUpdate(
 /** Decrypt stored headers for outbound calls. Only call at dispatch time. */
 export function decryptHeadersForOutbound(
   headers: Record<string, string>,
+  context?: string,
 ): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(headers).map(([k, v]) => [k, decryptSecret(v)]),
+    Object.entries(headers).map(([k, v]) => [k, decryptSecret(v, headerContext(context, k))]),
   );
 }
 
@@ -172,15 +194,27 @@ export function decryptHeadersForOutbound(
 /** Values a header override map may hold; `null` removes a registry default. */
 export type HeaderOverrides = Record<string, string | null>;
 
-export function encryptHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides {
+export function encryptHeaderOverrides(
+  overrides: HeaderOverrides,
+  context?: string,
+): HeaderOverrides {
   return Object.fromEntries(
-    Object.entries(overrides).map(([k, v]) => [k, v === null ? null : encryptSecret(v)]),
+    Object.entries(overrides).map(([k, v]) => [
+      k,
+      v === null ? null : encryptSecret(v, headerContext(context, k)),
+    ]),
   );
 }
 
-export function maskHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides {
+export function maskHeaderOverrides(
+  overrides: HeaderOverrides,
+  context?: string,
+): HeaderOverrides {
   return Object.fromEntries(
-    Object.entries(overrides).map(([k, v]) => [k, v === null ? null : maskSecret(v)]),
+    Object.entries(overrides).map(([k, v]) => [
+      k,
+      v === null ? null : maskSecret(v, headerContext(context, k)),
+    ]),
   );
 }
 
@@ -194,6 +228,8 @@ export function maskHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides
 export function mergeHeaderOverrideUpdate(
   stored: HeaderOverrides,
   update: HeaderOverrides,
+  context?: string,
+  storedContext: string | undefined = context,
 ): HeaderOverrides {
   const merged: HeaderOverrides = {};
   for (const [key, value] of Object.entries(update)) {
@@ -205,11 +241,17 @@ export function mergeHeaderOverrideUpdate(
       // Own keys only, as in {@link mergeHeaderUpdate}.
       const previous = Object.hasOwn(stored, key) ? stored[key] : undefined;
       if (previous !== undefined) {
-        merged[key] = previous;
+        merged[key] =
+          context !== storedContext && previous !== null
+            ? encryptSecret(
+                decryptSecret(previous, headerContext(storedContext, key)),
+                headerContext(context, key),
+              )
+            : previous;
       }
       continue;
     }
-    merged[key] = encryptSecret(value);
+    merged[key] = encryptSecret(value, headerContext(context, key));
   }
   return merged;
 }
@@ -231,8 +273,10 @@ export function mergeHeaderOverrideUpdate(
 export function mergeOutboundHeaders(
   registryHeaders: Record<string, string>,
   overrides: HeaderOverrides | undefined,
+  registryContext?: string,
+  overrideContext?: string,
 ): Record<string, string> {
-  const merged = decryptHeadersForOutbound(registryHeaders);
+  const merged = decryptHeadersForOutbound(registryHeaders, registryContext);
   for (const [key, value] of Object.entries(overrides ?? {})) {
     // A mask is a display artifact a form echoed back, never a credential.
     // Sending one is wrong twice over: `fetch` rejects it outright, because the
@@ -249,7 +293,7 @@ export function mergeOutboundHeaders(
       }
     }
     if (value !== null) {
-      merged[key] = decryptSecret(value);
+      merged[key] = decryptSecret(value, headerContext(overrideContext, key));
     }
   }
   return merged;

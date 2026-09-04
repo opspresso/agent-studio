@@ -16,6 +16,14 @@ const MAX_CACHED_AGENTS = 64;
  */
 const agentCache = new Map<string, Agent>();
 
+/** Close and forget pooled dispatchers between unit tests. Production never calls this. */
+export function resetPublicFetchAgentCacheForTest(): void {
+  for (const agent of agentCache.values()) {
+    void agent.close();
+  }
+  agentCache.clear();
+}
+
 function pinnedAgent(origin: string, address: string, family: 4 | 6): Agent {
   const key = `${origin}|${address}`;
   const cached = agentCache.get(key);

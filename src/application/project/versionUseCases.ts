@@ -7,6 +7,7 @@ import type {
   VersionParameters,
 } from "@/domain/project/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
+import { versionMcpHeadersContext } from "@/domain/security/secretContext";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
@@ -220,8 +221,11 @@ export interface VersionInput {
 async function resolveMcpBindings(
   cipher: SecretCipher,
   mcps: Pick<McpRepository, "get">,
+  projectName: string,
+  versionName: string,
   next: McpBinding[],
   existing: McpBinding[] = [],
+  existingVersionName: string = versionName,
 ): Promise<McpBinding[]> {
   const storedByName = new Map(existing.map((binding) => [binding.name, binding]));
   return Promise.all(
@@ -247,7 +251,12 @@ async function resolveMcpBindings(
       const currentTarget = current ? mcpHeaderTarget(current.url) : undefined;
       const storedHeaders =
         !current || stored?.headerTarget === currentTarget ? stored?.headers ?? {} : {};
-      const headers = cipher.mergeHeaderOverrideUpdate(storedHeaders, submitted);
+      const headers = cipher.mergeHeaderOverrideUpdate(
+        storedHeaders,
+        submitted,
+        versionMcpHeadersContext(projectName, versionName, binding.name),
+        versionMcpHeadersContext(projectName, existingVersionName, binding.name),
+      );
       if (Object.keys(headers).length === 0) {
         return rest;
       }
@@ -285,7 +294,15 @@ export async function resolveDraftMcpBindings(
     return bindings;
   }
   const saved = versionName ? await versions.get(projectName, versionName) : null;
-  return resolveMcpBindings(cipher, mcps, bindings, saved?.mcpList ?? []);
+  return resolveMcpBindings(
+    cipher,
+    mcps,
+    projectName,
+    "draft",
+    bindings,
+    saved?.mcpList ?? [],
+    saved?.versionName ?? "draft",
+  );
 }
 
 /**
@@ -301,7 +318,17 @@ export function toVersionView(cipher: SecretCipher, version: Version): Version {
     // fields to keep is how the ones nobody thought of get lost.
     mcpList: version.mcpList.map(({ headerTarget: _internal, ...binding }) =>
       binding.headers
-        ? { ...binding, headers: cipher.maskHeaderOverrides(binding.headers) }
+        ? {
+            ...binding,
+            headers: cipher.maskHeaderOverrides(
+              binding.headers,
+              versionMcpHeadersContext(
+                version.projectName,
+                version.versionName,
+                binding.name,
+              ),
+            ),
+          }
         : binding,
     ),
   };
@@ -444,7 +471,13 @@ export async function createVersion(
     model: input.model,
     fallbackModel: input.fallbackModel,
     parameters: input.parameters,
-    mcpList: await resolveMcpBindings(cipher, refs.mcps, input.mcpList),
+    mcpList: await resolveMcpBindings(
+      cipher,
+      refs.mcps,
+      projectName,
+      versionName,
+      input.mcpList,
+    ),
     skillList: input.skillList,
     subagentList: input.subagentList,
     maxTurn: input.maxTurn,
@@ -494,7 +527,14 @@ export async function updateVersion(
       input.fallbackModel === null ? undefined : input.fallbackModel ?? existing.fallbackModel,
     parameters: input.parameters ?? existing.parameters,
     mcpList: input.mcpList
-      ? await resolveMcpBindings(cipher, refs.mcps, input.mcpList, existing.mcpList)
+      ? await resolveMcpBindings(
+          cipher,
+          refs.mcps,
+          projectName,
+          versionName,
+          input.mcpList,
+          existing.mcpList,
+        )
       : existing.mcpList,
     skillList: input.skillList ?? existing.skillList,
     subagentList: input.subagentList ?? existing.subagentList,

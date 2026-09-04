@@ -10,6 +10,8 @@
  * network or database.
  */
 
+import { randomUUID } from "node:crypto";
+
 import type {
   ChannelChunk,
   ChannelCompletion,
@@ -576,9 +578,26 @@ async function* reportChildCompletion(
   source: AsyncGenerator<EngineChunk, string>,
   agentName: string,
 ): AsyncGenerator<EngineChunk, string> {
-  const answer = yield* source;
-  yield { author: agentName, authorPath: [agentName], authorDone: true };
-  return answer;
+  const transferId = randomUUID();
+  let completed = false;
+  try {
+    while (true) {
+      const step = await source.next();
+      if (step.done) {
+        completed = true;
+        yield { author: agentName, authorPath: [agentName], transferId, authorDone: true };
+        return step.value;
+      }
+      // Overwrite a nested transfer's id at this boundary: the parent trace
+      // groups every descendant under the direct transfer it started. The
+      // child's own recorder saw the nested id before this wrapper.
+      yield { ...step.value, transferId };
+    }
+  } finally {
+    if (!completed) {
+      await source.return("");
+    }
+  }
 }
 
 async function* runSubagentWithPii(
@@ -841,10 +860,10 @@ export async function* runPromptStream(
     // The provider cut the answer at its output cap. `done` would incorrectly
     // claim the model finished on its own.
     yield { warning: "The answer was cut at the model's output limit before it finished." };
-    yield { usage: usageInfo, finishReason: "output-limit" };
+    yield { usage: { ...usageInfo, model: state.model }, finishReason: "output-limit" };
     return;
   }
-  yield { usage: usageInfo, done: true };
+  yield { usage: { ...usageInfo, model: state.model }, done: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -2297,7 +2316,7 @@ export async function* runAgent(
 
     const usageInfo = toUsageInfo(streamed.model, streamed.usage);
     await recordUsageIfPossible(deps, input.projectName, streamed.model, usageInfo);
-    yield { author, usage: usageInfo };
+    yield { author, usage: { ...usageInfo, model: streamed.model } };
     if (
       traceReasoning &&
       !reasoningWithheldNoted &&

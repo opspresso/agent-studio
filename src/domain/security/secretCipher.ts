@@ -13,32 +13,43 @@
 export type HeaderOverrides = Record<string, string | null>;
 
 export interface SecretCipher {
-  /** Encrypt for storage. Already-encrypted input passes through unchanged. */
-  encrypt(plaintext: string): string;
+  /** Encrypt new plaintext for storage, bound to its stable row/field identity. */
+  encrypt(plaintext: string, context: string): string;
   /** Decrypt a stored value. Plaintext input passes through unchanged. */
-  decrypt(value: string): string;
+  decrypt(value: string, context: string): string;
   /** Length-preserving display mask; reveals edge characters on longer values. */
-  mask(value: string): string;
+  mask(value: string, context?: string): string;
   /** True when a submitted value is a mask echoed back, not a new secret. */
   isMasked(value: string): boolean;
 
-  encryptHeaders(headers: Record<string, string>): Record<string, string>;
-  maskHeaders(headers: Record<string, string>): Record<string, string>;
+  encryptHeaders(headers: Record<string, string>, context: string): Record<string, string>;
+  maskHeaders(headers: Record<string, string>, context: string): Record<string, string>;
   /** Masked/empty submitted values keep the stored secret; unmatched masks drop. */
   mergeHeaderUpdate(
     stored: Record<string, string>,
     update: Record<string, string>,
+    context: string,
   ): Record<string, string>;
   /** Decrypt stored headers for an outbound call. Only at dispatch time. */
-  decryptHeadersForOutbound(headers: Record<string, string>): Record<string, string>;
+  decryptHeadersForOutbound(
+    headers: Record<string, string>,
+    context: string,
+  ): Record<string, string>;
   /** Registry headers with a version's overrides layered on, decrypted. */
   mergeOutboundHeaders(
     registryHeaders: Record<string, string>,
     overrides: HeaderOverrides | undefined,
+    registryContext: string,
+    overrideContext?: string,
   ): Record<string, string>;
 
-  maskHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides;
-  mergeHeaderOverrideUpdate(stored: HeaderOverrides, update: HeaderOverrides): HeaderOverrides;
+  maskHeaderOverrides(overrides: HeaderOverrides, context: string): HeaderOverrides;
+  mergeHeaderOverrideUpdate(
+    stored: HeaderOverrides,
+    update: HeaderOverrides,
+    context: string,
+    storedContext?: string,
+  ): HeaderOverrides;
 
   /**
    * Decrypt `stored` and compare it to `candidate` in constant time.
@@ -47,5 +58,5 @@ export interface SecretCipher {
    * behind the port means a decrypted credential never exists as a value in the
    * application layer, and callers cannot accidentally compare with `===`.
    */
-  decryptEquals(stored: string, candidate: string): boolean;
+  decryptEquals(stored: string, candidate: string, context: string): boolean;
 }

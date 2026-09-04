@@ -455,6 +455,7 @@ export async function syncPluginsFromSnapshot(
       version: manifest.version,
       description: manifest.description,
       repo: snapshot.repo,
+      branch: snapshot.branch,
       rootPath: plugin.rootPath,
       commitSha: snapshot.commitSha,
       skills: conformantSkills.map((skill) => skill.name),

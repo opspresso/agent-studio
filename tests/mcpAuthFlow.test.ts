@@ -23,6 +23,8 @@ import type { McpServer } from "@/domain/mcp/types";
 import type { TokenRequestTarget, TokenSet } from "@/domain/mcp/oauth";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
+import { mcpOAuthStateContext } from "@/domain/security/secretContext";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 
 const OWNER = "owner@example.com";
 const BASE_URL = "https://studio.example.com";
@@ -58,16 +60,19 @@ function decryptFake(value: string): string {
  * that round trip keeps the secret. A fake pair would agree with itself while
  * the two shipped halves drifted.
  */
-const cipher = {
-  encrypt: (value: string) => (value.startsWith("enc:") ? value : `enc:${value}`),
-  decrypt: decryptFake,
+const cipher: McpAuthUseCasesDeps["cipher"] = {
+  ...secretCipher,
+  encrypt: (value: string, _context: string) =>
+    value.startsWith("enc:") ? value : `enc:${value}`,
+  decrypt: (value: string, _context: string) => decryptFake(value),
   isMasked,
   mask: maskSecret,
-  decryptHeadersForOutbound: (headers: Record<string, string>) =>
+  decryptHeadersForOutbound: (headers: Record<string, string>, _context: string) =>
     Object.fromEntries(Object.entries(headers).map(([name, value]) => [name, decryptFake(value)])),
   mergeOutboundHeaders: (
     registryHeaders: Record<string, string>,
     overrides: Record<string, string | null> | undefined,
+    _registryContext: string,
   ) => {
     const merged = Object.fromEntries(
       Object.entries(registryHeaders).map(([name, value]) => [name, decryptFake(value)]),
@@ -81,7 +86,7 @@ const cipher = {
     }
     return merged;
   },
-} as McpAuthUseCasesDeps["cipher"];
+};
 
 interface Harness {
   deps: McpAuthUseCasesDeps;
@@ -222,7 +227,10 @@ describe("beginAuthorization", () => {
     // The challenge must be the S256 of the verifier that was stored, or the
     // mismatch only surfaces at the token endpoint, after the user has left.
     const stored = [...h.states.values()][0];
-    const verifier = cipher.decrypt(stored?.codeVerifier ?? "");
+    const verifier = cipher.decrypt(
+      stored?.codeVerifier ?? "",
+      mcpOAuthStateContext(stored?.state ?? ""),
+    );
     expect(url.searchParams.get("code_challenge")).toBe(
       createHash("sha256").update(verifier).digest("base64url"),
     );

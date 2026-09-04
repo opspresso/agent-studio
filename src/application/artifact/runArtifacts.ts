@@ -67,7 +67,17 @@ export function createArtifactRecorder(
   return {
     async record(input) {
       try {
-        return await storeArtifact(storage, context, input);
+        const artifactContext =
+          input.authorPath && input.authorPath.length > 0
+            ? {
+                ...context,
+                ancestry: [
+                  ...(context.ancestry ?? [context.projectName]),
+                  ...input.authorPath,
+                ],
+              }
+            : context;
+        return await storeArtifact(storage, artifactContext, input);
       } catch (error) {
         // Never fatal: a run that drew the picture has done the expensive part,
         // and losing the copy is worth strictly less than losing the answer.
@@ -140,6 +150,7 @@ async function captured(recorder: ArtifactRecorder, chunk: EngineChunk): Promise
       mimeType: chunk.image.mimeType,
       ...(chunk.image.prompt ? { prompt: chunk.image.prompt } : {}),
       ...(chunk.author ? { producedBy: chunk.author } : {}),
+      ...(chunk.authorPath ? { authorPath: chunk.authorPath } : {}),
       // Only what the producer named. A run's own model is not a fallback for
       // a picture drawn by something else — see `EngineChunk.image.model`.
       ...(chunk.image.model ? { model: chunk.image.model } : {}),
@@ -161,6 +172,7 @@ async function captured(recorder: ArtifactRecorder, chunk: EngineChunk): Promise
       mimeType: chunk.file.mimeType,
       filename: chunk.file.name,
       ...(chunk.author ? { producedBy: chunk.author } : {}),
+      ...(chunk.authorPath ? { authorPath: chunk.authorPath } : {}),
     });
     // The bytes go either way. Unstored, they have nowhere to be fetched from
     // later, and the warning is what says so — carrying them on to a browser

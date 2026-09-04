@@ -20,11 +20,14 @@ describe("catalogReindexLock", () => {
     vi.spyOn(Date, "now").mockReturnValue(1_000);
     const token = await catalogReindexLock.acquire(60_000);
     expect(token).toBeTruthy();
+    await expect(catalogReindexLock.state()).resolves.toEqual({ generation: 1, active: true });
     await expect(catalogReindexLock.acquire(60_000)).resolves.toBeNull();
     await catalogReindexLock.release("not-the-owner");
     await expect(catalogReindexLock.acquire(60_000)).resolves.toBeNull();
     await catalogReindexLock.release(token!);
+    await expect(catalogReindexLock.state()).resolves.toEqual({ generation: 1, active: false });
     await expect(catalogReindexLock.acquire(60_000)).resolves.toBeTruthy();
+    await expect(catalogReindexLock.state()).resolves.toEqual({ generation: 2, active: true });
   });
 
   it("lets a new pass reclaim an expired lease", async () => {
@@ -32,5 +35,6 @@ describe("catalogReindexLock", () => {
     await expect(catalogReindexLock.acquire(60_000)).resolves.toBeTruthy();
     now.mockReturnValue(61_001);
     await expect(catalogReindexLock.acquire(60_000)).resolves.toBeTruthy();
+    await expect(catalogReindexLock.state()).resolves.toEqual({ generation: 2, active: true });
   });
 });

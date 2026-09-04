@@ -223,6 +223,27 @@ describe("captureRunArtifacts", () => {
     expect(storage.rowsWritten[0]?.producedBy).toBe("image-child");
   });
 
+  it("records the full transfer chain that produced an artifact", async () => {
+    const storage = fakeStorage();
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+    await collect(
+      captureRunArtifacts(
+        recorder,
+        stream({
+          author: "renderer",
+          authorPath: ["researcher", "renderer"],
+          image: { b64: PNG, mimeType: "image/png" },
+        }),
+      ),
+    );
+
+    expect(storage.rowsWritten[0]?.ancestry).toEqual([
+      "poster-bot",
+      "researcher",
+      "renderer",
+    ]);
+  });
+
   it("records the model the producer named, not the run's", async () => {
     // The version this run answers on is `poster-bot/v3`; the picture was drawn
     // by a child on its own model. Deriving the model from the run instead would

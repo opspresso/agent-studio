@@ -1,11 +1,17 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { listProjectActors, type ListActorsDeps } from "@/application/usage/listActors";
+import {
+  MAX_ACTOR_USAGE_ROWS,
+  MAX_ACTOR_VIEWS,
+  listProjectActors,
+  type ListActorsDeps,
+} from "@/application/usage/listActors";
 import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { RunCaller } from "@/domain/execution/actor";
 import type { Project } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { ActorUsageRow } from "@/domain/usage/types";
+import { slackSecretContext } from "@/domain/security/secretContext";
 
 beforeAll(() => {
   process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
@@ -23,8 +29,14 @@ function makeProject(withSlack: boolean): Project {
     ...(withSlack
       ? {
           slack: {
-            botToken: secretCipher.encrypt("xoxb-token"),
-            signingSecret: secretCipher.encrypt("secret"),
+            botToken: secretCipher.encrypt(
+              "xoxb-token",
+              slackSecretContext("painter", "bot-token"),
+            ),
+            signingSecret: secretCipher.encrypt(
+              "secret",
+              slackSecretContext("painter", "signing-secret"),
+            ),
             enabled: true,
           },
         }
@@ -66,7 +78,7 @@ describe("listProjectActors", () => {
       avatarUrl: "https://x/512.png",
     }));
 
-    const items = await listProjectActors(
+    const result = await listProjectActors(
       makeDeps([row("slack:U1")], resolve),
       makeProject(true),
       "2026-07-01",
@@ -74,10 +86,11 @@ describe("listProjectActors", () => {
     );
 
     expect(resolve).toHaveBeenCalledWith("xoxb-token", "U1");
-    expect(items[0]?.display).toEqual({ name: "Bruce", avatarUrl: "https://x/512.png" });
+    expect(result.items[0]?.display).toEqual({ name: "Bruce", avatarUrl: "https://x/512.png" });
     // The key stays exactly as stored: a client telling two callers apart must
     // not have to parse a display name.
-    expect(items[0]?.actor).toBe("slack:U1");
+    expect(result.items[0]?.actor).toBe("slack:U1");
+    expect(result).toMatchObject({ totalActors: 1, truncated: false });
   });
 
   it("resolves each distinct user once, however many days they span", async () => {
@@ -96,7 +109,7 @@ describe("listProjectActors", () => {
   it("leaves non-Slack callers alone", async () => {
     const resolve = vi.fn(async () => ({ displayName: "Bruce" }));
 
-    const items = await listProjectActors(
+    const result = await listProjectActors(
       makeDeps([row("user:someone@example.com"), row("a2a:shared-key")], resolve),
       makeProject(true),
       "2026-07-01",
@@ -104,13 +117,13 @@ describe("listProjectActors", () => {
     );
 
     expect(resolve).not.toHaveBeenCalled();
-    expect(items.every((item) => item.display === undefined)).toBe(true);
+    expect(result.items.every((item) => item.display === undefined)).toBe(true);
   });
 
   it("returns the raw keys when the project has no Slack bot", async () => {
     const resolve = vi.fn(async () => ({ displayName: "Bruce" }));
 
-    const items = await listProjectActors(
+    const result = await listProjectActors(
       makeDeps([row("slack:U1")], resolve),
       makeProject(false),
       "2026-07-01",
@@ -118,7 +131,7 @@ describe("listProjectActors", () => {
     );
 
     expect(resolve).not.toHaveBeenCalled();
-    expect(items[0]?.display).toBeUndefined();
+    expect(result.items[0]?.display).toBeUndefined();
   });
 
   it("still answers when the lookup throws", async () => {
@@ -127,7 +140,7 @@ describe("listProjectActors", () => {
       throw new Error("slack is down");
     });
 
-    const items = await listProjectActors(
+    const result = await listProjectActors(
       makeDeps([row("slack:U1")], resolve),
       makeProject(true),
       "2026-07-01",
@@ -135,8 +148,62 @@ describe("listProjectActors", () => {
     );
 
     // A Slack outage must not take the cost dashboard down with it.
-    expect(items[0]?.actor).toBe("slack:U1");
-    expect(items[0]?.display).toBeUndefined();
+    expect(result.items[0]?.actor).toBe("slack:U1");
+    expect(result.items[0]?.display).toBeUndefined();
     vi.restoreAllMocks();
+  });
+
+  it("aggregates an actor before ranking and enriching it", async () => {
+    const resolve = vi.fn(async () => ({ displayName: "Bruce" }));
+
+    const result = await listProjectActors(
+      makeDeps([row("slack:U1"), { ...row("slack:U1", 3, 0.75), date: "2026-07-29" }], resolve),
+      makeProject(true),
+      "2026-07-01",
+      "2026-07-31",
+    );
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      calls: { "gpt-5": 5 },
+      costUsd: { "gpt-5": 1.25 },
+    });
+  });
+
+  it("returns and enriches only the highest-cost callers", async () => {
+    const resolve = vi.fn(async (token: string, userId: string) => ({
+      displayName: `${token}:${userId}`,
+    }));
+    const rows = Array.from({ length: MAX_ACTOR_VIEWS + 5 }, (_, index) =>
+      row(`slack:U${String(index).padStart(3, "0")}`, 1, index),
+    );
+
+    const result = await listProjectActors(
+      makeDeps(rows, resolve),
+      makeProject(true),
+      "2026-07-01",
+      "2026-07-31",
+    );
+
+    expect(result.items).toHaveLength(MAX_ACTOR_VIEWS);
+    expect(result.totalActors).toBe(MAX_ACTOR_VIEWS + 5);
+    expect(result.truncated).toBe(true);
+    expect(resolve).toHaveBeenCalledTimes(MAX_ACTOR_VIEWS);
+    expect(result.items[0]?.actor).toBe(`slack:U${MAX_ACTOR_VIEWS + 4}`);
+  });
+
+  it("refuses a range whose raw actor rows exceed the read cap", async () => {
+    const rows = Array.from({ length: MAX_ACTOR_USAGE_ROWS + 1 }, (_, index) =>
+      row(`user:${index}`),
+    );
+
+    await expect(
+      listProjectActors(
+        makeDeps(rows, async () => null),
+        makeProject(false),
+        "2026-01-01",
+        "2026-07-03",
+      ),
+    ).rejects.toThrow("choose a narrower date range");
   });
 });

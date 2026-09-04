@@ -17,6 +17,8 @@ import {
   type WebhookTrigger,
 } from "@/domain/trigger/types";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
+import { triggerSecretContext } from "@/domain/security/secretContext";
+import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
 
@@ -53,7 +55,7 @@ function trigger(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
     kind: "webhook",
     description: "",
     enabled: true,
-    secret: secretCipher.encrypt(SECRET),
+    secret: secretCipher.encrypt(SECRET, triggerSecretContext("p", PROJECT_WEBHOOK_ID)),
     payloadMode: "message",
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
@@ -204,6 +206,20 @@ describe("admitDelivery", () => {
     expect((await admitDelivery(f.deps, "p", null, null)).status).toBe(
       "unauthorized",
     );
+  });
+
+  it("refuses a webhook ciphertext moved to another project", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const f = fixture();
+    expect((await admitDelivery(f.deps, "other-project", SECRET, null)).status).toBe(
+      "unauthorized",
+    );
+    expect(error).toHaveBeenCalled();
+  });
+
+  it("keeps a legacy v1 encrypted webhook secret usable during migration", async () => {
+    const f = fixture({ stored: trigger({ secret: encryptSecret(SECRET) }) });
+    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("accepted");
   });
 
   it("reports a project with no webhook as not configured", async () => {

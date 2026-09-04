@@ -535,6 +535,7 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
           : getEmbeddingModel,
       ),
       catalog: createPgVectorStore("catalog_vectors"),
+      reindexState: () => catalogReindexLock.state(),
       minScore: config.catalogMinScore,
       ...(RERANKER
         ? {

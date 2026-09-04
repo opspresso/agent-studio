@@ -1,12 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/container", () => ({ readinessReport: vi.fn() }));
 
 const { GET: readyGet } = await import("@/app/api/ready/route");
 const { GET: healthGet } = await import("@/app/api/health/route");
-const { beginShutdown } = await import("@/shared/lifecycle");
+const { beginShutdown, resetLifecycleForTest } = await import("@/shared/lifecycle");
 const { readinessReport } = await import("@/lib/container");
 const readinessMock = readinessReport as ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  resetLifecycleForTest();
+  readinessMock.mockReset();
+});
 
 describe("GET /api/ready", () => {
   it("returns 200 when downstreams are reachable", async () => {

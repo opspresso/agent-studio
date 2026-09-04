@@ -2,8 +2,9 @@
  * AES-256-GCM adapter for the {@link SecretCipher} port.
  *
  * A thin binding over the existing functions in `secretEncryption.ts` and
- * `timingSafe.ts` — those keep owning the format (`enc:v1:`), the masking tiers
- * and the constant-time comparison, so nothing about stored data changes here.
+ * `timingSafe.ts` — those keep owning the versioned format, the masking tiers
+ * and the constant-time comparison. A supplied storage context produces
+ * `enc:v2`; legacy context-free values remain readable as `enc:v1`.
  */
 
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -34,5 +35,6 @@ export const secretCipher: SecretCipher = {
   mergeOutboundHeaders,
   maskHeaderOverrides,
   mergeHeaderOverrideUpdate,
-  decryptEquals: (stored, candidate) => timingSafeEqualString(decryptSecret(stored), candidate),
+  decryptEquals: (stored, candidate, context) =>
+    timingSafeEqualString(decryptSecret(stored, context), candidate),
 };

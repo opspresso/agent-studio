@@ -35,12 +35,15 @@ import {
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import { log } from "@/shared/logger";
+import {
+  managedMcpEnvironmentContext,
+  mcpHeadersContext,
+} from "@/domain/security/secretContext";
 
 export interface CreateManagedInput {
   name: string;
   image: string;
   containerPort: number;
-  envRefs?: string[];
   environment?: Record<string, string>;
   args?: string[];
   endpointPath?: string;
@@ -169,9 +172,14 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
   function view(entry: McpServer): McpServer {
     return {
       ...entry,
-      headers: deps.cipher.maskHeaders(entry.headers),
+      headers: deps.cipher.maskHeaders(entry.headers, mcpHeadersContext(entry.name)),
       ...(entry.environment
-        ? { environment: deps.cipher.maskHeaders(entry.environment) }
+        ? {
+            environment: deps.cipher.maskHeaders(
+              entry.environment,
+              managedMcpEnvironmentContext(entry.name),
+            ),
+          }
         : {}),
     };
   }
@@ -201,7 +209,10 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     }
     // This probe has no user, project, or conversation — a stored spelling of
     // a reserved metadata header must not ride it claiming one.
-    const headers = deps.cipher.decryptHeadersForOutbound(entry.headers);
+    const headers = deps.cipher.decryptHeadersForOutbound(
+      entry.headers,
+      mcpHeadersContext(entry.name),
+    );
     stripMcpMetadataHeaders(headers);
     const result = await deps.probe.listTools(entry.url, headers, true, REACHABILITY_TIMEOUT_MS);
     return result.ok || result.unauthorized === true;
@@ -234,9 +245,13 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     return {
       name: entry.name,
       image: entry.image,
-      ...(entry.envRefs ? { envRefs: entry.envRefs } : {}),
       ...(entry.environment
-        ? { environment: deps.cipher.decryptHeadersForOutbound(entry.environment) }
+        ? {
+            environment: deps.cipher.decryptHeadersForOutbound(
+              entry.environment,
+              managedMcpEnvironmentContext(entry.name),
+            ),
+          }
         : {}),
       ...(entry.args ? { args: entry.args } : {}),
       ...(entry.containerPort !== undefined ? { containerPort: entry.containerPort } : {}),
@@ -366,7 +381,6 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
           name: input.name,
           image: input.image,
           containerPort: input.containerPort,
-          ...(input.envRefs ? { envRefs: input.envRefs } : {}),
           ...(input.environment ? { environment: input.environment } : {}),
           ...(input.args ? { args: input.args } : {}),
         };
@@ -382,15 +396,22 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
           url: `${workload.address}${endpointPath(input.endpointPath)}`,
           image: input.image,
           containerPort: input.containerPort,
-          ...(input.envRefs ? { envRefs: input.envRefs } : {}),
           ...(input.environment
-            ? { environment: deps.cipher.encryptHeaders(input.environment) }
+            ? {
+                environment: deps.cipher.encryptHeaders(
+                  input.environment,
+                  managedMcpEnvironmentContext(input.name),
+                ),
+              }
             : {}),
           ...(input.args ? { args: input.args } : {}),
           ...(input.endpointPath ? { endpointPath: input.endpointPath } : {}),
           ...(input.description ? { description: input.description } : {}),
           ...(input.content ? { content: input.content } : {}),
-          headers: deps.cipher.encryptHeaders(input.headers ?? {}),
+          headers: deps.cipher.encryptHeaders(
+            input.headers ?? {},
+            mcpHeadersContext(input.name),
+          ),
           createdAt: deps.now(),
           updatedAt: deps.now(),
         };
@@ -433,24 +454,21 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
 
     async update(name, input) {
       const existing = await requireManaged(name);
-      const envRefs =
-        input.envRefs === undefined
-          ? existing.envRefs
-          : input.envRefs.length > 0
-            ? input.envRefs
-            : undefined;
       const args =
         input.args === undefined ? existing.args : input.args.length > 0 ? input.args : undefined;
       const environment =
         input.environment === undefined
           ? existing.environment
           : Object.keys(input.environment).length > 0
-            ? deps.cipher.mergeHeaderUpdate(existing.environment ?? {}, input.environment)
+            ? deps.cipher.mergeHeaderUpdate(
+                existing.environment ?? {},
+                input.environment,
+                managedMcpEnvironmentContext(existing.name),
+              )
             : undefined;
       const nextEndpointPath = endpointPath(input.endpointPath ?? existing.endpointPath);
       const updated: McpServer = {
         ...existing,
-        envRefs,
         environment,
         args,
         endpointPath:
@@ -462,13 +480,16 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         headers:
           input.headers === undefined
             ? existing.headers
-            : deps.cipher.mergeHeaderUpdate(existing.headers, input.headers),
+            : deps.cipher.mergeHeaderUpdate(
+                existing.headers,
+                input.headers,
+                mcpHeadersContext(existing.name),
+              ),
         updatedAt: deps.now(),
       };
       const workloadChanged =
         updated.image !== existing.image ||
         updated.containerPort !== existing.containerPort ||
-        JSON.stringify(updated.envRefs ?? []) !== JSON.stringify(existing.envRefs ?? []) ||
         JSON.stringify(updated.environment ?? {}) !== JSON.stringify(existing.environment ?? {}) ||
         JSON.stringify(updated.args ?? []) !== JSON.stringify(existing.args ?? []) ||
         nextEndpointPath !== endpointPath(existing.endpointPath);

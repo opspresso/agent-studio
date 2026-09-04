@@ -13,8 +13,6 @@
 
 /** `host/path:tag` or `…@sha256:…`. No spaces, quotes, or shell metacharacters. */
 export const MANAGED_IMAGE = /^[A-Za-z0-9._\-/]+(?::[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$/;
-/** Absolute host path passed to Docker as an env-file reference. */
-export const MANAGED_ENV_REF = /^\/[A-Za-z0-9._\-/]+$/;
 /** An environment variable name, as env-file syntax and shells agree on it. */
 export const MANAGED_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** One env-file value. A line break would create another entry. */
@@ -44,11 +42,6 @@ export interface ManagedWorkloadSpec {
    * port>` already listens on.
    */
   containerPort?: number;
-  /**
-   * Host paths of env files whose contents become the container's environment.
-   * References, so secrets never pass through this app or its table.
-   */
-  envRefs?: string[];
   /** Plaintext values passed only from the lifecycle boundary to the runtime adapter. */
   environment?: Record<string, string>;
   /**

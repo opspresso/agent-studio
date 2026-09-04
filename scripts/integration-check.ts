@@ -61,6 +61,8 @@ async function main() {
     "@/infrastructure/db/repositories/mcpOAuthStateRepository"
   );
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
+  const { memberRepository } = await import("@/infrastructure/db/repositories/memberRepository");
+  const { createPgVectorStore } = await import("@/infrastructure/vector/pgVectorStore");
   const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
   const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
   const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
@@ -80,6 +82,12 @@ async function main() {
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
+  const {
+    externalAgentHeadersContext,
+    mcpConnectionSecretContext,
+    mcpHeadersContext,
+    mcpOAuthStateContext,
+  } = await import("@/domain/security/secretContext");
   const { keys: dbKeys } = await import("@/infrastructure/db/keys");
   const { createA2aTaskStore } = await import("@/infrastructure/a2a/taskStore");
   const { TaskState } = await import("@a2a-js/sdk");
@@ -164,6 +172,9 @@ async function main() {
   const a2aOwnerScope = `tenant-${suffix}:client-${suffix}`;
   const legacyDestinationProject = `it-telegram-migration-${suffix}`;
   const legacyDestinationKey = dbKeys.telegramDestination(legacyDestinationProject, 42, 1);
+  const integrationMemberId = `it-member-${suffix}`;
+  const integrationMemberEmail = `${integrationMemberId}@example.com`;
+  const vectorTable = `it_vectors_${suffix}`;
   // Audit rows are the one fixture no repository can remove: the entity is
   // append-only on purpose — a record its subject could erase would not be one —
   // and it lives outside the project partition the cascade clears. Their keys
@@ -289,45 +300,121 @@ async function main() {
     );
     pass("skill describe (projected, reserved-word alias)");
 
+    // ---------- pgvector adapter ----------
+    await withTransaction(async (client) => {
+      await client.query(
+        `CREATE TABLE ${vectorTable} (key text PRIMARY KEY, embedding vector NOT NULL, metadata jsonb NOT NULL DEFAULT '{}'::jsonb)`,
+      );
+    });
+    const vectors = createPgVectorStore(vectorTable);
+    const vectorA = `${projectName}:a`;
+    const vectorB = `${projectName}:b`;
+    const vectorC = `${projectName}:c`;
+    await vectors.upsert([
+      { key: vectorA, vector: [1, 0, 0], metadata: { kind: "skill", label: "A" } },
+      { key: vectorB, vector: [0.8, 0.2, 0], metadata: { kind: "skill", label: "B" } },
+      { key: vectorC, vector: [0, 1, 0], metadata: { kind: "tool", label: "C" } },
+    ]);
+    assert.deepEqual(await vectors.listKeys(), [vectorA, vectorB, vectorC]);
+    const vectorMatches = await vectors.query([1, 0, 0], 2, { kind: "skill" });
+    assert.deepEqual(
+      vectorMatches.map((match) => match.key),
+      [vectorA, vectorB],
+      "cosine order and metadata filter",
+    );
+    assert.equal(vectorMatches[0]?.metadata.label, "A");
+    await vectors.deleteByKeys([vectorB]);
+    assert.deepEqual(await vectors.listKeys(), [vectorA, vectorC]);
+    pass("pgvector upsert/query/filter/list/delete");
+
+    // ---------- Better Auth member adapter ----------
+    await withTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt") VALUES ($1, $2, $3, true, $4, $4)`,
+        [integrationMemberId, "Integration Member", integrationMemberEmail, now],
+      );
+    });
+    const memberByEmail = await memberRepository.getByEmail(integrationMemberEmail);
+    assert.equal(memberByEmail?.id, integrationMemberId);
+    assert.equal(
+      (await memberRepository.getById(integrationMemberId))?.email,
+      integrationMemberEmail,
+    );
+    assert.ok(
+      (
+        await memberRepository.list(10, {
+          joinedAt: new Date(Date.parse(now) - 1_000).toISOString(),
+          id: "",
+        })
+      ).some((member) => member.id === integrationMemberId),
+      "member list contains inserted user",
+    );
+    const tierChange = await memberRepository.setTier(integrationMemberId, "member");
+    assert.equal(tierChange?.previousTier, "guest");
+    assert.equal(tierChange?.member.tier, "member");
+    pass("member get/list/atomic tier update");
+
     // ---------- mcp + external agent (encrypted headers) ----------
-    const encrypted = encryptHeaders({ Authorization: "Bearer secret-token" });
+    const serverName = `it-mcp-${suffix}`;
+    const agentName = `it-agent-${suffix}`;
+    const mcpHeaders = encryptHeaders(
+      { Authorization: "Bearer secret-token" },
+      mcpHeadersContext(serverName),
+    );
     await mcpRepository.put({
-      name: `it-mcp-${suffix}`,
+      name: serverName,
       url: "http://localhost:9999/mcp",
-      headers: encrypted,
+      headers: mcpHeaders,
       createdAt: now,
       updatedAt: now,
     });
-    const mcp = await mcpRepository.get(`it-mcp-${suffix}`);
+    const mcp = await mcpRepository.get(serverName);
     assert.ok(mcp, "mcp get");
     assert.equal(
-      decryptHeadersForOutbound(mcp.headers).Authorization,
+      decryptHeadersForOutbound(mcp.headers, mcpHeadersContext(serverName)).Authorization,
       "Bearer secret-token",
       "mcp header encryption round-trip",
     );
     await externalAgentRepository.put({
-      name: `it-agent-${suffix}`,
+      name: agentName,
       url: "http://localhost:9999/v1/chat/completions",
       description: "external",
-      headers: encrypted,
+      headers: encryptHeaders(
+        { Authorization: "Bearer secret-token" },
+        externalAgentHeadersContext(agentName),
+      ),
       createdAt: now,
       updatedAt: now,
     });
-    assert.ok(await externalAgentRepository.get(`it-agent-${suffix}`), "external agent get");
+    const agent = await externalAgentRepository.get(agentName);
+    assert.ok(agent, "external agent get");
+    assert.equal(
+      decryptHeadersForOutbound(agent.headers, externalAgentHeadersContext(agentName)).Authorization,
+      "Bearer secret-token",
+      "external agent header encryption round-trip",
+    );
     pass("mcp + external agent with encrypted headers");
 
     // ---------- mcp oauth connection + in-flight state ----------
-    const serverName = `it-mcp-${suffix}`;
     await mcpConnectionRepository.put({
       projectName,
       serverName,
       clientId: "client-abc",
-      clientSecret: encryptSecret("client-secret"),
+      clientSecret: encryptSecret(
+        "client-secret",
+        mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+      ),
       issuer: "https://auth.example.com",
       resource: "https://mcp.example.com",
       scopes: ["chat:write"],
-      accessToken: encryptSecret("access-1"),
-      refreshToken: encryptSecret("refresh-1"),
+      accessToken: encryptSecret(
+        "access-1",
+        mcpConnectionSecretContext(projectName, serverName, "access-token"),
+      ),
+      refreshToken: encryptSecret(
+        "refresh-1",
+        mcpConnectionSecretContext(projectName, serverName, "refresh-token"),
+      ),
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       status: "connected",
       connectedBy: "owner@example.com",
@@ -336,7 +423,14 @@ async function main() {
     });
     const conn = await mcpConnectionRepository.get(projectName, serverName);
     assert.ok(conn, "mcp connection get");
-    assert.equal(decryptSecret(conn.clientSecret ?? ""), "client-secret", "client secret round-trip");
+    assert.equal(
+      decryptSecret(
+        conn.clientSecret ?? "",
+        mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+      ),
+      "client-secret",
+      "client secret round-trip",
+    );
     // Losing either would silently unbind the credentials and tokens from the
     // servers they belong to — the whole of SEP-2352, and of the audience check
     // that stops a repointed entry carrying them somewhere else.
@@ -353,8 +447,14 @@ async function main() {
     const stored = conn.refreshToken;
     assert.equal(
       await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
-        accessToken: encryptSecret("access-2"),
-        refreshToken: encryptSecret("refresh-2"),
+        accessToken: encryptSecret(
+          "access-2",
+          mcpConnectionSecretContext(projectName, serverName, "access-token"),
+        ),
+        refreshToken: encryptSecret(
+          "refresh-2",
+          mcpConnectionSecretContext(projectName, serverName, "refresh-token"),
+        ),
         expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
         status: "connected",
         updatedAt: new Date().toISOString(),
@@ -364,8 +464,14 @@ async function main() {
     );
     assert.equal(
       await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
-        accessToken: encryptSecret("access-3"),
-        refreshToken: encryptSecret("refresh-3"),
+        accessToken: encryptSecret(
+          "access-3",
+          mcpConnectionSecretContext(projectName, serverName, "access-token"),
+        ),
+        refreshToken: encryptSecret(
+          "refresh-3",
+          mcpConnectionSecretContext(projectName, serverName, "refresh-token"),
+        ),
         expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
         status: "connected",
         updatedAt: new Date().toISOString(),
@@ -374,7 +480,10 @@ async function main() {
       "refresh from a superseded refresh token is refused",
     );
     assert.equal(
-      decryptSecret((await mcpConnectionRepository.get(projectName, serverName))?.accessToken ?? ""),
+      decryptSecret(
+        (await mcpConnectionRepository.get(projectName, serverName))?.accessToken ?? "",
+        mcpConnectionSecretContext(projectName, serverName, "access-token"),
+      ),
       "access-2",
       "the winner's token survives the race",
     );
@@ -396,12 +505,13 @@ async function main() {
     assert.equal(revoked?.refreshToken, undefined, "cleared refresh token is absent, not null");
     assert.equal(revoked?.status, "needs_reauth", "status recorded");
 
+    const oauthState = `it-state-${suffix}`;
     await mcpOAuthStateRepository.put(
       {
-        state: `it-state-${suffix}`,
+        state: oauthState,
         projectName,
         serverName,
-        codeVerifier: encryptSecret("verifier"),
+        codeVerifier: encryptSecret("verifier", mcpOAuthStateContext(oauthState)),
         userEmail: "owner@example.com",
         issuer: "https://auth.example.com",
         issParameterSupported: true,
@@ -409,14 +519,19 @@ async function main() {
       },
       600,
     );
-    const consumed = await mcpOAuthStateRepository.consume(`it-state-${suffix}`);
+    const consumed = await mcpOAuthStateRepository.consume(oauthState);
     assert.equal(consumed?.userEmail, "owner@example.com", "oauth state consumed once");
     // The expected issuer has to survive the round trip or the RFC 9207 check at
     // the callback has nothing to compare against and fails the flow closed.
     assert.equal(consumed?.issuer, "https://auth.example.com", "expected issuer round-trips");
     assert.equal(consumed?.issParameterSupported, true, "iss advertisement round-trips");
     assert.equal(
-      await mcpOAuthStateRepository.consume(`it-state-${suffix}`),
+      decryptSecret(consumed?.codeVerifier ?? "", mcpOAuthStateContext(oauthState)),
+      "verifier",
+      "PKCE verifier context round-trip",
+    );
+    assert.equal(
+      await mcpOAuthStateRepository.consume(oauthState),
       null,
       "a replayed state is gone",
     );
@@ -624,7 +739,7 @@ async function main() {
     // ---------- usage attribution (per-caller rows) ----------
     await usageRepository.record({ ...usageDelta, actor: "user:it@example.com" });
     await usageRepository.record({ ...usageDelta, actor: "project-token:it@example.com" });
-    const actorRows = await usageRepository.listActorsByProject(projectName, today, today);
+    const actorRows = await usageRepository.listActorsByProject(projectName, today, today, 100);
     assert.equal(actorRows.length, 2, "one row per caller");
     assert.deepEqual(
       actorRows.map((r) => r.actor).sort(),
@@ -1283,6 +1398,14 @@ async function main() {
     await import("@/infrastructure/db/store")
       .then(({ deleteItem }) => deleteItem(legacyDestinationKey))
       .catch(() => {});
+    await import("@/infrastructure/db/client")
+      .then(({ withTransaction }) =>
+        withTransaction(async (client) => {
+          await client.query(`DROP TABLE IF EXISTS ${vectorTable}`);
+          await client.query(`DELETE FROM "user" WHERE "id" = $1`, [integrationMemberId]);
+        }),
+      )
+      .catch(() => {});
     // The A2A block deletes its own key on the happy path; an assert between
     // create and delete would otherwise leak the pair into the shared table.
     await import("@/infrastructure/db/repositories/a2aClientKeyRepository")
@@ -1310,7 +1433,9 @@ async function main() {
         );
       }
     }
-    mock.close();
+    await new Promise<void>((resolve, reject) => {
+      mock.close((error) => (error ? reject(error) : resolve()));
+    });
     const { closePool } = await import("@/infrastructure/db/client");
     await closePool();
   }

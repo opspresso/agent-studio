@@ -43,13 +43,21 @@ const USAGE_PAGE_SIZE = 100;
 async function listUsageItems(
   input: QueryInput,
   cursorAttribute: "SK" | "GSI1SK" = "SK",
+  maxItems?: number,
 ): Promise<Item[]> {
   const found: Item[] = [];
   let after: string | undefined;
   for (;;) {
-    const page = await queryItems({ ...input, after, limit: USAGE_PAGE_SIZE });
+    if (maxItems !== undefined && found.length >= maxItems) {
+      return found;
+    }
+    const pageSize =
+      maxItems === undefined
+        ? USAGE_PAGE_SIZE
+        : Math.min(USAGE_PAGE_SIZE, maxItems - found.length);
+    const page = await queryItems({ ...input, after, limit: pageSize });
     found.push(...page);
-    if (page.length < USAGE_PAGE_SIZE) {
+    if (page.length < pageSize) {
       return found;
     }
     // Never a fallback: an empty cursor is `sk > ''`, which matches the whole
@@ -184,15 +192,23 @@ export class PostgresUsageRepository implements UsageRepository {
     projectName: string,
     from: string,
     to: string,
+    limit: number,
   ): Promise<ActorUsageRow[]> {
-    const items = await listUsageItems({
-      pk: keys.usage(projectName, from).PK,
-      // The upper bound has to sort after every actor on `to`, and actor ids
-      // are unbounded strings — so bound by the prefix of the day after,
-      // exclusive, rather than by any suffix guessed for `to` itself.
-      sk: { between: [keys.usageActorPrefix(from), `${keys.usageActorPrefix(to)}￿`] },
-      notExpiredAt: Math.floor(Date.now() / 1000),
-    });
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new Error("actor usage limit must be a positive integer");
+    }
+    const items = await listUsageItems(
+      {
+        pk: keys.usage(projectName, from).PK,
+        // The upper bound has to sort after every actor on `to`, and actor ids
+        // are unbounded strings — so bound by the prefix of the day after,
+        // exclusive, rather than by any suffix guessed for `to` itself.
+        sk: { between: [keys.usageActorPrefix(from), `${keys.usageActorPrefix(to)}￿`] },
+        notExpiredAt: Math.floor(Date.now() / 1000),
+      },
+      "SK",
+      limit,
+    );
     return items.map(toActorUsageRow);
   }
 

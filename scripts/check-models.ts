@@ -211,6 +211,18 @@ function parseAliases(entry: Record<string, unknown>, channel: Channel): string[
 
 /** A runaway `has_more` must not spin; far more pages than any catalog needs. */
 const MAX_PAGES = 25;
+/** One provider request may stay silent this long before the check reports it. */
+export const MODEL_CHECK_REQUEST_TIMEOUT_MS = 30_000;
+
+export function modelRequestInit(
+  channel: Channel,
+  timeoutMs = MODEL_CHECK_REQUEST_TIMEOUT_MS,
+): RequestInit {
+  return {
+    headers: authHeaders(channel),
+    signal: AbortSignal.timeout(timeoutMs),
+  };
+}
 
 /**
  * Every model a channel serves.
@@ -234,7 +246,7 @@ async function fetchModels(channel: Channel): Promise<ServedModel[]> {
     channel.auth === "sigv4" ? createSignedFetch(AWS_SIGNING_SERVICE) : globalThis.fetch;
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const url = cursor ? `${endpoint}?after_id=${encodeURIComponent(cursor)}` : endpoint;
-    const response = await request(url, { headers: authHeaders(channel) });
+    const response = await request(url, modelRequestInit(channel));
     if (!response.ok) {
       throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
     }
@@ -294,7 +306,7 @@ async function fetchSpecializedModels(
   modality: "image" | "embeddings" | "rerank" | "transcription",
 ): Promise<ServedModel[]> {
   const url = `${channel.baseUrl.replace(/\/+$/, "")}/models?output_modalities=${modality}`;
-  const response = await request(url, { headers: authHeaders(channel) });
+  const response = await request(url, modelRequestInit(channel));
   if (!response.ok) {
     throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
   }

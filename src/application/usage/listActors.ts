@@ -3,11 +3,16 @@ import type { Project } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { ActorUsageRow } from "@/domain/usage/types";
 import { log } from "@/shared/logger";
+import { ValidationError } from "@/application/errors";
 
 /** The prefix an actor key carries when the caller came from Slack. */
 const SLACK_ACTOR_PREFIX = "slack:";
 /** How many profiles are resolved at once; the rest wait their turn. */
 const PROFILE_BATCH_SIZE = 8;
+/** Maximum daily actor rows one request may inspect, plus one probe row. */
+export const MAX_ACTOR_USAGE_ROWS = 10_000;
+/** Maximum callers returned and enriched with a Slack profile. */
+export const MAX_ACTOR_VIEWS = 100;
 
 /**
  * One caller's spend, with a human face on it when there is one to put there.
@@ -16,8 +21,16 @@ const PROFILE_BATCH_SIZE = 8;
  * a client that wants to tell two callers apart must not have to parse a name.
  * `display` is decoration and may be absent for any reason at all.
  */
-export interface ActorUsageView extends ActorUsageRow {
+export interface ActorUsageView extends Omit<ActorUsageRow, "date"> {
   display?: { name: string; avatarUrl?: string };
+}
+
+export interface ProjectActorUsage {
+  items: ActorUsageView[];
+  /** Every distinct actor in the rows inspected, including omitted views. */
+  totalActors: number;
+  /** True when only the highest-cost callers are in `items`. */
+  truncated: boolean;
 }
 
 /** A profile lookup already bound to one project's bot token. */
@@ -52,24 +65,55 @@ export async function listProjectActors(
   project: Project,
   from: string,
   to: string,
-): Promise<ActorUsageView[]> {
-  const rows = await deps.usage.listActorsByProject(project.name, from, to);
+): Promise<ProjectActorUsage> {
+  const rows = await deps.usage.listActorsByProject(
+    project.name,
+    from,
+    to,
+    MAX_ACTOR_USAGE_ROWS + 1,
+  );
+  if (rows.length > MAX_ACTOR_USAGE_ROWS) {
+    throw new ValidationError(
+      `Caller usage exceeds ${MAX_ACTOR_USAGE_ROWS.toLocaleString("en-US")} rows; choose a narrower date range`,
+    );
+  }
+  const byActor = new Map<string, ActorUsageView>();
+  for (const row of rows) {
+    const existing = byActor.get(row.actor);
+    byActor.set(row.actor, {
+      projectName: row.projectName,
+      actor: row.actor,
+      calls: addCounters(existing?.calls, row.calls),
+      inputTokens: addCounters(existing?.inputTokens, row.inputTokens),
+      outputTokens: addCounters(existing?.outputTokens, row.outputTokens),
+      ...(existing?.cachedTokens || row.cachedTokens
+        ? { cachedTokens: addCounters(existing?.cachedTokens, row.cachedTokens ?? {}) }
+        : {}),
+      costUsd: addCounters(existing?.costUsd, row.costUsd),
+    });
+  }
+  const ranked = [...byActor.values()].sort(
+    (a, b) => total(b.costUsd) - total(a.costUsd) || a.actor.localeCompare(b.actor),
+  );
+  const visible = ranked.slice(0, MAX_ACTOR_VIEWS);
   const slackIds = new Set(
-    rows
+    visible
       .filter((row) => row.actor.startsWith(SLACK_ACTOR_PREFIX))
       .map((row) => row.actor.slice(SLACK_ACTOR_PREFIX.length)),
   );
   const readProfile = deps.profileReaderFor(project);
   if (slackIds.size === 0 || !readProfile) {
-    return rows;
+    return {
+      items: visible,
+      totalActors: ranked.length,
+      truncated: ranked.length > visible.length,
+    };
   }
 
   const profiles = new Map<string, RunCaller>();
   const pending = [...slackIds];
-  // In batches rather than all at once. The set is one entry per person who
-  // used this project in the range, which a six-month window makes unbounded —
-  // firing all of them concurrently would put a workspace-sized burst on Slack
-  // for one page load.
+  // In batches rather than all at once. The view cap bounds the whole set, and
+  // the batch cap keeps even those calls from becoming one burst on Slack.
   for (let start = 0; start < pending.length; start += PROFILE_BATCH_SIZE) {
     await Promise.all(
       pending.slice(start, start + PROFILE_BATCH_SIZE).map(async (userId) => {
@@ -90,19 +134,38 @@ export async function listProjectActors(
     );
   }
 
-  return rows.map((row) => {
-    const profile = row.actor.startsWith(SLACK_ACTOR_PREFIX)
-      ? profiles.get(row.actor.slice(SLACK_ACTOR_PREFIX.length))
-      : undefined;
-    if (!profile) {
-      return row;
-    }
-    return {
-      ...row,
-      display: {
-        name: profile.displayName,
-        ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
-      },
-    };
-  });
+  return {
+    items: visible.map((row) => {
+      const profile = row.actor.startsWith(SLACK_ACTOR_PREFIX)
+        ? profiles.get(row.actor.slice(SLACK_ACTOR_PREFIX.length))
+        : undefined;
+      if (!profile) {
+        return row;
+      }
+      return {
+        ...row,
+        display: {
+          name: profile.displayName,
+          ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
+        },
+      };
+    }),
+    totalActors: ranked.length,
+    truncated: ranked.length > visible.length,
+  };
+}
+
+function addCounters(
+  current: Record<string, number> | undefined,
+  added: Record<string, number>,
+): Record<string, number> {
+  const result = { ...current };
+  for (const [key, value] of Object.entries(added)) {
+    result[key] = (result[key] ?? 0) + value;
+  }
+  return result;
+}
+
+function total(values: Record<string, number>): number {
+  return Object.values(values).reduce((sum, value) => sum + value, 0);
 }

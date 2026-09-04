@@ -25,6 +25,11 @@ import type {
 } from "@/domain/mcp/connection";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
+import {
+  mcpConnectionSecretContext,
+  mcpHeadersContext,
+  mcpOAuthStateContext,
+} from "@/domain/security/secretContext";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
@@ -241,7 +246,18 @@ function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpC
     serverName: connection.serverName,
     status: connection.status,
     clientId: connection.clientId,
-    ...(connection.clientSecret ? { clientSecret: cipher.mask(connection.clientSecret) } : {}),
+    ...(connection.clientSecret
+      ? {
+          clientSecret: cipher.mask(
+            connection.clientSecret,
+            mcpConnectionSecretContext(
+              connection.projectName,
+              connection.serverName,
+              "client-secret",
+            ),
+          ),
+        }
+      : {}),
     clientRegistered: connection.clientRegistered === true,
     scopes: connection.scopes,
     ...(connection.connectedBy ? { connectedBy: connection.connectedBy } : {}),
@@ -581,7 +597,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           ? existing?.clientSecret
           : submitted === ""
             ? undefined
-            : deps.cipher.encrypt(submitted);
+            : deps.cipher.encrypt(
+                submitted,
+                mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+              );
       const scopes = input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [];
 
       const issuer = server.auth.issuer;
@@ -725,7 +744,12 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
             ...base,
             clientId: registered.clientId,
             ...(registered.clientSecret
-              ? { clientSecret: deps.cipher.encrypt(registered.clientSecret) }
+              ? {
+                  clientSecret: deps.cipher.encrypt(
+                    registered.clientSecret,
+                    mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+                  ),
+                }
               : {}),
             clientRegistered: true,
             // What the server recorded wins over what was asked for.
@@ -757,7 +781,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           state,
           projectName,
           serverName,
-          codeVerifier: deps.cipher.encrypt(pkce.verifier),
+          codeVerifier: deps.cipher.encrypt(pkce.verifier, mcpOAuthStateContext(state)),
           userEmail,
           // Recorded alongside the verifier, as RFC 9207 requires: the registry
           // entry is exactly what may change while the user is at the provider,
@@ -821,7 +845,16 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         tokenEndpoint: server.auth.tokenEndpoint,
         clientId: connection.clientId,
         ...(connection.clientSecret
-          ? { clientSecret: deps.cipher.decrypt(connection.clientSecret) }
+          ? {
+              clientSecret: deps.cipher.decrypt(
+                connection.clientSecret,
+                mcpConnectionSecretContext(
+                  pending.projectName,
+                  pending.serverName,
+                  "client-secret",
+                ),
+              ),
+            }
           : {}),
         tokenEndpointAuthMethod: connection.tokenEndpointAuthMethod ?? server.auth.tokenEndpointAuthMethod,
         resource: server.auth.resource,
@@ -829,7 +862,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const tokens = await deps.oauth.exchangeCode(target, {
         code,
         redirectUri: await redirectUri(),
-        codeVerifier: deps.cipher.decrypt(pending.codeVerifier),
+        codeVerifier: deps.cipher.decrypt(
+          pending.codeVerifier,
+          mcpOAuthStateContext(pending.state),
+        ),
       });
 
       const now = new Date();
@@ -841,9 +877,25 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // RFC 8707 audience sent on the exchange just above.
         issuer: server.auth.issuer,
         resource: server.auth.resource,
-        accessToken: deps.cipher.encrypt(tokens.accessToken),
+        accessToken: deps.cipher.encrypt(
+          tokens.accessToken,
+          mcpConnectionSecretContext(
+            pending.projectName,
+            pending.serverName,
+            "access-token",
+          ),
+        ),
         ...(tokens.refreshToken
-          ? { refreshToken: deps.cipher.encrypt(tokens.refreshToken) }
+          ? {
+              refreshToken: deps.cipher.encrypt(
+                tokens.refreshToken,
+                mcpConnectionSecretContext(
+                  pending.projectName,
+                  pending.serverName,
+                  "refresh-token",
+                ),
+              ),
+            }
           : {}),
         ...(tokens.expiresInSeconds !== undefined
           ? { expiresAt: new Date(now.getTime() + tokens.expiresInSeconds * 1000).toISOString() }
@@ -898,7 +950,11 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // binding's overrides layered over the entry, then the project's
       // Authorization last so a version cannot substitute its own. A list built
       // any other way would be answering a question nobody asked.
-      const headers = deps.cipher.mergeOutboundHeaders(server.headers, headerOverrides);
+      const headers = deps.cipher.mergeOutboundHeaders(
+        server.headers,
+        headerOverrides,
+        mcpHeadersContext(server.name),
+      );
       // Before the availability check below, exactly as a run strips them: a
       // stored spelling of a reserved metadata header is not "a way to
       // authenticate", and this probe must not relay one either.

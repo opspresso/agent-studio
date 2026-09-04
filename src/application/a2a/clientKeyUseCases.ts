@@ -7,9 +7,10 @@
  *
  * The lifecycle mirrors the project API token (`apiTokenUseCases.ts`): issued
  * once in plaintext, stored encrypted with a display mask, revealable and
- * revocable with an audit row each. Verification is by hash lookup — one
- * GetItem on the hot path — which the repository keeps in step with the key
- * row transactionally.
+ * revocable with an audit row each. Verification first follows the hash lookup,
+ * then reads and decrypts the primary row under its client-name context. The
+ * repository keeps both rows in step transactionally; the second read keeps a
+ * relocated hash and ciphertext from authenticating as another client.
  */
 
 import type { A2aClientKey, A2aClientKeyRepository } from "@/domain/a2a/clientKey";
@@ -25,6 +26,7 @@ import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { A2A_ACTOR_ID } from "@/domain/execution/actor";
 import { log } from "@/shared/logger";
+import { a2aClientKeyContext } from "@/domain/security/secretContext";
 
 export interface A2aClientKeyView {
   name: string;
@@ -99,7 +101,7 @@ export function createA2aClientKeyUseCases(
       const key = {
         name,
         ...(description?.trim() ? { description: description.trim() } : {}),
-        token: cipher.encrypt(value),
+        token: cipher.encrypt(value, a2aClientKeyContext(name)),
         tokenHash: hashSecret(value),
         masked: cipher.mask(value),
         createdAt: new Date().toISOString(),
@@ -146,7 +148,10 @@ export function createA2aClientKeyUseCases(
         target: auditTarget("a2a-client", name),
         detail: "client key",
       });
-      return { key: cipher.decrypt(stored.token), createdAt: stored.createdAt };
+      return {
+        key: cipher.decrypt(stored.token, a2aClientKeyContext(name)),
+        createdAt: stored.createdAt,
+      };
     },
 
     async revoke(name, actorEmail) {
@@ -164,8 +169,26 @@ export function createA2aClientKeyUseCases(
       });
     },
 
-    verify(value) {
-      return repo.findNameByHash(hashSecret(value));
+    async verify(value) {
+      const tokenHash = hashSecret(value);
+      const name = await repo.findNameByHash(tokenHash);
+      if (!name) {
+        return null;
+      }
+      const stored = await repo.get(name);
+      if (!stored || stored.tokenHash !== tokenHash) {
+        return null;
+      }
+      try {
+        return cipher.decryptEquals(stored.token, value, a2aClientKeyContext(name)) ? name : null;
+      } catch (error) {
+        log.error(
+          "a2a",
+          `client key '${name}' cannot be decrypted:`,
+          error instanceof Error ? error.message : String(error),
+        );
+        return null;
+      }
     },
   };
 }

@@ -53,13 +53,18 @@ describe("authenticateExecution with a bearer token", () => {
     expect((result as Response).status).toBe(403);
   });
 
-  it("fails open when the owner's tier cannot be read", async () => {
+  it("403s a valid token when its owner has no member row", async () => {
     verify.mockResolvedValue("owner@x.com");
     getMemberTier.mockResolvedValue(null);
-    await expect(authenticateExecution(request("ast_ok"), "p")).resolves.toEqual({
-      email: "owner@x.com",
-      viaToken: true,
-    });
+    const result = await authenticateExecution(request("ast_ok"), "p");
+    expect((result as Response).status).toBe(403);
+  });
+
+  it("503s a valid token when its owner's tier cannot be read", async () => {
+    verify.mockResolvedValue("owner@x.com");
+    getMemberTier.mockRejectedValue(new Error("storage down"));
+    const result = await authenticateExecution(request("ast_ok"), "p");
+    expect((result as Response).status).toBe(503);
   });
 
   it("401s an invalid token without reading any tier", async () => {

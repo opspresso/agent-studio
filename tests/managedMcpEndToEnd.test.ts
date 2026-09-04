@@ -121,41 +121,53 @@ describe("managed MCP, end to end on loopback", () => {
       now: () => "2026-01-01T00:00:00.000Z",
       sleep: async () => {},
     });
+    let resolved: Awaited<ReturnType<typeof buildMcpTools>> | undefined;
+    try {
+      const entry = await managed.create({
+        name: "image-fetch",
+        image: "registry/mcp-image-fetch:v1",
+        containerPort: 3000,
+      });
+      expect(entry.url).toBe(`http://127.0.0.1:${port}/mcp`);
 
-    const entry = await managed.create({
-      name: "image-fetch",
-      image: "registry/mcp-image-fetch:v1",
-      containerPort: 3000,
-    });
-    expect(entry.url).toBe(`http://127.0.0.1:${port}/mcp`);
+      // The real guard's answer for a loopback address, so the bypass is the only
+      // thing that can make this work.
+      const policy: UrlPolicy = {
+        async assertAllowed(url) {
+          throw new BlockedUrlError(`refused: ${url}`);
+        },
+      };
+      const deps = {
+        mcps: repo,
+        cipher: secretCipher,
+        urlPolicy: policy,
+        mcpSessions: mcpSessionFactory,
+        mcpAuth: { headersFor: async () => ({ headers: {} }), markUnauthorized: async () => {} },
+      } as unknown as ExecutionDeps;
 
-    // The real guard's answer for a loopback address, so the bypass is the only
-    // thing that can make this work.
-    const policy: UrlPolicy = {
-      async assertAllowed(url) {
-        throw new BlockedUrlError(`refused: ${url}`);
-      },
-    };
-    const deps = {
-      mcps: repo,
-      cipher: secretCipher,
-      urlPolicy: policy,
-      mcpSessions: mcpSessionFactory,
-      mcpAuth: { headersFor: async () => ({ headers: {} }), markUnauthorized: async () => {} },
-    } as unknown as ExecutionDeps;
+      resolved = await buildMcpTools(deps, {
+        projectName: "p",
+        mcpList: [{ name: "image-fetch" }],
+      } as unknown as Version);
 
-    const resolved = await buildMcpTools(deps, {
-      projectName: "p",
-      mcpList: [{ name: "image-fetch" }],
-    } as unknown as Version);
-
-    expect(resolved.warnings).toEqual([]);
-    expect(resolved.mcpTools.map((t) => t.function.name)).toEqual(["fetch_image"]);
-    expect(resolved.mcpServers[0]?.name).toBe("image-fetch");
-
-    await resolved.close?.();
-    await managed.remove("image-fetch", "admin@example.com");
+      expect(resolved.warnings).toEqual([]);
+      expect(resolved.mcpTools.map((t) => t.function.name)).toEqual(["fetch_image"]);
+      expect(resolved.mcpServers[0]?.name).toBe("image-fetch");
+    } finally {
+      try {
+        await resolved?.close?.();
+      } finally {
+        try {
+          if (rows.has("image-fetch")) {
+            await managed.remove("image-fetch", "admin@example.com");
+          }
+        } finally {
+          await new Promise<void>((resolve, reject) => {
+            server.close((error) => (error ? reject(error) : resolve()));
+          });
+        }
+      }
+    }
     expect(rows.size).toBe(0);
-    await new Promise((done) => server.close(done));
   });
 });

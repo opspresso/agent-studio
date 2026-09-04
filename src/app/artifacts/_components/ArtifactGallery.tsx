@@ -23,6 +23,7 @@ import {
   SegmentedControl,
   Stack,
   Text,
+  UnstyledButton,
 } from "@mantine/core";
 import {
   IconDownload,
@@ -271,15 +272,21 @@ function ArtifactCard({
     <Card h="100%">
       <Card.Section>
         {artifact.kind === "image" && available ? (
-          <Image
-            src={artifact.url}
-            alt={artifact.prompt ?? t("artifacts.imageAlt")}
-            h={180}
-            fit="cover"
+          <UnstyledButton
+            type="button"
+            aria-label={t("artifacts.view")}
             onClick={onPreview}
-            style={{ cursor: "pointer" }}
-            onError={() => setGone(true)}
-          />
+            w="100%"
+            style={{ display: "block", cursor: "pointer" }}
+          >
+            <Image
+              src={artifact.url}
+              alt={artifact.prompt ?? t("artifacts.imageAlt")}
+              h={180}
+              fit="cover"
+              onError={() => setGone(true)}
+            />
+          </UnstyledButton>
         ) : (
           <Paper h={180} style={{ display: "grid", placeItems: "center" }}>
             {available ? (

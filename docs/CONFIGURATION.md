@@ -30,8 +30,9 @@ admin 이나 회전된 A2A 키가 그 쓰기를 처리하지 않은 인스턴스
 
 settings 쓰기는 최신 `SETTINGS#app` 행을 row lock 아래에서 읽고 patch를 합친 뒤 같은 transaction
 에서 저장한다. 일반 설정 저장, A2A key 회전, Embedding/Rerank 선택이 동시에 도착해도 한 요청의
-오래된 full-row snapshot이 다른 요청의 필드를 되돌리지 않는다. 특히 Embedding migration이 만든
-vector와 그 뒤의 query model이 서로 다른 상태로 남는 것을 이 저장 경계가 막는다.
+오래된 full-row snapshot이 다른 요청의 필드를 되돌리지 않는다. Embedding migration 동안의
+vector/query model 일치는 별도의 reindex lease generation이 지킨다. 검색은 시작 전·vector 조회
+후·반환 직전에 generation을 비교하고, migration과 겹쳤으면 결과를 버린다.
 
 오버라이드와 환경변수는 *"설정돼 있는가?"* 에 같은 방식으로 답한다: 비어 있거나 공백뿐인
 값은 **설정되지 않음**으로 치고, 유효 값이 되는 대신 다음 계층으로 떨어진다.
@@ -54,7 +55,7 @@ fail-open 이 될 수는 없다.
 
 | 검사 | 규칙 |
 |---|---|
-| `assertRequiredConfig` | `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` 가 모든 stage 에서 설정돼 있어야 한다. |
+| `assertRequiredConfig` | `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` 가 모든 stage 에서 설정돼 있어야 한다. 암호화 키는 canonical base64 로 인코딩한 정확히 32바이트여야 한다. |
 | `assertAccessControlConfig` | `NODE_ENV=production` 은 명시적인 `STAGE` 를 요구한다. `STAGE=alpha` 또는 `prod` 는 추가로 `ADMIN_EMAILS` 와 **로그인 수단 하나 이상**(`OIDC_ISSUER`/`OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, 또는 `AUTH_PASSWORD=true`)을 요구한다. 빈 `ALLOWED_EMAIL_DOMAINS` 는 모든 도메인을 허용하는 정상 설정이다. |
 
 두 검사 뒤에 부팅 경로는 스키마를 적용하고(`migrate`, advisory lock 아래에서, 인스턴스가
@@ -151,6 +152,10 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 | `LLM_PROVIDER_<NAME>_API_KEY` | 미설정 | **runtime** | 그 채널의 자격증명. `_AUTH=sigv4` 가 아닌 한 필수다: 키가 없는 채널은 **조용히 건너뛰어지고**, 그 모델들은 기본 채널로 떨어진다. |
 | `LLM_PROVIDER_<NAME>_AUTH` | `bearer` | **runtime** | `bearer` \| `sigv4`. `sigv4` 는 프로세스의 AWS 자격증명(역할, 또는 `AWS_ACCESS_KEY_ID`/`AWS_PROFILE`, SDK 의 표준 해석 순서)으로 매 요청에 서명하고 API 키를 **받지 않는다**. 문자 그대로의 `sigv4` 가 아닌 값은 전부 `bearer` 로 읽히므로, 오타가 서명도 키도 없는 채널을 만들어 낼 수는 없다. |
 | `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | provider 채널은 맨 모델 이름(`provider/` 접두사를 벗긴 것)을 받는다. 그 채널 자체가 전체 id 를 기대하는 라우터일 때 이 값을 켜라. |
+
+`/settings` 에서 기본 채널의 URL, 또는 provider 채널의 URL·인증 방식을 바꿀 때는 새 API key 를
+같이 입력해야 한다. 마스킹된 key 는 같은 endpoint 와 인증 방식에서만 보존되며 새 주소로 이동하지
+않는다. 기본 URL 과 key override 를 함께 비우면 두 값 모두 env 설정으로 돌아간다.
 
 > base URL 에는 provider 가 서비스하는 API 버전 경로가 포함돼야 한다. 어댑터는 거기에
 > `/chat/completions` 와 `/images/generations` 를 글자 그대로 덧붙인다. `https://api.x.ai/v1`
@@ -337,9 +342,9 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 | `MANAGED_MCP_REGISTRY` | 미설정 | — | `docker login` 이 인증하는 레지스트리. 덕분에 이 계정 자신의 이미지는 자격증명을 타이핑하지 않고도 pull 된다. 호스트가 pull 할 수 있는 다른 어떤 레지스트리의 이미지도 허용되며, 그것들에 대해서는 로그인만 건너뛴다. |
 
 `MANAGED_MCP_RUNTIME` 과 `MANAGED_MCP_REGISTRY` 중 하나라도 설정되지 않으면 managed-MCP 라우트는
-기능을 절반만 켜는 대신 `503` 으로 답한다. 컨테이너의 환경은 두 경로로 들어간다: `envRefs` 는
-호스트의 절대 경로인 `--env-file` 이고(값은 테이블에 들어오지 않는다), `environment` 는
-저장 시 암호화되는 값들이다. `PORT` 는 런타임이 써 넣으므로 거부된다.
+기능을 절반만 켜는 대신 `503` 으로 답한다. 컨테이너의 `environment` 값은 저장 시 암호화되고,
+Docker 를 호출하기 직전에만 0600 임시 env file 로 복호화된다. 호스트 파일 경로는 입력으로 받지
+않는다. `PORT` 는 런타임이 써 넣으므로 거부된다.
 
 **discovery TTL 에 손잡이가 둘인 이유.** 항목의 수명은 숫자 하나로 두 질문에 답한다. 서버의
 힌트는 첫 번째에 답한다. 자기 카탈로그가 얼마나 신선한가. 그리고 그건 이 앱보다 서버가 더
@@ -526,7 +531,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | GitHub API 요청 하나 (plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
 | 모델 응답당 동시 MCP 호출 수 | `5` | `src/application/llm/engine.ts` |
 | 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
-| 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP) | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
+| 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP·원격 A2A) | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | 턴당 문서 수 / 각 바이트 | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | 유지하는 추출 텍스트, 문서당 / 턴당 | `20,000` / `40,000` 자 | `src/domain/llm/documentLimits.ts` |
 | 턴을 나르는 요청 본문 (첨부 상한에서 파생) | ~`80MB` | `src/app/api/_lib/body.ts` |
@@ -567,6 +572,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | Teams 답변 편집 주기 / typing 갱신 | `2s` / `3s` | `src/application/teams/replyChannel.ts` |
 | Telegram·Teams 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
 | usage 요약 질의 범위 | `184` 일 | `src/app/api/usages/summary/validation.ts` |
+| 프로젝트 호출자 usage 한 요청의 원시 행 / 반환·Slack 프로필 해석 수 | `10,000` / `100` | `src/application/usage/listActors.ts` |
 | schedule 따라잡기 창 (장애가 한 번에 발화시킬 수 있는 양에 한계를 둔다) | `10` 분 | `src/application/trigger/scanSchedules.ts` |
 | scan tick 하나가 동시에 굴리는 schedule 발화 수 | `8` | `src/application/trigger/scanSchedules.ts` |
 | schedule 복구 스윕 주기 (잃어버린 런 회수) | `5` 분마다 | `src/application/trigger/scanSchedules.ts` |

@@ -651,7 +651,6 @@ function EditMcpForm({
   const [url, setUrl] = useState(server.url);
   const [image, setImage] = useState(server.image ?? "");
   const [containerPort, setContainerPort] = useState(String(server.containerPort ?? 3000));
-  const [envRefs, setEnvRefs] = useState((server.envRefs ?? []).join("\n"));
   const [environmentRows, setEnvironmentRows] = useState<HeaderRow[]>(
     recordToRows(server.environment ?? {}),
   );
@@ -679,10 +678,6 @@ function EditMcpForm({
         await updateManagedMcp(server.name, {
           image,
           containerPort: Number(containerPort),
-          envRefs: envRefs
-            .split(/[\s,]+/)
-            .map((ref) => ref.trim())
-            .filter(Boolean),
           environment: rowsToRecord(environmentRows),
           args: args
             .split("\n")
@@ -730,15 +725,6 @@ function EditMcpForm({
               min={1}
               max={65535}
               required
-            />
-            <TextInput
-              label={t("managed.envRefs")}
-              value={envRefs}
-              onChange={(e) => setEnvRefs(e.currentTarget.value)}
-              placeholder={t("managed.envRefsPlaceholder")}
-              description={t("managed.envRefsHint")}
-              inputWrapperOrder={["label", "input", "description", "error"]}
-              styles={monoInput}
             />
             <HeaderRowsEditor
               rows={environmentRows}

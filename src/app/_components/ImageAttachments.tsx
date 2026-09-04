@@ -20,6 +20,29 @@ import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
 
 /**
+ * A group of concurrent file reads that one clear can retire together.
+ *
+ * Unlike `createLatestOnly`, starting a second read does not retire the first:
+ * a paste and a drop may both be valid. Only clearing the draft moves the
+ * epoch, so neither read can add itself to the next message when it finishes.
+ */
+export function createAttachmentReadEpoch(): {
+  capture: () => () => boolean;
+  invalidate: () => void;
+} {
+  let epoch = 0;
+  return {
+    capture: () => {
+      const captured = epoch;
+      return () => captured === epoch;
+    },
+    invalidate: () => {
+      epoch += 1;
+    },
+  };
+}
+
+/**
  * Staged attachments for one turn — shared by the chat composers and the project
  * run panel so every surface enforces one set of limits and reports rejections
  * the same way.
@@ -32,7 +55,15 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [documents, setDocuments] = useState<DocumentAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [pendingReads, setPendingReads] = useState(0);
   const t = useT();
+  const readEpoch = useRef(createAttachmentReadEpoch());
+  useEffect(
+    () => () => {
+      readEpoch.current.invalidate();
+    },
+    [],
+  );
   /**
    * How many slots are already spoken for, counted as they are claimed rather
    * than as React commits them.
@@ -50,52 +81,63 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
       if (files.length === 0) {
         return;
       }
+      const isCurrent = readEpoch.current.capture();
+      setPendingReads((current) => current + 1);
       setAttachError(null);
       const added: Attachment[] = [];
       const addedDocuments: DocumentAttachment[] = [];
       const failures: string[] = [];
-      for (const file of files) {
-        try {
-          // Routed by what the file is, so one paperclip takes both and neither
-          // path has to explain itself to the person picking.
-          if (allowDocuments && isDocumentFile(file)) {
-            addedDocuments.push(await readDocumentAttachment(file));
-          } else {
-            added.push(await readAttachment(file));
+      try {
+        for (const file of files) {
+          try {
+            // Routed by what the file is, so one paperclip takes both and neither
+            // path has to explain itself to the person picking.
+            if (allowDocuments && isDocumentFile(file)) {
+              addedDocuments.push(await readDocumentAttachment(file));
+            } else {
+              added.push(await readAttachment(file));
+            }
+          } catch (error) {
+            // A thrown `Error` carries the reader's own message (a size or type
+            // refusal) and stays as written; the fallback is the only part this
+            // component words itself.
+            failures.push(
+              error instanceof Error ? error.message : t("attach.unreadable", { name: file.name }),
+            );
           }
-        } catch (error) {
-          // A thrown `Error` carries the reader's own message (a size or type
-          // refusal) and stays as written; the fallback is the only part this
-          // component words itself.
-          failures.push(
-            error instanceof Error ? error.message : t("attach.unreadable", { name: file.name }),
-          );
         }
-      }
-      // Reported from here, not from inside the updater: the updater runs after
-      // the checks below, so a message pushed there would never be shown — what
-      // is over the cap would just disappear.
-      //
-      // Counted against the claim rather than the rendered length, so two
-      // gestures resolving in the same tick cannot both spend the last slot.
-      const imageRoom = Math.max(MAX_IMAGES_PER_TURN - claimed.current.images, 0);
-      const documentRoom = Math.max(MAX_DOCUMENTS - claimed.current.documents, 0);
-      if (added.length > imageRoom) {
-        failures.push(t("attach.tooManyImages", { count: MAX_IMAGES_PER_TURN }));
-      }
-      if (addedDocuments.length > documentRoom) {
-        failures.push(t("attach.tooManyDocuments", { count: MAX_DOCUMENTS }));
-      }
-      const takenImages = added.slice(0, imageRoom);
-      const takenDocuments = addedDocuments.slice(0, documentRoom);
-      claimed.current = {
-        images: claimed.current.images + takenImages.length,
-        documents: claimed.current.documents + takenDocuments.length,
-      };
-      setAttachments((prev) => [...prev, ...takenImages]);
-      setDocuments((prev) => [...prev, ...takenDocuments]);
-      if (failures.length > 0) {
-        setAttachError(failures.join(" · "));
+        if (!isCurrent()) {
+          return;
+        }
+        // Reported from here, not from inside the updater: the updater runs after
+        // the checks below, so a message pushed there would never be shown — what
+        // is over the cap would just disappear.
+        //
+        // Counted against the claim rather than the rendered length, so two
+        // gestures resolving in the same tick cannot both spend the last slot.
+        const imageRoom = Math.max(MAX_IMAGES_PER_TURN - claimed.current.images, 0);
+        const documentRoom = Math.max(MAX_DOCUMENTS - claimed.current.documents, 0);
+        if (added.length > imageRoom) {
+          failures.push(t("attach.tooManyImages", { count: MAX_IMAGES_PER_TURN }));
+        }
+        if (addedDocuments.length > documentRoom) {
+          failures.push(t("attach.tooManyDocuments", { count: MAX_DOCUMENTS }));
+        }
+        const takenImages = added.slice(0, imageRoom);
+        const takenDocuments = addedDocuments.slice(0, documentRoom);
+        claimed.current = {
+          images: claimed.current.images + takenImages.length,
+          documents: claimed.current.documents + takenDocuments.length,
+        };
+        setAttachments((prev) => [...prev, ...takenImages]);
+        setDocuments((prev) => [...prev, ...takenDocuments]);
+        if (failures.length > 0) {
+          setAttachError(failures.join(" · "));
+        }
+      } finally {
+        if (isCurrent()) {
+          setPendingReads((current) => Math.max(current - 1, 0));
+        }
       }
     },
     // The rendered lengths are no longer read here, so this identity holds
@@ -115,7 +157,9 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
   }, []);
 
   const clear = useCallback(() => {
+    readEpoch.current.invalidate();
     claimed.current = { images: 0, documents: 0 };
+    setPendingReads(0);
     setAttachments([]);
     setDocuments([]);
     setAttachError(null);
@@ -125,6 +169,7 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
     attachments,
     documents,
     attachError,
+    reading: pendingReads > 0,
     addFiles,
     removeAt,
     removeDocumentAt,

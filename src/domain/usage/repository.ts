@@ -12,7 +12,12 @@ export interface UsageRepository {
    */
   record(delta: UsageDelta): Promise<void>;
   /** One project's per-caller rows across a date range (who spent it). */
-  listActorsByProject(projectName: string, from: string, to: string): Promise<ActorUsageRow[]>;
+  listActorsByProject(
+    projectName: string,
+    from: string,
+    to: string,
+    limit: number,
+  ): Promise<ActorUsageRow[]>;
   /**
    * One project's row for one date, or null when nothing was spent that day.
    * A single primary-key read — the cost guard runs it on every run, so it must

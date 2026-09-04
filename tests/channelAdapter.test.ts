@@ -34,6 +34,7 @@ async function requestBody(input: string | URL | Request, init?: RequestInit): P
 }
 
 afterEach(() => {
+  runtime.providerBaseUrl = "https://provider.example/v1";
   vi.unstubAllGlobals();
 });
 

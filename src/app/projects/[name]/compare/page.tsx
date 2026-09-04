@@ -32,6 +32,7 @@ import {
   Text,
   Textarea,
   TextInput,
+  UnstyledButton,
 } from "@mantine/core";
 import { useImageViewer } from "@/app/_components/ImageViewer";
 import { LoadingText } from "@/app/_components/PageState";
@@ -408,31 +409,57 @@ export default function ComparePage() {
                     </Text>
                   )}
                   {side.image ? (
-                    <Image
-                      src={imageDataUrl({ b64: side.image.imageBase64, mimeType: side.image.mimeType })}
-                      alt="Generated image"
-                      radius="sm"
-                      onClick={(e) =>
-                        view({ src: e.currentTarget.src, alt: e.currentTarget.alt })
-                      }
+                    <UnstyledButton
+                      type="button"
+                      aria-label="Generated image"
+                      w="100%"
+                      onClick={() => {
+                        const image = side.image;
+                        if (!image) return;
+                        view({
+                          src: imageDataUrl({
+                            b64: image.imageBase64,
+                            mimeType: image.mimeType,
+                          }),
+                          alt: "Generated image",
+                        });
+                      }}
                       style={{ cursor: "zoom-in" }}
-                    />
+                    >
+                      <Image
+                        src={imageDataUrl({
+                          b64: side.image.imageBase64,
+                          mimeType: side.image.mimeType,
+                        })}
+                        alt="Generated image"
+                        radius="sm"
+                      />
+                    </UnstyledButton>
                   ) : (
                     <Text fz="sm" style={{ whiteSpace: "pre-wrap" }}>
                       {side.text || (side.running ? "…" : "Run to see this version's answer.")}
                     </Text>
                   )}
                   {side.agentImages.map((generated, imageIndex) => (
-                    <Image
+                    <UnstyledButton
+                      type="button"
                       key={imageIndex}
-                      src={imageDataUrl(generated)}
-                      alt="Image drawn during the run"
-                      radius="sm"
-                      onClick={(e) =>
-                        view({ src: e.currentTarget.src, alt: e.currentTarget.alt })
+                      aria-label="Image drawn during the run"
+                      w="100%"
+                      onClick={() =>
+                        view({
+                          src: imageDataUrl(generated),
+                          alt: "Image drawn during the run",
+                        })
                       }
                       style={{ cursor: "zoom-in" }}
-                    />
+                    >
+                      <Image
+                        src={imageDataUrl(generated)}
+                        alt="Image drawn during the run"
+                        radius="sm"
+                      />
+                    </UnstyledButton>
                   ))}
                   {/* Comparing two versions means comparing what each produced,
                       and a rendered document is as much of that as a picture. */}

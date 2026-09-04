@@ -1,17 +1,21 @@
 import type { ProjectRepository } from "@/domain/project/repository";
-import { tierMayUseApiTokens, type MemberTier } from "@/domain/member/tiers";
+import {
+  DEFAULT_MEMBER_TIER,
+  tierMayUseApiTokens,
+  type MemberTier,
+} from "@/domain/member/tiers";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { generateSecretValue, hashSecret, secretHashEquals } from "@/shared/generatedSecret";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { assertProjectWritable, getProject } from "./projectUseCases";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
+import { projectApiTokenContext } from "@/domain/security/secretContext";
 
 /**
  * How this slice learns a member's tier — injected by the composition root,
- * like the admin check in `projectUseCases`. `null` means unknown (no row, or
- * the read failed) and the gate fails open: the lookup failing must not take
- * token issuance down with it.
+ * like the admin check in `projectUseCases`. `null` means no member row and is
+ * treated as the default tier; storage failures reject instead.
  */
 export type MemberTierLookup = (email: string) => Promise<MemberTier | null>;
 
@@ -44,8 +48,8 @@ export async function generateApiToken(
     // owner, so the owner's tier decides whether the credential may exist —
     // an admin minting one for a guest-owned project would mint a token the
     // execution gate refuses anyway.
-    const ownerTier = await memberTier(project.ownerEmail);
-    if (ownerTier && !tierMayUseApiTokens(ownerTier)) {
+    const ownerTier = (await memberTier(project.ownerEmail)) ?? DEFAULT_MEMBER_TIER;
+    if (!tierMayUseApiTokens(ownerTier)) {
       throw new ForbiddenError(
         `The project owner's tier ("${ownerTier}") does not allow API tokens`,
       );
@@ -54,7 +58,11 @@ export async function generateApiToken(
   const token = generateSecretValue("projectApiToken");
   const masked = cipher.mask(token);
   const createdAt = new Date().toISOString();
-  await repo.setApiToken(name, { token: cipher.encrypt(token), masked, createdAt });
+  await repo.setApiToken(name, {
+    token: cipher.encrypt(token, projectApiTokenContext(name)),
+    masked,
+    createdAt,
+  });
   await recordAudit({
     actorEmail: userEmail,
     action: "secret.rotate",
@@ -123,7 +131,10 @@ export async function revealApiToken(
     target: auditTarget("project", name),
     detail: "API token",
   });
-  return { token: cipher.decrypt(stored.token), createdAt: stored.createdAt };
+  return {
+    token: cipher.decrypt(stored.token, projectApiTokenContext(name)),
+    createdAt: stored.createdAt,
+  };
 }
 
 /** Remove the project's API token. Owner or admin. Idempotent. */
@@ -175,7 +186,7 @@ function matches(
 ): boolean {
   if (stored.token !== undefined) {
     try {
-      return cipher.decryptEquals(stored.token, candidate);
+      return cipher.decryptEquals(stored.token, candidate, projectApiTokenContext(projectName));
     } catch (error) {
       // A stored token that will not decrypt (wrong or rotated AES key) is an
       // operational fault, not a wrong caller: it must be visible, and it must
