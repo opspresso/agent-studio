@@ -51,8 +51,9 @@ export default function ProfilePage() {
   const [range, setRange] = useState(defaultDateRange);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [rows, setRows] = useState<MemberUsageRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +62,7 @@ export default function ProfilePage() {
       .then((data) => !cancelled && setAccount(data))
       .catch((loadError) =>
         !cancelled &&
-        setError(loadError instanceof Error ? loadError.message : "Failed to load profile"),
+        setAccountError(loadError instanceof Error ? loadError.message : "Failed to load profile"),
       );
     return () => { cancelled = true; };
   }, []);
@@ -73,7 +74,9 @@ export default function ProfilePage() {
     // last — showing the reader a range they are no longer asking for.
     let cancelled = false;
     async function loadUsage() {
-      setLoading(true);
+      setUsageLoading(true);
+      setUsageError(null);
+      setRows([]);
       try {
         const { items } = await readJson<{ items: MemberUsageRow[] }>(
           await fetch(`/api/me/usage?from=${range.from}&to=${range.to}`),
@@ -81,10 +84,10 @@ export default function ProfilePage() {
         if (!cancelled) setRows([...items].sort((a, b) => b.date.localeCompare(a.date)));
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load usage");
+          setUsageError(loadError instanceof Error ? loadError.message : "Failed to load usage");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setUsageLoading(false);
       }
     }
     void loadUsage();
@@ -101,7 +104,7 @@ export default function ProfilePage() {
   const cost = useMemo(() => totalCost(rows), [rows]);
   const calls = useMemo(() => totalCalls(rows), [rows]);
 
-  if (error) return <Alert color="red" variant="light">{error}</Alert>;
+  if (accountError) return <Alert color="red" variant="light">{accountError}</Alert>;
   if (account === null) return <LoadingText />;
 
   const { member, monthToDateUsd } = account;
@@ -165,6 +168,12 @@ export default function ProfilePage() {
 
       <DateRangePicker value={range} onChange={setRange} />
 
+      {usageError && (
+        <Alert color="red" variant="light">
+          {usageError}
+        </Alert>
+      )}
+
       <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="md">
         <StatCard
           label={t("cost.totalCost")}
@@ -188,11 +197,11 @@ export default function ProfilePage() {
         <CostBarChart
           data={daily.data}
           keys={daily.keys}
-          empty={loading ? "Loading…" : "No usage in this range."}
+          empty={usageLoading ? "Loading…" : "No usage in this range."}
         />
       </Card>
 
-      <UsageBreakdown groups={groups} label={groupBy} loading={loading} />
+      <UsageBreakdown groups={groups} label={groupBy} loading={usageLoading} />
     </Stack>
   );
 }
