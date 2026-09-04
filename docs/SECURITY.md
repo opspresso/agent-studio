@@ -51,7 +51,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 브라우저의 공통 응답 경계는 같은 origin의 `/api/*` 401을 받으면 현재 path·query·fragment를
 `next`로 보존해 `/login`으로 full navigation한다. Root layout이 이미 세션을 유효하지 않다고
 판정한 보호 페이지도 같은 경로를 탄다. 게이트가 없애는 것은 평범한 로그아웃 상태이며,
-예전에는 그 방문자에게 콘솔 전체와 에러 박스를 함께 건네주곤 했다.
+그 방문자에게 콘솔 shell이나 API error box를 렌더링하지 않는다.
 
 `/api` 는 matcher 밖에 있다. 그 라우트들은 스스로 인증하며, 프로그램 호출자에게는 HTML
 리다이렉트가 아니라 반드시 401 로 답해야 한다.
@@ -611,8 +611,8 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
   배포 단위로 그 위험을 받아들인다. 항목 단위가 아니라, 한 번.
 - **authorization 서버 메타데이터는 명세의 순서로 찾고, `issuer` 를 검증한다.** 경로가 있는
   issuer 는 RFC 8414 path-inserted → OpenID path-inserted → OpenID path-appended 이고 root 형은
-  시도하지 않는다; `issuer` 가 요청한 것과 다르거나 없는 문서는 쓰지 않는다. 예전에는 root 로
-  폴백해 Keycloak realm 이나 Okta custom AS 가 **다른 issuer 의 문서에 조용히 바인딩**됐다.
+  시도하지 않는다; root 폴백은 Keycloak realm이나 Okta custom AS를 다른 issuer의 문서에
+  조용히 바인딩할 수 있기 때문이다. `issuer`가 요청한 것과 다르거나 없는 문서는 쓰지 않는다.
   resource metadata 는 well-known 경로가 모두 빗나가면 서버 자신의 401 `WWW-Authenticate` 가
   지목하는 `resource_metadata` 주소를 읽는다(RFC 9728).
 - **`WWW-Authenticate` 는 런타임에도 읽는다.** 403 `insufficient_scope` 가 이름 댄 scope 는

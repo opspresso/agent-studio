@@ -25,9 +25,9 @@ chat 의 append-only 히스토리를 교차 기록하지 못하게 막는다.
 
 ## 런은 자기 연결보다 오래 산다
 
-예전에는 chat 런이 브라우저와 함께 끝났다. SSE 계층이 `cancel()` 에서 런을 abort 했기
-때문에, 새로고침·탭 닫기·하드 내비게이션은 반쯤 쓰인 답변과 매달린 사용자 턴을 남겼다.
-지금은 대신 **분리(detach)한다**: `detachOnReturn` (`src/shared/detachOnReturn.ts`) 이
+chat 런은 브라우저 연결과 **분리(detach)한다**. 연결 종료를 런 abort로 해석하면
+새로고침·탭 닫기·하드 내비게이션이 반쯤 쓰인 답변과 매달린 사용자 턴을 남기기 때문이다.
+`detachOnReturn` (`src/shared/detachOnReturn.ts`) 이
 소비자의 `return()` 을 "읽던 사람이 떠났다"로 바꾸고, 백그라운드에서 런을 완료까지 계속
 당기며, 라우트는 그 나머지를 `after()` 에 등록해 graceful shutdown 이 그것을 기다리게 한다.
 그래서 chat 라우트는 `sseResponse` 에 **`AbortController` 를 넘기지 않는다** — 라우트가

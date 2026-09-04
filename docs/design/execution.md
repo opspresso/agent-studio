@@ -265,8 +265,8 @@ Completions 와 달리, Images API 는 하나의 형태가 *아니다*. Port 의
 여기 추가되는 provider 는 방언을 가정하지 말고 확인해야 한다:
 `tests/imageChannelAdapter.test.ts` 가 각각의 wire 형태를 고정한다.
 
-**mime type 은 읽는 것이지 결코 가정하는 것이 아니다.** 예전에는 `image/png` 로 하드코딩돼
-있었고, 그것은 OpenAI 의 기본 출력 형식이라서만 성립했다. xAI 는 JPEG 로 답한다. 이 값은
+**mime type 은 읽는 것이지 결코 가정하는 것이 아니다.** `image/png` 하드코딩은 OpenAI의
+기본 출력에만 맞고 xAI의 JPEG 응답을 잘못 표시한다. 이 값은
 겉치레가 아니다 — 불변 캐시 헤더 아래 저장 오브젝트의 확장자와 `Content-Type` 이 되고, *두 번째*
 모델에게 돌려주는 바이트의 `data:` 접두사가 되며, Slack 업로드의 파일명과 A2A artifact 의 type
 이 된다.
