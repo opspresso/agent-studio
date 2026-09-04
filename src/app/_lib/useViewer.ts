@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, createElement, useContext } from "react";
 import type { Viewer } from "@/lib/viewer";
-import { redirectToLogin } from "./authRedirect";
 
 /**
  * Re-exported so a page keeps importing the viewer's shape from the hook that
@@ -12,41 +11,32 @@ import { redirectToLogin } from "./authRedirect";
  */
 export type { Viewer };
 
+const ViewerContext = createContext<Viewer | null | undefined>(undefined);
+
+export function ViewerProvider({
+  viewer,
+  children,
+}: {
+  viewer: Viewer | null;
+  children: React.ReactNode;
+}) {
+  return createElement(ViewerContext.Provider, { value: viewer }, children);
+}
+
 /**
  * The signed-in user plus whether they are an admin.
  *
- * `useSession` already carries the email, but not the admin flag — and the
- * pages that gate on ownership need both, because an admin may mutate any
- * project. One hook so the four gates cannot drift apart on what "may edit
- * this" means. `null` while loading, so a gate can wait rather than flash the
- * read-only state at an admin.
+ * The root layout resolves this once before rendering and provides it to every
+ * page. `useSession` already carries the email, but not the admin flag — and
+ * the pages that gate on ownership need both, because an admin may mutate any
+ * project. One hook so the gates cannot drift apart on what "may edit this"
+ * means. `null` means nobody is signed in; it is never a loading sentinel.
  */
 export function useViewer(): Viewer | null {
-  const [viewer, setViewer] = useState<Viewer | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/me")
-      .then((res) => {
-        if (res.status === 401) {
-          redirectToLogin();
-          return null;
-        }
-        return res.ok ? (res.json() as Promise<Viewer>) : null;
-      })
-      .then((data) => {
-        if (!cancelled && data) {
-          setViewer(data);
-        }
-      })
-      .catch(() => {
-        // A non-authentication failure leaves the caller in its loading/read-only state.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  const viewer = useContext(ViewerContext);
+  if (viewer === undefined) {
+    throw new Error("useViewer must be used inside ViewerProvider");
+  }
   return viewer;
 }
 

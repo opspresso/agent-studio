@@ -8,6 +8,7 @@ import { config } from "@/lib/config";
 import { getSessionUser } from "@/lib/session";
 import { resolveViewer } from "@/lib/viewer";
 import { I18nProvider } from "./_i18n/provider";
+import { ViewerProvider } from "./_lib/useViewer";
 import { resolveLocale } from "./_i18n/server";
 import { theme } from "./theme";
 import { version } from "../../package.json";
@@ -98,16 +99,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <MantineProvider theme={theme} defaultColorScheme="auto">
           <I18nProvider locale={locale}>
             <Notifications position="top-right" />
-            <ImageViewerProvider>
-              <AppLayout
-                version={version}
-                viewer={viewer}
-                userImage={user?.image ?? null}
-                signInProviders={config.authProviders}
-              >
-                {children}
-              </AppLayout>
-            </ImageViewerProvider>
+            <ViewerProvider viewer={viewer}>
+              <ImageViewerProvider>
+                <AppLayout
+                  version={version}
+                  viewer={viewer}
+                  userImage={user?.image ?? null}
+                  signInProviders={config.authProviders}
+                >
+                  {children}
+                </AppLayout>
+              </ImageViewerProvider>
+            </ViewerProvider>
           </I18nProvider>
         </MantineProvider>
       </body>
