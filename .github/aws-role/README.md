@@ -1,54 +1,68 @@
-# aws role
+# AWS OIDC roles
+
+GitHub Actions uses two separate least-privilege roles. Never apply one role's trust or permission
+policy to the other.
+
+| Role | Workflow | Trust policy | Permission policy |
+|---|---|---|---|
+| `github--agent-studio-ecr` | `Release` on `v*` tags | `trust-policy.json` | `role-policy.json` |
+| `github--agent-studio-models` | scheduled `Check models` on `main` | `models-trust-policy.json` | `models-role-policy.json` |
+
+The release trust assumes that `v*` tags are protected so only release operators can create them.
+The workflow-name condition prevents another workflow on an allowed ref from borrowing the role.
+
+## Create or update a role
+
+Set one row's values before running the commands:
 
 ```bash
-export NAME="agent-studio"
+export ROLE_NAME="github--agent-studio-ecr"
+export TRUST_POLICY="trust-policy.json"
+export POLICY_NAME="github--agent-studio-ecr"
+export ROLE_POLICY="role-policy.json"
 ```
 
-## create role
+For the model check role, use:
 
 ```bash
-export DESCRIPTION="${NAME} role"
-
-aws iam create-role --role-name "${NAME}" --description "${DESCRIPTION}" --assume-role-policy-document file://trust-policy.json | jq .
-
-aws iam get-role --role-name "${NAME}" | jq .
+export ROLE_NAME="github--agent-studio-models"
+export TRUST_POLICY="models-trust-policy.json"
+export POLICY_NAME="github--agent-studio-models"
+export ROLE_POLICY="models-role-policy.json"
 ```
 
-## create policy
+Create the role and policy once:
 
 ```bash
-export DESCRIPTION="${NAME} policy"
+aws iam create-role \
+  --role-name "${ROLE_NAME}" \
+  --assume-role-policy-document "file://${TRUST_POLICY}"
 
-aws iam create-policy --policy-name "${NAME}" --policy-document file://role-policy.json | jq .
-
-export ACCOUNT_ID=$(aws sts get-caller-identity | jq .Account -r)
-export POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${NAME}"
-
-aws iam get-policy --policy-arn "${POLICY_ARN}" | jq .
-
-aws iam create-policy-version --policy-arn "${POLICY_ARN}" --policy-document file://role-policy.json --set-as-default | jq .
+aws iam create-policy \
+  --policy-name "${POLICY_NAME}" \
+  --policy-document "file://${ROLE_POLICY}"
 ```
 
-## attach role policy
+Update an existing role and policy:
 
 ```bash
-aws iam attach-role-policy --role-name "${NAME}" --policy-arn "${POLICY_ARN}"
-# aws iam attach-role-policy --role-name "${NAME}" --policy-arn "arn:aws:iam::aws:policy/PowerUserAccess"
+aws iam update-assume-role-policy \
+  --role-name "${ROLE_NAME}" \
+  --policy-document "file://${TRUST_POLICY}"
+
+export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}"
+
+aws iam create-policy-version \
+  --policy-arn "${POLICY_ARN}" \
+  --policy-document "file://${ROLE_POLICY}" \
+  --set-as-default
 ```
 
-## add role-assume
+Attach the permission policy:
 
-```yaml
-
-      - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: "arn:aws:iam::396608815058:role/${{ env.NAME }}"
-          role-session-name: github-actions-ci-bot
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Sts GetCallerIdentity
-        run: |
-          aws sts get-caller-identity
-
+```bash
+aws iam attach-role-policy \
+  --role-name "${ROLE_NAME}" \
+  --policy-arn "${POLICY_ARN}"
 ```

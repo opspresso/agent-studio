@@ -32,6 +32,10 @@ AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필�
 
 `.github/workflows/release.yml`, `v*` 태그 push 로만 트리거된다. 임의 ref 를 고를 수 있는 수동
 dispatch 는 persistent self-hosted runner와 OIDC·registry·GitOps 자격 증명 경계에 두지 않는다:
+ECR role 의 trust 도 `Release` workflow 와 `v*` tag subject 를 함께 요구하며, 권한은 이 account 와
+region 의 `agent-studio` repository 에 image 를 push 하는 action 으로 한정된다. 적용할 policy 와 별도
+model-check role 은 `.github/aws-role/` 에 있다. `v*` tag 를 release operator 만 만들도록 보호하는
+것은 이 trust가 전제하는 GitHub 설정이다.
 
 1. **verify**. 전용 PostgreSQL test database 에 대해 `pnpm typecheck` + `pnpm test` +
    `pnpm test:integration`.

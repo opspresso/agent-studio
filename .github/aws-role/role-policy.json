@@ -11,9 +11,14 @@
     {
       "Effect": "Allow",
       "Action": [
-        "ecr:*"
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:CompleteLayerUpload",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart"
       ],
-      "Resource": "arn:aws:ecr:*:*:repository/agent-studio"
+      "Resource": "arn:aws:ecr:ap-northeast-2:396608815058:repository/agent-studio"
     }
   ]
 }
