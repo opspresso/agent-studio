@@ -120,6 +120,8 @@ export class ProjectA2aExecutor implements AgentExecutor {
     // chunks — a hung provider, or a single image call — stops promptly.
     const controller = new AbortController();
     const stopCancelWatch = this.watchForCancel(taskId, controller, requestContext.context);
+    // The caller's `contextId` is its conversation for every project type.
+    const conversation = a2aConversation(this.actor, contextId);
     try {
       if (runStrategyFor(this.project) === "image") {
         // A picture sent with the prompt is the one to edit: source bytes
@@ -131,6 +133,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
           prompt: messages[0] ? messageText(messages[0]) : "",
           ...(sources.length > 0 ? { images: sources } : {}),
           actor: this.actor,
+          ...(conversation ? { conversation } : {}),
           signal: controller.signal,
         });
         eventBus.publish(AgentEvent.artifactUpdate({
@@ -149,7 +152,6 @@ export class ProjectA2aExecutor implements AgentExecutor {
 
       // The caller's `contextId` is its conversation: a second message in it
       // reaches an MCP server and any onward transfer as the same one.
-      const conversation = a2aConversation(this.actor, contextId);
       const source = executeProjectStream(this.deps, {
         project: this.project,
         version: this.version,

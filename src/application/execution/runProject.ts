@@ -240,6 +240,7 @@ export async function* streamProjectRun(
       ...(input.variables ? { variables: input.variables } : {}),
       ...(prompt ? { prompt } : {}),
       ...(input.actor ? { actor: input.actor } : {}),
+      ...(input.conversation ? { conversation: input.conversation } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
     });
     return;

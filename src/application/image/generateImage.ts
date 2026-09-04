@@ -8,7 +8,12 @@ import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
-import { actorKey, type RunActor } from "@/domain/execution/actor";
+import {
+  actorKey,
+  conversationKey,
+  type RunActor,
+  type RunConversation,
+} from "@/domain/execution/actor";
 import { recordUsage } from "@/application/usage/recordUsage";
 import { runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { runEnding } from "@/application/run/runDeadline";
@@ -47,6 +52,8 @@ export interface GenerateImageInput {
   quality?: string;
   /** Who caused the run; recorded on the trace and the caller's usage row. */
   actor?: RunActor;
+  /** Surface conversation recorded on the trace, when the caller has one. */
+  conversation?: RunConversation;
   /** Caller cancellation (client disconnect / A2A cancel); a run deadline is
    * composed onto it so a hung provider call can't run or bill unbounded. */
   signal?: AbortSignal;
@@ -140,6 +147,7 @@ export async function generateImage(
           model,
           messageCount: 1,
           ...(input.actor ? { actor: input.actor } : {}),
+          ...(input.conversation ? { conversation: conversationKey(input.conversation) } : {}),
         })
       : undefined;
   let failed = false;

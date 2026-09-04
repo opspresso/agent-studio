@@ -39,6 +39,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       const project = await projectUseCases.get(name);
       const versionEntity = await versionUseCases.get(name, version);
       const actor = principalActor(principal);
+      const conversation = requestConversation(request, actor);
       if (runStrategyFor(project) === "image") {
         const image = await generateImage(imageDeps, {
           project,
@@ -48,13 +49,13 @@ export const POST = async (request: Request, ctx: RouteContext) => {
           // With source images the prompt edits them instead of drawing anew.
           images: parsed.data.images,
           actor,
+          ...(conversation ? { conversation } : {}),
           size: parsed.data.size,
           quality: parsed.data.quality,
           signal: request.signal,
         });
         return Response.json(image);
       }
-      const conversation = requestConversation(request, actor);
       const read = await readBoundExecutionDocuments(
         executionDeps,
         versionEntity,
@@ -71,8 +72,6 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         // Not on the image branch above: an image run's prompt is the rendered
         // template, with no system prompt for a caller block to live in.
         ...(principal.caller ? { caller: principal.caller } : {}),
-        // Nor is the conversation: an image run reaches no MCP server and makes
-        // no transfer, so there is nothing for it to continue.
         ...(conversation ? { conversation } : {}),
       };
       // The strategy→executor mapping lives in runProject; this route only
