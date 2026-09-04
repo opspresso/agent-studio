@@ -49,6 +49,21 @@ export interface CapabilityMatch {
   score: number;
 }
 
+export interface CatalogRerankReport {
+  calls: number;
+  candidates: number;
+  failed: number;
+}
+
+export interface CapabilitySearchResult {
+  matches: CapabilityMatch[][];
+  rerank: CatalogRerankReport;
+}
+
+export interface CatalogSearchOptions {
+  signal?: AbortSignal;
+}
+
 /**
  * How far below the best match an entry may sit and still be returned, as a
  * *fraction of that best score* rather than an absolute number.
@@ -144,117 +159,208 @@ export async function searchCapabilitiesByKind(
   deps: CatalogSearchDeps,
   queries: readonly string[],
   requests: ReadonlyArray<{ kind: CapabilityKind; limit: number }>,
-): Promise<CapabilityMatch[][]> {
+  options: CatalogSearchOptions = {},
+): Promise<CapabilitySearchResult> {
   const usable = queries.map((query) => query.trim()).filter((query) => query !== "");
   if (usable.length === 0) {
-    return requests.map(() => []);
+    return {
+      matches: requests.map(() => []),
+      rerank: { calls: 0, candidates: 0, failed: 0 },
+    };
   }
   const vectors = await deps.embeddings.embed(usable, "query");
-  return Promise.all(
+  const candidatesByRequest = await Promise.all(
     requests.map(async (request) => {
       if (request.limit <= 0) {
-        return [];
+        return usable.map(() => [] as RankedCandidate[]);
       }
       const topK = Math.max(request.limit * OVERSAMPLE, request.limit);
       const perQuery = await Promise.all(
         vectors.map((vector) => deps.catalog.query(vector, topK, { kind: request.kind })),
       );
-      return rank(deps, usable, request, perQuery);
+      return perQuery.map((matches, queryIndex) =>
+        vectorCandidates(matches, request.kind, usable[queryIndex] ?? ""),
+      );
     }),
   );
+  // One rerank request per query, not per kind. The model scores each document
+  // independently against the same query, so kind is a partition for the
+  // result limits and cuts rather than a reason to pay another network round
+  // trip. The query promises run together, bounding a healthy or timed-out
+  // rerank stage to one adapter deadline instead of one per recent turn.
+  const queryResults = await Promise.all(
+    usable.map((query, queryIndex) =>
+      rankQuery(
+        deps,
+        query,
+        requests,
+        candidatesByRequest.map((perQuery) => perQuery[queryIndex] ?? []),
+        options,
+      ),
+    ),
+  );
+  const best = requests.map(() => new Map<string, CapabilityMatch>());
+  const rerank = { calls: 0, candidates: 0, failed: 0 };
+  for (const result of queryResults) {
+    rerank.calls += result.rerank.calls;
+    rerank.candidates += result.rerank.candidates;
+    rerank.failed += result.rerank.failed;
+    for (const [requestIndex, candidates] of result.matches.entries()) {
+      const selected = best[requestIndex];
+      if (!selected) {
+        continue;
+      }
+      for (const { key, match } of candidates) {
+        const seen = selected.get(key);
+        if (!seen || match.score > seen.score) {
+          selected.set(key, match);
+        }
+      }
+    }
+  }
+  return {
+    matches: best.map((selected, index) =>
+      [...selected.values()]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, requests[index]?.limit ?? 0),
+    ),
+    rerank,
+  };
 }
 
 export async function searchCapabilities(
   deps: CatalogSearchDeps,
   queries: readonly string[],
   request: { kind: CapabilityKind; limit: number },
+  options: CatalogSearchOptions = {},
 ): Promise<CapabilityMatch[]> {
-  return (await searchCapabilitiesByKind(deps, queries, [request]))[0] ?? [];
+  return (await searchCapabilitiesByKind(deps, queries, [request], options)).matches[0] ?? [];
 }
 
-async function rank(
-  deps: CatalogSearchDeps,
-  usable: readonly string[],
-  request: { kind: CapabilityKind; limit: number },
-  perQuery: VectorMatch[][],
-): Promise<CapabilityMatch[]> {
-  // Each query is ranked and cut **against its own best**, and only then are the
-  // survivors merged.
-  //
-  // Sharing one cut across both is what the first version did, and the system
-  // prompt simply erased the request: measured against this registry, "깃헙
-  // 레포" puts github at 0.393, while "당신은 Slack 어시스턴트" puts slack at
-  // 0.583 — so a ratio taken over the union sat at 0.408 and dropped the entry
-  // the user actually asked for. The two queries are asking different
-  // questions, and a proportional cut is only meaningful within one of them.
-  const floor = deps.minScore ?? DEFAULT_MIN_SCORE;
-  const best = new Map<string, CapabilityMatch>();
-  for (const [queryIndex, matches] of perQuery.entries()) {
-    const scored: Array<{ key: string; entry: CapabilityEntry; match: CapabilityMatch }> = [];
-    for (const match of matches) {
-      const name = asString(match.metadata.name);
-      if (name === undefined) {
-        continue;
-      }
-      const toolName = asString(match.metadata.toolName);
-      const entry: CapabilityEntry = {
-        kind: request.kind,
-        name,
-        ...(toolName !== undefined ? { toolName } : {}),
-        description: asString(match.metadata.description) ?? "",
-      };
-      scored.push({
-        key: match.key,
-        entry,
-        match: {
-          ...entry,
-          score: match.score * (namedIn(usable, [toolName, name]) ? NAME_BOOST : 1),
-        },
-      });
-    }
-    scored.sort((a, b) => b.match.score - a.match.score);
-    const top = scored[0];
-    if (!top) {
+interface RankedCandidate {
+  key: string;
+  entry: CapabilityEntry;
+  match: CapabilityMatch;
+}
+
+function vectorCandidates(
+  matches: VectorMatch[],
+  kind: CapabilityKind,
+  query: string,
+): RankedCandidate[] {
+  const scored: RankedCandidate[] = [];
+  for (const match of matches) {
+    const name = asString(match.metadata.name);
+    if (name === undefined) {
       continue;
     }
-    // Both floors, and the higher one wins. The ratio keeps a strong field from
-    // dragging in its weak tail; the absolute floor answers the case the ratio
-    // cannot see at all — that nothing in the catalog matches this query, where
-    // half of the best bad score is still a bad score.
-    const cut = Math.max(top.match.score * KEEP_RATIO, floor);
-    let candidates = scored.filter(({ match }) => match.score >= cut);
-    if (deps.reranker && candidates.length > 0) {
-      const scores = await deps.reranker.rerank(
-        usable[queryIndex] ?? "",
-        candidates.map(({ entry }) => capabilityText(entry)),
-        CAPABILITY_RERANK_INSTRUCTION,
-      );
-      const bestRerankerScore = Math.max(...scores);
-      const rerankerCut = Math.max(
-        bestRerankerScore * RERANKER_KEEP_RATIO,
-        deps.rerankerMinScore ?? DEFAULT_RERANKER_MIN_SCORE,
-      );
-      candidates = candidates
-        .map((candidate, index) => ({
-          ...candidate,
-          match: { ...candidate.match, score: scores[index] ?? 0 },
-        }))
-        .filter(
-          ({ match }) =>
-            match.score >= rerankerCut,
-        )
-        .sort((a, b) => b.match.score - a.match.score);
-    }
-    for (const { key, match } of candidates.slice(0, request.limit)) {
-      // Best score across the queries, not the sum: an entry both reach is not
-      // twice as relevant as one either reaches strongly, and summing would
-      // rank breadth over fit.
-      const seen = best.get(key);
-      if (!seen || match.score > seen.score) {
-        best.set(key, match);
-      }
-    }
+    const toolName = asString(match.metadata.toolName);
+    const entry: CapabilityEntry = {
+      kind,
+      name,
+      ...(toolName !== undefined ? { toolName } : {}),
+      description: asString(match.metadata.description) ?? "",
+    };
+    scored.push({
+      key: match.key,
+      entry,
+      match: {
+        ...entry,
+        score: match.score * (namedIn([query], [toolName, name]) ? NAME_BOOST : 1),
+      },
+    });
   }
+  return scored.sort((a, b) => b.match.score - a.match.score);
+}
 
-  return [...best.values()].sort((a, b) => b.score - a.score).slice(0, request.limit);
+function vectorSurvivors(candidates: RankedCandidate[], floor: number): RankedCandidate[] {
+  const top = candidates[0];
+  if (!top) {
+    return [];
+  }
+  const cut = Math.max(top.match.score * KEEP_RATIO, floor);
+  return candidates.filter(({ match }) => match.score >= cut);
+}
+
+function rerankSurvivors(
+  candidates: RankedCandidate[],
+  floor: number,
+): RankedCandidate[] {
+  const best = Math.max(...candidates.map(({ match }) => match.score));
+  const cut = Math.max(best * RERANKER_KEEP_RATIO, floor);
+  return candidates
+    .filter(({ match }) => match.score >= cut)
+    .sort((a, b) => b.match.score - a.match.score);
+}
+
+async function rankQuery(
+  deps: CatalogSearchDeps,
+  query: string,
+  requests: ReadonlyArray<{ kind: CapabilityKind; limit: number }>,
+  candidatesByRequest: RankedCandidate[][],
+  options: CatalogSearchOptions,
+): Promise<{ matches: RankedCandidate[][]; rerank: CatalogRerankReport }> {
+  const floor = deps.minScore ?? DEFAULT_MIN_SCORE;
+  if (!deps.reranker) {
+    return {
+      matches: candidatesByRequest.map((candidates, index) =>
+        vectorSurvivors(candidates, floor).slice(0, requests[index]?.limit ?? 0),
+      ),
+      rerank: { calls: 0, candidates: 0, failed: 0 },
+    };
+  }
+  // A configured second-stage ranker sees the whole oversampled field. Cutting
+  // by vector score first would make it capable of reordering false positives
+  // but incapable of recovering the false negatives it exists to correct.
+  // The vector cut remains the fallback when the optional service is down.
+  const flattened = candidatesByRequest.flatMap((candidates, requestIndex) =>
+    candidates.map((candidate) => ({ candidate, requestIndex })),
+  );
+  if (flattened.length === 0) {
+    return {
+      matches: requests.map(() => []),
+      rerank: { calls: 0, candidates: 0, failed: 0 },
+    };
+  }
+  try {
+    options.signal?.throwIfAborted();
+    const documents = flattened.map(({ candidate }) => capabilityText(candidate.entry));
+    const scores = options.signal
+      ? await deps.reranker.rerank(
+          query,
+          documents,
+          CAPABILITY_RERANK_INSTRUCTION,
+          options.signal,
+        )
+      : await deps.reranker.rerank(query, documents, CAPABILITY_RERANK_INSTRUCTION);
+    if (scores.length !== flattened.length) {
+      throw new Error(`Reranker returned ${scores.length} scores for ${flattened.length} documents`);
+    }
+    const rescoredByRequest = requests.map(() => [] as RankedCandidate[]);
+    for (const [index, { candidate, requestIndex }] of flattened.entries()) {
+      rescoredByRequest[requestIndex]?.push({
+        ...candidate,
+        match: { ...candidate.match, score: scores[index] ?? 0 },
+      });
+    }
+    return {
+      matches: requests.map((request, requestIndex) => {
+        return rerankSurvivors(
+          rescoredByRequest[requestIndex] ?? [],
+          deps.rerankerMinScore ?? DEFAULT_RERANKER_MIN_SCORE,
+        ).slice(0, request.limit);
+      }),
+      rerank: { calls: 1, candidates: flattened.length, failed: 0 },
+    };
+  } catch (error) {
+    // User cancellation ends the run; an endpoint timeout or malformed answer
+    // only loses the second stage and keeps the already-valid vector result.
+    options.signal?.throwIfAborted();
+    return {
+      matches: candidatesByRequest.map((candidates, index) =>
+        vectorSurvivors(candidates, floor).slice(0, requests[index]?.limit ?? 0),
+      ),
+      rerank: { calls: 1, candidates: flattened.length, failed: 1 },
+    };
+  }
 }

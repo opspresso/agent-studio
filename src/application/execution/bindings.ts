@@ -7,7 +7,11 @@ import type { RunOrigin } from "@/domain/execution/actor";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import { listProjectMcpConnections } from "@/application/mcp/listConnections";
-import { searchCapabilitiesByKind, type CatalogSearchDeps } from "@/application/catalog/searchCatalog";
+import {
+  searchCapabilitiesByKind,
+  type CatalogRerankReport,
+  type CatalogSearchDeps,
+} from "@/application/catalog/searchCatalog";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./mcpTools";
@@ -238,15 +242,24 @@ async function discoverCapabilities(
   },
   version: Version,
   queries: readonly string[],
-): Promise<{ skillList: string[]; subagentList: SubagentRef[]; mcpList: McpBinding[]; notes: string[] }> {
+  signal?: AbortSignal,
+): Promise<{
+  skillList: string[];
+  subagentList: SubagentRef[];
+  mcpList: McpBinding[];
+  notes: string[];
+  rerank: CatalogRerankReport;
+}> {
   const boundSkills = new Set(version.skillList ?? []);
   const boundAgents = new Set((version.subagentList ?? []).map((ref) => ref.name));
   const boundServers = new Set((version.mcpList ?? []).map((binding) => binding.name));
 
   // One embedding pass for all four: the vector is the query, and only the
   // filter differs. Asking per kind meant four identical embeddings per run.
-  const [skills = [], agents = [], toolHits = [], serverHits = []] =
-    await searchCapabilitiesByKind(deps.catalog, queries, [
+  const search = await searchCapabilitiesByKind(
+    deps.catalog,
+    queries,
+    [
       { kind: "skill", limit: DISCOVERY_LIMITS.skill },
       { kind: "agent", limit: DISCOVERY_LIMITS.agent },
       // Tools are what a request matches, but a server is what a run can bind —
@@ -266,7 +279,10 @@ async function discoverCapabilities(
       // exactly the cap, one unconnected high scorer starved the servers the
       // request actually asked for.
       { kind: "mcpServer", limit: DISCOVERY_LIMITS.mcpServer * 3 },
-    ]);
+    ],
+    signal ? { signal } : {},
+  );
+  const [skills = [], agents = [], toolHits = [], serverHits = []] = search.matches;
 
   const skillList = skills.map((match) => match.name).filter((name) => !boundSkills.has(name));
   // Every catalogued agent is an external one: a project is reachable as a
@@ -358,7 +374,7 @@ async function discoverCapabilities(
   skillList.sort();
   subagentList.sort(byName);
   mcpList.sort(byName);
-  return { skillList, subagentList, mcpList, notes };
+  return { skillList, subagentList, mcpList, notes, rerank: search.rerank };
 }
 
 /**
@@ -379,6 +395,7 @@ export function toolsPrepared(resolved: {
   mcp: { mcpServers: readonly unknown[]; mcpTools: readonly unknown[] };
   discovered: readonly string[];
   warnings: readonly string[];
+  rerank?: CatalogRerankReport;
 }): Record<string, unknown> {
   return {
     skills: resolved.skills.length,
@@ -392,6 +409,13 @@ export function toolsPrepared(resolved: {
         }
       : {}),
     ...(resolved.warnings.length > 0 ? { warnings: resolved.warnings.length } : {}),
+    ...(resolved.rerank && resolved.rerank.calls > 0
+      ? {
+          rerankCalls: resolved.rerank.calls,
+          rerankCandidates: resolved.rerank.candidates,
+          ...(resolved.rerank.failed > 0 ? { rerankFailed: resolved.rerank.failed } : {}),
+        }
+      : {}),
   };
 }
 
@@ -438,6 +462,7 @@ export async function resolveRunTools(
    * used is already visible in its tool traffic.
    */
   discovered: string[];
+  rerank: CatalogRerankReport;
   /**
    * The version as this resolve read it — the caller's own where nothing was
    * discovered, and widened by the search where something was.
@@ -454,6 +479,7 @@ export async function resolveRunTools(
 }> {
   const discoveryNotes: string[] = [];
   const discovered: string[] = [];
+  let rerank: CatalogRerankReport = { calls: 0, candidates: 0, failed: 0 };
   // A version that asked for discovery and did not get it says so, on the same
   // channel a failed search uses. Nothing else can tell the author: the checkbox
   // stays ticked, the bindings still resolve, the run answers normally, and the
@@ -479,6 +505,7 @@ export async function resolveRunTools(
           },
           version,
           queries,
+          signal,
         );
         version = {
           ...version,
@@ -486,6 +513,12 @@ export async function resolveRunTools(
           subagentList: [...(version.subagentList ?? []), ...found.subagentList],
           mcpList: [...(version.mcpList ?? []), ...found.mcpList],
         };
+        rerank = found.rerank;
+        if (rerank.failed > 0) {
+          discoveryNotes.push(
+            `Reranking failed for ${rerank.failed} capability query group${rerank.failed === 1 ? "" : "s"}; vector ranking was used instead.`,
+          );
+        }
         discoveryNotes.push(...found.notes);
         discovered.push(
           ...found.skillList,
@@ -527,6 +560,7 @@ export async function resolveRunTools(
       mcp: settled.mcp,
       version,
       discovered,
+      rerank,
       // Discovery's losses lead — a search that could not run, or a server it
       // matched but the project cannot sign in to, is context for every binding
       // warning after it. What a search *found* is not here; see `discovered`.

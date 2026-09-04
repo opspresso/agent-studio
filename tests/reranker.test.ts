@@ -66,4 +66,32 @@ describe("createReranker", () => {
     await expect(reranker.rerank("query", [])).resolves.toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it.each([-0.1, 1.1])("refuses a score outside the activation range: %s", async (score) => {
+    vi.stubGlobal("fetch", async () =>
+      new Response(JSON.stringify({ results: [{ index: 0, relevance_score: score }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const reranker = createReranker({ baseUrl: "http://spark.test/v1", model: () => "reranker" });
+    await expect(reranker.rerank("query", ["document"])).rejects.toThrow(
+      "returned an invalid result",
+    );
+  });
+
+  it("propagates caller cancellation while resolving the runtime model", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const reranker = createReranker({
+      baseUrl: "http://spark.test/v1",
+      model: () => new Promise<string>(() => {}),
+    });
+    const controller = new AbortController();
+    const pending = reranker.rerank("query", ["document"], undefined, controller.signal);
+    controller.abort(new Error("Stop pressed"));
+
+    await expect(pending).rejects.toThrow("Stop pressed");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

@@ -323,6 +323,21 @@ describe("capability discovery", () => {
     expect(resolved.warnings.some((line) => line.includes("discovery failed"))).toBe(true);
   });
 
+  it("keeps vector-discovered capabilities when reranking fails", async () => {
+    const catalog = fakeCatalog({ skill: [found("aws-knowledge")] });
+    catalog.reranker = { rerank: async () => { throw new Error("reranker unavailable"); } };
+    const { deps } = harness({ catalog });
+
+    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+
+    expect(resolved.skills.map((skill) => skill.name)).toEqual(["aws-knowledge"]);
+    expect(resolved.discovered).toEqual(["aws-knowledge"]);
+    expect(resolved.warnings).toContain(
+      "Reranking failed for 2 capability query groups; vector ranking was used instead.",
+    );
+    expect(resolved.rerank).toEqual({ calls: 2, candidates: 2, failed: 2 });
+  });
+
   it("picks servers by score, not by which index found them", async () => {
     // "Tool hits lead" used to be source order: every tool hit outranked every
     // server hit, so a persona prompt's incidental tool match at a low score

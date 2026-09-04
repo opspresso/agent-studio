@@ -14,13 +14,36 @@ interface RerankResult {
 /** A catalog rerank must not hold the tools preparation stage indefinitely. */
 const RERANKER_TIMEOUT_MS = 15_000;
 
+async function waitWithSignal<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return await new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      reject(signal.reason instanceof Error ? signal.reason : new Error("Rerank was cancelled"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 /** Reranking as served by vLLM's `/v1/rerank`. */
 export function createReranker(config: RerankerConfig): RerankerPort {
   return {
-    async rerank(query, documents, instruction) {
+    async rerank(query, documents, instruction, signal) {
       if (documents.length === 0) {
         return [];
       }
+      const timeout = AbortSignal.timeout(RERANKER_TIMEOUT_MS);
+      const operationSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+      const model = await waitWithSignal(Promise.resolve(config.model()), operationSignal);
       const headers = new Headers({ "content-type": "application/json" });
       if (config.apiKey) {
         headers.set("authorization", `Bearer ${config.apiKey}`);
@@ -28,9 +51,9 @@ export function createReranker(config: RerankerConfig): RerankerPort {
       const response = await fetch(`${config.baseUrl.replace(/\/+$/, "")}/rerank`, {
         method: "POST",
         headers,
-        signal: AbortSignal.timeout(RERANKER_TIMEOUT_MS),
+        signal: operationSignal,
         body: JSON.stringify({
-          model: await config.model(),
+          model,
           query,
           documents,
           top_n: documents.length,
@@ -60,6 +83,8 @@ export function createReranker(config: RerankerConfig): RerankerPort {
           (index as number) >= documents.length ||
           typeof score !== "number" ||
           !Number.isFinite(score) ||
+          score < 0 ||
+          score > 1 ||
           scores[index as number] !== undefined
         ) {
           throw new Error("Reranker returned an invalid result");
