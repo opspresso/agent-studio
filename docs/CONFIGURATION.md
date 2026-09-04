@@ -364,6 +364,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 | `PLUGINS_REPO_BRANCH` | `main` | **runtime** | |
 | `GITHUB_TOKEN` | 미설정 | **runtime** | plugins 저장소에 대한 contents 읽기 권한이 필요하다. |
 | `GITHUB_API_URL` | `https://api.github.com` | — | GitHub REST API 가 답하는 곳. GitHub Enterprise Server 나 미러라면 `https://<host>/api/v3`. 끝의 슬래시는 떼어 낸다. |
+| `GITHUB_WEB_URL` | public GitHub 또는 표준 GHES API 주소에서 도출 | — | plugin 상세의 repository·commit 링크가 향하는 web base. API mirror나 비표준 경로처럼 도출할 수 없으면 명시하라. 없고 도출할 수도 없으면 잘못된 링크를 만드는 대신 텍스트만 표시한다. |
 
 **GitHub 에 닿지 않는 배포는 저장소를 아카이브로 올린다.** `/plugins` 의 업로드
 (`POST /api/plugins/sync/upload`, 체크아웃의 `.tar.gz`/`.tgz`/`.tar`, `git archive` 든

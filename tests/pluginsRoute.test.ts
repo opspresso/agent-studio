@@ -24,6 +24,7 @@ vi.mock("@/lib/session", () => ({
       handler({ id: "u1", email: "admin@example.com", name: "A", image: null }, ...args),
 }));
 vi.mock("@/lib/container", () => ({ syncPluginsFromRepo, pluginUseCases, lastPluginSync }));
+vi.mock("@/lib/config", () => ({ config: { githubWebUrl: "https://github.example.com" } }));
 vi.mock("@/lib/runtime-settings", () => ({
   getPluginsRepoConfig: vi.fn(async () => repoConfig.value),
 }));
@@ -120,11 +121,19 @@ describe("GET /api/plugins/[name]", () => {
     });
 
   it("returns the plugin", async () => {
-    const row = { name: "devops", skills: ["gitops"], mcpServers: ["argocd"] };
+    const row = {
+      name: "devops",
+      repo: "opspresso/agent-plugins",
+      skills: ["gitops"],
+      mcpServers: ["argocd"],
+    };
     pluginUseCases.get.mockResolvedValue(row);
     const res = await get("devops");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual(row);
+    expect(await res.json()).toEqual({
+      ...row,
+      repositoryUrl: "https://github.example.com/opspresso/agent-plugins",
+    });
   });
 
   it("accepts a period-bearing name — the spec allows it, the registry slug does not", async () => {

@@ -26,6 +26,8 @@ import type { SettingsRepository } from "@/domain/settings/repository";
 const TOUCHED = [
   "A2A_API_KEY",
   "GITHUB_TOKEN",
+  "GITHUB_API_URL",
+  "GITHUB_WEB_URL",
   "PLUGINS_REPO",
   "PLUGINS_REPO_BRANCH",
   "S3_BUCKET_NAME",
@@ -96,6 +98,21 @@ describe("optional config", () => {
     set("PLUGINS_REPO", " opspresso/agent-plugins\n");
     expect(config.scheduleScanToken).toBe("tok-1");
     expect(config.pluginsRepo).toBe("opspresso/agent-plugins");
+  });
+
+  it("derives the browser-facing GitHub base only from known API layouts", () => {
+    set("GITHUB_WEB_URL", undefined);
+    set("GITHUB_API_URL", undefined);
+    expect(config.githubWebUrl).toBe("https://github.com");
+
+    set("GITHUB_API_URL", "https://github.example.com/api/v3/");
+    expect(config.githubWebUrl).toBe("https://github.example.com");
+
+    set("GITHUB_API_URL", "https://proxy.example.com/github-api");
+    expect(config.githubWebUrl).toBeUndefined();
+
+    set("GITHUB_WEB_URL", "https://code.example.com/github/");
+    expect(config.githubWebUrl).toBe("https://code.example.com/github");
   });
 
   it("skips to the next candidate rather than stopping at a blank one", () => {

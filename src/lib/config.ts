@@ -554,6 +554,39 @@ export const config = {
     return (optionalEnv(process.env.GITHUB_API_URL) ?? "https://api.github.com").replace(/\/+$/, "");
   },
   /**
+   * Browser-facing GitHub base. Public GitHub and the standard GHES `/api/v3`
+   * shape are derivable; a mirror or non-standard layout must name its web UI.
+   */
+  get githubWebUrl(): string | undefined {
+    const explicit = optionalEnv(process.env.GITHUB_WEB_URL);
+    if (explicit) {
+      try {
+        const url = new URL(explicit);
+        return url.protocol === "https:" || url.protocol === "http:"
+          ? `${url.origin}${url.pathname.replace(/\/+$/, "")}`
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    }
+    if (config.githubApiUrl === "https://api.github.com") {
+      return "https://github.com";
+    }
+    try {
+      const api = new URL(config.githubApiUrl);
+      const suffix = "/api/v3";
+      if (
+        (api.protocol !== "https:" && api.protocol !== "http:") ||
+        !api.pathname.endsWith(suffix)
+      ) {
+        return undefined;
+      }
+      return `${api.origin}${api.pathname.slice(0, -suffix.length)}`;
+    } catch {
+      return undefined;
+    }
+  },
+  /**
    * The ways a person may sign in. Every one is optional, because an
    * installation decides which identity provider it has: a standard OIDC
    * provider (Keycloak, Entra ID, Okta, Authentik — anything with a discovery

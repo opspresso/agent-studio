@@ -656,7 +656,8 @@ GET  /api/plugins
       skills: ["name"], mcpServers: ["name"], syncedAt, createdAt, updatedAt } ]
 
 GET  /api/plugins/{name}
-→ 200 { …one of the above… } | 404 | 400   ({name} follows the Agent Plugins name rule,
+→ 200 { …one of the above…, repositoryUrl: string | null } | 404 | 400
+                                           ({name} follows the Agent Plugins name rule,
                                             which allows periods — not the registry slug)
 
 GET  /api/plugins/sync
