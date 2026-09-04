@@ -571,6 +571,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | Teams 답변 편집 주기 / typing 갱신 | `2s` / `3s` | `src/application/teams/replyChannel.ts` |
 | Telegram·Teams 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
 | usage 요약 질의 범위 | `184` 일 | `src/app/api/usages/summary/validation.ts` |
+| 프로젝트 호출자 usage 한 요청의 원시 행 / 반환·Slack 프로필 해석 수 | `10,000` / `100` | `src/application/usage/listActors.ts` |
 | schedule 따라잡기 창 (장애가 한 번에 발화시킬 수 있는 양에 한계를 둔다) | `10` 분 | `src/application/trigger/scanSchedules.ts` |
 | scan tick 하나가 동시에 굴리는 schedule 발화 수 | `8` | `src/application/trigger/scanSchedules.ts` |
 | schedule 복구 스윕 주기 (잃어버린 런 회수) | `5` 분마다 | `src/application/trigger/scanSchedules.ts` |

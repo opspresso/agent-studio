@@ -1250,8 +1250,9 @@ GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
 
 ```
 GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
-→ 200 { "items": [ { projectName, date, actor, calls, inputTokens, outputTokens, cachedTokens,
-                     costUsd, display?: { name, avatarUrl? } }, … ] }
+→ 200 { "items": [ { projectName, actor, calls, inputTokens, outputTokens, cachedTokens,
+                     costUsd, display?: { name, avatarUrl? } }, … ],
+        "totalActors": 123, "truncated": true }
 ```
 
 `actor` 는 `{kind}:{id}` 다. `user:a@example.com`, `project-token:owner@example.com` (토큰은
@@ -1260,6 +1261,11 @@ GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 `slack:U123`, `telegram:123456`, `teams:{Entra object id}`, `a2a:shared-key`, 그리고 trigger 발화에는
 `webhook:{project}:{triggerId}` 또는 `schedule:{project}:{triggerId}` 다. 지표 필드는 위 요약과
 정확히 같이 모델별 맵이다.
+
+일별 행은 서버에서 `actor` 별로 합친 뒤 비용이 큰 순서로 최대 100명을 돌려준다. `totalActors` 는
+그보다 뒤에 생략된 사람까지 포함한 전체 호출자 수이고, `truncated` 는 `items` 가 상위 일부인지
+알려 준다. Slack 프로필도 반환하는 호출자만 해석한다. 한 요청이 읽어야 할 일별 actor 행이
+10,000개를 넘으면 조용히 일부만 집계하지 않고 400으로 거절하므로 기간을 좁혀 다시 요청하라.
 
 `display` 는 `slack:` 행에 얼굴을 붙여 준다. 그 project 자신의 봇 토큰으로 해석한다. 장식이며
 어떤 이유로든 없을 수 있다. Slack 봇 없음, 회수된 토큰, 비활성화된 사용자, Slack 장애. 그리고

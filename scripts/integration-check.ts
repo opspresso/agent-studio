@@ -624,7 +624,7 @@ async function main() {
     // ---------- usage attribution (per-caller rows) ----------
     await usageRepository.record({ ...usageDelta, actor: "user:it@example.com" });
     await usageRepository.record({ ...usageDelta, actor: "project-token:it@example.com" });
-    const actorRows = await usageRepository.listActorsByProject(projectName, today, today);
+    const actorRows = await usageRepository.listActorsByProject(projectName, today, today, 100);
     assert.equal(actorRows.length, 2, "one row per caller");
     assert.deepEqual(
       actorRows.map((r) => r.actor).sort(),

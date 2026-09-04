@@ -63,8 +63,14 @@ describe("usage repository paging", () => {
       150,
     );
     await expect(
-      repository.listActorsByProject("p", "2026-08-01", "2026-08-01"),
+      repository.listActorsByProject("p", "2026-08-01", "2026-08-01", 300),
     ).resolves.toHaveLength(205);
+    await expect(
+      repository.listActorsByProject("p", "2026-08-01", "2026-08-01", 101),
+    ).resolves.toHaveLength(101);
+    await expect(
+      repository.listActorsByProject("p", "2026-08-01", "2026-08-01", 0),
+    ).rejects.toThrow("limit must be a positive integer");
     await expect(
       repository.listMemberDays("member@example.com", "2026-08-01", "2026-08-01"),
     ).resolves.toHaveLength(205);

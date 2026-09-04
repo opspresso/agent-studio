@@ -22,7 +22,7 @@ import type { Trace } from "@/domain/trace/types";
  * mutation's narrower response did not carry.
  */
 import type { McpConnectionView } from "@/application/mcp/mcpAuthUseCases";
-import type { ActorUsageView } from "@/application/usage/listActors";
+import type { ActorUsageView, ProjectActorUsage } from "@/application/usage/listActors";
 import type { ProjectA2aResponse } from "@/app/api/projects/[name]/a2a/route";
 import type { CloneProjectResponse } from "@/app/api/projects/[name]/clone/route";
 import type { ModelsResponse } from "@/app/api/models/route";
@@ -306,8 +306,8 @@ export async function usageActors(
   name: string,
   from: string,
   to: string,
-): Promise<{ items: ActorUsageView[] }> {
-  return readJson<{ items: ActorUsageView[] }>(
+): Promise<ProjectActorUsage> {
+  return readJson<ProjectActorUsage>(
     await fetch(`/api/projects/${name}/usage/actors?from=${from}&to=${to}`),
   );
 }

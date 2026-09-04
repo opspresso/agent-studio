@@ -63,6 +63,10 @@ export default function UsagePage() {
   const [groupBy, setGroupBy] = useState<GroupBy>("model");
   const [rows, setRows] = useState<UsageRow[]>([]);
   const [actorRows, setActorRows] = useState<ActorUsageView[]>([]);
+  const [actorTotal, setActorTotal] = useState(0);
+  const [actorTruncated, setActorTruncated] = useState(false);
+  const [actorLoading, setActorLoading] = useState(false);
+  const [actorError, setActorError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,9 +94,10 @@ export default function UsagePage() {
     // order they were asked, and without this the slower first answer lands
     // last — showing the reader a range they are no longer asking for.
     let cancelled = false;
-    async function load() {
+    async function loadSummary() {
       setLoading(true);
       setError(null);
+      setRows([]);
       try {
         const { items } = await usageSummary(name, range.from, range.to);
         if (!cancelled) setRows([...items].sort((a, b) => b.date.localeCompare(a.date)));
@@ -101,20 +106,55 @@ export default function UsagePage() {
       } finally {
         if (!cancelled) setLoading(false);
       }
-      // Separately, and never fatal: a breakdown that fails should cost the
-      // totals nothing.
-      if (!maySeeActors) {
-        if (!cancelled) setActorRows([]);
-        return;
-      }
+    }
+    void loadSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [name, range.from, range.to]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setActorRows([]);
+    setActorTotal(0);
+    setActorTruncated(false);
+    setActorError(null);
+    setActorLoading(maySeeActors);
+    if (!maySeeActors) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    // Separately, and never fatal: a breakdown that fails should cost the
+    // project totals nothing.
+    async function loadActors() {
       try {
-        const { items } = await usageActors(name, range.from, range.to);
-        if (!cancelled) setActorRows(items);
-      } catch {
-        if (!cancelled) setActorRows([]);
+        const { items, totalActors, truncated } = await usageActors(
+          name,
+          range.from,
+          range.to,
+        );
+        if (!cancelled) {
+          setActorRows(items);
+          setActorTotal(totalActors);
+          setActorTruncated(truncated);
+        }
+      } catch (actorLoadError) {
+        if (!cancelled) {
+          setActorRows([]);
+          setActorTotal(0);
+          setActorTruncated(false);
+          setActorError(
+            actorLoadError instanceof Error
+              ? actorLoadError.message
+              : "Failed to load caller usage",
+          );
+        }
+      } finally {
+        if (!cancelled) setActorLoading(false);
       }
     }
-    void load();
+    void loadActors();
     return () => {
       cancelled = true;
     };
@@ -160,12 +200,18 @@ export default function UsagePage() {
             />
             <StatCard
               label={t("projectUsage.callers")}
-              value={callers.length.toLocaleString(locale)}
-              detail={t(
-                maySeeActors
-                  ? "projectUsage.distinctIdentities"
-                  : "projectUsage.ownerAdminOnly",
-              )}
+              value={actorLoading ? "—" : actorTotal.toLocaleString(locale)}
+              detail={
+                actorLoading
+                  ? t("common.loading")
+                  : actorError
+                    ? t("projectUsage.unavailable")
+                    : t(
+                        maySeeActors
+                          ? "projectUsage.distinctIdentities"
+                          : "projectUsage.ownerAdminOnly",
+                    )
+              }
               Icon={IconUsers}
             />
           </SimpleGrid>
@@ -183,12 +229,23 @@ export default function UsagePage() {
 
           <UsageBreakdown groups={groups} label={groupBy} />
 
+          {actorError && (
+            <Alert color="yellow" variant="light">
+              {actorError}
+            </Alert>
+          )}
+
           {callers.length > 0 && (
             <Card padding={0}>
               <Group px="md" pt="md">
                 <CardHeading
                   title={t("projectUsage.whoSpent")}
-                  subtitle={t("projectUsage.perCallerRange")}
+                  subtitle={t(
+                    actorTruncated
+                      ? "projectUsage.topCallersRange"
+                      : "projectUsage.perCallerRange",
+                    { count: callers.length },
+                  )}
                 />
               </Group>
               <DataTable>
