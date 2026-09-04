@@ -906,17 +906,20 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
   않는 이미지를 위한 것이다.
 - `environment` 값은 레지스트리 행에서 암호화되고, 읽을 때 마스킹되며, 워크로드 스펙을 만들 때만
   복호화된다. `PORT` 는 거절된다. 그것은 런타임이 소유한다. 값이 Parameter Store 에 남아 있어야
-  하면 대신 `envRefs` 를 쓰라. 키는 `^[A-Za-z_][A-Za-z0-9_]*$` 이고 값은 16,384자까지 간다.
+  하면 대신 `envRefs` 를 쓰라. 키는 `^[A-Za-z_][A-Za-z0-9_]*$` 이고 값은 줄바꿈 없이
+  16,384자까지 간다. `envRefs`는 `/`로 시작하는 호스트 절대 경로다.
 - `endpointPath` 의 기본값은 `/mcp` 이고, query·fragment·공백이 없는 절대 경로여야 한다
   (`^\/(?!\/)[^\s?#]*$`). 그 밖의 것은 `400` 이다.
 - `PUT`/`DELETE` 의 `403` 은 모든 레지스트리 라우트가 답하는 repo 소유 거절이다: sync 된 항목의
   `description` 과 `content` 는 저장소의 것이고, 워크로드 필드(`image`, 포트, env)는 여기서 계속
   수정할 수 있다.
-- `image` 는 호스트가 pull 할 수 있는 어떤 레지스트리에서 와도 된다. `MANAGED_MCP_REGISTRY` 는
+- `PUT` 본문은 생성 본문에서 `name`을 뺀 필드의 부분 집합이다. workload 하나만 바꾸기 위해
+  `image`와 `containerPort`를 다시 보낼 필요가 없다.
+- `image` 는 안전한 Docker image reference 형식이어야 한다. `MANAGED_MCP_REGISTRY` 는
   `docker login` 이 인증하는 그 하나이고, 그 밖의 것에는 로그인을 건너뛴다.
 - `containerPort` 는 요청이지 보장이 아니다: 포트 매핑을 게시하는 어댑터만이 그것을 존중할 수
-  있다. 배포된 어댑터는 대신 네트워크 네임스페이스를 공유하므로, 컨테이너에 어느 포트로 bind 할지
-  (`PORT`) 알려 주고 저장된 값은 무시한다.
+  있다. 배포된 Docker 어댑터는 호스트 loopback의 결정적 포트를 `containerPort`에 매핑하고,
+  컨테이너에도 `PORT=<containerPort>`를 알려 준다.
 
 `GET` 은 **실제로 돌고 있는 것**을 보고한다. 저장된 항목만으로는 말할 수 없는 것이다.
 `running` 과 `reachable` 이 따로인 것은 일부러 그런 것이다: "돌고 있지만 닿을 수 없음"은 실재하는

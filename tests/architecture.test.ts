@@ -1655,6 +1655,19 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/slack/types.ts",
   },
   {
+    // The route must reject the same structural values the lifecycle and
+    // Docker boundaries refuse. Separate regexes made an unsafe request a late
+    // provisioning failure instead of a coherent 400.
+    what: "managed workload input syntax",
+    pattern: /\bMANAGED_(?:IMAGE|ENV_REF|ENV_KEY|ENV_VALUE|ARG|ENDPOINT_PATH)\b/,
+    owner: "src/domain/mcp/provisioner.ts",
+    alsoAllowedUnder: [
+      "src/app/api/mcps/managed/_schema.ts",
+      "src/application/mcp/managedMcpUseCases.ts",
+      "src/infrastructure/mcp/dockerProvisioner.ts",
+    ],
+  },
+  {
     // A reply can leave through post, edit, or either stream axis. Sanitising
     // one path in its caller makes fallback and final-recovery paths notification
     // capabilities, so the decision is named once and applied only at the wire.

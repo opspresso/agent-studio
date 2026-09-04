@@ -19,7 +19,11 @@
 import type { McpRepository } from "@/domain/mcp/repository";
 import { listRegistry } from "@/application/registry/registryUseCases";
 import { isManagedLoopback, type McpServer } from "@/domain/mcp/types";
-import type { McpProvisioner, ManagedWorkloadSpec } from "@/domain/mcp/provisioner";
+import {
+  MANAGED_ENDPOINT_PATH,
+  type McpProvisioner,
+  type ManagedWorkloadSpec,
+} from "@/domain/mcp/provisioner";
 import type { McpToolProbe } from "@/domain/mcp/toolProbe";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import {
@@ -45,17 +49,7 @@ export interface CreateManagedInput {
   headers?: Record<string, string>;
 }
 
-export interface UpdateManagedInput {
-  image?: string;
-  containerPort?: number;
-  envRefs?: string[];
-  environment?: Record<string, string>;
-  args?: string[];
-  endpointPath?: string;
-  description?: string;
-  content?: string;
-  headers?: Record<string, string>;
-}
+export type UpdateManagedInput = Partial<Omit<CreateManagedInput, "name">>;
 
 export interface ManagedMcpStatus {
   name: string;
@@ -251,7 +245,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
 
   function endpointPath(value: string | undefined): string {
     const path = value ?? DEFAULT_ENDPOINT_PATH;
-    if (!/^\/(?!\/)[^\s?#]*$/.test(path)) {
+    if (!MANAGED_ENDPOINT_PATH.test(path)) {
       throw new ValidationError(
         "Managed MCP endpoint path must start with / and contain no query or fragment.",
       );

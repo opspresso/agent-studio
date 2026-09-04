@@ -11,6 +11,19 @@
  * the container process without invoking a host shell.
  */
 
+/** `host/path:tag` or `…@sha256:…`. No spaces, quotes, or shell metacharacters. */
+export const MANAGED_IMAGE = /^[A-Za-z0-9._\-/]+(?::[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$/;
+/** Absolute host path passed to Docker as an env-file reference. */
+export const MANAGED_ENV_REF = /^\/[A-Za-z0-9._\-/]+$/;
+/** An environment variable name, as env-file syntax and shells agree on it. */
+export const MANAGED_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** One env-file value. A line break would create another entry. */
+export const MANAGED_ENV_VALUE = /^[^\r\n]*$/;
+/** One argv value. Control characters have no useful container argument meaning. */
+export const MANAGED_ARG = /^[^\u0000-\u001f\u007f]+$/;
+/** Endpoint below the provisioner's loopback origin. */
+export const MANAGED_ENDPOINT_PATH = /^\/(?!\/)[^\s?#]*$/;
+
 export interface ManagedWorkloadSpec {
   /** Registry entry name; also the container name, so the pair is discoverable. */
   name: string;

@@ -470,8 +470,9 @@ managed MCP 서버(`runtime: "managed"`)는 이 앱이 자기 호스트에서 �
 않는다. 유일한 런타임인 Docker 프로비저너(`MANAGED_MCP_RUNTIME=docker`,
 `src/infrastructure/mcp/dockerProvisioner.ts`)는 argv 를 `execFile` 로 Docker CLI 에 배열째
 넘기고, 구조적으로 쓰이는 값. 이름(`MANAGED_NAME`), 이미지 레퍼런스, `--env-file` 로 건네는
-env 참조(호스트의 절대 경로). 은 패턴으로 검사한다. 항목을 편집할 수 있는 운영자가 그것으로
-호스트에서 임의 코드를 돌릴 수는 없어야 한다.
+env 참조(호스트의 절대 경로), 환경 키·값, argv, endpoint path. 은
+`src/domain/mcp/provisioner.ts`의 패턴으로 API 입력과 Docker 실행 양쪽에서 검사한다. 항목을
+편집할 수 있는 운영자가 그것으로 호스트에서 임의 코드를 돌릴 수는 없어야 한다.
 
 컨테이너는 각각 메모리와 memory+swap을 모두 512MiB, CPU 1개, PID 256개로 제한하고 Linux
 capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesystem은 read-only이고
