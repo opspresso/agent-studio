@@ -51,6 +51,8 @@ export interface ArtifactInput {
   prompt?: string;
   /** The subagent that produced it, from the chunk's author. */
   producedBy?: string;
+  /** Transfer path that produced it, relative to the bracket's root project. */
+  authorPath?: readonly string[];
   /** The model that drew it, from the chunk. Absent when nothing can name one. */
   model?: string;
 }
