@@ -27,7 +27,8 @@ function inputTokensOf(body: unknown): number {
   if (typeof usage !== "object" || usage === null) {
     return 0;
   }
-  const tokens = (usage as { prompt_tokens?: unknown }).prompt_tokens;
+  const typedUsage = usage as { prompt_tokens?: unknown; total_tokens?: unknown };
+  const tokens = typedUsage.prompt_tokens ?? typedUsage.total_tokens;
   return typeof tokens === "number" && Number.isInteger(tokens) && tokens >= 0 ? tokens : 0;
 }
 

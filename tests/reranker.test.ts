@@ -73,6 +73,33 @@ describe("createReranker", () => {
     );
   });
 
+  it("reads OpenRouter total tokens for token-priced rerank usage", async () => {
+    vi.stubGlobal("fetch", async () =>
+      new Response(
+        JSON.stringify({
+          usage: { total_tokens: 150, search_units: 1 },
+          results: [{ index: 0, relevance_score: 0.8 }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const reranker = createReranker({
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: () => ({
+        id: "openrouter/rerank-2.5",
+        wireId: "voyageai/rerank-2.5",
+      }),
+    });
+
+    await expect(reranker.rerank("query", ["document"])).resolves.toMatchObject({
+      usage: {
+        model: "openrouter/rerank-2.5",
+        inputTokens: 150,
+        costUsd: 0.0000075,
+      },
+    });
+  });
+
   it("makes no request for an empty document list", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
