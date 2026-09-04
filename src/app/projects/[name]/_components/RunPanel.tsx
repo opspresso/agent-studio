@@ -122,6 +122,7 @@ export function RunPanel({
     attachments,
     documents,
     attachError,
+    reading,
     addFiles,
     removeAt,
     removeDocumentAt,
@@ -134,6 +135,7 @@ export function RunPanel({
   const canRun =
     versionName !== null &&
     !running &&
+    !reading &&
     (!needsMessage || message.trim() !== "" || attachments.length > 0 || documents.length > 0);
   const attachHint =
     projectType === "image"
@@ -475,7 +477,7 @@ export function RunPanel({
       )}
 
       <Group>
-        <Button onClick={run} loading={running} disabled={!canRun}>
+        <Button onClick={run} loading={running || reading} disabled={!canRun}>
           {t("playground.run")}
         </Button>
       </Group>
