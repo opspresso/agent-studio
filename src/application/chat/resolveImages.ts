@@ -1,17 +1,14 @@
 /**
- * Resolve stored image references to fetchable URLs, once, before anything
- * reads them.
+ * Resolve stored image references for a view or a run before anything reads
+ * them.
  *
- * Signing is asynchronous and `toEngineMessages` is a pure synchronous mapper
- * that a great deal of the replay contract is tested through. Rather than make
- * that function async and thread a signer into it, both readers resolve first
- * and hand on messages whose images already carry a `url` — the shape every row
- * had before keys existed. The mapper therefore keeps working on exactly one
- * shape, and the compatibility rule stays in `resolveImageUrl` alone.
+ * Signing and object reads are asynchronous while `toEngineMessages` is a pure
+ * synchronous mapper. The view resolves keys to display URLs; a run instead
+ * restores a bounded newest subset to inline bytes.
  *
  * An image that cannot be resolved is **dropped from the message**, not rendered
- * as a broken address: on the replay path a URL the provider cannot fetch fails
- * the whole turn, and in the view a broken image tells the reader nothing.
+ * as a broken address. In the view a broken image tells the reader nothing; in
+ * a run, handing a remote URL to the provider would delegate an SSRF decision.
  *
  * How many were dropped is returned rather than only logged. A picture the user
  * remembers sending, missing from the transcript with nothing said, reads as the
@@ -25,6 +22,7 @@ import { resolveImageUrl, type SignImageUrl } from "@/domain/chat/imageRefs";
 import {
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
+  isInlineImageDataUrl,
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
 import { imageDataUrl } from "@/domain/llm/types";
@@ -58,11 +56,6 @@ export interface ResolvedMessages {
   messages: ChatMessage[];
   /** How many stored images could not be turned into a fetchable address. */
   dropped: number;
-}
-
-export interface RunResolvedMessages extends ResolvedMessages {
-  /** Stored images that stayed visible by URL but could not become editable handles. */
-  notEditable: number;
 }
 
 interface PendingImage {
@@ -131,41 +124,41 @@ export async function resolveMessageImages(
 }
 
 /**
- * Resolve images for an agent run, restoring the newest stored objects as
- * inline bytes so the image registry can hand them to EditImage. Remaining
- * images keep the signed-URL path and are still visible to the model.
+ * Resolve images for an agent run, restoring at most the newest attachment
+ * budget as inline bytes. A remote URL is never sent to the provider; older,
+ * legacy, or unreadable images remain visible in the chat but leave this run's
+ * context and are counted as dropped.
  */
 export async function resolveRunMessageImages(
   messages: ChatMessage[],
   objects: ArtifactObjectStore | undefined,
-  ttlSeconds: number,
-): Promise<RunResolvedMessages> {
-  const inline = new Set<ChatMessageImage>();
-  if (objects) {
-    for (const message of [...messages].reverse()) {
-      if (message.role === "tool") {
-        continue;
-      }
-      for (const image of [...(message.images ?? [])].reverse()) {
-        if (inline.size >= MAX_ATTACHMENTS) {
-          break;
-        }
-        if (image.key && !image.url) {
-          inline.add(image);
-        }
-      }
-      if (inline.size >= MAX_ATTACHMENTS) {
+): Promise<ResolvedMessages> {
+  const selected = new Set<ChatMessageImage>();
+  for (const message of [...messages].reverse()) {
+    if (message.role === "tool") {
+      continue;
+    }
+    for (const image of [...(message.images ?? [])].reverse()) {
+      if (selected.size >= MAX_ATTACHMENTS) {
         break;
       }
+      if ((objects && image.key) || (image.url && isInlineImageDataUrl(image.url))) {
+        selected.add(image);
+      }
+    }
+    if (selected.size >= MAX_ATTACHMENTS) {
+      break;
     }
   }
 
-  let notEditable = 0;
   const resolved = await mapWithLimit(
     pendingImages(messages),
     MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS,
     async ({ messageIndex, image }) => {
-      if (objects && image.key && inline.has(image)) {
+      if (selected.has(image) && image.url && isInlineImageDataUrl(image.url)) {
+        return { messageIndex, image };
+      }
+      if (objects && image.key && selected.has(image)) {
         try {
           const stored = await objects.read(image.key, MAX_ATTACHMENT_BYTES);
           if (!(SUPPORTED_IMAGE_TYPES as readonly string[]).includes(stored.mimeType)) {
@@ -180,19 +173,15 @@ export async function resolveRunMessageImages(
             image: image.prompt === undefined ? { url } : { url, prompt: image.prompt },
           };
         } catch (error) {
-          notEditable += 1;
           log.error(
             "chat",
-            "could not load a stored image for editing; using its address",
+            "could not load a stored image for replay; leaving it out",
             error,
           );
         }
       }
-      return {
-        messageIndex,
-        image: await resolveOne(image, objects?.sign, ttlSeconds),
-      };
+      return { messageIndex, image: undefined };
     },
   );
-  return { ...rebuildMessages(messages, resolved), notEditable };
+  return rebuildMessages(messages, resolved);
 }

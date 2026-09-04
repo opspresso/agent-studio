@@ -1175,9 +1175,10 @@ completion 이 없다. 그것은 `/predict` 로 실행하라.
 ```
 
 **이미지 입력.** 메시지 본문은 문자열 대신 OpenAI content part 여도 된다. 이미지 바이트는
-`data:image/…;base64,…` url 로 인라인 이동한다. 원격 이미지는 `https://` 여야 한다. 페이로드
-하나는 10MB 로 제한되고, 그 version 의 모델은 `imageInput` 능력을 가져야 한다. 아니면 `400`
-이며, 이미지를 읽을 수 없는 `fallbackModel` 은 그 요청에서 건너뛴다.
+`data:image/…;base64,…` URL 로 인라인 이동한다. PNG, JPEG, GIF, WebP만 받고 디코딩 크기는
+하나당 5MB로 제한한다. 원격 URL은 받지 않는다. 호출자가 고른 주소를 모델 제공자에게 넘기면
+이 배포의 SSRF 정책을 적용할 수 없기 때문이다. 그 version의 모델은 `imageInput` 능력을 가져야
+한다. 아니면 `400`이며, 이미지를 읽을 수 없는 `fallbackModel`은 그 요청에서 건너뛴다.
 
 ```json
 { "messages": [ { "role": "user", "content": [
@@ -1594,9 +1595,9 @@ header="X-A2A-Key"` 를 싣고, Agent Card 는 같은 스킴을
 `securitySchemes`/`securityRequirements` 로 선언한다. 표준 클라이언트가 이 요구사항을 읽어
 자격 증명을 고른다.
 
-메시지는 A2A 1.0 `Part` 의 `text`, 또는 `image/*` 인 `raw`/https `url` 을 실을 수 있다. 단 image
-project 는 편집 원본을 바이트로 받아야 하므로 `raw` 만 받는다. `data`, 다른 media type, 지원하지
-않는 URL part 는 `ContentTypeNotSupported` (`-32005`) 로 거절된다. `taskId` 로 아직 working 인 task 를 이어 가는
+메시지는 A2A 1.0 `Part`의 `text`, 또는 지원하는 `image/*`의 `raw` 바이트를 실을 수 있다.
+`url`, `data`, 다른 media type은 `ContentTypeNotSupported` (`-32005`)로 거절된다. 호출자가 고른
+이미지 URL을 모델 제공자에게 넘겨 이 배포의 SSRF 경계를 우회하지 않기 위한 계약이다. `taskId`로 아직 working인 task를 이어 가는
 메시지는 `-32602` 로 거절된다: 이 agent 는 메시지마다 자기 task 를 돌리고 `input-required` 에
 들어가지 않으므로, 대화를 잇는 것은 `contextId` 다. `SendStreamingMessage` 와 `ResubscribeTask` 가
 첫 이벤트 전에 거절되면 JSON-RPC 에러 객체(200)로 답하고, 스트림 도중의 실패는 JSON-RPC 에러
@@ -1647,7 +1648,7 @@ assistant 턴의 `reasoning_content` 가 되고, `activity` 는 받되 버린다
 (`{ name, description, parameters? }`), `context` (`{ description, value }`), `state` (비어 있지
 않으면 읽기 전용 JSON 으로 context 와 함께 system 턴에 실린다. 갱신은 되지 않고
 `STATE_SNAPSHOT` 도 나가지 않는다), 그리고 받아만 두는 `forwardedProps`. `user` 턴의 parts 는
-`text`, `image` (`data` 소스 또는 https `url` 소스, 메시지당 `MAX_ATTACHMENTS` 개), `document`
+`text`, `image` (`data` 소스만, 메시지당 `MAX_ATTACHMENTS`개), `document`
 (`data` 소스만, `metadata.name`/`filename` 이 이름, 메시지당 `MAX_DOCUMENTS` 개, chat 첨부와
 같은 추출기로 텍스트가 된다) 이고, audio·video 와 URL 로 온 document 는 400 이다.
 interrupt 상태를 이어 가는 구현은 아직 없으므로 `resume` 이 있으면 400 이다. 값을 무시하고 새

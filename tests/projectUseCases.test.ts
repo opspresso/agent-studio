@@ -1446,23 +1446,36 @@ describe("chatMessageSchema content parts", () => {
     expect(parsed.data?.content).toEqual([{ type: "text", text: "what is this?" }, imagePart]);
   });
 
-  it("accepts an https image url", () => {
+  it("rejects remote image URLs", () => {
     const parsed = chatMessageSchema.safeParse({
       role: "user",
       content: [{ type: "image_url", image_url: { url: "https://example.com/a.png" } }],
     });
 
-    expect(parsed.success).toBe(true);
+    expect(parsed.success).toBe(false);
   });
 
-  it("rejects image urls with any other scheme", () => {
-    for (const url of ["file:///etc/passwd", "http://example.com/a.png", "data:text/html,x"]) {
+  it("rejects non-image and unsupported image data URLs", () => {
+    for (const url of [
+      "file:///etc/passwd",
+      "http://example.com/a.png",
+      "data:text/html,x",
+      "data:image/png;base64,!!!!",
+    ]) {
       const parsed = chatMessageSchema.safeParse({
         role: "user",
         content: [{ type: "image_url", image_url: { url } }],
       });
       expect(parsed.success, url).toBe(false);
     }
+    expect(
+      chatMessageSchema.safeParse({
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: "data:image/svg+xml;base64,PHN2Zz4=" } },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects an image payload over the size cap", () => {
@@ -1471,6 +1484,15 @@ describe("chatMessageSchema content parts", () => {
       content: [
         { type: "image_url", image_url: { url: `data:image/png;base64,${"A".repeat(11_000_000)}` } },
       ],
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects more images than one turn may carry", () => {
+    const parsed = chatMessageSchema.safeParse({
+      role: "user",
+      content: Array(5).fill(imagePart),
     });
 
     expect(parsed.success).toBe(false);

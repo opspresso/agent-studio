@@ -15,8 +15,8 @@
  * A readable GET address for a stored object.
  *
  * The lifetime belongs to the reader, because the readers differ: a chat view is
- * read by a person with the page already open, while a replay hands the URL to a
- * model provider that fetches it at some point inside a run.
+ * read by a person with the page already open, while durable messaging records
+ * need a link that remains useful after the run has ended.
  *
  * The adapter may return a time-limited signed URL or a direct public URL.
  * `downloadAs` sets the filename a browser saves under, and asking for one is

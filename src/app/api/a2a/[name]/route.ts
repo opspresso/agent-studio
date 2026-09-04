@@ -109,10 +109,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     const abortController = new AbortController();
     const requestHandler = new ProjectRequestHandler(
       store,
-      {
-        signal: abortController.signal,
-        acceptImageUrls: project.projectType !== "image",
-      },
+      { signal: abortController.signal },
       card,
       store,
       new ProjectA2aExecutor(executionDeps, project, version, store, actor, callContext),

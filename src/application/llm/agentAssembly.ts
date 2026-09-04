@@ -100,9 +100,8 @@ export class ImageRegistry {
 }
 
 /**
- * Register every inline image in the input messages. An https image part is
- * skipped: the provider fetches those itself, so the bytes an edit needs are
- * not in hand.
+ * Register every inline image in the input messages. The channel refuses any
+ * other image form before it can leave this deployment.
  */
 function registerInputImages(registry: ImageRegistry, messages: ChatMessageInput[]): void {
   for (const message of messages) {

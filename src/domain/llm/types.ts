@@ -3,6 +3,8 @@
  * These are pure domain shapes with no framework/provider imports.
  */
 
+export { imageDataUrl, parseImageDataUrl } from "./imageLimits";
+
 /** Token + cost accounting for a single LLM call. */
 export interface UsageInfo {
   inputTokens: number;
@@ -326,32 +328,6 @@ export function messageText(message: Pick<ChatMessageInput, "content">): string 
     .filter((part): part is Extract<ContentPart, { type: "text" }> => part.type === "text")
     .map((part) => part.text)
     .join("\n");
-}
-
-/**
- * Encode image bytes as the `data:` url an `image_url` content part carries.
- * Every surface that inlines an image goes through here, so the encoding has
- * one owner alongside the decoder below.
- */
-export function imageDataUrl(image: { b64: string; mimeType: string }): string {
-  return `data:${image.mimeType};base64,${image.b64}`;
-}
-
-/**
- * Decode a `data:<mime>;base64,<payload>` url into bytes — the inverse of
- * `imageDataUrl`. Any other url form (an https image the provider fetches for
- * itself) returns null. Parameters between the mime and `;base64` are
- * tolerated and dropped: `imageDataUrl` never writes them, but an external
- * caller's `data:image/png;charset=binary;base64,…` is still an image.
- */
-export function parseImageDataUrl(url: string): { b64: string; mimeType: string } | null {
-  const match = /^data:([^;,]+)(?:;[^;,]*)*;base64,(.+)$/s.exec(url);
-  const mimeType = match?.[1];
-  const b64 = match?.[2];
-  if (!mimeType || !b64 || !mimeType.startsWith("image/")) {
-    return null;
-  }
-  return { b64, mimeType };
 }
 
 /** True when a message body carries at least one image part. */

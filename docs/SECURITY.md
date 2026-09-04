@@ -382,6 +382,13 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
   호스트는 풀링된 디스패처에 닿기 전에 거부되고, 다른 곳으로 해석되는 호스트는 다른 키를
   받는다.
 
+**모델 입력의 이미지는 URL로 가져가지 않는다.** OpenAI 호환 실행, AG-UI, A2A는 지원하는 이미지
+바이트를 요청 안에 인라인으로 받으며, LLM 채널은 모든 `image_url`이 bounded `data:` URL인지
+마지막으로 다시 확인한다. `https://`만 검사한 뒤 원격 URL을 제공자에게 그대로 넘기면 요청은 이
+앱이 아니라 제공자 네트워크에서 발생한다. 그 경로에는 `fetchPublicUrl`의 DNS·주소·redirect
+검사가 닿지 않으므로 허용하지 않는다. 모델이 웹의 이미지를 읽어야 하면 `FetchUrl` 도구가 이
+앱의 아웃바운드 경계로 바이트를 가져와 같은 inline 형식으로 돌려준다.
+
 공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라. Registry endpoint URL 은
 query parameter 와 fragment 를 받지 않는다. 둘은 멤버가 읽는 registry view 와 운영 로그에서
 자격 증명을 노출하기 쉬우므로, 인증 정보는 encrypted header 또는 OAuth 연결에 둔다. 이전 행에
@@ -876,18 +883,16 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   지워진다.
 - **생성된 이미지** 는 `S3_BUCKET_NAME` 이 설정돼 있으면 추측할 수 없는 UUID 키 아래 저장되고,
   chat 행은 주소가 아니라 **오브젝트 키** 를 보관한다. 읽기 시점에 키가 주소가 되며, 수명은
-  독자에 맞춰 고른다. chat 뷰에는 15분, 재생(replay)에는 런 마감 시각 전체에 여유를 더한 값
-  (URL 을 가져가는 것이 *모델 제공자* 이고 런 중 어느 시점에 그 턴에 닿을지 모르기 때문이다),
-  그리고 Slack 스레드나 저장된 A2A 태스크처럼 지속되는 무언가에 쓰이는 링크에는 7일(SigV4
+  독자에 맞춰 고른다. chat 뷰에는 15분, Slack 스레드나 저장된 A2A 태스크처럼 지속되는
+  무언가에 쓰이는 링크에는 7일(SigV4
   pre-sign 의 상한이고, proxied 토큰도 같은 값을 쓴다). 그 링크는 그것이 함께 온 답을 이미 읽을
   수 있던 청중이 쥔다(`src/application/artifact/urlTtl.ts`). 주소의 *모양* 은
   `ARTIFACT_ACCESS_MODE` 가 정한다:
   - **`proxied`**. 스토어는 앱에게만 닿고 독자는 앱의 주소
     `PUBLIC_BASE_URL/api/objects/<key>?exp=<unix>&sig=<hmac>[&dl=<filename>]` 를 받는다
-    (`src/infrastructure/storage/objectUrlToken.ts`). 모델 제공자도 그 독자의 하나라
-    `PUBLIC_BASE_URL` 에 닿아야 한다([CONFIGURATION.md](CONFIGURATION.md#핵심)). **그 라우트는 세션을 요구하지 않으며
-    그것이 계약이다**: 주소를 쥐는 것은 `<img>` 태그, Slack 메시지, 재생된 턴을 가져가는 모델
-    제공자라 쿠키를 낼 수 없다. 토큰이 자격 증명이다. 키·만료·파일명을 함께 덮는 HMAC-SHA256
+    (`src/infrastructure/storage/objectUrlToken.ts`). **그 라우트는 세션을 요구하지 않으며
+    그것이 계약이다**: 주소를 쥐는 것은 `<img>` 태그, Slack 메시지, 저장된 A2A task라 쿠키를
+    낼 수 없다. 토큰이 자격 증명이다. 키·만료·파일명을 함께 덮는 HMAC-SHA256
     이고, 서명 키는 `AES_ENCRYPTION_KEY` 에서 HKDF(`agent-studio/object-url/v1`)로 파생되어 그
     바이트가 저장된 토큰을 암호화하는 바이트와 결코 같지 않다. 증명하는 것은 *이 배포가 이
     키에 대해 이 수명과 이 파일명으로 발행했다* 는 사실뿐이다. 파일명은 장식이 아니라 서명에

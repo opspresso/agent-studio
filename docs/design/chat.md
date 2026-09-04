@@ -191,7 +191,8 @@ N개의 assistant 턴, tool 텍스트 budget, 그리고 런 전체 단위의 히
 모델이 거부하는 part 를 보내면 턴 전체가 실패한다. 새 턴을 재생할 때는 저장된 최신 이미지
 네 개를 객체 저장소에서 크기 제한 아래 다시 읽어 data URL 로 전달한다. assistant 가 만든
 이미지도 provider 호환 user 이미지 메시지로 이어 붙이므로 후속 턴에서 같은 핸들을 얻는다.
-그보다 오래됐거나 읽지 못한 이미지는 signed URL 로 문맥에는 남지만 편집 핸들은 얻지 못한다.
+그보다 오래됐거나 읽지 못한 이미지는 화면 기록에는 남지만 런 문맥에서는 빠지고 warning으로
+보고된다. 모델 제공자가 원격 URL을 직접 가져가게 두면 이 배포의 SSRF 경계를 우회하기 때문이다.
 
 **문서는 그것을 받은 표면에서 텍스트가 된다.** PDF, 평문 텍스트, Markdown, CSV/TSV, JSON,
 YAML, XML, HTML 은 로컬 extractor가 읽고, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 는

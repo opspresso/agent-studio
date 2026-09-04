@@ -26,17 +26,11 @@ const toolCallSchema = z.object({
   function: z.object({ name: z.string().min(1), arguments: z.string() }),
 });
 
-const imageSourceSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("data"),
-    value: z.string().max(base64Chars(MAX_ATTACHMENT_BYTES), "image payload is too large"),
-    mimeType: z.enum(SUPPORTED_IMAGE_TYPES),
-  }),
-  z.object({
-    type: z.literal("url"),
-    value: z.string().startsWith("https://", "image url must be an https:// url"),
-  }),
-]);
+const imageSourceSchema = z.object({
+  type: z.literal("data"),
+  value: z.string().max(base64Chars(MAX_ATTACHMENT_BYTES), "image payload is too large"),
+  mimeType: z.enum(SUPPORTED_IMAGE_TYPES),
+});
 
 /** A name an application put in the open `metadata`; the mapping reads `name` or `filename`. */
 const documentMetadataSchema = z.record(z.string(), z.unknown()).optional();

@@ -10,10 +10,7 @@ import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
 import { runAndPersist, userTurnContent, withLeadingWarnings } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
-import {
-  REPLAY_URL_TTL_SECONDS,
-  VIEW_URL_TTL_SECONDS,
-} from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { deleteChat } from "@/application/chat/deleteChat";
 import { createChat } from "@/application/chat/createChat";
 import { sendMessage } from "@/application/chat/sendMessage";
@@ -1136,34 +1133,23 @@ describe("chat image attachments", () => {
     },
   };
 
-  it("replays a stored attachment as an image content part", () => {
+  it("does not replay a remote stored image URL to the provider", () => {
     const stored = message({ seq: 0, role: "user", content: "look" });
     (stored as { images?: Array<{ url: string }> }).images = [
       { url: "https://bucket.s3.example.com/images/a.png" },
     ];
 
-    expect(toEngineMessages([stored]).messages).toEqual([
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "look" },
-          {
-            type: "image_url",
-            image_url: { url: "https://bucket.s3.example.com/images/a.png" },
-          },
-        ],
-      },
-    ]);
+    expect(toEngineMessages([stored]).messages).toEqual([{ role: "user", content: "look" }]);
   });
 
-  it("omits the text part when the stored turn was image-only", () => {
+  it("marks an image-only turn when its remote URL is omitted", () => {
     const stored = message({ seq: 0, role: "user", content: "" });
     (stored as { images?: Array<{ url: string }> }).images = [{ url: "https://x/y.png" }];
 
     expect(toEngineMessages([stored]).messages).toEqual([
       {
         role: "user",
-        content: [{ type: "image_url", image_url: { url: "https://x/y.png" } }],
+        content: "[The image(s) attached to this turn are no longer available.]",
       },
     ]);
   });
@@ -1232,9 +1218,7 @@ describe("chat image attachments", () => {
     expect(state.activeRunId).toBeUndefined();
   });
 
-  it("falls back to a run-length signed URL when stored bytes cannot be restored", async () => {
-    // The provider fetches this, not the browser, and it may do so at the very
-    // end of a run allowed to last MAX_RUN_DURATION_MS.
+  it("omits and reports a stored image whose bytes cannot be restored", async () => {
     const sign = async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`;
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       {
@@ -1266,12 +1250,14 @@ describe("chat image attachments", () => {
       content: "and now?",
       userEmail: "owner@x.com",
     });
-    for await (const _ of stream) {
-      // drain
+    const chunks: unknown[] = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
     }
-    expect(JSON.stringify(seenMessages)).toContain(
-      `https://signed.example/images/x.png?ttl=${REPLAY_URL_TTL_SECONDS}`,
-    );
+    expect(JSON.stringify(seenMessages)).not.toContain("https://signed.example");
+    expect(chunks).toContainEqual({
+      warning: "1 earlier image(s) were omitted or could not be read back and are missing from this run's context.",
+    });
   });
 
   it("restores an earlier generated image as editable bytes", async () => {

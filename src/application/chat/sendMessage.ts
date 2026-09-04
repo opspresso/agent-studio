@@ -5,7 +5,6 @@ import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
 import { userMayAccessProject } from "@/application/project/projectUseCases";
 import { resolveRunMessageImages } from "./resolveImages";
-import { REPLAY_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { toEngineMessages } from "./messageMapping";
 import {
   resolveVersion,
@@ -134,13 +133,9 @@ export async function sendMessage(
     };
     await deps.chats.appendMessage(userMessage);
 
-    // Resolved before mapping. The newest stored images become inline bytes for
-    // editing; the rest keep replay-lifetime URLs fetched by the provider.
-    const resolved = await resolveRunMessageImages(
-      existing,
-      deps.artifacts?.objects,
-      REPLAY_URL_TTL_SECONDS,
-    );
+    // Resolved before mapping. At most the newest attachment budget becomes
+    // inline bytes; the provider never fetches a stored or caller-supplied URL.
+    const resolved = await resolveRunMessageImages(existing, deps.artifacts?.objects);
     const history = toEngineMessages(resolved.messages);
     // An image the replay could not address is a turn the model sees differently
     // from the one the reader is looking at — and if that turn carried nothing
@@ -149,14 +144,9 @@ export async function sendMessage(
     const imageWarnings =
       resolved.dropped > 0
         ? [
-            `${resolved.dropped} earlier image(s) could not be read back and are missing from this run's context.`,
+            `${resolved.dropped} earlier image(s) were omitted or could not be read back and are missing from this run's context.`,
           ]
         : [];
-    if (resolved.notEditable > 0) {
-      imageWarnings.push(
-        `${resolved.notEditable} earlier image(s) remain visible but are not available to image editing tools.`,
-      );
-    }
     const source = deps.runAgent({
       project,
       version,
