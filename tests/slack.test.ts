@@ -300,6 +300,19 @@ describe("slackClient.downloadFile", () => {
     expect(seen).toEqual([]);
   });
 
+  it("does not send the bot token over HTTP even when the host matches", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      seen.push(url);
+      return new Response(new Uint8Array(0));
+    });
+
+    await expect(
+      slackClient.downloadFile("tok", "http://files.slack.com/f/F1/shot.png", CAP),
+    ).rejects.toThrow("must use HTTPS");
+    expect(seen).toEqual([]);
+  });
+
   it("refuses a non-URL", async () => {
     await expect(slackClient.downloadFile("tok", "not a url", CAP)).rejects.toThrow("not a URL");
   });

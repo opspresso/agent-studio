@@ -242,14 +242,17 @@ export const slackClient = {
    * credentials to a host named by an inbound payload.
    */
   async downloadFile(token: string, url: string, maxBytes: number): Promise<Buffer> {
-    let host: string;
+    let parsed: URL;
     try {
-      host = new URL(url).host;
+      parsed = new URL(url);
     } catch {
-      throw new Error(`Slack file url is not a URL: ${url}`);
+      throw new Error("Slack file url is not a URL");
     }
-    if (!FILE_HOSTS.has(host)) {
-      throw new Error(`Slack file url has an unexpected host: ${host}`);
+    if (parsed.protocol !== "https:") {
+      throw new Error(`Slack file url must use HTTPS, not ${parsed.protocol}`);
+    }
+    if (!FILE_HOSTS.has(parsed.host)) {
+      throw new Error(`Slack file url has an unexpected host: ${parsed.host}`);
     }
     const res = await slackFetch(
       url,
