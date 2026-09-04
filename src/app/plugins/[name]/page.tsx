@@ -113,7 +113,7 @@ export default function PluginDetailPage() {
         )}
         <Text fz="xs" c="dimmed" mt={6}>
           {treeUrl ? (
-            <Anchor href={treeUrl} target="_blank" fz="xs">
+            <Anchor href={treeUrl} target="_blank" rel="noreferrer" fz="xs">
               {location}
             </Anchor>
           ) : (
@@ -121,7 +121,12 @@ export default function PluginDetailPage() {
           )}
           {" · "}
           {repoUrl ? (
-            <Anchor href={`${repoUrl}/commit/${plugin.commitSha}`} target="_blank" fz="xs">
+            <Anchor
+              href={`${repoUrl}/commit/${plugin.commitSha}`}
+              target="_blank"
+              rel="noreferrer"
+              fz="xs"
+            >
               {plugin.commitSha.slice(0, 7)}
             </Anchor>
           ) : (
