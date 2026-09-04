@@ -176,7 +176,7 @@ flowchart TB
   경로와 바이트 단위로 동일하다.
 - **비용**은 channel 이 말해 줄 때는 channel 이 청구한 값이고(`usage.cost_usd`, router 가
   보고하며 그것만이 청구서와 일치한다), 아니면 호출 지점에서 계산한 registry 가격이다
-  (`src/domain/llm/models.ts` 의 `calculateCost` / `calculateImageCost`). 어느 쪽이든
+  (`src/domain/llm/models.ts` 의 `calculateCost` / `calculateImageCost` / `calculateRerankCost`). 어느 쪽이든
   `recordUsage` 로 전달되고, 그것이 usage repository 의 행 잠금 아래 합산에 넘긴다. 단발성 런은
   호출마다 기록하고, agent 런은 `createUsageAggregator` 에 턴별 usage 를 모아 런이 끝날 때 한 번
   flush 한다.

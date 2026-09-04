@@ -87,17 +87,30 @@ key = kind#name  (or kind#name#toolName)          — src/domain/catalog/types.t
 엔드포인트(폐쇄망의 vLLM · TEI · Ollama 포함)나 Bedrock 에서 온다.
 
 `RERANKER_BASE_URL` 과 `RERANKER_MODEL` 을 함께 설정한 배포는 각 vector 검색의 오버샘플 후보를
-기존 cosine/name 하한으로 먼저 거른 뒤 `/rerank` 로 2차 정렬한다. 재평가하는 문서는 색인 때와
-같은 `capabilityText` 다. 이 문서는 답 passage가 아니라 답을 만들 수 있는 기능 설명이므로
+`/rerank` 로 2차 정렬한다. Rerank가 켜져 있으면 cosine 하한을 먼저 적용하지 않는다. 두 번째
+모델이 첫 번째 모델의 false negative를 되살릴 수 있어야 하기 때문이다. 같은 query의 Skill,
+Agent, MCP Tool, MCP Server 후보는 한 document batch로 보내고 결과를 kind별로 다시 나눠 각자의
+limit과 하한을 적용한다. 따라서 한 query는 Rerank 호출 하나다. 재평가하는 문서는 색인 때와 같은
+`capabilityText` 다. 이 문서는 답 passage가 아니라 답을 만들 수 있는 기능 설명이므로
 `searchCatalog.ts`가 그 과업을 명시한 instruction을 함께 보낸다. activation된 점수는
-`RERANKER_MIN_SCORE`와 그 query 최고 점수의 10% 중 높은 하한으로 다시 자른다. reranker를
-설정하지 않으면 기존 vector 점수와 순서가 그대로 남는다.
+`RERANKER_MIN_SCORE`와 그 query·kind 최고 점수의 10% 중 높은 하한으로 자른다. 이 절대 점수는
+모델마다 분포가 달라 `/models`에서 Rerank 모델과 함께 운영 설정으로 관리하며, DB override가 env를
+앞서고 다음 검색에서 읽힌다. Rerank endpoint가
+timeout, HTTP 오류, 잘못된 응답으로 실패하면 해당 query는 기존 cosine/name 하한과 순위로
+격하되고 런은 그 사실을 warning으로 보고한다. 사용자 취소는 격하하지 않고 즉시 전파한다.
+reranker를 설정하지 않으면 기존 vector 점수와 순서가 그대로 남는다.
+
+성공한 Rerank 호출은 endpoint가 보고한 input token과 실제 registry model id를 run의 usage
+aggregator에 기록한다. `perSearch` 가격이 있으면 호출당 그 값을, 없으면 input token 가격을 쓴다.
+따라서 Rerank 비용도 project·actor usage와 비용 guard에 포함된다. Prompt preview와 모델 선택
+probe는 실행 run이 아니므로 project usage를 만들지 않는다.
 
 활성 Embedding과 Rerank는 `/models`의 같은 레지스트리에서 각각 자기 type으로 선택한다.
 env의 `EMBEDDING_MODEL`·`RERANKER_MODEL`은 배포 기본값이고 DB 선택이 우선한다. Embedding 변경은
 확인 뒤 설치 전역 lease 아래에서 동기 재색인하며 실패하면 이전 선택과 vector를 복원한다. 다른
 인스턴스의 동시 migration은 409로 거절한다. Reranker 변경은 저장 vector를 바꾸지 않으므로
-재색인하지 않는다.
+재색인하지 않는다. 대신 선택 전 production capability instruction을 사용하는 semantic probe가
+관련 capability를 먼저 매기는지 확인한다. `RERANKER_MIN_SCORE`도 모델 선택과 같은 화면에서 저장한다.
 
 MCP 서버는 **두 번** 등장하고, 둘은 서로 다른 질문에 답한다. `mcpTool` 항목은 요청이 매칭되는
 대상이고 — "PR 에 코멘트를 남긴다" 는 툴의 description 에 있지 다른 어디에도 없다 — `mcpServer` 는
@@ -139,8 +152,8 @@ MCP 서버는 **두 번** 등장하고, 둘은 서로 다른 질문에 답한다
 말하면: 이 레지스트리는 영어로 서술되고 한국어로 질의되는데, 대안들이 풀지 못하는 경우가 바로
 그것이다.
 
-**각 쿼리는 자기 최고 점수를 기준으로 후보가 잘리고, 선택형 reranker로 재정렬된 뒤, 살아남은
-것들이 병합된다.** 하나의
+**각 쿼리는 독립적으로 선택형 reranker로 재정렬되고 자기 최고 점수를 기준으로 후보가 잘린 뒤,
+살아남은 것들이 병합된다.** 하나의
 컷을 둘이 공유하면 강한 쿼리가 약한 쿼리를 지워 버린다: "당신은 Slack 어시스턴트" 라고 쓰인 시스템
 프롬프트는 `slack` 을 0.583 에 놓고, 그래서 합집합 위에서 잡은 비율은 0.408 이 되어 0.393 인
 `github` 을 떨어뜨린다 — 요청이 실제로 지목한 바로 그 항목을. 서로 다른 질문을 하는 두 쿼리는 비례

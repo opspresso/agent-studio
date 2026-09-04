@@ -94,6 +94,12 @@ export function visibleModelRows<T extends ModelConfig & { type: ModelType }>(
   });
 }
 
+export function selectableRetrievalModels<
+  T extends ModelConfig & { type: ModelType; selectionHidden: boolean },
+>(models: T[], type: "embedding" | "rerank"): T[] {
+  return models.filter((model) => model.type === type && !model.selectionHidden);
+}
+
 export function nextSort(
   currentKey: ModelSortKey,
   currentDirection: SortDirection,

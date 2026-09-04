@@ -7,7 +7,7 @@ import { editorBody } from "@/app/api/_lib/body";
 const testSchema = z.object({ model: z.string().min(1).max(200) });
 
 /**
- * POST /api/models/test — one probe completion through the real channel.
+ * POST /api/models/test — one probe through the model type's real channel.
  * A failed probe is the response body (`ok: false`), not a 5xx: the test
  * succeeded at testing, and its finding is the payload.
  */

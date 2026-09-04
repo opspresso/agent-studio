@@ -133,6 +133,11 @@ export interface ModelSelection {
   source: "override" | "env" | "default";
 }
 
+export interface ScoreSelection {
+  value: number;
+  source: "override" | "env" | "default";
+}
+
 export async function getEmbeddingModelSelection(): Promise<ModelSelection> {
   const stored = (await loadSettings())?.embeddingModel;
   if (stored !== undefined) {
@@ -163,6 +168,23 @@ export async function getRerankerModel(): Promise<string> {
     throw new Error("RERANKER_MODEL not configured");
   }
   return selection.model;
+}
+
+export async function getRerankerMinScoreSelection(): Promise<ScoreSelection> {
+  const stored = (await loadSettings())?.rerankerMinScore;
+  if (stored !== undefined) {
+    const value = Number(stored);
+    if (Number.isFinite(value) && value >= 0 && value <= 1) {
+      return { value, source: "override" };
+    }
+  }
+  return optionalEnv(process.env.RERANKER_MIN_SCORE) !== undefined
+    ? { value: config.rerankerMinScore, source: "env" }
+    : { value: config.rerankerMinScore, source: "default" };
+}
+
+export async function getRerankerMinScore(): Promise<number> {
+  return (await getRerankerMinScoreSelection()).value;
 }
 
 export async function getLlmProviderConfigs(): Promise<ProviderChannelConfig[]> {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import snapshot from "@/domain/llm/catalog.json";
 import {
+  calculateRerankCost,
   getModelConfig,
   getVisibleModels,
   listModelMakers,
@@ -219,6 +220,26 @@ describe("loadModelCatalog", () => {
     expect(modelType(getModelConfig("openai/transcribe")!)).toBe("transcription");
     expect(getModelConfig("openai/rerank")?.pricing.perSearch).toBe(0.001);
     expect(getModelConfig("openai/transcribe")?.pricing.perAudioMinute).toBe(0.006);
+  });
+
+  it("prices rerank calls in the model's native unit", () => {
+    install(
+      catalog([
+        model("openai/rerank-search", {
+          pricing: { inputPer1M: 0, outputPer1M: 0, perSearch: 0.001 },
+          capabilities: { ...TEXT, rerank: true },
+          maxTokens: 0,
+        }),
+        model("openai/rerank-token", {
+          pricing: { inputPer1M: 2, outputPer1M: 0 },
+          capabilities: { ...TEXT, rerank: true },
+          maxTokens: 0,
+        }),
+      ]),
+    );
+
+    expect(calculateRerankCost("openai/rerank-search", 5_000)).toBe(0.001);
+    expect(calculateRerankCost("openai/rerank-token", 5_000)).toBe(0.01);
   });
 
   it("allows explicit zero limits only for image models", () => {

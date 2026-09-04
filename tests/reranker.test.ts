@@ -16,6 +16,7 @@ describe("createReranker", () => {
       };
       return new Response(
         JSON.stringify({
+          usage: { prompt_tokens: 42, total_tokens: 42 },
           results: [
             { index: 1, relevance_score: 0.9 },
             { index: 0, relevance_score: 0.2 },
@@ -27,12 +28,22 @@ describe("createReranker", () => {
     const reranker = createReranker({
       baseUrl: "http://spark.test:8002/v1/",
       apiKey: "reranker-key",
-      model: () => "Qwen/Qwen3-Reranker-0.6B",
+      model: () => ({
+        id: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+        wireId: "Qwen/Qwen3-Reranker-0.6B",
+      }),
     });
 
     await expect(
       reranker.rerank("query", ["first", "second"], "Find useful capabilities"),
-    ).resolves.toEqual([0.2, 0.9]);
+    ).resolves.toEqual({
+      scores: [0.2, 0.9],
+      usage: {
+        model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+        inputTokens: 42,
+        costUsd: 0,
+      },
+    });
     expect(request).toEqual({
       url: "http://spark.test:8002/v1/rerank",
       authorization: "Bearer reranker-key",
@@ -53,17 +64,81 @@ describe("createReranker", () => {
         headers: { "content-type": "application/json" },
       }),
     );
-    const reranker = createReranker({ baseUrl: "http://spark.test/v1", model: () => "reranker" });
+    const reranker = createReranker({
+      baseUrl: "http://spark.test/v1",
+      model: () => ({ id: "selfhosted/reranker", wireId: "reranker" }),
+    });
     await expect(reranker.rerank("query", ["first", "second"])).rejects.toThrow(
       "returned 1 scores for 2 documents",
     );
   });
 
+  it("reads OpenRouter total tokens for token-priced rerank usage", async () => {
+    vi.stubGlobal("fetch", async () =>
+      new Response(
+        JSON.stringify({
+          usage: { total_tokens: 150, search_units: 1 },
+          results: [{ index: 0, relevance_score: 0.8 }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const reranker = createReranker({
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: () => ({
+        id: "openrouter/rerank-2.5",
+        wireId: "voyageai/rerank-2.5",
+      }),
+    });
+
+    await expect(reranker.rerank("query", ["document"])).resolves.toMatchObject({
+      usage: {
+        model: "openrouter/rerank-2.5",
+        inputTokens: 150,
+        costUsd: 0.0000075,
+      },
+    });
+  });
+
   it("makes no request for an empty document list", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    const reranker = createReranker({ baseUrl: "http://spark.test/v1", model: () => "reranker" });
-    await expect(reranker.rerank("query", [])).resolves.toEqual([]);
+    const reranker = createReranker({
+      baseUrl: "http://spark.test/v1",
+      model: () => ({ id: "selfhosted/reranker", wireId: "reranker" }),
+    });
+    await expect(reranker.rerank("query", [])).resolves.toEqual({ scores: [] });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([-0.1, 1.1])("refuses a score outside the activation range: %s", async (score) => {
+    vi.stubGlobal("fetch", async () =>
+      new Response(JSON.stringify({ results: [{ index: 0, relevance_score: score }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const reranker = createReranker({
+      baseUrl: "http://spark.test/v1",
+      model: () => ({ id: "selfhosted/reranker", wireId: "reranker" }),
+    });
+    await expect(reranker.rerank("query", ["document"])).rejects.toThrow(
+      "returned an invalid result",
+    );
+  });
+
+  it("propagates caller cancellation while resolving the runtime model", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const reranker = createReranker({
+      baseUrl: "http://spark.test/v1",
+      model: () => new Promise<never>(() => {}),
+    });
+    const controller = new AbortController();
+    const pending = reranker.rerank("query", ["document"], undefined, controller.signal);
+    controller.abort(new Error("Stop pressed"));
+
+    await expect(pending).rejects.toThrow("Stop pressed");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

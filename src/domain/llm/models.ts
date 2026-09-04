@@ -887,6 +887,16 @@ export function calculateCost(modelId: string, tokens: CostTokens): number {
   return inputCost + outputCost;
 }
 
+/** Compute one rerank request from its native billing unit. */
+export function calculateRerankCost(modelId: string, inputTokens: number): number {
+  const cfg = getModelConfig(modelId);
+  if (!cfg) {
+    warnUnknownModel(modelId);
+    return 0;
+  }
+  return cfg.pricing.perSearch ?? (inputTokens * cfg.pricing.inputPer1M) / 1_000_000;
+}
+
 /** Image-token usage of one image generation call. */
 export interface ImageCostTokens {
   textInputTokens: number;

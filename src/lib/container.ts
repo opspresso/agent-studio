@@ -108,6 +108,7 @@ import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import { cacheQueryEmbeddings } from "@/application/catalog/queryCache";
+import { probeCapabilityReranker } from "@/application/catalog/probeReranker";
 import { log } from "@/shared/logger";
 import { bedrockEmbeddings } from "@/infrastructure/llm/bedrockEmbeddings";
 import { cohereEmbeddings } from "@/infrastructure/llm/cohereEmbeddings";
@@ -164,6 +165,7 @@ import {
   getSelfHostedModels,
   getRerankerModel,
   getRerankerModelSelection,
+  getRerankerMinScore,
   getUnknownModelPolicy,
   invalidateSettingsCache,
   isConfiguredAdmin,
@@ -259,8 +261,22 @@ const resolveTarget = async (modelId: string) => {
 const channel = createChannel(resolveTarget);
 const imageChannel = createImageChannel(resolveTarget);
 
+async function testRerankerModel(model: string, signal?: AbortSignal): Promise<void> {
+  const reranker = config.reranker;
+  if (!reranker) {
+    throw new ValidationError("The reranker endpoint is not configured");
+  }
+  await probeCapabilityReranker(
+    createReranker({
+      ...reranker,
+      model: () => ({ id: model, wireId: wireModelId(model) }),
+    }),
+    signal,
+  );
+}
+
 /** One-shot model probe for the /models console — the same channel a run uses. */
-export const testModel = createTestModel(channel);
+export const testModel = createTestModel(channel, { testReranker: testRerankerModel });
 
 /**
  * "Pull the published catalog now", for the /models console's refresh button —
@@ -524,9 +540,12 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
         ? {
             reranker: createReranker({
               ...RERANKER,
-              model: async () => wireModelId(await getRerankerModel()),
+              model: async () => {
+                const id = await getRerankerModel();
+                return { id, wireId: wireModelId(id) };
+              },
             }),
-            rerankerMinScore: config.rerankerMinScore,
+            rerankerMinScore: getRerankerMinScore,
           }
         : {}),
     }
@@ -600,17 +619,13 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
     type === "embedding"
       ? getEmbeddingModel()
       : (await getRerankerModelSelection())?.model,
+  currentRerankerMinScore: getRerankerMinScore,
   available: (type) =>
-    type === "embedding" ? catalogDeps !== undefined : RERANKER !== undefined,
+    type === "embedding" ? catalogDeps !== undefined : catalogDeps?.reranker !== undefined,
   hidden: getHiddenModels,
   ...(RERANKER
     ? {
-        testReranker: async (model: string) => {
-          await createReranker({
-            ...RERANKER,
-            model: () => wireModelId(model),
-          }).rerank("ping", ["ping"]);
-        },
+        testReranker: testRerankerModel,
       }
     : {}),
   invalidate: invalidateSettingsCache,

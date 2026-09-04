@@ -557,6 +557,7 @@ export async function* executeAgent(
         runSignal,
         discoveryQueries(input.version, recentUserQueries(input.messages)),
         origin,
+        usage.record,
       );
       closeMcpSessions = resolved.mcp.close;
       // Assembled inside the stage that resolved them: building the dispatcher

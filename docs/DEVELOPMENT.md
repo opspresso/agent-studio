@@ -122,6 +122,9 @@ pnpm exec vitest run -t "streamWithFallback"
 그것이 볼 수 없는 것은 *이 배포의* 채널이다. `LLM_BASE_URL` 의 게이트웨이, Bedrock 경로, 일부
 모델만 닿는 키. 이 스크립트는 그 차이를 본다: 채널이 서빙하지만 레지스트리에 없는 id (agent-models
 에 추가할 후보), 레지스트리에 있지만 어떤 채널도 서빙하지 않는 id (이 배포에서 쓸 수 없는 것).
+전용 `EMBEDDING_BASE_URL`과 `RERANKER_BASE_URL`도 독립 채널로 확인한다. OpenRouter는 기본
+`/models`가 text 중심이므로 `output_modalities` 필터로 image, embeddings, rerank, transcription을
+각각 추가 조회한다.
 
 ```bash
 pnpm check-models              # 양방향 보고; 차이 자체로는 실패하지 않음

@@ -23,6 +23,7 @@ export interface ModelSelectionDeps {
   lock: CatalogReindexLock;
   settings: SettingsUseCases;
   current(type: GlobalModelType): Promise<string | undefined>;
+  currentRerankerMinScore(): Promise<number>;
   available(type: GlobalModelType): boolean;
   hidden(): Promise<string[] | undefined>;
   testReranker?: (model: string) => Promise<void>;
@@ -36,6 +37,7 @@ export interface ModelSelectionUseCases {
     model: string,
     migrate: boolean,
     actorEmail: string,
+    rerankerMinScore?: number,
   ): Promise<ModelSelectionResult>;
 }
 
@@ -43,7 +45,7 @@ export function createModelSelectionUseCases(
   deps: ModelSelectionDeps,
 ): ModelSelectionUseCases {
   return {
-    async select(type, model, migrate, actorEmail) {
+    async select(type, model, migrate, actorEmail, rerankerMinScore) {
       const selected = getModelConfig(model);
       if (!selected) {
         throw new ValidationError(`Unknown model "${model}"`);
@@ -59,17 +61,43 @@ export function createModelSelectionUseCases(
       if (!deps.available(type)) {
         throw new ValidationError(`The ${type} endpoint is not configured`);
       }
-      if (model === await deps.current(type)) {
-        return { settings: await deps.settings.getView() };
-      }
+      const currentModel = await deps.current(type);
       if (type === "rerank") {
+        if (
+          rerankerMinScore !== undefined &&
+          (!Number.isFinite(rerankerMinScore) || rerankerMinScore < 0 || rerankerMinScore > 1)
+        ) {
+          throw new ValidationError("Reranker minimum score must be between 0 and 1");
+        }
+        const scoreChanged =
+          rerankerMinScore !== undefined &&
+          rerankerMinScore !== await deps.currentRerankerMinScore();
+        if (model === currentModel && !scoreChanged) {
+          return { settings: await deps.settings.getView() };
+        }
         if (!deps.testReranker) {
           throw new ValidationError("The reranker endpoint is not configured");
         }
-        await deps.testReranker(model);
-        const settings = await deps.settings.update({ rerankerModel: model }, actorEmail);
+        if (model !== currentModel) {
+          await deps.testReranker(model);
+        }
+        const settings = await deps.settings.update(
+          {
+            rerankerModel: model,
+            ...(rerankerMinScore !== undefined
+              ? { rerankerMinScore: String(rerankerMinScore) }
+              : {}),
+          },
+          actorEmail,
+        );
         deps.invalidate();
         return { settings };
+      }
+      if (rerankerMinScore !== undefined) {
+        throw new ValidationError("Reranker minimum score applies only to rerank models");
+      }
+      if (model === currentModel) {
+        return { settings: await deps.settings.getView() };
       }
       if (!migrate) {
         throw new ValidationError("Changing the embedding model requires migration approval");

@@ -30,6 +30,7 @@ const ENV_KEYS = [
   "ARTIFACT_ACCESS_MODE",
   "EMBEDDING_MODEL",
   "RERANKER_MODEL",
+  "RERANKER_MIN_SCORE",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -152,6 +153,24 @@ describe("settingsUseCases.update", () => {
     await useCases.update({ embeddingModel: "", rerankerModel: "" }, ADMIN);
     expect(current()?.embeddingModel).toBeUndefined();
     expect(current()?.rerankerModel).toBeUndefined();
+  });
+
+  it("stores a valid reranker score floor and rejects values outside zero to one", async () => {
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+
+    await useCases.update({ rerankerMinScore: "0.05" }, ADMIN);
+    expect(current()?.rerankerMinScore).toBe("0.05");
+
+    await expect(useCases.update({ rerankerMinScore: "1.1" }, ADMIN)).rejects.toThrow(
+      "Reranker minimum score must be between 0 and 1",
+    );
+    await expect(useCases.update({ rerankerMinScore: "not-a-number" }, ADMIN)).rejects.toThrow(
+      "Reranker minimum score must be between 0 and 1",
+    );
+
+    await useCases.update({ rerankerMinScore: "0.01" }, ADMIN);
+    expect(current()?.rerankerMinScore).toBeUndefined();
   });
 
   it("stores a public artifact mode override and clears it back to the environment", async () => {
@@ -477,7 +496,7 @@ describe("settingsUseCases.update self-hosted declarations", () => {
             capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
           },
           {
-            family: "whisper-large-v3",
+            family: "local-transcriber",
             displayName: "Whisper Large V3",
             type: "transcription",
             contextWindow: 0,
@@ -496,7 +515,7 @@ describe("settingsUseCases.update self-hosted declarations", () => {
       tools: false,
       rerank: true,
     });
-    expect(getModelConfig("selfhosted/whisper-large-v3")?.capabilities).toMatchObject({
+    expect(getModelConfig("selfhosted/local-transcriber")?.capabilities).toMatchObject({
       tools: false,
       transcription: true,
     });
@@ -523,6 +542,35 @@ describe("settingsUseCases.update self-hosted declarations", () => {
     );
     await expect(useCases.update({ selfHostedModels: [] }, ADMIN)).rejects.toThrow(
       "Selected self-hosted models must remain declared",
+    );
+  });
+
+  it("refuses to change the type of a selected self-hosted retrieval model", async () => {
+    process.env.RERANKER_MODEL = "selfhosted/Qwen/model";
+    const { repo } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    const declaration = {
+      family: "Qwen/model",
+      displayName: "Qwen model",
+      type: "rerank" as const,
+      contextWindow: 32768,
+      maxTokens: 0,
+      capabilities: {
+        tools: false,
+        structuredOutput: false,
+        imageInput: false,
+        reasoning: false,
+      },
+    };
+    await useCases.update({ selfHostedModels: [declaration] }, ADMIN);
+
+    await expect(
+      useCases.update(
+        { selfHostedModels: [{ ...declaration, type: "embedding" }] },
+        ADMIN,
+      ),
+    ).rejects.toThrow(
+      "Selected self-hosted model must remain rerank: selfhosted/Qwen/model",
     );
   });
 

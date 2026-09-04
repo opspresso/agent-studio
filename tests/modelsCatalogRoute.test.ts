@@ -6,13 +6,20 @@ const {
   getHiddenModels,
   getEmbeddingModelSelection,
   getRerankerModelSelection,
+  getRerankerMinScoreSelection,
   modelPreferenceUseCases,
+  config,
 } = vi.hoisted(() => ({
   getLlmProviderConfigs: vi.fn(),
   getHiddenModels: vi.fn(),
   getEmbeddingModelSelection: vi.fn(),
   getRerankerModelSelection: vi.fn(),
+  getRerankerMinScoreSelection: vi.fn(),
   modelPreferenceUseCases: { list: vi.fn() },
+  config: {
+    catalogEnabled: false,
+    reranker: undefined as { baseUrl: string; apiKey?: string } | undefined,
+  },
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -26,8 +33,10 @@ vi.mock("@/lib/runtime-settings", () => ({
   getHiddenModels,
   getEmbeddingModelSelection,
   getRerankerModelSelection,
+  getRerankerMinScoreSelection,
 }));
 vi.mock("@/lib/container", () => ({ modelPreferenceUseCases }));
+vi.mock("@/lib/config", () => ({ config }));
 
 const { GET } = await import("@/app/api/models/catalog/route");
 
@@ -45,6 +54,7 @@ interface CatalogBody {
     rerank?: { model: string; source: string };
   };
   selectionAvailable: { embedding: boolean; rerank: boolean };
+  rerankerMinScore: { value: number; source: "override" | "env" | "default" };
 }
 
 async function catalog(): Promise<CatalogBody> {
@@ -60,6 +70,9 @@ beforeEach(() => {
   modelPreferenceUseCases.list.mockResolvedValue([]);
   getEmbeddingModelSelection.mockResolvedValue({ model: "openrouter/qwen3-embedding-4b", source: "env" });
   getRerankerModelSelection.mockResolvedValue(undefined);
+  getRerankerMinScoreSelection.mockResolvedValue({ value: 0.01, source: "default" });
+  config.catalogEnabled = false;
+  config.reranker = undefined;
 });
 
 describe("GET /api/models/catalog", () => {
@@ -79,13 +92,14 @@ describe("GET /api/models/catalog", () => {
     expect(body.models.every((model) => !model.selectionHidden && !model.favorite)).toBe(true);
     expect(body.models.every((model) => !Object.hasOwn(model, "hidden"))).toBe(true);
     expect(new Set(body.models.map((model) => model.type))).toEqual(
-      new Set(["text", "image", "embedding"]),
+      new Set(["text", "image", "embedding", "rerank", "transcription"]),
     );
     expect(body.selections.embedding).toEqual({
       model: "openrouter/qwen3-embedding-4b",
       source: "env",
     });
     expect(body.selectionAvailable).toEqual({ embedding: false, rerank: false });
+    expect(body.rerankerMinScore).toEqual({ value: 0.01, source: "default" });
     expect(body.source).toBe("default");
   });
 
@@ -146,5 +160,13 @@ describe("GET /api/models/catalog", () => {
       model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
       source: "settings",
     });
+  });
+
+  it("offers rerank selection only when the catalog and reranker endpoint are both enabled", async () => {
+    config.catalogEnabled = true;
+    expect((await catalog()).selectionAvailable.rerank).toBe(false);
+
+    config.reranker = { baseUrl: "http://reranker.internal/v1" };
+    expect((await catalog()).selectionAvailable.rerank).toBe(true);
   });
 });

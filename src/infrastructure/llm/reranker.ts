@@ -1,9 +1,17 @@
 import type { RerankerPort } from "@/domain/vector/types";
+import { calculateRerankCost } from "@/domain/llm/models";
+
+interface ResolvedRerankerModel {
+  /** Registry id used for pricing and usage attribution. */
+  id: string;
+  /** Endpoint-native id sent on the wire. */
+  wireId: string;
+}
 
 interface RerankerConfig {
   baseUrl: string;
   apiKey?: string;
-  model: () => Promise<string> | string;
+  model: () => Promise<ResolvedRerankerModel> | ResolvedRerankerModel;
 }
 
 interface RerankResult {
@@ -11,16 +19,52 @@ interface RerankResult {
   relevance_score?: unknown;
 }
 
+function inputTokensOf(body: unknown): number {
+  if (typeof body !== "object" || body === null) {
+    return 0;
+  }
+  const usage = (body as { usage?: unknown }).usage;
+  if (typeof usage !== "object" || usage === null) {
+    return 0;
+  }
+  const typedUsage = usage as { prompt_tokens?: unknown; total_tokens?: unknown };
+  const tokens = typedUsage.prompt_tokens ?? typedUsage.total_tokens;
+  return typeof tokens === "number" && Number.isInteger(tokens) && tokens >= 0 ? tokens : 0;
+}
+
 /** A catalog rerank must not hold the tools preparation stage indefinitely. */
 const RERANKER_TIMEOUT_MS = 15_000;
+
+async function waitWithSignal<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return await new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      reject(signal.reason instanceof Error ? signal.reason : new Error("Rerank was cancelled"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
 
 /** Reranking as served by vLLM's `/v1/rerank`. */
 export function createReranker(config: RerankerConfig): RerankerPort {
   return {
-    async rerank(query, documents, instruction) {
+    async rerank(query, documents, instruction, signal) {
       if (documents.length === 0) {
-        return [];
+        return { scores: [] };
       }
+      const timeout = AbortSignal.timeout(RERANKER_TIMEOUT_MS);
+      const operationSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+      const model = await waitWithSignal(Promise.resolve(config.model()), operationSignal);
       const headers = new Headers({ "content-type": "application/json" });
       if (config.apiKey) {
         headers.set("authorization", `Bearer ${config.apiKey}`);
@@ -28,9 +72,9 @@ export function createReranker(config: RerankerConfig): RerankerPort {
       const response = await fetch(`${config.baseUrl.replace(/\/+$/, "")}/rerank`, {
         method: "POST",
         headers,
-        signal: AbortSignal.timeout(RERANKER_TIMEOUT_MS),
+        signal: operationSignal,
         body: JSON.stringify({
-          model: await config.model(),
+          model: model.wireId,
           query,
           documents,
           top_n: documents.length,
@@ -60,6 +104,8 @@ export function createReranker(config: RerankerConfig): RerankerPort {
           (index as number) >= documents.length ||
           typeof score !== "number" ||
           !Number.isFinite(score) ||
+          score < 0 ||
+          score > 1 ||
           scores[index as number] !== undefined
         ) {
           throw new Error("Reranker returned an invalid result");
@@ -69,7 +115,15 @@ export function createReranker(config: RerankerConfig): RerankerPort {
       if (scores.some((score) => score === undefined)) {
         throw new Error("Reranker returned an incomplete result");
       }
-      return scores as number[];
+      const inputTokens = inputTokensOf(body);
+      return {
+        scores: scores as number[],
+        usage: {
+          model: model.id,
+          inputTokens,
+          costUsd: calculateRerankCost(model.id, inputTokens),
+        },
+      };
     },
   };
 }

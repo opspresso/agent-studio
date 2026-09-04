@@ -94,3 +94,19 @@ export function selfHostedModelToInput(model: ModelConfig): SelfHostedModelInput
     },
   };
 }
+
+/** Replace the declaration for one served family, or append it when it is new. */
+export function upsertSelfHostedModelInput(
+  declarations: ModelConfig[],
+  input: SelfHostedModelInput,
+): SelfHostedModelInput[] {
+  let replaced = false;
+  const next = declarations.map((model) => {
+    if (model.family !== input.family) {
+      return selfHostedModelToInput(model);
+    }
+    replaced = true;
+    return input;
+  });
+  return replaced ? next : [...next, input];
+}

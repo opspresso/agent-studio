@@ -29,6 +29,7 @@ import {
 } from "@/domain/llm/models";
 import {
   selfHostedModelToInput,
+  upsertSelfHostedModelInput,
   type SelfHostedModelInput,
 } from "@/domain/llm/selfHostedModels";
 import type { ModelCatalogDocumentStatus } from "@/application/llm/modelCatalogDocument";
@@ -51,6 +52,7 @@ import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import {
   nextSort,
+  selectableRetrievalModels,
   deserializeModelTableState,
   DEFAULT_MODEL_TABLE_STATE,
   visibleModelRows,
@@ -343,16 +345,26 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                 </Tooltip>
               )}
             </Group>
-            <Button
-              size="compact-xs"
-              variant="default"
-              disabled={busy}
-              onClick={() =>
-                void save(declarations.filter((m) => m.id !== model.id).map(selfHostedModelToInput))
-              }
-            >
-              {t("models.selfHosted.remove")}
-            </Button>
+            <Group gap="xs" wrap="nowrap">
+              <Button
+                size="compact-xs"
+                variant="default"
+                disabled={busy}
+                onClick={() => setForm(selfHostedModelToInput(model))}
+              >
+                {t("models.selfHosted.edit")}
+              </Button>
+              <Button
+                size="compact-xs"
+                variant="default"
+                disabled={busy}
+                onClick={() =>
+                  void save(declarations.filter((m) => m.id !== model.id).map(selfHostedModelToInput))
+                }
+              >
+                {t("models.selfHosted.remove")}
+              </Button>
+            </Group>
           </Group>
         ))}
         {undeclared.map((row) => (
@@ -414,10 +426,13 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                   }))}
                   onChange={(value) => {
                     const type = (value ?? "text") as ModelType;
+                    const hasOutputTokens = type !== "embedding" && type !== "rerank";
                     setForm({
                       ...form,
                       type,
-                      maxTokens: type === "text" ? Math.max(form.maxTokens, 1) : 0,
+                      maxTokens: hasOutputTokens
+                        ? Math.max(form.maxTokens, type === "text" ? 1 : 0)
+                        : 0,
                       capabilities:
                         type === "text"
                           ? form.capabilities
@@ -442,7 +457,7 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                   size="xs"
                   label={t("models.selfHosted.context")}
                   value={form.contextWindow}
-                  min={1}
+                  min={form.type === "image" || form.type === "transcription" ? 0 : 1}
                   onChange={(value) => setForm({ ...form, contextWindow: Number(value) || 0 })}
                   w={150}
                 />
@@ -451,7 +466,7 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                   label={t("models.selfHosted.maxOutput")}
                   value={form.maxTokens}
                   min={form.type === "text" ? 1 : 0}
-                  disabled={form.type !== "text"}
+                  disabled={form.type === "embedding" || form.type === "rerank"}
                   onChange={(value) => setForm({ ...form, maxTokens: Number(value) || 0 })}
                   w={150}
                 />
@@ -482,10 +497,14 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
                   size="compact-xs"
                   loading={busy}
                   onClick={() =>
-                    void save([...declarations.map(selfHostedModelToInput), form])
+                    void save(upsertSelfHostedModelInput(declarations, form))
                   }
                 >
-                  {t("models.selfHosted.declare")}
+                  {t(
+                    declaredFamilies.has(form.family)
+                      ? "models.selfHosted.save"
+                      : "models.selfHosted.declare",
+                  )}
                 </Button>
                 <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setForm(null)}>
                   {t("models.selfHosted.cancel")}
@@ -503,14 +522,14 @@ type GlobalModelType = "embedding" | "rerank";
 
 function ModelSelectionSection({
   models,
-  providers,
   selections,
+  rerankerMinScore,
   available,
   onChanged,
 }: {
   models: CatalogModel[];
-  providers: CatalogProvider[];
   selections: Catalog["selections"];
+  rerankerMinScore: Catalog["rerankerMinScore"];
   available: Catalog["selectionAvailable"];
   onChanged: () => Promise<void>;
 }) {
@@ -519,12 +538,17 @@ function ModelSelectionSection({
   const [busy, setBusy] = useState<GlobalModelType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
-  const availableProviders = new Set(
-    providers.filter((provider) => provider.available).map((provider) => provider.name),
-  );
+  const [scoreFloor, setScoreFloor] = useState(rerankerMinScore.value);
 
-  async function select(type: GlobalModelType, model: string | null) {
-    if (!model || model === selections[type]?.model) return;
+  useEffect(() => {
+    setScoreFloor(rerankerMinScore.value);
+  }, [rerankerMinScore.value]);
+  const scoreFloorValid =
+    Number.isFinite(scoreFloor) && scoreFloor >= 0 && scoreFloor <= 1;
+
+  async function select(type: GlobalModelType, model: string | null, nextScore?: number) {
+    const scoreChanged = type === "rerank" && nextScore !== rerankerMinScore.value;
+    if (!model || (model === selections[type]?.model && !scoreChanged)) return;
     if (
       type === "embedding" &&
       !(await confirm({
@@ -544,7 +568,12 @@ function ModelSelectionSection({
       const response = await fetch("/api/models/selection", {
         method: "PUT",
         headers: jsonHeaders,
-        body: JSON.stringify({ type, model, migrate: type === "embedding" }),
+        body: JSON.stringify({
+          type,
+          model,
+          migrate: type === "embedding",
+          ...(type === "rerank" ? { rerankerMinScore: nextScore } : {}),
+        }),
       });
       const body = await readJson<{ migration?: { indexed: number } }>(response);
       setResult(
@@ -574,40 +603,72 @@ function ModelSelectionSection({
         {result && <Alert color="green">{result}</Alert>}
         {(["embedding", "rerank"] as const).map((type) => {
           const selection = selections[type];
-          const options = models.filter(
-            (model) =>
-              model.type === type &&
-              !model.selectionHidden &&
-              availableProviders.has(model.provider),
-          );
+          const options = selectableRetrievalModels(models, type);
           const selected = options.find((model) => model.id === selection?.model);
           return (
-            <Select
-              key={type}
-              label={t(`models.type.${type}`)}
-              value={selection?.model ?? null}
-              placeholder={t("models.selection.unconfigured")}
-              data={modelSelectData(
-                options,
-                selection?.model && !selected
-                  ? [{ value: selection.model, label: selection.model }]
-                  : [],
-                t("models.favorites"),
+            <Stack key={type} gap="xs">
+              <Select
+                label={t(`models.type.${type}`)}
+                value={selection?.model ?? null}
+                placeholder={t("models.selection.unconfigured")}
+                data={modelSelectData(
+                  options,
+                  selection?.model && !selected
+                    ? [{ value: selection.model, label: selection.model }]
+                    : [],
+                  t("models.favorites"),
+                )}
+                renderOption={renderModelOption(options)}
+                description={
+                  selected
+                    ? `${selected.provider} · ${modelPriceLabel(
+                        selected.pricing,
+                        selected.type,
+                      )} · ${selection?.source}`
+                    : selection?.source
+                }
+                disabled={
+                  !available[type] ||
+                  options.length === 0 ||
+                  busy !== null ||
+                  (type === "rerank" && !scoreFloorValid)
+                }
+                searchable
+                {...selectOnFocus}
+                onChange={(model) =>
+                  void select(type, model, type === "rerank" ? scoreFloor : undefined)
+                }
+              />
+              {type === "rerank" && (
+                <Group gap="sm" align="flex-end">
+                  <NumberInput
+                    label={t("models.selection.rerankerMinScore")}
+                    description={`${rerankerMinScore.source} · ${t("models.selection.rerankerMinScoreHint")}`}
+                    value={scoreFloor}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    decimalScale={4}
+                    onChange={(value) => setScoreFloor(Number(value))}
+                    disabled={!available.rerank || busy !== null}
+                    w={360}
+                  />
+                  <Button
+                    variant="default"
+                    disabled={
+                      !available.rerank ||
+                      !selection?.model ||
+                      !scoreFloorValid ||
+                      scoreFloor === rerankerMinScore.value ||
+                      busy !== null
+                    }
+                    onClick={() => void select("rerank", selection?.model ?? null, scoreFloor)}
+                  >
+                    {t("models.selection.saveScore")}
+                  </Button>
+                </Group>
               )}
-              renderOption={renderModelOption(options)}
-              description={
-                selected
-                  ? `${selected.provider} · ${modelPriceLabel(
-                      selected.pricing,
-                      selected.type,
-                    )} · ${selection?.source}`
-                  : selection?.source
-              }
-              disabled={!available[type] || options.length === 0 || busy !== null}
-              searchable
-              {...selectOnFocus}
-              onChange={(model) => void select(type, model)}
-            />
+            </Stack>
           );
         })}
       </Stack>
@@ -749,6 +810,10 @@ export default function ModelsPage() {
   const [models, setModels] = useState<CatalogModel[]>([]);
   const [makers, setMakers] = useState<Record<string, string>>({});
   const [selections, setSelections] = useState<Catalog["selections"] | null>(null);
+  const [rerankerMinScore, setRerankerMinScore] = useState<Catalog["rerankerMinScore"]>({
+    value: 0.01,
+    source: "default",
+  });
   const [selectionAvailable, setSelectionAvailable] = useState<Catalog["selectionAvailable"]>({
     embedding: false,
     rerank: false,
@@ -800,6 +865,7 @@ export default function ModelsPage() {
     setModels(data.models);
     setMakers(data.makers ?? {});
     setSelections(data.selections);
+    setRerankerMinScore(data.rerankerMinScore);
     setSelectionAvailable(data.selectionAvailable);
     setUpdatedAt(data.updatedAt ?? "");
     setSource(data.source);
@@ -957,8 +1023,8 @@ export default function ModelsPage() {
       {canEdit && selections && (
         <ModelSelectionSection
           models={models}
-          providers={providers}
           selections={selections}
+          rerankerMinScore={rerankerMinScore}
           available={selectionAvailable}
           onChanged={loadCatalog}
         />
@@ -1162,7 +1228,9 @@ export default function ModelsPage() {
                             <Badge color={BADGE.broken}>failed</Badge>
                           </Tooltip>
                         ))}
-                      {(model.type === "text" || model.type === "image") && (
+                      {(model.type === "text" ||
+                        model.type === "image" ||
+                        (model.type === "rerank" && selectionAvailable.rerank)) && (
                         <Button
                           size="compact-xs"
                           variant="default"

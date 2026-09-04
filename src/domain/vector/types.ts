@@ -63,9 +63,26 @@ export interface EmbeddingPort {
 }
 
 /** A second-stage ranker over the texts returned by vector search. */
+export interface RerankUsage {
+  model: string;
+  inputTokens: number;
+  costUsd: number;
+}
+
+export interface RerankResponse {
+  scores: number[];
+  /** Present exactly when an upstream request was made. */
+  usage?: RerankUsage;
+}
+
 export interface RerankerPort {
   /** One relevance score per document, in the order given. */
-  rerank(query: string, documents: readonly string[], instruction?: string): Promise<number[]>;
+  rerank(
+    query: string,
+    documents: readonly string[],
+    instruction?: string,
+    signal?: AbortSignal,
+  ): Promise<RerankResponse>;
 }
 
 /**

@@ -17,6 +17,7 @@ import { catalogDescription } from "@/domain/catalog/types";
 import {
   CAPABILITY_RERANK_INSTRUCTION,
   searchCapabilities,
+  searchCapabilitiesByKind,
 } from "@/application/catalog/searchCatalog";
 import type { McpServer } from "@/domain/mcp/types";
 import type { Skill } from "@/domain/skill/types";
@@ -307,6 +308,11 @@ const match = (key: string, score: number, metadata: Record<string, unknown>): V
   metadata,
 });
 
+const reranked = (scores: number[]) => ({
+  scores,
+  usage: { model: "selfhosted/reranker", inputTokens: 10, costUsd: 0 },
+});
+
 describe("searchCapabilities", () => {
   it("lifts an entry the query names above one that merely reads like it", async () => {
     // The gap an embedding cannot close: "slack" names a thing exactly, and a
@@ -386,7 +392,7 @@ describe("searchCapabilities", () => {
   });
 
   it("reranks the vector candidates with the indexed capability text", async () => {
-    const rerank = vi.fn(async () => [0.1, 0.9, 0.01]);
+    const rerank = vi.fn(async () => reranked([0.1, 0.9, 0.01, 0]));
     const deps = {
       ...searchDeps([
         [
@@ -415,13 +421,122 @@ describe("searchCapabilities", () => {
         "vector-first\nFirst description",
         "reranked-first\nSecond description",
         "reranker-rejected\nRejected description",
+        "below-cut\nNot relevant",
       ],
       CAPABILITY_RERANK_INSTRUCTION,
     );
   });
 
+  it("batches every capability kind into one rerank call per query", async () => {
+    const rerank = vi.fn(async () => reranked([0.8, 0.9]));
+    const deps = searchDeps([
+      [match("skill#review", 0.8, { name: "review", description: "Review code" })],
+      [match("agent#release", 0.7, { name: "release", description: "Release software" })],
+    ]);
+    const result = await searchCapabilitiesByKind(
+      { ...deps, reranker: { rerank } },
+      ["review and release"],
+      [{ kind: "skill", limit: 5 }, { kind: "agent", limit: 3 }],
+    );
+
+    expect(rerank).toHaveBeenCalledOnce();
+    expect(rerank).toHaveBeenCalledWith(
+      "review and release",
+      ["review\nReview code", "release\nRelease software"],
+      CAPABILITY_RERANK_INSTRUCTION,
+    );
+    expect(result.matches.map((matches) => matches.map((entry) => entry.name))).toEqual([
+      ["review"],
+      ["release"],
+    ]);
+    expect(result.rerank).toEqual({
+      calls: 1,
+      candidates: 2,
+      failed: 0,
+      usage: [{ model: "selfhosted/reranker", inputTokens: 10, costUsd: 0 }],
+    });
+  });
+
+  it("falls back to vector ranking when reranking fails", async () => {
+    const result = await searchCapabilitiesByKind(
+      {
+        ...searchDeps([[
+          match("skill#first", 0.9, { name: "first", description: "" }),
+          match("skill#second", 0.7, { name: "second", description: "" }),
+        ]]),
+        reranker: { rerank: async () => { throw new Error("reranker unavailable"); } },
+      },
+      ["request"],
+      [{ kind: "skill", limit: 5 }],
+    );
+
+    expect(result.matches[0]?.map((entry) => entry.name)).toEqual(["first", "second"]);
+    expect(result.rerank).toEqual({ calls: 1, candidates: 2, failed: 1, usage: [] });
+  });
+
+  it("lets reranking rescue an oversampled candidate below the vector ratio cut", async () => {
+    const rerank = vi.fn(async () => reranked([0.001, 0.9]));
+    const found = await searchCapabilities(
+      {
+        ...searchDeps([[
+          match("skill#vector-noise", 0.9, { name: "vector-noise", description: "Unrelated" }),
+          match("skill#actual", 0.4, { name: "actual", description: "The useful capability" }),
+        ]]),
+        reranker: { rerank },
+      },
+      ["request"],
+      { kind: "skill", limit: 5 },
+    );
+
+    expect(found.map((entry) => entry.name)).toEqual(["actual"]);
+    expect(rerank).toHaveBeenCalledWith(
+      "request",
+      ["vector-noise\nUnrelated", "actual\nThe useful capability"],
+      CAPABILITY_RERANK_INSTRUCTION,
+    );
+  });
+
+  it("isolates exact-name boosts to the query being ranked", async () => {
+    const found = await searchCapabilities(
+      searchDeps([
+        [
+          match("mcpServer#aws", 0.9, { name: "aws", description: "Cloud APIs" }),
+          match("mcpServer#slack", 0.7, { name: "slack", description: "Messages" }),
+        ],
+        [],
+      ]),
+      ["inspect cloud infrastructure", "slack"],
+      { kind: "mcpServer", limit: 5 },
+    );
+
+    expect(found.map((entry) => entry.name)).toEqual(["aws", "slack"]);
+  });
+
+  it("propagates cancellation instead of falling back", async () => {
+    const controller = new AbortController();
+    const rerank = vi.fn(
+      async (_query: string, _documents: readonly string[], _instruction?: string, signal?: AbortSignal) =>
+        await new Promise<ReturnType<typeof reranked>>((_, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const pending = searchCapabilities(
+      {
+        ...searchDeps([[match("skill#a", 0.9, { name: "a", description: "" })]]),
+        reranker: { rerank },
+      },
+      ["request"],
+      { kind: "skill", limit: 5 },
+      { signal: controller.signal },
+    );
+    controller.abort(new Error("Stop pressed"));
+
+    await expect(pending).rejects.toThrow("Stop pressed");
+  });
+
   it("keeps a low absolute reranker score when it clearly identifies an AWS capability", async () => {
-    const rerank = vi.fn(async () => [0.03, 0.0003]);
+    const rerank = vi.fn(async () => reranked([0.03, 0.0003]));
+    const rerankerMinScore = vi.fn(() => 0.01);
     const found = await searchCapabilities(
       {
         ...searchDeps([
@@ -437,12 +552,13 @@ describe("searchCapabilities", () => {
           ],
         ]),
         reranker: { rerank },
-        rerankerMinScore: 0.01,
+        rerankerMinScore,
       },
       ["aws eks 최신 버전 알려줘"],
       { kind: "mcpServer", limit: 5 },
     );
     expect(found.map((entry) => entry.name)).toEqual(["aws-knowledge"]);
+    expect(rerankerMinScore).toHaveBeenCalledOnce();
   });
 
   it("matches a hyphenated name written as separate words", async () => {

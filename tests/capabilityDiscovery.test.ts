@@ -12,8 +12,13 @@
  * to its answer is this file's.
  */
 
-import { describe, expect, it } from "vitest";
-import { discoveryQueries, recentUserQueries, resolveRunTools } from "@/application/execution/bindings";
+import { describe, expect, it, vi } from "vitest";
+import {
+  discoveryQueries,
+  recentUserQueries,
+  resolveRunTools,
+  toolsPrepared,
+} from "@/application/execution/bindings";
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import type { CapabilityKind } from "@/domain/catalog/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
@@ -321,6 +326,76 @@ describe("capability discovery", () => {
     const resolved = await resolveRunTools(deps, version({ skillList: ["bound"] }), undefined, QUERIES);
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
     expect(resolved.warnings.some((line) => line.includes("discovery failed"))).toBe(true);
+  });
+
+  it("propagates caller cancellation instead of falling back to bindings", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("Stop pressed"));
+    const { deps, opened } = harness({
+      catalog: fakeCatalog({ skill: [found("discovered")] }),
+    });
+
+    await expect(
+      resolveRunTools(
+        deps,
+        version({ skillList: ["bound"] }),
+        controller.signal,
+        QUERIES,
+      ),
+    ).rejects.toThrow("Stop pressed");
+    expect(opened).toEqual([]);
+  });
+
+  it("keeps vector-discovered capabilities when reranking fails", async () => {
+    const catalog = fakeCatalog({ skill: [found("aws-knowledge")] });
+    catalog.reranker = { rerank: async () => { throw new Error("reranker unavailable"); } };
+    const { deps } = harness({ catalog });
+
+    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+
+    expect(resolved.skills.map((skill) => skill.name)).toEqual(["aws-knowledge"]);
+    expect(resolved.discovered).toEqual(["aws-knowledge"]);
+    expect(resolved.warnings).toContain(
+      "Reranking failed for 2 capability query groups; vector ranking was used instead.",
+    );
+    expect(resolved.rerank).toEqual({ calls: 2, candidates: 2, failed: 2, usage: [] });
+  });
+
+  it("records successful rerank usage against the project making the run", async () => {
+    const catalog = fakeCatalog({ skill: [found("aws-knowledge")] });
+    catalog.reranker = {
+      rerank: async () => ({
+        scores: [0.9],
+        usage: { model: "openrouter/rerank-v3.5", inputTokens: 21, costUsd: 0.001 },
+      }),
+    };
+    const recordUsage = vi.fn(async () => {});
+    const { deps } = harness({ catalog });
+
+    const resolved = await resolveRunTools(
+      deps,
+      version(),
+      undefined,
+      ["aws docs"],
+      undefined,
+      recordUsage,
+    );
+
+    expect(resolved.skills.map((skill) => skill.name)).toEqual(["aws-knowledge"]);
+    expect(recordUsage).toHaveBeenCalledWith({
+      projectName: "proj",
+      model: "openrouter/rerank-v3.5",
+      inputTokens: 21,
+      outputTokens: 0,
+      costUsd: 0.001,
+    });
+    expect(toolsPrepared(resolved)).toMatchObject({
+      rerankCalls: 1,
+      rerankCandidates: 1,
+      rerankModels: ["openrouter/rerank-v3.5"],
+      rerankInputTokens: 21,
+      rerankCostUsd: 0.001,
+    });
   });
 
   it("picks servers by score, not by which index found them", async () => {
