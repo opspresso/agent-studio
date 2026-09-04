@@ -202,7 +202,8 @@ self-hosted runner를 쓴다. 임의 ref를 선택하는 `workflow_dispatch`는 
 `.github/workflows/check-models.yml` 은 `pnpm check-models --strict --since=7d` 를 pull request
 마다가 아니라 스케줄(cron `0 23 * * 0-4`, 일–목 23:00 UTC)로 돌린다: 살아 있는 provider API 와 저장소 시크릿이
 필요하기 때문이다(드리프트는 런이 실패하기 전에 Slack 으로 전송된다). provider 장애나 시크릿 없는
-fork 가 PR 을 실패시켜서는 안 된다.
+fork 가 PR 을 실패시켜서는 안 된다. 각 provider 요청은 30초에 중단되고 job 전체는 20분으로
+제한되어, 멈춘 채널 하나가 결과와 Slack 알림을 무기한 막지 못한다.
 
 **이 job 의 채널은 배포의 채널과 같아야 한다.** `LLM_BASE_URL` / `LLM_API_KEY` 만 주면 default
 채널 하나로 도는데, 이 배포에서 그것은 라우터가 아니라 provider 자신의 엔드포인트라 맨 id 를
