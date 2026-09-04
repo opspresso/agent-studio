@@ -1652,7 +1652,7 @@ assistant 턴의 `reasoning_content` 가 되고, `activity` 는 받되 버린다
 (`{ name, description, parameters? }`), `context` (`{ description, value }`), `state` (비어 있지
 않으면 읽기 전용 JSON 으로 context 와 함께 system 턴에 실린다. 갱신은 되지 않고
 `STATE_SNAPSHOT` 도 나가지 않는다), 그리고 받아만 두는 `forwardedProps`. `user` 턴의 parts 는
-`text`, `image` (`data` 소스만, 메시지당 `MAX_ATTACHMENTS`개), `document`
+`text`, `image` (`data` 소스만, 메시지당 `MAX_IMAGES_PER_TURN`개), `document`
 (`data` 소스만, `metadata.name`/`filename` 이 이름, 메시지당 `MAX_DOCUMENTS` 개, chat 첨부와
 같은 추출기로 텍스트가 된다) 이고, audio·video 와 URL 로 온 document 는 400 이다.
 interrupt 상태를 이어 가는 구현은 아직 없으므로 `resume` 이 있으면 400 이다. 값을 무시하고 새

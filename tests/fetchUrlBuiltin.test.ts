@@ -3,7 +3,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { ChannelMessage, ChannelParams } from "@/domain/llm/channel";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
 import { FETCH_URL_TOOL_NAME } from "@/application/llm/agentAssembly";
-import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
@@ -128,7 +128,7 @@ describe("fetching a picture", () => {
   it("shares the turn's image budget with MCP images rather than keeping its own", async () => {
     // A separate budget would be double spending: both end up in the same
     // follow-up user message.
-    const calls = Array.from({ length: MAX_ATTACHMENTS + 1 }, (_, i) =>
+    const calls = Array.from({ length: MAX_IMAGES_PER_TURN + 1 }, (_, i) =>
       toolCallChunk(i, `c${i}`, FETCH_URL_TOOL_NAME, `{"url":"https://example.test/${i}.png"}`),
     );
     const channel = new FakeChannel([
@@ -142,13 +142,13 @@ describe("fetching a picture", () => {
     };
     const chunks = await collect(runAgent(deps, input()));
     // Every fetch produced a picture, but only the budget's worth are attached.
-    expect(chunks.filter((c) => c.image)).toHaveLength(MAX_ATTACHMENTS);
+    expect(chunks.filter((c) => c.image)).toHaveLength(MAX_IMAGES_PER_TURN);
     const follow = channel.seenParams[1]?.messages ?? [];
     const imagesMessage = follow.find(
       (m) => m.role === "user" && Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"),
     );
     const parts = Array.isArray(imagesMessage?.content) ? imagesMessage.content : [];
-    expect(parts.filter((p) => p.type === "image_url")).toHaveLength(MAX_ATTACHMENTS);
+    expect(parts.filter((p) => p.type === "image_url")).toHaveLength(MAX_IMAGES_PER_TURN);
   });
 
   it("streams the picture to the surface as an image chunk", async () => {

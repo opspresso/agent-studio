@@ -20,8 +20,8 @@ import type { ChatMessage, ChatMessageImage } from "@/domain/chat/types";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import { resolveImageUrl, type SignImageUrl } from "@/domain/chat/imageRefs";
 import {
-  MAX_ATTACHMENTS,
-  MAX_ATTACHMENT_BYTES,
+  MAX_IMAGES_PER_TURN,
+  MAX_IMAGE_BYTES,
   isInlineImageDataUrl,
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
@@ -139,14 +139,14 @@ export async function resolveRunMessageImages(
       continue;
     }
     for (const image of [...(message.images ?? [])].reverse()) {
-      if (selected.size >= MAX_ATTACHMENTS) {
+      if (selected.size >= MAX_IMAGES_PER_TURN) {
         break;
       }
       if ((objects && image.key) || (image.url && isInlineImageDataUrl(image.url))) {
         selected.add(image);
       }
     }
-    if (selected.size >= MAX_ATTACHMENTS) {
+    if (selected.size >= MAX_IMAGES_PER_TURN) {
       break;
     }
   }
@@ -160,7 +160,7 @@ export async function resolveRunMessageImages(
       }
       if (objects && image.key && selected.has(image)) {
         try {
-          const stored = await objects.read(image.key, MAX_ATTACHMENT_BYTES);
+          const stored = await objects.read(image.key, MAX_IMAGE_BYTES);
           if (!(SUPPORTED_IMAGE_TYPES as readonly string[]).includes(stored.mimeType)) {
             throw new Error(`stored object has unsupported image type: ${stored.mimeType}`);
           }

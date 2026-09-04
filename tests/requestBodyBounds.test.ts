@@ -8,7 +8,7 @@ import {
   withTurnBody,
 } from "@/app/api/_lib/body";
 import { MAX_INBOUND_EVENT_BYTES, readEventBody } from "@/app/api/_lib/inboundEvent";
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
 
 /**
@@ -68,7 +68,7 @@ describe("withTurnBody", () => {
     // The cap is derived, so this pins the derivation rather than a number: a
     // request at the documented limits must not be refused by the body reader.
     const attachments =
-      MAX_DOCUMENT_BYTES * MAX_DOCUMENTS + MAX_ATTACHMENT_BYTES * MAX_ATTACHMENTS;
+      MAX_DOCUMENT_BYTES * MAX_DOCUMENTS + MAX_IMAGE_BYTES * MAX_IMAGES_PER_TURN;
 
     expect(MAX_TURN_BODY_BYTES).toBeGreaterThan(attachments);
   });

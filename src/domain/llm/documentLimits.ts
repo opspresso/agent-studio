@@ -17,6 +17,8 @@ export const MAX_DOCUMENTS = 4;
 
 /** Size of a single document as uploaded, before anything is extracted. */
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+/** Reader-facing spelling of the byte cap above. */
+export const MAX_DOCUMENT_SIZE_LABEL = `${MAX_DOCUMENT_BYTES / (1024 * 1024)}MB`;
 
 /**
  * Extracted characters kept from one document.

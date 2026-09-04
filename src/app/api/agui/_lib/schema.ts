@@ -2,11 +2,16 @@ import { z } from "zod";
 import type { AguiRunInput } from "@/domain/agui/types";
 import {
   base64Chars,
-  MAX_ATTACHMENT_BYTES,
-  MAX_ATTACHMENTS,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGES_PER_TURN,
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
-import { documentKind, MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
+import {
+  documentKind,
+  MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENT_SIZE_LABEL,
+  MAX_DOCUMENTS,
+} from "@/domain/llm/documentLimits";
 
 /**
  * The protocol's `RunAgentInput`, validated with this app's zod rather than
@@ -28,7 +33,7 @@ const toolCallSchema = z.object({
 
 const imageSourceSchema = z.object({
   type: z.literal("data"),
-  value: z.string().max(base64Chars(MAX_ATTACHMENT_BYTES), "image payload is too large"),
+  value: z.string().max(base64Chars(MAX_IMAGE_BYTES), "image payload is too large"),
   mimeType: z.enum(SUPPORTED_IMAGE_TYPES),
 });
 
@@ -40,7 +45,13 @@ const documentPartSchema = z
     type: z.literal("document"),
     source: z.object({
       type: z.literal("data"),
-      value: z.string().min(1).max(base64Chars(MAX_DOCUMENT_BYTES), "document is larger than 10MB"),
+      value: z
+        .string()
+        .min(1)
+        .max(
+          base64Chars(MAX_DOCUMENT_BYTES),
+          `document is larger than ${MAX_DOCUMENT_SIZE_LABEL}`,
+        ),
       mimeType: z.string().max(255),
     }),
     metadata: documentMetadataSchema,
@@ -73,8 +84,8 @@ const messageSchema = z.discriminatedUnion("role", [
       z
         .array(inputContentSchema)
         .refine(
-          (parts) => parts.filter((part) => part.type === "image").length <= MAX_ATTACHMENTS,
-          `at most ${MAX_ATTACHMENTS} images per message`,
+          (parts) => parts.filter((part) => part.type === "image").length <= MAX_IMAGES_PER_TURN,
+          `at most ${MAX_IMAGES_PER_TURN} images per message`,
         )
         .refine(
           (parts) => parts.filter((part) => part.type === "document").length <= MAX_DOCUMENTS,

@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { attachedDocumentsSchema, attachedImagesSchema } from "@/app/api/_lib/attachments";
-import { isInlineImageDataUrl, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import {
+  isInlineImageDataUrl,
+  MAX_IMAGE_SIZE_LABEL,
+  MAX_IMAGES_PER_TURN,
+} from "@/domain/llm/imageLimits";
 import type { ChannelToolCall } from "@/domain/llm/types";
 import type { McpBinding } from "@/domain/project/types";
 
@@ -226,7 +230,7 @@ const contentPartSchema = z.union([
         .string()
         .refine(
           isInlineImageDataUrl,
-          "image must be a supported data:image/…;base64,… payload no larger than 5MB",
+          `image must be a supported data:image/…;base64,… payload no larger than ${MAX_IMAGE_SIZE_LABEL}`,
         ),
       detail: z.enum(["low", "high", "auto"]).optional(),
     }),
@@ -258,8 +262,8 @@ export const chatMessageSchema = z.object({
 }).refine(
   ({ content }) =>
     !Array.isArray(content) ||
-    content.filter((part) => part.type === "image_url").length <= MAX_ATTACHMENTS,
-  { message: `at most ${MAX_ATTACHMENTS} images per message`, path: ["content"] },
+    content.filter((part) => part.type === "image_url").length <= MAX_IMAGES_PER_TURN,
+  { message: `at most ${MAX_IMAGES_PER_TURN} images per message`, path: ["content"] },
 );
 
 export const predictSchema = z.object({

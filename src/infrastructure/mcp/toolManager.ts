@@ -25,7 +25,7 @@ import { baseMimeType } from "@/domain/artifact/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
-import { base64ByteLength, MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
+import { base64ByteLength, MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
 import type { McpToolResult } from "@/domain/llm/types";
 import {
   type DiscoveryFailure,
@@ -640,7 +640,7 @@ function baseMediaType(value: string | undefined): string {
  * A picture a server returned, if a provider will take it.
  *
  * The size check is the same one a person's attachment meets, and it belongs
- * here for the same reason it belongs there: `MAX_ATTACHMENT_BYTES` is a bound
+ * here for the same reason it belongs there: `MAX_IMAGE_BYTES` is a bound
  * *providers* impose, so where the bytes came from does not change it. Only the
  * upload path enforced it, so a tool could hand back a picture no model would
  * accept — the count budget downstream bounds how many images a turn carries and
@@ -658,9 +658,9 @@ function imageBlock(data: string | undefined, declaredType: string | undefined):
     return { text: "[image result omitted]" };
   }
   const bytes = base64ByteLength(data);
-  if (bytes > MAX_ATTACHMENT_BYTES) {
+  if (bytes > MAX_IMAGE_BYTES) {
     return {
-      text: `[image omitted: ${mimeType}, ${bytes} bytes — over the ${MAX_ATTACHMENT_BYTES}-byte limit for one image. Ask the server for a smaller rendition.]`,
+      text: `[image omitted: ${mimeType}, ${bytes} bytes — over the ${MAX_IMAGE_BYTES}-byte limit for one image. Ask the server for a smaller rendition.]`,
     };
   }
   return { text: "[image]", image: { b64: data, mimeType } };

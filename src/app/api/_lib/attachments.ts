@@ -1,13 +1,15 @@
 import { z } from "zod";
 import {
   base64Chars,
-  MAX_ATTACHMENT_BYTES,
-  MAX_ATTACHMENTS,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGE_SIZE_LABEL,
+  MAX_IMAGES_PER_TURN,
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
 import {
   documentKind,
   MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENT_SIZE_LABEL,
   MAX_DOCUMENTS,
 } from "@/domain/llm/documentLimits";
 
@@ -16,14 +18,17 @@ import {
  * `@/domain/llm/imageLimits`; the bytes arrive base64-encoded in JSON, so the
  * byte cap becomes a character cap here.
  */
-const MAX_ATTACHMENT_CHARS = base64Chars(MAX_ATTACHMENT_BYTES);
+const MAX_ATTACHMENT_CHARS = base64Chars(MAX_IMAGE_BYTES);
 
 export const attachedImageSchema = z.object({
-  b64: z.string().min(1).max(MAX_ATTACHMENT_CHARS, "image is larger than 5MB"),
+  b64: z
+    .string()
+    .min(1)
+    .max(MAX_ATTACHMENT_CHARS, `image is larger than ${MAX_IMAGE_SIZE_LABEL}`),
   mimeType: z.enum(SUPPORTED_IMAGE_TYPES),
 });
 
-export const attachedImagesSchema = z.array(attachedImageSchema).max(MAX_ATTACHMENTS).optional();
+export const attachedImagesSchema = z.array(attachedImageSchema).max(MAX_IMAGES_PER_TURN).optional();
 
 const MAX_DOCUMENT_B64_CHARS = base64Chars(MAX_DOCUMENT_BYTES);
 
@@ -36,7 +41,10 @@ const MAX_DOCUMENT_B64_CHARS = base64Chars(MAX_DOCUMENT_BYTES);
  */
 export const attachedDocumentSchema = z
   .object({
-    b64: z.string().min(1).max(MAX_DOCUMENT_B64_CHARS, "document is larger than 10MB"),
+    b64: z
+      .string()
+      .min(1)
+      .max(MAX_DOCUMENT_B64_CHARS, `document is larger than ${MAX_DOCUMENT_SIZE_LABEL}`),
     mimeType: z.string().max(255),
     name: z.string().min(1).max(255),
   })

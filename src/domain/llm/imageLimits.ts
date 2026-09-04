@@ -6,9 +6,11 @@
  */
 
 /** Images one turn may carry. */
-export const MAX_ATTACHMENTS = 4;
+export const MAX_IMAGES_PER_TURN = 4;
 /** Decoded size of a single input or generated image. */
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Reader-facing spelling of the byte cap above. */
+export const MAX_IMAGE_SIZE_LABEL = `${MAX_IMAGE_BYTES / (1024 * 1024)}MB`;
 /** Formats every provider on the registry accepts. */
 export const SUPPORTED_IMAGE_TYPES = [
   "image/png",
@@ -66,7 +68,7 @@ export function isInlineImageDataUrl(url: string): boolean {
       b64 &&
       base64IsValid &&
       (SUPPORTED_IMAGE_TYPES as readonly string[]).includes(mimeType) &&
-      base64ByteLength(b64) <= MAX_ATTACHMENT_BYTES,
+      base64ByteLength(b64) <= MAX_IMAGE_BYTES,
   );
 }
 

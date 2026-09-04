@@ -142,7 +142,7 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   `EngineChunk.file` already follows — and only the follow-up message is withheld, since
   sending parts a text-only model rejects fails the whole turn. Such a run still gets ids: a
   model that cannot see a picture can hand it to an agent that can. Capped by
-  `MAX_ATTACHMENTS` **per turn**, which bounds delivery too — nothing else bounds how many
+  `MAX_IMAGES_PER_TURN` **per turn**, which bounds delivery too — nothing else bounds how many
   pictures one call returns — and per turn rather than per run, because the cap bounds one
   request and spending it once would leave a screenshot agent blind after its first. Once
   images are in context a fallback model that cannot read them is dropped.

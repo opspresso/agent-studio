@@ -1,6 +1,6 @@
 import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
 import { base64Chars } from "@/domain/llm/imageLimits";
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
 import { MAX_SKILL_TOTAL_BYTES } from "@/domain/skill/files";
 
@@ -19,7 +19,7 @@ import { MAX_SKILL_TOTAL_BYTES } from "@/domain/skill/files";
  */
 const ATTACHMENT_ALLOWANCE =
   base64Chars(MAX_DOCUMENT_BYTES) * MAX_DOCUMENTS +
-  base64Chars(MAX_ATTACHMENT_BYTES) * MAX_ATTACHMENTS;
+  base64Chars(MAX_IMAGE_BYTES) * MAX_IMAGES_PER_TURN;
 /** JSON quoting, field names, and the message itself. */
 const PROSE_ALLOWANCE = 256 * 1024;
 

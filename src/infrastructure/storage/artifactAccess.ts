@@ -1,7 +1,7 @@
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import { MAX_SAVED_FILE_BYTES } from "@/domain/artifact/types";
 import { MAX_DOCUMENT_BYTES } from "@/domain/llm/documentLimits";
-import { MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
+import { MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
 import { getArtifactAccessMode, getPublicBaseUrl } from "@/lib/runtime-settings";
 import { proxiedObjectPath, verifyObjectUrlToken, type ObjectUrlClaims } from "./objectUrlToken";
 
@@ -49,7 +49,7 @@ export function withArtifactAccessMode(store: ArtifactObjectStore): ArtifactObje
  */
 export const MAX_PROXIED_OBJECT_BYTES = Math.max(
   MAX_DOCUMENT_BYTES,
-  MAX_ATTACHMENT_BYTES,
+  MAX_IMAGE_BYTES,
   MAX_SAVED_FILE_BYTES,
 );
 

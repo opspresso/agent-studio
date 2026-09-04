@@ -20,7 +20,7 @@ import type { ResolvedTarget, TargetResolver } from "./providers";
 import {
   base64ByteLength,
   base64Chars,
-  MAX_ATTACHMENT_BYTES,
+  MAX_IMAGE_BYTES,
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
 import { imageDataUrl } from "@/domain/llm/types";
@@ -37,7 +37,7 @@ import type {
 const clients = createLlmClientCache<OpenAI>();
 
 /** One base64 image plus ample room for usage metadata and provider envelopes. */
-export const MAX_IMAGE_API_RESPONSE_BYTES = base64Chars(MAX_ATTACHMENT_BYTES) + 256_000;
+export const MAX_IMAGE_API_RESPONSE_BYTES = base64Chars(MAX_IMAGE_BYTES) + 256_000;
 
 /**
  * Keyed by a credential fingerprint so a runtime settings change gets a fresh
@@ -83,9 +83,9 @@ function checkedImageBytes(
     throw new Error(`Image ${what} returned unsupported image type ${mimeType}`);
   }
   const byteLength = base64ByteLength(b64);
-  if (byteLength > MAX_ATTACHMENT_BYTES) {
+  if (byteLength > MAX_IMAGE_BYTES) {
     throw new Error(
-      `Image ${what} returned ${byteLength.toLocaleString("en-US")} bytes, over the ${MAX_ATTACHMENT_BYTES.toLocaleString("en-US")} byte limit`,
+      `Image ${what} returned ${byteLength.toLocaleString("en-US")} bytes, over the ${MAX_IMAGE_BYTES.toLocaleString("en-US")} byte limit`,
     );
   }
   return { b64, mimeType };

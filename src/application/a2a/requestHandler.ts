@@ -40,8 +40,9 @@ import {
 import { DefaultRequestHandler, type ServerCallContext, type TaskStore } from "@a2a-js/sdk/server";
 import { isLiveTaskState, isTerminalTaskState, taskStateName } from "@/domain/a2a/task";
 import {
-  MAX_ATTACHMENT_BYTES,
-  MAX_ATTACHMENTS,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGE_SIZE_LABEL,
+  MAX_IMAGES_PER_TURN,
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
@@ -66,8 +67,8 @@ export function unsupportedPart(part: Part): string | null {
     if (part.content.$case === "url") {
       return "image file part by URL";
     }
-    if (part.content.value.byteLength > MAX_ATTACHMENT_BYTES) {
-      return `image larger than ${MAX_ATTACHMENT_BYTES / (1024 * 1024)}MB`;
+    if (part.content.value.byteLength > MAX_IMAGE_BYTES) {
+      return `image larger than ${MAX_IMAGE_SIZE_LABEL}`;
     }
     return null;
   }
@@ -219,16 +220,16 @@ export class ProjectRequestHandler extends DefaultRequestHandler {
       const reason = unsupportedPart(part);
       if (reason) {
         throw new ContentTypeNotSupportedError(
-          `This agent accepts text parts and image file parts (${SUPPORTED_IMAGE_TYPES.join(", ")}, up to ${MAX_ATTACHMENT_BYTES / (1024 * 1024)}MB each, ${MAX_ATTACHMENTS} per message); the message carries a ${reason}.`,
+          `This agent accepts text parts and image file parts (${SUPPORTED_IMAGE_TYPES.join(", ")}, up to ${MAX_IMAGE_SIZE_LABEL} each, ${MAX_IMAGES_PER_TURN} per message); the message carries a ${reason}.`,
         );
       }
       if (part.content?.$case === "raw" || part.content?.$case === "url") {
         pictures += 1;
       }
     }
-    if (pictures > MAX_ATTACHMENTS) {
+    if (pictures > MAX_IMAGES_PER_TURN) {
       throw new ContentTypeNotSupportedError(
-        `This agent accepts at most ${MAX_ATTACHMENTS} images per message; the message carries ${pictures}.`,
+        `This agent accepts at most ${MAX_IMAGES_PER_TURN} images per message; the message carries ${pictures}.`,
       );
     }
     const taskId = params.message.taskId;

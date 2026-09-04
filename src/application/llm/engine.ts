@@ -35,7 +35,7 @@ import type {
   RunResult,
   UsageInfo,
 } from "@/domain/llm/types";
-import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { ValidationError } from "@/application/errors";
 import { createRunContextBudget } from "./contextBudget";
 import { PiiFilter } from "./pii";
@@ -1890,7 +1890,7 @@ export async function* runAgent(
     // the cap a user turn gets — they cost the same and arrive the same way.
     // Per turn, not per run: the cap bounds one request, and spending it once
     // would leave a screenshot agent blind for the rest of the run.
-    let imageBudget = MAX_ATTACHMENTS;
+    let imageBudget = MAX_IMAGES_PER_TURN;
     let nextTurn = turn + 1;
 
     // Announce every call before any of them runs: the client sees the whole
@@ -2536,8 +2536,8 @@ export async function* runAgent(
               // answer about a picture it will never see.
               content +=
                 accepted.length > 0
-                  ? ` ${dropped} more were dropped: at most ${MAX_ATTACHMENTS} images per turn.`
-                  : `\n\n${dropped} image(s) from this tool were dropped: this turn's limit of ${MAX_ATTACHMENTS} images is already spent.`;
+                  ? ` ${dropped} more were dropped: at most ${MAX_IMAGES_PER_TURN} images per turn.`
+                  : `\n\n${dropped} image(s) from this tool were dropped: this turn's limit of ${MAX_IMAGES_PER_TURN} images is already spent.`;
             }
           }
         }

@@ -3,11 +3,16 @@ import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { imageDataUrl } from "@/domain/llm/types";
 import type { ChatMessageInput, ContentPart } from "@/domain/llm/types";
 import {
-  MAX_ATTACHMENT_BYTES,
-  MAX_ATTACHMENTS,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGE_SIZE_LABEL,
+  MAX_IMAGES_PER_TURN,
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
-import { documentKind, MAX_DOCUMENT_BYTES } from "@/domain/llm/documentLimits";
+import {
+  documentKind,
+  MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENT_SIZE_LABEL,
+} from "@/domain/llm/documentLimits";
 import {
   readDocuments as readDocumentsFor,
   withinDocumentCount,
@@ -30,9 +35,6 @@ import { sniffImageType } from "@/domain/llm/imageSniff";
  * silently skipped.
  */
 
-/** Attachment limits — the same ones every other surface enforces. */
-export const MAX_IMAGE_ATTACHMENTS = MAX_ATTACHMENTS;
-const MAX_IMAGE_BYTES = MAX_ATTACHMENT_BYTES;
 const SUPPORTED_TYPES = new Set<string>(SUPPORTED_IMAGE_TYPES);
 /**
  * How many recent turns are searched for images. A conversation can be long
@@ -60,7 +62,7 @@ function isUnspecifiedImage(attachment: InboundAttachment): boolean {
 export async function collectImageParts(
   attachments: InboundAttachment[],
   warnings: string[],
-  budget = MAX_IMAGE_ATTACHMENTS,
+  budget = MAX_IMAGES_PER_TURN,
 ): Promise<ContentPart[]> {
   if (budget <= 0) {
     return [];
@@ -89,7 +91,7 @@ export async function collectImageParts(
       continue;
     }
     if ((image.size ?? 0) > MAX_IMAGE_BYTES) {
-      warnings.push(`Image is larger than 5MB (${label}).`);
+      warnings.push(`Image is larger than ${MAX_IMAGE_SIZE_LABEL} (${label}).`);
       continue;
     }
     if (!image.download) {
@@ -101,7 +103,7 @@ export async function collectImageParts(
       // A platform's declared size can be absent, so the download is bounded
       // too; this is the same limit restated where the bytes are finally in hand.
       if (data.byteLength > MAX_IMAGE_BYTES) {
-        warnings.push(`Image is larger than 5MB (${label}).`);
+        warnings.push(`Image is larger than ${MAX_IMAGE_SIZE_LABEL} (${label}).`);
         continue;
       }
       const mimeType = isUnspecifiedImage(image) ? sniffImageType(data) : image.mimeType;
@@ -149,7 +151,7 @@ export async function collectDocuments(
   for (const document of withinDocumentCount(candidates, warnings)) {
     const label = document.name;
     if ((document.size ?? 0) > MAX_DOCUMENT_BYTES) {
-      warnings.push(`Document is larger than 10MB (${label}).`);
+      warnings.push(`Document is larger than ${MAX_DOCUMENT_SIZE_LABEL} (${label}).`);
       continue;
     }
     if (!document.download) {
@@ -159,7 +161,7 @@ export async function collectDocuments(
     try {
       const data = await document.download(MAX_DOCUMENT_BYTES);
       if (data.byteLength > MAX_DOCUMENT_BYTES) {
-        warnings.push(`Document is larger than 10MB (${label}).`);
+        warnings.push(`Document is larger than ${MAX_DOCUMENT_SIZE_LABEL} (${label}).`);
         continue;
       }
       downloaded.push({ bytes: data, mimeType: document.mimeType, name: label });

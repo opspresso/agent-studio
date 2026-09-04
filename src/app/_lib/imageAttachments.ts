@@ -1,5 +1,9 @@
 import { imageDataUrl } from "@/domain/llm/types";
-import { MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_TYPES } from "@/domain/llm/imageLimits";
+import {
+  MAX_IMAGE_BYTES,
+  MAX_IMAGE_SIZE_LABEL,
+  SUPPORTED_IMAGE_TYPES,
+} from "@/domain/llm/imageLimits";
 
 /** An image staged in a composer or run panel, before the turn is sent. */
 export interface Attachment {
@@ -19,8 +23,8 @@ export async function readAttachment(file: File): Promise<Attachment> {
   if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
     throw new Error(`${file.name}: only PNG, JPEG, GIF and WebP images are supported`);
   }
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error(`${file.name}: larger than 5MB`);
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new Error(`${file.name}: larger than ${MAX_IMAGE_SIZE_LABEL}`);
   }
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();

@@ -2,6 +2,7 @@ import type { ExecuteAgentInput } from "@/application/execution/deps";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
 import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
+import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
@@ -20,7 +21,6 @@ import { INTERACTIVE_RUN_TIMEOUT_MS } from "@/shared/runDeadline";
 import {
   collectDocuments,
   collectImageParts,
-  MAX_IMAGE_ATTACHMENTS,
   withHistoryImages,
 } from "./attachments";
 
@@ -156,7 +156,7 @@ export async function handleTurn(
     // so "make the picture I sent blue" still has the picture.
     history = await withHistoryImages(
       input.history,
-      MAX_IMAGE_ATTACHMENTS - imageParts.length,
+      MAX_IMAGES_PER_TURN - imageParts.length,
       warnings,
     );
     // Nothing survived to ask about. A file-only message whose every attachment
