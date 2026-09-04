@@ -16,5 +16,8 @@ maker. Official brand guidance was checked for
 [AWS](https://aws.amazon.com/architecture/icons/). Logos must not be modified or used to
 imply endorsement.
 
+The Deepgram mark comes from the ISC-licensed `@deepgram/styles` package maintained by
+Deepgram.
+
 When Lobe Icons has no mark for a catalog maker, the console uses a plain text monogram instead
 of borrowing another company's logo.

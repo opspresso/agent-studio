@@ -496,7 +496,7 @@ describe("settingsUseCases.update self-hosted declarations", () => {
             capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
           },
           {
-            family: "whisper-large-v3",
+            family: "local-transcriber",
             displayName: "Whisper Large V3",
             type: "transcription",
             contextWindow: 0,
@@ -515,7 +515,7 @@ describe("settingsUseCases.update self-hosted declarations", () => {
       tools: false,
       rerank: true,
     });
-    expect(getModelConfig("selfhosted/whisper-large-v3")?.capabilities).toMatchObject({
+    expect(getModelConfig("selfhosted/local-transcriber")?.capabilities).toMatchObject({
       tools: false,
       transcription: true,
     });
