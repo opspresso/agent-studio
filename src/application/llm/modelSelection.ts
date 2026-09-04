@@ -10,6 +10,7 @@ import type {
   SettingsUseCases,
   SettingsView,
 } from "@/application/settings/settingsUseCases";
+import { log } from "@/shared/logger";
 
 export type GlobalModelType = "embedding" | "rerank";
 
@@ -139,7 +140,14 @@ export function createModelSelectionUseCases(
           throw migrationError;
         }
       } finally {
-        await deps.lock.release(lease);
+        try {
+          await deps.lock.release(lease);
+        } catch (error) {
+          // The lease expires on its own. Cleanup failure must not turn an
+          // already committed selection/index into a client-visible failure,
+          // or replace the migration error that led here.
+          log.error("catalog", "embedding migration lease could not be released", error);
+        }
       }
     },
   };
