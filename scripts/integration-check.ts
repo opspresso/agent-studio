@@ -11,6 +11,7 @@
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import type { Task } from "@a2a-js/sdk";
 
 process.env.STAGE ??= "local";
 process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test";
@@ -80,6 +81,9 @@ async function main() {
     "@/infrastructure/crypto/secretEncryption"
   );
   const { keys: dbKeys } = await import("@/infrastructure/db/keys");
+  const { createA2aTaskStore } = await import("@/infrastructure/a2a/taskStore");
+  const { TaskState } = await import("@a2a-js/sdk");
+  const { ServerCallContext } = await import("@a2a-js/sdk/server");
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -157,6 +161,7 @@ async function main() {
 
   const suffix = Date.now().toString(36);
   const projectName = `it-proj-${suffix}`;
+  const a2aOwnerScope = `tenant-${suffix}:client-${suffix}`;
   const legacyDestinationProject = `it-telegram-migration-${suffix}`;
   const legacyDestinationKey = dbKeys.telegramDestination(legacyDestinationProject, 42, 1);
   // Audit rows are the one fixture no repository can remove: the entity is
@@ -1082,6 +1087,59 @@ async function main() {
     );
     pass("A2A client key: transactional pair, hash lookup, full deletion");
 
+    // ---------- inbound A2A task listing (GSI page + exact count) ----------
+    const taskContext = new ServerCallContext({
+      tenant: `tenant-${suffix}`,
+      user: { isAuthenticated: true, userName: `client-${suffix}` },
+    });
+    const taskStore = createA2aTaskStore(projectName);
+    const makeTask = (id: string, timestamp: string): Task => ({
+      id,
+      contextId: `ctx-${suffix}`,
+      status: { state: TaskState.TASK_STATE_COMPLETED, message: undefined, timestamp },
+      artifacts: [],
+      history: [],
+      metadata: undefined,
+    });
+    await taskStore.save(makeTask("task-1", "2026-01-01T00:00:00.000Z"), taskContext);
+    await taskStore.save(makeTask("task-2", "2026-01-02T00:00:00.000Z"), taskContext);
+    await taskStore.save(makeTask("task-3", "2026-01-03T00:00:00.000Z"), taskContext);
+    const taskPage = await taskStore.list(
+      {
+        tenant: `tenant-${suffix}`,
+        contextId: `ctx-${suffix}`,
+        status: TaskState.TASK_STATE_COMPLETED,
+        pageSize: 2,
+        pageToken: "",
+        historyLength: 0,
+        statusTimestampAfter: undefined,
+        includeArtifacts: false,
+      },
+      taskContext,
+    );
+    assert.equal(taskPage.totalSize, 3, "task count covers the filtered partition");
+    assert.deepEqual(
+      taskPage.tasks.map((task) => task.id),
+      ["task-3", "task-2"],
+      "task page follows the status timestamp index",
+    );
+    assert.notEqual(taskPage.nextPageToken, "", "a bounded page reports its continuation");
+    const taskTail = await taskStore.list(
+      {
+        tenant: `tenant-${suffix}`,
+        contextId: `ctx-${suffix}`,
+        status: TaskState.TASK_STATE_COMPLETED,
+        pageSize: 2,
+        pageToken: taskPage.nextPageToken,
+        historyLength: 0,
+        statusTimestampAfter: undefined,
+        includeArtifacts: false,
+      },
+      taskContext,
+    );
+    assert.deepEqual(taskTail.tasks.map((task) => task.id), ["task-1"], "task cursor is exclusive");
+    pass("A2A task list: bounded GSI page, exact count, exclusive cursor");
+
     // ---------- transact lock modes (a checked key does not serialise) ----------
     // A `check` op asserts something elsewhere is still live; the exclusive
     // lock it used to take made every usage row, trace and version write in a
@@ -1229,6 +1287,11 @@ async function main() {
     // create and delete would otherwise leak the pair into the shared table.
     await import("@/infrastructure/db/repositories/a2aClientKeyRepository")
       .then(({ a2aClientKeyRepository }) => a2aClientKeyRepository.delete(`client-${suffix}`))
+      .catch(() => {});
+    await import("@/infrastructure/db/store")
+      .then(({ deletePartition }) =>
+        deletePartition(dbKeys.a2aTask(projectName, a2aOwnerScope, "").PK),
+      )
       .catch(() => {});
     for (const artifactId of artifactFixtures) {
       await artifactRepository.delete(artifactId).catch(() => {});

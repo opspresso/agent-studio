@@ -80,6 +80,7 @@ export interface FakeStore {
   ): Promise<{ before: Item | null; after: Item }>;
   transact(ops: TransactOp[]): Promise<void>;
   queryItems(input: QueryInput): Promise<Item[]>;
+  countItems(input: QueryInput): Promise<number>;
   deletePartition(pk: string, options?: { keep?: string[]; prefix?: string }): Promise<number>;
   deleteIndexPartition(index: "GSI1" | "GSI2", pk: string): Promise<number>;
   deleteExpired(nowSeconds: number, limit?: number): Promise<number>;
@@ -243,6 +244,10 @@ export function createFakeStore(): FakeStore {
         matches = matches.slice(0, input.limit);
       }
       return matches.map(clone);
+    },
+
+    async countItems(input) {
+      return (await store.queryItems({ ...input, limit: undefined })).length;
     },
 
     async deletePartition(pk, options = {}) {

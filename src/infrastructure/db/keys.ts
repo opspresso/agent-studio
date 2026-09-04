@@ -256,6 +256,17 @@ export const keys = {
     PK: `A2ATASK#${projectName}#${encodeURIComponent(ownerScope)}`,
     SK: `TASK#${taskId}`,
   }),
+  a2aTaskListPartition: (projectName: string, ownerScope: string) =>
+    `A2ATASKLIST#${projectName}#${encodeURIComponent(ownerScope)}`,
+  a2aTaskList: (
+    projectName: string,
+    ownerScope: string,
+    statusTimestamp: string,
+    taskId: string,
+  ) => ({
+    GSI1PK: keys.a2aTaskListPartition(projectName, ownerScope),
+    GSI1SK: `${statusTimestamp}#${taskId}`,
+  }),
 
   /**
    * The remote `contextId` an external agent holds for one of this project's

@@ -1623,7 +1623,8 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로 만들어진다. Task 상태(`SendMessa
 동시에 일어난 complete/cancel 이 끝난 task 를 되돌리는 것을 막는다. 행은
 TTL(`A2A_TASK_RETENTION_DAYS`, 기본 1일)로 만료된다. `ListTasks` 는 status timestamp 내림차순이고
 같은 timestamp 에서는 task id 로 순서를 고정하며, opaque cursor 를 써서 페이지 사이에 새 task 가
-생겨도 앞 페이지의 항목이 중복되지 않는다.
+생겨도 앞 페이지의 항목이 중복되지 않는다. 한 요청은 `pageSize + 1` 개의 task 만 적재하고,
+`totalSize` 는 payload 를 읽지 않는 별도 count 로 계산한다.
 
 ## AG-UI (인바운드)
 

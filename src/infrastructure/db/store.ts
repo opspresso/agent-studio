@@ -340,12 +340,11 @@ const INDEX_COLUMNS = {
   GSI2: { pk: "gsi2pk", sk: "gsi2sk" },
 } as const;
 
-/**
- * Every row of one partition, or the slice of it a sort-key match names, in
- * sort-key order. Whole: the page ceiling this replaced was the store's, not
- * the caller's, so nothing here stops short of the rows that match.
- */
-export async function queryItems(input: QueryInput): Promise<Item[]> {
+function queryWhere(input: QueryInput): {
+  columns: (typeof INDEX_COLUMNS)[keyof typeof INDEX_COLUMNS];
+  where: string[];
+  params: unknown[];
+} {
   const columns = INDEX_COLUMNS[input.index ?? "primary"];
   const where: string[] = [`${columns.pk} = $1`];
   const params: unknown[] = [input.pk];
@@ -379,13 +378,34 @@ export async function queryItems(input: QueryInput): Promise<Item[]> {
     // unable to choose between them.
     where.push(`data ->> ${bind(attribute)}::text = ${bind(value)}`);
   }
+  return { columns, where, params };
+}
+
+/**
+ * Every row of one partition, or the slice of it a sort-key match names, in
+ * sort-key order. Whole: the page ceiling this replaced was the store's, not
+ * the caller's, so nothing here stops short of the rows that match.
+ */
+export async function queryItems(input: QueryInput): Promise<Item[]> {
+  const { columns, where, params } = queryWhere(input);
+  const forward = input.forward !== false;
   const order = `ORDER BY ${columns.sk} ${forward ? "ASC" : "DESC"}, sk ${forward ? "ASC" : "DESC"}`;
-  const limit = input.limit !== undefined ? `LIMIT ${bind(input.limit)}` : "";
+  const limit = input.limit !== undefined ? `LIMIT $${params.push(input.limit)}` : "";
   const rows = await sql<{ data: Item }>(
     `SELECT data FROM items WHERE ${where.join(" AND ")} ${order} ${limit}`,
     params,
   );
   return rows.map((row) => row.data);
+}
+
+/** Count one bounded-address query without transferring or decoding its item payloads. */
+export async function countItems(input: QueryInput): Promise<number> {
+  const { where, params } = queryWhere({ ...input, limit: undefined });
+  const rows = await sql<{ n: string }>(
+    `SELECT count(*)::text AS n FROM items WHERE ${where.join(" AND ")}`,
+    params,
+  );
+  return Number(rows[0]?.n ?? 0);
 }
 
 /**

@@ -17,7 +17,14 @@ import { TaskState, type ListTasksRequest, type ListTasksResponse, type Message,
 import type { ServerCallContext, TaskStore } from "@a2a-js/sdk/server";
 import { RequestMalformedError } from "@a2a-js/sdk/errors";
 import { keys } from "@/infrastructure/db/keys";
-import { CONDITIONAL_WRITE_FAILED, getItem, putItem, queryItems } from "@/infrastructure/db/store";
+import {
+  CONDITIONAL_WRITE_FAILED,
+  countItems,
+  getItem,
+  putItem,
+  queryItems,
+  type QueryInput,
+} from "@/infrastructure/db/store";
 import { RETENTION, expiresAtSeconds, isExpired } from "@/infrastructure/db/ttl";
 
 import { A2A_TERMINAL_STATES as TERMINAL_STATES } from "@/domain/a2a/task";
@@ -32,8 +39,6 @@ import { A2A_TERMINAL_STATES as TERMINAL_STATES } from "@/domain/a2a/task";
  * always stay retrievable rather than failing the write.
  */
 const MAX_ITEM_BYTES = 350_000;
-/** Rows read per database query while building an exact ListTasks response. */
-export const A2A_TASK_SCAN_PAGE_SIZE = 100;
 
 function stripPartBytes(parts: Part[] | undefined): Part[] | undefined {
   return parts?.map((part) =>
@@ -146,12 +151,15 @@ export function createA2aTaskStore(projectName: string): TaskStore {
 
     async save(task: Task, context: ServerCallContext): Promise<void> {
       const now = new Date().toISOString();
+      const scope = ownerScope(context);
       const wrapper = {
-        ...keys.a2aTask(projectName, ownerScope(context), task.id),
+        ...keys.a2aTask(projectName, scope, task.id),
+        ...keys.a2aTaskList(projectName, scope, sortableTimestamp(task), task.id),
         entityType: "a2aTask",
         projectName,
-        ownerScope: ownerScope(context),
+        ownerScope: scope,
         taskId: task.id,
+        contextId: task.contextId,
         state: task.status?.state ?? TaskState.TASK_STATE_UNSPECIFIED,
         updatedAt: now,
         expiresAt: expiresAtSeconds(now, RETENTION.a2aTaskDays),
@@ -174,54 +182,41 @@ export function createA2aTaskStore(projectName: string): TaskStore {
 
     async list(params: ListTasksRequest, context: ServerCallContext): Promise<ListTasksResponse> {
       validateListRequest(params);
-      const partition = keys.a2aTask(projectName, ownerScope(context), "").PK;
-      const now = Date.now();
-      const items = [];
-      let after: string | undefined;
-      for (;;) {
-        const page = await queryItems({
-          pk: partition,
-          sk: { prefix: "TASK#" },
-          limit: A2A_TASK_SCAN_PAGE_SIZE,
-          after,
-          notExpiredAt: Math.floor(now / 1000),
-        });
-        items.push(...page);
-        if (page.length < A2A_TASK_SCAN_PAGE_SIZE) {
-          break;
-        }
-        // Never a fallback: an empty cursor is `sk > ''`, which matches the
-        // whole partition again rather than ending the walk, so a row without
-        // a sort key would spin here instead of failing.
-        const cursor = page.at(-1)?.SK;
-        if (typeof cursor !== "string" || cursor === "") {
-          throw new Error("A2A task row has no sort key to page from");
-        }
-        after = cursor;
-      }
-      const statusTimestampAfter = params.statusTimestampAfter
-        ? Date.parse(params.statusTimestampAfter)
-        : undefined;
-      const matching = items
-        .filter((item) => !isExpired(item.expiresAt, now))
-        .map((item) => fromStoredTask(item.task as Task))
-        .filter((task) => !params.contextId || task.contextId === params.contextId)
-        .filter(
-          (task) =>
-            params.status === TaskState.TASK_STATE_UNSPECIFIED || task.status?.state === params.status,
-        )
-        .filter(
-          (task) =>
-            statusTimestampAfter === undefined ||
-            Date.parse(task.status?.timestamp ?? "") >= statusTimestampAfter,
-        )
-        .sort(compareTasks);
       const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 50));
       const cursor = pageCursor(params.pageToken);
-      const remaining = cursor
-        ? matching.filter((task) => isAfterCursor(task, cursor))
-        : matching;
-      const page = remaining.slice(0, pageSize);
+      const scope = ownerScope(context);
+      const filter: Record<string, string> = {};
+      if (params.contextId) {
+        filter.contextId = params.contextId;
+      }
+      if (params.status !== TaskState.TASK_STATE_UNSPECIFIED) {
+        filter.state = String(params.status);
+      }
+      const query: QueryInput = {
+        index: "GSI1",
+        pk: keys.a2aTaskListPartition(projectName, scope),
+        forward: false,
+        notExpiredAt: Math.floor(Date.now() / 1000),
+        ...(params.statusTimestampAfter
+          ? { sk: { gte: `${new Date(Date.parse(params.statusTimestampAfter)).toISOString()}#` } }
+          : {}),
+        ...(Object.keys(filter).length > 0 ? { filter } : {}),
+      };
+      const [items, totalSize] = await Promise.all([
+        queryItems({
+          ...query,
+          limit: pageSize + 1,
+          ...(cursor
+            ? {
+                after: keys.a2aTaskList(projectName, scope, cursor.timestamp, cursor.id).GSI1SK,
+              }
+            : {}),
+        }),
+        countItems(query),
+      ]);
+      const page = items
+        .slice(0, pageSize)
+        .map((item) => fromStoredTask(item.task as Task));
       const tasks = page.map((task) => ({
         ...task,
         artifacts: params.includeArtifacts ? task.artifacts : [],
@@ -232,7 +227,7 @@ export function createA2aTaskStore(projectName: string): TaskStore {
               ? []
               : task.history.slice(-params.historyLength),
       }));
-      const hasMore = remaining.length > page.length;
+      const hasMore = items.length > pageSize;
       return {
         tasks,
         nextPageToken:
@@ -240,7 +235,7 @@ export function createA2aTaskStore(projectName: string): TaskStore {
             ? encodePageCursor(page[page.length - 1]!)
             : "",
         pageSize,
-        totalSize: matching.length,
+        totalSize,
       };
     },
   };
@@ -281,23 +276,14 @@ function pageCursor(token: string): TaskPageCursor | undefined {
 
 function encodePageCursor(task: Task): string {
   return Buffer.from(
-    JSON.stringify({ timestamp: task.status?.timestamp ?? "", id: task.id }),
+    JSON.stringify({ timestamp: sortableTimestamp(task), id: task.id }),
     "utf8",
   ).toString("base64url");
 }
 
-/** Timestamp descending, then id descending so equal timestamps are stable. */
-function compareTasks(a: Task, b: Task): number {
-  const byTimestamp = (b.status?.timestamp ?? "").localeCompare(a.status?.timestamp ?? "");
-  return byTimestamp || b.id.localeCompare(a.id);
-}
-
-function isAfterCursor(task: Task, cursor: TaskPageCursor): boolean {
-  const timestamp = task.status?.timestamp ?? "";
-  if (timestamp !== cursor.timestamp) {
-    return timestamp < cursor.timestamp;
-  }
-  return task.id < cursor.id;
+function sortableTimestamp(task: Task): string {
+  const timestamp = Date.parse(task.status?.timestamp ?? "");
+  return Number.isNaN(timestamp) ? "" : new Date(timestamp).toISOString();
 }
 
 function validateListRequest(params: ListTasksRequest): void {

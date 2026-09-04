@@ -8,9 +8,7 @@ import { keys } from "@/infrastructure/db/keys";
 vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).createFakeStore());
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
-const { A2A_TASK_SCAN_PAGE_SIZE, createA2aTaskStore } = await import(
-  "@/infrastructure/a2a/taskStore"
-);
+const { createA2aTaskStore } = await import("@/infrastructure/a2a/taskStore");
 
 const ALICE = new ServerCallContext({
   tenant: "tenant-a",
@@ -214,19 +212,29 @@ describe("createA2aTaskStore", () => {
     expect(next.tasks[0]?.history).toEqual([]);
   });
 
-  it("reads a large task partition in bounded database pages", async () => {
-    const taskCount = A2A_TASK_SCAN_PAGE_SIZE * 2 + 5;
+  it("reads only one bounded task page and counts the rest without loading it", async () => {
+    const taskCount = 205;
     store.seed(
       Array.from({ length: taskCount }, (_, index) => {
         const id = `t${index.toString().padStart(3, "0")}`;
+        const timestamp = new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString();
         return {
           ...keys.a2aTask("proj-a", "tenant-a:alice", id),
+          ...keys.a2aTaskList("proj-a", "tenant-a:alice", timestamp, id),
+          contextId: "ctx-1",
           state: TaskState.TASK_STATE_COMPLETED,
-          task: makeTask(id, TaskState.TASK_STATE_COMPLETED),
+          task: {
+            ...makeTask(id, TaskState.TASK_STATE_COMPLETED),
+            status: {
+              ...taskStatus(TaskState.TASK_STATE_COMPLETED),
+              timestamp,
+            },
+          },
         };
       }),
     );
     const query = vi.spyOn(store, "queryItems");
+    const count = vi.spyOn(store, "countItems");
 
     const page = await createA2aTaskStore("proj-a").list(
       {
@@ -244,11 +252,17 @@ describe("createA2aTaskStore", () => {
 
     expect(page.totalSize).toBe(taskCount);
     expect(page.tasks).toHaveLength(100);
-    expect(query).toHaveBeenCalledTimes(3);
-    expect(query.mock.calls.every(([input]) => input.limit === A2A_TASK_SCAN_PAGE_SIZE)).toBe(true);
-    expect(query.mock.calls[1]?.[0].after).toBe("TASK#t099");
-    expect(query.mock.calls[2]?.[0].after).toBe("TASK#t199");
+    const payloadQueries = query.mock.calls.filter(([input]) => input.limit !== undefined);
+    expect(payloadQueries).toHaveLength(1);
+    expect(payloadQueries[0]?.[0]).toMatchObject({
+      index: "GSI1",
+      limit: 101,
+      forward: false,
+      filter: { contextId: "ctx-1" },
+    });
+    expect(count).toHaveBeenCalledOnce();
     query.mockRestore();
+    count.mockRestore();
   });
 
   it("rejects invalid ListTasks bounds and page tokens", async () => {
