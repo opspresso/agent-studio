@@ -30,6 +30,7 @@ const ENV_KEYS = [
   "ARTIFACT_ACCESS_MODE",
   "EMBEDDING_MODEL",
   "RERANKER_MODEL",
+  "RERANKER_MIN_SCORE",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -152,6 +153,24 @@ describe("settingsUseCases.update", () => {
     await useCases.update({ embeddingModel: "", rerankerModel: "" }, ADMIN);
     expect(current()?.embeddingModel).toBeUndefined();
     expect(current()?.rerankerModel).toBeUndefined();
+  });
+
+  it("stores a valid reranker score floor and rejects values outside zero to one", async () => {
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+
+    await useCases.update({ rerankerMinScore: "0.05" }, ADMIN);
+    expect(current()?.rerankerMinScore).toBe("0.05");
+
+    await expect(useCases.update({ rerankerMinScore: "1.1" }, ADMIN)).rejects.toThrow(
+      "Reranker minimum score must be between 0 and 1",
+    );
+    await expect(useCases.update({ rerankerMinScore: "not-a-number" }, ADMIN)).rejects.toThrow(
+      "Reranker minimum score must be between 0 and 1",
+    );
+
+    await useCases.update({ rerankerMinScore: "0.01" }, ADMIN);
+    expect(current()?.rerankerMinScore).toBeUndefined();
   });
 
   it("stores a public artifact mode override and clears it back to the environment", async () => {

@@ -523,11 +523,13 @@ type GlobalModelType = "embedding" | "rerank";
 function ModelSelectionSection({
   models,
   selections,
+  rerankerMinScore,
   available,
   onChanged,
 }: {
   models: CatalogModel[];
   selections: Catalog["selections"];
+  rerankerMinScore: Catalog["rerankerMinScore"];
   available: Catalog["selectionAvailable"];
   onChanged: () => Promise<void>;
 }) {
@@ -536,9 +538,17 @@ function ModelSelectionSection({
   const [busy, setBusy] = useState<GlobalModelType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const [scoreFloor, setScoreFloor] = useState(rerankerMinScore.value);
 
-  async function select(type: GlobalModelType, model: string | null) {
-    if (!model || model === selections[type]?.model) return;
+  useEffect(() => {
+    setScoreFloor(rerankerMinScore.value);
+  }, [rerankerMinScore.value]);
+  const scoreFloorValid =
+    Number.isFinite(scoreFloor) && scoreFloor >= 0 && scoreFloor <= 1;
+
+  async function select(type: GlobalModelType, model: string | null, nextScore?: number) {
+    const scoreChanged = type === "rerank" && nextScore !== rerankerMinScore.value;
+    if (!model || (model === selections[type]?.model && !scoreChanged)) return;
     if (
       type === "embedding" &&
       !(await confirm({
@@ -558,7 +568,12 @@ function ModelSelectionSection({
       const response = await fetch("/api/models/selection", {
         method: "PUT",
         headers: jsonHeaders,
-        body: JSON.stringify({ type, model, migrate: type === "embedding" }),
+        body: JSON.stringify({
+          type,
+          model,
+          migrate: type === "embedding",
+          ...(type === "rerank" ? { rerankerMinScore: nextScore } : {}),
+        }),
       });
       const body = await readJson<{ migration?: { indexed: number } }>(response);
       setResult(
@@ -591,32 +606,69 @@ function ModelSelectionSection({
           const options = selectableRetrievalModels(models, type);
           const selected = options.find((model) => model.id === selection?.model);
           return (
-            <Select
-              key={type}
-              label={t(`models.type.${type}`)}
-              value={selection?.model ?? null}
-              placeholder={t("models.selection.unconfigured")}
-              data={modelSelectData(
-                options,
-                selection?.model && !selected
-                  ? [{ value: selection.model, label: selection.model }]
-                  : [],
-                t("models.favorites"),
+            <Stack key={type} gap="xs">
+              <Select
+                label={t(`models.type.${type}`)}
+                value={selection?.model ?? null}
+                placeholder={t("models.selection.unconfigured")}
+                data={modelSelectData(
+                  options,
+                  selection?.model && !selected
+                    ? [{ value: selection.model, label: selection.model }]
+                    : [],
+                  t("models.favorites"),
+                )}
+                renderOption={renderModelOption(options)}
+                description={
+                  selected
+                    ? `${selected.provider} · ${modelPriceLabel(
+                        selected.pricing,
+                        selected.type,
+                      )} · ${selection?.source}`
+                    : selection?.source
+                }
+                disabled={
+                  !available[type] ||
+                  options.length === 0 ||
+                  busy !== null ||
+                  (type === "rerank" && !scoreFloorValid)
+                }
+                searchable
+                {...selectOnFocus}
+                onChange={(model) =>
+                  void select(type, model, type === "rerank" ? scoreFloor : undefined)
+                }
+              />
+              {type === "rerank" && (
+                <Group gap="sm" align="flex-end">
+                  <NumberInput
+                    label={t("models.selection.rerankerMinScore")}
+                    description={`${rerankerMinScore.source} · ${t("models.selection.rerankerMinScoreHint")}`}
+                    value={scoreFloor}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    decimalScale={4}
+                    onChange={(value) => setScoreFloor(Number(value))}
+                    disabled={!available.rerank || busy !== null}
+                    w={360}
+                  />
+                  <Button
+                    variant="default"
+                    disabled={
+                      !available.rerank ||
+                      !selection?.model ||
+                      !scoreFloorValid ||
+                      scoreFloor === rerankerMinScore.value ||
+                      busy !== null
+                    }
+                    onClick={() => void select("rerank", selection?.model ?? null, scoreFloor)}
+                  >
+                    {t("models.selection.saveScore")}
+                  </Button>
+                </Group>
               )}
-              renderOption={renderModelOption(options)}
-              description={
-                selected
-                  ? `${selected.provider} · ${modelPriceLabel(
-                      selected.pricing,
-                      selected.type,
-                    )} · ${selection?.source}`
-                  : selection?.source
-              }
-              disabled={!available[type] || options.length === 0 || busy !== null}
-              searchable
-              {...selectOnFocus}
-              onChange={(model) => void select(type, model)}
-            />
+            </Stack>
           );
         })}
       </Stack>
@@ -758,6 +810,10 @@ export default function ModelsPage() {
   const [models, setModels] = useState<CatalogModel[]>([]);
   const [makers, setMakers] = useState<Record<string, string>>({});
   const [selections, setSelections] = useState<Catalog["selections"] | null>(null);
+  const [rerankerMinScore, setRerankerMinScore] = useState<Catalog["rerankerMinScore"]>({
+    value: 0.01,
+    source: "default",
+  });
   const [selectionAvailable, setSelectionAvailable] = useState<Catalog["selectionAvailable"]>({
     embedding: false,
     rerank: false,
@@ -809,6 +865,7 @@ export default function ModelsPage() {
     setModels(data.models);
     setMakers(data.makers ?? {});
     setSelections(data.selections);
+    setRerankerMinScore(data.rerankerMinScore);
     setSelectionAvailable(data.selectionAvailable);
     setUpdatedAt(data.updatedAt ?? "");
     setSource(data.source);
@@ -967,6 +1024,7 @@ export default function ModelsPage() {
         <ModelSelectionSection
           models={models}
           selections={selections}
+          rerankerMinScore={rerankerMinScore}
           available={selectionAvailable}
           onChanged={loadCatalog}
         />

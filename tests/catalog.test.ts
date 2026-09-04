@@ -536,6 +536,7 @@ describe("searchCapabilities", () => {
 
   it("keeps a low absolute reranker score when it clearly identifies an AWS capability", async () => {
     const rerank = vi.fn(async () => reranked([0.03, 0.0003]));
+    const rerankerMinScore = vi.fn(() => 0.01);
     const found = await searchCapabilities(
       {
         ...searchDeps([
@@ -551,12 +552,13 @@ describe("searchCapabilities", () => {
           ],
         ]),
         reranker: { rerank },
-        rerankerMinScore: 0.01,
+        rerankerMinScore,
       },
       ["aws eks 최신 버전 알려줘"],
       { kind: "mcpServer", limit: 5 },
     );
     expect(found.map((entry) => entry.name)).toEqual(["aws-knowledge"]);
+    expect(rerankerMinScore).toHaveBeenCalledOnce();
   });
 
   it("matches a hyphenated name written as separate words", async () => {

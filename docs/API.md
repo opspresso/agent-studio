@@ -1468,6 +1468,7 @@ GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ]
                                  models: [ { …model, type: "text" | "image" | "embedding" | "rerank" | "transcription",
                                              selectionHidden, favorite } ],
                                  selections: { embedding, rerank? },
+                                 rerankerMinScore: { value, source },
                                  selectionAvailable: { embedding, rerank },
                                  makers: { <makerId>: label },
                                  updatedAt,
@@ -1480,7 +1481,7 @@ GET  /api/models/selfhosted → 200 { served: [ { name, type, contextWindow?, vi
                                     servedError?,
                                     declarations: [ <selfHostedModel> ],
                                     installed: [ <id> ] } | 400
-PUT  /api/models/selection { type: "embedding" | "rerank", model, migrate? }
+PUT  /api/models/selection { type: "embedding" | "rerank", model, migrate?, rerankerMinScore? }
                                  → 200 { settings, migration? } | 400 | 409 | 500
 GET    /api/models/catalog/document → 200 { stored: false }
                                     | 200 { stored: true, uploadedBy, uploadedAt, updatedAt,

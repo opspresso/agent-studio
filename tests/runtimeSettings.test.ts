@@ -15,6 +15,7 @@ import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
   getRerankerModelSelection,
+  getRerankerMinScoreSelection,
   invalidateSettingsCache,
   isAdminEmail,
   isConfiguredAdmin,
@@ -36,6 +37,7 @@ const ENV_KEYS = [
   "ARTIFACT_ACCESS_MODE",
   "EMBEDDING_MODEL",
   "RERANKER_MODEL",
+  "RERANKER_MIN_SCORE",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -156,6 +158,23 @@ describe("runtime settings precedence", () => {
       model: "selfhosted/env-reranker",
       source: "env",
     });
+  });
+
+  it("resolves the reranker score floor from DB before env and default", async () => {
+    process.env.RERANKER_MIN_SCORE = "0.2";
+    stub({ rerankerMinScore: "0.3", updatedAt: "2026-01-01T00:00:00Z" });
+    await expect(getRerankerMinScoreSelection()).resolves.toEqual({
+      value: 0.3,
+      source: "override",
+    });
+
+    invalidateSettingsCache();
+    stub(null);
+    await expect(getRerankerMinScoreSelection()).resolves.toEqual({ value: 0.2, source: "env" });
+
+    invalidateSettingsCache();
+    delete process.env.RERANKER_MIN_SCORE;
+    await expect(getRerankerMinScoreSelection()).resolves.toEqual({ value: 0.01, source: "default" });
   });
 
   it("caches reads until invalidated", async () => {

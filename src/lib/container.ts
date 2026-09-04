@@ -165,6 +165,7 @@ import {
   getSelfHostedModels,
   getRerankerModel,
   getRerankerModelSelection,
+  getRerankerMinScore,
   getUnknownModelPolicy,
   invalidateSettingsCache,
   isConfiguredAdmin,
@@ -544,7 +545,7 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
                 return { id, wireId: wireModelId(id) };
               },
             }),
-            rerankerMinScore: config.rerankerMinScore,
+            rerankerMinScore: getRerankerMinScore,
           }
         : {}),
     }
@@ -618,6 +619,7 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
     type === "embedding"
       ? getEmbeddingModel()
       : (await getRerankerModelSelection())?.model,
+  currentRerankerMinScore: getRerankerMinScore,
   available: (type) =>
     type === "embedding" ? catalogDeps !== undefined : catalogDeps?.reranker !== undefined,
   hidden: getHiddenModels,

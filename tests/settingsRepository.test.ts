@@ -36,6 +36,7 @@ describe("settingsRepository.get", () => {
       llmProviders: [{ name: "openai", baseUrl: "https://llm.example.com/v1", apiKey: "enc:v1:x" }],
       embeddingModel: "selfhosted/Qwen/Qwen3-Embedding-4B",
       rerankerModel: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      rerankerMinScore: "0.02",
       pluginsRepo: "opspresso/agent-plugins",
       pluginsRepoBranch: "main",
       githubToken: "enc:v1:token",

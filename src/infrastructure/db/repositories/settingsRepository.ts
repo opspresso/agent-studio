@@ -16,6 +16,7 @@ const FIELDS = [
   "llmApiKey",
   "embeddingModel",
   "rerankerModel",
+  "rerankerMinScore",
   "pluginsRepo",
   "pluginsRepoBranch",
   "githubToken",

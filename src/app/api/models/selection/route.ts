@@ -8,6 +8,7 @@ const selectionSchema = z.object({
   type: z.enum(["embedding", "rerank"]),
   model: z.string().min(1).max(200),
   migrate: z.boolean().optional(),
+  rerankerMinScore: z.number().min(0).max(1).optional(),
 });
 
 export const PUT = withAdminAuth(async (user, request: Request) => {
@@ -26,6 +27,7 @@ export const PUT = withAdminAuth(async (user, request: Request) => {
         parsed.data.model,
         parsed.data.migrate === true,
         user.email,
+        parsed.data.rerankerMinScore,
       ),
     );
   } catch (error) {

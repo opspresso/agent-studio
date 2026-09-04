@@ -55,6 +55,8 @@ export interface AppSettings {
   embeddingModel?: string;
   /** Active capability-catalog reranker; absent falls back to RERANKER_MODEL. */
   rerankerModel?: string;
+  /** Reranker relevance floor; absent falls back to RERANKER_MIN_SCORE. */
+  rerankerMinScore?: string;
   pluginsRepo?: string;
   pluginsRepoBranch?: string;
   /** Secret. */

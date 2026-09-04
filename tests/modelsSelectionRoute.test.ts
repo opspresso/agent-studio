@@ -45,6 +45,7 @@ describe("PUT /api/models/selection", () => {
       "selfhosted/Qwen/Qwen3-Embedding-4B",
       true,
       "admin@example.com",
+      undefined,
     );
   });
 
@@ -66,7 +67,35 @@ describe("PUT /api/models/selection", () => {
       "selfhosted/Qwen/Qwen3-Reranker-0.6B",
       false,
       "admin@example.com",
+      undefined,
     );
+  });
+
+  it("passes a rerank score floor to the bound use case", async () => {
+    modelSelectionUseCases.select.mockResolvedValue({ settings: {} });
+    const res = await put({
+      type: "rerank",
+      model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      rerankerMinScore: 0.05,
+    });
+    expect(res.status).toBe(200);
+    expect(modelSelectionUseCases.select).toHaveBeenCalledWith(
+      "rerank",
+      "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      false,
+      "admin@example.com",
+      0.05,
+    );
+  });
+
+  it("rejects a rerank score floor outside zero to one", async () => {
+    const res = await put({
+      type: "rerank",
+      model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
+      rerankerMinScore: 1.1,
+    });
+    expect(res.status).toBe(400);
+    expect(modelSelectionUseCases.select).not.toHaveBeenCalled();
   });
 
   it("maps a model type mismatch to 400", async () => {

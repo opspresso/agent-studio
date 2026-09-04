@@ -6,6 +6,7 @@ const {
   getHiddenModels,
   getEmbeddingModelSelection,
   getRerankerModelSelection,
+  getRerankerMinScoreSelection,
   modelPreferenceUseCases,
   config,
 } = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const {
   getHiddenModels: vi.fn(),
   getEmbeddingModelSelection: vi.fn(),
   getRerankerModelSelection: vi.fn(),
+  getRerankerMinScoreSelection: vi.fn(),
   modelPreferenceUseCases: { list: vi.fn() },
   config: {
     catalogEnabled: false,
@@ -31,6 +33,7 @@ vi.mock("@/lib/runtime-settings", () => ({
   getHiddenModels,
   getEmbeddingModelSelection,
   getRerankerModelSelection,
+  getRerankerMinScoreSelection,
 }));
 vi.mock("@/lib/container", () => ({ modelPreferenceUseCases }));
 vi.mock("@/lib/config", () => ({ config }));
@@ -51,6 +54,7 @@ interface CatalogBody {
     rerank?: { model: string; source: string };
   };
   selectionAvailable: { embedding: boolean; rerank: boolean };
+  rerankerMinScore: { value: number; source: "override" | "env" | "default" };
 }
 
 async function catalog(): Promise<CatalogBody> {
@@ -66,6 +70,7 @@ beforeEach(() => {
   modelPreferenceUseCases.list.mockResolvedValue([]);
   getEmbeddingModelSelection.mockResolvedValue({ model: "openrouter/qwen3-embedding-4b", source: "env" });
   getRerankerModelSelection.mockResolvedValue(undefined);
+  getRerankerMinScoreSelection.mockResolvedValue({ value: 0.01, source: "default" });
   config.catalogEnabled = false;
   config.reranker = undefined;
 });
@@ -94,6 +99,7 @@ describe("GET /api/models/catalog", () => {
       source: "env",
     });
     expect(body.selectionAvailable).toEqual({ embedding: false, rerank: false });
+    expect(body.rerankerMinScore).toEqual({ value: 0.01, source: "default" });
     expect(body.source).toBe("default");
   });
 

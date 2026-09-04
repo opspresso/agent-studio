@@ -14,7 +14,9 @@ import {
   getHiddenModels,
   getLlmProviderConfigs,
   getRerankerModelSelection,
+  getRerankerMinScoreSelection,
   type ModelSelection,
+  type ScoreSelection,
 } from "@/lib/runtime-settings";
 import { withMemberAuth } from "@/lib/session";
 import { config } from "@/lib/config";
@@ -26,6 +28,7 @@ export interface ModelsCatalogResponse {
   updatedAt: string;
   source: "override" | "default";
   selections: { embedding: ModelSelection; rerank?: ModelSelection };
+  rerankerMinScore: ScoreSelection;
   selectionAvailable: { embedding: boolean; rerank: boolean };
 }
 
@@ -49,12 +52,14 @@ export const GET = withMemberAuth(async (user) => {
     favoriteModels,
     embedding,
     rerank,
+    rerankerMinScore,
   ] = await Promise.all([
     getLlmProviderConfigs(),
     getHiddenModels(),
     modelPreferenceUseCases.list(user.id),
     getEmbeddingModelSelection(),
     getRerankerModelSelection(),
+    getRerankerMinScoreSelection(),
   ]);
   const dedicated = new Set(providerConfigs.map((provider) => provider.name));
   const hidden = new Set(hiddenModels ?? []);
@@ -75,6 +80,7 @@ export const GET = withMemberAuth(async (user) => {
     updatedAt: modelCatalogUpdatedAt(),
     source: hiddenModels === undefined ? "default" : "override",
     selections: { embedding, ...(rerank ? { rerank } : {}) },
+    rerankerMinScore,
     selectionAvailable: {
       embedding: config.catalogEnabled,
       rerank: config.catalogEnabled && config.reranker !== undefined,

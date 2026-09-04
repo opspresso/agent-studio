@@ -93,6 +93,7 @@ function deps(initial: AppSettings | null = null): {
       lock,
       settings: { getView: vi.fn() as never, update: update as never },
       current: async () => undefined,
+      currentRerankerMinScore: async () => Number(stored?.rerankerMinScore ?? 0.01),
       available: () => true,
       hidden: async () => undefined,
       testReranker,
@@ -202,5 +203,28 @@ describe("modelSelectionUseCases", () => {
         "admin@example.com",
       ),
     ).rejects.toThrow("is not an embedding model");
+  });
+
+  it("changes the rerank score floor without probing or rebuilding", async () => {
+    installModels();
+    const setup = deps({
+      rerankerModel: RERANKER,
+      rerankerMinScore: "0.01",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    setup.deps.current = async () => RERANKER;
+
+    await createModelSelectionUseCases(setup.deps).select(
+      "rerank",
+      RERANKER,
+      false,
+      "admin@example.com",
+      0.05,
+    );
+
+    expect(setup.value()?.rerankerMinScore).toBe("0.05");
+    expect(setup.deps.testReranker).not.toHaveBeenCalled();
+    expect(setup.reindex).not.toHaveBeenCalled();
+    expect(setup.invalidate).toHaveBeenCalledOnce();
   });
 });

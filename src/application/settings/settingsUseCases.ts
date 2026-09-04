@@ -19,6 +19,7 @@ import {
   selfHostedModelFromInput,
   type SelfHostedModelInput,
 } from "@/domain/llm/selfHostedModels";
+import { DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
 import { parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
@@ -65,6 +66,12 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
   { key: "llmApiKey", secret: true, env: () => optionalEnv(env.LLM_API_KEY) },
   { key: "embeddingModel", secret: false, env: () => optionalEnv(env.EMBEDDING_MODEL) },
   { key: "rerankerModel", secret: false, env: () => optionalEnv(env.RERANKER_MODEL) },
+  {
+    key: "rerankerMinScore",
+    secret: false,
+    env: () => optionalEnv(env.RERANKER_MIN_SCORE),
+    defaultValue: String(DEFAULT_RERANKER_MIN_SCORE),
+  },
   { key: "pluginsRepo", secret: false, env: () => optionalEnv(env.PLUGINS_REPO) },
   {
     key: "pluginsRepoBranch",
@@ -350,6 +357,12 @@ export function createSettingsUseCases(
           continue;
         }
         const value = raw.trim();
+        if (spec.key === "rerankerMinScore" && value !== "") {
+          const score = Number(value);
+          if (!Number.isFinite(score) || score < 0 || score > 1) {
+            throw new ValidationError("Reranker minimum score must be between 0 and 1");
+          }
+        }
         if (spec.key === "artifactAccessMode" && value !== "") {
           if (value !== "authenticated" && value !== "public" && value !== "proxied") {
             throw new ValidationError(
@@ -373,7 +386,12 @@ export function createSettingsUseCases(
           } else {
             next[spec.key] = cipher.encrypt(value);
           }
-        } else if (value === spec.env()) {
+        } else if (
+          value === spec.env() ||
+          (spec.key === "rerankerMinScore" &&
+            spec.env() === undefined &&
+            value === spec.defaultValue)
+        ) {
           delete next[spec.key];
         } else {
           next[spec.key] = value;

@@ -33,7 +33,7 @@ export interface CatalogSearchDeps {
   embeddings: EmbeddingPort;
   catalog: VectorStorePort;
   reranker?: RerankerPort;
-  rerankerMinScore?: number;
+  rerankerMinScore?: () => Promise<number> | number;
   /**
    * The relevance floor — see `DEFAULT_MIN_SCORE`. Injected because it belongs
    * to the embedding model and this layer cannot read configuration; absent
@@ -174,6 +174,9 @@ export async function searchCapabilitiesByKind(
       rerank: emptyRerankReport(),
     };
   }
+  const rerankerMinScore = deps.reranker
+    ? await Promise.resolve(deps.rerankerMinScore?.() ?? DEFAULT_RERANKER_MIN_SCORE)
+    : DEFAULT_RERANKER_MIN_SCORE;
   const vectors = await deps.embeddings.embed(usable, "query");
   const candidatesByRequest = await Promise.all(
     requests.map(async (request) => {
@@ -201,6 +204,7 @@ export async function searchCapabilitiesByKind(
         query,
         requests,
         candidatesByRequest.map((perQuery) => perQuery[queryIndex] ?? []),
+        rerankerMinScore,
         options,
       ),
     ),
@@ -305,6 +309,7 @@ async function rankQuery(
   query: string,
   requests: ReadonlyArray<{ kind: CapabilityKind; limit: number }>,
   candidatesByRequest: RankedCandidate[][],
+  rerankerMinScore: number,
   options: CatalogSearchOptions,
 ): Promise<{ matches: RankedCandidate[][]; rerank: CatalogRerankReport }> {
   const floor = deps.minScore ?? DEFAULT_MIN_SCORE;
@@ -355,7 +360,7 @@ async function rankQuery(
       matches: requests.map((request, requestIndex) => {
         return rerankSurvivors(
           rescoredByRequest[requestIndex] ?? [],
-          deps.rerankerMinScore ?? DEFAULT_RERANKER_MIN_SCORE,
+          rerankerMinScore,
         ).slice(0, request.limit);
       }),
       rerank: {
