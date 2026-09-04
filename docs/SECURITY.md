@@ -190,6 +190,8 @@ Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시�
 설정(LLM API 키와 plugins 저장소의 GitHub token)은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM
 암호화되어 `enc:v1:` 접두사 아래 저장된다
 (`src/infrastructure/crypto/secretEncryption.ts`).
+부팅, 저장 시크릿 암호화, proxied URL 서명은 모두 `decodeAes256Key` 를 거쳐 canonical base64 로
+인코딩된 정확히 32바이트 key 만 사용한다.
 
 ### 읽을 때의 마스킹
 

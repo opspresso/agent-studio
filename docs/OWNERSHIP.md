@@ -35,6 +35,7 @@
 | 저장된 오브젝트를 삭제하기 | `src/infrastructure/storage/s3ObjectStore.ts` |
 | proxied 오브젝트 주소와 그 토큰. `/api/objects/<key>?exp=&sig=[&dl=]`, HMAC 이 무엇을 덮는가 | `src/infrastructure/storage/objectUrlToken.ts`. 서명자와 라우트가 여기서 합의한다. 두 번째 작성자는 HMAC 이 파일명을 덮는지에 대해 다르게 답할 수 있고, 그것은 답하지 않는 링크이거나 서명되지 않은 이름으로 내려가는 링크다 |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` |
+| `AES_ENCRYPTION_KEY` 의 base64 해석과 32바이트 검증 | `src/shared/aesKey.ts` 의 `decodeAes256Key` |
 | 쉼표로 구분된 설정 목록의 파싱 | `src/shared/parseList.ts` |
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` |
 | provider 에 embedding 을 요청하기 | `src/infrastructure/llm/embeddings.ts` |

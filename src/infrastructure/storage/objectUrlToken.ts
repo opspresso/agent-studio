@@ -30,6 +30,7 @@
 import { createHmac, hkdfSync } from "node:crypto";
 import { config } from "@/lib/config";
 import { timingSafeEqualString } from "@/shared/timingSafe";
+import { decodeAes256Key } from "@/shared/aesKey";
 
 export interface ObjectUrlClaims {
   /** The object key, exactly as stored. */
@@ -57,7 +58,7 @@ let derived: Buffer | undefined;
 
 function signingKey(): Buffer {
   if (!derived) {
-    const master = Buffer.from(config.aesEncryptionKey, "base64");
+    const master = decodeAes256Key(config.aesEncryptionKey);
     derived = Buffer.from(hkdfSync("sha256", master, "", SIGNING_KEY_INFO, SIGNING_KEY_BYTES));
   }
   return derived;

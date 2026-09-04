@@ -1,16 +1,13 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { config } from "@/lib/config";
+import { decodeAes256Key } from "@/shared/aesKey";
 
 const PREFIX = "enc:v1:";
 // Stored layout after the prefix: base64(iv(12) + tag(16) + ciphertext).
 const IV_AND_TAG_LENGTH = 28;
 
 function getKey(): Buffer {
-  const key = Buffer.from(config.aesEncryptionKey, "base64");
-  if (key.length !== 32) {
-    throw new Error("AES_ENCRYPTION_KEY must be 32 bytes base64-encoded");
-  }
-  return key;
+  return decodeAes256Key(config.aesEncryptionKey);
 }
 
 export function isEncrypted(value: string): boolean {

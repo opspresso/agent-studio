@@ -137,6 +137,17 @@ describe("required config", () => {
       "Missing required environment variables: LLM_API_KEY",
     );
   });
+
+  it("rejects a present but weak AES key at boot", () => {
+    set("DATABASE_URL", "postgres://unit:unit@localhost:5432/unit");
+    set("LLM_BASE_URL", "https://router.example/v1");
+    set("LLM_API_KEY", "router-key");
+    set("AES_ENCRYPTION_KEY", "AA==");
+
+    expect(() => assertRequiredConfig()).toThrow(
+      "AES_ENCRYPTION_KEY must be 32 bytes in canonical base64",
+    );
+  });
 });
 
 describe("parseProviderConfigs", () => {

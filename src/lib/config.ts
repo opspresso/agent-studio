@@ -3,6 +3,7 @@ import { MAX_RUN_SLOTS } from "@/domain/execution/runSlot";
 import { parseKeyValueList, parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { log } from "@/shared/logger";
+import { decodeAes256Key } from "@/shared/aesKey";
 
 export type Stage = "local" | "alpha" | "prod";
 
@@ -33,6 +34,7 @@ export function assertRequiredConfig(): void {
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
   }
+  decodeAes256Key(config.aesEncryptionKey);
   void config.reranker;
 }
 
