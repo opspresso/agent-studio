@@ -20,7 +20,7 @@ import { MEMBER_TIER_COLOR } from "@/app/_components/badgeColors";
 import { CardHeading } from "@/app/_components/CardHeading";
 import { CostBarChart } from "@/app/_components/CostBarChart";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
-import { GroupByControl } from "@/app/_components/GroupByControl";
+import { GROUP_BY_LABEL, GroupByControl } from "@/app/_components/GroupByControl";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
 import { StatCard } from "@/app/_components/StatCard";
@@ -130,7 +130,7 @@ export default function ProfilePage() {
             <Text fz="sm" c="dimmed" truncate>{member.email}</Text>
             <Group gap="xl" mt="sm">
               <div>
-                <Text fz="xs" c="dimmed">Joined</Text>
+                <Text fz="xs" c="dimmed">{t("profile.joined")}</Text>
                 <Text fz="sm">{formatDateTime(member.joinedAt, locale)}</Text>
               </div>
               <div>
@@ -143,10 +143,17 @@ export default function ProfilePage() {
                 <Text fz="xs" c="dimmed">{t("profile.tierLimits")}</Text>
                 <Text fz="sm">
                   {limits.maxConcurrentRuns !== undefined
-                    ? `${limits.maxConcurrentRuns} concurrent ${limits.maxConcurrentRuns === 1 ? "run" : "runs"}`
-                    : "Workspace default concurrency"}
+                    ? t(
+                        limits.maxConcurrentRuns === 1
+                          ? "profile.concurrentRun"
+                          : "profile.concurrentRuns",
+                        { count: limits.maxConcurrentRuns },
+                      )
+                    : t("profile.workspaceConcurrency")}
                   {" · "}
-                  {cap !== undefined ? `${formatUsd(cap)}/month` : "uncapped"}
+                  {cap !== undefined
+                    ? t("profile.perMonth", { amount: formatUsd(cap) })
+                    : t("profile.uncapped")}
                 </Text>
               </div>
             </Group>
@@ -157,7 +164,7 @@ export default function ProfilePage() {
       {cap !== undefined && cap > 0 && (
         <Card>
           <Group justify="space-between" mb="xs">
-            <CardHeading title={t("profile.monthlyCap")} subtitle="This UTC month, whatever the range below" />
+            <CardHeading title={t("profile.monthlyCap")} subtitle={t("profile.capPeriod")} />
             <Text fz="sm" c="dimmed" ff="monospace">
               {formatUsd(monthToDateUsd)} / {formatUsd(cap)}
             </Text>
@@ -178,26 +185,29 @@ export default function ProfilePage() {
         <StatCard
           label={t("cost.totalCost")}
           value={formatUsd(cost)}
-          detail="Selected period"
+          detail={t("cost.selectedPeriod")}
           Icon={IconCoins}
         />
         <StatCard
           label={t("cost.totalCalls")}
           value={calls.toLocaleString(locale)}
-          detail="Model invocations"
+          detail={t("cost.modelInvocations")}
           Icon={IconActivity}
         />
       </SimpleGrid>
 
       <Card>
         <Group justify="space-between" mb="md" gap="md" wrap="wrap">
-          <CardHeading title={t("cost.dailyCost")} subtitle={`Stacked by ${groupBy}`} />
+          <CardHeading
+            title={t("cost.dailyCost")}
+            subtitle={t("usage.stackedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
+          />
           <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
         </Group>
         <CostBarChart
           data={daily.data}
           keys={daily.keys}
-          empty={usageLoading ? "Loading…" : "No usage in this range."}
+          empty={usageLoading ? t("common.loading") : t("usage.none")}
         />
       </Card>
 

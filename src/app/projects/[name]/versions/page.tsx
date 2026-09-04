@@ -69,9 +69,9 @@ export default function VersionsPage() {
   async function remove(versionName: string) {
     if (
       !(await confirm({
-        title: "Delete version",
-        message: `Delete version ${versionName}? This cannot be undone.`,
-        confirmLabel: "Delete",
+        title: t("versions.deleteTitle"),
+        message: t("versions.deleteBody", { name: versionName }),
+        confirmLabel: t("versions.delete"),
       }))
     ) {
       return;
@@ -126,7 +126,7 @@ export default function VersionsPage() {
                     <Text ff="monospace" fz="sm" fw={500}>
                       v{version.versionName}
                     </Text>
-                    {isPublished && <Badge color={BADGE.on}>published</Badge>}
+                    {isPublished && <Badge color={BADGE.on}>{t("versions.published")}</Badge>}
                   </Group>
                   <Text fz="xs" c="dimmed" mt={2}>
                     {version.model} · {formatDateTime(version.createdAt, locale)}
@@ -139,7 +139,7 @@ export default function VersionsPage() {
                       onClick={() => publish(version.versionName)}
                       disabled={busy !== null || isPublished}
                     >
-                      {isPublished ? "Published" : "Publish"}
+                      {isPublished ? t("versions.published") : t("versions.publish")}
                     </Button>
                     <Button
                       variant="default"
@@ -147,7 +147,7 @@ export default function VersionsPage() {
                       onClick={() => remove(version.versionName)}
                       disabled={busy !== null}
                     >
-                      Delete
+                      {t("versions.delete")}
                     </Button>
                   </Group>
                 )}

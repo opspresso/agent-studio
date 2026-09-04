@@ -7,7 +7,7 @@ import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { CardHeading } from "@/app/_components/CardHeading";
 import { CostBarChart } from "@/app/_components/CostBarChart";
 import { DataTable } from "@/app/_components/DataTable";
-import { GroupByControl } from "@/app/_components/GroupByControl";
+import { GROUP_BY_LABEL, GroupByControl } from "@/app/_components/GroupByControl";
 import { StatCard } from "@/app/_components/StatCard";
 import { UsageBreakdown } from "@/app/_components/UsageBreakdown";
 import { defaultDateRange } from "@/app/_lib/dateRange";
@@ -149,26 +149,33 @@ export default function UsagePage() {
             <StatCard
               label={t("cost.totalCost")}
               value={formatUsd(totalCost)}
-              detail="Selected period"
+              detail={t("cost.selectedPeriod")}
               Icon={IconCoins}
             />
             <StatCard
               label={t("cost.totalCalls")}
               value={totalCalls.toLocaleString(locale)}
-              detail="Model invocations"
+              detail={t("cost.modelInvocations")}
               Icon={IconActivity}
             />
             <StatCard
               label={t("projectUsage.callers")}
               value={callers.length.toLocaleString(locale)}
-              detail={callers.length === 0 ? "Owner or admin only" : "Distinct identities"}
+              detail={t(
+                maySeeActors
+                  ? "projectUsage.distinctIdentities"
+                  : "projectUsage.ownerAdminOnly",
+              )}
               Icon={IconUsers}
             />
           </SimpleGrid>
 
           <Card>
             <Group justify="space-between" mb="md" gap="md" wrap="wrap">
-              <CardHeading title={t("cost.dailyCost")} subtitle={`Stacked by ${groupBy}`} />
+              <CardHeading
+                title={t("cost.dailyCost")}
+                subtitle={t("usage.stackedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
+              />
               <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
             </Group>
             <CostBarChart data={daily.data} keys={daily.keys} />
@@ -179,14 +186,17 @@ export default function UsagePage() {
           {callers.length > 0 && (
             <Card padding={0}>
               <Group px="md" pt="md">
-                <CardHeading title={t("projectUsage.whoSpent")} subtitle="Per caller, this range" />
+                <CardHeading
+                  title={t("projectUsage.whoSpent")}
+                  subtitle={t("projectUsage.perCallerRange")}
+                />
               </Group>
               <DataTable>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Caller</Table.Th>
-                    <Table.Th ta="right">Calls</Table.Th>
-                    <Table.Th ta="right">Cost</Table.Th>
+                    <Table.Th>{t("projectUsage.caller")}</Table.Th>
+                    <Table.Th ta="right">{t("usage.calls")}</Table.Th>
+                    <Table.Th ta="right">{t("usage.cost")}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
