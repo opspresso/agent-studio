@@ -150,11 +150,6 @@ export interface McpServer {
    * run arbitrary code on the host.
    */
   image?: string;
-  /**
-   * Managed only: host env-file paths holding the container's environment.
-   * References, not values: the secrets never enter this table.
-   */
-  envRefs?: string[];
   /** Managed only: encrypted-at-rest environment values. Masked on client reads. */
   environment?: Record<string, string>;
   /** Managed only: arguments appended to the image entrypoint. */

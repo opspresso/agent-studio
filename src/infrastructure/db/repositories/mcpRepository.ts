@@ -13,7 +13,6 @@ function fromItem(item: Record<string, unknown>): McpServer {
     // back as `remote` — the shape those rows have always had.
     runtime: item.runtime as McpRuntime | undefined,
     image: item.image as string | undefined,
-    envRefs: item.envRefs as string[] | undefined,
     environment: item.environment as Record<string, string> | undefined,
     args: item.args as string[] | undefined,
     endpointPath: item.endpointPath as string | undefined,
@@ -40,7 +39,6 @@ function toItem(server: McpServer): Record<string, unknown> {
     // has to survive the round trip or the entry silently becomes remote.
     runtime: server.runtime,
     image: server.image,
-    envRefs: server.envRefs,
     environment: server.environment,
     args: server.args,
     endpointPath: server.endpointPath,

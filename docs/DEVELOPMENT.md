@@ -114,7 +114,7 @@ pnpm exec vitest run -t "streamWithFallback"
 | `scripts/integration-check.ts` | 저장소 왕복 전 구간 + 엔진(단발 실행과 agent 루프). |
 | `scripts/check-models.ts` | 카탈로그 스냅샷(`src/domain/llm/catalog.json`)을 *이 배포의* 채널들이 서빙하는 id 와 대조한다. agent-models 가 provider 의 공개 카탈로그는 스스로 보므로, 여기서 보는 것은 게이트웨이·Bedrock·키의 범위 같은 이 배포만의 차이다. |
 | `scripts/sync-models.ts` | 발행된 카탈로그로 스냅샷을 갱신한다 (`--check` 는 뒤처졌으면 1 로 종료, `--from <file>` 은 URL 대신 로컬 카탈로그 문서를 읽는다, `MODELS_CATALOG_URL` 이 없거나 `none` 인 환경에서는 이것이 필수다). 런타임은 카탈로그를 직접 읽으므로, 테스트가 새 모델을 봐야 하거나 릴리즈 전일 때 돌린다. |
-| `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키로 `items` 에 upsert 한다. 새 배포에서 위험한 managed MCP `envRefs` 와 저장소 종속 `artifactAccessMode` 는 제거하고, 같은 이메일로 먼저 생긴 사용자는 export 의 원래 id 를 보존하기 위해 교체한다. 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
+| `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키로 `items` 에 upsert 한다. 지원하지 않는 managed MCP host-file `envRefs` 와 저장소 종속 `artifactAccessMode` 는 제거하고, 같은 이메일로 먼저 생긴 사용자는 export 의 원래 id 를 보존하기 위해 교체한다. 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
 
 ### `check-models`
 

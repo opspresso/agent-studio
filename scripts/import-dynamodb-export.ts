@@ -273,12 +273,12 @@ async function main(): Promise<void> {
         // fixed before the row is written rather than after — the row is what
         // the new deployment reads at its next boot.
         if (Array.isArray(item.envRefs) && item.envRefs.length > 0) {
-          // A managed server's `envRefs` were SSM parameter names on the old
-          // deployment; here they are env-file paths on the app's host, and
-          // the old names would be opened as paths at every boot. Dropped,
-          // named, for the operator to re-enter as files.
+          // Host env-file references are no longer accepted: an API-controlled
+          // absolute path lets a managed image read unrelated host secrets.
+          // Drop the retired field rather than carrying that authority into
+          // the new deployment.
           console.log(
-            `dropping envRefs of ${pk} (${item.envRefs.map(String).join(", ")}): SSM names, not host paths`,
+            `dropping unsupported envRefs of ${pk} (${item.envRefs.map(String).join(", ")})`,
           );
           const { envRefs: _envRefs, ...rest } = item;
           item = rest;

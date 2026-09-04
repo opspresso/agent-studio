@@ -772,10 +772,6 @@ export const en = {
   "managed.imagePlaceholder": "…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1",
   "managed.imageHint": "Any registry the host can pull from — its own ECR needs no credentials.",
   "managed.port": "Container port",
-  "managed.envRefs": "Environment references",
-  "managed.envRefsPlaceholder": "/env/prod/mcp-image-fetch",
-  "managed.envRefsHint":
-    "Paths of env files on the host, not values — the secrets never pass through here.",
   "managed.envVars": "Environment variables",
   "managed.envVarsEmpty": "No direct environment variables.",
   "managed.addVariable": "+ Add variable",

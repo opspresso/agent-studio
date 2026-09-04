@@ -40,7 +40,6 @@ export interface CreateManagedInput {
   name: string;
   image: string;
   containerPort: number;
-  envRefs?: string[];
   environment?: Record<string, string>;
   args?: string[];
   endpointPath?: string;
@@ -234,7 +233,6 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     return {
       name: entry.name,
       image: entry.image,
-      ...(entry.envRefs ? { envRefs: entry.envRefs } : {}),
       ...(entry.environment
         ? { environment: deps.cipher.decryptHeadersForOutbound(entry.environment) }
         : {}),
@@ -366,7 +364,6 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
           name: input.name,
           image: input.image,
           containerPort: input.containerPort,
-          ...(input.envRefs ? { envRefs: input.envRefs } : {}),
           ...(input.environment ? { environment: input.environment } : {}),
           ...(input.args ? { args: input.args } : {}),
         };
@@ -382,7 +379,6 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
           url: `${workload.address}${endpointPath(input.endpointPath)}`,
           image: input.image,
           containerPort: input.containerPort,
-          ...(input.envRefs ? { envRefs: input.envRefs } : {}),
           ...(input.environment
             ? { environment: deps.cipher.encryptHeaders(input.environment) }
             : {}),
@@ -433,12 +429,6 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
 
     async update(name, input) {
       const existing = await requireManaged(name);
-      const envRefs =
-        input.envRefs === undefined
-          ? existing.envRefs
-          : input.envRefs.length > 0
-            ? input.envRefs
-            : undefined;
       const args =
         input.args === undefined ? existing.args : input.args.length > 0 ? input.args : undefined;
       const environment =
@@ -450,7 +440,6 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       const nextEndpointPath = endpointPath(input.endpointPath ?? existing.endpointPath);
       const updated: McpServer = {
         ...existing,
-        envRefs,
         environment,
         args,
         endpointPath:
@@ -468,7 +457,6 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       const workloadChanged =
         updated.image !== existing.image ||
         updated.containerPort !== existing.containerPort ||
-        JSON.stringify(updated.envRefs ?? []) !== JSON.stringify(existing.envRefs ?? []) ||
         JSON.stringify(updated.environment ?? {}) !== JSON.stringify(existing.environment ?? {}) ||
         JSON.stringify(updated.args ?? []) !== JSON.stringify(existing.args ?? []) ||
         nextEndpointPath !== endpointPath(existing.endpointPath);

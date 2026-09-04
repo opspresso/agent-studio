@@ -76,7 +76,7 @@
 | Project 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `projectWebhookPath` |
 | Project optimistic update 가 경쟁에서 졌을 때의 오류 계약 | `src/application/project/projectUpdate.ts` 의 `persistProjectUpdate` |
 | managed workload 이름 규칙 | `src/domain/naming.ts` 의 `MANAGED_NAME` |
-| managed workload의 image·env reference·환경 키·값·argv·endpoint path 문법 | `src/domain/mcp/provisioner.ts`. API가 400으로 거절하는 문법과 lifecycle/Docker 경계가 실행 직전에 방어하는 문법이 같다 |
+| managed workload의 image·환경 키·값·argv·endpoint path 문법 | `src/domain/mcp/provisioner.ts`. API가 400으로 거절하는 문법과 lifecycle/Docker 경계가 실행 직전에 방어하는 문법이 같다 |
 | plugin 상세의 repository·commit 링크가 향하는 GitHub web base | `src/lib/config.ts`의 `githubWebUrl`. public GitHub와 표준 GHES API 경로에서 도출하고, 그 밖에는 `GITHUB_WEB_URL`이 정한다. 브라우저는 상세 API가 만든 `repositoryUrl`만 읽는다 |
 | 동시에 도는 generator 를 병합하기 | `src/shared/mergeGenerators.ts` |
 | chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/app/_lib/authorPaths.ts` |

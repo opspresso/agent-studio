@@ -902,7 +902,7 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
 ```json
 { "name": "my-tool", "image": "…/my-mcp:1.4.0", "containerPort": 8080,
   "args": ["--port", "{{PORT}}"]?, "endpointPath": "/mcp"?,
-  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/etc/agent-studio/my-tool.env"]?,
+  "environment": { "LOG_LEVEL": "info" }?,
   "description": ""?, "content": ""?, "headers": {}? }
 ```
 
@@ -911,9 +911,9 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
   없어야 한다. 인자 안의 `{{PORT}}` 는 실제 listen 포트로 치환된다. `PORT` 환경변수를 존중하지
   않는 이미지를 위한 것이다.
 - `environment` 값은 레지스트리 행에서 암호화되고, 읽을 때 마스킹되며, 워크로드 스펙을 만들 때만
-  복호화된다. `PORT` 는 거절된다. 그것은 런타임이 소유한다. 값이 Parameter Store 에 남아 있어야
-  하면 대신 `envRefs` 를 쓰라. 키는 `^[A-Za-z_][A-Za-z0-9_]*$` 이고 값은 줄바꿈 없이
-  16,384자까지 간다. `envRefs`는 `/`로 시작하는 호스트 절대 경로다.
+  복호화된다. Docker 에는 0600 임시 env file 로 전달하고 호출 뒤 제거한다. 호스트 파일 경로는
+  받지 않는다. `PORT` 는 거절된다. 그것은 런타임이 소유한다. 키는
+  `^[A-Za-z_][A-Za-z0-9_]*$` 이고 값은 줄바꿈 없이 16,384자까지 간다.
 - `endpointPath` 의 기본값은 `/mcp` 이고, query·fragment·공백이 없는 절대 경로여야 한다
   (`^\/(?!\/)[^\s?#]*$`). 그 밖의 것은 `400` 이다.
 - `PUT`/`DELETE` 의 `403` 은 모든 레지스트리 라우트가 답하는 repo 소유 거절이다: sync 된 항목의

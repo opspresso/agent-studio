@@ -34,7 +34,6 @@ export function ManagedMcpModal({
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
   const [containerPort, setContainerPort] = useState("3000");
-  const [envRefs, setEnvRefs] = useState("");
   const [environmentRows, setEnvironmentRows] = useState<HeaderRow[]>([]);
   const [args, setArgs] = useState("");
   const [endpointPath, setEndpointPath] = useState("/mcp");
@@ -47,13 +46,12 @@ export function ManagedMcpModal({
   /**
    * The modal is mounted for the life of the page — `opened` is a prop, not a
    * mount — so the draft that just started a container is still here when the
-   * next one opens, image and env refs included.
+   * next one opens, image and environment included.
    */
   function reset() {
     setName("");
     setImage("");
     setContainerPort("3000");
-    setEnvRefs("");
     setEnvironmentRows([]);
     setArgs("");
     setEndpointPath("/mcp");
@@ -66,10 +64,6 @@ export function ManagedMcpModal({
     setSubmitting(true);
     setError(null);
     try {
-      const refs = envRefs
-        .split(/[\s,]+/)
-        .map((ref) => ref.trim())
-        .filter(Boolean);
       const runtimeArgs = args
         .split("\n")
         .map((arg) => arg.trim())
@@ -78,7 +72,6 @@ export function ManagedMcpModal({
         name,
         image,
         containerPort: Number(containerPort),
-        ...(refs.length > 0 ? { envRefs: refs } : {}),
         environment: rowsToRecord(environmentRows),
         ...(runtimeArgs.length > 0 ? { args: runtimeArgs } : {}),
         endpointPath,
@@ -142,15 +135,6 @@ export function ManagedMcpModal({
           </>
         }
         inputWrapperOrder={["label", "input", "description", "error"]}
-      />
-      <TextInput
-        label={t("managed.envRefs")}
-        value={envRefs}
-        onChange={(e) => setEnvRefs(e.currentTarget.value)}
-        placeholder={t("managed.envRefsPlaceholder")}
-        description={t("managed.envRefsHint")}
-        inputWrapperOrder={["label", "input", "description", "error"]}
-        styles={monoInput}
       />
       <HeaderRowsEditor
         rows={environmentRows}
