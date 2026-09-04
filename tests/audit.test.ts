@@ -237,15 +237,11 @@ describe("reading a range", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it("refuses an enormous range without first building it", async () => {
-    // The day count is arithmetic; enumerating this range allocates a Date and a
-    // string 3.6 million times, which blocks the one event loop for seconds
-    // before the refusal it was always going to end in.
-    const started = process.hrtime.bigint();
+  it("refuses an enormous range before querying any partition", async () => {
+    const listByDay = vi.spyOn(sink, "listByDay");
     await expect(
       useCases.list({ from: "0001-01-01", to: "9999-12-31" }),
     ).rejects.toBeInstanceOf(ValidationError);
-    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
-    expect(elapsedMs).toBeLessThan(100);
+    expect(listByDay).not.toHaveBeenCalled();
   });
 });
