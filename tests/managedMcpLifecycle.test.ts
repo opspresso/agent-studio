@@ -675,6 +675,46 @@ describe("managed MCP reconcile", () => {
     expect(f.rows.get("image-fetch")?.url).toBe("http://127.0.0.1:3001/mcp");
   });
 
+  it("surfaces cleanup failure for a restart at an invalid address", async () => {
+    const f = fixture({
+      existing: managedRow(),
+      address: "http://10.0.0.7:3001",
+      stopError: new Error("docker daemon unavailable"),
+    });
+    f.answerWith(() => REFUSED);
+
+    await expect(f.useCases.reconcile()).resolves.toEqual([
+      {
+        name: "image-fetch",
+        action: "failed",
+        detail: expect.stringContaining("container could not be stopped"),
+      },
+    ]);
+    expect(f.stopped).toEqual(["image-fetch"]);
+  });
+
+  it("surfaces cleanup failure when an entry is removed during restart", async () => {
+    const f = fixture({
+      existing: managedRow(),
+      holdStart: true,
+      stopError: new Error("docker daemon unavailable"),
+    });
+    f.answerWith(() => REFUSED);
+    const reconciling = f.useCases.reconcile();
+    await vi.waitFor(() => expect(f.started).toEqual(["image-fetch"]));
+    f.rows.delete("image-fetch");
+    f.releaseStart();
+
+    await expect(reconciling).resolves.toEqual([
+      {
+        name: "image-fetch",
+        action: "failed",
+        detail: expect.stringContaining("container could not be stopped"),
+      },
+    ]);
+    expect(f.stopped).toEqual(["image-fetch"]);
+  });
+
   it("drops the discovery cache the failure was learned into", async () => {
     const f = fixture({ existing: managedRow() });
     f.answerWith((_url, call) => (call === 1 ? REFUSED : REACHABLE));

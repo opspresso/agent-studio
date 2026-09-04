@@ -259,6 +259,18 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     return path;
   }
 
+  async function stopAfterFailure(
+    name: string,
+    failure: unknown,
+    cleanupMessage: string,
+  ): Promise<void> {
+    try {
+      await deps.provisioner.stop(name);
+    } catch (cleanupError) {
+      throw new AggregateError([failure, cleanupError], cleanupMessage);
+    }
+  }
+
   /**
    * The spec is passed in rather than derived here, so the caller can find out
    * that an entry cannot be started *before* it commits to starting it.
@@ -274,7 +286,14 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     // the only source of this address, but it is not the only thing that must
     // agree it is safe.
     if (!isManagedLoopback(restarted)) {
-      await deps.provisioner.stop(entry.name).catch(() => {});
+      const failure = new ValidationError(
+        `The provisioner returned ${workload.address}, which is not a loopback address.`,
+      );
+      await stopAfterFailure(
+        entry.name,
+        failure,
+        `Managed MCP server "${entry.name}" restarted at an invalid address and its container could not be stopped.`,
+      );
       throw new ValidationError(
         `The provisioner returned ${workload.address}, which is not a loopback address; the container was stopped rather than left behind an entry that cannot point at it.`,
       );
@@ -287,7 +306,14 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       await deps.repo.update(restarted);
     } catch (error) {
       if (isConditionalWriteFailure(error)) {
-        await deps.provisioner.stop(entry.name).catch(() => {});
+        const failure = new NotFoundError(
+          `MCP server "${entry.name}" was removed while it was being restarted.`,
+        );
+        await stopAfterFailure(
+          entry.name,
+          failure,
+          `Managed MCP server "${entry.name}" was removed during restart and its container could not be stopped.`,
+        );
         throw new NotFoundError(
           `MCP server "${entry.name}" was removed while it was being restarted; its container was stopped.`,
         );
@@ -398,14 +424,11 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         return view(server);
       } catch (error) {
         if (cleanUpWorkload) {
-          try {
-            await deps.provisioner.stop(input.name);
-          } catch (cleanupError) {
-            throw new AggregateError(
-              [error, cleanupError],
-              `Managed MCP server "${input.name}" failed to register and its container could not be stopped.`,
-            );
-          }
+          await stopAfterFailure(
+            input.name,
+            error,
+            `Managed MCP server "${input.name}" failed to register and its container could not be stopped.`,
+          );
         }
         throw error;
       } finally {
