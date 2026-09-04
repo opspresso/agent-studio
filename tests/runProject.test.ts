@@ -1849,9 +1849,9 @@ describe("executeAgent remote A2A image subagent", () => {
       image: {
         b64: "aW1n",
         mimeType: "image/png",
-        prompt: "a watercolor cat",
       },
     });
+    expect(chunks.find((chunk) => chunk.image)?.image).not.toHaveProperty("prompt");
     expect(chunks.some((chunk) => chunk.error)).toBe(false);
   });
 });

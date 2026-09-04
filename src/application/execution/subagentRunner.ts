@@ -731,7 +731,11 @@ export async function* runRemoteSubagent(
   for (const image of reply.images) {
     yield {
       author: agentName,
-      image: { b64: image.b64, mimeType: image.mimeType, prompt: message },
+      // The outbound message may include a transcript added by the parent. It
+      // is transport context, not the remote image's prompt, and keeping it as
+      // artifact metadata would retain earlier conversation text. The remote
+      // protocol does not report the actual generation prompt, so omit it.
+      image: { b64: image.b64, mimeType: image.mimeType },
     };
   }
   if (reply.text) {
