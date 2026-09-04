@@ -30,6 +30,14 @@ describe("header encryption round-trip", () => {
     const decrypted = decryptHeadersForOutbound(encrypted);
     expect(decrypted).toEqual(headers);
   });
+
+  it("encrypts input that resembles stored ciphertext instead of trusting its prefix", () => {
+    const copiedCiphertext = encryptSecret("victim-secret");
+    const stored = encryptSecret(copiedCiphertext);
+
+    expect(stored).not.toBe(copiedCiphertext);
+    expect(decryptSecret(stored)).toBe(copiedCiphertext);
+  });
 });
 
 describe("length-preserving masking", () => {

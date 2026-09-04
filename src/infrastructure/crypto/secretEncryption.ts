@@ -18,9 +18,6 @@ export function isEncrypted(value: string): boolean {
 }
 
 export function encryptSecret(plaintext: string): string {
-  if (isEncrypted(plaintext)) {
-    return plaintext;
-  }
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", getKey(), iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);

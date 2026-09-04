@@ -13,7 +13,7 @@
 export type HeaderOverrides = Record<string, string | null>;
 
 export interface SecretCipher {
-  /** Encrypt for storage. Already-encrypted input passes through unchanged. */
+  /** Encrypt new plaintext for storage, regardless of any prefix it contains. */
   encrypt(plaintext: string): string;
   /** Decrypt a stored value. Plaintext input passes through unchanged. */
   decrypt(value: string): string;
