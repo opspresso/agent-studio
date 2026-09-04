@@ -58,68 +58,68 @@ export const ko: Messages = {
 
   "home.eyebrow": "프로젝트 · 버전 · 배포",
   "home.headline": "AI 에이전트를 만들고",
-  "home.headlineAccent": " 우리 서버에서 운영합니다.",
+  "home.headlineAccent": " 사내 서버에서 운영하세요.",
   "home.lede":
-    "Agent Studio 는 설치형 에이전트 플랫폼입니다. 우리 네트워크 안에 올려 두고, 프롬프트나 에이전트를 프로젝트로 만들어 버전을 배포한 뒤 콘솔·HTTP·챗봇·다른 에이전트에서 호출합니다. 로그인과 실행, 콘솔은 인터넷이 끊긴 망에서도 그대로 동작합니다.",
-  "home.signInHint": "이 배포가 허용한 도메인의 계정으로 로그인합니다.",
+    "Agent Studio는 회사 네트워크 안에 설치해 쓰는 에이전트 플랫폼입니다. 프롬프트, 에이전트, 이미지 작업을 프로젝트로 만들고 버전을 배포하면 콘솔, API, 메신저, 다른 에이전트에서 실행할 수 있습니다. 로그인부터 실행까지 공개 인터넷 없이 동작합니다.",
+  "home.signInHint": "허용된 도메인의 계정으로 로그인하세요.",
   "home.proof.network": "설치한 서버에서 동작",
-  "home.proof.networkNote": "PostgreSQL 과 OpenAI 호환 엔드포인트",
-  "home.proof.engine": "모델은 프로토콜 하나로",
-  "home.proof.engineNote": "라우터, 자체 서빙, 외부 API",
-  "home.proof.cost": "실행마다 비용과 기록",
-  "home.proof.costNote": "시작한 사람 기준으로 집계",
+  "home.proof.networkNote": "PostgreSQL과 OpenAI 호환 모델 엔드포인트",
+  "home.proof.engine": "모델을 하나의 방식으로 연결",
+  "home.proof.engineNote": "라우터, 자체 호스팅 모델, 외부 API 지원",
+  "home.proof.cost": "실행별 비용과 트레이스",
+  "home.proof.costNote": "실행을 시작한 호출자에게 귀속",
   "home.streamLabel": "에이전트 실행 스트림 예시",
   "home.streamCaption": "agent run · text/event-stream",
   "home.streamLive": "예시",
-  "home.coverage": "Agent Studio 가 다루는 범위",
-  "home.domain.projects": "Project 와 버전",
+  "home.coverage": "Agent Studio의 주요 기능",
+  "home.domain.projects": "프로젝트와 버전",
   "home.domain.projectsBody":
-    "프롬프트, 에이전트, 이미지 작업을 프로젝트로 만들고 이름 붙인 버전으로 저장합니다. 버전 하나를 배포하면 호출자는 그 버전을 따라오거나 번호를 지정해 고정합니다.",
+    "프롬프트, 에이전트, 이미지 작업을 프로젝트로 관리합니다. 설정은 이름 있는 버전으로 저장하며, 호출자가 버전을 지정하지 않으면 배포된 버전을 사용합니다.",
   "home.domain.agent": "에이전트 루프",
   "home.domain.agentBody":
-    "멀티턴 도구 루프입니다. Skill 을 불러오고, MCP 도구를 호출하고, 서브에이전트에 작업을 넘기며, 버전이 허용하면 URL 도 읽습니다. 턴과 컨텍스트 예산이 실행 범위를 묶습니다.",
+    "에이전트는 Skill을 불러오고 MCP 도구를 호출하며, 서브에이전트에 작업을 맡기거나 URL을 읽을 수 있습니다. 턴 수와 컨텍스트 한도로 실행 범위를 제한합니다.",
   "home.domain.mcp": "MCP 도구",
   "home.domain.mcpBody":
-    "서버를 한 번 등록해 두고 어느 버전에서든 바인딩합니다. 바인딩에서 도구 목록을 좁히거나 나가는 헤더를 바꿀 수 있고, 프로젝트별 OAuth 를 지원하며 시크릿은 암호화해 저장합니다.",
+    "서버를 한 번 등록한 뒤 필요한 버전에 연결합니다. 연결할 도구를 제한하거나 요청 헤더를 덮어쓸 수 있습니다. 프로젝트별 OAuth를 지원하며 시크릿은 암호화해 저장합니다.",
   "home.domain.skills": "Skills",
   "home.domain.skillsBody":
-    "마크다운으로 쓴 작업 지침입니다. 프롬프트에는 이름과 설명만 싣고, 모델이 필요할 때 본문을 불러옵니다.",
+    "Markdown으로 작성한 재사용 가능한 작업 지침입니다. 모델은 이름과 설명을 먼저 확인하고, 필요할 때 전체 내용을 불러옵니다.",
   "home.domain.plugins": "Agent Plugins",
   "home.domain.pluginsBody":
-    "Skill 과 MCP 서버는 플러그인 저장소에서 동기화합니다. 폐쇄망에서는 같은 동기화가 업로드한 압축 파일을 입력으로 받습니다.",
+    "플러그인 저장소에서 Skill과 MCP 서버를 동기화합니다. 폐쇄망에서는 같은 저장소의 압축 파일을 직접 업로드할 수 있습니다.",
   "home.domain.catalog": "케이퍼빌리티 카탈로그",
   "home.domain.catalogBody":
-    "Skill·MCP 도구·에이전트를 한데 모은 검색 인덱스입니다. 옵트인한 버전은 실행마다 인덱스를 찾아 맞는 항목을 바인딩에 더합니다.",
+    "Skill, MCP 도구, 에이전트를 한곳에서 검색합니다. 이 기능을 켠 버전은 현재 요청에 맞는 기능을 실행 중에만 추가하며, 저장된 설정은 바꾸지 않습니다.",
   "home.domain.chats": "Chats",
   "home.domain.chatsBody":
-    "콘솔에서 에이전트 프로젝트와 대화합니다. 이미지와 문서를 첨부하고, 답변은 스트리밍으로 받고, 도구 호출도 대화 안에 남습니다. 탭을 닫아도 실행은 이어집니다.",
+    "콘솔에서 배포된 에이전트와 대화합니다. 이미지와 문서를 첨부할 수 있고, 답변과 도구 호출 과정을 대화 안에서 확인할 수 있습니다. 탭을 닫아도 실행은 계속됩니다.",
   "home.domain.images": "이미지",
   "home.domain.imagesBody":
-    "프롬프트로 이미지를 만들거나 고칩니다. 이미지 프로젝트, 에이전트 빌트인, 이미지 서브에이전트 세 경로가 있고, 편집은 실행이 지나온 어떤 이미지든 지정할 수 있습니다.",
+    "이미지 프로젝트, 에이전트의 기본 도구, 이미지 서브에이전트로 이미지를 만들거나 편집합니다. 첨부한 이미지와 현재 실행에서 만든 이미지를 다시 편집할 수 있습니다.",
   "home.domain.artifacts": "Artifacts",
   "home.domain.artifactsBody":
-    "실행이 만든 이미지와 파일을 서명된 주소로 보관하고 프로젝트별·사람별로 모아 보여 줍니다.",
+    "실행에서 만든 이미지와 파일을 서명된 URL로 보관하고, 프로젝트나 사용자별로 모아 봅니다.",
   "home.domain.surfaces": "Slack · A2A · 웹훅",
   "home.domain.surfacesBody":
-    "프로젝트마다 Slack·Telegram·Teams 봇을 붙이고, 웹훅과 스케줄로 실행하며, A2A 는 양방향으로 연결합니다. 모두 배포된 버전을 같은 엔진으로 실행합니다.",
+    "에이전트 프로젝트를 Slack, Telegram, Teams에 연결합니다. 배포된 버전은 웹훅, 스케줄, 양방향 A2A 호출에서도 실행할 수 있습니다.",
   "home.domain.cost": "비용과 한도",
   "home.domain.costBody":
-    "실행마다 채널이 청구한 금액이나 레지스트리에 적힌 모델 단가로 비용을 매겨 프로젝트별·호출자별·일자별로 집계합니다. 일간·월간 임계값은 알림을 보낸 뒤 차단합니다.",
+    "실행별 비용을 기록하고 프로젝트, 호출자, 날짜별로 집계합니다. 일간·월간 임계값을 설정해 알림을 보내거나 새 실행을 차단할 수 있습니다.",
   "home.domain.traces": "트레이스와 감사 로그",
   "home.domain.tracesBody":
-    "실행은 도구 호출까지 턴 단위로 기록되고 프로젝트에서 바로 열어 볼 수 있습니다. 시크릿 열람, 관리자 대리 수정, 삭제는 감사 로그로 남습니다.",
+    "각 실행의 턴과 도구 호출을 트레이스에서 확인합니다. 시크릿 열람, 관리자 변경, 삭제 작업은 감사 로그에 남습니다.",
   "home.install.title": "설치",
   "home.install.body":
-    "컨테이너 이미지로 배포합니다. 배포 manifest는 환경 저장소가 관리하고, 이 저장소는 localdev만 소유합니다.",
+    "Agent Studio는 컨테이너 이미지로 배포합니다. 배포 manifest는 환경 저장소에서 관리하고, 이 저장소에는 로컬 개발 환경만 둡니다.",
   "home.install.floor": "필요한 것",
   "home.install.floorNote":
-    "pgvector 를 켠 PostgreSQL 하나와, 모델을 서빙하는 OpenAI 호환 엔드포인트 하나입니다. 스키마는 앱이 부팅할 때 직접 만듭니다.",
+    "pgvector를 사용할 수 있는 PostgreSQL과 OpenAI 호환 모델 엔드포인트가 필요합니다. 앱이 시작될 때 데이터베이스 스키마를 만듭니다.",
   "home.install.offline": "폐쇄망에서",
   "home.install.offlineNote":
-    "모델 카탈로그와 플러그인은 내려받는 대신 업로드하고, 컨테이너 이미지는 내부 레지스트리로 미러링하며, 임베딩도 직접 띄운 엔드포인트를 쓸 수 있습니다.",
+    "모델 카탈로그와 플러그인 압축 파일을 직접 올리고, 컨테이너 이미지는 내부 레지스트리에 미러링합니다. 임베딩도 자체 호스팅 엔드포인트를 사용할 수 있습니다.",
   "home.install.optional": "선택 항목",
   "home.install.optionalNote":
-    "Slack·Telegram·Teams, 나가는 A2A 호출, 외부 모델 API 는 각각 따로 설정합니다. 설정하지 않으면 그 기능만 꺼지고 나머지는 그대로 돕니다.",
+    "Slack, Telegram, Teams, 외부 A2A, 모델 API는 각각 독립적으로 설정합니다. 설정하지 않은 연동만 꺼지고 나머지 기능은 그대로 동작합니다.",
   "home.product": "설치형 에이전트 플랫폼입니다.",
 
   "common.loading": "불러오는 중…",
@@ -192,152 +192,152 @@ export const ko: Messages = {
   "attach.tooManyDocuments": "메시지당 문서는 최대 {count} 개입니다",
   "attach.unreadable": "{name}: 읽을 수 없습니다",
 
-  "overview.welcome": "{name} 님, 다시 오셨네요",
+  "overview.welcome": "{name}님, 다시 오셨네요",
   "overview.welcomeAnon": "다시 오셨네요",
   "overview.lede":
-    "프롬프트·에이전트·이미지 프로젝트를 만들고, 버전을 배포해 어디서든 호출하세요.",
+    "프롬프트, 에이전트, 이미지 프로젝트를 만들고 콘솔에서 테스트한 뒤 다른 시스템에서 사용할 수 있도록 배포하세요.",
   "overview.newProject": "새 프로젝트",
   "overview.newChat": "새 대화",
   "overview.recentProjects": "최근 프로젝트",
-  "overview.recentProjectsNote": "워크스페이스에서 최근 수정된 순서 — 내 것이 먼저입니다.",
+  "overview.recentProjectsNote": "내 프로젝트를 먼저, 다른 프로젝트는 최근 수정된 순서로 보여 줍니다.",
   "overview.allProjects": "전체 보기",
   "overview.projectsFailed": "프로젝트를 불러오지 못했습니다.",
   "overview.noProjects": "아직 프로젝트가 없습니다.",
   "overview.recentChats": "최근 대화",
-  "overview.recentChatsNote": "멈춘 자리에서 대화를 이어가세요.",
+  "overview.recentChatsNote": "이전에 나눈 대화를 이어서 시작하세요.",
   "overview.allChats": "전체 보기",
   "overview.noChats": "아직 대화가 없습니다.",
   "overview.getStarted": "프로젝트로 시작하기",
   "overview.getStartedBody":
-    "프로젝트는 프롬프트·에이전트·이미지 작업을 담고, 배포할 수 있는 버전으로 저장합니다. 하나를 만들어 버전에 Skill 과 MCP 도구를 붙인 뒤 Playground 에서, 에이전트 프로젝트라면 대화에서 시험해 보세요.",
+    "프로젝트를 만들고 Playground에서 첫 버전을 설정한 뒤 실행해 보세요. 에이전트 프로젝트에는 Skill과 MCP 도구를 연결할 수 있고, 배포한 에이전트는 Chats에서도 사용할 수 있습니다.",
   "overview.browseSkills": "Skills 둘러보기",
 
   "guide.title": "가이드",
   "guide.lede":
-    "Agent Studio 가 어떤 도구인지, 빈 프로젝트에서 팀이 호출하는 에이전트까지 어떻게 가는지 정리했습니다. 본문에서 말하는 페이지는 각 절 끝의 링크로 바로 갑니다.",
+    "Agent Studio를 처음 사용한다면 여기서 시작하세요. 프로젝트를 만들고 설정한 뒤 배포하고 연결하는 과정과, 그 과정에서 만나는 용어와 한도를 설명합니다.",
 
   "guide.start.title": "처음이라면",
   "guide.start.body":
-    "네 단계로 끝나고, 각 단계는 프로젝트의 탭 하나에서 합니다. 배포는 버전을 지정하지 않은 호출자가 어느 버전을 받을지 정하는 설정입니다. 저장만 한 버전도 이름을 지정하면 호출됩니다.",
+    "프로젝트 생성, 버전 설정과 테스트, 배포, 호출 연결 순서로 진행합니다. 배포한 버전은 프로젝트의 기본값이 되지만, 호출할 때 다른 저장 버전을 직접 지정할 수도 있습니다.",
   "guide.start.step1": "프로젝트를 만듭니다",
   "guide.start.step1Body":
-    "Projects 페이지에서 New project 를 누릅니다. 이름은 호출자가 쓰는 식별자이고 나중에 바꿀 수 없습니다. 타입(llm, agent, image)도 이때 정합니다.",
-  "guide.start.step2": "Playground 에서 버전을 씁니다",
+    "Projects에서 New project를 누르세요. llm, agent, image 중 유형을 고르고, 호출자가 사용할 식별자를 입력합니다. 이 식별자는 나중에 바꿀 수 없습니다.",
+  "guide.start.step2": "Playground에서 버전을 설정합니다",
   "guide.start.step2Body":
-    "버전에는 모델, 프롬프트, 상한값, 그리고 실행이 쓸 수 있는 항목이 들어갑니다. 저장한 뒤 편집기 옆 패널에서 실행해 봅니다. 필요한 만큼 고치고 다시 저장하면 됩니다.",
-  "guide.start.step3": "하나를 배포합니다",
+    "버전에서 모델, 프롬프트, 실행 한도, 사용할 기능을 정합니다. 저장한 뒤 편집기 옆의 실행 패널에서 테스트하세요. 같은 버전을 계속 수정해 저장할 수 있습니다.",
+  "guide.start.step3": "버전을 배포합니다",
   "guide.start.step3Body":
-    "배포하면 프로젝트가 그 버전을 가리킵니다. 배포된 버전을 요청한 호출자는 그때부터 이 버전을 받고, 버전 번호를 지정한 호출자는 지정한 버전을 계속 받습니다.",
-  "guide.start.step4": "다른 곳에서 호출합니다",
+    "배포한 버전은 프로젝트의 기본 버전이 됩니다. published 버전을 요청하면 즉시 이 설정을 사용하고, 특정 버전을 지정한 요청은 계속 지정된 버전을 사용합니다.",
+  "guide.start.step4": "호출 방법을 연결합니다",
   "guide.start.step4Body":
-    "API Reference 탭에 이 프로젝트의 엔드포인트와 복사해 쓸 수 있는 curl 예제가 있습니다. Integrations 탭에서 프로젝트 토큰을 발급하고 Slack, Telegram, Teams, A2A, AG-UI 를 연결합니다.",
+    "HTTP로 호출하려면 API Reference 탭의 예제를 사용하세요. Integrations 탭에서는 프로젝트 토큰을 발급하고 Slack, Telegram, Teams, A2A, AG-UI 연결 방법을 확인할 수 있습니다.",
 
   "guide.words.title": "콘솔에서 쓰는 말",
   "guide.words.project": "Project",
   "guide.words.projectBody":
-    "이름과 타입을 가진 작업 단위입니다. 버전, 비용 한도, 연동 설정, 열람 범위를 함께 담습니다.",
+    "이름과 유형을 가진 작업 단위입니다. 버전, 접근 권한, 비용 한도, 연동 설정을 프로젝트에서 함께 관리합니다.",
   "guide.words.version": "Version",
   "guide.words.versionBody":
-    "이름이 붙은 프로젝트 스냅샷이며 모델, 프롬프트, 도구, 턴과 토큰 상한이 들어갑니다. 고쳐서 저장하면 새 버전이 생기지 않고 그 버전을 덮어씁니다. 배포된 버전도 같아서 호출자는 다음 실행부터 바뀐 내용을 받습니다. 배포는 그중 한 버전을 기본 응답으로 지정하는 설정입니다.",
+    "모델, 프롬프트, 도구, 실행 한도를 담은 이름 있는 설정입니다. 저장하면 새 버전을 만들지 않고 현재 버전을 갱신합니다. 배포된 버전을 수정하면 다음 실행부터 새 설정이 적용됩니다. 배포는 한 버전을 프로젝트의 기본값으로 지정합니다.",
   "guide.words.run": "Run",
   "guide.words.runBody":
-    "버전을 한 번 실행한 것입니다. 실행마다 비용, 실행 주체, 제한 시간, 트레이스가 남습니다.",
+    "버전을 한 번 실행한 단위입니다. 실행마다 호출자, 제한 시간, 사용량, 비용, 트레이스를 기록합니다.",
   "guide.words.caller": "Caller",
   "guide.words.callerBody":
-    "실행을 시작한 주체입니다. 콘솔의 사용자, 프로젝트 토큰, Slack 의 사용자가 여기 해당합니다. 비용과 동시 실행 수는 프로젝트뿐 아니라 호출자 단위로도 집계합니다.",
+    "실행을 시작한 주체입니다. 콘솔 사용자, 프로젝트 토큰, Slack 사용자가 여기에 해당합니다. 비용은 프로젝트와 호출자에 각각 기록하고, 동시 실행 제한은 호출자를 기준으로 적용합니다.",
   "guide.words.tier": "Tier",
   "guide.words.tierBody":
-    "사용자 등급이며 guest, member, admin 이 있습니다. 프로젝트를 만들 수 있는지, 토큰을 발급할 수 있는지, 동시 실행 개수와 월 사용 한도가 얼마인지를 정합니다. 내 등급과 한도는 프로필 페이지에서 봅니다.",
+    "guest, member, admin으로 나뉘는 사용자 등급입니다. 프로젝트 생성, API 토큰, 동시 실행 수, 월 비용 한도에 영향을 줍니다. 나에게 적용되는 값은 프로필에서 확인할 수 있습니다.",
 
-  "guide.types.title": "프로젝트 세 종류",
+  "guide.types.title": "프로젝트 유형",
   "guide.types.llm": "llm: 프롬프트 한 번, 답 한 번",
   "guide.types.llmBody":
-    "실행할 때 {{변수}} 를 채운 사용자 프롬프트에 한 번 답합니다. 도구를 쓰지 않고, 첫 턴 이후의 턴도 없습니다.",
+    "프롬프트 템플릿의 {{변수}}를 채우고 모델 응답 하나를 반환합니다. 도구를 사용하거나 다음 턴으로 이어지지 않습니다.",
   "guide.types.agent": "agent: 멀티턴 도구 루프",
   "guide.types.agentBody":
-    "모델이 답을 낼 때까지 반복합니다. Skill 을 불러오고, MCP 도구를 호출하고, 서브에이전트에 작업을 넘기고, 이미지를 그리고, URL 을 읽습니다. 이 중 무엇을 쓸 수 있는지는 버전에서 정합니다.",
+    "모델이 답변을 마칠 때까지 여러 턴의 도구 루프를 실행합니다. 버전 설정에 따라 Skill, MCP 도구, 서브에이전트, 이미지 생성, URL 읽기를 사용할 수 있습니다.",
   "guide.types.image": "image: 이미지 생성과 편집",
   "guide.types.imageBody":
-    "프롬프트로 이미지를 만들거나 첨부한 이미지를 고칩니다. 돌려줄 chat completion 이 없어서 그 형식으로 답하는 엔드포인트는 이 타입을 거절합니다. 콘솔, Chats, A2A 는 이미지를 그대로 돌려줍니다.",
+    "프롬프트로 이미지를 만들거나 첨부한 이미지를 편집합니다. Playground, predict API, AG-UI, A2A처럼 이미지를 지원하는 경로에서는 결과 이미지를 반환합니다. Chats는 에이전트 프로젝트만 받으며, chat completions는 이미지 프로젝트를 거절합니다.",
 
-  "guide.reach.title": "버전이 쓸 수 있는 것",
+  "guide.reach.title": "버전에서 사용할 수 있는 기능",
   "guide.reach.body":
-    "아래 항목은 버전에서 켜기 전까지 모두 꺼져 있습니다. 켜 둔 항목을 실행이 쓰지 못하면 답변에 그 사실을 적습니다.",
+    "대부분의 기능은 버전의 연결과 설정으로 정하지만, 배포 환경에도 해당 기능이 준비되어 있어야 합니다. 설정한 기능을 실행 중에 사용할 수 없으면 경고로 알려 줍니다.",
   "guide.reach.skills": "Skills",
   "guide.reach.skillsBody":
-    "마크다운으로 쓴 지침입니다. 프롬프트에는 이름과 설명만 실리고, 모델이 필요할 때 본문을 불러옵니다. 쓸 수 있는 목록은 Skills 페이지에 있습니다.",
+    "Markdown으로 작성한 재사용 가능한 지침입니다. 모델은 이름과 설명을 먼저 확인하고 필요할 때 전체 내용을 불러옵니다. 사용할 수 있는 Skill은 Skills 페이지에서 확인하세요.",
   "guide.reach.tools": "MCP 도구",
   "guide.reach.toolsBody":
-    "Tools 페이지에 등록한 서버입니다. 버전에서 서버를 바인딩하고, 제공할 도구를 고르고, 나가는 헤더를 바꿀 수 있습니다. 시크릿은 암호화해 저장합니다.",
+    "Tools 페이지에 등록한 서버입니다. 버전에서 서버를 연결하고 사용할 도구를 고르며, 요청 헤더를 덮어쓸 수 있습니다. 시크릿은 암호화해 저장합니다.",
   "guide.reach.subagents": "서브에이전트",
   "guide.reach.subagentsBody":
-    "실행이 작업을 넘길 수 있는 다른 프로젝트나 Agents 페이지의 항목입니다. 답변에는 그것을 쓴 서브에이전트가 표시되고, 비용은 같은 호출자에게 붙습니다.",
+    "작업을 맡길 수 있는 다른 프로젝트나 외부 에이전트입니다. 서브에이전트의 출력에는 작성자가 표시되고, 비용은 원래 실행을 시작한 호출자에게 귀속됩니다.",
   "guide.reach.catalog": "케이퍼빌리티 카탈로그",
   "guide.reach.catalogBody":
-    "Skill, 도구, 에이전트를 모두 담은 검색 인덱스입니다. “요청마다 필요한 기능 찾기”를 켜면 실행마다 인덱스를 검색해 맞는 항목을 버전의 바인딩에 더합니다. 기존 바인딩은 그대로 남습니다.",
+    "Skill, MCP 도구, 외부 에이전트를 검색하는 인덱스입니다. 동적 검색을 켜면 현재 요청에 맞는 기능을 해당 실행의 연결 목록에만 추가합니다. 저장된 연결을 삭제하거나 바꾸지는 않습니다.",
   "guide.reach.builtins": "기본 제공 도구",
   "guide.reach.builtinsBody":
-    "버전에서 하나씩 켭니다. 이미지 생성과 편집, 모델이 고른 URL 읽기, 사용자가 내려받을 파일 저장, 봇이 연결된 곳의 Slack 기록 읽기가 있습니다.",
+    "버전에서 이미지 생성, URL 읽기, Slack 기록 읽기를 켤 수 있습니다. Artifact 저장소가 설정되어 있으면 SaveFile이 자동으로 제공되어, 에이전트가 다운로드할 수 있는 텍스트 파일을 만들 수 있습니다.",
   "guide.reach.memory": "메모리",
   "guide.reach.memoryBody":
-    "이전 실행이 저장해 둔 내용을 실행 전에 불러옵니다. recall 도구를 제공하는 메모리 서버를 버전에서 바인딩했을 때 동작합니다. 바인딩이 없으면 아무 일도 하지 않고, 실행마다 그 사실을 알려 줍니다.",
+    "첫 모델 응답 전에 recall 도구를 제공하는 MCP 서버에서 관련 기억을 불러옵니다. recall을 제공하는 서버가 연결되어 있지 않으면 기억 없이 실행을 계속하고 경고를 남깁니다.",
 
-  "guide.surfaces.title": "호출할 수 있는 창구",
+  "guide.surfaces.title": "프로젝트 실행 방법",
   "guide.surfaces.body":
-    "아래 창구는 모두 같은 엔진으로 실행하고, 같은 비용과 트레이스 기록에 남습니다. 호출자가 버전을 지정하지 않으면 배포된 버전을 실행합니다. Playground 만 예외로 지금 열어 둔 버전을 실행합니다.",
+    "어떤 경로에서 실행하더라도 같은 엔진을 사용하고 사용량과 트레이스를 같은 곳에 기록합니다. 외부 호출은 일반적으로 배포된 버전을 사용하고, Playground는 편집기에서 열어 둔 버전을 실행합니다.",
   "guide.surfaces.console": "콘솔",
   "guide.surfaces.consoleBody":
-    "작성 중인 버전은 Playground 에서 실행하고, 배포된 에이전트와 이야기할 때는 Chats 를 씁니다. Chats 에서는 파일을 첨부하고, 답변을 스트리밍으로 받고, 도구 호출도 대화 안에서 봅니다. 탭을 닫아도 실행은 계속됩니다.",
+    "버전을 설정하고 테스트할 때는 Playground를 사용하세요. 배포된 에이전트와 계속 대화하려면 Chats를 사용합니다. 파일을 첨부하고 도구 호출 과정을 확인할 수 있으며, 브라우저 탭을 닫아도 진행 중인 실행은 계속됩니다.",
   "guide.surfaces.http": "HTTP",
   "guide.surfaces.httpBody":
-    "API Reference 탭에 엔드포인트 세 개가 있습니다. 이 앱의 predict 엔드포인트, OpenAI 호환 chat completions 엔드포인트, 도구 호출까지 스트리밍하는 agent 엔드포인트입니다. 세 곳 모두 프로젝트 토큰으로 인증합니다.",
+    "API Reference 탭에는 프로젝트 토큰으로 인증하는 엔드포인트 세 개가 있습니다. predict는 모든 프로젝트 유형을, chat completions는 llm과 agent를 지원합니다. agent 엔드포인트는 에이전트의 답변과 도구 활동을 스트리밍합니다.",
   "guide.surfaces.chatbots": "Slack, Telegram, Teams",
   "guide.surfaces.chatbotsBody":
-    "프로젝트마다 봇 하나를 Integrations 탭에서 연결합니다. 멘션과 다이렉트 메시지에 답하고, 스레드의 맥락을 이어가고, 답이 길어지는 동안 메시지 하나를 고쳐 가며 보여 줍니다.",
+    "에이전트 프로젝트는 Integrations 탭에서 플랫폼별 봇을 하나씩 연결할 수 있습니다. 다이렉트 메시지와 채널에서 봇을 부르는 규칙은 플랫폼마다 다르지만, 대화 맥락을 유지하고 각 플랫폼이 지원하는 방식으로 답변을 갱신합니다.",
   "guide.surfaces.triggers": "웹훅과 스케줄",
   "guide.surfaces.triggersBody":
-    "Settings 탭에 있습니다. 외부에서 호출하는 웹훅 URL 하나와, 필요한 만큼 만드는 cron 스케줄입니다. 둘 다 배포된 버전을 실행하고 실행 이력도 같은 탭에 남습니다.",
+    "Settings 탭에서 웹훅 하나와 필요한 만큼의 cron 스케줄을 설정할 수 있습니다. 둘 다 배포된 버전을 실행하며, 실행 이력도 같은 탭에서 확인합니다.",
   "guide.surfaces.a2a": "A2A",
   "guide.surfaces.a2aBody":
-    "이 프로젝트를 A2A 에이전트로 공개해 다른 시스템이 호출하게 하거나, 반대로 다른 에이전트를 등록해 작업을 넘길 수 있습니다. 둘 다 Integrations 탭에 있습니다.",
+    "Integrations 탭에서 이 프로젝트의 A2A 노출 상태와 Agent Card URL을 확인할 수 있습니다. 다른 A2A 에이전트를 호출하려면 Agents 페이지에 등록한 뒤 에이전트 프로젝트의 버전에 연결하세요.",
   "guide.surfaces.agui": "AG-UI",
   "guide.surfaces.aguiBody":
-    "배포된 프로젝트를 우리 앱 안에 붙입니다. 클라이언트가 스레드를 보내면 프로토콜 이벤트가 돌아오므로, 에이전트가 제품 화면 안에서 동작합니다.",
+    "AG-UI를 사용하면 배포된 프로젝트를 자체 애플리케이션 안에서 실행할 수 있습니다. 클라이언트가 대화 스레드를 보내면, 애플리케이션 화면에서 렌더링할 수 있는 프로토콜 이벤트를 반환합니다.",
 
   "guide.limits.title": "비용, 한도, 기록",
   "guide.limits.cost": "실행마다 비용이 매겨집니다",
   "guide.limits.costBody":
-    "채널이 청구한 금액을 쓰고, 없으면 레지스트리에 적힌 모델 단가를 씁니다. 개요 페이지는 프로젝트와 모델별로, 프로젝트의 Usage 탭은 호출자별로 묶어 보여 주고, 프로필 페이지에는 내 사용량이 있습니다.",
-  "guide.limits.guards": "한도는 알린 뒤 차단합니다",
+    "모델 채널이 비용을 알려 주면 그 값을 사용하고, 그렇지 않으면 레지스트리의 모델 단가로 계산합니다. 첫 화면에서는 워크스페이스 사용량을, 프로젝트의 Usage 탭에서는 프로젝트와 호출자별 내역을, 프로필에서는 내 사용량을 확인할 수 있습니다.",
+  "guide.limits.guards": "알림과 차단 기준을 따로 설정합니다",
   "guide.limits.guardsBody":
-    "프로젝트의 일간, 월간 한도는 Settings 탭에 있습니다. 알림 임계값을 넘으면 프로젝트에 지정한 창구로 알림을 한 번 보내고 실행은 계속됩니다. 차단 임계값을 넘으면 기간이 바뀔 때까지 새 실행을 거절합니다. 일간은 UTC 자정, 월간은 다음 달 1일에 바뀝니다.",
+    "프로젝트의 일간·월간 한도는 Settings 탭에서 설정합니다. 알림 임계값에 도달하면 알림을 한 번 보내고 실행을 계속합니다. 차단 임계값에 도달하면 UTC 자정이나 다음 달 1일까지 새 실행을 거절합니다.",
   "guide.limits.tier": "등급 한도도 함께 적용됩니다",
   "guide.limits.tierBody":
-    "모든 프로젝트를 합친 월 한도와 동시 실행 개수 제한이 있습니다. 둘 다 프로필 페이지에서 확인하고, 조정은 관리자가 합니다.",
+    "사용자 등급에 따라 모든 프로젝트를 합친 월 비용 한도와 동시 실행 수가 제한될 수 있습니다. 두 값은 프로필에서 확인하고, 등급은 관리자가 변경합니다.",
   "guide.limits.records": "실행이 남기는 기록",
   "guide.limits.recordsBody":
-    "턴과 도구 호출이 담긴 트레이스는 프로젝트의 Traces 탭에, 실행이 만든 이미지와 파일은 Artifacts 에 남습니다. 본인 것은 사이드바의 Artifacts 페이지, 프로젝트 것은 프로젝트의 Artifacts 탭에 있습니다.",
+    "프로젝트의 Traces 탭에는 턴과 도구 호출이 기록됩니다. 실행에서 만든 이미지와 파일은 Artifacts에 보관하며, 내 결과물은 사이드바에서, 프로젝트 전체 결과물은 프로젝트의 Artifacts 탭에서 확인합니다.",
 
   "guide.trouble.title": "문제가 생겼을 때",
   "guide.trouble.refused": "비용 때문에 실행이 거절됐습니다",
   "guide.trouble.refusedBody":
-    "프로젝트의 일간·월간 임계값이나 내 등급의 월 한도에 걸린 경우입니다. 앞의 것은 프로젝트 Settings 탭, 뒤의 것은 프로필 페이지에서 확인하고, 둘 다 관리자가 올릴 수 있습니다.",
+    "프로젝트의 일간·월간 차단 임계값에 도달했거나 사용자 등급의 월 비용 한도를 넘은 경우입니다. 프로젝트 한도는 소유자나 관리자가 Settings에서 바꿀 수 있고, 사용자 등급은 관리자만 변경할 수 있습니다.",
   "guide.trouble.model": "쓰려는 모델이 목록에 없습니다",
   "guide.trouble.modelBody":
-    "Models 페이지에는 이 배포가 호출할 수 있는 모델이 있고, 켜는 것은 관리자만 할 수 있습니다. 카탈로그에 없는 모델도 실행은 되지만 사용량이 비용 0 으로 기록됩니다.",
+    "Models 페이지에서 이 배포가 사용할 수 있는 모델을 확인하세요. 모델 선택은 관리자만 변경할 수 있습니다. 운영 정책이 알 수 없는 모델 ID를 허용하면 provider로 요청을 보내되, 단가를 알 수 없어 비용은 0으로 기록합니다. 알 수 없는 모델을 거부하도록 설정한 배포에서는 실행을 중단합니다.",
   "guide.trouble.tool": "모델이 MCP 도구를 호출하지 않습니다",
   "guide.trouble.toolBody":
-    "먼저 버전의 바인딩을 확인합니다. 도구 목록을 지정한 바인딩은 나머지 도구를 숨깁니다. 그다음 서버가 discovery 에 응답했는지 Tools 페이지에서 확인합니다. 바인딩한 서버에 닿지 못한 실행은 답변에 그 사실을 적습니다.",
+    "먼저 버전의 MCP 연결을 확인하세요. 사용할 도구를 따로 지정했다면 나머지 도구는 모델에 보이지 않습니다. 다음으로 Tools 페이지에서 discovery가 성공하는지 확인하세요. 연결한 서버에 접근하지 못한 실행은 경고를 남깁니다.",
   "guide.trouble.slack": "Slack 봇이 답하지 않습니다",
   "guide.trouble.slackBody":
-    "봇은 멘션, 다이렉트 메시지, 지정한 키워드가 들어간 채널 메시지에만 답하고 나머지는 무시합니다. Integrations 탭의 테스트 버튼으로 봇 토큰을 확인할 수 있고, 봇이 초대된 채널 목록도 볼 수 있습니다.",
+    "봇은 멘션, 다이렉트 메시지, 참여한 스레드의 후속 메시지, 설정한 키워드가 포함된 채널 메시지에 답합니다. Integrations 탭의 Test connection으로 봇 토큰을 확인하세요. Settings의 채널 선택 목록은 활성화된 봇이 참여한 채널만 보여 줍니다.",
   "guide.trouble.tab": "답변 중에 탭을 닫았습니다",
   "guide.trouble.tabBody":
-    "실행은 계속됩니다. Chats 에서 그 대화를 다시 열면 답변이 남아 있습니다.",
+    "실행은 계속됩니다. Chats에서 해당 대화를 다시 열면 답변을 확인할 수 있습니다.",
 
-  "guide.more.title": "더 읽을 곳",
+  "guide.more.title": "더 알아보기",
   "guide.more.body":
-    "프로젝트마다 API Reference 탭에 그 프로젝트를 호출하는 방법이 있습니다. 설치·설정·보안·운영 문서는 소스와 함께 docs/ 아래에 들어 있어서 인터넷이 없는 배포에서도 읽을 수 있습니다(INSTALL.md, CONFIGURATION.md, SECURITY.md, OPERATIONS.md).",
+    "각 프로젝트의 API Reference 탭에서 해당 프로젝트를 호출하는 방법을 확인할 수 있습니다. 소스 트리의 docs/에는 인터넷 없이 읽을 수 있는 설치, 설정, 보안, 운영 문서도 포함되어 있습니다(INSTALL.md, CONFIGURATION.md, SECURITY.md, OPERATIONS.md).",
 
   "chat.more": "이전 대화 더 보기",
   "chat.answerReady": "답변 완료",
