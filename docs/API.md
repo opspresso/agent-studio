@@ -763,8 +763,9 @@ POST /api/plugins/sync  { "remove"?: { "skills"?: ["name"], "mcpServers"?: ["nam
   `unsupported-transport` (`stdio`/`sse`, 보고만 하고 절대 실행하지 않는다),
   `headers-dropped` (서버는 sync 됐지만 mcp.json 이 선언한 헤더는 가져오지 않았다. `detail` 은
   그 이름만 나열한다), `duplicate-name` (두 plugin 이 그 이름을 주장한다. 주장한 쪽 모두
-  건너뛴다), `credentials-reset` (위 참조), `write-failed` (쓰기 하나가 차단됐다. sync 의 나머지는
-  계속됐고 다음 실행이 수렴시킨다).
+  건너뛴다), `credentials-reset` (위 참조), `write-failed` (쓰기 하나가 차단됐다. 다른 plugin/항목은
+  계속하고 다음 실행이 수렴시킨다. 부모 plugin 행의 쓰기라면 그 provenance 를 가질 컴포넌트는
+  이번 실행에서 쓰지 않는다).
 
 최상위 `skipped` 는 어떤 plugin 도 소유하지 않는 것을 싣는다. 쓸 수 없는 `plugin.json`, 다른
 plugin 루트 안에 중첩된 plugin 루트, 두 루트가 주장하는 plugin 이름. `orphanedPlugins` 는 저장소가

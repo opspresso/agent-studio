@@ -463,7 +463,14 @@ export async function syncPluginsFromSnapshot(
       createdAt: existingRow?.createdAt ?? now,
       updatedAt: now,
     };
-    await fence(repoSkips, `plugin:${manifest.name}`, () => deps.plugins.put(row));
+    const pluginWritten = await fence(
+      repoSkips,
+      `plugin:${manifest.name}`,
+      () => deps.plugins.put(row),
+    );
+    if (!pluginWritten) {
+      continue;
+    }
 
     for (const { name, doc, files } of conformantSkills) {
       const current = storedSkills.get(name);

@@ -132,7 +132,7 @@ function fakeMcps(existing: McpServer[] = [], refuse: Record<string, Error> = {}
   return { mcps, created, patched, removed, store };
 }
 
-function fakePlugins(existing: Plugin[] = []) {
+function fakePlugins(existing: Plugin[] = [], putError?: Error) {
   const store = new Map(existing.map((plugin) => [plugin.name, plugin]));
   const puts: Plugin[] = [];
   const removed: Array<{ name: string; actor: string }> = [];
@@ -145,6 +145,9 @@ function fakePlugins(existing: Plugin[] = []) {
         return [...store.values()];
       },
       async put(plugin: Plugin) {
+        if (putError) {
+          throw putError;
+        }
         puts.push(plugin);
         store.set(plugin.name, plugin);
       },
@@ -169,10 +172,11 @@ function makeDeps(opts: {
   servers?: McpServer[];
   pluginRows?: Plugin[];
   refuse?: Record<string, Error>;
+  pluginPutError?: Error;
 } = {}) {
   const skills = fakeSkills(opts.skills);
   const mcps = fakeMcps(opts.servers, opts.refuse);
-  const plugins = fakePlugins(opts.pluginRows);
+  const plugins = fakePlugins(opts.pluginRows, opts.pluginPutError);
   const deps: SyncPluginsDeps = {
     plugins: plugins.plugins,
     pluginRows: plugins.pluginRows,
@@ -1061,6 +1065,33 @@ describe("syncPluginsFromSnapshot", () => {
     );
     expect(plugins.puts).toHaveLength(1);
     expect(plugins.puts[0]?.mcpServers).toEqual(["boom"]);
+  });
+
+  it("does not write components when their parent plugin row fails", async () => {
+    const { deps, plugins, skills, mcps } = makeDeps({
+      pluginPutError: new Error("plugin table unavailable"),
+    });
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([
+        repoPlugin("devops", {
+          skills: [repoSkill("devops", "gitops")],
+          mcpJsonRaw: mcpJson({ argocd: httpServer() }),
+        }),
+      ]),
+      ACTOR,
+    );
+
+    expect(result.skipped).toEqual([
+      {
+        name: "plugin:devops",
+        reason: "write-failed",
+        detail: "plugin table unavailable",
+      },
+    ]);
+    expect(plugins.store.has("devops")).toBe(false);
+    expect(skills.puts).toEqual([]);
+    expect(mcps.created).toEqual([]);
   });
 
   it("annotates orphans with the versions that bind them", async () => {

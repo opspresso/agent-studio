@@ -55,7 +55,9 @@ skill 루트 아래에서 수집되며 (`src/domain/skill/files.ts`: `ALLOWED_SK
 
 각 plugin 도 행 하나가 된다 (`src/domain/plugin/types.ts` 의 `Plugin`: manifest 메타데이터와 그것이
 선언한 컴포넌트 이름들) — sync 가 무조건 upsert 하는 유일한 대상인데, 그 위에 운영자가 쓴 것이 하나도
-없기 때문이다. 콘솔의 Plugins 페이지가 이들을 나열한다.
+없기 때문이다. 부모 plugin 행을 먼저 저장한 뒤에만 그 provenance 를 가진 skill/MCP 컴포넌트를
+쓴다. 부모 쓰기가 실패하면 그 plugin 의 컴포넌트는 이번 sync 에서 그대로 두므로 출처 링크가
+없는 plugin 을 가리키지 않는다. 콘솔의 Plugins 페이지가 이들을 나열한다.
 
 **저장소는 자기가 선언한 것을 소유하고, 삭제는 사람이 소유한다**
 (`src/domain/sync/types.ts` 가 skip 어휘를 소유하고, kind 로 한정된 보고는
