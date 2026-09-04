@@ -75,6 +75,7 @@ function deps(initial: AppSettings | null = null): {
   const lock = {
     acquire: vi.fn(async () => "lease-1" as string | null),
     release: vi.fn(async () => {}),
+    state: vi.fn(async () => ({ generation: 0, active: false })),
   };
   return {
     value: () => stored,

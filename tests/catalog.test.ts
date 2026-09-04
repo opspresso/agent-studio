@@ -314,6 +314,46 @@ const reranked = (scores: number[]) => ({
 });
 
 describe("searchCapabilities", () => {
+  it("withholds discovery while a reindex lease is active", async () => {
+    const deps = searchDeps([[match("skill#a", 0.9, { name: "a", description: "" })]]);
+    const embed = vi.spyOn(deps.embeddings, "embed");
+    deps.reindexState = async () => ({ generation: 2, active: true });
+
+    await expect(
+      searchCapabilities(deps, ["anything"], { kind: "skill", limit: 5 }),
+    ).resolves.toEqual([]);
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it("discards a result when the reindex generation changes during its read", async () => {
+    const deps = searchDeps([[match("skill#a", 0.9, { name: "a", description: "" })]]);
+    const states = [
+      { generation: 2, active: false },
+      { generation: 3, active: false },
+    ];
+    deps.reindexState = async () => states.shift() ?? states[0]!;
+
+    await expect(
+      searchCapabilities(deps, ["anything"], { kind: "skill", limit: 5 }),
+    ).resolves.toEqual([]);
+  });
+
+  it("turns a vector error caused by an overlapping reindex into no discovery", async () => {
+    const deps = searchDeps([]);
+    deps.catalog.query = async () => {
+      throw new Error("different vector dimensions");
+    };
+    const states = [
+      { generation: 2, active: false },
+      { generation: 3, active: true },
+    ];
+    deps.reindexState = async () => states.shift() ?? states[0]!;
+
+    await expect(
+      searchCapabilities(deps, ["anything"], { kind: "skill", limit: 5 }),
+    ).resolves.toEqual([]);
+  });
+
   it("lifts an entry the query names above one that merely reads like it", async () => {
     // The gap an embedding cannot close: "slack" names a thing exactly, and a
     // description that talks around it must not outrank it.

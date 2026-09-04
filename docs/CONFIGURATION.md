@@ -30,8 +30,9 @@ admin 이나 회전된 A2A 키가 그 쓰기를 처리하지 않은 인스턴스
 
 settings 쓰기는 최신 `SETTINGS#app` 행을 row lock 아래에서 읽고 patch를 합친 뒤 같은 transaction
 에서 저장한다. 일반 설정 저장, A2A key 회전, Embedding/Rerank 선택이 동시에 도착해도 한 요청의
-오래된 full-row snapshot이 다른 요청의 필드를 되돌리지 않는다. 특히 Embedding migration이 만든
-vector와 그 뒤의 query model이 서로 다른 상태로 남는 것을 이 저장 경계가 막는다.
+오래된 full-row snapshot이 다른 요청의 필드를 되돌리지 않는다. Embedding migration 동안의
+vector/query model 일치는 별도의 reindex lease generation이 지킨다. 검색은 시작 전·vector 조회
+후·반환 직전에 generation을 비교하고, migration과 겹쳤으면 결과를 버린다.
 
 오버라이드와 환경변수는 *"설정돼 있는가?"* 에 같은 방식으로 답한다: 비어 있거나 공백뿐인
 값은 **설정되지 않음**으로 치고, 유효 값이 되는 대신 다음 계층으로 떨어진다.

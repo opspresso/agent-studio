@@ -110,7 +110,10 @@ probe는 실행 run이 아니므로 project usage를 만들지 않는다.
 활성 Embedding과 Rerank는 `/models`의 같은 레지스트리에서 각각 자기 type으로 선택한다.
 env의 `EMBEDDING_MODEL`·`RERANKER_MODEL`은 배포 기본값이고 DB 선택이 우선한다. Embedding 변경은
 확인 뒤 설치 전역 lease 아래에서 동기 재색인하며 실패하면 이전 선택과 vector를 복원한다. 다른
-인스턴스의 동시 migration은 409로 거절한다. Reranker 변경은 저장 vector를 바꾸지 않으므로
+인스턴스의 동시 migration은 409로 거절한다. Lease row의 generation은 release 뒤에도 남는다.
+검색은 시작 전, vector 조회 후, 반환 직전에 generation과 active 상태를 비교하고, 재색인과 겹친
+결과는 사용하지 않는다. 재색인 중에는 dynamic discovery가 빈 결과로 진행되므로 새 모델의 query가
+이전 모델의 vector를 검색하거나 in-place 교체 중인 두 공간을 섞지 않는다. Reranker 변경은 저장 vector를 바꾸지 않으므로
 재색인하지 않는다. 대신 선택 전 production capability instruction을 사용하는 semantic probe가
 관련 capability를 먼저 매기는지 확인한다. `RERANKER_MIN_SCORE`도 모델 선택과 같은 화면에서 저장한다.
 
