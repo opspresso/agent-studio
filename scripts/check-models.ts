@@ -39,11 +39,13 @@ import {
 } from "@/domain/llm/models";
 import { AWS_SIGNING_SERVICE, createSignedFetch } from "@/infrastructure/llm/awsSigner";
 import type { ChannelAuth, ProviderChannelConfig } from "@/domain/settings/types";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 /** Anthropic requires an explicit API version on every request. */
 const ANTHROPIC_VERSION = "2023-06-01";
 
-interface Channel {
+export interface Channel {
   label: string;
   baseUrl: string;
   apiKey: string;
@@ -159,9 +161,12 @@ async function resolveChannels(): Promise<Channel[]> {
  * that spelling. So the `x-api-key` form is used only where the prefix is
  * stripped — exactly where dispatch would be talking to Anthropic directly.
  */
-function authHeaders(channel: Channel): Record<string, string> {
+export function authHeaders(channel: Channel): Record<string, string> {
   if (channel.auth === "sigv4") {
     // The signer sets the header; anything put here would be overwritten by it.
+    return {};
+  }
+  if (channel.apiKey === "") {
     return {};
   }
   if (channel.provider === "anthropic" && !channel.keepModelPrefix) {
@@ -588,7 +593,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error("CHECK FAILED:", error);
-  process.exit(1);
-});
+const isMain =
+  process.argv[1] !== undefined && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+
+if (isMain) {
+  main().catch((error) => {
+    console.error("CHECK FAILED:", error);
+    process.exit(1);
+  });
+}
