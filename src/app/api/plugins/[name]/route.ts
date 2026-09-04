@@ -4,6 +4,7 @@ import { pluginUseCases } from "@/lib/container";
 import { config } from "@/lib/config";
 import { isPluginName } from "@/domain/plugin/types";
 import type { Plugin } from "@/domain/plugin/types";
+import { ARCHIVE_BRANCH } from "@/domain/plugin/sync";
 
 export type PluginResponse = Plugin & { repositoryUrl: string | null };
 
@@ -21,7 +22,10 @@ export const GET = withMemberAuth(async (_user, _request: Request, ctx: { params
     const githubWebUrl = config.githubWebUrl;
     const response = {
       ...plugin,
-      repositoryUrl: githubWebUrl ? `${githubWebUrl}/${plugin.repo}` : null,
+      repositoryUrl:
+        githubWebUrl && plugin.branch !== ARCHIVE_BRANCH
+          ? `${githubWebUrl}/${plugin.repo}`
+          : null,
     } satisfies PluginResponse;
     return Response.json(response);
   } catch (error) {

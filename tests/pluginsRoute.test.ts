@@ -124,12 +124,45 @@ describe("GET /api/plugins/[name]", () => {
     const row = {
       name: "devops",
       repo: "opspresso/agent-plugins",
+      branch: "main",
       skills: ["gitops"],
       mcpServers: ["argocd"],
     };
     pluginUseCases.get.mockResolvedValue(row);
     const res = await get("devops");
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ...row,
+      repositoryUrl: "https://github.example.com/opspresso/agent-plugins",
+    });
+  });
+
+  it("does not expose repository links for an uploaded archive", async () => {
+    const row = {
+      name: "devops",
+      repo: "opspresso/agent-plugins",
+      branch: "archive",
+      commitSha: "a".repeat(64),
+      skills: ["gitops"],
+      mcpServers: ["argocd"],
+    };
+    pluginUseCases.get.mockResolvedValue(row);
+    const res = await get("devops");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ...row, repositoryUrl: null });
+  });
+
+  it("keeps links for a Git branch even when its commit id is 64 hex characters", async () => {
+    const row = {
+      name: "devops",
+      repo: "opspresso/agent-plugins",
+      branch: "main",
+      commitSha: "a".repeat(64),
+      skills: ["gitops"],
+      mcpServers: ["argocd"],
+    };
+    pluginUseCases.get.mockResolvedValue(row);
+    const res = await get("devops");
     expect(await res.json()).toEqual({
       ...row,
       repositoryUrl: "https://github.example.com/opspresso/agent-plugins",

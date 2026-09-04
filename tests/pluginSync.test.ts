@@ -797,6 +797,7 @@ describe("syncPluginsFromSnapshot", () => {
     const row: Plugin = {
       name: "devops",
       repo: REPO,
+      branch: "main",
       rootPath: "plugins/devops",
       commitSha: "old-sha",
       skills: [],
@@ -824,6 +825,7 @@ describe("syncPluginsFromSnapshot", () => {
         version: "1.2.0",
         description: "DevOps bundle",
         repo: REPO,
+        branch: "main",
         rootPath: "plugins/devops",
         commitSha: "abc123",
         skills: ["gitops"],
@@ -840,6 +842,7 @@ describe("syncPluginsFromSnapshot", () => {
     const row: Plugin = {
       name: "retired",
       repo: REPO,
+      branch: "main",
       rootPath: "plugins/retired",
       commitSha: "old",
       skills: [],
@@ -997,6 +1000,7 @@ describe("syncPluginsFromSnapshot", () => {
     const row: Plugin = {
       name: "devops",
       repo: REPO,
+      branch: "main",
       rootPath: "plugins/devops",
       commitSha: "old-sha",
       skills: [],
@@ -1027,6 +1031,7 @@ describe("syncPluginsFromSnapshot", () => {
     const row: Plugin = {
       name: "devops",
       repo: REPO,
+      branch: "main",
       rootPath: "plugins/devops",
       commitSha: "old-sha",
       skills: ["gitops"],
@@ -1158,6 +1163,7 @@ describe("syncPluginsFromSnapshot", () => {
     const row: Plugin = {
       name: "elsewhere",
       repo: "other/repo",
+      branch: "main",
       rootPath: "",
       commitSha: "x",
       skills: [],

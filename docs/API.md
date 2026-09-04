@@ -657,7 +657,7 @@ GET  /api/plugins
       skills: ["name"], mcpServers: ["name"], syncedAt, createdAt, updatedAt } ]
 
 GET  /api/plugins/{name}
-→ 200 { …one of the above…, repositoryUrl: string | null } | 404 | 400
+→ 200 { …one of the above…, branch, repositoryUrl: string | null } | 404 | 400
                                            ({name} follows the Agent Plugins name rule,
                                             which allows periods — not the registry slug)
 
@@ -685,8 +685,9 @@ POST /api/plugins/sync/upload        multipart/form-data: file (.tar.gz | .tgz |
 --format=tar.gz HEAD` 든 `tar czf` 든. 맨 앞의 공통 디렉터리는 벗겨 낸다)를 올리면 GitHub
 클라이언트가 만드는 것과 같은 스냅샷이 되어 **같은 sync** 를 지난다. 행들이 지닐 provenance 는
 설정된 `PLUGINS_REPO`, 그것도 없으면 `archive` 다. `GET /sync` 가 마지막 리포트를 읽는 바로 그
-이름이고, 그래서 GitHub 가 닿던 시절의 행은 같은 저장소가 손으로 와도 주인을 유지한다. 스냅샷의 `branch` 는 `archive`,
-`commitSha` 는 아카이브의 sha256 이다. 업로드를 식별할 뿐, 바뀌었는지는 행마다 내용으로 판정한다(GitHub sync 와 같다). `PLUGINS_REPO`
+이름이고, 그래서 GitHub 가 닿던 시절의 행은 같은 저장소가 손으로 와도 주인을 유지한다. 스냅샷과
+plugin 행의 `branch` 는 `archive`, `commitSha` 는 아카이브의 sha256 이다. 상세 응답은 이 branch 를
+근거로 존재하지 않는 GitHub 링크를 만들지 않는다. 업로드를 식별할 뿐, 바뀌었는지는 행마다 내용으로 판정한다(GitHub sync 와 같다). `PLUGINS_REPO`
 도 `GITHUB_TOKEN` 도 필요 없고, `GET /api/plugins/sync` 의 `last` 는 같은 이름 아래에서 읽힌다.
 심볼릭 링크는 GitHub 트리와 같은 모드(`120000`)로 보고되어 같은 규칙으로 건너뛴다.
 

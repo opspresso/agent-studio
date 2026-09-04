@@ -216,6 +216,8 @@ export interface Plugin {
   description?: string;
   /** Repository the plugin was pulled from, e.g. "opspresso/agent-plugins". */
   repo: string;
+  /** Git branch the sync read, or "archive" for an uploaded snapshot. */
+  branch: string;
   /** Directory holding plugin.json, "" for a repo that is one plugin. */
   rootPath: string;
   /** Commit the last sync read. */
