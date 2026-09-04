@@ -46,6 +46,8 @@ export const en = {
   // App chrome: the header, the sidebar and its groups.
   "chrome.tagline": "Self-hosted agent platform",
   "chrome.navLabel": "Workspace navigation",
+  "chrome.openNavigation": "Open navigation",
+  "chrome.closeNavigation": "Close navigation",
   "chrome.openProjects": "Open projects",
   "chrome.status": "Workspace online · v{version}",
   "nav.group.workspace": "Workspace",

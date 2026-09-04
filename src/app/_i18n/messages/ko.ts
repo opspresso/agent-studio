@@ -22,6 +22,8 @@ export const ko: Messages = {
 
   "chrome.tagline": "설치형 에이전트 플랫폼",
   "chrome.navLabel": "워크스페이스 내비게이션",
+  "chrome.openNavigation": "내비게이션 열기",
+  "chrome.closeNavigation": "내비게이션 닫기",
   "chrome.openProjects": "Projects 열기",
   "chrome.status": "워크스페이스 온라인 · v{version}",
   "nav.group.workspace": "워크스페이스",

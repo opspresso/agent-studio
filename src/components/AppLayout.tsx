@@ -239,7 +239,13 @@ export function AppLayout({
       <AppShell.Header className={classes.header}>
         <Group h="100%" gap="md" wrap="nowrap" px={{ base: "md", md: "lg" }}>
             {showNav && (
-              <Burger opened={opened} onClick={toggle} hiddenFrom="md" size="sm" />
+              <Burger
+                opened={opened}
+                onClick={toggle}
+                hiddenFrom="md"
+                size="sm"
+                aria-label={t(opened ? "chrome.closeNavigation" : "chrome.openNavigation")}
+              />
             )}
             <UnstyledButton component={Link} href="/" className={classes.brand}>
               <span className={classes.logoWrap}>

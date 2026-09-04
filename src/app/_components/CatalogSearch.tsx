@@ -20,6 +20,7 @@ export function CatalogSearch({
       value={value}
       onChange={(e) => onChange(e.currentTarget.value)}
       placeholder={placeholder}
+      aria-label={placeholder}
       leftSection={<IconSearch size={14} />}
       maw={360}
     />

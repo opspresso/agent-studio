@@ -38,7 +38,12 @@ export function ToolRow({ pair }: { pair: ToolPair }) {
   const kind = TOOL_KIND[described.kind] ?? TOOL_KIND.tool;
   return (
     <Paper withBorder radius="md" style={{ overflow: "hidden" }} my={4} w="100%">
-      <UnstyledButton onClick={() => setOpen((prev) => !prev)} className={classes.rowToggle}>
+      <UnstyledButton
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={classes.rowToggle}
+        aria-expanded={open}
+      >
         <Group gap="xs" wrap="nowrap">
           {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
           <Badge size="xs" color={kind.color} radius="sm">

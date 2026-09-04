@@ -50,11 +50,13 @@ export function ReasoningRow({
   return (
     <Paper withBorder radius="md" style={{ overflow: "hidden" }} my={4} w="100%">
       <UnstyledButton
+        type="button"
         onClick={() => {
           setTouched(true);
           setOpen(!shown);
         }}
         className={classes.rowToggle}
+        aria-expanded={shown}
       >
         <Group gap="xs" wrap="nowrap">
           {shown ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
