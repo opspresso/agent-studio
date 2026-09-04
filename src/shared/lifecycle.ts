@@ -27,6 +27,9 @@ export function onShutdown(hook: ShutdownHook): void {
 
 /** Mark the instance unready. Exposed as the signal handler and for tests. */
 export function beginShutdown(): void {
+  if (draining) {
+    return;
+  }
   draining = true;
   for (const hook of hooks) {
     void Promise.resolve()

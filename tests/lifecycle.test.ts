@@ -1,5 +1,10 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { beginShutdown, isShuttingDown, registerShutdownSignals } from "@/shared/lifecycle";
+import {
+  beginShutdown,
+  isShuttingDown,
+  onShutdown,
+  registerShutdownSignals,
+} from "@/shared/lifecycle";
 
 afterAll(() => {
   process.removeListener("SIGTERM", beginShutdown);
@@ -22,8 +27,18 @@ describe("lifecycle", () => {
     expect(process.listeners("SIGTERM").filter((l) => l === beginShutdown)).toHaveLength(1);
   });
 
-  it("flips readiness to unready when the shutdown handler fires", () => {
+  it("flips readiness once and runs shutdown hooks once", async () => {
+    let hooks = 0;
+    onShutdown(() => {
+      hooks += 1;
+    });
+
+    beginShutdown();
+    beginShutdown();
+    await Promise.resolve();
+
     beginShutdown();
     expect(isShuttingDown()).toBe(true);
+    expect(hooks).toBe(1);
   });
 });
