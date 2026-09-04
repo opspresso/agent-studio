@@ -122,6 +122,21 @@ describe("a2aClientKeyUseCases", () => {
     await expect(createA2aClientKeyUseCases(repo, cipher).verify(value)).resolves.toBe("legacy");
   });
 
+  it("refuses a stale hash index that points at a different primary hash", async () => {
+    const repo = inMemoryRepo();
+    const value = "asc_presented-key";
+    repo.rows.set("partner", {
+      name: "partner",
+      token: `enc:v1:${value}`,
+      tokenHash: hashSecret("asc_other-key"),
+      masked: "asc_••••",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    repo.findNameByHash = async () => "partner";
+
+    await expect(createA2aClientKeyUseCases(repo, cipher).verify(value)).resolves.toBeNull();
+  });
+
   it("refuses a duplicate name as a conflict", async () => {
     const useCases = createA2aClientKeyUseCases(inMemoryRepo(), cipher);
     await useCases.create("partner", undefined, "admin@x.com");

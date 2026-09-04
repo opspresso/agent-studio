@@ -170,12 +170,13 @@ export function createA2aClientKeyUseCases(
     },
 
     async verify(value) {
-      const name = await repo.findNameByHash(hashSecret(value));
+      const tokenHash = hashSecret(value);
+      const name = await repo.findNameByHash(tokenHash);
       if (!name) {
         return null;
       }
       const stored = await repo.get(name);
-      if (!stored) {
+      if (!stored || stored.tokenHash !== tokenHash) {
         return null;
       }
       try {
