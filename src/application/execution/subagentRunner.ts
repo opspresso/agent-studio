@@ -39,6 +39,7 @@ import { memoryPrepared, recallForRun } from "./memoryRecall";
 import { log } from "@/shared/logger";
 import { runEnding } from "@/application/run/runDeadline";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
+import { runDeadlineExceeded } from "@/shared/runDeadline";
 
 /**
  * Assemble the injected engine dependencies for an agent run.
@@ -342,7 +343,9 @@ export async function* runPromptSubagent(
     // composed run signal, so a deadline that stopped both wrote the deadline's
     // sentence on one trace and the raw abort reason on the other.
     const error = runEnding(caught, signal);
-    thrown = error;
+    if (runDeadlineExceeded(signal) || !signal?.aborted) {
+      thrown = error;
+    }
     throw error;
   } finally {
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
@@ -615,7 +618,9 @@ export async function* runLocalSubagent(
     // parent's composed run signal, so a deadline that stopped both wrote the
     // deadline's sentence on one trace and the raw abort reason on the other.
     const error = runEnding(caught, signal);
-    thrown = error;
+    if (runDeadlineExceeded(signal) || !signal?.aborted) {
+      thrown = error;
+    }
     throw error;
   } finally {
     await closeMcp(closeMcpSessions);

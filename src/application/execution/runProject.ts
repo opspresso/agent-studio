@@ -93,8 +93,9 @@ export async function executeVersion(
     // or not the caller was still there to hear about it. One question, one
     // answer: the same latch decides the ending, the metric and the trace.
     const error = runEnding(caught, runSignal);
-    failed = runDeadlineExceeded(runSignal) || !input.signal?.aborted;
-    await finishTrace(recorder, error);
+    const cancelled = !runDeadlineExceeded(runSignal) && input.signal?.aborted === true;
+    failed = !cancelled;
+    await finishTrace(recorder, error, cancelled);
     throw error;
   } finally {
     // `runPrompt` awaits its own usage recording, so the settle inside `close`

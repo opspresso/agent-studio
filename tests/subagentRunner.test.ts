@@ -8,10 +8,13 @@
 
 import { describe, expect, it } from "vitest";
 import { runLocalSubagent } from "@/application/execution/subagentRunner";
+import { runImageSubagent } from "@/application/execution/imageTool";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { RunOrigin } from "@/domain/execution/actor";
+import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
+import type { Trace } from "@/domain/trace/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 
 function project(name: string): Project {
@@ -139,5 +142,73 @@ describe("runLocalSubagent and the child's own maxTurn", () => {
     // `turn`, which trips the child on entry.
     expect((await child({ maxTurn: null as unknown as number })).text).toBe("answered");
     expect((await child({})).text).toBe("answered");
+  });
+});
+
+describe("subagent cancellation traces", () => {
+  const origin = { ancestry: ["parent", "child"] } as RunOrigin;
+
+  it("records a caller-aborted prompt child as cancelled", async () => {
+    const controller = new AbortController();
+    const channel = new FakeChannel([[contentChunk("first"), contentChunk("second")]]);
+    const traces: Trace[] = [];
+    const deps = {
+      channel,
+      projects: { get: async () => project("child") },
+      versions: { get: async () => version("child") },
+      skills: { get: async () => null, list: async () => [] },
+      externalAgents: { get: async () => null },
+      traces: { put: async (trace: Trace) => void traces.push(trace) },
+    } as unknown as ExecutionDeps;
+    const stream = runLocalSubagent(
+      deps,
+      "child",
+      "hi",
+      1,
+      8,
+      async () => {},
+      origin,
+      controller.signal,
+    );
+
+    expect((await stream.next()).done).toBe(false);
+    controller.abort(new Error("ResponseAborted"));
+    await expect(stream.next()).rejects.toThrow("ResponseAborted");
+    expect(traces[0]?.status).toBe("cancelled");
+    expect(traces[0]?.error).toBeUndefined();
+  });
+
+  it("records a caller-aborted image child as cancelled", async () => {
+    const controller = new AbortController();
+    const responseAborted = new Error("ResponseAborted");
+    const traces: Trace[] = [];
+    const imageChannel: ImageChannel = {
+      async generateImage() {
+        controller.abort(responseAborted);
+        throw responseAborted;
+      },
+      async editImage() {
+        throw new Error("not used");
+      },
+    };
+    const imageProject = { ...project("child"), projectType: "image" as const };
+    const imageVersion = version("child", { model: "openai/gpt-image-2" });
+    const stream = runImageSubagent(
+      {
+        imageChannel,
+        traces: { put: async (trace: Trace) => void traces.push(trace) } as never,
+      },
+      "child",
+      imageProject,
+      imageVersion,
+      "draw",
+      async () => {},
+      origin,
+      controller.signal,
+    );
+
+    await expect(stream.next()).rejects.toBe(responseAborted);
+    expect(traces[0]?.status).toBe("cancelled");
+    expect(traces[0]?.error).toBeUndefined();
   });
 });

@@ -35,6 +35,7 @@ import type { ExecutionDeps } from "@/application/execution/runProject";
 import { withRunDeadline } from "@/shared/runDeadline";
 import { listModels } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
+import type { LlmChannel } from "@/domain/llm/channel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version, VersionParameters } from "@/domain/project/types";
 import type { UsageDelta } from "@/domain/usage/types";
@@ -78,7 +79,7 @@ const TEST_NOW = new Date("2026-07-30T06:12:00Z");
 const CLOCK_LINE =
   'Current date and time: 2026-07-30 (Thursday) 06:12 UTC. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.';
 
-function executionDepsFixture(channel: FakeChannel) {
+function executionDepsFixture(channel: LlmChannel) {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const recorded: UsageDelta[] = [];
   const imageModels: string[] = [];
@@ -199,6 +200,36 @@ describe("execution cancellation", () => {
     expect(sent?.aborted).toBe(false);
     abortController.abort();
     expect(sent?.aborted).toBe(true);
+  });
+
+  it("records a sampled caller-aborted prompt as cancelled", async () => {
+    const controller = new AbortController();
+    const responseAborted = new Error("ResponseAborted");
+    const channel: LlmChannel = {
+      async chatCompletion(params) {
+        controller.abort(responseAborted);
+        params.signal?.throwIfAborted();
+        throw responseAborted;
+      },
+      async *chatCompletionStream() {
+        throw new Error("not used");
+      },
+    };
+    const { deps } = executionDepsFixture(channel);
+    deps.traceSampleRate = 1;
+    deps.sample = () => 0;
+    const traces = captureTraces(deps);
+
+    await expect(
+      executeVersion(deps, {
+        project: { ...projectFixture(), projectType: "llm" },
+        version: versionFixture({ piiFiltering: false }),
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(responseAborted);
+
+    expect(traces[0]?.status).toBe("cancelled");
+    expect(traces[0]?.error).toBeUndefined();
   });
 });
 

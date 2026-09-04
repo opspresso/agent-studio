@@ -7,6 +7,7 @@ import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { UsageDelta } from "@/domain/usage/types";
+import type { Trace } from "@/domain/trace/types";
 
 const project: Project = {
   name: "img-proj",
@@ -459,6 +460,7 @@ describe("a provider refusal is reported as one", () => {
     const responseAborted = new Error();
     responseAborted.name = "ResponseAborted";
     const { deps } = fakeDeps();
+    const traces: Trace[] = [];
     const abortingChannel: ImageChannel = {
       async editImage(): Promise<never> {
         throw new Error("not this path");
@@ -470,13 +472,25 @@ describe("a provider refusal is reported as one", () => {
     };
 
     const thrown = await generateImage(
-      { ...deps, imageChannel: abortingChannel },
+      {
+        ...deps,
+        imageChannel: abortingChannel,
+        traces: {
+          put: async (trace) => void traces.push(trace),
+          get: async () => null,
+          listByProject: async () => traces,
+        },
+        traceSampleRate: 1,
+        sample: () => 0,
+      },
       { project, version: version("openai/gpt-image-2"), prompt: "a cat", signal: controller.signal },
     ).catch((error: unknown) => error);
 
     expect(thrown).toBe(responseAborted);
     expect(thrown).not.toBeInstanceOf(UpstreamError);
     expect(statusForError(thrown)).toBeNull();
+    expect(traces[0]?.status).toBe("cancelled");
+    expect(traces[0]?.error).toBeUndefined();
   });
 
   it("still reports a provider that aborted on its own as a failure", async () => {

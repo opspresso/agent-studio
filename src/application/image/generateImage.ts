@@ -13,7 +13,7 @@ import { recordUsage } from "@/application/usage/recordUsage";
 import { runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { runEnding } from "@/application/run/runDeadline";
 import { openRun, type RunBracketDeps } from "@/application/run/runBracket";
-import { traceSampled } from "@/application/run/traceLifecycle";
+import { finishTrace, traceSampled } from "@/application/run/traceLifecycle";
 import { log } from "@/shared/logger";
 
 /**
@@ -104,17 +104,6 @@ export async function* generateImageStream(
   }
   yield { usage: image.usage };
   yield { done: true };
-}
-
-async function finishTrace(recorder: TraceRecorder | undefined, error?: unknown): Promise<void> {
-  if (!recorder) {
-    return;
-  }
-  try {
-    await recorder.finish(error);
-  } catch (traceError) {
-    log.error("trace", "persistence failed", traceError);
-  }
 }
 
 export async function generateImage(
@@ -224,7 +213,7 @@ export async function generateImage(
     // deadline as the provider refusing — a 502 naming a model that answered
     // nothing wrong.
     const error = runEnding(caught, runSignal);
-    await finishTrace(recorder, error);
+    await finishTrace(recorder, error, cancelled);
     throw providerFailure(error, model, cancelled);
   } finally {
     await bracket.close({ failed });

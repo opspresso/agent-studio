@@ -404,6 +404,24 @@ describe("TraceRecorder", () => {
     expect(traces[0]?.error).toBe("provider unavailable");
   });
 
+  it("records caller cancellation instead of the abort error that delivered it", async () => {
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "p",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+    const aborted = new Error("ResponseAborted");
+
+    recorder.observe({ error: aborted.message });
+    await recorder.finish(aborted, true);
+
+    expect(traces[0]?.status).toBe("cancelled");
+    expect(traces[0]?.error).toBeUndefined();
+  });
+
   it("distinguishes a turn-limit ending from a normal completion", async () => {
     // The turn guard ends the generator normally, so before the reason was
     // explicit this run recorded `completed` — a run that produced no answer

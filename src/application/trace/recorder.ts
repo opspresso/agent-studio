@@ -275,7 +275,9 @@ export class TraceRecorder {
 
   async finish(thrown?: unknown, cancelled = false): Promise<void> {
     const endedAt = new Date();
-    if (thrown !== undefined) {
+    if (cancelled) {
+      this.error = undefined;
+    } else if (thrown !== undefined) {
       this.error = thrown instanceof Error ? thrown.message : String(thrown);
     }
     for (const subagent of this.subagents.values()) {
@@ -313,10 +315,10 @@ export class TraceRecorder {
         : {}),
       ...(this.context.actor ? { actor: this.context.actor } : {}),
       ...(this.context.conversation ? { conversation: this.context.conversation } : {}),
-      status: this.error
-        ? "failed"
-        : cancelled
-          ? "cancelled"
+      status: cancelled
+        ? "cancelled"
+        : this.error
+          ? "failed"
           : this.turnLimited
             ? "turn-limit"
             : "completed",
