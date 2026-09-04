@@ -149,8 +149,8 @@ buffer rather than a record, and why the viewport belongs to a library is
   one saves `c74d33ff-….pdf`. Three consequences. **Only the view resolves them**: a file's
   bytes never enter the model's context, so the replay path restores images and deliberately not
   these. **A file counts toward the turn being worth persisting** — a run whose only output was
-  a document used to write no message at all, which left the document stored and unreachable
-  from the conversation that made it. And the unstored case reads differently from an image's:
+  a document must retain a message or the stored object is unreachable from the conversation
+  that made it. And the unstored case reads differently from an image's:
   an image that failed to store was still *seen*, while a file that failed has been nowhere, so
   the warning says the download does not exist rather than that it is temporary.
   A live frame carries no address (`LiveFile`) — signing one into every frame would put a

@@ -314,8 +314,8 @@ on a second caller of either builder.
 **A capability is derived from the deps, never from the version.** A builtin the run cannot
 actually perform is not offered and not described: no `loadSkillContent` means no `Skill` tool
 even with skills bound, and no `runSubagent` means no transfer tool, no `dispatch_agents`, and
-no delegation section in the prompt. Both of those used to be gated on the *list* being
-non-empty, so a run advertised them and then answered a call with an error about arguments.
+no delegation section in the prompt. Gating on a non-empty binding list alone would advertise
+capabilities the run cannot perform.
 
 ## System prompt assembly (`buildAgentSystemPrompt`)
 

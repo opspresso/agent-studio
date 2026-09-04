@@ -20,10 +20,9 @@ import {
 /**
  * The Slack workspace, as six read-only tools a run may be offered.
  *
- * The bot already sits in the workspace and already holds scopes to read it;
- * what was missing was any way for a *run* to spend them. Without this an agent
- * asked "what did #deploy say about the rollback" can only answer from text
- * somebody pasted into the prompt.
+ * The bot's existing read scopes are exposed to a run only through these tools.
+ * Without them an agent asked "what did #deploy say about the rollback" can
+ * answer only from text somebody pasted into the prompt.
  *
  * Three decisions shape what is here:
  *
