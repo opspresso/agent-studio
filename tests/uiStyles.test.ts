@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const globals = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 const layout = readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
+const appLayout = readFileSync(new URL("../src/components/AppLayout.tsx", import.meta.url), "utf8");
 
 describe("disabled input legibility", () => {
   it("keeps every Mantine input shell at full opacity with readable ink", () => {
@@ -34,5 +35,10 @@ describe("disabled input legibility", () => {
     expect(layout.indexOf('import "@mantine/core/styles.css"')).toBeLessThan(
       layout.indexOf('import "./globals.css"'),
     );
+  });
+
+  it("uses AppShell's main landmark without nesting another one", () => {
+    expect(appLayout).toContain('<AppShell.Main className={classes.main} id="main-content">');
+    expect(appLayout).not.toContain("<main");
   });
 });

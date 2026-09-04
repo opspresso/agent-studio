@@ -316,10 +316,8 @@ export function AppLayout({
         )}
       </AppShell.Navbar>
 
-      <AppShell.Main>
-        <main className={classes.main} id="main-content">
-          {children}
-        </main>
+      <AppShell.Main className={classes.main} id="main-content">
+        {children}
       </AppShell.Main>
     </AppShell>
   );
