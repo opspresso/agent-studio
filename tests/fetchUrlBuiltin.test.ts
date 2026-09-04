@@ -177,6 +177,7 @@ describe("fetching a picture", () => {
 
 describe("running alongside MCP calls", () => {
   it("dispatches concurrently but answers in call order", async () => {
+    vi.useFakeTimers();
     const channel = new FakeChannel([
       [
         toolCallChunk(0, "c1", FETCH_URL_TOOL_NAME, '{"url":"https://example.test/slow"}'),
@@ -201,17 +202,23 @@ describe("running alongside MCP calls", () => {
         return { text: "09:00" };
       },
     };
-    const chunks = await collect(
-      runAgent(
-        deps,
-        input({ mcpTools: [{ type: "function", function: { name: "getTime", parameters: {} } }] }),
-      ),
-    );
-    expect(finished).toEqual(["mcp", "fetch"]);
-    expect(chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.toolCallId)).toEqual([
-      "c1",
-      "c2",
-    ]);
+    try {
+      const pending = collect(
+        runAgent(
+          deps,
+          input({ mcpTools: [{ type: "function", function: { name: "getTime", parameters: {} } }] }),
+        ),
+      );
+      await vi.advanceTimersByTimeAsync(10);
+      const chunks = await pending;
+      expect(finished).toEqual(["mcp", "fetch"]);
+      expect(chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.toolCallId)).toEqual([
+        "c1",
+        "c2",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

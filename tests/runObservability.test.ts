@@ -118,7 +118,7 @@ describe("run correlation", () => {
   it("still carries the id at the end of the run, not just the start", async () => {
     resetRunMetrics();
     const bracket = await openRun({ usage }, project, version);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await Promise.resolve();
     linkTrace("trace-x");
     expect(currentRunContext()).toMatchObject({ runId: bracket.runId, traceId: "trace-x" });
     await bracket.close();

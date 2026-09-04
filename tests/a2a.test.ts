@@ -644,17 +644,22 @@ describe("sendA2aMessage", () => {
     // a caller hanging up read as an ordinary failure with an empty reason.
     const cancel = new AbortController();
     const card = agentCard(false);
+    let markRpcStarted!: () => void;
+    const rpcStarted = new Promise<void>((resolve) => {
+      markRpcStarted = resolve;
+    });
     vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
       if (String(input) === CARD_URL) {
         return card;
       }
       return new Promise<Response>((_, reject) => {
         init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        markRpcStarted();
       });
     });
 
     const pending = sendA2aMessage(RPC_URL, {}, "hello", cancel.signal);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await rpcStarted;
     const responseAborted = new Error();
     responseAborted.name = "ResponseAborted";
     cancel.abort(responseAborted);

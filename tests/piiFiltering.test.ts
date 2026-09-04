@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runAgent, runPrompt, runPromptStream } from "@/application/llm/engine";
 import { PiiFilter } from "@/application/llm/pii";
 import type {
@@ -273,12 +273,12 @@ describe("PiiFilter", () => {
     expect(masked).toContain("[[PII: unterminated");
   });
 
-  it("restores a stream whatever the mapping's size", () => {
+  it("restores a stream without scanning the whole mapping", () => {
     const filter = new PiiFilter();
     // Every chunk used to be scanned against the whole mapping, twice — so a
     // run that masked a few thousand addresses spent seconds of blocked event
-    // loop restoring one turn. The ceiling is far above the linear cost and far
-    // below the quadratic one.
+    // loop restoring one turn. A structural assertion is deterministic where a
+    // wall-clock ceiling depends on the machine running the suite.
     const source = Array.from(
       { length: 4_000 },
       (_, index) => `user${index}@example.com wrote something.`,
@@ -286,7 +286,7 @@ describe("PiiFilter", () => {
     const masked = filter.mask(source);
 
     const restorer = filter.createStreamRestorer();
-    const startedAt = Date.now();
+    const mapIteration = vi.spyOn(Map.prototype, Symbol.iterator);
     let restored = "";
     for (let at = 0; at < masked.length; at += 8) {
       restored += restorer.push(masked.slice(at, at + 8));
@@ -294,7 +294,7 @@ describe("PiiFilter", () => {
     restored += restorer.flush();
 
     expect(restored).toBe(source);
-    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(mapIteration).not.toHaveBeenCalled();
   });
 
   it("distinguishes a real value from the contents of an existing placeholder", () => {
