@@ -188,23 +188,27 @@ access/refresh token·client secret·인가 중인 PKCE verifier, Slack 봇 toke
 Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, 앱 전역 A2A 키와
 이름 있는 A2A 클라이언트 키, project API token, webhook trigger 시크릿, 그리고 시크릿인 앱
 설정(LLM API 키와 plugins 저장소의 GitHub token)은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM
-암호화된다(`src/infrastructure/crypto/secretEncryption.ts`). 형식은 두 가지다. 기존 `enc:v1:`
-값은 그대로 읽고, 저장 위치의 컨텍스트를 함께 인증하는 값은 `enc:v2:` 로 쓴다. v2 는 row 와
-field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에 실패한다. 현재
-project API token, 이름 있는 A2A client key, webhook trigger secret 이 각각 project 이름,
-client 이름, `project + triggerId` 컨텍스트를 쓴다. Slack 의 bot token·signing secret,
-Telegram 의 bot token·webhook secret, Teams 의 app password 도 `project + integration + field` 에
-묶인다. MCP·external agent 의 registry header 는 항목 이름과 header 이름에, managed MCP 의
-environment 는 항목 이름과 변수 이름에 묶인다. HTTP header 이름은 대소문자를 구분하지 않으므로
-dispatch 의 override 병합만 대소문자를 무시하고, AAD 는 environment 와 같은 공통 map 규칙에
-따라 저장된 키 철자를 그대로 쓴다. 기존 v1 값은 다시 저장하거나 재발급하기 전까지 계속
-동작한다. 나머지 시크릿은 각 저장·복사 경로가 같은 컨텍스트를 재구성하도록 전환하기 전까지
-v1 형식을 유지한다. Version 의 MCP header override 는 `project + version + server + header` 에
-묶인다. 저장된 version 을 임시 preview draft 로 읽을 때는 값을 복호화해 `draft` 컨텍스트로 다시
-암호화하고, project clone 은 소유자의 override 를 애초에 복사하지 않는다.
+암호화된다(`src/infrastructure/crypto/secretEncryption.ts`). 새 값은 모두 `enc:v2:` 로 쓴다.
+v2 는 row 와 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에
+실패한다. 기존 `enc:v1:` 값은 다시 저장하거나 재발급하기 전까지 그대로 읽는다.
+
+Project API token, 이름 있는 A2A client key, webhook trigger secret 은 각각 project 이름,
+client 이름, `project + triggerId` 에 묶인다. Slack 의 bot token·signing secret, Telegram 의 bot
+token·webhook secret, Teams 의 app password 는 `project + integration + field` 를 쓴다.
+MCP·external agent 의 registry header 는 항목 이름과 header 이름에, managed MCP 의 environment 는
+항목 이름과 변수 이름에 묶인다. HTTP header의 override 병합만 이름의 대소문자를 무시하고,
+AAD 는 environment와 같은 공통 map 규칙에 따라 저장된 키 철자를 그대로 쓴다.
+
+Version 의 MCP header override 는 `project + version + server + header` 에 묶인다. 저장된 version 을
+임시 preview draft 로 읽을 때는 값을 복호화해 `draft` 컨텍스트로 다시 암호화하고, project clone 은
+소유자의 override 를 애초에 복사하지 않는다.
 MCP OAuth connection 의 client secret·access token·refresh token 은 `project + server + field` 에,
 인가 중인 PKCE verifier 는 일회성 state 값에 묶인다. Token refresh의 compare-and-set은 암호문을
 읽은 그대로 비교하므로 v2의 무작위 IV와 AAD 전환 뒤에도 같은 동시성 규칙을 유지한다.
+앱 설정의 기본 LLM key 는 effective base URL 에, provider별 key 는 `provider name + base URL` 에
+묶인다. 따라서 DB에서 key만 다른 endpoint로 옮기거나 저장 뒤 환경의 base URL만 바꾸면
+복호화되지 않으며 새 key를 입력해야 한다. GitHub token과 shared A2A key는 각각 고정된 settings
+field 컨텍스트를 쓴다.
 부팅, 저장 시크릿 암호화, proxied URL 서명은 모두 `decodeAes256Key` 를 거쳐 canonical base64 로
 인코딩된 정확히 32바이트 key 만 사용한다.
 

@@ -62,3 +62,15 @@ export function mcpConnectionSecretContext(
 export function mcpOAuthStateContext(state: string): string {
   return JSON.stringify(["mcp-oauth-state", state, "pkce-verifier"]);
 }
+
+export function llmApiKeyContext(baseUrl: string): string {
+  return JSON.stringify(["settings", "llm", baseUrl, "api-key"]);
+}
+
+export function llmProviderApiKeyContext(name: string, baseUrl: string): string {
+  return JSON.stringify(["settings", "llm-provider", name, baseUrl, "api-key"]);
+}
+
+export function settingsSecretContext(field: "github-token" | "a2a-api-key"): string {
+  return JSON.stringify(["settings", field]);
+}

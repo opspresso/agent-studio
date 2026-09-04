@@ -14,6 +14,11 @@ import { getModelConfig, loadSelfHostedModels } from "@/domain/llm/models";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";
 import { decryptSecret, encryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
+import {
+  llmApiKeyContext,
+  llmProviderApiKeyContext,
+  settingsSecretContext,
+} from "@/domain/security/secretContext";
 
 const ADMIN = "admin@example.com";
 
@@ -288,7 +293,9 @@ describe("settingsUseCases.update", () => {
     await useCases.update({ a2aApiKey: "a2a-secret", pluginsRepo: "org/repo" }, ADMIN);
     const storedKey = current()?.a2aApiKey;
     expect(isEncrypted(storedKey ?? "")).toBe(true);
-    expect(decryptSecret(storedKey ?? "")).toBe("a2a-secret");
+    expect(decryptSecret(storedKey ?? "", settingsSecretContext("a2a-api-key"))).toBe(
+      "a2a-secret",
+    );
 
     await useCases.update({ a2aApiKey: "*".repeat("a2a-secret".length) }, ADMIN);
     expect(current()?.a2aApiKey).toBe(storedKey);
@@ -317,8 +324,18 @@ describe("settingsUseCases.update", () => {
     const stored = current()?.llmProviders;
     expect(stored).toHaveLength(2);
     expect(stored?.[0]?.name).toBe("openai");
-    expect(decryptSecret(stored?.[0]?.apiKey ?? "")).toBe("sk-env-openai");
-    expect(decryptSecret(stored?.[1]?.apiKey ?? "")).toBe("sk-new");
+    expect(
+      decryptSecret(
+        stored?.[0]?.apiKey ?? "",
+        llmProviderApiKeyContext("openai", "https://api.openai.com/v1"),
+      ),
+    ).toBe("sk-env-openai");
+    expect(
+      decryptSecret(
+        stored?.[1]?.apiKey ?? "",
+        llmProviderApiKeyContext("google", "https://g.example.com/v1"),
+      ),
+    ).toBe("sk-new");
     expect(stored?.[1]?.keepModelPrefix).toBe(true);
     expect(view.llmProviders.source).toBe("override");
     expect(view.llmProviders.items[1]?.apiKey).toBe("*".repeat("sk-new".length));
@@ -388,7 +405,12 @@ describe("settingsUseCases.update", () => {
       },
       ADMIN,
     );
-    expect(decryptSecret(current()?.llmProviders?.[0]?.apiKey ?? "")).toBe("sk-new");
+    expect(
+      decryptSecret(
+        current()?.llmProviders?.[0]?.apiKey ?? "",
+        llmProviderApiKeyContext("openai", "https://new.example.com"),
+      ),
+    ).toBe("sk-new");
   });
 
   it("requires a new default key when LLM_BASE_URL changes", async () => {
@@ -413,7 +435,12 @@ describe("settingsUseCases.update", () => {
       ADMIN,
     );
     expect(current()?.llmBaseUrl).toBe("https://new.example.com/v1");
-    expect(decryptSecret(current()?.llmApiKey ?? "")).toBe("sk-new");
+    expect(
+      decryptSecret(
+        current()?.llmApiKey ?? "",
+        llmApiKeyContext("https://new.example.com/v1"),
+      ),
+    ).toBe("sk-new");
   });
 
   it("refuses a stored default endpoint without its own key", async () => {

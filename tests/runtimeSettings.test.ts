@@ -10,10 +10,12 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import {
   getArtifactAccessMode,
+  getA2aApiKey,
   getAdminEmails,
   getEmbeddingModelSelection,
   getLlmChannelConfig,
   getLlmProviderConfigs,
+  getPluginsRepoConfig,
   getRerankerModelSelection,
   getRerankerMinScoreSelection,
   invalidateSettingsCache,
@@ -21,6 +23,11 @@ import {
   isConfiguredAdmin,
 } from "@/lib/runtime-settings";
 import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
+import {
+  llmApiKeyContext,
+  llmProviderApiKeyContext,
+  settingsSecretContext,
+} from "@/domain/security/secretContext";
 
 const mockGet = vi.mocked(settingsRepository.get);
 
@@ -34,6 +41,8 @@ const ENV_KEYS = [
   "LLM_API_KEY",
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
+  "GITHUB_TOKEN",
+  "A2A_API_KEY",
   "ARTIFACT_ACCESS_MODE",
   "EMBEDDING_MODEL",
   "RERANKER_MODEL",
@@ -113,12 +122,29 @@ describe("runtime settings precedence", () => {
     );
   });
 
+  it("refuses a stored LLM key moved to another endpoint context", async () => {
+    stub({
+      llmBaseUrl: "https://new.example.com/v1",
+      llmApiKey: encryptSecret("sk-db", llmApiKeyContext("https://old.example.com/v1")),
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    await expect(getLlmChannelConfig()).rejects.toThrow();
+  });
+
   it("prefers stored LLM providers over LLM_PROVIDER_* env, decrypting keys", async () => {
     process.env.LLM_PROVIDER_OPENAI_BASE_URL = "https://env.example.com/v1";
     process.env.LLM_PROVIDER_OPENAI_API_KEY = "sk-env";
     stub({
       llmProviders: [
-        { name: "google", baseUrl: "https://g.example.com/v1", apiKey: encryptSecret("sk-db") },
+        {
+          name: "google",
+          baseUrl: "https://g.example.com/v1",
+          apiKey: encryptSecret(
+            "sk-db",
+            llmProviderApiKeyContext("google", "https://g.example.com/v1"),
+          ),
+        },
       ],
       updatedAt: "2026-01-01T00:00:00Z",
     });
@@ -144,6 +170,21 @@ describe("runtime settings precedence", () => {
         auth: "bearer",
       },
     ]);
+  });
+
+  it("decrypts fixed-field GitHub and shared A2A settings", async () => {
+    stub({
+      pluginsRepo: "org/plugins",
+      githubToken: encryptSecret("gh-secret", settingsSecretContext("github-token")),
+      a2aApiKey: encryptSecret("a2a-secret", settingsSecretContext("a2a-api-key")),
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    await expect(getPluginsRepoConfig()).resolves.toMatchObject({
+      repo: "org/plugins",
+      token: "gh-secret",
+    });
+    await expect(getA2aApiKey()).resolves.toBe("a2a-secret");
   });
 
   it("resolves embedding and reranker selections from DB before env", async () => {
@@ -220,7 +261,10 @@ describe("runtime settings precedence", () => {
     resolveRead({
       adminEmails: "admin@example.com",
       llmBaseUrl: "https://llm.example.com/v1",
-      llmApiKey: encryptSecret("sk-db"),
+      llmApiKey: encryptSecret(
+        "sk-db",
+        llmApiKeyContext("https://llm.example.com/v1"),
+      ),
       updatedAt: "2026-01-01T00:00:00Z",
     });
     await expect(admins).resolves.toEqual(["admin@example.com"]);

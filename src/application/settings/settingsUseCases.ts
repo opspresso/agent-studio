@@ -24,6 +24,11 @@ import { parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import type { SecretCipher } from "@/domain/security/secretCipher";
+import {
+  llmApiKeyContext,
+  llmProviderApiKeyContext,
+  settingsSecretContext,
+} from "@/domain/security/secretContext";
 
 /** Reads `LLM_PROVIDER_*` env vars into channel configs. Injected. */
 export type ParseProviderConfigs = (env: NodeJS.ProcessEnv) => ProviderChannelConfig[];
@@ -180,6 +185,23 @@ function changedKeys(specs: FieldSpec[], stored: AppSettings | null, next: AppSe
   return changed;
 }
 
+function fieldSecretContext(
+  key: SettingKey,
+  settings: AppSettings | null,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  switch (key) {
+    case "llmApiKey":
+      return llmApiKeyContext(settings?.llmBaseUrl ?? optionalEnv(env.LLM_BASE_URL) ?? "");
+    case "githubToken":
+      return settingsSecretContext("github-token");
+    case "a2aApiKey":
+      return settingsSecretContext("a2a-api-key");
+    default:
+      return undefined;
+  }
+}
+
 
 function toProviderViews(
   cipher: SecretCipher,
@@ -194,7 +216,10 @@ function toProviderViews(
       items: stored.map((provider) => ({
         name: provider.name,
         baseUrl: provider.baseUrl,
-        apiKey: cipher.mask(provider.apiKey),
+        apiKey: cipher.mask(
+          provider.apiKey,
+          llmProviderApiKeyContext(provider.name, provider.baseUrl),
+        ),
         keepModelPrefix: provider.keepModelPrefix ?? false,
         auth: provider.auth ?? "bearer",
       })),
@@ -224,7 +249,9 @@ function toView(
     const stored = settings?.[spec.key];
     if (stored !== undefined) {
       fields[spec.key] = {
-        value: spec.secret ? cipher.mask(stored) : stored,
+        value: spec.secret
+          ? cipher.mask(stored, fieldSecretContext(spec.key, settings, env))
+          : stored,
         source: "override",
         secret: spec.secret,
       };
@@ -288,7 +315,7 @@ function toProviderSetting(
     if (!apiKey) {
       throw new ValidationError(`LLM provider "${name}" needs an API key`);
     }
-    storedKey = cipher.encrypt(apiKey);
+    storedKey = cipher.encrypt(apiKey, llmProviderApiKeyContext(name, baseUrl));
   } else {
     const existing = stored?.find((provider) => provider.name === name);
     const fromEnv = parseProviderConfigs(env).find((provider) => provider.name === name);
@@ -301,7 +328,9 @@ function toProviderSetting(
         `Changing LLM provider "${name}" endpoint or auth requires a new API key`,
       );
     }
-    storedKey = existing ? existing.apiKey : cipher.encrypt(previous.apiKey);
+    storedKey = existing
+      ? existing.apiKey
+      : cipher.encrypt(previous.apiKey, llmProviderApiKeyContext(name, baseUrl));
   }
   return {
     name,
@@ -408,7 +437,10 @@ export function createSettingsUseCases(
             ) {
               delete next[spec.key];
             } else {
-              next[spec.key] = cipher.encrypt(value);
+              next[spec.key] = cipher.encrypt(
+                value,
+                fieldSecretContext(spec.key, next, env),
+              );
             }
           } else if (
             value === spec.env() ||
