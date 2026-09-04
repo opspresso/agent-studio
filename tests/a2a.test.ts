@@ -218,6 +218,23 @@ describe("extractA2aImages", () => {
       { b64: "aW1n", mimeType: "image/png", name: "generated.png" },
     ]);
   });
+
+  it("does not promote unsupported image types into model input", () => {
+    const task = taskFixture({
+      artifacts: [
+        artifact("image", [
+          {
+            content: { $case: "raw", value: Buffer.from("<svg/>") },
+            mediaType: "image/svg+xml",
+            filename: "unsafe.svg",
+            metadata: undefined,
+          },
+        ]),
+      ],
+    });
+
+    expect(extractA2aImages(task)).toEqual([]);
+  });
 });
 
 describe("normalizeAgentCardUrl", () => {

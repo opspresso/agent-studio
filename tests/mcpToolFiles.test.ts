@@ -187,6 +187,17 @@ describe("files in a tool result", () => {
     expect(result.images).toHaveLength(1);
   });
 
+  it("refuses malformed or unsupported images before they reach the model", () => {
+    for (const [mimeType, blob] of [
+      ["image/svg+xml", blobOf([0x3c, 0x73, 0x76, 0x67])],
+      ["image/png", "!!!!"],
+    ]) {
+      const result = formatToolResult(resource({ uri: "file:///bad", mimeType, blob }));
+      expect(result.images).toBeUndefined();
+      expect(result.text).toContain("image omitted");
+    }
+  });
+
   /**
    * `data:image/png; charset=binary;base64,…` is not a valid data URL, and the
    * turn the picture rides on is what fails. The same string was also the
