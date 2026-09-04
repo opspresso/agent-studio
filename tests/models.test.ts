@@ -310,8 +310,9 @@ describe("contextWindowLabel", () => {
         expect(contextWindowLabel(model), model.id).toMatch(/^Context \d[\d.]*[KM]?$/);
         continue;
       }
-      const count = model.capabilities.imageGeneration && model.contextWindow === 0 ? "0" : "\\d[\\d.]*[KM]";
-      const max = model.capabilities.imageGeneration && model.maxTokens === 0 ? "0" : "\\d[\\d.]*[KM]";
+      const allowsZero = model.capabilities.imageGeneration || model.capabilities.transcription;
+      const count = allowsZero && model.contextWindow === 0 ? "0" : "\\d[\\d.]*[KM]";
+      const max = allowsZero && model.maxTokens === 0 ? "0" : "\\d[\\d.]*[KM]";
       expect(contextWindowLabel(model), model.id).toMatch(new RegExp(`^Context ${count} · max out ${max}$`));
     }
   });

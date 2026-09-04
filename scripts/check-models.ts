@@ -76,6 +76,7 @@ interface ServedModel {
  */
 async function resolveChannels(): Promise<Channel[]> {
   const { config } = await import("@/lib/config");
+  let runtimeSettings: typeof import("@/lib/runtime-settings") | undefined;
   let base: { baseUrl: string; apiKey: string };
   let providers: ProviderChannelConfig[];
   try {
@@ -86,6 +87,7 @@ async function resolveChannels(): Promise<Channel[]> {
     // as "missing from the registry" — an invitation to add it to agent-models,
     // the one publisher it must not come from.
     loadSelfHostedModels(await settings.getSelfHostedModels());
+    runtimeSettings = settings;
   } catch (error) {
     console.warn(
       `! stored settings unreachable (${error instanceof Error ? error.message : String(error)}); using environment channels only\n`,
@@ -95,7 +97,7 @@ async function resolveChannels(): Promise<Channel[]> {
     providers = parseProviderConfigs(process.env);
   }
 
-  return [
+  const channels: Channel[] = [
     {
       label: "default",
       baseUrl: base.baseUrl,
@@ -113,6 +115,34 @@ async function resolveChannels(): Promise<Channel[]> {
       auth: provider.auth,
     })),
   ];
+  if (config.embeddingProvider === "openai" && config.embeddingBaseUrl) {
+    const model = runtimeSettings
+      ? await runtimeSettings.getEmbeddingModel()
+      : config.embeddingModel;
+    channels.push({
+      label: "embedding",
+      baseUrl: config.embeddingBaseUrl,
+      apiKey: config.embeddingApiKey ?? "not-required",
+      provider: providerOf(model),
+      keepModelPrefix: false,
+      auth: "bearer",
+    });
+  }
+  const reranker = config.reranker;
+  if (reranker) {
+    const model = runtimeSettings
+      ? await runtimeSettings.getRerankerModel()
+      : reranker.model;
+    channels.push({
+      label: "reranker",
+      baseUrl: reranker.baseUrl,
+      apiKey: reranker.apiKey ?? "",
+      provider: providerOf(model),
+      keepModelPrefix: false,
+      auth: "bearer",
+    });
+  }
+  return channels;
 }
 
 /**
@@ -226,11 +256,14 @@ async function fetchModels(channel: Channel): Promise<ServedModel[]> {
       });
     }
     if (body.has_more !== true || typeof body.last_id !== "string" || body.last_id === "") {
-      const [imageModels, embeddingModels] = await Promise.all([
-        fetchSpecializedModels(channel, request, "images"),
-        fetchSpecializedModels(channel, request, "embeddings"),
-      ]);
-      return [...collected, ...imageModels, ...embeddingModels];
+      const specialized = channel.provider === "openrouter"
+        ? await Promise.all(
+            (["image", "embeddings", "rerank", "transcription"] as const).map((modality) =>
+              fetchSpecializedModels(channel, request, modality),
+            ),
+          )
+        : [];
+      return [...collected, ...specialized.flat()];
     }
     cursor = body.last_id;
   }
@@ -240,25 +273,23 @@ async function fetchModels(channel: Channel): Promise<ServedModel[]> {
 /**
  * Models a channel keeps in a type-specific catalog.
  *
- * OpenRouter lists dedicated image and embedding models at `/images/models`
- * and `/embeddings/models`, not in `/models`. Without these reads they appear
+ * OpenRouter's Models API defaults to text output. Its `output_modalities`
+ * filter is the authoritative discovery path for image, embedding, rerank and
+ * transcription models; without these reads every specialized route appears
  * to be served by nothing, producing false retirement candidates and a
  * `--strict` failure on a healthy configuration.
  *
- * A channel without that catalog answers 404, which is an answer rather than a
- * failure — the four provider-direct channels and Bedrock's mantle endpoint all
- * do. Any other status is a channel not answering, and is raised like one.
+ * Called only for the dedicated OpenRouter channel. Other providers either
+ * include their specialized models in `/models` or have their own explicitly
+ * configured embedding/reranker channel in `resolveChannels`.
  */
 async function fetchSpecializedModels(
   channel: Channel,
   request: typeof globalThis.fetch,
-  type: "images" | "embeddings",
+  modality: "image" | "embeddings" | "rerank" | "transcription",
 ): Promise<ServedModel[]> {
-  const url = `${channel.baseUrl.replace(/\/+$/, "")}/${type}/models`;
+  const url = `${channel.baseUrl.replace(/\/+$/, "")}/models?output_modalities=${modality}`;
   const response = await request(url, { headers: authHeaders(channel) });
-  if (response.status === 404) {
-    return [];
-  }
   if (!response.ok) {
     throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
   }

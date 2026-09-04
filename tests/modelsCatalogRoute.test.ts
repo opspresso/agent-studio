@@ -92,7 +92,7 @@ describe("GET /api/models/catalog", () => {
     expect(body.models.every((model) => !model.selectionHidden && !model.favorite)).toBe(true);
     expect(body.models.every((model) => !Object.hasOwn(model, "hidden"))).toBe(true);
     expect(new Set(body.models.map((model) => model.type))).toEqual(
-      new Set(["text", "image", "embedding"]),
+      new Set(["text", "image", "embedding", "rerank", "transcription"]),
     );
     expect(body.selections.embedding).toEqual({
       model: "openrouter/qwen3-embedding-4b",

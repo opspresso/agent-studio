@@ -88,7 +88,7 @@ describe("loadSelfHostedModels", () => {
         },
         maxTokens: 0,
       }),
-      declaration("whisper-large-v3", {
+      declaration("local-transcriber", {
         capabilities: {
           tools: false,
           structuredOutput: false,
@@ -102,7 +102,7 @@ describe("loadSelfHostedModels", () => {
     ]);
     expect(getModelConfig("selfhosted/Qwen/Qwen3-Embedding-4B")?.capabilities.embedding).toBe(true);
     expect(getModelConfig("selfhosted/Qwen/Qwen3-Reranker-0.6B")?.capabilities.rerank).toBe(true);
-    expect(getModelConfig("selfhosted/whisper-large-v3")?.capabilities.transcription).toBe(true);
+    expect(getModelConfig("selfhosted/local-transcriber")?.capabilities.transcription).toBe(true);
     expect(offeredModels(["selfhosted"], undefined)).toEqual([]);
   });
 
