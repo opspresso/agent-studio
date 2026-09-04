@@ -292,10 +292,8 @@ export const slackClient = {
     if (!res.ok) {
       throw new Error(`Slack file download failed: ${res.status}`);
     }
-    // Bounded here, not by the caller. It used to answer `res.arrayBuffer()` and
-    // let the caller compare the size afterwards, which is a check that runs
-    // once the memory is already spent — and the caller's own pre-check reads
-    // `file.size`, which Slack may omit entirely (the call site says so).
+    // Bounded while reading, not after buffering: a post-read comparison spends
+    // the memory before enforcing the limit, and Slack may omit `file.size`.
     return Buffer.from(await readBodyBytes(res, maxBytes));
   },
   authTest(token: string): Promise<{ team?: string; user?: string; bot_id?: string }> {

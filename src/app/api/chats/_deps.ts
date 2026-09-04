@@ -22,7 +22,6 @@ export const chatDeps: ChatDeps = {
   documents: executionDeps.documents,
   openDocuments: (version, signal, origin) =>
     openDocumentExtractor(executionDeps, version, signal, origin),
-  // The store and the signer used to be two optional fields held together by a
-  // comment; one bundle makes "both or neither" structural.
+  // One bundle makes the required "store and signer together" relationship structural.
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };

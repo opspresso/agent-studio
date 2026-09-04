@@ -430,7 +430,7 @@ export const en = {
   "projects.displayNamePlaceholder": "My Project",
   "projects.description": "Description",
   "projects.departmentCode": "Department code",
-  "projects.departmentHint": "Optional code used to group project ownership and costs.",
+  "projects.departmentHint": "Optional code for grouping project ownership and costs.",
   "projects.type": "Type",
   "projects.type.llm": "llm — single-shot prompt",
   "projects.type.agent": "agent — multi-turn tool loop",

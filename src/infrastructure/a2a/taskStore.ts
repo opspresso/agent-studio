@@ -32,8 +32,7 @@ import { A2A_TERMINAL_STATES as TERMINAL_STATES } from "@/domain/a2a/task";
 /**
  * The most a stored task may weigh, measured against the whole stored item.
  * A task is read whole on every `GetTask` and every row of a `ListTasks`
- * page, so the bound keeps those reads cheap; it is the ceiling the store
- * used to impose, kept because nothing above it was ever wanted. When a task
+ * page, so the bound keeps those reads cheap. When a task
  * exceeds it, {@link fitTask} degrades the payload in steps — drop inline
  * file bytes, then drop history/artifacts — so the task's state and metadata
  * always stay retrievable rather than failing the write.

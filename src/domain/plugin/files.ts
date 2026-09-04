@@ -97,7 +97,7 @@ export function groupEntriesByRoot(
   return byRoot;
 }
 
-/** Drop everything under the given roots — used to blind a walk to refused subtrees. */
+/** Drop everything under roots the walk has refused. */
 export function excludeSubtrees(
   entries: SkillTreeEntry[],
   roots: readonly PluginRoot[],

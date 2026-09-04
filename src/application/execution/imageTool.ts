@@ -28,14 +28,8 @@ export function defaultImageModel(): string | undefined {
  * The image model a version's builtins draw with — one answer for both.
  *
  * They are gated on the same per-version opt-in and reach the same model, and
- * they used to compute it separately — each in its own builder's body, both run
- * when the deps are assembled. Only the generator warned about a stored
- * `imageModel` that has since left the registry; the editor took the same
- * fallback silently.
- *
- * Nothing observable differed. The two builders run together and that one
- * warning went out, so this removed a copy rather than repaired a behaviour —
- * what it buys is that the next change to the rule cannot land in one of them.
+ * therefore share one resolution. Otherwise generator and editor can disagree
+ * about a retired `imageModel` and whether its fallback should be reported.
  *
  * `undefined` means the version did not opt in, or that no registry entry can
  * draw at all. A model that left the registry falls back to the default instead
@@ -180,10 +174,8 @@ export async function* runImageSubagent(
     await finishTrace(recorder);
     return `Generated an image for: ${message}`;
   } catch (caught) {
-    // The trace is written whichever way this ends. `throwIfAborted` used to
-    // rethrow on the line *above* the write, so a cancelled or deadline-stopped
-    // child left no row at all — the run that took the longest being the one
-    // with nothing to read is exactly backwards.
+    // The trace is written whichever way this ends. Classify an abort before
+    // rethrowing so cancelled and deadline-stopped children retain their row.
     const error = runEnding(caught, signal);
     if (signal?.aborted) {
       await finishTrace(recorder, error, !runDeadlineExceeded(signal));

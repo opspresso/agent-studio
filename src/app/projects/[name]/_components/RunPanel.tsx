@@ -587,9 +587,8 @@ export function RunPanel({
         />
       ))}
 
-      {/* The same row the chat draws. A run that renders a document answers
-          with it, and this surface used to show the picture beside it and
-          nothing else. */}
+      {/* The same row the chat draws. A rendered document is part of the answer,
+          not an invisible side effect beside the image gallery. */}
       {agentFiles.map((file, i) => (
         <ProducedFile key={`file-${i}`} name={file.name} byteSize={file.byteSize} url={file.url} />
       ))}

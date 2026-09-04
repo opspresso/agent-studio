@@ -727,8 +727,8 @@ export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promis
     content,
     model: modelUsed,
     usage,
-    // The provider's own verdict: "length" is a response cut at the output
-    // cap, not a finish — the difference `finish_reason: "stop"` used to erase.
+    // The provider's own verdict: "length" is a response cut at the output cap,
+    // not the `finish_reason: "stop"` that represents completion.
     termination: choice?.finish_reason === "length" ? "output-limit" : "completed",
   };
   if (choice?.message.tool_calls && choice.message.tool_calls.length > 0) {
@@ -838,9 +838,8 @@ export async function* runPromptStream(
   }
   await recordUsageIfPossible(deps, input.projectName, state.model, usageInfo);
   if (outputCut) {
-    // The provider cut the answer at its output cap. `done` would claim the
-    // model finished on its own — the reason a truncated reply used to be
-    // reported as a normal stop.
+    // The provider cut the answer at its output cap. `done` would incorrectly
+    // claim the model finished on its own.
     yield { warning: "The answer was cut at the model's output limit before it finished." };
     yield { usage: usageInfo, finishReason: "output-limit" };
     return;
@@ -1460,8 +1459,7 @@ export function buildTransferTranscript(
       // One turn larger than the whole remaining budget. Dropping it outright
       // loses the *question* along with whatever made it long — a turn carrying
       // an attached document is a single line of tens of thousands of
-      // characters, so every such turn used to evict itself entirely and the
-      // child never learned the conversation was about a document at all.
+      // characters. Keeping its head preserves what the turn was about.
       // Keeping its head keeps what the turn was about; the budget is spent
       // either way, so nothing older fits after this.
       if (budget > MIN_TRANSFER_LINE_CHARS) {
@@ -1492,12 +1490,8 @@ export function buildTransferTranscript(
  * Both transfer tools enumerate the offered names in their schema, but an enum
  * is a request, not a guarantee — OpenAI-compatible gateways vary in whether
  * they constrain against one, and a model that invents a name is a routine
- * outcome, not a platform fault. Before this, such a call was *attempted*: the
- * runner refused it one layer down as an authored `error` chunk, which the
- * engine then reported as a lost delegation — a warning in the user's face for
- * a model typo, a tool-result line promising an answer that was never coming,
- * and, for the model, "the agent returned no answer" with no hint of what it
- * could have asked for instead.
+ * outcome, not a platform fault. Attempting it one layer down would turn a model
+ * typo into a lost-delegation warning and return no list of valid alternatives.
  *
  * Answered here the way an unloadable skill and an unknown image id already
  * are: a plain tool error naming the alternatives, which the model can act on
@@ -1578,8 +1572,8 @@ function turnLimitWarning(
  * Whether a delegation has room to run and come back.
  *
  * A child runs at `turn + 1` and the parent resumes at `turn + 2`, so two turns
- * must remain or the resume trips the initial guard. Both delegating builtins
- * encode that, and both used to encode it themselves.
+ * must remain or the resume trips the initial guard. Both delegation builtins
+ * share this decision.
  */
 function delegationTurnRefusal(
   turn: number,
@@ -2587,11 +2581,7 @@ export async function* runAgent(
           if (produced.length > 0) {
             // A picture the tool produced reaches the person who asked for it,
             // and *whether it also enters the context* is the only thing the
-            // model's capability decides. A text-only model used to lose both
-            // at once: the screenshot the user asked for was never yielded, so
-            // it was never streamed, never stored as an artifact, and never
-            // part of the finished conversation — while the tool result told
-            // the model it had been "dropped", which by then it had. The rule
+            // model's capability decides. The rule
             // `EngineChunk.file` already follows says it plainly: bytes that
             // cannot enter the context are still the run's output.
             //

@@ -43,8 +43,7 @@ export class ForbiddenError extends AppError {
 /**
  * Something this app called failed — GitHub, an MCP server, a provider.
  *
- * A distinct type because the alternative is what the sync routes used to do:
- * re-decide the status from a substring of the message
+ * A distinct type because deriving status from a message substring
  * (`message.includes("GitHub") ? 502 : 500`), which is case-sensitive, blind to
  * every message that does not happen to contain the word, and a second owner of
  * a mapping `apiError` already owns. 502 says "not our fault, and not something
@@ -104,9 +103,8 @@ export function statusForError(error: unknown): number | null {
  * cancelled.
  *
  * They are the item store's (`src/infrastructure/db/store.ts` raises them),
- * and this is the ONE place the application layer names them. Seven call
- * sites used to spell them out, which is how the two-name form ended up in
- * exactly one of them: the repository port's contract is "a conditional write
+ * and this is the ONE place the application layer names them. The repository
+ * port's contract is "a conditional write
  * may fail", and each caller only decides what to say about it.
  */
 const CONDITIONAL_WRITE_FAILED = "ConditionalWriteFailed";

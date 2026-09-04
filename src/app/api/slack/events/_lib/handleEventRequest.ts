@@ -27,9 +27,8 @@ const slackEventDeps: SlackEventDeps = {
   threads: slackThreadRepository,
   documents: documentExtractor,
   // Named even when this deployment has none, so "no object storage here" is a
-  // decision in the source rather than a field nobody thought about — which the
-  // conditional spread this used to be did not actually do: it left the field
-  // out, saying exactly as little as forgetting it would.
+  // source-level decision rather than an omitted field indistinguishable from
+  // forgotten wiring.
   signFile: signArtifactUrl,
   loadingIndicator: config.slackLoadingIndicator,
 };
@@ -71,9 +70,8 @@ export async function handleSlackEventRequest(
     signature,
   });
   if (!verified) {
-    // A refusal used to be silent, which left the two states an operator has to
-    // tell apart — "Slack reached us and the signature was wrong" and "Slack
-    // never reached us" — looking identical from the outside: no log either way.
+    // An operator must distinguish "Slack reached us and the signature was
+    // wrong" from "Slack never reached us", so a refusal is logged.
     // Setting up a Request URL is exactly when that distinction is needed.
     //
     // The signature and the secret are never logged; what is logged is the

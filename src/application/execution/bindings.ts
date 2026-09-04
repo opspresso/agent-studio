@@ -22,7 +22,7 @@ import { log } from "@/shared/logger";
  * One read per skill, behind the `Skill` tool.
  *
  * The tool is called repeatedly for the same skill — once for the body, then
- * once per attachment it asks for — and each call used to be its own item read.
+ * once per attachment it asks for — so the reader caches one item for the run.
  * A skill edited mid-run is not picked up, which is what consistency wants.
  *
  * Scoped to one agent's deps (`buildAgentDeps` builds it), so each hop of a
@@ -319,8 +319,8 @@ async function discoverCapabilities(
   );
 
   // One candidate per server, scored by the best evidence from either index,
-  // and walked in that order. "Tool hits lead" used to be *source* order —
-  // every tool hit outranked every server hit — so a persona prompt's
+  // and walked in that order. Source order must not let every tool hit outrank
+  // every server hit: a persona prompt's
   // incidental tool matches at 0.23 filled all three slots ahead of the
   // request's own servers at 0.33, which is how "클러스터 상태 어때?"
   // discovered a document store. What a tool hit knows that a server hit does

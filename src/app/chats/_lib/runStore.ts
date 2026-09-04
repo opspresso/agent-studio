@@ -1,11 +1,9 @@
 /**
  * Who owns a chat's live stream.
  *
- * Not the component that started it. A turn used to live in `ChatThread`'s
- * state, so opening another chat — or any client-side navigation at all —
- * unmounted the thing accumulating the answer and the reply vanished from the
- * screen while the run carried on server-side. The stream is owned here instead,
- * above the router, and a view subscribes to it.
+ * Not the component that started it. The stream lives above the router so
+ * opening another chat cannot unmount the state accumulating an answer; views
+ * subscribe to it instead.
  *
  * Deliberately free of React, `window` and `next/*`: this is the part with the
  * logic worth testing, and the test environment is plain Node with no DOM. The

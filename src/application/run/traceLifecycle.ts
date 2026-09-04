@@ -37,9 +37,8 @@ interface TracedRunInput {
 
 /**
  * Whether this run's trace is recorded — the ONE place the sampling draw is
- * compared against the rate. The version path and the image path used to each
- * derive it, with opposite comparison operators; a third copy is exactly how
- * they would drift apart. `sample` is injected like `now` so a test can pin
+ * compared against the rate. Sharing it keeps version and image paths from
+ * choosing opposite comparisons. `sample` is injected like `now` so a test can pin
  * the outcome at a fractional rate.
  */
 export function traceSampled(deps: TraceSamplingDeps): boolean {

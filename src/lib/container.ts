@@ -570,8 +570,7 @@ export async function reindexCatalogNow(): Promise<
 
 /**
  * Retention, as a tick. Every row that expires carries `expiresAt`; the
- * managed store used to purge those on its own, and here the scheduler tick
- * does it — bounded per call, so a backlog drains over several ticks rather
+ * scheduler performs the purge, bounded per call so a backlog drains over several ticks rather
  * than holding one long lock.
  */
 export async function sweepExpiredRows(now: Date = new Date()): Promise<number> {
@@ -584,9 +583,8 @@ export async function sweepExpiredRows(now: Date = new Date()): Promise<number> 
 }
 export const pluginUseCases = createPluginUseCases(pluginRepository);
 /**
- * The project slice, which route handlers used to compose for themselves:
- * twenty of them imported `projectRepository` from here to hand it straight
- * back to a use case. Composed once now, like every other slice.
+ * The project slice, composed once so routes receive bound use cases rather
+ * than importing a repository and choosing dependencies themselves.
  */
 export const projectUseCases = createProjectUseCases(projectRepository, {
   // The bot's webhook is retired before the row holding its token goes: an
@@ -906,9 +904,7 @@ const slackReader: SlackReaderPort = {
 
 /**
  * Slack profile lookup (cached) for putting a name on a `slack:` usage row.
- * Module-local like `slackAuthTest`: `usageUseCases` below is the only
- * consumer now, and the actors route used to import this alongside the cipher
- * to assemble the read's dependencies itself.
+ * Module-local like `slackAuthTest`: `usageUseCases` below is the only consumer.
  */
 const slackUserProfile = async (botToken: string, userId: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.userProfile(botToken, userId);
@@ -917,9 +913,8 @@ const slackUserProfile = async (botToken: string, userId: string) =>
 export const usageUseCases = createUsageUseCases({
   usage: usageRepository,
   projects: projectRepository,
-  // Token resolution closed over here: which token a project reads with is the
-  // slack slice's knowledge, and the usage slice takes a bound reader instead
-  // of the cipher-and-resolver pair it used to import for itself.
+  // Token resolution closes over the Slack slice's knowledge; the usage slice
+  // receives a bound reader rather than cipher and resolver internals.
   profileReaderFor: (project) => {
     const runtime = resolveProjectSlackRuntime(secretCipher, project);
     return runtime ? (userId) => slackUserProfile(runtime.botToken, userId) : null;
@@ -972,9 +967,8 @@ export const cloneProject = composeCloneProject({
 });
 
 /**
- * Trace reads, authorization included. The two trace routes used to import the
- * repository and run the ownership check themselves — the presentation layer
- * deciding which store a trace is read from, and re-deriving who may see it.
+ * Trace reads, authorization included. Routes receive this use case so the
+ * presentation layer neither chooses the repository nor re-derives access.
  * Reads go to the plain repository: the OTLP export wrapper above only matters
  * to writes.
  */
@@ -1136,9 +1130,8 @@ export const imageDeps: ImageGenerationDeps = executionDeps;
 /**
  * The webhook delivery path. `run` binds the facade's chunk-stream entry point
  * and nothing else: which project type runs which way, and what an image run's
- * chunks look like, are both decided there. This file used to answer the first
- * question and assemble the second by hand — a wiring site making a dispatch
- * decision, which is how the image path's ending announcement went missing once.
+ * chunks look like, are both decided there. This wiring site must not make its
+ * own dispatch decision or assemble image chunks.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
   triggers: triggerRepository,

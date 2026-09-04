@@ -1,12 +1,10 @@
 /**
  * What a run left behind.
  *
- * A run's bytes used to have no inventory. A generated image went to S3 under a
- * random UUID and its key was written into the chat message that happened to be
- * open, so nothing could list one, nothing could delete one, and a picture drawn
- * by a trigger or an A2A call went nowhere at all. An artifact row is that
- * missing inventory: one row per stored object, reachable by the project that
- * produced it and by the person who asked for it.
+ * One inventory row per stored object, reachable by the project that produced
+ * it and by the person who asked for it. Keeping inventory independent from a
+ * chat message lets trigger and A2A runs retain outputs too, and makes every
+ * object listable and removable.
  *
  * Not to be confused with an A2A artifact, which is a protocol message part. The
  * `a2a` slice never imports this type.

@@ -19,14 +19,8 @@ import { isSubmitEnter } from "@/app/_lib/modEnter";
 /**
  * The one composer.
  *
- * There used to be two: this one, and a copy inlined in `NewChatPanel` that had
- * grown its own project picker and its own Stop button. They had already drifted
- * — only one of them cleared its attachments on send — and a redesign of the
- * chat surface would have meant restyling both and keeping them in step by hand.
- *
- * The differences between the two turned out to be one slot above the input,
- * which is what `leading` is: a project picker on a chat that does not exist
- * yet, and nothing at all on one that does.
+ * New and existing chats share this component. Their only layout difference is
+ * the `leading` slot: a project picker before a chat exists, and nothing after.
  */
 export function Composer({
   onSend,
@@ -39,8 +33,8 @@ export function Composer({
   /**
    * Returns whether the send was accepted. `false` keeps the draft — text and
    * attachments — exactly as typed: a run can start between the render that
-   * enabled the composer and the press, and clearing before asking is how a
-   * typed message used to vanish into that window.
+   * enabled the composer and the press, so clearing before acceptance can lose
+   * a typed message.
    */
   onSend: (
     content: string,

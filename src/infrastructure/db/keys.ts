@@ -150,8 +150,8 @@ export const keys = {
    *
    * The project is part of the sort key rather than collapsed into the row,
    * so a person can be shown *where* their spend went as well as on which
-   * model. Date leads it so a window is still one `BETWEEN`; the cap simply
-   * sums every row the window returns, which it did before this split too.
+   * model. Date leads it so a window is still one `BETWEEN`; the cap sums every
+   * row the window returns.
    */
   usageMember: (email: string, date: string, projectName: string) => ({
     PK: `USAGEMEMBER#${email}`,

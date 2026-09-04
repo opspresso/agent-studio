@@ -43,8 +43,7 @@ const MAX_ENTRIES = 200;
  * reading that falls back to our own heuristic rather than to no caching.
  *
  * Both settings are read here, per call, rather than captured at module scope: a
- * value frozen at import is a process-wide constant nobody declared, which is
- * the shape this file used to have. `config` owns the parse and the warning, and
+ * value frozen at import is a process-wide constant nobody declared. `config` owns the parse and the warning, and
  * the two knobs' full rationale — why the ceiling is separate from the local TTL
  * at all — is beside their declarations there.
  */

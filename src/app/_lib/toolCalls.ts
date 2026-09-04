@@ -11,8 +11,8 @@ export interface ToolCallInfo {
 /**
  * Extract the call id, the tool's own name and its raw args.
  *
- * The name is deliberately left as the engine spelled it. It used to come back
- * decorated — `Skill: deep-research` — which reads well and matches nothing: a
+ * The name is deliberately left as the engine spelled it. A decorated value
+ * such as `Skill: deep-research` reads well and matches nothing: a
  * tool *result* carries the plain `Skill` (`createToolResultEmitter` sends
  * `options.name ?? call.name`), so anything pairing a result to its call by name
  * silently fails on every builtin that had been prettied up. Deciding how a call

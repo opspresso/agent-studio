@@ -11,9 +11,8 @@ type RouteContext = { params: Promise<{ name: string }> };
 /**
  * Assemble what the draft in the editor would send, without running it.
  *
- * Tier-gated at `member`, not owner-gated like saving one. It used to be the
- * owner's, on the argument that the draft's MCP bindings attach chosen headers
- * to a registered server — but that is not an authority the gate can reserve:
+ * Tier-gated at `member`, not owner-gated like saving one. A draft's MCP bindings
+ * attach chosen headers to a registered server, but that is not an authority the gate can reserve:
  * any member binds the same registry server with the same headers from a
  * project of their own. A masked header resolves only against this project's
  * stored binding for the same server name, so the most a non-owner's preview

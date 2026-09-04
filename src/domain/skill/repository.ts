@@ -12,10 +12,8 @@ export interface SkillRepository {
    * The bound skills' descriptions, without their bodies.
    *
    * Progressive disclosure is what the `Skill` tool is for — the model reads a
-   * one-line description and asks for the body only when it wants it — but a run
-   * used to fetch every bound skill *whole*, attachments included, to render
-   * that one line. A run whose model never calls the tool paid for all of it
-   * before its first token.
+   * one-line description and asks for the body only when it wants it. This read
+   * must not fetch whole skill bodies or attachments merely to render that line.
    *
    * Each entry's `name` is the one that was **asked for**, so a caller can look
    * its answer up by the name its version bound. Names absent from the answer

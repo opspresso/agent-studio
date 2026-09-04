@@ -94,9 +94,8 @@ function checkedImageBytes(
 /**
  * Map an Images API response onto the domain result (shared by generate/edit).
  *
- * The mime type is read rather than assumed. It used to be a hardcoded
- * `image/png`, which held only because OpenAI's default output format is PNG —
- * xAI answers `image/jpeg`, and this value is not cosmetic: it becomes the S3
+ * The mime type is read rather than assumed. OpenAI defaults to PNG while xAI
+ * answers `image/jpeg`, and this value is not cosmetic: it becomes the S3
  * object's extension and `Content-Type` under an immutable cache header, the
  * `data:` prefix on bytes handed back to a *second* model, the Slack upload's
  * filename and the A2A artifact's type. Calling a JPEG a PNG is wrong in all

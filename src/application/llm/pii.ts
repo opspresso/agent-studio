@@ -25,11 +25,9 @@ const PII_PATTERN = new RegExp(
   `${EMAIL_PATTERN.source}|(?<rrn>${RRN_PATTERN.source})|(?<card>${CARD_PATTERN.source})|${PHONE_PATTERN.source}`,
   "gi",
 );
-// What a Luhn-rejected card span is re-scanned with. The card branch consumed a
-// span the phone branch used to partially mask (`4111 1111 1111` of a mistyped
-// `4111 1111 1111 1112`), and returning it untouched would expose what was
-// masked before the card branch existed. The span is digits and separators, so
-// of the other branches only phone can match.
+// What a Luhn-rejected card span is re-scanned with. Returning the whole span
+// untouched could expose a phone-shaped prefix such as `4111 1111 1111`; of the
+// other branches only phone can match digits and separators.
 const CARD_REJECTED_PATTERN = new RegExp(PHONE_PATTERN.source, "gi");
 
 function passesLuhn(digits: string): boolean {

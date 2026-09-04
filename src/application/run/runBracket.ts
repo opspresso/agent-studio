@@ -43,8 +43,8 @@ export type RunBracketDeps = CostGuardDeps &
      * Whether an unregistered model may run. Injected rather than read, like
      * every other runtime setting an application module needs — the resolution
      * order lives in `src/lib/runtime-settings.ts`, which this layer may not
-     * import. Absent means `allow`, so a deps bag assembled before this existed
-     * behaves exactly as it did.
+     * import. Absent explicitly means `allow` for a caller that does not supply
+     * an unknown-model policy.
      */
     unknownModelPolicy?: () => Promise<UnknownModelPolicy>;
     /**

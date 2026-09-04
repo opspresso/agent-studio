@@ -289,8 +289,7 @@ export async function handleTurn(
     }
   }
   // Only this scope knows whether *anything* reached the reader — the sink sees
-  // the text and not the delivered images, which is how a run that answered
-  // purely with a picture used to be captioned "(no response)". A produced file
+  // text but not delivered images. A produced file
   // counts for the same reason: it is the deliverable, and the link below is the
   // only place the reply carries it.
   if (!text && uploads.length === 0 && producedRefs.length === 0 && warnings.length === 0) {

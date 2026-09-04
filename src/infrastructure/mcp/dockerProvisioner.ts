@@ -58,9 +58,8 @@ async function docker(args: string[]): Promise<string> {
     const { stdout } = await run("docker", args, { timeout: 300_000 });
     return stdout.trim();
   } catch (error) {
-    // execFile's own message repeats the whole command line, and a `docker
-    // run` line used to carry every decrypted environment value. What is
-    // worth keeping is what the CLI said on stderr; the argv is ours already.
+    // execFile's own message repeats the whole command line. A `docker run`
+    // argv can contain decrypted values, so keep only the CLI's stderr.
     const failed = error as { stderr?: unknown; code?: unknown };
     const stderr = typeof failed.stderr === "string" ? failed.stderr.trim() : "";
     const reason =

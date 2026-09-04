@@ -9,9 +9,8 @@ function newChatId(): string {
 }
 
 /**
- * The one OpenAI spelling of a run's ending — the collected and streaming
- * responses used to each keep their own mapping, and they had already
- * disagreed (`turn-limit` was `length` on the stream and `stop` collected).
+ * The one OpenAI spelling of a run's ending, shared by collected and streaming
+ * responses so `turn-limit` cannot become `length` in one and `stop` in another.
  * Exhaustive on purpose: a reason added to `RunTerminationReason` fails to
  * compile here instead of silently folding into `stop`.
  */
@@ -94,8 +93,8 @@ export function toChatCompletion(
  * termination the engine announces (`chunkTermination`) and spelled by
  * {@link wireFinishReason}: a normal completion is `stop`; the turn guard and
  * a provider output cut are `length` — the OpenAI signal for "stopped at a
- * limit". The reason used to be inferred from the *absence* of `done`, which
- * misreported a cancellation and a mid-stream error as `length`; a stream that
+ * limit". Inferring the reason from the *absence* of `done` would misreport a
+ * cancellation and a mid-stream error as `length`; a stream that
  * ends without announcing anything is now a defect and fails the request
  * rather than being dressed up as a length stop.
  */

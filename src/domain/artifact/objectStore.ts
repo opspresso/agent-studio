@@ -1,11 +1,9 @@
 /**
  * Where an artifact's bytes are kept.
  *
- * One port rather than the two this replaced. Writing used to be an application
- * type and signing a domain one, wired separately and held together by a comment
- * on the composition site saying "both or neither" — because storing a key
- * nobody can sign is the same as storing nothing. One interface makes that
- * structural.
+ * Writing and signing share one port because they must be wired together:
+ * storing a key nobody can sign is the same as storing nothing. One interface
+ * makes that requirement structural.
  *
  * The port takes a key rather than minting one: {@link artifactObjectKey} owns
  * the naming, so the adapter knows nothing about how objects are addressed.
