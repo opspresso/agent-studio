@@ -205,7 +205,7 @@ export class TraceRecorder {
         this.addSpan({
           spanId: randomUUID(),
           kind: "model",
-          name: this.context.model,
+          name: chunk.usage.model ?? this.context.model,
           startedAt: modelStartedAt.toISOString(),
           endedAt: now.toISOString(),
           durationMs: Math.max(0, now.getTime() - modelStartedAt.getTime()),

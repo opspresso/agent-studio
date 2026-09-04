@@ -841,10 +841,10 @@ export async function* runPromptStream(
     // The provider cut the answer at its output cap. `done` would incorrectly
     // claim the model finished on its own.
     yield { warning: "The answer was cut at the model's output limit before it finished." };
-    yield { usage: usageInfo, finishReason: "output-limit" };
+    yield { usage: { ...usageInfo, model: state.model }, finishReason: "output-limit" };
     return;
   }
-  yield { usage: usageInfo, done: true };
+  yield { usage: { ...usageInfo, model: state.model }, done: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -2297,7 +2297,7 @@ export async function* runAgent(
 
     const usageInfo = toUsageInfo(streamed.model, streamed.usage);
     await recordUsageIfPossible(deps, input.projectName, streamed.model, usageInfo);
-    yield { author, usage: usageInfo };
+    yield { author, usage: { ...usageInfo, model: streamed.model } };
     if (
       traceReasoning &&
       !reasoningWithheldNoted &&

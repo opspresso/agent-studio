@@ -7,6 +7,8 @@ export { imageDataUrl, parseImageDataUrl } from "./imageLimits";
 
 /** Token + cost accounting for a single LLM call. */
 export interface UsageInfo {
+  /** Model that produced this one call. Omitted on aggregates spanning calls. */
+  model?: string;
   inputTokens: number;
   outputTokens: number;
   costUsd: number;

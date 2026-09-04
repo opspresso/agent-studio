@@ -177,6 +177,31 @@ describe("TraceRecorder", () => {
     }
   });
 
+  it("records the model that actually produced a fallback turn", async () => {
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "p",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/primary",
+      messageCount: 1,
+    });
+
+    recorder.observe({
+      usage: {
+        model: "anthropic/fallback",
+        inputTokens: 10,
+        outputTokens: 5,
+        costUsd: 0.01,
+      },
+    });
+    await recorder.finish();
+
+    expect(traces[0]?.spans.find((span) => span.kind === "model")?.name).toBe(
+      "anthropic/fallback",
+    );
+  });
+
   it("names the thinking share of a model span, and only when reported", async () => {
     // A turn that thought for 4,000 tokens and answered in ten looks, without
     // this, like a turn that wrote 4,010 words.
