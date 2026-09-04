@@ -25,6 +25,7 @@ import {
   type TriggerRun,
   type WebhookTrigger,
 } from "@/domain/trigger/types";
+import { triggerSecretContext } from "@/domain/security/secretContext";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
@@ -59,6 +60,29 @@ export type AdmitResult =
   | { status: "unauthorized" }
   | { status: "busy" }
   | { status: "no-published-version" };
+
+function triggerSecretMatches(
+  deps: TriggerRunnerDeps,
+  trigger: WebhookTrigger,
+  candidate: string,
+  projectName: string,
+  triggerId: string,
+): boolean {
+  try {
+    return deps.cipher.decryptEquals(
+      trigger.secret,
+      candidate,
+      triggerSecretContext(projectName, triggerId),
+    );
+  } catch (error) {
+    log.error(
+      "trigger",
+      `secret of trigger '${projectName}/${triggerId}' cannot be decrypted:`,
+      error instanceof Error ? error.message : String(error),
+    );
+    return false;
+  }
+}
 
 /** The actor a firing is attributed to; the trigger kind is the actor kind. */
 export function triggerActor(
@@ -143,7 +167,10 @@ export async function admitDelivery(
   // The secret is checked before anything else observable happens, and in
   // constant time — a disabled trigger must not answer differently to a wrong
   // secret than an enabled one would.
-  if (!presentedSecret || !deps.cipher.decryptEquals(trigger.secret, presentedSecret)) {
+  if (
+    !presentedSecret ||
+    !triggerSecretMatches(deps, trigger, presentedSecret, projectName, PROJECT_WEBHOOK_ID)
+  ) {
     return { status: "unauthorized" };
   }
   if (!trigger.enabled) {

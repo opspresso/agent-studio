@@ -191,9 +191,10 @@ Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시�
 암호화된다(`src/infrastructure/crypto/secretEncryption.ts`). 형식은 두 가지다. 기존 `enc:v1:`
 값은 그대로 읽고, 저장 위치의 컨텍스트를 함께 인증하는 값은 `enc:v2:` 로 쓴다. v2 는 row 와
 field 정체성을 AES-GCM AAD 로 묶으므로 암호문만 다른 위치로 옮기면 인증에 실패한다. 현재
-project API token 이 `project + name + api-token` 컨텍스트를 쓰며, 기존 v1 token 은 재발급
-전까지 계속 동작한다. 나머지 시크릿은 각 저장·복사 경로가 같은 컨텍스트를 재구성하도록
-전환하기 전까지 v1 형식을 유지한다.
+project API token, 이름 있는 A2A client key, webhook trigger secret 이 각각 project 이름,
+client 이름, `project + triggerId` 컨텍스트를 쓴다. 기존 v1 값은 재발급 전까지 계속 동작한다.
+나머지 시크릿은 각 저장·복사 경로가 같은 컨텍스트를 재구성하도록 전환하기 전까지 v1 형식을
+유지한다.
 부팅, 저장 시크릿 암호화, proxied URL 서명은 모두 `decodeAes256Key` 를 거쳐 canonical base64 로
 인코딩된 정확히 32바이트 key 만 사용한다.
 
@@ -278,7 +279,7 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 | Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, project 별 시크릿 |
 | Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다. 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
-| 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회(actor `a2a:{client}`, 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
+| 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회 후 primary row 의 컨텍스트 결합 token 을 상수 시간으로 재확인(actor `a2a:{client}`, 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
 | Webhook trigger | `X-Trigger-Secret` | `cipher.decryptEquals` (상수 시간) |
 | CronJob 틱. schedule 스캔(`/api/triggers/scan`), 카탈로그 재색인(`/api/catalog/reindex`), plugins sync(`/api/plugins/sync/scan`) | `X-Scan-Token` | `SCHEDULE_SCAN_TOKEN` 과 `timingSafeEqualString` 비교. 설정돼 있지 않으면 503 으로 답하고, 거부된 token 은 셋 모두에서 경고를 로그에 남긴다 |
 

@@ -115,7 +115,7 @@ describe("trigger secret", () => {
       "owner@example.com",
     );
     expect(storedWebhook(PROJECT_WEBHOOK_ID).secret).not.toBe(created.secret);
-    expect(storedWebhook(PROJECT_WEBHOOK_ID).secret.startsWith("enc:")).toBe(true);
+    expect(storedWebhook(PROJECT_WEBHOOK_ID).secret.startsWith("enc:v2:")).toBe(true);
   });
 
   it("can be read back, like a project API token", async () => {

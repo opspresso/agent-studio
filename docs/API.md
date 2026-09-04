@@ -1606,7 +1606,8 @@ Agent Card GET 은 표면이 꺼져 있으면 `503`, project 가 private 이거�
 
 `503` (설정되지 않음) 은 표면이 완전히 꺼져 있을 때만 답한다: 공유 키도 없고 **그리고** 클라이언트
 키도 없을 때다. 켜져 있는 표면에서 키가 틀리거나 없으면 `401` 이다. 공유 키는 상수 시간으로
-비교하고, 클라이언트 키는 해시로 해석한다. 그 401 은 `WWW-Authenticate: ApiKey realm="a2a",
+비교하고, 클라이언트 키는 해시로 primary row 를 찾은 뒤 client 이름에 결합된 token 을 다시
+확인한다. 그 401 은 `WWW-Authenticate: ApiKey realm="a2a",
 header="X-A2A-Key"` 를 싣고, Agent Card 는 같은 스킴을
 `securitySchemes`/`securityRequirements` 로 선언한다. 표준 클라이언트가 이 요구사항을 읽어
 자격 증명을 고른다.

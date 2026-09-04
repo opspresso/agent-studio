@@ -28,6 +28,7 @@ import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
+import { triggerSecretContext } from "@/domain/security/secretContext";
 
 export interface TriggerDeps {
   triggers: TriggerRepository;
@@ -99,7 +100,7 @@ function toView(trigger: Trigger, cipher: SecretCipher, plaintext?: string): Tri
   const { secret: _stored, ...rest } = trigger;
   return {
     ...rest,
-    secretMasked: cipher.mask(_stored),
+    secretMasked: cipher.mask(_stored, triggerSecretContext(trigger.projectName, trigger.triggerId)),
     ...(plaintext ? { secret: plaintext } : {}),
   };
 }
@@ -265,7 +266,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         trigger = {
           ...base,
           kind: "webhook",
-          secret: deps.cipher.encrypt(secret),
+          secret: deps.cipher.encrypt(secret, triggerSecretContext(projectName, input.triggerId)),
           payloadMode: input.payloadMode ?? "message",
         };
       }
@@ -333,7 +334,9 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         ...existing,
         ...shared,
         payloadMode: input.payloadMode ?? existing.payloadMode,
-        ...(rotated ? { secret: deps.cipher.encrypt(rotated) } : {}),
+        ...(rotated
+          ? { secret: deps.cipher.encrypt(rotated, triggerSecretContext(projectName, triggerId)) }
+          : {}),
       };
       await deps.triggers.put(updated);
       if (rotated) {
@@ -377,7 +380,13 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         target: auditTarget("project", projectName),
         detail: `webhook trigger secret '${triggerId}'`,
       });
-      return { secret: deps.cipher.decrypt(trigger.secret), createdAt: trigger.createdAt };
+      return {
+        secret: deps.cipher.decrypt(
+          trigger.secret,
+          triggerSecretContext(projectName, triggerId),
+        ),
+        createdAt: trigger.createdAt,
+      };
     },
 
     async remove(projectName: string, triggerId: string, userEmail: string): Promise<void> {

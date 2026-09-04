@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   A2A_CLIENT_KEY_LIST_PAGE_SIZE,
   createA2aClientKeyUseCases,
@@ -10,11 +10,22 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import { hashSecret } from "@/shared/generatedSecret";
 
 /** Identity cipher: these tests are about the lifecycle, not the encryption. */
+function decrypt(value: string, context?: string): string {
+  if (value.startsWith("enc:v1:")) return value.slice("enc:v1:".length);
+  const prefix = `enc:v2:${encodeURIComponent(context ?? "")}:`;
+  if (!value.startsWith(prefix)) throw new Error("wrong encryption context");
+  return value.slice(prefix.length);
+}
+
 const cipher = {
-  encrypt: (v: string) => `enc:v1:${v}`,
-  decrypt: (v: string) => v.replace(/^enc:v1:/, ""),
+  encrypt: (v: string, context?: string) =>
+    context ? `enc:v2:${encodeURIComponent(context)}:${v}` : `enc:v1:${v}`,
+  decrypt,
   mask: (v: string) => `${v.slice(0, 4)}••••`,
   isMasked: () => false,
+  decryptEquals(stored: string, candidate: string, context?: string) {
+    return decrypt(stored, context) === candidate;
+  },
 } as unknown as SecretCipher;
 
 function inMemoryRepo(): A2aClientKeyRepository & { rows: Map<string, A2aClientKey> } {
@@ -79,6 +90,36 @@ describe("a2aClientKeyUseCases", () => {
     const { key } = await useCases.create("partner", undefined, "admin@x.com");
 
     expect(repo.rows.get("partner")?.tokenHash).toBe(hashSecret(key));
+  });
+
+  it("does not authenticate a key row moved under another client name", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const repo = inMemoryRepo();
+    const useCases = createA2aClientKeyUseCases(repo, cipher);
+    const { key } = await useCases.create("partner", undefined, "admin@x.com");
+    const stored = repo.rows.get("partner")!;
+    repo.rows.delete("partner");
+    repo.rows.set("other-client", { ...stored, name: "other-client" });
+
+    await expect(useCases.verify(key)).resolves.toBeNull();
+    await expect(useCases.reveal("other-client", "admin@x.com")).rejects.toThrow(
+      "wrong encryption context",
+    );
+    expect(error).toHaveBeenCalled();
+  });
+
+  it("keeps a legacy v1 encrypted client key usable during migration", async () => {
+    const repo = inMemoryRepo();
+    const value = "asc_legacy-client-key";
+    repo.rows.set("legacy", {
+      name: "legacy",
+      token: `enc:v1:${value}`,
+      tokenHash: hashSecret(value),
+      masked: "asc_••••",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    await expect(createA2aClientKeyUseCases(repo, cipher).verify(value)).resolves.toBe("legacy");
   });
 
   it("refuses a duplicate name as a conflict", async () => {
