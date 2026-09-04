@@ -292,15 +292,11 @@ export async function predictImage(
 ): Promise<ImageResult> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders,
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok) {
-    const data = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(data?.error ?? `Image generation failed (${res.status})`);
-  }
-  return (await res.json()) as ImageResult;
+  return readJson<ImageResult>(res);
 }
 
 export type { ActorUsageView };
@@ -311,19 +307,15 @@ export async function usageActors(
   from: string,
   to: string,
 ): Promise<{ items: ActorUsageView[] }> {
-  const res = await fetch(`/api/projects/${name}/usage/actors?from=${from}&to=${to}`);
-  await assertOk(res);
-  return (await res.json()) as { items: ActorUsageView[] };
+  return readJson<{ items: ActorUsageView[] }>(
+    await fetch(`/api/projects/${name}/usage/actors?from=${from}&to=${to}`),
+  );
 }
 
 export type { ProjectSlackResponse };
 
 export async function getProjectSlack(name: string): Promise<ProjectSlackResponse> {
-  const res = await fetch(`/api/projects/${name}/slack`);
-  if (!res.ok) {
-    throw new Error(`Failed to load Slack settings (${res.status})`);
-  }
-  return (await res.json()) as ProjectSlackResponse;
+  return readJson<ProjectSlackResponse>(await fetch(`/api/projects/${name}/slack`));
 }
 
 export async function updateProjectSlack(
@@ -336,23 +328,17 @@ export async function updateProjectSlack(
     channelKeywords?: string[];
   },
 ): Promise<ProjectSlackResponse> {
-  const res = await fetch(`/api/projects/${name}/slack`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(update),
-  });
-  const data = (await res.json()) as ProjectSlackResponse & { error?: string };
-  if (!res.ok) {
-    throw new Error(data.error ?? `Failed to save Slack settings (${res.status})`);
-  }
-  return data;
+  return readJson<ProjectSlackResponse>(
+    await fetch(`/api/projects/${name}/slack`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify(update),
+    }),
+  );
 }
 
 export async function disconnectProjectSlack(name: string): Promise<void> {
-  const res = await fetch(`/api/projects/${name}/slack`, { method: "DELETE" });
-  if (!res.ok) {
-    throw new Error(`Failed to disconnect Slack (${res.status})`);
-  }
+  await assertOk(await fetch(`/api/projects/${name}/slack`, { method: "DELETE" }));
 }
 
 export async function testProjectSlack(
@@ -448,26 +434,20 @@ export async function testProjectTeams(
 export type { ApiTokenStatus };
 
 export async function getProjectToken(name: string): Promise<ApiTokenStatus> {
-  const res = await fetch(`/api/projects/${name}/token`);
-  if (!res.ok) {
-    throw new Error(`Failed to load API token status (${res.status})`);
-  }
-  return (await res.json()) as ApiTokenStatus;
+  return readJson<ApiTokenStatus>(await fetch(`/api/projects/${name}/token`));
 }
 
 /** Generate (or regenerate) the project API token. Returns the raw token once. */
 export async function generateProjectToken(
   name: string,
 ): Promise<{ token: string; masked: string; createdAt: string }> {
-  const res = await fetch(`/api/projects/${name}/token`, { method: "POST" });
-  const data = (await res.json()) as {
+  const data = await readJson<{
     token?: string;
     masked?: string;
     createdAt?: string;
-    error?: string;
-  };
-  if (!res.ok || !data.token) {
-    throw new Error(data.error ?? `Failed to generate token (${res.status})`);
+  }>(await fetch(`/api/projects/${name}/token`, { method: "POST" }));
+  if (!data.token) {
+    throw new Error("Project API token response did not include a token");
   }
   return { token: data.token, masked: data.masked ?? "", createdAt: data.createdAt ?? "" };
 }
@@ -477,29 +457,23 @@ export async function generateProjectToken(
  * response body is a live credential and must stay out of caches and history.
  */
 export async function revealProjectToken(name: string): Promise<string> {
-  const res = await fetch(`/api/projects/${name}/token/reveal`, { method: "POST" });
-  const data = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
-  if (!res.ok || !data.token) {
-    throw new Error(data.error ?? `Failed to reveal token (${res.status})`);
+  const data = await readJson<{ token?: string }>(
+    await fetch(`/api/projects/${name}/token/reveal`, { method: "POST" }),
+  );
+  if (!data.token) {
+    throw new Error("Project API token response did not include a token");
   }
   return data.token;
 }
 
 export async function revokeProjectToken(name: string): Promise<void> {
-  const res = await fetch(`/api/projects/${name}/token`, { method: "DELETE" });
-  if (!res.ok) {
-    throw new Error(`Failed to revoke token (${res.status})`);
-  }
+  await assertOk(await fetch(`/api/projects/${name}/token`, { method: "DELETE" }));
 }
 
 export type { ProjectA2aResponse };
 
 export async function getProjectA2a(name: string): Promise<ProjectA2aResponse> {
-  const res = await fetch(`/api/projects/${name}/a2a`);
-  if (!res.ok) {
-    throw new Error(`Failed to load A2A settings (${res.status})`);
-  }
-  return (await res.json()) as ProjectA2aResponse;
+  return readJson<ProjectA2aResponse>(await fetch(`/api/projects/${name}/a2a`));
 }
 
 // --- MCP OAuth connections -------------------------------------------------
