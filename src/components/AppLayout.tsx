@@ -251,7 +251,7 @@ export function AppLayout({
               <span className={classes.logoWrap}>
                 <Image src="/logo.png" alt="" width={28} height={28} priority />
               </span>
-              <div>
+              <div className={classes.brandText}>
                 <Text fw={650} fz="md" lh={1.1}>
                   Agent Studio
                 </Text>
@@ -322,8 +322,8 @@ export function AppLayout({
         )}
       </AppShell.Navbar>
 
-      <AppShell.Main className={classes.main} id="main-content">
-        {children}
+      <AppShell.Main id="main-content">
+        <div className={classes.main}>{children}</div>
       </AppShell.Main>
     </AppShell>
   );
