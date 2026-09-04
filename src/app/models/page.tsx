@@ -51,6 +51,7 @@ import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import {
   nextSort,
+  selectableRetrievalModels,
   deserializeModelTableState,
   DEFAULT_MODEL_TABLE_STATE,
   visibleModelRows,
@@ -503,13 +504,11 @@ type GlobalModelType = "embedding" | "rerank";
 
 function ModelSelectionSection({
   models,
-  providers,
   selections,
   available,
   onChanged,
 }: {
   models: CatalogModel[];
-  providers: CatalogProvider[];
   selections: Catalog["selections"];
   available: Catalog["selectionAvailable"];
   onChanged: () => Promise<void>;
@@ -519,9 +518,6 @@ function ModelSelectionSection({
   const [busy, setBusy] = useState<GlobalModelType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
-  const availableProviders = new Set(
-    providers.filter((provider) => provider.available).map((provider) => provider.name),
-  );
 
   async function select(type: GlobalModelType, model: string | null) {
     if (!model || model === selections[type]?.model) return;
@@ -574,12 +570,7 @@ function ModelSelectionSection({
         {result && <Alert color="green">{result}</Alert>}
         {(["embedding", "rerank"] as const).map((type) => {
           const selection = selections[type];
-          const options = models.filter(
-            (model) =>
-              model.type === type &&
-              !model.selectionHidden &&
-              availableProviders.has(model.provider),
-          );
+          const options = selectableRetrievalModels(models, type);
           const selected = options.find((model) => model.id === selection?.model);
           return (
             <Select
@@ -957,7 +948,6 @@ export default function ModelsPage() {
       {canEdit && selections && (
         <ModelSelectionSection
           models={models}
-          providers={providers}
           selections={selections}
           available={selectionAvailable}
           onChanged={loadCatalog}
@@ -1162,7 +1152,9 @@ export default function ModelsPage() {
                             <Badge color={BADGE.broken}>failed</Badge>
                           </Tooltip>
                         ))}
-                      {(model.type === "text" || model.type === "image") && (
+                      {(model.type === "text" ||
+                        model.type === "image" ||
+                        (model.type === "rerank" && selectionAvailable.rerank)) && (
                         <Button
                           size="compact-xs"
                           variant="default"

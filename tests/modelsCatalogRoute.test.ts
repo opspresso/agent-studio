@@ -7,12 +7,17 @@ const {
   getEmbeddingModelSelection,
   getRerankerModelSelection,
   modelPreferenceUseCases,
+  config,
 } = vi.hoisted(() => ({
   getLlmProviderConfigs: vi.fn(),
   getHiddenModels: vi.fn(),
   getEmbeddingModelSelection: vi.fn(),
   getRerankerModelSelection: vi.fn(),
   modelPreferenceUseCases: { list: vi.fn() },
+  config: {
+    catalogEnabled: false,
+    reranker: undefined as { baseUrl: string; apiKey?: string } | undefined,
+  },
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -28,6 +33,7 @@ vi.mock("@/lib/runtime-settings", () => ({
   getRerankerModelSelection,
 }));
 vi.mock("@/lib/container", () => ({ modelPreferenceUseCases }));
+vi.mock("@/lib/config", () => ({ config }));
 
 const { GET } = await import("@/app/api/models/catalog/route");
 
@@ -60,6 +66,8 @@ beforeEach(() => {
   modelPreferenceUseCases.list.mockResolvedValue([]);
   getEmbeddingModelSelection.mockResolvedValue({ model: "openrouter/qwen3-embedding-4b", source: "env" });
   getRerankerModelSelection.mockResolvedValue(undefined);
+  config.catalogEnabled = false;
+  config.reranker = undefined;
 });
 
 describe("GET /api/models/catalog", () => {
@@ -146,5 +154,13 @@ describe("GET /api/models/catalog", () => {
       model: "selfhosted/Qwen/Qwen3-Reranker-0.6B",
       source: "settings",
     });
+  });
+
+  it("offers rerank selection only when the catalog and reranker endpoint are both enabled", async () => {
+    config.catalogEnabled = true;
+    expect((await catalog()).selectionAvailable.rerank).toBe(false);
+
+    config.reranker = { baseUrl: "http://reranker.internal/v1" };
+    expect((await catalog()).selectionAvailable.rerank).toBe(true);
   });
 });

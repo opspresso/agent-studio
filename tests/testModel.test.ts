@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestModel } from "@/application/llm/testModel";
 import { ValidationError } from "@/application/errors";
 import type { LlmChannel } from "@/domain/llm/channel";
@@ -75,8 +75,9 @@ describe("createTestModel", () => {
     expect(channel.seenParams).toHaveLength(0);
   });
 
-  it("does not send a rerank model to chat completion", async () => {
+  it("tests a rerank model through the specialized endpoint", async () => {
     const channel = new FakeChannel([[]]);
+    const testReranker = vi.fn(async () => {});
     loadSelfHostedModels([
       {
         id: "selfhosted/reranker",
@@ -96,10 +97,41 @@ describe("createTestModel", () => {
         maxTokens: 0,
       },
     ]);
-    await expect(createTestModel(channel)("selfhosted/reranker")).rejects.toThrow(
-      "Rerank model cannot be tested through chat completion",
-    );
+    const result = await createTestModel(channel, { testReranker })("selfhosted/reranker");
+
+    expect(result.ok).toBe(true);
+    expect(testReranker).toHaveBeenCalledWith("selfhosted/reranker", expect.any(AbortSignal));
     expect(channel.seenParams).toHaveLength(0);
+  });
+
+  it("reports a rerank probe failure as a test result", async () => {
+    loadSelfHostedModels([
+      {
+        id: "selfhosted/reranker",
+        provider: "selfhosted",
+        family: "reranker",
+        maker: "local",
+        displayName: "Reranker",
+        pricing: { inputPer1M: 0, outputPer1M: 0 },
+        capabilities: {
+          tools: false,
+          structuredOutput: false,
+          imageInput: false,
+          reasoning: false,
+          rerank: true,
+        },
+        contextWindow: 32768,
+        maxTokens: 0,
+      },
+    ]);
+
+    const result = await createTestModel(new FakeChannel([[]]), {
+      testReranker: async () => {
+        throw new Error("semantic probe failed");
+      },
+    })("selfhosted/reranker");
+
+    expect(result).toMatchObject({ ok: false, error: "semantic probe failed" });
   });
 
   it("does not send a transcription model to chat completion", async () => {

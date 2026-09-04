@@ -77,7 +77,7 @@ export const GET = withMemberAuth(async (user) => {
     selections: { embedding, ...(rerank ? { rerank } : {}) },
     selectionAvailable: {
       embedding: config.catalogEnabled,
-      rerank: config.reranker !== undefined,
+      rerank: config.catalogEnabled && config.reranker !== undefined,
     },
   } satisfies ModelsCatalogResponse);
 });

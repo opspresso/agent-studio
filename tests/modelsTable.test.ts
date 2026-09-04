@@ -5,6 +5,7 @@ import {
   deserializeModelTableState,
   nextSort,
   normalizeModelTableState,
+  selectableRetrievalModels,
   visibleModelRows,
 } from "@/app/models/modelTable";
 
@@ -42,6 +43,15 @@ const models = [
 ];
 
 describe("models table", () => {
+  it("offers visible retrieval models independently of LLM provider routes", () => {
+    const rows = models.map((item) => ({ ...item, selectionHidden: item.id === "openrouter/e" }));
+
+    expect(selectableRetrievalModels(rows, "embedding")).toEqual([]);
+    expect(selectableRetrievalModels(rows, "rerank").map((item) => item.id)).toEqual([
+      "selfhosted/r",
+    ]);
+  });
+
   it("filters one provider without mutating the catalog", () => {
     expect(visibleModelRows(models, {
       provider: "openai",
