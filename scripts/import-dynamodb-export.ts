@@ -27,9 +27,9 @@
  * rows present in both are replaced by the export's copy.
  */
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { withTelegramDestinationIndex } from "@/infrastructure/db/telegramDestinationIndex";
-
-process.env.STAGE ??= "local";
 
 type AttributeValue =
   | { S: string }
@@ -82,7 +82,13 @@ function authDate(item: Record<string, unknown>, field: string): Date | null {
   return null;
 }
 
+/** Users must be imported before every row that may reference one, across all pages. */
+export function authImportPhase(item: Record<string, unknown>): "user" | "rest" {
+  return String(item.PK ?? "").startsWith("AUTH#user#") ? "user" : "rest";
+}
+
 async function main(): Promise<void> {
+  process.env.STAGE ??= "local";
   const files = process.argv.slice(2);
   if (files.length === 0) {
     console.error("usage: import-dynamodb-export.ts <scan-output.json> [more.json…]");
@@ -105,49 +111,74 @@ async function main(): Promise<void> {
     droppedSettings: 0,
   };
 
-  // Every file's users before any file's sessions: an export paged by
-  // `--starting-token` puts a session and its user wherever the page boundary
-  // fell, and a session whose user is in another page is not an orphan.
+  // Gather identity before opening the transaction. The files may be large, so
+  // keep only ids and emails rather than every unmarshalled row in memory.
   const userIds = new Set<string>();
-  for (const file of files) {
-    for (const item of readItems(file)) {
-      if (String(item.PK ?? "").startsWith("AUTH#user#")) {
-        userIds.add(String(item.id));
-      }
-    }
-  }
+  const userEmails = new Set<string>();
   for (const file of files) {
     const items = readItems(file);
     console.log(`${file}: ${items.length} item(s)`);
-    // A scan comes back in no order, and a session or account row references
-    // its user: users first, then the rest of the auth rows, then everything
-    // else. A row whose user the export does not carry is an orphan the old
-    // adapter could hold and the foreign key cannot — dropped and counted.
-    const rank = (item: Record<string, unknown>): number => {
-      const pk = String(item.PK ?? "");
-      return pk.startsWith("AUTH#user#") ? 0 : pk.startsWith("AUTH#") ? 1 : 2;
-    };
-    items.sort((a, b) => rank(a) - rank(b));
-    await withTransaction(async (client) => {
-      // `email` is unique and the upsert below matches on `id`: a user row the
-      // new deployment already made for one of these addresses — the bootstrap
-      // administrator a first boot creates — would fail the whole file. That
-      // row is the same person with a fresh id and nothing of theirs on it, so
-      // it gives way to the exported one; the next boot finds the imported
-      // user by email and adds the password back.
-      const emails = items
-        .filter((item) => rank(item) === 0)
-        .map((item) => String(item.email ?? "").toLowerCase())
-        .filter(Boolean);
-      const replaced = await client.query<{ id: string; email: string }>(
-        `DELETE FROM "user" WHERE lower("email") = ANY($1) AND NOT ("id" = ANY($2)) RETURNING "id", "email"`,
-        [emails, [...userIds]],
-      );
-      for (const row of replaced.rows) {
-        console.log(`replacing user ${row.email} (${row.id}) with the exported row`);
+    for (const item of items) {
+      if (authImportPhase(item) === "user") {
+        userIds.add(String(item.id));
+        const email = String(item.email ?? "").toLowerCase();
+        if (email) userEmails.add(email);
       }
-      counts.replacedUsers += replaced.rowCount ?? 0;
-      for (let item of items) {
+    }
+  }
+  // One transaction for the whole export: a failure in a later page must not
+  // leave earlier pages committed. The two file passes keep every user ahead
+  // of every session/account regardless of where AWS cut the pages.
+  await withTransaction(async (client) => {
+    // `email` is unique and the upsert below matches on `id`: a user row the
+    // new deployment already made for one of these addresses — the bootstrap
+    // administrator a first boot creates — would fail the whole file. That
+    // row is the same person with a fresh id and nothing of theirs on it, so
+    // it gives way to the exported one; the next boot finds the imported
+    // user by email and adds the password back.
+    const replaced = await client.query<{ id: string; email: string }>(
+      `DELETE FROM "user" WHERE lower("email") = ANY($1) AND NOT ("id" = ANY($2)) RETURNING "id", "email"`,
+      [[...userEmails], [...userIds]],
+    );
+    for (const row of replaced.rows) {
+      console.log(`replacing user ${row.email} (${row.id}) with the exported row`);
+    }
+    counts.replacedUsers += replaced.rowCount ?? 0;
+
+    for (const file of files) {
+      for (const item of readItems(file)) {
+        if (authImportPhase(item) !== "user") continue;
+        const pk = String(item.PK ?? "");
+        const sk = String(item.SK ?? "");
+        if (!pk || !sk) {
+          counts.dropped += 1;
+          continue;
+        }
+        await client.query(
+          `INSERT INTO "user" ("id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt", "tier", "lastLoginAt")
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "email" = EXCLUDED."email",
+             "emailVerified" = EXCLUDED."emailVerified", "image" = EXCLUDED."image",
+             "updatedAt" = EXCLUDED."updatedAt", "tier" = EXCLUDED."tier", "lastLoginAt" = EXCLUDED."lastLoginAt"`,
+          [
+            item.id,
+            item.name ?? "",
+            item.email,
+            item.emailVerified === true,
+            item.image ?? null,
+            authDate(item, "createdAt") ?? new Date(),
+            authDate(item, "updatedAt") ?? new Date(),
+            typeof item.tier === "string" ? item.tier : null,
+            authDate(item, "lastLoginAt"),
+          ],
+        );
+        counts.user += 1;
+      }
+    }
+
+    for (const file of files) {
+      for (let item of readItems(file)) {
+        if (authImportPhase(item) === "user") continue;
         const pk = String(item.PK ?? "");
         const sk = String(item.SK ?? "");
         if (!pk || !sk) {
@@ -161,27 +192,6 @@ async function main(): Promise<void> {
         if (pk.startsWith("AUTH#")) {
           const model = pk.split("#")[1];
           switch (model) {
-            case "user":
-              await client.query(
-                `INSERT INTO "user" ("id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt", "tier", "lastLoginAt")
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                 ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "email" = EXCLUDED."email",
-                   "emailVerified" = EXCLUDED."emailVerified", "image" = EXCLUDED."image",
-                   "updatedAt" = EXCLUDED."updatedAt", "tier" = EXCLUDED."tier", "lastLoginAt" = EXCLUDED."lastLoginAt"`,
-                [
-                  item.id,
-                  item.name ?? "",
-                  item.email,
-                  item.emailVerified === true,
-                  item.image ?? null,
-                  authDate(item, "createdAt") ?? new Date(),
-                  authDate(item, "updatedAt") ?? new Date(),
-                  typeof item.tier === "string" ? item.tier : null,
-                  authDate(item, "lastLoginAt"),
-                ],
-              );
-              counts.user += 1;
-              break;
             case "session":
               if (!userIds.has(String(item.userId))) {
                 counts.dropped += 1;
@@ -307,8 +317,8 @@ async function main(): Promise<void> {
         );
         counts.items += 1;
       }
-    });
-  }
+    }
+  });
   console.log(
     `imported ${counts.items} item(s) (${counts.droppedEnvRefs} with envRefs dropped, ${counts.droppedSettings} with a stale artifactAccessMode), ${counts.user} user(s) (${counts.replacedUsers} replaced), ${counts.session} session(s), ` +
       `${counts.account} account(s), ${counts.verification} verification(s); dropped ${counts.dropped}`,
@@ -316,9 +326,9 @@ async function main(): Promise<void> {
   await closePool();
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
-
-export {};
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
