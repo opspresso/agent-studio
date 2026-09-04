@@ -1655,6 +1655,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/slack/types.ts",
   },
   {
+    // A reply can leave through post, edit, or either stream axis. Sanitising
+    // one path in its caller makes fallback and final-recovery paths notification
+    // capabilities, so the decision is named once and applied only at the wire.
+    what: "which outbound Slack mrkdwn tokens may notify people",
+    pattern: /neutralizeSlackMentions/,
+    owner: "src/domain/slack/outboundText.ts",
+    alsoAllowedUnder: ["src/infrastructure/slack/client.ts"],
+  },
+  {
     // With `message.channels` subscribed the bot receives its own replies, and
     // a reply lands in a thread the bot is engaged in — so a second copy of
     // this check that drifted would not merely answer something twice, it would

@@ -32,6 +32,13 @@ append 는 사라지지 않고 다음 것과 함께 다시 보내진다. 스트�
 않았다. 채널로 스트리밍할 때는 수신자를
 추가로 명시한다(`recipient_user_id` / `recipient_team_id`). DM 은 그러지 않는다.
 
+**답변은 알림 권한을 얻지 않는다.** 모델·도구·warning·project 설명에서 온 텍스트는 일반
+mrkdwn으로 렌더되지만, Slack Web API 어댑터가 전송 직전에 `<@U…>`, `<!channel>`, `<!here>`,
+`<!everyone>`, `<!subteam^…>`을 escape한다. streaming, edit fallback, 최종 재전송이 모두 같은
+경계를 지나므로 어느 전달 모드도 예외가 아니다. 링크(`<https://…|…>`), 채널 참조, date token,
+일반 Markdown은 그대로 남는다. 답이 누군가를 지목하는 문장을 써도 실제 알림 대상을 늘릴 수는
+없다.
+
 **제자리 편집은 메시지 하나에 담기지 않는 답을 여러 개로 잇는다.** 편집되는 메시지의 상한은
 `MAX_EDIT_TEXT` (2,800자)인데, 이 숫자는 문서가 아니라 관측이다 — Slack 은 `text` 에 4,000자를
 문서화해 두고 그보다 훨씬 먼저 거부한다. 그 길이의 텍스트는 section block 으로 렌더되고 그

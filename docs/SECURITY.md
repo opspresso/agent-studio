@@ -790,6 +790,19 @@ project 는 그것을 결코 보지 않는다. 해석된 프로필은 워크스�
 인젝션을 불가능하게 만들지는 않지만. 메시지 본문도 신뢰되지 않는다. 신원 메타데이터가 독자가
 볼 수 없는 지시를 숨길 자리가 되는 것은 막는다.
 
+## Slack 출력 알림
+
+LLM 답변과 tool 결과는 Slack mrkdwn으로 전달되므로 텍스트 안의 mention token은 단순한 표시가
+아니다. `<@U…>`는 사용자를, `<!subteam^…>`은 사용자 그룹을, `<!channel>`·`<!here>`·
+`<!everyone>`은 넓은 청중을 실제로 알릴 수 있다. 그 텍스트는 질문·외부 문서·도구 결과에 의해
+영향받으므로 알림 권한으로 취급하지 않는다.
+
+`neutralizeSlackMentions`(`src/domain/slack/outboundText.ts`)가 알림 가능한 완전한 token만
+escape한다. `slackClient`는 `chat.postMessage`, `chat.update`, 그리고 stream의 text/chunk 축을
+Slack에 쓰기 직전에 모두 이 함수를 통과시킨다. 따라서 streaming 실패 뒤 edit로 물러나거나
+마감 시 남은 답을 다시 보내는 경로도 같은 규칙을 받는다. 일반 Markdown, URL link, channel
+reference, 알림을 만들지 않는 date token은 보존한다.
+
 ## Slack 워크스페이스 읽기
 
 `parameters.slackWorkspace` 로 버전별 옵트인. 켜져 있으면 런은 자기 project 의 봇이 설치된
