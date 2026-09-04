@@ -917,6 +917,133 @@ class ToolCallAccumulator {
   }
 }
 
+interface AgentTurnStreamInput {
+  channel: LlmChannel;
+  params: ChannelParams;
+  fallbackModel?: string;
+  model: string;
+  signal?: AbortSignal;
+  author?: string;
+  filter?: PiiFilter;
+  traceReasoning: boolean;
+  usedCallIds: Set<string>;
+  saidSomething: boolean;
+  reasonedSomething: boolean;
+}
+
+interface AgentTurnStreamResult {
+  model: string;
+  assistantText: string;
+  reasoningText: string;
+  usage: ChannelUsage | null;
+  outputCut: boolean;
+  calls: AccumulatedCall[];
+  saidSomething: boolean;
+  reasonedSomething: boolean;
+}
+
+/** Stream and collect exactly one provider turn; `null` means its error was emitted. */
+async function* streamAgentTurn(
+  input: AgentTurnStreamInput,
+): AsyncGenerator<EngineChunk, AgentTurnStreamResult | null> {
+  const state = { model: input.model };
+  let assistantText = "";
+  let reasoningText = "";
+  let usage: ChannelUsage | null = null;
+  let outputCut = false;
+  let saidSomething = input.saidSomething;
+  let reasonedSomething = input.reasonedSomething;
+  const accumulator = new ToolCallAccumulator(input.usedCallIds);
+  const contentRestorer = input.filter?.createStreamRestorer();
+  const reasoningRestorer = input.traceReasoning
+    ? input.filter?.createStreamRestorer()
+    : undefined;
+
+  try {
+    for await (const chunk of streamWithFallback(
+      input.channel,
+      input.params,
+      input.fallbackModel,
+      state,
+    )) {
+      if (chunk.usage) {
+        usage = chunk.usage;
+      }
+      if (chunk.choices[0]?.finish_reason === "length") {
+        outputCut = true;
+      }
+      const delta = chunk.choices[0]?.delta;
+      if (!delta) {
+        continue;
+      }
+      // Content, reasoning, and calls may coexist in one provider delta.
+      if (delta.content) {
+        if (assistantText === "" && saidSomething) {
+          yield { author: input.author, delta: { content: TURN_SEPARATOR } };
+        }
+        assistantText += delta.content;
+        const content = contentRestorer?.push(delta.content) ?? delta.content;
+        if (content) {
+          saidSomething = true;
+          yield { author: input.author, delta: { content } };
+        }
+      }
+      if (delta.reasoning_content) {
+        if (input.traceReasoning && reasoningText === "" && reasonedSomething) {
+          yield { author: input.author, delta: { reasoningContent: TURN_SEPARATOR } };
+        }
+        // Kept even when not emitted: the provider receives it back with this turn.
+        reasoningText += delta.reasoning_content;
+        if (input.traceReasoning) {
+          const reasoningContent =
+            reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
+          if (reasoningContent) {
+            reasonedSomething = true;
+            yield { author: input.author, delta: { reasoningContent } };
+          }
+        }
+      }
+      for (const toolCall of delta.tool_calls ?? []) {
+        accumulator.add(toolCall);
+      }
+    }
+  } catch (error) {
+    input.signal?.throwIfAborted();
+    const remainingContent = contentRestorer?.flush();
+    if (remainingContent) {
+      yield { author: input.author, delta: { content: remainingContent } };
+    }
+    const remainingReasoning = reasoningRestorer?.flush();
+    if (remainingReasoning) {
+      yield { author: input.author, delta: { reasoningContent: remainingReasoning } };
+    }
+    yield { author: input.author, error: errorMessage(error) };
+    return null;
+  }
+
+  const remainingContent = contentRestorer?.flush();
+  if (remainingContent) {
+    saidSomething = true;
+    yield { author: input.author, delta: { content: remainingContent } };
+  }
+  const remainingReasoning = reasoningRestorer?.flush();
+  if (remainingReasoning) {
+    reasonedSomething = true;
+    yield { author: input.author, delta: { reasoningContent: remainingReasoning } };
+  }
+
+  return {
+    model: state.model,
+    assistantText,
+    reasoningText,
+    usage,
+    outputCut,
+    calls: accumulator.finalize(),
+    saidSomething,
+    reasonedSomething,
+  };
+}
+
 /**
  * The call's arguments, or `null` when the text does not parse as a JSON
  * object. `null` is a distinct answer on purpose: a provider output cut leaves
@@ -1066,6 +1193,59 @@ function prepareToolCalls(
       client: clientToolNames.has(call.name),
     };
   });
+}
+
+/**
+ * Announce one turn's complete call plan before any call is dispatched.
+ *
+ * The returned copy is what goes back to the provider. Yielded copies are what
+ * the application or a person reads, so restored values and client-tool
+ * arguments follow their separate contracts here rather than in the execution
+ * loop below.
+ */
+async function* announceToolCalls(
+  prepared: PreparedToolCall[],
+  author: string | undefined,
+  filter: PiiFilter | undefined,
+): AsyncGenerator<EngineChunk, ChannelToolCall[]> {
+  const wireToolCalls: ChannelToolCall[] = [];
+  for (const { call, args, displayArgs, malformed, client } of prepared) {
+    if (malformed) {
+      // The model's own text is the only truthful record of arguments that did
+      // not parse — re-encoding `{}` would claim it asked for nothing. A client
+      // tool's copy is not cut: the announced text is the call.
+      const wireCall: ChannelToolCall = {
+        id: call.id,
+        type: "function",
+        function: {
+          name: call.name,
+          arguments: client ? call.arguments : boundArgumentText(call.arguments),
+        },
+      };
+      wireToolCalls.push(wireCall);
+      yield {
+        author,
+        delta: {
+          toolCalls: [filter ? (restoreValues(filter, wireCall) as ChannelToolCall) : wireCall],
+        },
+      };
+      continue;
+    }
+    // Both copies are bounded from their own source. A client tool's announced
+    // copy is the exception: its announcement is the call the application runs,
+    // so replacing a value with its size would replace the argument itself.
+    const bounded = boundToolArgsPair(args, displayArgs);
+    wireToolCalls.push(toWireToolCall(call.id, call.name, bounded.wire));
+    yield {
+      author,
+      delta: {
+        toolCalls: [
+          toWireToolCall(call.id, call.name, client ? displayArgs : bounded.display),
+        ],
+      },
+    };
+  }
+  return wireToolCalls;
 }
 
 async function dispatchConcurrentTools(
@@ -1459,6 +1639,96 @@ async function loadSkillSafe(
   }
 }
 
+interface ImageBuiltinResult {
+  text: string;
+  /** False only when provider-authored error text must pass through the result budget. */
+  bounded: boolean;
+}
+
+async function* generateImageBuiltin(input: {
+  generate: NonNullable<AgentDeps["generateImage"]>;
+  canEdit: boolean;
+  args: Record<string, unknown>;
+  displayArgs: Record<string, unknown>;
+  images: ImageRegistry;
+  signal?: AbortSignal;
+  author?: string;
+}): AsyncGenerator<EngineChunk, ImageBuiltinResult> {
+  const maskedPrompt = typeof input.args.prompt === "string" ? input.args.prompt : "";
+  const displayPrompt =
+    typeof input.displayArgs.prompt === "string" ? input.displayArgs.prompt : "";
+  const size = typeof input.displayArgs.size === "string" ? input.displayArgs.size : undefined;
+  const quality =
+    typeof input.displayArgs.quality === "string" ? input.displayArgs.quality : undefined;
+  if (!maskedPrompt.trim()) {
+    return { text: "Error: GenerateImage requires a prompt.", bounded: true };
+  }
+  try {
+    const image = await input.generate(maskedPrompt, size, quality);
+    yield { author: input.author, image: { ...image, prompt: displayPrompt } };
+    const handle = input.canEdit
+      ? input.images.add(image, `generated: ${displayPrompt.slice(0, 60)}`)
+      : undefined;
+    return {
+      text: handle
+        ? `Image generated and delivered to the user (image id: ${handle.id}, editable with ${EDIT_IMAGE_TOOL_NAME}). Briefly describe what was drawn; do not claim you cannot show images.`
+        : "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.",
+      bounded: true,
+    };
+  } catch (error) {
+    input.signal?.throwIfAborted();
+    return { text: `Error: image generation failed. ${errorMessage(error)}`, bounded: false };
+  }
+}
+
+async function* editImageBuiltin(input: {
+  edit: NonNullable<AgentDeps["editImage"]>;
+  args: Record<string, unknown>;
+  displayArgs: Record<string, unknown>;
+  images: ImageRegistry;
+  signal?: AbortSignal;
+  author?: string;
+}): AsyncGenerator<EngineChunk, ImageBuiltinResult> {
+  const maskedPrompt = typeof input.args.prompt === "string" ? input.args.prompt : "";
+  const displayPrompt =
+    typeof input.displayArgs.prompt === "string" ? input.displayArgs.prompt : "";
+  const imageId =
+    typeof input.displayArgs.image_id === "string" ? input.displayArgs.image_id : "";
+  const size = typeof input.displayArgs.size === "string" ? input.displayArgs.size : undefined;
+  const quality =
+    typeof input.displayArgs.quality === "string" ? input.displayArgs.quality : undefined;
+  if (!maskedPrompt.trim()) {
+    return { text: `Error: ${EDIT_IMAGE_TOOL_NAME} requires a prompt.`, bounded: true };
+  }
+  const source = input.images.get(imageId);
+  if (!source) {
+    const known = input.images.list().map((handle) => handle.id);
+    return {
+      text: known.length
+        ? `Error: no image with id '${imageId}'. Available images: ${known.join(", ")}.`
+        : "Error: no image is available to edit yet. Generate one first, or ask the user to attach one.",
+      bounded: true,
+    };
+  }
+  try {
+    const image = await input.edit({
+      prompt: maskedPrompt,
+      images: [{ b64: source.b64, mimeType: source.mimeType }],
+      size,
+      quality,
+    });
+    yield { author: input.author, image: { ...image, prompt: displayPrompt } };
+    const handle = input.images.add(image, `edited from ${source.id}`);
+    return {
+      text: `Image edited and delivered to the user (image id: ${handle.id}). Briefly describe the change; do not claim you cannot show images.`,
+      bounded: true,
+    };
+  } catch (error) {
+    input.signal?.throwIfAborted();
+    return { text: `Error: image edit failed. ${errorMessage(error)}`, bounded: false };
+  }
+}
+
 export async function* runAgent(
   deps: AgentDeps,
   input: RunAgentInput,
@@ -1717,108 +1987,28 @@ export async function* runAgent(
           "This model does not reason while it can call tools, so little or none of this run's reasoning was recorded.",
       };
     }
-    const state = { model: input.model };
-    let assistantText = "";
-    let reasoningText = "";
-    let usage: ChannelUsage | null = null;
-    // The provider's own ending for this turn: "length" means the text was cut
-    // at the output cap — an ending `done` must not report as a finish.
-    let outputCut = false;
-    const accumulator = new ToolCallAccumulator(usedCallIds);
-    const contentRestorer = filter?.createStreamRestorer();
-    const reasoningRestorer = traceReasoning ? filter?.createStreamRestorer() : undefined;
-
-    try {
-      for await (const chunk of streamWithFallback(deps.channel, params, fallbackModel, state)) {
-        if (chunk.usage) {
-          usage = chunk.usage;
-        }
-        if (chunk.choices[0]?.finish_reason === "length") {
-          outputCut = true;
-        }
-        const delta = chunk.choices[0]?.delta;
-        if (!delta) {
-          continue;
-        }
-        // Independent checks, not a chain. The three delta fields are
-        // concurrent accumulation buffers on the wire, not mutually exclusive
-        // events: OpenAI-compatible gateways (vLLM, LiteLLM) and reasoning
-        // shims routinely emit content or reasoning_content alongside
-        // tool_calls in one delta, and an `else if` would silently drop the
-        // tool call — the loop would then finish as if the model never asked.
-        if (delta.content) {
-          // First visible word of a turn that follows one which already spoke:
-          // separate them. `assistantText` is this turn's own buffer, so it is
-          // empty exactly once per turn, and a turn that only calls tools never
-          // reaches here — no stray break before an answer that follows silence.
-          if (assistantText === "" && saidSomething) {
-            yield { author, delta: { content: TURN_SEPARATOR } };
-          }
-          assistantText += delta.content;
-          const content = contentRestorer?.push(delta.content) ?? delta.content;
-          if (content) {
-            saidSomething = true;
-            yield { author, delta: { content } };
-          }
-        }
-        if (delta.reasoning_content) {
-          if (traceReasoning && reasoningText === "" && reasonedSomething) {
-            // The answer's own rule, applied to the thinking: `reasoningText` is
-            // this turn's buffer, so it is empty exactly once per turn.
-            yield { author, delta: { reasoningContent: TURN_SEPARATOR } };
-          }
-          // Outside the gate on purpose: this is what goes back to the provider
-          // on this turn's assistant message, whether or not anyone reads it.
-          reasoningText += delta.reasoning_content;
-          if (traceReasoning) {
-            const reasoningContent =
-              reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
-            if (reasoningContent) {
-              reasonedSomething = true;
-              yield { author, delta: { reasoningContent } };
-            }
-          }
-        }
-        if (delta.tool_calls) {
-          for (const toolCall of delta.tool_calls) {
-            accumulator.add(toolCall);
-          }
-        }
-      }
-    } catch (error) {
-      input.signal?.throwIfAborted();
-      const remainingContent = contentRestorer?.flush();
-      if (remainingContent) {
-        yield { author, delta: { content: remainingContent } };
-      }
-      const remainingReasoning = reasoningRestorer?.flush();
-      if (remainingReasoning) {
-        yield { author, delta: { reasoningContent: remainingReasoning } };
-      }
-      yield { author, error: errorMessage(error) };
+    const streamed: AgentTurnStreamResult | null = yield* streamAgentTurn({
+      channel: deps.channel,
+      params,
+      ...(fallbackModel ? { fallbackModel } : {}),
+      model: input.model,
+      ...(input.signal ? { signal: input.signal } : {}),
+      author,
+      ...(filter ? { filter } : {}),
+      traceReasoning,
+      usedCallIds,
+      saidSomething,
+      reasonedSomething,
+    });
+    if (!streamed) {
       return;
     }
+    const { assistantText, reasoningText, outputCut, calls } = streamed;
+    saidSomething = streamed.saidSomething;
+    reasonedSomething = streamed.reasonedSomething;
 
-    const remainingContent = contentRestorer?.flush();
-    if (remainingContent) {
-      // Counted like any other visible word. The restorer holds back whatever
-      // suffix could still turn out to be half a replacement token, so a turn
-      // the provider cut just after `[[PII:` reaches the reader entirely
-      // through this flush — and a `saidSomething` set only in the loop above
-      // would leave the next turn's first word running straight into it.
-      saidSomething = true;
-      yield { author, delta: { content: remainingContent } };
-    }
-    const remainingReasoning = reasoningRestorer?.flush();
-    if (remainingReasoning) {
-      // Set here for the reason the content flush above gives: a turn whose
-      // whole thinking arrives through the flush must still break the next one.
-      reasonedSomething = true;
-      yield { author, delta: { reasoningContent: remainingReasoning } };
-    }
-
-    const usageInfo = toUsageInfo(state.model, usage);
-    await recordUsageIfPossible(deps, input.projectName, state.model, usageInfo);
+    const usageInfo = toUsageInfo(streamed.model, streamed.usage);
+    await recordUsageIfPossible(deps, input.projectName, streamed.model, usageInfo);
     yield { author, usage: usageInfo };
     if (
       traceReasoning &&
@@ -1829,8 +2019,6 @@ export async function* runAgent(
       reasoningWithheldNoted = true;
       yield { author, warning: REASONING_TEXT_WITHHELD_WARNING };
     }
-
-    const calls = accumulator.finalize();
     // Every ending of the loop, not just the clean one. A run whose words went
     // into its thinking is as blank when the turn guard stops it or the
     // provider cuts it — and there the *other* warning is actively misleading,
@@ -1881,7 +2069,6 @@ export async function* runAgent(
     }
 
     // All tool calls of one response aggregate into ONE assistant message.
-    const wireToolCalls: ChannelToolCall[] = [];
     const toolMessages: ChannelMessage[] = [];
     const postContextMessages: ChannelMessage[] = [];
     /** Pictures MCP tools returned this turn, attached after the tool results. */
@@ -1923,45 +2110,7 @@ export async function* runAgent(
           : "The model's turn was cut at its output limit while it was calling tools; the run continues.",
       };
     }
-    for (const { call, args, displayArgs, malformed, client } of prepared) {
-      if (malformed) {
-        // The model's own text is the only truthful record of arguments that
-        // did not parse — re-encoding `{}` would claim it asked for nothing.
-        // A client tool's copy is not cut: the announced text is the call.
-        const wireCall: ChannelToolCall = {
-          id: call.id,
-          type: "function",
-          function: {
-            name: call.name,
-            arguments: client ? call.arguments : boundArgumentText(call.arguments),
-          },
-        };
-        wireToolCalls.push(wireCall);
-        yield {
-          author,
-          delta: { toolCalls: [filter ? (restoreValues(filter, wireCall) as ChannelToolCall) : wireCall] },
-        };
-        continue;
-      }
-      // Both copies bounded, and each from its own source: `args` is masked and
-      // goes back to the provider, `displayArgs` has the values restored and is
-      // what a person reads. A client tool's announced copy is the exception:
-      // for every other tool the real call was made with the whole value and
-      // the announcement only describes it, but a client tool's call *is* the
-      // announcement — nothing else carries the arguments to the application
-      // that runs it — so a value swapped for its size would be the value the
-      // tool receives.
-      const bounded = boundToolArgsPair(args, displayArgs);
-      wireToolCalls.push(toWireToolCall(call.id, call.name, bounded.wire));
-      yield {
-        author,
-        delta: {
-          toolCalls: [
-            toWireToolCall(call.id, call.name, client ? displayArgs : bounded.display),
-          ],
-        },
-      };
-    }
+    const wireToolCalls = yield* announceToolCalls(prepared, author, filter);
 
     // The MCP calls of one response are independent by construction — the model
     // asked for them together — so they run concurrently instead of adding up
@@ -2345,75 +2494,29 @@ export async function* runAgent(
       }
 
       if (builtin && call.name === IMAGE_TOOL_NAME && deps.generateImage) {
-        const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
-        const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
-        const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
-        const quality = typeof displayArgs.quality === "string" ? displayArgs.quality : undefined;
-        let resultText: string;
-        // Every outcome here is a string this engine wrote — only the provider's
-        // error body has a length nothing on this side decides.
-        let fromProvider = false;
-        if (!maskedPrompt.trim()) {
-          resultText = "Error: GenerateImage requires a prompt.";
-        } else {
-          try {
-            const image = await deps.generateImage(maskedPrompt, size, quality);
-            yield { author, image: { ...image, prompt: displayPrompt } };
-            const handle = deps.editImage
-              ? images.add(image, `generated: ${displayPrompt.slice(0, 60)}`)
-              : undefined;
-            resultText = handle
-              ? `Image generated and delivered to the user (image id: ${handle.id}, editable with ${EDIT_IMAGE_TOOL_NAME}). Briefly describe what was drawn; do not claim you cannot show images.`
-              : "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.";
-          } catch (error) {
-            input.signal?.throwIfAborted();
-            fromProvider = true;
-            resultText = `Error: image generation failed. ${errorMessage(error)}`;
-          }
-        }
-        // Only the provider's body is fitted. A refusal this engine wrote is
-        // charged whole, or a turn whose budget an earlier tool result spent
-        // would answer "request less data" to a call that forgot its prompt.
-        yield toolResult(call, resultText, { bounded: !fromProvider });
+        const result = yield* generateImageBuiltin({
+          generate: deps.generateImage,
+          canEdit: deps.editImage !== undefined,
+          args,
+          displayArgs,
+          images,
+          ...(input.signal ? { signal: input.signal } : {}),
+          author,
+        });
+        yield toolResult(call, result.text, { bounded: result.bounded });
         continue;
       }
 
       if (builtin && call.name === EDIT_IMAGE_TOOL_NAME && deps.editImage) {
-        const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
-        const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
-        const imageId = typeof displayArgs.image_id === "string" ? displayArgs.image_id : "";
-        const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
-        const quality = typeof displayArgs.quality === "string" ? displayArgs.quality : undefined;
-        const source = images.get(imageId);
-        let resultText: string;
-        /** See GenerateImage above. */
-        let fromProvider = false;
-        if (!maskedPrompt.trim()) {
-          resultText = `Error: ${EDIT_IMAGE_TOOL_NAME} requires a prompt.`;
-        } else if (!source) {
-          const known = images.list().map((handle) => handle.id);
-          resultText = known.length
-            ? `Error: no image with id '${imageId}'. Available images: ${known.join(", ")}.`
-            : `Error: no image is available to edit yet. Generate one first, or ask the user to attach one.`;
-        } else {
-          try {
-            const image = await deps.editImage({
-              prompt: maskedPrompt,
-              images: [{ b64: source.b64, mimeType: source.mimeType }],
-              size,
-              quality,
-            });
-            yield { author, image: { ...image, prompt: displayPrompt } };
-            const handle = images.add(image, `edited from ${source.id}`);
-            resultText = `Image edited and delivered to the user (image id: ${handle.id}). Briefly describe the change; do not claim you cannot show images.`;
-          } catch (error) {
-            input.signal?.throwIfAborted();
-            fromProvider = true;
-            resultText = `Error: image edit failed. ${errorMessage(error)}`;
-          }
-        }
-        // Same split as GenerateImage above.
-        yield toolResult(call, resultText, { bounded: !fromProvider });
+        const result = yield* editImageBuiltin({
+          edit: deps.editImage,
+          args,
+          displayArgs,
+          images,
+          ...(input.signal ? { signal: input.signal } : {}),
+          author,
+        });
+        yield toolResult(call, result.text, { bounded: result.bounded });
         continue;
       }
 
