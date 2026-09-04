@@ -57,3 +57,12 @@ export function registerShutdownSignals(): void {
   process.on("SIGTERM", beginShutdown);
   process.on("SIGINT", beginShutdown);
 }
+
+/** Restore process-local state between unit tests. Production never calls this. */
+export function resetLifecycleForTest(): void {
+  process.removeListener("SIGTERM", beginShutdown);
+  process.removeListener("SIGINT", beginShutdown);
+  draining = false;
+  registered = false;
+  hooks.length = 0;
+}

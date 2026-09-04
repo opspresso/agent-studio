@@ -1,14 +1,14 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   beginShutdown,
   isShuttingDown,
   onShutdown,
   registerShutdownSignals,
+  resetLifecycleForTest,
 } from "@/shared/lifecycle";
 
-afterAll(() => {
-  process.removeListener("SIGTERM", beginShutdown);
-  process.removeListener("SIGINT", beginShutdown);
+beforeEach(() => {
+  resetLifecycleForTest();
 });
 
 describe("lifecycle", () => {

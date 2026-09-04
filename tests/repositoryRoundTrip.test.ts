@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeStore } from "./fakeStore";
 
 // --- The item store, in memory: every adapter under test writes through it, and
@@ -25,6 +25,10 @@ import { expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 const NOW_SECONDS = Math.floor(Date.parse(NOW) / 1000);
+
+beforeEach(() => {
+  store.rows.clear();
+});
 
 /** A live project row a version, usage or trace write may land in. */
 function seedProject(name: string, over: Record<string, unknown> = {}): void {

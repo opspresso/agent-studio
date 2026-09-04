@@ -1,7 +1,7 @@
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const listMcpToolsMock = vi.hoisted(() =>
   vi.fn(async (_url: string, _headers: Record<string, string>) => ({ ok: true as const, tools: [] })),
@@ -16,6 +16,7 @@ const sendAgentMessageMock = vi.hoisted(() =>
     text: "hi",
   })),
 );
+
 vi.mock("@/infrastructure/agent/agentClient", () => ({ sendAgentMessage: sendAgentMessageMock }));
 
 const sendA2aMessageMock = vi.hoisted(() =>
@@ -25,6 +26,12 @@ const sendA2aMessageMock = vi.hoisted(() =>
   })),
 );
 vi.mock("@/infrastructure/a2a/client", () => ({ sendA2aMessage: sendA2aMessageMock }));
+
+beforeEach(() => {
+  listMcpToolsMock.mockClear();
+  sendAgentMessageMock.mockClear();
+  sendA2aMessageMock.mockClear();
+});
 
 import { createAgentUseCases as createAgentUseCasesImpl } from "@/application/agent/agentUseCases";
 import { createMcpUseCases as createMcpUseCasesImpl } from "@/application/mcp/mcpUseCases";

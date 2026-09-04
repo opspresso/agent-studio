@@ -40,10 +40,15 @@ vi.mock("node:dns/promises", () => ({
   },
 }));
 
-import { fetchPublicUrl, PublicFetchError } from "@/infrastructure/net/publicFetch";
+import {
+  fetchPublicUrl,
+  PublicFetchError,
+  resetPublicFetchAgentCacheForTest,
+} from "@/infrastructure/net/publicFetch";
 import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 
 afterEach(() => {
+  resetPublicFetchAgentCacheForTest();
   vi.unstubAllGlobals();
   undiciFetch.mockReset();
   agentOptions.length = 0;
