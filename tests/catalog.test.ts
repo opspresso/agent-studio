@@ -349,6 +349,23 @@ const reranked = (scores: number[]) => ({
 });
 
 describe("searchCapabilities", () => {
+  it("keeps billed reranking usage when reindexing invalidates its matches", async () => {
+    const deps = searchDeps([[
+      match("skill#a", 0.9, { name: "a", description: "first" }),
+      match("skill#b", 0.8, { name: "b", description: "second" }),
+    ]]);
+    let generation = 1;
+    deps.reindexState = async () => ({ generation, active: false });
+    const usage = { model: "selfhosted/reranker", inputTokens: 30, costUsd: 0.02 };
+    deps.reranker = { rerank: async () => {
+      generation += 1;
+      return { scores: [0.9, 0.8], usage };
+    } };
+    const result = await searchCapabilitiesByKind(deps, ["query"], [{ kind: "skill", limit: 5 }]);
+    expect(result.matches).toEqual([[]]);
+    expect(result.rerank).toEqual({ calls: 1, candidates: 2, failed: 0, usage: [usage] });
+  });
+
   it("withholds discovery while a reindex lease is active", async () => {
     const deps = searchDeps([[match("skill#a", 0.9, { name: "a", description: "" })]]);
     const embed = vi.spyOn(deps.embeddings, "embed");

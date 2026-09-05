@@ -277,7 +277,9 @@ export async function searchCapabilitiesByKind(
     rerank,
   };
   const finished = (await deps.reindexState?.()) ?? indexed;
-  return reindexOverlapped(started, finished) ? emptySearch(requests) : result;
+  return reindexOverlapped(started, finished)
+    ? { matches: requests.map(() => []), rerank }
+    : result;
 }
 
 export async function searchCapabilities(
