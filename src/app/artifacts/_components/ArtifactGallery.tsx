@@ -263,10 +263,10 @@ function ArtifactCard({
 }) {
   // Address resolution never checks the object is there, so an expired or
   // already-deleted one fails at fetch time.
-  const [gone, setGone] = useState(false);
+  const [failedUrl, setFailedUrl] = useState<string | undefined>(undefined);
   const t = useT();
   const locale = useLocale();
-  const available = artifact.url !== undefined && !gone;
+  const available = artifact.url !== undefined && artifact.url !== failedUrl;
 
   return (
     <Card h="100%">
@@ -284,7 +284,7 @@ function ArtifactCard({
               alt={artifact.prompt ?? t("artifacts.imageAlt")}
               h={180}
               fit="cover"
-              onError={() => setGone(true)}
+              onError={() => setFailedUrl(artifact.url)}
             />
           </UnstyledButton>
         ) : (

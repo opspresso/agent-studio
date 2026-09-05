@@ -135,13 +135,13 @@ export function GeneratedImage({
   label: string;
   prompt?: string;
 }) {
-  const [gone, setGone] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | undefined>(undefined);
   const t = useT();
   const view = useImageViewer();
   const alt = prompt ?? label;
   return (
     <Box maw="80%" w="100%" style={{ aspectRatio: "1 / 1" }}>
-      {gone ? (
+      {failedSrc === src ? (
         <Paper
           withBorder
           radius="md"
@@ -172,7 +172,7 @@ export function GeneratedImage({
             h="100%"
             w="100%"
             fit="contain"
-            onError={() => setGone(true)}
+            onError={() => setFailedSrc(src)}
           />
         </UnstyledButton>
       )}
