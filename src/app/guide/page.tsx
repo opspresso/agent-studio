@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Card, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from "@mantine/core";
+import { Card, Group, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import {
   IconBook2,
   IconCompass,
@@ -15,244 +15,284 @@ import type { MessageKey } from "@/app/_i18n/messages/en";
 import { getT } from "@/app/_i18n/server";
 import classes from "./page.module.css";
 
-/**
- * The one page whose content *is* its text: what this console is for and the
- * shortest path through it, for a reader who has just been given an account.
- *
- * A server component, so the prose is rendered in the reader's language on the
- * first paint rather than after hydration — this page is nothing but strings,
- * and a flash of the wrong language would be the whole page. Nothing here is
- * interactive, which is what makes that free.
- *
- * The links are `next/link` and bare `<a>` with a class, not Mantine's
- * `Anchor`: `component={Link}` hands a *function* to a client component, which
- * React refuses across the RSC boundary — the page 500s at request time while
- * `pnpm build` stays green, since nothing renders it during the build.
- *
- * Every entry below is a pair of message keys, and the page is the seven lists.
- * That is deliberate: a section is added by writing its two catalogue entries
- * and one array element, so the English and Korean copies stay in step through
- * `Messages` rather than through anyone remembering to edit twice. No dotted
- * Mantine sub-component (`List.Item`, `Card.Section`) appears here — they do
- * not survive the RSC boundary and arrive as `undefined`, which is a 500 at
- * render rather than a mistake anyone sees while writing.
- */
-
-interface Entry {
+interface GuideSection {
+  id: string;
   title: MessageKey;
-  body: MessageKey;
+  body?: MessageKey;
+  Icon: TablerIcon;
+  entries: ReadonlyArray<{ title: MessageKey; body: MessageKey }>;
+  links?: ReadonlyArray<{ href: string; label: MessageKey }>;
 }
 
-const SECTION_LINKS = [
-  { id: "start", title: "guide.start.title" },
-  { id: "words", title: "guide.words.title" },
-  { id: "types", title: "guide.types.title" },
-  { id: "reach", title: "guide.reach.title" },
-  { id: "surfaces", title: "guide.surfaces.title" },
-  { id: "limits", title: "guide.limits.title" },
-  { id: "trouble", title: "guide.trouble.title" },
-] as const satisfies ReadonlyArray<{ id: string; title: MessageKey }>;
-
-const STEPS = [
-  { title: "guide.start.step1", body: "guide.start.step1Body" },
-  { title: "guide.start.step2", body: "guide.start.step2Body" },
-  { title: "guide.start.step3", body: "guide.start.step3Body" },
-  { title: "guide.start.step4", body: "guide.start.step4Body" },
-] as const satisfies readonly Entry[];
-
-const WORDS = [
-  { title: "guide.words.project", body: "guide.words.projectBody" },
-  { title: "guide.words.version", body: "guide.words.versionBody" },
-  { title: "guide.words.run", body: "guide.words.runBody" },
-  { title: "guide.words.caller", body: "guide.words.callerBody" },
-  { title: "guide.words.tier", body: "guide.words.tierBody" },
-] as const satisfies readonly Entry[];
-
-const TYPES = [
-  { title: "guide.types.llm", body: "guide.types.llmBody" },
-  { title: "guide.types.agent", body: "guide.types.agentBody" },
-  { title: "guide.types.image", body: "guide.types.imageBody" },
-] as const satisfies readonly Entry[];
-
-const REACH = [
-  { title: "guide.reach.skills", body: "guide.reach.skillsBody" },
-  { title: "guide.reach.tools", body: "guide.reach.toolsBody" },
-  { title: "guide.reach.subagents", body: "guide.reach.subagentsBody" },
-  { title: "guide.reach.catalog", body: "guide.reach.catalogBody" },
-  { title: "guide.reach.builtins", body: "guide.reach.builtinsBody" },
-  { title: "guide.reach.memory", body: "guide.reach.memoryBody" },
-] as const satisfies readonly Entry[];
-
-const SURFACES = [
-  { title: "guide.surfaces.console", body: "guide.surfaces.consoleBody" },
-  { title: "guide.surfaces.http", body: "guide.surfaces.httpBody" },
-  { title: "guide.surfaces.chatbots", body: "guide.surfaces.chatbotsBody" },
-  { title: "guide.surfaces.triggers", body: "guide.surfaces.triggersBody" },
-  { title: "guide.surfaces.a2a", body: "guide.surfaces.a2aBody" },
-  { title: "guide.surfaces.agui", body: "guide.surfaces.aguiBody" },
-] as const satisfies readonly Entry[];
-
-const LIMITS = [
-  { title: "guide.limits.cost", body: "guide.limits.costBody" },
-  { title: "guide.limits.guards", body: "guide.limits.guardsBody" },
-  { title: "guide.limits.tier", body: "guide.limits.tierBody" },
-  { title: "guide.limits.records", body: "guide.limits.recordsBody" },
-] as const satisfies readonly Entry[];
-
-const TROUBLE = [
-  { title: "guide.trouble.refused", body: "guide.trouble.refusedBody" },
-  { title: "guide.trouble.model", body: "guide.trouble.modelBody" },
-  { title: "guide.trouble.tool", body: "guide.trouble.toolBody" },
-  { title: "guide.trouble.slack", body: "guide.trouble.slackBody" },
-  { title: "guide.trouble.tab", body: "guide.trouble.tabBody" },
-] as const satisfies readonly Entry[];
+const SECTIONS: readonly GuideSection[] = [
+  {
+    id: "start",
+    title: "guide.start.title",
+    body: "guide.start.body",
+    Icon: IconCompass,
+    entries: [
+      { title: "guide.start.account", body: "guide.start.accountBody" },
+      { title: "guide.start.create", body: "guide.start.createBody" },
+      { title: "guide.start.test", body: "guide.start.testBody" },
+      { title: "guide.start.publish", body: "guide.start.publishBody" },
+    ],
+    links: [
+      { href: "/chats", label: "nav.chats" },
+      { href: "/projects", label: "nav.projects" },
+      { href: "/profile", label: "nav.profile" },
+    ],
+  },
+  {
+    id: "projects",
+    title: "guide.projects.title",
+    body: "guide.projects.body",
+    Icon: IconBook2,
+    entries: [
+      { title: "guide.projects.llm", body: "guide.projects.llmBody" },
+      { title: "guide.projects.agent", body: "guide.projects.agentBody" },
+      { title: "guide.projects.image", body: "guide.projects.imageBody" },
+    ],
+    links: [
+      { href: "/projects", label: "nav.projects" },
+    ],
+  },
+  {
+    id: "versions",
+    title: "guide.versions.title",
+    body: "guide.versions.body",
+    Icon: IconRoute,
+    entries: [
+      { title: "guide.versions.model", body: "guide.versions.modelBody" },
+      { title: "guide.versions.prompt", body: "guide.versions.promptBody" },
+      { title: "guide.versions.limits", body: "guide.versions.limitsBody" },
+      { title: "guide.versions.compare", body: "guide.versions.compareBody" },
+      { title: "guide.versions.publish", body: "guide.versions.publishBody" },
+    ],
+  },
+  {
+    id: "capabilities",
+    title: "guide.capabilities.title",
+    body: "guide.capabilities.body",
+    Icon: IconPlugConnected,
+    entries: [
+      { title: "guide.capabilities.skills", body: "guide.capabilities.skillsBody" },
+      { title: "guide.capabilities.tools", body: "guide.capabilities.toolsBody" },
+      { title: "guide.capabilities.oauth", body: "guide.capabilities.oauthBody" },
+      { title: "guide.capabilities.agents", body: "guide.capabilities.agentsBody" },
+      { title: "guide.capabilities.plugins", body: "guide.capabilities.pluginsBody" },
+      { title: "guide.capabilities.discovery", body: "guide.capabilities.discoveryBody" },
+      { title: "guide.capabilities.builtins", body: "guide.capabilities.builtinsBody" },
+    ],
+    links: [
+      { href: "/skills", label: "nav.skills" },
+      { href: "/tools", label: "nav.tools" },
+      { href: "/agents", label: "nav.agents" },
+      { href: "/plugins", label: "nav.plugins" },
+    ],
+  },
+  {
+    id: "chat",
+    title: "guide.chat.title",
+    body: "guide.chat.body",
+    Icon: IconVocabulary,
+    entries: [
+      { title: "guide.chat.version", body: "guide.chat.versionBody" },
+      { title: "guide.chat.context", body: "guide.chat.contextBody" },
+      { title: "guide.chat.attachments", body: "guide.chat.attachmentsBody" },
+      { title: "guide.chat.stop", body: "guide.chat.stopBody" },
+    ],
+    links: [
+      { href: "/chats", label: "nav.chats" },
+      { href: "/artifacts", label: "nav.artifacts" },
+    ],
+  },
+  {
+    id: "api",
+    title: "guide.api.title",
+    body: "guide.api.body",
+    Icon: IconRoute,
+    entries: [
+      { title: "guide.api.token", body: "guide.api.tokenBody" },
+      { title: "guide.api.version", body: "guide.api.versionBody" },
+      { title: "guide.api.input", body: "guide.api.inputBody" },
+      { title: "guide.api.sdk", body: "guide.api.sdkBody" },
+      { title: "guide.api.stream", body: "guide.api.streamBody" },
+      { title: "guide.api.result", body: "guide.api.resultBody" },
+    ],
+    links: [
+      { href: "/projects", label: "nav.projects" },
+    ],
+  },
+  {
+    id: "integrations",
+    title: "guide.integrations.title",
+    body: "guide.integrations.body",
+    Icon: IconPlugConnected,
+    entries: [
+      { title: "guide.integrations.slack", body: "guide.integrations.slackBody" },
+      { title: "guide.integrations.messengers", body: "guide.integrations.messengersBody" },
+      { title: "guide.integrations.a2a", body: "guide.integrations.a2aBody" },
+      { title: "guide.integrations.webhook", body: "guide.integrations.webhookBody" },
+      { title: "guide.integrations.schedule", body: "guide.integrations.scheduleBody" },
+    ],
+  },
+  {
+    id: "records",
+    title: "guide.records.title",
+    Icon: IconCoin,
+    entries: [
+      { title: "guide.records.artifacts", body: "guide.records.artifactsBody" },
+      { title: "guide.records.usage", body: "guide.records.usageBody" },
+      { title: "guide.records.budgets", body: "guide.records.budgetsBody" },
+      { title: "guide.records.traces", body: "guide.records.tracesBody" },
+    ],
+    links: [
+      { href: "/artifacts", label: "nav.artifacts" },
+      { href: "/profile", label: "nav.profile" },
+      { href: "/projects", label: "nav.projects" },
+    ],
+  },
+  {
+    id: "security",
+    title: "guide.security.title",
+    body: "guide.security.body",
+    Icon: IconBook2,
+    entries: [
+      { title: "guide.security.visibility", body: "guide.security.visibilityBody" },
+      { title: "guide.security.credentials", body: "guide.security.credentialsBody" },
+      { title: "guide.security.pii", body: "guide.security.piiBody" },
+      { title: "guide.security.network", body: "guide.security.networkBody" },
+    ],
+    links: [
+      { href: "/profile", label: "nav.profile" },
+    ],
+  },
+  {
+    id: "admin",
+    title: "guide.admin.title",
+    body: "guide.admin.body",
+    Icon: IconVocabulary,
+    entries: [
+      { title: "guide.admin.members", body: "guide.admin.membersBody" },
+      { title: "guide.admin.settings", body: "guide.admin.settingsBody" },
+      { title: "guide.admin.models", body: "guide.admin.modelsBody" },
+      { title: "guide.admin.offline", body: "guide.admin.offlineBody" },
+      { title: "guide.admin.artifacts", body: "guide.admin.artifactsBody" },
+      { title: "guide.admin.audit", body: "guide.admin.auditBody" },
+    ],
+    links: [
+      { href: "/members", label: "nav.members" },
+      { href: "/settings", label: "nav.settings" },
+      { href: "/models", label: "nav.models" },
+      { href: "/audit", label: "nav.audit" },
+    ],
+  },
+  {
+    id: "install",
+    title: "guide.install.title",
+    body: "guide.install.body",
+    Icon: IconBook2,
+    entries: [
+      { title: "guide.install.prepare", body: "guide.install.prepareBody" },
+      { title: "guide.install.environment", body: "guide.install.environmentBody" },
+      { title: "guide.install.signin", body: "guide.install.signinBody" },
+      { title: "guide.install.storage", body: "guide.install.storageBody" },
+      { title: "guide.install.verify", body: "guide.install.verifyBody" },
+    ],
+  },
+  {
+    id: "operations",
+    title: "guide.operations.title",
+    body: "guide.operations.body",
+    Icon: IconRoute,
+    entries: [
+      { title: "guide.operations.health", body: "guide.operations.healthBody" },
+      { title: "guide.operations.ticker", body: "guide.operations.tickerBody" },
+      { title: "guide.operations.catalog", body: "guide.operations.catalogBody" },
+      { title: "guide.operations.retention", body: "guide.operations.retentionBody" },
+      { title: "guide.operations.backup", body: "guide.operations.backupBody" },
+      { title: "guide.operations.upgrade", body: "guide.operations.upgradeBody" },
+    ],
+  },
+  {
+    id: "trouble",
+    title: "guide.trouble.title",
+    body: "guide.trouble.body",
+    Icon: IconLifebuoy,
+    entries: [
+      { title: "guide.trouble.access", body: "guide.trouble.accessBody" },
+      { title: "guide.trouble.model", body: "guide.trouble.modelBody" },
+      { title: "guide.trouble.limits", body: "guide.trouble.limitsBody" },
+      { title: "guide.trouble.tools", body: "guide.trouble.toolsBody" },
+      { title: "guide.trouble.automation", body: "guide.trouble.automationBody" },
+      { title: "guide.trouble.files", body: "guide.trouble.filesBody" },
+      { title: "guide.trouble.support", body: "guide.trouble.supportBody" },
+    ],
+  },
+];
 
 export default async function GuidePage() {
   const t = await getT();
-
-  /*
-   * A section, and the two shapes its entries take. Locals rather than
-   * exported components: nothing outside this page draws a guide section, and
-   * a shared one would have to grow a prop for each of the differences below.
-   */
-  const section = (
-    id: string,
-    heading: MessageKey,
-    Icon: TablerIcon,
-    lede: MessageKey | null,
-    children: React.ReactNode,
-    links: ReadonlyArray<{ href: string; label: MessageKey }> = [],
-  ) => (
-    <Card component="section" id={id} padding="lg" className={classes.prose}>
-      <Group gap="sm" wrap="nowrap" align="center">
-        <ThemeIcon variant="light" color="brand" size={34} radius="md">
-          <Icon size={19} stroke={1.7} />
-        </ThemeIcon>
-        <Title order={2} fz="h4">
-          {t(heading)}
-        </Title>
-      </Group>
-      {lede && (
-        <Text fz="sm" c="dimmed" mt="sm" maw={820} lh={1.6}>
-          {t(lede)}
-        </Text>
-      )}
-      {children}
-      {links.length > 0 && (
-        /* The pages the section just described, one click away. */
-        <Group gap="sm" mt="lg">
-          {links.map((link) => (
-            <Link key={link.href} href={link.href} className={classes.link}>
-              {t(link.label)} →
-            </Link>
-          ))}
-        </Group>
-      )}
-    </Card>
-  );
-
-  const entries = (items: readonly Entry[]) => (
-    <Stack gap="md" mt="lg">
-      {items.map((entry) => (
-        <div key={entry.title}>
-          <Text fz="sm" fw={600}>
-            {t(entry.title)}
-          </Text>
-          <Text fz="sm" c="dimmed" mt={4} maw={820} lh={1.6}>
-            {t(entry.body)}
-          </Text>
-        </div>
-      ))}
-    </Stack>
-  );
 
   return (
     <Stack gap="lg">
       <PageHeader title={t("guide.title")} description={t("guide.lede")} Icon={IconCompass} />
 
-      {/* Seven sections is more than fits a screen, so they are listed once. */}
-      <Group gap="md" wrap="wrap">
-        {SECTION_LINKS.map((link) => (
-          <a key={link.id} href={`#${link.id}`} className={classes.link}>
-            {t(link.title)}
-          </a>
-        ))}
-      </Group>
+      <nav aria-label={t("guide.contents")}>
+        <Group gap="md" wrap="wrap">
+          {SECTIONS.map((section) => (
+            <a key={section.id} href={`#${section.id}`} className={classes.link}>
+              {t(section.title)}
+            </a>
+          ))}
+        </Group>
+      </nav>
 
-      {section(
-        "start",
-        "guide.start.title",
-        IconRoute,
-        "guide.start.body",
-        <Stack gap="md" mt="lg">
-          {STEPS.map((step, index) => (
-            <Group key={step.title} gap="md" wrap="nowrap" align="flex-start">
-              {/* The step number is the ordering, so it is drawn rather than implied. */}
-              <ThemeIcon variant="light" color="brand" size={28} radius="xl">
-                <Text fz="xs" fw={700}>
-                  {index + 1}
-                </Text>
-              </ThemeIcon>
-              <div style={{ minWidth: 0 }}>
-                <Text fz="sm" fw={600}>
-                  {t(step.title)}
-                </Text>
-                <Text fz="sm" c="dimmed" mt={4} maw={820} lh={1.6}>
-                  {t(step.body)}
+      {SECTIONS.map(({ id, title, body, Icon, entries, links }) => (
+        <Card
+          key={id}
+          component="section"
+          id={id}
+          aria-labelledby={`${id}-title`}
+          padding="lg"
+          className={classes.prose}
+        >
+          <Group gap="sm" wrap="nowrap" align="center">
+            <ThemeIcon variant="light" color="brand" size={34} radius="md">
+              <Icon size={19} stroke={1.7} aria-hidden="true" />
+            </ThemeIcon>
+            <Title id={`${id}-title`} order={2} fz="h4">
+              {t(title)}
+            </Title>
+          </Group>
+          {body && (
+            <Text fz="sm" c="dimmed" mt="sm" maw={820} lh={1.7}>
+              {t(body)}
+            </Text>
+          )}
+          <Stack gap="lg" mt="lg">
+            {entries.map((entry) => (
+              <div key={entry.title}>
+                <Title order={3} fz="sm" fw={600}>
+                  {t(entry.title)}
+                </Title>
+                <Text fz="sm" c="dimmed" mt={4} maw={820} lh={1.7}>
+                  {t(entry.body)}
                 </Text>
               </div>
+            ))}
+          </Stack>
+          {links && (
+            <Group gap="sm" mt="lg">
+              {links.map((link) => (
+                <Link key={link.href} href={link.href} className={classes.link}>
+                  {t(link.label)} →
+                </Link>
+              ))}
             </Group>
-          ))}
-        </Stack>,
-        [{ href: "/projects", label: "nav.projects" }],
-      )}
-
-      {section("words", "guide.words.title", IconVocabulary, null, entries(WORDS), [
-        { href: "/profile", label: "nav.profile" },
-      ])}
-
-      {section(
-        "types",
-        "guide.types.title",
-        IconBook2,
-        null,
-        <SimpleGrid cols={{ base: 1, md: 3 }} spacing="lg" mt="lg">
-          {TYPES.map((type) => (
-            <div key={type.title}>
-              <Text fz="sm" fw={600} ff="monospace">
-                {t(type.title)}
-              </Text>
-              <Text fz="sm" c="dimmed" mt={6} lh={1.6}>
-                {t(type.body)}
-              </Text>
-            </div>
-          ))}
-        </SimpleGrid>,
-      )}
-
-      {section("reach", "guide.reach.title", IconPlugConnected, "guide.reach.body", entries(REACH), [
-        { href: "/skills", label: "nav.skills" },
-        { href: "/tools", label: "nav.tools" },
-        { href: "/agents", label: "nav.agents" },
-        { href: "/plugins", label: "nav.plugins" },
-      ])}
-
-      {section("surfaces", "guide.surfaces.title", IconRoute, "guide.surfaces.body", entries(SURFACES), [
-        { href: "/chats", label: "nav.chats" },
-      ])}
-
-      {section("limits", "guide.limits.title", IconCoin, null, entries(LIMITS), [
-        { href: "/", label: "nav.overview" },
-        { href: "/profile", label: "nav.profile" },
-        { href: "/artifacts", label: "nav.artifacts" },
-      ])}
-
-      {section("trouble", "guide.trouble.title", IconLifebuoy, null, entries(TROUBLE), [
-        { href: "/models", label: "nav.models" },
-        { href: "/tools", label: "nav.tools" },
-      ])}
-
-      {section("more", "guide.more.title", IconBook2, "guide.more.body", null)}
+          )}
+        </Card>
+      ))}
     </Stack>
   );
 }

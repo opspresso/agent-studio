@@ -257,130 +257,256 @@ export const en = {
   // page whose content *is* the text.
   "guide.title": "Guide",
   "guide.lede":
-    "Start here if you are new to Agent Studio. This guide covers the path from creating a project to publishing and connecting it, then explains the terms and limits you will see along the way.",
+    "A practical handbook for users, project owners, and deployment operators. Everything here is available with the deployed application, without a source checkout.",
+  "guide.contents": "Contents",
 
-  "guide.start.title": "If this is your first time",
+  "guide.start.title": "Start here",
   "guide.start.body":
-    "The usual path is to create a project, configure and test a version, publish it, and then connect a caller. Publishing chooses the default version; a caller can still request another saved version by name.",
-  "guide.start.step1": "Create a project",
-  "guide.start.step1Body":
-    "Open Projects and select New project. Choose llm, agent, or image, and enter the permanent identifier that callers will use.",
-  "guide.start.step2": "Configure a version in the Playground",
-  "guide.start.step2Body":
-    "Choose the model, prompts, limits, and capabilities for the version. Save it and use the run panel beside the editor to test it. You can keep editing and saving the same version.",
-  "guide.start.step3": "Publish the version",
-  "guide.start.step3Body":
-    "Publishing makes this version the project's default. Requests for the published version use it immediately, while requests for a specific version continue to use the version they named.",
-  "guide.start.step4": "Connect a caller",
-  "guide.start.step4Body":
-    "Use the examples on the API Reference tab to call the project over HTTP. The Integrations tab provides the project token and setup details for Slack, Telegram, Teams, A2A, and AG-UI.",
+    "Agent Studio runs prompt, agent, and image projects inside your organization. This guide is included in the console and can be read without source code or public internet access. Begin with an existing agent if you only need to chat; follow the steps below to build your own project.",
+  "guide.start.account": "1. Sign in and check your access",
+  "guide.start.accountBody":
+    "Open the address provided by your organization and use the sign-in method shown. Profile shows your tier, usage, and limits. New accounts normally start as guest; if project creation is unavailable, ask an administrator to change your tier in Members.",
+  "guide.start.create": "2. Create a small first project",
+  "guide.start.createBody":
+    "In Projects, choose New project, enter an identifier and display name, and choose a type. For a first test, use llm for a prompt template or agent for a conversational assistant. Start with a short task whose expected answer you can judge before adding tools.",
+  "guide.start.test": "3. Save, run, and inspect",
+  "guide.start.testBody":
+    "In Playground, select an available model and write the instructions. Save the version, enter a test input, and run it. Check the answer, warnings, usage, and tool activity. Run uses the saved version, so editing without saving does not test your new settings.",
+  "guide.start.publish": "4. Publish and connect",
+  "guide.start.publishBody":
+    "Publish the tested version from Versions. For an HTTP caller, issue a project token in Integrations and follow API Reference. Publishing selects a default version; it does not create a separate application or freeze the configuration.",
 
-  "guide.words.title": "Words this console uses",
-  "guide.words.project": "Project",
-  "guide.words.projectBody":
-    "A named unit of work with one type. A project contains its versions, access rules, cost limits, and integrations.",
-  "guide.words.version": "Version",
-  "guide.words.versionBody":
-    "A named configuration containing the model, prompts, tools, and run limits. Saving updates that version in place. If it is published, the next run uses the updated configuration. Publishing marks one version as the project default.",
-  "guide.words.run": "Run",
-  "guide.words.runBody":
-    "One execution of a version. A run records its caller, deadline, usage, cost, and trace.",
-  "guide.words.caller": "Caller",
-  "guide.words.callerBody":
-    "The identity that started a run, such as a console user, project token, or Slack user. Cost is recorded for both the project and caller, while the concurrency limit applies to the caller.",
-  "guide.words.tier": "Tier",
-  "guide.words.tierBody":
-    "Your access level: guest, member, or admin. It controls project creation, API tokens, concurrent runs, and monthly spend. The Profile page shows the limits that apply to you.",
+  "guide.projects.title": "Choose the project type",
+  "guide.projects.body":
+    "A project groups versions, visibility, integrations, and usage under one identifier. A version holds the model, prompts, capabilities, and execution limits. Choose the type for the output and workflow you need.",
+  "guide.projects.llm": "llm: a prompt template",
+  "guide.projects.llmBody":
+    "Use llm for summarization, classification, or rewriting in one model response. Put placeholders such as {{topic}} in the user prompt template and supply their values when running it. A system prompt sets the standing instructions. This type does not call tools or continue a tool loop.",
+  "guide.projects.agent": "agent: conversation and tools",
+  "guide.projects.agentBody":
+    "Use agent when a task requires conversation, searches, tool calls, or delegation. Write its role, task boundaries, and expected output in the system prompt, then send the task as a message. The model chooses whether to use the tools made available to it; enabling a tool does not guarantee a call.",
+  "guide.projects.image": "image: generation and editing",
+  "guide.projects.imageBody":
+    "Select an image generation model and describe the desired picture. Attach source images to edit them; without source images, the project generates a new picture. The system prompt supplies a recurring style. Test in Playground or Compare, and call the predict API for integration. Chats and chat completions do not run image projects.",
 
-  "guide.types.title": "Three kinds of project",
-  "guide.types.llm": "llm: one prompt, one answer",
-  "guide.types.llmBody":
-    "Fills {{variables}} in a prompt template and returns one model response. It does not use tools or continue to another turn.",
-  "guide.types.agent": "agent: a multi-turn tool loop",
-  "guide.types.agentBody":
-    "Runs a multi-turn tool loop until the model finishes its answer. Depending on the version, it can load skills, call MCP tools, delegate work, generate images, and read URLs.",
-  "guide.types.image": "image: draw or edit pictures",
-  "guide.types.imageBody":
-    "Generates an image from a prompt or edits an attached image. Image-capable surfaces such as the Playground, predict API, AG-UI, and A2A return the image itself. Chats accepts agent projects only, and chat completion endpoints reject image projects.",
+  "guide.versions.title": "Configure, compare, and publish versions",
+  "guide.versions.body":
+    "Treat a version as a named, editable configuration. For an experiment, choose + New version in Playground's version selector: it copies the current editor contents, and Save creates the new version. Use this path when callers already depend on the current configuration.",
+  "guide.versions.model": "Model and fallback",
+  "guide.versions.modelBody":
+    "Select a model that supports the task: tool calling for agent projects, image input for reading pictures, or image generation for an image project. For llm and agent projects, configure a fallback model if needed. A fallback still needs the capabilities required by the request; it cannot make an incompatible model read an image.",
+  "guide.versions.prompt": "Preview and save are different",
+  "guide.versions.promptBody":
+    "Use Prompt preview to inspect the prompt assembled from the current draft. It does not generate an answer, but it can contact MCP servers and call embedding/rerank services for dynamic discovery. Save before using the run panel: its request executes the saved version. An agent receives user messages directly; llm template variables are not an agent input mechanism.",
+  "guide.versions.limits": "Control run size",
+  "guide.versions.limitsBody":
+    "Set output length, agent turn limits, and other parameters exposed by the editor to match the task. Turn and output limits can end a run with a partial answer; a deployment deadline can stop it with an error. Read the completion reason and warnings before accepting the output. Reasoning trace controls the displayed reasoning, not whether the model reasons.",
+  "guide.versions.compare": "Compare with the same input",
+  "guide.versions.compareBody":
+    "Save the candidate version, open Compare, choose two saved versions, and run the same input. Compare answer quality, warnings, duration, and usage. Both sides make real calls and count toward usage and concurrency limits; the comparison is not a free preview.",
+  "guide.versions.publish": "Understand what changes after Publish",
+  "guide.versions.publishBody":
+    "In Versions, Publish points the project default at the selected version. Requests using published follow that pointer; requests naming a version keep using that name. Saving changes to a published version affects its next run immediately. To revert the default, publish a known good version; named-version callers must be updated separately.",
 
-  "guide.reach.title": "What a version can use",
-  "guide.reach.body":
-    "A version's bindings and settings decide most of what it can use; the deployment must also provide the underlying capability. If an enabled capability is unavailable during a run, the run reports a warning.",
-  "guide.reach.skills": "Skills",
-  "guide.reach.skillsBody":
-    "Reusable instructions written in Markdown. The model sees each skill's name and description, then loads the full content when needed. The Skills page lists what is available.",
-  "guide.reach.tools": "MCP tools",
-  "guide.reach.toolsBody":
-    "Servers registered on the Tools page. A version binds a server, chooses which tools to expose, and can override outbound headers. Secrets are encrypted at rest.",
-  "guide.reach.subagents": "Subagents",
-  "guide.reach.subagentsBody":
-    "Another project or an external agent that can receive delegated work. Subagent output is labelled with its author, and its cost remains attributed to the original caller.",
-  "guide.reach.catalog": "Capability catalog",
-  "guide.reach.catalogBody":
-    "A searchable index of skills, MCP tools, and external agents. When dynamic discovery is enabled, each run adds relevant results to its resolved bindings for that run only. Saved bindings are neither removed nor changed.",
-  "guide.reach.builtins": "Built-in tools",
-  "guide.reach.builtinsBody":
-    "A version can enable image generation, URL reading, and Slack history. SaveFile is available automatically when artifact storage is configured, so an agent can give the reader a downloadable text file.",
-  "guide.reach.memory": "Memory",
-  "guide.reach.memoryBody":
-    "A version can ask bound MCP servers with a recall tool for relevant memory before the first model response. If no bound server offers recall, the run continues without memory and reports a warning.",
+  "guide.capabilities.title": "Add skills, tools, and other agents",
+  "guide.capabilities.body":
+    "Administrators register capabilities on Skills, Tools, Agents, and Plugins. Project owners bind the available entries to a version, save, and test a task that needs them. Registration alone does not expose every capability to every run.",
+  "guide.capabilities.skills": "Skills: reusable instructions",
+  "guide.capabilities.skillsBody":
+    "Have an administrator create the skill on Skills with a clear description, then bind it in the version editor. The model initially sees the name and description and can load the full instructions when needed. Use skills for repeatable procedures and domain guidance, and verify that the task actually causes the intended skill to be loaded.",
+  "guide.capabilities.tools": "MCP: discover and select tools",
+  "guide.capabilities.toolsBody":
+    "Have an administrator register the server on Tools and check that discovery lists the expected tools. Bind the server to the version, select the tools to expose, and save the version. If calls fail, inspect the server status, required headers, and run warnings. A reachable server can still return no usable tools or require authorization.",
+  "guide.capabilities.oauth": "MCP connection settings have different scopes",
+  "guide.capabilities.oauthBody":
+    "Tool selections and header overrides belong to the version and require its Save action. OAuth Connect, Disconnect, and OAuth client credentials belong to the project and are saved separately; all its versions share that connection. Complete authorization before testing a tool that requires OAuth.",
+  "guide.capabilities.agents": "Delegate to another agent",
+  "guide.capabilities.agentsBody":
+    "Bind a published local project or an external agent registered on Agents. External registrations use an OpenAI-compatible or A2A endpoint and its credentials. Give each delegate a description that makes its role clear. Delegated activity is labelled by author, while its usage remains part of the originating run's accounting.",
+  "guide.capabilities.plugins": "Import and synchronize plugins",
+  "guide.capabilities.pluginsBody":
+    "An administrator imports skills and MCP definitions from a configured repository or an uploaded checkout archive in Plugins. Use archive upload when the repository is unreachable. Inspect skipped/invalid entries and bind imported capabilities to your version. Imported skill content and MCP URLs/descriptions are maintained at the source and synchronized again; configure credentials separately in the console, because MCP headers are not imported. Sync does not delete orphaned entries automatically; review and remove them explicitly from its results.",
+  "guide.capabilities.discovery": "Dynamic discovery and memory",
+  "guide.capabilities.discoveryBody":
+    "Dynamic discovery can add relevant indexed skills, tools, and agents for a run without changing its saved bindings. It needs a working capability catalog and embedding setup; ask an administrator if results are missing. Memory recall is separate: it needs a bound MCP server offering recall. Without that tool, the run proceeds without memory and reports a warning.",
+  "guide.capabilities.builtins": "Image generation, URL reading, and files",
+  "guide.capabilities.builtinsBody":
+    "Enable the built-in capabilities needed by the version, such as image generation, URL reading, or Slack history. Their provider, network access, or bot setup must also be available. SaveFile is offered automatically when artifact storage is configured and lets an agent produce downloadable text files. Inspect generated files before using or sharing them.",
 
-  "guide.surfaces.title": "Where it can answer",
-  "guide.surfaces.body":
-    "Every surface uses the same execution engine and records usage and traces in the same place. External callers normally use the published version; the Playground runs the version currently open in the editor.",
-  "guide.surfaces.console": "The console",
-  "guide.surfaces.consoleBody":
-    "Use the Playground while configuring and testing a version. Use Chats for ongoing conversations with published agent projects, including attachments and tool calls. Closing the browser tab does not stop an active chat run.",
-  "guide.surfaces.http": "HTTP",
-  "guide.surfaces.httpBody":
-    "The API Reference tab documents three endpoints that accept the project token. Predict supports each project type, chat completions supports llm and agent projects, and the agent endpoint streams an agent's text and tool activity.",
-  "guide.surfaces.chatbots": "Slack, Telegram, Teams",
-  "guide.surfaces.chatbotsBody":
-    "An agent project can connect one bot on each supported platform from the Integrations tab. Direct-message and channel activation rules differ by platform, but each connection preserves conversation context and streams or updates the reply in the platform's supported format.",
-  "guide.surfaces.triggers": "Webhooks and schedules",
-  "guide.surfaces.triggersBody":
-    "The Settings tab provides one webhook and any number of cron schedules. Both run the published version, and their execution history appears on the same tab.",
-  "guide.surfaces.a2a": "A2A",
-  "guide.surfaces.a2aBody":
-    "The Integrations tab shows this project's A2A exposure status and Agent Card URL. To call another A2A agent, register it on the Agents page and bind it to an agent project version.",
-  "guide.surfaces.agui": "AG-UI",
-  "guide.surfaces.aguiBody":
-    "Use AG-UI to run a published project inside your own application. The client sends its thread and receives protocol events that the application can render in its own interface.",
+  "guide.chat.title": "Conversations and attachments",
+  "guide.chat.body":
+    "Chats keeps conversations with agent projects. Use Playground for configuration tests and Chats for continuing work over multiple messages.",
+  "guide.chat.version": "Choose the agent and version behavior",
+  "guide.chat.versionBody":
+    "Start a new chat and select an accessible agent project. Chats uses the published version when one exists, otherwise the latest saved version. llm and image projects are not chat choices. Publishing or editing a version can therefore change the behavior of later turns in an existing conversation.",
+  "guide.chat.context": "Conversation history has limits",
+  "guide.chat.contextBody":
+    "The thread retains messages and tool activity, but the model receives a bounded history. A long conversation or large tool result can be shortened and produce a warning. Older images may remain visible in the thread without being sent in a later turn; attach the relevant image again when needed. Restate essential constraints and start a new conversation when the task changes substantially.",
+  "guide.chat.attachments": "Images and documents",
+  "guide.chat.attachmentsBody":
+    "Attach PNG, JPEG, GIF, or WebP images to a model that supports image input. Text and PDF documents are extracted into text; Office and similar document formats need a bound MCP read_document tool. Check the attachment control for size and count limits and resolve unreadable-file errors before sending. Stored chat documents preserve extracted text, not an archive of the original file.",
+  "guide.chat.stop": "Closing the page does not stop a chat run",
+  "guide.chat.stopBody":
+    "Use the chat's stop control to request cancellation. Navigating away or closing the browser tab only disconnects the view; reopen the conversation to read the saved result. Cancellation cannot undo actions a tool has already completed. A server interruption can still prevent an active run from finishing.",
 
-  "guide.limits.title": "Cost, limits, and records",
-  "guide.limits.cost": "Every run is priced",
-  "guide.limits.costBody":
-    "A run uses the cost reported by its model channel, or the model registry price when none is reported. The overview shows workspace usage, the project's Usage tab shows project and caller details, and Profile shows your own spend.",
-  "guide.limits.guards": "Thresholds alert, then refuse",
-  "guide.limits.guardsBody":
-    "Configure daily and monthly project limits on the Settings tab. An alert threshold sends one notification and lets runs continue. A block threshold rejects new runs until the period resets at UTC midnight or the start of the next month.",
-  "guide.limits.tier": "Your tier applies too",
-  "guide.limits.tierBody":
-    "Your tier can set a monthly cost cap across all projects and a limit on concurrent runs. Profile shows both values, and an admin can change your tier.",
-  "guide.limits.records": "What a run leaves behind",
-  "guide.limits.recordsBody":
-    "The project's Traces tab records turns and tool calls. Images and files produced by runs appear under Artifacts: your own in the sidebar page, and all project output in the project's Artifacts tab.",
+  "guide.api.title": "Call a project over HTTP",
+  "guide.api.body":
+    "API Reference is built into each project and fills in its address and published version. It contains request fields, response shapes, error codes, and curl or SDK examples. Use it alongside the steps here; no source checkout is needed.",
+  "guide.api.token": "Prepare the project and credential",
+  "guide.api.tokenBody":
+    "Publish a tested version so execution examples appear. The owner or an administrator issues the token in Integrations; the owner's tier must allow API tokens. Replace $PROJECT_API_TOKEN in the example with that token and send Authorization: Bearer <token>. It is a project credential, not the LLM provider key, and it only runs that project.",
+  "guide.api.version": "Choose a fixed version or published",
+  "guide.api.versionBody":
+    "Execution URLs use /api/projects/{name}/versions/{version}/ followed by the endpoint. The generated examples name the version currently published. Keep that name to target it explicitly, or use published to follow future Publish changes. Confirm the host is the Agent Studio address reachable from the calling system.",
+  "guide.api.input": "Match the input to the project type",
+  "guide.api.inputBody":
+    "For llm predict, send variables matching the user prompt template, such as {\"variables\":{\"topic\":\"meeting notes\"},\"stream\":false}. For agent predict, send messages, such as {\"messages\":[{\"role\":\"user\",\"content\":\"Summarize these notes\"}],\"stream\":false}; variables are ignored. For image predict, send prompt and optionally source images for editing. Begin with a non-streaming request and inspect its response.",
+  "guide.api.sdk": "OpenAI-compatible clients",
+  "guide.api.sdkBody":
+    "Use chat/completions for llm and agent projects and copy the Python or JavaScript example from API Reference. Set the SDK base URL to the version's URL shown there and the API key to the project token. The saved version selects the model and sampling parameters; sending model, temperature, or max_tokens does not override them. Image projects use predict instead.",
+  "guide.api.stream": "Streaming and conversation history",
+  "guide.api.streamBody":
+    "For text predict or chat/completions, stream:true returns SSE; agent also provides an endpoint for streaming text and tool activity. Keep the connection open and handle warning, error, and completion events, because HTTP 200 alone does not prove the run succeeded. HTTP callers send their own message history. X-Conversation-Id can preserve downstream MCP/A2A conversation identity, but does not load past messages for you.",
+  "guide.api.result": "Check the result and protect the token",
+  "guide.api.resultBody":
+    "Inspect usage, warnings, and the completion reason as well as the answer. turn-limit or output-limit on predict means a partial result; chat completions reports length for limit stops. Download file results before their links expire. Keep tokens in the calling server's secret storage. Regenerating or revoking a project token invalidates the old token immediately, so update every caller.",
 
-  "guide.trouble.title": "When something does not work",
-  "guide.trouble.refused": "A run was refused over cost",
-  "guide.trouble.refusedBody":
-    "The project reached a daily or monthly block threshold, or your tier reached its monthly cap. A project owner or admin can change project limits in Settings; only an admin can change a member's tier.",
-  "guide.trouble.model": "The model I want is missing",
+  "guide.integrations.title": "Bots, protocols, and automation",
+  "guide.integrations.body":
+    "Project owners and administrators configure integrations. Publish a version first and verify one real call after setup. External platforms need their own credentials and network connectivity; they are optional in an offline installation.",
+  "guide.integrations.slack": "Slack",
+  "guide.integrations.slackBody":
+    "For an agent project, copy the app manifest from Integrations, create and install the dedicated Slack app, and save its bot token and signing secret. Enable events, check the displayed events URL, and run Test connection. Invite the bot to the target channel and mention it. A successful credential test does not prove Slack can deliver events to the application.",
+  "guide.integrations.messengers": "Telegram and Teams",
+  "guide.integrations.messengersBody":
+    "In an agent project's Integrations, save and enable the Telegram bot token; enabling registers its webhook. Use Register webhook again after an application URL change. For Teams, enable the Azure Bot's Teams channel, save its application ID and client secret (plus tenant ID for a single-tenant app), and set its messaging endpoint to the displayed URL. Test in a direct conversation before trying group mentions.",
+  "guide.integrations.a2a": "A2A and AG-UI",
+  "guide.integrations.a2aBody":
+    "A2A exposes published public projects to compatible agents; administrators configure shared or named client keys in Settings, and callers use X-A2A-Key. Check the Agent Card URL in Integrations. AG-UI runs a published project inside your own interface using the project token. Copy its client example from Integrations and let your application manage the message thread and render protocol events.",
+  "guide.integrations.webhook": "Receive a webhook",
+  "guide.integrations.webhookBody":
+    "In project Settings, configure and enable the webhook, copy its URL, and send the secret in X-Trigger-Secret. Choose message payload mode for an agent message or variables mode for template fields. HTTP 202 acknowledges delivery, not a finished answer; inspect the trigger's run history for success, output, skips, or failures. Concurrent deliveries are skipped unless allowed.",
+  "guide.integrations.schedule": "Schedule a recurring task",
+  "guide.integrations.scheduleBody":
+    "In project Settings, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message or variables to run. Select any delivery destinations and enable it. Schedules use the published version and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
+
+  "guide.records.title": "Results, usage, and limits",
+  "guide.records.artifacts": "Find and retain generated files",
+  "guide.records.artifactsBody":
+    "Personal Artifacts lists your results. Project Artifacts is for the owner and administrators and includes results from bots and automation too. Storage must be configured for persistent files. Reopen the artifact view to refresh an expired download link, and download files you need to retain. Deleting an artifact can break earlier links; deleting a chat does not automatically delete its artifacts.",
+  "guide.records.usage": "Understand usage and attribution",
+  "guide.records.usageBody":
+    "Use project Usage to inspect the selected period and model/provider breakdown; owners and administrators can inspect caller details. Profile shows personal usage. Project-token calls are accounted to the project rather than the owner's personal budget. Prices come from provider-reported cost or catalog pricing; a zero estimate is not proof that the provider charged nothing.",
+  "guide.records.budgets": "Alerts, blocks, and concurrent runs",
+  "guide.records.budgetsBody":
+    "Project Settings separates daily/monthly alert and block thresholds. Alerts notify when a destination is configured; blocks refuse new runs until the UTC day or month resets, even without notifications. Personal tier limits and caller concurrency limits also apply where relevant. Costs can arrive after a run finishes, so thresholds are not a prepaid balance that guarantees no overspend.",
+  "guide.records.traces": "Investigate a run in Traces",
+  "guide.records.tracesBody":
+    "Owners and administrators can open project Traces to inspect preparation, model calls, tools, delegates, durations, usage, and warnings. Traces is a diagnostic record, not a complete archive of prompts and tool output. Agent runs are traced, while llm and image tracing can be sampled. A missing trace can also mean the request was refused before execution started.",
+
+  "guide.security.title": "Access and sensitive data",
+  "guide.security.body":
+    "Choose access rules before sharing a project or connecting data sources. The console, model provider, tools, and file store are separate places where information may be processed.",
+  "guide.security.visibility": "Public, private, and editing rights",
+  "guide.security.visibilityBody":
+    "A public project is accessible to signed-in users of this installation; it is not anonymous access to every API. Private projects limit access to the owner, invited emails, and administrators. Invitations allow viewing and running, not editing. Owners and administrators manage versions, settings, integrations, traces, and project-wide artifacts. Machine credentials have their own access rules.",
+  "guide.security.credentials": "Secrets and shared links",
+  "guide.security.credentialsBody":
+    "Do not put API keys in prompts, skill text, browser code, screenshots, or support messages. Use the dedicated credential fields. A masked value is a display placeholder, not a working key to copy. Treat signed artifact links as credentials: someone holding a link may read the file until it expires. If a token leaks, revoke or regenerate it and update its callers.",
+  "guide.security.pii": "PII filtering is a limited protection",
+  "guide.security.piiBody":
+    "A version's PII filtering replaces recognized patterns before sending model text and restores them in user-facing output. It is not complete anonymization: restored information can appear in tool arguments, saved answers, reasoning, and files. Discovery embedding/rerank queries and memory recall queries are outside this filter. Use approved model and tool services for sensitive work.",
+  "guide.security.network": "Private services need explicit network access",
+  "guide.security.networkBody":
+    "Ask the deployment operator to allow the specific internal DNS suffix when a legitimate internal service is blocked. MCP servers use MCP_INTERNAL_HOST_SUFFIXES; URL reading uses URL_FETCH_INTERNAL_HOST_SUFFIXES. They are different settings. A declared host must still be reachable and authorized; an allow entry does not supply credentials or open a firewall.",
+
+  "guide.admin.title": "Administrator settings",
+  "guide.admin.body":
+    "Members, Settings, Models, and Audit serve different purposes. Changes here can affect multiple projects, so verify the affected path after saving. Registry pages are available to members and administrators; creating and maintaining their entries is an administrator task.",
+  "guide.admin.members": "Manage member tiers",
+  "guide.admin.membersBody":
+    "In Members, find the user and change the tier when they need project creation or API-token access. Profile is where the user checks their resulting limits. Administrators listed in ADMIN_EMAILS have a fixed admin tier; removing an email from the list does not automatically demote its stored tier. Members is not an account-creation or password-reset screen.",
+  "guide.admin.settings": "Settings overrides and deployment values",
+  "guide.admin.settingsBody":
+    "Settings manages the public base URL, artifact access mode, access lists, LLM channels, plugin repository, and A2A credentials. Saved values override deployment environment values, which override defaults. Saving an empty field removes that override and falls back to the environment; for a secret, this is not a guarantee that the service becomes disabled. Database, encryption, sign-in provider, storage connection, retention, and internal-host settings remain deployment configuration.",
+  "guide.admin.models": "Connect and verify models",
+  "guide.admin.modelsBody":
+    "Configure the default LLM or provider channel URL and credentials in Settings, including the API base path required by the endpoint. When changing a URL, enter its matching key too; the old masked key cannot be reused for a new destination. In Models, inspect capabilities and availability, run Test, then run a short project. A catalog entry describes a model; it does not install or serve it.",
+  "guide.admin.offline": "Catalog and retrieval in an offline deployment",
+  "guide.admin.offlineBody":
+    "Upload a model catalog document in Models when remote synchronization is unavailable. Use Self-hosted declarations for models actually served by your internal endpoint. Capability discovery requires CATALOG_ENABLED=true in the deployment and a working embedding setup; rerank is optional. Changing embedding requires rebuilding the index. Unknown model IDs follow the deployment's allow/refuse policy and may lack cost estimates.",
+  "guide.admin.artifacts": "Choose how users reach artifacts",
+  "guide.admin.artifactsBody":
+    "Set PUBLIC_BASE_URL to the application's user-facing address. In Settings, proxied artifact access sends bytes through the application and suits a store that browsers cannot reach. authenticated returns an expiring storage URL, so browsers need direct storage access. public requires public-read storage policy and lets anyone with the URL read it. Validate by generating, reopening, and downloading a file from a user's network.",
+  "guide.admin.audit": "Review administrative changes",
+  "guide.admin.auditBody":
+    "Use Audit to inspect the selected date range, actor, action, target, and details. Credential reveal operations are recorded as well. Use these records to identify who changed configuration or accessed an issued secret, and use project Traces for execution diagnostics. Retention limits apply to both kinds of record.",
+
+  "guide.install.title": "Install without source code",
+  "guide.install.body":
+    "This section is for the deployment operator. An ordinary console user only needs the application address and an account. Obtain the release image and the deployment-specific launch, secret, ingress, and backup settings from the package provider; source files and development commands are not prerequisites for using the image.",
+  "guide.install.prepare": "1. Prepare the services and image",
+  "guide.install.prepareBody":
+    "Use a versioned release image, PostgreSQL with pgvector (the deployment baseline is PostgreSQL 18), and a reachable OpenAI-compatible LLM endpoint. Mirror the image into an internal registry before entering an isolated network. Add an S3-compatible object store if files must persist. The deployment owns service addresses, credentials, volumes, TLS, and routing.",
+  "guide.install.environment": "2. Supply required configuration",
+  "guide.install.environmentBody":
+    "Supply DATABASE_URL, LLM_BASE_URL, LLM_API_KEY, and AES_ENCRYPTION_KEY through the deployment's secret/configuration mechanism. AES_ENCRYPTION_KEY must encode 32 bytes in base64 and remain stable across restarts. Set STAGE explicitly (prod for production); alpha/prod also requires ADMIN_EMAILS and a sign-in method. Set BETTER_AUTH_SECRET to a stable session secret and BETTER_AUTH_URL and PUBLIC_BASE_URL to the user-facing application address in the deployment environment before configuring callbacks.",
+  "guide.install.signin": "3. Configure sign-in",
+  "guide.install.signinBody":
+    "For offline operation, configure internal OIDC or password sign-in. OIDC needs OIDC_ISSUER, OIDC_CLIENT_ID, and OIDC_CLIENT_SECRET; register the application's /api/auth/callback/oidc callback with the identity provider. Password bootstrap uses AUTH_PASSWORD=true, BOOTSTRAP_ADMIN_EMAIL, and BOOTSTRAP_ADMIN_PASSWORD; include that email in ADMIN_EMAILS. Changing the bootstrap password does not reset an existing password account.",
+  "guide.install.storage": "4. Connect persistent file storage",
+  "guide.install.storageBody":
+    "For persistent files, create a bucket and set S3_BUCKET_NAME. For a non-AWS store, also set S3_ENDPOINT, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY. AWS S3 can use the deployment's AWS credential or role configuration. Grant the storage identity read, write, and delete access to artifacts/* in that bucket. Keep non-AWS storage keys in the S3 fields rather than AWS_* variables used by other providers. Select the artifact access mode in Settings and verify downloads from the user's network.",
+  "guide.install.verify": "5. Start and verify the full path",
+  "guide.install.verifyBody":
+    "The application validates configuration and applies database migrations on startup. Check health and readiness, sign in as the administrator, test a model, and create and run a small project. If storage is configured, reopen a generated file. Test internal MCP and any enabled integrations individually; a reachable console alone does not validate them.",
+
+  "guide.operations.title": "Operate, retain, and upgrade",
+  "guide.operations.body":
+    "The deployment operator owns monitoring, scheduled calls, backups, and rollouts. Configure these alongside the application rather than assuming that saving a console setting starts background infrastructure.",
+  "guide.operations.health": "Health is not a successful model run",
+  "guide.operations.healthBody":
+    "GET /api/health checks process liveness. GET /api/ready checks database and default LLM reachability and returns 503 when unavailable or draining. LLM reachability only requires an HTTP response, so even a 401 or 404 from its models endpoint can pass. Verify credentials and model support with Models Test and a real project run.",
+  "guide.operations.ticker": "Run the external ticker",
+  "guide.operations.tickerBody":
+    "Set SCHEDULE_SCAN_TOKEN and configure an external scheduler to POST /api/triggers/scan with X-Scan-Token at least once per minute. Setting the token alone starts nothing. This call drives schedules and expired database-row cleanup. A missing deployment token returns 503; an absent or incorrect request token returns 401. Check scan results and trigger histories after enabling it; long outages do not replay every missed occurrence.",
+  "guide.operations.catalog": "Refresh the capability index",
+  "guide.operations.catalogBody":
+    "If capability discovery is enabled, configure a separate hourly POST /api/catalog/reindex with the same X-Scan-Token credential. The schedule scan does not perform this reindex. A successful response starts background indexing; inspect the server log for indexed, removed, or undiscovered entries, then test a question that should discover a newly registered capability.",
+  "guide.operations.retention": "Database retention and file lifecycle",
+  "guide.operations.retentionBody":
+    "Set TRACE_RETENTION_DAYS, USAGE_RETENTION_DAYS, CHAT_RETENTION_DAYS, ARTIFACT_RETENTION_DAYS, TRIGGER_RUN_RETENTION_DAYS, A2A_TASK_RETENTION_DAYS, and AUDIT_RETENTION_DAYS in the deployment as needed. Keep artifact retention at least as long as chat retention. Expired rows can be excluded from reads before physical deletion; without the ticker they remain stored. Object bytes need a separate bucket lifecycle for artifacts/image/, artifacts/document/, and any legacy images/. Align file and record retention to avoid records pointing to deleted files.",
+  "guide.operations.backup": "Back up data and recovery keys",
+  "guide.operations.backupBody":
+    "Back up PostgreSQL, stored objects, deployment configuration, and the encryption/session secrets under restricted access. Restore them together in a separate environment and verify sign-in, credential decryption, project runs, and file access. Losing or arbitrarily replacing AES_ENCRYPTION_KEY makes stored credentials unreadable. An application image is not a data backup.",
+  "guide.operations.upgrade": "Upgrade with a recovery plan",
+  "guide.operations.upgradeBody":
+    "Record the current image version and verify backups before changing the image. Allow active runs time to drain during shutdown, then check startup migration logs and repeat the basic sign-in/run/file checks. Reverting the image tag does not downgrade the database schema. Confirm schema compatibility and the deployment's restore procedure before relying on rollback.",
+
+  "guide.trouble.title": "Troubleshooting",
+  "guide.trouble.body":
+    "Start with the failing surface, the exact error, and whether the run began. Change one relevant setting at a time, then repeat the smallest request that demonstrates the problem.",
+  "guide.trouble.access": "Sign-in fails or a control is unavailable",
+  "guide.trouble.accessBody":
+    "Check the configured sign-in method, allowed email domain, and account with the administrator. A missing create/edit control can be a tier or ownership restriction. For API 401, check the token and project name; for 403, check current owner tier and permissions. A private or inaccessible project can return 404, so do not assume the URL alone is wrong.",
+  "guide.trouble.model": "A model is missing or a call fails",
   "guide.trouble.modelBody":
-    "The Models page lists the models available to this deployment, and only an admin can change that selection. If the deployment allows unknown model IDs, they can still be sent to the provider but are recorded at zero cost because the registry has no price for them. A deployment configured to refuse unknown models stops the run instead.",
-  "guide.trouble.tool": "The model never calls my MCP tool",
-  "guide.trouble.toolBody":
-    "Check the version's MCP binding first. If it names specific tools, all others are hidden. Then use the Tools page to confirm that discovery succeeds. A run that cannot reach a bound server reports a warning.",
-  "guide.trouble.slack": "The Slack bot stays silent",
-  "guide.trouble.slackBody":
-    "The bot answers mentions, direct messages, follow-ups in threads it joined, and channel messages that match configured keywords. Use Test connection on the Integrations tab to validate the bot token. Channel selectors in Settings list channels only after the enabled bot has joined them.",
-  "guide.trouble.tab": "I closed the tab while it was answering",
-  "guide.trouble.tabBody":
-    "The run continues. Open that conversation again in Chats and the answer is there.",
-
-  "guide.more.title": "Where to read more",
-  "guide.more.body":
-    "Each project's API Reference tab explains how to call that project. The source tree also includes offline documentation for installation, configuration, security, and operations under docs/ (INSTALL.md, CONFIGURATION.md, SECURITY.md, OPERATIONS.md).",
+    "In Models, check hidden and availability states and run Test. Ask the administrator to confirm the provider URL, base path, credentials, and model ID, then save the intended model in the project version. For 400, compare the request fields and image/tool requirements with API Reference. For provider errors such as 502, inspect the reported upstream error; retrying unchanged does not fix a wrong model or URL.",
+  "guide.trouble.limits": "429, timeout, or an incomplete answer",
+  "guide.trouble.limitsBody":
+    "For 429, inspect concurrent runs, project daily/monthly blocks, and personal tier usage; follow Retry-After on API responses. For a timeout or stream error, inspect the provider, slow tools, and deployment deadline. For turn-limit, output-limit, or length, narrow the task or adjust the saved version's appropriate limit. Avoid blind retries when a tool may already have changed external data.",
+  "guide.trouble.tools": "A tool or memory is not used",
+  "guide.trouble.toolsBody":
+    "Confirm the capability is bound to the saved version and visible in Prompt preview. Check tool selection, discovery, OAuth connection, and run warnings. Ask a question that actually requires the tool. For internal-host blocks, involve the deployment operator; for memory, verify a bound server offers recall. A document reader must be explicitly bound, not merely discoverable.",
+  "guide.trouble.automation": "A bot or schedule is silent",
+  "guide.trouble.automationBody":
+    "Check the published version, integration enabled state, credentials, and callback reachability. Test a direct bot message or explicit mention. For schedules, also check enabled state, cron time zone, and the external ticker. Inspect skipped/failed runs and delivery results in project Settings; a successful model run with a failed destination is a delivery problem.",
+  "guide.trouble.files": "Attachments or downloads fail",
+  "guide.trouble.filesBody":
+    "Check supported file type and upload limits first. An image needs a model that can read it; an Office document needs the bound reader tool. For generated files, inspect storage warnings and reopen Artifacts to refresh the link. If the console opens but files do not, have the operator check the artifact access mode, public base URL, browser-to-storage connectivity, and retention policy.",
+  "guide.trouble.support": "What to send for support",
+  "guide.trouble.supportBody":
+    "Record the application version, project and saved version names, surface, time and time zone, error/status code, trace ID if available, and a minimal input that reproduces the issue. Include what you expected and whether the failure occurs in Playground too. Remove tokens, cookies, private file links, and sensitive content. Installation-specific startup and recovery problems belong with the deployment operator or package provider.",
 
   // Chats: the sidebar, the thread, the composer and the parts a turn is drawn
   // from.

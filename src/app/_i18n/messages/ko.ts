@@ -215,131 +215,256 @@ export const ko: Messages = {
   "overview.browseSkills": "Skills 둘러보기",
 
   "guide.title": "가이드",
-  "guide.lede":
-    "Agent Studio를 처음 사용한다면 여기서 시작하세요. 프로젝트를 만들고 설정한 뒤 배포하고 연결하는 과정과, 그 과정에서 만나는 용어와 한도를 설명합니다.",
+  "guide.lede": "사용자·프로젝트 소유자·배포 담당자를 위한 실무 안내서다. 소스 코드 없이 배포된 앱에서 사용·연동·운영 절차를 확인한다.",
+  "guide.contents": "목차",
 
-  "guide.start.title": "처음이라면",
+  "guide.start.title": "처음 시작하기",
   "guide.start.body":
-    "프로젝트 생성, 버전 설정과 테스트, 배포, 호출 연결 순서로 진행합니다. 배포한 버전은 프로젝트의 기본값이 되지만, 호출할 때 다른 저장 버전을 직접 지정할 수도 있습니다.",
-  "guide.start.step1": "프로젝트를 만듭니다",
-  "guide.start.step1Body":
-    "Projects에서 New project를 누르세요. llm, agent, image 중 유형을 고르고, 호출자가 사용할 식별자를 입력합니다. 이 식별자는 나중에 바꿀 수 없습니다.",
-  "guide.start.step2": "Playground에서 버전을 설정합니다",
-  "guide.start.step2Body":
-    "버전에서 모델, 프롬프트, 실행 한도, 사용할 기능을 정합니다. 저장한 뒤 편집기 옆의 실행 패널에서 테스트하세요. 같은 버전을 계속 수정해 저장할 수 있습니다.",
-  "guide.start.step3": "버전을 배포합니다",
-  "guide.start.step3Body":
-    "배포한 버전은 프로젝트의 기본 버전이 됩니다. published 버전을 요청하면 즉시 이 설정을 사용하고, 특정 버전을 지정한 요청은 계속 지정된 버전을 사용합니다.",
-  "guide.start.step4": "호출 방법을 연결합니다",
-  "guide.start.step4Body":
-    "HTTP로 호출하려면 API Reference 탭의 예제를 사용하세요. Integrations 탭에서는 프로젝트 토큰을 발급하고 Slack, Telegram, Teams, A2A, AG-UI 연결 방법을 확인할 수 있습니다.",
+    "Agent Studio는 조직 안에서 프롬프트·에이전트·이미지 프로젝트를 만들고 실행하는 플랫폼이다. 이 가이드는 콘솔에 포함되어 소스 코드나 외부 인터넷 없이 읽을 수 있다. 대화만 필요하면 Chats에서 기존 에이전트를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
+  "guide.start.account": "1. 로그인과 권한 확인",
+  "guide.start.accountBody":
+    "조직에서 받은 접속 주소를 열고 화면에 표시된 방식으로 로그인한다. Profile에서 내 등급·사용량·한도를 확인한다. 새 계정은 보통 guest로 시작하므로 프로젝트 생성이 불가능하면 관리자에게 Members에서 등급 변경을 요청한다.",
+  "guide.start.create": "2. 첫 프로젝트 만들기",
+  "guide.start.createBody":
+    "Projects에서 New project를 선택하고 식별자·표시 이름·유형을 입력한다. 프롬프트 템플릿을 시험하려면 llm, 대화형 도우미를 만들려면 agent를 선택한다. 도구를 연결하기 전에 답변의 적절성을 판단할 수 있는 짧은 작업부터 시작한다.",
+  "guide.start.test": "3. 저장한 뒤 실행하고 확인하기",
+  "guide.start.testBody":
+    "Playground에서 사용 가능한 모델과 지시문을 설정한다. 버전을 저장한 뒤 시험 입력을 넣고 실행한다. 답변·경고·사용량·도구 활동을 확인한다. 실행은 저장된 버전을 사용하므로 편집만 하고 저장하지 않으면 이전 설정을 시험하게 된다.",
+  "guide.start.publish": "4. 배포하고 연결하기",
+  "guide.start.publishBody":
+    "Versions에서 검증한 버전을 Publish한다. HTTP로 호출하려면 Integrations에서 프로젝트 토큰을 발급하고 API Reference의 예제를 따른다. Publish는 기본 버전을 지정하는 동작이며 별도 애플리케이션을 만들거나 설정을 고정하지 않는다.",
 
-  "guide.words.title": "콘솔에서 쓰는 말",
-  "guide.words.project": "Project",
-  "guide.words.projectBody":
-    "이름과 유형을 가진 작업 단위입니다. 버전, 접근 권한, 비용 한도, 연동 설정을 프로젝트에서 함께 관리합니다.",
-  "guide.words.version": "Version",
-  "guide.words.versionBody":
-    "모델, 프롬프트, 도구, 실행 한도를 담은 이름 있는 설정입니다. 저장하면 새 버전을 만들지 않고 현재 버전을 갱신합니다. 배포된 버전을 수정하면 다음 실행부터 새 설정이 적용됩니다. 배포는 한 버전을 프로젝트의 기본값으로 지정합니다.",
-  "guide.words.run": "Run",
-  "guide.words.runBody":
-    "버전을 한 번 실행한 단위입니다. 실행마다 호출자, 제한 시간, 사용량, 비용, 트레이스를 기록합니다.",
-  "guide.words.caller": "Caller",
-  "guide.words.callerBody":
-    "실행을 시작한 주체입니다. 콘솔 사용자, 프로젝트 토큰, Slack 사용자가 여기에 해당합니다. 비용은 프로젝트와 호출자에 각각 기록하고, 동시 실행 제한은 호출자를 기준으로 적용합니다.",
-  "guide.words.tier": "Tier",
-  "guide.words.tierBody":
-    "guest, member, admin으로 나뉘는 사용자 등급입니다. 프로젝트 생성, API 토큰, 동시 실행 수, 월 비용 한도에 영향을 줍니다. 나에게 적용되는 값은 프로필에서 확인할 수 있습니다.",
+  "guide.projects.title": "프로젝트 유형 선택",
+  "guide.projects.body":
+    "프로젝트는 하나의 식별자 아래 버전·공개 범위·연동·사용량을 묶는다. 버전에는 모델·프롬프트·사용 기능·실행 한도를 저장한다. 필요한 결과물과 작업 방식에 맞춰 유형을 선택한다.",
+  "guide.projects.llm": "llm: 프롬프트 템플릿",
+  "guide.projects.llmBody":
+    "요약·분류·문장 수정처럼 모델 응답 한 번으로 처리하는 작업에 사용한다. 사용자 프롬프트 템플릿에 {{topic}} 같은 변수를 넣고 실행할 때 값을 입력한다. 시스템 프롬프트에는 공통 지시를 작성한다. 도구를 호출하거나 도구 결과를 받아 반복 실행하지 않는다.",
+  "guide.projects.agent": "agent: 대화와 도구 실행",
+  "guide.projects.agentBody":
+    "대화·검색·도구 호출·다른 에이전트에 대한 위임이 필요한 작업에 사용한다. 시스템 프롬프트에 역할·작업 범위·결과 형식을 쓰고 메시지로 작업을 전달한다. 모델이 제공된 도구의 사용 여부를 판단하므로 도구를 연결했다고 반드시 호출하는 것은 아니다.",
+  "guide.projects.image": "image: 이미지 생성과 편집",
+  "guide.projects.imageBody":
+    "이미지 생성 모델을 선택하고 원하는 그림을 설명한다. 원본 이미지를 첨부하면 편집하고, 첨부하지 않으면 새로 생성한다. 시스템 프롬프트로 공통 스타일을 지정할 수 있다. Playground나 Compare에서 시험하고 predict API로 연동한다. Chats와 chat completions는 image 프로젝트를 실행하지 않는다.",
 
-  "guide.types.title": "프로젝트 유형",
-  "guide.types.llm": "llm: 프롬프트 한 번, 답 한 번",
-  "guide.types.llmBody":
-    "프롬프트 템플릿의 {{변수}}를 채우고 모델 응답 하나를 반환합니다. 도구를 사용하거나 다음 턴으로 이어지지 않습니다.",
-  "guide.types.agent": "agent: 멀티턴 도구 루프",
-  "guide.types.agentBody":
-    "모델이 답변을 마칠 때까지 여러 턴의 도구 루프를 실행합니다. 버전 설정에 따라 Skill, MCP 도구, 서브에이전트, 이미지 생성, URL 읽기를 사용할 수 있습니다.",
-  "guide.types.image": "image: 이미지 생성과 편집",
-  "guide.types.imageBody":
-    "프롬프트로 이미지를 만들거나 첨부한 이미지를 편집합니다. Playground, predict API, AG-UI, A2A처럼 이미지를 지원하는 경로에서는 결과 이미지를 반환합니다. Chats는 에이전트 프로젝트만 받으며, chat completions는 이미지 프로젝트를 거절합니다.",
+  "guide.versions.title": "버전 설정·비교·배포",
+  "guide.versions.body":
+    "버전은 이름이 붙은 수정 가능한 설정이다. 시험용 버전은 Playground의 버전 선택에서 + New version을 고르면 현재 편집 내용이 복사되고 Save로 생성된다. 다른 호출자가 사용 중인 설정을 시험할 때 이 방식으로 별도 버전을 만든다.",
+  "guide.versions.model": "모델과 대체 모델",
+  "guide.versions.modelBody":
+    "agent 프로젝트에는 tool calling, 그림을 읽는 작업에는 image input, image 프로젝트에는 image generation을 지원하는 모델을 선택한다. llm과 agent 프로젝트는 필요하면 대체 모델을 지정한다. 대체 모델도 요청에 필요한 기능을 지원해야 하며 이미지 입력을 지원하지 않는 모델로 그림을 읽게 할 수는 없다.",
+  "guide.versions.prompt": "프롬프트 미리보기와 저장 구분",
+  "guide.versions.promptBody":
+    "Prompt preview에서 현재 편집 내용으로 조립한 프롬프트를 확인한다. 답변은 생성하지 않지만 MCP 서버 조회와 동적 검색의 embedding/rerank 서비스에는 실제 요청을 보낼 수 있다. 실행 패널은 저장된 버전을 실행하므로 먼저 저장한다. agent는 사용자 메시지를 직접 받으며 llm의 템플릿 변수 방식으로 입력을 전달하지 않는다.",
+  "guide.versions.limits": "실행 범위와 한도 설정",
+  "guide.versions.limitsBody":
+    "편집기에 표시되는 출력 길이·에이전트 턴 수·기타 파라미터를 작업에 맞게 지정한다. 턴·출력 한도에서는 부분 답변으로 끝날 수 있고, 배포의 실행 시간 한도에서는 오류로 중단될 수 있다. 결과를 사용하기 전에 종료 사유와 경고를 확인한다. Reasoning trace는 추론 표시 여부를 제어하며 모델의 추론 수행 여부를 바꾸는 기능은 아니다.",
+  "guide.versions.compare": "같은 입력으로 버전 비교",
+  "guide.versions.compareBody":
+    "후보 버전을 저장한 뒤 Compare에서 저장된 두 버전을 선택하고 같은 입력으로 실행한다. 답변 품질·경고·소요 시간·사용량을 비교한다. 양쪽 모두 실제 호출이므로 사용량과 동시 실행 한도에 포함되며 무료 미리보기가 아니다.",
+  "guide.versions.publish": "Publish 이후 바뀌는 대상 확인",
+  "guide.versions.publishBody":
+    "Versions의 Publish는 프로젝트 기본값을 선택한 버전으로 바꾼다. published로 호출하면 이 기본값을 따르고, 버전 이름을 직접 지정하면 해당 버전을 계속 사용한다. 배포 중인 버전을 수정해 저장하면 다음 실행부터 즉시 반영된다. 기본값을 되돌리려면 검증된 다른 버전을 Publish하고, 버전 이름을 지정한 호출자는 별도로 변경한다.",
 
-  "guide.reach.title": "버전에서 사용할 수 있는 기능",
-  "guide.reach.body":
-    "대부분의 기능은 버전의 연결과 설정으로 정하지만, 배포 환경에도 해당 기능이 준비되어 있어야 합니다. 설정한 기능을 실행 중에 사용할 수 없으면 경고로 알려 줍니다.",
-  "guide.reach.skills": "Skills",
-  "guide.reach.skillsBody":
-    "Markdown으로 작성한 재사용 가능한 지침입니다. 모델은 이름과 설명을 먼저 확인하고 필요할 때 전체 내용을 불러옵니다. 사용할 수 있는 Skill은 Skills 페이지에서 확인하세요.",
-  "guide.reach.tools": "MCP 도구",
-  "guide.reach.toolsBody":
-    "Tools 페이지에 등록한 서버입니다. 버전에서 서버를 연결하고 사용할 도구를 고르며, 요청 헤더를 덮어쓸 수 있습니다. 시크릿은 암호화해 저장합니다.",
-  "guide.reach.subagents": "서브에이전트",
-  "guide.reach.subagentsBody":
-    "작업을 맡길 수 있는 다른 프로젝트나 외부 에이전트입니다. 서브에이전트의 출력에는 작성자가 표시되고, 비용은 원래 실행을 시작한 호출자에게 귀속됩니다.",
-  "guide.reach.catalog": "케이퍼빌리티 카탈로그",
-  "guide.reach.catalogBody":
-    "Skill, MCP 도구, 외부 에이전트를 검색하는 인덱스입니다. 동적 검색을 켜면 현재 요청에 맞는 기능을 해당 실행의 연결 목록에만 추가합니다. 저장된 연결을 삭제하거나 바꾸지는 않습니다.",
-  "guide.reach.builtins": "기본 제공 도구",
-  "guide.reach.builtinsBody":
-    "버전에서 이미지 생성, URL 읽기, Slack 기록 읽기를 켤 수 있습니다. Artifact 저장소가 설정되어 있으면 SaveFile이 자동으로 제공되어, 에이전트가 다운로드할 수 있는 텍스트 파일을 만들 수 있습니다.",
-  "guide.reach.memory": "메모리",
-  "guide.reach.memoryBody":
-    "첫 모델 응답 전에 recall 도구를 제공하는 MCP 서버에서 관련 기억을 불러옵니다. recall을 제공하는 서버가 연결되어 있지 않으면 기억 없이 실행을 계속하고 경고를 남깁니다.",
+  "guide.capabilities.title": "스킬·도구·에이전트 확장",
+  "guide.capabilities.body":
+    "관리자가 Skills·Tools·Agents·Plugins에 기능을 등록한다. 프로젝트 소유자는 사용 가능한 항목을 버전에 연결하고 저장한 다음, 그 기능이 필요한 작업으로 시험한다. 등록만으로 모든 실행에 모든 기능이 제공되지는 않는다.",
+  "guide.capabilities.skills": "Skills: 재사용할 지시문",
+  "guide.capabilities.skillsBody":
+    "관리자가 Skills에서 용도를 명확하게 설명한 스킬을 등록하면 버전 편집기에서 연결한다. 모델은 처음에 이름과 설명을 보고 필요할 때 전체 지시문을 읽는다. 반복 절차나 업무 지식을 담는 데 사용하며, 실제 작업에서 의도한 스킬을 읽는지 확인한다.",
+  "guide.capabilities.tools": "MCP: 도구 검색과 선택",
+  "guide.capabilities.toolsBody":
+    "관리자가 Tools에서 서버를 등록하고 discovery 결과에 필요한 도구가 나타나는지 확인한다. 버전에 서버를 연결하고 제공할 도구를 선택한 뒤 버전을 저장한다. 호출이 실패하면 서버 상태·필수 헤더·실행 경고를 확인한다. 서버에 접속할 수 있어도 사용할 도구가 없거나 별도 인증이 필요할 수 있다.",
+  "guide.capabilities.oauth": "MCP 설정의 저장 범위",
+  "guide.capabilities.oauthBody":
+    "도구 선택과 헤더 재정의는 버전 설정이며 버전의 Save가 필요하다. OAuth Connect·Disconnect·OAuth 클라이언트 자격 증명은 프로젝트 단위로 별도 저장되어 모든 버전이 공유한다. OAuth가 필요한 도구는 인증 연결을 완료한 뒤 시험한다.",
+  "guide.capabilities.agents": "다른 에이전트에 작업 위임",
+  "guide.capabilities.agentsBody":
+    "배포된 로컬 프로젝트나 Agents에 등록한 외부 에이전트를 연결한다. 외부 등록에는 OpenAI 호환 또는 A2A 엔드포인트와 자격 증명을 사용한다. 위임 대상의 역할을 설명에 명확하게 적는다. 위임된 활동에는 작성자가 표시되며 사용량은 최초 실행의 비용 집계에 포함된다.",
+  "guide.capabilities.plugins": "Plugins 가져오기와 동기화",
+  "guide.capabilities.pluginsBody":
+    "관리자가 Plugins에서 설정된 저장소나 업로드한 checkout archive의 스킬·MCP 정의를 가져온다. 저장소에 접근할 수 없으면 archive 업로드를 사용한다. 건너뜀·유효하지 않은 항목을 확인하고 가져온 기능을 버전에 연결한다. 가져온 스킬 본문과 MCP URL·설명은 원본에서 수정한 뒤 다시 동기화한다. MCP 헤더는 가져오지 않으므로 자격 증명은 콘솔에서 별도로 설정한다. 고아 항목은 동기화가 자동 삭제하지 않으며 결과 화면에서 검토 후 명시적으로 삭제한다.",
+  "guide.capabilities.discovery": "동적 검색과 메모리",
+  "guide.capabilities.discoveryBody":
+    "동적 검색은 저장된 연결을 바꾸지 않고 실행에 관련된 스킬·도구·에이전트를 색인에서 추가한다. capability catalog와 임베딩 설정이 동작해야 하므로 검색 결과가 없으면 관리자에게 확인한다. 메모리 recall은 별개이며 recall 도구를 제공하는 MCP 서버가 연결되어야 한다. 해당 도구가 없으면 메모리 없이 진행하고 경고를 남긴다.",
+  "guide.capabilities.builtins": "이미지 생성·URL 읽기·파일 만들기",
+  "guide.capabilities.builtinsBody":
+    "버전에 필요한 이미지 생성·URL 읽기·Slack 기록 조회 등의 내장 기능을 켠다. 해당 공급자·네트워크 접근·봇 설정도 준비되어야 한다. Artifact 저장소가 구성되면 SaveFile이 자동 제공되어 에이전트가 내려받을 텍스트 파일을 만들 수 있다. 생성 파일은 사용하거나 공유하기 전에 내용을 확인한다.",
 
-  "guide.surfaces.title": "프로젝트 실행 방법",
-  "guide.surfaces.body":
-    "어떤 경로에서 실행하더라도 같은 엔진을 사용하고 사용량과 트레이스를 같은 곳에 기록합니다. 외부 호출은 일반적으로 배포된 버전을 사용하고, Playground는 편집기에서 열어 둔 버전을 실행합니다.",
-  "guide.surfaces.console": "콘솔",
-  "guide.surfaces.consoleBody":
-    "버전을 설정하고 테스트할 때는 Playground를 사용하세요. 배포된 에이전트와 계속 대화하려면 Chats를 사용합니다. 파일을 첨부하고 도구 호출 과정을 확인할 수 있으며, 브라우저 탭을 닫아도 진행 중인 실행은 계속됩니다.",
-  "guide.surfaces.http": "HTTP",
-  "guide.surfaces.httpBody":
-    "API Reference 탭에는 프로젝트 토큰으로 인증하는 엔드포인트 세 개가 있습니다. predict는 모든 프로젝트 유형을, chat completions는 llm과 agent를 지원합니다. agent 엔드포인트는 에이전트의 답변과 도구 활동을 스트리밍합니다.",
-  "guide.surfaces.chatbots": "Slack, Telegram, Teams",
-  "guide.surfaces.chatbotsBody":
-    "에이전트 프로젝트는 Integrations 탭에서 플랫폼별 봇을 하나씩 연결할 수 있습니다. 다이렉트 메시지와 채널에서 봇을 부르는 규칙은 플랫폼마다 다르지만, 대화 맥락을 유지하고 각 플랫폼이 지원하는 방식으로 답변을 갱신합니다.",
-  "guide.surfaces.triggers": "웹훅과 스케줄",
-  "guide.surfaces.triggersBody":
-    "Settings 탭에서 웹훅 하나와 필요한 만큼의 cron 스케줄을 설정할 수 있습니다. 둘 다 배포된 버전을 실행하며, 실행 이력도 같은 탭에서 확인합니다.",
-  "guide.surfaces.a2a": "A2A",
-  "guide.surfaces.a2aBody":
-    "Integrations 탭에서 이 프로젝트의 A2A 노출 상태와 Agent Card URL을 확인할 수 있습니다. 다른 A2A 에이전트를 호출하려면 Agents 페이지에 등록한 뒤 에이전트 프로젝트의 버전에 연결하세요.",
-  "guide.surfaces.agui": "AG-UI",
-  "guide.surfaces.aguiBody":
-    "AG-UI를 사용하면 배포된 프로젝트를 자체 애플리케이션 안에서 실행할 수 있습니다. 클라이언트가 대화 스레드를 보내면, 애플리케이션 화면에서 렌더링할 수 있는 프로토콜 이벤트를 반환합니다.",
+  "guide.chat.title": "대화와 첨부파일",
+  "guide.chat.body":
+    "Chats는 agent 프로젝트와의 대화를 보관한다. 설정 시험에는 Playground를, 여러 메시지에 걸쳐 이어가는 작업에는 Chats를 사용한다.",
+  "guide.chat.version": "대화할 에이전트와 실행 버전",
+  "guide.chat.versionBody":
+    "새 대화를 만들고 접근 가능한 agent 프로젝트를 선택한다. 배포 버전이 있으면 그 버전을, 없으면 최신 저장 버전을 사용한다. llm과 image 프로젝트는 선택 대상이 아니다. 따라서 버전 배포나 수정으로 기존 대화의 후속 답변 동작도 달라질 수 있다.",
+  "guide.chat.context": "대화 맥락의 한계",
+  "guide.chat.contextBody":
+    "대화에는 메시지와 도구 활동이 남지만 모델에 전달하는 기록에는 한도가 있다. 긴 대화나 큰 도구 결과는 일부가 잘리고 경고가 표시될 수 있다. 오래된 이미지는 화면에 남아 있어도 후속 실행에 전달되지 않을 수 있으므로 필요한 이미지를 다시 첨부한다. 핵심 조건은 다시 전달하고 작업이 크게 달라지면 새 대화를 시작한다.",
+  "guide.chat.attachments": "이미지와 문서 첨부",
+  "guide.chat.attachmentsBody":
+    "이미지 입력을 지원하는 모델에 PNG·JPEG·GIF·WebP 이미지를 첨부한다. 텍스트와 PDF 문서는 텍스트로 추출하며 Office 등 문서 형식은 연결된 MCP의 read_document 도구가 필요하다. 첨부 영역의 크기·개수 한도를 확인하고 읽기 실패를 해결한 뒤 전송한다. 대화의 문서 보관은 추출된 텍스트 기준이며 원본 파일 보관소가 아니다.",
+  "guide.chat.stop": "페이지를 닫아도 대화 실행은 계속됨",
+  "guide.chat.stopBody":
+    "중단하려면 대화의 정지 버튼을 사용한다. 다른 화면으로 이동하거나 브라우저 탭을 닫으면 화면 연결만 끊기므로, 해당 대화를 다시 열어 저장된 결과를 확인한다. 중단 요청으로 이미 완료한 도구 작업이 되돌아가지는 않는다. 서버 자체가 중단되면 진행 중인 실행이 완료되지 못할 수 있다.",
 
-  "guide.limits.title": "비용, 한도, 기록",
-  "guide.limits.cost": "실행마다 비용이 매겨집니다",
-  "guide.limits.costBody":
-    "모델 채널이 비용을 알려 주면 그 값을 사용하고, 그렇지 않으면 레지스트리의 모델 단가로 계산합니다. 첫 화면에서는 워크스페이스 사용량을, 프로젝트의 Usage 탭에서는 프로젝트와 호출자별 내역을, 프로필에서는 내 사용량을 확인할 수 있습니다.",
-  "guide.limits.guards": "알림과 차단 기준을 따로 설정합니다",
-  "guide.limits.guardsBody":
-    "프로젝트의 일간·월간 한도는 Settings 탭에서 설정합니다. 알림 임계값에 도달하면 알림을 한 번 보내고 실행을 계속합니다. 차단 임계값에 도달하면 UTC 자정이나 다음 달 1일까지 새 실행을 거절합니다.",
-  "guide.limits.tier": "등급 한도도 함께 적용됩니다",
-  "guide.limits.tierBody":
-    "사용자 등급에 따라 모든 프로젝트를 합친 월 비용 한도와 동시 실행 수가 제한될 수 있습니다. 두 값은 프로필에서 확인하고, 등급은 관리자가 변경합니다.",
-  "guide.limits.records": "실행이 남기는 기록",
-  "guide.limits.recordsBody":
-    "프로젝트의 Traces 탭에는 턴과 도구 호출이 기록됩니다. 실행에서 만든 이미지와 파일은 Artifacts에 보관하며, 내 결과물은 사이드바에서, 프로젝트 전체 결과물은 프로젝트의 Artifacts 탭에서 확인합니다.",
+  "guide.api.title": "HTTP API 호출",
+  "guide.api.body":
+    "각 프로젝트의 API Reference는 해당 프로젝트 주소와 배포 버전을 채워 보여 준다. 요청 필드·응답 형식·오류 코드·curl 또는 SDK 예제가 포함되어 있다. 아래 절차와 함께 사용하며 소스 checkout은 필요하지 않다.",
+  "guide.api.token": "프로젝트와 인증 정보 준비",
+  "guide.api.tokenBody":
+    "실행 예제가 나타나도록 검증한 버전을 Publish한다. 소유자나 관리자가 Integrations에서 토큰을 발급하며 소유자의 등급이 API 토큰을 허용해야 한다. 예제의 $PROJECT_API_TOKEN을 이 토큰으로 바꾸고 Authorization: Bearer <token>으로 전송한다. 모델 공급자의 API 키가 아닌 프로젝트 전용 자격 증명이며 해당 프로젝트 실행에만 사용한다.",
+  "guide.api.version": "특정 버전과 published 선택",
+  "guide.api.versionBody":
+    "실행 URL은 /api/projects/{name}/versions/{version}/ 뒤에 엔드포인트를 붙인다. 자동 생성 예제는 현재 배포된 버전의 이름을 사용한다. 그 버전을 지정하려면 이름을 유지하고, 이후 Publish 변경을 따라가려면 published를 사용한다. 호스트는 호출 시스템에서 접근 가능한 Agent Studio 주소인지 확인한다.",
+  "guide.api.input": "유형에 맞는 입력 보내기",
+  "guide.api.inputBody":
+    "llm의 predict에는 사용자 프롬프트 템플릿에 맞는 variables를 보낸다. 예: {\"variables\":{\"topic\":\"회의록\"},\"stream\":false}. agent의 predict에는 {\"messages\":[{\"role\":\"user\",\"content\":\"회의록을 요약하라\"}],\"stream\":false}처럼 messages를 보내며 variables는 무시된다. image의 predict에는 prompt를 보내고 편집 시 원본 images를 추가한다. 먼저 비스트리밍 요청으로 응답을 확인한다.",
+  "guide.api.sdk": "OpenAI 호환 클라이언트",
+  "guide.api.sdkBody":
+    "llm과 agent 프로젝트에는 chat/completions를 사용할 수 있으며 API Reference의 Python 또는 JavaScript 예제를 복사한다. SDK의 base URL은 예제에 나온 버전 URL로, API key는 프로젝트 토큰으로 설정한다. 모델과 샘플링 파라미터는 저장된 버전이 결정하므로 model·temperature·max_tokens를 보내도 덮어쓰지 않는다. image 프로젝트는 predict를 사용한다.",
+  "guide.api.stream": "스트리밍과 대화 이력",
+  "guide.api.streamBody":
+    "텍스트 predict나 chat/completions에 stream:true를 보내면 SSE로 응답하며 agent에는 텍스트와 도구 활동을 스트리밍하는 전용 엔드포인트도 있다. 연결을 유지하고 경고·오류·종료 이벤트까지 처리한다. HTTP 200만으로 실행 성공을 판단할 수는 없다. HTTP 호출자는 이전 메시지를 직접 보내야 한다. X-Conversation-Id는 하위 MCP/A2A의 대화 식별을 이어 주지만 과거 메시지를 자동으로 불러오지는 않는다.",
+  "guide.api.result": "결과 확인과 토큰 관리",
+  "guide.api.resultBody":
+    "답변뿐 아니라 usage·warnings·종료 사유도 확인한다. predict의 turn-limit·output-limit는 부분 결과를 뜻하며 chat completions의 한도 종료는 length로 표시된다. 파일 결과는 링크가 만료되기 전에 내려받는다. 토큰은 호출 서버의 비밀 저장소에 보관한다. 재발급하거나 폐기하면 기존 토큰이 즉시 무효가 되므로 모든 호출자를 함께 갱신한다.",
 
-  "guide.trouble.title": "문제가 생겼을 때",
-  "guide.trouble.refused": "비용 때문에 실행이 거절됐습니다",
-  "guide.trouble.refusedBody":
-    "프로젝트의 일간·월간 차단 임계값에 도달했거나 사용자 등급의 월 비용 한도를 넘은 경우입니다. 프로젝트 한도는 소유자나 관리자가 Settings에서 바꿀 수 있고, 사용자 등급은 관리자만 변경할 수 있습니다.",
-  "guide.trouble.model": "쓰려는 모델이 목록에 없습니다",
+  "guide.integrations.title": "봇·프로토콜·자동화 연동",
+  "guide.integrations.body":
+    "프로젝트 소유자와 관리자가 연동을 설정한다. 먼저 버전을 배포하고 설정 후 실제 호출 한 번으로 검증한다. 외부 플랫폼은 별도 자격 증명과 네트워크 연결이 필요하며 폐쇄망 설치의 필수 기능은 아니다.",
+  "guide.integrations.slack": "Slack",
+  "guide.integrations.slackBody":
+    "agent 프로젝트의 Integrations에서 app manifest를 복사해 전용 Slack 앱을 생성·설치하고 bot token과 signing secret을 저장한다. 이벤트를 활성화하고 표시된 events URL을 확인한 뒤 Test connection을 실행한다. 대상 채널에 봇을 초대하고 멘션으로 시험한다. 자격 증명 검사가 성공해도 Slack에서 앱으로 이벤트가 전달되는지 별도 확인해야 한다.",
+  "guide.integrations.messengers": "Telegram과 Teams",
+  "guide.integrations.messengersBody":
+    "agent 프로젝트의 Integrations에서 Telegram bot token을 저장하고 활성화하면 webhook이 등록된다. 앱 주소가 바뀌면 Register webhook으로 다시 등록한다. Teams는 Azure Bot의 Teams 채널을 활성화하고 application ID·client secret, 단일 tenant 앱이면 tenant ID를 저장한 뒤 표시된 URL을 messaging endpoint로 설정한다. 그룹 멘션을 시험하기 전에 다이렉트 대화에서 확인한다.",
+  "guide.integrations.a2a": "A2A와 AG-UI",
+  "guide.integrations.a2aBody":
+    "A2A는 배포된 public 프로젝트를 호환 에이전트에 제공한다. 관리자가 Settings에서 공용 키나 이름 있는 클라이언트 키를 설정하며 호출자는 X-A2A-Key를 사용한다. Integrations에서 Agent Card URL을 확인한다. AG-UI는 프로젝트 토큰으로 배포된 프로젝트를 자체 화면에서 실행한다. Integrations의 클라이언트 예제를 사용하고 자체 앱에서 대화 이력과 프로토콜 이벤트 표시를 관리한다.",
+  "guide.integrations.webhook": "웹훅으로 실행하기",
+  "guide.integrations.webhookBody":
+    "프로젝트 Settings에서 webhook을 설정·활성화하고 URL을 복사한 뒤 X-Trigger-Secret 헤더로 비밀값을 보낸다. agent 메시지에는 message 모드, 템플릿 필드에는 variables 모드를 선택한다. HTTP 202는 전달 접수이며 답변 완료가 아니다. 트리거 실행 이력에서 성공·결과·건너뜀·실패를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
+  "guide.integrations.schedule": "반복 작업 예약하기",
+  "guide.integrations.scheduleBody":
+    "프로젝트 Settings에서 다섯 필드 cron 식, Asia/Seoul 같은 IANA 시간대, 실행할 메시지나 변수를 지정해 스케줄을 추가한다. 필요하면 전송 목적지를 선택하고 활성화한다. 스케줄은 배포 버전을 사용하며 배포 환경의 외부 티커가 필요하다. 답변 생성은 성공해도 봇 전송이 실패할 수 있으므로 실행 상태와 전달 결과를 함께 확인한다.",
+
+  "guide.records.title": "결과물·사용량·한도",
+  "guide.records.artifacts": "생성 파일 찾기와 보관",
+  "guide.records.artifactsBody":
+    "개인 Artifacts에는 내 결과물이 표시된다. 프로젝트 Artifacts는 소유자와 관리자용이며 봇·자동화 실행의 결과도 포함한다. 파일을 영속 보관하려면 저장소 설정이 필요하다. 다운로드 링크가 만료되면 Artifact 화면을 다시 열어 갱신하고 계속 보관할 파일은 내려받는다. Artifact 삭제는 기존 링크를 끊을 수 있으며 대화 삭제가 Artifact를 자동 삭제하지는 않는다.",
+  "guide.records.usage": "사용량과 비용 귀속 이해",
+  "guide.records.usageBody":
+    "프로젝트 Usage에서 기간별 내역과 모델·공급자별 집계를 보고, 소유자와 관리자는 호출자별 상세를 확인한다. 개인 사용량은 Profile에서 확인한다. 프로젝트 토큰 호출은 소유자의 개인 예산이 아닌 프로젝트에 집계된다. 비용은 공급자 보고값이나 카탈로그 단가를 사용하므로 추정치가 0이라고 공급자 과금도 없다고 판단하지 않는다.",
+  "guide.records.budgets": "알림·차단·동시 실행 한도",
+  "guide.records.budgetsBody":
+    "프로젝트 Settings에서 일간·월간 알림 기준과 차단 기준을 따로 설정한다. 알림은 목적지가 설정되어야 전달되며, 차단은 알림 설정이 없어도 UTC 기준 날짜나 월이 바뀔 때까지 새 실행을 거절한다. 호출 방식에 따라 개인 등급 한도와 호출자 동시 실행 한도도 적용된다. 비용은 실행 완료 후 반영될 수 있어 기준값이 초과 지출을 완전히 막는 선불 잔액은 아니다.",
+  "guide.records.traces": "Traces로 실행 조사하기",
+  "guide.records.tracesBody":
+    "소유자와 관리자는 프로젝트 Traces에서 준비 단계·모델 호출·도구·위임·소요 시간·사용량·경고를 확인한다. Trace는 진단 기록이며 프롬프트와 도구 결과 원문 전체를 보관하는 문서가 아니다. agent는 실행을 추적하고 llm·image는 표본 추적일 수 있다. Trace가 없으면 실행 시작 전에 요청이 거절된 경우도 확인한다.",
+
+  "guide.security.title": "접근 권한과 민감정보",
+  "guide.security.body":
+    "프로젝트를 공유하거나 데이터 소스를 연결하기 전에 접근 범위를 정한다. 콘솔·모델 공급자·도구·파일 저장소는 각각 정보가 처리될 수 있는 위치다.",
+  "guide.security.visibility": "공개 범위와 편집 권한",
+  "guide.security.visibilityBody":
+    "public 프로젝트는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private 프로젝트는 소유자·초대 이메일·관리자로 접근을 제한한다. 초대는 조회·실행 권한이며 편집 권한이 아니다. 소유자와 관리자가 버전·설정·연동·Trace·프로젝트 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
+  "guide.security.credentials": "비밀값과 공유 링크",
+  "guide.security.credentialsBody":
+    "API 키를 프롬프트·스킬 본문·브라우저 코드·화면 캡처·지원 요청에 넣지 않고 전용 자격 증명 필드에 저장한다. 마스킹된 값은 표시용이며 복사해서 사용할 키가 아니다. 서명된 Artifact 링크도 자격 증명으로 취급한다. 링크를 가진 사람이 만료 전 파일에 접근할 수 있다. 토큰이 노출되면 폐기하거나 재발급하고 호출자를 갱신한다.",
+  "guide.security.pii": "PII 필터의 적용 범위",
+  "guide.security.piiBody":
+    "버전의 PII filtering은 모델에 보낼 텍스트에서 인식한 패턴을 치환하고 사용자에게 보여 줄 결과에서 복원한다. 완전한 익명화는 아니며 도구 인자·저장된 답변·추론·파일에 복원된 정보가 포함될 수 있다. 동적 검색의 embedding/rerank 질의와 memory recall 질의는 이 필터 밖이다. 민감한 작업에는 승인된 모델과 도구 서비스를 사용한다.",
+  "guide.security.network": "내부 서비스의 접근 허용",
+  "guide.security.networkBody":
+    "정상적인 내부 서비스가 차단되면 배포 담당자에게 해당 내부 DNS suffix 허용을 요청한다. MCP 서버는 MCP_INTERNAL_HOST_SUFFIXES, URL 읽기는 URL_FETCH_INTERNAL_HOST_SUFFIXES를 사용하며 서로 다른 설정이다. 허용된 호스트도 실제 통신과 인증이 가능해야 하며 허용 목록 등록이 자격 증명을 제공하거나 방화벽을 여는 것은 아니다.",
+
+  "guide.admin.title": "관리자 설정",
+  "guide.admin.body":
+    "Members·Settings·Models·Audit는 역할이 다르다. 여기서 변경한 값은 여러 프로젝트에 영향을 줄 수 있으므로 저장 후 해당 기능을 시험한다. 기능 레지스트리 화면은 member 이상이 열람하며 항목 생성·관리는 관리자 작업이다.",
+  "guide.admin.members": "사용자 등급 관리",
+  "guide.admin.membersBody":
+    "Members에서 사용자를 찾아 프로젝트 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다. Members는 계정 생성이나 비밀번호 재설정 화면이 아니다.",
+  "guide.admin.settings": "Settings 재정의와 배포 설정",
+  "guide.admin.settingsBody":
+    "Settings에서 공개 base URL·Artifact 접근 방식·접근 목록·LLM 채널·플러그인 저장소·A2A 자격 증명을 관리한다. 저장값이 배포 환경변수보다 우선하고 그다음 기본값을 사용한다. 빈 필드 저장은 재정의를 제거하고 환경변수로 돌아가는 동작이므로 비밀값을 비워도 해당 서비스가 꺼진다고 단정할 수 없다. DB·암호화·로그인 공급자·저장소 연결·보존 기간·내부 호스트 설정은 배포 설정에서 관리한다.",
+  "guide.admin.models": "모델 연결과 검증",
+  "guide.admin.modelsBody":
+    "Settings에서 기본 LLM 또는 공급자 채널의 URL과 자격 증명을 설정하고 엔드포인트가 요구하는 API base 경로를 포함한다. URL을 바꿀 때는 해당 키도 함께 입력하며 기존 마스킹 키를 새 목적지에 재사용할 수 없다. Models에서 기능과 제공 상태를 확인하고 Test 후 짧은 프로젝트를 실행한다. 카탈로그 등록은 모델의 설명이며 모델을 설치하거나 서빙하는 작업이 아니다.",
+  "guide.admin.offline": "폐쇄망의 카탈로그와 검색 모델",
+  "guide.admin.offlineBody":
+    "원격 동기화가 불가능하면 Models에서 모델 카탈로그 문서를 업로드한다. 내부 엔드포인트가 실제 제공하는 모델은 Self-hosted에서 선언한다. 기능 검색에는 배포의 CATALOG_ENABLED=true와 동작하는 embedding 설정이 필요하며 rerank는 선택 사항이다. embedding을 바꾸면 색인을 다시 만든다. 알 수 없는 모델 ID는 배포의 허용·거부 정책을 따르며 비용 추정치가 없을 수 있다.",
+  "guide.admin.artifacts": "사용자의 Artifact 접근 방식",
+  "guide.admin.artifactsBody":
+    "PUBLIC_BASE_URL에 사용자가 접속하는 앱 주소를 설정한다. Settings의 proxied 방식은 앱이 파일을 전달하므로 브라우저가 저장소에 직접 접근하지 못하는 환경에 적합하다. authenticated는 만료되는 저장소 URL을 반환하므로 브라우저의 직접 접근이 필요하다. public은 공개 읽기 저장소 정책이 필요하며 URL을 가진 누구나 읽을 수 있다. 사용자 네트워크에서 파일 생성·다시 열기·다운로드로 검증한다.",
+  "guide.admin.audit": "관리 작업 이력 확인",
+  "guide.admin.auditBody":
+    "Audit에서 기간을 선택해 작업자·동작·대상·상세를 확인한다. 자격 증명 원문 조회도 기록된다. 설정 변경이나 발급된 비밀값 조회를 조사할 때 이 기록을 사용하고 실행 진단에는 프로젝트 Traces를 사용한다. 두 기록 모두 보존 기간의 영향을 받는다.",
+
+  "guide.install.title": "소스 없이 설치하기",
+  "guide.install.body":
+    "배포 담당자를 위한 절차다. 일반 콘솔 사용자는 앱 주소와 계정만 있으면 된다. 패키지 공급자로부터 릴리스 이미지와 해당 환경의 실행·secret·ingress·backup 설정을 받는다. 이미지 사용에 소스 파일이나 개발 명령은 필요하지 않다.",
+  "guide.install.prepare": "1. 서비스와 이미지 준비",
+  "guide.install.prepareBody":
+    "버전이 지정된 릴리스 이미지, pgvector가 있는 PostgreSQL(배포 기준 PostgreSQL 18), 접근 가능한 OpenAI 호환 LLM 엔드포인트를 준비한다. 폐쇄망에는 진입 전에 이미지를 내부 registry로 반입한다. 파일 영속 보관이 필요하면 S3 호환 저장소를 추가한다. 서비스 주소·자격 증명·볼륨·TLS·라우팅은 배포 환경에서 구성한다.",
+  "guide.install.environment": "2. 필수 설정 주입",
+  "guide.install.environmentBody":
+    "배포 환경의 secret·설정 주입 방식으로 DATABASE_URL·LLM_BASE_URL·LLM_API_KEY·AES_ENCRYPTION_KEY를 제공한다. AES_ENCRYPTION_KEY는 32바이트의 base64 값이어야 하고 재시작 후에도 유지해야 한다. STAGE를 명시하며 운영 배포는 prod를 사용한다. alpha/prod는 ADMIN_EMAILS와 로그인 방식도 필요하다. 콜백 구성 전에 배포 환경의 BETTER_AUTH_SECRET에 유지할 세션 secret을, BETTER_AUTH_URL과 PUBLIC_BASE_URL에 사용자가 접속하는 앱 주소를 설정한다.",
+  "guide.install.signin": "3. 로그인 구성",
+  "guide.install.signinBody":
+    "폐쇄망에서는 사내 OIDC나 비밀번호 로그인을 구성한다. OIDC_ISSUER·OIDC_CLIENT_ID·OIDC_CLIENT_SECRET을 설정하고 앱의 /api/auth/callback/oidc 주소를 인증 공급자에 등록한다. 비밀번호 초기 관리자는 AUTH_PASSWORD=true·BOOTSTRAP_ADMIN_EMAIL·BOOTSTRAP_ADMIN_PASSWORD로 구성하고 해당 이메일을 ADMIN_EMAILS에도 포함한다. bootstrap 비밀번호 변경으로 기존 비밀번호 계정이 초기화되지는 않는다.",
+  "guide.install.storage": "4. 파일 저장소 연결",
+  "guide.install.storageBody":
+    "파일을 영속 보관하려면 bucket을 만들고 S3_BUCKET_NAME을 설정한다. AWS가 아닌 저장소는 S3_ENDPOINT·S3_ACCESS_KEY_ID·S3_SECRET_ACCESS_KEY도 설정한다. AWS S3는 배포의 AWS 자격 증명이나 역할 설정을 사용할 수 있다. 저장소 계정에는 해당 bucket의 artifacts/* 읽기·쓰기·삭제 권한을 부여한다. 비 AWS 저장소의 키는 다른 공급자도 사용하는 AWS_* 대신 S3 전용 변수에 넣는다. Settings에서 Artifact 접근 방식을 정하고 사용자 네트워크에서 다운로드를 검증한다.",
+  "guide.install.verify": "5. 기동과 전체 경로 확인",
+  "guide.install.verifyBody":
+    "앱은 기동 시 설정을 검증하고 DB migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한 뒤 모델 Test와 작은 프로젝트 생성을 거쳐 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험하며 콘솔에 접속된다는 사실만으로 모두 정상이라고 판단하지 않는다.",
+
+  "guide.operations.title": "운영·보존·업그레이드",
+  "guide.operations.body":
+    "배포 담당자가 모니터링·주기 호출·백업·rollout을 구성한다. 콘솔 설정을 저장하면 외부 인프라까지 자동으로 시작된다고 가정하지 않는다.",
+  "guide.operations.health": "상태 점검과 모델 실행 구분",
+  "guide.operations.healthBody":
+    "GET /api/health는 프로세스 생존을 확인한다. GET /api/ready는 DB와 기본 LLM의 도달 가능성을 확인하며 연결 불가나 draining 중에는 503을 반환한다. LLM 도달 검사는 HTTP 응답 여부를 보므로 models 엔드포인트의 401·404도 통과할 수 있다. 자격 증명과 모델 지원은 Models의 Test와 실제 프로젝트 실행으로 검증한다.",
+  "guide.operations.ticker": "외부 티커 구성",
+  "guide.operations.tickerBody":
+    "SCHEDULE_SCAN_TOKEN을 설정하고 외부 스케줄러가 최소 매분 한 번 X-Scan-Token 헤더로 POST /api/triggers/scan을 호출하도록 구성한다. 토큰 설정만으로 주기 작업이 시작되지는 않는다. 이 호출이 스케줄과 만료 DB 행 정리를 수행한다. 배포 토큰 미설정은 503, 요청 토큰 누락·불일치는 401이다. 활성화 후 scan 결과와 트리거 이력을 확인하며 장시간 중단 시 놓친 모든 발생분이 재실행되지는 않는다.",
+  "guide.operations.catalog": "기능 검색 색인 갱신",
+  "guide.operations.catalogBody":
+    "기능 검색을 켠 배포에서는 같은 X-Scan-Token 자격 증명으로 POST /api/catalog/reindex를 매시간 별도 호출하도록 구성한다. 스케줄 scan이 이 재색인까지 수행하지는 않는다. 성공 응답은 백그라운드 색인 시작을 뜻하므로 서버 로그에서 indexed·removed·undiscovered 결과를 확인하고 새로 등록한 기능이 검색되어야 하는 질문으로 시험한다.",
+  "guide.operations.retention": "DB 보존과 파일 수명 관리",
+  "guide.operations.retentionBody":
+    "배포 환경의 TRACE_RETENTION_DAYS·USAGE_RETENTION_DAYS·CHAT_RETENTION_DAYS·ARTIFACT_RETENTION_DAYS·TRIGGER_RUN_RETENTION_DAYS·A2A_TASK_RETENTION_DAYS·AUDIT_RETENTION_DAYS로 보존 기간을 정한다. Artifact 보존은 대화 보존 이상으로 유지한다. 만료 행은 물리적 삭제 전에 조회에서 제외될 수 있으며 티커가 없으면 저장소에 남는다. 실제 파일은 artifacts/image/·artifacts/document/와 기존 images/ 경로를 포함하는 별도 bucket lifecycle로 관리한다. 기록은 보이는데 파일은 삭제되는 일이 없도록 보존 기간을 맞춘다.",
+  "guide.operations.backup": "데이터와 복구 키 백업",
+  "guide.operations.backupBody":
+    "PostgreSQL·저장된 object·배포 설정·암호화 및 세션 secret을 접근 제한된 위치에 백업한다. 별도 환경에 함께 복구하고 로그인·자격 증명 복호화·프로젝트 실행·파일 접근을 검증한다. AES_ENCRYPTION_KEY를 잃거나 임의 교체하면 저장된 자격 증명을 읽을 수 없다. 앱 이미지는 데이터 백업이 아니다.",
+  "guide.operations.upgrade": "복구 절차를 준비한 업그레이드",
+  "guide.operations.upgradeBody":
+    "이미지를 바꾸기 전에 현재 버전을 기록하고 백업을 확인한다. 종료 시 진행 중인 실행이 마무리될 유예 시간을 주고, 새 기동의 migration 로그와 로그인·실행·파일 확인을 반복한다. 이미지 태그를 되돌려도 DB 스키마는 내려가지 않는다. rollback에 의존하기 전에 스키마 호환성과 해당 배포의 복구 절차를 확인한다.",
+
+  "guide.trouble.title": "문제 해결",
+  "guide.trouble.body":
+    "실패한 화면·정확한 오류·실행 시작 여부부터 확인한다. 관련 설정을 하나씩 바꾸고 문제를 확인할 수 있는 가장 작은 요청으로 다시 시험한다.",
+  "guide.trouble.access": "로그인 실패 또는 사용할 수 없는 버튼",
+  "guide.trouble.accessBody":
+    "관리자와 로그인 방식·허용 이메일 도메인·계정을 확인한다. 생성·편집 버튼이 없으면 등급이나 소유권 제한일 수 있다. API 401은 토큰과 프로젝트 이름을, 403은 현재 소유자 등급과 권한을 확인한다. private 또는 접근 불가 프로젝트는 404일 수 있으므로 URL만 잘못되었다고 단정하지 않는다.",
+  "guide.trouble.model": "모델이 없거나 호출 실패",
   "guide.trouble.modelBody":
-    "Models 페이지에서 이 배포가 사용할 수 있는 모델을 확인하세요. 모델 선택은 관리자만 변경할 수 있습니다. 운영 정책이 알 수 없는 모델 ID를 허용하면 provider로 요청을 보내되, 단가를 알 수 없어 비용은 0으로 기록합니다. 알 수 없는 모델을 거부하도록 설정한 배포에서는 실행을 중단합니다.",
-  "guide.trouble.tool": "모델이 MCP 도구를 호출하지 않습니다",
-  "guide.trouble.toolBody":
-    "먼저 버전의 MCP 연결을 확인하세요. 사용할 도구를 따로 지정했다면 나머지 도구는 모델에 보이지 않습니다. 다음으로 Tools 페이지에서 discovery가 성공하는지 확인하세요. 연결한 서버에 접근하지 못한 실행은 경고를 남깁니다.",
-  "guide.trouble.slack": "Slack 봇이 답하지 않습니다",
-  "guide.trouble.slackBody":
-    "봇은 멘션, 다이렉트 메시지, 참여한 스레드의 후속 메시지, 설정한 키워드가 포함된 채널 메시지에 답합니다. Integrations 탭의 Test connection으로 봇 토큰을 확인하세요. Settings의 채널 선택 목록은 활성화된 봇이 참여한 채널만 보여 줍니다.",
-  "guide.trouble.tab": "답변 중에 탭을 닫았습니다",
-  "guide.trouble.tabBody":
-    "실행은 계속됩니다. Chats에서 해당 대화를 다시 열면 답변을 확인할 수 있습니다.",
-
-  "guide.more.title": "더 알아보기",
-  "guide.more.body":
-    "각 프로젝트의 API Reference 탭에서 해당 프로젝트를 호출하는 방법을 확인할 수 있습니다. 소스 트리의 docs/에는 인터넷 없이 읽을 수 있는 설치, 설정, 보안, 운영 문서도 포함되어 있습니다(INSTALL.md, CONFIGURATION.md, SECURITY.md, OPERATIONS.md).",
+    "Models에서 숨김·제공 상태를 확인하고 Test를 실행한다. 관리자와 공급자 URL·base 경로·자격 증명·모델 ID를 확인한 뒤 원하는 모델을 프로젝트 버전에 저장한다. 400은 요청 필드와 이미지·도구 요구사항을 API Reference와 대조한다. 502 같은 공급자 오류는 표시된 상위 서비스 오류를 확인하며 잘못된 모델이나 URL은 같은 요청을 반복해도 해결되지 않는다.",
+  "guide.trouble.limits": "429·시간 초과·부분 답변",
+  "guide.trouble.limitsBody":
+    "429는 동시 실행·프로젝트 일간 및 월간 차단·개인 등급 사용량을 확인하고 API 응답의 Retry-After를 따른다. 시간 초과나 스트림 오류는 공급자·느린 도구·배포 실행 시간 한도를 확인한다. turn-limit·output-limit·length는 작업을 좁히거나 저장된 버전의 해당 한도를 조정한다. 도구가 이미 외부 데이터를 바꿨을 수 있으므로 확인 없이 재시도를 반복하지 않는다.",
+  "guide.trouble.tools": "도구·메모리를 사용하지 않음",
+  "guide.trouble.toolsBody":
+    "저장된 버전에 기능이 연결되어 있고 Prompt preview에 표시되는지 확인한다. 도구 선택·discovery·OAuth 연결·실행 경고를 점검하고 실제로 해당 도구가 필요한 질문으로 시험한다. 내부 호스트 차단은 배포 담당자에게 확인하고 메모리는 연결 서버에 recall이 있는지 확인한다. 문서 읽기 도구는 검색 가능 상태만으로 부족하며 명시적으로 연결해야 한다.",
+  "guide.trouble.automation": "봇·스케줄이 응답하지 않음",
+  "guide.trouble.automationBody":
+    "배포 버전·연동 활성화·자격 증명·콜백 도달 여부를 확인하고 봇 다이렉트 메시지나 명시적 멘션으로 시험한다. 스케줄은 활성화·cron 시간대·외부 티커도 확인한다. 프로젝트 Settings에서 건너뜀·실패 이력과 전달 결과를 본다. 모델 실행 성공 후 목적지 전송만 실패했다면 전달 경로의 문제다.",
+  "guide.trouble.files": "첨부·다운로드 실패",
+  "guide.trouble.filesBody":
+    "먼저 지원 형식과 업로드 한도를 확인한다. 이미지는 읽기 가능한 모델이, Office 문서는 연결된 문서 읽기 도구가 필요하다. 생성 파일은 저장소 경고를 확인하고 Artifacts를 다시 열어 링크를 갱신한다. 콘솔만 열리고 파일은 열리지 않으면 운영자가 Artifact 접근 방식·공개 base URL·브라우저의 저장소 연결·보존 정책을 점검한다.",
+  "guide.trouble.support": "지원 요청에 포함할 정보",
+  "guide.trouble.supportBody":
+    "앱 버전·프로젝트와 저장 버전 이름·호출 화면 또는 방식·시각과 시간대·오류 및 상태 코드·가능한 Trace ID·최소 재현 입력을 정리한다. 기대한 결과와 Playground에서도 실패하는지 함께 적는다. 토큰·쿠키·비공개 파일 링크·민감한 본문은 제거한다. 설치 환경별 기동·복구 문제는 배포 담당자나 패키지 공급자에게 전달한다.",
 
   "chat.more": "이전 대화 더 보기",
   "chat.answerReady": "답변 완료",

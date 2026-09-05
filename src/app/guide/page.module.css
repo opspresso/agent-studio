@@ -6,9 +6,11 @@
  */
 .prose {
   word-break: keep-all;
+  overflow-wrap: anywhere;
+  scroll-margin-top: 5rem;
 }
 
-/* Mantine's anchor look, without its component: see the note in page.tsx. */
+/* Mantine's anchor look, without its component. */
 .link {
   font-size: var(--mantine-font-size-sm);
   color: var(--mantine-color-anchor);
