@@ -442,9 +442,9 @@ async function main() {
       "connection listed under its project partition",
     );
 
-    // Compare-and-set on the refresh token: the second caller refreshed from a
-    // token that is no longer stored, which is the concurrent-refresh race.
-    const stored = conn.refreshToken;
+    // Compare-and-set on the grant revision: only the first writer can replace
+    // the connection snapshot both callers read.
+    const stored = conn.revision;
     assert.equal(
       await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
         accessToken: encryptSecret(
@@ -460,7 +460,7 @@ async function main() {
         updatedAt: new Date().toISOString(),
       }),
       true,
-      "refresh with the current refresh token wins",
+      "refresh with the current grant revision wins",
     );
     assert.equal(
       await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
@@ -477,7 +477,7 @@ async function main() {
         updatedAt: new Date().toISOString(),
       }),
       false,
-      "refresh from a superseded refresh token is refused",
+      "refresh from a superseded grant revision is refused",
     );
     assert.equal(
       decryptSecret(
@@ -488,18 +488,16 @@ async function main() {
       "the winner's token survives the race",
     );
 
-    // Absent values REMOVE rather than storing null, so `attribute_not_exists`
-    // stays a usable race condition afterwards. The expected value is read back
-    // rather than re-encrypted: ciphertext is randomized, so only the stored one
-    // can match.
+    // Absent values REMOVE rather than storing null. The expected revision is
+    // read back from the winner before clearing its tokens.
     const won = await mcpConnectionRepository.get(projectName, serverName);
     assert.equal(
-      await mcpConnectionRepository.updateTokens(projectName, serverName, won?.refreshToken, {
+      await mcpConnectionRepository.updateTokens(projectName, serverName, won?.revision, {
         status: "needs_reauth",
         updatedAt: new Date().toISOString(),
       }),
       true,
-      "clearing tokens with the stored refresh token succeeds",
+      "clearing tokens with the stored grant revision succeeds",
     );
     const revoked = await mcpConnectionRepository.get(projectName, serverName);
     assert.equal(revoked?.refreshToken, undefined, "cleared refresh token is absent, not null");

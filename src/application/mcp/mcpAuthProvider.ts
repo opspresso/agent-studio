@@ -68,13 +68,31 @@ function bearer(token: string): Record<string, string> {
 function mismatchReason(
   connection: McpConnection,
   serverName: string,
-  auth: McpServerAuth,
+  auth: Pick<McpServerAuth, "issuer" | "resource">,
 ): string | undefined {
   if (connection.issuer !== auth.issuer) {
     return `MCP server '${serverName}' points at a different authorization server than the one this project's credentials were registered with; it needs to be connected again.`;
   }
   if (connection.resource !== auth.resource) {
     return `MCP server '${serverName}' now identifies as a different resource than the one this project's access was granted for; it needs to be connected again.`;
+  }
+  return undefined;
+}
+
+function unavailableReason(
+  connection: McpConnection,
+  serverName: string,
+  auth: Pick<McpServerAuth, "issuer" | "resource">,
+): string | undefined {
+  const mismatch = mismatchReason(connection, serverName, auth);
+  if (mismatch) {
+    return mismatch;
+  }
+  if (connection.status === "needs_reauth") {
+    return `MCP server '${serverName}' needs to be reconnected for this project.`;
+  }
+  if (connection.status !== "connected" || !connection.accessToken) {
+    return `MCP server '${serverName}' has not been authorized for this project yet.`;
   }
   return undefined;
 }
@@ -97,6 +115,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
   async function refresh(
     connection: McpConnection,
     target: TokenRequestTarget,
+    auth: Pick<McpServerAuth, "issuer" | "resource">,
   ): Promise<McpAuthResolution> {
     const stored = connection.refreshToken;
     if (!stored) {
@@ -121,9 +140,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       const won = await deps.connections.updateTokens(
         connection.projectName,
         connection.serverName,
-        // The stored ciphertext exactly as read: this is a compare-and-set on
-        // "has the row changed since I read it".
-        stored,
+        connection.revision,
         {
           accessToken: deps.cipher.encrypt(
             tokens.accessToken,
@@ -155,10 +172,15 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       if (won) {
         return { headers: bearer(tokens.accessToken) };
       }
-      // Another instance refreshed first. Providers that rotate refresh tokens
-      // have already revoked the one this call used, so the token just obtained
-      // may be the losing branch — use whatever the winner stored.
+      // A refresh or reconnect won. Its grant may belong to a different target
+      // or no longer be connected, so validate it against this run's snapshot.
       const current = await deps.connections.get(connection.projectName, connection.serverName);
+      if (current) {
+        const unavailable = unavailableReason(current, connection.serverName, auth);
+        if (unavailable) {
+          return { headers: {}, unavailable };
+        }
+      }
       if (current?.accessToken) {
         return {
           headers: bearer(
@@ -180,12 +202,12 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
     } catch (error) {
       if (error instanceof OAuthGrantError) {
         // The grant itself is gone; only this warrants making the owner
-        // re-authorize. Conditional on the same token, so a concurrent
+        // re-authorize. Conditional on the same revision, so a concurrent
         // successful refresh is not overwritten by this failure.
         await deps.connections.updateTokens(
           connection.projectName,
           connection.serverName,
-          stored,
+          connection.revision,
           { status: "needs_reauth", updatedAt: new Date().toISOString() },
         );
         return {
@@ -214,21 +236,9 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       // Ahead of every path that would hand a credential out, including the one
       // that only reads a live token: sending a bearer token to a server it was
       // not minted for is the failure this guards, and that path sends one.
-      const mismatch = mismatchReason(connection, serverName, auth);
-      if (mismatch) {
-        return { headers: {}, unavailable: mismatch };
-      }
-      if (connection.status === "needs_reauth") {
-        return {
-          headers: {},
-          unavailable: `MCP server '${serverName}' needs to be reconnected for this project.`,
-        };
-      }
-      if (!connection.accessToken) {
-        return {
-          headers: {},
-          unavailable: `MCP server '${serverName}' has not been authorized for this project yet.`,
-        };
+      const unavailable = unavailableReason(connection, serverName, auth);
+      if (unavailable || !connection.accessToken) {
+        return { headers: {}, unavailable };
       }
       if (!needsRefresh(connection, Date.now())) {
         return {
@@ -254,7 +264,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
           : {}),
         tokenEndpointAuthMethod: connection.tokenEndpointAuthMethod ?? auth.tokenEndpointAuthMethod,
         resource: auth.resource,
-      });
+      }, { issuer: auth.issuer, resource: auth.resource });
     },
 
     async markUnauthorized(projectName, serverName, scope) {
@@ -274,7 +284,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       // Through the compare-and-set, like every other write to this row: a
       // reconnect or a refresh landing between the read above and this write
       // would otherwise be overwritten with the stale row just read.
-      await deps.connections.updateTokens(projectName, serverName, connection.refreshToken, {
+      await deps.connections.updateTokens(projectName, serverName, connection.revision, {
         accessToken: connection.accessToken,
         refreshToken: connection.refreshToken,
         expiresAt: connection.expiresAt,
