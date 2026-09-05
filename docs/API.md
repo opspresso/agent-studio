@@ -1561,8 +1561,9 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
   (`declarations`, 편집의 기준이다: 레지스트리가 설치를 거부한 선언도 여기 보여야 다음
   full-replace 저장이 그것을 조용히 지우지 않는다), 그중 설치된 id(`installed`), 그리고
   채널이 *지금* 서빙하는 목록(`served`, Text·Embedding·Rerank 채널의 `/v1/models` 를 각
-  채널의 자격증명으로 읽고 type을 붙이며, LM Studio 네이티브 카탈로그가 있으면 컨텍스트
-  길이·vision·embedding type을 보강한다). `served` 는 best-effort 다. 채널이 답하지 않으면 뷰를 실패시키는 대신
+  채널의 자격증명으로 읽고 type을 붙인다. 기본 LLM 또는 공개 provider 채널과 같은 URL인
+  retrieval fallback은 self-hosted 발행자가 아니므로 제외한다. LM Studio 네이티브 카탈로그가
+  있으면 컨텍스트 길이·vision·embedding type을 보강한다). `served` 는 best-effort 다. 채널이 답하지 않으면 뷰를 실패시키는 대신
   `servedError` 로 실리고, 다른 채널이 답했다면 그 `served` 목록은 그대로 남는다: 서빙 스택 하나가
   죽어 있어도 건강한 모델과 선언은 admin 이 볼 수 있어야 한다.
   채널이 아예 설정돼 있지 않으면 `400`. 선언 자체는 `PUT /api/settings` 의

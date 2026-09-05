@@ -18,7 +18,7 @@
  */
 
 import type { ProviderChannelConfig } from "@/domain/settings/types";
-import type { ModelType } from "@/domain/llm/models";
+import { SELF_HOSTED_PROVIDERS, type ModelType } from "@/domain/llm/models";
 
 /** One model the channel serves, with what the serving stack says about it. */
 export interface ServedSelfHostedModel {
@@ -39,6 +39,55 @@ export interface SelfHostedModelChannel {
 export interface ServedSelfHostedModelsView {
   served: ServedSelfHostedModel[] | null;
   servedError?: string;
+}
+
+interface SelfHostedDiscoveryTargets {
+  defaultBaseUrl: string;
+  embedding?: Pick<ProviderChannelConfig, "baseUrl" | "apiKey">;
+  reranker?: Pick<ProviderChannelConfig, "baseUrl" | "apiKey">;
+}
+
+const normalizedBaseUrl = (value: string) => value.replace(/\/+$/, "");
+
+/**
+ * Select only deployment-owned endpoints for the declaration aid.
+ *
+ * Retrieval fallbacks may point at the same public router as a registered
+ * provider or the default LLM channel. Its `/models` response is the router's
+ * whole catalog, not a list of models this deployment publishes as
+ * `selfhosted/*`; assigning every row the fallback's type both lies about the
+ * models and duplicates rows when embedding and rerank share the router.
+ */
+export function selfHostedDiscoveryChannels(
+  providers: readonly ProviderChannelConfig[],
+  targets: SelfHostedDiscoveryTargets,
+): SelfHostedModelChannel[] {
+  const selfHostedNames = new Set<string>(SELF_HOSTED_PROVIDERS);
+  const selfHostedProviders = providers.filter((provider) =>
+    selfHostedNames.has(provider.name),
+  );
+  const publicBaseUrls = new Set([
+    normalizedBaseUrl(targets.defaultBaseUrl),
+    ...providers
+      .filter((provider) => !selfHostedNames.has(provider.name))
+      .map((provider) => normalizedBaseUrl(provider.baseUrl)),
+  ]);
+  const candidates: SelfHostedModelChannel[] = [
+    ...selfHostedProviders.map((channel) => ({ channel, type: "text" as const })),
+    ...(targets.embedding && !publicBaseUrls.has(normalizedBaseUrl(targets.embedding.baseUrl))
+      ? [{ channel: targets.embedding, type: "embedding" as const }]
+      : []),
+    ...(targets.reranker && !publicBaseUrls.has(normalizedBaseUrl(targets.reranker.baseUrl))
+      ? [{ channel: targets.reranker, type: "rerank" as const }]
+      : []),
+  ];
+  const seen = new Set<string>();
+  return candidates.filter(({ channel }) => {
+    const baseUrl = normalizedBaseUrl(channel.baseUrl);
+    if (seen.has(baseUrl)) return false;
+    seen.add(baseUrl);
+    return true;
+  });
 }
 
 const FETCH_TIMEOUT_MS = 10_000;

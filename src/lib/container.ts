@@ -174,7 +174,7 @@ import {
 import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
 import { DEFAULT_MEMBER_TIER, type MemberTier } from "@/domain/member/tiers";
-import { offeredModels, SELF_HOSTED_PROVIDERS } from "@/domain/llm/models";
+import { offeredModels } from "@/domain/llm/models";
 import { composeCreateProjectWithInitialVersion } from "@/application/project/createProjectFlow";
 import { composeCloneProject } from "@/application/project/cloneProjectFlow";
 
@@ -331,40 +331,31 @@ export const modelPreferenceUseCases = createModelPreferenceUseCases(modelPrefer
  */
 export const listSelfHostedServedModels = async () => {
   const providers = await getLlmProviderConfigs();
-  const channel = providers.find((provider) =>
-    (SELF_HOSTED_PROVIDERS as readonly string[]).includes(provider.name),
+  const { listServedSelfHostedChannels, selfHostedDiscoveryChannels } = await import(
+    "@/infrastructure/llm/selfHostedDiscovery"
   );
-  const channels = [
-    ...(channel ? [{ channel, type: "text" as const }] : []),
+  const channels = selfHostedDiscoveryChannels(providers, {
+    defaultBaseUrl: config.llmBaseUrl,
     ...(config.embeddingProvider === "openai" && config.embeddingBaseUrl
-      ? [
-          {
-            channel: {
-              baseUrl: config.embeddingBaseUrl,
-              apiKey: config.embeddingApiKey ?? "not-required",
-            },
-            type: "embedding" as const,
+      ? {
+          embedding: {
+            baseUrl: config.embeddingBaseUrl,
+            apiKey: config.embeddingApiKey ?? "not-required",
           },
-        ]
-      : []),
+        }
+      : {}),
     ...(RERANKER
-      ? [
-          {
-            channel: {
-              baseUrl: RERANKER.baseUrl,
-              apiKey: RERANKER.apiKey ?? "",
-            },
-            type: "rerank" as const,
+      ? {
+          reranker: {
+            baseUrl: RERANKER.baseUrl,
+            apiKey: RERANKER.apiKey ?? "",
           },
-        ]
-      : []),
-  ];
+        }
+      : {}),
+  });
   if (channels.length === 0) {
     throw new ValidationError("No self-hosted provider channel is configured");
   }
-  const { listServedSelfHostedChannels } = await import(
-    "@/infrastructure/llm/selfHostedDiscovery"
-  );
   return listServedSelfHostedChannels(channels);
 };
 

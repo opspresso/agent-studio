@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   listServedSelfHostedChannels,
   listServedSelfHostedModels,
+  selfHostedDiscoveryChannels,
 } from "@/infrastructure/llm/selfHostedDiscovery";
 
 const CHANNEL = { baseUrl: "http://127.0.0.1:1234/v1", apiKey: "dummy" };
@@ -10,6 +11,50 @@ const json = (body: unknown) =>
   new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
 
 describe("listServedSelfHostedModels", () => {
+  it("excludes retrieval fallbacks backed by public provider channels", () => {
+    const providers = [
+      {
+        name: "selfhosted",
+        baseUrl: "http://models.internal/v1",
+        apiKey: "local",
+        auth: "bearer" as const,
+        keepModelPrefix: false,
+      },
+      {
+        name: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1/",
+        apiKey: "public",
+        auth: "bearer" as const,
+        keepModelPrefix: true,
+      },
+    ];
+
+    expect(
+      selfHostedDiscoveryChannels(providers, {
+        defaultBaseUrl: "https://default-router.example/v1",
+        embedding: { baseUrl: "https://openrouter.ai/api/v1", apiKey: "public" },
+        reranker: { baseUrl: "https://openrouter.ai/api/v1", apiKey: "public" },
+      }),
+    ).toEqual([
+      { channel: providers[0], type: "text" },
+    ]);
+  });
+
+  it("keeps distinct deployment-owned retrieval endpoints and deduplicates shared ones", () => {
+    expect(
+      selfHostedDiscoveryChannels([], {
+        defaultBaseUrl: "https://default-router.example/v1",
+        embedding: { baseUrl: "http://embedding.internal/v1/", apiKey: "" },
+        reranker: { baseUrl: "http://embedding.internal/v1", apiKey: "" },
+      }),
+    ).toEqual([
+      {
+        channel: { baseUrl: "http://embedding.internal/v1/", apiKey: "" },
+        type: "embedding",
+      },
+    ]);
+  });
+
   it("merges LM Studio's native facts and types its embedding models", async () => {
     const fetchFn = vi.fn(async (url: string | URL | Request) => {
       const u = String(url);
