@@ -50,6 +50,7 @@ describe("bindingsMayOfferRecall", () => {
 
   it("does not rule out a binding that offers all its tools, or one that selects recall", () => {
     expect(bindingsMayOfferRecall([{ name: "docs" }])).toBe(true);
+    expect(bindingsMayOfferRecall([{ name: "docs", tools: [] }])).toBe(true);
     expect(bindingsMayOfferRecall([{ name: "docs", tools: ["search"] }, { name: "memory", tools: ["recall"] }])).toBe(
       true,
     );
