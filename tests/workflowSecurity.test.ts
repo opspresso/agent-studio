@@ -66,12 +66,13 @@ describe("workflow supply chain", () => {
 
   it("recognizes every supported self-hosted runner spelling", () => {
     expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: self-hosted")).toBe(true);
-    expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: ubuntu-24.04")).toBe(true);
+    expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: [self-hosted, linux]")).toBe(true);
     expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on:\n      - self-hosted\n      - linux")).toBe(true);
     expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: ubuntu-latest")).toBe(false);
+    expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: ubuntu-24.04")).toBe(false);
   });
 
-  it("does not expose privileged self-hosted workflows to arbitrary-ref dispatch", () => {
+  it("does not expose privileged workflows to arbitrary-ref dispatch", () => {
     for (const name of ["check-models.yml", "release.yml"]) {
       const text = readFileSync(join(WORKFLOWS, name), "utf8");
       expect(text, name).not.toMatch(/^\s{2}workflow_dispatch\s*:/m);
@@ -80,12 +81,12 @@ describe("workflow supply chain", () => {
 
   it("gates every release job on a version tag", () => {
     const text = readFileSync(join(WORKFLOWS, "release.yml"), "utf8");
-    const jobBlocks = text.split(/^  (?=[a-z][a-z-]+:\s*$)/m).slice(1);
-    const selfHosted = jobBlocks.filter(usesSelfHostedRunner);
-    const unguarded = selfHosted
+    const jobs = text.split(/^jobs:\s*$/m)[1] ?? "";
+    const jobBlocks = jobs.split(/^  (?=[a-z][a-z-]+:\s*$)/m).slice(1);
+    const unguarded = jobBlocks
       .filter((block) => !/if:\s*startsWith\(github\.ref, 'refs\/tags\/v'\)/.test(block));
 
-    expect(selfHosted.length).toBeGreaterThan(0);
+    expect(jobBlocks.length).toBeGreaterThan(0);
     expect(unguarded).toEqual([]);
   });
 
