@@ -49,6 +49,7 @@ import {
   selectOnFocus,
 } from "@/app/_components/modelOptions";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import {
@@ -800,6 +801,7 @@ export default function ModelsPage() {
   });
   const [updatedAt, setUpdatedAt] = useState("");
   const [source, setSource] = useState<"override" | "default">("default");
+  const [latestCatalog] = useState(createLatestOnly);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState<string | null>(null);
@@ -840,7 +842,19 @@ export default function ModelsPage() {
   const canEdit = viewer?.isAdmin === true;
 
   const loadCatalog = useCallback(async () => {
-    const data = await readJson<Catalog>(await fetch("/api/models/catalog"));
+    const isCurrent = latestCatalog();
+    let data: Catalog;
+    try {
+      data = await readJson<Catalog>(await fetch("/api/models/catalog"));
+    } catch (error) {
+      if (isCurrent()) {
+        throw error;
+      }
+      return;
+    }
+    if (!isCurrent()) {
+      return;
+    }
     setProviders(data.providers);
     setModels(data.models);
     setMakers(data.makers ?? {});
@@ -849,7 +863,7 @@ export default function ModelsPage() {
     setSelectionAvailable(data.selectionAvailable);
     setUpdatedAt(data.updatedAt ?? "");
     setSource(data.source);
-  }, []);
+  }, [latestCatalog]);
 
   useEffect(() => {
     if (!canRead) return;
@@ -884,7 +898,6 @@ export default function ModelsPage() {
 
   async function saveHidden(
     hiddenIds: string[],
-    nextModels: CatalogModel[],
     nextSource: "override" | "default",
   ) {
     setBusy(true);
@@ -896,7 +909,9 @@ export default function ModelsPage() {
         body: JSON.stringify({ hiddenModels: hiddenIds }),
       });
       await readJson(res);
-      setModels(nextModels);
+      latestCatalog();
+      const hidden = new Set(hiddenIds);
+      setModels((current) => current.map((model) => ({ ...model, selectionHidden: hidden.has(model.id) })));
       setSource(nextSource);
     } catch (saveError) {
       setError(reportError(saveError, "Failed to save"));
@@ -916,7 +931,7 @@ export default function ModelsPage() {
       setError(t("models.oneVisible"));
       return;
     }
-    void saveHidden(hiddenIds, nextModels, hiddenIds.length === 0 ? "default" : "override");
+    void saveHidden(hiddenIds, hiddenIds.length === 0 ? "default" : "override");
   }
 
   async function toggleFavorite(id: string, favorite: boolean) {
@@ -932,7 +947,8 @@ export default function ModelsPage() {
         }),
       });
       await readJson(res);
-      setModels(nextModels);
+      latestCatalog();
+      setModels((current) => current.map((model) => model.id === id ? { ...model, favorite } : model));
     } catch (saveError) {
       setError(reportError(saveError, t("models.favoriteSaveFailed")));
     } finally {
@@ -982,7 +998,6 @@ export default function ModelsPage() {
                   onClick={() =>
                     void saveHidden(
                       [],
-                      models.map((model) => ({ ...model, selectionHidden: false })),
                       "default",
                     )
                   }
