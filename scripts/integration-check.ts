@@ -1299,6 +1299,7 @@ async function main() {
       const probeKey = keys.trace(`lock-probe-${suffix}`);
       const probe = { ...probeKey, entityType: "TRACE", projectName, createdAt: now };
       const holder = await getPool().connect();
+      let writer: Promise<void> | undefined;
       const waited = <T,>(promise: Promise<T>) =>
         Promise.race([
           promise.then(() => "done" as const),
@@ -1327,15 +1328,18 @@ async function main() {
         // Same key, but written this time: that one waits for the shared holder.
         // An `update` rather than a `put`, so the row keeps what the fixture
         // wrote and the checks after this one still read it.
-        const writer = transact([
+        writer = transact([
           { kind: "update", key: projectKey, patch: (row) => ({ ...(row ?? {}) }) },
         ]);
         assert.equal(await waited(writer), "waiting", "a write on the key still waits on a reader");
-        await holder.query("ROLLBACK");
-        await writer;
       } finally {
-        holder.release();
+        try {
+          await holder.query("ROLLBACK");
+        } finally {
+          holder.release(true);
+        }
       }
+      await writer;
       const { deleteItem } = await import("@/infrastructure/db/store");
       await deleteItem(probeKey).catch(() => {});
       pass("transact: a checked key locks share-mode, a written one exclusively");
