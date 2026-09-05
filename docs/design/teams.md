@@ -51,7 +51,9 @@ Bot Framework 에도 스트리밍 호출은 없다: 답은 대화에 보낸 acti
 업로드가 아니라 **메시지 안에**, Teams 가 inline 으로 그리는 `data:` URI 첨부로 간다 (Teams 가
 문서화한 1MB 까지; 그 위는 보내 보고 거절당하는 대신 여기서 경고로 말한다). 열린 채 끝난 코드
 펜스는 꼬리를 붙이기 전에 닫는다 — Teams 의 리더도 그렇지 않으면 파일 링크와 경고를 코드로 읽는다. 메시지 하나는 20,000자에서 끊어 다음 메시지로 잇는다 — Teams
-가 받는 28KB 언저리 아래에서 Markdown 과 첨부에 여유를 둔 값이고, 그만큼 긴 답은 어차피
+의 [Bot 메시지 한도](https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/format-your-bot-messages)는
+UTF-16 기준 약 100KB 이고 본문은 80KB 이내를 권장한다. 20,000 UTF-16 code unit 은 40KB 로
+메타데이터 여유를 남긴다. 그만큼 긴 답은 어차피
 둘로 나뉘는 편이 읽기 좋다.
 
 ## 어떤 activity 가 봇을 향한 것인가

@@ -140,7 +140,7 @@
 | 결정 | 소유자 |
 |---|---|
 | 모든 행 키 문자열. 아이템 테이블의 `PK`/`SK`/GSI 주소 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외, 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` |
-| 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(`￿`), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 `items` 에 raw SQL 을 쓰지 않는다. 두 번째 `SELECT … FOR UPDATE` 는 그 셋이 어긋날 두 번째 자리다 |
+| 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(U+10FFFF), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 `items` 에 raw SQL 을 쓰지 않는다. 두 번째 `SELECT … FOR UPDATE` 는 그 셋이 어긋날 두 번째 자리다 |
 | 스키마. `items` 와 그 파생 컬럼·부분 인덱스, Better Auth 의 테이블, `catalog_vectors`, 그리고 어느 버전이 적용됐는지 | `src/infrastructure/db/migrations.ts`. 추가만 하는 목록, advisory lock 아래에서 부팅마다 |
 | 만료 행을 지우는 틱 | `src/lib/container.ts` 의 `sweepExpiredRows` 가 `store.deleteExpired`(아이템 테이블)와 `memberRepository.deleteExpiredSessions`(Better Auth `session`)를 schedule-scan 틱에서 부른다 (`src/app/api/triggers/scan/route.ts`) |
 | Model 이 무엇이고, 어떤 route 가 그것을 서빙하는가 | **이 저장소 밖**. [opspresso/agent-models](https://github.com/opspresso/agent-models) 의 `models/` (family/offering), `https://models.opspresso.com/models.json` 으로 발행된다. 앱에서는 `src/domain/llm/models.ts` 의 `loadModelCatalog` 가 받아들이는 *유일한 입구* 이고, 숫자는 절대 여기 쓰지 않는다 (`tests/models.test.ts` 가 막는다) |

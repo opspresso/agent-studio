@@ -139,8 +139,9 @@ manifest 의 `features.agent_view` 로, 그리고 런타임에
 다시 적용해야 한다.
 
 **누가 묻고 있는지**는 버전이 opt-in 했을 때만 모델에 도달한다(`parameters.callerContext`).
-이 opt-in 은 프롬프트만이 아니라 *조회* 를 막는다 — 요청하지 않은 프로젝트는 누구의 id 도
-Slack 의 프로필 API 로 보내지 않는다. 켜져 있으면 `users.info` 가 `callerFrom` 을 통해 질문자를
+이 opt-in 은 모델에 넣을 프로필 정보의 조회를 게이트한다. private project 접근 검사와
+artifact 소유자 식별을 위한 email 조회는 독립적이며, 옵트인이 꺼져 있어도 `users.info` 를
+호출할 수 있다. 켜져 있으면 `users.info` 가 `callerFrom` 을 통해 질문자를
 해석한다. `callerFrom` 은 `RunCaller` 가 만들어지고 공격자가 제어하는 이름이 프롬프트에
 안전해지는 단 하나의 자리다(이름, 시간대, 아바타 **URL**; 이메일은 의도적으로 없다 —
 [SECURITY.md](../SECURITY.md#호출자-컨텍스트) 참고). 엔진은 그것을 런 시계 옆의 caller 블록으로
