@@ -189,6 +189,10 @@ async function main() {
   const memberDayFixtures: Array<{ email: string; date: string; project: string }> = [];
 
   try {
+    const { checkManagedMcpTransport } = await import("./managed-mcp-check");
+    await checkManagedMcpTransport();
+    pass("managed MCP provision, registration and real loopback transport");
+
     // ---------- schema migration backfill ----------
     const { withTransaction } = await import("@/infrastructure/db/client");
     await withTransaction(async (client) => {

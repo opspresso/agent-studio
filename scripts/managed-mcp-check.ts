@@ -1,7 +1,4 @@
-// A 32-byte key must be present before the encryption module reads config.
-process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
-
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
 import { buildMcpTools } from "@/application/execution/mcpTools";
@@ -74,7 +71,8 @@ function startLoopbackMcp(): Promise<{ server: Server; port: number }> {
       response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
     });
   });
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       resolve({ server, port: typeof address === "object" && address ? address.port : 0 });
@@ -82,92 +80,90 @@ function startLoopbackMcp(): Promise<{ server: Server; port: number }> {
   });
 }
 
-describe("managed MCP, end to end on loopback", () => {
-  it("provisions, registers, and is reachable by a run", async () => {
-    clearMcpDiscoveryCache();
-    const { server, port } = await startLoopbackMcp();
-    const rows = new Map<string, McpServer>();
+export async function checkManagedMcpTransport(): Promise<void> {
+  clearMcpDiscoveryCache();
+  const { server, port } = await startLoopbackMcp();
+  const rows = new Map<string, McpServer>();
 
-    const provisioner: McpProvisioner = {
-      async start(spec) {
-        return {
-          name: spec.name,
-          address: `http://127.0.0.1:${port}`,
-          identity: "container-1",
-          running: true,
-        };
-      },
-      async stop() {},
-      async inspect(name) {
-        return rows.has(name)
-          ? { name, address: `http://127.0.0.1:${port}`, identity: "container-1", running: true }
-          : null;
-      },
-    };
-    const repo = {
-      get: async (name: string) => rows.get(name) ?? null,
-      list: async () => [...rows.values()],
-      create: async (s: McpServer) => void rows.set(s.name, s),
-      update: async (s: McpServer) => void rows.set(s.name, s),
-      put: async (s: McpServer) => void rows.set(s.name, s),
-      delete: async (name: string) => void rows.delete(name),
-    };
-
-    const managed = createManagedMcpUseCases({
-      repo: repo as never,
-      provisioner,
-      probe: { invalidateDiscovery() {} } as never,
-      cipher: secretCipher,
-      now: () => "2026-01-01T00:00:00.000Z",
-      sleep: async () => {},
-    });
-    let resolved: Awaited<ReturnType<typeof buildMcpTools>> | undefined;
-    try {
-      const entry = await managed.create({
-        name: "image-fetch",
-        image: "registry/mcp-image-fetch:v1",
-        containerPort: 3000,
-      });
-      expect(entry.url).toBe(`http://127.0.0.1:${port}/mcp`);
-
-      // The real guard's answer for a loopback address, so the bypass is the only
-      // thing that can make this work.
-      const policy: UrlPolicy = {
-        async assertAllowed(url) {
-          throw new BlockedUrlError(`refused: ${url}`);
-        },
+  const provisioner: McpProvisioner = {
+    async start(spec) {
+      return {
+        name: spec.name,
+        address: `http://127.0.0.1:${port}`,
+        identity: "container-1",
+        running: true,
       };
-      const deps = {
-        mcps: repo,
-        cipher: secretCipher,
-        urlPolicy: policy,
-        mcpSessions: mcpSessionFactory,
-        mcpAuth: { headersFor: async () => ({ headers: {} }), markUnauthorized: async () => {} },
-      } as unknown as ExecutionDeps;
+    },
+    async stop() {},
+    async inspect(name) {
+      return rows.has(name)
+        ? { name, address: `http://127.0.0.1:${port}`, identity: "container-1", running: true }
+        : null;
+    },
+  };
+  const repo = {
+    get: async (name: string) => rows.get(name) ?? null,
+    list: async () => [...rows.values()],
+    create: async (s: McpServer) => void rows.set(s.name, s),
+    update: async (s: McpServer) => void rows.set(s.name, s),
+    put: async (s: McpServer) => void rows.set(s.name, s),
+    delete: async (name: string) => void rows.delete(name),
+  };
 
-      resolved = await buildMcpTools(deps, {
-        projectName: "p",
-        mcpList: [{ name: "image-fetch" }],
-      } as unknown as Version);
+  const managed = createManagedMcpUseCases({
+    repo: repo as never,
+    provisioner,
+    probe: { invalidateDiscovery() {} } as never,
+    cipher: secretCipher,
+    now: () => "2026-01-01T00:00:00.000Z",
+    sleep: async () => {},
+  });
+  let resolved: Awaited<ReturnType<typeof buildMcpTools>> | undefined;
+  try {
+    const entry = await managed.create({
+      name: "image-fetch",
+      image: "registry/mcp-image-fetch:v1",
+      containerPort: 3000,
+    });
+    assert.equal(entry.url, `http://127.0.0.1:${port}/mcp`);
 
-      expect(resolved.warnings).toEqual([]);
-      expect(resolved.mcpTools.map((t) => t.function.name)).toEqual(["fetch_image"]);
-      expect(resolved.mcpServers[0]?.name).toBe("image-fetch");
+    // The real guard's answer for a loopback address, so the bypass is the only
+    // thing that can make this work.
+    const policy: UrlPolicy = {
+      async assertAllowed(url) {
+        throw new BlockedUrlError(`refused: ${url}`);
+      },
+    };
+    const deps = {
+      mcps: repo,
+      cipher: secretCipher,
+      urlPolicy: policy,
+      mcpSessions: mcpSessionFactory,
+      mcpAuth: { headersFor: async () => ({ headers: {} }), markUnauthorized: async () => {} },
+    } as unknown as ExecutionDeps;
+
+    resolved = await buildMcpTools(deps, {
+      projectName: "p",
+      mcpList: [{ name: "image-fetch" }],
+    } as unknown as Version);
+
+    assert.deepEqual(resolved.warnings, []);
+    assert.deepEqual(resolved.mcpTools.map((t) => t.function.name), ["fetch_image"]);
+    assert.equal(resolved.mcpServers[0]?.name, "image-fetch");
+  } finally {
+    try {
+      await resolved?.close?.();
     } finally {
       try {
-        await resolved?.close?.();
-      } finally {
-        try {
-          if (rows.has("image-fetch")) {
-            await managed.remove("image-fetch", "admin@example.com");
-          }
-        } finally {
-          await new Promise<void>((resolve, reject) => {
-            server.close((error) => (error ? reject(error) : resolve()));
-          });
+        if (rows.has("image-fetch")) {
+          await managed.remove("image-fetch", "admin@example.com");
         }
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
       }
     }
-    expect(rows.size).toBe(0);
-  });
-});
+  }
+  assert.equal(rows.size, 0);
+}
