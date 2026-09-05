@@ -188,6 +188,9 @@ export default function SettingsPage() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (view === null) {
+      return;
+    }
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -294,7 +297,11 @@ export default function SettingsPage() {
       {confirmModal}
 
       <form onSubmit={save}>
-        <Stack gap="xl">
+        <Stack
+          gap="xl"
+          renderRoot={(props) => <fieldset {...props} disabled={view === null} />}
+          style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+        >
           {error && (
             <Alert color="red" variant="light">
               {error}
