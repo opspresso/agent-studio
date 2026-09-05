@@ -42,6 +42,7 @@ import type { UsageDelta } from "@/domain/usage/types";
 import type { Trace } from "@/domain/trace/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
+import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 
 const DEFAULT_IMAGE_MODEL = listModels().find((m) => m.capabilities.imageGeneration)?.id;
 
@@ -181,6 +182,33 @@ describe("withRunDeadline", () => {
 });
 
 describe("execution cancellation", () => {
+  it.each([
+    ["agent", false], ["agent", true], ["llm", false], ["llm", true],
+  ] as const)("records a streamed %s failure even when collected=%s", async (projectType, collected) => {
+    resetRunMetrics();
+    const channel = new FakeChannel([]);
+    channel.chatCompletionStream = async function* () {
+      yield contentChunk("partial");
+      throw new Error("provider disconnected");
+    };
+    const { deps } = executionDepsFixture(channel);
+    const traces = captureTraces(deps);
+    deps.traceSampleRate = 1;
+    deps.sample = () => 0;
+    const stream = executeProjectStream(deps, {
+      project: { ...projectFixture(), projectType },
+      version: versionFixture({ piiFiltering: false }),
+      messages: [{ role: "user", content: "hello" }],
+    });
+    if (collected) {
+      await expect(collectRun(stream, "gpt-test")).rejects.toThrow("provider disconnected");
+    } else {
+      expect(await collect(stream)).toContainEqual(expect.objectContaining({ error: "provider disconnected" }));
+    }
+    expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 0, runsFinished: 1, runsFailed: 1 });
+    expect(traces.at(-1)).toMatchObject({ status: "failed", error: "provider disconnected" });
+  });
+
   it("propagates caller cancellation to the LLM channel through the run deadline", async () => {
     const channel = new FakeChannel([[contentChunk("done"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
