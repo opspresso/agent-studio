@@ -2406,6 +2406,46 @@ describe("streamProjectRun", () => {
     expect(recorded).toHaveLength(1);
   });
 
+  it("edits only the source images in the latest user turn", async () => {
+    const { deps, edits, imageModels } = executionDepsFixture(new FakeChannel([]));
+    const older = { role: "user" as const, content: [
+      { type: "image_url" as const, image_url: { url: "data:image/png;base64,b2xk" } },
+    ] };
+    await collect(streamProjectRun(deps, {
+      ...imageProject(),
+      messages: [older, { role: "user", content: [
+        { type: "text", text: "recolor this" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,bmV3" } },
+      ] }],
+    }));
+    expect(edits).toEqual([{
+      model: DEFAULT_IMAGE_MODEL,
+      prompt: "You are helpful.\n\nrecolor this",
+      sources: ["bmV3"],
+    }]);
+    expect(imageModels).toEqual([]);
+
+    await collect(streamProjectRun(deps, {
+      ...imageProject(),
+      messages: [older, { role: "user", content: "draw another" }],
+    }));
+    expect(edits).toHaveLength(1);
+    expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
+  });
+
+  it("refuses an image edit source that cannot be decoded inline", async () => {
+    const { deps, edits, imageModels } = executionDepsFixture(new FakeChannel([]));
+    await expect(collect(streamProjectRun(deps, {
+      ...imageProject(),
+      messages: [{ role: "user", content: [
+        { type: "text", text: "edit it" },
+        { type: "image_url", image_url: { url: "https://private.example/image.png" } },
+      ] }],
+    }))).rejects.toBeInstanceOf(ValidationError);
+    expect(edits).toEqual([]);
+    expect(imageModels).toEqual([]);
+  });
+
   it("draws the newest user turn, and falls back to the version's template", async () => {
     const { deps } = executionDepsFixture(new FakeChannel([]));
     const prompts: string[] = [];

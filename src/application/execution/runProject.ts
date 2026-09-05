@@ -8,7 +8,7 @@
  * exposes an optional `channel` so tests can inject a fake.
  */
 
-import { collectedWarning, isTopLevelChunk, messageText, runTermination } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk, messageText, parseImageDataUrl, runTermination } from "@/domain/llm/types";
 import type {
   ChatMessageInput,
   EngineChunk,
@@ -237,11 +237,23 @@ export async function* streamProjectRun(
     // An image run's prompt is one string. A chunk consumer's history is the
     // conversation, and only its last user turn can be the thing to draw.
     const prompt = latestUserText(input.messages);
+    const content = input.messages.findLast((message) => message.role === "user")?.content;
+    const images = Array.isArray(content) ? content.flatMap((part) => {
+      if (part.type !== "image_url") {
+        return [];
+      }
+      const image = parseImageDataUrl(part.image_url.url);
+      if (!image) {
+        throw new ValidationError("Image edit sources must be supported inline image data URLs");
+      }
+      return [image];
+    }) : [];
     yield* generateImageStream(deps, {
       project: input.project,
       version: input.version,
       ...(input.variables ? { variables: input.variables } : {}),
       ...(prompt ? { prompt } : {}),
+      ...(images.length > 0 ? { images } : {}),
       ...(input.actor ? { actor: input.actor } : {}),
       ...(input.conversation ? { conversation: input.conversation } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
