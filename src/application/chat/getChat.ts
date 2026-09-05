@@ -3,7 +3,7 @@ import type { ChatDeps } from "./deps";
 import { ChatNotFoundError } from "./errors";
 import { resolveMessageImages } from "./resolveImages";
 import { resolveMessageFiles } from "./resolveFiles";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { log } from "@/shared/logger";
 import { listChatMessages } from "./messageList";
 

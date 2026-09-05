@@ -11,7 +11,7 @@ import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
 import { runAndPersist, userTurnContent } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { deleteChat } from "@/application/chat/deleteChat";
 import { createChat } from "@/application/chat/createChat";
 import { sendMessage } from "@/application/chat/sendMessage";

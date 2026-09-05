@@ -5,7 +5,7 @@ import {
   resolveMessageImages,
   resolveRunMessageImages,
 } from "@/application/chat/resolveImages";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { toEngineMessages } from "@/application/chat/messageMapping";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import type { ChatMessage, ChatMessageImage } from "@/domain/chat/types";

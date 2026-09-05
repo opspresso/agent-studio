@@ -6,7 +6,7 @@
  * be a gallery that disagrees with itself about what "images only" means.
  */
 
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import {
   DEFAULT_ARTIFACT_PAGE,
   MAX_ARTIFACT_PAGE,

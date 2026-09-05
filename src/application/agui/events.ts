@@ -38,7 +38,7 @@ import {
   type EngineChunk,
 } from "@/domain/llm/types";
 import { fileRefOf, resolveProducedFile } from "@/application/artifact/producedFiles";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 
 /** How the engine names a transfer's result: the tool, a colon, the agent it went to. */
 const TRANSFER_RESULT_PREFIX = "transfer_to_agent: ";

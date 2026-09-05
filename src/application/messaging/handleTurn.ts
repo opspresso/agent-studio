@@ -15,7 +15,7 @@ import {
   resolveProducedFiles,
   type ProducedFileRef,
 } from "@/application/artifact/producedFiles";
-import { RECORD_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { RECORD_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { turnContent, type ReadDocument } from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
 import { INTERACTIVE_RUN_TIMEOUT_MS } from "@/shared/runDeadline";

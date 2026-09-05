@@ -24,7 +24,7 @@ import {
 } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
 import { fileRefOf, resolveProducedFile } from "@/application/artifact/producedFiles";
-import { RECORD_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { RECORD_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
 import { a2aConversation } from "@/domain/a2a/conversation";
 import { log } from "@/shared/logger";

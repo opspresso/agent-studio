@@ -60,7 +60,7 @@ function refuse(status: number, error: string): Response {
  * fetching a replayed image mid-run, none of which has a cookie to present.
  * The token is the credential — an HMAC this deployment minted over the key,
  * the expiry and the filename — and its lifetime is whatever the signer asked
- * for, chosen per reader in `src/application/artifact/urlTtl.ts`. A bad or
+ * for, chosen per reader in `src/shared/artifactUrlTtl.ts`. A bad or
  * expired token is a 403; an object that is no longer there is a 404; the
  * cache lifetime a reader is allowed is bounded by the token's own. The read
  * is capped at `MAX_PROXIED_OBJECT_BYTES`, the most any stored object can be.

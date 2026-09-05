@@ -132,7 +132,7 @@ buffer rather than a record, and why the viewport belongs to a library is
   made attachments the one class of stored object nothing could list or delete. Either way the
   message keeps `images: [{ key, prompt? }]` — the b64 payload would be megabytes replayed on
   every later turn, far past the message's byte budget. The view signs each key with its own
-  lifetime (`@/application/artifact/urlTtl`). A run
+  lifetime (`@/shared/artifactUrlTtl`). A run
   instead reads the newest four stored images back under `MAX_IMAGE_BYTES` and sends them
   as data URLs, which is what registers both user attachments and assistant-produced images as
   editable handles; older images stay visible in the chat but are omitted from model context.

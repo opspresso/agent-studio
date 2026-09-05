@@ -1,7 +1,7 @@
 import { sseResponse } from "@/app/api/_lib/sse";
 import { executionDeps, projectUseCases, signArtifactUrl, versionUseCases } from "@/lib/container";
 import { resolveProducedFile, resolveProducedFiles } from "@/application/artifact/producedFiles";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
 import { chatCompletionsSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";

@@ -9,7 +9,7 @@ import {
   versionUseCases,
 } from "@/lib/container";
 import { resolveProducedFiles, withAddressedFiles } from "@/application/artifact/producedFiles";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { generateImage } from "@/application/image/generateImage";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";

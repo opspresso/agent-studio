@@ -2,7 +2,7 @@ import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { executionDeps, projectUseCases, signArtifactUrl, versionUseCases } from "@/lib/container";
 import { withAddressedFiles } from "@/application/artifact/producedFiles";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { executeAgent } from "@/application/execution/runProject";
 import { agentSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";

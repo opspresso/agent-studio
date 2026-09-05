@@ -1419,6 +1419,11 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/llm/toolNames.ts",
   },
   {
+    what: "signed artifact URL lifetimes",
+    pattern: /(?:VIEW_URL_TTL_SECONDS|RECORD_URL_TTL_SECONDS)\s*=/,
+    owner: "src/shared/artifactUrlTtl.ts",
+  },
+  {
     // Two surfaces ask the same question — the chat store about the answer it
     // is about to re-render, the console about the thinking it is about to
     // commit — and each had grown its own copy of the three constants and the

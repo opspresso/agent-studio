@@ -11,7 +11,7 @@ import { isSubmitEnter } from "@/app/_lib/modEnter";
 import { onFilePaste } from "@/app/_components/ImageAttachments";
 import { onModEnter } from "@/app/_lib/modEnter";
 import { SIGNATURE_REFRESH_MS } from "@/app/chats/_lib/refresh";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { CHAT_MESSAGE_MAX_SEQ, keys } from "@/infrastructure/db/keys";
 
 function message(seq: number, content: string): ChatMessage {
@@ -221,10 +221,6 @@ describe("onFilePaste", () => {
 
 describe("SIGNATURE_REFRESH_MS", () => {
   it("re-reads the thread before the signatures on it expire", () => {
-    // The client cannot import the TTL — it lives in `application/` — so the
-    // relationship the tail read depends on is asserted here instead. A
-    // refresh at or past the TTL is a window in which an image on screen is
-    // already dead.
     expect(SIGNATURE_REFRESH_MS).toBeLessThan(VIEW_URL_TTL_SECONDS * 1000);
   });
 });
