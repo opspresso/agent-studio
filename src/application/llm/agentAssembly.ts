@@ -1174,7 +1174,8 @@ export function assembleAgentRun(
   deps: AgentCapabilityDeps,
   input: AssembleAgentRunInput,
 ): AgentRunAssembly {
-  const skills = input.skills ?? [];
+  const canLoadSkills = Boolean(deps.loadSkillContent);
+  const skills = canLoadSkills ? (input.skills ?? []) : [];
   // Delegation is described and offered only where it can actually reach a
   // child. Without a runner the transfer tool was still advertised and the
   // prompt still explained it, and a call came back "requires agent_name and
@@ -1202,7 +1203,7 @@ export function assembleAgentRun(
     ...(input.clientTools ? { clientTools: input.clientTools } : {}),
     skills,
     subagents,
-    canLoadSkills: Boolean(deps.loadSkillContent),
+    canLoadSkills,
     withSaveFileTool,
     withImageTool: Boolean(deps.generateImage),
     withEditTool: canEdit,

@@ -1084,7 +1084,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     await collect(
       runAgent(
-        { channel, runSubagent: async function* () {
+        { channel, loadSkillContent: async () => "body", runSubagent: async function* () {
             return "";
           } },
         {

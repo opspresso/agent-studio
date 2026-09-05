@@ -54,7 +54,12 @@ describe("the caller block", () => {
 
 describe("a builtin is offered only when the run can perform it", () => {
   it("offers the Skill tool with a loader", () => {
-    expect(names(fullDeps(), { skills: SKILLS })).toContain("Skill");
+    const assembly = assembleAgentRun(fullDeps(), { skills: SKILLS });
+    expect(assembly.tools.map((tool) => tool.function.name)).toContain("Skill");
+    expect(assembly.builtinNames.has("Skill")).toBe(true);
+    expect(assembly.systemPrompt).toContain("## Available Skills");
+    expect(assembly.systemPrompt).toContain("greeting");
+    expect(assembly.systemPrompt).toContain("How to greet");
   });
 
   it("withholds it without one, rather than answering every call with an error", () => {
@@ -63,7 +68,11 @@ describe("a builtin is offered only when the run can perform it", () => {
     // advertise it and then answer "cannot be executed in this context".
     const deps = fullDeps();
     delete deps.loadSkillContent;
-    expect(names(deps, { skills: SKILLS })).not.toContain("Skill");
+    const assembly = assembleAgentRun(deps, { skills: SKILLS });
+    expect(assembly.tools.map((tool) => tool.function.name)).not.toContain("Skill");
+    expect(assembly.builtinNames.has("Skill")).toBe(false);
+    expect(assembly.systemPrompt).not.toContain("## Available Skills");
+    expect(assembly.systemPrompt).not.toContain("greeting");
   });
 
   it("withholds the image tools without their channels", () => {
