@@ -1113,7 +1113,7 @@ export default function ModelsPage() {
                         h={32}
                         p={4}
                         bg="white"
-                        style={{ borderRadius: "var(--mantine-radius-sm)", flexShrink: 0 }}
+                        style={{ borderRadius: "var(--mantine-radius-sm)", flexShrink: 0, colorScheme: "light" }}
                       >
                         <img
                           src={`/icons/brands/${model.maker}.svg`}
