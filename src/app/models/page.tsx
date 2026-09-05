@@ -33,6 +33,7 @@ import {
   type SelfHostedModelInput,
 } from "@/domain/llm/selfHostedModels";
 import type { ModelCatalogDocumentStatus } from "@/application/llm/modelCatalogDocument";
+import type { SelfHostedModelsResponse } from "@/app/api/models/selfhosted/route";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { formatDate, formatDateTime } from "@/shared/date";
 import { tierAtLeast } from "@/domain/member/tiers";
@@ -217,24 +218,6 @@ function otherRoutes(models: CatalogModel[], model: CatalogModel): string[] {
     .map((other) => other.provider);
 }
 
-/** What the selfhosted channel reports it serves (`GET /api/models/selfhosted`). */
-interface ServedModel {
-  name: string;
-  type: ModelType;
-  contextWindow?: number;
-  vision?: boolean;
-}
-
-/** The section's whole picture, from `GET /api/models/selfhosted`. */
-interface SelfHostedView {
-  /** Null when the channel did not answer. */
-  served: ServedModel[] | null;
-  /** The stored declarations — the editing basis, installed or not. */
-  declarations: ModelConfig[];
-  /** Ids the registry actually installed; a stored id missing here was refused. */
-  installed: string[];
-}
-
 const DECLARABLE_CAPABILITIES = [
   ["tools", "Tools"],
   ["structuredOutput", "JSON"],
@@ -254,13 +237,13 @@ const DECLARABLE_CAPABILITIES = [
  */
 function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
   const t = useT();
-  const [view, setView] = useState<SelfHostedView | null>(null);
+  const [view, setView] = useState<SelfHostedModelsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<SelfHostedModelInput | null>(null);
 
   const loadView = useCallback(async () => {
-    const data = await readJson<SelfHostedView>(await fetch("/api/models/selfhosted"));
+    const data = await readJson<SelfHostedModelsResponse>(await fetch("/api/models/selfhosted"));
     setView(data);
   }, []);
 
@@ -314,6 +297,9 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
           <Alert color="orange" variant="light" withCloseButton onClose={() => setError(null)}>
             {error}
           </Alert>
+        )}
+        {view?.servedError && (
+          <Alert color="orange" variant="light">{view.servedError}</Alert>
         )}
         {declarations.map((model) => (
           <Group key={model.id} justify="space-between" wrap="nowrap">

@@ -4,6 +4,11 @@ import { getSelfHostedModels } from "@/lib/runtime-settings";
 import { apiError } from "@/app/api/_lib/http";
 import { withAdminAuth } from "@/lib/session";
 
+export type SelfHostedModelsResponse = Awaited<ReturnType<typeof listSelfHostedServedModels>> & {
+  declarations: Awaited<ReturnType<typeof getSelfHostedModels>>;
+  installed: string[];
+};
+
 /**
  * GET /api/models/selfhosted — everything the console's Self-hosted section
  * edits and displays: the **stored** declarations (the editing basis — a
@@ -26,7 +31,7 @@ export const GET = withAdminAuth(async () => {
       ...(await listSelfHostedServedModels()),
       declarations,
       installed,
-    });
+    } satisfies SelfHostedModelsResponse);
   } catch (error) {
     return apiError(error);
   }
