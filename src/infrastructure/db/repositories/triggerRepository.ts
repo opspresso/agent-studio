@@ -199,10 +199,9 @@ export const triggerRepository: TriggerRepository = {
     // the more the trigger is used.
     //
     // `startedBefore` bounds the sort key rather than filtering what came back.
-    // The start time leads the key, so the range *is* the window: the read costs
-    // `limit` rows however many newer ones exist above it. A filter would read
-    // the newest `limit` rows and discard them, which is exactly the way a busy
-    // trigger's stranded row stays invisible.
+    // The start time leads the key, so the range excludes newer rows before
+    // they are read. The optional status predicate
+    // also runs before LIMIT, so completed history cannot hide stranded runs.
     const prefix = keys.triggerRunPrefix(triggerId);
     const items = await queryItems({
       pk: keys.projectPartition(projectName),
@@ -212,6 +211,7 @@ export const triggerRepository: TriggerRepository = {
       forward: false,
       limit,
       notExpiredAt: Math.floor(Date.now() / 1000),
+      ...(opts.status ? { filter: { status: opts.status } } : {}),
     });
     return items.map(toRun);
   },

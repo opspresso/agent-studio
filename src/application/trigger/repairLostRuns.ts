@@ -139,6 +139,7 @@ export async function repairTriggerRuns(
       // Ask for the rows that could be dead rather than the rows that are
       // recent. On a busy trigger those sets do not overlap at all.
       startedBefore: new Date(cutoff).toISOString(),
+      status: "running",
     });
   } catch (error) {
     log.warn("trigger", `could not read runs of '${trigger.triggerId}' for repair`, error);

@@ -174,6 +174,7 @@ function fixture(
       rows
         .filter((r) => r.triggerId === triggerId)
         .filter((r) => !listOpts.startedBefore || r.startedAt < listOpts.startedBefore)
+        .filter((r) => !listOpts.status || r.status === listOpts.status)
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
         .slice(0, limit),
   };
@@ -490,7 +491,7 @@ describe("scanSchedules", () => {
     expect(f.rows.find((r) => r.runId === "live-delivery")?.status).toBe("running");
   });
 
-  it("finds a stranded row buried under a busy trigger's newer ones", async () => {
+  it.each([0, REPAIR_AFTER_SECONDS + 60])("finds a stranded row below completed runs aged %i seconds", async (age) => {
     // A webhook taking ten deliveries a minute writes hundreds of rows inside
     // one lease window. Read as "the newest REPAIR_SCAN_LIMIT rows", the row
     // that needs finishing is never on the page — and it only sinks further the
@@ -500,15 +501,15 @@ describe("scanSchedules", () => {
       triggerId: "inbound",
       runId: "lost-delivery",
       status: "running",
-      startedAt: new Date(AT.getTime() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
+      startedAt: new Date(AT.getTime() - (REPAIR_AFTER_SECONDS + 300) * 1000).toISOString(),
     };
     const busy: TriggerRun[] = Array.from({ length: 200 }, (_unused, index) => ({
       projectName: "p",
       triggerId: "inbound",
       runId: `recent-${index}`,
       status: "succeeded" as const,
-      startedAt: new Date(AT.getTime() - index * 1000).toISOString(),
-      endedAt: new Date(AT.getTime() - index * 1000 + 500).toISOString(),
+      startedAt: new Date(AT.getTime() - (age + index) * 1000).toISOString(),
+      endedAt: new Date(AT.getTime() - (age + index) * 1000 + 500).toISOString(),
     }));
     const f = fixture({
       schedules: [schedule({ enabled: false })],

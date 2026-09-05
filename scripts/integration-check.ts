@@ -929,6 +929,16 @@ async function main() {
       endedAt: now,
       error: "lost",
     });
+    const olderRun = { ...oldRun, runId: "older", startedAt: runAt(7_200_000) };
+    await triggerRepository.appendRun(olderRun);
+    assert.deepEqual(
+      (await triggerRepository.listRuns(projectName, triggerId, 1, {
+        startedBefore: runAt(60_000),
+        status: "running",
+      })).map((run) => run.runId),
+      ["older"],
+      "completed history does not consume the repair query limit",
+    );
     assert.equal(
       (await triggerRepository.listRuns(projectName, triggerId, 10)).find((r) => r.runId === "old")
         ?.status,
