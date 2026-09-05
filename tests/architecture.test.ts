@@ -1449,7 +1449,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // exactly what dispatching several agents at once made necessary.
     what: "deriving the transfer chain a chunk came from",
     pattern: /authorPath \?\? \(/,
-    owner: "src/app/_lib/authorPaths.ts",
+    owner: "src/domain/llm/types.ts",
   },
   {
     // Every stream consumer would reason "no `done` seen → cut off at a

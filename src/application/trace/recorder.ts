@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { runTermination } from "@/domain/llm/types";
+import { chunkAuthorPath, runTermination } from "@/domain/llm/types";
 import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
@@ -80,6 +80,12 @@ function preview(value: string): string {
     : `${value.slice(0, MAX_PREVIEW_CHARS)}…`;
 }
 
+/** Tool ids are run-local; sampling must not decide which result they match. */
+function toolCallKey(chunk: EngineChunk, callId: string): string {
+  const path = chunkAuthorPath(chunk) ?? [];
+  return JSON.stringify([path, chunk.transferId ?? null, callId]);
+}
+
 export class TraceRecorder {
   readonly traceId = randomUUID();
   private readonly startedAt = new Date();
@@ -154,7 +160,7 @@ export class TraceRecorder {
     for (const call of chunk.delta?.toolCalls ?? []) {
       const id = call.id;
       if (id) {
-        this.pendingTools.set(id, {
+        this.pendingTools.set(toolCallKey(chunk, id), {
           name: call.function?.name ?? "tool",
           startedAt: now,
           inputChars: call.function?.arguments?.length ?? 0,
@@ -162,10 +168,11 @@ export class TraceRecorder {
       }
     }
     if (chunk.toolResult) {
-      const pending = this.pendingTools.get(chunk.toolResult.toolCallId);
+      const key = toolCallKey(chunk, chunk.toolResult.toolCallId);
+      const pending = this.pendingTools.get(key);
       const started = pending?.startedAt ?? now;
       this.addSpan({
-        spanId: chunk.toolResult.toolCallId,
+        spanId: randomUUID(),
         kind: "tool",
         name: pending?.name ?? chunk.toolResult.name,
         ...(chunk.author ? { author: chunk.author } : {}),
@@ -176,7 +183,7 @@ export class TraceRecorder {
         input: pending ? { argumentChars: pending.inputChars } : undefined,
         output: { contentChars: chunk.toolResult.content.length },
       });
-      this.pendingTools.delete(chunk.toolResult.toolCallId);
+      this.pendingTools.delete(key);
       // Where the next model call starts. Without this the tool's own duration
       // was counted twice — on its span and again inside the model span that
       // follows it — which is the misreading `prepare` was added to remove, in
@@ -333,7 +340,7 @@ export class TraceRecorder {
   /** Open or update the entry for the transfer this chunk came from. */
   private trackSubagent(chunk: EngineChunk, now: Date): SubagentEntry {
     const author = chunk.author as string;
-    const path = chunk.authorPath ?? [author];
+    const path = chunkAuthorPath(chunk)!;
     // The hop this run made; anything below it belongs to the same transfer.
     const child = path[0] ?? author;
     const key = chunk.transferId ?? `${child}#${chunk.traceId ?? "-"}`;

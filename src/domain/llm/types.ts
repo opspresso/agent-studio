@@ -97,6 +97,14 @@ export type RunTerminationReason =
   | "cancelled"
   | "error";
 
+/** The chain a chunk came from, or nothing when it is the top-level agent's. */
+export function chunkAuthorPath(chunk: {
+  author?: string;
+  authorPath?: string[];
+}): string[] | undefined {
+  return chunk.authorPath ?? (chunk.author ? [chunk.author] : undefined);
+}
+
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
   /**
