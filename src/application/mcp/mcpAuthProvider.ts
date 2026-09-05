@@ -161,7 +161,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
                   ),
                 ),
               }
-            : {}),
+            : { refreshToken: stored }),
           ...(tokens.expiresInSeconds !== undefined
             ? { expiresAt: new Date(now + tokens.expiresInSeconds * 1000).toISOString() }
             : {}),

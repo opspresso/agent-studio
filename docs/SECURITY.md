@@ -730,8 +730,9 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
 - 콜백은 **project 소유권을 다시 확인한다.** 사용자가 제공자에 가 있는 동안 소유권이 바뀔 수 있기
   때문이다.
 
-갱신은 저장된 refresh token 에 대한 compare-and-set 이다. refresh token 을 회전시키는 제공자는
-이전 것을 폐기하므로, 경쟁에서 진 쪽은 이긴 쪽의 token 을 쓴다. **거절된 grant** 만이 연결을
+갱신은 연결 revision에 대한 compare-and-set이다. 응답이 refresh token을 생략하면 기존 값을
+보존하고 새 값을 주면 교체한다. 경쟁에서 진 쪽은 원래 issuer·resource에 속하며 연결된 상태인
+승자의 grant만 사용한다. **거절된 grant** 만이 연결을
 `needs_reauth` 로 표시한다. 5xx 나 타임아웃은 그대로 둔다. (갱신 타이밍은 보안 제약이 아니라
 설계 제약이다. [design/mcp.md](design/mcp.md#oauth) 참고.)
 

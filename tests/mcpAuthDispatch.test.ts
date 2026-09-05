@@ -307,6 +307,32 @@ describe("a refresh racing a reconnect", () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it("keeps an unrotated refresh token usable and replaces it when the provider rotates", async () => {
+    await mcpConnectionRepository.put(connectionFixture({
+      expiresAt: new Date(Date.now() + 1000).toISOString(),
+    }));
+    const refresh = vi.fn()
+      .mockResolvedValueOnce({ accessToken: "first", expiresInSeconds: 1 })
+      .mockResolvedValueOnce({ accessToken: "second", refreshToken: "rotated", expiresInSeconds: 1 })
+      .mockResolvedValueOnce({ accessToken: "third", expiresInSeconds: 43_200 });
+    const provider = createMcpAuthProvider({
+      connections: mcpConnectionRepository,
+      oauth: { refresh } as never,
+      cipher,
+    });
+
+    expect((await provider.headersFor("p", "slack", OAUTH_SERVER.auth!)).headers)
+      .toEqual({ Authorization: "Bearer first" });
+    expect((await mcpConnectionRepository.get("p", "slack"))?.refreshToken).toBe("enc:refresh-1");
+    expect((await provider.headersFor("p", "slack", OAUTH_SERVER.auth!)).headers)
+      .toEqual({ Authorization: "Bearer second" });
+    expect((await mcpConnectionRepository.get("p", "slack"))?.refreshToken).toBe("enc:rotated");
+    expect((await provider.headersFor("p", "slack", OAUTH_SERVER.auth!)).headers)
+      .toEqual({ Authorization: "Bearer third" });
+    expect(refresh.mock.calls.map((call) => call[1])).toEqual(["refresh-1", "refresh-1", "rotated"]);
+    expect((await mcpConnectionRepository.get("p", "slack"))?.refreshToken).toBe("enc:rotated");
+  });
+
   async function pendingRefresh() {
     const started = Promise.withResolvers<void>();
     const exchange = Promise.withResolvers<TokenSet>();
