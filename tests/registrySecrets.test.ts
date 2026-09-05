@@ -63,6 +63,7 @@ import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
+import { resolveRegistryUrlPatch } from "@/application/registry/registryUseCases";
 // The store module is the in-memory fake (tests/setup.ts), which raises the
 // same error the real one does for a lost precondition.
 import { ConditionalWriteError } from "@/infrastructure/db/store";
@@ -81,6 +82,26 @@ import {
  * asserting the shape would re-break every time the reveal tiers change. */
 const expectMasked = (value: string | undefined) => expect(isMasked(value ?? "")).toBe(true);
 const NOW = "2026-01-01T00:00:00.000Z";
+
+describe("resolveRegistryUrlPatch", () => {
+  it("preserves a stored root URL when its equivalent spelling is submitted", () => {
+    const existing = "https://MCP.example:443";
+    expect(resolveRegistryUrlPatch(existing, "https://mcp.example/")).toBe(existing);
+    expect(resolveRegistryUrlPatch("https://mcp.example/", existing)).toBe("https://mcp.example/");
+  });
+
+  it.each([
+    "https://mcp.example/mcp/",
+    "https://mcp.example/MCP",
+    "https://other.example/mcp",
+    "https://mcp.example:8443/mcp",
+    "https://mcp.example/mcp?token=new",
+    "https://mcp.example/mcp#fragment",
+    "not a URL",
+  ])("preserves a different or invalid patch for validation: %s", (patch) => {
+    expect(resolveRegistryUrlPatch("https://mcp.example/mcp", patch)).toBe(patch);
+  });
+});
 
 function makeMcpRepo(initial: McpServer[] = []) {
   const store = new Map(initial.map((server) => [server.name, server]));

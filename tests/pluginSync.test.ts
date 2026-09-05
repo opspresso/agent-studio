@@ -5,7 +5,9 @@ import {
   syncPluginsFromSnapshot,
   type SyncPluginsDeps,
 } from "@/application/plugin/syncPlugins";
-import type { CreateMcpInput, McpUseCases, UpdateMcpInput } from "@/application/mcp/mcpUseCases";
+import { createMcpUseCases, type CreateMcpInput, type McpUseCases, type UpdateMcpInput } from "@/application/mcp/mcpUseCases";
+import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { Skill } from "@/domain/skill/types";
 import type { McpServer } from "@/domain/mcp/types";
@@ -421,6 +423,47 @@ describe("syncPluginsFromSnapshot", () => {
     expect(mcps.patched).toEqual([
       { name: "argocd", patch: { source: `github:${REPO}#devops` } },
     ]);
+  });
+
+  it.each([
+    "https://knowledge-mcp.global.api.aws",
+    "https://knowledge-mcp.global.api.aws/",
+    "https://KNOWLEDGE-MCP.global.api.aws:443",
+  ])("does not rewrite an unchanged server through the real MCP view: %s", async (url) => {
+    const name = "aws-knowledge";
+    await mcpRepository.put(storedServer(name, {
+      url,
+      headers: { Authorization: "test-token" },
+    }));
+    const stored = await mcpRepository.get(name);
+    const update = vi.spyOn(mcpRepository, "update");
+    const invalidateDiscovery = vi.fn();
+    const { deps } = makeDeps();
+    deps.mcps = createMcpUseCases(mcpRepository, secretCipher, {
+      assertAllowed: vi.fn(async () => {}),
+    }, {
+      listTools: vi.fn(async () => ({ ok: true as const, tools: [] })),
+      invalidateDiscovery,
+    });
+    const input = snapshot([repoPlugin("devops", {
+      mcpJsonRaw: mcpJson({ [name]: httpServer(url) }),
+    })]);
+
+    try {
+      for (let pass = 0; pass < 2; pass++) {
+        const result = await syncPluginsFromSnapshot(deps, input, ACTOR);
+        const report = section(result, "devops").mcpServers;
+        expect(report.unchanged).toEqual([name]);
+        expect(report.overwritten).toEqual([]);
+        expect(report.skipped).toEqual([]);
+      }
+      expect(update).not.toHaveBeenCalled();
+      expect(invalidateDiscovery).not.toHaveBeenCalled();
+      expect(await mcpRepository.get(name)).toEqual(stored);
+    } finally {
+      update.mockRestore();
+      await mcpRepository.delete(name);
+    }
   });
 
   it("adopts a source-less entry whose name a plugin declares — the name is the repository's", async () => {

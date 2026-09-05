@@ -37,10 +37,20 @@ export function assertCredentialFreeRegistryUrl(rawUrl: string): void {
  * pointing somewhere else, its credentials dropped for having followed an
  * address change, and the credential-free rule would then refuse to let anyone
  * type the original back. A patch that is the stored URL's own redaction is
- * therefore the same address, not a new one.
+ * therefore the same address, not a new one. Compare serialized URLs so the
+ * view's normalization (root slash, host case, default port) is not a move.
  */
 export function resolveRegistryUrlPatch(existing: string, patch: string): string {
-  return patch === urlWithoutQueryOrFragment(existing) ? existing : patch;
+  let normalized: string;
+  try {
+    normalized = new URL(patch).toString();
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return patch;
+    }
+    throw error;
+  }
+  return normalized === urlWithoutQueryOrFragment(existing) ? existing : patch;
 }
 
 /** Minimal repository shape shared by the registry slices. */

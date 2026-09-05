@@ -7,7 +7,7 @@ import type { PluginRepository } from "@/domain/plugin/repository";
 import type { PluginUseCases } from "./pluginUseCases";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
-import { listRegistry } from "@/application/registry/registryUseCases";
+import { listRegistry, resolveRegistryUrlPatch } from "@/application/registry/registryUseCases";
 import { parseFrontmatter } from "@/domain/plugin/frontmatter";
 import { isSlug } from "@/domain/naming";
 import { log } from "@/shared/logger";
@@ -546,7 +546,7 @@ export async function syncPluginsFromSnapshot(
       // case refuses to move one. Left out of the patch so the rest of the
       // document can still apply, and reported either way.
       const managed = current.runtime === "managed";
-      const urlDiffers = url !== current.url;
+      const urlDiffers = resolveRegistryUrlPatch(current.url, url) !== current.url;
       // A document the repository no longer carries no longer describes the
       // server: for an entry that is already this plugin's, the stored
       // description and notes clear rather than outlive their source. An entry

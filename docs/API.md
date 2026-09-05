@@ -750,7 +750,8 @@ POST /api/plugins/sync  { "remove"?: { "skills"?: ["name"], "mcpServers"?: ["nam
   저장소가 지금 가리키는 곳 어디로든 옛 호스트의 secret 을 보내는 대신, 그 항목의 저장된 헤더와
   OAuth 블록을 버린다 (`credentials-reset` 으로 보고된다).
 - **unchanged**. 양쪽에 있고 이미 일치한다. 아무것도 쓰지 않았으므로 `updatedAt` 도 움직이지
-  않는다.
+  않는다. URL은 registry의 공통 변경 판정을 사용하며, 루트 주소의 끝 `/`, 호스트 대소문자,
+  기본 포트의 표기 차이는 변경으로 보지 않는다. 경로의 끝 `/` 차이는 변경이다.
 - **orphaned**. 이 저장소의 sync 가 만들었고 그 안의 어떤 plugin 도 더 이상 선언하지 않는 것.
   자기 source 가 지목하는 plugin 에 귀속되며 (완전히 사라진 plugin 을 위해서는 섹션이
   합성된다), `boundTo` 는 대롱거리게 될 `project/version` 바인딩을 나열한다. 이름이 대응하는
