@@ -1310,6 +1310,26 @@ describe("sendA2aMessage — the task's state decides", () => {
 });
 
 describe("ProjectA2aExecutor — what a message may carry", () => {
+  it("reports image storage loss on the completed task", async () => {
+    const deps = executionDepsFixture(new FakeChannel([]));
+    deps.artifacts = {
+      objects: { put: async () => { throw new Error("storage unavailable"); } },
+      rows: {},
+    } as never;
+    const executor = new ProjectA2aExecutor(
+      deps,
+      projectFixture({ projectType: "image" }),
+      versionFixture({ model: "openai/gpt-image-2" }),
+      fakeStore(),
+    );
+    const bus = new CollectingBus();
+    await executor.execute(requestContext(messageFixture("draw a cat")), bus);
+    const status = statusEvent(bus.events)?.status;
+    expect(status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+    expect(JSON.stringify(status?.message)).toContain("could not be stored");
+    expect(artifactEvents(bus.events)).toHaveLength(1);
+  });
+
   it("hands an image project the picture it was sent, to edit rather than ignore", async () => {
     const deps = executionDepsFixture(new FakeChannel([]));
     const sources: unknown[] = [];

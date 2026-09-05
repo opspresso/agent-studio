@@ -146,7 +146,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
           lastChunk: true,
           metadata: undefined,
         }));
-        await this.publishTerminal(eventBus, taskId, contextId, controller, requestContext.context);
+        await this.publishTerminal(eventBus, taskId, contextId, controller, requestContext.context, image.warning);
         return;
       }
 
