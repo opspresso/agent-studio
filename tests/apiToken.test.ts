@@ -12,6 +12,7 @@ import {
   verifyProjectApiToken as verifyProjectApiTokenImpl,
 } from "@/application/project/apiTokenUseCases";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { setAdminCheck } from "@/application/project/projectUseCases";
 
 // The cipher is injected now; every call below is unchanged.
 type Gen = Parameters<typeof generateApiTokenImpl>;
@@ -178,12 +179,18 @@ describe("generateApiToken", () => {
       // would let an admin mint a credential the execution gate refuses.
       const { repo, stored } = makeRepo(project());
       const asked: string[] = [];
-      await expect(
-        generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async (email) => {
-          asked.push(email);
-          return "guest";
-        }),
-      ).rejects.toBeInstanceOf(ForbiddenError);
+      const admin = "admin@example.com";
+      setAdminCheck(async (email) => email === admin);
+      try {
+        await expect(
+          generateApiTokenImpl(repo, "my-bot", admin, secretCipher, async (email) => {
+            asked.push(email);
+            return email === admin ? "admin" : "guest";
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenError);
+      } finally {
+        setAdminCheck(async () => false);
+      }
       expect(asked).toEqual([OWNER]);
       expect(stored()).toBeNull();
     });
