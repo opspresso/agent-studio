@@ -348,6 +348,15 @@ async function collectStream(
     }
     return { result: null, error: errorText(error, idle, caller) };
   }
+  if (task && (!task.status || isLiveTaskState(task.status.state))) {
+    // EOF ends the transport, not the remote work. Even an artifact's last
+    // chunk says nothing about whether the task completed or needs input.
+    const state = task.status ? taskStateName(task.status.state) : "unspecified";
+    return {
+      result: null,
+      error: `A2A stream ended before the remote task finished (state: ${state})`,
+    };
+  }
   // A task is the fuller record whenever there is one: it carries the artifacts,
   // the terminal status and the history the extractors fall through.
   return { result: task ?? message };
