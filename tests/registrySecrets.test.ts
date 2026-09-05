@@ -106,6 +106,9 @@ describe("resolveRegistryUrlPatch", () => {
 function makeMcpRepo(initial: McpServer[] = []) {
   const store = new Map(initial.map((server) => [server.name, server]));
   const repo: McpRepository = {
+    async updateAuth() {
+      throw new Error("OAuth updates are not used by this fixture");
+    },
     async get(name) {
       return store.get(name) ?? null;
     },

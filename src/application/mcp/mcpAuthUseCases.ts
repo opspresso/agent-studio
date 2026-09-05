@@ -31,10 +31,11 @@ import {
   mcpOAuthStateContext,
 } from "@/domain/security/secretContext";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
-import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import { listProjectMcpConnections } from "./listConnections";
+import { processManagedMcpLifecycleClaims } from "./managedMcpUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
 import { skipsUrlGuard } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
@@ -296,6 +297,7 @@ function parseGrantedScopes(scope: string): string[] {
 }
 
 export interface McpAuthUseCasesDeps {
+  lifecycleClaims?: Set<string>;
   mcps: McpRepository;
   projects: ProjectRepository;
   connections: McpConnectionRepository;
@@ -385,6 +387,7 @@ export interface McpAuthUseCases {
 }
 
 export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCases {
+  const lifecycleClaims = deps.lifecycleClaims ?? processManagedMcpLifecycleClaims();
   async function requireServer(name: string) {
     const server = await deps.mcps.get(name);
     if (!server) {
@@ -472,6 +475,23 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       );
     }
     return connection;
+  }
+
+  async function saveAuth(server: McpServer, auth: McpServerAuth | undefined): Promise<void> {
+    if (lifecycleClaims.has(server.name)) {
+      throw new ConflictError(`A lifecycle operation for "${server.name}" is already running.`);
+    }
+    lifecycleClaims.add(server.name);
+    try {
+      const saved = await deps.mcps.updateAuth(server.name, server.url, auth, new Date().toISOString());
+      if (!saved) {
+        throw new ConflictError(
+          `MCP server "${server.name}" was removed or moved while its OAuth configuration was being updated. Please retry.`,
+        );
+      }
+    } finally {
+      lifecycleClaims.delete(server.name);
+    }
   }
 
   return {
@@ -566,14 +586,13 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         ...(scopesSupported ? { scopesSupported } : {}),
         discoveredAt: new Date().toISOString(),
       };
-      await deps.mcps.put({ ...server, auth, updatedAt: new Date().toISOString() });
+      await saveAuth(server, auth);
       return { status: "discovered", auth };
     },
 
     async clearAuth(name) {
       const server = await requireServer(name);
-      const { auth: _dropped, ...rest } = server;
-      await deps.mcps.put({ ...rest, updatedAt: new Date().toISOString() });
+      await saveAuth(server, undefined);
     },
 
     async listConnections(projectName, userEmail) {

@@ -395,6 +395,26 @@ async function main() {
     );
     pass("mcp + external agent with encrypted headers");
 
+    const discoveredAuth = {
+      type: "oauth2" as const,
+      resource: mcp.url,
+      issuer: "https://auth.example.com",
+      authorizationServer: "https://auth.example.com",
+      authorizationEndpoint: "https://auth.example.com/authorize",
+      tokenEndpoint: "https://auth.example.com/token",
+      tokenEndpointAuthMethod: "none" as const,
+      discoveredAt: now,
+    };
+    assert.equal(await mcpRepository.updateAuth(serverName, "https://stale.example/mcp", discoveredAuth, now), false);
+    assert.equal(await mcpRepository.updateAuth(serverName, mcp.url, discoveredAuth, now), true);
+    assert.deepEqual((await mcpRepository.get(serverName))?.auth, discoveredAuth);
+    assert.deepEqual((await mcpRepository.get(serverName))?.headers, mcp.headers);
+    assert.equal(await mcpRepository.updateAuth(serverName, mcp.url, undefined, now), true);
+    assert.equal((await mcpRepository.get(serverName))?.auth, undefined);
+    assert.equal(await mcpRepository.updateAuth(`${serverName}-absent`, mcp.url, discoveredAuth, now), false);
+    assert.equal(await mcpRepository.get(`${serverName}-absent`), null);
+    pass("MCP metadata patch: URL fence, header preservation, clear, missing row refusal");
+
     // ---------- mcp oauth connection + in-flight state ----------
     await mcpConnectionRepository.put({
       projectName,

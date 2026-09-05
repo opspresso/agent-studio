@@ -6,7 +6,7 @@
  * so code written against Slack alone silently assumes all three.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The SSRF boundary has its own tests and resolves DNS for real; here it stands
 // aside so the stubbed fetch is what the metadata client talks to.
@@ -15,11 +15,16 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 }));
 
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
-import { ValidationError } from "@/application/errors";
+import { ConflictError, ValidationError } from "@/application/errors";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
-import type { McpServer } from "@/domain/mcp/types";
+import type { McpServer, McpServerAuth } from "@/domain/mcp/types";
 import type { OAuthMetadataClient } from "@/domain/mcp/oauth";
 import { McpMetadataError } from "@/domain/mcp/oauth";
+import type { McpRepository } from "@/domain/mcp/repository";
+import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
+import type { FakeStore } from "./fakeStore";
+
+const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
 
 const SERVER: McpServer = {
   name: "slack",
@@ -36,15 +41,28 @@ function useCases(
     server?: McpServer;
     internalHostSuffixes?: string[];
     allowUnadvertisedPkce?: boolean;
+    repository?: McpRepository;
+    lifecycleClaims?: Set<string>;
   } = {},
 ) {
-  const server = opts.server ?? SERVER;
+  let server = opts.server ?? SERVER;
   const stored: McpServer[] = [];
   const deps = {
-    mcps: {
+    lifecycleClaims: opts.lifecycleClaims ?? new Set<string>(),
+    mcps: opts.repository ?? {
       get: async (name: string) => (name === server.name ? { ...server } : null),
       put: async (saved: McpServer) => {
         stored.push(saved);
+      },
+      updateAuth: async (name: string, expectedUrl: string, auth: McpServerAuth | undefined, updatedAt: string) => {
+        if (server.name !== name || server.url !== expectedUrl) {
+          return false;
+        }
+        const { auth: _previous, ...current } = server;
+        void _previous;
+        server = { ...current, ...(auth ? { auth } : {}), updatedAt };
+        stored.push(server);
+        return true;
       },
     } as never,
     metadata: {
@@ -97,6 +115,21 @@ const SLACK_AS = {
 };
 
 describe("discovering a server's authorization configuration", () => {
+  it.each(["discover", "clearAuth"] as const)("does not %s across a managed lifecycle write", async (operation) => {
+    const claims = new Set([SERVER.name]);
+    const { useCases: uc, stored } = useCases({
+      fetchProtectedResource: async () => SLACK_RESOURCE,
+      fetchAuthorizationServer: async () => SLACK_AS,
+    }, { lifecycleClaims: claims });
+    await expect(uc[operation](SERVER.name)).rejects.toBeInstanceOf(ConflictError);
+    expect(stored).toEqual([]);
+    expect(claims.has(SERVER.name)).toBe(true);
+    claims.clear();
+    await uc[operation](SERVER.name);
+    expect(stored).toHaveLength(1);
+    expect(claims.size).toBe(0);
+  });
+
   it("stores what Slack publishes, taking `resource` from the metadata not the URL", async () => {
     // Slack serves `…/mcp` but identifies as its origin. Deriving the resource
     // from the endpoint would send an audience the server never claims, and a
@@ -294,6 +327,104 @@ describe("discovering a server's authorization configuration", () => {
     await uc.clearAuth("slack");
     expect(stored[0]).toBeDefined();
     expect("auth" in (stored[0] as object)).toBe(false);
+  });
+});
+
+describe("OAuth metadata writes racing registry edits", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(SERVER.updatedAt));
+    store.rows.clear();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  async function pendingDiscovery() {
+    await mcpRepository.put(SERVER);
+    const started = Promise.withResolvers<void>();
+    const metadata = Promise.withResolvers<typeof SLACK_AS>();
+    const { useCases: uc } = useCases({
+      fetchProtectedResource: async () => SLACK_RESOURCE,
+      fetchAuthorizationServer: async () => {
+        started.resolve();
+        return metadata.promise;
+      },
+    }, { repository: mcpRepository });
+    const result = uc.discover(SERVER.name);
+    await started.promise;
+    return { result, metadata };
+  }
+
+  it.each(["deleted", "moved"])("refuses discovery after the original entry was %s", async (change) => {
+    const pending = await pendingDiscovery();
+    if (change === "deleted") {
+      await mcpRepository.delete(SERVER.name);
+    } else {
+      await mcpRepository.put({ ...SERVER, url: "https://other.example/mcp" });
+    }
+    pending.metadata.resolve(SLACK_AS);
+
+    await expect(pending.result).rejects.toBeInstanceOf(ConflictError);
+    const current = await mcpRepository.get(SERVER.name);
+    if (change === "deleted") {
+      expect(current).toBeNull();
+    } else {
+      expect(current?.url).toBe("https://other.example/mcp");
+      expect(current?.auth).toBeUndefined();
+    }
+  });
+
+  it("adds discovered auth without undoing concurrent headers and description edits", async () => {
+    const pending = await pendingDiscovery();
+    const edited = { ...SERVER, headers: { Authorization: "enc:new-header" }, description: "edited" };
+    await mcpRepository.put(edited);
+    pending.metadata.resolve(SLACK_AS);
+
+    await expect(pending.result).resolves.toMatchObject({ status: "discovered" });
+    expect(await mcpRepository.get(SERVER.name)).toMatchObject({
+      ...edited,
+      auth: { issuer: SLACK_AS.issuer, resource: SLACK_RESOURCE.resource },
+    });
+  });
+
+  it.each(["deleted", "moved", "edited"])("clears auth safely when the entry was %s after reading", async (change) => {
+    const { result, metadata } = await pendingDiscovery();
+    metadata.resolve(SLACK_AS);
+    await result;
+    const original = await mcpRepository.get(SERVER.name);
+    expect(original?.auth).toBeDefined();
+    const read = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const { useCases: uc } = useCases({}, { repository: {
+      ...mcpRepository,
+      async get(name) {
+        const snapshot = await mcpRepository.get(name);
+        read.resolve();
+        await resume.promise;
+        return snapshot;
+      },
+    } });
+    const clearing = uc.clearAuth(SERVER.name);
+    await read.promise;
+    const edited = {
+      ...original!,
+      ...(change === "moved" ? { url: "https://other.example/mcp" } : {}),
+      headers: { Authorization: "enc:new-header" },
+      description: "edited",
+    };
+    if (change === "deleted") {
+      await mcpRepository.delete(SERVER.name);
+    } else {
+      await mcpRepository.put(edited);
+    }
+    resume.resolve();
+
+    if (change === "edited") {
+      await expect(clearing).resolves.toBeUndefined();
+      expect(await mcpRepository.get(SERVER.name)).toMatchObject({ ...edited, auth: undefined });
+    } else {
+      await expect(clearing).rejects.toBeInstanceOf(ConflictError);
+      expect(await mcpRepository.get(SERVER.name)).toEqual(change === "deleted" ? null : edited);
+    }
   });
 });
 
