@@ -142,6 +142,13 @@ describe("rows that end where a parser stops looking", () => {
     expect(parseCsv("a\n\nb")).toEqual([["a"], ["b"]]);
   });
 
+  it.each(["\n", "\r\n", "\r"])("reads quoted fields after blank %j lines", (newline) => {
+    expect(parseCsv(`${newline}"a,b",c${newline}${newline}"one${newline}two",d`)).toEqual([
+      ["a,b", "c"],
+      [`one${newline}two`, "d"],
+    ]);
+  });
+
   it("still keeps a row whose fields are all empty", () => {
     // Not a blank line: the delimiters say there are three columns.
     expect(parseCsv(",,")).toEqual([["", "", ""]]);

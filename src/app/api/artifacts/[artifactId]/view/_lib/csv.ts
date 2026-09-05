@@ -67,7 +67,6 @@ export function parseCsv(text: string): string[][] {
       started = true;
       continue;
     }
-    atFieldStart = false;
     if (char === ",") {
       endField();
       continue;
@@ -86,6 +85,7 @@ export function parseCsv(text: string): string[][] {
       }
       continue;
     }
+    atFieldStart = false;
     field += char;
     // Set here rather than above the branches: a newline is a character too,
     // and marking the row started before reading it is what made a trailing
