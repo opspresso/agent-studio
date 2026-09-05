@@ -531,6 +531,36 @@ describe("settingsUseCases.update", () => {
     ).rejects.toThrow("At least one model must remain visible");
   });
 
+  it.each(["embedding", "rerank"] as const)("does not count a %s declaration as a visible run model", async (type) => {
+    const { repo } = fakeRepo();
+    await expect(createSettingsUseCases(repo).update({
+      selfHostedModels: [{
+        family: `special-${type}`, displayName: "Specialized", type,
+        contextWindow: 32768, maxTokens: 0,
+        capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false },
+      }],
+      hiddenModels: getVisibleModels().map((model) => model.id),
+    }, ADMIN)).rejects.toThrow("At least one model must remain visible");
+  });
+
+  it("counts a newly declared text model only when its provider is offered", async () => {
+    const { repo } = fakeRepo();
+    const patch = {
+      selfHostedModels: [{
+        family: "chat-model", displayName: "Chat model", type: "text" as const,
+        contextWindow: 32768, maxTokens: 8192,
+        capabilities: { tools: true, structuredOutput: false, imageInput: false, reasoning: false },
+      }],
+      hiddenModels: getVisibleModels().map((model) => model.id),
+    };
+    await expect(createSettingsUseCases(repo).update(patch, ADMIN))
+      .rejects.toThrow("At least one model must remain visible");
+    await expect(createSettingsUseCases(repo).update({
+      ...patch,
+      llmProviders: [{ name: "selfhosted", baseUrl: "https://models.example/v1", apiKey: "key" }],
+    }, ADMIN)).resolves.toBeDefined();
+  });
+
   it("refuses to hide everything the configured provider channels offer", async () => {
     // Only anthropic is configured, so hiding every anthropic model empties
     // /api/models even though other providers' models stay catalog-visible.

@@ -756,10 +756,11 @@ export function providerOffered(name: string, dedicated: ReadonlySet<string>): b
 export function offeredModels(
   providerNames: string[],
   hiddenIds: string[] | undefined,
+  candidates: readonly ModelConfig[] = getVisibleModels(),
 ): ModelConfig[] {
   const providers = new Set(providerNames);
   const hidden = new Set(hiddenIds ?? []);
-  return getVisibleModels().filter(
+  return candidates.filter(
     (model) =>
       (modelType(model) === "text" || modelType(model) === "image") &&
       providerOffered(model.provider, providers) &&
