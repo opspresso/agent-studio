@@ -56,6 +56,8 @@ export interface ResolvedMessages {
   messages: ChatMessage[];
   /** How many stored images could not be turned into a fetchable address. */
   dropped: number;
+  /** Message sequences whose original images were omitted during resolution. */
+  droppedImageSeqs: ReadonlySet<number>;
 }
 
 interface PendingImage {
@@ -81,10 +83,15 @@ function rebuildMessages(
   resolved: ResolvedImage[],
 ): ResolvedMessages {
   const byMessage = new Map<number, ChatMessageImage[]>();
+  const droppedImageSeqs = new Set<number>();
   let dropped = 0;
   for (const entry of resolved) {
     if (!entry.image) {
       dropped += 1;
+      const message = messages[entry.messageIndex];
+      if (message) {
+        droppedImageSeqs.add(message.seq);
+      }
       continue;
     }
     const images = byMessage.get(entry.messageIndex) ?? [];
@@ -100,6 +107,7 @@ function rebuildMessages(
       return { ...message, images: byMessage.get(messageIndex) ?? [] };
     }),
     dropped,
+    droppedImageSeqs,
   };
 }
 

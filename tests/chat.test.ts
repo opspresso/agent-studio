@@ -1285,6 +1285,61 @@ describe("chat image attachments", () => {
     });
   });
 
+  it.each(["read-failure", "history-limit", "legacy-url", "storage-unconfigured"])(
+    "keeps an earlier image-only turn nonempty after %s",
+    async (reason) => {
+      const stored = message({
+        seq: 0,
+        role: "user",
+        images: [reason === "legacy-url"
+          ? { url: "https://bucket.example/legacy.png" }
+          : { key: "images/earlier.png" }],
+      });
+      const newer = reason === "history-limit"
+        ? [message({
+            seq: 1,
+            role: "assistant",
+            content: "newer images",
+            images: Array.from({ length: 4 }, (_, index) => ({ key: `images/new-${index}.png` })),
+          })]
+        : [];
+      const { repo } = makeChatRepo(chatFixture("owner@x.com"), [stored, ...newer]);
+      const { storage } = fakeArtifacts();
+      if (reason === "read-failure") {
+        storage.objects.read = async () => {
+          throw new Error("object unavailable");
+        };
+      }
+      const runAgent = vi.fn<AgentRunner>(() => emptyAgent());
+      const result = await sendMessage(makeDeps(repo, {
+        projects: agentProjects,
+        versions: publishedVersions,
+        artifacts: reason === "storage-unconfigured" ? undefined : storage,
+        runAgent,
+      }), {
+        chatId: "c1",
+        content: "and now?",
+        userEmail: "owner@x.com",
+      });
+      const chunks: unknown[] = [];
+      for await (const chunk of result.stream) {
+        chunks.push(chunk);
+      }
+
+      const sent = runAgent.mock.calls[0]?.[0].messages;
+      expect(sent?.[0]).toEqual({
+        role: "user",
+        content: "[The image(s) attached to this turn are no longer available.]",
+      });
+      expect(sent?.at(-1)).toEqual({ role: "user", content: "and now?" });
+      expect(JSON.stringify(sent)).not.toContain("https://");
+      expect(chunks).toContainEqual({
+        warning: "1 earlier image(s) were omitted or could not be read back and are missing from this run's context.",
+      });
+      expect((await repo.listMessages("c1"))[0]).toEqual(stored);
+    },
+  );
+
   it("restores an earlier generated image as editable bytes", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "make an image" }),

@@ -6,6 +6,7 @@ import {
   resolveRunMessageImages,
 } from "@/application/chat/resolveImages";
 import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { toEngineMessages } from "@/application/chat/messageMapping";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import type { ChatMessage, ChatMessageImage } from "@/domain/chat/types";
 
@@ -149,6 +150,40 @@ describe("resolveMessageImages", () => {
 });
 
 describe("resolveRunMessageImages", () => {
+  it("preserves an image-only turn's loss through resolution and replay mapping", async () => {
+    const original: ChatMessage[] = [
+      {
+        chatId: "c1",
+        seq: 7,
+        role: "user",
+        content: "",
+        images: [{ url: "https://bucket.example/legacy.png" }],
+        createdAt: "2026-08-03T10:00:00Z",
+      },
+      {
+        chatId: "c1",
+        seq: 8,
+        role: "user",
+        content: "",
+        images: [],
+        createdAt: "2026-08-03T10:00:01Z",
+      },
+    ];
+
+    const resolved = await resolveRunMessageImages(original, undefined);
+    const replay = toEngineMessages(resolved.messages, {
+      droppedImageSeqs: resolved.droppedImageSeqs,
+    });
+
+    expect(replay.messages).toEqual([
+      { role: "user", content: "[The image(s) attached to this turn are no longer available.]" },
+      { role: "user", content: "" },
+    ]);
+    expect(original[0]?.role !== "tool" && original[0]?.images).toEqual([
+      { url: "https://bucket.example/legacy.png" },
+    ]);
+  });
+
   it("inlines only the newest four stored images and never signs the rest", async () => {
     const reads: string[] = [];
     const sign = async () => {

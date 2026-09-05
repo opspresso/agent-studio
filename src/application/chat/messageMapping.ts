@@ -44,7 +44,7 @@ const MAX_HISTORY_MESSAGES = 200;
  * restores the newest objects as data URLs so they remain editable; anything
  * else is absent from the run context rather than fetched by the provider.
  */
-function userMessage(message: UserChatMessage): ChatMessageInput {
+function userMessage(message: UserChatMessage, imagesDropped: boolean): ChatMessageInput {
   const documents = message.documents ?? [];
   // Resolved upstream (`resolveImages.ts`); one that could not be restored
   // carries no URL and is left out rather than handed to the provider.
@@ -63,7 +63,7 @@ function userMessage(message: UserChatMessage): ChatMessageInput {
   // stored with no content and no attachments replays empty because that is
   // what it was, and telling the model an image went missing from it would be
   // inventing the loss rather than reporting one.
-  const lostEveryImage = images.length === 0 && (message.images?.length ?? 0) > 0;
+  const lostEveryImage = images.length === 0 && (imagesDropped || (message.images?.length ?? 0) > 0);
   const content =
     !message.content && documents.length === 0 && lostEveryImage
       ? "[The image(s) attached to this turn are no longer available.]"
@@ -203,6 +203,8 @@ function pairWithinRun(run: ChatMessage[], into: Map<ChatMessage, ToolPair[]>): 
 export interface ToEngineMessagesOptions {
   /** Assistant turns whose tool calls replay. 0 replays none. */
   toolReplayTurns?: number;
+  /** Image loss reported before unresolved references were removed. */
+  droppedImageSeqs?: ReadonlySet<number>;
 }
 
 export interface EngineMessages {
@@ -268,7 +270,7 @@ export function toEngineMessages(
   const out: ChatMessageInput[] = [];
   for (const message of history) {
     if (message.role === "user") {
-      out.push(userMessage(message));
+      out.push(userMessage(message, options.droppedImageSeqs?.has(message.seq) ?? false));
       continue;
     }
     if (message.role === "tool") {

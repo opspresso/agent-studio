@@ -136,11 +136,13 @@ export async function sendMessage(
     // Resolved before mapping. At most the newest attachment budget becomes
     // inline bytes; the provider never fetches a stored or caller-supplied URL.
     const resolved = await resolveRunMessageImages(existing, deps.artifacts?.objects);
-    const history = toEngineMessages(resolved.messages);
+    const history = toEngineMessages(resolved.messages, {
+      droppedImageSeqs: resolved.droppedImageSeqs,
+    });
     // An image the replay could not address is a turn the model sees differently
     // from the one the reader is looking at — and if that turn carried nothing
-    // else, it replays empty. Said out loud for the same reason a dropped
-    // history run is: the answer will be shaped by the gap either way.
+    // else, the mapper substitutes an image-loss marker. Said out loud for the
+    // same reason a dropped history run is: the answer will be shaped by the gap either way.
     const imageWarnings =
       resolved.dropped > 0
         ? [
