@@ -212,11 +212,23 @@ describe("chat TTL", () => {
 describe("chat run log TTL", () => {
   it("expires a run log entry a fixed window from when it was written", async () => {
     vi.setSystemTime(new Date("2026-08-05T00:00:00Z"));
+    store.seed([{ ...keys.chat("c1") }]);
     await chatRunLogRepository.append("c1", "run-1", [{ seq: 0, payload: "[]" }]);
     expect((await store.getItem(keys.chatRunLog("c1", "run-1", 0)))?.expiresAt).toBe(
       Math.floor(Date.parse("2026-08-05T00:00:00Z") / 1000) + RUN_LOG_TTL_SECONDS,
     );
     expect(RUN_LOG_TTL_SECONDS).toBeGreaterThan(RUN_LEASE_SECONDS);
+  });
+
+  it.each([false, true])("refuses a late flush while the chat is deleted (marked=%s)", async (marked) => {
+    if (marked) {
+      store.seed([{ ...keys.chat("c1"), deletingAt: NOW_ISO }]);
+    }
+    await expect(chatRunLogRepository.append("c1", "run-1", [
+      { seq: 0, payload: '[{"delta":{"content":"late"}}]' },
+      { seq: 1, payload: "[]", terminal: true },
+    ])).rejects.toMatchObject({ name: store.TRANSACTION_CANCELLED });
+    expect(await chatRunLogRepository.read("c1", "run-1", 0)).toEqual([]);
   });
 
   it("filters expired entries from read()", async () => {

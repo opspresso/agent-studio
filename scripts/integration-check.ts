@@ -664,6 +664,11 @@ async function main() {
     });
     await chatRunLogRepository.append(sweptChatId, "run-1", [{ seq: 0, payload: "[]" }]);
     await chatRepository.delete(sweptChatId);
+    await assert.rejects(
+      chatRunLogRepository.append(sweptChatId, "run-1", [{ seq: 1, payload: "[]", terminal: true }]),
+      { name: "TransactionCancelled" },
+      "a late terminal write cannot recreate a deleted chat's log",
+    );
     assert.deepEqual(
       await chatRunLogRepository.read(sweptChatId, "run-1", 0),
       [],
