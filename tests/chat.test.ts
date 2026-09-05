@@ -1143,6 +1143,30 @@ describe("chat image attachments", () => {
     expect(toEngineMessages([stored]).messages).toEqual([{ role: "user", content: "look" }]);
   });
 
+  it.each(["create", "send"])("attributes attached images to the uploader on %s", async (action) => {
+    const userEmail = "uploader@x.com";
+    const { repo } = makeChatRepo(chatFixture(userEmail));
+    const { storage } = fakeArtifacts();
+    const put = vi.spyOn(storage.rows, "put");
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      artifacts: storage,
+    });
+    const result = action === "create"
+      ? await createChat(deps, { projectName: "p1", firstMessage: "look", images: [PNG], userEmail })
+      : await sendMessage(deps, { chatId: "c1", content: "look", images: [PNG], userEmail });
+    for await (const _chunk of result.stream) {
+      // Finish the run and release its lease.
+    }
+    expect(put).toHaveBeenCalledWith(expect.objectContaining({
+      source: "attachment",
+      projectName: "p1",
+      versionName: "1",
+      actor: { kind: "user", id: userEmail },
+    }));
+  });
+
   it("marks an image-only turn when its remote URL is omitted", () => {
     const stored = message({ seq: 0, role: "user", content: "" });
     (stored as { images?: Array<{ url: string }> }).images = [{ url: "https://x/y.png" }];

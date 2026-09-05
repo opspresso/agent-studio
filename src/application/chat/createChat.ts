@@ -95,7 +95,7 @@ export async function createChat(
     const attachments = input.images ?? [];
     const uploaded = await storeAttachedImages(
       deps,
-      { projectName: project.name, versionName: version.versionName },
+      { projectName: project.name, versionName: version.versionName, actor: { kind: "user", id: input.userEmail } },
       attachments,
     );
     const documentInput = input.documents ?? [];
