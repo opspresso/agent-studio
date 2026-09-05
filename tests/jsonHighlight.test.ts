@@ -1,44 +1,31 @@
 import { describe, expect, it } from "vitest";
+import { createElement, Fragment } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { JsonHighlight } from "@/app/_components/JsonHighlight";
 import { tokenize } from "@/app/_components/highlight";
 
-/**
- * `JsonHighlight` decides by parsing, because what it is handed is a provider's
- * argument object or an MCP server's reply — JSON most of the time, a sentence
- * or a stack trace the rest of it. These fix the decision itself; the component
- * around it is two lines of JSX over `tokenize`.
- *
- * The rules are duplicated from the component rather than exported for the
- * test, so this file states them independently: a document (object or array)
- * that parses is coloured, everything else is left exactly as it arrived.
- */
-function decide(text: string, maxChars = 20_000): "json" | "plain" {
-  if (text.length > maxChars) {
-    return "plain";
-  }
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-    return "plain";
-  }
-  try {
-    JSON.parse(trimmed);
-    return "json";
-  } catch {
-    return "plain";
-  }
+function render(text: string): string {
+  return renderToStaticMarkup(createElement(JsonHighlight, { text }));
+}
+
+function plain(text: string): string {
+  return renderToStaticMarkup(createElement(Fragment, null, text));
 }
 
 describe("what gets coloured as JSON", () => {
   it("colours an object and an array", () => {
-    expect(decide('{"city":"Seoul"}')).toBe("json");
-    expect(decide("[1, 2, 3]")).toBe("json");
-    expect(decide('\n  {"padded": true}\n')).toBe("json");
+    for (const text of ['{"city":"Seoul"}', "[1, 2, 3]", '\n  {"padded": true}\n']) {
+      const html = render(text);
+      expect(html).toContain("<span");
+      expect(html.replace(/<\/?span\b[^>]*>/g, "")).toBe(plain(JSON.stringify(JSON.parse(text), null, 2)));
+    }
   });
 
   /** A tool that answers in prose, and one that failed mid-sentence. */
   it("leaves text that is not a JSON document alone", () => {
-    expect(decide("Seoul is sunny.")).toBe("plain");
-    expect(decide("Error: connection refused")).toBe("plain");
-    expect(decide('{"truncated": tr')).toBe("plain");
+    expect(render("Seoul is sunny.")).toBe(plain("Seoul is sunny."));
+    expect(render("Error: connection refused")).toBe(plain("Error: connection refused"));
+    expect(render('{"truncated": tr')).toBe(plain('{"truncated": tr'));
   });
 
   /**
@@ -46,15 +33,14 @@ describe("what gets coloured as JSON", () => {
    * document is noise — the leading brace is what makes it worth reading.
    */
   it("leaves a bare scalar alone even though it parses", () => {
-    expect(decide("42")).toBe("plain");
-    expect(decide('"ok"')).toBe("plain");
-    expect(decide("null")).toBe("plain");
+    expect(render("42")).toBe(plain("42"));
+    expect(render('"ok"')).toBe(plain('"ok"'));
+    expect(render("null")).toBe(plain("null"));
   });
 
   it("stops at the size where tokenizing costs a frame", () => {
     const big = `{"data":"${"x".repeat(20_000)}"}`;
-    expect(decide(big)).toBe("plain");
-    expect(decide(big, big.length)).toBe("json");
+    expect(render(big)).toBe(plain(big));
   });
 
   /** The colours themselves: keys and values are separate token types. */
