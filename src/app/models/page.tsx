@@ -227,9 +227,8 @@ interface ServedModel {
 
 /** The section's whole picture, from `GET /api/models/selfhosted`. */
 interface SelfHostedView {
-  /** Null when the channel did not answer — `servedError` says why. */
+  /** Null when the channel did not answer. */
   served: ServedModel[] | null;
-  servedError?: string;
   /** The stored declarations — the editing basis, installed or not. */
   declarations: ModelConfig[];
   /** Ids the registry actually installed; a stored id missing here was refused. */
@@ -315,11 +314,6 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
           <Alert color="orange" variant="light" withCloseButton onClose={() => setError(null)}>
             {error}
           </Alert>
-        )}
-        {view?.servedError !== undefined && (
-          <Text fz="sm" c="orange">
-            {view.servedError}
-          </Text>
         )}
         {declarations.map((model) => (
           <Group key={model.id} justify="space-between" wrap="nowrap">
