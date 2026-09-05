@@ -186,20 +186,6 @@ export async function reindexCatalog(deps: CatalogIndexDeps): Promise<ReindexRep
   // order would leave a window where a live capability is absent from the index
   // entirely, and searches during it would silently under-answer.
   const stale = keysAtStart.filter((key) => !keep.has(key));
-  // Nothing collected is a claim about the registries, and "every registry is
-  // empty at once" is not a state this platform reaches — a table name pointed
-  // somewhere else, a role that lost its reads, a local process aimed at the
-  // deployed index are. Each of those looks identical from here and would erase
-  // the catalog in one call, so the total wipe is the one prune refused. Said
-  // out loud rather than skipped quietly: an operator who *did* empty the
-  // registries deliberately needs to know why the index still answers.
-  if (entries.length === 0 && stale.length > 0) {
-    log.error(
-      "catalog",
-      `the registries came back empty; refusing to delete all ${stale.length} indexed entries`,
-    );
-    return { indexed: 0, removed: 0, undiscovered };
-  }
   if (stale.length > 0) {
     await deps.catalog.deleteByKeys(stale);
   }
