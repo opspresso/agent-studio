@@ -1,6 +1,6 @@
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
-import { chunkAuthorPath, removeActivePath, trackActivePath } from "@/app/_lib/authorPaths";
-import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
+import { removeActivePath, trackActivePath } from "@/app/_lib/authorPaths";
+import { chunkAuthorPath, collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
 import type { LiveTurn, StreamChunk } from "./types";
 
 /** Render a tool result payload to a readable string for a collapsible block. */
@@ -55,17 +55,25 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
     reasoningTokens += chunk.usage.reasoningTokens;
   }
   if (Array.isArray(chunk.delta?.toolCalls)) {
-    toolCalls = [...toolCalls, ...chunk.delta.toolCalls.map(parseWireToolCall)];
+    toolCalls = [...toolCalls, ...chunk.delta.toolCalls.map((call) => ({
+      ...parseWireToolCall(call),
+      author: chunk.author,
+      authorPath: chunk.authorPath,
+      transferId: chunk.transferId,
+    }))];
   }
   if (chunk.toolResult !== undefined) {
     tools = [
       ...tools,
       {
         // Carried so the result can be put back beside the call that asked for
-        // it — the ids are unique within a run, which is exactly this turn.
+        // it — the id is scoped to the delegation that produced this chunk.
         id: toolResultField(chunk.toolResult, "toolCallId"),
         name: toolResultField(chunk.toolResult, "name"),
         content: stringifyToolResult(chunk.toolResult),
+        author: chunk.author,
+        authorPath: chunk.authorPath,
+        transferId: chunk.transferId,
       },
     ];
   }

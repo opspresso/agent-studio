@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chunkAuthorPath, runTermination } from "@/domain/llm/types";
+import { chunkAuthorPath, runTermination, toolCallKey } from "@/domain/llm/types";
 import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
@@ -78,12 +78,6 @@ function preview(value: string): string {
   return value.length <= MAX_PREVIEW_CHARS
     ? value
     : `${value.slice(0, MAX_PREVIEW_CHARS)}…`;
-}
-
-/** Tool ids are run-local; sampling must not decide which result they match. */
-function toolCallKey(chunk: EngineChunk, callId: string): string {
-  const path = chunkAuthorPath(chunk) ?? [];
-  return JSON.stringify([path, chunk.transferId ?? null, callId]);
 }
 
 export class TraceRecorder {

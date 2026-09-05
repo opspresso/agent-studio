@@ -1,3 +1,5 @@
+import { toolCallKey } from "@/domain/llm/types";
+
 /**
  * A tool call and what it returned, as one thing.
  *
@@ -30,6 +32,8 @@ interface PairableCall {
   name: string;
   args: string;
   author?: string | undefined;
+  authorPath?: string[] | undefined;
+  transferId?: string | undefined;
 }
 
 interface PairableResult {
@@ -37,6 +41,8 @@ interface PairableResult {
   name?: string | undefined;
   content: string;
   author?: string | undefined;
+  authorPath?: string[] | undefined;
+  transferId?: string | undefined;
 }
 
 /**
@@ -56,11 +62,10 @@ function baseName(name: string | undefined): string | undefined {
 /**
  * Pair them up, by call id where there is one and by name and order otherwise.
  *
- * The id is what the engine itself pairs on and it is exact — including for the
+ * The id is scoped to its delegation and is exact — including for the
  * same tool called twice, which is the case two flat lists cannot express. Name
- * matching is the fallback for a result whose call never reached this turn (a
- * subagent's, whose call belongs to the child's conversation) and for a provider
- * that omits ids.
+ * matching stays within the same scope and is only for a provider that omits
+ * ids. Results whose calls never reached this turn stay unpaired.
  *
  * Calls keep their original order so a row does not jump as its result lands,
  * and a result nothing claimed is appended rather than dropped.
@@ -78,16 +83,21 @@ export function pairToolTraffic(
 
   const orphans: PairableResult[] = [];
   for (const result of results) {
+    const scope = toolCallKey(result, "");
     const byId =
       result.id === undefined
         ? -1
-        : calls.findIndex((call, at) => !claimed.has(at) && call.id === result.id);
+        : calls.findIndex((call, at) =>
+            !claimed.has(at) && call.id === result.id && toolCallKey(call, "") === scope,
+          );
     const index =
       byId !== -1
         ? byId
         : calls.findIndex(
             (call, at) =>
               !claimed.has(at) &&
+              toolCallKey(call, "") === scope &&
+              (call.id === undefined || result.id === undefined) &&
               (result.name === undefined || baseName(call.name) === baseName(result.name)),
           );
     if (index === -1) {

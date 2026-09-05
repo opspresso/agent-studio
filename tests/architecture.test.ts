@@ -1067,6 +1067,11 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "scoping tool calls to their delegation",
+    pattern: /export function toolCallKey\b/,
+    owner: "src/domain/llm/types.ts",
+  },
+  {
     what: "bounded same-origin redirect following",
     pattern: /export async function fetchSameOrigin\b/,
     owner: "src/infrastructure/net/redirectPolicy.ts",

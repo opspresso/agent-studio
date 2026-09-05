@@ -49,6 +49,7 @@ export interface StreamChunk {
   author?: string;
   /** Transfer chain that produced the chunk, outermost first. */
   authorPath?: string[];
+  transferId?: string;
   /** This authored run returned and is no longer active. */
   authorDone?: boolean;
   /** A binding the run could not use; the run still answers. */
@@ -62,6 +63,9 @@ export interface LiveToolCall {
   /** As the engine named it — see `parseWireToolCall` on why it is not decorated. */
   name: string;
   args: string;
+  author?: string | undefined;
+  authorPath?: string[] | undefined;
+  transferId?: string | undefined;
 }
 
 export interface LiveToolResult {
@@ -69,6 +73,9 @@ export interface LiveToolResult {
   id?: string | undefined;
   name?: string | undefined;
   content: string;
+  author?: string | undefined;
+  authorPath?: string[] | undefined;
+  transferId?: string | undefined;
 }
 
 export interface LiveImage {

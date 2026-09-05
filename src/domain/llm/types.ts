@@ -105,6 +105,14 @@ export function chunkAuthorPath(chunk: {
   return chunk.authorPath ?? (chunk.author ? [chunk.author] : undefined);
 }
 
+/** Tool ids identify calls only within their run, independently of trace sampling. */
+export function toolCallKey(
+  chunk: Pick<EngineChunk, "author" | "authorPath" | "transferId">,
+  callId: string,
+): string {
+  return JSON.stringify([chunkAuthorPath(chunk) ?? [], chunk.transferId ?? null, callId]);
+}
+
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
   /**
