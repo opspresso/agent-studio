@@ -1547,9 +1547,10 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
 - `favorites` 는 로그인한 사용자의 Better Auth user id 로 분리한 개인 설정이다. PUT 은 전체 교체이고
   최대 200개이며, 중복 제거·정렬해 저장한다. 다른 사용자의 id 를 받는 파라미터는 없다. 숨긴 모델의
   즐겨찾기는 저장에 남지만 picker 에서는 숨김이 우선한다.
-- `test` 는 Text·Image 모델에 대해 진짜 채널로 아주 작은 completion 하나를 보낸다 (`maxTokens` 16,
-  15초 타임아웃). Embedding·Rerank·Transcription은 completion endpoint로 검사할 수 없으므로 `400` 이고 콘솔도 Test
-  버튼을 표시하지 않는다.
+- `test`는 Text 모델에 작은 completion 하나를 보낸다 (`maxTokens` 16, 15초 타임아웃).
+  Image는 실제 이미지 채널로 테스트 이미지를 생성한다 (120초 타임아웃). 이미지 생성 비용은
+  제공자에 발생하며 결과 이미지는 저장하지 않는다. Rerank는 전용 endpoint의 semantic probe를
+  사용한다. Embedding·Transcription은 이 진단을 지원하지 않으므로 `400`이며 Test 버튼도 없다.
   프로바이더 해석, base URL, API 키, wire-id 치환까지 포함해서다. 실패한 프로브는 `5xx` 가 아니라
   `200` 본문이다 (`ok: false` 와 상류 에러). 레지스트리에 없는 id도 `400` 이다. 프로브는 런
   브래킷 밖에서 돌아가므로 사용량 행을 기록하지 않는다.

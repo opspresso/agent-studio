@@ -1232,7 +1232,7 @@ export default function ModelsPage() {
                           loading={test?.running}
                           onClick={() => void runTest(model.id)}
                         >
-                          Test
+                          {model.type === "image" ? t("models.generateTestImage") : "Test"}
                         </Button>
                       )}
                     </Group>

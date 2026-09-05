@@ -279,7 +279,12 @@ async function resolveReranker(id: string) {
 }
 
 /** One-shot model probe for the /models console — the same channel a run uses. */
-export const testModel = createTestModel(channel, { testReranker: testRerankerModel });
+export const testModel = createTestModel(channel, {
+  testReranker: testRerankerModel,
+  testImage: async (model, signal) => {
+    await imageChannel.generateImage({ model, prompt: "A small white square on a plain background.", signal });
+  },
+});
 
 /**
  * "Pull the published catalog now", for the /models console's refresh button —

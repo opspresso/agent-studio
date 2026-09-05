@@ -1,6 +1,6 @@
 /**
- * A one-shot "does this model answer" probe for the /models console. Text and
- * image models use the cheapest possible completion through the real channel;
+ * A one-shot "does this model answer" probe for the /models console. Text models
+ * use a small completion and image models generate through the image channel;
  * rerank models use their injected specialized-endpoint probe. It reports an
  * endpoint failure as a result rather than throwing, because turning failure
  * into a report is this function's job.
@@ -26,10 +26,12 @@ export interface ModelTestResult {
 export type TestModel = (modelId: string) => Promise<ModelTestResult>;
 
 export interface TestModelDeps {
+  testImage?: (modelId: string, signal: AbortSignal) => Promise<void>;
   testReranker?: (modelId: string, signal: AbortSignal) => Promise<void>;
 }
 
 const TEST_TIMEOUT_MS = 15_000;
+const IMAGE_TEST_TIMEOUT_MS = 120_000;
 
 export function createTestModel(channel: LlmChannel, deps: TestModelDeps = {}): TestModel {
   return async (modelId) => {
@@ -49,11 +51,16 @@ export function createTestModel(channel: LlmChannel, deps: TestModelDeps = {}): 
     if (type === "rerank" && !deps.testReranker) {
       throw new ValidationError(`The reranker endpoint is not configured: ${modelId}`);
     }
+    if (type === "image" && !deps.testImage) {
+      throw new ValidationError(`The image endpoint is not configured: ${modelId}`);
+    }
     const startedAt = Date.now();
     try {
-      const signal = AbortSignal.timeout(TEST_TIMEOUT_MS);
+      const signal = AbortSignal.timeout(type === "image" ? IMAGE_TEST_TIMEOUT_MS : TEST_TIMEOUT_MS);
       if (type === "rerank") {
         await deps.testReranker!(modelId, signal);
+      } else if (type === "image") {
+        await deps.testImage!(modelId, signal);
       } else {
         await channel.chatCompletion({
           model: modelId,

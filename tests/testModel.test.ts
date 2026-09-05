@@ -23,6 +23,23 @@ function failingChannel(message: string): LlmChannel {
 }
 
 describe("createTestModel", () => {
+  it("tests an image model through its image endpoint", async () => {
+    const channel = new FakeChannel([[]]);
+    const testImage = vi.fn(async () => {});
+    const result = await createTestModel(channel, { testImage })("openai/gpt-image-2");
+    expect(result.ok).toBe(true);
+    expect(testImage).toHaveBeenCalledWith("openai/gpt-image-2", expect.any(AbortSignal));
+    expect(channel.seenParams).toEqual([]);
+  });
+
+  it("reports image endpoint errors without trying chat completion", async () => {
+    const channel = new FakeChannel([[]]);
+    const testImage = async () => { throw new Error("image endpoint refused"); };
+    expect(await createTestModel(channel, { testImage })("openai/gpt-image-2"))
+      .toMatchObject({ ok: false, error: "image endpoint refused" });
+    expect(channel.seenParams).toEqual([]);
+  });
+
   it("reports ok on a returned completion, even one with no content", async () => {
     // An empty script yields `content: null` — a reasoning model that spent the
     // whole budget on hidden reasoning looks exactly like this, and it still

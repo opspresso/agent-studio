@@ -966,6 +966,7 @@ export const ko: Messages = {
   "models.hiddenCount": "{count}개 숨김",
   "models.showAll": "모두 표시",
   "models.oneVisible": "적어도 하나의 모델은 표시해야 합니다.",
+  "models.generateTestImage": "테스트 이미지 생성",
   "models.catalogUpdated": "카탈로그 갱신",
   "models.refreshNow": "지금 갱신",
   "models.catalogFile.title": "카탈로그 문서",
