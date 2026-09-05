@@ -1,7 +1,8 @@
 import type { ExecuteAgentInput } from "@/application/execution/deps";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
-import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
-import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
+import type { RunActor, RunCaller, RunConversation, RunOrigin } from "@/domain/execution/actor";
+import type { OpenedDocumentExtractor } from "@/application/execution/documentExtractor";
+import { documentKind } from "@/domain/llm/documentLimits";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { collectedWarning, isTopLevelChunk, toolCallKey } from "@/domain/llm/types";
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
@@ -53,7 +54,11 @@ export interface MessagingDeps {
    * file with the same warning the old image-only path used, which is exactly
    * the silence this replaced.
    */
-  documents: DocumentExtractor;
+  openDocuments: (
+    version: Version,
+    signal: AbortSignal,
+    origin: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
+  ) => Promise<OpenedDocumentExtractor>;
   /**
    * Signs an address for a file this run produced.
    *
@@ -149,8 +154,18 @@ export async function handleTurn(
   try {
     const attached = input.attachments;
     const imageParts = attached.length > 0 ? await collectImageParts(attached, warnings) : [];
-    readDocuments =
-      attached.length > 0 ? await collectDocuments(deps.documents, attached, warnings) : [];
+    if (attached.some((attachment) => documentKind(attachment.mimeType, attachment.name) !== null)) {
+      const opened = await deps.openDocuments(version, deadline, {
+        actor: input.actor,
+        userEmail: input.ownerEmail,
+        conversation: input.conversation,
+      });
+      try {
+        readDocuments = await collectDocuments(opened.extractor, attached, warnings);
+      } finally {
+        await opened.close();
+      }
+    }
     // Assembled by the one function that owns a turn's body, so a chat bot and a
     // chat put the same message in front of the model.
     userContent = turnContent(readDocuments, input.text, imageParts);

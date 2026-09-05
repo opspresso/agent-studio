@@ -109,9 +109,10 @@ function makeDeps(chunks: EngineChunk[]): MessagingDeps & { seen: () => TurnInpu
     },
     projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
     versions: { get: async () => versionFixture(), list: async () => [] } as unknown as VersionRepository,
-    documents: {
-      extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }),
-    },
+    openDocuments: async () => ({
+      extractor: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
+      close: async () => {},
+    }),
     seen: () => seen,
   };
 }
@@ -134,6 +135,36 @@ afterEach(() => {
 });
 
 describe("handleTurn", () => {
+  it.each([false, true])("closes version-bound document capabilities after extraction (failure: %s)", async (fails) => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const deps = makeDeps([{ done: true }]);
+    const close = vi.fn(async () => {});
+    const extract = vi.fn(async () => {
+      if (fails) throw new Error("office reader unavailable");
+      return { text: "Quarterly revenue" };
+    });
+    deps.openDocuments = vi.fn(async () => ({ extractor: { extract }, close }));
+    const input = turn({
+      actor: { kind: "slack", id: "U1" },
+      ownerEmail: "caller@example.com",
+      attachments: [{ name: "report.docx", mimeType: "application/octet-stream", download: async () => Buffer.from("office") }],
+    });
+    const { reply, finished } = makeReply();
+
+    await handleTurn(deps, input, reply);
+
+    expect(deps.openDocuments).toHaveBeenCalledWith(input.version, expect.any(AbortSignal), {
+      actor: input.actor, userEmail: input.ownerEmail, conversation: input.conversation,
+    });
+    expect(extract).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    if (fails) {
+      expect(finished()?.suffix).toContain("office reader unavailable");
+    } else {
+      expect(deps.seen().at(-1)?.message.content).toContain("Quarterly revenue");
+    }
+  });
+
   it("streams the top-level answer, reports steps at real boundaries, and finishes once", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

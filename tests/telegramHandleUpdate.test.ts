@@ -98,9 +98,10 @@ function makeDeps(chunks: EngineChunk[], telegram: TelegramClientPort, options: 
         name === projectFixture().publishedVersion ? versionFixture(options.callerContext) : null,
       list: async () => [],
     } as unknown as VersionRepository,
-    documents: {
-      extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }),
-    },
+    openDocuments: async () => ({
+      extractor: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
+      close: async () => {},
+    }),
     telegram,
     transcripts: {
       recent: async () => stored,

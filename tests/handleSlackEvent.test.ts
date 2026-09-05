@@ -299,14 +299,15 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
     // The real extractor has its own tests; here it only has to be the thing
     // that turns bytes into text, so a document's route through the handler is
     // what is under test.
-    documents: {
-      extract: async ({ bytes, name, maxChars }) => {
+    openDocuments: async () => ({
+      extractor: { extract: async ({ bytes, name, maxChars }) => {
         const text = Buffer.from(bytes).toString("utf-8");
         return text.length <= maxChars
           ? { text }
           : { text: text.slice(0, maxChars), note: `the first ${maxChars} characters of ${name}` };
-      },
-    },
+      } },
+      close: async () => {},
+    }),
     projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
     versions: {
       // The pointer is read off the project, so the fake answers its concrete name.
@@ -1831,11 +1832,12 @@ describe("a document attached to a Slack message", () => {
     const { slack, finalText } = makeSlackFake();
     slack.downloadFile = async () => Buffer.from("scanned", "utf-8");
     const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
-    deps.documents = {
-      extract: async () => {
+    deps.openDocuments = async () => ({
+      extractor: { extract: async () => {
         throw new DocumentExtractionError("it has 3 page(s) but no extractable text layer");
-      },
-    };
+      } },
+      close: async () => {},
+    });
 
     await handleSlackEvent(
       deps,
@@ -1867,11 +1869,12 @@ describe("a document attached to a Slack message", () => {
     const { slack, finalText } = makeSlackFake();
     slack.downloadFile = async () => Buffer.from("scanned", "utf-8");
     const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
-    deps.documents = {
-      extract: async () => {
+    deps.openDocuments = async () => ({
+      extractor: { extract: async () => {
         throw new DocumentExtractionError("it has 3 page(s) but no extractable text layer");
-      },
-    };
+      } },
+      close: async () => {},
+    });
     let dispatched = 0;
     const run = deps.runAgent;
     deps.runAgent = (input) => {
