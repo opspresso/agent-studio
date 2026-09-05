@@ -1,3 +1,4 @@
+import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { runStrategyFor } from "@/application/execution/runProject";
 import { sseResponse } from "@/app/api/_lib/sse";
 import {
@@ -8,7 +9,7 @@ import {
   versionUseCases,
 } from "@/lib/container";
 import { resolveProducedFiles, withAddressedFiles } from "@/application/artifact/producedFiles";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { generateImage } from "@/application/image/generateImage";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
@@ -19,7 +20,6 @@ import { withTurnBody } from "@/app/api/_lib/body";
 import {
   attachDocumentsToMessages,
   readBoundExecutionDocuments,
-  withDocumentWarnings,
 } from "@/app/api/projects/_lib/documents";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
@@ -83,7 +83,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
           // in raw chunks too, and a file frame carrying an object key is the
           // same non-answer there as it was here.
           withAddressedFiles(
-            withDocumentWarnings(
+            withLeadingWarnings(
               read.warnings,
               executeProjectStream(executionDeps, { ...params, signal: abortController.signal }),
             ),

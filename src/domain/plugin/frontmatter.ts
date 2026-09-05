@@ -33,7 +33,7 @@ export function parseFrontmatter(raw: string): Frontmatter {
   const fields: Record<string, string> = {};
   const lines = match[1].split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
-    const kv = /^([A-Za-z_-]+):\s*(.*)$/.exec((lines[i] ?? "").trim());
+    const kv = /^([A-Za-z_-]+):\s*(.*)$/.exec((lines[i] ?? "").trimEnd());
     if (!kv?.[1] || kv[2] === undefined) {
       continue;
     }

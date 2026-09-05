@@ -1067,6 +1067,21 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "scoping tool calls to their delegation",
+    pattern: /export function toolCallKey\b/,
+    owner: "src/domain/llm/types.ts",
+  },
+  {
+    what: "bounded same-origin redirect following",
+    pattern: /export async function fetchSameOrigin\b/,
+    owner: "src/infrastructure/net/redirectPolicy.ts",
+  },
+  {
+    what: "prepending warnings after a run's first pull",
+    pattern: /export async function\* with(?:Leading|Document)Warnings\b/,
+    owner: "src/application/run/leadingWarnings.ts",
+  },
+  {
     // Written once for the artifacts gallery, then wanted verbatim by the chat's
     // download row the moment files became deliverable — which is how the second
     // copy of anything starts. Two surfaces looking at the same object have to
@@ -1399,6 +1414,16 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/llm/agentAssembly.ts",
   },
   {
+    what: "builtin tool wire names",
+    pattern: /(?:SKILL_TOOL_NAME\s*=|BUILTIN_TOOL_NAMES\s*:\s*readonly string\[\]\s*=|(?:const|let)\s+\w+\s*=\s*"(?:Skill|transfer_to_agent|dispatch_agents|GenerateImage|EditImage)")/,
+    owner: "src/domain/llm/toolNames.ts",
+  },
+  {
+    what: "signed artifact URL lifetimes",
+    pattern: /(?:VIEW_URL_TTL_SECONDS|RECORD_URL_TTL_SECONDS)\s*=/,
+    owner: "src/shared/artifactUrlTtl.ts",
+  },
+  {
     // Two surfaces ask the same question — the chat store about the answer it
     // is about to re-render, the console about the thinking it is about to
     // commit — and each had grown its own copy of the three constants and the
@@ -1439,7 +1464,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // exactly what dispatching several agents at once made necessary.
     what: "deriving the transfer chain a chunk came from",
     pattern: /authorPath \?\? \(/,
-    owner: "src/app/_lib/authorPaths.ts",
+    owner: "src/domain/llm/types.ts",
   },
   {
     // Every stream consumer would reason "no `done` seen → cut off at a
@@ -1461,7 +1486,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
       "src/application/execution/subagentRunner.ts",
       "src/app/api/_lib/sse.ts",
       "src/app/api/chats/_lib/frames.ts",
-      "src/application/chat/run.ts",
+      "src/application/run/leadingWarnings.ts",
       "src/shared/mergeGenerators.ts",
       "src/shared/detachOnReturn.ts",
       "src/infrastructure/slack/profileCache.ts",

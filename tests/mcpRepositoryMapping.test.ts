@@ -73,6 +73,74 @@ describe("mcp repository mapping", () => {
 });
 
 describe("mcp connection mapping", () => {
+  it.each([undefined, "enc:unchanged-refresh"])(
+    "changes the revision on every put and token update with refresh token %s",
+    async (refreshToken) => {
+      const connection: McpConnection = {
+        projectName: "p",
+        serverName: "slack",
+        clientId: "client",
+        issuer: "https://auth.example.com",
+        resource: "https://mcp.slack.com",
+        scopes: [],
+        accessToken: "enc:unchanged-access",
+        refreshToken,
+        status: "connected",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+      await mcpConnectionRepository.put(connection);
+      const first = await mcpConnectionRepository.get("p", "slack");
+      expect(first?.revision).toBeTruthy();
+
+      // Rewriting exactly the same grant, even echoing its revision back,
+      // must invalidate every snapshot taken before the write.
+      await mcpConnectionRepository.put({ ...connection, revision: first?.revision });
+      const second = await mcpConnectionRepository.get("p", "slack");
+      expect(second?.revision).toBeTruthy();
+      expect(second?.revision).not.toBe(first?.revision);
+      const next = {
+        accessToken: connection.accessToken,
+        refreshToken,
+        status: connection.status,
+        updatedAt: connection.updatedAt,
+      };
+      await expect(mcpConnectionRepository.updateTokens("p", "slack", first?.revision, next))
+        .resolves.toBe(false);
+      await expect(Promise.all([
+        mcpConnectionRepository.updateTokens("p", "slack", second?.revision, next),
+        mcpConnectionRepository.updateTokens("p", "slack", second?.revision, next),
+      ])).resolves.toEqual([true, false]);
+      const third = await mcpConnectionRepository.get("p", "slack");
+      expect(third?.revision).toBeTruthy();
+      expect(third?.revision).not.toBe(second?.revision);
+      expect(third).toMatchObject(connection);
+    },
+  );
+
+  it("assigns an unversioned row's first revision under the atomic CAS", async () => {
+    store.seed([{
+      ...keys.mcpConnection("p", "slack"),
+      projectName: "p",
+      serverName: "slack",
+      clientId: "client",
+      issuer: "https://auth.example.com",
+      resource: "https://mcp.slack.com",
+      scopes: [],
+      status: "connected",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    const snapshot = await mcpConnectionRepository.get("p", "slack");
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.revision).toBeUndefined();
+    const next = { status: "connected" as const, updatedAt: "2026-01-01T00:00:00.000Z" };
+
+    await expect(Promise.all([
+      mcpConnectionRepository.updateTokens("p", "slack", snapshot?.revision, next),
+      mcpConnectionRepository.updateTokens("p", "slack", snapshot?.revision, next),
+    ])).resolves.toEqual([true, false]);
+    expect((await mcpConnectionRepository.get("p", "slack"))?.revision).toBeTruthy();
+  });
+
   it("round-trips the flag that decides whether the issuer check applies", async () => {
     // The write spreads the whole connection while the read names its fields, so
     // a field added to the type and not to the reader is stored and then lost on

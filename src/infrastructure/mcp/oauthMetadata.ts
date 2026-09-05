@@ -2,7 +2,7 @@
  * {@link OAuthMetadataClient} over `fetchPublicUrl`, so metadata reads pass the
  * same SSRF guard every other operator-supplied URL does — with the same one
  * exception the run path and the tool probe carry, and only where the caller
- * passes it: an address this deployment vouches for is dialed with plain fetch,
+ * passes it: an address this deployment vouches for skips public address resolution,
  * because the guard would reject it on every request and the entry would be
  * registrable and dispatchable but never discoverable.
  *
@@ -20,6 +20,7 @@ import { McpMetadataError } from "@/domain/mcp/oauth";
 import { extractWWWAuthenticateParams } from "@modelcontextprotocol/client";
 import { LEGACY_PROTOCOL_VERSION, MCP_CLIENT_INFO } from "./session";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+import { fetchSameOrigin } from "@/infrastructure/net/redirectPolicy";
 import { readBodyText } from "@/shared/httpBody";
 
 const METADATA_TIMEOUT_MS = 10_000;
@@ -82,7 +83,7 @@ function sameIssuer(a: string, b: string): boolean {
  * the request a legacy client would make first anyway: an `initialize`.
  */
 async function challengedMetadataUrl(mcpUrl: string, loopback: boolean): Promise<string | undefined> {
-  const send = loopback ? fetch : fetchPublicUrl;
+  const send = loopback ? fetchSameOrigin : fetchPublicUrl;
   try {
     const response = await send(mcpUrl, {
       method: "POST",
@@ -129,7 +130,7 @@ async function challengedMetadataUrl(mcpUrl: string, loopback: boolean): Promise
 async function fetchJson(url: string, loopback: boolean): Promise<Record<string, unknown> | null> {
   // Read per call rather than captured at module load, so a test that stubs the
   // global is what a loopback read talks to.
-  const send = loopback ? fetch : fetchPublicUrl;
+  const send = loopback ? fetchSameOrigin : fetchPublicUrl;
   const response = await send(url, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),

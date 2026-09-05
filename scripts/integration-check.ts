@@ -1,3 +1,5 @@
+import { assertLocalDatabase } from "./local-database";
+
 /**
  * End-to-end integration check against a local PostgreSQL and a mock LLM
  * server. Exercises every repository round-trip plus the execution engine
@@ -16,19 +18,10 @@ import type { Task } from "@a2a-js/sdk";
 process.env.STAGE ??= "local";
 process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test";
 
-// Refuse anything but a local test database. This check cascade-deletes what
-// it writes, and `--env-file=.env.local` (which carries the dev URL) is an
-// easy way to aim it at the dev database by accident — where it would take
-// the dev app's data with it.
-const database = new URL(process.env.DATABASE_URL);
-if (
-  !["localhost", "127.0.0.1"].includes(database.hostname) ||
-  !database.pathname.endsWith("_test")
-) {
-  console.error(
-    `Refusing to run against ${database.host}${database.pathname}: this check writes and ` +
-      "deletes, so it only runs against a local database whose name ends in `_test`.",
-  );
+try {
+  assertLocalDatabase(process.env.DATABASE_URL, true);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : "Invalid database configuration");
   process.exit(1);
 }
 // Overridable so the check can run beside a `scripts/mock-llm.ts` already
@@ -189,6 +182,10 @@ async function main() {
   const memberDayFixtures: Array<{ email: string; date: string; project: string }> = [];
 
   try {
+    const { checkManagedMcpTransport } = await import("./managed-mcp-check");
+    await checkManagedMcpTransport();
+    pass("managed MCP provision, registration and real loopback transport");
+
     // ---------- schema migration backfill ----------
     const { withTransaction } = await import("@/infrastructure/db/client");
     await withTransaction(async (client) => {
@@ -395,6 +392,26 @@ async function main() {
     );
     pass("mcp + external agent with encrypted headers");
 
+    const discoveredAuth = {
+      type: "oauth2" as const,
+      resource: mcp.url,
+      issuer: "https://auth.example.com",
+      authorizationServer: "https://auth.example.com",
+      authorizationEndpoint: "https://auth.example.com/authorize",
+      tokenEndpoint: "https://auth.example.com/token",
+      tokenEndpointAuthMethod: "none" as const,
+      discoveredAt: now,
+    };
+    assert.equal(await mcpRepository.updateAuth(serverName, "https://stale.example/mcp", discoveredAuth, now), false);
+    assert.equal(await mcpRepository.updateAuth(serverName, mcp.url, discoveredAuth, now), true);
+    assert.deepEqual((await mcpRepository.get(serverName))?.auth, discoveredAuth);
+    assert.deepEqual((await mcpRepository.get(serverName))?.headers, mcp.headers);
+    assert.equal(await mcpRepository.updateAuth(serverName, mcp.url, undefined, now), true);
+    assert.equal((await mcpRepository.get(serverName))?.auth, undefined);
+    assert.equal(await mcpRepository.updateAuth(`${serverName}-absent`, mcp.url, discoveredAuth, now), false);
+    assert.equal(await mcpRepository.get(`${serverName}-absent`), null);
+    pass("MCP metadata patch: URL fence, header preservation, clear, missing row refusal");
+
     // ---------- mcp oauth connection + in-flight state ----------
     await mcpConnectionRepository.put({
       projectName,
@@ -442,9 +459,9 @@ async function main() {
       "connection listed under its project partition",
     );
 
-    // Compare-and-set on the refresh token: the second caller refreshed from a
-    // token that is no longer stored, which is the concurrent-refresh race.
-    const stored = conn.refreshToken;
+    // Compare-and-set on the grant revision: only the first writer can replace
+    // the connection snapshot both callers read.
+    const stored = conn.revision;
     assert.equal(
       await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
         accessToken: encryptSecret(
@@ -460,7 +477,7 @@ async function main() {
         updatedAt: new Date().toISOString(),
       }),
       true,
-      "refresh with the current refresh token wins",
+      "refresh with the current grant revision wins",
     );
     assert.equal(
       await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
@@ -477,7 +494,7 @@ async function main() {
         updatedAt: new Date().toISOString(),
       }),
       false,
-      "refresh from a superseded refresh token is refused",
+      "refresh from a superseded grant revision is refused",
     );
     assert.equal(
       decryptSecret(
@@ -488,18 +505,16 @@ async function main() {
       "the winner's token survives the race",
     );
 
-    // Absent values REMOVE rather than storing null, so `attribute_not_exists`
-    // stays a usable race condition afterwards. The expected value is read back
-    // rather than re-encrypted: ciphertext is randomized, so only the stored one
-    // can match.
+    // Absent values REMOVE rather than storing null. The expected revision is
+    // read back from the winner before clearing its tokens.
     const won = await mcpConnectionRepository.get(projectName, serverName);
     assert.equal(
-      await mcpConnectionRepository.updateTokens(projectName, serverName, won?.refreshToken, {
+      await mcpConnectionRepository.updateTokens(projectName, serverName, won?.revision, {
         status: "needs_reauth",
         updatedAt: new Date().toISOString(),
       }),
       true,
-      "clearing tokens with the stored refresh token succeeds",
+      "clearing tokens with the stored grant revision succeeds",
     );
     const revoked = await mcpConnectionRepository.get(projectName, serverName);
     assert.equal(revoked?.refreshToken, undefined, "cleared refresh token is absent, not null");
@@ -664,6 +679,11 @@ async function main() {
     });
     await chatRunLogRepository.append(sweptChatId, "run-1", [{ seq: 0, payload: "[]" }]);
     await chatRepository.delete(sweptChatId);
+    await assert.rejects(
+      chatRunLogRepository.append(sweptChatId, "run-1", [{ seq: 1, payload: "[]", terminal: true }]),
+      { name: "TransactionCancelled" },
+      "a late terminal write cannot recreate a deleted chat's log",
+    );
     assert.deepEqual(
       await chatRunLogRepository.read(sweptChatId, "run-1", 0),
       [],
@@ -929,6 +949,16 @@ async function main() {
       endedAt: now,
       error: "lost",
     });
+    const olderRun = { ...oldRun, runId: "older", startedAt: runAt(7_200_000) };
+    await triggerRepository.appendRun(olderRun);
+    assert.deepEqual(
+      (await triggerRepository.listRuns(projectName, triggerId, 1, {
+        startedBefore: runAt(60_000),
+        status: "running",
+      })).map((run) => run.runId),
+      ["older"],
+      "completed history does not consume the repair query limit",
+    );
     assert.equal(
       (await triggerRepository.listRuns(projectName, triggerId, 10)).find((r) => r.runId === "old")
         ?.status,
@@ -1269,6 +1299,7 @@ async function main() {
       const probeKey = keys.trace(`lock-probe-${suffix}`);
       const probe = { ...probeKey, entityType: "TRACE", projectName, createdAt: now };
       const holder = await getPool().connect();
+      let writer: Promise<void> | undefined;
       const waited = <T,>(promise: Promise<T>) =>
         Promise.race([
           promise.then(() => "done" as const),
@@ -1297,15 +1328,18 @@ async function main() {
         // Same key, but written this time: that one waits for the shared holder.
         // An `update` rather than a `put`, so the row keeps what the fixture
         // wrote and the checks after this one still read it.
-        const writer = transact([
+        writer = transact([
           { kind: "update", key: projectKey, patch: (row) => ({ ...(row ?? {}) }) },
         ]);
         assert.equal(await waited(writer), "waiting", "a write on the key still waits on a reader");
-        await holder.query("ROLLBACK");
-        await writer;
       } finally {
-        holder.release();
+        try {
+          await holder.query("ROLLBACK");
+        } finally {
+          holder.release(true);
+        }
       }
+      await writer;
       const { deleteItem } = await import("@/infrastructure/db/store");
       await deleteItem(probeKey).catch(() => {});
       pass("transact: a checked key locks share-mode, a written one exclusively");

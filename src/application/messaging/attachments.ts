@@ -1,5 +1,5 @@
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
-import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
+import { DocumentExtractionError, type DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { imageDataUrl } from "@/domain/llm/types";
 import type { ChatMessageInput, ContentPart } from "@/domain/llm/types";
 import {
@@ -12,12 +12,15 @@ import {
   documentKind,
   MAX_DOCUMENT_BYTES,
   MAX_DOCUMENT_SIZE_LABEL,
+  MAX_DOCUMENTS,
+  MAX_DOCUMENT_CHARS_PER_TURN,
 } from "@/domain/llm/documentLimits";
 import {
   readDocuments as readDocumentsFor,
   withinDocumentCount,
   type AttachedDocument,
   type ReadDocument,
+  turnContent,
 } from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
 import { sniffImageType } from "@/domain/llm/imageSniff";
@@ -128,11 +131,7 @@ export async function collectImageParts(
 /**
  * Download the message's document attachments and read them into text.
  *
- * Only the current message. An older turn's attachments are left alone: a
- * document is expensive to fetch and parse where an image is not, and unlike
- * "edit the picture I sent earlier" there is no request shape that needs the
- * bytes of a file from three turns ago — the text it contributed is already in
- * the conversation.
+ * The caller selects the message and reserves its share of the run's budget.
  */
 export async function collectDocuments(
   documents: DocumentExtractor,
@@ -173,6 +172,60 @@ export async function collectDocuments(
     }
   }
   return readDocumentsFor(documents, downloaded, warnings);
+}
+
+export async function withHistoryDocuments(
+  extractor: DocumentExtractor,
+  turns: HistoryTurn[],
+  currentAttachments: InboundAttachment[],
+  currentDocuments: ReadDocument[],
+  warnings: string[],
+): Promise<HistoryTurn[]> {
+  const isDocument = (attachment: InboundAttachment) => documentKind(attachment.mimeType, attachment.name) !== null;
+  let remainingCount = Math.max(0, MAX_DOCUMENTS - currentAttachments.filter(isDocument).length);
+  let remainingChars = MAX_DOCUMENT_CHARS_PER_TURN - currentDocuments.reduce((sum, document) => sum + document.text.length, 0);
+  const bounded: DocumentExtractor = {
+    extract: async (input) => {
+      if (remainingChars <= 0) {
+        throw new DocumentExtractionError("this run's document budget is spent");
+      }
+      const result = await extractor.extract({ ...input, maxChars: Math.min(input.maxChars, remainingChars) });
+      remainingChars -= result.text.length;
+      return result;
+    },
+  };
+  const readByIndex = new Map<number, ReadDocument[]>();
+  let dropped = 0;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index]!;
+    if (turn.message.role !== "user") {
+      continue;
+    }
+    const candidates = turn.attachments.filter(isDocument);
+    const selected = remainingChars > 0 ? candidates.slice(0, remainingCount) : [];
+    remainingCount -= selected.length;
+    dropped += candidates.length - selected.length;
+    if (selected.length > 0) {
+      readByIndex.set(index, await collectDocuments(bounded, selected, warnings));
+    }
+  }
+  if (dropped > 0) {
+    warnings.push(`Left out ${dropped} older document attachment(s) to fit this run's document budget.`);
+  }
+  return turns.map((turn, index) => {
+    const documents = readByIndex.get(index);
+    if (!documents?.length) {
+      return turn;
+    }
+    const content = turn.message.content;
+    return {
+      ...turn,
+      message: {
+        ...turn.message,
+        content: turnContent(documents, typeof content === "string" ? content : "", Array.isArray(content) ? content : []),
+      },
+    };
+  });
 }
 
 /**

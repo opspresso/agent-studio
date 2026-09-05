@@ -197,6 +197,9 @@ describe("registering an entry on a declared internal host", () => {
   function repoWith(initial: McpServer[] = []): McpRepository {
     const store = new Map(initial.map((s) => [s.name, s]));
     return {
+      async updateAuth() {
+        throw new Error("OAuth updates are not used by this fixture");
+      },
       async list() {
         return [...store.values()];
       },

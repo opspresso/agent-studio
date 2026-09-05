@@ -82,7 +82,9 @@ describe("GET /api/objects/[...key]", () => {
     store.read.mockResolvedValue({ bytes: Uint8Array.from([1]), mimeType: "image/png" });
     const picture = await get(signed());
     expect(picture.headers.get("Content-Security-Policy")).toBe("frame-ancestors 'none'");
+    store.read.mockResolvedValue({ bytes: Uint8Array.from([37, 80, 68, 70]), mimeType: "application/pdf" });
     const pdf = await get(signed());
+    expect(pdf.headers.get("Content-Type")).toBe("application/pdf");
     expect(pdf.headers.get("Content-Security-Policy")).toBe("frame-ancestors 'none'");
   });
 

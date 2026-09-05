@@ -84,6 +84,12 @@ const server = createServer((req, res) => {
       res.writeHead(400).end();
       return;
     }
+    if (!body || !Array.isArray(body.messages) || body.messages.some(
+      (message) => !message || typeof message !== "object" || typeof message.role !== "string",
+    )) {
+      res.writeHead(400).end();
+      return;
+    }
     const hasToolResult = body.messages.some((m) => m.role === "tool");
     const skillName = /skill named "?([a-z0-9-]+)/i.exec(JSON.stringify(body.messages))?.[1];
     const wantsSkill = Boolean(!hasToolResult && body.tools?.length && skillName);

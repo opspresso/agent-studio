@@ -1,3 +1,5 @@
+import { Readable } from "node:stream";
+import { ReadableStream } from "node:stream/web";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -9,6 +11,7 @@ import { ObjectNotFoundError, type ArtifactObjectStore } from "@/domain/artifact
 import { config } from "@/lib/config";
 import { getArtifactAccessMode } from "@/lib/runtime-settings";
 import { sniffImageType } from "@/domain/llm/imageSniff";
+import { BodyTooLargeError, readBodyBytes } from "@/shared/httpBody";
 
 let s3Client: S3Client | undefined;
 
@@ -93,18 +96,32 @@ export const artifactObjectStore: ArtifactObjectStore = {
         }
         throw error;
       });
-    if (object.ContentLength === undefined) {
-      throw new Error("stored object has no content length");
-    }
-    if (object.ContentLength > maxBytes) {
-      throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
-    }
-    if (!object.Body) {
+    const body = object.Body;
+    if (!body) {
       throw new Error("stored object has no body");
     }
-    const bytes = await object.Body.transformToByteArray();
-    if (bytes.byteLength > maxBytes) {
-      throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
+    let bytes: Uint8Array;
+    try {
+      const headers = new Headers();
+      if (object.ContentLength !== undefined) {
+        headers.set("content-length", String(object.ContentLength));
+      }
+      const stream = body instanceof Readable
+        // Node and DOM typings differ on BYOB readers; this boundary uses the
+        // same Uint8Array default reader in both environments.
+        ? ReadableStream.from<Uint8Array>(body) as unknown as NonNullable<Response["body"]>
+        : body.transformToWebStream();
+      bytes = await readBodyBytes({ body: stream, headers }, maxBytes);
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
+      }
+      throw error;
+    } finally {
+      // Also release an unread Node body when its declared size was refused.
+      if (body instanceof Readable) {
+        body.destroy();
+      }
     }
     // The header is the only place the type lives, and a filesystem hop loses
     // it: a migration's `aws s3 sync` → `mc mirror`, a backup restored the

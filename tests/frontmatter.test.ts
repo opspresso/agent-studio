@@ -34,6 +34,26 @@ describe("parseFrontmatter", () => {
     expect(parseFrontmatter(doc).fields.description).toBe("kept");
   });
 
+  it("keeps nested metadata out of the document's top-level fields", () => {
+    const doc = [
+      "---",
+      "name: real-skill",
+      "description: correct",
+      "metadata:",
+      "  name: internal-id",
+      "  description: nested description",
+      "  url: https://nested.test",
+      "url: https://top-level.test   ",
+      "---",
+      "Body",
+    ].join("\n");
+    expect(parseFrontmatter(doc).fields).toMatchObject({
+      name: "real-skill",
+      description: "correct",
+      url: "https://top-level.test",
+    });
+  });
+
   it("does not mistake a horizontal rule mid-document for a block", () => {
     const doc = "Intro\n\n---\n\nMore";
     expect(parseFrontmatter(doc)).toEqual({ fields: {}, body: doc });

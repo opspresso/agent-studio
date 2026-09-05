@@ -109,9 +109,10 @@ function makeDeps(chunks: EngineChunk[]): MessagingDeps & { seen: () => TurnInpu
     },
     projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
     versions: { get: async () => versionFixture(), list: async () => [] } as unknown as VersionRepository,
-    documents: {
-      extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }),
-    },
+    openDocuments: async () => ({
+      extractor: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
+      close: async () => {},
+    }),
     seen: () => seen,
   };
 }
@@ -134,6 +135,90 @@ afterEach(() => {
 });
 
 describe("handleTurn", () => {
+  it("reads recent historical documents after current attachments within one shared budget", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const deps = makeDeps([{ done: true }]);
+    const downloaded: string[] = [];
+    const document = (name: string) => ({
+      name, mimeType: "text/plain", download: async () => {
+        downloaded.push(name);
+        return Buffer.from(name);
+      },
+    });
+    deps.openDocuments = async () => ({
+      extractor: { extract: async ({ maxChars }) => ({ text: "가".repeat(Math.min(15_000, maxChars)) }) },
+      close: async () => {},
+    });
+    const { reply, finished } = makeReply();
+    await handleTurn(deps, turn({
+      attachments: [document("current.txt")],
+      history: [
+        { message: { role: "user", content: "old" }, attachments: [document("old.txt")] },
+        { message: { role: "user", content: "middle" }, attachments: [document("middle.txt")] },
+        { message: { role: "assistant", content: "answer" }, attachments: [document("output.txt")] },
+        { message: { role: "user", content: "recent" }, attachments: [document("recent.txt")] },
+      ],
+    }), reply);
+
+    expect(downloaded).toEqual(["current.txt", "recent.txt", "middle.txt"]);
+    const messages = deps.seen().map(({ message }) => message.content);
+    expect(messages[0]).toBe("old");
+    expect(messages[1]).toContain('[Attached file "middle.txt"');
+    expect(messages[2]).toBe("answer");
+    expect(messages[3]).toContain('[Attached file "recent.txt"');
+    expect(messages[4]).toContain('[Attached file "current.txt"');
+    expect(messages.join("").match(/가/g)).toHaveLength(40_000);
+    expect(finished()?.suffix).toContain("Left out 1 older document attachment");
+  });
+
+  it("counts current and historical documents together before downloading", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const deps = makeDeps([{ done: true }]);
+    const download = vi.fn(async () => Buffer.from("short"));
+    const document = { name: "notes.txt", mimeType: "text/plain", download };
+    const { reply, finished } = makeReply();
+    await handleTurn(deps, turn({
+      attachments: [document],
+      history: Array.from({ length: 8 }, (_, index) => ({
+        message: { role: "user" as const, content: `question ${index}` }, attachments: [document],
+      })),
+    }), reply);
+    expect(download).toHaveBeenCalledTimes(4);
+    expect(finished()?.suffix).toContain("Left out 5 older document attachment");
+    expect(deps.seen()[7]?.message.content).toContain("short");
+    expect(deps.seen()[4]?.message.content).toBe("question 4");
+  });
+
+  it.each([false, true])("closes version-bound document capabilities after extraction (failure: %s)", async (fails) => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const deps = makeDeps([{ done: true }]);
+    const close = vi.fn(async () => {});
+    const extract = vi.fn(async () => {
+      if (fails) throw new Error("office reader unavailable");
+      return { text: "Quarterly revenue" };
+    });
+    deps.openDocuments = vi.fn(async () => ({ extractor: { extract }, close }));
+    const input = turn({
+      actor: { kind: "slack", id: "U1" },
+      ownerEmail: "caller@example.com",
+      attachments: [{ name: "report.docx", mimeType: "application/octet-stream", download: async () => Buffer.from("office") }],
+    });
+    const { reply, finished } = makeReply();
+
+    await handleTurn(deps, input, reply);
+
+    expect(deps.openDocuments).toHaveBeenCalledWith(input.version, expect.any(AbortSignal), {
+      actor: input.actor, userEmail: input.ownerEmail, conversation: input.conversation,
+    });
+    expect(extract).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    if (fails) {
+      expect(finished()?.suffix).toContain("office reader unavailable");
+    } else {
+      expect(deps.seen().at(-1)?.message.content).toContain("Quarterly revenue");
+    }
+  });
+
   it("streams the top-level answer, reports steps at real boundaries, and finishes once", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -150,8 +235,8 @@ describe("handleTurn", () => {
     const outcome = await handleTurn(deps, turn(), reply);
 
     expect(pushed).toEqual(["hel", "hello"]);
-    expect(steps).toEqual([{ id: "c1", title: "search" }]);
-    expect(done).toEqual([{ id: "c1", title: "search (docs)" }]);
+    expect(steps).toEqual([{ id: expect.any(String), title: "search" }]);
+    expect(done).toEqual([{ id: steps[0]!.id, title: "search (docs)" }]);
     expect(finished()).toEqual({ text: "hello", suffix: "" });
     expect(outcome.text).toBe("hello");
     expect(heartbeat()).toEqual({ started: 1, stopped: 1 });
@@ -171,7 +256,23 @@ describe("handleTurn", () => {
 
     await handleTurn(deps, turn(), reply);
 
-    expect(steps).toEqual([{ id: "c1", title: "child: Skill", nested: true }]);
+    expect(steps).toEqual([{ id: expect.any(String), title: "child: Skill", nested: true }]);
+  });
+
+  it("keeps a nested tool completion separate from its parent's reused id", async () => {
+    const call = { id: "c1", function: { name: "search", arguments: "{}" } };
+    const deps = makeDeps([
+      { delta: { toolCalls: [call] } },
+      { author: "child", transferId: "transfer", delta: { toolCalls: [call] } },
+      { author: "child", transferId: "transfer", toolResult: { toolCallId: "c1", name: "child search", content: "child" } },
+      { toolResult: { toolCallId: "c1", name: "parent search", content: "parent" } },
+      { done: true },
+    ]);
+    const { reply, steps, done } = makeReply();
+    await handleTurn(deps, turn(), reply);
+    expect(steps).toHaveLength(2);
+    expect(steps[0]!.id).not.toBe(steps[1]!.id);
+    expect(done.map((step) => step.id)).toEqual([steps[1]!.id, steps[0]!.id]);
   });
 
   it("delivers a picture the run drew and leaves a fetched one out beside it", async () => {

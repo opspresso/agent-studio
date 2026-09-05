@@ -8,6 +8,16 @@
  * mechanism that spends it, in `application/`.
  */
 
+import { BUILTIN_TOOL_NAMES } from "./toolNames";
+
+/**
+ * Tool definitions one request may carry in all — the provider's own 128,
+ * which {@link MAX_MCP_TOOLS_PER_RUN} leaves room under for the builtins. A
+ * tool set that arrives after both — an application's own tools, declared
+ * per request over AG-UI — is cut to what is left under this.
+ */
+export const MAX_TOOLS_PER_REQUEST = 128;
+
 /**
  * Tool definitions one request may carry.
  *
@@ -22,12 +32,4 @@
  * 133 and been rejected outright — the failure this constant exists to prevent,
  * caused by the constant. `BUILTIN_TOOL_NAMES` is the count to check against.
  */
-export const MAX_MCP_TOOLS_PER_RUN = 115;
-
-/**
- * Tool definitions one request may carry in all — the provider's own 128,
- * which {@link MAX_MCP_TOOLS_PER_RUN} leaves room under for the builtins. A
- * tool set that arrives after both — an application's own tools, declared
- * per request over AG-UI — is cut to what is left under this.
- */
-export const MAX_TOOLS_PER_REQUEST = 128;
+export const MAX_MCP_TOOLS_PER_RUN = MAX_TOOLS_PER_REQUEST - BUILTIN_TOOL_NAMES.length;

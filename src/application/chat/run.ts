@@ -253,32 +253,6 @@ function truncateForPersist(content: string, budget = MAX_PERSISTED_CONTENT_BYTE
   return cutUtf8Bytes(content, room) + marker;
 }
 
-/**
- * Warnings the mapping layer produced, ahead of the engine's own. They ride the
- * same chunk channel so every consumer — live UI, Slack, persistence — handles
- * one kind of warning, and `yield*` still forwards a client disconnect to the
- * run underneath.
- *
- * The source is asked for its first chunk *before* any of them goes out. A run
- * is turned away — over its daily cost limit, out of slots — on the generator's
- * first `next()`, and a leading warning that answered that pull from this list
- * would speak for a run that never started: the reader would see a trimmed
- * history reported, then the refusal, for an answer that never began.
- */
-export async function* withLeadingWarnings(
-  warnings: string[],
-  source: AsyncGenerator<EngineChunk>,
-): AsyncGenerator<EngineChunk> {
-  const first = await source.next();
-  for (const warning of warnings) {
-    yield { warning };
-  }
-  if (!first.done) {
-    yield first.value;
-    yield* source;
-  }
-}
-
 /** A run reports one warning per unusable binding; the item stays bounded. */
 const MAX_PERSISTED_WARNINGS = 20;
 

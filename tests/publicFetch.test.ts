@@ -108,6 +108,7 @@ describe("fetchPublicUrl", () => {
     const response = await fetchPublicUrl("https://93.184.216.34/start");
 
     expect(await response.text()).toBe("ok");
+    expect(response.url).toBe("https://93.184.216.34/next");
     expect(undiciFetch).toHaveBeenCalledTimes(2);
     expect(String(undiciFetch.mock.calls[1]?.[0])).toBe("https://93.184.216.34/next");
   });
@@ -187,6 +188,41 @@ describe("fetchPublicUrl transport pairing", () => {
 describe("fetchPublicUrl dispatcher reuse", () => {
   const dispatcherOf = (call: unknown[] | undefined) =>
     (call?.[1] as { dispatcher?: unknown } | undefined)?.dispatcher;
+
+  it("checks and pins each same-origin redirect hop to its newly resolved address", async () => {
+    dnsResults.push(["93.184.216.43"], ["93.184.216.44"]);
+    undiciFetch
+      .mockResolvedValueOnce(new Response(null, { status: 307, headers: { location: "/next" } }))
+      .mockResolvedValueOnce(new Response("ok"));
+
+    await fetchPublicUrl("https://rebind.test/first", { method: "POST", body: "payload" });
+
+    expect(undiciFetch).toHaveBeenCalledTimes(2);
+    expect(undiciFetch.mock.calls[1]?.[1]).toMatchObject({ method: "POST", body: "payload", redirect: "manual" });
+    expect(dispatcherOf(undiciFetch.mock.calls[0])).not.toBe(dispatcherOf(undiciFetch.mock.calls[1]));
+    expect(dnsResults).toHaveLength(0);
+    const addresses: unknown[] = [];
+    for (const options of agentOptions) {
+      options.connect.lookup("rebind.test", { all: true }, (_error, result) => addresses.push(result));
+    }
+    expect(addresses).toEqual([
+      [{ address: "93.184.216.43", family: 4 }],
+      [{ address: "93.184.216.44", family: 4 }],
+    ]);
+  });
+
+  it("cancels a redirect response before refusing a private DNS result on the next hop", async () => {
+    dnsResults.push(["93.184.216.43"], ["127.0.0.1"]);
+    const cancel = vi.fn();
+    undiciFetch.mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), {
+      status: 307, headers: { location: "/next" },
+    }));
+
+    await expect(fetchPublicUrl("https://rebind.test/first")).rejects.toBeInstanceOf(SsrfError);
+
+    expect(undiciFetch).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
 
   it("reuses one dispatcher for repeated requests to the same origin and address", async () => {
     undiciFetch.mockResolvedValue(new Response("ok"));

@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import { RateLimitedError } from "@/application/errors";
 import { readSse } from "@/app/_lib/sse";
+import { openDocumentExtractor } from "@/application/execution/documentExtractor";
+
+vi.mock("@/application/execution/documentExtractor", () => ({ openDocumentExtractor: vi.fn() }));
 
 // Route-handler test: repositories and the execution facade are mocked, so the
 // assertions are about what the route decides — who may call, what it refuses,
@@ -70,7 +73,7 @@ const input = {
 
 async function frames(response: Response): Promise<unknown[]> {
   const events: unknown[] = [];
-  for await (const event of readSse(response)) {
+  for await (const event of readSse(response, { requireDone: false })) {
     events.push(event);
   }
   return events;
@@ -78,6 +81,10 @@ async function frames(response: Response): Promise<unknown[]> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(openDocumentExtractor).mockResolvedValue({
+    extractor: { extract: async ({ name }) => ({ text: `<${name}>` }) },
+    close: async () => {},
+  });
   runs.length = 0;
   projectRepo.get.mockResolvedValue({
     name: "proj",
@@ -108,6 +115,33 @@ beforeEach(() => {
 });
 
 describe("POST /api/agui/[name]", () => {
+  it.each([false, true])("reads Office attachments with the published version and closes the reader (failure: %s)", async (fails) => {
+    const close = vi.fn(async () => {});
+    vi.mocked(openDocumentExtractor).mockResolvedValue({
+      extractor: { extract: async () => {
+        if (fails) throw new Error("office reader unavailable");
+        return { text: "Quarterly revenue" };
+      } },
+      close,
+    });
+    const response = await POST(req({
+      ...input,
+      messages: [{ id: "m1", role: "user", content: [
+        { type: "text", text: "summarise" },
+        { type: "document", source: { type: "data", value: "b2ZmaWNl", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, metadata: { name: "report.docx" } },
+      ] }],
+    }), ctx);
+    const events = await frames(response);
+
+    expect(response.status).toBe(200);
+    expect(openDocumentExtractor).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ projectName: "proj", versionName: "1" }),
+      expect.any(AbortSignal), expect.objectContaining({ actor: { kind: "project-token", id: "owner@example.com" } }),
+    );
+    expect(close).toHaveBeenCalledOnce();
+    expect(JSON.stringify(fails ? events : runs)).toContain(fails ? "office reader unavailable" : "Quarterly revenue");
+  });
+
   it("streams the run as AG-UI events without an OpenAI terminator", async () => {
     const response = await POST(req(input), ctx);
     expect(response.status).toBe(200);

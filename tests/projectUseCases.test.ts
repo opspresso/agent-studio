@@ -717,6 +717,30 @@ describe("MCP binding header overrides", () => {
     ).toBe("Bearer preview-secret");
   });
 
+  it.each([false, true])("keeps the concrete version context through the published alias (masked=%s)", async (masked) => {
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const versions = makeVersionRepo();
+    const created = await createVersion(versions, projects, "p", {
+      ...versionInput(),
+      mcpList: bindingWith({ Authorization: "Bearer saved-secret" }),
+    }, OWNER);
+    const get = versions.get;
+    versions.get = (projectName, name) => get(projectName, name === "published" ? created.versionName : name);
+    const updated = await updateVersion(versions, projects, "p", "published", {
+      mcpList: masked
+        ? toVersionView(created).mcpList
+        : bindingWith({ Authorization: "Bearer fresh-secret" }),
+    }, OWNER);
+
+    expect(updated.versionName).toBe(created.versionName);
+    expect(mergeOutboundHeaders(
+      {},
+      updated.mcpList[0]!.headers!,
+      undefined,
+      versionMcpHeadersContext("p", created.versionName, "shared-mcp"),
+    ).Authorization).toBe(masked ? "Bearer saved-secret" : "Bearer fresh-secret");
+  });
+
   it("drops preserved secrets when the registry endpoint moved", async () => {
     const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
     const versions = makeVersionRepo();
@@ -885,6 +909,16 @@ describe("imageModel validation", () => {
 });
 
 describe("publishVersion", () => {
+  it("resolves the published alias before storing the pointer", async () => {
+    const projects = makeProjectRepo([projectFixture("p", { publishedVersion: "1" })]);
+    const versions = makeVersionRepo([versionFixture("p", "1")]);
+    const get = versions.get;
+    versions.get = (projectName, name) => get(projectName, name === "published" ? "1" : name);
+    const publish = vi.spyOn(projects, "publish");
+    const updated = await publishVersion(projects, versions, "p", "published", OWNER);
+    expect(updated.publishedVersion).toBe("1");
+    expect(publish).toHaveBeenCalledWith(updated, "1", expect.any(String));
+  });
   it("points the published pointer at an existing version", async () => {
     const updated = await publishVersion(
       makeProjectRepo([projectFixture("p")]),

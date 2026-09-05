@@ -136,8 +136,8 @@ export const OTHERS_KEY = "Others";
 
 /** One column of a stacked cost chart: a UTC day, and what each series cost. */
 export interface CostSeriesPoint {
-  [key: string]: number | string;
   date: string;
+  values: number[];
 }
 
 export interface CostSeries {
@@ -167,10 +167,7 @@ function pointFrom(
   keys: string[],
   hasOthers: boolean,
 ): CostSeriesPoint {
-  const point: CostSeriesPoint = { date };
-  for (const key of keys) {
-    point[key] = bucket?.get(key) ?? 0;
-  }
+  const values = keys.map((key) => bucket?.get(key) ?? 0);
   if (hasOthers) {
     const keySet = new Set(keys);
     let others = 0;
@@ -179,14 +176,15 @@ function pointFrom(
         others += cost;
       }
     }
-    point[OTHERS_KEY] = others;
+    values.push(others);
   }
-  return point;
+  return { date, values };
 }
 
 export interface ChartColumn {
   /** What the chart addresses the series by. Never contains a dot. */
   dataKey: string;
+  index: number;
   /** What the reader sees: a project name, a model id, or `OTHERS_KEY`. */
   label: string;
 }
@@ -199,15 +197,20 @@ export interface ChartColumn {
  * them parses.
  */
 export function toChartColumns(keys: string[]): ChartColumn[] {
-  return keys.map((label, index) => ({ dataKey: `s${index}`, label }));
+  return keys.map((label, index) => ({ dataKey: `s${index}`, index, label }));
+}
+
+export interface ChartDataPoint {
+  [key: string]: number | string;
+  date: string;
 }
 
 /** Re-keys series points onto the dot-free keys of `columns`. */
-export function toChartData(data: CostSeriesPoint[], columns: ChartColumn[]): CostSeriesPoint[] {
+export function toChartData(data: CostSeriesPoint[], columns: ChartColumn[]): ChartDataPoint[] {
   return data.map((point) => {
-    const row: CostSeriesPoint = { date: point.date };
+    const row: ChartDataPoint = { date: point.date };
     for (const column of columns) {
-      row[column.dataKey] = point[column.label] ?? 0;
+      row[column.dataKey] = point.values[column.index] ?? 0;
     }
     return row;
   });

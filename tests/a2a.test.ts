@@ -541,6 +541,80 @@ describe("sendA2aMessage", () => {
     expect(methods).toEqual(["SendStreamingMessage"]);
   });
 
+  it.each([
+    ["a partial artifact", [TASK_EVENT, ARTIFACT_OPEN]],
+    ["an artifact's last chunk", [TASK_EVENT, ARTIFACT_OPEN, ARTIFACT_APPEND]],
+    ["an artifact without its initial task", [ARTIFACT_OPEN]],
+  ])("refuses clean EOF after %s without a settled task", async (_label, events) => {
+    const methods = stubRemote(agentCard(true), (_method, id) =>
+      sseResponse(sseFrames(id, events)),
+    );
+
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual({
+      ok: false,
+      error: "A2A stream ended before the remote task finished (state: working)",
+    });
+    expect(methods).toEqual(["SendStreamingMessage"]);
+  });
+
+  it("refuses a task snapshot with content but no status at EOF", async () => {
+    const methods = stubRemote(agentCard(true), (_method, id) =>
+      sseResponse(sseFrames(id, [StreamResponse.toJSON({
+        payload: {
+          $case: "task",
+          value: taskFixture({
+            status: undefined,
+            artifacts: [artifact("a1", [textPart("partial answer")])],
+          }),
+        },
+      })])),
+    );
+
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual({
+      ok: false,
+      error: "A2A stream ended before the remote task finished (state: unspecified)",
+    });
+    expect(methods).toEqual(["SendStreamingMessage"]);
+  });
+
+  it.each([true, false])("accepts a direct Message reply with streaming %s", async (streaming) => {
+    const payload = { $case: "message" as const, value: agentMessageFixture("direct answer") };
+    const methods = stubRemote(agentCard(streaming), (_method, id) =>
+      streaming
+        ? sseResponse(sseFrames(id, [StreamResponse.toJSON({ payload })]))
+        : Response.json({ jsonrpc: "2.0", id, result: SendMessageResponse.toJSON({ payload }) }),
+    );
+
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual({
+      ok: true,
+      text: "direct answer",
+      images: [],
+      contextId: "c1",
+    });
+    expect(methods).toEqual([streaming ? "SendStreamingMessage" : "SendMessage"]);
+  });
+
+  it.each([
+    [TaskState.TASK_STATE_COMPLETED, { ok: true, text: "reply", images: [], contextId: "c1" }],
+    [TaskState.TASK_STATE_FAILED, { ok: false, error: "Remote task failed: reply" }],
+    [TaskState.TASK_STATE_INPUT_REQUIRED, {
+      ok: false,
+      error: "Remote agent needs input before it can continue: reply",
+      continuation: { contextId: "c1", taskId: "t1" },
+    }],
+  ])("preserves a settled task snapshot at EOF with state %s", async (state, expected) => {
+    stubRemote(agentCard(true), (_method, id) =>
+      sseResponse(sseFrames(id, [StreamResponse.toJSON({
+        payload: {
+          $case: "task",
+          value: taskFixture({ status: taskStatus(state, agentMessageFixture("reply")) }),
+        },
+      })])),
+    );
+
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual(expected);
+  });
+
   it("keeps an answer whose stream broke after the task reached a terminal state", async () => {
     stubRemote(agentCard(true), (_method, id) =>
       // Everything arrived, then the connection tore down ungracefully — a
@@ -1236,6 +1310,26 @@ describe("sendA2aMessage — the task's state decides", () => {
 });
 
 describe("ProjectA2aExecutor — what a message may carry", () => {
+  it("reports image storage loss on the completed task", async () => {
+    const deps = executionDepsFixture(new FakeChannel([]));
+    deps.artifacts = {
+      objects: { put: async () => { throw new Error("storage unavailable"); } },
+      rows: {},
+    } as never;
+    const executor = new ProjectA2aExecutor(
+      deps,
+      projectFixture({ projectType: "image" }),
+      versionFixture({ model: "openai/gpt-image-2" }),
+      fakeStore(),
+    );
+    const bus = new CollectingBus();
+    await executor.execute(requestContext(messageFixture("draw a cat")), bus);
+    const status = statusEvent(bus.events)?.status;
+    expect(status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+    expect(JSON.stringify(status?.message)).toContain("could not be stored");
+    expect(artifactEvents(bus.events)).toHaveLength(1);
+  });
+
   it("hands an image project the picture it was sent, to edit rather than ignore", async () => {
     const deps = executionDepsFixture(new FakeChannel([]));
     const sources: unknown[] = [];

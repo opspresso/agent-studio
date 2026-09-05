@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace } from "@/domain/trace/types";
+import type { EngineChunk } from "@/domain/llm/types";
 
 function memoryRepository(): { repository: TraceRepository; traces: Trace[] } {
   const traces: Trace[] = [];
@@ -22,6 +23,91 @@ function memoryRepository(): { repository: TraceRepository; traces: Trace[] } {
 }
 
 describe("TraceRecorder", () => {
+  it.each([false, true])("pairs parent and nested tool calls independently when sampled=%s", async (sampled) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const { repository, traces } = memoryRepository();
+      const recorder = new TraceRecorder(repository, {
+        projectName: "parent", versionName: "1", projectType: "agent", model: "model", messageCount: 1,
+      });
+      const contexts: Partial<EngineChunk>[] = [
+        {},
+        { author: "child", authorPath: ["child"], transferId: "delegation" },
+        { author: "grandchild", authorPath: ["child", "grandchild"], transferId: "delegation" },
+      ];
+      const names = ["parent-tool", "child-tool", "grandchild-tool"];
+      const args = ["{}", '{"x":1}', '{"query":"value"}'];
+      for (let index = 0; index < contexts.length; index += 1) {
+        vi.setSystemTime(index * 1000);
+        recorder.observe({
+          ...contexts[index],
+          ...(sampled ? { traceId: "sampled-trace" } : {}),
+          delta: { toolCalls: [{ id: "call_1", function: { name: names[index], arguments: args[index] } }] },
+        });
+      }
+      for (const [index, time] of [[2, 5000], [1, 6000], [0, 9000]] as const) {
+        vi.setSystemTime(time);
+        recorder.observe({
+          ...contexts[index],
+          ...(sampled ? { traceId: "sampled-trace" } : {}),
+          toolResult: { toolCallId: "call_1", name: "result", content: "ok" },
+        });
+      }
+      await recorder.finish();
+
+      const tools = traces[0]!.spans.filter((span) => span.kind === "tool");
+      expect(new Set(traces[0]!.spans.map((span) => span.spanId)).size).toBe(traces[0]!.spans.length);
+      expect(tools.map((span) => [span.name, span.author, span.durationMs, span.input?.argumentChars])).toEqual([
+        ["grandchild-tool", "grandchild", 3000, args[2]!.length],
+        ["child-tool", "child", 5000, args[1]!.length],
+        ["parent-tool", undefined, 9000, args[0]!.length],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])("pairs overlapping transfers to the same child when sampled=%s", async (sampled) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const { repository, traces } = memoryRepository();
+      const recorder = new TraceRecorder(repository, {
+        projectName: "parent", versionName: "1", projectType: "agent", model: "model", messageCount: 1,
+      });
+      const context = (transferId: string) => ({
+        author: "child",
+        authorPath: ["child"],
+        transferId,
+        ...(sampled ? { traceId: `trace-${transferId}` } : {}),
+      });
+      recorder.observe({
+        ...context("first"),
+        delta: { toolCalls: [{ id: "call_1", function: { name: "first-tool", arguments: "{}" } }] },
+      });
+      vi.setSystemTime(1000);
+      recorder.observe({
+        ...context("second"),
+        delta: { toolCalls: [{ id: "call_1", function: { name: "second-tool", arguments: '{"x":1}' } }] },
+      });
+      vi.setSystemTime(3000);
+      recorder.observe({ ...context("first"), toolResult: { toolCallId: "call_1", name: "result", content: "ok" } });
+      vi.setSystemTime(7000);
+      recorder.observe({ ...context("second"), toolResult: { toolCallId: "call_1", name: "result", content: "ok" } });
+      await recorder.finish();
+
+      expect(new Set(traces[0]!.spans.map((span) => span.spanId)).size).toBe(traces[0]!.spans.length);
+      expect(traces[0]!.spans.filter((span) => span.kind === "tool")
+        .map((span) => [span.name, span.durationMs, span.input?.argumentChars])).toEqual([
+        ["first-tool", 3000, 2],
+        ["second-tool", 6000, 7],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("records model, tool, and subagent spans without storing full message content", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {

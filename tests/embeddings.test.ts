@@ -100,6 +100,21 @@ describe("openAiEmbeddings", () => {
     );
   });
 
+  it.each([[0, 0], [0, 2], [-1, 0], [0, 0.5], ["0", 1], [null, 1]])(
+    "refuses invalid batch indexes %j, %j",
+    async (first, second) => {
+      respondWith({
+        data: [
+          { index: first, embedding: [0.1] },
+          { index: second, embedding: [0.2] },
+        ],
+      });
+      await expect(openAiEmbeddings.embed(["one", "two"], "document")).rejects.toThrow(
+        "Embedding response indexes must cover each input exactly once",
+      );
+    },
+  );
+
   it("asks for the width the index was created at, not the model's default", async () => {
     // `text-embedding-3-small` is natively 1536 while every instruction for
     // creating the index says 1024, so the documented default configuration

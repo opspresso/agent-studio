@@ -1,4 +1,6 @@
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
+import { turnContent } from "@/application/llm/documentParts";
+import { messageText } from "@/domain/llm/types";
 import { conversationKey, type RunActor, type RunCaller, type RunConversation } from "@/domain/execution/actor";
 import type { InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel } from "@/domain/messaging/reply";
@@ -128,7 +130,8 @@ export async function runRememberedTurn(
     key,
     {
       role: "user",
-      content: input.text || attachmentNote(input.attachments.map((attachment) => attachment.name)),
+      content: messageText({ content: turnContent(outcome.inputDocuments ?? [], input.text) }) ||
+        attachmentNote(input.attachments.map((attachment) => attachment.name)),
       ...(input.userId ? { userId: input.userId } : {}),
       ...(named ? { speaker: named.displayName } : {}),
       createdAt: askedAt,

@@ -78,8 +78,8 @@ refuses to boot without an explicit `STAGE`. See [CONFIGURATION.md](docs/CONFIGU
 
 - `src/domain/` owns entities, value rules, and repository ports. It is pure TypeScript and
   imports no framework, AWS, infrastructure, or `shared` module.
-- `src/application/` owns use cases and orchestration. It imports domain and the standard
-  library only. `@a2a-js/sdk` is the single third-party exception; the pure `runMetrics` leaf is
+- `src/application/` owns use cases and orchestration. It imports domain, dependency-free shared
+  helpers, and the standard library only. `@a2a-js/sdk` is the single third-party exception; the pure `runMetrics` leaf is
   the only current `lib` import. It never imports `container.ts`; dependencies are injected.
 - `src/infrastructure/` owns adapters: PostgreSQL/item store, vectors, object store, LLM, MCP,
   messaging, A2A, GitHub, network, and crypto.

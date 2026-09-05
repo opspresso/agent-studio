@@ -6,10 +6,10 @@ import {
   deletePartition,
   getItem,
   queryItems,
-  transact,
   updateItem,
   type Item,
 } from "@/infrastructure/db/store";
+import { chatIsLive, putChatItem } from "@/infrastructure/db/chatLifecycle";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import { CHAT_PAGE, MAX_CHAT_PAGE, type ChatRepository } from "@/domain/chat/repository";
 import { boundedPageLimit, MAX_PAGE_LIMIT } from "@/shared/pageLimit";
@@ -61,8 +61,6 @@ function chatFields(chat: Chat): Item {
     expiresAt: expiresAtSeconds(chat.updatedAt, RETENTION.chatDays),
   };
 }
-
-const live = (row: Item | null): boolean => row !== null && row.deletingAt === undefined;
 
 function toMessageItem(message: ChatMessage): Item {
   const { PK, SK } = keys.chatMessage(message.chatId, message.seq);
@@ -151,7 +149,7 @@ export const chatRepository: ChatRepository = {
     await updateItem(
       keys.chat(chat.chatId),
       (row) => ({ ...row, ...chatFields(chat), nextSeq: row?.nextSeq ?? 0 }),
-      live,
+      chatIsLive,
     );
   },
 
@@ -191,10 +189,7 @@ export const chatRepository: ChatRepository = {
   },
 
   async appendMessage(message) {
-    await transact([
-      { kind: "check", key: keys.chat(message.chatId), condition: live },
-      { kind: "put", item: toMessageItem(message), condition: conditions.notExists },
-    ]);
+    await putChatItem(message.chatId, toMessageItem(message), conditions.notExists);
   },
 
   async claimRun(chatId, runId, nowSeconds, expiresAtSeconds) {
@@ -209,7 +204,7 @@ export const chatRepository: ChatRepository = {
           return { ...rest, activeRunId: runId, activeRunExpiresAt: expiresAtSeconds };
         },
         (row) =>
-          live(row) &&
+          chatIsLive(row) &&
           (row?.activeRunId === undefined || Number(row?.activeRunExpiresAt ?? 0) < nowSeconds),
       );
       return true;
@@ -284,7 +279,7 @@ export const chatRepository: ChatRepository = {
       const { before } = await updateItem(
         key,
         (row) => (typeof row?.nextSeq === "number" ? { ...row, nextSeq: row.nextSeq + 1 } : { ...row }),
-        live,
+        chatIsLive,
       );
       if (typeof before?.nextSeq === "number") {
         return before.nextSeq;
@@ -299,7 +294,7 @@ export const chatRepository: ChatRepository = {
       await updateItem(
         key,
         (row) => ({ ...row, nextSeq: initial }),
-        (row) => live(row) && row?.nextSeq === undefined,
+        (row) => chatIsLive(row) && row?.nextSeq === undefined,
       ).catch((error: unknown) => {
         // Someone else initialised it first; the retry counts from theirs.
         if (!lostCondition(error)) {

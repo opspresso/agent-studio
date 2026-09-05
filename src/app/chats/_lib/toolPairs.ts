@@ -40,7 +40,9 @@ export function storedToolArgs(messages: readonly ChatMessage[]): Map<number, st
     if (message.role === "user") {
       closeRun();
     } else if (message.role === "tool") {
-      rows.push({ seq: message.seq, toolCallId: message.toolCallId });
+      if (message.author === undefined && !message.displayOnly) {
+        rows.push({ seq: message.seq, toolCallId: message.toolCallId });
+      }
     } else {
       for (const raw of message.toolCalls ?? []) {
         const call = parseWireToolCall(raw);

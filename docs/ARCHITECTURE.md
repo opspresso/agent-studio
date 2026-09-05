@@ -137,8 +137,8 @@ src/
   SDK 도, 인증 라이브러리도, `shared` 조차도 안 된다.
 - `application` 은 의존성을 *받는다*. composition root 를 절대 import 하면 안 된다.
   의존성은 *주입*되는 것이지 끌어오는 것이 아니다. 서드파티 패키지도 같은 방식으로,
-  `domain` 과 같은 모양의 규칙으로 금지된다. 긍정형으로 서술해 **domain 과 표준
-  라이브러리, 그 외에는 아무것도**다. 블록리스트는 이미 누군가 후회한 의존성만 이름
+  `domain` 과 같은 모양의 규칙으로 금지된다. 긍정형으로 서술해 **domain, 의존성 없는 shared 헬퍼와 표준
+  라이브러리**다. 블록리스트는 이미 누군가 후회한 의존성만 이름
   붙이기 때문이다. `@a2a-js/sdk` 가 유일하게 명시된 예외다: A2A 프로토콜 *자체*가 그
   executor 가 구현하는 계약이고, 포트를 두면 태스크 생명주기를 우리 타입으로 다시
   적으면서 얻는 것이 없다.
@@ -146,8 +146,9 @@ src/
   않는다. 어댑터에 필요한 설정은 `lib/config.ts` 가 선언하며, 파싱과 경고를 그쪽이
   소유한다. 모듈 스코프에서 읽으면 아무도 선언하지 않고, 아무도 주입하지 않았으며, 부팅
   검증이 한 번도 확인하지 않은 프로세스 전역 상수가 된다.
-- `src/lib` 은 application 과 infrastructure 양쪽이 import 해도 되는 횡단 리프다(config,
-  runtime-settings, session). `domain` 은 절대 하지 않는다.
+- `src/lib` 은 설정·인증·composition 을 연결하는 서버 접착제다. infrastructure 는 이를
+  import 할 수 있지만 application 은 순수 리프인 `runMetrics` 만 허용된다. `domain` 은
+  어느 `lib` 모듈도 import 하지 않는다.
 - 라우트 핸들러와 페이지는 `infrastructure/` 를 직접 import 하면 안 된다. 오직 wiring
   site 를 통해서만 한다.
 
@@ -314,7 +315,7 @@ artifact 는 자리표시자 아래 놓이는 대신 그 인덱스에 아예 없
   마라.
 - **리포지토리는 `items` 에 raw SQL 을 쓰지 않고 `src/infrastructure/db/store.ts` 를
   지난다.** 스토어가 조건을 행 잠금(`SELECT … FOR UPDATE`) 아래에서 평가하고, 트랜잭션이
-  행을 키 순서로 잠가 교착을 막으며, 접두사 쿼리의 상한(`prefix` + `￿`)을 철자하는 자리다.
+  행을 키 순서로 잠가 교착을 막으며, 접두사 쿼리의 상한(`prefix` + U+10FFFF)을 철자하는 자리다.
   두 번째 `FOR UPDATE` 는 그 셋이 어긋날 두 번째 자리다. 조건은 저장된 행에 대한 술어
   (`conditions.exists` / `notExists` / `existsWith` / `existsWithout`)이고, 깨진 전제는
   `ConditionalWriteFailed`(트랜잭션 안에서는 `TransactionCancelled`)로 올라오며 그 이름을

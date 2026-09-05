@@ -8,7 +8,7 @@
  * exposes an optional `channel` so tests can inject a fake.
  */
 
-import { collectedWarning, isTopLevelChunk, messageText, runTermination } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk, messageText, parseImageDataUrl, runTermination } from "@/domain/llm/types";
 import type {
   ChatMessageInput,
   EngineChunk,
@@ -113,7 +113,7 @@ export async function* executeVersionStream(
   const bracket = await openRun(deps, input.project, input.version, input.actor);
   const recorder = sampledTraceRecorder(deps, input);
   const runSignal = withRunDeadline(input.signal);
-  let thrown: unknown;
+  let failure: unknown;
   let completed = false;
   try {
     for await (const chunk of engine.runPromptStream(
@@ -133,6 +133,9 @@ export async function* executeVersionStream(
       },
     )) {
       recorder?.observe(chunk);
+      if (runTermination(chunk) === "error") {
+        failure = chunk.error;
+      }
       yield recorder && isTopLevelChunk(chunk)
         ? { ...chunk, traceId: recorder.traceId }
         : chunk;
@@ -141,12 +144,12 @@ export async function* executeVersionStream(
   } catch (caught) {
     const error = runEnding(caught, runSignal);
     if (runDeadlineExceeded(runSignal) || !input.signal?.aborted) {
-      thrown = error;
+      failure = error;
     }
     throw error;
   } finally {
-    await bracket.close({ failed: thrown !== undefined });
-    await finishTrace(recorder, thrown, !completed && thrown === undefined);
+    await bracket.close({ failed: failure !== undefined });
+    await finishTrace(recorder, failure, !completed && failure === undefined);
   }
 }
 
@@ -234,11 +237,23 @@ export async function* streamProjectRun(
     // An image run's prompt is one string. A chunk consumer's history is the
     // conversation, and only its last user turn can be the thing to draw.
     const prompt = latestUserText(input.messages);
+    const content = input.messages.findLast((message) => message.role === "user")?.content;
+    const images = Array.isArray(content) ? content.flatMap((part) => {
+      if (part.type !== "image_url") {
+        return [];
+      }
+      const image = parseImageDataUrl(part.image_url.url);
+      if (!image) {
+        throw new ValidationError("Image edit sources must be supported inline image data URLs");
+      }
+      return [image];
+    }) : [];
     yield* generateImageStream(deps, {
       project: input.project,
       version: input.version,
       ...(input.variables ? { variables: input.variables } : {}),
       ...(prompt ? { prompt } : {}),
+      ...(images.length > 0 ? { images } : {}),
       ...(input.actor ? { actor: input.actor } : {}),
       ...(input.conversation ? { conversation: input.conversation } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
@@ -522,7 +537,7 @@ export async function* executeAgent(
   const recorder = deps.traces
     ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length, origin)
     : undefined;
-  let thrown: unknown;
+  let failure: unknown;
   let completed = false;
   let closeMcpSessions: (() => Promise<void>) | undefined;
   // Compose the caller's signal with a hard deadline. Held out here because the
@@ -664,6 +679,9 @@ export async function* executeAgent(
       signal: runSignal,
     }))) {
       recorder?.observe(chunk);
+      if (runTermination(chunk) === "error") {
+        failure = chunk.error;
+      }
       // The run's own id on its own chunks: a subagent's chunks already carry
       // that child's trace, and until top-level chunks carried this one, a
       // consumer joining "this run" to "its trace" (the trigger firing row)
@@ -680,7 +698,7 @@ export async function* executeAgent(
     // gone, which on this deployment is the ordinary case.
     const error = runEnding(caught, runSignal);
     if (runDeadlineExceeded(runSignal) || !input.signal?.aborted) {
-      thrown = error;
+      failure = error;
     }
     throw error;
   } finally {
@@ -688,8 +706,8 @@ export async function* executeAgent(
     // The flush comes first: an agent run's usage is buffered until here, so a
     // settle before it would be reading a total that excludes this whole run.
     const spentOn = await usage.flush();
-    await bracket.close({ failed: thrown !== undefined });
+    await bracket.close({ failed: failure !== undefined });
     await settleTransferred(deps, spentOn, input.project.name);
-    await finishTrace(recorder, thrown, !completed && thrown === undefined);
+    await finishTrace(recorder, failure, !completed && failure === undefined);
   }
 }

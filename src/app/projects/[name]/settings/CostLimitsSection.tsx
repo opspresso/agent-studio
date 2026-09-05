@@ -58,12 +58,14 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
     MessageDestinationKind[]
   >([]);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setLoaded(false);
     async function load() {
       const project = await getProject(projectName);
       if (cancelled) {
@@ -75,6 +77,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
       setMonthlyAlertUsd(limits?.monthlyAlertThresholdUsd ?? "");
       setMonthlyBlockUsd(limits?.monthlyBlockThresholdUsd ?? "");
       setDestinations(limits ? costAlertDestinations(limits) : []);
+      setLoaded(true);
       setLoading(false);
 
       // The project's own integration summaries say which surfaces exist, so
@@ -120,6 +123,9 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
   }, [projectName]);
 
   async function save() {
+    if (!loaded) {
+      return;
+    }
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -215,14 +221,18 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
     <CollapsibleSection
       title={t("pset.costLimits")}
       badge={
-        loading ? undefined : (
+        !loaded ? undefined : (
           <Badge color={stateColor(configured)} radius="xl">
             {configured ? summary : "none"}
           </Badge>
         )
       }
     >
-      <Stack gap="md">
+      <Stack
+        gap="md"
+        renderRoot={(props) => <fieldset {...props} disabled={!loaded} />}
+        style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+      >
         <Text fz="sm" c="dimmed">
           Spend is measured per UTC day and per UTC month across every model this project runs.
           Leave a field empty for no limit. A blocked project refuses every run — API, chat,

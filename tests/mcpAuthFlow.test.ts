@@ -9,7 +9,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createMcpAuthUseCases,
   MCP_OAUTH_CALLBACK_PATH,
@@ -482,6 +482,50 @@ describe("completeAuthorization", () => {
     expect(connection?.refreshToken).toBe("enc:rt-1");
     expect(connection?.connectedBy).toBe(OWNER);
     expect(Date.parse(connection?.expiresAt ?? "")).toBeGreaterThan(Date.now());
+  });
+
+  it.each<TokenSet>([
+    { accessToken: "new-access" },
+    { accessToken: "new-access", refreshToken: "new-refresh" },
+    { accessToken: "new-access", expiresInSeconds: 0 },
+  ])("replaces the old grant using only the new token response %j", async (tokens) => {
+    vi.useFakeTimers();
+    const now = "2026-01-01T00:00:00.000Z";
+    vi.setSystemTime(new Date(now));
+    try {
+      const { h, uc, state } = await started({
+        connection: {
+          status: "connected",
+          accessToken: "enc:old-access",
+          refreshToken: "enc:old-refresh",
+          expiresAt: "2030-01-01T00:00:00.000Z",
+        },
+        tokens,
+      });
+
+      await uc.completeAuthorization({ state, code: "new-code", userEmail: OWNER });
+
+      const stored = h.connections.get("p/slack");
+      expect(stored).toMatchObject({
+        clientId: "client-1",
+        clientSecret: "enc:shh",
+        accessToken: "enc:new-access",
+        status: "connected",
+        connectedBy: OWNER,
+      });
+      if (tokens.refreshToken) {
+        expect(stored?.refreshToken).toBe("enc:new-refresh");
+      } else {
+        expect(stored).not.toHaveProperty("refreshToken");
+      }
+      if (tokens.expiresInSeconds !== undefined) {
+        expect(stored?.expiresAt).toBe(now);
+      } else {
+        expect(stored).not.toHaveProperty("expiresAt");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("records the scopes the server granted, not the ones asked for", async () => {

@@ -42,6 +42,7 @@ import type { UsageDelta } from "@/domain/usage/types";
 import type { Trace } from "@/domain/trace/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
+import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 
 const DEFAULT_IMAGE_MODEL = listModels().find((m) => m.capabilities.imageGeneration)?.id;
 
@@ -181,6 +182,33 @@ describe("withRunDeadline", () => {
 });
 
 describe("execution cancellation", () => {
+  it.each([
+    ["agent", false], ["agent", true], ["llm", false], ["llm", true],
+  ] as const)("records a streamed %s failure even when collected=%s", async (projectType, collected) => {
+    resetRunMetrics();
+    const channel = new FakeChannel([]);
+    channel.chatCompletionStream = async function* () {
+      yield contentChunk("partial");
+      throw new Error("provider disconnected");
+    };
+    const { deps } = executionDepsFixture(channel);
+    const traces = captureTraces(deps);
+    deps.traceSampleRate = 1;
+    deps.sample = () => 0;
+    const stream = executeProjectStream(deps, {
+      project: { ...projectFixture(), projectType },
+      version: versionFixture({ piiFiltering: false }),
+      messages: [{ role: "user", content: "hello" }],
+    });
+    if (collected) {
+      await expect(collectRun(stream, "gpt-test")).rejects.toThrow("provider disconnected");
+    } else {
+      expect(await collect(stream)).toContainEqual(expect.objectContaining({ error: "provider disconnected" }));
+    }
+    expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 0, runsFinished: 1, runsFailed: 1 });
+    expect(traces.at(-1)).toMatchObject({ status: "failed", error: "provider disconnected" });
+  });
+
   it("propagates caller cancellation to the LLM channel through the run deadline", async () => {
     const channel = new FakeChannel([[contentChunk("done"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
@@ -1115,20 +1143,27 @@ describe("executeAgent reports the bindings it could not use", () => {
 });
 
 describe("executeAgent PII filtering", () => {
-  it("passes the version toggle to the engine", async () => {
+  it.each([true, false])("passes piiFiltering=%s to the engine", async (piiFiltering) => {
     const channel = new FakeChannel([[contentChunk("Contact the masked value."), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: true }),
+        version: versionFixture({ piiFiltering }),
         messages: [{ role: "user", content: "email@example.com or 010-1234-5678" }],
       }),
     );
 
-    const sent = String(channel.seenParams[0]?.messages[0]?.content);
-    expect(sent).not.toContain("email@example.com");
-    expect(sent).not.toContain("010-1234-5678");
+    const user = channel.seenParams[0]?.messages.find((message) => message.role === "user");
+    expect(user).toBeDefined();
+    const sent = String(user?.content);
+    if (piiFiltering) {
+      expect(sent).toContain("[[PII:");
+      expect(sent).not.toContain("email@example.com");
+      expect(sent).not.toContain("010-1234-5678");
+    } else {
+      expect(sent).toBe("email@example.com or 010-1234-5678");
+    }
   });
 });
 
@@ -2376,6 +2411,46 @@ describe("streamProjectRun", () => {
     ]);
     // Booked against the project like any other run, not silently free.
     expect(recorded).toHaveLength(1);
+  });
+
+  it("edits only the source images in the latest user turn", async () => {
+    const { deps, edits, imageModels } = executionDepsFixture(new FakeChannel([]));
+    const older = { role: "user" as const, content: [
+      { type: "image_url" as const, image_url: { url: "data:image/png;base64,b2xk" } },
+    ] };
+    await collect(streamProjectRun(deps, {
+      ...imageProject(),
+      messages: [older, { role: "user", content: [
+        { type: "text", text: "recolor this" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,bmV3" } },
+      ] }],
+    }));
+    expect(edits).toEqual([{
+      model: DEFAULT_IMAGE_MODEL,
+      prompt: "You are helpful.\n\nrecolor this",
+      sources: ["bmV3"],
+    }]);
+    expect(imageModels).toEqual([]);
+
+    await collect(streamProjectRun(deps, {
+      ...imageProject(),
+      messages: [older, { role: "user", content: "draw another" }],
+    }));
+    expect(edits).toHaveLength(1);
+    expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
+  });
+
+  it("refuses an image edit source that cannot be decoded inline", async () => {
+    const { deps, edits, imageModels } = executionDepsFixture(new FakeChannel([]));
+    await expect(collect(streamProjectRun(deps, {
+      ...imageProject(),
+      messages: [{ role: "user", content: [
+        { type: "text", text: "edit it" },
+        { type: "image_url", image_url: { url: "https://private.example/image.png" } },
+      ] }],
+    }))).rejects.toBeInstanceOf(ValidationError);
+    expect(edits).toEqual([]);
+    expect(imageModels).toEqual([]);
   });
 
   it("draws the newest user turn, and falls back to the version's template", async () => {

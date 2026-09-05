@@ -178,9 +178,9 @@ recorder 는 resolve 보다 먼저 만들어지므로(그래야 resolve 가 던�
 읽혔다 — 마지막 턴이 침묵하는 대신 마무리를 짓게 된 지금도 그대로다: 답은 존재하지만, 예산을
 다 쓴 채로 그리고 계획이 여전히 쓰고 있던 tool 없이 쓰인 답이다.
 
-**transfer 하나는 어느 깊이까지 갔든 span 하나다.** subagent 항목은 직계 자식 *과* 그 trace id
-로 키가 매겨지므로, 더 깊은 hop 은 그것을 시작한 transfer 로 합쳐지고 같은 agent 로의 두
-transfer 는 두 span 으로 남는다. 그러면 사슬은 양방향으로 읽힌다: `ancestry` 로는 위로
+**transfer 하나는 어느 깊이까지 갔든 span 하나다.** subagent 항목은 `transferId` 로 구분해
+trace 샘플링 여부와 독립적으로 같은 agent 로의 두 transfer 를 두 span 으로 남긴다.
+더 깊은 hop 은 그것을 시작한 직계 자식의 transfer 로 합쳐진다. 그러면 사슬은 양방향으로 읽힌다: `ancestry` 로는 위로
 top-level 런까지, span 의 subagent trace id 로는 아래로 자식 자신의 trace 까지.
 
 **모든 누적기에는 한도가 있다.** trace 가 행 하나로 쓰이고 행 하나로 읽히기 때문이다 —

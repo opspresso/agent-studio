@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +33,21 @@ const { artifactObjectStore, artifactPublicUrl } = await import(
 const savedBucket = process.env.S3_BUCKET_NAME;
 const savedRegion = process.env.AWS_REGION;
 
+function streamingBody(chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>) {
+  const body = Readable.from(chunks, { objectMode: false, highWaterMark: 1 });
+  return Object.assign(body, {
+    transformToByteArray: vi.fn(async () => {
+      const collected: Uint8Array[] = [];
+      for await (const chunk of body) {
+        collected.push(chunk);
+      }
+      return Buffer.concat(collected);
+    }),
+    // The SDK's Node stream mixin uses this same conversion.
+    transformToWebStream: vi.fn(() => Readable.toWeb(body)),
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.S3_BUCKET_NAME = "artifact-bucket";
@@ -47,18 +63,17 @@ afterEach(() => {
 
 describe("artifactObjectStore access modes", () => {
   it("reads stored bytes and preserves their content type", async () => {
-    const transformToByteArray = vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3]));
+    const body = streamingBody([Uint8Array.from([1, 2]), Uint8Array.from([3])]);
     mocks.send.mockResolvedValue({
       ContentLength: 3,
       ContentType: "image/png",
-      Body: { transformToByteArray },
+      Body: body,
     });
 
-    await expect(artifactObjectStore.read("artifacts/image/id.png", 10)).resolves.toEqual({
-      bytes: Uint8Array.from([1, 2, 3]),
-      mimeType: "image/png",
-    });
-    expect(transformToByteArray).toHaveBeenCalledOnce();
+    const result = await artifactObjectStore.read("artifacts/image/id.png", 10);
+    expect([...result.bytes]).toEqual([1, 2, 3]);
+    expect(result.mimeType).toBe("image/png");
+    expect(body.destroyed).toBe(true);
     const command = mocks.send.mock.calls[0]?.[0] as { input: Record<string, string> };
     expect(command.input.Key).toBe("artifacts/image/id.png");
   });
@@ -70,7 +85,7 @@ describe("artifactObjectStore access modes", () => {
     mocks.send.mockResolvedValue({
       ContentLength: png.byteLength,
       ContentType: "application/octet-stream",
-      Body: { transformToByteArray: vi.fn().mockResolvedValue(png) },
+      Body: streamingBody([png]),
     });
     await expect(artifactObjectStore.read("images/abc", 100)).resolves.toMatchObject({
       mimeType: "image/png",
@@ -79,7 +94,7 @@ describe("artifactObjectStore access modes", () => {
     // Bytes that are no picture keep the generic type rather than a guess.
     mocks.send.mockResolvedValue({
       ContentLength: 3,
-      Body: { transformToByteArray: vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3])) },
+      Body: streamingBody([Uint8Array.from([1, 2, 3])]),
     });
     await expect(artifactObjectStore.read("artifacts/file/x.bin", 100)).resolves.toMatchObject({
       mimeType: "application/octet-stream",
@@ -87,30 +102,95 @@ describe("artifactObjectStore access modes", () => {
   });
 
   it("rejects an oversized object before buffering its body", async () => {
-    const transformToByteArray = vi.fn();
+    const read = vi.fn();
+    const body = streamingBody((function* () {
+      read();
+      yield new Uint8Array(11);
+    })());
     mocks.send.mockResolvedValue({
       ContentLength: 11,
       ContentType: "image/png",
-      Body: { transformToByteArray },
+      Body: body,
     });
 
     await expect(artifactObjectStore.read("artifacts/image/id.png", 10)).rejects.toThrow(
       "exceeds the 10-byte read limit",
     );
-    expect(transformToByteArray).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    expect(body.destroyed).toBe(true);
   });
 
-  it("does not buffer a body whose size S3 did not report", async () => {
-    const transformToByteArray = vi.fn();
+  it("reads a bounded body whose size S3 did not report", async () => {
+    const body = streamingBody([Uint8Array.from([1, 2, 3])]);
     mocks.send.mockResolvedValue({
       ContentType: "image/png",
-      Body: { transformToByteArray },
+      Body: body,
     });
 
-    await expect(artifactObjectStore.read("artifacts/image/id.png", 10)).rejects.toThrow(
-      "has no content length",
+    const result = await artifactObjectStore.read("artifacts/image/id.png", 3);
+    expect([...result.bytes]).toEqual([1, 2, 3]);
+    expect(result.mimeType).toBe("image/png");
+    expect(body.destroyed).toBe(true);
+  });
+
+  it.each([undefined, 1])("cuts off an oversized body with declared length %s", async (ContentLength) => {
+    let produced = 0;
+    const body = streamingBody((function* () {
+      for (let index = 0; index < 20; index++) {
+        produced += 1;
+        yield new Uint8Array(6);
+      }
+    })());
+    mocks.send.mockResolvedValue({ ContentLength, Body: body });
+
+    await expect(artifactObjectStore.read("artifacts/file/id.bin", 10)).rejects.toThrow(
+      "exceeds the 10-byte read limit",
     );
-    expect(transformToByteArray).not.toHaveBeenCalled();
+
+    expect(produced).toBeGreaterThanOrEqual(2);
+    expect(produced).toBeLessThan(20);
+    expect(body.destroyed).toBe(true);
+  });
+
+  it("releases the body and preserves a read failure", async () => {
+    const error = new Error("object connection reset");
+    const body = streamingBody((async function* () {
+      yield Uint8Array.from([1]);
+      throw error;
+    })());
+    mocks.send.mockResolvedValue({ ContentLength: 3, Body: body });
+
+    await expect(artifactObjectStore.read("artifacts/file/id.bin", 10)).rejects.toBe(error);
+
+    expect(body.destroyed).toBe(true);
+  });
+
+  it("cancels and unlocks an oversized SDK Web Stream body", async () => {
+    const cancel = vi.fn();
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(6));
+      },
+      cancel,
+    }, { highWaterMark: 0 });
+    const body = Object.assign(stream, {
+      transformToWebStream: () => stream,
+    });
+    mocks.send.mockResolvedValue({ ContentLength: 1, Body: body });
+
+    await expect(artifactObjectStore.read("artifacts/file/id.bin", 10)).rejects.toThrow(
+      "exceeds the 10-byte read limit",
+    );
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(stream.locked).toBe(false);
+  });
+
+  it("rejects a response with no body", async () => {
+    mocks.send.mockResolvedValue({ ContentLength: 0 });
+
+    await expect(artifactObjectStore.read("artifacts/file/id.bin", 10)).rejects.toThrow(
+      "stored object has no body",
+    );
   });
 
   it("returns an encoded direct S3 URL in public mode without presigning", async () => {

@@ -73,7 +73,7 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
 
 | 모듈 | 소유하는 것 |
 |---|---|
-| `agentAssembly.ts` | 런이 무엇을 할 수 있다고 듣는가: `assembleAgentRun`, 시스템 프롬프트 빌더들(`buildAgentSystemPrompt`, skill 표와 server 표, 런 시계와 caller 블록), builtin 도구 정의와 `buildAgentTools`, `BUILTIN_TOOL_NAMES`, `ImageRegistry`, 그리고 `MAX_DISPATCH_TASKS` |
+| `agentAssembly.ts` | 런이 무엇을 할 수 있다고 듣는가: `assembleAgentRun`, 시스템 프롬프트 빌더들(`buildAgentSystemPrompt`, skill 표와 server 표, 런 시계와 caller 블록), builtin 도구 정의와 `buildAgentTools`, `ImageRegistry`, 그리고 `MAX_DISPATCH_TASKS` |
 | `toolResultBudget.ts` | 결과가 얼마를 써도 되는지와 무엇을 해야 하는지: `createToolResultBudget` 과 `createToolResultEmitter`, `MAX_TOOL_RESULT_CHARS_PER_TURN`, `MIN_KEPT_RESULT_CHARS`, 그리고 truncation 마커 |
 
 > `src/application/llm/AGENTS.md` 가 루프 불변식의 정본이다. `engine.ts`, `agentAssembly.ts`,
@@ -133,7 +133,7 @@ flowchart TB
   넣는 수밖에 없다),
   `parameters.slackWorkspace` 뒤의 Slack 읽기 도구 여섯 개
   ([workspace 읽기](slack.md#워크스페이스-읽기) 참고).
-  **그 밖의 이름은 모두 MCP 도구이고**, `BUILTIN_TOOL_NAMES` — 열세 개 전부 — 는 alias 할당
+  **그 밖의 이름은 모두 MCP 도구이고**, `src/domain/llm/toolNames.ts` 의 `BUILTIN_TOOL_NAMES` — 열세 개 전부 — 는 alias 할당
   동안 예약되어, MCP 도구가 builtin 이 주장할 수 있는 이름을 다는 일이 없다.
 
 > 루프가 그것들을 어떻게 dispatch 하는지, builtin 이 *제공된다*는 것이 무슨 뜻이고 왜 그것을
@@ -290,7 +290,7 @@ provider 는 이미 그림을 그렸고 청구했으므로, 쓰기 실패는 결
 **저장된 이미지는 키이고, 그 주소는 읽을 때마다 해석된다.** 행은 접근 정책을 확정하지 않는다.
 `ARTIFACT_ACCESS_MODE=proxied` 는 키를 이 앱의 서명 주소(`/api/objects`, HMAC 토큰)로,
 `authenticated` 는 스토어의 시간 제한이 있는 pre-signed URL 로, `public` 은 스토어의 직접 URL 로
-해석한다 — 앞의 둘은 수명이 같고(`urlTtl.ts`), 셋 모두 `withArtifactAccessMode`
+해석한다 — 앞의 둘은 수명이 같고(`src/shared/artifactUrlTtl.ts`), 셋 모두 `withArtifactAccessMode`
 (`src/infrastructure/storage/artifactAccess.ts`)가 S3 어댑터 위에서 호출마다 고르므로 설정
 페이지의 전환은 다음 서명에 반영된다. 이미지는 *보여지는* 것이라 파일명을 요구하지 않으며
 public 에서는 서명 없는 주소로 충분하다. **문서**는 자기 이름을 달고 가져가는 것이고 S3 는
@@ -307,7 +307,7 @@ authenticated 모드의 chat 뷰는 이미 그 페이지를 가진 사람이 읽
 고른 주소를 모델 provider에게 넘기면 이 앱의 SSRF 경계가 닿지 않기 때문이다. 두 번째 수명은
 SigV4 pre-sign의 상한인 7일이며 proxied 토큰도 같은 값을 쓴다. Slack 스레드나 저장된 A2A
 task처럼 지속되는 무언가에 적히는 링크를 위한 것이고, 런이 끝나고 한참 뒤에 읽힌다. 둘 다
-`src/application/artifact/urlTtl.ts`가 소유한다.
+`src/shared/artifactUrlTtl.ts`가 소유한다.
 
 **chat 은 결코 오브젝트를 삭제하지 않는다.** chat 행은 `expiresAt` 이 지나면 틱의 sweep 이
 `DELETE` 한 문장으로 지우는데 애플리케이션은 어느 행이 갔는지 관측하지 않으므로, cascade 할 수

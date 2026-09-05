@@ -5,9 +5,9 @@ import { RateLimitedError } from "@/application/errors";
 import { detachOnReturn } from "@/shared/detachOnReturn";
 import { readSse } from "@/app/_lib/sse";
 
-async function collectSse(response: Response): Promise<unknown[]> {
+async function collectSse(response: Response, options?: { requireDone?: boolean }): Promise<unknown[]> {
   const chunks: unknown[] = [];
-  for await (const chunk of readSse(response)) {
+  for await (const chunk of readSse(response, options)) {
     chunks.push(chunk);
   }
   return chunks;
@@ -39,6 +39,40 @@ describe("readSse", () => {
     await expect(collectSse(new Response('data: {"delta":"lost"}'))).rejects.toThrow(
       "SSE stream ended with an incomplete frame",
     );
+  });
+
+  it("rejects a cut connection even at a complete frame boundary", async () => {
+    await expect(collectSse(new Response('data: {"delta":"partial"}\n\n'))).rejects.toThrow(
+      "SSE stream ended without [DONE]",
+    );
+  });
+
+  it.each(["done", "malformed", "return", "throw"])("releases the response on %s", async (exit) => {
+    const cancel = vi.fn();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(
+          exit === "done" ? "data: [DONE]\n\n" : exit === "malformed" ? "data: {bad}\n\n" : 'data: {"delta":"one"}\n\n',
+        ));
+      },
+      cancel,
+    });
+    const stream = readSse(new Response(body));
+    if (exit === "malformed") {
+      await expect(stream.next()).rejects.toThrow("Malformed SSE data frame");
+    } else if (exit === "done") {
+      await expect(stream.next()).resolves.toMatchObject({ done: true });
+    } else {
+      await stream.next();
+      if (exit === "throw") {
+        const error = new Error("consumer failed");
+        await expect(stream.throw(error)).rejects.toBe(error);
+      } else {
+        await stream.return(undefined);
+      }
+    }
+    expect(body.locked).toBe(false);
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });
 
@@ -245,7 +279,7 @@ describe("sseResponseRaw error framing", () => {
     const response = await sseResponseRaw(failing(), undefined, {
       errorFrame: (message) => ({ type: "RUN_ERROR", message }),
     });
-    await expect(collectSse(response)).resolves.toEqual([
+    await expect(collectSse(response, { requireDone: false })).resolves.toEqual([
       { type: "RUN_STARTED" },
       { type: "RUN_ERROR", message: "provider went away" },
     ]);

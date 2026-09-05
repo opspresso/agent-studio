@@ -315,7 +315,8 @@ export const config = {
   /**
    * How managed MCP containers are started (`MANAGED_MCP_RUNTIME=docker`, the
    * one runtime there is — the app drives the Docker CLI on its own host), and
-   * the registry their images must come from. Either unset means this
+   * the registry configuration required to enable the feature. Docker uses
+   * host credentials; this setting does not restrict image registries. Either unset means this
    * deployment cannot start containers, and managed servers are simply
    * unavailable — the feature is off rather than half-configured.
    */

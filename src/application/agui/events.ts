@@ -38,7 +38,7 @@ import {
   type EngineChunk,
 } from "@/domain/llm/types";
 import { fileRefOf, resolveProducedFile } from "@/application/artifact/producedFiles";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 
 /** How the engine names a transfer's result: the tool, a colon, the agent it went to. */
 const TRANSFER_RESULT_PREFIX = "transfer_to_agent: ";
@@ -153,8 +153,8 @@ class RunTranslator {
   private openReasoning: string | undefined;
   private readonly openSteps: string[] = [];
   /**
-   * What each subagent said, by author, until the parent's transfer result
-   * arrives. The engine marks that result display-only — in the context the
+   * What each subagent said, by author, until the current top-level tool result
+   * arrives. The engine marks a transfer result display-only — in the context the
    * child's answer enters as a "For context" turn — but a client replays only
    * tool results, so the marker alone would tell the next run the delegation
    * returned nothing (the chat surface filters the marker for the same
@@ -296,16 +296,15 @@ class RunTranslator {
    * route does not exist, so the child's answer stands in for the marker.
    */
   private resultContent(result: NonNullable<EngineChunk["toolResult"]>): string {
-    if (!result.displayOnly) {
-      return result.content;
-    }
-    const agent = result.name.startsWith(TRANSFER_RESULT_PREFIX)
+    const agent = result.displayOnly && result.name.startsWith(TRANSFER_RESULT_PREFIX)
       ? result.name.slice(TRANSFER_RESULT_PREFIX.length)
       : undefined;
     const answer = agent ? this.childText.get(agent)?.trim() : undefined;
-    if (agent) {
-      this.childText.delete(agent);
-    }
+    // Builtins run in call order: all children of this tool have returned
+    // before its result, and none from the next tool has begun. A dispatch's
+    // answers are already in its own result and must not survive into a later
+    // transfer to the same agent.
+    this.childText.clear();
     return answer || result.content;
   }
 

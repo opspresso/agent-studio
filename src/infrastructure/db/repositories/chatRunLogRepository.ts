@@ -1,5 +1,6 @@
 import { keys } from "@/infrastructure/db/keys";
-import { putItem, queryItems } from "@/infrastructure/db/store";
+import { queryItems } from "@/infrastructure/db/store";
+import { putChatItem } from "@/infrastructure/db/chatLifecycle";
 import { expiresAtFromNow, RUN_LOG_TTL_SECONDS } from "@/infrastructure/db/ttl";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
 import { boundedPageLimit, MAX_PAGE_LIMIT } from "@/shared/pageLimit";
@@ -13,10 +14,10 @@ const ENTITY = "ChatRunLog";
  */
 export const chatRunLogRepository: ChatRunLogRepository = {
   async append(chatId, runId, entries) {
-    // Sequential single puts: one flush is a handful of rows at most — the
+    // Sequential fenced writes: one flush is a handful of rows at most — the
     // frames are already batched into them.
     for (const entry of entries) {
-      await putItem({
+      await putChatItem(chatId, {
         ...keys.chatRunLog(chatId, runId, entry.seq),
         entityType: ENTITY,
         chatId,

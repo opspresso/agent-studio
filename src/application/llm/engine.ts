@@ -2418,6 +2418,23 @@ export async function* runAgent(
       };
     }
     const wireToolCalls = yield* announceToolCalls(prepared, author, filter);
+    const assistantMessage: ChannelMessage = {
+      role: "assistant",
+      content: assistantText || null,
+      tool_calls: wireToolCalls,
+    };
+    if (reasoningText) {
+      // Unreachable by `reasoningTrace`, deliberately: this is the provider's
+      // round-trip — the thinking has to stay attached to the turn that
+      // produced it and to the tool calls that turn declared. What the version
+      // opted into is who may *read* it, not whether the model gets it back.
+      // Masked, because the filter bounds what the model sees; the reader's
+      // copy travels restored on the chunk stream.
+      assistantMessage.reasoning_content = reasoningText;
+    }
+    // Reserve the model's whole turn before any result is fitted: the next
+    // request carries both, including the bounded arguments and reasoning.
+    contextBudget?.chargeMessage(assistantMessage);
 
     // The MCP calls of one response are independent by construction — the model
     // asked for them together — so they run concurrently instead of adding up
@@ -2690,24 +2707,6 @@ export async function* runAgent(
       fallbackModel = imageEligibleFallback(fallbackModel, true);
     }
 
-    const assistantMessage: ChannelMessage = {
-      role: "assistant",
-      content: assistantText || null,
-      tool_calls: wireToolCalls,
-    };
-    if (reasoningText) {
-      // Unreachable by `reasoningTrace`, deliberately: this is the provider's
-      // round-trip — the thinking has to stay attached to the turn that
-      // produced it and to the tool calls that turn declared. What the version
-      // opted into is who may *read* it, not whether the model gets it back.
-      // Masked, because the filter bounds what the model sees; the reader's
-      // copy travels restored on the chunk stream.
-      assistantMessage.reasoning_content = reasoningText;
-    }
-    // The model's own turn is context now too; the tool results — markers,
-    // wrappers and omission strings included — were already charged as they
-    // were fitted or inserted.
-    contextBudget?.chargeMessage(assistantMessage);
     messages.push(assistantMessage, ...toolMessages, ...postContextMessages);
     if (endsOnClientCall) {
       // The application holds the rest of this turn: it runs the call and

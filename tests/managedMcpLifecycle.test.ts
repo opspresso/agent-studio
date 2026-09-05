@@ -3,6 +3,7 @@ import {
   createManagedMcpUseCases,
   MAX_MANAGED_MCP_SERVERS,
 } from "@/application/mcp/managedMcpUseCases";
+import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import type { AuditEvent } from "@/domain/audit/types";
 import type { McpServer } from "@/domain/mcp/types";
@@ -149,30 +150,36 @@ function fixture(
     },
     invalidateDiscovery: (url: string) => invalidated.push(url),
   };
+  // Enough of the port to prove the probe is handed decrypted values.
+  const cipher = {
+    decryptHeadersForOutbound: (h: Record<string, string>) =>
+      Object.fromEntries(Object.entries(h).map(([k, v]) => [k, v.replace(/^enc:v1:/, "")])),
+    encryptHeaders: (h: Record<string, string>) =>
+      Object.fromEntries(Object.entries(h).map(([k, v]) => [k, `enc:v1:${v}`])),
+    maskHeaders: (h: Record<string, string>) =>
+      Object.fromEntries(Object.keys(h).map((key) => [key, "********"])),
+    mergeHeaderUpdate: (_stored: Record<string, string>, update: Record<string, string>) =>
+      Object.fromEntries(Object.entries(update).map(([k, v]) => [k, `enc:v1:${v}`])),
+  } as never;
+  const lifecycleClaims = new Set<string>();
   const useCases = createManagedMcpUseCases({
     repo: repo as never,
     provisioner,
     probe: probe as never,
-    // Enough of the port to prove the probe is handed decrypted values.
-    cipher: { decryptHeadersForOutbound: (h: Record<string, string>) =>
-      Object.fromEntries(Object.entries(h).map(([k, v]) => [k, v.replace(/^enc:v1:/, "")])),
-      encryptHeaders: (h: Record<string, string>) =>
-        Object.fromEntries(Object.entries(h).map(([k, v]) => [k, `enc:v1:${v}`])),
-      maskHeaders: (h: Record<string, string>) =>
-        Object.fromEntries(Object.keys(h).map((key) => [key, "********"])),
-      mergeHeaderUpdate: (_stored: Record<string, string>, update: Record<string, string>) =>
-        Object.fromEntries(Object.entries(update).map(([k, v]) => [k, `enc:v1:${v}`])),
-    } as never,
+    cipher,
     now: () => "2026-01-01T00:00:00.000Z",
     // Recorded, never waited on: a test that sleeps for real is a test nobody
     // runs.
     sleep: async (ms: number) => {
       sleeps.push(ms);
     },
-    lifecycleClaims: new Set<string>(),
+    lifecycleClaims,
   });
   return {
     useCases,
+    registryUseCases: createMcpUseCases(
+      repo as never, cipher, { assertAllowed: async () => {} }, probe as never, [], lifecycleClaims,
+    ),
     rows,
     stopped,
     started,
@@ -180,6 +187,9 @@ function fixture(
     invalidated,
     probeCalls,
     sleeps,
+    repo,
+    provisioner,
+    lifecycleClaims,
     releaseStart: () => releaseStart(),
     answerWith: (fn: (url: string, call: number) => ListToolsResult) => {
       answer = fn;
@@ -263,6 +273,7 @@ describe("managed MCP lifecycle", () => {
     );
     expect(f.rows.has("image-fetch")).toBe(true);
     expect(f.invalidated).toEqual([]);
+    expect(f.lifecycleClaims.size).toBe(0);
   });
 
   it("leaves the same audit row an unmanaged deletion does", async () => {
@@ -443,6 +454,8 @@ describe("managed MCP lifecycle", () => {
       },
     ]);
     f.releaseStart();
+    await flush();
+    expect(f.lifecycleClaims.size).toBe(0);
   });
 
   it("updates metadata without restarting the container", async () => {
@@ -452,6 +465,25 @@ describe("managed MCP lifecycle", () => {
 
     expect(f.rows.get("image-fetch")?.description).toBe("updated");
     expect(f.started).toEqual([]);
+    expect(f.lifecycleClaims.size).toBe(0);
+  });
+
+  it("releases an update's claim after validation or persistence fails", async () => {
+    const f = fixture({ existing: managedRow() });
+    await expect(f.useCases.update("image-fetch", { endpointPath: "bad" })).rejects.toThrow(/endpoint path/);
+    expect(f.lifecycleClaims.size).toBe(0);
+
+    const update = f.repo.update;
+    f.repo.update = async () => {
+      throw new Error("write unavailable");
+    };
+    await expect(f.useCases.update("image-fetch", { image: "ecr/img:v2" })).rejects.toThrow("write unavailable");
+    expect(f.lifecycleClaims.size).toBe(0);
+    expect(f.started).toEqual([]);
+
+    f.repo.update = update;
+    await f.useCases.update("image-fetch", { description: "retry succeeded" });
+    expect(f.rows.get("image-fetch")?.description).toBe("retry succeeded");
   });
 
   it("rejects an endpoint path that could change the request target", async () => {
@@ -836,6 +868,123 @@ describe("managed MCP restart", () => {
 });
 
 describe("managed MCP restart and reconcile exclude each other", () => {
+  it("refuses to delete a managed row through the ordinary registry use case", async () => {
+    const f = fixture({ existing: managedRow() });
+
+    await expect(f.registryUseCases.remove("image-fetch", "admin@example.com"))
+      .rejects.toThrow(/managed lifecycle/);
+
+    expect(f.rows.has("image-fetch")).toBe(true);
+    expect(f.stopped).toEqual([]);
+    expect(f.lifecycleClaims.size).toBe(0);
+    await f.useCases.remove("image-fetch", "admin@example.com");
+    expect(f.rows.has("image-fetch")).toBe(false);
+    expect(f.stopped).toEqual(["image-fetch"]);
+  });
+
+  it.each(["update", "registry update", "remove"] as const)("refuses %s while a restart is pending", async (operation) => {
+    const f = fixture({ existing: managedRow({ description: "original" }), holdStart: true });
+    await f.useCases.restart("image-fetch");
+    try {
+      const mutation = operation === "update"
+        ? f.useCases.update("image-fetch", { description: "new description" })
+        : operation === "registry update"
+          ? f.registryUseCases.update("image-fetch", { description: "new description" })
+          : f.useCases.remove("image-fetch", "admin@example.com");
+      await expect(mutation).rejects.toThrow(/already running/);
+      expect(f.rows.get("image-fetch")?.description).toBe("original");
+      expect(f.stopped).toEqual([]);
+    } finally {
+      f.releaseStart();
+      await flush();
+    }
+    expect(f.lifecycleClaims.size).toBe(0);
+  });
+
+  it.each(["managed", "registry"] as const)("claims a %s metadata update before its first read", async (surface) => {
+    const f = fixture({ existing: managedRow() });
+    const gate = Promise.withResolvers<void>();
+    const get = f.repo.get;
+    f.repo.get = async (name) => {
+      await gate.promise;
+      return get(name);
+    };
+    const updating = (surface === "managed" ? f.useCases : f.registryUseCases)
+      .update("image-fetch", { description: "new description" });
+    const restarting = f.useCases.restart("image-fetch").then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    gate.resolve();
+    try {
+      expect(await restarting).toMatchObject({ message: expect.stringMatching(/already running/) });
+    } finally {
+      await updating;
+      await flush();
+    }
+    expect(f.started).toEqual([]);
+    expect(f.rows.get("image-fetch")?.description).toBe("new description");
+    expect(f.lifecycleClaims.size).toBe(0);
+  });
+
+  it("holds deletion's claim between stopping the workload and deleting its row", async () => {
+    const f = fixture({ existing: managedRow() });
+    const stopped = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    f.provisioner.stop = async () => {
+      stopped.resolve();
+      await gate.promise;
+    };
+    const removing = f.useCases.remove("image-fetch", "admin@example.com");
+    await stopped.promise;
+    try {
+      await expect(f.useCases.restart("image-fetch")).rejects.toThrow(/already running/);
+      expect(f.started).toEqual([]);
+    } finally {
+      gate.resolve();
+      await removing;
+      await flush();
+    }
+    expect(f.rows.has("image-fetch")).toBe(false);
+    expect(f.lifecycleClaims.size).toBe(0);
+  });
+
+  it.each(["update", "remove"] as const)("refreshes a queued reconcile entry after an earlier %s", async (operation) => {
+    const f = fixture({ existing: managedRow() });
+    f.rows.set("second", managedRow({ name: "second", description: "original" }));
+    const started = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    const start = f.provisioner.start;
+    f.provisioner.start = async (spec) => {
+      if (spec.name === "image-fetch") {
+        started.resolve();
+        await gate.promise;
+      }
+      return start(spec);
+    };
+    f.answerWith(() => REFUSED);
+    const sweep = f.useCases.reconcile();
+    await started.promise;
+    try {
+      if (operation === "update") {
+        await f.useCases.update("second", { description: "new description" });
+      } else {
+        await f.useCases.remove("second", "admin@example.com");
+      }
+    } finally {
+      gate.resolve();
+    }
+    await sweep;
+
+    if (operation === "update") {
+      expect(f.rows.get("second")?.description).toBe("new description");
+    } else {
+      expect(f.rows.has("second")).toBe(false);
+      expect(f.started).toEqual(["image-fetch"]);
+    }
+    expect(f.lifecycleClaims.size).toBe(0);
+  });
+
   it("leaves an entry alone while a restart of it is already running", async () => {
     // Both paths do `docker rm -f` then `docker run` under one name. Running
     // them together means the sweep's teardown kills the container the button

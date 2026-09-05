@@ -2,6 +2,7 @@ import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpRuntime, McpServer, McpServerAuth } from "@/domain/mcp/types";
 import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
+import { CONDITIONAL_WRITE_FAILED, updateItem } from "../store";
 
 const ENTITY_TYPE = "MCP" as const;
 
@@ -56,9 +57,30 @@ function toItem(server: McpServer): Record<string, unknown> {
   };
 }
 
-export const mcpRepository: McpRepository = createKeyedRepository<McpServer>({
-  entityType: ENTITY_TYPE,
-  key: keys.mcp,
-  toItem,
-  fromItem,
-});
+export const mcpRepository: McpRepository = {
+  ...createKeyedRepository<McpServer>({
+    entityType: ENTITY_TYPE,
+    key: keys.mcp,
+    toItem,
+    fromItem,
+  }),
+  async updateAuth(name, expectedUrl, auth, updatedAt) {
+    try {
+      await updateItem(
+        keys.mcp(name),
+        (row) => {
+          const { auth: _previous, ...current } = row ?? {};
+          void _previous;
+          return { ...current, ...(auth ? { auth } : {}), updatedAt };
+        },
+        (row) => row !== null && row.url === expectedUrl,
+      );
+      return true;
+    } catch (error) {
+      if ((error as { name?: string }).name === CONDITIONAL_WRITE_FAILED) {
+        return false;
+      }
+      throw error;
+    }
+  },
+};

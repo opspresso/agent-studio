@@ -1,0 +1,38 @@
+export const SKILL_TOOL_NAME = "Skill";
+export const TRANSFER_TOOL_NAME = "transfer_to_agent";
+export const DISPATCH_TOOL_NAME = "dispatch_agents";
+export const IMAGE_TOOL_NAME = "GenerateImage";
+export const EDIT_IMAGE_TOOL_NAME = "EditImage";
+export const FETCH_URL_TOOL_NAME = "FetchUrl";
+export const SAVE_FILE_TOOL_NAME = "SaveFile";
+export const SLACK_HISTORY_TOOL_NAME = "SlackHistory";
+export const SLACK_THREAD_TOOL_NAME = "SlackThread";
+export const SLACK_USER_TOOL_NAME = "SlackUser";
+export const SLACK_USERS_TOOL_NAME = "SlackUsers";
+export const SLACK_CHANNELS_TOOL_NAME = "SlackChannels";
+export const SLACK_REACTIONS_TOOL_NAME = "SlackReactions";
+/** The set served by one reader, so the loop can route them together. */
+export const SLACK_TOOL_NAMES: readonly string[] = [
+  SLACK_HISTORY_TOOL_NAME,
+  SLACK_THREAD_TOOL_NAME,
+  SLACK_USER_TOOL_NAME,
+  SLACK_USERS_TOOL_NAME,
+  SLACK_CHANNELS_TOOL_NAME,
+  SLACK_REACTIONS_TOOL_NAME,
+];
+/**
+ * Every name a builtin may claim. An MCP tool that arrives under one of these
+ * must be aliased even when that builtin is inactive for the run: whether a
+ * builtin is offered depends on the version, while the alias must be stable and
+ * decided before the run's tool set is built.
+ */
+export const BUILTIN_TOOL_NAMES: readonly string[] = [
+  SKILL_TOOL_NAME,
+  TRANSFER_TOOL_NAME,
+  DISPATCH_TOOL_NAME,
+  IMAGE_TOOL_NAME,
+  EDIT_IMAGE_TOOL_NAME,
+  FETCH_URL_TOOL_NAME,
+  SAVE_FILE_TOOL_NAME,
+  ...SLACK_TOOL_NAMES,
+];

@@ -90,6 +90,7 @@ export function NumberField({
 
 export interface PickerOption {
   value: string;
+  id?: string;
   description?: string;
   badge?: string;
   /** Colour for {@link badge}; from `badgeColors`, so the picker never picks one. */
@@ -175,7 +176,7 @@ function OptionPicker<T extends PickerOption>({
         setDraft(expected === value ? "" : value);
       }}
       placeholder={placeholder}
-      data={options.map((option) => option.value)}
+      data={options.map((option) => option.id ?? option.value)}
       filter={({ options: items, search }) => {
         const query = search.trim().toLowerCase();
         if (!query) {
@@ -183,19 +184,19 @@ function OptionPicker<T extends PickerOption>({
         }
         return items.filter((item) => {
           const value = "value" in item ? item.value : "";
-          const option = options.find((candidate) => candidate.value === value);
+          const option = options.find((candidate) => (candidate.id ?? candidate.value) === value);
           return (
-            value.toLowerCase().includes(query) ||
+            (option?.value ?? value).toLowerCase().includes(query) ||
             (option?.description ?? "").toLowerCase().includes(query)
           );
         });
       }}
       renderOption={({ option }) => {
-        const meta = options.find((candidate) => candidate.value === option.value);
+        const meta = options.find((candidate) => (candidate.id ?? candidate.value) === option.value);
         return (
           <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
             <Text fz="sm" style={{ flexShrink: 0 }}>
-              {option.value}
+              {meta?.value ?? option.value}
             </Text>
             {meta?.badge && (
               <Badge size="xs" color={meta.badgeColor}>
@@ -211,7 +212,7 @@ function OptionPicker<T extends PickerOption>({
         );
       }}
       onOptionSubmit={(value) => {
-        const option = options.find((candidate) => candidate.value === value);
+        const option = options.find((candidate) => (candidate.id ?? candidate.value) === value);
         if (option) {
           onPick(option);
         }
@@ -677,7 +678,9 @@ export function SubagentInput({
   options: Array<PickerOption & { type: "local" | "remote" }>;
 }) {
   const t = useT();
-  const available = options.filter((option) => !values.some((v) => v.name === option.value));
+  const available = options
+    .filter((option) => !values.some((v) => v.name === option.value))
+    .map((option) => ({ ...option, id: `${option.type}:${option.value}` }));
 
   return (
     <Field label={t("bindings.subagents")}>

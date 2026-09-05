@@ -53,16 +53,20 @@ interface ToolResultView {
   name: string;
   content: string;
   author?: string | undefined;
+  authorPath?: string[] | undefined;
+  transferId?: string | undefined;
 }
 interface ToolCallView {
   id?: string | undefined;
   name: string;
   args: string;
   author?: string | undefined;
+  authorPath?: string[] | undefined;
+  transferId?: string | undefined;
 }
 
-function toolCallView(raw: unknown, author?: string): ToolCallView {
-  return { ...parseWireToolCall(raw), author };
+function toolCallView(raw: unknown, chunk: EngineChunk): ToolCallView {
+  return { ...parseWireToolCall(raw), author: chunk.author, authorPath: chunk.authorPath, transferId: chunk.transferId };
 }
 
 export function RunPanel({
@@ -294,7 +298,7 @@ export function RunPanel({
           reasoningPacer.push(reasoned);
         }
         if (chunk.delta?.toolCalls) {
-          const calls = chunk.delta.toolCalls.map((c) => toolCallView(c, chunk.author));
+          const calls = chunk.delta.toolCalls.map((c) => toolCallView(c, chunk));
           setToolCalls((prev) => [...prev, ...calls]);
         }
         if (chunk.toolResult) {
@@ -303,6 +307,8 @@ export function RunPanel({
             name: chunk.toolResult.name,
             content: chunk.toolResult.content,
             author: chunk.author,
+            authorPath: chunk.authorPath,
+            transferId: chunk.transferId,
           };
           setToolResults((prev) => [...prev, result]);
         }

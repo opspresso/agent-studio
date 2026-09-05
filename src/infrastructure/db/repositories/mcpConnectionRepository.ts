@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { CONDITIONAL_WRITE_FAILED, deleteItem, getItem, queryItems, updateItem } from "../store";
 import { keys } from "../keys";
 import { putProjectItem } from "../projectLifecycle";
@@ -22,6 +23,7 @@ function toItem(connection: McpConnection): Record<string, unknown> {
     ...keys.mcpConnection(connection.projectName, connection.serverName),
     entityType: ENTITY_TYPE,
     ...rest,
+    revision: randomUUID(),
     ...(expiresAt === undefined ? {} : { [EXPIRES_AT_ISO]: expiresAt }),
   };
 }
@@ -78,6 +80,7 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
     connectedBy: optionalString(item.connectedBy),
     connectedAt: optionalString(item.connectedAt),
     updatedAt: item.updatedAt as string,
+    revision: optionalString(item.revision),
   };
 }
 
@@ -125,19 +128,16 @@ export const mcpConnectionRepository: McpConnectionRepository = {
   },
 
   /**
-   * Compare-and-set on the refresh token. An absent expectation covers both a
-   * connection that never had one and the first write after authorization, so
-   * a caller that refreshed from "no refresh token" still cannot clobber a
-   * token another instance has since stored.
+   * Compare-and-set on the whole grant's write identity. Token values and
+   * timestamps may stay unchanged across reconnects; the revision never does.
    */
-  async updateTokens(projectName, serverName, expectedRefreshToken, next) {
+  async updateTokens(projectName, serverName, expectedRevision, next) {
     try {
       await updateItem(
         keys.mcpConnection(projectName, serverName),
         (row) => {
-          // Absent values are removed, never written as null: the presence of
-          // `refreshToken` is the condition that decides a race, and a stored
-          // NULL would read as present while carrying no token. The legacy
+          // Absent values are removed, never written as null: optional token
+          // fields must not read as present while carrying no token. The legacy
           // `expiresAt` string goes too — it would shadow a removed
           // `expiresAtIso` through the read fallback.
           const {
@@ -150,6 +150,7 @@ export const mcpConnectionRepository: McpConnectionRepository = {
           void _a, _r, _e, _legacy;
           return {
             ...rest,
+            revision: randomUUID(),
             status: next.status,
             updatedAt: next.updatedAt,
             // Widened by a scope challenge, under the same condition as the
@@ -164,10 +165,7 @@ export const mcpConnectionRepository: McpConnectionRepository = {
         // The row must still exist: a connection deleted mid-refresh must not
         // be resurrected by the refresh that was already in flight.
         (row) =>
-          row !== null &&
-          (expectedRefreshToken === undefined
-            ? row.refreshToken === undefined
-            : row.refreshToken === expectedRefreshToken),
+          row !== null && row.revision === expectedRevision,
       );
       return true;
     } catch (error) {

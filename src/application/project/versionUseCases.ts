@@ -531,7 +531,7 @@ export async function updateVersion(
           cipher,
           refs.mcps,
           projectName,
-          versionName,
+          existing.versionName,
           input.mcpList,
           existing.mcpList,
         )
@@ -583,15 +583,15 @@ export async function publishVersion(
   userEmail: string,
 ): Promise<Project> {
   const project = await assertProjectWritable(projects, projectName, userEmail);
-  await getVersion(versions, projectName, versionName);
+  const version = await getVersion(versions, projectName, versionName);
 
   const updated: Project = {
     ...project,
-    publishedVersion: versionName,
+    publishedVersion: version.versionName,
     updatedAt: nextUpdatedAt(project.updatedAt),
   };
   try {
-    await projects.publish(updated, versionName, project.updatedAt);
+    await projects.publish(updated, version.versionName, project.updatedAt);
   } catch (error) {
     if (isTransactionCancelled(error)) {
       throw new ConflictError(`Project "${projectName}" changed while publishing version "${versionName}"`);

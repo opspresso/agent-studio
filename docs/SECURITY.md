@@ -203,8 +203,9 @@ Version 의 MCP header override 는 `project + version + server + header` 에 �
 임시 preview draft 로 읽을 때는 값을 복호화해 `draft` 컨텍스트로 다시 암호화하고, project clone 은
 소유자의 override 를 애초에 복사하지 않는다.
 MCP OAuth connection 의 client secret·access token·refresh token 은 `project + server + field` 에,
-인가 중인 PKCE verifier 는 일회성 state 값에 묶인다. Token refresh의 compare-and-set은 암호문을
-읽은 그대로 비교하므로 v2의 무작위 IV와 AAD 전환 뒤에도 같은 동시성 규칙을 유지한다.
+인가 중인 PKCE verifier 는 일회성 state 값에 묶인다. Token refresh의 compare-and-set은 저장소가
+연결을 쓸 때마다 발급하는 revision을 비교한다. 토큰 값과 타임스탬프가 같아도 새 연결을 구분하며,
+갱신 경쟁에서 진 요청은 최초 issuer·resource와 일치하는 connected grant만 사용할 수 있다.
 앱 설정의 기본 LLM key 는 effective base URL 에, provider별 key 는 `provider name + base URL` 에
 묶인다. 따라서 DB에서 key만 다른 endpoint로 옮기거나 저장 뒤 환경의 base URL만 바꾸면
 복호화되지 않으며 새 key를 입력해야 한다. GitHub token과 shared A2A key는 각각 고정된 settings
@@ -449,6 +450,11 @@ MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
 주소 대역이 넓어지는 것은 아니다**. 다른 모든 항목은 여전히 원래 받던 검사를 받는다. 이것은
 가드를 느슨하게 하는 것이 아니라 managed 루프백 옆에 놓인 두 번째 좁은 예외다.
 
+내부 주소 예외도 자동 redirect 추종은 허용하지 않는다. MCP 세션·OAuth 메타데이터·내부
+`FetchUrl`은 `src/infrastructure/net/redirectPolicy.ts`의 `fetchSameOrigin`을 통해 최대 5회만
+같은 출처로 이동한다. 공개 URL도 같은 redirect 규칙을 사용하며, 각 요청 직전에 DNS를 검증하고
+확인된 주소로 연결한다. 다른 출처로 이동하는 응답은 본문을 해제한 뒤 거부한다.
+
 이름을 맞추는 술어는 하나다. `src/domain/security/internalHosts.ts` 의
 `isDeclaredInternalHost`. 그리고 목록은 둘이다. `MCP_INTERNAL_HOST_SUFFIXES` 는 이 앱이
 부르기로 되어 있는 서비스를, [`URL_FETCH_INTERNAL_HOST_SUFFIXES`](#모델이-고른-url) 는 모델이
@@ -640,8 +646,9 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
   issuer 는 RFC 8414 path-inserted → OpenID path-inserted → OpenID path-appended 이고 root 형은
   시도하지 않는다; root 폴백은 Keycloak realm이나 Okta custom AS를 다른 issuer의 문서에
   조용히 바인딩할 수 있기 때문이다. `issuer`가 요청한 것과 다르거나 없는 문서는 쓰지 않는다.
-  resource metadata 는 well-known 경로가 모두 빗나가면 서버 자신의 401 `WWW-Authenticate` 가
-  지목하는 `resource_metadata` 주소를 읽는다(RFC 9728).
+  resource metadata 는 먼저 서버 자신의 401 `WWW-Authenticate` 를 확인한다.
+  `resource_metadata` 주소가 있으면 그 주소만 정본으로 읽고, 없을 때 well-known 경로를
+  시도한다(RFC 9728).
 - **`WWW-Authenticate` 는 런타임에도 읽는다.** 403 `insufficient_scope` 가 이름 댄 scope 는
   연결의 scope 에 합쳐지고 연결은 `needs_reauth` 가 되어, 콘솔의 재연결이 서버가 방금 거절한
   것과 같은 grant 대신 넓어진 grant 를 요청한다(step-up). 전에는 403 이 "unreachable" 로 보여
@@ -724,8 +731,9 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
 - 콜백은 **project 소유권을 다시 확인한다.** 사용자가 제공자에 가 있는 동안 소유권이 바뀔 수 있기
   때문이다.
 
-갱신은 저장된 refresh token 에 대한 compare-and-set 이다. refresh token 을 회전시키는 제공자는
-이전 것을 폐기하므로, 경쟁에서 진 쪽은 이긴 쪽의 token 을 쓴다. **거절된 grant** 만이 연결을
+갱신은 연결 revision에 대한 compare-and-set이다. 응답이 refresh token을 생략하면 기존 값을
+보존하고 새 값을 주면 교체한다. 경쟁에서 진 쪽은 원래 issuer·resource에 속하며 연결된 상태인
+승자의 grant만 사용한다. **거절된 grant** 만이 연결을
 `needs_reauth` 로 표시한다. 5xx 나 타임아웃은 그대로 둔다. (갱신 타이밍은 보안 제약이 아니라
 설계 제약이다. [design/mcp.md](design/mcp.md#oauth) 참고.)
 
@@ -801,9 +809,10 @@ token 으로 치환되고, 응답에서 원본이 복원된다. 스트리밍도 
 그래서 이것이 기본 동작이 아니라 버전별 옵트인이다. 켜는 것은 실제 사람의 이름을 프롬프트에,
 그리고 제공자가 로깅하는 무엇에든 집어넣겠다는 결정이다.
 
-옵트인은 프롬프트뿐 아니라 조회도 게이트한다. 꺼진 버전은 `users.info` 호출을 아예 일으키지
-않으므로, 옵트인하지 않은 project 는 멤버의 id 를 Slack 의 프로필 API 로 결코 보내지 않는다.
-그리고 이름이 메시지와 함께 도착하는 Telegram 에서는 그것이 대화 트랜스크립트에 쓰이지도
+옵트인은 모델에 넣을 이름·시간대·아바타를 위한 프로필 조회를 게이트한다. Slack 의 private
+project 접근 검사와 artifact 소유자 식별에 필요한 email 조회는 옵트인과 독립적으로
+`users.info` 를 호출할 수 있다. 그 email 은 모델의 caller 블록에 들어가지 않는다.
+이름이 메시지와 함께 도착하는 Telegram 에서는 옵트인하지 않은 이름이 대화 트랜스크립트에 쓰이지도
 않는다([데이터 노출과 보존](#데이터-노출과-보존) 참고). **transfer 는 호출자를
 자식에게 실어 나르고**(`RunOrigin`), 거기서 자식 버전 자신의 옵트인이 다시 결정한다. 그래서
 이름은 몇 홉 떨어져 있든 그것을 요청한 버전에만 도달하고, 소유자가 한 번도 옵트인하지 않은
@@ -889,7 +898,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 알아 둘 만한 다른 속성들:
 
 - **문서는 읽힐 뿐, 실행되거나 렌더링되지 않는다.** 추출은 텍스트만 내놓는다. HTML 은
-  가져오거나 스크립트를 돌리거나 해석하는 대신 그 마크업 그대로 읽힌다.
+  마크업과 활성 내용을 제거한 텍스트로 읽히며, 스크립트를 실행하거나 외부 리소스를 가져오지 않는다.
 - **문서를 대신해 무언가를 가져오는 것은 없다.** 첨부 안의 URL 은 다른 것과 마찬가지로 텍스트일
   뿐이다. 버전이 바인딩한 도구만이 그것에 작용할 수 있고, 그 도구 자신의 가드 아래에서 그렇다.
 - **텍스트는 PII 필터를 지난다.** 버전이 옵트인하면 턴의 나머지와 마찬가지이고, 한계도 같다
@@ -927,7 +936,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   독자에 맞춰 고른다. chat 뷰에는 15분, Slack 스레드나 저장된 A2A 태스크처럼 지속되는
   무언가에 쓰이는 링크에는 7일(SigV4
   pre-sign 의 상한이고, proxied 토큰도 같은 값을 쓴다). 그 링크는 그것이 함께 온 답을 이미 읽을
-  수 있던 청중이 쥔다(`src/application/artifact/urlTtl.ts`). 주소의 *모양* 은
+  수 있던 청중이 쥔다(`src/shared/artifactUrlTtl.ts`). 주소의 *모양* 은
   `ARTIFACT_ACCESS_MODE` 가 정한다:
   - **`proxied`**. 스토어는 앱에게만 닿고 독자는 앱의 주소
     `PUBLIC_BASE_URL/api/objects/<key>?exp=<unix>&sig=<hmac>[&dl=<filename>]` 를 받는다

@@ -1,3 +1,5 @@
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
+
 /**
  * How long a thread may go on tail reads before it re-reads everything.
  *
@@ -13,10 +15,5 @@
  * next retire reads the whole thread again and every signature in it is fresh
  * once more. Half the TTL, so a signature minted just before a full read still
  * has half its life left when the next one comes.
- *
- * It cannot import `VIEW_URL_TTL_SECONDS` — that constant lives in
- * `application/`, which a client module may not reach — so
- * `tests/chatIncrementalSync.test.ts` asserts the relationship instead. A test
- * is the seam here, not an import.
  */
-export const SIGNATURE_REFRESH_MS = (15 * 60 * 1000) / 2;
+export const SIGNATURE_REFRESH_MS = (VIEW_URL_TTL_SECONDS * 1000) / 2;

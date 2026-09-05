@@ -106,6 +106,9 @@ describe("resolveRegistryUrlPatch", () => {
 function makeMcpRepo(initial: McpServer[] = []) {
   const store = new Map(initial.map((server) => [server.name, server]));
   const repo: McpRepository = {
+    async updateAuth() {
+      throw new Error("OAuth updates are not used by this fixture");
+    },
     async get(name) {
       return store.get(name) ?? null;
     },
@@ -360,6 +363,28 @@ describe("MCP registry secret contract", () => {
     const result = await useCases.testConnection("evil");
     expect(result).toMatchObject({ ok: false });
     expect(listMcpToolsMock).not.toHaveBeenCalled();
+  });
+
+  it("checks a moved URL even when the previous address was declared internal", async () => {
+    const original = "http://mcp.approved.internal/mcp";
+    const { repo, store } = makeMcpRepo([
+      { name: "m", url: original, headers: {}, createdAt: NOW, updatedAt: NOW },
+    ]);
+    const assertAllowed = vi.fn(testPolicy.assertAllowed);
+    const useCases = createMcpUseCasesImpl(repo, secretCipher, { assertAllowed }, {
+      listTools: listMcpToolsMock,
+      invalidateDiscovery: () => {},
+    }, ["approved.internal"]);
+
+    await expect(useCases.update("m", { url: "http://blocked.internal/mcp" }))
+      .rejects.toBeInstanceOf(ValidationError);
+    expect(assertAllowed).toHaveBeenCalledWith("http://blocked.internal/mcp");
+    expect(store.get("m")?.url).toBe(original);
+
+    assertAllowed.mockClear();
+    await useCases.update("m", { url: "http://other.approved.internal/mcp" });
+    expect(assertAllowed).not.toHaveBeenCalled();
+    expect(store.get("m")?.url).toBe("http://other.approved.internal/mcp");
   });
 
   it("sends the signed-in user email when testing a connection", async () => {

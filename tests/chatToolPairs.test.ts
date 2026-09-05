@@ -3,12 +3,59 @@ import { storedToolArgs } from "@/app/chats/_lib/toolPairs";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { describeTool, parseWireToolCall } from "@/app/_lib/toolCalls";
 import type { ChatMessage } from "@/domain/chat/types";
+import { reduceChunk } from "@/app/chats/_lib/stream";
+import { EMPTY_TURN, type StreamChunk } from "@/app/chats/_lib/types";
 
 function wireCall(id: string, name: string, args: string): unknown {
   return { id, type: "function", function: { name, arguments: args } };
 }
 
 describe("pairToolTraffic", () => {
+  it("keeps reused ids separate across parents, nested paths, and simultaneous transfers", () => {
+    const scopes = [
+      {},
+      { author: "child", authorPath: ["child"], transferId: "first" },
+      { author: "child", authorPath: ["child"], transferId: "second" },
+      { author: "child", authorPath: ["nested", "child"], transferId: "first" },
+    ];
+    const chunks: StreamChunk[] = [
+      ...scopes.map((scope, index) => ({
+        ...scope,
+        delta: { toolCalls: [wireCall("call_1", "search", `args-${index}`)] },
+      })),
+      ...scopes.map((scope, index) => ({
+        ...scope,
+        toolResult: { toolCallId: "call_1", name: "search", content: `result-${index}` },
+      })).toReversed(),
+    ];
+    const turn = chunks.reduce(reduceChunk, EMPTY_TURN);
+    expect(turn.toolCalls[1]).toMatchObject(scopes[1]!);
+    expect(turn.tools[0]).toMatchObject(scopes[3]!);
+    expect(pairToolTraffic(turn.toolCalls, turn.tools)).toEqual(scopes.map((scope, index) => ({
+      name: "search", args: `args-${index}`, content: `result-${index}`, author: scope.author,
+    })));
+  });
+
+  it("does not attach an orphan child's result to a parent's same-named call", () => {
+    expect(pairToolTraffic(
+      [{ name: "search", args: "parent" }],
+      [{ name: "search", content: "child result", author: "child" }],
+    )).toEqual([
+      { name: "search", args: "parent" },
+      { name: "search", content: "child result", author: "child" },
+    ]);
+  });
+
+  it("does not use name fallback when both sides identify different calls", () => {
+    expect(pairToolTraffic(
+      [{ id: "parent", name: "search", args: "parent" }],
+      [{ id: "orphan", name: "search", content: "orphan result" }],
+    )).toEqual([
+      { name: "search", args: "parent" },
+      { name: "search", content: "orphan result" },
+    ]);
+  });
+
   it("puts a call and its result in one row", () => {
     expect(
       pairToolTraffic([{ name: "search", args: "{}" }], [{ name: "search", content: "hits" }]),
@@ -224,6 +271,17 @@ describe("storedToolArgs", () => {
   function message(partial: Partial<ChatMessage> & { seq: number; role: string }): ChatMessage {
     return { chatId: "c1", content: "", createdAt: "", ...partial } as ChatMessage;
   }
+
+  it("leaves authored and display-only rows without a parent's arguments", () => {
+    const args = storedToolArgs([
+      message({ seq: 0, role: "user" }),
+      message({ seq: 1, role: "tool", toolCallId: "call_1", author: "child" }),
+      message({ seq: 2, role: "tool", toolCallId: "call_1", displayOnly: true }),
+      message({ seq: 3, role: "tool", toolCallId: "call_1" }),
+      message({ seq: 4, role: "assistant", toolCalls: [wireCall("call_1", "search", "parent")] as never }),
+    ]);
+    expect([...args]).toEqual([[3, "parent"]]);
+  });
 
   /**
    * A stored tool row keeps the result and the tool's name; which *skill* ran is

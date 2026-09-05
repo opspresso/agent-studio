@@ -22,9 +22,9 @@ import { closeOpenFence } from "@/shared/markdownFence";
  */
 
 /**
- * The cap on one activity's text. Teams accepts a message of about 28KB; a
- * lower ceiling keeps room for the Markdown and the attachments beside it, and
- * an answer that long reads better continued in a second message anyway.
+ * The cap on one activity's text. Teams recommends an 80KB body within its
+ * approximate 100KB UTF-16 limit. 20,000 code units leave room for metadata,
+ * and an answer that long reads better continued in a second message anyway.
  */
 export const MAX_MESSAGE_CHARS = 20_000;
 /** Teams allows roughly one message a second per conversation; edits share it. */

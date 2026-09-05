@@ -40,6 +40,55 @@ afterEach(() => {
 });
 
 describe("reading protected resource metadata", () => {
+  it("follows internal challenge and metadata redirects only within their origin", async () => {
+    const origin = new URL(INTERNAL_URL).origin;
+    const cancel = vi.fn();
+    const direct = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      expect(init?.redirect).toBe("manual");
+      const url = String(input);
+      if (url === INTERNAL_URL || url === `${origin}/oauth/prm`) {
+        return new Response(new ReadableStream({ cancel }), {
+          status: 307,
+          headers: { location: url === INTERNAL_URL ? "/challenge" : "/oauth/document" },
+        });
+      }
+      if (url === `${origin}/challenge`) {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body)).method).toBe("initialize");
+        return new Response(null, {
+          status: 401,
+          headers: { "WWW-Authenticate": `Bearer resource_metadata="${origin}/oauth/prm"` },
+        });
+      }
+      return jsonResponse({ ...RESOURCE_DOC, resource: INTERNAL_URL });
+    });
+    vi.stubGlobal("fetch", direct);
+
+    const metadata = await oauthMetadataClient.fetchProtectedResource(INTERNAL_URL, true);
+
+    expect(metadata.resource).toBe(INTERNAL_URL);
+    expect(direct.mock.calls.map(([url]) => String(url))).toEqual([
+      INTERNAL_URL, `${origin}/challenge`, `${origin}/oauth/prm`, `${origin}/oauth/document`,
+    ]);
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(guardedFetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses internal metadata redirects off origin and cancels every discarded response", async () => {
+    const cancel = vi.fn();
+    const direct = vi.fn(async () => new Response(new ReadableStream({ cancel }), {
+      status: 302, headers: { location: "http://other.internal/metadata" },
+    }));
+    vi.stubGlobal("fetch", direct);
+
+    await expect(oauthMetadataClient.fetchProtectedResource(INTERNAL_URL, true))
+      .rejects.toThrow("Cross-origin redirect blocked");
+
+    expect(direct).toHaveBeenCalledTimes(3);
+    expect(cancel).toHaveBeenCalledTimes(3);
+    expect(guardedFetch).not.toHaveBeenCalled();
+  });
+
   it("dials a declared-internal host directly, the way a run already does", async () => {
     const direct = vi.fn(async () => jsonResponse(RESOURCE_DOC));
     vi.stubGlobal("fetch", direct);

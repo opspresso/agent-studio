@@ -13,7 +13,7 @@ import {
 import { toEngineMessages } from "@/application/chat/messageMapping";
 import { reduceChunk } from "@/app/chats/_lib/stream";
 import { EMPTY_TURN } from "@/app/chats/_lib/types";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 
 /**
  * A run rendered a PDF, the bracket stored it, and the chat had nowhere to put

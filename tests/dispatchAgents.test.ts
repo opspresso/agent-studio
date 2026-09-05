@@ -108,7 +108,14 @@ describe("dispatch_agents", () => {
       ["beta", gate()],
       ["gamma", gate()],
     ]);
+    const allStarted = gate();
+    const completed = new Map([...gates.keys()].map((name) => [name, gate()]));
+    const completionOrder: string[] = [];
+    let started = 0;
     const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      if (++started === gates.size) {
+        allStarted.open();
+      }
       await gates.get(agentName)?.opened;
       yield { author: agentName, delta: { content: agentName } };
       return `${agentName} answered`;
@@ -122,15 +129,25 @@ describe("dispatch_agents", () => {
       [contentChunk("all done"), usageChunk(1, 1)],
     ]);
 
-    const pending = collect(
-      runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith()),
-    );
-    // Reverse of the request order.
-    gates.get("gamma")?.open();
-    gates.get("beta")?.open();
-    gates.get("alpha")?.open();
+    const pending = (async () => {
+      const chunks: EngineChunk[] = [];
+      for await (const chunk of runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())) {
+        chunks.push(chunk);
+        if (chunk.authorDone && chunk.author) {
+          completionOrder.push(chunk.author);
+          completed.get(chunk.author)?.open();
+        }
+      }
+      return chunks;
+    })();
+    await allStarted.opened;
+    for (const name of ["gamma", "beta", "alpha"]) {
+      gates.get(name)!.open();
+      await completed.get(name)!.opened;
+    }
     const result = dispatchResult(await pending);
 
+    expect(completionOrder).toEqual(["gamma", "beta", "alpha"]);
     expect(result.indexOf("### alpha")).toBeLessThan(result.indexOf("### beta"));
     expect(result.indexOf("### beta")).toBeLessThan(result.indexOf("### gamma"));
     expect(result).toContain("alpha answered");

@@ -61,10 +61,4 @@ export function removeActivePath(active: string[][], path: string[]): string[][]
   return active.filter((existing) => !key(existing).startsWith(completed));
 }
 
-/** The chain a chunk came from, or nothing when it is the top-level agent's. */
-export function chunkAuthorPath(chunk: {
-  author?: string;
-  authorPath?: string[];
-}): string[] | undefined {
-  return chunk.authorPath ?? (chunk.author ? [chunk.author] : undefined);
-}
+export { chunkAuthorPath } from "@/domain/llm/types";

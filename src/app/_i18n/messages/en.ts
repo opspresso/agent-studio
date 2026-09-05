@@ -1054,6 +1054,7 @@ export const en = {
   "models.hiddenCount": "{count} hidden",
   "models.showAll": "Show all",
   "models.oneVisible": "At least one model must remain visible.",
+  "models.generateTestImage": "Generate test image",
   "models.catalogUpdated": "catalog updated",
   "models.refreshNow": "Refresh now",
   "models.catalogFile.title": "Catalog document",

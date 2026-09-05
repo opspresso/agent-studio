@@ -32,7 +32,8 @@ export interface TriggerRepository {
    *
    * `startedBefore` narrows the window to rows that started before that instant.
    * The console wants the newest N; a repair sweep wants the newest N *that are
-   * old enough to be dead*, and on a trigger taking ten deliveries a minute
+   * old enough to be dead*. `status` filters before the limit so completed runs
+   * cannot hide stranded ones. On a trigger taking ten deliveries a minute
    * those are not the same rows — a firing stranded twenty minutes ago sits
    * under two hundred newer ones and would never appear in an unbounded page.
    */
@@ -40,6 +41,6 @@ export interface TriggerRepository {
     projectName: string,
     triggerId: string,
     limit: number,
-    opts?: { startedBefore?: string },
+    opts?: { startedBefore?: string; status?: TriggerRun["status"] },
   ): Promise<TriggerRun[]>;
 }

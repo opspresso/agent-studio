@@ -302,7 +302,7 @@ export async function getHiddenModels(): Promise<string[] | undefined> {
  * of these and a declaration is data, not configuration. Read by the catalog
  * refresher (boot and every tick) and installed into the registry overlay.
  */
-export async function getSelfHostedModels(): Promise<unknown[]> {
+export async function getSelfHostedModels(): Promise<NonNullable<AppSettings["selfHostedModels"]>> {
   return (await loadSettings())?.selfHostedModels ?? [];
 }
 

@@ -188,20 +188,55 @@ describe("reindexCatalog", () => {
     expect(recorded.deleted).toEqual([]);
   });
 
-  it("refuses to empty the index when the registries came back empty", async () => {
-    // Every registry empty at once is not a state this platform reaches; a
-    // table name pointed elsewhere or a local process aimed at the deployed
-    // index are, and they look identical from here.
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const recorded = fakeStore(["skill#a", "skill#b"]);
-      const report = await reindexCatalog(indexDeps({ catalog: recorded.store }));
+  it("removes the final indexed capability when every registry is successfully empty", async () => {
+    const recorded = fakeStore(["skill#last"]);
+
+    const report = await reindexCatalog(indexDeps({ catalog: recorded.store }));
+
+    expect(recorded.upserted).toEqual([]);
+    expect(recorded.deleted).toEqual(["skill#last"]);
+    expect(recorded.order).toEqual(["upsert", "delete"]);
+    expect(report).toEqual({ indexed: 0, removed: 1, undiscovered: [] });
+  });
+
+  it.each(["skills", "mcps", "externalAgents"] as const)(
+    "preserves the index when the %s registry cannot be read",
+    async (registry) => {
+      const recorded = fakeStore(["skill#last"]);
+      const error = new Error("registry unavailable");
+      const deps = indexDeps({ catalog: recorded.store });
+      deps[registry] = {
+        list: async () => {
+          throw error;
+        },
+      };
+
+      await expect(reindexCatalog(deps)).rejects.toBe(error);
+
+      expect(recorded.upserted).toEqual([]);
       expect(recorded.deleted).toEqual([]);
-      expect(report).toMatchObject({ indexed: 0, removed: 0 });
-      expect(error).toHaveBeenCalled();
-    } finally {
-      error.mockRestore();
-    }
+      expect(recorded.order).toEqual([]);
+    },
+  );
+
+  it("preserves the index when a later registry page fails", async () => {
+    const recorded = fakeStore(["skill#last"]);
+    const error = new Error("registry page unavailable");
+    const list = vi.fn(async (limit: number, after?: string) => {
+      if (after !== undefined) {
+        throw error;
+      }
+      return Array.from({ length: limit }, (_, index) => skill(`skill-${index}`));
+    });
+
+    await expect(
+      reindexCatalog(indexDeps({ catalog: recorded.store, skills: { list } })),
+    ).rejects.toBe(error);
+
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(recorded.upserted).toEqual([]);
+    expect(recorded.deleted).toEqual([]);
+    expect(recorded.order).toEqual([]);
   });
 
   it("keeps indexing when one server's probe throws", async () => {
@@ -314,6 +349,23 @@ const reranked = (scores: number[]) => ({
 });
 
 describe("searchCapabilities", () => {
+  it("keeps billed reranking usage when reindexing invalidates its matches", async () => {
+    const deps = searchDeps([[
+      match("skill#a", 0.9, { name: "a", description: "first" }),
+      match("skill#b", 0.8, { name: "b", description: "second" }),
+    ]]);
+    let generation = 1;
+    deps.reindexState = async () => ({ generation, active: false });
+    const usage = { model: "selfhosted/reranker", inputTokens: 30, costUsd: 0.02 };
+    deps.reranker = { rerank: async () => {
+      generation += 1;
+      return { scores: [0.9, 0.8], usage };
+    } };
+    const result = await searchCapabilitiesByKind(deps, ["query"], [{ kind: "skill", limit: 5 }]);
+    expect(result.matches).toEqual([[]]);
+    expect(result.rerank).toEqual({ calls: 1, candidates: 2, failed: 0, usage: [usage] });
+  });
+
   it("withholds discovery while a reindex lease is active", async () => {
     const deps = searchDeps([[match("skill#a", 0.9, { name: "a", description: "" })]]);
     const embed = vi.spyOn(deps.embeddings, "embed");

@@ -88,6 +88,12 @@ export interface McpConnection {
   connectedBy?: string;
   connectedAt?: string;
   updatedAt: string;
+  /**
+   * Identity of the last repository write, independent of token rotation and
+   * timestamps. An unversioned snapshot may only update an unversioned row;
+   * every successful put or token update assigns a fresh revision.
+   */
+  revision?: string;
 }
 
 /**
@@ -125,8 +131,9 @@ export interface McpConnectionRepository {
   listByProject(projectName: string, limit: number, after?: string): Promise<McpConnection[]>;
   put(connection: McpConnection): Promise<void>;
   /**
-   * Replace the tokens only if the stored refresh token is still the one the
-   * caller refreshed from.
+   * Replace the tokens only if the connection still has the revision read by
+   * the caller. Every successful connection write changes that revision,
+   * including reconnects with unchanged refresh tokens or timestamps.
    *
    * Providers that rotate refresh tokens revoke the previous one, so two
    * instances refreshing at once means the loser's write would store a token the
@@ -135,16 +142,14 @@ export interface McpConnectionRepository {
    * another instance already stored a newer token and the caller should re-read
    * rather than treat it as an error.
    *
-   * `expectedRefreshToken` is the **stored** value, passed back exactly as it was
-   * read. Encryption is randomized, so re-encrypting the same plaintext produces
-   * a different ciphertext and would never match — which makes this a comparison
-   * on "has the row changed since I read it", the thing a compare-and-set
-   * actually needs to know.
+   * `expectedRevision` is the repository-issued value exactly as read. An absent
+   * expectation matches only a still-unversioned row, and the successful update
+   * assigns its first revision under the same atomic condition.
    */
   updateTokens(
     projectName: string,
     serverName: string,
-    expectedRefreshToken: string | undefined,
+    expectedRevision: string | undefined,
     next: Pick<
       McpConnection,
       "accessToken" | "refreshToken" | "expiresAt" | "status" | "updatedAt"

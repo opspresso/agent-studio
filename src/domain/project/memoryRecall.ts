@@ -22,5 +22,5 @@ export const RECALL_TOOL_NAME = "recall";
  * one, and only discovery says — the prompt preview asks it.
  */
 export function bindingsMayOfferRecall(mcpList: readonly McpBinding[]): boolean {
-  return mcpList.some((binding) => binding.tools === undefined || binding.tools.includes(RECALL_TOOL_NAME));
+  return mcpList.some((binding) => !binding.tools?.length || binding.tools.includes(RECALL_TOOL_NAME));
 }

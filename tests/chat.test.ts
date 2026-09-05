@@ -1,3 +1,4 @@
+import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { describe, expect, it, vi } from "vitest";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
@@ -8,9 +9,9 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { AgentRunner, ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
-import { runAndPersist, userTurnContent, withLeadingWarnings } from "@/application/chat/run";
+import { runAndPersist, userTurnContent } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { deleteChat } from "@/application/chat/deleteChat";
 import { createChat } from "@/application/chat/createChat";
 import { sendMessage } from "@/application/chat/sendMessage";
@@ -1142,6 +1143,30 @@ describe("chat image attachments", () => {
     expect(toEngineMessages([stored]).messages).toEqual([{ role: "user", content: "look" }]);
   });
 
+  it.each(["create", "send"])("attributes attached images to the uploader on %s", async (action) => {
+    const userEmail = "uploader@x.com";
+    const { repo } = makeChatRepo(chatFixture(userEmail));
+    const { storage } = fakeArtifacts();
+    const put = vi.spyOn(storage.rows, "put");
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      artifacts: storage,
+    });
+    const result = action === "create"
+      ? await createChat(deps, { projectName: "p1", firstMessage: "look", images: [PNG], userEmail })
+      : await sendMessage(deps, { chatId: "c1", content: "look", images: [PNG], userEmail });
+    for await (const _chunk of result.stream) {
+      // Finish the run and release its lease.
+    }
+    expect(put).toHaveBeenCalledWith(expect.objectContaining({
+      source: "attachment",
+      projectName: "p1",
+      versionName: "1",
+      actor: { kind: "user", id: userEmail },
+    }));
+  });
+
   it("marks an image-only turn when its remote URL is omitted", () => {
     const stored = message({ seq: 0, role: "user", content: "" });
     (stored as { images?: Array<{ url: string }> }).images = [{ url: "https://x/y.png" }];
@@ -1259,6 +1284,61 @@ describe("chat image attachments", () => {
       warning: "1 earlier image(s) were omitted or could not be read back and are missing from this run's context.",
     });
   });
+
+  it.each(["read-failure", "history-limit", "legacy-url", "storage-unconfigured"])(
+    "keeps an earlier image-only turn nonempty after %s",
+    async (reason) => {
+      const stored = message({
+        seq: 0,
+        role: "user",
+        images: [reason === "legacy-url"
+          ? { url: "https://bucket.example/legacy.png" }
+          : { key: "images/earlier.png" }],
+      });
+      const newer = reason === "history-limit"
+        ? [message({
+            seq: 1,
+            role: "assistant",
+            content: "newer images",
+            images: Array.from({ length: 4 }, (_, index) => ({ key: `images/new-${index}.png` })),
+          })]
+        : [];
+      const { repo } = makeChatRepo(chatFixture("owner@x.com"), [stored, ...newer]);
+      const { storage } = fakeArtifacts();
+      if (reason === "read-failure") {
+        storage.objects.read = async () => {
+          throw new Error("object unavailable");
+        };
+      }
+      const runAgent = vi.fn<AgentRunner>(() => emptyAgent());
+      const result = await sendMessage(makeDeps(repo, {
+        projects: agentProjects,
+        versions: publishedVersions,
+        artifacts: reason === "storage-unconfigured" ? undefined : storage,
+        runAgent,
+      }), {
+        chatId: "c1",
+        content: "and now?",
+        userEmail: "owner@x.com",
+      });
+      const chunks: unknown[] = [];
+      for await (const chunk of result.stream) {
+        chunks.push(chunk);
+      }
+
+      const sent = runAgent.mock.calls[0]?.[0].messages;
+      expect(sent?.[0]).toEqual({
+        role: "user",
+        content: "[The image(s) attached to this turn are no longer available.]",
+      });
+      expect(sent?.at(-1)).toEqual({ role: "user", content: "and now?" });
+      expect(JSON.stringify(sent)).not.toContain("https://");
+      expect(chunks).toContainEqual({
+        warning: "1 earlier image(s) were omitted or could not be read back and are missing from this run's context.",
+      });
+      expect((await repo.listMessages("c1"))[0]).toEqual(stored);
+    },
+  );
 
   it("restores an earlier generated image as editable bytes", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [

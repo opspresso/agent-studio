@@ -115,15 +115,15 @@ describe("buildDailySeries", () => {
     const series = buildDailySeries(rows, "project", "2026-01-01", "2026-01-02");
     expect(series.keys).toEqual(["beta", "alpha"]);
     expect(series.data).toEqual([
-      { date: "2026-01-01", beta: 1.2, alpha: 1 },
-      { date: "2026-01-02", beta: 0, alpha: 0 },
+      { date: "2026-01-01", values: [1.2, 1] },
+      { date: "2026-01-02", values: [0, 0] },
     ]);
   });
 
   it("groups by provider, folding model ids by prefix", () => {
     const series = buildDailySeries(rows, "provider", "2026-01-01", "2026-01-01");
     expect(series.keys).toEqual(["openai", "google"]);
-    expect(series.data).toEqual([{ date: "2026-01-01", openai: 2, google: 0.2 }]);
+    expect(series.data).toEqual([{ date: "2026-01-01", values: [2, 0.2] }]);
   });
 
   it("fills every date in range with zeros when there are no items", () => {
@@ -151,7 +151,7 @@ describe("buildDailySeries", () => {
     // Keys keep the highest-cost projects; the two cheapest (1 + 2) fold into Others.
     expect(series.keys).not.toContain("p0");
     expect(series.keys).not.toContain("p1");
-    expect(series.data[0]?.[OTHERS_KEY]).toBeCloseTo(3, 6);
+    expect(series.data[0]?.values.at(-1)).toBeCloseTo(3, 6);
   });
 
   it("returns empty data for a malformed range", () => {
@@ -161,6 +161,51 @@ describe("buildDailySeries", () => {
 });
 
 describe("toChartColumns / toChartData", () => {
+  it("preserves chart dates when a project is named date", () => {
+    const series = buildDailySeries([
+      { projectName: "date", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 3 } },
+    ], "project", "2026-01-01", "2026-01-02");
+    const columns = toChartColumns(series.keys);
+    expect(columns.map((column) => column.label)).toEqual(["date"]);
+    expect(toChartData(series.data, columns)).toEqual([
+      { date: "2026-01-01", s0: 3 },
+      { date: "2026-01-02", s0: 0 },
+    ]);
+  });
+
+  it("preserves spend attributed to a department named __proto__", () => {
+    const series = buildDailySeries([
+      { projectName: "alpha", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 3 } },
+    ], "department", "2026-01-01", "2026-01-01", new Map([["alpha", "__proto__"]]));
+    const columns = toChartColumns(series.keys);
+    expect(columns.map((column) => column.label)).toEqual(["__proto__"]);
+    expect(toChartData(series.data, columns)).toEqual([{ date: "2026-01-01", s0: 3 }]);
+  });
+
+  it("keeps an Others department separate from the remaining departments' spend", () => {
+    const many: DailyCostRow[] = Array.from({ length: MAX_CHART_SERIES + 2 }, (_, i) => ({
+      projectName: `p${i}`,
+      date: "2026-01-01",
+      calls: { m: 1 },
+      costUsd: { m: i + 1 },
+    }));
+    const departments = new Map(many.map((row, index) => [
+      row.projectName!, index === many.length - 1 ? "Others" : `department-${index}`,
+    ]));
+    const series = buildDailySeries(many, "department", "2026-01-01", "2026-01-02", departments);
+    const columns = toChartColumns(series.keys);
+    const chartData = toChartData(series.data, columns);
+    const others = columns.filter((column) => column.label === "Others");
+    expect(columns).toHaveLength(MAX_CHART_SERIES + 1);
+    expect(new Set(columns.map((column) => column.dataKey)).size).toBe(columns.length);
+    expect(others).toHaveLength(2);
+    expect(chartData[0]?.[others[0]!.dataKey]).toBe(10);
+    expect(chartData[0]?.[others[1]!.dataKey]).toBe(3);
+    expect(columns.reduce((sum, column) => sum + Number(chartData[0]?.[column.dataKey]), 0)).toBe(55);
+    expect(columns.every((column) => chartData[1]?.[column.dataKey] === 0)).toBe(true);
+    expect(chartData.map((point) => point.date)).toEqual(["2026-01-01", "2026-01-02"]);
+  });
+
   it("addresses a dotted model id by a dot-free key and keeps the id as the label", () => {
     const series = buildDailySeries(rows, "model", "2026-01-01", "2026-01-01");
     const columns = toChartColumns(series.keys);
@@ -173,8 +218,19 @@ describe("toChartColumns / toChartData", () => {
 
   it("zero-fills a key the point does not carry", () => {
     const columns = toChartColumns(["a", "b"]);
-    expect(toChartData([{ date: "2026-01-01", a: 3 }], columns)).toEqual([
+    expect(toChartData([{ date: "2026-01-01", values: [3] }], columns)).toEqual([
       { date: "2026-01-01", s0: 3, s1: 0 },
+    ]);
+  });
+
+  it("preserves each column's spend when columns are reordered or filtered", () => {
+    const series = buildDailySeries(rows, "project", "2026-01-01", "2026-01-01");
+    const columns = toChartColumns(series.keys);
+    expect(toChartData(series.data, columns.toReversed())).toEqual([
+      { date: "2026-01-01", s0: 1.2, s1: 1 },
+    ]);
+    expect(toChartData(series.data, columns.slice(1))).toEqual([
+      { date: "2026-01-01", s1: 1 },
     ]);
   });
 });

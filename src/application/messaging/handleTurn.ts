@@ -1,9 +1,10 @@
 import type { ExecuteAgentInput } from "@/application/execution/deps";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
-import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
-import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
+import type { RunActor, RunCaller, RunConversation, RunOrigin } from "@/domain/execution/actor";
+import type { OpenedDocumentExtractor } from "@/application/execution/documentExtractor";
+import { documentKind } from "@/domain/llm/documentLimits";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
-import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk, toolCallKey } from "@/domain/llm/types";
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel, ReplyImage } from "@/domain/messaging/reply";
@@ -14,14 +15,15 @@ import {
   resolveProducedFiles,
   type ProducedFileRef,
 } from "@/application/artifact/producedFiles";
-import { RECORD_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
-import { turnContent } from "@/application/llm/documentParts";
+import { RECORD_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
+import { turnContent, type ReadDocument } from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
 import { INTERACTIVE_RUN_TIMEOUT_MS } from "@/shared/runDeadline";
 import {
   collectDocuments,
   collectImageParts,
   withHistoryImages,
+  withHistoryDocuments,
 } from "./attachments";
 
 /**
@@ -53,7 +55,11 @@ export interface MessagingDeps {
    * file with the same warning the old image-only path used, which is exactly
    * the silence this replaced.
    */
-  documents: DocumentExtractor;
+  openDocuments: (
+    version: Version,
+    signal: AbortSignal,
+    origin: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
+  ) => Promise<OpenedDocumentExtractor>;
   /**
    * Signs an address for a file this run produced.
    *
@@ -94,6 +100,7 @@ export interface TurnInput {
 
 /** What the run left on the surface, for the adapter's log and bookkeeping. */
 export interface TurnOutcome {
+  inputDocuments?: ReadDocument[];
   /** The top-level answer as delivered. */
   text: string;
   /** How many pictures the surface accepted — attempts that failed are warnings, not deliveries. */
@@ -143,19 +150,33 @@ export async function handleTurn(
   // that stretch was a bot that received the file and did nothing.
   const stopStatusHeartbeat = reply.keepStatusAlive();
   let userContent: string | ContentPart[] = "";
+  let readDocuments: ReadDocument[] = [];
   let history: ChatMessageInput[] = [];
   try {
     const attached = input.attachments;
     const imageParts = attached.length > 0 ? await collectImageParts(attached, warnings) : [];
-    const readDocuments =
-      attached.length > 0 ? await collectDocuments(deps.documents, attached, warnings) : [];
+    let historyTurns = input.history;
+    const documentCandidates = [...attached, ...historyTurns.flatMap((turn) => turn.message.role === "user" ? turn.attachments : [])];
+    if (documentCandidates.some((attachment) => documentKind(attachment.mimeType, attachment.name) !== null)) {
+      const opened = await deps.openDocuments(version, deadline, {
+        actor: input.actor,
+        userEmail: input.ownerEmail,
+        conversation: input.conversation,
+      });
+      try {
+        readDocuments = await collectDocuments(opened.extractor, attached, warnings);
+        historyTurns = await withHistoryDocuments(opened.extractor, historyTurns, attached, readDocuments, warnings);
+      } finally {
+        await opened.close();
+      }
+    }
     // Assembled by the one function that owns a turn's body, so a chat bot and a
     // chat put the same message in front of the model.
     userContent = turnContent(readDocuments, input.text, imageParts);
     // Whatever budget the current message left goes to the newest history images,
     // so "make the picture I sent blue" still has the picture.
     history = await withHistoryImages(
-      input.history,
+      historyTurns,
       MAX_IMAGES_PER_TURN - imageParts.length,
       warnings,
     );
@@ -212,7 +233,7 @@ export async function handleTurn(
         // Arguments stream in after the name, so a later delta for the same
         // call carries neither and is not a step of its own.
         if (call.id && name) {
-          await reply.step(call.id, chunk.author ? `${chunk.author}: ${name}` : name, {
+          await reply.step(toolCallKey(chunk, call.id), chunk.author ? `${chunk.author}: ${name}` : name, {
             nested: !isTopLevelChunk(chunk),
           });
         }
@@ -222,7 +243,7 @@ export async function handleTurn(
       // that it finished it.
       if (chunk.toolResult) {
         await reply.stepDone(
-          chunk.toolResult.toolCallId,
+          toolCallKey(chunk, chunk.toolResult.toolCallId),
           // The result names what the call acted on — the skill it loaded, the
           // server an MCP tool came from — which the call's own name never does.
           chunk.author ? `${chunk.author}: ${chunk.toolResult.name}` : chunk.toolResult.name,
@@ -307,5 +328,8 @@ export async function handleTurn(
     ...warnings.map((warning) => reply.warningLine(warning)),
   ].join("\n");
   await reply.finish(text, suffix);
-  return { text, imagesDelivered, filesDelivered: produced.files.length, warnings };
+  return {
+    text, imagesDelivered, filesDelivered: produced.files.length, warnings,
+    ...(readDocuments.length > 0 ? { inputDocuments: readDocuments } : {}),
+  };
 }

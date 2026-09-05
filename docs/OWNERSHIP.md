@@ -12,6 +12,8 @@
 
 | 결정 | 소유자 |
 |---|---|
+| 실행의 첫 응답을 확인한 뒤 경고를 먼저 전달하고 조기 종료 시 원본 실행을 닫기 | `src/application/run/leadingWarnings.ts` 의 `withLeadingWarnings`. Chat과 실행 API가 같은 첫 응답·종료 계약을 사용한다 |
+| 아웃바운드 redirect의 출처·횟수·HTTP 메서드 규칙 | `src/infrastructure/net/redirectPolicy.ts` 의 `fetchSameOrigin`. 공개 URL의 DNS 검증·연결 고정은 `publicFetch.ts`가 각 요청에 적용한다 |
 | MCP tool 의 형태 | `src/domain/mcp/types.ts` |
 | 어떤 호스트가 아웃바운드 URL 가드를 건너뛸 수 있는가. 선언된 suffix 에 이름을 맞추는 술어 하나 | `src/domain/security/internalHosts.ts` 의 `isDeclaredInternalHost`. MCP 목록과 `FetchUrl` 목록이 같은 술어를 지나고, provenance(managed 루프백)와 합친 형태는 `src/domain/mcp/types.ts` 의 `skipsUrlGuard` 다 |
 | Project 의 client ID 메타데이터 문서가 서빙되는 주소 | `src/application/mcp/mcpAuthUseCases.ts` 의 `clientMetadataUrl`. 여기서 어긋나는 것은 명세상 치명적이다: 문서 자신의 `client_id` 가 그것을 가져온 URL 과 다르면 authorization server 는 거부한다 |
@@ -62,6 +64,7 @@
 | Slack 읽기 하나가 동시에 조회할 프로필 수 | `src/domain/slack/reader.ts` 의 `MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS`. thread caller context와 workspace read tool이 함께 적용한다 |
 | schedule 설정 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/projects/[name]/settings/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` |
 | 호출자별 동시 실행 slot 수의 저장 상한 | `src/domain/execution/runSlot.ts` 의 `MAX_RUN_SLOTS` / `boundedRunSlotLimit`. 저장 키의 세 자리 index가 표현하는 `0..999`이며 config와 repository가 함께 적용한다 |
+| builtin 도구의 wire 이름과 예약 집합 | `src/domain/llm/toolNames.ts` — 엔진, MCP alias 할당, 클라이언트 표시가 함께 사용한다 |
 | 런당 MCP tool 상한 | `src/domain/llm/toolLimits.ts` |
 | 각 member tier 가 쓸 수 있는 금액 | `src/domain/member/tiers.ts` 의 `TIER_LIMITS` |
 | MCP 서버가 보낸 401 이 뜻하는 것 | `src/infrastructure/mcp/session.ts` |
@@ -80,7 +83,8 @@
 | managed workload의 image·환경 키·값·argv·endpoint path 문법 | `src/domain/mcp/provisioner.ts`. API가 400으로 거절하는 문법과 lifecycle/Docker 경계가 실행 직전에 방어하는 문법이 같다 |
 | plugin 상세의 repository·commit 링크가 향하는 GitHub web base | `src/lib/config.ts`의 `githubWebUrl`. public GitHub와 표준 GHES API 경로에서 도출하고, 그 밖에는 `GITHUB_WEB_URL`이 정한다. 브라우저는 상세 API가 만든 `repositoryUrl`만 읽는다 |
 | 동시에 도는 generator 를 병합하기 | `src/shared/mergeGenerators.ts` |
-| chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/app/_lib/authorPaths.ts` |
+| chunk 가 거쳐 온 transfer 사슬을 도출하기 | `src/domain/llm/types.ts` 의 `chunkAuthorPath` |
+| 같은 도구 call ID를 실행·위임별로 구분하는 내부 키 | `src/domain/llm/types.ts` 의 `toolCallKey`. 트레이스와 UI가 author 경로·transfer ID·call ID를 함께 사용한다 |
 | 사람이 읽을 달러 금액 | `src/app/_lib/formatUsd.ts` 의 `formatUsd`. `SINGLE_OWNERS` 행이 아니라 그 자체가 하나의 규칙으로 강제된다: `app` 안 어디에도 `${…toFixed(…)}` 는 없고 두 `_lib` 포매터만 있다 |
 | 사람이 읽을 저장 오브젝트의 크기 | `src/app/_lib/formatBytes.ts` 의 `formatBytes` |
 | 사람이 읽을 경과·소요 시간 | `src/app/_lib/duration.ts` 의 `formatSeconds`/`formatDuration`. 단위는 `common.duration*` 카탈로그가 가지므로 어느 페이지든 그대로 쓴다. 진행 중 시계와 끝난 뒤 배지가 같은 규칙(내림)으로 읽히는 것이 이 소유의 요점이다 |
@@ -136,7 +140,7 @@
 | 결정 | 소유자 |
 |---|---|
 | 모든 행 키 문자열. 아이템 테이블의 `PK`/`SK`/GSI 주소 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외, 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` |
-| 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(`￿`), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 `items` 에 raw SQL 을 쓰지 않는다. 두 번째 `SELECT … FOR UPDATE` 는 그 셋이 어긋날 두 번째 자리다 |
+| 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(U+10FFFF), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 `items` 에 raw SQL 을 쓰지 않는다. 두 번째 `SELECT … FOR UPDATE` 는 그 셋이 어긋날 두 번째 자리다 |
 | 스키마. `items` 와 그 파생 컬럼·부분 인덱스, Better Auth 의 테이블, `catalog_vectors`, 그리고 어느 버전이 적용됐는지 | `src/infrastructure/db/migrations.ts`. 추가만 하는 목록, advisory lock 아래에서 부팅마다 |
 | 만료 행을 지우는 틱 | `src/lib/container.ts` 의 `sweepExpiredRows` 가 `store.deleteExpired`(아이템 테이블)와 `memberRepository.deleteExpiredSessions`(Better Auth `session`)를 schedule-scan 틱에서 부른다 (`src/app/api/triggers/scan/route.ts`) |
 | Model 이 무엇이고, 어떤 route 가 그것을 서빙하는가 | **이 저장소 밖**. [opspresso/agent-models](https://github.com/opspresso/agent-models) 의 `models/` (family/offering), `https://models.opspresso.com/models.json` 으로 발행된다. 앱에서는 `src/domain/llm/models.ts` 의 `loadModelCatalog` 가 받아들이는 *유일한 입구* 이고, 숫자는 절대 여기 쓰지 않는다 (`tests/models.test.ts` 가 막는다) |
@@ -170,7 +174,7 @@
 | 저장된 파일 참조를 다운로드 주소로 바꾸기 | `src/domain/chat/fileRefs.ts` 의 `resolveFileUrl` |
 | 런이 만들어 낸 파일을 읽는 사람에게 내주기 | `src/application/artifact/producedFiles.ts`. 테스트가 강제하는 것은 *짝*(출력 축 하나를 읽는 모듈은 다른 축도 읽는다)이고, 이 파일은 이름으로 면제한다. 이 파일의 주제 자체가 그 축이기 때문이다 |
 | AWS 로 나가는 요청에 서명하기 | `src/infrastructure/llm/awsSigner.ts`. 대신 `tests/awsSigner.test.ts` 가 못박는다. 이 파일이 만들어 내는 서명을 고정해 두는 테스트다 |
-| 서명된 오브젝트 URL 이 읽는 주체별로 얼마나 사는가 | `src/application/artifact/urlTtl.ts` |
+| 서명된 오브젝트 URL 이 읽는 주체별로 얼마나 사는가 | `src/shared/artifactUrlTtl.ts` |
 | Chat 의 run lease 를 누가 놓는가 | `src/application/chat/runLog.ts` 의 `teeToRunLog` |
 | Chat 목록을 한 번에 몇 개 읽는가, 그리고 최대 몇 개까지 허용하는가 | `src/domain/chat/repository.ts` 의 `CHAT_PAGE` / `MAX_CHAT_PAGE`. use case 의 기본값, 엔드포인트의 상한, 사이드바 "더 보기"의 증가폭이 모두 같은 결정이고, `domain` 은 셋 다 닿을 수 있는 유일한 계층이다(순수 TS 라 클라이언트 번들에 들어가도 된다) |
 | Chat 메시지를 꼬리부터 읽는 정렬 키 범위 | `src/infrastructure/db/keys.ts` 의 `chatMessageRange`. 하한 클램프까지 포함해서 |

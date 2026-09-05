@@ -1,7 +1,7 @@
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // MCP dispatch goes through the SSRF-guarded fetch; forward it to the stubbed
 // global so a scripted JSON-RPC server can answer without DNS or undici.
@@ -11,7 +11,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 
 import { createMcpAuthProvider, TOKEN_REFRESH_MARGIN_MS } from "@/application/mcp/mcpAuthProvider";
 import { executeAgent, type ExecutionDeps } from "@/application/execution/runProject";
-import { OAuthGrantError } from "@/domain/mcp/oauth";
+import { OAuthGrantError, type TokenSet } from "@/domain/mcp/oauth";
 import type { McpConnection } from "@/domain/mcp/connection";
 import type { McpServer } from "@/domain/mcp/types";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
@@ -20,10 +20,14 @@ import type { Project, Version } from "@/domain/project/types";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
+import { mcpConnectionRepository } from "@/infrastructure/db/repositories/mcpConnectionRepository";
+import { keys } from "@/infrastructure/db/keys";
+import type { FakeStore } from "./fakeStore";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
 
 const MCP_URL = "https://oauth-mcp.test/mcp";
+const store = await import("@/infrastructure/db/store") as unknown as FakeStore;
 
 const OAUTH_SERVER: McpServer = {
   name: "slack",
@@ -294,6 +298,143 @@ describe("resolving the Authorization for a project's connection", () => {
   });
 });
 
+describe("a refresh racing a reconnect", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    store.rows.clear();
+    store.seed([{ ...keys.project("p"), entityType: "PROJECT", name: "p" }]);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("keeps an unrotated refresh token usable and replaces it when the provider rotates", async () => {
+    await mcpConnectionRepository.put(connectionFixture({
+      expiresAt: new Date(Date.now() + 1000).toISOString(),
+    }));
+    const refresh = vi.fn()
+      .mockResolvedValueOnce({ accessToken: "first", expiresInSeconds: 1 })
+      .mockResolvedValueOnce({ accessToken: "second", refreshToken: "rotated", expiresInSeconds: 1 })
+      .mockResolvedValueOnce({ accessToken: "third", expiresInSeconds: 43_200 });
+    const provider = createMcpAuthProvider({
+      connections: mcpConnectionRepository,
+      oauth: { refresh } as never,
+      cipher,
+    });
+
+    expect((await provider.headersFor("p", "slack", OAUTH_SERVER.auth!)).headers)
+      .toEqual({ Authorization: "Bearer first" });
+    expect((await mcpConnectionRepository.get("p", "slack"))?.refreshToken).toBe("enc:refresh-1");
+    expect((await provider.headersFor("p", "slack", OAUTH_SERVER.auth!)).headers)
+      .toEqual({ Authorization: "Bearer second" });
+    expect((await mcpConnectionRepository.get("p", "slack"))?.refreshToken).toBe("enc:rotated");
+    expect((await provider.headersFor("p", "slack", OAUTH_SERVER.auth!)).headers)
+      .toEqual({ Authorization: "Bearer third" });
+    expect(refresh.mock.calls.map((call) => call[1])).toEqual(["refresh-1", "refresh-1", "rotated"]);
+    expect((await mcpConnectionRepository.get("p", "slack"))?.refreshToken).toBe("enc:rotated");
+  });
+
+  async function pendingRefresh() {
+    const started = Promise.withResolvers<void>();
+    const exchange = Promise.withResolvers<TokenSet>();
+    const refresh = vi.fn(async () => {
+      started.resolve();
+      return exchange.promise;
+    });
+    await mcpConnectionRepository.put(connectionFixture({
+      expiresAt: new Date(Date.now() + 1000).toISOString(),
+    }));
+    const provider = createMcpAuthProvider({
+      connections: mcpConnectionRepository,
+      oauth: { refresh } as never,
+      cipher,
+    });
+    const result = provider.headersFor("p", "slack", OAUTH_SERVER.auth!);
+    await started.promise;
+    return { result, exchange, refresh };
+  }
+
+  it("keeps a reconnect made with the same refresh token in the same millisecond", async () => {
+    const pending = await pendingRefresh();
+    const reconnected = connectionFixture({ clientId: "client-2", accessToken: "enc:reconnected" });
+    await mcpConnectionRepository.put(reconnected);
+    pending.exchange.resolve({ accessToken: "stale-refresh", refreshToken: "refresh-1" });
+
+    expect((await pending.result).headers).toEqual({ Authorization: "Bearer reconnected" });
+    expect(await mcpConnectionRepository.get("p", "slack")).toMatchObject(reconnected);
+    expect(pending.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("does not revoke a reconnect when the old refresh grant is refused", async () => {
+    const pending = await pendingRefresh();
+    const reconnected = connectionFixture({ accessToken: "enc:reconnected" });
+    await mcpConnectionRepository.put(reconnected);
+    pending.exchange.reject(new OAuthGrantError("invalid_grant", "old grant expired"));
+
+    expect((await pending.result).headers).toEqual({});
+    expect(await mcpConnectionRepository.get("p", "slack")).toMatchObject(reconnected);
+  });
+
+  it("does not return the refreshed token after the connection was deleted", async () => {
+    const pending = await pendingRefresh();
+    await mcpConnectionRepository.delete("p", "slack");
+    pending.exchange.resolve({ accessToken: "stale-refresh", refreshToken: "refresh-2" });
+
+    const result = await pending.result;
+    expect(result.headers).toEqual({});
+    expect(result.unavailable).toContain("credentials changed");
+    expect(await mcpConnectionRepository.get("p", "slack")).toBeNull();
+  });
+
+  it.each([
+    ["issuer", { issuer: "https://new-auth.test" }],
+    ["resource", { resource: "https://new-resource.test" }],
+    ["needs_auth", { status: "needs_auth" as const }],
+    ["needs_reauth", { status: "needs_reauth" as const }],
+  ])("does not hand out a CAS winner with a changed %s", async (_kind, changed) => {
+    const pending = await pendingRefresh();
+    const reconnected = connectionFixture({
+      accessToken: "enc:other-grant",
+      refreshToken: "enc:other-refresh",
+      ...changed,
+    });
+    await mcpConnectionRepository.put(reconnected);
+    pending.exchange.resolve({ accessToken: "stale-refresh", refreshToken: "refresh-2" });
+
+    const result = await pending.result;
+    expect(result.headers).toEqual({});
+    expect(result.unavailable).toBeTruthy();
+    expect(await mcpConnectionRepository.get("p", "slack")).toMatchObject(reconnected);
+    expect(pending.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("does not mark a newer grant unauthorized when neither grant has a refresh token", async () => {
+    await mcpConnectionRepository.put(connectionFixture({ refreshToken: undefined }));
+    const read = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const provider = createMcpAuthProvider({
+      connections: {
+        ...mcpConnectionRepository,
+        async get(projectName, serverName) {
+          const snapshot = await mcpConnectionRepository.get(projectName, serverName);
+          read.resolve();
+          await resume.promise;
+          return snapshot;
+        },
+      },
+      oauth: {} as never,
+      cipher,
+    });
+    const pending = provider.markUnauthorized("p", "slack", "files:write");
+    await read.promise;
+    const reconnected = connectionFixture({ accessToken: "enc:reconnected", refreshToken: undefined });
+    await mcpConnectionRepository.put(reconnected);
+    resume.resolve();
+    await pending;
+
+    expect(await mcpConnectionRepository.get("p", "slack")).toMatchObject(reconnected);
+  });
+});
+
 // --- through a real run -------------------------------------------------------
 
 const testUrlPolicy: UrlPolicy = { async assertAllowed() {} };
@@ -462,7 +603,7 @@ describe("markUnauthorized with a scope challenge", () => {
   it("widens the connection's scopes and asks for a reconnect, through the compare-and-set", async () => {
     const puts: unknown[] = [];
     const updates: Array<{ expected: unknown; next: Record<string, unknown> }> = [];
-    let stored = connectionFixture({ scopes: ["files:read"], status: "connected" });
+    let stored = connectionFixture({ scopes: ["files:read"], status: "connected", revision: "grant-1" });
     const provider = createMcpAuthProvider({
       connections: {
         get: async () => stored,
@@ -491,7 +632,7 @@ describe("markUnauthorized with a scope challenge", () => {
     // this write would be overwritten with the stale row.
     expect(puts).toHaveLength(0);
     expect(updates).toHaveLength(1);
-    expect(updates[0]?.expected).toBe(stored.refreshToken);
+    expect(updates[0]?.expected).toBe("grant-1");
     expect(stored.scopes).toEqual(["files:read", "files:write"]);
     expect(stored.status).toBe("needs_reauth");
   });

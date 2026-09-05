@@ -549,11 +549,11 @@ export function createSettingsUseCases(
             const channelNames = (next.llmProviders ?? parseProviderConfigs(env)).map(
               (provider) => provider.name,
             );
-            const hidden = new Set(ids);
             const remaining = offeredModels(channelNames, ids).filter(
               (model) => patch.selfHostedModels === undefined || model.provider !== "selfhosted",
             );
-            if (remaining.length === 0 && [...declaredNow].every((id) => hidden.has(id))) {
+            const declaredVisible = offeredModels(channelNames, ids, next.selfHostedModels ?? []).length > 0;
+            if (remaining.length === 0 && !declaredVisible) {
               throw new ValidationError("At least one model must remain visible");
             }
             next.hiddenModels = ids;

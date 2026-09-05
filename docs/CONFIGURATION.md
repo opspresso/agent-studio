@@ -42,8 +42,8 @@ vector/query model 일치는 별도의 reindex lease generation이 지킨다. �
 `src/shared/env.ts` 가 소유하고, 거기서 돌려주는 값은 trim 돼 있다. `STAGE` 와
 `AWS_REGION` 은 예외로, 빈 값을 문자 그대로 받는다. `STAGE` 에서
 그것은 의도적이다: 빈 값은 throw 하는데, `local` 로 폴백하면 배포된 stage 에서
-`assertAccessControlConfig` 를 건너뛰게 되기 때문이다. `ARTIFACT_ACCESS_MODE` 는 trim
-없이 읽는다: 정확히 `public` 이나 `proxied` 가 아닌 것은 무엇이든 `authenticated` 로 읽힌다.
+`assertAccessControlConfig` 를 건너뛰게 되기 때문이다. `ARTIFACT_ACCESS_MODE` 도 trim 한 뒤
+읽으며, `public` 이나 `proxied` 가 아닌 값은 `authenticated` 로 읽힌다.
 다만 프로덕션 Node 프로세스에서 `STAGE` 를 비워 두는 것은 그 자체로 부팅 에러다. 로컬
 컨테이너는 `STAGE=local` 로 명시적으로 남고, 배포된 이미지가 변수 하나가 빠졌다는 이유로
 fail-open 이 될 수는 없다.
@@ -99,7 +99,7 @@ fail-open 이 될 수는 없다.
 | `RERANKER_BASE_URL` / `RERANKER_MODEL` | 미설정 | `RERANKER_MODEL`은 **models** | 둘을 함께 설정하면 query별로 모든 capability kind의 오버샘플 vector 후보를 한 `/rerank` 호출로 2차 정렬한다. endpoint 실패는 기존 cosine/name 순위로 격하되고, 사용자 취소는 즉시 전파된다. `RERANKER_MODEL`은 배포 기본값이고 `/models`의 Rerank 타입 선택이 DB override한다. 등록된 공개 모델의 provider 채널이 있으면 그 URL·key·wire ID로 probe와 검색을 수행한다. Self-hosted 모델은 reranker 전용 채널을 사용한다. 하나만 설정하면 부팅을 거부한다. 미설정이면 기존 cosine/name 순위를 그대로 쓴다. |
 | `RERANKER_API_KEY` | 미설정 | — | reranker의 선택형 Bearer credential. 인증 없는 사내 vLLM endpoint는 비워 둔다. |
 | `RERANKER_MIN_SCORE` | `0.01` | **models** | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 env 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하고 `/models`에서 함께 저장하라. DB override가 env보다 우선하며 다음 검색부터 적용된다. |
-| `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`; 일반 URL 조립은 요청 origin, 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (A2A Agent Card, Slack 매니페스트, OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 일반 URL 조립에서만 적용된다. A2A Agent Card 경로에는 요청이 없어서, 두 변수 모두 설정되지 않으면 카드가 `localhost` 를 광고한다. **거부된 사인인의 리디렉션(`/login?error=`)은 부팅 시 env 값으로 고정된다**: Better Auth 옵션은 한 번만 평가되므로 runtime 설정을 보지 못하고, env 가 비어 있으면 상대 경로가 되어 프록시 뒤에서 bind 주소 기준으로 해석될 수 있다. OIDC/Google 사인인을 쓰는 배포는 env 로도 설정하라. **MCP client ID 메타데이터 문서는 예외다**: 설정된 base 가 없으면 요청 origin 이나 localhost 를 추측하지 않고 503 으로 답한다. 그 URL 이 곧 OAuth `client_id` 이고 authorization server 가 가져가므로, loopback 이나 평문 http 값이면 흐름이 시작되기 전에 거부되고 provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다. [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
+| `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`; 일반 URL 조립은 요청 origin, 없으면 `http://localhost:3000` | **runtime** | 바깥을 향하는 URL (A2A Agent Card, Slack 매니페스트, MCP OAuth 콜백, MCP client ID 메타데이터 문서)을 만들 때 쓰는 scheme + host. 리버스 프록시 뒤에서는 요청 URL 이 bind 주소를 반영하므로 이 값은 설정에서 와야 한다. 요청 origin 단계는 요청이 손에 있는 일반 URL 조립에서만 적용된다. A2A Agent Card 경로에는 요청이 없어서, 두 변수 모두 설정되지 않으면 카드가 `localhost` 를 광고한다. **거부된 사인인의 리디렉션(`/login?error=`)은 부팅 시 env 값으로 고정된다**: Better Auth 옵션은 한 번만 평가되므로 runtime 설정을 보지 못하고, env 가 비어 있으면 상대 경로가 되어 프록시 뒤에서 bind 주소 기준으로 해석될 수 있다. OIDC/Google 사인인을 쓰는 배포는 env 로도 설정하라. **MCP client ID 메타데이터 문서는 예외다**: 설정된 base 가 없으면 요청 origin 이나 localhost 를 추측하지 않고 503 으로 답한다. 그 URL 이 곧 OAuth `client_id` 이고 authorization server 가 가져가므로, loopback 이나 평문 http 값이면 흐름이 시작되기 전에 거부되고 provider 가 제공하는 경우 연결은 dynamic registration 으로 폴백한다. [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라. |
 
 ### 임베딩 모델 선택
 
@@ -131,24 +131,24 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 |---|---|---|---|
 | `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`openssl rand -base64 32`). |
 | `BETTER_AUTH_URL` | — | — | Better Auth 가 콜백을 만들 때 기준으로 삼는 base URL. |
-| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | — | 표준 OIDC 제공자. Keycloak, Entra ID, Okta, Authentik, `<issuer>/.well-known/openid-configuration` 을 내놓는 것이면 무엇이든. 셋이 모두 있을 때만 켜진다(Better Auth 의 `genericOAuth`, PKCE). 콜백은 `PUBLIC_BASE_URL/api/auth/callback/oidc` 이고 제공자에 그 리디렉션 URI 를 등록한다. 배포당 하나: 기업에는 디렉터리가 하나이고, 두 번째 제공자는 사람이 누구인지에 대한 두 번째 정본이다. |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | — | 표준 OIDC 제공자. Keycloak, Entra ID, Okta, Authentik, `<issuer>/.well-known/openid-configuration` 을 내놓는 것이면 무엇이든. 셋이 모두 있을 때만 켜진다(Better Auth 의 `genericOAuth`, PKCE). 콜백은 `BETTER_AUTH_URL/api/auth/callback/oidc` 이고 제공자에 그 리디렉션 URI 를 등록한다. 배포당 하나: 기업에는 디렉터리가 하나이고, 두 번째 제공자는 사람이 누구인지에 대한 두 번째 정본이다. |
 | `OIDC_DISPLAY_NAME` / `OIDC_SCOPES` | `SSO` / `openid email profile` | — | 로그인 버튼의 이름, 그리고 공백으로 구분한 scope. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | — | Google 로그인. 둘 다 있을 때만 켜진다. 콜백은 `/api/auth/callback/google`. |
 | `AUTH_PASSWORD` | `false` | — | `true` 면 이메일 + 비밀번호 로그인. **가입 폼은 없다**. 아무도 보증하지 않는 계정이므로 부트스트랩 관리자는 부팅 때 만들어지고, 그 밖의 비밀번호 계정은 관리자의 의도적인 행위다. 신원 제공자가 아직 닿지 않는 설치의 첫 관리자와, 제공자가 죽었을 때의 비상 접근을 위한 것이다. |
-| `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | — | — | `AUTH_PASSWORD=true` 일 때 첫 부팅에 만들어지는 계정 (`ensureBootstrapAdmin`). 같은 이메일의 사용자가 이미 있으면 아무것도 하지 않고, 나중에 값을 바꿔도 아무것도 바뀌지 않는다. 그때부터 계정은 그 사람의 것이다. 이메일은 `ADMIN_EMAILS` 에도 넣어야 admin 이 된다. `ALLOWED_EMAIL_DOMAINS` 는 이 주소에 적용되지 않는다. 제공자나 도메인 목록이 모두를 잠갔을 때의 비상 계정이므로. `AUTH_PASSWORD` 없이 설정하면 경고만 남기고 만들지 않는다. |
+| `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | — | — | `AUTH_PASSWORD=true` 일 때 부팅 시 준비되는 계정 (`ensureBootstrapAdmin`). 같은 이메일의 사용자에게 비밀번호 credential 이 이미 있으면 변경하지 않는다. 사용자는 있지만 credential 이 없으면 기존 사용자 행을 유지하고 비밀번호 credential 을 추가한다. 기존 비밀번호는 환경변수 변경으로 갱신되지 않는다. 이메일은 `ADMIN_EMAILS` 에도 넣어야 admin 이 된다. `ALLOWED_EMAIL_DOMAINS` 는 이 주소에 적용되지 않는다. 제공자나 도메인 목록이 모두를 잠갔을 때의 비상 계정이므로. `AUTH_PASSWORD` 없이 설정하면 경고만 남기고 만들지 않는다. |
 | `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 세 제공자 모두에 적용된다(사용자 생성과 세션 생성의 훅). 비어 있으면 아무 도메인이나 허용한다. |
 | `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: Caddy 와 ingress controller 처럼 두 홉이 `X-Forwarded-For` 에 덧붙일 때). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
 | `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 프로젝트에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *제한 없음*, 프로젝트 오버라이드에는 *아무도 아님* 을 뜻한다. 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
 
 ## LLM 채널
 
-모든 트래픽은 OpenAI Chat Completions 프로토콜로 말한다. 모델 id 는 `provider/model` 이다.
+기본 텍스트 생성 채널은 OpenAI Chat Completions 프로토콜로 말한다. 모델 id 는 `provider/model` 이다.
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
 | `LLM_BASE_URL` | — (필수) | **runtime** | 기본 채널. OpenRouter 나 LiteLLM 같은 라우터. provider 채널이 가져가지 않는 한 모든 모델 id 가 여기로 간다. |
 | `LLM_API_KEY` | — (필수) | **runtime** | 그 채널의 자격증명. |
-| `LLM_PROVIDER_<NAME>_BASE_URL` | 미설정 | **runtime** | provider 별 채널을 등록한다. `<NAME>` 은 모델 id 의 provider 접두사를 대문자로 쓴 것이다. 레지스트리의 provider 는 `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`, `BEDROCK`, `OPENROUTER`, `SELFHOSTED` 다. env 파서는 `[A-Z0-9_]+` 형태의 이름이면 무엇이든 받지만, 그 목록 밖의 채널은 어떤 모델 id 와도 절대 매치될 수 없다. `/settings` 오버라이드 경로는 그런 것을 아예 거부한다. |
+| `LLM_PROVIDER_<NAME>_BASE_URL` | 미설정 | **runtime** | provider 별 채널을 등록한다. `<NAME>` 은 모델 id 의 provider 접두사를 대문자로 쓴 것이다. 레지스트리의 provider 는 `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`, `BEDROCK`, `OPENROUTER`, `SELFHOSTED` 다. env 파서는 `[A-Z0-9_]+` 형태의 이름을 받아 사용자 정의 provider 접두사의 모델도 해당 채널로 보낸다. `/settings` 오버라이드는 지원 provider 목록으로 제한된다. |
 | `LLM_PROVIDER_<NAME>_API_KEY` | 미설정 | **runtime** | 그 채널의 자격증명. `_AUTH=sigv4` 가 아닌 한 필수다: 키가 없는 채널은 **조용히 건너뛰어지고**, 그 모델들은 기본 채널로 떨어진다. |
 | `LLM_PROVIDER_<NAME>_AUTH` | `bearer` | **runtime** | `bearer` \| `sigv4`. `sigv4` 는 프로세스의 AWS 자격증명(역할, 또는 `AWS_ACCESS_KEY_ID`/`AWS_PROFILE`, SDK 의 표준 해석 순서)으로 매 요청에 서명하고 API 키를 **받지 않는다**. 문자 그대로의 `sigv4` 가 아닌 값은 전부 `bearer` 로 읽히므로, 오타가 서명도 키도 없는 채널을 만들어 낼 수는 없다. |
 | `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | provider 채널은 맨 모델 이름(`provider/` 접두사를 벗긴 것)을 받는다. 그 채널 자체가 전체 id 를 기대하는 라우터일 때 이 값을 켜라. |
@@ -306,7 +306,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack·Telegram·Teams 경로는 공용 메시징 파이프라인에서 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 이 값과 함께 움직이는 파생값이 셋 있다: 런 슬롯 lease(이 값 + 60초), MCP OAuth 토큰 갱신 여유(이 값 + 5분), 리플레이 signed URL 수명(이 값 + 15분, `src/application/artifact/urlTtl.ts`). |
+| `MAX_RUN_DURATION_MS` | `600000` (10분) | — | 모든 진입점에 걸리는, 단일 런의 실제 경과 시간 상한. 멈춰 버린 provider 나 도구 호출이 무한정 돌거나 무한정 청구할 수 없다. 유효하지 않은 값은 경고와 함께 무시된다. Slack·Telegram·Teams 경로는 공용 메시징 파이프라인에서 추가로 고정된 3분 인터랙티브 데드라인(아래)을 적용하는데, 그것은 런을 짧게 만들 수만 있다. 런 슬롯 lease 는 이 값 + 60초, MCP OAuth 토큰 갱신 여유는 이 값 + 5분이다. 서명 URL 수명은 런 길이와 독립적으로 뷰 15분·지속되는 기록 7일이며 `src/shared/artifactUrlTtl.ts` 가 소유한다. |
 | `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | 한 호출자가 동시에 진행할 수 있는 런 수(최대 `1000`). `0` 은 제한을 끈다. 자기 `maxConcurrentRuns` 를 가진 멤버 tier(*코드에 고정된 제한* 참고)는 그 멤버 자신의 런에 대해 이 값을 덮어쓴다. 기본 `guest` tier 가 그런 값을 하나 들고 있다. `admin`/`member`, 프로젝트 토큰, 그리고 모든 기계 호출자는 이 값을 물려받는다. |
 | `MAX_CONCURRENT_RUNS_A2A` | `50` | — | **공유** A2A 키로 이뤄진 호출을 위한 별도 상한(최대 `1000`). 그 actor id 는 상수라서, 하나의 정체성이 거기의 모든 기계 호출자를 대표한다. 그러지 않으면 호출자별 제한이 A2A 표면 전체에 상한을 씌우게 된다. 이름이 붙은 클라이언트 키는 호출자 하나이며 사람과 마찬가지로 `MAX_CONCURRENT_RUNS_PER_ACTOR` 아래에 놓인다. |
 | `SCHEDULE_SCAN_TOKEN` | 미설정 | — | 모든 ticker 가 제시하는 단 하나의 자격증명(`X-Scan-Token`)이며, CronJob 이 POST 하는 세 엔드포인트가 공유한다: `/api/triggers/scan`(schedule), `/api/plugins/sync/scan`(plugins 저장소), `/api/catalog/reindex`(capability 카탈로그). 설정하지 않으면 이 배포에 ticker 가 없다는 뜻이다: 셋 다 503 으로 답하고 schedule 트리거는 결코 발화하지 않는다. 열리는 대신 꺼진다. |
@@ -339,7 +339,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 | `MCP_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | 사설 주소로 resolve 되더라도 MCP 항목이 쓸 수 있는 호스트의 DNS suffix 목록, 쉼표 구분. `<namespace>.svc.cluster.local` 이나 사내 존. 비어 있으면 SSRF 가드는 원래 그대로다. [SECURITY.md](SECURITY.md#선언된-내부-호스트) 를 보라. |
 | `URL_FETCH_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | `FetchUrl` 빌트인이 사설 주소로 resolve 되는데도 읽어도 되는 호스트의 DNS suffix 목록. 사내 위키, 내부 API. **위와 의도적으로 별개의 목록이다**: 이 앱이 부르는 서비스라고 해서 모델이 설득당해 읽어도 되는 페이지인 것은 아니다. 같은 매칭 규칙(`isDeclaredInternalHost`, 레이블 경계, 단일 레이블 거부, IP 리터럴 거부), 같은 이유로 env 전용. [SECURITY.md](SECURITY.md#모델이-고른-url). |
 | `MANAGED_MCP_RUNTIME` | 미설정 | — | managed MCP 컨테이너를 어떻게 띄우는가. 유일한 값은 `docker`. 앱이 자기 호스트의 Docker CLI 를 직접 구동해 `127.0.0.1:<port>` 로 포트를 게시하고 그 주소를 등록한다. 다른 값은 경고와 함께 무시되어 기능이 꺼진다. 앱 프로세스가 `docker` 바이너리와 호스트 loopback 에 닿아야 한다. 기본 앱 이미지에는 Docker CLI가 없으므로 배포 저장소가 이미지와 네트워크를 명시적으로 구성해야 한다. |
-| `MANAGED_MCP_REGISTRY` | 미설정 | — | `docker login` 이 인증하는 레지스트리. 덕분에 이 계정 자신의 이미지는 자격증명을 타이핑하지 않고도 pull 된다. 호스트가 pull 할 수 있는 다른 어떤 레지스트리의 이미지도 허용되며, 그것들에 대해서는 로그인만 건너뛴다. |
+| `MANAGED_MCP_REGISTRY` | 미설정 | — | 관리형 MCP 기능을 켜기 위해 필요한 레지스트리 설정이다. 앱이 `docker login` 을 수행하지 않으므로 호스트의 Docker credential 을 미리 준비해야 한다. 이미지 pull 은 호스트가 접근할 수 있는 레지스트리를 사용한다. |
 
 `MANAGED_MCP_RUNTIME` 과 `MANAGED_MCP_REGISTRY` 중 하나라도 설정되지 않으면 managed-MCP 라우트는
 기능을 절반만 켜는 대신 `503` 으로 답한다. 컨테이너의 `environment` 값은 저장 시 암호화되고,
@@ -568,7 +568,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | Slack 프로필 캐시 (성공 / 실패 / 항목 수) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |
 | Telegram 메시지 하나 (Telegram 자신의 상한이다. 더 긴 답변은 다음 메시지로 이어지며, 마지막 `800` 자 안에 줄바꿈이 있으면 거기서 자른다) | `4,096` 자 | `src/application/telegram/replyChannel.ts` |
 | Telegram 답변 편집 주기 / typing 갱신 (Telegram 은 typing 을 `5s` 에 만료시킨다) | `2s` / `4s` | `src/application/telegram/replyChannel.ts` |
-| Teams 메시지 하나 (Teams 의 28KB 아래에서 Markdown 과 첨부에 여유를 둔 값. 더 긴 답변은 다음 메시지로 이어진다) / inline 그림 (Teams 가 문서화한 상한) | `20,000` 자 / `1MB` | `src/application/teams/replyChannel.ts` |
+| Teams 메시지 하나 (더 긴 답변은 다음 메시지로 이어진다) / inline 그림 (Teams 가 문서화한 상한) | `20,000` 자 / `1MB` | `src/application/teams/replyChannel.ts` |
 | Teams 답변 편집 주기 / typing 갱신 | `2s` / `3s` | `src/application/teams/replyChannel.ts` |
 | Telegram·Teams 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
 | usage 요약 질의 범위 | `184` 일 | `src/app/api/usages/summary/validation.ts` |

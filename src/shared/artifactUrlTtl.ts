@@ -2,7 +2,7 @@
  * How long a signed object URL lives, by who is going to fetch it.
  *
  * Two lifetimes for two kinds of reader, and the difference is load-bearing
- * rather than cosmetic. It sits in the artifact slice rather than the chat one because the
+ * rather than cosmetic. Shared across the browser and server because the
  * readers span the whole app — the chat view, the artifacts gallery, a Slack
  * thread, a stored A2A task — and all of them are looking at the same objects.
  */
