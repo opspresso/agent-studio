@@ -36,4 +36,3 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
   SAVE_FILE_TOOL_NAME,
   ...SLACK_TOOL_NAMES,
 ];
-
