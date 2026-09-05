@@ -70,7 +70,7 @@ const input = {
 
 async function frames(response: Response): Promise<unknown[]> {
   const events: unknown[] = [];
-  for await (const event of readSse(response)) {
+  for await (const event of readSse(response, { requireDone: false })) {
     events.push(event);
   }
   return events;
