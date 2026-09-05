@@ -1569,6 +1569,8 @@ DELETE /api/models/catalog/document → 200 { stored: false, refreshed }
   채널이 아예 설정돼 있지 않으면 `400`. 선언 자체는 `PUT /api/settings` 의
   `selfHostedModels` 로 한다.
 - `selection` 은 배포 전역의 Embedding/Rerank 활성 모델을 레지스트리 id로 선택한다.
+  등록된 공개 모델의 provider 채널이 있으면 URL·credential·wire ID를 함께 전환한다.
+  Self-hosted 모델에는 provider의 text 채널을 적용하지 않고 기존 Embedding/Rerank endpoint 설정을 따른다.
   Rerank는 타입과 endpoint 구성을 확인하고 실제 query/document pair를 시험한 뒤 바뀐다. Embedding은 `migrate: true`가 없으면
   `400`이고, 승인된 요청은 전체 capability vector 재색인을 끝까지 기다린다. 실패하면 이전
   선택을 복원하고 이전 모델로 다시 재색인한다. 같은 migration이 이미 진행 중이면 `409`다.

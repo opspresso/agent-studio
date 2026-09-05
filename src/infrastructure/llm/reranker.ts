@@ -1,17 +1,13 @@
 import type { RerankerPort } from "@/domain/vector/types";
 import { calculateRerankCost } from "@/domain/llm/models";
 
-interface ResolvedRerankerModel {
+interface RerankerConfig {
+  baseUrl: string;
+  apiKey?: string;
   /** Registry id used for pricing and usage attribution. */
   id: string;
   /** Endpoint-native id sent on the wire. */
   wireId: string;
-}
-
-interface RerankerConfig {
-  baseUrl: string;
-  apiKey?: string;
-  model: () => Promise<ResolvedRerankerModel> | ResolvedRerankerModel;
 }
 
 interface RerankResult {
@@ -56,7 +52,7 @@ async function waitWithSignal<T>(pending: Promise<T>, signal: AbortSignal): Prom
 }
 
 /** Reranking as served by vLLM's `/v1/rerank`. */
-export function createReranker(config: RerankerConfig): RerankerPort {
+export function createReranker(resolve: () => Promise<RerankerConfig> | RerankerConfig): RerankerPort {
   return {
     async rerank(query, documents, instruction, signal) {
       if (documents.length === 0) {
@@ -64,7 +60,7 @@ export function createReranker(config: RerankerConfig): RerankerPort {
       }
       const timeout = AbortSignal.timeout(RERANKER_TIMEOUT_MS);
       const operationSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-      const model = await waitWithSignal(Promise.resolve(config.model()), operationSignal);
+      const config = await waitWithSignal(Promise.resolve(resolve()), operationSignal);
       const headers = new Headers({ "content-type": "application/json" });
       if (config.apiKey) {
         headers.set("authorization", `Bearer ${config.apiKey}`);
@@ -74,7 +70,7 @@ export function createReranker(config: RerankerConfig): RerankerPort {
         headers,
         signal: operationSignal,
         body: JSON.stringify({
-          model: model.wireId,
+          model: config.wireId,
           query,
           documents,
           top_n: documents.length,
@@ -119,9 +115,9 @@ export function createReranker(config: RerankerConfig): RerankerPort {
       return {
         scores: scores as number[],
         usage: {
-          model: model.id,
+          model: config.id,
           inputTokens,
-          costUsd: calculateRerankCost(model.id, inputTokens),
+          costUsd: calculateRerankCost(config.id, inputTokens),
         },
       };
     },

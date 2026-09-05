@@ -156,7 +156,7 @@ import { createArtifactUseCases } from "@/application/artifact/artifactUseCases"
 import {
   getHiddenModels,
   getAdminEmails,
-  getEmbeddingChannelConfig,
+  getEmbeddingTarget,
   getEmbeddingModel,
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -164,6 +164,7 @@ import {
   getPublicBaseUrl,
   getSelfHostedModels,
   getRerankerModel,
+  getRerankerTarget,
   getRerankerModelSelection,
   getRerankerMinScore,
   getUnknownModelPolicy,
@@ -173,7 +174,7 @@ import {
 import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
 import { DEFAULT_MEMBER_TIER, type MemberTier } from "@/domain/member/tiers";
-import { offeredModels, SELF_HOSTED_PROVIDERS, wireModelId } from "@/domain/llm/models";
+import { offeredModels, SELF_HOSTED_PROVIDERS } from "@/domain/llm/models";
 import { composeCreateProjectWithInitialVersion } from "@/application/project/createProjectFlow";
 import { composeCloneProject } from "@/application/project/cloneProjectFlow";
 
@@ -267,12 +268,14 @@ async function testRerankerModel(model: string, signal?: AbortSignal): Promise<v
     throw new ValidationError("The reranker endpoint is not configured");
   }
   await probeCapabilityReranker(
-    createReranker({
-      ...reranker,
-      model: () => ({ id: model, wireId: wireModelId(model) }),
-    }),
+    createReranker(() => resolveReranker(model)),
     signal,
   );
+}
+
+async function resolveReranker(id: string) {
+  const target = await getRerankerTarget(id);
+  return { ...target, id, wireId: target.model };
 }
 
 /** One-shot model probe for the /models console — the same channel a run uses. */
@@ -531,7 +534,11 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
       embeddings: cacheQueryEmbeddings(
         EMBEDDINGS[config.embeddingProvider],
         config.embeddingProvider === "openai"
-          ? async () => `${(await getEmbeddingChannelConfig()).baseUrl}|${await getEmbeddingModel()}`
+          ? async () => {
+              const model = await getEmbeddingModel();
+              const target = await getEmbeddingTarget(model);
+              return `${target.baseUrl}|${model}|${target.model}`;
+            }
           : getEmbeddingModel,
       ),
       catalog: createPgVectorStore("catalog_vectors"),
@@ -539,13 +546,7 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
       minScore: config.catalogMinScore,
       ...(RERANKER
         ? {
-            reranker: createReranker({
-              ...RERANKER,
-              model: async () => {
-                const id = await getRerankerModel();
-                return { id, wireId: wireModelId(id) };
-              },
-            }),
+            reranker: createReranker(async () => resolveReranker(await getRerankerModel())),
             rerankerMinScore: getRerankerMinScore,
           }
         : {}),
