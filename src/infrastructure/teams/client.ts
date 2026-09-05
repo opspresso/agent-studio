@@ -145,8 +145,12 @@ async function keyFor(kid: string): Promise<SigningKey | undefined> {
   return signingKeys?.keys.get(kid);
 }
 
-function base64UrlJson<T>(part: string): T {
-  return JSON.parse(Buffer.from(part, "base64url").toString("utf-8")) as T;
+function base64UrlJson(part: string): Record<string, unknown> {
+  const value: unknown = JSON.parse(Buffer.from(part, "base64url").toString("utf-8"));
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("JWT sections must be objects");
+  }
+  return value as Record<string, unknown>;
 }
 
 /**
@@ -163,40 +167,44 @@ async function verifyBearer(
   if (!token) {
     return { ok: false, reason: "no bearer token" };
   }
-  const [rawHeader, rawPayload, rawSignature] = token.split(".");
-  if (!rawHeader || !rawPayload || !rawSignature) {
+  const parts = token.split(".");
+  const [rawHeader, rawPayload, rawSignature] = parts;
+  if (parts.length !== 3 || !rawHeader || !rawPayload || !rawSignature) {
     return { ok: false, reason: "not a JWT" };
   }
-  let header: { alg?: string; kid?: string };
-  let payload: { iss?: string; aud?: string | string[]; exp?: number; nbf?: number; serviceurl?: string };
+  let header: Record<string, unknown>;
+  let payload: Record<string, unknown>;
   try {
     header = base64UrlJson(rawHeader);
     payload = base64UrlJson(rawPayload);
   } catch {
     return { ok: false, reason: "malformed JWT" };
   }
-  if (header.alg !== "RS256" || !header.kid) {
-    return { ok: false, reason: `unsupported algorithm ${header.alg ?? "none"}` };
+  if (header.alg !== "RS256" || typeof header.kid !== "string" || !header.kid) {
+    return { ok: false, reason: `unsupported algorithm ${typeof header.alg === "string" ? header.alg : "none"}` };
   }
-  if (!payload.iss || !ISSUERS.has(payload.iss)) {
-    return { ok: false, reason: `issuer ${payload.iss ?? "missing"}` };
+  if (typeof payload.iss !== "string" || !ISSUERS.has(payload.iss)) {
+    return { ok: false, reason: `issuer ${typeof payload.iss === "string" ? payload.iss : "missing"}` };
   }
   // A GUID either way, compared as one: the registration is stored as typed
   // and the service writes it lower-case.
-  const audiences = (Array.isArray(payload.aud) ? payload.aud : [payload.aud]).map((aud) =>
-    (aud ?? "").toLowerCase(),
-  );
-  if (!audiences.includes(expected.appId.toLowerCase())) {
+  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (
+    !audiences.every((aud): aud is string => typeof aud === "string") ||
+    !audiences.some((aud) => aud.toLowerCase() === expected.appId.toLowerCase())
+  ) {
     return { ok: false, reason: "audience is another app" };
   }
   const now = Math.floor(Date.now() / 1000);
-  if (payload.exp === undefined || payload.exp + CLOCK_SKEW_SECONDS < now) {
+  if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp + CLOCK_SKEW_SECONDS < now) {
     return { ok: false, reason: "expired" };
   }
-  if (payload.nbf !== undefined && payload.nbf - CLOCK_SKEW_SECONDS > now) {
+  if (payload.nbf !== undefined && (
+    typeof payload.nbf !== "number" || !Number.isFinite(payload.nbf) || payload.nbf - CLOCK_SKEW_SECONDS > now
+  )) {
     return { ok: false, reason: "not yet valid" };
   }
-  if (!payload.serviceurl || normalizeServiceUrl(payload.serviceurl) !== normalizeServiceUrl(expected.serviceUrl)) {
+  if (typeof payload.serviceurl !== "string" || normalizeServiceUrl(payload.serviceurl) !== normalizeServiceUrl(expected.serviceUrl)) {
     return { ok: false, reason: "issued for another serviceUrl" };
   }
   let key: SigningKey | undefined;

@@ -113,12 +113,12 @@ describe("verifying a Bot Framework token", () => {
     const forged = `${head}.${createSign("RSA-SHA256").update(head).sign(other.privateKey).toString("base64url")}`;
     expect(await teamsClient.verifyRequest(`Bearer ${forged}`, { appId: APP, serviceUrl: SERVICE })).toMatchObject({
       ok: false,
-      reason: /signature/,
+      reason: expect.stringMatching(/signature/),
     });
     const unknownKid = sign(goodClaims(), { alg: "RS256", kid: "key-9" });
     expect(await teamsClient.verifyRequest(`Bearer ${unknownKid}`, { appId: APP, serviceUrl: SERVICE })).toMatchObject({
       ok: false,
-      reason: /unknown signing key/,
+      reason: expect.stringMatching(/unknown signing key/),
     });
     expect(await teamsClient.verifyRequest(null, { appId: APP, serviceUrl: SERVICE })).toMatchObject({ ok: false });
     expect(await teamsClient.verifyRequest("Bearer nope", { appId: APP, serviceUrl: SERVICE })).toMatchObject({ ok: false });
@@ -126,11 +126,43 @@ describe("verifying a Bot Framework token", () => {
 
   it("refuses an algorithm other than RS256, so a `none` token never passes", async () => {
     stubFetch();
-    const token = `${b64url({ alg: "none", kid: "key-1" })}.${b64url(goodClaims())}.`;
+    const token = `${b64url({ alg: "none", kid: "key-1" })}.${b64url(goodClaims())}.eA`;
     expect(await teamsClient.verifyRequest(`Bearer ${token}`, { appId: APP, serviceUrl: SERVICE })).toMatchObject({
       ok: false,
-      reason: /algorithm/,
+      reason: expect.stringMatching(/algorithm/),
     });
+  });
+
+  it.each([
+    [null, {}],
+    [[], {}],
+    [{ alg: "RS256", kid: "key-1" }, null],
+    [{ alg: "RS256", kid: "key-1" }, []],
+  ])("refuses non-object JWT sections (%j, %j)", async (header, payload) => {
+    const calls = stubFetch();
+    const token = `${b64url(header)}.${b64url(payload)}.eA`;
+    await expect(teamsClient.verifyRequest(`Bearer ${token}`, { appId: APP, serviceUrl: SERVICE }))
+      .resolves.toEqual({ ok: false, reason: "malformed JWT" });
+    expect(calls).toEqual([]);
+  });
+
+  it.each([
+    { aud: [123] }, { aud: 123 }, { serviceurl: {} }, { exp: null }, { exp: "9999999999" },
+    { nbf: "0" }, { nbf: null }, { iss: { toString: null } },
+  ])("refuses malformed claims before fetching signing keys: %j", async (claims) => {
+    const calls = stubFetch();
+    const token = `${b64url({ alg: "RS256", kid: "key-1" })}.${b64url({ ...goodClaims(), ...claims })}.eA`;
+    await expect(teamsClient.verifyRequest(`Bearer ${token}`, { appId: APP, serviceUrl: SERVICE }))
+      .resolves.toMatchObject({ ok: false });
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses extra JWT segments even after a valid signature", async () => {
+    const calls = stubFetch();
+    const token = `${sign(goodClaims())}.extra`;
+    await expect(teamsClient.verifyRequest(`Bearer ${token}`, { appId: APP, serviceUrl: SERVICE }))
+      .resolves.toEqual({ ok: false, reason: "not a JWT" });
+    expect(calls).toEqual([]);
   });
 });
 
