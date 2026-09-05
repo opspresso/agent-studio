@@ -6,7 +6,7 @@ import {
 } from "@/application/llm/contextBudget";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
 import type { EngineChunk } from "@/domain/llm/types";
-import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+import { contentChunk, FakeChannel, reasoningChunk, toolCallChunk, usageChunk } from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -233,6 +233,65 @@ describe("runAgent context budget", () => {
     const toolMessage = channel.seenParams[1]?.messages.find((m) => m.role === "tool");
     expect(String(toolMessage?.content).length).toBeLessThan(40_000);
   });
+
+  it.each(["search", "transfer_to_agent"])(
+    "reserves the assistant turn before fitting a %s result into the next request",
+    async (toolName) => {
+      const text = "a".repeat(6_000);
+      const reasoning = "r".repeat(3_000);
+      const args = { agent_name: "child", message: "m".repeat(3_000) };
+      const channel = new FakeChannel([
+        [
+          contentChunk(text),
+          reasoningChunk(reasoning),
+          toolCallChunk(0, "call_1", toolName, JSON.stringify(args)),
+          usageChunk(1, 1),
+        ],
+        [contentChunk("answered"), usageChunk(1, 1)],
+      ]);
+      const chunks = await collect(runAgent(
+        {
+          channel,
+          callMcpTool: async () => ({ text: "x".repeat(100_000) }),
+          runSubagent: async function* () {
+            return "x".repeat(100_000);
+          },
+        },
+        {
+          projectName: "p",
+          model: SMALL_WINDOW_MODEL,
+          parameters: SMALL_BUDGET_PARAMS,
+          messages: [{ role: "user", content: "go" }],
+          mcpTools: TOOL,
+          subagents: [{ name: "child", description: "", type: "local" }],
+        },
+      ));
+
+      expect(channel.seenParams).toHaveLength(2);
+      const request = channel.seenParams[1]!;
+      const assistant = request.messages.find((message) => message.role === "assistant")!;
+      expect(assistant.content).toBe(text);
+      expect(assistant.reasoning_content).toBe(reasoning);
+      expect(JSON.parse(assistant.tool_calls![0]!.function!.arguments!)).toEqual(args);
+      // Measure what actually reaches the channel, not the budget's clamped
+      // remaining() counter: charging too late hides an overflow as debt.
+      const tokens = request.messages.reduce(
+        (total, message) => total +
+          estimateContextTokens(String(message.content ?? "")) +
+          estimateContextTokens(message.reasoning_content ?? "") +
+          estimateContextTokens(message.tool_calls ? JSON.stringify(message.tool_calls) : ""),
+        estimateContextTokens(JSON.stringify(request.tools)),
+      );
+      const capacity = createRunContextBudget(
+        SMALL_WINDOW_MODEL, undefined, SMALL_BUDGET_PARAMS.maxTokens,
+      )!.remaining();
+      expect(tokens).toBeLessThanOrEqual(capacity);
+      // A second charge would unnecessarily discard another assistant turn's
+      // worth of useful result text instead of filling the available room.
+      expect(tokens).toBeGreaterThan(capacity - 100);
+      expect(chunks.filter((chunk) => chunk.warning?.includes("context budget"))).toHaveLength(1);
+    },
+  );
 
   it("stops budgeting a run that had no room from the start, and says so", async () => {
     // Two configurations reach this: an input that fills the window on its own,
