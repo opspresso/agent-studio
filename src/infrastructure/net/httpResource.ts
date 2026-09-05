@@ -33,10 +33,7 @@ import {
 } from "@/domain/net/httpResource";
 import { isDeclaredInternalHost } from "@/domain/security/internalHosts";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
-import {
-  MAX_OUTBOUND_REDIRECTS,
-  OUTBOUND_REDIRECT_STATUSES,
-} from "@/infrastructure/net/redirectPolicy";
+import { fetchSameOrigin } from "@/infrastructure/net/redirectPolicy";
 import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { log } from "@/shared/logger";
 import { BodyTooLargeError, readBodyBytes } from "@/shared/httpBody";
@@ -122,48 +119,6 @@ function refused(url: string, reason: string): HttpResourceError {
 }
 
 /**
- * A declared internal host, fetched without the address guard — the guard would
- * refuse every one of them, which is the whole reason the suffix was declared.
- *
- * What `fetchPublicUrl` does around the guard is kept: native following is off,
- * hops are capped, and a redirect may not leave the origin it started from. Here
- * it also may not leave the declared set, which the same-origin rule already
- * implies and which is checked anyway — the exemption is the one thing a
- * redirect must not be able to widen.
- */
-async function fetchDeclaredInternal(
-  url: string,
-  init: { signal: AbortSignal; headers: Record<string, string> },
-  suffixes: readonly string[],
-): Promise<{ response: Response; url: string }> {
-  let current = new URL(url);
-  const originalOrigin = current.origin;
-  for (let redirects = 0; ; redirects += 1) {
-    const response = await fetch(current, { ...init, redirect: "manual" });
-    if (!OUTBOUND_REDIRECT_STATUSES.has(response.status)) {
-      return { response, url: response.url || current.href };
-    }
-    if (redirects >= MAX_OUTBOUND_REDIRECTS) {
-      await response.body?.cancel().catch(() => {});
-      throw refused(url, `too many redirects from ${originalOrigin}`);
-    }
-    const location = response.headers.get("location");
-    if (!location) {
-      return { response, url: response.url || current.href };
-    }
-    await response.body?.cancel().catch(() => {});
-    const next = new URL(location, current);
-    if (!isDeclaredInternalHost(next.href, suffixes)) {
-      throw refused(url, `redirect leaves the declared internal hosts: ${originOf(next.href)}`);
-    }
-    if (next.origin !== originalOrigin) {
-      throw refused(url, `cross-origin redirect: ${originalOrigin} -> ${next.origin}`);
-    }
-    current = next;
-  }
-}
-
-/**
  * `internalHostSuffixes` is the `FetchUrl` list — never the MCP one. The
  * composition root hands it in so this file reads no configuration of its own;
  * an empty list is the default and means every address faces the guard.
@@ -184,7 +139,8 @@ export function createHttpResourceReader(deps: {
       let finalUrl: string;
       try {
         if (isDeclaredInternalHost(url, suffixes)) {
-          ({ response, url: finalUrl } = await fetchDeclaredInternal(url, init, suffixes));
+          response = await fetchSameOrigin(url, init);
+          finalUrl = response.url;
         } else {
           response = await fetchPublicUrl(url, init);
           finalUrl = response.url || url;

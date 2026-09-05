@@ -53,6 +53,7 @@ import type { McpTool } from "@/domain/mcp/types";
 import { version as APP_VERSION } from "../../../package.json";
 export type { McpTool };
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+import { fetchSameOrigin, withResponseUrl } from "@/infrastructure/net/redirectPolicy";
 import { cutCodePoints } from "@/shared/utf8Text";
 import { withTimeout } from "@/shared/withTimeout";
 
@@ -155,9 +156,13 @@ function boundedFetch(
   loopback: boolean,
   runSignal: () => AbortSignal | undefined,
 ): FetchLike {
-  const send = loopback ? fetch : fetchPublicUrl;
+  const send = loopback ? fetchSameOrigin : fetchPublicUrl;
   return async (url, init) => {
-    const response = await send(url, withSignal(init, runSignal()));
+    const response = await send(url, withSignal(
+      init,
+      runSignal(),
+      url instanceof Request ? url.signal : undefined,
+    ));
     const declared = Number(response.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > MAX_MCP_RESPONSE_BYTES) {
       await response.body?.cancel().catch(() => {});
@@ -181,11 +186,11 @@ function boundedFetch(
         },
       }),
     );
-    return new Response(bounded, {
+    return withResponseUrl(new Response(bounded, {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers,
-    });
+    }), response.url);
   };
 }
 
@@ -198,11 +203,15 @@ function boundedFetch(
  * or the call deadline passes. Merging it here is what makes a cancelled run
  * actually stop talking.
  */
-function withSignal(init: RequestInit | undefined, signal: AbortSignal | undefined): RequestInit {
+function withSignal(
+  init: RequestInit | undefined,
+  signal: AbortSignal | undefined,
+  requestSignal?: AbortSignal,
+): RequestInit {
   if (!signal) {
     return init ?? {};
   }
-  const own = init?.signal;
+  const own = init?.signal ?? requestSignal;
   return { ...init, signal: own ? AbortSignal.any([own, signal]) : signal };
 }
 
@@ -227,7 +236,7 @@ export class McpSession {
      * An address this deployment vouches for: a container it started, or a host
      * whose suffix it declared internal. `fetchPublicUrl` would reject both on
      * every request — correctly, for anything an operator merely typed — so
-     * these use plain fetch instead.
+     * these skip address resolution while retaining the same redirect policy.
      *
      * Only ever set from `skipsUrlGuard`, which owns that decision and is the
      * only thing entitled to make it; the name predates the second way in.

@@ -1,5 +1,5 @@
 import { Agent, fetch as undiciFetch, type Response as UndiciResponse } from "undici";
-import { MAX_OUTBOUND_REDIRECTS, OUTBOUND_REDIRECT_STATUSES } from "./redirectPolicy";
+import { fetchSameOrigin, RedirectPolicyError, withResponseUrl } from "./redirectPolicy";
 import { resolvePublicUrl, SsrfError } from "./ssrfGuard";
 
 const MAX_CACHED_AGENTS = 64;
@@ -82,7 +82,7 @@ function asGlobalResponse(response: UndiciResponse): Response {
   for (const cookie of response.headers.getSetCookie()) {
     headers.append("set-cookie", cookie);
   }
-  return new Response(
+  return withResponseUrl(new Response(
     // One object, two declarations of it: undici types its body as
     // `node:stream/web`'s stream and the global `Response` as the DOM's, and
     // the compiler cannot see that this runtime has only ever had one of them.
@@ -92,7 +92,7 @@ function asGlobalResponse(response: UndiciResponse): Response {
       statusText: response.statusText,
       headers,
     },
-  );
+  ), response.url);
 }
 
 /**
@@ -116,69 +116,25 @@ export async function fetchPublicUrl(
   input: string | URL | Request,
   init?: RequestInit,
 ): Promise<Response> {
-  let url =
-    input instanceof Request
-      ? new URL(input.url)
-      : input instanceof URL
-        ? new URL(input.href)
-        : new URL(input);
-  const originalOrigin = url.origin;
-  const requestBody =
-    input instanceof Request && input.method !== "GET" && input.method !== "HEAD"
-      ? await input.clone().arrayBuffer()
-      : undefined;
-  let requestInit: RequestInit = {
-    ...(input instanceof Request
-      ? {
-          method: input.method,
-          headers: input.headers,
-          body: requestBody,
-          signal: input.signal,
-        }
-      : {}),
-    ...init,
-    redirect: "manual",
-  };
-
-  for (let redirects = 0; ; redirects += 1) {
-    const resolved = await resolvePublicUrl(url.href);
-    const address = resolved.addresses[0];
-    if (!address) {
-      throw new PublicFetchError(`Cannot resolve host: ${url.hostname}`);
-    }
-    const family = address.includes(":") ? 6 : 4;
-    const dispatcher = pinnedAgent(url.origin, address, family);
-    const response = await undiciFetch(url, {
-      ...requestInit,
-      dispatcher,
-    } as Parameters<typeof undiciFetch>[1]);
-    if (!OUTBOUND_REDIRECT_STATUSES.has(response.status)) {
+  try {
+    return await fetchSameOrigin(input, init, async (url, requestInit) => {
+      const resolved = await resolvePublicUrl(url.href);
+      const address = resolved.addresses[0];
+      if (!address) {
+        throw new PublicFetchError(`Cannot resolve host: ${url.hostname}`);
+      }
+      const family = address.includes(":") ? 6 : 4;
+      const dispatcher = pinnedAgent(url.origin, address, family);
+      const response = await undiciFetch(url, {
+        ...requestInit,
+        dispatcher,
+      } as Parameters<typeof undiciFetch>[1]);
       return asGlobalResponse(response);
+    });
+  } catch (error) {
+    if (error instanceof RedirectPolicyError) {
+      throw new PublicFetchError(error.message);
     }
-    if (redirects >= MAX_OUTBOUND_REDIRECTS) {
-      await response.body?.cancel();
-      throw new PublicFetchError(`Too many redirects from ${originalOrigin}`);
-    }
-    const location = response.headers.get("location");
-    if (!location) {
-      return asGlobalResponse(response);
-    }
-    await response.body?.cancel();
-    const next = new URL(location, url);
-    await resolvePublicUrl(next.href);
-    if (next.origin !== originalOrigin) {
-      throw new PublicFetchError(
-        `Cross-origin redirect blocked: ${originalOrigin} -> ${next.origin}`,
-      );
-    }
-
-    const method = (requestInit.method ?? "GET").toUpperCase();
-    if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === "POST")) {
-      const headers = new Headers(requestInit.headers);
-      headers.delete("content-type");
-      headers.delete("content-length");
-      requestInit = { ...requestInit, method: "GET", body: undefined, headers };
-    }
-    url = next;
+    throw error;
   }
 }

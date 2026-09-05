@@ -13,6 +13,7 @@
 | 결정 | 소유자 |
 |---|---|
 | 실행의 첫 응답을 확인한 뒤 경고를 먼저 전달하고 조기 종료 시 원본 실행을 닫기 | `src/application/run/leadingWarnings.ts` 의 `withLeadingWarnings`. Chat과 실행 API가 같은 첫 응답·종료 계약을 사용한다 |
+| 아웃바운드 redirect의 출처·횟수·HTTP 메서드 규칙 | `src/infrastructure/net/redirectPolicy.ts` 의 `fetchSameOrigin`. 공개 URL의 DNS 검증·연결 고정은 `publicFetch.ts`가 각 요청에 적용한다 |
 | MCP tool 의 형태 | `src/domain/mcp/types.ts` |
 | 어떤 호스트가 아웃바운드 URL 가드를 건너뛸 수 있는가. 선언된 suffix 에 이름을 맞추는 술어 하나 | `src/domain/security/internalHosts.ts` 의 `isDeclaredInternalHost`. MCP 목록과 `FetchUrl` 목록이 같은 술어를 지나고, provenance(managed 루프백)와 합친 형태는 `src/domain/mcp/types.ts` 의 `skipsUrlGuard` 다 |
 | Project 의 client ID 메타데이터 문서가 서빙되는 주소 | `src/application/mcp/mcpAuthUseCases.ts` 의 `clientMetadataUrl`. 여기서 어긋나는 것은 명세상 치명적이다: 문서 자신의 `client_id` 가 그것을 가져온 URL 과 다르면 authorization server 는 거부한다 |

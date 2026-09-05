@@ -449,6 +449,11 @@ MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
 주소 대역이 넓어지는 것은 아니다**. 다른 모든 항목은 여전히 원래 받던 검사를 받는다. 이것은
 가드를 느슨하게 하는 것이 아니라 managed 루프백 옆에 놓인 두 번째 좁은 예외다.
 
+내부 주소 예외도 자동 redirect 추종은 허용하지 않는다. MCP 세션·OAuth 메타데이터·내부
+`FetchUrl`은 `src/infrastructure/net/redirectPolicy.ts`의 `fetchSameOrigin`을 통해 최대 5회만
+같은 출처로 이동한다. 공개 URL도 같은 redirect 규칙을 사용하며, 각 요청 직전에 DNS를 검증하고
+확인된 주소로 연결한다. 다른 출처로 이동하는 응답은 본문을 해제한 뒤 거부한다.
+
 이름을 맞추는 술어는 하나다. `src/domain/security/internalHosts.ts` 의
 `isDeclaredInternalHost`. 그리고 목록은 둘이다. `MCP_INTERNAL_HOST_SUFFIXES` 는 이 앱이
 부르기로 되어 있는 서비스를, [`URL_FETCH_INTERNAL_HOST_SUFFIXES`](#모델이-고른-url) 는 모델이

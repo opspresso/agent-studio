@@ -1067,6 +1067,11 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "bounded same-origin redirect following",
+    pattern: /export async function fetchSameOrigin\b/,
+    owner: "src/infrastructure/net/redirectPolicy.ts",
+  },
+  {
     what: "prepending warnings after a run's first pull",
     pattern: /export async function\* with(?:Leading|Document)Warnings\b/,
     owner: "src/application/run/leadingWarnings.ts",
