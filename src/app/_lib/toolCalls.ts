@@ -1,3 +1,11 @@
+import {
+  SKILL_TOOL_NAME as SKILL,
+  TRANSFER_TOOL_NAME as TRANSFER,
+  DISPATCH_TOOL_NAME as DISPATCH,
+  IMAGE_TOOL_NAME,
+  EDIT_IMAGE_TOOL_NAME,
+} from "@/domain/llm/toolNames";
+
 /** Display parsing for OpenAI-wire tool calls, shared by the run panel and chat UI. */
 
 export interface ToolCallInfo {
@@ -42,18 +50,7 @@ export interface ToolDescription {
   source?: string;
 }
 
-/**
- * The builtin names, spelled here rather than imported.
- *
- * `src/application/llm/engine.ts` owns them, and importing it into a client
- * bundle would drag the whole engine — the channel, the subagent runner, the MCP
- * session manager — into the browser. Kept to this one module, which is already
- * the single place the UI decides how a tool call reads.
- */
-const SKILL = "Skill";
-const TRANSFER = "transfer_to_agent";
-const DISPATCH = "dispatch_agents";
-const IMAGE = ["GenerateImage", "EditImage"];
+const IMAGE = [IMAGE_TOOL_NAME, EDIT_IMAGE_TOOL_NAME];
 
 function fieldsOf(args: string | undefined): Record<string, unknown> {
   if (!args) {

@@ -73,7 +73,7 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
 
 | 모듈 | 소유하는 것 |
 |---|---|
-| `agentAssembly.ts` | 런이 무엇을 할 수 있다고 듣는가: `assembleAgentRun`, 시스템 프롬프트 빌더들(`buildAgentSystemPrompt`, skill 표와 server 표, 런 시계와 caller 블록), builtin 도구 정의와 `buildAgentTools`, `BUILTIN_TOOL_NAMES`, `ImageRegistry`, 그리고 `MAX_DISPATCH_TASKS` |
+| `agentAssembly.ts` | 런이 무엇을 할 수 있다고 듣는가: `assembleAgentRun`, 시스템 프롬프트 빌더들(`buildAgentSystemPrompt`, skill 표와 server 표, 런 시계와 caller 블록), builtin 도구 정의와 `buildAgentTools`, `ImageRegistry`, 그리고 `MAX_DISPATCH_TASKS` |
 | `toolResultBudget.ts` | 결과가 얼마를 써도 되는지와 무엇을 해야 하는지: `createToolResultBudget` 과 `createToolResultEmitter`, `MAX_TOOL_RESULT_CHARS_PER_TURN`, `MIN_KEPT_RESULT_CHARS`, 그리고 truncation 마커 |
 
 > `src/application/llm/AGENTS.md` 가 루프 불변식의 정본이다. `engine.ts`, `agentAssembly.ts`,
@@ -133,7 +133,7 @@ flowchart TB
   넣는 수밖에 없다),
   `parameters.slackWorkspace` 뒤의 Slack 읽기 도구 여섯 개
   ([workspace 읽기](slack.md#워크스페이스-읽기) 참고).
-  **그 밖의 이름은 모두 MCP 도구이고**, `BUILTIN_TOOL_NAMES` — 열세 개 전부 — 는 alias 할당
+  **그 밖의 이름은 모두 MCP 도구이고**, `src/domain/llm/toolNames.ts` 의 `BUILTIN_TOOL_NAMES` — 열세 개 전부 — 는 alias 할당
   동안 예약되어, MCP 도구가 builtin 이 주장할 수 있는 이름을 다는 일이 없다.
 
 > 루프가 그것들을 어떻게 dispatch 하는지, builtin 이 *제공된다*는 것이 무슨 뜻이고 왜 그것을
