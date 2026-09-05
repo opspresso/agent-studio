@@ -215,6 +215,27 @@ describe("updateProjectTelegram", () => {
       ConflictError,
     );
   });
+
+  it.each(["replace", "disconnect"])("keeps the existing webhook when %s loses the project update", async (operation) => {
+    const { repo, current } = fakeRepo(makeProject());
+    await update(repo, { botToken: "42:first", enabled: true }, OWNER);
+    const stored = current();
+    repo.update = async () => {
+      throw Object.assign(new Error("conditional check failed"), {
+        name: "ConditionalWriteFailed",
+      });
+    };
+    const { calls, registered, deleted } = makeCalls();
+
+    await expect(operation === "replace"
+      ? update(repo, { botToken: "43:second" }, OWNER, calls)
+      : disconnectProjectTelegram(repo, "bot-proj", OWNER, secretCipher, calls.deleteWebhook),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    expect(current()).toBe(stored);
+    expect(registered).toEqual([]);
+    expect(deleted).toEqual([]);
+  });
 });
 
 describe("runtime, binding, test and webhook", () => {
@@ -305,11 +326,12 @@ describe("runtime, binding, test and webhook", () => {
     });
   });
 
-  it("disconnects, telling Telegram first and dropping the credentials even when that fails", async () => {
+  it("disconnects before telling Telegram, keeping credentials dropped when that fails", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const { repo, current } = await configured();
     const deleted: string[] = [];
     await disconnectProjectTelegram(repo, "bot-proj", OWNER, secretCipher, async (token) => {
+      expect(current().telegram).toBeUndefined();
       deleted.push(token);
       throw new Error("Telegram deleteWebhook failed: HTTP 500");
     });

@@ -180,11 +180,6 @@ export async function updateProjectTelegram(
     botToken = cipher.encrypt(token, telegramSecretContext(name, "bot-token"));
     botUsername = identity.username;
     if (tokenChanged && previous) {
-      // The old bot must stop delivering here, and must stop being able to:
-      // its webhook goes, and so does the secret it was registered with.
-      await calls
-        .deleteWebhook(previous.botToken)
-        .catch((error) => log.warn("telegram", `could not delete the previous bot's webhook for ${name}`, error));
       webhookSecret = cipher.encrypt(
         generateSecretValue("telegramWebhookSecret"),
         telegramSecretContext(name, "webhook-secret"),
@@ -203,6 +198,11 @@ export async function updateProjectTelegram(
   const updated: Project = { ...project, telegram, updatedAt: nextUpdatedAt(project.updatedAt) };
   await persistProjectUpdate(repo, updated, project.updatedAt);
 
+  if (tokenChanged && previous) {
+    await calls
+      .deleteWebhook(previous.botToken)
+      .catch((error) => log.warn("telegram", `could not delete the previous bot's webhook for ${name}`, error));
+  }
   const wasEnabled = stored?.enabled === true;
   const runtime = resolveProjectTelegramCredentials(cipher, updated);
   const warnings: string[] = [];
@@ -228,10 +228,10 @@ export async function updateProjectTelegram(
 }
 
 /**
- * Forget the bot. Telegram is told first, best effort: a webhook left
+ * Forget the bot, then notify Telegram best effort: a webhook left
  * registered keeps Telegram delivering to an endpoint that now answers 404,
  * and Telegram retries those for a day. A failure there is logged and the
- * credentials are dropped regardless — a stale registration is Telegram's
+ * credentials remain dropped — a stale registration is Telegram's
  * problem to give up on, a stored token nobody wants is ours.
  */
 export async function disconnectProjectTelegram(
@@ -243,17 +243,17 @@ export async function disconnectProjectTelegram(
 ): Promise<ProjectTelegramResult> {
   const project = await assertProjectWritable(repo, name, userEmail);
   const runtime = resolveProjectTelegramCredentials(cipher, project);
-  if (runtime) {
-    await deleteWebhook(runtime.botToken).catch((error) =>
-      log.warn("telegram", `could not delete the webhook for ${name}; Telegram will give up on its own`, error),
-    );
-  }
   const updated: Project = {
     ...project,
     telegram: undefined,
     updatedAt: nextUpdatedAt(project.updatedAt),
   };
   await persistProjectUpdate(repo, updated, project.updatedAt);
+  if (runtime) {
+    await deleteWebhook(runtime.botToken).catch((error) =>
+      log.warn("telegram", `could not delete the webhook for ${name}; Telegram will give up on its own`, error),
+    );
+  }
   return { project: updated, view: maskedView(cipher, updated) };
 }
 
