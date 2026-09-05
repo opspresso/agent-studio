@@ -423,6 +423,8 @@ export function createRunStore(): RunStore {
   ): Promise<void> {
     const controller = new AbortController();
     controllers.set(canonical(key), controller);
+    const isCurrent = () =>
+      !controller.signal.aborted && controllers.get(canonical(key)) === controller;
     let request = () => open(controller.signal);
     let attempt = 0;
     let reconnects = 0;
@@ -440,13 +442,20 @@ export function createRunStore(): RunStore {
         let lost: string | undefined;
         try {
           const res = await request();
+          if (!isCurrent()) {
+            await res.body?.cancel().catch(() => {});
+            return;
+          }
           if (!res.ok) {
             const body = (await res.json().catch(() => ({}))) as { error?: string };
+            if (!isCurrent()) {
+              return;
+            }
             finish(key, "failed", body.error ?? `request failed (${res.status})`);
             return;
           }
           for await (const chunk of readSse(res)) {
-            if (controller.signal.aborted) {
+            if (!isCurrent()) {
               return;
             }
             if (chunk.ended) {
@@ -483,7 +492,7 @@ export function createRunStore(): RunStore {
         } catch (error) {
           lost = error instanceof Error ? error.message : "stream error";
         }
-        if (controller.signal.aborted) {
+        if (!isCurrent()) {
           return;
         }
         if (ended) {
@@ -513,7 +522,7 @@ export function createRunStore(): RunStore {
           // one-off failure the next poll might have answered.
           active = undefined;
         }
-        if (controller.signal.aborted) {
+        if (!isCurrent()) {
           return;
         }
         if (active === false) {
@@ -527,7 +536,7 @@ export function createRunStore(): RunStore {
           fetch(`/api/chats/${chatId}/runs/${runId}/stream`, { signal: controller.signal });
       }
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (isCurrent()) {
         finish(key, "failed", error instanceof Error ? error.message : "stream error");
       }
     } finally {

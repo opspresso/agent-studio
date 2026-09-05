@@ -661,6 +661,80 @@ describe("runStore", () => {
     expect(store.get("c1")).toBeUndefined();
   });
 
+  it.each(["resolved", "rejected"] as const)(
+    "ignores an old error body that %s after its entry was replaced",
+    async (outcome) => {
+      vi.useFakeTimers();
+      let bodyController!: ReadableStreamDefaultController<Uint8Array>;
+      const oldResponse = new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            bodyController = controller;
+          },
+        }),
+        { status: 429 },
+      );
+      const readBody = vi.spyOn(oldResponse, "json");
+      stubFetch([
+        () => oldResponse,
+        () => sse([{ runId: "replacement" }, { delta: { content: "new answer" } }, { ended: true }]),
+      ]);
+      const store = fresh();
+      store.startTurn("c1", PENDING);
+      await settle();
+      expect(readBody).toHaveBeenCalledOnce();
+
+      store.abort("c1");
+      store.startTurn("c1", { ...PENDING, content: "new question" });
+      await settle();
+      const replacement = store.get("c1");
+      expect(replacement).toMatchObject({ status: "finished", live: { text: "new answer" } });
+      const notified = vi.fn();
+      const unsubscribe = store.subscribe(notified);
+
+      if (outcome === "rejected") {
+        bodyController.error(new DOMException("aborted", "AbortError"));
+      } else {
+        bodyController.enqueue(new TextEncoder().encode('{"error":"old request refused"}'));
+        bodyController.close();
+      }
+      await settle();
+
+      expect(store.get("c1")).toBe(replacement);
+      expect(notified).not.toHaveBeenCalled();
+      unsubscribe();
+      store.abort("c1");
+    },
+  );
+
+  it("discards a response that arrives after its pump was replaced", async () => {
+    vi.useFakeTimers();
+    const pending = Promise.withResolvers<Response>();
+    const cancelled = vi.fn();
+    const oldResponse = new Response(new ReadableStream({ cancel: cancelled }), { status: 429 });
+    const readBody = vi.spyOn(oldResponse, "json");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockReturnValueOnce(pending.promise)
+        .mockResolvedValueOnce(sse([{ runId: "replacement" }, { ended: true }])),
+    );
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    store.abort("c1");
+    store.startTurn("c1", PENDING);
+    await settle();
+    const replacement = store.get("c1");
+
+    pending.resolve(oldResponse);
+    await settle();
+
+    expect(readBody).not.toHaveBeenCalled();
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(store.get("c1")).toBe(replacement);
+    store.abort("c1");
+  });
+
   it("asks the server to stop the run behind an entry", async () => {
     const { urls } = stubFetch([
       () => sse([{ runId: "run-1" }, { delta: { content: "…" } }], { close: true }),
