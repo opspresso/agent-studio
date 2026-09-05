@@ -86,6 +86,9 @@ export const openAiEmbeddings: EmbeddingPort = {
           `Embedding response returned ${ordered.length} vectors for ${batch.length} inputs`,
         );
       }
+      if (ordered.some((item, index) => item.index !== index)) {
+        throw new Error("Embedding response indexes must cover each input exactly once");
+      }
       for (const item of ordered) {
         vectors.push(item.embedding);
       }
