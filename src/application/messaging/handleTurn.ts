@@ -3,7 +3,7 @@ import type { SignObjectUrl } from "@/domain/artifact/objectStore";
 import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
-import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk, toolCallKey } from "@/domain/llm/types";
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel, ReplyImage } from "@/domain/messaging/reply";
@@ -212,7 +212,7 @@ export async function handleTurn(
         // Arguments stream in after the name, so a later delta for the same
         // call carries neither and is not a step of its own.
         if (call.id && name) {
-          await reply.step(call.id, chunk.author ? `${chunk.author}: ${name}` : name, {
+          await reply.step(toolCallKey(chunk, call.id), chunk.author ? `${chunk.author}: ${name}` : name, {
             nested: !isTopLevelChunk(chunk),
           });
         }
@@ -222,7 +222,7 @@ export async function handleTurn(
       // that it finished it.
       if (chunk.toolResult) {
         await reply.stepDone(
-          chunk.toolResult.toolCallId,
+          toolCallKey(chunk, chunk.toolResult.toolCallId),
           // The result names what the call acted on — the skill it loaded, the
           // server an MCP tool came from — which the call's own name never does.
           chunk.author ? `${chunk.author}: ${chunk.toolResult.name}` : chunk.toolResult.name,

@@ -150,8 +150,8 @@ describe("handleTurn", () => {
     const outcome = await handleTurn(deps, turn(), reply);
 
     expect(pushed).toEqual(["hel", "hello"]);
-    expect(steps).toEqual([{ id: "c1", title: "search" }]);
-    expect(done).toEqual([{ id: "c1", title: "search (docs)" }]);
+    expect(steps).toEqual([{ id: expect.any(String), title: "search" }]);
+    expect(done).toEqual([{ id: steps[0]!.id, title: "search (docs)" }]);
     expect(finished()).toEqual({ text: "hello", suffix: "" });
     expect(outcome.text).toBe("hello");
     expect(heartbeat()).toEqual({ started: 1, stopped: 1 });
@@ -171,7 +171,23 @@ describe("handleTurn", () => {
 
     await handleTurn(deps, turn(), reply);
 
-    expect(steps).toEqual([{ id: "c1", title: "child: Skill", nested: true }]);
+    expect(steps).toEqual([{ id: expect.any(String), title: "child: Skill", nested: true }]);
+  });
+
+  it("keeps a nested tool completion separate from its parent's reused id", async () => {
+    const call = { id: "c1", function: { name: "search", arguments: "{}" } };
+    const deps = makeDeps([
+      { delta: { toolCalls: [call] } },
+      { author: "child", transferId: "transfer", delta: { toolCalls: [call] } },
+      { author: "child", transferId: "transfer", toolResult: { toolCallId: "c1", name: "child search", content: "child" } },
+      { toolResult: { toolCallId: "c1", name: "parent search", content: "parent" } },
+      { done: true },
+    ]);
+    const { reply, steps, done } = makeReply();
+    await handleTurn(deps, turn(), reply);
+    expect(steps).toHaveLength(2);
+    expect(steps[0]!.id).not.toBe(steps[1]!.id);
+    expect(done.map((step) => step.id)).toEqual([steps[1]!.id, steps[0]!.id]);
   });
 
   it("delivers a picture the run drew and leaves a fetched one out beside it", async () => {
