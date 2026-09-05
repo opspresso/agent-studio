@@ -869,8 +869,15 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       });
 
       const now = new Date();
+      const {
+        accessToken: _accessToken,
+        refreshToken: _refreshToken,
+        expiresAt: _expiresAt,
+        ...credentials
+      } = connection;
+      void _accessToken, _refreshToken, _expiresAt;
       await deps.connections.put({
-        ...connection,
+        ...credentials,
         // Stamped here too, so a row that predates the binding acquires both
         // halves the first time it is authorized rather than staying unbound
         // forever. `resource` is what these very tokens were minted for — the
