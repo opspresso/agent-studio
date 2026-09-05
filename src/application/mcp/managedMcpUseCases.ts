@@ -158,7 +158,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
    * refusing the second, whether they came from create, update, a button, or the
    * boot sweep.
    *
-   * Every container-changing path claims here, so they exclude each other as
+   * Every managed mutation claims here, so they exclude each other as
    * well as themselves. A claim is taken with no `await` between the check and
    * the add, which is what makes it a claim rather than a suggestion.
    *
@@ -453,91 +453,103 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     },
 
     async update(name, input) {
-      const existing = await requireManaged(name);
-      const args =
-        input.args === undefined ? existing.args : input.args.length > 0 ? input.args : undefined;
-      const environment =
-        input.environment === undefined
-          ? existing.environment
-          : Object.keys(input.environment).length > 0
-            ? deps.cipher.mergeHeaderUpdate(
-                existing.environment ?? {},
-                input.environment,
-                managedMcpEnvironmentContext(existing.name),
-              )
-            : undefined;
-      const nextEndpointPath = endpointPath(input.endpointPath ?? existing.endpointPath);
-      const updated: McpServer = {
-        ...existing,
-        environment,
-        args,
-        endpointPath:
-          nextEndpointPath === DEFAULT_ENDPOINT_PATH ? undefined : nextEndpointPath,
-        image: input.image ?? existing.image,
-        containerPort: input.containerPort ?? existing.containerPort,
-        description: input.description ?? existing.description,
-        content: input.content ?? existing.content,
-        headers:
-          input.headers === undefined
-            ? existing.headers
-            : deps.cipher.mergeHeaderUpdate(
-                existing.headers,
-                input.headers,
-                mcpHeadersContext(existing.name),
-              ),
-        updatedAt: deps.now(),
-      };
-      const workloadChanged =
-        updated.image !== existing.image ||
-        updated.containerPort !== existing.containerPort ||
-        JSON.stringify(updated.environment ?? {}) !== JSON.stringify(existing.environment ?? {}) ||
-        JSON.stringify(updated.args ?? []) !== JSON.stringify(existing.args ?? []) ||
-        nextEndpointPath !== endpointPath(existing.endpointPath);
-      let claimed = false;
-      if (workloadChanged) {
-        if (lifecycleClaims.has(name)) {
-          throw new ConflictError(`A restart of "${name}" is already running.`);
-        }
-        specFor(updated);
-        lifecycleClaims.add(name);
-        claimed = true;
+      if (lifecycleClaims.has(name)) {
+        throw new ConflictError(`A lifecycle operation for "${name}" is already running.`);
       }
+      lifecycleClaims.add(name);
+      let restartQueued = false;
       try {
-        await deps.repo.update(updated);
-      } catch (error) {
-        if (claimed) {
+        const existing = await requireManaged(name);
+        const args =
+          input.args === undefined ? existing.args : input.args.length > 0 ? input.args : undefined;
+        const environment =
+          input.environment === undefined
+            ? existing.environment
+            : Object.keys(input.environment).length > 0
+              ? deps.cipher.mergeHeaderUpdate(
+                  existing.environment ?? {},
+                  input.environment,
+                  managedMcpEnvironmentContext(existing.name),
+                )
+              : undefined;
+        const nextEndpointPath = endpointPath(input.endpointPath ?? existing.endpointPath);
+        const updated: McpServer = {
+          ...existing,
+          environment,
+          args,
+          endpointPath:
+            nextEndpointPath === DEFAULT_ENDPOINT_PATH ? undefined : nextEndpointPath,
+          image: input.image ?? existing.image,
+          containerPort: input.containerPort ?? existing.containerPort,
+          description: input.description ?? existing.description,
+          content: input.content ?? existing.content,
+          headers:
+            input.headers === undefined
+              ? existing.headers
+              : deps.cipher.mergeHeaderUpdate(
+                  existing.headers,
+                  input.headers,
+                  mcpHeadersContext(existing.name),
+                ),
+          updatedAt: deps.now(),
+        };
+        const workloadChanged =
+          updated.image !== existing.image ||
+          updated.containerPort !== existing.containerPort ||
+          JSON.stringify(updated.environment ?? {}) !== JSON.stringify(existing.environment ?? {}) ||
+          JSON.stringify(updated.args ?? []) !== JSON.stringify(existing.args ?? []) ||
+          nextEndpointPath !== endpointPath(existing.endpointPath);
+        if (workloadChanged) {
+          specFor(updated);
+        }
+        try {
+          await deps.repo.update(updated);
+        } catch (error) {
+          if (isConditionalWriteFailure(error)) {
+            throw new NotFoundError(`MCP server "${name}" was removed while it was being updated.`);
+          }
+          throw error;
+        }
+        deps.probe.invalidateDiscovery(existing.url);
+        if (workloadChanged) {
+          // The background restart owns release through its settle attempts.
+          restartQueued = true;
+          queueRestart(updated);
+        }
+        return view(updated);
+      } finally {
+        if (!restartQueued) {
           lifecycleClaims.delete(name);
         }
-        if (isConditionalWriteFailure(error)) {
-          throw new NotFoundError(`MCP server "${name}" was removed while it was being updated.`);
-        }
-        throw error;
       }
-      deps.probe.invalidateDiscovery(existing.url);
-      if (workloadChanged) {
-        queueRestart(updated);
-      }
-      return view(updated);
     },
 
     async remove(name, actorEmail) {
-      const existing = await requireManaged(name);
-      // Container first. The entry is what makes it reachable, so a failure
-      // after this point leaves something unreachable rather than something
-      // running that nothing points at.
-      await deps.provisioner.stop(name);
-      await deps.repo.delete(name);
-      deps.probe.invalidateDiscovery(existing.url);
-      // Same action and the same `mcp:` target as an unmanaged deletion: the
-      // reader is asking who removed an MCP server, and which of the two routes
-      // it went through is not the question. Written here rather than in the
-      // route because this is the one place the deletion happens.
-      await recordAudit({
-        actorEmail,
-        action: "registry.delete",
-        target: auditTarget("mcp", name),
-        detail: "managed; its container was stopped",
-      });
+      if (lifecycleClaims.has(name)) {
+        throw new ConflictError(`A lifecycle operation for "${name}" is already running.`);
+      }
+      lifecycleClaims.add(name);
+      try {
+        const existing = await requireManaged(name);
+        // Container first. The entry is what makes it reachable, so a failure
+        // after this point leaves something unreachable rather than something
+        // running that nothing points at.
+        await deps.provisioner.stop(name);
+        await deps.repo.delete(name);
+        deps.probe.invalidateDiscovery(existing.url);
+        // Same action and the same `mcp:` target as an unmanaged deletion: the
+        // reader is asking who removed an MCP server, and which of the two routes
+        // it went through is not the question. Written here rather than in the
+        // route because this is the one place the deletion happens.
+        await recordAudit({
+          actorEmail,
+          action: "registry.delete",
+          target: auditTarget("mcp", name),
+          detail: "managed; its container was stopped",
+        });
+      } finally {
+        lifecycleClaims.delete(name);
+      }
     },
 
     async status(name) {
@@ -605,11 +617,14 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         }
         lifecycleClaims.add(entry.name);
         try {
-          if (await reaches(entry)) {
+          // The list predates earlier entries' probes and restarts. A mutation
+          // may have completed while this entry waited for its turn.
+          const current = await requireManaged(entry.name);
+          if (await reaches(current)) {
             outcomes.push({ name: entry.name, action: "healthy" });
             continue;
           }
-          const restarted = await restartEntry(entry, specFor(entry));
+          const restarted = await restartEntry(current, specFor(current));
           // One restart per entry per sweep. If it still does not answer once
           // it has had time to come up, the problem is not the namespace it was
           // stranded in, and going round again would only take it down a second

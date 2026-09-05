@@ -1,6 +1,7 @@
 import type { McpRepository } from "@/domain/mcp/repository";
 import { skipsUrlGuard, type McpServer } from "@/domain/mcp/types";
-import { NotFoundError, ValidationError } from "@/application/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
+import { processManagedMcpLifecycleClaims } from "@/application/mcp/managedMcpUseCases";
 import { applyMcpUserEmail, stripMcpMetadataHeaders } from "@/application/mcpMetadataHeaders";
 import {
   assertAllowedUrl,
@@ -75,6 +76,7 @@ export function createMcpUseCases(
    * use if it cannot be saved.
    */
   internalHostSuffixes: readonly string[] = [],
+  lifecycleClaims: Set<string> = processManagedMcpLifecycleClaims(),
 ): McpUseCases {
   const registry = createRegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput>({
     label: "MCP server",
@@ -180,6 +182,37 @@ export function createMcpUseCases(
 
   return {
     ...registry,
+
+    async update(name, input) {
+      // Metadata writes share the container's claim too: a restart persists
+      // its snapshot after starting and must not overwrite a concurrent edit.
+      if (lifecycleClaims.has(name)) {
+        throw new ConflictError(`A lifecycle operation for "${name}" is already running.`);
+      }
+      lifecycleClaims.add(name);
+      try {
+        return await registry.update(name, input);
+      } finally {
+        lifecycleClaims.delete(name);
+      }
+    },
+
+    async remove(name, actorEmail) {
+      if (lifecycleClaims.has(name)) {
+        throw new ConflictError(`A lifecycle operation for "${name}" is already running.`);
+      }
+      lifecycleClaims.add(name);
+      try {
+        if ((await repo.get(name))?.runtime === "managed") {
+          throw new ValidationError(
+            `MCP server "${name}" is managed: delete it through the managed lifecycle so its container is stopped.`,
+          );
+        }
+        await registry.remove(name, actorEmail);
+      } finally {
+        lifecycleClaims.delete(name);
+      }
+    },
 
     async testConnection(name, userEmail) {
       const existing = await repo.get(name);
