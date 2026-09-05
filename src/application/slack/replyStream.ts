@@ -769,7 +769,7 @@ export function createReplySink(
           // `chat.startStream` opened the message empty, so the first append
           // carries everything accumulated so far — bounded, because that is
           // exactly where a long answer exceeds what Slack takes in one write.
-          const opening = fullText.slice(0, MAX_STREAM_TEXT);
+          const opening = fullText.slice(0, cutPoint(fullText, 0, MAX_STREAM_TEXT, MAX_STREAM_TEXT / 10));
           await slack
             .appendStream(token, {
               channel: messageChannel,
@@ -792,7 +792,7 @@ export function createReplySink(
       if (mode === "stream") {
         // Only as much as Slack takes; whatever is left goes with the next
         // push, or with the close.
-        const sending = fullText.slice(flushed, flushed + MAX_STREAM_TEXT);
+        const sending = fullText.slice(flushed, cutPoint(fullText, flushed, MAX_STREAM_TEXT, MAX_STREAM_TEXT / 10));
         await slack
           .appendStream(token, {
             channel: messageChannel,

@@ -731,6 +731,21 @@ describe("closing a stream that still owes both text and rows", () => {
 describe("an answer longer than one write", () => {
   const LONG = "x".repeat(30_000);
 
+  it("keeps surrogate pairs intact at initial and later append boundaries", async () => {
+    const { slack, appended } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+    const text = `${"x".repeat(11_999)}😀${"y".repeat(11_997)}😀tail`;
+    await sink.push(text);
+    await sink.push(text);
+    await sink.push(text);
+    await sink.finish(text, "");
+    expect(appended.every((part) => part.isWellFormed())).toBe(true);
+    expect(appended.every((part) => part.length <= 12_000)).toBe(true);
+    expect(appended.join("")).toBe(text);
+  });
+
   it("sends it across several writes rather than one Slack refuses", async () => {
     const { slack, appended } = makeStreamingChannelFake();
     const sink = createReplySink(slack, "tok", CHANNEL);
