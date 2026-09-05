@@ -1,3 +1,4 @@
+import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { describe, expect, it, vi } from "vitest";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
@@ -8,7 +9,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { AgentRunner, ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
-import { runAndPersist, userTurnContent, withLeadingWarnings } from "@/application/chat/run";
+import { runAndPersist, userTurnContent } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
 import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { deleteChat } from "@/application/chat/deleteChat";

@@ -1,6 +1,6 @@
 import { readDocuments, turnContent, type ReadDocument } from "@/application/llm/documentParts";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
-import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
+import type { ChatMessageInput } from "@/domain/llm/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import type { Version } from "@/domain/project/types";
 import {
@@ -73,19 +73,4 @@ export function attachDocumentsToMessages(
         : turnContent(documents, content ?? ""),
     };
   });
-}
-
-/** Preserve pre-stream status, then surface extraction loss on the chunk channel. */
-export async function* withDocumentWarnings(
-  warnings: string[],
-  source: AsyncGenerator<EngineChunk>,
-): AsyncGenerator<EngineChunk> {
-  const { value: first, done: sourceEnded } = await source.next();
-  for (const warning of warnings) {
-    yield { warning };
-  }
-  if (!sourceEnded) {
-    yield first;
-    yield* source;
-  }
 }

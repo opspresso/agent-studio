@@ -1067,6 +1067,11 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "prepending warnings after a run's first pull",
+    pattern: /export async function\* with(?:Leading|Document)Warnings\b/,
+    owner: "src/application/run/leadingWarnings.ts",
+  },
+  {
     // Written once for the artifacts gallery, then wanted verbatim by the chat's
     // download row the moment files became deliverable — which is how the second
     // copy of anything starts. Two surfaces looking at the same object have to
@@ -1461,7 +1466,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
       "src/application/execution/subagentRunner.ts",
       "src/app/api/_lib/sse.ts",
       "src/app/api/chats/_lib/frames.ts",
-      "src/application/chat/run.ts",
+      "src/application/run/leadingWarnings.ts",
       "src/shared/mergeGenerators.ts",
       "src/shared/detachOnReturn.ts",
       "src/infrastructure/slack/profileCache.ts",

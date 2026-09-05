@@ -1,3 +1,4 @@
+import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { executionDeps, projectUseCases, signArtifactUrl, versionUseCases } from "@/lib/container";
 import { withAddressedFiles } from "@/application/artifact/producedFiles";
@@ -11,7 +12,6 @@ import { withTurnBody } from "@/app/api/_lib/body";
 import {
   attachDocumentsToMessages,
   readBoundExecutionDocuments,
-  withDocumentWarnings,
 } from "@/app/api/projects/_lib/documents";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
@@ -47,7 +47,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         // compare view read this stream too, which is how both of them ended up
         // drawing the picture a run made and saying nothing about the document.
         withAddressedFiles(
-          withDocumentWarnings(
+          withLeadingWarnings(
             read.warnings,
             executeAgent(executionDeps, {
               project,

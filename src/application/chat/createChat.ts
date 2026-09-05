@@ -11,10 +11,10 @@ import {
   readMessageDocuments,
   storeAttachedImages,
   userTurnContent,
-  withLeadingWarnings,
 } from "./run";
 import { titleFromMessage } from "./title";
 import { claimChatRun } from "./runLease";
+import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { teeToRunLog } from "./runLog";
 
 export interface CreateChatInput {
