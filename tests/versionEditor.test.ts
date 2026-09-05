@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { parseJsonObject, parseVersionDraft } from "@/app/projects/[name]/_components/VersionEditor";
 import type { VersionInput } from "@/app/projects/lib/api";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { MantineProvider } from "@mantine/core";
+import { SubagentInput } from "@/app/projects/[name]/_components/inputs";
+
+describe("subagent picker identity", () => {
+  it("renders local and remote candidates with the same name", () => {
+    const render = () => renderToStaticMarkup(createElement(MantineProvider, {
+      children: createElement(SubagentInput, {
+        values: [],
+        onChange: () => {},
+        options: [
+          { value: "helper", type: "local", description: "Local helper" },
+          { value: "helper", type: "remote", description: "Remote helper" },
+        ],
+      }),
+    }));
+    expect(render).not.toThrow();
+  });
+});
 
 describe("parseJsonObject", () => {
   it("accepts only JSON objects", () => {
