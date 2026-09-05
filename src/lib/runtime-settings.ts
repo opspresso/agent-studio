@@ -20,7 +20,8 @@ import {
   type UnknownModelPolicy,
 } from "@/domain/settings/modelPolicy";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
-import { parseProviderConfigs } from "@/infrastructure/llm/providers";
+import { parseProviderConfigs, resolveProviderTarget, type ResolvedTarget } from "@/infrastructure/llm/providers";
+import { getModelConfig, SELF_HOSTED_PROVIDERS, wireModelId } from "@/domain/llm/models";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import { config, positiveIntEnv } from "./config";
 import { optionalEnv } from "@/shared/env";
@@ -138,6 +139,38 @@ export async function getEmbeddingChannelConfig(): Promise<{ baseUrl: string; ap
     };
   }
   return getLlmChannelConfig();
+}
+
+async function getRetrievalProviderTarget(model: string): Promise<ResolvedTarget | undefined> {
+  const registered = getModelConfig(model);
+  if (!registered || SELF_HOSTED_PROVIDERS.some((name) => name === registered.provider)) {
+    return undefined;
+  }
+  const provider = (await getLlmProviderConfigs()).find((entry) => entry.name === registered.provider);
+  if (!provider) {
+    return undefined;
+  }
+  if (provider.auth === "sigv4") {
+    throw new Error(`Provider "${provider.name}" does not support OpenAI-compatible retrieval authentication`);
+  }
+  return resolveProviderTarget(model, [provider], provider);
+}
+
+export async function getEmbeddingTarget(model: string): Promise<{ baseUrl: string; apiKey: string; model: string }> {
+  return await getRetrievalProviderTarget(model)
+    ?? { ...await getEmbeddingChannelConfig(), model: wireModelId(model) };
+}
+
+export async function getRerankerTarget(model: string): Promise<{ baseUrl: string; apiKey?: string; model: string }> {
+  const provider = await getRetrievalProviderTarget(model);
+  if (provider) {
+    return provider;
+  }
+  const reranker = config.reranker;
+  if (!reranker) {
+    throw new Error("The reranker endpoint is not configured");
+  }
+  return { ...reranker, model: wireModelId(model) };
 }
 
 export interface ModelSelection {

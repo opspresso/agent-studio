@@ -13,10 +13,12 @@ import {
   getA2aApiKey,
   getAdminEmails,
   getEmbeddingModelSelection,
+  getEmbeddingTarget,
   getLlmChannelConfig,
   getLlmProviderConfigs,
   getPluginsRepoConfig,
   getRerankerModelSelection,
+  getRerankerTarget,
   getRerankerMinScoreSelection,
   invalidateSettingsCache,
   isAdminEmail,
@@ -45,7 +47,11 @@ const ENV_KEYS = [
   "A2A_API_KEY",
   "ARTIFACT_ACCESS_MODE",
   "EMBEDDING_MODEL",
+  "EMBEDDING_BASE_URL",
+  "EMBEDDING_API_KEY",
   "RERANKER_MODEL",
+  "RERANKER_BASE_URL",
+  "RERANKER_API_KEY",
   "RERANKER_MIN_SCORE",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
@@ -185,6 +191,73 @@ describe("runtime settings precedence", () => {
       token: "gh-secret",
     });
     await expect(getA2aApiKey()).resolves.toBe("a2a-secret");
+  });
+
+  it("routes public retrieval models with their provider URL, scoped credential and wire id", async () => {
+    process.env.EMBEDDING_BASE_URL = "http://spark.test:8001/v1";
+    process.env.RERANKER_BASE_URL = "http://spark.test:8002/v1";
+    process.env.RERANKER_MODEL = "selfhosted/Qwen/Qwen3-Reranker-0.6B";
+    const baseUrl = "https://router.test/api/v1";
+    stub({
+      llmProviders: [{
+        name: "openrouter", baseUrl,
+        apiKey: encryptSecret("router-secret", llmProviderApiKeyContext("openrouter", baseUrl)),
+      }, {
+        name: "selfhosted", baseUrl: "http://spark.test:8000/v1", apiKey: encryptSecret("chat-key"),
+      }],
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    await expect(getEmbeddingTarget("openrouter/text-embedding-3-small")).resolves.toMatchObject({
+      baseUrl, apiKey: "router-secret", model: "openai/text-embedding-3-small",
+    });
+    await expect(getRerankerTarget("openrouter/rerank-2.5")).resolves.toMatchObject({
+      baseUrl, apiKey: "router-secret", model: "voyageai/rerank-2.5",
+    });
+    await expect(getEmbeddingTarget("selfhosted/Qwen/Qwen3-Embedding-4B")).resolves.toEqual({
+      baseUrl: "http://spark.test:8001/v1", apiKey: "not-required", model: "Qwen/Qwen3-Embedding-4B",
+    });
+    await expect(getRerankerTarget("selfhosted/Qwen/Qwen3-Reranker-0.6B")).resolves.toEqual({
+      baseUrl: "http://spark.test:8002/v1", model: "Qwen/Qwen3-Reranker-0.6B",
+    });
+  });
+
+  it("preserves provider model prefixes when the retrieval channel requires them", async () => {
+    stub({
+      llmProviders: [{
+        name: "openrouter", baseUrl: "https://router.test/v1", apiKey: encryptSecret("router-key"),
+        keepModelPrefix: true,
+      }],
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    await expect(getRerankerTarget("openrouter/rerank-2.5")).resolves.toMatchObject({
+      model: "openrouter/rerank-2.5",
+    });
+  });
+
+  it("keeps deployment retrieval endpoints when no matching provider channel is registered", async () => {
+    process.env.EMBEDDING_BASE_URL = "http://embedding.test/v1";
+    process.env.EMBEDDING_API_KEY = "embedding-key";
+    process.env.RERANKER_BASE_URL = "http://reranker.test/v1";
+    process.env.RERANKER_MODEL = "voyageai/rerank-2.5";
+    process.env.RERANKER_API_KEY = "reranker-key";
+    stub({ llmProviders: [], updatedAt: "2026-01-01T00:00:00Z" });
+
+    await expect(getEmbeddingTarget("openrouter/text-embedding-3-small")).resolves.toEqual({
+      baseUrl: "http://embedding.test/v1", apiKey: "embedding-key", model: "openai/text-embedding-3-small",
+    });
+    await expect(getRerankerTarget("openrouter/rerank-2.5")).resolves.toEqual({
+      baseUrl: "http://reranker.test/v1", apiKey: "reranker-key", model: "voyageai/rerank-2.5",
+    });
+  });
+
+  it("refuses to send unsigned retrieval requests to a SigV4 provider", async () => {
+    stub({
+      llmProviders: [{ name: "openrouter", baseUrl: "https://signed.test/v1", auth: "sigv4", apiKey: "" }],
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    await expect(getRerankerTarget("openrouter/rerank-2.5")).rejects.toThrow("retrieval authentication");
+    await expect(getEmbeddingTarget("openrouter/text-embedding-3-small")).rejects.toThrow("retrieval authentication");
   });
 
   it("resolves embedding and reranker selections from DB before env", async () => {

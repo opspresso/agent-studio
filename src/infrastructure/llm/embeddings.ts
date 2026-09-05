@@ -6,18 +6,16 @@
  * has to be — an embedding model is not a chat model, and its dimension has to
  * match the index the vectors go into.
  *
- * Not routed through `resolveProviderTarget`: that resolver exists to send a
- * `provider/model` id to that provider's own endpoint, and an embedding model
- * here is one id on one channel. Adding a second provider means a second
- * adapter behind {@link EmbeddingPort}, not a branch in this one.
+ * Runtime settings resolve the selected model's provider channel as one
+ * endpoint/credential/model tuple. Self-hosted models use the dedicated
+ * embedding endpoint, which may differ from their chat endpoint.
  */
 
 import OpenAI from "openai";
 import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
 import type { EmbeddingPort } from "@/domain/vector/types";
-import { getEmbeddingChannelConfig, getEmbeddingModel } from "@/lib/runtime-settings";
+import { getEmbeddingTarget, getEmbeddingModel } from "@/lib/runtime-settings";
 import { config } from "@/lib/config";
-import { wireModelId } from "@/domain/llm/models";
 
 const clients = createLlmClientCache<OpenAI>();
 
@@ -49,16 +47,13 @@ export const openAiEmbeddings: EmbeddingPort = {
     if (texts.length === 0) {
       return [];
     }
-    const [{ baseUrl, apiKey }, model] = await Promise.all([
-      getEmbeddingChannelConfig(),
-      getEmbeddingModel(),
-    ]);
+    const { baseUrl, apiKey, model } = await getEmbeddingTarget(await getEmbeddingModel());
     const client = getClient(baseUrl, apiKey);
     const vectors: number[][] = [];
     for (let start = 0; start < texts.length; start += BATCH) {
       const batch = texts.slice(start, start + BATCH);
       const response = await client.embeddings.create({
-        model: wireModelId(model),
+        model,
         input: batch as string[],
         // Asked for explicitly, like both Bedrock adapters, because the index
         // fixes its dimension at creation and this model's native width is not

@@ -155,4 +155,28 @@ describe("openAiEmbeddings", () => {
     expect(await openAiEmbeddings.embed([], "document")).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("routes a public model through its provider even with a self-hosted embedding endpoint", async () => {
+    process.env.EMBEDDING_BASE_URL = "http://spark.test:8001/v1";
+    vi.mocked(settingsRepository.get).mockResolvedValue({
+      embeddingModel: "openrouter/text-embedding-3-small",
+      llmProviders: [{
+        name: "openrouter",
+        baseUrl: `https://provider-${address}.example/v1`,
+        apiKey: encryptSecret("provider-key"),
+      }],
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({
+      data: [{ index: 0, embedding: [0.1] }],
+    }), { headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await openAiEmbeddings.embed(["one"], "document");
+
+    const [url, init] = (fetchSpy.mock.calls as unknown as [string, RequestInit][])[0]!;
+    expect(String(url)).toBe(`https://provider-${address}.example/v1/embeddings`);
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer provider-key");
+    expect(JSON.parse(String(init.body)).model).toBe("openai/text-embedding-3-small");
+  });
 });
