@@ -58,6 +58,14 @@ export function parseJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
+export function parseVersionDraft(value: VersionInput, schemaText: string): VersionInput | null {
+  const jsonSchema = schemaText.trim() === "" ? undefined : parseJsonObject(schemaText);
+  if (jsonSchema === null) {
+    return value.parameters.structuredOutput ? null : value;
+  }
+  return { ...value, parameters: { ...value.parameters, jsonSchema } };
+}
+
 type SubagentOption = PickerOption & { type: "local" | "remote" };
 
 export function VersionEditor({
@@ -67,6 +75,9 @@ export function VersionEditor({
   imageModels,
   value,
   onChange,
+  schemaText,
+  onSchemaChange,
+  schemaError,
   save,
 }: {
   projectName: string;
@@ -75,6 +86,9 @@ export function VersionEditor({
   imageModels: SelectableModel[];
   value: VersionInput;
   onChange: (value: VersionInput) => void;
+  schemaText: string;
+  onSchemaChange: (text: string) => void;
+  schemaError: string | null;
   /** Passed through to the MCP settings dialog, which covers the page's Save. */
   save: VersionSave;
 }) {
@@ -152,10 +166,6 @@ export function VersionEditor({
       cancelled = true;
     };
   }, [projectName, viewer, mayReadRegistries]);
-  const [schemaText, setSchemaText] = useState(() =>
-    value.parameters.jsonSchema ? JSON.stringify(value.parameters.jsonSchema, null, 2) : "",
-  );
-  const [schemaError, setSchemaError] = useState<string | null>(null);
   const [schemaHelpOpen, setSchemaHelpOpen] = useState(false);
 
   const selectedModel = models.find((m) => m.id === value.model);
@@ -169,22 +179,6 @@ export function VersionEditor({
   }
   function patchParams(next: Partial<VersionParameters>) {
     onChange({ ...value, parameters: { ...value.parameters, ...next } });
-  }
-
-  function onSchemaChange(text: string) {
-    setSchemaText(text);
-    if (text.trim() === "") {
-      setSchemaError(null);
-      patchParams({ jsonSchema: undefined });
-      return;
-    }
-    const parsed = parseJsonObject(text);
-    if (parsed) {
-      setSchemaError(null);
-      patchParams({ jsonSchema: parsed });
-    } else {
-      setSchemaError(t("version.invalidJson"));
-    }
   }
 
   return (
@@ -423,7 +417,7 @@ export function VersionEditor({
         />
       )}
 
-      {projectType !== "image" && supportsStructured && (
+      {projectType !== "image" && (supportsStructured || schemaError !== null) && (
         <Stack gap="xs">
           <Group gap={6} wrap="nowrap">
             <Checkbox

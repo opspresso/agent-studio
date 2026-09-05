@@ -56,11 +56,13 @@ export function PromptPreview({
   projectName,
   projectType,
   draft,
+  validationError,
   versionName,
 }: {
   projectName: string;
   projectType: ProjectType;
   draft: VersionInput;
+  validationError: string | null;
   /**
    * The saved version the draft started from, or null for one never saved. The
    * server resolves masked header overrides against it — without it a bound MCP
@@ -92,9 +94,12 @@ export function PromptPreview({
   // the turn, which for an agent run it does not.
   const usesRequest = draft.parameters.dynamicCapabilities === true;
   const current = JSON.stringify({ draft, variables, message });
-  const stale = preview !== null && previewOf !== current;
+  const stale = preview !== null && (validationError !== null || previewOf !== current);
 
   async function refresh() {
+    if (validationError !== null) {
+      return;
+    }
     const isCurrent = latestOnly();
     const requested = current;
     setLoading(true);
@@ -152,7 +157,7 @@ export function PromptPreview({
             size="compact-sm"
             onClick={() => void refresh()}
             loading={loading}
-            disabled={!draft.model}
+            disabled={!draft.model || validationError !== null}
           >
             {preview ? t("preview.refresh") : t("preview.build")}
           </Button>
@@ -195,9 +200,9 @@ export function PromptPreview({
         />
       )}
 
-      {error && (
+      {(validationError || error) && (
         <Alert color="red" variant="light">
-          {error}
+          {validationError || error}
         </Alert>
       )}
 

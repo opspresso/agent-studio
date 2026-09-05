@@ -16,7 +16,7 @@ import {
 } from "../lib/api";
 import { useT } from "@/app/_i18n/provider";
 import { useConfirm } from "@/app/_components/useConfirm";
-import { VersionEditor } from "./_components/VersionEditor";
+import { parseVersionDraft, VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
 import { PromptPreview } from "./_components/PromptPreview";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
@@ -87,6 +87,7 @@ export default function PlaygroundPage() {
   const [models, setModels] = useState<SelectableModel[]>([]);
   const [selectedName, setSelectedName] = useState<string>("");
   const [draft, setDraft] = useState<VersionInput>(emptyInput([]));
+  const [schemaText, setSchemaText] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<string>("");
 
   const [loading, setLoading] = useState(true);
@@ -136,6 +137,7 @@ export default function PlaygroundPage() {
         setProject(proj);
         setVersions(vers);
         setModels(mods);
+        setSchemaText(null);
 
         const initial =
           vers.find((v) => v.versionName === proj.publishedVersion) ??
@@ -167,7 +169,15 @@ export default function PlaygroundPage() {
     };
   }, [name]);
 
-  const dirty = useMemo(() => JSON.stringify(draft) !== snapshot, [draft, snapshot]);
+  const currentSchemaText = schemaText ?? (
+    draft.parameters.jsonSchema ? JSON.stringify(draft.parameters.jsonSchema, null, 2) : ""
+  );
+  const validatedDraft = useMemo(
+    () => parseVersionDraft(draft, currentSchemaText),
+    [draft, currentSchemaText],
+  );
+  const schemaError = validatedDraft === null ? t("version.invalidJson") : null;
+  const dirty = validatedDraft === null || JSON.stringify(validatedDraft) !== snapshot;
 
   function selectVersion(versionName: string) {
     if (versionName === "") {
@@ -181,12 +191,16 @@ export default function PlaygroundPage() {
       const input = toInput(version);
       setSelectedName(versionName);
       setDraft(input);
+      setSchemaText(null);
       setSnapshot(JSON.stringify(input));
       clearSaved();
     }
   }
 
   async function save() {
+    if (validatedDraft === null) {
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     clearSaved();
@@ -194,18 +208,18 @@ export default function PlaygroundPage() {
     try {
       const saved =
         selectedName === ""
-          ? await createVersion(name, draft)
+          ? await createVersion(name, validatedDraft)
           : await updateVersion(name, selectedName, {
-              ...draft,
-              fallbackModel: draft.fallbackModel ?? null,
-              maxTurn: draft.maxTurn ?? null,
+              ...validatedDraft,
+              fallbackModel: validatedDraft.fallbackModel ?? null,
+              maxTurn: validatedDraft.maxTurn ?? null,
             });
       const refreshed = await listVersions(name);
       setVersions(refreshed);
       setSelectedName(saved.versionName);
       const input = toInput(saved);
       setDraft(input);
-      setSnapshot(JSON.stringify(input));
+      setSnapshot(JSON.stringify(schemaText === null ? input : parseVersionDraft(input, schemaText)));
       setSavedName(saved.versionName);
       savedTimer.current = setTimeout(() => setSavedName(null), SAVED_NOTICE_MS);
       savedVersion = saved.versionName;
@@ -292,7 +306,7 @@ export default function PlaygroundPage() {
                     </Text>
                   )
                 )}
-                <Button onClick={save} loading={saving} disabled={!draft.model}>
+                <Button onClick={save} loading={saving} disabled={!draft.model || schemaError !== null}>
                   {selectedName === "" ? t("playground.createVersion") : t("playground.save")}
                 </Button>
               </Group>
@@ -323,8 +337,8 @@ export default function PlaygroundPage() {
           >
             <VersionEditor
               // Remount on version switch, like RunPanel below: the editor
-              // holds per-version state initialised once (the schema text,
-              // the header-override rows), and carried across versions it
+              // holds per-version state initialised once (the header-override
+              // rows), and carried across versions it
               // would write version A's edits into version B's draft.
               key={`${name}/${selectedName || "unsaved"}`}
               projectName={project.name}
@@ -335,11 +349,14 @@ export default function PlaygroundPage() {
               imageModels={models.filter((m) => modelType(m) === "image")}
               value={draft}
               onChange={setDraft}
+              schemaText={currentSchemaText}
+              onSchemaChange={setSchemaText}
+              schemaError={schemaError}
               save={{
                 run: save,
                 saving,
-                disabled: !draft.model,
-                error: saveError,
+                disabled: !draft.model || schemaError !== null,
+                error: schemaError ?? saveError,
                 savedName: dirty ? null : savedName,
                 label: selectedName === "" ? t("playground.createVersion") : t("playground.save"),
               }}
@@ -355,7 +372,8 @@ export default function PlaygroundPage() {
               <PromptPreview
                 projectName={name}
                 projectType={project.projectType}
-                draft={draft}
+                draft={validatedDraft ?? draft}
+                validationError={schemaError}
                 versionName={selectedName || null}
               />
             </CollapsibleSection>
