@@ -1143,20 +1143,27 @@ describe("executeAgent reports the bindings it could not use", () => {
 });
 
 describe("executeAgent PII filtering", () => {
-  it("passes the version toggle to the engine", async () => {
+  it.each([true, false])("passes piiFiltering=%s to the engine", async (piiFiltering) => {
     const channel = new FakeChannel([[contentChunk("Contact the masked value."), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: true }),
+        version: versionFixture({ piiFiltering }),
         messages: [{ role: "user", content: "email@example.com or 010-1234-5678" }],
       }),
     );
 
-    const sent = String(channel.seenParams[0]?.messages[0]?.content);
-    expect(sent).not.toContain("email@example.com");
-    expect(sent).not.toContain("010-1234-5678");
+    const user = channel.seenParams[0]?.messages.find((message) => message.role === "user");
+    expect(user).toBeDefined();
+    const sent = String(user?.content);
+    if (piiFiltering) {
+      expect(sent).toContain("[[PII:");
+      expect(sent).not.toContain("email@example.com");
+      expect(sent).not.toContain("010-1234-5678");
+    } else {
+      expect(sent).toBe("email@example.com or 010-1234-5678");
+    }
   });
 });
 
