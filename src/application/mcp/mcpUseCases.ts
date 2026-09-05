@@ -129,7 +129,6 @@ export function createMcpUseCases(
       // became impossible.
       if (
         movedTo !== undefined &&
-        !skipsUrlGuard(existing, internalHostSuffixes) &&
         !skipsUrlGuard({ url: movedTo }, internalHostSuffixes)
       ) {
         await assertAllowedUrl(policy, movedTo);
