@@ -15,7 +15,7 @@ import {
   type ProducedFileRef,
 } from "@/application/artifact/producedFiles";
 import { RECORD_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
-import { turnContent } from "@/application/llm/documentParts";
+import { turnContent, type ReadDocument } from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
 import { INTERACTIVE_RUN_TIMEOUT_MS } from "@/shared/runDeadline";
 import {
@@ -94,6 +94,7 @@ export interface TurnInput {
 
 /** What the run left on the surface, for the adapter's log and bookkeeping. */
 export interface TurnOutcome {
+  inputDocuments?: ReadDocument[];
   /** The top-level answer as delivered. */
   text: string;
   /** How many pictures the surface accepted — attempts that failed are warnings, not deliveries. */
@@ -143,11 +144,12 @@ export async function handleTurn(
   // that stretch was a bot that received the file and did nothing.
   const stopStatusHeartbeat = reply.keepStatusAlive();
   let userContent: string | ContentPart[] = "";
+  let readDocuments: ReadDocument[] = [];
   let history: ChatMessageInput[] = [];
   try {
     const attached = input.attachments;
     const imageParts = attached.length > 0 ? await collectImageParts(attached, warnings) : [];
-    const readDocuments =
+    readDocuments =
       attached.length > 0 ? await collectDocuments(deps.documents, attached, warnings) : [];
     // Assembled by the one function that owns a turn's body, so a chat bot and a
     // chat put the same message in front of the model.
@@ -307,5 +309,8 @@ export async function handleTurn(
     ...warnings.map((warning) => reply.warningLine(warning)),
   ].join("\n");
   await reply.finish(text, suffix);
-  return { text, imagesDelivered, filesDelivered: produced.files.length, warnings };
+  return {
+    text, imagesDelivered, filesDelivered: produced.files.length, warnings,
+    ...(readDocuments.length > 0 ? { inputDocuments: readDocuments } : {}),
+  };
 }

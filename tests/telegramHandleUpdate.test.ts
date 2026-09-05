@@ -540,11 +540,11 @@ describe("handleTelegramUpdate", () => {
     expect(last && messageText({ content: last })).toContain("what is this?");
   });
 
-  it("reads an attached document into the turn as text", async () => {
+  it("reads an attached document and preserves its text for a follow-up", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { telegram, downloads } = makeTelegramFake();
-    const { deps, runs } = makeDeps([{ done: true }], telegram);
+    const { deps, runs, remembered, stored } = makeDeps([{ done: true }], telegram);
 
     await handleTelegramUpdate(
       deps,
@@ -563,5 +563,15 @@ describe("handleTelegramUpdate", () => {
     const last = runs[0]?.messages.at(-1);
     expect(last && messageText(last)).toContain("png-bytes");
     expect(last && messageText(last)).toContain("summarise");
+    stored.push(...remembered.map(({ turn }) => turn));
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({ update_id: 2, message: message({ message_id: 8, text: "quote the document" }) }),
+      BINDING,
+    );
+    expect(messageText(runs[1]!.messages[0]!)).toContain("png-bytes");
+    expect(messageText(runs[1]!.messages[0]!)).toContain('[Attached file "notes.txt"');
+    expect(messageText(runs[1]!.messages[0]!)).toContain("summarise");
+    expect(downloads).toEqual(["doc"]);
   });
 });
