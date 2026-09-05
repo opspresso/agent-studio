@@ -23,6 +23,7 @@ import {
   collectDocuments,
   collectImageParts,
   withHistoryImages,
+  withHistoryDocuments,
 } from "./attachments";
 
 /**
@@ -154,7 +155,9 @@ export async function handleTurn(
   try {
     const attached = input.attachments;
     const imageParts = attached.length > 0 ? await collectImageParts(attached, warnings) : [];
-    if (attached.some((attachment) => documentKind(attachment.mimeType, attachment.name) !== null)) {
+    let historyTurns = input.history;
+    const documentCandidates = [...attached, ...historyTurns.flatMap((turn) => turn.message.role === "user" ? turn.attachments : [])];
+    if (documentCandidates.some((attachment) => documentKind(attachment.mimeType, attachment.name) !== null)) {
       const opened = await deps.openDocuments(version, deadline, {
         actor: input.actor,
         userEmail: input.ownerEmail,
@@ -162,6 +165,7 @@ export async function handleTurn(
       });
       try {
         readDocuments = await collectDocuments(opened.extractor, attached, warnings);
+        historyTurns = await withHistoryDocuments(opened.extractor, historyTurns, attached, readDocuments, warnings);
       } finally {
         await opened.close();
       }
@@ -172,7 +176,7 @@ export async function handleTurn(
     // Whatever budget the current message left goes to the newest history images,
     // so "make the picture I sent blue" still has the picture.
     history = await withHistoryImages(
-      input.history,
+      historyTurns,
       MAX_IMAGES_PER_TURN - imageParts.length,
       warnings,
     );

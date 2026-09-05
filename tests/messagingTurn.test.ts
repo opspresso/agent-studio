@@ -135,6 +135,60 @@ afterEach(() => {
 });
 
 describe("handleTurn", () => {
+  it("reads recent historical documents after current attachments within one shared budget", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const deps = makeDeps([{ done: true }]);
+    const downloaded: string[] = [];
+    const document = (name: string) => ({
+      name, mimeType: "text/plain", download: async () => {
+        downloaded.push(name);
+        return Buffer.from(name);
+      },
+    });
+    deps.openDocuments = async () => ({
+      extractor: { extract: async ({ maxChars }) => ({ text: "가".repeat(Math.min(15_000, maxChars)) }) },
+      close: async () => {},
+    });
+    const { reply, finished } = makeReply();
+    await handleTurn(deps, turn({
+      attachments: [document("current.txt")],
+      history: [
+        { message: { role: "user", content: "old" }, attachments: [document("old.txt")] },
+        { message: { role: "user", content: "middle" }, attachments: [document("middle.txt")] },
+        { message: { role: "assistant", content: "answer" }, attachments: [document("output.txt")] },
+        { message: { role: "user", content: "recent" }, attachments: [document("recent.txt")] },
+      ],
+    }), reply);
+
+    expect(downloaded).toEqual(["current.txt", "recent.txt", "middle.txt"]);
+    const messages = deps.seen().map(({ message }) => message.content);
+    expect(messages[0]).toBe("old");
+    expect(messages[1]).toContain('[Attached file "middle.txt"');
+    expect(messages[2]).toBe("answer");
+    expect(messages[3]).toContain('[Attached file "recent.txt"');
+    expect(messages[4]).toContain('[Attached file "current.txt"');
+    expect(messages.join("").match(/가/g)).toHaveLength(40_000);
+    expect(finished()?.suffix).toContain("Left out 1 older document attachment");
+  });
+
+  it("counts current and historical documents together before downloading", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const deps = makeDeps([{ done: true }]);
+    const download = vi.fn(async () => Buffer.from("short"));
+    const document = { name: "notes.txt", mimeType: "text/plain", download };
+    const { reply, finished } = makeReply();
+    await handleTurn(deps, turn({
+      attachments: [document],
+      history: Array.from({ length: 8 }, (_, index) => ({
+        message: { role: "user" as const, content: `question ${index}` }, attachments: [document],
+      })),
+    }), reply);
+    expect(download).toHaveBeenCalledTimes(4);
+    expect(finished()?.suffix).toContain("Left out 5 older document attachment");
+    expect(deps.seen()[7]?.message.content).toContain("short");
+    expect(deps.seen()[4]?.message.content).toBe("question 4");
+  });
+
   it.each([false, true])("closes version-bound document capabilities after extraction (failure: %s)", async (fails) => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const deps = makeDeps([{ done: true }]);
