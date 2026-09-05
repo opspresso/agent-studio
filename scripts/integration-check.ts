@@ -1,3 +1,5 @@
+import { assertLocalDatabase } from "./local-database";
+
 /**
  * End-to-end integration check against a local PostgreSQL and a mock LLM
  * server. Exercises every repository round-trip plus the execution engine
@@ -16,19 +18,10 @@ import type { Task } from "@a2a-js/sdk";
 process.env.STAGE ??= "local";
 process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test";
 
-// Refuse anything but a local test database. This check cascade-deletes what
-// it writes, and `--env-file=.env.local` (which carries the dev URL) is an
-// easy way to aim it at the dev database by accident — where it would take
-// the dev app's data with it.
-const database = new URL(process.env.DATABASE_URL);
-if (
-  !["localhost", "127.0.0.1"].includes(database.hostname) ||
-  !database.pathname.endsWith("_test")
-) {
-  console.error(
-    `Refusing to run against ${database.host}${database.pathname}: this check writes and ` +
-      "deletes, so it only runs against a local database whose name ends in `_test`.",
-  );
+try {
+  assertLocalDatabase(process.env.DATABASE_URL, true);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : "Invalid database configuration");
   process.exit(1);
 }
 // Overridable so the check can run beside a `scripts/mock-llm.ts` already

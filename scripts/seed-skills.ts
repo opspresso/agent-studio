@@ -1,3 +1,5 @@
+import { assertLocalDatabase } from "./local-database";
+
 /**
  * Seed sample skills. Existing skills with the same name are left untouched,
  * so local edits survive re-runs.
@@ -12,9 +14,10 @@ if (!databaseUrl) {
   console.error("DATABASE_URL is unset — pass --env-file=.env.local");
   process.exit(1);
 }
-const database = new URL(databaseUrl);
-if (!["localhost", "127.0.0.1"].includes(database.hostname)) {
-  console.error(`Refusing to seed a non-local database: ${database.host}${database.pathname}`);
+try {
+  assertLocalDatabase(databaseUrl);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : "Invalid database configuration");
   process.exit(1);
 }
 

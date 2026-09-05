@@ -1,3 +1,5 @@
+import { assertLocalDatabase } from "./local-database";
+
 /**
  * Create a local development user + session directly in the database and
  * print a signed session cookie for exercising authenticated API routes
@@ -10,10 +12,10 @@ process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:543
 process.env.BETTER_AUTH_SECRET ??= "dev-secret";
 
 const databaseUrl = process.env.DATABASE_URL;
-// Hostname, not substring: `postgres://prod-host/db?opt=localhost` must not
-// pass, since this script writes an account and a live session cookie.
-if (!["localhost", "127.0.0.1"].includes(new URL(databaseUrl).hostname)) {
-  console.error(`Refusing to run against a non-local database: ${databaseUrl}`);
+try {
+  assertLocalDatabase(databaseUrl);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : "Invalid database configuration");
   process.exit(1);
 }
 
