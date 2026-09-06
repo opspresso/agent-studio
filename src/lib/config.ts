@@ -458,7 +458,8 @@ export const config = {
    * be talked into reading, and a prompt injection must not be able to read a
    * cluster-internal MCP service because a deploy declared it reachable for a
    * different reason. Same matching (`isDeclaredInternalHost`), same caveats —
-   * no IP literals, no single-label suffixes — and env-only for the same reason:
+   * no IP literals, no single-label suffixes except exact localhost — and
+   * env-only for the same reason:
    * widening what a model-chosen URL can reach should take a deploy, not a form.
    *
    * Empty (the default) leaves every model-chosen URL facing the guard.

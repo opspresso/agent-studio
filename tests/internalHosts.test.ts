@@ -67,6 +67,18 @@ describe("isDeclaredInternalHost", () => {
     expect(isDeclaredInternalHost("http://svc.internal/mcp", ["internal"])).toBe(false);
   });
 
+  it("admits explicitly declared localhost only as an exact host", () => {
+    const url = "http://localhost:3100/api/organizations/opspresso/mcp";
+    expect(isDeclaredInternalHost(url, ["localhost"])).toBe(true);
+    expect(isDeclaredInternalHost("http://LOCALHOST.:3100/mcp", [" LocalHost "])).toBe(true);
+    expect(isDeclaredInternalHost(url, [])).toBe(false);
+    expect(isDeclaredInternalHost(url, CLUSTER)).toBe(false);
+    for (const host of ["sub.localhost", "evil-localhost", "localhost.evil.test", "127.0.0.1", "[::1]"]) {
+      expect(isDeclaredInternalHost(`http://${host}:3100/mcp`, ["localhost"])).toBe(false);
+    }
+    expect(isDeclaredInternalHost("file://localhost/mcp", ["localhost"])).toBe(false);
+  });
+
   it("never matches an IP literal", () => {
     // A declared suffix is a name someone published. An address has no name to
     // match, and a private one still has to earn its way through provenance.
@@ -176,6 +188,14 @@ describe("the two internal-host lists", () => {
       isDeclaredInternalHost("http://page.docs.corp.internal/", config.urlFetchInternalHostSuffixes),
     ).toBe(true);
   });
+
+  it("does not authorize FetchUrl through an MCP localhost declaration", () => {
+    set("MCP_INTERNAL_HOST_SUFFIXES", "localhost");
+    set("URL_FETCH_INTERNAL_HOST_SUFFIXES", undefined);
+    const url = "http://localhost:3100/api/organizations/opspresso/mcp";
+    expect(skipsUrlGuard({ url }, config.mcpInternalHostSuffixes)).toBe(true);
+    expect(isDeclaredInternalHost(url, config.urlFetchInternalHostSuffixes)).toBe(false);
+  });
 });
 
 /**
@@ -185,10 +205,11 @@ describe("the two internal-host lists", () => {
  * rather than left to the composition root being read correctly.
  */
 describe("registering an entry on a declared internal host", () => {
-  /** Stands in for the real guard: refuses anything under the cluster domain. */
+  /** Stands in for the real guard: refuses localhost and the cluster domain. */
   const policy: UrlPolicy = {
     async assertAllowed(url) {
-      if (new URL(url).hostname.endsWith(".cluster.local")) {
+      const host = new URL(url).hostname;
+      if (host === "localhost" || host.endsWith(".cluster.local")) {
         throw new BlockedUrlError(`URL host resolves to a private or reserved address`);
       }
     },
@@ -235,6 +256,18 @@ describe("registering an entry on a declared internal host", () => {
   it("is accepted once the suffix is declared", async () => {
     const created = await make(CLUSTER).create({ name: "url-fetch", url: CLUSTER_URL, headers: {} });
     expect(created.url).toBe(CLUSTER_URL);
+  });
+
+  it("requires an explicit localhost declaration for a local MCP server", async () => {
+    const input = {
+      name: "agent-memory",
+      url: "http://localhost:3100/api/organizations/opspresso/mcp",
+      headers: {},
+    };
+    await expect(make(CLUSTER).create(input)).rejects.toThrow(/private or reserved/);
+    const created = await make([...CLUSTER, "localhost"]).create(input);
+    expect(created.url).toBe(input.url);
+    expect(skipsUrlGuard(created, [...CLUSTER, "localhost"])).toBe(true);
   });
 
   it("does not admit a different private host under the same configuration", async () => {

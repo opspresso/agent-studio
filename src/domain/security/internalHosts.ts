@@ -33,7 +33,8 @@ function isIpLiteral(hostname: string): boolean {
  *
  * Two things it will not do. A single-label suffix (`local`, `internal`) is
  * refused, because one of those admits a whole namespace of names and is far
- * more likely a mistake than an intent. And an IP literal never matches: the
+ * more likely a mistake than an intent. Explicit `localhost` is the exception:
+ * it matches only that host, never subdomains. An IP literal never matches: the
  * point is a name someone chose to publish, and an address has no name to
  * match — a private address still has to earn its way through provenance.
  */
@@ -57,6 +58,9 @@ export function isDeclaredInternalHost(url: string, suffixes: readonly string[])
   }
   return suffixes.some((raw) => {
     const suffix = raw.trim().toLowerCase().replace(/^\./, "").replace(/\.$/, "");
+    if (suffix === "localhost") {
+      return host === "localhost";
+    }
     if (suffix === "" || !suffix.includes(".")) {
       return false;
     }
