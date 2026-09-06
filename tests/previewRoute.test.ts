@@ -9,7 +9,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { state, projectRepo, calls } = vi.hoisted(() => ({
   state: { email: "owner@example.com" },
   projectRepo: { get: vi.fn() },
-  calls: [] as Array<{ versionName: string; variables?: Record<string, string> }>,
+  calls: [] as Array<{
+    versionName: string;
+    variables?: Record<string, string>;
+    message?: string;
+    actor?: { kind: string; id: string };
+  }>,
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -39,9 +44,19 @@ vi.mock("@/lib/container", async () => ({
 vi.mock("@/application/execution/runProject", () => ({
   previewPrompt: async (
     _deps: unknown,
-    input: { version: { versionName: string }; variables?: Record<string, string> },
+    input: {
+      version: { versionName: string };
+      variables?: Record<string, string>;
+      message?: string;
+      actor?: { kind: string; id: string };
+    },
   ) => {
-    calls.push({ versionName: input.version.versionName, variables: input.variables });
+    calls.push({
+      versionName: input.version.versionName,
+      variables: input.variables,
+      ...(input.message ? { message: input.message } : {}),
+      ...(input.actor ? { actor: input.actor } : {}),
+    });
     return {
       messages: [{ role: "system", content: "assembled" }],
       toolNames: [],
@@ -78,7 +93,11 @@ describe("POST /api/projects/[name]/preview", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ messages: [{ role: "system", content: "assembled" }] });
-    expect(calls).toEqual([{ versionName: "draft", variables: { a: "b" } }]);
+    expect(calls).toEqual([{
+      versionName: "draft",
+      variables: { a: "b" },
+      actor: { kind: "user", id: "owner@example.com" },
+    }]);
   });
 
   it("assembles for a session caller who does not own the project, like a run", async () => {
@@ -87,7 +106,21 @@ describe("POST /api/projects/[name]/preview", () => {
     const res = await POST(body(), ctx());
 
     expect(res.status).toBe(200);
-    expect(calls).toEqual([{ versionName: "draft", variables: undefined }]);
+    expect(calls).toEqual([{
+      versionName: "draft",
+      variables: undefined,
+      actor: { kind: "user", id: "someone@example.com" },
+    }]);
+  });
+
+  it("passes the request and signed-in identity to memory-aware preview", async () => {
+    const res = await POST(body({ message: "유정열을 검색해서 정리해" }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(calls[0]).toMatchObject({
+      message: "유정열을 검색해서 정리해",
+      actor: { kind: "user", id: "owner@example.com" },
+    });
   });
 
   it("404s on a project that does not exist", async () => {

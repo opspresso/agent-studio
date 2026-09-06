@@ -259,7 +259,7 @@ export const ko: Messages = {
     "agent 프로젝트에는 tool calling, 그림을 읽는 작업에는 image input, image 프로젝트에는 image generation을 지원하는 모델을 선택한다. llm과 agent 프로젝트는 필요하면 대체 모델을 지정한다. 대체 모델도 요청에 필요한 기능을 지원해야 하며 이미지 입력을 지원하지 않는 모델로 그림을 읽게 할 수는 없다.",
   "guide.versions.prompt": "프롬프트 미리보기와 저장 구분",
   "guide.versions.promptBody":
-    "Prompt preview에서 현재 편집 내용으로 조립한 프롬프트를 확인한다. 답변은 생성하지 않지만 MCP 서버 조회와 동적 검색의 embedding/rerank 서비스에는 실제 요청을 보낼 수 있다. 실행 패널은 저장된 버전을 실행하므로 먼저 저장한다. agent는 사용자 메시지를 직접 받으며 llm의 템플릿 변수 방식으로 입력을 전달하지 않는다.",
+    "Prompt preview에서 현재 편집 내용으로 조립한 프롬프트를 확인한다. 답변은 생성하지 않지만 요청을 입력하면 memory recall, MCP 서버 조회와 동적 검색의 embedding/rerank 서비스에 실제 요청을 보낼 수 있다. 실행 패널은 저장된 버전을 실행하므로 먼저 저장한다. agent는 사용자 메시지를 직접 받으며 llm의 템플릿 변수 방식으로 입력을 전달하지 않는다.",
   "guide.versions.limits": "실행 범위와 한도 설정",
   "guide.versions.limitsBody":
     "편집기에 표시되는 출력 길이·에이전트 턴 수·기타 파라미터를 작업에 맞게 지정한다. 턴·출력 한도에서는 부분 답변으로 끝날 수 있고, 배포의 실행 시간 한도에서는 오류로 중단될 수 있다. 결과를 사용하기 전에 종료 사유와 경고를 확인한다. Reasoning trace는 추론 표시 여부를 제어하며 모델의 추론 수행 여부를 바꾸는 기능은 아니다.",
@@ -700,7 +700,7 @@ export const ko: Messages = {
   "preview.build": "미리보기 만들기",
   "preview.request": "요청",
   "preview.requestHint":
-    "시스템 프롬프트와 함께 색인된 기능 이름·설명에 매칭됩니다. 실제 요청을 넣어 설명이 올바른 Skill·도구·에이전트를 찾는지 확인하세요. 비워 두면 모든 실행이 공통으로 시작하는 상태를 볼 수 있습니다.",
+    "메모리를 회상하고 시스템 프롬프트와 함께 색인된 기능 이름·설명에 매칭합니다. 실제 요청을 넣어 실행이 받을 기억과 Skill·도구·에이전트를 확인하세요. 비워 두면 공통 시작 상태를 볼 수 있습니다.",
   "preview.requestPlaceholder": "예: aws eks 최신 버전 알려줘",
   "preview.hideTools": "도구 숨기기",
   "preview.chars": "{count} 자",

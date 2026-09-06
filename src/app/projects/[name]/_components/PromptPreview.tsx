@@ -89,10 +89,11 @@ export function PromptPreview({
       projectType === "agent" ? [] : [...findTemplateVariables(draft.userPromptTemplate)],
     [projectType, draft.userPromptTemplate],
   );
-  // Only discovery reads the request, so the box is offered only where it
-  // changes the answer — anywhere else it would suggest the prompt depends on
-  // the turn, which for an agent run it does not.
-  const usesRequest = draft.parameters.dynamicCapabilities === true;
+  // Discovery and memory recall both depend on the request. Without either,
+  // the box would suggest the assembled prompt varies when it does not.
+  const usesRequest =
+    projectType === "agent" &&
+    (draft.parameters.dynamicCapabilities === true || draft.parameters.memoryRecall === true);
   const current = JSON.stringify({ draft, variables, message });
   const stale = preview !== null && (validationError !== null || previewOf !== current);
 

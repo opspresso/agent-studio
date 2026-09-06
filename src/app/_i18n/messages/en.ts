@@ -301,7 +301,7 @@ export const en = {
     "Select a model that supports the task: tool calling for agent projects, image input for reading pictures, or image generation for an image project. For llm and agent projects, configure a fallback model if needed. A fallback still needs the capabilities required by the request; it cannot make an incompatible model read an image.",
   "guide.versions.prompt": "Preview and save are different",
   "guide.versions.promptBody":
-    "Use Prompt preview to inspect the prompt assembled from the current draft. It does not generate an answer, but it can contact MCP servers and call embedding/rerank services for dynamic discovery. Save before using the run panel: its request executes the saved version. An agent receives user messages directly; llm template variables are not an agent input mechanism.",
+    "Use Prompt preview to inspect the prompt assembled from the current draft. It does not generate an answer, but a supplied request can call memory recall, contact MCP servers, and call embedding/rerank services for dynamic discovery. Save before using the run panel: its request executes the saved version. An agent receives user messages directly; llm template variables are not an agent input mechanism.",
   "guide.versions.limits": "Control run size",
   "guide.versions.limitsBody":
     "Set output length, agent turn limits, and other parameters exposed by the editor to match the task. Turn and output limits can end a run with a partial answer; a deployment deadline can stop it with an error. Read the completion reason and warnings before accepting the output. Reasoning trace controls the displayed reasoning, not whether the model reasons.",
@@ -770,7 +770,7 @@ export const en = {
   "preview.build": "Build preview",
   "preview.request": "Request",
   "preview.requestHint":
-    "Matched against indexed capability names and descriptions alongside the system prompt. Use a real request to check whether each description finds the right skill, tool, or agent. Leave it empty to see what every run starts with.",
+    "Used for memory recall and matched against indexed capability names and descriptions alongside the system prompt. Use a real request to inspect the recalled context and capabilities that run would receive. Leave it empty to see the common starting point.",
   "preview.requestPlaceholder": "e.g. what is the latest EKS version?",
   "preview.hideTools": "Hide tools",
   "preview.chars": "{count} chars",

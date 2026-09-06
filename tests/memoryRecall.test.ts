@@ -530,6 +530,25 @@ describe("a version that opted in recalls before the first token", () => {
     expect(preview.warnings.some((w) => w.includes("no bound MCP server offers"))).toBe(false);
   });
 
+  it("the preview recalls and renders the memory block when a request is supplied", async () => {
+    const seen = stubMemoryServer();
+    const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
+      project: projectFixture(),
+      version: versionFixture(true),
+      message: "how do we deploy?",
+      actor: { kind: "user", id: "reader@example.com" },
+    });
+    expect(seen.find((entry) => entry.method === "tools/call")).toMatchObject({
+      name: "recall",
+      args: { query: "how do we deploy?" },
+    });
+    expect(preview.messages[0]?.content).toContain("## What you remember");
+    expect(preview.messages[0]?.content).toContain("Deploys go through ArgoCD");
+    expect(preview.warnings.some((warning) => warning.startsWith("Memory recall is on"))).toBe(
+      false,
+    );
+  });
+
   it("the preview names a version with recall on and no server to recall from", async () => {
     stubMemoryServer();
     const preview = await previewPrompt(depsFixture(new FakeChannel([])), {

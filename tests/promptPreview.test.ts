@@ -95,7 +95,7 @@ function executionDepsFixture(channel: FakeChannel) {
 }
 
 /** Answer the MCP handshake with `toolNames`, recording every request's verb. */
-function stubMcpServer(toolNames: string[]): { verbs: string[] } {
+function stubMcpServer(toolNames: string[], responseText = "ok"): { verbs: string[] } {
   const verbs: string[] = [];
   vi.stubGlobal(
     "fetch",
@@ -112,7 +112,7 @@ function stubMcpServer(toolNames: string[]): { verbs: string[] } {
       const result = modernResult(body.method, {
         ...(body.method === "tools/list"
           ? { tools: conforming(toolNames.map((name) => ({ name }))) }
-          : { content: [{ type: "text", text: "ok" }] }),
+          : { content: [{ type: "text", text: responseText }] }),
       });
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },
@@ -154,6 +154,58 @@ afterEach(() => {
 });
 
 describe("previewPrompt", () => {
+  it("uses recalled context to show the prompt and capabilities for a request", async () => {
+    const deps = executionDepsFixture(new FakeChannel([]));
+    stubMcpServer(["recall"], "유정열은 opspresso 조직 소속이다.");
+    deps.mcps.get = (async (name: string) => ({
+      name,
+      url: MCP_URL,
+      description: name === "memory" ? "Project memory" : "Search opspresso documents",
+      headers: {},
+    })) as ExecutionDeps["mcps"]["get"];
+    deps.catalog = {
+      embeddings: {
+        embed: async (texts) => texts.map((text) => [text.includes("opspresso") ? 1 : 0]),
+      },
+      catalog: {
+        upsert: async () => {},
+        deleteByKeys: async () => {},
+        listKeys: async () => [],
+        query: async (vector, _limit, filter) =>
+          vector[0] === 1 && filter?.kind === "mcpServer"
+            ? [{
+                key: "mcp#org-records",
+                score: 0.9,
+                metadata: {
+                  name: "org-records",
+                  description: "Search opspresso documents",
+                },
+              }]
+            : [],
+      },
+    };
+    const preview = await previewPrompt(deps, {
+      project: projectFixture(),
+      version: {
+        ...versionFixture(),
+        mcpList: [{ name: "memory" }],
+        parameters: {
+          piiFiltering: false,
+          memoryRecall: true,
+          dynamicCapabilities: true,
+        },
+      },
+      message: "유정열을 검색해서 정리해",
+      actor: { kind: "user", id: "reader@example.com" },
+    });
+
+    expect(preview.discovered).toContain("org-records");
+    expect(preview.messages[0]?.content).toContain("## What you remember");
+    expect(preview.messages[0]?.content).toContain("유정열은 opspresso 조직 소속이다.");
+    expect(preview.messages[0]?.content).toContain("org-records");
+    expect(preview.warnings).toEqual([]);
+  });
+
   it("returns exactly the system prompt the run would send", async () => {
     // The whole point of the panel. A second implementation of the assembly
     // would drift, and the reader would be shown a prompt nobody sends.

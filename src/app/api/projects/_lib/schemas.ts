@@ -210,9 +210,9 @@ export const previewPromptSchema = versionInputSchema.extend({
   versionName: z.string().min(1).optional(),
   variables: z.record(z.string(), z.string()).optional(),
   /**
-   * A request to preview against. Only capability discovery reads it — the
-   * assembled prompt still stands before the first turn — so it is bounded at
-   * the length a query is useful at rather than a whole conversation's.
+   * A request to preview against. Capability discovery and memory recall read
+   * it; the assembled prompt still stands before the first turn, so it is
+   * bounded at the length a query is useful at rather than a conversation's.
    */
   message: z.string().max(8000).optional(),
 });

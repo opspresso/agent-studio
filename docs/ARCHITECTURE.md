@@ -578,7 +578,8 @@ sequenceDiagram
   participant T as 툴 (MCP / Skill / subagent / image)
   C->>R: POST …/agent (메시지)
   R->>X: executeAgent(executionDeps, {project, version, messages})
-  X->>X: skill / subagent / MCP tool 해석 (병렬)
+  X->>X: 명시적 바인딩 memory recall
+  X->>X: 요청 + 관련 기억으로 discovery<br/>skill / subagent / MCP tool 해석 (병렬)
   X->>E: runAgent(agentDeps, input)
   loop tool_calls 가 없거나 턴 가드가 멈출 때까지
     E->>E: 채널 스트림 (fallback: 첫 chunk 전에 한 번 재시도)
@@ -606,10 +607,14 @@ transfer 지시문, 이미지 절을 얻는다.
 project 는 자기가 갖고 있지도 않은 시스템 메시지 대신 style 과 템플릿이 합쳐진 프롬프트를
 프리뷰한다. 런이 조립하는 것과 똑같이 `composeImagePrompt` 가 조립한다.
 
-프리뷰가 적용하지 않는 것이 하나 있다면 PII 마스킹이다: 마스킹은 런마다 내용을 다시 쓰고,
-무엇을 가릴지는 그 턴 자신의 텍스트에 달려 있는데 프리뷰에는 그것이 없다. 필터를 켠 버전은
-대신 그 사실을 warning 으로 듣는다. agent 버전의 쓰이지 않는 user prompt 템플릿을 알리는
-것과 같은 채널이다.
+agent preview에 요청을 입력하면 실제 런처럼 명시적 바인딩에서 memory를 먼저 회상하고, 관련 기억을
+동적 capability 검색에 보탠 뒤 시스템 프롬프트의 **What you remember** 블록까지 조립한다. 요청이
+없으면 memory를 호출하지 않으며, 그 기억과 그것으로 발견될 capability가 빠졌다고 warning으로
+말한다.
+
+프리뷰가 적용하지 않는 것이 하나 있다면 PII 마스킹이다. 요청과 회상 결과가 있어도 프리뷰는 원문으로
+조립하며, 필터를 켠 버전은 대신 그 사실을 warning으로 듣는다. agent 버전의 쓰이지 않는 user prompt
+템플릿을 알리는 것과 같은 채널이다.
 
 ### SSE 응답은 답하기 전에 첫 chunk 를 당겨온다
 

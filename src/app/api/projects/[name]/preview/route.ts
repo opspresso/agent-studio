@@ -26,6 +26,11 @@ type RouteContext = { params: Promise<{ name: string }> };
  * gated would hand back through one project page exactly what the four
  * Intelligence pages withhold. Running the project stays open to a guest; a run
  * answers, it does not enumerate.
+ *
+ * When the draft enables memory recall and supplies a preview request, this
+ * route also makes the same read-only recall call as a run. That does not widen
+ * access: the member could already run the accessible project, and the MCP
+ * receives the same signed-in email identity.
  */
 export const POST = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
@@ -56,7 +61,7 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
         createdAt: new Date().toISOString(),
       },
       variables,
-      // What capability discovery searches with, when the version enables it.
+      // What memory recall and capability discovery search with.
       ...(message ? { message } : {}),
       actor: { kind: "user", id: user.email },
       // The person looking at the preview is the one a run started from this

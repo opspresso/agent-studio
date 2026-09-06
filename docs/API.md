@@ -335,9 +335,9 @@ slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 부모가 자기가 transfer 하는 project 에 대해 무언가를 말하는 것은 아니다.
 
 `POST /api/projects/{name}/preview` 는 선택적인 `message` 를 받는다. 무엇을 기준으로
-미리 볼지, 최대 8,000자다. 이것을 읽는 것은 discovery 뿐이지만 (agent 런의 사용자 턴은 대화에서
-온다), 런이 *어떤* 능력을 찾아내는지는 무엇을 요청받았는지에 달려 있다. 그래서 이것이 없으면
-미리보기는 특정한 런의 모습이 아니라 모든 런이 출발하는 바닥을 보여 준다.
+미리 볼지, 최대 8,000자다. agent preview는 이것으로 memory를 회상하고 capability를 검색하지만,
+사용자 턴 자체를 조립된 메시지에 넣지는 않는다. 이것이 없으면 memory를 호출하지 않고 시스템
+프롬프트만으로 capability를 검색하므로, 미리보기는 모든 런이 출발하는 바닥을 보여 준다.
 
 `dynamicCapabilities` 는 런이 이 version 이 한 번도 바인딩하지 않은 skill·MCP 서버·agent 에
 닿게 해 준다. version 의 시스템 프롬프트와 지금 답하고 있는 요청으로 전역 카탈로그를 검색해
@@ -360,9 +360,9 @@ slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 이것은 읽기를 더하는 것이다. 런당 한 번 호출하며 한계가 있다 (가장 최근 턴을 최대 2,000자까지
 보내고, 최대 4,000자를 보관하며, 첫 토큰은 최대 10초까지 기다린다). 실패한 서버는 런의
 `warning` 이 되고 런은 그것 없이 계속 간다. 이것을 켰지만 `recall` 을 제공하는 바인딩된 서버가
-없는 version 은 메모리 없이 시작했다고 경고한다. `POST /api/projects/{name}/preview` 는 그
-블록과 기억으로 추가될 capability를 보여 줄 수 없다. 프리뷰는 `message`가 있어도 메모리를 호출하지
-않으며 그 사실을 warning 으로 말한다.
+없는 version 은 메모리 없이 시작했다고 경고한다. `POST /api/projects/{name}/preview`도 `message`가
+있으면 같은 순서로 memory를 호출해 회상 블록과 그것으로 발견한 capability를 보여 준다. `message`가
+없으면 memory를 호출하지 않고 빠진 내용을 warning으로 말한다.
 `dynamicCapabilities` 와 마찬가지로 요청 텍스트는 엔진의 PII 필터가 만들어지기 전에 서버에
 닿는다. 두 기능을 함께 켜면 제한된 회상 내용도 embedding·rerank provider에 닿는다.
 [SECURITY.md](SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳) 를 보라.

@@ -185,7 +185,7 @@ export function previewPrompt(
   input: VersionInput & {
     versionName?: string;
     variables?: Record<string, string>;
-    /** A request to preview against; only capability discovery reads it. */
+    /** A request to preview against; capability discovery and memory recall read it. */
     message?: string;
   },
 ): Promise<PromptPreview> {
