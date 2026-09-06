@@ -45,6 +45,12 @@
   width: 100%;
 }
 
+/* The global selection colour is the same brand violet as the user bubble. */
+.userBubble ::selection {
+  color: var(--mantine-color-black);
+  background-color: var(--mantine-color-yellow-4);
+}
+
 /* Revealed on hover, so a conversation is not a column of buttons. */
 .actions {
   opacity: 0;

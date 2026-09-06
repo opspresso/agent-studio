@@ -279,7 +279,14 @@ export const MessageView = memo(function MessageView({
             : [],
         )}
         {message.content && (
-          <Paper radius="lg" px="md" py="xs" bg="var(--mantine-primary-color-filled)" maw="80%">
+          <Paper
+            radius="lg"
+            px="md"
+            py="xs"
+            bg="var(--mantine-primary-color-filled)"
+            maw="80%"
+            className={classes.userBubble}
+          >
             <Text fz="sm" c="white" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {message.content}
             </Text>
