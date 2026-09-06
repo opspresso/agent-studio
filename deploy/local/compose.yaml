@@ -63,8 +63,8 @@ services:
           - mcp-youtube.agent-mcps.svc.cluster.local
 
   # --- MCP servers that need real credentials ----------------------------
-  # `aws` needs .env.aws (an access key); note that mcp-memory then reads and
-  # writes the *same* memory buckets alpha uses — there is no local S3 Vectors.
+  # `aws` needs .env.aws (an access key). mcp-memory stores its rows in the
+  # root compose project's PostgreSQL and uses Bedrock only for embeddings.
   # `brave` needs BRAVE_API_KEY in `.env`.
 
   mcp-memory:
@@ -77,9 +77,7 @@ services:
     environment:
       PORT: "80"
       AWS_REGION: ${AWS_REGION:-ap-northeast-2}
-      VECTOR_BUCKET: agent-studio-vector
-      VECTOR_INDEX: memories
-      STATE_BUCKET: agent-studio-memory
+      DATABASE_URL: postgres://agent_studio:agent_studio@postgres:5432/mcp_memory
       EMBEDDING_PROVIDER: bedrock
       EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
       EMBEDDING_DIM: "1024"
@@ -91,6 +89,7 @@ services:
       default:
         aliases:
           - mcp-memory.agent-mcps.svc.cluster.local
+      data:
 
   # `entrypoint` starts the HTTP transport directly; the upstream image's
   # default command is stdio-only and its healthcheck does not probe this port.
@@ -188,3 +187,8 @@ services:
       - ./scripts/tick.sh:/tick.sh:ro
     mem_limit: 64m
     logging: *logging
+
+networks:
+  data:
+    external: true
+    name: agent-studio-local_default

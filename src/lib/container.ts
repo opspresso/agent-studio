@@ -201,7 +201,7 @@ setAuditSink(auditRepository);
  * The two ports move together: a row naming an object nobody can sign is worse
  * than no row, and a stored object no row names cannot be found again to delete.
  * `undefined` is the whole feature being off — the same shape `catalogDeps`
- * takes when this deployment has no vector bucket.
+ * takes when this deployment has the capability catalog disabled.
  */
 export const artifactStorage = isObjectStoreConfigured()
   ? { rows: artifactRepository, objects: withArtifactAccessMode(artifactObjectStore) }

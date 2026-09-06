@@ -1,16 +1,14 @@
 /**
- * {@link EmbeddingPort} over Bedrock, which is what `mcp-memory` already
- * embeds with on this deployment.
+ * {@link EmbeddingPort} over Bedrock for the capability catalog.
  *
- * Matching it is not a preference: both write into the same S3 Vectors bucket,
- * and an index's dimension is fixed at creation. Two models would mean two
- * indexes that cannot be compared, and — worse — a run that embedded a query
- * with one and queried an index built by the other would get scores that are
- * *plausible and wrong*, with nothing raising an error.
+ * The model that writes the pgvector rows must also embed every query. Vectors
+ * from two models are not comparable and can produce plausible but wrong
+ * scores without raising an error; the reindex generation keeps both sides on
+ * one configured model.
  *
  * The pod needs no credentials of its own: an EKS Pod Identity association
  * binds the service account to a role carrying `bedrock:InvokeModel`, the same
- * way the S3 client here is already authorized.
+ * way the artifact S3 client is authorized.
  */
 
 import { InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";

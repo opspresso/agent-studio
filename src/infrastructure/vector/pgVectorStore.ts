@@ -27,8 +27,8 @@ function toLiteral(vector: readonly number[]): string {
 
 /**
  * Cosine distance (`<=>`) is in `[0, 2]` and 0 means identical, so the score
- * is its complement — the same number the S3 Vectors store answered with, so
- * `CATALOG_MIN_SCORE` means what it did.
+ * is its complement. `CATALOG_MIN_SCORE` is expressed on that cosine
+ * similarity scale.
  */
 function toScore(distance: number): number {
   return 1 - distance;

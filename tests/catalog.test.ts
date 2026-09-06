@@ -1,7 +1,7 @@
 /**
  * The catalog: what a reindex writes and removes, and how a search ranks.
  *
- * Both sides are exercised against fakes rather than the S3 Vectors adapter —
+ * Both sides are exercised against fakes rather than the PostgreSQL adapter —
  * what is worth pinning here is the two decisions that are ours (which entries
  * exist, and which of them a query gets back), not that an AWS client sends what
  * we told it to.

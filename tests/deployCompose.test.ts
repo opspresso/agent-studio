@@ -6,6 +6,14 @@ const localMcpCompose = readFileSync(
   new URL("../deploy/local/compose.yaml", import.meta.url),
   "utf8",
 );
+const localMcpDeploy = readFileSync(
+  new URL("../deploy/local/scripts/deploy.sh", import.meta.url),
+  "utf8",
+);
+const postgresInit = readFileSync(
+  new URL("../deploy/postgres/init.sql", import.meta.url),
+  "utf8",
+);
 
 function serviceBlock(compose: string, name: string): string {
   const marker = `  ${name}:\n`;
@@ -31,6 +39,16 @@ describe("deployment configuration", () => {
   it("keeps local AWS-backed MCP services behind the aws profile", () => {
     expect(serviceBlock(localMcpCompose, "mcp-memory")).toContain("profiles: [aws]");
     expect(serviceBlock(localMcpCompose, "mcp-cloudwatch")).toContain("profiles: [aws]");
+  });
+
+  it("stores local MCP memory in a dedicated database on the shared PostgreSQL server", () => {
+    const service = serviceBlock(localMcpCompose, "mcp-memory");
+    expect(service).toContain("postgres:5432/mcp_memory");
+    expect(service).toContain("data:");
+    expect(service).not.toMatch(/VECTOR_BUCKET|VECTOR_INDEX|STATE_BUCKET/);
+    expect(localMcpCompose).toContain("name: agent-studio-local_default");
+    expect(localMcpDeploy).toContain("createdb -U agent_studio -O agent_studio mcp_memory");
+    expect(postgresInit).toContain("CREATE DATABASE mcp_memory OWNER agent_studio;");
   });
 
   it("owns an independent PostgreSQL 18 and MinIO stack", () => {

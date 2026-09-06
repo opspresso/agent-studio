@@ -45,6 +45,36 @@ echo "== ecr login ($ECR_REGISTRY)"
 aws ecr get-login-password --region "$AWS_REGION" |
   docker login --username AWS --password-stdin "$ECR_REGISTRY" > /dev/null
 
+# --- PostgreSQL -----------------------------------------------------------
+
+# mcp-memory v0.9 stores everything in PostgreSQL. The root compose project
+# owns that server and network; ensure the separate database on every deploy
+# because initdb hooks do not run again for an existing volume.
+if docker compose config --services | grep -qx mcp-memory; then
+  studio=(docker compose -f ../../compose.yaml)
+  echo "== mcp-memory database"
+  COMPOSE_IGNORE_ORPHANS=true "${studio[@]}" up -d --no-deps postgres > /dev/null
+  ready=false
+  for _ in {1..60}; do
+    if "${studio[@]}" exec -T postgres pg_isready -U agent_studio -d agent_studio > /dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$ready" != true ]]; then
+    echo "postgres did not become ready — run docker compose logs postgres from the repository root" >&2
+    exit 1
+  fi
+  if "${studio[@]}" exec -T postgres psql -U agent_studio -d postgres -tAc \
+    "SELECT 1 FROM pg_database WHERE datname = 'mcp_memory'" | grep -q 1; then
+    echo "   mcp_memory: present"
+  else
+    "${studio[@]}" exec -T postgres createdb -U agent_studio -O agent_studio mcp_memory
+    echo "   mcp_memory: created"
+  fi
+fi
+
 # --- Up -------------------------------------------------------------------
 
 echo "== compose up"
