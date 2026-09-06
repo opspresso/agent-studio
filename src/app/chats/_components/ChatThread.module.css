@@ -15,6 +15,18 @@
   padding-inline: var(--mantine-spacing-md);
 }
 
+.welcome {
+  min-height: 18rem;
+  padding: clamp(20px, 4vh, 48px) var(--mantine-spacing-lg);
+}
+
+.projectDescription {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
 /*
  * The jump-to-latest control, over the bottom of the thread rather than in the
  * flow — appearing in the flow would resize the scroll container, which is the

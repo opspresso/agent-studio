@@ -75,6 +75,10 @@ export default function AgentsPage() {
     void refresh();
   }, []);
 
+  const visibleItems = agents.filter((agent) =>
+    matchesFilter(filter, agent.name, agent.description),
+  );
+
   return (
     <Stack gap="lg">
       <CatalogHeader
@@ -96,40 +100,45 @@ export default function AgentsPage() {
       )}
 
       {agents.length > 0 && (
-        <CatalogSearch value={filter} onChange={setFilter} placeholder={t("agents.filter")} />
+        <CatalogSearch
+          value={filter}
+          onChange={setFilter}
+          placeholder={t("agents.filter")}
+          resultCount={visibleItems.length}
+          totalCount={agents.length}
+          onReset={filter ? () => setFilter("") : undefined}
+        />
       )}
 
       <CardGrid
         loading={loading}
-        empty={agents.length === 0}
-        emptyText={t("agents.empty")}
+        empty={visibleItems.length === 0}
+        emptyText={t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}
       >
-        {agents
-          .filter((agent) => matchesFilter(filter, agent.name, agent.description))
-          .map((agent) => {
-            const headerCount = Object.keys(agent.headers).length;
-            return (
-              <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} h="100%">
-                <Group gap="xs">
-                  <Text fw={500}>{agent.name}</Text>
-                  <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
-                    {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
+        {visibleItems.map((agent) => {
+          const headerCount = Object.keys(agent.headers).length;
+          return (
+            <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} h="100%">
+              <Group gap="xs">
+                <Text fw={500}>{agent.name}</Text>
+                <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
+                  {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
+                </Badge>
+                {headerCount > 0 && (
+                  <Badge color={BADGE.on}>
+                    {headerCount} header{headerCount === 1 ? "" : "s"}
                   </Badge>
-                  {headerCount > 0 && (
-                    <Badge color={BADGE.on}>
-                      {headerCount} header{headerCount === 1 ? "" : "s"}
-                    </Badge>
-                  )}
-                </Group>
-                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                  {agent.description}
-                </Text>
-                <Text fz="xs" c="dimmed" mt="xs" truncate>
-                  {agent.url}
-                </Text>
-              </Card>
-            );
-          })}
+                )}
+              </Group>
+              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+                {agent.description}
+              </Text>
+              <Text fz="xs" c="dimmed" mt="xs" truncate>
+                {agent.url}
+              </Text>
+            </Card>
+          );
+        })}
       </CardGrid>
 
       {!loading && a2aProjects && a2aProjects.projects.length > 0 && (

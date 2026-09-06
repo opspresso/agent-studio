@@ -2,7 +2,6 @@
 
 import { Group, Text, ThemeIcon, Title } from "@mantine/core";
 import type { TablerIcon } from "@tabler/icons-react";
-import { useT } from "@/app/_i18n/provider";
 import classes from "./CatalogHeader.module.css";
 
 export function CatalogHeader({
@@ -16,27 +15,24 @@ export function CatalogHeader({
   Icon: TablerIcon;
   children?: React.ReactNode;
 }) {
-  const t = useT();
   return (
     <div className={classes.header}>
-      <Group justify="space-between" align="flex-end" gap="xl" wrap="wrap">
-        <Group gap="md" align="flex-start" wrap="nowrap">
+      <Group justify="space-between" align="center" gap="md" wrap="wrap">
+        <Group gap="md" align="flex-start" wrap="nowrap" style={{ flex: "1 1 320px", minWidth: 0 }}>
           <ThemeIcon
-            size={48}
+            size={42}
             radius="lg"
-            variant="gradient"
-            gradient={{ from: "brand.6", to: "violet.5", deg: 135 }}
+            variant="light"
+            color="brand"
+            style={{ flexShrink: 0 }}
           >
             <Icon size={23} stroke={1.7} />
           </ThemeIcon>
-          <div>
-            <Text fz={10} fw={650} c="brand" tt="uppercase" lts="0.13em" mb={4}>
-              {t("common.workspaceCatalog")}
-            </Text>
-            <Title order={1} fz={{ base: 28, md: 36 }} lts="-0.035em">
+          <div style={{ minWidth: 0 }}>
+            <Title order={1} fz={{ base: 26, md: 30 }} lts="-0.025em">
               {title}
             </Title>
-            <Text fz="sm" c="dimmed" mt={5} maw={620}>
+            <Text fz="sm" c="dimmed" mt={5} maw={680} style={{ wordBreak: "keep-all" }}>
               {description}
             </Text>
           </div>

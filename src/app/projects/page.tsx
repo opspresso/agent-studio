@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -28,6 +28,7 @@ import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createProject, listProjects, type SanitizedProject, type ProjectType } from "./lib/api";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { PROJECT_TYPE_COLOR } from "@/app/_components/badgeColors";
+import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { reportError } from "@/app/_lib/reportError";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
@@ -40,10 +41,15 @@ const TYPE_OPTIONS = [
 
 export default function ProjectsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useT();
   const { data: session } = useSession();
   const viewer = useViewer();
+  const mayCreate = viewer !== null && tierMayCreateProjects(viewer.tier);
+  const createRequested = searchParams.get("create") === "1";
   const [projects, setProjects] = useState<SanitizedProject[]>([]);
+  const [filter, setFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
@@ -67,6 +73,18 @@ export default function ProjectsPage() {
     void refresh();
   }, []);
 
+  useEffect(() => {
+    if (createRequested && mayCreate) {
+      open();
+      router.replace("/projects", { scroll: false });
+    }
+  }, [createRequested, mayCreate, open, router]);
+
+  const visibleProjects = projects.filter((project) =>
+    (!typeFilter || project.projectType === typeFilter) &&
+    matchesFilter(filter, project.displayName, project.name, project.description),
+  );
+
   return (
     <Stack gap="lg">
       <CatalogHeader
@@ -74,7 +92,7 @@ export default function ProjectsPage() {
         description={t("projects.lede")}
         Icon={IconFolder}
       >
-        {viewer !== null && tierMayCreateProjects(viewer.tier) && (
+        {mayCreate && (
           <Button onClick={open}>{t("projects.new")}</Button>
         )}
       </CatalogHeader>
@@ -85,12 +103,34 @@ export default function ProjectsPage() {
         </Alert>
       )}
 
+      {projects.length > 0 && (
+        <Group align="flex-start" gap="md">
+          <CatalogSearch
+            value={filter}
+            onChange={setFilter}
+            placeholder={t("projects.filter")}
+            resultCount={visibleProjects.length}
+            totalCount={projects.length}
+            onReset={filter || typeFilter ? () => { setFilter(""); setTypeFilter(null); } : undefined}
+          />
+          <Select
+            aria-label={t("projects.allTypes")}
+            placeholder={t("projects.allTypes")}
+            data={TYPE_OPTIONS.map((option) => ({ value: option.value, label: t(option.label) }))}
+            value={typeFilter}
+            onChange={setTypeFilter}
+            clearable
+            w={{ base: "100%", sm: 220 }}
+          />
+        </Group>
+      )}
+
       <CardGrid
         loading={loading}
-        empty={projects.length === 0}
-        emptyText={t("projects.empty")}
+        empty={visibleProjects.length === 0}
+        emptyText={t(projects.length === 0 ? "projects.empty" : "catalog.noResults")}
       >
-        {projects.map((project) => (
+        {visibleProjects.map((project) => (
           <Card
             key={project.name}
             component={Link}
@@ -122,7 +162,7 @@ export default function ProjectsPage() {
               {project.description}
             </Text>
             {project.publishedVersion && (
-              <Text fz="xs" c="teal" mt="sm">
+              <Text fz="xs" c="light-dark(var(--mantine-color-teal-9), var(--mantine-color-teal-3))" mt="sm">
                 {t("projects.published", { version: project.publishedVersion })}
               </Text>
             )}

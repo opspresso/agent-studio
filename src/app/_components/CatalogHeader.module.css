@@ -1,16 +1,4 @@
 .header {
-  position: relative;
-  overflow: hidden;
-  padding: clamp(20px, 3vw, 30px);
-  border: 1px solid var(--studio-border);
-  border-radius: var(--mantine-radius-xl);
-  background:
-    radial-gradient(
-      circle at 92% -20%,
-      color-mix(in oklab, var(--mantine-color-violet-5) 14%, transparent),
-      transparent 20rem
-    ),
-    var(--studio-surface);
-  box-shadow: var(--surface-shadow);
-  backdrop-filter: blur(16px);
+  padding-block: 4px 20px;
+  border-bottom: 1px solid var(--studio-border);
 }

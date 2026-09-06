@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Text } from "@mantine/core";
+import { Card, Group, Loader, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 
 /**
@@ -16,16 +16,17 @@ import { useT } from "@/app/_i18n/provider";
 export function LoadingText() {
   const t = useT();
   return (
-    <Text fz="sm" c="dimmed">
-      {t("common.loading")}
-    </Text>
+    <Group gap="sm" role="status" py="md">
+      <Loader size="xs" />
+      <Text fz="sm" c="dimmed">{t("common.loading")}</Text>
+    </Group>
   );
 }
 
 /** A bordered card standing in for a list with nothing to show. */
 export function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <Card>
+    <Card py="xl">
       <Text fz="sm" c="dimmed">
         {children}
       </Text>

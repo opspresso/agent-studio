@@ -1,13 +1,6 @@
-import { Group, Text, Title } from "@mantine/core";
+import { Group, Text, ThemeIcon, Title } from "@mantine/core";
 import type { TablerIcon } from "@tabler/icons-react";
 
-/**
- * The light page header — icon beside title and description — shared by the
- * admin pages (Settings, Members, Audit trail) and the profile page. Catalog
- * pages use the heavier `CatalogHeader`. `wrap="nowrap"` is load-bearing: a Group wraps before it
- * shrinks, so a long description would otherwise push the whole text block
- * onto the next line, leaving the icon alone on top.
- */
 export function PageHeader({
   title,
   description,
@@ -19,21 +12,13 @@ export function PageHeader({
 }) {
   return (
     <Group gap="md" wrap="nowrap" align="flex-start">
-      <Icon size={30} style={{ flexShrink: 0 }} />
+      <ThemeIcon size={42} radius="lg" variant="light" color="brand" style={{ flexShrink: 0 }}>
+        <Icon size={23} stroke={1.7} />
+      </ThemeIcon>
       <div style={{ minWidth: 0 }}>
-        <Title order={1} fz="h2">
+        <Title order={1} fz={{ base: 26, md: 30 }} lts="-0.025em">
           {title}
         </Title>
-        {/*
-          The only prose on these pages, and the only part with a reading
-          width: Members and the audit trail put tables under it that use the
-          whole shell, and a sentence stretched to match them is unreadable.
-        */}
-        {/*
-          `keep-all` because these lines are mostly Korean: the default rule
-          breaks Hangul between syllable blocks, so a description ends up split
-          mid-word. English keeps breaking at spaces either way.
-        */}
         <Text fz="sm" c="dimmed" mt={4} maw={720} style={{ wordBreak: "keep-all" }}>
           {description}
         </Text>

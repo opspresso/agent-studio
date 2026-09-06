@@ -5,6 +5,7 @@ import { Alert, Badge, Stack, Table, Text } from "@mantine/core";
 import { IconShieldCheck } from "@tabler/icons-react";
 import type { AuditEvent } from "@/domain/audit/types";
 import { PageHeader } from "@/app/_components/PageHeader";
+import { DataTable } from "@/app/_components/DataTable";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { defaultDateRange } from "@/app/_lib/dateRange";
@@ -76,15 +77,14 @@ export default function AuditPage() {
       ) : events.length === 0 ? (
         <EmptyState>{t("audit.empty")}</EmptyState>
       ) : (
-        <Table.ScrollContainer minWidth={760}>
-          <Table striped highlightOnHover>
+        <DataTable minWidth={760}>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Time</Table.Th>
-                <Table.Th>Action</Table.Th>
-                <Table.Th>Actor</Table.Th>
-                <Table.Th>Target</Table.Th>
-                <Table.Th>Detail</Table.Th>
+                <Table.Th>{t("audit.time")}</Table.Th>
+                <Table.Th>{t("audit.action")}</Table.Th>
+                <Table.Th>{t("audit.actor")}</Table.Th>
+                <Table.Th>{t("audit.target")}</Table.Th>
+                <Table.Th>{t("audit.detail")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -98,8 +98,7 @@ export default function AuditPage() {
                 </Table.Tr>
               ))}
             </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+        </DataTable>
       )}
     </Stack>
   );

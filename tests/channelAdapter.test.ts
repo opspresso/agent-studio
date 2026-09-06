@@ -169,6 +169,36 @@ describe("OpenAI channel adapter", () => {
     expect(chunks[2]?.usage).toMatchObject({ prompt_tokens: 5, completion_tokens: 2 });
   });
 
+  it.each(["chat-run-stopped", new Error("run deadline")])(
+    "preserves the caller's abort reason when the SDK ends a partial stream cleanly: %s",
+    async (reason) => {
+      runtime.providerBaseUrl = "https://cancel-stream.example/v1";
+      vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(
+              `data: ${JSON.stringify({ choices: [{ delta: { content: "Partial reply" }, finish_reason: null }] })}\n\n`,
+            ));
+            signal?.addEventListener("abort", () => controller.error(signal.reason), { once: true });
+          },
+        });
+        return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+      }));
+      const controller = new AbortController();
+      const stream = channel.chatCompletionStream({
+        model: "openai/gpt-test",
+        messages: [{ role: "user", content: "hello" }],
+        signal: controller.signal,
+      })[Symbol.asyncIterator]();
+
+      const first = await stream.next();
+      expect(first.value?.choices[0]?.delta.content).toBe("Partial reply");
+      controller.abort(reason);
+      await expect(stream.next()).rejects.toBe(reason);
+    },
+  );
+
   /**
    * Two channels answer in dialects of the same protocol, and both of these were
    * observed live: Bedrock's open-weight models put the model's thinking in

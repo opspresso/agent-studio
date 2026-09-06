@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   ActionIcon,
   AppShell,
@@ -26,7 +26,6 @@ import {
   IconMessageCircle,
   IconPhoto,
   IconPackage,
-  IconPlus,
   IconRobot,
   IconSettings,
   IconShieldCheck,
@@ -166,6 +165,7 @@ export function AppLayout({
   const pathname = usePathname();
   const t = useT();
   const [opened, { toggle, close }] = useDisclosure(false);
+  const navViewport = useRef<HTMLDivElement>(null);
   const requiresLogin = viewer === null && !isPublicPagePath(pathname);
 
   useEffect(() => {
@@ -173,6 +173,19 @@ export function AppLayout({
       redirectToLogin();
     }
   }, [pathname, viewer]);
+
+  useEffect(() => {
+    const viewport = navViewport.current;
+    const active = viewport?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!viewport || !active || viewport.clientHeight === 0) return;
+    const bounds = viewport.getBoundingClientRect();
+    const item = active.getBoundingClientRect();
+    if (item.bottom > bounds.bottom) {
+      viewport.scrollTop += item.bottom - bounds.bottom;
+    } else if (item.top < bounds.top) {
+      viewport.scrollTop += item.top - bounds.top;
+    }
+  }, [pathname, opened, viewer?.tier, viewer?.isAdmin]);
 
   if (requiresLogin) {
     return null;
@@ -210,9 +223,8 @@ export function AppLayout({
         onClick={close}
       >
         <ThemeIcon
-          variant={active ? "gradient" : "transparent"}
-          gradient={{ from: "brand.6", to: "violet.5", deg: 135 }}
-          color={active ? undefined : "gray"}
+          variant="transparent"
+          color={active ? "brand" : "gray"}
           size={30}
           radius="md"
         >
@@ -230,12 +242,22 @@ export function AppLayout({
     <AppShell
       header={{ height: 64 }}
       navbar={{
-        width: 248,
+        width: 232,
         breakpoint: "md",
         collapsed: { mobile: !opened || !showNav, desktop: !showNav },
       }}
       padding={0}
     >
+      <a
+        href="#main-content"
+        className={classes.skipLink}
+        onClick={() => {
+          close();
+          document.getElementById("main-content")?.focus();
+        }}
+      >
+        {t("chrome.skipToContent")}
+      </a>
       <AppShell.Header className={classes.header}>
         <Group h="100%" gap="md" wrap="nowrap" px={{ base: "md", md: "lg" }}>
             {showNav && (
@@ -281,8 +303,8 @@ export function AppLayout({
       <AppShell.Navbar className={classes.navbar} p="md">
         {showNav && (
         <>
-        <Group justify="space-between" mb="lg">
-          <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.14em">
+        <Group justify="space-between" mb="sm">
+          <Text fz={11} fw={600} c="dimmed">
             {t("chrome.navLabel")}
           </Text>
           <ActionIcon
@@ -294,14 +316,14 @@ export function AppLayout({
             aria-label={t("chrome.openProjects")}
             onClick={close}
           >
-            <IconPlus size={14} />
+            <IconFolder size={16} />
           </ActionIcon>
         </Group>
-        <ScrollArea style={{ flex: 1 }} scrollbarSize={4}>
-          <Stack gap="xl">
+        <ScrollArea viewportRef={navViewport} style={{ flex: 1 }} scrollbarSize={6} type="always">
+          <Stack gap="md">
             {NAV_GROUPS.filter(visibleTo(viewer)).map((group) => (
-              <Stack key={group.key} gap={6}>
-                <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.12em" px="sm">
+              <Stack key={group.key} gap={2}>
+                <Text fz={11} fw={600} c="dimmed" px="sm">
                   {t(group.label)}
                 </Text>
                 {group.items.map(navLink)}
@@ -309,11 +331,10 @@ export function AppLayout({
             ))}
           </Stack>
         </ScrollArea>
-        <Stack gap={6} className={classes.navPersonal}>
+        <Stack gap={2} className={classes.navPersonal}>
           {PERSONAL_ITEMS.map(navLink)}
         </Stack>
         <div className={classes.navFooter}>
-          <span className={classes.statusDot} />
           <Text fz="xs" c="dimmed">
             {t("chrome.status", { version })}
           </Text>
@@ -322,7 +343,7 @@ export function AppLayout({
         )}
       </AppShell.Navbar>
 
-      <AppShell.Main id="main-content">
+      <AppShell.Main id="main-content" tabIndex={-1}>
         <div className={classes.main}>{children}</div>
       </AppShell.Main>
     </AppShell>

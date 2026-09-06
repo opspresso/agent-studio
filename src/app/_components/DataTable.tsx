@@ -1,4 +1,4 @@
-import { Table } from "@mantine/core";
+import { Paper, Table } from "@mantine/core";
 
 /**
  * A table of numbers, with its scroll container — the single owner of how
@@ -23,10 +23,12 @@ export function DataTable({
   children: React.ReactNode;
 }) {
   return (
-    <Table.ScrollContainer minWidth={minWidth}>
-      <Table verticalSpacing="sm" horizontalSpacing="md">
-        {children}
-      </Table>
-    </Table.ScrollContainer>
+    <Paper withBorder style={{ overflow: "hidden", background: "var(--studio-surface)" }}>
+      <Table.ScrollContainer minWidth={minWidth}>
+        <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
+          {children}
+        </Table>
+      </Table.ScrollContainer>
+    </Paper>
   );
 }

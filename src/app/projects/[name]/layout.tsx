@@ -19,7 +19,7 @@ import {
 } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
-import { getProject } from "../lib/api";
+import { getProject, type SanitizedProject } from "../lib/api";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { tierMayCreateProjects } from "@/domain/member/tiers";
 import { CloneProjectButton } from "./_components/CloneProjectButton";
@@ -36,12 +36,14 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   // second thing to keep in step.
   const viewer = useViewer();
   const t = useT();
-  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
+  const [project, setProject] = useState<SanitizedProject | null>(null);
+  const currentProject = project?.name === name ? project : null;
+  const ownerEmail = currentProject?.ownerEmail ?? null;
 
   useEffect(() => {
     let cancelled = false;
     getProject(name)
-      .then((project) => !cancelled && setOwnerEmail(project.ownerEmail))
+      .then((project) => !cancelled && setProject(project))
       // Retried once rather than swallowed. The owner is read only to decide
       // whether this person may manage the project, so a read that fails leaves
       // `ownerEmail` null and the *owner* is shown a read-only header — the tabs
@@ -50,7 +52,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
       // this one was not harmless.
       .catch(() =>
         getProject(name)
-          .then((project) => !cancelled && setOwnerEmail(project.ownerEmail))
+          .then((project) => !cancelled && setProject(project))
           // A second failure is a project this browser genuinely cannot read,
           // which the page below reports on its own — the header simply stays
           // as it is rather than claiming anything about who is looking.
@@ -87,10 +89,10 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   ];
 
   return (
-    <Stack gap="xl">
+    <Stack gap="lg">
       <div className={classes.workspaceHeader}>
         <Group justify="space-between" align="flex-start" gap="lg" wrap="wrap">
-          <Group gap="md" wrap="nowrap">
+          <Group gap="md" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
             <ActionIcon
               component={Link}
               href="/projects"
@@ -101,24 +103,23 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
               <IconArrowLeft size={17} />
             </ActionIcon>
             <ThemeIcon
-              size={46}
-              radius="lg"
-              variant="gradient"
-              gradient={{ from: "brand.6", to: "violet.5", deg: 135 }}
+              size={40}
+              radius="md"
+              variant="light"
             >
               <IconSparkles size={22} />
             </ThemeIcon>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <Group gap="xs">
-                <Title order={1} fz="h3" lts="-0.025em">
-                  {name}
+                <Title order={1} fz="h3" lts="-0.025em" style={{ overflowWrap: "anywhere" }}>
+                  {currentProject?.displayName || name}
                 </Title>
                 <Badge variant="light" color="brand" radius="xl">
                   {t("project.badge")}
                 </Badge>
               </Group>
-              <Text fz="sm" c="dimmed" mt={2}>
-                {t("project.lede")}
+              <Text fz="xs" ff="monospace" c="dimmed" mt={4} style={{ overflowWrap: "anywhere" }}>
+                {name}
               </Text>
             </div>
           </Group>
@@ -143,7 +144,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
        * direct load or a back button.
        */}
       <Tabs value={pathname} variant="none" classNames={{ list: classes.tabs, tab: classes.tab }}>
-        <Tabs.List>
+        <Tabs.List aria-label={t("project.badge")}>
           {tabs.map(({ Icon, ...tab }) => (
             <Tabs.Tab
               key={tab.href}

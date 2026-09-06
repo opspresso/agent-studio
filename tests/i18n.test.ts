@@ -98,24 +98,24 @@ describe("translator", () => {
 
   it("fills a placeholder in both languages", () => {
     expect(translator("en")("chrome.status", { version: "0.58.3" })).toBe(
-      "Workspace online · v0.58.3",
+      "Version 0.58.3",
     );
     expect(translator("ko")("chrome.status", { version: "0.58.3" })).toBe(
-      "워크스페이스 온라인 · v0.58.3",
+      "버전 0.58.3",
     );
   });
 
   it("accepts a number as a value", () => {
-    expect(translator("en")("chrome.status", { version: 1 })).toBe("Workspace online · v1");
+    expect(translator("en")("chrome.status", { version: 1 })).toBe("Version 1");
   });
 
   it("leaves a placeholder it was given no value for", () => {
     // Reaching a page as `{version}` is a bug report; reaching it as `v` is a
     // sentence that looks finished and is wrong.
     expect(translator("en")("chrome.status", { unrelated: 1 })).toBe(
-      "Workspace online · v{version}",
+      "Version {version}",
     );
-    expect(translator("en")("chrome.status")).toBe("Workspace online · v{version}");
+    expect(translator("en")("chrome.status")).toBe("Version {version}");
   });
 
   it("fills every placeholder in a message that has more than one", () => {

@@ -61,6 +61,10 @@ export default function ToolsPage() {
     void refresh();
   }, []);
 
+  const visibleItems = servers.filter((server) =>
+    matchesFilter(filter, server.name, server.description),
+  );
+
   return (
     <Stack gap="lg">
       <CatalogHeader
@@ -87,37 +91,42 @@ export default function ToolsPage() {
       )}
 
       {servers.length > 0 && (
-        <CatalogSearch value={filter} onChange={setFilter} placeholder={t("tools.filter")} />
+        <CatalogSearch
+          value={filter}
+          onChange={setFilter}
+          placeholder={t("tools.filter")}
+          resultCount={visibleItems.length}
+          totalCount={servers.length}
+          onReset={filter ? () => setFilter("") : undefined}
+        />
       )}
 
       <CardGrid
         loading={loading}
-        empty={servers.length === 0}
-        emptyText={t("tools.empty")}
+        empty={visibleItems.length === 0}
+        emptyText={t(servers.length === 0 ? "tools.empty" : "catalog.noResults")}
       >
-        {servers
-          .filter((server) => matchesFilter(filter, server.name, server.description))
-          .map((server) => {
-            const plugin = server.source ? parsePluginSource(server.source) : null;
-            return (
-              <Card key={server.name} component={Link} href={`/tools/${server.name}`} h="100%">
-                <Group gap="xs" wrap="wrap">
-                  <Text fw={500}>{server.name}</Text>
-                  {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}
-                  {server.runtime === "managed" && (
-                    <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>
-                  )}
-                  <CredentialBadges server={server} />
-                </Group>
-                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                  {server.description || "No description"}
-                </Text>
-                <Text fz="xs" c="dimmed" mt="xs" truncate>
-                  {server.url}
-                </Text>
-              </Card>
-            );
-          })}
+        {visibleItems.map((server) => {
+          const plugin = server.source ? parsePluginSource(server.source) : null;
+          return (
+            <Card key={server.name} component={Link} href={`/tools/${server.name}`} h="100%">
+              <Group gap="xs" wrap="wrap">
+                <Text fw={500}>{server.name}</Text>
+                {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}
+                {server.runtime === "managed" && (
+                  <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>
+                )}
+                <CredentialBadges server={server} />
+              </Group>
+              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+                {server.description || "No description"}
+              </Text>
+              <Text fz="xs" c="dimmed" mt="xs" truncate>
+                {server.url}
+              </Text>
+            </Card>
+          );
+        })}
       </CardGrid>
 
       <ManagedMcpModal

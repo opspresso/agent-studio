@@ -221,6 +221,9 @@ export function createChannel(resolveTarget: TargetResolver): LlmChannel {
           })),
         };
       }
+      // The SDK may finish iteration normally on abort. Preserve the caller's
+      // reason so execution records cancellation and chat persists its stop note.
+      params.signal?.throwIfAborted();
     },
   };
 }

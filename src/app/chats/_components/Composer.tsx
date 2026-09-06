@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { ActionIcon, Group, Stack, Textarea } from "@mantine/core";
+import { ActionIcon, Group, Stack, Text, Textarea } from "@mantine/core";
 import { IconPlayerStopFilled, IconSend } from "@tabler/icons-react";
 import {
   AttachButton,
@@ -100,7 +100,7 @@ export function Composer({
         submit();
       }}
       {...handlers}
-      style={{ position: "relative" }}
+      style={{ position: "relative", padding: "var(--mantine-spacing-sm)", border: "1px solid var(--studio-border)", borderRadius: "var(--mantine-radius-lg)", background: "var(--studio-surface-raised)" }}
     >
       {dragging && <DropHint />}
       <Stack gap="xs">
@@ -116,6 +116,7 @@ export function Composer({
         <Group gap="xs" align="flex-end" wrap="nowrap">
           <AttachButton onPick={(files) => void addFiles(files)} disabled={disabled} documents />
           <Textarea
+            aria-label={t("chat.messageLabel")}
             value={value}
             onChange={(event) => setValue(event.currentTarget.value)}
             onPaste={onPaste}
@@ -126,9 +127,9 @@ export function Composer({
               }
             }}
             autosize
-            minRows={1}
+            minRows={2}
             maxRows={8}
-            radius="xl"
+            radius="md"
             placeholder={placeholder ?? t("chat.placeholder")}
             style={{ flex: 1 }}
           />
@@ -148,6 +149,7 @@ export function Composer({
             <ActionIcon
               type="submit"
               variant="filled"
+              color="brand"
               size="input-sm"
               radius="xl"
               loading={disabled || reading}
@@ -158,6 +160,7 @@ export function Composer({
             </ActionIcon>
           )}
         </Group>
+        <Text fz="xs" c="dimmed" ta="right">{t("chat.inputHint")}</Text>
       </Stack>
     </form>
   );

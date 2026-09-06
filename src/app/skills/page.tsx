@@ -57,6 +57,10 @@ export default function SkillsPage() {
     void refresh();
   }, []);
 
+  const visibleItems = skills.filter((skill) =>
+    matchesFilter(filter, skill.name, skill.description),
+  );
+
   return (
     <Stack gap="lg">
       <CatalogHeader
@@ -78,38 +82,43 @@ export default function SkillsPage() {
       )}
 
       {skills.length > 0 && (
-        <CatalogSearch value={filter} onChange={setFilter} placeholder={t("skills.filter")} />
+        <CatalogSearch
+          value={filter}
+          onChange={setFilter}
+          placeholder={t("skills.filter")}
+          resultCount={visibleItems.length}
+          totalCount={skills.length}
+          onReset={filter ? () => setFilter("") : undefined}
+        />
       )}
 
       <CardGrid
         loading={loading}
-        empty={skills.length === 0}
-        emptyText={t("skills.empty")}
+        empty={visibleItems.length === 0}
+        emptyText={t(skills.length === 0 ? "skills.empty" : "catalog.noResults")}
       >
-        {skills
-          .filter((skill) => matchesFilter(filter, skill.name, skill.description))
-          .map((skill) => {
-            const plugin = skill.source ? parsePluginSource(skill.source) : null;
-            const files = skill.files;
-            return (
-              <Card key={skill.name} component={Link} href={`/skills/${skill.name}`} h="100%">
-                <Group gap="xs" wrap="nowrap">
-                  <Text fw={500} truncate>
-                    {skill.name}
-                  </Text>
-                  {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}
-                </Group>
-                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                  {skill.description}
+        {visibleItems.map((skill) => {
+          const plugin = skill.source ? parsePluginSource(skill.source) : null;
+          const files = skill.files;
+          return (
+            <Card key={skill.name} component={Link} href={`/skills/${skill.name}`} h="100%">
+              <Group gap="xs" wrap="nowrap">
+                <Text fw={500} truncate>
+                  {skill.name}
                 </Text>
-                {files > 0 && (
-                  <Text fz="xs" c="dimmed" mt={6}>
-                    {files} attachment{files === 1 ? "" : "s"}
-                  </Text>
-                )}
-              </Card>
-            );
-          })}
+                {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}
+              </Group>
+              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+                {skill.description}
+              </Text>
+              {files > 0 && (
+                <Text fz="xs" c="dimmed" mt={6}>
+                  {files} attachment{files === 1 ? "" : "s"}
+                </Text>
+              )}
+            </Card>
+          );
+        })}
       </CardGrid>
 
       <CreateSkillModal
