@@ -328,7 +328,7 @@ export const en = {
     "An administrator imports skills and MCP definitions from a configured repository or an uploaded checkout archive in Plugins. Use archive upload when the repository is unreachable. Inspect skipped/invalid entries and bind imported capabilities to your version. Imported skill content and MCP URLs/descriptions are maintained at the source and synchronized again; configure credentials separately in the console, because MCP headers are not imported. Sync does not delete orphaned entries automatically; review and remove them explicitly from its results.",
   "guide.capabilities.discovery": "Dynamic discovery and memory",
   "guide.capabilities.discoveryBody":
-    "Dynamic discovery can add relevant indexed skills, tools, and agents for a run without changing its saved bindings. It needs a working capability catalog and embedding setup; ask an administrator if results are missing. Memory recall is separate: it needs a bound MCP server offering recall. Without that tool, the run proceeds without memory and reports a warning.",
+    "Dynamic discovery matches the system prompt and current request against capability names and descriptions, then adds relevant skills, MCP servers/tools, and external agents without changing saved bindings. A precise description is the routing signal: say when the capability should be used and what it returns. It needs a working capability catalog and embedding setup; ask an administrator if results are missing. Memory recall is separate and needs a bound MCP server offering recall.",
   "guide.capabilities.builtins": "Image generation, URL reading, and files",
   "guide.capabilities.builtinsBody":
     "Enable the built-in capabilities needed by the version, such as image generation, URL reading, or Slack history. Their provider, network access, or bot setup must also be available. SaveFile is offered automatically when artifact storage is configured and lets an agent produce downloadable text files. Inspect generated files before using or sharing them.",
@@ -557,6 +557,8 @@ export const en = {
   "projects.displayName": "Display name",
   "projects.displayNamePlaceholder": "My Project",
   "projects.description": "Description",
+  "projects.descriptionHint":
+    "Shown to parent agents when this published project is bound as a local subagent, and published in its A2A Agent Card. State which requests it should receive and what result it returns.",
   "projects.departmentCode": "Department code",
   "projects.departmentHint": "Optional code for grouping project ownership and costs.",
   "projects.type": "Type",
@@ -706,7 +708,7 @@ export const en = {
   "version.searchSkills": "Search registered skills",
   "version.dynamicCapabilities": "Find capabilities for each request",
   "version.dynamicCapabilitiesHint":
-    "Searches the registry with this version’s system prompt and the incoming request, and offers what it finds on top of the bindings above. The bindings are always offered in full. An MCP server that needs its own sign-in is offered only once this project has connected it — a connection is made from that server’s own settings and shared by every version, so it counts here even where this version never bound the server.",
+    "Searches capability names and descriptions with this version’s system prompt and the incoming request, then offers the matching skills, MCP servers/tools, and external agents on top of the bindings above. The opening 500 characters of each description are indexed, so say what request the capability handles before implementation details. Bindings are always offered in full. An MCP server that needs its own sign-in is offered only after this project connects it.",
 
   "version.memoryRecall": "Recall memory before each run",
   "version.memoryRecallHint":
@@ -760,7 +762,7 @@ export const en = {
   "preview.build": "Build preview",
   "preview.request": "Request",
   "preview.requestHint":
-    "Searched against the registry alongside the system prompt. Leave it empty to see what every run starts with.",
+    "Matched against indexed capability names and descriptions alongside the system prompt. Use a real request to check whether each description finds the right skill, tool, or agent. Leave it empty to see what every run starts with.",
   "preview.requestPlaceholder": "e.g. what is the latest EKS version?",
   "preview.hideTools": "Hide tools",
   "preview.chars": "{count} chars",
@@ -795,9 +797,10 @@ export const en = {
   "registry.nameLabel": "Name",
   "registry.nameHint": "Lowercase letters, digits, and hyphens only.",
   "registry.description": "Description",
-  "registry.modelSummary": "One-line summary shown to the model",
+  "registry.discoveryPromptBadge": "Discovery + model prompt",
   "registry.content": "Content (markdown)",
   "registry.contentHeading": "Content",
+  "registry.operatorOnlyBadge": "Operator only",
   "registry.operatorNotes":
     "Operator notes for the console. Not sent to the model — only the description is.",
   "registry.register": "Register",
@@ -808,6 +811,16 @@ export const en = {
   // Skills.
   "skills.lede":
     "Markdown behavior instructions loaded on demand by the agent engine. Synced skills arrive through Plugins.",
+  "skills.descriptionRole":
+    "A skill is found and chosen from its name and description before its content is loaded. Dynamic discovery indexes the opening 500 characters, and the full description appears in the model’s Available Skills table. Write when to use the skill and what outcome it enables. Content becomes the execution instructions after selection.",
+  "skills.descriptionHint":
+    "Used for dynamic discovery and shown to the model before content is loaded. Lead with when to use this skill and the outcome it enables.",
+  "skills.descriptionDetailHint":
+    "This is the routing text available before the model chooses a skill. Content below is unavailable until the model loads this skill.",
+  "skills.descriptionPlaceholder": "Use when reviewing code changes for defects, regressions, and missing tests",
+  "skills.contentHint":
+    "Loaded after the model selects this skill. Put the workflow, rules, constraints, and references needed to perform it here.",
+  "skills.contentBadge": "Loaded after selection",
   "skills.new": "New skill",
   "skills.filter": "Filter skills…",
   "skills.empty": "No skills yet. Sync a plugins repo, or create one here.",
@@ -818,6 +831,11 @@ export const en = {
   // External agents.
   "agents.lede":
     "External OpenAI-compatible and A2A endpoints a project version can bind as remote subagents.",
+  "agents.descriptionRole":
+    "External agent descriptions drive dynamic discovery and are shown in the model’s Available Agents table for transfer decisions. The opening 500 characters are indexed. Workspace project descriptions are not dynamically discovered, but they appear when bound as local agents and in published A2A Agent Cards.",
+  "agents.descriptionHint":
+    "Used for dynamic discovery and transfer selection. State which requests this agent should handle and what result it returns.",
+  "agents.descriptionPlaceholder": "Investigates Kubernetes incidents and returns evidence-backed remediation steps",
   "agents.register": "Register agent",
   "agents.registerTitle": "Register external agent",
   "agents.filter": "Filter agents…",
@@ -831,6 +849,24 @@ export const en = {
   // MCP servers.
   "tools.lede":
     "MCP servers that expose tools to agents over streamable HTTP — registered once, bound per version.",
+  "tools.descriptionRole":
+    "The server name and opening 500 characters of its description are indexed for dynamic discovery and shown in the model’s Connected MCP Servers table. Each tool’s own description is also indexed and sent with its input schema, so it usually decides which action matches. Content is operator-only notes.",
+  "tools.descriptionHint":
+    "Used for server-level discovery and shown to the model. Describe the tasks this server enables; selection of a specific action also uses each tool’s own description.",
+  "tools.descriptionDetailHint":
+    "This is the server-level routing text. After the server is selected, each tool’s own description and input schema guide the specific action.",
+  "tools.descriptionOwnedHint":
+    "Owned by the plugin repository. Edit it there: this description still drives server discovery and appears in the model prompt.",
+  "tools.toolDescriptionsHint":
+    "Each tool description is indexed for dynamic discovery and sent to the model with that tool’s input schema.",
+  "tools.noDescription":
+    "No server description. Dynamic discovery can only match the server name or tool descriptions from a successful probe.",
+  "tools.connectionAndDescriptions": "Connection and tool descriptions",
+  "tools.connectionDescriptionHint":
+    "Test the connection to inspect the model-facing descriptions published by this server for each tool.",
+  "tools.operatorNotesHeading": "Operator notes",
+  "tools.showOperatorNotes": "Show all operator notes",
+  "tools.hideOperatorNotes": "Collapse operator notes",
   "tools.register": "Register MCP",
   "tools.runManaged": "Run managed",
   "tools.registerTitle": "Register MCP server",
@@ -843,6 +879,9 @@ export const en = {
   // Agent Plugins.
   "plugins.lede":
     "Agent Plugins packages synced from GitHub — each bundles skills and MCP servers, and the repo owns every name it declares.",
+  "plugins.descriptionTitle": "Component descriptions drive runtime use",
+  "plugins.descriptionRole":
+    "A plugin description helps people browse and filter packages; the runtime does not search plugins. Dynamic discovery searches the descriptions of the skills, MCP servers, and MCP tools inside the plugin. Make each component description say when it should be used.",
   "plugins.filter": "Filter plugins…",
   "plugins.empty": "No plugins yet. Add the repository and token in Settings, then sync.",
   "plugins.noSkills": "This plugin declares no skills.",
@@ -852,6 +891,8 @@ export const en = {
     "A .tar.gz of the plugins repository (git archive or tar of a checkout) — for a deployment that cannot reach GitHub.",
   "plugins.archiveSource": "Archive: {name}",
   "plugins.uploadFailed": "Upload failed",
+
+  "capabilities.descriptionTitle": "Description controls discovery",
 
   // Artifacts.
   "artifacts.lede":

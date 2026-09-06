@@ -30,6 +30,7 @@ import {
   Button,
   Card,
   Group,
+  Spoiler,
   Stack,
   Text,
   Textarea,
@@ -282,9 +283,6 @@ export default function McpDetailPage() {
             )}
             <CredentialBadges server={server} />
           </Group>
-          <Text fz="sm" c="dimmed" mt={4}>
-            {server.description}
-          </Text>
           <Text fz="xs" c="dimmed" mt={4}>
             {server.url}
           </Text>
@@ -361,6 +359,24 @@ export default function McpDetailPage() {
         </Alert>
       )}
 
+      <Alert
+        color="blue"
+        variant="light"
+        title={
+          <Group gap="xs">
+            <Text fw={600}>{t("registry.description")}</Text>
+            <Badge color="blue" variant="light">
+              {t("registry.discoveryPromptBadge")}
+            </Badge>
+          </Group>
+        }
+      >
+        <Text fz="sm">{server.description || t("tools.noDescription")}</Text>
+        <Text fz="xs" c="dimmed" mt="xs">
+          {t("tools.descriptionDetailHint")}
+        </Text>
+      </Alert>
+
       {editing ? (
         <EditMcpForm
           server={server}
@@ -372,19 +388,6 @@ export default function McpDetailPage() {
         />
       ) : (
         <>
-          {server.content && (
-            <section>
-              <Text fz="sm" fw={500} c="dimmed" mb="xs">
-                Content
-              </Text>
-              <Card>
-                <Text ff="monospace" fz="sm" style={{ whiteSpace: "pre-wrap" }}>
-                  {server.content}
-                </Text>
-              </Card>
-            </section>
-          )}
-
           <OAuthSection server={server} onChanged={() => void refresh()} editable={Boolean(viewer?.isAdmin)} />
 
           <section>
@@ -425,12 +428,15 @@ export default function McpDetailPage() {
           <section>
             <Group gap="sm" mb="xs">
               <Text fz="sm" fw={500} c="dimmed">
-                Connection
+                {t("tools.connectionAndDescriptions")}
               </Text>
               <Button variant="default" size="compact-sm" onClick={runTest} loading={testing}>
                 Test connection
               </Button>
             </Group>
+            <Text fz="xs" c="dimmed" mb="sm">
+              {t("tools.connectionDescriptionHint")}
+            </Text>
 
             {testError && (
               <Alert color="red" variant="light">
@@ -442,6 +448,9 @@ export default function McpDetailPage() {
               <div>
                 <Text fz="sm" c="dimmed" mb="xs">
                   {tools.length} tool{tools.length === 1 ? "" : "s"} discovered.
+                </Text>
+                <Text fz="xs" c="blue" mb="xs">
+                  {t("tools.toolDescriptionsHint")}
                 </Text>
                 <Stack gap="xs">
                   {tools.map((tool) => (
@@ -460,6 +469,33 @@ export default function McpDetailPage() {
               </div>
             )}
           </section>
+
+          {server.content && (
+            <section>
+              <Group gap="xs" mb="xs">
+                <Text fz="sm" fw={500} c="dimmed">
+                  {t("tools.operatorNotesHeading")}
+                </Text>
+                <Badge color="gray" variant="light">
+                  {t("registry.operatorOnlyBadge")}
+                </Badge>
+              </Group>
+              <Text fz="xs" c="dimmed" mb="xs">
+                {t("registry.operatorNotes")}
+              </Text>
+              <Card>
+                <Spoiler
+                  maxHeight={220}
+                  showLabel={t("tools.showOperatorNotes")}
+                  hideLabel={t("tools.hideOperatorNotes")}
+                >
+                  <Text ff="monospace" fz="sm" style={{ whiteSpace: "pre-wrap" }}>
+                    {server.content}
+                  </Text>
+                </Spoiler>
+              </Card>
+            </section>
+          )}
         </>
       )}
     </Stack>
@@ -781,9 +817,13 @@ function EditMcpForm({
           label={t("registry.description")}
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
-          placeholder={t("registry.modelSummary")}
+          placeholder={t("tools.descriptionPlaceholder")}
           disabled={documentLocked}
-          {...(documentLocked ? { description: "Owned by the plugin repository." } : {})}
+          description={
+            documentLocked
+              ? t("tools.descriptionOwnedHint")
+              : t("tools.descriptionHint")
+          }
           inputWrapperOrder={["label", "input", "description", "error"]}
         />
         <Textarea

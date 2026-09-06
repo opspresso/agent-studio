@@ -128,6 +128,10 @@ export default function PluginsPage() {
         )}
       </CatalogHeader>
 
+      <Alert color="blue" variant="light" title={t("plugins.descriptionTitle")}>
+        {t("plugins.descriptionRole")}
+      </Alert>
+
       {syncConfig && (
         <Text fz="xs" c={syncConfig.configured ? "dimmed" : "orange"}>
           {syncConfig.configured

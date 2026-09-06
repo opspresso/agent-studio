@@ -228,6 +228,8 @@ function CreateProjectModal({
         autosize
         minRows={3}
         maxRows={12}
+        description={t("projects.descriptionHint")}
+        inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <TextInput
         label={t("projects.departmentCode")}

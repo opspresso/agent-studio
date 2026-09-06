@@ -134,6 +134,10 @@ export default function PluginDetailPage() {
         </Text>
       </div>
 
+      <Alert color="blue" variant="light" title={t("plugins.descriptionTitle")}>
+        {t("plugins.descriptionRole")}
+      </Alert>
+
       <ComponentSection
         title={`Skills (${plugin.skills.length})`}
         names={plugin.skills}

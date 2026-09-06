@@ -124,6 +124,9 @@ export default function AgentDetailPage() {
             <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
               {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
             </Badge>
+            <Badge color="blue" variant="light">
+              {t("registry.discoveryPromptBadge")}
+            </Badge>
           </Group>
           <Text fz="sm" c="dimmed" mt={4}>
             {agent.description}
@@ -328,6 +331,8 @@ function EditAgentForm({
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
           required
+          description={t("agents.descriptionHint")}
+          inputWrapperOrder={["label", "input", "description", "error"]}
         />
 
         <HeaderRowsEditor

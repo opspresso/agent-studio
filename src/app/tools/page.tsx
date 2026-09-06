@@ -76,6 +76,10 @@ export default function ToolsPage() {
         </Group>}
       </CatalogHeader>
 
+      <Alert color="blue" variant="light" title={t("capabilities.descriptionTitle")}>
+        {t("tools.descriptionRole")}
+      </Alert>
+
       {error && (
         <Alert color="red" variant="light">
           {error}
@@ -220,7 +224,9 @@ function RegisterMcpModal({
         label={t("registry.description")}
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
-        placeholder={t("registry.modelSummary")}
+        placeholder={t("tools.descriptionPlaceholder")}
+        description={t("tools.descriptionHint")}
+        inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <Textarea
         label={t("registry.content")}

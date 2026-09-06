@@ -150,6 +150,8 @@ export default function SettingsPage() {
             autosize
             minRows={4}
             maxRows={20}
+            description={t("projects.descriptionHint")}
+            inputWrapperOrder={["label", "input", "description", "error"]}
           />
           <TextInput
             label={t("projects.departmentCode")}

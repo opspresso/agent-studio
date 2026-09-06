@@ -286,7 +286,7 @@ export const ko: Messages = {
     "관리자가 Plugins에서 설정된 저장소나 업로드한 checkout archive의 스킬·MCP 정의를 가져온다. 저장소에 접근할 수 없으면 archive 업로드를 사용한다. 건너뜀·유효하지 않은 항목을 확인하고 가져온 기능을 버전에 연결한다. 가져온 스킬 본문과 MCP URL·설명은 원본에서 수정한 뒤 다시 동기화한다. MCP 헤더는 가져오지 않으므로 자격 증명은 콘솔에서 별도로 설정한다. 고아 항목은 동기화가 자동 삭제하지 않으며 결과 화면에서 검토 후 명시적으로 삭제한다.",
   "guide.capabilities.discovery": "동적 검색과 메모리",
   "guide.capabilities.discoveryBody":
-    "동적 검색은 저장된 연결을 바꾸지 않고 실행에 관련된 스킬·도구·에이전트를 색인에서 추가한다. capability catalog와 임베딩 설정이 동작해야 하므로 검색 결과가 없으면 관리자에게 확인한다. 메모리 recall은 별개이며 recall 도구를 제공하는 MCP 서버가 연결되어야 한다. 해당 도구가 없으면 메모리 없이 진행하고 경고를 남긴다.",
+    "동적 검색은 시스템 프롬프트와 현재 요청을 기능 이름·설명에 매칭해 관련 Skill·MCP 서버/도구·외부 에이전트를 저장된 연결 위에 추가한다. 설명이 라우팅 신호이므로 언제 사용하고 무엇을 돌려주는지 정확히 써야 한다. capability catalog와 임베딩 설정이 동작해야 하며 검색 결과가 없으면 관리자에게 확인한다. 메모리 recall은 별개이며 recall 도구를 제공하는 MCP 서버가 연결되어야 한다.",
   "guide.capabilities.builtins": "이미지 생성·URL 읽기·파일 만들기",
   "guide.capabilities.builtinsBody":
     "버전에 필요한 이미지 생성·URL 읽기·Slack 기록 조회 등의 내장 기능을 켠다. 해당 공급자·네트워크 접근·봇 설정도 준비되어야 한다. Artifact 저장소가 구성되면 SaveFile이 자동 제공되어 에이전트가 내려받을 텍스트 파일을 만들 수 있다. 생성 파일은 사용하거나 공유하기 전에 내용을 확인한다.",
@@ -507,6 +507,8 @@ export const ko: Messages = {
   "projects.displayName": "표시 이름",
   "projects.displayNamePlaceholder": "My Project",
   "projects.description": "설명",
+  "projects.descriptionHint":
+    "공개된 프로젝트가 로컬 서브에이전트로 바인딩될 때 상위 에이전트에게 표시되고 A2A Agent Card에도 실립니다. 어떤 요청을 받고 어떤 결과를 돌려주는지 쓰세요.",
   "projects.departmentCode": "부서 코드",
   "projects.departmentHint": "프로젝트 소유와 비용을 묶는 선택 코드입니다.",
   "projects.type": "타입",
@@ -639,7 +641,7 @@ export const ko: Messages = {
   "version.searchSkills": "등록된 Skill 검색",
   "version.dynamicCapabilities": "요청마다 필요한 기능 찾기",
   "version.dynamicCapabilitiesHint":
-    "이 버전의 시스템 프롬프트와 들어온 요청으로 레지스트리를 검색해, 위 바인딩에 더해 찾은 것을 함께 제공합니다. 바인딩은 언제나 전부 제공됩니다. 자체 로그인이 필요한 MCP 서버는 이 프로젝트가 연결한 뒤에만 제공됩니다 — 연결은 그 서버의 설정에서 만들고 모든 버전이 공유하므로, 이 버전이 서버를 바인딩하지 않았어도 포함됩니다.",
+    "이 버전의 시스템 프롬프트와 들어온 요청으로 기능 이름과 설명을 검색해, 일치하는 Skill·MCP 서버/도구·외부 에이전트를 위 바인딩에 더해 제공합니다. 설명의 첫 500자가 색인되므로 구현 세부보다 어떤 요청을 처리하는지 먼저 쓰세요. 바인딩은 언제나 전부 제공되며, 자체 로그인이 필요한 MCP 서버는 이 프로젝트가 연결한 뒤에만 제공됩니다.",
 
   "version.memoryRecall": "런마다 먼저 메모리 회상",
   "version.memoryRecallHint":
@@ -690,7 +692,7 @@ export const ko: Messages = {
   "preview.build": "미리보기 만들기",
   "preview.request": "요청",
   "preview.requestHint":
-    "시스템 프롬프트와 함께 레지스트리 검색에 쓰입니다. 비워 두면 모든 실행이 공통으로 시작하는 상태를 볼 수 있습니다.",
+    "시스템 프롬프트와 함께 색인된 기능 이름·설명에 매칭됩니다. 실제 요청을 넣어 설명이 올바른 Skill·도구·에이전트를 찾는지 확인하세요. 비워 두면 모든 실행이 공통으로 시작하는 상태를 볼 수 있습니다.",
   "preview.requestPlaceholder": "예: aws eks 최신 버전 알려줘",
   "preview.hideTools": "도구 숨기기",
   "preview.chars": "{count} 자",
@@ -721,9 +723,10 @@ export const ko: Messages = {
   "registry.nameLabel": "이름",
   "registry.nameHint": "소문자·숫자·하이픈만 쓸 수 있습니다.",
   "registry.description": "설명",
-  "registry.modelSummary": "모델에게 보여줄 한 줄 요약",
+  "registry.discoveryPromptBadge": "검색 + 모델 프롬프트",
   "registry.content": "본문 (마크다운)",
   "registry.contentHeading": "본문",
+  "registry.operatorOnlyBadge": "운영자 전용",
   "registry.operatorNotes":
     "콘솔에 표시할 운영자 메모입니다. 모델에게는 전달되지 않고, 설명만 전달됩니다.",
   "registry.register": "등록",
@@ -733,6 +736,16 @@ export const ko: Messages = {
 
   "skills.lede":
     "에이전트 엔진이 필요할 때 불러오는 마크다운 행동 지침입니다. 동기화된 Skill 은 Agent Plugins 를 통해 들어옵니다.",
+  "skills.descriptionRole":
+    "Skill은 본문을 불러오기 전에 이름과 설명으로 검색되고 선택됩니다. 동적 검색은 설명의 첫 500자를 색인하며 전체 설명은 모델의 Available Skills 표에 표시됩니다. 언제 이 Skill을 쓰고 어떤 결과를 만드는지 쓰세요. 본문은 선택된 뒤 실제 실행 지침이 됩니다.",
+  "skills.descriptionHint":
+    "동적 검색에 쓰이고 본문을 불러오기 전에 모델에게 표시됩니다. 언제 쓰는 Skill인지와 만들어 내는 결과를 먼저 쓰세요.",
+  "skills.descriptionDetailHint":
+    "모델이 Skill을 고르기 전에 사용할 수 있는 라우팅 문장입니다. 아래 본문은 모델이 이 Skill을 불러온 뒤에만 전달됩니다.",
+  "skills.descriptionPlaceholder": "코드 변경에서 결함, 회귀, 누락된 테스트를 찾아야 할 때 사용",
+  "skills.contentHint":
+    "모델이 이 Skill을 선택한 뒤 불러옵니다. 작업 절차, 규칙, 제약과 필요한 참조를 여기에 쓰세요.",
+  "skills.contentBadge": "선택 후 불러옴",
   "skills.new": "새 Skill",
   "skills.filter": "Skill 검색…",
   "skills.empty": "아직 Skill 이 없습니다. 플러그인 저장소를 동기화하거나 여기서 만드세요.",
@@ -742,6 +755,11 @@ export const ko: Messages = {
 
   "agents.lede":
     "프로젝트 버전이 원격 서브에이전트로 바인딩할 수 있는 외부 OpenAI 호환·A2A 엔드포인트입니다.",
+  "agents.descriptionRole":
+    "외부 에이전트 설명은 동적 검색에 쓰이며 모델의 Available Agents 표에 표시되어 전환 대상을 고르게 합니다. 첫 500자가 색인됩니다. 워크스페이스 프로젝트 설명은 동적으로 검색되지 않지만 로컬 에이전트로 바인딩될 때와 공개 A2A Agent Card에 표시됩니다.",
+  "agents.descriptionHint":
+    "동적 검색과 전환 대상 선택에 쓰입니다. 이 에이전트가 처리할 요청과 돌려주는 결과를 쓰세요.",
+  "agents.descriptionPlaceholder": "Kubernetes 장애를 조사하고 근거가 있는 복구 절차를 반환합니다",
   "agents.register": "에이전트 등록",
   "agents.registerTitle": "외부 에이전트 등록",
   "agents.filter": "에이전트 검색…",
@@ -754,6 +772,24 @@ export const ko: Messages = {
 
   "tools.lede":
     "streamable HTTP 로 에이전트에게 도구를 제공하는 MCP 서버입니다. 한 번 등록하면 버전마다 바인딩합니다.",
+  "tools.descriptionRole":
+    "서버 이름과 설명의 첫 500자는 동적 검색에 색인되고 모델의 Connected MCP Servers 표에 표시됩니다. 각 도구의 설명도 별도로 색인되고 입력 스키마와 함께 모델에 전달되므로 실제 동작 선택에는 도구 설명이 주로 쓰입니다. 본문은 운영자 전용 메모입니다.",
+  "tools.descriptionHint":
+    "서버 단위 검색에 쓰이고 모델에게 표시됩니다. 이 서버가 처리하는 작업을 쓰세요. 구체적인 동작 선택에는 각 도구의 설명도 사용됩니다.",
+  "tools.descriptionDetailHint":
+    "서버 단위 라우팅 문장입니다. 서버가 선택된 뒤에는 각 도구가 공개한 설명과 입력 스키마가 구체적인 동작을 안내합니다.",
+  "tools.descriptionOwnedHint":
+    "플러그인 저장소가 소유합니다. 저장소에서 수정하세요. 이 설명은 서버 검색과 모델 프롬프트에 계속 사용됩니다.",
+  "tools.toolDescriptionsHint":
+    "각 도구 설명은 동적 검색에 색인되고 해당 도구의 입력 스키마와 함께 모델에 전달됩니다.",
+  "tools.noDescription":
+    "서버 설명이 없습니다. 동적 검색은 서버 이름이나 연결 검사로 읽은 도구 설명에만 매칭할 수 있습니다.",
+  "tools.connectionAndDescriptions": "연결 및 도구 설명",
+  "tools.connectionDescriptionHint":
+    "연결을 검사해 이 서버가 각 도구에 공개하고 모델에게 전달하는 설명을 확인하세요.",
+  "tools.operatorNotesHeading": "운영자 메모",
+  "tools.showOperatorNotes": "운영자 메모 전체 보기",
+  "tools.hideOperatorNotes": "운영자 메모 접기",
   "tools.register": "MCP 등록",
   "tools.runManaged": "관리형으로 실행",
   "tools.registerTitle": "MCP 서버 등록",
@@ -765,6 +801,9 @@ export const ko: Messages = {
 
   "plugins.lede":
     "GitHub 에서 동기화한 Agent Plugins 패키지입니다. 각 패키지는 Skill 과 MCP 서버를 묶으며, 패키지가 선언한 모든 이름은 저장소가 소유합니다.",
+  "plugins.descriptionTitle": "컴포넌트 설명이 런타임 사용을 결정합니다",
+  "plugins.descriptionRole":
+    "플러그인 설명은 사람이 패키지를 찾고 구분할 때만 쓰이며 런타임은 플러그인 자체를 검색하지 않습니다. 동적 검색은 플러그인 안의 Skill·MCP 서버·MCP 도구 설명을 검색합니다. 각 컴포넌트 설명에 언제 사용해야 하는지 쓰세요.",
   "plugins.filter": "플러그인 검색…",
   "plugins.empty": "아직 플러그인이 없습니다. 설정에서 저장소와 토큰을 등록한 뒤 동기화하세요.",
   "plugins.noSkills": "이 플러그인은 Skill 을 선언하지 않습니다.",
@@ -774,6 +813,8 @@ export const ko: Messages = {
     "플러그인 저장소의 .tar.gz (git archive 또는 체크아웃의 tar) — GitHub 에 닿을 수 없는 배포를 위한 경로입니다.",
   "plugins.archiveSource": "아카이브: {name}",
   "plugins.uploadFailed": "업로드에 실패했습니다",
+
+  "capabilities.descriptionTitle": "설명이 검색 결과를 결정합니다",
 
   "artifacts.lede":
     "실행이 만들어 낸 이미지와 문서입니다. Slack·트리거·A2A 호출로 시작된 실행의 결과물은 해당 프로젝트에 속하며, 프로젝트 탭에서 볼 수 있습니다.",

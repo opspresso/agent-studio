@@ -67,6 +67,10 @@ export default function SkillsPage() {
         {viewer?.isAdmin && <Button onClick={open}>{t("skills.new")}</Button>}
       </CatalogHeader>
 
+      <Alert color="blue" variant="light" title={t("capabilities.descriptionTitle")}>
+        {t("skills.descriptionRole")}
+      </Alert>
+
       {error && (
         <Alert color="red" variant="light">
           {error}
@@ -185,8 +189,10 @@ function CreateSkillModal({
         label={t("registry.description")}
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
-        placeholder={t("registry.modelSummary")}
+        placeholder={t("skills.descriptionPlaceholder")}
         required
+        description={t("skills.descriptionHint")}
+        inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <Textarea
         label={t("registry.content")}
@@ -196,6 +202,8 @@ function CreateSkillModal({
         autosize
         minRows={8}
         maxRows={30}
+        description={t("skills.contentHint")}
+        inputWrapperOrder={["label", "input", "description", "error"]}
         styles={monoInput}
       />
     </FormModal>

@@ -171,6 +171,8 @@ export function ManagedMcpModal({
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
         placeholder={t("tools.descriptionPlaceholder")}
+        description={t("tools.descriptionHint")}
+        inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <Textarea
         label={t("registry.content")}

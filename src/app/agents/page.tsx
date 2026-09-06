@@ -85,6 +85,10 @@ export default function AgentsPage() {
         {viewer?.isAdmin && <Button onClick={open}>{t("agents.register")}</Button>}
       </CatalogHeader>
 
+      <Alert color="blue" variant="light" title={t("capabilities.descriptionTitle")}>
+        {t("agents.descriptionRole")}
+      </Alert>
+
       {error && (
         <Alert color="red" variant="light">
           {error}
@@ -335,6 +339,9 @@ function RegisterAgentModal({
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
         required
+        placeholder={t("agents.descriptionPlaceholder")}
+        description={t("agents.descriptionHint")}
+        inputWrapperOrder={["label", "input", "description", "error"]}
       />
 
       <HeaderRowsEditor

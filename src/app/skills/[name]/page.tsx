@@ -111,7 +111,7 @@ export default function SkillDetailPage() {
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
-          <Group gap="xs" wrap="nowrap">
+          <Group gap="xs" wrap="wrap">
             <Title order={1} fz="h2">
               {skill.name}
             </Title>
@@ -126,9 +126,6 @@ export default function SkillDetailPage() {
               </Badge>
             )}
           </Group>
-          <Text fz="sm" c="dimmed" mt={4}>
-            {skill.description}
-          </Text>
           {skill.source && (
             <Text fz="xs" c="dimmed" mt={4}>
               Owned by {skill.source} — the console cannot edit or delete it. Change it in the
@@ -156,6 +153,24 @@ export default function SkillDetailPage() {
         </Alert>
       )}
 
+      <Alert
+        color="blue"
+        variant="light"
+        title={
+          <Group gap="xs">
+            <Text fw={600}>{t("registry.description")}</Text>
+            <Badge color="blue" variant="light">
+              {t("registry.discoveryPromptBadge")}
+            </Badge>
+          </Group>
+        }
+      >
+        <Text fz="sm">{skill.description}</Text>
+        <Text fz="xs" c="dimmed" mt="xs">
+          {t("skills.descriptionDetailHint")}
+        </Text>
+      </Alert>
+
       {editing ? (
         <EditSkillForm
           skill={skill}
@@ -168,7 +183,12 @@ export default function SkillDetailPage() {
       ) : (
         <>
           <section>
-            <Text fz="sm" fw={500} c="dimmed" mb="xs">{t("registry.contentHeading")}</Text>
+            <Group gap="xs" mb="xs">
+              <Text fz="sm" fw={500} c="dimmed">{t("registry.contentHeading")}</Text>
+              <Badge color="gray" variant="light">
+                {t("skills.contentBadge")}
+              </Badge>
+            </Group>
             <Card>
               <Text ff="monospace" fz="sm" style={{ whiteSpace: "pre-wrap" }}>
                 {skill.content || <Text component="span" c="dimmed">{t("skills.noContent")}</Text>}
@@ -234,6 +254,8 @@ function EditSkillForm({
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
           required
+          description={t("skills.descriptionHint")}
+          inputWrapperOrder={["label", "input", "description", "error"]}
         />
         <Textarea
           label={t("registry.content")}
@@ -242,6 +264,8 @@ function EditSkillForm({
           autosize
           minRows={16}
           maxRows={40}
+          description={t("skills.contentHint")}
+          inputWrapperOrder={["label", "input", "description", "error"]}
           styles={monoInput}
         />
 
