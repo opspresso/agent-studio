@@ -162,7 +162,7 @@ export default function ProjectsPage() {
               {project.description}
             </Text>
             {project.publishedVersion && (
-              <Text fz="xs" c="teal" mt="sm">
+              <Text fz="xs" c="light-dark(var(--mantine-color-teal-9), var(--mantine-color-teal-3))" mt="sm">
                 {t("projects.published", { version: project.publishedVersion })}
               </Text>
             )}
