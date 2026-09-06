@@ -38,7 +38,9 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 | 페이지 | `src/proxy.ts` | 로그아웃 상태의 방문자를 `/login?next=…` 로 리다이렉트 |
 | API 라우트 | `withAuth` / `withMemberAuth` / `withAdminAuth` (`src/lib/session.ts`) | 세션이 없으면 401, 요구 tier(`member`, `admin`) 미만이면 403; 핸들러에 `SessionUser` 를 건넨다 |
 
-`src/shared/pageAccess.ts` 는 어떤 페이지가 공개인지에 대한 단일 소유자다. `/` 와 `/login`.
+`src/shared/pageAccess.ts` 는 어떤 페이지가 공개인지에 대한 단일 소유자다. `/`, `/login`, `/guide`.
+가이드는 로그인 없이 읽는 정적 안내이며, 가이드에서 연결하는 프로젝트·설정 페이지와 API는
+각자의 인증·권한 검사를 유지한다.
 `src/proxy.ts`와 브라우저의 만료 세션 redirect가 같은 판정을 읽는다. matcher 가 닿는 나머지
 전부는 세션을 요구하므로 **새 라우트는 기본이 보호 상태** 다. 그 방향은
 의도적이다. 공개 페이지를 목록에 넣는 것을 잊으면 사용자가 1분 안에 신고하는 리다이렉트가

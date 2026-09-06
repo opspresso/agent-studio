@@ -20,7 +20,7 @@ export const ko: Messages = {
   "theme.light": "라이트",
   "theme.dark": "다크",
 
-  "chrome.tagline": "설치형 에이전트 플랫폼",
+  "chrome.tagline": "에이전트 플랫폼",
   "chrome.navLabel": "워크스페이스 내비게이션",
   "chrome.openNavigation": "내비게이션 열기",
   "chrome.skipToContent": "본문으로 바로가기",
@@ -56,7 +56,7 @@ export const ko: Messages = {
   "auth.signOut": "로그아웃",
   "auth.account": "계정",
   "login.title": "로그인이 필요합니다",
-  "login.product": "Agent Studio, 설치형 에이전트 플랫폼입니다.",
+  "login.product": "Agent Studio, AI 에이전트를 만들고 활용하는 플랫폼입니다.",
   "login.domains": "이 배포가 허용한 도메인의 계정으로 로그인하세요.",
 
   "home.flow.title": "아이디어에서 실행까지",
@@ -68,14 +68,14 @@ export const ko: Messages = {
   "home.flow.reviewBody": "대화와 결과물을 다시 열고, 같은 워크스페이스에서 실행 기록과 사용량을 확인하세요.",
   "home.eyebrow": "프로젝트 · 버전 · 배포",
   "home.headline": "AI 에이전트를 만들고",
-  "home.headlineAccent": " 사내 서버에서 운영하세요.",
+  "home.headlineAccent": " 다양한 작업에 활용하세요.",
   "home.lede":
-    "Agent Studio는 회사 네트워크 안에 설치해 쓰는 에이전트 플랫폼입니다. 프롬프트, 에이전트, 이미지 작업을 프로젝트로 만들고 버전을 배포하면 콘솔, API, 메신저, 다른 에이전트에서 실행할 수 있습니다. 로그인부터 실행까지 공개 인터넷 없이 동작합니다.",
+    "Agent Studio는 모델, 스킬, 도구를 하나로 연결하는 에이전트 플랫폼입니다. 프롬프트, 에이전트, 이미지 작업을 프로젝트로 만들고 대화, API, 메신저에서 활용하세요.",
   "home.signInHint": "허용된 도메인의 계정으로 로그인하세요.",
-  "home.proof.network": "설치한 서버에서 동작",
-  "home.proof.networkNote": "PostgreSQL과 OpenAI 호환 모델 엔드포인트",
+  "home.proof.network": "아이디어를 에이전트로",
+  "home.proof.networkNote": "만들기부터 테스트와 배포까지 한곳에서",
   "home.proof.engine": "모델을 하나의 방식으로 연결",
-  "home.proof.engineNote": "라우터, 자체 호스팅 모델, 외부 API 지원",
+  "home.proof.engineNote": "작업에 맞는 모델을 자유롭게 선택",
   "home.proof.cost": "실행별 비용과 트레이스",
   "home.proof.costNote": "실행을 시작한 호출자에게 귀속",
   "home.streamLabel": "에이전트 실행 스트림 예시",
@@ -96,7 +96,7 @@ export const ko: Messages = {
     "Markdown으로 작성한 재사용 가능한 작업 지침입니다. 모델은 이름과 설명을 먼저 확인하고, 필요할 때 전체 내용을 불러옵니다.",
   "home.domain.plugins": "Agent Plugins",
   "home.domain.pluginsBody":
-    "플러그인 저장소에서 Skill과 MCP 서버를 동기화합니다. 폐쇄망에서는 같은 저장소의 압축 파일을 직접 업로드할 수 있습니다.",
+    "플러그인 저장소나 압축 파일에서 재사용 가능한 Skill과 MCP 도구를 가져와 프로젝트에 연결합니다.",
   "home.domain.catalog": "케이퍼빌리티 카탈로그",
   "home.domain.catalogBody":
     "Skill, MCP 도구, 에이전트를 한곳에서 검색합니다. 이 기능을 켠 버전은 현재 요청에 맞는 기능을 실행 중에만 추가하며, 저장된 설정은 바꾸지 않습니다.",
@@ -118,19 +118,9 @@ export const ko: Messages = {
   "home.domain.traces": "트레이스와 감사 로그",
   "home.domain.tracesBody":
     "각 실행의 턴과 도구 호출을 트레이스에서 확인합니다. 시크릿 열람, 관리자 변경, 삭제 작업은 감사 로그에 남습니다.",
-  "home.install.title": "설치",
-  "home.install.body":
-    "Agent Studio는 컨테이너 이미지로 배포합니다. 배포 manifest는 환경 저장소에서 관리하고, 이 저장소에는 로컬 개발 환경만 둡니다.",
-  "home.install.floor": "필요한 것",
-  "home.install.floorNote":
-    "pgvector를 사용할 수 있는 PostgreSQL과 OpenAI 호환 모델 엔드포인트가 필요합니다. 앱이 시작될 때 데이터베이스 스키마를 만듭니다.",
-  "home.install.offline": "폐쇄망에서",
-  "home.install.offlineNote":
-    "모델 카탈로그와 플러그인 압축 파일을 직접 올리고, 컨테이너 이미지는 내부 레지스트리에 미러링합니다. 임베딩도 자체 호스팅 엔드포인트를 사용할 수 있습니다.",
-  "home.install.optional": "선택 항목",
-  "home.install.optionalNote":
-    "Slack, Telegram, Teams, 외부 A2A, 모델 API는 각각 독립적으로 설정합니다. 설정하지 않은 연동만 꺼지고 나머지 기능은 그대로 동작합니다.",
-  "home.product": "설치형 에이전트 플랫폼입니다.",
+  "home.guide.title": "Agent Studio 시작하기",
+  "home.guide.body": "가이드에서 첫 프로젝트 만들기, 도구 연결, 대화 시작 방법을 살펴보세요. 로그인 없이 읽을 수 있습니다.",
+  "home.product": "AI 에이전트 플랫폼입니다.",
 
   "catalog.clearSearch": "검색어 지우기",
   "catalog.resetFilters": "필터 초기화",
@@ -229,12 +219,12 @@ export const ko: Messages = {
   "overview.browseSkills": "Skills 둘러보기",
 
   "guide.title": "가이드",
-  "guide.lede": "사용자·프로젝트 소유자·배포 담당자를 위한 실무 안내서다. 소스 코드 없이 배포된 앱에서 사용·연동·운영 절차를 확인한다.",
+  "guide.lede": "에이전트를 만들고 도구를 연결해 대화와 애플리케이션에서 활용하는 방법을 안내한다.",
   "guide.contents": "목차",
 
   "guide.start.title": "처음 시작하기",
   "guide.start.body":
-    "Agent Studio는 조직 안에서 프롬프트·에이전트·이미지 프로젝트를 만들고 실행하는 플랫폼이다. 이 가이드는 콘솔에 포함되어 소스 코드나 외부 인터넷 없이 읽을 수 있다. 대화만 필요하면 Chats에서 기존 에이전트를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
+    "Agent Studio는 프롬프트·에이전트·이미지 프로젝트를 위한 플랫폼이다. 이 가이드는 로그인 없이 읽을 수 있다. 대화를 시작하려면 로그인 후 Chats에서 기존 에이전트를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
   "guide.start.account": "1. 로그인과 권한 확인",
   "guide.start.accountBody":
     "조직에서 받은 접속 주소를 열고 화면에 표시된 방식으로 로그인한다. Profile에서 내 등급·사용량·한도를 확인한다. 새 계정은 보통 guest로 시작하므로 프로젝트 생성이 불가능하면 관리자에게 Members에서 등급 변경을 요청한다.",

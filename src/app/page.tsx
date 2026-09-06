@@ -1,5 +1,6 @@
 import {
   Badge,
+  Button,
   Card,
   Grid,
   GridCol,
@@ -122,16 +123,6 @@ const DOMAINS = [
   Icon: typeof IconFolder;
 }>;
 
-/*
- * The deployment strip under the domain grid: what an install asks for, what it
- * does without a network, and what stays a choice.
- */
-const INSTALL_POINTS = [
-  { title: "home.install.floor", body: "home.install.floorNote" },
-  { title: "home.install.offline", body: "home.install.offlineNote" },
-  { title: "home.install.optional", body: "home.install.optionalNote" },
-] as const satisfies ReadonlyArray<{ title: MessageKey; body: MessageKey }>;
-
 const WORKFLOW = [
   { title: "home.flow.build", body: "home.flow.buildBody", Icon: IconFolder },
   { title: "home.flow.run", body: "home.flow.runBody", Icon: IconPlayerPlay },
@@ -174,6 +165,9 @@ export default async function Home() {
           </Text>
           <Group mt="xl" gap="md" wrap="wrap">
             <SignInButton providers={{ ...config.authProviders, password: false }} />
+            <Button component="a" href="/guide" variant="default">
+              {t("nav.guide")}
+            </Button>
             <Text fz="sm" c="dimmed">
               {t("home.signInHint")}
             </Text>
@@ -260,36 +254,22 @@ export default async function Home() {
         </SimpleGrid>
       </section>
 
-      {/*
-        What the twelve cards above do not say: this is software a company
-        installs, not a service it subscribes to. It sits after them because a
-        reader wants to know what the thing does before where it runs.
-      */}
       <Paper
         component="section"
         withBorder
         radius="lg"
         p={{ base: "lg", md: "xl" }}
-        className={classes.installPanel}
+        className={classes.guidePanel}
       >
         <Title order={2} fz="h3">
-          {t("home.install.title")}
+          {t("home.guide.title")}
         </Title>
         <Text mt="sm" maw={760} c="dimmed" lh={1.7}>
-          {t("home.install.body")}
+          {t("home.guide.body")}
         </Text>
-        <SimpleGrid mt="xl" cols={{ base: 1, sm: 3 }} spacing="lg">
-          {INSTALL_POINTS.map((point) => (
-            <div key={point.title}>
-              <Text fz="sm" fw={600}>
-                {t(point.title)}
-              </Text>
-              <Text fz="sm" c="dimmed" mt={6} lh={1.6}>
-                {t(point.body)}
-              </Text>
-            </div>
-          ))}
-        </SimpleGrid>
+        <Button component="a" href="/guide" mt="lg" variant="default">
+          {t("nav.guide")}
+        </Button>
       </Paper>
 
       <Stack gap={6} align="center">

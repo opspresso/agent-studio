@@ -44,7 +44,7 @@ export const en = {
   "theme.dark": "Dark",
 
   // App chrome: the header, the sidebar and its groups.
-  "chrome.tagline": "Self-hosted agent platform",
+  "chrome.tagline": "Agent platform",
   "chrome.navLabel": "Workspace navigation",
   "chrome.openNavigation": "Open navigation",
   "chrome.skipToContent": "Skip to main content",
@@ -81,7 +81,7 @@ export const en = {
   "auth.signOut": "Sign out",
   "auth.account": "Account",
   "login.title": "Sign in to continue",
-  "login.product": "Agent Studio, a self-hosted platform for building and running agents.",
+  "login.product": "Agent Studio, a platform for building and using AI agents.",
   "login.domains": "Use an account on one of this deployment’s allowed domains.",
 
   // The signed-out landing page.
@@ -94,14 +94,14 @@ export const en = {
   "home.flow.reviewBody": "Return to conversations and artifacts. Inspect run traces and usage in the same workspace.",
   "home.eyebrow": "Project · version · publish",
   "home.headline": "Build AI agents",
-  "home.headlineAccent": " and run them on your own servers.",
+  "home.headlineAccent": " and put them to work.",
   "home.lede":
-    "Agent Studio runs inside your company's network. Create prompt, agent, and image projects, publish a version, and use it from the console, an API, a chat platform, or another agent. The core app, including sign-in and runs, keeps working without public internet access.",
+    "Agent Studio brings models, skills, and tools together in one agent platform. Create prompt, agent, and image projects, then use them in conversations, through APIs, or from your favorite messengers.",
   "home.signInHint": "Sign in with an account from an allowed domain.",
-  "home.proof.network": "Runs on your servers",
-  "home.proof.networkNote": "PostgreSQL and an OpenAI-compatible model endpoint",
+  "home.proof.network": "From ideas to agents",
+  "home.proof.networkNote": "Create, test, and publish in one workspace",
   "home.proof.engine": "One interface for your models",
-  "home.proof.engineNote": "Use a router, self-hosted models, or provider APIs",
+  "home.proof.engineNote": "Connect the right model for each task",
   "home.proof.cost": "Cost and traces per run",
   "home.proof.costNote": "Attributed to the caller that started the run",
   "home.streamLabel": "Example of an agent run stream",
@@ -122,7 +122,7 @@ export const en = {
     "Reusable instructions written in Markdown. The model sees a short list of names and descriptions, then loads the full instructions when needed.",
   "home.domain.plugins": "Agent Plugins",
   "home.domain.pluginsBody":
-    "Sync skills and MCP servers from a plugin repository. In an air-gapped installation, upload an archive of the same repository instead.",
+    "Bring reusable skills and MCP tools into your projects from plugin repositories or uploaded archives.",
   "home.domain.catalog": "Capability catalog",
   "home.domain.catalogBody":
     "Search skills, MCP tools, and agents in one catalog. An opted-in version adds relevant capabilities for the current run without changing its saved bindings.",
@@ -144,19 +144,9 @@ export const en = {
   "home.domain.traces": "Traces & audit",
   "home.domain.tracesBody":
     "Inspect each run turn by turn, including tool calls. Secret access, administrative changes, and deletions are recorded in the audit log.",
-  "home.install.title": "Installing it",
-  "home.install.body":
-    "Agent Studio is distributed as a container image. Environment repositories own deployment manifests; this repository contains the local development setup.",
-  "home.install.floor": "What it needs",
-  "home.install.floorNote":
-    "Provide PostgreSQL with pgvector and an OpenAI-compatible model endpoint. The app creates its database schema when it starts.",
-  "home.install.offline": "Without internet access",
-  "home.install.offlineNote":
-    "Upload model catalogs and plugin archives, mirror container images to an internal registry, and use a self-hosted embedding endpoint.",
-  "home.install.optional": "What stays optional",
-  "home.install.optionalNote":
-    "Slack, Telegram, Teams, outbound A2A, and external model APIs are independent integrations. If one is not configured, only that integration stays off.",
-  "home.product": "A self-hosted platform for building and running agents.",
+  "home.guide.title": "Get started with Agent Studio",
+  "home.guide.body": "Explore the guide to create your first project, connect tools, and start a conversation. No sign-in is needed to read it.",
+  "home.product": "An AI agent platform.",
 
   // Vocabulary more than one page uses. A word here is one a reader meets on
   // several screens and should not have to re-learn.
@@ -271,12 +261,12 @@ export const en = {
   // page whose content *is* the text.
   "guide.title": "Guide",
   "guide.lede":
-    "A practical handbook for users, project owners, and deployment operators. Everything here is available with the deployed application, without a source checkout.",
+    "Learn to build agents, connect tools, and use your projects in conversations and applications.",
   "guide.contents": "Contents",
 
   "guide.start.title": "Start here",
   "guide.start.body":
-    "Agent Studio runs prompt, agent, and image projects inside your organization. This guide is included in the console and can be read without source code or public internet access. Begin with an existing agent if you only need to chat; follow the steps below to build your own project.",
+    "Agent Studio is a platform for prompt, agent, and image projects. Read this guide without signing in. To start a conversation, sign in and choose an existing agent in Chats; to build your own, follow the steps below.",
   "guide.start.account": "1. Sign in and check your access",
   "guide.start.accountBody":
     "Open the address provided by your organization and use the sign-in method shown. Profile shows your tier, usage, and limits. New accounts normally start as guest; if project creation is unavailable, ask an administrator to change your tier in Members.",

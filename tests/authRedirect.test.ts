@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+import { proxy } from "@/proxy";
 import {
   loginHref,
   redirectApiUnauthorized,
@@ -24,13 +26,27 @@ afterEach(() => {
 });
 
 describe("expired session redirect", () => {
+  it("serves the guide without a cookie while protecting workspace pages", () => {
+    const guide = proxy(new NextRequest("https://studio.example.com/guide"));
+    expect(guide.headers.get("x-middleware-next")).toBe("1");
+    expect(guide.headers.get("location")).toBeNull();
+
+    for (const path of ["/projects", "/settings", "/guide/private"]) {
+      const response = proxy(new NextRequest(`https://studio.example.com${path}`));
+      expect(response.status).toBe(307);
+      const redirect = new URL(response.headers.get("location")!);
+      expect(redirect.pathname).toBe("/login");
+      expect(redirect.searchParams.get("next")).toBe(path);
+    }
+  });
+
   it("preserves the current path, query, and fragment as the post-login destination", () => {
     expect(loginHref(location())).toBe(
       "/login?next=%2Fprojects%2Fsample%3Ftab%3Dusage%23daily",
     );
   });
 
-  it("redirects protected pages but leaves the two public pages alone", () => {
+  it("redirects protected pages but leaves public pages alone", () => {
     const protectedLocation = location();
     expect(redirectToLogin(protectedLocation)).toBe(true);
     expect(protectedLocation.replace).toHaveBeenCalledWith(
@@ -39,8 +55,14 @@ describe("expired session redirect", () => {
 
     expect(isPublicPagePath("/")).toBe(true);
     expect(isPublicPagePath("/login")).toBe(true);
+    expect(isPublicPagePath("/guide")).toBe(true);
+    expect(isPublicPagePath("/guide/private")).toBe(false);
+    expect(isPublicPagePath("/settings")).toBe(false);
     expect(isPublicPagePath("/projects")).toBe(false);
     expect(redirectToLogin(location("/login"))).toBe(false);
+    const guideLocation = location("/guide");
+    expect(redirectToLogin(guideLocation)).toBe(false);
+    expect(guideLocation.replace).not.toHaveBeenCalled();
   });
 
   it("redirects only same-origin API 401 responses", () => {

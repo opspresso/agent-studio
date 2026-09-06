@@ -1,6 +1,6 @@
 .hero,
 .domainCard,
-.installPanel,
+.guidePanel,
 .workflow {
   word-break: keep-all;
 }
@@ -37,6 +37,6 @@
   background: var(--studio-surface);
 }
 
-.installPanel {
+.guidePanel {
   background: var(--studio-surface);
 }

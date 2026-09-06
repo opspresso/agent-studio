@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Alert, Card, Center, Stack, Text, ThemeIcon, Title } from "@mantine/core";
+import { Alert, Anchor, Card, Center, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import { IconRobot } from "@tabler/icons-react";
 import { SignInButton } from "@/components/SignInButton";
 import { config } from "@/lib/config";
@@ -61,6 +61,7 @@ export default async function LoginPage({
             {t("login.domains")}
           </Text>
           <SignInButton providers={config.authProviders} callbackURL={next} />
+          <Anchor href="/guide" fz="sm">{t("nav.guide")}</Anchor>
         </Stack>
       </Card>
     </Center>
