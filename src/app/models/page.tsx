@@ -38,6 +38,7 @@ import { formatUsd } from "@/app/_lib/formatUsd";
 import { formatDate, formatDateTime } from "@/shared/date";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { CardGrid } from "@/app/_components/CardGrid";
+import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { LoadingText } from "@/app/_components/PageState";
@@ -286,10 +287,9 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
   const undeclared = (served ?? []).filter((row) => !declaredFamilies.has(row.name));
 
   return (
-    <Card withBorder>
+    <CollapsibleSection title={t("models.selfHosted.title")}>
       <Stack gap="sm">
         <div>
-          <Text fw={600}>{t("models.selfHosted.title")}</Text>
           <Text fz="sm" c="dimmed">
             {t("models.selfHosted.lede")}
           </Text>
@@ -495,7 +495,7 @@ function SelfHostedSection({ onChanged }: { onChanged: () => Promise<void> }) {
           </Card>
         )}
       </Stack>
-    </Card>
+    </CollapsibleSection>
   );
 }
 
@@ -571,11 +571,10 @@ function ModelSelectionSection({
   }
 
   return (
-    <Card withBorder>
+    <CollapsibleSection title={t("models.selection.title")}>
       {confirmModal}
       <Stack gap="sm">
         <div>
-          <Text fw={600}>{t("models.selection.title")}</Text>
           <Text fz="sm" c="dimmed">
             {t("models.selection.lede")}
           </Text>
@@ -653,7 +652,7 @@ function ModelSelectionSection({
           );
         })}
       </Stack>
-    </Card>
+    </CollapsibleSection>
   );
 }
 
@@ -715,10 +714,9 @@ function CatalogDocumentSection({ onChanged }: { onChanged: () => Promise<void> 
   }
 
   return (
-    <Card withBorder>
+    <CollapsibleSection title={t("models.catalogFile.title")}>
       <Stack gap="sm">
         <div>
-          <Text fw={600}>{t("models.catalogFile.title")}</Text>
           <Text fz="sm" c="dimmed">
             {t("models.catalogFile.lede")}
           </Text>
@@ -779,7 +777,7 @@ function CatalogDocumentSection({ onChanged }: { onChanged: () => Promise<void> 
           )}
         </Group>
       </Stack>
-    </Card>
+    </CollapsibleSection>
   );
 }
 

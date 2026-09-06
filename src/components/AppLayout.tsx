@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   ActionIcon,
   AppShell,
@@ -165,6 +165,7 @@ export function AppLayout({
   const pathname = usePathname();
   const t = useT();
   const [opened, { toggle, close }] = useDisclosure(false);
+  const navViewport = useRef<HTMLDivElement>(null);
   const requiresLogin = viewer === null && !isPublicPagePath(pathname);
 
   useEffect(() => {
@@ -172,6 +173,19 @@ export function AppLayout({
       redirectToLogin();
     }
   }, [pathname, viewer]);
+
+  useEffect(() => {
+    const viewport = navViewport.current;
+    const active = viewport?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!viewport || !active || viewport.clientHeight === 0) return;
+    const bounds = viewport.getBoundingClientRect();
+    const item = active.getBoundingClientRect();
+    if (item.bottom > bounds.bottom) {
+      viewport.scrollTop += item.bottom - bounds.bottom;
+    } else if (item.top < bounds.top) {
+      viewport.scrollTop += item.top - bounds.top;
+    }
+  }, [pathname, opened, viewer?.tier, viewer?.isAdmin]);
 
   if (requiresLogin) {
     return null;
@@ -305,7 +319,7 @@ export function AppLayout({
             <IconFolder size={16} />
           </ActionIcon>
         </Group>
-        <ScrollArea style={{ flex: 1 }} scrollbarSize={6} type="always">
+        <ScrollArea viewportRef={navViewport} style={{ flex: 1 }} scrollbarSize={6} type="always">
           <Stack gap="md">
             {NAV_GROUPS.filter(visibleTo(viewer)).map((group) => (
               <Stack key={group.key} gap={2}>

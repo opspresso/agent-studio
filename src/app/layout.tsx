@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ColorSchemeScript, MantineProvider, mantineHtmlProps } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
-import { Chakra_Petch, Figtree, JetBrains_Mono } from "next/font/google";
+import { Figtree, JetBrains_Mono } from "next/font/google";
 import { AppLayout } from "@/components/AppLayout";
 import { ImageViewerProvider } from "./_components/ImageViewer";
 import { config } from "@/lib/config";
@@ -36,24 +36,14 @@ export const metadata: Metadata = {
 };
 
 /*
- * The three faces, self-hosted at build time so nothing is fetched from a font
+ * The two faces, self-hosted at build time so nothing is fetched from a font
  * CDN at runtime. They reach the styles as CSS variables rather than class
  * names because `theme.ts` is a `"use client"` module and cannot import a font
  * object across that boundary — it reads `var(--font-sans)` instead.
  *
- * Neither Figtree nor Chakra Petch carries Hangul, so the system stack stays
- * behind them in `theme.ts` as the fallback that actually renders Korean.
+ * Figtree does not carry Hangul, so the system stack in `theme.ts` renders Korean.
  */
 const sans = Figtree({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
-
-// The display face: geometric, squared-off, and only used for headings — three
-// weights is the whole range `theme.ts` asks for.
-const display = Chakra_Petch({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-display",
-  display: "swap",
-});
 
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
@@ -85,7 +75,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html
       lang={locale}
-      className={`${sans.variable} ${display.variable} ${mono.variable}`}
+      className={`${sans.variable} ${mono.variable}`}
       {...mantineHtmlProps}
     >
       <head>
