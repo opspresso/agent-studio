@@ -416,7 +416,8 @@ flowchart LR
   facade["runProject 파사드<br/>streamProjectRun · executeProjectStream · executeProject · executeAgent<br/>projectType dispatch: agent → 툴 루프, llm → 단발,<br/>image → streamProjectRun 은 스트리밍, completion 짝은 거절"]
   imageuc["generateImage 유스케이스<br/>streamProjectRun 이 닿고, chunk 스트림이 나르지 못하는<br/>모양으로 답하는 두 표면도 닿는다"]
   bracket["런 브래킷 — openRun<br/>1. 프로젝트 비용 가드, fail open<br/>2. 멤버 tier 의 월간 상한, fail open<br/>3. 호출자별 동시성 슬롯, fail closed<br/>4. in-flight 메트릭 + correlation id + artifact recorder"]
-  resolve["버전의 바인딩 해석<br/>skill · MCP 세션 · subagent<br/>쓸 수 없는 바인딩은 warning chunk 가 된다"]
+  memory["명시적 바인딩의 메모리 recall<br/>관련 기억은 discovery 검색 문맥이 된다"]
+  resolve["버전의 바인딩 해석<br/>요청 + 관련 기억으로 capability discovery<br/>skill · MCP 세션 · subagent<br/>쓸 수 없는 바인딩은 warning chunk 가 된다"]
   engine["엔진<br/>runAgent · runPrompt(Stream)"]
   channel["OpenAI 호환 채널"]
   imagechannel["이미지 채널"]
@@ -440,7 +441,7 @@ flowchart LR
   facade -.-> imageuc
   facade --> bracket
   imageuc --> bracket
-  bracket -->|"agent 런"| resolve --> engine
+  bracket -->|"agent 런"| memory --> resolve --> engine
   bracket -->|"llm 단발"| engine
   bracket -->|"image 런"| imagechannel
   engine <--> channel

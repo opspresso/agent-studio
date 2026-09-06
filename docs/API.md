@@ -353,13 +353,19 @@ slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 바인딩된 MCP 서버(mcp-memory)를 가장 최근 사용자 턴으로 호출하고, 돌아온 것을 시스템 프롬프트에
 **What you remember** 블록으로 넣는다. 지시가 아니라 배경으로 틀 지어서. 그래서 모델은 물어볼
 생각을 해내야 하는 대신 project 가 이미 아는 것에서 출발한다. 도구는 이전처럼 계속 제공된다.
+회상은 capability discovery보다 먼저 실행된다. `dynamicCapabilities`도 켜져 있고 관련 기억이 있으면
+원래 discovery 검색어를 유지한 채 최신 요청과 기억을 합친 검색어를 하나 더 사용한다. 소속 조직이나
+문서 위치를 기억에서 알아낸 런은 그 단서에 맞는 MCP를 발견할 수 있지만, URL·credential·권한은
+기억에서 만들지 않고 기존 카탈로그와 연결·인가 검사를 그대로 거친다.
 이것은 읽기를 더하는 것이다. 런당 한 번 호출하며 한계가 있다 (가장 최근 턴을 최대 2,000자까지
 보내고, 최대 4,000자를 보관하며, 첫 토큰은 최대 10초까지 기다린다). 실패한 서버는 런의
 `warning` 이 되고 런은 그것 없이 계속 간다. 이것을 켰지만 `recall` 을 제공하는 바인딩된 서버가
 없는 version 은 메모리 없이 시작했다고 경고한다. `POST /api/projects/{name}/preview` 는 그
-블록을 보여 줄 수 없고. 무엇이 회상되는지는 요청에 달려 있다. 그 사실을 warning 으로 말한다.
+블록과 기억으로 추가될 capability를 보여 줄 수 없다. 프리뷰는 `message`가 있어도 메모리를 호출하지
+않으며 그 사실을 warning 으로 말한다.
 `dynamicCapabilities` 와 마찬가지로 요청 텍스트는 엔진의 PII 필터가 만들어지기 전에 서버에
-닿는다. [SECURITY.md](SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳) 를 보라.
+닿는다. 두 기능을 함께 켜면 제한된 회상 내용도 embedding·rerank provider에 닿는다.
+[SECURITY.md](SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳) 를 보라.
 
 #### MCP 바인딩과 version 별 헤더 오버라이드
 

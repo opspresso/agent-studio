@@ -149,13 +149,14 @@ Agent 런은 model/tool/subagent span 을 언제나 저장하고, agent 가 아�
 subagent trace id. **원문 프롬프트와 tool 결과는 저장하지 않는다.** 보존 기간, 샘플링, 누가
 trace 를 읽을 수 있는지는 [OPERATIONS.md](../OPERATIONS.md#트레이싱) 에 있다.
 
-**첫 토큰 이전의 준비 작업은 `prepare` span 이다.** 런이 모델을 부르기 전에 하는 두 가지 —
-version 의 도구를 resolve 하는 것(바인딩된 MCP 서버를 전부 열고 도구를 나열하며, discovery 를
-켠 version 은 카탈로그까지 검색한다)과 memory recall — 은 네트워크 작업이고 느려질 수 있다.
+**첫 토큰 이전의 준비 작업은 `prepare` span 이다.** 런이 모델을 부르기 전에 memory recall을 먼저
+수행하고, 그다음 version의 도구를 resolve한다. 후자는 바인딩된 MCP 서버를 열고 도구를 나열하며,
+discovery를 켠 version은 원래 요청과 관련 기억으로 카탈로그까지 검색한다. 둘 다 네트워크 작업이고
+느려질 수 있다.
 recorder 는 resolve 보다 먼저 만들어지므로(그래야 resolve 가 던져도 trace 가 남는다) 그 시간이
 **첫 model span 안에 들어가 있었다**: MCP 서버 하나가 8초를 잡아먹은 런이 8초짜리 모델로
 읽혔고, "왜 첫 토큰이 늦었나" 는 페이지 어디에도 답이 없었다. 이제 각 단계가 자기 span 을
-갖고(`tools`, `memory`), 그 끝이 다음 model span 의 시작이다. `output` 은 그 단계가 무엇을
+갖고 실행 순서대로 `memory`와 `tools`에 기록되며, 그 끝이 다음 model span 의 시작이다. `output` 은 그 단계가 무엇을
 가지고 돌아왔는지다 — skill·subagent·MCP 서버·도구 수, 잃은 것의 수, 그리고 discovery 가
 무엇을 더했는지는 **이름으로**(최대 20개, 그 옆의 수는 찾은 총 개수라 목록보다 크면 그만큼이
 안 보이는 것이다). 런의 계획 중
