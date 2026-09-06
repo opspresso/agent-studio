@@ -30,9 +30,9 @@ import { buildAgentDeps } from "./subagentRunner";
  * actually sends, and silently — the discovered rows are the ones an author has
  * no other way to see.
  *
- * PII masking is not applied: it rewrites content per run, and what a run masks
- * depends on the turn's own text. A version with the filter on says so in its
- * warnings instead.
+ * PII masking is not applied: the preview has at most one request, not the
+ * complete message set from which a run builds its mapping. A version with the
+ * filter on says so in its warnings instead.
  */
 export async function previewPrompt(
   deps: ExecutionDeps,

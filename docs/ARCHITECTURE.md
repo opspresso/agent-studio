@@ -592,7 +592,7 @@ sequenceDiagram
   X->>X: usage 애그리게이터 flush (finally)
 ```
 
-### 프리뷰는 런이 보낼 것을 보내지 않고 조립한다
+### 프리뷰는 모델을 호출하지 않고 런 입력을 조립한다
 
 `previewPrompt`(`src/application/execution/promptPreview.ts`)는 "모델이 실제로 무엇을 읽게
 되는가"에 답한다. agent project 에서 그 답은 에디터에 적힌 텍스트가 결코 아니다: 시스템

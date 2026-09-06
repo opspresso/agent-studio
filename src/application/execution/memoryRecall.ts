@@ -142,7 +142,12 @@ export async function prepareMemoryForRun(
   }, input.signal, input.origin);
   try {
     const memory = await recallForRun({ ...input, mcp });
-    return { ...memory, warnings: [...mcp.warnings, ...memory.warnings] };
+    // A resolution warning already names why no target survived. The generic
+    // consequence beside it only repeats the same loss without more action.
+    const warnings = memory.warnings.filter(
+      (warning) => warning !== noRecallTargetWarning() || mcp.warnings.length === 0,
+    );
+    return { ...memory, warnings: [...mcp.warnings, ...warnings] };
   } finally {
     await closeMcp(mcp.close);
   }

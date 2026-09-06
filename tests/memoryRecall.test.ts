@@ -12,7 +12,11 @@
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_RECALLED_CHARS, recallMemories } from "@/application/execution/memoryRecall";
+import {
+  MAX_RECALLED_CHARS,
+  prepareMemoryForRun,
+  recallMemories,
+} from "@/application/execution/memoryRecall";
 import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
 import { buildAgentSystemPrompt, rememberedBlock } from "@/application/llm/agentAssembly";
 import { executeAgent } from "@/application/execution/runProject";
@@ -397,6 +401,32 @@ describe("a version that opted in recalls before the first token", () => {
     }
     return { seen, channel, chunks };
   }
+
+  it("keeps a specific MCP loss instead of adding a generic no-target warning", async () => {
+    const deps = depsFixture(new FakeChannel([]));
+    let closed = false;
+    deps.mcpSessions = {
+      open: async () => ({
+        tools: [],
+        toolNamesByServer: new Map(),
+        warnings: ["MCP server 'memory' denied access."],
+        unauthorizedServers: [],
+        callTool: async () => ({ text: "" }),
+        aliasFor: () => undefined,
+        close: async () => {
+          closed = true;
+        },
+      }),
+    };
+
+    const result = await prepareMemoryForRun(deps, {
+      version: versionFixture(true),
+      query: "how do we deploy?",
+    });
+
+    expect(result.warnings).toEqual(["MCP server 'memory' denied access."]);
+    expect(closed).toBe(true);
+  });
 
   it.each(["root", "subagent"])("uses a recalled affiliation to discover and search its document source (%s)", async (surface) => {
     const calls: Array<{ server: string; name?: string; email: string | null }> = [];

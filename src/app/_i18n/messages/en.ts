@@ -770,18 +770,18 @@ export const en = {
   "preview.build": "Build preview",
   "preview.request": "Request",
   "preview.requestHint":
-    "Used for memory recall and matched against indexed capability names and descriptions alongside the system prompt. Use a real request to inspect the recalled context and capabilities that run would receive. Leave it empty to see the common starting point.",
+    "Used for memory recall and capability matching. Building the preview sends it to configured MCP and embedding/rerank services. Use a real request to inspect the context and capabilities that run would receive; leave it empty for the common starting point.",
   "preview.requestPlaceholder": "e.g. what is the latest EKS version?",
   "preview.hideTools": "Hide tools",
   "preview.chars": "{count} chars",
   "preview.tools": "· {count} tools",
   "preview.stale": "· stale",
-  "preview.discovered": "Found for this request, on top of the bindings: {names}",
+  "preview.discovered": "Found for this preview, on top of the bindings: {names}",
   "preview.noPrompt":
     "This version sends no prompt of its own; the conversation supplies everything.",
   "preview.toolsOffered": "Tools offered ({count})",
   "preview.blurb":
-    "Builds the system prompt the way a run does — skill table, connected MCP servers and their tool names, transfer instructions — by contacting the bound MCP servers.",
+    "Builds the system prompt the way a run does — recalled context, skill table, connected MCP servers and their tool names, transfer instructions — by contacting the configured services on demand.",
 
   // A project's own credentials for one MCP server.
   "mcpConn.connected": "Connected",

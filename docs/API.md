@@ -409,12 +409,15 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
 
 ```
 POST /api/projects/{name}/preview
-  { …an unsaved version body…, "variables": { "topic": "otters" }? }
+  { …an unsaved version body…,
+    "variables": { "topic": "otters" }?,
+    "message": "request to preview"? }
 → 200 { messages: [ { role, content } ], … }
 ```
 
 에디터 안의 초안이 **보냈을** 것을 조립한다. 시스템 프롬프트, skill 표, 연결된 MCP 서버 표,
-렌더링된 템플릿. 실행하지는 않고.
+렌더링된 템플릿. 답변 모델은 호출하지 않는다. `message`가 있으면 설정에 따라 read-only memory
+recall과 capability discovery를 실제로 수행하므로 MCP와 embedding·rerank 서비스에는 요청할 수 있다.
 
 소유자 게이트가 아니라 member 게이트다 (`withMemberAuth`): 조립된 텍스트는 해석된 skill 과
 MCP 서버의 이름을 담는다. `guest` 가 거절당하는 바로 그 레지스트리다. 그래서 세션만이 아니라
@@ -422,8 +425,8 @@ MCP 서버의 이름을 담는다. `guest` 가 거절당하는 바로 그 레지
 게이트가 따로 챙길 수 있는 권한이 아니다. 어떤 member 든 자기 project 에서 같은 레지스트리
 서버를 같은 헤더로 바인딩한다. 마스킹된 헤더는 같은 서버 이름에 대한 이 project 의 저장된
 바인딩에 대해서만 해석되므로, 소유자가 아닌 사람의 미리보기는 그가 이미 시작할 수 있는 런이
-보내지 않을 것을 아무것도 보내지 않는다. 그리고 조립된 텍스트는 `GET /versions` 가 세션만으로도
-이미 답하는 것으로 구성된다. URL 은 언제나 레지스트리에서 오므로 SSRF 표면은 런의 것이다.
+보내지 않을 것을 아무것도 보내지 않는다. Memory도 그 project의 런이 같은 사용자 identity로
+회상할 내용이다. URL은 언제나 레지스트리에서 오므로 SSRF 표면은 런의 것이다.
 
 ## 앱 설정
 

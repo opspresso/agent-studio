@@ -700,17 +700,17 @@ export const ko: Messages = {
   "preview.build": "미리보기 만들기",
   "preview.request": "요청",
   "preview.requestHint":
-    "메모리를 회상하고 시스템 프롬프트와 함께 색인된 기능 이름·설명에 매칭합니다. 실제 요청을 넣어 실행이 받을 기억과 Skill·도구·에이전트를 확인하세요. 비워 두면 공통 시작 상태를 볼 수 있습니다.",
+    "Memory recall과 capability 매칭에 사용한다. 미리보기를 만들면 설정된 MCP와 embedding/rerank 서비스에 이 요청을 전송한다. 실제 요청으로 실행이 받을 문맥과 기능을 확인하고, 비워 두면 공통 시작 상태를 볼 수 있다.",
   "preview.requestPlaceholder": "예: aws eks 최신 버전 알려줘",
   "preview.hideTools": "도구 숨기기",
   "preview.chars": "{count} 자",
   "preview.tools": "· 도구 {count} 개",
   "preview.stale": "· 오래됨",
-  "preview.discovered": "이 요청에 대해 바인딩 외에 추가로 찾은 것: {names}",
+  "preview.discovered": "이 미리보기에서 바인딩 외에 추가로 찾은 것: {names}",
   "preview.noPrompt": "이 버전은 자체 프롬프트를 보내지 않습니다. 모든 내용은 대화가 채웁니다.",
   "preview.toolsOffered": "제공하는 도구 ({count})",
   "preview.blurb":
-    "실행과 같은 방식으로 시스템 프롬프트를 만듭니다 — Skill 표, 연결된 MCP 서버와 도구 이름, 전환 지시 — 이를 위해 바인딩된 MCP 서버에 실제로 접속합니다.",
+    "실행과 같은 방식으로 시스템 프롬프트를 만든다 — 회상한 문맥, Skill 표, 연결된 MCP 서버와 도구 이름, 전환 지시 — 이를 위해 설정된 서비스에 필요할 때 실제로 접속한다.",
 
   "mcpConn.connected": "연결됨",
   "mcpConn.needsAuth": "인증되지 않음",
