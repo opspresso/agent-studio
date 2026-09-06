@@ -116,6 +116,10 @@ flowchart TB
 모든 종료는 알려진다 — 정상 종료는 `done`, 상한은 `finishReason`, 실패는 `error` chunk — 그것이
 소비자로 하여금 끝을 추론하지 않고 읽게 해 준다.
 
+채널 어댑터는 SDK의 스트림 반복이 끝난 뒤에도 호출자의 취소 signal을 확인하고 원래 이유를
+던진다. SDK가 취소를 정상 반복 종료로 전달해도 실행은 완료로 기록되지 않으며, Chat은 중단
+안내를 메시지에 남긴다.
+
 - 모든 텍스트 생성은 **OpenAI Chat Completions 프로토콜**로 말하며, 모델 id 는
   `provider/model` 이다. 라우팅은
   [CONFIGURATION.md](../CONFIGURATION.md#llm-채널) 에 설명돼 있다.
