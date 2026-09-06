@@ -446,6 +446,12 @@ MCP 클라이언트는 `@modelcontextprotocol/client` 위에서 돌고, 가드�
 MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
 ```
 
+로컬 앱의 MCP를 연결하려면 `localhost`를 명시적으로 추가한다. 예를 들어
+`MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local,localhost`는
+`http://localhost:3100/api/organizations/opspresso/mcp`를 허용한다. `localhost`는 정확히
+그 호스트만 허용하며 하위 도메인과 IP 주소는 포함하지 않는다. 기본값은 계속 차단이며,
+이 MCP 설정을 추가해도 모델의 `FetchUrl` 허용 목록은 바뀌지 않는다.
+
 선언된 접미사 아래의 호스트는 그 질문이 던져지는 모든 곳에서 public URL 가드를 건너뛴다.
 항목을 등록할 때와 편집할 때, 콘솔의 "Test connection" 프로브, admin 이 항목의 OAuth 메타데이터를
 읽을 때, project 자신의 도구 목록, 그리고 디스패치. 각각 `skipsUrlGuard` 를 통해서다. **차단된
@@ -474,7 +480,8 @@ MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
   은 거부한다. 단순한 "…로 끝난다"였다면 통과시켰을 아슬아슬한 경우다. 앞에 붙은 점은
   허용되며 같은 뜻이다.
 - **단일 레이블 접미사는 없다.** `local` 이나 `internal` 은 이름 공간 하나를 통째로 허용하게
-  된다. 의도라기보다 오타일 가능성이 훨씬 높으므로 존중하지 않는다.
+  된다. 의도라기보다 오타일 가능성이 훨씬 높으므로 존중하지 않는다. 명시한 `localhost`만
+  정확한 호스트 일치로 허용하며, 접미사로 확장하지 않는다.
 - **IP 리터럴은 결코 안 된다.** 그 예외는 누군가 게시한 이름을 위한 것이다. 주소에는 맞출 이름이
   없으므로, 사설 주소는 여전히 provenance 로 자기 길을 얻어야 한다.
 - **`http(s)` 만**, 그리고 userinfo 로 호스트 검사를 지나쳐 접미사를 밀반입할 수 없다.
