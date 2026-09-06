@@ -10,10 +10,11 @@ import {
   Text,
   ThemeIcon,
   Title,
-  VisuallyHidden,
 } from "@mantine/core";
 import {
   IconArrowsShuffle,
+  IconArrowDown,
+  IconPlayerPlay,
   IconVersions,
   IconBook2,
   IconRobot,
@@ -131,37 +132,11 @@ const INSTALL_POINTS = [
   { title: "home.install.optional", body: "home.install.optionalNote" },
 ] as const satisfies ReadonlyArray<{ title: MessageKey; body: MessageKey }>;
 
-const TRACE_LINES: Array<{ kind: "meta" | "tool" | "text" | "author"; text: string }> = [
-  { kind: "meta", text: 'POST /api/projects/support-triage/versions/published/agent' },
-  { kind: "text", text: 'data: {"delta":{"content":"Looking at the report…"}}' },
-  {
-    kind: "tool",
-    text: 'data: {"delta":{"toolCalls":[{"id":"call_1","type":"function","function":{"name":"Skill","arguments":"{\\"skill_name\\":\\"triage-rules\\"}"}}]}}',
-  },
-  {
-    kind: "tool",
-    text: 'data: {"toolResult":{"toolCallId":"call_1","name":"Skill: triage-rules","content":"# Triage rules…"}}',
-  },
-  {
-    kind: "tool",
-    text: 'data: {"delta":{"toolCalls":[{"id":"call_2","type":"function","function":{"name":"transfer_to_agent","arguments":"{\\"agent_name\\":\\"escalation-agent\\",\\"message\\":\\"Rate this crash report.\\"}"}}]}}',
-  },
-  {
-    kind: "author",
-    text: 'data: {"author":"escalation-agent","authorPath":["escalation-agent"],"delta":{"content":"Severity: P2"}}',
-  },
-  {
-    kind: "author",
-    text: 'data: {"author":"escalation-agent","authorPath":["escalation-agent"],"authorDone":true}',
-  },
-  {
-    kind: "tool",
-    text: `data: {"toolResult":{"toolCallId":"call_2","name":"transfer_to_agent: escalation-agent","content":"Transferred to 'escalation-agent'; its answer follows.","displayOnly":true}}`,
-  },
-  { kind: "text", text: 'data: {"delta":{"content":"Filed as P2 with repro steps."}}' },
-  { kind: "meta", text: 'data: {"usage":{"inputTokens":812,"outputTokens":164,"costUsd":0.0031}}' },
-  { kind: "meta", text: 'data: {"done":true}' },
-];
+const WORKFLOW = [
+  { title: "home.flow.build", body: "home.flow.buildBody", Icon: IconFolder },
+  { title: "home.flow.run", body: "home.flow.runBody", Icon: IconPlayerPlay },
+  { title: "home.flow.review", body: "home.flow.reviewBody", Icon: IconFiles },
+] as const satisfies ReadonlyArray<{ title: MessageKey; body: MessageKey; Icon: typeof IconFolder }>;
 
 export default async function Home() {
   const user = await getSessionUser();
@@ -172,7 +147,7 @@ export default async function Home() {
   const t = await getT();
 
   return (
-    <Stack gap={80} py={{ base: "md", md: 48 }}>
+    <Stack gap={56} py={{ base: "md", md: 32 }}>
       {/*
         `GridCol`, not `Grid.Col`: this is a server component, and Mantine's
         static sub-components do not survive the RSC boundary — the dotted form
@@ -190,11 +165,11 @@ export default async function Home() {
           >
             {t("home.eyebrow")}
           </Badge>
-          <Title order={1} mt="lg" fz={{ base: 42, md: 60 }} lh={1.04} lts="-0.045em">
+          <Title order={1} mt="lg" fz={{ base: 36, md: 48 }} lh={1.12} lts="-0.045em">
             {t("home.headline")}
             <span className={classes.gradientText}>{t("home.headlineAccent")}</span>
           </Title>
-          <Text mt="xl" maw={580} c="dimmed" lh={1.7} fz={{ base: "md", md: "lg" }}>
+          <Text mt="lg" maw={580} c="dimmed" lh={1.7} fz="md">
             {t("home.lede")}
           </Text>
           <Group mt="xl" gap="md" wrap="wrap">
@@ -226,51 +201,33 @@ export default async function Home() {
         </GridCol>
 
         <GridCol span={{ base: 12, lg: 6 }} style={{ minWidth: 0 }}>
-          <div className={classes.visualStage}>
-            <div className={classes.orb} />
-            <div className={classes.orbit} />
-            <Paper
-              component="figure"
-              withBorder
-              m={0}
-              w="100%"
-              className={classes.console}
-              aria-label={t("home.streamLabel")}
-            >
-              <Group
-                component="figcaption"
-                justify="space-between"
-                px="md"
-                py="xs"
-                className={classes.consoleHeader}
-              >
-                <Text ff="monospace" fz="xs" c="dimmed">
-                  {t("home.streamCaption")}
-                </Text>
-                <Text ff="monospace" fz={10} tt="uppercase" c="dimmed" px={8} py={2}>
-                  {t("home.streamLive")}
-                </Text>
-              </Group>
-              <pre className={classes.trace}>
-                {TRACE_LINES.map((line, i) => (
-                  <div key={i} className={classes[line.kind]}>
-                    {line.text}
-                  </div>
-                ))}
-                <div className={classes.meta}>
-                  data: [DONE]
-                  <span className={`trace-cursor ${classes.cursor}`} />
+          <Paper component="figure" withBorder m={0} p={{ base: "lg", md: "xl" }} className={classes.workflow}>
+            <Text component="figcaption" fw={600} fz="lg" mb="xl">
+              {t("home.flow.title")}
+            </Text>
+            <Stack gap="sm">
+              {WORKFLOW.map(({ title, body, Icon }, index) => (
+                <div key={title}>
+                  {index > 0 && <IconArrowDown size={18} className={classes.flowArrow} aria-hidden="true" />}
+                  <Group align="flex-start" wrap="nowrap" gap="md" className={classes.flowStep}>
+                    <ThemeIcon size={44} variant="light" color="brand" radius="lg" style={{ flexShrink: 0 }}>
+                      <Icon size={22} stroke={1.7} />
+                    </ThemeIcon>
+                    <div>
+                      <Text fz="xs" c="dimmed" mb={2}>0{index + 1}</Text>
+                      <Text fw={600}>{t(title)}</Text>
+                      <Text fz="sm" c="dimmed" mt={5} lh={1.6}>{t(body)}</Text>
+                    </div>
+                  </Group>
                 </div>
-              </pre>
-            </Paper>
-          </div>
+              ))}
+            </Stack>
+          </Paper>
         </GridCol>
       </Grid>
 
       <section>
-        <VisuallyHidden>
-          <Title order={2}>{t("home.coverage")}</Title>
-        </VisuallyHidden>
+        <Title order={2} fz="h3" mb="lg">{t("home.coverage")}</Title>
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
           {DOMAINS.map(({ Icon, ...domain }) => (
             <Card
@@ -292,9 +249,9 @@ export default async function Home() {
               >
                 {domain.label}
               </Text>
-              <Text fz="sm" fw={600} mt="xs">
+              <Title order={3} fz="md" fw={600} mt="xs">
                 {t(domain.title)}
-              </Text>
+              </Title>
               <Text fz="sm" c="dimmed" mt={6} lh={1.6}>
                 {t(domain.body)}
               </Text>

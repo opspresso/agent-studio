@@ -6,6 +6,7 @@ import { IconUsers } from "@tabler/icons-react";
 import { MEMBER_TIERS, type MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
 import { PageHeader } from "@/app/_components/PageHeader";
+import { DataTable } from "@/app/_components/DataTable";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { formatDateTime } from "@/shared/date";
 import { readJson } from "@/app/_lib/httpClient";
@@ -72,8 +73,7 @@ export default function MembersPage() {
       ) : members.length === 0 ? (
         <EmptyState>{t("members.empty")}</EmptyState>
       ) : (
-        <Table.ScrollContainer minWidth={780}>
-          <Table striped highlightOnHover>
+        <DataTable minWidth={780}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>{t("members.member")}</Table.Th>
@@ -119,8 +119,7 @@ export default function MembersPage() {
                 </Table.Tr>
               ))}
             </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+        </DataTable>
       )}
     </Stack>
   );

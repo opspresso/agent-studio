@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { Alert, Card, Center, Stack, Text, Title } from "@mantine/core";
+import { Alert, Card, Center, Stack, Text, ThemeIcon, Title } from "@mantine/core";
+import { IconRobot } from "@tabler/icons-react";
 import { SignInButton } from "@/components/SignInButton";
 import { config } from "@/lib/config";
 import { getSessionUser } from "@/lib/session";
@@ -40,14 +41,17 @@ export default async function LoginPage({
 
   return (
     <Center mih="60vh">
-      <Card maw={420} w="100%" padding="xl">
-        <Stack gap="md" align="center" ta="center">
+      <Card maw={460} w="100%" padding="xl">
+        <Stack gap="lg" align="center" ta="center">
+          <ThemeIcon size={52} variant="light" color="brand" radius="lg">
+            <IconRobot size={28} stroke={1.6} />
+          </ThemeIcon>
           {error ? (
             <Alert color="red" variant="light" w="100%" ta="left">
               {error}
             </Alert>
           ) : null}
-          <Title order={1} fz="h3">
+          <Title order={1} fz="h2">
             {t("login.title")}
           </Title>
           <Text fz="sm" lh={1.6}>

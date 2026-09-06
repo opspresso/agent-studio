@@ -85,6 +85,10 @@ export default function PluginsPage() {
     void refresh();
   }, []);
 
+  const visibleItems = plugins.filter((plugin) =>
+    matchesFilter(filter, plugin.name, plugin.description),
+  );
+
   return (
     <Stack gap="lg">
       <CatalogHeader
@@ -165,40 +169,45 @@ export default function PluginsPage() {
       )}
 
       {plugins.length > 0 && (
-        <CatalogSearch value={filter} onChange={setFilter} placeholder={t("plugins.filter")} />
+        <CatalogSearch
+          value={filter}
+          onChange={setFilter}
+          placeholder={t("plugins.filter")}
+          resultCount={visibleItems.length}
+          totalCount={plugins.length}
+          onReset={filter ? () => setFilter("") : undefined}
+        />
       )}
 
       <CardGrid
         loading={loading}
-        empty={plugins.length === 0}
-        emptyText={t("plugins.empty")}
+        empty={visibleItems.length === 0}
+        emptyText={t(plugins.length === 0 ? "plugins.empty" : "catalog.noResults")}
       >
-        {plugins
-          .filter((plugin) => matchesFilter(filter, plugin.name, plugin.description))
-          .map((plugin) => (
-            <Card key={plugin.name} component={Link} href={`/plugins/${plugin.name}`} h="100%">
-              <Group gap="xs" wrap="nowrap">
-                <Text fw={500} truncate>
-                  {plugin.name}
-                </Text>
-                {plugin.version && (
-                  <Badge size="xs" variant="light">
-                    v{plugin.version}
-                  </Badge>
-                )}
-              </Group>
-              {plugin.description && (
-                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                  {plugin.description}
-                </Text>
-              )}
-              <Text fz="xs" c="dimmed" mt={8}>
-                {plugin.skills.length} skill{plugin.skills.length === 1 ? "" : "s"} ·{" "}
-                {plugin.mcpServers.length} server{plugin.mcpServers.length === 1 ? "" : "s"} ·
-                synced {formatDate(plugin.syncedAt, locale)} · {plugin.commitSha.slice(0, 7)}
+        {visibleItems.map((plugin) => (
+          <Card key={plugin.name} component={Link} href={`/plugins/${plugin.name}`} h="100%">
+            <Group gap="xs" wrap="nowrap">
+              <Text fw={500} truncate>
+                {plugin.name}
               </Text>
-            </Card>
-          ))}
+              {plugin.version && (
+                <Badge size="xs" variant="light">
+                  v{plugin.version}
+                </Badge>
+              )}
+            </Group>
+            {plugin.description && (
+              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+                {plugin.description}
+              </Text>
+            )}
+            <Text fz="xs" c="dimmed" mt={8}>
+              {plugin.skills.length} skill{plugin.skills.length === 1 ? "" : "s"} ·{" "}
+              {plugin.mcpServers.length} server{plugin.mcpServers.length === 1 ? "" : "s"} ·
+              synced {formatDate(plugin.syncedAt, locale)} · {plugin.commitSha.slice(0, 7)}
+            </Text>
+          </Card>
+        ))}
       </CardGrid>
     </Stack>
   );

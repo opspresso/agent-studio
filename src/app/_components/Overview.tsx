@@ -33,7 +33,7 @@ import { recentProjects } from "@/app/_lib/overview";
 import { listProjects, type SanitizedProject } from "@/app/projects/lib/api";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
-import { tierAtLeast, type MemberTier } from "@/domain/member/tiers";
+import { tierAtLeast, tierMayCreateProjects, type MemberTier } from "@/domain/member/tiers";
 import { formatDate } from "@/shared/date";
 import { PROJECT_TYPE_COLOR } from "./badgeColors";
 import { OwnerLine } from "./OwnerLine";
@@ -95,6 +95,7 @@ export function Overview({
 }) {
   const viewerEmail = userEmail;
   const showCatalogs = tierAtLeast(tier, "member");
+  const canCreateProjects = tierMayCreateProjects(tier);
   const t = useT();
   const locale = useLocale();
 
@@ -187,10 +188,10 @@ export function Overview({
     projectsLoaded && chatsLoaded && (projects?.length ?? 0) === 0 && chats.length === 0;
 
   return (
-    <Stack gap={48}>
+    <Stack gap={32}>
       <Group justify="space-between" align="flex-end" gap="md" wrap="wrap">
         <div>
-          <Title order={1} fz={{ base: 28, md: 36 }} lts="-0.035em">
+          <Title order={1} fz={{ base: 26, md: 30 }} lts="-0.035em">
             {firstName ? t("overview.welcome", { name: firstName }) : t("overview.welcomeAnon")}
           </Title>
           <Text c="dimmed" mt={6} maw={620}>
@@ -198,8 +199,8 @@ export function Overview({
           </Text>
         </div>
         <Group gap="xs" wrap="wrap">
-          <Button component={Link} href="/projects" leftSection={<IconPlus size={16} />}>
-            {t("overview.newProject")}
+          <Button component={Link} href={canCreateProjects ? "/projects?create=1" : "/projects"} leftSection={canCreateProjects ? <IconPlus size={16} /> : <IconFolder size={16} />}>
+            {t(canCreateProjects ? "overview.newProject" : "overview.allProjects")}
           </Button>
           <Button
             component={Link}
@@ -212,23 +213,10 @@ export function Overview({
         </Group>
       </Group>
 
-      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-        <CountTile
-          href="/projects"
-          label={t("nav.projects")}
-          count={projects?.length}
-          Icon={IconFolder}
-        />
-        {showCatalogs &&
-          CATALOGS.map(({ key, href, label, Icon }) => (
-            <CountTile key={key} href={href} label={t(label)} count={counts[key]} Icon={Icon} />
-          ))}
-      </SimpleGrid>
-
       {isNewWorkspace ? (
-        <GetStarted />
+        <GetStarted showCatalogs={showCatalogs} canCreateProjects={canCreateProjects} />
       ) : (
-        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl">
+        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
           <Section
             title={t("overview.recentProjects")}
             description={t("overview.recentProjectsNote")}
@@ -246,7 +234,7 @@ export function Overview({
             )}
             <Stack gap="sm">
               {recent.map((project) => (
-                <Card key={project.name} component={Link} href={`/projects/${project.name}`}>
+                <Card key={project.name} component={Link} href={`/projects/${project.name}`} padding="sm" className={classes.projectRow}>
                   <Group justify="space-between" gap="xs" wrap="nowrap">
                     <Text fw={500} truncate>
                       {project.displayName || project.name}
@@ -303,6 +291,19 @@ export function Overview({
         </SimpleGrid>
       )}
 
+      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
+        <CountTile
+          href="/projects"
+          label={t("nav.projects")}
+          count={projects?.length}
+          Icon={IconFolder}
+        />
+        {showCatalogs &&
+          CATALOGS.map(({ key, href, label, Icon }) => (
+            <CountTile key={key} href={href} label={t(label)} count={counts[key]} Icon={Icon} />
+          ))}
+      </SimpleGrid>
+
       <Dashboard projects={projects} />
     </Stack>
   );
@@ -321,13 +322,13 @@ function CountTile({
   Icon: typeof IconFolder;
 }) {
   return (
-    <Card component={Link} href={href} className={classes.countTile}>
+    <Card component={Link} href={href} padding="md">
       <Group justify="space-between" align="flex-start" wrap="nowrap">
         <div>
-          <Text fz={10} fw={600} tt="uppercase" c="dimmed" lts="0.1em">
+          <Text fz="sm" fw={500} c="dimmed">
             {label}
           </Text>
-          <Text fz={28} fw={650} mt={4} lts="-0.035em">
+          <Text fz={24} fw={600} mt={4} lts="-0.035em">
             {count ?? "—"}
           </Text>
         </div>
@@ -353,10 +354,10 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <Stack gap="md" component="section">
-      <Group justify="space-between" align="flex-end" gap="xs" wrap="nowrap">
+    <Stack gap="md" component="section" className={classes.section}>
+      <Group justify="space-between" align="flex-end" gap="xs" wrap="wrap">
         <div>
-          <Text fw={600}>{title}</Text>
+          <Title order={2} fz="md" fw={600}>{title}</Title>
           <Text fz="xs" c="dimmed">
             {description}
           </Text>
@@ -397,7 +398,7 @@ function RowSkeleton({ rows }: { rows: number }) {
  * workspace showing three "nothing here" boxes says what is missing and never
  * what to do about it.
  */
-function GetStarted() {
+function GetStarted({ showCatalogs, canCreateProjects }: { showCatalogs: boolean; canCreateProjects: boolean }) {
   const t = useT();
   return (
     <Paper withBorder p="xl" className={classes.getStarted}>
@@ -411,12 +412,14 @@ function GetStarted() {
             {t("overview.getStartedBody")}
           </Text>
           <Group gap="xs" mt={4}>
-            <Button component={Link} href="/projects" leftSection={<IconPlus size={16} />}>
-              {t("overview.newProject")}
+            <Button component={Link} href={canCreateProjects ? "/projects?create=1" : "/projects"} leftSection={canCreateProjects ? <IconPlus size={16} /> : <IconFolder size={16} />}>
+              {t(canCreateProjects ? "overview.newProject" : "overview.allProjects")}
             </Button>
-            <Button component={Link} href="/skills" variant="default">
-              {t("overview.browseSkills")}
-            </Button>
+            {showCatalogs && (
+              <Button component={Link} href="/skills" variant="default">
+                {t("overview.browseSkills")}
+              </Button>
+            )}
           </Group>
         </Stack>
       </Group>

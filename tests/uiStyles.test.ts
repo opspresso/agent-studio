@@ -42,7 +42,8 @@ describe("disabled input legibility", () => {
   });
 
   it("uses AppShell's main landmark without nesting another one", () => {
-    expect(appLayout).toContain('<AppShell.Main id="main-content">');
+    expect(appLayout).toContain('<AppShell.Main id="main-content" tabIndex={-1}>');
+    expect(appLayout).toContain('href="#main-content"');
     expect(appLayout).toContain('<div className={classes.main}>{children}</div>');
     expect(appLayout).not.toContain("<main");
   });

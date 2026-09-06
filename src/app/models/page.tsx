@@ -1040,8 +1040,18 @@ export default function ModelsPage() {
 
       {models.length > 0 && (
         <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
-          <Group align="flex-end" wrap="wrap" gap="md">
-            <CatalogSearch value={filter} onChange={setFilter} placeholder={t("models.filter")} />
+          <Group align="flex-start" wrap="wrap" gap="md">
+            <CatalogSearch
+              value={filter}
+              onChange={setFilter}
+              placeholder={t("models.filter")}
+              resultCount={rows.length}
+              totalCount={models.length}
+              onReset={filter || tableState.provider || tableState.type || tableState.capabilities.length > 0 ? () => {
+                setFilter("");
+                setTableState((current) => ({ ...current, provider: null, type: null, capabilities: [] }));
+              } : undefined}
+            />
             <Select
               aria-label="Provider"
               placeholder="All providers"
@@ -1084,10 +1094,11 @@ export default function ModelsPage() {
             </Checkbox.Group>
           </Group>
           <Group gap="sm" align="center">
-            <Text fz="sm" c="dimmed">
-              {rows.length} {rows.length === 1 ? "model" : "models"}
-              {updatedAt && ` · ${t("models.catalogUpdated")} ${formatDate(updatedAt, locale)}`}
-            </Text>
+            {updatedAt && (
+              <Text fz="sm" c="dimmed">
+                {t("models.catalogUpdated")} {formatDate(updatedAt, locale)}
+              </Text>
+            )}
             <SortButtons
               activeKey={tableState.sortKey}
               direction={tableState.direction}
@@ -1097,7 +1108,11 @@ export default function ModelsPage() {
         </Group>
       )}
 
-      <CardGrid loading={loading} empty={models.length === 0} emptyText={t("models.empty")}>
+      <CardGrid
+        loading={loading}
+        empty={rows.length === 0}
+        emptyText={t(models.length === 0 ? "models.empty" : "catalog.noResults")}
+      >
         {rows.map((model) => {
           const provider = providerByName.get(model.provider);
           const routes = otherRoutes(models, model);

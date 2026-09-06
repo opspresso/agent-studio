@@ -1,40 +1,31 @@
-.countTile {
-  transition:
-    transform 160ms ease,
-    border-color 160ms ease;
+.section {
+  padding: var(--mantine-spacing-lg);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--mantine-radius-lg);
+  background: var(--studio-surface);
 }
 
-.countTile:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 28%, transparent);
+.projectRow {
+  box-shadow: none;
 }
 
 .chatRow {
   display: block;
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-sm);
   border-radius: var(--mantine-radius-md);
   transition: background-color 120ms ease;
 }
 
-.chatRow:hover {
+.chatRow:hover,
+.chatRow:focus-visible {
   background-color: var(--surface-highlight);
 }
 
-.getStarted {
-  background: linear-gradient(
-    145deg,
-    color-mix(in oklab, var(--studio-surface-raised) 86%, transparent),
-    color-mix(in oklab, var(--surface-highlight) 46%, transparent)
-  );
-  box-shadow: var(--surface-shadow);
+.chatRow:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .countTile {
-    transition: none;
-  }
-
-  .countTile:hover {
-    transform: none;
-  }
+.getStarted {
+  background: var(--studio-surface);
 }

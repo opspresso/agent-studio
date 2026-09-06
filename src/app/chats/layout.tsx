@@ -11,7 +11,7 @@ export default function ChatsLayout({ children }: { children: React.ReactNode })
       h={{ base: "calc(100dvh - 10rem)", md: "calc(100dvh - 8rem)" }}
     >
       <ChatSidebar />
-      <Box component="section" style={{ flex: 1, minWidth: 0 }}>
+      <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, border: "1px solid var(--studio-border)", borderRadius: "var(--mantine-radius-lg)", background: "var(--studio-surface)", padding: "var(--mantine-spacing-sm)" }}>
         {children}
       </Box>
     </Flex>

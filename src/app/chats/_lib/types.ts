@@ -137,6 +137,7 @@ export interface LiveTurn {
 export interface AgentProject {
   name: string;
   displayName: string;
+  description?: string;
   projectType: string;
 }
 

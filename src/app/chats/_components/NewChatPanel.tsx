@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
 import { useT } from "@/app/_i18n/provider";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
@@ -12,7 +13,8 @@ import { ChatThread } from "./ChatThread";
 import { LiveAssistant, MessageView, RunningAgents } from "./parts";
 import { Composer } from "./Composer";
 import { onNewChat } from "./ChatSidebar";
-import { Alert, Box, Flex, Group, ScrollArea, Select, Stack, Text } from "@mantine/core";
+import { Alert, Box, Button, Flex, Group, Loader, ScrollArea, Select, Stack, Text, ThemeIcon, Title } from "@mantine/core";
+import { IconMessageCircle, IconArrowRight } from "@tabler/icons-react";
 import { useLocalStorage } from "@mantine/hooks";
 import classes from "./ChatThread.module.css";
 
@@ -120,7 +122,7 @@ export function NewChatPanel() {
     // key set, and guarding on that alone made Send do nothing for the rest of
     // the session — silently, since the button still looks enabled. Refused
     // sends report themselves so the composer keeps the draft.
-    if (!projectName || starting) {
+    if (!projectsLoaded || !projects.some((project) => project.name === projectName) || starting) {
       return false;
     }
     setKey(runStore.startNewChat(projectName, { content, attachments, documents }));
@@ -133,6 +135,17 @@ export function NewChatPanel() {
     return <ChatThread chatId={chatId} />;
   }
 
+  if (!projectsLoaded) {
+    return (
+      <Flex h="100%" align="center" justify="center" role="status">
+        <Group gap="sm">
+          <Loader size="sm" />
+          <Text c="dimmed" fz="sm">{t("common.loading")}</Text>
+        </Group>
+      </Flex>
+    );
+  }
+
   if (projectsLoaded && projects.length === 0) {
     return (
       <Flex h="100%" align="center" justify="center">
@@ -143,10 +156,19 @@ export function NewChatPanel() {
             </Alert>
           ) : (
             <>
-              <Text fw={500}>{t("chat.noAgentProjects")}</Text>
+              <ThemeIcon size={56} radius="xl" variant="light" mx="auto">
+                <IconMessageCircle size={28} />
+              </ThemeIcon>
+              <Title order={1} fz="h3">{t("chat.noAgentProjects")}</Title>
               <Text fz="sm" c="dimmed">
                 {t("chat.noAgentProjectsBody")}
               </Text>
+              <Group justify="center" mt="sm">
+                <Button component={Link} href="/projects" rightSection={<IconArrowRight size={16} />}>
+                  {t("chrome.openProjects")}
+                </Button>
+                <Button component={Link} href="/guide" variant="default">{t("nav.guide")}</Button>
+              </Group>
             </>
           )}
         </Stack>
@@ -155,15 +177,36 @@ export function NewChatPanel() {
   }
 
   const starting = entry?.status === "streaming";
+  const selectedProject = projects.find((project) => project.name === projectName);
 
   return (
     <Flex direction="column" h="100%">
       <ScrollArea style={{ flex: 1, minHeight: 0 }} pb="md">
         {entry?.pendingUser === undefined ? (
-          <Flex h="100%" align="center" justify="center" py="xl">
-            <Text fz="sm" c="dimmed">
-              {t("chat.pickProject")}
-            </Text>
+          <Flex h="100%" align="center" justify="center" className={classes.welcome}>
+            <Stack gap="md" w="100%" maw={480}>
+              <ThemeIcon size={52} radius="lg" variant="light">
+                <IconMessageCircle size={27} stroke={1.7} />
+              </ThemeIcon>
+              <div>
+                <Title order={1} fz={{ base: 26, sm: 32 }}>{t("chat.welcomeTitle")}</Title>
+                <Text fz="sm" c="dimmed" mt="xs">{t("chat.pickProject")}</Text>
+              </div>
+              <Select
+                label={t("chat.project")}
+                value={projectName}
+                onChange={(value) => setProjectName(value ?? "")}
+                allowDeselect={false}
+                searchable
+                data={projects.map((project) => ({ value: project.name, label: project.displayName || project.name }))}
+              />
+              {selectedProject?.description && (
+                <Text fz="sm" c="dimmed" className={classes.projectDescription}>
+                  {selectedProject.description}
+                </Text>
+              )}
+              <Text fz="xs" c="dimmed">{t("chat.welcomeHint")}</Text>
+            </Stack>
           </Flex>
         ) : (
           <Stack gap="sm" className={classes.column}>
@@ -209,15 +252,16 @@ export function NewChatPanel() {
           <Composer
             key={composerKey}
             onSend={start}
-            disabled={starting}
+            disabled={starting || !selectedProject}
             placeholder={t("chat.firstPlaceholder")}
             status={<RunningAgents paths={entry?.live.authorPaths ?? []} />}
-            leading={
+            leading={entry?.pendingUser !== undefined && (
               <Group gap="xs" align="center">
                 <Text fz="xs" fw={500} c="dimmed">
                   {t("chat.project")}
                 </Text>
                 <Select
+                  aria-label={t("chat.project")}
                   value={projectName}
                   onChange={(value) => setProjectName(value ?? "")}
                   disabled={starting}
@@ -228,7 +272,7 @@ export function NewChatPanel() {
                   }))}
                 />
               </Group>
-            }
+            )}
             {...(starting && entry?.runId && key
               ? { onStop: () => runStore.cancelRun(key) }
               : {})}

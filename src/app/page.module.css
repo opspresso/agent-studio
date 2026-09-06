@@ -1,176 +1,42 @@
-/* The signed-out hero's example stream. Colours mark what each line is. */
-
-/*
- * Korean has no spaces inside a noun phrase, so the default break rule splits
- * words mid-syllable-block — the headline read "사내 서 / 버에서". `keep-all`
- * moves the break to a space, which is how Korean copy is set. English is
- * unaffected: it already breaks at spaces.
- */
 .hero,
 .domainCard,
-.installPanel {
+.installPanel,
+.workflow {
   word-break: keep-all;
 }
 
 .eyebrow {
-  border: 1px solid color-mix(in oklab, var(--mantine-color-brand-5) 24%, transparent);
-  background: color-mix(in oklab, var(--mantine-color-brand-5) 9%, transparent);
+  border: 1px solid var(--studio-border);
 }
 
-/*
- * Both ends come off the brand ramp now. They used to be `brand-5 → violet-5`,
- * which read as a gradient only while brand was blue — the ramp has since moved
- * to hue 290 and the two ends landed within a few degrees of each other, so the
- * text was a flat violet wearing a gradient's markup. Dark-to-light on one hue
- * is the same move `--ai-gradient` makes.
- */
 .gradientText {
-  color: transparent;
-  background: linear-gradient(120deg, var(--mantine-color-brand-7), var(--mantine-color-brand-4));
-  background-clip: text;
-  -webkit-background-clip: text;
+  color: light-dark(var(--mantine-color-brand-7), var(--mantine-color-brand-3));
 }
 
 .proofRow > div {
   padding-left: var(--mantine-spacing-md);
-  border-left: 1px solid var(--studio-border);
+  border-left: 2px solid var(--studio-border);
 }
 
-.visualStage {
-  position: relative;
-  display: grid;
-  min-height: 440px;
-  align-items: center;
-  isolation: isolate;
+.workflow {
+  background: var(--studio-surface);
+  box-shadow: var(--surface-shadow);
 }
 
-.orb {
-  position: absolute;
-  z-index: -2;
-  top: 4%;
-  left: 16%;
-  width: 68%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.84), transparent 12%),
-    radial-gradient(circle at 50% 50%, var(--mantine-color-brand-4), var(--mantine-color-brand-8));
-  filter: blur(2px);
-  opacity: 0.56;
-  box-shadow:
-    0 0 90px color-mix(in oklab, var(--mantine-color-brand-5) 40%, transparent),
-    inset -30px -30px 70px rgba(30, 18, 78, 0.3);
+.flowStep {
+  padding: var(--mantine-spacing-sm);
 }
 
-.orbit {
-  position: absolute;
-  z-index: -1;
-  top: 8%;
-  left: 10%;
-  width: 80%;
-  aspect-ratio: 1;
-  border: 1px solid color-mix(in oklab, var(--mantine-color-brand-3) 28%, transparent);
-  border-radius: 50%;
-  transform: rotate(-18deg) scaleY(0.56);
-}
-
-.console {
-  overflow: hidden;
-  border-color: color-mix(in oklab, var(--mantine-color-brand-4) 28%, var(--studio-border));
-  background-color: color-mix(in oklab, var(--studio-surface) 86%, transparent);
-  box-shadow:
-    0 32px 80px rgba(38, 26, 74, 0.22),
-    inset 0 1px rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(22px) saturate(1.2);
-  transform: perspective(1000px) rotateY(-2deg) rotateX(1deg);
-}
-
-.consoleHeader {
-  border-bottom: 1px solid var(--studio-border);
-  background-color: color-mix(in oklab, var(--studio-surface-raised) 58%, transparent);
-}
-
-.trace {
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
-  padding: var(--mantine-spacing-md);
-  margin: 0;
-  font-family: var(--mantine-font-family-monospace);
-  font-size: 11px;
-  line-height: 1.6;
-}
-
-.domainCard {
-  position: relative;
-  overflow: hidden;
-  transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease;
-  background: linear-gradient(
-    145deg,
-    color-mix(in oklab, var(--studio-surface-raised) 86%, transparent),
-    color-mix(in oklab, var(--surface-highlight) 46%, transparent)
-  );
-}
-
-.domainCard::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: var(--ai-gradient);
-  opacity: 0.72;
-}
-
-.domainCard:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 28%, transparent);
-  box-shadow: var(--surface-shadow-lifted);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .domainCard {
-    transition: none;
-  }
-
-  .domainCard:hover {
-    transform: none;
-  }
-}
-
-@media (max-width: $mantine-breakpoint-sm) {
-  .visualStage {
-    min-height: 360px;
-  }
-
-  .console {
-    transform: none;
-  }
-}
-
-.meta {
+.flowArrow {
+  display: block;
+  margin: 0 0 var(--mantine-spacing-xs) 25px;
   color: var(--mantine-color-dimmed);
 }
 
-.tool {
-  color: var(--mantine-primary-color-filled);
+.domainCard {
+  background: var(--studio-surface);
 }
 
-.author {
-  color: light-dark(var(--mantine-color-orange-8), var(--mantine-color-orange-4));
-}
-
-.text {
-  color: var(--mantine-color-text);
-}
-
-.cursor {
-  display: inline-block;
-  width: 6px;
-  height: 12px;
-  margin-left: 4px;
-  transform: translateY(2px);
-  background-color: var(--mantine-primary-color-filled);
+.installPanel {
+  background: var(--studio-surface);
 }
