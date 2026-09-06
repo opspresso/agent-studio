@@ -67,7 +67,8 @@ flowchart LR
   imageuc["이미지 유스케이스 — generateImage"]
 
   bracket["런 브래킷 — openRun<br/>모델 정책 → 프로젝트 비용 가드 → 멤버 월 상한 → 동시성 슬롯 → 메트릭·상관 id·아티팩트 레코더"]
-  resolve["바인딩 해석 (prepare span)<br/>스킬 · MCP 세션 · 서브에이전트 · (옵트인) 카탈로그 검색 · 메모리 회상"]
+  memory["메모리 준비 (memory prepare span)<br/>명시적 바인딩 recall"]
+  resolve["바인딩 해석 (tools prepare span)<br/>요청 + 관련 기억으로 (옵트인) 카탈로그 검색<br/>스킬 · MCP 세션 · 서브에이전트"]
   engine["엔진 — runAgent / runPrompt(Stream)"]
   channel["OpenAI 호환 채널 (LLM 공급자)"]
   imagechannel["이미지 채널"]
@@ -90,7 +91,7 @@ flowchart LR
   schedule -->|"triggerRunnerDeps.run"| facade
   facade --> bracket
   imageuc --> bracket
-  bracket -->|"agent"| resolve --> engine
+  bracket -->|"agent"| memory --> resolve --> engine
   bracket -->|"llm"| engine
   bracket -->|"image"| imagechannel
   engine <--> channel
@@ -120,7 +121,8 @@ sequenceDiagram
   S->>F: executeAgent(deps, {project, version, messages, actor, caller, conversation})
   F->>B: openRun — 모델 정책 · 비용 가드(fail-open) · 멤버 상한(fail-open) · 동시성 슬롯(fail-closed) · 메트릭 · 상관 id · 아티팩트 레코더
   B-->>F: bracket
-  F->>F: resolveRunTools (스킬 / MCP / 서브에이전트 병렬) · recallForRun<br/>각각 prepare span 으로 기록 — 첫 model span 은 그 뒤에서 시작한다
+  F->>F: prepareMemoryForRun (명시적 바인딩 recall)<br/>memory prepare span 으로 기록
+  F->>F: resolveRunTools (요청 + 관련 기억으로 discovery · 스킬 / MCP / 서브에이전트 병렬)<br/>tools prepare span 으로 기록 — 첫 model span 은 그 뒤에서 시작한다
   F-->>S: {warning} 청크 (쓸 수 없던 바인딩)
   F->>E: runAgent(agentDeps, input)
   loop tool_calls 가 없거나 turn 가드에 걸릴 때까지

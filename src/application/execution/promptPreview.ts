@@ -1,4 +1,4 @@
-/** Rendering what a run would send, without dispatching it. */
+/** Rendering what a run would send, without dispatching the model. */
 
 import type { Project, Version } from "@/domain/project/types";
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
@@ -8,7 +8,7 @@ import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
 import { callerFor, runClock, runStrategyFor } from "./deps";
 import { discoveryQueries, resolveRunTools } from "./bindings";
-import { noRecallTargetWarning, recallTargets } from "./memoryRecall";
+import { noRecallTargetWarning, prepareMemoryForRun, recallTargets } from "./memoryRecall";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 
@@ -24,15 +24,15 @@ import { buildAgentDeps } from "./subagentRunner";
  * way the tool names are the true ones — so the sessions this opens are
  * released before returning.
  *
- * A version with `dynamicCapabilities` on searches the catalog here too, on the
- * same two queries a run uses. Skipping it would put the preview back where the
+ * With a request, memory recall and dynamic capability discovery run in the
+ * same order as a real run. Skipping either would put the preview back where the
  * caller block once had it: describing a smaller prompt than the version
  * actually sends, and silently — the discovered rows are the ones an author has
  * no other way to see.
  *
- * PII masking is not applied: it rewrites content per run, and what a run masks
- * depends on the turn's own text. A version with the filter on says so in its
- * warnings instead.
+ * PII masking is not applied: the preview has at most one request, not the
+ * complete message set from which a run builds its mapping. A version with the
+ * filter on says so in its warnings instead.
  */
 export async function previewPrompt(
   deps: ExecutionDeps,
@@ -43,8 +43,8 @@ export async function previewPrompt(
     /**
      * The caller's connection, so a preview stops when they navigate away.
      *
-     * A preview is the expensive half of a run: it opens every bound MCP server
-     * for discovery and embeds a catalog query. It does not go through the run
+     * A preview is the expensive half of a run: it opens bound MCP servers,
+     * may call recall, and embeds catalog queries. It does not go through the run
      * bracket — nothing counts it, nothing bounds how many are in flight — so
      * the connection is the only thing that can end one, and it was not passed.
      */
@@ -52,12 +52,9 @@ export async function previewPrompt(
     /**
      * The request to preview against, when there is one.
      *
-     * Only discovery reads it — an agent run's user turn comes from the
-     * conversation, and the assembled prompt below still stands before the
-     * first one. But *which* capabilities a run finds depends on what it is
-     * being asked, so without this the preview can only show what the system
-     * prompt alone pulls in: the floor of every run rather than the shape of
-     * any particular one.
+     * Recall and discovery read it — an agent run's user turn still comes from
+     * the conversation, while the assembled prompt below stands before that
+     * turn. Without this the preview can show only the floor of every run.
      */
     message?: string;
     /**
@@ -81,12 +78,13 @@ export async function previewPrompt(
     );
   }
 
-  if (version.parameters.memoryRecall && runStrategyFor(project) === "agent") {
-    // What a run recalls depends on the request, which a preview does not have;
-    // saying so keeps a prompt one block short of the real one from reading as
-    // the real one.
+  if (
+    version.parameters.memoryRecall &&
+    runStrategyFor(project) === "agent" &&
+    !input.message?.trim()
+  ) {
     warnings.push(
-      "Memory recall is on: a run asks its bound memory server about the request before the first token and adds what it remembers to the system prompt. The preview has no request, so the block is not shown.",
+      "Memory recall is on, but the preview has no request to recall with; recalled context and any capabilities it would discover are not shown.",
     );
   }
 
@@ -136,12 +134,25 @@ export async function previewPrompt(
       "An agent run does not send the user prompt template; the conversation supplies the user turn.",
     );
   }
+  const origin = input.actor ? { actor: input.actor } : undefined;
+  const memory = input.message?.trim()
+    ? await prepareMemoryForRun(deps, {
+        version,
+        query: input.message,
+        signal: input.signal,
+        ...(origin ? { origin } : {}),
+      })
+    : { input: {}, warnings: [], asked: 0, failed: 0 };
   const resolved = await resolveRunTools(
     deps,
     version,
     input.signal,
-    discoveryQueries(version, input.message === undefined ? [] : [input.message]),
-    input.actor ? { actor: input.actor } : undefined,
+    discoveryQueries(
+      version,
+      input.message === undefined ? [] : [input.message],
+      memory.input.remembered,
+    ),
+    origin,
   );
   try {
     // The same deps a run is given: whether the image section and the image
@@ -162,8 +173,10 @@ export async function previewPrompt(
     // Nothing is asked — a preview has no request — but whether a version with
     // recall on has anywhere to recall *from* is the one memory warning an
     // author can act on from the editor.
-    const memory =
-      version.parameters.memoryRecall && recallTargets(resolved.mcp, version).length === 0
+    const missingMemory =
+      !input.message?.trim() &&
+      version.parameters.memoryRecall &&
+      recallTargets(resolved.mcp, version).length === 0
         ? { warnings: [noRecallTargetWarning()] }
         : { warnings: [] };
     const { systemPrompt, tools } = engine.assembleAgentRun(agentDeps, {
@@ -178,6 +191,7 @@ export async function previewPrompt(
       // line the model will read.
       now: runClock(deps),
       ...callerFor({ version, caller: input.caller }),
+      ...(memory.input.remembered ? { remembered: memory.input.remembered } : {}),
       // A preview stands for a top-level run, and that is the only kind offered
       // fan-out — hiding it here would show a prompt nobody sends.
       canDispatch: true,
@@ -186,7 +200,14 @@ export async function previewPrompt(
       messages: systemPrompt ? [{ role: "system", content: systemPrompt }] : [],
       toolNames: tools.map((tool) => tool.function.name),
       tools: tools.map((tool) => tool.function),
-      warnings: [...warnings, ...resolved.warnings, ...memory.warnings],
+      warnings: [
+        ...new Set([
+          ...warnings,
+          ...resolved.warnings,
+          ...memory.warnings,
+          ...missingMemory.warnings,
+        ]),
+      ],
       discovered: resolved.discovered,
     };
   } finally {

@@ -202,12 +202,24 @@ export function recentUserQueries(messages: readonly ChatMessageInput[]): string
  * outright. Deduplicated because a repeated text adds embedding tokens and
  * vector-store queries for an answer the first copy already gives.
  */
-export function discoveryQueries(version: Version, requests: readonly string[] = []): string[] {
+export function discoveryQueries(
+  version: Version,
+  requests: readonly string[] = [],
+  remembered?: string,
+): string[] {
+  const request = requests.findLast((text) => text.trim());
+  // Keep the original request queries: a recalled association adds a route to
+  // investigate, but cannot replace what the person asked us to accomplish.
+  const contextualQuery = request && remembered?.trim()
+    ? `Request: ${request.slice(0, PROMPT_QUERY_CHARS / 2)}\nRelated memory: ${remembered.slice(0, PROMPT_QUERY_CHARS / 2)}`
+      .slice(0, PROMPT_QUERY_CHARS)
+    : undefined;
   return [
     ...new Set(
       [
         version.systemPrompt.slice(0, PROMPT_QUERY_CHARS),
         ...requests.map((request) => request.slice(0, PROMPT_QUERY_CHARS)),
+        ...(contextualQuery ? [contextualQuery] : []),
       ].filter((query) => query.trim() !== ""),
     ),
   ];

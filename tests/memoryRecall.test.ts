@@ -12,10 +12,15 @@
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_RECALLED_CHARS, recallMemories } from "@/application/execution/memoryRecall";
+import {
+  MAX_RECALLED_CHARS,
+  prepareMemoryForRun,
+  recallMemories,
+} from "@/application/execution/memoryRecall";
 import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
 import { buildAgentSystemPrompt, rememberedBlock } from "@/application/llm/agentAssembly";
 import { executeAgent } from "@/application/execution/runProject";
+import { runLocalSubagent } from "@/application/execution/subagentRunner";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import { previewPrompt } from "@/application/execution/promptPreview";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
@@ -27,7 +32,7 @@ import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { UsageDelta } from "@/domain/usage/types";
-import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
+import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
@@ -340,7 +345,7 @@ function depsFixture(channel: FakeChannel): ExecutionDeps {
 }
 
 /** A memory server: `recall` answers with what it was asked, `remember` exists too. */
-function stubMemoryServer(): Array<{ method?: string; name?: string; args?: unknown }> {
+function stubMemoryServer(toolNames: (url: string) => string[] = () => ["recall", "remember"]): Array<{ method?: string; name?: string; args?: unknown }> {
   const seen: Array<{ method?: string; name?: string; args?: unknown }> = [];
   vi.stubGlobal(
     "fetch",
@@ -357,7 +362,7 @@ function stubMemoryServer(): Array<{ method?: string; name?: string; args?: unkn
       }
       const result = modernResult(body.method, {
         ...(body.method === "tools/list"
-          ? { tools: conforming([{ name: "recall" }, { name: "remember" }]) }
+          ? { tools: conforming(toolNames(String(_input)).map((name) => ({ name }))) }
           : {
               content: [
                 {
@@ -397,11 +402,118 @@ describe("a version that opted in recalls before the first token", () => {
     return { seen, channel, chunks };
   }
 
+  it("keeps a specific MCP loss instead of adding a generic no-target warning", async () => {
+    const deps = depsFixture(new FakeChannel([]));
+    let closed = false;
+    deps.mcpSessions = {
+      open: async () => ({
+        tools: [],
+        toolNamesByServer: new Map(),
+        warnings: ["MCP server 'memory' denied access."],
+        unauthorizedServers: [],
+        callTool: async () => ({ text: "" }),
+        aliasFor: () => undefined,
+        close: async () => {
+          closed = true;
+        },
+      }),
+    };
+
+    const result = await prepareMemoryForRun(deps, {
+      version: versionFixture(true),
+      query: "how do we deploy?",
+    });
+
+    expect(result.warnings).toEqual(["MCP server 'memory' denied access."]);
+    expect(closed).toBe(true);
+  });
+
+  it.each(["root", "subagent"])("uses a recalled affiliation to discover and search its document source (%s)", async (surface) => {
+    const calls: Array<{ server: string; name?: string; email: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const organization = String(url).includes("org.example.test");
+      if (body.method === "tools/call") {
+        calls.push({ server: organization ? "org-records" : "memory", name: body.params.name,
+          email: new Headers(init?.headers).get("X-User-Email") });
+      }
+      const preamble = protocolPreamble(body.method, body.id, init?.method);
+      if (preamble) return preamble;
+      const result = modernResult(body.method, body.method === "tools/list"
+        ? { tools: conforming(organization ? [{ name: "document_search" }] : [{ name: "recall" }]) }
+        : { content: [{ type: "text", text: organization
+          ? "Document evidence for the requested person"
+          : "유정열은 opspresso 조직 소속이다." }] });
+      return Response.json({ jsonrpc: "2.0", id: body.id, result });
+    }));
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "search-1", "document_search", JSON.stringify({ query: "유정열" }))],
+      [contentChunk("Summary based on the document evidence"), usageChunk(1, 1)],
+    ]);
+    const deps = depsFixture(channel);
+    deps.mcps.get = async (name) => name === "memory" ? registryServer : {
+      ...registryServer, name, headers: {}, url: "https://org.example.test/mcp",
+      description: "Search opspresso organization documents",
+    };
+    const embedded: string[] = [];
+    let closedSessions = 0;
+    const open = deps.mcpSessions.open.bind(deps.mcpSessions);
+    deps.mcpSessions = { open: async (...args) => {
+      const session = await open(...args);
+      const close = session.close.bind(session);
+      session.close = async () => { closedSessions += 1; await close(); };
+      return session;
+    } };
+    let recalledBeforeDiscovery = false;
+    deps.catalog = {
+      embeddings: { embed: async (texts) => {
+        recalledBeforeDiscovery = calls.length === 1 && calls[0]?.name === "recall" && closedSessions === 1;
+        embedded.push(...texts);
+        return texts.map((text) => [text.includes("opspresso") ? 1 : 0]);
+      } },
+      catalog: {
+        upsert: async () => {}, deleteByKeys: async () => {}, listKeys: async () => [],
+        query: async (vector, _limit, filter) => vector[0] === 1 && filter?.kind === "mcpServer"
+          ? [{ key: "org-server", score: 0.9, metadata: {
+            name: "org-records", description: "Search opspresso organization documents",
+          } }] : [],
+      },
+    };
+    const version = versionFixture(true);
+    version.parameters = { ...version.parameters, dynamicCapabilities: true };
+    const project = { ...projectFixture(), publishedVersion: version.versionName };
+    deps.projects.get = async () => project;
+    deps.versions.get = async () => version;
+    const actor = { kind: "user" as const, id: "reader@example.com" };
+    const query = "유정열을 검색해서 정리해";
+    const stream = surface === "root"
+      ? executeAgent(deps, { project, version, actor, messages: [{ role: "user", content: query }] })
+      : runLocalSubagent(deps, project.name, query, 1, 8, async () => {}, { actor, ancestry: ["parent", project.name] });
+    const chunks: EngineChunk[] = [];
+    for await (const chunk of stream) chunks.push(chunk);
+
+    expect(chunks.some((chunk) => chunk.error)).toBe(false);
+    expect(recalledBeforeDiscovery).toBe(true);
+    expect(closedSessions).toBe(2);
+    expect(embedded).toContain("유정열을 검색해서 정리해");
+    expect(embedded.some((text) => text.includes("유정열을 검색해서 정리해") && text.includes("opspresso"))).toBe(true);
+    expect(channel.seenParams[0]?.tools?.map((tool) => tool.function.name)).toContain("document_search");
+    expect(String(channel.seenParams[0]?.messages[0]?.content)).toContain("org-records");
+    expect(calls).toEqual([
+      { server: "memory", name: "recall", email: "reader@example.com" },
+      { server: "org-records", name: "document_search", email: "reader@example.com" },
+    ]);
+    expect(channel.seenParams[1]?.messages.some((message) =>
+      message.role === "tool" && String(message.content).includes("Document evidence"))).toBe(true);
+  });
+
   it("asks recall with the newest user turn and puts the answer in the system prompt", async () => {
     const { seen, channel, chunks } = await run(true);
 
     const recallCall = seen.find((s) => s.method === "tools/call");
     expect(recallCall).toMatchObject({ name: "recall", args: { query: "how do we deploy?" } });
+    expect(seen.filter((entry) => entry.method === "tools/list")).toHaveLength(1);
+    expect(seen.filter((entry) => entry.method === "tools/call")).toHaveLength(1);
     const system = channel.seenParams[0]?.messages[0];
     expect(system?.role).toBe("system");
     expect(String(system?.content)).toContain("## What you remember");
@@ -418,6 +530,22 @@ describe("a version that opted in recalls before the first token", () => {
     expect(String(channel.seenParams[0]?.messages[0]?.content)).not.toContain("## What you remember");
   });
 
+  it("does not invent a missing recall tool on an unrestricted non-memory binding", async () => {
+    const seen = stubMemoryServer((url) => url.includes("docs.test") ? ["search"] : ["recall"]);
+    const deps = depsFixture(new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]));
+    deps.mcps.get = async (name) => name === "memory" ? registryServer : {
+      ...registryServer, name, url: "https://docs.test/mcp", headers: {},
+    };
+    const chunks: EngineChunk[] = [];
+    for await (const chunk of executeAgent(deps, {
+      project: projectFixture(),
+      version: { ...versionFixture(true), mcpList: [{ name: "memory" }, { name: "docs" }] },
+      messages: [{ role: "user", content: "how do we deploy?" }],
+    })) chunks.push(chunk);
+    expect(chunks.filter((chunk) => chunk.warning || chunk.error)).toEqual([]);
+    expect(seen.filter((entry) => entry.method === "tools/call").map((entry) => entry.name)).toEqual(["recall"]);
+  });
+
   it("the preview says the block is missing rather than showing a prompt one block short", async () => {
     const seen = stubMemoryServer();
     const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
@@ -430,6 +558,25 @@ describe("a version that opted in recalls before the first token", () => {
     // and, the server offering `recall`, has no absence to report either.
     expect(seen.some((s) => s.method === "tools/call")).toBe(false);
     expect(preview.warnings.some((w) => w.includes("no bound MCP server offers"))).toBe(false);
+  });
+
+  it("the preview recalls and renders the memory block when a request is supplied", async () => {
+    const seen = stubMemoryServer();
+    const preview = await previewPrompt(depsFixture(new FakeChannel([])), {
+      project: projectFixture(),
+      version: versionFixture(true),
+      message: "how do we deploy?",
+      actor: { kind: "user", id: "reader@example.com" },
+    });
+    expect(seen.find((entry) => entry.method === "tools/call")).toMatchObject({
+      name: "recall",
+      args: { query: "how do we deploy?" },
+    });
+    expect(preview.messages[0]?.content).toContain("## What you remember");
+    expect(preview.messages[0]?.content).toContain("Deploys go through ArgoCD");
+    expect(preview.warnings.some((warning) => warning.startsWith("Memory recall is on"))).toBe(
+      false,
+    );
   });
 
   it("the preview names a version with recall on and no server to recall from", async () => {

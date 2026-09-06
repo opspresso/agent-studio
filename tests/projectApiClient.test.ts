@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   generateProjectToken,
   getProjectSlack,
+  previewPrompt,
   predictImage,
   updateProjectSlack,
 } from "@/app/projects/lib/api";
@@ -11,6 +12,37 @@ afterEach(() => {
 });
 
 describe("project API client failures", () => {
+  it("forwards preview cancellation to the request", async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      messages: [],
+      toolNames: [],
+      tools: [],
+      warnings: [],
+      discovered: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await previewPrompt(
+      "demo",
+      {
+        systemPrompt: "",
+        userPromptTemplate: "",
+        model: "gpt-test",
+        parameters: { piiFiltering: false },
+        mcpList: [],
+        skillList: [],
+        subagentList: [],
+      },
+      controller.signal,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/projects/demo/preview",
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+
   it("uses the shared unauthorized redirect for integration reads", async () => {
     const replace = vi.fn();
     vi.stubGlobal("window", {

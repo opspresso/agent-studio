@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { findTemplateVariables } from "@/shared/template";
 import {
   previewPrompt,
@@ -18,6 +18,7 @@ import {
   Stack,
   Text,
   TextInput,
+  Textarea,
 } from "@mantine/core";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
@@ -48,9 +49,9 @@ function charCount(preview: PromptPreview): number {
  * rendered with its variables. This panel asks the server to perform that same
  * assembly and shows the result.
  *
- * Fetched only on demand: it contacts the bound MCP servers for their real tool
- * names, which is not something to do on every keystroke. A draft edited after
- * the last fetch is marked stale rather than refetched.
+ * Fetched only on demand: it may recall memory, contact MCP servers for their
+ * real tool names, and search the capability catalog. A draft edited after the
+ * last fetch is marked stale rather than refetched.
  */
 export function PromptPreview({
   projectName,
@@ -80,6 +81,16 @@ export function PromptPreview({
   const t = useT();
   const locale = useLocale();
   const latestOnly = useRef(createLatestOnly()).current;
+  const previewRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      // Retire the current result before aborting so its finally block cannot
+      // write loading state after this panel has unmounted.
+      latestOnly();
+      previewRequest.current?.abort();
+    };
+  }, [latestOnly]);
 
   // Only the user prompt template is rendered with variables — a {{var}} in
   // the system prompt reaches the model as literal text, and an agent run
@@ -89,36 +100,73 @@ export function PromptPreview({
       projectType === "agent" ? [] : [...findTemplateVariables(draft.userPromptTemplate)],
     [projectType, draft.userPromptTemplate],
   );
-  // Only discovery reads the request, so the box is offered only where it
-  // changes the answer — anywhere else it would suggest the prompt depends on
-  // the turn, which for an agent run it does not.
-  const usesRequest = draft.parameters.dynamicCapabilities === true;
-  const current = JSON.stringify({ draft, variables, message });
+  // Discovery and memory recall both depend on the request. Without either,
+  // the box would suggest the assembled prompt varies when it does not.
+  const usesRequest =
+    projectType === "agent" &&
+    (draft.parameters.dynamicCapabilities === true || draft.parameters.memoryRecall === true);
+  // The saved version identifies the stored header overrides a masked draft is
+  // resolved against. Two versions can render the same fields but decrypt to
+  // different credentials, so that identity is part of preview freshness too.
+  const current = JSON.stringify({
+    projectName,
+    versionName,
+    draft,
+    variables,
+    ...(usesRequest ? { message } : {}),
+  });
   const stale = preview !== null && (validationError !== null || previewOf !== current);
+
+  useEffect(() => {
+    const active = previewRequest.current;
+    if (!active) {
+      return;
+    }
+    // The response would be stale by construction. Stop its MCP and catalog
+    // work instead of merely refusing to paint it when it eventually returns.
+    latestOnly();
+    previewRequest.current = null;
+    active.abort();
+    setLoading(false);
+  }, [current, latestOnly]);
 
   async function refresh() {
     if (validationError !== null) {
       return;
     }
+    previewRequest.current?.abort();
+    const controller = new AbortController();
+    previewRequest.current = controller;
     const isCurrent = latestOnly();
     const requested = current;
     setLoading(true);
     setError(null);
     try {
-      const result = await previewPrompt(projectName, {
-        ...draft,
-        ...(versionName ? { versionName } : {}),
-        variables,
-        ...(usesRequest && message.trim() ? { message } : {}),
-      });
+      const result = await previewPrompt(
+        projectName,
+        {
+          ...draft,
+          ...(versionName ? { versionName } : {}),
+          variables,
+          ...(usesRequest && message.trim() ? { message } : {}),
+        },
+        controller.signal,
+      );
       if (isCurrent()) {
         setPreview(result);
         setPreviewOf(requested);
       }
     } catch (e) {
-      if (isCurrent()) setError(e instanceof Error ? e.message : t("preview.failed"));
+      if (!controller.signal.aborted && isCurrent()) {
+        setError(e instanceof Error ? e.message : t("preview.failed"));
+      }
     } finally {
-      if (isCurrent()) setLoading(false);
+      if (previewRequest.current === controller) {
+        previewRequest.current = null;
+      }
+      if (isCurrent()) {
+        setLoading(false);
+      }
     }
   }
 
@@ -191,12 +239,16 @@ export function PromptPreview({
       )}
 
       {usesRequest && (
-        <TextInput
+        <Textarea
           label={t("preview.request")}
           description={t("preview.requestHint")}
           placeholder={t("preview.requestPlaceholder")}
           value={message}
           onChange={(e) => setMessage(e.currentTarget.value)}
+          maxLength={8000}
+          autosize
+          minRows={2}
+          maxRows={8}
         />
       )}
 

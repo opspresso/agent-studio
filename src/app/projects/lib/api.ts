@@ -171,7 +171,7 @@ export function updateVersion(
 export type { PromptPreview };
 
 /**
- * Assemble what the draft in the editor would send. Owner or admin, and it contacts
+ * Assemble what the draft in the editor would send. Member-gated, and it contacts
  * the bound MCP servers, so the panel calls it on demand rather than as the
  * editor changes.
  *
@@ -185,14 +185,16 @@ export function previewPrompt(
   input: VersionInput & {
     versionName?: string;
     variables?: Record<string, string>;
-    /** A request to preview against; only capability discovery reads it. */
+    /** A request to preview against; capability discovery and memory recall read it. */
     message?: string;
   },
+  signal?: AbortSignal,
 ): Promise<PromptPreview> {
   return fetch(`/api/projects/${name}/preview`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify(input),
+    signal,
   }).then((r) => readJson<PromptPreview>(r));
 }
 

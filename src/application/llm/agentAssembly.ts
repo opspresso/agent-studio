@@ -291,6 +291,12 @@ function capabilityFraming(
       `Your instructions define your role and constraints. Within that role, ${joinClauses(rules, "or")}.`,
     );
   }
+  if (withMcp) {
+    lines.push(
+      "",
+      "For a search or investigation, use relevant associations learned from memory or tool results (such as an organization, project, or document location) to choose the next source from the connected servers' descriptions. A clue about where to search is not the requested research result: follow it with an available search tool and gather supporting evidence before summarizing. Do not repeat the same recall when it has already supplied that clue. If the needed source is unavailable or denies access, state that limitation; do not imply it was searched.",
+    );
+  }
   return lines.join("\n");
 }
 

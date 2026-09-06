@@ -335,9 +335,9 @@ slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 부모가 자기가 transfer 하는 project 에 대해 무언가를 말하는 것은 아니다.
 
 `POST /api/projects/{name}/preview` 는 선택적인 `message` 를 받는다. 무엇을 기준으로
-미리 볼지, 최대 8,000자다. 이것을 읽는 것은 discovery 뿐이지만 (agent 런의 사용자 턴은 대화에서
-온다), 런이 *어떤* 능력을 찾아내는지는 무엇을 요청받았는지에 달려 있다. 그래서 이것이 없으면
-미리보기는 특정한 런의 모습이 아니라 모든 런이 출발하는 바닥을 보여 준다.
+미리 볼지, 최대 8,000자다. agent preview는 이것으로 memory를 회상하고 capability를 검색하지만,
+사용자 턴 자체를 조립된 메시지에 넣지는 않는다. 이것이 없으면 memory를 호출하지 않고 시스템
+프롬프트만으로 capability를 검색하므로, 미리보기는 모든 런이 출발하는 바닥을 보여 준다.
 
 `dynamicCapabilities` 는 런이 이 version 이 한 번도 바인딩하지 않은 skill·MCP 서버·agent 에
 닿게 해 준다. version 의 시스템 프롬프트와 지금 답하고 있는 요청으로 전역 카탈로그를 검색해
@@ -353,13 +353,19 @@ slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 바인딩된 MCP 서버(mcp-memory)를 가장 최근 사용자 턴으로 호출하고, 돌아온 것을 시스템 프롬프트에
 **What you remember** 블록으로 넣는다. 지시가 아니라 배경으로 틀 지어서. 그래서 모델은 물어볼
 생각을 해내야 하는 대신 project 가 이미 아는 것에서 출발한다. 도구는 이전처럼 계속 제공된다.
+회상은 capability discovery보다 먼저 실행된다. `dynamicCapabilities`도 켜져 있고 관련 기억이 있으면
+원래 discovery 검색어를 유지한 채 최신 요청과 기억을 합친 검색어를 하나 더 사용한다. 소속 조직이나
+문서 위치를 기억에서 알아낸 런은 그 단서에 맞는 MCP를 발견할 수 있지만, URL·credential·권한은
+기억에서 만들지 않고 기존 카탈로그와 연결·인가 검사를 그대로 거친다.
 이것은 읽기를 더하는 것이다. 런당 한 번 호출하며 한계가 있다 (가장 최근 턴을 최대 2,000자까지
 보내고, 최대 4,000자를 보관하며, 첫 토큰은 최대 10초까지 기다린다). 실패한 서버는 런의
 `warning` 이 되고 런은 그것 없이 계속 간다. 이것을 켰지만 `recall` 을 제공하는 바인딩된 서버가
-없는 version 은 메모리 없이 시작했다고 경고한다. `POST /api/projects/{name}/preview` 는 그
-블록을 보여 줄 수 없고. 무엇이 회상되는지는 요청에 달려 있다. 그 사실을 warning 으로 말한다.
+없는 version 은 메모리 없이 시작했다고 경고한다. `POST /api/projects/{name}/preview`도 `message`가
+있으면 같은 순서로 memory를 호출해 회상 블록과 그것으로 발견한 capability를 보여 준다. `message`가
+없으면 memory를 호출하지 않고 빠진 내용을 warning으로 말한다.
 `dynamicCapabilities` 와 마찬가지로 요청 텍스트는 엔진의 PII 필터가 만들어지기 전에 서버에
-닿는다. [SECURITY.md](SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳) 를 보라.
+닿는다. 두 기능을 함께 켜면 제한된 회상 내용도 embedding·rerank provider에 닿는다.
+[SECURITY.md](SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳) 를 보라.
 
 #### MCP 바인딩과 version 별 헤더 오버라이드
 
@@ -403,12 +409,15 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
 
 ```
 POST /api/projects/{name}/preview
-  { …an unsaved version body…, "variables": { "topic": "otters" }? }
+  { …an unsaved version body…,
+    "variables": { "topic": "otters" }?,
+    "message": "request to preview"? }
 → 200 { messages: [ { role, content } ], … }
 ```
 
 에디터 안의 초안이 **보냈을** 것을 조립한다. 시스템 프롬프트, skill 표, 연결된 MCP 서버 표,
-렌더링된 템플릿. 실행하지는 않고.
+렌더링된 템플릿. 답변 모델은 호출하지 않는다. `message`가 있으면 설정에 따라 read-only memory
+recall과 capability discovery를 실제로 수행하므로 MCP와 embedding·rerank 서비스에는 요청할 수 있다.
 
 소유자 게이트가 아니라 member 게이트다 (`withMemberAuth`): 조립된 텍스트는 해석된 skill 과
 MCP 서버의 이름을 담는다. `guest` 가 거절당하는 바로 그 레지스트리다. 그래서 세션만이 아니라
@@ -416,8 +425,8 @@ MCP 서버의 이름을 담는다. `guest` 가 거절당하는 바로 그 레지
 게이트가 따로 챙길 수 있는 권한이 아니다. 어떤 member 든 자기 project 에서 같은 레지스트리
 서버를 같은 헤더로 바인딩한다. 마스킹된 헤더는 같은 서버 이름에 대한 이 project 의 저장된
 바인딩에 대해서만 해석되므로, 소유자가 아닌 사람의 미리보기는 그가 이미 시작할 수 있는 런이
-보내지 않을 것을 아무것도 보내지 않는다. 그리고 조립된 텍스트는 `GET /versions` 가 세션만으로도
-이미 답하는 것으로 구성된다. URL 은 언제나 레지스트리에서 오므로 SSRF 표면은 런의 것이다.
+보내지 않을 것을 아무것도 보내지 않는다. Memory도 그 project의 런이 같은 사용자 identity로
+회상할 내용이다. URL은 언제나 레지스트리에서 오므로 SSRF 표면은 런의 것이다.
 
 ## 앱 설정
 
