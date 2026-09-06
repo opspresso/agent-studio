@@ -82,11 +82,10 @@ export async function previewPrompt(
   }
 
   if (version.parameters.memoryRecall && runStrategyFor(project) === "agent") {
-    // What a run recalls depends on the request, which a preview does not have;
-    // saying so keeps a prompt one block short of the real one from reading as
-    // the real one.
+    // Preview never calls memory, even when a request is supplied for discovery.
+    // It cannot show recalled context or the capabilities that context would find.
     warnings.push(
-      "Memory recall is on: a run asks its bound memory server about the request before the first token and adds what it remembers to the system prompt. The preview has no request, so the block is not shown.",
+      "Memory recall is on: a run asks its bound memory server before capability discovery and adds relevant memories to the search context and system prompt. The preview does not call memory, so recalled context and any capabilities it would discover are not shown.",
     );
   }
 

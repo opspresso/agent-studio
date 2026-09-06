@@ -35,7 +35,7 @@ import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "@/application/run/traceLifecycle";
 import { callerFor, runClock, runStrategyFor, toEngineParameters, toRunInput } from "./deps";
-import { memoryPrepared, recallForRun } from "./memoryRecall";
+import { memoryPrepared, prepareMemoryForRun } from "./memoryRecall";
 
 export type {
   ExecutionDeps,
@@ -552,6 +552,33 @@ export async function* executeAgent(
     // clock exists to remove. The pinned deps travel down the transfer chain.
     const startedAt = runClock(deps);
     const runDeps: ExecutionDeps = { ...deps, now: () => startedAt };
+    // Recall explicit bindings before discovery, so remembered associations can
+    // help find the sources needed to answer the request.
+    const recallStartedAt = new Date();
+    // Only when the version asked: a run that recalls nothing spent no time
+    // here, and a zero-length span on every trace would say less than none.
+    const recordRecall = (
+      detail: { status?: "ok" | "error"; output?: Record<string, unknown> },
+    ): void => {
+      if (input.version.parameters.memoryRecall) {
+        recorder?.observePrepare("memory", recallStartedAt, detail);
+      }
+    };
+    const memory = await prepareMemoryForRun(deps, {
+      version: input.version,
+      origin,
+      query: latestUserText(input.messages) ?? "",
+      signal: runSignal,
+    }).then(
+      (ok) => {
+        recordRecall(memoryPrepared(ok));
+        return ok;
+      },
+      (error: unknown) => {
+        recordRecall({ status: "error" });
+        throw error;
+      },
+    );
     // Tools first, deps second: the dispatcher the deps carry is the one this
     // resolve produced, so the bag is complete when it is built rather than
     // patched afterwards.
@@ -572,7 +599,7 @@ export async function* executeAgent(
         deps,
         input.version,
         runSignal,
-        discoveryQueries(input.version, recentUserQueries(input.messages)),
+        discoveryQueries(input.version, recentUserQueries(input.messages), memory.input.remembered),
         origin,
         usage.record,
       );
@@ -607,36 +634,7 @@ export async function* executeAgent(
     );
     const { skills, subagents, mcp, warnings, discovered } = prepared.resolved;
     const agentDeps = prepared.agentDeps;
-    // Before the first token, when the version asked for it: what this project
-    // remembers about the request. A recall that fails is a warning below, never
-    // the end of the run — the answer is worth more than the recollection. The
-    // version as bound, not as widened: only servers the author bound are asked.
-    const recallStartedAt = new Date();
-    // Only when the version asked: a run that recalls nothing spent no time
-    // here, and a zero-length span on every trace would say less than none.
-    const recordRecall = (
-      detail: { status?: "ok" | "error"; output?: Record<string, unknown> },
-    ): void => {
-      if (input.version.parameters.memoryRecall) {
-        recorder?.observePrepare("memory", recallStartedAt, detail);
-      }
-    };
-    const memory = await recallForRun({
-      version: input.version,
-      mcp,
-      query: latestUserText(input.messages) ?? "",
-      signal: runSignal,
-    }).then(
-      (ok) => {
-        recordRecall(memoryPrepared(ok));
-        return ok;
-      },
-      (error: unknown) => {
-        recordRecall({ status: "error" });
-        throw error;
-      },
-    );
-    warnings.push(...memory.warnings);
+    warnings.push(...memory.warnings.filter((warning) => !warnings.includes(warning)));
     // Logged rather than yielded: a capability *found* is a gain, and the
     // warning channel is where a reader looks for what a run lost. What the run
     // then did with it shows up in its tool traffic either way.

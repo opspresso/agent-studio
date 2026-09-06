@@ -35,7 +35,7 @@ import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools, toolsPrepared } from "./bindings";
-import { memoryPrepared, recallForRun } from "./memoryRecall";
+import { memoryPrepared, prepareMemoryForRun } from "./memoryRecall";
 import { log } from "@/shared/logger";
 import { runEnding } from "@/application/run/runDeadline";
 import { externalAgentHeadersContext } from "@/domain/security/secretContext";
@@ -479,6 +479,26 @@ export async function* runLocalSubagent(
     // Timed like the top level's: a child opens its own MCP sessions and runs
     // its own catalog search, and billing that to its first model call is the
     // same misreading one level down.
+    // The child's version decides for itself, like every other opt-in; the
+    // transfer message is its whole request, so it is what the memory is asked.
+    const recallStartedAt = new Date();
+    const recordRecall = (
+      detail: { status?: "ok" | "error"; output?: Record<string, unknown> },
+    ): void => {
+      if (version.parameters.memoryRecall) {
+        recorder?.observePrepare("memory", recallStartedAt, detail);
+      }
+    };
+    const memory = await prepareMemoryForRun(deps, { version, query: message, signal, origin }).then(
+      (ok) => {
+        recordRecall(memoryPrepared(ok));
+        return ok;
+      },
+      (error: unknown) => {
+        recordRecall({ status: "error" });
+        throw error;
+      },
+    );
     const resolveStartedAt = new Date();
     // Recorded on both outcomes, like the top level's: the stage worth timing
     // most is the one that never finished.
@@ -487,7 +507,7 @@ export async function* runLocalSubagent(
         deps,
         version,
         signal,
-        discoveryQueries(version, [message]),
+        discoveryQueries(version, [message], memory.input.remembered),
         origin,
         recordUsageFn,
       );
@@ -526,27 +546,7 @@ export async function* runLocalSubagent(
         `${project.name}: offering ${discovered.length} discovered: ${discovered.join(", ")}`,
       );
     }
-    // The child's version decides for itself, like every other opt-in; the
-    // transfer message is its whole request, so it is what the memory is asked.
-    const recallStartedAt = new Date();
-    const recordRecall = (
-      detail: { status?: "ok" | "error"; output?: Record<string, unknown> },
-    ): void => {
-      if (version.parameters.memoryRecall) {
-        recorder?.observePrepare("memory", recallStartedAt, detail);
-      }
-    };
-    const memory = await recallForRun({ version, mcp, query: message, signal }).then(
-      (ok) => {
-        recordRecall(memoryPrepared(ok));
-        return ok;
-      },
-      (error: unknown) => {
-        recordRecall({ status: "error" });
-        throw error;
-      },
-    );
-    warnings.push(...memory.warnings);
+    warnings.push(...memory.warnings.filter((warning) => !warnings.includes(warning)));
     for (const warning of warnings) {
       const chunk: EngineChunk = { warning, ...(recorder ? { traceId: recorder.traceId } : {}) };
       recorder?.observe(chunk);

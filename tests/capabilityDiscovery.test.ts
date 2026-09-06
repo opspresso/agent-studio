@@ -144,6 +144,19 @@ function harness(
 const QUERIES = ["You review pull requests.", "open a PR for this"];
 
 describe("capability discovery", () => {
+  it("adds bounded request-plus-memory context without replacing the original queries", () => {
+    const request = "Find and summarize this person";
+    const queries = discoveryQueries(version(), ["Earlier request", request], "They belong to an organization");
+    expect(queries.slice(0, 3)).toEqual([version().systemPrompt, "Earlier request", request]);
+    expect(queries[3]).toContain(request);
+    expect(queries[3]).toContain("They belong to an organization");
+    const bounded = discoveryQueries(version(), ["r".repeat(3000)], "m".repeat(5000));
+    expect(bounded.every((query) => query.length <= 2000)).toBe(true);
+    expect(bounded.at(-1)).toContain("m".repeat(100));
+    expect(discoveryQueries(version(), [request], "")).toEqual(discoveryQueries(version(), [request]));
+    expect(discoveryQueries(version(), [], "unrelated memory")).toEqual(discoveryQueries(version()));
+  });
+
   it("offers nothing beyond the bindings when the version did not opt in", async () => {
     const { deps } = harness({ catalog: fakeCatalog({ skill: [found("discovered")] }) });
     const resolved = await resolveRunTools(

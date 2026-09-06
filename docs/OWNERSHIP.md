@@ -50,8 +50,8 @@
 | capability 가 색인되는 키 | `src/domain/catalog/types.ts` 의 `capabilityKey` |
 | capability 가 어떤 텍스트로 embedding 되는가 | `src/domain/catalog/types.ts` 의 `capabilityText` |
 | 검색이 한 런에 얼마나 더할 수 있는가 | `src/application/execution/bindings.ts` 의 `DISCOVERY_LIMITS` |
-| 런이 자기 메모리를 어떻게 준비하는가. 어떤 tool 에게, 무엇으로 묻고, 그 답이 무엇이 되는가 | `src/application/execution/memoryRecall.ts` 의 `recallMemories` / `MAX_RECALLED_CHARS`; 묻는 tool 의 이름과 "바인딩만으로 회상이 불가능한가" 는 `src/domain/project/memoryRecall.ts` 의 `RECALL_TOOL_NAME` / `bindingsMayOfferRecall`. 버전 편집기가 런 전에 같은 답을 읽는다 |
-| 런이 무엇으로 카탈로그를 검색하는가 | `src/application/execution/bindings.ts` 의 `discoveryQueries` |
+| 런이 자기 메모리를 어떻게 준비하는가. 언제 준비하고, 어떤 tool 에게 무엇으로 묻고, 그 답이 무엇이 되는가 | `src/application/execution/memoryRecall.ts` 의 `prepareMemoryForRun` / `recallMemories` / `MAX_RECALLED_CHARS`; 묻는 tool 의 이름과 "바인딩만으로 회상이 불가능한가" 는 `src/domain/project/memoryRecall.ts` 의 `RECALL_TOOL_NAME` / `bindingsMayOfferRecall`. 버전 편집기가 런 전에 같은 답을 읽는다 |
+| 런이 무엇으로 카탈로그를 검색하는가 | `src/application/execution/bindings.ts` 의 `discoveryQueries` — 원래 요청과 회상으로 보강한 검색 문맥의 한도·조합 |
 | 마크다운 frontmatter 블록의 파싱 | `src/domain/plugin/frontmatter.ts` |
 | repo 소유 컴포넌트의 provenance 문자열(`github:<repo>#<plugin>`) | `src/domain/plugin/types.ts` 의 `pluginSourcePrefix`(sync 가 `startsWith`/`slice` 로 기대는 쪽)·`pluginSource`·`parsePluginSource` |
 | 아티팩트 목록의 페이지 커서(= GSI 정렬 키) 철자. 아래 "모든 행 키 문자열" 의 유일한 예외이고, API 가 독자에게 건네는 커서이기도 하기 때문이다 | `src/domain/artifact/repository.ts` 의 `artifactCursor` |

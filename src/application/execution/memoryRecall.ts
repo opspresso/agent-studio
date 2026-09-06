@@ -19,9 +19,10 @@
  */
 
 import type * as engine from "@/application/llm/engine";
-import { RECALL_TOOL_NAME } from "@/domain/project/memoryRecall";
+import { bindingsMayOfferRecall, RECALL_TOOL_NAME } from "@/domain/project/memoryRecall";
 import type { Version } from "@/domain/project/types";
-import type { ResolvedMcp } from "./mcpTools";
+import type { RunOrigin } from "@/domain/execution/actor";
+import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./mcpTools";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
 import { cutCodePoints } from "@/shared/utf8Text";
@@ -92,12 +93,6 @@ export function noRecallTargetWarning(): string {
 }
 
 /**
- * The recall a run makes, gated on its version — what both run sites call, so
- * the opt-in check, the query and the way the answer reaches the engine are
- * spelled once. `version` is the version *as bound*, not as widened by
- * discovery (see {@link recallTargets}); `mcp` is the resolve that ran.
- */
-/**
  * What the memory stage reports on its trace span — the second half of the pair
  * `toolsPrepared` owns, and here for the same reason: two run levels record it,
  * and a field added to one copy is a field the other silently stops carrying.
@@ -124,6 +119,41 @@ export function memoryPrepared(memory: {
   };
 }
 
+/** Recall only explicit bindings before the catalog chooses the run's capabilities. */
+export async function prepareMemoryForRun(
+  deps: McpToolDeps,
+  input: {
+    version: Version;
+    query: string;
+    signal?: AbortSignal;
+    origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">;
+  },
+): Promise<Awaited<ReturnType<typeof recallForRun>>> {
+  if (!input.version.parameters.memoryRecall) {
+    return { input: {}, warnings: [], asked: 0, failed: 0 };
+  }
+  // Preserve binding selections: an unrestricted document server need not
+  // offer recall. Inventing that selection would report a missing-tool warning.
+  // Only recall is called; final resolution reuses the cached catalogs.
+  const mcp = await buildMcpTools(deps, {
+    ...input.version,
+    mcpList: (input.version.mcpList ?? [])
+      .filter((binding) => bindingsMayOfferRecall([binding])),
+  }, input.signal, input.origin);
+  try {
+    const memory = await recallForRun({ ...input, mcp });
+    return { ...memory, warnings: [...mcp.warnings, ...memory.warnings] };
+  } finally {
+    await closeMcp(mcp.close);
+  }
+}
+
+/**
+ * The recall a run makes, gated on its version — what both run sites call, so
+ * the opt-in check, the query and the way the answer reaches the engine are
+ * spelled once. `version` is the version *as bound*, not as widened by
+ * discovery (see {@link recallTargets}); `mcp` is the resolve that ran.
+ */
 export async function recallForRun(input: {
   version: Version;
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;
