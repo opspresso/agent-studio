@@ -103,7 +103,13 @@ export function buildFileTool(
         return output(created.bytes, created.mimeType, typeof args.name === "string" ? args.name : title, created.validation.warnings);
       }
       const { artifact, file } = await source(args.file_id);
+      const svg = baseMimeType(file.mimeType) === "image/svg+xml";
       if (args.operation === "read") {
+        if (svg) {
+          const text = decodeUtf8Text(file.bytes);
+          if (text === null) throw new DocumentProcessingError("This SVG is not UTF-8 text");
+          return { text: framedDocument(file.name, cutCodePoints(text, MAX_DOCUMENT_TOOL_CHARS), text.length > MAX_DOCUMENT_TOOL_CHARS ? "partial SVG markup" : "SVG markup", artifact.artifactId) };
+        }
         const extracted = await deps.documents.extract({ ...file, maxChars: MAX_DOCUMENT_TOOL_CHARS, signal });
         return { text: framedDocument(file.name, extracted.text, extracted.note, artifact.artifactId) };
       }
@@ -113,7 +119,7 @@ export function buildFileTool(
         if (args.mode !== undefined && args.mode !== "structure" && args.mode !== "edit_targets") throw new DocumentProcessingError("Unknown inspection mode");
         if (args.include_hidden !== undefined && typeof args.include_hidden !== "boolean") throw new DocumentProcessingError("include_hidden must be boolean");
         const kind = documentKind(file.mimeType, file.name);
-        if (kind === "text" || kind === "html") {
+        if (kind === "text" || kind === "html" || svg) {
           const text = decodeUtf8Text(file.bytes);
           if (text === null) throw new DocumentProcessingError("This file is not UTF-8 text");
           return { text: framedDocument(file.name, cutCodePoints(text, MAX_DOCUMENT_TOOL_CHARS), `${text.length > MAX_DOCUMENT_TOOL_CHARS ? "Partial text; " : ""}text editing uses part=text and index=0 with an original substring that occurs once`, artifact.artifactId) };
@@ -126,7 +132,7 @@ export function buildFileTool(
           throw new DocumentProcessingError(`edits must contain 1–${MAX_DOCUMENT_EDITS} explicit edit operations`);
         }
         const edits = args.edits as DocumentEdit[];
-        if (documentKind(file.mimeType, file.name) === "text" || documentKind(file.mimeType, file.name) === "html") {
+        if (documentKind(file.mimeType, file.name) === "text" || documentKind(file.mimeType, file.name) === "html" || svg) {
           if (file.bytes.byteLength > MAX_SAVED_FILE_BYTES) throw new DocumentProcessingError("This text file exceeds the editing byte limit");
           let text = decodeUtf8Text(file.bytes);
           if (text === null) throw new DocumentProcessingError("This file is not UTF-8 text");
@@ -140,7 +146,7 @@ export function buildFileTool(
             text = text.slice(0, start) + edit.replacement + text.slice(start + edit.text.length);
           }
           if (!text.isWellFormed()) throw new DocumentProcessingError("Replacement contains invalid Unicode");
-          if (baseMimeType(file.mimeType) === "application/json") {
+          if (baseMimeType(file.mimeType) === "application/json" || baseMimeType(file.mimeType).endsWith("+json") || /\.json$/i.test(file.name)) {
             try { JSON.parse(text); } catch { throw new DocumentProcessingError("The edited JSON is invalid"); }
           }
           const bytes = Buffer.from(text, "utf8");

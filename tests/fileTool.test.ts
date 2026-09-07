@@ -1,3 +1,4 @@
+import { buildFileSaver } from "@/application/execution/saveFileTool";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildFileTool } from "@/application/document/fileTool";
 import { captureRunArtifacts, createArtifactRecorder } from "@/application/artifact/runArtifacts";
@@ -40,6 +41,31 @@ beforeEach(() => { ids.next = 0; vi.useFakeTimers(); vi.setSystemTime(now); });
 afterEach(() => vi.useRealTimers());
 
 describe("native File tool", () => {
+  it("reads and edits SVG artifacts created by SaveFile", async () => {
+    const run = setup();
+    const save = buildFileSaver(run.deps)!;
+    const created = await save({ name: "chart.svg", mimeType: "image/svg+xml", content: '<svg xmlns="http://www.w3.org/2000/svg"><text>Original</text></svg>' });
+    await run.capture(created);
+    const id = created.files![0]!.artifactId;
+    expect((await run.call({ operation: "read", file_id: id })).text).toContain("<svg");
+    expect((await run.call({ operation: "inspect", file_id: id })).text).toContain("part=text");
+    const edited = await run.call({ operation: "edit", file_id: id, edits: [{ operation: "replace_text", part: "text", index: 0, text: "Original", replacement: "Edited" }] });
+    expect(edited.files).toHaveLength(1);
+    expect(Buffer.from(edited.files![0]!.b64, "base64").toString("utf8")).toContain("Edited");
+    expect(edited.files![0]!.derivedFrom).toBe(id);
+  });
+
+  it("validates edited JSON identified by filename even when its MIME is generic", async () => {
+    const run = setup();
+    const created = await buildFileSaver(run.deps)!({ name: "data.json", mimeType: "application/json", content: '{"value":1}' });
+    await run.capture(created);
+    const id = created.files![0]!.artifactId!;
+    run.rows.get(id)!.mimeType = "application/octet-stream";
+    const edited = await run.call({ operation: "edit", file_id: id, edits: [{ operation: "replace_text", part: "text", index: 0, text: "1", replacement: "invalid" }] });
+    expect(edited.text).toContain("edited JSON is invalid");
+    expect(edited.files).toBeUndefined();
+  });
+
   it("creates, stores, reads and edits a document using stable identities", async () => {
     const run = setup();
     const created = await run.call({ operation: "create", format: "docx", title: "Report", content: "# Report\n\nOriginal content." });

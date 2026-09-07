@@ -25,6 +25,20 @@ function allParts(bytes: Uint8Array) {
 }
 
 describe("native document editing", () => {
+  it("writes the HWPX mimetype entry first even when source entries are reordered", async () => {
+    const file = await source("hwpx");
+    const parts = allParts(file.bytes);
+    const mime = parts.get("mimetype")!;
+    parts.delete("mimetype");
+    parts.set("mimetype", mime);
+    const input = { ...file, bytes: buildZip(Object.fromEntries(parts)) };
+    const target = (await documentEditor.inspect(input)).targets[0]!;
+    const output = await documentEditor.edit(input, [{ ...target, operation: "replace_text", replacement: "Updated title" }]);
+    expect(openZip(output.bytes).entries[0]!.name).toBe("mimetype");
+    const header = new DataView(output.bytes.buffer, output.bytes.byteOffset, output.bytes.byteLength);
+    expect(header.getUint16(8, true)).toBe(0);
+  });
+
   it.each(["docx", "pptx", "hwpx"] as const)("edits %s text and preserves every other package entry", async (format) => {
     const file = await source(format);
     const originalBytes = file.bytes.slice();
@@ -63,7 +77,13 @@ describe("native document editing", () => {
     const file = await source("docx");
     const parts = allParts(file.bytes);
     parts.set("_xmlsignatures/sig1.xml", new TextEncoder().encode("<signature/>"));
-    await expect(documentEditor.inspect({ ...file, bytes: buildZip(Object.fromEntries(parts)) })).rejects.toThrow("signed document");
+    const signed = { ...file, bytes: buildZip(Object.fromEntries(parts)) };
+    const inspection = await documentEditor.inspect(signed);
+    expect(inspection.text).toContain("Old revenue increased.");
+    expect(inspection.targets).toEqual([]);
+    expect(inspection.warnings.join(" ")).toContain("signed");
+    const target = (await documentEditor.inspect(file)).targets[0]!;
+    await expect(documentEditor.edit(signed, [{ ...target, operation: "replace_text", replacement: "changed" }])).rejects.toThrow("signed document");
   });
 
   it("paginates inspection using the same target indices", async () => {

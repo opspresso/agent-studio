@@ -31,7 +31,7 @@ const TEXT_PARTS = {
 const TEXT_TAGS = { docx: "w:t", pptx: "a:t", hwpx: "hp:t" };
 type EditableFormat = keyof typeof TEXT_PARTS;
 
-function packageOf(file: DocumentFile) {
+function packageOf(file: DocumentFile, editing = false) {
   if (file.bytes.byteLength > MAX_DOCUMENT_BYTES) throw new DocumentError("The source document is too large to edit");
   const detected = detect(file.bytes, file.mimeType, file.name);
   if (detected.format !== "docx" && detected.format !== "pptx" && detected.format !== "hwpx" && detected.format !== "xlsx") {
@@ -40,10 +40,11 @@ function packageOf(file: DocumentFile) {
   const zip = openZip(file.bytes);
   const names = zip.entries.map(({ name }) => name);
   if (new Set(names).size !== names.length) throw new DocumentError("Cannot edit an archive with duplicate entries");
-  if (names.some((name) => name.startsWith("_xmlsignatures/") || /^META-INF\/signatures?\.xml$/i.test(name))) {
+  const signed = names.some((name) => name.startsWith("_xmlsignatures/") || /^META-INF\/signatures?\.xml$/i.test(name));
+  if (editing && signed) {
     throw new DocumentError("Cannot edit a signed document without invalidating its signature");
   }
-  return { format: detected.format, parts: zip.read(names) };
+  return { format: detected.format, parts: zip.read(names), signed };
 }
 
 function xmlOf(bytes: Uint8Array): string {
@@ -66,7 +67,7 @@ export async function inspectDocument(file: DocumentFile, options: DocumentInspe
     const inspection = from >= read.blocks.length ? { text: "", complete: true } : inspectBlocks(read.blocks, { from });
     return { format: read.format, text: inspection.text, complete: inspection.complete, targets: [], warnings: read.omissions };
   }
-  const { format, parts } = packageOf(file);
+  const { format, parts, signed } = packageOf(file);
   if (format === "xlsx") {
     const inspected = inspectXlsx(file.bytes, options.includeHidden);
     const cells = inspected.sheets.flatMap((sheet) => sheet.cells.map((cell) => ({ sheet: sheet.name, state: sheet.state, ...cell })));
@@ -77,6 +78,7 @@ export async function inspectDocument(file: DocumentFile, options: DocumentInspe
       format, text: bounded, targets: [],
       complete: inspected.complete && from + window.length >= cells.length && bounded.length === text.length,
       warnings: [
+        ...(signed ? ["This workbook is signed; editing is not supported."] : []),
         "Formulas are shown with their cached values and are not recalculated.",
         ...(inspected.hiddenSheets && !options.includeHidden ? ["Hidden worksheets were omitted; use includeHidden to inspect them."] : []),
         ...(inspected.macroEnabled ? ["The workbook contains macros; they were not executed."] : []),
@@ -88,7 +90,7 @@ export async function inspectDocument(file: DocumentFile, options: DocumentInspe
   }
   const targets: DocumentInspection["targets"] = [];
   const lines: string[] = [];
-  const warnings: string[] = [];
+  const warnings: string[] = signed ? ["This document is signed; editing is not supported."] : [];
   let ordinal = 0;
   let used = 0;
   let complete = true;
@@ -98,7 +100,7 @@ export async function inspectDocument(file: DocumentFile, options: DocumentInspe
     for (const [index, element] of elements.entries()) {
       if (ordinal++ < from) continue;
       const target = { part, index, text: element.text };
-      const line = JSON.stringify({ ...target, editable: !element.nested });
+      const line = JSON.stringify({ ...target, editable: !element.nested && !signed });
       if (lines.length >= MAX_INSPECTED_BLOCKS || used + line.length + 1 > MAX_TEXT_CHARS) {
         complete = false;
         if (lines.length === 0) {
@@ -111,7 +113,7 @@ export async function inspectDocument(file: DocumentFile, options: DocumentInspe
       }
       lines.push(line);
       used += line.length + 1;
-      if (!element.nested) targets.push(target);
+      if (!element.nested && !signed) targets.push(target);
     }
   }
   return { format, text: lines.join("\n"), targets, complete, warnings };
@@ -122,7 +124,7 @@ export async function editDocument(file: DocumentFile, operations: readonly Docu
   if (!Array.isArray(operations) || operations.length === 0 || operations.length > MAX_DOCUMENT_EDITS) {
     throw new DocumentError(`Supply 1–${MAX_DOCUMENT_EDITS} document edits`);
   }
-  const opened = packageOf(file);
+  const opened = packageOf(file, true);
   const format = opened.format;
   let parts = opened.parts;
   if (format === "xlsx") {
@@ -171,7 +173,14 @@ export async function editDocument(file: DocumentFile, operations: readonly Docu
       parts.set(part, new TextEncoder().encode(edited));
     }
   }
-  const output = buildZip(Object.fromEntries([...parts].map(([name, bytes]) => [name, name === "mimetype" ? stored(bytes) : bytes])));
+  // HWPX requires an uncompressed mimetype entry at the start of the archive.
+  const entries = [...parts];
+  if (format === "hwpx") {
+    const mime = parts.get("mimetype");
+    if (!mime) throw new DocumentError("The HWPX mimetype entry is missing");
+    entries.splice(0, entries.length, ["mimetype", mime], ...entries.filter(([name]) => name !== "mimetype"));
+  }
+  const output = buildZip(Object.fromEntries(entries.map(([name, bytes]) => [name, name === "mimetype" ? stored(bytes) : bytes])));
   if (output.byteLength > MAX_RENDERED_BYTES) throw new DocumentError("The edited document exceeds the output byte limit");
   const reopened = openZip(output);
   if (reopened.entries.length !== parts.size) throw new DocumentError("The edited package lost entries");

@@ -782,6 +782,7 @@ const FILE_TOOL_DEF: ChannelToolDef = {
       "Inspect before editing: DOCX/PPTX/HWPX text targets carry part, index and original text; use replace_text with replacement. " +
       "XLSX uses set_cell with sheet, cell and value. Plain text uses replace_text, part=text, index=0 and an original substring that occurs once. " +
       "Edits create a new file and preserve the source. Document text edits cannot add paragraphs or line breaks. " +
+      "If editing is unsupported, report it; rebuilding from extracted text does not preserve original formatting. " +
       "Use mode=structure to inspect document layout information, or edit_targets for text targets. " +
       "Use SaveFile to create plain text, Markdown, CSV, JSON, HTML or SVG. Assets map names to PNG/JPEG file IDs and are referenced as asset://name in Markdown.",
     parameters: {
