@@ -150,7 +150,7 @@ export function editWorkbook(original: Map<string, Uint8Array>, operations: read
   }
   const parts = new Map(original);
   const workbook = xmlOf(parts, "xl/workbook.xml");
-  const sheets = sheetParts(workbook, xmlOf(parts, "xl/_rels/workbook.xml.rels"));
+  const sheets = sheetParts(workbook, xmlOf(parts, "xl/_rels/workbook.xml.rels"), true);
   const seen = new Set<string>();
   for (const operation of operations) {
     if (operation.operation !== "set_cell" || typeof operation.sheet !== "string" || typeof operation.cell !== "string") {

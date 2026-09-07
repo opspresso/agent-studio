@@ -166,6 +166,47 @@ describe("workbook editing", () => {
     expect(inspection.text).toContain('"value":"15"');
   });
 
+  it("edits the worksheet named by prefixed relationships, not its ordinal filename", async () => {
+    const file = await workbook();
+    const parts = allParts(file.bytes);
+    const name = "xl/_rels/workbook.xml.rels";
+    const rels = new TextDecoder().decode(parts.get(name))
+      .replace(/(<\/?)(Relationships?)(?=[\s>])/g, "$1p:$2")
+      .replace('xmlns="', 'xmlns:p="')
+      .replace(/worksheets\/sheet([12])\.xml/g, (_match, index: string) => `worksheets/sheet${index === "1" ? "2" : "1"}.xml`);
+    parts.set(name, new TextEncoder().encode(rels));
+    const output = await documentEditor.edit({ ...file, bytes: buildZip(Object.fromEntries(parts)) }, [
+      { operation: "set_cell", sheet: "Summary", cell: "A1", value: "Selected sheet" },
+    ]);
+    const result = allParts(output.bytes);
+    expect(new TextDecoder().decode(result.get("xl/worksheets/sheet2.xml"))).toContain("Selected sheet");
+    expect(new TextDecoder().decode(result.get("xl/worksheets/sheet1.xml"))).not.toContain("Selected sheet");
+  });
+
+  it("refuses editing when the worksheet relationship is unresolved", async () => {
+    const file = await workbook();
+    const parts = allParts(file.bytes);
+    parts.set("xl/_rels/workbook.xml.rels", new TextEncoder().encode('<Relationships/>'));
+    await expect(documentEditor.edit({ ...file, bytes: buildZip(Object.fromEntries(parts)) }, [
+      { operation: "set_cell", sheet: "Summary", cell: "A1", value: "Wrong target" },
+    ])).rejects.toThrow(/relationship/i);
+  });
+
+  it("ignores commented worksheet relationships when choosing an edit target", async () => {
+    const file = await workbook();
+    const parts = allParts(file.bytes);
+    const name = "xl/_rels/workbook.xml.rels";
+    const rels = new TextDecoder().decode(parts.get(name)).replace('</Relationships>',
+      '<!-- <Relationship Id="rId1" Target="worksheets/sheet2.xml"/> --></Relationships>');
+    parts.set(name, new TextEncoder().encode(rels));
+    const output = await documentEditor.edit({ ...file, bytes: buildZip(Object.fromEntries(parts)) }, [
+      { operation: "set_cell", sheet: "Summary", cell: "A1", value: "Selected sheet" },
+    ]);
+    const result = allParts(output.bytes);
+    expect(new TextDecoder().decode(result.get("xl/worksheets/sheet1.xml"))).toContain("Selected sheet");
+    expect(new TextDecoder().decode(result.get("xl/worksheets/sheet2.xml"))).not.toContain("Selected sheet");
+  });
+
   it("retains a namespace prefix while creating cells and rows", async () => {
     const file = await workbook();
     const parts = allParts(file.bytes);

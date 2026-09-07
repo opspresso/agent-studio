@@ -449,41 +449,50 @@ function columnName(column: number): string {
 export function sheetParts(
   workbook: string | undefined,
   rels: string | undefined,
+  requireRelationships = false,
 ): Array<{ name: string; path: string; state: "visible" | "hidden" | "veryHidden" }> {
   if (!workbook) {
     return [];
   }
   const targets = new Map<string, string>();
   if (rels) {
-    for (const match of rels.matchAll(/<Relationship\b([^>]*)>/g)) {
-      const id = attributeOf(match[1] ?? "", "Id");
-      const target = attributeOf(match[1] ?? "", "Target");
+    walkXml(rels, { text() {}, close() {}, open(name, attributes) {
+      if (localName(name) !== "Relationship") return;
+      const id = attributeOf(attributes, "Id");
+      const target = attributeOf(attributes, "Target");
       if (id && target) {
+        if (targets.has(id)) throw new XlsxError("Duplicate workbook relationship ID");
+        if (attributeOf(attributes, "TargetMode") === "External") {
+          if (requireRelationships) throw new XlsxError("Cannot edit external workbook relationships");
+          return;
+        }
         // Targets are relative to `xl/`, and some writers make that explicit.
         targets.set(id, `xl/${target.replace(/^\/?(xl\/)?/, "")}`);
       }
-    }
+    } });
   }
   const sheets: Array<{
     name: string;
     path: string;
     state: "visible" | "hidden" | "veryHidden";
   }> = [];
-  for (const match of workbook.matchAll(/<(?:\w+:)?sheet\b([^>]*)\/?>/g)) {
-    const attributes = match[1] ?? "";
+  walkXml(workbook, { text() {}, close() {}, open(tag, attributes) {
+    if (localName(tag) !== "sheet") return;
     const name = attributeOf(attributes, "name");
     if (!name) {
-      continue;
+      return;
     }
     const id = attributeOf(attributes, "r:id") ?? attributeOf(attributes, "id");
     const declaredState = attributeOf(attributes, "state");
     const state =
       declaredState === "hidden" || declaredState === "veryHidden" ? declaredState : "visible";
-    // The relationship is authoritative; the conventional path is the fallback
-    // for a workbook whose rels part is missing or unreadable.
+    if (requireRelationships && (!id || !targets.has(id))) {
+      throw new XlsxError(`Worksheet ${JSON.stringify(name)} has no resolved relationship`);
+    }
+    // Reading may recover a conventional path; editing must never guess a target.
     const path = (id && targets.get(id)) || `xl/worksheets/sheet${sheets.length + 1}.xml`;
     sheets.push({ name, path, state });
-  }
+  } });
   return sheets;
 }
 
