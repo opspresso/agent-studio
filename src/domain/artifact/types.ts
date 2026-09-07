@@ -210,6 +210,7 @@ const EXTENSIONS: Record<string, string> = {
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "application/hwp+zip": "hwpx",
   "application/haansofthwpx": "hwpx",
   "application/vnd.hancom.hwpx": "hwpx",
   "application/x-hwp": "hwp",

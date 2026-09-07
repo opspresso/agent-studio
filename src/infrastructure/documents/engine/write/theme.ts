@@ -41,15 +41,9 @@
  * PDF wants three floats — `hashed` and `rgbOf` below do those two conversions
  * so the values themselves are stated once.
  */
-export const DOCUMENT_PROFILES = [
-  "executive",
-  "consulting",
-  "formal",
-  "technical",
-  "standard",
-] as const;
-
-export type DocumentProfile = (typeof DOCUMENT_PROFILES)[number];
+export { DOCUMENT_PROFILES } from "@/domain/document/processor";
+import type { DocumentProfile } from "@/domain/document/processor";
+export type { DocumentProfile } from "@/domain/document/processor";
 
 export const DEFAULT_PROFILE: DocumentProfile = "executive";
 

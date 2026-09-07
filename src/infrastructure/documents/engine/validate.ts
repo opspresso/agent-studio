@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import type { DocumentFormat, DocumentValidation } from "@/domain/document/processor";
 import { PDFDocument } from "pdf-lib";
 import { DocumentError } from "./errors";
 import { docxToText } from "./read/docx";
@@ -10,15 +11,9 @@ import { openZip } from "./zip";
 
 export class ValidationError extends DocumentError {}
 
-export type RenderFormat = "docx" | "pdf" | "hwpx" | "pptx" | "xlsx";
+export type RenderFormat = DocumentFormat;
 
-export interface ValidationReport {
-  structure: "passed";
-  content: "reopened" | "not_checked";
-  visual: "not_run";
-  externalRelationships: number;
-  warnings: string[];
-}
+export type ValidationReport = DocumentValidation;
 
 const REQUIRED: Record<Exclude<RenderFormat, "pdf">, readonly string[]> = {
   docx: [

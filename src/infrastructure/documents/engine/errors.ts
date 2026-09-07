@@ -11,7 +11,9 @@
  * teaches a model nothing and can carry more about this process than the caller
  * should have.
  */
-export class DocumentError extends Error {
+import { DocumentProcessingError } from "@/domain/document/processor";
+
+export class DocumentError extends DocumentProcessingError {
   constructor(message: string) {
     super(message);
     this.name = new.target.name;
