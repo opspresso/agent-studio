@@ -25,6 +25,19 @@ function allParts(bytes: Uint8Array) {
 }
 
 describe("native document editing", () => {
+  it("recognizes signatures declared outside the conventional signature directory", async () => {
+    const file = await source("docx");
+    const parts = allParts(file.bytes);
+    const types = new TextDecoder().decode(parts.get("[Content_Types].xml"));
+    parts.set("[Content_Types].xml", new TextEncoder().encode(types.replace("</Types>", '<Override PartName="/custom/sign.xml" ContentType="application/vnd.openxmlformats-package.digital-signature-xmlsignature+xml"/></Types>')));
+    parts.set("custom/sign.xml", new TextEncoder().encode("<Signature/>"));
+    const signed = { ...file, bytes: buildZip(Object.fromEntries(parts)) };
+    const target = (await documentEditor.inspect(file)).targets[0]!;
+    await expect(documentEditor.edit(signed, [{ ...target, operation: "replace_text", replacement: "changed" }]))
+      .rejects.toThrow("signed document");
+    expect((await documentEditor.inspect(signed)).warnings.join(" ")).toContain("signed");
+  });
+
   it("writes the HWPX mimetype entry first even when source entries are reordered", async () => {
     const file = await source("hwpx");
     const parts = allParts(file.bytes);

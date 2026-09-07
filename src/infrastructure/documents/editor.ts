@@ -40,7 +40,14 @@ function packageOf(file: DocumentFile, editing = false) {
   const zip = openZip(file.bytes);
   const names = zip.entries.map(({ name }) => name);
   if (new Set(names).size !== names.length) throw new DocumentError("Cannot edit an archive with duplicate entries");
-  const signed = names.some((name) => name.startsWith("_xmlsignatures/") || /^META-INF\/signatures?\.xml$/i.test(name));
+  // OPC signature parts can live at arbitrary paths; their content types and relationships are authoritative.
+  const declarations = zip.read(["[Content_Types].xml", "_rels/.rels"]);
+  const declaredSignature = [...declarations.values()].some((bytes) =>
+    xmlElements(xmlOf(bytes), (name) => ["Default", "Override", "Relationship"].includes(localName(name)))
+      .some(({ attributes }) => [attributeOf(attributes, "ContentType"), attributeOf(attributes, "Type")]
+        .some((value) => value?.includes("digital-signature"))),
+  );
+  const signed = declaredSignature || names.some((name) => name.startsWith("_xmlsignatures/") || /^META-INF\/signatures?\.xml$/i.test(name));
   if (editing && signed) {
     throw new DocumentError("Cannot edit a signed document without invalidating its signature");
   }
