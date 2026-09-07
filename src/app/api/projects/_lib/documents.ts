@@ -1,4 +1,6 @@
-import { readDocuments, turnContent, type ReadDocument } from "@/application/llm/documentParts";
+import { prepareDocumentAttachments } from "@/application/document/attachments";
+import type { ArtifactStorage, ArtifactContext } from "@/application/artifact/storeArtifact";
+import { turnContent, type ReadDocument } from "@/application/llm/documentParts";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { ChatMessageInput } from "@/domain/llm/types";
 interface DocumentInput {
@@ -8,20 +10,14 @@ interface DocumentInput {
 }
 
 export async function readExecutionDocuments(
-  extractor: DocumentExtractor,
+  deps: { documents: DocumentExtractor; artifacts?: ArtifactStorage },
+  context: ArtifactContext,
   documents: DocumentInput[] = [],
 ): Promise<{ documents: ReadDocument[]; warnings: string[] }> {
-  const warnings: string[] = [];
-  const read = await readDocuments(
-    extractor,
-    documents.map((document) => ({
-      bytes: Buffer.from(document.b64, "base64"),
-      mimeType: document.mimeType,
-      name: document.name,
-    })),
-    warnings,
+  const read = await prepareDocumentAttachments(deps.documents, deps.artifacts, context,
+    documents.map((document) => ({ bytes: Buffer.from(document.b64, "base64"), mimeType: document.mimeType, name: document.name })),
   );
-  return { documents: read, warnings };
+  return { documents: read.stored, warnings: read.warnings };
 }
 
 /** Put attached document text on the request's last user turn. */

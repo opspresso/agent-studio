@@ -128,10 +128,30 @@ function turn(overrides: Partial<TurnInput> = {}): TurnInput {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
 describe("handleTurn", () => {
+  it("restores and retains file IDs without putting signed URLs in model history", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const deps = makeDeps([{ file: { name: "new.docx", mimeType: "application/msword", source: "builtin: File", key: "stored", artifactId: "new-id" } }, { done: true }]);
+    const append = vi.fn(async () => {});
+    deps.fileHistory = {
+      recent: async () => [{ role: "assistant", content: "Prior file ID: old-id", createdAt: "2026-09-07T00:00:00.000Z" }],
+      append,
+    };
+    deps.signFile = async () => "https://signed.test/secret";
+    const { reply } = makeReply();
+    await handleTurn(deps, turn({ actor: { kind: "slack", id: "U1" } }), reply);
+    expect(JSON.stringify(deps.seen())).toContain("old-id");
+    expect(append).toHaveBeenCalledOnce();
+    expect(JSON.stringify(append.mock.calls)).toContain("new-id");
+    expect(JSON.stringify(append.mock.calls)).not.toContain("secret");
+  });
+
   it("reads recent historical documents after current attachments within one shared budget", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const deps = makeDeps([{ done: true }]);

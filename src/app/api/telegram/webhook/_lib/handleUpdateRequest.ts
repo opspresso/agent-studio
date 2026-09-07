@@ -24,6 +24,8 @@ const telegramEventDeps: TelegramEventDeps = {
   telegram: telegramClient,
   destinations: telegramDestinationRepository,
   documents: executionDeps.documents,
+  artifacts: executionDeps.artifacts,
+  fileHistory: transcriptRepository,
   // Named even when this deployment has none, so "no object storage here" is a
   // source-level decision rather than omitted wiring.
   signFile: signArtifactUrl,

@@ -21,6 +21,8 @@ const teamsEventDeps: TeamsEventDeps = {
   versions: versionRepository,
   teams: teamsClient,
   documents: executionDeps.documents,
+  artifacts: executionDeps.artifacts,
+  fileHistory: transcriptRepository,
   // Named even when this deployment has none, so "no object storage here" is a
   // source-level decision rather than omitted wiring.
   signFile: signArtifactUrl,

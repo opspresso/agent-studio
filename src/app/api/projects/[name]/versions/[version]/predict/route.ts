@@ -56,7 +56,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         });
         return Response.json(image);
       }
-      const read = await readExecutionDocuments(executionDeps.documents, parsed.data.documents);
+      const read = await readExecutionDocuments(executionDeps, { projectName: project.name, versionName: versionEntity.versionName, actor }, parsed.data.documents);
       const params = {
         project,
         version: versionEntity,

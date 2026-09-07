@@ -1141,7 +1141,7 @@ version 의 MCP 도구·skill·subagent 로 멀티턴 도구 루프를 실행한
   "finishReason": "completed",  // 런이 끝난 이유: "turn-limit" / "output-limit" 은 부분 답을 뜻한다
   "warnings": [ "Skill 'x' is no longer in the registry; it was not offered." ]?,  // 런이 무언가를 잃었을 때만
   "images": [ { "b64": "…", "mimeType": "image/png" } ]?,  // 런이 무언가를 그렸을 때만
-  "files": [ { "name": "report.docx", "mimeType": "…", "byteSize": 2048, "url": "https://…" } ]?  // 툴이 파일을 만들었을 때만
+  "files": [ { "fileId": "…", "name": "report.docx", "mimeType": "…", "byteSize": 2048, "url": "https://…" } ]?  // 툴이 파일을 만들었을 때만
 }
 ```
 
@@ -1214,7 +1214,7 @@ subagent)는 OpenAI 스키마에 자리가 없으므로 확장으로 함께 실�
 프레임이다. 이 필드를 모르는 클라이언트는 그냥 무시한다.
 
 **파일 출력.** 같은 취급을 다시 하되 중요한 차이가 하나 있다: 문서는 그려지는 것이 아니라
-*가져가는* 것이므로 주소로 이동한다. completion 객체의 `files: [ { name, mimeType,
+*가져가는* 것이므로 주소로 이동한다. completion 객체의 `files: [ { fileId?, name, mimeType,
 byteSize?, url } ]` 와 스트림의 `choices[0].delta.files` 프레임이다. 그 주소가 무엇이고 얼마나
 사는지는 위 `/predict` 를 보라.
 
@@ -1231,8 +1231,8 @@ Agent SSE 스트림이다. 본문은 `{ "messages": [ … ] }`. `EngineChunk` �
 [ARCHITECTURE.md](ARCHITECTURE.md#enginechunk-계약) 에 있다.
 
 `file` 프레임은 이 엔드포인트를 **주소가 붙은 채로** 떠난다: 런 브래킷이 붙여 둔 object key 와
-artifact id 는 수명이 짧은 서명 `url` 로 대체된다. 그 둘은 플랫폼 자신의 장부이고 호출자가 그것을
-쥐어 봐야 할 수 있는 일이 없기 때문이다. 서명할 수 없었던 파일은, 아무것도 가져올 수 없는 문서를
+artifact id 대신 다운로드용 서명 `url`과 후속 `File` 도구 호출용 `fileId`를 제공한다.
+저장소 키는 외부에 노출하지 않으며 `fileId` 자체는 접근 권한이 아니다. 서명할 수 없었던 파일은, 아무것도 가져올 수 없는 문서를
 지목하는 `file` 프레임 대신 `warning` 프레임으로 도착한다.
 
 **agent project 만**. 그 밖의 타입은 400 이다. 도구 루프에는 `llm` project 의
@@ -1694,7 +1694,7 @@ reasoningTokens?, cachedInputTokens? }]` 를 싣는다. usage 는 fallback·suba
 않는다. `RUN_ERROR` 의 `code` 는 타입이 있는 실패의
 클래스명(`RateLimitedError`, `UpstreamError` 등)이다. 런이 만든 그림과 파일은
 `ACTIVITY_SNAPSHOT`. `activityType` 이 `agent-studio.image` (`content: { mimeType, dataUrl,
-prompt?, model?, artifactId? }`) 또는 `agent-studio.file` (`content: { name, mimeType, url,
+prompt?, model?, artifactId? }`) 또는 `agent-studio.file` (`content: { fileId?, name, mimeType, url,
 byteSize? }`. 15분 서명 URL). 로 스레드의 메시지가 되고, 클라이언트가 다음 런 입력에서
 제거하므로 바이트는 모델로 돌아가지 않는다. `CUSTOM` 은 `agent-studio.warning` (`{ message }`)
 하나다.

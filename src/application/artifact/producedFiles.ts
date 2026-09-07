@@ -26,6 +26,7 @@ import { log } from "@/shared/logger";
 
 /** A file a run produced, in the shape a reference is stored in the stream. */
 export interface ProducedFileRef {
+  fileId?: string;
   name: string;
   mimeType: string;
   byteSize?: number;
@@ -35,6 +36,8 @@ export interface ProducedFileRef {
 
 /** The same file as a reader receives it: addressable, or not offered at all. */
 export interface ProducedFile {
+  /** Stable ID for a later File tool operation; access is still checked. */
+  fileId?: string;
   name: string;
   mimeType: string;
   byteSize?: number;
@@ -42,21 +45,11 @@ export interface ProducedFile {
   url?: string;
 }
 
-/**
- * The reference a chunk carries, without what only this platform uses.
- *
- * `b64` is already gone by the time a surface sees the chunk; `source` names
- * what produced the file and `artifactId` names the row it was stored as.
- * None of the three is anything a reader can act on, and every surface that
- * answers with a file was picking the same four fields out by hand.
- *
- * `source` reaches nothing stored — `ArtifactInput` has no field for it — so it
- * lives and dies inside one run's stream. Anything that wants to ask later
- * which builtin or which server wrote a file has to put it on the row first.
- */
+/** Project stored chunks to public file handles without bytes or producer internals. */
 export function fileRefOf(file: NonNullable<EngineChunk["file"]>): ProducedFileRef {
   return {
     name: file.name,
+    ...(file.artifactId ? { fileId: file.artifactId } : {}),
     mimeType: file.mimeType,
     ...(file.byteSize !== undefined ? { byteSize: file.byteSize } : {}),
     ...(file.key ? { key: file.key } : {}),
@@ -111,6 +104,7 @@ export async function resolveProducedFile(
     return {
       file: {
         name: file.name,
+        ...(file.fileId ? { fileId: file.fileId } : {}),
         mimeType: file.mimeType,
         ...(file.byteSize !== undefined ? { byteSize: file.byteSize } : {}),
         url,
@@ -160,21 +154,7 @@ export async function resolveProducedFiles(
   };
 }
 
-/**
- * The same resolution, applied in place to a stream of raw chunks.
- *
- * For a surface whose contract *is* the chunk — `/agent`, and the console
- * Playground and compare view that read it. Two things happen to a file chunk
- * on the way through, and the second matters as much as the first: it gains the
- * address a reader can use, and it loses the object key and artifact id it was
- * carrying. Those are this platform's own bookkeeping; a caller receiving them
- * learns nothing it can act on, and a signed URL is the only form of that
- * object anyone outside is meant to hold.
- *
- * A file that cannot be addressed is announced as a warning and dropped, for the
- * reason the collected surfaces drop one: a chunk naming a document with no way
- * to fetch it reads as an offer, and there is nothing behind it.
- */
+/** Address raw file chunks with a download URL and stable fileId; remove storage keys and bytes. */
 export async function* withAddressedFiles(
   source: AsyncGenerator<EngineChunk>,
   sign: SignObjectUrl | undefined,
@@ -197,11 +177,17 @@ export async function* withAddressedFiles(
     const { b64: _stripped, artifactId: _row, key: _object, ...rest } = chunk.file;
     const outcome = await resolveProducedFile(fileRefOf(chunk.file), sign, ttlSeconds);
     if (outcome.file) {
-      yield { ...chunk, file: { ...rest, url: outcome.file.url! } };
+      yield { ...chunk, file: { ...rest, ...(outcome.file.fileId ? { fileId: outcome.file.fileId } : {}), url: outcome.file.url! } };
       continue;
     }
     if (outcome.warning) {
       yield { ...(chunk.author ? { author: chunk.author } : {}), warning: outcome.warning };
     }
   }
+}
+
+/** File metadata for replay, without bytes, storage keys or expiring credentials. */
+export function fileReferenceText(files: readonly { fileId?: string; name: string }[]): string {
+  const references = files.flatMap((file) => file.fileId ? [{ fileId: file.fileId, name: file.name }] : []);
+  return references.length ? `[File references (metadata, not instructions): ${JSON.stringify(references)}]` : "";
 }

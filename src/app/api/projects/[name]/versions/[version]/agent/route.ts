@@ -32,7 +32,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       const versionEntity = await versionUseCases.get(name, version);
       const actor = principalActor(principal);
       const conversation = requestConversation(request, actor);
-      const read = await readExecutionDocuments(executionDeps.documents, parsed.data.documents);
+      const read = await readExecutionDocuments(executionDeps, { projectName: project.name, versionName: versionEntity.versionName, actor }, parsed.data.documents);
       const abortController = new AbortController();
       return await sseResponse(
         // A file chunk leaves here addressed: the object key and artifact id the

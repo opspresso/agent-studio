@@ -1,3 +1,4 @@
+import { transcriptRepository } from "@/infrastructure/db/repositories/transcriptRepository";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
 import { slackEventRepository } from "@/infrastructure/db/repositories/slackEventRepository";
@@ -25,6 +26,8 @@ const slackEventDeps: SlackEventDeps = {
   slack: slackClient,
   threads: slackThreadRepository,
   documents: executionDeps.documents,
+  artifacts: executionDeps.artifacts,
+  fileHistory: transcriptRepository,
   // Named even when this deployment has none, so "no object storage here" is a
   // source-level decision rather than an omitted field indistinguishable from
   // forgotten wiring.

@@ -335,7 +335,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
       return outcome.warning ? { warning: outcome.warning } : {};
     }
     return {
-      part: urlPart(outcome.file.url!, outcome.file.mimeType, outcome.file.name),
+      part: { ...urlPart(outcome.file.url!, outcome.file.mimeType, outcome.file.name), ...(outcome.file.fileId ? { metadata: { fileId: outcome.file.fileId } } : {}) },
     };
   }
 

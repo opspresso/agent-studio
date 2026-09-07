@@ -1,3 +1,6 @@
+import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
+import { loadFileHistory, rememberFiles } from "./fileHistory";
+import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { ExecuteAgentInput } from "@/application/execution/deps";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
 import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
@@ -45,6 +48,8 @@ import {
 
 /** Injected dependencies a messaging adapter's bag carries. */
 export interface MessagingDeps {
+  artifacts?: ArtifactStorage;
+  fileHistory?: ConversationTranscriptRepository;
   /** Bound wrapper over `executeAgent(executionDeps, params)`. */
   runAgent: (params: ExecuteAgentInput) => AsyncGenerator<EngineChunk>;
   projects: ProjectRepository;
@@ -154,8 +159,11 @@ export async function handleTurn(
     let historyTurns = input.history;
     const documentCandidates = [...attached, ...historyTurns.flatMap((turn) => turn.message.role === "user" ? turn.attachments : [])];
     if (documentCandidates.some((attachment) => documentKind(attachment.mimeType, attachment.name) !== null)) {
-      readDocuments = await collectDocuments(deps.documents, attached, warnings);
-      historyTurns = await withHistoryDocuments(deps.documents, historyTurns, attached, readDocuments, warnings);
+      const persistence = { storage: deps.artifacts, context: {
+        projectName: project.name, versionName: version.versionName, actor: input.actor, ownerEmail: input.ownerEmail,
+      } };
+      readDocuments = await collectDocuments(deps.documents, attached, warnings, persistence);
+      historyTurns = await withHistoryDocuments(deps.documents, historyTurns, attached, readDocuments, warnings, persistence);
     }
     // Assembled by the one function that owns a turn's body, so a chat bot and a
     // chat put the same message in front of the model.
@@ -175,7 +183,8 @@ export async function handleTurn(
     if (typeof userContent === "string" && userContent === "") {
       throw new EmptyTurnError();
     }
-    const messages: ChatMessageInput[] = [...history, { role: "user", content: userContent }];
+    const fileHistory = await loadFileHistory(deps.fileHistory, project.name, input.conversation, input.actor, warnings);
+    const messages: ChatMessageInput[] = [...history, ...(fileHistory ? [{ role: "user" as const, content: fileHistory }] : []), { role: "user", content: userContent }];
     for await (const chunk of deps.runAgent({
       project,
       version,
@@ -306,6 +315,7 @@ export async function handleTurn(
   // Links first, warnings after: one is what the run made and the other is what
   // it lost, and a reader scanning the end of a reply should meet them in that
   // order.
+  await rememberFiles(deps.fileHistory, project.name, input.conversation, input.actor, producedRefs.filter((file) => file.key), warnings);
   const suffix = [
     // `resolveProducedFiles` hands back only files it could address; the guard
     // is what the type still leaves open, not a case that occurs.

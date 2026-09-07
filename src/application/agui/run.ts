@@ -1,3 +1,4 @@
+import { prepareDocumentAttachments } from "@/application/document/attachments";
 /**
  * A published project run over AG-UI.
  *
@@ -81,6 +82,13 @@ export async function* streamAguiRun(
   // is a warning beside the answer, reported with the surface's own.
   const messages = await toEngineMessages(request.input.messages, request.input.context, request.input.state, {
     documents: deps.execution.documents,
+    prepareDocuments: async (documents) => {
+      const result = await prepareDocumentAttachments(deps.execution.documents, deps.execution.artifacts, {
+        projectName: request.project.name, versionName: request.version.versionName, actor: request.actor,
+      }, documents);
+      warnings.push(...result.warnings);
+      return result.stored;
+    },
     warnings,
   });
   const source = streamProjectRun(deps.execution, {

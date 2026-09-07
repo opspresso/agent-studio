@@ -123,17 +123,17 @@ describe("withAddressedFiles", () => {
     return out;
   }
 
-  it("swaps the platform's identifiers for an address", async () => {
+  it("publishes a stable file ID and address without exposing the object key", async () => {
     const [chunk] = await drain([stored], sign);
     expect(chunk?.file).toEqual({
+      fileId: "art-1",
       name: "report.docx",
       mimeType: "application/msword",
       source: "mcp: render",
       byteSize: 2048,
       url: "https://signed/objects/report.docx?name=report.docx",
     });
-    // The object key and artifact row id are this platform's bookkeeping; a
-    // caller holding them can do nothing with them.
+    // The storage fields remain internal; fileId is the public operation handle.
     expect(chunk?.file).not.toHaveProperty("key");
     expect(chunk?.file).not.toHaveProperty("artifactId");
   });

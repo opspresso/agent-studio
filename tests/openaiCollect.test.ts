@@ -144,6 +144,7 @@ describe("a file a run produced, on the OpenAI surface", () => {
     // `artifactId` name the run's own bookkeeping.
     expect(result.files).toEqual([
       {
+        fileId: "art-1",
         name: "report.docx",
         mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         byteSize: 2048,

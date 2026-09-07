@@ -197,6 +197,8 @@ export interface EngineChunk {
    * address, rather than a ten-megabyte string down the wire.
    */
   file?: {
+    /** Public stable reference on addressed streams. */
+    fileId?: string;
     derivedFrom?: string;
     b64?: string;
     mimeType: string;
