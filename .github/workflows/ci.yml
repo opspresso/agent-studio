@@ -57,11 +57,21 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Isolate standalone deployment
+        run: |
+          document_smoke_dir=$(mktemp -d)
+          cp -R .next/standalone/. "$document_smoke_dir/"
+          mkdir -p "$document_smoke_dir/.next/static" "$document_smoke_dir/public"
+          cp -R .next/static/. "$document_smoke_dir/.next/static/"
+          cp -R public/. "$document_smoke_dir/public/"
+          echo "DOCUMENT_SMOKE_DIR=$document_smoke_dir" >> "$GITHUB_ENV"
+
       - name: Native document worker smoke test
-        working-directory: .next/standalone
-        run: ../../node_modules/.bin/tsx ../../scripts/document-worker-check.ts
+        working-directory: ${{ env.DOCUMENT_SMOKE_DIR }}
+        run: '"$GITHUB_WORKSPACE/node_modules/.bin/tsx" --tsconfig "$GITHUB_WORKSPACE/tsconfig.json" "$GITHUB_WORKSPACE/scripts/document-worker-check.ts"'
 
       - name: Production server smoke test
+        working-directory: ${{ env.DOCUMENT_SMOKE_DIR }}
         env:
           STAGE: local
           DATABASE_URL: postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test
@@ -73,10 +83,7 @@ jobs:
           HOSTNAME: 127.0.0.1
           PORT: 3000
         run: |
-          mkdir -p .next/standalone/.next/static .next/standalone/public
-          cp -R .next/static/. .next/standalone/.next/static/
-          cp -R public/. .next/standalone/public/
-          node .next/standalone/server.js > /tmp/agent-studio-production.log 2>&1 &
+          node server.js > /tmp/agent-studio-production.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 30); do

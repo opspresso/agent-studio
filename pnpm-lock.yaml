@@ -62,6 +62,9 @@ importers:
       '@smithy/signature-v4':
         specifier: ^5.7.0
         version: 5.7.3
+      '@swc/helpers':
+        specifier: 0.5.23
+        version: 0.5.23
       '@tabler/icons-react':
         specifier: ^3.45.0
         version: 3.46.0(react@19.2.8)
