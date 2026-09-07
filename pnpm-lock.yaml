@@ -132,6 +132,9 @@ importers:
       '@types/sanitize-html':
         specifier: ^2.16.1
         version: 2.16.1
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       postcss:
         specifier: ^8.5.23
         version: 8.5.26

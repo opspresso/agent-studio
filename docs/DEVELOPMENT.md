@@ -76,11 +76,12 @@ pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ## 명령
 
 ```bash
-pnpm dev              # next dev
-pnpm build            # 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
+pnpm dev              # 문서 워커 번들 후 next dev
+pnpm build            # 문서 워커 번들 + 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
 pnpm start            # 이미 만든 Next.js production build 실행
 pnpm typecheck        # tsc --noEmit, strict + 추가 검사 (아래)
 pnpm test             # vitest run
+pnpm test:documents   # 실제 자식 프로세스로 생성·추출·검사·편집 검증 (DB 불필요)
 pnpm test:watch       # vitest watch
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test) 에 대한 리포지토리 + 엔진 검사
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)

@@ -61,5 +61,6 @@ export interface DocumentExtractor {
      * told to, while a remote server is not something the caller can fix.
      */
     charset?: string;
+    signal?: AbortSignal;
   }): Promise<ExtractedDocument>;
 }

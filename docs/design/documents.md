@@ -84,3 +84,20 @@ PNG·JPEG artifact ID로 가는 매핑이며, 문서에서는 `asset://name`으�
 평문·Markdown·CSV·JSON·HTML·SVG 생성은 기존 `SaveFile`을 사용한다. UTF-8 텍스트의
 `edit`는 `part: text`, `index: 0`과 한 번만 나타나는 기존 문자열로 교체 대상을 지정한다.
 JSON 편집 결과는 구문을 검사한다. 텍스트 편집 결과도 기존 파일을 덮어쓰지 않는다.
+
+## 실행 자원
+
+배포의 composition root는 `workerAdapters.ts`를 연결한다. 파싱·생성·검사는 앱의
+이벤트 루프에서 실행하지 않고 별도 Node 자식 프로세스에서 수행한다. 작업마다 새
+프로세스를 만들고 결과 수신·취소·실패·타임아웃 뒤 종료한다. 프로세스가 실제 종료된
+뒤에만 동시 실행 슬롯을 반환한다. 앱 프로세스당 동시 실행 2개, 대기 8개이며 대기
+시간을 포함한 작업 기한은 30초다. 초과 대기는 즉시 거절한다.
+
+자식에는 `NODE_ENV=production`만 전달한다. 앱의 DB·S3·LLM 자격증명은 전달하지 않는다.
+V8 old-space는 256MiB로 제한한다. 이 값은 프로세스 전체 RSS 제한은 아니며, 별도의
+입력·ZIP 전개·XML·셀 개수 제한이 외부 버퍼와 파서 작업량을 제한한다.
+
+`pnpm dev`와 `pnpm build`는 esbuild로 `build/document-worker.cjs`를 만든다.
+워커 의존성과 한글 폰트는 standalone 배포물에 포함한다. 런타임 패키지 설치나
+외부 폰트 다운로드는 필요하지 않다. `pnpm test:documents`는 실제 IPC와 다섯 형식의
+왕복을 검증하며, CI는 standalone 디렉터리에서도 같은 검사를 실행한다.

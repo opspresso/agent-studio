@@ -8,8 +8,8 @@
     "pnpm": ">=11"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "pnpm build:documents && next dev",
+    "build": "pnpm build:documents && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -18,7 +18,9 @@
     "check-models": "tsx scripts/check-models.ts",
     "sync-models": "tsx scripts/sync-models.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
-    "db:migrate:test": "DATABASE_URL=postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test tsx scripts/db-migrate.ts"
+    "db:migrate:test": "DATABASE_URL=postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test tsx scripts/db-migrate.ts",
+    "build:documents": "node scripts/build-document-worker.mjs",
+    "test:documents": "pnpm build:documents && tsx scripts/document-worker-check.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.0.1",
@@ -62,6 +64,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/sanitize-html": "^2.16.1",
+    "esbuild": "0.28.2",
     "postcss": "^8.5.23",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",

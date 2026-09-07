@@ -1,5 +1,4 @@
-import { documentRenderer } from "@/infrastructure/documents/renderer";
-import { documentEditor } from "@/infrastructure/documents/editor";
+import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor } from "@/infrastructure/documents/workerAdapters";
 /**
  * Composition root. Wires domain repository ports to their PostgreSQL adapters and
  * exposes the `executionDeps` bundle consumed by the execution facade
@@ -37,7 +36,6 @@ import { onShutdown } from "@/shared/lifecycle";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { createHttpResourceReader } from "@/infrastructure/net/httpResource";
-import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
 import { config } from "./config";
 import { withTimeout } from "@/shared/withTimeout";
@@ -1086,9 +1084,9 @@ export const executionDeps: ExecutionDeps = {
   http: createHttpResourceReader({ internalHostSuffixes: config.urlFetchInternalHostSuffixes }),
   // The same adapter the chat routes wire: an attachment and a fetched page
   // become text the same way, which is what keeps one owner for extraction.
-  documents: documentExtractor,
-  documentRenderer: documentRenderer,
-  documentEditor: documentEditor,
+  documents: workerDocumentExtractor,
+  documentRenderer: workerDocumentRenderer,
+  documentEditor: workerDocumentEditor,
   // Bound here because deciding *which* workspace a project reads means
   // decrypting its bot token, which is the Slack slice's knowledge — the
   // execution slice takes the finished reader instead.

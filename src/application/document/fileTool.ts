@@ -104,7 +104,7 @@ export function buildFileTool(
       }
       const { artifact, file } = await source(args.file_id);
       if (args.operation === "read") {
-        const extracted = await deps.documents.extract({ ...file, maxChars: MAX_DOCUMENT_TOOL_CHARS });
+        const extracted = await deps.documents.extract({ ...file, maxChars: MAX_DOCUMENT_TOOL_CHARS, signal });
         return { text: framedDocument(file.name, extracted.text, extracted.note, artifact.artifactId) };
       }
       if (args.operation === "inspect") {

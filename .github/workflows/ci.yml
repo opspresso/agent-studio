@@ -57,6 +57,10 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Native document worker smoke test
+        working-directory: .next/standalone
+        run: ../../node_modules/.bin/tsx ../../scripts/document-worker-check.ts
+
       - name: Production server smoke test
         env:
           STAGE: local
