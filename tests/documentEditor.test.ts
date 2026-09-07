@@ -207,6 +207,19 @@ describe("workbook editing", () => {
     expect(new TextDecoder().decode(result.get("xl/worksheets/sheet2.xml"))).not.toContain("Selected sheet");
   });
 
+  it("does not reinterpret an external sheet as a local ordinal part", async () => {
+    const file = await workbook();
+    const parts = allParts(file.bytes);
+    const name = "xl/_rels/workbook.xml.rels";
+    parts.set(name, new TextEncoder().encode(new TextDecoder().decode(parts.get(name))
+      .replace('Id="rId1"', 'Id="rId1" TargetMode="External"')));
+    const external = { ...file, bytes: buildZip(Object.fromEntries(parts)) };
+    expect((await documentEditor.inspect(external)).text).not.toContain('"sheet":"Summary"');
+    await expect(documentEditor.edit(external, [
+      { operation: "set_cell", sheet: "Summary", cell: "A1", value: "Local overwrite" },
+    ])).rejects.toThrow("external workbook relationships");
+  });
+
   it("retains a namespace prefix while creating cells and rows", async () => {
     const file = await workbook();
     const parts = allParts(file.bytes);

@@ -464,6 +464,7 @@ export function sheetParts(
         if (targets.has(id)) throw new XlsxError("Duplicate workbook relationship ID");
         if (attributeOf(attributes, "TargetMode") === "External") {
           if (requireRelationships) throw new XlsxError("Cannot edit external workbook relationships");
+          targets.set(id, "");
           return;
         }
         // Targets are relative to `xl/`, and some writers make that explicit.
@@ -490,7 +491,7 @@ export function sheetParts(
       throw new XlsxError(`Worksheet ${JSON.stringify(name)} has no resolved relationship`);
     }
     // Reading may recover a conventional path; editing must never guess a target.
-    const path = (id && targets.get(id)) || `xl/worksheets/sheet${sheets.length + 1}.xml`;
+    const path = (id ? targets.get(id) : undefined) ?? `xl/worksheets/sheet${sheets.length + 1}.xml`;
     sheets.push({ name, path, state });
   } });
   return sheets;
