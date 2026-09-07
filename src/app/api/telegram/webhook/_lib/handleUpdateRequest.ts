@@ -1,6 +1,5 @@
 import { verifyTelegramSecret, TELEGRAM_SECRET_HEADER } from "@/infrastructure/telegram/verify";
 import { telegramClient } from "@/infrastructure/telegram/client";
-import { openDocumentExtractor } from "@/application/execution/documentExtractor";
 import { telegramUpdateRepository } from "@/infrastructure/db/repositories/telegramUpdateRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
 import { transcriptRepository } from "@/infrastructure/db/repositories/transcriptRepository";
@@ -24,7 +23,7 @@ const telegramEventDeps: TelegramEventDeps = {
   versions: versionRepository,
   telegram: telegramClient,
   destinations: telegramDestinationRepository,
-  openDocuments: (version, signal, origin) => openDocumentExtractor(executionDeps, version, signal, origin),
+  documents: executionDeps.documents,
   // Named even when this deployment has none, so "no object storage here" is a
   // source-level decision rather than omitted wiring.
   signFile: signArtifactUrl,

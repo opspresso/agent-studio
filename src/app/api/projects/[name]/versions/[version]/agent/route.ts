@@ -11,7 +11,7 @@ import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { withTurnBody } from "@/app/api/_lib/body";
 import {
   attachDocumentsToMessages,
-  readBoundExecutionDocuments,
+  readExecutionDocuments,
 } from "@/app/api/projects/_lib/documents";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
@@ -32,13 +32,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       const versionEntity = await versionUseCases.get(name, version);
       const actor = principalActor(principal);
       const conversation = requestConversation(request, actor);
-      const read = await readBoundExecutionDocuments(
-        executionDeps,
-        versionEntity,
-        parsed.data.documents,
-        request.signal,
-        { actor, ...(conversation ? { conversation } : {}) },
-      );
+      const read = await readExecutionDocuments(executionDeps.documents, parsed.data.documents);
       const abortController = new AbortController();
       return await sseResponse(
         // A file chunk leaves here addressed: the object key and artifact id the

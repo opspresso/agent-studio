@@ -6,7 +6,6 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
-import type { RunOrigin } from "@/domain/execution/actor";
 
 export interface AgentRunParams {
   project: Project;
@@ -27,13 +26,6 @@ export interface AgentRunParams {
 
 /** Bound wrapper over `executeAgent(executionDeps, params)`, injected at the route boundary. */
 export type AgentRunner = (params: AgentRunParams) => AsyncGenerator<EngineChunk>;
-
-export type OpenChatDocuments = (
-  version: Version,
-  signal?: AbortSignal,
-  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
-) => Promise<{ extractor: DocumentExtractor; close: () => Promise<void> }>;
-
 
 /** An image the user attached to a turn, as inline bytes. */
 export interface AttachedImage {
@@ -75,6 +67,4 @@ export interface ChatDeps {
   artifacts?: ArtifactStorage;
   /** Reads an attached document into the text the turn carries and stores. */
   documents: DocumentExtractor;
-  /** Resolves optional document capabilities from this version's MCP bindings. */
-  openDocuments?: OpenChatDocuments;
 }

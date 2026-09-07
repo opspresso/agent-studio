@@ -127,7 +127,7 @@
 | 답변의 Markdown 을 Telegram HTML 로 렌더하기 | `src/application/telegram/markdown.ts` 의 `markdownToTelegramHtml` |
 | 바이트가 UTF-8 텍스트인지 판정하기 | `src/shared/utf8Text.ts` |
 | 사용자 문서의 상한 | `src/domain/llm/documentLimits.ts` |
-| Office 첨부를 읽는 MCP capability 선택과 실행 문맥 | `src/application/execution/documentExtractor.ts` — version binding에서 `read_document`를 해석하며 registry/server 이름을 가정하지 않는다 |
+| Office 문서 파싱과 렌더링 | `src/infrastructure/documents/engine/` — 프로토콜·저장소와 독립적인 내부 엔진. 첨부 추출은 `src/infrastructure/llm/documentExtractor.ts`가 연결한다 |
 | 가져온 URL 이 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` 의 `framedFetchedUrl` |
 | 가져온 URL 을 얼마나 유지하는가 | `src/application/llm/urlContent.ts` 의 `MAX_FETCHED_TEXT_CHARS` |
 | 첨부된 문서가 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` |

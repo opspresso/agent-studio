@@ -37,7 +37,7 @@ export const MAX_DOCUMENT_CHARS_PER_TURN = 40_000;
 /** What a document is read as. `null` is "not something this accepts". */
 export type DocumentKind = "text" | "pdf" | "html" | "office";
 
-/** Office formats whose structure is parsed by a bound read_document MCP capability. */
+/** Office formats parsed by the built-in document engine. */
 const OFFICE_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

@@ -1,5 +1,4 @@
 import { teamsClient } from "@/infrastructure/teams/client";
-import { openDocumentExtractor } from "@/application/execution/documentExtractor";
 import { teamsActivityRepository } from "@/infrastructure/db/repositories/teamsActivityRepository";
 import { transcriptRepository } from "@/infrastructure/db/repositories/transcriptRepository";
 import {
@@ -21,7 +20,7 @@ const teamsEventDeps: TeamsEventDeps = {
   projects: projectRepository,
   versions: versionRepository,
   teams: teamsClient,
-  openDocuments: (version, signal, origin) => openDocumentExtractor(executionDeps, version, signal, origin),
+  documents: executionDeps.documents,
   // Named even when this deployment has none, so "no object storage here" is a
   // source-level decision rather than omitted wiring.
   signFile: signArtifactUrl,

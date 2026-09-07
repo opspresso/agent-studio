@@ -17,8 +17,6 @@
  */
 
 /** A document read successfully. `text` may be empty only if the file was. */
-import { documentKind } from "./documentLimits";
-
 export interface ExtractedDocument {
   text: string;
   /**
@@ -64,44 +62,4 @@ export interface DocumentExtractor {
      */
     charset?: string;
   }): Promise<ExtractedDocument>;
-}
-
-/** A parser supplied by an optional office-document capability. */
-export type OfficeDocumentReader = (input: {
-  bytes: Uint8Array;
-  mimeType: string;
-  name: string;
-}) => Promise<string>;
-
-function cutText(text: string, maxChars: number): ExtractedDocument {
-  const points = Array.from(text);
-  if (points.length <= maxChars) {
-    return { text };
-  }
-  return {
-    text: points.slice(0, maxChars).join(""),
-    note: `the first ${maxChars.toLocaleString("en-US")} of ${points.length.toLocaleString("en-US")} characters`,
-  };
-}
-
-/** Add an optional office parser without changing the local PDF/text adapter. */
-export function withOfficeDocumentReader(
-  fallback: DocumentExtractor,
-  reader: OfficeDocumentReader | undefined,
-  unavailableReason = "no office-document reader is available",
-): DocumentExtractor {
-  return {
-    async extract(input) {
-      if (documentKind(input.mimeType, input.name) !== "office") {
-        return fallback.extract(input);
-      }
-      if (!reader) {
-        throw new DocumentExtractionError(unavailableReason);
-      }
-      if (input.maxChars <= 0) {
-        throw new DocumentExtractionError("this turn's document budget is already spent");
-      }
-      return cutText(await reader(input), input.maxChars);
-    },
-  };
 }

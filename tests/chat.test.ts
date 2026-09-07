@@ -1859,17 +1859,13 @@ describe("attached documents", () => {
     expect(replayed.content).toContain('[Attached file "q3.txt"');
   });
 
-  it("resolves office parsing from the runnable version and closes it after extraction", async () => {
+  it("reads office attachments through the native extractor", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
-    const close = vi.fn(async () => {});
-    const openDocuments = vi.fn(async () => ({
-      extractor: { extract: async () => ({ text: "| Quarter | Revenue |\n| --- | --- |\n| Q3 | 12 |" }) },
-      close,
-    }));
+    const extract = vi.fn(async () => ({ text: "| Quarter | Revenue |\n| --- | --- |\n| Q3 | 12 |" }));
     const deps = makeDeps(repo, {
       projects: agentProjects,
       versions: publishedVersions,
-      openDocuments,
+      documents: { extract },
     });
 
     const { stream } = await sendMessage(deps, {
@@ -1882,31 +1878,19 @@ describe("attached documents", () => {
       // drain
     }
 
-    expect(openDocuments).toHaveBeenCalledWith(
-      expect.objectContaining({ projectName: "agent", versionName: "1" }),
-      undefined,
-      {
-        actor: { kind: "user", id: "owner@x.com" },
-        conversation: { surface: "chat", id: "c1" },
-      },
-    );
-    expect(close).toHaveBeenCalledOnce();
+    expect(extract).toHaveBeenCalledOnce();
     expect((await repo.listMessages("c1")).find((message) => message.role === "user")).toMatchObject({
       documents: [{ name: "q3.xlsx", text: expect.stringContaining("Revenue") }],
     });
   });
 
-  it("names the signed-in user to bound document servers on the first message too", async () => {
+  it("reads office attachments on the first message without MCP bindings", async () => {
     const { repo } = makeChatRepo(null);
-    const close = vi.fn(async () => {});
-    const openDocuments = vi.fn(async () => ({
-      extractor: { extract: async () => ({ text: "revenue rose" }) },
-      close,
-    }));
+    const extract = vi.fn(async () => ({ text: "revenue rose" }));
     const deps = makeDeps(repo, {
       projects: agentProjects,
       versions: publishedVersions,
-      openDocuments,
+      documents: { extract },
     });
 
     const { stream } = await createChat(deps, {
@@ -1919,15 +1903,7 @@ describe("attached documents", () => {
       // drain
     }
 
-    expect(openDocuments).toHaveBeenCalledWith(
-      expect.objectContaining({ projectName: "agent", versionName: "1" }),
-      undefined,
-      {
-        actor: { kind: "user", id: "owner@x.com" },
-        conversation: { surface: "chat", id: expect.any(String) },
-      },
-    );
-    expect(close).toHaveBeenCalledOnce();
+    expect(extract).toHaveBeenCalledOnce();
   });
 
   it("answers, and says why, when the document could not be read", async () => {

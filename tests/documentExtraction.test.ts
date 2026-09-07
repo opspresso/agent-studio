@@ -48,7 +48,7 @@ describe("documentKind", () => {
     expect(documentKind("application/octet-stream", "saved.html")).toBe("html");
   });
 
-  it("routes the office formats mcp-document reads", () => {
+  it("routes the office formats the native engine reads", () => {
     expect(documentKind("", "report.docx")).toBe("office");
     expect(documentKind("application/octet-stream", "deck.pptx")).toBe("office");
     expect(documentKind("application/vnd.hancom.hwp", "report")).toBe("office");

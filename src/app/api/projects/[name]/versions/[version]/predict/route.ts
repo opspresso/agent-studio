@@ -19,7 +19,7 @@ import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { withTurnBody } from "@/app/api/_lib/body";
 import {
   attachDocumentsToMessages,
-  readBoundExecutionDocuments,
+  readExecutionDocuments,
 } from "@/app/api/projects/_lib/documents";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
@@ -56,13 +56,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         });
         return Response.json(image);
       }
-      const read = await readBoundExecutionDocuments(
-        executionDeps,
-        versionEntity,
-        parsed.data.documents,
-        request.signal,
-        { actor, ...(conversation ? { conversation } : {}) },
-      );
+      const read = await readExecutionDocuments(executionDeps.documents, parsed.data.documents);
       const params = {
         project,
         version: versionEntity,
