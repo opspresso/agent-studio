@@ -136,13 +136,17 @@ export function buildFileTool(
           if (file.bytes.byteLength > MAX_SAVED_FILE_BYTES) throw new DocumentProcessingError("This text file exceeds the editing byte limit");
           let text = decodeUtf8Text(file.bytes);
           if (text === null) throw new DocumentProcessingError("This file is not UTF-8 text");
+          let textBytes = Buffer.byteLength(text, "utf8");
           for (const edit of edits) {
             if (edit.operation !== "replace_text" || edit.part !== "text" || edit.index !== 0 || typeof edit.text !== "string" || !edit.text || typeof edit.replacement !== "string") {
               throw new DocumentProcessingError("Text files use replace_text with part=text, index=0, unique original text and replacement");
             }
-            if (Buffer.byteLength(edit.replacement, "utf8") > MAX_SAVED_FILE_BYTES) throw new DocumentProcessingError("Replacement exceeds the editing byte limit");
+            const replacementBytes = Buffer.byteLength(edit.replacement, "utf8");
+            if (replacementBytes > MAX_SAVED_FILE_BYTES) throw new DocumentProcessingError("Replacement exceeds the editing byte limit");
             const start = text.indexOf(edit.text);
             if (start < 0 || text.indexOf(edit.text, start + 1) >= 0) throw new DocumentProcessingError("Original text must match exactly once");
+            textBytes += replacementBytes - Buffer.byteLength(edit.text, "utf8");
+            if (textBytes > MAX_SAVED_FILE_BYTES) throw new DocumentProcessingError("The edited text exceeds the editing byte limit");
             text = text.slice(0, start) + edit.replacement + text.slice(start + edit.text.length);
           }
           if (!text.isWellFormed()) throw new DocumentProcessingError("Replacement contains invalid Unicode");

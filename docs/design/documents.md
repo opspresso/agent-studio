@@ -89,6 +89,8 @@ PNG·JPEG artifact ID로 가는 매핑이며, 문서에서는 `asset://name`으�
 평문·Markdown·CSV·JSON·HTML·SVG 생성은 기존 `SaveFile`을 사용한다. UTF-8 텍스트의
 `edit`는 `part: text`, `index: 0`과 한 번만 나타나는 기존 문자열로 교체 대상을 지정한다.
 JSON 편집 결과는 구문을 검사한다. 텍스트 편집 결과도 기존 파일을 덮어쓰지 않는다.
+텍스트 편집은 최종 결과뿐 아니라 각 교체 직전의 예상 UTF-8 크기를 검사해 중간 결과도
+`MAX_SAVED_FILE_BYTES`를 넘지 않도록 한다.
 
 ## 실행 자원
 

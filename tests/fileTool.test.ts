@@ -4,6 +4,7 @@ import { buildFileTool } from "@/application/document/fileTool";
 import { captureRunArtifacts, createArtifactRecorder } from "@/application/artifact/runArtifacts";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { Artifact } from "@/domain/artifact/types";
+import { MAX_SAVED_FILE_BYTES } from "@/domain/artifact/types";
 import type { EngineChunk, McpToolResult } from "@/domain/llm/types";
 import { documentRenderer } from "@/infrastructure/documents/renderer";
 import { documentEditor } from "@/infrastructure/documents/editor";
@@ -41,6 +42,18 @@ beforeEach(() => { ids.next = 0; vi.useFakeTimers(); vi.setSystemTime(now); });
 afterEach(() => vi.useRealTimers());
 
 describe("native File tool", () => {
+  it("bounds intermediate text edits before allocating an oversized result", async () => {
+    const run = setup();
+    const created = await buildFileSaver(run.deps)!({ name: "text.txt", mimeType: "text/plain", content: "ab" });
+    await run.capture(created);
+    const replacement = "가".repeat(Math.floor(MAX_SAVED_FILE_BYTES / 3));
+    const edited = await run.call({ operation: "edit", file_id: created.files![0]!.artifactId, edits: [
+      { operation: "replace_text", part: "text", index: 0, text: "a", replacement: replacement + "x" },
+      { operation: "replace_text", part: "text", index: 0, text: replacement + "x", replacement: "small" },
+    ] });
+    expect(edited.text).toContain("editing byte limit");
+    expect(edited.files).toBeUndefined();
+  });
   it("reads and edits SVG artifacts created by SaveFile", async () => {
     const run = setup();
     const save = buildFileSaver(run.deps)!;
