@@ -8,7 +8,7 @@
 
 import { strict as assert } from "node:assert";
 import { test } from "vitest";
-import { fitInto, imageSize } from "@/infrastructure/documents/engine/write/image";
+import { fitInto, imageSize, pdfPngSize } from "@/infrastructure/documents/engine/write/image";
 
 /** 640×400, as the eight signature bytes + IHDR demand. */
 function pngFixture(width = 640, height = 400): Uint8Array {
@@ -56,4 +56,25 @@ test("a picture scales down to fit and never up past its pixels", () => {
   const small = fitInto({ width: 100, height: 50 }, box);
   assert.equal(small.width, 9525 * 100);
   assert.equal(small.height, 9525 * 50);
+});
+
+
+test("PDF PNG preflight refuses animated, duplicate and invalid allocation headers", () => {
+  const header = Buffer.from(pngFixture());
+  header[24] = 8;
+  header[25] = 6;
+  const end = Buffer.alloc(12);
+  end.write("IEND", 4);
+  const png = Buffer.concat([header, end]);
+  assert.deepEqual(pdfPngSize(png), { width: 640, height: 400 });
+  assert.throws(() => pdfPngSize(Buffer.concat([header, header.subarray(8), end])), /exactly one/);
+  const animation = Buffer.alloc(20);
+  animation.writeUInt32BE(8, 0);
+  animation.write("acTL", 4);
+  animation.writeUInt32BE(2, 8);
+  assert.throws(() => pdfPngSize(Buffer.concat([header, animation, end])), /animated PNG/);
+  const invalid = Buffer.from(png);
+  invalid[24] = 255;
+  assert.throws(() => pdfPngSize(invalid), /IHDR parameters/);
+  assert.throws(() => pdfPngSize(png.subarray(0, png.length - 1)), /IEND/);
 });

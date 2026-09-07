@@ -14,6 +14,8 @@ export const MAX_IMAGES_PER_TURN = 4;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 /** Reader-facing spelling of the byte cap above. */
 export const MAX_IMAGE_SIZE_LABEL = `${MAX_IMAGE_BYTES / (1024 * 1024)}MB`;
+/** Total PNG pixels decoded for one PDF; bounds RGBA buffers beyond compressed bytes. */
+export const MAX_PDF_IMAGE_PIXELS = 16 * 1024 * 1024;
 /** Formats every provider on the registry accepts. */
 export const SUPPORTED_IMAGE_TYPES = [
   "image/png",

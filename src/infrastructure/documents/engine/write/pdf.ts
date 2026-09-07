@@ -34,6 +34,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { MAX_PDF_IMAGE_PIXELS } from "@/domain/llm/imageLimits";
 import { join } from "node:path";
 import fontkit from "@pdf-lib/fontkit";
 import { DocumentError } from "../errors";
@@ -71,7 +72,7 @@ import {
   type Palette,
 } from "./theme";
 import { PRODUCER } from "../version";
-import { imageSize, type ImageAsset } from "./image";
+import { imageSize, pdfPngSize, type ImageAsset } from "./image";
 
 /** A4 in points, and a 2cm margin. */
 const PAGE_WIDTH = 595.28;
@@ -945,6 +946,16 @@ export async function renderPdf(
   document: MarkdownDocument,
   options: PdfOptions,
 ): Promise<RenderedPdf> {
+  let decodedPixels = 0;
+  const figures = [...figureAssets(document.blocks)].map((name) => {
+    const asset = options.assets && Object.hasOwn(options.assets, name) ? options.assets[name] : undefined;
+    if (!asset) throw new DocumentError(`the document references asset://${name} but no asset of that name was provided`);
+    const size = asset.mimeType === "image/png" ? pdfPngSize(asset.bytes) : imageSize(asset.bytes, asset.mimeType);
+    // PNG embedding decodes raster buffers outside V8's old-space heap limit.
+    if (asset.mimeType === "image/png") decodedPixels += size.width * size.height;
+    if (decodedPixels > MAX_PDF_IMAGE_PIXELS) throw new DocumentError(`PDF image assets exceed ${MAX_PDF_IMAGE_PIXELS} decoded PNG pixels`);
+    return { name, asset, size };
+  });
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const bytes = loadFontBytes();
@@ -957,14 +968,7 @@ export async function renderPdf(
     mono: await pdf.embedFont(StandardFonts.Courier),
   };
   const images = new Map<string, EmbeddedFigure>();
-  for (const name of figureAssets(document.blocks)) {
-    const asset = options.assets && Object.hasOwn(options.assets, name) ? options.assets[name] : undefined;
-    if (!asset) {
-      throw new DocumentError(
-        `the document references asset://${name} but no asset of that name was provided`,
-      );
-    }
-    const size = imageSize(asset.bytes, asset.mimeType);
+  for (const { name, asset, size } of figures) {
     const image =
       asset.mimeType === "image/png"
         ? await pdf.embedPng(asset.bytes)

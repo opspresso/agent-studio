@@ -97,6 +97,42 @@ export function imageSize(bytes: Uint8Array, mime: ImageMime): ImageSize {
   return mime === "image/png" ? pngSize(bytes) : jpegSize(bytes);
 }
 
+/** Validate the PNG headers that determine allocation in the PDF decoder. No pixels are decoded here. */
+export function pdfPngSize(bytes: Uint8Array): ImageSize {
+  const size = pngSize(bytes);
+  let at = PNG_SIGNATURE.length;
+  let header = false;
+  while (at + 12 <= bytes.length) {
+    const length = readUInt32(bytes, at);
+    const type = String.fromCharCode(...bytes.subarray(at + 4, at + 8));
+    const next = at + 12 + length;
+    if (next > bytes.length) throw new ImageError("the PNG has a truncated chunk");
+    if (!header && type !== "IHDR") throw new ImageError("the PNG must start with IHDR");
+    if (type === "IHDR") {
+      if (header || length !== 13) throw new ImageError("the PNG must have exactly one 13-byte IHDR");
+      header = true;
+      const depth = bytes[at + 16]!;
+      const colour = bytes[at + 17]!;
+      const validDepth = colour === 0 ? [1, 2, 4, 8, 16].includes(depth)
+        : colour === 3 ? [1, 2, 4, 8].includes(depth)
+        : [2, 4, 6].includes(colour) && [8, 16].includes(depth);
+      if (!validDepth || bytes[at + 18] !== 0 || bytes[at + 19] !== 0 || ![0, 1].includes(bytes[at + 20]!)) {
+        throw new ImageError("the PNG has unsupported IHDR parameters");
+      }
+    }
+    if (type === "acTL" || type === "fcTL" || type === "fdAT") {
+      // pdf-lib otherwise decodes all animation frames before refusing APNG.
+      throw new ImageError("animated PNG is not supported for PDF embedding; provide a still PNG");
+    }
+    if (type === "IEND") {
+      if (length !== 0) throw new ImageError("the PNG has an invalid IEND chunk");
+      return size;
+    }
+    at = next;
+  }
+  throw new ImageError("the PNG has no complete IEND chunk");
+}
+
 /** 96dpi, which is what Office assumes when a picture states no other. */
 const EMU_PER_PIXEL = 9525;
 

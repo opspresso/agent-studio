@@ -532,6 +532,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 모델 응답당 동시 MCP 호출 수 | `5` | `src/application/llm/engine.ts` |
 | 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
 | 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP·원격 A2A) | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
+| PDF에 삽입하는 PNG의 총 디코딩 픽셀 | `16,777,216` | `src/domain/llm/imageLimits.ts`의 `MAX_PDF_IMAGE_PIXELS` |
 | 문서 워커 동시 실행 / 대기 작업 | `2` / `8` | `src/infrastructure/documents/workerPool.ts` |
 | 문서 작업 기한 (대기 포함) / 자식 V8 old-space | `30s` / `256MiB` | `src/infrastructure/documents/workerPool.ts` |
 | 턴당 문서 수 / 각 바이트 | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |

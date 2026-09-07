@@ -189,7 +189,7 @@ test("a link is one clickable annotation, not one per word", async () => {
 
 test("a standalone asset image is embedded and a missing one is refused", async () => {
   const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X4cSAAAAAElFTkSuQmCC",
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
     "base64",
   );
   const rendered = await renderPdf(parseMarkdown("![구조도](asset://diagram.png)"), {
