@@ -16,8 +16,8 @@ import { escapeXml } from "../xml";
 import { buildZip } from "../zip";
 import { designFor } from "./theme";
 
-export type SpreadsheetScalar = string | number | boolean | null;
-export type SpreadsheetCell = SpreadsheetScalar | { formula: string; cachedValue?: SpreadsheetScalar };
+import type { SpreadsheetScalar, SpreadsheetCell } from "@/domain/document/processor";
+export type { SpreadsheetScalar, SpreadsheetCell } from "@/domain/document/processor";
 
 export interface SpreadsheetSheet {
   name: string;
@@ -60,7 +60,7 @@ function scalar(value: unknown, where: string): SpreadsheetScalar {
   throw new DocumentError(`${where} must be a string, finite number, boolean or null`);
 }
 
-function cell(value: unknown, where: string): SpreadsheetCell {
+export function spreadsheetCell(value: unknown, where: string): SpreadsheetCell {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return scalar(value, where);
   }
@@ -134,14 +134,14 @@ function sheetsOf(raw: unknown): SpreadsheetSheet[] {
         );
       }
       return row.map((value, column) =>
-        cell(value, `${name}!${columnName(column)}${rowIndex + 1}`),
+        spreadsheetCell(value, `${name}!${columnName(column)}${rowIndex + 1}`),
       );
     });
     return { name, rows: parsed };
   });
 }
 
-function cellXml(value: SpreadsheetCell, address: string, header: boolean): string {
+export function cellXml(value: SpreadsheetCell, address: string, header: boolean): string {
   const style = header ? ' s="1"' : "";
   if (value === null) {
     return `<c r="${address}"${style}/>`;

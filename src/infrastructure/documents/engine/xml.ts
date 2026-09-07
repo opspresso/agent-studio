@@ -22,9 +22,11 @@ export interface XmlHandler {
   /** Character data between tags, already entity-decoded. */
   text(value: string): void;
   /** `name` excludes the brackets and the slash; `selfClosing` gets no `close`. */
-  open(name: string, attributes: string, selfClosing: boolean): void;
-  close(name: string): void;
+  open(name: string, attributes: string, selfClosing: boolean, span?: XmlSpan): void;
+  close(name: string, span?: XmlSpan): void;
 }
+
+export interface XmlSpan { start: number; end: number }
 
 export class XmlError extends DocumentError {}
 
@@ -207,7 +209,7 @@ export function walkXml(xml: string, handler: XmlHandler): void {
       if (events > MAX_XML_EVENTS) {
         throw new XmlError(`document XML has more than ${MAX_XML_EVENTS.toLocaleString("en-US")} elements`);
       }
-      handler.close(inner.slice(1).trim());
+      handler.close(inner.slice(1).trim(), { start, end: end + 1 });
       continue;
     }
     const selfClosing = inner.endsWith("/");
@@ -223,7 +225,7 @@ export function walkXml(xml: string, handler: XmlHandler): void {
         throw new XmlError(`document XML is nested more than ${MAX_XML_DEPTH} elements deep`);
       }
     }
-    handler.open(body.slice(0, space), body.slice(space).trim(), selfClosing);
+    handler.open(body.slice(0, space), body.slice(space).trim(), selfClosing, { start, end: end + 1 });
   }
 }
 

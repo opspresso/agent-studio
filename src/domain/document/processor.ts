@@ -54,3 +54,50 @@ export interface CreatedDocument {
 export interface DocumentRenderer {
   create(input: CreateDocumentInput, signal?: AbortSignal): Promise<CreatedDocument>;
 }
+
+export interface DocumentFile {
+  bytes: Uint8Array;
+  mimeType: string;
+  name: string;
+}
+
+export interface DocumentTextTarget {
+  part: string;
+  index: number;
+  text: string;
+}
+
+export interface ReplaceDocumentText extends DocumentTextTarget {
+  operation: "replace_text";
+  replacement: string;
+}
+
+export type SpreadsheetScalar = string | number | boolean | null;
+export type SpreadsheetCell = SpreadsheetScalar | { formula: string; cachedValue?: SpreadsheetScalar };
+
+export interface SetDocumentCell {
+  operation: "set_cell";
+  sheet: string;
+  cell: string;
+  value: SpreadsheetCell;
+}
+
+export type DocumentEdit = ReplaceDocumentText | SetDocumentCell;
+export interface DocumentInspectionOptions {
+  from?: number;
+  includeHidden?: boolean;
+  mode?: "structure" | "edit_targets";
+}
+
+export interface DocumentInspection {
+  format: string;
+  text: string;
+  complete: boolean;
+  targets: DocumentTextTarget[];
+  warnings: string[];
+}
+
+export interface DocumentEditor {
+  inspect(file: DocumentFile, options?: DocumentInspectionOptions, signal?: AbortSignal): Promise<DocumentInspection>;
+  edit(file: DocumentFile, operations: readonly DocumentEdit[], signal?: AbortSignal): Promise<CreatedDocument>;
+}

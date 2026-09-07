@@ -165,6 +165,15 @@ export function columnOf(reference: string): number {
   return column - 1;
 }
 
+/** Validate the Excel coordinate shared by readers and editors. */
+export function validateCellAddress(reference: string): void {
+  if (!/^[A-Za-z]{1,3}[1-9]\d{0,6}$/.test(reference) ||
+      Number(reference.replace(/^[A-Za-z]+/, "")) > MAX_SPREADSHEET_ROW_INDEX ||
+      columnOf(reference) >= MAX_SPREADSHEET_COLUMNS) {
+    throw new XlsxError("a cell address must be within A1:XFD1048576");
+  }
+}
+
 /** `<si>` entries in order — cells with `t="s"` index into this. */
 class SharedStrings implements XmlHandler {
   private readonly values: string[] = [];
@@ -308,12 +317,7 @@ class Sheet implements XmlHandler {
         const styled = Number(attributeOf(attributes, "s") ?? "");
         this.style = Number.isInteger(styled) ? styled : undefined;
         const reference = attributeOf(attributes, "r");
-        if (reference !== undefined && (
-          !/^[A-Za-z]{1,3}[1-9]\d{0,6}$/.test(reference) ||
-          Number(reference.replace(/^[A-Za-z]+/, "")) > MAX_SPREADSHEET_ROW_INDEX
-        )) {
-          throw new XlsxError("a cell address must be within A1:XFD1048576");
-        }
+        if (reference !== undefined) validateCellAddress(reference);
         // Absent addresses mean "the next column", which is what a writer that
         // omits them intends.
         this.column = reference ? columnOf(reference) : this.nextColumn;
@@ -442,7 +446,7 @@ function columnName(column: number): string {
 }
 
 /** Sheet name → part path, in workbook order. */
-function sheetParts(
+export function sheetParts(
   workbook: string | undefined,
   rels: string | undefined,
 ): Array<{ name: string; path: string; state: "visible" | "hidden" | "veryHidden" }> {
