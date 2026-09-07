@@ -113,6 +113,13 @@ test("escaping round-trips through decoding", () => {
   assert.equal(decodeXmlEntities(escapeXml(raw)), raw);
 });
 
+test("serialization refuses invalid XML characters and unpaired surrogates", () => {
+  for (const text of ["\u0000", "\u000b", "\ufffe", "\uffff", "\ud800", "\udc00"]) {
+    assert.throws(() => escapeXml(text), /invalid XML characters/);
+  }
+  assert.equal(decodeXmlEntities(escapeXml("한글 😀\t\n\r")), "한글 😀\t\n\r");
+});
+
 test("numeric ampersands do not decode the text they introduce again", () => {
   assert.equal(decodeXmlEntities("&#38;lt; &#x26;#65; &#x26;amp;"), "&lt; &#65; &amp;");
   assert.equal(attributeOf('name="&#38;lt;"', "name"), "&lt;");

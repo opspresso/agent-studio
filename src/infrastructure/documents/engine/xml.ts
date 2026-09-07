@@ -72,6 +72,9 @@ function codePoint(value: number): string {
 
 /** Escape for use in an XML text node or a double-quoted attribute value. */
 export function escapeXml(value: string): string {
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/.test(value) || !value.isWellFormed()) {
+    throw new XmlError("Text contains invalid XML characters");
+  }
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

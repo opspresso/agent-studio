@@ -6,6 +6,12 @@ import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 const metadata = { title: "분기 보고서", created: "2026-09-07T00:00:00.000Z" };
 
 describe("native document generation", () => {
+  it.each(["docx", "pptx", "hwpx", "xlsx"] as const)("rejects invalid XML text instead of certifying a corrupt %s", async (format) => {
+    await expect(documentRenderer.create({
+      ...metadata, format,
+      ...(format === "xlsx" ? { sheets: [{ name: "Main", rows: [["invalid\ufffftext"]] }] } : { content: "invalid\ufffftext" }),
+    })).rejects.toThrow(/XML/i);
+  });
   it.each([[[5000, 5000]], [[4096, 4096], [1, 1]]])("bounds decoded PDF image pixels before reaching the decoder: %j", async (...dimensions) => {
     const { PDFDocument } = await import("pdf-lib");
     const decode = vi.spyOn(PDFDocument.prototype, "embedPng").mockRejectedValue(new Error("PNG decoder was reached"));
