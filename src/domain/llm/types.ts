@@ -197,6 +197,7 @@ export interface EngineChunk {
    * address, rather than a ten-megabyte string down the wire.
    */
   file?: {
+    derivedFrom?: string;
     b64?: string;
     mimeType: string;
     name: string;
@@ -371,7 +372,7 @@ export interface McpToolResult {
    * a model cannot read a DOCX, and the result text is what names it. They ride
    * out to the surface, which stores them and hands the reader a link.
    */
-  files?: Array<{ b64: string; mimeType: string; name: string }>;
+  files?: Array<{ b64: string; mimeType: string; name: string; artifactId?: string; derivedFrom?: string }>;
 }
 
 /** Result of a single-shot (non-agent) run. */

@@ -1,3 +1,4 @@
+import { FILE_TOOL_NAME } from "@/domain/llm/toolNames";
 /**
  * LLM engine. Runs prompt and agent executions over a single
  * OpenAI-compatible channel:
@@ -1315,35 +1316,32 @@ async function dispatchConcurrentTools(
     }
   }
   const saveCalls: PreparedToolCall[] = [];
-  if (saveDispatch) {
-    for (const entry of prepared) {
-      if (entry.malformed || !entry.builtin || entry.call.name !== SAVE_FILE_TOOL_NAME) {
-        continue;
-      }
-      if (savedFiles >= MAX_SAVED_FILES_PER_RUN) {
-        settled.set(entry.call.id, {
-          ok: {
-            text: `Error: this run has already written ${MAX_SAVED_FILES_PER_RUN} files, which is its limit.`,
-          },
-        });
-      } else {
-        // Counted on acceptance, not on success: a refused call still spent a
-        // turn deciding to make it, and a loop that keeps failing is exactly the
-        // thing this bounds.
-        savedFiles += 1;
-        saveCalls.push(entry);
-      }
+  const fileCalls: PreparedToolCall[] = [];
+  for (const entry of prepared) {
+    if (!entry.builtin || entry.malformed) continue;
+    const save = entry.call.name === SAVE_FILE_TOOL_NAME && Boolean(saveDispatch);
+    const file = entry.call.name === FILE_TOOL_NAME && Boolean(deps.fileTool);
+    if (!save && !file) continue;
+    const writes = save || entry.displayArgs.operation === "create" || entry.displayArgs.operation === "edit";
+    if (writes && savedFiles >= MAX_SAVED_FILES_PER_RUN) {
+      settled.set(entry.call.id, { ok: { text: `Error: this run has already written ${MAX_SAVED_FILES_PER_RUN} files, which is its limit.` } });
+    } else {
+      // Reserve in wire order across both file producers, including unsuccessful attempts.
+      if (writes) savedFiles += 1;
+      (save ? saveCalls : fileCalls).push(entry);
     }
   }
   const concurrent = [
     ...mcpCalls.map((entry) => ({ entry, kind: "mcp" as const })),
     ...fetchCalls.map((entry) => ({ entry, kind: "fetch" as const })),
     ...saveCalls.map((entry) => ({ entry, kind: "save" as const })),
+    ...fileCalls.map((entry) => ({ entry, kind: "file" as const })),
   ];
   if (concurrent.length > 0) {
     const results = await mapWithLimit(concurrent, MAX_PARALLEL_TOOL_CALLS, async ({ entry, kind }) => {
       const fetch = kind === "fetch";
       try {
+        if (kind === "file") return { ok: await deps.fileTool!(entry.displayArgs) };
         if (kind === "save") {
           const text = (value: unknown) => (typeof value === "string" ? value : "");
           // From `displayArgs`, not `args`, and for the same reason MCP
@@ -1380,7 +1378,7 @@ async function dispatchConcurrentTools(
         if (fetch) {
           return { ok: { text: `Error: could not read that address — ${errorMessage(error)}` } };
         }
-        if (kind === "save") {
+        if (kind === "save" || kind === "file") {
           return { ok: { text: `Error: that file could not be kept — ${errorMessage(error)}` } };
         }
         return { err: error };

@@ -24,7 +24,7 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   `BUILTIN_TOOL_NAMES` is reserved when MCP aliases are allocated, before the run knows which
   builtins it will offer, so an MCP tool never carries a name a builtin might claim.
 - Dispatch of one response: every call is announced first, then the **MCP calls, `FetchUrl` and
-  `SaveFile` run concurrently** (≤5 in flight, one shared pool) while the *other* builtins run
+  `SaveFile` and `File` run concurrently** (≤5 in flight, one shared pool) while the *other* builtins run
   strictly in call order — a transfer moves the turn budget and the image tools mutate the image
   registry. The two joiners do neither: `FetchUrl`'s bytes are registered below, in order, the
   way an MCP tool's are, and leaving it sequential would make three links in one answer cost
@@ -57,7 +57,7 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   preference.** `args` is masked and `displayArgs` has the values restored. Anything crossing to
   another model — a transfer's `message`, a dispatch's `tasks` — reads `args`. Anything reaching
   a person or an outside system that the caller's own context already trusts — MCP dispatch,
-  the image prompts, `SaveFile`'s file — reads `displayArgs`; a report saved from the masked
+  the image prompts, `SaveFile` and `File` — reads `displayArgs`; a report saved from the masked
   copy reaches the person who asked for it full of their own placeholders.
 - A returned picture takes one path, whoever produced it. `FetchUrl` normalises onto
   `McpToolResult`, so the image budget, the `img_N` registration, the rejection notice for a
@@ -413,3 +413,14 @@ The engine calls `deps.recordUsage` once per model call *inside* the loop and al
 a `usage` chunk. Agent runs inject an aggregator (`createUsageAggregator`) that buffers
 and flushes once per (project, date, model) in a `finally` — telemetry failures are
 logged, never thrown.
+
+## Native file operations
+
+`File` dispatches through an injected `fileTool` capability and is offered only when native
+processing and artifact storage are available. Read and inspect take stable file IDs.
+Create and edit share `MAX_SAVED_FILES_PER_RUN` with `SaveFile`, reserved in wire order.
+Native producers reserve IDs through `createArtifactId`; only `captureRunArtifacts` stores
+output bytes. An edit carries `derivedFrom`, and the original is never overwritten.
+File IDs in results are metadata, not access grants; the file use case checks the actor
+before reading bytes. Project tokens and messaging actors remain scoped to the entry
+project, including when a subagent performs the operation.

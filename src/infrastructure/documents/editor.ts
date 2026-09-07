@@ -1,5 +1,6 @@
 import {
   DOCUMENT_MIME_TYPES,
+  MAX_DOCUMENT_EDITS,
   type CreatedDocument,
   type DocumentEditor,
   type DocumentFile,
@@ -22,7 +23,6 @@ import { attributeOf, attributesOf, escapeXml, localName } from "./engine/xml";
 import { buildZip, openZip, stored } from "./engine/zip";
 import { replaceXml, xmlElements, type XmlReplacement } from "./engine/edit/xmlElements";
 
-const MAX_EDITS = 100;
 const TEXT_PARTS = {
   docx: /^word\/(?:document|header\d+|footer\d+)\.xml$/,
   pptx: /^ppt\/slides\/slide\d+\.xml$/,
@@ -119,8 +119,8 @@ export async function inspectDocument(file: DocumentFile, options: DocumentInspe
 
 /** Patch explicit text targets while preserving all other uncompressed package entries. */
 export async function editDocument(file: DocumentFile, operations: readonly DocumentEdit[]): Promise<CreatedDocument> {
-  if (!Array.isArray(operations) || operations.length === 0 || operations.length > MAX_EDITS) {
-    throw new DocumentError(`Supply 1–${MAX_EDITS} document edits`);
+  if (!Array.isArray(operations) || operations.length === 0 || operations.length > MAX_DOCUMENT_EDITS) {
+    throw new DocumentError(`Supply 1–${MAX_DOCUMENT_EDITS} document edits`);
   }
   const opened = packageOf(file);
   const format = opened.format;

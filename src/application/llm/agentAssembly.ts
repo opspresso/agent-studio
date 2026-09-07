@@ -1,3 +1,4 @@
+import { DOCUMENT_FORMATS, DOCUMENT_PROFILES } from "@/domain/document/processor";
 /**
  * What an agent run is told it can do — the prompt sections, the tool
  * definitions, and the one assembly (`assembleAgentRun`) both the tool loop and
@@ -25,6 +26,7 @@ import {
   EDIT_IMAGE_TOOL_NAME,
   FETCH_URL_TOOL_NAME,
   SAVE_FILE_TOOL_NAME,
+  FILE_TOOL_NAME,
   SLACK_HISTORY_TOOL_NAME,
   SLACK_THREAD_TOOL_NAME,
   SLACK_USER_TOOL_NAME,
@@ -42,6 +44,7 @@ export {
   EDIT_IMAGE_TOOL_NAME,
   FETCH_URL_TOOL_NAME,
   SAVE_FILE_TOOL_NAME,
+  FILE_TOOL_NAME,
   SLACK_HISTORY_TOOL_NAME,
   SLACK_THREAD_TOOL_NAME,
   SLACK_USER_TOOL_NAME,
@@ -226,6 +229,7 @@ export interface AgentCapabilityDeps {
   editImage?: ImageEditor;
   fetchUrl?: UrlFetcher;
   saveFile?: FileSaver;
+  fileTool?: (args: Record<string, unknown>) => Promise<McpToolResult>;
   /**
    * Serves the Slack read tools, or absent when this run has no workspace
    * to look at. One function rather than four deps: the tools differ only in
@@ -768,6 +772,43 @@ const IMAGE_TOOL_DEF: ChannelToolDef = {
   },
 };
 
+const FILE_TOOL_DEF: ChannelToolDef = {
+  type: "function",
+  function: {
+    name: FILE_TOOL_NAME,
+    description: "Read, inspect, create or edit files using stable file IDs from attachments and earlier outputs. " +
+      "For create, provide format and Markdown content (DOCX/PDF/PPTX/HWPX), or sheets with named rows of scalar cells (XLSX). " +
+      "XLSX formulas are explicit objects {formula, cachedValue?}; strings starting with = stay literal. No formulas are calculated. " +
+      "Inspect before editing: DOCX/PPTX/HWPX text targets carry part, index and original text; use replace_text with replacement. " +
+      "XLSX uses set_cell with sheet, cell and value. Plain text uses replace_text, part=text, index=0 and an original substring that occurs once. " +
+      "Edits create a new file and preserve the source. Document text edits cannot add paragraphs or line breaks. " +
+      "Use mode=structure to inspect document layout information, or edit_targets for text targets. " +
+      "Use SaveFile to create plain text, Markdown, CSV, JSON, HTML or SVG. Assets map names to PNG/JPEG file IDs and are referenced as asset://name in Markdown.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: { type: "string", enum: ["read", "inspect", "create", "edit"] },
+        file_id: { type: "string", description: "Existing file ID, required for read, inspect and edit. Never a URL or object key." },
+        format: { type: "string", enum: [...DOCUMENT_FORMATS] },
+        content: { type: "string", description: "Markdown for a newly created document." },
+        title: { type: "string" }, name: { type: "string", description: "Output filename." },
+        profile: { type: "string", enum: [...DOCUMENT_PROFILES] },
+        sheets: { type: "array", items: { type: "object", properties: { name: { type: "string" }, rows: { type: "array", items: { type: "array", items: {} } } }, required: ["name", "rows"] } },
+        assets: { type: "object", additionalProperties: { type: "string" } },
+        from: { type: "integer", minimum: 0 },
+        mode: { type: "string", enum: ["structure", "edit_targets"] },
+        include_hidden: { type: "boolean" },
+        edits: { type: "array", items: { type: "object", properties: {
+          operation: { type: "string", enum: ["replace_text", "set_cell"] },
+          part: { type: "string" }, index: { type: "integer", minimum: 0 }, text: { type: "string" }, replacement: { type: "string" },
+          sheet: { type: "string" }, cell: { type: "string" }, value: {},
+        }, required: ["operation"] } },
+      },
+      required: ["operation"],
+    },
+  },
+};
+
 const SAVE_FILE_TOOL_DEF: ChannelToolDef = {
   type: "function",
   function: {
@@ -1003,6 +1044,7 @@ export interface AgentToolsInput {
   withUrlTool: boolean;
   /** Whether anything in this deployment would keep a file the run wrote. */
   withSaveFileTool: boolean;
+  withFileTool?: boolean;
   /** Whether this run may read the Slack workspace its project's bot is in. */
   withSlackTools: boolean;
   /**
@@ -1057,6 +1099,10 @@ export function buildAgentTools(input: AgentToolsInput): {
   if (input.withSaveFileTool) {
     tools.push(SAVE_FILE_TOOL_DEF);
     builtinNames.add(SAVE_FILE_TOOL_NAME);
+  }
+  if (input.withFileTool) {
+    tools.push(FILE_TOOL_DEF);
+    builtinNames.add(FILE_TOOL_NAME);
   }
   if (input.withSlackTools) {
     tools.push(...SLACK_TOOL_DEFS);
@@ -1207,6 +1253,7 @@ export function assembleAgentRun(
     subagents,
     canLoadSkills,
     withSaveFileTool,
+    withFileTool: Boolean(deps.fileTool),
     withImageTool: Boolean(deps.generateImage),
     withEditTool: canEdit,
     withImageTransfer: canTransfer,

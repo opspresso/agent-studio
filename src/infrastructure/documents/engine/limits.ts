@@ -8,7 +8,7 @@
  * that, keeps the notice *this* server writes — which can name pages and
  * totals — instead of one that only says a limit was hit.
  */
-export const MAX_TEXT_CHARS = 90_000;
+export { MAX_DOCUMENT_TOOL_CHARS as MAX_TEXT_CHARS } from "@/domain/document/processor";
 
 /**
  * Markdown accepted by `render_document`.
@@ -79,8 +79,8 @@ export const MAX_BLOCK_PREVIEW_CHARS = 120;
  * `MAX_RENDERED_BYTES` — an image is stored in the zip roughly as it arrived,
  * so a deck's size is mostly its pictures.
  */
-export const MAX_ASSET_COUNT = 12;
-export const MAX_ASSET_TOTAL_BYTES = 6 * 1024 * 1024;
+export { MAX_DOCUMENT_ASSETS as MAX_ASSET_COUNT } from "@/domain/document/processor";
+export { MAX_DOCUMENT_ASSET_BYTES as MAX_ASSET_TOTAL_BYTES } from "@/domain/document/processor";
 
 /**
  * How large a rendered document may be in one response.

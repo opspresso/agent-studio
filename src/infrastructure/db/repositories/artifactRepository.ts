@@ -12,6 +12,7 @@ const ARTIFACT_ENTITY = "ARTIFACT";
 function fromItem(item: Record<string, unknown>): Artifact {
   return {
     artifactId: String(item.artifactId ?? ""),
+    ...(typeof item.derivedFrom === "string" ? { derivedFrom: item.derivedFrom } : {}),
     kind: item.kind as Artifact["kind"],
     source: item.source as Artifact["source"],
     key: String(item.key ?? ""),

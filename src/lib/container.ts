@@ -1,3 +1,5 @@
+import { documentRenderer } from "@/infrastructure/documents/renderer";
+import { documentEditor } from "@/infrastructure/documents/editor";
 /**
  * Composition root. Wires domain repository ports to their PostgreSQL adapters and
  * exposes the `executionDeps` bundle consumed by the execution facade
@@ -1085,6 +1087,8 @@ export const executionDeps: ExecutionDeps = {
   // The same adapter the chat routes wire: an attachment and a fetched page
   // become text the same way, which is what keeps one owner for extraction.
   documents: documentExtractor,
+  documentRenderer: documentRenderer,
+  documentEditor: documentEditor,
   // Bound here because deciding *which* workspace a project reads means
   // decrypting its bot token, which is the Slack slice's knowledge — the
   // execution slice takes the finished reader instead.

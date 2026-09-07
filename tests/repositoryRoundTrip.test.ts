@@ -689,6 +689,7 @@ describe("artifactRepository round-trip", () => {
   it("reads back every field it was given", async () => {
     const artifact = {
       artifactId: "a1",
+      derivedFrom: "original-document",
       kind: "image" as const,
       source: "generated" as const,
       key: "artifacts/image/a1.png",

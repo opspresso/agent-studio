@@ -284,7 +284,9 @@ export function toEngineMessages(
     // `messageChars` counts content and document text, not this — so replaying
     // it would overrun the window without the "earlier turn(s) were left out"
     // warning below ever firing.
-    const mapped: ChatMessageInput = { role: "assistant", content: message.content };
+    const fileIds = (message.files ?? []).flatMap((file) => file.artifactId ? [`${JSON.stringify(file.name)}: ${file.artifactId}`] : []);
+    const content = message.content + (fileIds.length ? `\n[Files from this answer: ${fileIds.join("; ")}]` : "");
+    const mapped: ChatMessageInput = { role: "assistant", content };
     if (pairs.length > 0) {
       mapped.tool_calls = pairs.map((pair) => pair.call);
     }

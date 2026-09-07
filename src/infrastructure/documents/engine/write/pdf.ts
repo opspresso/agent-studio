@@ -34,6 +34,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import fontkit from "@pdf-lib/fontkit";
 import { DocumentError } from "../errors";
 import {
@@ -139,15 +140,15 @@ const CJK =
 /** Characters the built-in Courier can encode, which is what makes a listing monospaced. */
 const LATIN1_ONLY = /^[\x20-\x7e]*$/;
 
-const FONT_DIRECTORY = new URL("../../../../../assets/document-fonts/", import.meta.url);
+const FONT_DIRECTORY = join(process.cwd(), "assets/document-fonts");
 
 /** Read once per process: two files of about 2MB each. */
 let fontBytes: { regular: Uint8Array; bold: Uint8Array } | undefined;
 
 function loadFontBytes(): { regular: Uint8Array; bold: Uint8Array } {
   fontBytes ??= {
-    regular: readFileSync(new URL("NanumGothic-Regular.ttf", FONT_DIRECTORY)),
-    bold: readFileSync(new URL("NanumGothic-Bold.ttf", FONT_DIRECTORY)),
+    regular: readFileSync(join(FONT_DIRECTORY, "NanumGothic-Regular.ttf")),
+    bold: readFileSync(join(FONT_DIRECTORY, "NanumGothic-Bold.ttf")),
   };
   return fontBytes;
 }

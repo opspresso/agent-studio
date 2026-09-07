@@ -171,6 +171,8 @@ async function captured(recorder: ArtifactRecorder, chunk: EngineChunk): Promise
       bytes,
       mimeType: chunk.file.mimeType,
       filename: chunk.file.name,
+      ...(chunk.file.artifactId ? { artifactId: chunk.file.artifactId } : {}),
+      ...(chunk.file.derivedFrom ? { derivedFrom: chunk.file.derivedFrom } : {}),
       ...(chunk.author ? { producedBy: chunk.author } : {}),
       ...(chunk.authorPath ? { authorPath: chunk.authorPath } : {}),
     });

@@ -63,3 +63,24 @@ Chat은 `prepareDocumentAttachments`로 원본을 기존 artifact 저장소에 �
 키나 서명 URL을 전달하지 않는다. 조회 화면은 파일 참조를 서명해 원본을 다운로드할 수
 있게 한다. 추출에 실패했거나 텍스트 예산을 다 쓴 파일도 보관된 원본 참조는 유지한다.
 저장소가 없거나 저장에 실패하면 그 사실을 경고하고 추출문으로 대화를 계속한다.
+
+## 실행 도구
+
+`File`은 agent 실행과 Playground preview에 같은 조건으로 제공하는 기본 도구다.
+MCP 등록은 필요하지 않으며 문서 엔진과 artifact 저장소가 구성되어야 한다.
+`operation`은 `read`, `inspect`, `create`, `edit`이고 기존 파일은 `file_id`로 지목한다.
+읽기와 검사 결과만 모델 문맥에 들어가며, 생성·편집 바이트는 `EngineChunk.file`로
+나가 실행 브래킷이 저장한다. `SaveFile`과 `File`의 생성·편집 요청은 런당 파일 상한을
+호출 순서대로 공유한다. 파일 ID는 저장 전 예약하며 결과와 실제 artifact 행이 같은
+ID를 사용한다. 수정본 행의 `derivedFrom`은 원본 ID를 기록한다.
+
+사용자는 자신에게 귀속된 파일을 읽을 수 있다. 프로젝트 토큰은 시작 프로젝트 안에서
+자신의 소유자에게 귀속된 파일만 읽고, 메시징·A2A·trigger actor는 시작 프로젝트 안의
+동일 actor 파일만 읽는다. 서브에이전트에서도 시작 프로젝트 범위는 유지한다. 파일 ID나
+저장소 키를 안다는 이유만으로 접근을 허용하지 않는다.
+
+`create`는 Markdown 또는 XLSX 시트 배열을 받는다. 이미지 `assets`는 이름에서
+PNG·JPEG artifact ID로 가는 매핑이며, 문서에서는 `asset://name`으로 참조한다.
+평문·Markdown·CSV·JSON·HTML·SVG 생성은 기존 `SaveFile`을 사용한다. UTF-8 텍스트의
+`edit`는 `part: text`, `index: 0`과 한 번만 나타나는 기존 문자열로 교체 대상을 지정한다.
+JSON 편집 결과는 구문을 검사한다. 텍스트 편집 결과도 기존 파일을 덮어쓰지 않는다.

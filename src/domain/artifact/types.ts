@@ -18,6 +18,8 @@ export type ArtifactKind = "image" | "document";
 export type ArtifactSource = "generated" | "attachment";
 
 export interface Artifact {
+  /** Original artifact from which an edited file was derived. */
+  derivedFrom?: string;
   artifactId: string;
   kind: ArtifactKind;
   source: ArtifactSource;
@@ -314,15 +316,7 @@ export function artifactOwnerEmail(
 export interface FileReference {
   /** Object key. What is stored; never what is served. */
   key?: string;
-  /**
-   * The artifact row these bytes belong to. Present on every file the bracket
-   * stored — it is what `captureRunArtifacts` learned when it wrote the row,
-   * not something a surface asks for.
-   *
-   * What it is *for* is narrower: a viewable file is opened at
-   * `/api/artifacts/{id}/view`, which serves it under a sandbox policy an
-   * object URL cannot carry. A `.docx` carries the id and nothing reads it.
-   */
+  /** Stable identity for downloads, views and later file operations. */
   artifactId?: string;
   /** A signed download address, put here by the read path. */
   url?: string;

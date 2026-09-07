@@ -193,3 +193,4 @@
 | 콘솔이 사람에게 보여주는 모든 문자열 | `src/app/_i18n/messages/en.ts` |
 | 요청이 어떤 언어로 서빙되는가 | `src/app/_i18n/locale.ts` |
 | 플랫폼이 히스토리를 남기지 않을 때 chat-bot 표면이 conversation 에 대해 무엇을 기억하는가 | `src/domain/messaging/transcript.ts` 의 `ConversationTranscriptRepository`. Telegram 과 Teams 핸들러가 `transcriptHistory.ts` 를 통해 쓰고 읽는다 |
+| 모델이 파일 ID로 읽거나 편집할 수 있는 범위 | `src/application/document/fileTool.ts`의 actor·시작 project 검사. ID 자체는 접근 권한이 아니다 |
