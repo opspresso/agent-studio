@@ -765,12 +765,12 @@ token 으로 치환되고, 응답에서 원본이 복원된다. 스트리밍도 
 여전히 본다. (subagent transfer 는 정반대다. 자식 agent 는 마스킹된 메시지를 받는다.) MCP 서버
 등록은 그 자체의 기준으로 검토하라. `piiFiltering` 은 그것을 다루지 않는다.
 
-**`SaveFile` 이 쓰는 파일도 복원된 쪽이다.** 그 파일은 물어본 사람이 받는 것이고, 그가 같은
+**`SaveFile`과 `File`의 생성·편집도 복원된 인자를 사용한다.** 그 파일은 물어본 사람이 받는 것이고, 그가 같은
 화면에서 읽는 답변이 이미 복원된 텍스트다. 마스킹된 사본으로 저장하면 자기 컨텍스트를 위해
 치환된 placeholder 로 가득 찬 리포트가 자기에게 돌아온다. 그래서 저장은 `displayArgs` 에서
 읽는다. 어느 사본에서 디스패치하는지가 이 경계를 정하는 곳이라는 뜻이기도 하다: 다른 모델로
 건너가는 것(transfer 의 `message`, dispatch 의 `tasks`)은 `args`, 사람이나 이미 신뢰된 바깥
-시스템에 닿는 것(MCP 디스패치, 이미지 프롬프트, `SaveFile` 의 파일)은 `displayArgs` 다.
+시스템에 닿는 것(MCP 디스패치, 이미지 프롬프트, `SaveFile`·`File`의 파일)은 `displayArgs`다.
 
 **capability discovery 도 그 밖에 있고, 구조적인 이유가 있다.** `dynamicCapabilities` 가 켜진
 버전은 가장 최근 사용자 턴들(마지막 하나만이 아니라 짧은 창)을 자기 질의 중 하나로 삼아

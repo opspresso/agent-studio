@@ -69,7 +69,7 @@ src/
   domain/           # 엔티티 + 리포지토리 포트. 순수 TS. 프레임워크/AWS import 없음.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
     execution/  security/  slack/  telegram/  teams/  messaging/  trigger/  sync/
-    audit/  plugin/  member/  a2a/  agui/  catalog/  vector/  artifact/  net/
+    audit/  plugin/  member/  a2a/  agui/  catalog/  vector/  artifact/  document/  net/
   application/      # 유스케이스. 도메인 포트에만 의존하고, composition root 에는 절대
                     # 의존하지 않는다 — deps 는 주입되지, 끌어오지 않는다.
     llm/            # 엔진: 툴 루프, 에이전트 런 조립, 툴 결과 예산, PII 마스킹,
@@ -82,6 +82,7 @@ src/
     messaging/      # 모든 채팅봇 표면이 공유하는 것: 턴 파이프라인, 첨부 제한, 편집으로
                     # 답을 전달하는 장부, 플랫폼 히스토리가 없는 표면의 transcript 규칙 —
                     # domain/messaging 의 reply 포트 위에서
+    document/       # 첨부 원본 보관, File 도구와 파일 접근 범위
     artifact/       # 런이 남긴 것: 유일한 행 작성자, 브래킷에서의 캡처, 서명 URL 수명
     audit/          # 감사 행의 유일한 작성자, 그리고 그 흔적을 다시 읽기
     catalog/        # capability 인덱스: reindex, 검색, 쿼리 임베딩 캐시
@@ -92,6 +93,7 @@ src/
                     # 리포지토리
     llm/            # OpenAI 호환 프로바이더 채널, 스트리밍
     mcp/            # MCP HTTP 클라이언트, 세션, 디스커버리 캐시, Docker 프로비저너
+    documents/      # 네이티브 문서 파서·생성기·편집기, 제한된 자식 프로세스 워커
     vector/         # capability 카탈로그가 인덱싱되는 pgvector 스토어 (catalog_vectors)
     plugin/  archive/
                     # 저장소 트리 → plugins 스냅샷 워커 (GitHub 와 업로드 아카이브가 공유),
@@ -277,7 +279,7 @@ flowchart TB
 | Telegram destination | `PROJECT#{name}` | `TELEGRAMDESTINATION#{botId}#{chatId}#{threadId}` | — | — |
 | Teams activity 중복 제거 (App ID 로 한정; activity id 는 대화 안에서만 유일하므로 대화 id 를 앞에 붙인다) | `PROJECT#{name}` | `TEAMSACTIVITY#{appId}#{conversationId}#{activityId}` | — | — |
 | 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면, Telegram, Teams; project 파티션에 있어 cascade 가 지운다) | `PROJECT#{name}` | `TRANSCRIPT#{conversationKey}#TURN#{createdAt ISO}#{seq}` | — | — |
-| Artifact (런이 만들어 낸 것) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
+| Artifact (첨부 원본과 런 출력) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
 | A2A 태스크 (수신) | `A2ATASK#{projectName}#{urlencode(tenant:client)}` | `TASK#{taskId}` | `A2ATASKLIST#{projectName}#{urlencode(tenant:client)}` | `{statusTimestamp ISO}#{taskId}` |
 | 원격 대화 (송신 A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
 | A2A 클라이언트 키 | `A2ACLIENT#{name}` | `META` | `TYPE#A2ACLIENT` | `{name}` |
@@ -644,7 +646,7 @@ chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. *
 | `toolResult` | 각 툴이 끝난 뒤 엔진이 | chat 의 툴 행(화면에 표시되고, 최근 N 턴에 대해서는 컨텍스트로 리플레이된다), 클라이언트 툴 패널, AG-UI 의 `TOOL_CALL_RESULT` |
 | `warning` | 런이 무언가를 잃는 모든 자리: 셋업 시점에는 쓸 수 없었던 바인딩(삭제된 skill/subagent, 도달 불가하거나 차단된 MCP 서버, 런당 상한을 넘은 tool), 런 도중에는 턴 또는 출력 한도, 컨텍스트 예산 절단, 잘린 transfer transcript, 실패한 transfer, 버려진 document | chat 경고 배너, chat 봇의 경고 꼬리말(Slack, Telegram, Teams), `Trace.warnings`, AG-UI 의 `CUSTOM` 경고 이벤트(그리고 `RUN_FINISHED.result.warnings`). 절대 스트림을 끝내지 않는다 |
 | `image` | GenerateImage / EditImage 빌트인, 그리고 image project subagent | **author 와 무관하게** 소비된다(agent 가 그림을 그리는 방법이 곧 image subagent 에 위임하는 것이다): chat 이미지 영속화(오브젝트 스토어), chat 봇의 업로드(Slack, Telegram, Teams), OpenAI `images` 확장, AG-UI 의 `ACTIVITY_SNAPSHOT`(`agent-studio.image`), 클라이언트 갤러리 |
-| `file` | 그림이 아닌 바이트를 반환한 툴. 렌더링된 문서, 내보내기 파일 | `image` 의 열 개 소비자가 이것을 절대 보지 않도록 정확히 그 이유로 별도의 축이다: chat 은 참조를 영속화하고 다운로드로 제공하며(assistant 메시지의 `files`, 저장될 파일 이름과 함께 읽을 때마다 서명된다), 런 로그는 대신 메모를 넣는다. 바이트는 그것을 저장한 브래킷이 걷어내며 **모델의 컨텍스트에 절대 들어가지 않는다**. 파일을 지목하는 것은 툴 결과 텍스트다. 이름과 media type 은 서버에서 오므로, 그것으로 무언가를 만들기 전에 둘 다 방어적으로 읽는다(`safeFileName`/`baseMediaType`). `image` 를 읽는 모든 표면은 이것도 읽는다. `/predict` 와 두 OpenAI 모양은 `files` 확장으로 싣고, `/agent` 는 프레임에서 키를 서명된 `url` 로 바꾸며, A2A 는 서명된 주소의 URL part 를 발행하고, AG-UI 는 서명된 주소를 `ACTIVITY_SNAPSHOT`(`agent-studio.file`)으로 싣고, messaging 파이프라인은 Slack·Telegram·Teams 응답 아래 링크하며, trigger 의 행은 그것을 이름으로 적는다. 해석은 `producedFiles.ts` 가 소유한다. 한 축을 읽으면서 다른 축을 읽지 않는 모듈은 `tests/architecture.test.ts` 를 실패시킨다 |
+| `file` | 파일을 반환한 툴. `File` 생성·편집, `SaveFile`, MCP 파일 출력 | 이미지 표시와 파일 다운로드를 구분하는 별도의 출력 축이다: chat 은 참조를 영속화하고 다운로드로 제공하며(assistant 메시지의 `files`, 저장될 파일 이름과 함께 읽을 때마다 서명된다), 런 로그는 대신 메모를 넣는다. 바이트는 그것을 저장한 브래킷이 걷어내며 **모델의 컨텍스트에 절대 들어가지 않는다**. 파일을 지목하는 것은 툴 결과 텍스트다. 이름과 media type 은 서버에서 오므로, 그것으로 무언가를 만들기 전에 둘 다 방어적으로 읽는다(`safeFileName`/`baseMediaType`). `image` 를 읽는 모든 표면은 이것도 읽는다. `/predict` 와 두 OpenAI 모양은 `files` 확장으로 싣고, `/agent` 는 프레임에서 키를 서명된 `url` 로 바꾸며, A2A 는 서명된 주소의 URL part 를 발행하고, AG-UI 는 서명된 주소를 `ACTIVITY_SNAPSHOT`(`agent-studio.file`)으로 싣고, messaging 파이프라인은 Slack·Telegram·Teams 응답 아래 링크하며, trigger 의 행은 그것을 이름으로 적는다. 해석은 `producedFiles.ts` 가 소유한다. 한 축을 읽으면서 다른 축을 읽지 않는 모듈은 `tests/architecture.test.ts` 를 실패시킨다 |
 | `usage` | 모델 호출마다 한 번씩 엔진이. 실제 호출 모델(`model`)도 싣기 때문에 fallback 턴을 trace 가 primary 로 오인하지 않는다 | `collectRun` 의 응답 usage. 여러 호출을 합산한 응답에서는 모델을 생략한다. DB 기록은 별개다(엔진 루프 안의 `recordUsage` / 애그리게이터) |
 | `error` | 실패 시 엔진이(스트림 도중, 재시도 없음). transfer 가 실패하면 authored 로 나간다 | **top-level** 에러만 스트림을 끝낸다. authored 인 것은 거의 모든 소비자가 *버린다*(messaging 파이프라인과 trace recorder 는 예외). 부모가 그것을 지나쳐 답하기 때문이다. 그래서 실패한 transfer 가 잃은 것은 이 필드가 아니라 그 transfer 의 `warning` 으로 독자에게, "For context" 턴으로 모델에게 닿는다 |
 | `done` | 루프가 툴 호출 없이 끝날 때 엔진이. 턴 가드가 멈춘 경우는 **아니다** | 아래의 `chunkTermination` 을 통해 읽는다: OpenAI `finish_reason: "stop"`, 클라이언트의 마무리 |
@@ -760,7 +762,7 @@ SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건
 /projects/[name]      오케스트레이션 playground (프롬프트 편집기, 모델 선택, run/stream)
 /projects/[name]/versions | usage | traces | artifacts | api-reference | integrations | settings | compare
 /chats  /chats/[chatId]
-/artifacts            내 런이 만든 것; project 자체 탭이 나머지를 담는다
+/artifacts            내 첨부 원본과 런 출력; project 자체 탭이 나머지를 담는다
 /skills  /tools (MCP)  /agents  /plugins  (각각 + /[name] 상세 페이지)
 /dashboard            `/` 로 리다이렉트, `/` 가 마지막 섹션으로 비용 대시보드를 담는다
 /profile              내 tier, 그것이 제한하는 것, 이번 UTC 달의 지출

@@ -402,7 +402,7 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
   입력해야 한다. fingerprint 는 API 응답과 입력에 노출하지 않는다.
 - 오버라이드 편집은 다른 모든 version 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
 
-한 런은 통틀어 최대 115개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
+한 런은 통틀어 최대 114개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
 보고한다.
 
 ### 프롬프트 미리보기
@@ -638,7 +638,7 @@ publish 된 version 도 실행 가능한 초안도 없는 project 는 `400` 으�
 `documents` 는 보는 것이 아니라 읽는 파일이다. `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
 각각 10MB이며 `b64` 형식도 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
 HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내장 문서 엔진이 읽으며 MCP 등록이나 version binding을 요구하지 않는다.
-파싱이 실패하면 그 파일이 빠졌다는 warning을 돌려준다. `name` 은 필수이고,
+파싱이 실패하면 추출 실패 warning을 돌려준다. 저장된 원본의 참조는 유지한다. `name` 은 필수이고,
 `mimeType` 이 `application/octet-stream` 일 때. 업로드는 흔히 이렇게 도착한다. 판단을 떠맡는다.
 읽을 수 없는 타입은 `400` 으로 거절된다. 서버는 **텍스트**를 추출하고. PDF 의 텍스트 레이어,
 텍스트 파일의 내용. 턴은 그것을 싣는다. Chat은 오브젝트 저장소가 구성돼 있으면 원본도 artifact로
@@ -656,7 +656,7 @@ HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내�
 검사한다. 레지스트리와 version 편집은 skill 의 전체 파일 묶음 무게에 맞춰 훨씬 더 빡빡하게
 제한된다.
 
-chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name` 과 `note` 를 돌려주고 `text` 는 비운다:
+chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name`, `note`와 다운로드용 `file?`을 돌려주고 `text`는 비운다:
 추출된 텍스트는 *나중 턴*이 재생하는 것이고 서버 측에서 읽히므로, 그것을 브라우저로 보내면 둘 중
 아무것도 렌더링하지 않는 화면을 위해 턴당 수만 자를 선로에 올리게 된다.
 
@@ -1456,7 +1456,7 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 10 MB 다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
-`byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의
+`byteSize`, `filename?`, `derivedFrom?` (수정본의 원본 artifact ID), `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의
 출력이 누구 앞으로 정리되는지. 물어본 사람에서 해석한다), `ancestry?` (transfer 사슬. 바깥쪽이
 먼저), `producedBy?`, `model?` (그린 모델. 이름을 댈 수 있는 생산자만. MCP 도구·원격 A2A 의
 그림, 렌더링된 문서, 첨부는 비어 있다), `runId?`, `prompt?`, `createdAt`, 그리고 서명된 `url` (15분. 문서의 것은

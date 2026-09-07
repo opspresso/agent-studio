@@ -6,14 +6,30 @@
 
 ## 읽기
 
-`src/infrastructure/llm/documentExtractor.ts`는 첨부와 URL 읽기의 공통 어댑터다.
+첨부와 URL 읽기는 `DocumentExtractor` 포트를 공유한다. 배포는
+`workerAdapters.ts`를 통해 작업을 자식 프로세스로 보내고, 그 안에서
+`src/infrastructure/llm/documentExtractor.ts`가 형식별 추출을 수행한다.
 PDF는 텍스트 레이어를 추출하고 HTML은 활성 내용을 제거하며 평문은 UTF-8을 검증한다.
 Office 문서는 내부 `engine/read/`로 전달한다. DOCX, XLSX, PPTX, HWP 5.x, HWPX,
 ODT/ODS/ODP, RTF를 지원한다. 암호화 파일, HWP 3.0, 구형 DOC/XLS/PPT는 지원하지 않는다.
 
 Office 읽기는 Markdown으로 표현할 수 있는 내용과 구조를 추출한다. 원본 파일의
-보존 편집을 뜻하지 않는다. 읽기 결과의 `complete`, `omissions`, `counts`는
-추출 범위와 누락을 나타낸다. 첨부는 `documentLimits.ts`의 더 작은 문자 예산을 적용한다.
+보존 편집을 뜻하지 않는다. 내부 Office 읽기 결과의 `complete`, `omissions`, `counts`는
+추출 범위와 누락을 나타낸다. 외부 추출 포트는 `text`와 `note?`만 반환한다. 첨부는 `documentLimits.ts`의 더 작은 문자 예산을 적용한다.
+
+## 형식별 작업 범위
+
+| 형식 | 읽기 | File 검사 | 원본 편집 | 새 파일 생성 |
+|---|---|---|---|---|
+| UTF-8 평문·Markdown·CSV·JSON·HTML 등 | 텍스트(HTML은 활성 내용 제거) | 원문 텍스트 | 유일한 문자열 교체 | SaveFile의 지원 MIME |
+| PDF | 텍스트 레이어 | 미지원 | 미지원 | File |
+| DOCX·PPTX·HWPX | 텍스트와 구조 | 구조 또는 텍스트 대상 | 선택한 텍스트 요소 교체 | File |
+| XLSX | 셀 텍스트 | 셀·수식·저장된 값 | 셀 값·수식 교체 | File |
+| HWP 5.x·ODT/ODS/ODP·RTF | 텍스트와 구조 | 읽기 전용 구조 | 미지원 | 미지원 |
+| 저장된 SVG | File로 마크업 읽기 | 원문 마크업 | 유일한 문자열 교체 | SaveFile |
+
+SVG는 일반 문서 첨부의 대상이 아니며, 위 작업은 이미 보관된 SVG artifact에 적용한다.
+PNG·JPEG는 문서 생성의 이미지 asset으로 사용한다. OCR과 원본 PDF 편집은 제공하지 않는다.
 
 ## 생성
 
@@ -45,7 +61,8 @@ DOCX, PPTX, PDF는 PNG·JPEG asset을 삽입한다. PDF에 실제 삽입하는 P
 밖의 XML과 나머지 패키지 항목은 보존한다. 텍스트 길이에 따른 배치 변화는 시각 검증이
 필요하며 엔진은 시각 검증을 수행했다고 보고하지 않는다.
 
-XLSX 검사는 셀 주소·저장된 값·수식을 보여 준다. 숨긴 시트는 `includeHidden`으로
+XLSX 검사는 셀 주소·저장된 값·수식을 보여 준다. 숨긴 시트는 `File` 인자의
+`include_hidden`(내부 포트의 `includeHidden`)으로
 명시해야 포함한다. `set_cell`은 시트 이름과 셀 주소로 값을 바꾸거나 빈 위치에 셀·행을
 추가한다. 셀 스타일과 관계없는 패키지 항목은 보존한다. 입력 셀이 다른 수식의 선행
 값일 수 있으므로 모든 시트의 수식 캐시를 제거하고, 기존 계산 체인과 그 선언을
@@ -54,6 +71,7 @@ XLSX 검사는 셀 주소·저장된 값·수식을 보여 준다. 숨긴 시트
 수정할 수 있다.
 시트 연결은 주석을 제외한 실제 relationship 요소로 해석하며 네임스페이스 접두사를 허용한다.
 편집은 relationship으로 시트 경로를 확인해야 하며, 누락된 연결을 파일명 순서로 추정하지 않는다.
+외부 relationship이 있는 워크북은 편집을 거절하며, 외부 시트를 로컬 파일로 대신 읽지 않는다.
 
 한 번에 최대 100개 편집을 적용한다. 중복·겹침 대상, 불일치하는 원본 텍스트, 서명 문서의 편집,
 매크로 워크북의 편집은 거절한다. 서명 문서의 읽기 전용 검사는 허용한다. OPC 서명은 관례적인 경로뿐 아니라
@@ -71,12 +89,13 @@ Chat은 `prepareDocumentAttachments`로 원본을 기존 artifact 저장소에 �
 
 ## 실행 도구
 
-`File`은 agent 실행과 Playground preview에 같은 조건으로 제공하는 기본 도구다.
+`File`은 agent 실행과 Playground의 agent 실행에 같은 조건으로 제공하는 기본 도구다.
+`llm`·`image` 프로젝트와 실행하지 않는 프롬프트 미리보기에는 파일 도구 호출이 없다.
 MCP 등록은 필요하지 않으며 문서 엔진과 artifact 저장소가 구성되어야 한다.
 `operation`은 `read`, `inspect`, `create`, `edit`이고 기존 파일은 `file_id`로 지목한다.
 읽기와 검사 결과만 모델 문맥에 들어가며, 생성·편집 바이트는 `EngineChunk.file`로
 나가 실행 브래킷이 저장한다. `SaveFile`과 `File`의 생성·편집 요청은 런당 파일 상한을
-호출 순서대로 공유한다. 파일 ID는 저장 전 예약하며 결과와 실제 artifact 행이 같은
+호출 순서대로 공유하며 실패한 쓰기 시도도 계산한다. 파일 ID는 저장 전 예약하며 결과와 실제 artifact 행이 같은
 ID를 사용한다. 수정본 행의 `derivedFrom`은 원본 ID를 기록한다.
 
 사용자는 자신에게 귀속된 파일을 읽을 수 있다. 프로젝트 토큰은 시작 프로젝트 안에서
@@ -94,13 +113,15 @@ JSON 편집 결과는 구문을 검사한다. 텍스트 편집 결과도 기존 
 
 ## 실행 자원
 
-배포의 composition root는 `workerAdapters.ts`를 연결한다. 파싱·생성·검사는 앱의
-이벤트 루프에서 실행하지 않고 별도 Node 자식 프로세스에서 수행한다. 작업마다 새
-프로세스를 만들고 결과 수신·취소·실패·타임아웃 뒤 종료한다. 프로세스가 실제 종료된
+배포의 composition root는 `workerAdapters.ts`를 연결한다. 추출 포트의 읽기와 문서
+생성·검사·편집은 별도 Node 자식 프로세스에서 수행한다. `File`의 SVG 마크업 읽기와
+평문·SVG 검사·편집, `SaveFile`은 앱 프로세스에서 바이트 제한 아래 수행한다.
+워커 작업마다 새 프로세스를 만들고 결과 수신·취소·실패·타임아웃 뒤 종료한다. 프로세스가 실제 종료된
 뒤에만 동시 실행 슬롯을 반환한다. 앱 프로세스당 동시 실행 2개, 대기 8개이며 대기
 시간을 포함한 작업 기한은 30초다. 초과 대기는 즉시 거절한다.
 
-자식에는 `NODE_ENV=production`만 전달한다. 앱의 DB·S3·LLM 자격증명은 전달하지 않는다.
+자식에는 환경변수로 `NODE_ENV=production`만 전달한다. 파일·네트워크 접근 권한은
+실행 계정의 OS 권한을 따른다. 앱의 DB·S3·LLM 자격증명은 전달하지 않는다.
 XLSX 시트 입력 JSON의 크기는 UTF-8 바이트로 측정한다.
 V8 old-space는 256MiB로 제한한다. 이 값은 프로세스 전체 RSS 제한은 아니며, 별도의
 입력·ZIP 전개·XML·셀 개수 제한이 외부 버퍼와 파서 작업량을 제한한다.
