@@ -165,13 +165,14 @@ buffer rather than a record, and why the viewport belongs to a library is
   images can be addressed any more,
   `userMessage` substitutes a marker saying so, because an empty user turn is a shape some
   providers refuse outright.
-- **Documents are stored as their text, not as the file.** `readMessageDocuments` reads the
-  bytes exactly once; what comes back is both what this turn sends and what is persisted as
-  `documents: [{ name, text, note? }]`. Storing the text is what lets the *next* question
-  still have the document — a turn that only sent it would answer "summarise this" and then
-  fail "what does section 3 say?" — and the bytes could not be stored anyway. Both the live
-  turn and the replay wrap it with `framedDocument`, so a replayed turn is the one the chat
-  recorded rather than a differently-shaped one.
+- **Documents keep bounded text and a reference to the original.** `readMessageDocuments`
+  uses `prepareDocumentAttachments` to store original bytes through `storeArtifact`, with
+  `source: attachment`, and then extracts the turn's text. The message stores
+  `documents: [{ name, text, note?, file? }]`, never document bytes. The optional `file`
+  carries the artifact id and object key; only the view replaces the key with a signed URL.
+  Failed extraction still retains a successfully stored original. Missing/failed storage
+  is warned and text extraction continues. Live and replay use `framedDocument`, including
+  the file id when available, so later turns can refer to the same original.
 - **Document text counts against the history budget** (`messageChars`). It sits beside
   `content` rather than in it, so measuring `content` alone would price a turn carrying
   40,000 characters of PDF as the sentence the user typed.

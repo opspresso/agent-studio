@@ -99,7 +99,10 @@ export async function createChat(
       attachments,
     );
     const documentInput = input.documents ?? [];
-    const read = await readMessageDocuments(deps.documents, documentInput);
+    const read = await readMessageDocuments(deps, {
+      projectName: project.name, versionName: version.versionName,
+      actor: { kind: "user", id: input.userEmail },
+    }, documentInput);
     const userSeq = await deps.chats.reserveMessageSeq(chat.chatId);
     const userMessage: ChatMessage = {
       chatId: chat.chatId,

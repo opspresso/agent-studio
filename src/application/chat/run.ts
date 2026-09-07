@@ -9,7 +9,6 @@ import type {
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import type { ChannelToolCall, ContentPart, EngineChunk } from "@/domain/llm/types";
 import {
-  readDocuments,
   turnContent,
   type ReadDocument,
 } from "@/application/llm/documentParts";
@@ -19,7 +18,7 @@ import { filesNotKeptWarning } from "@/application/artifact/producedFiles";
 import { endNoticeFor } from "./cancelRun";
 import { log } from "@/shared/logger";
 import { cutUtf8Bytes } from "@/shared/utf8Text";
-import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
+import { prepareDocumentAttachments } from "@/application/document/attachments";
 
 /**
  * Chat is an interactive surface, so it may fall back to the newest draft
@@ -52,32 +51,15 @@ export function userTurnContent(
   );
 }
 
-/**
- * Read attached documents into the text this turn carries and stores.
- *
- * The bytes are read exactly once. What comes back is both what the model sees
- * now and what the chat keeps, which is what lets a follow-up question still
- * have the document — the file itself is never stored, because a chat message is
- * one row, read whole on every later turn, and a 10MB PDF has no place in one.
- */
+/** Store original documents separately and keep bounded text on the chat message. */
 export async function readMessageDocuments(
-  extractor: DocumentExtractor,
+  deps: ChatDeps,
+  context: ArtifactContext,
   documents: AttachedDocumentInput[],
 ): Promise<{ stored: ChatMessageDocument[]; warnings: string[] }> {
-  if (documents.length === 0) {
-    return { stored: [], warnings: [] };
-  }
-  const warnings: string[] = [];
-  const stored = await readDocuments(
-    extractor,
-    documents.map((document) => ({
-      bytes: Buffer.from(document.b64, "base64"),
-      mimeType: document.mimeType,
-      name: document.name,
-    })),
-    warnings,
-  );
-  return { stored, warnings };
+  return prepareDocumentAttachments(deps.documents, deps.artifacts, context, documents.map((document) => ({
+    bytes: Buffer.from(document.b64, "base64"), mimeType: document.mimeType, name: document.name,
+  })));
 }
 
 /**

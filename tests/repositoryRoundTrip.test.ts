@@ -634,6 +634,10 @@ describe("chatRepository message round-trip", () => {
       role: "user",
       content: "what is this?",
       images: [{ url: "https://img.example/attached.png" }],
+      documents: [{ name: "source.docx", text: "extracted", file: {
+        artifactId: "source-id", key: "artifacts/document/source-id.docx", name: "source.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", byteSize: 100,
+      } }],
       createdAt: NOW,
     };
     const toolMessage: ChatMessage = {

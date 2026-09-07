@@ -43,8 +43,9 @@ function forReading(message: ChatMessage): ChatMessage {
   }
   return {
     ...message,
-    documents: message.documents.map(({ name, note }) => ({
+    documents: message.documents.map(({ name, note, file }) => ({
       name,
+      ...(file ? { file } : {}),
       text: "",
       ...(note ? { note } : {}),
     })),

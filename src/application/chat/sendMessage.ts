@@ -102,7 +102,10 @@ export async function sendMessage(
       attachments,
     );
     const documentInput = input.documents ?? [];
-    const read = await readMessageDocuments(deps.documents, documentInput);
+    const read = await readMessageDocuments(deps, {
+      projectName: project.name, versionName: version.versionName,
+      actor: { kind: "user", id: input.userEmail },
+    }, documentInput);
     const userMessage: ChatMessage = {
       chatId: input.chatId,
       seq: userSeq,

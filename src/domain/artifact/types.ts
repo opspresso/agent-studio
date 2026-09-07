@@ -309,3 +309,24 @@ export function artifactOwnerEmail(
   }
   return actor.kind === "user" || actor.kind === "project-token" ? actor.id : undefined;
 }
+
+/** A stored file reference; read surfaces replace the key with a signed URL. */
+export interface FileReference {
+  /** Object key. What is stored; never what is served. */
+  key?: string;
+  /**
+   * The artifact row these bytes belong to. Present on every file the bracket
+   * stored — it is what `captureRunArtifacts` learned when it wrote the row,
+   * not something a surface asks for.
+   *
+   * What it is *for* is narrower: a viewable file is opened at
+   * `/api/artifacts/{id}/view`, which serves it under a sandbox policy an
+   * object URL cannot carry. A `.docx` carries the id and nothing reads it.
+   */
+  artifactId?: string;
+  /** A signed download address, put here by the read path. */
+  url?: string;
+  name: string;
+  mimeType: string;
+  byteSize?: number;
+}

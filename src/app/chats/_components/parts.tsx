@@ -243,13 +243,18 @@ export const MessageView = memo(function MessageView({
   if (message.role === "user") {
     return (
       <Stack gap={4} align="flex-end">
-        {/* The file itself is never stored — only the text read out of it — so
-            what a reader gets back is the name they attached and how much of it
-            was read. Silence here would make an attachment look like it never
-            happened on the next page load. */}
         {(message.documents ?? []).length > 0 && (
           <Group gap="xs" justify="flex-end">
-            {(message.documents ?? []).map((document, index) => (
+            {(message.documents ?? []).map((document, index) => document.file?.url ? (
+              <ProducedFile
+                key={`document-${index}`}
+                name={document.file.name}
+                url={document.file.url}
+                byteSize={document.file.byteSize}
+                mimeType={document.file.mimeType}
+                artifactId={document.file.artifactId}
+              />
+            ) : (
               <Badge
                 key={`document-${index}`}
                 variant="light"

@@ -63,24 +63,31 @@ export async function resolveMessageFiles(
   sign: SignObjectUrl | undefined,
   ttlSeconds: number,
 ): Promise<ResolvedFileMessages> {
-  const pending = messages.flatMap((message, messageIndex) =>
-    message.role === "assistant"
-      ? (message.files ?? []).map((file) => ({ messageIndex, file }))
-      : [],
-  );
+  const pending = messages.flatMap((message, messageIndex) => {
+    if (message.role === "assistant") return (message.files ?? []).map((file) => ({ messageIndex, documentIndex: -1, file }));
+    if (message.role === "user") return (message.documents ?? []).flatMap((document, documentIndex) =>
+      document.file ? [{ messageIndex, documentIndex, file: document.file }] : [],
+    );
+    return [];
+  });
   const resolved = await mapWithLimit(
     pending,
     MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS,
-    async ({ messageIndex, file }) => ({
-      messageIndex,
+    async ({ messageIndex, documentIndex, file }) => ({
+      messageIndex, documentIndex,
       file: await resolveOne(file, sign, ttlSeconds),
     }),
   );
   const byMessage = new Map<number, ChatMessageFile[]>();
+  const byDocument = new Map<string, ChatMessageFile>();
   let dropped = 0;
   for (const entry of resolved) {
     if (!entry.file) {
       dropped += 1;
+      continue;
+    }
+    if (entry.documentIndex >= 0) {
+      byDocument.set(`${entry.messageIndex}:${entry.documentIndex}`, entry.file);
       continue;
     }
     const files = byMessage.get(entry.messageIndex) ?? [];
@@ -90,8 +97,11 @@ export async function resolveMessageFiles(
 
   return {
     messages: messages.map((message, messageIndex) => {
-      // Only an assistant turn produces files. Narrowing rather than casting is
-      // what keeps the union's claim true instead of working around it.
+      if (message.role === "user" && message.documents?.some((document) => document.file)) {
+        return { ...message, documents: message.documents.map((document, documentIndex) => ({
+          ...document, file: byDocument.get(`${messageIndex}:${documentIndex}`),
+        })) };
+      }
       if (message.role !== "assistant" || !message.files?.length) {
         return message;
       }
