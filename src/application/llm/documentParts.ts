@@ -129,10 +129,17 @@ export async function readDocuments(
   const accepted = withinDocumentCount(documents, warnings);
 
   const read: ReadDocument[] = [];
+  const keepOriginal = (document: AttachedDocument): void => {
+    if (document.file?.artifactId) read.push({
+      name: document.name, file: document.file, text: "",
+      note: "Text was not extracted; the original file is retained",
+    });
+  };
   let remaining = MAX_DOCUMENT_CHARS_PER_TURN;
   for (const document of accepted) {
     if (remaining <= 0) {
       warnings.push(`Could not read ${document.name}: this message's document budget is spent.`);
+      keepOriginal(document);
       continue;
     }
     try {
@@ -164,6 +171,7 @@ export async function readDocuments(
             : "unknown error"
         }`,
       );
+      keepOriginal(document);
     }
   }
   return read;

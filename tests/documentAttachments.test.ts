@@ -45,6 +45,25 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("original document attachments", () => {
+  it("keeps input order when the first of two equally named documents cannot be extracted", async () => {
+    const saved = storage();
+    extractor.extract.mockRejectedValueOnce(new Error("unreadable first file"));
+    const result = await prepareDocumentAttachments(extractor, saved.value, context, [document(), document()]);
+    expect(result.stored.map((entry) => entry.file?.artifactId?.slice(-1))).toEqual(["1", "2"]);
+    expect(result.stored.map((entry) => entry.text)).toEqual(["", "extracted text"]);
+  });
+
+  it("retains failed and budget-exhausted originals at their original positions", async () => {
+    const saved = storage();
+    extractor.extract.mockResolvedValue({ text: "x".repeat(20_000) })
+      .mockResolvedValueOnce({ text: "x".repeat(20_000) })
+      .mockRejectedValueOnce(new Error("second file failed"));
+    const result = await prepareDocumentAttachments(extractor, saved.value, context, Array.from({ length: 4 }, document));
+    expect(result.stored.map((entry) => entry.file?.artifactId?.slice(-1))).toEqual(["1", "2", "3", "4"]);
+    expect(result.stored.map((entry) => entry.text.length)).toEqual([20_000, 0, 20_000, 0]);
+    expect(extractor.extract).toHaveBeenCalledTimes(3);
+  });
+
   it("stores originals outside message rows and gives the model an ID instead of bytes or a URL", async () => {
     const saved = storage();
     const result = await prepareDocumentAttachments(extractor, saved.value, context, [document()]);

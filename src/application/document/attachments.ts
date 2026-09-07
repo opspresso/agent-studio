@@ -42,14 +42,5 @@ export async function prepareDocumentAttachments(
     accepted.push(input);
   }
   const stored = await readDocuments(extractor, accepted, warnings);
-  const readIds = new Set(stored.map((document) => document.file?.artifactId));
-  for (const document of accepted) {
-    if (document.file?.artifactId && !readIds.has(document.file.artifactId)) {
-      stored.push({
-        name: document.name, file: document.file, text: "",
-        note: "Text was not extracted; the original file is retained",
-      });
-    }
-  }
   return { stored, warnings };
 }
