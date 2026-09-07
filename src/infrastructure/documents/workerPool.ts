@@ -35,7 +35,7 @@ function checkBytes(job: DocumentJob): void {
   if (job.operation === "edit" && JSON.stringify(job.input.operations).length > MAX_MARKDOWN_CHARS) throw new DocumentProcessingError("Document edits exceed the text budget");
   if (job.operation === "create") {
     if ((job.input.content?.length ?? 0) > MAX_MARKDOWN_CHARS) throw new DocumentProcessingError("Document content exceeds the text budget");
-    if (job.input.sheets !== undefined && JSON.stringify(job.input.sheets).length > MAX_DOCUMENT_BYTES) throw new DocumentProcessingError("Workbook input exceeds the byte budget");
+    if (job.input.sheets !== undefined && Buffer.byteLength(JSON.stringify(job.input.sheets), "utf8") > MAX_DOCUMENT_BYTES) throw new DocumentProcessingError("Workbook input exceeds the byte budget");
     const total = Object.values(job.input.assets ?? {}).reduce((sum, asset) => sum + asset.bytes.byteLength, 0);
     if (total > MAX_DOCUMENT_ASSET_BYTES) throw new DocumentProcessingError("Document image assets exceed the byte limit");
   }

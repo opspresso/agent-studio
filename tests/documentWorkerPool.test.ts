@@ -23,6 +23,16 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("document worker pool", () => {
+  it("counts workbook input as UTF-8 bytes before spawning", async () => {
+    const spawn = vi.fn((): ChildProcess => { throw new Error("must not spawn"); });
+    const pool = new DocumentWorkerPool(spawn);
+    await expect(pool.execute("create", {
+      format: "xlsx", title: "test", created: "2026-09-07T00:00:00.000Z",
+      sheets: [{ name: "Sheet", rows: [["가".repeat(Math.floor(MAX_DOCUMENT_BYTES / 3) + 1)]] }],
+    })).rejects.toThrow("Workbook input exceeds the byte budget");
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it("bounds concurrency and releases slots only after process exit", async () => {
     const { pool, children, spawn } = setup();
     const jobs = Array.from({ length: MAX_DOCUMENT_WORKERS + MAX_QUEUED_DOCUMENT_JOBS }, () => pool.execute("extract", input));
