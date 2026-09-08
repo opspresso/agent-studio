@@ -2,7 +2,8 @@
 
 상태: **구현 중**. 전사 포트·결과 검증과 OpenAI 호환 multipart 어댑터를 구현했다.
 영속 작업 repository는 발생당 admission·source dedup·lease·checkpoint·취소·재시도를 제공한다.
-모델 설정 조립·worker 실행·도구 연결은 아직 없다.
+worker 단계 실행기는 가져오기·전사·선택적 후처리·저장과 heartbeat·중간 receipt·재시도를 제공한다.
+모델 설정 조립·실제 단계 어댑터 연결·worker 기동·도구 연결은 아직 없다.
 파일의 달력 일·월 보존 계산은 `src/application/artifact/fileRetention.ts`가 제공하며 실제 삭제 스윕은 아직 없다.
 아래 도구 이름은 구현할 계약이며 현재 제공 기능이 아니다.
 구현은 [마일스톤](../MILESTONES.md#audio-processing-jobs)에서 추적한다.

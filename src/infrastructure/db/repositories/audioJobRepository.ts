@@ -64,7 +64,7 @@ export const audioJobRepository: AudioJobRepository = {
     }
     const job: AudioJob = {
       ...input, id: admission.id, revision: 1, status: "queued", stage: "importing",
-      createdAt: admission.now, updatedAt: admission.now, dueAt: admission.now, attempt: 0, receipts: {},
+      createdAt: admission.now, updatedAt: admission.now, dueAt: admission.now, attempt: 0, failures: 0, receipts: {},
     };
     try {
       await transact([
@@ -171,7 +171,7 @@ export const audioJobRepository: AudioJobRepository = {
     checkLimit(maxActive);
     const job = await this.get(projectName, id);
     if (!job || job.revision !== revision || !["blocked", "failed"].includes(job.status)) return null;
-    const next: AudioJob = { ...job, status: "queued", revision: revision + 1, updatedAt: now, dueAt: now };
+    const next: AudioJob = { ...job, status: "queued", revision: revision + 1, updatedAt: now, dueAt: now, failures: 0 };
     delete next.lease;
     delete next.errorCode;
     try {

@@ -6,6 +6,7 @@ export type AudioSource = { kind: "file"; fileId: string } | { kind: "source"; s
 
 /** Stable input: retries never choose a different model, identity, or destination. */
 export interface AudioJobInput {
+  task?: "import" | "transcribe" | "process";
   projectName: string;
   userEmail: string;
   source: AudioSource;
@@ -29,6 +30,8 @@ export interface AudioJob extends AudioJobInput {
   /** Worker fencing token; replaced on every new claim, independent of the job revision. */
   lease?: { token: string; until: string };
   attempt: number;
+  /** Consecutive failures of the current stage, reset after a successful stage. */
+  failures: number;
   fileId?: string;
   transcriptRef?: string;
   draftRef?: string;
@@ -44,7 +47,7 @@ export function isAudioJobTerminal(status: AudioJobStatus): boolean {
 }
 
 export type AudioJobCheckpoint = Pick<AudioJob, "status" | "stage" | "dueAt"> &
-  Partial<Pick<AudioJob, "fileId" | "transcriptRef" | "draftRef" | "receipts" | "errorCode">>;
+  Partial<Pick<AudioJob, "fileId" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "failures">>;
 
 export interface AudioJobRepository {
   submit(input: AudioJobInput, admission: {
