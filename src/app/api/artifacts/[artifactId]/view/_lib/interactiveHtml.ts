@@ -39,7 +39,10 @@ iframe { display: block; width: 100%; height: 100%; border: 0; background: white
     const content = new DOMParser().parseFromString(frame.srcdoc, 'text/html');
     const monitor = document.createElement('script');
     monitor.textContent = "(() => { const notify = () => parent.postMessage({kind: 'artifact-script-error'}, '*'); addEventListener('error', event => { if (event instanceof ErrorEvent) notify(); }); addEventListener('unhandledrejection', notify); })();";
-    Document.prototype.querySelector.call(content, 'head').prepend(monitor);
+    // A srcdoc otherwise resolves fragment links against the wrapper URL.
+    const base = document.createElement('base');
+    base.href = 'about:srcdoc';
+    Document.prototype.querySelector.call(content, 'head').prepend(base, monitor);
     frame.srcdoc = '<!doctype html>' + Document.prototype.querySelector.call(content, 'html').outerHTML;
     stage.replaceChildren(frame);
     stopped.hidden = true;

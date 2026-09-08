@@ -30,7 +30,7 @@ export const INTERACTIVE_HTML_VIEW_POLICY = [
   "worker-src 'none'",
   "object-src 'none'",
   "form-action 'none'",
-  "base-uri 'none'",
+  "base-uri about:",
   "frame-ancestors 'self'",
 ].join("; ");
 

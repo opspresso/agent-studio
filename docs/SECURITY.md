@@ -1000,7 +1000,8 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   - **격리와 통신 제한의 범위를 구분한다.** HTML의 `INTERACTIVE_HTML_VIEW_POLICY`는
     fetch/XHR/WebSocket, 외부 script·CSS·image·font, worker, 외부 프레임 이동과 폼 제출을
     제한한다. `frame-src 'none'`은 inline srcdoc을 허용하면서 네트워크 frame 탐색을 막는다.
-    카메라·마이크·위치 등은 Permissions Policy로 제한한다. 이 정책은 WebRTC 등 모든
+    내부 목차 링크는 기준 URL을 `about:srcdoc`으로 지정해 처리하며, `base-uri about:`으로
+    외부 기준 URL을 거절한다. 카메라·마이크·위치 등은 Permissions Policy로 제한한다. 이 정책은 WebRTC 등 모든
     브라우저 통신이나 CPU·메모리를 강제 격리하지 않는다. 따라서 신뢰하는 HTML만 명시적으로
     실행하도록 안내한다. 완전한 무통신·자원 격리가 필요하면 별도의 실행 환경이 필요하다.
     iframe에서 보고한 오류는 현재 iframe의 Window를 확인한 뒤 고정 안내로만 표시한다.

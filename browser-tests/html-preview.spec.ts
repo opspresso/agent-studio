@@ -129,3 +129,55 @@ test("handles document property names without executing source in the wrapper", 
   await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   await expect(page.frameLocator("#stage iframe").locator("#ok")).toHaveText("ready");
 });
+
+test("keeps fragment links inside the document without navigating the frame", async ({ page }) => {
+  documentSource = '<a href="#details">Jump to details</a><div style="height:1600px"></div><h2 id="details">Details</h2>';
+  await page.goto(`${base}/view`);
+  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
+  const content = page.frameLocator("#stage iframe");
+  await content.getByRole("link", { name: "Jump to details" }).click();
+  await expect(content.locator("#details")).toBeInViewport();
+  expect(requests).toEqual(["/view"]);
+});
+
+test("renders local SVG symbol references", async ({ page }) => {
+  documentSource = '<svg width="100" height="100"><defs><g id="shape"><rect width="40" height="30" fill="red"/></g></defs><use href="#shape"/></svg>';
+  await page.goto(`${base}/view`);
+  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
+  const use = page.frameLocator("#stage iframe").locator("use");
+  await expect.poll(() => use.evaluate((element: SVGGraphicsElement) => element.getBBox().width)).toBe(40);
+  expect(requests).toEqual(["/view"]);
+});
+
+test("preserves custom fragment handlers and Unicode targets", async ({ page }) => {
+  documentSource = '<a href="#missing" onclick="event.preventDefault();document.querySelector(\'#custom\').textContent=\'handled\'">Custom</a><output id="custom"></output><a href="#설명">Details</a><div style="height:1600px"></div><h2 id="설명">Target</h2>';
+  await page.goto(`${base}/view`);
+  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
+  const content = page.frameLocator("#stage iframe");
+  await content.getByRole("link", { name: "Custom", exact: true }).click();
+  await expect(content.locator("#custom")).toHaveText("handled");
+  await content.getByRole("link", { name: "Details", exact: true }).click();
+  await expect(content.locator("#설명")).toBeInViewport();
+  expect(requests).toEqual(["/view"]);
+});
+
+
+test("honors window-level custom fragment navigation", async ({ page }) => {
+  documentSource = '<a href="#unused">Custom link</a><output id="result"></output><script>addEventListener("click",event=>{event.preventDefault();document.getElementById("result").textContent="handled"})</script>';
+  await page.goto(`${base}/view`);
+  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
+  const content = page.frameLocator("#stage iframe");
+  await content.getByRole("link", { name: "Custom link" }).click();
+  await expect(content.locator("#result")).toHaveText("handled");
+  expect(await content.locator("body").evaluate(() => location.hash)).toBe("");
+});
+
+test("rejects an external base URL after allowing the local srcdoc base", async ({ page }) => {
+  documentSource = '<output id="base"></output><script>document.querySelector("base").href="https://attacker.example/";document.getElementById("base").textContent=document.baseURI</script>';
+  await page.goto(`${base}/view`);
+  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
+  const content = page.frameLocator("#stage iframe");
+  await expect(content.locator("#base")).not.toBeEmpty();
+  await expect(content.locator("#base")).not.toContainText("attacker.example");
+  expect(requests).toEqual(["/view"]);
+});

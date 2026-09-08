@@ -30,7 +30,7 @@ describe("HTML artifact isolation", () => {
     expect(ARTIFACT_VIEW_POLICY).not.toContain("allow-scripts");
     expect(INTERACTIVE_HTML_VIEW_POLICY).toContain("sandbox allow-scripts;");
     expect(INTERACTIVE_HTML_VIEW_POLICY).not.toMatch(/allow-same-origin|allow-popups|allow-top-navigation|allow-forms|unsafe-eval/);
-    for (const rule of ["default-src 'none'", "connect-src 'none'", "frame-src 'none'", "worker-src 'none'", "form-action 'none'", "base-uri 'none'"]) {
+    for (const rule of ["default-src 'none'", "connect-src 'none'", "frame-src 'none'", "worker-src 'none'", "form-action 'none'", "base-uri about:"]) {
       expect(INTERACTIVE_HTML_VIEW_POLICY).toContain(rule);
     }
   });
