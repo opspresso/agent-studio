@@ -19,7 +19,7 @@ function jobOf(item: Item | null): AudioJob | null {
 
 function row(job: AudioJob): Item {
   return {
-    ...keys.audioJob(job.projectName, job.id), entityType: "AudioJob", job,
+    ...keys.audioJob(job.projectName, job.id), entityType: "AudioJob", job, userEmail: job.userEmail,
     ...(!isAudioJobTerminal(job.status) ? keys.audioJobDueIndex(job.dueAt, job.projectName, job.id) : {}),
   };
 }
@@ -92,10 +92,11 @@ export const audioJobRepository: AudioJobRepository = {
 
   async get(projectName, id) { return jobOf(await getItem(keys.audioJob(projectName, id))); },
 
-  async list(projectName, limit, after) {
+  async list(projectName, limit, after, userEmail) {
     checkLimit(limit);
     return (await queryItems({ pk: keys.projectPartition(projectName), sk: { prefix: keys.audioJobPrefix() },
-      limit, ...(after ? { after: keys.audioJob(projectName, after).SK } : {}) })).map((item) => jobOf(item)!);
+      limit, ...(after ? { after: keys.audioJob(projectName, after).SK } : {}),
+      ...(userEmail ? { filter: { userEmail } } : {}) })).map((item) => jobOf(item)!);
   },
 
   async due(now, limit) {

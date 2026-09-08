@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { SourceFile, SourceFileRepository } from "@/domain/artifact/sourceFile";
 import { sourceFileObjectKey } from "@/domain/artifact/sourceFile";
 import { SourceObjectExistsError, type SourceObjectStore } from "@/domain/artifact/sourceObjectStore";
+import type { SourceByteStream } from "@/domain/artifact/sourceReference";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { fileExpiresAt } from "./fileRetention";
 
@@ -33,8 +34,13 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       retireAt: fileExpiresAt(existing.storedAt, file.retention) });
   };
   return {
+    async metadata(projectName: string, id: string, userEmail: string): Promise<SourceFile> {
+      const file = await deps.files.get(projectName, id);
+      if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
+      return file;
+    },
     async import(input: Pick<SourceFile, "id" | "projectName" | "userEmail" | "filename" | "mimeType" | "retention">,
-      open: () => Promise<AsyncIterable<Uint8Array>>, signal?: AbortSignal): Promise<SourceFile> {
+      open: (maxBytes: number) => Promise<SourceByteStream>, signal?: AbortSignal): Promise<SourceFile> {
       signal?.throwIfAborted();
       if (!input.id || !input.filename.trim() || input.filename.length > 255 || !input.mimeType ||
         !input.userEmail || /[\r\n\0]/.test(input.filename)) throw new ValidationError("Source file metadata is invalid");
@@ -53,11 +59,12 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       let receipt: { byteSize: number; checksum: string } | undefined;
       let existing = await deps.objects.stat(key);
       if (!existing) {
+        const body = await open(MAX_SOURCE_BYTES);
         try {
-          receipt = await deps.objects.write({ key, body: await open(), mimeType: file.mimeType, maxBytes: MAX_SOURCE_BYTES }, signal);
+          receipt = await deps.objects.write({ key, body, mimeType: file.mimeType, maxBytes: MAX_SOURCE_BYTES }, signal);
         } catch (error) {
           if (!(error instanceof SourceObjectExistsError)) throw error;
-        }
+        } finally { await body.close?.().catch(() => {}); }
         existing = await deps.objects.stat(key);
       }
       if (!existing) throw new ConflictError("Uploaded source object is not available");

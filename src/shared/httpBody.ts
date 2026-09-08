@@ -28,7 +28,7 @@ export class BodyTooLargeError extends Error {
  * skippable: a reader that only counts what arrives is still correct, just
  * wasteful, so an implementation missing this looks like it works.
  */
-async function refuseDeclaredLength(
+export async function refuseDeclaredLength(
   message: Pick<Request | Response, "body" | "headers">,
   maxBytes: number,
 ): Promise<void> {

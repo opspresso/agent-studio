@@ -1,4 +1,5 @@
 import type { FileRetention } from "@/domain/artifact/retention";
+import type { RunActor } from "@/domain/execution/actor";
 
 export type AudioJobStage = "importing" | "transcribing" | "postprocessing" | "storing";
 export type AudioJobStatus = "queued" | "running" | "waiting" | "completed" | "blocked" | "failed" | "cancelled";
@@ -9,6 +10,7 @@ export interface AudioJobInput {
   task?: "import" | "transcribe" | "process";
   projectName: string;
   userEmail: string;
+  actor?: RunActor;
   source: AudioSource;
   /** Hash of source identity, item identity and the explicit processing revision. */
   sourceKey: string;
@@ -54,7 +56,7 @@ export interface AudioJobRepository {
     id: string; now: string; occurrence: string; maxActive: number; maxPerOccurrence: number;
   }): Promise<{ status: "accepted" | "duplicate"; job: AudioJob } | { status: "busy" }>;
   get(projectName: string, id: string): Promise<AudioJob | null>;
-  list(projectName: string, limit: number, after?: string): Promise<AudioJob[]>;
+  list(projectName: string, limit: number, after?: string, userEmail?: string): Promise<AudioJob[]>;
   due(now: string, limit: number): Promise<AudioJob[]>;
   claim(projectName: string, id: string, now: string, token: string, until: string): Promise<AudioJob | null>;
   heartbeat(job: AudioJob, now: string, until: string): Promise<boolean>;

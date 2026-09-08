@@ -40,6 +40,12 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("closes the opened download when storage refuses it before reading", async () => {
+    const close = vi.fn(async () => {});
+    vi.mocked(objects.write).mockRejectedValueOnce(new Error("storage unavailable"));
+    await expect(useCases().import(input, async () => Object.assign(open(), { close }))).rejects.toThrow();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
   it("does not open an upload for a project being deleted", async () => {
     fake.seed([{ ...keys.project("audio"), entityType: "PROJECT", deletingAt: clock.toISOString() }]);
     await expect(useCases().import(input, openBody)).rejects.toThrow();

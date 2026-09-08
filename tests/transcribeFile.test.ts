@@ -21,10 +21,11 @@ function fixture() {
   const config = { transcriber: { transcribe }, segmentSeconds: 1, maxSegmentBytes: 100, settingsKey: "settings-1" };
   const deps: AudioTranscriptionDeps = {
     files: {
+      async metadata() { return metadata; },
       async import(input, open) {
         if (!saved.has(input.id)) {
           const chunks: Uint8Array[] = [];
-          for await (const chunk of await open()) chunks.push(chunk);
+          for await (const chunk of await open(512 * 1024 * 1024)) chunks.push(chunk);
           saved.set(input.id, Buffer.concat(chunks));
         }
         return { ...metadata, ...input };
