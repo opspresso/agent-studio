@@ -55,6 +55,7 @@ const ALLOWED_TAGS = [
   "small",
   "span",
   "strong",
+  "style",
   "sub",
   "summary",
   "sup",
@@ -73,7 +74,7 @@ const ALLOWED_TAGS = [
 ] as const;
 
 const ALLOWED_ATTRIBUTES = {
-  "*": ["aria-*", "class", "dir", "id", "lang", "role", "title"],
+  "*": ["aria-*", "class", "dir", "id", "lang", "role", "style", "title"],
   a: ["href", "rel"],
   blockquote: ["cite"],
   col: ["span"],
@@ -112,7 +113,9 @@ export const ARTIFACT_VIEW_POLICY = [
  * Turn untrusted HTML into a static report.
  *
  * The allowlist keeps document structure and data images, but deliberately has
- * no script, style, metadata, form, embedded browsing context, SVG or MathML.
+ * no script, metadata, form, embedded browsing context, SVG or MathML.
+ * Embedded and inline CSS retain the design. ARTIFACT_VIEW_POLICY must accompany
+ * this HTML: its sandbox blocks scripts and its CSP blocks CSS network requests.
  * Event handlers and every unlisted attribute disappear with them. Links keep
  * only safe schemes and never send this page as their referrer.
  */
@@ -127,6 +130,8 @@ export function sanitizeArtifactHtml(bytes: Uint8Array, mimeType: string): strin
 
   const sanitized = sanitizeHtml(source, {
     allowedTags: [...ALLOWED_TAGS],
+    // Style is permitted only with the sandbox/CSP enforced by the view route.
+    allowVulnerableTags: true,
     allowedAttributes: ALLOWED_ATTRIBUTES,
     allowedSchemes: ["http", "https", "mailto"],
     allowedSchemesByTag: { img: ["data"] },

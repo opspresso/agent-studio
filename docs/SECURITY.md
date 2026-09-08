@@ -995,8 +995,10 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
     쓰였기 때문이다. 원격 이미지도 함께 막힌다(`img-src data:`). 모델이 고른 주소에서 가져오는
     그림은 그 호스트에게 "이 페이지가 열렸다"고, 그리고 누가 열었는지를 알려 준다.
   - **HTML 도 정적 문서로 만든 뒤 보낸다.** `sanitize-html` allowlist 는 제목·문단·목록·표·코드·
-    data 이미지·안전한 링크를 남기고, script·event handler·`meta`·CSS·form·iframe/object·
-    SVG/MathML 을 제거한다. 원문 charset 으로 먼저 해석한 뒤 UTF-8 로 다시 보내므로, sanitizer 를
+    data 이미지·안전한 링크를 남기고, script·event handler·`meta`·form·iframe/object·
+    SVG/MathML 을 제거한다. 문서 내부 `<style>`과 `style` 속성은 보존해 디자인을 유지한다.
+    CSS의 외부 stylesheet·font·image 요청은 CSP가 차단하며, 이 HTML은 반드시
+    `ARTIFACT_VIEW_POLICY`와 함께 제공한다. 원문 charset 으로 먼저 해석한 뒤 UTF-8 로 다시 보내므로, sanitizer 를
     우회하려고 잘못된 인코딩을 섞은 바이트는 열리지 않는다. 외부 링크는 사용자가 직접 눌러야만
     이동하며 `Referrer-Policy: no-referrer` 와 `rel=noreferrer` 를 함께 적용한다.
   - **모든 view 가 같은 script 없는 정책을 받는다.** `sandbox` 에 어떤 `allow-*` 도 붙이지 않고

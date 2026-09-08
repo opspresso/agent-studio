@@ -23,8 +23,24 @@ describe("HTML artifact safety", () => {
 
     expect(page).toContain("<h1>Quarterly report</h1>");
     expect(page).toContain("<table><tr><th>Cost</th><td>$12</td></tr></table>");
-    expect(page).not.toMatch(/<script|onload=|<meta|<style|<form|<input|<iframe/i);
+    expect(page).not.toMatch(/<script|onload=|<meta|<form|<input|<iframe/i);
     expect(page).not.toContain("attacker.example");
+  });
+
+  it("preserves embedded and inline CSS for designed documents", () => {
+    const page = sanitize('<html><head><style>body { background: #f9f9f9; max-width: 900px } @media (max-width: 600px) { table { width: 100% } }</style></head><body><h1 style="color: #333; padding: 20px">Report</h1></body></html>');
+    expect(page).toContain('<style>body { background: #f9f9f9; max-width: 900px }');
+    expect(page).toContain('@media (max-width: 600px)');
+    expect(page).toMatch(/style="[^"]*color:#333/);
+    expect(page).toMatch(/style="[^"]*padding:20px/);
+  });
+
+  it("removes scripts escaping a style element and external stylesheet tags", () => {
+    const page = sanitize('<style>body { color: red }</style><script>alert(1)</script><link rel="stylesheet" href="https://attacker.example/style.css"><p onclick="alert(1)" style="color: blue">Report</p>');
+    expect(page).not.toMatch(/<script|<link|onclick|alert\(1\)/);
+    expect(ARTIFACT_VIEW_POLICY).toContain("style-src 'unsafe-inline'");
+    expect(ARTIFACT_VIEW_POLICY).toContain("default-src 'none'");
+    expect(ARTIFACT_VIEW_POLICY).not.toContain("https:");
   });
 
   it("keeps data images and safe links without leaking a referrer", () => {
