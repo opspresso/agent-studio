@@ -34,6 +34,7 @@ iframe { display: block; width: 100%; height: 100%; border: 0; background: white
   const stopped = document.getElementById('stopped');
   const stop = document.getElementById('stop');
   const run = document.getElementById('restart');
+  let errorShown = false;
   const restart = () => {
     const frame = template.content.firstElementChild.cloneNode(true);
     const content = new DOMParser().parseFromString(frame.srcdoc, 'text/html');
@@ -44,6 +45,7 @@ iframe { display: block; width: 100%; height: 100%; border: 0; background: white
     base.href = 'about:srcdoc';
     Document.prototype.querySelector.call(content, 'head').prepend(base, monitor);
     frame.srcdoc = '<!doctype html>' + Document.prototype.querySelector.call(content, 'html').outerHTML;
+    errorShown = false;
     stage.replaceChildren(frame);
     stopped.hidden = true;
     stop.disabled = false;
@@ -57,7 +59,8 @@ iframe { display: block; width: 100%; height: 100%; border: 0; background: white
   });
   window.addEventListener('message', event => {
     const frame = stage.querySelector('iframe');
-    if (frame && event.source === frame.contentWindow && event.data?.kind === 'artifact-script-error') {
+    if (!errorShown && frame && event.source === frame.contentWindow && event.data?.kind === 'artifact-script-error') {
+      errorShown = true;
       stopped.textContent = stopped.dataset.error;
       stopped.hidden = false;
     }

@@ -149,6 +149,30 @@ test("renders local SVG symbol references", async ({ page }) => {
   expect(requests).toEqual(["/view"]);
 });
 
+test("updates the fixed error notice only once per execution", async ({ page }) => {
+  documentSource = '<button onclick="for(let i=0;i<50;i++)parent.postMessage({kind:\'artifact-script-error\'},\'*\');parent.postMessage({kind:\'batch-finished\'},\'*\')">Report errors</button>';
+  await page.goto(`${base}/view`);
+  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
+  const notices = page.evaluate(() => new Promise<number>((resolve) => {
+    let mutations = 0;
+    const observer = new MutationObserver((records) => { mutations += records.length; });
+    observer.observe(document.querySelector("#stopped")!, { childList: true });
+    window.addEventListener("message", function finish(event) {
+      if (event.data?.kind !== "batch-finished") return;
+      observer.disconnect();
+      window.removeEventListener("message", finish);
+      resolve(mutations);
+    });
+  }));
+  await page.frameLocator("#stage iframe").getByRole("button", { name: "Report errors" }).click();
+  expect(await notices).toBe(1);
+  await page.getByRole("button", { name: "Restart", exact: true }).click();
+  await expect(page.locator("#stopped")).toBeHidden();
+  await page.frameLocator("#stage iframe").getByRole("button", { name: "Report errors" }).click();
+  await expect(page.locator("#stopped")).toContainText("script error");
+});
+
+
 test("preserves custom fragment handlers and Unicode targets", async ({ page }) => {
   documentSource = '<a href="#missing" onclick="event.preventDefault();document.querySelector(\'#custom\').textContent=\'handled\'">Custom</a><output id="custom"></output><a href="#설명">Details</a><div style="height:1600px"></div><h2 id="설명">Target</h2>';
   await page.goto(`${base}/view`);
