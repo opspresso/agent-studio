@@ -1067,6 +1067,11 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "calendar month expiration of stored files",
+    pattern: /\.setUTCMonth\(/,
+    owner: "src/application/artifact/fileRetention.ts",
+  },
+  {
     what: "scoping tool calls to their delegation",
     pattern: /export function toolCallKey\b/,
     owner: "src/domain/llm/types.ts",

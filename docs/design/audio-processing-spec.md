@@ -2,6 +2,7 @@
 
 상태: **구현 중**. 전사 포트·결과 검증과 OpenAI 호환 multipart 어댑터를 구현했다.
 모델 설정 조립·영속 작업·도구 연결은 아직 없다.
+파일의 달력 일·월 보존 계산은 `src/application/artifact/fileRetention.ts`가 제공하며 실제 삭제 스윕은 아직 없다.
 아래 도구 이름은 구현할 계약이며 현재 제공 기능이 아니다.
 구현은 [마일스톤](../MILESTONES.md#audio-processing-jobs)에서 추적한다.
 운영 Agent 생성·인증 연결·스케줄 활성화는 개발 검증 후 수행한다.
