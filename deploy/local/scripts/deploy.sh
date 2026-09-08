@@ -12,9 +12,6 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-: "${AWS_REGION:=ap-northeast-2}"
-export AWS_REGION
-
 if [[ ! -f .env ]]; then
   cp .env.example .env
   echo "Created .env from .env.example — review it (profiles, keys), then rerun."
@@ -30,34 +27,13 @@ if ! grep -q "^MCP_INTERNAL_HOST_SUFFIXES=.*agent-mcps\.svc\.cluster\.local" ../
   echo "  MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local" >&2
 fi
 
-value_in() {  # value_in FILE VAR — the value a KEY=VALUE file holds, or nothing
-  [[ -f "$1" ]] && grep -E "^$2=" "$1" | head -1 | cut -d= -f2- || true
-}
-
-# Refuse enabled services without their own credentials; never print values.
-require_value() {
-  [[ -n "$(value_in .env "$1")" ]] || { echo "$1 missing in deploy/local/.env" >&2; exit 1; }
-}
+# Compose owns dotenv quoting, interpolation and shell overrides.
 services=$(docker compose config --services)
-if grep -qx mcp-argocd <<< "$services"; then
-  require_value ARGOCD_BASE_URL
-  require_value ARGOCD_API_TOKEN
-fi
-if grep -qx mcp-grafana <<< "$services"; then
-  require_value GRAFANA_URL
-  require_value GRAFANA_SERVICE_ACCOUNT_TOKEN
-fi
-if grep -qx mcp-brave-search <<< "$services"; then
-  require_value BRAVE_API_KEY
-fi
-if grep -qx mcp-kubernetes <<< "$services"; then
-  require_value KUBECONFIG_PATH
-  [[ -f "$(value_in .env KUBECONFIG_PATH)" ]] || { echo "KUBECONFIG_PATH must name an existing file" >&2; exit 1; }
-fi
 if [[ -z "$services" ]]; then
   echo "No profiles enabled. Configure COMPOSE_PROFILES in deploy/local/.env."
   exit 0
 fi
+docker compose config --format json | node scripts/check-config.mts
 
 # --- Up -------------------------------------------------------------------
 
