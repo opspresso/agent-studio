@@ -14,6 +14,8 @@ import type { ChannelToolDef } from "@/domain/llm/channel";
 import { MAX_TOOLS_PER_REQUEST } from "@/domain/llm/toolLimits";
 import type { ChatMessageInput, EngineChunk, McpToolResult } from "@/domain/llm/types";
 import { SAVABLE_TYPES } from "@/domain/artifact/types";
+import { AUDIO_TOOL_DEFS } from "@/application/audio/toolDefinitions";
+import { AUDIO_TOOL_NAMES } from "@/domain/llm/toolNames";
 import { parseImageDataUrl } from "@/domain/llm/types";
 import type { RunCaller } from "@/domain/execution/actor";
 import { formatRunClock } from "@/shared/date";
@@ -230,6 +232,7 @@ export interface AgentCapabilityDeps {
   fetchUrl?: UrlFetcher;
   saveFile?: FileSaver;
   fileTool?: (args: Record<string, unknown>) => Promise<McpToolResult>;
+  audioTools?: (tool: string, args: Record<string, unknown>) => Promise<McpToolResult>;
   /**
    * Serves the Slack read tools, or absent when this run has no workspace
    * to look at. One function rather than four deps: the tools differ only in
@@ -1050,6 +1053,7 @@ export interface AgentToolsInput {
   /** Whether anything in this deployment would keep a file the run wrote. */
   withSaveFileTool: boolean;
   withFileTool?: boolean;
+  withAudioTools?: boolean;
   /** Whether this run may read the Slack workspace its project's bot is in. */
   withSlackTools: boolean;
   /**
@@ -1108,6 +1112,10 @@ export function buildAgentTools(input: AgentToolsInput): {
   if (input.withFileTool) {
     tools.push(FILE_TOOL_DEF);
     builtinNames.add(FILE_TOOL_NAME);
+  }
+  if (input.withAudioTools) {
+    tools.push(...AUDIO_TOOL_DEFS);
+    for (const name of AUDIO_TOOL_NAMES) builtinNames.add(name);
   }
   if (input.withSlackTools) {
     tools.push(...SLACK_TOOL_DEFS);
@@ -1259,6 +1267,7 @@ export function assembleAgentRun(
     canLoadSkills,
     withSaveFileTool,
     withFileTool: Boolean(deps.fileTool),
+    withAudioTools: Boolean(deps.audioTools),
     withImageTool: Boolean(deps.generateImage),
     withEditTool: canEdit,
     withImageTransfer: canTransfer,

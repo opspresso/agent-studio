@@ -1,4 +1,4 @@
-import { FILE_TOOL_NAME } from "@/domain/llm/toolNames";
+import { FILE_TOOL_NAME, AUDIO_TOOL_NAMES } from "@/domain/llm/toolNames";
 /**
  * LLM engine. Runs prompt and agent executions over a single
  * OpenAI-compatible channel:
@@ -1332,6 +1332,8 @@ async function dispatchConcurrentTools(
     }
   }
   const concurrent = [
+    ...prepared.filter((entry) => entry.builtin && !entry.malformed && !entry.client && deps.audioTools && AUDIO_TOOL_NAMES.includes(entry.call.name))
+      .map((entry) => ({ entry, kind: "audio" as const })),
     ...mcpCalls.map((entry) => ({ entry, kind: "mcp" as const })),
     ...fetchCalls.map((entry) => ({ entry, kind: "fetch" as const })),
     ...saveCalls.map((entry) => ({ entry, kind: "save" as const })),
@@ -1341,6 +1343,7 @@ async function dispatchConcurrentTools(
     const results = await mapWithLimit(concurrent, MAX_PARALLEL_TOOL_CALLS, async ({ entry, kind }) => {
       const fetch = kind === "fetch";
       try {
+        if (kind === "audio") return { ok: await deps.audioTools!(entry.call.name, entry.displayArgs) };
         if (kind === "file") return { ok: await deps.fileTool!(entry.displayArgs) };
         if (kind === "save") {
           const text = (value: unknown) => (typeof value === "string" ? value : "");
@@ -1378,6 +1381,7 @@ async function dispatchConcurrentTools(
         if (fetch) {
           return { ok: { text: `Error: could not read that address — ${errorMessage(error)}` } };
         }
+        if (kind === "audio") return { ok: { text: "Error: audio operation failed." } };
         if (kind === "save" || kind === "file") {
           return { ok: { text: `Error: that file could not be kept — ${errorMessage(error)}` } };
         }

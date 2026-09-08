@@ -187,6 +187,8 @@ export interface VersionParameters {
    * into things by the text it reads.
    */
   urlFetch?: boolean;
+  /** Opt into durable source-file and audio tools when storage and caller identity are available. */
+  audioProcessing?: boolean;
   /**
    * Whether this version's runs may read the Slack workspace its project's bot
    * is installed in — channel history, threads, who a user id is.

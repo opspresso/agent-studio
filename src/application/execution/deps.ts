@@ -11,7 +11,7 @@ import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
 import type { LlmChannel } from "@/domain/llm/channel";
 import type { ChannelToolDef } from "@/domain/llm/channel";
-import type { ChatMessageInput, EngineParameters } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
@@ -26,7 +26,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { HttpResourceReader } from "@/domain/net/httpResource";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation, RunOrigin } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
 import type { SlackWorkspaceReader } from "@/domain/slack/reader";
 
@@ -61,6 +61,9 @@ export interface ExecutionDeps extends RunBracketDeps {
   documents: DocumentExtractor;
   documentRenderer?: DocumentRenderer;
   documentEditor?: DocumentEditor;
+  audioTools?: (projectName: string, origin: RunOrigin) => Promise<
+    ((tool: string, args: Record<string, unknown>) => Promise<McpToolResult>) | undefined
+  >;
   /**
    * A reader for the Slack workspace this project's bot is installed in, or
    * null when it has no enabled bot.
@@ -176,6 +179,8 @@ export interface ExecuteProjectInput {
   variables?: Record<string, string>;
   messages: ChatMessageInput[];
   actor?: RunActor;
+  /** Server-resolved user identity for non-user entry points such as schedules. */
+  ownerEmail?: string;
   /** See {@link ExecuteVersionInput.caller}. */
   caller?: RunCaller;
   /** See {@link ExecuteVersionInput.conversation}. */
@@ -221,7 +226,7 @@ export function toRunInput(
   input: ExecuteProjectInput,
 ): Pick<
   ExecuteAgentInput,
-  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal"
+  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal" | "ownerEmail"
 > {
   return {
     project: input.project,
@@ -230,6 +235,7 @@ export function toRunInput(
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
     ...(input.conversation ? { conversation: input.conversation } : {}),
+    ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),
     ...(input.clientTools ? { clientTools: input.clientTools } : {}),
     signal: input.signal,
   };

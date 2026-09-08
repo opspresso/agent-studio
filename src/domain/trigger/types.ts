@@ -98,6 +98,8 @@ export interface WebhookTrigger extends TriggerBase {
  */
 export interface ScheduleTrigger extends TriggerBase {
   kind: "schedule";
+  /** Captured from the authenticated owner when personal execution is explicitly enabled. */
+  executionEmail?: string;
   /** Five-field cron expression, read in `timezone`. `src/domain/trigger/cron.ts` evaluates it. */
   cron: string;
   /** IANA zone the cron fields are read in, e.g. `Asia/Seoul`. */

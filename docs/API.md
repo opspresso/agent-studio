@@ -1765,3 +1765,12 @@ JSON이며 text, 구간, model, coverage, 원본 checksum과 사용량 receipt �
 
 202는 작업 수락이다. 별도 worker가 처리하고 완료 상태를 GET으로 확인한다. API 연결이 끊겨도
 작업은 유지된다. 원본은 설정한 기간 후 삭제하며 작업·중복 방지 기록은 유지한다.
+
+Agent 버전의 `parameters.audioProcessing=true`는 `ImportFile`, `TranscribeAudio`, `AudioJob`을
+선택적으로 제공한다. 도구는 현재 실행의 사용자·프로젝트·발생 ID에 바인딩되며 임의 email이나
+raw URL을 받지 않는다. AudioJob의 read는 최대 20,000자씩 Unicode 문자 경계를 보존해 전사문을 반환한다.
+
+Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
+관리자도 다른 소유자를 대신해 켤 수 없다. `false`는 저장한 email을 지우고, 생략은 기존 값을
+유지한다. Webhook에는 이 옵션을 사용할 수 없다. Admission과 실행 직전에 현재 소유권과 member
+상태를 확인한다. actor는 schedule로 유지하며 검증된 email만 MCP `X-User-Email`로 전달한다.

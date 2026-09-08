@@ -14,6 +14,7 @@ import {
   repairLostRuns,
 } from "@/application/trigger/repairLostRuns";
 import { executeFiring } from "@/application/trigger/runTrigger";
+import { toRunInput } from "@/application/execution/deps";
 import type { FiringDeps } from "@/application/trigger/deps";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
@@ -229,6 +230,38 @@ async function scanAndExecute(f: Fixture, at = AT) {
 }
 
 describe("scanSchedules", () => {
+  it("carries an explicitly authorized owner email without changing the schedule actor", async () => {
+    const f = fixture({ schedules: [schedule({ executionEmail: project.ownerEmail })] });
+    f.deps.executionUserActive = async () => true;
+    let email: string | undefined;
+    const original = f.deps.run;
+    f.deps.run = async function* (input) { email = input.userEmail; yield* original(input); };
+    const result = await scanAndExecute(f);
+    expect(result.summary.fired).toBe(1);
+    expect(email).toBe(project.ownerEmail);
+    expect(f.runs[0]?.actorKind).toBe("schedule");
+    expect(toRunInput({ project, version, messages: [], ownerEmail: email }).ownerEmail).toBe(email);
+  });
+
+  it("does not admit a schedule whose delegated user is inactive", async () => {
+    const f = fixture({ schedules: [schedule({ executionEmail: project.ownerEmail })] });
+    f.deps.executionUserActive = async () => false;
+    const result = await scanAndExecute(f);
+    expect(result.firings).toHaveLength(0);
+    expect(f.runs).toHaveLength(0);
+  });
+
+  it("rechecks ownership after admission and before dispatch", async () => {
+    const f = fixture({ schedules: [schedule({ executionEmail: project.ownerEmail })] });
+    f.deps.executionUserActive = async () => true;
+    const result = await scanSchedules(f.deps, AT);
+    expect(result.firings).toHaveLength(1);
+    f.deps.projects.get = async () => ({ ...project, ownerEmail: "new-owner@example.com" });
+    const firing = result.firings[0]!;
+    await executeFiring(f.deps, firing, scheduleInput(firing.trigger));
+    expect(f.runs).toHaveLength(0);
+    expect(f.rows.at(-1)?.status).toBe("failed");
+  });
   it("claims a due occurrence, runs it as the schedule actor, and finishes the row", async () => {
     const f = fixture();
     const { summary } = await scanAndExecute(f);

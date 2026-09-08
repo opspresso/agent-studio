@@ -4,7 +4,7 @@ import { validateTranscription, type TranscriptionPort, type TranscriptionResult
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { AudioJobStepError, type AudioJobStepContext } from "./processJob";
 
-const MAX_TRANSCRIPT_BYTES = 10 * 1024 * 1024;
+export const MAX_TRANSCRIPT_BYTES = 10 * 1024 * 1024;
 
 export interface AudioTranscript {
   text: string;

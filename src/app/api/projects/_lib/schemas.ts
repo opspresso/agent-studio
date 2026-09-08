@@ -99,6 +99,7 @@ const payloadModeSchema = z.enum(["variables", "message"]);
 // Cron/timezone validity and which kind may carry which field are enforced in
 // `triggerUseCases` — the rules live beside the code that reads them.
 export const createTriggerSchema = z.object({
+  runAsOwner: z.boolean().optional(),
   triggerId: z
     .string()
     .refine(isSlug, `triggerId ${SLUG_RULE}`),
@@ -115,6 +116,7 @@ export const createTriggerSchema = z.object({
 });
 
 export const updateTriggerSchema = z.object({
+  runAsOwner: z.boolean().optional(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
   variables: z.record(z.string().min(1), z.string()).optional(),
@@ -137,6 +139,7 @@ export const versionParametersSchema = z.object({
   jsonSchema: z.record(z.string(), z.unknown()).optional(),
   imageGeneration: z.boolean().optional(),
   urlFetch: z.boolean().optional(),
+  audioProcessing: z.boolean().optional(),
   slackWorkspace: z.boolean().optional(),
   imageModel: z.string().optional(),
   dynamicCapabilities: z.boolean().optional(),

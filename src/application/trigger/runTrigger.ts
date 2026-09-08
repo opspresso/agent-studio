@@ -91,6 +91,14 @@ export function triggerActor(
   return { kind: trigger.kind, id: `${trigger.projectName}:${trigger.triggerId}` };
 }
 
+const EXECUTION_USER_UNAUTHORIZED = "The schedule execution user is no longer authorized.";
+
+async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, project: Project): Promise<boolean> {
+  if (trigger.kind !== "schedule" || !trigger.executionEmail) return true;
+  return trigger.executionEmail === project.ownerEmail && !!deps.executionUserActive &&
+    await deps.executionUserActive(trigger.executionEmail);
+}
+
 /** The overlap lease's key. Distinct from the actor's own slot partition. */
 function overlapKey(projectName: string, triggerId: string): string {
   return `trigger-overlap:${projectName}:${triggerId}`;
@@ -213,6 +221,10 @@ export async function admitRun<T extends Trigger>(
   }
   // Published only. A draft is configuration in progress; an external system
   // firing at one would run whatever an editor happened to have saved.
+  if (!await executionUserAllowed(deps, trigger, project)) {
+    await recordSkip(deps, trigger, extra, EXECUTION_USER_UNAUTHORIZED);
+    return { status: "not-configured" };
+  }
   const version = await resolveRunnableVersion(deps.versions, project);
   if (!version) {
     await recordSkip(deps, trigger, extra, "No published version.");
@@ -360,11 +372,16 @@ export async function executeFiring(
   // anyone would have read either.
   let produced = 0;
   try {
+    if (trigger.kind === "schedule" && trigger.executionEmail) {
+      const current = await deps.projects.get(project.name);
+      if (!current || !await executionUserAllowed(deps, trigger, current)) throw new Error(EXECUTION_USER_UNAUTHORIZED);
+    }
     for await (const chunk of deps.run({
       project,
       version,
       ...input,
       actor: triggerActor(trigger),
+      ...(trigger.kind === "schedule" && trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),
     })) {
       // Top-level only for the answer, like every other consumer: a subagent's
       // text is not the run's answer (see `isTopLevelChunk`). What a child

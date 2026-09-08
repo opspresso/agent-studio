@@ -36,7 +36,8 @@ ffmpeg는 runtime 이미지에 포함돼 있다. 동시에 두 작업을 처리�
 맞는 메모리와 scratch volume을 할당한다. worker 중단 시 작업 lease가 만료된 후 다른 worker가 재개한다.
 `SIGTERM`은 현재 작업을 중단하고 checkpoint를 남긴다. 필수 chat·sign-in 경로는 worker와 무관하다.
 
-후처리·Memory delivery·Agent 도구와 설정 UI는 개발 중이며 현재 HTTP API는 해당 출력 옵션을 거절한다.
+버전의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저장소와 실행 사용자 문맥이 있어야
+도구가 제공된다. 후처리·Memory delivery와 설정 UI는 개발 중이며 해당 출력 옵션은 아직 거절한다.
 
 ## localdev
 

@@ -10,6 +10,9 @@ import { createTranscriber } from "@/infrastructure/llm/transcription";
 import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { createSourceReferenceUseCases } from "@/application/audio/sourceReferences";
 import { createAudioJobUseCases } from "@/application/audio/audioJobUseCases";
+import { createAudioTool } from "@/application/audio/audioTool";
+import { mcpUserEmail } from "@/application/mcpMetadataHeaders";
+import { currentRunContext } from "@/shared/runContext";
 import { createAudioTranscriptionStep } from "@/application/audio/transcribeFile";
 import { AudioJobStepError, processAudioJob } from "@/application/audio/processJob";
 import { openModelCall } from "@/application/run/runBracket";
@@ -1105,6 +1108,16 @@ export const executionDeps: ExecutionDeps = {
   documents: workerDocumentExtractor,
   documentRenderer: workerDocumentRenderer,
   documentEditor: workerDocumentEditor,
+  audioTools: async (projectName, origin) => {
+    if (!config.sourceFilesBucketName) return undefined;
+    const email = mcpUserEmail(origin.actor, origin.userEmail);
+    if (!email) return undefined;
+    const project = origin.ancestry[0] ?? projectName;
+    const runtime = getAudioRuntime();
+    try { await runtime.authorize(project, email); } catch { return undefined; }
+    return createAudioTool(runtime, { projectName: project, userEmail: email,
+      occurrence: currentRunContext()?.runId ?? randomUUID(), actor: origin.actor });
+  },
   // Bound here because deciding *which* workspace a project reads means
   // decrypting its bot token, which is the Slack slice's knowledge — the
   // execution slice takes the finished reader instead.
@@ -1152,6 +1165,10 @@ export const imageDeps: ImageGenerationDeps = executionDeps;
  * own dispatch decision or assemble image chunks.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
+  executionUserActive: async (email) => {
+    const member = await memberRepository.getByEmail(email);
+    return !!member && member.tier !== "guest";
+  },
   triggers: triggerRepository,
   projects: projectRepository,
   versions: versionRepository,
@@ -1166,6 +1183,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       ...(input.variables ? { variables: input.variables } : {}),
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
+      ...(input.userEmail ? { ownerEmail: input.userEmail } : {}),
     });
   },
 };
