@@ -87,6 +87,7 @@ pnpm exec playwright install chromium # HTML 실행 미리보기 테스트용 �
 pnpm test:html-preview # 로컬 HTTP fixture에서 실제 Chromium 기능·격리 검사
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test) 에 대한 리포지토리 + 엔진 검사
 pnpm test:storage     # 로컬 MinIO 임시 bucket의 원본 파일 streaming·조건부 저장·삭제 검사
+pnpm test:audio       # ffmpeg로 실제 MP3 분할·WAV 크기·시간 범위·임시 파일 정리 검사
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)
 pnpm check-models     # 카탈로그 스냅샷과 이 배포의 채널이 서빙하는 것의 차이
 pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원격은 MODELS_CATALOG_URL 설정)

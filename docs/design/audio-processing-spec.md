@@ -4,6 +4,8 @@
 영속 작업 repository는 발생당 admission·source dedup·lease·checkpoint·취소·재시도를 제공한다.
 worker 단계 실행기는 가져오기·전사·선택적 후처리·저장과 heartbeat·중간 receipt·재시도를 제공한다.
 모델 설정 조립·실제 단계 어댑터 연결·worker 기동·도구 연결은 아직 없다.
+ffmpeg 분할 어댑터와 구간별 결과 파일을 재사용하는 전사 단계가 구현돼 있다. 전사 단계의 budget·usage
+콜백과 runtime 모델 resolver는 composition root에 연결해야 한다. `test:audio`는 실제 MP3 변환을 검증한다.
 원본 object store는 streaming multipart·조건부 생성·크기 제한·업로드 취소를 제공한다.
 `pnpm test:storage`는 로컬 MinIO의 임시 비공개 bucket에서 실제 저장·충돌·읽기·삭제를 검증한다.
 파일 inventory와 가져오기·응답 유실 복구·개인 읽기·만료 삭제 유스케이스를 구현했다.
@@ -171,6 +173,12 @@ cursor에 포함하고 남은 내용을 다음 호출로 제공한다. 미완료
 - 분할·변환은 이미지에 포함한 ffmpeg로 수행하고 network·CPU·메모리·scratch disk를 제한한다.
   구간 결과는 각각 보존해 성공한 구간을 재전사하지 않는다. timestamp 없는 모델에 시간이나
   구간 간 동일 화자를 만들어 붙이지 않는다. 무음과 전사 실패를 구분한다.
+
+현재 분할 어댑터는 MP3·WAV·FLAC·Ogg 입력을 허용한 demuxer로 열고 로컬 file protocol만 사용한다.
+한 번 PCM 16 kHz mono로 변환한 뒤 sample 단위로 잘라 WAV를 만든다. 전체 변환 시간 10분, 오디오
+6시간, 단일 ffmpeg allocation 256 MiB 제한을 적용한다. 이는 process 전체 RSS 상한이 아니므로
+worker 배포에서 메모리와 scratch volume 용량을 함께 제한한다. 사용법은
+[ffmpeg 옵션](https://ffmpeg.org/ffmpeg.html)과 [protocol 제한](https://ffmpeg.org/ffmpeg-protocols.html)을 따른다.
 
 ## 작업·재시도·완료 계약
 

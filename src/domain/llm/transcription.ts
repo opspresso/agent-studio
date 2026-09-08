@@ -69,7 +69,10 @@ export function validateTranscription(result: TranscriptionResult): Transcriptio
       invalid("Transcript speaker label is invalid");
     }
   }
-  if (result.usage) {
+  if (result.usage !== undefined) {
+    if (!result.usage || typeof result.usage !== "object" || Array.isArray(result.usage)) {
+      invalid("Transcription usage is invalid");
+    }
     for (const value of [result.usage.inputTokens, result.usage.outputTokens]) {
       if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
         invalid("Transcription token usage is invalid");
