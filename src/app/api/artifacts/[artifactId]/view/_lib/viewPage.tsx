@@ -1,8 +1,8 @@
 /**
  * A stored artifact as a page a reader can open.
  *
- * `text/html` never comes through here — `htmlSafety.ts` decodes and sanitizes
- * it separately. Everything else is a file a browser would save, and this is
+ * `text/html` never comes through here — `interactiveHtml.ts` places it inside
+ * a sandboxed iframe. Everything else is a file a browser would save, and this is
  * what makes View mean the same thing for all of them: the reader presses it
  * and gets something to look at, rather than learning that one kind of report
  * opens and the rest land in Downloads.
@@ -20,8 +20,8 @@
  * raw HTML in the source as *text* rather than markup and strips dangerous URL
  * schemes, so the page carries no script by construction.
  *
- * Nothing built here has script, and `htmlSafety.ts` strips it from HTML too.
- * Every view therefore receives the same sandbox with no `allow-*` grant. SVG
+ * Nothing built here has script, so these static views receive a sandbox
+ * with no `allow-*` grant. HTML has a separate interactive wrapper. SVG
  * is drawn through `<img>` rather than inlined: an SVG loaded as an image cannot
  * run script or fetch anything, by specification, before any header has a say.
  *
@@ -44,6 +44,7 @@ import remarkGfm from "remark-gfm";
 import type { InlineView } from "@/domain/artifact/types";
 import { cutUtf8Bytes, decodeUtf8Text } from "@/shared/utf8Text";
 import { parseCsv } from "./csv";
+import { escapeHtml } from "./htmlSafety";
 
 /**
  * How many rows of a table are drawn.
@@ -180,17 +181,6 @@ li { margin: 0.25rem 0; }
 }
 @media print { body { padding: 0; } }
 `;
-
-const ESCAPES: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-};
-
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"]/g, (char) => ESCAPES[char]!);
-}
 
 /** One `<td>`/`<th>`, with whatever the cell held escaped into it. */
 function cell(tag: "td" | "th", value: string): string {

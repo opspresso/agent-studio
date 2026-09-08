@@ -1,103 +1,4 @@
-import sanitizeHtml from "sanitize-html";
-
-const ALLOWED_TAGS = [
-  "a",
-  "abbr",
-  "address",
-  "article",
-  "aside",
-  "b",
-  "blockquote",
-  "body",
-  "br",
-  "caption",
-  "cite",
-  "code",
-  "col",
-  "colgroup",
-  "dd",
-  "del",
-  "details",
-  "dfn",
-  "div",
-  "dl",
-  "dt",
-  "em",
-  "figcaption",
-  "figure",
-  "footer",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "head",
-  "header",
-  "hgroup",
-  "hr",
-  "html",
-  "i",
-  "img",
-  "ins",
-  "kbd",
-  "li",
-  "main",
-  "mark",
-  "nav",
-  "ol",
-  "p",
-  "pre",
-  "q",
-  "s",
-  "samp",
-  "section",
-  "small",
-  "span",
-  "strong",
-  "style",
-  "sub",
-  "summary",
-  "sup",
-  "table",
-  "tbody",
-  "td",
-  "tfoot",
-  "th",
-  "thead",
-  "time",
-  "title",
-  "tr",
-  "u",
-  "ul",
-  "var",
-] as const;
-
-const ALLOWED_ATTRIBUTES = {
-  "*": ["aria-*", "class", "dir", "id", "lang", "role", "style", "title"],
-  a: ["href", "rel"],
-  blockquote: ["cite"],
-  col: ["span"],
-  colgroup: ["span"],
-  del: ["cite", "datetime"],
-  details: ["open"],
-  img: ["alt", "height", "loading", "src", "width"],
-  ins: ["cite", "datetime"],
-  li: ["value"],
-  ol: ["reversed", "start", "type"],
-  q: ["cite"],
-  td: ["colspan", "headers", "rowspan"],
-  th: ["abbr", "colspan", "headers", "rowspan", "scope"],
-  time: ["datetime"],
-};
-
-/**
- * The one policy for every artifact page the app serves.
- *
- * HTML is sanitized before it reaches this policy. The sandbox remains the
- * browser-enforced backstop: no script, form, popup, download or same-origin
- * access is granted, and no subresource may leave the document.
- */
+/** Static artifact views do not execute scripts. */
 export const ARTIFACT_VIEW_POLICY = [
   "sandbox",
   "default-src 'none'",
@@ -110,39 +11,41 @@ export const ARTIFACT_VIEW_POLICY = [
 ].join("; ");
 
 /**
- * Turn untrusted HTML into a static report.
- *
- * The allowlist keeps document structure and data images, but deliberately has
- * no script, metadata, form, embedded browsing context, SVG or MathML.
- * Embedded and inline CSS retain the design. ARTIFACT_VIEW_POLICY must accompany
- * this HTML: its sandbox blocks scripts and its CSP blocks CSS network requests.
- * Event handlers and every unlisted attribute disappear with them. Links keep
- * only safe schemes and never send this page as their referrer.
+ * The wrapper and its srcdoc child inherit this policy. The child also has its
+ * own sandbox, so their opaque origins are distinct. frame-src blocks child
+ * navigation and nested network frames while permitting inline srcdoc content.
+ * This restricts web fetches, not every browser networking API (notably WebRTC).
+ * Never serve untrusted HTML directly with this script-capable policy.
  */
-export function sanitizeArtifactHtml(bytes: Uint8Array, mimeType: string): string | null {
-  const charset = /;\s*charset\s*=\s*"?([A-Za-z0-9._-]+)"?/i.exec(mimeType)?.[1] ?? "utf-8";
-  let source: string;
-  try {
-    source = new TextDecoder(charset, { fatal: true }).decode(bytes);
-  } catch {
-    return null;
-  }
+export const INTERACTIVE_HTML_VIEW_POLICY = [
+  "sandbox allow-scripts",
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src data: blob:",
+  "font-src data:",
+  "media-src data: blob:",
+  "connect-src 'none'",
+  "frame-src 'none'",
+  "worker-src 'none'",
+  "object-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'self'",
+].join("; ");
 
-  const sanitized = sanitizeHtml(source, {
-    allowedTags: [...ALLOWED_TAGS],
-    // Style is permitted only with the sandbox/CSP enforced by the view route.
-    allowVulnerableTags: true,
-    allowedAttributes: ALLOWED_ATTRIBUTES,
-    allowedSchemes: ["http", "https", "mailto"],
-    allowedSchemesByTag: { img: ["data"] },
-    allowProtocolRelative: false,
-    enforceHtmlBoundary: true,
-    transformTags: {
-      a: (tagName, attribs) => ({
-        tagName,
-        attribs: { ...attribs, rel: "noreferrer" },
-      }),
-    },
-  });
-  return `<!doctype html>${sanitized}`;
+export const ARTIFACT_VIEW_PERMISSIONS = [
+  "camera=()", "microphone=()", "geolocation=()", "display-capture=()",
+  "clipboard-read=()", "clipboard-write=()", "payment=()", "usb=()",
+].join(", ");
+
+/** Decode before placing the original document inside an isolated child. */
+export function decodeArtifactHtml(bytes: Uint8Array, mimeType: string): string | null {
+  const charset = /;\s*charset\s*=\s*"?([A-Za-z0-9._-]+)"?/i.exec(mimeType)?.[1] ?? "utf-8";
+  try { return new TextDecoder(charset, { fatal: true }).decode(bytes); } catch { return null; }
+}
+
+export function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

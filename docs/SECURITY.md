@@ -989,23 +989,25 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
     한 번 건네지면 그것을 연 사람의 권한보다 오래 살며, `public` 모드에서는 영구다. 임의의
     마크업이 실행되는 영구 주소는 저장소가 아니라 호스팅이다. `/view` 는 삭제와 같은 조건으로
     매 요청을 인가하고, `Content-Security-Policy` 의 `sandbox` 로 문서를 불투명 오리진에
-    놓는다. 그래서 그 페이지는 콘솔의 쿠키·스토리지·DOM 에 닿지 못하고 서브리소스를 하나도
-    불러오지 못하며, 같은 주소를 새 탭에서 열어도 그대로다. iframe 의 `sandbox` 속성으로는
-    닿지 못하는 경우다. `nosniff` 를 함께 보내는 이유는 이 논증 전체가 우리가 선언한 타입 위에
-    쓰였기 때문이다. 원격 이미지도 함께 막힌다(`img-src data:`). 모델이 고른 주소에서 가져오는
-    그림은 그 호스트에게 "이 페이지가 열렸다"고, 그리고 누가 열었는지를 알려 준다.
-  - **HTML 도 정적 문서로 만든 뒤 보낸다.** `sanitize-html` allowlist 는 제목·문단·목록·표·코드·
-    data 이미지·안전한 링크를 남기고, script·event handler·`meta`·form·iframe/object·
-    SVG/MathML 을 제거한다. 문서 내부 `<style>`과 `style` 속성은 보존해 디자인을 유지한다.
-    CSS의 외부 stylesheet·font·image 요청은 CSP가 차단하며, 이 HTML은 반드시
-    `ARTIFACT_VIEW_POLICY`와 함께 제공한다. 원문 charset 으로 먼저 해석한 뒤 UTF-8 로 다시 보내므로, sanitizer 를
-    우회하려고 잘못된 인코딩을 섞은 바이트는 열리지 않는다. 외부 링크는 사용자가 직접 눌러야만
-    이동하며 `Referrer-Policy: no-referrer` 와 `rel=noreferrer` 를 함께 적용한다.
-  - **모든 view 가 같은 script 없는 정책을 받는다.** `sandbox` 에 어떤 `allow-*` 도 붙이지 않고
-    `default-src 'none'` 을 적용한다. Markdown 은 원시 HTML 을 텍스트로 내보내고 위험한 URL
-    스킴을 떼는 렌더러를 지나며, CSV 는 이스케이프된 표가 되고, SVG 는 `<img>` 안에 놓인다.
-    HTML 은 위 sanitizer 가 능동 콘텐츠를 제거한다. 애플리케이션 변환과 브라우저 sandbox 중
-    하나만 믿지 않고 둘을 함께 적용한다.
+    놓는다. HTML 원문은 별도의 iframe에만 들어가고 콘솔의 쿠키·스토리지·DOM에 닿지 못한다.
+    `nosniff`와 `no-referrer`도 함께 적용한다.
+  - **HTML은 독자가 실행을 선택할 때만 동작한다.** 원문을 선언된 charset으로 엄격하게
+    디코딩하고, 전체 내용을 이스케이프한 `srcdoc` 속성으로 전달한다. 바깥 화면에는 제품의
+    제어 코드만 실행되며, 원문 script·이벤트·canvas·SVG는 iframe 안에서 보존한다.
+    HTTP CSP와 iframe 모두 `sandbox allow-scripts`를 적용하고 `allow-same-origin`,
+    top-navigation, popup, form, download 권한을 주지 않는다. iframe을 제거하면 실행 상태를
+    버리고, 다시 시작하면 원본을 새 iframe에 넣는다. 코드 오류나 상태를 저장 성공과 혼동하지 않는다.
+  - **격리와 통신 제한의 범위를 구분한다.** HTML의 `INTERACTIVE_HTML_VIEW_POLICY`는
+    fetch/XHR/WebSocket, 외부 script·CSS·image·font, worker, 외부 프레임 이동과 폼 제출을
+    제한한다. `frame-src 'none'`은 inline srcdoc을 허용하면서 네트워크 frame 탐색을 막는다.
+    카메라·마이크·위치 등은 Permissions Policy로 제한한다. 이 정책은 WebRTC 등 모든
+    브라우저 통신이나 CPU·메모리를 강제 격리하지 않는다. 따라서 신뢰하는 HTML만 명시적으로
+    실행하도록 안내한다. 완전한 무통신·자원 격리가 필요하면 별도의 실행 환경이 필요하다.
+    iframe에서 보고한 오류는 현재 iframe의 Window를 확인한 뒤 고정 안내로만 표시한다.
+    오류 원문을 부모 화면에 렌더하거나 서버로 보내지 않으며 특권 API·인증 정보는 전달하지 않는다.
+  - **정적 view는 스크립트를 실행하지 않는다.** `ARTIFACT_VIEW_POLICY`에는 어떤 `allow-*`도
+    붙이지 않는다. Markdown은 raw HTML을 텍스트로 내보내고, CSV는 이스케이프된 표,
+    SVG는 `<img>`로 표시한다. HTML 실행 정책은 이 경로에 적용하지 않는다.
   - **`next.config.ts` 의 헤더가 라우트의 헤더를 이긴다. 이것이 sandbox 를 한 번 통째로
     무력화했다.** `headers()` 에 선언한 키는 라우트 핸들러가 세운 같은 키를 *대체*한다. 콘솔용
     `SECURITY_HEADERS` 가 `/:path*` 로 걸려 있었으므로 `/view` 의 응답은 sandbox 정책 대신

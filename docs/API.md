@@ -1418,21 +1418,24 @@ GET /api/artifacts/{artifactId}/view
 sandbox 가 필요 없고, 다운로드는 애초에 신뢰를 요구하지 않는다.
 
 응답은 `text/html; charset=utf-8` 이다. 저장된 HTML 은 선언된 charset 으로 디코딩한 뒤
-허용된 태그·속성만 남기고 UTF-8 로 응답한다. 다른 타입도 앱이 UTF-8 view 를 만든다.
+원문을 이스케이프한 iframe `srcdoc` 속성에 넣은 실행 화면으로 응답한다. 다른 타입도 앱이 UTF-8 view를 만든다.
 
 | 저장된 타입 | 어떻게 보이는가 |
 |---|---|
-| `text/html` | 내부 CSS를 보존한 HTML. 스크립트·이벤트 핸들러·외부 stylesheet 태그를 제거하고 CSS의 외부 요청은 CSP로 차단한다 |
+| `text/html` | HTML 실행을 선택하면 CSS·JavaScript·입력·canvas·SVG를 별도의 sandbox iframe에서 실행한다. 중지·다시 시작을 제공한다 |
 | `text/markdown` | 채팅 스레드와 같은 렌더러로 렌더 |
 | `text/csv` | 첫 행을 머리행으로 삼은 표 (RFC 4180 파싱, 2,000행 상한) |
 | `application/json` | 다시 들여쓴 텍스트. 파싱되지 않으면 원문 그대로 + 그 사실을 말한다 |
 | `image/svg+xml` | `<img>` 안의 그림 |
 | `text/plain` | 원문 그대로 |
 
-모든 view 에 동일한 `ARTIFACT_VIEW_POLICY` 를 적용한다. `sandbox` 에 스크립트나
-same-origin 권한을 주지 않으며 `default-src 'none'` 으로 외부 리소스를 차단한다. 불투명
-오리진에서 렌더링하므로 콘솔의 쿠키·스토리지·DOM 에 닿지 못한다. 정책과 HTML 정제는
-`src/app/api/artifacts/[artifactId]/view/_lib/htmlSafety.ts` 가 소유한다.
+HTML 이외에는 스크립트 없는 `ARTIFACT_VIEW_POLICY`를 적용한다. HTML 실행 화면은
+`INTERACTIVE_HTML_VIEW_POLICY`와 iframe의 `sandbox="allow-scripts"`를 함께 적용한다.
+원문은 바깥 화면의 DOM에서 실행되지 않으며 iframe은 별도의 불투명 origin을 갖는다.
+부모·콘솔 DOM, 쿠키, localStorage에 접근할 수 없다. 일반 웹 요청, 외부 프레임 이동,
+폼 제출, 팝업은 제한한다. WebRTC 등 모든 브라우저 통신을 차단하는 환경은 아니므로
+자동 실행하지 않고 사용자의 명시적인 실행을 요구한다. 수정 상태는 파일에 저장되지 않는다.
+정책은 `htmlSafety.ts`, 실행 화면은 같은 디렉터리의 `interactiveHtml.ts`가 소유한다.
 
 서명된 오브젝트 URL 로는 그 헤더를 실을 수 없고, 건네진 주소는 그것을 연 사람의 권한보다
 오래 산다. public 모드에서는 영구다. 그래서 페이지만은 앱을 통해 나간다. 읽기 상한은
@@ -1450,7 +1453,7 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 만료·파일명을 덮는 HMAC. [SECURITY.md](SECURITY.md#데이터-노출과-보존)). `dl` 이 있으면
 `Content-Disposition: attachment` 로 그 이름에 내려가고, 없으면 인라인이다. 응답은
 `Cache-Control: private, max-age=<토큰의 남은 초>` 를 싣고, 브라우저가 문서로 그릴 수 있는
-타입 중 raster image 와 PDF 를 제외한 것은 `/view` 와 같은
+타입 중 raster image 와 PDF 를 제외한 것은 정적 view와 같은
 `sandbox; default-src 'none'` 아래로 나간다. raster image 와 PDF 는
 `frame-ancestors 'none'` 만 적용한다. 한 번에 읽는 상한은 저장될 수 있는 오브젝트의 최대인
 10 MB 다.

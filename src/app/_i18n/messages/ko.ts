@@ -308,7 +308,7 @@ export const ko: Messages = {
   "guide.chat.attachmentsBody":
     "이미지 입력을 지원하는 모델에 PNG·JPEG·GIF·WebP를 첨부한다. PDF, UTF-8 텍스트, DOCX, XLSX, PPTX, HWP 5.x, HWPX, ODT/ODS/ODP, RTF는 내장 문서 엔진이 읽는다. 문서는 한 번에 최대 4개, 각각 10 MiB까지 첨부한다. 대화에는 제한된 추출문을 남기며 저장소가 구성되면 원본도 보관한다. 전송 후 추출·저장 경고를 확인한다.",
   "guide.chat.createFiles": "새 문서 만들기",
-  "guide.chat.createFilesBody": "agent 대화에서 “이 메모로 DOCX 보고서를 만들어 줘” 또는 “XLSX 예산표를 만들어 줘”라고 요청한다. DOCX·PDF·PPTX·HWPX·XLSX 생성은 내장 기능이다. 평문·Markdown·CSV·JSON·HTML·SVG는 SaveFile을 사용한다. 파일 도구에는 저장소 구성이 필요하다. 답변의 결과 파일을 내려받아 내용과 배치를 확인한다.",
+  "guide.chat.createFilesBody": "agent 대화에서 “이 메모로 DOCX 보고서를 만들어 줘” 또는 “XLSX 예산표를 만들어 줘”라고 요청한다. DOCX·PDF·PPTX·HWPX·XLSX 생성은 내장 기능이다. 평문·Markdown·CSV·JSON·HTML·SVG는 SaveFile을 사용한다. 파일 도구에는 저장소 구성이 필요하다. 답변의 결과 파일을 내려받아 내용과 배치를 확인한다. HTML 미리보기에서는 신뢰하는 파일에 대해 HTML 실행을 누른다. 중지·다시 시작을 사용할 수 있으며, 미리보기에서 변경한 내용은 원본에 저장되지 않는다.",
   "guide.chat.editFiles": "첨부 문서를 수정하고 원본 유지하기",
   "guide.chat.editFilesBody": "원본을 첨부하고 “문서를 검사한 뒤 제목을 분기 실적으로 바꿔 줘” 또는 “Summary 시트 B2를 150으로 바꿔 줘”라고 요청한다. DOCX·PPTX·HWPX는 선택한 텍스트, XLSX는 셀, UTF-8 텍스트는 한 번만 나타나는 문자열을 교체한다. agent가 대상을 확인한 뒤 별도 수정본을 반환한다. 후속 요청에서 원본이나 수정본을 다시 사용할 수 있다.",
   "guide.chat.fileLimits": "편집 가능한 범위 확인하기",
@@ -829,6 +829,17 @@ export const ko: Messages = {
   "plugins.uploadFailed": "업로드에 실패했습니다",
 
   "capabilities.descriptionTitle": "설명이 검색 결과를 결정합니다",
+
+  "artifacts.preview.title": "HTML 미리보기",
+  "artifacts.preview.note": "신뢰하는 HTML만 실행하세요. Studio 데이터와 분리하고 웹 요청을 제한하지만, 모든 통신 차단을 보장하지는 않습니다. 변경 내용은 저장되지 않습니다.",
+  "artifacts.preview.controls": "미리보기 제어",
+  "artifacts.preview.run": "HTML 실행",
+  "artifacts.preview.ready": "HTML에는 실행 코드가 포함될 수 있습니다. HTML 실행을 누르면 격리된 미리보기를 시작합니다.",
+  "artifacts.preview.stop": "중지",
+  "artifacts.preview.restart": "다시 시작",
+  "artifacts.preview.stopped": "미리보기를 중지했습니다. 다시 시작하면 원본 파일을 새로 엽니다.",
+  "artifacts.preview.error": "파일의 스크립트 오류가 감지됐습니다. 미리보기를 중지하거나 파일 수정을 요청해 주세요.",
+  "artifacts.preview.noScript": "미리보기를 실행하려면 브라우저의 JavaScript를 활성화해 주세요.",
 
   "artifacts.lede":
     "보관된 첨부 원본과 실행이 생성·수정한 파일입니다. Slack·트리거·A2A의 파일도 권한에 따라 프로젝트의 Artifacts에서 확인할 수 있습니다.",

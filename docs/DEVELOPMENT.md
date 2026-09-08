@@ -83,6 +83,8 @@ pnpm typecheck        # tsc --noEmit, strict + 추가 검사 (아래)
 pnpm test             # vitest run
 pnpm test:documents   # 실제 자식 프로세스로 생성·추출·검사·편집 검증 (DB 불필요)
 pnpm test:watch       # vitest watch
+pnpm exec playwright install chromium # HTML 실행 미리보기 테스트용 브라우저
+pnpm test:html-preview # 로컬 HTTP fixture에서 실제 Chromium 기능·격리 검사
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test) 에 대한 리포지토리 + 엔진 검사
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)
 pnpm check-models     # 카탈로그 스냅샷과 이 배포의 채널이 서빙하는 것의 차이
@@ -182,7 +184,8 @@ pnpm test:integration
 
 ## CI
 
-`.github/workflows/ci.yml` 은 저장소의 모든 branch push 에서 돈다:
+`.github/workflows/ci.yml`은 모든 branch push에서 실행된다. 별도 `html-preview` job은
+Chromium을 설치하고 HTML 실행·중지·입력 및 격리 경계를 검증한다. 기본 검증 순서는 다음과 같다:
 
 ```
 typecheck → test → test:integration → build → standalone 격리 → 문서 워커 smoke test → production server smoke test

@@ -24,6 +24,7 @@ describe("saving a file a run wrote", () => {
     // whole reason the tool exists said back to the reader anyway.
     expect(result.text).toContain("report.html");
     expect(result.text).toContain("do not repeat");
+    expect(result.text).toContain("have not been browser-tested by SaveFile");
   });
 
   it("keeps the bare type, so a charset cannot ride onto the row", () => {
