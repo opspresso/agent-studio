@@ -43,8 +43,6 @@ test("preserves step navigation, inputs and canvas; stop and restart discard sta
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${base}/view`);
-  await expect(page.locator("#stage iframe")).toHaveCount(0);
-  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   const content = page.frameLocator("#stage iframe");
   await content.getByRole("button", { name: "Next" }).click();
   await expect(content.locator("#second")).toBeVisible();
@@ -73,7 +71,6 @@ test("blocks app DOM, cookies, storage, workers and web requests from an embedde
     document.querySelector('#checks').textContent=JSON.stringify(result);
     })();</script>`;
   await page.goto(`${base}/parent`);
-  await page.frameLocator("#outer").getByRole("button", { name: "Run HTML", exact: true }).click();
   const content = page.frameLocator("#outer").frameLocator("#stage iframe");
   await expect(content.locator("#checks")).not.toBeEmpty();
   expect(JSON.parse((await content.locator("#checks").textContent())!)).toEqual({ parent: "blocked", top: "blocked", cookie: "blocked", storage: "blocked", worker: "blocked", fetch: "blocked", popup: "blocked" });
@@ -94,28 +91,27 @@ for (const kind of ["self", "top", "form", "nested", "css"] as const) {
     };
     documentSource = `<button onclick="${actions[kind].replaceAll('"', '&quot;')}">Attempt</button>`;
     await page.goto(`${base}/view`);
-    await page.getByRole("button", { name: "Run HTML", exact: true }).click();
     await page.frameLocator("#stage iframe").getByRole("button", { name: "Attempt" }).click();
     // Observe the real server, not only request events: blocked navigation must send no bytes.
     await page.waitForTimeout(250);
     expect(requests).toEqual(["/view"]);
     expect(page.url()).toBe(`${base}/view`);
+    if (kind === "self") await expect(page.locator("#stopped")).toContainText("blocked");
   });
 }
 
-test("requires an explicit launch and accurately describes the networking boundary", async ({ page }) => {
-  documentSource = '<script>document.body.textContent="executed"</script>';
+test("runs immediately and accurately describes the networking boundary", async ({ page }) => {
+  documentSource = '<body><output id="started">waiting</output><script>document.getElementById("started").textContent="executed"</script></body>';
   await page.goto(`${base}/view`);
-  await expect(page.locator("#stage iframe")).toHaveCount(0);
+  await expect(page.frameLocator("#stage iframe").locator("#started")).toHaveText("executed");
   await expect(page.getByText(/not a fully offline sandbox/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run HTML", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
   expect(requests).toEqual(["/view"]);
 });
 
 test("reports runtime errors without accepting unrelated window messages", async ({ page }) => {
   documentSource = '<body><button onclick="throw new Error(\'private-error-data\')">Fail</button></body>';
   await page.goto(`${base}/view`);
-  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   await page.evaluate(() => window.postMessage({ kind: "artifact-script-error" }, "*"));
   await expect(page.locator("#stopped")).toBeHidden();
   await page.frameLocator("#stage iframe").getByRole("button", { name: "Fail" }).click();
@@ -126,14 +122,12 @@ test("reports runtime errors without accepting unrelated window messages", async
 test("handles document property names without executing source in the wrapper", async ({ page }) => {
   documentSource = '<form name="createElement"></form><form name="head"></form><form name="documentElement"></form><output id="ok">waiting</output><script>document.getElementById("ok").textContent="ready"</script>';
   await page.goto(`${base}/view`);
-  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   await expect(page.frameLocator("#stage iframe").locator("#ok")).toHaveText("ready");
 });
 
 test("keeps fragment links inside the document without navigating the frame", async ({ page }) => {
   documentSource = '<a href="#details">Jump to details</a><div style="height:1600px"></div><h2 id="details">Details</h2>';
   await page.goto(`${base}/view`);
-  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   const content = page.frameLocator("#stage iframe");
   await content.getByRole("link", { name: "Jump to details" }).click();
   await expect(content.locator("#details")).toBeInViewport();
@@ -143,7 +137,6 @@ test("keeps fragment links inside the document without navigating the frame", as
 test("renders local SVG symbol references", async ({ page }) => {
   documentSource = '<svg width="100" height="100"><defs><g id="shape"><rect width="40" height="30" fill="red"/></g></defs><use href="#shape"/></svg>';
   await page.goto(`${base}/view`);
-  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   const use = page.frameLocator("#stage iframe").locator("use");
   await expect.poll(() => use.evaluate((element: SVGGraphicsElement) => element.getBBox().width)).toBe(40);
   expect(requests).toEqual(["/view"]);
@@ -152,7 +145,6 @@ test("renders local SVG symbol references", async ({ page }) => {
 test("updates the fixed error notice only once per execution", async ({ page }) => {
   documentSource = '<button onclick="for(let i=0;i<50;i++)parent.postMessage({kind:\'artifact-script-error\'},\'*\');parent.postMessage({kind:\'batch-finished\'},\'*\')">Report errors</button>';
   await page.goto(`${base}/view`);
-  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   const notices = page.evaluate(() => new Promise<number>((resolve) => {
     let mutations = 0;
     const observer = new MutationObserver((records) => { mutations += records.length; });
@@ -176,7 +168,6 @@ test("updates the fixed error notice only once per execution", async ({ page }) 
 test("preserves custom fragment handlers and Unicode targets", async ({ page }) => {
   documentSource = '<a href="#missing" onclick="event.preventDefault();document.querySelector(\'#custom\').textContent=\'handled\'">Custom</a><output id="custom"></output><a href="#설명">Details</a><div style="height:1600px"></div><h2 id="설명">Target</h2>';
   await page.goto(`${base}/view`);
-  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   const content = page.frameLocator("#stage iframe");
   await content.getByRole("link", { name: "Custom", exact: true }).click();
   await expect(content.locator("#custom")).toHaveText("handled");
@@ -189,7 +180,6 @@ test("preserves custom fragment handlers and Unicode targets", async ({ page }) 
 test("honors window-level custom fragment navigation", async ({ page }) => {
   documentSource = '<a href="#unused">Custom link</a><output id="result"></output><script>addEventListener("click",event=>{event.preventDefault();document.getElementById("result").textContent="handled"})</script>';
   await page.goto(`${base}/view`);
-  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   const content = page.frameLocator("#stage iframe");
   await content.getByRole("link", { name: "Custom link" }).click();
   await expect(content.locator("#result")).toHaveText("handled");
@@ -199,9 +189,33 @@ test("honors window-level custom fragment navigation", async ({ page }) => {
 test("rejects an external base URL after allowing the local srcdoc base", async ({ page }) => {
   documentSource = '<output id="base"></output><script>document.querySelector("base").href="https://attacker.example/";document.getElementById("base").textContent=document.baseURI</script>';
   await page.goto(`${base}/view`);
-  await page.getByRole("button", { name: "Run HTML", exact: true }).click();
   const content = page.frameLocator("#stage iframe");
   await expect(content.locator("#base")).not.toBeEmpty();
   await expect(content.locator("#base")).not.toContainText("attacker.example");
   expect(requests).toEqual(["/view"]);
+});
+
+test("reports errors when artifact code uses parent and ErrorEvent as local names", async ({ page }) => {
+  documentSource = '<button id="fail">Waiting</button><script>const parent=document.body;const ErrorEvent=null;document.getElementById("fail").textContent="Ready";document.getElementById("fail").onclick=()=>{throw new Error("private-detail")}</script>';
+  await page.goto(`${base}/view`);
+  await page.frameLocator("#stage iframe").getByRole("button", { name: "Ready" }).click();
+  await expect(page.locator("#stopped")).toContainText("script error");
+});
+
+test("explains blocked scripts instead of silently showing an incomplete document", async ({ page }) => {
+  documentSource = `<p>Waiting for a chart</p><script src="${base}/blocked-library.js"></script>`;
+  await page.goto(`${base}/view`);
+  await expect(page.locator("#stopped")).toContainText("blocked");
+  expect(requests).toEqual(["/view"]);
+});
+
+
+test("prioritizes script errors over blocked-resource notices", async ({ page }) => {
+  documentSource = `<script src="${base}/blocked.js"></script><button onclick="throw new Error('private')">Fail</button>`;
+  await page.goto(`${base}/view`);
+  await expect(page.locator("#stopped")).toContainText("blocked");
+  await page.frameLocator("#stage iframe").getByRole("button", { name: "Fail" }).click();
+  await expect(page.locator("#stopped")).toContainText("script error");
+  await page.frameLocator("#stage iframe").locator("body").evaluate(() => parent.postMessage({ kind: "artifact-policy-blocked" }, "*"));
+  await expect(page.locator("#stopped")).toContainText("script error");
 });

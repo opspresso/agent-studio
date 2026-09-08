@@ -64,7 +64,7 @@ export function saveFileResult(input: {
     // and a model that had one would only be able to repeat it into the answer,
     // where it would outlive the turn and belong to whoever read the transcript.
     text: `Saved ${filename} (${kb(bytes.byteLength)}). The reader has it; do not repeat its contents in your answer.` +
-      (mimeType === "text/html" ? " HTML runs in an isolated iframe after the reader chooses Run HTML; web requests are restricted. Its scripts and interactions have not been browser-tested by SaveFile." : ""),
+      (mimeType === "text/html" ? " HTML runs immediately in an isolated iframe; web requests are restricted. Its scripts and interactions have not been browser-tested by SaveFile." : ""),
     files: [{ b64: bytes.toString("base64"), mimeType, name: filename }],
   };
 }

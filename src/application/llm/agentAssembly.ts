@@ -819,7 +819,7 @@ const SAVE_FILE_TOOL_DEF: ChannelToolDef = {
       "Use it when the answer *is* a document rather than a reply: a long HTML report, a CSV of results, " +
       "a Markdown write-up somebody will file or send on. The file is delivered on its own; " +
       "say what you made and do not repeat its contents in the answer. " +
-      "After the reader chooses Run HTML, previews support inline CSS, JavaScript, buttons, inputs, SVG and canvas in an isolated iframe. " +
+      "HTML previews run immediately in an isolated iframe and support inline CSS, JavaScript, buttons, inputs, SVG and canvas. " +
       "Make HTML self-contained: no CDN, external scripts, imports, eval, fetch, storage, workers, form submissions or page navigation. " +
       "Use DOM updates for tabs and steps, keep all content reachable, and use border-box sizing, responsive layouts and a viewport meta tag for mobile. " +
       "Saving does not execute or browser-test the file; only claim tested interactions when you actually tested them.",

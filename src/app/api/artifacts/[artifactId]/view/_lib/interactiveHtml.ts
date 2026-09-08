@@ -1,6 +1,17 @@
 import type { Translate } from "@/app/_i18n/translate";
 import { decodeArtifactHtml, escapeHtml } from "./htmlSafety";
 
+// Capture native references before the artifact can shadow their global names.
+const CHILD_MONITOR = `
+(() => {
+  const send = parent.postMessage.bind(parent);
+  const RuntimeErrorEvent = ErrorEvent;
+  const notify = kind => send({kind}, '*');
+  addEventListener('error', event => { if (event instanceof RuntimeErrorEvent) notify('artifact-script-error'); });
+  addEventListener('unhandledrejection', () => notify('artifact-script-error'));
+  addEventListener('securitypolicyviolation', () => notify('artifact-policy-blocked'));
+})();`;
+
 /** Original code exists only in an escaped srcdoc attribute, never in the wrapper DOM. */
 export function interactiveHtml(bytes: Uint8Array, mimeType: string, filename: string | undefined, t: Translate): string | null {
   const source = decodeArtifactHtml(bytes, mimeType);
@@ -22,8 +33,8 @@ iframe { display: block; width: 100%; height: 100%; border: 0; background: white
 #stopped { padding: 24px; }
 </style></head><body>
 <header><strong>${title}</strong><p>${escapeHtml(t("artifacts.preview.note"))}</p>
-<nav aria-label="${escapeHtml(t("artifacts.preview.controls"))}"><button id="stop" type="button" disabled>${escapeHtml(t("artifacts.preview.stop"))}</button><button id="restart" type="button" data-restart="${escapeHtml(t("artifacts.preview.restart"))}">${escapeHtml(t("artifacts.preview.run"))}</button></nav></header>
-<p id="stopped" role="status" data-stopped="${escapeHtml(t("artifacts.preview.stopped"))}" data-error="${escapeHtml(t("artifacts.preview.error"))}">${escapeHtml(t("artifacts.preview.ready"))}</p>
+<nav aria-label="${escapeHtml(t("artifacts.preview.controls"))}"><button id="stop" type="button" disabled>${escapeHtml(t("artifacts.preview.stop"))}</button><button id="restart" type="button">${escapeHtml(t("artifacts.preview.restart"))}</button></nav></header>
+<p id="stopped" role="status" data-stopped="${escapeHtml(t("artifacts.preview.stopped"))}" data-error="${escapeHtml(t("artifacts.preview.error"))}" data-blocked="${escapeHtml(t("artifacts.preview.blocked"))}" hidden></p>
 <main id="stage"></main>
 <noscript>${escapeHtml(t("artifacts.preview.noScript"))}</noscript>
 <template id="document"><iframe title="${title}" sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="${escapeHtml(source)}"></iframe></template>
@@ -33,23 +44,28 @@ iframe { display: block; width: 100%; height: 100%; border: 0; background: white
   const template = document.getElementById('document');
   const stopped = document.getElementById('stopped');
   const stop = document.getElementById('stop');
-  const run = document.getElementById('restart');
-  let errorShown = false;
+  const restartButton = document.getElementById('restart');
+  let shownNotice = '';
+  const showNotice = kind => {
+    if (shownNotice === 'error' || shownNotice === kind) return;
+    shownNotice = kind;
+    stopped.textContent = kind === 'error' ? stopped.dataset.error : stopped.dataset.blocked;
+    stopped.hidden = false;
+  };
   const restart = () => {
     const frame = template.content.firstElementChild.cloneNode(true);
     const content = new DOMParser().parseFromString(frame.srcdoc, 'text/html');
     const monitor = document.createElement('script');
-    monitor.textContent = "(() => { const notify = () => parent.postMessage({kind: 'artifact-script-error'}, '*'); addEventListener('error', event => { if (event instanceof ErrorEvent) notify(); }); addEventListener('unhandledrejection', notify); })();";
+    monitor.textContent = ${JSON.stringify(CHILD_MONITOR).replace(/</g, "\\u003c")};
     // A srcdoc otherwise resolves fragment links against the wrapper URL.
     const base = document.createElement('base');
     base.href = 'about:srcdoc';
     Document.prototype.querySelector.call(content, 'head').prepend(base, monitor);
     frame.srcdoc = '<!doctype html>' + Document.prototype.querySelector.call(content, 'html').outerHTML;
-    errorShown = false;
+    shownNotice = '';
     stage.replaceChildren(frame);
     stopped.hidden = true;
     stop.disabled = false;
-    run.textContent = run.dataset.restart;
   };
   stop.addEventListener('click', () => {
     stage.replaceChildren();
@@ -59,13 +75,15 @@ iframe { display: block; width: 100%; height: 100%; border: 0; background: white
   });
   window.addEventListener('message', event => {
     const frame = stage.querySelector('iframe');
-    if (!errorShown && frame && event.source === frame.contentWindow && event.data?.kind === 'artifact-script-error') {
-      errorShown = true;
-      stopped.textContent = stopped.dataset.error;
-      stopped.hidden = false;
-    }
+    if (!frame || event.source !== frame.contentWindow) return;
+    if (event.data?.kind === 'artifact-script-error') showNotice('error');
+    else if (event.data?.kind === 'artifact-policy-blocked') showNotice('blocked');
   });
-  run.addEventListener('click', restart);
+  document.addEventListener('securitypolicyviolation', event => {
+    if (event.isTrusted && event.effectiveDirective === 'frame-src' && stage.querySelector('iframe')) showNotice('blocked');
+  });
+  restartButton.addEventListener('click', restart);
+  restart();
 })();
 </script></body></html>`;
 }
