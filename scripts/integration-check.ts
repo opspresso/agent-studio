@@ -1345,6 +1345,35 @@ async function main() {
       pass("transact: a checked key locks share-mode, a written one exclusively");
     }
 
+    // ---------- source inventory (completion recovery + deletion fencing) ----------
+    {
+      const { sourceFileRepository: files } = await import("@/infrastructure/db/repositories/sourceFileRepository");
+      const { deleteItem } = await import("@/infrastructure/db/store");
+      const id = `source-${suffix}`;
+      try {
+        const pending = await files.create({ id, projectName, userEmail: "integration@example.com",
+          filename: "sample.mp3", mimeType: "audio/mpeg", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
+          revision: 1, status: "pending", createdAt: now, retireAt: now });
+        const competing = await Promise.all([
+          files.finish(pending, { storedAt: now, retireAt: now, checksum: "sha256", byteSize: 3 }),
+          files.finish(pending, { storedAt: now, retireAt: now, checksum: "sha256", byteSize: 3 }),
+        ]);
+        assert.equal(competing.filter(Boolean).length, 1);
+        assert.equal(await files.get(`${projectName}-other`, id), null);
+        const ready = (await files.get(projectName, id))!;
+        assert.equal(ready.status, "ready");
+        const deleting = await files.markDeleting(ready, now);
+        assert.ok(deleting);
+        assert.equal(await files.finish(pending, { storedAt: now, retireAt: now, checksum: "late", byteSize: 3 }), null);
+        assert.equal(await files.markDeleted(deleting, now), true);
+        assert.equal((await files.get(projectName, id))?.status, "deleted");
+        assert.equal((await files.expired(now, 100)).some((file) => file.id === id), false);
+        pass("source inventory: atomic completion, project isolation and deletion fencing");
+      } finally {
+        await deleteItem(dbKeys.sourceFile(id));
+      }
+    }
+
     // ---------- durable audio work (admission + worker fencing) ----------
     {
       const { audioJobRepository: jobs } = await import("@/infrastructure/db/repositories/audioJobRepository");

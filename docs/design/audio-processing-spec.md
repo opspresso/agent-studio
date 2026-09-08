@@ -6,7 +6,8 @@ worker 단계 실행기는 가져오기·전사·선택적 후처리·저장과 
 모델 설정 조립·실제 단계 어댑터 연결·worker 기동·도구 연결은 아직 없다.
 원본 object store는 streaming multipart·조건부 생성·크기 제한·업로드 취소를 제공한다.
 `pnpm test:storage`는 로컬 MinIO의 임시 비공개 bucket에서 실제 저장·충돌·읽기·삭제를 검증한다.
-파일의 달력 일·월 보존 계산은 `src/application/artifact/fileRetention.ts`가 제공하며 실제 삭제 스윕은 아직 없다.
+파일 inventory와 가져오기·응답 유실 복구·개인 읽기·만료 삭제 유스케이스를 구현했다.
+보존 계산은 `src/application/artifact/fileRetention.ts`가 소유한다. 정기 스윕 기동은 아직 연결하지 않았다.
 아래 도구 이름은 구현할 계약이며 현재 제공 기능이 아니다.
 구현은 [마일스톤](../MILESTONES.md#audio-processing-jobs)에서 추적한다.
 운영 Agent 생성·인증 연결·스케줄 활성화는 개발 검증 후 수행한다.

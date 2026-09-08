@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   AbortMultipartUploadCommand, CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand, UploadPartCommand,
+  CreateMultipartUploadCommand, UploadPartCommand, HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { SourceObjectExistsError, type SourceObjectStore } from "@/domain/artifact/sourceObjectStore";
 import { BodyTooLargeError } from "@/shared/httpBody";
@@ -74,6 +74,17 @@ export function createSourceObjectStore(bucket: string): SourceObjectStore {
       }
     },
     read: (key, maxBytes) => readStoredObject(bucket, key, maxBytes),
+    async stat(key) {
+      try {
+        const head = await getS3Client().send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        if (head.ContentLength === undefined || !head.LastModified) throw new Error("Source object metadata is incomplete");
+        return { byteSize: head.ContentLength, mimeType: head.ContentType ?? "application/octet-stream",
+          storedAt: head.LastModified.toISOString() };
+      } catch (error) {
+        if ((error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404) return null;
+        throw error;
+      }
+    },
     delete: (key) => deleteStoredObject(bucket, key),
   };
 }

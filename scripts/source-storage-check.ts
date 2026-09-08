@@ -21,6 +21,10 @@ async function main() {
     const receipt = await objects.write({ key: "source", body: body(), mimeType: "audio/mpeg", maxBytes: bytes.length });
     assert.equal(receipt.byteSize, bytes.length);
     assert.equal(receipt.checksum, createHash("sha256").update(bytes).digest("hex"));
+    const metadata = await objects.stat("source");
+    assert.equal(metadata?.byteSize, bytes.length);
+    assert.equal(metadata?.mimeType, "audio/mpeg");
+    assert.ok(metadata?.storedAt);
     const read = await objects.read("source", bytes.length);
     assert.equal(read.mimeType, "audio/mpeg");
     assert.deepEqual(read.bytes, Buffer.from(bytes));
@@ -34,6 +38,7 @@ async function main() {
     assert.equal(anonymous.status, 403, "source bucket must not allow anonymous reads");
     await objects.delete("source");
     await objects.delete("source");
+    assert.equal(await objects.stat("source"), null);
     await assert.rejects(objects.read("source", bytes.length), { name: "ObjectNotFoundError" });
     console.log("PASS source storage: multipart integrity, conditional write, abort cleanup, private read and deletion");
   } finally {

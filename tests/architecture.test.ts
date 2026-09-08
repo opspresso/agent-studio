@@ -1067,6 +1067,11 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "private source file object addresses",
+    pattern: /export function sourceFileObjectKey\b/,
+    owner: "src/domain/artifact/sourceFile.ts",
+  },
+  {
     what: "calendar month expiration of stored files",
     pattern: /\.setUTCMonth\(/,
     owner: "src/application/artifact/fileRetention.ts",

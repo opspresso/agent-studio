@@ -19,6 +19,13 @@ export const keys = {
 
   audioJob: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `AUDIOJOB#${id}` }),
   audioJobPrefix: () => "AUDIOJOB#",
+  sourceFile: (id: string) => ({ PK: `SOURCEFILE#${id}`, SK: "META" }),
+  sourceFileExpiryIndex: (retireAt: string, projectName: string, id: string) => ({
+    GSI1PK: "SOURCEFILEEXPIRY", GSI1SK: `${retireAt}#${projectName}#${id}`,
+  }),
+  sourceFileExpiryQuery: (now: string) => ({
+    pk: "SOURCEFILEEXPIRY", sk: { between: ["", `${now}#\uffff`] as [string, string] },
+  }),
   audioJobSlots: (projectName: string) => ({ PK: `PROJECT#${projectName}`, SK: "AUDIOSLOTS" }),
   audioJobSource: (projectName: string, sourceKey: string) => ({
     PK: `PROJECT#${projectName}`, SK: `AUDIOSOURCE#${sourceKey}`,
