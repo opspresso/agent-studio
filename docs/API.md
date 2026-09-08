@@ -1755,8 +1755,9 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 "days" | "months", value: positive integer, timezone}`, 선택적 `task: "import" | "transcribe" |
 "process"`, `model`, `language`, `processingRevision`이다. import 이외에는 등록된 Transcription
 모델이 필요하다. 같은 외부 source identity의 재실행은 duplicate이며 명시적 processingRevision으로
-새 처리를 요청한다. `postprocess`와 `destination`은 schema에 정의돼 있으나 현재 실행 조립이
-완성되지 않아 요청하면 400으로 거절한다.
+새 처리를 요청한다. `postprocess: {projectName, versionName}`는 선택한 Agent 버전을 고정해 후처리한다.
+`destination: {serverName, documents, memories}`는 원래 프로젝트의 published 버전에 바인딩된 MCP로
+저장한다. 수신 서버에 수집 도구와 idempotencyKey 입력이 없으면 작업을 받기 전에 거절한다.
 
 AudioJobView는 `id`, `status`, `stage`, `model`, 생성·갱신·다음 실행 시각, `attempt`, `failures`,
 `revision`과 존재하는 `fileId`, `transcriptRef`, `draftRef`, `receipts`, `errorCode`를 반환한다.

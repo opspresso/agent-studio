@@ -11,7 +11,7 @@ function fixture() {
   let id = 0;
   const deps: AudioJobUseCaseDeps = {
     jobs, files: { get: async () => null }, sourceIdentity: vi.fn(async () => ({ namespace: "external-account", itemId: "recording-1" })),
-    authorize: vi.fn(async () => {}), validateModel: vi.fn(async () => {}), validateOutputs: vi.fn(async () => {}),
+    authorize: vi.fn(async () => {}), validateModel: vi.fn(async () => {}), validateOutputs: vi.fn(async () => ({})),
     limits: async () => ({ maxActive: 2, maxPerOccurrence: 2 }), now: () => new Date("2026-09-09T00:00:00Z"), id: () => `job-${++id}`,
   };
   const input: SubmitAudioJobInput = { source: { kind: "source", sourceRef: "reference-1" }, model: "openai/whisper-1",

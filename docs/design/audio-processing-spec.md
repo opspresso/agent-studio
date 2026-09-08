@@ -1,22 +1,13 @@
 # 범용 오디오 처리·비동기 작업 개발 스펙
 
-상태: **구현 중**. 전사 포트·결과 검증과 OpenAI 호환 multipart 어댑터를 구현했다.
-영속 작업 repository는 발생당 admission·source dedup·lease·checkpoint·취소·재시도를 제공한다.
-worker 단계 실행기는 가져오기·전사·선택적 후처리·저장과 heartbeat·중간 receipt·재시도를 제공한다.
-ASR runtime target·비용 계산과 사용량 receipt의 원자적 중복 방지를 구현했다.
-암호화 source reference·guarded streaming 다운로드·작업 제출/조회/취소/재시도 유스케이스를 구현했다.
-composition root의 전사 경로, HTTP 작업·파일 API와 별도 worker 실행 모드를 연결했다.
-`audioProcessing` opt-in 버전의 Agent builtin과 schedule의 명시적 본인 email 실행을 연결했다.
-후처리·Memory delivery·설정 UI는 아직 연결하지 않았다.
-ffmpeg 분할 어댑터와 구간별 결과 파일을 재사용하는 전사 단계가 구현돼 있다. 전사 단계의 budget·usage
-콜백과 runtime 모델 resolver는 composition root에 연결돼 있다. `test:audio`는 실제 MP3 변환을 검증한다.
-원본 object store는 streaming multipart·조건부 생성·크기 제한·업로드 취소를 제공한다.
-`pnpm test:storage`는 로컬 MinIO의 임시 비공개 bucket에서 실제 저장·충돌·읽기·삭제를 검증한다.
-파일 inventory와 가져오기·응답 유실 복구·개인 읽기·만료 삭제 유스케이스를 구현했다.
-보존 계산은 `src/application/artifact/fileRetention.ts`가 소유한다. 정기 스윕 기동은 아직 연결하지 않았다.
-아래 도구 이름은 구현할 계약이며 현재 제공 기능이 아니다.
+상태: **구현 중**. HTTP API·Agent 도구·별도 worker로 원본 가져오기, 구간 전사, 선택적 Agent
+후처리와 MCP 저장을 실행한다. 구간·후처리 결과와 저장 receipt를 보관해 실패한 단계부터 재개한다.
+개인 실행은 기존 MCP 인증과 검증된 email 문맥을 사용한다.
+
+남은 개발은 Agent Memory 수신 측 수집·멱등 저장 계약, MCP 결과의 source reference 변환,
+설정 UI와 전체 운영 검증이다. Studio의 delivery는 수신 서버가 필요한 도구와 idempotencyKey를
+노출해야 활성화된다. 운영 Agent 생성·OAuth·스케줄 설정은 개발 검증 후 수행한다.
 구현은 [마일스톤](../MILESTONES.md#audio-processing-jobs)에서 추적한다.
-운영 Agent 생성·인증 연결·스케줄 활성화는 개발 검증 후 수행한다.
 
 ## 목표와 설계 원칙
 

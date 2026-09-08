@@ -19,5 +19,10 @@ export const AUDIO_TOOL_DEFS: ChannelToolDef[] = [
     parameters: { type: "object", properties: { operation: { type: "string", enum: ["submit", "status", "list", "read"] },
       ...source, model: { type: "string" }, language: { type: "string" }, retention,
       job_id: { type: "string" }, cursor: { type: "string" }, limit: { type: "integer", minimum: 1 },
-      processing_revision: { type: "string" } }, required: ["operation"], additionalProperties: false } } },
+      processing_revision: { type: "string" },
+      postprocess: { type: "object", properties: { projectName: { type: "string" }, versionName: { type: "string" } },
+        required: ["projectName", "versionName"], additionalProperties: false },
+      destination: { type: "object", properties: { serverName: { type: "string" }, documents: { type: "boolean" }, memories: { type: "boolean" } },
+        required: ["serverName", "documents", "memories"], additionalProperties: false },
+    }, required: ["operation"], additionalProperties: false } } },
 ];

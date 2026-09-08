@@ -37,7 +37,8 @@ ffmpeg는 runtime 이미지에 포함돼 있다. 동시에 두 작업을 처리�
 `SIGTERM`은 현재 작업을 중단하고 checkpoint를 남긴다. 필수 chat·sign-in 경로는 worker와 무관하다.
 
 버전의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저장소와 실행 사용자 문맥이 있어야
-도구가 제공된다. 후처리·Memory delivery와 설정 UI는 개발 중이며 해당 출력 옵션은 아직 거절한다.
+도구가 제공된다. 후처리는 선택한 Agent 버전을 고정해 실행한다. Memory delivery에는 수신 서버의
+문서 수집·멱등 저장 도구가 필요하다. 수신 측 확장과 설정 UI는 개발 중이다.
 
 ## localdev
 

@@ -22,10 +22,24 @@ async function main() {
   const bucket = `audio-pipeline-${randomUUID()}-test`;
   process.env.SOURCE_FILES_BUCKET_NAME = bucket;
   let calls = 0;
+  let postprocessCalls = 0;
   const mock = createServer(async (request, response) => {
     const buffers: Buffer[] = [];
     for await (const chunk of request) buffers.push(Buffer.from(chunk));
     const body = Buffer.concat(buffers);
+    if (request.url === "/v1/chat/completions") {
+      const input = JSON.parse(body.toString("utf-8"));
+      assert.equal(input.tools?.some((tool: { function: { name: string } }) => tool.function.name === "AudioJob") ?? false, false);
+      postprocessCalls += 1;
+      const content = JSON.stringify({ text: "Summary of sample", memories: [
+        { kind: "fact", title: "Sample", content: "Sample transcript", evidence: ["Sample transcript"] },
+      ], warnings: [] });
+      response.setHeader("content-type", "text/event-stream");
+      response.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n` +
+        `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } })}\n\n` +
+        "data: [DONE]\n\n");
+      return;
+    }
     assert.ok(request.headers["content-type"]?.startsWith("multipart/form-data"));
     assert.ok(body.includes(Buffer.from("whisper-1")));
     assert.ok(body.includes(Buffer.from("RIFF")));
@@ -38,11 +52,20 @@ async function main() {
   process.env.TRANSCRIPTION_BASE_URL = `http://127.0.0.1:${address.port}/v1`;
   process.env.TRANSCRIPTION_API_KEY = "test";
   process.env.TRANSCRIPTION_RESPONSE_FORMAT = "json";
+  process.env.LLM_BASE_URL = process.env.TRANSCRIPTION_BASE_URL;
+  process.env.LLM_API_KEY = "test";
+  process.env.LLM_PROVIDER_OPENAI_BASE_URL = process.env.TRANSCRIPTION_BASE_URL;
+  process.env.LLM_PROVIDER_OPENAI_API_KEY = "test";
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
   const { getAudioRuntime } = await import("@/lib/container");
   const { getS3Client, deleteStoredObject } = await import("@/infrastructure/storage/s3ObjectStore");
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
+  const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
+  const { getLlmChannelConfig, getLlmProviderConfigs } = await import("@/lib/runtime-settings");
+  const { resolveProviderTarget } = await import("@/infrastructure/llm/providers");
+  assert.equal(resolveProviderTarget("openai/gpt-5-mini", await getLlmProviderConfigs(), await getLlmChannelConfig()).baseUrl,
+    process.env.TRANSCRIPTION_BASE_URL, "pipeline checks must use the local mock channel");
   const { withTransaction, closePool } = await import("@/infrastructure/db/client");
   const { deleteItem } = await import("@/infrastructure/db/store");
   const { keys } = await import("@/infrastructure/db/keys");
@@ -57,6 +80,9 @@ async function main() {
       [id, "Audio Pipeline Test", email, now]); });
     await projectRepository.create({ name: projectName, ownerEmail: email, displayName: "Audio Pipeline Test",
       description: "", projectType: "agent", visibility: "private", createdAt: now, updatedAt: now });
+    await versionRepository.create({ projectName, versionName: "writer", model: "openai/gpt-5-mini",
+      systemPrompt: "Summarize the source.", userPromptTemplate: "", parameters: { piiFiltering: false, audioProcessing: true },
+      skillList: [], mcpList: [], subagentList: [], createdAt: now });
     const path = join(directory, "source.mp3");
     await promisify(execFile)(process.env.FFMPEG_PATH ?? "ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
       "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5", "-ar", "16000", "-ac", "1", path]);
@@ -65,7 +91,8 @@ async function main() {
     const retention = { unit: "months" as const, value: 3, timezone: "Asia/Seoul" };
     const file = await runtime.files.import({ id: randomUUID(), projectName, userEmail: email,
       filename: "source.mp3", mimeType: "audio/mpeg", retention }, async () => (async function* () { yield bytes; })());
-    const input = { task: "transcribe" as const, source: { kind: "file" as const, fileId: file.id }, model: "openai/whisper-1", retention };
+    const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: "openai/whisper-1", retention,
+      postprocess: { projectName, versionName: "writer" } };
     const submitted = await runtime.jobs.submit(projectName, email, input, { occurrence: "test" });
     assert.ok("job" in submitted); assert.equal(submitted.status, "accepted");
     const completed = await runtime.process(projectName, submitted.job.id);
@@ -75,14 +102,19 @@ async function main() {
     const transcript = JSON.parse(new TextDecoder().decode(result.bytes));
     assert.equal(transcript.text, "Sample transcript");
     assert.equal(transcript.totalSeconds, 1.5);
+    assert.ok(completed.draftRef);
+    const draft = await runtime.files.read(projectName, completed.draftRef, email);
+    assert.equal(JSON.parse(new TextDecoder().decode(draft.bytes)).text, "Summary of sample");
+    assert.equal(postprocessCalls, 1);
     assert.equal(calls, 1);
+    assert.equal(postprocessCalls, 1);
     assert.equal((await runtime.jobs.submit(projectName, email, input, { occurrence: "test-again" })).status, "duplicate");
     assert.equal(await runtime.process(projectName, completed.id), null);
     assert.equal(calls, 1);
     const usage = await usageRepository.getDay(projectName, new Date().toISOString().slice(0, 10));
     assert.equal(usage?.calls["openai/whisper-1"], 1);
     await assert.rejects(runtime.jobs.get(projectName, completed.id, "other@example.test"));
-    console.log("PASS audio pipeline: PostgreSQL admission → MinIO source → ffmpeg → multipart ASR → durable transcript → usage and replay");
+    console.log("PASS audio pipeline: PostgreSQL → MinIO → ffmpeg → ASR → grounded Agent output → usage and replay");
   } finally {
     const objects = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1000 }));
     for (const object of objects.Contents ?? []) {

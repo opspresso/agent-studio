@@ -134,6 +134,8 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
  * threaded side by side through eight signatures.
  */
 export interface RunOrigin {
+  /** A durable job's postprocessor must not recursively enqueue more durable jobs. */
+  backgroundTask?: boolean;
   actor?: RunActor;
   /**
    * A user email resolved by a surface whose actor id is not an email, such as

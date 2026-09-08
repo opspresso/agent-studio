@@ -620,7 +620,7 @@ wire 에 실리지 않으면 호출을 처리하는 모델이 자기 최대치�
 ## 오디오 전사 설정
 
 오디오 처리 구현은 [개발 스펙](design/audio-processing-spec.md)에서 추적한다. 아래 설정 resolver는
-구현돼 있고 HTTP API와 별도 worker에서 사용한다. Agent builtin·후처리·Memory delivery는 구현 중이다.
+구현돼 있고 HTTP API·Agent 도구·별도 worker에서 사용한다. Memory delivery에는 수신 서버의 수집·멱등 저장 계약이 필요하다.
 worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것만으로 자동 수집이 시작되지는 않는다.
 
 | 변수 | 기본값 | 역할 |

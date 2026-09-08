@@ -517,6 +517,7 @@ export async function* executeAgent(
   // including the ones a subagent transfer makes on another project — was caused
   // by whoever started it.
   const origin: RunOrigin = {
+    ...(input.backgroundTask ? { backgroundTask: true } : {}),
     ancestry: [input.project.name],
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.ownerEmail ? { userEmail: input.ownerEmail } : {}),

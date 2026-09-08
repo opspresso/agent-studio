@@ -25,7 +25,7 @@ export interface AudioJobUseCaseDeps {
   sourceIdentity(project: string, id: string, email: string): Promise<{ namespace: string; itemId: string }>;
   authorize(project: string, email: string): Promise<void>;
   validateModel(model: string): Promise<void>;
-  validateOutputs(input: SubmitAudioJobInput, project: string, email: string): Promise<void>;
+  validateOutputs(input: SubmitAudioJobInput, project: string, email: string): Promise<Pick<AudioJob, "postprocess" | "destination">>;
   limits(project: string): Promise<{ maxActive: number; maxPerOccurrence: number }>;
   now(): Date;
   id(): string;
@@ -67,7 +67,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         await deps.validateModel(input.model);
       }
       if (task !== "process" && (input.postprocess || input.destination)) throw new ValidationError("Only process tasks accept output options");
-      await deps.validateOutputs(input, projectName, userEmail);
+      const outputs = await deps.validateOutputs(input, projectName, userEmail);
       let identity: { namespace: string; itemId: string };
       if (input.source.kind === "file") {
         const file = await deps.files.get(projectName, input.source.fileId);
@@ -82,8 +82,8 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       ])).digest("hex");
       const limits = await deps.limits(projectName);
       const result = await deps.jobs.submit({ projectName, userEmail, actor: origin.actor,
-        source: input.source, sourceKey, model: input.model ?? "", task, language: input.language,
-        retention: input.retention, postprocess: input.postprocess, destination: input.destination },
+        source: input.source, sourceKey, sourceIdentity: identity, model: input.model ?? "", task, language: input.language,
+        retention: input.retention, ...outputs },
       { id: deps.id(), now, occurrence: origin.occurrence, ...limits });
       return result.status === "busy" ? result : { status: result.status, job: view(result.job) };
     },

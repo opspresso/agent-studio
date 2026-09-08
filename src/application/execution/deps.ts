@@ -147,6 +147,7 @@ export interface ExecuteVersionInput {
 }
 
 export interface ExecuteAgentInput {
+  backgroundTask?: boolean;
   project: Project;
   version: Version;
   /** OpenAI-shaped message history from the route/chat boundary. */
@@ -174,6 +175,7 @@ export interface ExecuteAgentInput {
 // --- Project-level dispatch --------------------------------------------------
 
 export interface ExecuteProjectInput {
+  backgroundTask?: boolean;
   project: Project;
   version: Version;
   variables?: Record<string, string>;
@@ -226,7 +228,7 @@ export function toRunInput(
   input: ExecuteProjectInput,
 ): Pick<
   ExecuteAgentInput,
-  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal" | "ownerEmail"
+  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal" | "ownerEmail" | "backgroundTask"
 > {
   return {
     project: input.project,
@@ -236,6 +238,7 @@ export function toRunInput(
     ...(input.caller ? { caller: input.caller } : {}),
     ...(input.conversation ? { conversation: input.conversation } : {}),
     ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),
+    ...(input.backgroundTask ? { backgroundTask: true } : {}),
     ...(input.clientTools ? { clientTools: input.clientTools } : {}),
     signal: input.signal,
   };

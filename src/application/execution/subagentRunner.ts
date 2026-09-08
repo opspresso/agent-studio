@@ -85,7 +85,7 @@ export async function buildAgentDeps(
     // the tool, and one in a deployment that keeps nothing never sees it.
     saveFile: buildFileSaver(deps),
     fileTool: buildFileTool(deps, projectName, origin, signal),
-    audioTools: version.parameters.audioProcessing ? await deps.audioTools?.(projectName, origin) : undefined,
+    audioTools: version.parameters.audioProcessing && !origin.backgroundTask ? await deps.audioTools?.(projectName, origin) : undefined,
     readSlack: await buildSlackReader(deps, version, projectName),
   };
 }

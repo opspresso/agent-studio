@@ -29,6 +29,13 @@ function retention(value: unknown): FileRetention {
   return { unit: input.unit, value: input.value, timezone: input.timezone };
 }
 
+function object(args: Record<string, unknown>, field: string): Record<string, unknown> | undefined {
+  const value = args[field];
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError(`Invalid ${field}`);
+  return value as Record<string, unknown>;
+}
+
 /** One bound user and occurrence, shared by all audio calls in an Agent run. */
 export function createAudioTool(deps: AudioToolDeps, context: {
   projectName: string; userEmail: string; occurrence: string; actor?: RunActor;
@@ -68,6 +75,13 @@ export function createAudioTool(deps: AudioToolDeps, context: {
           jobStatus: job.status, warnings: Array.isArray(body.warnings) ? body.warnings.filter((warning) => typeof warning === "string") : [] }) };
       }
       if (operation !== "submit") throw new ValidationError("Invalid audio operation");
+      const post = object(args, "postprocess"); const destination = object(args, "destination");
+      const projectName = post && text(post, "projectName"); const versionName = post && text(post, "versionName");
+      if (post && (!projectName || !versionName)) throw new ValidationError("A postprocessing Agent version is required");
+      const serverName = destination && text(destination, "serverName");
+      if (destination && (!serverName || typeof destination.documents !== "boolean" || typeof destination.memories !== "boolean")) {
+        throw new ValidationError("Invalid destination");
+      }
       const fileId = text(args, "file_id"); const sourceRef = text(args, "source_ref");
       if ((!fileId && !sourceRef) || (fileId && sourceRef)) throw new ValidationError("Provide exactly one file_id or source_ref");
       const result = await deps.jobs.submit(context.projectName, context.userEmail, {
@@ -75,6 +89,8 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         task: tool === IMPORT_FILE_TOOL_NAME ? "import" : tool === TRANSCRIBE_AUDIO_TOOL_NAME ? "transcribe" : "process",
         model: text(args, "model"), language: text(args, "language"), retention: retention(args.retention),
         processingRevision: text(args, "processing_revision"),
+        ...(post ? { postprocess: { projectName: projectName!, versionName: versionName! } } : {}),
+        ...(destination ? { destination: { serverName: serverName!, documents: destination.documents as boolean, memories: destination.memories as boolean } } : {}),
       }, { occurrence: context.occurrence, actor: context.actor });
       return { text: JSON.stringify(result) };
     } catch (error) {
