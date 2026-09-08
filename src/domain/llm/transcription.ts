@@ -36,7 +36,7 @@ export interface TranscriptionPort {
 
 export class TranscriptionError extends Error {
   constructor(
-    public readonly code: "invalid_input" | "invalid_response" | "unsupported" | "unavailable",
+    public readonly code: "invalid_input" | "invalid_response" | "unsupported" | "authentication" | "unavailable",
     message: string,
   ) {
     super(message);

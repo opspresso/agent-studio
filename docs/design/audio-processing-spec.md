@@ -1,6 +1,7 @@
 # 범용 오디오 처리·비동기 작업 개발 스펙
 
-상태: **구현 중**. 전사 포트와 정규화 결과 검증을 정의했다. 실행 어댑터·작업·도구 연결은 아직 없다.
+상태: **구현 중**. 전사 포트·결과 검증과 OpenAI 호환 multipart 어댑터를 구현했다.
+모델 설정 조립·영속 작업·도구 연결은 아직 없다.
 아래 도구 이름은 구현할 계약이며 현재 제공 기능이 아니다.
 구현은 [마일스톤](../MILESTONES.md#audio-processing-jobs)에서 추적한다.
 운영 Agent 생성·인증 연결·스케줄 활성화는 개발 검증 후 수행한다.
@@ -140,6 +141,12 @@ cursor에 포함하고 남은 내용을 다음 호출로 제공한다. 미완료
 작업·파일 ID는 접근 권한이 아니며 시작 project와 실행 사용자를 확인한다.
 
 ## 파일 입력과 전사
+
+현재 `src/infrastructure/llm/transcription.ts`는 지정 endpoint의 `/audio/transcriptions`를 호출한다.
+`json`·`verbose_json`·`diarized_json` 응답과 선택적 `chunking_strategy=auto`를 설정으로 받는다.
+자동 provider retry는 하지 않으며 인증 오류·일시 오류·잘못된 응답을 구분한다. 입력과 응답은
+크기가 제한되고, 누락된 usage는 unknown으로 남는다. 형식은
+[공식 Audio API 계약](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)을 따른다.
 
 - 공개 URL은 기존 DNS·SSRF·redirect 검증을 모든 hop에 적용한다. 출처 인증 header를 다른
   다운로드 호스트로 전달하지 않는다. 내부 ASR·MinIO는 등록된 운영 endpoint를 사용한다.
