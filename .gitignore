@@ -35,6 +35,8 @@ next-env.d.ts
 
 # testing
 coverage/
+test-results/
+playwright-report/
 
 # logs
 npm-debug.log*

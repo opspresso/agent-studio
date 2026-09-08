@@ -3,7 +3,9 @@ import { withAuth } from "@/lib/session";
 import { artifactUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 import { viewPage } from "./_lib/viewPage";
-import { ARTIFACT_VIEW_POLICY, sanitizeArtifactHtml } from "./_lib/htmlSafety";
+import { ARTIFACT_VIEW_POLICY, INTERACTIVE_HTML_VIEW_POLICY, ARTIFACT_VIEW_PERMISSIONS } from "./_lib/htmlSafety";
+import { interactiveHtml } from "./_lib/interactiveHtml";
+import { getT } from "@/app/_i18n/server";
 
 type RouteContext = { params: Promise<{ artifactId: string }> };
 
@@ -41,8 +43,8 @@ function withErrorHeaders(response: Response): Response {
 /**
  * The type this response is served as.
  *
- * Every kind is now a UTF-8 page. Raw HTML is decoded from its declared
- * charset before sanitizing, and every other view is built from validated
+ * Every kind is now a UTF-8 page. Stored HTML is decoded from its declared
+ * charset before isolating, and every other view is built from validated
  * UTF-8 text. Saying the charset keeps Korean text independent of browser
  * guesses or a removed `<meta>` element.
  */
@@ -69,7 +71,7 @@ const handler = withAuth(async (user, _request: Request, ctx: RouteContext) => {
     const { artifact, bytes, view } = await artifactUseCases.readForView(artifactId, user.email);
     let body: BodyInit | null;
     if (view === "html") {
-      body = sanitizeArtifactHtml(bytes, artifact.mimeType);
+      body = interactiveHtml(bytes, artifact.mimeType, artifact.filename, await getT());
     } else {
       body = viewPage(view, bytes, artifact.filename);
     }
@@ -79,7 +81,8 @@ const handler = withAuth(async (user, _request: Request, ctx: RouteContext) => {
     return new Response(body, {
       headers: {
         "Content-Type": CONTENT_TYPE,
-        "Content-Security-Policy": ARTIFACT_VIEW_POLICY,
+        "Content-Security-Policy": view === "html" ? INTERACTIVE_HTML_VIEW_POLICY : ARTIFACT_VIEW_POLICY,
+        "Permissions-Policy": ARTIFACT_VIEW_PERMISSIONS,
         ...BASE_HEADERS,
         // Not `immutable` like the object itself: this response carries one
         // reader's permission, and a shared cache holding it would answer the

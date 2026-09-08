@@ -350,7 +350,7 @@ export const en = {
   "guide.chat.attachmentsBody":
     "Attach PNG, JPEG, GIF, or WebP images to a model that supports image input. PDF, UTF-8 text, DOCX, XLSX, PPTX, HWP 5.x, HWPX, ODT/ODS/ODP, and RTF are read by the built-in document engine. Attach up to four documents of 10 MiB each. The conversation retains bounded extracted text; configured storage also keeps the originals. Check extraction and storage warnings after sending.",
   "guide.chat.createFiles": "Create a new document",
-  "guide.chat.createFilesBody": "In an agent conversation, ask “Create a DOCX report from these notes” or “Make an XLSX budget table.” DOCX, PDF, PPTX, HWPX, and XLSX creation is built in. Plain text, Markdown, CSV, JSON, HTML, and SVG use SaveFile. File tools require configured storage. Download the result from the response and review its contents and layout.",
+  "guide.chat.createFilesBody": "In an agent conversation, ask “Create a DOCX report from these notes” or “Make an XLSX budget table.” DOCX, PDF, PPTX, HWPX, and XLSX creation is built in. Plain text, Markdown, CSV, JSON, HTML, and SVG use SaveFile. File tools require configured storage. Download the result from the response and review its contents and layout. HTML previews run immediately in an isolated frame. Stop and Restart control execution; preview changes are not saved to the original.",
   "guide.chat.editFiles": "Edit an attachment and keep the original",
   "guide.chat.editFilesBody": "Attach the source, then ask “Inspect this document and change the heading to Quarterly results” or “Set Summary!B2 to 150.” DOCX, PPTX, and HWPX support selected text changes; XLSX supports cell changes; UTF-8 text supports unique substring replacement. The agent inspects targets and returns a new file. Follow-up requests can use the original or revised file.",
   "guide.chat.fileLimits": "Know the editing limits",
@@ -909,6 +909,16 @@ export const en = {
   "capabilities.descriptionTitle": "Description controls discovery",
 
   // Artifacts.
+  "artifacts.preview.title": "HTML preview",
+  "artifacts.preview.note": "Web requests are restricted, but this is not a fully offline sandbox. Changes are not saved.",
+  "artifacts.preview.controls": "Preview controls",
+  "artifacts.preview.stop": "Stop",
+  "artifacts.preview.restart": "Restart",
+  "artifacts.preview.stopped": "Preview stopped. Restart to load the original file again.",
+  "artifacts.preview.blocked": "The preview blocked a browser operation or resource. Use self-contained HTML; restart if the page stopped responding.",
+  "artifacts.preview.error": "The file reported a script error. Stop the preview or ask for a corrected file.",
+  "artifacts.preview.noScript": "Enable JavaScript in your browser to run this preview.",
+
   "artifacts.lede":
     "Stored attachment originals and files created or edited by your runs. Files from Slack, triggers, and A2A are also available to authorized readers on the project’s artifact page.",
   "artifacts.empty": "Nothing kept yet. Stored attachment originals and generated files appear here.",

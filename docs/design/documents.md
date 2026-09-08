@@ -111,6 +111,23 @@ JSON 편집 결과는 구문을 검사한다. 텍스트 편집 결과도 기존 
 텍스트 편집은 최종 결과뿐 아니라 각 교체 직전의 예상 UTF-8 크기를 검사해 중간 결과도
 `MAX_SAVED_FILE_BYTES`를 넘지 않도록 한다.
 
+## HTML 실행 미리보기
+
+HTML 원본은 수정하지 않는다. `/view`는 HTML을 즉시 실행하고 중지·다시 시작 버튼을 제공하며,
+원본을 별도 불투명 origin의 sandbox iframe에 넣는다. JavaScript·버튼·입력·canvas·SVG를
+보존하므로 단계형 문서의 나머지 화면에도 접근할 수 있다. `#목차` 링크는 iframe 문서 안에서
+이동하며 사용자 정의 클릭 처리도 유지한다. 원문을 바깥 DOM에 삽입하지 않는다.
+일반 웹 요청과 외부 이동을 제한하지만 완전한 무통신 sandbox는 아니다. 미리보기를 여는
+즉시 코드가 실행되므로 신뢰하는 파일을 다룬다는 전제로 사용한다. 세부 경계는 [보안](../SECURITY.md#데이터-노출과-보존)을 따른다.
+
+SaveFile 안내는 외부 CDN·fetch·storage에 의존하지 않는 단일 HTML을 요구하고, 저장이
+브라우저 실행 검증을 뜻하지 않는다고 명시한다. 파일 내부의 로직 오류까지 자동으로 고치지는 않는다. 실행 중 감지된 script 오류와 차단된 리소스는 고정 안내로 표시한다. 같은 안내는 반복 갱신하지 않고 script 오류를 우선하며, 다시 시작하면 초기화한다.
+`pnpm test:html-preview`는 제어 동작과 주요 보안 경계를 실제 Chromium에서 검증한다.
+
+![HTML 열기 직후](images/html-preview-ready.png)
+
+![HTML 실행 후](images/html-preview-running.png)
+
 ## 실행 자원
 
 배포의 composition root는 `workerAdapters.ts`를 연결한다. 추출 포트의 읽기와 문서
