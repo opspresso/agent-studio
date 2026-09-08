@@ -86,10 +86,7 @@ function makeDeps(chunks: EngineChunk[], teams: TeamsClientPort, options: { call
         name === projectFixture().publishedVersion ? versionFixture(options.callerContext) : null,
       list: async () => [],
     } as unknown as VersionRepository,
-    openDocuments: async () => ({
-      extractor: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
-      close: async () => {},
-    }),
+    documents: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
     teams,
     transcripts: {
       recent: async () => stored,

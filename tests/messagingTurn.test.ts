@@ -109,10 +109,7 @@ function makeDeps(chunks: EngineChunk[]): MessagingDeps & { seen: () => TurnInpu
     },
     projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
     versions: { get: async () => versionFixture(), list: async () => [] } as unknown as VersionRepository,
-    openDocuments: async () => ({
-      extractor: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
-      close: async () => {},
-    }),
+    documents: { extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }) },
     seen: () => seen,
   };
 }
@@ -131,10 +128,30 @@ function turn(overrides: Partial<TurnInput> = {}): TurnInput {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
 describe("handleTurn", () => {
+  it("restores and retains file IDs without putting signed URLs in model history", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const deps = makeDeps([{ file: { name: "new.docx", mimeType: "application/msword", source: "builtin: File", key: "stored", artifactId: "new-id" } }, { done: true }]);
+    const append = vi.fn(async () => {});
+    deps.fileHistory = {
+      recent: async () => [{ role: "assistant", content: "Prior file ID: old-id", createdAt: "2026-09-07T00:00:00.000Z" }],
+      append,
+    };
+    deps.signFile = async () => "https://signed.test/secret";
+    const { reply } = makeReply();
+    await handleTurn(deps, turn({ actor: { kind: "slack", id: "U1" } }), reply);
+    expect(JSON.stringify(deps.seen())).toContain("old-id");
+    expect(append).toHaveBeenCalledOnce();
+    expect(JSON.stringify(append.mock.calls)).toContain("new-id");
+    expect(JSON.stringify(append.mock.calls)).not.toContain("secret");
+  });
+
   it("reads recent historical documents after current attachments within one shared budget", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const deps = makeDeps([{ done: true }]);
@@ -145,10 +162,7 @@ describe("handleTurn", () => {
         return Buffer.from(name);
       },
     });
-    deps.openDocuments = async () => ({
-      extractor: { extract: async ({ maxChars }) => ({ text: "가".repeat(Math.min(15_000, maxChars)) }) },
-      close: async () => {},
-    });
+    deps.documents = { extract: async ({ maxChars }) => ({ text: "가".repeat(Math.min(15_000, maxChars)) }) };
     const { reply, finished } = makeReply();
     await handleTurn(deps, turn({
       attachments: [document("current.txt")],
@@ -189,15 +203,14 @@ describe("handleTurn", () => {
     expect(deps.seen()[4]?.message.content).toBe("question 4");
   });
 
-  it.each([false, true])("closes version-bound document capabilities after extraction (failure: %s)", async (fails) => {
+  it.each([false, true])("reads office documents through the native extractor (failure: %s)", async (fails) => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const deps = makeDeps([{ done: true }]);
-    const close = vi.fn(async () => {});
     const extract = vi.fn(async () => {
       if (fails) throw new Error("office reader unavailable");
       return { text: "Quarterly revenue" };
     });
-    deps.openDocuments = vi.fn(async () => ({ extractor: { extract }, close }));
+    deps.documents = { extract };
     const input = turn({
       actor: { kind: "slack", id: "U1" },
       ownerEmail: "caller@example.com",
@@ -207,11 +220,7 @@ describe("handleTurn", () => {
 
     await handleTurn(deps, input, reply);
 
-    expect(deps.openDocuments).toHaveBeenCalledWith(input.version, expect.any(AbortSignal), {
-      actor: input.actor, userEmail: input.ownerEmail, conversation: input.conversation,
-    });
     expect(extract).toHaveBeenCalledOnce();
-    expect(close).toHaveBeenCalledOnce();
     if (fails) {
       expect(finished()?.suffix).toContain("office reader unavailable");
     } else {

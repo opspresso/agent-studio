@@ -765,12 +765,12 @@ token 으로 치환되고, 응답에서 원본이 복원된다. 스트리밍도 
 여전히 본다. (subagent transfer 는 정반대다. 자식 agent 는 마스킹된 메시지를 받는다.) MCP 서버
 등록은 그 자체의 기준으로 검토하라. `piiFiltering` 은 그것을 다루지 않는다.
 
-**`SaveFile` 이 쓰는 파일도 복원된 쪽이다.** 그 파일은 물어본 사람이 받는 것이고, 그가 같은
+**`SaveFile`과 `File`의 생성·편집도 복원된 인자를 사용한다.** 그 파일은 물어본 사람이 받는 것이고, 그가 같은
 화면에서 읽는 답변이 이미 복원된 텍스트다. 마스킹된 사본으로 저장하면 자기 컨텍스트를 위해
 치환된 placeholder 로 가득 찬 리포트가 자기에게 돌아온다. 그래서 저장은 `displayArgs` 에서
 읽는다. 어느 사본에서 디스패치하는지가 이 경계를 정하는 곳이라는 뜻이기도 하다: 다른 모델로
 건너가는 것(transfer 의 `message`, dispatch 의 `tasks`)은 `args`, 사람이나 이미 신뢰된 바깥
-시스템에 닿는 것(MCP 디스패치, 이미지 프롬프트, `SaveFile` 의 파일)은 `displayArgs` 다.
+시스템에 닿는 것(MCP 디스패치, 이미지 프롬프트, `SaveFile`·`File`의 파일)은 `displayArgs`다.
 
 **capability discovery 도 그 밖에 있고, 구조적인 이유가 있다.** `dynamicCapabilities` 가 켜진
 버전은 가장 최근 사용자 턴들(마지막 하나만이 아니라 짧은 창)을 자기 질의 중 하나로 삼아
@@ -917,8 +917,10 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   뿐이다. 버전이 바인딩한 도구만이 그것에 작용할 수 있고, 그 도구 자신의 가드 아래에서 그렇다.
 - **텍스트는 PII 필터를 지난다.** 버전이 옵트인하면 턴의 나머지와 마찬가지이고, 한계도 같다
   (email, 전화번호, 한국 등록번호, 카드 번호, 이름은 아니다).
-- **Chat 은 파일이 아니라 추출된 텍스트를 저장한다.** chat 자신의 보존 기간과 소유자 전용 읽기
-  규칙 아래에서다. 10MB PDF 는 결코 영속되지 않는다. 읽어 낸 것 중 턴당 최대 40,000자가 저장된다.
+- **Chat은 원본과 추출문을 분리해 보관한다.** 턴당 최대 40,000자의 추출문과 파일 참조는
+  소유자 전용 chat 행에 남고, 원본은 `source: attachment`인 artifact로 저장한다. 원본은
+  기존 artifact와 같은 소유자·project owner·admin 읽기 정책, artifact 보존 기간과 오브젝트
+  접근 모드를 따른다. 원본은 chat 삭제만으로 삭제되지 않으며 artifact 삭제·보존 정책이 소유한다.
 
 ## 데이터 노출과 보존
 
@@ -938,6 +940,9 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 - Trace, usage 행, chat, trigger 배달, 인바운드 A2A 태스크는 모두 `expiresAt` 을 지니고
   schedule-scan 틱의 sweep 이 지운다. 티커가 없는 배포는 아무것도 지우지 않는다.
   [OPERATIONS.md](OPERATIONS.md#행-보존) 참고.
+- **메시징 파일 참조 기록**은 Slack·Telegram·Teams에서 대화·actor별로 생성 파일 ID와
+  이름만 7일간 보관한다. URL이나 바이트는 기록하지 않는다. 최근 20개 기록, 기록당 20개
+  파일, 런당 20,000자로 제한하며 참조를 얻어도 `File` 도구의 권한 검사를 통과해야 한다.
 - **Telegram·Teams 대화 트랜스크립트** 는 project 의 봇과 주고받은 모든 턴의 *텍스트* 를 7일간
   보관한다. 대화별로 질문과 답을. 두 플랫폼 모두 히스토리를 돌려주지 않아 후속 질문이 그 앞의
   질문을 실어 날라야 하기 때문이다. 그것은 chat 메시지처럼 저장된 사용자 텍스트다. chat 과 달리
@@ -990,8 +995,10 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
     쓰였기 때문이다. 원격 이미지도 함께 막힌다(`img-src data:`). 모델이 고른 주소에서 가져오는
     그림은 그 호스트에게 "이 페이지가 열렸다"고, 그리고 누가 열었는지를 알려 준다.
   - **HTML 도 정적 문서로 만든 뒤 보낸다.** `sanitize-html` allowlist 는 제목·문단·목록·표·코드·
-    data 이미지·안전한 링크를 남기고, script·event handler·`meta`·CSS·form·iframe/object·
-    SVG/MathML 을 제거한다. 원문 charset 으로 먼저 해석한 뒤 UTF-8 로 다시 보내므로, sanitizer 를
+    data 이미지·안전한 링크를 남기고, script·event handler·`meta`·form·iframe/object·
+    SVG/MathML 을 제거한다. 문서 내부 `<style>`과 `style` 속성은 보존해 디자인을 유지한다.
+    CSS의 외부 stylesheet·font·image 요청은 CSP가 차단하며, 이 HTML은 반드시
+    `ARTIFACT_VIEW_POLICY`와 함께 제공한다. 원문 charset 으로 먼저 해석한 뒤 UTF-8 로 다시 보내므로, sanitizer 를
     우회하려고 잘못된 인코딩을 섞은 바이트는 열리지 않는다. 외부 링크는 사용자가 직접 눌러야만
     이동하며 `Referrer-Policy: no-referrer` 와 `rel=noreferrer` 를 함께 적용한다.
   - **모든 view 가 같은 script 없는 정책을 받는다.** `sandbox` 에 어떤 `allow-*` 도 붙이지 않고

@@ -195,9 +195,9 @@ N개의 assistant 턴, tool 텍스트 budget, 그리고 런 전체 단위의 히
 보고된다. 모델 제공자가 원격 URL을 직접 가져가게 두면 이 배포의 SSRF 경계를 우회하기 때문이다.
 
 **문서는 그것을 받은 표면에서 텍스트가 된다.** PDF, 평문 텍스트, Markdown, CSV/TSV, JSON,
-YAML, XML, HTML 은 로컬 extractor가 읽고, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 는
-실행할 version에 바인딩된 MCP 중 `read_document` capability를 제공하는 서버가 읽는다. 후자가 없거나 실패하면 파일을 조용히
-버리지 않고 warning 으로 보고한다. 어느 쪽이든 provider 고유의 file part 가 아니라 텍스트 part 로
+YAML, XML, HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF를 모두 내장 extractor가 읽는다.
+Office 형식은 내부 문서 엔진으로 처리하며 MCP 등록이나 version binding을 요구하지 않는다.
+파싱에 실패하면 warning으로 보고한다. 어느 쪽이든 provider 고유의 file part 가 아니라 텍스트 part 로
 턴 안에 읽힌다. 이것은
 단순화가 아니라 이 배포에 대한 결정이다: 하나의 model id 는 기본 라우터가 서빙할 수도 있고
 그 provider 자신의 OpenAI 호환 엔드포인트(`LLM_PROVIDER_<NAME>_BASE_URL`)가 서빙할 수도
@@ -208,7 +208,7 @@ capability 게이트가 아예 필요 없고, chat 영속화·재생·PII 필터
 | 조각 | 소유자 |
 |---|---|
 | 캡(cap), 그리고 어떤 파일이 문서인지 (`documentKind`) | `src/domain/llm/documentLimits.ts` |
-| 추출 (포트 — PDF 파서와 MCP 위임이 필요하다) | `src/domain/llm/documentExtractor.ts`, 로컬 어댑터, `src/application/execution/documentExtractor.ts` 의 바인딩된 capability 합성 |
+| 추출 포트와 내장 어댑터 | `src/domain/llm/documentExtractor.ts`, `src/infrastructure/llm/documentExtractor.ts`, `src/infrastructure/documents/engine/` |
 | budget, warning, 그리고 모델이 읽는 래퍼 | `src/application/llm/documentParts.ts` |
 | 바이트가 애초에 텍스트인지 | `src/shared/utf8Text.ts` 의 `decodeUtf8Text` |
 | 전송될 때와 재생될 때의 user 턴 본문 | `src/application/llm/documentParts.ts` 의 `turnContent` |

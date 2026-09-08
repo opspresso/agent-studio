@@ -42,7 +42,12 @@ export interface ArtifactContext {
   runId?: string;
 }
 
+/** Reserve an output identity before the run bracket stores its bytes. */
+export function createArtifactId(): string { return randomUUID(); }
+
 export interface ArtifactInput {
+  artifactId?: string;
+  derivedFrom?: string;
   kind: ArtifactKind;
   source: ArtifactSource;
   bytes: Uint8Array;
@@ -71,12 +76,13 @@ export async function storeArtifact(
   context: ArtifactContext,
   input: ArtifactInput,
 ): Promise<Artifact> {
-  const artifactId = randomUUID();
+  const artifactId = input.artifactId ?? createArtifactId();
   const key = artifactObjectKey(input.kind, artifactId, input.mimeType);
   await storage.objects.put({ key, bytes: input.bytes, mimeType: input.mimeType });
   const prompt = input.prompt ? cutCodePoints(input.prompt, MAX_ARTIFACT_PROMPT_CHARS) : undefined;
   const artifact: Artifact = {
     artifactId,
+    ...(input.derivedFrom ? { derivedFrom: input.derivedFrom } : {}),
     kind: input.kind,
     source: input.source,
     key,

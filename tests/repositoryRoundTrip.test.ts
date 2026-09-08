@@ -634,6 +634,10 @@ describe("chatRepository message round-trip", () => {
       role: "user",
       content: "what is this?",
       images: [{ url: "https://img.example/attached.png" }],
+      documents: [{ name: "source.docx", text: "extracted", file: {
+        artifactId: "source-id", key: "artifacts/document/source-id.docx", name: "source.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", byteSize: 100,
+      } }],
       createdAt: NOW,
     };
     const toolMessage: ChatMessage = {
@@ -685,6 +689,7 @@ describe("artifactRepository round-trip", () => {
   it("reads back every field it was given", async () => {
     const artifact = {
       artifactId: "a1",
+      derivedFrom: "original-document",
       kind: "image" as const,
       source: "generated" as const,
       key: "artifacts/image/a1.png",

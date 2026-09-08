@@ -1,3 +1,4 @@
+import { fileReferenceText } from "@/application/artifact/producedFiles";
 import type {
   AssistantChatMessage,
   ChatMessage,
@@ -97,7 +98,8 @@ function assistantImageMessage(message: AssistantChatMessage): ChatMessageInput 
 /** What a stored message costs the history budget, attachments included. */
 function messageChars(message: ChatMessage): number {
   const documents = message.role === "user" ? (message.documents ?? []) : [];
-  return documents.reduce((total, document) => total + document.text.length, message.content.length);
+  const files = message.role === "assistant" ? fileReferenceText((message.files ?? []).map((file) => ({ name: file.name, fileId: file.artifactId }))).length : 0;
+  return documents.reduce((total, document) => total + document.text.length, message.content.length + files);
 }
 
 /** One stored call and the result stored for it, already matched. */
@@ -284,7 +286,9 @@ export function toEngineMessages(
     // `messageChars` counts content and document text, not this — so replaying
     // it would overrun the window without the "earlier turn(s) were left out"
     // warning below ever firing.
-    const mapped: ChatMessageInput = { role: "assistant", content: message.content };
+    const fileIds = fileReferenceText((message.files ?? []).map((file) => ({ name: file.name, fileId: file.artifactId })));
+    const content = message.content + (fileIds ? `\n${fileIds}` : "");
+    const mapped: ChatMessageInput = { role: "assistant", content };
     if (pairs.length > 0) {
       mapped.tool_calls = pairs.map((pair) => pair.call);
     }

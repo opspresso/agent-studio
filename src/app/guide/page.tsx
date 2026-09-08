@@ -99,6 +99,9 @@ const SECTIONS: readonly GuideSection[] = [
       { title: "guide.chat.version", body: "guide.chat.versionBody" },
       { title: "guide.chat.context", body: "guide.chat.contextBody" },
       { title: "guide.chat.attachments", body: "guide.chat.attachmentsBody" },
+      { title: "guide.chat.createFiles", body: "guide.chat.createFilesBody" },
+      { title: "guide.chat.editFiles", body: "guide.chat.editFilesBody" },
+      { title: "guide.chat.fileLimits", body: "guide.chat.fileLimitsBody" },
       { title: "guide.chat.stop", body: "guide.chat.stopBody" },
     ],
     links: [

@@ -10,7 +10,9 @@
 ## 빌드 아티팩트
 
 배포 대상은 컨테이너 이미지다. 빌드는 멀티스테이지이며 Next.js **standalone** 출력을 싣는다.
-의존성이 아티팩트 안으로 추적돼 들어가므로 런타임 스테이지에는 `node_modules` 설치가 없다.
+의존성과 문서 워커 번들, PDF용 한글 폰트가 아티팩트 안으로 추적돼 들어가므로 런타임
+스테이지에는 `node_modules` 설치나 폰트 다운로드가 없다. 문서 작업은 앱이 띄우는 자식
+프로세스에서 실행하며 별도 MCP 서비스는 필요 없다. 실행 한계는 [문서 엔진](design/documents.md#실행-자원)을 보라.
 
 ```bash
 docker build -t agent-studio .
@@ -283,7 +285,7 @@ MinIO 는 `mc ilm rule add --expire-days …`:
 | Prefix | 구간 | 담는 것 |
 |---|---|---|
 | `artifacts/image/` | `ARTIFACT_RETENTION_DAYS` | 생성된 이미지와 첨부된 이미지 |
-| `artifacts/document/` | `ARTIFACT_RETENTION_DAYS` | 도구가 렌더링한 문서 |
+| `artifacts/document/` | `ARTIFACT_RETENTION_DAYS` | 첨부 문서 원본과 도구가 생성·편집한 파일 |
 | `images/` | `CHAT_RETENTION_DAYS` | 아티팩트 이전의 레이아웃; 아직 읽지만 쓰지는 않는다 |
 
 이 두 설정은 앱이 맞춰 줄 수 없고, 어긋나는 두 방향 모두 눈에 보인다: 행이 먼저 만료되면

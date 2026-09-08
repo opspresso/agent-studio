@@ -1,3 +1,4 @@
+import { buildFileTool } from "@/application/document/fileTool";
 /**
  * Subagent transfer and the engine deps a run is assembled from. These live
  * together because they are mutually recursive: a parent builds deps to run,
@@ -83,6 +84,7 @@ export async function buildAgentDeps(
     // Storage decides, not the version: a run that can keep a file is offered
     // the tool, and one in a deployment that keeps nothing never sees it.
     saveFile: buildFileSaver(deps),
+    fileTool: buildFileTool(deps, projectName, origin, signal),
     readSlack: await buildSlackReader(deps, version, projectName),
   };
 }

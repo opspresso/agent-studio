@@ -102,26 +102,10 @@ export async function sendMessage(
       attachments,
     );
     const documentInput = input.documents ?? [];
-    const documentSession =
-      documentInput.length > 0
-        ? await deps.openDocuments?.(
-            version,
-            input.signal,
-            {
-              actor: { kind: "user", id: input.userEmail },
-              conversation: chatConversation(input.chatId),
-            },
-          )
-        : undefined;
-    let read: Awaited<ReturnType<typeof readMessageDocuments>>;
-    try {
-      read = await readMessageDocuments(
-        documentSession?.extractor ?? deps.documents,
-        documentInput,
-      );
-    } finally {
-      await documentSession?.close();
-    }
+    const read = await readMessageDocuments(deps, {
+      projectName: project.name, versionName: version.versionName,
+      actor: { kind: "user", id: input.userEmail },
+    }, documentInput);
     const userMessage: ChatMessage = {
       chatId: input.chatId,
       seq: userSeq,

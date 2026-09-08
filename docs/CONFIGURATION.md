@@ -495,19 +495,19 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | artifact 행에 남기는 프롬프트 발췌 | `500` 자 | `src/application/artifact/storeArtifact.ts` |
 | `/view` 가 메모리로 읽어 들이는 artifact | `2 MB` | `src/domain/artifact/types.ts` |
 | `/view` 가 CSV 에서 그리는 행 수 | `2,000` | `src/app/api/artifacts/[artifactId]/view/_lib/viewPage.tsx` |
-| `SaveFile` 하나가 쓸 수 있는 텍스트 | `1 MB` | `src/domain/artifact/types.ts` |
+| `SaveFile` 생성 및 `File` 평문 편집의 바이트(중간 결과 포함) | `1 MB` | `src/domain/artifact/types.ts` |
 | `/api/objects` 가 proxied 주소 하나에 대해 메모리로 읽어 들이는 오브젝트. 고른 숫자가 아니라 저장될 수 있는 것의 최대(첨부 · 문서 · 저장 파일 상한 중 큰 쪽) | `10 MB` | `src/infrastructure/storage/artifactAccess.ts` 의 `MAX_PROXIED_OBJECT_BYTES` |
 | admin 이 올리는 모델 카탈로그 문서 | `4 MB` | `src/app/api/_lib/body.ts` |
 | 올리는 plugins 아카이브. 전송 크기 / 풀었을 때 / 엔트리 수 (헤더 기준, 파일·디렉터리·확장 레코드 모두) | `32 MB` / `64 MB` / `20,000` | `src/app/api/plugins/sync/upload/route.ts`, `src/infrastructure/archive/tar.ts` |
 | 한 틱의 retention sweep 이 지우는 행 수 (나머지는 다음 틱) | `items` 최대 `5,000` + Better Auth session 최대 `5,000` | `src/infrastructure/db/store.ts` 의 `deleteExpired`, `src/infrastructure/db/repositories/memberRepository.ts` 의 `deleteExpiredSessions` |
-| 한 런이 쓸 수 있는 파일 수 (`SaveFile`) | `10` | `src/application/llm/engine.ts` |
+| 한 런의 파일 쓰기 시도 수 (`SaveFile`과 `File` 생성·편집 공유) | `10` | `src/application/llm/engine.ts` |
 | 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (skill / 외부 agent / MCP 서버) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
 | 각 MCP 인덱스에 요청하는 카탈로그 매치 수. 그 상한을 넘겨 oversampling 한다. 여러 도구 행이 한 서버로 합쳐지고, 런이 바인딩할 수 없는 후보가 슬롯을 잡아먹어서는 안 되기 때문이다 | MCP 서버 상한의 `4×`(tool 인덱스) / `3×`(server 인덱스) | `src/application/execution/bindings.ts` |
 | 런이 카탈로그를 검색할 때 쓰는 것 (시스템 프롬프트 / 가장 최근 사용자 턴 / 최신 요청 + 관련 기억을 합친 검색어) | `2,000` 자 / `3` 턴 / `2,000` 자(각 절반 최대 `1,000` 자) | `src/application/execution/bindings.ts` |
 | 메모리 recall (`memoryRecall`): 보내는 질의 / 프롬프트에 유지하는 텍스트 / 첫 토큰이 그것을 기다리는 시간 | `2,000` 자 / `4,000` 자 / `10s` | `src/application/execution/memoryRecall.ts` |
 | 인코딩된 대화 id (그것을 넘으면 대화가 없고, API 헤더는 400 으로 답한다) | `512` 자 | `src/domain/execution/actor.ts` 의 `MAX_CONVERSATION_ID_LENGTH` |
 | 원격 agent 의 `contextId` 를 우리 쪽 대화 하나에 대해 유지하는 기간 | `7` 일, 사용 시 갱신 | `src/infrastructure/db/ttl.ts` |
-| 런당 선언되는 MCP 도구 수 (= 128 − builtin 수) | `115` | `src/domain/llm/toolLimits.ts` |
+| 런당 선언되는 MCP 도구 수 (= 128 − builtin 수) | `114` | `src/domain/llm/toolLimits.ts` |
 | MCP 도구 결과 하나 | `100,000` 자 | `src/infrastructure/mcp/toolManager.ts` |
 | MCP 서버의 HTTP 응답 | `14.5MB` | `src/infrastructure/mcp/session.ts` |
 | MCP 서버 하나에서 읽는 `tools/list` 페이지 수 (상한에 닿으면 그 discovery 는 실패한다, SDK 는 부분 카탈로그를 남기지 않는다) | `64` | `src/infrastructure/mcp/session.ts` |
@@ -529,9 +529,17 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | OpenAI-compatible SDK client cache (text / image / embedding, adapter별) / Teams 앱 token cache | 각 `16` / `32` | `src/infrastructure/llm/clientCache.ts`, `src/infrastructure/teams/client.ts` |
 | 프로젝트 설정에 표시하는 최근 Telegram destination | `100` | `src/application/telegram/projectTelegram.ts` |
 | GitHub API 요청 하나 (plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
-| 모델 응답당 동시 MCP 호출 수 | `5` | `src/application/llm/engine.ts` |
+| 모델 응답당 동시 MCP·FetchUrl·SaveFile·File 호출 수(공유 풀) | `5` | `src/application/llm/engine.ts` |
 | 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
 | 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP·원격 A2A) | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
+| PDF에 삽입하는 PNG의 총 디코딩 픽셀 | `16,777,216` | `src/domain/llm/imageLimits.ts`의 `MAX_PDF_IMAGE_PIXELS` |
+| 앱 프로세스당 문서 워커 동시 실행 / 대기 작업 | `2` / `8` | `src/infrastructure/documents/workerPool.ts` |
+| 문서 작업 기한 (대기 포함) / 자식 V8 old-space | `30s` / `256MiB` | `src/infrastructure/documents/workerPool.ts` |
+| 문서 생성 Markdown / 편집 요청 JSON 문자 예산 | `500,000` 자 | `src/infrastructure/documents/engine/limits.ts`, `workerPool.ts` |
+| 생성·편집 문서 출력 | `10,000,000` bytes | `src/infrastructure/documents/engine/limits.ts` |
+| 문서 생성 이미지 asset 수 / 총 바이트 | `12` / `6 MiB` | `src/domain/document/processor.ts` |
+| File 읽기·검사 텍스트 / 한 번의 편집 수 | `90,000` 자 / `100` | `src/domain/document/processor.ts` |
+| XLSX 생성 시트 JSON 입력(UTF-8) | `10 MiB` | `src/infrastructure/documents/workerPool.ts` |
 | 턴당 문서 수 / 각 바이트 | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | 유지하는 추출 텍스트, 문서당 / 턴당 | `20,000` / `40,000` 자 | `src/domain/llm/documentLimits.ts` |
 | 턴을 나르는 요청 본문 (첨부 상한에서 파생) | ~`80MB` | `src/app/api/_lib/body.ts` |

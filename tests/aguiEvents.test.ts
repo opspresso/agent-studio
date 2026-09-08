@@ -267,13 +267,13 @@ describe("toAguiEvents — reasoning, steps and the other axes", () => {
   });
 
   it("addresses a produced file, and reports one it cannot address", async () => {
-    const file = { mimeType: "application/pdf", name: "report.pdf", source: "mcp: render", key: "k1", byteSize: 12 };
+    const file = { artifactId: "file-1", mimeType: "application/pdf", name: "report.pdf", source: "mcp: render", key: "k1", byteSize: 12 };
     const signed = await translate([{ file }, { done: true }], async (key) => `https://files/${key}`);
     expect(signed[1]).toEqual({
       type: "ACTIVITY_SNAPSHOT",
       messageId: "id1",
       activityType: "agent-studio.file",
-      content: { name: "report.pdf", mimeType: "application/pdf", byteSize: 12, url: "https://files/k1" },
+      content: { fileId: "file-1", name: "report.pdf", mimeType: "application/pdf", byteSize: 12, url: "https://files/k1" },
     });
 
     const unsigned = await translate([{ file }, { done: true }]);

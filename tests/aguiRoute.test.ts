@@ -2,17 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import { RateLimitedError } from "@/application/errors";
 import { readSse } from "@/app/_lib/sse";
-import { openDocumentExtractor } from "@/application/execution/documentExtractor";
-
-vi.mock("@/application/execution/documentExtractor", () => ({ openDocumentExtractor: vi.fn() }));
 
 // Route-handler test: repositories and the execution facade are mocked, so the
 // assertions are about what the route decides — who may call, what it refuses,
 // and that the run's chunks leave as AG-UI frames.
-const { projectRepo, versionRepo, runs } = vi.hoisted(() => ({
+const { projectRepo, versionRepo, runs, extract } = vi.hoisted(() => ({
   projectRepo: { get: vi.fn() },
   versionRepo: { get: vi.fn(), list: vi.fn(async () => []) },
   runs: [] as unknown[],
+  extract: vi.fn(),
 }));
 
 // The conversation key is an HMAC under the deployment's secret; only that
@@ -32,7 +30,7 @@ vi.mock("@/lib/container", async () => ({
     projects: projectRepo,
     versions: versionRepo,
     execution: {
-      documents: { extract: async ({ name }: { name: string }) => ({ text: `<${name}>` }) },
+      documents: { extract },
     },
   },
   apiTokenUseCases: (
@@ -81,10 +79,7 @@ async function frames(response: Response): Promise<unknown[]> {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(openDocumentExtractor).mockResolvedValue({
-    extractor: { extract: async ({ name }) => ({ text: `<${name}>` }) },
-    close: async () => {},
-  });
+  extract.mockImplementation(async ({ name }: { name: string }) => ({ text: `<${name}>` }));
   runs.length = 0;
   projectRepo.get.mockResolvedValue({
     name: "proj",
@@ -115,14 +110,10 @@ beforeEach(() => {
 });
 
 describe("POST /api/agui/[name]", () => {
-  it.each([false, true])("reads Office attachments with the published version and closes the reader (failure: %s)", async (fails) => {
-    const close = vi.fn(async () => {});
-    vi.mocked(openDocumentExtractor).mockResolvedValue({
-      extractor: { extract: async () => {
-        if (fails) throw new Error("office reader unavailable");
-        return { text: "Quarterly revenue" };
-      } },
-      close,
+  it.each([false, true])("reads Office attachments without MCP bindings (failure: %s)", async (fails) => {
+    extract.mockImplementation(async () => {
+      if (fails) throw new Error("office reader unavailable");
+      return { text: "Quarterly revenue" };
     });
     const response = await POST(req({
       ...input,
@@ -134,11 +125,7 @@ describe("POST /api/agui/[name]", () => {
     const events = await frames(response);
 
     expect(response.status).toBe(200);
-    expect(openDocumentExtractor).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ projectName: "proj", versionName: "1" }),
-      expect.any(AbortSignal), expect.objectContaining({ actor: { kind: "project-token", id: "owner@example.com" } }),
-    );
-    expect(close).toHaveBeenCalledOnce();
+    expect(extract).toHaveBeenCalledOnce();
     expect(JSON.stringify(fails ? events : runs)).toContain(fails ? "office reader unavailable" : "Quarterly revenue");
   });
 

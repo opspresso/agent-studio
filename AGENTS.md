@@ -35,6 +35,7 @@ before editing its subsystem.
 | Setup, scripts, CI | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | Unbuilt work only | [docs/MILESTONES.md](docs/MILESTONES.md) |
 | LLM engine | `src/application/llm/AGENTS.md`, then [design/execution.md](docs/design/execution.md) |
+| Document parsing, generation, editing and workers | [design/documents.md](docs/design/documents.md) |
 | Chat persistence and replay | `src/application/chat/AGENTS.md`, then [design/chat.md](docs/design/chat.md) |
 
 ## Commands

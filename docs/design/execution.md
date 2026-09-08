@@ -135,9 +135,11 @@ flowchart TB
   게이트다. 앞의 둘은 결정이라 버전이 정한다: 하나는 호출마다 돈을 쓰고 하나는 모델이 말하는
   주소로 요청을 보낸다. 파일을 쓰는 것은 둘 다 아니고, 못 하는 런은 리포트를 채팅창에 붙여
   넣는 수밖에 없다),
+  `File`(보관된 파일 읽기·검사와 문서 생성·편집 — 문서 엔진과 오브젝트 저장소가 게이트이며
+  형식별 범위는 [문서 엔진](documents.md)을 따른다),
   `parameters.slackWorkspace` 뒤의 Slack 읽기 도구 여섯 개
   ([workspace 읽기](slack.md#워크스페이스-읽기) 참고).
-  **그 밖의 이름은 모두 MCP 도구이고**, `src/domain/llm/toolNames.ts` 의 `BUILTIN_TOOL_NAMES` — 열세 개 전부 — 는 alias 할당
+  **그 밖의 이름은 모두 MCP 도구이고**, `src/domain/llm/toolNames.ts` 의 `BUILTIN_TOOL_NAMES` 는 alias 할당
   동안 예약되어, MCP 도구가 builtin 이 주장할 수 있는 이름을 다는 일이 없다.
 
 > 루프가 그것들을 어떻게 dispatch 하는지, builtin 이 *제공된다*는 것이 무슨 뜻이고 왜 그것을
@@ -346,15 +348,13 @@ task처럼 지속되는 무언가에 적히는 링크를 위한 것이고, 런�
 | Chunk | 포착이 하는 일 |
 |---|---|
 | `image` | 바이트를 저장하고 그것을 **유지하며**, `artifactId`/`key` 를 추가한다. 라이브 뷰는 여전히 chunk 에서 렌더링한다. `fetched` 표시가 붙은 것은 저장되지 않은 채 지나간다. |
-| `file` | 바이트를 저장하고 그것을 **떼어 내어**, 이름·크기·키만 남긴다. 렌더링된 문서는 그릴 것이 없고, 다운로드 링크 하나 만들자고 SSE 연결로 수 MB 의 base64 를 밀어 내리는 것은 순수한 비용이다. |
+| `file` | 바이트를 저장하고 그것을 **떼어 내어**, 이름·크기·artifact ID·키와 원본 관계를 남긴다. 렌더링된 문서는 그릴 것이 없고, 다운로드 링크 하나 만들자고 SSE 연결로 수 MB 의 base64 를 밀어 내리는 것은 순수한 비용이다. |
 
-파일의 생산자는 둘이다. 파일을 만들어 돌려주는 MCP 도구(문서 렌더러가 그렇다)와 `SaveFile`
-빌트인이고, chunk 의 `source` 가 둘을 갈라 적는다 — `mcp: render_document` 와
-`builtin: SaveFile`. **그것은 런의 스트림 안에서만 산다**: `ArtifactInput` 에 자리가 없어 행에
-남지 않고, `fileRefOf` 가 표면으로 나가는 길에 떼어 낸다. 나중에 "이 파일을 누가 썼나"를 물으려면
-먼저 행에 실어야 한다. 빌트인 쪽은 모델이 쓴 텍스트라 바이트를 만든 것이 모델이지만, 그것을
-어디에 둘지는 여전히 브래킷이 정한다: 도구는 결과에 파일을 실어 보낼 뿐이고 저장은
-`captureRunArtifacts` 가 한다. 그래서 새 생산자가 저장 경로를 새로 알 필요가 없었다.
+파일의 생산자는 MCP 도구, 텍스트를 저장하는 `SaveFile`, 내장 문서 엔진을 호출하는 `File`이다.
+chunk의 `source`는 `mcp: …` 또는 `builtin: …`로 생산자를 설명하며 스트림 안에서만 산다.
+도구는 결과에 바이트를 싣고 `captureRunArtifacts`가 저장한다. 내장 파일 도구는
+`createArtifactId`로 ID를 예약해 모델에게 알리며, 브래킷은 같은 ID로 저장한다.
+편집본의 `derivedFrom`은 원본 artifact를 가리킨다. 원본은 덮어쓰지 않는다.
 
 **무엇이 그렸는지는 그린 쪽이 말한다.** artifact 행의 `model` 은 chunk 가 실어 온 것이고
 (`EngineChunk.image.model`), 브래킷이 version 에서 유추하지 않는다 — 런의 모델은 그림을 그린

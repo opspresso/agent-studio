@@ -31,7 +31,7 @@ const nextConfig: NextConfig = {
   // this repository's agent rules are written by hand.
   agentRules: false,
   outputFileTracingIncludes: {
-    "/*": ["./node_modules/@swc/helpers/esm/**/*"],
+    "/*": ["./node_modules/@swc/helpers/**/*", "./assets/document-fonts/**/*", "./build/document-worker.cjs"],
   },
   experimental: {
     optimizePackageImports: ["@mantine/core", "@mantine/hooks", "@tabler/icons-react"],

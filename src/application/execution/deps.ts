@@ -1,3 +1,4 @@
+import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
 /**
  * Types the execution facade exposes, plus the version → engine parameter
  * mapping every runner shares. Separate from the entry points so the modules
@@ -58,6 +59,8 @@ export interface ExecutionDeps extends RunBracketDeps {
   http: HttpResourceReader;
   /** Turns attached or fetched bytes into text; tests inject a fake. */
   documents: DocumentExtractor;
+  documentRenderer?: DocumentRenderer;
+  documentEditor?: DocumentEditor;
   /**
    * A reader for the Slack workspace this project's bot is installed in, or
    * null when it has no enabled bot.

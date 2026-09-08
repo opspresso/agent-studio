@@ -45,9 +45,8 @@ tool call 은 `step` 으로, tool result 는 `stepDone` 으로, 그리고 top-le
 있었다면 "런이 답을 만들지 못한 채 끝났다"도 포함해서다. 어댑터가 로그를 남기고 기록할 수
 있도록, 자신이 전달한 것을 돌려준다.
 
-문서 첨부는 실행할 Version 에 연결된 `read_document` capability 를 통해 Office 형식을
-읽는다. 같은 추출기가 PDF·텍스트는 로컬에서 처리하며, 추출이 끝나거나 실패하면 MCP 연결을
-정리한다. actor·사용자 email·conversation 은 런과 같은 문맥으로 전달한다.
+문서 첨부는 내장 추출기로 PDF·텍스트·Office 형식을 읽는다. Office 문서에도 MCP 연결이나
+Version binding이 필요하지 않으며, 파일 바이트를 외부 문서 서버로 전달하지 않는다.
 
 **어댑터는 플랫폼이 정하는 모든 것을 소유한다.** 전달된 이벤트 중 어느 것이 런을 일으키는지,
 그리고 그 판정은 라우트에서 dedup claim *보다 앞에서* 실행되므로 아무도 부르지 않은 이벤트는

@@ -207,6 +207,21 @@ export const documentExtractor: DocumentExtractor = {
     if (kind === "pdf") {
       return pdfToText(bytes, maxChars);
     }
+    if (kind === "office") {
+      const { readDocument } = await import("@/infrastructure/documents/engine/read/document");
+      const { DocumentError } = await import("@/infrastructure/documents/engine/errors");
+      try {
+        const result = await readDocument({ bytes, mimeType, filename: name, label: name });
+        const text = cutCodePoints(result.text, maxChars);
+        const notes = [
+          ...(!result.complete && result.note ? [result.note] : []),
+          ...(text.length < result.text.length ? [`the first ${maxChars.toLocaleString("en-US")} characters`] : []),
+        ];
+        return { text, ...(notes.length ? { note: notes.join("; ") } : {}) };
+      } catch (error) {
+        throw new DocumentExtractionError(error instanceof DocumentError ? error.message : "the office document could not be parsed");
+      }
+    }
     return kind === "html"
       ? htmlToPlainText(bytes, maxChars, charset)
       : plainToText(bytes, maxChars);

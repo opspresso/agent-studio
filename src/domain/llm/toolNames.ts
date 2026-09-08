@@ -4,6 +4,7 @@ export const DISPATCH_TOOL_NAME = "dispatch_agents";
 export const IMAGE_TOOL_NAME = "GenerateImage";
 export const EDIT_IMAGE_TOOL_NAME = "EditImage";
 export const FETCH_URL_TOOL_NAME = "FetchUrl";
+export const FILE_TOOL_NAME = "File";
 export const SAVE_FILE_TOOL_NAME = "SaveFile";
 export const SLACK_HISTORY_TOOL_NAME = "SlackHistory";
 export const SLACK_THREAD_TOOL_NAME = "SlackThread";
@@ -34,5 +35,6 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
   EDIT_IMAGE_TOOL_NAME,
   FETCH_URL_TOOL_NAME,
   SAVE_FILE_TOOL_NAME,
+  FILE_TOOL_NAME,
   ...SLACK_TOOL_NAMES,
 ];

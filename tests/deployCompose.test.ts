@@ -37,18 +37,26 @@ describe("deployment configuration", () => {
   });
 
   it("keeps local AWS-backed MCP services behind the aws profile", () => {
-    expect(serviceBlock(localMcpCompose, "mcp-memory")).toContain("profiles: [aws]");
     expect(serviceBlock(localMcpCompose, "mcp-cloudwatch")).toContain("profiles: [aws]");
   });
 
-  it("stores local MCP memory in a dedicated database on the shared PostgreSQL server", () => {
-    const service = serviceBlock(localMcpCompose, "mcp-memory");
-    expect(service).toContain("postgres:5432/mcp_memory");
-    expect(service).toContain("data:");
-    expect(service).not.toMatch(/VECTOR_BUCKET|VECTOR_INDEX|STATE_BUCKET/);
-    expect(localMcpCompose).toContain("name: agent-studio-local_default");
-    expect(localMcpDeploy).toContain("createdb -U agent_studio -O agent_studio mcp_memory");
-    expect(postgresInit).toContain("CREATE DATABASE mcp_memory OWNER agent_studio;");
+  it("retires redundant services without provisioning or dropping their data", () => {
+    for (const name of ["mcp-memory", "mcp-document", "mcp-youtube"]) {
+      expect(serviceBlock(localMcpCompose, name)).toBe("");
+    }
+    expect(localMcpDeploy).not.toMatch(/createdb|DROP DATABASE|ecr get-login-password/);
+    expect(postgresInit).not.toContain("mcp_memory");
+    expect(postgresInit).not.toContain("DROP DATABASE");
+  });
+
+  it("scopes new integrations and their credentials to explicit profiles", () => {
+    for (const name of ["argocd", "grafana", "kubernetes"]) {
+      expect(serviceBlock(localMcpCompose, `mcp-${name}`)).toContain(`profiles: [${name}]`);
+    }
+    expect(serviceBlock(localMcpCompose, "mcp-brave-search")).not.toContain("env_file:");
+    expect(serviceBlock(localMcpCompose, "mcp-kubernetes")).toContain("create_host_path: false");
+    expect(serviceBlock(localMcpCompose, "mcp-kubernetes")).toContain('"--read-only"');
+    expect(serviceBlock(localMcpCompose, "mcp-argocd")).toContain('MCP_READ_ONLY: "true"');
   });
 
   it("owns an independent PostgreSQL 18 and MinIO stack", () => {

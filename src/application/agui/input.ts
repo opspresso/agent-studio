@@ -15,10 +15,12 @@ import {
   readDocuments,
   turnContent,
   type AttachedDocument,
+  type ReadDocument,
 } from "@/application/llm/documentParts";
 import { cutCodePoints } from "@/shared/utf8Text";
 
 export interface AguiInputDeps {
+  prepareDocuments?: (documents: AttachedDocument[]) => Promise<ReadDocument[]>;
   /** Turns a document part into text, the way every other surface's attachment becomes text. */
   documents: DocumentExtractor;
   /** What reading the input lost — an unreadable file, a budget spent — for the surface to report. */
@@ -215,7 +217,7 @@ async function userContent(
         ]
       : [],
   );
-  const documents = await readDocuments(deps.documents, attached, deps.warnings);
+  const documents = deps.prepareDocuments ? await deps.prepareDocuments(attached) : await readDocuments(deps.documents, attached, deps.warnings);
   return turnContent(documents, text, images);
 }
 

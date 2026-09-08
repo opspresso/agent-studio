@@ -43,7 +43,7 @@ prompt project 는 한 번 답하고, image project 는 그림을 그린다 — 
 | top-level `toolResult` | `TOOL_CALL_RESULT` (`role: "tool"`). transfer 의 display-only 마커는 클라이언트가 다음 런에서 재생할 실제 자식 답으로 바꾼다 |
 | authored 청크의 첫 등장 / `authorDone` | `STEP_STARTED` / `STEP_FINISHED` (`stepName` 은 `authorPath` 체인). 자식의 텍스트와 호출은 이벤트가 되지 않는다 — 그 답은 부모의 tool 결과로 돌아온다 |
 | `image` (author 무관) | `ACTIVITY_SNAPSHOT` `activityType: "agent-studio.image"`, `content: { mimeType, dataUrl, prompt?, model?, artifactId? }` |
-| `file` (author 무관) | `ACTIVITY_SNAPSHOT` `activityType: "agent-studio.file"`, `content: { name, mimeType, url, byteSize? }` — 바이트는 브래킷이 걷어냈으므로 `VIEW_URL_TTL_SECONDS` 로 서명한 주소. 주소를 만들 수 없으면 경고가 된다 |
+| `file` (author 무관) | `ACTIVITY_SNAPSHOT` `activityType: "agent-studio.file"`, `content: { fileId?, name, mimeType, url, byteSize? }` — 바이트는 브래킷이 걷어냈으므로 `VIEW_URL_TTL_SECONDS` 로 서명한 주소. 주소를 만들 수 없으면 경고가 된다 |
 | `warning` (author 무관, `collectedWarning` 으로 중복 제거) | `CUSTOM` `agent-studio.warning` `{ message }` — 그리고 `RUN_FINISHED.result.warnings` 에 모인다 |
 | `usage` (모든 호출) | 합산해 `RUN_FINISHED.usage[0]` (`inputTokens`, `outputTokens`, `totalTokens`, `reasoningTokens?`, `cachedInputTokens?`). 실제 호출 모델을 청크가 밝히지 않으므로 aggregate 에 `model` 을 잘못 붙이지 않는다 |
 | top-level `done` / `finishReason` | 열린 것을 전부 닫고 종료 사유를 기억해 둔다. `RUN_FINISHED` 는 **소스가 소진될 때** 나간다 — artifact recorder 는 엔진 스트림이 끝난 *뒤에* 보관하지 못한 그림을 말하므로, `done` 에서 끝내면 그 경고 하나를 잃는다. `result.termination` 은 엔진의 어휘(`completed` / `turn-limit` / `output-limit`) 그대로 |

@@ -76,11 +76,12 @@ pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ## 명령
 
 ```bash
-pnpm dev              # next dev
-pnpm build            # 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
+pnpm dev              # 문서 워커 번들 후 next dev
+pnpm build            # 문서 워커 번들 + 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
 pnpm start            # 이미 만든 Next.js production build 실행
 pnpm typecheck        # tsc --noEmit, strict + 추가 검사 (아래)
 pnpm test             # vitest run
+pnpm test:documents   # 실제 자식 프로세스로 생성·추출·검사·편집 검증 (DB 불필요)
 pnpm test:watch       # vitest watch
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test) 에 대한 리포지토리 + 엔진 검사
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)
@@ -184,7 +185,7 @@ pnpm test:integration
 `.github/workflows/ci.yml` 은 저장소의 모든 branch push 에서 돈다:
 
 ```
-typecheck → test → test:integration → build → production server smoke test
+typecheck → test → test:integration → build → standalone 격리 → 문서 워커 smoke test → production server smoke test
 ```
 
 `pgvector/pgvector:0.8.6-pg18-trixie` 서비스 컨테이너가 `POSTGRES_DB=agent_studio_test` 로 호스트 포트
@@ -192,8 +193,10 @@ typecheck → test → test:integration → build → production server smoke te
 지난다. job 마다 새로 뜨는 컨테이너는 비어 있고, 검사가 자기 스키마를 적용하므로 워크플로에 설정할
 것이 없다.
 
-마지막 smoke test 는 Dockerfile 과 같이 `public` 및 `.next/static` 을 standalone 디렉터리에
-복사하고, 같은 entry point(`node .next/standalone/server.js`)로 build 산출물을 실제 실행한다.
+빌드 뒤 standalone 산출물을 저장소 밖의 임시 디렉터리로 복사하고 Dockerfile 과 같이
+`public` 및 `.next/static` 을 더한다. 그 디렉터리에서 실제 문서 워커의 생성·추출·검사·편집을
+검증해 번들과 폰트가 배포 산출물에 포함되는지 확인한다. 마지막 smoke test 는 같은
+디렉터리에서 `node server.js`로 production 서버를 실행한다.
 `/api/health`, 첫 화면, 로고, 대표 JavaScript chunk 의 200을 확인한다. 하류 상태를 보는
 `/api/ready` 가 아니라 liveness 를 쓰므로 mock LLM 서버는 필요 없다. 프로세스가 먼저 끝나거나
 30초 안에 응답하지 않으면 서버 로그를 출력하고 실패한다.

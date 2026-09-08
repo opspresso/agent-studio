@@ -23,7 +23,8 @@
 | **Skills** | 필요할 때 로드되는 마크다운 동작 지침. 시스템 프롬프트는 이름/설명 표만 담는다. Agent Plugins 저장소에서 sync 할 수 있다. |
 | **MCP tools** | MCP 서버의 공유 레지스트리. 버전별 binding 이 tool 목록을 좁히고 아웃바운드 헤더를 덮어쓸 수 있다. Managed 서버와 OAuth 를 지원한다(아래). |
 | **Agents** | 다른 project 를 로컬 subagent 로 쓰거나, 외부 OpenAI 호환 / A2A 엔드포인트를 원격 subagent 로 쓴다. |
-| **Chats** | agent project 를 상대로 하는 소유자별 비공개 대화. tool 트래픽과 이미지가 보존된다. |
+| **Chats** | agent project 를 상대로 하는 소유자별 비공개 대화. tool 트래픽과 이미지, 첨부 원본과 생성·편집 파일의 참조가 보존된다. |
+| **Files** | 첨부 문서를 읽고, 기본 `File` 도구로 문서를 생성·검사·편집한다. 원본과 수정본은 별도 파일로 보관한다. [지원 형식과 제약](docs/design/documents.md)을 보라. |
 | **Cost dashboard** | project 별·model 별 일일 지출과 caller 별 귀속. project 카탈로그를 공유하므로 caller 축이 필요하다. |
 | **Guards** | project 별 일일·월간 비용 임계값, caller 별 동시 실행 제한, 모든 런에 걸리는 벽시계 데드라인. |
 | **Integrations** | project 별 Slack·Telegram·Teams 봇, webhook trigger, 양방향 A2A, 사용자 앱을 위한 AG-UI. |
@@ -148,6 +149,16 @@ agent 런은 빌트인 `GenerateImage` 도구로 그릴 수 있고 `EditImage` �
 핸들(`img_1`, `img_2`, …)로 이미지를 지칭한다. 핸들은 사용자가 보낸 것과 런이 그린 것을 모두
 아우르므로 "이제 밤으로 만들어 줘" 가 어느 쪽에도 통하고, subagent transfer 를 타고 넘어가므로
 에이전트가 그림을 전용 image project 에 넘겨도 다시 그리지 않고 *편집* 하게 할 수 있다.
+
+### 문서와 파일
+
+첨부 문서는 텍스트를 추출해 모델에 전달하고, object store가 있으면 원본도 보관한다.
+agent는 기본 `File` 도구로 보관된 파일을 읽고 검사하거나 DOCX·PDF·HWPX·PPTX·XLSX를
+생성한다. DOCX·PPTX·HWPX의 텍스트와 XLSX 셀, UTF-8 텍스트를 편집하면 원본을 유지한
+새 파일을 만든다. 평문·Markdown·CSV·JSON·HTML·SVG 생성은 `SaveFile`을 사용한다.
+
+`File`에는 object store가 필요하며 별도 MCP 서버는 필요 없다. 읽기와 편집의 지원 범위는
+같지 않다. [문서 엔진](docs/design/documents.md)에서 형식별 제약과 파일 접근 범위를 확인하라.
 
 ### Webhook
 

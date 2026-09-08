@@ -1,6 +1,6 @@
 {
   "name": "agent-studio",
-  "version": "0.101.0",
+  "version": "0.102.0",
   "private": true,
   "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000",
   "engines": {
@@ -8,8 +8,8 @@
     "pnpm": ">=11"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "pnpm build:documents && next dev",
+    "build": "pnpm build:documents && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -18,7 +18,9 @@
     "check-models": "tsx scripts/check-models.ts",
     "sync-models": "tsx scripts/sync-models.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
-    "db:migrate:test": "DATABASE_URL=postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test tsx scripts/db-migrate.ts"
+    "db:migrate:test": "DATABASE_URL=postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test tsx scripts/db-migrate.ts",
+    "build:documents": "node scripts/build-document-worker.mjs",
+    "test:documents": "pnpm build:documents && tsx scripts/document-worker-check.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.0.1",
@@ -35,11 +37,16 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
     "@opentelemetry/resources": "^2.10.0",
     "@opentelemetry/sdk-trace-base": "^2.10.0",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@smithy/signature-v4": "^5.7.0",
+    "@swc/helpers": "0.5.23",
     "@tabler/icons-react": "^3.45.0",
     "better-auth": "^1.7.0",
+    "cfb": "^1.2.2",
+    "fflate": "^0.8.3",
     "next": "^16.2.11",
     "openai": "^7.4.0",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.23.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -58,6 +65,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/sanitize-html": "^2.16.1",
+    "esbuild": "0.28.2",
     "postcss": "^8.5.23",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",

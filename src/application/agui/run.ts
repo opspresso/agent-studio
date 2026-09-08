@@ -1,3 +1,4 @@
+import { prepareDocumentAttachments } from "@/application/document/attachments";
 /**
  * A published project run over AG-UI.
  *
@@ -22,7 +23,6 @@ import {
   type ExecutionDeps,
 } from "@/application/execution/runProject";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
-import { openDocumentExtractor } from "@/application/execution/documentExtractor";
 import { toAguiEvents } from "./events";
 import { toEngineMessages } from "./input";
 
@@ -80,25 +80,17 @@ export async function* streamAguiRun(
       : [];
   // Documents are read here, before the run opens: an unreadable attachment
   // is a warning beside the answer, reported with the surface's own.
-  const hasDocuments = request.input.messages.some((message) =>
-    message.role === "user" && Array.isArray(message.content) &&
-    message.content.some((part) => part.type === "document"),
-  );
-  const opened = hasDocuments
-    ? await openDocumentExtractor(deps.execution, request.version, request.signal, {
-        actor: request.actor,
-        conversation: request.conversation,
-      })
-    : undefined;
-  let messages;
-  try {
-    messages = await toEngineMessages(request.input.messages, request.input.context, request.input.state, {
-      documents: opened?.extractor ?? deps.execution.documents,
-      warnings,
-    });
-  } finally {
-    await opened?.close();
-  }
+  const messages = await toEngineMessages(request.input.messages, request.input.context, request.input.state, {
+    documents: deps.execution.documents,
+    prepareDocuments: async (documents) => {
+      const result = await prepareDocumentAttachments(deps.execution.documents, deps.execution.artifacts, {
+        projectName: request.project.name, versionName: request.version.versionName, actor: request.actor,
+      }, documents);
+      warnings.push(...result.warnings);
+      return result.stored;
+    },
+    warnings,
+  });
   const source = streamProjectRun(deps.execution, {
     project: request.project,
     version: request.version,

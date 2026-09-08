@@ -1,3 +1,4 @@
+import { createArtifactId } from "@/application/artifact/storeArtifact";
 /** The SaveFile builtin: text a run wrote, kept as a file the reader receives. */
 
 import type * as engine from "@/application/llm/engine";
@@ -86,5 +87,10 @@ export function buildFileSaver(
   if (!deps.artifacts) {
     return undefined;
   }
-  return async (input) => saveFileResult(input);
+  return async (input) => {
+    const result = saveFileResult(input);
+    if (!result.files?.length) return result;
+    const files = result.files.map((file) => ({ ...file, artifactId: createArtifactId() }));
+    return { ...result, files, text: `${result.text} File ID: ${files[0]!.artifactId}.` };
+  };
 }

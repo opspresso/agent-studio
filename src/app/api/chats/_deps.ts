@@ -5,7 +5,6 @@ import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLo
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
 import type { ChatDeps } from "@/application/chat/deps";
-import { openDocumentExtractor } from "@/application/execution/documentExtractor";
 
 /**
  * Composition root for the chat routes: wires the domain ports to concrete
@@ -20,8 +19,6 @@ export const chatDeps: ChatDeps = {
   // the facade — not this boundary — decides whether the version asked for it.
   runAgent: (params) => executeAgent(executionDeps, params),
   documents: executionDeps.documents,
-  openDocuments: (version, signal, origin) =>
-    openDocumentExtractor(executionDeps, version, signal, origin),
   // One bundle makes the required "store and signer together" relationship structural.
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };

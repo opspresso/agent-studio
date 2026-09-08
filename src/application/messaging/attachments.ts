@@ -1,3 +1,5 @@
+import { prepareDocumentAttachments } from "@/application/document/attachments";
+import type { ArtifactStorage, ArtifactContext } from "@/application/artifact/storeArtifact";
 import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
 import { DocumentExtractionError, type DocumentExtractor } from "@/domain/llm/documentExtractor";
 import { imageDataUrl } from "@/domain/llm/types";
@@ -133,10 +135,13 @@ export async function collectImageParts(
  *
  * The caller selects the message and reserves its share of the run's budget.
  */
+export interface DocumentPersistence { storage?: ArtifactStorage; context: ArtifactContext }
+
 export async function collectDocuments(
   documents: DocumentExtractor,
   attachments: InboundAttachment[],
   warnings: string[],
+  persistence?: DocumentPersistence,
 ): Promise<ReadDocument[]> {
   const candidates = attachments.filter(
     (attachment) => documentKind(attachment.mimeType, attachment.name) !== null,
@@ -171,6 +176,11 @@ export async function collectDocuments(
       );
     }
   }
+  if (persistence) {
+    const result = await prepareDocumentAttachments(documents, persistence.storage, persistence.context, downloaded);
+    warnings.push(...result.warnings);
+    return result.stored;
+  }
   return readDocumentsFor(documents, downloaded, warnings);
 }
 
@@ -180,6 +190,7 @@ export async function withHistoryDocuments(
   currentAttachments: InboundAttachment[],
   currentDocuments: ReadDocument[],
   warnings: string[],
+  persistence?: DocumentPersistence,
 ): Promise<HistoryTurn[]> {
   const isDocument = (attachment: InboundAttachment) => documentKind(attachment.mimeType, attachment.name) !== null;
   let remainingCount = Math.max(0, MAX_DOCUMENTS - currentAttachments.filter(isDocument).length);
@@ -206,7 +217,7 @@ export async function withHistoryDocuments(
     remainingCount -= selected.length;
     dropped += candidates.length - selected.length;
     if (selected.length > 0) {
-      readByIndex.set(index, await collectDocuments(bounded, selected, warnings));
+      readByIndex.set(index, await collectDocuments(bounded, selected, warnings, persistence));
     }
   }
   if (dropped > 0) {

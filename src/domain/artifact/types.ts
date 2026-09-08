@@ -18,6 +18,8 @@ export type ArtifactKind = "image" | "document";
 export type ArtifactSource = "generated" | "attachment";
 
 export interface Artifact {
+  /** Original artifact from which an edited file was derived. */
+  derivedFrom?: string;
   artifactId: string;
   kind: ArtifactKind;
   source: ArtifactSource;
@@ -210,6 +212,7 @@ const EXTENSIONS: Record<string, string> = {
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "application/hwp+zip": "hwpx",
   "application/haansofthwpx": "hwpx",
   "application/vnd.hancom.hwpx": "hwpx",
   "application/x-hwp": "hwp",
@@ -307,4 +310,17 @@ export function artifactOwnerEmail(
     return undefined;
   }
   return actor.kind === "user" || actor.kind === "project-token" ? actor.id : undefined;
+}
+
+/** A stored file reference; read surfaces replace the key with a signed URL. */
+export interface FileReference {
+  /** Object key. What is stored; never what is served. */
+  key?: string;
+  /** Stable identity for downloads, views and later file operations. */
+  artifactId?: string;
+  /** A signed download address, put here by the read path. */
+  url?: string;
+  name: string;
+  mimeType: string;
+  byteSize?: number;
 }

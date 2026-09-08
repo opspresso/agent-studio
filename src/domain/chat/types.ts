@@ -1,3 +1,4 @@
+import type { FileReference } from "@/domain/artifact/types";
 import type { ChannelToolCall } from "../llm/types";
 
 export interface Chat {
@@ -77,37 +78,12 @@ export interface ChatMessageImage {
  * image — but with no legacy form to reconcile: files were never written before
  * signing existed.
  */
-export interface ChatMessageFile {
-  /** Object key. What is stored; never what is served. */
-  key?: string;
-  /**
-   * The artifact row these bytes belong to. Present on every file the bracket
-   * stored — it is what `captureRunArtifacts` learned when it wrote the row,
-   * not something a surface asks for.
-   *
-   * What it is *for* is narrower: a viewable file is opened at
-   * `/api/artifacts/{id}/view`, which serves it under a sandbox policy an
-   * object URL cannot carry. A `.docx` carries the id and nothing reads it.
-   */
-  artifactId?: string;
-  /** A signed download address, put here by the read path. */
-  url?: string;
-  name: string;
-  mimeType: string;
-  byteSize?: number;
-}
+export type ChatMessageFile = FileReference;
 
-/**
- * A document the user attached, stored as the text extracted from it rather than
- * as the file.
- *
- * The text is what the turn actually carried, so storing it is what lets a
- * follow-up question — "and what does section 3 say?" — still have the document.
- * Storing the bytes instead would answer a question nobody asks and would make
- * every replay carry the file: a chat message is one row, read whole on each
- * later turn.
- */
+/** A bounded extraction plus the separately stored original file, when storage is configured. */
 export interface ChatMessageDocument {
+  /** Stored original, separate from the text included in model context. */
+  file?: FileReference;
   name: string;
   text: string;
   /** What came back when not all of it did — "the first 12 of 40 pages". */

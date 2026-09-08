@@ -402,7 +402,7 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
   입력해야 한다. fingerprint 는 API 응답과 입력에 노출하지 않는다.
 - 오버라이드 편집은 다른 모든 version 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
 
-한 런은 통틀어 최대 115개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
+한 런은 통틀어 최대 114개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
 보고한다.
 
 ### 프롬프트 미리보기
@@ -637,13 +637,14 @@ publish 된 version 도 실행 가능한 초안도 없는 project 는 `400` 으�
 
 `documents` 는 보는 것이 아니라 읽는 파일이다. `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
 각각 10MB이며 `b64` 형식도 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
-HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 실행할 version에 바인딩된 MCP 중
-`read_document` capability를 제공하는 서버가 읽는다. 그런 binding이 없거나 호출이 실패하면
-그 파일이 빠졌다는 warning 을 돌려준다. `name` 은 필수이고,
+HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내장 문서 엔진이 읽으며 MCP 등록이나 version binding을 요구하지 않는다.
+파싱이 실패하면 추출 실패 warning을 돌려준다. 저장된 원본의 참조는 유지한다. `name` 은 필수이고,
 `mimeType` 이 `application/octet-stream` 일 때. 업로드는 흔히 이렇게 도착한다. 판단을 떠맡는다.
 읽을 수 없는 타입은 `400` 으로 거절된다. 서버는 **텍스트**를 추출하고. PDF 의 텍스트 레이어,
-텍스트 파일의 내용. 턴은 그것을 싣는다. 파일 자체는 절대 저장되지 않는다. 저장되는 것은 추출된
-텍스트이며, 사용자 메시지의 `documents: [ { name, text, note? } ]` 로 들어간다. 후속 질문이
+텍스트 파일의 내용. 턴은 그것을 싣는다. Chat은 오브젝트 저장소가 구성돼 있으면 원본도 artifact로
+보관하며, 사용자 메시지에 `documents: [ { name, text, note?, file? } ]`을 저장한다.
+`file`은 artifact ID와 오브젝트 키를 가진 참조이고, 조회 시 키 대신 서명된 다운로드 URL을 제공한다.
+원본 바이트는 메시지 행이나 모델 문맥에 넣지 않는다. 저장 실패·미구성은 warning으로 알린다. 후속 질문이
 여전히 그 문서를 갖고 있게 해 주는 것이 이것이다. 문서당 최대 20,000자, 한 턴 통틀어 40,000자를
 보관한다. 빠진 것은 `warning` 으로 보고되고, 아예 읽을 수 없었던 문서(텍스트 레이어가 없는 스캔,
 암호로 보호된 PDF)도 마찬가지다.
@@ -655,7 +656,7 @@ HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 실�
 검사한다. 레지스트리와 version 편집은 skill 의 전체 파일 묶음 무게에 맞춰 훨씬 더 빡빡하게
 제한된다.
 
-chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name` 과 `note` 를 돌려주고 `text` 는 비운다:
+chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name`, `note`와 다운로드용 `file?`을 돌려주고 `text`는 비운다:
 추출된 텍스트는 *나중 턴*이 재생하는 것이고 서버 측에서 읽히므로, 그것을 브라우저로 보내면 둘 중
 아무것도 렌더링하지 않는 화면을 위해 턴당 수만 자를 선로에 올리게 된다.
 
@@ -1140,7 +1141,7 @@ version 의 MCP 도구·skill·subagent 로 멀티턴 도구 루프를 실행한
   "finishReason": "completed",  // 런이 끝난 이유: "turn-limit" / "output-limit" 은 부분 답을 뜻한다
   "warnings": [ "Skill 'x' is no longer in the registry; it was not offered." ]?,  // 런이 무언가를 잃었을 때만
   "images": [ { "b64": "…", "mimeType": "image/png" } ]?,  // 런이 무언가를 그렸을 때만
-  "files": [ { "name": "report.docx", "mimeType": "…", "byteSize": 2048, "url": "https://…" } ]?  // 툴이 파일을 만들었을 때만
+  "files": [ { "fileId": "…", "name": "report.docx", "mimeType": "…", "byteSize": 2048, "url": "https://…" } ]?  // 툴이 파일을 만들었을 때만
 }
 ```
 
@@ -1213,7 +1214,7 @@ subagent)는 OpenAI 스키마에 자리가 없으므로 확장으로 함께 실�
 프레임이다. 이 필드를 모르는 클라이언트는 그냥 무시한다.
 
 **파일 출력.** 같은 취급을 다시 하되 중요한 차이가 하나 있다: 문서는 그려지는 것이 아니라
-*가져가는* 것이므로 주소로 이동한다. completion 객체의 `files: [ { name, mimeType,
+*가져가는* 것이므로 주소로 이동한다. completion 객체의 `files: [ { fileId?, name, mimeType,
 byteSize?, url } ]` 와 스트림의 `choices[0].delta.files` 프레임이다. 그 주소가 무엇이고 얼마나
 사는지는 위 `/predict` 를 보라.
 
@@ -1230,8 +1231,8 @@ Agent SSE 스트림이다. 본문은 `{ "messages": [ … ] }`. `EngineChunk` �
 [ARCHITECTURE.md](ARCHITECTURE.md#enginechunk-계약) 에 있다.
 
 `file` 프레임은 이 엔드포인트를 **주소가 붙은 채로** 떠난다: 런 브래킷이 붙여 둔 object key 와
-artifact id 는 수명이 짧은 서명 `url` 로 대체된다. 그 둘은 플랫폼 자신의 장부이고 호출자가 그것을
-쥐어 봐야 할 수 있는 일이 없기 때문이다. 서명할 수 없었던 파일은, 아무것도 가져올 수 없는 문서를
+artifact id 대신 다운로드용 서명 `url`과 후속 `File` 도구 호출용 `fileId`를 제공한다.
+저장소 키는 외부에 노출하지 않으며 `fileId` 자체는 접근 권한이 아니다. 서명할 수 없었던 파일은, 아무것도 가져올 수 없는 문서를
 지목하는 `file` 프레임 대신 `warning` 프레임으로 도착한다.
 
 **agent project 만**. 그 밖의 타입은 400 이다. 도구 루프에는 `llm` project 의
@@ -1421,7 +1422,7 @@ sandbox 가 필요 없고, 다운로드는 애초에 신뢰를 요구하지 않�
 
 | 저장된 타입 | 어떻게 보이는가 |
 |---|---|
-| `text/html` | 스크립트·이벤트 핸들러·외부 리소스를 제거한 HTML |
+| `text/html` | 내부 CSS를 보존한 HTML. 스크립트·이벤트 핸들러·외부 stylesheet 태그를 제거하고 CSS의 외부 요청은 CSP로 차단한다 |
 | `text/markdown` | 채팅 스레드와 같은 렌더러로 렌더 |
 | `text/csv` | 첫 행을 머리행으로 삼은 표 (RFC 4180 파싱, 2,000행 상한) |
 | `application/json` | 다시 들여쓴 텍스트. 파싱되지 않으면 원문 그대로 + 그 사실을 말한다 |
@@ -1455,7 +1456,7 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 10 MB 다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
-`byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의
+`byteSize`, `filename?`, `derivedFrom?` (수정본의 원본 artifact ID), `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의
 출력이 누구 앞으로 정리되는지. 물어본 사람에서 해석한다), `ancestry?` (transfer 사슬. 바깥쪽이
 먼저), `producedBy?`, `model?` (그린 모델. 이름을 댈 수 있는 생산자만. MCP 도구·원격 A2A 의
 그림, 렌더링된 문서, 첨부는 비어 있다), `runId?`, `prompt?`, `createdAt`, 그리고 서명된 `url` (15분. 문서의 것은
@@ -1693,7 +1694,7 @@ reasoningTokens?, cachedInputTokens? }]` 를 싣는다. usage 는 fallback·suba
 않는다. `RUN_ERROR` 의 `code` 는 타입이 있는 실패의
 클래스명(`RateLimitedError`, `UpstreamError` 등)이다. 런이 만든 그림과 파일은
 `ACTIVITY_SNAPSHOT`. `activityType` 이 `agent-studio.image` (`content: { mimeType, dataUrl,
-prompt?, model?, artifactId? }`) 또는 `agent-studio.file` (`content: { name, mimeType, url,
+prompt?, model?, artifactId? }`) 또는 `agent-studio.file` (`content: { fileId?, name, mimeType, url,
 byteSize? }`. 15분 서명 URL). 로 스레드의 메시지가 되고, 클라이언트가 다음 런 입력에서
 제거하므로 바이트는 모델로 돌아가지 않는다. `CUSTOM` 은 `agent-studio.warning` (`{ message }`)
 하나다.

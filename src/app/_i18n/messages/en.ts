@@ -128,13 +128,13 @@ export const en = {
     "Search skills, MCP tools, and agents in one catalog. An opted-in version adds relevant capabilities for the current run without changing its saved bindings.",
   "home.domain.chats": "Chats",
   "home.domain.chatsBody":
-    "Talk to a published agent in the console. Attach images and documents, follow the streamed reply, and inspect tool calls in the conversation. Closing the tab does not stop the run.",
+    "Talk to an agent in the console. Read PDF, text, and Office attachments without a document MCP server, and follow replies and tool calls. Closing the tab does not stop the run.",
   "home.domain.images": "Images",
   "home.domain.imagesBody":
     "Generate or edit images with an image project, an agent's built-in tools, or an image subagent. An agent can edit an attached image or one produced earlier in the run.",
-  "home.domain.artifacts": "Artifacts",
+  "home.domain.artifacts": "Documents & artifacts",
   "home.domain.artifactsBody":
-    "Keep images and files produced by runs behind signed URLs, and browse them by project or by user.",
+    "Create reports, presentations, and spreadsheets. Edit supported attachments into new files while keeping the originals. Configured storage keeps originals and results available for download.",
   "home.domain.surfaces": "Slack, A2A & webhooks",
   "home.domain.surfacesBody":
     "Connect agent projects to Slack, Telegram, and Teams. Published versions can also run from webhooks, schedules, and inbound or outbound A2A calls.",
@@ -335,7 +335,7 @@ export const en = {
     "Dynamic discovery matches the system prompt and current request against capability names and descriptions, then adds relevant skills, MCP servers/tools, and external agents without changing saved bindings. A precise description is the routing signal: say when the capability should be used and what it returns. It needs a working capability catalog and embedding setup; ask an administrator if results are missing. Memory recall is separate and needs a bound MCP server offering recall.",
   "guide.capabilities.builtins": "Image generation, URL reading, and files",
   "guide.capabilities.builtinsBody":
-    "Enable the built-in capabilities needed by the version, such as image generation, URL reading, or Slack history. Their provider, network access, or bot setup must also be available. SaveFile is offered automatically when artifact storage is configured and lets an agent produce downloadable text files. Inspect generated files before using or sharing them.",
+    "Enable image generation, URL reading, or Slack history when the version needs them, and configure their providers or connections. With artifact storage configured, agents automatically receive File for reading, creating, and editing documents, and SaveFile for text files. Document processing is built in and needs no MCP binding.",
 
   "guide.chat.title": "Conversations and attachments",
   "guide.chat.body":
@@ -348,7 +348,13 @@ export const en = {
     "The thread retains messages and tool activity, but the model receives a bounded history. A long conversation or large tool result can be shortened and produce a warning. Older images may remain visible in the thread without being sent in a later turn; attach the relevant image again when needed. Restate essential constraints and start a new conversation when the task changes substantially.",
   "guide.chat.attachments": "Images and documents",
   "guide.chat.attachmentsBody":
-    "Attach PNG, JPEG, GIF, or WebP images to a model that supports image input. Text and PDF documents are extracted into text; Office and similar document formats need a bound MCP read_document tool. Check the attachment control for size and count limits and resolve unreadable-file errors before sending. Stored chat documents preserve extracted text, not an archive of the original file.",
+    "Attach PNG, JPEG, GIF, or WebP images to a model that supports image input. PDF, UTF-8 text, DOCX, XLSX, PPTX, HWP 5.x, HWPX, ODT/ODS/ODP, and RTF are read by the built-in document engine. Attach up to four documents of 10 MiB each. The conversation retains bounded extracted text; configured storage also keeps the originals. Check extraction and storage warnings after sending.",
+  "guide.chat.createFiles": "Create a new document",
+  "guide.chat.createFilesBody": "In an agent conversation, ask “Create a DOCX report from these notes” or “Make an XLSX budget table.” DOCX, PDF, PPTX, HWPX, and XLSX creation is built in. Plain text, Markdown, CSV, JSON, HTML, and SVG use SaveFile. File tools require configured storage. Download the result from the response and review its contents and layout.",
+  "guide.chat.editFiles": "Edit an attachment and keep the original",
+  "guide.chat.editFilesBody": "Attach the source, then ask “Inspect this document and change the heading to Quarterly results” or “Set Summary!B2 to 150.” DOCX, PPTX, and HWPX support selected text changes; XLSX supports cell changes; UTF-8 text supports unique substring replacement. The agent inspects targets and returns a new file. Follow-up requests can use the original or revised file.",
+  "guide.chat.fileLimits": "Know the editing limits",
+  "guide.chat.fileLimitsBody": "Reading a format does not guarantee editing it. PDF, HWP, ODT/ODS/ODP, and RTF have no source-preserving editor. Signed documents and macro workbooks are rejected for editing. Document text edits cannot add paragraphs or line breaks, and formulas are not calculated. Text changes may alter layout; review the downloaded result. Extracting text and rebuilding a document does not preserve its original formatting.",
   "guide.chat.stop": "Closing the page does not stop a chat run",
   "guide.chat.stopBody":
     "Use the chat's stop control to request cancellation. Navigating away or closing the browser tab only disconnects the view; reopen the conversation to read the saved result. Cancellation cannot undo actions a tool has already completed. A server interruption can still prevent an active run from finishing.",
@@ -395,9 +401,9 @@ export const en = {
     "In project Settings, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message or variables to run. Select any delivery destinations and enable it. Schedules use the published version and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
 
   "guide.records.title": "Results, usage, and limits",
-  "guide.records.artifacts": "Find and retain generated files",
+  "guide.records.artifacts": "Find originals and generated files",
   "guide.records.artifactsBody":
-    "Personal Artifacts lists your results. Project Artifacts is for the owner and administrators and includes results from bots and automation too. Storage must be configured for persistent files. Reopen the artifact view to refresh an expired download link, and download files you need to retain. Deleting an artifact can break earlier links; deleting a chat does not automatically delete its artifacts.",
+    "Personal Artifacts includes your stored attachment originals and generated or edited files. Project Artifacts is for the owner and administrators and also includes bot and automation files. Reopen the artifact view to refresh an expired download link. A retained file can be used again by an authorized agent through its file ID. Download files you need to keep beyond retention. Deleting a chat does not delete its artifacts.",
   "guide.records.usage": "Understand usage and attribution",
   "guide.records.usageBody":
     "Use project Usage to inspect the selected period and model/provider breakdown; owners and administrators can inspect caller details. Profile shows personal usage. Project-token calls are accounted to the project rather than the owner's personal budget. Prices come from provider-reported cost or catalog pricing; a zero estimate is not proof that the provider charged nothing.",
@@ -507,7 +513,7 @@ export const en = {
     "Check the published version, integration enabled state, credentials, and callback reachability. Test a direct bot message or explicit mention. For schedules, also check enabled state, cron time zone, and the external ticker. Inspect skipped/failed runs and delivery results in project Settings; a successful model run with a failed destination is a delivery problem.",
   "guide.trouble.files": "Attachments or downloads fail",
   "guide.trouble.filesBody":
-    "Check supported file type and upload limits first. An image needs a model that can read it; an Office document needs the bound reader tool. For generated files, inspect storage warnings and reopen Artifacts to refresh the link. If the console opens but files do not, have the operator check the artifact access mode, public base URL, browser-to-storage connectivity, and retention policy.",
+    "Check the file type and upload limits first. An image needs an image-capable model; Office reading uses the built-in engine. Password-protected files, scans needing OCR, and unsupported edits require another workflow. If File is unavailable or the original was not kept, ask the operator to check storage configuration. For download failures, reopen Artifacts and check storage warnings, access mode, public base URL, connectivity, and retention.",
   "guide.trouble.support": "What to send for support",
   "guide.trouble.supportBody":
     "Record the application version, project and saved version names, surface, time and time zone, error/status code, trace ID if available, and a minimal input that reproduces the issue. Include what you expected and whether the failure occurs in Playground too. Remove tokens, cookies, private file links, and sensitive content. Installation-specific startup and recovery problems belong with the deployment operator or package provider.",
@@ -904,8 +910,8 @@ export const en = {
 
   // Artifacts.
   "artifacts.lede":
-    "Images and documents your runs produced. A run started by Slack, a trigger or an A2A call belongs to its project — those are on the project’s own tab.",
-  "artifacts.empty": "Nothing kept yet. Images and documents your runs produce show up here.",
+    "Stored attachment originals and files created or edited by your runs. Files from Slack, triggers, and A2A are also available to authorized readers on the project’s artifact page.",
+  "artifacts.empty": "Nothing kept yet. Stored attachment originals and generated files appear here.",
   "artifacts.filter": "Filter…",
   "artifacts.delete": "Delete",
   "artifacts.all": "All",

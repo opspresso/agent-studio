@@ -88,7 +88,7 @@ export function isUtcDay(day: string): boolean {
   return !Number.isNaN(at) && utcDay(new Date(at)) === day;
 }
 
-const MS_PER_DAY = 86_400_000;
+export const MS_PER_DAY = 86_400_000;
 
 /**
  * How many UTC days `[from, to]` spans, both endpoints counted.
