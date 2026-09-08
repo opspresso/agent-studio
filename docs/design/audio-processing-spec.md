@@ -1,7 +1,8 @@
 # 범용 오디오 처리·비동기 작업 개발 스펙
 
 상태: **구현 중**. 전사 포트·결과 검증과 OpenAI 호환 multipart 어댑터를 구현했다.
-모델 설정 조립·영속 작업·도구 연결은 아직 없다.
+영속 작업 repository는 발생당 admission·source dedup·lease·checkpoint·취소·재시도를 제공한다.
+모델 설정 조립·worker 실행·도구 연결은 아직 없다.
 파일의 달력 일·월 보존 계산은 `src/application/artifact/fileRetention.ts`가 제공하며 실제 삭제 스윕은 아직 없다.
 아래 도구 이름은 구현할 계약이며 현재 제공 기능이 아니다.
 구현은 [마일스톤](../MILESTONES.md#audio-processing-jobs)에서 추적한다.

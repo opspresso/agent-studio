@@ -1345,6 +1345,50 @@ async function main() {
       pass("transact: a checked key locks share-mode, a written one exclusively");
     }
 
+    // ---------- durable audio work (admission + worker fencing) ----------
+    {
+      const { audioJobRepository: jobs } = await import("@/infrastructure/db/repositories/audioJobRepository");
+      const input = {
+        projectName, userEmail: "integration@example.com", source: { kind: "file" as const, fileId: "audio-file" },
+        sourceKey: "integration-source", model: "selfhosted/asr",
+        retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" },
+      };
+      const admitted = await Promise.all(Array.from({ length: 8 }, (_, index) => jobs.submit(input, {
+        id: `audio-${index}`, now, occurrence: "integration-hour", maxActive: 1, maxPerOccurrence: 1,
+      })));
+      assert.equal(admitted.filter((result) => result.status === "accepted").length, 1);
+      assert.equal(admitted.filter((result) => result.status === "duplicate").length, 7);
+      const winner = admitted.find((result) => result.status === "accepted")!;
+      assert.ok("job" in winner);
+      const job = winner.job;
+      const leaseUntil = new Date(Date.parse(now) + 120_000).toISOString();
+      const reclaimedAt = new Date(Date.parse(now) + 180_000).toISOString();
+      const nextUntil = new Date(Date.parse(now) + 300_000).toISOString();
+      const claims = await Promise.all([
+        jobs.claim(projectName, job.id, now, "worker-a", leaseUntil),
+        jobs.claim(projectName, job.id, now, "worker-b", leaseUntil),
+      ]);
+      assert.equal(claims.filter(Boolean).length, 1);
+      const first = claims.find((value) => value !== null)!;
+      const second = await jobs.claim(projectName, job.id, reclaimedAt, "worker-c", nextUntil);
+      assert.ok(second);
+      assert.equal(await jobs.checkpoint(first, {
+        status: "completed", stage: "storing", dueAt: reclaimedAt,
+      }, reclaimedAt), null, "expired worker cannot commit results");
+      assert.equal(await jobs.heartbeat(second, reclaimedAt, nextUntil), true);
+      assert.ok(await jobs.checkpoint(second, { status: "completed", stage: "storing", dueAt: reclaimedAt,
+        receipts: { transcript: "document-1" } }, reclaimedAt));
+      assert.equal((await jobs.submit(input, {
+        id: "audio-replay", now: reclaimedAt, occurrence: "next-hour", maxActive: 1, maxPerOccurrence: 1,
+      })).status, "duplicate");
+      const next = await jobs.submit({ ...input, sourceKey: "other-source" }, {
+        id: "audio-next", now: reclaimedAt, occurrence: "next-hour", maxActive: 1, maxPerOccurrence: 1,
+      });
+      assert.equal(next.status, "accepted", "terminal job releases its durable project slot");
+      assert.equal(await jobs.cancel(projectName, "audio-next", 1, reclaimedAt), true);
+      pass("audio jobs: concurrent admission, lease fencing, durable dedup and slot release");
+    }
+
     // ---------- concurrency slots (conditional claim + lease reclaim) ----------
     const slotActor = `user:slots-${suffix}@example.com`;
     const nowSeconds = Math.floor(Date.now() / 1000);

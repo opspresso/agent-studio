@@ -17,6 +17,22 @@ export const keys = {
   }),
   versionPrefix: () => "VERSION#",
 
+  audioJob: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `AUDIOJOB#${id}` }),
+  audioJobPrefix: () => "AUDIOJOB#",
+  audioJobSlots: (projectName: string) => ({ PK: `PROJECT#${projectName}`, SK: "AUDIOSLOTS" }),
+  audioJobSource: (projectName: string, sourceKey: string) => ({
+    PK: `PROJECT#${projectName}`, SK: `AUDIOSOURCE#${sourceKey}`,
+  }),
+  audioJobOccurrence: (projectName: string, occurrence: string) => ({
+    PK: `PROJECT#${projectName}`, SK: `AUDIOOCCURRENCE#${occurrence}`,
+  }),
+  audioJobDueIndex: (dueAt: string, projectName: string, id: string) => ({
+    GSI1PK: "AUDIOJOBDUE", GSI1SK: `${dueAt}#${projectName}#${id}`,
+  }),
+  audioJobDueQuery: (now: string) => ({
+    pk: "AUDIOJOBDUE", sk: { between: ["", `${now}#\uffff`] as [string, string] },
+  }),
+
   chat: (chatId: string) => ({ PK: `CHAT#${chatId}`, SK: "META" }),
   chatMessage: (chatId: string, seq: number) => ({
     PK: `CHAT#${chatId}`,
