@@ -1,60 +1,74 @@
 # deploy/local — MCP 서버 로컬 배포
 
-레지스트리의 MCP 서버들을 docker compose 로 로컬에 띄운다. **앱은 컨테이너가 아니라 호스트의 `pnpm dev`** — 코드를 고치고 `http://localhost:3000` 에서 바로 테스트하면서, MCP dispatch 는 실제 배포와 같은 경로로 동작한다.
+`../agent-plugins/plugins/*/mcp.json`의 내부 MCP를 Docker Compose로 실행한다.
+앱은 호스트의 `pnpm dev`로 실행한다. 각 MCP는 80 포트와
+`mcp-<name>.agent-mcps.svc.cluster.local` network alias·OrbStack 도메인을 사용한다.
+호스트 포트와 `/etc/hosts` 변경은 필요 없다. 일반 Docker Desktop에서는 같은 이름을
+호스트에서 해석할 DNS와 loopback의 Host 기반 프록시를 별도로 구성해야 한다.
 
-agent-plugins 레지스트리가 등록하는 MCP URL 은 `http://mcp-<name>.agent-mcps.svc.cluster.local/mcp`(포트 없음 = 80)이다. 각 서비스가 그 클러스터 DNS 이름을 network alias 로 달고 80 포트로 리슨하며, **OrbStack 커스텀 도메인 라벨**(`dev.orbstack.domains`) 로 호스트의 `pnpm dev` 프로세스도 같은 이름을 컨테이너로 직접 해석한다 — 포트 공개도 `/etc/hosts` 도 필요 없다.
+## 서비스
 
-> OrbStack 전용 부분은 라벨 하나뿐이다. 일반 Docker Desktop 에서는 호스트가 이 이름들을 해석하지 못하므로, `/etc/hosts` 에 `127.0.0.1 mcp-<name>.agent-mcps.svc.cluster.local …` 를 추가하고 127.0.0.1:80 에서 Host 헤더로 라우팅하는 프록시(caddy 등)를 두는 방식으로 대신한다.
+| 프로필 | 컨테이너 | 필요한 설정 |
+|---|---|---|
+| `aws` | mcp-cloudwatch | `.env.aws`의 AWS 자격증명 |
+| `brave` | mcp-brave-search | `.env`의 `BRAVE_API_KEY` |
+| `argocd` | mcp-argocd | `ARGOCD_BASE_URL`, `ARGOCD_API_TOKEN` |
+| `grafana` | mcp-grafana | `GRAFANA_URL`, `GRAFANA_SERVICE_ACCOUNT_TOKEN` |
+| `kubernetes` | mcp-kubernetes | `KUBECONFIG_PATH` |
+| `ticker` | ticker | 앱과 같은 `SCHEDULE_SCAN_TOKEN` |
 
-## 사전 조건
+기본 활성 프로필은 없다. 사용할 서비스의 입력을 채운 뒤 `COMPOSE_PROFILES`에 나열한다.
+이미지는 공개 registry의 고정 태그를 사용하며 ECR 로그인이 필요 없다.
+GitHub·Notion·AWS Knowledge는 plugin에 선언된 외부 MCP로 연결하므로 로컬 컨테이너를 만들지 않는다.
 
-- 로컬 개발 셋업 (`docs/DEVELOPMENT.md`): 루트 `compose.yaml` 의 PostgreSQL 18·MinIO, `.env.local`, `pnpm dev`. `aws` 프로필을 켜면 배포 스크립트가 같은 PostgreSQL에 `mcp_memory` 데이터베이스를 멱등하게 만든다.
-- `.env.local` 에 한 줄 추가 — 이것이 없으면 SSRF 가드가 MCP URL 을 전부 거부하고, plugins sync 는 모든 서버를 `invalid-url` 로 스킵한다:
+문서 처리는 Studio 내장 기능이다. 장기 메모리는 Agent Memory 연동으로 구성한다.
+이 Compose에는 mcp-document·mcp-memory·mcp-youtube가 없다. 기존 `mcp_memory`
+DB와 볼륨은 제거하지 않으며, 이전 MCP 바인딩과 메모리 데이터 이전은 별도 작업이다.
 
-  ```
-  MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
-  ```
-
-- MCP 이미지를 받을 AWS 자격 증명 (private ECR). `AWS_PROFILE` 이면 충분하다.
-
-## 실행
+## 설정과 실행
 
 ```bash
-cd deploy/local
-scripts/deploy.sh    # 첫 실행: .env 생성 후 종료 — 검토하고 다시 실행
-scripts/deploy.sh    # .env 에 고정한 태그로 ECR 로그인 + 기동
-pnpm dev             # 레포 루트에서 — http://localhost:3000
+cp deploy/local/.env.example deploy/local/.env
+# .env의 필요한 주소·자격증명·COMPOSE_PROFILES 설정
+# aws 사용 시 .env.aws.example을 .env.aws로 복사해 설정
+
+deploy/local/scripts/deploy.sh
+pnpm dev
 ```
+
+이미 `.env`가 있으면 덮어쓰지 말고 새 설정만 추가한다. 앱의 `.env.local`에는
+`MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local`을 포함해야 한다.
+주소는 컨테이너에서 접근 가능해야 하며 호스트 서비스는 `host.docker.internal`을 사용한다.
+
+Argo CD·Grafana·Kubernetes의 로컬 도구는 읽기 전용으로 제공한다. Kubernetes는 선택한 context만
+포함한 전용 kubeconfig를 읽기 전용으로 마운트한다. 인증서 경로와 exec 플러그인을 호스트에
+의존하는 kubeconfig는 그대로 동작하지 않으므로 컨테이너에서 사용할 수 있게 준비한다.
+API 권한은 연결 대상의 token·RBAC가 결정한다. Grafana도 의도한 범위의 서비스 계정을 사용한다. 인증 설정은
+[upstream 안내](https://github.com/grafana/mcp-grafana/blob/v1.1.0/README.md)를 따른다.
+어떤 MCP에도 앱의 전체 `.env.local`을 전달하지 않는다.
 
 ## 검증
 
 ```bash
-# 호스트에서 컨테이너 직결 (OrbStack 도메인)
-curl -s -o /dev/null -w '%{http_code}\n' \
-  -X POST http://mcp-document.agent-mcps.svc.cluster.local/mcp \
+docker compose -f deploy/local/compose.yaml ps
+curl -s -X POST http://mcp-cloudwatch.agent-mcps.svc.cluster.local/mcp \
   -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}'
-# → 200
 ```
 
-콘솔에서: `/plugins` 의 **Sync** 를 실행하면 클러스터 DNS 서버들이 레지스트리에 생성된다 (`ticker` 프로필을 켰다면 1분 내 자동). 그다음 `/tools` 의 `mcp-document`·`mcp-youtube` 에 **Test** — 성공하면 suffix 를 경유한 dispatch 까지 동작하는 것이다.
+콘솔 `/plugins`에서 Sync한 뒤 `/tools`에서 해당 서버의 Test를 실행한다.
+호스트에서 이름 해석이 실패하면 OrbStack Settings → Network의
+“Allow access to container domains & IPs”와 로컬 DNS 동작을 확인한다.
+[OrbStack 도메인 안내](https://docs.orbstack.dev/docker/domains#compatibility)를 따른다.
+컨테이너 내부 응답과 호스트의 도메인 접근은 각각 검증해야 한다.
+MCP initialize·도구 목록 성공은 하류 API 접근 성공을 보장하지 않는다.
+연결 대상이 준비되면 허용된 읽기 도구로 실제 접근을 확인한다.
 
-## 프로필
-
-기본은 자격 증명이 필요 없는 `mcp-document` + `mcp-youtube` 만 뜬다. `.env` 의 `COMPOSE_PROFILES` 에 추가한다:
-
-| 프로필 | 서비스 | 필요한 것 | 주의 |
-|---|---|---|---|
-| `aws` | mcp-memory, mcp-cloudwatch | `cp .env.aws.example .env.aws` 후 액세스 키 | mcp-memory는 공유 PostgreSQL의 `mcp_memory`에 저장하고 Bedrock으로 embedding한다. 이전 S3/S3 Vectors 데이터는 자동 이전되지 않는다 |
-| `brave` | mcp-brave-search | `.env` 의 `BRAVE_API_KEY` | |
-| `ticker` | 스케줄·플러그인 sync·카탈로그 리인덱스 | `.env` 의 `SCHEDULE_SCAN_TOKEN` (`.env.local` 과 같은 값) | `scripts/tick.sh` 를 마운트하고 호스트의 `pnpm dev`(:3000)를 두드린다 — 컨테이너에는 이 토큰 하나만 들어간다 |
-
-managed MCP(`MANAGED_MCP_RUNTIME=docker`)는 별개의 경로다: 앱이 직접 docker CLI 로 컨테이너를 띄우고 루프백으로 등록한다 (`docs/CONFIGURATION.md`). 이 compose 는 *레지스트리(agent-plugins)의* 서버들을 실제 배포와 같은 이름으로 띄우는 쪽이다 — 두 방식은 공존할 수 있다.
-
-## 정리
+## 종료
 
 ```bash
-cd deploy/local && docker compose --profile '*' down
+docker compose -f deploy/local/compose.yaml --profile '*' down
 ```
 
-`--profile '*'` 는 지금 꺼져 있는 프로필의 컨테이너(예: `aws` 를 켰다가 끈 뒤 남은 mcp-memory)까지 내린다. 이 프로젝트(`agent-studio-mcp-local`)의 컨테이너만 내려간다. 레포 루트의 `agent-studio-local` 프로젝트와는 무관하다.
+이 명령은 `agent-studio-mcp-local`만 종료한다. 루트의 PostgreSQL·MinIO와 Agent Memory는
+별도 Compose 프로젝트다. 데이터 볼륨을 삭제하는 `down -v`는 사용하지 않는다.

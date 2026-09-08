@@ -31,65 +31,56 @@ x-mcp: &mcp
 
 services:
   # --- MCP servers -------------------------------------------------------
-  # The two that need no credentials — the default profile-less set, enough
-  # for an end-to-end MCP run.
-
-  mcp-document:
+  # Credentials and target services are selected explicitly through profiles.
+  mcp-argocd:
     <<: *mcp
-    platform: linux/amd64
-    image: ${ECR_REGISTRY}/mcp-document:${MCP_DOCUMENT_TAG}
+    profiles: [argocd]
+    image: quay.io/argoprojlabs/mcp-for-argocd:${MCP_ARGOCD_TAG}
+    command: ["http", "--port", "80", "--stateless", "--bind-address", "0.0.0.0", "--allow-unauthenticated", "--allowed-host-header", "mcp-argocd.agent-mcps.svc.cluster.local"]
     environment:
-      PORT: "80"
+      ARGOCD_BASE_URL: ${ARGOCD_BASE_URL:-}
+      ARGOCD_API_TOKEN: ${ARGOCD_API_TOKEN:-}
+      MCP_READ_ONLY: "true"
     labels:
-      dev.orbstack.domains: mcp-document.agent-mcps.svc.cluster.local
+      dev.orbstack.domains: mcp-argocd.agent-mcps.svc.cluster.local
     mem_limit: 512m
     networks:
       default:
-        aliases:
-          - mcp-document.agent-mcps.svc.cluster.local
+        aliases: [mcp-argocd.agent-mcps.svc.cluster.local]
 
-  mcp-youtube:
+  mcp-grafana:
     <<: *mcp
-    platform: linux/amd64
-    image: ${ECR_REGISTRY}/mcp-youtube:${MCP_YOUTUBE_TAG}
+    profiles: [grafana]
+    image: grafana/mcp-grafana:${MCP_GRAFANA_TAG}
+    command: ["--transport", "streamable-http", "--address", "0.0.0.0:80", "--allowed-hosts", "mcp-grafana.agent-mcps.svc.cluster.local,localhost", "--disable-write"]
     environment:
-      PORT: "80"
+      GRAFANA_URL: ${GRAFANA_URL:-}
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_SERVICE_ACCOUNT_TOKEN:-}
     labels:
-      dev.orbstack.domains: mcp-youtube.agent-mcps.svc.cluster.local
-    mem_limit: 512m
+      dev.orbstack.domains: mcp-grafana.agent-mcps.svc.cluster.local
+    mem_limit: 256m
     networks:
       default:
-        aliases:
-          - mcp-youtube.agent-mcps.svc.cluster.local
+        aliases: [mcp-grafana.agent-mcps.svc.cluster.local]
 
-  # --- MCP servers that need real credentials ----------------------------
-  # `aws` needs .env.aws (an access key). mcp-memory stores its rows in the
-  # root compose project's PostgreSQL and uses Bedrock only for embeddings.
-  # `brave` needs BRAVE_API_KEY in `.env`.
-
-  mcp-memory:
+  mcp-kubernetes:
     <<: *mcp
-    profiles: [aws]
-    platform: linux/amd64
-    image: ${ECR_REGISTRY}/mcp-memory:${MCP_MEMORY_TAG}
-    env_file:
-      - .env.aws
-    environment:
-      PORT: "80"
-      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
-      DATABASE_URL: postgres://agent_studio:agent_studio@postgres:5432/mcp_memory
-      EMBEDDING_PROVIDER: bedrock
-      EMBEDDING_MODEL: amazon.titan-embed-text-v2:0
-      EMBEDDING_DIM: "1024"
-      RECALL_MIN_SIMILARITY: "0.1"
+    profiles: [kubernetes]
+    image: quay.io/containers/kubernetes_mcp_server:${MCP_KUBERNETES_TAG}
+    command: ["--port", "80", "--toolsets", "core", "--stateless", "--read-only", "--kubeconfig", "/config/kubeconfig"]
+    volumes:
+      - type: bind
+        source: ${KUBECONFIG_PATH:-./kubeconfig}
+        target: /config/kubeconfig
+        read_only: true
+        bind:
+          create_host_path: false
     labels:
-      dev.orbstack.domains: mcp-memory.agent-mcps.svc.cluster.local
-    mem_limit: 512m
+      dev.orbstack.domains: mcp-kubernetes.agent-mcps.svc.cluster.local
+    mem_limit: 256m
     networks:
       default:
-        aliases:
-          - mcp-memory.agent-mcps.svc.cluster.local
-      data:
+        aliases: [mcp-kubernetes.agent-mcps.svc.cluster.local]
 
   # `entrypoint` starts the HTTP transport directly; the upstream image's
   # default command is stdio-only and its healthcheck does not probe this port.
@@ -141,9 +132,8 @@ services:
     <<: *mcp
     profiles: [brave]
     image: brave/brave-search-mcp-server:${MCP_BRAVE_TAG}
-    env_file:
-      - .env
     environment:
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
       BRAVE_MCP_TRANSPORT: http
       BRAVE_MCP_HOST: 0.0.0.0
       BRAVE_MCP_PORT: "80"
@@ -187,8 +177,3 @@ services:
       - ./scripts/tick.sh:/tick.sh:ro
     mem_limit: 64m
     logging: *logging
-
-networks:
-  data:
-    external: true
-    name: agent-studio-local_default
