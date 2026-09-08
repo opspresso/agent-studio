@@ -21,7 +21,7 @@ let s3Client: S3Client | undefined;
  * because a self-hosted endpoint rarely resolves bucket subdomains. Unset,
  * the SDK's own region/credential resolution applies, exactly as before.
  */
-function getS3Client(): S3Client {
+export function getS3Client(): S3Client {
   if (!s3Client) {
     const endpoint = config.s3Endpoint;
     const credentials = config.s3Credentials;
@@ -66,6 +66,55 @@ export function artifactPublicUrl(key: string): string {
   return `https://${bucket}.s3.${config.awsRegion}.amazonaws.com/${encodedKey}`;
 }
 
+export async function readStoredObject(bucket: string, key: string, maxBytes: number) {
+  const object = await getS3Client()
+    .send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    .catch((error: unknown) => {
+      // The port's name for it. `NoSuchKey` is what S3 and every compatible
+      // store answer a GET on a missing key with.
+      if ((error as { name?: string }).name === "NoSuchKey") {
+        throw new ObjectNotFoundError(key);
+      }
+      throw error;
+    });
+  const body = object.Body;
+  if (!body) {
+    throw new Error("stored object has no body");
+  }
+  let bytes: Uint8Array;
+  try {
+    const headers = new Headers();
+    if (object.ContentLength !== undefined) {
+      headers.set("content-length", String(object.ContentLength));
+    }
+    const stream = body instanceof Readable
+      // Node and DOM typings differ on BYOB readers; this boundary uses the
+      // same Uint8Array default reader in both environments.
+      ? ReadableStream.from<Uint8Array>(body) as unknown as NonNullable<Response["body"]>
+      : body.transformToWebStream();
+    bytes = await readBodyBytes({ body: stream, headers }, maxBytes);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
+    }
+    throw error;
+  } finally {
+    // Also release an unread Node body when its declared size was refused.
+    if (body instanceof Readable) {
+      body.destroy();
+    }
+  }
+  // The header is the only place the type lives, and a filesystem hop loses
+  // it: a migration's `aws s3 sync` → `mc mirror`, a backup restored the
+  // same way, both re-guess from the extension — which an `images/<uuid>`
+  // key has none of. A picture says what it is in its first bytes; for one,
+  // that answer wins over a header that says nothing.
+  const declared = object.ContentType;
+  const generic = declared === undefined || declared === "application/octet-stream";
+  const mimeType = (generic ? sniffImageType(bytes) : undefined) ?? declared ?? "application/octet-stream";
+  return { bytes, mimeType };
+}
+
 /**
  * The bytes behind an artifact row.
  *
@@ -85,54 +134,7 @@ export const artifactObjectStore: ArtifactObjectStore = {
     );
   },
 
-  async read(key, maxBytes) {
-    const object = await getS3Client()
-      .send(new GetObjectCommand({ Bucket: requireBucket(), Key: key }))
-      .catch((error: unknown) => {
-        // The port's name for it. `NoSuchKey` is what S3 and every compatible
-        // store answer a GET on a missing key with.
-        if ((error as { name?: string }).name === "NoSuchKey") {
-          throw new ObjectNotFoundError(key);
-        }
-        throw error;
-      });
-    const body = object.Body;
-    if (!body) {
-      throw new Error("stored object has no body");
-    }
-    let bytes: Uint8Array;
-    try {
-      const headers = new Headers();
-      if (object.ContentLength !== undefined) {
-        headers.set("content-length", String(object.ContentLength));
-      }
-      const stream = body instanceof Readable
-        // Node and DOM typings differ on BYOB readers; this boundary uses the
-        // same Uint8Array default reader in both environments.
-        ? ReadableStream.from<Uint8Array>(body) as unknown as NonNullable<Response["body"]>
-        : body.transformToWebStream();
-      bytes = await readBodyBytes({ body: stream, headers }, maxBytes);
-    } catch (error) {
-      if (error instanceof BodyTooLargeError) {
-        throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
-      }
-      throw error;
-    } finally {
-      // Also release an unread Node body when its declared size was refused.
-      if (body instanceof Readable) {
-        body.destroy();
-      }
-    }
-    // The header is the only place the type lives, and a filesystem hop loses
-    // it: a migration's `aws s3 sync` → `mc mirror`, a backup restored the
-    // same way, both re-guess from the extension — which an `images/<uuid>`
-    // key has none of. A picture says what it is in its first bytes; for one,
-    // that answer wins over a header that says nothing.
-    const declared = object.ContentType;
-    const generic = declared === undefined || declared === "application/octet-stream";
-    const mimeType = (generic ? sniffImageType(bytes) : undefined) ?? declared ?? "application/octet-stream";
-    return { bytes, mimeType };
-  },
+  async read(key, maxBytes) { return readStoredObject(requireBucket(), key, maxBytes); },
 
   /**
    * A direct URL in public mode, otherwise a pre-signed GET URL. The signed
@@ -182,8 +184,11 @@ export const artifactObjectStore: ArtifactObjectStore = {
    * delete interrupted between the two converges when it is retried.
    */
   async delete(key) {
-    await getS3Client().send(
-      new DeleteObjectCommand({ Bucket: requireBucket(), Key: key }),
-    );
+    await deleteStoredObject(requireBucket(), key);
   },
 };
+
+/** Shared object deletion; callers own their inventory and retention policy. */
+export async function deleteStoredObject(bucket: string, key: string): Promise<void> {
+  await getS3Client().send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+}

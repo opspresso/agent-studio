@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "tsx scripts/integration-check.ts",
+    "test:storage": "tsx scripts/source-storage-check.ts",
     "test:watch": "vitest",
     "test:html-preview": "playwright test --config playwright.preview.config.ts",
     "check-models": "tsx scripts/check-models.ts",

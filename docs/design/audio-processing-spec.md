@@ -4,6 +4,8 @@
 영속 작업 repository는 발생당 admission·source dedup·lease·checkpoint·취소·재시도를 제공한다.
 worker 단계 실행기는 가져오기·전사·선택적 후처리·저장과 heartbeat·중간 receipt·재시도를 제공한다.
 모델 설정 조립·실제 단계 어댑터 연결·worker 기동·도구 연결은 아직 없다.
+원본 object store는 streaming multipart·조건부 생성·크기 제한·업로드 취소를 제공한다.
+`pnpm test:storage`는 로컬 MinIO의 임시 비공개 bucket에서 실제 저장·충돌·읽기·삭제를 검증한다.
 파일의 달력 일·월 보존 계산은 `src/application/artifact/fileRetention.ts`가 제공하며 실제 삭제 스윕은 아직 없다.
 아래 도구 이름은 구현할 계약이며 현재 제공 기능이 아니다.
 구현은 [마일스톤](../MILESTONES.md#audio-processing-jobs)에서 추적한다.
@@ -234,6 +236,12 @@ evidence refs를 사용한다. 원래 서비스의 필드명은 mapping이 변�
 저장하지 않는다. 안정적인 job URI도 별도 인증된 조회 주소이며 자체 접근 권한을 부여하지 않는다.
 
 ## 파일 보존·개인 접근·운영
+
+원본 저장 어댑터는 multipart 완료 시 `If-None-Match: *`를 사용해 기존 파일을 덮어쓰지 않는다.
+이는 [S3 조건부 쓰기 계약](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)을
+사용하며 기존 object와 충돌하면 호출자가 inventory를 다시 확인한다. `test:storage`는 로컬 endpoint만
+허용하고 무작위 임시 bucket을 만들고 제거한다. 기본값은 Compose의 MinIO이며 별도 로컬 환경은
+`STORAGE_TEST_ENDPOINT`, `STORAGE_TEST_ACCESS_KEY`, `STORAGE_TEST_SECRET_KEY`로 지정한다.
 
 원본은 비공개 `source-files/<opaque-source>/<jobId>/<fileId>`에 저장한다. 버킷과 key에는 업무
 이름을 요구하지 않는다. 공개 artifact 정책이 적용되지 않는 prefix 또는 별도 비공개 bucket을 사용한다.
