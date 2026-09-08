@@ -12,12 +12,14 @@
 import { keys } from "@/infrastructure/db/keys";
 import {
   CONDITIONAL_WRITE_FAILED,
+  TRANSACTION_CANCELLED,
   getItem,
   queryItems,
   transact,
   updateItem,
   type Item,
   type QueryInput,
+  type TransactOp,
 } from "@/infrastructure/db/store";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
@@ -127,6 +129,7 @@ function added(row: Item | null, delta: UsageDelta, extra: Item): Item {
 
 export class PostgresUsageRepository implements UsageRepository {
   async record(delta: UsageDelta): Promise<void> {
+    if (delta.idempotencyKey !== undefined) { await this.recordOnce(delta); return; }
     await this.addTo(keys.usage(delta.projectName, delta.date), delta, {
       entityType: "Usage",
       GSI1PK: keys.usageDatePartition(delta.date),
@@ -151,6 +154,43 @@ export class PostgresUsageRepository implements UsageRepository {
           added(row, delta, { entityType: "UsageMember", email }),
         );
       }
+    }
+  }
+
+  /** The receipt and all projections commit together; retries cannot partially charge twice. */
+  private async recordOnce(delta: UsageDelta): Promise<void> {
+    if (!delta.idempotencyKey || delta.idempotencyKey.length > 256) throw new Error("Invalid usage event identity");
+    const receipt = keys.usageReceipt(delta.projectName, delta.idempotencyKey);
+    const same = (item: Item) => {
+      const stored = (item.delta ?? {}) as Record<string, unknown>;
+      const entries = Object.entries(delta).filter(([, value]) => value !== undefined);
+      return Object.keys(stored).length === entries.length && entries.every(([key, value]) => stored[key] === value);
+    };
+    const existing = await getItem(receipt);
+    if (existing) {
+      if (!same(existing)) throw new Error("Usage event identity has a different payload");
+      return;
+    }
+    const ops: TransactOp[] = [
+      { kind: "check", key: keys.project(delta.projectName), condition: projectIsLive },
+      { kind: "put", item: { ...receipt, entityType: "UsageReceipt", delta }, condition: (item) => item === null },
+      { kind: "update", key: keys.usage(delta.projectName, delta.date), patch: (item) => added(item, delta, {
+        entityType: "Usage", GSI1PK: keys.usageDatePartition(delta.date), GSI1SK: delta.projectName,
+      }) },
+    ];
+    if (delta.actor) {
+      ops.push({ kind: "update", key: keys.usageActor(delta.projectName, delta.date, delta.actor),
+        patch: (item) => added(item, delta, { entityType: "Usage", actor: delta.actor }) });
+      const email = memberEmailFromActorKey(delta.actor);
+      if (email) ops.push({ kind: "update", key: keys.usageMember(email, delta.date, delta.projectName),
+        patch: (item) => added(item, delta, { entityType: "UsageMember", email }) });
+    }
+    try { await transact(ops); }
+    catch (error) {
+      if (!(error instanceof Error) || error.name !== TRANSACTION_CANCELLED) throw error;
+      const winner = await getItem(receipt);
+      if (!winner) throw error;
+      if (!same(winner)) throw new Error("Usage event identity has a different payload");
     }
   }
 

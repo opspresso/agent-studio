@@ -17,7 +17,9 @@ const input = { id: "file-1", projectName: "audio", userEmail: "owner@example.te
 const open = vi.fn(async function* () { yield new Uint8Array([1, 2, 3]); });
 const useCases = () => createSourceFileUseCases({ files, objects, now: () => clock });
 beforeEach(() => {
-  vi.clearAllMocks(); fake.rows.clear(); fake.seed([{ ...keys.project("audio") }, { ...keys.project("other") }]);
+  vi.clearAllMocks(); fake.rows.clear(); fake.seed([
+    { ...keys.project("audio"), entityType: "PROJECT" }, { ...keys.project("other"), entityType: "PROJECT" },
+  ]);
   clock = new Date("2026-11-30T01:00:00.000Z"); contents = new Map();
   objects = {
     write: vi.fn(async ({ key, body, mimeType }) => {
@@ -38,6 +40,11 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("does not open an upload for a project being deleted", async () => {
+    fake.seed([{ ...keys.project("audio"), entityType: "PROJECT", deletingAt: clock.toISOString() }]);
+    await expect(useCases().import(input, openBody)).rejects.toThrow();
+    expect(open).not.toHaveBeenCalled();
+  });
   it("stores inventory and reuses the original completion date on replay", async () => {
     const api = useCases();
     const file = await api.import(input, openBody);

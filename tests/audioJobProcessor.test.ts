@@ -28,7 +28,7 @@ function deps(): AudioJobProcessorDeps {
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now);
-  fake.rows.clear(); fake.seed([{ ...keys.project("audio") }]);
+  fake.rows.clear(); fake.seed([{ ...keys.project("audio"), entityType: "PROJECT" }]);
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 

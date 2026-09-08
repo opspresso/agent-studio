@@ -3,6 +3,7 @@ import {
   type AudioJob, type AudioJobRepository,
 } from "@/domain/audio/job";
 import { keys } from "../keys";
+import { projectIsLive } from "../projectLifecycle";
 import {
   conditions, getItem, queryItems, transact, updateItem,
   CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, type Item, type TransactOp,
@@ -68,7 +69,7 @@ export const audioJobRepository: AudioJobRepository = {
     };
     try {
       await transact([
-        { kind: "check", key: keys.project(input.projectName), condition: conditions.exists },
+        { kind: "check", key: keys.project(input.projectName), condition: projectIsLive },
         { kind: "put", item: row(job), condition: conditions.notExists },
         { kind: "put", item: { ...sourceKey, jobId: job.id }, condition: conditions.notExists },
         reserve(input.projectName, job.id, admission.maxActive),
@@ -176,7 +177,7 @@ export const audioJobRepository: AudioJobRepository = {
     delete next.errorCode;
     try {
       await transact([
-        { kind: "check", key: keys.project(projectName), condition: conditions.exists },
+        { kind: "check", key: keys.project(projectName), condition: projectIsLive },
         { kind: "put", item: row(next), condition: (item) => jobOf(item)?.revision === revision },
         reserve(projectName, id, maxActive),
       ]);

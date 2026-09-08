@@ -616,3 +616,22 @@ wire 에 실리지 않으면 호출을 처리하는 모델이 자기 최대치�
 전혀 남기지 않는 버전도 마찬가지다. 0 예산은 런이 채워 보지도 못한 예산을 탓하면서 모든 도구
 호출을 거부하게 되기 때문이다. 단발성(`llm`) 런도 예산이 없다. 한 번의 호출에서는 아무것도
 누적되지 않고, 입력은 호출자 자신의 것이다.
+
+## 오디오 전사 설정
+
+오디오 처리 구현은 [개발 스펙](design/audio-processing-spec.md)에서 추적한다. 아래 설정 resolver는
+구현돼 있지만 worker·도구 조립은 진행 중이다. 이 값을 넣는 것만으로 자동 수집이 시작되지는 않는다.
+
+| 변수 | 기본값 | 역할 |
+| --- | --- | --- |
+| `SOURCE_FILES_BUCKET_NAME` | 미설정 | 비공개 원본 파일 전용 bucket. 기존 public artifact bucket으로 fallback하지 않는다 |
+| `TRANSCRIPTION_BASE_URL` | 미설정 | `/audio/transcriptions` 앞의 ASR base URL. 없으면 선택 모델의 명시적 provider 채널을 요구한다 |
+| `TRANSCRIPTION_API_KEY` | 미설정 | 전용 ASR key. base URL 없이 설정하면 거절하며 다른 LLM key를 가져오지 않는다 |
+| `TRANSCRIPTION_RESPONSE_FORMAT` | `json` | `json`, `verbose_json`, `diarized_json` 중 provider가 지원하는 형식 |
+| `TRANSCRIPTION_CHUNKING_STRATEGY` | 미설정 | provider가 지원할 때만 `auto` 사용 |
+| `TRANSCRIPTION_MAX_INPUT_BYTES` | `26214400` | 변환된 구간 하나의 provider 전송 상한. 원본 파일 상한과 별개 |
+| `TRANSCRIPTION_SEGMENT_SECONDS` | `300` | 구간 길이 상한. byte 상한이 더 작으면 그에 맞춰 분할 |
+| `FFMPEG_PATH` | `ffmpeg` | 운영 이미지에 설치된 오디오 decoder 실행 파일 |
+
+전사 모델은 카탈로그의 Transcription 타입이어야 한다. HTTP multipart를 지원하지 않는 SigV4
+채널과 미설정 채널은 거절한다. 알려지지 않은 사용량의 비용 계산 결과는 unknown이며 0이 아니다.

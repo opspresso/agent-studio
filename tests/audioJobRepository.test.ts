@@ -16,9 +16,14 @@ const input: AudioJobInput = {
   sourceKey: "source-1", model: "selfhosted/asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
 };
 const admission = { id: "job-1", now, occurrence: "hour-1", maxActive: 1, maxPerOccurrence: 1 };
-beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.project("audio") }]); });
+beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.project("audio"), entityType: "PROJECT" }]); });
 
 describe("durable audio jobs", () => {
+  it("does not admit work while the project is being deleted", async () => {
+    fake.seed([{ ...keys.project("audio"), entityType: "PROJECT", deletingAt: now }]);
+    expect(await jobs.submit(input, admission)).toEqual({ status: "busy" });
+    expect(await jobs.get("audio", "job-1")).toBeNull();
+  });
   it("atomically admits one source and keeps its identity after completion", async () => {
     const first = await jobs.submit(input, admission);
     expect(first.status).toBe("accepted");

@@ -19,6 +19,7 @@ export const keys = {
 
   audioJob: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `AUDIOJOB#${id}` }),
   audioJobPrefix: () => "AUDIOJOB#",
+  usageReceipt: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `USAGERECEIPT#${id}` }),
   sourceFile: (id: string) => ({ PK: `SOURCEFILE#${id}`, SK: "META" }),
   sourceFileExpiryIndex: (retireAt: string, projectName: string, id: string) => ({
     GSI1PK: "SOURCEFILEEXPIRY", GSI1SK: `${retireAt}#${projectName}#${id}`,

@@ -44,6 +44,8 @@
 | 설정된 값이 비어 있는지 여부 | `src/shared/env.ts` |
 | Embedding/Rerank 선택 모델의 endpoint·credential·wire ID 결정 | `src/lib/runtime-settings.ts`의 `getEmbeddingTarget` / `getRerankerTarget`. 공개 모델은 등록된 provider 채널을 우선하고 self-hosted는 전용 채널을 사용한다 |
 | provider 에 embedding 을 요청하기 | `src/infrastructure/llm/embeddings.ts` |
+| 전사 모델의 endpoint·credential·wire ID·응답 형식 결정 | `src/lib/runtime-settings.ts`의 `getTranscriptionTarget` |
+| 전사 사용량의 시간/토큰 단위 비용 계산 | `src/domain/llm/models.ts`의 `calculateTranscriptionCost`. 누락된 과금 단위는 unknown이다 |
 | 배포 전역 Embedding/Rerank 모델 선택과 Embedding 변경 시 vector migration | `src/application/llm/modelSelection.ts`; env/DB 우선순위는 `src/lib/runtime-settings.ts` |
 | Capability catalog reindex의 설치 전역 직렬화 lease | `src/domain/catalog/reindexLock.ts` 계약과 `src/infrastructure/db/repositories/catalogReindexLock.ts` 구현 |
 | vector 후보를 2차 정렬하기 | 요청/응답 프로토콜은 `src/infrastructure/llm/reranker.ts`, 어느 후보·텍스트·과업 instruction을 보내고 상대 하한으로 자를지는 `src/application/catalog/searchCatalog.ts` |

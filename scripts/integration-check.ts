@@ -1345,6 +1345,24 @@ async function main() {
       pass("transact: a checked key locks share-mode, a written one exclusively");
     }
 
+    // ---------- durable usage receipts ----------
+    {
+      const event = { idempotencyKey: `asr-${suffix}`, projectName, date: today, model: "asr-integration",
+        calls: 1, inputTokens: 10, outputTokens: 2, costUsd: 0.01, actor: "user:audio-integration@example.com" };
+      try {
+        await Promise.all(Array.from({ length: 8 }, () => usageRepository.record(event)));
+        assert.equal((await usageRepository.getDay(projectName, today))?.calls["asr-integration"], 1);
+        // PostgreSQL JSONB reorders object keys; replay compares values, not serialized order.
+        await usageRepository.record(event);
+        await assert.rejects(usageRepository.record({ ...event, costUsd: 2 }));
+        assert.equal((await usageRepository.getDay(projectName, today))?.costUsd["asr-integration"], 0.01);
+        pass("usage receipts: concurrent replay bills once and rejects conflicting payloads");
+      } finally {
+        const { deleteItem } = await import("@/infrastructure/db/store");
+        await deleteItem(dbKeys.usageMember("audio-integration@example.com", today, projectName));
+      }
+    }
+
     // ---------- source inventory (completion recovery + deletion fencing) ----------
     {
       const { sourceFileRepository: files } = await import("@/infrastructure/db/repositories/sourceFileRepository");

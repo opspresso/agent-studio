@@ -1,5 +1,6 @@
 import type { SourceFile, SourceFileRepository } from "@/domain/artifact/sourceFile";
 import { keys } from "../keys";
+import { projectIsLive } from "../projectLifecycle";
 import { conditions, getItem, queryItems, transact, updateItem,
   CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, type Item } from "../store";
 
@@ -16,7 +17,7 @@ export const sourceFileRepository: SourceFileRepository = {
   async create(file) {
     try {
       await transact([
-        { kind: "check", key: keys.project(file.projectName), condition: conditions.exists },
+        { kind: "check", key: keys.project(file.projectName), condition: projectIsLive },
         { kind: "put", item: row(file), condition: conditions.notExists },
       ]);
       return file;

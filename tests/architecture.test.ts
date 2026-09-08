@@ -1067,6 +1067,16 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "transcription channel and wire format selection",
+    pattern: /export async function getTranscriptionTarget\b/,
+    owner: "src/lib/runtime-settings.ts",
+  },
+  {
+    what: "transcription duration and token cost calculation",
+    pattern: /export function calculateTranscriptionCost\b/,
+    owner: "src/domain/llm/models.ts",
+  },
+  {
     what: "private source file object addresses",
     pattern: /export function sourceFileObjectKey\b/,
     owner: "src/domain/artifact/sourceFile.ts",
