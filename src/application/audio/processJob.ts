@@ -1,6 +1,7 @@
 import type { AudioJob, AudioJobCheckpoint, AudioJobRepository } from "@/domain/audio/job";
 import { TranscriptionError } from "@/domain/llm/transcription";
 import { unrefTimer } from "@/shared/unrefTimer";
+import { AppError } from "@/application/errors";
 
 export const AUDIO_JOB_LEASE_MS = 120_000;
 export const AUDIO_JOB_HEARTBEAT_MS = 30_000;
@@ -8,9 +9,9 @@ export const AUDIO_JOB_DEADLINE_MS = 24 * 60 * 60 * 1000;
 export const AUDIO_JOB_RETRY_DELAYS_MS = [60_000, 300_000, 900_000, 3_600_000] as const;
 const DOCUMENT_POLL_MS = 30_000;
 
-export class AudioJobStepError extends Error {
+export class AudioJobStepError extends AppError {
   constructor(readonly code: string, readonly retryable: boolean) {
-    super(code);
+    super(code, retryable ? 502 : 409);
     this.name = "AudioJobStepError";
   }
 }
@@ -38,6 +39,7 @@ export interface AudioJobProcessorDeps {
 function failureOf(error: unknown): { code: string; retryable: boolean } {
   if (error instanceof AudioJobStepError) return { code: error.code, retryable: error.retryable };
   if (error instanceof TranscriptionError) return { code: error.code, retryable: error.code === "unavailable" };
+  if (error instanceof AppError) return { code: `http_${error.status}`, retryable: error.status >= 500 || error.status === 429 };
   // Unknown errors may carry private source data. Never persist their message.
   return { code: "step_failed", retryable: true };
 }

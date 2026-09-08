@@ -43,7 +43,7 @@ function fixture() {
       };
     } },
     resolve: async () => config,
-    beforeTranscribe: vi.fn(async () => {}), recordUsage: vi.fn(async () => {}),
+    beforeTranscribe: vi.fn(async () => async () => {}), recordUsage: vi.fn(async () => {}),
   };
   const context: AudioJobStepContext = { signal: new AbortController().signal, record: vi.fn(async () => {}) };
   return { job, deps, saved, context, transcribe, config };

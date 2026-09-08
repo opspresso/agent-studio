@@ -100,18 +100,12 @@ export interface RunBracket {
  * fifth entry point that has to supply it cannot quietly opt out of the policies
  * that read it.
  */
-export async function openRun(
+export async function openModelCall(
   deps: RunBracketDeps,
   project: Project,
-  version: Version,
+  version: Pick<Version, "model" | "fallbackModel">,
   actor?: RunActor,
-  /**
-   * What the surface knows beyond the actor. Only the artifact owner so far,
-   * and separate from `actor` on purpose: that key decides spend and limits,
-   * this one only decides whose gallery the output shows up in.
-   */
-  opts: { ownerEmail?: string } = {},
-): Promise<RunBracket> {
+): Promise<Omit<RunBracket, "artifacts">> {
   // Before the first `await`, and therefore before this function leaves the
   // caller's async context. `enterWith` binds the store to the context it runs
   // in; called after an await it would bind to this function's own continuation
@@ -168,18 +162,6 @@ export async function openRun(
   let closed = false;
   return {
     runId: context.runId,
-    ...(deps.artifacts
-      ? {
-          artifacts: createArtifactRecorder(deps.artifacts, {
-            projectName: project.name,
-            versionName: version.versionName,
-            ...(actor ? { actor } : {}),
-            ...(opts.ownerEmail ? { ownerEmail: opts.ownerEmail } : {}),
-            ancestry: [project.name],
-            runId: context.runId,
-          }),
-        }
-      : {}),
     async close(outcome = {}) {
       // Idempotent: a generator can reach its `finally` through both a normal
       // return and a consumer's `return()`, and a double decrement would leave
@@ -193,5 +175,24 @@ export async function openRun(
       await slot.release();
       await settleCostLimit(deps, project);
     },
+  };
+}
+
+/** Chunk-producing runs add artifact capture to the common metered model-call bracket. */
+export async function openRun(
+  deps: RunBracketDeps,
+  project: Project,
+  version: Version,
+  actor?: RunActor,
+  opts: { ownerEmail?: string } = {},
+): Promise<RunBracket> {
+  const bracket = await openModelCall(deps, project, version, actor);
+  return {
+    ...bracket,
+    ...(deps.artifacts ? { artifacts: createArtifactRecorder(deps.artifacts, {
+      projectName: project.name, versionName: version.versionName,
+      ...(actor ? { actor } : {}), ...(opts.ownerEmail ? { ownerEmail: opts.ownerEmail } : {}),
+      ancestry: [project.name], runId: bracket.runId,
+    }) } : {}),
   };
 }

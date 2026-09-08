@@ -5,9 +5,10 @@
 worker 단계 실행기는 가져오기·전사·선택적 후처리·저장과 heartbeat·중간 receipt·재시도를 제공한다.
 ASR runtime target·비용 계산과 사용량 receipt의 원자적 중복 방지를 구현했다.
 암호화 source reference·guarded streaming 다운로드·작업 제출/조회/취소/재시도 유스케이스를 구현했다.
-composition root 조립·worker 기동·도구/API 연결은 아직 없다.
+composition root의 전사 경로, HTTP 작업·파일 API와 별도 worker 실행 모드를 연결했다.
+Agent builtin·후처리·Memory delivery·설정 UI는 아직 연결하지 않았다.
 ffmpeg 분할 어댑터와 구간별 결과 파일을 재사용하는 전사 단계가 구현돼 있다. 전사 단계의 budget·usage
-콜백과 runtime 모델 resolver를 composition root에 연결해야 한다. `test:audio`는 실제 MP3 변환을 검증한다.
+콜백과 runtime 모델 resolver는 composition root에 연결돼 있다. `test:audio`는 실제 MP3 변환을 검증한다.
 원본 object store는 streaming multipart·조건부 생성·크기 제한·업로드 취소를 제공한다.
 `pnpm test:storage`는 로컬 MinIO의 임시 비공개 bucket에서 실제 저장·충돌·읽기·삭제를 검증한다.
 파일 inventory와 가져오기·응답 유실 복구·개인 읽기·만료 삭제 유스케이스를 구현했다.

@@ -1,4 +1,22 @@
 import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor } from "@/infrastructure/documents/workerAdapters";
+import { createHash, randomUUID } from "node:crypto";
+import { audioJobRepository } from "@/infrastructure/db/repositories/audioJobRepository";
+import { sourceFileRepository } from "@/infrastructure/db/repositories/sourceFileRepository";
+import { sourceReferenceRepository } from "@/infrastructure/db/repositories/sourceReferenceRepository";
+import { createSourceObjectStore } from "@/infrastructure/storage/sourceObjectStore";
+import { sourceDownloader } from "@/infrastructure/net/sourceDownloader";
+import { createAudioSegmenter } from "@/infrastructure/llm/audioSegmenter";
+import { createTranscriber } from "@/infrastructure/llm/transcription";
+import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
+import { createSourceReferenceUseCases } from "@/application/audio/sourceReferences";
+import { createAudioJobUseCases } from "@/application/audio/audioJobUseCases";
+import { createAudioTranscriptionStep } from "@/application/audio/transcribeFile";
+import { AudioJobStepError, processAudioJob } from "@/application/audio/processJob";
+import { openModelCall } from "@/application/run/runBracket";
+import { runAudioWorker } from "@/application/audio/worker";
+import { getTranscriptionTarget } from "@/lib/runtime-settings";
+import { calculateTranscriptionCost } from "@/domain/llm/models";
+import { utcDay } from "@/shared/date";
 /**
  * Composition root. Wires domain repository ports to their PostgreSQL adapters and
  * exposes the `executionDeps` bundle consumed by the execution facade
@@ -75,7 +93,7 @@ import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
 import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
-import { ConflictError, ValidationError } from "@/application/errors";
+import { ConflictError, ForbiddenError, ValidationError } from "@/application/errors";
 import type { PluginsRepoSnapshot, PluginSyncSelection } from "@/domain/plugin/sync";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import {
@@ -1158,3 +1176,80 @@ export const aguiDeps: AguiDeps = {
   versions: versionRepository,
   execution: executionDeps,
 };
+
+/** Optional private audio execution, constructed only when a caller uses it. */
+export function getAudioRuntime() {
+  const bucket = config.sourceFilesBucketName;
+  if (!bucket) throw new ValidationError("SOURCE_FILES_BUCKET_NAME is not configured");
+  const files = createSourceFileUseCases({ files: sourceFileRepository, objects: createSourceObjectStore(bucket), now: () => new Date() });
+  const authorize = async (projectName: string, email: string) => {
+    const project = await projectRepository.get(projectName);
+    const member = await memberRepository.getByEmail(email);
+    if (!project || project.ownerEmail !== email || !member || member.tier === "guest") {
+      throw new ForbiddenError("Audio processing requires the project owner's member account");
+    }
+    return project;
+  };
+  const references = createSourceReferenceUseCases({ references: sourceReferenceRepository, cipher: secretCipher,
+    urlPolicy, downloader: sourceDownloader, files, authorize: async (project, email) => { await authorize(project, email); },
+    now: () => new Date(), id: randomUUID });
+  const jobs = createAudioJobUseCases({ jobs: audioJobRepository, files: sourceFileRepository,
+    sourceIdentity: references.identity,
+    authorize: async (project, email) => { await authorize(project, email); },
+    validateModel: async (model) => { await getTranscriptionTarget(model); },
+    validateOutputs: async (input) => {
+      if (input.postprocess || input.destination) throw new ValidationError("Audio postprocessing and delivery are not connected yet");
+    },
+    limits: async () => ({ maxActive: 1, maxPerOccurrence: 1 }), now: () => new Date(), id: randomUUID,
+  });
+  const settings = config.transcription;
+  const transcribe = createAudioTranscriptionStep({ files,
+    segmenter: createAudioSegmenter({ binary: settings.ffmpegPath, searchPath: settings.searchPath }),
+    resolve: async (model) => {
+      const target = await getTranscriptionTarget(model);
+      const provider = createTranscriber(target);
+      return { segmentSeconds: target.segmentSeconds, maxSegmentBytes: target.maxInputBytes,
+        settingsKey: createHash("sha256").update(JSON.stringify({ id: target.id, wireId: target.wireId,
+          baseUrl: target.baseUrl, responseFormat: target.responseFormat, chunkingStrategy: target.chunkingStrategy })).digest("hex"),
+        transcriber: { async transcribe(input, signal) {
+          const result = await provider.transcribe(input, signal);
+          return { ...result, accounting: { eventId: randomUUID(), date: utcDay(new Date()),
+            costUsd: calculateTranscriptionCost(result.model, result.usage) } };
+        } },
+      };
+    },
+    beforeTranscribe: async (job) => {
+      const project = await authorize(job.projectName, job.userEmail);
+      const bracket = await openModelCall(executionDeps, project, { model: job.model }, job.actor ?? { kind: "user", id: job.userEmail });
+      return (failed) => bracket.close({ failed });
+    },
+    recordUsage: async (job, _receiptId, result) => {
+      const accounting = result.accounting;
+      if (!accounting || accounting.costUsd === undefined) throw new AudioJobStepError("transcription_cost_unknown", false);
+      await usageRepository.record({ projectName: job.projectName, date: accounting.date, model: result.model,
+        calls: 1, inputTokens: result.usage?.inputTokens ?? 0, outputTokens: result.usage?.outputTokens ?? 0,
+        costUsd: accounting.costUsd, idempotencyKey: accounting.eventId,
+        actor: actorKey(job.actor ?? { kind: "user", id: job.userEmail }) });
+    },
+  });
+  return { files, references, jobs, authorize,
+    async process(projectName: string, id: string, signal?: AbortSignal) {
+      return processAudioJob({ jobs: audioJobRepository, now: () => new Date(), token: randomUUID,
+        authorize: async (job) => { await authorize(job.projectName, job.userEmail); },
+        importFile: references.importFile, transcribe,
+        postprocess: async () => { throw new AudioJobStepError("postprocessing_unavailable", false); },
+        store: async () => { throw new AudioJobStepError("delivery_unavailable", false); },
+      }, projectName, id, signal);
+    },
+  };
+}
+
+export async function runAudioWorkerService(signal: AbortSignal): Promise<void> {
+  const runtime = getAudioRuntime();
+  await runAudioWorker({
+    due: (limit) => audioJobRepository.due(new Date().toISOString(), limit),
+    process: (project, id, signal) => runtime.process(project, id, signal),
+    sweep: () => runtime.files.sweep(),
+    refresh: refreshModelCatalog,
+  }, signal);
+}

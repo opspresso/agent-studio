@@ -25,7 +25,7 @@ export interface AudioTranscriptionDeps {
     transcriber: TranscriptionPort; segmentSeconds: number; maxSegmentBytes: number; settingsKey: string;
   }>;
   /** The run budget owner checks each new provider request, not cached segments. */
-  beforeTranscribe(job: AudioJob, audioSeconds: number): Promise<void>;
+  beforeTranscribe(job: AudioJob, audioSeconds: number): Promise<(failed: boolean) => Promise<void>>;
   /** Must record idempotently by the stable segment receipt ID. */
   recordUsage(job: AudioJob, receiptId: string, result: TranscriptionResult): Promise<void>;
 }
@@ -78,22 +78,27 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
       const expected = { index: segment.index, start: segment.start, end: segment.end, totalSeconds: segment.totalSeconds,
         sourceChecksum: source.file.checksum, model: job.model, segmentSeconds: config.segmentSeconds,
         maxSegmentBytes: config.maxSegmentBytes, settingsKey: config.settingsKey, language: job.language ?? null };
-      await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
-        filename: `segment-${segment.index}.json`, mimeType: "application/json", retention: job.retention }, async () => {
-        await deps.beforeTranscribe(job, segment.end - segment.start);
-        context.signal.throwIfAborted();
-        const result = await config.transcriber.transcribe({ bytes: segment.bytes, mimeType: segment.mimeType,
-          filename: segment.filename, ...(job.language ? { language: job.language } : {}) }, context.signal);
-        const bytes = new TextEncoder().encode(JSON.stringify({ ...expected, result } satisfies StoredSegment));
-        if (bytes.length > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
-        return (async function* () { yield bytes; })();
-      }, context.signal);
-      const checkpoint = await deps.files.read(job.projectName, id, job.userEmail, MAX_TRANSCRIPT_BYTES);
-      checkpointBytes += checkpoint.bytes.length;
-      if (checkpointBytes > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
-      const part = parseSegment(checkpoint.bytes, expected);
-      await deps.recordUsage(job, id, part.result);
-      parts.push(part);
+      let close: ((failed: boolean) => Promise<void>) | undefined;
+      let failed = true;
+      try {
+        await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
+          filename: `segment-${segment.index}.json`, mimeType: "application/json", retention: job.retention }, async () => {
+          close = await deps.beforeTranscribe(job, segment.end - segment.start);
+          context.signal.throwIfAborted();
+          const result = await config.transcriber.transcribe({ bytes: segment.bytes, mimeType: segment.mimeType,
+            filename: segment.filename, ...(job.language ? { language: job.language } : {}) }, context.signal);
+          const bytes = new TextEncoder().encode(JSON.stringify({ ...expected, result } satisfies StoredSegment));
+          if (bytes.length > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
+          return (async function* () { yield bytes; })();
+        }, context.signal);
+        const checkpoint = await deps.files.read(job.projectName, id, job.userEmail, MAX_TRANSCRIPT_BYTES);
+        checkpointBytes += checkpoint.bytes.length;
+        if (checkpointBytes > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
+        const part = parseSegment(checkpoint.bytes, expected);
+        await deps.recordUsage(job, id, part.result);
+        parts.push(part);
+        failed = false;
+      } finally { await close?.(failed); }
     }
     if (!parts.length) throw new AudioJobStepError("empty_audio", false);
     const segments: TranscriptSegment[] = parts.flatMap((part) => part.result.segments.map((segment) => ({

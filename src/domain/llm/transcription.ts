@@ -28,6 +28,8 @@ export interface TranscriptionResult {
   /** Missing usage remains unknown rather than becoming zero. */
   usage?: TranscriptionUsage;
   warnings: string[];
+  /** Server-assigned accounting identity, preserved with a durable segment checkpoint. */
+  accounting?: { eventId: string; date: string; costUsd?: number };
 }
 
 export interface TranscriptionPort {

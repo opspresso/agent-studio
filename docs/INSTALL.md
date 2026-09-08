@@ -24,6 +24,20 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 전체 환경변수와 고정 한계는 [CONFIGURATION.md](CONFIGURATION.md), 운영 계약은
 [OPERATIONS.md](OPERATIONS.md)를 보라.
 
+## 오디오 worker
+
+오디오 전사는 선택 기능이다. HTTP 앱과 같은 이미지의 `node build/audio-worker.cjs`를 별도 process로
+실행한다. 로컬 개발은 `pnpm worker:audio`를 사용한다. DB 초기화는 앱 또는 기존 migration 명령으로
+먼저 수행한다. worker는 카탈로그·self-hosted 선언을 주기적으로 갱신하고 작업과 원본 만료를 처리한다.
+
+`SOURCE_FILES_BUCKET_NAME`에 별도 비공개 bucket을 지정하고 같은 DB·S3 자격증명·암호화 키를
+공유한다. 모델 채널과 ffmpeg 설정은 [CONFIGURATION.md](CONFIGURATION.md#오디오-전사-설정)를 따른다.
+ffmpeg는 runtime 이미지에 포함돼 있다. 동시에 두 작업을 처리하므로 최대 입력·PCM 임시 파일에
+맞는 메모리와 scratch volume을 할당한다. worker 중단 시 작업 lease가 만료된 후 다른 worker가 재개한다.
+`SIGTERM`은 현재 작업을 중단하고 checkpoint를 남긴다. 필수 chat·sign-in 경로는 worker와 무관하다.
+
+후처리·Memory delivery·Agent 도구와 설정 UI는 개발 중이며 현재 HTTP API는 해당 출력 옵션을 거절한다.
+
 ## localdev
 
 Node 24와 pnpm 11을 설치하고:

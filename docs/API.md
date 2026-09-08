@@ -1735,3 +1735,33 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 
 셋 다 일부러 비인증이고 의존성이 가볍다. 세션이 없는 인프라가 이것들을 찔러 보기 때문이다.
 연결하는 방법은 [OPERATIONS.md](OPERATIONS.md#헬스-프로브) 를 보라.
+
+## 오디오 작업과 원본 파일
+
+아래 경로는 member session과 프로젝트 소유자 권한을 요구한다. 실행 사용자 email은 session에서
+결정하며 body로 전달할 수 없다. `SOURCE_FILES_BUCKET_NAME`과 전사 채널 설정이 필요하다.
+
+| Method | 경로 | 계약 |
+| --- | --- | --- |
+| POST | `/api/projects/{name}/source-references` | `{url, namespace, itemId, filename, mimeType}` → 201 `{sourceRef, filename, mimeType}`. URL은 암호화한다 |
+| POST | `/api/projects/{name}/source-files?unit=months&value=3&timezone=Asia%2FSeoul` | raw 파일 body, Content-Type과 percent-encoded `X-Filename` → 201 SourceFile metadata |
+| GET | `/api/projects/{name}/source-files/{file}` | 개인 파일 다운로드. 만료되면 거절하며 항상 attachment·no-store로 반환한다 |
+| POST | `/api/projects/{name}/audio-jobs` | 작업 제출 → 202 accepted/duplicate, 활성 한도 초과는 409 busy |
+| GET | `/api/projects/{name}/audio-jobs?limit=20&after={id}` | `{jobs, nextCursor}`, limit 1–100. 다른 사용자 작업은 limit 전에 제외한다 |
+| GET | `/api/projects/{name}/audio-jobs/{job}` | AudioJobView |
+| POST | `/api/projects/{name}/audio-jobs/{job}` | `{action: "cancel" | "retry", revision}`. 변경된 revision 또는 허용하지 않는 상태는 409 |
+
+작업 입력은 `source: {kind: "file", fileId} | {kind: "source", sourceRef}`, `retention: {unit:
+"days" | "months", value: positive integer, timezone}`, 선택적 `task: "import" | "transcribe" |
+"process"`, `model`, `language`, `processingRevision`이다. import 이외에는 등록된 Transcription
+모델이 필요하다. 같은 외부 source identity의 재실행은 duplicate이며 명시적 processingRevision으로
+새 처리를 요청한다. `postprocess`와 `destination`은 schema에 정의돼 있으나 현재 실행 조립이
+완성되지 않아 요청하면 400으로 거절한다.
+
+AudioJobView는 `id`, `status`, `stage`, `model`, 생성·갱신·다음 실행 시각, `attempt`, `failures`,
+`revision`과 존재하는 `fileId`, `transcriptRef`, `draftRef`, `receipts`, `errorCode`를 반환한다.
+source URL·암호문·내부 source key는 포함하지 않는다. 저장된 전사 결과는 transcriptRef 파일의
+JSON이며 text, 구간, model, coverage, 원본 checksum과 사용량 receipt 참조를 포함한다.
+
+202는 작업 수락이다. 별도 worker가 처리하고 완료 상태를 GET으로 확인한다. API 연결이 끊겨도
+작업은 유지된다. 원본은 설정한 기간 후 삭제하며 작업·중복 방지 기록은 유지한다.
