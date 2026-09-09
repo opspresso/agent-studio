@@ -140,7 +140,18 @@ function AudioWorkspace({ name }: { name: string }) {
     {jobs.map((job) => <Paper key={job.id} withBorder p="md"><Stack gap="xs">
       <Group justify="space-between"><Text ff="monospace" size="sm">{job.id}</Text><Badge>{t(`audio.status.${job.status}`)}</Badge></Group>
       <Text size="sm">{job.model} · {t(`audio.stage.${job.stage}`)} · {formatDateTime(job.updatedAt, locale)}</Text>
+      {job.status === "waiting" && <Text size="sm" c="dimmed">{t("audio.resumeAt")}: {formatDateTime(job.dueAt, locale)}</Text>}
       {job.errorCode && <Text c="red" size="sm">{job.errorCode}</Text>}
+      {Object.keys(job.receipts).some((key) => key.startsWith("document:") || key.startsWith("memory:")) && <details>
+        <Text component="summary" size="sm">{t("audio.receipts")}</Text>
+        <Stack gap={4} mt="xs">
+          <Text size="xs" c="dimmed">{t("audio.receiptsHint")}</Text>
+          {Object.entries(job.receipts).filter(([key]) => key.startsWith("document:") || key.startsWith("memory:")).map(([key, id]) =>
+            <Text key={key} size="xs" style={{ overflowWrap: "anywhere" }}>
+              {key === "document:transcript" ? t("audio.transcript") : key === "document:result" ? t("audio.result") : "Memory"} · {id}
+            </Text>)}
+        </Stack>
+      </details>}
       <Group gap="xs">
         {job.fileId && <Button component="a" href={`${base}/source-files/${job.fileId}`} variant="light" size="xs">{t("audio.original")}</Button>}
         {job.transcriptRef && <Button component="a" href={`${base}/source-files/${job.transcriptRef}`} variant="light" size="xs">{t("audio.transcript")}</Button>}
