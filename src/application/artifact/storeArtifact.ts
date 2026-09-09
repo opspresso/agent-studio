@@ -13,6 +13,8 @@ import type { ArtifactRepository } from "@/domain/artifact/repository";
 import { artifactObjectKey } from "@/domain/artifact/types";
 import type { Artifact, ArtifactKind, ArtifactSource } from "@/domain/artifact/types";
 import type { RunActor } from "@/domain/execution/actor";
+import type { SourceFile } from "@/domain/artifact/sourceFile";
+import { sourceFileObjectKey } from "@/domain/artifact/sourceFile";
 import { cutCodePoints } from "@/shared/utf8Text";
 
 /**
@@ -24,6 +26,17 @@ import { cutCodePoints } from "@/shared/utf8Text";
  * the conversation.
  */
 export const MAX_ARTIFACT_PROMPT_CHARS = 500;
+
+/** Index an already stored private file without copying its bytes or extending retention. */
+export async function registerSourceArtifact(rows: ArtifactRepository, file: SourceFile): Promise<void> {
+  if (file.status !== "ready" || file.derived?.kind === "checkpoint") return;
+  await rows.put({ artifactId: file.id, privateFileId: file.id, retireAt: file.retireAt,
+    kind: file.mimeType.startsWith("audio/") ? "audio" : "document",
+    source: file.derived ? "generated" : "attachment", key: sourceFileObjectKey(file.id),
+    mimeType: file.mimeType, filename: file.filename, byteSize: file.byteSize!,
+    projectName: file.projectName, versionName: "", ownerEmail: file.userEmail,
+    createdAt: file.storedAt ?? file.createdAt });
+}
 
 /** The two ports an artifact needs, wired or absent together. */
 export interface ArtifactStorage {

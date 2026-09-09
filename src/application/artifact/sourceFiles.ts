@@ -13,6 +13,7 @@ export interface SourceFileDeps {
   files: SourceFileRepository;
   objects: SourceObjectStore;
   now(): Date;
+  publish?: (file: SourceFile) => Promise<void>;
 }
 
 function assertReadable(file: SourceFile | null, userEmail: string, now: string): asserts file is SourceFile {
@@ -28,6 +29,7 @@ export async function removeExpiredSourceFile(deps: SourceFileDeps, file: Source
 }
 
 export function createSourceFileUseCases(deps: SourceFileDeps) {
+  const publish = async (file: SourceFile) => { await deps.publish?.(file); return file; };
   const expiry = (storedAt: string, file: Pick<SourceFile, "retention" | "retainUntil">) => {
     const policyExpiry = fileExpiresAt(storedAt, file.retention);
     return file.retainUntil && file.retainUntil < policyExpiry ? file.retainUntil : policyExpiry;
@@ -68,7 +70,7 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       if (file.status === "pending" && file.retireAt <= now.toISOString()) {
         file = await recoverCompletedUpload(file) ?? file;
       }
-      if (file.status === "ready") { assertReadable(file, input.userEmail, now.toISOString()); return file; }
+      if (file.status === "ready") { assertReadable(file, input.userEmail, now.toISOString()); return publish(file); }
       if (file.status !== "pending" || file.retireAt <= now.toISOString()) throw new ConflictError("Source file is unavailable or expired");
       const key = sourceFileObjectKey(file.id);
       let receipt: { byteSize: number; checksum: string } | undefined;
@@ -89,11 +91,11 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       }
       const finished = await deps.files.finish(file, { ...receipt, storedAt: existing.storedAt,
         retireAt: expiry(existing.storedAt, file) });
-      if (finished) { assertReadable(finished, input.userEmail, deps.now().toISOString()); return finished; }
+      if (finished) { assertReadable(finished, input.userEmail, deps.now().toISOString()); return publish(finished); }
       const latest = await deps.files.get(file.projectName, file.id);
       if (latest?.status === "deleting" || latest?.status === "deleted") await deps.objects.delete(key);
       assertReadable(latest, input.userEmail, deps.now().toISOString());
-      return latest;
+      return publish(latest);
     },
 
     async read(projectName: string, id: string, userEmail: string, maxBytes = MAX_SOURCE_BYTES) {
@@ -103,6 +105,15 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       const result = await deps.objects.read(sourceFileObjectKey(id), maxBytes);
       assertReadable(file, userEmail, deps.now().toISOString());
       return { file, ...result };
+    },
+
+    async remove(projectName: string, id: string, userEmail: string): Promise<void> {
+      const file = await deps.files.get(projectName, id);
+      if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
+      if (file.status === "deleted") return;
+      const now = deps.now().toISOString();
+      const retired = await deps.files.retire(file, now);
+      if (!retired || !await removeExpiredSourceFile(deps, retired, now)) throw new ConflictError("Source file changed; retry removal");
     },
 
     async sweep(limit = 100): Promise<{ deleted: number; failed: number }> {

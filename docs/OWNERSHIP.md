@@ -23,6 +23,7 @@
 | audit 행을 어떻게 쓰는가 | `src/application/audit/recordAudit.ts` |
 | 이미지 Model 의 세 가지 토큰 수를 usage 행 하나로 합치기 | `src/domain/llm/models.ts` |
 | artifact 행을 어떻게 쓰는가 | `src/application/artifact/storeArtifact.ts` |
+| 비공개 파일의 Artifact 등록과 원본 보존 기한 연결 | `src/application/artifact/storeArtifact.ts`의 `registerSourceArtifact`. 바이트 복사 없이 `privateFileId`로 연결하며 checkpoint를 제외한다 |
 | artifact 가 저장되는 오브젝트 키 | `src/domain/artifact/types.ts` 의 `artifactObjectKey` |
 | 비공개 원본 파일의 오브젝트 키 | `src/domain/artifact/sourceFile.ts` 의 `sourceFileObjectKey` |
 | 파일의 달력 일·월 보존 기간과 월말·DST 만료 계산 | `src/application/artifact/fileRetention.ts` 의 `fileExpiresAt`. 시간대 해석은 기존 `domain/trigger/cron.ts`의 `wallClock`을 사용한다 |

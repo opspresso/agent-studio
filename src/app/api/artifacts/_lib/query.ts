@@ -49,9 +49,9 @@ export function parseArtifactQuery(url: string): ParsedQuery {
   if ((from && !isUtcDay(from)) || (to && !isUtcDay(to)) || (from && to && from > to)) {
     return { ok: false, error: "from/to must be YYYY-MM-DD with from ≤ to" };
   }
-  const kind = oneOf(params.get("kind"), ["image", "document"] as const);
+  const kind = oneOf(params.get("kind"), ["image", "document", "audio"] as const);
   if (kind === INVALID) {
-    return { ok: false, error: "kind must be image or document" };
+    return { ok: false, error: "kind must be image, document or audio" };
   }
   const source = oneOf(params.get("source"), ["generated", "attachment"] as const);
   if (source === INVALID) {
@@ -136,6 +136,7 @@ export async function toArtifactViews(
   const more = rows.length >= probeSize(options);
   const views = await Promise.all(
     artifacts.map(async (artifact) => {
+      if (artifact.privateFileId) return { ...artifact, url: `/api/artifacts/${encodeURIComponent(artifact.artifactId)}/download` };
       if (!sign) {
         return artifact;
       }

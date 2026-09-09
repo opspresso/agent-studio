@@ -1002,6 +1002,7 @@ export const en = {
   "artifacts.images": "Images",
   "artifacts.preview": "Preview",
   "artifacts.documents": "Documents",
+  "artifacts.audio": "Audio",
   "artifacts.attached": "Attached",
   "artifacts.view": "View",
   "artifacts.download": "Download",
@@ -1020,6 +1021,7 @@ export const en = {
   // cannot supply: those are plural headings for a segmented control.
   "artifacts.kindImage": "image",
   "artifacts.kindDocument": "document",
+  "artifacts.kindAudio": "audio file",
 
   // The full-screen image viewer every surface opens a picture in. Its own
   // namespace rather than `artifacts.`: the gallery is one of four callers.

@@ -47,7 +47,7 @@ import {
 import { isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
 import { reportError } from "@/app/_lib/reportError";
 
-type KindFilter = "all" | "image" | "document";
+type KindFilter = "all" | ArtifactKind;
 
 /**
  * The noun the delete sentence puts in the middle of itself.
@@ -63,6 +63,7 @@ type KindFilter = "all" | "image" | "document";
 const KIND_NOUN: Record<ArtifactKind, MessageKey> = {
   image: "artifacts.kindImage",
   document: "artifacts.kindDocument",
+  audio: "artifacts.kindAudio",
 };
 
 export function ArtifactGallery({
@@ -219,6 +220,7 @@ export function ArtifactGallery({
             { label: t("artifacts.all"), value: "all" },
             { label: t("artifacts.images"), value: "image" },
             { label: t("artifacts.documents"), value: "document" },
+            { label: t("artifacts.audio"), value: "audio" },
           ]}
         />
         {artifacts.length > 0 && (

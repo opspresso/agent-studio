@@ -10,6 +10,7 @@ import { sourceDownloader } from "@/infrastructure/net/sourceDownloader";
 import { createAudioSegmenter } from "@/infrastructure/llm/audioSegmenter";
 import { createTranscriber } from "@/infrastructure/llm/transcription";
 import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
+import { registerSourceArtifact } from "@/application/artifact/storeArtifact";
 import { createSourceReferenceUseCases } from "@/application/audio/sourceReferences";
 import { createAudioJobUseCases, type SubmitAudioJobInput } from "@/application/audio/audioJobUseCases";
 import { createAudioTool } from "@/application/audio/audioTool";
@@ -273,8 +274,17 @@ export const memberUseCases = createMemberUseCases(
  * which would say "you have made nothing" to someone whose images were never
  * being kept in the first place.
  */
-export const artifactUseCases = artifactStorage
-  ? createArtifactUseCases(artifactStorage.rows, artifactStorage.objects, projectRepository)
+export const artifactUseCases = artifactStorage || config.sourceFilesBucketName
+  ? createArtifactUseCases(artifactRepository, artifactStorage?.objects ?? artifactObjectStore, projectRepository, {
+    read: async (project, file, email, maxBytes) => {
+      const runtime = getAudioRuntime(); await runtime.authorize(project, email);
+      return runtime.files.read(project, file, email, maxBytes);
+    },
+    remove: async (project, file, email) => {
+      const runtime = getAudioRuntime(); await runtime.authorize(project, email);
+      return runtime.files.remove(project, file, email);
+    },
+  })
   : undefined;
 
 /**
@@ -1216,7 +1226,8 @@ async function sourceRefreshIdentity(input: Parameters<NonNullable<ExecutionDeps
 export function getAudioRuntime() {
   const bucket = config.sourceFilesBucketName;
   if (!bucket) throw new ValidationError("SOURCE_FILES_BUCKET_NAME is not configured");
-  const files = createSourceFileUseCases({ files: sourceFileRepository, objects: createSourceObjectStore(bucket), now: () => new Date() });
+  const files = createSourceFileUseCases({ files: sourceFileRepository, objects: createSourceObjectStore(bucket), now: () => new Date(),
+    publish: (file) => registerSourceArtifact(artifactRepository, file) });
   const authorize = async (projectName: string, email: string) => {
     const project = await projectRepository.get(projectName);
     const member = await memberRepository.getByEmail(email);

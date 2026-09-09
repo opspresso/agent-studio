@@ -2,10 +2,10 @@ import { removeExpiredSourceFile, type SourceFileDeps } from "@/application/arti
 import type { SourceFile } from "@/domain/artifact/sourceFile";
 import { AudioJobStepError, type AudioJobProcessorDeps } from "./processJob";
 
-/** A durable cleaning stage follows successful delivery; originals are never indexed as derived files. */
+/** Only scratch checkpoints are retired; final artifacts survive external copies. */
 export function createAudioCleanup(deps: SourceFileDeps): AudioJobProcessorDeps["clean"] {
   return async (job, context) => {
-    const kinds: NonNullable<SourceFile["derived"]>["kind"][] = ["checkpoint", ...(job.movedTo ? ["transcript" as const, "draft" as const] : [])];
+    const kinds: NonNullable<SourceFile["derived"]>["kind"][] = ["checkpoint"];
     for (const kind of kinds) {
       for (;;) {
         context.signal.throwIfAborted();

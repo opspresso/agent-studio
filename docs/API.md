@@ -145,8 +145,9 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | 그 chat 의 소유자 |
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
-| `/api/artifacts/{artifactId}` | `DELETE` | 생성자, project 소유자, 또는 admin |
-| `/api/artifacts/{artifactId}/view` | `GET` | 생성자, project 소유자, 또는 admin |
+| `/api/artifacts/{artifactId}` | `DELETE` | 생성자, project 소유자, 또는 admin. 비공개 파일은 파일 소유자(member)의 현재 project 소유 권한 필요 |
+| `/api/artifacts/{artifactId}/view` | `GET` | 생성자, project 소유자, 또는 admin. 비공개 파일은 파일 소유자(member)의 현재 project 소유 권한 필요 |
+| `/api/artifacts/{artifactId}/download` | `GET` | 비공개 파일 소유자(member), 현재 project 소유 권한 필요 |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/models/favorites` | `GET` `PUT` | session |

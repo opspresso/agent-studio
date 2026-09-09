@@ -64,6 +64,18 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("private artifact persistence", () => {
+  it("round-trips the private file address and excludes it once source retention expires", async () => {
+    const stored = artifact({ kind: "audio", privateFileId: "source-id", retireAt: "2026-08-13T00:00:00.000Z" });
+    await artifactRepository.put(stored);
+    expect(await artifactRepository.get(stored.artifactId)).toEqual(stored);
+    expect((await artifactRepository.listByOwner("bruce@daangn.com"))[0]?.privateFileId).toBe("source-id");
+    vi.setSystemTime(new Date(stored.retireAt!));
+    expect(await artifactRepository.get(stored.artifactId)).toBeNull();
+    expect(await artifactRepository.listByOwner("bruce@daangn.com")).toEqual([]);
+  });
+});
+
 describe("artifactObjectKey", () => {
   it("derives the key from the artifact id, so a row and its object can find each other", () => {
     // The legacy `images/<random-uuid>` layout referenced nothing: an object left

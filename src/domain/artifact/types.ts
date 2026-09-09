@@ -12,7 +12,7 @@
 
 import type { RunActor } from "@/domain/execution/actor";
 
-export type ArtifactKind = "image" | "document";
+export type ArtifactKind = "image" | "document" | "audio";
 
 /** Whether the run produced these bytes or a person brought them. */
 export type ArtifactSource = "generated" | "attachment";
@@ -20,6 +20,9 @@ export type ArtifactSource = "generated" | "attachment";
 export interface Artifact {
   /** Original artifact from which an edited file was derived. */
   derivedFrom?: string;
+  /** Private file inventory owns bytes and expiration; never sign through the public artifact store. */
+  privateFileId?: string;
+  retireAt?: string;
   artifactId: string;
   kind: ArtifactKind;
   source: ArtifactSource;

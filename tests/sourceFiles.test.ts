@@ -42,6 +42,15 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("retries artifact publication without downloading the completed file again", async () => {
+    const publish = vi.fn().mockRejectedValueOnce(new Error("inventory unavailable")).mockResolvedValue(undefined);
+    const api = createSourceFileUseCases({ files, objects, now: () => clock, publish });
+    await expect(api.import(input, openBody)).rejects.toThrow("inventory unavailable");
+    const file = await api.import(input, openBody);
+    expect(file.status).toBe("ready");
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledTimes(2);
+  });
   it("does not restore a retired pending upload's retention during recovery", async () => {
     const finish = vi.spyOn(files, "finish").mockRejectedValueOnce(new Error("database unavailable"));
     await expect(useCases().import(input, openBody)).rejects.toThrow();
@@ -51,7 +60,7 @@ describe("private source file lifecycle", () => {
     expect(contents.size).toBe(0);
     finish.mockRestore();
   });
-  it("cleans checkpoints and transferred bodies while retaining the original and undelivered final results", async () => {
+  it("cleans checkpoints while retaining original and final artifacts after external delivery", async () => {
     fake.seed([{ ...keys.audioJob("audio", "job"), job: { status: "running", stage: "transcribing", userEmail: input.userEmail } }]);
     const api = useCases();
     const original = await api.import(input, openBody);
@@ -67,9 +76,9 @@ describe("private source file lifecycle", () => {
     expect((await files.get("audio", "transcript"))?.status).toBe("ready");
     const moved = { ...job, movedTo: { serverName: "memory", transcriptId: "doc-1", resultId: "doc-2" } };
     await clean(moved, context); await clean(moved, context);
-    expect(contents.size).toBe(1);
+    expect(contents.size).toBe(3);
     expect(await files.get("audio", input.id)).toEqual(original);
-    expect(objects.delete).toHaveBeenCalledTimes(3);
+    expect(objects.delete).toHaveBeenCalledTimes(1);
     await expect(api.import({ ...input, id: "late", derived: { jobId: "job", kind: "checkpoint" } }, openBody)).rejects.toThrow();
     expect(await files.get("audio", "late")).toBeNull();
   });

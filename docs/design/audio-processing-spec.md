@@ -277,9 +277,11 @@ retention은 `{unit: days | months, value, timezone}`으로 설정하고 최초 
 단계 완료 후 정리하고 늦어도 원본 expiry에 제거한다. versioning·복제·백업에도 보존 정책을 적용한다.
 
 원본 보존과 산출물 보존은 별개다. 전사·후처리 checkpoint는 성공 후 cleaning 단계에서 정리한다.
-문서 저장을 선택했으면 모든 필수 receipt를 먼저 기록하고 전사문·후처리 본문도 제거한다.
-Memory 후보만 저장했거나 전사만 수행한 작업은 최종 본문에 retention을 적용한다.
-실패 복구 payload는 정해진 expiry까지 유지한다. 이전한 본문 read는 sink 참조·`moved`를 반환하고,
+원본·전사문·후처리 결과는 비공개 Artifact 목록에 등록하며 동일한 원본 파일을 참조한다.
+외부 문서·Memory 저장은 복사이며 최종 Artifact를 지우거나 보존 기간을 연장하지 않는다.
+checkpoint는 목록에 공개하지 않는다. Artifact 다운로드·미리보기·삭제는 원본 파일 소유자와
+현재 프로젝트 권한을 확인하며 public artifact bucket의 URL을 서명하지 않는다.
+실패 복구 payload는 정해진 expiry까지 유지한다. 외부 저장 receipt와
 완료 claim은 남겨 중복 처리하지 않는다. 삭제 실패는 cleaning 단계에서 재시도하며 전사·저장을
 반복하지 않는다. 작업별 파일 인덱스를 100건씩 조회하며 원본은 이 인덱스에 넣지 않는다.
 cleaning 이후에는 새로운 파생 파일 생성을 거절한다. 명시적으로 만료시킨 pending 업로드도

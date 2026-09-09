@@ -923,6 +923,7 @@ export const ko: Messages = {
   "artifacts.images": "이미지",
   "artifacts.preview": "미리보기",
   "artifacts.documents": "문서",
+  "artifacts.audio": "오디오",
   "artifacts.attached": "첨부",
   "artifacts.view": "보기",
   "artifacts.download": "다운로드",
@@ -940,6 +941,7 @@ export const ko: Messages = {
     "{kind} 하나를 스토리지에서 제거합니다. 이것이 표시됐던 모든 곳 — 대화 메시지, Slack 스레드 — 에서 사용할 수 없음으로 표시됩니다. 되돌릴 수 없습니다.",
   "artifacts.kindImage": "이미지",
   "artifacts.kindDocument": "문서",
+  "artifacts.kindAudio": "오디오 파일",
 
   "viewer.showInfo": "정보 보기",
   "viewer.hideInfo": "정보 숨기기",
