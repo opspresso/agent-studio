@@ -81,6 +81,7 @@
 | 한 번의 dispatch 가 몇 개의 Agent 를 실행할 수 있는가 | `src/application/llm/agentAssembly.ts` |
 | Agent 런의 프롬프트와 tool 집합을 어떻게 조립하는가 | `src/application/llm/agentAssembly.ts` 의 `assembleAgentRun` |
 | Model 의 window 로부터 런의 컨텍스트 예산을 도출하기 | `src/application/llm/contextBudget.ts` |
+| presence penalty의 허용 범위 | `src/domain/llm/channel.ts`의 `PRESENCE_PENALTY_RANGE`. 버전 API 검증과 편집기가 함께 사용한다 |
 | 런의 trace 를 샘플링할지 여부 | `src/application/run/traceLifecycle.ts` |
 | schedule 이 언제 발화하는지 판정하기 | `src/domain/trigger/cron.ts` |
 | Project 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `projectWebhookPath` |

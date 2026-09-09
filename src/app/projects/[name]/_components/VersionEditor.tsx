@@ -45,6 +45,7 @@ import type { PickerOption } from "./inputs";
 import type { VersionSave } from "./McpBindingSettings";
 import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
 import { SUBAGENT_KIND_COLOR } from "@/app/_components/badgeColors";
+import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
 
 /** Parse the JSON object the API accepts, without using a type assertion as validation. */
 export function parseJsonObject(text: string): Record<string, unknown> | null {
@@ -328,6 +329,15 @@ export function VersionEditor({
             onChange={(maxTokens) => patchParams({ maxTokens })}
             step={1}
             min={1}
+            placeholder={t("version.defaultPlaceholder")}
+          />
+          <NumberField
+            label={t("version.presencePenalty")}
+            value={value.parameters.presencePenalty}
+            onChange={(presencePenalty) => patchParams({ presencePenalty })}
+            step={0.1}
+            min={PRESENCE_PENALTY_RANGE.min}
+            max={PRESENCE_PENALTY_RANGE.max}
             placeholder={t("version.defaultPlaceholder")}
           />
         </SimpleGrid>

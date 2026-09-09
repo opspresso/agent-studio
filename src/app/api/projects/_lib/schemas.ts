@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
 import { isMcpSourceMapping, MAX_MCP_SOURCE_MAPPINGS } from "@/domain/mcp/sourceMapping";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { attachedDocumentsSchema, attachedImagesSchema } from "@/app/api/_lib/attachments";
@@ -132,6 +133,7 @@ export const updateTriggerSchema = z.object({
 
 export const versionParametersSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
+  presencePenalty: z.number().min(PRESENCE_PENALTY_RANGE.min).max(PRESENCE_PENALTY_RANGE.max).optional(),
   maxTokens: z.number().int().positive().optional(),
   reasoningEffort: z.enum(["low", "medium", "high"]).optional(),
   piiFiltering: z.boolean().default(false),

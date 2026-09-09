@@ -677,6 +677,7 @@ export const ko: Messages = {
   "version.userPromptAgentHint":
     "에이전트 실행은 이 템플릿을 쓰지 않습니다 — 사용자 턴은 대화가 채웁니다. 비우면 이 필드가 사라집니다.",
   "version.temperature": "Temperature",
+  "version.presencePenalty": "반복 억제 (Presence penalty)",
   "version.maxTokens": "최대 토큰",
   "version.defaultPlaceholder": "기본값",
   "version.reasoningTrace": "추론 과정 기록",

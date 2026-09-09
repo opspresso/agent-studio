@@ -167,6 +167,7 @@ export interface Project {
 
 export interface VersionParameters {
   temperature?: number;
+  presencePenalty?: number;
   maxTokens?: number;
   reasoningEffort?: "low" | "medium" | "high";
   piiFiltering: boolean;

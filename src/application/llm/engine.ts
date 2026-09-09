@@ -376,6 +376,9 @@ function buildChannelParams(
   if (parameters?.temperature !== undefined) {
     params.temperature = parameters.temperature;
   }
+  if (parameters?.presencePenalty !== undefined) {
+    params.presencePenalty = parameters.presencePenalty;
+  }
   if (parameters?.maxTokens !== undefined) {
     params.maxTokens = parameters.maxTokens;
   }

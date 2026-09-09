@@ -307,7 +307,7 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 ```
 
 Version 본문: `systemPrompt`, `userPromptTemplate`, `model` (필수, `provider/model`),
-`fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
+`fallbackModel?`, `parameters { temperature?, presencePenalty?, maxTokens?, reasoningEffort?, piiFiltering,
 structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?, urlFetch?,
 slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,

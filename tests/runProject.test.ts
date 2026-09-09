@@ -163,6 +163,27 @@ function offersImageTool(channel: FakeChannel): boolean {
   return channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage") ?? false;
 }
 
+describe("version sampling parameters", () => {
+  it.each(["agent", "llm"] as const)("forwards presence penalties through the %s execution facade", async (projectType) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_NOW);
+    try {
+      for (const presencePenalty of [undefined, 0, 1.5]) {
+        const channel = new FakeChannel([[contentChunk("Done"), usageChunk(1, 1)]]);
+        const { deps } = executionDepsFixture(channel);
+        await executeProject(deps, {
+          project: { ...projectFixture(), projectType },
+          version: versionFixture({ piiFiltering: false, presencePenalty }),
+          messages: [{ role: "user", content: "Answer briefly" }],
+        });
+        expect(channel.seenParams[0]?.presencePenalty).toBe(presencePenalty);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("withRunDeadline", () => {
   it("composes a caller signal so its abort still propagates", () => {
     const controller = new AbortController();

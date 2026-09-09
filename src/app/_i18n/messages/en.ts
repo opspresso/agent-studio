@@ -738,6 +738,7 @@ export const en = {
   "version.userPromptAgentHint":
     "Agent runs ignore this template — the conversation supplies the user turn. Clear it to remove this field.",
   "version.temperature": "Temperature",
+  "version.presencePenalty": "Presence penalty",
   "version.maxTokens": "Max tokens",
   "version.defaultPlaceholder": "default",
   "version.reasoningTrace": "Record the reasoning",

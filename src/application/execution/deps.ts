@@ -286,6 +286,9 @@ export function toEngineParameters(version: Version): EngineParameters {
   if (p.temperature !== undefined) {
     params.temperature = p.temperature;
   }
+  if (p.presencePenalty !== undefined) {
+    params.presencePenalty = p.presencePenalty;
+  }
   if (p.maxTokens !== undefined) {
     params.maxTokens = p.maxTokens;
   }
