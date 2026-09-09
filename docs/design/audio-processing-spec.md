@@ -1,8 +1,8 @@
 # 범용 오디오 처리·비동기 작업 개발 스펙
 
-상태: **개발 기능 구현**. 메인 Agent가 다운로드·전사·후처리 Agent를 조정하고 Artifact ID로 결과를
+상태: **개발 기능 구현**. 한 Agent가 plugin skill의 절차에 따라 도구를 호출하고 Artifact ID로 결과를
 전달한다. HTTP API·Agent 도구·별도 worker가 긴 작업과 재시도를 담당한다. 외부 기록은 사용자
-요청에 따라 기록 Agent가 수행한다. 결합된 처리가 필요한 호출자는 선택적 후처리·sink 계약도 사용할 수 있다.
+요청에 따라 같은 Agent가 수행한다. 결합된 처리가 필요한 호출자는 선택적 후처리·sink 계약도 사용할 수 있다.
 개인 실행은 기존 MCP 인증과 검증된 email 문맥을 사용한다.
 
 Agent Memory 수신 측은 문서 수집·멱등 저장 계약을 제공해야 한다. MCP 결과의 source reference
@@ -33,16 +33,21 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 
 ## Artifact 중심 Agent 구성
 
-메인 Agent의 published 버전을 schedule로 호출한다. 각 역할은 일반 Agent project의 설정이며,
-플랫폼에 특정 녹음 서비스나 업무 종류를 추가하지 않는다.
+운영 Agent의 published 버전을 schedule로 호출한다. 기본 구성은 Agent 하나와 `audio-processing`·
+`meeting-minutes` skill이며 하위 Agent를 요구하지 않는다. 개인 기록을 제공할 때는 `personal-records`를
+추가한다. 플랫폼에 특정 녹음 서비스나 업무 종류를 추가하지 않는다.
 
 | 역할 | 호출과 산출물 |
 | --- | --- |
-| 메인 | `AudioJob list/status`의 task·sourceIdentity·Artifact 관계로 진행 상태를 확인하고 해당 하위 Agent에 위임한다 |
-| 다운로드 | 연결된 MCP의 source_ref → `ImportFile` → 비공개 원본 Artifact |
-| 전사 | 원본 artifact_id → `TranscribeAudio` → 전사 JSON Artifact |
-| 후처리 | 전사 artifact_id → `AudioJob submit`의 `task: postprocess` → summary.md·dialogue.md·구조화 JSON |
-| 기록 | 사용자 요청이 있을 때만 `File read` → 연결된 MCP의 document_ingest 또는 remember. 개인 scope와 동일한 idempotencyKey를 사용한다 |
+| 운영 Agent | skill을 읽고 `AudioJob list/status`의 task·sourceIdentity·Artifact 관계로 진행 상태를 확인한다. 새 녹음은 프로젝트 설정으로 한 작업을 제출한다 |
+| worker | 보관·전사·후처리를 이어가며 원본·전사·summary.md·dialogue.md·구조화 JSON을 비공개 Artifact로 저장한다 |
+| 후처리 실행 | 같은 Agent의 고정 버전을 `backgroundTask`로 실행한다. Skill 읽기만 제공하므로 새 작업 제출·MCP 쓰기·하위 Agent 호출은 수행하지 않는다 |
+| 요청한 기록 | 같은 운영 Agent가 `File read` 후 연결된 MCP의 document_ingest 또는 remember를 호출한다. 개인 scope와 동일한 idempotencyKey를 사용한다 |
+
+일부 단계만 필요한 요청은 `ImportFile`, `TranscribeAudio`, `AudioJob submit`의 `task: postprocess`를
+직접 사용한다. 복잡한 별도 업무에 위임을 사용할 수 있지만 파일 처리 단계마다 Agent를 만들지는 않는다.
+절차와 기록 규칙은 plugin skill, 모델·보존 기간·후처리 버전은 오디오 설정, 수집 범위·탐색 한도는
+schedule 메시지에 둔다. 시스템 프롬프트에는 skill 선택과 사용자 요청 범위만 짧게 둔다.
 
 진행 중인 작업이 있으면 새 녹음을 시작하지 않는다. pending 작업은 완료로 보고하지 않으며 다음
 실행에서 같은 job ID를 확인한다. 완료된 단계를 다시 실행하거나 만료된 원본을 자동 재다운로드하지 않는다.
@@ -50,11 +55,11 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 `ImportFile`·`TranscribeAudio`·`AudioJob submit`은 같은 processing_revision을 재시도에 재사용한다.
 연결 도구의 source_ref는 가져오기에 사용할 참조이며 다운로드 완료를 뜻하지 않는다. 원본 URL은 의도적으로
 숨기므로 URL 부재를 처리 완료나 파일 만료의 근거로 삼지 않는다. 기존 sourceIdentity와 job 상태로 판단한다.
-기록 Agent가 읽은 내용이 잘렸으면 전체 저장으로 보고하지 않는다. 저장 오류나 충돌을 피하려고
+기록할 본문이 잘렸으면 전체 저장으로 보고하지 않는다. 저장 오류나 충돌을 피하려고
 조직 scope로 바꾸거나 새 멱등 키를 무작정 발급하지 않는다.
 
-MCP OAuth는 해당 서버를 호출하는 하위 Agent에 연결한다. 원본 참조·작업·산출물의 보관 범위는
-메인 프로젝트이며, URL 갱신에 사용할 하위 프로젝트와 연결 세대는 별도로 유지한다.
+MCP OAuth는 해당 서버를 호출하는 운영 Agent에 연결한다. 위임을 선택한 구성에서도 원본 참조·작업·
+산출물은 메인 프로젝트에 보관하며, URL 갱신에 사용할 호출 프로젝트와 연결 세대는 별도로 유지한다.
 schedule은 검증된 owner email 문맥을 사용하고, cron 기본 요청에는 외부 저장을 포함하지 않는다.
 
 ## 책임과 재사용 경계
