@@ -1345,6 +1345,42 @@ async function main() {
       pass("transact: a checked key locks share-mode, a written one exclusively");
     }
 
+    // ---------- audio configuration/version deletion fence ----------
+    {
+      const { audioJobConfigRepository: configs } = await import("@/infrastructure/db/repositories/audioJobConfigRepository");
+      const project = (await projectRepository.get(projectName))!;
+      const versionName = "audio-reference-check";
+      await versionRepository.create({ projectName, versionName, model: "integration/model", systemPrompt: "", userPromptTemplate: "",
+        parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [], createdAt: now });
+      const config = { projectName, userEmail: project.ownerEmail, revision: 1, enabled: true, model: "integration/asr",
+        retention: { unit: "months" as const, value: 3, timezone: "UTC" }, maxActive: 1, maxPerOccurrence: 1,
+        postprocess: { projectName, versionName }, updatedAt: now };
+      assert.equal(await configs.save(config, 0), true);
+      await assert.rejects(versionRepository.delete(projectName, versionName, project.updatedAt));
+      assert.ok(await versionRepository.get(projectName, versionName));
+      assert.equal(await configs.save({ ...config, enabled: false, revision: 2 }, 1), true);
+      const current = (await projectRepository.get(projectName))!;
+      await versionRepository.delete(projectName, versionName, current.updatedAt);
+      assert.equal(await configs.save({ ...config, revision: 3 }, 2), false);
+      assert.equal((await configs.get(projectName))?.enabled, false);
+      await versionRepository.create({ projectName, versionName, model: "integration/model", systemPrompt: "", userPromptTemplate: "",
+        parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [], createdAt: now });
+      const beforeRace = (await projectRepository.get(projectName))!;
+      const raced = await Promise.allSettled([
+        configs.save({ ...config, revision: 3 }, 2),
+        versionRepository.delete(projectName, versionName, beforeRace.updatedAt),
+      ]);
+      const saved = raced[0].status === "fulfilled" && raced[0].value;
+      const deleted = raced[1].status === "fulfilled";
+      assert.notEqual(saved, deleted, "exactly one of saving the reference and deleting its version may succeed");
+      if (saved) {
+        assert.ok(await versionRepository.get(projectName, versionName));
+        assert.equal(await configs.save({ ...config, enabled: false, revision: 4 }, 3), true);
+        await versionRepository.delete(projectName, versionName, (await projectRepository.get(projectName))!.updatedAt);
+      } else assert.equal((await configs.get(projectName))?.enabled, false);
+      pass("audio configuration: version deletion and reference save cannot leave a dangling target");
+    }
+
     // ---------- durable usage receipts ----------
     {
       const event = { idempotencyKey: `asr-${suffix}`, projectName, date: today, model: "asr-integration",

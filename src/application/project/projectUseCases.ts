@@ -2,7 +2,7 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import type { CostLimits, Project, ProjectType, ProjectVisibility } from "@/domain/project/types";
 import { mayAccessProject, normalizeMemberEmails } from "@/domain/project/access";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
-import { nextUpdatedAt } from "./timestamps";
+import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { persistProjectUpdate } from "./projectUpdate";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";

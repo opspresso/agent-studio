@@ -15,7 +15,7 @@ import {
   MAX_SUGGESTED_PROMPTS,
   MIN_KEYWORD_LENGTH,
 } from "@/domain/slack/types";
-import { nextUpdatedAt } from "@/application/project/timestamps";
+import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { slackSecretContext } from "@/domain/security/secretContext";
 
 export interface ProjectSlackView {

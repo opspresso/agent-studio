@@ -15,7 +15,7 @@ import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
 import { assertProjectWritable, userMayAccessProject } from "./projectUseCases";
 import { modelCompatibilityRejectReason } from "./modelCompatibility";
-import { nextUpdatedAt } from "./timestamps";
+import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { log } from "@/shared/logger";
 import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 

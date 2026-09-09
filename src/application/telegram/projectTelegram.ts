@@ -1,7 +1,7 @@
 import { ValidationError } from "@/application/errors";
 import { persistProjectUpdate } from "@/application/project/projectUpdate";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
-import { nextUpdatedAt } from "@/application/project/timestamps";
+import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { botIdFromToken } from "@/application/telegram/engagement";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, TelegramIntegration } from "@/domain/project/types";

@@ -1,7 +1,7 @@
 import { ValidationError } from "@/application/errors";
 import { persistProjectUpdate } from "@/application/project/projectUpdate";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
-import { nextUpdatedAt } from "@/application/project/timestamps";
+import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, TeamsIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
