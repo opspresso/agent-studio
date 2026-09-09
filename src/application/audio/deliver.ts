@@ -67,8 +67,9 @@ export function createAudioDeliveryStep(deps: AudioDeliveryDeps) {
           if (doc.status !== "ready") ready = false;
           if (doc.status === "failed" && receipts[`retried-at:${item.key}`] !== String(doc.attempts)) {
             const retries = Number(receipts[`retry-count:${item.key}`] ?? 0);
-            if (retries >= 4) throw new AudioJobStepError("document_processing_failed", false);
-            await client.call("document_ingest_retry", { documentId: doc.id, idempotencyKey: `${job.id}:${key}:retry:${retries + 1}` });
+            if (retries >= 4 || doc.attempts >= 5) throw new AudioJobStepError("document_processing_failed", false);
+            await client.call("document_ingest_retry", { documentId: doc.id, expectedAttempts: doc.attempts,
+              idempotencyKey: `${job.id}:${key}:retry-attempt:${doc.attempts}` });
             receipts[`retry-count:${item.key}`] = String(retries + 1);
             receipts[`retried-at:${item.key}`] = String(doc.attempts);
             await context.record({ receipts });

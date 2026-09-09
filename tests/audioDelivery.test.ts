@@ -63,6 +63,8 @@ describe("audio delivery receipts", () => {
     f.state.attempts = 1;
     await f.run(f.job, f.context);
     expect(f.call.mock.calls.filter(([name]) => name === "document_ingest_retry")).toHaveLength(4);
+    expect(f.call.mock.calls.filter(([name]) => name === "document_ingest_retry").map(([, args]) => args.expectedAttempts))
+      .toEqual([0, 0, 1, 1]);
   });
   it("supports document-only transcription without a postprocessor", async () => {
     const f = fixture(); f.state.status = "ready"; f.job.draftRef = undefined; f.job.destination!.memories = false;

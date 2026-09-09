@@ -4,8 +4,8 @@
 후처리와 MCP 저장을 실행한다. 구간·후처리 결과와 저장 receipt를 보관해 실패한 단계부터 재개한다.
 개인 실행은 기존 MCP 인증과 검증된 email 문맥을 사용한다.
 
-남은 개발은 Agent Memory 수신 측 수집·멱등 저장 계약, MCP 결과의 source reference 변환,
-설정 UI와 전체 운영 검증이다. Studio의 delivery는 수신 서버가 필요한 도구와 idempotencyKey를
+Agent Memory 수신 측 수집·멱등 저장 계약은 별도 브랜치에 구현했다. 남은 개발은 MCP 결과의
+source reference 변환, 설정 UI와 전체 운영 검증이다. Studio의 delivery는 수신 서버가 필요한 도구와 idempotencyKey를
 노출해야 활성화된다. 운영 Agent 생성·OAuth·스케줄 설정은 개발 검증 후 수행한다.
 구현은 [마일스톤](../MILESTONES.md#audio-processing-jobs)에서 추적한다.
 
@@ -220,7 +220,7 @@ Agent Memory에는 출처와 업무에 무관한 다음 MCP 계약을 추가한�
 | --- | --- |
 | `document_ingest` | idempotencyKey·title·UTF-8 content·MIME·source·metadata·scope → document ID·status |
 | `document_ingest_status` | document ID → pending/processing/ready/failed |
-| `document_ingest_retry` | document ID → 기존 ID와 상태. 기존 문서 write 권한 필요 |
+| `document_ingest_retry` | document ID·idempotencyKey·관측한 expectedAttempts → 기존 ID와 상태. 기존 문서 write 권한 필요 |
 | `remember` 확장 | 기존 입력 + 선택적 idempotencyKey → 기존 Memory ID·version |
 
 인증·email 해석·scope 검증은 기존 MCP 경계를 공유한다. 문서 유스케이스·quota·worker를 재사용하고

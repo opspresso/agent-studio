@@ -1304,7 +1304,8 @@ export function getAudioRuntime() {
     if (writes.some((name) => {
       const alias = mcp.aliasFor?.(job.destination!.serverName, name);
       const properties = mcp.mcpTools.find((tool) => tool.function.name === alias)?.function.parameters?.properties;
-      return !properties || typeof properties !== "object" || !("idempotencyKey" in properties);
+      return !properties || typeof properties !== "object" || !("idempotencyKey" in properties) ||
+        (name === "document_ingest_retry" && !("expectedAttempts" in properties));
     })) {
       await closeMcp(mcp.close);
       throw new ValidationError("The destination must support idempotent ingestion writes");
