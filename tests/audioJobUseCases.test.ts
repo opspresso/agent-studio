@@ -91,6 +91,7 @@ describe("audio job use cases", () => {
     const first = await api.submit("audio", "owner@example.test", input, { occurrence: "hour-1" });
     const second = await api.submit("audio", "owner@example.test", { ...input, source: { kind: "source", sourceRef: "refreshed" } }, { occurrence: "hour-2" });
     expect(first.status).toBe("accepted"); expect(second.status).toBe("duplicate");
+    expect("job" in first && first.job).toMatchObject({ task: "process", sourceIdentity: { namespace: "external-account", itemId: "recording-1" } });
     expect("job" in first && first.job).not.toHaveProperty("sourceKey");
     expect("job" in first && first.job).not.toHaveProperty("userEmail");
     expect("job" in first && first.job).not.toHaveProperty("source");

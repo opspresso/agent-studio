@@ -130,6 +130,7 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 | `AudioJob` `submit`, `task: postprocess` | 기존 전사 Artifact·후처리 Agent·retention으로 요약만 실행. model·language·destination·config_revision은 받지 않는다 |
 | `AudioJob` `config` | 본인 프로젝트 작업 설정과 revision 또는 null |
 | `AudioJob` `status` | job ID → 단계·처리 범위·오류·retry 시각·결과 참조 |
+| `AudioJob` `list`의 작업 구분 | `task`와 비밀이 아닌 `sourceIdentity`로 완료된 다운로드·전사·후처리를 연결하고 이미 처리한 입력을 구분한다 |
 | `AudioJob` `read` | job ID·결과 종류·cursor·limit → bounded 본문과 nextCursor |
 
 `ImportFile`의 다운로드와 `TranscribeAudio`도 동일한 영속 task 실행기를 사용한다. 제한된 시간에

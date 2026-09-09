@@ -37,14 +37,14 @@ export interface AudioJobUseCaseDeps {
 }
 
 /** Public view: source credentials, ownership data and internal receipt paths stay server-side. */
-export type AudioJobView = Pick<AudioJob, "id" | "status" | "stage" | "model" | "createdAt" | "updatedAt" |
+export type AudioJobView = Pick<AudioJob, "id" | "task" | "sourceIdentity" | "status" | "stage" | "model" | "createdAt" | "updatedAt" |
   "dueAt" | "attempt" | "failures" | "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision" | "configRevision"> & {
     artifacts: { source?: string; transcript?: string; processed?: string; structured?: string; dialogue?: string };
     transcriptProjectName: string;
   };
 
 function view(job: AudioJob): AudioJobView {
-  return { id: job.id, status: job.status, stage: job.stage,
+  return { id: job.id, task: job.task ?? "process", sourceIdentity: job.sourceIdentity, status: job.status, stage: job.stage,
     model: job.task === "postprocess" ? job.postprocess?.version?.model ?? "" : job.model, createdAt: job.createdAt,
     transcriptProjectName: job.task === "postprocess" ? audioSourceProject(job) : job.projectName,
     artifacts: { source: job.fileId, transcript: job.transcriptRef, processed: job.summaryRef ?? job.draftRef, structured: job.draftRef, dialogue: job.dialogueRef },
