@@ -52,7 +52,7 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
       return file;
     },
-    async import(input: Pick<SourceFile, "id" | "projectName" | "userEmail" | "filename" | "mimeType" | "retention" | "retainUntil" | "derived">,
+    async import(input: Pick<SourceFile, "id" | "projectName" | "userEmail" | "filename" | "mimeType" | "retention" | "retainUntil" | "derived" | "derivedFrom" | "model" | "producedBy">,
       open: (maxBytes: number) => Promise<SourceByteStream>, signal?: AbortSignal): Promise<SourceFile> {
       signal?.throwIfAborted();
       if (!input.id || !input.filename.trim() || input.filename.length > 255 || !input.mimeType ||

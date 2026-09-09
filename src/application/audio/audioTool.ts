@@ -58,11 +58,11 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         if (operation === "status") return { text: JSON.stringify(job) };
         const kind = text(args, "result_kind") ?? "transcript";
         if (kind !== "transcript" && kind !== "processed") throw new ValidationError("Invalid result_kind");
-        if (job.movedTo) {
+        const reference = kind === "processed" ? job.draftRef : job.transcriptRef;
+        if (job.movedTo && !reference) {
           if (kind === "processed" && !job.movedTo.resultId) throw new ValidationError("The processed result is not available");
           return { text: JSON.stringify({ status: "moved", destination: job.movedTo, jobStatus: job.status }) };
         }
-        const reference = kind === "processed" ? job.draftRef : job.transcriptRef;
         if (!reference) throw new ValidationError(`The ${kind} result is not ready`);
         const cursor = text(args, "cursor") ?? "0";
         const limit = args.limit ?? 12_000;
@@ -91,13 +91,14 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         throw new ValidationError("Invalid destination");
       }
       const fileId = text(args, "file_id"); const sourceRef = text(args, "source_ref");
+      const artifactId = text(args, "artifact_id");
       const configRevision = args.config_revision;
       if (configRevision !== undefined && (typeof configRevision !== "number" || !Number.isSafeInteger(configRevision) || configRevision <= 0)) {
         throw new ValidationError("Invalid config_revision");
       }
-      if ((!fileId && !sourceRef) || (fileId && sourceRef)) throw new ValidationError("Provide exactly one file_id or source_ref");
+      if ([fileId, sourceRef, artifactId].filter(Boolean).length !== 1) throw new ValidationError("Provide exactly one artifact_id, file_id or source_ref");
       const result = await deps.jobs.submit(context.projectName, context.userEmail, {
-        source: fileId ? { kind: "file", fileId } : { kind: "source", sourceRef: sourceRef! },
+        source: artifactId ? { kind: "artifact", artifactId } : fileId ? { kind: "file", fileId } : { kind: "source", sourceRef: sourceRef! },
         task: tool === IMPORT_FILE_TOOL_NAME ? "import" : tool === TRANSCRIBE_AUDIO_TOOL_NAME ? "transcribe" : "process",
         model: text(args, "model"), language: text(args, "language"), retention: args.retention === undefined ? undefined : retention(args.retention),
         ...(configRevision !== undefined ? { configRevision } : {}),

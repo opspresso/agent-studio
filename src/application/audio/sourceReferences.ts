@@ -1,5 +1,6 @@
 import type { SourceReferenceRepository, SourceDownloader, SourceRefresh } from "@/domain/artifact/sourceReference";
 import type { AudioJob } from "@/domain/audio/job";
+import { audioSourceProject } from "@/domain/audio/job";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { sourceReferenceContext } from "@/domain/security/secretContext";
@@ -55,7 +56,9 @@ export function createSourceReferenceUseCases(deps: SourceReferenceDeps) {
     importFile: (async (job, context) => {
       await deps.authorize(job.projectName, job.userEmail);
       if (job.source.kind === "file") {
-        const file = await deps.files.metadata(job.projectName, job.source.fileId, job.userEmail);
+        const project = audioSourceProject(job);
+        await deps.authorize(project, job.userEmail);
+        const file = await deps.files.metadata(project, job.source.fileId, job.userEmail);
         if (file.status !== "ready" || file.retireAt <= deps.now().toISOString()) throw new AudioJobStepError("source_file_expired", false);
         return { fileId: file.id };
       }

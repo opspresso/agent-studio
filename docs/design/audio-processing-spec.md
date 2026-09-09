@@ -124,8 +124,8 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 
 | 도구 | 계약 |
 | --- | --- |
-| `ImportFile` | 접근 가능한 `file_id` 또는 `source_ref`를 받아 job ID 반환. 완료 후 status에서 비공개 file ID 확인 |
-| `TranscribeAudio` | file ID·모델 선택으로 비동기 전사를 제출하고 job ID 반환 |
+| `ImportFile` | 접근 가능한 `artifact_id`, `file_id`, `source_ref` 중 하나로 job ID 반환. 완료 후 status의 `artifacts.source`로 원본 Artifact 확인 |
+| `TranscribeAudio` | 원본 Artifact ID·모델 선택으로 비동기 전사를 제출하고 job ID 반환. `artifacts.transcript`가 결과 Artifact ID |
 | `AudioJob` `submit` | source ref 또는 file ID·설정 참조 → accepted/busy/duplicate/blocked와 job ID |
 | `AudioJob` `config` | 본인 프로젝트 작업 설정과 revision 또는 null |
 | `AudioJob` `status` | job ID → 단계·처리 범위·오류·retry 시각·결과 참조 |
@@ -134,6 +134,11 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 `ImportFile`의 다운로드와 `TranscribeAudio`도 동일한 영속 task 실행기를 사용한다. 제한된 시간에
 완료되지 않으면 task ID를 반환하고 `AudioJob status`로 진행을 확인한다. `AudioJob submit`은 이
 공통 기능에 선택적 후처리·저장을 연결하는 편의 계약이며 다운로드·전사 로직을 복제하지 않는다.
+
+`artifact_id`는 현재 사용자가 소유한 비공개 Artifact를 가리킨다. 다른 Agent 프로젝트에서 만든
+파일도 입력으로 사용할 수 있다. 접수 시 실제 파일 위치로 고정하고 양쪽 프로젝트의 소유 권한을
+확인한다. worker와 각 전사 요청에서도 원본 프로젝트 권한을 재확인하며 바이트는 복사하지 않는다.
+파생 Artifact는 입력의 만료를 상속하고 `derivedFrom`·`model`로 원본과 생성 모델을 기록한다.
 
 `source_ref`는 서버가 발급한 불투명 참조다. 등록된 MCP tool의 파일 URL을
 프로젝트·연결·외부 item ID에 연결한다. 직접 업로드는 비공개 file ID를 반환한다. JSON 안의 URL은 등록된 binding의 필드 mapping으로

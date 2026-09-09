@@ -212,9 +212,9 @@ function AudioWorkspace({ name }: { name: string }) {
         </Stack>
       </details>}
       <Group gap="xs">
-        {job.fileId && <Button component="a" href={`${base}/source-files/${job.fileId}`} variant="light" size="xs">{t("audio.original")}</Button>}
-        {job.transcriptRef && !job.movedTo && <Button component="a" href={`${base}/source-files/${job.transcriptRef}`} variant="light" size="xs">{t("audio.transcript")}</Button>}
-        {job.draftRef && !job.movedTo && <Button component="a" href={`${base}/source-files/${job.draftRef}`} variant="light" size="xs">{t("audio.result")}</Button>}
+        {job.artifacts.source && <Button component="a" href={`/api/artifacts/${encodeURIComponent(job.artifacts.source)}/download`} variant="light" size="xs">{t("audio.original")}</Button>}
+        {job.artifacts.transcript && <Button component="a" href={`/api/artifacts/${encodeURIComponent(job.artifacts.transcript)}/view`} variant="light" size="xs">{t("audio.transcript")}</Button>}
+        {job.artifacts.processed && <Button component="a" href={`/api/artifacts/${encodeURIComponent(job.artifacts.processed)}/view`} variant="light" size="xs">{t("audio.result")}</Button>}
         {(job.status === "failed" || job.status === "blocked") && <Button size="xs" variant="default" disabled={busy} onClick={() => act(job, "retry")}>{t("audio.retry")}</Button>}
         {["queued", "running", "waiting"].includes(job.status) && <Button size="xs" variant="subtle" color="red" disabled={busy} onClick={() => act(job, "cancel")}>{t("audio.cancel")}</Button>}
       </Group>

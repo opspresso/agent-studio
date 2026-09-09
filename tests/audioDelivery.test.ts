@@ -27,7 +27,7 @@ function fixture() {
   const deps: AudioDeliveryDeps = { files: {
     read: vi.fn(async (_project, id) => ({ file: {} as never, mimeType: "application/json",
       bytes: new TextEncoder().encode(JSON.stringify(id === "transcript" ? transcript : draft)) })),
-    metadata: vi.fn(async () => ({ filename: "source.mp3" }) as never), import: vi.fn(), sweep: vi.fn(),
+    metadata: vi.fn(async () => ({ filename: "source.mp3" }) as never), import: vi.fn(), sweep: vi.fn(), remove: vi.fn(),
   }, open: async () => ({ call, close }) };
   const context = { signal: new AbortController().signal, record: async (progress: { receipts?: Record<string, string> }) => {
     job.receipts = { ...job.receipts, ...progress.receipts };

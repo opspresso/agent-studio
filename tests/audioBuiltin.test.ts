@@ -60,6 +60,23 @@ describe("audio builtins", () => {
     expect(refused.text).not.toContain("token");
     expect(submit).toHaveBeenCalledTimes(1);
   });
+  it("accepts an Artifact ID but refuses ambiguous input identities", async () => {
+    const submit = vi.fn(async () => ({ status: "accepted" as const, job: { id: "job" } }));
+    const tool = createAudioTool({ jobs: { submit } as unknown as ReturnType<typeof createAudioJobUseCases>, files: { read: vi.fn() } },
+      { projectName: "transcriber", userEmail: "owner@example.test", occurrence: "run" });
+    const args = { artifact_id: "original", model: "asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" } };
+    await tool("TranscribeAudio", args);
+    expect(submit).toHaveBeenCalledWith("transcriber", "owner@example.test", expect.objectContaining({ source: { kind: "artifact", artifactId: "original" } }), expect.anything());
+    expect((await tool("TranscribeAudio", { ...args, file_id: "another" })).text).toMatch(/^Error:/);
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+  it("keeps reading local results after a copy has been stored in Memory", async () => {
+    const jobs = { get: async () => ({ transcriptRef: "transcript", status: "completed", movedTo: { serverName: "memory", transcriptId: "doc" } }) } as unknown as ReturnType<typeof createAudioJobUseCases>;
+    const read = vi.fn(async () => ({ file: {} as never, mimeType: "application/json", bytes: new TextEncoder().encode(JSON.stringify({ text: "retained local result" })) }));
+    const tool = createAudioTool({ jobs, files: { read } }, { projectName: "audio", userEmail: "owner@example.test", occurrence: "read" });
+    expect(JSON.parse((await tool("AudioJob", { operation: "read", job_id: "job" })).text)).toMatchObject({ text: "retained local result" });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
   it("pages transcript text without splitting a Unicode character", async () => {
     const jobs = { get: async () => ({ transcriptRef: "transcript", status: "completed" }) } as unknown as ReturnType<typeof createAudioJobUseCases>;
     const tool = createAudioTool({ jobs, files: { read: vi.fn(async () => ({

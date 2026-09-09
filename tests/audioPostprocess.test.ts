@@ -23,7 +23,7 @@ function fixture(text = "Fact one.") {
           saved.set(input.id, Buffer.concat(parts));
         }
         return { ...metadata, ...input };
-      }, async sweep() { return { deleted: 0, failed: 0 }; } },
+      }, async remove() {}, async sweep() { return { deleted: 0, failed: 0 }; } },
     run: vi.fn(async (_job, _text, mode) => JSON.stringify({ text: "Summary", warnings: [], memories: mode === "extract"
       ? [{ kind: "fact", title: "Fact", content: "Fact one.", evidence: ["Fact one."] }] : [] })),
   };

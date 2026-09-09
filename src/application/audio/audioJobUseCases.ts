@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AudioJob, AudioJobRepository, AudioSource } from "@/domain/audio/job";
 import type { FileRetention } from "@/domain/artifact/retention";
-import type { SourceFileRepository } from "@/domain/artifact/sourceFile";
+import type { SourceFile, SourceFileRepository } from "@/domain/artifact/sourceFile";
 import type { RunActor } from "@/domain/execution/actor";
 import type { AudioJobConfigRepository } from "@/domain/audio/config";
 import { getModelConfig } from "@/domain/llm/models";
@@ -10,7 +10,7 @@ import { fileExpiresAt } from "@/application/artifact/fileRetention";
 
 export interface SubmitAudioJobInput {
   task?: "import" | "transcribe" | "process";
-  source: AudioSource;
+  source: AudioSource | { kind: "artifact"; artifactId: string };
   model?: string;
   language?: string;
   retention?: FileRetention;
@@ -25,6 +25,7 @@ export interface AudioJobUseCaseDeps {
   jobs: AudioJobRepository;
   configs?: Pick<AudioJobConfigRepository, "get">;
   files: Pick<SourceFileRepository, "get">;
+  resolveArtifact?(id: string, email: string): Promise<SourceFile>;
   sourceIdentity(project: string, id: string, email: string): Promise<{ namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] }>;
   authorize(project: string, email: string): Promise<void>;
   validateModel(model: string): Promise<void>;
@@ -36,10 +37,13 @@ export interface AudioJobUseCaseDeps {
 
 /** Public view: source credentials, ownership data and internal receipt paths stay server-side. */
 export type AudioJobView = Pick<AudioJob, "id" | "status" | "stage" | "model" | "createdAt" | "updatedAt" |
-  "dueAt" | "attempt" | "failures" | "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision" | "configRevision">;
+  "dueAt" | "attempt" | "failures" | "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision" | "configRevision"> & {
+    artifacts: { source?: string; transcript?: string; processed?: string };
+  };
 
 function view(job: AudioJob): AudioJobView {
   return { id: job.id, status: job.status, stage: job.stage, model: job.model, createdAt: job.createdAt,
+    artifacts: { source: job.fileId, transcript: job.transcriptRef, processed: job.draftRef },
     updatedAt: job.updatedAt, dueAt: job.dueAt, attempt: job.attempt, failures: job.failures,
     fileId: job.fileId, transcriptRef: job.transcriptRef, draftRef: job.draftRef,
     fileInfo: job.fileInfo, transcriptionProgress: job.transcriptionProgress, movedTo: job.movedTo,
@@ -65,6 +69,11 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
     async submit(projectName: string, userEmail: string, input: SubmitAudioJobInput,
       origin: { occurrence: string; actor?: RunActor }) {
       await deps.authorize(projectName, userEmail);
+      if (input.source.kind === "artifact") {
+        if (!deps.resolveArtifact) throw new ValidationError("Artifact inputs are unavailable");
+        const file = await deps.resolveArtifact(input.source.artifactId, userEmail);
+        input = { ...input, source: { kind: "file", fileId: file.id, projectName: file.projectName } };
+      }
       const config = await deps.configs?.get(projectName);
       if (config && (!config.enabled || config.userEmail !== userEmail)) throw new ConflictError("Audio configuration is disabled or requires owner confirmation");
       if (input.configRevision !== undefined) {
@@ -92,7 +101,9 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       const outputs = await deps.validateOutputs(input, projectName, userEmail);
       let identity: { namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] };
       if (input.source.kind === "file") {
-        const file = await deps.files.get(projectName, input.source.fileId);
+        const sourceProject = input.source.projectName ?? projectName;
+        await deps.authorize(sourceProject, userEmail);
+        const file = await deps.files.get(sourceProject, input.source.fileId);
         if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
         if (file.status !== "ready" || file.retireAt <= now) throw new ConflictError("Source file is unavailable or expired");
         identity = { namespace: "stored-file", itemId: file.id };

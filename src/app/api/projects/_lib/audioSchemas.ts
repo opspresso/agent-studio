@@ -15,6 +15,7 @@ export const sourceReferenceSchema = z.object({
 export const audioJobSchema = z.object({
   task: z.enum(["import", "transcribe", "process"]).optional(),
   source: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("artifact"), artifactId: z.string().min(1).max(128) }).strict(),
     z.object({ kind: z.literal("file"), fileId: z.string().min(1).max(128) }).strict(),
     z.object({ kind: z.literal("source"), sourceRef: z.string().min(1).max(128) }).strict(),
   ]),

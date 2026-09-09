@@ -19,6 +19,34 @@ function fixture() {
   return { deps, input, api: createAudioJobUseCases(deps) };
 }
 describe("audio job use cases", () => {
+  it("resolves another Agent's owned Artifact to its original private file without copying bytes", async () => {
+    const f = fixture();
+    const file = { id: "downloaded-file", projectName: "downloader", userEmail: "owner@example.test", status: "ready" as const,
+      retireAt: "2026-12-09T00:00:00Z" } as import("@/domain/artifact/sourceFile").SourceFile;
+    f.deps.resolveArtifact = vi.fn(async () => file);
+    f.deps.files.get = vi.fn(async () => file);
+    const result = await f.api.submit("audio", file.userEmail,
+      { ...f.input, task: "transcribe", source: { kind: "artifact", artifactId: "artifact-1" } }, { occurrence: "once" });
+    expect(result.status).toBe("accepted");
+    expect(f.deps.resolveArtifact).toHaveBeenCalledWith("artifact-1", file.userEmail);
+    expect(f.deps.authorize).toHaveBeenCalledWith("downloader", file.userEmail);
+    expect(f.deps.files.get).toHaveBeenCalledWith("downloader", file.id);
+    expect(await jobs.get("audio", "job-1")).toMatchObject({ source: { kind: "file", fileId: file.id, projectName: "downloader" } });
+  });
+  it("refuses inaccessible, foreign-owned and expired Artifact inputs before admitting a job", async () => {
+    const f = fixture();
+    const file = { id: "file", projectName: "downloader", userEmail: "other@example.test", status: "ready" as const,
+      retireAt: "2026-12-09T00:00:00Z" } as import("@/domain/artifact/sourceFile").SourceFile;
+    f.deps.resolveArtifact = async () => file;
+    f.deps.files.get = async () => file;
+    const submit = () => f.api.submit("audio", "owner@example.test", { ...f.input, source: { kind: "artifact", artifactId: "artifact" } }, { occurrence: "once" });
+    await expect(submit()).rejects.toThrow("Source file not found");
+    file.userEmail = "owner@example.test"; file.retireAt = "2026-09-09T00:00:00.000Z";
+    await expect(submit()).rejects.toThrow("expired");
+    f.deps.authorize = async (project) => { if (project === "downloader") throw new Error("access revoked"); };
+    await expect(submit()).rejects.toThrow("access revoked");
+    expect(await jobs.get("audio", "job-1")).toBeNull();
+  });
   it("retains a private source replay recipe when admitting a temporary reference", async () => {
     const f = fixture();
     const refresh = { serverName: "files", versionName: "1", identity: "epoch", mapping: {

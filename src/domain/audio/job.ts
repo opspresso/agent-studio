@@ -5,7 +5,12 @@ import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 
 export type AudioJobStage = "importing" | "transcribing" | "postprocessing" | "storing" | "cleaning";
 export type AudioJobStatus = "queued" | "running" | "waiting" | "completed" | "blocked" | "failed" | "cancelled";
-export type AudioSource = { kind: "file"; fileId: string } | { kind: "source"; sourceRef: string };
+export type AudioSource = { kind: "file"; fileId: string; projectName?: string } | { kind: "source"; sourceRef: string };
+
+/** Stored input may belong to another Agent owned by the same requesting user. */
+export function audioSourceProject(job: Pick<AudioJobInput, "source" | "projectName">): string {
+  return job.source.kind === "file" ? job.source.projectName ?? job.projectName : job.projectName;
+}
 
 /** Stable input: retries never choose a different model, identity, or destination. */
 export interface AudioJobInput {

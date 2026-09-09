@@ -34,7 +34,7 @@ function fixture() {
         return { file: metadata, mimeType: id === "input" ? "audio/mpeg" : "application/json",
           bytes: id === "input" ? new Uint8Array([1, 2, 3]) : saved.get(id)! };
       },
-      async sweep() { return { deleted: 0, failed: 0 }; },
+      async remove() {}, async sweep() { return { deleted: 0, failed: 0 }; },
     },
     segmenter: { async *split() {
       for (let index = 0; index < 2; index++) yield {
@@ -50,6 +50,17 @@ function fixture() {
 }
 
 describe("resumable file transcription", () => {
+  it("reads a previous Agent's Artifact while storing derived output under the transcribing Agent", async () => {
+    const f = fixture();
+    f.job.source = { kind: "file", fileId: "input", projectName: "downloader" };
+    const read = vi.spyOn(f.deps.files, "read");
+    const write = vi.spyOn(f.deps.files, "import");
+    await createAudioTranscriptionStep(f.deps)(f.job, f.context);
+    expect(read).toHaveBeenCalledWith("downloader", "input", f.job.userEmail);
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ projectName: "audio", derivedFrom: "input", model: f.job.model,
+      retainUntil: "2026-12-08T00:00:00.000Z" }), expect.any(Function), f.context.signal);
+    expect(f.transcribe).toHaveBeenCalledTimes(2);
+  });
   it("inherits the original expiry for every segment and the combined transcript", async () => {
     const f = fixture();
     const imported = vi.spyOn(f.deps.files, "import");

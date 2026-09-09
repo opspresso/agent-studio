@@ -24,6 +24,7 @@ import { createAudioDeliveryStep } from "@/application/audio/deliver";
 import { createAudioCleanup } from "@/application/audio/cleanup";
 import { buildMcpTools, closeMcp } from "@/application/execution/mcpTools";
 import type { AudioJob } from "@/domain/audio/job";
+import { audioSourceProject } from "@/domain/audio/job";
 import { AUDIO_OUTPUT_SCHEMA } from "@/domain/audio/output";
 import { AudioJobStepError, processAudioJob } from "@/application/audio/processJob";
 import { openModelCall } from "@/application/run/runBracket";
@@ -107,7 +108,7 @@ import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
 import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
-import { ConflictError, ForbiddenError, ValidationError } from "@/application/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import type { PluginsRepoSnapshot, PluginSyncSelection } from "@/domain/plugin/sync";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import {
@@ -1236,6 +1237,11 @@ export function getAudioRuntime() {
     }
     return project;
   };
+  const authorizeJob = async (job: AudioJob) => {
+    const project = await authorize(job.projectName, job.userEmail);
+    if (audioSourceProject(job) !== job.projectName) await authorize(audioSourceProject(job), job.userEmail);
+    return project;
+  };
   const references = createSourceReferenceUseCases({ references: sourceReferenceRepository, cipher: secretCipher,
     urlPolicy, downloader: sourceDownloader, files, authorize: async (project, email) => { await authorize(project, email); },
     refresh: createMcpSourceRefresher(executionDeps),
@@ -1267,6 +1273,12 @@ export function getAudioRuntime() {
     now: () => new Date(),
   });
   const jobs = createAudioJobUseCases({ jobs: audioJobRepository, configs: audioJobConfigRepository, files: sourceFileRepository,
+    resolveArtifact: async (id, email) => {
+      const artifact = await artifactRepository.get(id);
+      if (!artifact?.privateFileId || artifact.ownerEmail !== email) throw new NotFoundError("Private artifact not found");
+      await authorize(artifact.projectName, email);
+      return files.metadata(artifact.projectName, artifact.privateFileId, email);
+    },
     sourceIdentity: references.identity,
     authorize: async (project, email) => { await authorize(project, email); },
     validateModel: async (model) => { await getTranscriptionTarget(model); }, validateOutputs,
@@ -1289,7 +1301,7 @@ export function getAudioRuntime() {
       };
     },
     beforeTranscribe: async (job) => {
-      const project = await authorize(job.projectName, job.userEmail);
+      const project = await authorizeJob(job);
       const bracket = await openModelCall(executionDeps, project, { model: job.model }, job.actor ?? { kind: "user", id: job.userEmail });
       return (failed) => bracket.close({ failed });
     },
@@ -1367,10 +1379,10 @@ export function getAudioRuntime() {
     },
     async process(projectName: string, id: string, signal?: AbortSignal) {
       return processAudioJob({ jobs: audioJobRepository, now: () => new Date(), token: randomUUID,
-        authorize: async (job) => { await authorize(job.projectName, job.userEmail); },
+        authorize: async (job) => { await authorizeJob(job); },
         importFile: async (job, context) => {
           const result = await references.importFile(job, context);
-          const file = await files.metadata(job.projectName, result.fileId, job.userEmail);
+          const file = await files.metadata(audioSourceProject(job), result.fileId, job.userEmail);
           return { ...result, fileInfo: { filename: file.filename, byteSize: file.byteSize, expiresAt: file.retireAt } };
         }, transcribe,
         postprocess,

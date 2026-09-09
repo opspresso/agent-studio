@@ -31,6 +31,8 @@ export const MAX_ARTIFACT_PROMPT_CHARS = 500;
 export async function registerSourceArtifact(rows: ArtifactRepository, file: SourceFile): Promise<void> {
   if (file.status !== "ready" || file.derived?.kind === "checkpoint") return;
   await rows.put({ artifactId: file.id, privateFileId: file.id, retireAt: file.retireAt,
+    ...(file.derivedFrom ? { derivedFrom: file.derivedFrom } : {}), ...(file.model ? { model: file.model } : {}),
+    producedBy: file.producedBy ?? file.projectName,
     kind: file.mimeType.startsWith("audio/") ? "audio" : "document",
     source: file.derived ? "generated" : "attachment", key: sourceFileObjectKey(file.id),
     mimeType: file.mimeType, filename: file.filename, byteSize: file.byteSize!,

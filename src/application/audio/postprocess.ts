@@ -101,6 +101,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     const id = `${job.id}-draft`;
     await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
       filename: "result.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt,
+      derivedFrom: job.transcriptRef, model: job.postprocess.version.model, producedBy: job.postprocess.projectName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield bytes; })(), context.signal);
     return { draftRef: id };

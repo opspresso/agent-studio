@@ -1,4 +1,5 @@
 import type { AudioJob } from "@/domain/audio/job";
+import { audioSourceProject } from "@/domain/audio/job";
 import type { AudioPostprocessOutput } from "@/domain/audio/output";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { AudioJobStepError, type AudioJobStepContext } from "./processJob";
@@ -43,7 +44,7 @@ export function createAudioDeliveryStep(deps: AudioDeliveryDeps) {
       await context.record({ receipts });
     };
     const sourceUri = `urn:agent-studio:audio-job:${job.id}`;
-    const filename = job.fileId ? (await deps.files.metadata(job.projectName, job.fileId, job.userEmail)).filename : job.id;
+    const filename = job.fileId ? (await deps.files.metadata(audioSourceProject(job), job.fileId, job.userEmail)).filename : job.id;
     const metadata = { jobId: job.id, sourceFileId: job.fileId, model: transcript.model,
       sourceChecksum: transcript.sourceChecksum, coverage: transcript.coverage, sourceIdentity: job.sourceIdentity,
       ...(job.postprocess ? { postprocess: { projectName: job.postprocess.projectName,

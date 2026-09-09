@@ -1,4 +1,5 @@
 import type { AudioJob } from "@/domain/audio/job";
+import { audioSourceProject } from "@/domain/audio/job";
 import type { AudioSegmenter } from "@/domain/audio/segmenter";
 import { validateTranscription, type TranscriptionPort, type TranscriptionResult, type TranscriptSegment } from "@/domain/llm/transcription";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
@@ -66,7 +67,7 @@ function parseSegment(bytes: Uint8Array, expected: Omit<StoredSegment, "result">
 export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
   return async (job: AudioJob, context: AudioJobStepContext): Promise<{ transcriptRef: string }> => {
     if (!job.fileId) throw new AudioJobStepError("missing_file", false);
-    const source = await deps.files.read(job.projectName, job.fileId, job.userEmail);
+    const source = await deps.files.read(audioSourceProject(job), job.fileId, job.userEmail);
     if (!source.file.checksum) throw new AudioJobStepError("missing_checksum", false);
     const config = await deps.resolve(job.model);
     const parts: StoredSegment[] = [];
@@ -128,6 +129,7 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
     const id = `${job.id}-transcript`;
     await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
       filename: "transcript.json", mimeType: "application/json", retention: job.retention, retainUntil: source.file.retireAt,
+      derivedFrom: job.fileId, model: job.model,
       derived: { jobId: job.id, kind: "transcript" } },
     async () => (async function* () { yield bytes; })(), context.signal);
     return { transcriptRef: id };

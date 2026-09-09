@@ -12,7 +12,7 @@ function fixture() {
     references: { put: async (value) => { rows.set(value.id, value); }, get: async (id) => rows.get(id) ?? null },
     cipher: { encrypt: vi.fn(() => "ciphertext"), decrypt: vi.fn(() => "https://files.example.test/audio?sig=private") },
     urlPolicy: { assertAllowed: vi.fn(async () => {}) }, downloader: { open: vi.fn() },
-    files: { import: vi.fn(), read: vi.fn(), metadata: vi.fn(), sweep: vi.fn() },
+    files: { import: vi.fn(), read: vi.fn(), metadata: vi.fn(), sweep: vi.fn(), remove: vi.fn() },
     authorize: vi.fn(async () => {}), now: () => now, id: () => "ref-1",
   };
   const input = { projectName: "audio", userEmail: "owner@example.test", namespace: "account-1", itemId: "external-1",
@@ -21,6 +21,17 @@ function fixture() {
 }
 
 describe("encrypted source references", () => {
+  it("reuses a cross-Agent file after checking its project, with no download or upload", async () => {
+    const f = fixture();
+    vi.mocked(f.deps.files.metadata).mockResolvedValue({ id: "existing", status: "ready", retireAt: "2026-12-09T00:00:00Z" } as never);
+    const job = { projectName: "transcriber", userEmail: f.input.userEmail,
+      source: { kind: "file", fileId: "existing", projectName: "downloader" } } as AudioJob;
+    expect(await f.api.importFile(job, { signal: new AbortController().signal, record: async () => {} })).toEqual({ fileId: "existing" });
+    expect(f.deps.authorize).toHaveBeenCalledWith("downloader", f.input.userEmail);
+    expect(f.deps.files.metadata).toHaveBeenCalledWith("downloader", "existing", f.input.userEmail);
+    expect(f.deps.downloader.open).not.toHaveBeenCalled();
+    expect(f.deps.files.import).not.toHaveBeenCalled();
+  });
   it("refreshes an admitted source after its temporary reference row has expired", async () => {
     const f = fixture();
     const refresh = { serverName: "files", versionName: "1", identity: "connection-1", mapping: {

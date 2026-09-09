@@ -3,7 +3,8 @@ import { IMPORT_FILE_TOOL_NAME, TRANSCRIBE_AUDIO_TOOL_NAME, AUDIO_JOB_TOOL_NAME 
 
 const retention = { type: "object", properties: { unit: { type: "string", enum: ["days", "months"] },
   value: { type: "integer", minimum: 1 }, timezone: { type: "string" } }, required: ["unit", "value", "timezone"], additionalProperties: false };
-const source = { source_ref: { type: "string", description: "Opaque source reference returned by a connected tool." },
+const source = { artifact_id: { type: "string", description: "Private Artifact ID owned by the current user, including outputs from another Agent. Reuses stored bytes without downloading again. Provide exactly one source field." },
+  source_ref: { type: "string", description: "Opaque source reference returned by a connected tool." },
   file_id: { type: "string", description: "Private source file ID from an upload or completed import." } };
 
 export const AUDIO_TOOL_DEFS: ChannelToolDef[] = [

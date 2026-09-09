@@ -10,6 +10,10 @@ export interface SourceFile {
   /** Optional immutable upper bound inherited by derived files from their source. */
   retainUntil?: string;
   derived?: { jobId: string; kind: "checkpoint" | "transcript" | "draft" };
+  /** Input Artifact and producing model, preserved when an Agent derives a result. */
+  derivedFrom?: string;
+  model?: string;
+  producedBy?: string;
   revision: number;
   status: "pending" | "ready" | "deleting" | "deleted";
   createdAt: string;

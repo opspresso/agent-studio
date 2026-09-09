@@ -41,6 +41,11 @@ describe("private files in the Artifact inventory", () => {
     }
     expect(f.objects.sign).not.toHaveBeenCalled();
   });
+  it("preserves the original input and actual producing Agent when indexing a derived result", async () => {
+    const f = fixture();
+    await registerSourceArtifact(f.rows, { ...file, derivedFrom: "transcript", producedBy: "summarizer", model: "selfhosted/text" });
+    expect(await f.rows.get(file.id)).toMatchObject({ derivedFrom: "transcript", producedBy: "summarizer", model: "selfhosted/text" });
+  });
   it("reads and removes only through the private file lifecycle, not the public bucket", async () => {
     const f = fixture(); await registerSourceArtifact(f.rows, file);
     expect((await f.api.readPrivateFile(file.id, file.userEmail)).bytes).toHaveLength(3);
