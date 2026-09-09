@@ -65,6 +65,9 @@ export async function buildAgentDeps(
   callMcpTool?: engine.AgentDeps["callMcpTool"],
 ): Promise<engine.AgentDeps> {
   const channel = deps.channel;
+  if (origin.backgroundTask) {
+    return { channel, recordUsage: recordUsageFn, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };
+  }
   // Once for the run: both builtins draw with the same model, and resolving it
   // twice is what let the two disagree about reporting a stale `imageModel`.
   const imageModel = resolveImageModel(version, projectName);
@@ -85,7 +88,7 @@ export async function buildAgentDeps(
     // the tool, and one in a deployment that keeps nothing never sees it.
     saveFile: buildFileSaver(deps),
     fileTool: buildFileTool(deps, projectName, origin, signal),
-    audioTools: version.parameters.audioProcessing && !origin.backgroundTask ? await deps.audioTools?.(projectName, origin) : undefined,
+    audioTools: version.parameters.audioProcessing ? await deps.audioTools?.(projectName, origin) : undefined,
     readSlack: await buildSlackReader(deps, version, projectName),
   };
 }

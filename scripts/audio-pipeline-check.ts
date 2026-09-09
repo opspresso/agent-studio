@@ -41,7 +41,7 @@ async function main() {
     const body = Buffer.concat(buffers);
     if (request.url === "/v1/chat/completions") {
       const input = JSON.parse(body.toString("utf-8"));
-      assert.equal(input.tools?.some((tool: { function: { name: string } }) => tool.function.name === "AudioJob") ?? false, false);
+      assert.ok((input.tools ?? []).every((tool: { function: { name: string } }) => tool.function.name === "Skill"), "postprocessing must not receive effectful tools");
       postprocessCalls += 1;
       const content = JSON.stringify({ text: "Summary of sample", memories: [
         { kind: "fact", title: "Sample", content: "Sample transcript", evidence: ["Sample transcript"] },
@@ -99,8 +99,9 @@ async function main() {
       description: "", projectType: "agent", visibility: "private", createdAt: now, updatedAt: now });
     projectCreated = true;
     await versionRepository.create({ projectName, versionName: "writer", model: "openai/gpt-5-mini",
-      systemPrompt: "Summarize the source.", userPromptTemplate: "", parameters: { piiFiltering: false, audioProcessing: true },
-      skillList: [], mcpList: [], subagentList: [], createdAt: now });
+      systemPrompt: "Summarize the source.", userPromptTemplate: "", parameters: { piiFiltering: false, audioProcessing: true,
+        dynamicCapabilities: true, memoryRecall: true, urlFetch: true, imageGeneration: true, slackWorkspace: true },
+      skillList: [], mcpList: [{ name: "must-not-resolve" }], subagentList: [{ name: "must-not-run", type: "remote" }], createdAt: now });
     if (memoryUrl) {
       await mcpUseCases.create({ name: memoryName, url: memoryUrl.href, headers: { Authorization: `Bearer ${memoryToken}` } });
       memoryRegistered = true;

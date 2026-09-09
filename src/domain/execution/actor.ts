@@ -134,7 +134,7 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
  * threaded side by side through eight signatures.
  */
 export interface RunOrigin {
-  /** A durable job's postprocessor must not recursively enqueue more durable jobs. */
+  /** Durable postprocessing may read bound skills; its worker owns all external effects. */
   backgroundTask?: boolean;
   actor?: RunActor;
   /**

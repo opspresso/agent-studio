@@ -126,10 +126,10 @@ export async function prepareMemoryForRun(
     version: Version;
     query: string;
     signal?: AbortSignal;
-    origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">;
+    origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation" | "backgroundTask">;
   },
 ): Promise<Awaited<ReturnType<typeof recallForRun>>> {
-  if (!input.version.parameters.memoryRecall) {
+  if (input.origin?.backgroundTask || !input.version.parameters.memoryRecall) {
     return { input: {}, warnings: [], asked: 0, failed: 0 };
   }
   // Preserve binding selections: an unrestricted document server need not

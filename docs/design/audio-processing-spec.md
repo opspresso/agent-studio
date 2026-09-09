@@ -84,6 +84,8 @@ Agent는 source를 선택해 작업을 제출하고 실제 작업은 worker가 �
 직접 engine을 호출하지 않으며 run bracket·비용·trace를 유지한다. 후처리 origin은 서버가 주입하고
 이 실행에서는 새 작업 제출 능력을 제공하지 않아 재귀 생성을 막는다. 저장은 모델의 완료 주장 대신
 검증된 출력과 실제 receipt로 판정한다.
+후처리 실행은 연결된 skill 읽기만 허용한다. MCP·동적 탐색·사전 Memory recall·subagent·URL 조회·
+Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하고 원격 저장은 worker가 담당한다.
 
 ## Agent Memory email 인증
 

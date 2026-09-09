@@ -480,7 +480,7 @@ export async function resolveRunTools(
    * Where the run came from. MCP resolution names an email actor and the
    * conversation to every server as request headers.
    */
-  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
+  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation" | "backgroundTask">,
   /** Records billable Rerank calls for a real run; previews leave it absent. */
   recordRerankUsage?: engine.RecordUsageFn,
 ): Promise<{
@@ -517,6 +517,12 @@ export async function resolveRunTools(
    */
   version: Version;
 }> {
+  // Background postprocessing consumes source data; the worker owns every external effect.
+  if (origin?.backgroundTask) {
+    version = { ...version, mcpList: [], subagentList: [], parameters: {
+      ...version.parameters, dynamicCapabilities: false, memoryRecall: false,
+    } };
+  }
   const discoveryNotes: string[] = [];
   const discovered: string[] = [];
   let rerank: CatalogRerankReport = { calls: 0, candidates: 0, failed: 0, usage: [] };
