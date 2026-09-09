@@ -13,8 +13,9 @@ import type { AudioJobsResponse } from "@/app/api/projects/[name]/audio-jobs/rou
 import type { AudioJobView } from "@/application/audio/audioJobUseCases";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
 import type { AudioConfigResponse } from "@/app/api/projects/[name]/audio-config/route";
-import { MAX_ACTIVE_AUDIO_JOBS } from "@/domain/audio/job";
+import { isAudioJobTerminal, MAX_ACTIVE_AUDIO_JOBS } from "@/domain/audio/job";
 import { useProjectAudio } from "../_components/ProjectAudioContext";
+import { loadActiveAudioJobs, mergeAudioJobUpdates } from "./jobPolling";
 
 export default function AudioPage() {
   const { enabled, error } = useProjectAudio();
@@ -91,12 +92,22 @@ function AudioWorkspace({ name }: { name: string }) {
     if (writer) listVersions(writer).then((values) => { if (active) setVersions(values); }).catch((error) => { if (active) setError(error.message); });
     return () => { active = false; };
   }, [writer]);
-  const activeJobs = !loadingJobs && jobs.length <= 20 && jobs.some((job) => ["queued", "running", "waiting"].includes(job.status));
   useEffect(() => {
-    if (!activeJobs) return;
-    const timer = setInterval(() => { if (!document.hidden) refresh().catch((error) => setError(error.message)); }, 5000);
-    return () => clearInterval(timer);
-  }, [activeJobs, refresh]);
+    if (!jobs.some((job) => !isAudioJobTerminal(job.status))) return;
+    const request = new AbortController();
+    let pending = false;
+    const timer = setInterval(async () => {
+      if (document.hidden || pending) return;
+      pending = true;
+      try {
+        const updates = await loadActiveAudioJobs(base, jobs, request.signal);
+        if (!request.signal.aborted) setJobs((previous) => mergeAudioJobUpdates(previous, updates));
+      } catch (error) {
+        if (!request.signal.aborted) setError(error instanceof Error ? error.message : String(error));
+      } finally { pending = false; }
+    }, 5000);
+    return () => { clearInterval(timer); request.abort(); };
+  }, [base, jobs]);
 
   const validRetention = typeof duration === "number" && Number.isSafeInteger(duration) && duration > 0 && timezone.trim().length > 0;
   const processing = useSaved && savedConfig ? {
