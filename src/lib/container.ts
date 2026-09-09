@@ -1339,7 +1339,11 @@ export function getAudioRuntime() {
     async process(projectName: string, id: string, signal?: AbortSignal) {
       return processAudioJob({ jobs: audioJobRepository, now: () => new Date(), token: randomUUID,
         authorize: async (job) => { await authorize(job.projectName, job.userEmail); },
-        importFile: references.importFile, transcribe,
+        importFile: async (job, context) => {
+          const result = await references.importFile(job, context);
+          const file = await files.metadata(job.projectName, result.fileId, job.userEmail);
+          return { ...result, fileInfo: { filename: file.filename, byteSize: file.byteSize, expiresAt: file.retireAt } };
+        }, transcribe,
         postprocess,
         store: deliver,
       }, projectName, id, signal);

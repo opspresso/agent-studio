@@ -130,6 +130,9 @@ async function main() {
       completed = await runtime.process(projectName, submitted.job.id) ?? completed;
     }
     assert.equal(completed?.status, "completed", JSON.stringify(completed));
+    const publicJob = await runtime.jobs.get(projectName, completed.id, email);
+    assert.deepEqual(publicJob.fileInfo, { filename: file.filename, byteSize: file.byteSize, expiresAt: file.retireAt });
+    assert.deepEqual(publicJob.transcriptionProgress, { processedSeconds: 1.5, totalSeconds: 1.5, completedSegments: 1 });
     assert.ok(completed.transcriptRef);
     const result = await runtime.files.read(projectName, completed.transcriptRef, email);
     assert.equal(result.file.retireAt, file.retireAt);

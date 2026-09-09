@@ -70,6 +70,7 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
     if (!source.file.checksum) throw new AudioJobStepError("missing_checksum", false);
     const config = await deps.resolve(job.model);
     const parts: StoredSegment[] = [];
+    let processedSeconds = 0;
     let checkpointBytes = 0;
     for await (const segment of deps.segmenter.split({ bytes: source.bytes, mimeType: source.mimeType,
       segmentSeconds: config.segmentSeconds, maxSegmentBytes: config.maxSegmentBytes }, context.signal)) {
@@ -98,6 +99,10 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
         const part = parseSegment(checkpoint.bytes, expected);
         await deps.recordUsage(job, id, part.result);
         parts.push(part);
+        processedSeconds += part.end - part.start;
+        if (processedSeconds >= (job.transcriptionProgress?.processedSeconds ?? 0)) {
+          await context.record({ transcriptionProgress: { processedSeconds, totalSeconds: part.totalSeconds, completedSegments: parts.length } });
+        }
         failed = false;
       } finally { await close?.(failed); }
     }

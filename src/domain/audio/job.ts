@@ -37,6 +37,8 @@ export interface AudioJob extends AudioJobInput {
   /** Consecutive failures of the current stage, reset after a successful stage. */
   failures: number;
   fileId?: string;
+  fileInfo?: { filename: string; byteSize?: number; expiresAt: string };
+  transcriptionProgress?: { processedSeconds: number; totalSeconds: number; completedSegments: number };
   transcriptRef?: string;
   draftRef?: string;
   /** Per-output receipts, separate from model-generated content. */
@@ -51,7 +53,7 @@ export function isAudioJobTerminal(status: AudioJobStatus): boolean {
 }
 
 export type AudioJobCheckpoint = Pick<AudioJob, "status" | "stage" | "dueAt"> &
-  Partial<Pick<AudioJob, "fileId" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "failures">>;
+  Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "failures">>;
 
 export interface AudioJobRepository {
   submit(input: AudioJobInput, admission: {

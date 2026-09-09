@@ -33,12 +33,13 @@ export interface AudioJobUseCaseDeps {
 
 /** Public view: source credentials, ownership data and internal receipt paths stay server-side. */
 export type AudioJobView = Pick<AudioJob, "id" | "status" | "stage" | "model" | "createdAt" | "updatedAt" |
-  "dueAt" | "attempt" | "failures" | "fileId" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision">;
+  "dueAt" | "attempt" | "failures" | "fileId" | "fileInfo" | "transcriptionProgress" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision">;
 
 function view(job: AudioJob): AudioJobView {
   return { id: job.id, status: job.status, stage: job.stage, model: job.model, createdAt: job.createdAt,
     updatedAt: job.updatedAt, dueAt: job.dueAt, attempt: job.attempt, failures: job.failures,
     fileId: job.fileId, transcriptRef: job.transcriptRef, draftRef: job.draftRef,
+    fileInfo: job.fileInfo, transcriptionProgress: job.transcriptionProgress,
     receipts: job.receipts, errorCode: job.errorCode, revision: job.revision };
 }
 

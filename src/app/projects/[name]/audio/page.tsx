@@ -140,6 +140,8 @@ function AudioWorkspace({ name }: { name: string }) {
     {jobs.map((job) => <Paper key={job.id} withBorder p="md"><Stack gap="xs">
       <Group justify="space-between"><Text ff="monospace" size="sm">{job.id}</Text><Badge>{t(`audio.status.${job.status}`)}</Badge></Group>
       <Text size="sm">{job.model} · {t(`audio.stage.${job.stage}`)} · {formatDateTime(job.updatedAt, locale)}</Text>
+      {job.fileInfo && <Text size="sm">{job.fileInfo.filename} · {t("audio.expiresAt")}: {formatDateTime(job.fileInfo.expiresAt, locale)}</Text>}
+      {job.transcriptionProgress && <Text size="sm">{t("audio.coverage")}: {job.transcriptionProgress.processedSeconds.toFixed(1)} / {job.transcriptionProgress.totalSeconds.toFixed(1)} {t("audio.seconds")}</Text>}
       {job.status === "waiting" && <Text size="sm" c="dimmed">{t("audio.resumeAt")}: {formatDateTime(job.dueAt, locale)}</Text>}
       {job.errorCode && <Text c="red" size="sm">{job.errorCode}</Text>}
       {Object.keys(job.receipts).some((key) => key.startsWith("document:") || key.startsWith("memory:")) && <details>

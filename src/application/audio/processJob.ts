@@ -16,7 +16,7 @@ export class AudioJobStepError extends AppError {
   }
 }
 
-type Progress = Partial<Pick<AudioJob, "fileId" | "transcriptRef" | "draftRef" | "receipts">>;
+type Progress = Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "transcriptRef" | "draftRef" | "receipts">>;
 
 export interface AudioJobStepContext {
   signal: AbortSignal;
@@ -30,7 +30,7 @@ export interface AudioJobProcessorDeps {
   token(): string;
   /** Recheck the current project and user before every external stage. */
   authorize(job: AudioJob): Promise<void>;
-  importFile(job: AudioJob, context: AudioJobStepContext): Promise<{ fileId: string }>;
+  importFile(job: AudioJob, context: AudioJobStepContext): Promise<{ fileId: string; fileInfo?: AudioJob["fileInfo"] }>;
   transcribe(job: AudioJob, context: AudioJobStepContext): Promise<{ transcriptRef: string }>;
   postprocess(job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string }>;
   store(job: AudioJob, context: AudioJobStepContext): Promise<{ ready: boolean; receipts: Record<string, string> }>;

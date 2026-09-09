@@ -69,6 +69,18 @@ describe("resumable file transcription", () => {
     expect(result.coverage).toEqual([{ start: 0, end: 1 }, { start: 1, end: 2 }]);
     expect(f.deps.beforeTranscribe).toHaveBeenCalledTimes(2);
     expect(f.deps.recordUsage).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(f.context.record).mock.calls.map(([value]) => value.transcriptionProgress)).toEqual([
+      { processedSeconds: 1, totalSeconds: 2, completedSegments: 1 },
+      { processedSeconds: 2, totalSeconds: 2, completedSegments: 2 },
+    ]);
+  });
+
+  it("keeps checkpoint progress from moving backwards while replaying cached segments", async () => {
+    const f = fixture(); const run = createAudioTranscriptionStep(f.deps);
+    await run(f.job, f.context);
+    vi.mocked(f.context.record).mockClear();
+    await run({ ...f.job, transcriptionProgress: { processedSeconds: 2, totalSeconds: 2, completedSegments: 2 } }, f.context);
+    expect(f.context.record).toHaveBeenCalledExactlyOnceWith({ transcriptionProgress: { processedSeconds: 2, totalSeconds: 2, completedSegments: 2 } });
   });
 
   it("retries only the failed segment and uses stable usage receipt IDs", async () => {
@@ -77,6 +89,7 @@ describe("resumable file transcription", () => {
     f.transcribe.mockRejectedValueOnce(new Error("ASR offline"));
     const run = createAudioTranscriptionStep(f.deps);
     await expect(run(f.job, f.context)).rejects.toThrow("ASR offline");
+    expect(f.context.record).toHaveBeenCalledExactlyOnceWith({ transcriptionProgress: { processedSeconds: 1, totalSeconds: 2, completedSegments: 1 } });
     expect(f.saved.has("job-1-asr-0")).toBe(true);
     expect(f.saved.has("job-1-transcript")).toBe(false);
     await run(f.job, f.context);

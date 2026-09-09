@@ -1761,7 +1761,9 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 저장한다. 수신 서버에 수집 도구와 idempotencyKey 입력이 없으면 작업을 받기 전에 거절한다.
 
 AudioJobView는 `id`, `status`, `stage`, `model`, 생성·갱신·다음 실행 시각, `attempt`, `failures`,
-`revision`과 존재하는 `fileId`, `transcriptRef`, `draftRef`, `receipts`, `errorCode`를 반환한다.
+`revision`과 존재하는 `fileId`, `fileInfo`, `transcriptionProgress`, `transcriptRef`, `draftRef`, `receipts`, `errorCode`를 반환한다.
+`fileInfo`는 filename·byteSize·expiresAt을, `transcriptionProgress`는 성공한 구간의 processedSeconds·
+totalSeconds·completedSegments를 담는다. 목록 조회는 본문을 읽지 않고 checkpoint metadata를 반환한다.
 source URL·암호문·내부 source key는 포함하지 않는다. 저장된 전사 결과는 transcriptRef 파일의
 JSON이며 text, 구간, model, coverage, 원본 checksum과 사용량 receipt 참조를 포함한다.
 
