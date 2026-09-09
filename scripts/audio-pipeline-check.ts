@@ -33,7 +33,7 @@ async function main() {
   process.env.S3_SECRET_ACCESS_KEY = process.env.STORAGE_TEST_SECRET_KEY ?? "agent_studio_secret";
   process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
   const bucket = `audio-pipeline-${randomUUID()}-test`;
-  process.env.SOURCE_FILES_BUCKET_NAME = bucket;
+  process.env.S3_BUCKET_NAME = bucket;
   let calls = 0;
   let postprocessCalls = 0;
   const mock = createServer(async (request, response) => {
@@ -71,7 +71,8 @@ async function main() {
   process.env.LLM_PROVIDER_OPENAI_API_KEY = "test";
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
-  const { getAudioRuntime, mcpUseCases } = await import("@/lib/container");
+  const { getAudioRuntime, mcpUseCases, artifactUseCases } = await import("@/lib/container");
+  const { artifactRepository } = await import("@/infrastructure/db/repositories/artifactRepository");
   const { getS3Client, deleteStoredObject } = await import("@/infrastructure/storage/s3ObjectStore");
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
@@ -146,7 +147,7 @@ async function main() {
     assert.deepEqual(publicJob.fileInfo, { filename: file.filename, byteSize: file.byteSize, expiresAt: file.retireAt });
     assert.deepEqual(publicJob.transcriptionProgress, { processedSeconds: 1.5, totalSeconds: 1.5, completedSegments: 1 });
     assert.ok(completed.transcriptRef);
-    if (!memoryUrl) {
+    {
       const result = await runtime.files.read(projectName, completed.transcriptRef, email);
       assert.equal(result.file.retireAt, file.retireAt);
       assert.equal(result.file.retainUntil, file.retireAt);
@@ -158,17 +159,24 @@ async function main() {
       assert.equal(draft.file.retireAt, file.retireAt);
       assert.equal(draft.file.retainUntil, file.retireAt);
       assert.equal(JSON.parse(new TextDecoder().decode(draft.bytes)).text, "Summary of sample");
-    } else {
-      assert.ok(completed.draftRef);
-      assert.ok(completed.movedTo);
-      await assert.rejects(runtime.files.read(projectName, completed.transcriptRef, email));
-      await assert.rejects(runtime.files.read(projectName, completed.draftRef, email));
     }
+    assert.ok(completed.summaryRef); assert.ok(completed.dialogueRef); assert.ok(completed.draftRef);
+    const finalIds = [file.id, completed.transcriptRef, completed.draftRef, completed.summaryRef, completed.dialogueRef];
+    assert.ok(artifactUseCases);
+    const artifacts = await artifactUseCases.listMine(email, { limit: 100 });
+    assert.deepEqual(artifacts.filter((a) => a.projectName === projectName).map((a) => a.artifactId).sort(), [...finalIds].sort());
+    for (const id of finalIds) {
+      const result = await artifactUseCases.readPrivateFile(id, email);
+      assert.equal(result.artifact.retireAt, file.retireAt);
+      assert.ok(result.bytes.length);
+      await assert.rejects(artifactUseCases.readPrivateFile(id, "other@example.test"));
+    }
+    const anonymous = await fetch(new URL(`${bucket}/${sourceFileObjectKey(file.id)}`, endpoint));
+    await anonymous.body?.cancel();
+    assert.equal(anonymous.status, 403, "private artifacts in the shared bucket reject anonymous reads");
     const remaining = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1000 }));
     assert.equal(remaining.IsTruncated, false);
-    assert.deepEqual((remaining.Contents ?? []).filter((object) => object.Size !== 0).map((object) => object.Key).sort(), [sourceFileObjectKey(file.id),
-      ...(!memoryUrl ? [sourceFileObjectKey(completed.transcriptRef), sourceFileObjectKey(completed.draftRef!)] : [])].sort());
-    assert.equal(postprocessCalls, 1);
+    assert.deepEqual((remaining.Contents ?? []).filter((object) => object.Size !== 0).map((object) => object.Key).sort(), finalIds.map(sourceFileObjectKey).sort());
     assert.equal(calls, 1);
     assert.equal(postprocessCalls, 1);
     assert.equal((await runtime.jobs.submit(projectName, email, submitInput, { occurrence: "test-again" })).status, "duplicate");
@@ -183,13 +191,30 @@ async function main() {
       assert.ok(completed.receipts["memory:0"]);
       console.log(`PASS Memory delivery: ${JSON.stringify({ jobId: completed.id, receipts: completed.receipts })}`);
     }
+    const previousMode = process.env.ARTIFACT_ACCESS_MODE;
+    let opened = false;
+    try {
+      process.env.ARTIFACT_ACCESS_MODE = "public";
+      await assert.rejects(runtime.files.import({ id: `${id}-refused`, projectName, userEmail: email,
+        filename: "refused.mp3", mimeType: "audio/mpeg", retention: file.retention }, async () => {
+        opened = true; return (async function* () { yield bytes; })();
+      }), /Private Artifacts require/);
+      assert.equal(opened, false, "storage policy is checked before opening source bytes");
+    } finally {
+      if (previousMode === undefined) delete process.env.ARTIFACT_ACCESS_MODE;
+      else process.env.ARTIFACT_ACCESS_MODE = previousMode;
+    }
     console.log("PASS audio pipeline: PostgreSQL → MinIO → ffmpeg → ASR → grounded Agent output → usage and replay");
   } finally {
     const objects = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1000 }));
     for (const object of objects.Contents ?? []) {
       if (!object.Key) continue;
       await deleteStoredObject(bucket, object.Key);
-      if (object.Key.startsWith("source-files/")) await deleteItem(keys.sourceFile(decodeURIComponent(object.Key.slice("source-files/".length))));
+      if (object.Key.startsWith("source-files/")) {
+        const id = decodeURIComponent(object.Key.slice("source-files/".length));
+        await artifactRepository.delete(id);
+        await deleteItem(keys.sourceFile(id));
+      }
     }
     if (projectCreated) await projectRepository.delete(projectName);
     if (memoryRegistered) await mcpUseCases.remove(memoryName, email);

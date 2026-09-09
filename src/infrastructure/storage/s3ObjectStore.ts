@@ -7,7 +7,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { ObjectNotFoundError, type ArtifactObjectStore } from "@/domain/artifact/objectStore";
+import { assertNotPrivateFileKey, ObjectNotFoundError, type ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import { config } from "@/lib/config";
 import { getArtifactAccessMode } from "@/lib/runtime-settings";
 import { sniffImageType } from "@/domain/llm/imageSniff";
@@ -53,6 +53,7 @@ export function isObjectStoreConfigured(): boolean {
  * for AWS itself the virtual-host form.
  */
 export function artifactPublicUrl(key: string): string {
+  assertNotPrivateFileKey(key);
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
   const bucket = requireBucket();
   const base = config.s3PublicBaseUrl?.replace(/\/+$/, "");
@@ -66,9 +67,10 @@ export function artifactPublicUrl(key: string): string {
   return `https://${bucket}.s3.${config.awsRegion}.amazonaws.com/${encodedKey}`;
 }
 
-export async function readStoredObject(bucket: string, key: string, maxBytes: number) {
+export async function readStoredObject(bucket: string, key: string, maxBytes: number, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const object = await getS3Client()
-    .send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    .send(new GetObjectCommand({ Bucket: bucket, Key: key }), { abortSignal: signal })
     .catch((error: unknown) => {
       // The port's name for it. `NoSuchKey` is what S3 and every compatible
       // store answer a GET on a missing key with.
@@ -92,7 +94,7 @@ export async function readStoredObject(bucket: string, key: string, maxBytes: nu
       // same Uint8Array default reader in both environments.
       ? ReadableStream.from<Uint8Array>(body) as unknown as NonNullable<Response["body"]>
       : body.transformToWebStream();
-    bytes = await readBodyBytes({ body: stream, headers }, maxBytes);
+    bytes = await readBodyBytes({ body: stream, headers }, maxBytes, signal);
   } catch (error) {
     if (error instanceof BodyTooLargeError) {
       throw new Error(`stored object exceeds the ${maxBytes}-byte read limit`);
@@ -123,6 +125,7 @@ export async function readStoredObject(bucket: string, key: string, maxBytes: nu
  */
 export const artifactObjectStore: ArtifactObjectStore = {
   async put(input) {
+    assertNotPrivateFileKey(input.key);
     await getS3Client().send(
       new PutObjectCommand({
         Bucket: requireBucket(),
@@ -134,7 +137,7 @@ export const artifactObjectStore: ArtifactObjectStore = {
     );
   },
 
-  async read(key, maxBytes) { return readStoredObject(requireBucket(), key, maxBytes); },
+  async read(key, maxBytes) { assertNotPrivateFileKey(key); return readStoredObject(requireBucket(), key, maxBytes); },
 
   /**
    * A direct URL in public mode, otherwise a pre-signed GET URL. The signed
@@ -150,6 +153,7 @@ export const artifactObjectStore: ArtifactObjectStore = {
    * document under its object key, which is a UUID.
    */
   async sign(key, expiresInSeconds, options) {
+    assertNotPrivateFileKey(key);
     const downloadAs = options?.downloadAs;
     if (!downloadAs && (await getArtifactAccessMode()) === "public") {
       return artifactPublicUrl(key);
@@ -184,6 +188,7 @@ export const artifactObjectStore: ArtifactObjectStore = {
    * delete interrupted between the two converges when it is retried.
    */
   async delete(key) {
+    assertNotPrivateFileKey(key);
     await deleteStoredObject(requireBucket(), key);
   },
 };

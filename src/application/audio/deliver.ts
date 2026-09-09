@@ -30,12 +30,12 @@ function document(value: unknown) {
 export function createAudioDeliveryStep(deps: AudioDeliveryDeps) {
   return async (job: AudioJob, context: AudioJobStepContext) => {
     if (!job.destination || !job.transcriptRef) throw new AudioJobStepError("delivery_configuration_missing", false);
-    const source = await deps.files.read(job.projectName, job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES);
+    const source = await deps.files.read(job.projectName, job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
     const transcript = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(source.bytes)) as AudioTranscript;
     if (typeof transcript.text !== "string") throw new AudioJobStepError("transcript_invalid", false);
     let output: AudioPostprocessOutput | undefined;
     if (job.draftRef) {
-      const draft = await deps.files.read(job.projectName, job.draftRef, job.userEmail, MAX_TRANSCRIPT_BYTES);
+      const draft = await deps.files.read(job.projectName, job.draftRef, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
       output = parseAudioPostprocessOutput(new TextDecoder("utf-8", { fatal: true }).decode(draft.bytes), transcript.text, MAX_TRANSCRIPT_BYTES);
     }
     const receipts = { ...job.receipts };

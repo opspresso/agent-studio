@@ -316,8 +316,8 @@ evidence refs를 사용한다. 원래 서비스의 필드명은 mapping이 변�
 허용하고 무작위 임시 bucket을 만들고 제거한다. 기본값은 Compose의 MinIO이며 별도 로컬 환경은
 `STORAGE_TEST_ENDPOINT`, `STORAGE_TEST_ACCESS_KEY`, `STORAGE_TEST_SECRET_KEY`로 지정한다.
 
-원본은 비공개 `source-files/<fileId>`에 저장한다. 버킷과 key에는 업무
-이름을 요구하지 않는다. 공개 artifact 정책이 적용되지 않는 prefix 또는 별도 비공개 bucket을 사용한다.
+원본·전사·요약은 기존 `S3_BUCKET_NAME`의 비공개 `source-files/<fileId>`에 저장한다.
+버킷과 key에는 업무 이름을 요구하지 않는다. 별도 원본 bucket 설정을 두지 않는다.
 streaming multipart·checksum·abort·abandoned upload 정리를 제공하고 DB 갱신 전 crash에서도
 최초 저장 시각을 복구한다.
 
@@ -329,6 +329,7 @@ retention은 `{unit: days | months, value, timezone}`으로 설정하고 최초 
 
 만료일부터 읽기를 거절하고 worker가 매분 최대 100건씩 삭제를 시도한다. object 본문 제거 확인 뒤
 `deletedAt`을 기록하며 정리 전 inventory를 row TTL로 지우지 않는다. worker 중단·backlog에 따라 물리 삭제가 지연될 수 있다.
+만료 sweep은 한 번에 하나만 실행하며 새 작업 조회와 병행한다. 종료 신호는 작업과 sweep에 함께 전달한다.
 변환·분할 임시 파일은 정상 완료·오류·취소 시 정리한다. 강제 종료로 남은 scratch 파일의 정리는
 설치 환경의 임시 volume 정책으로 보완한다. 복제·백업에도 파일 보존 정책을 적용한다.
 
@@ -336,7 +337,9 @@ retention은 `{unit: days | months, value, timezone}`으로 설정하고 최초 
 원본·전사문·후처리 결과는 각각 저장된 비공개 파일을 그대로 참조해 Artifact 목록에 등록한다.
 외부 문서·Memory 저장은 복사이며 최종 Artifact를 지우거나 보존 기간을 연장하지 않는다.
 checkpoint는 목록에 공개하지 않는다. Artifact 다운로드·미리보기·삭제는 원본 파일 소유자와
-현재 프로젝트 권한을 확인하며 public artifact bucket의 URL을 서명하지 않는다.
+현재 프로젝트 권한을 확인한다. 일반 Artifact의 읽기·쓰기·삭제·URL 발급과 bearer URL 조회는
+`source-files/` 키를 거절한다. 파일 상태·보존 기한 확인과 Artifact 등록은 같은 transaction으로
+보호하므로 삭제와 경합한 등록이 목록을 되살리지 않는다.
 실패 복구 payload는 정해진 expiry까지 유지한다. 외부 저장 receipt와
 완료 claim은 남겨 중복 처리하지 않는다. 삭제 실패는 cleaning 단계에서 재시도하며 전사·저장을
 반복하지 않는다. 작업별 파일 인덱스를 100건씩 조회하며 원본은 이 인덱스에 넣지 않는다.
@@ -344,7 +347,8 @@ cleaning 이후에는 새로운 파생 파일 생성을 거절한다. 명시적�
 복구 과정에서 보존 기한을 연장하지 않는다.
 삭제는 키를 0바이트 표식으로 교체한다. 지연된 multipart 완료는 기존 키가 있으므로 조건부 쓰기에
 실패하고, stat/read는 표식을 없는 파일로 처리한다. 표식과 삭제 inventory는 유지하며 오디오 bytes는
-남기지 않는다. 이는 versioning이 꺼진 전용 source bucket을 전제로 한다.
+남기지 않는다. 이는 공유 버킷의 versioning이 꺼져 있고 `source-files/`에 객체 일괄 만료 규칙이
+없다는 전제다. object 요청은 10분, 삭제·multipart 정리는 30초로 제한하고 worker 취소를 조회에도 전달한다.
 
 범용 작업 UI는 단계·coverage·expiry·receipt·오류·retry·취소를 제공한다.
 오디오 처리 탭은 오디오 도구를 켠 Agent의 소유자에게만 노출한다. 배포된 버전을 기준으로 하며,

@@ -4,6 +4,7 @@ import { createFakeStore } from "./fakeStore";
 import { keys } from "@/infrastructure/db/keys";
 import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import type { SourceObjectStore } from "@/domain/artifact/sourceObjectStore";
+import { ValidationError } from "@/application/errors";
 import { createAudioCleanup } from "@/application/audio/cleanup";
 import type { AudioJob } from "@/domain/audio/job";
 
@@ -42,6 +43,23 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("validates shared storage before opening a source or creating inventory", async () => {
+    const api = createSourceFileUseCases({ files, objects, now: () => clock,
+      assertWritable: async () => { throw new ValidationError("Private storage required"); } });
+    await expect(api.import(input, openBody)).rejects.toMatchObject({ status: 400 });
+    expect(open).not.toHaveBeenCalled();
+    expect(await files.get(input.projectName, input.id)).toBeNull();
+  });
+  it("passes worker cancellation through reads and import metadata lookups", async () => {
+    const controller = new AbortController();
+    const api = useCases();
+    await api.import(input, openBody, controller.signal);
+    expect(objects.stat).toHaveBeenCalledWith("source-files/file-1", controller.signal);
+    await api.read(input.projectName, input.id, input.userEmail, 10, controller.signal);
+    expect(objects.read).toHaveBeenCalledWith("source-files/file-1", 10, controller.signal);
+    controller.abort(new Error("shutdown"));
+    await expect(api.sweep(100, controller.signal)).rejects.toThrow("shutdown");
+  });
   it("does not return bytes when the file is deleted during the read", async () => {
     const api = useCases();
     await api.import(input, openBody);

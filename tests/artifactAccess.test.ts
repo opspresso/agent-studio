@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
+import { objectUrlSignature, verifyObjectUrlToken } from "@/infrastructure/storage/objectUrlToken";
 
 /**
  * In proxied mode the signed address is the app's own. A deployment that has
@@ -17,7 +18,7 @@ vi.mock("@/lib/runtime-settings", () => ({
 }));
 
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
-const { withArtifactAccessMode } = await import("@/infrastructure/storage/artifactAccess");
+const { withArtifactAccessMode, createProxiedObjectAccess } = await import("@/infrastructure/storage/artifactAccess");
 
 const inner: ArtifactObjectStore = {
   put: async () => {},
@@ -32,6 +33,16 @@ beforeEach(() => {
 });
 
 describe("withArtifactAccessMode", () => {
+  it.each(["authenticated", "public", "proxied"])("never signs private file keys in %s mode", async (mode) => {
+    settings.mode = mode;
+    await expect(withArtifactAccessMode(inner).sign("source-files/private", 60)).rejects.toMatchObject({ name: "ObjectNotFoundError" });
+  });
+  it("rejects private file keys at the bearer-token endpoint", () => {
+    const claims = { key: "source-files/private", exp: 200 };
+    const signature = objectUrlSignature(claims);
+    expect(verifyObjectUrlToken(claims, signature, 100)).toBe(true);
+    expect(createProxiedObjectAccess(inner).verify(claims, signature, 100)).toBe(false);
+  });
   it("signs a path when no public address is configured", async () => {
     const url = await withArtifactAccessMode(inner).sign("artifacts/image/a.png", 60);
     expect(url.startsWith("/api/objects/artifacts/image/a.png?")).toBe(true);

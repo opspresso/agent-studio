@@ -57,7 +57,7 @@ describe("resumable file transcription", () => {
     const read = vi.spyOn(f.deps.files, "read");
     const write = vi.spyOn(f.deps.files, "import");
     await createAudioTranscriptionStep(f.deps)(f.job, f.context);
-    expect(read).toHaveBeenCalledWith("downloader", "input", f.job.userEmail);
+    expect(read).toHaveBeenCalledWith("downloader", "input", f.job.userEmail, undefined, f.context.signal);
     expect(write).toHaveBeenCalledWith(expect.objectContaining({ projectName: "audio", producedBy: "transcriber", derivedFrom: "input", model: f.job.model,
       retainUntil: "2026-12-08T00:00:00.000Z" }), expect.any(Function), f.context.signal);
     expect(f.transcribe).toHaveBeenCalledTimes(2);

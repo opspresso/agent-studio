@@ -31,10 +31,15 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 환경변수가 이미 주입된 환경에서는 `pnpm worker:audio`를 사용한다. DB 초기화는 앱 또는 기존 migration 명령으로
 먼저 수행한다. worker는 카탈로그·self-hosted 선언을 주기적으로 갱신하고 작업과 원본 만료를 처리한다.
 
-`SOURCE_FILES_BUCKET_NAME`에 별도 비공개 bucket을 지정하고 같은 DB·S3 자격증명·암호화 키를
-공유한다. 모델 채널과 ffmpeg 설정은 [CONFIGURATION.md](CONFIGURATION.md#오디오-전사-설정)를 따른다.
-원본 bucket은 versioning을 끈 전용 bucket으로 운영한다. 객체 전체에 일괄 만료 규칙을 적용하지
-않으며 파일별 만료는 worker가 처리한다. 삭제 시 본문을 0바이트 표식으로 교체해 지연된 multipart
+원본·전사·요약은 기존 `S3_BUCKET_NAME`의 `source-files/` 경로를 사용하는 비공개 Artifacts다.
+별도 원본 버킷 설정은 없으며 worker는 앱과 DB·S3 자격증명·암호화 키를 공유한다.
+모델 채널과 ffmpeg 설정은 [CONFIGURATION.md](CONFIGURATION.md#오디오-전사-설정)를 따른다.
+버킷의 versioning을 끄고 익명 읽기를 허용하지 않는다. `ARTIFACT_ACCESS_MODE`는
+`authenticated` 또는 `proxied`를 사용하며 `public`에서는 비공개 파일 쓰기를 거절한다.
+앱 설정은 S3의 공개 ACL·bucket policy를 변경하지 않으므로 운영자가 실제 비공개 접근을 확인한다.
+스토리지 자격증명은 `artifacts/*`와 `source-files/*`를 읽고 쓰고 삭제할 수 있어야 한다.
+일반 Artifact의 만료 규칙은 `artifacts/`에만 적용한다. `source-files/`의 파일별 만료와 삭제 표식은
+worker가 관리하므로 이 경로에 객체 일괄 만료 규칙을 적용하지 않는다. 삭제 시 본문을 0바이트 표식으로 교체해 지연된 multipart
 완료가 파일을 복원하지 못하게 한다. 이 표식에는 원본 bytes·파일명·URL을 저장하지 않는다.
 프로세스 강제 종료로 남을 수 있는 multipart parts에는 별도 AbortIncompleteMultipartUpload
 lifecycle을 설정한다. 백업·복제 저장소에도 같은 원본 보존 정책을 적용한다.
@@ -120,3 +125,9 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 새 image tag로 교체하면 앱이 부팅 시 advisory lock 아래에서 schema migration을 적용한다. 별도
 migration job은 필요하지 않다. Rollback은 image tag를 되돌리는 것이며 schema를 내리지 않는다.
 IDC와 EKS의 구체적인 upgrade 및 rollback 명령은 각 배포 저장소가 소유한다.
+
+이전 `SOURCE_FILES_BUCKET_NAME`에 파일이 있으면 worker와 새 작업 접수를 멈추고 진행 중인 업로드를
+정리한 뒤 `source-files/`의 키·본문·metadata를 `S3_BUCKET_NAME` 버킷으로 복사한다. 0바이트 삭제
+표식도 포함하며 대상 파일의 checksum과 metadata를 검증한다. DB의 파일 ID·저장 시각·보존 기한은
+변경하지 않는다. 복사 확인 후 이전 환경변수를 제거하고 새 앱·worker를 시작한다. 원본 버킷 삭제는
+별도 운영 작업이며 업그레이드 과정에서 자동 삭제하지 않는다.

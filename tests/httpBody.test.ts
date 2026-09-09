@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
+import { BodyTooLargeError, readBodyBytes, readBodyText } from "@/shared/httpBody";
+
+describe("abortable byte reads", () => {
+  it("interrupts a stalled body and releases its reader without returning partial bytes", async () => {
+    const controller = new AbortController();
+    let cancelled = false;
+    let started!: () => void;
+    const reading = new Promise<void>((resolve) => { started = resolve; });
+    const body = new ReadableStream<Uint8Array>({
+      start(stream) { stream.enqueue(new Uint8Array([1])); },
+      pull() { started(); },
+      cancel() { cancelled = true; },
+    });
+    const result = readBodyBytes(new Response(body), 10, controller.signal);
+    const rejected = expect(result).rejects.toThrow("worker stopped");
+    await reading; controller.abort(new Error("worker stopped"));
+    await rejected;
+    expect(cancelled).toBe(true);
+    expect(body.locked).toBe(false);
+  });
+  it("releases a body when cancellation preceded the read", async () => {
+    const controller = new AbortController(); controller.abort(new Error("cancelled"));
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({ cancel() { cancelled = true; } });
+    await expect(readBodyBytes(new Response(body), 10, controller.signal)).rejects.toThrow("cancelled");
+    expect(cancelled).toBe(true);
+    expect(body.locked).toBe(false);
+  });
+});
 
 describe("readBodyText", () => {
   it("rejects a declared body that exceeds the limit without reading it", async () => {

@@ -26,11 +26,35 @@ vi.mock("@/lib/runtime-settings", () => ({
   getArtifactAccessMode: mocks.getArtifactAccessMode,
 }));
 
-const { artifactObjectStore, artifactPublicUrl } = await import(
+const { artifactObjectStore, artifactPublicUrl, readStoredObject } = await import(
   "@/infrastructure/storage/s3ObjectStore"
 );
 
 const savedBucket = process.env.S3_BUCKET_NAME;
+
+it("keeps private files outside generic reads, writes, deletes and URL generation", async () => {
+  const key = "source-files/private";
+  await expect(artifactObjectStore.read(key, 100)).rejects.toMatchObject({ name: "ObjectNotFoundError" });
+  await expect(artifactObjectStore.put({ key, bytes: new Uint8Array([1]), mimeType: "audio/mpeg" })).rejects.toMatchObject({ name: "ObjectNotFoundError" });
+  await expect(artifactObjectStore.delete(key)).rejects.toMatchObject({ name: "ObjectNotFoundError" });
+  await expect(artifactObjectStore.sign(key, 60)).rejects.toMatchObject({ name: "ObjectNotFoundError" });
+  expect(() => artifactPublicUrl(key)).toThrow("No stored object");
+  expect(mocks.send).not.toHaveBeenCalled();
+  expect(mocks.getSignedUrl).not.toHaveBeenCalled();
+});
+
+it("cancels a stalled Node object body and destroys its socket stream", async () => {
+  const controller = new AbortController();
+  let started!: () => void;
+  const reading = new Promise<void>((resolve) => { started = resolve; });
+  const body = new Readable({ read() { started(); } });
+  mocks.send.mockResolvedValue({ Body: body, ContentType: "audio/mpeg" });
+  const result = readStoredObject("shared-artifacts", "source-files/id", 100, controller.signal);
+  const rejected = expect(result).rejects.toThrow("worker stopped");
+  await reading; controller.abort(new Error("worker stopped"));
+  await rejected;
+  expect(body.destroyed).toBe(true);
+});
 const savedRegion = process.env.AWS_REGION;
 
 function streamingBody(chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>) {

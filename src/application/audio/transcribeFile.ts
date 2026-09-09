@@ -68,7 +68,7 @@ function parseSegment(bytes: Uint8Array, expected: Omit<StoredSegment, "result">
 export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
   return async (job: AudioJob, context: AudioJobStepContext): Promise<{ transcriptRef: string }> => {
     if (!job.fileId) throw new AudioJobStepError("missing_file", false);
-    const source = await deps.files.read(audioSourceProject(job), job.fileId, job.userEmail);
+    const source = await deps.files.read(audioSourceProject(job), job.fileId, job.userEmail, undefined, context.signal);
     if (!source.file.checksum) throw new AudioJobStepError("missing_checksum", false);
     const config = await deps.resolve(job.model);
     const parts: StoredSegment[] = [];
@@ -95,7 +95,7 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
           if (bytes.length > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
           return (async function* () { yield bytes; })();
         }, context.signal);
-        const checkpoint = await deps.files.read(job.projectName, id, job.userEmail, MAX_TRANSCRIPT_BYTES);
+        const checkpoint = await deps.files.read(job.projectName, id, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
         checkpointBytes += checkpoint.bytes.length;
         if (checkpointBytes > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
         const part = parseSegment(checkpoint.bytes, expected);

@@ -93,6 +93,7 @@ export async function readBodyText(
 export async function readBodyBytes(
   message: Pick<Request | Response, "body" | "headers">,
   maxBytes: number,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
   await refuseDeclaredLength(message, maxBytes);
   const body = message.body;
@@ -102,12 +103,16 @@ export async function readBodyBytes(
   const chunks: Uint8Array[] = [];
   let total = 0;
   const reader = body.getReader();
+  const abort = () => { void reader.cancel(signal?.reason).catch(() => {}); };
+  signal?.addEventListener("abort", abort, { once: true });
   try {
+    signal?.throwIfAborted();
     for (;;) {
       // Destructured on purpose. Reading the flag off a named result object
       // instead would look, to the single-owner check, exactly like this file
       // deciding why a *run* ended — a question it has no part in.
       const { done, value } = await reader.read();
+      signal?.throwIfAborted();
       if (done) {
         break;
       }
@@ -118,6 +123,7 @@ export async function readBodyBytes(
       chunks.push(value);
     }
   } finally {
+    signal?.removeEventListener("abort", abort);
     // Releasing the lock lets the connection be reused; cancelling a body that
     // already finished is a no-op.
     reader.releaseLock();

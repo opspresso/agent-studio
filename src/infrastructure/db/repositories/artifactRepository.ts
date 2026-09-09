@@ -1,9 +1,11 @@
 import { artifactCursor } from "@/domain/artifact/repository";
 import type { ArtifactRepository, ListArtifactsOptions } from "@/domain/artifact/repository";
 import type { Artifact } from "@/domain/artifact/types";
+import type { SourceFile } from "@/domain/artifact/sourceFile";
 import { artifactOwnerEmail } from "@/domain/artifact/types";
 import { keys } from "@/infrastructure/db/keys";
-import { deleteItem, getItem, putItem, queryItems, type SortKeyMatch } from "@/infrastructure/db/store";
+import { deleteItem, getItem, putItem, queryItems, transact, type SortKeyMatch, type Item } from "@/infrastructure/db/store";
+import { projectIsLive } from "../projectLifecycle";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import { boundedPageLimit } from "@/shared/pageLimit";
 
@@ -94,7 +96,7 @@ async function list(
 export class PostgresArtifactRepository implements ArtifactRepository {
   async put(artifact: Artifact): Promise<void> {
     const ownerEmail = artifactOwnerEmail(artifact.actor, artifact.ownerEmail);
-    await putItem({
+    const item: Item = {
       ...artifact,
       ...keys.artifact(artifact.artifactId),
       entityType: ARTIFACT_ENTITY,
@@ -111,7 +113,21 @@ export class PostgresArtifactRepository implements ArtifactRepository {
         : {}),
       expiresAt: artifact.retireAt ? Math.floor(Date.parse(artifact.retireAt) / 1000)
         : expiresAtSeconds(artifact.createdAt, RETENTION.artifactDays),
-    });
+    };
+    if (artifact.privateFileId) {
+      // File retirement and gallery publication share a transaction fence.
+      // A delayed publisher must not recreate a row after its bytes are deleted.
+      await transact([
+        { kind: "check", key: keys.project(artifact.projectName), condition: projectIsLive },
+        { kind: "check", key: keys.sourceFile(artifact.privateFileId), condition: (row) => {
+          const file = row?.file as SourceFile | undefined;
+          return file?.status === "ready" && file.projectName === artifact.projectName &&
+            file.userEmail === ownerEmail && file.retireAt === artifact.retireAt &&
+            file.retireAt > new Date().toISOString() && file.derived?.kind !== "checkpoint";
+        } },
+        { kind: "put", item },
+      ]);
+    } else await putItem(item);
   }
 
   async get(artifactId: string): Promise<Artifact | null> {

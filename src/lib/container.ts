@@ -189,6 +189,7 @@ import { createMemberUseCases } from "@/application/member/memberUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import {
   getHiddenModels,
+  getArtifactAccessMode,
   getAdminEmails,
   getEmbeddingTarget,
   getEmbeddingModel,
@@ -276,8 +277,8 @@ export const memberUseCases = createMemberUseCases(
  * which would say "you have made nothing" to someone whose images were never
  * being kept in the first place.
  */
-export const artifactUseCases = artifactStorage || config.sourceFilesBucketName
-  ? createArtifactUseCases(artifactRepository, artifactStorage?.objects ?? artifactObjectStore, projectRepository, {
+export const artifactUseCases = artifactStorage
+  ? createArtifactUseCases(artifactRepository, artifactStorage.objects, projectRepository, {
     read: async (project, file, email, maxBytes) => {
       const runtime = getAudioRuntime(); await runtime.authorize(project, email);
       return runtime.files.read(project, file, email, maxBytes);
@@ -1140,7 +1141,7 @@ export const executionDeps: ExecutionDeps = {
   registerMcpSource: async (input) => getAudioRuntime().references.register(input),
   sourceRefreshIdentity,
   audioTools: async (projectName, origin) => {
-    if (!config.sourceFilesBucketName) return undefined;
+    if (!config.objectBucketName) return undefined;
     const email = mcpUserEmail(origin.actor, origin.userEmail);
     if (!email) return undefined;
     const project = origin.ancestry[0] ?? projectName;
@@ -1236,9 +1237,12 @@ async function sourceRefreshIdentity(input: Parameters<NonNullable<ExecutionDeps
 
 /** Optional private audio execution, constructed only when a caller uses it. */
 export function getAudioRuntime() {
-  const bucket = config.sourceFilesBucketName;
-  if (!bucket) throw new ValidationError("SOURCE_FILES_BUCKET_NAME is not configured");
+  const bucket = config.objectBucketName;
+  if (!bucket) throw new ValidationError("S3_BUCKET_NAME is not configured");
   const files = createSourceFileUseCases({ files: sourceFileRepository, objects: createSourceObjectStore(bucket), now: () => new Date(),
+    assertWritable: async () => {
+      if (await getArtifactAccessMode() === "public") throw new ValidationError("Private Artifacts require authenticated or proxied storage access");
+    },
     publish: (file) => registerSourceArtifact(artifactRepository, file) });
   const authorize = async (projectName: string, email: string) => {
     const project = await projectRepository.get(projectName);
@@ -1409,7 +1413,7 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
   await runAudioWorker({
     due: (limit) => audioJobRepository.due(new Date().toISOString(), limit),
     process: (project, id, signal) => runtime.process(project, id, signal),
-    sweep: () => runtime.files.sweep(),
+    sweep: (signal) => runtime.files.sweep(undefined, signal),
     refresh: refreshModelCatalog,
   }, signal);
 }

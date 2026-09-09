@@ -33,7 +33,7 @@ AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필�
 ## 오디오 작업 운영
 
 오디오 worker는 HTTP 앱과 별도 process다. 같은 이미지에서 `node build/audio-worker.cjs`를 실행하고
-DB·비공개 원본 bucket·암호화 키·전사 채널을 공유한다. [설치 조건](INSTALL.md#오디오-worker)과
+DB·기존 `S3_BUCKET_NAME`의 비공개 Artifacts 저장소·암호화 키·전사 채널을 공유한다. [설치 조건](INSTALL.md#오디오-worker)과
 [환경변수·고정 한계](CONFIGURATION.md#오디오-전사-설정)를 따른다. worker만 켜면 접수된 작업을 처리하며,
 신규 녹음의 정기 탐색에는 Agent schedule과 [ticker](#schedule-티커)가 별도로 필요하다.
 

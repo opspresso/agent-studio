@@ -1,4 +1,4 @@
-/** Streaming source files are separate from generated artifacts and never have public URLs. */
+/** Streaming private Artifacts share the object store but never have public URLs. */
 export interface SourceObjectStore {
   write(input: {
     key: string;
@@ -6,8 +6,8 @@ export interface SourceObjectStore {
     mimeType: string;
     maxBytes: number;
   }, signal?: AbortSignal): Promise<{ byteSize: number; checksum: string }>;
-  read(key: string, maxBytes: number): Promise<{ bytes: Uint8Array; mimeType: string }>;
-  stat(key: string): Promise<{ byteSize: number; mimeType: string; storedAt: string } | null>;
+  read(key: string, maxBytes: number, signal?: AbortSignal): Promise<{ bytes: Uint8Array; mimeType: string }>;
+  stat(key: string, signal?: AbortSignal): Promise<{ byteSize: number; mimeType: string; storedAt: string } | null>;
   /** Removes source bytes and prevents delayed create-only writes from restoring them. */
   delete(key: string): Promise<void>;
 }

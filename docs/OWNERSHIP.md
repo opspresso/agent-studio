@@ -25,7 +25,7 @@
 | artifact 행을 어떻게 쓰는가 | `src/application/artifact/storeArtifact.ts` |
 | 비공개 파일의 Artifact 등록과 원본 보존 기한 연결 | `src/application/artifact/storeArtifact.ts`의 `registerSourceArtifact`. 바이트 복사 없이 `privateFileId`로 연결하며 checkpoint를 제외한다 |
 | artifact 가 저장되는 오브젝트 키 | `src/domain/artifact/types.ts` 의 `artifactObjectKey` |
-| 비공개 원본 파일의 오브젝트 키 | `src/domain/artifact/sourceFile.ts` 의 `sourceFileObjectKey` |
+| 비공개 파일의 오브젝트 키·경로 판정 | `src/domain/artifact/sourceFile.ts`의 `sourceFileObjectKey`·`isSourceFileObjectKey`. 일반 object 접근 거절은 `domain/artifact/objectStore.ts`의 `assertNotPrivateFileKey` |
 | 파일의 달력 일·월 보존 기간과 월말·DST 만료 계산 | `src/application/artifact/fileRetention.ts` 의 `fileExpiresAt`. 시간대 해석은 기존 `domain/trigger/cron.ts`의 `wallClock`을 사용한다 |
 | mime 타입에서 파라미터를 떼어낸 형태. 아래 세 규칙이 모두 이것 위에 쓰여 있어 서로 어긋날 수 없다 | `src/domain/artifact/types.ts` 의 `baseMimeType` |
 | 저장된 artifact 가 화면에 닿는 방식(쓰인 그대로 / 렌더해서), 그리고 그 상한 | `src/domain/artifact/types.ts` 의 `inlineViewOf` / `MAX_INLINE_VIEW_BYTES` |

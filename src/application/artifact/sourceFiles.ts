@@ -14,6 +14,8 @@ export interface SourceFileDeps {
   objects: SourceObjectStore;
   now(): Date;
   publish?: (file: SourceFile) => Promise<void>;
+  /** Deployment storage policy, checked before opening a source or spending a model call. */
+  assertWritable?(): Promise<void>;
 }
 
 function assertReadable(file: SourceFile | null, userEmail: string, now: string): asserts file is SourceFile {
@@ -34,15 +36,15 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
     const policyExpiry = fileExpiresAt(storedAt, file.retention);
     return file.retainUntil && file.retainUntil < policyExpiry ? file.retainUntil : policyExpiry;
   };
-  const storedReceipt = async (file: SourceFile) => {
-    const recovered = await deps.objects.read(sourceFileObjectKey(file.id), MAX_SOURCE_BYTES);
+  const storedReceipt = async (file: SourceFile, signal?: AbortSignal) => {
+    const recovered = await deps.objects.read(sourceFileObjectKey(file.id), MAX_SOURCE_BYTES, signal);
     if (recovered.mimeType !== file.mimeType) throw new ConflictError("Source object type does not match its inventory");
     return { byteSize: recovered.bytes.byteLength, checksum: createHash("sha256").update(recovered.bytes).digest("hex") };
   };
-  const recoverCompletedUpload = async (file: SourceFile): Promise<SourceFile | null> => {
-    const existing = await deps.objects.stat(sourceFileObjectKey(file.id));
+  const recoverCompletedUpload = async (file: SourceFile, signal?: AbortSignal): Promise<SourceFile | null> => {
+    const existing = await deps.objects.stat(sourceFileObjectKey(file.id), signal);
     if (!existing) return null;
-    const receipt = await storedReceipt(file);
+    const receipt = await storedReceipt(file, signal);
     return deps.files.finish(file, { ...receipt, storedAt: existing.storedAt,
       retireAt: expiry(existing.storedAt, file) });
   };
@@ -55,6 +57,7 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
     async import(input: Pick<SourceFile, "id" | "projectName" | "userEmail" | "filename" | "mimeType" | "retention" | "retainUntil" | "derived" | "derivedFrom" | "model" | "producedBy">,
       open: (maxBytes: number) => Promise<SourceByteStream>, signal?: AbortSignal): Promise<SourceFile> {
       signal?.throwIfAborted();
+      await deps.assertWritable?.();
       if (!input.id || !input.filename.trim() || input.filename.length > 255 || !input.mimeType ||
         !input.userEmail || /[\r\n\0]/.test(input.filename)) throw new ValidationError("Source file metadata is invalid");
       const now = deps.now();
@@ -68,13 +71,13 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
         retireAt: input.retainUntil && input.retainUntil < uploadDeadline ? input.retainUntil : uploadDeadline });
       if (file.userEmail !== input.userEmail) throw new NotFoundError("Source file not found");
       if (file.status === "pending" && file.retireAt <= now.toISOString()) {
-        file = await recoverCompletedUpload(file) ?? file;
+        file = await recoverCompletedUpload(file, signal) ?? file;
       }
       if (file.status === "ready") { assertReadable(file, input.userEmail, now.toISOString()); return publish(file); }
       if (file.status !== "pending" || file.retireAt <= now.toISOString()) throw new ConflictError("Source file is unavailable or expired");
       const key = sourceFileObjectKey(file.id);
       let receipt: { byteSize: number; checksum: string } | undefined;
-      let existing = await deps.objects.stat(key);
+      let existing = await deps.objects.stat(key, signal);
       if (!existing) {
         const body = await open(MAX_SOURCE_BYTES);
         try {
@@ -82,10 +85,10 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
         } catch (error) {
           if (!(error instanceof SourceObjectExistsError)) throw error;
         } finally { await body.close?.().catch(() => {}); }
-        existing = await deps.objects.stat(key);
+        existing = await deps.objects.stat(key, signal);
       }
       if (!existing) throw new ConflictError("Uploaded source object is not available");
-      if (!receipt) receipt = await storedReceipt(file);
+      if (!receipt) receipt = await storedReceipt(file, signal);
       if (existing.byteSize !== receipt.byteSize || existing.mimeType !== file.mimeType) {
         throw new ConflictError("Source object metadata does not match its receipt");
       }
@@ -98,11 +101,13 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       return publish(latest);
     },
 
-    async read(projectName: string, id: string, userEmail: string, maxBytes = MAX_SOURCE_BYTES) {
+    async read(projectName: string, id: string, userEmail: string, maxBytes = MAX_SOURCE_BYTES, signal?: AbortSignal) {
+      signal?.throwIfAborted();
       if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > MAX_SOURCE_BYTES) throw new ValidationError("Invalid source read limit");
       const file = await deps.files.get(projectName, id);
       assertReadable(file, userEmail, deps.now().toISOString());
-      const result = await deps.objects.read(sourceFileObjectKey(id), maxBytes);
+      const result = await deps.objects.read(sourceFileObjectKey(id), maxBytes, signal);
+      signal?.throwIfAborted();
       const latest = await deps.files.get(projectName, id);
       assertReadable(latest, userEmail, deps.now().toISOString());
       return { file: latest, ...result };
@@ -117,19 +122,21 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       if (!retired || !await removeExpiredSourceFile(deps, retired, now)) throw new ConflictError("Source file changed; retry removal");
     },
 
-    async sweep(limit = 100): Promise<{ deleted: number; failed: number }> {
+    async sweep(limit = 100, signal?: AbortSignal): Promise<{ deleted: number; failed: number }> {
+      signal?.throwIfAborted();
       const now = deps.now().toISOString();
       const result = { deleted: 0, failed: 0 };
       for (let file of await deps.files.expired(now, limit)) {
+        signal?.throwIfAborted();
         try {
           // Pending inventory may outlive a completed upload whose response was lost.
           if (file.status === "pending") {
-            const recovered = await recoverCompletedUpload(file);
+            const recovered = await recoverCompletedUpload(file, signal);
             if (recovered) file = recovered;
           }
           if (file.retireAt > now) continue;
           if (await removeExpiredSourceFile(deps, file, now)) result.deleted += 1;
-        } catch { result.failed += 1; }
+        } catch { signal?.throwIfAborted(); result.failed += 1; }
       }
       return result;
     },

@@ -189,9 +189,6 @@ export const config = {
   get objectBucketName(): string | undefined {
     return optionalEnv(process.env.S3_BUCKET_NAME);
   },
-  get sourceFilesBucketName(): string | undefined {
-    return optionalEnv(process.env.SOURCE_FILES_BUCKET_NAME);
-  },
   get transcription() {
     const baseUrl = optionalEnv(process.env.TRANSCRIPTION_BASE_URL);
     const apiKey = optionalEnv(process.env.TRANSCRIPTION_API_KEY);

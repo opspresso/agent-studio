@@ -163,7 +163,7 @@ agent는 기본 `File` 도구로 보관된 파일을 읽고 검사하거나 DOCX
 
 ### 오디오 처리와 개인 기록
 
-오디오 기능에는 전용 비공개 S3 호환 bucket·전사 채널·별도 audio worker가 필요하다.
+오디오 기능은 기존 `S3_BUCKET_NAME`의 비공개 Artifacts 저장소를 사용하며 전사 채널·별도 audio worker가 필요하다.
 Agent의 오디오 도구를 켜면 소유자가 **오디오 처리** 탭에서 업로드·설정·진행 상태를 관리한다.
 Agent 하나에 `audio-processing`, `meeting-minutes`, 필요하면 `personal-records` skill을 연결해
 절차를 재사용한다. 다운로드·전사·요약 때문에 하위 Agent를 각각 만들 필요는 없다.
