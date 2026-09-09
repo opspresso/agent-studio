@@ -17,6 +17,7 @@ import {
 import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
+import { mapMcpSource } from "@/application/audio/mapMcpSource";
 import {
   mcpHeadersContext,
   versionMcpHeadersContext,
@@ -27,7 +28,7 @@ export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
 /** What resolving a version's MCP bindings actually reads off the run's deps. */
 export type McpToolDeps = Pick<
   ExecutionDeps,
-  "mcps" | "cipher" | "urlPolicy" | "mcpSessions" | "mcpAuth" | "internalHostSuffixes"
+  "mcps" | "cipher" | "urlPolicy" | "mcpSessions" | "mcpAuth" | "internalHostSuffixes" | "registerMcpSource" | "sourceRefreshIdentity"
 >;
 
 export async function buildMcpTools(
@@ -35,7 +36,7 @@ export async function buildMcpTools(
   version: Version,
   signal?: AbortSignal,
   /** Where the run came from; its email actor and conversation reach the server as headers. */
-  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
+  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation"> & Partial<Pick<RunOrigin, "ancestry">>,
 ): Promise<{
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
@@ -103,6 +104,8 @@ export async function buildMcpTools(
             "those credentials were not sent. Re-enter them for the current endpoint.";
           log.warn("mcp", credentialWarning);
         }
+        const refreshIdentity = binding.sourceOutputs?.some((mapping) => mapping.refreshArgument)
+          ? await deps.sourceRefreshIdentity?.({ version, binding, server: mcp }) : undefined;
         const headers = deps.cipher.mergeOutboundHeaders(
           mcp.headers,
           overrides,
@@ -157,6 +160,10 @@ export async function buildMcpTools(
             headers,
             ...(contextHeaders ? { contextHeaders } : {}),
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
+            ...(binding.sourceOutputs?.length ? { resultTransforms: Object.fromEntries(binding.sourceOutputs.map((mapping) => [mapping.tool,
+              (result: unknown) => mapMcpSource({ result, mapping, serverName: mcp.name, projectName: origin?.ancestry?.[0] ?? version.projectName,
+                ...(mapping.refreshArgument && refreshIdentity ? { refresh: { projectName: version.projectName, serverName: mcp.name, versionName: version.versionName, mapping, identity: refreshIdentity } } : {}),
+                userEmail: mcpUserEmail(origin?.actor, origin?.userEmail), register: deps.registerMcpSource })])) } : {}),
           },
           description: mcp.description ?? "",
           ...(credentialWarning ? { warning: credentialWarning } : {}),
@@ -244,15 +251,11 @@ export async function buildMcpTools(
       const alias = toolManager.aliasFor(serverName, toolName);
       return alias && offered.has(alias) ? alias : undefined;
     },
-    callMcpTool: async (name, args) =>
-      offered.has(name)
-        ? toolManager.callTool(name, args)
-        : {
-            text:
-              `Error: '${name}' is not available on this run. At most ` +
-              `${MAX_MCP_TOOLS_PER_RUN} MCP tools are offered and this one was past that. ` +
-              `Use one of the tools listed for you.`,
-          },
+    callMcpTool: async (name, args) => {
+      if (!offered.has(name)) return { text: `Error: '${name}' is not available on this run. At most ` +
+        `${MAX_MCP_TOOLS_PER_RUN} MCP tools are offered and this one was past that. Use one of the tools listed for you.` };
+      return toolManager.callTool(name, args);
+    },
     close: async () => {
       // Checked again on the way out, because discovery may have been served
       // from cache — in which case the run's first request to that server was a

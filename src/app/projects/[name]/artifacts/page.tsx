@@ -7,10 +7,8 @@ import { listProjectArtifacts, type ArtifactQuery } from "@/app/artifacts/api";
 import { useT } from "@/app/_i18n/provider";
 
 /**
- * Everything this project produced — not a filtered view of the personal
- * gallery. A run started by Slack, a trigger or an A2A call has no mailbox to
- * belong to, so this is the only list those artifacts appear in, and therefore
- * the only place they can be deleted from.
+ * Everything this project produced, including outputs without a personal owner.
+ * Personal-context automation also appears in its owner's personal gallery.
  */
 export default function ProjectArtifactsPage() {
   const t = useT();

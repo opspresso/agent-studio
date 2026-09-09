@@ -75,6 +75,9 @@ function toRequestBody(params: ChannelParams): Record<string, unknown> {
   if (params.temperature !== undefined) {
     body.temperature = params.temperature;
   }
+  if (params.presencePenalty !== undefined) {
+    body.presence_penalty = params.presencePenalty;
+  }
   if (params.maxTokens !== undefined) {
     body.max_completion_tokens = params.maxTokens;
   }

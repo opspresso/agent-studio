@@ -1,4 +1,6 @@
 import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
+import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
+import type { FileToolDeps } from "@/application/document/fileTool";
 /**
  * Types the execution facade exposes, plus the version → engine parameter
  * mapping every runner shares. Separate from the entry points so the modules
@@ -11,10 +13,11 @@ import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
 import type { LlmChannel } from "@/domain/llm/channel";
 import type { ChannelToolDef } from "@/domain/llm/channel";
-import type { ChatMessageInput, EngineParameters } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, Version, McpBinding } from "@/domain/project/types";
+import type { McpServer } from "@/domain/mcp/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
@@ -26,7 +29,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { HttpResourceReader } from "@/domain/net/httpResource";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation, RunOrigin } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
 import type { SlackWorkspaceReader } from "@/domain/slack/reader";
 
@@ -59,8 +62,14 @@ export interface ExecutionDeps extends RunBracketDeps {
   http: HttpResourceReader;
   /** Turns attached or fetched bytes into text; tests inject a fake. */
   documents: DocumentExtractor;
+  readPrivateArtifact?: FileToolDeps["readPrivateArtifact"];
   documentRenderer?: DocumentRenderer;
   documentEditor?: DocumentEditor;
+  audioTools?: (projectName: string, origin: RunOrigin) => Promise<
+    ((tool: string, args: Record<string, unknown>) => Promise<McpToolResult>) | undefined
+  >;
+  registerMcpSource?: RegisterMcpSource;
+  sourceRefreshIdentity?(input: { version: Version; binding: McpBinding; server: McpServer }): Promise<string>;
   /**
    * A reader for the Slack workspace this project's bot is installed in, or
    * null when it has no enabled bot.
@@ -144,6 +153,7 @@ export interface ExecuteVersionInput {
 }
 
 export interface ExecuteAgentInput {
+  backgroundTask?: boolean;
   project: Project;
   version: Version;
   /** OpenAI-shaped message history from the route/chat boundary. */
@@ -171,11 +181,14 @@ export interface ExecuteAgentInput {
 // --- Project-level dispatch --------------------------------------------------
 
 export interface ExecuteProjectInput {
+  backgroundTask?: boolean;
   project: Project;
   version: Version;
   variables?: Record<string, string>;
   messages: ChatMessageInput[];
   actor?: RunActor;
+  /** Server-resolved user identity for non-user entry points such as schedules. */
+  ownerEmail?: string;
   /** See {@link ExecuteVersionInput.caller}. */
   caller?: RunCaller;
   /** See {@link ExecuteVersionInput.conversation}. */
@@ -221,7 +234,7 @@ export function toRunInput(
   input: ExecuteProjectInput,
 ): Pick<
   ExecuteAgentInput,
-  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal"
+  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal" | "ownerEmail" | "backgroundTask"
 > {
   return {
     project: input.project,
@@ -230,6 +243,8 @@ export function toRunInput(
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
     ...(input.conversation ? { conversation: input.conversation } : {}),
+    ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),
+    ...(input.backgroundTask ? { backgroundTask: true } : {}),
     ...(input.clientTools ? { clientTools: input.clientTools } : {}),
     signal: input.signal,
   };
@@ -270,6 +285,9 @@ export function toEngineParameters(version: Version): EngineParameters {
   const params: EngineParameters = {};
   if (p.temperature !== undefined) {
     params.temperature = p.temperature;
+  }
+  if (p.presencePenalty !== undefined) {
+    params.presencePenalty = p.presencePenalty;
   }
   if (p.maxTokens !== undefined) {
     params.maxTokens = p.maxTokens;

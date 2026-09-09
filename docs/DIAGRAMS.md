@@ -258,6 +258,32 @@ flowchart LR
 ```
 
 키 문자열은 `src/infrastructure/db/keys.ts` 만 만들고, 모든 리포지토리는 `store.ts` 의 아이템
-스토어를 지난다(조건은 행 잠금 아래에서, 트랜잭션은 키 순서로). 자라는 행은 `expiresAt` 을
+스토어를 지난다(조건은 행 잠금 아래에서, 트랜잭션은 키 순서로). TTL 대상 행은 `expiresAt` 을
 갖고 schedule-scan 틱이 쓸어낸다 ([OPERATIONS.md#행-보존](OPERATIONS.md#행-보존)); 경계 없이
 자랄 수 있는 목록은 `limit` 을 넘긴다.
+
+## 7. 오디오 작업과 개인 기록
+
+[오디오 처리 계약](design/audio-processing-spec.md)을 요약한다. Agent 수를 늘리지 않고 skill과
+worker로 역할을 나눈다. 외부 녹음 출처·전사 모델·기록 서비스는 설치와 사용자 요청이 선택한다.
+
+```mermaid
+flowchart LR
+  user[사용자 요청] --> agent[Agent 한 개와 skill]
+  cron[Schedule과 ticker] --> agent
+  source[업로드 file_id 또는 연결 도구의 source_ref] --> agent
+  agent -->|작업 접수| jobs[(DB 작업·중복 방지)]
+  jobs --> worker[별도 audio worker]
+  worker --> import[비공개 원본 보관]
+  import --> asr[지정 모델로 전사]
+  asr --> summary[선택적 후처리: 같은 Agent snapshot]
+  import --> artifacts[(비공개 Artifacts)]
+  asr --> artifacts
+  summary --> artifacts
+  artifacts -->|사용자가 기록을 요청| record[같은 Agent의 personal-records]
+  record --> memory[개인 Document 또는 Memory]
+  expiry[파일별 retention sweep] --> artifacts
+```
+
+후처리 런에는 Skill 읽기만 제공한다. 작업 제출·외부 저장을 재귀 호출하지 않는다.
+파일 삭제는 DB의 완료 이력·중복 방지 기록을 초기화하지 않는다.

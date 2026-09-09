@@ -59,6 +59,21 @@ function fixture() {
   };
 }
 
+describe("schedule personal execution", () => {
+  it("captures the authenticated owner's email and can explicitly clear it", async () => {
+    const f = fixture();
+    const created = await f.useCases.create("p", { triggerId: "hourly", kind: "schedule", cron: "0 * * * *",
+      timezone: "Asia/Seoul", runAsOwner: true }, project.ownerEmail);
+    expect(created.executionEmail).toBe(project.ownerEmail);
+    expect((await f.useCases.update("p", "hourly", { message: "updated" }, project.ownerEmail)).executionEmail).toBe(project.ownerEmail);
+    expect((await f.useCases.update("p", "hourly", { runAsOwner: false }, project.ownerEmail)).executionEmail).toBeUndefined();
+  });
+  it("refuses personal execution on webhooks", async () => {
+    const f = fixture();
+    await expect(f.useCases.create("p", { triggerId: "webhook", runAsOwner: true }, project.ownerEmail)).rejects.toThrow("only available for schedules");
+  });
+});
+
 describe("trigger ids follow the project-name rule", () => {
   it("normalises the same way a project name does", () => {
     // The console slugifies on blur; these are the inputs it has to survive.

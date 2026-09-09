@@ -1,5 +1,6 @@
 import type { SlackSuggestedPrompt } from "@/domain/slack/types";
 import type { MessageDestination } from "@/domain/messaging/destination";
+import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 
 export type ProjectType = "llm" | "agent" | "image";
 
@@ -166,6 +167,7 @@ export interface Project {
 
 export interface VersionParameters {
   temperature?: number;
+  presencePenalty?: number;
   maxTokens?: number;
   reasoningEffort?: "low" | "medium" | "high";
   piiFiltering: boolean;
@@ -187,6 +189,8 @@ export interface VersionParameters {
    * into things by the text it reads.
    */
   urlFetch?: boolean;
+  /** Opt into durable source-file and audio tools when storage and caller identity are available. */
+  audioProcessing?: boolean;
   /**
    * Whether this version's runs may read the Slack workspace its project's bot
    * is installed in — channel history, threads, who a user id is.
@@ -282,6 +286,7 @@ export interface SubagentRef {
  */
 export interface McpBinding {
   name: string;
+  sourceOutputs?: McpSourceMapping[];
   headers?: Record<string, string | null>;
   /** Internal fingerprint of the registry URL that encrypted header values belong to. */
   headerTarget?: string;

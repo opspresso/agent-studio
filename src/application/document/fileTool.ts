@@ -11,6 +11,7 @@ import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
 
 export interface FileToolDeps {
+  readPrivateArtifact?: (id: string, email: string, maxBytes: number) => Promise<{ bytes: Uint8Array }>;
   artifacts?: ArtifactStorage;
   documents: DocumentExtractor;
   documentRenderer?: DocumentRenderer;
@@ -40,7 +41,7 @@ export function buildFileTool(
   if (!storage || !renderer || !editor) return undefined;
   const issued = new Set<string>();
 
-  async function source(value: unknown) {
+  async function source(value: unknown, allowPrivate = false) {
     const id = requiredString(value, "file_id");
     if (id.length > 128) throw new DocumentProcessingError("File unavailable");
     const artifact = await storage!.rows.get(id);
@@ -56,7 +57,12 @@ export function buildFileTool(
     );
     if (!artifact || (!own && !issued.has(id))) throw new DocumentProcessingError("File unavailable");
     if (artifact.byteSize > MAX_DOCUMENT_BYTES) throw new DocumentProcessingError("This file exceeds the document input byte limit");
-    const read = await storage!.objects.read(artifact.key, MAX_DOCUMENT_BYTES);
+    if (artifact.privateFileId && (!allowPrivate || actor?.kind !== "user" || !deps.readPrivateArtifact)) {
+      throw new DocumentProcessingError("Private artifacts support authenticated read and inspect only");
+    }
+    const read = artifact.privateFileId
+      ? await deps.readPrivateArtifact!(artifact.artifactId, actor!.id, MAX_DOCUMENT_BYTES)
+      : await storage!.objects.read(artifact.key, MAX_DOCUMENT_BYTES);
     return { artifact, file: { bytes: read.bytes, mimeType: artifact.mimeType, name: artifact.filename ?? "file" } };
   }
 
@@ -102,7 +108,7 @@ export function buildFileTool(
         }, signal);
         return output(created.bytes, created.mimeType, typeof args.name === "string" ? args.name : title, created.validation.warnings);
       }
-      const { artifact, file } = await source(args.file_id);
+      const { artifact, file } = await source(args.file_id, args.operation === "read" || args.operation === "inspect");
       const svg = baseMimeType(file.mimeType) === "image/svg+xml";
       if (args.operation === "read") {
         if (svg) {

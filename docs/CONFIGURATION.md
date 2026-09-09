@@ -616,3 +616,38 @@ wire 에 실리지 않으면 호출을 처리하는 모델이 자기 최대치�
 전혀 남기지 않는 버전도 마찬가지다. 0 예산은 런이 채워 보지도 못한 예산을 탓하면서 모든 도구
 호출을 거부하게 되기 때문이다. 단발성(`llm`) 런도 예산이 없다. 한 번의 호출에서는 아무것도
 누적되지 않고, 입력은 호출자 자신의 것이다.
+
+## 오디오 전사 설정
+
+오디오의 [처리 계약](design/audio-processing-spec.md)은 HTTP API·Agent 도구·별도 worker에서 공유한다. Memory delivery에는 수신 서버의 수집·멱등 저장 계약이 필요하다.
+worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것만으로 자동 수집이 시작되지는 않는다.
+
+| 변수 | 기본값 | 역할 |
+| --- | --- | --- |
+| `SOURCE_FILES_BUCKET_NAME` | 미설정 | versioning을 끈 비공개 원본 전용 bucket. 기존 public artifact bucket으로 fallback하지 않는다. 삭제 표식·multipart lifecycle은 INSTALL을 따른다 |
+| `TRANSCRIPTION_BASE_URL` | 미설정 | `/audio/transcriptions` 앞의 ASR base URL. 없으면 선택 모델의 명시적 provider 채널을 요구한다 |
+| `TRANSCRIPTION_API_KEY` | 미설정 | 전용 ASR key. base URL 없이 설정하면 거절하며 다른 LLM key를 가져오지 않는다 |
+| `TRANSCRIPTION_RESPONSE_FORMAT` | `json` | `json`, `verbose_json`, `diarized_json` 중 provider가 지원하는 형식 |
+| `TRANSCRIPTION_CHUNKING_STRATEGY` | 미설정 | provider가 지원할 때만 `auto` 사용 |
+| `TRANSCRIPTION_MAX_INPUT_BYTES` | `26214400` | 변환된 구간 하나의 provider 전송 상한. 원본 파일 상한과 별개 |
+| `TRANSCRIPTION_SEGMENT_SECONDS` | `300` | 구간 길이 상한. byte 상한이 더 작으면 그에 맞춰 분할 |
+| `FFMPEG_PATH` | `ffmpeg` | 운영 이미지에 설치된 오디오 decoder 실행 파일 |
+
+전사 모델은 카탈로그의 Transcription 타입이어야 한다. HTTP multipart를 지원하지 않는 SigV4
+채널과 미설정 채널은 거절한다. 비용 계산에 필요한 사용량이 없으면 결과는 unknown이며 0이 아니다.
+이 경우 작업은 transcription_cost_unknown으로 중단하므로 provider 응답의 사용량·가격 계약을 확인한다.
+
+오디오 고정 한계는 다음 코드가 소유한다. 앱의 일반 문서 처리·런 제한과 별도로 적용한다.
+
+| 한계 | 값 | 소유 코드 |
+| --- | --- | --- |
+| 원본 파일 크기 / 미완료 업로드 유효 시간 | 512 MiB / 24시간 | `src/application/artifact/sourceFiles.ts` |
+| 원본 오디오 길이 | 6시간 | `src/domain/audio/segmenter.ts` |
+| 다운로드 / 구간 전사 요청 제한 | 각각 10분 | `src/infrastructure/net/sourceDownloader.ts`, `src/infrastructure/llm/transcription.ts` |
+| worker 동시 작업 / poll / 만료 sweep | 2개 / 10초 / 60초 | `src/application/audio/worker.ts` |
+| job lease / heartbeat / 실행 구간 | 2분 / 30초 / 24시간 | `src/application/audio/processJob.ts` |
+| 자동 재시도 대기 | 1·5·15·60분, 최초 포함 5회 | `src/application/audio/processJob.ts` |
+| 후처리 입력 / 출력 / 호출 수 | 16,000자 / 최대 6,000자 / 64회 | `src/application/audio/postprocess.ts` |
+
+수동 재시도는 실행 구간만 새로 시작하며 원본·파생 파일의 만료를 연장하지 않는다.
+프로젝트의 maxActive·maxPerOccurrence 기본은 각각 1이며, 저장 설정에서 1–100 범위로 지정한다.

@@ -40,7 +40,7 @@ async function main() {
   // Matches better-call's signCookieValue: HMAC-SHA256 over the token,
   // standard base64, then the whole `token.signature` value URI-encoded.
   const signature = createHmac("sha256", ctx.secret).update(session.token).digest("base64");
-  const cookie = `better-auth.session_token=${encodeURIComponent(`${session.token}.${signature}`)}`;
+  const cookie = `${ctx.authCookies.sessionToken.name}=${encodeURIComponent(`${session.token}.${signature}`)}`;
 
   const verified = await auth.api.getSession({ headers: new Headers({ cookie }) });
   if (!verified) {

@@ -23,12 +23,15 @@ export interface ChannelToolDef {
   };
 }
 
+export const PRESENCE_PENALTY_RANGE = { min: -2, max: 2 } as const;
+
 export interface ChannelParams {
   model: string;
   messages: ChannelMessage[];
   signal?: AbortSignal;
   tools?: ChannelToolDef[];
   temperature?: number;
+  presencePenalty?: number;
   maxTokens?: number;
   reasoningEffort?: "low" | "medium" | "high" | "none";
   responseFormat?: Record<string, unknown>;

@@ -12,6 +12,8 @@ const ARTIFACT_ENTITY = "ARTIFACT";
 function fromItem(item: Record<string, unknown>): Artifact {
   return {
     artifactId: String(item.artifactId ?? ""),
+    ...(typeof item.privateFileId === "string" ? { privateFileId: item.privateFileId } : {}),
+    ...(typeof item.retireAt === "string" ? { retireAt: item.retireAt } : {}),
     ...(typeof item.derivedFrom === "string" ? { derivedFrom: item.derivedFrom } : {}),
     kind: item.kind as Artifact["kind"],
     source: item.source as Artifact["source"],
@@ -107,7 +109,8 @@ export class PostgresArtifactRepository implements ArtifactRepository {
             GSI2SK: artifactCursor(artifact),
           }
         : {}),
-      expiresAt: expiresAtSeconds(artifact.createdAt, RETENTION.artifactDays),
+      expiresAt: artifact.retireAt ? Math.floor(Date.parse(artifact.retireAt) / 1000)
+        : expiresAtSeconds(artifact.createdAt, RETENTION.artifactDays),
     });
   }
 

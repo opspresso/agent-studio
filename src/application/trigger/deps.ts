@@ -19,12 +19,14 @@ export interface FiringDeps {
     variables?: Record<string, string>;
     message?: string;
     actor: RunActor;
+    userEmail?: string;
   }) => AsyncGenerator<EngineChunk>;
   /**
    * Reused to enforce `allowConcurrent: false` — "at most one in flight, and a
    * dead instance's hold expires" is exactly what a run slot already is.
    */
   runSlots?: RunSlotRepository;
+  executionUserActive?: (email: string) => Promise<boolean>;
   /** Sends a completed schedule report; platform credentials stay in the composition root. */
   deliverReport?: (project: Project, delivery: ScheduleDelivery, text: string) => Promise<void>;
 }

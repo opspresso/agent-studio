@@ -19,7 +19,10 @@ import {
 } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
-import { getProject, type SanitizedProject } from "../lib/api";
+import { getProject, getVersion, listVersions, type SanitizedProject } from "../lib/api";
+import { onVersionChange } from "../lib/versionEvents";
+import { projectHasAudioTools } from "@/domain/project/audioAccess";
+import { ProjectAudioContext } from "./_components/ProjectAudioContext";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { tierMayCreateProjects } from "@/domain/member/tiers";
 import { CloneProjectButton } from "./_components/CloneProjectButton";
@@ -37,29 +40,39 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const viewer = useViewer();
   const t = useT();
   const [project, setProject] = useState<SanitizedProject | null>(null);
+  const [audio, setAudio] = useState<{ name: string; enabled?: boolean; error?: string }>();
   const currentProject = project?.name === name ? project : null;
   const ownerEmail = currentProject?.ownerEmail ?? null;
 
   useEffect(() => {
     let cancelled = false;
-    getProject(name)
-      .then((project) => !cancelled && setProject(project))
-      // Retried once rather than swallowed. The owner is read only to decide
-      // whether this person may manage the project, so a read that fails leaves
-      // `ownerEmail` null and the *owner* is shown a read-only header — the tabs
-      // their own project needs, missing, with nothing said. Every other ignored
-      // rejection in this codebase carries a line saying why it is harmless;
-      // this one was not harmless.
-      .catch(() =>
-        getProject(name)
-          .then((project) => !cancelled && setProject(project))
-          // A second failure is a project this browser genuinely cannot read,
-          // which the page below reports on its own — the header simply stays
-          // as it is rather than claiming anything about who is looking.
-          .catch(() => {}),
-      );
+    let sequence = 0;
+    const reload = () => {
+      const request = ++sequence;
+      setAudio({ name });
+      // Retry transient reads once; stale responses cannot replace newer settings.
+      void (async () => {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const project = await getProject(name);
+            if (cancelled || request !== sequence) return;
+            setProject(project);
+            const versions = project.projectType !== "agent" ? [] : project.publishedVersion
+              ? [await getVersion(name, project.publishedVersion)] : await listVersions(name);
+            if (!cancelled && request === sequence) setAudio({ name, enabled: projectHasAudioTools(project, versions) });
+            return;
+          } catch (error) {
+            if (cancelled || request !== sequence) return;
+            if (attempt === 1) setAudio({ name, error: error instanceof Error ? error.message : "Project settings could not be loaded" });
+          }
+        }
+      })();
+    };
+    reload();
+    const unsubscribe = onVersionChange(name, reload);
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [name]);
 
@@ -69,6 +82,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     { href: `${base}/versions`, label: t("project.tab.versions"), Icon: IconHistory },
     { href: `${base}/compare`, label: t("project.tab.compare"), Icon: IconGitCompare },
     { href: `${base}/usage`, label: t("project.tab.usage"), Icon: IconChartBar },
+    ...(ownerEmail && viewer?.email === ownerEmail && audio?.name === name && audio.enabled ? [{ href: `${base}/audio`, label: t("audio.title"), Icon: IconSparkles }] : []),
     // Gated like Traces: these hold other people's runtime output, and the
     // delete here is the only way a Slack or trigger run's artifact is removed.
     ...(canManage
@@ -92,7 +106,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     <Stack gap="lg">
       <div className={classes.workspaceHeader}>
         <Group justify="space-between" align="flex-start" gap="lg" wrap="wrap">
-          <Group gap="md" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+          <Group gap="md" wrap="nowrap" style={{ minWidth: 0, flex: "1 1 280px" }}>
             <ActionIcon
               component={Link}
               href="/projects"
@@ -158,7 +172,9 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
         </Tabs.List>
       </Tabs>
 
-      {children}
+      <ProjectAudioContext.Provider value={audio?.name === name ? { enabled: audio.enabled, error: audio.error } : {}}>
+        {children}
+      </ProjectAudioContext.Provider>
     </Stack>
   );
 }

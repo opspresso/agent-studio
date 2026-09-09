@@ -10,6 +10,8 @@ import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { McpToolResult } from "@/domain/llm/types";
 
 export interface McpServerConfig {
+  /** Explicit projections run before text truncation and before model/trace exposure. */
+  resultTransforms?: Record<string, (result: unknown) => Promise<McpToolResult>>;
   name: string;
   url: string;
   /** Already-decrypted outbound headers. */

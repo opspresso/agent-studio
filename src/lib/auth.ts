@@ -7,6 +7,7 @@ import { getPool } from "@/infrastructure/db/client";
 import { log } from "@/shared/logger";
 import { EMAIL_DOMAIN_NOT_ALLOWED, OIDC_PROVIDER_ID } from "@/shared/signInError";
 import { config } from "./config";
+import { AUTH_COOKIE_PREFIX } from "@/shared/authCookies";
 import { getAllowedEmailDomains, isConfiguredAdmin } from "./runtime-settings";
 
 /**
@@ -126,6 +127,7 @@ export const auth = betterAuth({
     errorURL: `${config.publicBaseUrl ?? ""}/login`,
   },
   advanced: {
+    cookiePrefix: AUTH_COOKIE_PREFIX,
     ipAddress: {
       trustedProxies: config.trustedProxyCidrs,
     },

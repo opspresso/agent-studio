@@ -53,6 +53,7 @@ import {
   predictSchema,
   updateVersionSchema,
   versionNameSchema,
+  versionParametersSchema,
 } from "@/app/api/projects/_lib/schemas";
 import {
   ConflictError,
@@ -1311,6 +1312,15 @@ describe("updateVersion / deleteVersion boundaries", () => {
       deleteVersion(versions, makeProjectRepo([projectFixture("p")]), "p", "1", OWNER),
     ).rejects.toBeInstanceOf(ConflictError);
   });
+
+  it("checks enabled configuration references before deleting a version", async () => {
+    const versions = makeVersionRepo([versionFixture("p", "1")]);
+    const guard = vi.fn(async () => { throw new ConflictError("Version is in use"); });
+    await expect(deleteVersion(versions, makeProjectRepo([projectFixture("p")]), "p", "1", OWNER, guard))
+      .rejects.toThrow("Version is in use");
+    expect(await versions.get("p", "1")).not.toBeNull();
+    expect(guard).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("model capability validation", () => {
@@ -1389,6 +1399,18 @@ describe("model capability validation", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("presence penalty validation", () => {
+  it.each([-2, 0, 1.5, 2])("preserves a supported penalty %s", (presencePenalty) => {
+    expect(versionParametersSchema.parse({ presencePenalty }).presencePenalty).toBe(presencePenalty);
+  });
+  it.each([-2.1, 2.1, NaN, Infinity, "1.5"])("rejects invalid penalty %s", (presencePenalty) => {
+    expect(versionParametersSchema.safeParse({ presencePenalty }).success).toBe(false);
+  });
+  it("keeps the provider default when the setting is omitted", () => {
+    expect(versionParametersSchema.parse({})).not.toHaveProperty("presencePenalty");
   });
 });
 

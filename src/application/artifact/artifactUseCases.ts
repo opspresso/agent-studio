@@ -1,11 +1,9 @@
 /**
  * Reading and removing what runs produced.
  *
- * Listing has two entry points because the rows have two reachable axes and
- * neither covers the other: a person's own gallery (the owner index) misses
- * every Slack, A2A and trigger run, whose actor names no mailbox, and a
- * project's gallery is how those are reached — but projects are a shared
- * catalog, so it is not a substitute for the personal one either.
+ * The owner index includes outputs attributed to a resolved email, including
+ * personal-context automation. The project index also includes outputs without
+ * a personal owner, and uses the project's management access rules.
  */
 
 import { NotFoundError, ValidationError } from "@/application/errors";
@@ -30,6 +28,7 @@ export const MAX_ARTIFACT_PAGE = 100;
 export const DEFAULT_ARTIFACT_PAGE = 24;
 
 export interface ArtifactUseCases {
+  readPrivateFile(artifactId: string, viewerEmail: string, maxBytes?: number): Promise<{ artifact: Artifact; bytes: Uint8Array }>;
   listMine(email: string, options?: ListArtifactsOptions): Promise<Artifact[]>;
   listByProject(
     projectName: string,
@@ -63,6 +62,10 @@ export function createArtifactUseCases(
   repo: ArtifactRepository,
   objects: ArtifactObjectStore,
   projects: ProjectRepository,
+  privateFiles?: {
+    read(project: string, file: string, email: string, maxBytes?: number): Promise<{ bytes: Uint8Array }>;
+    remove(project: string, file: string, email: string): Promise<void>;
+  },
 ): ArtifactUseCases {
   /**
    * Whose gallery this row is in — **the same expression the owner index is
@@ -115,6 +118,14 @@ export function createArtifactUseCases(
   }
 
   return {
+    async readPrivateFile(artifactId, viewerEmail, maxBytes) {
+      const artifact = await repo.get(artifactId);
+      if (!artifact?.privateFileId || !privateFiles || !isOwnRow(artifact, viewerEmail)) {
+        throw new NotFoundError("Private artifact not found");
+      }
+      const { bytes } = await privateFiles.read(artifact.projectName, artifact.privateFileId, viewerEmail, maxBytes);
+      return { artifact, bytes };
+    },
     async readForView(artifactId, viewerEmail) {
       const artifact = await repo.get(artifactId);
       if (!artifact) {
@@ -136,7 +147,10 @@ export function createArtifactUseCases(
           `That file is too large to open here; download it instead (${artifact.byteSize} bytes).`,
         );
       }
-      const { bytes } = await objects.read(artifact.key, MAX_INLINE_VIEW_BYTES);
+      if (artifact.privateFileId && (!privateFiles || !isOwnRow(artifact, viewerEmail))) throw new NotFoundError("Private artifact not found");
+      const { bytes } = artifact.privateFileId
+        ? await privateFiles!.read(artifact.projectName, artifact.privateFileId, viewerEmail, MAX_INLINE_VIEW_BYTES)
+        : await objects.read(artifact.key, MAX_INLINE_VIEW_BYTES);
       return { artifact, bytes, view };
     },
 
@@ -158,7 +172,10 @@ export function createArtifactUseCases(
       // Object first: this order can only leave a row whose preview is broken,
       // which pressing delete again resolves, while the reverse leaves bytes no
       // inventory names — and nothing can find those to remove them later.
-      await objects.delete(artifact.key);
+      if (artifact.privateFileId) {
+        if (!privateFiles || !isOwnRow(artifact, actorEmail)) throw new NotFoundError("Private artifact not found");
+        await privateFiles.remove(artifact.projectName, artifact.privateFileId, actorEmail);
+      } else await objects.delete(artifact.key);
       await repo.delete(artifactId);
       // Only when it was not the person's own. A gallery tidy-up recorded row by
       // row would bury the trail this table exists for; reaching into someone

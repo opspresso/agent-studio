@@ -47,6 +47,7 @@ function toTrigger(item: Record<string, unknown>): Trigger {
     return {
       ...base,
       kind: "schedule",
+      ...(item.executionEmail ? { executionEmail: String(item.executionEmail) } : {}),
       cron: String(item.cron ?? ""),
       timezone: String(item.timezone ?? ""),
       ...(item.message ? { message: String(item.message) } : {}),

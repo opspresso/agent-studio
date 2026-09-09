@@ -20,6 +20,7 @@ import {
 } from "@/domain/trigger/types";
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
   isConditionalWriteFailure,
@@ -37,6 +38,7 @@ export interface TriggerDeps {
 }
 
 export interface CreateTriggerInput {
+  runAsOwner?: boolean;
   triggerId: string;
   /** Defaults to `webhook`, the kind that existed before there were two. */
   kind?: TriggerKind;
@@ -52,6 +54,7 @@ export interface CreateTriggerInput {
 }
 
 export interface UpdateTriggerInput {
+  runAsOwner?: boolean;
   description?: string;
   enabled?: boolean;
   variables?: Record<string, string>;
@@ -72,6 +75,7 @@ export interface UpdateTriggerInput {
  * from `create` and from a rotation, the two moments the caller has to copy it.
  */
 export interface TriggerView {
+  executionEmail?: string;
   projectName: string;
   triggerId: string;
   kind: TriggerKind;
@@ -202,7 +206,9 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       input: CreateTriggerInput,
       userEmail: string,
     ): Promise<TriggerView> {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
+      const project = await assertProjectWritable(deps.projects, projectName, userEmail);
+      if (input.runAsOwner && project.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
+      if (input.runAsOwner !== undefined && input.kind !== "schedule") throw new ValidationError("Personal execution is only available for schedules");
       // A project has exactly one webhook and it answers at `/api/webhook/{project}`,
       // which resolves this id and nothing else. Both halves of that are enforced
       // here, at the only place a row is minted: a webhook under any other name
@@ -243,6 +249,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         trigger = {
           ...base,
           kind: "schedule",
+          ...(input.runAsOwner ? { executionEmail: userEmail } : {}),
           cron: input.cron,
           timezone: input.timezone,
           ...(input.message ? { message: input.message } : {}),
@@ -287,8 +294,10 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       input: UpdateTriggerInput,
       userEmail: string,
     ): Promise<TriggerView> {
-      await assertProjectWritable(deps.projects, projectName, userEmail);
+      const project = await assertProjectWritable(deps.projects, projectName, userEmail);
+      if (input.runAsOwner && project.ownerEmail !== userEmail) throw new ForbiddenError("Only the owner can enable personal execution");
       const existing = await load(projectName, triggerId);
+      if (input.runAsOwner !== undefined && existing.kind !== "schedule") throw new ValidationError("Personal execution is only available for schedules");
       const shared = {
         description: input.description ?? existing.description,
         enabled: input.enabled ?? existing.enabled,
@@ -304,7 +313,8 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         }
         assertScheduleFields(input);
         // An empty string clears the message; undefined keeps what is stored.
-        const { message: stored, deliveries: storedDeliveries, ...rest } = existing;
+        const { message: stored, deliveries: storedDeliveries, executionEmail: storedEmail, ...rest } = existing;
+        const executionEmail = input.runAsOwner === undefined ? storedEmail : input.runAsOwner ? userEmail : undefined;
         const message = input.message ?? stored ?? "";
         const deliveries =
           input.deliveries === undefined
@@ -314,6 +324,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           ...rest,
           ...shared,
           cron: input.cron ?? existing.cron,
+          ...(executionEmail ? { executionEmail } : {}),
           timezone: input.timezone ?? existing.timezone,
           ...(message ? { message } : {}),
           ...(deliveries.length > 0 ? { deliveries } : {}),

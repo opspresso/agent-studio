@@ -20,6 +20,7 @@ export type LogScope =
   | "a2a"
   | "api"
   | "artifact"
+  | "audio-worker"
   | "audit"
   | "authz"
   | "boot"

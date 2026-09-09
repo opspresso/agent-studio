@@ -145,8 +145,9 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | 그 chat 의 소유자 |
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
-| `/api/artifacts/{artifactId}` | `DELETE` | 생성자, project 소유자, 또는 admin |
-| `/api/artifacts/{artifactId}/view` | `GET` | 생성자, project 소유자, 또는 admin |
+| `/api/artifacts/{artifactId}` | `DELETE` | 생성자, project 소유자, 또는 admin. 비공개 파일은 파일 소유자(member)의 현재 project 소유 권한 필요 |
+| `/api/artifacts/{artifactId}/view` | `GET` | 생성자, project 소유자, 또는 admin. 비공개 파일은 파일 소유자(member)의 현재 project 소유 권한 필요 |
+| `/api/artifacts/{artifactId}/download` | `GET` | 비공개 파일 소유자(member), 현재 project 소유 권한 필요 |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/models/favorites` | `GET` `PUT` | session |
@@ -306,7 +307,7 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 ```
 
 Version 본문: `systemPrompt`, `userPromptTemplate`, `model` (필수, `provider/model`),
-`fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
+`fallbackModel?`, `parameters { temperature?, presencePenalty?, maxTokens?, reasoningEffort?, piiFiltering,
 structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?, urlFetch?,
 slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,
@@ -315,6 +316,8 @@ slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 `model` 도 마찬가지다. `agent` project 에는 `tools`, 그 파라미터에는 `structuredOutput` 과
 `reasoningTrace`(모델의 `reasoning`)가 필요하다 (카탈로그에 없는 id 는 거절이 아니라 경고
 대상이다).
+현재 배포 버전이나 활성 오디오 설정에서 후처리 대상으로 지정한 고정 버전의 삭제는 409로 거절한다.
+후처리 설정에서 `versionName: "published"`를 사용하면 새 작업이 접수될 때 배포 버전을 고정한다.
 `mcpList`/`skillList`/`subagentList` 항목은 등록된 MCP 서버·skill·agent·project 로 해석돼야
 한다. 대롱거리는 참조는 400 으로 거절된다. 그리고 애초에 `agent` project 만 이들을 가질 수
 있다. 업데이트에서는 *새로 추가된* 항목만 검사하므로, 이미 참조하던 레지스트리 항목이
@@ -1735,3 +1738,109 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 
 셋 다 일부러 비인증이고 의존성이 가볍다. 세션이 없는 인프라가 이것들을 찔러 보기 때문이다.
 연결하는 방법은 [OPERATIONS.md](OPERATIONS.md#헬스-프로브) 를 보라.
+
+## 오디오 작업과 원본 파일
+
+아래 경로는 member session과 프로젝트 소유자 권한을 요구한다. 실행 사용자 email은 session에서
+결정하며 body로 전달할 수 없다. `SOURCE_FILES_BUCKET_NAME`이 필요하며 전사가 포함된 작업에는 별도 전사 채널 설정도 필요하다.
+
+| Method | 경로 | 계약 |
+| --- | --- | --- |
+| POST | `/api/projects/{name}/source-references` | `{url, namespace, itemId, filename, mimeType}` → 201 `{sourceRef, filename, mimeType}`. URL은 암호화한다 |
+| POST | `/api/projects/{name}/source-files?unit=months&value=3&timezone=Asia%2FSeoul` | raw 파일 body, Content-Type과 percent-encoded `X-Filename` → 201 SourceFile metadata |
+| GET | `/api/projects/{name}/source-files/{file}` | 개인 파일 다운로드. 만료되면 거절하며 항상 attachment·no-store로 반환한다 |
+| GET | `/api/artifacts/{artifactId}/download` | 비공개 원본·결과 Artifact 다운로드. 소유자 session을 확인하며 공개 서명 URL로 전환하지 않는다 |
+| GET | `/api/projects/{name}/audio-options` | 설정된 전사 모델의 `{id, displayName}` 목록과 published 버전에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
+| GET | `/api/projects/{name}/audio-config` | 현재 프로젝트 작업 설정 또는 null. 소유자만 읽는다 |
+| PUT | `/api/projects/{name}/audio-config` | `{revision, enabled, model, language?, retention, postprocess?, destination?, maxActive, maxPerOccurrence}` → 다음 revision. 최초 revision은 0, 충돌은 409 |
+| POST | `/api/projects/{name}/audio-jobs` | 작업 제출 → 202 accepted/duplicate, 활성 한도 초과는 409 busy |
+| GET | `/api/projects/{name}/audio-jobs?limit=20&after={id}` | `{jobs, nextCursor}`, limit 1–100. 다른 사용자 작업은 limit 전에 제외한다 |
+| GET | `/api/projects/{name}/audio-jobs/{job}` | AudioJobView |
+| POST | `/api/projects/{name}/audio-jobs/{job}` | `{action: "cancel" | "retry", revision}`. 변경된 revision 또는 허용하지 않는 상태는 409 |
+
+작업의 `source`는 `{kind:"artifact", artifactId}`, `{kind:"file", fileId}` 또는
+`{kind:"source", sourceRef}`다. artifact는 같은 사용자가 소유한 다른 Agent의 비공개 결과도 재사용하며,
+file은 해당 프로젝트의 업로드·보관 파일이다. 원본 URL과 외부 녹음 ID는 파일 ID를 대신하지 않는다.
+
+`task`는 `import | transcribe | postprocess | process`이며 기본은 `process`다.
+
+- import는 보관만, transcribe는 전사까지 수행한다. transcribe와 process에는 등록된 Transcription model이 필요하다.
+- postprocess는 전사 Artifact와 `{projectName, versionName}` 후처리 대상을 받아 ASR 없이 처리한다.
+  model·language·destination·configRevision을 함께 보낼 수 없다.
+
+retention은 `{unit:"days"|"months", value:양의 정수, timezone:IANA 시간대}`다.
+language는 전사에 사용하는 선택적 2–3자 언어 코드다. 같은 프로젝트·사용자·source identity·
+task·processingRevision은 duplicate로 기존 작업을 반환한다. 명시적인 새 processingRevision은
+같은 원본의 재처리를 요청하며 설정 변경만으로 기존 작업을 다시 처리하지 않는다.
+
+postprocess의 versionName은 고정 이름 또는 `published`다. 접수할 때 실제 버전과 내용을 고정한다.
+활성 설정이 고정 참조하는 버전은 설정을 바꾸기 전 삭제할 수 없다. configRevision을 지정하면
+서버가 해당 revision의 model·language·retention·postprocess·destination을 읽는다. source와
+명시적 processingRevision 외의 처리 override는 섞지 않으며 task는 생략하거나 process여야 한다.
+revision 충돌은 409다. enabled=false는 신규 제출·수동 재시도를 막으며 기존 작업 snapshot은 바꾸지 않는다.
+프로젝트의 admission 한도는 요청별 설정에도 적용한다. 설정 소유자가 바뀌면 현재 소유자가 다시
+저장하기 전까지 제출·재시도를 거절한다. 설정 행에는 credential이나 Agent version 본문을 저장하지 않는다.
+
+`destination: {serverName, documents, memories}`는 명시적으로 선택한 외부 복사 경로다.
+해당 MCP는 원래 프로젝트의 published 버전에 연결되어 있고 멱등 수집 도구를 제공해야 한다.
+기본 Artifact 처리에는 destination이 필요하지 않다. 사용자 요청에 따른 `personal-records` skill의
+직접 기록도 사용할 수 있으며 무인 수집 기본 설정에는 외부 저장 대상을 지정하지 않는다.
+
+AudioJobView는 id·task·sourceIdentity·status·stage·model·createdAt·updatedAt·dueAt·attempt·failures·
+revision과 선택적인 configRevision·fileId·fileInfo·transcriptionProgress·transcriptRef·draftRef·
+movedTo·receipts·errorCode를 반환한다. `artifacts`는 source·transcript·processed·structured·dialogue의
+Artifact ID를 제공한다. `transcriptProjectName`은 전사 파일을 읽을 프로젝트다.
+fileInfo는 filename·byteSize·expiresAt, transcriptionProgress는 processedSeconds·totalSeconds·completedSegments다.
+본문·원본 URL·암호문·내부 중복 방지 키는 목록에 넣지 않는다.
+
+제출 응답의 accepted/duplicate/busy와 job.status는 다르다. job.status가 completed라면 마지막
+stage가 importing이나 cleaning이어도 끝난 작업이다. movedTo는 외부 문서 복사 ID이며 Artifact 삭제를
+뜻하지 않는다. cleaning은 checkpoint만 정리하고 원본·최종 결과는 보존 만료까지 유지한다.
+원본 파일은 설정된 기간 후 삭제하지만 작업 이력·중복 방지 기록은 남긴다.
+
+취소는 queued/running/waiting에, 수동 재시도는 failed/blocked에 적용한다. 자동 재시도는 최초 시도
+포함 최대 5회이며 수동 재시도는 새 24시간 실행 구간을 시작한다. 생성 시각·완료 단계·파일 보존 만료는
+유지한다. 202나 제출 성공만으로 처리 완료를 보고하지 않는다.
+
+Agent 버전의 `parameters.audioProcessing=true`는 ImportFile·TranscribeAudio·AudioJob을 제공한다.
+각 도구는 현재 사용자·프로젝트·발생 ID에 바인딩된다. source 인수는 artifact_id·file_id·source_ref 중
+하나이고 원본 URL·임의 email은 받지 않는다. 세 제출 도구 모두 processing_revision을 지원한다.
+AudioJob read는 최대 20,000자씩 전사문을 반환하고 nextCursor로 이어 읽는다.
+`result_kind:"processed"`는 후처리 본문이다. 로컬 본문 참조 없이 외부 복사 정보만 있는 작업에서만
+`{status:"moved", destination:movedTo, jobStatus}`를 반환한다. 원본 JSON에는 text·segments·model·
+coverage·원본 checksum·사용량 receipt 참조가 포함된다.
+
+Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
+관리자도 다른 소유자를 대신해 켤 수 없다. `false`는 저장한 email을 지우고, 생략은 기존 값을
+유지한다. Webhook에는 이 옵션을 사용할 수 없다. Admission과 실행 직전에 현재 소유권과 member
+상태를 확인한다. actor는 schedule로 유지하며 검증된 email만 MCP `X-User-Email`로 전달한다.
+
+MCP binding의 `sourceOutputs`는 도구의 JSON 응답을 파일 참조로 변환한다. 항목은
+`{tool, namespace, urlPath, idPath, namePath?, mimeType, refreshArgument?}`이며 경로는 object key 배열이다.
+도구당 한 항목, binding당 최대 8개, 경로 깊이 최대 8개다. 예시는 다음과 같다.
+
+```json
+{
+  "name": "files",
+  "sourceOutputs": [{
+    "tool": "fetch_asset",
+    "namespace": "account-a",
+    "urlPath": ["asset", "downloadUrl"],
+    "idPath": ["asset", "id"],
+    "namePath": ["asset", "name"],
+    "mimeType": "audio/mpeg"
+  }]
+}
+```
+
+변환은 MCP 결과가 잘리기 전에 실행된다. 모델과 trace에는 `source_ref`, `filename`, `mime_type`,
+`source`, `external_id`만 전달하며 원본 응답의 다른 URL·notes는 전달하지 않는다. 잘못된 응답,
+미설정 storage, 없는 사용자 문맥에서는 Error 결과를 반환하며 원본으로 fallback하지 않는다.
+namespace는 연결 계정을 식별하는 운영자 설정이며 계정이 달라지면 새 namespace를 사용한다.
+
+`refreshArgument`를 설정하면 해당 읽기 도구를 원래 item ID 하나로 다시 호출할 수 있다. 문자열 또는
+정수 ID 인수 하나만 필요한 조회 도구에 사용한다. 재조회 recipe는 접수된 작업에 보관되므로 임시
+source_ref 행이 만료돼도 최초 다운로드 직전에 새 URL을 얻는다. 원본을 이미 보관했다면 재조회하지 않는다.
+서버 주소·등록 header·binding·OAuth authorizationEpoch를 재조회 전후 비교하며 일반 access token
+갱신은 세대를 바꾸지 않는다. 재인증·연결 교체·다른 item 반환은 자동 재개를 차단한다.
+raw URL은 작업에 복제하지 않으며 새 URL에도 동일한 다운로드 URL 정책을 적용한다.

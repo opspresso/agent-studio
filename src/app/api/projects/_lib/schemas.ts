@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
+import { isMcpSourceMapping, MAX_MCP_SOURCE_MAPPINGS } from "@/domain/mcp/sourceMapping";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { attachedDocumentsSchema, attachedImagesSchema } from "@/app/api/_lib/attachments";
 import {
@@ -99,6 +101,7 @@ const payloadModeSchema = z.enum(["variables", "message"]);
 // Cron/timezone validity and which kind may carry which field are enforced in
 // `triggerUseCases` — the rules live beside the code that reads them.
 export const createTriggerSchema = z.object({
+  runAsOwner: z.boolean().optional(),
   triggerId: z
     .string()
     .refine(isSlug, `triggerId ${SLUG_RULE}`),
@@ -115,6 +118,7 @@ export const createTriggerSchema = z.object({
 });
 
 export const updateTriggerSchema = z.object({
+  runAsOwner: z.boolean().optional(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
   variables: z.record(z.string().min(1), z.string()).optional(),
@@ -129,6 +133,7 @@ export const updateTriggerSchema = z.object({
 
 export const versionParametersSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
+  presencePenalty: z.number().min(PRESENCE_PENALTY_RANGE.min).max(PRESENCE_PENALTY_RANGE.max).optional(),
   maxTokens: z.number().int().positive().optional(),
   reasoningEffort: z.enum(["low", "medium", "high"]).optional(),
   piiFiltering: z.boolean().default(false),
@@ -137,6 +142,7 @@ export const versionParametersSchema = z.object({
   jsonSchema: z.record(z.string(), z.unknown()).optional(),
   imageGeneration: z.boolean().optional(),
   urlFetch: z.boolean().optional(),
+  audioProcessing: z.boolean().optional(),
   slackWorkspace: z.boolean().optional(),
   imageModel: z.string().optional(),
   dynamicCapabilities: z.boolean().optional(),
@@ -161,6 +167,14 @@ export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([
     headers: z.record(z.string().min(1), z.string().nullable()).optional(),
     /** Omitted or empty means "every tool this server offers". */
     tools: z.array(z.string().min(1)).optional(),
+    sourceOutputs: z.array(z.object({
+      refreshArgument: z.string().min(1).max(128).optional(),
+      tool: z.string().min(1).max(128), namespace: z.string().min(1).max(128),
+      urlPath: z.array(z.string().min(1).max(128)).min(1).max(8),
+      idPath: z.array(z.string().min(1).max(128)).min(1).max(8),
+      namePath: z.array(z.string().min(1).max(128)).min(1).max(8).optional(),
+      mimeType: z.string().regex(/^[a-z]+\/[a-z0-9.+-]+$/i),
+    }).strict().refine(isMcpSourceMapping, "Invalid source mapping")).max(MAX_MCP_SOURCE_MAPPINGS).refine((items) => new Set(items.map((item) => item.tool)).size === items.length, "Duplicate source tool mapping").optional(),
   }),
 ]);
 

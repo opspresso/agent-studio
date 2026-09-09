@@ -77,7 +77,7 @@ pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 
 ```bash
 pnpm dev              # 문서 워커 번들 후 next dev
-pnpm build            # 문서 워커 번들 + 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
+pnpm build            # 문서·오디오 워커 번들 + 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
 pnpm start            # 이미 만든 Next.js production build 실행
 pnpm typecheck        # tsc --noEmit, strict + 추가 검사 (아래)
 pnpm test             # vitest run
@@ -86,10 +86,28 @@ pnpm test:watch       # vitest watch
 pnpm exec playwright install chromium # HTML 실행 미리보기 테스트용 브라우저
 pnpm test:html-preview # 로컬 HTTP fixture에서 실제 Chromium 기능·격리 검사
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test) 에 대한 리포지토리 + 엔진 검사
+pnpm test:storage     # 로컬 MinIO 임시 bucket의 원본 파일 streaming·조건부 저장·삭제 검사
+pnpm test:audio       # ffmpeg로 실제 MP3 분할·WAV 크기·시간 범위·임시 파일 정리 검사
+pnpm test:audio:pipeline # PostgreSQL test DB·MinIO·ffmpeg·로컬 ASR mock을 통한 전체 전사 경로
+pnpm worker:audio     # 환경변수가 주입된 별도 오디오 worker. 앱이 DB를 초기화한 뒤 실행
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)
 pnpm check-models     # 카탈로그 스냅샷과 이 배포의 채널이 서빙하는 것의 차이
 pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원격은 MODELS_CATALOG_URL 설정)
 ```
+
+로컬 `.env.local`을 읽어 worker를 실행하려면 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`를 사용한다.
+`pnpm dev`는 오디오 worker를 자동 시작하지 않는다.
+
+`test:audio:pipeline`은 선택적으로 실제 Agent Memory MCP까지 검증한다. 별도 폐기 가능한
+Memory 설치를 `localhost`에 띄우고 문서 worker를 켠다. 합성 사용자(`@example.test`)의 개인 계정·검증된 email과
+테스트 설치의 MCP token을 준비한 뒤 `{ "token": "..." }` 응답을 권한 0600의 임시 파일로 저장한다.
+환경 변수 `AUDIO_TEST_MEMORY_URL`, `AUDIO_TEST_MEMORY_TOKEN_FILE`, `AUDIO_TEST_MEMORY_EMAIL`을
+지정하고 같은 검사를 실행한다. 공개 호스트와 IP literal은 거절하며 테스트 process에만
+`localhost` MCP 연결을 허용한다. ASR·후처리 모델은 계속 로컬 mock을 사용한다.
+
+이 모드는 실제 MCP schema discovery·email 전달·문서 ready 대기·Memory receipt를 확인한다.
+Studio 측 fixture는 정리하지만 수신 측에는 합성 문서 2건과 Memory 1건이 남으므로 검증 후
+전용 Memory DB·버킷을 폐기한다. 기존 사용자 데이터가 있는 Memory 설치에 연결하지 않는다.
 
 ```bash
 # 테스트 파일 하나, 또는 테스트 이름으로

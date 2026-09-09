@@ -134,6 +134,8 @@ function sanitizeCallerName(value: string | undefined): string | undefined {
  * threaded side by side through eight signatures.
  */
 export interface RunOrigin {
+  /** Durable postprocessing may read bound skills; its worker owns all external effects. */
+  backgroundTask?: boolean;
   actor?: RunActor;
   /**
    * A user email resolved by a surface whose actor id is not an email, such as

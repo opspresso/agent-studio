@@ -32,6 +32,84 @@
  * never one label at a time.
  */
 export const en = {
+  "audio.uploadedFile": "Uploaded original",
+  "audio.title": "Audio processing",
+  "audio.useSaved": "Use saved project settings",
+  "audio.configRevision": "Settings revision",
+  "audio.configDisabled": "New jobs are disabled. Enable and save the project settings to resume submissions.",
+  "audio.projectConfig": "Project job settings",
+  "audio.configEnabled": "Allow new jobs and retries",
+  "audio.maxActive": "Maximum active jobs",
+  "audio.maxPerOccurrence": "Maximum new jobs per run",
+  "audio.saveConfig": "Save project settings",
+  "audio.saveConfigHint": "Save the selected processing options and limits for future jobs. Existing jobs keep their submitted settings.",
+  "audio.pageHint": "Upload audio, follow background transcription and postprocessing, and reopen the results in private Artifacts.",
+  "audio.file": "Audio file",
+  "audio.chooseFile": "Choose a file",
+  "audio.model": "Transcription model",
+  "audio.language": "Transcription language code (optional)",
+  "audio.noModels": "No transcription models are configured. Ask an administrator to configure a transcription endpoint and model.",
+  "audio.retention": "Keep original for",
+  "audio.retentionUnit": "Period unit",
+  "audio.days": "Days",
+  "audio.months": "Calendar months",
+  "audio.timezone": "Timezone",
+  "audio.writer": "Postprocessing Agent (optional)",
+  "audio.writerVersion": "Agent version",
+  "audio.followPublished": "Follow published version",
+  "audio.writerVersionHint": "The selected version is fixed when a job is submitted. New publications apply only to new jobs.",
+  "audio.destination": "Memory destination (optional)",
+  "audio.destinationHint": "Choose an MCP server bound to this project’s published version.",
+  "audio.saveDocuments": "Save documents",
+  "audio.saveMemories": "Save grounded memories",
+  "audio.personalOnly": "Originals and results are private Artifacts. Accepted jobs continue after you leave.",
+  "audio.submit": "Start processing",
+  "audio.jobs": "Processing jobs",
+  "audio.refresh": "Refresh",
+  "audio.noJobs": "No audio jobs yet.",
+  "audio.original": "Original file",
+  "audio.transcript": "Transcript",
+  "audio.dialogue": "Dialogue",
+  "audio.toolsRequired": "Enable audio processing tools in the published version to use this page. Before the first publication, the latest saved version is used.",
+  "audio.result": "Processed result",
+  "audio.retry": "Retry",
+  "audio.resumeAt": "Next processing attempt",
+  "audio.expiresAt": "Original expires",
+  "audio.coverage": "Transcribed audio",
+  "audio.seconds": "seconds",
+  "audio.receipts": "Saved record IDs",
+  "audio.receiptsHint": "A document ID confirms receipt. The job completes after all selected documents finish processing and memories are saved.",
+  "audio.cancel": "Cancel",
+  "audio.more": "Load more",
+  "audio.status.queued": "Queued",
+  "audio.status.running": "Running",
+  "audio.status.waiting": "Waiting to resume",
+  "audio.status.completed": "Completed",
+  "audio.status.failed": "Failed",
+  "audio.status.blocked": "Needs attention",
+  "audio.status.cancelled": "Cancelled",
+  "audio.stage.importing": "Importing",
+  "audio.stage.transcribing": "Transcribing",
+  "audio.stage.postprocessing": "Agent processing",
+  "audio.stage.storing": "Saving",
+  "audio.stage.cleaning": "Cleaning intermediate files",
+  "audio.moved": "Documents copied to",
+  "audio.enableTools": "Audio processing tools",
+  "audio.enableToolsHint": "Let this Agent import files, transcribe audio and inspect background jobs.",
+  "audio.runAsOwner": "Run with my personal context",
+  "audio.runAsOwnerHint": "Use your verified email for personal MCP data. Only the project owner can enable this.",
+  "audio.mappingTitle": "File response mappings",
+  "audio.mappingHint": "Map a tool's JSON fields to private file references. Separate nested fields with dots. Use a distinct namespace for each account.",
+  "audio.mappingTool": "Tool name",
+  "audio.refreshArgument": "Read tool's item ID argument (optional)",
+  "audio.refreshArgumentHint": "Replay this tool with the original item ID immediately before downloading. Use only a read tool requiring this single argument.",
+  "audio.namespace": "Account namespace",
+  "audio.urlPath": "Download URL field path",
+  "audio.idPath": "File ID field path",
+  "audio.namePath": "Filename field path (optional)",
+  "audio.mimeType": "File MIME type",
+  "audio.addMapping": "Add file mapping",
+  "audio.removeMapping": "Remove mapping",
   // Language toggle. Each language is named in itself — `LOCALE_LABELS` — so
   // only the control around it is translated.
   "locale.label": "Language",
@@ -132,6 +210,8 @@ export const en = {
   "home.domain.images": "Images",
   "home.domain.imagesBody":
     "Generate or edit images with an image project, an agent's built-in tools, or an image subagent. An agent can edit an attached image or one produced earlier in the run.",
+  "home.domain.audio": "Audio transcription & summaries",
+  "home.domain.audioBody": "Import audio from uploads or connected tools, transcribe it with a selected model, and produce summaries in the background. Keep originals and results as private Artifacts; personal records are saved when requested.",
   "home.domain.artifacts": "Documents & artifacts",
   "home.domain.artifactsBody":
     "Create reports, presentations, and spreadsheets. Edit supported attachments into new files while keeping the originals. Configured storage keeps originals and results available for download.",
@@ -239,7 +319,7 @@ export const en = {
   "overview.welcome": "Welcome back, {name}",
   "overview.welcomeAnon": "Welcome back",
   "overview.lede":
-    "Create prompt, agent, and image projects, test them in the console, and publish them for other systems to use.",
+    "Create prompt, agent, and image projects, test them in the console, and publish them for other systems. Agent tools also support document work and background audio processing.",
   "overview.newProject": "New project",
   "overview.newChat": "New chat",
   "overview.recentProjects": "Recent projects",
@@ -304,7 +384,7 @@ export const en = {
     "Use Prompt preview to inspect the prompt assembled from the current draft. It does not generate an answer, but a supplied request can call memory recall, contact MCP servers, and call embedding/rerank services for dynamic discovery. Save before using the run panel: its request executes the saved version. An agent receives user messages directly; llm template variables are not an agent input mechanism.",
   "guide.versions.limits": "Control run size",
   "guide.versions.limitsBody":
-    "Set output length, agent turn limits, and other parameters exposed by the editor to match the task. Turn and output limits can end a run with a partial answer; a deployment deadline can stop it with an error. Read the completion reason and warnings before accepting the output. Reasoning trace controls the displayed reasoning, not whether the model reasons.",
+    "Set output length and agent turn limits to match the task. Presence penalty is an optional control for repeated tokens when the selected model supports it. Turn and output limits can leave a partial answer; a deployment deadline can stop the run with an error. Read completion reasons and warnings. Reasoning trace controls displayed reasoning, not whether the model reasons.",
   "guide.versions.compare": "Compare with the same input",
   "guide.versions.compareBody":
     "Save the candidate version, open Compare, choose two saved versions, and run the same input. Compare answer quality, warnings, duration, and usage. Both sides make real calls and count toward usage and concurrency limits; the comparison is not a free preview.",
@@ -326,16 +406,16 @@ export const en = {
     "Tool selections and header overrides belong to the version and require its Save action. OAuth Connect, Disconnect, and OAuth client credentials belong to the project and are saved separately; all its versions share that connection. Complete authorization before testing a tool that requires OAuth.",
   "guide.capabilities.agents": "Delegate to another agent",
   "guide.capabilities.agentsBody":
-    "Bind a published local project or an external agent registered on Agents. External registrations use an OpenAI-compatible or A2A endpoint and its credentials. Give each delegate a description that makes its role clear. Delegated activity is labelled by author, while its usage remains part of the originating run's accounting.",
+    "Delegate when a task benefits from a separate specialist; a routine workflow can use one Agent with skills. Bind a published local project or a registered external OpenAI-compatible or A2A agent. Give each delegate a precise description. Delegated activity is labelled by author, while usage remains part of the originating run accounting.",
   "guide.capabilities.plugins": "Import and synchronize plugins",
   "guide.capabilities.pluginsBody":
     "An administrator imports skills and MCP definitions from a configured repository or an uploaded checkout archive in Plugins. Use archive upload when the repository is unreachable. Inspect skipped/invalid entries and bind imported capabilities to your version. Imported skill content and MCP URLs/descriptions are maintained at the source and synchronized again; configure credentials separately in the console, because MCP headers are not imported. Sync does not delete orphaned entries automatically; review and remove them explicitly from its results.",
   "guide.capabilities.discovery": "Dynamic discovery and memory",
   "guide.capabilities.discoveryBody":
     "Dynamic discovery matches the system prompt and current request against capability names and descriptions, then adds relevant skills, MCP servers/tools, and external agents without changing saved bindings. A precise description is the routing signal: say when the capability should be used and what it returns. It needs a working capability catalog and embedding setup; ask an administrator if results are missing. Memory recall is separate and needs a bound MCP server offering recall.",
-  "guide.capabilities.builtins": "Image generation, URL reading, and files",
+  "guide.capabilities.builtins": "Image, audio, URL, and file tools",
   "guide.capabilities.builtinsBody":
-    "Enable image generation, URL reading, or Slack history when the version needs them, and configure their providers or connections. With artifact storage configured, agents automatically receive File for reading, creating, and editing documents, and SaveFile for text files. Document processing is built in and needs no MCP binding.",
+    "Enable image generation, audio processing, URL reading, or Slack history when needed and configure the corresponding services. With file storage configured, File reads, creates, and edits supported documents, while SaveFile creates text files. Audio uses a private source store and a separate worker. Document processing itself is built in and needs no MCP binding.",
 
   "guide.chat.title": "Conversations and attachments",
   "guide.chat.body":
@@ -358,6 +438,25 @@ export const en = {
   "guide.chat.stop": "Closing the page does not stop a chat run",
   "guide.chat.stopBody":
     "Use the chat's stop control to request cancellation. Navigating away or closing the browser tab only disconnects the view; reopen the conversation to read the saved result. Cancellation cannot undo actions a tool has already completed. A server interruption can still prevent an active run from finishing.",
+
+  "guide.audio.title": "Audio processing and personal records",
+  "guide.audio.body": "One Agent can handle collection, transcription, summaries, and requested records with reusable skills. A separate worker continues long jobs after the Agent response or browser page ends.",
+  "guide.audio.setup": "Enable audio tools",
+  "guide.audio.setupBody": "Ask an administrator to configure a private file store, a transcription service, and the audio worker. Enable Audio processing tools in your Agent version. The project owner sees the Audio processing tab when the published version enables it; before the first publication, the latest saved version is used.",
+  "guide.audio.skills": "Keep one Agent and reusable skills",
+  "guide.audio.skillsBody": "With the workspace plugin, bind audio-processing for the workflow, meeting-minutes for summaries, and personal-records for requested Document or Memory storage. Keep the system prompt short. Connect the recording source to this Agent and authenticate there. Separate download, transcription, and recording agents are not required.",
+  "guide.audio.version": "Choose processing settings",
+  "guide.audio.versionBody": "In Audio processing, select the transcription model, language, retention, and optional postprocessing Agent, then save project settings. The same Agent can do postprocessing. Follow published version uses the version published when each job is submitted and keeps that snapshot. An enabled setting that names a fixed version must be changed before that version can be deleted.",
+  "guide.audio.run": "Start a job or schedule collection",
+  "guide.audio.runBody": "Upload an audio file on the project page, or ask the Agent to collect a recording through its connected tool. For recurring collection, configure a schedule with a search range and maximum number of new recordings. Enable Run with my personal context as the owner. The worker and schedule ticker must be running; turning on audio tools alone does not schedule anything.",
+  "guide.audio.results": "Read private Artifacts",
+  "guide.audio.resultsBody": "Original audio, transcript JSON, summary Markdown, speaker dialogue, and structured results appear as the selected stages finish. Open them from the job or Artifacts. A submitted or duplicate request may still refer to an unfinished job: check the job status. Completed remains completed even when its last stage says Cleaning intermediate files. Review names, numbers, missing passages, and unknown speakers.",
+  "guide.audio.records": "Save to Memory or Documents only when requested",
+  "guide.audio.recordsBody": "The default result is private Artifacts. Specify which Artifact to save and whether you want a personal Document or Memory. The Agent reads that result and checks the destination service response. For unattended collection, leave the external destination empty. Saving a personal record does not delete the Artifact; the destination service has its own retention policy.",
+  "guide.audio.retry": "Retry without starting completed stages again",
+  "guide.audio.retryBody": "A waiting job resumes automatically. For failed jobs or jobs needing attention, fix the cause and use Retry. A manual retry starts a new 24-hour execution window while keeping completed stages, record IDs, and the original file expiry. Cancellation does not undo external records already created. A deleted or expired source may require a fresh import.",
+  "guide.audio.reset": "Deleting files is not a processing reset",
+  "guide.audio.resetBody": "Deleting Artifacts removes their files, but completed job history and duplicate-prevention records remain. To repeat one recording, explicitly ask the Agent to reprocess it. A full project reset is an administrator maintenance operation: pause scheduling, wait for active work to stop, and clear job history and duplicate-prevention records together. There is no reset-all button on this page.",
 
   "guide.api.title": "Call a project over HTTP",
   "guide.api.body":
@@ -403,7 +502,7 @@ export const en = {
   "guide.records.title": "Results, usage, and limits",
   "guide.records.artifacts": "Find originals and generated files",
   "guide.records.artifactsBody":
-    "Personal Artifacts includes your stored attachment originals and generated or edited files. Project Artifacts is for the owner and administrators and also includes bot and automation files. Reopen the artifact view to refresh an expired download link. A retained file can be used again by an authorized agent through its file ID. Download files you need to keep beyond retention. Deleting a chat does not delete its artifacts.",
+    "Personal Artifacts includes files attributed to your email, including personal-context automation. Project Artifacts also includes outputs without a personal owner. Private audio originals and results can only be read or deleted by their owner. Reopen an ordinary artifact to refresh an expired signed link; this does not restore an expired or deleted file. Download files you need beyond retention. Deleting a chat does not delete its artifacts.",
   "guide.records.usage": "Understand usage and attribution",
   "guide.records.usageBody":
     "Use project Usage to inspect the selected period and model/provider breakdown; owners and administrators can inspect caller details. Profile shows personal usage. Project-token calls are accounted to the project rather than the owner's personal budget. Prices come from provider-reported cost or catalog pricing; a zero estimate is not proof that the provider charged nothing.",
@@ -485,7 +584,7 @@ export const en = {
     "If capability discovery is enabled, configure a separate hourly POST /api/catalog/reindex with the same X-Scan-Token credential. The schedule scan does not perform this reindex. A successful response starts background indexing; inspect the server log for indexed, removed, or undiscovered entries, then test a question that should discover a newly registered capability.",
   "guide.operations.retention": "Database retention and file lifecycle",
   "guide.operations.retentionBody":
-    "Set TRACE_RETENTION_DAYS, USAGE_RETENTION_DAYS, CHAT_RETENTION_DAYS, ARTIFACT_RETENTION_DAYS, TRIGGER_RUN_RETENTION_DAYS, A2A_TASK_RETENTION_DAYS, and AUDIT_RETENTION_DAYS in the deployment as needed. Keep artifact retention at least as long as chat retention. Expired rows can be excluded from reads before physical deletion; without the ticker they remain stored. Object bytes need a separate bucket lifecycle for artifacts/image/, artifacts/document/, and any legacy images/. Align file and record retention to avoid records pointing to deleted files.",
+    "Database retention settings control trace, usage, chat, artifact, trigger, A2A, and audit rows. Keep ordinary artifact retention at least as long as chat retention and configure matching object lifecycle rules. Private audio files use their own day or calendar-month expiry, inherited by derived outputs and enforced by the audio worker. Do not apply blanket object expiration to the private source bucket: deletion barriers must remain. Deleting or expiring audio Artifacts does not clear job history or duplicate-prevention records.",
   "guide.operations.backup": "Back up data and recovery keys",
   "guide.operations.backupBody":
     "Back up PostgreSQL, stored objects, deployment configuration, and the encryption/session secrets under restricted access. Restore them together in a separate environment and verify sign-in, credential decryption, project runs, and file access. Losing or arbitrarily replacing AES_ENCRYPTION_KEY makes stored credentials unreadable. An application image is not a data backup.",
@@ -662,6 +761,7 @@ export const en = {
   "version.userPromptAgentHint":
     "Agent runs ignore this template — the conversation supplies the user turn. Clear it to remove this field.",
   "version.temperature": "Temperature",
+  "version.presencePenalty": "Presence penalty",
   "version.maxTokens": "Max tokens",
   "version.defaultPlaceholder": "default",
   "version.reasoningTrace": "Record the reasoning",
@@ -928,6 +1028,7 @@ export const en = {
   "artifacts.images": "Images",
   "artifacts.preview": "Preview",
   "artifacts.documents": "Documents",
+  "artifacts.audio": "Audio",
   "artifacts.attached": "Attached",
   "artifacts.view": "View",
   "artifacts.download": "Download",
@@ -946,6 +1047,7 @@ export const en = {
   // cannot supply: those are plural headings for a segmented control.
   "artifacts.kindImage": "image",
   "artifacts.kindDocument": "document",
+  "artifacts.kindAudio": "audio file",
 
   // The full-screen image viewer every surface opens a picture in. Its own
   // namespace rather than `artifacts.`: the gallery is one of four callers.

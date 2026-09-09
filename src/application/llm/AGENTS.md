@@ -24,7 +24,7 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래�
   `BUILTIN_TOOL_NAMES` is reserved when MCP aliases are allocated, before the run knows which
   builtins it will offer, so an MCP tool never carries a name a builtin might claim.
 - Dispatch of one response: every call is announced first, then the **MCP calls, `FetchUrl` and
-  `SaveFile` and `File` run concurrently** (≤5 in flight, one shared pool) while the *other* builtins run
+  `SaveFile`, `File`, `ImportFile`, `TranscribeAudio` and `AudioJob` run concurrently** (≤5 in flight, one shared pool) while the *other* builtins run
   strictly in call order — a transfer moves the turn budget and the image tools mutate the image
   registry. The two joiners do neither: `FetchUrl`'s bytes are registered below, in order, the
   way an MCP tool's are, and leaving it sequential would make three links in one answer cost

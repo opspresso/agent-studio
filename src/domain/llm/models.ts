@@ -898,6 +898,25 @@ export function calculateRerankCost(modelId: string, inputTokens: number): numbe
   return cfg.pricing.perSearch ?? (inputTokens * cfg.pricing.inputPer1M) / 1_000_000;
 }
 
+/** Unknown ASR billing remains unknown rather than looking like a free provider call. */
+export function calculateTranscriptionCost(modelId: string, usage?: {
+  inputTokens?: number; outputTokens?: number; audioSeconds?: number;
+}): number | undefined {
+  const model = getModelConfig(modelId);
+  if (!model?.capabilities.transcription) return undefined;
+  const price = model.pricing;
+  if (price.perAudioMinute !== undefined) {
+    if (price.perAudioMinute === 0) return 0;
+    return usage?.audioSeconds !== undefined && Number.isFinite(usage.audioSeconds) && usage.audioSeconds >= 0
+      ? usage.audioSeconds / 60 * price.perAudioMinute : undefined;
+  }
+  if (price.inputPer1M === 0 && price.outputPer1M === 0) return 0;
+  if (usage?.inputTokens === undefined || usage.outputTokens === undefined ||
+    !Number.isSafeInteger(usage.inputTokens) || !Number.isSafeInteger(usage.outputTokens) ||
+    usage.inputTokens < 0 || usage.outputTokens < 0) return undefined;
+  return (usage.inputTokens * price.inputPer1M + usage.outputTokens * price.outputPer1M) / 1_000_000;
+}
+
 /** Image-token usage of one image generation call. */
 export interface ImageCostTokens {
   textInputTokens: number;

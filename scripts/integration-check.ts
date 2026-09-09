@@ -1345,6 +1345,133 @@ async function main() {
       pass("transact: a checked key locks share-mode, a written one exclusively");
     }
 
+    // ---------- audio configuration/version deletion fence ----------
+    {
+      const { audioJobConfigRepository: configs } = await import("@/infrastructure/db/repositories/audioJobConfigRepository");
+      const project = (await projectRepository.get(projectName))!;
+      const versionName = "audio-reference-check";
+      await versionRepository.create({ projectName, versionName, model: "integration/model", systemPrompt: "", userPromptTemplate: "",
+        parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [], createdAt: now });
+      const config = { projectName, userEmail: project.ownerEmail, revision: 1, enabled: true, model: "integration/asr",
+        retention: { unit: "months" as const, value: 3, timezone: "UTC" }, maxActive: 1, maxPerOccurrence: 1,
+        postprocess: { projectName, versionName }, updatedAt: now };
+      assert.equal(await configs.save(config, 0), true);
+      await assert.rejects(versionRepository.delete(projectName, versionName, project.updatedAt));
+      assert.ok(await versionRepository.get(projectName, versionName));
+      assert.equal(await configs.save({ ...config, enabled: false, revision: 2 }, 1), true);
+      const current = (await projectRepository.get(projectName))!;
+      await versionRepository.delete(projectName, versionName, current.updatedAt);
+      assert.equal(await configs.save({ ...config, revision: 3 }, 2), false);
+      assert.equal((await configs.get(projectName))?.enabled, false);
+      await versionRepository.create({ projectName, versionName, model: "integration/model", systemPrompt: "", userPromptTemplate: "",
+        parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [], createdAt: now });
+      const beforeRace = (await projectRepository.get(projectName))!;
+      const raced = await Promise.allSettled([
+        configs.save({ ...config, revision: 3 }, 2),
+        versionRepository.delete(projectName, versionName, beforeRace.updatedAt),
+      ]);
+      const saved = raced[0].status === "fulfilled" && raced[0].value;
+      const deleted = raced[1].status === "fulfilled";
+      assert.notEqual(saved, deleted, "exactly one of saving the reference and deleting its version may succeed");
+      if (saved) {
+        assert.ok(await versionRepository.get(projectName, versionName));
+        assert.equal(await configs.save({ ...config, enabled: false, revision: 4 }, 3), true);
+        await versionRepository.delete(projectName, versionName, (await projectRepository.get(projectName))!.updatedAt);
+      } else assert.equal((await configs.get(projectName))?.enabled, false);
+      pass("audio configuration: version deletion and reference save cannot leave a dangling target");
+    }
+
+    // ---------- durable usage receipts ----------
+    {
+      const event = { idempotencyKey: `asr-${suffix}`, projectName, date: today, model: "asr-integration",
+        calls: 1, inputTokens: 10, outputTokens: 2, costUsd: 0.01, actor: "user:audio-integration@example.com" };
+      try {
+        await Promise.all(Array.from({ length: 8 }, () => usageRepository.record(event)));
+        assert.equal((await usageRepository.getDay(projectName, today))?.calls["asr-integration"], 1);
+        // PostgreSQL JSONB reorders object keys; replay compares values, not serialized order.
+        await usageRepository.record(event);
+        await assert.rejects(usageRepository.record({ ...event, costUsd: 2 }));
+        assert.equal((await usageRepository.getDay(projectName, today))?.costUsd["asr-integration"], 0.01);
+        pass("usage receipts: concurrent replay bills once and rejects conflicting payloads");
+      } finally {
+        const { deleteItem } = await import("@/infrastructure/db/store");
+        await deleteItem(dbKeys.usageMember("audio-integration@example.com", today, projectName));
+      }
+    }
+
+    // ---------- source inventory (completion recovery + deletion fencing) ----------
+    {
+      const { sourceFileRepository: files } = await import("@/infrastructure/db/repositories/sourceFileRepository");
+      const { deleteItem } = await import("@/infrastructure/db/store");
+      const id = `source-${suffix}`;
+      try {
+        const pending = await files.create({ id, projectName, userEmail: "integration@example.com",
+          filename: "sample.mp3", mimeType: "audio/mpeg", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
+          revision: 1, status: "pending", createdAt: now, retireAt: now });
+        const competing = await Promise.all([
+          files.finish(pending, { storedAt: now, retireAt: now, checksum: "sha256", byteSize: 3 }),
+          files.finish(pending, { storedAt: now, retireAt: now, checksum: "sha256", byteSize: 3 }),
+        ]);
+        assert.equal(competing.filter(Boolean).length, 1);
+        assert.equal(await files.get(`${projectName}-other`, id), null);
+        const ready = (await files.get(projectName, id))!;
+        assert.equal(ready.status, "ready");
+        const deleting = await files.markDeleting(ready, now);
+        assert.ok(deleting);
+        assert.equal(await files.finish(pending, { storedAt: now, retireAt: now, checksum: "late", byteSize: 3 }), null);
+        assert.equal(await files.markDeleted(deleting, now), true);
+        assert.equal((await files.get(projectName, id))?.status, "deleted");
+        assert.equal((await files.expired(now, 100)).some((file) => file.id === id), false);
+        pass("source inventory: atomic completion, project isolation and deletion fencing");
+      } finally {
+        await deleteItem(dbKeys.sourceFile(id));
+      }
+    }
+
+    // ---------- durable audio work (admission + worker fencing) ----------
+    {
+      const { audioJobRepository: jobs } = await import("@/infrastructure/db/repositories/audioJobRepository");
+      const input = {
+        projectName, userEmail: "integration@example.com", source: { kind: "file" as const, fileId: "audio-file" },
+        sourceKey: "integration-source", model: "selfhosted/asr",
+        retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" },
+      };
+      const admitted = await Promise.all(Array.from({ length: 8 }, (_, index) => jobs.submit(input, {
+        id: `audio-${index}`, now, occurrence: "integration-hour", maxActive: 1, maxPerOccurrence: 1,
+      })));
+      assert.equal(admitted.filter((result) => result.status === "accepted").length, 1);
+      assert.equal(admitted.filter((result) => result.status === "duplicate").length, 7);
+      const winner = admitted.find((result) => result.status === "accepted")!;
+      assert.ok("job" in winner);
+      const job = winner.job;
+      const leaseUntil = new Date(Date.parse(now) + 120_000).toISOString();
+      const reclaimedAt = new Date(Date.parse(now) + 180_000).toISOString();
+      const nextUntil = new Date(Date.parse(now) + 300_000).toISOString();
+      const claims = await Promise.all([
+        jobs.claim(projectName, job.id, now, "worker-a", leaseUntil),
+        jobs.claim(projectName, job.id, now, "worker-b", leaseUntil),
+      ]);
+      assert.equal(claims.filter(Boolean).length, 1);
+      const first = claims.find((value) => value !== null)!;
+      const second = await jobs.claim(projectName, job.id, reclaimedAt, "worker-c", nextUntil);
+      assert.ok(second);
+      assert.equal(await jobs.checkpoint(first, {
+        status: "completed", stage: "storing", dueAt: reclaimedAt,
+      }, reclaimedAt), null, "expired worker cannot commit results");
+      assert.equal(await jobs.heartbeat(second, reclaimedAt, nextUntil), true);
+      assert.ok(await jobs.checkpoint(second, { status: "completed", stage: "storing", dueAt: reclaimedAt,
+        receipts: { transcript: "document-1" } }, reclaimedAt));
+      assert.equal((await jobs.submit(input, {
+        id: "audio-replay", now: reclaimedAt, occurrence: "next-hour", maxActive: 1, maxPerOccurrence: 1,
+      })).status, "duplicate");
+      const next = await jobs.submit({ ...input, sourceKey: "other-source" }, {
+        id: "audio-next", now: reclaimedAt, occurrence: "next-hour", maxActive: 1, maxPerOccurrence: 1,
+      });
+      assert.equal(next.status, "accepted", "terminal job releases its durable project slot");
+      assert.equal(await jobs.cancel(projectName, "audio-next", 1, reclaimedAt), true);
+      pass("audio jobs: concurrent admission, lease fencing, durable dedup and slot release");
+    }
+
     // ---------- concurrency slots (conditional claim + lease reclaim) ----------
     const slotActor = `user:slots-${suffix}@example.com`;
     const nowSeconds = Math.floor(Date.now() / 1000);

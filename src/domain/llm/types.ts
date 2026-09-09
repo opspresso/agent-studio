@@ -394,6 +394,7 @@ export interface RunResult {
 /** Sampling / generation parameters resolved from a version. */
 export interface EngineParameters {
   temperature?: number;
+  presencePenalty?: number;
   maxTokens?: number;
   reasoningEffort?: "low" | "medium" | "high";
   piiFiltering?: boolean;

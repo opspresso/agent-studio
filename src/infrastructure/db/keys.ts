@@ -17,6 +17,38 @@ export const keys = {
   }),
   versionPrefix: () => "VERSION#",
 
+  audioJob: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `AUDIOJOB#${id}` }),
+  audioJobConfig: (projectName: string) => ({ PK: `PROJECT#${projectName}`, SK: "AUDIOCONFIG" }),
+  audioJobPrefix: () => "AUDIOJOB#",
+  usageReceipt: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `USAGERECEIPT#${id}` }),
+  sourceFile: (id: string) => ({ PK: `SOURCEFILE#${id}`, SK: "META" }),
+  sourceFileJobIndex: (project: string, job: string, kind: string, id: string) => ({
+    GSI2PK: `SOURCEJOB#${project}#${job}`, GSI2SK: `${kind}#${id}`,
+  }),
+  sourceFileJobQuery: (project: string, job: string, kind: string) => ({
+    pk: `SOURCEJOB#${project}#${job}`, sk: { prefix: `${kind}#` },
+  }),
+  sourceReference: (id: string) => ({ PK: `SOURCEREFERENCE#${id}`, SK: "META" }),
+  sourceFileExpiryIndex: (retireAt: string, projectName: string, id: string) => ({
+    GSI1PK: "SOURCEFILEEXPIRY", GSI1SK: `${retireAt}#${projectName}#${id}`,
+  }),
+  sourceFileExpiryQuery: (now: string) => ({
+    pk: "SOURCEFILEEXPIRY", sk: { between: ["", `${now}#\uffff`] as [string, string] },
+  }),
+  audioJobSlots: (projectName: string) => ({ PK: `PROJECT#${projectName}`, SK: "AUDIOSLOTS" }),
+  audioJobSource: (projectName: string, sourceKey: string) => ({
+    PK: `PROJECT#${projectName}`, SK: `AUDIOSOURCE#${sourceKey}`,
+  }),
+  audioJobOccurrence: (projectName: string, occurrence: string) => ({
+    PK: `PROJECT#${projectName}`, SK: `AUDIOOCCURRENCE#${occurrence}`,
+  }),
+  audioJobDueIndex: (dueAt: string, projectName: string, id: string) => ({
+    GSI1PK: "AUDIOJOBDUE", GSI1SK: `${dueAt}#${projectName}#${id}`,
+  }),
+  audioJobDueQuery: (now: string) => ({
+    pk: "AUDIOJOBDUE", sk: { between: ["", `${now}#\uffff`] as [string, string] },
+  }),
+
   chat: (chatId: string) => ({ PK: `CHAT#${chatId}`, SK: "META" }),
   chatMessage: (chatId: string, seq: number) => ({
     PK: `CHAT#${chatId}`,

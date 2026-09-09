@@ -191,6 +191,8 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
     timeZone,
     hourCycle: "h23",
     minute: "numeric",
+    second: "numeric",
+    year: "numeric",
     hour: "numeric",
     day: "numeric",
     month: "numeric",
@@ -205,6 +207,8 @@ const WEEKDAYS: Record<string, number> = {
 };
 
 interface WallClock {
+  year: number;
+  second: number;
   minute: number;
   hour: number;
   dayOfMonth: number;
@@ -213,13 +217,15 @@ interface WallClock {
 }
 
 /** What a clock on the wall in `timeZone` shows at this UTC instant. */
-function wallClock(instant: Date, timeZone: string): WallClock {
+export function wallClock(instant: Date, timeZone: string): WallClock {
   const read: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {};
   for (const part of formatterFor(timeZone).formatToParts(instant)) {
     read[part.type] = part.value;
   }
   return {
     minute: Number(read.minute),
+    year: Number(read.year),
+    second: Number(read.second),
     // `% 24` guards the ICU quirk where midnight renders as "24" — `h23`
     // requests 0–23, but a wrong 24 here would silently skip every midnight.
     hour: Number(read.hour) % 24,

@@ -3,6 +3,10 @@ export function projectApiTokenContext(projectName: string): string {
   return JSON.stringify(["project", projectName, "api-token"]);
 }
 
+export function sourceReferenceContext(projectName: string, id: string): string {
+  return JSON.stringify(["project", projectName, "source-reference", id, "url"]);
+}
+
 /** AES-GCM context for one named inbound A2A client key. */
 export function a2aClientKeyContext(name: string): string {
   return JSON.stringify(["a2a-client", name, "token"]);

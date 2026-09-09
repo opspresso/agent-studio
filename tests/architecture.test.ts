@@ -612,7 +612,12 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(95);
+    expect(entries.length).toBe(98);
+    expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
+      "src/app/projects/[name]/audio/page.tsx",
+      "src/app/projects/[name]/_components/SourceMappings.tsx",
+      "src/app/projects/[name]/_components/ProjectAudioContext.tsx",
+    ]));
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -1066,6 +1071,26 @@ interface SingleOwner {
 }
 
 const SINGLE_OWNERS: SingleOwner[] = [
+  {
+    what: "transcription channel and wire format selection",
+    pattern: /export async function getTranscriptionTarget\b/,
+    owner: "src/lib/runtime-settings.ts",
+  },
+  {
+    what: "transcription duration and token cost calculation",
+    pattern: /export function calculateTranscriptionCost\b/,
+    owner: "src/domain/llm/models.ts",
+  },
+  {
+    what: "private source file object addresses",
+    pattern: /export function sourceFileObjectKey\b/,
+    owner: "src/domain/artifact/sourceFile.ts",
+  },
+  {
+    what: "calendar month expiration of stored files",
+    pattern: /\.setUTCMonth\(/,
+    owner: "src/application/artifact/fileRetention.ts",
+  },
   {
     what: "scoping tool calls to their delegation",
     pattern: /export function toolCallKey\b/,

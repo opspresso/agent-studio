@@ -39,6 +39,26 @@ afterEach(() => {
 });
 
 describe("OpenAI channel adapter", () => {
+  it.each([undefined, 0, 1.5])("sends presence penalty %s identically for streaming and completion requests", async (presencePenalty) => {
+    runtime.providerBaseUrl = `https://presence-${String(presencePenalty ?? "default").replace(".", "-")}.example/v1`;
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const body = await requestBody(input, init) as Record<string, unknown>;
+      bodies.push(body);
+      return body.stream
+        ? new Response("data: [DONE]\n\n", { headers: { "Content-Type": "text/event-stream" } })
+        : Response.json({ choices: [] });
+    }));
+    const params = { model: "openai/gpt-test", messages: [], presencePenalty };
+    await channel.chatCompletion(params);
+    for await (const chunk of channel.chatCompletionStream(params)) void chunk;
+    expect(bodies).toHaveLength(2);
+    for (const body of bodies) {
+      if (presencePenalty === undefined) expect(body).not.toHaveProperty("presence_penalty");
+      else expect(body.presence_penalty).toBe(presencePenalty);
+    }
+  });
+
   it("routes provider models and translates request and response fields", async () => {
     let body: Record<string, unknown> | undefined;
     vi.stubGlobal(

@@ -66,6 +66,8 @@ export interface MemberUsageRow {
 }
 
 export interface UsageDelta {
+  /** Stable event identity for durable callers replaying the same receipt. */
+  idempotencyKey?: string;
   projectName: string;
   date: string;
   model: string;

@@ -189,6 +189,28 @@ export const config = {
   get objectBucketName(): string | undefined {
     return optionalEnv(process.env.S3_BUCKET_NAME);
   },
+  get sourceFilesBucketName(): string | undefined {
+    return optionalEnv(process.env.SOURCE_FILES_BUCKET_NAME);
+  },
+  get transcription() {
+    const baseUrl = optionalEnv(process.env.TRANSCRIPTION_BASE_URL);
+    const apiKey = optionalEnv(process.env.TRANSCRIPTION_API_KEY);
+    if (apiKey && !baseUrl) throw new Error("TRANSCRIPTION_API_KEY requires TRANSCRIPTION_BASE_URL");
+    const responseFormat = optionalEnv(process.env.TRANSCRIPTION_RESPONSE_FORMAT) ?? "json";
+    if (responseFormat !== "json" && responseFormat !== "verbose_json" && responseFormat !== "diarized_json") {
+      throw new Error("Invalid TRANSCRIPTION_RESPONSE_FORMAT");
+    }
+    const chunkingStrategy = optionalEnv(process.env.TRANSCRIPTION_CHUNKING_STRATEGY);
+    if (chunkingStrategy && chunkingStrategy !== "auto") throw new Error("Invalid TRANSCRIPTION_CHUNKING_STRATEGY");
+    return {
+      baseUrl, apiKey, responseFormat,
+      ...(chunkingStrategy ? { chunkingStrategy: "auto" as const } : {}),
+      maxInputBytes: positiveIntEnv("TRANSCRIPTION_MAX_INPUT_BYTES", 25 * 1024 * 1024),
+      segmentSeconds: positiveIntEnv("TRANSCRIPTION_SEGMENT_SECONDS", 300),
+      ffmpegPath: optionalEnv(process.env.FFMPEG_PATH) ?? "ffmpeg",
+      searchPath: process.env.PATH,
+    } as const;
+  },
   get s3Endpoint(): string | undefined {
     return optionalEnv(process.env.S3_ENDPOINT);
   },

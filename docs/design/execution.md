@@ -20,7 +20,7 @@ Project { name (slug, immutable id), displayName, description,
           slack?, telegram?, teams?, costLimits?, createdAt, updatedAt }
 
 Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fallbackModel?,
-          parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
+          parameters { temperature?, presencePenalty?, maxTokens?, reasoningEffort?, piiFiltering,
                        callerContext?, structuredOutput?/jsonSchema,
                        imageGeneration?/imageModel?, urlFetch?, slackWorkspace?,
                        dynamicCapabilities?, memoryRecall?, reasoningTrace? },
@@ -46,6 +46,9 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
   전에 쓰인 행은 `mcpList` 를 `string[]` 로 저장했다. 읽을 때 정규화되고, API 도 여전히 그
   형태를 받는다.
 - 템플릿 변수 `{{var}}` 는 dispatch 전에 서버 측에서 렌더링된다.
+- `presencePenalty`는 선택적인 생성 설정이며 OpenAI-compatible 요청의 `presence_penalty`로 전달한다.
+  허용 범위는 -2부터 2까지이고, 양수는 이미 나온 토큰에 페널티를 적용한다. 미설정이면 provider 기본값을 유지하며,
+  모델이 지원하는 경우에만 사용한다. `maxTokens`와 함께 버전에 저장하고 각 하위 Agent는 자신의 설정을 사용한다.
 - Version 쓰기는 catalog 모델에 대해 **capability 적합성**을 검증한다(agent project 는
   `capabilities.tools` 를 요구하고, `structuredOutput` 은 그 capability 를 요구한다). 알 수
   없는/커스텀 모델 id 는 경고와 함께 계속 허용되며 — catalog 에 추가되기 전까지는 $0 으로

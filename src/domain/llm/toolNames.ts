@@ -5,6 +5,10 @@ export const IMAGE_TOOL_NAME = "GenerateImage";
 export const EDIT_IMAGE_TOOL_NAME = "EditImage";
 export const FETCH_URL_TOOL_NAME = "FetchUrl";
 export const FILE_TOOL_NAME = "File";
+export const IMPORT_FILE_TOOL_NAME = "ImportFile";
+export const TRANSCRIBE_AUDIO_TOOL_NAME = "TranscribeAudio";
+export const AUDIO_JOB_TOOL_NAME = "AudioJob";
+export const AUDIO_TOOL_NAMES: readonly string[] = [IMPORT_FILE_TOOL_NAME, TRANSCRIBE_AUDIO_TOOL_NAME, AUDIO_JOB_TOOL_NAME];
 export const SAVE_FILE_TOOL_NAME = "SaveFile";
 export const SLACK_HISTORY_TOOL_NAME = "SlackHistory";
 export const SLACK_THREAD_TOOL_NAME = "SlackThread";
@@ -36,5 +40,6 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
   FETCH_URL_TOOL_NAME,
   SAVE_FILE_TOOL_NAME,
   FILE_TOOL_NAME,
+  ...AUDIO_TOOL_NAMES,
   ...SLACK_TOOL_NAMES,
 ];

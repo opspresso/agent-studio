@@ -23,6 +23,7 @@ import { settingsRepository } from "@/infrastructure/db/repositories/settingsRep
 import { parseProviderConfigs, resolveProviderTarget, type ResolvedTarget } from "@/infrastructure/llm/providers";
 import { getModelConfig, SELF_HOSTED_PROVIDERS, wireModelId } from "@/domain/llm/models";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
+import type { TranscriptionConfig } from "@/infrastructure/llm/transcription";
 import { config, positiveIntEnv } from "./config";
 import { optionalEnv } from "@/shared/env";
 import { parseList } from "@/shared/parseList";
@@ -171,6 +172,25 @@ export async function getRerankerTarget(model: string): Promise<{ baseUrl: strin
     throw new Error("The reranker endpoint is not configured");
   }
   return { ...reranker, model: wireModelId(model) };
+}
+
+/** ASR requires an explicit channel; never fall through to an unrelated text provider. */
+export async function getTranscriptionTarget(model: string): Promise<TranscriptionConfig & { segmentSeconds: number }> {
+  const registered = getModelConfig(model);
+  if (!registered?.capabilities.transcription) throw new Error("The selected model is not a registered transcription model");
+  const settings = config.transcription;
+  let target: { baseUrl: string; apiKey?: string; model: string };
+  if (settings.baseUrl) {
+    target = { baseUrl: settings.baseUrl, apiKey: settings.apiKey, model: wireModelId(model) };
+  } else {
+    const provider = (await getLlmProviderConfigs()).find((entry) => entry.name === registered.provider);
+    if (!provider || provider.auth === "sigv4") throw new Error("An OpenAI-compatible transcription channel is not configured");
+    target = resolveProviderTarget(model, [provider], provider);
+  }
+  return { baseUrl: target.baseUrl, apiKey: target.apiKey, id: model, wireId: target.model,
+    maxInputBytes: settings.maxInputBytes, responseFormat: settings.responseFormat,
+    ...(settings.chunkingStrategy ? { chunkingStrategy: settings.chunkingStrategy } : {}),
+    segmentSeconds: settings.segmentSeconds };
 }
 
 export interface ModelSelection {

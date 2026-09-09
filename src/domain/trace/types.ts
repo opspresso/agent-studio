@@ -1,11 +1,10 @@
 import type { RunActor } from "@/domain/execution/actor";
 
 /**
- * `turn-limit` is distinct from `completed` because a run the turn guard ended
- * produced no final answer — recording it as completed made the one run worth
- * investigating read as normal on the traces page.
+ * Limit endings are distinct from `completed`: the turn guard or provider's
+ * output cap stopped the run before it finished its answer.
  */
-export type TraceStatus = "completed" | "turn-limit" | "failed" | "cancelled";
+export type TraceStatus = "completed" | "turn-limit" | "output-limit" | "failed" | "cancelled";
 /**
  * `prepare` is the work a run does before its first model call — resolving the
  * version's tools (which opens every bound MCP server) and, when the version

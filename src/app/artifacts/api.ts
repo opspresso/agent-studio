@@ -29,7 +29,7 @@ function queryString(query: ArtifactQuery): string {
   return encoded ? `?${encoded}` : "";
 }
 
-/** What this person's own runs produced. Misses runs no mailbox caused. */
+/** Artifacts attributed to this mailbox, including personal-context automation. */
 export function listMyArtifacts(query: ArtifactQuery = {}): Promise<ArtifactPage> {
   return fetch(`/api/artifacts${queryString(query)}`).then((r) => readJson<ArtifactPage>(r));
 }

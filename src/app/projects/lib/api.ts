@@ -1,3 +1,4 @@
+import { notifyVersionChange } from "./versionEvents";
 import type {
   CostLimits,
   McpBinding,
@@ -153,7 +154,7 @@ export function createVersion(
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify(input),
-  }).then((r) => readJson<Version>(r));
+  }).then((r) => readJson<Version>(r)).then((saved) => { notifyVersionChange(name); return saved; });
 }
 
 export function updateVersion(
@@ -165,7 +166,7 @@ export function updateVersion(
     method: "PUT",
     headers: jsonHeaders,
     body: JSON.stringify(input),
-  }).then((r) => readJson<Version>(r));
+  }).then((r) => readJson<Version>(r)).then((saved) => { notifyVersionChange(name); return saved; });
 }
 
 export type { PromptPreview };
@@ -199,7 +200,7 @@ export function previewPrompt(
 }
 
 export function deleteVersion(name: string, version: string): Promise<void> {
-  return fetch(`/api/projects/${name}/versions/${version}`, { method: "DELETE" }).then(assertOk);
+  return fetch(`/api/projects/${name}/versions/${version}`, { method: "DELETE" }).then(assertOk).then(() => notifyVersionChange(name));
 }
 
 export function publishVersion(name: string, versionName: string): Promise<SanitizedProject> {
@@ -207,7 +208,7 @@ export function publishVersion(name: string, versionName: string): Promise<Sanit
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ versionName }),
-  }).then((r) => readJson<SanitizedProject>(r));
+  }).then((r) => readJson<SanitizedProject>(r)).then((saved) => { notifyVersionChange(name); return saved; });
 }
 
 // --- Models ---------------------------------------------------------------
