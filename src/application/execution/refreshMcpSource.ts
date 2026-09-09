@@ -1,7 +1,7 @@
 import type { SourceReferenceDeps } from "@/application/audio/sourceReferences";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { buildMcpTools, closeMcp, type McpToolDeps } from "@/application/execution/mcpTools";
-import { readMcpSourceResult } from "@/application/audio/mapMcpSource";
+import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import { AudioJobStepError } from "@/application/audio/processJob";
 
 export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps, "versions">): NonNullable<SourceReferenceDeps["refresh"]> {
@@ -17,8 +17,14 @@ export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps,
       return { version, binding };
     };
     const { version, binding } = await check();
-    const client = await buildMcpTools(deps, { ...version,
-      mcpList: [{ ...binding, tools: [recipe.mapping.tool], sourceOutputs: undefined }] }, signal,
+    let refreshed: Parameters<RegisterMcpSource>[0] | undefined;
+    // Project before the model-facing result cap; a large provider response may
+    // otherwise lose the closing JSON delimiter. This callback persists nothing.
+    const client = await buildMcpTools({ ...deps, registerMcpSource: async (source) => {
+      refreshed = source;
+      return { sourceRef: "refresh", filename: source.filename, mimeType: source.mimeType };
+    } }, { ...version,
+      mcpList: [{ ...binding, tools: [recipe.mapping.tool], sourceOutputs: [{ ...recipe.mapping, refreshArgument: undefined }] }] }, signal,
     { actor: job.actor, userEmail: job.userEmail });
     try {
       const alias = client.aliasFor?.(recipe.serverName, recipe.mapping.tool);
@@ -34,8 +40,8 @@ export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps,
       const result = await client.callMcpTool(alias, { [argument]: itemId });
       await check();
       if (result.text.startsWith("Error:")) throw new AudioJobStepError("source_refresh_failed", true);
-      try { return readMcpSourceResult({ content: [{ type: "text", text: result.text }] }, recipe.mapping, recipe.serverName); }
-      catch { throw new AudioJobStepError("source_refresh_response_invalid", false); }
+      if (!refreshed) throw new AudioJobStepError("source_refresh_response_invalid", false);
+      return refreshed;
     } finally { await closeMcp(client.close); }
   };
 }

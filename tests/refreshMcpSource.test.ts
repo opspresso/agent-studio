@@ -12,7 +12,10 @@ function fixture() {
   const version = { projectName: "audio", versionName: "1", mcpList: [{ name: "files", sourceOutputs: [recipe.mapping] }] };
   const identity = vi.fn(async () => "epoch-1");
   const deps = { versions: { get: async () => version }, mcps: { get: async () => ({ name: "files" }) }, sourceRefreshIdentity: identity } as unknown as Parameters<typeof createMcpSourceRefresher>[0];
-  const call = vi.fn(async () => ({ text: JSON.stringify({ id: 42, url: "https://files.example.test/fresh" }) }));
+  const call = vi.fn(async () => {
+    await vi.mocked(buildMcpTools).mock.calls[0]?.[0].registerMcpSource?.({ projectName: "audio", userEmail: "owner@example.test", namespace: "account", itemId: "42", url: "https://files.example.test/fresh", filename: "source", mimeType: "audio/mpeg" });
+    return { text: "opaque projected result" };
+  });
   const close = vi.fn(async () => {});
   vi.mocked(buildMcpTools).mockResolvedValue({ mcpTools: [{ type: "function", function: { name: "file_read", parameters: { properties: { file_id: { type: "integer" } } } } }],
     mcpServers: [], warnings: [], aliasFor: () => "file_read", callMcpTool: call, close });
@@ -20,12 +23,12 @@ function fixture() {
   return { run: createMcpSourceRefresher(deps), job, recipe, call, close, identity };
 }
 describe("registered MCP source replay", () => {
-  it("uses only the fixed read tool and typed original ID, without recursively projecting the response", async () => {
+  it("uses the fixed read tool and projects privately before model-facing truncation without persisting a new reference", async () => {
     const f = fixture();
     const value = await f.run(f.job, f.recipe, new AbortController().signal);
     expect(value).toMatchObject({ itemId: "42", url: "https://files.example.test/fresh" });
     expect(f.call).toHaveBeenCalledExactlyOnceWith("file_read", { file_id: 42 });
-    expect(vi.mocked(buildMcpTools).mock.calls[0]?.[1].mcpList).toEqual([{ name: "files", tools: ["get_file"], sourceOutputs: undefined }]);
+    expect(vi.mocked(buildMcpTools).mock.calls[0]?.[1].mcpList).toEqual([{ name: "files", tools: ["get_file"], sourceOutputs: [{ ...f.recipe.mapping, refreshArgument: undefined }] }]);
     expect(f.close).toHaveBeenCalledTimes(1);
   });
   it("refuses reconnections before issuing the read", async () => {

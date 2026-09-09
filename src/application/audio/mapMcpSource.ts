@@ -16,6 +16,26 @@ function readPath(value: unknown, path: readonly string[]): unknown {
   return current;
 }
 
+/** Text responses may append provider guidance after a complete JSON value. */
+function readJsonContainer(text: string): unknown {
+  const start = text.search(/\S/);
+  if (text[start] !== "{" && text[start] !== "[") throw new Error("Source response must begin with JSON");
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quoted = false;
+    } else if (char === '"') quoted = true;
+    else if (char === "{" || char === "[") depth++;
+    else if ((char === "}" || char === "]") && --depth === 0) return JSON.parse(text.slice(start, index + 1));
+  }
+  throw new Error("Incomplete source JSON object");
+}
+
 export function readMcpSourceResult(raw: unknown, mapping: McpSourceMapping, serverName: string) {
   const result = raw as { structuredContent?: unknown; content?: unknown[]; isError?: boolean; resultType?: string } | undefined;
   if (!result || result.isError || result.resultType === "input_required") throw new Error("Source call failed");
@@ -23,7 +43,7 @@ export function readMcpSourceResult(raw: unknown, mapping: McpSourceMapping, ser
     const block = item as { type?: unknown; text?: unknown } | null;
     return block?.type === "text" && typeof block.text === "string" ? [block.text] : [];
   }).join("\n");
-  const body: unknown = result.structuredContent ?? JSON.parse(text);
+  const body: unknown = result.structuredContent ?? readJsonContainer(text);
   const url = readPath(body, mapping.urlPath);
   const rawId = readPath(body, mapping.idPath);
   const itemId = typeof rawId === "number" && Number.isSafeInteger(rawId) ? String(rawId) : rawId;

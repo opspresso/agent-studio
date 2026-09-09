@@ -12,6 +12,22 @@ function input() {
     result: { content: [{ type: "text", text: JSON.stringify(body) }] } };
 }
 describe("MCP source projection", () => {
+  it("reads a complete JSON object followed by provider guidance without exposing the guidance", async () => {
+    const value = input();
+    const text = JSON.stringify({ ...body, notes: 'braces } { and escaped quote " with slash \\' });
+    const result = await mapMcpSource({ ...value, result: { content: [{ type: "text", text: `\n${text}\nUse another tool for transcript bodies: ${secret}` }] } });
+    expect(result.text).toContain("ref-1");
+    expect(result.text).not.toContain(secret);
+    expect(value.register).toHaveBeenCalledOnce();
+  });
+  it.each([JSON.stringify(body).slice(0, -1), `prefix ${JSON.stringify(body)}`, '{"file": invalid}'])
+    ("rejects incomplete, prefixed or malformed JSON without registering a source", async (text) => {
+      const value = input();
+      const result = await mapMcpSource({ ...value, result: { content: [{ type: "text", text }] } });
+      expect(result.text).toMatch(/^Error:/);
+      expect(result.text).not.toContain(secret);
+      expect(value.register).not.toHaveBeenCalled();
+    });
   it("keeps the replay recipe private and refuses refresh mappings without a captured connection identity", async () => {
     const value = input(); const renewable = { ...mapping, refreshArgument: "file_id" };
     expect((await mapMcpSource({ ...value, mapping: renewable })).text).toMatch(/^Error:/);
@@ -31,6 +47,12 @@ describe("MCP source projection", () => {
   it("uses structured output without depending on a text preview", async () => {
     const value = input();
     expect((await mapMcpSource({ ...value, result: { structuredContent: body } })).text).toContain("ref-1");
+  });
+  it("preserves array-root mappings", async () => {
+    const value = input();
+    const result = await mapMcpSource({ ...value, mapping: { ...mapping, urlPath: ["0", "file", "url"], idPath: ["0", "file", "id"], namePath: ["0", "file", "name"] },
+      result: { content: [{ type: "text", text: JSON.stringify([body]) }] } });
+    expect(result.text).toContain("ref-1");
   });
   it("separates namespaces from different MCP servers", async () => {
     const value = input(); await mapMcpSource(value); await mapMcpSource({ ...value, serverName: "another" });

@@ -144,6 +144,9 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 문자열·정수 ID 인수 하나를 지원한다. endpoint·credential·binding·OAuth flow 세대가 바뀌면
 재조회하지 않으며 조회 중 변경도 결과 사용 전에 확인한다. recipe는 job에 유지하고 URL은 복제하지 않는다.
 
+파일 응답의 텍스트는 첫 JSON 객체·배열 뒤에 붙은 제공자 안내문을 제외하고 파싱한다. 불완전한
+JSON은 거절한다. 최초 등록과 URL 재조회 모두 모델용 응답 길이 제한 전에 비공개 필드를 추출한다.
+
 목록 탐색 자체는 Agent가 기존 MCP tool을 사용한다. 구조화 파일 참조가 있는 응답은 서버가
 source ref로 치환한 뒤 모델·trace에 전달한다. 선택한 출처가 이 계약을 제공하지 않으면
 재조회 mapping을 등록하거나 파일 업로드를 사용한다. 서비스 이름별 분기를 추가하지 않는다.
