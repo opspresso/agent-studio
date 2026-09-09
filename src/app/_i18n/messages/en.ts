@@ -67,6 +67,7 @@ export const en = {
   "audio.noJobs": "No audio jobs yet.",
   "audio.original": "Original file",
   "audio.transcript": "Transcript",
+  "audio.dialogue": "Dialogue",
   "audio.result": "Processed result",
   "audio.retry": "Retry",
   "audio.resumeAt": "Next processing attempt",

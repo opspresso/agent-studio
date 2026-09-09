@@ -6,6 +6,9 @@ import type { createSourceFileUseCases } from "@/application/artifact/sourceFile
 import { cutCodePoints } from "@/shared/utf8Text";
 import { AudioJobStepError, type AudioJobStepContext } from "./processJob";
 import { MAX_TRANSCRIPT_BYTES } from "./transcribeFile";
+import type { AudioTranscript } from "./transcribeFile";
+import { renderDialogue } from "./dialogue";
+import { validateTranscription } from "@/domain/llm/transcription";
 
 const INPUT_CHARS = 16_000;
 const OUTPUT_CHARS = 6_000;
@@ -42,12 +45,13 @@ function chunks(text: string): string[] {
 }
 
 export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
-  return async (job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string; summaryRef: string }> => {
+  return async (job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string; summaryRef: string; dialogueRef: string }> => {
     if (!job.postprocess?.version || !job.transcriptRef) throw new AudioJobStepError("postprocess_configuration_missing", false);
     const file = await deps.files.read(job.task === "postprocess" ? audioSourceProject(job) : job.projectName,
       job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES);
-    const transcript = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)) as { text: string; warnings?: string[] };
-    if (typeof transcript.text !== "string") throw new AudioJobStepError("transcript_invalid", false);
+    const transcript = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)) as AudioTranscript;
+    try { validateTranscription(transcript); }
+    catch { throw new AudioJobStepError("transcript_invalid", false); }
     let calls = 0;
     const execute = async (text: string, round: number, index: number): Promise<AudioPostprocessOutput> => {
       if (++calls > MAX_CALLS) throw new AudioJobStepError("postprocess_call_limit", false);
@@ -112,6 +116,12 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
       derivedFrom: job.transcriptRef, model: job.postprocess.version.model, producedBy: job.postprocess.projectName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield new TextEncoder().encode(final.text); })(), context.signal);
-    return { draftRef: id, summaryRef };
+    const dialogueRef = `${job.id}-dialogue`;
+    await deps.files.import({ id: dialogueRef, projectName: job.projectName, userEmail: job.userEmail,
+      filename: "dialogue.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
+      derivedFrom: job.transcriptRef, model: transcript.model,
+      derived: { jobId: job.id, kind: "draft" } },
+    async () => (async function* () { yield new TextEncoder().encode(renderDialogue(transcript)); })(), context.signal);
+    return { draftRef: id, summaryRef, dialogueRef };
   };
 }

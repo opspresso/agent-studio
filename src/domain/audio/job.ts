@@ -53,6 +53,7 @@ export interface AudioJob extends AudioJobInput {
   transcriptRef?: string;
   draftRef?: string;
   summaryRef?: string;
+  dialogueRef?: string;
   /** Per-output receipts, separate from model-generated content. */
   receipts: Record<string, string>;
   errorCode?: string;
@@ -65,7 +66,7 @@ export function isAudioJobTerminal(status: AudioJobStatus): boolean {
 }
 
 export type AudioJobCheckpoint = Pick<AudioJob, "status" | "stage" | "dueAt"> &
-  Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "summaryRef" | "receipts" | "errorCode" | "failures">>;
+  Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "summaryRef" | "dialogueRef" | "receipts" | "errorCode" | "failures">>;
 
 export interface AudioJobRepository {
   submit(input: AudioJobInput, admission: {

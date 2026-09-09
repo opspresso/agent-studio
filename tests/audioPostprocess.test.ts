@@ -12,7 +12,7 @@ function fixture(text = "Fact one.") {
       projectName: "writer", versionName: "1", model: "text-model", systemPrompt: "Summarize", userPromptTemplate: "",
       parameters: { piiFiltering: false }, skillList: [], mcpList: [], subagentList: [], createdAt: "2026-09-09T00:00:00Z",
     } } };
-  const saved = new Map<string, Uint8Array>([["transcript", new TextEncoder().encode(JSON.stringify({ text, warnings: ["source warning"] }))]]);
+  const saved = new Map<string, Uint8Array>([["transcript", new TextEncoder().encode(JSON.stringify({ text, model: "asr", segments: [], warnings: ["source warning"] }))]]);
   const metadata: SourceFile = { id: "file", projectName: job.projectName, userEmail: job.userEmail, filename: "file.json",
     mimeType: "application/json", retention: job.retention, revision: 1, status: "ready", createdAt: job.createdAt, retireAt: "2026-12-09T00:00:00Z" };
   const deps: AudioPostprocessDeps = {
@@ -39,6 +39,8 @@ describe("durable Agent postprocessing", () => {
     const result = await f.run(f.job, f.context);
     expect(read).toHaveBeenCalledWith("transcriber", "transcript", f.job.userEmail, expect.any(Number));
     expect(result.summaryRef).toBe("job-summary");
+    expect(result.dialogueRef).toBe("job-dialogue");
+    expect(new TextDecoder().decode(f.saved.get(result.dialogueRef))).toContain("**Unknown speaker:**");
     expect(new TextDecoder().decode(f.saved.get(result.summaryRef))).toBe("Summary");
     expect(imported).toHaveBeenCalledWith(expect.objectContaining({ filename: "summary.md", mimeType: "text/markdown", derivedFrom: "transcript", producedBy: "writer" }), expect.any(Function), f.context.signal);
   });
@@ -46,7 +48,7 @@ describe("durable Agent postprocessing", () => {
     const f = fixture("Fact one. ".repeat(3000));
     const imported = vi.spyOn(f.deps.files, "import");
     await f.run(f.job, f.context);
-    expect(imported).toHaveBeenCalledTimes(5);
+    expect(imported).toHaveBeenCalledTimes(6);
     expect(imported.mock.calls.every(([input]) => input.retainUntil === "2026-12-09T00:00:00Z")).toBe(true);
   });
   it("stores a grounded output and reuses completed model calls", async () => {

@@ -142,6 +142,9 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 파생 Artifact는 입력의 만료를 상속하고 `derivedFrom`·`model`로 원본과 생성 모델을 기록한다.
 후처리 결과는 구조화 JSON과 `summary.md`로 각각 보관한다. `artifacts.processed`는 읽기용
 Markdown, `artifacts.structured`는 원문 근거와 경고가 포함된 JSON Artifact ID다.
+`artifacts.dialogue`는 `dialogue.md`다. ASR이 제공한 구간·화자 라벨·시간만 표시하고,
+누락된 화자는 미상으로 표시한다. 구간별 화자 라벨을 같은 인물로 합치거나 실명을 추정하지 않는다.
+구간 목록이 불완전해도 전체 전사문을 함께 보존한다. 대화 내용의 Markdown·HTML은 문자 그대로 표시한다.
 
 `source_ref`는 서버가 발급한 불투명 참조다. 등록된 MCP tool의 파일 URL을
 프로젝트·연결·외부 item ID에 연결한다. 직접 업로드는 비공개 file ID를 반환한다. JSON 안의 URL은 등록된 binding의 필드 mapping으로

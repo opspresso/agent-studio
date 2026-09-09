@@ -47,6 +47,7 @@ export const ko: Messages = {
   "audio.noJobs": "아직 오디오 작업이 없습니다.",
   "audio.original": "원본 파일",
   "audio.transcript": "전사문",
+  "audio.dialogue": "대화 내용",
   "audio.result": "처리 결과",
   "audio.retry": "재시도",
   "audio.resumeAt": "다음 처리 시각",

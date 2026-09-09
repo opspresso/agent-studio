@@ -37,8 +37,8 @@ describe("audio job processor", () => {
   it("runs standalone postprocessing from an existing transcript without ASR or external writes", async () => {
     await submit({ task: "postprocess", model: "", postprocess: { projectName: "writer", versionName: "1" } });
     const d = deps();
-    vi.mocked(d.postprocess).mockResolvedValue({ draftRef: "draft", summaryRef: "summary" });
-    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "stored", draftRef: "draft", summaryRef: "summary" });
+    vi.mocked(d.postprocess).mockResolvedValue({ draftRef: "draft", summaryRef: "summary", dialogueRef: "dialogue" });
+    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "stored", draftRef: "draft", summaryRef: "summary", dialogueRef: "dialogue" });
     expect(d.postprocess).toHaveBeenCalledWith(expect.objectContaining({ transcriptRef: "stored" }), expect.anything());
     expect(d.transcribe).not.toHaveBeenCalled();
     expect(d.store).not.toHaveBeenCalled();

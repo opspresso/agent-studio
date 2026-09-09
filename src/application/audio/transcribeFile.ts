@@ -8,6 +8,7 @@ import { AudioJobStepError, type AudioJobStepContext } from "./processJob";
 export const MAX_TRANSCRIPT_BYTES = 10 * 1024 * 1024;
 
 export interface AudioTranscript {
+  language?: string;
   text: string;
   segments: TranscriptSegment[];
   model: string;
@@ -117,6 +118,7 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
       ...(segment.speaker ? { speaker: `${part.index}:${segment.speaker}` } : {}),
     })));
     const output: AudioTranscript = {
+      ...(job.language ? { language: job.language } : {}),
       text: parts.map((part) => part.result.text).join("\n"), segments, model: job.model,
       sourceFileId: job.fileId, sourceChecksum: source.file.checksum,
       totalSeconds: parts[0]!.totalSeconds,
