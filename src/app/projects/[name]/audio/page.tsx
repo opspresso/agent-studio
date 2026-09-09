@@ -165,7 +165,7 @@ function AudioWorkspace({ name }: { name: string }) {
         }} disabled={busy} />
         {useSaved && <Text size="sm">{savedConfig.model} · {t("audio.configRevision")}: {savedConfig.revision} · {savedConfig.retention.value} {t(savedConfig.retention.unit === "months" ? "audio.months" : "audio.days")} · {savedConfig.retention.timezone}</Text>}
         {useSaved && savedConfig.language && <Text size="sm">{t("audio.language")}: {savedConfig.language}</Text>}
-        {useSaved && savedConfig.postprocess && <Text size="sm">{t("audio.writer")}: {savedConfig.postprocess.projectName} / {savedConfig.postprocess.versionName}</Text>}
+        {useSaved && savedConfig.postprocess && <Text size="sm">{t("audio.writer")}: {savedConfig.postprocess.projectName} / {savedConfig.postprocess.versionName === "published" ? t("audio.followPublished") : savedConfig.postprocess.versionName}</Text>}
         {useSaved && savedConfig.destination && <Text size="sm">{t("audio.destination")}: {savedConfig.destination.serverName} · {savedConfig.destination.documents ? t("audio.saveDocuments") : ""} {savedConfig.destination.memories ? t("audio.saveMemories") : ""}</Text>}
         {!savedConfig.enabled && <Alert>{t("audio.configDisabled")}</Alert>}
       </>}
@@ -180,10 +180,15 @@ function AudioWorkspace({ name }: { name: string }) {
         <TextInput label={t("audio.timezone")} value={timezone} onChange={(e) => setTimezone(e.currentTarget.value)} disabled={busy} />
       </SimpleGrid>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <Select label={t("audio.writer")} clearable searchable value={writer} onChange={(writer) => { setWriter(writer); setWriterVersion(null); }} disabled={busy}
+        <Select label={t("audio.writer")} clearable searchable value={writer} onChange={(writer) => {
+          setWriter(writer); setWriterVersion(projects.some((p) => p.name === writer && p.publishedVersion) ? "published" : null);
+        }} disabled={busy}
           data={projects.filter((project) => project.ownerEmail === viewer?.email && project.projectType === "agent").map((project) => ({ value: project.name, label: project.displayName }))} />
-        <Select label={t("audio.writerVersion")} value={writerVersion} onChange={setWriterVersion} disabled={busy || !writer}
-          data={versions.map((version) => ({ value: version.versionName, label: version.versionName }))} />
+        <Select label={t("audio.writerVersion")} description={t("audio.writerVersionHint")} value={writerVersion} onChange={setWriterVersion} disabled={busy || !writer}
+          data={[
+            ...(projects.some((p) => p.name === writer && p.publishedVersion) ? [{ value: "published", label: t("audio.followPublished") }] : []),
+            ...versions.map((version) => ({ value: version.versionName, label: version.versionName })),
+          ]} />
       </SimpleGrid>
       <Select label={t("audio.destination")} description={t("audio.destinationHint")} clearable value={destination} onChange={setDestination} data={options.destinations} disabled={busy} />
       {destination && <Group><Checkbox label={t("audio.saveDocuments")} checked={documents} onChange={(e) => setDocuments(e.currentTarget.checked)} disabled={busy} />

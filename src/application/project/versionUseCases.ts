@@ -554,6 +554,7 @@ export async function deleteVersion(
   projectName: string,
   versionName: string,
   userEmail: string,
+  assertUnused?: (project: Project, version: Version) => Promise<void>,
 ): Promise<void> {
   const project = await assertProjectWritable(projects, projectName, userEmail);
   // Resolve through the repository so the "published" sentinel names the real
@@ -562,6 +563,7 @@ export async function deleteVersion(
   if (project.publishedVersion === existing.versionName) {
     throw new ConflictError(`Published version "${existing.versionName}" cannot be deleted`);
   }
+  await assertUnused?.(project, existing);
   try {
     await versions.delete(projectName, existing.versionName, project.updatedAt);
   } catch (error) {
@@ -619,6 +621,7 @@ export interface VersionUseCasesDeps {
   /** Registry lookups a version's references are validated against. */
   refs: VersionRefRepos;
   cipher: SecretCipher;
+  assertUnused?: (project: Project, version: Version) => Promise<void>;
 }
 
 /**
@@ -677,7 +680,7 @@ export function createVersionUseCases(deps: VersionUseCasesDeps): VersionUseCase
       ),
 
     remove: (projectName: string, versionName: string, userEmail: string): Promise<void> =>
-      deleteVersion(deps.versions, deps.projects, projectName, versionName, userEmail),
+      deleteVersion(deps.versions, deps.projects, projectName, versionName, userEmail, deps.assertUnused),
 
     publish: (projectName: string, versionName: string, userEmail: string): Promise<Project> =>
       publishVersion(deps.projects, deps.versions, projectName, versionName, userEmail),

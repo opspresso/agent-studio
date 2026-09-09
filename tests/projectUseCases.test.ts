@@ -1312,6 +1312,15 @@ describe("updateVersion / deleteVersion boundaries", () => {
       deleteVersion(versions, makeProjectRepo([projectFixture("p")]), "p", "1", OWNER),
     ).rejects.toBeInstanceOf(ConflictError);
   });
+
+  it("checks enabled configuration references before deleting a version", async () => {
+    const versions = makeVersionRepo([versionFixture("p", "1")]);
+    const guard = vi.fn(async () => { throw new ConflictError("Version is in use"); });
+    await expect(deleteVersion(versions, makeProjectRepo([projectFixture("p")]), "p", "1", OWNER, guard))
+      .rejects.toThrow("Version is in use");
+    expect(await versions.get("p", "1")).not.toBeNull();
+    expect(guard).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("model capability validation", () => {

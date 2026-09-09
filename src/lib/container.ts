@@ -1,6 +1,7 @@
 import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor } from "@/infrastructure/documents/workerAdapters";
 import { createHash, randomUUID } from "node:crypto";
 import { createAudioConfigUseCases } from "@/application/audio/audioConfig";
+import { assertAudioPostprocessorVersionUnused, resolveAudioPostprocessor } from "@/application/audio/postprocessVersion";
 import { audioJobConfigRepository } from "@/infrastructure/db/repositories/audioJobConfigRepository";
 import { audioJobRepository } from "@/infrastructure/db/repositories/audioJobRepository";
 import { sourceFileRepository } from "@/infrastructure/db/repositories/sourceFileRepository";
@@ -30,7 +31,7 @@ import { AudioJobStepError, processAudioJob } from "@/application/audio/processJ
 import { openModelCall } from "@/application/run/runBracket";
 import { runAudioWorker } from "@/application/audio/worker";
 import { getTranscriptionTarget } from "@/lib/runtime-settings";
-import { calculateTranscriptionCost, getModelConfig, getVisibleModels } from "@/domain/llm/models";
+import { calculateTranscriptionCost, getVisibleModels } from "@/domain/llm/models";
 import { utcDay } from "@/shared/date";
 /**
  * Composition root. Wires domain repository ports to their PostgreSQL adapters and
@@ -980,6 +981,9 @@ export const versionUseCases = createVersionUseCases({
   projects: projectRepository,
   refs: versionRefRepos,
   cipher: secretCipher,
+  assertUnused: (project, version) => assertAudioPostprocessorVersionUnused(
+    { projects: projectRepository, configs: audioJobConfigRepository }, project, version,
+  ),
 });
 
 export const createProjectWithInitialVersion = composeCreateProjectWithInitialVersion({
@@ -1259,11 +1263,7 @@ export function getAudioRuntime() {
   const validateOutputs = async (input: Pick<SubmitAudioJobInput, "postprocess" | "destination">, projectName: string, email: string) => {
     const result: Pick<AudioJob, "postprocess" | "destination"> = {};
     if (input.postprocess) {
-      const project = await authorize(input.postprocess.projectName, email);
-      const version = await versionRepository.get(project.name, input.postprocess.versionName);
-      if (!version || project.projectType !== "agent") throw new ValidationError("Postprocessing requires an Agent version");
-      if (!getModelConfig(version.model)?.capabilities.structuredOutput) throw new ValidationError("Postprocessing requires a structured-output model");
-      result.postprocess = { projectName: project.name, versionName: version.versionName, version };
+      result.postprocess = await resolveAudioPostprocessor(versionRepository, authorize, input.postprocess, email);
     }
     if (input.destination) {
       if (!input.destination.documents && !input.destination.memories) throw new ValidationError("Choose a delivery output");

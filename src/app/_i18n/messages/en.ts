@@ -56,6 +56,8 @@ export const en = {
   "audio.timezone": "Timezone",
   "audio.writer": "Postprocessing Agent (optional)",
   "audio.writerVersion": "Agent version",
+  "audio.followPublished": "Follow published version",
+  "audio.writerVersionHint": "The selected version is fixed when a job is submitted. New publications apply only to new jobs.",
   "audio.destination": "Memory destination (optional)",
   "audio.destinationHint": "Choose an MCP server bound to this project’s published version.",
   "audio.saveDocuments": "Save documents",

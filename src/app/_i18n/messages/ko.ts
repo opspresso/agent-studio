@@ -36,6 +36,8 @@ export const ko: Messages = {
   "audio.timezone": "시간대",
   "audio.writer": "후처리 Agent (선택)",
   "audio.writerVersion": "Agent 버전",
+  "audio.followPublished": "배포 버전 따라가기",
+  "audio.writerVersionHint": "작업 접수 시 버전을 고정합니다. 이후 배포는 새 작업에만 적용됩니다.",
   "audio.destination": "Memory 저장 대상 (선택)",
   "audio.destinationHint": "이 프로젝트의 published 버전에 연결된 MCP 서버를 선택하세요.",
   "audio.saveDocuments": "문서 저장",

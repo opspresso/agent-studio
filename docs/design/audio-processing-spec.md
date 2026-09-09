@@ -149,6 +149,10 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 `destination?`, `retention`, `maxActive`, `maxPerOccurrence`, `revision`을 둔다.
 `postprocess`는 project/version 선택을, `destination`은 저장할 결과와 MCP binding을
 참조한다. source 연결·사용자 문맥은 기존 프로젝트 연결과 자동화 설정을 참조한다.
+자기 Agent의 후처리는 `versionName: "published"`로 배포 버전을 따라갈 수 있다. 작업 접수 시
+실제 버전 이름과 내용을 snapshot으로 고정하므로 이후 배포는 새 작업에만 적용된다.
+활성 오디오 설정이 명시적으로 참조하는 고정 버전은 설정을 바꾸기 전까지 삭제할 수 없다.
+없어진 버전은 자동 대체하지 않고 대상 project/version을 포함한 오류로 알린다.
 기간이나 cron에 고정값을 넣지 않는다. 임의 코드·템플릿으로 서버 실행 로직을 주입하지 않는다.
 GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `AudioJob config`를 읽고
 `submit`에 `config_revision`을 지정한다. 참조와 요청별 설정을 섞지 않는다. 설정이 없으면 기존

@@ -316,6 +316,8 @@ slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
 `model` 도 마찬가지다. `agent` project 에는 `tools`, 그 파라미터에는 `structuredOutput` 과
 `reasoningTrace`(모델의 `reasoning`)가 필요하다 (카탈로그에 없는 id 는 거절이 아니라 경고
 대상이다).
+현재 배포 버전이나 활성 오디오 설정에서 후처리 대상으로 지정한 고정 버전의 삭제는 409로 거절한다.
+후처리 설정에서 `versionName: "published"`를 사용하면 새 작업이 접수될 때 배포 버전을 고정한다.
 `mcpList`/`skillList`/`subagentList` 항목은 등록된 MCP 서버·skill·agent·project 로 해석돼야
 한다. 대롱거리는 참조는 400 으로 거절된다. 그리고 애초에 `agent` project 만 이들을 가질 수
 있다. 업데이트에서는 *새로 추가된* 항목만 검사하므로, 이미 참조하던 레지스트리 항목이
