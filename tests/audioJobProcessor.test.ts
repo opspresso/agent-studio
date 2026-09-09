@@ -148,6 +148,28 @@ describe("audio job processor", () => {
     expect(d.importFile).not.toHaveBeenCalled();
   });
 
+  it("gives an explicit retry a new deadline without losing prior stages or creation time", async () => {
+    await submit(); const d = deps();
+    vi.mocked(d.transcribe).mockRejectedValueOnce(new AudioJobStepError("provider_unavailable", false));
+    const stopped = (await processAudioJob(d, "audio", "job-1"))!;
+    vi.setSystemTime("2026-09-10T00:00:00.000Z");
+    await jobs.retry("audio", "job-1", stopped.revision, new Date().toISOString(), 1);
+    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", createdAt: now,
+      retryStartedAt: "2026-09-10T00:00:00.000Z", retention: input.retention });
+    expect(d.importFile).toHaveBeenCalledTimes(1);
+    expect(d.transcribe).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not extend the deadline for automatic retries", async () => {
+    await submit(); const d = deps();
+    vi.setSystemTime("2026-09-08T23:00:00.000Z");
+    vi.mocked(d.transcribe).mockRejectedValueOnce(new AudioJobStepError("provider_unavailable", true));
+    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "waiting" });
+    vi.setSystemTime("2026-09-09T00:00:00.000Z");
+    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "blocked", errorCode: "job_deadline" });
+    expect(d.transcribe).toHaveBeenCalledTimes(1);
+  });
+
   it("stops after five failures without persisting upstream error text", async () => {
     await submit(); const d = deps();
     d.transcribe = vi.fn(async () => { throw new Error("private audio URL and token"); });

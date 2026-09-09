@@ -260,6 +260,8 @@ lease generation·file ref·checksum·expiry·segment manifest·output manifest�
   조건부 갱신한다. 소유권을 잃은 worker는 abort하며 외부 요청에는 안정적 idempotency key를 사용한다.
 - 일시 오류는 최초 시도 포함 5회, 재시도 간격 1·5·15·60분으로 제안한다. 인증·입력 오류는
   즉시 blocked다. 최종 failed/blocked는 slot을 반환하고 명시적 재시도 전 다시 선택하지 않는다.
+- 명시적 수동 재시도는 새 24시간 실행 구간을 시작한다. 자동 재시도는 실행 구간을 연장하지 않는다.
+  원래 작업 생성 시각·완료 단계·중복 방지 키·파일 보존 만료는 유지한다.
 - 취소는 새 단계를 시작하지 않게 하며 이미 성공한 외부 저장을 자동 삭제하지 않는다.
   응답 유실 시 receipt를 같은 키로 재조회한다. ASR이 멱등 호출을 지원하지 않으면 crash 후
   해당 구간 중복 과금 가능성을 표시한다. 중복 저장 방지와 과금 exactly-once를 혼동하지 않는다.

@@ -67,7 +67,7 @@ export async function processAudioJob(
   const operationSignal = AbortSignal.any([
     leaseAbort.signal, deadlineAbort.signal, ...(signal ? [signal] : []),
   ]);
-  const remaining = Date.parse(current.createdAt) + AUDIO_JOB_DEADLINE_MS - start.getTime();
+  const remaining = Date.parse(current.retryStartedAt ?? current.createdAt) + AUDIO_JOB_DEADLINE_MS - start.getTime();
   const deadline = setTimeout(() => deadlineAbort.abort(), Math.max(0, remaining));
   unrefTimer(deadline);
   if (remaining <= 0) deadlineAbort.abort();

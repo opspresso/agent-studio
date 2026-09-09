@@ -173,7 +173,7 @@ export const audioJobRepository: AudioJobRepository = {
     checkLimit(maxActive);
     const job = await this.get(projectName, id);
     if (!job || job.revision !== revision || !["blocked", "failed"].includes(job.status)) return null;
-    const next: AudioJob = { ...job, status: "queued", revision: revision + 1, updatedAt: now, dueAt: now, failures: 0 };
+    const next: AudioJob = { ...job, status: "queued", revision: revision + 1, updatedAt: now, dueAt: now, failures: 0, retryStartedAt: now };
     delete next.lease;
     delete next.errorCode;
     try {

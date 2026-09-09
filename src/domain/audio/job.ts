@@ -41,6 +41,8 @@ export interface AudioJob extends AudioJobInput {
   status: AudioJobStatus;
   stage: AudioJobStage;
   createdAt: string;
+  /** Explicit manual retry starts a new execution window, not a new retention period. */
+  retryStartedAt?: string;
   updatedAt: string;
   dueAt: string;
   /** Worker fencing token; replaced on every new claim, independent of the job revision. */
