@@ -17,6 +17,7 @@ export interface AudioJobInput {
   sourceKey: string;
   sourceIdentity?: { namespace: string; itemId: string };
   model: string;
+  configRevision?: number;
   language?: string;
   retention: FileRetention;
   postprocess?: { projectName: string; versionName: string; version?: Version };

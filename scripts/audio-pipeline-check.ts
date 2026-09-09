@@ -121,7 +121,17 @@ async function main() {
     const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: "openai/whisper-1", retention,
       postprocess: { projectName, versionName: "writer" },
       ...(memoryUrl ? { destination: { serverName: memoryName, documents: true, memories: true } } : {}) };
-    const submitted = await runtime.jobs.submit(projectName, email, input, { occurrence: "test" });
+    let configuration = await runtime.configuration.save(projectName, email, { enabled: true, model: input.model, retention,
+      postprocess: input.postprocess, destination: input.destination, maxActive: 1, maxPerOccurrence: 1 }, 0);
+    const edits = await Promise.allSettled([
+      runtime.configuration.save(projectName, email, configuration, configuration.revision),
+      runtime.configuration.save(projectName, email, configuration, configuration.revision),
+    ]);
+    const winners = edits.filter((edit) => edit.status === "fulfilled");
+    assert.equal(winners.length, 1, "only one concurrent configuration edit may win");
+    configuration = winners[0]!.value;
+    const submitInput = { source: input.source, configRevision: configuration.revision };
+    const submitted = await runtime.jobs.submit(projectName, email, submitInput, { occurrence: "test" });
     assert.ok("job" in submitted); assert.equal(submitted.status, "accepted");
     let completed = await runtime.process(projectName, submitted.job.id);
     const deadline = Date.now() + 90_000;
@@ -130,6 +140,7 @@ async function main() {
       completed = await runtime.process(projectName, submitted.job.id) ?? completed;
     }
     assert.equal(completed?.status, "completed", JSON.stringify(completed));
+    assert.equal(completed.configRevision, configuration.revision);
     const publicJob = await runtime.jobs.get(projectName, completed.id, email);
     assert.deepEqual(publicJob.fileInfo, { filename: file.filename, byteSize: file.byteSize, expiresAt: file.retireAt });
     assert.deepEqual(publicJob.transcriptionProgress, { processedSeconds: 1.5, totalSeconds: 1.5, completedSegments: 1 });
@@ -148,7 +159,7 @@ async function main() {
     assert.equal(postprocessCalls, 1);
     assert.equal(calls, 1);
     assert.equal(postprocessCalls, 1);
-    assert.equal((await runtime.jobs.submit(projectName, email, input, { occurrence: "test-again" })).status, "duplicate");
+    assert.equal((await runtime.jobs.submit(projectName, email, submitInput, { occurrence: "test-again" })).status, "duplicate");
     assert.equal(await runtime.process(projectName, completed.id), null);
     assert.equal(calls, 1);
     const usage = await usageRepository.getDay(projectName, new Date().toISOString().slice(0, 10));

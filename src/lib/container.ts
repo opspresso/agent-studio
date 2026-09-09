@@ -1,5 +1,7 @@
 import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor } from "@/infrastructure/documents/workerAdapters";
 import { createHash, randomUUID } from "node:crypto";
+import { createAudioConfigUseCases } from "@/application/audio/audioConfig";
+import { audioJobConfigRepository } from "@/infrastructure/db/repositories/audioJobConfigRepository";
 import { audioJobRepository } from "@/infrastructure/db/repositories/audioJobRepository";
 import { sourceFileRepository } from "@/infrastructure/db/repositories/sourceFileRepository";
 import { sourceReferenceRepository } from "@/infrastructure/db/repositories/sourceReferenceRepository";
@@ -9,7 +11,7 @@ import { createAudioSegmenter } from "@/infrastructure/llm/audioSegmenter";
 import { createTranscriber } from "@/infrastructure/llm/transcription";
 import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { createSourceReferenceUseCases } from "@/application/audio/sourceReferences";
-import { createAudioJobUseCases } from "@/application/audio/audioJobUseCases";
+import { createAudioJobUseCases, type SubmitAudioJobInput } from "@/application/audio/audioJobUseCases";
 import { createAudioTool } from "@/application/audio/audioTool";
 import { mcpUserEmail } from "@/application/mcpMetadataHeaders";
 import { currentRunContext } from "@/shared/runContext";
@@ -1217,31 +1219,36 @@ export function getAudioRuntime() {
   const references = createSourceReferenceUseCases({ references: sourceReferenceRepository, cipher: secretCipher,
     urlPolicy, downloader: sourceDownloader, files, authorize: async (project, email) => { await authorize(project, email); },
     now: () => new Date(), id: randomUUID });
-  const jobs = createAudioJobUseCases({ jobs: audioJobRepository, files: sourceFileRepository,
+  const validateOutputs = async (input: Pick<SubmitAudioJobInput, "postprocess" | "destination">, projectName: string, email: string) => {
+    const result: Pick<AudioJob, "postprocess" | "destination"> = {};
+    if (input.postprocess) {
+      const project = await authorize(input.postprocess.projectName, email);
+      const version = await versionRepository.get(project.name, input.postprocess.versionName);
+      if (!version || project.projectType !== "agent") throw new ValidationError("Postprocessing requires an Agent version");
+      if (!getModelConfig(version.model)?.capabilities.structuredOutput) throw new ValidationError("Postprocessing requires a structured-output model");
+      result.postprocess = { projectName: project.name, versionName: version.versionName, version };
+    }
+    if (input.destination) {
+      if (!input.destination.documents && !input.destination.memories) throw new ValidationError("Choose a delivery output");
+      if (input.destination.memories && !result.postprocess) throw new ValidationError("Memory extraction requires a postprocessing Agent");
+      const version = await versionRepository.get(projectName, "published");
+      const binding = version?.mcpList.find((entry) => entry.name === input.destination!.serverName);
+      if (!version || !binding) throw new ValidationError("The destination must be bound to the project's published version");
+      result.destination = { ...input.destination, version: { ...version, mcpList: [binding] } };
+      const destination = await openDestination({ projectName, userEmail: email, destination: result.destination });
+      await destination.close();
+    }
+    return result;
+  };
+  const configuration = createAudioConfigUseCases({ configs: audioJobConfigRepository,
+    authorize: async (project, email) => { await authorize(project, email); },
+    validate: async (input, project, email) => { await getTranscriptionTarget(input.model); await validateOutputs(input, project, email); },
+    now: () => new Date(),
+  });
+  const jobs = createAudioJobUseCases({ jobs: audioJobRepository, configs: audioJobConfigRepository, files: sourceFileRepository,
     sourceIdentity: references.identity,
     authorize: async (project, email) => { await authorize(project, email); },
-    validateModel: async (model) => { await getTranscriptionTarget(model); },
-    validateOutputs: async (input, projectName, email) => {
-      const result: Pick<AudioJob, "postprocess" | "destination"> = {};
-      if (input.postprocess) {
-        const project = await authorize(input.postprocess.projectName, email);
-        const version = await versionRepository.get(project.name, input.postprocess.versionName);
-        if (!version || project.projectType !== "agent") throw new ValidationError("Postprocessing requires an Agent version");
-        if (!getModelConfig(version.model)?.capabilities.structuredOutput) throw new ValidationError("Postprocessing requires a structured-output model");
-        result.postprocess = { projectName: project.name, versionName: version.versionName, version };
-      }
-      if (input.destination) {
-        if (!input.destination.documents && !input.destination.memories) throw new ValidationError("Choose a delivery output");
-        if (input.destination.memories && !result.postprocess) throw new ValidationError("Memory extraction requires a postprocessing Agent");
-        const version = await versionRepository.get(projectName, "published");
-        const binding = version?.mcpList.find((entry) => entry.name === input.destination!.serverName);
-        if (!version || !binding) throw new ValidationError("The destination must be bound to the project's published version");
-        result.destination = { ...input.destination, version: { ...version, mcpList: [binding] } };
-        const destination = await openDestination({ projectName, userEmail: email, destination: result.destination });
-        await destination.close();
-      }
-      return result;
-    },
+    validateModel: async (model) => { await getTranscriptionTarget(model); }, validateOutputs,
     limits: async () => ({ maxActive: 1, maxPerOccurrence: 1 }), now: () => new Date(), id: randomUUID,
   });
   const settings = config.transcription;
@@ -1324,7 +1331,7 @@ export function getAudioRuntime() {
     };
   }
   const deliver = createAudioDeliveryStep({ files, open: openDestination });
-  return { files, references, jobs, authorize,
+  return { files, references, jobs, authorize, configuration,
     async options(projectName: string, email: string) {
       await authorize(projectName, email);
       const hidden = new Set(await getHiddenModels());

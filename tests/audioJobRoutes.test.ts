@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ submit: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), retry: vi.fn(), register: vi.fn(), options: vi.fn() }));
+const mocks = vi.hoisted(() => ({ submit: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), retry: vi.fn(), register: vi.fn(), options: vi.fn(), getConfig: vi.fn(), saveConfig: vi.fn() }));
 vi.mock("@/lib/session", () => ({ withMemberAuth: (handler: (user: { email: string }, request: Request, context: unknown) => Promise<Response>) =>
   (request: Request, context: unknown) => handler({ email: "owner@example.test" }, request, context) }));
-vi.mock("@/lib/container", () => ({ getAudioRuntime: () => ({ jobs: mocks, options: mocks.options, references: { register: mocks.register } }) }));
+vi.mock("@/lib/container", () => ({ getAudioRuntime: () => ({ jobs: mocks, options: mocks.options, references: { register: mocks.register }, configuration: { get: mocks.getConfig, save: mocks.saveConfig } }) }));
 vi.mock("node:crypto", async (original) => ({ ...await original<typeof import("node:crypto")>(), randomUUID: () => "occurrence-1" }));
 import { POST, GET } from "@/app/api/projects/[name]/audio-jobs/route";
 import { POST as action } from "@/app/api/projects/[name]/audio-jobs/[job]/route";
 import { POST as source } from "@/app/api/projects/[name]/source-references/route";
 import { GET as options } from "@/app/api/projects/[name]/audio-options/route";
+import { PUT as saveConfig } from "@/app/api/projects/[name]/audio-config/route";
 
 const context = { params: Promise.resolve({ name: "audio" }) };
 const input = { source: { kind: "file", fileId: "file-1" }, task: "transcribe", model: "openai/whisper-1",
@@ -19,6 +20,15 @@ function request(body: unknown) { return new Request("https://studio.test/api/pr
 beforeEach(() => { vi.clearAllMocks(); mocks.submit.mockResolvedValue({ status: "accepted", job: { id: "job-1" } }); });
 
 describe("audio job HTTP contracts", () => {
+  it("validates configuration writes and binds the save to the session owner", async () => {
+    const body = { revision: 0, enabled: true, model: input.model, retention: input.retention, maxActive: 1, maxPerOccurrence: 1 };
+    mocks.saveConfig.mockResolvedValue({ ...body, revision: 1 });
+    expect((await saveConfig(request({ ...body, userEmail: "other@example.test" }), context)).status).toBe(400);
+    expect(mocks.saveConfig).not.toHaveBeenCalled();
+    expect((await saveConfig(request(body), context)).status).toBe(200);
+    const { revision, ...configuration } = body;
+    expect(mocks.saveConfig).toHaveBeenCalledWith("audio", "owner@example.test", configuration, revision);
+  });
   it("reads configured options with the authenticated identity", async () => {
     const data = { models: [{ id: "openai/whisper-1", displayName: "Whisper 1" }], destinations: ["memory"] };
     mocks.options.mockResolvedValue(data);

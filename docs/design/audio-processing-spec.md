@@ -114,17 +114,21 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 
 ## 범용 설정과 도구
 
-프로젝트별 `AudioJobConfig`에 `enabled`, `transcriptionModel`, `language`, `postprocess?`,
-`outputs`, `retention`, `maxActiveJobs`, `maxNewJobsPerOccurrence`, `revision`을 둔다.
-`postprocess`는 project/version 선택과 출력 schema를, `outputs`는 저장할 결과와 MCP binding을
+프로젝트별 `AudioJobConfig`에 `enabled`, `model`, `language`, `postprocess?`,
+`destination?`, `retention`, `maxActive`, `maxPerOccurrence`, `revision`을 둔다.
+`postprocess`는 project/version 선택을, `destination`은 저장할 결과와 MCP binding을
 참조한다. source 연결·사용자 문맥은 기존 프로젝트 연결과 자동화 설정을 참조한다.
 기간이나 cron에 고정값을 넣지 않는다. 임의 코드·템플릿으로 서버 실행 로직을 주입하지 않는다.
+GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `AudioJob config`를 읽고
+`submit`에 `config_revision`을 지정한다. 참조와 요청별 설정을 섞지 않는다. 설정이 없으면 기존
+요청별 설정과 활성·발생당 1건 제한을 적용한다. 설정 변경은 제출된 작업 snapshot을 바꾸지 않는다.
 
 | 도구 | 계약 |
 | --- | --- |
-| `ImportFile` | 접근 가능한 `file_id` 또는 `source_ref`를 받아 비공개 파일 ID·MIME·크기·checksum 반환 |
+| `ImportFile` | 접근 가능한 `file_id` 또는 `source_ref`를 받아 job ID 반환. 완료 후 status에서 비공개 file ID 확인 |
 | `TranscribeAudio` | file ID·모델 선택으로 비동기 전사를 제출하고 job ID 반환 |
 | `AudioJob` `submit` | source ref 또는 file ID·설정 참조 → accepted/busy/duplicate/blocked와 job ID |
+| `AudioJob` `config` | 본인 프로젝트 작업 설정과 revision 또는 null |
 | `AudioJob` `status` | job ID → 단계·처리 범위·오류·retry 시각·결과 참조 |
 | `AudioJob` `read` | job ID·결과 종류·cursor·limit → bounded 본문과 nextCursor |
 

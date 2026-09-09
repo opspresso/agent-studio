@@ -19,6 +19,22 @@ function fixture() {
   return { deps, input, api: createAudioJobUseCases(deps) };
 }
 describe("audio job use cases", () => {
+  it("pins a configuration revision without allowing overrides and keeps submitted work unchanged", async () => {
+    const f = fixture();
+    let config = { projectName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true, updatedAt: "2026-09-09T00:00:00Z",
+      model: "openai/whisper-1", retention: { unit: "months" as const, value: 3, timezone: "Asia/Seoul" }, maxActive: 1, maxPerOccurrence: 1 };
+    f.deps.configs = { get: async () => config };
+    const input = { source: f.input.source, configRevision: 1 };
+    await expect(f.api.submit("audio", "owner@example.test", { ...input, model: config.model }, { occurrence: "one" })).rejects.toMatchObject({ status: 400 });
+    const first = await f.api.submit("audio", "owner@example.test", input, { occurrence: "one" });
+    expect(first.status).toBe("accepted");
+    config = { ...config, revision: 2, retention: { ...config.retention, value: 1 } };
+    await expect(f.api.submit("audio", "owner@example.test", input, { occurrence: "two" })).rejects.toMatchObject({ status: 409 });
+    expect(await jobs.get("audio", "job-1")).toMatchObject({ configRevision: 1, retention: { value: 3 } });
+    config = { ...config, enabled: false };
+    await expect(f.api.submit("audio", "owner@example.test", f.input, { occurrence: "two" })).rejects.toMatchObject({ status: 409 });
+    expect(await f.api.configuration("audio", "owner@example.test")).not.toHaveProperty("userEmail");
+  });
   it("deduplicates refreshed references by stable external identity and hides internal input", async () => {
     const { api, input } = fixture();
     const first = await api.submit("audio", "owner@example.test", input, { occurrence: "hour-1" });

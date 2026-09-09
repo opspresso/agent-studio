@@ -1747,6 +1747,8 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 | POST | `/api/projects/{name}/source-files?unit=months&value=3&timezone=Asia%2FSeoul` | raw 파일 body, Content-Type과 percent-encoded `X-Filename` → 201 SourceFile metadata |
 | GET | `/api/projects/{name}/source-files/{file}` | 개인 파일 다운로드. 만료되면 거절하며 항상 attachment·no-store로 반환한다 |
 | GET | `/api/projects/{name}/audio-options` | 설정된 전사 모델의 `{id, displayName}` 목록과 published 버전에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
+| GET | `/api/projects/{name}/audio-config` | 현재 프로젝트 작업 설정 또는 null. 소유자만 읽는다 |
+| PUT | `/api/projects/{name}/audio-config` | `{revision, enabled, model, language?, retention, postprocess?, destination?, maxActive, maxPerOccurrence}` → 다음 revision. 최초 revision은 0, 충돌은 409 |
 | POST | `/api/projects/{name}/audio-jobs` | 작업 제출 → 202 accepted/duplicate, 활성 한도 초과는 409 busy |
 | GET | `/api/projects/{name}/audio-jobs?limit=20&after={id}` | `{jobs, nextCursor}`, limit 1–100. 다른 사용자 작업은 limit 전에 제외한다 |
 | GET | `/api/projects/{name}/audio-jobs/{job}` | AudioJobView |
@@ -1757,6 +1759,11 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 "process"`, `model`, `language`, `processingRevision`이다. import 이외에는 등록된 Transcription
 모델이 필요하다. 같은 외부 source identity의 재실행은 duplicate이며 명시적 processingRevision으로
 새 처리를 요청한다. `postprocess: {projectName, versionName}`는 선택한 Agent 버전을 고정해 후처리한다.
+`configRevision`을 지정하면 source와 명시적 processingRevision 외의 처리 설정을 서버가 읽는다.
+model·language·retention·postprocess·destination override는 함께 보낼 수 없다. 현재 설정 revision과
+다르면 409다. 설정된 admission 한도는 요청별 설정에도 적용하며 enabled=false는 신규 제출·재시도를
+차단한다. 진행 중인 작업은 이미 고정된 설정을 유지한다. 설정 소유자가 바뀌면 현재 소유자가 PUT으로
+다시 저장하기 전 제출하지 못한다. 설정 자체는 credential이나 Agent version 본문을 저장하지 않는다.
 `destination: {serverName, documents, memories}`는 원래 프로젝트의 published 버전에 바인딩된 MCP로
 저장한다. 수신 서버에 수집 도구와 idempotencyKey 입력이 없으면 작업을 받기 전에 거절한다.
 

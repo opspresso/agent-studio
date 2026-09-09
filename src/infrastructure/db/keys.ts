@@ -18,6 +18,7 @@ export const keys = {
   versionPrefix: () => "VERSION#",
 
   audioJob: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `AUDIOJOB#${id}` }),
+  audioJobConfig: (projectName: string) => ({ PK: `PROJECT#${projectName}`, SK: "AUDIOCONFIG" }),
   audioJobPrefix: () => "AUDIOJOB#",
   usageReceipt: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `USAGERECEIPT#${id}` }),
   sourceFile: (id: string) => ({ PK: `SOURCEFILE#${id}`, SK: "META" }),

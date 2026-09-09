@@ -44,6 +44,7 @@ export function createAudioTool(deps: AudioToolDeps, context: {
     try {
       if (!AUDIO_TOOL_NAMES.includes(tool) || "url" in args || "userEmail" in args) throw new ValidationError("Invalid audio tool arguments");
       const operation = tool === AUDIO_JOB_TOOL_NAME ? text(args, "operation") : "submit";
+      if (operation === "config") return { text: JSON.stringify(await deps.jobs.configuration(context.projectName, context.userEmail)) };
       if (operation === "list") {
         const limit = args.limit ?? 20;
         if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new ValidationError("Invalid list limit");
@@ -83,11 +84,16 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         throw new ValidationError("Invalid destination");
       }
       const fileId = text(args, "file_id"); const sourceRef = text(args, "source_ref");
+      const configRevision = args.config_revision;
+      if (configRevision !== undefined && (typeof configRevision !== "number" || !Number.isSafeInteger(configRevision) || configRevision <= 0)) {
+        throw new ValidationError("Invalid config_revision");
+      }
       if ((!fileId && !sourceRef) || (fileId && sourceRef)) throw new ValidationError("Provide exactly one file_id or source_ref");
       const result = await deps.jobs.submit(context.projectName, context.userEmail, {
         source: fileId ? { kind: "file", fileId } : { kind: "source", sourceRef: sourceRef! },
         task: tool === IMPORT_FILE_TOOL_NAME ? "import" : tool === TRANSCRIBE_AUDIO_TOOL_NAME ? "transcribe" : "process",
-        model: text(args, "model"), language: text(args, "language"), retention: retention(args.retention),
+        model: text(args, "model"), language: text(args, "language"), retention: args.retention === undefined ? undefined : retention(args.retention),
+        ...(configRevision !== undefined ? { configRevision } : {}),
         processingRevision: text(args, "processing_revision"),
         ...(post ? { postprocess: { projectName: projectName!, versionName: versionName! } } : {}),
         ...(destination ? { destination: { serverName: serverName!, documents: destination.documents as boolean, memories: destination.memories as boolean } } : {}),
