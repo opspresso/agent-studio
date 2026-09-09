@@ -32,6 +32,10 @@ afterEach(() => {
 });
 
 describe("bootstrap administrator and the allowed-domain list", () => {
+  it("configures the Studio cookie namespace", async () => {
+    const { auth } = await import("@/lib/auth");
+    expect(auth.options.advanced?.cookiePrefix).toBe("agent-studio");
+  });
   it("names the bootstrap address case-insensitively, and only with password sign-in on", async () => {
     const { isBootstrapAdminEmail } = await import("@/lib/auth");
     expect(isBootstrapAdminEmail("admin@localhost")).toBe(true);

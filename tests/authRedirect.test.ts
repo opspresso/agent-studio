@@ -26,6 +26,16 @@ afterEach(() => {
 });
 
 describe("expired session redirect", () => {
+  it("uses only Studio's session cookie, including its secure variant", () => {
+    for (const name of ["agent-studio.session_token", "__Secure-agent-studio.session_token"]) {
+      const response = proxy(new NextRequest("https://studio.example.com/projects", { headers: { cookie: `${name}=studio-session` } }));
+      expect(response.headers.get("x-middleware-next")).toBe("1");
+    }
+    for (const name of ["agent-memory.session_token", "better-auth.session_token", "__Secure-agent-memory.session_token"]) {
+      const response = proxy(new NextRequest("https://studio.example.com/projects", { headers: { cookie: `${name}=other-session` } }));
+      expect(response.status).toBe(307);
+    }
+  });
   it("serves the guide without a cookie while protecting workspace pages", () => {
     const guide = proxy(new NextRequest("https://studio.example.com/guide"));
     expect(guide.headers.get("x-middleware-next")).toBe("1");

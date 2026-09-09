@@ -8,6 +8,11 @@
 
 ## 인증
 
+Better Auth의 `advanced.cookiePrefix`는 `agent-studio`다. 기본 세션 쿠키는
+`agent-studio.session_token`이며 HTTPS 설정에서는 `__Secure-`가 붙는다. 페이지 게이트도 같은
+접두어를 사용한다. Agent Memory의 `agent-memory` 쿠키와 분리하며 이전 `better-auth` 쿠키는
+읽지 않는다. 접두어 변경을 배포하면 기존 브라우저 세션은 다시 로그인해야 한다.
+
 Better Auth 1.7 이 이 앱의 커넥션 풀 위에서 라이브러리 자신의 Postgres 어댑터로 돈다.
 `user`, `session`, `account`, `verification` 은 그것이 소유하는 테이블이고(`migrations.ts` 가
 만든다), email·token 의 유일성은 테이블의 유니크 제약이다. 로그인 수단은 **전부 선택**이고

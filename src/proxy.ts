@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 import { isPublicPagePath } from "@/shared/pageAccess";
+import { AUTH_COOKIE_PREFIX } from "@/shared/authCookies";
 
 /**
  * The sign-in gate for pages. `pageAccess.ts` owns which pages are public.
@@ -28,7 +29,7 @@ import { isPublicPagePath } from "@/shared/pageAccess";
  */
 export function proxy(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
-  if (isPublicPagePath(pathname) || getSessionCookie(request)) {
+  if (isPublicPagePath(pathname) || getSessionCookie(request, { cookiePrefix: AUTH_COOKIE_PREFIX })) {
     return NextResponse.next();
   }
 

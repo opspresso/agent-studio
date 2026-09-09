@@ -162,6 +162,7 @@
 | 심볼릭 링크의 git 모드. 첨부 수집기가 거부하는 한 가지 엔트리 타입 | `src/domain/skill/files.ts` 의 `SYMLINK_MODE`. GitHub 트리와 아카이브가 같은 값으로 보고한다 |
 | admin 이 올린 모델 카탈로그 문서의 자리, 그리고 그것이 발행 카탈로그보다 우선한다는 규칙 | `src/infrastructure/db/keys.ts` 의 `modelCatalog` (행 `MODELCATALOG#doc`), 우선순위는 `src/application/llm/modelCatalogStoredSource.ts` 의 `createCompositeModelCatalogSource`. 부팅 refresher 와 콘솔의 refresh 버튼이 같은 조합을 쓴다 |
 | 어떤 로그인 수단이 켜져 있는가 | `src/lib/config.ts` 의 `authProviders`. `auth.ts` 가 그대로 조립하고 로그인 페이지가 그대로 그린다 |
+| Studio 인증 쿠키의 접두어 | `src/shared/authCookies.ts` 의 `AUTH_COOKIE_PREFIX`. Better Auth 설정과 페이지 게이트가 함께 사용하며 개발 세션은 Better Auth context의 쿠키 이름을 사용한다 |
 | AG-UI 의 와이어 형태. 받는 `RunAgentInput` 과 내보내는 이벤트 | `src/domain/agui/types.ts` (SDK 대신 직접 선언한 이유가 파일 머리에 있다); 입력 검증은 `src/app/api/agui/_lib/schema.ts` |
 | AG-UI 메시지와 `context`·`state` 가 엔진 메시지가 되는 방식 | `src/application/agui/input.ts` |
 | OAuth authorization 서버 메타데이터를 찾는 주소와 순서 | `src/infrastructure/mcp/oauthMetadata.ts` 의 `authorizationServerCandidates` |
