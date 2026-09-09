@@ -380,6 +380,8 @@ export class ToolManager {
       return { text: `Error: tool call failed. No MCP server provides the tool '${aliasName}'.` };
     }
     const serverName = this.serverNameByAlias.get(aliasName) ?? "unknown";
+    const transforms = this.servers.find((server) => server.name === serverName)?.resultTransforms;
+    const transform = transforms && Object.hasOwn(transforms, originalName) ? transforms[originalName] : undefined;
     try {
       const result = (await session.callTool(
         originalName,
@@ -393,6 +395,13 @@ export class ToolManager {
             structuredContent?: unknown;
           }
         | undefined;
+      if (transform) {
+        if (!result || result.isError || result.resultType === "input_required") {
+          return { text: "Error: the mapped source tool did not return a successful file response." };
+        }
+        const projected = await transform(result);
+        return { text: truncateResult(projected.text) };
+      }
       // A server that needs something more before it can answer — an approval, a
       // missing argument, a completion — says so with this instead of content
       // (MRTR, protocol `2026-07-28`). Named here rather than left to the check
@@ -449,6 +458,7 @@ export class ToolManager {
         this.recordUnauthorized(serverName, stepUp?.scope);
       }
       const message = error instanceof Error ? error.message : String(error);
+      if (transform) return { text: "Error: the mapped source tool failed; no private response was exposed." };
       return {
         text: `Error: tool call failed. '${originalName}' on MCP server '${serverName}': ${message}`,
       };

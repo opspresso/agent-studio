@@ -1113,6 +1113,7 @@ export const executionDeps: ExecutionDeps = {
   documents: workerDocumentExtractor,
   documentRenderer: workerDocumentRenderer,
   documentEditor: workerDocumentEditor,
+  registerMcpSource: async (input) => getAudioRuntime().references.register(input),
   audioTools: async (projectName, origin) => {
     if (!config.sourceFilesBucketName) return undefined;
     const email = mcpUserEmail(origin.actor, origin.userEmail);

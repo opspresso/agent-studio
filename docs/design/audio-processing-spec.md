@@ -4,8 +4,8 @@
 후처리와 MCP 저장을 실행한다. 구간·후처리 결과와 저장 receipt를 보관해 실패한 단계부터 재개한다.
 개인 실행은 기존 MCP 인증과 검증된 email 문맥을 사용한다.
 
-Agent Memory 수신 측 수집·멱등 저장 계약은 별도 브랜치에 구현했다. 남은 개발은 MCP 결과의
-source reference 변환, 설정 UI와 전체 운영 검증이다. Studio의 delivery는 수신 서버가 필요한 도구와 idempotencyKey를
+Agent Memory 수신 측 수집·멱등 저장 계약은 별도 브랜치에 구현했다. MCP 결과의 source reference
+변환도 구현돼 있으며, 남은 작업은 설정 UI와 전체 운영 검증이다. Studio의 delivery는 수신 서버가 필요한 도구와 idempotencyKey를
 노출해야 활성화된다. 운영 Agent 생성·OAuth·스케줄 설정은 개발 검증 후 수행한다.
 구현은 [마일스톤](../MILESTONES.md#audio-processing-jobs)에서 추적한다.
 

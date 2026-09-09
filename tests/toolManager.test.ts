@@ -381,6 +381,31 @@ afterEach(() => {
 // --- tests ------------------------------------------------------------------
 
 describe("ToolManager tool-name collision aliasing", () => {
+  it("does not let a source projection turn a server failure into success", async () => {
+    stubMcpFetch({ "https://a.test/mcp": { listTools: [{ name: "get_file" }], callIsError: true,
+      callContent: [textBlock("https://files.test/?signature=private")] } });
+    const transform = vi.fn(async () => ({ text: "not a success" }));
+    const manager = new ToolManager([{ ...server("a", "https://a.test/mcp"), resultTransforms: { get_file: transform } }]);
+    await manager.init();
+    const result = await manager.callTool("get_file", {});
+    expect(result.text).toMatch(/^Error:/); expect(result.text).not.toContain("signature");
+    expect(transform).not.toHaveBeenCalled();
+    await manager.close();
+  });
+  it("projects a source response before truncating large text", async () => {
+    const original = JSON.stringify({ padding: "x".repeat(110_000), url: "https://files.test/?signature=private" });
+    stubMcpFetch({ "https://a.test/mcp": { listTools: [{ name: "get_file" }], callContent: [textBlock(original)] } });
+    const transform = vi.fn(async (raw: unknown) => {
+      const text = (raw as { content: Array<{ text: string }> }).content[0]!.text;
+      expect(JSON.parse(text).url).toContain("signature");
+      return { text: '{"source_ref":"ref-1"}' };
+    });
+    const manager = new ToolManager([{ ...server("a", "https://a.test/mcp"), resultTransforms: { get_file: transform } }]);
+    await manager.init();
+    expect(await manager.callTool("get_file", {})).toEqual({ text: '{"source_ref":"ref-1"}' });
+    expect(transform).toHaveBeenCalledTimes(1);
+    await manager.close();
+  });
   it("suffixes colliding names and routes each alias to its own server", async () => {
     stubMcpFetch({
       "https://a.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("from server A")] },

@@ -1,5 +1,6 @@
 import type { SlackSuggestedPrompt } from "@/domain/slack/types";
 import type { MessageDestination } from "@/domain/messaging/destination";
+import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 
 export type ProjectType = "llm" | "agent" | "image";
 
@@ -284,6 +285,7 @@ export interface SubagentRef {
  */
 export interface McpBinding {
   name: string;
+  sourceOutputs?: McpSourceMapping[];
   headers?: Record<string, string | null>;
   /** Internal fingerprint of the registry URL that encrypted header values belong to. */
   headerTarget?: string;

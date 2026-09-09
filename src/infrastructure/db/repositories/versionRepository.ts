@@ -4,6 +4,7 @@ import type { VersionRepository } from "@/domain/project/repository";
 import type { McpBinding, Version } from "@/domain/project/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
 import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
+import { isMcpSourceMapping } from "@/domain/mcp/sourceMapping";
 
 const ENTITY_TYPE = "VERSION";
 const PUBLISHED = "published";
@@ -45,8 +46,14 @@ function toMcpBindings(raw: unknown): McpBinding[] {
         headers?: unknown;
         headerTarget?: unknown;
         tools?: unknown;
+        sourceOutputs?: unknown;
       };
       if (typeof binding.name === "string" && binding.name) {
+        if (binding.sourceOutputs !== undefined && (!Array.isArray(binding.sourceOutputs) ||
+          binding.sourceOutputs.length > 8 || !binding.sourceOutputs.every(isMcpSourceMapping) ||
+          new Set(binding.sourceOutputs.map((item) => item.tool)).size !== binding.sourceOutputs.length)) {
+          throw new Error("Stored MCP source mappings are invalid");
+        }
         // An empty list means the same as no list — every tool — so it is
         // dropped rather than stored as a narrowing that offers nothing.
         const tools = Array.isArray(binding.tools)
@@ -55,6 +62,7 @@ function toMcpBindings(raw: unknown): McpBinding[] {
         return [
           {
             name: binding.name,
+            ...(binding.sourceOutputs ? { sourceOutputs: binding.sourceOutputs as McpBinding["sourceOutputs"] } : {}),
             ...(binding.headers && typeof binding.headers === "object"
               ? { headers: binding.headers as McpBinding["headers"] }
               : {}),
