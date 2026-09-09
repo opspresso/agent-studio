@@ -79,7 +79,8 @@ export function createSourceReferenceUseCases(deps: SourceReferenceDeps) {
         metadata = job.sourceRefresh ? await refresh() : await resolve(job.projectName, sourceRef, job.userEmail);
       }
       const file = await deps.files.import({ id: `${job.id}-source`, projectName: job.projectName,
-        userEmail: job.userEmail, filename: metadata.filename, mimeType: metadata.mimeType, retention: job.retention }, async (maxBytes) => {
+        userEmail: job.userEmail, filename: metadata.filename, mimeType: metadata.mimeType, retention: job.retention,
+        producedBy: job.producedBy }, async (maxBytes) => {
         let url: string;
         if (job.sourceRefresh) {
           const current = await refresh();

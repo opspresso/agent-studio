@@ -38,7 +38,7 @@ function object(args: Record<string, unknown>, field: string): Record<string, un
 
 /** One bound user and occurrence, shared by all audio calls in an Agent run. */
 export function createAudioTool(deps: AudioToolDeps, context: {
-  projectName: string; userEmail: string; occurrence: string; actor?: RunActor;
+  projectName: string; userEmail: string; occurrence: string; actor?: RunActor; producedBy?: string;
 }) {
   return async (tool: string, args: Record<string, unknown>): Promise<McpToolResult> => {
     try {
@@ -111,7 +111,8 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         processingRevision: text(args, "processing_revision"),
         ...(post ? { postprocess: { projectName: projectName!, versionName: versionName! } } : {}),
         ...(destination ? { destination: { serverName: serverName!, documents: destination.documents as boolean, memories: destination.memories as boolean } } : {}),
-      }, { occurrence: context.occurrence, actor: context.actor });
+      }, { occurrence: context.occurrence, actor: context.actor,
+        ...(context.producedBy ? { producedBy: context.producedBy } : {}) });
       return { text: JSON.stringify(result) };
     } catch (error) {
       return { text: `Error: ${error instanceof AppError ? error.message : "audio operation failed"}.` };

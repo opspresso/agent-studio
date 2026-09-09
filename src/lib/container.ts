@@ -1146,7 +1146,7 @@ export const executionDeps: ExecutionDeps = {
       await runtime.authorize(sourceProject, user);
       return runtime.files.read(sourceProject, id, user, maxBytes);
     } } }, { projectName: project, userEmail: email,
-      occurrence: currentRunContext()?.runId ?? randomUUID(), actor: origin.actor });
+      occurrence: currentRunContext()?.runId ?? randomUUID(), actor: origin.actor, producedBy: projectName });
   },
   // Bound here because deciding *which* workspace a project reads means
   // decrypting its bot token, which is the Slack slice's knowledge — the

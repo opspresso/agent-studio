@@ -131,7 +131,7 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
     const id = `${job.id}-transcript`;
     await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
       filename: "transcript.json", mimeType: "application/json", retention: job.retention, retainUntil: source.file.retireAt,
-      derivedFrom: job.fileId, model: job.model,
+      derivedFrom: job.fileId, model: job.model, producedBy: job.producedBy,
       derived: { jobId: job.id, kind: "transcript" } },
     async () => (async function* () { yield bytes; })(), context.signal);
     return { transcriptRef: id };

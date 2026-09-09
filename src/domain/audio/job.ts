@@ -20,6 +20,8 @@ export interface AudioJobInput {
   projectName: string;
   userEmail: string;
   actor?: RunActor;
+  /** Server-bound Agent that submitted the work; storage remains in projectName. */
+  producedBy?: string;
   source: AudioSource;
   /** Hash of source identity, item identity and the explicit processing revision. */
   sourceKey: string;

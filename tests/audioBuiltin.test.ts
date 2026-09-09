@@ -63,10 +63,10 @@ describe("audio builtins", () => {
   it("accepts an Artifact ID but refuses ambiguous input identities", async () => {
     const submit = vi.fn(async () => ({ status: "accepted" as const, job: { id: "job" } }));
     const tool = createAudioTool({ jobs: { submit } as unknown as ReturnType<typeof createAudioJobUseCases>, files: { read: vi.fn() } },
-      { projectName: "transcriber", userEmail: "owner@example.test", occurrence: "run" });
-    const args = { artifact_id: "original", model: "asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" } };
+      { projectName: "main", producedBy: "transcriber", userEmail: "owner@example.test", occurrence: "run" });
+    const args = { artifact_id: "original", model: "asr", producedBy: "spoofed", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" } };
     await tool("TranscribeAudio", args);
-    expect(submit).toHaveBeenCalledWith("transcriber", "owner@example.test", expect.objectContaining({ source: { kind: "artifact", artifactId: "original" } }), expect.anything());
+    expect(submit).toHaveBeenCalledWith("main", "owner@example.test", expect.objectContaining({ source: { kind: "artifact", artifactId: "original" } }), expect.objectContaining({ producedBy: "transcriber" }));
     expect((await tool("TranscribeAudio", { ...args, file_id: "another" })).text).toMatch(/^Error:/);
     expect(submit).toHaveBeenCalledTimes(1);
   });

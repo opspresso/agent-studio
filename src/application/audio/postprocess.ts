@@ -119,7 +119,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     const dialogueRef = `${job.id}-dialogue`;
     await deps.files.import({ id: dialogueRef, projectName: job.projectName, userEmail: job.userEmail,
       filename: "dialogue.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
-      derivedFrom: job.transcriptRef, model: transcript.model,
+      derivedFrom: job.transcriptRef, model: transcript.model, producedBy: job.postprocess.projectName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield new TextEncoder().encode(renderDialogue(transcript)); })(), context.signal);
     return { draftRef: id, summaryRef, dialogueRef };

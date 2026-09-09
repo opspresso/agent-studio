@@ -53,11 +53,12 @@ describe("resumable file transcription", () => {
   it("reads a previous Agent's Artifact while storing derived output under the transcribing Agent", async () => {
     const f = fixture();
     f.job.source = { kind: "file", fileId: "input", projectName: "downloader" };
+    f.job.producedBy = "transcriber";
     const read = vi.spyOn(f.deps.files, "read");
     const write = vi.spyOn(f.deps.files, "import");
     await createAudioTranscriptionStep(f.deps)(f.job, f.context);
     expect(read).toHaveBeenCalledWith("downloader", "input", f.job.userEmail);
-    expect(write).toHaveBeenCalledWith(expect.objectContaining({ projectName: "audio", derivedFrom: "input", model: f.job.model,
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ projectName: "audio", producedBy: "transcriber", derivedFrom: "input", model: f.job.model,
       retainUntil: "2026-12-08T00:00:00.000Z" }), expect.any(Function), f.context.signal);
     expect(f.transcribe).toHaveBeenCalledTimes(2);
   });

@@ -39,12 +39,12 @@ describe("audio job use cases", () => {
     f.deps.resolveArtifact = vi.fn(async () => file);
     f.deps.files.get = vi.fn(async () => file);
     const result = await f.api.submit("audio", file.userEmail,
-      { ...f.input, task: "transcribe", source: { kind: "artifact", artifactId: "artifact-1" } }, { occurrence: "once" });
+      { ...f.input, task: "transcribe", source: { kind: "artifact", artifactId: "artifact-1" } }, { occurrence: "once", producedBy: "transcriber" });
     expect(result.status).toBe("accepted");
     expect(f.deps.resolveArtifact).toHaveBeenCalledWith("artifact-1", file.userEmail);
     expect(f.deps.authorize).toHaveBeenCalledWith("downloader", file.userEmail);
     expect(f.deps.files.get).toHaveBeenCalledWith("downloader", file.id);
-    expect(await jobs.get("audio", "job-1")).toMatchObject({ source: { kind: "file", fileId: file.id, projectName: "downloader" } });
+    expect(await jobs.get("audio", "job-1")).toMatchObject({ producedBy: "transcriber", source: { kind: "file", fileId: file.id, projectName: "downloader" } });
   });
   it("refuses inaccessible, foreign-owned and expired Artifact inputs before admitting a job", async () => {
     const f = fixture();

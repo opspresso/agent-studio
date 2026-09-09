@@ -71,7 +71,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       return view;
     },
     async submit(projectName: string, userEmail: string, input: SubmitAudioJobInput,
-      origin: { occurrence: string; actor?: RunActor }) {
+      origin: { occurrence: string; actor?: RunActor; producedBy?: string }) {
       await deps.authorize(projectName, userEmail);
       if (input.source.kind === "artifact") {
         if (!deps.resolveArtifact) throw new ValidationError("Artifact inputs are unavailable");
@@ -125,6 +125,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       ])).digest("hex");
       const limits = config ? { maxActive: config.maxActive, maxPerOccurrence: config.maxPerOccurrence } : await deps.limits(projectName);
       const result = await deps.jobs.submit({ projectName, userEmail, actor: origin.actor,
+        ...(origin.producedBy ? { producedBy: origin.producedBy } : {}),
         source: input.source, sourceKey, sourceIdentity: { namespace: identity.namespace, itemId: identity.itemId }, sourceRefresh: identity.refresh,
         model: input.model ?? "", task, language: input.language,
         retention: input.retention, configRevision: input.configRevision, ...outputs },

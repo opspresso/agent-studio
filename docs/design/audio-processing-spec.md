@@ -1,7 +1,8 @@
 # 범용 오디오 처리·비동기 작업 개발 스펙
 
-상태: **개발 기능 구현**. HTTP API·Agent 도구·별도 worker로 원본 가져오기, 구간 전사, 선택적 Agent
-후처리와 MCP 저장을 실행한다. 구간·후처리 결과와 저장 receipt를 보관해 실패한 단계부터 재개한다.
+상태: **개발 기능 구현**. 메인 Agent가 다운로드·전사·후처리 Agent를 조정하고 Artifact ID로 결과를
+전달한다. HTTP API·Agent 도구·별도 worker가 긴 작업과 재시도를 담당한다. 외부 기록은 사용자
+요청에 따라 기록 Agent가 수행한다. 결합된 처리가 필요한 호출자는 선택적 후처리·sink 계약도 사용할 수 있다.
 개인 실행은 기존 MCP 인증과 검증된 email 문맥을 사용한다.
 
 Agent Memory 수신 측은 문서 수집·멱등 저장 계약을 제공해야 한다. MCP 결과의 source reference
@@ -29,6 +30,29 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 첫 구현에서 임의 DAG·스크립트 실행기나 시각적 workflow 편집기를 만들지 않는다.
 파일 가져오기, 전사, 선택적 Agent 후처리, 선택적 저장을 조합하는 제한된 작업 계약부터 구현한다.
 전사만 실행하거나 이미 보관된 파일을 사용하는 흐름도 같은 기능을 사용한다.
+
+## Artifact 중심 Agent 구성
+
+메인 Agent의 published 버전을 schedule로 호출한다. 각 역할은 일반 Agent project의 설정이며,
+플랫폼에 특정 녹음 서비스나 업무 종류를 추가하지 않는다.
+
+| 역할 | 호출과 산출물 |
+| --- | --- |
+| 메인 | `AudioJob list/status`의 task·sourceIdentity·Artifact 관계로 진행 상태를 확인하고 해당 하위 Agent에 위임한다 |
+| 다운로드 | 연결된 MCP의 source_ref → `ImportFile` → 비공개 원본 Artifact |
+| 전사 | 원본 artifact_id → `TranscribeAudio` → 전사 JSON Artifact |
+| 후처리 | 전사 artifact_id → `AudioJob submit`의 `task: postprocess` → summary.md·dialogue.md·구조화 JSON |
+| 기록 | 사용자 요청이 있을 때만 `File read` → 연결된 MCP의 document_ingest 또는 remember. 개인 scope와 동일한 idempotencyKey를 사용한다 |
+
+진행 중인 작업이 있으면 새 녹음을 시작하지 않는다. pending 작업은 완료로 보고하지 않으며 다음
+실행에서 같은 job ID를 확인한다. 완료된 단계를 다시 실행하거나 만료된 원본을 자동 재다운로드하지 않는다.
+이미 보관된 전사 Artifact로 후처리만 다시 수행할 수 있으며, 명시적인 재처리는 processing_revision을 구분한다.
+기록 Agent가 읽은 내용이 잘렸으면 전체 저장으로 보고하지 않는다. 저장 오류나 충돌을 피하려고
+조직 scope로 바꾸거나 새 멱등 키를 무작정 발급하지 않는다.
+
+MCP OAuth는 해당 서버를 호출하는 하위 Agent에 연결한다. 원본 참조·작업·산출물의 보관 범위는
+메인 프로젝트이며, URL 갱신에 사용할 하위 프로젝트와 연결 세대는 별도로 유지한다.
+schedule은 검증된 owner email 문맥을 사용하고, cron 기본 요청에는 외부 저장을 포함하지 않는다.
 
 ## 책임과 재사용 경계
 
@@ -316,17 +340,19 @@ owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약�
 
 이 절은 운영 시 구성할 사례이며 공통 코드의 필수 조건이 아니다.
 
-- 대상 Studio: `https://studio.opspresso.com`. Agent 생성은 개발 검증 후 수행한다.
+- 설치별 Studio 주소에 Agent를 구성하고 로컬에서 검증한 뒤 같은 설정을 운영 설치에 적용한다.
 - 출처는 기존 Plaud MCP와 프로젝트 OAuth를 연결한다. 목록 탐색·조회 방법은 plugin이 소유한다.
   `list_files`·`get_file`과 실제 schema를 사용하고 임시 오디오 URL을 범용 source ref로 변환한다.
   필터 사용 시 pagination이 무시되는 제약은 해당 skill에서 처리한다.
   [Plaud 공식 계약](https://docs.plaud.ai/plaud-mcp-cli/mcp)을 참조한다.
-- cron은 `0 * * * *`, timezone은 `Asia/Seoul`, maxActiveJobs와 maxNewJobsPerOccurrence는 1이다.
-  기존 작업이 있으면 새 파일을 시작하지 않는다. 최초 수집 시작일은 활성화 전에 정한다.
+- cron은 `0 * * * *`, timezone은 `Asia/Seoul`이다. 메인은 신규 녹음을 한 건만 선택하고,
+  작업 설정은 maxActive=1, maxPerOccurrence=3으로 다운로드·전사·후처리 각각의 접수를 허용한다.
+  기존 작업이 진행 중이면 새 파일을 시작하지 않는다. 최초 수집 시작일은 활성화 전에 정한다.
 - 지정 Transcription 모델로 MP3를 전사하고 `meeting-minutes` skill로 후처리한다.
   결정·할 일·미결·담당자·기한·근거 검수는 이 skill과 Agent schema가 결정한다.
-- `transcript.md`와 `minutes.md`를 Agent Memory Documents에, 확정 결정·사실을 Memory에 저장한다.
-  둘 다 기존 MCP 연결과 설정한 본인 email로 개인 scope에 저장한다.
+- 전사 JSON·summary.md·dialogue.md를 Artifact에 보관한다. 사용자 요청이 있을 때만 선택한 문서를
+  Agent Memory Documents에, 원문 근거가 있는 내용을 Memory에 기록한다. 기존 MCP 연결과 검증된
+  본인 email 문맥으로 개인 scope에 저장하며, 자동 수집 cron은 외부 저장을 호출하지 않는다.
 - MP3는 MinIO에 보관하고 retention을 `{unit: months, value: 3, timezone: Asia/Seoul}`로 지정한다.
   예: 2026-11-30 10:00 KST 저장 → 2027-02-28 10:00 KST 만료. Documents·Memory는 유지한다.
 
