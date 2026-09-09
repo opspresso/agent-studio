@@ -18,8 +18,6 @@
 
 남은 개발 계약:
 
-- 프로젝트별 작업 설정: 모델·후처리·저장·retention과 admission 한도를 재사용 가능한 revision으로
-  관리하는 API·Agent 도구는 구현돼 있다. 설정 UI와 plugin의 config revision 사용 지침을 연결한다.
 - source 참조 갱신: 등록한 read tool과 고정 argument mapping으로 같은 외부 item을 재조회하며,
   다른 계정 재연결을 기존 작업의 자동 재개로 취급하지 않는다. 현재 정규화된 임시 참조만 저장한다.
 - 산출물 이전 후 정리: 모든 필수 저장 receipt를 확인한 작업의 중간본을 정리하고 본문 조회에

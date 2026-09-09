@@ -12,6 +12,8 @@ import type { AudioOptionsResponse } from "@/app/api/projects/[name]/audio-optio
 import type { AudioJobsResponse } from "@/app/api/projects/[name]/audio-jobs/route";
 import type { AudioJobView } from "@/application/audio/audioJobUseCases";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
+import type { AudioConfigResponse } from "@/app/api/projects/[name]/audio-config/route";
+import { MAX_ACTIVE_AUDIO_JOBS } from "@/domain/audio/job";
 
 export default function AudioPage() {
   const { name } = useParams<{ name: string }>();
@@ -23,6 +25,11 @@ function AudioWorkspace({ name }: { name: string }) {
   const base = `/api/projects/${encodeURIComponent(name)}`;
   const [options, setOptions] = useState<AudioOptionsResponse>({ models: [], destinations: [] });
   const [optionsLoaded, setOptionsLoaded] = useState(false);
+  const [savedConfig, setSavedConfig] = useState<AudioConfigResponse>(null);
+  const [useSaved, setUseSaved] = useState(false);
+  const [configEnabled, setConfigEnabled] = useState(true);
+  const [maxActive, setMaxActive] = useState<number | string>(1);
+  const [maxPerOccurrence, setMaxPerOccurrence] = useState<number | string>(1);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const listRequest = useRef<AbortController | null>(null);
   const [projects, setProjects] = useState<SanitizedProject[]>([]);
@@ -32,6 +39,7 @@ function AudioWorkspace({ name }: { name: string }) {
   const [file, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState<{ source: File; file: SourceFile } | null>(null);
   const [model, setModel] = useState<string | null>(null);
+  const [language, setLanguage] = useState("");
   const [unit, setUnit] = useState<string | null>("months");
   const [duration, setDuration] = useState<number | string>(3);
   const [timezone, setTimezone] = useState("Asia/Seoul");
@@ -59,14 +67,17 @@ function AudioWorkspace({ name }: { name: string }) {
   }, [base]);
   useEffect(() => {
     let active = true;
-    Promise.all([fetch(`${base}/audio-options`).then(readJson<AudioOptionsResponse>), listProjects()])
-      .then(([options, projects]) => { if (active) { setOptions(options); setProjects(projects); setOptionsLoaded(true); } })
+    Promise.all([fetch(`${base}/audio-options`).then(readJson<AudioOptionsResponse>), listProjects(), fetch(`${base}/audio-config`).then(readJson<AudioConfigResponse>)])
+      .then(([options, projects, config]) => { if (active) {
+        setOptions(options); setProjects(projects); setOptionsLoaded(true); setSavedConfig(config); setUseSaved(Boolean(config));
+        if (config) { setConfigEnabled(config.enabled); setMaxActive(config.maxActive); setMaxPerOccurrence(config.maxPerOccurrence); }
+      } })
       .catch((error) => { if (active) setError(error.message); });
     refresh().catch((error) => { if (active) setError(error.message); });
     return () => { active = false; listRequest.current?.abort(); };
   }, [base, refresh]);
   useEffect(() => {
-    let active = true; setVersions([]); setWriterVersion(null);
+    let active = true; setVersions([]);
     if (writer) listVersions(writer).then((values) => { if (active) setVersions(values); }).catch((error) => { if (active) setError(error.message); });
     return () => { active = false; };
   }, [writer]);
@@ -78,23 +89,42 @@ function AudioWorkspace({ name }: { name: string }) {
   }, [activeJobs, refresh]);
 
   const validRetention = typeof duration === "number" && Number.isSafeInteger(duration) && duration > 0 && timezone.trim().length > 0;
+  const processing = useSaved && savedConfig ? {
+    model: savedConfig.model, language: savedConfig.language, retention: savedConfig.retention,
+    postprocess: savedConfig.postprocess, destination: savedConfig.destination,
+  } : { model: model ?? "", ...(language.trim() ? { language: language.trim() } : {}), retention: { unit: unit as "months" | "days", value: Number(duration), timezone },
+    ...(writer && writerVersion ? { postprocess: { projectName: writer, versionName: writerVersion } } : {}),
+    ...(destination ? { destination: { serverName: destination, documents, memories } } : {}) };
+  const validProcessing = useSaved ? Boolean(savedConfig) : Boolean(model) && validRetention &&
+    (!language.trim() || /^[a-z]{2,3}$/i.test(language.trim())) &&
+    (!writer || Boolean(writerVersion)) && (!destination || ((documents || memories) && (!memories || Boolean(writerVersion))));
 
-  async function submit() {
-    if (!file || !model || !validRetention) return;
+  async function saveConfiguration() {
+    if (!validProcessing) return;
     setBusy(true); setError(null);
     try {
-      const query = new URLSearchParams({ unit: unit ?? "months", value: String(duration), timezone });
+      const result = await fetch(`${base}/audio-config`, { method: "PUT", headers: jsonHeaders,
+        body: JSON.stringify({ ...processing, enabled: configEnabled, maxActive, maxPerOccurrence, revision: savedConfig?.revision ?? 0 }) }).then(readJson<AudioConfigResponse>);
+      setSavedConfig(result); setUseSaved(Boolean(result));
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  }
+
+  async function submit() {
+    if (!file || !validProcessing) return;
+    setBusy(true); setError(null);
+    try {
+      const selectedRetention = processing.retention;
+      const query = new URLSearchParams({ unit: selectedRetention.unit, value: String(selectedRetention.value), timezone: selectedRetention.timezone });
       const types: Record<string, string> = { mp3: "audio/mpeg", wav: "audio/wav", flac: "audio/flac", ogg: "audio/ogg" };
       const mimeType = types[file.name.split(".").at(-1)?.toLowerCase() ?? ""] || file.type || "application/octet-stream";
-      const existing = uploaded?.source === file && uploaded.file.retention.unit === unit && uploaded.file.retention.value === duration && uploaded.file.retention.timezone === timezone ? uploaded.file : null;
+      const existing = uploaded?.source === file && uploaded.file.retention.unit === selectedRetention.unit && uploaded.file.retention.value === selectedRetention.value && uploaded.file.retention.timezone === selectedRetention.timezone ? uploaded.file : null;
       const stored = existing ? existing : await fetch(`${base}/source-files?${query}`, { method: "POST", body: file,
         headers: { "content-type": mimeType, "x-filename": encodeURIComponent(file.name) } }).then(readJson<SourceFile>);
       setUploaded({ source: file, file: stored });
       await fetch(`${base}/audio-jobs`, { method: "POST", headers: jsonHeaders, body: JSON.stringify({
-        task: writer || destination ? "process" : "transcribe", source: { kind: "file", fileId: stored.id }, model,
-        retention: { unit, value: duration, timezone },
-        ...(writer && writerVersion ? { postprocess: { projectName: writer, versionName: writerVersion } } : {}),
-        ...(destination ? { destination: { serverName: destination, documents, memories } } : {}),
+        source: { kind: "file", fileId: stored.id },
+        ...(useSaved && savedConfig ? { configRevision: savedConfig.revision } : { ...processing, task: writer || destination ? "process" : "transcribe" }),
       }) }).then(readJson<unknown>);
       setFile(null); setUploaded(null); await refresh();
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
@@ -113,18 +143,34 @@ function AudioWorkspace({ name }: { name: string }) {
     {error && <Alert color="red">{error}</Alert>}
     {optionsLoaded && !options.models.length && <Alert>{t("audio.noModels")}</Alert>}
     <Paper withBorder p="lg"><Stack>
-      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+      {savedConfig && <>
+        <Checkbox label={t("audio.useSaved")} checked={useSaved} onChange={(e) => {
+          const checked = e.currentTarget.checked;
+          if (!checked) {
+            setModel(savedConfig.model); setLanguage(savedConfig.language ?? ""); setUnit(savedConfig.retention.unit); setDuration(savedConfig.retention.value); setTimezone(savedConfig.retention.timezone);
+            setWriter(savedConfig.postprocess?.projectName ?? null); setWriterVersion(savedConfig.postprocess?.versionName ?? null);
+            setDestination(savedConfig.destination?.serverName ?? null); setDocuments(savedConfig.destination?.documents ?? true); setMemories(savedConfig.destination?.memories ?? false);
+          }
+          setUseSaved(checked);
+        }} disabled={busy} />
+        {useSaved && <Text size="sm">{savedConfig.model} · {t("audio.configRevision")}: {savedConfig.revision} · {savedConfig.retention.value} {t(savedConfig.retention.unit === "months" ? "audio.months" : "audio.days")} · {savedConfig.retention.timezone}</Text>}
+        {useSaved && savedConfig.language && <Text size="sm">{t("audio.language")}: {savedConfig.language}</Text>}
+        {useSaved && savedConfig.postprocess && <Text size="sm">{t("audio.writer")}: {savedConfig.postprocess.projectName} / {savedConfig.postprocess.versionName}</Text>}
+        {useSaved && savedConfig.destination && <Text size="sm">{t("audio.destination")}: {savedConfig.destination.serverName} · {savedConfig.destination.documents ? t("audio.saveDocuments") : ""} {savedConfig.destination.memories ? t("audio.saveMemories") : ""}</Text>}
+        {!savedConfig.enabled && <Alert>{t("audio.configDisabled")}</Alert>}
+      </>}
         <FileInput label={t("audio.file")} placeholder={t("audio.chooseFile")} description="MP3, WAV, FLAC, Ogg" accept=".mp3,.wav,.flac,.ogg" value={file} onChange={(file) => { setFile(file); setUploaded(null); }} clearable disabled={busy} />
-        <Select label={t("audio.model")} searchable data={options.models.map((model) => ({ value: model.id, label: `${model.displayName} · ${model.id}` }))} value={model} onChange={setModel} disabled={busy} />
-      </SimpleGrid>
       {uploaded && <Text component="a" size="sm" href={`${base}/source-files/${uploaded.file.id}`}>{t("audio.uploadedFile")}: {uploaded.file.filename}</Text>}
+      {!useSaved && <>
+        <Select label={t("audio.model")} searchable data={options.models.map((model) => ({ value: model.id, label: `${model.displayName} · ${model.id}` }))} value={model} onChange={setModel} disabled={busy} />
+        <TextInput label={t("audio.language")} placeholder="ko, en" value={language} onChange={(e) => setLanguage(e.currentTarget.value)} maxLength={3} disabled={busy} />
       <SimpleGrid cols={{ base: 1, sm: 3 }}>
         <NumberInput label={t("audio.retention")} min={1} allowDecimal={false} value={duration} onChange={setDuration} disabled={busy} />
         <Select label={t("audio.retentionUnit")} data={[{ value: "days", label: t("audio.days") }, { value: "months", label: t("audio.months") }]} value={unit} onChange={setUnit} allowDeselect={false} disabled={busy} />
         <TextInput label={t("audio.timezone")} value={timezone} onChange={(e) => setTimezone(e.currentTarget.value)} disabled={busy} />
       </SimpleGrid>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <Select label={t("audio.writer")} clearable searchable value={writer} onChange={setWriter} disabled={busy}
+        <Select label={t("audio.writer")} clearable searchable value={writer} onChange={(writer) => { setWriter(writer); setWriterVersion(null); }} disabled={busy}
           data={projects.filter((project) => project.ownerEmail === viewer?.email && project.projectType === "agent").map((project) => ({ value: project.name, label: project.displayName }))} />
         <Select label={t("audio.writerVersion")} value={writerVersion} onChange={setWriterVersion} disabled={busy || !writer}
           data={versions.map((version) => ({ value: version.versionName, label: version.versionName }))} />
@@ -132,8 +178,18 @@ function AudioWorkspace({ name }: { name: string }) {
       <Select label={t("audio.destination")} description={t("audio.destinationHint")} clearable value={destination} onChange={setDestination} data={options.destinations} disabled={busy} />
       {destination && <Group><Checkbox label={t("audio.saveDocuments")} checked={documents} onChange={(e) => setDocuments(e.currentTarget.checked)} disabled={busy} />
         <Checkbox label={t("audio.saveMemories")} checked={memories} onChange={(e) => setMemories(e.currentTarget.checked)} disabled={busy || !writerVersion} /></Group>}
+      </>}
       <Group justify="space-between"><Text size="sm" c="dimmed">{t("audio.personalOnly")}</Text>
-        <Button loading={busy} disabled={!file || !model || !validRetention || (Boolean(writer) && !writerVersion) || (Boolean(destination) && ((!documents && !memories) || (memories && !writerVersion)))} onClick={submit}>{t("audio.submit")}</Button></Group>
+        <Button loading={busy} disabled={!file || !validProcessing || savedConfig?.enabled === false} onClick={submit}>{t("audio.submit")}</Button></Group>
+      <details><Text component="summary">{t("audio.projectConfig")}</Text><Stack mt="sm">
+        <Checkbox label={t("audio.configEnabled")} checked={configEnabled} onChange={(e) => setConfigEnabled(e.currentTarget.checked)} disabled={busy} />
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <NumberInput label={t("audio.maxActive")} value={maxActive} onChange={setMaxActive} min={1} max={MAX_ACTIVE_AUDIO_JOBS} allowDecimal={false} disabled={busy} />
+          <NumberInput label={t("audio.maxPerOccurrence")} value={maxPerOccurrence} onChange={setMaxPerOccurrence} min={1} max={MAX_ACTIVE_AUDIO_JOBS} allowDecimal={false} disabled={busy} />
+        </SimpleGrid>
+        <Text size="sm" c="dimmed">{t("audio.saveConfigHint")}</Text>
+        <Button onClick={saveConfiguration} loading={busy} disabled={!validProcessing || !Number.isInteger(maxActive) || !Number.isInteger(maxPerOccurrence)}>{t("audio.saveConfig")}</Button>
+      </Stack></details>
     </Stack></Paper>
     <Group justify="space-between"><Title order={3}>{t("audio.jobs")}</Title><Button variant="default" loading={loadingJobs} onClick={() => refresh().catch((error) => setError(error.message))}>{t("audio.refresh")}</Button></Group>
     {!loadingJobs && !jobs.length && <Text c="dimmed">{t("audio.noJobs")}</Text>}
