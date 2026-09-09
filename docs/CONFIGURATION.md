@@ -85,7 +85,7 @@ fail-open 이 될 수는 없다.
 | `DATABASE_POOL_SIZE` | `10` | — | 인스턴스 하나가 열어 두는 커넥션 수. 런은 모델 호출 동안 커넥션을 쥐지 않고 밀리초 단위로만 빌리므로 10 이면 넉넉하고, 함대 전체가 기본 `max_connections` 100 아래에 남을 만큼 작다. 하한 `1`. |
 | `AWS_REGION` | `ap-northeast-2` | — | AWS 를 쓰는 기능. Bedrock 임베딩, `S3_ENDPOINT` 없이 AWS S3 자체를 쓸 때의 클라이언트. 이 쓰는 리전. 그 밖에는 읽히지 않는다. |
 | `AES_ENCRYPTION_KEY` | — (필수) | — | 32바이트 base64. 저장되는 모든 시크릿을 암호화하고, proxied 오브젝트 주소의 서명 키도 여기서 HKDF 로 파생된다. [SECURITY.md](SECURITY.md#저장된-시크릿) 를 보라. |
-| `S3_BUCKET_NAME` | 미설정 | — | 런이 만들어 낸 것. 생성된 이미지와 저장된 문서. 이 `artifacts/<kind>/` 아래로 들어가는 버킷. 어느 S3 호환 스토어든 된다 (MinIO, Garage, Ceph RGW, AWS S3). 행에는 오브젝트 키가 저장되고 URL 은 절대 저장되지 않는다. 자격증명은 스토어 자신의 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 쌍이고, 비어 있으면 SDK 기본 체인(`AWS_*`, 인스턴스 역할, AWS 자신에는 이것이 맞다)이다; 그 주체에게는 (레거시 `images/*` 만이 아니라) **`artifacts/*`** 의 put·get·delete 가 있어야 한다. 설정하지 않으면 영속화가 통째로 꺼진다: 런은 여전히 그림을 그리고, 바이트는 표면까지 도달했다가 거기서 멈추며, artifact 갤러리는 404 로 답한다. |
+| `S3_BUCKET_NAME` | 미설정 | — | Artifacts의 공통 버킷. 일반 생성 파일은 `artifacts/<kind>/`, 비공개 오디오·전사·요약은 `source-files/`에 저장한다. 어느 S3 호환 스토어든 된다 (MinIO, Garage, Ceph RGW, AWS S3). 행에는 오브젝트 키가 저장되고 URL 은 절대 저장되지 않는다. 자격증명은 스토어 자신의 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 쌍이고, 비어 있으면 SDK 기본 체인(`AWS_*`, 인스턴스 역할, AWS 자신에는 이것이 맞다)이다; 그 주체에게는 (레거시 `images/*` 만이 아니라) **`artifacts/*`와 `source-files/*`**의 put·get·delete와 비공개 파일의 multipart 업로드 권한이 있어야 한다. 설정하지 않으면 영속화가 통째로 꺼진다: 런은 여전히 그림을 그리고, 바이트는 표면까지 도달했다가 거기서 멈추며, artifact 갤러리는 404 로 답한다. |
 | `S3_ENDPOINT` | 미설정 | — | AWS 가 아닌 스토어의 주소 (`http://minio:9000`). 설정되면 path-style 로 주소를 만든다. 자체 호스팅 엔드포인트는 버킷 서브도메인을 해석하지 못하는 것이 보통이다. 비어 있으면 SDK 자신의 리전·자격증명 해석으로 AWS S3 에 간다. |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 미설정 | — | 오브젝트 스토어의 키 쌍. `AWS_*` 에 넣지 않는다. 그 쌍은 프로세스의 다른 모든 AWS 클라이언트(Bedrock 채널·Cohere 임베딩)가 읽으므로, MinIO 의 키를 거기 두면 AWS 에 MinIO 키로 서명하게 된다. 비어 있으면 SDK 기본 체인을 따른다. |
 | `S3_PUBLIC_BASE_URL` | 미설정 | — | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
@@ -621,10 +621,11 @@ wire 에 실리지 않으면 호출을 처리하는 모델이 자기 최대치�
 
 오디오의 [처리 계약](design/audio-processing-spec.md)은 HTTP API·Agent 도구·별도 worker에서 공유한다. Memory delivery에는 수신 서버의 수집·멱등 저장 계약이 필요하다.
 worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것만으로 자동 수집이 시작되지는 않는다.
+원본·전사·요약은 기존 `S3_BUCKET_NAME`을 재사용한다. 비공개·versioning 비활성화와 경로별
+보존 정책은 [설치 안내](INSTALL.md#오디오-worker)를 따른다. 별도 원본 bucket 설정은 없다.
 
 | 변수 | 기본값 | 역할 |
 | --- | --- | --- |
-| `SOURCE_FILES_BUCKET_NAME` | 미설정 | versioning을 끈 비공개 원본 전용 bucket. 기존 public artifact bucket으로 fallback하지 않는다. 삭제 표식·multipart lifecycle은 INSTALL을 따른다 |
 | `TRANSCRIPTION_BASE_URL` | 미설정 | `/audio/transcriptions` 앞의 ASR base URL. 없으면 선택 모델의 명시적 provider 채널을 요구한다 |
 | `TRANSCRIPTION_API_KEY` | 미설정 | 전용 ASR key. base URL 없이 설정하면 거절하며 다른 LLM key를 가져오지 않는다 |
 | `TRANSCRIPTION_RESPONSE_FORMAT` | `json` | `json`, `verbose_json`, `diarized_json` 중 provider가 지원하는 형식 |
@@ -644,6 +645,7 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 | 원본 파일 크기 / 미완료 업로드 유효 시간 | 512 MiB / 24시간 | `src/application/artifact/sourceFiles.ts` |
 | 원본 오디오 길이 | 6시간 | `src/domain/audio/segmenter.ts` |
 | 다운로드 / 구간 전사 요청 제한 | 각각 10분 | `src/infrastructure/net/sourceDownloader.ts`, `src/infrastructure/llm/transcription.ts` |
+| 비공개 파일 object 요청 / 삭제·multipart 정리 요청 | 10분 / 30초 | `src/infrastructure/storage/sourceObjectStore.ts` |
 | worker 동시 작업 / poll / 만료 sweep | 2개 / 10초 / 60초 | `src/application/audio/worker.ts` |
 | job lease / heartbeat / 실행 구간 | 2분 / 30초 / 24시간 | `src/application/audio/processJob.ts` |
 | 자동 재시도 대기 | 1·5·15·60분, 최초 포함 5회 | `src/application/audio/processJob.ts` |

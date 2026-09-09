@@ -4,7 +4,7 @@ import {
   AbortMultipartUploadCommand, CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand, UploadPartCommand, PutObjectCommand, HeadObjectCommand,
 } from "@aws-sdk/client-s3";
-import { createSourceObjectStore } from "@/infrastructure/storage/sourceObjectStore";
+import { createSourceObjectStore, SOURCE_OBJECT_REQUEST_MS } from "@/infrastructure/storage/sourceObjectStore";
 
 const mocks = vi.hoisted(() => ({ send: vi.fn(), read: vi.fn(), remove: vi.fn() }));
 vi.mock("@/infrastructure/storage/s3ObjectStore", () => ({
@@ -24,6 +24,17 @@ async function* chunks(...values: Uint8Array[]) { yield* values; }
 const store = createSourceObjectStore("private-source-files");
 
 describe("streaming source object storage", () => {
+  it.each(["caller", "deadline"])("interrupts stalled metadata requests on %s cancellation", async (kind) => {
+    const caller = new AbortController(); const deadline = new AbortController();
+    vi.mocked(AbortSignal.timeout).mockReturnValue(deadline.signal);
+    mocks.send.mockImplementation((_command, options) => new Promise((_resolve, reject) => {
+      options.abortSignal.addEventListener("abort", () => reject(options.abortSignal.reason), { once: true });
+    }));
+    const result = expect(store.stat("file", caller.signal)).rejects.toThrow("stopped");
+    (kind === "caller" ? caller : deadline).abort(new Error("stopped"));
+    await result;
+    expect(AbortSignal.timeout).toHaveBeenCalledWith(SOURCE_OBJECT_REQUEST_MS);
+  });
   it("uploads bounded sequential parts with integrity checks and create-only completion", async () => {
     const bytes = new Uint8Array(5 * 1024 * 1024 + 3).fill(7);
     const result = await store.write({ key: "source-file", mimeType: "audio/mpeg", maxBytes: bytes.length,
@@ -73,7 +84,7 @@ describe("streaming source object storage", () => {
   it("uses the shared bounded reader and seals a deleted key with an empty object", async () => {
     mocks.read.mockResolvedValue({ bytes: new Uint8Array([1]), mimeType: "audio/mpeg" });
     await store.read("file", 15); await store.delete("file");
-    expect(mocks.read).toHaveBeenCalledWith("private-source-files", "file", 15);
+    expect(mocks.read).toHaveBeenCalledWith("private-source-files", "file", 15, expect.any(AbortSignal));
     const retired = mocks.send.mock.calls.find(([command]) => command instanceof PutObjectCommand)?.[0];
     expect(retired?.input).toMatchObject({ Bucket: "private-source-files", Key: "file", ContentLength: 0, Metadata: { "source-deleted": "true" } });
     expect(retired?.input.Body).toHaveLength(0);

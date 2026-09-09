@@ -48,7 +48,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
   return async (job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string; summaryRef: string; dialogueRef: string }> => {
     if (!job.postprocess?.version || !job.transcriptRef) throw new AudioJobStepError("postprocess_configuration_missing", false);
     const file = await deps.files.read(job.task === "postprocess" ? audioSourceProject(job) : job.projectName,
-      job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES);
+      job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
     const transcript = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)) as AudioTranscript;
     try { validateTranscription(transcript); }
     catch { throw new AudioJobStepError("transcript_invalid", false); }
@@ -66,7 +66,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
         const bytes = new TextEncoder().encode(JSON.stringify({ digest, output }));
         return (async function* () { yield bytes; })();
       }, context.signal);
-      const cached = await deps.files.read(job.projectName, id, job.userEmail, MAX_TRANSCRIPT_BYTES);
+      const cached = await deps.files.read(job.projectName, id, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
       const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(cached.bytes)) as { digest: string; output: AudioPostprocessOutput };
       if (value.digest !== digest) throw new AudioJobStepError("postprocess_checkpoint_mismatch", false);
       return parseAudioPostprocessOutput(JSON.stringify(value.output), transcript.text, maxChars);

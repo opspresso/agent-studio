@@ -1,3 +1,5 @@
+import { isSourceFileObjectKey } from "./sourceFile";
+
 /**
  * Where an artifact's bytes are kept.
  *
@@ -40,6 +42,11 @@ export class ObjectNotFoundError extends Error {
     super(`No stored object at ${key}`);
     this.name = "ObjectNotFoundError";
   }
+}
+
+/** Private file keys require their owner/retention checks, never a reusable object URL. */
+export function assertNotPrivateFileKey(key: string): void {
+  if (isSourceFileObjectKey(key)) throw new ObjectNotFoundError(key);
 }
 
 export interface ArtifactObjectStore {

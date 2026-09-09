@@ -1,4 +1,6 @@
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
+import { assertNotPrivateFileKey } from "@/domain/artifact/objectStore";
+import { isSourceFileObjectKey } from "@/domain/artifact/sourceFile";
 import { MAX_SAVED_FILE_BYTES } from "@/domain/artifact/types";
 import { MAX_DOCUMENT_BYTES } from "@/domain/llm/documentLimits";
 import { MAX_IMAGE_BYTES } from "@/domain/llm/imageLimits";
@@ -23,6 +25,7 @@ export function withArtifactAccessMode(store: ArtifactObjectStore): ArtifactObje
   return {
     ...store,
     async sign(key, expiresInSeconds, options) {
+      assertNotPrivateFileKey(key);
       if ((await getArtifactAccessMode()) !== "proxied") {
         return store.sign(key, expiresInSeconds, options);
       }
@@ -69,7 +72,7 @@ export interface ProxiedObjectAccess {
  */
 export function createProxiedObjectAccess(store: ArtifactObjectStore): ProxiedObjectAccess {
   return {
-    verify: verifyObjectUrlToken,
+    verify: (claims, signature, nowSeconds) => !isSourceFileObjectKey(claims.key) && verifyObjectUrlToken(claims, signature, nowSeconds),
     read: (key) => store.read(key, MAX_PROXIED_OBJECT_BYTES),
   };
 }

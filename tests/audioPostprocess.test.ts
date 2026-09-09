@@ -37,7 +37,7 @@ describe("durable Agent postprocessing", () => {
     const read = vi.spyOn(f.deps.files, "read");
     const imported = vi.spyOn(f.deps.files, "import");
     const result = await f.run(f.job, f.context);
-    expect(read).toHaveBeenCalledWith("transcriber", "transcript", f.job.userEmail, expect.any(Number));
+    expect(read).toHaveBeenCalledWith("transcriber", "transcript", f.job.userEmail, expect.any(Number), f.context.signal);
     expect(result.summaryRef).toBe("job-summary");
     expect(result.dialogueRef).toBe("job-dialogue");
     expect(new TextDecoder().decode(f.saved.get(result.dialogueRef))).toContain("**Unknown speaker:**");

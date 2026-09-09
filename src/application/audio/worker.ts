@@ -4,13 +4,14 @@ import { log } from "@/shared/logger";
 export interface AudioWorkerDeps {
   due(limit: number): Promise<AudioJob[]>;
   process(projectName: string, id: string, signal: AbortSignal): Promise<unknown>;
-  sweep(): Promise<{ deleted: number; failed: number }>;
+  sweep(signal: AbortSignal): Promise<{ deleted: number; failed: number }>;
   refresh(): Promise<unknown>;
 }
 
 /** Long jobs run beside polling; one slow source never blocks all other projects. */
 export async function runAudioWorker(deps: AudioWorkerDeps, signal: AbortSignal): Promise<void> {
   const pending = new Map<string, Promise<unknown>>();
+  let sweeping: Promise<void> | undefined;
   let nextRefresh = 0;
   let nextSweep = 0;
   while (!signal.aborted) {
@@ -26,10 +27,13 @@ export async function runAudioWorker(deps: AudioWorkerDeps, signal: AbortSignal)
           pending.set(job.id, task);
         }
       }
-      if (Date.now() >= nextSweep) {
-        const result = await deps.sweep();
-        if (result.failed) log.warn("audio-worker", "Source file deletion requires retry", result);
+      if (!sweeping && Date.now() >= nextSweep) {
         nextSweep = Date.now() + 60_000;
+        sweeping = deps.sweep(signal).then((result) => {
+          if (result.failed) log.warn("audio-worker", "Source file deletion requires retry", result);
+        }).catch(() => {
+          if (!signal.aborted) log.error("audio-worker", "Source file sweep failed; retrying on the next sweep");
+        }).finally(() => { sweeping = undefined; });
       }
     } catch { log.error("audio-worker", "Worker poll failed; retrying on the next poll"); }
     if (signal.aborted) break;
@@ -40,5 +44,5 @@ export async function runAudioWorker(deps: AudioWorkerDeps, signal: AbortSignal)
       if (signal.aborted) finish();
     });
   }
-  await Promise.allSettled(pending.values());
+  await Promise.allSettled([...pending.values(), ...(sweeping ? [sweeping] : [])]);
 }

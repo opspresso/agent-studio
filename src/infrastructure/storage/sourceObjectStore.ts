@@ -12,11 +12,17 @@ import { getS3Client, readStoredObject } from "./s3ObjectStore";
 const PART_BYTES = 5 * 1024 * 1024;
 const MAX_PARTS = 10_000;
 const CLEANUP_REQUEST_MS = 30_000;
+export const SOURCE_OBJECT_REQUEST_MS = 600_000;
+
+function operationSignal(signal?: AbortSignal): AbortSignal {
+  return AbortSignal.any([AbortSignal.timeout(SOURCE_OBJECT_REQUEST_MS), ...(signal ? [signal] : [])]);
+}
 
 export function createSourceObjectStore(bucket: string): SourceObjectStore {
   if (!bucket.trim()) throw new Error("Source file bucket is required");
   return {
     async write(input, signal) {
+      signal = operationSignal(signal);
       signal?.throwIfAborted();
       if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes <= 0 || input.maxBytes > PART_BYTES * MAX_PARTS) {
         throw new Error("Source upload byte limit is invalid");
@@ -75,15 +81,17 @@ export function createSourceObjectStore(bucket: string): SourceObjectStore {
         throw error;
       }
     },
-    async read(key, maxBytes) {
-      const result = await readStoredObject(bucket, key, maxBytes);
+    async read(key, maxBytes, signal) {
+      const result = await readStoredObject(bucket, key, maxBytes, operationSignal(signal));
       // Source writes reject empty bodies. A zero-byte object is a retirement barrier.
       if (result.bytes.byteLength === 0) throw new ObjectNotFoundError(key);
       return result;
     },
-    async stat(key) {
+    async stat(key, signal) {
+      signal = operationSignal(signal);
+      signal.throwIfAborted();
       try {
-        const head = await getS3Client().send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        const head = await getS3Client().send(new HeadObjectCommand({ Bucket: bucket, Key: key }), { abortSignal: signal });
         if (head.ContentLength === 0 && head.Metadata?.["source-deleted"] === "true") return null;
         if (head.ContentLength === undefined || !head.LastModified) throw new Error("Source object metadata is incomplete");
         return { byteSize: head.ContentLength, mimeType: head.ContentType ?? "application/octet-stream",

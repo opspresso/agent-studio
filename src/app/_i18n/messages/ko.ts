@@ -519,7 +519,7 @@ export const ko: Messages = {
     "폐쇄망에서는 사내 OIDC나 비밀번호 로그인을 구성한다. OIDC_ISSUER·OIDC_CLIENT_ID·OIDC_CLIENT_SECRET을 설정하고 앱의 /api/auth/callback/oidc 주소를 인증 공급자에 등록한다. 비밀번호 초기 관리자는 AUTH_PASSWORD=true·BOOTSTRAP_ADMIN_EMAIL·BOOTSTRAP_ADMIN_PASSWORD로 구성하고 해당 이메일을 ADMIN_EMAILS에도 포함한다. bootstrap 비밀번호 변경으로 기존 비밀번호 계정이 초기화되지는 않는다.",
   "guide.install.storage": "4. 파일 저장소 연결",
   "guide.install.storageBody":
-    "파일을 영속 보관하려면 bucket을 만들고 S3_BUCKET_NAME을 설정한다. AWS가 아닌 저장소는 S3_ENDPOINT·S3_ACCESS_KEY_ID·S3_SECRET_ACCESS_KEY도 설정한다. AWS S3는 배포의 AWS 자격 증명이나 역할 설정을 사용할 수 있다. 저장소 계정에는 해당 bucket의 artifacts/* 읽기·쓰기·삭제 권한을 부여한다. 비 AWS 저장소의 키는 다른 공급자도 사용하는 AWS_* 대신 S3 전용 변수에 넣는다. Settings에서 Artifact 접근 방식을 정하고 사용자 네트워크에서 다운로드를 검증한다.",
+    "파일을 영속 보관하려면 bucket을 만들고 S3_BUCKET_NAME을 설정한다. AWS가 아닌 저장소는 S3_ENDPOINT·S3_ACCESS_KEY_ID·S3_SECRET_ACCESS_KEY도 설정한다. AWS S3는 배포의 AWS 자격 증명이나 역할 설정을 사용할 수 있다. 저장소 계정에는 해당 bucket의 artifacts/*·source-files/* 읽기·쓰기·삭제와 비공개 파일의 multipart 업로드 권한을 부여한다. 비 AWS 저장소의 키는 다른 공급자도 사용하는 AWS_* 대신 S3 전용 변수에 넣는다. Settings에서 Artifact 접근 방식을 정하고 사용자 네트워크에서 다운로드를 검증한다.",
   "guide.install.verify": "5. 기동과 전체 경로 확인",
   "guide.install.verifyBody":
     "앱은 기동 시 설정을 검증하고 DB migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한 뒤 모델 Test와 작은 프로젝트 생성을 거쳐 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험하며 콘솔에 접속된다는 사실만으로 모두 정상이라고 판단하지 않는다.",
@@ -537,7 +537,7 @@ export const ko: Messages = {
   "guide.operations.catalogBody":
     "기능 검색을 켠 배포에서는 같은 X-Scan-Token 자격 증명으로 POST /api/catalog/reindex를 매시간 별도 호출하도록 구성한다. 스케줄 scan이 이 재색인까지 수행하지는 않는다. 성공 응답은 백그라운드 색인 시작을 뜻하므로 서버 로그에서 indexed·removed·undiscovered 결과를 확인하고 새로 등록한 기능이 검색되어야 하는 질문으로 시험한다.",
   "guide.operations.retention": "DB 보존과 파일 수명 관리",
-  "guide.operations.retentionBody": "DB 보존 설정은 트레이스·사용량·대화·Artifact·트리거·A2A·감사 행에 적용된다. 일반 Artifact 보존은 대화 보존 이상으로 두고 오브젝트 수명주기도 맞춘다. 비공개 오디오 파일은 별도의 일·달력 월 만료를 사용하며 파생 결과가 이를 상속하고 오디오 worker가 삭제한다. 삭제 표식을 유지해야 하므로 원본 전용 bucket에 일괄 만료를 적용하지 않는다. 오디오 Artifact 삭제·만료는 작업 이력과 중복 방지 기록을 지우지 않는다.",
+  "guide.operations.retentionBody": "DB 보존 설정은 트레이스·사용량·대화·Artifact·트리거·A2A·감사 행에 적용된다. 일반 Artifact 보존은 대화 보존 이상으로 두고 오브젝트 수명주기도 맞춘다. 비공개 오디오 파일은 별도의 일·달력 월 만료를 사용하며 파생 결과가 이를 상속하고 오디오 worker가 삭제한다. 같은 Artifacts bucket의 source-files/ 경로에는 삭제 표식을 유지해야 하므로 일괄 만료를 적용하지 않는다. 오디오 Artifact 삭제·만료는 작업 이력과 중복 방지 기록을 지우지 않는다.",
   "guide.operations.backup": "데이터와 복구 키 백업",
   "guide.operations.backupBody":
     "PostgreSQL·저장된 object·배포 설정·암호화 및 세션 secret을 접근 제한된 위치에 백업한다. 별도 환경에 함께 복구하고 로그인·자격 증명 복호화·프로젝트 실행·파일 접근을 검증한다. AES_ENCRYPTION_KEY를 잃거나 임의 교체하면 저장된 자격 증명을 읽을 수 없다. 앱 이미지는 데이터 백업이 아니다.",

@@ -1428,6 +1428,36 @@ async function main() {
       }
     }
 
+    // ---------- private artifact publication/retirement fence ----------
+    {
+      const { sourceFileRepository: files } = await import("@/infrastructure/db/repositories/sourceFileRepository");
+      const { registerSourceArtifact } = await import("@/application/artifact/storeArtifact");
+      const { deleteItem } = await import("@/infrastructure/db/store");
+      const id = `source-artifact-${suffix}`;
+      try {
+        const pending = await files.create({ id, projectName, userEmail: "integration@example.com",
+          filename: "sample.mp3", mimeType: "audio/mpeg", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
+          revision: 1, status: "pending", createdAt: now, retireAt: now });
+        const ready = await files.finish(pending, { storedAt: now,
+          retireAt: new Date(Date.now() + 86_400_000).toISOString(), checksum: "sha256", byteSize: 3 });
+        assert.ok(ready);
+        await registerSourceArtifact(artifactRepository, ready);
+        assert.ok(await artifactRepository.get(id));
+        const [, retirement] = await Promise.allSettled([
+          registerSourceArtifact(artifactRepository, ready), files.retire(ready, new Date().toISOString()),
+        ]);
+        assert.equal(retirement.status, "fulfilled");
+        if (retirement.status === "fulfilled") assert.ok(retirement.value);
+        await artifactRepository.delete(id);
+        await assert.rejects(registerSourceArtifact(artifactRepository, ready));
+        assert.equal(await artifactRepository.get(id), null, "delayed publication cannot restore a deleted private artifact");
+        pass("private artifacts: publication is fenced against source retirement");
+      } finally {
+        await artifactRepository.delete(id);
+        await deleteItem(dbKeys.sourceFile(id));
+      }
+    }
+
     // ---------- durable audio work (admission + worker fencing) ----------
     {
       const { audioJobRepository: jobs } = await import("@/infrastructure/db/repositories/audioJobRepository");

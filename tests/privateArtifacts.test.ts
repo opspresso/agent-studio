@@ -24,6 +24,11 @@ function fixture() {
 }
 beforeEach(() => { setAdminCheck(async () => false); });
 describe("private files in the Artifact inventory", () => {
+  it("reports a retirement race as a conflict instead of an upstream retry", async () => {
+    const f = fixture();
+    f.rows.put.mockRejectedValueOnce(Object.assign(new Error("conditional check failed"), { name: "TransactionCancelled" }));
+    await expect(registerSourceArtifact(f.rows, file)).rejects.toMatchObject({ status: 409 });
+  });
   it("indexes one stable artifact without storing another object or extending retention", async () => {
     const f = fixture();
     await registerSourceArtifact(f.rows, file); await registerSourceArtifact(f.rows, file);

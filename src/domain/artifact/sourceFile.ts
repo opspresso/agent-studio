@@ -25,9 +25,12 @@ export interface SourceFile {
   deletedAt?: string;
 }
 
+const SOURCE_FILE_PREFIX = "source-files/";
 export function sourceFileObjectKey(id: string): string {
-  return `source-files/${encodeURIComponent(id)}`;
+  return `${SOURCE_FILE_PREFIX}${encodeURIComponent(id)}`;
 }
+
+export function isSourceFileObjectKey(key: string): boolean { return key.startsWith(SOURCE_FILE_PREFIX); }
 
 export interface SourceFileRepository {
   create(file: SourceFile): Promise<SourceFile>;

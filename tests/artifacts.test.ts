@@ -67,12 +67,23 @@ afterEach(() => {
 describe("private artifact persistence", () => {
   it("round-trips the private file address and excludes it once source retention expires", async () => {
     const stored = artifact({ kind: "audio", privateFileId: "source-id", retireAt: "2026-08-13T00:00:00.000Z" });
+    store.seed([{ ...keys.project(stored.projectName), entityType: "PROJECT" },
+      { ...keys.sourceFile("source-id"), file: { status: "ready", projectName: stored.projectName,
+        userEmail: "bruce@daangn.com", retireAt: stored.retireAt } }]);
     await artifactRepository.put(stored);
     expect(await artifactRepository.get(stored.artifactId)).toEqual(stored);
     expect((await artifactRepository.listByOwner("bruce@daangn.com"))[0]?.privateFileId).toBe("source-id");
     vi.setSystemTime(new Date(stored.retireAt!));
     expect(await artifactRepository.get(stored.artifactId)).toBeNull();
     expect(await artifactRepository.listByOwner("bruce@daangn.com")).toEqual([]);
+  });
+  it.each(["pending", "deleting", "deleted"])("does not publish a stale private artifact after its file becomes %s", async (status) => {
+    const stored = artifact({ kind: "audio", privateFileId: "source-id", retireAt: "2026-08-13T00:00:00.000Z" });
+    store.seed([{ ...keys.project(stored.projectName), entityType: "PROJECT" },
+      { ...keys.sourceFile("source-id"), file: { status, projectName: stored.projectName,
+        userEmail: "bruce@daangn.com", retireAt: stored.retireAt } }]);
+    await expect(artifactRepository.put(stored)).rejects.toThrow();
+    expect(await artifactRepository.get(stored.artifactId)).toBeNull();
   });
 });
 
