@@ -480,7 +480,7 @@ export async function resolveRunTools(
    * Where the run came from. MCP resolution names an email actor and the
    * conversation to every server as request headers.
    */
-  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation" | "backgroundTask">,
+  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation" | "backgroundTask"> & Partial<Pick<RunOrigin, "ancestry">>,
   /** Records billable Rerank calls for a real run; previews leave it absent. */
   recordRerankUsage?: engine.RecordUsageFn,
 ): Promise<{

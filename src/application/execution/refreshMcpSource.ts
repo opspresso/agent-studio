@@ -4,10 +4,14 @@ import { buildMcpTools, closeMcp, type McpToolDeps } from "@/application/executi
 import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import { AudioJobStepError } from "@/application/audio/processJob";
 
-export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps, "versions">): NonNullable<SourceReferenceDeps["refresh"]> {
+export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps, "versions" | "projects">): NonNullable<SourceReferenceDeps["refresh"]> {
   return async (job, recipe, signal) => {
     const check = async () => {
-      const version = await deps.versions.get(job.projectName, recipe.versionName);
+      if (recipe.projectName && recipe.projectName !== job.projectName) {
+        const project = await deps.projects.get(recipe.projectName);
+        if (project?.ownerEmail !== job.userEmail) throw new AudioJobStepError("source_project_access_changed", false);
+      }
+      const version = await deps.versions.get(recipe.projectName ?? job.projectName, recipe.versionName);
       const server = await deps.mcps.get(recipe.serverName);
       const binding = version?.mcpList.find((entry) => entry.name === recipe.serverName);
       if (!version || !server || !binding || !recipe.mapping.refreshArgument ||

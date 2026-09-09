@@ -147,7 +147,11 @@ Markdown, `artifacts.structured`는 원문 근거와 경고가 포함된 JSON Ar
 구간 목록이 불완전해도 전체 전사문을 함께 보존한다. 대화 내용의 Markdown·HTML은 문자 그대로 표시한다.
 
 `source_ref`는 서버가 발급한 불투명 참조다. 등록된 MCP tool의 파일 URL을
-프로젝트·연결·외부 item ID에 연결한다. 직접 업로드는 비공개 file ID를 반환한다. JSON 안의 URL은 등록된 binding의 필드 mapping으로
+메인 Agent의 프로젝트에 보관한다. 하위 Agent가 조회한 경우에도 작업과 참조의 보관 범위는
+같으며, 재조회 recipe는 하위 Agent의 프로젝트·version·OAuth 연결을 별도로 고정한다.
+재조회 전후에 해당 프로젝트의 소유 권한과 연결 세대를 확인한다.
+
+참조는 프로젝트·연결·외부 item ID에 연결한다. 직접 업로드는 비공개 file ID를 반환한다. JSON 안의 URL은 등록된 binding의 필드 mapping으로
 정규화하며 worker는 원래 필드명을 알지 않는다. URL·인증정보를 job 입력에 그대로 복제하지 않는다.
 필요한 경우 짧은 수명의 URL을 암호화해 임시 저장하고 가져오기 완료·만료 시 폐기한다.
 갱신은 binding에 등록한 read tool·고정 argument mapping으로만 수행한다. 임의 tool 실행은 금지한다.

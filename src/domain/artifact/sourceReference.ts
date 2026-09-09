@@ -1,6 +1,8 @@
 import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 
 export interface SourceRefresh {
+  /** Project owning the MCP binding and OAuth connection, independent of artifact ownership. */
+  projectName?: string;
   serverName: string;
   versionName: string;
   mapping: McpSourceMapping;

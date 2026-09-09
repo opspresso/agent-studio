@@ -1247,6 +1247,9 @@ export function getAudioRuntime() {
   const authorizeJob = async (job: AudioJob) => {
     const project = await authorize(job.projectName, job.userEmail);
     if (audioSourceProject(job) !== job.projectName) await authorize(audioSourceProject(job), job.userEmail);
+    if (job.sourceRefresh?.projectName && job.sourceRefresh.projectName !== job.projectName) {
+      await authorize(job.sourceRefresh.projectName, job.userEmail);
+    }
     return project;
   };
   const references = createSourceReferenceUseCases({ references: sourceReferenceRepository, cipher: secretCipher,

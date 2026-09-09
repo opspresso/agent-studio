@@ -36,7 +36,7 @@ export async function buildMcpTools(
   version: Version,
   signal?: AbortSignal,
   /** Where the run came from; its email actor and conversation reach the server as headers. */
-  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation">,
+  origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation"> & Partial<Pick<RunOrigin, "ancestry">>,
 ): Promise<{
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
@@ -161,8 +161,8 @@ export async function buildMcpTools(
             ...(contextHeaders ? { contextHeaders } : {}),
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
             ...(binding.sourceOutputs?.length ? { resultTransforms: Object.fromEntries(binding.sourceOutputs.map((mapping) => [mapping.tool,
-              (result: unknown) => mapMcpSource({ result, mapping, serverName: mcp.name, projectName: version.projectName,
-                ...(mapping.refreshArgument && refreshIdentity ? { refresh: { serverName: mcp.name, versionName: version.versionName, mapping, identity: refreshIdentity } } : {}),
+              (result: unknown) => mapMcpSource({ result, mapping, serverName: mcp.name, projectName: origin?.ancestry?.[0] ?? version.projectName,
+                ...(mapping.refreshArgument && refreshIdentity ? { refresh: { projectName: version.projectName, serverName: mcp.name, versionName: version.versionName, mapping, identity: refreshIdentity } } : {}),
                 userEmail: mcpUserEmail(origin?.actor, origin?.userEmail), register: deps.registerMcpSource })])) } : {}),
           },
           description: mcp.description ?? "",
