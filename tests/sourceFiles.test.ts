@@ -42,6 +42,17 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("does not return bytes when the file is deleted during the read", async () => {
+    const api = useCases();
+    await api.import(input, openBody);
+    const read = objects.read;
+    objects.read = vi.fn(async (key, limit) => {
+      const bytes = await read(key, limit);
+      await api.remove(input.projectName, input.id, input.userEmail);
+      return bytes;
+    });
+    await expect(api.read(input.projectName, input.id, input.userEmail)).rejects.toMatchObject({ status: 409 });
+  });
   it("retries artifact publication without downloading the completed file again", async () => {
     const publish = vi.fn().mockRejectedValueOnce(new Error("inventory unavailable")).mockResolvedValue(undefined);
     const api = createSourceFileUseCases({ files, objects, now: () => clock, publish });

@@ -103,8 +103,9 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       const file = await deps.files.get(projectName, id);
       assertReadable(file, userEmail, deps.now().toISOString());
       const result = await deps.objects.read(sourceFileObjectKey(id), maxBytes);
-      assertReadable(file, userEmail, deps.now().toISOString());
-      return { file, ...result };
+      const latest = await deps.files.get(projectName, id);
+      assertReadable(latest, userEmail, deps.now().toISOString());
+      return { file: latest, ...result };
     },
 
     async remove(projectName: string, id: string, userEmail: string): Promise<void> {
