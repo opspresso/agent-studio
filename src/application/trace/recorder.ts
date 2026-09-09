@@ -92,11 +92,11 @@ export class TraceRecorder {
   private readonly warnings: string[] = [];
   private error: string | undefined;
   /**
-   * Whether this run's own turn guard ended it. Read from the top level only:
+   * Whether this run stopped at a limit. Read from the top level only:
    * an authored termination is a child's, absorbed into the parent's tool
    * result, and must not mark the parent's trace.
    */
-  private turnLimited = false;
+  private limit: "turn-limit" | "output-limit" | undefined;
 
   constructor(
     private readonly repository: TraceRepository,
@@ -148,8 +148,9 @@ export class TraceRecorder {
     if (chunk.warning && this.warnings.length < MAX_WARNINGS) {
       this.warnings.push(preview(chunk.warning));
     }
-    if (runTermination(chunk) === "turn-limit") {
-      this.turnLimited = true;
+    const termination = runTermination(chunk);
+    if (termination === "turn-limit" || termination === "output-limit") {
+      this.limit = termination;
     }
     for (const call of chunk.delta?.toolCalls ?? []) {
       const id = call.id;
@@ -245,6 +246,9 @@ export class TraceRecorder {
   }
 
   observeResult(result: RunResult): void {
+    if (result.termination === "output-limit" || result.termination === "turn-limit") {
+      this.limit = result.termination;
+    }
     const now = new Date();
     // `modelStartedAt`, not `startedAt`: the two are the same until a stage
     // moves the boundary, and reading the run's start here would count any
@@ -316,9 +320,7 @@ export class TraceRecorder {
         ? "cancelled"
         : this.error
           ? "failed"
-          : this.turnLimited
-            ? "turn-limit"
-            : "completed",
+          : this.limit ?? "completed",
       spans: this.spans,
       ...(this.spansDropped > 0 ? { spansDropped: this.spansDropped } : {}),
       ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}),

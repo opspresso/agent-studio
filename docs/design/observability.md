@@ -137,7 +137,7 @@ Slack 주소든 그대로 다시 읽히고, 서로 다른 두 외부 id — A2A 
 
 ```ts
 Trace     { traceId, projectName, versionName, projectType, actor?, ancestry?, conversation?,
-            status: 'completed' | 'turn-limit' | 'failed' | 'cancelled',
+            status: 'completed' | 'turn-limit' | 'output-limit' | 'failed' | 'cancelled',
             spans: TraceSpan[], spansDropped?, warnings?,
             startedAt, endedAt, durationMs, error?, createdAt }
 TraceSpan { spanId, kind: 'model' | 'tool' | 'subagent' | 'prepare', name, author?,
@@ -148,6 +148,9 @@ Agent 런은 model/tool/subagent span 을 언제나 저장하고, agent 가 아�
 런은 샘플링된다. span 은 한도가 정해진 메타데이터만 담는다 — 문자 수, 토큰, 비용, 소요 시간,
 subagent trace id. **원문 프롬프트와 tool 결과는 저장하지 않는다.** 보존 기간, 샘플링, 누가
 trace 를 읽을 수 있는지는 [OPERATIONS.md](../OPERATIONS.md#트레이싱) 에 있다.
+
+턴 한도와 모델 출력 한도로 끝난 런은 각각 `turn-limit`, `output-limit`로 기록한다.
+하위 Agent의 한도 종료는 메인 Trace 상태를 바꾸지 않으며, 오류와 취소가 한도 상태보다 우선한다.
 
 **첫 토큰 이전의 준비 작업은 `prepare` span 이다.** 런이 모델을 부르기 전에 memory recall을 먼저
 수행하고, 그다음 version의 도구를 resolve한다. 후자는 바인딩된 MCP 서버를 열고 도구를 나열하며,

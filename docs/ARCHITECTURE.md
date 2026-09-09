@@ -650,7 +650,7 @@ chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. *
 | `usage` | 모델 호출마다 한 번씩 엔진이. 실제 호출 모델(`model`)도 싣기 때문에 fallback 턴을 trace 가 primary 로 오인하지 않는다 | `collectRun` 의 응답 usage. 여러 호출을 합산한 응답에서는 모델을 생략한다. DB 기록은 별개다(엔진 루프 안의 `recordUsage` / 애그리게이터) |
 | `error` | 실패 시 엔진이(스트림 도중, 재시도 없음). transfer 가 실패하면 authored 로 나간다 | **top-level** 에러만 스트림을 끝낸다. authored 인 것은 거의 모든 소비자가 *버린다*(messaging 파이프라인과 trace recorder 는 예외). 부모가 그것을 지나쳐 답하기 때문이다. 그래서 실패한 transfer 가 잃은 것은 이 필드가 아니라 그 transfer 의 `warning` 으로 독자에게, "For context" 턴으로 모델에게 닿는다 |
 | `done` | 루프가 툴 호출 없이 끝날 때 엔진이. 턴 가드가 멈춘 경우는 **아니다** | 아래의 `chunkTermination` 을 통해 읽는다: OpenAI `finish_reason: "stop"`, 클라이언트의 마무리 |
-| `finishReason` | `done` 이 말할 수 없는 이유로 런이 끝날 때 엔진이. 턴 가드(`turn-limit`)와 프로바이더의 출력 절단(`output-limit`), 각각 그것을 이름 붙인 `warning` 과 함께 | `chunkTermination`/`runTermination` 을 통해 읽는다: OpenAI `finish_reason: "length"`, trace 상태 `turn-limit`, A2A 종단 상태 메시지, AG-UI 의 `RUN_FINISHED.result.termination`, predict 의 `finishReason` 필드 |
+| `finishReason` | `done` 이 말할 수 없는 이유로 런이 끝날 때 엔진이. 턴 가드(`turn-limit`)와 프로바이더의 출력 절단(`output-limit`), 각각 그것을 이름 붙인 `warning` 과 함께 | `chunkTermination`/`runTermination` 을 통해 읽는다: OpenAI `finish_reason: "length"`, trace 상태 `turn-limit`/`output-limit`, A2A 종단 상태 메시지, AG-UI 의 `RUN_FINISHED.result.termination`, predict 의 `finishReason` 필드 |
 | `author` | subagent chunk 만. **가장 안쪽** agent | 소비자는 `isTopLevelChunk` 로 거른다. 클라이언트는 지금 도는 agent 를 보여 준다 |
 | `authorPath` | subagent chunk 만. 바깥쪽부터 나열한 체인 | 클라이언트는 `sample-agent → simple-image` 로 렌더링한다. trace recorder 는 첫 원소로 transfer 를 묶고 artifact recorder 는 root project 뒤에 전체 경로를 붙여 provenance 로 저장한다 |
 | `transferId` | delegation 호출마다. trace sampling과 무관하게 자식의 모든 chunk와 `authorDone`에 같은 값 | trace recorder가 같은 agent로 간 여러 transfer를 각각 한 span으로 묶는다. `traceId`는 선택적인 하위 trace 링크일 뿐 identity가 아니다 |
@@ -679,7 +679,7 @@ flowchart LR
   warning["warning chunk<br/>사람이 읽는 쪽 절반"]
 
   openai["OpenAI 표면<br/>finish_reason stop / length"]
-  tracestatus["trace 상태<br/>completed · turn-limit · failed · cancelled"]
+  tracestatus["trace 상태<br/>completed · turn-limit · output-limit · failed · cancelled"]
   a2aout["A2A 종단 상태<br/>warning 은 상태 메시지에 실려 간다"]
   aguiout["AG-UI — CUSTOM 경고 이벤트,<br/>RUN_FINISHED.result 에 termination 과 함께 모인다"]
   predictout["predict 논스트리밍<br/>finishReason 필드"]

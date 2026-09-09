@@ -562,10 +562,8 @@ describe("TraceRecorder", () => {
     expect(traces[0]?.error).toBeUndefined();
   });
 
-  it("distinguishes a turn-limit ending from a normal completion", async () => {
-    // The turn guard ends the generator normally, so before the reason was
-    // explicit this run recorded `completed` — a run that produced no answer
-    // read as normal on the traces page.
+  it.each(["turn-limit", "output-limit"] as const)("distinguishes a %s ending from a normal completion", async (limit) => {
+    // A normally exhausted generator can still carry an incomplete answer.
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "p",
@@ -575,15 +573,14 @@ describe("TraceRecorder", () => {
       messageCount: 1,
     });
 
-    recorder.observe({ warning: "The run stopped at its turn limit (2 turns)…" });
-    recorder.observe({ finishReason: "turn-limit" });
+    recorder.observe({ finishReason: limit });
     await recorder.finish();
 
-    expect(traces[0]?.status).toBe("turn-limit");
+    expect(traces[0]?.status).toBe(limit);
     expect(traces[0]?.error).toBeUndefined();
   });
 
-  it("does not mark the parent's trace from a child's turn limit", async () => {
+  it.each(["turn-limit", "output-limit"] as const)("does not mark the parent's trace from a child's %s", async (limit) => {
     // An authored termination is the child's — absorbed into the parent's tool
     // result — and the parent may still answer normally.
     const { repository, traces } = memoryRepository();
@@ -595,10 +592,29 @@ describe("TraceRecorder", () => {
       messageCount: 1,
     });
 
-    recorder.observe({ author: "child", finishReason: "turn-limit" });
+    recorder.observe({ author: "child", finishReason: limit });
     recorder.observe({ done: true });
     await recorder.finish();
 
     expect(traces[0]?.status).toBe("completed");
+  });
+
+  it.each([undefined, "failed", "cancelled"] as const)("records a single-shot output limit with %s taking precedence", async (ending) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const { repository, traces } = memoryRepository();
+      const recorder = new TraceRecorder(repository, {
+        projectName: "p", versionName: "1", projectType: "llm", model: "model", messageCount: 1,
+      });
+      recorder.observeResult({
+        content: "partial", model: "model", usage: { inputTokens: 5, outputTokens: 10, costUsd: 0 },
+        termination: "output-limit",
+      });
+      await recorder.finish(ending ? new Error("interrupted") : undefined, ending === "cancelled");
+      expect(traces[0]?.status).toBe(ending ?? "output-limit");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
