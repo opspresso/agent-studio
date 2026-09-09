@@ -12,6 +12,16 @@ function input() {
     result: { content: [{ type: "text", text: JSON.stringify(body) }] } };
 }
 describe("MCP source projection", () => {
+  it("keeps the replay recipe private and refuses refresh mappings without a captured connection identity", async () => {
+    const value = input(); const renewable = { ...mapping, refreshArgument: "file_id" };
+    expect((await mapMcpSource({ ...value, mapping: renewable })).text).toMatch(/^Error:/);
+    expect(value.register).not.toHaveBeenCalled();
+    const refresh = { serverName: "files", versionName: "1", mapping: renewable, identity: "connection-generation" };
+    const result = await mapMcpSource({ ...value, mapping: renewable, refresh });
+    expect(value.register).toHaveBeenCalledWith(expect.objectContaining({ refresh }));
+    expect(result.text).not.toContain("connection-generation");
+    expect(result.text).not.toContain("refreshArgument");
+  });
   it("returns only opaque file metadata and never copies alternate URLs or provider notes", async () => {
     const value = input(); const result = await mapMcpSource(value);
     expect(JSON.parse(result.text)).toEqual({ source_ref: "ref-1", filename: "audio.mp3", mime_type: "audio/mpeg", source: "files", external_id: "item-1" });

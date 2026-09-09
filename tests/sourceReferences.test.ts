@@ -3,6 +3,7 @@ import { createSourceReferenceUseCases, type SourceReferenceDeps } from "@/appli
 import type { SourceReference } from "@/domain/artifact/sourceReference";
 import { sourceReferenceContext } from "@/domain/security/secretContext";
 import type { AudioJob } from "@/domain/audio/job";
+import { NotFoundError } from "@/application/errors";
 
 function fixture() {
   const rows = new Map<string, SourceReference>();
@@ -20,6 +21,33 @@ function fixture() {
 }
 
 describe("encrypted source references", () => {
+  it("refreshes an admitted source after its temporary reference row has expired", async () => {
+    const f = fixture();
+    const refresh = { serverName: "files", versionName: "1", identity: "connection-1", mapping: {
+      tool: "get_file", namespace: "account", urlPath: ["url"], idPath: ["id"], mimeType: "audio/mpeg", refreshArgument: "file_id",
+    } };
+    await f.api.register({ ...f.input, refresh });
+    const identity = await f.api.identity("audio", "ref-1", f.input.userEmail);
+    f.rows.clear();
+    f.deps.refresh = vi.fn(async () => ({ ...f.input, url: "https://files.example.test/new?sig=fresh" }));
+    vi.mocked(f.deps.files.metadata).mockRejectedValue(new NotFoundError("missing"));
+    vi.mocked(f.deps.downloader.open).mockResolvedValue({ body: (async function* () { yield new Uint8Array([1]); })(), mimeType: "audio/mpeg" });
+    vi.mocked(f.deps.files.import).mockImplementation(async (input, open) => {
+      for await (const _part of await open(100)) { /* consume */ }
+      return { ...input, status: "ready", revision: 2, createdAt: "now", retireAt: "later" };
+    });
+    const job: AudioJob = { id: "job", projectName: "audio", userEmail: f.input.userEmail, source: { kind: "source", sourceRef: "ref-1" },
+      sourceKey: "key", sourceIdentity: identity, sourceRefresh: identity.refresh, model: "asr", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" },
+      revision: 1, status: "running", stage: "importing", createdAt: "now", updatedAt: "now", dueAt: "now", attempt: 1, failures: 0, receipts: {} };
+    const context = { signal: new AbortController().signal, record: async () => {} };
+    expect(await f.api.importFile(job, context)).toEqual({ fileId: "job-source" });
+    expect(f.deps.refresh).toHaveBeenCalledTimes(1);
+    expect(f.deps.downloader.open).toHaveBeenCalledWith("https://files.example.test/new?sig=fresh", context.signal, 100);
+    expect(f.deps.cipher.decrypt).not.toHaveBeenCalled();
+    vi.mocked(f.deps.refresh).mockResolvedValue({ ...f.input, itemId: "another-item" });
+    await expect(f.api.importFile(job, context)).rejects.toThrow("source_identity_changed");
+    expect(f.deps.downloader.open).toHaveBeenCalledTimes(1);
+  });
   it("returns an opaque reference and encrypts the URL with its project-bound context", async () => {
     const f = fixture();
     expect(await f.api.register(f.input)).toEqual({ sourceRef: "ref-1", filename: "audio.mp3", mimeType: "audio/mpeg" });

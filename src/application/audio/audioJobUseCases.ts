@@ -25,7 +25,7 @@ export interface AudioJobUseCaseDeps {
   jobs: AudioJobRepository;
   configs?: Pick<AudioJobConfigRepository, "get">;
   files: Pick<SourceFileRepository, "get">;
-  sourceIdentity(project: string, id: string, email: string): Promise<{ namespace: string; itemId: string }>;
+  sourceIdentity(project: string, id: string, email: string): Promise<{ namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] }>;
   authorize(project: string, email: string): Promise<void>;
   validateModel(model: string): Promise<void>;
   validateOutputs(input: SubmitAudioJobInput, project: string, email: string): Promise<Pick<AudioJob, "postprocess" | "destination">>;
@@ -90,7 +90,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       }
       if (task !== "process" && (input.postprocess || input.destination)) throw new ValidationError("Only process tasks accept output options");
       const outputs = await deps.validateOutputs(input, projectName, userEmail);
-      let identity: { namespace: string; itemId: string };
+      let identity: { namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] };
       if (input.source.kind === "file") {
         const file = await deps.files.get(projectName, input.source.fileId);
         if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
@@ -104,7 +104,8 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       ])).digest("hex");
       const limits = config ? { maxActive: config.maxActive, maxPerOccurrence: config.maxPerOccurrence } : await deps.limits(projectName);
       const result = await deps.jobs.submit({ projectName, userEmail, actor: origin.actor,
-        source: input.source, sourceKey, sourceIdentity: identity, model: input.model ?? "", task, language: input.language,
+        source: input.source, sourceKey, sourceIdentity: { namespace: identity.namespace, itemId: identity.itemId }, sourceRefresh: identity.refresh,
+        model: input.model ?? "", task, language: input.language,
         retention: input.retention, configRevision: input.configRevision, ...outputs },
       { id: deps.id(), now, occurrence: origin.occurrence, ...limits });
       return result.status === "busy" ? result : { status: result.status, job: view(result.job) };

@@ -166,6 +166,7 @@ export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([
     /** Omitted or empty means "every tool this server offers". */
     tools: z.array(z.string().min(1)).optional(),
     sourceOutputs: z.array(z.object({
+      refreshArgument: z.string().min(1).max(128).optional(),
       tool: z.string().min(1).max(128), namespace: z.string().min(1).max(128),
       urlPath: z.array(z.string().min(1).max(128)).min(1).max(8),
       idPath: z.array(z.string().min(1).max(128)).min(1).max(8),

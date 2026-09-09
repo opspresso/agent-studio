@@ -13,6 +13,8 @@ import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { createSourceReferenceUseCases } from "@/application/audio/sourceReferences";
 import { createAudioJobUseCases, type SubmitAudioJobInput } from "@/application/audio/audioJobUseCases";
 import { createAudioTool } from "@/application/audio/audioTool";
+import { sourceRefreshFingerprint } from "@/application/audio/sourceRefreshIdentity";
+import { createMcpSourceRefresher } from "@/application/execution/refreshMcpSource";
 import { mcpUserEmail } from "@/application/mcpMetadataHeaders";
 import { currentRunContext } from "@/shared/runContext";
 import { createAudioTranscriptionStep } from "@/application/audio/transcribeFile";
@@ -1116,6 +1118,7 @@ export const executionDeps: ExecutionDeps = {
   documentRenderer: workerDocumentRenderer,
   documentEditor: workerDocumentEditor,
   registerMcpSource: async (input) => getAudioRuntime().references.register(input),
+  sourceRefreshIdentity,
   audioTools: async (projectName, origin) => {
     if (!config.sourceFilesBucketName) return undefined;
     const email = mcpUserEmail(origin.actor, origin.userEmail);
@@ -1203,6 +1206,11 @@ export const aguiDeps: AguiDeps = {
   execution: executionDeps,
 };
 
+async function sourceRefreshIdentity(input: Parameters<NonNullable<ExecutionDeps["sourceRefreshIdentity"]>>[0]) {
+  const connection = await mcpConnectionRepository.get(input.version.projectName, input.server.name);
+  return sourceRefreshFingerprint(input.server, input.binding, connection);
+}
+
 /** Optional private audio execution, constructed only when a caller uses it. */
 export function getAudioRuntime() {
   const bucket = config.sourceFilesBucketName;
@@ -1218,6 +1226,7 @@ export function getAudioRuntime() {
   };
   const references = createSourceReferenceUseCases({ references: sourceReferenceRepository, cipher: secretCipher,
     urlPolicy, downloader: sourceDownloader, files, authorize: async (project, email) => { await authorize(project, email); },
+    refresh: createMcpSourceRefresher(executionDeps),
     now: () => new Date(), id: randomUUID });
   const validateOutputs = async (input: Pick<SubmitAudioJobInput, "postprocess" | "destination">, projectName: string, email: string) => {
     const result: Pick<AudioJob, "postprocess" | "destination"> = {};

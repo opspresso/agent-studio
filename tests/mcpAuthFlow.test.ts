@@ -481,6 +481,8 @@ describe("completeAuthorization", () => {
     expect(connection?.accessToken).toBe("enc:at-1");
     expect(connection?.refreshToken).toBe("enc:rt-1");
     expect(connection?.connectedBy).toBe(OWNER);
+    expect(connection?.authorizationEpoch).toMatch(/^[a-f0-9]{64}$/);
+    expect(connection?.authorizationEpoch).not.toBe(state);
     expect(Date.parse(connection?.expiresAt ?? "")).toBeGreaterThan(Date.now());
   });
 

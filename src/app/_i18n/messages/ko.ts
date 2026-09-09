@@ -75,6 +75,8 @@ export const ko: Messages = {
   "audio.mappingTitle": "파일 응답 매핑",
   "audio.mappingHint": "도구의 JSON 필드를 비공개 파일 참조로 변환합니다. 중첩 필드는 점으로 구분하고 계정마다 다른 namespace를 사용하세요.",
   "audio.mappingTool": "도구 이름",
+  "audio.refreshArgument": "조회 도구의 파일 ID 인수 (선택)",
+  "audio.refreshArgumentHint": "다운로드 직전에 원래 파일 ID로 이 도구를 다시 호출합니다. 이 인수 하나만 필요한 읽기 도구에 설정하세요.",
   "audio.namespace": "계정 namespace",
   "audio.urlPath": "다운로드 URL 필드 경로",
   "audio.idPath": "파일 ID 필드 경로",

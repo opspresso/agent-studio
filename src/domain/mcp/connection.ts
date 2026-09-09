@@ -87,6 +87,8 @@ export interface McpConnection {
   /** Email of the owner who completed the authorization. */
   connectedBy?: string;
   connectedAt?: string;
+  /** Identity of the completed OAuth flow; preserved across access-token refreshes. */
+  authorizationEpoch?: string;
   updatedAt: string;
   /**
    * Identity of the last repository write, independent of token rotation and

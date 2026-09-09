@@ -1,6 +1,7 @@
 import type { FileRetention } from "@/domain/artifact/retention";
 import type { RunActor } from "@/domain/execution/actor";
 import type { Version } from "@/domain/project/types";
+import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 
 export type AudioJobStage = "importing" | "transcribing" | "postprocessing" | "storing";
 export type AudioJobStatus = "queued" | "running" | "waiting" | "completed" | "blocked" | "failed" | "cancelled";
@@ -16,6 +17,7 @@ export interface AudioJobInput {
   /** Hash of source identity, item identity and the explicit processing revision. */
   sourceKey: string;
   sourceIdentity?: { namespace: string; itemId: string };
+  sourceRefresh?: SourceRefresh;
   model: string;
   configRevision?: number;
   language?: string;

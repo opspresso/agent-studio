@@ -8,6 +8,8 @@ export interface McpSourceMapping {
   idPath: string[];
   namePath?: string[];
   mimeType: string;
+  /** Opt-in replay of this read tool with the stable item ID in one fixed argument. */
+  refreshArgument?: string;
 }
 
 export function isMcpSourceMapping(value: unknown): value is McpSourceMapping {
@@ -17,5 +19,6 @@ export function isMcpSourceMapping(value: unknown): value is McpSourceMapping {
   const path = (value: unknown) => Array.isArray(value) && value.length > 0 && value.length <= 8 &&
     value.every((part) => name(part) && !["__proto__", "prototype", "constructor"].includes(part));
   return name(item.tool) && name(item.namespace) && path(item.urlPath) && path(item.idPath) &&
+    (item.refreshArgument === undefined || (name(item.refreshArgument) && !["__proto__", "prototype", "constructor"].includes(item.refreshArgument as string))) &&
     (item.namePath === undefined || path(item.namePath)) && typeof item.mimeType === "string" && /^[a-z]+\/[a-z0-9.+-]+$/i.test(item.mimeType);
 }

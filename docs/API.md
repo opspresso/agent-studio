@@ -1787,7 +1787,7 @@ Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email
 상태를 확인한다. actor는 schedule로 유지하며 검증된 email만 MCP `X-User-Email`로 전달한다.
 
 MCP binding의 `sourceOutputs`는 도구의 JSON 응답을 파일 참조로 변환한다. 항목은
-`{tool, namespace, urlPath, idPath, namePath?, mimeType}`이며 경로는 object key 배열이다.
+`{tool, namespace, urlPath, idPath, namePath?, mimeType, refreshArgument?}`이며 경로는 object key 배열이다.
 도구당 한 항목, binding당 최대 8개, 경로 깊이 최대 8개다. 예시는 다음과 같다.
 
 ```json
@@ -1808,3 +1808,10 @@ MCP binding의 `sourceOutputs`는 도구의 JSON 응답을 파일 참조로 변�
 `source`, `external_id`만 전달하며 원본 응답의 다른 URL·notes는 전달하지 않는다. 잘못된 응답,
 미설정 storage, 없는 사용자 문맥에서는 Error 결과를 반환하며 원본으로 fallback하지 않는다.
 namespace는 연결 계정을 식별하는 운영자 설정이며 계정이 달라지면 새 namespace를 사용한다.
+
+`refreshArgument`를 설정하면 해당 읽기 도구를 원래 item ID 하나로 다시 호출할 수 있다. 문자열 또는
+정수 ID 인수 하나만 필요한 조회 도구에 사용한다. 재조회 recipe는 접수된 작업에 보관되므로 임시
+source_ref 행이 만료돼도 최초 다운로드 직전에 새 URL을 얻는다. 원본을 이미 보관했다면 재조회하지 않는다.
+서버 주소·등록 header·binding·OAuth authorizationEpoch를 재조회 전후 비교하며 일반 access token
+갱신은 세대를 바꾸지 않는다. 재인증·연결 교체·다른 item 반환은 자동 재개를 차단한다.
+raw URL은 작업에 복제하지 않으며 새 URL에도 동일한 다운로드 URL 정책을 적용한다.

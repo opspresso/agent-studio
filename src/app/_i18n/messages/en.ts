@@ -95,6 +95,8 @@ export const en = {
   "audio.mappingTitle": "File response mappings",
   "audio.mappingHint": "Map a tool's JSON fields to private file references. Separate nested fields with dots. Use a distinct namespace for each account.",
   "audio.mappingTool": "Tool name",
+  "audio.refreshArgument": "Read tool's item ID argument (optional)",
+  "audio.refreshArgumentHint": "Replay this tool with the original item ID immediately before downloading. Use only a read tool requiring this single argument.",
   "audio.namespace": "Account namespace",
   "audio.urlPath": "Download URL field path",
   "audio.idPath": "File ID field path",

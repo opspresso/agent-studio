@@ -19,6 +19,16 @@ function fixture() {
   return { deps, input, api: createAudioJobUseCases(deps) };
 }
 describe("audio job use cases", () => {
+  it("retains a private source replay recipe when admitting a temporary reference", async () => {
+    const f = fixture();
+    const refresh = { serverName: "files", versionName: "1", identity: "epoch", mapping: {
+      tool: "read_file", namespace: "account", urlPath: ["url"], idPath: ["id"], mimeType: "audio/mpeg", refreshArgument: "id",
+    } };
+    f.deps.sourceIdentity = async () => ({ namespace: "account", itemId: "item", refresh });
+    const result = await f.api.submit("audio", "owner@example.test", f.input, { occurrence: "one" });
+    expect((await jobs.get("audio", "job-1"))?.sourceRefresh).toEqual(refresh);
+    expect("job" in result && result.job).not.toHaveProperty("sourceRefresh");
+  });
   it("pins a configuration revision without allowing overrides and keeps submitted work unchanged", async () => {
     const f = fixture();
     let config = { projectName: "audio", userEmail: "owner@example.test", revision: 1, enabled: true, updatedAt: "2026-09-09T00:00:00Z",

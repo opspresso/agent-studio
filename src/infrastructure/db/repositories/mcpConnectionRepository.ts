@@ -79,6 +79,7 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
     status: item.status as McpConnection["status"],
     connectedBy: optionalString(item.connectedBy),
     connectedAt: optionalString(item.connectedAt),
+    authorizationEpoch: optionalString(item.authorizationEpoch),
     updatedAt: item.updatedAt as string,
     revision: optionalString(item.revision),
   };

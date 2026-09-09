@@ -141,6 +141,9 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 정규화하며 worker는 원래 필드명을 알지 않는다. URL·인증정보를 job 입력에 그대로 복제하지 않는다.
 필요한 경우 짧은 수명의 URL을 암호화해 임시 저장하고 가져오기 완료·만료 시 폐기한다.
 갱신은 binding에 등록한 read tool·고정 argument mapping으로만 수행한다. 임의 tool 실행은 금지한다.
+현재 mapping의 선택적 `refreshArgument`에 원래 item ID를 넣어 같은 조회 도구를 호출한다.
+문자열·정수 ID 인수 하나를 지원한다. endpoint·credential·binding·OAuth flow 세대가 바뀌면
+재조회하지 않으며 조회 중 변경도 결과 사용 전에 확인한다. recipe는 job에 유지하고 URL은 복제하지 않는다.
 
 목록 탐색 자체는 Agent가 기존 MCP tool을 사용한다. 구조화 파일 참조가 있는 응답은 서버가
 source ref로 치환한 뒤 모델·trace에 전달한다. 선택한 출처가 이 계약을 제공하지 않으면

@@ -7,6 +7,7 @@
  * availability to every time-to-first-token.
  */
 
+import { createHash } from "node:crypto";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer, McpServerAuth, TokenEndpointAuthMethod } from "@/domain/mcp/types";
 import type {
@@ -931,6 +932,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         status: "connected",
         connectedBy: userEmail,
         connectedAt: now.toISOString(),
+        authorizationEpoch: createHash("sha256").update(pending.state).digest("hex"),
         updatedAt: now.toISOString(),
       });
       return { projectName: pending.projectName, serverName: pending.serverName };

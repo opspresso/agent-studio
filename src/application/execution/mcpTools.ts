@@ -28,7 +28,7 @@ export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
 /** What resolving a version's MCP bindings actually reads off the run's deps. */
 export type McpToolDeps = Pick<
   ExecutionDeps,
-  "mcps" | "cipher" | "urlPolicy" | "mcpSessions" | "mcpAuth" | "internalHostSuffixes" | "registerMcpSource"
+  "mcps" | "cipher" | "urlPolicy" | "mcpSessions" | "mcpAuth" | "internalHostSuffixes" | "registerMcpSource" | "sourceRefreshIdentity"
 >;
 
 export async function buildMcpTools(
@@ -104,6 +104,8 @@ export async function buildMcpTools(
             "those credentials were not sent. Re-enter them for the current endpoint.";
           log.warn("mcp", credentialWarning);
         }
+        const refreshIdentity = binding.sourceOutputs?.some((mapping) => mapping.refreshArgument)
+          ? await deps.sourceRefreshIdentity?.({ version, binding, server: mcp }) : undefined;
         const headers = deps.cipher.mergeOutboundHeaders(
           mcp.headers,
           overrides,
@@ -160,6 +162,7 @@ export async function buildMcpTools(
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
             ...(binding.sourceOutputs?.length ? { resultTransforms: Object.fromEntries(binding.sourceOutputs.map((mapping) => [mapping.tool,
               (result: unknown) => mapMcpSource({ result, mapping, serverName: mcp.name, projectName: version.projectName,
+                ...(mapping.refreshArgument && refreshIdentity ? { refresh: { serverName: mcp.name, versionName: version.versionName, mapping, identity: refreshIdentity } } : {}),
                 userEmail: mcpUserEmail(origin?.actor, origin?.userEmail), register: deps.registerMcpSource })])) } : {}),
           },
           description: mcp.description ?? "",

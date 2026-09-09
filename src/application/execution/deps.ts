@@ -15,7 +15,8 @@ import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, Version, McpBinding } from "@/domain/project/types";
+import type { McpServer } from "@/domain/mcp/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
@@ -66,6 +67,7 @@ export interface ExecutionDeps extends RunBracketDeps {
     ((tool: string, args: Record<string, unknown>) => Promise<McpToolResult>) | undefined
   >;
   registerMcpSource?: RegisterMcpSource;
+  sourceRefreshIdentity?(input: { version: Version; binding: McpBinding; server: McpServer }): Promise<string>;
   /**
    * A reader for the Slack workspace this project's bot is installed in, or
    * null when it has no enabled bot.

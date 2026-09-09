@@ -18,6 +18,8 @@ export function SourceMappings({ value, onChange }: { value: McpSourceMapping[];
           <TextInput label={t("audio.idPath")} value={item.idPath.join(".")} required onChange={(e) => update(index, { idPath: e.currentTarget.value.split(".") })} />
           <TextInput label={t("audio.namePath")} value={item.namePath?.join(".") ?? ""} onChange={(e) => update(index, { namePath: e.currentTarget.value ? e.currentTarget.value.split(".") : undefined })} />
           <TextInput label={t("audio.mimeType")} value={item.mimeType} required onChange={(e) => update(index, { mimeType: e.currentTarget.value })} />
+          <TextInput label={t("audio.refreshArgument")} description={t("audio.refreshArgumentHint")} value={item.refreshArgument ?? ""}
+            onChange={(e) => update(index, { refreshArgument: e.currentTarget.value || undefined })} />
         </SimpleGrid>
         <Group justify="flex-end"><Button size="xs" variant="subtle" color="red" onClick={() => onChange(value.filter((_, i) => i !== index))}>{t("audio.removeMapping")}</Button></Group>
       </Stack>

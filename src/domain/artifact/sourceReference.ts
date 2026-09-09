@@ -1,3 +1,13 @@
+import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
+
+export interface SourceRefresh {
+  serverName: string;
+  versionName: string;
+  mapping: McpSourceMapping;
+  /** Fingerprint of the endpoint, binding and connection generation, excluding rotated OAuth tokens. */
+  identity: string;
+}
+
 export interface SourceReference {
   id: string;
   projectName: string;
@@ -10,6 +20,7 @@ export interface SourceReference {
   encryptedUrl: string;
   createdAt: string;
   expiresAt: number;
+  refresh?: SourceRefresh;
 }
 
 export interface SourceReferenceRepository {
