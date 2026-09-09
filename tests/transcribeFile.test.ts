@@ -50,6 +50,13 @@ function fixture() {
 }
 
 describe("resumable file transcription", () => {
+  it("inherits the original expiry for every segment and the combined transcript", async () => {
+    const f = fixture();
+    const imported = vi.spyOn(f.deps.files, "import");
+    await createAudioTranscriptionStep(f.deps)(f.job, f.context);
+    expect(imported).toHaveBeenCalledTimes(3);
+    expect(imported.mock.calls.every(([input]) => input.retainUntil === "2026-12-08T00:00:00.000Z")).toBe(true);
+  });
   it("combines source-relative timing while keeping speaker labels scoped to each request", async () => {
     const f = fixture();
     expect(await createAudioTranscriptionStep(f.deps)(f.job, f.context)).toEqual({ transcriptRef: "job-1-transcript" });

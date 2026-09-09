@@ -40,6 +40,44 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("bounds derived files by their original expiry even when replay requests a later deadline", async () => {
+    const retainUntil = "2026-12-01T01:00:00.000Z";
+    const file = await useCases().import({ ...input, retainUntil }, openBody);
+    expect(file.retireAt).toBe(retainUntil);
+    expect((await useCases().import({ ...input, retainUntil: "2027-04-01T00:00:00.000Z" }, openBody)).retireAt).toBe(retainUntil);
+    clock = new Date(retainUntil);
+    await expect(useCases().read(input.projectName, input.id, input.userEmail)).rejects.toMatchObject({ status: 409 });
+    expect(await useCases().sweep()).toEqual({ deleted: 1, failed: 0 });
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not extend the inherited deadline while recovering a completed upload", async () => {
+    const retainUntil = "2026-11-30T02:00:00.000Z";
+    const finish = vi.spyOn(files, "finish").mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(useCases().import({ ...input, retainUntil }, openBody)).rejects.toThrow("database unavailable");
+    clock = new Date(retainUntil);
+    expect(await useCases().sweep()).toEqual({ deleted: 1, failed: 0 });
+    expect(await files.get(input.projectName, input.id)).toMatchObject({ status: "deleted", retireAt: retainUntil });
+    finish.mockRestore();
+  });
+
+  it("refuses expired or malformed deadlines before opening a provider", async () => {
+    for (const retainUntil of [clock.toISOString(), "invalid", "2027-01-01"]) {
+      await expect(useCases().import({ ...input, retainUntil }, openBody)).rejects.toThrow();
+    }
+    expect(open).not.toHaveBeenCalled();
+    expect(await files.get(input.projectName, input.id)).toBeNull();
+  });
+
+  it("does not return readable output if its inherited deadline passes during upload", async () => {
+    const retainUntil = "2026-11-30T02:00:00.000Z";
+    await expect(useCases().import({ ...input, retainUntil }, async () => {
+      clock = new Date(retainUntil);
+      return open();
+    })).rejects.toMatchObject({ status: 409 });
+    expect(await useCases().sweep()).toEqual({ deleted: 1, failed: 0 });
+  });
+
   it("closes the opened download when storage refuses it before reading", async () => {
     const close = vi.fn(async () => {});
     vi.mocked(objects.write).mockRejectedValueOnce(new Error("storage unavailable"));

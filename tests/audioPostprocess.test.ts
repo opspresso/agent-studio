@@ -32,6 +32,13 @@ function fixture(text = "Fact one.") {
 }
 
 describe("durable Agent postprocessing", () => {
+  it("inherits transcript expiry through extraction, reduction and final output", async () => {
+    const f = fixture("Fact one. ".repeat(3000));
+    const imported = vi.spyOn(f.deps.files, "import");
+    await f.run(f.job, f.context);
+    expect(imported).toHaveBeenCalledTimes(4);
+    expect(imported.mock.calls.every(([input]) => input.retainUntil === "2026-12-09T00:00:00Z")).toBe(true);
+  });
   it("stores a grounded output and reuses completed model calls", async () => {
     const f = fixture(); await f.run(f.job, f.context); await f.run(f.job, f.context);
     expect(f.deps.run).toHaveBeenCalledTimes(1);

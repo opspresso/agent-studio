@@ -54,7 +54,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
       const digest = createHash("sha256").update(JSON.stringify([job.postprocess!.version, text, mode])).digest("hex");
       const id = `${job.id}-post-${round}-${index}`;
       await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
-        filename: "postprocess.json", mimeType: "application/json", retention: job.retention }, async () => {
+        filename: "postprocess.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt }, async () => {
         const output = parseAudioPostprocessOutput(await deps.run(job, text, mode, maxChars, context.signal), transcript.text, maxChars);
         const bytes = new TextEncoder().encode(JSON.stringify({ digest, output }));
         return (async function* () { yield bytes; })();
@@ -99,7 +99,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     const bytes = new TextEncoder().encode(JSON.stringify(final));
     const id = `${job.id}-draft`;
     await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
-      filename: "result.json", mimeType: "application/json", retention: job.retention },
+      filename: "result.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt },
     async () => (async function* () { yield bytes; })(), context.signal);
     return { draftRef: id };
   };

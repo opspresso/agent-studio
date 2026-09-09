@@ -7,6 +7,8 @@ export interface SourceFile {
   filename: string;
   mimeType: string;
   retention: FileRetention;
+  /** Optional immutable upper bound inherited by derived files from their source. */
+  retainUntil?: string;
   revision: number;
   status: "pending" | "ready" | "deleting" | "deleted";
   createdAt: string;

@@ -21,6 +21,10 @@ function assertReadable(file: SourceFile | null, userEmail: string, now: string)
 }
 
 export function createSourceFileUseCases(deps: SourceFileDeps) {
+  const expiry = (storedAt: string, file: Pick<SourceFile, "retention" | "retainUntil">) => {
+    const policyExpiry = fileExpiresAt(storedAt, file.retention);
+    return file.retainUntil && file.retainUntil < policyExpiry ? file.retainUntil : policyExpiry;
+  };
   const storedReceipt = async (file: SourceFile) => {
     const recovered = await deps.objects.read(sourceFileObjectKey(file.id), MAX_SOURCE_BYTES);
     if (recovered.mimeType !== file.mimeType) throw new ConflictError("Source object type does not match its inventory");
@@ -31,7 +35,7 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
     if (!existing) return null;
     const receipt = await storedReceipt(file);
     return deps.files.finish(file, { ...receipt, storedAt: existing.storedAt,
-      retireAt: fileExpiresAt(existing.storedAt, file.retention) });
+      retireAt: expiry(existing.storedAt, file) });
   };
   return {
     async metadata(projectName: string, id: string, userEmail: string): Promise<SourceFile> {
@@ -39,16 +43,20 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
       return file;
     },
-    async import(input: Pick<SourceFile, "id" | "projectName" | "userEmail" | "filename" | "mimeType" | "retention">,
+    async import(input: Pick<SourceFile, "id" | "projectName" | "userEmail" | "filename" | "mimeType" | "retention" | "retainUntil">,
       open: (maxBytes: number) => Promise<SourceByteStream>, signal?: AbortSignal): Promise<SourceFile> {
       signal?.throwIfAborted();
       if (!input.id || !input.filename.trim() || input.filename.length > 255 || !input.mimeType ||
         !input.userEmail || /[\r\n\0]/.test(input.filename)) throw new ValidationError("Source file metadata is invalid");
       const now = deps.now();
+      if (input.retainUntil !== undefined && (!Number.isFinite(Date.parse(input.retainUntil)) ||
+        new Date(input.retainUntil).toISOString() !== input.retainUntil)) throw new ValidationError("Invalid source retention deadline");
+      if (input.retainUntil !== undefined && input.retainUntil <= now.toISOString()) throw new ConflictError("Source retention deadline has passed");
       // Validate retention before creating inventory or opening a remote source.
       fileExpiresAt(now.toISOString(), input.retention);
+      const uploadDeadline = new Date(now.getTime() + INCOMPLETE_UPLOAD_MS).toISOString();
       let file = await deps.files.create({ ...input, status: "pending", revision: 1, createdAt: now.toISOString(),
-        retireAt: new Date(now.getTime() + INCOMPLETE_UPLOAD_MS).toISOString() });
+        retireAt: input.retainUntil && input.retainUntil < uploadDeadline ? input.retainUntil : uploadDeadline });
       if (file.userEmail !== input.userEmail) throw new NotFoundError("Source file not found");
       if (file.status === "pending" && file.retireAt <= now.toISOString()) {
         file = await recoverCompletedUpload(file) ?? file;
@@ -73,8 +81,8 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
         throw new ConflictError("Source object metadata does not match its receipt");
       }
       const finished = await deps.files.finish(file, { ...receipt, storedAt: existing.storedAt,
-        retireAt: fileExpiresAt(existing.storedAt, file.retention) });
-      if (finished) return finished;
+        retireAt: expiry(existing.storedAt, file) });
+      if (finished) { assertReadable(finished, input.userEmail, deps.now().toISOString()); return finished; }
       const latest = await deps.files.get(file.projectName, file.id);
       if (latest?.status === "deleting" || latest?.status === "deleted") await deps.objects.delete(key);
       assertReadable(latest, input.userEmail, deps.now().toISOString());

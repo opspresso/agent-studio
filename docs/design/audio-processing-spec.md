@@ -255,6 +255,8 @@ streaming multipart·checksum·abort·abandoned upload 정리를 제공하고 DB
 retention은 `{unit: days | months, value, timezone}`으로 설정하고 최초 저장 완료 시각에 expiry를
 계산한다. months는 달력 월을 더하고 없는 날짜는 대상 월 말일로 보정한다. 재시도·재다운로드로
 연장하지 않는다. 원본 만료 이후 자동 재다운로드는 거절한다.
+전사 구간·통합 전사문·Agent 중간 결과·최종 결과는 입력 파일의 만료를 `retainUntil`로 상속한다.
+파일 정책으로 계산한 만료와 상속한 만료 중 이른 시각을 적용하며, 업로드 복구도 이 상한을 유지한다.
 
 만료일부터 읽기·서명을 거절하고 worker가 매분 최대 100건씩 삭제한다. object 삭제 확인 뒤
 `deletedAt`을 기록하며 정리 전 행을 row TTL로 지우지 않는다. 서명 수명도 파일 expiry 이하로 제한한다.

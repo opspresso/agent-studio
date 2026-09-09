@@ -99,11 +99,15 @@ async function main() {
     assert.equal(completed?.status, "completed", JSON.stringify(completed));
     assert.ok(completed.transcriptRef);
     const result = await runtime.files.read(projectName, completed.transcriptRef, email);
+    assert.equal(result.file.retireAt, file.retireAt);
+    assert.equal(result.file.retainUntil, file.retireAt);
     const transcript = JSON.parse(new TextDecoder().decode(result.bytes));
     assert.equal(transcript.text, "Sample transcript");
     assert.equal(transcript.totalSeconds, 1.5);
     assert.ok(completed.draftRef);
     const draft = await runtime.files.read(projectName, completed.draftRef, email);
+    assert.equal(draft.file.retireAt, file.retireAt);
+    assert.equal(draft.file.retainUntil, file.retireAt);
     assert.equal(JSON.parse(new TextDecoder().decode(draft.bytes)).text, "Summary of sample");
     assert.equal(postprocessCalls, 1);
     assert.equal(calls, 1);
