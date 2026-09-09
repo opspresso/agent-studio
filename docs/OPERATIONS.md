@@ -10,7 +10,7 @@
 ## 빌드 아티팩트
 
 배포 대상은 컨테이너 이미지다. 빌드는 멀티스테이지이며 Next.js **standalone** 출력을 싣는다.
-의존성과 문서 워커 번들, PDF용 한글 폰트가 아티팩트 안으로 추적돼 들어가므로 런타임
+의존성과 문서·오디오 워커 번들, PDF용 한글 폰트가 아티팩트 안으로 추적돼 들어가므로 런타임
 스테이지에는 `node_modules` 설치나 폰트 다운로드가 없다. 문서 작업은 앱이 띄우는 자식
 프로세스에서 실행하며 별도 MCP 서비스는 필요 없다. 실행 한계는 [문서 엔진](design/documents.md#실행-자원)을 보라.
 
@@ -29,6 +29,37 @@ docker compose up --build          # 로컬 앱 + PostgreSQL 18 + MinIO
 AWS 자격 증명은 AWS 를 쓰는 기능(Bedrock, AWS S3 자체)에서만 필요하고, 역할이나 표준
 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 쌍으로 온다. 오브젝트 스토어의 키는 그것과 별개인
 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 다(compose 는 번들 MinIO 의 root 키로 채운다). 키를 이미지에 구워 넣지 마라.
+
+## 오디오 작업 운영
+
+오디오 worker는 HTTP 앱과 별도 process다. 같은 이미지에서 `node build/audio-worker.cjs`를 실행하고
+DB·비공개 원본 bucket·암호화 키·전사 채널을 공유한다. [설치 조건](INSTALL.md#오디오-worker)과
+[환경변수·고정 한계](CONFIGURATION.md#오디오-전사-설정)를 따른다. worker만 켜면 접수된 작업을 처리하며,
+신규 녹음의 정기 탐색에는 Agent schedule과 [ticker](#schedule-티커)가 별도로 필요하다.
+
+기본 운영 구성은 Agent 하나와 plugin skill이다. 후처리 대상을 자기 Agent의 `published`로 두면
+작업 접수 시 실제 버전이 고정된다. 새 배포는 이미 접수된 작업을 바꾸지 않는다. 자동 수집의
+외부 저장 대상은 비워두고, 개인 Memory·Document 기록은 요청한 Artifact에 대해서만 수행한다.
+
+작업의 status와 stage를 구분한다. completed의 stage가 cleaning이어도 완료 상태다. waiting은
+자동 재개하며 failed/blocked는 원인을 해결한 후 수동 retry한다. 수동 retry는 실행 구간만 새로
+시작하고 성공한 단계·외부 receipt·파일 만료는 유지한다. 원본이 없어졌거나 연결이 바뀐 경우에는
+그 원인을 복구해야 한다. 다른 모델·원본으로 새 처리가 필요하면 명시적 processingRevision을 사용한다.
+
+원본과 최종 Artifact는 파일별 만료까지 보존하고 checkpoint만 완료 시 정리한다. 원본 bucket의
+삭제 표식은 유지한다. 일반 Artifact bucket 수명주기를 이 bucket에 적용하지 않는다. 작업 이력과
+중복 방지 기록은 파일 만료와 별개이므로 파일을 지워도 다음 schedule이 같은 녹음을 다시 처리하지 않는다.
+
+전체 초기화가 필요한 개발·운영 유지보수에서는 다음 범위만 정리한다. 전용 reset API나 화면 버튼은 없다.
+
+1. 해당 프로젝트의 schedule과 신규 작업·재시도를 비활성화한다. 이미 시작된 실행과 worker 작업이
+   끝나거나 취소되어 lease·활성 slot이 비어 있는지 확인한다.
+2. `keys.ts`의 해당 프로젝트 AUDIOJOB·AUDIOSOURCE·AUDIOOCCURRENCE·AUDIOSLOTS 행을 함께 정리한다.
+   일부만 지워 중복 claim이 삭제된 job을 가리키게 하지 않는다. 다른 프로젝트의 행은 건드리지 않는다.
+3. Artifact 삭제 여부는 별도로 결정한다. source-file 삭제 inventory·0바이트 표식은 유지해 지연된
+   업로드가 지운 파일을 복원하지 못하게 한다. Agent·skill·인증·오디오 설정은 유지할 수 있다.
+4. 빈 작업 목록과 중복 claim 정리를 확인하고 설정·schedule을 다시 켠다. 다음 실행은 설정된 수집
+   시작 범위에서 한도 내의 녹음을 새로 처리한다. 이 작업은 외부 Memory·Document를 삭제하지 않는다.
 
 ## 릴리스 파이프라인
 

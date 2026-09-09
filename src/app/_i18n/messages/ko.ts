@@ -23,7 +23,7 @@ export const ko: Messages = {
   "audio.maxPerOccurrence": "실행당 최대 신규 작업 수",
   "audio.saveConfig": "프로젝트 설정 저장",
   "audio.saveConfigHint": "선택한 처리 옵션과 한도를 이후 작업에 사용하도록 저장합니다. 기존 작업은 제출 당시 설정을 유지합니다.",
-  "audio.pageHint": "오디오를 업로드하고 백그라운드 전사와 Agent 처리 상태를 확인합니다.",
+  "audio.pageHint": "오디오를 업로드하고 백그라운드 전사·후처리 상태를 확인하세요. 결과는 비공개 Artifacts에서 다시 열 수 있습니다.",
   "audio.file": "오디오 파일",
   "audio.chooseFile": "파일 선택",
   "audio.model": "전사 모델",
@@ -42,7 +42,7 @@ export const ko: Messages = {
   "audio.destinationHint": "이 프로젝트의 published 버전에 연결된 MCP 서버를 선택하세요.",
   "audio.saveDocuments": "문서 저장",
   "audio.saveMemories": "근거가 있는 Memory 저장",
-  "audio.personalOnly": "본인 개인 범위에 저장됩니다. 화면을 나가도 처리는 계속됩니다.",
+  "audio.personalOnly": "원본과 결과는 비공개 Artifacts에 보관됩니다. 접수된 작업은 화면을 나가도 계속됩니다.",
   "audio.submit": "처리 시작",
   "audio.jobs": "처리 작업",
   "audio.refresh": "새로고침",
@@ -73,7 +73,7 @@ export const ko: Messages = {
   "audio.stage.postprocessing": "Agent 처리",
   "audio.stage.storing": "저장",
   "audio.stage.cleaning": "중간본 정리",
-  "audio.moved": "문서 이전 위치",
+  "audio.moved": "문서 복사 대상",
   "audio.enableTools": "오디오 처리 도구",
   "audio.enableToolsHint": "이 Agent에서 파일 가져오기, 오디오 전사와 백그라운드 작업 조회를 사용합니다.",
   "audio.runAsOwner": "내 개인 문맥으로 실행",
@@ -184,6 +184,8 @@ export const ko: Messages = {
   "home.domain.images": "이미지",
   "home.domain.imagesBody":
     "이미지 프로젝트, 에이전트의 기본 도구, 이미지 서브에이전트로 이미지를 만들거나 편집합니다. 첨부한 이미지와 현재 실행에서 만든 이미지를 다시 편집할 수 있습니다.",
+  "home.domain.audio": "오디오 전사·요약",
+  "home.domain.audioBody": "업로드하거나 연결 도구에서 가져온 오디오를 지정 모델로 전사하고 백그라운드에서 요약합니다. 원본과 결과는 비공개 Artifacts에 보관하며, 개인 기록은 요청했을 때 저장합니다.",
   "home.domain.artifacts": "문서와 결과 파일",
   "home.domain.artifactsBody":
     "보고서·발표자료·스프레드시트를 만들고, 지원되는 첨부 문서를 원본을 유지한 채 새 파일로 수정합니다. 저장소를 구성하면 원본과 결과를 보관하고 내려받을 수 있습니다.",
@@ -279,7 +281,7 @@ export const ko: Messages = {
   "overview.welcome": "{name}님, 다시 오셨네요",
   "overview.welcomeAnon": "다시 오셨네요",
   "overview.lede":
-    "프롬프트, 에이전트, 이미지 프로젝트를 만들고 콘솔에서 테스트한 뒤 다른 시스템에서 사용할 수 있도록 배포하세요.",
+    "프롬프트·에이전트·이미지 프로젝트를 만들고 콘솔에서 테스트한 뒤 필요한 버전을 배포하세요. 문서 작업과 백그라운드 오디오 처리도 Agent 도구로 구성할 수 있습니다.",
   "overview.newProject": "새 프로젝트",
   "overview.newChat": "새 대화",
   "overview.recentProjects": "최근 프로젝트",
@@ -339,8 +341,7 @@ export const ko: Messages = {
   "guide.versions.promptBody":
     "Prompt preview에서 현재 편집 내용으로 조립한 프롬프트를 확인한다. 답변은 생성하지 않지만 요청을 입력하면 memory recall, MCP 서버 조회와 동적 검색의 embedding/rerank 서비스에 실제 요청을 보낼 수 있다. 실행 패널은 저장된 버전을 실행하므로 먼저 저장한다. agent는 사용자 메시지를 직접 받으며 llm의 템플릿 변수 방식으로 입력을 전달하지 않는다.",
   "guide.versions.limits": "실행 범위와 한도 설정",
-  "guide.versions.limitsBody":
-    "편집기에 표시되는 출력 길이·에이전트 턴 수·기타 파라미터를 작업에 맞게 지정한다. 턴·출력 한도에서는 부분 답변으로 끝날 수 있고, 배포의 실행 시간 한도에서는 오류로 중단될 수 있다. 결과를 사용하기 전에 종료 사유와 경고를 확인한다. Reasoning trace는 추론 표시 여부를 제어하며 모델의 추론 수행 여부를 바꾸는 기능은 아니다.",
+  "guide.versions.limitsBody": "작업에 맞게 최대 출력 토큰과 Agent 턴 수를 설정한다. 반복 억제는 선택한 모델이 지원할 때 쓰는 선택적 설정이다. 턴·출력 한도에 도달하면 일부 답변만 남을 수 있고 설치의 실행 시간 제한은 오류로 종료할 수 있다. 종료 이유와 경고를 확인한다. 추론 과정 기록은 표시 여부를 바꾸며 모델의 추론 자체를 켜거나 끄지는 않는다.",
   "guide.versions.compare": "같은 입력으로 버전 비교",
   "guide.versions.compareBody":
     "후보 버전을 저장한 뒤 Compare에서 저장된 두 버전을 선택하고 같은 입력으로 실행한다. 답변 품질·경고·소요 시간·사용량을 비교한다. 양쪽 모두 실제 호출이므로 사용량과 동시 실행 한도에 포함되며 무료 미리보기가 아니다.",
@@ -361,17 +362,15 @@ export const ko: Messages = {
   "guide.capabilities.oauthBody":
     "도구 선택과 헤더 재정의는 버전 설정이며 버전의 Save가 필요하다. OAuth Connect·Disconnect·OAuth 클라이언트 자격 증명은 프로젝트 단위로 별도 저장되어 모든 버전이 공유한다. OAuth가 필요한 도구는 인증 연결을 완료한 뒤 시험한다.",
   "guide.capabilities.agents": "다른 에이전트에 작업 위임",
-  "guide.capabilities.agentsBody":
-    "배포된 로컬 프로젝트나 Agents에 등록한 외부 에이전트를 연결한다. 외부 등록에는 OpenAI 호환 또는 A2A 엔드포인트와 자격 증명을 사용한다. 위임 대상의 역할을 설명에 명확하게 적는다. 위임된 활동에는 작성자가 표시되며 사용량은 최초 실행의 비용 집계에 포함된다.",
+  "guide.capabilities.agentsBody": "별도 전문 역할이 필요한 작업에 위임을 사용한다. 반복적인 절차는 Agent 하나와 skill로 구성할 수 있다. 배포된 로컬 프로젝트나 등록된 외부 OpenAI 호환·A2A Agent를 연결하고 역할을 명확히 설명한다. 위임된 활동은 작성 Agent 이름으로 구분하며 사용량은 원래 실행의 집계에 포함된다.",
   "guide.capabilities.plugins": "Plugins 가져오기와 동기화",
   "guide.capabilities.pluginsBody":
     "관리자가 Plugins에서 설정된 저장소나 업로드한 checkout archive의 스킬·MCP 정의를 가져온다. 저장소에 접근할 수 없으면 archive 업로드를 사용한다. 건너뜀·유효하지 않은 항목을 확인하고 가져온 기능을 버전에 연결한다. 가져온 스킬 본문과 MCP URL·설명은 원본에서 수정한 뒤 다시 동기화한다. MCP 헤더는 가져오지 않으므로 자격 증명은 콘솔에서 별도로 설정한다. 고아 항목은 동기화가 자동 삭제하지 않으며 결과 화면에서 검토 후 명시적으로 삭제한다.",
   "guide.capabilities.discovery": "동적 검색과 메모리",
   "guide.capabilities.discoveryBody":
     "동적 검색은 시스템 프롬프트와 현재 요청을 기능 이름·설명에 매칭해 관련 Skill·MCP 서버/도구·외부 에이전트를 저장된 연결 위에 추가한다. 설명이 라우팅 신호이므로 언제 사용하고 무엇을 돌려주는지 정확히 써야 한다. capability catalog와 임베딩 설정이 동작해야 하며 검색 결과가 없으면 관리자에게 확인한다. 메모리 recall은 별개이며 recall 도구를 제공하는 MCP 서버가 연결되어야 한다.",
-  "guide.capabilities.builtins": "이미지 생성·URL 읽기·파일 만들기",
-  "guide.capabilities.builtinsBody":
-    "버전에 필요한 이미지 생성·URL 읽기·Slack 기록 조회를 켜고 공급자나 연결을 구성한다. Artifact 저장소가 구성되면 agent에 문서 읽기·생성·편집용 File과 텍스트 파일 생성용 SaveFile이 자동 제공된다. 문서 처리는 내장 기능이며 MCP 바인딩이 필요하지 않다.",
+  "guide.capabilities.builtins": "이미지·오디오·URL·파일 도구",
+  "guide.capabilities.builtinsBody": "필요한 이미지 생성·오디오 처리·URL 읽기·Slack 기록 기능을 켜고 해당 서비스를 구성한다. 파일 저장소가 있으면 File로 지원 문서를 읽고 생성·편집하며, 텍스트 파일은 SaveFile로 만든다. 오디오에는 비공개 원본 저장소와 별도 worker가 필요하다. 문서 처리는 기본 제공하며 별도 MCP 연결이 필요하지 않는다.",
 
   "guide.chat.title": "대화와 첨부파일",
   "guide.chat.body":
@@ -394,6 +393,25 @@ export const ko: Messages = {
   "guide.chat.stop": "페이지를 닫아도 대화 실행은 계속됨",
   "guide.chat.stopBody":
     "중단하려면 대화의 정지 버튼을 사용한다. 다른 화면으로 이동하거나 브라우저 탭을 닫으면 화면 연결만 끊기므로, 해당 대화를 다시 열어 저장된 결과를 확인한다. 중단 요청으로 이미 완료한 도구 작업이 되돌아가지는 않는다. 서버 자체가 중단되면 진행 중인 실행이 완료되지 못할 수 있다.",
+
+  "guide.audio.title": "오디오 처리와 개인 기록",
+  "guide.audio.body": "Agent 하나가 재사용 가능한 skill을 읽고 수집·전사·요약·요청한 기록을 수행할 수 있다. 긴 작업은 별도 worker가 이어가므로 Agent 응답이 끝나거나 화면을 닫아도 계속된다.",
+  "guide.audio.setup": "오디오 도구 켜기",
+  "guide.audio.setupBody": "관리자가 비공개 파일 저장소·전사 서비스·오디오 worker를 구성한 뒤 Agent 버전에서 오디오 처리 도구를 켠다. 배포 버전에 도구가 켜져 있으면 프로젝트 소유자에게 오디오 처리 탭이 표시된다. 첫 배포 전에는 최신 저장 버전을 기준으로 한다.",
+  "guide.audio.skills": "Agent 하나와 재사용 skill로 구성하기",
+  "guide.audio.skillsBody": "workspace plugin을 사용한다면 처리 절차는 audio-processing, 회의록은 meeting-minutes, 요청한 Document·Memory 기록은 personal-records를 연결한다. 시스템 프롬프트는 짧게 유지하고 녹음 출처의 도구와 인증도 이 Agent에 연결한다. 다운로드·전사·기록용 Agent를 각각 만들 필요는 없다.",
+  "guide.audio.version": "처리 설정 선택하기",
+  "guide.audio.versionBody": "오디오 처리에서 전사 모델·언어·보존 기간과 선택적인 후처리 Agent를 고르고 프로젝트 설정을 저장한다. 같은 Agent가 후처리도 할 수 있다. 배포 버전 따라가기는 작업을 접수할 때 실제 버전을 고정한다. 활성 설정에서 고정 버전을 지정했다면 그 버전을 삭제하기 전에 후처리 설정부터 바꿔야 한다.",
+  "guide.audio.run": "작업 시작과 정기 수집",
+  "guide.audio.runBody": "프로젝트 화면에서 오디오를 업로드하거나 Agent에 연결 도구로 녹음을 가져오도록 요청한다. 정기 수집은 schedule에 수집 범위와 신규 녹음 수 제한을 지정하고, 소유자가 내 개인 문맥으로 실행을 켠다. worker와 schedule ticker가 실행 중이어야 하며 오디오 도구를 켜는 것만으로 정기 작업이 생기지는 않는다.",
+  "guide.audio.results": "비공개 Artifacts에서 결과 확인하기",
+  "guide.audio.resultsBody": "선택한 단계가 끝나면 원본 오디오·전사 JSON·Markdown 요약·화자 대화·구조화 결과가 만들어진다. 작업 항목이나 Artifacts에서 연다. 접수 또는 중복 응답과 실제 작업 상태는 다르므로 완료 상태를 확인한다. 마지막 단계가 중간 파일 정리여도 상태가 완료이면 끝난 작업이다. 인명·수치·누락 구간·화자 미상 표시는 원문과 대조한다.",
+  "guide.audio.records": "요청한 경우에만 Memory·Document에 기록하기",
+  "guide.audio.recordsBody": "결과는 기본적으로 비공개 Artifacts에 보관한다. 저장할 Artifact와 개인 Document 또는 Memory 중 원하는 종류를 지정한다. Agent가 해당 결과를 읽고 기록 서비스의 응답을 확인한다. 무인 수집에서는 외부 저장 대상을 비워둔다. 개인 기록이 성공해도 Artifact는 삭제하지 않으며 기록 서비스의 보존 정책은 별도로 적용된다.",
+  "guide.audio.retry": "완료한 단계를 유지하며 재시도하기",
+  "guide.audio.retryBody": "재개 대기 작업은 자동으로 다시 실행된다. 실패했거나 확인이 필요한 작업은 원인을 해결한 뒤 재시도를 누른다. 수동 재시도는 새 24시간 실행 구간을 시작하지만 완료한 단계·기록 ID·원본 파일 만료는 유지한다. 취소해도 이미 만든 외부 기록은 취소되지 않는다. 삭제되거나 만료된 원본은 새로 가져와야 할 수 있다.",
+  "guide.audio.reset": "파일 삭제와 작업 초기화 구분하기",
+  "guide.audio.resetBody": "Artifacts를 지워도 완료된 작업 이력과 중복 방지 기록은 남는다. 같은 녹음 하나를 다시 처리하려면 Agent에 재처리를 명시적으로 요청한다. 전체 초기화는 관리자 유지보수 작업으로, schedule을 멈추고 실행 중인 작업이 종료된 뒤 작업 이력과 중복 방지 기록을 함께 지워야 한다. 이 화면에는 전체 초기화 버튼이 없다.",
 
   "guide.api.title": "HTTP API 호출",
   "guide.api.body":
@@ -438,8 +456,7 @@ export const ko: Messages = {
 
   "guide.records.title": "결과물·사용량·한도",
   "guide.records.artifacts": "원본과 생성 파일 찾기",
-  "guide.records.artifactsBody":
-    "개인 Artifacts에서 보관된 첨부 원본과 생성·수정 파일을 확인한다. 프로젝트 Artifacts는 소유자와 관리자용이며 봇·자동화의 파일도 포함한다. 다운로드 링크가 만료되면 화면을 다시 열어 갱신한다. 파일이 보관 중이면 권한이 있는 agent가 파일 ID로 다시 사용할 수 있다. 보존 기간보다 오래 필요한 파일은 내려받는다. 대화를 삭제해도 Artifact는 자동 삭제되지 않는다.",
+  "guide.records.artifactsBody": "개인 Artifacts에는 본인 email에 귀속된 파일과 개인 문맥의 자동화 산출물이 표시된다. 프로젝트 Artifacts에는 개인 소유자가 없는 실행 결과도 포함된다. 비공개 오디오 원본·결과의 읽기와 삭제는 소유자만 할 수 있다. 일반 파일의 서명 링크만 만료됐다면 Artifacts에서 다시 열어 갱신한다. 이미 만료되거나 삭제된 파일은 복원되지 않는다. 보존 기간 이후에도 필요한 파일은 내려받는다. 대화를 삭제해도 Artifacts는 삭제되지 않는다.",
   "guide.records.usage": "사용량과 비용 귀속 이해",
   "guide.records.usageBody":
     "프로젝트 Usage에서 기간별 내역과 모델·공급자별 집계를 보고, 소유자와 관리자는 호출자별 상세를 확인한다. 개인 사용량은 Profile에서 확인한다. 프로젝트 토큰 호출은 소유자의 개인 예산이 아닌 프로젝트에 집계된다. 비용은 공급자 보고값이나 카탈로그 단가를 사용하므로 추정치가 0이라고 공급자 과금도 없다고 판단하지 않는다.",
@@ -520,8 +537,7 @@ export const ko: Messages = {
   "guide.operations.catalogBody":
     "기능 검색을 켠 배포에서는 같은 X-Scan-Token 자격 증명으로 POST /api/catalog/reindex를 매시간 별도 호출하도록 구성한다. 스케줄 scan이 이 재색인까지 수행하지는 않는다. 성공 응답은 백그라운드 색인 시작을 뜻하므로 서버 로그에서 indexed·removed·undiscovered 결과를 확인하고 새로 등록한 기능이 검색되어야 하는 질문으로 시험한다.",
   "guide.operations.retention": "DB 보존과 파일 수명 관리",
-  "guide.operations.retentionBody":
-    "배포 환경의 TRACE_RETENTION_DAYS·USAGE_RETENTION_DAYS·CHAT_RETENTION_DAYS·ARTIFACT_RETENTION_DAYS·TRIGGER_RUN_RETENTION_DAYS·A2A_TASK_RETENTION_DAYS·AUDIT_RETENTION_DAYS로 보존 기간을 정한다. Artifact 보존은 대화 보존 이상으로 유지한다. 만료 행은 물리적 삭제 전에 조회에서 제외될 수 있으며 티커가 없으면 저장소에 남는다. 실제 파일은 artifacts/image/·artifacts/document/와 기존 images/ 경로를 포함하는 별도 bucket lifecycle로 관리한다. 기록은 보이는데 파일은 삭제되는 일이 없도록 보존 기간을 맞춘다.",
+  "guide.operations.retentionBody": "DB 보존 설정은 트레이스·사용량·대화·Artifact·트리거·A2A·감사 행에 적용된다. 일반 Artifact 보존은 대화 보존 이상으로 두고 오브젝트 수명주기도 맞춘다. 비공개 오디오 파일은 별도의 일·달력 월 만료를 사용하며 파생 결과가 이를 상속하고 오디오 worker가 삭제한다. 삭제 표식을 유지해야 하므로 원본 전용 bucket에 일괄 만료를 적용하지 않는다. 오디오 Artifact 삭제·만료는 작업 이력과 중복 방지 기록을 지우지 않는다.",
   "guide.operations.backup": "데이터와 복구 키 백업",
   "guide.operations.backupBody":
     "PostgreSQL·저장된 object·배포 설정·암호화 및 세션 secret을 접근 제한된 위치에 백업한다. 별도 환경에 함께 복구하고 로그인·자격 증명 복호화·프로젝트 실행·파일 접근을 검증한다. AES_ENCRYPTION_KEY를 잃거나 임의 교체하면 저장된 자격 증명을 읽을 수 없다. 앱 이미지는 데이터 백업이 아니다.",

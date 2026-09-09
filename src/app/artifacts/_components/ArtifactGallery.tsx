@@ -5,8 +5,8 @@
  *
  * Shared by the personal gallery and a project's tab because the two differ only
  * in which index they read: the rows, the tiles and the delete flow are the same
- * question asked down two axes, and a project's list is the only way rows from a
- * Slack, A2A or trigger run are ever reachable.
+ * question asked down two axes. The project list also includes runs whose
+ * outputs have no resolved personal owner.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";

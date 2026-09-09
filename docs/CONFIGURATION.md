@@ -619,8 +619,7 @@ wire 에 실리지 않으면 호출을 처리하는 모델이 자기 최대치�
 
 ## 오디오 전사 설정
 
-오디오 처리 구현은 [개발 스펙](design/audio-processing-spec.md)에서 추적한다. 아래 설정 resolver는
-구현돼 있고 HTTP API·Agent 도구·별도 worker에서 사용한다. Memory delivery에는 수신 서버의 수집·멱등 저장 계약이 필요하다.
+오디오의 [처리 계약](design/audio-processing-spec.md)은 HTTP API·Agent 도구·별도 worker에서 공유한다. Memory delivery에는 수신 서버의 수집·멱등 저장 계약이 필요하다.
 worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것만으로 자동 수집이 시작되지는 않는다.
 
 | 변수 | 기본값 | 역할 |
@@ -635,4 +634,20 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 | `FFMPEG_PATH` | `ffmpeg` | 운영 이미지에 설치된 오디오 decoder 실행 파일 |
 
 전사 모델은 카탈로그의 Transcription 타입이어야 한다. HTTP multipart를 지원하지 않는 SigV4
-채널과 미설정 채널은 거절한다. 알려지지 않은 사용량의 비용 계산 결과는 unknown이며 0이 아니다.
+채널과 미설정 채널은 거절한다. 비용 계산에 필요한 사용량이 없으면 결과는 unknown이며 0이 아니다.
+이 경우 작업은 transcription_cost_unknown으로 중단하므로 provider 응답의 사용량·가격 계약을 확인한다.
+
+오디오 고정 한계는 다음 코드가 소유한다. 앱의 일반 문서 처리·런 제한과 별도로 적용한다.
+
+| 한계 | 값 | 소유 코드 |
+| --- | --- | --- |
+| 원본 파일 크기 / 미완료 업로드 유효 시간 | 512 MiB / 24시간 | `src/application/artifact/sourceFiles.ts` |
+| 원본 오디오 길이 | 6시간 | `src/domain/audio/segmenter.ts` |
+| 다운로드 / 구간 전사 요청 제한 | 각각 10분 | `src/infrastructure/net/sourceDownloader.ts`, `src/infrastructure/llm/transcription.ts` |
+| worker 동시 작업 / poll / 만료 sweep | 2개 / 10초 / 60초 | `src/application/audio/worker.ts` |
+| job lease / heartbeat / 실행 구간 | 2분 / 30초 / 24시간 | `src/application/audio/processJob.ts` |
+| 자동 재시도 대기 | 1·5·15·60분, 최초 포함 5회 | `src/application/audio/processJob.ts` |
+| 후처리 입력 / 출력 / 호출 수 | 16,000자 / 최대 6,000자 / 64회 | `src/application/audio/postprocess.ts` |
+
+수동 재시도는 실행 구간만 새로 시작하며 원본·파생 파일의 만료를 연장하지 않는다.
+프로젝트의 maxActive·maxPerOccurrence 기본은 각각 1이며, 저장 설정에서 1–100 범위로 지정한다.

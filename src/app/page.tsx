@@ -25,6 +25,7 @@ import {
   IconMessageCircle,
   IconPackage,
   IconPhoto,
+  IconMicrophone,
   IconSearch,
   IconTimeline,
   IconTool,
@@ -97,6 +98,12 @@ const DOMAINS = [
     title: "home.domain.artifacts",
     body: "home.domain.artifactsBody",
     Icon: IconFiles,
+  },
+  {
+    label: "audio",
+    title: "home.domain.audio",
+    body: "home.domain.audioBody",
+    Icon: IconMicrophone,
   },
   {
     label: "surfaces",

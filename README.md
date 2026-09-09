@@ -25,6 +25,7 @@
 | **Agents** | 다른 project 를 로컬 subagent 로 쓰거나, 외부 OpenAI 호환 / A2A 엔드포인트를 원격 subagent 로 쓴다. |
 | **Chats** | agent project 를 상대로 하는 소유자별 비공개 대화. tool 트래픽과 이미지, 첨부 원본과 생성·편집 파일의 참조가 보존된다. |
 | **Files** | 첨부 문서를 읽고, 기본 `File` 도구로 문서를 생성·검사·편집한다. 원본과 수정본은 별도 파일로 보관한다. [지원 형식과 제약](docs/design/documents.md)을 보라. |
+| **Audio** | 선택적인 비공개 저장소·ASR 채널·worker로 녹음을 보관·전사·후처리한다. 기본은 Agent 하나와 skill 구성이며 원본·전사·요약·대화 결과를 Artifacts에 보관한다. 개인 기록은 별도 요청으로 수행한다. |
 | **Cost dashboard** | project 별·model 별 일일 지출과 caller 별 귀속. project 카탈로그를 공유하므로 caller 축이 필요하다. |
 | **Guards** | project 별 일일·월간 비용 임계값, caller 별 동시 실행 제한, 모든 런에 걸리는 벽시계 데드라인. |
 | **Integrations** | project 별 Slack·Telegram·Teams 봇, webhook trigger, 양방향 A2A, 사용자 앱을 위한 AG-UI. |
@@ -100,12 +101,12 @@ lint 단계는 없다. `typecheck` + `test` + `build` 가 검사다.
 A2A·Slack·Telegram·Teams 엔드포인트가 더해진다.
 
 **Project → Integrations → API token** 에서 토큰을 발급해 세션 쿠키 대신
-`Authorization: Bearer <token>` 으로 보내라. 토큰은 그 project 로 범위가 한정되며 소유자로
-인증된다. 전체 계약은 [docs/API.md](docs/API.md#실행) 에 있다.
+`Authorization: Bearer <token>` 으로 보내라. 토큰은 그 project 실행으로 범위가 한정되며
+개인 사용자 인증이나 개인 MCP 실행 문맥을 대신하지 않는다. 전체 계약은 [docs/API.md](docs/API.md#실행) 에 있다.
 
 ### 여러 LLM provider
 
-모든 트래픽은 OpenAI Chat Completions 프로토콜을 쓰고, model id 는 `provider/model` 이다.
+텍스트 생성은 OpenAI Chat Completions 프로토콜을 쓰고, model id 는 `provider/model` 이다.
 기본적으로 모든 id 는 `LLM_BASE_URL`(OpenRouter 나 LiteLLM 같은 라우터)로 간다. provider 를
 직접 호출하려면 provider 별 채널을 등록하라.
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md#llm-채널) 를 보라.
@@ -159,6 +160,19 @@ agent는 기본 `File` 도구로 보관된 파일을 읽고 검사하거나 DOCX
 
 `File`에는 object store가 필요하며 별도 MCP 서버는 필요 없다. 읽기와 편집의 지원 범위는
 같지 않다. [문서 엔진](docs/design/documents.md)에서 형식별 제약과 파일 접근 범위를 확인하라.
+
+### 오디오 처리와 개인 기록
+
+오디오 기능에는 전용 비공개 S3 호환 bucket·전사 채널·별도 audio worker가 필요하다.
+Agent의 오디오 도구를 켜면 소유자가 **오디오 처리** 탭에서 업로드·설정·진행 상태를 관리한다.
+Agent 하나에 `audio-processing`, `meeting-minutes`, 필요하면 `personal-records` skill을 연결해
+절차를 재사용한다. 다운로드·전사·요약 때문에 하위 Agent를 각각 만들 필요는 없다.
+
+같은 Agent로 후처리할 때는 **배포 버전 따라가기**를 선택한다. 실제 버전은 작업 접수 시 고정된다.
+원본·전사 JSON·요약·대화·구조화 결과는 비공개 Artifacts에 남으며, 개인 Memory·Document 기록은
+사용자가 요청한 경우에만 수행한다. 파일 만료·삭제는 작업 이력과 중복 방지 기록을 초기화하지 않는다.
+앱의 `/guide#audio`와 [설치 조건](docs/INSTALL.md#오디오-worker),
+[운영·리셋](docs/OPERATIONS.md#오디오-작업-운영)을 참고하라.
 
 ### Webhook
 

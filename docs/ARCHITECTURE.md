@@ -245,7 +245,7 @@ flowchart TB
   다시 쓴다. 수천 행이라 인덱스 없이 정확 스캔한다 (`src/infrastructure/vector/pgVectorStore.ts`).
 
 아이템 테이블의 키는 `PK` / `SK` 이며 `GSI1`(`GSI1PK`/`GSI1SK`)과 `GSI2`(`GSI2PK`/`GSI2SK`)
-를 둔다. 모든 아이템은 `entityType` 을 갖는다.
+를 둔다. 주요 엔티티 행은 `entityType`으로 구분하며 claim·counter 같은 보조 행은 키와 상태 필드로 구분한다.
 
 | 엔티티 | PK | SK | GSI1PK | GSI1SK |
 |---|---|---|---|---|
@@ -258,6 +258,12 @@ flowchart TB
 | Trigger (webhook / schedule) | `PROJECT#{name}` | `TRIGGER#{triggerId}` | schedule 만: `TYPE#SCHEDULE` | schedule 만: `{name}#{triggerId}` |
 | Trigger 런 (delivery / firing) | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt}#{runId}` | — | — |
 | Trigger 중복 제거 claim (`Idempotency-Key` / `schedule:{instant}`) | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
+| 오디오 작업 | `PROJECT#{name}` | `AUDIOJOB#{id}` | 비종료 작업만: `AUDIOJOBDUE` | `{dueAt}#{name}#{id}` |
+| 오디오 기본 설정 | `PROJECT#{name}` | `AUDIOCONFIG` | — | — |
+| 오디오 중복 방지 / 발생별 한도 / 활성 slot | `PROJECT#{name}` | `AUDIOSOURCE#{sourceKey}` / `AUDIOOCCURRENCE#{occurrence}` / `AUDIOSLOTS` | — | — |
+| 비공개 원본·파생 파일 inventory | `SOURCEFILE#{id}` | `META` | 미삭제 파일만: `SOURCEFILEEXPIRY` | `{retireAt}#{name}#{id}` |
+| 암호화된 원본 참조 | `SOURCEREFERENCE#{id}` | `META` | — | — |
+| 멱등 사용량 receipt | `PROJECT#{name}` | `USAGERECEIPT#{id}` | — | — |
 | Chat | `CHAT#{chatId}` | `META` | `CHATOWNER#{email}` | `{updatedAt ISO}` |
 | Chat 메시지 | `CHAT#{chatId}` | `MSG#{seq zero-padded 6}` | — | — |
 | Chat 런 로그 (리플레이 버퍼, 짧은 TTL) | `CHAT#{chatId}` | `RUNLOG#{runId}#{seq zero-padded 6}` | — | — |
@@ -292,22 +298,24 @@ flowchart TB
 | 사용자별 모델 즐겨찾기 | `MODELPREFERENCES#{userId}` | `META` | — | — |
 | admin 이 업로드한 모델 카탈로그 문서 (배포당 하나, 발행 카탈로그보다 우선) | `MODELCATALOG#doc` | `META` | — | — |
 
-두 번째 인덱스는 다음 두 목록만 담당한다:
+두 번째 인덱스는 다음 목록을 담당한다:
 
 | 엔티티 | GSI2PK | GSI2SK |
 |---|---|---|
 | Telegram destination | `TELEGRAMDESTINATION#{name}#{botId}` | `{lastSeenAt ISO}` |
 | Artifact (소유자 이메일이 있는 행만, 희소) | `ARTIFACTOWNER#{email}` | `{createdAt ISO}#{artifactId}` |
+| 미삭제 파생 파일 | `SOURCEJOB#{project}#{job}` | `{kind}#{id}` |
 
 **왜 테이블 하나에 인덱스 둘인가.** 아이템 범위의 모든 접근은 기본 키로 충분하다: 프로젝트와
 그 버전들이 파티션을 공유하고, chat 과 그 메시지들이 파티션을 공유하므로 캐스케이드 삭제가
-`DELETE` 한 문장이다. `GSI1` 은 이질적인 "종류별 목록" 패턴을 담당한다. `TYPE#*` 카탈로그
+`DELETE` 한 문장이다. `GSI1` 은 종류별 목록과 시간별 순회를 담당한다. `TYPE#*` 카탈로그
 목록, `CHATOWNER#{email}`(사용자의 chat 을 최신순으로), `USAGEDATE#{date}`(대시보드를 위한
-프로젝트 횡단 일간 비용), `TRACEPROJECT#{name}`, `ARTIFACTPROJECT#{name}`. `GSI2` 는 Telegram
-destination 을 최근 활동순으로 읽는 목록과 artifact 의 소유자 축을 담당한다.
-`ARTIFACTOWNER#{email}` 은 메일함을 지목하는 행에만 **한정해서** 기록된다. 사용자나 프로젝트
-토큰이면 actor 자신의 주소, Slack 런이면 질문한 사람의 해석된 주소. 그래서 A2A 나 trigger 의
-artifact 는 자리표시자 아래 놓이는 대신 그 인덱스에 아예 없다
+프로젝트 횡단 일간 비용), `TRACEPROJECT#{name}`, `ARTIFACTPROJECT#{name}`, `AUDIOJOBDUE`,
+`SOURCEFILEEXPIRY`가 그 예다. `GSI2`는 Telegram destination의 최근 활동, Artifact의 소유자,
+작업별 파생 파일을 조회한다.
+`ARTIFACTOWNER#{email}`은 사용자 actor나 서버가 확정한 ownerEmail이 있는 행에만 기록한다.
+개인 문맥으로 실행한 자동화도 개인 목록에 표시된다. 개인 email이 없는 실행 결과는 프로젝트
+목록에만 나타나며 임의의 자리표시자 소유자를 만들지 않는다
 ([Artifacts](design/execution.md#artifacts) 참고). 두 인덱스 모두 `WHERE gsiNpk IS NOT NULL` 인
 부분 인덱스라, 속성을 쓰지 않은 행은 인덱스에 존재하지 않는다.
 

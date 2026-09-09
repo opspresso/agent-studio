@@ -1,11 +1,9 @@
 /**
  * Reading and removing what runs produced.
  *
- * Listing has two entry points because the rows have two reachable axes and
- * neither covers the other: a person's own gallery (the owner index) misses
- * every Slack, A2A and trigger run, whose actor names no mailbox, and a
- * project's gallery is how those are reached — but projects are a shared
- * catalog, so it is not a substitute for the personal one either.
+ * The owner index includes outputs attributed to a resolved email, including
+ * personal-context automation. The project index also includes outputs without
+ * a personal owner, and uses the project's management access rules.
  */
 
 import { NotFoundError, ValidationError } from "@/application/errors";

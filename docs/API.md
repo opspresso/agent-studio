@@ -1742,13 +1742,14 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 ## 오디오 작업과 원본 파일
 
 아래 경로는 member session과 프로젝트 소유자 권한을 요구한다. 실행 사용자 email은 session에서
-결정하며 body로 전달할 수 없다. `SOURCE_FILES_BUCKET_NAME`과 전사 채널 설정이 필요하다.
+결정하며 body로 전달할 수 없다. `SOURCE_FILES_BUCKET_NAME`이 필요하며 전사가 포함된 작업에는 별도 전사 채널 설정도 필요하다.
 
 | Method | 경로 | 계약 |
 | --- | --- | --- |
 | POST | `/api/projects/{name}/source-references` | `{url, namespace, itemId, filename, mimeType}` → 201 `{sourceRef, filename, mimeType}`. URL은 암호화한다 |
 | POST | `/api/projects/{name}/source-files?unit=months&value=3&timezone=Asia%2FSeoul` | raw 파일 body, Content-Type과 percent-encoded `X-Filename` → 201 SourceFile metadata |
 | GET | `/api/projects/{name}/source-files/{file}` | 개인 파일 다운로드. 만료되면 거절하며 항상 attachment·no-store로 반환한다 |
+| GET | `/api/artifacts/{artifactId}/download` | 비공개 원본·결과 Artifact 다운로드. 소유자 session을 확인하며 공개 서명 URL로 전환하지 않는다 |
 | GET | `/api/projects/{name}/audio-options` | 설정된 전사 모델의 `{id, displayName}` 목록과 published 버전에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
 | GET | `/api/projects/{name}/audio-config` | 현재 프로젝트 작업 설정 또는 null. 소유자만 읽는다 |
 | PUT | `/api/projects/{name}/audio-config` | `{revision, enabled, model, language?, retention, postprocess?, destination?, maxActive, maxPerOccurrence}` → 다음 revision. 최초 revision은 0, 충돌은 409 |
@@ -1757,36 +1758,57 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 | GET | `/api/projects/{name}/audio-jobs/{job}` | AudioJobView |
 | POST | `/api/projects/{name}/audio-jobs/{job}` | `{action: "cancel" | "retry", revision}`. 변경된 revision 또는 허용하지 않는 상태는 409 |
 
-작업 입력은 `source: {kind: "file", fileId} | {kind: "source", sourceRef}`, `retention: {unit:
-"days" | "months", value: positive integer, timezone}`, 선택적 `task: "import" | "transcribe" |
-"process"`, `model`, `language`, `processingRevision`이다. import 이외에는 등록된 Transcription
-모델이 필요하다. 같은 외부 source identity의 재실행은 duplicate이며 명시적 processingRevision으로
-새 처리를 요청한다. `postprocess: {projectName, versionName}`는 선택한 Agent 버전을 고정해 후처리한다.
-`configRevision`을 지정하면 source와 명시적 processingRevision 외의 처리 설정을 서버가 읽는다.
-model·language·retention·postprocess·destination override는 함께 보낼 수 없다. 현재 설정 revision과
-다르면 409다. 설정된 admission 한도는 요청별 설정에도 적용하며 enabled=false는 신규 제출·재시도를
-차단한다. 진행 중인 작업은 이미 고정된 설정을 유지한다. 설정 소유자가 바뀌면 현재 소유자가 PUT으로
-다시 저장하기 전 제출하지 못한다. 설정 자체는 credential이나 Agent version 본문을 저장하지 않는다.
-`destination: {serverName, documents, memories}`는 원래 프로젝트의 published 버전에 바인딩된 MCP로
-저장한다. 수신 서버에 수집 도구와 idempotencyKey 입력이 없으면 작업을 받기 전에 거절한다.
+작업의 `source`는 `{kind:"artifact", artifactId}`, `{kind:"file", fileId}` 또는
+`{kind:"source", sourceRef}`다. artifact는 같은 사용자가 소유한 다른 Agent의 비공개 결과도 재사용하며,
+file은 해당 프로젝트의 업로드·보관 파일이다. 원본 URL과 외부 녹음 ID는 파일 ID를 대신하지 않는다.
 
-AudioJobView는 `id`, `status`, `stage`, `model`, 생성·갱신·다음 실행 시각, `attempt`, `failures`,
-`revision`과 존재하는 `fileId`, `fileInfo`, `transcriptionProgress`, `transcriptRef`, `draftRef`, `receipts`, `errorCode`를 반환한다.
-`fileInfo`는 filename·byteSize·expiresAt을, `transcriptionProgress`는 성공한 구간의 processedSeconds·
-totalSeconds·completedSegments를 담는다. 목록 조회는 본문을 읽지 않고 checkpoint metadata를 반환한다.
-`movedTo`가 있으면 전사문·후처리 본문이 해당 MCP의 transcriptId·resultId 문서로 이전된 상태다.
-`cleaning` 단계는 저장 receipt를 유지한 채 중간 파일을 정리한다. AudioJob read는 이 경우
-`{status: "moved", destination: movedTo, jobStatus}`를 반환하며 삭제된 본문을 다시 읽지 않는다.
-source URL·암호문·내부 source key는 포함하지 않는다. 저장된 전사 결과는 transcriptRef 파일의
-JSON이며 text, 구간, model, coverage, 원본 checksum과 사용량 receipt 참조를 포함한다.
+`task`는 `import | transcribe | postprocess | process`이며 기본은 `process`다.
 
-202는 작업 수락이다. 별도 worker가 처리하고 완료 상태를 GET으로 확인한다. API 연결이 끊겨도
-작업은 유지된다. 원본은 설정한 기간 후 삭제하며 작업·중복 방지 기록은 유지한다.
+- import는 보관만, transcribe는 전사까지 수행한다. transcribe와 process에는 등록된 Transcription model이 필요하다.
+- postprocess는 전사 Artifact와 `{projectName, versionName}` 후처리 대상을 받아 ASR 없이 처리한다.
+  model·language·destination·configRevision을 함께 보낼 수 없다.
 
-Agent 버전의 `parameters.audioProcessing=true`는 `ImportFile`, `TranscribeAudio`, `AudioJob`을
-선택적으로 제공한다. 도구는 현재 실행의 사용자·프로젝트·발생 ID에 바인딩되며 임의 email이나
-raw URL을 받지 않는다. AudioJob의 read는 최대 20,000자씩 Unicode 문자 경계를 보존해 전사문을 반환한다.
-`result_kind: "processed"`로 후처리 본문을 선택하며 기본값은 `transcript`다. 이전된 본문은 moved 응답으로 확인한다.
+retention은 `{unit:"days"|"months", value:양의 정수, timezone:IANA 시간대}`다.
+language는 전사에 사용하는 선택적 2–3자 언어 코드다. 같은 프로젝트·사용자·source identity·
+task·processingRevision은 duplicate로 기존 작업을 반환한다. 명시적인 새 processingRevision은
+같은 원본의 재처리를 요청하며 설정 변경만으로 기존 작업을 다시 처리하지 않는다.
+
+postprocess의 versionName은 고정 이름 또는 `published`다. 접수할 때 실제 버전과 내용을 고정한다.
+활성 설정이 고정 참조하는 버전은 설정을 바꾸기 전 삭제할 수 없다. configRevision을 지정하면
+서버가 해당 revision의 model·language·retention·postprocess·destination을 읽는다. source와
+명시적 processingRevision 외의 처리 override는 섞지 않으며 task는 생략하거나 process여야 한다.
+revision 충돌은 409다. enabled=false는 신규 제출·수동 재시도를 막으며 기존 작업 snapshot은 바꾸지 않는다.
+프로젝트의 admission 한도는 요청별 설정에도 적용한다. 설정 소유자가 바뀌면 현재 소유자가 다시
+저장하기 전까지 제출·재시도를 거절한다. 설정 행에는 credential이나 Agent version 본문을 저장하지 않는다.
+
+`destination: {serverName, documents, memories}`는 명시적으로 선택한 외부 복사 경로다.
+해당 MCP는 원래 프로젝트의 published 버전에 연결되어 있고 멱등 수집 도구를 제공해야 한다.
+기본 Artifact 처리에는 destination이 필요하지 않다. 사용자 요청에 따른 `personal-records` skill의
+직접 기록도 사용할 수 있으며 무인 수집 기본 설정에는 외부 저장 대상을 지정하지 않는다.
+
+AudioJobView는 id·task·sourceIdentity·status·stage·model·createdAt·updatedAt·dueAt·attempt·failures·
+revision과 선택적인 configRevision·fileId·fileInfo·transcriptionProgress·transcriptRef·draftRef·
+movedTo·receipts·errorCode를 반환한다. `artifacts`는 source·transcript·processed·structured·dialogue의
+Artifact ID를 제공한다. `transcriptProjectName`은 전사 파일을 읽을 프로젝트다.
+fileInfo는 filename·byteSize·expiresAt, transcriptionProgress는 processedSeconds·totalSeconds·completedSegments다.
+본문·원본 URL·암호문·내부 중복 방지 키는 목록에 넣지 않는다.
+
+제출 응답의 accepted/duplicate/busy와 job.status는 다르다. job.status가 completed라면 마지막
+stage가 importing이나 cleaning이어도 끝난 작업이다. movedTo는 외부 문서 복사 ID이며 Artifact 삭제를
+뜻하지 않는다. cleaning은 checkpoint만 정리하고 원본·최종 결과는 보존 만료까지 유지한다.
+원본 파일은 설정된 기간 후 삭제하지만 작업 이력·중복 방지 기록은 남긴다.
+
+취소는 queued/running/waiting에, 수동 재시도는 failed/blocked에 적용한다. 자동 재시도는 최초 시도
+포함 최대 5회이며 수동 재시도는 새 24시간 실행 구간을 시작한다. 생성 시각·완료 단계·파일 보존 만료는
+유지한다. 202나 제출 성공만으로 처리 완료를 보고하지 않는다.
+
+Agent 버전의 `parameters.audioProcessing=true`는 ImportFile·TranscribeAudio·AudioJob을 제공한다.
+각 도구는 현재 사용자·프로젝트·발생 ID에 바인딩된다. source 인수는 artifact_id·file_id·source_ref 중
+하나이고 원본 URL·임의 email은 받지 않는다. 세 제출 도구 모두 processing_revision을 지원한다.
+AudioJob read는 최대 20,000자씩 전사문을 반환하고 nextCursor로 이어 읽는다.
+`result_kind:"processed"`는 후처리 본문이다. 로컬 본문 참조 없이 외부 복사 정보만 있는 작업에서만
+`{status:"moved", destination:movedTo, jobStatus}`를 반환한다. 원본 JSON에는 text·segments·model·
+coverage·원본 checksum·사용량 receipt 참조가 포함된다.
 
 Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
 관리자도 다른 소유자를 대신해 켤 수 없다. `false`는 저장한 email을 지우고, 생략은 기존 값을

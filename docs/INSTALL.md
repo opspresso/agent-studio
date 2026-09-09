@@ -27,7 +27,8 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 ## 오디오 worker
 
 오디오 전사는 선택 기능이다. HTTP 앱과 같은 이미지의 `node build/audio-worker.cjs`를 별도 process로
-실행한다. 로컬 개발은 `pnpm worker:audio`를 사용한다. DB 초기화는 앱 또는 기존 migration 명령으로
+실행한다. 로컬 `.env.local`을 사용할 때는 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`로 실행한다.
+환경변수가 이미 주입된 환경에서는 `pnpm worker:audio`를 사용한다. DB 초기화는 앱 또는 기존 migration 명령으로
 먼저 수행한다. worker는 카탈로그·self-hosted 선언을 주기적으로 갱신하고 작업과 원본 만료를 처리한다.
 
 `SOURCE_FILES_BUCKET_NAME`에 별도 비공개 bucket을 지정하고 같은 DB·S3 자격증명·암호화 키를
@@ -42,7 +43,9 @@ ffmpeg는 runtime 이미지에 포함돼 있다. 동시에 두 작업을 처리�
 `SIGTERM`은 현재 작업을 중단하고 checkpoint를 남긴다. 필수 chat·sign-in 경로는 worker와 무관하다.
 
 버전의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저장소와 실행 사용자 문맥이 있어야
-도구가 제공된다. 후처리는 선택한 Agent 버전을 고정해 실행한다. Memory delivery에는 수신 서버의
+도구가 제공된다. 같은 Agent와 plugin skill로 수집·후처리·요청한 기록을 구성할 수 있다.
+후처리는 `published` 또는 고정 버전을 선택하고 작업 접수 시 snapshot으로 고정한다. 기본 결과는
+비공개 Artifacts이며 외부 기록은 명시적으로 요청하거나 선택한 경우에만 수행한다. Memory delivery에는 수신 서버의
 문서 수집·멱등 저장 도구가 필요하다. 오디오 처리 화면에서 작업 설정과 한도를 revision으로 저장한다.
 
 ## localdev

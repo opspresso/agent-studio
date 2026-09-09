@@ -1,6 +1,6 @@
 # 범용 오디오 처리·비동기 작업 개발 스펙
 
-상태: **개발 기능 구현**. 한 Agent가 plugin skill의 절차에 따라 도구를 호출하고 Artifact ID로 결과를
+한 Agent가 plugin skill의 절차에 따라 도구를 호출하고 Artifact ID로 결과를
 전달한다. HTTP API·Agent 도구·별도 worker가 긴 작업과 재시도를 담당한다. 외부 기록은 사용자
 요청에 따라 같은 Agent가 수행한다. 결합된 처리가 필요한 호출자는 선택적 후처리·sink 계약도 사용할 수 있다.
 개인 실행은 기존 MCP 인증과 검증된 email 문맥을 사용한다.
@@ -85,7 +85,7 @@ Agent Memory의 현재 인증·ACL·API 계약은 형제 저장소의 `docs/api.
 ## 책임과 실행 구조
 
 Studio는 파일·전사·Agent 실행·작업 상태를 소유한다. Agent Memory는 문서 처리·검색·Memory·ACL을
-소유한다. Plugin은 출처별 탐색 방법과 업무별 작성 지침을 소유한다. Dockpad는 worker·MinIO 운영을
+소유한다. Plugin은 출처별 탐색 방법과 업무별 작성 지침을 소유한다. worker·MinIO 운영은 설치 환경이
 소유한다. 특정 출처의 목록 필드·도구 이름·계정 정보를 범용 worker에 하드코딩하지 않는다.
 
 ```mermaid
@@ -105,7 +105,7 @@ flowchart TD
 
 Agent는 source를 선택해 작업을 제출하고 실제 작업은 worker가 이어받는다. source 목록 탐색은
 기존 MCP와 skill로 수행한다. worker는 제출된 source만 처리하며 특정 서비스의 inventory를 직접
-스캔하지 않는다. 대량 탐색은 범용 checkpoint에 cursor·source ID를 저장해 다음 발생에서 이어간다.
+스캔하지 않는다. 목록 탐색은 source 도구의 cursor와 설정한 페이지 한도를 따른다. 별도의 source 탐색 cursor를 영속화하는 기능은 제공하지 않는다.
 조회 실패·불완전 탐색을 `empty`로 표시하지 않는다.
 
 같은 Studio 이미지의 전용 worker 모드가 PostgreSQL `items` 작업을 bounded polling·claim한다.
@@ -229,8 +229,8 @@ Unicode 경계를 보존하는 문자 offset cursor로 남은 내용을 다음 �
   speaker, 실제 model·usage·coverage·warnings를 반환한다. provider API는 infrastructure가 소유한다.
 - endpoint·credential·wire ID는 runtime settings resolver가 결정하고 published 모델 사실은
   agent-models를 따른다. 실제 모델 선정 후 공식 provider 계약을 확인한다.
-- 초기 플랫폼 상한 제안은 파일 512 MiB, 오디오 6시간, 다운로드와 구간 ASR 각각 10분,
-  전체 활성 작업 24시간이다. 모델과 플랫폼 중 작은 제한을 적용하고 외부 모델로 자동 fallback하지 않는다.
+- 플랫폼 상한은 파일 512 MiB, 오디오 6시간, 다운로드와 구간 ASR 각각 10분,
+  한 실행 구간 24시간이다. 모델과 플랫폼 중 작은 제한을 적용하고 외부 모델로 자동 fallback하지 않는다.
 - 분할·변환은 이미지에 포함한 ffmpeg로 수행하고 network·CPU·메모리·scratch disk를 제한한다.
   구간 결과는 각각 보존해 성공한 구간을 재전사하지 않는다. timestamp 없는 모델에 시간이나
   구간 간 동일 화자를 만들어 붙이지 않는다. 무음과 전사 실패를 구분한다.
@@ -256,9 +256,9 @@ lease generation·file ref·checksum·expiry·segment manifest·output manifest�
   여러 worker·수동·schedule 호출에도 설정된 동시성 상한을 유지한다.
 - 발생당 신규 작업 상한은 서버가 전달한 occurrence ID에 귀속한다. 같은 발생의 Agent가 여러 번
   submit해도 초과하지 않는다. 완료 claim은 원본 만료 후에도 유지하고 재처리는 명시적 revision이다.
-- worker 기본 lease 2분·heartbeat 30초·poll 10초를 제안한다. 모든 checkpoint는 lease generation으로
+- worker 기본 lease는 2분·heartbeat는 30초·poll은 10초다. 모든 checkpoint는 lease generation으로
   조건부 갱신한다. 소유권을 잃은 worker는 abort하며 외부 요청에는 안정적 idempotency key를 사용한다.
-- 일시 오류는 최초 시도 포함 5회, 재시도 간격 1·5·15·60분으로 제안한다. 인증·입력 오류는
+- 일시 오류는 최초 시도 포함 5회, 재시도 간격은 1·5·15·60분이다. 인증·입력 오류는
   즉시 blocked다. 최종 failed/blocked는 slot을 반환하고 명시적 재시도 전 다시 선택하지 않는다.
 - 명시적 수동 재시도는 새 24시간 실행 구간을 시작한다. 자동 재시도는 실행 구간을 연장하지 않는다.
   원래 작업 생성 시각·완료 단계·중복 방지 키·파일 보존 만료는 유지한다.
@@ -283,14 +283,14 @@ warnings를 담는 결과 envelope만 정의한다. 업무별 필드를 engine�
 확장하며 정책 소유자는 run bracket이다. 요청별 실제 audio seconds/token과 retry를 집계하고
 unknown usage를 0으로 표시하지 않는다. 각 구간 전에 잔여 예산을 확인한다.
 
-Agent Memory에는 출처와 업무에 무관한 다음 MCP 계약을 추가한다.
+수신 기록 서비스에는 출처와 업무에 무관한 다음 MCP 계약이 필요하다.
 
 | 도구 | 계약 |
 | --- | --- |
 | `document_ingest` | idempotencyKey·title·UTF-8 content·MIME·source·metadata·scope → document ID·status |
 | `document_ingest_status` | document ID → pending/processing/ready/failed |
 | `document_ingest_retry` | document ID·idempotencyKey·관측한 expectedAttempts → 기존 ID와 상태. 기존 문서 write 권한 필요 |
-| `remember` 확장 | 기존 입력 + 선택적 idempotencyKey → 기존 Memory ID·version |
+| `remember` | 기존 입력 + 선택적 idempotencyKey → 기존 Memory ID·version |
 
 인증·email 해석·scope 검증은 기존 MCP 경계를 공유한다. 문서 유스케이스·quota·worker를 재사용하고
 별도 개인 인증 경로를 만들지 않는다. Studio는 전사문을 LLM에게 다시 쓰게 하지 않고 저장된 결과를
@@ -327,13 +327,13 @@ retention은 `{unit: days | months, value, timezone}`으로 설정하고 최초 
 전사 구간·통합 전사문·Agent 중간 결과·최종 결과는 입력 파일의 만료를 `retainUntil`로 상속한다.
 파일 정책으로 계산한 만료와 상속한 만료 중 이른 시각을 적용하며, 업로드 복구도 이 상한을 유지한다.
 
-만료일부터 읽기·서명을 거절하고 worker가 매분 최대 100건씩 삭제한다. object 본문 제거 확인 뒤
-`deletedAt`을 기록하며 정리 전 행을 row TTL로 지우지 않는다. 서명 수명도 파일 expiry 이하로 제한한다.
-정상 운영 삭제 지연 목표는 5분이며 중단·backlog 시 실제 지연을 보고한다. 변환·분할 임시 파일은
-단계 완료 후 정리하고 늦어도 원본 expiry에 제거한다. versioning·복제·백업에도 보존 정책을 적용한다.
+만료일부터 읽기를 거절하고 worker가 매분 최대 100건씩 삭제를 시도한다. object 본문 제거 확인 뒤
+`deletedAt`을 기록하며 정리 전 inventory를 row TTL로 지우지 않는다. worker 중단·backlog에 따라 물리 삭제가 지연될 수 있다.
+변환·분할 임시 파일은 정상 완료·오류·취소 시 정리한다. 강제 종료로 남은 scratch 파일의 정리는
+설치 환경의 임시 volume 정책으로 보완한다. 복제·백업에도 파일 보존 정책을 적용한다.
 
-원본 보존과 산출물 보존은 별개다. 전사·후처리 checkpoint는 성공 후 cleaning 단계에서 정리한다.
-원본·전사문·후처리 결과는 비공개 Artifact 목록에 등록하며 동일한 원본 파일을 참조한다.
+원본과 파생 파일은 각각 inventory를 가지며 파생 파일의 만료는 입력보다 늦지 않다. 전사·후처리 checkpoint는 성공 후 cleaning 단계에서 정리한다.
+원본·전사문·후처리 결과는 각각 저장된 비공개 파일을 그대로 참조해 Artifact 목록에 등록한다.
 외부 문서·Memory 저장은 복사이며 최종 Artifact를 지우거나 보존 기간을 연장하지 않는다.
 checkpoint는 목록에 공개하지 않는다. Artifact 다운로드·미리보기·삭제는 원본 파일 소유자와
 현재 프로젝트 권한을 확인하며 public artifact bucket의 URL을 서명하지 않는다.
@@ -361,34 +361,22 @@ owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약�
 - 설치별 Studio 주소에 Agent를 구성하고 로컬에서 검증한 뒤 같은 설정을 운영 설치에 적용한다.
 - 출처는 기존 Plaud MCP와 프로젝트 OAuth를 연결한다. 목록 탐색·조회 방법은 plugin이 소유한다.
   `list_files`·`get_file`과 실제 schema를 사용하고 임시 오디오 URL을 범용 source ref로 변환한다.
-  필터 사용 시 pagination이 무시되는 제약은 해당 skill에서 처리한다.
+  출처별 pagination 제약은 해당 skill과 실제 도구 schema를 따른다.
   [Plaud 공식 계약](https://docs.plaud.ai/plaud-mcp-cli/mcp)을 참조한다.
 - cron은 `0 * * * *`, timezone은 `Asia/Seoul`이다. 메인은 신규 녹음을 한 건만 선택하고,
-  작업 설정은 maxActive=1, maxPerOccurrence=3으로 다운로드·전사·후처리 각각의 접수를 허용한다.
+  작업 설정은 maxActive=1, maxPerOccurrence=1로 두고 한 process 작업이 보관·전사·후처리를 이어간다.
   기존 작업이 진행 중이면 새 파일을 시작하지 않는다. 최초 수집 시작일은 활성화 전에 정한다.
 - 지정 Transcription 모델로 MP3를 전사하고 `meeting-minutes` skill로 후처리한다.
   결정·할 일·미결·담당자·기한·근거 검수는 이 skill과 Agent schema가 결정한다.
 - 전사 JSON·summary.md·dialogue.md를 Artifact에 보관한다. 사용자 요청이 있을 때만 선택한 문서를
   Agent Memory Documents에, 원문 근거가 있는 내용을 Memory에 기록한다. 기존 MCP 연결과 검증된
   본인 email 문맥으로 개인 scope에 저장하며, 자동 수집 cron은 외부 저장을 호출하지 않는다.
-- MP3는 MinIO에 보관하고 retention을 `{unit: months, value: 3, timezone: Asia/Seoul}`로 지정한다.
-  예: 2026-11-30 10:00 KST 저장 → 2027-02-28 10:00 KST 만료. Documents·Memory는 유지한다.
+- 이 사례의 MP3는 MinIO에 보관하고 retention을 `{unit: months, value: 3, timezone: Asia/Seoul}`로 지정한다.
+  예: 2026-11-30 10:00 KST 저장 → 2027-02-28 10:00 KST 만료. 외부 Documents·Memory의 보존은 수신 서비스가 결정한다.
 
-## 구현 순서와 수용 기준
+## 검증 기준
 
-| 순서 | 작업 / 소유 | 완료 검증 |
-| --- | --- | --- |
-| 1 | email 실행 문맥 / Studio | schedule·worker에 본인 email 유지, 임의 email 거부, owner 변경 시 중단 |
-| 2 | 문서 MCP·멱등 저장 / Memory | 기존 Bearer+email 개인 ACL, 동시 동일 키 1건, 응답 유실 retry에 같은 ID |
-| 3 | 범용 파일·task·전사 / Studio | 업로드와 서로 다른 MCP source 참조, lease fencing, 구간 복구, streaming 제한 |
-| 4 | 선택적 후처리·sink / Studio | 전사만/요약/문서 저장 각각 실행, optional 단계 생략, 필수 output receipt로 완료 판정 |
-| 5 | retention·UI·worker 운영 / Studio·Dockpad | 일·월 정책, 월말/윤년, 임시 파일·multipart 정리, 개인 trace 격리 |
-| 6 | 활용 지침 / agent-plugins | 실제 도구 schema와 일치, 출처별 탐색과 업무별 prompt가 공통 코드와 분리 |
-
-2·3은 4의 선행이다. 구현 후 모델·endpoint·source 시작 범위·MinIO·본인 email을 설정하고 시험 파일로
-E2E를 확인한 뒤 Agent publish·schedule을 활성화한다. 스펙 작성에는 운영 연결이 필요하지 않다.
-
-추가 회귀 기준:
+다음 경계를 회귀 검사로 확인한다.
 
 - 같은 발생·여러 worker·수동 submit 경쟁에도 admission·동시성 상한 유지.
 - 업로드 강의 녹음과 MCP 인터뷰 녹음을 서비스별 engine 분기 없이 처리.
@@ -403,5 +391,5 @@ domain/application/infrastructure 경계, row key의 `keys.ts` 소유, 기존 wi
 새 도구 예약명·run entry point·단일 정책 소유는 architecture test와 OWNERSHIP에 반영한다.
 Unit은 경계에서 network·clock·random을 mock한다. Studio는 typecheck·unit·integration·build,
 Memory는 해당 저장소 verify·integration, 사용자 문맥·UI 변경은 E2E를 수행한다.
-Studio integration DB는 `_test` 이름만 사용한다. 이 문서의 자원·retry 기본값은 구현 전 모델 시험과
-기존 제한을 대조해 정책 소유자 한 곳에서 확정한다.
+Studio integration DB는 `_test` 이름만 사용한다. 자원·retry 기본값과 소유 코드는
+[CONFIGURATION.md](../CONFIGURATION.md#오디오-전사-설정)를 따른다.
