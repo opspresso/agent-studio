@@ -41,6 +41,26 @@ function setup() {
 beforeEach(() => { ids.next = 0; vi.useFakeTimers(); vi.setSystemTime(now); });
 afterEach(() => vi.useRealTimers());
 
+describe("private Artifact inputs", () => {
+  it("reads a private Markdown Artifact through the authenticated reader, never the public object store", async () => {
+    const f = setup();
+    f.rows.set("summary", { artifactId: "summary", privateFileId: "private-summary", kind: "document", source: "generated",
+      key: "source-files/private-summary", mimeType: "text/markdown", filename: "summary.md", byteSize: 7,
+      projectName: "other-agent", versionName: "1", ownerEmail: actor.id, createdAt: now.toISOString() });
+    const readPrivateArtifact = vi.fn(async () => ({ bytes: new TextEncoder().encode("Summary") }));
+    const call = buildFileTool({ ...f.deps, readPrivateArtifact }, "recorder", { actor, ancestry: ["recorder"] })!;
+    expect((await call({ operation: "read", file_id: "summary" })).text).toContain("Summary");
+    expect(readPrivateArtifact).toHaveBeenCalledWith("summary", actor.id, expect.any(Number));
+    expect(f.read).not.toHaveBeenCalled();
+    expect((await call({ operation: "edit", file_id: "summary", edits: [] })).text).toContain("authenticated read and inspect only");
+    expect((await call({ operation: "create", format: "docx", content: "Document", assets: { source: "summary" } })).text).toContain("authenticated read and inspect only");
+    expect(readPrivateArtifact).toHaveBeenCalledTimes(1);
+    const other = buildFileTool({ ...f.deps, readPrivateArtifact }, "recorder", { actor: { kind: "user", id: "other@example.test" }, ancestry: ["recorder"] })!;
+    expect((await other({ operation: "read", file_id: "summary" })).text).toContain("File unavailable");
+    expect(readPrivateArtifact).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("native File tool", () => {
   it("bounds intermediate text edits before allocating an oversized result", async () => {
     const run = setup();

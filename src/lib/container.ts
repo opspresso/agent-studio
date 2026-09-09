@@ -1127,6 +1127,10 @@ export const executionDeps: ExecutionDeps = {
   // The same adapter the chat routes wire: an attachment and a fetched page
   // become text the same way, which is what keeps one owner for extraction.
   documents: workerDocumentExtractor,
+  readPrivateArtifact: async (id, email, maxBytes) => {
+    if (!artifactUseCases) throw new NotFoundError("Private artifact not found");
+    return artifactUseCases.readPrivateFile(id, email, maxBytes);
+  },
   documentRenderer: workerDocumentRenderer,
   documentEditor: workerDocumentEditor,
   registerMcpSource: async (input) => getAudioRuntime().references.register(input),

@@ -1,5 +1,6 @@
 import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
 import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
+import type { FileToolDeps } from "@/application/document/fileTool";
 /**
  * Types the execution facade exposes, plus the version → engine parameter
  * mapping every runner shares. Separate from the entry points so the modules
@@ -61,6 +62,7 @@ export interface ExecutionDeps extends RunBracketDeps {
   http: HttpResourceReader;
   /** Turns attached or fetched bytes into text; tests inject a fake. */
   documents: DocumentExtractor;
+  readPrivateArtifact?: FileToolDeps["readPrivateArtifact"];
   documentRenderer?: DocumentRenderer;
   documentEditor?: DocumentEditor;
   audioTools?: (projectName: string, origin: RunOrigin) => Promise<

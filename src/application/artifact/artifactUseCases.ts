@@ -30,7 +30,7 @@ export const MAX_ARTIFACT_PAGE = 100;
 export const DEFAULT_ARTIFACT_PAGE = 24;
 
 export interface ArtifactUseCases {
-  readPrivateFile(artifactId: string, viewerEmail: string): Promise<{ artifact: Artifact; bytes: Uint8Array }>;
+  readPrivateFile(artifactId: string, viewerEmail: string, maxBytes?: number): Promise<{ artifact: Artifact; bytes: Uint8Array }>;
   listMine(email: string, options?: ListArtifactsOptions): Promise<Artifact[]>;
   listByProject(
     projectName: string,
@@ -120,12 +120,12 @@ export function createArtifactUseCases(
   }
 
   return {
-    async readPrivateFile(artifactId, viewerEmail) {
+    async readPrivateFile(artifactId, viewerEmail, maxBytes) {
       const artifact = await repo.get(artifactId);
       if (!artifact?.privateFileId || !privateFiles || !isOwnRow(artifact, viewerEmail)) {
         throw new NotFoundError("Private artifact not found");
       }
-      const { bytes } = await privateFiles.read(artifact.projectName, artifact.privateFileId, viewerEmail);
+      const { bytes } = await privateFiles.read(artifact.projectName, artifact.privateFileId, viewerEmail, maxBytes);
       return { artifact, bytes };
     },
     async readForView(artifactId, viewerEmail) {
