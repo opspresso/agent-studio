@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AudioJob } from "@/domain/audio/job";
+import { audioSourceProject } from "@/domain/audio/job";
 import { AUDIO_MEMORY_KINDS, type AudioPostprocessOutput, type AudioMemoryCandidate } from "@/domain/audio/output";
 import type { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { cutCodePoints } from "@/shared/utf8Text";
@@ -41,9 +42,10 @@ function chunks(text: string): string[] {
 }
 
 export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
-  return async (job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string }> => {
+  return async (job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string; summaryRef: string }> => {
     if (!job.postprocess?.version || !job.transcriptRef) throw new AudioJobStepError("postprocess_configuration_missing", false);
-    const file = await deps.files.read(job.projectName, job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES);
+    const file = await deps.files.read(job.task === "postprocess" ? audioSourceProject(job) : job.projectName,
+      job.transcriptRef, job.userEmail, MAX_TRANSCRIPT_BYTES);
     const transcript = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)) as { text: string; warnings?: string[] };
     if (typeof transcript.text !== "string") throw new AudioJobStepError("transcript_invalid", false);
     let calls = 0;
@@ -104,6 +106,12 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
       derivedFrom: job.transcriptRef, model: job.postprocess.version.model, producedBy: job.postprocess.projectName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield bytes; })(), context.signal);
-    return { draftRef: id };
+    const summaryRef = `${job.id}-summary`;
+    await deps.files.import({ id: summaryRef, projectName: job.projectName, userEmail: job.userEmail,
+      filename: "summary.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
+      derivedFrom: job.transcriptRef, model: job.postprocess.version.model, producedBy: job.postprocess.projectName,
+      derived: { jobId: job.id, kind: "draft" } },
+    async () => (async function* () { yield new TextEncoder().encode(final.text); })(), context.signal);
+    return { draftRef: id, summaryRef };
   };
 }

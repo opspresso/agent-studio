@@ -68,7 +68,8 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         const limit = args.limit ?? 12_000;
         if (!/^\d+$/.test(cursor) || !Number.isSafeInteger(Number(cursor)) || typeof limit !== "number" ||
           !Number.isInteger(limit) || limit < 1 || limit > 20_000) throw new ValidationError("Invalid transcript page");
-        const file = await deps.files.read(context.projectName, reference, context.userEmail, MAX_TRANSCRIPT_BYTES);
+        const file = await deps.files.read(kind === "transcript" ? job.transcriptProjectName ?? context.projectName : context.projectName,
+          reference, context.userEmail, MAX_TRANSCRIPT_BYTES);
         const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)) as { text?: unknown; warnings?: unknown };
         if (typeof body.text !== "string") throw new ValidationError("The stored transcript is invalid");
         const offset = Number(cursor);
@@ -83,6 +84,10 @@ export function createAudioTool(deps: AudioToolDeps, context: {
           jobStatus: job.status, warnings: Array.isArray(body.warnings) ? body.warnings.filter((warning) => typeof warning === "string") : [] }) };
       }
       if (operation !== "submit") throw new ValidationError("Invalid audio operation");
+      const task = text(args, "task");
+      if (task !== undefined && (tool !== AUDIO_JOB_TOOL_NAME || !["process", "postprocess"].includes(task))) {
+        throw new ValidationError("Invalid audio task");
+      }
       const post = object(args, "postprocess"); const destination = object(args, "destination");
       const projectName = post && text(post, "projectName"); const versionName = post && text(post, "versionName");
       if (post && (!projectName || !versionName)) throw new ValidationError("A postprocessing Agent version is required");
@@ -99,7 +104,8 @@ export function createAudioTool(deps: AudioToolDeps, context: {
       if ([fileId, sourceRef, artifactId].filter(Boolean).length !== 1) throw new ValidationError("Provide exactly one artifact_id, file_id or source_ref");
       const result = await deps.jobs.submit(context.projectName, context.userEmail, {
         source: artifactId ? { kind: "artifact", artifactId } : fileId ? { kind: "file", fileId } : { kind: "source", sourceRef: sourceRef! },
-        task: tool === IMPORT_FILE_TOOL_NAME ? "import" : tool === TRANSCRIBE_AUDIO_TOOL_NAME ? "transcribe" : "process",
+        task: tool === IMPORT_FILE_TOOL_NAME ? "import" : tool === TRANSCRIBE_AUDIO_TOOL_NAME ? "transcribe" :
+          task === "postprocess" ? "postprocess" : "process",
         model: text(args, "model"), language: text(args, "language"), retention: args.retention === undefined ? undefined : retention(args.retention),
         ...(configRevision !== undefined ? { configRevision } : {}),
         processingRevision: text(args, "processing_revision"),

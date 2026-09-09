@@ -5,6 +5,8 @@ import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 
 export type AudioJobStage = "importing" | "transcribing" | "postprocessing" | "storing" | "cleaning";
 export type AudioJobStatus = "queued" | "running" | "waiting" | "completed" | "blocked" | "failed" | "cancelled";
+export const AUDIO_JOB_TASKS = ["import", "transcribe", "postprocess", "process"] as const;
+export type AudioJobTask = (typeof AUDIO_JOB_TASKS)[number];
 export type AudioSource = { kind: "file"; fileId: string; projectName?: string } | { kind: "source"; sourceRef: string };
 
 /** Stored input may belong to another Agent owned by the same requesting user. */
@@ -14,7 +16,7 @@ export function audioSourceProject(job: Pick<AudioJobInput, "source" | "projectN
 
 /** Stable input: retries never choose a different model, identity, or destination. */
 export interface AudioJobInput {
-  task?: "import" | "transcribe" | "process";
+  task?: AudioJobTask;
   projectName: string;
   userEmail: string;
   actor?: RunActor;
@@ -50,6 +52,7 @@ export interface AudioJob extends AudioJobInput {
   movedTo?: { serverName: string; transcriptId: string; resultId?: string };
   transcriptRef?: string;
   draftRef?: string;
+  summaryRef?: string;
   /** Per-output receipts, separate from model-generated content. */
   receipts: Record<string, string>;
   errorCode?: string;
@@ -62,7 +65,7 @@ export function isAudioJobTerminal(status: AudioJobStatus): boolean {
 }
 
 export type AudioJobCheckpoint = Pick<AudioJob, "status" | "stage" | "dueAt"> &
-  Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "failures">>;
+  Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "summaryRef" | "receipts" | "errorCode" | "failures">>;
 
 export interface AudioJobRepository {
   submit(input: AudioJobInput, admission: {

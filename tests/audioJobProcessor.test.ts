@@ -34,6 +34,15 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("audio job processor", () => {
+  it("runs standalone postprocessing from an existing transcript without ASR or external writes", async () => {
+    await submit({ task: "postprocess", model: "", postprocess: { projectName: "writer", versionName: "1" } });
+    const d = deps();
+    vi.mocked(d.postprocess).mockResolvedValue({ draftRef: "draft", summaryRef: "summary" });
+    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "stored", draftRef: "draft", summaryRef: "summary" });
+    expect(d.postprocess).toHaveBeenCalledWith(expect.objectContaining({ transcriptRef: "stored" }), expect.anything());
+    expect(d.transcribe).not.toHaveBeenCalled();
+    expect(d.store).not.toHaveBeenCalled();
+  });
   it("retries only cleanup after durable delivery receipts have been recorded", async () => {
     await submit({ destination: { serverName: "memory", documents: true, memories: false } });
     const d = deps();

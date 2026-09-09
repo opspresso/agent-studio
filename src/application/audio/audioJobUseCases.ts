@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import type { AudioJob, AudioJobRepository, AudioSource } from "@/domain/audio/job";
+import type { AudioJob, AudioJobRepository, AudioJobTask, AudioSource } from "@/domain/audio/job";
+import { AUDIO_JOB_TASKS, audioSourceProject } from "@/domain/audio/job";
 import type { FileRetention } from "@/domain/artifact/retention";
 import type { SourceFile, SourceFileRepository } from "@/domain/artifact/sourceFile";
 import type { RunActor } from "@/domain/execution/actor";
@@ -9,7 +10,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@/application/err
 import { fileExpiresAt } from "@/application/artifact/fileRetention";
 
 export interface SubmitAudioJobInput {
-  task?: "import" | "transcribe" | "process";
+  task?: AudioJobTask;
   source: AudioSource | { kind: "artifact"; artifactId: string };
   model?: string;
   language?: string;
@@ -38,12 +39,15 @@ export interface AudioJobUseCaseDeps {
 /** Public view: source credentials, ownership data and internal receipt paths stay server-side. */
 export type AudioJobView = Pick<AudioJob, "id" | "status" | "stage" | "model" | "createdAt" | "updatedAt" |
   "dueAt" | "attempt" | "failures" | "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision" | "configRevision"> & {
-    artifacts: { source?: string; transcript?: string; processed?: string };
+    artifacts: { source?: string; transcript?: string; processed?: string; structured?: string };
+    transcriptProjectName: string;
   };
 
 function view(job: AudioJob): AudioJobView {
-  return { id: job.id, status: job.status, stage: job.stage, model: job.model, createdAt: job.createdAt,
-    artifacts: { source: job.fileId, transcript: job.transcriptRef, processed: job.draftRef },
+  return { id: job.id, status: job.status, stage: job.stage,
+    model: job.task === "postprocess" ? job.postprocess?.version?.model ?? "" : job.model, createdAt: job.createdAt,
+    transcriptProjectName: job.task === "postprocess" ? audioSourceProject(job) : job.projectName,
+    artifacts: { source: job.fileId, transcript: job.transcriptRef, processed: job.summaryRef ?? job.draftRef, structured: job.draftRef },
     updatedAt: job.updatedAt, dueAt: job.dueAt, attempt: job.attempt, failures: job.failures,
     fileId: job.fileId, transcriptRef: job.transcriptRef, draftRef: job.draftRef,
     fileInfo: job.fileInfo, transcriptionProgress: job.transcriptionProgress, movedTo: job.movedTo,
@@ -85,7 +89,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       }
       const now = deps.now().toISOString();
       const task = input.task ?? "process";
-      if (!["import", "transcribe", "process"].includes(task) ||
+      if (!AUDIO_JOB_TASKS.includes(task) ||
         (input.language !== undefined && !/^[a-z]{2,3}$/i.test(input.language)) ||
         !origin.occurrence || origin.occurrence.length > 256 ||
         (input.processingRevision !== undefined && (!input.processingRevision || input.processingRevision.length > 128))) {
@@ -93,11 +97,14 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       }
       if (!input.retention) throw new ValidationError("File retention is required");
       try { fileExpiresAt(now, input.retention); } catch { throw new ValidationError("Invalid file retention"); }
-      if (task !== "import") {
+      if (task === "postprocess" && (!input.postprocess || input.destination || input.model || input.language || input.source.kind !== "file")) {
+        throw new ValidationError("Postprocessing requires a stored transcript and Agent, without ASR or delivery options");
+      }
+      if (task === "transcribe" || task === "process") {
         if (!input.model || !getModelConfig(input.model)?.capabilities.transcription) throw new ValidationError("A transcription model is required");
         await deps.validateModel(input.model);
       }
-      if (task !== "process" && (input.postprocess || input.destination)) throw new ValidationError("Only process tasks accept output options");
+      if (task !== "process" && task !== "postprocess" && (input.postprocess || input.destination)) throw new ValidationError("Only process or postprocess tasks accept output options");
       const outputs = await deps.validateOutputs(input, projectName, userEmail);
       let identity: { namespace: string; itemId: string; refresh?: AudioJob["sourceRefresh"] };
       if (input.source.kind === "file") {
@@ -106,6 +113,9 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         const file = await deps.files.get(sourceProject, input.source.fileId);
         if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
         if (file.status !== "ready" || file.retireAt <= now) throw new ConflictError("Source file is unavailable or expired");
+        if (task === "postprocess" && (file.mimeType !== "application/json" || file.derived?.kind !== "transcript")) {
+          throw new ValidationError("Postprocessing input must be a transcription Artifact");
+        }
         identity = { namespace: "stored-file", itemId: file.id };
       } else if (input.source.kind === "source") {
         identity = await deps.sourceIdentity(projectName, input.source.sourceRef, userEmail);

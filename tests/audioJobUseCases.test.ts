@@ -19,6 +19,19 @@ function fixture() {
   return { deps, input, api: createAudioJobUseCases(deps) };
 }
 describe("audio job use cases", () => {
+  it("admits summary-only work without an ASR model and refuses external delivery options", async () => {
+    const f = fixture();
+    const file = { id: "transcript", projectName: "transcriber", userEmail: "owner@example.test", status: "ready", mimeType: "application/json",
+      derived: { kind: "transcript", jobId: "original" }, retireAt: "2026-12-09T00:00:00.000Z" } as import("@/domain/artifact/sourceFile").SourceFile;
+    f.deps.resolveArtifact = async () => file; f.deps.files.get = async () => file;
+    const input: SubmitAudioJobInput = { task: "postprocess", source: { kind: "artifact", artifactId: "transcript" }, retention: f.input.retention,
+      postprocess: { projectName: "writer", versionName: "1" } };
+    expect((await f.api.submit("audio", file.userEmail, input, { occurrence: "summary" })).status).toBe("accepted");
+    expect(f.deps.validateModel).not.toHaveBeenCalled();
+    await expect(f.api.submit("audio", file.userEmail, { ...input, destination: { serverName: "memory", documents: true, memories: false } }, { occurrence: "unexpected-write" })).rejects.toThrow("without ASR or delivery");
+    file.derived = undefined;
+    await expect(f.api.submit("audio", file.userEmail, input, { occurrence: "not-transcript" })).rejects.toThrow("transcription Artifact");
+  });
   it("resolves another Agent's owned Artifact to its original private file without copying bytes", async () => {
     const f = fixture();
     const file = { id: "downloaded-file", projectName: "downloader", userEmail: "owner@example.test", status: "ready" as const,

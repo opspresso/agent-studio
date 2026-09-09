@@ -18,6 +18,7 @@ export const AUDIO_TOOL_DEFS: ChannelToolDef[] = [
   { type: "function", function: { name: AUDIO_JOB_TOOL_NAME,
     description: "Submit, inspect, list or read durable audio jobs for the current user. Use config to read project defaults, then submit with config_revision and source only (no model, retention or output overrides). Read uses a returned cursor to page through the transcript. Reuse the original source identity; reprocessing requires an explicit processing_revision. A busy response means no new job was admitted. Processing continues after this run: report the job ID instead of polling repeatedly while pending.",
     parameters: { type: "object", properties: { operation: { type: "string", enum: ["submit", "status", "list", "read", "config"] },
+      task: { type: "string", enum: ["process", "postprocess"], description: "postprocess reads an existing transcript Artifact and runs only the chosen Agent. No ASR or external delivery. Supply artifact_id, postprocess and retention; omit model, language, destination and config_revision." },
       ...source, model: { type: "string" }, language: { type: "string" }, retention,
       job_id: { type: "string" }, cursor: { type: "string" }, limit: { type: "integer", minimum: 1 },
       result_kind: { type: "string", enum: ["transcript", "processed"], description: "Result to read; defaults to transcript. A moved response points to the receiving MCP documents." },

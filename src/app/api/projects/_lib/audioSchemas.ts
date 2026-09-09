@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isValidTimezone } from "@/domain/trigger/cron";
-import { MAX_ACTIVE_AUDIO_JOBS } from "@/domain/audio/job";
+import { AUDIO_JOB_TASKS, MAX_ACTIVE_AUDIO_JOBS } from "@/domain/audio/job";
 
 export const fileRetentionSchema = z.object({
   unit: z.enum(["days", "months"]), value: z.number().int().positive(),
@@ -13,7 +13,7 @@ export const sourceReferenceSchema = z.object({
 }).strict();
 
 export const audioJobSchema = z.object({
-  task: z.enum(["import", "transcribe", "process"]).optional(),
+  task: z.enum(AUDIO_JOB_TASKS).optional(),
   source: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("artifact"), artifactId: z.string().min(1).max(128) }).strict(),
     z.object({ kind: z.literal("file"), fileId: z.string().min(1).max(128) }).strict(),

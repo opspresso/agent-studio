@@ -127,6 +127,7 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 | `ImportFile` | 접근 가능한 `artifact_id`, `file_id`, `source_ref` 중 하나로 job ID 반환. 완료 후 status의 `artifacts.source`로 원본 Artifact 확인 |
 | `TranscribeAudio` | 원본 Artifact ID·모델 선택으로 비동기 전사를 제출하고 job ID 반환. `artifacts.transcript`가 결과 Artifact ID |
 | `AudioJob` `submit` | source ref 또는 file ID·설정 참조 → accepted/busy/duplicate/blocked와 job ID |
+| `AudioJob` `submit`, `task: postprocess` | 기존 전사 Artifact·후처리 Agent·retention으로 요약만 실행. model·language·destination·config_revision은 받지 않는다 |
 | `AudioJob` `config` | 본인 프로젝트 작업 설정과 revision 또는 null |
 | `AudioJob` `status` | job ID → 단계·처리 범위·오류·retry 시각·결과 참조 |
 | `AudioJob` `read` | job ID·결과 종류·cursor·limit → bounded 본문과 nextCursor |
@@ -139,6 +140,8 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 파일도 입력으로 사용할 수 있다. 접수 시 실제 파일 위치로 고정하고 양쪽 프로젝트의 소유 권한을
 확인한다. worker와 각 전사 요청에서도 원본 프로젝트 권한을 재확인하며 바이트는 복사하지 않는다.
 파생 Artifact는 입력의 만료를 상속하고 `derivedFrom`·`model`로 원본과 생성 모델을 기록한다.
+후처리 결과는 구조화 JSON과 `summary.md`로 각각 보관한다. `artifacts.processed`는 읽기용
+Markdown, `artifacts.structured`는 원문 근거와 경고가 포함된 JSON Artifact ID다.
 
 `source_ref`는 서버가 발급한 불투명 참조다. 등록된 MCP tool의 파일 URL을
 프로젝트·연결·외부 item ID에 연결한다. 직접 업로드는 비공개 file ID를 반환한다. JSON 안의 URL은 등록된 binding의 필드 mapping으로

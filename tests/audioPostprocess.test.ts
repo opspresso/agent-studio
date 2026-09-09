@@ -32,11 +32,21 @@ function fixture(text = "Fact one.") {
 }
 
 describe("durable Agent postprocessing", () => {
+  it("reads a separate Agent's transcript and stores a readable Markdown summary with provenance", async () => {
+    const f = fixture(); f.job.task = "postprocess"; f.job.source = { kind: "file", projectName: "transcriber", fileId: "transcript" };
+    const read = vi.spyOn(f.deps.files, "read");
+    const imported = vi.spyOn(f.deps.files, "import");
+    const result = await f.run(f.job, f.context);
+    expect(read).toHaveBeenCalledWith("transcriber", "transcript", f.job.userEmail, expect.any(Number));
+    expect(result.summaryRef).toBe("job-summary");
+    expect(new TextDecoder().decode(f.saved.get(result.summaryRef))).toBe("Summary");
+    expect(imported).toHaveBeenCalledWith(expect.objectContaining({ filename: "summary.md", mimeType: "text/markdown", derivedFrom: "transcript", producedBy: "writer" }), expect.any(Function), f.context.signal);
+  });
   it("inherits transcript expiry through extraction, reduction and final output", async () => {
     const f = fixture("Fact one. ".repeat(3000));
     const imported = vi.spyOn(f.deps.files, "import");
     await f.run(f.job, f.context);
-    expect(imported).toHaveBeenCalledTimes(4);
+    expect(imported).toHaveBeenCalledTimes(5);
     expect(imported.mock.calls.every(([input]) => input.retainUntil === "2026-12-09T00:00:00Z")).toBe(true);
   });
   it("stores a grounded output and reuses completed model calls", async () => {

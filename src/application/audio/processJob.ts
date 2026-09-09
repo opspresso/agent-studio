@@ -16,7 +16,7 @@ export class AudioJobStepError extends AppError {
   }
 }
 
-type Progress = Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts">>;
+type Progress = Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "summaryRef" | "receipts">>;
 
 export interface AudioJobStepContext {
   signal: AbortSignal;
@@ -32,7 +32,7 @@ export interface AudioJobProcessorDeps {
   authorize(job: AudioJob): Promise<void>;
   importFile(job: AudioJob, context: AudioJobStepContext): Promise<{ fileId: string; fileInfo?: AudioJob["fileInfo"] }>;
   transcribe(job: AudioJob, context: AudioJobStepContext): Promise<{ transcriptRef: string }>;
-  postprocess(job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string }>;
+  postprocess(job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string; summaryRef?: string }>;
   store(job: AudioJob, context: AudioJobStepContext): Promise<{ ready: boolean; receipts: Record<string, string> }>;
   clean(job: AudioJob, context: AudioJobStepContext): Promise<void>;
 }
@@ -122,6 +122,10 @@ export async function processAudioJob(
         case "importing": {
           const result = await deps.importFile(current, context);
           requireReference(result.fileId);
+          if (current.task === "postprocess") {
+            await advance({ ...result, transcriptRef: result.fileId }, "postprocessing");
+            break;
+          }
           await advance(result, current.task === "import" ? undefined : "transcribing");
           break;
         }
