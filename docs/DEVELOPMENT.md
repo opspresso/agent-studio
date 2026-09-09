@@ -95,6 +95,17 @@ pnpm check-models     # 카탈로그 스냅샷과 이 배포의 채널이 서빙
 pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원격은 MODELS_CATALOG_URL 설정)
 ```
 
+`test:audio:pipeline`은 선택적으로 실제 Agent Memory MCP까지 검증한다. 별도 폐기 가능한
+Memory 설치를 `localhost`에 띄우고 문서 worker를 켠다. 합성 사용자(`@example.test`)의 조직 등록과
+기존 MCP token 발급을 마친 뒤 `{ "token": "..." }` 응답을 권한 0600의 임시 파일로 저장한다.
+환경 변수 `AUDIO_TEST_MEMORY_URL`, `AUDIO_TEST_MEMORY_TOKEN_FILE`, `AUDIO_TEST_MEMORY_EMAIL`을
+지정하고 같은 검사를 실행한다. 공개 호스트와 IP literal은 거절하며 테스트 process에만
+`localhost` MCP 연결을 허용한다. ASR·후처리 모델은 계속 로컬 mock을 사용한다.
+
+이 모드는 실제 MCP schema discovery·email 전달·문서 ready 대기·Memory receipt를 확인한다.
+Studio 측 fixture는 정리하지만 수신 측에는 합성 문서 2건과 Memory 1건이 남으므로 검증 후
+전용 Memory DB·버킷을 폐기한다. 기존 사용자 데이터가 있는 Memory 설치에 연결하지 않는다.
+
 ```bash
 # 테스트 파일 하나, 또는 테스트 이름으로
 pnpm exec vitest run tests/engine.test.ts

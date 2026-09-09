@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import { CreateBucketCommand, DeleteBucketCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { assertLocalDatabase } from "./local-database";
 
@@ -13,6 +14,17 @@ async function main() {
   process.env.STAGE = "local";
   process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test";
   assertLocalDatabase(process.env.DATABASE_URL, true);
+  const memoryUrl = process.env.AUDIO_TEST_MEMORY_URL ? new URL(process.env.AUDIO_TEST_MEMORY_URL) : undefined;
+  let memoryToken: string | undefined;
+  if (memoryUrl) {
+    assert.equal(memoryUrl.hostname, "localhost", "Memory checks require a disposable localhost server; IP literals do not qualify for the MCP host policy");
+    assert.ok(process.env.AUDIO_TEST_MEMORY_TOKEN_FILE, "Provide the test MCP credential file");
+    const credential = JSON.parse(await readFile(process.env.AUDIO_TEST_MEMORY_TOKEN_FILE, "utf8"));
+    assert.equal(typeof credential.token, "string");
+    memoryToken = credential.token;
+    assert.ok(process.env.AUDIO_TEST_MEMORY_EMAIL?.endsWith("@example.test"), "Use a synthetic Memory fixture email");
+    process.env.MCP_INTERNAL_HOST_SUFFIXES = memoryUrl.hostname;
+  }
   const endpoint = new URL(process.env.STORAGE_TEST_ENDPOINT ?? "http://127.0.0.1:9000");
   assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname));
   process.env.S3_ENDPOINT = endpoint.href;
@@ -58,7 +70,7 @@ async function main() {
   process.env.LLM_PROVIDER_OPENAI_API_KEY = "test";
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
-  const { getAudioRuntime } = await import("@/lib/container");
+  const { getAudioRuntime, mcpUseCases } = await import("@/lib/container");
   const { getS3Client, deleteStoredObject } = await import("@/infrastructure/storage/s3ObjectStore");
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
@@ -71,18 +83,32 @@ async function main() {
   const { keys } = await import("@/infrastructure/db/keys");
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
   const client = getS3Client();
-  const id = randomUUID(); const email = `${id}@example.test`; const projectName = `audio-${id}`;
+  const id = randomUUID(); const email = memoryUrl ? process.env.AUDIO_TEST_MEMORY_EMAIL! : `${id}@example.test`; const projectName = `audio-${id}`;
+  const memoryName = `memory-${id}`;
+  let memoryRegistered = false;
+  let userCreated = false;
+  let projectCreated = false;
   const now = new Date().toISOString(); const directory = await mkdtemp(join(tmpdir(), "audio-pipeline-"));
   await client.send(new CreateBucketCommand({ Bucket: bucket }));
   try {
     await withTransaction(async (db) => { await db.query(
       `INSERT INTO "user" ("id", "name", "email", "emailVerified", "tier", "createdAt", "updatedAt") VALUES ($1, $2, $3, true, 'member', $4, $4)`,
       [id, "Audio Pipeline Test", email, now]); });
+    userCreated = true;
     await projectRepository.create({ name: projectName, ownerEmail: email, displayName: "Audio Pipeline Test",
       description: "", projectType: "agent", visibility: "private", createdAt: now, updatedAt: now });
+    projectCreated = true;
     await versionRepository.create({ projectName, versionName: "writer", model: "openai/gpt-5-mini",
       systemPrompt: "Summarize the source.", userPromptTemplate: "", parameters: { piiFiltering: false, audioProcessing: true },
       skillList: [], mcpList: [], subagentList: [], createdAt: now });
+    if (memoryUrl) {
+      await mcpUseCases.create({ name: memoryName, url: memoryUrl.href, headers: { Authorization: `Bearer ${memoryToken}` } });
+      memoryRegistered = true;
+      const writer = await versionRepository.get(projectName, "writer"); assert.ok(writer);
+      await versionRepository.create({ ...writer, versionName: "collector", mcpList: [{ name: memoryName }] });
+      const project = await projectRepository.get(projectName); assert.ok(project);
+      await projectRepository.publish({ ...project, publishedVersion: "collector" }, "collector", project.updatedAt);
+    }
     const path = join(directory, "source.mp3");
     await promisify(execFile)(process.env.FFMPEG_PATH ?? "ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
       "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5", "-ar", "16000", "-ac", "1", path]);
@@ -92,10 +118,16 @@ async function main() {
     const file = await runtime.files.import({ id: randomUUID(), projectName, userEmail: email,
       filename: "source.mp3", mimeType: "audio/mpeg", retention }, async () => (async function* () { yield bytes; })());
     const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: "openai/whisper-1", retention,
-      postprocess: { projectName, versionName: "writer" } };
+      postprocess: { projectName, versionName: "writer" },
+      ...(memoryUrl ? { destination: { serverName: memoryName, documents: true, memories: true } } : {}) };
     const submitted = await runtime.jobs.submit(projectName, email, input, { occurrence: "test" });
     assert.ok("job" in submitted); assert.equal(submitted.status, "accepted");
-    const completed = await runtime.process(projectName, submitted.job.id);
+    let completed = await runtime.process(projectName, submitted.job.id);
+    const deadline = Date.now() + 90_000;
+    while (completed?.status === "waiting" && Date.now() < deadline) {
+      await delay(Math.max(1, Math.min(1000, Date.parse(completed.dueAt) - Date.now())));
+      completed = await runtime.process(projectName, submitted.job.id) ?? completed;
+    }
     assert.equal(completed?.status, "completed", JSON.stringify(completed));
     assert.ok(completed.transcriptRef);
     const result = await runtime.files.read(projectName, completed.transcriptRef, email);
@@ -118,6 +150,12 @@ async function main() {
     const usage = await usageRepository.getDay(projectName, new Date().toISOString().slice(0, 10));
     assert.equal(usage?.calls["openai/whisper-1"], 1);
     await assert.rejects(runtime.jobs.get(projectName, completed.id, "other@example.test"));
+    if (memoryUrl) {
+      assert.ok(completed.receipts["document:transcript"]);
+      assert.ok(completed.receipts["document:result"]);
+      assert.ok(completed.receipts["memory:0"]);
+      console.log(`PASS Memory delivery: ${JSON.stringify({ jobId: completed.id, receipts: completed.receipts })}`);
+    }
     console.log("PASS audio pipeline: PostgreSQL → MinIO → ffmpeg → ASR → grounded Agent output → usage and replay");
   } finally {
     const objects = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1000 }));
@@ -126,10 +164,11 @@ async function main() {
       await deleteStoredObject(bucket, object.Key);
       if (object.Key.startsWith("source-files/")) await deleteItem(keys.sourceFile(decodeURIComponent(object.Key.slice("source-files/".length))));
     }
-    await projectRepository.delete(projectName);
+    if (projectCreated) await projectRepository.delete(projectName);
+    if (memoryRegistered) await mcpUseCases.remove(memoryName, email);
     await deleteItem(keys.usageMember(email, now.slice(0, 10), projectName));
     await deleteItem(keys.usageMember(email, new Date().toISOString().slice(0, 10), projectName));
-    await withTransaction(async (db) => { await db.query(`DELETE FROM "user" WHERE "id" = $1`, [id]); });
+    if (userCreated) await withTransaction(async (db) => { await db.query(`DELETE FROM "user" WHERE "id" = $1`, [id]); });
     await client.send(new DeleteBucketCommand({ Bucket: bucket }));
     client.destroy(); await closePool();
     await new Promise<void>((resolve) => mock.close(() => resolve()));
