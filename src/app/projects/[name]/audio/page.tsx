@@ -14,8 +14,18 @@ import type { AudioJobView } from "@/application/audio/audioJobUseCases";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
 import type { AudioConfigResponse } from "@/app/api/projects/[name]/audio-config/route";
 import { MAX_ACTIVE_AUDIO_JOBS } from "@/domain/audio/job";
+import { useProjectAudio } from "../_components/ProjectAudioContext";
 
 export default function AudioPage() {
+  const { enabled, error } = useProjectAudio();
+  const t = useT();
+  if (error) return <Alert color="red">{error}</Alert>;
+  if (enabled === undefined) return <Text c="dimmed">{t("common.loading")}</Text>;
+  if (!enabled) return <Alert color="blue">{t("audio.toolsRequired")}</Alert>;
+  return <AudioProjectPage />;
+}
+
+function AudioProjectPage() {
   const { name } = useParams<{ name: string }>();
   return <AudioWorkspace key={name} name={name} />;
 }

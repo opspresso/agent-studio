@@ -48,6 +48,7 @@ export const ko: Messages = {
   "audio.original": "원본 파일",
   "audio.transcript": "전사문",
   "audio.dialogue": "대화 내용",
+  "audio.toolsRequired": "이 페이지를 사용하려면 배포된 버전에서 오디오 처리 도구를 켜세요. 아직 배포하지 않았다면 최신 저장 버전을 기준으로 합니다.",
   "audio.result": "처리 결과",
   "audio.retry": "재시도",
   "audio.resumeAt": "다음 처리 시각",

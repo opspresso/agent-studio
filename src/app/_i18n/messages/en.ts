@@ -68,6 +68,7 @@ export const en = {
   "audio.original": "Original file",
   "audio.transcript": "Transcript",
   "audio.dialogue": "Dialogue",
+  "audio.toolsRequired": "Enable audio processing tools in the published version to use this page. Before the first publication, the latest saved version is used.",
   "audio.result": "Processed result",
   "audio.retry": "Retry",
   "audio.resumeAt": "Next processing attempt",

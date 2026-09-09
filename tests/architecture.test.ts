@@ -612,10 +612,11 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(97);
+    expect(entries.length).toBe(98);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/projects/[name]/audio/page.tsx",
       "src/app/projects/[name]/_components/SourceMappings.tsx",
+      "src/app/projects/[name]/_components/ProjectAudioContext.tsx",
     ]));
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",

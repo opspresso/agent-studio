@@ -330,8 +330,10 @@ cleaning 이후에는 새로운 파생 파일 생성을 거절한다. 명시적�
 실패하고, stat/read는 표식을 없는 파일로 처리한다. 표식과 삭제 inventory는 유지하며 오디오 bytes는
 남기지 않는다. 이는 versioning이 꺼진 전용 source bucket을 전제로 한다.
 
-범용 작업 UI는 단계·coverage·expiry·receipt·오류·retry·취소를 제공한다. 개인 파일·본문·후처리
-run output·trace는 실행 사용자와 원래 project 범위로 제한하며 공개 project 갤러리에 노출하지 않는다.
+범용 작업 UI는 단계·coverage·expiry·receipt·오류·retry·취소를 제공한다.
+오디오 처리 탭은 오디오 도구를 켠 Agent의 소유자에게만 노출한다. 배포된 버전을 기준으로 하며,
+배포 전에는 최신 저장 버전을 사용한다. 직접 페이지 주소를 열어도 동일한 기능 설정을 확인한다.
+개인 파일·본문·후처리 run output·trace는 실행 사용자와 원래 project 범위로 제한하며 공개 project 갤러리에 노출하지 않는다.
 owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약한다. 외부 sink 자료는 자동 삭제하지 않는다.
 목록은 cursor·limit으로 제한한다. 일반 로그에는 job·stage·safe error·model·크기·시간·attempt만
 기록하며 파일 URL·token·본문은 제외한다. 외부 source 장애가 Studio의 필수 offline 경로를 막지 않는다.
