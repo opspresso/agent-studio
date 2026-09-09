@@ -625,7 +625,7 @@ worker 실행과 별개로 schedule을 설정해야 하며 이 값을 넣는 것
 
 | 변수 | 기본값 | 역할 |
 | --- | --- | --- |
-| `SOURCE_FILES_BUCKET_NAME` | 미설정 | 비공개 원본 파일 전용 bucket. 기존 public artifact bucket으로 fallback하지 않는다 |
+| `SOURCE_FILES_BUCKET_NAME` | 미설정 | versioning을 끈 비공개 원본 전용 bucket. 기존 public artifact bucket으로 fallback하지 않는다. 삭제 표식·multipart lifecycle은 INSTALL을 따른다 |
 | `TRANSCRIPTION_BASE_URL` | 미설정 | `/audio/transcriptions` 앞의 ASR base URL. 없으면 선택 모델의 명시적 provider 채널을 요구한다 |
 | `TRANSCRIPTION_API_KEY` | 미설정 | 전용 ASR key. base URL 없이 설정하면 거절하며 다른 LLM key를 가져오지 않는다 |
 | `TRANSCRIPTION_RESPONSE_FORMAT` | `json` | `json`, `verbose_json`, `diarized_json` 중 provider가 지원하는 형식 |

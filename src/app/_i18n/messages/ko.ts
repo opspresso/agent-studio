@@ -68,6 +68,8 @@ export const ko: Messages = {
   "audio.stage.transcribing": "전사",
   "audio.stage.postprocessing": "Agent 처리",
   "audio.stage.storing": "저장",
+  "audio.stage.cleaning": "중간본 정리",
+  "audio.moved": "문서 이전 위치",
   "audio.enableTools": "오디오 처리 도구",
   "audio.enableToolsHint": "이 Agent에서 파일 가져오기, 오디오 전사와 백그라운드 작업 조회를 사용합니다.",
   "audio.runAsOwner": "내 개인 문맥으로 실행",

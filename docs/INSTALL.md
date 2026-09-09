@@ -32,13 +32,18 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 
 `SOURCE_FILES_BUCKET_NAME`에 별도 비공개 bucket을 지정하고 같은 DB·S3 자격증명·암호화 키를
 공유한다. 모델 채널과 ffmpeg 설정은 [CONFIGURATION.md](CONFIGURATION.md#오디오-전사-설정)를 따른다.
+원본 bucket은 versioning을 끈 전용 bucket으로 운영한다. 객체 전체에 일괄 만료 규칙을 적용하지
+않으며 파일별 만료는 worker가 처리한다. 삭제 시 본문을 0바이트 표식으로 교체해 지연된 multipart
+완료가 파일을 복원하지 못하게 한다. 이 표식에는 원본 bytes·파일명·URL을 저장하지 않는다.
+프로세스 강제 종료로 남을 수 있는 multipart parts에는 별도 AbortIncompleteMultipartUpload
+lifecycle을 설정한다. 백업·복제 저장소에도 같은 원본 보존 정책을 적용한다.
 ffmpeg는 runtime 이미지에 포함돼 있다. 동시에 두 작업을 처리하므로 최대 입력·PCM 임시 파일에
 맞는 메모리와 scratch volume을 할당한다. worker 중단 시 작업 lease가 만료된 후 다른 worker가 재개한다.
 `SIGTERM`은 현재 작업을 중단하고 checkpoint를 남긴다. 필수 chat·sign-in 경로는 worker와 무관하다.
 
 버전의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저장소와 실행 사용자 문맥이 있어야
 도구가 제공된다. 후처리는 선택한 Agent 버전을 고정해 실행한다. Memory delivery에는 수신 서버의
-문서 수집·멱등 저장 도구가 필요하다. 수신 측 확장과 설정 UI는 개발 중이다.
+문서 수집·멱등 저장 도구가 필요하다. 오디오 처리 화면에서 작업 설정과 한도를 revision으로 저장한다.
 
 ## localdev
 

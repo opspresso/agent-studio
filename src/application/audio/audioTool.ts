@@ -56,12 +56,19 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         if (!id) throw new ValidationError("job_id is required");
         const job = await deps.jobs.get(context.projectName, id, context.userEmail);
         if (operation === "status") return { text: JSON.stringify(job) };
-        if (!job.transcriptRef) throw new ValidationError("The transcript is not ready");
+        const kind = text(args, "result_kind") ?? "transcript";
+        if (kind !== "transcript" && kind !== "processed") throw new ValidationError("Invalid result_kind");
+        if (job.movedTo) {
+          if (kind === "processed" && !job.movedTo.resultId) throw new ValidationError("The processed result is not available");
+          return { text: JSON.stringify({ status: "moved", destination: job.movedTo, jobStatus: job.status }) };
+        }
+        const reference = kind === "processed" ? job.draftRef : job.transcriptRef;
+        if (!reference) throw new ValidationError(`The ${kind} result is not ready`);
         const cursor = text(args, "cursor") ?? "0";
         const limit = args.limit ?? 12_000;
         if (!/^\d+$/.test(cursor) || !Number.isSafeInteger(Number(cursor)) || typeof limit !== "number" ||
           !Number.isInteger(limit) || limit < 1 || limit > 20_000) throw new ValidationError("Invalid transcript page");
-        const file = await deps.files.read(context.projectName, job.transcriptRef, context.userEmail, MAX_TRANSCRIPT_BYTES);
+        const file = await deps.files.read(context.projectName, reference, context.userEmail, MAX_TRANSCRIPT_BYTES);
         const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)) as { text?: unknown; warnings?: unknown };
         if (typeof body.text !== "string") throw new ValidationError("The stored transcript is invalid");
         const offset = Number(cursor);

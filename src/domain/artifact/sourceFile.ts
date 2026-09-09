@@ -9,6 +9,7 @@ export interface SourceFile {
   retention: FileRetention;
   /** Optional immutable upper bound inherited by derived files from their source. */
   retainUntil?: string;
+  derived?: { jobId: string; kind: "checkpoint" | "transcript" | "draft" };
   revision: number;
   status: "pending" | "ready" | "deleting" | "deleted";
   createdAt: string;
@@ -29,6 +30,8 @@ export interface SourceFileRepository {
   get(projectName: string, id: string): Promise<SourceFile | null>;
   finish(file: SourceFile, result: { storedAt: string; retireAt: string; byteSize: number; checksum: string }): Promise<SourceFile | null>;
   expired(now: string, limit: number): Promise<SourceFile[]>;
+  forJob(projectName: string, jobId: string, kind: NonNullable<SourceFile["derived"]>["kind"], limit: number): Promise<SourceFile[]>;
+  retire(file: SourceFile, now: string): Promise<SourceFile | null>;
   markDeleting(file: SourceFile, now: string): Promise<SourceFile | null>;
   markDeleted(file: SourceFile, now: string): Promise<boolean>;
 }

@@ -20,6 +20,13 @@ function assertReadable(file: SourceFile | null, userEmail: string, now: string)
   if (file.status !== "ready" || file.retireAt <= now) throw new ConflictError("Source file is unavailable or expired");
 }
 
+export async function removeExpiredSourceFile(deps: SourceFileDeps, file: SourceFile, now: string): Promise<boolean> {
+  const deleting = await deps.files.markDeleting(file, now);
+  if (!deleting) return false;
+  await deps.objects.delete(sourceFileObjectKey(file.id));
+  return deps.files.markDeleted(deleting, now);
+}
+
 export function createSourceFileUseCases(deps: SourceFileDeps) {
   const expiry = (storedAt: string, file: Pick<SourceFile, "retention" | "retainUntil">) => {
     const policyExpiry = fileExpiresAt(storedAt, file.retention);
@@ -43,7 +50,7 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
       return file;
     },
-    async import(input: Pick<SourceFile, "id" | "projectName" | "userEmail" | "filename" | "mimeType" | "retention" | "retainUntil">,
+    async import(input: Pick<SourceFile, "id" | "projectName" | "userEmail" | "filename" | "mimeType" | "retention" | "retainUntil" | "derived">,
       open: (maxBytes: number) => Promise<SourceByteStream>, signal?: AbortSignal): Promise<SourceFile> {
       signal?.throwIfAborted();
       if (!input.id || !input.filename.trim() || input.filename.length > 255 || !input.mimeType ||
@@ -109,10 +116,7 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
             if (recovered) file = recovered;
           }
           if (file.retireAt > now) continue;
-          const deleting = await deps.files.markDeleting(file, now);
-          if (!deleting) continue;
-          await deps.objects.delete(sourceFileObjectKey(file.id));
-          if (await deps.files.markDeleted(deleting, now)) result.deleted += 1;
+          if (await removeExpiredSourceFile(deps, file, now)) result.deleted += 1;
         } catch { result.failed += 1; }
       }
       return result;

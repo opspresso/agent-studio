@@ -20,6 +20,7 @@ import { currentRunContext } from "@/shared/runContext";
 import { createAudioTranscriptionStep } from "@/application/audio/transcribeFile";
 import { createAudioPostprocessStep } from "@/application/audio/postprocess";
 import { createAudioDeliveryStep } from "@/application/audio/deliver";
+import { createAudioCleanup } from "@/application/audio/cleanup";
 import { buildMcpTools, closeMcp } from "@/application/execution/mcpTools";
 import type { AudioJob } from "@/domain/audio/job";
 import { AUDIO_OUTPUT_SCHEMA } from "@/domain/audio/output";
@@ -1340,6 +1341,7 @@ export function getAudioRuntime() {
     };
   }
   const deliver = createAudioDeliveryStep({ files, open: openDestination });
+  const clean = createAudioCleanup({ files: sourceFileRepository, objects: createSourceObjectStore(bucket), now: () => new Date() });
   return { files, references, jobs, authorize, configuration,
     async options(projectName: string, email: string) {
       await authorize(projectName, email);
@@ -1362,6 +1364,7 @@ export function getAudioRuntime() {
         }, transcribe,
         postprocess,
         store: deliver,
+        clean,
       }, projectName, id, signal);
     },
   };

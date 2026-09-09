@@ -1,15 +1,17 @@
 import { createHash } from "node:crypto";
 import {
   AbortMultipartUploadCommand, CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand, UploadPartCommand, HeadObjectCommand,
+  CreateMultipartUploadCommand, UploadPartCommand, HeadObjectCommand, PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { SourceObjectExistsError, type SourceObjectStore } from "@/domain/artifact/sourceObjectStore";
+import { ObjectNotFoundError } from "@/domain/artifact/objectStore";
 import { BodyTooLargeError } from "@/shared/httpBody";
-import { deleteStoredObject, getS3Client, readStoredObject } from "./s3ObjectStore";
+import { getS3Client, readStoredObject } from "./s3ObjectStore";
 
 /** S3 requires every non-final multipart part to be at least five MiB. */
 const PART_BYTES = 5 * 1024 * 1024;
 const MAX_PARTS = 10_000;
+const CLEANUP_REQUEST_MS = 30_000;
 
 export function createSourceObjectStore(bucket: string): SourceObjectStore {
   if (!bucket.trim()) throw new Error("Source file bucket is required");
@@ -66,17 +68,23 @@ export function createSourceObjectStore(bucket: string): SourceObjectStore {
       } catch (error) {
         // Cancellation of the caller must not cancel cleanup of the partial upload.
         await client.send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: input.key, UploadId: uploadId }),
-          { abortSignal: AbortSignal.timeout(30_000) }).catch(() => {});
+          { abortSignal: AbortSignal.timeout(CLEANUP_REQUEST_MS) }).catch(() => {});
         if ((error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 412) {
           throw new SourceObjectExistsError();
         }
         throw error;
       }
     },
-    read: (key, maxBytes) => readStoredObject(bucket, key, maxBytes),
+    async read(key, maxBytes) {
+      const result = await readStoredObject(bucket, key, maxBytes);
+      // Source writes reject empty bodies. A zero-byte object is a retirement barrier.
+      if (result.bytes.byteLength === 0) throw new ObjectNotFoundError(key);
+      return result;
+    },
     async stat(key) {
       try {
         const head = await getS3Client().send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        if (head.ContentLength === 0 && head.Metadata?.["source-deleted"] === "true") return null;
         if (head.ContentLength === undefined || !head.LastModified) throw new Error("Source object metadata is incomplete");
         return { byteSize: head.ContentLength, mimeType: head.ContentType ?? "application/octet-stream",
           storedAt: head.LastModified.toISOString() };
@@ -85,6 +93,13 @@ export function createSourceObjectStore(bucket: string): SourceObjectStore {
         throw error;
       }
     },
-    delete: (key) => deleteStoredObject(bucket, key),
+    async delete(key) {
+      // Keep the key occupied so an in-flight create-only multipart completion cannot
+      // resurrect its bytes after deletion, even if that writer crashes before cleanup.
+      await getS3Client().send(new PutObjectCommand({ Bucket: bucket, Key: key,
+        Body: new Uint8Array(0), ContentLength: 0, ContentType: "application/octet-stream",
+        CacheControl: "private, no-store", Metadata: { "source-deleted": "true" },
+      }), { abortSignal: AbortSignal.timeout(CLEANUP_REQUEST_MS) });
+    },
   };
 }

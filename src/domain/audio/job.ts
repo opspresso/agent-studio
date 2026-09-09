@@ -3,7 +3,7 @@ import type { RunActor } from "@/domain/execution/actor";
 import type { Version } from "@/domain/project/types";
 import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 
-export type AudioJobStage = "importing" | "transcribing" | "postprocessing" | "storing";
+export type AudioJobStage = "importing" | "transcribing" | "postprocessing" | "storing" | "cleaning";
 export type AudioJobStatus = "queued" | "running" | "waiting" | "completed" | "blocked" | "failed" | "cancelled";
 export type AudioSource = { kind: "file"; fileId: string } | { kind: "source"; sourceRef: string };
 
@@ -42,6 +42,7 @@ export interface AudioJob extends AudioJobInput {
   fileId?: string;
   fileInfo?: { filename: string; byteSize?: number; expiresAt: string };
   transcriptionProgress?: { processedSeconds: number; totalSeconds: number; completedSegments: number };
+  movedTo?: { serverName: string; transcriptId: string; resultId?: string };
   transcriptRef?: string;
   draftRef?: string;
   /** Per-output receipts, separate from model-generated content. */
@@ -56,7 +57,7 @@ export function isAudioJobTerminal(status: AudioJobStatus): boolean {
 }
 
 export type AudioJobCheckpoint = Pick<AudioJob, "status" | "stage" | "dueAt"> &
-  Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "failures">>;
+  Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "failures">>;
 
 export interface AudioJobRepository {
   submit(input: AudioJobInput, admission: {

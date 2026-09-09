@@ -19,6 +19,7 @@ export const AUDIO_TOOL_DEFS: ChannelToolDef[] = [
     parameters: { type: "object", properties: { operation: { type: "string", enum: ["submit", "status", "list", "read", "config"] },
       ...source, model: { type: "string" }, language: { type: "string" }, retention,
       job_id: { type: "string" }, cursor: { type: "string" }, limit: { type: "integer", minimum: 1 },
+      result_kind: { type: "string", enum: ["transcript", "processed"], description: "Result to read; defaults to transcript. A moved response points to the receiving MCP documents." },
       processing_revision: { type: "string" },
       config_revision: { type: "integer", minimum: 1 },
       postprocess: { type: "object", properties: { projectName: { type: "string" }, versionName: { type: "string" } },

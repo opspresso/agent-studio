@@ -1771,6 +1771,9 @@ AudioJobView는 `id`, `status`, `stage`, `model`, 생성·갱신·다음 실행 
 `revision`과 존재하는 `fileId`, `fileInfo`, `transcriptionProgress`, `transcriptRef`, `draftRef`, `receipts`, `errorCode`를 반환한다.
 `fileInfo`는 filename·byteSize·expiresAt을, `transcriptionProgress`는 성공한 구간의 processedSeconds·
 totalSeconds·completedSegments를 담는다. 목록 조회는 본문을 읽지 않고 checkpoint metadata를 반환한다.
+`movedTo`가 있으면 전사문·후처리 본문이 해당 MCP의 transcriptId·resultId 문서로 이전된 상태다.
+`cleaning` 단계는 저장 receipt를 유지한 채 중간 파일을 정리한다. AudioJob read는 이 경우
+`{status: "moved", destination: movedTo, jobStatus}`를 반환하며 삭제된 본문을 다시 읽지 않는다.
 source URL·암호문·내부 source key는 포함하지 않는다. 저장된 전사 결과는 transcriptRef 파일의
 JSON이며 text, 구간, model, coverage, 원본 checksum과 사용량 receipt 참조를 포함한다.
 
@@ -1780,6 +1783,7 @@ JSON이며 text, 구간, model, coverage, 원본 checksum과 사용량 receipt �
 Agent 버전의 `parameters.audioProcessing=true`는 `ImportFile`, `TranscribeAudio`, `AudioJob`을
 선택적으로 제공한다. 도구는 현재 실행의 사용자·프로젝트·발생 ID에 바인딩되며 임의 email이나
 raw URL을 받지 않는다. AudioJob의 read는 최대 20,000자씩 Unicode 문자 경계를 보존해 전사문을 반환한다.
+`result_kind: "processed"`로 후처리 본문을 선택하며 기본값은 `transcript`다. 이전된 본문은 moved 응답으로 확인한다.
 
 Schedule 생성·수정의 `runAsOwner: true`는 로그인한 소유자의 email을 `executionEmail`로 저장한다.
 관리자도 다른 소유자를 대신해 켤 수 없다. `false`는 저장한 email을 지우고, 생략은 기존 값을

@@ -36,7 +36,8 @@
 | 한 런이 파일을 몇 개까지 쓸 수 있는가 | `src/application/llm/engine.ts` 의 `MAX_SAVED_FILES_PER_RUN`. 이 플랫폼이 고른 루프 한도라 그것을 강제하는 루프 옆에 산다 |
 | 한 호출의 인자를 얼마나 보관하고 되풀이하는가 (알려지는 쪽과 프로바이더로 돌아가는 쪽 둘 다) | `src/application/llm/engine.ts` 의 `MAX_TOOL_ARG_BYTES` / `boundToolArgsPair` / `boundArgumentText` |
 | 프로젝트 산출물을 읽을 수 있는 사람. 쓰기와 같은 규칙, 기록만 하지 않는다 | `src/application/project/projectUseCases.ts` 의 `assertProjectOutputReadable` |
-| 저장된 오브젝트를 삭제하기 | `src/infrastructure/storage/s3ObjectStore.ts` |
+| 일반 산출물 오브젝트를 삭제하기 | `src/infrastructure/storage/s3ObjectStore.ts` |
+| 비공개 source 본문 제거와 지연 업로드 재생성 차단 | `src/infrastructure/storage/sourceObjectStore.ts` 의 `delete`. 0바이트 표식으로 키를 유지하며 source 읽기에서는 없는 파일로 취급한다 |
 | proxied 오브젝트 주소와 그 토큰. `/api/objects/<key>?exp=&sig=[&dl=]`, HMAC 이 무엇을 덮는가 | `src/infrastructure/storage/objectUrlToken.ts`. 서명자와 라우트가 여기서 합의한다. 두 번째 작성자는 HMAC 이 파일명을 덮는지에 대해 다르게 답할 수 있고, 그것은 답하지 않는 링크이거나 서명되지 않은 이름으로 내려가는 링크다 |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` |
 | `AES_ENCRYPTION_KEY` 의 base64 해석과 32바이트 검증 | `src/shared/aesKey.ts` 의 `decodeAes256Key` |

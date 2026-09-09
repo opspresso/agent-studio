@@ -88,6 +88,8 @@ export const en = {
   "audio.stage.transcribing": "Transcribing",
   "audio.stage.postprocessing": "Agent processing",
   "audio.stage.storing": "Saving",
+  "audio.stage.cleaning": "Cleaning intermediate files",
+  "audio.moved": "Documents moved to",
   "audio.enableTools": "Audio processing tools",
   "audio.enableToolsHint": "Let this Agent import files, transcribe audio and inspect background jobs.",
   "audio.runAsOwner": "Run with my personal context",

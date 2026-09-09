@@ -16,7 +16,7 @@ export class AudioJobStepError extends AppError {
   }
 }
 
-type Progress = Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "transcriptRef" | "draftRef" | "receipts">>;
+type Progress = Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts">>;
 
 export interface AudioJobStepContext {
   signal: AbortSignal;
@@ -34,6 +34,7 @@ export interface AudioJobProcessorDeps {
   transcribe(job: AudioJob, context: AudioJobStepContext): Promise<{ transcriptRef: string }>;
   postprocess(job: AudioJob, context: AudioJobStepContext): Promise<{ draftRef: string }>;
   store(job: AudioJob, context: AudioJobStepContext): Promise<{ ready: boolean; receipts: Record<string, string> }>;
+  clean(job: AudioJob, context: AudioJobStepContext): Promise<void>;
 }
 
 function failureOf(error: unknown): { code: string; retryable: boolean } {
@@ -128,26 +129,40 @@ export async function processAudioJob(
           if (!current.fileId) throw new AudioJobStepError("missing_file", false);
           const result = await deps.transcribe(current, context);
           requireReference(result.transcriptRef);
-          await advance(result, current.task === "transcribe" ? undefined
-            : current.postprocess ? "postprocessing" : current.destination ? "storing" : undefined);
+          await advance(result, current.task === "transcribe" ? "cleaning"
+            : current.postprocess ? "postprocessing" : current.destination ? "storing" : "cleaning");
           break;
         }
         case "postprocessing": {
           if (!current.transcriptRef) throw new AudioJobStepError("missing_transcript", false);
           const result = await deps.postprocess(current, context);
           requireReference(result.draftRef);
-          await advance(result, current.destination ? "storing" : undefined);
+          await advance(result, current.destination ? "storing" : "cleaning");
           break;
         }
         case "storing": {
           if (!current.transcriptRef) throw new AudioJobStepError("missing_transcript", false);
           const result = await deps.store(current, context);
-          if (result.ready) await advance({ receipts: result.receipts });
+          if (result.ready) {
+            let movedTo: AudioJob["movedTo"];
+            if (current.destination?.documents) {
+              const transcriptId = result.receipts["document:transcript"];
+              const resultId = current.draftRef ? result.receipts["document:result"] : undefined;
+              if (!transcriptId || (current.draftRef && !resultId)) throw new AudioJobStepError("missing_delivery_receipt", false);
+              movedTo = { serverName: current.destination.serverName, transcriptId, ...(resultId ? { resultId } : {}) };
+            }
+            await advance({ receipts: result.receipts, ...(movedTo ? { movedTo } : {}) }, "cleaning");
+          }
           else {
             operationSignal.throwIfAborted();
             await save({ receipts: result.receipts, status: "waiting", stage: "storing", failures: 0, errorCode: undefined,
               dueAt: new Date(deps.now().getTime() + DOCUMENT_POLL_MS).toISOString() });
           }
+          break;
+        }
+        case "cleaning": {
+          await deps.clean(current, context);
+          await advance({});
           break;
         }
       }

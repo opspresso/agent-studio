@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { CreateBucketCommand, DeleteBucketCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { assertLocalDatabase } from "./local-database";
+import { sourceFileObjectKey } from "@/domain/artifact/sourceFile";
 
 async function main() {
   process.env.STAGE = "local";
@@ -145,17 +146,28 @@ async function main() {
     assert.deepEqual(publicJob.fileInfo, { filename: file.filename, byteSize: file.byteSize, expiresAt: file.retireAt });
     assert.deepEqual(publicJob.transcriptionProgress, { processedSeconds: 1.5, totalSeconds: 1.5, completedSegments: 1 });
     assert.ok(completed.transcriptRef);
-    const result = await runtime.files.read(projectName, completed.transcriptRef, email);
-    assert.equal(result.file.retireAt, file.retireAt);
-    assert.equal(result.file.retainUntil, file.retireAt);
-    const transcript = JSON.parse(new TextDecoder().decode(result.bytes));
-    assert.equal(transcript.text, "Sample transcript");
-    assert.equal(transcript.totalSeconds, 1.5);
-    assert.ok(completed.draftRef);
-    const draft = await runtime.files.read(projectName, completed.draftRef, email);
-    assert.equal(draft.file.retireAt, file.retireAt);
-    assert.equal(draft.file.retainUntil, file.retireAt);
-    assert.equal(JSON.parse(new TextDecoder().decode(draft.bytes)).text, "Summary of sample");
+    if (!memoryUrl) {
+      const result = await runtime.files.read(projectName, completed.transcriptRef, email);
+      assert.equal(result.file.retireAt, file.retireAt);
+      assert.equal(result.file.retainUntil, file.retireAt);
+      const transcript = JSON.parse(new TextDecoder().decode(result.bytes));
+      assert.equal(transcript.text, "Sample transcript");
+      assert.equal(transcript.totalSeconds, 1.5);
+      assert.ok(completed.draftRef);
+      const draft = await runtime.files.read(projectName, completed.draftRef, email);
+      assert.equal(draft.file.retireAt, file.retireAt);
+      assert.equal(draft.file.retainUntil, file.retireAt);
+      assert.equal(JSON.parse(new TextDecoder().decode(draft.bytes)).text, "Summary of sample");
+    } else {
+      assert.ok(completed.draftRef);
+      assert.ok(completed.movedTo);
+      await assert.rejects(runtime.files.read(projectName, completed.transcriptRef, email));
+      await assert.rejects(runtime.files.read(projectName, completed.draftRef, email));
+    }
+    const remaining = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1000 }));
+    assert.equal(remaining.IsTruncated, false);
+    assert.deepEqual((remaining.Contents ?? []).filter((object) => object.Size !== 0).map((object) => object.Key).sort(), [sourceFileObjectKey(file.id),
+      ...(!memoryUrl ? [sourceFileObjectKey(completed.transcriptRef), sourceFileObjectKey(completed.draftRef!)] : [])].sort());
     assert.equal(postprocessCalls, 1);
     assert.equal(calls, 1);
     assert.equal(postprocessCalls, 1);

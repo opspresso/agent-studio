@@ -22,6 +22,12 @@ export const keys = {
   audioJobPrefix: () => "AUDIOJOB#",
   usageReceipt: (projectName: string, id: string) => ({ PK: `PROJECT#${projectName}`, SK: `USAGERECEIPT#${id}` }),
   sourceFile: (id: string) => ({ PK: `SOURCEFILE#${id}`, SK: "META" }),
+  sourceFileJobIndex: (project: string, job: string, kind: string, id: string) => ({
+    GSI2PK: `SOURCEJOB#${project}#${job}`, GSI2SK: `${kind}#${id}`,
+  }),
+  sourceFileJobQuery: (project: string, job: string, kind: string) => ({
+    pk: `SOURCEJOB#${project}#${job}`, sk: { prefix: `${kind}#` },
+  }),
   sourceReference: (id: string) => ({ PK: `SOURCEREFERENCE#${id}`, SK: "META" }),
   sourceFileExpiryIndex: (retireAt: string, projectName: string, id: string) => ({
     GSI1PK: "SOURCEFILEEXPIRY", GSI1SK: `${retireAt}#${projectName}#${id}`,

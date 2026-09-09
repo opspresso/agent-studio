@@ -6,6 +6,25 @@ import { createAudioTool } from "@/application/audio/audioTool";
 import type { createAudioJobUseCases } from "@/application/audio/audioJobUseCases";
 
 describe("audio builtins", () => {
+  it("reads the selected processed result without substituting the transcript", async () => {
+    const get = vi.fn(async () => ({ id: "job-1", status: "completed", transcriptRef: "transcript", draftRef: "draft" }));
+    const read = vi.fn(async (_project: string, _id: string) => ({ bytes: new TextEncoder().encode(JSON.stringify({ text: "Summary" })) }));
+    const tool = createAudioTool({ jobs: { get } as unknown as ReturnType<typeof createAudioJobUseCases>,
+      files: { read } as unknown as Parameters<typeof createAudioTool>[0]["files"] },
+    { projectName: "audio", userEmail: "owner@example.test", occurrence: "run" });
+    expect(JSON.parse((await tool("AudioJob", { operation: "read", job_id: "job-1", result_kind: "processed" })).text).text).toBe("Summary");
+    expect(read.mock.calls[0]?.[1]).toBe("draft");
+  });
+  it("returns the sink pointer without reading deleted transcript bytes", async () => {
+    const movedTo = { serverName: "memory", transcriptId: "doc-1" };
+    const get = vi.fn(async () => ({ id: "job-1", status: "completed", movedTo }));
+    const read = vi.fn();
+    const tool = createAudioTool({ jobs: { get } as unknown as ReturnType<typeof createAudioJobUseCases>, files: { read } },
+      { projectName: "audio", userEmail: "owner@example.test", occurrence: "run" });
+    const result = await tool("AudioJob", { operation: "read", job_id: "job-1" });
+    expect(JSON.parse(result.text)).toEqual({ status: "moved", destination: movedTo, jobStatus: "completed" });
+    expect(read).not.toHaveBeenCalled();
+  });
   it("dispatches offered audio tools through the shared result stream", async () => {
     const audioTools = vi.fn(async () => ({ text: '{"status":"accepted","job":{"id":"job-1"}}' }));
     const channel = new FakeChannel([

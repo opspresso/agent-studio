@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AbortMultipartUploadCommand, CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand, UploadPartCommand,
+  CreateMultipartUploadCommand, UploadPartCommand, PutObjectCommand, HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { createSourceObjectStore } from "@/infrastructure/storage/sourceObjectStore";
 
@@ -70,9 +70,20 @@ describe("streaming source object storage", () => {
     expect(mocks.send.mock.calls.some(([command]) => command instanceof AbortMultipartUploadCommand)).toBe(true);
   });
 
-  it("uses the shared bounded reader and deletion owner with the private bucket", async () => {
+  it("uses the shared bounded reader and seals a deleted key with an empty object", async () => {
+    mocks.read.mockResolvedValue({ bytes: new Uint8Array([1]), mimeType: "audio/mpeg" });
     await store.read("file", 15); await store.delete("file");
     expect(mocks.read).toHaveBeenCalledWith("private-source-files", "file", 15);
-    expect(mocks.remove).toHaveBeenCalledWith("private-source-files", "file");
+    const retired = mocks.send.mock.calls.find(([command]) => command instanceof PutObjectCommand)?.[0];
+    expect(retired?.input).toMatchObject({ Bucket: "private-source-files", Key: "file", ContentLength: 0, Metadata: { "source-deleted": "true" } });
+    expect(retired?.input.Body).toHaveLength(0);
+    expect(mocks.remove).not.toHaveBeenCalled();
+  });
+  it("treats a deletion barrier as absent for readers and metadata lookups", async () => {
+    mocks.read.mockResolvedValue({ bytes: new Uint8Array(0), mimeType: "application/octet-stream" });
+    mocks.send.mockImplementation(async (command: unknown) => command instanceof HeadObjectCommand
+      ? { ContentLength: 0, Metadata: { "source-deleted": "true" } } : {});
+    expect(await store.stat("retired")).toBeNull();
+    await expect(store.read("retired", 10)).rejects.toMatchObject({ name: "ObjectNotFoundError" });
   });
 });

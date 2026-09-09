@@ -4,6 +4,8 @@ import { createFakeStore } from "./fakeStore";
 import { keys } from "@/infrastructure/db/keys";
 import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import type { SourceObjectStore } from "@/domain/artifact/sourceObjectStore";
+import { createAudioCleanup } from "@/application/audio/cleanup";
+import type { AudioJob } from "@/domain/audio/job";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 import * as store from "@/infrastructure/db/store";
@@ -40,6 +42,53 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("does not restore a retired pending upload's retention during recovery", async () => {
+    const finish = vi.spyOn(files, "finish").mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(useCases().import(input, openBody)).rejects.toThrow();
+    const pending = (await files.get("audio", input.id))!;
+    await files.retire(pending, clock.toISOString());
+    expect(await useCases().sweep()).toEqual({ deleted: 1, failed: 0 });
+    expect(contents.size).toBe(0);
+    finish.mockRestore();
+  });
+  it("cleans checkpoints and transferred bodies while retaining the original and undelivered final results", async () => {
+    fake.seed([{ ...keys.audioJob("audio", "job"), job: { status: "running", stage: "transcribing", userEmail: input.userEmail } }]);
+    const api = useCases();
+    const original = await api.import(input, openBody);
+    for (const kind of ["checkpoint", "transcript", "draft"] as const) {
+      await api.import({ ...input, id: kind, derived: { jobId: "job", kind } }, openBody);
+    }
+    fake.seed([{ ...keys.audioJob("audio", "job"), job: { status: "running", stage: "cleaning", userEmail: input.userEmail } }]);
+    const job = { id: "job", projectName: "audio", userEmail: input.userEmail, fileId: input.id } as AudioJob;
+    const context = { signal: new AbortController().signal, record: async () => {} };
+    const clean = createAudioCleanup({ files, objects, now: () => clock });
+    await clean(job, context);
+    expect((await files.get("audio", "checkpoint"))?.status).toBe("deleted");
+    expect((await files.get("audio", "transcript"))?.status).toBe("ready");
+    const moved = { ...job, movedTo: { serverName: "memory", transcriptId: "doc-1", resultId: "doc-2" } };
+    await clean(moved, context); await clean(moved, context);
+    expect(contents.size).toBe(1);
+    expect(await files.get("audio", input.id)).toEqual(original);
+    expect(objects.delete).toHaveBeenCalledTimes(3);
+    await expect(api.import({ ...input, id: "late", derived: { jobId: "job", kind: "checkpoint" } }, openBody)).rejects.toThrow();
+    expect(await files.get("audio", "late")).toBeNull();
+  });
+
+  it("keeps deletion inventory when cleanup is interrupted and resumes without touching another job", async () => {
+    for (const id of ["job", "other-job"]) fake.seed([{ ...keys.audioJob("audio", id), job: { status: "running", stage: "transcribing", userEmail: input.userEmail } }]);
+    await useCases().import({ ...input, derived: { jobId: "job", kind: "checkpoint" } }, openBody);
+    await useCases().import({ ...input, id: "other", derived: { jobId: "other-job", kind: "checkpoint" } }, openBody);
+    const clean = createAudioCleanup({ files, objects, now: () => clock });
+    const job = { id: "job", projectName: "audio", userEmail: input.userEmail } as AudioJob;
+    const context = { signal: new AbortController().signal, record: async () => {} };
+    vi.mocked(objects.delete).mockRejectedValueOnce(new Error("storage offline"));
+    await expect(clean(job, context)).rejects.toThrow("storage offline");
+    expect((await files.get("audio", input.id))?.status).toBe("deleting");
+    await clean(job, context);
+    expect((await files.get("audio", input.id))?.status).toBe("deleted");
+    expect((await files.get("audio", "other"))?.status).toBe("ready");
+  });
+
   it("bounds derived files by their original expiry even when replay requests a later deadline", async () => {
     const retainUntil = "2026-12-01T01:00:00.000Z";
     const file = await useCases().import({ ...input, retainUntil }, openBody);

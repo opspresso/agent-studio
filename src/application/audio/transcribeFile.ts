@@ -84,7 +84,7 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
       try {
         await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
           filename: `segment-${segment.index}.json`, mimeType: "application/json", retention: job.retention,
-          retainUntil: source.file.retireAt }, async () => {
+          retainUntil: source.file.retireAt, derived: { jobId: job.id, kind: "checkpoint" } }, async () => {
           close = await deps.beforeTranscribe(job, segment.end - segment.start);
           context.signal.throwIfAborted();
           const result = await config.transcriber.transcribe({ bytes: segment.bytes, mimeType: segment.mimeType,
@@ -127,7 +127,8 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
     if (bytes.length > MAX_TRANSCRIPT_BYTES) throw new AudioJobStepError("transcript_limit", false);
     const id = `${job.id}-transcript`;
     await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
-      filename: "transcript.json", mimeType: "application/json", retention: job.retention, retainUntil: source.file.retireAt },
+      filename: "transcript.json", mimeType: "application/json", retention: job.retention, retainUntil: source.file.retireAt,
+      derived: { jobId: job.id, kind: "transcript" } },
     async () => (async function* () { yield bytes; })(), context.signal);
     return { transcriptRef: id };
   };

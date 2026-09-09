@@ -23,7 +23,8 @@ function deps(): AudioJobProcessorDeps {
     importFile: vi.fn(async () => ({ fileId: "stored" })),
     transcribe: vi.fn(async () => ({ transcriptRef: "transcript" })),
     postprocess: vi.fn(async () => ({ draftRef: "draft" })),
-    store: vi.fn(async () => ({ ready: true, receipts: { transcript: "document-1" } })),
+    store: vi.fn(async () => ({ ready: true, receipts: { "document:transcript": "document-1", "document:result": "document-2" } })),
+    clean: vi.fn(async () => {}),
   };
 }
 beforeEach(() => {
@@ -33,10 +34,29 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("audio job processor", () => {
+  it("retries only cleanup after durable delivery receipts have been recorded", async () => {
+    await submit({ destination: { serverName: "memory", documents: true, memories: false } });
+    const d = deps();
+    vi.mocked(d.clean).mockRejectedValueOnce(new Error("storage offline"));
+    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "waiting", stage: "cleaning",
+      movedTo: { serverName: "memory", transcriptId: "document-1" } });
+    vi.setSystemTime("2026-09-08T00:01:00.000Z");
+    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", stage: "cleaning" });
+    expect(d.store).toHaveBeenCalledTimes(1);
+    expect(d.transcribe).toHaveBeenCalledTimes(1);
+    expect(d.clean).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not clean files when a delivery reports ready without its required document receipt", async () => {
+    await submit({ destination: { serverName: "memory", documents: true, memories: false } });
+    const d = deps(); vi.mocked(d.store).mockResolvedValue({ ready: true, receipts: {} });
+    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "blocked", errorCode: "missing_delivery_receipt" });
+    expect(d.clean).not.toHaveBeenCalled();
+  });
   it("runs transcription without requiring postprocessing or storage", async () => {
     await submit(); const d = deps();
     expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "transcript" });
-    expect(d.authorize).toHaveBeenCalledTimes(2);
+    expect(d.authorize).toHaveBeenCalledTimes(3);
     expect(d.postprocess).not.toHaveBeenCalled(); expect(d.store).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
