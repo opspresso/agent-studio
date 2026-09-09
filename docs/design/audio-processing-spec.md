@@ -47,6 +47,9 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 진행 중인 작업이 있으면 새 녹음을 시작하지 않는다. pending 작업은 완료로 보고하지 않으며 다음
 실행에서 같은 job ID를 확인한다. 완료된 단계를 다시 실행하거나 만료된 원본을 자동 재다운로드하지 않는다.
 이미 보관된 전사 Artifact로 후처리만 다시 수행할 수 있으며, 명시적인 재처리는 processing_revision을 구분한다.
+`ImportFile`·`TranscribeAudio`·`AudioJob submit`은 같은 processing_revision을 재시도에 재사용한다.
+연결 도구의 source_ref는 가져오기에 사용할 참조이며 다운로드 완료를 뜻하지 않는다. 원본 URL은 의도적으로
+숨기므로 URL 부재를 처리 완료나 파일 만료의 근거로 삼지 않는다. 기존 sourceIdentity와 job 상태로 판단한다.
 기록 Agent가 읽은 내용이 잘렸으면 전체 저장으로 보고하지 않는다. 저장 오류나 충돌을 피하려고
 조직 scope로 바꾸거나 새 멱등 키를 무작정 발급하지 않는다.
 

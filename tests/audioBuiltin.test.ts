@@ -3,9 +3,25 @@ import { runAgent } from "@/application/llm/engine";
 import { contentChunk, FakeChannel, toolCallChunk } from "./fakeChannel";
 import { AUDIO_TOOL_NAMES } from "@/domain/llm/toolNames";
 import { createAudioTool } from "@/application/audio/audioTool";
+import { AUDIO_TOOL_DEFS } from "@/application/audio/toolDefinitions";
 import type { createAudioJobUseCases } from "@/application/audio/audioJobUseCases";
 
 describe("audio builtins", () => {
+  it.each(["ImportFile", "TranscribeAudio"])("offers and forwards an explicit processing revision for %s", async (name) => {
+    const definition = AUDIO_TOOL_DEFS.find(tool => tool.function.name === name);
+    expect(definition?.function.parameters).toMatchObject({ properties: { processing_revision: { type: "string" } } });
+    const submit = vi.fn(async () => ({ status: "accepted" as const, job: { id: "job-1" } }));
+    const tool = createAudioTool({ jobs: { submit } as unknown as ReturnType<typeof createAudioJobUseCases>, files: { read: vi.fn() } },
+      { projectName: "audio", userEmail: "owner@example.test", occurrence: "run-1" });
+    const args = { source_ref: "opaque-source", ...(name === "TranscribeAudio" ? { model: "asr" } : {}),
+      retention: { unit: "months", value: 3, timezone: "Asia/Seoul" } };
+    for (const processing_revision of [undefined, "user-requested-revision"]) {
+      await tool(name, { ...args, processing_revision });
+      expect(submit).toHaveBeenLastCalledWith("audio", "owner@example.test", expect.objectContaining({ processingRevision: processing_revision }),
+        { occurrence: "run-1", actor: undefined });
+    }
+  });
+
   it("reads the selected processed result without substituting the transcript", async () => {
     const get = vi.fn(async () => ({ id: "job-1", status: "completed", transcriptRef: "transcript", draftRef: "draft" }));
     const read = vi.fn(async (_project: string, _id: string) => ({ bytes: new TextEncoder().encode(JSON.stringify({ text: "Summary" })) }));
