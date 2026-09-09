@@ -264,6 +264,13 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
                     }
                   />
                   <Switch
+                    label={t("audio.runAsOwner")}
+                    description={t("audio.runAsOwnerHint")}
+                    checked={Boolean(schedule.executionEmail)}
+                    disabled={busy}
+                    onChange={(e) => { const runAsOwner = e.currentTarget.checked; act(async () => { await updateTrigger(projectName, schedule.triggerId, { runAsOwner }); }); }}
+                  />
+                  <Switch
                     label={t("trigger.allowOverlap")}
                     checked={schedule.allowConcurrent}
                     disabled={busy}

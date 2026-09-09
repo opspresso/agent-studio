@@ -22,6 +22,7 @@ import { listProjectMcpTools } from "../../lib/api";
 import { getMcp } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
 import { McpBindingSettings, type VersionSave } from "./McpBindingSettings";
+import { SourceMappings } from "./SourceMappings";
 import { HeaderRowsEditor } from "@/app/_components/HeaderRows";
 
 /**
@@ -629,6 +630,8 @@ export function McpBindingInput({
             serverName={settingsFor}
             onClose={() => setSettingsFor(null)}
             save={save}
+            sources={<SourceMappings value={values.find((v) => v.name === settingsFor)?.sourceOutputs ?? []}
+              onChange={(sourceOutputs) => onChange(values.map((binding) => binding.name === settingsFor ? { ...binding, sourceOutputs } : binding))} />}
             onConnectionChanged={() => setConnectionEpoch((epoch) => epoch + 1)}
             tools={
               <ToolSelector

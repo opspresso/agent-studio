@@ -1,3 +1,5 @@
+export const MAX_MCP_SOURCE_MAPPINGS = 8;
+
 /** A version-owned projection of one MCP JSON response into a private file reference. */
 export interface McpSourceMapping {
   tool: string;

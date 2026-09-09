@@ -4,7 +4,7 @@ import type { VersionRepository } from "@/domain/project/repository";
 import type { McpBinding, Version } from "@/domain/project/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
 import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
-import { isMcpSourceMapping } from "@/domain/mcp/sourceMapping";
+import { isMcpSourceMapping, MAX_MCP_SOURCE_MAPPINGS } from "@/domain/mcp/sourceMapping";
 
 const ENTITY_TYPE = "VERSION";
 const PUBLISHED = "published";
@@ -50,7 +50,7 @@ function toMcpBindings(raw: unknown): McpBinding[] {
       };
       if (typeof binding.name === "string" && binding.name) {
         if (binding.sourceOutputs !== undefined && (!Array.isArray(binding.sourceOutputs) ||
-          binding.sourceOutputs.length > 8 || !binding.sourceOutputs.every(isMcpSourceMapping) ||
+          binding.sourceOutputs.length > MAX_MCP_SOURCE_MAPPINGS || !binding.sourceOutputs.every(isMcpSourceMapping) ||
           new Set(binding.sourceOutputs.map((item) => item.tool)).size !== binding.sourceOutputs.length)) {
           throw new Error("Stored MCP source mappings are invalid");
         }

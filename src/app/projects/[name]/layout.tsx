@@ -69,6 +69,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     { href: `${base}/versions`, label: t("project.tab.versions"), Icon: IconHistory },
     { href: `${base}/compare`, label: t("project.tab.compare"), Icon: IconGitCompare },
     { href: `${base}/usage`, label: t("project.tab.usage"), Icon: IconChartBar },
+    ...(ownerEmail && viewer?.email === ownerEmail ? [{ href: `${base}/audio`, label: t("audio.title"), Icon: IconSparkles }] : []),
     // Gated like Traces: these hold other people's runtime output, and the
     // delete here is the only way a Slack or trigger run's artifact is removed.
     ...(canManage
@@ -92,7 +93,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     <Stack gap="lg">
       <div className={classes.workspaceHeader}>
         <Group justify="space-between" align="flex-start" gap="lg" wrap="wrap">
-          <Group gap="md" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+          <Group gap="md" wrap="nowrap" style={{ minWidth: 0, flex: "1 1 280px" }}>
             <ActionIcon
               component={Link}
               href="/projects"

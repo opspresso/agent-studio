@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ submit: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), retry: vi.fn(), register: vi.fn() }));
+const mocks = vi.hoisted(() => ({ submit: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), retry: vi.fn(), register: vi.fn(), options: vi.fn() }));
 vi.mock("@/lib/session", () => ({ withMemberAuth: (handler: (user: { email: string }, request: Request, context: unknown) => Promise<Response>) =>
   (request: Request, context: unknown) => handler({ email: "owner@example.test" }, request, context) }));
-vi.mock("@/lib/container", () => ({ getAudioRuntime: () => ({ jobs: mocks, references: { register: mocks.register } }) }));
+vi.mock("@/lib/container", () => ({ getAudioRuntime: () => ({ jobs: mocks, options: mocks.options, references: { register: mocks.register } }) }));
 vi.mock("node:crypto", async (original) => ({ ...await original<typeof import("node:crypto")>(), randomUUID: () => "occurrence-1" }));
 import { POST, GET } from "@/app/api/projects/[name]/audio-jobs/route";
 import { POST as action } from "@/app/api/projects/[name]/audio-jobs/[job]/route";
 import { POST as source } from "@/app/api/projects/[name]/source-references/route";
+import { GET as options } from "@/app/api/projects/[name]/audio-options/route";
 
 const context = { params: Promise.resolve({ name: "audio" }) };
 const input = { source: { kind: "file", fileId: "file-1" }, task: "transcribe", model: "openai/whisper-1",
@@ -18,6 +19,13 @@ function request(body: unknown) { return new Request("https://studio.test/api/pr
 beforeEach(() => { vi.clearAllMocks(); mocks.submit.mockResolvedValue({ status: "accepted", job: { id: "job-1" } }); });
 
 describe("audio job HTTP contracts", () => {
+  it("reads configured options with the authenticated identity", async () => {
+    const data = { models: [{ id: "openai/whisper-1", displayName: "Whisper 1" }], destinations: ["memory"] };
+    mocks.options.mockResolvedValue(data);
+    const response = await options(new Request("https://studio.test/api?email=another@example.test"), context);
+    expect(await response.json()).toEqual(data);
+    expect(mocks.options).toHaveBeenCalledWith("audio", "owner@example.test");
+  });
   it("binds submitted work to the authenticated email and server occurrence", async () => {
     const response = await POST(request(input), context);
     expect(response.status).toBe(202);

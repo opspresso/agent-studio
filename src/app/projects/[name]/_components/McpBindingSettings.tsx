@@ -45,6 +45,7 @@ export function McpBindingSettings({
   save,
   tools,
   headers,
+  sources,
   onConnectionChanged,
 }: {
   projectName: string;
@@ -61,6 +62,7 @@ export function McpBindingSettings({
   tools: React.ReactNode;
   /** Header-override editor for this binding, likewise. */
   headers: React.ReactNode;
+  sources?: React.ReactNode;
 }) {
   const t = useT();
   return (
@@ -80,6 +82,7 @@ export function McpBindingSettings({
         <Section title={t("mcpSettings.overrides")} note={t("mcpSettings.overridesNote")}>
           {headers}
         </Section>
+        {sources && <Stack gap="xs"><Text fw={600}>{t("audio.mappingTitle")}</Text>{sources}</Stack>}
         <Section title={t("mcpSettings.connection")} note={t("mcpSettings.connectionNote")}>
           <McpConnectionCard
             projectName={projectName}

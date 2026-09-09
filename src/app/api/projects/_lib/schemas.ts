@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isMcpSourceMapping } from "@/domain/mcp/sourceMapping";
+import { isMcpSourceMapping, MAX_MCP_SOURCE_MAPPINGS } from "@/domain/mcp/sourceMapping";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
 import { attachedDocumentsSchema, attachedImagesSchema } from "@/app/api/_lib/attachments";
 import {
@@ -171,7 +171,7 @@ export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([
       idPath: z.array(z.string().min(1).max(128)).min(1).max(8),
       namePath: z.array(z.string().min(1).max(128)).min(1).max(8).optional(),
       mimeType: z.string().regex(/^[a-z]+\/[a-z0-9.+-]+$/i),
-    }).strict().refine(isMcpSourceMapping, "Invalid source mapping")).max(8).refine((items) => new Set(items.map((item) => item.tool)).size === items.length, "Duplicate source tool mapping").optional(),
+    }).strict().refine(isMcpSourceMapping, "Invalid source mapping")).max(MAX_MCP_SOURCE_MAPPINGS).refine((items) => new Set(items.map((item) => item.tool)).size === items.length, "Duplicate source tool mapping").optional(),
   }),
 ]);
 

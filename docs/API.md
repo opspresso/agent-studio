@@ -1746,6 +1746,7 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 | POST | `/api/projects/{name}/source-references` | `{url, namespace, itemId, filename, mimeType}` → 201 `{sourceRef, filename, mimeType}`. URL은 암호화한다 |
 | POST | `/api/projects/{name}/source-files?unit=months&value=3&timezone=Asia%2FSeoul` | raw 파일 body, Content-Type과 percent-encoded `X-Filename` → 201 SourceFile metadata |
 | GET | `/api/projects/{name}/source-files/{file}` | 개인 파일 다운로드. 만료되면 거절하며 항상 attachment·no-store로 반환한다 |
+| GET | `/api/projects/{name}/audio-options` | 설정된 전사 모델의 `{id, displayName}` 목록과 published 버전에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
 | POST | `/api/projects/{name}/audio-jobs` | 작업 제출 → 202 accepted/duplicate, 활성 한도 초과는 409 busy |
 | GET | `/api/projects/{name}/audio-jobs?limit=20&after={id}` | `{jobs, nextCursor}`, limit 1–100. 다른 사용자 작업은 limit 전에 제외한다 |
 | GET | `/api/projects/{name}/audio-jobs/{job}` | AudioJobView |

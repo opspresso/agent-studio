@@ -23,7 +23,7 @@ import { AudioJobStepError, processAudioJob } from "@/application/audio/processJ
 import { openModelCall } from "@/application/run/runBracket";
 import { runAudioWorker } from "@/application/audio/worker";
 import { getTranscriptionTarget } from "@/lib/runtime-settings";
-import { calculateTranscriptionCost, getModelConfig } from "@/domain/llm/models";
+import { calculateTranscriptionCost, getModelConfig, getVisibleModels } from "@/domain/llm/models";
 import { utcDay } from "@/shared/date";
 /**
  * Composition root. Wires domain repository ports to their PostgreSQL adapters and
@@ -1325,6 +1325,17 @@ export function getAudioRuntime() {
   }
   const deliver = createAudioDeliveryStep({ files, open: openDestination });
   return { files, references, jobs, authorize,
+    async options(projectName: string, email: string) {
+      await authorize(projectName, email);
+      const hidden = new Set(await getHiddenModels());
+      const candidates = getVisibleModels().filter((model) => model.capabilities.transcription && !hidden.has(model.id));
+      const checked = await Promise.all(candidates.map(async (model) => {
+        try { await getTranscriptionTarget(model.id); return { id: model.id, displayName: model.displayName }; }
+        catch { return null; }
+      }));
+      const version = await versionRepository.get(projectName, "published");
+      return { models: checked.filter((model) => model !== null), destinations: (version?.mcpList ?? []).map((binding) => binding.name) };
+    },
     async process(projectName: string, id: string, signal?: AbortSignal) {
       return processAudioJob({ jobs: audioJobRepository, now: () => new Date(), token: randomUUID,
         authorize: async (job) => { await authorize(job.projectName, job.userEmail); },

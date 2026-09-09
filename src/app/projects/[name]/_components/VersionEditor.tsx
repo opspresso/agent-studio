@@ -491,6 +491,9 @@ export function VersionEditor({
         </Stack>
       )}
 
+      {runsTools && <Checkbox label={t("audio.enableTools")} description={t("audio.enableToolsHint")}
+        checked={value.parameters.audioProcessing ?? false}
+        onChange={(e) => patchParams({ audioProcessing: e.currentTarget.checked ? true : undefined })} />}
       {(runsTools || value.parameters.urlFetch) && (
         <Stack gap="xs">
           <Checkbox

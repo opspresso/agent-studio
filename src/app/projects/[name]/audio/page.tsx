@@ -1,0 +1,154 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams } from "next/navigation";
+import { Alert, Badge, Button, Checkbox, FileInput, Group, NumberInput, Paper, Select, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { useLocale, useT } from "@/app/_i18n/provider";
+import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
+import { useViewer } from "@/app/_lib/useViewer";
+import { listProjects, listVersions, type SanitizedProject, type Version } from "../../lib/api";
+import { formatDateTime } from "@/shared/date";
+import type { AudioOptionsResponse } from "@/app/api/projects/[name]/audio-options/route";
+import type { AudioJobsResponse } from "@/app/api/projects/[name]/audio-jobs/route";
+import type { AudioJobView } from "@/application/audio/audioJobUseCases";
+import type { SourceFile } from "@/domain/artifact/sourceFile";
+
+export default function AudioPage() {
+  const { name } = useParams<{ name: string }>();
+  return <AudioWorkspace key={name} name={name} />;
+}
+
+function AudioWorkspace({ name }: { name: string }) {
+  const t = useT(); const locale = useLocale(); const viewer = useViewer();
+  const base = `/api/projects/${encodeURIComponent(name)}`;
+  const [options, setOptions] = useState<AudioOptionsResponse>({ models: [], destinations: [] });
+  const [optionsLoaded, setOptionsLoaded] = useState(false);
+  const [loadingJobs, setLoadingJobs] = useState(true);
+  const listRequest = useRef<AbortController | null>(null);
+  const [projects, setProjects] = useState<SanitizedProject[]>([]);
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [jobs, setJobs] = useState<AudioJobView[]>([]);
+  const [next, setNext] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploaded, setUploaded] = useState<{ source: File; file: SourceFile } | null>(null);
+  const [model, setModel] = useState<string | null>(null);
+  const [unit, setUnit] = useState<string | null>("months");
+  const [duration, setDuration] = useState<number | string>(3);
+  const [timezone, setTimezone] = useState("Asia/Seoul");
+  const [writer, setWriter] = useState<string | null>(null);
+  const [writerVersion, setWriterVersion] = useState<string | null>(null);
+  const [destination, setDestination] = useState<string | null>(null);
+  const [documents, setDocuments] = useState(true);
+  const [memories, setMemories] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async (after?: string) => {
+    listRequest.current?.abort();
+    const request = new AbortController();
+    listRequest.current = request;
+    setLoadingJobs(true);
+    try {
+      const result = await fetch(`${base}/audio-jobs?limit=20${after ? `&after=${encodeURIComponent(after)}` : ""}`, { signal: request.signal }).then(readJson<AudioJobsResponse>);
+      if (!request.signal.aborted) {
+        setJobs((previous) => after ? [...previous, ...result.jobs] : result.jobs);
+        setNext(result.nextCursor);
+      }
+    } catch (error) { if (!request.signal.aborted) throw error; }
+    finally { if (!request.signal.aborted) setLoadingJobs(false); }
+  }, [base]);
+  useEffect(() => {
+    let active = true;
+    Promise.all([fetch(`${base}/audio-options`).then(readJson<AudioOptionsResponse>), listProjects()])
+      .then(([options, projects]) => { if (active) { setOptions(options); setProjects(projects); setOptionsLoaded(true); } })
+      .catch((error) => { if (active) setError(error.message); });
+    refresh().catch((error) => { if (active) setError(error.message); });
+    return () => { active = false; listRequest.current?.abort(); };
+  }, [base, refresh]);
+  useEffect(() => {
+    let active = true; setVersions([]); setWriterVersion(null);
+    if (writer) listVersions(writer).then((values) => { if (active) setVersions(values); }).catch((error) => { if (active) setError(error.message); });
+    return () => { active = false; };
+  }, [writer]);
+  const activeJobs = !loadingJobs && jobs.length <= 20 && jobs.some((job) => ["queued", "running", "waiting"].includes(job.status));
+  useEffect(() => {
+    if (!activeJobs) return;
+    const timer = setInterval(() => { if (!document.hidden) refresh().catch((error) => setError(error.message)); }, 5000);
+    return () => clearInterval(timer);
+  }, [activeJobs, refresh]);
+
+  const validRetention = typeof duration === "number" && Number.isSafeInteger(duration) && duration > 0 && timezone.trim().length > 0;
+
+  async function submit() {
+    if (!file || !model || !validRetention) return;
+    setBusy(true); setError(null);
+    try {
+      const query = new URLSearchParams({ unit: unit ?? "months", value: String(duration), timezone });
+      const types: Record<string, string> = { mp3: "audio/mpeg", wav: "audio/wav", flac: "audio/flac", ogg: "audio/ogg" };
+      const mimeType = types[file.name.split(".").at(-1)?.toLowerCase() ?? ""] || file.type || "application/octet-stream";
+      const existing = uploaded?.source === file && uploaded.file.retention.unit === unit && uploaded.file.retention.value === duration && uploaded.file.retention.timezone === timezone ? uploaded.file : null;
+      const stored = existing ? existing : await fetch(`${base}/source-files?${query}`, { method: "POST", body: file,
+        headers: { "content-type": mimeType, "x-filename": encodeURIComponent(file.name) } }).then(readJson<SourceFile>);
+      setUploaded({ source: file, file: stored });
+      await fetch(`${base}/audio-jobs`, { method: "POST", headers: jsonHeaders, body: JSON.stringify({
+        task: writer || destination ? "process" : "transcribe", source: { kind: "file", fileId: stored.id }, model,
+        retention: { unit, value: duration, timezone },
+        ...(writer && writerVersion ? { postprocess: { projectName: writer, versionName: writerVersion } } : {}),
+        ...(destination ? { destination: { serverName: destination, documents, memories } } : {}),
+      }) }).then(readJson<unknown>);
+      setFile(null); setUploaded(null); await refresh();
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  }
+  async function act(job: AudioJobView, action: "retry" | "cancel") {
+    setBusy(true); setError(null);
+    try { await fetch(`${base}/audio-jobs/${job.id}`, { method: "POST", headers: jsonHeaders,
+      body: JSON.stringify({ action, revision: job.revision }) }).then(readJson<unknown>); await refresh(); }
+    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  }
+
+  return <Stack gap="lg">
+    <div><Title order={2}>{t("audio.title")}</Title><Text c="dimmed" size="sm">{t("audio.pageHint")}</Text></div>
+    {error && <Alert color="red">{error}</Alert>}
+    {optionsLoaded && !options.models.length && <Alert>{t("audio.noModels")}</Alert>}
+    <Paper withBorder p="lg"><Stack>
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <FileInput label={t("audio.file")} placeholder={t("audio.chooseFile")} description="MP3, WAV, FLAC, Ogg" accept=".mp3,.wav,.flac,.ogg" value={file} onChange={(file) => { setFile(file); setUploaded(null); }} clearable disabled={busy} />
+        <Select label={t("audio.model")} searchable data={options.models.map((model) => ({ value: model.id, label: `${model.displayName} · ${model.id}` }))} value={model} onChange={setModel} disabled={busy} />
+      </SimpleGrid>
+      {uploaded && <Text component="a" size="sm" href={`${base}/source-files/${uploaded.file.id}`}>{t("audio.uploadedFile")}: {uploaded.file.filename}</Text>}
+      <SimpleGrid cols={{ base: 1, sm: 3 }}>
+        <NumberInput label={t("audio.retention")} min={1} allowDecimal={false} value={duration} onChange={setDuration} disabled={busy} />
+        <Select label={t("audio.retentionUnit")} data={[{ value: "days", label: t("audio.days") }, { value: "months", label: t("audio.months") }]} value={unit} onChange={setUnit} allowDeselect={false} disabled={busy} />
+        <TextInput label={t("audio.timezone")} value={timezone} onChange={(e) => setTimezone(e.currentTarget.value)} disabled={busy} />
+      </SimpleGrid>
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <Select label={t("audio.writer")} clearable searchable value={writer} onChange={setWriter} disabled={busy}
+          data={projects.filter((project) => project.ownerEmail === viewer?.email && project.projectType === "agent").map((project) => ({ value: project.name, label: project.displayName }))} />
+        <Select label={t("audio.writerVersion")} value={writerVersion} onChange={setWriterVersion} disabled={busy || !writer}
+          data={versions.map((version) => ({ value: version.versionName, label: version.versionName }))} />
+      </SimpleGrid>
+      <Select label={t("audio.destination")} description={t("audio.destinationHint")} clearable value={destination} onChange={setDestination} data={options.destinations} disabled={busy} />
+      {destination && <Group><Checkbox label={t("audio.saveDocuments")} checked={documents} onChange={(e) => setDocuments(e.currentTarget.checked)} disabled={busy} />
+        <Checkbox label={t("audio.saveMemories")} checked={memories} onChange={(e) => setMemories(e.currentTarget.checked)} disabled={busy || !writerVersion} /></Group>}
+      <Group justify="space-between"><Text size="sm" c="dimmed">{t("audio.personalOnly")}</Text>
+        <Button loading={busy} disabled={!file || !model || !validRetention || (Boolean(writer) && !writerVersion) || (Boolean(destination) && ((!documents && !memories) || (memories && !writerVersion)))} onClick={submit}>{t("audio.submit")}</Button></Group>
+    </Stack></Paper>
+    <Group justify="space-between"><Title order={3}>{t("audio.jobs")}</Title><Button variant="default" loading={loadingJobs} onClick={() => refresh().catch((error) => setError(error.message))}>{t("audio.refresh")}</Button></Group>
+    {!loadingJobs && !jobs.length && <Text c="dimmed">{t("audio.noJobs")}</Text>}
+    {jobs.map((job) => <Paper key={job.id} withBorder p="md"><Stack gap="xs">
+      <Group justify="space-between"><Text ff="monospace" size="sm">{job.id}</Text><Badge>{t(`audio.status.${job.status}`)}</Badge></Group>
+      <Text size="sm">{job.model} · {t(`audio.stage.${job.stage}`)} · {formatDateTime(job.updatedAt, locale)}</Text>
+      {job.errorCode && <Text c="red" size="sm">{job.errorCode}</Text>}
+      <Group gap="xs">
+        {job.fileId && <Button component="a" href={`${base}/source-files/${job.fileId}`} variant="light" size="xs">{t("audio.original")}</Button>}
+        {job.transcriptRef && <Button component="a" href={`${base}/source-files/${job.transcriptRef}`} variant="light" size="xs">{t("audio.transcript")}</Button>}
+        {job.draftRef && <Button component="a" href={`${base}/source-files/${job.draftRef}`} variant="light" size="xs">{t("audio.result")}</Button>}
+        {(job.status === "failed" || job.status === "blocked") && <Button size="xs" variant="default" disabled={busy} onClick={() => act(job, "retry")}>{t("audio.retry")}</Button>}
+        {["queued", "running", "waiting"].includes(job.status) && <Button size="xs" variant="subtle" color="red" disabled={busy} onClick={() => act(job, "cancel")}>{t("audio.cancel")}</Button>}
+      </Group>
+    </Stack></Paper>)}
+    {next && <Button variant="subtle" disabled={loadingJobs} onClick={() => refresh(next).catch((error) => setError(error.message))}>{t("audio.more")}</Button>}
+  </Stack>;
+}
