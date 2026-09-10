@@ -1,3 +1,4 @@
+import { audioToolInputFields } from "./toolDefinitions";
 import { AUDIO_JOB_TOOL_NAME, AUDIO_TOOL_NAMES, IMPORT_FILE_TOOL_NAME, TRANSCRIBE_AUDIO_TOOL_NAME } from "@/domain/llm/toolNames";
 import type { RunActor } from "@/domain/execution/actor";
 import type { McpToolResult } from "@/domain/llm/types";
@@ -15,7 +16,7 @@ interface AudioToolDeps {
 
 function text(args: Record<string, unknown>, field: string): string | undefined {
   const value = args[field];
-  if (value === undefined) return undefined;
+  if (value === undefined || value === null) return undefined;
   if (typeof value !== "string" || !value.trim() || value.length > 256) throw new ValidationError(`Invalid ${field}`);
   return value;
 }
@@ -31,7 +32,7 @@ function retention(value: unknown): FileRetention {
 
 function object(args: Record<string, unknown>, field: string): Record<string, unknown> | undefined {
   const value = args[field];
-  if (value === undefined) return undefined;
+  if (value === undefined || value === null) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError(`Invalid ${field}`);
   return value as Record<string, unknown>;
 }
@@ -43,7 +44,15 @@ export function createAudioTool(deps: AudioToolDeps, context: {
   return async (tool: string, args: Record<string, unknown>): Promise<McpToolResult> => {
     try {
       if (!AUDIO_TOOL_NAMES.includes(tool) || "url" in args || "userEmail" in args) throw new ValidationError("Invalid audio tool arguments");
+      if (tool === AUDIO_JOB_TOOL_NAME) {
+        if (Object.keys(args).some((key) => key !== "request")) throw new ValidationError("AudioJob accepts only request; select one operation shape");
+        args = object(args, "request") ?? {};
+      }
       const operation = tool === AUDIO_JOB_TOOL_NAME ? text(args, "operation") : "submit";
+      const allowed = audioToolInputFields(tool, operation);
+      if (!allowed || Object.keys(args).some((key) => !allowed.includes(key))) {
+        throw new ValidationError("Unexpected audio input; use only fields of the selected request shape");
+      }
       if (operation === "config") return { text: JSON.stringify(await deps.jobs.configuration(context.projectName, context.userEmail)) };
       if (operation === "list") {
         const limit = args.limit ?? 20;
@@ -83,11 +92,8 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         return { text: JSON.stringify({ text: content, nextCursor: next < body.text.length ? String(next) : null,
           jobStatus: job.status, warnings: Array.isArray(body.warnings) ? body.warnings.filter((warning) => typeof warning === "string") : [] }) };
       }
-      if (operation !== "submit") throw new ValidationError("Invalid audio operation");
-      const task = text(args, "task");
-      if (task !== undefined && (tool !== AUDIO_JOB_TOOL_NAME || !["process", "postprocess"].includes(task))) {
-        throw new ValidationError("Invalid audio task");
-      }
+      if (!["submit", "process", "postprocess"].includes(operation ?? "")) throw new ValidationError("Invalid audio operation");
+      const task = operation === "postprocess" ? "postprocess" : "process";
       const post = object(args, "postprocess"); const destination = object(args, "destination");
       const projectName = post && text(post, "projectName"); const versionName = post && text(post, "versionName");
       if (post && (!projectName || !versionName)) throw new ValidationError("A postprocessing Agent version is required");
@@ -95,13 +101,19 @@ export function createAudioTool(deps: AudioToolDeps, context: {
       if (destination && (!serverName || typeof destination.documents !== "boolean" || typeof destination.memories !== "boolean")) {
         throw new ValidationError("Invalid destination");
       }
-      const fileId = text(args, "file_id"); const sourceRef = text(args, "source_ref");
-      const artifactId = text(args, "artifact_id");
+      const selectedSource = object(args, "source");
+      if (selectedSource && (Object.keys(selectedSource).some((key) => !["kind", "id"].includes(key)) ||
+        !["artifact", "file", "source"].includes(String(selectedSource.kind)))) throw new ValidationError("Invalid source kind");
+      const sourceId = selectedSource && text(selectedSource, "id");
+      const fileId = selectedSource?.kind === "file" ? sourceId : undefined;
+      const sourceRef = selectedSource?.kind === "source" ? sourceId : undefined;
+      const artifactId = operation === "postprocess" ? text(args, "artifact_id") : selectedSource?.kind === "artifact" ? sourceId : undefined;
       const configRevision = args.config_revision;
+      if (tool === AUDIO_JOB_TOOL_NAME && operation === "submit" && configRevision === undefined) throw new ValidationError("Read config first and supply its config_revision");
       if (configRevision !== undefined && (typeof configRevision !== "number" || !Number.isSafeInteger(configRevision) || configRevision <= 0)) {
         throw new ValidationError("Invalid config_revision");
       }
-      if ([fileId, sourceRef, artifactId].filter(Boolean).length !== 1) throw new ValidationError("Provide exactly one artifact_id, file_id or source_ref");
+      if ([fileId, sourceRef, artifactId].filter(Boolean).length !== 1) throw new ValidationError("Provide source with kind and a non-empty id; postprocess requires artifact_id");
       const result = await deps.jobs.submit(context.projectName, context.userEmail, {
         source: artifactId ? { kind: "artifact", artifactId } : fileId ? { kind: "file", fileId } : { kind: "source", sourceRef: sourceRef! },
         task: tool === IMPORT_FILE_TOOL_NAME ? "import" : tool === TRANSCRIBE_AUDIO_TOOL_NAME ? "transcribe" :
@@ -113,6 +125,14 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         ...(destination ? { destination: { serverName: serverName!, documents: destination.documents as boolean, memories: destination.memories as boolean } } : {}),
       }, { occurrence: context.occurrence, actor: context.actor,
         ...(context.producedBy ? { producedBy: context.producedBy } : {}) });
+      if (result.status === "busy") {
+        const reasons = {
+          occurrence_limit: "This Agent run has used its new-job allowance, even if its earlier job completed. Do not retry submissions or poll in this run. Report the existing job and remaining work. In a new run, use AudioJob submit with config_revision to process import, transcription and summary as one durable job.",
+          active_limit: "The project has reached its active-job limit. Report the existing job and stop; do not repeatedly poll or submit in this run.",
+          conflict: "The project or job changed during submission. No new job was admitted. Report the conflict instead of repeatedly submitting.",
+        };
+        return { text: `Error: Audio job not admitted (${result.reason}). ${reasons[result.reason]}` };
+      }
       return { text: JSON.stringify(result) };
     } catch (error) {
       return { text: `Error: ${error instanceof AppError ? error.message : "audio operation failed"}.` };

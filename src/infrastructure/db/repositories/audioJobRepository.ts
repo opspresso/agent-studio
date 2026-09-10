@@ -60,7 +60,8 @@ export const audioJobRepository: AudioJobRepository = {
     const previous = await getItem(sourceKey);
     if (previous) {
       const job = await this.get(input.projectName, previous.jobId as string);
-      if (!job) throw new Error("Audio job source claim has no job");
+      // A concurrent explicit deletion can remove the job after its source claim was read.
+      if (!job) return { status: "busy", reason: "conflict" };
       return { status: "duplicate", job };
     }
     const job: AudioJob = {
@@ -83,11 +84,16 @@ export const audioJobRepository: AudioJobRepository = {
       const winner = await getItem(sourceKey);
       if (winner) {
         const existing = await this.get(input.projectName, winner.jobId as string);
-        if (!existing) throw new Error("Audio job source claim has no job");
+        if (!existing) return { status: "busy", reason: "conflict" };
         return { status: "duplicate", job: existing };
       }
     }
-    return { status: "busy" };
+    const [occurrence, slots] = await Promise.all([
+      getItem(keys.audioJobOccurrence(input.projectName, admission.occurrence)),
+      getItem(keys.audioJobSlots(input.projectName)),
+    ]);
+    return { status: "busy", reason: Number(occurrence?.count ?? 0) >= admission.maxPerOccurrence ? "occurrence_limit"
+      : activeIds(slots).length >= admission.maxActive ? "active_limit" : "conflict" };
   },
 
   async get(projectName, id) { return jobOf(await getItem(keys.audioJob(projectName, id))); },
@@ -164,6 +170,22 @@ export const audioJobRepository: AudioJobRepository = {
           return current !== null && current.revision === revision && !isAudioJobTerminal(current.status);
         } },
         release(projectName, id),
+      ]);
+      return true;
+    } catch (error) { if (lostCondition(error)) return false; throw error; }
+  },
+
+  async delete(projectName, id, revision) {
+    const job = await this.get(projectName, id);
+    if (!job || job.revision !== revision || !isAudioJobTerminal(job.status)) return false;
+    try {
+      await transact([
+        { kind: "delete", key: keys.audioJob(projectName, id), condition: (item) => {
+          const current = jobOf(item);
+          return current !== null && current.revision === revision && isAudioJobTerminal(current.status);
+        } },
+        { kind: "delete", key: keys.audioJobSource(projectName, job.sourceKey),
+          condition: (item) => item === null || item.jobId === id },
       ]);
       return true;
     } catch (error) { if (lostCondition(error)) return false; throw error; }

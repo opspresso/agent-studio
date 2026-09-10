@@ -19,6 +19,28 @@ function fixture() {
   return { deps, input, api: createAudioJobUseCases(deps) };
 }
 describe("audio job use cases", () => {
+  it("allows only the owner to delete terminal history and keeps source files intact", async () => {
+    const f = fixture();
+    await f.api.submit("audio", "owner@example.test", f.input, { occurrence: "deletion" });
+    await expect(f.api.delete("audio", "job-1", "other@example.test", 1)).rejects.toThrow("not found");
+    await expect(f.api.delete("audio", "job-1", "owner@example.test", 1)).rejects.toThrow("still active");
+    await f.api.cancel("audio", "job-1", "owner@example.test", 1);
+    const files = vi.spyOn(f.deps.files, "get");
+    expect(await f.api.delete("audio", "job-1", "owner@example.test", 2)).toEqual({ deleted: true });
+    expect(files).not.toHaveBeenCalled();
+    await expect(f.api.get("audio", "job-1", "owner@example.test")).rejects.toThrow("not found");
+    expect((await f.api.submit("audio", "owner@example.test", f.input, { occurrence: "again" })).status).toBe("accepted");
+  });
+  it("persists intermediate progress and exposes it through both status and list", async () => {
+    const f = fixture();
+    await f.api.submit("audio", "owner@example.test", f.input, { occurrence: "progress" });
+    const now = f.deps.now().toISOString();
+    const claimed = await jobs.claim("audio", "job-1", now, "worker", "2026-09-09T00:02:00Z");
+    const postprocessProgress = { phase: "extract" as const, round: 0, completed: 1, total: 4 };
+    await jobs.checkpoint(claimed!, { status: "running", stage: "postprocessing", dueAt: now, postprocessProgress }, now);
+    expect(await f.api.get("audio", "job-1", "owner@example.test")).toMatchObject({ postprocessProgress });
+    expect(await f.api.list("audio", "owner@example.test", 20)).toEqual([expect.objectContaining({ postprocessProgress })]);
+  });
   it("admits summary-only work without an ASR model and refuses external delivery options", async () => {
     const f = fixture();
     const file = { id: "transcript", projectName: "transcriber", userEmail: "owner@example.test", status: "ready", mimeType: "application/json",
@@ -28,6 +50,9 @@ describe("audio job use cases", () => {
       postprocess: { projectName: "writer", versionName: "1" } };
     expect((await f.api.submit("audio", file.userEmail, input, { occurrence: "summary" })).status).toBe("accepted");
     expect(f.deps.validateModel).not.toHaveBeenCalled();
+    await expect(f.api.submit("audio", file.userEmail, {
+      ...f.input, source: { kind: "artifact", artifactId: "transcript" }, task: "transcribe",
+    }, { occurrence: "wrong-audio" })).rejects.toThrow("already a transcript");
     await expect(f.api.submit("audio", file.userEmail, { ...input, destination: { serverName: "memory", documents: true, memories: false } }, { occurrence: "unexpected-write" })).rejects.toThrow("without ASR or delivery");
     file.derived = undefined;
     await expect(f.api.submit("audio", file.userEmail, input, { occurrence: "not-transcript" })).rejects.toThrow("transcription Artifact");

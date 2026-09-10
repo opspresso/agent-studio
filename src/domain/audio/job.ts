@@ -53,6 +53,8 @@ export interface AudioJob extends AudioJobInput {
   fileId?: string;
   fileInfo?: { filename: string; byteSize?: number; expiresAt: string };
   transcriptionProgress?: { processedSeconds: number; totalSeconds: number; completedSegments: number };
+  /** Counts refer to the current extraction/reduction round, not the whole job. */
+  postprocessProgress?: { phase: "extract" | "reduce" | "saving"; round: number; completed: number; total: number };
   movedTo?: { serverName: string; transcriptId: string; resultId?: string };
   transcriptRef?: string;
   draftRef?: string;
@@ -70,12 +72,12 @@ export function isAudioJobTerminal(status: AudioJobStatus): boolean {
 }
 
 export type AudioJobCheckpoint = Pick<AudioJob, "status" | "stage" | "dueAt"> &
-  Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "summaryRef" | "dialogueRef" | "receipts" | "errorCode" | "failures">>;
+  Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "postprocessProgress" | "movedTo" | "transcriptRef" | "draftRef" | "summaryRef" | "dialogueRef" | "receipts" | "errorCode" | "failures">>;
 
 export interface AudioJobRepository {
   submit(input: AudioJobInput, admission: {
     id: string; now: string; occurrence: string; maxActive: number; maxPerOccurrence: number;
-  }): Promise<{ status: "accepted" | "duplicate"; job: AudioJob } | { status: "busy" }>;
+  }): Promise<{ status: "accepted" | "duplicate"; job: AudioJob } | { status: "busy"; reason: "active_limit" | "occurrence_limit" | "conflict" }>;
   get(projectName: string, id: string): Promise<AudioJob | null>;
   list(projectName: string, limit: number, after?: string, userEmail?: string): Promise<AudioJob[]>;
   due(now: string, limit: number): Promise<AudioJob[]>;
@@ -84,5 +86,7 @@ export interface AudioJobRepository {
   checkpoint(job: AudioJob, patch: AudioJobCheckpoint, now: string): Promise<AudioJob | null>;
   /** Administrative cancellation also fences a worker already holding the job. */
   cancel(projectName: string, id: string, revision: number, now: string): Promise<boolean>;
+  /** Remove terminal job history and release its source identity for a new submission. Files retain their own lifetime. */
+  delete(projectName: string, id: string, revision: number): Promise<boolean>;
   retry(projectName: string, id: string, revision: number, now: string, maxActive: number): Promise<AudioJob | null>;
 }

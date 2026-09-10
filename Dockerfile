@@ -23,6 +23,9 @@ RUN apk add --no-cache ffmpeg && addgroup -S app && adduser -S app -G app
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public
+# The standalone app and the durable audio worker share one image. The worker
+# is started by the IDC Compose service with `node build/audio-worker.cjs`.
+COPY --from=build --chown=app:app /app/build ./build
 USER app
 
 EXPOSE 3000

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ submit: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), retry: vi.fn(), register: vi.fn(), options: vi.fn(), getConfig: vi.fn(), saveConfig: vi.fn() }));
+const mocks = vi.hoisted(() => ({ submit: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), delete: vi.fn(), retry: vi.fn(), register: vi.fn(), options: vi.fn(), getConfig: vi.fn(), saveConfig: vi.fn() }));
 vi.mock("@/lib/session", () => ({ withMemberAuth: (handler: (user: { email: string }, request: Request, context: unknown) => Promise<Response>) =>
   (request: Request, context: unknown) => handler({ email: "owner@example.test" }, request, context) }));
 vi.mock("@/lib/container", () => ({ getAudioRuntime: () => ({ jobs: mocks, options: mocks.options, references: { register: mocks.register }, configuration: { get: mocks.getConfig, save: mocks.saveConfig } }) }));
@@ -20,6 +20,17 @@ function request(body: unknown) { return new Request("https://studio.test/api/pr
 beforeEach(() => { vi.clearAllMocks(); mocks.submit.mockResolvedValue({ status: "accepted", job: { id: "job-1" } }); });
 
 describe("audio job HTTP contracts", () => {
+  it("validates deletion and binds the owner and revision", async () => {
+    const ctx = { params: Promise.resolve({ name: "audio", job: "job-1" }) };
+    expect((await action(request({ action: "delete" }), ctx)).status).toBe(400);
+    expect((await action(request({ action: "delete", revision: 3, userEmail: "other@example.test" }), ctx)).status).toBe(400);
+    expect(mocks.delete).not.toHaveBeenCalled();
+    mocks.delete.mockResolvedValue({ deleted: true });
+    const response = await action(request({ action: "delete", revision: 3 }), ctx);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deleted: true });
+    expect(mocks.delete).toHaveBeenCalledWith("audio", "job-1", "owner@example.test", 3);
+  });
   it("validates configuration writes and binds the save to the session owner", async () => {
     const body = { revision: 0, enabled: true, model: input.model, retention: input.retention, maxActive: 1, maxPerOccurrence: 1 };
     mocks.saveConfig.mockResolvedValue({ ...body, revision: 1 });

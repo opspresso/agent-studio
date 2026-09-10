@@ -1753,10 +1753,10 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 | GET | `/api/projects/{name}/audio-options` | 설정된 전사 모델의 `{id, displayName}` 목록과 published 버전에 바인딩된 MCP 이름 목록. 실제 저장 기능은 제출 시 검증한다 |
 | GET | `/api/projects/{name}/audio-config` | 현재 프로젝트 작업 설정 또는 null. 소유자만 읽는다 |
 | PUT | `/api/projects/{name}/audio-config` | `{revision, enabled, model, language?, retention, postprocess?, destination?, maxActive, maxPerOccurrence}` → 다음 revision. 최초 revision은 0, 충돌은 409 |
-| POST | `/api/projects/{name}/audio-jobs` | 작업 제출 → 202 accepted/duplicate, 활성 한도 초과는 409 busy |
+| POST | `/api/projects/{name}/audio-jobs` | 작업 제출 → 202 accepted/duplicate, 접수 한도 초과·경합은 409 busy |
 | GET | `/api/projects/{name}/audio-jobs?limit=20&after={id}` | `{jobs, nextCursor}`, limit 1–100. 다른 사용자 작업은 limit 전에 제외한다 |
 | GET | `/api/projects/{name}/audio-jobs/{job}` | AudioJobView |
-| POST | `/api/projects/{name}/audio-jobs/{job}` | `{action: "cancel" | "retry", revision}`. 변경된 revision 또는 허용하지 않는 상태는 409 |
+| POST | `/api/projects/{name}/audio-jobs/{job}` | `{action: "cancel" | "retry" | "delete", revision}`. 변경된 revision 또는 허용하지 않는 상태는 409 |
 
 작업의 `source`는 `{kind:"artifact", artifactId}`, `{kind:"file", fileId}` 또는
 `{kind:"source", sourceRef}`다. artifact는 같은 사용자가 소유한 다른 Agent의 비공개 결과도 재사용하며,
@@ -1787,22 +1787,44 @@ revision 충돌은 409다. enabled=false는 신규 제출·수동 재시도를 �
 직접 기록도 사용할 수 있으며 무인 수집 기본 설정에는 외부 저장 대상을 지정하지 않는다.
 
 AudioJobView는 id·task·sourceIdentity·status·stage·model·createdAt·updatedAt·dueAt·attempt·failures·
-revision과 선택적인 configRevision·fileId·fileInfo·transcriptionProgress·transcriptRef·draftRef·
+revision과 선택적인 configRevision·fileId·fileInfo·transcriptionProgress·postprocessProgress·transcriptRef·draftRef·
 movedTo·receipts·errorCode를 반환한다. `artifacts`는 source·transcript·processed·structured·dialogue의
 Artifact ID를 제공한다. `transcriptProjectName`은 전사 파일을 읽을 프로젝트다.
 fileInfo는 filename·byteSize·expiresAt, transcriptionProgress는 processedSeconds·totalSeconds·completedSegments다.
+postprocessProgress는 phase(`extract`·`reduce`·`saving`)·round·completed·total이다.
+건수는 현재 추출·통합 회차 또는 결과 파일 저장 단계 기준이며 전체 작업의 퍼센트가 아니다.
+전사는 첫 구간 요청 전에 전체 길이를 기록하고, 후처리는 각 구간 검증·저장 뒤 완료 건수를 기록한다.
 본문·원본 URL·암호문·내부 중복 방지 키는 목록에 넣지 않는다.
+
+접수 거절은 `{status: "busy", reason}`이며 reason은 `active_limit`(동시 작업 한도),
+`occurrence_limit`(현재 Agent 실행의 신규 접수 한도), `conflict`(상태 경합)다.
+발생당 한도는 앞 작업이 완료돼도 복원되지 않는다. Agent 도구는 이 거절을 `Error:`로 반환하고,
+같은 실행에서 반복 조회·재제출하지 않도록 원인과 다음 행동을 안내한다.
+다운로드·전사·요약 요청은 `AudioJob {request:{operation:"submit",...}}`과 config_revision으로 한 작업에 등록한다.
+`ImportFile`은 가져오기만, `TranscribeAudio`는 가져오기·전사까지만 수행하며 후처리를 이어가지 않는다.
+전사 Artifact를 transcribe/process의 오디오 입력으로 접수하면 400이다. 기존 전사문 요약은
+postprocess 작업으로 요청하며 이 입력 오류는 접수 한도를 소비하지 않는다.
 
 제출 응답의 accepted/duplicate/busy와 job.status는 다르다. job.status가 completed라면 마지막
 stage가 importing이나 cleaning이어도 끝난 작업이다. movedTo는 외부 문서 복사 ID이며 Artifact 삭제를
 뜻하지 않는다. cleaning은 checkpoint만 정리하고 원본·최종 결과는 보존 만료까지 유지한다.
 원본 파일은 설정된 기간 후 삭제하지만 작업 이력·중복 방지 기록은 남긴다.
 
+삭제는 completed/failed/blocked/cancelled에 적용하며 `{deleted: true}`를 반환한다. 작업 이력과 해당
+중복 방지 키를 한 transaction으로 삭제하므로 같은 입력을 새 발생에서 다시 제출할 수 있다.
+원본·파생 Artifact와 외부 저장 결과는 삭제하지 않으며 기존 만료 정책을 유지한다. 실행 중인 작업은
+먼저 취소한다. 삭제 자체가 새 가져오기나 전사를 시작하지 않으며 발생당 접수 한도를 초기화하지 않는다.
 취소는 queued/running/waiting에, 수동 재시도는 failed/blocked에 적용한다. 자동 재시도는 최초 시도
 포함 최대 5회이며 수동 재시도는 새 24시간 실행 구간을 시작한다. 생성 시각·완료 단계·파일 보존 만료는
 유지한다. 202나 제출 성공만으로 처리 완료를 보고하지 않는다.
 
 Agent 버전의 `parameters.audioProcessing=true`는 ImportFile·TranscribeAudio·AudioJob을 제공한다.
+AudioJob 도구 인수는 `{request:{operation,...}}`이며 operation별 입력은 분리된다.
+config는 operation만, list는 cursor·limit, status는 job_id, read는 job_id·cursor·limit·result_kind를 받는다.
+submit은 source `{kind:"artifact"|"file"|"source",id}`·config_revision·processing_revision만 받는다.
+postprocess는 artifact_id·postprocess·retention·processing_revision을 받고, process는 source와 명시적 처리 옵션을 받는다.
+선택값은 null로 지정하며 선택하지 않은 작업의 필드나 빈 문자열을 넣지 않는다.
+ImportFile·TranscribeAudio도 source `{kind,id}`를 사용한다. HTTP 작업 API의 source·task 계약은 별도다.
 각 도구는 현재 사용자·프로젝트·발생 ID에 바인딩된다. source 인수는 artifact_id·file_id·source_ref 중
 하나이고 원본 URL·임의 email은 받지 않는다. 세 제출 도구 모두 processing_revision을 지원한다.
 AudioJob read는 최대 20,000자씩 전사문을 반환하고 nextCursor로 이어 읽는다.

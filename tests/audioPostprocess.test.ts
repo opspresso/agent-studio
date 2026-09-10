@@ -27,11 +27,42 @@ function fixture(text = "Fact one.") {
     run: vi.fn(async (_job, _text, mode) => JSON.stringify({ text: "Summary", warnings: [], memories: mode === "extract"
       ? [{ kind: "fact", title: "Fact", content: "Fact one.", evidence: ["Fact one."] }] : [] })),
   };
-  const context = { signal: new AbortController().signal, record: async () => {} };
+  const context = { signal: new AbortController().signal, record: vi.fn<import("@/application/audio/processJob").AudioJobStepContext["record"]>(async () => {}) };
   return { job, saved, deps, context, run: createAudioPostprocessStep(deps) };
 }
 
 describe("durable Agent postprocessing", () => {
+  it.each(["", "   "])("rejects an empty summary before storing any checkpoint or result", async (text) => {
+    const f = fixture();
+    vi.mocked(f.deps.run).mockResolvedValue(JSON.stringify({ text, memories: [], warnings: ["No memories found"] }));
+    await expect(f.run(f.job, f.context)).rejects.toThrow("postprocess_output_invalid");
+    expect([...f.saved.keys()]).toEqual(["transcript"]);
+    expect(f.context.record).toHaveBeenCalledExactlyOnceWith({ postprocessProgress: { phase: "extract", round: 0, completed: 0, total: 1 } });
+  });
+  it("reports extraction, reduction and file progress, including cached replay", async () => {
+    const f = fixture("Fact one. ".repeat(3000));
+    await f.run(f.job, f.context);
+    expect(f.context.record.mock.calls.map(([value]) => value.postprocessProgress)).toEqual([
+      { phase: "extract", round: 0, completed: 0, total: 2 },
+      { phase: "extract", round: 0, completed: 1, total: 2 },
+      { phase: "extract", round: 0, completed: 2, total: 2 },
+      { phase: "reduce", round: 1, completed: 0, total: 1 },
+      { phase: "reduce", round: 1, completed: 1, total: 1 },
+      { phase: "saving", round: 0, completed: 0, total: 3 },
+      { phase: "saving", round: 0, completed: 1, total: 3 },
+      { phase: "saving", round: 0, completed: 2, total: 3 },
+      { phase: "saving", round: 0, completed: 3, total: 3 },
+    ]);
+    f.context.record.mockClear();
+    await f.run({ ...f.job, postprocessProgress: { phase: "saving", round: 0, completed: 2, total: 3 } }, f.context);
+    expect(f.deps.run).toHaveBeenCalledTimes(3);
+    expect(f.context.record.mock.calls.map(([value]) => value.postprocessProgress?.completed)).toEqual([2, 3]);
+  });
+  it("does not count failed model output as completed", async () => {
+    const f = fixture("Different source");
+    await expect(f.run(f.job, f.context)).rejects.toThrow("postprocess_output_invalid");
+    expect(f.context.record).toHaveBeenCalledExactlyOnceWith({ postprocessProgress: { phase: "extract", round: 0, completed: 0, total: 1 } });
+  });
   it("reads a separate Agent's transcript and stores a readable Markdown summary with provenance", async () => {
     const f = fixture(); f.job.task = "postprocess"; f.job.source = { kind: "file", projectName: "transcriber", fileId: "transcript" };
     const read = vi.spyOn(f.deps.files, "read");

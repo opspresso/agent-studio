@@ -38,7 +38,7 @@ export interface AudioJobUseCaseDeps {
 
 /** Public view: source credentials, ownership data and internal receipt paths stay server-side. */
 export type AudioJobView = Pick<AudioJob, "id" | "task" | "sourceIdentity" | "status" | "stage" | "model" | "createdAt" | "updatedAt" |
-  "dueAt" | "attempt" | "failures" | "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision" | "configRevision"> & {
+  "dueAt" | "attempt" | "failures" | "fileId" | "fileInfo" | "transcriptionProgress" | "postprocessProgress" | "movedTo" | "transcriptRef" | "draftRef" | "receipts" | "errorCode" | "revision" | "configRevision"> & {
     artifacts: { source?: string; transcript?: string; processed?: string; structured?: string; dialogue?: string };
     transcriptProjectName: string;
   };
@@ -50,7 +50,7 @@ function view(job: AudioJob): AudioJobView {
     artifacts: { source: job.fileId, transcript: job.transcriptRef, processed: job.summaryRef ?? job.draftRef, structured: job.draftRef, dialogue: job.dialogueRef },
     updatedAt: job.updatedAt, dueAt: job.dueAt, attempt: job.attempt, failures: job.failures,
     fileId: job.fileId, transcriptRef: job.transcriptRef, draftRef: job.draftRef,
-    fileInfo: job.fileInfo, transcriptionProgress: job.transcriptionProgress, movedTo: job.movedTo,
+    fileInfo: job.fileInfo, transcriptionProgress: job.transcriptionProgress, postprocessProgress: job.postprocessProgress, movedTo: job.movedTo,
     receipts: job.receipts, errorCode: job.errorCode, revision: job.revision, configRevision: job.configRevision };
 }
 
@@ -113,6 +113,9 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
         const file = await deps.files.get(sourceProject, input.source.fileId);
         if (!file || file.userEmail !== userEmail) throw new NotFoundError("Source file not found");
         if (file.status !== "ready" || file.retireAt <= now) throw new ConflictError("Source file is unavailable or expired");
+        if ((task === "transcribe" || task === "process") && file.derived?.kind === "transcript") {
+          throw new ValidationError("This Artifact is already a transcript, not audio. To summarize it, use an AudioJob postprocess request with artifact_id, postprocess and retention; omit config_revision, model, language and destination.");
+        }
         if (task === "postprocess" && (file.mimeType !== "application/json" || file.derived?.kind !== "transcript")) {
           throw new ValidationError("Postprocessing input must be a transcription Artifact");
         }
@@ -143,6 +146,11 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
       const job = await deps.jobs.get(project, id);
       if (!job) throw new NotFoundError("Audio job not found");
       return view(job);
+    },
+    async delete(project: string, id: string, email: string, revision: number) {
+      await owned(project, id, email);
+      if (!await deps.jobs.delete(project, id, revision)) throw new ConflictError("Audio job changed or is still active; cancel it before deleting");
+      return { deleted: true };
     },
     async retry(project: string, id: string, email: string, revision: number) {
       await owned(project, id, email);

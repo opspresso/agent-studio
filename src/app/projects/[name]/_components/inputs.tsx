@@ -630,7 +630,7 @@ export function McpBindingInput({
             serverName={settingsFor}
             onClose={() => setSettingsFor(null)}
             save={save}
-            sources={<SourceMappings value={values.find((v) => v.name === settingsFor)?.sourceOutputs ?? []}
+            sources={<SourceMappings value={values.find((v) => v.name === settingsFor)?.sourceOutputs}
               onChange={(sourceOutputs) => onChange(values.map((binding) => binding.name === settingsFor ? { ...binding, sourceOutputs } : binding))} />}
             onConnectionChanged={() => setConnectionEpoch((epoch) => epoch + 1)}
             tools={

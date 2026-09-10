@@ -44,7 +44,7 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 | 후처리 실행 | 같은 Agent의 고정 버전을 `backgroundTask`로 실행한다. Skill 읽기만 제공하므로 새 작업 제출·MCP 쓰기·하위 Agent 호출은 수행하지 않는다 |
 | 요청한 기록 | 같은 운영 Agent가 `File read` 후 연결된 MCP의 document_ingest 또는 remember를 호출한다. 개인 scope와 동일한 idempotencyKey를 사용한다 |
 
-일부 단계만 필요한 요청은 `ImportFile`, `TranscribeAudio`, `AudioJob submit`의 `task: postprocess`를
+일부 단계만 필요한 요청은 `ImportFile`, `TranscribeAudio`, `AudioJob postprocess`를
 직접 사용한다. 복잡한 별도 업무에 위임을 사용할 수 있지만 파일 처리 단계마다 Agent를 만들지는 않는다.
 절차와 기록 규칙은 plugin skill, 모델·보존 기간·후처리 버전은 오디오 설정, 수집 범위·탐색 한도는
 schedule 메시지에 둔다. 시스템 프롬프트에는 skill 선택과 사용자 요청 범위만 짧게 둔다.
@@ -156,6 +156,11 @@ Slack 조회·이미지·파일 생성 능력은 실행 경계에서 차단하�
 참조 검사와 버전 삭제 사이에 설정이 추가되는 경쟁도 차단한다.
 없어진 버전은 자동 대체하지 않고 대상 project/version을 포함한 오류로 알린다.
 기간이나 cron에 고정값을 넣지 않는다. 임의 코드·템플릿으로 서버 실행 로직을 주입하지 않는다.
+AudioJob의 LLM 인수는 request 안의 operation별 union으로 분리한다. configured submit에는 source·
+config_revision·processing_revision만 있고, 조회나 후처리 옵션을 채워 넣지 않는다. 선택값은 null이다.
+ImportFile·TranscribeAudio는 source `{kind,id}`로 정확히 하나의 입력을 받는다. 절차와 호출 예시는
+plugin의 audio-processing 스킬이 소유하며 사용자 요청에는 대상과 결과만 남긴다.
+
 GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `AudioJob config`를 읽고
 `submit`에 `config_revision`을 지정한다. 참조와 요청별 설정을 섞지 않는다. 설정이 없으면 기존
 요청별 설정과 활성·발생당 1건 제한을 적용한다. 설정 변경은 제출된 작업 snapshot을 바꾸지 않는다.
@@ -165,7 +170,7 @@ GET/PUT `audio-config`로 읽고 revision 조건부 저장한다. Agent는 `Audi
 | `ImportFile` | 접근 가능한 `artifact_id`, `file_id`, `source_ref` 중 하나로 job ID 반환. 완료 후 status의 `artifacts.source`로 원본 Artifact 확인 |
 | `TranscribeAudio` | 원본 Artifact ID·모델 선택으로 비동기 전사를 제출하고 job ID 반환. `artifacts.transcript`가 결과 Artifact ID |
 | `AudioJob` `submit` | source ref 또는 file ID·설정 참조 → accepted/busy/duplicate/blocked와 job ID |
-| `AudioJob` `submit`, `task: postprocess` | 기존 전사 Artifact·후처리 Agent·retention으로 요약만 실행. model·language·destination·config_revision은 받지 않는다 |
+| `AudioJob` `postprocess` | 기존 전사 Artifact·후처리 Agent·retention으로 요약만 실행. model·language·destination·config_revision은 받지 않는다 |
 | `AudioJob` `config` | 본인 프로젝트 작업 설정과 revision 또는 null |
 | `AudioJob` `status` | job ID → 단계·처리 범위·오류·retry 시각·결과 참조 |
 | `AudioJob` `list`의 작업 구분 | `task`와 비밀이 아닌 `sourceIdentity`로 완료된 다운로드·전사·후처리를 연결하고 이미 처리한 입력을 구분한다 |
@@ -189,6 +194,13 @@ Markdown, `artifacts.structured`는 원문 근거와 경고가 포함된 JSON Ar
 메인 Agent의 프로젝트에 보관한다. 하위 Agent가 조회한 경우에도 작업과 참조의 보관 범위는
 같으며, 재조회 recipe는 하위 Agent의 프로젝트·version·OAuth 연결을 별도로 고정한다.
 재조회 전후에 해당 프로젝트의 소유 권한과 연결 세대를 확인한다.
+
+plugin.json의 `extensions.org.opspresso.agent-studio.mcpSourceOutputs`는 서버별 기본 파일 응답 매핑이다.
+동기화는 검증된 매핑을 MCP 레지스트리에 저장한다. 버전 sourceOutputs가 생략되면 기본값을 사용하고,
+명시적 배열은 기본값을 덮어쓰며 빈 배열은 비활성화다. 기본 namespace는 프로젝트와 연결 fingerprint에
+묶어 계정 간 입력을 구분한다. 매핑 변경은 기존 source refresh fingerprint를 무효화한다.
+Plaud plugin은 get_file의 presigned_url·id·name·file_id 재조회 계약을 선언하므로 수동 매핑이 필요하지 않다.
+스킬·MCP 설명은 사용 절차를 설명하며 URL 변환은 이 기계 판독 가능한 선언이 담당한다.
 
 참조는 프로젝트·연결·외부 item ID에 연결한다. 직접 업로드는 비공개 file ID를 반환한다. JSON 안의 URL은 등록된 binding의 필드 mapping으로
 정규화하며 worker는 원래 필드명을 알지 않는다. URL·인증정보를 job 입력에 그대로 복제하지 않는다.
@@ -254,8 +266,10 @@ lease generation·file ref·checksum·expiry·segment manifest·output manifest�
 
 - project slot과 `(project, source identity, item ID, 처리 revision)` claim을 transaction으로 획득한다.
   여러 worker·수동·schedule 호출에도 설정된 동시성 상한을 유지한다.
+  접수 거절은 active_limit·occurrence_limit·conflict로 구분한다. Agent 도구는 Error로 전달하고,
+  완료 후에도 복원되지 않는 발생당 한도를 worker 지연으로 오해해 반복 제출하지 않도록 안내한다.
 - 발생당 신규 작업 상한은 서버가 전달한 occurrence ID에 귀속한다. 같은 발생의 Agent가 여러 번
-  submit해도 초과하지 않는다. 완료 claim은 원본 만료 후에도 유지하고 재처리는 명시적 revision이다.
+  submit해도 초과하지 않는다. 완료 claim은 원본 만료 후에도 유지한다. 재처리는 명시적 revision 또는 종료 작업 삭제 후 새 제출로 요청한다.
 - worker 기본 lease는 2분·heartbeat는 30초·poll은 10초다. 모든 checkpoint는 lease generation으로
   조건부 갱신한다. 소유권을 잃은 worker는 abort하며 외부 요청에는 안정적 idempotency key를 사용한다.
 - 일시 오류는 최초 시도 포함 5회, 재시도 간격은 1·5·15·60분이다. 인증·입력 오류는
@@ -278,6 +292,12 @@ warnings를 담는 결과 envelope만 정의한다. 업무별 필드를 engine�
 긴 입력은 구간별 처리 후 통합하며 source/segment 근거를 유지한다. 불완전 전사의 저장 허용 여부와
 검수 조건은 설정한 품질 정책으로 검증한다. source 내용은 실행 권한이나 목적지를 바꾸지 못한다.
 생성 결과와 후보 payload를 먼저 고정·저장하고 원격 저장 retry에서 다시 생성하지 않는다.
+후처리의 text는 비어 있지 않은 원문 언어 Markdown 요약이다. Memory 후보가 없어도 요약은 작성하며
+경고만 반환하지 않는다. 후처리 입력은 요약 작업 지시와 원문 종류(transcript 또는 summary notes)를
+명시하며 런타임 시각으로 녹음 날짜를 추정하지 않는다. 빈 요약은 checkpoint 저장 전에 postprocess_output_invalid로 차단한다.
+Memory 추출이 필요 없는 실행과 통합 회차는 모델에서 Markdown 본문을 직접 생성하고,
+런타임이 빈 memories·warnings 배열과 함께 내부 JSON envelope로 감싼다. Memory 저장을 선택한
+추출 회차만 구조화 출력으로 본문과 근거 후보를 함께 생성한다.
 
 후처리는 기존 run bracket의 예산·trace를 사용한다. ASR도 같은 프로젝트 예산 승인·정산 메커니즘을
 확장하며 정책 소유자는 run bracket이다. 요청별 실제 audio seconds/token과 retry를 집계하고
@@ -350,7 +370,15 @@ cleaning 이후에는 새로운 파생 파일 생성을 거절한다. 명시적�
 남기지 않는다. 이는 공유 버킷의 versioning이 꺼져 있고 `source-files/`에 객체 일괄 만료 규칙이
 없다는 전제다. object 요청은 10분, 삭제·multipart 정리는 30초로 제한하고 worker 취소를 조회에도 전달한다.
 
-범용 작업 UI는 단계·coverage·expiry·receipt·오류·retry·취소를 제공한다.
+소유자는 종료된 작업을 명시적으로 삭제할 수 있다. 작업 행과 그 작업의 source claim을 revision 조건부
+transaction으로 함께 삭제하며, 같은 입력을 다음 발생에서 다시 제출할 수 있다. 활성 작업은 먼저 취소한다.
+원본·파생 파일과 외부 저장 결과는 기존 보존 정책을 유지하고, 발생당 접수 한도는 초기화하지 않는다.
+삭제 후 가져오기·전사를 새로 요청해야 하며 import 전용 작업이 자동으로 transcribe로 바뀌지는 않는다.
+
+범용 작업 UI는 작업 종류·단계·coverage·expiry·receipt·오류·retry·취소와 접수·갱신 시각을 제공한다.
+전사는 전체 오디오 대비 완료 시간과 구간 수를, 후처리는 추출·통합 회차·결과 파일 저장의 완료 건수를
+checkpoint에 기록해 표시한다. 진행 막대는 각 단계 기준이며 전체 작업의 예상 진행률이 아니다.
+재시도에서 검증된 checkpoint를 다시 읽을 때 저장된 진행량을 낮추지 않는다.
 오디오 처리 탭은 오디오 도구를 켠 Agent의 소유자에게만 노출한다. 배포된 버전을 기준으로 하며,
 배포 전에는 최신 저장 버전을 사용한다. 직접 페이지 주소를 열어도 동일한 기능 설정을 확인한다.
 화면에 펼친 모든 페이지의 진행 중인 작업을 5초마다 갱신하며, 완료된 행과 페이지 cursor를 유지한다.

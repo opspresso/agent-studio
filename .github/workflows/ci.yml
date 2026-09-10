@@ -70,6 +70,10 @@ jobs:
         working-directory: ${{ env.DOCUMENT_SMOKE_DIR }}
         run: '"$GITHUB_WORKSPACE/node_modules/.bin/tsx" --tsconfig "$GITHUB_WORKSPACE/tsconfig.json" "$GITHUB_WORKSPACE/scripts/document-worker-check.ts"'
 
+      - name: Durable audio worker smoke test
+        working-directory: ${{ env.DOCUMENT_SMOKE_DIR }}
+        run: node "$GITHUB_WORKSPACE/scripts/audio-worker-check.mjs"
+
       - name: Production server smoke test
         working-directory: ${{ env.DOCUMENT_SMOKE_DIR }}
         env:

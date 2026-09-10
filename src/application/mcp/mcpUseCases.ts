@@ -1,3 +1,4 @@
+import { isMcpSourceMappings } from "@/domain/mcp/sourceMapping";
 import type { McpRepository } from "@/domain/mcp/repository";
 import { skipsUrlGuard, type McpServer } from "@/domain/mcp/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
@@ -21,6 +22,7 @@ import {
 } from "@/domain/security/secretContext";
 
 export interface CreateMcpInput {
+  sourceOutputs?: McpServer["sourceOutputs"];
   name: string;
   url: string;
   description?: string;
@@ -31,6 +33,7 @@ export interface CreateMcpInput {
 }
 
 export interface UpdateMcpInput {
+  sourceOutputs?: McpServer["sourceOutputs"];
   url?: string;
   description?: string;
   content?: string;
@@ -84,6 +87,7 @@ export function createMcpUseCases(
     repo,
     view: (server) => masked(cipher, server),
     async build(input, now) {
+      if (input.sourceOutputs !== undefined && !isMcpSourceMappings(input.sourceOutputs)) throw new ValidationError("Invalid MCP source mappings");
       assertCredentialFreeRegistryUrl(input.url);
       // A new entry is `remote` by definition — nothing has provisioned it — so
       // the only way past the guard here is a suffix this deployment declared.
@@ -95,6 +99,7 @@ export function createMcpUseCases(
         url: input.url,
         description: input.description,
         content: input.content,
+        sourceOutputs: input.sourceOutputs,
         source: input.source,
         headers: cipher.encryptHeaders(input.headers, mcpHeadersContext(input.name)),
         createdAt: now,
@@ -102,6 +107,7 @@ export function createMcpUseCases(
       };
     },
     async apply(existing, patch, now) {
+      if (patch.sourceOutputs !== undefined && !isMcpSourceMappings(patch.sourceOutputs)) throw new ValidationError("Invalid MCP source mappings");
       const patchedUrl =
         patch.url === undefined ? undefined : resolveRegistryUrlPatch(existing.url, patch.url);
       // The address this save moves to, or nothing. Only a change is checked:
@@ -153,6 +159,7 @@ export function createMcpUseCases(
         url: patchedUrl ?? existing.url,
         description: patch.description ?? existing.description,
         content: patch.content ?? existing.content,
+        sourceOutputs: patch.sourceOutputs ?? existing.sourceOutputs,
         source: patch.source ?? existing.source,
         headers: movedAddress
           ? cipher.mergeHeaderUpdate({}, patch.headers ?? {}, mcpHeadersContext(existing.name))

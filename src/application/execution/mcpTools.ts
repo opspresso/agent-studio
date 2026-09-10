@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /** A version's MCP bindings resolved into offered tools, and session cleanup. */
 
 import type { Version } from "@/domain/project/types";
@@ -104,8 +105,13 @@ export async function buildMcpTools(
             "those credentials were not sent. Re-enter them for the current endpoint.";
           log.warn("mcp", credentialWarning);
         }
-        const refreshIdentity = binding.sourceOutputs?.some((mapping) => mapping.refreshArgument)
+        const sourceOutputs = binding.sourceOutputs ?? mcp.sourceOutputs;
+        const defaults = binding.sourceOutputs === undefined && Boolean(sourceOutputs?.length);
+        const refreshIdentity = defaults || sourceOutputs?.some((mapping) => mapping.refreshArgument)
           ? await deps.sourceRefreshIdentity?.({ version, binding, server: mcp }) : undefined;
+        // Default namespaces belong to the authenticated connection, never to a shared plugin account.
+        const mappings = sourceOutputs?.map((mapping) => defaults ? { ...mapping,
+          namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, version.projectName, refreshIdentity])).digest("hex") } : mapping);
         const headers = deps.cipher.mergeOutboundHeaders(
           mcp.headers,
           overrides,
@@ -160,8 +166,8 @@ export async function buildMcpTools(
             headers,
             ...(contextHeaders ? { contextHeaders } : {}),
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
-            ...(binding.sourceOutputs?.length ? { resultTransforms: Object.fromEntries(binding.sourceOutputs.map((mapping) => [mapping.tool,
-              (result: unknown) => mapMcpSource({ result, mapping, serverName: mcp.name, projectName: origin?.ancestry?.[0] ?? version.projectName,
+            ...(mappings?.length ? { resultTransforms: Object.fromEntries(mappings.map((mapping) => [mapping.tool,
+              (result: unknown) => defaults && !refreshIdentity ? Promise.resolve({ text: "Error: default file mapping requires a connection identity." }) : mapMcpSource({ result, mapping, serverName: mcp.name, projectName: origin?.ancestry?.[0] ?? version.projectName,
                 ...(mapping.refreshArgument && refreshIdentity ? { refresh: { projectName: version.projectName, serverName: mcp.name, versionName: version.versionName, mapping, identity: refreshIdentity } } : {}),
                 userEmail: mcpUserEmail(origin?.actor, origin?.userEmail), register: deps.registerMcpSource })])) } : {}),
           },
