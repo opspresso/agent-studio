@@ -98,6 +98,10 @@ pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원
 로컬 `.env.local`을 읽어 worker를 실행하려면 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`를 사용한다.
 `pnpm dev`는 오디오 worker를 자동 시작하지 않는다.
 
+CI는 저장소 밖에 복사한 standalone 디렉터리에서 `scripts/audio-worker-check.mjs`를 실행한다.
+worker 번들 로드, 실패한 DB poll 뒤 재개 대기, SIGTERM 종료를 합성 설정과 로컬 거절 소켓으로
+검사한다. 실제 DB·스토리지·전사 처리는 `test:audio:pipeline`이 검증한다.
+
 `test:audio:pipeline`은 선택적으로 실제 Agent Memory MCP까지 검증한다. 별도 폐기 가능한
 Memory 설치를 `localhost`에 띄우고 문서 worker를 켠다. 합성 사용자(`@example.test`)의 개인 계정·검증된 email과
 테스트 설치의 MCP token을 준비한 뒤 `{ "token": "..." }` 응답을 권한 0600의 임시 파일로 저장한다.
