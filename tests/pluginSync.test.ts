@@ -100,6 +100,7 @@ function fakeMcps(existing: McpServer[] = [], refuse: Record<string, Error> = {}
         url: input.url,
         description: input.description,
         content: input.content,
+        sourceOutputs: input.sourceOutputs,
         source: input.source,
         headers: {},
         createdAt: NOW,
@@ -120,6 +121,7 @@ function fakeMcps(existing: McpServer[] = [], refuse: Record<string, Error> = {}
         url: patch.url ?? current.url,
         description: patch.description ?? current.description,
         content: patch.content ?? current.content,
+        sourceOutputs: patch.sourceOutputs ?? current.sourceOutputs,
         source: patch.source ?? current.source,
         updatedAt: NOW,
       };
@@ -1218,5 +1220,19 @@ describe("syncPluginsFromSnapshot", () => {
     const { deps } = makeDeps({ pluginRows: [row] });
     const result = await syncPluginsFromSnapshot(deps, snapshot([repoPlugin("devops")]), ACTOR);
     expect(result.orphanedPlugins).toEqual([]);
+  });
+});
+
+describe("plugin-owned source mapping defaults", () => {
+  it("creates, updates and removes defaults through the MCP use case", async () => {
+    const f = makeDeps();
+    const mapping = { tool: "read", namespace: "files", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg" };
+    const plugin = repoPlugin("workspace", { mcpJsonRaw: mcpJson({ files: httpServer() }) });
+    plugin.manifestRaw = manifest("workspace", { extensions: { "org.opspresso.agent-studio": { mcpSourceOutputs: { files: [mapping] } } } });
+    await syncPluginsFromSnapshot(f.deps, snapshot([plugin]), "owner@example.test");
+    expect(f.mcps.store.get("files")?.sourceOutputs).toEqual([mapping]);
+    plugin.manifestRaw = manifest("workspace");
+    await syncPluginsFromSnapshot(f.deps, snapshot([plugin]), "owner@example.test");
+    expect(f.mcps.store.get("files")?.sourceOutputs).toEqual([]);
   });
 });

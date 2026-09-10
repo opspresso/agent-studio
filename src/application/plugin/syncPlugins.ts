@@ -402,6 +402,7 @@ export async function syncPluginsFromSnapshot(
       name: string;
       url: string;
       doc: { description?: string; content?: string };
+      sourceOutputs?: McpServer["sourceOutputs"];
     }> = [];
     const servers = parsedServers.get(manifest.name);
     for (const [name, entry] of Object.entries(servers ?? {})) {
@@ -441,7 +442,7 @@ export async function syncPluginsFromSnapshot(
         });
       }
       const doc = plugin.mcpDocs.find((candidate) => candidate.server === name);
-      acceptedServers.push({ name, url: classified.url, doc: doc ? parseMcpDoc(doc.content) : {} });
+      acceptedServers.push({ name, url: classified.url, sourceOutputs: manifest.mcpSourceOutputs?.[name], doc: doc ? parseMcpDoc(doc.content) : {} });
     }
 
     const existingRow = rowsByName.get(manifest.name);
@@ -519,7 +520,7 @@ export async function syncPluginsFromSnapshot(
       }
     }
 
-    for (const { name, url, doc } of acceptedServers) {
+    for (const { name, url, doc, sourceOutputs } of acceptedServers) {
       const current = storedServers.get(name);
       if (!current) {
         if (
@@ -529,6 +530,7 @@ export async function syncPluginsFromSnapshot(
               url,
               description: doc.description,
               content: doc.content,
+              sourceOutputs,
               source,
               // Never from the repository: a secret does not belong in git, so
               // a server that needs one is registered here and credentialed in
@@ -554,7 +556,9 @@ export async function syncPluginsFromSnapshot(
       const ours = current.source === source;
       const description = doc.description ?? (ours && current.description ? "" : undefined);
       const content = doc.content ?? (ours && current.content ? "" : undefined);
+      const effectiveSourceOutputs = sourceOutputs ?? (ours ? [] : undefined);
       const patch: UpdateMcpInput = {
+        ...(effectiveSourceOutputs !== undefined && JSON.stringify(effectiveSourceOutputs) !== JSON.stringify(current.sourceOutputs ?? []) ? { sourceOutputs: effectiveSourceOutputs } : {}),
         ...(urlDiffers && !managed ? { url } : {}),
         ...(description !== undefined && description !== current.description ? { description } : {}),
         ...(content !== undefined && content !== current.content ? { content } : {}),

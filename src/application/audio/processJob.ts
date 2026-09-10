@@ -16,7 +16,7 @@ export class AudioJobStepError extends AppError {
   }
 }
 
-type Progress = Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "movedTo" | "transcriptRef" | "draftRef" | "summaryRef" | "dialogueRef" | "receipts">>;
+type Progress = Partial<Pick<AudioJob, "fileId" | "fileInfo" | "transcriptionProgress" | "postprocessProgress" | "movedTo" | "transcriptRef" | "draftRef" | "summaryRef" | "dialogueRef" | "receipts">>;
 
 export interface AudioJobStepContext {
   signal: AbortSignal;

@@ -1,3 +1,5 @@
+import { isMcpSourceMappings, type McpSourceMapping } from "@/domain/mcp/sourceMapping";
+
 /**
  * The Agent Plugins 1.0.0 formats (agent-plugins.org): the `plugin.json`
  * manifest and the `mcp.json` server map. Interpreted here, in one place —
@@ -31,7 +33,10 @@ export const PLUGIN_NAME_RULE =
 export const PLUGIN_MANIFEST_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 export const MCP_JSON_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 
+export const STUDIO_PLUGIN_EXTENSION = "org.opspresso.agent-studio";
+
 export interface PluginManifest {
+  mcpSourceOutputs?: Record<string, McpSourceMapping[]>;
   name: string;
   version?: string;
   description?: string;
@@ -71,6 +76,14 @@ export function parsePluginManifest(
   if (typeof obj.name !== "string" || !isPluginName(obj.name)) {
     return { ok: false, reason: `plugin.json name ${PLUGIN_NAME_RULE}` };
   }
+  const extensions = obj.extensions as Record<string, unknown> | undefined;
+  const extension = extensions?.[STUDIO_PLUGIN_EXTENSION] as Record<string, unknown> | undefined;
+  const mcpSourceOutputs = extension?.mcpSourceOutputs;
+  if (mcpSourceOutputs !== undefined && (!mcpSourceOutputs || typeof mcpSourceOutputs !== "object" ||
+    Array.isArray(mcpSourceOutputs) || Object.entries(mcpSourceOutputs).some(([name, mappings]) =>
+      !isPluginName(name) || !isMcpSourceMappings(mappings)))) {
+    return { ok: false, reason: "Invalid Agent Studio mcpSourceOutputs extension" };
+  }
   const author =
     typeof obj.author === "object" && obj.author !== null && !Array.isArray(obj.author)
       ? {
@@ -86,6 +99,7 @@ export function parsePluginManifest(
     ok: true,
     manifest: {
       name: obj.name,
+      ...(mcpSourceOutputs !== undefined ? { mcpSourceOutputs: mcpSourceOutputs as Record<string, McpSourceMapping[]> } : {}),
       version: optionalString(obj.version),
       description: optionalString(obj.description),
       ...(author ? { author } : {}),

@@ -42,6 +42,14 @@ function manifest(overrides: Record<string, unknown> = {}): string {
 }
 
 describe("parsePluginManifest", () => {
+  it("validates the plugin file mapping extension before syncing it", () => {
+    const mapping = { tool: "read", namespace: "files", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg" };
+    const input = (mappings: unknown) => manifest({ extensions: { "org.opspresso.agent-studio": { mcpSourceOutputs: { files: mappings } } } });
+    expect(parsePluginManifest(input([mapping]))).toMatchObject({ ok: true, manifest: { mcpSourceOutputs: { files: [mapping] } } });
+    expect(parsePluginManifest(input([mapping, mapping]))).toMatchObject({ ok: false });
+    expect(parsePluginManifest(input([{ ...mapping, headers: { Authorization: "not-importable" } }]))).toMatchObject({ ok: false });
+    expect(parsePluginManifest(input([{ ...mapping, urlPath: ["__proto__"] }]))).toMatchObject({ ok: false });
+  });
   it("reads the manifest fields it consumes", () => {
     const parsed = parsePluginManifest(
       manifest({

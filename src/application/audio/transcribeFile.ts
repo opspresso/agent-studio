@@ -77,6 +77,9 @@ export function createAudioTranscriptionStep(deps: AudioTranscriptionDeps) {
     for await (const segment of deps.segmenter.split({ bytes: source.bytes, mimeType: source.mimeType,
       segmentSeconds: config.segmentSeconds, maxSegmentBytes: config.maxSegmentBytes }, context.signal)) {
       context.signal.throwIfAborted();
+      if (!parts.length && !job.transcriptionProgress) {
+        await context.record({ transcriptionProgress: { processedSeconds: 0, totalSeconds: segment.totalSeconds, completedSegments: 0 } });
+      }
       const id = `${job.id}-asr-${segment.index}`;
       const expected = { index: segment.index, start: segment.start, end: segment.end, totalSeconds: segment.totalSeconds,
         sourceChecksum: source.file.checksum, model: job.model, segmentSeconds: config.segmentSeconds,

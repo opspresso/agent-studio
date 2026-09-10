@@ -23,7 +23,7 @@ export function parseAudioPostprocessOutput(text: string, source: string, maxCha
   try {
     if (text.length > maxChars) throw new Error("Too much output");
     const body = JSON.parse(text) as AudioPostprocessOutput;
-    if (!body || typeof body.text !== "string" || !Array.isArray(body.memories) || body.memories.length > 50 ||
+    if (!body || typeof body.text !== "string" || !body.text.trim() || !Array.isArray(body.memories) || body.memories.length > 50 ||
       !Array.isArray(body.warnings) || body.warnings.some((warning) => typeof warning !== "string")) throw new Error("Invalid output");
     for (const item of body.memories) {
       if (!item || !AUDIO_MEMORY_KINDS.includes(item.kind) || typeof item.title !== "string" || !item.title.trim() || item.title.length > 500 ||
@@ -76,15 +76,27 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     const warnings: string[] = [...(transcript.warnings ?? [])];
     const inputs = chunks(transcript.text);
     if (inputs.length > MAX_CALLS) throw new AudioJobStepError("postprocess_call_limit", false);
+    const record = async (phase: "extract" | "reduce" | "saving", round: number, completed: number, total: number) => {
+      const previous = job.postprocessProgress;
+      const order = { extract: 0, reduce: 1, saving: 2 };
+      if (previous && (order[phase] < order[previous.phase] ||
+        (phase === previous.phase && (round < previous.round || (round === previous.round && completed < previous.completed))))) return;
+      await context.record({ postprocessProgress: { phase, round, completed, total } });
+    };
+    await record("extract", 0, 0, inputs.length);
     for (const [index, text] of inputs.entries()) {
       const output = await execute(text, 0, index);
       outputs.push(output); extracted.push(...output.memories); warnings.push(...output.warnings);
+      await record("extract", 0, index + 1, inputs.length);
     }
     for (let round = 1; outputs.length > 1; round++) {
       const previous = outputs.map((output) => JSON.stringify(output)).join("\n");
       const next: AudioPostprocessOutput[] = [];
-      for (const [index, text] of chunks(previous).entries()) {
+      const parts = chunks(previous);
+      await record("reduce", round, 0, parts.length);
+      for (const [index, text] of parts.entries()) {
         const output = await execute(text, round, index); next.push(output); warnings.push(...output.warnings);
+        await record("reduce", round, index + 1, parts.length);
       }
       if (next.length >= outputs.length && next.map((output) => JSON.stringify(output)).join("\n").length >= previous.length) {
         throw new AudioJobStepError("postprocess_reduction_stalled", false);
@@ -103,6 +115,7 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     if (unique.size > 50) throw new AudioJobStepError("memory_candidate_limit", false);
     const final: AudioPostprocessOutput = { ...output, memories: [...unique.values()],
       warnings: [...new Set(warnings)] };
+    await record("saving", 0, 0, 3);
     const bytes = new TextEncoder().encode(JSON.stringify(final));
     const id = `${job.id}-draft`;
     await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
@@ -110,18 +123,21 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
       derivedFrom: job.transcriptRef, model: job.postprocess.version.model, producedBy: job.postprocess.projectName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield bytes; })(), context.signal);
+    await record("saving", 0, 1, 3);
     const summaryRef = `${job.id}-summary`;
     await deps.files.import({ id: summaryRef, projectName: job.projectName, userEmail: job.userEmail,
       filename: "summary.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
       derivedFrom: job.transcriptRef, model: job.postprocess.version.model, producedBy: job.postprocess.projectName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield new TextEncoder().encode(final.text); })(), context.signal);
+    await record("saving", 0, 2, 3);
     const dialogueRef = `${job.id}-dialogue`;
     await deps.files.import({ id: dialogueRef, projectName: job.projectName, userEmail: job.userEmail,
       filename: "dialogue.md", mimeType: "text/markdown", retention: job.retention, retainUntil: file.file.retireAt,
       derivedFrom: job.transcriptRef, model: transcript.model, producedBy: job.postprocess.projectName,
       derived: { jobId: job.id, kind: "draft" } },
     async () => (async function* () { yield new TextEncoder().encode(renderDialogue(transcript)); })(), context.signal);
+    await record("saving", 0, 3, 3);
     return { draftRef: id, summaryRef, dialogueRef };
   };
 }

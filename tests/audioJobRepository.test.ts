@@ -19,9 +19,40 @@ const admission = { id: "job-1", now, occurrence: "hour-1", maxActive: 1, maxPer
 beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.project("audio"), entityType: "PROJECT" }]); });
 
 describe("durable audio jobs", () => {
+  it.each(["completed", "cancelled", "failed", "blocked"] as const)("deletes %s history and admits the same source under a new job ID", async (status) => {
+    await jobs.submit(input, admission);
+    const lease = (await jobs.claim("audio", "job-1", now, "worker", until))!;
+    const terminal = (await jobs.checkpoint(lease, { status, stage: "cleaning", dueAt: now }, now))!;
+    expect(await jobs.delete("audio", "job-1", terminal.revision - 1)).toBe(false);
+    expect(await jobs.delete("audio", "job-1", terminal.revision)).toBe(true);
+    expect(await jobs.get("audio", "job-1")).toBeNull();
+    expect(await jobs.list("audio", 10)).toEqual([]);
+    expect(await jobs.due(later, 10)).toEqual([]);
+    expect(await jobs.heartbeat(lease, now, until)).toBe(false);
+    expect(await jobs.checkpoint(lease, { status: "completed", stage: "cleaning", dueAt: now }, now)).toBeNull();
+    // Deletion does not reset the admission cap of an already spent occurrence.
+    expect(await jobs.submit(input, { ...admission, id: "job-2" })).toEqual({ status: "busy", reason: "occurrence_limit" });
+    expect((await jobs.submit(input, { ...admission, id: "job-2", occurrence: "hour-2" })).status).toBe("accepted");
+  });
+  it("refuses deleting queued, running and waiting jobs", async () => {
+    await jobs.submit(input, admission);
+    expect(await jobs.delete("audio", "job-1", 1)).toBe(false);
+    const lease = (await jobs.claim("audio", "job-1", now, "worker", until))!;
+    expect(await jobs.delete("audio", "job-1", lease.revision)).toBe(false);
+    const waiting = (await jobs.checkpoint(lease, { status: "waiting", stage: "importing", dueAt: later }, now))!;
+    expect(await jobs.delete("audio", "job-1", waiting.revision)).toBe(false);
+    expect((await jobs.submit(input, { ...admission, id: "job-2", occurrence: "hour-2" })).status).toBe("duplicate");
+  });
+  it("does not remove a source claim held by another job", async () => {
+    await jobs.submit(input, admission);
+    await jobs.cancel("audio", "job-1", 1, now);
+    fake.seed([{ ...keys.audioJobSource("audio", input.sourceKey), jobId: "other-job" }]);
+    expect(await jobs.delete("audio", "job-1", 2)).toBe(false);
+    expect(await jobs.get("audio", "job-1")).not.toBeNull();
+  });
   it("does not admit work while the project is being deleted", async () => {
     fake.seed([{ ...keys.project("audio"), entityType: "PROJECT", deletingAt: now }]);
-    expect(await jobs.submit(input, admission)).toEqual({ status: "busy" });
+    expect(await jobs.submit(input, admission)).toEqual({ status: "busy", reason: "conflict" });
     expect(await jobs.get("audio", "job-1")).toBeNull();
   });
   it("atomically admits one source and keeps its identity after completion", async () => {
@@ -37,8 +68,8 @@ describe("durable audio jobs", () => {
 
   it("holds the project slot across worker expiry and waiting retries", async () => {
     await jobs.submit(input, admission);
-    expect((await jobs.submit({ ...input, sourceKey: "source-2" }, { ...admission, id: "job-2", now: later,
-      occurrence: "hour-2" })).status).toBe("busy");
+    expect(await jobs.submit({ ...input, sourceKey: "source-2" }, { ...admission, id: "job-2", now: later,
+      occurrence: "hour-2" })).toEqual({ status: "busy", reason: "active_limit" });
     const lease = (await jobs.claim("audio", "job-1", now, "worker-1", until))!;
     await jobs.checkpoint(lease, { status: "waiting", stage: "transcribing", dueAt: later, fileId: "stored-1" }, now);
     expect(await jobs.due(until, 10)).toEqual([]);

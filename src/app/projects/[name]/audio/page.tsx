@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { Alert, Badge, Button, Checkbox, FileInput, Group, NumberInput, Paper, Select, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Badge, Button, Checkbox, FileInput, Group, NumberInput, Paper, Progress, Select, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
+import { useConfirm } from "@/app/_components/useConfirm";
 import { useViewer } from "@/app/_lib/useViewer";
 import { listProjects, listVersions, type SanitizedProject, type Version } from "../../lib/api";
 import { formatDateTime } from "@/shared/date";
@@ -33,6 +34,7 @@ function AudioProjectPage() {
 
 function AudioWorkspace({ name }: { name: string }) {
   const t = useT(); const locale = useLocale(); const viewer = useViewer();
+  const { confirm, confirmModal } = useConfirm();
   const base = `/api/projects/${encodeURIComponent(name)}`;
   const [options, setOptions] = useState<AudioOptionsResponse>({ models: [], destinations: [] });
   const [optionsLoaded, setOptionsLoaded] = useState(false);
@@ -151,7 +153,9 @@ function AudioWorkspace({ name }: { name: string }) {
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   }
-  async function act(job: AudioJobView, action: "retry" | "cancel") {
+  async function act(job: AudioJobView, action: "retry" | "cancel" | "delete") {
+    if (action === "delete" && !await confirm({ title: t("audio.deleteTitle"),
+      message: t("audio.deleteBody"), confirmLabel: t("audio.delete") })) return;
     setBusy(true); setError(null);
     try { await fetch(`${base}/audio-jobs/${job.id}`, { method: "POST", headers: jsonHeaders,
       body: JSON.stringify({ action, revision: job.revision }) }).then(readJson<unknown>); await refresh(); }
@@ -160,6 +164,7 @@ function AudioWorkspace({ name }: { name: string }) {
   }
 
   return <Stack gap="lg">
+    {confirmModal}
     <div><Title order={2}>{t("audio.title")}</Title><Text c="dimmed" size="sm">{t("audio.pageHint")}</Text></div>
     {error && <Alert color="red">{error}</Alert>}
     {optionsLoaded && !options.models.length && <Alert>{t("audio.noModels")}</Alert>}
@@ -218,12 +223,28 @@ function AudioWorkspace({ name }: { name: string }) {
       </Stack></details>
     </Stack></Paper>
     <Group justify="space-between"><Title order={3}>{t("audio.jobs")}</Title><Button variant="default" loading={loadingJobs} onClick={() => refresh().catch((error) => setError(error.message))}>{t("audio.refresh")}</Button></Group>
+    {jobs.some((job) => !isAudioJobTerminal(job.status)) && <Text size="xs" c="dimmed">{t("audio.pollingHint")}</Text>}
     {!loadingJobs && !jobs.length && <Text c="dimmed">{t("audio.noJobs")}</Text>}
     {jobs.map((job) => <Paper key={job.id} withBorder p="md"><Stack gap="xs">
       <Group justify="space-between"><Text ff="monospace" size="sm">{job.id}</Text><Badge>{t(`audio.status.${job.status}`)}</Badge></Group>
-      <Text size="sm">{job.model} · {t(`audio.stage.${job.stage}`)} · {formatDateTime(job.updatedAt, locale)}</Text>
+      <Text size="sm" fw={600}>{t(`audio.task.${job.task ?? "process"}`)} · {t(`audio.stage.${job.stage}`)}</Text>
+      <Text size="sm" c="dimmed">{job.model} · {t("audio.updatedAt")}: {formatDateTime(job.updatedAt, locale)}</Text>
+      <Text size="sm" c="dimmed">{t("audio.createdAt")}: {formatDateTime(job.createdAt, locale)} · {t("audio.attempt", { count: job.attempt })}</Text>
+      {job.status === "running" && <Text size="sm">{t(`audio.activity.${job.stage}`)}</Text>}
+      {job.status === "queued" && <Text size="sm" c="dimmed">{t("audio.queuedHint")}</Text>}
+      {job.status === "waiting" && <Text size="sm">{t(job.errorCode ? "audio.retryHint" : "audio.deliveryWaitHint")}</Text>}
       {job.fileInfo && <Text size="sm">{job.fileInfo.filename} · {t("audio.expiresAt")}: {formatDateTime(job.fileInfo.expiresAt, locale)}</Text>}
-      {job.transcriptionProgress && <Text size="sm">{t("audio.coverage")}: {job.transcriptionProgress.processedSeconds.toFixed(1)} / {job.transcriptionProgress.totalSeconds.toFixed(1)} {t("audio.seconds")}</Text>}
+      {job.transcriptionProgress && <Stack gap={4}>
+        <Text size="sm">{t("audio.coverage")}: {job.transcriptionProgress.processedSeconds.toFixed(1)} / {job.transcriptionProgress.totalSeconds.toFixed(1)} {t("audio.seconds")} · {t("audio.completedSegments", { count: job.transcriptionProgress.completedSegments })}</Text>
+        {job.transcriptionProgress.totalSeconds > 0 && <>
+          <Progress aria-label={t("audio.coverage")} value={Math.min(100, job.transcriptionProgress.processedSeconds / job.transcriptionProgress.totalSeconds * 100)} />
+          <Text size="xs" c="dimmed">{Math.min(100, Math.floor(job.transcriptionProgress.processedSeconds / job.transcriptionProgress.totalSeconds * 100))}%</Text>
+        </>}
+      </Stack>}
+      {job.postprocessProgress && <Stack gap={4}>
+        <Text size="sm">{t(`audio.postprocess.${job.postprocessProgress.phase}`)}{job.postprocessProgress.phase === "reduce" ? ` · ${t("audio.round", { count: job.postprocessProgress.round })}` : ""} · {t("audio.completedParts", { count: job.postprocessProgress.completed, total: job.postprocessProgress.total })}</Text>
+        {job.postprocessProgress.total > 0 && <Progress aria-label={t(`audio.postprocess.${job.postprocessProgress.phase}`)} value={Math.min(100, job.postprocessProgress.completed / job.postprocessProgress.total * 100)} />}
+      </Stack>}
       {job.status === "waiting" && <Text size="sm" c="dimmed">{t("audio.resumeAt")}: {formatDateTime(job.dueAt, locale)}</Text>}
       {job.errorCode && <Text c="red" size="sm">{job.errorCode}</Text>}
       {job.movedTo && <Text size="sm">{t("audio.moved")}: {job.movedTo.serverName}</Text>}
@@ -243,6 +264,7 @@ function AudioWorkspace({ name }: { name: string }) {
         {job.artifacts.processed && <Button component="a" href={`/api/artifacts/${encodeURIComponent(job.artifacts.processed)}/view`} variant="light" size="xs">{t("audio.result")}</Button>}
         {job.artifacts.dialogue && <Button component="a" href={`/api/artifacts/${encodeURIComponent(job.artifacts.dialogue)}/view`} variant="light" size="xs">{t("audio.dialogue")}</Button>}
         {(job.status === "failed" || job.status === "blocked") && <Button size="xs" variant="default" disabled={busy} onClick={() => act(job, "retry")}>{t("audio.retry")}</Button>}
+        {isAudioJobTerminal(job.status) && <Button size="xs" variant="subtle" color="red" disabled={busy} onClick={() => act(job, "delete")}>{t("audio.delete")}</Button>}
         {["queued", "running", "waiting"].includes(job.status) && <Button size="xs" variant="subtle" color="red" disabled={busy} onClick={() => act(job, "cancel")}>{t("audio.cancel")}</Button>}
       </Group>
     </Stack></Paper>)}

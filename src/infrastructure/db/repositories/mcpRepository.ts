@@ -1,3 +1,4 @@
+import { isMcpSourceMappings } from "@/domain/mcp/sourceMapping";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpRuntime, McpServer, McpServerAuth } from "@/domain/mcp/types";
 import { createKeyedRepository } from "../keyedRepository";
@@ -7,6 +8,7 @@ import { CONDITIONAL_WRITE_FAILED, updateItem } from "../store";
 const ENTITY_TYPE = "MCP" as const;
 
 function fromItem(item: Record<string, unknown>): McpServer {
+  if (item.sourceOutputs !== undefined && !isMcpSourceMappings(item.sourceOutputs)) throw new Error("Stored MCP source mappings are invalid");
   return {
     name: item.name as string,
     url: item.url as string,
@@ -20,6 +22,7 @@ function fromItem(item: Record<string, unknown>): McpServer {
     containerPort: item.containerPort as number | undefined,
     description: item.description as string | undefined,
     content: item.content as string | undefined,
+    sourceOutputs: item.sourceOutputs as McpServer["sourceOutputs"],
     source: item.source as string | undefined,
     headers: (item.headers as Record<string, string> | undefined) ?? {},
     auth: item.auth as McpServerAuth | undefined,
@@ -48,6 +51,7 @@ function toItem(server: McpServer): Record<string, unknown> {
     containerPort: server.containerPort,
     description: server.description,
     content: server.content,
+    sourceOutputs: server.sourceOutputs,
     source: server.source,
     headers: server.headers,
     // Absent for a static-header server; `clearAuth` relies on writing it away.

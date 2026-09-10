@@ -33,4 +33,4 @@ export const audioConfigSchema = audioJobSchema.pick({ model: true, language: tr
   maxPerOccurrence: z.number().int().min(1).max(MAX_ACTIVE_AUDIO_JOBS),
 }).strict();
 
-export const audioJobActionSchema = z.object({ action: z.enum(["cancel", "retry"]), revision: z.number().int().positive() }).strict();
+export const audioJobActionSchema = z.object({ action: z.enum(["cancel", "retry", "delete"]), revision: z.number().int().positive() }).strict();

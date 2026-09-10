@@ -16,7 +16,7 @@ export interface AudioPostprocessOutput {
 export const AUDIO_OUTPUT_SCHEMA = {
   name: "audio_result", strict: true,
   schema: { type: "object", properties: {
-    text: { type: "string" },
+    text: { type: "string", minLength: 1, description: "Required readable Markdown summary of the source, even when memories is empty." },
     memories: { type: "array", items: { type: "object", properties: {
       kind: { type: "string", enum: AUDIO_MEMORY_KINDS }, title: { type: "string" }, content: { type: "string" },
       evidence: { type: "array", items: { type: "string" } },

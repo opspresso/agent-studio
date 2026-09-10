@@ -1,3 +1,4 @@
+import type { McpSourceMapping } from "./sourceMapping";
 import { isDeclaredInternalHost } from "@/domain/security/internalHosts";
 
 /** A tool a bound MCP server offers. `inputSchema` is the JSON Schema the
@@ -140,6 +141,8 @@ export function skipsUrlGuard(
 }
 
 export interface McpServer {
+  /** Plugin-provided file response mappings. A version may override or disable them. */
+  sourceOutputs?: McpSourceMapping[];
   name: string;
   url: string;
   /** Absent on every row written before managed servers existed: those are `remote`. */

@@ -82,6 +82,7 @@ describe("resumable file transcription", () => {
     expect(f.deps.beforeTranscribe).toHaveBeenCalledTimes(2);
     expect(f.deps.recordUsage).toHaveBeenCalledTimes(2);
     expect(vi.mocked(f.context.record).mock.calls.map(([value]) => value.transcriptionProgress)).toEqual([
+      { processedSeconds: 0, totalSeconds: 2, completedSegments: 0 },
       { processedSeconds: 1, totalSeconds: 2, completedSegments: 1 },
       { processedSeconds: 2, totalSeconds: 2, completedSegments: 2 },
     ]);
@@ -101,7 +102,8 @@ describe("resumable file transcription", () => {
     f.transcribe.mockRejectedValueOnce(new Error("ASR offline"));
     const run = createAudioTranscriptionStep(f.deps);
     await expect(run(f.job, f.context)).rejects.toThrow("ASR offline");
-    expect(f.context.record).toHaveBeenCalledExactlyOnceWith({ transcriptionProgress: { processedSeconds: 1, totalSeconds: 2, completedSegments: 1 } });
+    expect(f.context.record).toHaveBeenLastCalledWith({ transcriptionProgress: { processedSeconds: 1, totalSeconds: 2, completedSegments: 1 } });
+    expect(f.context.record).toHaveBeenCalledTimes(2);
     expect(f.saved.has("job-1-asr-0")).toBe(true);
     expect(f.saved.has("job-1-transcript")).toBe(false);
     await run(f.job, f.context);
