@@ -532,6 +532,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           <Composer
             onSend={handleSend}
             disabled={streaming || Boolean(pendingApproval)}
+            busy={streaming}
             status={<RunningAgents paths={live?.authorPaths ?? []} />}
             {...(streaming && shown.runId ? { onStop: () => runStore.cancelRun(chatId) } : {})}
           />

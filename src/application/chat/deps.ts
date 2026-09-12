@@ -13,7 +13,7 @@ export interface AgentRunParams {
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   project: Project;
   version: Version;
-  /** OpenAI-shaped message history (see messageMapping.ts). */
+  /** The new user input; persisted SDK Session supplies previous model turns. */
   messages: ChatMessageInput[];
   /** Who caused the run — always the chat's owner, since chats are private. */
   actor: RunActor;

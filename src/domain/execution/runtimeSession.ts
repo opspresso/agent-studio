@@ -10,7 +10,7 @@ export interface RuntimeSessionRow {
 
 export interface RuntimeSessionRepository {
   get(sessionId: string, ownerEmail: string): Promise<RuntimeSessionRow | null>;
-  /** Compare-and-swap; null means the row must not exist. */
+  /** Compare-and-swap; null permits creation only when no active row exists. */
   save(row: Omit<RuntimeSessionRow, "revision">, expectedRevision: number | null): Promise<number | null>;
   delete(sessionId: string, ownerEmail: string): Promise<void>;
   sweepExpired(now: Date): Promise<number>;

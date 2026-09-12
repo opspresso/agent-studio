@@ -1,45 +1,13 @@
+import { runtimeSessionFixture as fixture } from "./runtimeSessionFixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeSessionRepository, RuntimeSessionRow } from "@/domain/execution/runtimeSession";
-import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { Version } from "@/domain/project/types";
-import { openRuntimeSession, pendingRuntimeApproval, readRuntimeSession, discardRuntimeCheckpoint, type RuntimeSessionServices } from "@/application/runtime/session";
+import { openRuntimeSession, pendingRuntimeApproval, readRuntimeSession, discardRuntimeCheckpoint } from "@/application/runtime/session";
 import { runAgent } from "@/application/runtime";
-import type { AgentDeps, RunAgentInput } from "@/application/runtime/types";
-import type { EngineChunk } from "@/domain/llm/types";
+import type { AgentDeps } from "@/application/runtime/types";
 import { FakeChannel, contentChunk, toolCallChunk, usageChunk } from "./fakeChannel";
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-09-12T00:00:00Z")); });
 afterEach(() => { vi.useRealTimers(); });
 
-function fixture(policy: Version["parameters"]["policy"] = {}) {
-  const rows = new Map<string, RuntimeSessionRow>();
-  const repository: RuntimeSessionRepository = {
-    async get(id, owner) { const row = rows.get(id); return row?.ownerEmail === owner ? structuredClone(row) : null; },
-    async save(row, expected) {
-      const current = rows.get(row.sessionId);
-      if ((current?.revision ?? null) !== expected || current && current.ownerEmail !== row.ownerEmail) return null;
-      const revision = (expected ?? 0) + 1;
-      rows.set(row.sessionId, { ...row, revision });
-      return revision;
-    },
-    async delete(id) { rows.delete(id); }, async sweepExpired() { return 0; },
-  };
-  const cipher = {
-    encrypt: vi.fn((text: string, context: string) => "enc:v2:" + Buffer.from(JSON.stringify([context, text])).toString("base64")),
-    decrypt: vi.fn((data: string, context: string) => { const [saved, text] = JSON.parse(Buffer.from(data.slice("enc:v2:".length), "base64").toString()); if (context !== saved) throw new Error("Cipher context mismatch"); return text as string; }),
-  } as unknown as SecretCipher;
-  const services: RuntimeSessionServices = { repository, cipher, retentionDays: 30 };
-  const version: Version = { projectName: "project", versionName: "v1", model: "google/gemini-2.5-flash", systemPrompt: "Instructions", userPromptTemplate: "", parameters: { piiFiltering: true, policy }, skillList: [], mcpList: [], subagentList: [], maxTurn: 5, createdAt: "2026-09-12T00:00:00Z" };
-  const scope = { sessionId: "chat-1", ownerEmail: "owner@example.com", projectName: "project", version };
-  async function run(channel: FakeChannel, message: string, resume?: Parameters<typeof openRuntimeSession>[2], overrides: Partial<AgentDeps> = {}, input: Partial<RunAgentInput> = {}) {
-    const runtime = await openRuntimeSession(services, scope, resume);
-    runtime.checkBinding("root", "unchanged");
-    const chunks: EngineChunk[] = [];
-    for await (const chunk of runAgent({ channel, ...overrides }, { projectName: "project", model: version.model, parameters: version.parameters, maxTurn: 5, messages: [{ role: "user", content: message }], ...input, runtime })) chunks.push(chunk);
-    return chunks;
-  }
-  return { rows, services, scope, version, run };
-}
 
 describe("durable native SDK Session", () => {
   it("keeps a preceding user image editable after a version enables image tools", async () => {
@@ -266,5 +234,31 @@ describe("durable native SDK Session", () => {
     const chunks = await f.run(channel, "delegate", undefined, { loadAgent }, { canDispatch: true, subagents: [{ name: "child", type: "local", description: "child" }] });
     expect(child.calls).toBe(0);
     expect(chunks.some((chunk) => chunk.warning?.includes("guardrail"))).toBe(true);
+  });
+
+  it("keeps concurrent handoff approvals distinct after a fresh graph reconstruction", async () => {
+    const f = fixture();
+    let resuming = false;
+    const effect = vi.fn(async (_name: string, args: Record<string, unknown>) => ({ text: String(args.value) }));
+    const loadAgent: NonNullable<AgentDeps["loadAgent"]> = async (name, task) => ({
+      kind: "agent", warnings: [], close: async () => {},
+      deps: { channel: new FakeChannel(resuming ? [] : [[toolCallChunk(0, "handoff", "handoff_specialist", JSON.stringify({ input: task.message, image_ids: [] }))]]),
+        loadAgent: async (target, handoffTask) => ({ kind: "agent", warnings: [], close: async () => {},
+          deps: { channel: new FakeChannel(resuming ? [[contentChunk("specialist done")]] : [[toolCallChunk(0, "lookup", "lookup", JSON.stringify({ value: handoffTask.message }))]]), callMcpTool: effect },
+          input: { projectName: target, model: f.version.model, messages: [{ role: "user", content: handoffTask.message }], parameters: { policy: { approvalTools: ["lookup"] } }, mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }] },
+        }),
+      },
+      input: { projectName: name, model: f.version.model, messages: [{ role: "user", content: task.message }], subagents: [{ name: "specialist", type: "local", description: "specialist" }] },
+    });
+    const input = { canDispatch: true, subagents: [{ name: "child", type: "local" as const, description: "child" }] };
+    await f.run(new FakeChannel([[toolCallChunk(0, "first", "delegate_child", '{"input":"first","image_ids":[]}'), toolCallChunk(1, "second", "delegate_child", '{"input":"second","image_ids":[]}')]]), "delegate", undefined, { loadAgent }, input);
+    const pending = (await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail))!;
+    expect(pending.approvals).toHaveLength(2);
+    const chosen = pending.approvals.find((item) => item.arguments.includes("first"))!;
+    resuming = true;
+    const chunks = await f.run(new FakeChannel([[contentChunk("parent done")]]), "", { revision: pending.revision, decisions: pending.approvals.map((item) => ({ id: item.id, approve: item.id === chosen.id })) }, { loadAgent }, input);
+    expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
+    expect(effect).toHaveBeenCalledExactlyOnceWith("lookup", { value: "first" });
+    expect(await pendingRuntimeApproval(f.services, "chat-1", f.scope.ownerEmail)).toBeNull();
   });
 });

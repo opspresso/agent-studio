@@ -85,4 +85,3 @@ export function boundArgumentText(text: string): string {
     ? text
     : `${cutUtf8Bytes(text, MAX_TOOL_ARG_BYTES)}…[truncated]`;
 }
-

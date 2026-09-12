@@ -5,7 +5,7 @@ import type {
   ChannelCompletion,
   ChannelParams,
   LlmChannel,
-} from "@/domain/llm/channel";
+} from "./channelFixtures";
 import type { EngineChunk } from "@/domain/llm/types";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { contentChunk, usageChunk } from "./fakeChannel";

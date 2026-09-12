@@ -102,7 +102,7 @@ export function RunPanel({
   const [toolResults, setToolResults] = useState<ToolResultView[]>([]);
   // The chain currently producing chunks (outermost first), or undefined while the
   // top-level agent itself is answering.
-  // A set, not one chain: `dispatch_agents` has several children running at once.
+  // A set, not one chain: SDK delegation has several children running at once.
   const [activePaths, setActivePaths] = useState<string[][]>([]);
   const [visitedPaths, setVisitedPaths] = useState<string[][]>([]);
   const [error, setError] = useState<string | null>(null);

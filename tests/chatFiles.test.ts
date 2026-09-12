@@ -10,7 +10,7 @@ import {
   MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS,
   resolveMessageFiles,
 } from "@/application/chat/resolveFiles";
-import { toEngineMessages } from "@/application/chat/messageMapping";
+
 import { reduceChunk } from "@/app/chats/_lib/stream";
 import { EMPTY_TURN } from "@/app/chats/_lib/types";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
@@ -320,26 +320,6 @@ describe("runAndPersist", () => {
     ]);
 
     expect(fixture.messages.some((message) => message.role === "assistant")).toBe(true);
-  });
-});
-
-/**
- * The asymmetry that makes `EngineChunk.file` a separate axis in the first
- * place: a model cannot read bytes, the tool result text is what named the
- * file, and a replayed turn must not claim otherwise.
- */
-describe("replay", () => {
-  it("carries no trace of a stored file into the model's context", () => {
-    const { messages } = toEngineMessages([
-      { chatId: "c1", seq: 1, role: "user", content: "make a pdf", createdAt: "2026-08-12T15:14:00Z" },
-      assistantWith([
-        { key: "artifacts/document/x.pdf", name: "summary.pdf", mimeType: "application/pdf" },
-      ]),
-    ]);
-
-    const serialised = JSON.stringify(messages);
-    expect(serialised).not.toContain("summary.pdf");
-    expect(serialised).not.toContain("artifacts/document");
   });
 });
 

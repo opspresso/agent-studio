@@ -14,7 +14,7 @@
  */
 
 import { ValidationError } from "@/application/errors";
-import type { LlmChannel } from "@/domain/llm/channel";
+import { withTrace, NoopTrace, type ModelProvider } from "@openai/agents";
 import { getModelConfig, modelType } from "@/domain/llm/models";
 
 export interface ModelTestResult {
@@ -33,7 +33,7 @@ export interface TestModelDeps {
 const TEST_TIMEOUT_MS = 15_000;
 const IMAGE_TEST_TIMEOUT_MS = 120_000;
 
-export function createTestModel(channel: LlmChannel, deps: TestModelDeps = {}): TestModel {
+export function createTestModel(models: ModelProvider, deps: TestModelDeps = {}): TestModel {
   return async (modelId) => {
     // Enabled or not is irrelevant — the point is testing a model *before*
     // enabling it — but an id the registry cannot price is a caller mistake,
@@ -62,12 +62,10 @@ export function createTestModel(channel: LlmChannel, deps: TestModelDeps = {}): 
       } else if (type === "image") {
         await deps.testImage!(modelId, signal);
       } else {
-        await channel.chatCompletion({
-          model: modelId,
-          messages: [{ role: "user", content: "ping" }],
-          maxTokens: 16,
-          signal,
-        });
+        await withTrace(new NoopTrace(), async () => (await models.getModel(modelId)).getResponse({
+          input: "ping", modelSettings: { maxTokens: 16, store: false },
+          tools: [], handoffs: [], outputType: "text", tracing: false, signal,
+        }));
       }
       return { ok: true, latencyMs: Date.now() - startedAt };
     } catch (error) {

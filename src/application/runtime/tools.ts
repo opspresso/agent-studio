@@ -1,4 +1,4 @@
-import { getCurrentSpan, tool, type Tool, type ToolCallOutputContent, type RunContext } from "@openai/agents";
+import { tool, type Tool, type ToolCallOutputContent, type RunContext } from "@openai/agents";
 import type { McpToolResult } from "@/domain/llm/types";
 import { imageDataUrl } from "@/domain/llm/types";
 import { describeImageInputReject } from "@/domain/llm/models";
@@ -15,7 +15,7 @@ import type { AgentDeps, RunAgentInput } from "./types";
 import type { RuntimeTurn } from "./model";
 import { restoreValues } from "./messages";
 import { boundToolArgsPair } from "./arguments";
-import type { RuntimeEmitter } from "./output";
+import { writeToolResult, type RuntimeEmitter } from "./output";
 import { createSdkMcp, type McpCapability, type ToolCallDetails } from "./mcp";
 
 type CapabilityOutput = McpToolResult & { bounded?: boolean };
@@ -81,15 +81,12 @@ export function createRuntimeTools(
     const name = definition.function.name;
     const displayNames = new Map<string, string>();
     const showResult = (id: string, raw: string, boundedText = false) => {
-      const masked = filter?.mask(raw) ?? raw;
-      const bounded = (boundedText ? turn.results.charge : turn.results.fit)(masked);
-      if (bounded.startsWith("Error:")) getCurrentSpan()?.setError({ message: "Tool execution failed" });
-      emit({ toolResult: { toolCallId: id, name: displayNames.get(id) ?? (serverByTool.has(name) ? `${serverByTool.get(name)}: ${name}` : name), content: filter?.restore(bounded) ?? bounded } });
-      if (bounded !== masked && !lossReported) {
+      const result = writeToolResult({ id, name: displayNames.get(id) ?? (serverByTool.has(name) ? `${serverByTool.get(name)}: ${name}` : name), text: raw, bounded: boundedText }, turn.results, emit, filter);
+      if (result.truncated && !lossReported) {
         lossReported = true;
         emit({ warning: "Tool output was truncated to fit the run's context budget." });
       }
-      return bounded;
+      return result.text;
     };
     const options = {
       name, description: definition.function.description ?? name,

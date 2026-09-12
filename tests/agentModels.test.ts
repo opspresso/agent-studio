@@ -76,6 +76,19 @@ afterEach(() => {
 });
 
 describe("Agents SDK model provider", () => {
+  it.each([undefined, 0, 1.5])("preserves presence penalty %s in streaming and completion calls", async (presencePenalty) => {
+    const requests = installTransport((body) => body.stream ? sse([{ choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }] }]) : Response.json(completion()));
+    const model = await createAgentModelProvider(async () => target).getModel("selfhosted/local-model");
+    const input = { ...request, modelSettings: { ...request.modelSettings, presencePenalty } };
+    await getResponse(model, input);
+    await withTrace(new NoopTrace(), async () => { for await (const event of model.getStreamedResponse(input)) void event; });
+    expect(requests).toHaveLength(2);
+    for (const { body } of requests) {
+      if (presencePenalty === undefined) expect(body).not.toHaveProperty("presence_penalty");
+      else expect(body.presence_penalty).toBe(presencePenalty);
+    }
+  });
+
   it("uses the configured compatible endpoint and preserves billing metadata", async () => {
     const requests = installTransport(() => Response.json(completion()));
     const model = await createAgentModelProvider(async () => target).getModel("selfhosted/local-model");

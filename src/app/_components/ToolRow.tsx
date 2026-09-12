@@ -14,7 +14,6 @@ import classes from "./CollapsibleRow.module.css";
 const TOOL_KIND: Record<ToolKind, { label: string; color: string }> = {
   skill: { label: "Skill", color: "grape" },
   agent: { label: "Agent", color: SUBAGENT_COLOR },
-  agents: { label: "Agents", color: SUBAGENT_COLOR },
   image: { label: "Image", color: "teal" },
   tool: { label: "Tool", color: "gray" },
 };
@@ -25,7 +24,7 @@ const TOOL_KIND: Record<ToolKind, { label: string; color: string }> = {
  *
  * The header says *what kind* of thing ran and *which one*, without being
  * opened. Every skill in the system is one `Skill` call and every hand-off is
- * one `transfer_to_agent`, so a row labelled with the tool's own name told the
+ * one native delegation, so a row labelled with the tool's own name told the
  * reader a skill had been loaded and never which — the answer was in the
  * arguments, behind a click. Shared by the chat and the playground, which had
  * each grown their own rendering of the same wire format.

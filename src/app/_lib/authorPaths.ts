@@ -38,7 +38,7 @@ export function mergeVisitedPath(seen: string[][], path: string[]): string[][] {
  * A chain evicts any chain it is nested with, **in either direction**: a parent
  * speaking again means its child returned (a transfer blocks until it does), and
  * a child speaking means the parent is waiting on it. Chains that are not nested
- * all stay — `dispatch_agents` has several children running at once, and a set
+ * all stay — SDK delegation has several children running at once, and a set
  * that kept only the last one to speak would flicker between them.
  *
  * This is where the visited rule cannot be reused: keeping the deeper chain would

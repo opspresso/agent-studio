@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { ModelProvider } from "@openai/agents";
 import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
-import type { LlmChannel, ChannelParams } from "@/domain/llm/channel";
+import type { LlmChannel, ChannelParams } from "./channelFixtures";
 
 /** Existing wire fixtures run through the real SDK converter and tool runtime. */
 export function scriptedModels(channel: LlmChannel): ModelProvider {

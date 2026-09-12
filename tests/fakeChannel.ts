@@ -5,7 +5,7 @@ import type {
   ChannelParams,
   ChannelToolCall,
   LlmChannel,
-} from "@/domain/llm/channel";
+} from "./channelFixtures";
 
 /** A channel that replays one scripted chunk list per successive call. */
 export class FakeChannel implements LlmChannel {

@@ -99,4 +99,3 @@ export function buildTransferTranscript(
   }
   return { text: lines.join("\n"), dropped };
 }
-

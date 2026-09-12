@@ -26,6 +26,7 @@ export function Composer({
   onSend,
   onStop,
   disabled,
+  busy = disabled,
   placeholder,
   leading,
   status,
@@ -48,6 +49,7 @@ export function Composer({
    */
   onStop?: () => void;
   disabled?: boolean;
+  busy?: boolean;
   placeholder?: string;
   /** Above the input: the project picker, on a chat that does not exist yet. */
   leading?: React.ReactNode;
@@ -152,7 +154,7 @@ export function Composer({
               color="brand"
               size="input-sm"
               radius="xl"
-              loading={disabled || reading}
+              loading={busy || reading}
               disabled={disabled || reading || empty}
               aria-label={t("chat.send")}
             >

@@ -1,7 +1,6 @@
 import {
   SKILL_TOOL_NAME as SKILL,
-  TRANSFER_TOOL_NAME as TRANSFER,
-  DISPATCH_TOOL_NAME as DISPATCH,
+  agentToolTarget,
   IMAGE_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
 } from "@/domain/llm/toolNames";
@@ -16,16 +15,7 @@ export interface ToolCallInfo {
   args: string;
 }
 
-/**
- * Extract the call id, the tool's own name and its raw args.
- *
- * The name is deliberately left as the engine spelled it. A decorated value
- * such as `Skill: deep-research` reads well and matches nothing: a
- * tool *result* carries the plain `Skill` (`createToolResultEmitter` sends
- * `options.name ?? call.name`), so anything pairing a result to its call by name
- * silently fails on every builtin that had been prettied up. Deciding how a call
- * reads is `describeTool`'s job, at the point of rendering.
- */
+/** Preserve public tool identity; display names are derived only when rendering. */
 export function parseWireToolCall(raw: unknown): ToolCallInfo {
   const record = (raw ?? {}) as { id?: unknown; function?: { name?: string; arguments?: string } };
   return {
@@ -40,7 +30,7 @@ export function parseWireToolCall(raw: unknown): ToolCallInfo {
  * whether it consulted a skill, handed off to another agent, or called out to an
  * MCP server — and every one of those arrives as an identically shaped tool row.
  */
-export type ToolKind = "skill" | "agent" | "agents" | "image" | "tool";
+export type ToolKind = "skill" | "agent" | "image" | "tool";
 
 export interface ToolDescription {
   kind: ToolKind;
@@ -70,23 +60,8 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
-/**
- * Turn a tool name and its arguments into what to show.
- *
- * The arguments are where the interesting half lives: every skill in the system
- * arrives as one `Skill` call and every hand-off as one `transfer_to_agent`, so
- * a label built from the tool name alone says a skill was loaded without ever
- * saying which. Missing args — a stored tool row whose call could not be found —
- * fall back to the tool's name, which is still true, just less useful.
- */
+/** Render skills, native agent tools and decorated MCP results. */
 export function describeTool(toolName: string, args?: string): ToolDescription {
-  // A *result* arrives already decorated with what it acted on — the engine
-  // sends `Skill: tech-spec` and `transfer_to_agent: simple-llm` — so the tool
-  // is the part before the colon and the thing it touched is the part after.
-  // Matching the whole string against the bare builtin name classified every one
-  // of them as a plain tool, which is what a browser showed the moment a run
-  // actually used a skill. A stored row frequently has only this to go on: its
-  // arguments live on the assistant message, which is not always to hand.
   const colon = toolName.indexOf(": ");
   const base = colon === -1 ? toolName : toolName.slice(0, colon);
   const decorated = colon === -1 ? undefined : toolName.slice(colon + 2);
@@ -94,19 +69,8 @@ export function describeTool(toolName: string, args?: string): ToolDescription {
   if (base === SKILL) {
     return { kind: "skill", name: text(fields.skill_name) ?? decorated ?? SKILL };
   }
-  if (base === TRANSFER) {
-    return { kind: "agent", name: text(fields.agent_name) ?? decorated ?? "agent" };
-  }
-  if (base === DISPATCH) {
-    const tasks = Array.isArray(fields.tasks) ? fields.tasks : [];
-    const names = tasks
-      .map((task) => text((task as Record<string, unknown> | null)?.agent_name))
-      .filter((name): name is string => name !== undefined);
-    if (names.length > 0) {
-      return { kind: "agents", name: names.join(", ") };
-    }
-    return { kind: "agents", name: decorated ?? "agents" };
-  }
+  const target = agentToolTarget(base);
+  if (target) return { kind: "agent", name: decorated ?? target };
   if (IMAGE.includes(base)) {
     return { kind: "image", name: decorated ?? base };
   }

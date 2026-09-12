@@ -6,7 +6,7 @@ import type {
   ChannelCompletion,
   ChannelParams,
   LlmChannel,
-} from "@/domain/llm/channel";
+} from "./channelFixtures";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { SAVE_FILE_TOOL_NAME } from "@/application/llm/agentAssembly";
 import { buildFileSaver } from "@/application/execution/saveFileTool";

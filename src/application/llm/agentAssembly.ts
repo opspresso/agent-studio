@@ -1,14 +1,5 @@
 import { DOCUMENT_FORMATS, DOCUMENT_PROFILES } from "@/domain/document/processor";
-/**
- * What an agent run is told it can do — the prompt sections, the tool
- * definitions, and the one assembly (`assembleAgentRun`) both the tool loop and
- * the Playground preview go through.
- *
- * Split from `engine.ts` as one of its two internal modules (the other is
- * `toolResultBudget.ts`): everything here is pure derivation over the run's
- * capabilities, shared with the preview, and none of it touches loop state.
- * The engine re-exports the public surface, so callers keep one import path.
- */
+/** Shared capability and prompt assembly for SDK execution and preview. */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import { MAX_TOOLS_PER_REQUEST } from "@/domain/llm/toolLimits";
@@ -39,8 +30,6 @@ import {
 
 export {
   SKILL_TOOL_NAME,
-  TRANSFER_TOOL_NAME,
-  DISPATCH_TOOL_NAME,
   IMAGE_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
   FETCH_URL_TOOL_NAME,
@@ -322,8 +311,7 @@ function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
  * `tableCell` escaping, so a description that spans lines or carries a pipe
  * cannot end the section early and swallow the agents listed after it.
  *
- * The set of names is not restated in prose: `transfer_to_agent`'s `agent_name`
- * is an enum, which constrains the call itself rather than asking for it.
+ * Public SDK tool names identify their target without a second agent-name argument.
  */
 function subagentSystemPromptAddition(subagents: SubagentInfo[], withDispatch: boolean, offeredNames?: readonly string[]): string {
   const rows = subagents.map((agent) => {
@@ -515,7 +503,7 @@ export interface AgentSystemPromptInput {
   images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean };
   /** The run's wall clock, injected. Omitted keeps the prompt clock-free. */
   now?: Date;
-  /** Whether this run is offered `dispatch_agents` (see {@link buildAgentTools}). */
+  /** Whether this run may offer SDK Agent-as-Tool delegation. */
   canDispatch?: boolean;
   /** Whether this run may read a URL — another way a picture can arrive. */
   withUrlTool?: boolean;

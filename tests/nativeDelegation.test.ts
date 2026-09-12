@@ -58,7 +58,7 @@ describe("native SDK delegation", () => {
     const chunks = await collect(runAgent(f.deps, f.input));
     expect(f.requests.map((body) => body.model)).toEqual([ROOT, CHILD]);
     expect(chunks.filter((chunk) => !chunk.author).map((chunk) => chunk.delta?.content ?? "").join("")).toBe("specialist answer");
-    expect(chunks.some((chunk) => chunk.toolResult?.name === "Handoff: child")).toBe(true);
+    expect(chunks.some((chunk) => chunk.toolResult?.name === "handoff_child: child")).toBe(true);
     expect(chunks.at(-1)).toMatchObject({ done: true });
     expect(f.closed).toHaveBeenCalledTimes(1);
   });

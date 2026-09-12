@@ -47,7 +47,7 @@ export async function* runAgent(deps: AgentDeps, input: RunAgentInput): AsyncGen
       };
       producer = withNativeTracing(deps.onSdkSpan, async () => {
         const graph: AgentGraph = { close: [], persistent: Boolean(input.runtime), saved: input.runtime?.checkpoint?.graph };
-        const maxTurns = Math.max(0, (input.maxTurn ?? 50) - (input.startTurn ?? 0));
+        const maxTurns = Math.max(0, activeInput.maxTurn ?? 50);
         try {
           signal.throwIfAborted();
           if (input.runtime) graph.history = await input.runtime.session.getItems();
@@ -122,12 +122,10 @@ export async function* runAgent(deps: AgentDeps, input: RunAgentInput): AsyncGen
 }
 
 function turnLimitWarning(input: RunAgentInput, answered: boolean): string {
-  const child = (input.startTurn ?? 0) > 0;
-  const subject = child ? `Subagent '${input.projectName}'` : "The run";
   const limit = input.maxTurn ?? 50;
   return answered
-    ? `${subject} reached its turn limit (${limit} turns); the last turn was answered from what it already had, with no tools offered.`
-    : `${subject} stopped at its turn limit (${limit} turns) before ${child ? "finishing; the main run continues" : "the model finished answering"}.`;
+    ? `The run reached its turn limit (${limit} turns); the last turn was answered from what it already had, with no tools offered.`
+    : `The run stopped at its turn limit (${limit} turns) before the model finished answering.`;
 }
 
 export function runPromptStream(deps: EngineDeps, input: RunPromptInput): AsyncGenerator<EngineChunk> {

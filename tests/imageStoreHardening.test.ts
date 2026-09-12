@@ -3,11 +3,9 @@ import { resolveImageUrl } from "@/domain/chat/imageRefs";
 import {
   MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS,
   resolveMessageImages,
-  resolveRunMessageImages,
 } from "@/application/chat/resolveImages";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
-import { toEngineMessages } from "@/application/chat/messageMapping";
-import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
+
 import type { ChatMessage, ChatMessageImage } from "@/domain/chat/types";
 
 /**
@@ -146,82 +144,5 @@ describe("resolveMessageImages", () => {
     await pending;
 
     expect(maxActive).toBe(MAX_CONCURRENT_CHAT_IMAGE_RESOLUTIONS);
-  });
-});
-
-describe("resolveRunMessageImages", () => {
-  it("preserves an image-only turn's loss through resolution and replay mapping", async () => {
-    const original: ChatMessage[] = [
-      {
-        chatId: "c1",
-        seq: 7,
-        role: "user",
-        content: "",
-        images: [{ url: "https://bucket.example/legacy.png" }],
-        createdAt: "2026-08-03T10:00:00Z",
-      },
-      {
-        chatId: "c1",
-        seq: 8,
-        role: "user",
-        content: "",
-        images: [],
-        createdAt: "2026-08-03T10:00:01Z",
-      },
-    ];
-
-    const resolved = await resolveRunMessageImages(original, undefined);
-    const replay = toEngineMessages(resolved.messages, {
-      droppedImageSeqs: resolved.droppedImageSeqs,
-    });
-
-    expect(replay.messages).toEqual([
-      { role: "user", content: "[The image(s) attached to this turn are no longer available.]" },
-      { role: "user", content: "" },
-    ]);
-    expect(original[0]?.role !== "tool" && original[0]?.images).toEqual([
-      { url: "https://bucket.example/legacy.png" },
-    ]);
-  });
-
-  it("inlines only the newest four stored images and never signs the rest", async () => {
-    const reads: string[] = [];
-    const sign = async () => {
-      throw new Error("run replay must not sign image URLs");
-    };
-    const objects: ArtifactObjectStore = {
-      put: async () => {},
-      read: async (key) => {
-        reads.push(key);
-        return { bytes: Buffer.from(key), mimeType: "image/png" };
-      },
-      sign,
-      delete: async () => {},
-    };
-    const messages = Array.from({ length: 6 }, (_, index) =>
-      assistant([{ key: `images/${index}.png` }]),
-    );
-
-    const resolved = await resolveRunMessageImages(messages, objects);
-
-    expect(reads).toEqual([
-      "images/2.png",
-      "images/3.png",
-      "images/4.png",
-      "images/5.png",
-    ]);
-    expect(resolved.dropped).toBe(2);
-    expect(JSON.stringify(resolved.messages)).not.toContain("https://");
-    expect(JSON.stringify(resolved.messages)).toContain("data:image/png;base64,");
-  });
-
-  it("drops a legacy remote URL instead of handing it to the model", async () => {
-    const resolved = await resolveRunMessageImages(
-      [assistant([{ url: "https://bucket.example/legacy.png" }])],
-      undefined,
-    );
-
-    expect(resolved.dropped).toBe(1);
-    expect(resolved.messages[0]?.role === "assistant" && resolved.messages[0].images).toEqual([]);
   });
 });

@@ -4,7 +4,6 @@ export {
   BUILTIN_TOOL_NAMES,
   buildAgentSystemPrompt,
   buildAgentTools,
-  DISPATCH_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
   FETCH_URL_TOOL_NAME,
   IMAGE_TOOL_NAME,
@@ -13,7 +12,6 @@ export {
   SAVE_FILE_TOOL_NAME,
   SKILL_TOOL_NAME,
   SLACK_TOOL_NAMES,
-  TRANSFER_TOOL_NAME,
 } from "@/application/llm/agentAssembly";
 export type {
   AgentCapabilityDeps,
@@ -28,7 +26,6 @@ export type {
 } from "@/application/llm/agentAssembly";
 export {
   createToolResultBudget,
-  createToolResultEmitter,
   MAX_TOOL_RESULT_CHARS_PER_TURN,
   MIN_KEPT_RESULT_CHARS,
   turnTruncationMarker,

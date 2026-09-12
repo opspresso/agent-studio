@@ -15,7 +15,7 @@ export function createSdkOutput(destination: RuntimeEmitter) {
     const item = event.item;
     if (item.type === "handoff_output_item") {
       if (!results.has(item.rawItem.callId)) emit({ toolResult: {
-        toolCallId: item.rawItem.callId, name: `Handoff: ${item.targetAgent.name}`,
+        toolCallId: item.rawItem.callId, name: `${item.rawItem.name}: ${item.targetAgent.name}`,
         content: `Conversation handed to ${item.targetAgent.name}.`,
       } });
     } else if (item.type === "tool_call_output_item" && item.rawItem.type === "function_call_result" && !results.has(item.rawItem.callId)) {

@@ -36,7 +36,7 @@ import type { ExecutionDeps } from "@/application/execution/runProject";
 import { withRunDeadline } from "@/shared/runDeadline";
 import { listModels } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
-import type { LlmChannel } from "@/domain/llm/channel";
+import type { LlmChannel } from "./channelFixtures";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version, VersionParameters } from "@/domain/project/types";
 import type { UsageDelta } from "@/domain/usage/types";
@@ -1691,10 +1691,8 @@ describe("executeAgent subagent turn budget", () => {
         usageChunk(1, 1),
       ],
       [childCall("c1"), usageChunk(1, 1)],
-      [childCall("c2"), usageChunk(1, 1)],
-      [childCall("c3"), usageChunk(1, 1)],
-      [childCall("c4"), usageChunk(1, 1)],
-      [contentChunk("done"), usageChunk(1, 1)],
+      [contentChunk("partial findings"), usageChunk(1, 1)],
+      [contentChunk("parent recovered"), usageChunk(1, 1)],
     ]);
     const { deps } = executionDepsFixture(channel);
     deps.projects.get = (async (name: string) => ({
@@ -1712,7 +1710,7 @@ describe("executeAgent subagent turn budget", () => {
           }
         : null) as ExecutionDeps["versions"]["get"];
 
-    await collect(
+    const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
         version: {
@@ -1727,6 +1725,8 @@ describe("executeAgent subagent turn budget", () => {
     // Child starts at turn 1 and stops at the parent's ceiling of 3 — two model
     // calls. Its own maxTurn of 50 would have let it run until the scripts ran out.
     expect(channel.seenParams.filter((params) => params.model === "gpt-child")).toHaveLength(2);
+    expect(chunks.some((chunk) => chunk.author === "child" && chunk.warning?.includes("turn limit (2 turns)"))).toBe(true);
+    expect(chunks.filter((chunk) => !chunk.author && chunk.delta?.content).map((chunk) => chunk.delta?.content).join("")).toBe("parent recovered");
   });
 });
 

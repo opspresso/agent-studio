@@ -17,7 +17,7 @@
  * subagent transfer never opens one — by design, since it is not a top-level run
  * — yet it dispatches to the provider and books a usage row exactly as its
  * parent does, and the parent's model being registered says nothing about the
- * child's. `subagentRunner` applies this where the child's version resolves, for
+ * child's. `agentBindings` applies this where the child's version resolves, for
  * that reason and no other.
  *
  * It is *not* attached to saving a version. Storing an id the registry has not

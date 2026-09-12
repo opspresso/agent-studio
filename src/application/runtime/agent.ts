@@ -11,7 +11,7 @@ import { createRuntimeTools, claimToolSlot, waitForSlot } from "./tools";
 import { toAgentInput, restoreValues, conversationMessages } from "./messages";
 import { buildTransferTranscript } from "./transcript";
 import { studioRunConfig } from "./runner";
-import type { RuntimeEmitter } from "./output";
+import { writeToolResult, type RuntimeEmitter } from "./output";
 import type { AgentDeps, AgentTask, RunAgentInput, PreparedAgent } from "./types";
 import { BoundAgent } from "./boundAgent";
 import { createSdkOutput } from "./events";
@@ -244,6 +244,7 @@ export function compileAgent(
             const result = String(await nativeInvoke(context, args, details));
             if (!prototype.current().completed) throw new ValidationError(result);
             paused = prototype.current().paused;
+            if (!paused && child.turn.finalTurn) childEmit({ warning: `Agent '${binding.agentName}' reached its turn limit (${child.turn.maxTurns} turns); the parent continues with its partial result.` });
             return result;
           }, child.observe, child.filter);
         }
@@ -261,11 +262,10 @@ export function compileAgent(
         emit({ warning: `Agent '${binding.agentName}': ${text}` });
       }
       if (slot) await waitForSlot(slot.previous, details?.signal ?? input.signal);
-      const masked = filter?.mask(text) ?? text;
-      const bounded = turn.results.fit(masked);
-      emit({ toolResult: { toolCallId: id, name: `${binding.name}: ${binding.agentName}`, content: filter?.restore(bounded) ?? bounded } });
+      const result = writeToolResult({ id, name: `${binding.name}: ${binding.agentName}`, text }, turn.results, emit, filter);
+      if (result.truncated) emit({ warning: "Tool output was truncated to fit the run's context budget." });
       slot?.complete();
-      return bounded;
+      return result.text;
     };
     agent.tools.push(delegate);
   }

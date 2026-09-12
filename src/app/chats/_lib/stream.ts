@@ -31,7 +31,7 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
   let { text, reasoning, reasoningTokens, toolCalls, tools, images, files, warnings, authorPaths } =
     prev;
   // Follow the stream: an authored chunk names a chain that is running now and
-  // joins the set — several children speak at once under `dispatch_agents`, while
+  // joins the set — several children speak at once under SDK delegation, while
   // a chain it is nested with has evidently finished. An unauthored chunk means
   // the top-level agent has control again, and none of them is still running.
   const path = chunkAuthorPath(chunk);

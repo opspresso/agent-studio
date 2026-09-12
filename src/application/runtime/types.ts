@@ -102,15 +102,6 @@ export interface RunAgentInput {
    */
   canDispatch?: boolean;
   maxTurn?: number;
-  /** Starting turn, used when a subagent continues the parent's turn budget. */
-  startTurn?: number;
-  /**
-   * The conversation to hand to anything this run transfers to. Set by a
-   * subagent runner so the *original* chat travels down the whole chain: a
-   * child's own `messages` are the one synthetic turn it was handed, and
-   * deriving from those would nest each hop's transcript inside the next.
-   */
-  transcript?: string;
   skills?: SkillInfo[];
   subagents?: SubagentInfo[];
   /** MCP tool definitions, already aliased for name collisions. */

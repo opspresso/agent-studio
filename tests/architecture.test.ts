@@ -1777,9 +1777,9 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // because chat replay legitimately builds `role: "tool"` messages from
     // stored rows — that is reconstruction, not dispatch.
     what: "what a tool result has to do, and in what order",
-    pattern: /tool_call_id: call\.id/,
-    owner: "src/application/llm/toolResultBudget.ts",
-    within: "src/application/llm/",
+    pattern: /function writeToolResult\(/,
+    owner: "src/application/runtime/output.ts",
+    within: "src/application/runtime/",
   },
   {
     // Whether a run's prompt may name the person asking. Three modules answered

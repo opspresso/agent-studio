@@ -29,7 +29,7 @@ import {
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import type { Project, Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
-import type { LlmChannel } from "@/domain/llm/channel";
+import type { LlmChannel } from "./channelFixtures";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { scriptedModels } from "./scriptedModels";
 import type { Trace } from "@/domain/trace/types";

@@ -7,7 +7,7 @@ import type {
   ChannelCompletion,
   ChannelParams,
   LlmChannel,
-} from "@/domain/llm/channel";
+} from "./channelFixtures";
 import type { EngineChunk } from "@/domain/llm/types";
 
 class EchoChannel implements LlmChannel {

@@ -60,7 +60,6 @@ import { mcpOAuthStateRepository } from "@/infrastructure/db/repositories/mcpOAu
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { remoteConversationRepository } from "@/infrastructure/db/repositories/remoteConversationRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
-import { createChannel } from "@/infrastructure/llm/channel";
 import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
 import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
@@ -307,7 +306,6 @@ const resolveTarget = async (modelId: string) => {
   return resolveProviderTarget(modelId, providers, defaultChannel);
 };
 
-const channel = createChannel(resolveTarget);
 const agentModels = createAgentModelProvider(resolveTarget);
 export const runtimeSessions: RuntimeSessionServices = { repository: runtimeSessionRepository, cipher: secretCipher, retentionDays: RETENTION.chatDays };
 const imageChannel = createImageChannel(resolveTarget);
@@ -329,7 +327,7 @@ async function resolveReranker(id: string) {
 }
 
 /** One-shot model probe for the /models console — the same channel a run uses. */
-export const testModel = createTestModel(channel, {
+export const testModel = createTestModel(agentModels, {
   testReranker: testRerankerModel,
   testImage: async (model, signal) => {
     await imageChannel.generateImage({ model, prompt: "A small white square on a plain background.", signal });

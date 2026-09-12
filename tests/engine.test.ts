@@ -1,6 +1,6 @@
 import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it, vi } from "vitest";
-import type { ChannelParams, LlmChannel } from "@/domain/llm/channel";
+import type { ChannelParams, LlmChannel } from "./channelFixtures";
 import type { ContentPart, EngineChunk } from "@/domain/llm/types";
 import {
   buildTransferTranscript,
@@ -1460,58 +1460,10 @@ describe("the final turn", () => {
     expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "turn-limit" });
   });
 
-  it("gives a subagent the same wrap-up, named as its own", async () => {
-    // A child that comes back empty leaves the parent answering "the agent
-    // returned no answer"; one that wrapped up hands over what it learned.
-    const channel = new FakeChannel([[contentChunk("partial findings"), usageChunk(1, 1)]]);
-    const deps: AgentDeps = {
-      channel,
-      recordUsage: async () => {},
-      callMcpTool: async () => ({ text: "ok" }),
-    };
 
-    const chunks = await collect(
-      runAgent(deps, {
-        projectName: "child-proj",
-        model: MODEL,
-        messages: [{ role: "user", content: "go" }],
-        maxTurn: 4,
-        startTurn: 3,
-        mcpTools: [toolDef],
-      }),
-    );
-
-    expect(channel.seenParams[0]?.tools).toBeUndefined();
-    expect(chunks.some((c) => c.delta?.content === "partial findings")).toBe(true);
-    expect(chunks.find((c) => c.warning)?.warning).toContain(
-      "Subagent 'child-proj' reached its turn limit",
-    );
-  });
 });
 
-describe("subagent turn guard wording", () => {
-  it("names the subagent instead of claiming the run stopped", async () => {
-    const channel = new FakeChannel([]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
 
-    const chunks = await collect(
-      runAgent(deps, {
-        projectName: "child-proj",
-        model: MODEL,
-        messages: [{ role: "user", content: "go" }],
-        maxTurn: 2,
-        startTurn: 2,
-      }),
-    );
-
-    const warning = chunks.find((c) => c.warning)?.warning ?? "";
-    // "Subagent", not "Transferred agent": a dispatch child continues the
-    // parent's turn counter the same way, and the wording must be true of both.
-    expect(warning).toContain("Subagent 'child-proj'");
-    expect(warning).toContain("the main run continues");
-    expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "turn-limit" });
-  });
-});
 
 describe("empty provider errors", () => {
   it("never yields an error chunk with an empty message", async () => {

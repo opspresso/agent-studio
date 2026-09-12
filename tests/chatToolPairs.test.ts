@@ -198,18 +198,14 @@ describe("describeTool", () => {
   });
 
   it("names the agent a transfer went to", () => {
-    expect(describeTool("transfer_to_agent", JSON.stringify({ agent_name: "researcher" }))).toEqual(
+    expect(describeTool("handoff_researcher", JSON.stringify({ input: "research", image_ids: [] }))).toEqual(
       { kind: "agent", name: "researcher" },
     );
   });
 
-  it("names every agent a dispatch ran", () => {
-    expect(
-      describeTool(
-        "dispatch_agents",
-        JSON.stringify({ tasks: [{ agent_name: "a" }, { agent_name: "b" }] }),
-      ),
-    ).toEqual({ kind: "agents", name: "a, b" });
+  it("names each native delegate tool independently", () => {
+    expect(describeTool("delegate_a")).toEqual({ kind: "agent", name: "a" });
+    expect(describeTool("delegate_b")).toEqual({ kind: "agent", name: "b" });
   });
 
   it("calls anything else a tool, under its own name", () => {
@@ -225,7 +221,7 @@ describe("describeTool", () => {
    */
   it("reads the engine's decorated result name", () => {
     expect(describeTool("Skill: tech-spec")).toEqual({ kind: "skill", name: "tech-spec" });
-    expect(describeTool("transfer_to_agent: simple-llm")).toEqual({
+    expect(describeTool("delegate_simple-llm: simple-llm")).toEqual({
       kind: "agent",
       name: "simple-llm",
     });
