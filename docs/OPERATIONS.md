@@ -262,7 +262,21 @@ Agent 런은 **항상** 트레이싱된다. 비-agent 런과 이미지 predict �
 에러 채널은 앱 로거로 흘려보낸다) 런이 아니다. export 배치는 인스턴스가 draining 을 시작할 때
 flush 되므로, 롤아웃에서도 마지막 span 은 남는다.
 
+SDK의 기본 공개 exporter는 사용하지 않는다. `runtime/tracing.ts`가 로컬 native span을 수집하고,
+승인 대기 실행은 `awaiting-approval`로 저장한다. SDK 모델·도구의 원문 데이터는 수집하지 않는다.
+
+### 승인 대기 실행
+
+Chat 소유자가 도구별 인자를 확인하고 승인·거절한다. 재개는 정확한 revision을 원자적으로
+선점하며, 중복 재개와 변경된 버전/바인딩을 거부한다. 승인 후 인스턴스가 종료되어 체크포인트가
+`running`으로 남으면 자동 재실행하지 않는다. 도구 효과를 확인한 뒤 실행 잠금이 만료되었거나
+해제된 상태에서 폐기한다. 폐기는 화면 기록을 남기고 미완료 실행을 모델 문맥에서 제외한다.
+
 ## 행 보존
+
+SDK Session과 승인 체크포인트는 `runtime_sessions.expires_at`으로 만료되며 chat 보존 기간을
+사용한다. 만료된 행은 읽기에서 제외한다. Chat 삭제 tombstone은 늦은 실행의 저장을 막고
+run-log 보존 기간 뒤 정리된다. 스캔 토큰이 없으면 이 테이블도 자동으로 정리되지 않는다.
 
 트레이스, usage 행, chat 과 그 메시지, 아티팩트 행, 트리거 전달, 인바운드 A2A 태스크,
 Slack·Telegram·Teams 중복 제거 claim 은 모두 유닉스 초 단위 `expiresAt` 을
@@ -275,7 +289,8 @@ transfer 는 맨바닥에서 시작한다), Telegram·Teams 대화 트랜스크�
 
 > **만료는 테이블의 기능이 아니라 틱이다.** schedule-scan 틱(`POST /api/triggers/scan`)이 돌
 > 때마다 `sweepExpiredRows` 가 `expiresAt` 이 지난 행을 지운다. 한 번에 `items` 에서 최대
-> 5,000행, Better Auth `session` 에서 최대 5,000행을 각각 지우므로 총 상한은 10,000행이다.
+> 5,000행, Better Auth `session`에서 최대 5,000행, SDK `runtime_sessions`에서 최대
+> 1,000행을 지우므로 총 상한은 11,000행이다.
 > 밀린 분량은 다음 틱들이 나눠 가져가고, 실패해도 스캔은 실패하지 않는다. `session` 은 자기
 > `expiresAt` 을 기준으로 쓴다: 라이브러리는 만료된
 > 세션을 그 쿠키가 다시 올 때만 지우므로, 돌아오지 않은 브라우저의 행은 틱이 아니면 영원히 남는다.

@@ -108,6 +108,12 @@ mirror하고, 모델은 사내 OpenAI 호환 LLM·embedding·reranker endpoint�
 런타임 다운로드는 필요 없다. 지원 형식과 워커 실행 제약은
 [문서 엔진](design/documents.md)을 보라.
 
+Agent Runtime은 앱에 포함된 OpenAI Agents SDK를 사용한다. SDK Session은 같은 PostgreSQL의
+`runtime_sessions`에 저장하고 `AES_ENCRYPTION_KEY`로 인증 암호화한다. 공개 OpenAI trace
+전송은 로컬 processor로 교체되어 사내 모델만으로 실행할 수 있다. 기존 ChatMessage는 화면
+기록으로 보존하며 SDK Session의 모델 이력으로 자동 변환하지 않는다. 모델 이력이 필요한 새
+대화는 현재 런타임에서 시작한다. 배포 교체 시 진행 중인 런을 먼저 drain하라.
+
 ## 데이터 이관
 
 v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQL에 이관한다.

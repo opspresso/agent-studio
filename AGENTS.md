@@ -172,9 +172,9 @@ key, cap, formatter, error identity, or collapse rule, search
 
 ### Chat and console
 
-- Before editing chat `run.ts` or `messageMapping.ts`, read `src/application/chat/AGENTS.md`.
-  Replay preserves tool traffic; within-turn storage order is reverse wire order, call/result ids
-  are scoped to one run, and three independent context budgets apply.
+- Before editing chat persistence or approval use cases, read `src/application/chat/AGENTS.md`.
+  Native SDK Session owns model/tool history. Display storage order is reverse wire order;
+  call/result IDs remain scoped to one run. Session, display reads and reconnect logs have separate bounds.
 - A chat run outlives its initiating connection. Routes do not pass an `AbortController` to SSE;
   the detach wrapper remains outermost; clients do not abort the fetch on unmount.
 - `use-stick-to-bottom` alone owns chat viewport scrolling. Thread descendants cannot scroll on

@@ -142,6 +142,7 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/chats` | `GET` `POST` | session |
 | `/api/chats/{chatId}` | `GET` `DELETE` | 그 chat 의 소유자 |
 | `/api/chats/{chatId}/messages` | `POST` | 그 chat 의 소유자 |
+| `/api/chats/{chatId}/approval` | `GET` `POST` `DELETE` | 그 chat 의 소유자 |
 | `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | 그 chat 의 소유자 |
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
@@ -586,7 +587,7 @@ Chat 은 소유자에게만 비공개이고, agent project 에 대해서만 실�
 ```
 GET    /api/chats?limit=                     → { chats, hasMore }
 POST   /api/chats                            { projectName, firstMessage, images?, documents? } → SSE
-GET    /api/chats/{chatId}?sinceSeq=         → { chat, messages, activeRun? }
+GET    /api/chats/{chatId}?sinceSeq=         → { chat, messages, activeRun?, pendingApproval? }
 DELETE /api/chats/{chatId}                   → 204
 POST   /api/chats/{chatId}/messages          { content, images?, documents? } → SSE
 GET    /api/chats/{chatId}/runs/{runId}/stream → SSE
@@ -662,6 +663,45 @@ HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내�
 chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name`, `note`와 다운로드용 `file?`을 돌려주고 `text`는 비운다:
 추출된 텍스트는 *나중 턴*이 재생하는 것이고 서버 측에서 읽히므로, 그것을 브라우저로 보내면 둘 중
 아무것도 렌더링하지 않는 화면을 위해 턴당 수만 자를 선로에 올리게 된다.
+
+### Chat 승인과 재개
+
+버전의 `parameters.policy`에는 `maxInputChars`(1–1,000,000), `blockedTools`,
+`approvalTools`를 지정할 수 있다. 도구 이름은 Prompt preview의 공개 이름이며 각 목록은
+최대 128개다. Handoff 이름은 `approvalTools`에 넣을 수 없고, 승인할 위임은
+`delegate_<name>`을 사용한다. 승인 정책은 영속 Chat 실행에서 지원한다.
+
+`GET /api/chats/{chatId}/approval`은 `{ pending: null }` 또는 다음 형태로 응답한다.
+`GET /api/chats/{chatId}`의 `pendingApproval`도 같은 pending 값을 가진다.
+
+```json
+{
+  "pending": {
+    "revision": 2,
+    "status": "pending",
+    "approvals": [{ "id": "<64자리 hex id>", "agent": "assistant", "tool": "SaveFile", "arguments": "{...}" }]
+  }
+}
+```
+
+`POST /api/chats/{chatId}/approval`은 다음 결정을 받고 실행을 SSE로 재개한다.
+한 번에 일부 승인만 결정할 수도 있다. 새 사용자 메시지는 추가하지 않으며 head에는
+`runId`와 `elapsedMs`가 있고 `userSeq`는 없다. 재개된 실행도 연결과 분리되어 끝까지 진행한다.
+
+```json
+{ "revision": 2, "decisions": [{ "id": "<승인 항목 id>", "approve": true }] }
+```
+
+`approve: false`는 도구 실행을 거절하고 SDK가 그 결과로 답을 이어가게 한다.
+승인 전에 도구는 실행되지 않는다. 다른 소유자는 `404`, 부정확하거나 중복된 항목은 `400`,
+이미 소비된 revision이나 대기하지 않는 실행은 `409`다. 실행 시작 이후의 오류는 SSE의
+`error` 프레임으로 전달될 수 있다. 프로젝트 접근 권한과 현재 버전·바인딩도 다시 확인한다.
+
+`DELETE /api/chats/{chatId}/approval`에 `{ "revision": 2 }`를 보내면 미완료 실행을
+폐기하고 `204`로 응답한다. 실행 잠금이 살아 있으면 `409`다. 화면 기록은 유지하고 미완료
+실행은 다음 모델 문맥에서 제외한다. 승인 뒤 프로세스가 중단된 경우 `status: "running"`으로
+남으며 자동 재실행하지 않는다. 도구 결과를 확인한 뒤 폐기하고 새 턴을 시작한다.
+승인 대기 중 새 메시지는 `409`다. 모든 변경 요청은 session의 동일 출처 검사를 적용한다.
 
 ## 레지스트리·연동 오퍼레이션
 

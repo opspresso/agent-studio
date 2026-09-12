@@ -757,6 +757,22 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
 헤더들이 담고 있는 것으로 여전히 돌아간다. 그것들이 아무것도 담고 있지 않을 때만 경고와 함께
 드롭된다.
 
+## SDK Session과 승인 상태
+
+SDK Session 이력과 승인 대기 RunState는 `runtime_sessions`에 별도로 저장한다. 같은 배포의
+`AES_ENCRYPTION_KEY`를 사용하며 대화 ID와 소유자를 인증 데이터에 묶은 암호문만 읽는다.
+원문 상태에는 모델/도구 이력과 각 Agent의 PII 복원 매핑이 포함될 수 있다. DB 접근 권한과
+암호화 키를 분리해 관리하고 백업·복구 시 같은 키를 유지하라.
+
+승인은 Chat 소유자가 정확한 revision과 항목 ID를 지정한다. 동일 출처 session 변경 검사,
+프로젝트 접근 재확인, 실행 lease와 Session CAS를 함께 적용한다. 승인 상태는 도구 실행 전에
+pending에서 running으로 선점한다. 중복·낡은 결정, 변경된 버전과 연결은 거부하며 승인 후
+중단된 실행은 자동으로 반복하지 않는다. 삭제 tombstone은 늦게 끝난 실행의 재생성을 막는다.
+
+SDK tracing은 로컬 processor가 이름·시간·상태·사용량만 수집한다. SDK의 공개 exporter를
+설치하지 않으며 원문 모델/도구 입력·출력과 credential을 native span으로 내보내지 않는다.
+배포가 선택한 OTLP exporter와 실행 오류/경고 기록의 접근 범위는 기존 운영 정책을 따른다.
+
 ## PII 필터링, 그리고 그것이 멈추는 곳
 
 `parameters.piiFiltering` 으로 버전별 옵트인. 나가는 메시지와 변수 안의 email, 전화번호, 한국

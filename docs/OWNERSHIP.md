@@ -34,8 +34,8 @@
 | 어떤 응답이 콘솔의 보안 헤더를 받는가. 여기 선언한 헤더는 라우트가 같은 키로 세운 것을 *대체한다* | `next.config.ts` 의 `SECURITY_HEADERS` 와 그 `source` |
 | 런이 파일로 쓸 수 있는 타입과 그 크기 | `src/domain/artifact/types.ts` 의 `SAVABLE_TYPES` / `isSavable` / `MAX_SAVED_FILE_BYTES` |
 | 저장된 파일이 독자에게 어떤 이름으로 내려가는가 | `src/domain/artifact/types.ts` 의 `savedFileName` |
-| 한 런이 파일을 몇 개까지 쓸 수 있는가 | `src/application/llm/engine.ts` 의 `MAX_SAVED_FILES_PER_RUN`. 이 플랫폼이 고른 루프 한도라 그것을 강제하는 루프 옆에 산다 |
-| 한 호출의 인자를 얼마나 보관하고 되풀이하는가 (알려지는 쪽과 프로바이더로 돌아가는 쪽 둘 다) | `src/application/llm/engine.ts` 의 `MAX_TOOL_ARG_BYTES` / `boundToolArgsPair` / `boundArgumentText` |
+| 한 런이 파일을 몇 개까지 쓸 수 있는가 | `src/application/runtime/tools.ts` 의 `MAX_SAVED_FILES_PER_RUN`. 이 플랫폼이 고른 루프 한도라 그것을 강제하는 루프 옆에 산다 |
+| 한 호출의 인자를 얼마나 보관하고 되풀이하는가 (알려지는 쪽과 프로바이더로 돌아가는 쪽 둘 다) | `src/application/runtime/arguments.ts` 의 `MAX_TOOL_ARG_BYTES` / `boundToolArgsPair` / `boundArgumentText` |
 | 프로젝트 산출물을 읽을 수 있는 사람. 쓰기와 같은 규칙, 기록만 하지 않는다 | `src/application/project/projectUseCases.ts` 의 `assertProjectOutputReadable` |
 | 일반 산출물 오브젝트를 삭제하기 | `src/infrastructure/storage/s3ObjectStore.ts` |
 | 비공개 source 본문 제거와 지연 업로드 재생성 차단 | `src/infrastructure/storage/sourceObjectStore.ts` 의 `delete`. 0바이트 표식으로 키를 유지하며 source 읽기에서는 없는 파일로 취급한다 |
@@ -63,7 +63,7 @@
 | 아티팩트 목록의 페이지 커서(= GSI 정렬 키) 철자. 아래 "모든 행 키 문자열" 의 유일한 예외이고, API 가 독자에게 건네는 커서이기도 하기 때문이다 | `src/domain/artifact/repository.ts` 의 `artifactCursor` |
 | 호출자가 요청한 페이지 크기를 읽는 법과, 한 페이지가 커질 수 있는 상한 | `src/shared/pageLimit.ts` 의 `parsePageLimit` / `boundedPageLimit` / `MAX_PAGE_LIMIT`. 목록 엔드포인트 넷이 각자 읽던 것이고, 사본들은 정수가 아닌 모든 입력에서 서로 달랐다 — 빈 `?limit=` 은 `Number("")` 가 0 이라 1 로 클램프되어, 갤러리 한 장을 요청한 페이지라고 답했다. 갤러리·chat 사이드바처럼 페이지 크기 자체가 하나의 결정인 곳은 자기 `max` 를 건네고, 리포지토리는 들어오는 값을 같은 규칙으로 다시 묶는다. Project·version·trigger·MCP connection 전체 열거, schedule scan, name-keyed registry와 A2A client key도 자연 키 cursor로 100개씩 읽는다. Better Auth member는 `createdAt + id`, audit day는 `createdAt + eventId`, chat transcript와 run-log replay는 `seq` cursor로 같은 크기를 읽는다. Usage 범위 집계와 Telegram destination 목록은 primary/GSI 정렬 키 cursor로 같은 크기를 내부 순회한다 |
 | UTC 날짜를 시각으로 읽는 법, 하루의 길이, 그리고 날짜 범위를 걸어가는 법 | `src/shared/date.ts` 의 `isUtcDay` / `daySpan` / `daysBetween`. 감사 로그·usage 일별 파티션·콘솔 비용 차트가 각자 범위를 걸었고, 넷째는 넓은 범위를 거절하려고 일수를 따로 셌다. 넷이 어긋난 날 하나는 아무것도 쓰이지 않은 키로 던지는 쿼리이거나, 다른 곳에 적힌 행 옆에 그려지는 차트의 기둥이다. 방향(오래된 쪽부터/최근 쪽부터)만 호출자의 것이고, `reverse()` 는 두 번째 걷기가 아니다 |
-| subagent 중첩 한도 | `src/application/execution/subagentRunner.ts` |
+| subagent 중첩 한도 | `src/application/execution/agentBindings.ts` |
 | catalog 재색인 중 동시에 probe할 MCP 서버 수 | `src/application/catalog/reindexCatalog.ts` 의 `MAX_CONCURRENT_CATALOG_PROBES` |
 | A2A 노출 목록이 동시에 확인할 project version 수 | `src/application/a2a/exposure.ts` 의 `MAX_CONCURRENT_A2A_EXPOSURE_READS` |
 | plugin snapshot 하나가 동시에 읽을 선택 파일 수 | `src/infrastructure/plugin/snapshot.ts` 의 `MAX_CONCURRENT_PLUGIN_READS` |
@@ -109,7 +109,7 @@
 | top-level 런을 감싸는 것 | `src/application/run/runBracket.ts` |
 | 어떤 project type 이 어떤 방식으로 실행되는가 | `src/application/execution/deps.ts` |
 | 런의 프롬프트가 자기 caller 를 이름으로 불러도 되는가 | `src/application/execution/deps.ts` 의 `callerFor` |
-| tool 결과가 무엇을, 어떤 순서로 해야 하는가 | `src/application/llm/toolResultBudget.ts` 의 `createToolResultEmitter` |
+| tool 결과가 무엇을, 어떤 순서로 해야 하는가 | `src/application/runtime/output.ts` 의 `writeToolResult` |
 | 실행 파사드가 agent project 를 어떻게 dispatch 하는가 | `src/application/execution/deps.ts` |
 | 진행 상황을 포함해 Slack 답변이 어떻게 전달되는가 | `src/application/slack/replyStream.ts`. 보고는 하나이고, 그것을 렌더하는 것은 표면이 가진 메커니즘이다: DM 의 상태 줄이거나 채널 스트림의 `task_update` 축이다. 어느 쪽도 다른 쪽의 정의가 아니다 |
 | Slack 출력에서 어떤 mrkdwn token이 알림 권한을 갖는가 | `src/domain/slack/outboundText.ts`의 `neutralizeSlackMentions`. 실제 Slack Web API 어댑터가 post, update, stream의 모든 텍스트 축에 적용한다 |

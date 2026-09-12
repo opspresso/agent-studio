@@ -7,9 +7,8 @@ Project 가 무엇이고, Version 이 무엇을 선언하며, 하나가 실행�
 [ARCHITECTURE.md](../ARCHITECTURE.md) 다. 여기서 이름 붙인 상한들은
 [CONFIGURATION.md](../CONFIGURATION.md#코드에-고정된-제한) 에 고정돼 있다.
 
-> **루프 자신의 불변식은 코드 옆에 있다.** `src/application/llm/AGENTS.md` 가 `engine.ts`,
-> `agentAssembly.ts`, `toolResultBudget.ts`, `pii.ts` 를 고칠 때 무엇이 성립해야 하는지에 대한
-> 정본이다. 이 파일은 루프가 왜 그런 모양인지를 말한다.
+> 실행 불변식의 정본은 `src/application/runtime/AGENTS.md`다. SDK API는
+> [OpenAI Agents SDK](https://openai.github.io/openai-agents-js/)의 계약을 직접 사용한다.
 
 ## Project / Version
 
@@ -23,7 +22,7 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
           parameters { temperature?, presencePenalty?, maxTokens?, reasoningEffort?, piiFiltering,
                        callerContext?, structuredOutput?/jsonSchema,
                        imageGeneration?/imageModel?, urlFetch?, slackWorkspace?,
-                       dynamicCapabilities?, memoryRecall?, reasoningTrace? },
+                       dynamicCapabilities?, memoryRecall?, reasoningTrace?, policy? },
           mcpList: McpBinding[], skillList: string[],
           subagentList: { name, type: 'local' | 'remote' }[], maxTurn?, createdAt }
 ```
@@ -65,139 +64,119 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
   이긴다. 대화형 표면(chat)만 최신 draft 로 폴백하는 쪽을 택하고, 외부 표면(Slack, A2A,
   webhook trigger, subagent transfer)은 published 전용이라 draft 가 새어 나가지 않는다.
 
-## LLM engine
+## Native Agent Runtime
 
-`src/application/llm/engine.ts` 는 **모든 것이 주입되는 순수 로직**이다 — channel,
-`recordUsage`, `callMcpTool`, `loadSkillContent`, `runSubagent`, `generateImage`, `editImage`,
-`fetchUrl`, `readSlack` — 그래서 `tests/fakeChannel.ts` 를 통해 네트워크도 DB 도 없이 테스트된다.
-
-루프는 두 이웃을 두고, **`engine.ts` 가 둘 다 다시 export 하는 파사드**라서, 호출자는 import
-경로 하나를 유지하고 그 분리는 내부 사정으로 남는다:
-
-| 모듈 | 소유하는 것 |
-|---|---|
-| `agentAssembly.ts` | 런이 무엇을 할 수 있다고 듣는가: `assembleAgentRun`, 시스템 프롬프트 빌더들(`buildAgentSystemPrompt`, skill 표와 server 표, 런 시계와 caller 블록), builtin 도구 정의와 `buildAgentTools`, `ImageRegistry`, 그리고 `MAX_DISPATCH_TASKS` |
-| `toolResultBudget.ts` | 결과가 얼마를 써도 되는지와 무엇을 해야 하는지: `createToolResultBudget` 과 `createToolResultEmitter`, `MAX_TOOL_RESULT_CHARS_PER_TURN`, `MIN_KEPT_RESULT_CHARS`, 그리고 truncation 마커 |
-
-> `src/application/llm/AGENTS.md` 가 루프 불변식의 정본이다. `engine.ts`, `agentAssembly.ts`,
-> `toolResultBudget.ts`, `pii.ts` 를 고치기 전에 읽어라.
+Agent Studio는 AgentOps / Control Plane이며 OpenAI Agents SDK가 기본 Agent Runtime이다.
+Studio는 버전·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가
+모델 턴·도구 실행·Handoff·Agent-as-Tool·Guardrail·승인 중단과 재개를 수행한다.
+`src/application/runtime/`가 SDK 계약을 직접 사용한다. 자체 모델/도구 루프는 두지 않는다.
 
 ```mermaid
 flowchart TB
-  start["턴 시작"]
-  guard{"턴 ≥ maxTurn?"}
-  turnlimit["warning +<br/>finishReason: turn-limit"]
-  final{"턴 = maxTurn − 1 이고<br/>이 런에 도구가 있는가?"}
-  wrapup["도구를 제공하지 않고,<br/>모델에게 그 이유를 알린다"]
-  call["모델 호출 — 스트림<br/>첫 chunk 전의 재시도 가능한 실패:<br/>fallback 으로 한 번 재시도"]
-  miderr["스트림 도중 실패:<br/>error chunk, 재시도 없음 — 스트림 종료"]
-  hascalls{"tool call 이 있는가?"}
-  cut{"provider 가<br/>finish_reason length 라고 했는가?"}
-  outputlimit["warning +<br/>finishReason: output-limit"]
-  finished["done: true"]
-  dispatch["모든 호출을 알린 뒤 dispatch:<br/>builtin 은 호출 순서대로 · MCP + FetchUrl 은 동시에 ≤5<br/>출력이 잘린 턴은 한 번 경고한다. 파싱되지 않은<br/>인자는 error 결과를 받고, 결코 dispatch 되지 않는다"]
-  budget["턴당 상한 + 런 컨텍스트 예산<br/>잘린 곳에는 마커가 남고, 런은 한 번 경고한다"]
-  append["assistant 메시지 하나 + tool 결과<br/>+ post-context 메시지 — 모두 과금된다"]
-
-  start --> guard
-  guard -->|예| turnlimit
-  guard -->|아니오| final
-  final -->|예| wrapup --> call
-  final -->|아니오| call
-  call -.-> miderr
-  call --> hascalls
-  hascalls -->|아니오| cut
-  cut -->|예| outputlimit
-  cut -->|아니오| finished
-  hascalls -->|예| dispatch --> budget --> append -->|"턴 + 1<br/>(transfer 는: + 2)"| start
+  surface["Chat · API · 메시징 · Trigger"] --> control["Studio Control Plane<br/>버전 · 권한 · 비용/동시성 가드 · 바인딩"]
+  control --> runtime["SDK Agent + Runner"]
+  runtime --> model["SDK ModelProvider<br/>OpenAI / 호환 gateway / vLLM"]
+  runtime --> capabilities["SDK Tool · MCPServer"]
+  runtime --> handoff["Handoff: 같은 Runner의 담당 Agent 변경"]
+  runtime --> delegate["Agent.asTool: specialist 결과를 부모에게 반환"]
+  runtime <--> session["Chat의 SDK Session + RunState<br/>암호화된 PostgreSQL CAS 저장"]
+  runtime --> events["SDK stream events → EngineChunk → 표면"]
+  runtime --> trace["SDK native spans → 로컬 Trace"]
+  control --> memory["독립 Context/Memory recall"]
 ```
 
-**마무리 턴(wrap-up turn)** 에서는 모든 경로가 `turn-limit` 으로 끝난다: 모델이 쓴 것이
-무엇이든 그것이 런의 답이고, 그럼에도 모델이 한 호출은 dispatch 되지 않으며, warning 은 런이
-답을 냈는지 아니면 답 없이 멈췄는지를 말한다.
+### 역할과 소유권
 
-모든 종료는 알려진다 — 정상 종료는 `done`, 상한은 `finishReason`, 실패는 `error` chunk — 그것이
-소비자로 하여금 끝을 추론하지 않고 읽게 해 준다.
+| 개념 | 역할 |
+|---|---|
+| Skill | 읽을 수 있는 지식과 지침. `Skill` 도구로 필요한 본문/파일을 점진적으로 읽는다 |
+| Tool | 실행 가능한 기능. SDK function tool이 인자 검증·실행·결과를 관리한다 |
+| MCP | 외부 도구 프로토콜. Studio가 검증한 연결과 alias 스냅샷을 SDK `MCPServer`로 제공한다 |
+| Memory | 버전이 선택한 장기 지식/문맥. MCP recall 결과는 discovery와 프롬프트 준비에 사용한다 |
+| Session | 특정 대화의 정확한 모델/도구 이력. Memory와 별도 저장·수명주기를 가진다 |
+| Policy | 입력 Guardrail, 차단 도구, 승인이 필요한 도구 및 플랫폼 실행 한도 |
+| Credential | Studio가 endpoint별로 해석하는 비밀. 모델 요청 시점과 도구 dispatch 경계에서 주입한다 |
 
-채널 어댑터는 SDK의 스트림 반복이 끝난 뒤에도 호출자의 취소 signal을 확인하고 원래 이유를
-던진다. SDK가 취소를 정상 반복 종료로 전달해도 실행은 완료로 기록되지 않으며, Chat은 중단
-안내를 메시지에 남긴다.
+`agentAssembly.ts`는 실제 실행과 Prompt preview의 도구·지침을 함께 조립한다. 실행할 수 없는
+기능과 정책으로 차단한 기능은 모델에게 제공하지 않는다. MCP 연결의 SSRF 검증, OAuth,
+사용자/대화 헤더와 연결 정리는 기존 Studio 경계가 소유하며 SDK의 전역 이름 기반 도구
+캐시는 사용하지 않는다. 한 사용자에게 준비한 도구 목록을 다른 자격 증명으로 재사용하지 않는다.
 
-- 모든 텍스트 생성은 **OpenAI Chat Completions 프로토콜**로 말하며, 모델 id 는
-  `provider/model` 이다. 라우팅은
-  [CONFIGURATION.md](../CONFIGURATION.md#llm-채널) 에 설명돼 있다.
-- `runPrompt(deps, input): Promise<RunResult>` — 단발성이고, 스트리밍은 `runPromptStream` 이다.
-- `runAgent(deps, input): AsyncGenerator<EngineChunk>` — 재귀적인 다중 턴 도구 루프.
-  제공할 수 있는 것: `Skill`(점진적 skill 로딩), `transfer_to_agent`(subagent transfer —
-  로컬 재귀이거나 원격 agent 의 HTTP 호출), `dispatch_agents`(여러 subagent 를 한 번에,
-  **top-level 런에만** 제공되어 동시에 도는 자식 수가 transfer 깊이를 따라 늘지 않는다),
-  `GenerateImage`, `EditImage`, `FetchUrl`(모델이 고른 URL, `parameters.urlFetch` 뒤에 있다 —
-  [SECURITY.md](../SECURITY.md#모델이-고른-url) 참고. 자기 몫의 추출은 갖지 않는다 —
-  텍스트·HTML·PDF 는 첨부가 지나는 것과 같은 `DocumentExtractor` 를 지난다), 그리고
-  `SaveFile`(런이 쓴 텍스트를 독자가 받는 파일로 남긴다 — 버전이 아니라 **오브젝트 스토리지**가
-  게이트다. 앞의 둘은 결정이라 버전이 정한다: 하나는 호출마다 돈을 쓰고 하나는 모델이 말하는
-  주소로 요청을 보낸다. 파일을 쓰는 것은 둘 다 아니고, 못 하는 런은 리포트를 채팅창에 붙여
-  넣는 수밖에 없다),
-  `File`(보관된 파일 읽기·검사와 문서 생성·편집 — 문서 엔진과 오브젝트 저장소가 게이트이며
-  형식별 범위는 [문서 엔진](documents.md)을 따른다),
-  `parameters.slackWorkspace` 뒤의 Slack 읽기 도구 여섯 개
-  ([workspace 읽기](slack.md#워크스페이스-읽기) 참고).
-  **그 밖의 이름은 모두 MCP 도구이고**, `src/domain/llm/toolNames.ts` 의 `BUILTIN_TOOL_NAMES` 는 alias 할당
-  동안 예약되어, MCP 도구가 builtin 이 주장할 수 있는 이름을 다는 일이 없다.
+### 모델과 실행
 
-> 루프가 그것들을 어떻게 dispatch 하는지, builtin 이 *제공된다*는 것이 무슨 뜻이고 왜 그것을
-> dep 의 존재로 읽지 않는지, 턴 가드와 마무리 턴이 런을 어떻게 끝내는지, transfer 가 무엇을
-> 나르고 모든 결과가 무엇에 과금되는지 — 전부 `src/application/llm/AGENTS.md` 의 몫이며,
-> 편집에 필요한 만큼의 상세로 적혀 있다.
+`runPrompt`와 `runPromptStream`도 SDK Agent/Runner를 사용한다. `runAgent`의 도구 반복은 SDK가
+수행하며, Studio 모델 wrapper는 모델별 설정·PII·사용량·컨텍스트 예산과 마지막 턴 정책을 적용한다.
+마지막 허용 턴에는 도구를 제공하지 않고 현재 정보로 답하도록 지시한다. SDK의 `maxTurns`도
+동시에 강제한다. 제공되지 않은 도구와 잘못된 인자는 SDK의 오류 결과/실패 계약을 따른다.
 
-세 가지 한계는 루프의 메커니즘이라기보다 플랫폼에 대한 결정이고, 각각은 루프가 스스로 물을 수
-없는 질문에 답한다:
+`agentModels.ts`의 SDK `OpenAIChatCompletionsModel`은 배포가 지정한 endpoint로만 요청한다.
+OpenAI, OpenAI-compatible gateway와 사내 vLLM은 같은 경로를 사용한다. 요청마다 endpoint와
+credential을 다시 해석하며 bearer와 AWS SigV4를 지원한다. `store: false`를 사용하고 provider
+conversation state에 의존하지 않는다. 숨은 HTTP 재시도는 없으며, 첫 출력 전 429/5xx에만
+설정된 fallback 모델로 한 번 전환한다. 출력이 시작된 뒤에는 실패한 요청을 반복하지 않는다.
+`/models` 진단도 같은 SDK 모델 어댑터를 사용한다.
 
-- **런 전체 컨텍스트 예산**(`src/application/llm/contextBudget.ts`, 단일 소유자)은 모델의
-  `contextWindow` 에서 상한을 도출한다. 그래서 window 가 작은 모델에서 도구를 많이 쓰는 런은
-  provider 의 `400` 으로 죽는 대신 마커와 `warning` 하나를 남기며 잘린다(추정치와 그 근거는
-  [CONFIGURATION.md](../CONFIGURATION.md#런-전체의-컨텍스트-예산) 에 있다). 이 예산은 런이
-  *추가하는* 것을 제한한다 — 입력 `messages` 는 호출자의 것으로 남는다: chat 만 히스토리를
-  다듬는데, 서버 측 저장소가 유일하게 한계 없는 입력원이기 때문이다. 다른 모든 표면은 호출자가
-  구성한 것을 그대로 중계한다. 호출자의 요청을 조용히 다시 쓰는 것이 provider 자신의 overflow
-  응답보다 나쁘기 때문이다. 등록되지 않은 모델은 도출할 window 가 없어 예산 없이 실행된다.
-- **두 이미지 dep 은 version 이 `parameters.imageGeneration` 으로 옵트인할 때만 주입된다.**
-  모델은 `parameters.imageModel` 이 여전히 이미지 가능 모델인 동안에는 그것이고, 아니면
-  registry 의 기본값이다. 해석된 모델의 provider 가 *edit* 엔드포인트를 구현하는지는 dispatch
-  시점에만 알 수 있으므로, 그 거부는 숨겨진 도구가 아니라 tool-result 에러다.
-- **로컬 transfer 는 조상 체인을 나른다**: 이미 체인에 있는 project 로 transfer 하거나 깊이 5
-  를 넘겨 중첩하는 것은 author 가 붙은 error chunk 로 거부된다. 턴 회계만으로는 이것이
-  제한되지 않는다 — 자식은 부모의 턴 카운터를 이어받고 자신의 `maxTurn` 은 부모의 상한으로
-  clamp 된다(`subagentRunner.ts`) — 그래도 순환은 상한이 무언가 말하기 전에 예산 전체를 써
-  버릴 것이다.
+SDK usage와 provider의 실제 청구 비용을 보존한다. 청구 비용이 없으면 모델 카탈로그의
+가격으로 계산하고, agent 실행은 `createUsageAggregator`가 모델 호출별 값을 모아 종료 시
+저장한다. `reasoning_content` dialect는 SDK 이력의 해당 모델 턴에 남긴다. `reasoningTrace`는
+화면으로 보낼 reasoning만 제어하며 provider 재생 이력은 삭제하지 않는다.
 
-런이 루프 자체를 넘어 나르는 것:
+SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과 예산 순서를 점유하므로,
+승인 대기·인자 오류로 실행되지 않은 도구가 형제 도구의 완료를 막지 않는다. 텍스트 결과는
+마스킹 → 예산 차감 → 복원한 화면 출력 순으로 처리하고 SDK에는 마스킹된 결과를 돌려준다.
+파일 bytes는 모델 문맥에 넣지 않으며, 이미지는 domain 한도 내 inline bytes만 허용한다.
+스트림 소비자의 backpressure와 취소는 자식 실행과 MCP 연결의 정리까지 기다린다.
 
-- **Fallback**: 기본 모델에서 **첫 chunk 전에** 재시도 가능한 에러(429/5xx)가 나면
-  `fallbackModel` 로 한 번 재시도한다. 스트림 도중의 실패는 `{error}` chunk 를 내고 재시도하지
-  않는다.
-- **PII 필터링**(`parameters.piiFiltering`): 밖으로 나가는 메시지와 변수 안의 이메일, 전화번호,
-  주민등록번호, Luhn 검증을 통과하는 카드 번호는 dispatch 전에 형식을 보존하면서 되돌릴 수 있는
-  `[[PII:…]]` 토큰으로 정규식 마스킹된다(`src/application/llm/pii.ts`). 원본은 응답에서 복원되며
-  — 토큰 경계 버퍼링과 함께 스트리밍도 포함한다 — 매핑은 subagent transfer 를 건너 이어진다.
-  반면 engine 컨텍스트로 다시 들어오는 도구 인자·결과는 마스킹된 채로 남는다. **밖으로 나가는
-  MCP dispatch 는 마스킹되지 않는다** —
-  [SECURITY.md](../SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳) 참고. 꺼 두면 필터링하지 않는
-  경로와 바이트 단위로 동일하다.
-- **비용**은 channel 이 말해 줄 때는 channel 이 청구한 값이고(`usage.cost_usd`, router 가
-  보고하며 그것만이 청구서와 일치한다), 아니면 호출 지점에서 계산한 registry 가격이다
-  (`src/domain/llm/models.ts` 의 `calculateCost` / `calculateImageCost` / `calculateRerankCost`). 어느 쪽이든
-  `recordUsage` 로 전달되고, 그것이 usage repository 의 행 잠금 아래 합산에 넘긴다. 단발성 런은
-  호출마다 기록하고, agent 런은 `createUsageAggregator` 에 턴별 usage 를 모아 런이 끝날 때 한 번
-  flush 한다.
-- **Model registry** `src/domain/llm/models.ts`:
-  `ModelConfig { id, provider, family, maker, displayName, pricing { inputPer1M, outputPer1M,
-  cachedInputPer1M?, imageInputPer1M?, imageOutputPer1M?, perImage?, perInputImage?, perSearch?,
-  perAudioMinute? },
-  capabilities { tools, structuredOutput, imageInput, reasoning, reasoningWithTools?,
-  imageGeneration?, embedding?, rerank?, transcription? }, contextWindow, maxTokens, hidden?, wireId? }`.
-  타입은 Text·Image·Embedding·Rerank·Transcription 중 하나다. `wireId` 와 drift 검사는
-  [CONFIGURATION.md](../CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그) 참고.
+### Handoff와 Agent-as-Tool
+
+로컬 text agent는 `handoff_<name>`으로 담당 Agent를 바꾸거나, 최상위 Agent가 제공하는
+`delegate_<name>`으로 specialist의 결과를 받은 뒤 계속 답할 수 있다. 인자는
+`{ input: string, image_ids: string[] }`다. Handoff는 같은 Runner의 모델/도구 이력을 이어받고,
+Agent-as-Tool은 SDK가 별도 실행을 관리한다. 후자의 요청에는 최신 SDK Session 이력에서
+만든 한정된 배경 문맥을 전달한다. 원격 Agent와 image project는 별도 기능을 수행하는
+SDK function tool이며 text agent로 가장하지 않는다.
+
+Studio는 요청된 대상의 발행 버전만 준비하고 순환, 깊이 5, 모델/비용 정책을 검사한다.
+자식은 부모에게 남은 턴 수 이하로 제한되며 추가 Agent-as-Tool 병렬 위임을 제공하지 않는다.
+필요한 로컬 Handoff와 원격/이미지 도구는 자식에도 제공할 수 있다. 자식 실패는 부모의 오류
+도구 결과와 경고가 되고, 부모는 남은 정보로 답할 수 있다.
+
+`BoundAgent`는 SDK identity를 유지하면서 동시 호출의 모델·도구·Guardrail 자원을 분리한다.
+각 위임 호출의 tool-call ID 공간도 분리한다. 승인 체크포인트를 읽을 때는 저장된 위임과
+Handoff 선언을 먼저 복원하고, 승인된 SDK 객체를 실제 재개에도 사용한다.
+
+### Session과 승인
+
+Chat은 새 사용자 턴만 실행에 전달한다. SDK `Session`의 native items가 모델 이력이며,
+화면용 `ChatMessage`의 합쳐진 응답이나 도구 행에서 이력을 다시 만들지 않는다.
+Session은 `runtime_sessions`의 별도 행에 저장한다. 소유자·대화에 묶인 AES 인증 암호화와
+revision CAS를 사용하고, 이력과 승인 대기 `RunState`를 한 번에 저장한다.
+
+`parameters.policy`는 `maxInputChars`, `blockedTools`, `approvalTools`를 선언한다.
+입력 크기는 blocking SDK Guardrail로 확인하고, 승인은 SDK `needsApproval`과
+`RunState.approve/reject`를 사용한다. 승인 정책은 영속 Chat에서 지원한다. 다른 실행 표면은
+해당 정책이 적용되는 실행을 거부한다. Handoff 대신 `delegate_<name>`에 승인 정책을 적용한다.
+구체적인 HTTP 요청은 [Chat 승인 API](../API.md#chat-승인과-재개)를 따른다.
+
+승인 대기 상태에는 버전·도구/연결 fingerprint·이미지 핸들·소비한 예산·각 Agent의 PII 매핑을
+보존한다. 재개 전 pending revision을 running으로 원자적으로 선점한다. 중복 결정과 바뀐
+버전/바인딩은 거부한다. 승인 이후 프로세스가 중단되어 결과가 불확실하면 자동 재실행하지
+않는다. 사용자는 기록을 확인한 뒤 미완료 실행을 폐기할 수 있다. 폐기는 화면 기록을 보존하고
+미완료 실행만 이후 모델 문맥에서 제외한다.
+
+일반 Session 문맥은 오래된 완전한 사용자 턴부터 생략하고 최신 턴은 보존한다. 가장 최근
+inline 이미지 4개를 남기며 생략한 이미지에는 텍스트 표시와 경고를 남긴다. 생성된 이미지의
+편집 핸들도 다음 턴에 전달한다. 전체 암호화 payload의 원문 크기에는 별도 저장 상한이 있다.
+실행 오류·취소로 완료되지 않은 새 턴은 정상 Session 완료 이력으로 커밋하지 않는다.
+Chat 삭제는 tombstone으로 늦게 끝난 실행의 이력 재생성을 막는다.
+
+### 로컬 Tracing
+
+SDK의 기본 공개 exporter는 로컬 `TracingProcessor`로 교체한다. 샘플링된 Studio Trace에
+native Agent·generation·function·MCP listing·Guardrail·Handoff span을 연결하며 native
+span ID와 부모 ID를 보존한다. 모델 입력·출력, 도구 인자와 credential은 수집하지 않는다.
+승인 대기 실행은 `awaiting-approval` 상태다. 선택적인 운영 OTLP 전송은 배포가 구성한
+기존 exporter를 통하며, 기본 실행에는 외부 tracing 서비스나 OpenAI API key가 필요 없다.
 
 ## Images
 

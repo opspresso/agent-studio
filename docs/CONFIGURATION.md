@@ -480,13 +480,13 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 
 | 제한 | 값 | 소유자 |
 |---|---|---|
-| agent 런당 턴 수 (버전 `maxTurn` 기본값) | `50` | `src/application/llm/engine.ts` |
+| agent 런당 턴 수 (버전 `maxTurn` 기본값) | `50` | `src/application/runtime/execute.ts` |
 | 멤버 tier 제한. 멤버당 동시 런 수 / 월 USD 상한 (`admin` —/—, `member` —/`20`, `guest` `1`/`2`. "—" 는 env 제한을 물려받거나 상한이 없다는 뜻). `guest` 는 추가로 프로젝트를 만들 수 없고 프로젝트 API 토큰도 쓸 수 없다 | `TIER_LIMITS` | `src/domain/member/tiers.ts` |
-| `dispatch_agents` 호출 하나가 돌릴 수 있는 agent 수 | `4` | `src/application/llm/agentAssembly.ts` |
+| SDK function tool 동시 실행 수 | `5` | `src/application/runtime/runner.ts` |
 | 턴당 도구 결과 텍스트 | `200,000` 자 | `src/application/llm/toolResultBudget.ts` |
-| subagent 로 넘기는 transfer transcript | `8,000` 자 | `src/application/llm/engine.ts` |
-| subagent 중첩 깊이 | `5` | `src/application/execution/subagentRunner.ts` |
-| 한 런이 읽을 수 있는 주소 수 (`FetchUrl`) | `20` | `src/application/llm/engine.ts` |
+| subagent 로 넘기는 transfer transcript | `8,000` 자 | `src/application/runtime/transcript.ts` |
+| subagent 중첩 깊이 | `5` | `src/application/execution/agentBindings.ts` |
+| 한 런이 읽을 수 있는 주소 수 (`FetchUrl`) | `20` | `src/application/runtime/tools.ts` |
 | `FetchUrl` 하나가 끌어올 수 있는 바이트 | `5 MB` | `src/application/llm/urlContent.ts` |
 | `FetchUrl` 요청 하나, 모델에 도구 에러가 건네지기 전까지 | `15s` | `src/infrastructure/net/httpResource.ts` |
 | 가져온 주소 하나에서 유지하는 텍스트 | `90,000` 자 | `src/application/llm/urlContent.ts` |
@@ -500,7 +500,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | admin 이 올리는 모델 카탈로그 문서 | `4 MB` | `src/app/api/_lib/body.ts` |
 | 올리는 plugins 아카이브. 전송 크기 / 풀었을 때 / 엔트리 수 (헤더 기준, 파일·디렉터리·확장 레코드 모두) | `32 MB` / `64 MB` / `20,000` | `src/app/api/plugins/sync/upload/route.ts`, `src/infrastructure/archive/tar.ts` |
 | 한 틱의 retention sweep 이 지우는 행 수 (나머지는 다음 틱) | `items` 최대 `5,000` + Better Auth session 최대 `5,000` | `src/infrastructure/db/store.ts` 의 `deleteExpired`, `src/infrastructure/db/repositories/memberRepository.ts` 의 `deleteExpiredSessions` |
-| 한 런의 파일 쓰기 시도 수 (`SaveFile`과 `File` 생성·편집 공유) | `10` | `src/application/llm/engine.ts` |
+| 한 런의 파일 쓰기 시도 수 (`SaveFile`과 `File` 생성·편집 공유) | `10` | `src/application/runtime/tools.ts` |
 | 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (skill / 외부 agent / MCP 서버) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
 | 각 MCP 인덱스에 요청하는 카탈로그 매치 수. 그 상한을 넘겨 oversampling 한다. 여러 도구 행이 한 서버로 합쳐지고, 런이 바인딩할 수 없는 후보가 슬롯을 잡아먹어서는 안 되기 때문이다 | MCP 서버 상한의 `4×`(tool 인덱스) / `3×`(server 인덱스) | `src/application/execution/bindings.ts` |
 | 런이 카탈로그를 검색할 때 쓰는 것 (시스템 프롬프트 / 가장 최근 사용자 턴 / 최신 요청 + 관련 기억을 합친 검색어) | `2,000` 자 / `3` 턴 / `2,000` 자(각 절반 최대 `1,000` 자) | `src/application/execution/bindings.ts` |
@@ -529,7 +529,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | OpenAI-compatible SDK client cache (text / image / embedding, adapter별) / Teams 앱 token cache | 각 `16` / `32` | `src/infrastructure/llm/clientCache.ts`, `src/infrastructure/teams/client.ts` |
 | 프로젝트 설정에 표시하는 최근 Telegram destination | `100` | `src/application/telegram/projectTelegram.ts` |
 | GitHub API 요청 하나 (plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
-| 모델 응답당 동시 MCP·FetchUrl·SaveFile·File 호출 수(공유 풀) | `5` | `src/application/llm/engine.ts` |
+| 모델 응답당 동시 SDK function tool 수(공유 풀) | `5` | `src/application/runtime/runner.ts` |
 | 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
 | 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP·원격 A2A) | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | PDF에 삽입하는 PNG의 총 디코딩 픽셀 | `16,777,216` | `src/domain/llm/imageLimits.ts`의 `MAX_PDF_IMAGE_PIXELS` |
@@ -546,13 +546,14 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 프로세스가 동시에 보유하는 attachment-scale turn 본문 바이트 (`256KiB` 초과분만 과금, 상한은 최대 turn 본문의 2배) | ~`168MB` | `src/app/api/_lib/body.ts` |
 | Skill 첨부. 파일당 바이트 / skill 당 파일 수 / skill 당 바이트 (어느 하나라도 넘는 파일은 sync 에서 건너뛰고 이유를 보고한다) | `64KB` / `20` / `200KB` | `src/domain/skill/files.ts` |
 | 레지스트리 또는 버전 편집의 요청 본문 (skill 파일 상한에서 파생) | `456KB` | `src/app/api/_lib/body.ts` |
-| 턴이 넘칠 때 유지하는 transfer transcript 한 줄 | 최소 `500` 자 | `src/application/llm/engine.ts` |
+| 턴이 넘칠 때 유지하는 transfer transcript 한 줄 | 최소 `500` 자 | `src/application/runtime/transcript.ts` |
 | 컨텍스트 예산 추정 (ASCII / 그 외 / 이미지 part / 여유분) | 토큰당 `3` 자 / 자당 `1.5` 토큰 / `2,500` 토큰 / `2,000` 토큰 | `src/application/llm/contextBudget.ts` |
 | 런의 컨텍스트 예산이 잘라 낼 때 유지하는 도구 결과 | 최소 `500` 자 | `src/application/llm/toolResultBudget.ts` |
 | chat 메시지 하나가 보관하는 텍스트 (답변 · 도구 결과) | `350,000` 바이트 | `src/application/chat/run.ts` |
 | chat 메시지 하나가 보관하는 추론. 답변 **뒤에**, 같은 아이템 예산에서 | `40,000` 바이트 | `src/application/chat/run.ts` |
-| 컨텍스트로 리플레이되는 chat 이력 | `200` 메시지 / `200,000` 자 | `src/application/chat/messageMapping.ts` |
-| 컨텍스트로 리플레이되는 chat 도구 트래픽 | `3` 턴 / `20,000` 자 | `src/application/chat/messageMapping.ts` |
+| SDK Session 이력 | `256` items / `150,000` 자; 최신 완전한 턴은 보존 | `src/application/runtime/session.ts` |
+| SDK Session/checkpoint 저장 원문 | `64MiB`; 압축 후 인증 암호화 | `src/application/runtime/session.ts` |
+| 다음 턴의 SDK Session 이미지 | 최신 `4`개 | `src/application/runtime/historyImages.ts`, `src/domain/llm/imageLimits.ts` |
 | 인바운드 webhook / Slack 이벤트 / Telegram update / Teams activity 본문 | 넷이 함께 `1MB` | `src/app/api/_lib/inboundEvent.ts` 의 `MAX_INBOUND_EVENT_BYTES` |
 | webhook 의 message-mode payload / 트리거 이력에 저장하는 result·error·warning 각각 | `20,000` 자 / `2,000` 자 | `src/application/trigger/runTrigger.ts` |
 | 컨텍스트로 쓰는 Slack 스레드 턴 수 | `50` | `src/application/slack/handleSlackEvent.ts` |

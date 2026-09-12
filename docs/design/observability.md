@@ -135,59 +135,34 @@ Slack 주소든 그대로 다시 읽히고, 서로 다른 두 외부 id — A2A 
 
 ## Trace
 
+Agent 런은 항상 기록하며 나머지 런은 설정된 비율로 샘플링한다. Studio Trace는 준비 단계,
+SDK native span과 최상위 종료 상태를 한정된 행으로 저장한다.
+
 ```ts
-Trace     { traceId, projectName, versionName, projectType, actor?, ancestry?, conversation?,
-            status: 'completed' | 'turn-limit' | 'output-limit' | 'failed' | 'cancelled',
-            spans: TraceSpan[], spansDropped?, warnings?,
-            startedAt, endedAt, durationMs, error?, createdAt }
-TraceSpan { spanId, kind: 'model' | 'tool' | 'subagent' | 'prepare', name, author?,
-            startedAt, endedAt, durationMs, status: 'ok' | 'error', input?, output? }
+Trace { traceId, projectName, versionName, projectType, actor?, ancestry?, conversation?,
+        status: 'completed' | 'awaiting-approval' | 'turn-limit' | 'output-limit' | 'failed' | 'cancelled',
+        spans, spansDropped?, warnings?, startedAt, endedAt, durationMs, error?, createdAt }
+TraceSpan { spanId, parentSpanId?, kind: 'model' | 'tool' | 'subagent' | 'guardrail' | 'prepare',
+            name, author?, startedAt, endedAt, durationMs, status: 'ok' | 'error', input?, output? }
 ```
 
-Agent 런은 model/tool/subagent span 을 언제나 저장하고, agent 가 아닌 런과 이미지 predict
-런은 샘플링된다. span 은 한도가 정해진 메타데이터만 담는다 — 문자 수, 토큰, 비용, 소요 시간,
-subagent trace id. **원문 프롬프트와 tool 결과는 저장하지 않는다.** 보존 기간, 샘플링, 누가
-trace 를 읽을 수 있는지는 [OPERATIONS.md](../OPERATIONS.md#트레이싱) 에 있다.
+`runtime/tracing.ts`는 SDK 기본 exporter를 로컬 processor로 교체한다. Agent, 모델 generation,
+function tool, Handoff, MCP 도구 listing과 Guardrail의 native span ID·부모 ID를 보존한다.
+동시 위임도 SDK가 만든 계층에 남으며 text 자식마다 별도의 Studio Trace를 만들지 않는다.
+이미지 등 특화 실행은 자체 기록을 유지할 수 있다.
 
-턴 한도와 모델 출력 한도로 끝난 런은 각각 `turn-limit`, `output-limit`로 기록한다.
-하위 Agent의 한도 종료는 메인 Trace 상태를 바꾸지 않으며, 오류와 취소가 한도 상태보다 우선한다.
+모델/도구 입력·출력과 credential은 SDK trace 수집에서 제외한다. 이름, SDK 종류/trace ID,
+시간, 상태와 숫자형 사용량만 변환한다. 모델의 실제 비용과 cache/reasoning token을 보존한다.
+`TraceRecorder`는 native 모드에서 청크를 보고 같은 model/tool span을 다시 만들지 않는다.
 
-**첫 토큰 이전의 준비 작업은 `prepare` span 이다.** 런이 모델을 부르기 전에 memory recall을 먼저
-수행하고, 그다음 version의 도구를 resolve한다. 후자는 바인딩된 MCP 서버를 열고 도구를 나열하며,
-discovery를 켠 version은 원래 요청과 관련 기억으로 카탈로그까지 검색한다. 둘 다 네트워크 작업이고
-느려질 수 있다.
-recorder 는 resolve 보다 먼저 만들어지므로(그래야 resolve 가 던져도 trace 가 남는다) 그 시간이
-**첫 model span 안에 들어가 있었다**: MCP 서버 하나가 8초를 잡아먹은 런이 8초짜리 모델로
-읽혔고, "왜 첫 토큰이 늦었나" 는 페이지 어디에도 답이 없었다. 이제 각 단계가 자기 span 을
-갖고 실행 순서대로 `memory`와 `tools`에 기록되며, 그 끝이 다음 model span 의 시작이다. `output` 은 그 단계가 무엇을
-가지고 돌아왔는지다 — skill·subagent·MCP 서버·도구 수, 잃은 것의 수, 그리고 discovery 가
-무엇을 더했는지는 **이름으로**(최대 20개, 그 옆의 수는 찾은 총 개수라 목록보다 크면 그만큼이
-안 보이는 것이다). 런의 계획 중
-요청마다 달라지는 것은 그 목록뿐이라, 이름이 없으면 "왜 저 도구를 불렀나" 는 사후에 답할 수
-없다. Rerank를 사용한 tools 단계는 호출 수, 후보 수, 모델, input token, 비용과 vector fallback
-수를 함께 기록한다. 원문 query와 capability description은 기록하지 않는다.
-단계가 실패해도 런은 실패가 아니다(memory 가 답하지 않아도 런은 기억 없이 계속한다): span 이
-`error` 이고 trace 는 그대로다. **무엇이 `error` 인지는 경고 수가 아니라 실제로 물어본 서버가
-답하지 않았는지다** — 회상할 서버가 아예 없는 version 은 자기가 하는 모든 런에서 경고하므로,
-그것을 실패로 세면 잘못 설정된 version 의 trace 는 전부 빨갛게 된다.
+SDK 실행 전 `memory`와 `tools` 준비는 Studio `prepare` span이다. 바인딩·발견한 capability
+개수와 최대 20개의 이름, 손실과 준비 오류를 기록하며 원문 query/description은 기록하지 않는다.
+MCP 준비 실패가 기록되어도 실행이 계속된 경우 Trace 전체를 실패로 처리하지 않는다.
 
-**trace 는 사용자가 보는 것과 같은 chunk 로 조립된다.** `TraceRecorder`
-(`src/application/trace/recorder.ts`) 는 루프 곳곳에 흩어진 계측 지점에서 호출되는 대신
-`EngineChunk` 스트림을 관찰한다. 그래서 새 tool 이나 builtin 은 아무것도 그것을 기억하지
-않아도 trace 에 남는다. 종료는 `runTermination` 을 통해 읽으며, 그것이 자식의 turn limit 이
-부모의 trace 에 찍히는 것을 막아 준다.
+최상위 청크에서 종료·경고를 읽는다. 하위 Agent의 한도/실패가 부모의 완료를 덮지 않으며,
+승인 대기는 `awaiting-approval`이다. 취소와 실패는 한도 상태보다 우선한다. 최대 span 100개,
+warning 20개를 저장하고, 생략된 span은 `spansDropped`로 센다. 실행 경고/오류 문구는 최대
+1,000자로 제한되며 원문 오류에 민감 정보가 있을 수 있어 소유자와 admin만 읽을 수 있다.
 
-**`turn-limit` 은 그 자체로 하나의 상태다.** 상한에 도달한 런은 끝난 런이 아니기 때문이다.
-이것을 `completed` 로 기록하면 정작 조사할 가치가 있는 그 한 건이 trace 페이지에서 정상으로
-읽혔다 — 마지막 턴이 침묵하는 대신 마무리를 짓게 된 지금도 그대로다: 답은 존재하지만, 예산을
-다 쓴 채로 그리고 계획이 여전히 쓰고 있던 tool 없이 쓰인 답이다.
-
-**transfer 하나는 어느 깊이까지 갔든 span 하나다.** subagent 항목은 `transferId` 로 구분해
-trace 샘플링 여부와 독립적으로 같은 agent 로의 두 transfer 를 두 span 으로 남긴다.
-더 깊은 hop 은 그것을 시작한 직계 자식의 transfer 로 합쳐진다. 그러면 사슬은 양방향으로 읽힌다: `ancestry` 로는 위로
-top-level 런까지, span 의 subagent trace id 로는 아래로 자식 자신의 trace 까지.
-
-**모든 누적기에는 한도가 있다.** trace 가 행 하나로 쓰이고 행 하나로 읽히기 때문이다 —
-상세 페이지는 통째로 받고, 목록은 상위 N 개를 통째로 받는다: span 100 개,
-나머지는 사라지는 대신 `spansDropped` 에 세어진다. warning 20 개. 그리고 error 나 warning
-문자열 하나당 1,000자.
+선택적인 OTLP exporter와 보존·샘플링 설정은 [운영](../OPERATIONS.md#트레이싱)을 따른다.
+기본 실행은 공개 OpenAI trace exporter나 외부 tracing 서비스에 의존하지 않는다.

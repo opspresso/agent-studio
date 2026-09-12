@@ -5,7 +5,7 @@ agent project 를 상대로 하는 소유자 범위(owner-scoped)의 비공개 �
 여기에 있는 이유는 대부분의 첨부가 chat 으로 도착하기 때문이다.
 
 > **영속화(persistence)와 재생(replay) 불변식은 코드 옆에 있다.**
-> `run.ts` 와 `messageMapping.ts` 에 대한 정본은 `src/application/chat/AGENTS.md` 다 —
+> 표면의 정본은 `src/application/chat/AGENTS.md`, 모델 이력의 정본은 `src/application/runtime/AGENTS.md`다 —
 > 재개(resume)가 기대는 순서, 재생이 무엇을 거부하는지, 각 budget 이 어디에 적용되는지.
 > 이 파일은 왜 런이 자기 연결보다 오래 사는지, 그리고 왜 그 로그가 기록(record)이 아니라
 > 버퍼인지를 말한다.
@@ -22,6 +22,18 @@ self-call 은 없다 — 클라이언트로 SSE 를 스트리밍한다.
 만료), 그 리스가 유지되는 동안 들어온 두 번째 전송은 `ChatConflictError` (409) 다. 이것은
 호출자별 run-slot 가드와는 별개다: 그쪽은 *한 사람*의 동시성을 제한하고, 이쪽은 두 런이 한
 chat 의 append-only 히스토리를 교차 기록하지 못하게 막는다.
+
+## SDK Session과 승인
+
+ChatMessage는 화면에 보여 주는 기록이며, 모델 이력은 별도 암호화된 SDK Session에 있다.
+새 턴은 새 입력만 전달하고 SDK가 이전 native 모델·도구 items를 결합한다. Memory recall은
+별도 Context 기능으로 유지한다. Session은 오래된 완전한 턴과 이미지를 제한하며 생략을 알린다.
+
+승인이 필요한 도구는 효과를 실행하기 전에 SDK RunState와 이력을 함께 저장한다. Chat 소유자는
+Agent·도구·전체 인자를 검토하고 승인하거나 거절한다. 새 사용자 메시지를 추가하지 않고 재개하며,
+revision CAS로 중복 실행을 막는다. 변경된 버전/연결과 실행 결과가 불확실한 체크포인트는
+자동으로 재개하지 않는다. 실행 중이 아닐 때 폐기하면 화면 기록은 보존하고 미완료 문맥을 제거한다.
+자세한 요청 형식은 [승인 API](../API.md#chat-승인과-재개)를 따른다.
 
 ## 런은 자기 연결보다 오래 산다
 
@@ -188,11 +200,10 @@ N개의 assistant 턴, tool 텍스트 budget, 그리고 런 전체 단위의 히
 
 **이미지**는 바이트로 이동한다. `image_url` content part 가 되고, 런이 이미지를 편집할 수
 있도록 엔진이 각각에 핸들을 등록하며, 모델은 `imageInput` 을 선언해야 한다 — 텍스트 전용
-모델이 거부하는 part 를 보내면 턴 전체가 실패한다. 새 턴을 재생할 때는 저장된 최신 이미지
-네 개를 객체 저장소에서 크기 제한 아래 다시 읽어 data URL 로 전달한다. assistant 가 만든
-이미지도 provider 호환 user 이미지 메시지로 이어 붙이므로 후속 턴에서 같은 핸들을 얻는다.
-그보다 오래됐거나 읽지 못한 이미지는 화면 기록에는 남지만 런 문맥에서는 빠지고 warning으로
-보고된다. 모델 제공자가 원격 URL을 직접 가져가게 두면 이 배포의 SSRF 경계를 우회하기 때문이다.
+모델이 거부하는 part를 보내면 턴 전체가 실패한다. SDK Session이 최신 inline 이미지 네 개와
+생성 이미지의 편집 핸들을 다음 턴에 전달한다. 오래된 이미지는 문맥에서 생략하고 텍스트 표시와
+warning을 남긴다. 화면 이미지는 별도의 artifact key에서 서명한다. 모델 제공자는 원격 URL을
+직접 가져오지 않으며, 후속 턴의 모델 bytes를 화면용 object URL에서 다시 구성하지 않는다.
 
 **문서는 그것을 받은 표면에서 텍스트가 된다.** PDF, 평문 텍스트, Markdown, CSV/TSV, JSON,
 YAML, XML, HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF를 모두 내장 extractor가 읽는다.
