@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getChatApproval, resumeChatApproval, discardChatApproval } from "@/application/chat/approval";
+import { sendMessage } from "@/application/chat/sendMessage";
 import type { ChatDeps } from "@/application/chat/deps";
 import type { ActiveChatRun, Chat, ChatMessage } from "@/domain/chat/types";
 import type { Project } from "@/domain/project/types";
@@ -44,6 +45,15 @@ async function fixture() {
 }
 
 describe("chat approval ownership and lifecycle", () => {
+  it("reports missing or expired native history when continuing an existing chat", async () => {
+    const f = await fixture();
+    f.rows.clear();
+    const run = await sendMessage(f.deps, { chatId: f.chat.chatId, userEmail: f.chat.ownerEmail, content: "continue" });
+    const chunks: unknown[] = [];
+    for await (const chunk of run.stream) chunks.push(chunk);
+    expect(chunks).toContainEqual({ warning: "Earlier chat records are visible, but this chat has no saved SDK Session. This run starts a new model context." });
+  });
+
   it("hides a pending approval and all mutations from a non-owner", async () => {
     const f = await fixture();
     const read = vi.spyOn(f.services.repository, "get");

@@ -14,7 +14,7 @@ import {
 import { claimChatRun } from "./runLease";
 import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { teeToRunLog } from "./runLog";
-import { pendingRuntimeApproval } from "@/application/runtime/session";
+import { readRuntimeSession } from "@/application/runtime/session";
 
 export interface SendMessageInput {
   chatId: string;
@@ -86,7 +86,9 @@ export async function sendMessage(
     throw new ChatValidationError("project has no runnable version");
   }
 
-  if (deps.runtimeSessions && await pendingRuntimeApproval(deps.runtimeSessions, input.chatId, input.userEmail)) throw new ChatConflictError("Resolve the pending approval before sending another message");
+  const savedRuntime = deps.runtimeSessions ? await readRuntimeSession(deps.runtimeSessions, input.chatId, input.userEmail) : undefined;
+  if (savedRuntime?.document.checkpoint) throw new ChatConflictError("Resolve the pending approval before sending another message");
+  const sessionWarnings = savedRuntime === null ? ["Earlier chat records are visible, but this chat has no saved SDK Session. This run starts a new model context."] : [];
   const runId = await claimChatRun(deps.chats, input.chatId);
   try {
     const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
@@ -141,7 +143,7 @@ export async function sendMessage(
         deps,
         chat,
         withLeadingWarnings(
-          [...uploaded.warnings, ...read.warnings],
+          [...sessionWarnings, ...uploaded.warnings, ...read.warnings],
           source,
         ),
         // So a stop is persisted as the note it is, rather than surfacing here
