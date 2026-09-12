@@ -141,9 +141,11 @@ src/
   의존성은 *주입*되는 것이지 끌어오는 것이 아니다. 서드파티 패키지도 같은 방식으로,
   `domain` 과 같은 모양의 규칙으로 금지된다. 긍정형으로 서술해 **domain, 의존성 없는 shared 헬퍼와 표준
   라이브러리**다. 블록리스트는 이미 누군가 후회한 의존성만 이름
-  붙이기 때문이다. `@a2a-js/sdk` 가 유일하게 명시된 예외다: A2A 프로토콜 *자체*가 그
+  붙이기 때문이다. `@a2a-js/sdk` 와 `@openai/agents` 는 명시된 예외다: A2A 프로토콜 *자체*가 그
   executor 가 구현하는 계약이고, 포트를 두면 태스크 생명주기를 우리 타입으로 다시
-  적으면서 얻는 것이 없다.
+  적으면서 얻는 것이 없다. Agents SDK의 `Agent`·`Runner`·`Session`·`RunState`도 SDK의 계약을 직접
+  사용한다. `application/runtime`은 그 실행 정책을 조립하고, 모델 endpoint와 credential 해석은
+  infrastructure에 주입한다. SDK의 기본 외부 trace 전송은 비활성화한다.
 - `infrastructure` 는 `application` 도 `app` 도 import 하지 않고, `process.env` 도 읽지
   않는다. 어댑터에 필요한 설정은 `lib/config.ts` 가 선언하며, 파싱과 경고를 그쪽이
   소유한다. 모듈 스코프에서 읽으면 아무도 선언하지 않고, 아무도 주입하지 않았으며, 부팅

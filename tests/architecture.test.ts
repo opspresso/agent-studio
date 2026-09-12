@@ -262,10 +262,12 @@ const APP_WIRING_SITES = [
 ];
 
 /**
- * Packages `application` may name, because the protocol *is* the contract. See
- * the rule below for why this is a list of one rather than a port.
+ * Protocol/runtime SDKs whose native contracts are owned by their library.
+ * Studio's runtime uses Agent, Runner, Session and RunState directly; recreating
+ * those contracts as ports would recreate the agent runtime being replaced.
+ * Network clients and credential resolution still live in infrastructure.
  */
-const PROTOCOL_SDKS = ["@a2a-js/"];
+const PROTOCOL_SDKS = ["@a2a-js/", "@openai/agents"];
 
 const RULES: Rule[] = [
   {
@@ -306,13 +308,13 @@ const RULES: Rule[] = [
     // yet, and it arrives as a `import type` nobody reads twice.
     //
     // Protocol SDKs are the one exception, named rather than allowlisted.
-    // `@a2a-js/sdk` is it: `a2a/executor.ts` implements the SDK's
+    // `a2a/executor.ts` implements the SDK's
     // `AgentExecutor` and `a2a/exposure.ts` returns its `AgentCard`, so A2A's
     // shape does reach the use case. A port there would restate the protocol's
     // task lifecycle in our own types to gain nothing — there is one
-    // implementation of A2A and there will be one. That is a judgement rather
-    // than an oversight, which is what naming it here records; a second SDK has
-    // to be argued for in the same place.
+    // implementation of A2A and there will be one. The same ownership applies
+    // to the Agents SDK: Runner owns tool turns, approvals and handoffs. Studio
+    // owns admission, capabilities and persistence around that native runtime.
     name: "application imports only the domain and the standard library",
     from: "application",
     banned: (spec) => {

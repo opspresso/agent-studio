@@ -12,10 +12,8 @@
  * this same protocol.
  */
 
-import OpenAI from "openai";
-import { AWS_SIGNING_SERVICE, createSignedFetch } from "./awsSigner";
-import { createLlmClientCache, llmClientCacheKey } from "./clientCache";
-import type { ResolvedTarget, TargetResolver } from "./providers";
+import { getOpenAIClient } from "./openaiClient";
+import type { TargetResolver } from "./providers";
 import type {
   ChannelChunk,
   ChannelCompletion,
@@ -25,33 +23,6 @@ import type {
   LlmChannel,
 } from "@/domain/llm/channel";
 import { isInlineImageDataUrl } from "@/domain/llm/imageLimits";
-
-const clients = createLlmClientCache<OpenAI>();
-
-/**
- * Keyed by a credential fingerprint so a runtime settings change gets a fresh
- * client without retaining raw keys in the cache index.
- *
- * A `sigv4` target carries no key, so its per-request credential is the signing
- * `fetch` rather than anything in the constructor — the SDK still wants an
- * `apiKey`, and the placeholder below never reaches the wire because the signer
- * rewrites the headers.
- */
-function getClient(target: ResolvedTarget): OpenAI {
-  const key = llmClientCacheKey(target.baseUrl, target.auth, target.apiKey);
-  let client = clients.get(key);
-  if (!client) {
-    client = target.auth === "sigv4"
-      ? new OpenAI({
-          baseURL: target.baseUrl,
-          apiKey: "sigv4",
-          fetch: createSignedFetch(AWS_SIGNING_SERVICE),
-        })
-      : new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey });
-    clients.set(key, client);
-  }
-  return client;
-}
 
 /** Translate domain params into an OpenAI Chat Completions request body. */
 function toRequestBody(params: ChannelParams): Record<string, unknown> {
@@ -159,7 +130,7 @@ export function createChannel(resolveTarget: TargetResolver): LlmChannel {
   return {
     async chatCompletion(params: ChannelParams): Promise<ChannelCompletion> {
       const target = await resolveTarget(params.model);
-      const response = (await getClient(target).chat.completions.create({
+      const response = (await getOpenAIClient(target).chat.completions.create({
         ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
         stream: false,
       }, { signal: params.signal })) as unknown as {
@@ -194,7 +165,7 @@ export function createChannel(resolveTarget: TargetResolver): LlmChannel {
 
     async *chatCompletionStream(params: ChannelParams): AsyncGenerator<ChannelChunk> {
       const target = await resolveTarget(params.model);
-      const stream = (await getClient(target).chat.completions.create({
+      const stream = (await getOpenAIClient(target).chat.completions.create({
         ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
         stream: true,
         stream_options: { include_usage: true },
