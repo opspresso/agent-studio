@@ -136,6 +136,14 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 migration job은 필요하지 않다. Rollback은 image tag를 되돌리는 것이며 schema를 내리지 않는다.
 IDC와 EKS의 구체적인 upgrade 및 rollback 명령은 각 배포 저장소가 소유한다.
 
+Better Auth 1.7.4 이상은 계정을 `providerId + accountId`로 찾는다. Migration 7은 기존
+`account.issuer`의 값과 컬럼을 보존하면서 `NOT NULL`과 issuer 기반 인덱스를 제거하고,
+provider 계정 키의 unique index를 만든다. 중복 키가 있으면 어떤 계정도 변경하지 않고
+실패한다. 서로 다른 issuer가 같은 provider ID를 쓴 경우 운영자가 신뢰할 수 있는 ID 매핑을
+확인해 충돌을 해결해야 한다. 로컬 설정을 쓰는 개발 서버에는
+`pnpm tsx --env-file=.env.local scripts/db-migrate.ts`를 적용한 뒤 재시작한다.
+[Better Auth 업그레이드 가이드](https://better-auth.com/docs/guides/1-7-upgrade-guide)를 따른다.
+
 이전 `SOURCE_FILES_BUCKET_NAME`에 파일이 있으면 worker와 새 작업 접수를 멈추고 진행 중인 업로드를
 정리한 뒤 `source-files/`의 키·본문·metadata를 `S3_BUCKET_NAME` 버킷으로 복사한다. 0바이트 삭제
 표식도 포함하며 대상 파일의 checksum과 metadata를 검증한다. DB의 파일 ID·저장 시각·보존 기한은

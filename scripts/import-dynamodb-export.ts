@@ -219,17 +219,13 @@ async function main(): Promise<void> {
                 counts.dropped += 1;
                 break;
               }
-              // Better Auth 1.7 addresses an account by issuer + accountId; rows
-              // written by the 1.6 adapter carry no issuer. The library's own
-              // namespaces: a password account is `local:credential`, a
-              // built-in social provider (Google here) `local:oauth:<id>`.
+              // Identity is providerId + accountId. Retain any historical issuer
+              // as metadata without inventing a namespace for older exports.
               const providerId = String(item.providerId ?? "");
               const issuer =
                 typeof item.issuer === "string" && item.issuer !== ""
                   ? item.issuer
-                  : providerId === "credential"
-                    ? "local:credential"
-                    : `local:oauth:${encodeURIComponent(providerId)}`;
+                  : null;
               await client.query(
                 `INSERT INTO "account" ("id", "accountId", "providerId", "issuer", "userId", "accessToken", "refreshToken", "idToken",
                    "accessTokenExpiresAt", "refreshTokenExpiresAt", "scope", "password", "createdAt", "updatedAt")

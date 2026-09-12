@@ -199,14 +199,16 @@ export async function ensureBootstrapAdmin(): Promise<void> {
         log.info("authz", `bootstrap administrator ${bootstrap.email} was created by another instance`);
         return raced.user;
       }));
-  // The shape the library's own sign-up writes for a password account: a
-  // `credential` provider under its local issuer namespace.
+  // Password accounts use the library's providerId + accountId identity.
   await ctx.internalAdapter.linkAccount({
     userId: user.id,
     providerId: "credential",
-    issuer: "local:credential",
     accountId: user.id,
     password: await ctx.password.hash(bootstrap.password),
+  }).catch(async (error: unknown) => {
+    // Another boot can link the same credential after our initial read.
+    // Accept only a confirmed account for this user; other failures remain fatal.
+    if (!(await ctx.internalAdapter.findCredentialAccount(user.id))) throw error;
   });
   log.info("authz", `${existing ? "added a password to" : "created"} bootstrap administrator ${bootstrap.email}`);
 }

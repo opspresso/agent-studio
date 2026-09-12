@@ -48,7 +48,7 @@
     "@smithy/signature-v4": "^5.7.0",
     "@swc/helpers": "0.5.23",
     "@tabler/icons-react": "^3.45.0",
-    "better-auth": "^1.7.0",
+    "better-auth": "^1.7.4",
     "cfb": "^1.2.2",
     "fflate": "^0.8.3",
     "next": "^16.2.11",

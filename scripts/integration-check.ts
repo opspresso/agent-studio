@@ -36,6 +36,8 @@ async function main() {
   await migrate();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
+  const { checkAuthSchema } = await import("./auth-schema-check");
+  await checkAuthSchema();
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
   const { listProjects } = await import("@/application/project/projectUseCases");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
