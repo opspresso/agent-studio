@@ -4,6 +4,7 @@
  */
 
 export { imageDataUrl, parseImageDataUrl } from "./imageLimits";
+import type { RuntimePolicy } from "@/domain/execution/runtimeSession";
 
 /** Token + cost accounting for a single LLM call. */
 export interface UsageInfo {
@@ -115,6 +116,7 @@ export function toolCallKey(
 
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
+  approval?: { pending: true };
   /**
    * The trace this chunk belongs to, when the run was sampled. A top-level
    * chunk carries its own run's trace; an authored chunk carries the child's.
@@ -393,6 +395,7 @@ export interface RunResult {
 
 /** Sampling / generation parameters resolved from a version. */
 export interface EngineParameters {
+  policy?: RuntimePolicy;
   temperature?: number;
   presencePenalty?: number;
   maxTokens?: number;

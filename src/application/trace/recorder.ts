@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chunkAuthorPath, runTermination, toolCallKey } from "@/domain/llm/types";
+import { chunkAuthorPath, runTermination, toolCallKey, isTopLevelChunk } from "@/domain/llm/types";
 import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
@@ -97,6 +97,12 @@ export class TraceRecorder {
    * result, and must not mark the parent's trace.
    */
   private limit: "turn-limit" | "output-limit" | undefined;
+  private sdkRuntime = false;
+  private awaitingApproval = false;
+
+  useSdkRuntime(): void { this.sdkRuntime = true; }
+
+  observeSdkSpan(span: TraceSpan): void { this.addSpan(span); }
 
   constructor(
     private readonly repository: TraceRepository,
@@ -151,6 +157,11 @@ export class TraceRecorder {
     const termination = runTermination(chunk);
     if (termination === "turn-limit" || termination === "output-limit") {
       this.limit = termination;
+    }
+    if (chunk.approval && isTopLevelChunk(chunk)) this.awaitingApproval = true;
+    if (this.sdkRuntime) {
+      if (chunk.error && isTopLevelChunk(chunk)) this.error = chunk.error;
+      return;
     }
     for (const call of chunk.delta?.toolCalls ?? []) {
       const id = call.id;
@@ -249,6 +260,15 @@ export class TraceRecorder {
     if (result.termination === "output-limit" || result.termination === "turn-limit") {
       this.limit = result.termination;
     }
+    if (this.sdkRuntime) {
+      const model = this.spans.findLast((span) => span.kind === "model" && span.status === "ok");
+      if (model) {
+        model.name = result.model;
+        model.input = { inputTokens: result.usage.inputTokens, ...(result.usage.cachedTokens ? { cachedTokens: result.usage.cachedTokens } : {}) };
+        model.output = { ...model.output, outputTokens: result.usage.outputTokens, costUsd: result.usage.costUsd };
+      }
+      return;
+    }
     const now = new Date();
     // `modelStartedAt`, not `startedAt`: the two are the same until a stage
     // moves the boundary, and reading the run's start here would count any
@@ -320,7 +340,7 @@ export class TraceRecorder {
         ? "cancelled"
         : this.error
           ? "failed"
-          : this.limit ?? "completed",
+          : this.awaitingApproval ? "awaiting-approval" : this.limit ?? "completed",
       spans: this.spans,
       ...(this.spansDropped > 0 ? { spansDropped: this.spansDropped } : {}),
       ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}),

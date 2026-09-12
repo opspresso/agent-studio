@@ -1,3 +1,4 @@
+import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import type {
@@ -6,7 +7,7 @@ import type {
   ChannelParams,
   LlmChannel,
 } from "@/domain/llm/channel";
-import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
+import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { SAVE_FILE_TOOL_NAME } from "@/application/llm/agentAssembly";
 import { buildFileSaver } from "@/application/execution/saveFileTool";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
@@ -178,6 +179,7 @@ describe("what the run yields for a saved file", () => {
 
 /** Echoes back whatever it was sent, as a SaveFile call carrying it. */
 class SaveWhatItSaw implements LlmChannel {
+  getModel(name?: string) { return scriptedModels(this).getModel(name); }
   calls = 0;
   readonly seenParams: ChannelParams[] = [];
 

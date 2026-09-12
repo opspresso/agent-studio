@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChannelMessage, ChannelToolCall } from "@/domain/llm/channel";
-import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
+import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import {
   contentChunk,
   FakeChannel,
@@ -35,6 +35,24 @@ const toolMsgIdsOf = (messages: ChannelMessage[]) =>
   messages.filter((m) => m.role === "tool").map((m) => m.tool_call_id);
 
 describe("runAgent aggregates multiple tool calls from one response", () => {
+  it("continues valid sibling tools when the SDK rejects an earlier malformed call", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "invalid", "lookup", '{"query": broken'), toolCallChunk(1, "valid", "lookup", '{"query":"Seoul"}'), usageChunk(10, 5)],
+      [contentChunk("recovered"), usageChunk(8, 4)],
+    ]);
+    const callMcpTool = vi.fn(async () => ({ text: "found" }));
+    const chunks = await collect(runAgent({ channel, callMcpTool }, {
+      projectName: "p", model: MODEL, messages: [{ role: "user", content: "lookup" }],
+      mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }],
+    }));
+    expect(callMcpTool).toHaveBeenCalledExactlyOnceWith("lookup", { query: "Seoul" });
+    expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
+    expect(chunks.find((chunk) => chunk.toolResult?.toolCallId === "invalid")?.toolResult?.content).toContain("parsing tool arguments");
+    expect(chunks.find((chunk) => chunk.toolResult?.toolCallId === "valid")?.toolResult?.content).toBe("found");
+    expect(toolMsgIdsOf(followUpMessages(channel))).toEqual(["invalid", "valid"]);
+    expect(channel.calls).toBe(2);
+  });
+
   it("emits ONE assistant message carrying every call, then one tool message per call, in order, with no orphans", async () => {
     const channel = new FakeChannel([
       [
@@ -82,59 +100,7 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
     expect(new Set(toolMsgIdsOf(messages))).toEqual(new Set(idsOf(assistant?.tool_calls)));
   });
 
-  it("interleaves a subagent transfer with an MCP call: tool messages first (in order), context user message last", async () => {
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"hi"}'),
-        toolCallChunk(1, "call_m", "getWeather", '{"city":"Seoul"}'),
-        usageChunk(10, 5),
-      ],
-      [contentChunk("done"), usageChunk(8, 4)],
-    ]);
-    const runSubagent = vi.fn(async function* (): AsyncGenerator<EngineChunk, string> {
-      yield { author: "child", delta: { content: "child says hi" } };
-      return "child-answer";
-    });
-    const callMcpTool = vi.fn(async () => ({ text: "sunny" }));
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, runSubagent, callMcpTool };
-    const input: RunAgentInput = {
-      projectName: "parent",
-      model: MODEL,
-      messages: [{ role: "user", content: "delegate and fetch" }],
-      subagents: [{ name: "child", description: "a child agent", type: "local" }],
-      mcpTools: [{ type: "function", function: { name: "getWeather", parameters: {} } }],
-    };
 
-    const chunks = await collect(runAgent(deps, input));
-
-    expect(runSubagent).toHaveBeenCalledTimes(1);
-    expect(callMcpTool).toHaveBeenCalledTimes(1);
-
-    const messages = followUpMessages(channel);
-    const assistant = assistantWithToolCalls(messages);
-    // Both calls hang off the single assistant message; both are answered.
-    expect(idsOf(assistant?.tool_calls)).toEqual(["call_t", "call_m"]);
-    expect(toolMsgIdsOf(messages)).toEqual(["call_t", "call_m"]);
-
-    // The transfer's "For context" user message must come AFTER every tool
-    // message — a tool message may never trail a non-tool message in the block.
-    const assistantIdx = messages.indexOf(assistant as ChannelMessage);
-    const block = messages.slice(assistantIdx + 1);
-    const lastToolIdx = block.map((m) => m.role).lastIndexOf("tool");
-    const contextIdx = block.findIndex(
-      (m) => m.role === "user" && String(m.content).includes("child-answer"),
-    );
-    expect(contextIdx).toBeGreaterThan(lastToolIdx);
-    // The transfer's own tool message is the null-result placeholder.
-    const transferToolMsg = block.find((m) => m.role === "tool" && m.tool_call_id === "call_t");
-    expect(String(transferToolMsg?.content)).toContain("null");
-
-    // A successful transfer reports itself, so a finished conversation can say
-    // which agent answered — but marked so nothing replays it as the answer.
-    const transferResult = chunks.find((c) => c.toolResult?.toolCallId === "call_t")?.toolResult;
-    expect(transferResult?.name).toBe("transfer_to_agent: child");
-    expect(transferResult?.displayOnly).toBe(true);
-  });
 });
 
 describe("ToolCallAccumulator makes every call of a response addressable", () => {
@@ -405,31 +371,7 @@ describe("images an MCP tool returns", () => {
     expect(hasImagePart).toBe(false);
   });
 
-  it("hands a text-only model an id for a picture it cannot see", async () => {
-    // The model cannot look at it, but it can pass it to an agent that can —
-    // which is the whole of what an id is for.
-    const channel = screenshotChannel();
-    const deps: AgentDeps = {
-      channel,
-      recordUsage: async () => {},
-      callMcpTool: async () => ({ text: "captured", images: [{ b64: PIXEL, mimeType: "image/png" }] }),
-      runSubagent: async function* () {
-        return "";
-      },
-    };
 
-    const chunks = await collect(
-      runAgent(deps, {
-        projectName: "p",
-        model: "openai/gpt-5-mini-text-only-not-in-catalog",
-        messages: [{ role: "user", content: "what is on screen?" }],
-        mcpTools: screenshotTools,
-        subagents: [{ name: "looker", description: "reads images", type: "local" }],
-      }),
-    );
-
-    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toContain("img_1");
-  });
 
   it("caps how many pictures one turn may take in", async () => {
     const channel = screenshotChannel();

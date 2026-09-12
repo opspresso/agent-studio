@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runAgent } from "@/application/llm/engine";
+import { runAgent } from "@/application/runtime";
 import { contentChunk, FakeChannel, toolCallChunk } from "./fakeChannel";
 import { AUDIO_TOOL_NAMES } from "@/domain/llm/toolNames";
 import { createAudioTool } from "@/application/audio/audioTool";

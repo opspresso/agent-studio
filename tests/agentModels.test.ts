@@ -13,6 +13,7 @@ import {
 } from "@openai/agents";
 import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
 import { createStudioRunner } from "@/application/runtime/runner";
+import { runAgent } from "@/application/runtime";
 import { resolveProviderTarget, type ResolvedTarget } from "@/infrastructure/llm/providers";
 
 const target: ResolvedTarget = {
@@ -159,6 +160,34 @@ describe("native Agents SDK execution over Studio routing", () => {
   function runner() {
     return createStudioRunner(createAgentModelProvider(async () => target));
   }
+
+  it("runs Studio's production entry with SDK tools, keeps files out of context and replays tool images", async () => {
+    const requests = installTransport((_body, index) => Response.json(index === 0
+      ? completion("", [{ id: "capture_1", type: "function", function: { name: "capture", arguments: "{}" } }])
+      : completion("captured")));
+    // Studio's streaming entry asks for streamed provider responses.
+    vi.stubGlobal("fetch", vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requests.push({ url: String(url), body, headers: new Headers(init?.headers) });
+      return sse(requests.length === 1 ? [
+        { id: "capture-turn", choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "capture_1", type: "function", function: { name: "capture", arguments: "{}" } }] }, finish_reason: "tool_calls" }] },
+      ] : [{ id: "answer-turn", choices: [{ index: 0, delta: { content: "captured" }, finish_reason: "stop" }] }]);
+    }));
+    const chunks = [];
+    for await (const chunk of runAgent({
+      channel: createAgentModelProvider(async () => target),
+      callMcpTool: async () => ({ text: "captured", images: [{ b64: "aGVsbG8=", mimeType: "image/png" }], files: [{ name: "report.txt", mimeType: "text/plain", b64: "c2VjcmV0LWZpbGU=" }] }),
+    }, {
+      projectName: "studio", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "capture" }], maxTurn: 4,
+      mcpTools: [{ type: "function", function: { name: "capture", parameters: { type: "object", properties: {} } } }],
+    })) chunks.push(chunk);
+    expect(chunks.some((chunk) => chunk.file?.name === "report.txt")).toBe(true);
+    expect(chunks.some((chunk) => chunk.image?.b64 === "aGVsbG8=")).toBe(true);
+    expect(chunks.map((chunk) => chunk.delta?.content ?? "").join("")).toBe("captured");
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+    expect(JSON.stringify(requests[1]?.body)).toContain("data:image/png;base64,aGVsbG8=");
+    expect(JSON.stringify(requests)).not.toContain("c2VjcmV0LWZpbGU=");
+  });
 
   it("lets Runner execute tools and retain exact tool traffic in a Session", async () => {
     const requests = installTransport((_body, index) => Response.json(index === 0

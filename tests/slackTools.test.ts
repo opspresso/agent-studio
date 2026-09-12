@@ -6,7 +6,7 @@ import {
   SLACK_TOOL_NAMES,
   type AgentDeps,
   type RunAgentInput,
-} from "@/application/llm/engine";
+} from "@/application/runtime";
 import type { EngineChunk } from "@/domain/llm/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import type {

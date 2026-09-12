@@ -1,6 +1,6 @@
 /** The Slack workspace read tools, over this project's own bot. */
 
-import type * as engine from "@/application/llm/engine";
+import type * as engine from "@/application/runtime";
 import type { Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "./deps";
 

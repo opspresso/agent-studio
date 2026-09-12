@@ -10,25 +10,33 @@ import {
 } from "@openai/agents";
 import { isInlineImageDataUrl } from "@/domain/llm/imageLimits";
 import { getOpenAIClient } from "./openaiClient";
-import type { TargetResolver } from "./providers";
+import type OpenAI from "openai";
+import type { ResolvedTarget, TargetResolver } from "./providers";
 
 /** Studio owns routing and credentials; the Agents SDK owns the model protocol. */
-export function createAgentModelProvider(resolveTarget: TargetResolver): ModelProvider {
+export function createAgentModelProvider(
+  resolveTarget: TargetResolver,
+  clientForTarget: (target: ResolvedTarget) => OpenAI = (target) => getOpenAIClient(target, 0),
+): ModelProvider {
   return {
     getModel(name) {
       if (!name) throw new Error("An explicit Studio model is required");
-      return new StudioChatModel(name, resolveTarget);
+      return new StudioChatModel(name, resolveTarget, clientForTarget);
     },
   };
 }
 
 class StudioChatModel implements Model {
-  constructor(private readonly name: string, private readonly resolveTarget: TargetResolver) {}
+  constructor(
+    private readonly name: string,
+    private readonly resolveTarget: TargetResolver,
+    private readonly clientForTarget: (target: ResolvedTarget) => OpenAI,
+  ) {}
 
   private async resolve(): Promise<OpenAIChatCompletionsModel> {
     const target = await this.resolveTarget(this.name);
     // Retry policy belongs to the run. Hidden HTTP retries can repeat paid work.
-    return new OpenAIChatCompletionsModel(getOpenAIClient(target, 0), target.model, {
+    return new OpenAIChatCompletionsModel(this.clientForTarget(target), target.model, {
       strictFeatureValidation: true,
     });
   }
@@ -76,8 +84,9 @@ class StudioChatModel implements Model {
 
 function prepareRequest(request: ModelRequest): ModelRequest {
   request.signal?.throwIfAborted();
-  if (Array.isArray(request.input)) {
-    for (const item of request.input) {
+  const input = Array.isArray(request.input) ? expandToolImages(restoreReasoningDialect(request.input)) : request.input;
+  if (Array.isArray(input)) {
+    for (const item of input) {
       if ((item.type !== undefined && item.type !== "message") || !Array.isArray(item.content)) continue;
       for (const part of item.content) {
         if (part.type === "input_image" &&
@@ -90,7 +99,7 @@ function prepareRequest(request: ModelRequest): ModelRequest {
   const { maxTokens, providerData, ...settings } = request.modelSettings;
   return {
     ...request,
-    input: Array.isArray(request.input) ? restoreReasoningDialect(request.input) : request.input,
+    input,
     modelSettings: {
       ...settings,
       store: false,
@@ -101,6 +110,28 @@ function prepareRequest(request: ModelRequest): ModelRequest {
       },
     },
   };
+}
+
+/** Chat Completions carries tool images in a user message after the tool-result group. */
+function expandToolImages(input: AgentInputItem[]): AgentInputItem[] {
+  const result: AgentInputItem[] = [];
+  let images: Array<{ type: "input_image"; image: string; detail: "auto" }> = [];
+  const flush = () => {
+    if (images.length) result.push({ type: "message", role: "user", content: images });
+    images = [];
+  };
+  for (const item of input) {
+    if (item.type !== "function_call_result") { flush(); result.push(item); continue; }
+    if (!Array.isArray(item.output)) { result.push(item); continue; }
+    for (const part of item.output) {
+      if (part.type !== "input_image") continue;
+      if (typeof part.image !== "string" || !isInlineImageDataUrl(part.image)) throw new Error("LLM image inputs must contain bounded inline image bytes");
+      images.push({ type: "input_image", image: part.image, detail: "auto" });
+    }
+    result.push({ ...item, output: item.output.filter((part) => part.type === "input_text") });
+  }
+  flush();
+  return result;
 }
 
 /** vLLM/DeepSeek use reasoning_content; the SDK's built-in dialect uses reasoning. */

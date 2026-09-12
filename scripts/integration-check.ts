@@ -34,6 +34,8 @@ process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 async function main() {
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
+  const { checkRuntimeSessions } = await import("./runtime-session-check");
+  await checkRuntimeSessions();
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
   const { listProjects } = await import("@/application/project/projectUseCases");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
@@ -118,13 +120,14 @@ async function main() {
           send({
             choices: [
               {
+                index: 0,
                 delta: {
                   tool_calls: [
                     {
                       index: 0,
                       id: "call_1",
                       type: "function",
-                      function: { name: "Skill", arguments: '{"name":"integration-skill"}' },
+                      function: { name: "Skill", arguments: '{"skill_name":"integration-skill"}' },
                     },
                   ],
                 },
@@ -132,11 +135,11 @@ async function main() {
               },
             ],
           });
-          send({ choices: [{ delta: {}, finish_reason: "tool_calls" }] });
+          send({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] });
         } else {
-          send({ choices: [{ delta: { content: "streamed " }, finish_reason: null }] });
-          send({ choices: [{ delta: { content: "answer" }, finish_reason: null }] });
-          send({ choices: [{ delta: {}, finish_reason: "stop" }] });
+          send({ choices: [{ index: 0, delta: { content: "streamed " }, finish_reason: null }] });
+          send({ choices: [{ index: 0, delta: { content: "answer" }, finish_reason: null }] });
+          send({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
         }
         send({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 5 } });
         res.write("data: [DONE]\n\n");
@@ -1559,6 +1562,31 @@ async function main() {
     );
     assert.ok(llmCalls.length >= 2, "agent loop made a second LLM call after the tool round");
     pass("executeAgent loop with builtin Skill tool");
+
+    // ---------- durable SDK Session + approval over PostgreSQL ----------
+    {
+      const { pendingRuntimeApproval } = await import("@/application/runtime/session");
+      const sessionId = `integration-session-${suffix}`;
+      const owner = "it@example.com";
+      const version = { ...published, parameters: { ...published.parameters, policy: { approvalTools: ["Skill"] } } };
+      const base = { project, version, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      const first = [];
+      for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "use your skill" }] })) first.push(chunk);
+      assert.ok(first.some((chunk) => chunk.approval), "approval is persisted before notifying the client");
+      assert.ok(!first.some((chunk) => chunk.toolResult), "a pending Skill call has not executed");
+      const pending = await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner);
+      assert.ok(pending && pending.approvals.length === 1);
+      const resumed = [];
+      for await (const chunk of executeAgent(executionDeps, { ...base, messages: [], resumeApproval: { revision: pending.revision, decisions: [{ id: pending.approvals[0]!.id, approve: true }] } })) resumed.push(chunk);
+      assert.ok(!resumed.some((chunk) => chunk.error), "approved SDK execution resumes successfully");
+      assert.ok(resumed.some((chunk) => chunk.toolResult?.name === "Skill: integration-skill"));
+      assert.equal(await pendingRuntimeApproval(executionDeps.runtimeSessions!, sessionId, owner), null);
+      const before = llmCalls.length;
+      for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "continue" }] })) assert.equal(chunk.error, undefined);
+      assert.equal(llmCalls.length, before + 1, "the Session replay avoids executing the previous Skill call again");
+      await executionDeps.runtimeSessions!.repository.delete(sessionId, owner);
+      pass("SDK Session approval persistence, restart-style resume and exact continuation");
+    }
 
     // ---------- cascade delete ----------
     await projectRepository.delete(projectName);

@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { assembleAgentRun, type AgentDeps, type SubagentInfo } from "@/application/llm/engine";
+import { assembleAgentRun, type AgentDeps, type SubagentInfo } from "@/application/runtime";
 import type { RunCaller } from "@/domain/execution/actor";
 
 const CALLER: RunCaller = { displayName: "Bruce", timezone: "Asia/Seoul" };
@@ -22,9 +22,7 @@ function fullDeps(overrides: Partial<AgentDeps> = {}): AgentDeps {
   return {
     channel: {} as AgentDeps["channel"],
     loadSkillContent: async () => "body",
-    runSubagent: async function* () {
-      return "";
-    },
+    canDelegate: true,
     generateImage: async () => ({ b64: "", mimeType: "image/png", model: "openai/gpt-image-1" }),
     editImage: async () => ({ b64: "", mimeType: "image/png", model: "openai/gpt-image-1" }),
     ...overrides,
@@ -91,19 +89,19 @@ describe("a builtin is offered only when the run can perform it", () => {
     // message" — about the arguments, when the reason was that nothing could
     // carry them.
     const deps = fullDeps();
-    delete deps.runSubagent;
+    delete deps.canDelegate;
     const assembly = assembleAgentRun(deps, { subagents: SUBAGENTS, canDispatch: true });
     const offered = assembly.tools.map((tool) => tool.function.name);
-    expect(offered).not.toContain("transfer_to_agent");
-    expect(offered).not.toContain("dispatch_agents");
+    expect(offered).not.toContain("handoff_child");
+    expect(offered).not.toContain("delegate_child");
     // And the prompt does not describe what the tools cannot do.
     expect(assembly.systemPrompt).not.toContain("child");
   });
 
   it("withholds dispatch from a run the facade did not admit as top-level", () => {
-    expect(names(fullDeps(), { subagents: SUBAGENTS })).not.toContain("dispatch_agents");
+    expect(names(fullDeps(), { subagents: SUBAGENTS })).not.toContain("delegate_child");
     expect(names(fullDeps(), { subagents: SUBAGENTS, canDispatch: true })).toContain(
-      "dispatch_agents",
+      "delegate_child",
     );
   });
 });
@@ -148,7 +146,7 @@ describe("what the assembly reports back", () => {
       canDispatch: true,
     });
     expect([...assembly.builtinNames].sort()).toEqual(
-      ["EditImage", "GenerateImage", "Skill", "dispatch_agents", "transfer_to_agent"].sort(),
+      ["EditImage", "GenerateImage", "Skill", "delegate_child", "handoff_child"].sort(),
     );
   });
 });

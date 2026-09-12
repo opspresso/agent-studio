@@ -19,7 +19,7 @@ import {
 import { chatConversation } from "@/domain/chat/conversation";
 import { slackConversation } from "@/domain/slack/conversation";
 import { a2aConversation } from "@/domain/a2a/conversation";
-import { runRemoteSubagent } from "@/application/execution/subagentRunner";
+import { runRemoteSubagent } from "@/application/execution/remoteAgent";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { RemoteAgentDispatcher, RemoteAgentReply } from "@/domain/agent/dispatcher";
 import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";

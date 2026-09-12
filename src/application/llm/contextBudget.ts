@@ -103,6 +103,7 @@ export interface FittedText {
 }
 
 export interface RunContextBudget {
+  snapshot(): { left: number; truncated: boolean };
   /** Estimated tokens still spendable on context. Never negative. */
   remaining(): number;
   /**
@@ -135,6 +136,15 @@ class Budget implements RunContextBudget {
 
   constructor(capacityTokens: number) {
     this.left = Math.max(0, capacityTokens);
+  }
+
+  snapshot() { return { left: this.left, truncated: this.didTruncate }; }
+
+  static restore(state: { left: number; truncated: boolean }): Budget {
+    const budget = new Budget(0);
+    budget.left = state.left;
+    budget.didTruncate = state.truncated;
+    return budget;
   }
 
   remaining(): number {
@@ -201,6 +211,10 @@ class Budget implements RunContextBudget {
   truncated(): boolean {
     return this.didTruncate;
   }
+}
+
+export function restoreRunContextBudget(state: { left: number; truncated: boolean }): RunContextBudget {
+  return Budget.restore(state);
 }
 
 /**

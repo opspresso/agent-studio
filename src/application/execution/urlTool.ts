@@ -1,6 +1,6 @@
 /** The FetchUrl builtin, over the outbound boundary. */
 
-import type * as engine from "@/application/llm/engine";
+import type * as engine from "@/application/runtime";
 import { readUrlContent } from "@/application/llm/urlContent";
 import type { Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "./deps";

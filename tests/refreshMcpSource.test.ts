@@ -19,7 +19,7 @@ function fixture() {
     return { text: "opaque projected result" };
   });
   const close = vi.fn(async () => {});
-  vi.mocked(buildMcpTools).mockResolvedValue({ mcpTools: [{ type: "function", function: { name: "file_read", parameters: { properties: { file_id: { type: "integer" } } } } }],
+  vi.mocked(buildMcpTools).mockResolvedValue({ signature: "test", mcpTools: [{ type: "function", function: { name: "file_read", parameters: { properties: { file_id: { type: "integer" } } } } }],
     mcpServers: [], warnings: [], aliasFor: () => "file_read", callMcpTool: call, close });
   const job = { projectName: "audio", userEmail: "owner@example.test", sourceIdentity: { namespace: "account", itemId: "42" } } as AudioJob;
   return { run: createMcpSourceRefresher(deps), job, recipe, call, close, identity, getVersion, getProject };

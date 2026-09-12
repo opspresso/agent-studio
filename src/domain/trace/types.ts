@@ -4,7 +4,7 @@ import type { RunActor } from "@/domain/execution/actor";
  * Limit endings are distinct from `completed`: the turn guard or provider's
  * output cap stopped the run before it finished its answer.
  */
-export type TraceStatus = "completed" | "turn-limit" | "output-limit" | "failed" | "cancelled";
+export type TraceStatus = "completed" | "awaiting-approval" | "turn-limit" | "output-limit" | "failed" | "cancelled";
 /**
  * `prepare` is the work a run does before its first model call — resolving the
  * version's tools (which opens every bound MCP server) and, when the version
@@ -13,9 +13,10 @@ export type TraceStatus = "completed" | "turn-limit" | "output-limit" | "failed"
  * MCP server reported an eight-second model, and "why was the first token so
  * late" had no answer anywhere on the page.
  */
-export type TraceSpanKind = "model" | "tool" | "subagent" | "prepare";
+export type TraceSpanKind = "model" | "tool" | "subagent" | "prepare" | "guardrail";
 
 export interface TraceSpan {
+  parentSpanId?: string;
   spanId: string;
   kind: TraceSpanKind;
   name: string;

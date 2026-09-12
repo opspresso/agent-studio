@@ -121,6 +121,23 @@ export class PiiFilter {
   /** The longest token minted so far; how far a stream restorer may hold. */
   private longestToken = 0;
 
+  /** Only persisted inside authenticated, encrypted runtime checkpoints. */
+  snapshot(): Array<[string, string]> {
+    return [...this.replacementByOriginal.entries()];
+  }
+
+  static restoreSnapshot(entries: Array<[string, string]>): PiiFilter {
+    const filter = new PiiFilter();
+    for (const [original, replacement] of entries) {
+      if (typeof original !== "string" || typeof replacement !== "string" || !replacement.startsWith(TOKEN_OPEN) || !replacement.endsWith(TOKEN_CLOSE)) throw new Error("Invalid PII checkpoint");
+      if (filter.originalByReplacement.has(replacement)) throw new Error("Duplicate PII checkpoint token");
+      filter.replacementByOriginal.set(original, replacement);
+      filter.originalByReplacement.set(replacement, original);
+      filter.longestToken = Math.max(filter.longestToken, replacement.length);
+    }
+    return filter;
+  }
+
   /**
    * Text already carrying this filter's own tokens is masked again — a child
    * shares its parent's filter, so a transferred answer arrives holding them

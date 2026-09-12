@@ -85,7 +85,7 @@ export default function TracesPage() {
                       c={
                         trace.status === "completed"
                           ? "teal"
-                          : trace.status === "turn-limit" || trace.status === "output-limit"
+                          : trace.status === "awaiting-approval" || trace.status === "turn-limit" || trace.status === "output-limit"
                             ? "yellow"
                             : "red"
                       }

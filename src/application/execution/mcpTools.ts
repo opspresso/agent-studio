@@ -7,7 +7,9 @@ import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import { skipsUrlGuard } from "@/domain/mcp/types";
 import { MAX_MCP_TOOLS_PER_RUN } from "@/domain/llm/toolLimits";
-import * as engine from "@/application/llm/engine";
+import { agentToolName } from "@/domain/llm/toolNames";
+import { runtimeFingerprint } from "@/application/runtime/session";
+import * as engine from "@/application/runtime";
 import {
   applyMcpUserEmail,
   CONVERSATION_ID_HEADER,
@@ -39,6 +41,7 @@ export async function buildMcpTools(
   /** Where the run came from; its email actor and conversation reach the server as headers. */
   origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation"> & Partial<Pick<RunOrigin, "ancestry">>,
 ): Promise<{
+  signature: string;
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
   callMcpTool?: engine.AgentDeps["callMcpTool"];
@@ -56,7 +59,7 @@ export async function buildMcpTools(
 }> {
   const mcpList = version.mcpList ?? [];
   if (mcpList.length === 0) {
-    return { mcpTools: [], mcpServers: [], warnings: [] };
+    return { mcpTools: [], mcpServers: [], warnings: [], signature: runtimeFingerprint([]) };
   }
   const descriptionByName = new Map<string, string>();
   // Per-request context, kept apart from the identity headers on purpose — see
@@ -195,7 +198,8 @@ export async function buildMcpTools(
   // tool the engine would then shadow.
   // The factory releases anything it opened if discovery fails, so a run
   // cancelled mid-init leaks nothing.
-  const toolManager = await deps.mcpSessions.open(servers, engine.BUILTIN_TOOL_NAMES, signal);
+  const reservedNames = [...engine.BUILTIN_TOOL_NAMES, ...(version.subagentList ?? []).flatMap((agent) => [agentToolName(agent.name, "handoff"), agentToolName(agent.name, "delegate")])];
+  const toolManager = await deps.mcpSessions.open(servers, reservedNames, signal);
   // A server that rejected the token is the one failure the project itself can
   // fix. Recorded so the console offers a reconnect rather than leaving the
   // owner to re-diagnose it from a warning on every future run.
@@ -232,6 +236,7 @@ export async function buildMcpTools(
     }
   }
   return {
+    signature: runtimeFingerprint([servers.map(({ name, url }) => ({ name, url })), capped]),
     mcpTools: capped,
     mcpServers,
     warnings: [

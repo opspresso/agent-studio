@@ -1,5 +1,6 @@
+import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it, vi } from "vitest";
-import { runAgent, runPrompt, runPromptStream } from "@/application/llm/engine";
+import { runAgent, runPrompt, runPromptStream } from "@/application/runtime";
 import { PiiFilter } from "@/application/llm/pii";
 import type {
   ChannelChunk,
@@ -10,6 +11,7 @@ import type {
 import type { EngineChunk } from "@/domain/llm/types";
 
 class EchoChannel implements LlmChannel {
+  getModel(name?: string) { return scriptedModels(this).getModel(name); }
   readonly seenParams: ChannelParams[] = [];
 
   async chatCompletion(params: ChannelParams): Promise<ChannelCompletion> {
@@ -36,6 +38,7 @@ class EchoChannel implements LlmChannel {
 }
 
 class ErrorChannel implements LlmChannel {
+  getModel(name?: string) { return scriptedModels(this).getModel(name); }
   readonly seenParams: ChannelParams[] = [];
   emitted = "";
 
@@ -52,6 +55,7 @@ class ErrorChannel implements LlmChannel {
 }
 
 class TransferChannel implements LlmChannel {
+  getModel(name?: string) { return scriptedModels(this).getModel(name); }
   readonly seenParams: ChannelParams[] = [];
 
   async chatCompletion(): Promise<ChannelCompletion> {
@@ -93,43 +97,10 @@ class TransferChannel implements LlmChannel {
  * it is the only way a restored copy of the message can be told apart from the
  * masked original once it reaches the child.
  */
-class DispatchChannel implements LlmChannel {
-  readonly seenParams: ChannelParams[] = [];
 
-  async chatCompletion(): Promise<ChannelCompletion> {
-    throw new Error("not used");
-  }
-
-  async *chatCompletionStream(params: ChannelParams): AsyncGenerator<ChannelChunk> {
-    this.seenParams.push(params);
-    if (this.seenParams.length === 1) {
-      const message = String(params.messages.at(-1)?.content);
-      yield {
-        choices: [
-          {
-            delta: {
-              tool_calls: [
-                {
-                  index: 0,
-                  id: "call_1",
-                  type: "function",
-                  function: {
-                    name: "dispatch_agents",
-                    arguments: JSON.stringify({ tasks: [{ agent_name: "child", message }] }),
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      };
-      return;
-    }
-    yield { choices: [{ delta: { content: "Done." } }] };
-  }
-}
 
 class ImageToolChannel implements LlmChannel {
+  getModel(name?: string) { return scriptedModels(this).getModel(name); }
   readonly seenParams: ChannelParams[] = [];
 
   async chatCompletion(): Promise<ChannelCompletion> {
@@ -368,152 +339,13 @@ describe("PiiFilter", () => {
     expect(result).toBe(`Contact ${input}`);
   });
 
-  it("masks the conversation a transfer carries, not just the message", async () => {
-    // The transcript is history the parent's own context already has masked; it
-    // crosses the same boundary the message does and must cross it the same way.
-    const channel = new TransferChannel();
-    let childTranscript: string | undefined;
-    const runSubagent = async function* (
-      _agentName: string,
-      _message: string,
-      _turn: number,
-      _maxTurn: number,
-      _images?: unknown,
-      transcript?: string,
-    ): AsyncGenerator<EngineChunk, string> {
-      childTranscript = transcript;
-      return "ok";
-    };
 
-    await collectText(
-      runAgent(
-        { channel, runSubagent },
-        {
-          projectName: "parent",
-          model: "test/model",
-          messages: [
-            { role: "user", content: "reach me at email@example.com" },
-            { role: "assistant", content: "Noted, I will call 010-1234-5678." },
-            { role: "user", content: "go ahead" },
-          ],
-          parameters: { piiFiltering: true },
-          subagents: [{ name: "child", description: "", type: "remote" }],
-          maxTurn: 3,
-        },
-      ),
-    );
 
-    expect(childTranscript).toBeDefined();
-    expect(childTranscript).not.toContain("email@example.com");
-    expect(childTranscript).not.toContain("010-1234-5678");
-    // Masked, not dropped: the child still sees that a contact was mentioned.
-    expect(childTranscript).toContain("reach me at");
-    expect(childTranscript).toContain("[[PII:");
-  });
 
-  it("keeps PII masked across a subagent boundary and restores child chunks", async () => {
-    const channel = new TransferChannel();
-    const input = "email@example.com or 010-1234-5678";
-    let childMessage = "";
-    const runSubagent = async function* (agentName: string, message: string) {
-      childMessage = message;
-      for (const char of message) {
-        yield { author: agentName, delta: { content: char } };
-      }
-      return message;
-    };
 
-    const result = await collectText(
-      runAgent(
-        { channel, runSubagent },
-        {
-          projectName: "parent",
-          model: "test/model",
-          messages: [{ role: "user", content: input }],
-          parameters: { piiFiltering: true },
-          subagents: [{ name: "child", description: "", type: "remote" }],
-          maxTurn: 3,
-        },
-      ),
-    );
 
-    expect(childMessage).not.toContain("email@example.com");
-    expect(childMessage).not.toContain("010-1234-5678");
-    expect(result).toContain(input);
-    expect(result).toContain("Done.");
-  });
 
-  it("hands a dispatched child the masked message, exactly as a transfer does", async () => {
-    // `displayArgs` has the PII restored, for display and for MCP dispatch. A
-    // subagent is the other side of that boundary: taking the message from there
-    // would send real addresses to another model while the parent's own context
-    // stayed protected.
-    const channel = new DispatchChannel();
-    const input = "email@example.com or 010-1234-5678";
-    const seen: string[] = [];
-    const runSubagent = async function* (agentName: string, message: string) {
-      seen.push(message);
-      yield { author: agentName, delta: { content: message } };
-      return message;
-    };
 
-    const result = await collectText(
-      runAgent(
-        { channel, runSubagent },
-        {
-          projectName: "parent",
-          model: "test/model",
-          messages: [{ role: "user", content: input }],
-          parameters: { piiFiltering: true },
-          subagents: [{ name: "child", description: "", type: "local" }],
-          canDispatch: true,
-          maxTurn: 4,
-        },
-      ),
-    );
-
-    expect(seen).toHaveLength(1);
-    expect(seen[0]).not.toContain("email@example.com");
-    expect(seen[0]).not.toContain("010-1234-5678");
-    expect(seen[0]).toContain("[[PII:");
-    // And the parent's own output still restores.
-    expect(result).toContain(input);
-  });
-
-  it("closes the child generator when the parent stream is cancelled", async () => {
-    const channel = new TransferChannel();
-    let childClosed = false;
-    const runSubagent = async function* () {
-      try {
-        yield { author: "child", delta: { content: "child output" } };
-        await new Promise(() => {});
-      } finally {
-        childClosed = true;
-      }
-      return "";
-    };
-    const source = runAgent(
-      { channel, runSubagent },
-      {
-        projectName: "parent",
-        model: "test/model",
-        messages: [{ role: "user", content: "email@example.com" }],
-        parameters: { piiFiltering: true },
-        subagents: [{ name: "child", description: "", type: "remote" }],
-        maxTurn: 3,
-      },
-    );
-
-    while (true) {
-      const step = await source.next();
-      if (step.done || step.value.delta?.content === "child output") {
-        break;
-      }
-    }
-    await source.return(undefined);
-
-    expect(childClosed).toBe(true);
-  });
 
   it("keeps PII masked for image generation while restoring the displayed prompt", async () => {
     const channel = new ImageToolChannel();

@@ -1,7 +1,8 @@
+import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChannelMessage, ChannelParams } from "@/domain/llm/channel";
-import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
+import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { FETCH_URL_TOOL_NAME } from "@/application/llm/agentAssembly";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
@@ -262,7 +263,7 @@ describe("reading a page under PII filtering", () => {
 
     const asked: string[] = [];
     const deps: AgentDeps = {
-      channel,
+      channel: scriptedModels(channel),
       recordUsage: async () => {},
       fetchUrl: async (target: string) => {
         asked.push(target);

@@ -20,7 +20,7 @@ import { generateImageStream } from "@/application/image/generateImage";
 import { UpstreamError, ValidationError } from "@/application/errors";
 import { settleCostLimit } from "@/application/usage/costGuard";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
-import * as engine from "@/application/llm/engine";
+import * as engine from "@/application/runtime";
 import { runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { runEnding } from "@/application/run/runDeadline";
 import { log } from "@/shared/logger";
@@ -32,10 +32,11 @@ import { fileRefOf, type ProducedFileRef } from "@/application/artifact/produced
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { discoveryQueries, recentUserQueries, resolveRunTools, toolsPrepared } from "./bindings";
 import { closeMcp } from "./mcpTools";
-import { buildAgentDeps } from "./subagentRunner";
+import { buildAgentDeps } from "./agentBindings";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "@/application/run/traceLifecycle";
 import { callerFor, runClock, runStrategyFor, toEngineParameters, toRunInput } from "./deps";
 import { memoryPrepared, prepareMemoryForRun } from "./memoryRecall";
+import { openRuntimeSession, runtimeFingerprint } from "@/application/runtime/session";
 
 export type {
   ExecutionDeps,
@@ -63,13 +64,14 @@ export async function executeVersion(
   // metric and no usage — it never started.
   const bracket = await openRun(deps, input.project, input.version, input.actor);
   const recorder = sampledTraceRecorder(deps, input);
+  recorder?.useSdkRuntime();
   // Held rather than built inline: the catch has to be able to ask which of the
   // two signals stopped the run.
   const runSignal = withRunDeadline(input.signal);
   let failed = false;
   try {
     const result = await engine.runPrompt(
-      { channel, recordUsage: bindUsage(deps, actorKey) },
+      { channel, recordUsage: bindUsage(deps, actorKey), onSdkSpan: recorder ? (span) => recorder.observeSdkSpan(span) : undefined },
       {
         projectName: input.project.name,
         model: input.version.model,
@@ -112,12 +114,13 @@ export async function* executeVersionStream(
   const actorKey = input.actor ? toActorKey(input.actor) : undefined;
   const bracket = await openRun(deps, input.project, input.version, input.actor);
   const recorder = sampledTraceRecorder(deps, input);
+  recorder?.useSdkRuntime();
   const runSignal = withRunDeadline(input.signal);
   let failure: unknown;
   let completed = false;
   try {
     for await (const chunk of engine.runPromptStream(
-      { channel, recordUsage: bindUsage(deps, actorKey) },
+      { channel, recordUsage: bindUsage(deps, actorKey), onSdkSpan: recorder ? (span) => recorder.observeSdkSpan(span) : undefined },
       {
         projectName: input.project.name,
         model: input.version.model,
@@ -551,7 +554,12 @@ export async function* executeAgent(
     // assembles has to agree on when "now" is, and a parent and a child landing
     // on different dates across a midnight boundary is the exact confusion the
     // clock exists to remove. The pinned deps travel down the transfer chain.
-    const startedAt = runClock(deps);
+    const runtime = deps.runtimeSessions && input.conversation?.surface === "chat" && input.actor?.kind === "user"
+      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, ownerEmail: input.actor.id, projectName: input.project.name, version: input.version }, input.resumeApproval)
+      : undefined;
+    if (input.resumeApproval && !runtime) throw new ValidationError("Approval resumption requires a persisted chat session");
+    const messages = runtime?.checkpoint?.input.messages ?? input.messages;
+    const startedAt = runtime?.checkpoint?.input.now ? new Date(runtime.checkpoint.input.now) : runClock(deps);
     const runDeps: ExecutionDeps = { ...deps, now: () => startedAt };
     // Recall explicit bindings before discovery, so remembered associations can
     // help find the sources needed to answer the request.
@@ -565,12 +573,12 @@ export async function* executeAgent(
         recorder?.observePrepare("memory", recallStartedAt, detail);
       }
     };
-    const memory = await prepareMemoryForRun(deps, {
+    const memory = await (runtime?.checkpoint ? Promise.resolve({ input: { remembered: runtime.checkpoint.input.remembered }, warnings: [], asked: 0, failed: 0 }) : prepareMemoryForRun(deps, {
       version: input.version,
       origin,
-      query: latestUserText(input.messages) ?? "",
+      query: latestUserText(messages) ?? "",
       signal: runSignal,
-    }).then(
+    })).then(
       (ok) => {
         recordRecall(memoryPrepared(ok));
         return ok;
@@ -600,11 +608,12 @@ export async function* executeAgent(
         deps,
         input.version,
         runSignal,
-        discoveryQueries(input.version, recentUserQueries(input.messages), memory.input.remembered),
+        discoveryQueries(input.version, recentUserQueries(messages), memory.input.remembered),
         origin,
         usage.record,
       );
       closeMcpSessions = resolved.mcp.close;
+      runtime?.checkBinding("root", runtimeFingerprint([resolved.mcp.signature, resolved.subagents, resolved.skills]));
       // Assembled inside the stage that resolved them: building the dispatcher
       // reads a repository and decrypts a secret for a run with the Slack tools
       // on, and between two spans that time was billed to the model again.
@@ -619,6 +628,7 @@ export async function* executeAgent(
         origin,
         runSignal,
         resolved.mcp.callMcpTool,
+        runtime,
       );
       return { resolved, agentDeps };
     })().then(
@@ -634,7 +644,8 @@ export async function* executeAgent(
       },
     );
     const { skills, subagents, mcp, warnings, discovered } = prepared.resolved;
-    const agentDeps = prepared.agentDeps;
+    const agentDeps: engine.AgentDeps = { ...prepared.agentDeps, onSdkSpan: recorder ? (span) => recorder.observeSdkSpan(span) : undefined };
+    recorder?.useSdkRuntime();
     warnings.push(...memory.warnings.filter((warning) => !warnings.includes(warning)));
     // Logged rather than yielded: a capability *found* is a gain, and the
     // warning channel is where a reader looks for what a run lost. What the run
@@ -656,10 +667,11 @@ export async function* executeAgent(
     // bytes were kept.
     for await (const chunk of captureRunArtifacts(bracket.artifacts, engine.runAgent(agentDeps, {
       projectName: input.project.name,
+      ...(runtime ? { runtime } : {}),
       model: input.version.model,
       fallbackModel: input.version.fallbackModel,
       systemPrompt: input.version.systemPrompt,
-      messages: input.messages,
+      messages,
       parameters: toEngineParameters(input.version),
       now: startedAt,
       ...callerFor(input),

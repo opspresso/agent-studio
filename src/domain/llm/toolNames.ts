@@ -1,6 +1,15 @@
 export const SKILL_TOOL_NAME = "Skill";
 export const TRANSFER_TOOL_NAME = "transfer_to_agent";
 export const DISPATCH_TOOL_NAME = "dispatch_agents";
+/** Stable SDK function names, including projects whose names reach the 64-character cap. */
+export function agentToolName(name: string, mode: "handoff" | "delegate" | "external"): string {
+  const prefix = mode === "handoff" ? "handoff_" : "delegate_";
+  const full = prefix + name;
+  if (full.length <= 64) return full;
+  let hash = 2166136261;
+  for (const character of name) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  return `${full.slice(0, 55)}_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
 export const IMAGE_TOOL_NAME = "GenerateImage";
 export const EDIT_IMAGE_TOOL_NAME = "EditImage";
 export const FETCH_URL_TOOL_NAME = "FetchUrl";

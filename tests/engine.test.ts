@@ -1,3 +1,4 @@
+import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it, vi } from "vitest";
 import type { ChannelParams, LlmChannel } from "@/domain/llm/channel";
 import type { ContentPart, EngineChunk } from "@/domain/llm/types";
@@ -6,7 +7,7 @@ import {
   runAgent,
   type AgentDeps,
   type RunAgentInput,
-} from "@/application/llm/engine";
+} from "@/application/runtime";
 import {
   contentChunk,
   FakeChannel,
@@ -337,33 +338,7 @@ describe("runAgent tool loop", () => {
     expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "turn-limit" });
   });
 
-  it("rejects a transfer when fewer than two turns remain", async () => {
-    const channel = new FakeChannel([
-      [toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"hi"}'), usageChunk(1, 1)],
-      [contentChunk("done"), usageChunk(1, 1)],
-    ]);
-    const runSubagent = vi.fn(async function* () {
-      return "child-answer";
-    });
-    const deps: AgentDeps = {
-      channel,
-      recordUsage: async () => {},
-      runSubagent,
-    };
-    const input: RunAgentInput = {
-      projectName: "parent",
-      model: MODEL,
-      messages: [{ role: "user", content: "delegate" }],
-      maxTurn: 2, // turn 0: turn+2 (2) >= maxTurn (2) -> reject
-      subagents: [{ name: "child", description: "a child agent", type: "local" }],
-    };
 
-    const chunks = await collect(runAgent(deps, input));
-
-    expect(runSubagent).not.toHaveBeenCalled();
-    const rejection = chunks.find((c) => c.toolResult?.name === "transfer_to_agent");
-    expect(rejection?.toolResult?.content).toContain("max_turn reached");
-  });
 
   /**
    * The tool's `agent_name` is an enum, but an enum is advisory — a model that
@@ -372,259 +347,14 @@ describe("runAgent tool loop", () => {
    * back empty. It is a call the model can retry, so it is answered like an
    * unloadable skill: a tool error naming what it could have asked for.
    */
-  it("refuses a transfer to an agent the run never offered", async () => {
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"nope","message":"hi"}'),
-        usageChunk(1, 1),
-      ],
-      [contentChunk("answered myself"), usageChunk(1, 1)],
-    ]);
-    const runSubagent = vi.fn(async function* (): AsyncGenerator<EngineChunk, string> {
-      return "never";
-    });
-    const chunks = await collect(
-      runAgent(
-        { channel, recordUsage: async () => {}, runSubagent },
-        {
-          projectName: "parent",
-          model: MODEL,
-          messages: [{ role: "user", content: "delegate" }],
-          subagents: [{ name: "child", description: "a child agent", type: "local" }],
-        },
-      ),
-    );
 
-    expect(runSubagent).not.toHaveBeenCalled();
-    const rejection = chunks.find((c) => c.toolResult?.name === "transfer_to_agent");
-    expect(rejection?.toolResult?.content).toContain("'nope' is not connected");
-    // The alternatives, so the next turn can be right.
-    expect(rejection?.toolResult?.content).toContain("Available agents: child");
-    // A model's own mistake is not a loss the user has to be told about, and
-    // the run answers past it.
-    expect(chunks.some((c) => c.warning)).toBe(false);
-    expect(chunks.some((c) => c.done)).toBe(true);
-  });
 
-  it("keeps top-level chunks unauthored when subagents are wired", async () => {
-    const channel = new FakeChannel([
-      [toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"hi"}'), usageChunk(1, 1)],
-      [contentChunk("parent answer"), usageChunk(1, 1)],
-    ]);
-    const runSubagent = vi.fn(async function* (): AsyncGenerator<EngineChunk, string> {
-      yield { author: "child", delta: { content: "child says hi" } };
-      return "child says hi";
-    });
-    const deps: AgentDeps = {
-      channel,
-      recordUsage: async () => {},
-      runSubagent,
-    };
-    const input: RunAgentInput = {
-      projectName: "parent",
-      model: MODEL,
-      messages: [{ role: "user", content: "delegate" }],
-      subagents: [{ name: "child", description: "a child agent", type: "local" }],
-    };
 
-    const chunks = await collect(runAgent(deps, input));
-
-    // Only subagent chunks carry an author; the parent's own chunks never do,
-    // so `!chunk.author` is the universal top-level predicate.
-    const authored = chunks.filter((c) => c.author !== undefined);
-    expect(authored.length).toBeGreaterThan(0);
-    expect(authored.every((c) => c.author === "child")).toBe(true);
-    const topContent = chunks
-      .filter((c) => c.author === undefined && c.delta?.content)
-      .map((c) => c.delta?.content)
-      .join("");
-    expect(topContent).toContain("parent answer");
-    // The child's stream ends with an authorDone, like a dispatched task's:
-    // a consumer keying a step's lifetime on it (the AG-UI translator) would
-    // otherwise show the transferred agent as running until the run ends.
-    expect(
-      chunks.some((c) => c.author === "child" && c.authorDone === true),
-    ).toBe(true);
-  });
 });
 
-describe("a transfer that came back empty", () => {
-  /**
-   * A child never throws: the runner turns its failures into authored `error`
-   * chunks and returns `""`. Every consumer drops those on the grounds that the
-   * parent answers past them — which held only for `dispatch_agents`, the one
-   * path that folded the reason into what the parent reads. A transfer did not,
-   * so a provider refusal reached the model as an empty answer and it wrote a
-   * reason of its own.
-   */
-  function transferRun(child: NonNullable<AgentDeps["runSubagent"]>) {
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter","message":"draw"}'),
-        usageChunk(1, 1),
-      ],
-      [contentChunk("parent answer"), usageChunk(1, 1)],
-    ]);
-    const run = runAgent(
-      { channel, recordUsage: async () => {}, runSubagent: child },
-      {
-        projectName: "parent",
-        model: MODEL,
-        messages: [{ role: "user", content: "draw something" }],
-        subagents: [{ name: "painter", description: "draws", type: "local" }],
-      },
-    );
-    return { channel, run };
-  }
 
-  /** The user turns the parent's *next* request carries — where a child's answer lands. */
-  function contextTurns(channel: FakeChannel): string {
-    return (channel.seenParams[1]?.messages ?? [])
-      .filter((message) => message.role === "user")
-      .map((message) => (typeof message.content === "string" ? message.content : ""))
-      .join("\n");
-  }
 
-  it("tells the parent and the reader why, when the child answered nothing", async () => {
-    const { channel, run } = transferRun(async function* () {
-      yield { author: "painter", error: "400 rejected by the safety system" };
-      return "";
-    });
 
-    const chunks = await collect(run);
-
-    expect(contextTurns(channel)).toContain("400 rejected by the safety system");
-    const warnings = chunks.filter((chunk) => chunk.warning);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]?.warning).toContain("painter");
-    expect(warnings[0]?.warning).toContain("400 rejected by the safety system");
-    // The notice is the run's, not the child's: an authored warning is dropped
-    // by the consumers that gate on `isTopLevelChunk`.
-    expect(warnings[0]?.author).toBeUndefined();
-  });
-
-  it("keeps the child's answer when it recovered from a failure of its own", async () => {
-    const { channel, run } = transferRun(async function* () {
-      yield { author: "painter", error: "a nested transfer failed" };
-      return "drew it anyway";
-    });
-
-    const chunks = await collect(run);
-
-    // The returned text decides, never the error chunks that went past — a
-    // descendant's failure travels out on this same stream.
-    expect(contextTurns(channel)).toContain("drew it anyway");
-    expect(contextTurns(channel)).not.toContain("a nested transfer failed");
-    expect(chunks.some((chunk) => chunk.warning)).toBe(false);
-  });
-
-  it("says so when the child came back empty with no reason at all", async () => {
-    const { channel, run } = transferRun(async function* () {
-      return "";
-    });
-
-    const chunks = await collect(run);
-
-    expect(contextTurns(channel)).toContain("Error: the agent returned no answer.");
-    expect(chunks.filter((chunk) => chunk.warning)).toHaveLength(1);
-  });
-
-  it("leaves a transfer that answered unremarked", async () => {
-    const { channel, run } = transferRun(async function* () {
-      yield { author: "painter", delta: { content: "a painting" } };
-      return "a painting";
-    });
-
-    const chunks = await collect(run);
-
-    expect(contextTurns(channel)).toContain("a painting");
-    expect(contextTurns(channel)).not.toContain("Error:");
-    expect(chunks.some((chunk) => chunk.warning)).toBe(false);
-  });
-});
-
-describe("the conversation a transfer carries is bounded", () => {
-  /** Capture what the engine hands the runner as the transcript. */
-  function captureTranscript() {
-    const seen: { transcript?: string } = {};
-    const runSubagent = vi.fn(async function* (
-      _agentName: string,
-      _message: string,
-      _turn: number,
-      _maxTurn: number,
-      _images?: unknown,
-      transcript?: string,
-    ): AsyncGenerator<EngineChunk, string> {
-      seen.transcript = transcript;
-      return "done";
-    });
-    return { seen, runSubagent };
-  }
-
-  async function runWith(messages: RunAgentInput["messages"]) {
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"go"}'),
-        usageChunk(1, 1),
-      ],
-      [contentChunk("done"), usageChunk(1, 1)],
-    ]);
-    const { seen, runSubagent } = captureTranscript();
-    const chunks = await collect(
-      runAgent(
-        { channel, recordUsage: async () => {}, runSubagent },
-        {
-          projectName: "parent",
-          model: MODEL,
-          messages,
-          subagents: [{ name: "child", description: "a child agent", type: "local" }],
-        },
-      ),
-    );
-    return { chunks, transcript: seen.transcript };
-  }
-
-  it("drops the oldest turns and says so, in the transcript and to the reader", async () => {
-    // A chain re-sends this at every hop, so the budget is far below what a
-    // top-level run carries — a long chat necessarily loses its oldest turns.
-    const long = "x".repeat(900);
-    const history = Array.from({ length: 20 }, (_, i) => ({
-      role: "user" as const,
-      content: `turn ${i} ${long}`,
-    }));
-    const { chunks, transcript } = await runWith([...history, { role: "user", content: "now go" }]);
-
-    expect(transcript).toBeDefined();
-    // Newest-first spending: the turns nearest the question survive.
-    expect(transcript).toContain("turn 19");
-    expect(transcript).not.toContain("turn 0 ");
-    // The child cannot see the run's warnings, so the gap is named in the text
-    // it does see — a gap it cannot see is one it will answer around.
-    expect(transcript).toMatch(/…\(\d+ earlier turn\(s\) omitted\)/);
-    expect(
-      chunks.some((c) => c.warning?.includes("left out of the context handed to other agents")),
-    ).toBe(true);
-  });
-
-  it("warns nobody when the whole conversation fits", async () => {
-    const { chunks, transcript } = await runWith([
-      { role: "user", content: "draw a cat" },
-      { role: "assistant", content: "Here is an orange cat." },
-      { role: "user", content: "now go" },
-    ]);
-
-    expect(transcript).toContain("User: draw a cat");
-    expect(transcript).not.toContain("omitted");
-    expect(chunks.some((c) => c.warning)).toBe(false);
-  });
-
-  it("hands over nothing when there is no conversation before the request", async () => {
-    const { chunks, transcript } = await runWith([{ role: "user", content: "now go" }]);
-
-    expect(transcript).toBeUndefined();
-    expect(chunks.some((c) => c.warning)).toBe(false);
-  });
-});
 
 describe("tools + reasoning_effort provider constraint", () => {
   const TOOL = { type: "function" as const, function: { name: "lookup", parameters: {} } };
@@ -750,7 +480,7 @@ describe("recording the run's reasoning", () => {
       [contentChunk("done"), usageChunk(1, 1)],
     ]);
     const deps: AgentDeps = {
-      channel,
+      channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
     };
@@ -774,7 +504,7 @@ describe("recording the run's reasoning", () => {
       [reasoningChunk("now answer"), contentChunk("done"), usageChunk(1, 1)],
     ]);
     const deps: AgentDeps = {
-      channel,
+      channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
     };
@@ -802,7 +532,7 @@ describe("recording the run's reasoning", () => {
       [contentChunk("done"), usageChunk(1, 1)],
     ]);
     const deps: AgentDeps = {
-      channel,
+      channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
     };
@@ -864,7 +594,7 @@ describe("recording the run's reasoning", () => {
       },
     };
     const deps: AgentDeps = {
-      channel,
+      channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
     };
@@ -915,7 +645,7 @@ describe("recording the run's reasoning", () => {
       [reasoningChunk("thinking, not speaking"), toolCallChunk(0, "call_1", "lookup", "{}"), usageChunk(1, 1)],
     ]);
     const deps: AgentDeps = {
-      channel,
+      channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
     };
@@ -1084,9 +814,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     await collect(
       runAgent(
-        { channel, loadSkillContent: async () => "body", runSubagent: async function* () {
-            return "";
-          } },
+        { channel, loadSkillContent: async () => "body", loadAgent: async () => { throw new Error("Unexpected delegation"); } },
         {
           projectName: "p",
           model: MODEL,
@@ -1129,7 +857,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
     const content = await systemPromptFor({
       skills: [{ name: "writing", description: "how to write" }],
       subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
-      mcpTools: [{ type: "function", function: { name: "search_repos", parameters: {} } }],
+      mcpTools: ["search_repos", "get_pr", "search_docs"].map((name) => ({ type: "function", function: { name, parameters: {} } })),
       mcpServers: [{ name: "github", description: "repos", toolNames: ["search_repos"] }],
     });
     expect(content).toContain(
@@ -1155,7 +883,7 @@ describe("runAgent MCP server system prompt", () => {
           model: MODEL,
           systemPrompt: "base prompt",
           messages: [{ role: "user", content: "hi" }],
-          mcpTools: [{ type: "function", function: { name: "search_repos", parameters: {} } }],
+          mcpTools: ["search_repos", "get_pr", "search_docs"].map((name) => ({ type: "function", function: { name, parameters: {} } })),
           mcpServers: [
             { name: "github", description: "Internal GitHub access", toolNames: ["search_repos", "get_pr"] },
             { name: "docs", description: "", toolNames: ["search_docs"] },
@@ -1182,7 +910,7 @@ describe("runAgent MCP server system prompt", () => {
           model: MODEL,
           systemPrompt: "base prompt",
           messages: [{ role: "user", content: "hi" }],
-          mcpTools: [{ type: "function", function: { name: "search_repos", parameters: {} } }],
+          mcpTools: ["search_repos", "get_pr", "search_docs"].map((name) => ({ type: "function", function: { name, parameters: {} } })),
         },
       ),
     );
@@ -1201,7 +929,7 @@ describe("runAgent MCP server system prompt", () => {
           projectName: "p",
           model: MODEL,
           messages: [{ role: "user", content: "hi" }],
-          mcpTools: [{ type: "function", function: { name: "a", parameters: {} } }],
+          mcpTools: ["a", "b"].map((name) => ({ type: "function", function: { name, parameters: {} } })),
           mcpServers: [
             { name: "multi", description: "  first line\n\n  second | piped  ", toolNames: ["a"] },
             { name: "after", description: "still listed", toolNames: ["b"] },
@@ -1249,95 +977,11 @@ describe("runAgent skill and subagent system prompt", () => {
     expect(skillName.enum).toEqual(["writing"]);
   });
 
-  it("lists subagents in a table shaped like the other sections", async () => {
-    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
-    await collect(
-      runAgent(
-        { channel, runSubagent: async function* () {
-            return "";
-          } },
-        {
-          projectName: "p",
-          model: MODEL,
-          systemPrompt: "base prompt",
-          messages: [{ role: "user", content: "hi" }],
-          subagents: [
-            { name: "painter", description: "draws pictures", type: "local" },
-            { name: "blank", description: "", type: "local" },
-          ],
-        },
-      ),
-    );
 
-    const content = String(channel.seenParams[0]?.messages[0]?.content);
-    expect(content).toContain("## Available Agents");
-    expect(content).toContain("| painter | local | draws pictures |");
-    expect(content).toContain("| blank | local | No description |");
-    expect(content).toContain(
-      "Recent conversation may be passed as background depending on the agent type, but `message` must always be self-contained.",
-    );
-    expect(content).toContain("Remote agents cannot receive images.");
-    // `agent_name` is an enum, so the prompt does not restate which names are legal.
-    expect(content).not.toContain("NOTE:");
-    // Nothing points the model at a description it is never given.
-    expect(content).not.toContain("your description");
-  });
 
-  it("keeps the agent table intact when a description spans lines or contains a pipe", async () => {
-    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
-    await collect(
-      runAgent(
-        { channel, runSubagent: async function* () {
-            return "";
-          } },
-        {
-          projectName: "p",
-          model: MODEL,
-          messages: [{ role: "user", content: "hi" }],
-          subagents: [
-            { name: "multi", description: "  first line\n\n  second | piped  ", type: "local" },
-            { name: "after", description: "still listed", type: "remote" },
-          ],
-        },
-      ),
-    );
 
-    const content = String(channel.seenParams[0]?.messages[0]?.content);
-    expect(content).toContain("| multi | local | first line second \\| piped |");
-    expect(content).toContain("| after | remote | still listed |");
-    const tableLines = content
-      .split("\n")
-      .filter((line) => line.startsWith("| ") && !line.startsWith("|--"));
-    expect(tableLines).toHaveLength(3); // header + 2 agents
-  });
 
-  it("does not offer image transfer when every connected agent is remote", async () => {
-    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
-    await collect(
-      runAgent(
-        {
-          channel,
-          runSubagent: async function* () {
-            return "";
-          },
-        },
-        {
-          projectName: "p",
-          model: MODEL,
-          messages: [{ role: "user", content: "hi" }],
-          subagents: [{ name: "remote", description: "external", type: "remote" }],
-        },
-      ),
-    );
 
-    const transfer = channel.seenParams[0]?.tools?.find(
-      (tool) => tool.function.name === "transfer_to_agent",
-    );
-    expect(transfer?.function.parameters?.properties).not.toHaveProperty("image_ids");
-    expect(String(channel.seenParams[0]?.messages[0]?.content)).not.toContain(
-      "## Available Images",
-    );
-  });
 });
 
 describe("runAgent image input", () => {
@@ -1362,8 +1006,8 @@ describe("runAgent image input", () => {
       ),
     );
 
-    // messages[0] is the system prompt; the user turn keeps its parts as-is.
-    expect(channel.seenParams[0]?.messages.at(-1)?.content).toEqual(IMAGE_MESSAGE[0]?.content);
+    // The SDK makes default image detail explicit; text and image bytes are unchanged.
+    expect(channel.seenParams[0]?.messages.at(-1)?.content).toEqual((IMAGE_MESSAGE[0]?.content as ContentPart[]).map((part) => part.type === "image_url" ? { ...part, image_url: { ...part.image_url, detail: "auto" } } : part));
   });
 
   it("rejects a model that does not accept image input", async () => {
@@ -1438,7 +1082,7 @@ describe("runAgent image input", () => {
     expect(Array.isArray(parts)).toBe(true);
     const [text, image] = parts as ContentPart[];
     expect(JSON.stringify(text)).not.toContain("a@b.com");
-    expect(image).toEqual({ type: "image_url", image_url: { url: DATA_URL } });
+    expect(image).toEqual({ type: "image_url", image_url: { url: DATA_URL, detail: "auto" } });
   });
 });
 
@@ -1614,7 +1258,7 @@ describe("provider output cut (finish_reason: length)", () => {
     const channel = new FakeChannel([
       [contentChunk("partial answ"), finishReasonChunk("length"), usageChunk(2, 1)],
     ]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { channel: scriptedModels(channel), recordUsage: async () => {} };
 
     const chunks = await collect(
       runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
@@ -1666,12 +1310,11 @@ describe("provider output cut (finish_reason: length)", () => {
 
     // Never dispatched with `{}` — the model never asked for that call.
     expect(callMcpTool).not.toHaveBeenCalled();
+    expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
     expect(chunks.some((c) => c.warning?.includes("output limit"))).toBe(true);
-    const result = chunks.find((c) => c.toolResult)?.toolResult;
-    expect(result?.content).toContain("Error:");
-    expect(result?.content).toContain("output limit");
-    // The loop recovers: the model reads the error result and answers.
-    expect(chunks.some((c) => c.done)).toBe(true);
+    expect(channel.calls).toBe(2);
+    expect(chunks.find((chunk) => chunk.toolResult)?.toolResult?.content).toContain("parsing tool arguments");
+    expect(chunks.at(-1)?.done).toBe(true);
   });
 
   it("still runs the calls of a cut turn whose arguments arrived whole", async () => {
@@ -1720,11 +1363,13 @@ describe("provider output cut (finish_reason: length)", () => {
     );
 
     expect(callMcpTool).not.toHaveBeenCalled();
-    const result = chunks.find((c) => c.toolResult)?.toolResult;
-    expect(result?.content).toContain("did not parse");
-    // No cut happened, so nothing is announced as one.
+    expect(chunks.filter((chunk) => chunk.error)).toEqual([]);
+    const result = chunks.find((chunk) => chunk.toolResult)?.toolResult?.content;
+    expect(result).toContain("parsing tool arguments");
+    expect(result).not.toContain("query");
+    expect(channel.calls).toBe(2);
     expect(chunks.some((c) => c.warning)).toBe(false);
-    expect(chunks.some((c) => c.done)).toBe(true);
+    expect(chunks.at(-1)?.done).toBe(true);
   });
 });
 
@@ -1767,8 +1412,8 @@ describe("the final turn", () => {
     // And the model is told why, rather than left to guess at a silently
     // shrunken tool set.
     const lastTurnMessages = channel.seenParams[2]?.messages ?? [];
-    expect(lastTurnMessages.at(-1)).toMatchObject({ role: "user" });
-    expect(String(lastTurnMessages.at(-1)?.content)).toContain("final turn");
+    expect(lastTurnMessages[0]).toMatchObject({ role: "system" });
+    expect(String(lastTurnMessages[0]?.content)).toContain("final turn");
 
     expect(chunks.some((c) => c.delta?.content === "Here is what I found so far.")).toBe(true);
     // The answer is real, but it is not a finish: it is what the run could say
@@ -1881,7 +1526,7 @@ describe("empty provider errors", () => {
         throw new Error("");
       },
     };
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { channel: scriptedModels(channel), recordUsage: async () => {} };
 
     const chunks = await collect(
       runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
@@ -1901,39 +1546,3 @@ describe("empty provider errors", () => {
  * report is not there. Turning the filter off makes the same run work, which is
  * the shape that makes it hard to see.
  */
-describe("a transfer under PII filtering", () => {
-  it("forwards a file the child produced, which is neither stored nor delivered otherwise", async () => {
-    const channel = new FakeChannel([
-      [toolCallChunk(0, "c1", "transfer_to_agent", '{"agent_name":"writer","message":"write it"}'), usageChunk(1, 1)],
-      [contentChunk("보고서를 만들었습니다."), usageChunk(1, 1)],
-    ]);
-    const chunks = await collect(
-      runAgent(
-        {
-          channel,
-          runSubagent: async function* () {
-            yield {
-              author: "writer",
-              file: { b64: "AAAA", mimeType: "application/pdf", name: "report.pdf", source: "mcp: render_document" },
-            } as EngineChunk;
-            yield { author: "writer", authorDone: true } as EngineChunk;
-            return "done";
-          },
-        },
-        {
-          projectName: "p",
-          model: MODEL,
-          messages: [{ role: "user", content: "mail me at a@b.com" }],
-          parameters: { piiFiltering: true },
-          subagents: [{ name: "writer", description: "writes", type: "local" }],
-        },
-      ),
-    );
-
-    const file = chunks.find((chunk) => chunk.file);
-    expect(file?.file?.name).toBe("report.pdf");
-    expect(file?.file?.b64).toBe("AAAA");
-    // The chain has to stop being drawn as active, too.
-    expect(chunks.some((chunk) => chunk.authorDone)).toBe(true);
-  });
-});

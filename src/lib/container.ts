@@ -61,6 +61,7 @@ import { externalAgentRepository } from "@/infrastructure/db/repositories/extern
 import { remoteConversationRepository } from "@/infrastructure/db/repositories/remoteConversationRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { createChannel } from "@/infrastructure/llm/channel";
+import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
 import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
@@ -68,6 +69,9 @@ import { withTraceExport } from "@/infrastructure/telemetry/withTraceExport";
 import type { OtelTraceExport } from "@/infrastructure/telemetry/otelTraceExport";
 import { onShutdown } from "@/shared/lifecycle";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { runtimeSessionRepository } from "@/infrastructure/db/repositories/runtimeSessionRepository";
+import { RETENTION } from "@/infrastructure/db/ttl";
+import type { RuntimeSessionServices } from "@/application/runtime/session";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { createHttpResourceReader } from "@/infrastructure/net/httpResource";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
@@ -304,6 +308,8 @@ const resolveTarget = async (modelId: string) => {
 };
 
 const channel = createChannel(resolveTarget);
+const agentModels = createAgentModelProvider(resolveTarget);
+export const runtimeSessions: RuntimeSessionServices = { repository: runtimeSessionRepository, cipher: secretCipher, retentionDays: RETENTION.chatDays };
 const imageChannel = createImageChannel(resolveTarget);
 
 async function testRerankerModel(model: string, signal?: AbortSignal): Promise<void> {
@@ -621,7 +627,8 @@ export async function sweepExpiredRows(now: Date = new Date()): Promise<number> 
   // itself purges only when that session's cookie is presented again.
   const items = await deleteExpired(Math.floor(now.getTime() / 1000));
   const sessions = await deleteExpiredSessions(now);
-  return items + sessions;
+  const runtime = await runtimeSessionRepository.sweepExpired(now);
+  return items + sessions + runtime;
 }
 export const pluginUseCases = createPluginUseCases(pluginRepository);
 /**
@@ -1116,13 +1123,14 @@ const deliverProjectMessage: PostCostAlert = async (project, destination, text) 
 
 /** Repository + channel bundle passed to the execution facade (executeVersion/Stream/Agent). */
 export const executionDeps: ExecutionDeps = {
+  runtimeSessions: runtimeSessions,
   projects: projectRepository,
   versions: versionRepository,
   skills: skillRepository,
   mcps: mcpRepository,
   externalAgents: externalAgentRepository,
   usage: usageRepository,
-  channel,
+  channel: agentModels,
   imageChannel,
   cipher: secretCipher,
   urlPolicy,

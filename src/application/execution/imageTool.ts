@@ -5,7 +5,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
 import { getModelConfig, getVisibleModels, toImageUsageRecord } from "@/domain/llm/models";
-import * as engine from "@/application/llm/engine";
+import * as engine from "@/application/runtime";
 import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import type { ExecutionDeps } from "./deps";
 import { runEnding } from "@/application/run/runDeadline";

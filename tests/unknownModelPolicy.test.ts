@@ -5,12 +5,10 @@ import {
   toUnknownModelPolicy,
   type UnknownModelPolicy,
 } from "@/domain/settings/modelPolicy";
-import { runLocalSubagent } from "@/application/execution/subagentRunner";
+import { prepareSubagent } from "@/application/execution/agentBindings";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { ValidationError } from "@/application/errors";
 import { listModels } from "@/domain/llm/models";
-import type { RunOrigin } from "@/domain/execution/actor";
-import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 
@@ -181,60 +179,23 @@ describe("the run bracket enforces it", () => {
   });
 });
 
-describe("a subagent transfer enforces it too", () => {
-  /**
-   * The bracket is not the whole set of paths that spend money. A transfer never
-   * opens one — by design — yet it dispatches to the provider and books a usage
-   * row exactly as its parent does, and the parent's model being registered says
-   * nothing about the child's.
-   */
-  const child: Project = { ...project, name: "child", publishedVersion: "v1" };
-
-  function deps(policy: UnknownModelPolicy | undefined, model: string): ExecutionDeps {
-    return {
-      projects: { get: async () => child },
-      versions: { get: async () => version({ projectName: "child", model }) },
+describe("subagent preparation enforces model policy", () => {
+  const child: Project = { ...project, name: "child", projectType: "llm", publishedVersion: "v1" };
+  const parent = version({ projectName: "parent", subagentList: [{ name: "child", type: "local" }] });
+  function prepare(policy: UnknownModelPolicy | undefined, model: string) {
+    const deps = {
+      projects: { get: async () => child }, versions: { get: async () => version({ projectName: "child", model }) },
       ...(policy ? { unknownModelPolicy: async () => policy } : {}),
     } as unknown as ExecutionDeps;
+    return prepareSubagent(deps, parent, "child", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
   }
-
-  async function collect(source: AsyncGenerator<EngineChunk, string>) {
-    const chunks: EngineChunk[] = [];
-    let step = await source.next();
-    while (!step.done) {
-      chunks.push(step.value);
-      step = await source.next();
-    }
-    return { chunks, text: step.value };
-  }
-
-  const noUsage = async () => {};
-  const origin = { actor: { kind: "user", id: "u@example.com" } } as unknown as RunOrigin;
-
-  it("refuses an unpriced child before it reaches the channel", async () => {
-    const { chunks, text } = await collect(
-      runLocalSubagent(deps("refuse", UNKNOWN), "child", "hi", 1, 4, noUsage, origin),
-    );
-    expect(text).toBe("");
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0]?.author).toBe("child");
-    expect(chunks[0]?.error).toContain("not in the registry");
+  it("refuses an unpriced child before model execution", async () => {
+    await expect(prepare("refuse", UNKNOWN)).rejects.toThrow("not in the registry");
   });
-
-  it("runs a child whose model the registry can price", async () => {
-    // Reaching the dispatch is the assertion: these deps carry no channel, so
-    // what comes back is the channel failing rather than the policy refusing.
-    const { chunks } = await collect(
-      runLocalSubagent(deps("refuse", REGISTERED), "child", "hi", 1, 4, noUsage, origin),
-    );
-    expect(chunks[0]?.error).not.toContain("not in the registry");
+  it("prepares a registered model", async () => {
+    expect(await prepare("refuse", REGISTERED)).toMatchObject({ kind: "agent", input: { model: REGISTERED } });
   });
-
-  it("leaves a transfer alone when no policy is injected", async () => {
-    // A deps bag assembled before this existed behaves exactly as it did.
-    const { chunks } = await collect(
-      runLocalSubagent(deps(undefined, UNKNOWN), "child", "hi", 1, 4, noUsage, origin),
-    );
-    expect(chunks[0]?.error).not.toContain("not in the registry");
+  it("allows unpriced models when no refusal policy is configured", async () => {
+    expect(await prepare(undefined, UNKNOWN)).toMatchObject({ kind: "agent", input: { model: UNKNOWN } });
   });
 });

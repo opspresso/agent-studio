@@ -529,7 +529,7 @@ describe("configuration reads", () => {
  * `PromptPreview.tsx` reached `@/application/llm/template` for a regex over
  * `{{var}}` placeholders. That module was 29 lines with no imports of its own,
  * so it cost nothing and read as harmless — which is the point. The same line
- * naming `@/application/llm/engine` instead pulls the tool loop, the PII filter,
+ * naming `@/application/runtime` instead pulls the tool loop, the PII filter,
  * the context budget and the logger into the browser bundle, and no rule here
  * would have said a word.
  *
@@ -614,8 +614,10 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(98);
+    expect(entries.length).toBe(100);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
+      "src/app/chats/_components/PendingApproval.tsx",
+      "src/app/projects/[name]/_components/RuntimePolicyEditor.tsx",
       "src/app/projects/[name]/audio/page.tsx",
       "src/app/projects/[name]/_components/SourceMappings.tsx",
       "src/app/projects/[name]/_components/ProjectAudioContext.tsx",
@@ -749,7 +751,6 @@ describe("response shapes", () => {
 const RUN_ENDING_SITES = [
   "src/application/execution/imageTool.ts",
   "src/application/execution/runProject.ts",
-  "src/application/execution/subagentRunner.ts",
   "src/application/image/generateImage.ts",
 ];
 
@@ -1419,7 +1420,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     what: "the subagent nesting limit",
     pattern: /MAX_SUBAGENT_DEPTH\s*=/,
-    owner: "src/application/execution/subagentRunner.ts",
+    owner: "src/application/execution/agentBindings.ts",
   },
   {
     what: "the per-run MCP tool cap",
@@ -1436,9 +1437,9 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/member/tiers.ts",
   },
   {
-    what: "how many agents one dispatch may run",
-    pattern: /MAX_DISPATCH_TASKS\s*=/,
-    owner: "src/application/llm/agentAssembly.ts",
+    what: "concurrent SDK function tool executions",
+    pattern: /MAX_FUNCTION_TOOL_CONCURRENCY\s*=/,
+    owner: "src/application/runtime/runner.ts",
   },
   {
     what: "builtin tool wire names",
@@ -1509,8 +1510,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     pattern: /\.done\b|\.finishReason\b/,
     owner: "src/domain/llm/types.ts",
     alsoAllowedUnder: [
-      "src/application/llm/engine.ts",
-      "src/application/execution/subagentRunner.ts",
+      "src/application/runtime/execute.ts",
+      "src/application/runtime/agent.ts",
       "src/app/api/_lib/sse.ts",
       "src/app/api/chats/_lib/frames.ts",
       "src/application/run/leadingWarnings.ts",
@@ -2443,7 +2444,7 @@ const TOOL_RESOLUTION_SITES = [
   // The top-level agent run; queries come from the newest user turn.
   "src/application/execution/runProject.ts",
   // A transferred-to child; the transfer message is its whole request.
-  "src/application/execution/subagentRunner.ts",
+  "src/application/execution/agentBindings.ts",
   // The Playground preview; the request is optional there, and without one it
   // shows the floor every run starts from.
   "src/application/execution/promptPreview.ts",
@@ -2728,11 +2729,11 @@ describe("edge runtime compatibility", () => {
 describe("scanner", () => {
   it("reads the whole source tree", () => {
     expect(SOURCE_FILES.length).toBeGreaterThan(100);
-    expect(SOURCE_FILES.some((f) => f.path === "src/application/llm/engine.ts")).toBe(true);
+    expect(SOURCE_FILES.some((f) => f.path === "src/application/runtime/execute.ts")).toBe(true);
   });
 
   it("still sees a dependency that is known to exist", () => {
-    const engine = SOURCE_FILES.find((f) => f.path === "src/application/llm/engine.ts")!;
+    const engine = SOURCE_FILES.find((f) => f.path === "src/application/runtime/execute.ts")!;
     const specs = parseImports(engine.text).map((i) => i.spec);
     expect(specs.some((spec) => spec.startsWith("@/domain/"))).toBe(true);
   });
@@ -2776,7 +2777,7 @@ describe("scanner", () => {
       [
         `const { executeAgent: run, streamProjectRun } = await import("@/application/execution/runProject");`,
         `(await import("@/application/execution/runProject")).executeAgent;`,
-        `const engine = await import("@/application/llm/engine");`,
+        `const engine = await import("@/application/runtime");`,
         `import("@/application/execution/runProject").then(({ executeAgent: run }) => run);`,
       ].join("\n"),
     );
@@ -2804,7 +2805,7 @@ describe("scanner", () => {
     const parsed = parseImports(
       [
         `import { executeAgent as run, type Deps } from "@/application/execution/runProject";`,
-        `import * as engine from "@/application/llm/engine";`,
+        `import * as engine from "@/application/runtime";`,
         `import React from "react";`,
       ].join("\n"),
     );

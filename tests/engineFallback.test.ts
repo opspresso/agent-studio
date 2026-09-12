@@ -1,3 +1,4 @@
+import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it } from "vitest";
 import type {
   ChannelChunk,
@@ -6,7 +7,7 @@ import type {
   LlmChannel,
 } from "@/domain/llm/channel";
 import type { EngineChunk } from "@/domain/llm/types";
-import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
+import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { contentChunk, usageChunk } from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
@@ -33,6 +34,7 @@ type StreamStep =
 
 /** Replays one stream step per successive call; steps may throw. */
 class ScriptedChannel implements LlmChannel {
+  getModel(name?: string) { return scriptedModels(this).getModel(name); }
   calls = 0;
   readonly seenParams: ChannelParams[] = [];
 

@@ -9,7 +9,7 @@ import type { EngineChunk, McpToolResult } from "@/domain/llm/types";
 import { documentRenderer } from "@/infrastructure/documents/renderer";
 import { documentEditor } from "@/infrastructure/documents/editor";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
-import { runAgent } from "@/application/llm/engine";
+import { runAgent } from "@/application/runtime";
 import { FakeChannel, toolCallChunk, contentChunk } from "./fakeChannel";
 
 const ids = vi.hoisted(() => ({ next: 0 }));

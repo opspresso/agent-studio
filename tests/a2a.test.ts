@@ -31,6 +31,7 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import type { LlmChannel } from "@/domain/llm/channel";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+import { scriptedModels } from "./scriptedModels";
 import type { Trace } from "@/domain/trace/types";
 import { fakeSkillRepository } from "./fakeSkills";
 import {
@@ -893,21 +894,17 @@ describe("ProjectA2aExecutor", () => {
     expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
   });
 
-  it("completes past an authored (subagent) error instead of failing the task", async () => {
-    // The transfer target's version repo rejects, so the child fails on entry —
-    // an *authored* error chunk. The parent answers past it, exactly as chat,
-    // Slack and the OpenAI surface treat it; failing the task here threw that
-    // answer away.
+  it("completes after a delegated agent fails to prepare its tools", async () => {
     const channel = new FakeChannel([
       [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"go"}'),
+        toolCallChunk(0, "call_t", "delegate_child", "{\"input\":\"go\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [contentChunk("recovered without the child"), usageChunk(1, 1)],
     ]);
     const deps = executionDepsFixture(channel);
-    // The subagent resolves (the transfer tool is offered), but running it hits
-    // the rejecting version repo — the authored-error shape under test.
+    // Metadata resolves, then the child's unreadable skill fails preparation.
+    deps.versions.get = async () => versionFixture({ projectName: "child", skillList: ["unreadable"] });
     (deps as { projects: unknown }).projects = {
       get: async () => projectFixture({ name: "child", projectType: "agent" }),
       list: () => Promise.reject(new Error("not used")),
@@ -1068,7 +1065,7 @@ describe("ProjectA2aExecutor cancel", () => {
     try {
       const deps = {
         ...executionDepsFixture(new FakeChannel([])),
-        channel: hangingChannel(),
+        channel: scriptedModels(hangingChannel()),
       } as unknown as ExecutionDeps;
       const store = fakeStore({
         load: async () =>
@@ -1096,7 +1093,7 @@ describe("ProjectA2aExecutor cancel", () => {
       let maxActiveReads = 0;
       const deps = {
         ...executionDepsFixture(new FakeChannel([])),
-        channel: hangingChannel(),
+        channel: scriptedModels(hangingChannel()),
       } as unknown as ExecutionDeps;
       const store = fakeStore({
         load: async () => {
@@ -1391,7 +1388,7 @@ describe("ProjectA2aExecutor — what a message may carry", () => {
     const sent = channel.seenParams[0]!.messages.at(-1)!.content;
     expect(sent).toEqual([
       { type: "text", text: "what is this?" },
-      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA", detail: "auto" } },
     ]);
     const last = artifactEvents(bus.events).at(-1);
     expect(last?.lastChunk).toBe(true);

@@ -254,13 +254,13 @@ describe("previewPrompt", () => {
     expect(preview.toolNames).toEqual([
       "query",
       "Skill",
-      "transfer_to_agent",
-      "dispatch_agents",
+      "handoff_painter",
+      "delegate_painter",
     ]);
     expect(preview.tools.map((tool) => tool.name)).toEqual(preview.toolNames);
-    expect(preview.tools.find((tool) => tool.name === "dispatch_agents")).toMatchObject({
-      description: expect.stringContaining("Run several connected agents"),
-      parameters: expect.objectContaining({ required: ["tasks"] }),
+    expect(preview.tools.find((tool) => tool.name === "delegate_painter")).toMatchObject({
+      description: expect.stringContaining("Ask painter"),
+      parameters: expect.objectContaining({ required: ["input", "image_ids"] }),
     });
   });
 

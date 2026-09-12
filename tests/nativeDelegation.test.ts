@@ -1,0 +1,181 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RunState } from "@openai/agents";
+import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
+import { runAgent } from "@/application/runtime";
+import { compileAgent } from "@/application/runtime/agent";
+import { createStudioRunner } from "@/application/runtime/runner";
+import type { AgentDeps, RunAgentInput } from "@/application/runtime/types";
+import type { EngineChunk } from "@/domain/llm/types";
+
+const ROOT = "openai/gpt-5-mini";
+const CHILD = "google/gemini-2.5-flash";
+let testId = 0;
+
+beforeEach(() => {
+  testId += 1;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-12T00:00:00Z"));
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+function answer(content: string) {
+  return [{ index: 0, delta: { content }, finish_reason: "stop" }];
+}
+function calls(...entries: Array<{ name: string; input?: string }>) {
+  return [{ index: 0, delta: { tool_calls: entries.map((entry, index) => ({
+    index, id: `call_${index}`, type: "function", function: { name: entry.name, arguments: entry.input === undefined ? "{}" : JSON.stringify({ input: entry.input, image_ids: [] }) },
+  })) }, finish_reason: "tool_calls" }];
+}
+
+function fixture(reply: (body: Record<string, unknown>, index: number) => unknown[]) {
+  const requests: Array<Record<string, unknown>> = [];
+  vi.stubGlobal("fetch", vi.fn(async (_url, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    requests.push(body);
+    const data = JSON.stringify({ id: `response_${requests.length}`, choices: reply(body, requests.length - 1), usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } });
+    return new Response(`data: ${data}\n\ndata: [DONE]\n\n`, { headers: { "Content-Type": "text/event-stream" } });
+  }));
+  const models = createAgentModelProvider(async (model) => ({ providerName: null, baseUrl: `http://delegation-${testId}.test/v1`, apiKey: "test", auth: "bearer", model }));
+  const closed = vi.fn(async () => {});
+  const loadAgent = vi.fn<NonNullable<AgentDeps["loadAgent"]>>(async (name, task) => ({
+    kind: "agent", deps: { channel: models }, close: closed, warnings: [],
+    input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], signal: task.signal },
+  }));
+  const deps: AgentDeps = { channel: models, canDelegate: true, loadAgent };
+  const input: RunAgentInput = { projectName: "root", model: ROOT, maxTurn: 8, canDispatch: true, messages: [{ role: "user", content: "help me" }], subagents: [{ name: "child", type: "local", kind: "agent", description: "Specialist" }] };
+  return { deps, input, requests, closed, loadAgent, models };
+}
+
+async function collect(source: AsyncGenerator<EngineChunk>) {
+  const output: EngineChunk[] = [];
+  for await (const chunk of source) output.push(chunk);
+  return output;
+}
+
+describe("native SDK delegation", () => {
+  it("hands the same Runner to the child, which supplies the top-level answer", async () => {
+    const f = fixture((_body, index) => index === 0 ? calls({ name: "handoff_child", input: "take over" }) : answer("specialist answer"));
+    const chunks = await collect(runAgent(f.deps, f.input));
+    expect(f.requests.map((body) => body.model)).toEqual([ROOT, CHILD]);
+    expect(chunks.filter((chunk) => !chunk.author).map((chunk) => chunk.delta?.content ?? "").join("")).toBe("specialist answer");
+    expect(chunks.some((chunk) => chunk.toolResult?.name === "Handoff: child")).toBe(true);
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+    expect(f.closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses Agent.asTool, then returns the child answer as a tool result to the parent", async () => {
+    const f = fixture((body, index) => index === 0 ? calls({ name: "delegate_child", input: "research" }) : body.model === CHILD ? answer("research result") : answer("parent synthesis"));
+    const chunks = await collect(runAgent(f.deps, f.input));
+    expect(f.requests.map((body) => body.model)).toEqual([ROOT, CHILD, ROOT]);
+    expect(chunks.filter((chunk) => chunk.author === "child").map((chunk) => chunk.delta?.content ?? "").join("")).toBe("research result");
+    expect(chunks.filter((chunk) => !chunk.author).map((chunk) => chunk.delta?.content ?? "").join("")).toBe("parent synthesis");
+    expect(f.requests[2]?.messages).toEqual(expect.arrayContaining([expect.objectContaining({ role: "tool", content: "research result" })]));
+    expect(chunks.some((chunk) => chunk.author === "child" && chunk.authorDone)).toBe(true);
+    expect(f.closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("prepares independent native invocations when the same agent is requested twice", async () => {
+    const f = fixture((body, index) => index === 0 ? calls({ name: "delegate_child", input: "first" }, { name: "delegate_child", input: "second" }) : body.model === CHILD ? answer(`result ${index}`) : answer("both done"));
+    const chunks = await collect(runAgent(f.deps, f.input));
+    expect(f.loadAgent).toHaveBeenCalledTimes(2);
+    expect(f.closed).toHaveBeenCalledTimes(2);
+    expect(chunks.filter((chunk) => chunk.authorDone).map((chunk) => chunk.transferId)).toEqual(expect.arrayContaining(["call_0", "call_1"]));
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+    expect(f.requests.filter((body) => body.model === CHILD)).toHaveLength(2);
+  });
+
+  it("propagates a child's SDK approval and resumes through serialized nested RunState", async () => {
+    const f = fixture((body, index) => {
+      if (index === 0) return calls({ name: "delegate_child", input: "write after approval" });
+      if (index === 1) return calls({ name: "confirm" });
+      return answer(body.model === CHILD ? "child resumed" : "parent resumed");
+    });
+    f.loadAgent.mockImplementation(async (name, task) => ({
+      kind: "agent", deps: { channel: f.models }, warnings: [], close: f.closed,
+      input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], clientTools: [{ type: "function", function: { name: "confirm", parameters: { type: "object", properties: {} } } }] },
+    }));
+    const graph = { close: [] };
+    const compiled = compileAgent(f.deps, f.input, () => {}, graph);
+    const runner = createStudioRunner(f.models);
+    const paused = await runner.run(compiled.agent, "help", { stream: true });
+    for await (const event of paused) void event;
+    await paused.completed;
+    expect(paused.interruptions).toHaveLength(1);
+    expect(paused.interruptions[0]?.rawItem).toMatchObject({ name: "confirm" });
+    const restoredAgent = compileAgent(f.deps, f.input, () => {}, { close: [] }).agent;
+    const state = await RunState.fromString(restoredAgent, paused.state.toString());
+    state.reject(state.getInterruptions()[0]!);
+    const resumed = await runner.run(restoredAgent, state, { stream: true });
+    for await (const event of resumed) void event;
+    await resumed.completed;
+    expect(resumed.interruptions).toEqual([]);
+    expect(resumed.finalOutput).toBe("parent resumed");
+    expect(f.requests.filter((body) => body.model === CHILD)).toHaveLength(2);
+  });
+
+  it("preserves a reserved hyphenated project tool name and invokes its external capability", async () => {
+    const f = fixture((_body, index) => index === 0 ? calls({ name: "delegate_image-agent", input: "draw" }) : answer("delivered"));
+    f.input.subagents = [{ name: "image-agent", type: "local", kind: "action", description: "Draw images" }];
+    const invoked = vi.fn();
+    f.loadAgent.mockResolvedValue({ kind: "action", run: async function* () {
+      invoked();
+      yield { image: { b64: "aGVsbG8=", mimeType: "image/png" } };
+      return "image delivered";
+    } });
+    const chunks = await collect(runAgent(f.deps, f.input));
+    expect(invoked).toHaveBeenCalledTimes(1);
+    expect(f.requests[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: "delegate_image-agent" }) })]));
+    expect(chunks.some((chunk) => chunk.image && chunk.author === "image-agent")).toBe(true);
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+  });
+
+  it("reports a child admission refusal as a tool result and lets the parent answer", async () => {
+    const f = fixture((_body, index) => index === 0 ? calls({ name: "delegate_child", input: "research" }) : answer("The specialist is unavailable"));
+    f.loadAgent.mockRejectedValue(new Error("Child project spending limit reached"));
+    const chunks = await collect(runAgent(f.deps, f.input));
+    expect(f.requests.map((body) => body.model)).toEqual([ROOT, ROOT]);
+    expect(chunks.some((chunk) => chunk.toolResult?.content.includes("spending limit"))).toBe(true);
+    expect(chunks.some((chunk) => chunk.warning?.includes("child"))).toBe(true);
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+  });
+
+  it("masks the delegated context and restores the child's streamed text", async () => {
+    const f = fixture((body, index) => {
+      if (index === 0) {
+        const supplied = String((body.messages as Array<{ content: string }>).at(-1)?.content);
+        return calls({ name: "delegate_child", input: supplied });
+      }
+      if (body.model === CHILD) return answer(String((body.messages as Array<{ content: string }>).at(-1)?.content));
+      return answer("done");
+    });
+    f.input.messages = [{ role: "user", content: "email@example.com" }];
+    f.input.parameters = { piiFiltering: true };
+    const chunks = await collect(runAgent(f.deps, f.input));
+    expect(JSON.stringify(f.requests)).not.toContain("email@example.com");
+    expect(f.loadAgent.mock.calls[0]?.[1].message).toContain("[[PII:");
+    expect(chunks.filter((chunk) => chunk.author === "child").map((chunk) => chunk.delta?.content ?? "").join("")).toContain("email@example.com");
+  });
+
+  it("keeps approvals distinct when concurrent invocations reuse provider tool-call ids", async () => {
+    const f = fixture((_body, index) => index === 0 ? calls({ name: "delegate_child", input: "first" }, { name: "delegate_child", input: "second" }) : index < 3 ? calls({ name: "confirm" }) : answer("child completed"));
+    f.loadAgent.mockImplementation(async (name, task) => ({
+      kind: "agent", deps: { channel: f.models }, warnings: [], close: f.closed,
+      input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], clientTools: [{ type: "function", function: { name: "confirm", parameters: { type: "object", properties: {} } } }] },
+    }));
+    const compiled = compileAgent(f.deps, f.input, () => {}, { close: [] });
+    const paused = await createStudioRunner(f.models).run(compiled.agent, "help", { stream: true });
+    for await (const event of paused) void event;
+    await paused.completed;
+    const approvals = paused.interruptions;
+    expect(approvals).toHaveLength(2);
+    expect(new Set(approvals.map((item) => "callId" in item.rawItem ? item.rawItem.callId : ""))).toHaveLength(2);
+    const state = await RunState.fromString(compiled.agent, paused.state.toString());
+    const restored = state.getInterruptions();
+    state.reject(restored[0]!);
+    const resumed = await createStudioRunner(f.models).run(compiled.agent, state, { stream: true });
+    for await (const event of resumed) void event;
+    await resumed.completed;
+    expect(resumed.interruptions).toHaveLength(1);
+    expect(resumed.interruptions[0]?.rawItem).toEqual(restored[1]?.rawItem);
+  });
+});

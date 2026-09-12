@@ -132,6 +132,11 @@ export const updateTriggerSchema = z.object({
 });
 
 export const versionParametersSchema = z.object({
+  policy: z.object({
+    maxInputChars: z.number().int().min(1).max(1_000_000).optional(),
+    blockedTools: z.array(z.string().min(1).max(64)).max(128).optional(),
+    approvalTools: z.array(z.string().min(1).max(64).refine((name) => !name.startsWith("handoff_"), "Require approval for delegate tools or actions, not handoffs")).max(128).optional(),
+  }).optional(),
   temperature: z.number().min(0).max(2).optional(),
   presencePenalty: z.number().min(PRESENCE_PENALTY_RANGE.min).max(PRESENCE_PENALTY_RANGE.max).optional(),
   maxTokens: z.number().int().positive().optional(),

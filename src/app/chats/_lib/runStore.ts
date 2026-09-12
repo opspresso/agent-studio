@@ -29,6 +29,7 @@ import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { readSse } from "./sseClient";
 import { reduceChunk } from "./stream";
 import { EMPTY_TURN, type Chat, type LiveTurn, type StreamChunk } from "./types";
+import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
 
 /** The turn as the user sent it, drawn until the persisted copy replaces it. */
 export interface PendingUser {
@@ -90,6 +91,7 @@ export interface RunEntry {
 }
 
 export interface RunStore {
+  resumeApproval(chatId: string, input: { revision: number; decisions: RuntimeApprovalDecision[] }): string | null;
   subscribe(listener: () => void): () => void;
   /** The entry for a chat id, or for the placeholder key a new chat started under. */
   get(key: string): RunEntry | undefined;
@@ -568,6 +570,14 @@ export function createRunStore(): RunStore {
   }
 
   const store: RunStore = {
+    resumeApproval(chatId, input) {
+      if (entries.get(chatId)?.status === "streaming") return null;
+      create(chatId, { chatId });
+      void pump(chatId, (signal) => fetch(`/api/chats/${chatId}/approval`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal,
+      }));
+      return chatId;
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => {

@@ -1,5 +1,5 @@
 import { executeAgent } from "@/application/execution/runProject";
-import { artifactStorage, executionDeps } from "@/lib/container";
+import { artifactStorage, executionDeps, runtimeSessions } from "@/lib/container";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLogRepository";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
@@ -11,6 +11,7 @@ import type { ChatDeps } from "@/application/chat/deps";
  * adapters and binds the execution engine's `executionDeps` into `runAgent`.
  */
 export const chatDeps: ChatDeps = {
+  runtimeSessions,
   chats: chatRepository,
   runLog: chatRunLogRepository,
   projects: projectRepository,

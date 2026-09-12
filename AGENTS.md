@@ -34,7 +34,7 @@ before editing its subsystem.
 | Auth, secrets, SSRF, PII | [docs/SECURITY.md](docs/SECURITY.md) |
 | Setup, scripts, CI | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | Unbuilt work only | [docs/MILESTONES.md](docs/MILESTONES.md) |
-| LLM engine | `src/application/llm/AGENTS.md`, then [design/execution.md](docs/design/execution.md) |
+| Agent runtime | `src/application/runtime/AGENTS.md`, then [design/execution.md](docs/design/execution.md) |
 | Document parsing, generation, editing and workers | [design/documents.md](docs/design/documents.md) |
 | Chat persistence and replay | `src/application/chat/AGENTS.md`, then [design/chat.md](docs/design/chat.md) |
 
@@ -136,7 +136,10 @@ key, cap, formatter, error identity, or collapse rule, search
 - Row keys come from `src/infrastructure/db/keys.ts`. The sole cross-layer cursor exception is
   `artifactCursor` in `src/domain/artifact/repository.ts`.
 - Repositories use `src/infrastructure/db/store.ts`, never raw SQL against `items`. Plain SQL is
-  limited to Better Auth tables, `catalog_vectors`, and `skillRepository.describe` projection.
+  limited to Better Auth tables, `catalog_vectors`, encrypted `runtime_sessions`, and
+  `skillRepository.describe` projection. SDK Session/checkpoint payloads use their own table because
+  native state can contain inline images larger than an item row; history and approval state commit
+  together with an owner-scoped revision check.
 - Unbounded lists take `limit`; post-read expiry filtering passes `notExpiredAt` so filtering
   occurs before the limit counts.
 - Expiring rows carry `expiresAt`; `sweepExpiredRows` performs retention on the schedule tick and

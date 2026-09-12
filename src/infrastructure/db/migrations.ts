@@ -161,6 +161,23 @@ const MIGRATIONS: Migration[] = [
          AND jsonb_typeof(data->'lastSeenAt') = 'string'`,
     ],
   },
+  {
+    version: 6,
+    name: "runtime_sessions",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS runtime_sessions (
+        session_id text PRIMARY KEY,
+        owner_email text NOT NULL,
+        project_name text NOT NULL,
+        revision bigint NOT NULL DEFAULT 1,
+        payload text NOT NULL,
+        deleted boolean NOT NULL DEFAULT false,
+        expires_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE INDEX IF NOT EXISTS runtime_sessions_expiry ON runtime_sessions (expires_at)`,
+    ],
+  },
 ];
 
 /** Bring the database to the current schema. Safe to call on every boot. */

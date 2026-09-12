@@ -30,6 +30,8 @@ import { BADGE } from "@/app/_components/badgeColors";
 import classes from "./ChatThread.module.css";
 import { highestSeq, mergeMessages } from "../_lib/mergeMessages";
 import { SIGNATURE_REFRESH_MS } from "../_lib/refresh";
+import type { ChatWithMessages } from "@/application/chat/getChat";
+import { PendingApproval } from "./PendingApproval";
 
 interface Fetched {
   messages: ChatMessage[];
@@ -58,6 +60,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
   const entry = useRunEntry(chatId);
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [approvalState, setApprovalState] = useState<{ chatId: string; pending: ChatWithMessages["pendingApproval"] } | null>(null);
+  const pendingApproval = approvalState?.chatId === chatId ? approvalState.pending : null;
   // Images already on screen this session, keyed by the message they persisted
   // to. Substituted for that message's stored copies at render, because the
   // stored URL points at an object the browser has never fetched — swapping the
@@ -189,6 +193,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
         chat?: Chat;
         messages?: ChatMessage[];
         activeRun?: { runId: string };
+        pendingApproval?: ChatWithMessages["pendingApproval"];
       };
       try {
         data = (await res.json()) as typeof data;
@@ -209,6 +214,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
         lastFullRead.current = Date.now();
       }
       setChat(data.chat ?? null);
+      setApprovalState({ chatId, pending: data.pendingApproval ?? null });
       setMessages((prev) => (since === undefined ? fetched : mergeMessages(prev, fetched)));
       // Outside the updater, which React may run twice and which must stay
       // pure. A full read replaces what is held; a tail read can only extend
@@ -484,6 +490,14 @@ export function ChatThread({ chatId }: { chatId: string }) {
                   {...(shown?.endedAtMs !== undefined ? { endedAtMs: shown.endedAtMs } : {})}
                 />
               )}
+              {pendingApproval && <PendingApproval
+                key={`${chatId}:${pendingApproval.revision}`}
+                chatId={chatId} pending={pendingApproval} disabled={streaming}
+                onDecision={(decisions) => {
+                  if (runStore.resumeApproval(chatId, { revision: pendingApproval.revision, decisions }) !== null) setError(null);
+                }}
+                onDiscarded={() => { if (showing.current === chatId) { setApprovalState(null); void syncFromServer({ tail: true }); } }}
+              />}
             </Stack>
           </div>
         </ScrollArea>
@@ -517,7 +531,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           )}
           <Composer
             onSend={handleSend}
-            disabled={streaming}
+            disabled={streaming || Boolean(pendingApproval)}
             status={<RunningAgents paths={live?.authorPaths ?? []} />}
             {...(streaming && shown.runId ? { onStop: () => runStore.cancelRun(chatId) } : {})}
           />
