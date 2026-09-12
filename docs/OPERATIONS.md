@@ -243,24 +243,20 @@ model id` 를 한 번씩 로그로 남기기도 한다. `UNKNOWN_MODEL_POLICY=re
 Agent 런은 **항상** 트레이싱된다. 비-agent 런과 이미지 predict 런은 `TRACE_SAMPLE_RATE` 로
 샘플링된다.
 
-트레이스는 각 프로젝트의 **Traces** 탭에서 소유자와 설정된 admin 에게만 보인다. 다른 사용자의
-런타임 입력과 출력을 담고 있기 때문이다. span 은 유한한 메타데이터만 유지한다: 문자 수, 토큰,
-비용, 지속 시간, 서브에이전트 trace id, 그리고 `prepare` span 의 경우 그 런이 무엇을 들고
-시작했는지. skill·subagent·MCP 서버·도구의 *수*, 그리고 discovery 가 켜진 version 이라면
-그 요청에 대해 카탈로그가 더한 케이퍼빌리티 **이름** 최대 20개(이 배포의 인벤토리 일부가
-런 단위로 남는다는 뜻이다). **원본 프롬프트와 도구 결과는 저장하지 않는다**. 단
-한 가지 유의점이 있다: 트레이스의 `error` 와 `warnings` 는 실패 텍스트를 최대 1,000자까지 그대로
-보관하고, 프로바이더나 도구의 에러 문자열에는 내용이 박혀 있을 수 있다. 각 트레이스는 그 런을
-일으킨 `actor` 도 함께 지닌다.
+트레이스는 프로젝트 소유자와 관리자(`assertProjectWritable` 기준)에게 보인다. SDK span은 이름·종류·상태·시간,
+native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 skill·Agent·MCP·도구의 수와
+발견한 capability 이름 최대 20개를 기록한다. 원본 프롬프트와 도구 결과는 span에 저장하지 않는다.
+다만 Trace의 `error`와 `warnings`는 원문 오류를 최대 1,000자로 보관하므로 민감 정보가 포함될
+수 있다. Trace에는 실행을 일으킨 `actor`와 대화의 `conversation`도 기록한다.
 
-`OTEL_EXPORTER_OTLP_ENDPOINT` 가 설정돼 있으면 저장된 모든 트레이스가 OTLP span 으로도
-내보내진다 ([CONFIGURATION.md](CONFIGURATION.md#관측성과-보존-기간) 참고). 같은
-타임스탬프, 앱의 trace id 를 `app.trace_id` 속성으로(그리고 `app.actor` 를, 대화 안에 있는
-런이라면 `app.conversation` 도 함께. MCP 헤더가 나르는 것과 같은 키라서 메모리 서버의 로그와
-런의 span 을 그것으로 join 할 수 있다), 그리고 같은 유한 메타데이터를 담아서 나간다. 기록으로
-남는 것은 여전히 데이터베이스 행이다; collector 장애의 대가는 `[otel]` 로그 라인이지(SDK 의 내부
-에러 채널은 앱 로거로 흘려보낸다) 런이 아니다. export 배치는 인스턴스가 draining 을 시작할 때
-flush 되므로, 롤아웃에서도 마지막 span 은 남는다.
+`OTEL_EXPORTER_OTLP_ENDPOINT`를 설정하면 저장된 Trace를 OTLP로 내보낸다.
+[설정](CONFIGURATION.md#관측성과-보존-기간)에 따라 endpoint와 headers를 주입한다. exporter는
+Studio 런을 root로 만들고 저장된 span을 그 직계 자식으로 내보낸다. 타임스탬프·이름·상태와
+`app.span.kind`·`app.span.author`, root의 `app.trace_id`·프로젝트·버전·호출자·대화 속성을
+전송한다. SDK의 원래 span ID/부모 관계와 세부 사용량은 DB Trace에서 조회한다.
+
+기록의 정본은 DB 행이다. collector 장애는 `[otel]` 로그로 보고하고 실행을 실패시키지 않는다.
+export 배치는 draining 시 flush한다.
 
 SDK의 기본 공개 exporter는 사용하지 않는다. `runtime/tracing.ts`가 로컬 native span을 수집하고,
 승인 대기 실행은 `awaiting-approval`로 저장한다. SDK 모델·도구의 원문 데이터는 수집하지 않는다.

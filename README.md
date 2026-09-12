@@ -6,6 +6,10 @@
 에이전트, AG-UI 로 임베드한 앱이다. 모든 런은 호출자에게 귀속되며 비용과 트레이스를 기록하고
 정해진 한도를 적용한다.
 
+Agent Studio는 **AgentOps / Control Plane**, OpenAI Agents SDK는 기본 **Agent Runtime**을
+담당한다. Studio가 버전·바인딩·권한·자격 증명·예산을 준비하고 SDK가 모델 턴, 도구 실행,
+Handoff, Agent-as-Tool, Guardrail과 승인 중단·재개를 관리한다.
+
 **한 설치 = 한 기업이다.** 멀티테넌시가 없고, 외부 네트워크가 끊긴 IDC 에서도 부팅·로그인·런이
 된다. 밖으로 나가는 연결은 전부 선택이므로 Slack·Teams·Telegram, 외부 모델 제공자, 모델
 카탈로그와 플러그인 자동 sync 는 켜는 만큼만 붙는다. 영속 인프라는 **PostgreSQL 하나**면
@@ -19,15 +23,15 @@
 | | |
 |---|---|
 | **Projects & versions** | 세 가지 project type 이 있다. `llm`(단발성 프롬프트), `agent`(멀티턴 tool 루프), `image`(생성/편집). Version 은 이름 붙인 스냅샷이고 고치면 그 자리에서 덮어쓴다. 포인터가 publish 된 것을 가리킨다. |
-| **LLM engine** | 모든 provider 에 대해 하나의 OpenAI 호환 프로토콜. 멀티턴 tool 루프, subagent transfer, 턴별 예산, 1회 재시도 fallback, 어디서나 스트리밍. |
+| **Agent Runtime** | SDK Agent·Runner·Tool·MCP·Streaming·Tracing. OpenAI 호환 모델 어댑터로 사내 gateway·vLLM을 연결하며, 첫 출력 전 재시도 가능한 실패에만 설정된 fallback을 사용한다. |
 | **Skills** | 필요할 때 로드되는 마크다운 동작 지침. 시스템 프롬프트는 이름/설명 표만 담는다. Agent Plugins 저장소에서 sync 할 수 있다. |
 | **MCP tools** | MCP 서버의 공유 레지스트리. 버전별 binding 이 tool 목록을 좁히고 아웃바운드 헤더를 덮어쓸 수 있다. Managed 서버와 OAuth 를 지원한다(아래). |
-| **Agents** | 다른 project 를 로컬 subagent 로 쓰거나, 외부 OpenAI 호환 / A2A 엔드포인트를 원격 subagent 로 쓴다. |
-| **Chats** | agent project 를 상대로 하는 소유자별 비공개 대화. tool 트래픽과 이미지, 첨부 원본과 생성·편집 파일의 참조가 보존된다. |
+| **Agents** | 로컬 text project를 SDK Handoff 또는 Agent-as-Tool로 연결한다. 외부 OpenAI 호환/A2A 엔드포인트와 image project는 특화 도구로 호출한다. |
+| **Chats** | 소유자별 비공개 대화. 모델 이력은 암호화된 SDK Session에 저장하고, 화면용 메시지·도구 트래픽·artifact 참조는 별도로 보존한다. 도구 승인·거절·폐기와 서버 재시작 후 승인 재개를 지원한다. |
 | **Files** | 첨부 문서를 읽고, 기본 `File` 도구로 문서를 생성·검사·편집한다. 원본과 수정본은 별도 파일로 보관한다. [지원 형식과 제약](docs/design/documents.md)을 보라. |
 | **Audio** | 선택적인 비공개 저장소·ASR 채널·worker로 녹음을 보관·전사·후처리한다. 기본은 Agent 하나와 skill 구성이며 원본·전사·요약·대화 결과를 Artifacts에 보관한다. 개인 기록은 별도 요청으로 수행한다. |
 | **Cost dashboard** | project 별·model 별 일일 지출과 caller 별 귀속. project 카탈로그를 공유하므로 caller 축이 필요하다. |
-| **Guards** | project 별 일일·월간 비용 임계값, caller 별 동시 실행 제한, 모든 런에 걸리는 벽시계 데드라인. |
+| **Guards** | project별 일일·월간 비용, caller별 동시 실행과 런 데드라인. 버전 정책으로 입력 크기, 차단 도구와 승인이 필요한 도구를 정한다. 승인 정책은 영속 Chat에서 지원한다. |
 | **Integrations** | project 별 Slack·Telegram·Teams 봇, webhook trigger, 양방향 A2A, 사용자 앱을 위한 AG-UI. |
 
 ## 스택
@@ -35,7 +39,8 @@
 - Node.js 24, pnpm 11
 - Next.js 16 (App Router), React 19, TypeScript strict
 - Mantine 9 (컴포넌트 + 테마)
-- Better Auth 1.7 (표준 OIDC(Keycloak · Entra ID · Okta …), Google, 또는 비밀번호)
+- OpenAI Agents SDK (정확한 버전은 `package.json`과 잠금 파일에서 고정)
+- Better Auth 1.7.4 이상 (표준 OIDC(Keycloak · Entra ID · Okta …), Google, 또는 비밀번호)
 - Clean Architecture (`domain` / `application` / `infrastructure` / `app`), 테스트로 강제된다
 - PostgreSQL + pgvector 하나에 모든 행과 케이퍼빌리티 카탈로그. 아티팩트는 S3 호환 스토어(선택)
 
@@ -44,7 +49,7 @@
 ```bash
 # 1. Install
 corepack enable && corepack prepare pnpm@11.24.0 --activate
-pnpm install
+pnpm install --frozen-lockfile
 
 # 2. Environment
 cp .env.example .env.local
@@ -69,10 +74,11 @@ pnpm dev            # http://localhost:3000
 ```bash
 pnpm typecheck      # tsc --noEmit (strict)
 pnpm test           # Vitest
+pnpm test:integration # 전용 로컬 PostgreSQL *_test DB
 pnpm build          # production build
 ```
 
-lint 단계는 없다. `typecheck` + `test` + `build` 가 검사다.
+lint 단계는 없다. CI는 타입·단위·통합 검사와 빌드, standalone worker·서버 및 HTML 미리보기를 검증한다.
 
 ## 문서
 
@@ -112,6 +118,10 @@ A2A·Slack·Telegram·Teams 엔드포인트가 더해진다.
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md#llm-채널) 를 보라.
 
 ### Skills
+
+Skill은 지침, Tool은 실행 기능, MCP는 외부 도구 프로토콜이다. Memory는 연결된 서버가 보관하는
+장기 지식이며 Chat의 SDK Session 이력과 분리한다. 역할과 실행 계약은
+[실행 설계](docs/design/execution.md#역할과-소유권)를 따른다.
 
 Skill 은 [Agent Plugins](https://agent-plugins.org/) 저장소(`PLUGINS_REPO`)에서 sync 된다.
 각 플러그인은 Agent Skills 스펙에 따라 `skills/<name>/SKILL.md` 에 skill 을 선언하고, 그

@@ -25,7 +25,7 @@ HTTP 계약은 [API.md](../API.md#ag-ui-인바운드) 에, 인증은
   거절하지 대화 없이 돌리지 않는다.
 
 런 자체는 파사드의 것이다. `streamProjectRun` 을 부르므로 agent project 는 tool 루프를 돌고,
-prompt project 는 한 번 답하고, image project 는 그림을 그린다 — 채팅 패널은 셋 다 보여 줄 수
+prompt project는 SDK에서 한 번 답하고, image project는 그림을 그린다 — 채팅 패널은 셋 다 보여 줄 수
 있다. 새 진입점이 `projectType` dispatch 를 다시 쓰지 않는다는 규칙 그대로다.
 
 ## 청크에서 이벤트로
@@ -40,12 +40,12 @@ prompt project 는 한 번 답하고, image project 는 그림을 그린다 — 
 | top-level `delta.content` | `TEXT_MESSAGE_START` (처음) → `TEXT_MESSAGE_CONTENT` … → `TEXT_MESSAGE_END` (tool 호출·step·종료가 닫는다) |
 | top-level `delta.reasoningContent` (version 이 `reasoningTrace` 를 켰을 때만 온다) | `REASONING_START` + `REASONING_MESSAGE_START` → `REASONING_MESSAGE_CONTENT` … → `REASONING_MESSAGE_END` + `REASONING_END` (답변이 시작되면 닫힌다) |
 | top-level `delta.toolCalls` | 호출마다 `TOOL_CALL_START` → `TOOL_CALL_ARGS` (인자가 있을 때) → `TOOL_CALL_END`. 그 턴이 처음 말하거나 부를 때 만든 assistant 메시지 id 를 모든 호출이 `parentMessageId` 로 공유한다 |
-| top-level `toolResult` | `TOOL_CALL_RESULT` (`role: "tool"`). transfer 의 display-only 마커는 클라이언트가 다음 런에서 재생할 실제 자식 답으로 바꾼다 |
+| top-level `toolResult` | `TOOL_CALL_RESULT` (`role: "tool"`). Runtime이 만든 native 도구 결과를 그대로 전달한다. 자식 delta를 다시 누적해 결과를 만들지 않는다 |
 | authored 청크의 첫 등장 / `authorDone` | `STEP_STARTED` / `STEP_FINISHED` (`stepName` 은 `authorPath` 체인). 자식의 텍스트와 호출은 이벤트가 되지 않는다 — 그 답은 부모의 tool 결과로 돌아온다 |
 | `image` (author 무관) | `ACTIVITY_SNAPSHOT` `activityType: "agent-studio.image"`, `content: { mimeType, dataUrl, prompt?, model?, artifactId? }` |
 | `file` (author 무관) | `ACTIVITY_SNAPSHOT` `activityType: "agent-studio.file"`, `content: { fileId?, name, mimeType, url, byteSize? }` — 바이트는 브래킷이 걷어냈으므로 `VIEW_URL_TTL_SECONDS` 로 서명한 주소. 주소를 만들 수 없으면 경고가 된다 |
 | `warning` (author 무관, `collectedWarning` 으로 중복 제거) | `CUSTOM` `agent-studio.warning` `{ message }` — 그리고 `RUN_FINISHED.result.warnings` 에 모인다 |
-| `usage` (모든 호출) | 합산해 `RUN_FINISHED.usage[0]` (`inputTokens`, `outputTokens`, `totalTokens`, `reasoningTokens?`, `cachedInputTokens?`). 실제 호출 모델을 청크가 밝히지 않으므로 aggregate 에 `model` 을 잘못 붙이지 않는다 |
+| `usage` (모든 호출) | 합산해 `RUN_FINISHED.usage[0]` (`inputTokens`, `outputTokens`, `totalTokens`, `reasoningTokens?`, `cachedInputTokens?`). 여러 모델의 호출을 합산할 수 있으므로 aggregate에 단일 `model`을 붙이지 않는다 |
 | top-level `done` / `finishReason` | 열린 것을 전부 닫고 종료 사유를 기억해 둔다. `RUN_FINISHED` 는 **소스가 소진될 때** 나간다 — artifact recorder 는 엔진 스트림이 끝난 *뒤에* 보관하지 못한 그림을 말하므로, `done` 에서 끝내면 그 경고 하나를 잃는다. `result.termination` 은 엔진의 어휘(`completed` / `turn-limit` / `output-limit`) 그대로 |
 | top-level `error`, 스트림 도중의 throw, terminal 청크 없는 소스 종료 | 열린 것을 전부 닫고 `RUN_ERROR` |
 
@@ -62,8 +62,8 @@ prompt project 는 한 번 답하고, image project 는 그림을 그린다 — 
 `TOOL_CALL_START` 가 그것을 `parentMessageId` 로 싣는다 — 턴이 먼저 말했든 아니든. parent 없는
 호출을 받은 클라이언트는 호출마다 assistant 메시지를 지어내므로, tool 둘만 부른 턴이 빈 말풍선
 둘이 되고 다음 런의 history 도 둘로 쪼개졌다. tool 결과가 오면 턴이 끝나고, 다음 말은 다음
-메시지다. step 이름은 `authorPath` 를 `/` 로 이은 체인이라, 한 agent 의 자식 둘이 동시에 돌아도
-step 하나를 나눠 쓰지 않는다.
+메시지다. step 이름은 `authorPath`를 `/`로 이은 Agent 경로다. 각 도구 호출과 결과의
+식별자는 별도의 `toolCallId`로 보존한다.
 
 **첫 청크는 `RUN_STARTED` 보다 먼저 당긴다.** 런은 첫 `next()` 에서 거절된다 — 비용 가드,
 동시성 가드 — 그리고 라우트는 그 throw 를 429 와 `Retry-After` 로 바꾼다. 이벤트 스트림이
@@ -84,7 +84,7 @@ step 하나를 나눠 쓰지 않는다.
 
 AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델이 그것을 부르면 앱이 자기
 쪽에서 실행한다(지도 보여 주기, 폼 채우기). 이것이 엔진에 닿는 방식은
-`src/application/llm/AGENTS.md` 가 불변식으로 소유한다. 요지는:
+`src/application/runtime/AGENTS.md`가 불변식으로 소유한다. 요지는:
 
 - agent project 에만 제공된다. prompt project 에는 끝낼 턴이 없고 image project 에는 제공할
   모델이 없으므로, 그런 project 에 선언된 tool 은 버리지 않고 **경고로 보고** 한다 — 앱은
@@ -96,15 +96,17 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
   확인한 뒤 걷어내며 경고한다.
 - 시스템 프롬프트의 `## Application Tools` 섹션이 한 가지만 말한다: 이 tool 은 상대편에서
   돌고, 부르면 턴이 끝나며, 결과는 대화와 함께 돌아온다.
-- **클라이언트 tool 을 부른 턴이 런의 마지막 턴이다.** 호출은 모두 알려지고 — 클라이언트
-  호출의 인자는 **자르지 않는다**, 알림이 곧 호출이라서 — 그 턴의 런 자신의 호출(MCP, 빌트인)은
-  평소처럼 돌아 결과를 보고한 뒤, 루프는 `done` 으로 끝난다(프로바이더가 턴을 출력 한도에서
-  잘랐으면 `output-limit`: `done` 은 완전한 호출 계획을 주장한다). 같은 턴의 transfer 는 답을
-  display-only 마커 대신 **자기 결과로** 내보낸다 — "For context" 턴은 런과 함께 죽고, 앱의
-  재생은 tool 결과만 싣기 때문이다; MCP tool 이 돌려준 그림은 모델이 다시 보지 못한다고
-  경고한다(독자는 이미 받았다). 클라이언트 호출에는 결과를 만들지 않는다 — 앱의 답이 history
-  에 들어갈 결과다. 다음 런의 `messages` 는 그 assistant 턴(`toolCalls`)과 tool 메시지들(앱이
-  만든 것, 그리고 `TOOL_CALL_RESULT` 로 받은 서버 쪽 것)을 싣고, 엔진은 거기서 이어 간다.
+- 실행 가능한 클라이언트 tool 호출은 SDK `needsApproval`로 런을 중단한다. 호출 인자는
+  자르지 않으며 같은 턴의 서버 도구는 실행하고 결과를 전달한다. SDK 중단을 표면의 전송 종료로
+  알린 뒤 앱이 클라이언트 도구를 수행한다. 호출 인자가 잘못되면 SDK가 오류 결과를 만들고
+  모델이 다시 답할 수 있으므로, tool-call delta만 보고 모든 경우에 런이 끝났다고 가정하지 않는다.
+- 클라이언트가 실행할 호출에는 서버가 성공 결과를 만들지 않는다. 다음 요청의 `messages`에
+  assistant의 `toolCalls`, 클라이언트 실행 결과와 서버의 `TOOL_CALL_RESULT`를 함께 보낸다.
+  AG-UI의 이력은 이 입력이 소유하며 영속 Chat Session을 자동으로 연결하지 않는다.
+- 위임의 답은 native 도구 결과에 들어 있다. 서버 도구의 그림은 해당 실행에서 전달되지만 다음
+  AG-UI 입력으로 자동 재생되지 않는 경우 경고한다.
+- 버전의 `approvalTools`는 영속 Chat용 HITL 정책이다. AG-UI frontend tool의 중단/후속 요청과
+  별개의 기능이며 이 표면에는 Chat 승인 API가 연결되지 않는다.
 
 ## 입력
 

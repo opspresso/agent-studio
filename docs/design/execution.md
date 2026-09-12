@@ -164,6 +164,7 @@ revision CAS를 사용하고, 이력과 승인 대기 `RunState`를 한 번에 �
 않는다. 사용자는 기록을 확인한 뒤 미완료 실행을 폐기할 수 있다. 폐기는 화면 기록을 보존하고
 미완료 실행만 이후 모델 문맥에서 제외한다.
 
+기존 Chat의 Session이 없거나 만료되었으면 새 모델 문맥으로 시작한다는 경고를 전달한다.
 일반 Session 문맥은 오래된 완전한 사용자 턴부터 생략하고 최신 턴은 보존한다. 가장 최근
 inline 이미지 4개를 남기며 생략한 이미지에는 텍스트 표시와 경고를 남긴다. 생성된 이미지의
 편집 핸들도 다음 턴에 전달한다. 전체 암호화 payload의 원문 크기에는 별도 저장 상한이 있다.
@@ -225,9 +226,9 @@ transfer 는 호출자의 signal 로는 "cancelled" 를, 자신의 idle signal �
 `url + headers` 단위라서, 새로고침 한 번이 실패 기간 내내 그 project 의 모든 런에 "server
 unavailable" 을 되풀이해 재생했을 것이다.
 
-**Port 는 의도를 말하고, adapter 는 각 provider 의 방언을 말한다.** 모든 provider 가 구현하는
-사실상의 표준이라 `src/infrastructure/llm/channel.ts` 에는 provider 분기가 아예 없는 Chat
-Completions 와 달리, Images API 는 하나의 형태가 *아니다*. Port 의 `size` 와 `quality` 는 도구
+**Port는 의도를 말하고 adapter는 provider별 요청 형태를 다룬다.** 텍스트는
+`src/infrastructure/llm/agentModels.ts`의 SDK Chat Completions 어댑터를 사용한다.
+Images API는 provider별 요청 형태가 달라 별도 이미지 어댑터에서 번역한다. Port의 `size`와 `quality`는 도구
 스키마가 모델에게 제공하는 어휘이고, 모델은 어느 provider 가 자신을 서빙할지 전혀 모른다.
 그것들을 번역하는 일은 `src/infrastructure/llm/imageChannel.ts` 의 몫이며, 이 파일이
 `ResolvedTarget.providerName` 의 유일한 독자다. xAI 는 같은 의도를 `aspect_ratio` + `resolution`

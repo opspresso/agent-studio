@@ -310,13 +310,14 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 Version 본문: `systemPrompt`, `userPromptTemplate`, `model` (필수, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, presencePenalty?, maxTokens?, reasoningEffort?, piiFiltering,
 structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?, urlFetch?,
-slackWorkspace?, dynamicCapabilities?, memoryRecall?, reasoningTrace? }`,
+slackWorkspace?, audioProcessing?, dynamicCapabilities?, memoryRecall?, reasoningTrace?, policy? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. 이미지 능력이 없는 레지스트리
 모델을 `imageModel` 로 주면 400 으로 거절되고, 그 version 이 필요로 하는 능력이 없는 카탈로그
 `model` 도 마찬가지다. `agent` project 에는 `tools`, 그 파라미터에는 `structuredOutput` 과
 `reasoningTrace`(모델의 `reasoning`)가 필요하다 (카탈로그에 없는 id 는 거절이 아니라 경고
 대상이다).
+`policy`의 입력 크기·차단 도구·승인 도구 설정은 [Chat 승인과 재개](#chat-승인과-재개)를 따른다.
 현재 배포 버전이나 활성 오디오 설정에서 후처리 대상으로 지정한 고정 버전의 삭제는 409로 거절한다.
 후처리 설정에서 `versionName: "published"`를 사용하면 새 작업이 접수될 때 배포 버전을 고정한다.
 `mcpList`/`skillList`/`subagentList` 항목은 등록된 MCP 서버·skill·agent·project 로 해석돼야
@@ -406,7 +407,8 @@ project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 
   입력해야 한다. fingerprint 는 API 응답과 입력에 노출하지 않는다.
 - 오버라이드 편집은 다른 모든 version 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
 
-한 런은 통틀어 최대 114개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
+MCP 도구 준비 상한은 113개이며, 최종 SDK 도구 집합은 builtin·위임·클라이언트 도구를 포함해
+128개 이하로 제한한다. 빼놓아야 했던 것은 `warning` chunk로
 보고한다.
 
 ### 프롬프트 미리보기
@@ -1535,17 +1537,17 @@ GET /api/projects/{name}/traces/{traceId}
 형식의 날짜나 뒤집힌 범위는 `400` 이다. `limit` 의 기본값은 50 이고 1–100 으로 제한된다.
 다른 project 에 속한 `traceId` 는 남의 트레이스가 아니라 `404` 다.
 
-두 엔드포인트 모두 소유자와 effective admin 으로 제한된다 (그 외에는 403). 트레이스는 다른 사용자의
-런타임 입력/출력을 담고 있다. agent 런은 언제나 트레이싱된다. 텍스트와 이미지 predict 런은
-`TRACE_SAMPLE_RATE` (0–1, 기본 `0.1`) 에 따라 샘플링된다. 트레이스 span 은 모델 토큰/비용 요약,
-도구 입출력 크기, 로컬 subagent 트레이스 링크, 그리고 첫 토큰 이전 준비 단계(`prepare`)가
-무엇을 들고 돌아왔는지. 개수들과, discovery 가 그 요청에 더한 케이퍼빌리티 이름 최대 20개.
-를 담는다. 원본 프롬프트와 도구 결과는 저장되지
-않는다. 각 트레이스는 `actor`. 그 런을 일으킨 사람. 도 싣고, subagent 의 트레이스는 자기에게
-닿은 top-level 런의 actor 를 싣는다. 그 transfer 는 두 번째 사람의 결정이 아니었기 때문이다.
-대화 안에 있던 런의 트레이스는 그 런의 대화 키인 `conversation` 을 싣는다 (`chat:{id}`,
-`slack:{channel}:{thread}`, …). 상관 분석을 위해 기록될 뿐 아직 인덱싱되거나 필터할 수 있는 것은
-아니다.
+두 엔드포인트 모두 소유자와 effective admin으로 제한된다(그 외에는 403). agent 런은 항상
+기록하며, 나머지는 `TRACE_SAMPLE_RATE`(기본 `0.1`)로 샘플링한다. SDK 실행은 Agent·모델·도구·
+Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`, 종류·이름·상태·시간과
+모델 사용량을 보존하고 text 자식은 같은 Studio Trace의 native 계층에 들어간다.
+`prepare`에는 준비한 capability 수와 발견한 이름 최대 20개를 기록한다.
+
+원본 프롬프트와 도구 결과는 span에 저장하지 않는다. 실행 오류·경고에는 잘린 원문 오류가
+포함될 수 있다. Trace의 종료 상태는 `completed`, `awaiting-approval`, `turn-limit`,
+`output-limit`, `failed`, `cancelled`다. `actor`는 실행을 일으킨 사람이며 대화의
+`conversation` 키도 기록한다(`chat:{id}`, `slack:{channel}:{thread}` 등). 대화 키는 아직
+목록 필터나 인덱스로 제공하지 않는다. 기록 범위는 [관측 설계](design/observability.md#trace)를 따른다.
 
 ## Models
 

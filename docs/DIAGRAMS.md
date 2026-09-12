@@ -48,7 +48,7 @@ flowchart LR
     predict["POST …/predict"]
     cc["POST …/chat/completions"]
     agentsse["POST …/agent (SSE)"]
-    chat["POST /api/chats/{id}/messages"]
+    chat["Chat 생성 · 메시지 · 승인 재개"]
     slack["POST /api/slack/events/{project}"]
     telegram["POST /api/telegram/webhook/{project}"]
     teams["POST /api/teams/messages/{project}"]
@@ -56,11 +56,12 @@ flowchart LR
     agui["POST /api/agui/{name} (AG-UI SSE)"]
     webhook["POST /api/webhook/{project}"]
     schedule["POST /api/triggers/scan"]
+    audio["Audio worker 후처리"]
   end
 
   subgraph facade["실행 파사드 — runProject.ts"]
     direction TB
-    dispatch["projectType 디스패치<br/>agent → 툴 루프 · llm → 단발 · image → generateImageStream"]
+    dispatch["projectType 디스패치<br/>agent → SDK 다중 턴 · llm → SDK 단발 · image → generateImageStream"]
     fns["streamProjectRun (청크 소비자, 이미지 포함)<br/>executeProjectStream / executeProject (완성 응답, 이미지 거부)<br/>executeAgent (에이전트 전용)"]
   end
 
@@ -69,12 +70,13 @@ flowchart LR
   bracket["런 브래킷 — openRun<br/>모델 정책 → 프로젝트 비용 가드 → 멤버 월 상한 → 동시성 슬롯 → 메트릭·상관 id·아티팩트 레코더"]
   memory["메모리 준비 (memory prepare span)<br/>명시적 바인딩 recall"]
   resolve["바인딩 해석 (tools prepare span)<br/>요청 + 관련 기억으로 (옵트인) 카탈로그 검색<br/>스킬 · MCP 세션 · 서브에이전트"]
-  engine["엔진 — runAgent / runPrompt(Stream)"]
-  channel["OpenAI 호환 채널 (LLM 공급자)"]
+  engine["SDK Agent · Runner — runAgent / runPrompt(Stream)"]
+  channel["SDK ModelProvider (OpenAI 호환 endpoint)"]
   imagechannel["이미지 채널"]
   tools["도구: MCP(≤5 동시) · Skill · SDK Handoff / Agent.asTool · 이미지 · FetchUrl · SaveFile · File · Slack 읽기"]
   usage["사용량 기록 (런 종료 시 1회 flush)"]
-  trace["트레이스 (에이전트 항상, 그 외 샘플링)"]
+  trace["로컬 SDK native spans + 준비 단계<br/>에이전트 항상, 그 외 샘플링"]
+  session["영속 Chat: SDK Session + 승인 RunState<br/>암호화 저장 · revision CAS"]
 
   predict -->|"agent / llm"| facade
   predict -.->|"image"| imageuc
@@ -89,6 +91,7 @@ flowchart LR
   agui -->|"streamAguiRun"| facade
   webhook -->|"triggerRunnerDeps.run"| facade
   schedule -->|"triggerRunnerDeps.run"| facade
+  audio -->|"backgroundTask"| facade
   facade --> bracket
   imageuc --> bracket
   bracket -->|"agent"| memory --> resolve --> engine
@@ -96,6 +99,7 @@ flowchart LR
   bracket -->|"image"| imagechannel
   engine <--> channel
   engine <--> tools
+  engine <--> session
   engine --> usage
   engine --> trace
 ```
@@ -205,7 +209,7 @@ flowchart TB
 ## 6. 저장 모델: PostgreSQL 하나와 오브젝트 스토어
 
 데이터베이스 하나에 아이템 테이블 `items`(`pk`/`sk` + JSONB `data`, 파생 컬럼 `gsi1*`/`gsi2*`/
-`expires_at`), Better Auth 의 테이블, 그리고 `catalog_vectors`(pgvector). 런이 만든 바이트는
+`expires_at`), Better Auth 테이블, `catalog_vectors`(pgvector), 암호화된 `runtime_sessions`가 있다. 런이 만든 바이트는
 S3 호환 오브젝트 스토어(선택)에 있고 행이 그 키를 지목한다. 항목 단위 접근은 기본 키로,
 "종류별 목록" 은 GSI1 로. 전체 키 맵은
 [ARCHITECTURE.md#postgresql-아이템-테이블-설계](ARCHITECTURE.md#postgresql-아이템-테이블-설계).
@@ -216,6 +220,7 @@ flowchart LR
     items["items — 아래 파티션 전부 (pk · sk · data jsonb)"]
     auth["user · session · account · verification (Better Auth)"]
     vectors["catalog_vectors (pgvector — capability 카탈로그)"]
+    sessions["runtime_sessions — SDK 이력 · 승인 · revision · expires_at"]
   end
   subgraph objects["S3 호환 오브젝트 스토어 — S3_BUCKET_NAME (선택)"]
     objs["artifacts/{kind}/{id}.{ext} — ARTIFACT 행이 키를 지목<br/>독자에게는 proxied(/api/objects, HMAC 토큰) · pre-signed · 직접 URL 중 ARTIFACT_ACCESS_MODE"]
@@ -257,8 +262,8 @@ flowchart LR
   end
 ```
 
-키 문자열은 `src/infrastructure/db/keys.ts` 만 만들고, 모든 리포지토리는 `store.ts` 의 아이템
-스토어를 지난다(조건은 행 잠금 아래에서, 트랜잭션은 키 순서로). TTL 대상 행은 `expiresAt` 을
+아이템 키 문자열은 `src/infrastructure/db/keys.ts`만 만들고, 아이템 리포지토리는 `store.ts`의 아이템
+스토어를 지난다(조건은 행 잠금 아래에서, 트랜잭션은 키 순서로). 별도 테이블은 전용 SQL 어댑터를 사용한다. TTL 대상 행은 `expiresAt` 또는 SQL 만료 시각을
 갖고 schedule-scan 틱이 쓸어낸다 ([OPERATIONS.md#행-보존](OPERATIONS.md#행-보존)); 경계 없이
 자랄 수 있는 목록은 `limit` 을 넘긴다.
 
