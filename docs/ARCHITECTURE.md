@@ -265,9 +265,10 @@ flowchart TB
 | Trigger (webhook / schedule) | `PROJECT#{name}` | `TRIGGER#{triggerId}` | schedule 만: `TYPE#SCHEDULE` | schedule 만: `{name}#{triggerId}` |
 | Trigger 런 (delivery / firing) | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt}#{runId}` | — | — |
 | Trigger 중복 제거 claim (`Idempotency-Key` / `schedule:{instant}`) | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
-| 오디오 작업 | `PROJECT#{name}` | `AUDIOJOB#{id}` | 비종료 작업만: `AUDIOJOBDUE` | `{dueAt}#{name}#{id}` |
+| 오디오 작업 | `PROJECT#{name}` | `AUDIOJOB#{id}` | — | — |
+| 오디오 프로젝트 큐 | `PROJECT#{name}` | `AUDIOSLOTS` | 비어 있지 않을 때: `AUDIOJOBDUE` | `{headDueAt}#{name}#{headJobId}` |
 | 오디오 기본 설정 | `PROJECT#{name}` | `AUDIOCONFIG` | — | — |
-| 오디오 중복 방지 / 발생별 한도 / 활성 slot | `PROJECT#{name}` | `AUDIOSOURCE#{sourceKey}` / `AUDIOOCCURRENCE#{occurrence}` / `AUDIOSLOTS` | — | — |
+| 오디오 중복 방지 / 발생별 한도 | `PROJECT#{name}` | `AUDIOSOURCE#{sourceKey}` / `AUDIOOCCURRENCE#{occurrence}` | — | — |
 | 비공개 원본·파생 파일 inventory | `SOURCEFILE#{id}` | `META` | 미삭제 파일만: `SOURCEFILEEXPIRY` | `{retireAt}#{name}#{id}` |
 | 암호화된 원본 참조 | `SOURCEREFERENCE#{id}` | `META` | — | — |
 | 멱등 사용량 receipt | `PROJECT#{name}` | `USAGERECEIPT#{id}` | — | — |

@@ -30,6 +30,11 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 실행한다. 로컬 `.env.local`을 사용할 때는 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`로 실행한다.
 환경변수가 이미 주입된 환경에서는 `pnpm worker:audio`를 사용한다. DB 초기화는 앱 또는 기존 migration 명령으로
 먼저 수행한다. worker는 카탈로그·self-hosted 선언을 주기적으로 갱신하고 작업과 원본 만료를 처리한다.
+여러 파일은 DB 큐에 접수하며 프로젝트마다 한 건씩 순차 실행한다. `maxActive`는 대기·진행 작업을
+합친 접수 상한이고 `maxPerOccurrence`는 한 요청에서 접수할 수 있는 새 작업 수다.
+앱과 worker는 같은 큐 스키마 버전을 사용해야 한다. 큐 인덱스 변경을 포함한 업그레이드는 구버전
+앱·worker의 작업 쓰기를 중단하고 migration을 완료한 뒤 새 버전을 시작한다. migration은 기존
+대기 목록의 순서·작업 상태·lease·산출물 참조를 유지한다.
 오디오 worker 번들은 외부 패키지 의존성까지 포함한다. HTTP 포트를 열지 않으므로 worker 컨테이너는
 앱 이미지의 `/api/health` HEALTHCHECK를 그대로 상속하지 않도록 재정의한다. 컨테이너 실행 상태와
 실제 작업 진행 상태는 별도로 확인한다.

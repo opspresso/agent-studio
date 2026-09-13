@@ -128,7 +128,7 @@ export function createAudioTool(deps: AudioToolDeps, context: {
       if (result.status === "busy") {
         const reasons = {
           occurrence_limit: "This Agent run has used its new-job allowance, even if its earlier job completed. Do not retry submissions or poll in this run. Report the existing job and remaining work. In a new run, use AudioJob submit with config_revision to process import, transcription and summary as one durable job.",
-          active_limit: "The project has reached its active-job limit. Report the existing job and stop; do not repeatedly poll or submit in this run.",
+          active_limit: "The project has reached its queued-and-running job limit. Report admitted job IDs and the unsubmitted remainder; do not repeatedly poll or submit in this run.",
           conflict: "The project or job changed during submission. No new job was admitted. Report the conflict instead of repeatedly submitting.",
         };
         return { text: `Error: Audio job not admitted (${result.reason}). ${reasons[result.reason]}` };

@@ -20,7 +20,7 @@ import {
 import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
-import { mapMcpSource } from "@/application/audio/mapMcpSource";
+import { mapMcpSource, MCP_SOURCE_RESULT_DESCRIPTION } from "@/application/audio/mapMcpSource";
 import {
   mcpHeadersContext,
   versionMcpHeadersContext,
@@ -221,7 +221,19 @@ export async function buildMcpTools(
   // Providers cap how many tools one request may declare, and a request over
   // that limit fails outright — losing the tail is strictly better than losing
   // the run. Builtins are added after this, so leave them room.
-  const capped = toolManager.tools.slice(0, MAX_MCP_TOOLS_PER_RUN);
+  const mappedAliases = new Set(servers.flatMap((server) =>
+    Object.keys(server.resultTransforms ?? {}).flatMap((name) => {
+      const alias = toolManager.aliasFor(server.name, name);
+      return alias ? [alias] : [];
+    }),
+  ));
+  const capped = toolManager.tools.slice(0, MAX_MCP_TOOLS_PER_RUN).map((tool) =>
+    mappedAliases.has(tool.function.name) ? {
+      ...tool,
+      function: { ...tool.function,
+        description: [tool.function.description, MCP_SOURCE_RESULT_DESCRIPTION].filter(Boolean).join("\n\n") },
+    } : tool,
+  );
   const droppedTools = toolManager.tools.length - capped.length;
   const offered = new Set(capped.map((tool) => tool.function.name));
   const mcpServers: engine.McpServerInfo[] = [];

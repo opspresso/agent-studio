@@ -19,7 +19,7 @@ export const ko: Messages = {
   "audio.configDisabled": "새 작업이 비활성화돼 있습니다. 프로젝트 설정을 활성화하고 저장하면 제출을 재개할 수 있습니다.",
   "audio.projectConfig": "프로젝트 작업 설정",
   "audio.configEnabled": "신규 작업과 재시도 허용",
-  "audio.maxActive": "최대 활성 작업 수",
+  "audio.maxActive": "최대 대기·진행 작업 수",
   "audio.maxPerOccurrence": "실행당 최대 신규 작업 수",
   "audio.saveConfig": "프로젝트 설정 저장",
   "audio.saveConfigHint": "선택한 처리 옵션과 한도를 이후 작업에 사용하도록 저장합니다. 기존 작업은 제출 당시 설정을 유지합니다.",

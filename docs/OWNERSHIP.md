@@ -71,7 +71,9 @@
 | schedule 설정 화면이 동시에 읽을 최근 실행 목록 수 | `src/app/projects/[name]/settings/scheduleRuns.ts` 의 `MAX_CONCURRENT_SCHEDULE_RUN_READS` |
 | plugin 기본 파일 응답 매핑 선언·검증 | `src/domain/plugin/types.ts`의 `STUDIO_PLUGIN_EXTENSION`, `src/domain/mcp/sourceMapping.ts`의 `isMcpSourceMappings` |
 | MCP 기본 파일 매핑 선택과 연결별 namespace | `src/application/execution/mcpTools.ts`; 버전 설정이 없을 때만 레지스트리 기본값을 사용한다 |
+| 매핑된 MCP 도구의 모델용 응답 계약 | `src/application/audio/mapMcpSource.ts`의 `MCP_SOURCE_RESULT_DESCRIPTION`; 실행 바인딩이 해당 alias의 설명에만 덧붙인다 |
 | 오디오 도구의 작업별 입력 shape | `src/application/audio/toolDefinitions.ts`; `AudioJob.request`의 operation별 union |
+| 오디오 프로젝트 큐의 접수 순서·due 인덱스·직렬 claim | `src/infrastructure/db/repositories/audioJobRepository.ts`; 큐 첫 작업만 실행하고 작업 전이와 큐 갱신을 transaction으로 묶는다 |
 | 오디오 작업 화면의 동시 상태 조회 수와 갱신 병합 | `src/app/projects/[name]/audio/jobPolling.ts`의 `MAX_CONCURRENT_AUDIO_JOB_READS`와 `mergeAudioJobUpdates` |
 | 호출자별 동시 실행 slot 수의 저장 상한 | `src/domain/execution/runSlot.ts` 의 `MAX_RUN_SLOTS` / `boundedRunSlotLimit`. 저장 키의 세 자리 index가 표현하는 `0..999`이며 config와 repository가 함께 적용한다 |
 | builtin 도구의 wire 이름과 예약 집합 | `src/domain/llm/toolNames.ts` — 엔진, MCP alias 할당, 클라이언트 표시가 함께 사용한다 |

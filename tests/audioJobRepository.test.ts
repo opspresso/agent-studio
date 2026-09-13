@@ -19,6 +19,64 @@ const admission = { id: "job-1", now, occurrence: "hour-1", maxActive: 1, maxPer
 beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.project("audio"), entityType: "PROJECT" }]); });
 
 describe("durable audio jobs", () => {
+  it("queues multiple sources but only lets workers claim the FIFO head", async () => {
+    const limits = { ...admission, maxActive: 3, maxPerOccurrence: 3 };
+    await jobs.submit(input, { ...limits, id: "z-first" });
+    await jobs.submit({ ...input, sourceKey: "source-2" }, { ...limits, id: "a-second" });
+    await jobs.submit({ ...input, sourceKey: "source-3" }, { ...limits, id: "m-third" });
+    expect((await jobs.due(now, 10)).map((job) => job.id)).toEqual(["z-first"]);
+    expect(await jobs.claim("audio", "a-second", now, "worker-2", until)).toBeNull();
+    const first = (await jobs.claim("audio", "z-first", now, "worker-1", until))!;
+    expect(await jobs.due(now, 10)).toEqual([]);
+    expect(await jobs.claim("audio", "m-third", now, "worker-3", until)).toBeNull();
+    await jobs.checkpoint(first, { status: "completed", stage: "cleaning", dueAt: now }, now);
+    expect((await jobs.due(now, 10)).map((job) => job.id)).toEqual(["a-second"]);
+    const second = (await jobs.claim("audio", "a-second", now, "worker-2", until))!;
+    await jobs.checkpoint(second, { status: "failed", stage: "transcribing", dueAt: now }, now);
+    expect((await jobs.due(now, 10)).map((job) => job.id)).toEqual(["m-third"]);
+  });
+
+  it("keeps another project eligible while a full queue waits behind a leased head", async () => {
+    const limits = { ...admission, maxActive: 100, maxPerOccurrence: 100 };
+    await jobs.submit(input, limits);
+    const first = (await jobs.claim("audio", "job-1", now, "worker-1", until))!;
+    for (let index = 2; index <= 100; index++) {
+      await jobs.submit({ ...input, sourceKey: `source-${index}` }, { ...limits, id: `job-${index}` });
+    }
+    fake.seed([{ ...keys.project("other"), entityType: "PROJECT" }]);
+    await jobs.submit({ ...input, projectName: "other" }, admission);
+    expect((await jobs.due(now, 1)).map((job) => job.projectName)).toEqual(["other"]);
+    await jobs.checkpoint(first, { status: "waiting", stage: "transcribing", dueAt: later }, now);
+    expect((await jobs.due(until, 1)).map((job) => job.projectName)).toEqual(["other"]);
+    expect(await jobs.claim("audio", "job-2", later, "worker-2", "2026-09-08T00:05:00.000Z")).toBeNull();
+    expect((await jobs.due(later, 10)).map((job) => job.projectName).sort()).toEqual(["audio", "other"]);
+  });
+
+  it("preserves the head lease when cancelling a queued job and advances on head cancellation", async () => {
+    const limits = { ...admission, maxActive: 3, maxPerOccurrence: 3 };
+    await jobs.submit(input, limits);
+    const first = (await jobs.claim("audio", "job-1", now, "worker-1", until))!;
+    await jobs.submit({ ...input, sourceKey: "source-2" }, { ...limits, id: "job-2" });
+    await jobs.submit({ ...input, sourceKey: "source-3" }, { ...limits, id: "job-3" });
+    expect(await jobs.heartbeat(first, now, later)).toBe(true);
+    expect(await jobs.cancel("audio", "job-2", 1, now)).toBe(true);
+    expect(await jobs.due(until, 10)).toEqual([]);
+    expect(await jobs.cancel("audio", "job-1", first.revision, now)).toBe(true);
+    expect((await jobs.due(now, 10)).map((job) => job.id)).toEqual(["job-3"]);
+    expect(await jobs.heartbeat(first, now, later)).toBe(false);
+  });
+
+  it("appends an explicitly retried job behind already admitted work", async () => {
+    const limits = { ...admission, maxActive: 2, maxPerOccurrence: 2 };
+    await jobs.submit(input, limits);
+    await jobs.submit({ ...input, sourceKey: "source-2" }, { ...limits, id: "job-2" });
+    const first = (await jobs.claim("audio", "job-1", now, "worker-1", until))!;
+    const failed = (await jobs.checkpoint(first, { status: "failed", stage: "transcribing", dueAt: now }, now))!;
+    expect(await jobs.retry("audio", "job-1", failed.revision, now, 2)).not.toBeNull();
+    expect((await jobs.due(now, 10)).map((job) => job.id)).toEqual(["job-2"]);
+    expect(await jobs.claim("audio", "job-1", now, "worker-1", until)).toBeNull();
+  });
+
   it.each(["completed", "cancelled", "failed", "blocked"] as const)("deletes %s history and admits the same source under a new job ID", async (status) => {
     await jobs.submit(input, admission);
     const lease = (await jobs.claim("audio", "job-1", now, "worker", until))!;

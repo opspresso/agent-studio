@@ -41,6 +41,8 @@ export interface AudioJob extends AudioJobInput {
   status: AudioJobStatus;
   stage: AudioJobStage;
   createdAt: string;
+  /** First worker claim of this execution window; queue waiting does not spend its deadline. */
+  startedAt?: string;
   /** Explicit manual retry starts a new execution window, not a new retention period. */
   retryStartedAt?: string;
   updatedAt: string;

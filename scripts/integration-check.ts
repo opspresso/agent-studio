@@ -34,6 +34,8 @@ process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 async function main() {
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
+  const { checkAudioQueueMigration } = await import("./audio-queue-check");
+  await checkAudioQueueMigration();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
   const { checkAuthSchema } = await import("./auth-schema-check");
@@ -1505,6 +1507,22 @@ async function main() {
       assert.equal(next.status, "accepted", "terminal job releases its durable project slot");
       assert.equal(await jobs.cancel(projectName, "audio-next", 1, reclaimedAt), true);
       pass("audio jobs: concurrent admission, lease fencing, durable dedup and slot release");
+
+      const queued = await Promise.all(Array.from({ length: 3 }, (_, index) => jobs.submit({ ...input, sourceKey: `queued-source-${index}` }, {
+        id: `queued-audio-${index}`, now, occurrence: "queued-hour", maxActive: 3, maxPerOccurrence: 3,
+      })));
+      assert.equal(queued.filter((result) => result.status === "accepted").length, 3);
+      const queue = await getItem(dbKeys.audioJobSlots(projectName));
+      const order = queue!.jobIds as string[];
+      for (const id of order) {
+        const competing = await Promise.all(order.map((candidate) => jobs.claim(projectName, candidate, now, `worker-${candidate}`, leaseUntil)));
+        const claimed = competing.filter((job) => job !== null);
+        assert.equal(claimed.length, 1, "only the project queue head can be claimed across workers");
+        assert.equal(claimed[0]!.id, id, "execution follows transactional admission order");
+        assert.ok(await jobs.checkpoint(claimed[0]!, { status: "completed", stage: "cleaning", dueAt: now }, now));
+      }
+      assert.deepEqual((await getItem(dbKeys.audioJobSlots(projectName)))!.jobIds, []);
+      pass("audio jobs: concurrent queue admission and serial FIFO processing across workers");
     }
 
     // ---------- concurrency slots (conditional claim + lease reclaim) ----------

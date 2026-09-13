@@ -5,7 +5,7 @@ import {
 import { keys } from "../keys";
 import { projectIsLive } from "../projectLifecycle";
 import {
-  conditions, getItem, queryItems, transact, updateItem,
+  conditions, getItem, queryItems, transact,
   CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, type Item, type TransactOp,
 } from "../store";
 
@@ -20,7 +20,6 @@ function jobOf(item: Item | null): AudioJob | null {
 function row(job: AudioJob): Item {
   return {
     ...keys.audioJob(job.projectName, job.id), entityType: "AudioJob", job, userEmail: job.userEmail,
-    ...(!isAudioJobTerminal(job.status) ? keys.audioJobDueIndex(job.dueAt, job.projectName, job.id) : {}),
   };
 }
 
@@ -39,17 +38,31 @@ function activeIds(item: Item | null): string[] {
   return item?.jobIds as string[] | undefined ?? [];
 }
 
-/** One bounded ledger makes changes to the concurrency limit atomic too. */
-function reserve(projectName: string, id: string, limit: number): TransactOp {
-  return { kind: "update", key: keys.audioJobSlots(projectName),
-    condition: (item) => activeIds(item).length < limit && !activeIds(item).includes(id),
-    patch: (item) => ({ jobIds: [...activeIds(item), id] }) };
+/** Only the queue head is indexed, so a busy project's backlog cannot starve other projects. */
+function queueRow(projectName: string, jobIds: string[], dueAt: string): Item {
+  return { ...keys.audioJobSlots(projectName), entityType: "AudioJobQueue", projectName, jobIds,
+    ...(jobIds[0] ? { dueAt, ...keys.audioJobDueIndex(dueAt, projectName, jobIds[0]) } : {}) };
 }
 
-function release(projectName: string, id: string): TransactOp {
+/** Admission appends to the bounded project queue; execution claims only its head. */
+function reserve(projectName: string, id: string, limit: number, now: string): TransactOp {
+  return { kind: "update", key: keys.audioJobSlots(projectName),
+    condition: (item) => activeIds(item).length < limit && !activeIds(item).includes(id),
+    patch: (item) => queueRow(projectName, [...activeIds(item), id],
+      activeIds(item).length ? item!.dueAt as string : now) };
+}
+
+function release(projectName: string, id: string, now: string): TransactOp {
   return { kind: "update", key: keys.audioJobSlots(projectName),
     condition: (item) => activeIds(item).includes(id),
-    patch: (item) => ({ jobIds: activeIds(item).filter((held) => held !== id) }) };
+    patch: (item) => queueRow(projectName, activeIds(item).filter((held) => held !== id),
+      activeIds(item)[0] === id ? now : item!.dueAt as string) };
+}
+
+function advanceQueue(projectName: string, id: string, dueAt: () => string): TransactOp {
+  return { kind: "update", key: keys.audioJobSlots(projectName),
+    condition: (item) => activeIds(item)[0] === id,
+    patch: (item) => queueRow(projectName, activeIds(item), dueAt()) };
 }
 
 export const audioJobRepository: AudioJobRepository = {
@@ -73,7 +86,7 @@ export const audioJobRepository: AudioJobRepository = {
         { kind: "check", key: keys.project(input.projectName), condition: projectIsLive },
         { kind: "put", item: row(job), condition: conditions.notExists },
         { kind: "put", item: { ...sourceKey, jobId: job.id }, condition: conditions.notExists },
-        reserve(input.projectName, job.id, admission.maxActive),
+        reserve(input.projectName, job.id, admission.maxActive, admission.now),
         { kind: "update", key: keys.audioJobOccurrence(input.projectName, admission.occurrence),
           condition: (current) => Number(current?.count ?? 0) < admission.maxPerOccurrence,
           patch: (current) => ({ count: Number(current?.count ?? 0) + 1 }) },
@@ -107,32 +120,42 @@ export const audioJobRepository: AudioJobRepository = {
 
   async due(now, limit) {
     checkLimit(limit);
-    return (await queryItems({ index: "GSI1", ...keys.audioJobDueQuery(now), limit })).map((item) => jobOf(item)!);
+    const queues = await queryItems({ index: "GSI1", ...keys.audioJobDueQuery(now), limit });
+    const heads = await Promise.all(queues.map((item) => this.get(item.projectName as string, activeIds(item)[0]!)));
+    return heads.filter((job): job is AudioJob => job !== null && !isAudioJobTerminal(job.status) && job.dueAt <= now);
   },
 
   async claim(projectName, id, now, token, until) {
     if (!token || until <= now) throw new Error("Audio job lease must expire in the future");
     try {
-      const { after } = await updateItem(keys.audioJob(projectName, id), (item) => {
-        const job = jobOf(item)!;
-        return row({ ...job, status: "running", revision: job.revision + 1, attempt: job.attempt + 1,
-          lease: { token, until }, dueAt: until, updatedAt: now });
-      }, (item) => {
-        const job = jobOf(item);
-        return job !== null && !isAudioJobTerminal(job.status) && job.dueAt <= now &&
-          (!job.lease || job.lease.until <= now);
-      });
-      return jobOf(after);
+      let next: AudioJob | null = null;
+      await transact([
+        { kind: "update", key: keys.audioJob(projectName, id), patch: (item) => {
+          const job = jobOf(item)!;
+          next = { ...job, status: "running", revision: job.revision + 1, attempt: job.attempt + 1,
+            startedAt: job.startedAt ?? now, lease: { token, until }, dueAt: until, updatedAt: now };
+          return row(next);
+        }, condition: (item) => {
+          const job = jobOf(item);
+          return job !== null && !isAudioJobTerminal(job.status) && job.dueAt <= now &&
+            (!job.lease || job.lease.until <= now);
+        } },
+        advanceQueue(projectName, id, () => until),
+      ]);
+      return next;
     } catch (error) { if (lostCondition(error)) return null; throw error; }
   },
 
   async heartbeat(job, now, until) {
     if (until <= now) throw new Error("Audio job lease must expire in the future");
     try {
-      await updateItem(keys.audioJob(job.projectName, job.id), (item) => {
-        const current = jobOf(item)!;
-        return row({ ...current, lease: { token: current.lease!.token, until }, dueAt: until, updatedAt: now });
-      }, (item) => owned(jobOf(item), job, now));
+      await transact([
+        { kind: "update", key: keys.audioJob(job.projectName, job.id), patch: (item) => {
+          const current = jobOf(item)!;
+          return row({ ...current, lease: { token: current.lease!.token, until }, dueAt: until, updatedAt: now });
+        }, condition: (item) => owned(jobOf(item), job, now) },
+        advanceQueue(job.projectName, job.id, () => until),
+      ]);
       return true;
     } catch (error) { if (lostCondition(error)) return false; throw error; }
   },
@@ -152,7 +175,7 @@ export const audioJobRepository: AudioJobRepository = {
             else next.dueAt = current.lease!.until;
             return row(next);
           } },
-        ...(terminal ? [release(job.projectName, job.id)] : []),
+        terminal ? release(job.projectName, job.id, now) : advanceQueue(job.projectName, job.id, () => next!.dueAt),
       ]);
       return next;
     } catch (error) { if (lostCondition(error)) return null; throw error; }
@@ -169,7 +192,7 @@ export const audioJobRepository: AudioJobRepository = {
           const current = jobOf(item);
           return current !== null && current.revision === revision && !isAudioJobTerminal(current.status);
         } },
-        release(projectName, id),
+        release(projectName, id, now),
       ]);
       return true;
     } catch (error) { if (lostCondition(error)) return false; throw error; }
@@ -198,11 +221,12 @@ export const audioJobRepository: AudioJobRepository = {
     const next: AudioJob = { ...job, status: "queued", revision: revision + 1, updatedAt: now, dueAt: now, failures: 0, retryStartedAt: now };
     delete next.lease;
     delete next.errorCode;
+    delete next.startedAt;
     try {
       await transact([
         { kind: "check", key: keys.project(projectName), condition: projectIsLive },
         { kind: "put", item: row(next), condition: (item) => jobOf(item)?.revision === revision },
-        reserve(projectName, id, maxActive),
+        reserve(projectName, id, maxActive, now),
       ]);
       return next;
     } catch (error) { if (lostCondition(error)) return null; throw error; }

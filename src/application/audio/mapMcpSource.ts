@@ -2,6 +2,15 @@ import { createHash } from "node:crypto";
 import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 import type { McpToolResult } from "@/domain/llm/types";
+import { AUDIO_JOB_TOOL_NAME } from "@/domain/llm/toolNames";
+
+/** The model-facing contract of the projection, independent of the provider's raw response. */
+export const MCP_SOURCE_RESULT_DESCRIPTION =
+  "Agent Studio file response: returns source_ref, filename, mime_type, source and external_id. " +
+  "The download URL stays private; source_ref is a usable file reference, not a completed download. " +
+  `For transcription and summary, use the connected audio-processing skill and ${AUDIO_JOB_TOOL_NAME} config/submit ` +
+  'with source={"kind":"source","id":"<returned source_ref>"} when audio tools are available. ' +
+  "Never substitute external_id or request the hidden URL.";
 
 export type RegisterMcpSource = (input: { projectName: string; userEmail: string; namespace: string;
   itemId: string; url: string; filename: string; mimeType: string; refresh?: SourceRefresh }) => Promise<{ sourceRef: string; filename: string; mimeType: string }>;

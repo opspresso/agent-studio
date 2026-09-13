@@ -5,6 +5,7 @@ export interface AudioJobConfig extends Pick<AudioJobInput, "model" | "language"
   userEmail: string;
   revision: number;
   enabled: boolean;
+  /** Admitted nonterminal jobs, including queued work. Execution is serial per project. */
   maxActive: number;
   maxPerOccurrence: number;
   updatedAt: string;

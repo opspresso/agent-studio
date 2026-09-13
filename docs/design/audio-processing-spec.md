@@ -49,8 +49,9 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 절차와 기록 규칙은 plugin skill, 모델·보존 기간·후처리 버전은 오디오 설정, 수집 범위·탐색 한도는
 schedule 메시지에 둔다. 시스템 프롬프트에는 skill 선택과 사용자 요청 범위만 짧게 둔다.
 
-진행 중인 작업이 있으면 새 녹음을 시작하지 않는다. pending 작업은 완료로 보고하지 않으며 다음
-실행에서 같은 job ID를 확인한다. 완료된 단계를 다시 실행하거나 만료된 원본을 자동 재다운로드하지 않는다.
+여러 녹음 요청은 설정 한도 안에서 각각 영속 큐에 접수한다. worker는 프로젝트별로 접수 순서대로
+한 건씩 실행한다. pending 작업은 완료로 보고하지 않으며 다음 실행에서 같은 job ID를 확인한다.
+완료된 단계를 다시 실행하거나 만료된 원본을 자동 재다운로드하지 않는다.
 이미 보관된 전사 Artifact로 후처리만 다시 수행할 수 있으며, 명시적인 재처리는 processing_revision을 구분한다.
 `ImportFile`·`TranscribeAudio`·`AudioJob submit`은 같은 processing_revision을 재시도에 재사용한다.
 연결 도구의 source_ref는 가져오기에 사용할 참조이며 다운로드 완료를 뜻하지 않는다. 원본 URL은 의도적으로
@@ -201,6 +202,9 @@ plugin.json의 `extensions.org.opspresso.agent-studio.mcpSourceOutputs`는 서�
 묶어 계정 간 입력을 구분한다. 매핑 변경은 기존 source refresh fingerprint를 무효화한다.
 Plaud plugin은 get_file의 presigned_url·id·name·file_id 재조회 계약을 선언하므로 수동 매핑이 필요하지 않다.
 스킬·MCP 설명은 사용 절차를 설명하며 URL 변환은 이 기계 판독 가능한 선언이 담당한다.
+실행과 Prompt preview의 매핑된 도구 설명에는 `source_ref` 반환 계약을 덧붙인다. 서버의 원래
+입력 스키마와 설명은 유지하고, 도구 alias를 기준으로 해당 매핑에만 적용한다. 기본 매핑을
+비활성화한 버전에는 안내를 붙이지 않으며 공유 discovery 캐시도 수정하지 않는다.
 
 참조는 프로젝트·연결·외부 item ID에 연결한다. 직접 업로드는 비공개 file ID를 반환한다. JSON 안의 URL은 등록된 binding의 필드 mapping으로
 정규화하며 worker는 원래 필드명을 알지 않는다. URL·인증정보를 job 입력에 그대로 복제하지 않는다.
@@ -265,7 +269,11 @@ lease generation·file ref·checksum·expiry·segment manifest·output manifest�
 본문은 object storage에 두고 DB에는 bounded metadata를 저장한다.
 
 - project slot과 `(project, source identity, item ID, 처리 revision)` claim을 transaction으로 획득한다.
-  여러 worker·수동·schedule 호출에도 설정된 동시성 상한을 유지한다.
+  `maxActive`는 대기·진행을 합친 비종료 작업 수이고 `maxPerOccurrence`는 한 Agent 실행의 접수 한도다.
+  실제 실행은 여러 worker에서도 프로젝트별 한 건이다. `AUDIOSLOTS.jobIds`의 접수 순서를 사용하며,
+  큐의 첫 작업만 due 인덱스와 claim에 노출한다. lease·heartbeat·대기 시각과 큐 인덱스를 함께 갱신한다.
+  완료·실패·차단·취소는 slot 반환과 다음 작업 활성화를 한 transaction으로 처리한다.
+  재시도 작업은 큐 끝에 추가한다. 한 프로젝트의 대기 목록이 다른 프로젝트의 due 조회 한도를 차지하지 않는다.
   접수 거절은 active_limit·occurrence_limit·conflict로 구분한다. Agent 도구는 Error로 전달하고,
   완료 후에도 복원되지 않는 발생당 한도를 worker 지연으로 오해해 반복 제출하지 않도록 안내한다.
 - 발생당 신규 작업 상한은 서버가 전달한 occurrence ID에 귀속한다. 같은 발생의 Agent가 여러 번
@@ -274,7 +282,8 @@ lease generation·file ref·checksum·expiry·segment manifest·output manifest�
   조건부 갱신한다. 소유권을 잃은 worker는 abort하며 외부 요청에는 안정적 idempotency key를 사용한다.
 - 일시 오류는 최초 시도 포함 5회, 재시도 간격은 1·5·15·60분이다. 인증·입력 오류는
   즉시 blocked다. 최종 failed/blocked는 slot을 반환하고 명시적 재시도 전 다시 선택하지 않는다.
-- 명시적 수동 재시도는 새 24시간 실행 구간을 시작한다. 자동 재시도는 실행 구간을 연장하지 않는다.
+- 24시간 실행 구간은 최초 worker claim의 `startedAt`부터 계산하며 큐 대기는 포함하지 않는다.
+  명시적 수동 재시도는 다음 claim에서 새 실행 구간을 시작한다. 자동 재시도는 실행 구간을 연장하지 않는다.
   원래 작업 생성 시각·완료 단계·중복 방지 키·파일 보존 만료는 유지한다.
 - 취소는 새 단계를 시작하지 않게 하며 이미 성공한 외부 저장을 자동 삭제하지 않는다.
   응답 유실 시 receipt를 같은 키로 재조회한다. ASR이 멱등 호출을 지원하지 않으면 crash 후
@@ -400,6 +409,8 @@ owner 변경·삭제 시 worker를 중단하고 object 정리를 완료/예약�
 - cron은 `0 * * * *`, timezone은 `Asia/Seoul`이다. 메인은 신규 녹음을 한 건만 선택하고,
   작업 설정은 maxActive=1, maxPerOccurrence=1로 두고 한 process 작업이 보관·전사·후처리를 이어간다.
   기존 작업이 진행 중이면 새 파일을 시작하지 않는다. 최초 수집 시작일은 활성화 전에 정한다.
+  "최근 일주일 녹음을 가져와서 전사하고 요약해"처럼 기간을 지정할 수 있다. 한 요청에서 여러 건을
+  접수하려면 두 접수 한도를 필요한 큐 크기로 설정한다. 한도를 늘려도 프로젝트 내 실제 실행은 한 건씩이다.
 - 지정 Transcription 모델로 MP3를 전사하고 `meeting-minutes` skill로 후처리한다.
   결정·할 일·미결·담당자·기한·근거 검수는 이 skill과 Agent schema가 결정한다.
 - 전사 JSON·summary.md·dialogue.md를 Artifact에 보관한다. 사용자 요청이 있을 때만 선택한 문서를

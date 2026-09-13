@@ -39,7 +39,7 @@ export const en = {
   "audio.configDisabled": "New jobs are disabled. Enable and save the project settings to resume submissions.",
   "audio.projectConfig": "Project job settings",
   "audio.configEnabled": "Allow new jobs and retries",
-  "audio.maxActive": "Maximum active jobs",
+  "audio.maxActive": "Maximum queued and running jobs",
   "audio.maxPerOccurrence": "Maximum new jobs per run",
   "audio.saveConfig": "Save project settings",
   "audio.saveConfigHint": "Save the selected processing options and limits for future jobs. Existing jobs keep their submitted settings.",

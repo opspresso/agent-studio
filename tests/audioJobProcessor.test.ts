@@ -143,9 +143,19 @@ describe("audio job processor", () => {
   });
 
   it("blocks an expired job without starting a provider request", async () => {
-    await submit(); vi.setSystemTime("2026-09-09T00:00:00.000Z"); const d = deps();
+    await submit();
+    await jobs.claim("audio", "job-1", now, "expired-worker", "2026-09-08T00:02:00.000Z");
+    vi.setSystemTime("2026-09-09T00:00:00.000Z"); const d = deps();
     expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "blocked", errorCode: "job_deadline" });
     expect(d.importFile).not.toHaveBeenCalled();
+  });
+
+  it("does not spend the execution deadline while waiting in the queue", async () => {
+    await submit();
+    vi.setSystemTime("2026-09-10T00:00:00.000Z"); const d = deps();
+    expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", createdAt: now,
+      startedAt: "2026-09-10T00:00:00.000Z" });
+    expect(d.transcribe).toHaveBeenCalledOnce();
   });
 
   it("gives an explicit retry a new deadline without losing prior stages or creation time", async () => {
@@ -154,8 +164,9 @@ describe("audio job processor", () => {
     const stopped = (await processAudioJob(d, "audio", "job-1"))!;
     vi.setSystemTime("2026-09-10T00:00:00.000Z");
     await jobs.retry("audio", "job-1", stopped.revision, new Date().toISOString(), 1);
+    vi.setSystemTime("2026-09-12T00:00:00.000Z");
     expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", createdAt: now,
-      retryStartedAt: "2026-09-10T00:00:00.000Z", retention: input.retention });
+      retryStartedAt: "2026-09-10T00:00:00.000Z", startedAt: "2026-09-12T00:00:00.000Z", retention: input.retention });
     expect(d.importFile).toHaveBeenCalledTimes(1);
     expect(d.transcribe).toHaveBeenCalledTimes(2);
   });
@@ -165,7 +176,7 @@ describe("audio job processor", () => {
     vi.setSystemTime("2026-09-08T23:00:00.000Z");
     vi.mocked(d.transcribe).mockRejectedValueOnce(new AudioJobStepError("provider_unavailable", true));
     expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "waiting" });
-    vi.setSystemTime("2026-09-09T00:00:00.000Z");
+    vi.setSystemTime("2026-09-09T23:00:00.000Z");
     expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "blocked", errorCode: "job_deadline" });
     expect(d.transcribe).toHaveBeenCalledTimes(1);
   });

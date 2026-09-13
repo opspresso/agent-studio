@@ -12,7 +12,7 @@
  */
 
 import { withTransaction } from "./client";
-import { TELEGRAM_DESTINATION_INDEX_PREFIX } from "./keys";
+import { keys, TELEGRAM_DESTINATION_INDEX_PREFIX } from "./keys";
 import { log } from "@/shared/logger";
 
 interface Migration {
@@ -196,6 +196,29 @@ const MIGRATIONS: Migration[] = [
       `DROP INDEX IF EXISTS "account_issuer_accountId_idx"`,
       `DROP INDEX IF EXISTS "account_issuer_accountId_uidx"`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "account_providerId_accountId_uidx" ON "account" ("providerId", "accountId")`,
+    ],
+  },
+  {
+    version: 8,
+    name: "audio_project_queue",
+    statements: [
+      `UPDATE items SET data = jsonb_set(data, '{job,startedAt}',
+         COALESCE(data->'job'->'retryStartedAt', data->'job'->'createdAt'))
+       WHERE data->>'entityType' = 'AudioJob' AND (data->'job'->>'attempt')::integer > 0
+         AND NOT (data->'job' ? 'startedAt')`,
+      `UPDATE items AS queue
+       SET data = queue.data || jsonb_build_object(
+         'entityType', 'AudioJobQueue', 'projectName', head.data->'job'->>'projectName',
+         'dueAt', head.data->'job'->>'dueAt',
+         'GSI1PK', head.data->>'GSI1PK', 'GSI1SK', head.data->>'GSI1SK'
+       )
+       FROM items AS head
+       WHERE queue.sk = '${keys.audioJobSlots("").SK}' AND head.pk = queue.pk
+         AND head.sk = '${keys.audioJobPrefix()}' || (queue.data->'jobIds'->>0)
+         AND head.data->>'entityType' = 'AudioJob'
+         AND head.gsi1pk = '${keys.audioJobDueQuery("").pk}'`,
+      `UPDATE items SET data = data - 'GSI1PK' - 'GSI1SK'
+       WHERE data->>'entityType' = 'AudioJob' AND gsi1pk = '${keys.audioJobDueQuery("").pk}'`,
     ],
   },
 ];

@@ -1800,6 +1800,9 @@ project·사용자·모델 라벨은 붙지 않는다. build 정보만 값의 �
 | GET | `/api/projects/{name}/audio-jobs/{job}` | AudioJobView |
 | POST | `/api/projects/{name}/audio-jobs/{job}` | `{action: "cancel" | "retry" | "delete", revision}`. 변경된 revision 또는 허용하지 않는 상태는 409 |
 
+`maxActive`는 대기·진행을 합친 비종료 작업 상한이고, `maxPerOccurrence`는 한 Agent 실행의
+신규 접수 상한이다. 여러 작업을 접수해도 worker는 프로젝트별 접수 순서대로 한 건씩 실행한다.
+
 작업의 `source`는 `{kind:"artifact", artifactId}`, `{kind:"file", fileId}` 또는
 `{kind:"source", sourceRef}`다. artifact는 같은 사용자가 소유한 다른 Agent의 비공개 결과도 재사용하며,
 file은 해당 프로젝트의 업로드·보관 파일이다. 원본 URL과 외부 녹음 ID는 파일 ID를 대신하지 않는다.
