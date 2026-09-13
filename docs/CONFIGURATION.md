@@ -56,7 +56,7 @@ fail-open 이 될 수는 없다.
 | 검사 | 규칙 |
 |---|---|
 | `assertRequiredConfig` | `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` 가 모든 stage 에서 설정돼 있어야 한다. 암호화 키는 canonical base64 로 인코딩한 정확히 32바이트여야 한다. |
-| `assertAccessControlConfig` | `NODE_ENV=production` 은 명시적인 `STAGE` 를 요구한다. `STAGE=alpha` 또는 `prod` 는 추가로 `ADMIN_EMAILS` 와 **로그인 수단 하나 이상**(`OIDC_ISSUER`/`OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, 또는 `AUTH_PASSWORD=true`)을 요구한다. 빈 `ALLOWED_EMAIL_DOMAINS` 는 모든 도메인을 허용하는 정상 설정이다. |
+| `assertAccessControlConfig` | `NODE_ENV=production` 은 명시적인 `STAGE` 를 요구한다. `STAGE=alpha` 또는 `prod` 는 추가로 `ADMIN_EMAILS` 와 **로그인 수단 하나 이상**(Keycloak, 표준 OIDC, Google의 필수 변수 묶음 또는 `AUTH_PASSWORD=true`)을 요구한다. 각 묶음은 [인증과 접근 제어](#인증과-접근-제어)를 따른다. 빈 `ALLOWED_EMAIL_DOMAINS` 는 모든 도메인을 허용하는 정상 설정이다. |
 
 두 검사 뒤에 부팅 경로는 스키마를 적용하고(`migrate`, advisory lock 아래에서, 인스턴스가
 여럿이어도 한 번) `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` 가 있으면 그 계정을
@@ -131,12 +131,13 @@ Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 �
 |---|---|---|---|
 | `BETTER_AUTH_SECRET` | — | — | 세션 서명 시크릿 (`openssl rand -base64 32`). |
 | `BETTER_AUTH_URL` | — | — | Better Auth 가 콜백을 만들 때 기준으로 삼는 base URL. |
-| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | — | 표준 OIDC 제공자. Keycloak, Entra ID, Okta, Authentik, `<issuer>/.well-known/openid-configuration` 을 내놓는 것이면 무엇이든. 셋이 모두 있을 때만 켜진다(Better Auth 의 `genericOAuth`, PKCE). 콜백은 `BETTER_AUTH_URL/api/auth/callback/oidc` 이고 제공자에 그 리디렉션 URI 를 등록한다. 배포당 하나: 기업에는 디렉터리가 하나이고, 두 번째 제공자는 사람이 누구인지에 대한 두 번째 정본이다. |
+| `KEYCLOAK_ISSUER` / `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET` | — | — | Keycloak 로그인. 셋이 모두 비어 있지 않을 때 켜지며 Google·표준 OIDC와 병행할 수 있다. issuer는 `https://sso.example.com/realms/corp` 같은 HTTP(S) realm URL이며 끝의 `/`는 제거한다. 사용자명·비밀번호·query·fragment가 포함된 URL은 거부한다. 콜백은 `BETTER_AUTH_URL/api/auth/callback/keycloak`이다. PKCE와 ID 토큰 검증을 사용한다. [설치 절차](INSTALL.md#keycloak-로그인)를 따른다. |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | — | 표준 OIDC 제공자. Keycloak, Entra ID, Okta, Authentik 등 `<issuer>/.well-known/openid-configuration`을 제공하는 서버를 연결한다. 셋이 모두 있을 때만 켜진다(Better Auth의 `genericOAuth`, PKCE). 콜백은 `BETTER_AUTH_URL/api/auth/callback/oidc`이며 Keycloak 전용 설정과 별개의 provider다. |
 | `OIDC_DISPLAY_NAME` / `OIDC_SCOPES` | `SSO` / `openid email profile` | — | 로그인 버튼의 이름, 그리고 공백으로 구분한 scope. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | — | Google 로그인. 둘 다 있을 때만 켜진다. 콜백은 `/api/auth/callback/google`. |
 | `AUTH_PASSWORD` | `false` | — | `true` 면 이메일 + 비밀번호 로그인. **가입 폼은 없다**. 아무도 보증하지 않는 계정이므로 부트스트랩 관리자는 부팅 때 만들어지고, 그 밖의 비밀번호 계정은 관리자의 의도적인 행위다. 신원 제공자가 아직 닿지 않는 설치의 첫 관리자와, 제공자가 죽었을 때의 비상 접근을 위한 것이다. |
 | `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | — | — | `AUTH_PASSWORD=true` 일 때 부팅 시 준비되는 계정 (`ensureBootstrapAdmin`). 같은 이메일의 사용자에게 비밀번호 credential 이 이미 있으면 변경하지 않는다. 사용자는 있지만 credential 이 없으면 기존 사용자 행을 유지하고 비밀번호 credential 을 추가한다. 기존 비밀번호는 환경변수 변경으로 갱신되지 않는다. 이메일은 `ADMIN_EMAILS` 에도 넣어야 admin 이 된다. `ALLOWED_EMAIL_DOMAINS` 는 이 주소에 적용되지 않는다. 제공자나 도메인 목록이 모두를 잠갔을 때의 비상 계정이므로. `AUTH_PASSWORD` 없이 설정하면 경고만 남기고 만들지 않는다. |
-| `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 세 제공자 모두에 적용된다(사용자 생성과 세션 생성의 훅). 비어 있으면 아무 도메인이나 허용한다. |
+| `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | **runtime** | 로그인이 허용되는 도메인의 쉼표 구분 목록. 모든 로그인 수단에 적용된다(사용자 생성과 세션 생성의 훅). 비어 있으면 아무 도메인이나 허용한다. |
 | `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: Caddy 와 ingress controller 처럼 두 홉이 `X-Forwarded-For` 에 덧붙일 때). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
 | `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 프로젝트에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *제한 없음*, 프로젝트 오버라이드에는 *아무도 아님* 을 뜻한다. 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
 

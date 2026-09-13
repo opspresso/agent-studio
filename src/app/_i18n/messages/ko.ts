@@ -544,7 +544,7 @@ export const ko: Messages = {
     "배포 환경의 secret·설정 주입 방식으로 DATABASE_URL·LLM_BASE_URL·LLM_API_KEY·AES_ENCRYPTION_KEY를 제공한다. AES_ENCRYPTION_KEY는 32바이트의 base64 값이어야 하고 재시작 후에도 유지해야 한다. STAGE를 명시하며 운영 배포는 prod를 사용한다. alpha/prod는 ADMIN_EMAILS와 로그인 방식도 필요하다. 콜백 구성 전에 배포 환경의 BETTER_AUTH_SECRET에 유지할 세션 secret을, BETTER_AUTH_URL과 PUBLIC_BASE_URL에 사용자가 접속하는 앱 주소를 설정한다.",
   "guide.install.signin": "3. 로그인 구성",
   "guide.install.signinBody":
-    "폐쇄망에서는 사내 OIDC나 비밀번호 로그인을 구성한다. OIDC_ISSUER·OIDC_CLIENT_ID·OIDC_CLIENT_SECRET을 설정하고 앱의 /api/auth/callback/oidc 주소를 인증 공급자에 등록한다. 비밀번호 초기 관리자는 AUTH_PASSWORD=true·BOOTSTRAP_ADMIN_EMAIL·BOOTSTRAP_ADMIN_PASSWORD로 구성하고 해당 이메일을 ADMIN_EMAILS에도 포함한다. bootstrap 비밀번호 변경으로 기존 비밀번호 계정이 초기화되지는 않는다.",
+    "폐쇄망에서는 사내 Keycloak·표준 OIDC·비밀번호 로그인을 구성한다. Keycloak은 KEYCLOAK_ISSUER(realm URL)·KEYCLOAK_CLIENT_ID·KEYCLOAK_CLIENT_SECRET을 설정하고 client에 /api/auth/callback/keycloak을 등록한다. 표준 OIDC는 OIDC_ISSUER·OIDC_CLIENT_ID·OIDC_CLIENT_SECRET과 /api/auth/callback/oidc를 사용한다. GOOGLE_CLIENT_ID·GOOGLE_CLIENT_SECRET을 설정하면 Google도 병행할 수 있다. 비밀번호 초기 관리자는 AUTH_PASSWORD=true·BOOTSTRAP_ADMIN_EMAIL·BOOTSTRAP_ADMIN_PASSWORD로 구성하고 해당 이메일을 ADMIN_EMAILS에도 포함한다. bootstrap 비밀번호 변경으로 기존 비밀번호 계정이 초기화되지는 않는다.",
   "guide.install.storage": "4. 파일 저장소 연결",
   "guide.install.storageBody":
     "파일을 영속 보관하려면 bucket을 만들고 S3_BUCKET_NAME을 설정한다. AWS가 아닌 저장소는 S3_ENDPOINT·S3_ACCESS_KEY_ID·S3_SECRET_ACCESS_KEY도 설정한다. AWS S3는 배포의 AWS 자격 증명이나 역할 설정을 사용할 수 있다. 저장소 계정에는 해당 bucket의 artifacts/*·source-files/* 읽기·쓰기·삭제와 비공개 파일의 multipart 업로드 권한을 부여한다. 비 AWS 저장소의 키는 다른 공급자도 사용하는 AWS_* 대신 S3 전용 변수에 넣는다. Settings에서 Artifact 접근 방식을 정하고 사용자 네트워크에서 다운로드를 검증한다.",

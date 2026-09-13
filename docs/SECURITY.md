@@ -26,11 +26,20 @@ Better Auth 1.7 이 이 앱의 커넥션 풀 위에서 라이브러리 자신의
 
 | 수단 | 켜는 것 | 성질 |
 |---|---|---|
-| 표준 OIDC | `OIDC_ISSUER` + `OIDC_CLIENT_ID` + `OIDC_CLIENT_SECRET` | `genericOAuth` 로 discovery 문서에서 찾고 PKCE 를 쓴다. 배포당 하나. 기업의 디렉터리는 하나이고, 두 번째 제공자는 사람이 누구인지에 대한 두 번째 정본이다. 콜백 `/api/auth/callback/oidc` |
+| Keycloak | `KEYCLOAK_ISSUER` + `KEYCLOAK_CLIENT_ID` + `KEYCLOAK_CLIENT_SECRET` | Better Auth의 Keycloak helper와 `genericOAuth`로 discovery를 읽고 PKCE(S256)를 쓴다. 콜백 `/api/auth/callback/keycloak` |
+| 표준 OIDC | `OIDC_ISSUER` + `OIDC_CLIENT_ID` + `OIDC_CLIENT_SECRET` | `genericOAuth`로 discovery 문서에서 찾고 PKCE를 쓴다. 콜백 `/api/auth/callback/oidc` |
 | Google | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | 콜백 `/api/auth/callback/google` |
 | 이메일 + 비밀번호 | `AUTH_PASSWORD=true` | **가입 폼이 없다**(`disableSignUp`): 신원 제공자가 보증하는 사람은 첫 로그인으로 사용자가 되지만, 비밀번호 계정은 아무도 보증하지 않으므로 부트스트랩 관리자(`BOOTSTRAP_ADMIN_EMAIL`/`PASSWORD`, 부팅 때 한 번)와 관리자가 의도적으로 만든 계정뿐이다. 첫 관리자와 제공자가 죽었을 때의 비상 접근용이다 |
 
-`STAGE=alpha|prod` 는 셋 중 하나도 없으면 부팅을 거부한다(`assertAccessControlConfig`);
+Keycloak·표준 OIDC·Google을 함께 설정하면 각 로그인 버튼을 표시한다. Keycloak은 discovery의
+issuer·JWKS가 있어야 등록하며 ID 토큰의 서명·issuer·audience와 요청별 nonce를 Better Auth가
+검증한다. 로그인 버튼은 설정의 존재를 나타내므로 discovery 실패 시에도 표시되지만 인증은
+실패한다. 제공자 복구 뒤 앱을 재시작해 discovery를 다시 읽는다. Keycloak issuer는 배포 운영자가
+환경 변수로 지정하며 사내 주소를 허용한다. 브라우저와 서버 모두 그 주소에 접근할 수 있어야 한다.
+Keycloak role을 Studio tier로 매핑하지 않는다. 기존 관리자 설정과 멤버 tier 정책을 적용한다.
+Keycloak으로 로그인한 사용자의 앱 로그아웃은 Studio 세션만 종료하며 Keycloak SSO 세션은 유지한다.
+
+`STAGE=alpha|prod`는 로그인 수단이 하나도 없으면 부팅을 거부한다(`assertAccessControlConfig`);
 `local` 은 `scripts/dev-session.ts` 가 세션을 만들어 주므로 없어도 된다. 로그인은 수단과
 무관하게 `ALLOWED_EMAIL_DOMAINS` 로 제한된다. 사용자 생성과 세션 생성 양쪽의 훅에서, 그래서
 이미 있는 사용자도 도메인이 목록에서 빠지면 다음 로그인에 거절된다. 빈 목록은 모든 도메인을

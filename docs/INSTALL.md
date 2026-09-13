@@ -24,6 +24,40 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 전체 환경변수와 고정 한계는 [CONFIGURATION.md](CONFIGURATION.md), 운영 계약은
 [OPERATIONS.md](OPERATIONS.md)를 보라.
 
+## Keycloak 로그인
+
+Google 없이 사내 Keycloak만으로 로그인할 수 있다. 다음 값을 애플리케이션 환경에 설정하고
+재시작한다. `KEYCLOAK_ISSUER`는 discovery 문서 URL이 아닌 realm URL이다.
+
+```dotenv
+BETTER_AUTH_URL=https://studio.example.com
+KEYCLOAK_ISSUER=https://sso.example.com/realms/corp
+KEYCLOAK_CLIENT_ID=agent-studio
+KEYCLOAK_CLIENT_SECRET=<client-secret>
+ADMIN_EMAILS=admin@example.com
+ALLOWED_EMAIL_DOMAINS=example.com
+```
+
+Keycloak에서 해당 realm에 OpenID Connect client를 만들고 Client authentication과 Standard flow를
+켠다. Valid redirect URIs에는 `https://studio.example.com/api/auth/callback/keycloak`을 정확히
+등록한다. PKCE method는 `S256`으로 설정할 수 있다. `openid profile email` scope를 사용하므로
+사용자에게 email을 설정하고 해당 claim이 ID 토큰에 포함되도록 한다. 사용자 self-registration을
+허용한다면 realm의 Verify Email도 켜서 사용자가 입력한 주소의 소유권을 확인한다. Client secret은 배포의
+secret 저장소로 주입한다. 기본 앱 환경 변수와 `BETTER_AUTH_SECRET`도 필요하다.
+
+서버는 realm의 discovery·token·JWKS endpoint에, 사용자 브라우저는 로그인 endpoint에 접근해야 한다.
+사내 TLS 인증서를 쓰면 앱 런타임과 브라우저가 발급 CA를 신뢰하도록 구성한다. 공개 인터넷 없이
+운영할 때는 사내 Keycloak 또는 비밀번호 로그인을 구성하고 Google 변수는 비워 둔다.
+Google도 필요하면 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 함께 설정한다.
+
+기존 `OIDC_*`로 Keycloak을 연결한 설치는 그 설정을 유지할 수 있다. `oidc`와 `keycloak`은 서로
+다른 provider ID와 콜백을 사용하므로 같은 realm을 중복 등록하지 않는다. 공급자 전환 시 기존
+계정 키를 자동 이관하지 않는다. 앱 로그아웃은 Studio 세션만 종료하며 Keycloak SSO 세션은
+유지한다. 토큰 검증과 접근 제한은 [SECURITY.md](SECURITY.md#인증)를 따른다.
+
+설정 항목의 의미는 [Keycloak OIDC 문서](https://www.keycloak.org/securing-apps/oidc-layers)와
+[client 설정 문서](https://www.keycloak.org/docs/latest/server_admin/index.html#_oidc_clients)를 참고한다.
+
 ## 오디오 worker
 
 오디오 전사는 선택 기능이다. HTTP 앱과 같은 이미지의 `node build/audio-worker.cjs`를 별도 process로
