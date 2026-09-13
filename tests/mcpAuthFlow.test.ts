@@ -670,6 +670,26 @@ describe("completeAuthorization: issuer validation", () => {
     expect(h.exchanges).toHaveLength(0);
   });
 
+  it("keeps Google's callback issuer exact despite its discovery alias", async () => {
+    const { h, uc, state } = await started({
+      ...ISSUING,
+      auth: {
+        ...ISSUING.auth,
+        authorizationServer: "https://accounts.google.com/",
+        issuer: "https://accounts.google.com",
+        issParameterSupported: true,
+      },
+    });
+
+    await expect(uc.completeAuthorization({
+      state,
+      code: "c",
+      userEmail: OWNER,
+      iss: "https://accounts.google.com/",
+    })).rejects.toThrow(/different authorization server/);
+    expect(h.exchanges).toHaveLength(0);
+  });
+
   it("proceeds without iss when the server never claimed to send one", async () => {
     // Most authorization servers in the wild. Rejecting these would make the
     // check a availability bug rather than a security one.

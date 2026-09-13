@@ -301,6 +301,59 @@ describe("where an authorization server's document is looked for", () => {
   });
 });
 
+describe("Google Workspace authorization metadata", () => {
+  const GOOGLE_DOC = {
+    issuer: "https://accounts.google.com",
+    authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+    token_endpoint: "https://oauth2.googleapis.com/token",
+    code_challenge_methods_supported: ["S256"],
+    authorization_response_iss_parameter_supported: true,
+  };
+
+  it.each(["oauth-authorization-server", "openid-configuration"])(
+    "reads Google's canonical issuer from %s when Workspace advertises its root slash",
+    async (suffix) => {
+      guardedFetch.mockImplementation(async (input: string) =>
+        String(input).endsWith(`/.well-known/${suffix}`)
+          ? jsonResponse(GOOGLE_DOC)
+          : new Response(null, { status: 404 }),
+      );
+
+      const metadata = await oauthMetadataClient.fetchAuthorizationServer("https://accounts.google.com/");
+
+      expect(metadata).toMatchObject({
+        issuer: "https://accounts.google.com",
+        authorizationEndpoint: GOOGLE_DOC.authorization_endpoint,
+        tokenEndpoint: GOOGLE_DOC.token_endpoint,
+        codeChallengeMethodsSupported: ["S256"],
+        issParameterSupported: true,
+      });
+      expect(guardedFetch.mock.calls.map(([url]) => String(url))).toEqual(
+        suffix === "oauth-authorization-server"
+          ? ["https://accounts.google.com/.well-known/oauth-authorization-server"]
+          : [
+            "https://accounts.google.com/.well-known/oauth-authorization-server",
+            "https://accounts.google.com/.well-known/openid-configuration",
+          ],
+      );
+    },
+  );
+
+  it.each([
+    ["https://auth.example.com/", "https://auth.example.com"],
+    ["https://accounts.google.com/tenant/", "https://accounts.google.com/tenant"],
+    ["https://accounts.google.com.evil.example/", "https://accounts.google.com"],
+    ["https://accounts.google.com/", "https://other.example.com"],
+    ["https://accounts.google.com/", "https://accounts.google.com/tenant"],
+    ["https://accounts.google.com", "https://accounts.google.com/"],
+  ])("refuses an issuer mismatch from %s to %s", async (requested, declared) => {
+    guardedFetch.mockImplementation(async () => jsonResponse({ ...GOOGLE_DOC, issuer: declared }));
+
+    await expect(oauthMetadataClient.fetchAuthorizationServer(requested))
+      .rejects.toBeInstanceOf(McpMetadataError);
+  });
+});
+
 describe("where the resource metadata is looked for", () => {
   it("prefers the address in the server's 401 challenge over constructed well-known paths", async () => {
     guardedFetch.mockImplementation(async (input: string, init?: RequestInit) => {

@@ -67,9 +67,15 @@ export function authorizationServerCandidates(issuer: string): string[] {
   ];
 }
 
-/** RFC 8414 requires a code-point-for-code-point match with the requested issuer. */
-function sameIssuer(a: string, b: string): boolean {
-  return a === b;
+/**
+ * RFC 8414 issuer comparison is exact. Google Workspace advertises the root
+ * alias with a slash, while Google's own metadata declares the slashless issuer.
+ * Permit only that directed pair; retain the declared issuer for callback checks.
+ */
+function matchesDiscoveredIssuer(declared: string, requested: string): boolean {
+  return declared === requested || (
+    requested === "https://accounts.google.com/" && declared === "https://accounts.google.com"
+  );
 }
 
 /**
@@ -268,7 +274,7 @@ const parseAuthorizationServer =
     // may be the right document, and a wrong one bound here is a wrong
     // server for every authorization that follows.
     const declaredIssuer = asString(doc.issuer);
-    if (!declaredIssuer || !sameIssuer(declaredIssuer, issuer)) {
+    if (!declaredIssuer || !matchesDiscoveredIssuer(declaredIssuer, issuer)) {
       return null;
     }
     const registrationEndpoint = asString(doc.registration_endpoint);

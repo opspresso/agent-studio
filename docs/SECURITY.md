@@ -675,6 +675,10 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
   issuer 는 RFC 8414 path-inserted → OpenID path-inserted → OpenID path-appended 이고 root 형은
   시도하지 않는다; root 폴백은 Keycloak realm이나 Okta custom AS를 다른 issuer의 문서에
   조용히 바인딩할 수 있기 때문이다. `issuer`가 요청한 것과 다르거나 없는 문서는 쓰지 않는다.
+  Google Workspace의 명시적인 discovery 호환성 예외는 광고 주소
+  `https://accounts.google.com/` → 메타데이터 issuer `https://accounts.google.com` 한 쌍이다.
+  다른 호스트·경로·포트나 반대 방향에는 적용하지 않는다. 발견한 원본 issuer를 저장하며
+  콜백의 `iss` 비교에는 이 예외를 적용하지 않는다.
   resource metadata 는 먼저 서버 자신의 401 `WWW-Authenticate` 를 확인한다.
   `resource_metadata` 주소가 있으면 그 주소만 정본으로 읽고, 없을 때 well-known 경로를
   시도한다(RFC 9728).
