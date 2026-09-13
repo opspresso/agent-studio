@@ -387,6 +387,7 @@ function ArtifactCard({
 }
 
 const FILE_TYPE_ICONS: Partial<Record<ArtifactFileType, string>> = {
+  audio: "/icons/file-types/audio.svg",
   pdf: "/icons/file-types/pdf.svg",
   docx: "/icons/file-types/docx.svg",
   pptx: "/icons/file-types/pptx.svg",
@@ -406,7 +407,7 @@ function FileTypeIcon({ artifact }: { artifact: ArtifactView }) {
   return src ? (
     <Image
       src={src}
-      alt={t("artifacts.documentAlt", { type: type.toUpperCase() })}
+      alt={type === "audio" ? t("artifacts.kindAudio") : t("artifacts.documentAlt", { type: type.toUpperCase() })}
       w={64}
       h={64}
       fit="contain"

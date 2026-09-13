@@ -66,6 +66,7 @@ import {
 import { reportError } from "@/app/_lib/reportError";
 import type { ModelsCatalogResponse } from "@/app/api/models/catalog/route";
 import { useConfirm } from "@/app/_components/useConfirm";
+import { makerLogoPath } from "./makerLogo";
 
 type CatalogProvider = ModelsCatalogResponse["providers"][number];
 type CatalogModel = ModelsCatalogResponse["models"][number];
@@ -1129,7 +1130,7 @@ export default function ModelsPage() {
                         style={{ borderRadius: "var(--mantine-radius-sm)", flexShrink: 0, colorScheme: "light" }}
                       >
                         <img
-                          src={`/icons/brands/${model.maker}.svg`}
+                          src={makerLogoPath(model.maker)}
                           alt={`${makerLabel(makers, model.maker)} logo`}
                           width={24}
                           height={24}

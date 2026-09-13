@@ -1,5 +1,5 @@
 /**
- * Which icon a document tile shows.
+ * Which icon a file tile shows.
  *
  * A gallery of documents is a grid of near-identical tiles, and the type mark is
  * the only thing in it a reader scans by. Two ways in, because neither covers
@@ -11,6 +11,7 @@
 import { baseMimeType } from "@/domain/artifact/types";
 
 export type ArtifactFileType =
+  | "audio"
   | "pdf"
   | "docx"
   | "pptx"
@@ -62,6 +63,13 @@ const EXTENSIONS = new Set<ArtifactFileType>([
 
 /** `.markdown` and `.htm` are the same file to a reader; the mark says so too. */
 const EXTENSION_ALIASES: Record<string, ArtifactFileType> = {
+  mp3: "audio",
+  wav: "audio",
+  flac: "audio",
+  ogg: "audio",
+  opus: "audio",
+  m4a: "audio",
+  aac: "audio",
   htm: "html",
   markdown: "md",
   text: "txt",
@@ -80,6 +88,7 @@ export function artifactFileType(
   // `constructor` with a function off `Object.prototype`, which the truthy
   // check reads as a file type.
   const mime = baseMimeType(mimeType);
+  if (mime.startsWith("audio/")) return "audio";
   const byMime = Object.hasOwn(MIME_TYPES, mime) ? MIME_TYPES[mime] : undefined;
   if (byMime) {
     return byMime;

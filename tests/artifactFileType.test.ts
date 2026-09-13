@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { artifactFileType } from "@/app/artifacts/_lib/fileType";
 
 describe("artifactFileType", () => {
+  it.each(["audio/mpeg", "audio/wav", "audio/flac", "audio/ogg", "Audio/MPEG; charset=binary"])
+    ("recognizes %s even when a recording title has no extension", (mimeType) => {
+      expect(artifactFileType(mimeType, "주간 회의", "source-files/recording")).toBe("audio");
+    });
+
+  it.each(["mp3", "wav", "flac", "ogg", "opus", "m4a", "aac"])
+    ("recognizes an audio file from its %s suffix when MIME is generic", (extension) => {
+      expect(artifactFileType("application/octet-stream", `recording.${extension.toUpperCase()}`)).toBe("audio");
+    });
+
   it("reads a mime type or extension named after an Object.prototype member as generic", () => {
     // Both keys come from outside — a server's declared type, a model's
     // filename — and a plain lookup answers them with a function off the

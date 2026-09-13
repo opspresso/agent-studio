@@ -7,6 +7,7 @@ Some are renamed to the file type this app names rather than the one the source 
 
 | here | upstream |
 |---|---|
+| `audio.svg` | `audio.svg` |
 | `pdf.svg` | `pdf.svg` |
 | `docx.svg` | `word.svg` |
 | `pptx.svg` | `powerpoint.svg` |
