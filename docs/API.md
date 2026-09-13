@@ -11,7 +11,7 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 
 - **Content type**: 따로 언급하지 않는 한 요청과 응답은 JSON 이다. 스트리밍 응답은
   `text/event-stream` 이다.
-- **Auth**: 애플리케이션 라우트는 Better Auth 세션 쿠키를 요구한다 (OIDC · Google · 비밀번호
+- **Auth**: 애플리케이션 라우트는 Better Auth 세션 쿠키를 요구한다 (Keycloak · 표준 OIDC · Google · 비밀번호
   중 배포가 켠 수단으로 로그인한다. 로컬 개발에서는 `scripts/dev-session.ts` 가 하나 출력해 준다). 세션이 없거나 유효하지 않으면 →
   `401 { "error": "Unauthorized" }`. 로그인 플로우 자체는 `/api/auth/*` 아래에 있다
   (Better Auth catch-all). 실행 엔드포인트 셋(`predict`, `chat/completions`,

@@ -26,7 +26,7 @@ cp .env.example .env.local
 실제 런에 필요한 최소값은 `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`,
 `AES_ENCRYPTION_KEY`(32바이트 base64, `openssl rand -base64 32`) 다. `src/instrumentation.ts`
 가 이들을 부팅 시점에 검증하므로, 빠진 값이 있으면 첫 요청이 아니라 기동 단계에서 실패한다.
-신원 제공자(OIDC · Google · 비밀번호)는 실제 로그인에만 필요하다. `STAGE=local` 은 하나도
+신원 제공자(Keycloak · 표준 OIDC · Google · 비밀번호)는 실제 로그인에만 필요하다. `STAGE=local` 은 하나도
 없이 부팅하고, 아래의 dev-session 스크립트가 로그인을 우회한다.
 
 전체 목록은 [CONFIGURATION.md](CONFIGURATION.md) 를 보라.
@@ -130,6 +130,12 @@ Studio 측 fixture는 정리하지만 수신 측에는 합성 문서 2건과 Mem
 pnpm exec vitest run tests/engine.test.ts
 pnpm exec vitest run -t "streamWithFallback"
 ```
+
+`pnpm test:integration`은 `scripts/keycloak-auth-check.ts`도 별도 프로세스에서 실행한다.
+로컬 `_test` DB의 임시 스키마와 RS256 토큰을 발행하는 로컬 OIDC fixture로 실제 앱의
+discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·nonce·state 오류와 신규·기존
+사용자의 도메인 제한도 검증하고 임시 스키마를 삭제한다. 실제 Keycloak realm은 사용하지 않으므로
+배포의 client 설정·CA·네트워크 도달성은 [설치 절차](INSTALL.md#keycloak-로그인)로 확인한다.
 
 **lint 단계는 없다**. ESLint 설정 자체가 존재하지 않는다. 검사는 `typecheck` + `test` 다.
 `build` 가 세 번째다: 잘못된 라우트 핸들러 시그니처나 깨진 instrumentation import 를 잡아내는

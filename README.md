@@ -40,7 +40,7 @@ Handoff, Agent-as-Tool, Guardrail과 승인 중단·재개를 관리한다.
 - Next.js 16 (App Router), React 19, TypeScript strict
 - Mantine 9 (컴포넌트 + 테마)
 - OpenAI Agents SDK (정확한 버전은 `package.json`과 잠금 파일에서 고정)
-- Better Auth 1.7.4 이상 (표준 OIDC(Keycloak · Entra ID · Okta …), Google, 또는 비밀번호)
+- Better Auth 1.7.4 이상 (Keycloak, 표준 OIDC(Entra ID · Okta …), Google, 또는 비밀번호)
 - Clean Architecture (`domain` / `application` / `infrastructure` / `app`), 테스트로 강제된다
 - PostgreSQL + pgvector 하나에 모든 행과 케이퍼빌리티 카탈로그. 아티팩트는 S3 호환 스토어(선택)
 
@@ -54,7 +54,7 @@ pnpm install --frozen-lockfile
 # 2. Environment
 cp .env.example .env.local
 # LLM_BASE_URL, LLM_API_KEY, AES_ENCRYPTION_KEY (32바이트 base64) 를 채우고,
-# 실제 로그인이 필요하면 BETTER_AUTH_SECRET 과 로그인 방식 하나(OIDC / Google / 비밀번호)도 채운다.
+# 실제 로그인이 필요하면 BETTER_AUTH_SECRET 과 로그인 방식 하나(Keycloak / OIDC / Google / 비밀번호)도 채운다.
 
 # 3. agent-studio-local PostgreSQL 18 + MinIO (bucket도 생성한다)
 docker compose up -d postgres minio minio-init
