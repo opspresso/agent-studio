@@ -207,6 +207,12 @@ export const MAX_INLINE_VIEW_BYTES = 2 * 1024 * 1024;
  * where a wrong guess would say something false about them.
  */
 const EXTENSIONS: Record<string, string> = {
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/flac": "flac",
+  "audio/ogg": "ogg",
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",

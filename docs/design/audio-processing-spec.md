@@ -339,6 +339,10 @@ evidence refs를 사용한다. 원래 서비스의 필드명은 mapping이 변�
 
 ## 파일 보존·개인 접근·운영
 
+비공개 원본 파일은 `savedFileName`의 MIME별 확장자 규칙으로 저장하고 다운로드한다.
+MCP가 확장자 없는 녹음 제목을 반환해도 MP3는 `.mp3`로 내려받는다. 다운로드에서도 같은 규칙을
+적용하므로 기존 파일의 메타데이터에 확장자가 없어도 재수집 없이 올바른 파일명을 제공한다.
+
 원본 저장 어댑터는 multipart 완료 시 `If-None-Match: *`를 사용해 기존 파일을 덮어쓰지 않는다.
 이는 [S3 조건부 쓰기 계약](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)을
 사용하며 기존 object와 충돌하면 호출자가 inventory를 다시 확인한다. `test:storage`는 로컬 endpoint만

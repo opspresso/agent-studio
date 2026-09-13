@@ -74,6 +74,18 @@ describe("saving a file a run wrote", () => {
 });
 
 describe("what a saved file is called", () => {
+  it.each([
+    ["audio/mpeg", "mp3"], ["audio/mp3", "mp3"], ["audio/wav", "wav"],
+    ["audio/x-wav", "wav"], ["audio/flac", "flac"], ["audio/ogg", "ogg"],
+  ])("adds the audio extension for %s without duplicating an existing suffix", (mimeType, extension) => {
+    expect(savedFileName("주간 회의", mimeType)).toBe(`주간 회의.${extension}`);
+    expect(savedFileName(`회의.${extension.toUpperCase()}`, mimeType)).toBe(`회의.${extension.toUpperCase()}`);
+  });
+
+  it("normalizes MIME casing and parameters when naming audio", () => {
+    expect(savedFileName("주간 회의", "Audio/MPEG; charset=binary")).toBe("주간 회의.mp3");
+  });
+
   it("adds the extension its type implies", () => {
     expect(savedFileName("quarterly", "text/csv")).toBe("quarterly.csv");
     expect(savedFileName("quarterly.csv", "text/csv")).toBe("quarterly.csv");

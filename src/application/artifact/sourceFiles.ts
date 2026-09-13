@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SourceFile, SourceFileRepository } from "@/domain/artifact/sourceFile";
 import { sourceFileObjectKey } from "@/domain/artifact/sourceFile";
+import { savedFileName } from "@/domain/artifact/types";
 import { SourceObjectExistsError, type SourceObjectStore } from "@/domain/artifact/sourceObjectStore";
 import type { SourceByteStream } from "@/domain/artifact/sourceReference";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
@@ -67,7 +68,8 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       // Validate retention before creating inventory or opening a remote source.
       fileExpiresAt(now.toISOString(), input.retention);
       const uploadDeadline = new Date(now.getTime() + INCOMPLETE_UPLOAD_MS).toISOString();
-      let file = await deps.files.create({ ...input, status: "pending", revision: 1, createdAt: now.toISOString(),
+      let file = await deps.files.create({ ...input, filename: savedFileName(input.filename, input.mimeType),
+        status: "pending", revision: 1, createdAt: now.toISOString(),
         retireAt: input.retainUntil && input.retainUntil < uploadDeadline ? input.retainUntil : uploadDeadline });
       if (file.userEmail !== input.userEmail) throw new NotFoundError("Source file not found");
       if (file.status === "pending" && file.retireAt <= now.toISOString()) {

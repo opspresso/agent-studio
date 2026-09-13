@@ -43,6 +43,15 @@ beforeEach(() => {
 const openBody = async () => open();
 
 describe("private source file lifecycle", () => {
+  it("stores and publishes a provider title with the audio extension", async () => {
+    const publish = vi.fn(async () => {});
+    const api = createSourceFileUseCases({ files, objects, now: () => clock, publish });
+    const file = await api.import({ ...input, filename: "주간 회의" }, openBody);
+    expect(file.filename).toBe("주간 회의.mp3");
+    expect((await files.get("audio", input.id))?.filename).toBe("주간 회의.mp3");
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ filename: "주간 회의.mp3" }));
+  });
+
   it("validates shared storage before opening a source or creating inventory", async () => {
     const api = createSourceFileUseCases({ files, objects, now: () => clock,
       assertWritable: async () => { throw new ValidationError("Private storage required"); } });
