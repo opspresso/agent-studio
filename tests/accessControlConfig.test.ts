@@ -1,21 +1,18 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertAccessControlConfig } from "@/lib/config";
 
-const KEYS = ["NODE_ENV", "STAGE", "ADMIN_EMAILS", "ALLOWED_EMAIL_DOMAINS"] as const;
-const ORIGINAL = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
-
 function set(name: string, value: string | undefined): void {
-  if (value === undefined) {
-    delete process.env[name];
-  } else {
-    process.env[name] = value;
-  }
+  vi.stubEnv(name, value);
 }
 
-afterEach(() => {
-  for (const key of KEYS) {
-    set(key, ORIGINAL[key]);
+beforeEach(() => {
+  for (const key of ["AUTH_PASSWORD", "OIDC_ISSUER", "GOOGLE_CLIENT_ID", "KEYCLOAK_ISSUER"]) {
+    set(key, undefined);
   }
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -99,6 +96,15 @@ describe("assertAccessControlConfig", () => {
     set("OIDC_ISSUER", "https://sso.example/realms/corp");
     set("OIDC_CLIENT_ID", "agent-studio");
     set("OIDC_CLIENT_SECRET", "secret");
+    expect(() => assertAccessControlConfig()).not.toThrow();
+  });
+
+  it.each(["alpha", "prod"])("accepts Keycloak alone in %s", (stage) => {
+    set("STAGE", stage);
+    set("ADMIN_EMAILS", "ops@example.com");
+    set("KEYCLOAK_ISSUER", "https://sso.example/realms/corp");
+    set("KEYCLOAK_CLIENT_ID", "agent-studio");
+    set("KEYCLOAK_CLIENT_SECRET", "test-secret");
     expect(() => assertAccessControlConfig()).not.toThrow();
   });
 });

@@ -5,14 +5,11 @@ import Link from "next/link";
 import { Button, Divider, PasswordInput, Stack, Text, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { authClient, signIn, signInWithOidc } from "@/lib/auth-client";
-import { OIDC_PROVIDER_ID } from "@/shared/signInError";
+import type { config } from "@/lib/config";
+import { KEYCLOAK_PROVIDER_ID, OIDC_PROVIDER_ID } from "@/shared/signInError";
 
 /** Which ways in this deployment offers; `config.authProviders` decides. */
-export interface SignInProviders {
-  google: boolean;
-  oidc: { displayName: string } | undefined;
-  password: boolean;
-}
+export type SignInProviders = typeof config.authProviders;
 
 /**
  * The sign-in controls, one per configured provider.
@@ -57,11 +54,24 @@ export function SignInButton({
 
   const oidc = providers.oidc;
   const buttons = [
+    ...(providers.keycloak
+      ? [
+          <Button
+            key="keycloak"
+            size={size}
+            loading={pending}
+            onClick={() => void withPending(() => signInWithOidc(KEYCLOAK_PROVIDER_ID, callbackURL))}
+          >
+            {label ?? t("auth.signInWith", { provider: "Keycloak" })}
+          </Button>,
+        ]
+      : []),
     ...(oidc
       ? [
           <Button
             key="oidc"
             size={size}
+            variant={providers.keycloak ? "default" : "filled"}
             loading={pending}
             onClick={() => void withPending(() => signInWithOidc(OIDC_PROVIDER_ID, callbackURL))}
           >
@@ -74,7 +84,7 @@ export function SignInButton({
           <Button
             key="google"
             size={size}
-            variant={oidc ? "default" : "filled"}
+            variant={providers.keycloak || oidc ? "default" : "filled"}
             loading={pending}
             onClick={() =>
               void withPending(async () => {
@@ -92,10 +102,9 @@ export function SignInButton({
   ];
 
   if (!providers.password) {
-    if (buttons.length === 0) {
-      // Nothing to offer here — a password-only deployment seen from the
-      // header, or one with no provider at all. The login page has the form,
-      // or the explanation.
+    if (buttons.length === 0 || (compact && buttons.length > 1)) {
+      // The login page has room for provider selection and the password form;
+      // a compact header must fit a single control regardless of provider count.
       return (
         <Button component={Link} href={`/login?next=${encodeURIComponent(callbackURL)}`} size={size}>
           {label ?? t("auth.signIn")}

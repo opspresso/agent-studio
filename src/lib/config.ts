@@ -59,9 +59,10 @@ export function assertAccessControlConfig(): void {
     throw new Error(`STAGE=${config.stage} requires access-control config; set: ADMIN_EMAILS`);
   }
   const providers = config.authProviders;
-  if (!providers.google && !providers.oidc && !providers.password) {
+  if (!providers.google && !providers.keycloak && !providers.oidc && !providers.password) {
     throw new Error(
       `STAGE=${config.stage} has no way to sign in; set OIDC_ISSUER/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET, ` +
+        "KEYCLOAK_ISSUER/KEYCLOAK_CLIENT_ID/KEYCLOAK_CLIENT_SECRET, " +
         "GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET, or AUTH_PASSWORD=true",
     );
   }
@@ -622,6 +623,23 @@ export const config = {
     const clientSecret = optionalEnv(process.env.GOOGLE_CLIENT_SECRET);
     return clientId && clientSecret ? { clientId, clientSecret } : undefined;
   },
+  get keycloak(): { issuer: string; clientId: string; clientSecret: string } | undefined {
+    const issuer = optionalEnv(process.env.KEYCLOAK_ISSUER);
+    const clientId = optionalEnv(process.env.KEYCLOAK_CLIENT_ID);
+    const clientSecret = optionalEnv(process.env.KEYCLOAK_CLIENT_SECRET);
+    if (!issuer || !clientId || !clientSecret) {
+      return undefined;
+    }
+    try {
+      const url = new URL(issuer);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+        throw new Error("invalid issuer");
+      }
+    } catch {
+      throw new Error("KEYCLOAK_ISSUER must be an HTTP(S) realm URL without credentials, query, or fragment");
+    }
+    return { issuer: issuer.replace(/\/+$/, ""), clientId, clientSecret };
+  },
   get oidc():
     | { issuer: string; clientId: string; clientSecret: string; displayName: string; scopes: string[] }
     | undefined {
@@ -653,10 +671,11 @@ export const config = {
     return email && password ? { email, password } : undefined;
   },
   /** What the sign-in page offers — the providers above, as switches. */
-  get authProviders(): { google: boolean; oidc: { displayName: string } | undefined; password: boolean } {
+  get authProviders(): { google: boolean; keycloak: boolean; oidc: { displayName: string } | undefined; password: boolean } {
     const oidc = config.oidc;
     return {
       google: config.googleOAuth !== undefined,
+      keycloak: config.keycloak !== undefined,
       oidc: oidc ? { displayName: oidc.displayName } : undefined,
       password: config.passwordAuth,
     };
