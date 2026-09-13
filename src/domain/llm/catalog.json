@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-09T07:44:21.608Z",
+  "updatedAt": "2026-09-12T23:51:06.209Z",
   "source": "https://github.com/opspresso/agent-models",
   "providers": [
     "openai",
@@ -2237,10 +2237,10 @@
       "maker": "upstage",
       "displayName": "Solar Pro 4",
       "pricing": {
-        "inputPer1M": 0.03,
-        "outputPer1M": 0.12,
-        "cachedInputPer1M": 0.006,
-        "discount": 0.9
+        "inputPer1M": 0.09,
+        "outputPer1M": 0.36,
+        "cachedInputPer1M": 0.018,
+        "discount": 0.7
       },
       "capabilities": {
         "tools": true,
@@ -2271,7 +2271,8 @@
       },
       "contextWindow": 1000000,
       "maxTokens": 131072,
-      "wireId": "qwen/qwen3.8-max"
+      "wireId": "qwen/qwen3.8-max",
+      "hidden": true
     },
     {
       "id": "openrouter/claude-opus-5-fast",
@@ -2517,9 +2518,9 @@
       "maker": "tencent",
       "displayName": "Hy3",
       "pricing": {
-        "inputPer1M": 0.132,
-        "outputPer1M": 0.528,
-        "cachedInputPer1M": 0.033
+        "inputPer1M": 0.0825,
+        "outputPer1M": 0.33,
+        "cachedInputPer1M": 0.020625
       },
       "capabilities": {
         "tools": true,
@@ -2559,9 +2560,9 @@
       "maker": "zhipu",
       "displayName": "GLM 5.2",
       "pricing": {
-        "inputPer1M": 0.966,
-        "outputPer1M": 3.036,
-        "cachedInputPer1M": 0.1932
+        "inputPer1M": 0.6,
+        "outputPer1M": 2,
+        "cachedInputPer1M": 0.15
       },
       "capabilities": {
         "tools": true,
@@ -2570,7 +2571,7 @@
         "reasoning": true
       },
       "contextWindow": 1048576,
-      "maxTokens": 131072,
+      "maxTokens": 182476,
       "wireId": "z-ai/glm-5.2"
     },
     {
@@ -2855,10 +2856,9 @@
       "maker": "deepseek",
       "displayName": "DeepSeek V4 Pro 0423",
       "pricing": {
-        "inputPer1M": 0.95526,
-        "outputPer1M": 1.91052,
-        "cachedInputPer1M": 0.079605,
-        "discount": 0.451
+        "inputPer1M": 1.6,
+        "outputPer1M": 3.2,
+        "cachedInputPer1M": 0.135
       },
       "capabilities": {
         "tools": true,
@@ -2867,7 +2867,7 @@
         "reasoning": true
       },
       "contextWindow": 1048576,
-      "maxTokens": 384000,
+      "maxTokens": 393216,
       "wireId": "deepseek/deepseek-v4-pro"
     },
     {
@@ -2877,10 +2877,10 @@
       "maker": "deepseek",
       "displayName": "DeepSeek V4 Flash 0423",
       "pricing": {
-        "inputPer1M": 0.088606,
-        "outputPer1M": 0.177212,
-        "cachedInputPer1M": 0.0177212,
-        "discount": 0.3671
+        "inputPer1M": 0.06566,
+        "outputPer1M": 0.13132,
+        "cachedInputPer1M": 0.013132,
+        "discount": 0.531
       },
       "capabilities": {
         "tools": true,
@@ -2962,8 +2962,8 @@
       "maker": "google",
       "displayName": "Gemma 4 26B A4B",
       "pricing": {
-        "inputPer1M": 0.07,
-        "outputPer1M": 0.34
+        "inputPer1M": 0.042,
+        "outputPer1M": 0.22
       },
       "capabilities": {
         "tools": true,
@@ -4656,9 +4656,9 @@
       "maker": "moonshot",
       "displayName": "Kimi K3",
       "pricing": {
-        "inputPer1M": 3,
-        "outputPer1M": 15,
-        "cachedInputPer1M": 0.3
+        "inputPer1M": 2.64813806,
+        "outputPer1M": 13.28272425,
+        "cachedInputPer1M": 0.30264435
       },
       "capabilities": {
         "tools": true,
@@ -4721,10 +4721,9 @@
       "maker": "zhipu",
       "displayName": "GLM 5.3 Flash",
       "pricing": {
-        "inputPer1M": 0.075,
-        "outputPer1M": 0.25,
-        "cachedInputPer1M": 0.015,
-        "discount": 0.5
+        "inputPer1M": 0.15,
+        "outputPer1M": 0.5,
+        "cachedInputPer1M": 0.03
       },
       "capabilities": {
         "tools": true,
@@ -5894,6 +5893,73 @@
       "contextWindow": 32000,
       "maxTokens": 0,
       "wireId": "voyageai/voyage-multimodal-3.5"
+    },
+    {
+      "id": "openrouter/gpt-image-2.5-sunburst",
+      "provider": "openrouter",
+      "family": "gpt-image-2.5-sunburst",
+      "maker": "openai",
+      "displayName": "GPT Image 2.5 Sunburst",
+      "pricing": {
+        "inputPer1M": 8,
+        "outputPer1M": 8,
+        "cachedInputPer1M": 2,
+        "imageOutputPer1M": 30
+      },
+      "capabilities": {
+        "tools": false,
+        "structuredOutput": false,
+        "imageInput": true,
+        "reasoning": false,
+        "imageGeneration": true
+      },
+      "contextWindow": 400000,
+      "maxTokens": 360000,
+      "wireId": "openai/gpt-image-2.5-sunburst"
+    },
+    {
+      "id": "openrouter/gpt-image-2.5-flare",
+      "provider": "openrouter",
+      "family": "gpt-image-2.5-flare",
+      "maker": "openai",
+      "displayName": "GPT Image 2.5 Flare",
+      "pricing": {
+        "inputPer1M": 8,
+        "outputPer1M": 8,
+        "cachedInputPer1M": 2,
+        "imageOutputPer1M": 30
+      },
+      "capabilities": {
+        "tools": false,
+        "structuredOutput": false,
+        "imageInput": true,
+        "reasoning": false,
+        "imageGeneration": true
+      },
+      "contextWindow": 400000,
+      "maxTokens": 360000,
+      "wireId": "openai/gpt-image-2.5-flare"
+    },
+    {
+      "id": "openrouter/deepseek-v4.1-flash",
+      "provider": "openrouter",
+      "family": "deepseek-v4.1-flash",
+      "maker": "deepseek",
+      "displayName": "DeepSeek V4.1 Flash",
+      "pricing": {
+        "inputPer1M": 0.15,
+        "outputPer1M": 0.6,
+        "cachedInputPer1M": 0.003
+      },
+      "capabilities": {
+        "tools": true,
+        "structuredOutput": true,
+        "imageInput": true,
+        "reasoning": true
+      },
+      "contextWindow": 1048576,
+      "maxTokens": 384000,
+      "wireId": "deepseek/deepseek-v4.1-flash"
     }
   ]
 }
