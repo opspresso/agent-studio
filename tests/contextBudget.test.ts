@@ -235,6 +235,26 @@ describe("runAgent context budget", () => {
     expect(String(toolMessage?.content).length).toBeLessThan(40_000);
   });
 
+  it("leaves room for native handoff declarations in the next model request", async () => {
+    const channel = toolLoopChannel();
+    const chunks = await collect(runAgent({ createToolSchemaValidator, channel,
+      callMcpTool: async () => ({ text: "x".repeat(100_000) }),
+      loadAgent: async () => { throw new Error("The unused specialist must not be loaded"); },
+    }, {
+      projectName: "p", model: SMALL_WINDOW_MODEL, parameters: SMALL_BUDGET_PARAMS,
+      messages: [{ role: "user", content: "go" }], mcpTools: TOOL,
+      subagents: [{ name: "specialist", type: "local", kind: "agent", description: "Detailed expertise. ".repeat(250) }],
+    }));
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+    const next = channel.seenParams[1]!;
+    expect(next.tools?.some((tool) => tool.function.name === "handoff_specialist")).toBe(true);
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, SMALL_BUDGET_PARAMS.maxTokens)!;
+    for (const message of next.messages) budget.chargeMessage(message);
+    budget.chargeText(JSON.stringify(next.tools));
+    expect(budget.remaining()).toBeGreaterThan(0);
+    expect(chunks.some((chunk) => chunk.warning?.includes("context budget"))).toBe(true);
+  });
+
 
 
   it("stops budgeting a run that had no room from the start, and says so", async () => {

@@ -92,6 +92,7 @@ export function createRunModel(
     const budget = createRunContextBudget(input.model, fallbackFor(request), input.parameters?.maxTokens);
     budget?.chargeText(request.systemInstructions);
     budget?.chargeText(JSON.stringify(request.tools));
+    budget?.chargeText(JSON.stringify(request.handoffs));
     if (Array.isArray(request.input)) {
       for (const item of request.input) {
         budget?.chargeText(JSON.stringify(item, (_key, value: unknown) => {
