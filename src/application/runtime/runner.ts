@@ -14,6 +14,6 @@ export function studioRunConfig(modelProvider: ModelProvider): Partial<RunConfig
     tracingDisabled: !nativeTracingEnabled(),
     traceIncludeSensitiveData: false,
     modelSettings: { store: false, preserveRawUsage: true },
-    toolExecution: { maxFunctionToolConcurrency: MAX_FUNCTION_TOOL_CONCURRENCY },
+    toolExecution: { maxFunctionToolConcurrency: MAX_FUNCTION_TOOL_CONCURRENCY, preApprovalInputGuardrails: true },
   };
 }

@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Card builders resolve the public base URL via runtime settings; stub the
@@ -818,6 +819,7 @@ function executionDepsFixture(channel: FakeChannel): ExecutionDeps {
       listByProject: reject,
       listByDateRange: reject,
     },
+    createToolSchemaValidator,
     channel,
     imageChannel: {
       generateImage: async () => ({

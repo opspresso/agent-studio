@@ -153,7 +153,7 @@ export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promis
   };
   let usage: RunResult["usage"] = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
   const model = createRunModel(deps, { ...input, projectName: input.projectName ?? "", messages }, turn, (chunk) => { if (chunk.usage) usage = chunk.usage; }, filter);
-  const agent = new Agent({ name: input.projectName || "prompt", model, inputGuardrails: inputGuardrails(messages, input.parameters?.policy), outputType: input.parameters?.structuredOutput && input.parameters.jsonSchema
+  const agent = new Agent({ name: input.projectName || "prompt", model, inputGuardrails: inputGuardrails(messages, input.parameters?.policy, filter), outputType: input.parameters?.structuredOutput && input.parameters.jsonSchema
     ? { type: "json_schema", name: "response", strict: false, schema: input.parameters.jsonSchema as JsonSchemaDefinition["schema"] } : "text" });
   const result = await withNativeTracing(deps.onSdkSpan, () => createStudioRunner(deps.channel).run(agent, toAgentInput(messages), { maxTurns: 1, signal: input.signal }));
   input.signal?.throwIfAborted();

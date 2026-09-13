@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { vi } from "vitest";
 import type { RuntimeSessionRepository, RuntimeSessionRow } from "@/domain/execution/runtimeSession";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -32,7 +33,7 @@ export function runtimeSessionFixture(policy: Version["parameters"]["policy"] = 
     const runtime = await openRuntimeSession(services, scope, resume);
     runtime.checkBinding("root", "unchanged");
     const chunks: EngineChunk[] = [];
-    for await (const chunk of runAgent({ channel, ...overrides }, { projectName: "project", model: version.model, parameters: version.parameters, maxTurn: 5, messages: [{ role: "user", content: message }], ...input, runtime })) chunks.push(chunk);
+    for await (const chunk of runAgent({ createToolSchemaValidator, channel, ...overrides }, { projectName: "project", model: version.model, parameters: version.parameters, maxTurn: 5, messages: [{ role: "user", content: message }], ...input, runtime })) chunks.push(chunk);
     return chunks;
   }
   return { rows, services, scope, version, run };

@@ -1,12 +1,14 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { FunctionTool, MCPServer, Tool, RunContext, ToolCallOutputContent } from "@openai/agents";
+import type { FunctionTool, MCPServer, Tool, RunContext, ToolCallOutputContent, ToolInputGuardrailDefinition } from "@openai/agents";
 import { parseImageDataUrl } from "@/domain/llm/types";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 
 export interface McpCapability {
   definition: ChannelToolDef;
+  parameters: FunctionTool["parameters"];
   server: string;
   needsApproval: boolean;
+  inputGuardrails: ToolInputGuardrailDefinition[];
   execute(args: unknown, context: RunContext<unknown>, details?: ToolCallDetails): Promise<string | ToolCallOutputContent[]>;
   error(context: RunContext<unknown>, error: unknown, details?: ToolCallDetails): Promise<string>;
 }
@@ -62,8 +64,12 @@ export function createSdkMcp(capabilities: McpCapability[]) {
     // Expose the alias allocated by Studio; SDK internal identifiers are only
     // for conversion and cannot rewrite or collide with public tool names.
     native.name = capability.definition.function.name;
+    // SDK non-strict MCP conversion opens the top-level object. Keep Studio's declaration.
+    native.parameters = capability.parameters;
+    native.inputGuardrails = capability.inputGuardrails;
+    native.errorFunction = capability.error;
     // Keep the SDK's static no-approval policy when approval is not required.
-    // A dynamic predicate conservatively pauses malformed input before invocation.
+    // Native pre-approval guardrails validate input before this predicate can pause it.
     if (capability.needsApproval) native.needsApproval = async () => true;
     native.invoke = (context, args, details) => invocation.run({ context, details, capability }, () => invoke(context, args, details));
     return native;

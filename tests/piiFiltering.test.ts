@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it, vi } from "vitest";
 import { runAgent, runPrompt, runPromptStream } from "@/application/runtime";
@@ -323,7 +324,7 @@ describe("PiiFilter", () => {
 
     const result = await collectText(
       runAgent(
-        { channel },
+        { createToolSchemaValidator, channel },
         {
           projectName: "test",
           model: "test/model",
@@ -354,7 +355,7 @@ describe("PiiFilter", () => {
     const chunks: EngineChunk[] = [];
 
     for await (const chunk of runAgent(
-      {
+      { createToolSchemaValidator,
         channel,
         generateImage: async (prompt) => {
           generatedPrompt = prompt;
@@ -383,7 +384,7 @@ describe("PiiFilter", () => {
     const chunks: EngineChunk[] = [];
 
     for await (const chunk of runAgent(
-      {
+      { createToolSchemaValidator,
         channel,
         generateImage: async () => {
           throw new Error("provider rejected email@example.com");

@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
@@ -478,6 +479,7 @@ function runDeps(
     mcps: { get: async () => OAUTH_SERVER },
     externalAgents: { get: reject },
     usage: { record: async () => {} },
+    createToolSchemaValidator,
     channel,
     imageChannel: { generateImage: reject } as unknown as ImageChannel,
     cipher: { mergeOutboundHeaders: () => ({}) },

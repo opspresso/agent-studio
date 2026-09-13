@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RunState } from "@openai/agents";
 import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
@@ -38,10 +39,10 @@ function fixture(reply: (body: Record<string, unknown>, index: number) => unknow
   const models = createAgentModelProvider(async (model) => ({ providerName: null, baseUrl: `http://delegation-${testId}.test/v1`, apiKey: "test", auth: "bearer", model }));
   const closed = vi.fn(async () => {});
   const loadAgent = vi.fn<NonNullable<AgentDeps["loadAgent"]>>(async (name, task) => ({
-    kind: "agent", deps: { channel: models }, close: closed, warnings: [],
+    kind: "agent", deps: { createToolSchemaValidator, channel: models }, close: closed, warnings: [],
     input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], signal: task.signal },
   }));
-  const deps: AgentDeps = { channel: models, canDelegate: true, loadAgent };
+  const deps: AgentDeps = { createToolSchemaValidator, channel: models, canDelegate: true, loadAgent };
   const input: RunAgentInput = { projectName: "root", model: ROOT, maxTurn: 8, canDispatch: true, messages: [{ role: "user", content: "help me" }], subagents: [{ name: "child", type: "local", kind: "agent", description: "Specialist" }] };
   return { deps, input, requests, closed, loadAgent, models };
 }
@@ -91,7 +92,7 @@ describe("native SDK delegation", () => {
       return answer(body.model === CHILD ? "child resumed" : "parent resumed");
     });
     f.loadAgent.mockImplementation(async (name, task) => ({
-      kind: "agent", deps: { channel: f.models }, warnings: [], close: f.closed,
+      kind: "agent", deps: { createToolSchemaValidator, channel: f.models }, warnings: [], close: f.closed,
       input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], clientTools: [{ type: "function", function: { name: "confirm", parameters: { type: "object", properties: {} } } }] },
     }));
     const graph = { close: [] };
@@ -159,7 +160,7 @@ describe("native SDK delegation", () => {
   it("keeps approvals distinct when concurrent invocations reuse provider tool-call ids", async () => {
     const f = fixture((_body, index) => index === 0 ? calls({ name: "delegate_child", input: "first" }, { name: "delegate_child", input: "second" }) : index < 3 ? calls({ name: "confirm" }) : answer("child completed"));
     f.loadAgent.mockImplementation(async (name, task) => ({
-      kind: "agent", deps: { channel: f.models }, warnings: [], close: f.closed,
+      kind: "agent", deps: { createToolSchemaValidator, channel: f.models }, warnings: [], close: f.closed,
       input: { projectName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], clientTools: [{ type: "function", function: { name: "confirm", parameters: { type: "object", properties: {} } } }] },
     }));
     const compiled = compileAgent(f.deps, f.input, () => {}, { close: [] });

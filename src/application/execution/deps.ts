@@ -12,6 +12,7 @@ import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
 import type { ModelProvider } from "@openai/agents";
+import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
@@ -42,6 +43,7 @@ import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession"
  * a policy that silently stops applying to text runs.
  */
 export interface ExecutionDeps extends RunBracketDeps {
+  createToolSchemaValidator: () => ToolSchemaValidator;
   runtimeSessions?: RuntimeSessionServices;
   versions: VersionRepository;
   projects: ProjectRepository;

@@ -18,7 +18,7 @@ import { createSdkOutput } from "./events";
 import { restoreRunContextBudget } from "@/application/llm/contextBudget";
 import type { RuntimeGraphSnapshot, RuntimeAgentSnapshot } from "./session";
 import { imageDataUrl } from "@/domain/llm/types";
-import { inputGuardrails } from "./policy";
+import { inputGuardrails, checkHandoffInput, toolInputGuardrail } from "./policy";
 
 type SdkAgent = Agent<unknown, AgentOutputType>;
 
@@ -111,20 +111,24 @@ export function compileAgent(
   const outputType: AgentOutputType = input.parameters?.structuredOutput && input.parameters.jsonSchema
     ? { type: "json_schema", name: "response", strict: false, schema: input.parameters.jsonSchema as JsonSchemaDefinition["schema"] }
     : "text";
-  const capabilities = createRuntimeTools(deps, input, assembly, turn, emit, filter);
+  const schemas = assembly.tools.length ? deps.createToolSchemaValidator?.() : undefined;
+  if (assembly.tools.length && !schemas) throw new Error("Tool schema validation is not configured");
+  const capabilities = createRuntimeTools(deps, input, assembly, turn, emit, filter, schemas);
   const agent: SdkAgent = new Agent<unknown, AgentOutputType>({
     name: input.projectName || "prompt", model, outputType,
     instructions: assembly.systemPrompt,
     tools: capabilities.tools,
     mcpServers: capabilities.mcp.servers,
-    inputGuardrails: inputGuardrails(input.messages, input.parameters?.policy),
+    inputGuardrails: inputGuardrails(input.messages, input.parameters?.policy, filter),
   });
   const getMcpTools = agent.getMcpTools.bind(agent);
   agent.getMcpTools = async (...args) => (await getMcpTools(...args)).map(capabilities.mcp.bind);
   graph.activeTurn = turn;
 
+  const validateTask = assembly.delegations.length ? schemas!.compile(AGENT_TASK_SCHEMA) : undefined;
   const task = (raw: string, signal = input.signal): AgentTask => {
     const args: unknown = JSON.parse(raw);
+    validateTask?.(args);
     if (!args || typeof args !== "object" || !("input" in args) || typeof args.input !== "string" || !args.input.trim()) throw new ValidationError("An agent task requires non-empty input");
     const ids = "image_ids" in args ? args.image_ids : [];
     if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new ValidationError("image_ids must be an array of image handles");
@@ -141,13 +145,14 @@ export function compileAgent(
     const prototype = new BoundAgent(binding.agentName);
     if (binding.mode === "handoff") {
       let nextInput: RunAgentInput | undefined;
-      const transfer = new Handoff<unknown, AgentOutputType>(prototype, async (_context, args) => {
+      const transfer = new Handoff<unknown, AgentOutputType>(prototype, async (context, args) => {
         const prepared = await deps.loadAgent!(binding.agentName, { ...task(args), invocationId: `${input.projectName}/${binding.name}` });
         if (prepared.kind !== "agent") throw new ValidationError("A handoff target must be a text agent");
         graph.close.push(prepared.close);
         for (const warning of prepared.warnings) emit({ warning });
         nextInput = prepared.input;
         const compiled = compileAgent(prepared.deps, prepared.input, emit, graph, filter);
+        await checkHandoffInput(compiled.agent, prepared.input.messages, context);
         transfer.agent = compiled.agent;
         const records = graph.handoffs![scope] ??= [];
         if (!records.some((entry) => entry.source === input.projectName && entry.tool === binding.name && entry.args === args)) records.push({ source: input.projectName, tool: binding.name, args });
@@ -164,7 +169,7 @@ export function compileAgent(
       continue;
     }
 
-    const metadata = { toolName: binding.name, toolDescription: assembly.tools.find((entry) => entry.function.name === binding.name)?.function.description ?? binding.agentName, parameters: AGENT_TASK_SCHEMA, needsApproval: input.parameters?.policy?.approvalTools?.includes(binding.name) ?? false };
+    const metadata = { toolName: binding.name, toolDescription: assembly.tools.find((entry) => entry.function.name === binding.name)?.function.description ?? binding.agentName, parameters: AGENT_TASK_SCHEMA, inputGuardrails: [toolInputGuardrail(validateTask!, filter)], needsApproval: input.parameters?.policy?.approvalTools?.includes(binding.name) ?? false };
     // The SDK's source-agent metadata and nested RunState remain attached to this
     // actual Agent-as-Tool. Only resolving the deployment-owned version is lazy.
     const runOptions = { maxTurns: turn.maxTurns, signal: input.signal };
@@ -183,10 +188,12 @@ export function compileAgent(
           return prototype.current().filter?.restore(text) ?? text;
         },
       })
-      : tool({ name: binding.name, description: metadata.toolDescription, parameters: AGENT_TASK_SCHEMA, needsApproval: metadata.needsApproval, execute: async () => "" });
+      : tool({ name: binding.name, description: metadata.toolDescription, parameters: AGENT_TASK_SCHEMA, inputGuardrails: metadata.inputGuardrails, needsApproval: metadata.needsApproval, execute: async () => "" });
     // Registry aliases are already valid and reserved. Preserve hyphens that
     // the SDK's convenience name normalizer would otherwise replace.
     delegate.name = binding.name;
+    // Agent.asTool does not forward function-tool guardrails in this SDK version.
+    delegate.inputGuardrails = metadata.inputGuardrails;
     const nativeInvoke = delegate.invoke.bind(delegate);
     const childOutput = (id: string): RuntimeEmitter => {
       const childEmit: RuntimeEmitter = (chunk) => emit({ ...chunk, author: chunk.author ?? binding.agentName, authorPath: [binding.agentName, ...(chunk.authorPath ?? [])], transferId: id });

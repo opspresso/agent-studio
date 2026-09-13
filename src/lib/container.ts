@@ -61,6 +61,7 @@ import { externalAgentRepository } from "@/infrastructure/db/repositories/extern
 import { remoteConversationRepository } from "@/infrastructure/db/repositories/remoteConversationRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
 import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
@@ -1121,6 +1122,7 @@ const deliverProjectMessage: PostCostAlert = async (project, destination, text) 
 
 /** Repository + channel bundle passed to the execution facade (executeVersion/Stream/Agent). */
 export const executionDeps: ExecutionDeps = {
+  createToolSchemaValidator,
   runtimeSessions: runtimeSessions,
   projects: projectRepository,
   versions: versionRepository,

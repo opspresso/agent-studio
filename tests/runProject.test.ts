@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -125,6 +126,7 @@ function executionDepsFixture(channel: LlmChannel) {
       listByProject: reject,
       listByDateRange: reject,
     },
+    createToolSchemaValidator,
     channel,
     imageChannel,
     cipher: secretCipher,

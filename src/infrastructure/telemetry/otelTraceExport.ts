@@ -51,6 +51,8 @@ function tracesUrl(endpoint: string): string {
 
 function spanAttributes(span: TraceSpan): Record<string, string> {
   return {
+    "app.span_id": span.spanId,
+    ...(span.parentSpanId ? { "app.parent_span_id": span.parentSpanId } : {}),
     "app.span.kind": span.kind,
     ...(span.author ? { "app.span.author": span.author } : {}),
   };
@@ -94,16 +96,28 @@ export function createOtelTraceExport(config: OtelExportConfig): OtelTraceExport
       },
     });
     const rootContext = otelApi.setSpan(otelContext.active(), root);
-    for (const span of trace.spans) {
-      const child = tracer.startSpan(
-        span.name,
-        { startTime: new Date(span.startedAt), attributes: spanAttributes(span) },
-        rootContext,
-      );
-      if (span.status === "error") {
-        child.setStatus({ code: SpanStatusCode.ERROR });
-      }
+    // Native spans arrive in completion order, often before their parents.
+    const spansById = new Map(trace.spans.map((span) => [span.spanId, span]));
+    const contexts = new Map<string, typeof rootContext>();
+    const visiting = new Set<string>();
+    const exportSpan = (span: TraceSpan): typeof rootContext => {
+      const existing = contexts.get(span.spanId);
+      if (existing) return existing;
+      if (visiting.has(span.spanId)) return rootContext;
+      visiting.add(span.spanId);
+      const parent = span.parentSpanId ? spansById.get(span.parentSpanId) : undefined;
+      const parentContext = parent ? exportSpan(parent) : rootContext;
+      visiting.delete(span.spanId);
+      const child = tracer.startSpan(span.name,
+        { startTime: new Date(span.startedAt), attributes: spanAttributes(span) }, parentContext);
+      const childContext = otelApi.setSpan(parentContext, child);
+      contexts.set(span.spanId, childContext);
+      if (span.status === "error") child.setStatus({ code: SpanStatusCode.ERROR });
       child.end(new Date(span.endedAt));
+      return childContext;
+    };
+    for (const span of trace.spans) {
+      exportSpan(span);
     }
     if (trace.status === "failed") {
       root.setStatus({ code: SpanStatusCode.ERROR, message: trace.error });

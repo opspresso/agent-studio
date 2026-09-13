@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 /**
  * Memory recall before the first token — `parameters.memoryRecall`.
  *
@@ -337,6 +338,7 @@ function depsFixture(channel: FakeChannel): ExecutionDeps {
       listByProject: reject,
       listByDateRange: reject,
     },
+    createToolSchemaValidator,
     channel,
     imageChannel,
     cipher: secretCipher,

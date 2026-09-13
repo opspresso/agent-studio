@@ -8,6 +8,7 @@ import type { Version } from "@/domain/project/types";
 import type { PiiFilter } from "@/application/llm/pii";
 import type { ImageHandle } from "@/application/llm/agentAssembly";
 import type { TraceSpan } from "@/domain/trace/types";
+import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
 
 export type RecordUsageFn = (record: {
   projectName: string;
@@ -32,6 +33,8 @@ export interface EngineDeps {
  * calls, but which MCP tools are offered arrives as run input, not off a dep.
  */
 export interface AgentDeps extends EngineDeps, AgentCapabilityDeps {
+  /** Required whenever an agent exposes tools; text-only runs need no compiler. */
+  createToolSchemaValidator?: () => ToolSchemaValidator;
   /** Dispatch an MCP tool by its (aliased) name. */
   callMcpTool?: (name: string, args: Record<string, unknown>) => Promise<McpToolResult>;
   loadAgent?: (name: string, request: AgentTask) => Promise<PreparedAgent>;

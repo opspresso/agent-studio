@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { describe, expect, it, vi } from "vitest";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -54,7 +55,7 @@ describe("client tools in the tool loop", () => {
       [contentChunk("never reached")],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "unexpected" }));
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(runAgent(deps, input()));
 
@@ -79,7 +80,7 @@ describe("client tools in the tool loop", () => {
       [contentChunk("never reached")],
     ]);
     const callMcpTool = vi.fn(async (name: string) => ({ text: `${name}: sunny` }));
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(runAgent(deps, input()));
 
@@ -93,7 +94,7 @@ describe("client tools in the tool loop", () => {
 
   it("answers a client tool's result from the history on the next run", async () => {
     const channel = new FakeChannel([[contentChunk("The map is up."), usageChunk(8, 4)]]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
     const chunks = await collect(
       runAgent(
         deps,
@@ -117,7 +118,7 @@ describe("client tools in the tool loop", () => {
 
   it("is never offered to a run that lacks the tool loop's deps for it, but is offered as a function", async () => {
     const channel = new FakeChannel([[contentChunk("ok")]]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
     await collect(runAgent(deps, input()));
     const offered = channel.seenParams[0]!.tools?.map((tool) => tool.function.name);
     expect(offered).toEqual(["getWeather", "showMap"]);
@@ -175,7 +176,7 @@ describe("client tools in the assembly", () => {
 
   it("reports what it could not offer before the first turn", async () => {
     const channel = new FakeChannel([[contentChunk("ok")]]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
     const chunks = await collect(runAgent(deps, input({ clientTools: [clientTool("getWeather")] })));
     expect(chunks[0]?.warning).toContain("getWeather");
   });
@@ -188,7 +189,7 @@ describe("a turn that ends on a client tool", () => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "call_1", "insertDocument", JSON.stringify({ content })), usageChunk(10, 5)],
     ]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
     const chunks = await collect(runAgent(deps, input({ clientTools: [clientTool("insertDocument")] })));
     const announced = chunks.find((c) => c.delta?.toolCalls)?.delta?.toolCalls?.[0];
     expect(JSON.parse(announced?.function?.arguments ?? "{}")).toEqual({ content });
@@ -200,7 +201,7 @@ describe("a turn that ends on a client tool", () => {
       [toolCallChunk(0, "call_1", "showMap", '{"city":"Se'), finishReasonChunk("length"), usageChunk(10, 5)],
       [contentChunk("recovered")],
     ]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
     const chunks = await collect(runAgent(deps, input()));
     expect(channel.calls).toBe(2);
     expect(chunks.find((c) => c.warning)?.warning).toContain("output limit");
@@ -222,7 +223,7 @@ describe("a turn that ends on a client tool", () => {
       [contentChunk("never reached")],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "shot", images: [{ b64: "AAAA", mimeType: "image/png" }] }));
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
     const chunks = await collect(
       runAgent(
         deps,

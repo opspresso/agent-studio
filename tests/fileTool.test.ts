@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { buildFileSaver } from "@/application/execution/saveFileTool";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildFileTool } from "@/application/document/fileTool";
@@ -140,7 +141,7 @@ describe("native File tool", () => {
       [contentChunk("The report is ready.")],
     ]);
     const chunks: EngineChunk[] = [];
-    const source = runAgent({ channel, recordUsage: async () => {}, fileTool: run.call }, {
+    const source = runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {}, fileTool: run.call }, {
       projectName: "project", model: "custom/test", systemPrompt: "Create a report.", messages: [{ role: "user", content: "Write the report." }],
     });
     for await (const chunk of captureRunArtifacts(run.recorder, source)) chunks.push(chunk);
@@ -164,7 +165,7 @@ describe("native File tool", () => {
     const calls = Array.from({ length: 11 }, (_, index) => toolCallChunk(index, `call_${index}`, index < 9 ? "File" : "SaveFile", JSON.stringify({ operation: "create", name: "a.txt", mime_type: "text/plain", content: "test" })));
     const channel = new FakeChannel([calls, [contentChunk("finished")]]);
     const chunks: EngineChunk[] = [];
-    for await (const chunk of runAgent({ channel, recordUsage: async () => {}, fileTool, saveFile }, {
+    for await (const chunk of runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {}, fileTool, saveFile }, {
       projectName: "project", model: "custom/test", systemPrompt: "Create files", messages: [{ role: "user", content: "Create files" }],
     })) chunks.push(chunk);
     expect(fileTool).toHaveBeenCalledTimes(9);

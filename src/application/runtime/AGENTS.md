@@ -11,6 +11,12 @@ budgets, artifacts and persistence around that runtime. Do not add a second agen
   distinct call IDs even when providers omit or reuse them.
 - Consume native SDK tool-result events. Input validation can produce an SDK error result
   without calling a tool's execution callback. Never lose that traffic or emit it twice.
+- Plain SDK JSON Schema parameters only parse JSON. Inject `ToolSchemaValidator`, preserve
+  the declared constraints and validate restored dispatch arguments before claiming a tool slot.
+  A missing compiler must refuse tool execution. Native tool guardrails run before approval,
+  including frontend calls. Approval never bypasses argument validation.
+- Input limits count text before PII masking. Runner checks the starting agent; explicitly run
+  the target's same guardrails during a handoff, before its first model request.
 - PII filtering masks model requests and restores display/tool dispatch. Persist each
   filter's mapping with a pending run, including child-only filters. Reasoning visibility
   controls emission, not provider replay.

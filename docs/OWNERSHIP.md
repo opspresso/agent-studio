@@ -154,7 +154,9 @@
 | SDK Agent·Handoff·Agent-as-Tool 조립과 동시 호출의 identity | `src/application/runtime/agent.ts`, `boundAgent.ts`; SDK가 실행을 소유하고 Studio가 호출별 자원을 연결한다 |
 | 모델 이력·승인 체크포인트·revision과 저장 예산 | `src/application/runtime/session.ts`; 저장 CAS와 tombstone은 `src/infrastructure/db/repositories/runtimeSessionRepository.ts` |
 | SDK native span의 로컬 수집과 안전한 메타데이터 변환 | `src/application/runtime/tracing.ts` |
-| 버전의 입력 Guardrail | `src/application/runtime/policy.ts`; 도구 정책은 SDK 도구 조립에 적용한다 |
+| SDK span 부모 관계의 OTLP 변환 | `src/infrastructure/telemetry/otelTraceExport.ts`; 완료 순서와 무관하게 저장된 부모 관계를 사용한다 |
+| 실행 전 도구 JSON Schema 검증 | `src/domain/llm/toolSchema.ts`의 포트, `src/infrastructure/llm/toolSchema.ts`의 검증기; 선언은 기존 도구 소유자가 유지한다 |
+| 버전의 입력 Guardrail과 Handoff 대상 검사 | `src/application/runtime/policy.ts`; 도구 정책은 SDK 도구 조립에 적용한다 |
 | Better Auth 계정 키와 스키마 이관 | `src/infrastructure/db/migrations.ts`; 현재 키는 `providerId + accountId`이며 `issuer` 값은 nullable로 보존한다 |
 | 모든 행 키 문자열. 아이템 테이블의 `PK`/`SK`/GSI 주소 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외, 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` |
 | 아이템 테이블에 쓰는 방법. 행 잠금 아래에서 평가되는 조건, 키 순서로 잠그는 트랜잭션, 접두사 쿼리의 상한(U+10FFFF), 만료 행의 sweep | `src/infrastructure/db/store.ts`. 리포지토리는 `items` 에 raw SQL 을 쓰지 않는다. 두 번째 `SELECT … FOR UPDATE` 는 그 셋이 어긋날 두 번째 자리다 |

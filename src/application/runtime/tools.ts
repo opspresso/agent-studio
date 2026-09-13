@@ -17,6 +17,8 @@ import { restoreValues } from "./messages";
 import { boundToolArgsPair } from "./arguments";
 import { writeToolResult, type RuntimeEmitter } from "./output";
 import { createSdkMcp, type McpCapability, type ToolCallDetails } from "./mcp";
+import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
+import { toolInputGuardrail } from "./policy";
 
 type CapabilityOutput = McpToolResult & { bounded?: boolean };
 
@@ -26,7 +28,7 @@ const MAX_SAVED_FILES_PER_RUN = 10;
 /** The SDK invokes these capabilities; this module never advances agent turns. */
 export function createRuntimeTools(
   deps: AgentDeps, input: RunAgentInput, assembly: AgentRunAssembly,
-  turn: RuntimeTurn, emit: RuntimeEmitter, filter?: PiiFilter,
+  turn: RuntimeTurn, emit: RuntimeEmitter, filter?: PiiFilter, schemas?: ToolSchemaValidator,
 ) {
   const resources = turn.resources ??= { urls: 0, files: 0, imageTurn: 0, imagesUsed: 0 };
   let lossReported = false;
@@ -79,6 +81,9 @@ export function createRuntimeTools(
   const tools: Tool[] = [];
   for (const definition of assembly.tools.filter((definition) => !assembly.delegations.some((binding) => binding.name === definition.function.name) && !input.parameters?.policy?.blockedTools?.includes(definition.function.name))) {
     const name = definition.function.name;
+    if (!schemas) throw new Error("Tool schema validation is not configured");
+    const parameters = { properties: {}, required: [], additionalProperties: true as const, ...definition.function.parameters, type: "object" as const };
+    const validate = schemas.compile(parameters);
     const displayNames = new Map<string, string>();
     const showResult = (id: string, raw: string, boundedText = false) => {
       const result = writeToolResult({ id, name: displayNames.get(id) ?? (serverByTool.has(name) ? `${serverByTool.get(name)}: ${name}` : name), text: raw, bounded: boundedText }, turn.results, emit, filter);
@@ -91,7 +96,8 @@ export function createRuntimeTools(
     const options = {
       name, description: definition.function.description ?? name,
       strict: false as const,
-      parameters: { properties: {}, required: [], ...definition.function.parameters, type: "object" as const, additionalProperties: true as const },
+      parameters,
+      inputGuardrails: [toolInputGuardrail(validate, filter)],
       needsApproval: assembly.clientToolNames.has(name) || input.parameters?.policy?.approvalTools?.includes(name),
       errorFunction: async (_context: RunContext<unknown>, error: unknown, details?: ToolCallDetails) => {
         const id = details?.toolCall?.callId ?? "";
@@ -103,14 +109,13 @@ export function createRuntimeTools(
       execute: async (raw: unknown, _context: RunContext<unknown> | undefined, details?: ToolCallDetails): Promise<string | ToolCallOutputContent[]> => {
         input.signal?.throwIfAborted();
         const callId = details?.toolCall?.callId ?? "";
-        const slot = claimToolSlot(turn, callId);
         if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-          await waitForSlot(slot.previous, details?.signal ?? input.signal);
-          try { return showResult(callId, "Error: tool arguments must be a JSON object."); }
-          finally { slot.complete(); }
+          throw new Error("Tool arguments must be a JSON object.");
         }
         const args = raw as Record<string, unknown>;
         const display = filter ? restoreValues(filter, args) as Record<string, unknown> : args;
+        validate(display);
+        const slot = claimToolSlot(turn, callId);
         if (name === SKILL_TOOL_NAME && string(display.skill_name)) displayNames.set(callId, `${name}: ${string(display.skill_name)}`);
         if (details?.toolCall) details.toolCall.arguments = JSON.stringify(boundToolArgsPair(args, display).wire);
         const action = () => invoke(name, args, display);
@@ -142,7 +147,7 @@ export function createRuntimeTools(
       },
     };
     if (!assembly.builtinNames.has(name) && !assembly.clientToolNames.has(name)) {
-      mcp.push({ definition, server: serverByTool.get(name) ?? "MCP", needsApproval: Boolean(options.needsApproval), execute: options.execute, error: options.errorFunction });
+      mcp.push({ definition, parameters, server: serverByTool.get(name) ?? "MCP", needsApproval: Boolean(options.needsApproval), inputGuardrails: options.inputGuardrails, execute: options.execute, error: options.errorFunction });
     } else {
       const native = tool(options);
       native.name = name;

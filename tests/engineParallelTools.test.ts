@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChannelMessage, ChannelToolCall } from "@/domain/llm/channel";
@@ -41,7 +42,7 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
       [contentChunk("recovered"), usageChunk(8, 4)],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "found" }));
-    const chunks = await collect(runAgent({ channel, callMcpTool }, {
+    const chunks = await collect(runAgent({ createToolSchemaValidator, channel, callMcpTool }, {
       projectName: "p", model: MODEL, messages: [{ role: "user", content: "lookup" }],
       mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }],
     }));
@@ -67,7 +68,7 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
       calledOrder.push(name);
       return { text: name === "getWeather" ? "sunny" : "09:00" };
     });
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
     const input: RunAgentInput = {
       projectName: "p",
       model: MODEL,
@@ -116,7 +117,7 @@ describe("ToolCallAccumulator makes every call of a response addressable", () =>
     const callMcpTool = vi.fn(async (name: string) => ({
       text: name === "getWeather" ? "sunny" : "09:00",
     }));
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -154,7 +155,7 @@ describe("ToolCallAccumulator makes every call of a response addressable", () =>
       ],
       [contentChunk("done"), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       callMcpTool: vi.fn(async () => ({ text: "ok" })),
@@ -187,7 +188,7 @@ describe("ToolCallAccumulator makes every call of a response addressable", () =>
       [toolCallChunkWithoutId(0, "getTime", "{}"), usageChunk(10, 5)],
       [contentChunk("done"), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       callMcpTool: vi.fn(async () => ({ text: "ok" })),
@@ -220,7 +221,7 @@ describe("ToolCallAccumulator reassembles streamed fragments", () => {
       [contentChunk("found"), usageChunk(8, 4)],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "results" }));
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
 
     await collect(
       runAgent(deps, {
@@ -263,7 +264,7 @@ describe("MCP calls of one response overlap", () => {
       ],
       [contentChunk("both done"), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -307,7 +308,7 @@ describe("images an MCP tool returns", () => {
     // A tool message is text-only, so bytes that stayed in the tool result would
     // never reach the model — the run would answer about a picture it never saw.
     const channel = screenshotChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "captured", images: [{ b64: PIXEL, mimeType: "image/png" }] }),
@@ -345,7 +346,7 @@ describe("images an MCP tool returns", () => {
     // finished conversation; `EngineChunk.file` already draws the line in the
     // right place.
     const channel = screenshotChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "captured", images: [{ b64: PIXEL, mimeType: "image/png" }] }),
@@ -376,7 +377,7 @@ describe("images an MCP tool returns", () => {
   it("caps how many pictures one turn may take in", async () => {
     const channel = screenshotChannel();
     const many = Array.from({ length: 9 }, () => ({ b64: PIXEL, mimeType: "image/png" }));
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "captured", images: many }),
@@ -406,7 +407,7 @@ describe("images an MCP tool returns", () => {
       [contentChunk("both pages look fine."), usageChunk(8, 4)],
     ]);
     const four = Array.from({ length: 4 }, () => ({ b64: PIXEL, mimeType: "image/png" }));
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "captured", images: four }),
@@ -428,7 +429,7 @@ describe("images an MCP tool returns", () => {
   it("does not claim images are attached when none were", async () => {
     const channel = screenshotChannel();
     const many = Array.from({ length: 6 }, () => ({ b64: PIXEL, mimeType: "image/png" }));
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       // Two calls in one response: the second finds the turn's budget spent.
@@ -466,7 +467,7 @@ describe("per-turn tool result budget", () => {
       ],
       [contentChunk("enough"), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(
       runAgent(deps, {

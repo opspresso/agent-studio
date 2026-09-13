@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -42,13 +43,13 @@ describe("offering the tool", () => {
     // Capability comes from the deps, never from the version — so the preview
     // and the run cannot disagree about what a run can reach.
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
-    await collect(runAgent({ channel, recordUsage: async () => {} }, input()));
+    await collect(runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {} }, input()));
     expect(offeredTools(channel)).not.toContain(FETCH_URL_TOOL_NAME);
   });
 
   it("is offered when it was", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       fetchUrl: async () => ({ text: "" }),
@@ -64,7 +65,7 @@ describe("reading a page", () => {
       [toolCallChunk(0, "c1", FETCH_URL_TOOL_NAME, '{"url":"https://example.test/a"}'), usageChunk(10, 5)],
       [contentChunk("summarised"), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       fetchUrl: async () => ({ text: "Revenue rose.", note: "the first 2 of 9 pages" }),
@@ -85,9 +86,9 @@ describe("reading a page", () => {
       [contentChunk("ok"), usageChunk(8, 4)],
     ]);
     const fetchUrl = vi.fn(async () => ({ text: "" }));
-    await collect(runAgent({ channel, recordUsage: async () => {}, fetchUrl }, input()));
+    await collect(runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {}, fetchUrl }, input()));
     expect(fetchUrl).not.toHaveBeenCalled();
-    expect(toolMessages(channel)[0]?.content).toContain("requires a url");
+    expect(toolMessages(channel)[0]?.content).toContain("required property 'url'");
   });
 
   it("reports a failed read as an answer rather than tearing the run down", async () => {
@@ -97,7 +98,7 @@ describe("reading a page", () => {
       [toolCallChunk(0, "c1", FETCH_URL_TOOL_NAME, '{"url":"http://10.0.0.1/"}'), usageChunk(10, 5)],
       [contentChunk("told the user"), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       fetchUrl: async () => {
@@ -119,7 +120,7 @@ describe("reading a page", () => {
     const channel = new FakeChannel([...scripts, [contentChunk("done"), usageChunk(1, 1)]]);
     const fetchUrl = vi.fn(async () => ({ text: "page" }));
     await collect(
-      runAgent({ channel, recordUsage: async () => {}, fetchUrl }, input({ maxTurn: 30 })),
+      runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {}, fetchUrl }, input({ maxTurn: 30 })),
     );
     expect(fetchUrl.mock.calls.length).toBe(20);
   });
@@ -136,7 +137,7 @@ describe("fetching a picture", () => {
       [...calls, usageChunk(10, 5)],
       [contentChunk("described"), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       fetchUrl: async () => ({ text: "", image: { b64: PNG, mimeType: "image/png" } }),
@@ -157,7 +158,7 @@ describe("fetching a picture", () => {
       [toolCallChunk(0, "c1", FETCH_URL_TOOL_NAME, '{"url":"https://example.test/a.png"}'), usageChunk(10, 5)],
       [contentChunk("that is a logo"), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       fetchUrl: async () => ({ text: "", image: { b64: PNG, mimeType: "image/png" } }),
@@ -188,7 +189,7 @@ describe("running alongside MCP calls", () => {
       [contentChunk("done"), usageChunk(8, 4)],
     ]);
     const finished: string[] = [];
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       // Resolves after the MCP call, so "in flight together" and "answered in
@@ -262,7 +263,7 @@ describe("reading a page under PII filtering", () => {
     } as unknown as FakeChannel;
 
     const asked: string[] = [];
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel: scriptedModels(channel),
       recordUsage: async () => {},
       fetchUrl: async (target: string) => {

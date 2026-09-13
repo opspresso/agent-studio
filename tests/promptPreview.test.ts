@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 // MCP requests go through the SSRF-guarded fetch; forward it to the stubbed
@@ -85,6 +86,7 @@ function executionDepsFixture(channel: FakeChannel) {
     mcps: { get: reject },
     externalAgents: { get: reject },
     usage: { record: async () => {} },
+    createToolSchemaValidator,
     channel,
     imageChannel,
     cipher: secretCipher,

@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { describe, expect, it, vi } from "vitest";
 import { buildAgentDeps, prepareSubagent, MAX_SUBAGENT_DEPTH } from "@/application/execution/agentBindings";
 import type { ExecutionDeps } from "@/application/execution/deps";
@@ -13,6 +14,7 @@ function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Part
   const projects = { get: vi.fn(async () => project) };
   const versions = { get: vi.fn(async () => version), list: vi.fn(async () => ({ items: [version], cursor: undefined })) };
   const deps = {
+    createToolSchemaValidator,
     channel: new FakeChannel([]), projects, versions,
     skills: { get: async () => null, describe: async () => [], list: async () => [] },
     externalAgents: { get: async () => null },

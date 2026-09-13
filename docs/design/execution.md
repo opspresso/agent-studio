@@ -70,6 +70,8 @@ Agent Studio는 AgentOps / Control Plane이며 OpenAI Agents SDK가 기본 Agent
 Studio는 버전·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가
 모델 턴·도구 실행·Handoff·Agent-as-Tool·Guardrail·승인 중단과 재개를 수행한다.
 `src/application/runtime/`가 SDK 계약을 직접 사용한다. 자체 모델/도구 루프는 두지 않는다.
+SDK의 각 기능을 어디까지 제공하는지와 선택적 실행 환경의 도입 조건은
+[SDK 기능 적용 범위](sdk-capabilities.md)를 따른다.
 
 ```mermaid
 flowchart TB
@@ -90,7 +92,7 @@ flowchart TB
 | 개념 | 역할 |
 |---|---|
 | Skill | 읽을 수 있는 지식과 지침. `Skill` 도구로 필요한 본문/파일을 점진적으로 읽는다 |
-| Tool | 실행 가능한 기능. SDK function tool이 인자 검증·실행·결과를 관리한다 |
+| Tool | 실행 가능한 기능. SDK가 호출·결과를 관리하며 주입된 JSON Schema 검증기가 실행 전 인자를 검사한다 |
 | MCP | 외부 도구 프로토콜. Studio가 검증한 연결과 alias 스냅샷을 SDK `MCPServer`로 제공한다 |
 | Memory | 버전이 선택한 장기 지식/문맥. MCP recall 결과는 discovery와 프롬프트 준비에 사용한다 |
 | Session | 특정 대화의 정확한 모델/도구 이력. Memory와 별도 저장·수명주기를 가진다 |
@@ -108,6 +110,14 @@ flowchart TB
 수행하며, Studio 모델 wrapper는 모델별 설정·PII·사용량·컨텍스트 예산과 마지막 턴 정책을 적용한다.
 마지막 허용 턴에는 도구를 제공하지 않고 현재 정보로 답하도록 지시한다. SDK의 `maxTurns`도
 동시에 강제한다. 제공되지 않은 도구와 잘못된 인자는 SDK의 오류 결과/실패 계약을 따른다.
+
+일반 JSON Schema를 SDK `tool()`에 전달하면 JSON 파싱만 제공하므로 별도의 실행 전 검증을
+적용한다. `ToolSchemaValidator` 포트를 통해 기존 MCP 패키지의 검증기를 주입하며 builtin·MCP·위임·frontend
+도구의 선언을 그대로 검사한다. 필수 필드·타입·enum·중첩 구조·추가 필드 제한을 보존하고 값을
+강제 변환하거나 삭제하지 않는다. PII 인자는 복원한 실제 dispatch 값을 검사한다. SDK 도구 입력
+Guardrail은 승인 요청 전에 검사하며, 실패는 오류 도구 결과로 돌아가고 실행 슬롯과 부작용을
+만들지 않는다. 잘못된 frontend 호출도 같은 경로로 모델에 돌아간다. 승인된 호출도 실행 전
+검증한다. 검증기가 없는 도구 실행, 해석할 수 없는 스키마와 외부 `$ref`는 거부한다.
 
 `agentModels.ts`의 SDK `OpenAIChatCompletionsModel`은 배포가 지정한 endpoint로만 요청한다.
 OpenAI, OpenAI-compatible gateway와 사내 vLLM은 같은 경로를 사용한다. 요청마다 endpoint와
@@ -153,7 +163,9 @@ Session은 `runtime_sessions`의 별도 행에 저장한다. 소유자·대화�
 revision CAS를 사용하고, 이력과 승인 대기 `RunState`를 한 번에 저장한다.
 
 `parameters.policy`는 `maxInputChars`, `blockedTools`, `approvalTools`를 선언한다.
-입력 크기는 blocking SDK Guardrail로 확인하고, 승인은 SDK `needsApproval`과
+입력 크기는 PII 치환 전 텍스트를 기준으로 blocking SDK Guardrail로 확인한다. SDK가 처음
+실행하는 Agent의 입력만 자동 검사하므로 Handoff는 대상 Agent의 같은 Guardrail을 명시적으로
+실행하고 native span을 남긴다. Agent-as-Tool은 자식 Runner가 검사한다. 승인은 SDK `needsApproval`과
 `RunState.approve/reject`를 사용한다. 승인 정책은 영속 Chat에서 지원한다. 다른 실행 표면은
 해당 정책이 적용되는 실행을 거부한다. Handoff 대신 `delegate_<name>`에 승인 정책을 적용한다.
 구체적인 HTTP 요청은 [Chat 승인 API](../API.md#chat-승인과-재개)를 따른다.

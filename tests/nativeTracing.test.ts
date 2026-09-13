@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runAgent, runPrompt } from "@/application/runtime";
 import { TraceRecorder } from "@/application/trace/recorder";
@@ -26,7 +27,7 @@ describe("local SDK tracing", () => {
       [toolCallChunk(0, "lookup", "lookup", '{"query":"private@example.com"}'), usageChunk(12, 4, 0, 0.12)],
       [contentChunk("answer"), usageChunk(8, 3, 0, 0.08)],
     ]);
-    for await (const chunk of runAgent({ channel, onSdkSpan: (span) => f.recorder.observeSdkSpan(span), callMcpTool: async () => ({ text: "private result with api-secret-key" }) }, {
+    for await (const chunk of runAgent({ createToolSchemaValidator, channel, onSdkSpan: (span) => f.recorder.observeSdkSpan(span), callMcpTool: async () => ({ text: "private result with api-secret-key" }) }, {
       projectName: "project", model: "openai/gpt-5-mini", parameters: { piiFiltering: true },
       messages: [{ role: "user", content: "private@example.com" }],
       mcpTools: [{ type: "function", function: { name: "lookup", parameters: {} } }],
@@ -48,7 +49,7 @@ describe("local SDK tracing", () => {
   it("records native blocking guardrails and a failed run before model dispatch", async () => {
     const f = recorder();
     const channel = new FakeChannel([]);
-    for await (const chunk of runAgent({ channel, onSdkSpan: (span) => f.recorder.observeSdkSpan(span) }, {
+    for await (const chunk of runAgent({ createToolSchemaValidator, channel, onSdkSpan: (span) => f.recorder.observeSdkSpan(span) }, {
       projectName: "project", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "too long" }], parameters: { policy: { maxInputChars: 2 } },
     })) f.recorder.observe(chunk);
     await f.recorder.finish();

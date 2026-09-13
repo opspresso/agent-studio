@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { describe, expect, it } from "vitest";
 import {
   createRunContextBudget,
@@ -208,7 +209,7 @@ describe("runAgent context budget", () => {
 
   it("truncates tool output to the model's context budget and warns once", async () => {
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(100_000) }),
     };
@@ -244,7 +245,7 @@ describe("runAgent context budget", () => {
     // exhausted" from turn 0 and blames a budget the run never got to fill,
     // while the overflow it exists to prevent is already in the request.
     const channel = toolLoopChannel();
-    const deps: AgentDeps = { channel, callMcpTool: async () => ({ text: "result" }) };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, callMcpTool: async () => ({ text: "result" }) };
     const input: RunAgentInput = {
       projectName: "p",
       model: SMALL_WINDOW_MODEL,
@@ -273,7 +274,7 @@ describe("runAgent context budget", () => {
     // and the provider receives as a lone surrogate escape.
     const payload = `a${"😀".repeat(100_000)}`;
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: payload }),
     };
@@ -304,7 +305,7 @@ describe("runAgent context budget", () => {
     // run fit cut that text again — a surviving claim about a length the
     // final text no longer had.
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
     };
@@ -337,7 +338,7 @@ describe("runAgent context budget", () => {
       ],
       [contentChunk("answered"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
     };
@@ -367,7 +368,7 @@ describe("runAgent context budget", () => {
       (_, i) => `user${String(i).padStart(4, "0")}@mail.com`,
     ).join(" ");
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: payload }),
     };
@@ -392,7 +393,7 @@ describe("runAgent context budget", () => {
   it("leaves a run with headroom byte-identical", async () => {
     const payload = "x".repeat(50_000);
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: payload }),
     };
@@ -426,7 +427,7 @@ describe("runAgent context budget", () => {
       ],
       [contentChunk("answered"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
     };
@@ -458,13 +459,13 @@ describe("runAgent context budget", () => {
     const channel = new FakeChannel([
       [
         toolCallChunk(0, "call_1", "search", "{}"),
-        toolCallChunk(1, "call_2", "GenerateImage", "{}"),
+        toolCallChunk(1, "call_2", "GenerateImage", '{"prompt":""}'),
         toolCallChunk(2, "call_3", "GenerateImage", '{"prompt":"a fox"}'),
         usageChunk(1, 1),
       ],
       [contentChunk("answered"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
       generateImage: async () => {
@@ -491,7 +492,7 @@ describe("runAgent context budget", () => {
   it("runs an unregistered model unbudgeted, exactly as before the budget", async () => {
     const payload = "x".repeat(100_000);
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: payload }),
     };

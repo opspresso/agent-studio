@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   Agent,
@@ -187,7 +188,7 @@ describe("native Agents SDK execution over Studio routing", () => {
       ] : [{ id: "answer-turn", choices: [{ index: 0, delta: { content: "captured" }, finish_reason: "stop" }] }]);
     }));
     const chunks = [];
-    for await (const chunk of runAgent({
+    for await (const chunk of runAgent({ createToolSchemaValidator,
       channel: createAgentModelProvider(async () => target),
       callMcpTool: async () => ({ text: "captured", images: [{ b64: "aGVsbG8=", mimeType: "image/png" }], files: [{ name: "report.txt", mimeType: "text/plain", b64: "c2VjcmV0LWZpbGU=" }] }),
     }, {

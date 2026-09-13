@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it, vi } from "vitest";
 import type { ChannelParams, LlmChannel } from "./channelFixtures";
@@ -38,7 +39,7 @@ describe("runAgent tool loop", () => {
       expect(name).toBe("getWeather");
       return { text: "sunny" };
     });
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async (r) => {
         recorded.push(r);
@@ -85,7 +86,7 @@ describe("runAgent tool loop", () => {
     const recorded: Array<{ costUsd: number }> = [];
     const chunks = await collect(
       runAgent(
-        { channel, recordUsage: async (r) => void recorded.push(r as { costUsd: number }) },
+        { createToolSchemaValidator, channel, recordUsage: async (r) => void recorded.push(r as { costUsd: number }) },
         {
           projectName: "router-bot",
           model: MODEL,
@@ -105,7 +106,7 @@ describe("runAgent tool loop", () => {
     const recorded: Array<{ costUsd: number }> = [];
     await collect(
       runAgent(
-        { channel, recordUsage: async (r) => void recorded.push(r as { costUsd: number }) },
+        { createToolSchemaValidator, channel, recordUsage: async (r) => void recorded.push(r as { costUsd: number }) },
         {
           projectName: "direct-bot",
           model: MODEL,
@@ -131,7 +132,7 @@ describe("runAgent tool loop", () => {
     ]);
     const chunks = await collect(
       runAgent(
-        { channel, callMcpTool: async () => ({ text: "a page" }) },
+        { createToolSchemaValidator, channel, callMcpTool: async () => ({ text: "a page" }) },
         {
           projectName: "docs-bot",
           model: MODEL,
@@ -159,7 +160,7 @@ describe("runAgent tool loop", () => {
     ]);
     const chunks = await collect(
       runAgent(
-        { channel, callMcpTool: async () => ({ text: "a page" }) },
+        { createToolSchemaValidator, channel, callMcpTool: async () => ({ text: "a page" }) },
         {
           projectName: "docs-bot",
           model: MODEL,
@@ -181,7 +182,7 @@ describe("runAgent tool loop", () => {
       [toolCallChunk(0, "call_1", "Skill", '{"skill_name":"image-generation"}'), usageChunk(10, 5)],
       [contentChunk("Loaded."), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       loadSkillContent: async () => "# skill content",
@@ -212,7 +213,7 @@ describe("runAgent tool loop", () => {
       [contentChunk("done"), usageChunk(1, 1)],
     ]);
     const called: string[] = [];
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       loadSkillContent: async () => "# never reached",
@@ -250,7 +251,7 @@ describe("runAgent tool loop", () => {
       [contentChunk("It is sunny."), usageChunk(8, 4)],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "sunny" }));
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -285,7 +286,7 @@ describe("runAgent tool loop", () => {
       [contentChunk("found"), usageChunk(2, 1)],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "results" }));
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -311,7 +312,7 @@ describe("runAgent tool loop", () => {
       [toolCallChunk(0, "call_c", "loop", "{}"), usageChunk(1, 1)],
     ]);
     const recorded: unknown[] = [];
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async (r) => {
         recorded.push(r);
@@ -361,7 +362,7 @@ describe("tools + reasoning_effort provider constraint", () => {
 
   it("forces reasoning_effort to 'none' for models that reject the combination", async () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     await collect(
       runAgent(deps, {
@@ -379,7 +380,7 @@ describe("tools + reasoning_effort provider constraint", () => {
 
   it("sends an explicit 'none' even when no effort is configured", async () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     await collect(
       runAgent(deps, {
@@ -397,7 +398,7 @@ describe("tools + reasoning_effort provider constraint", () => {
 
   it("keeps the configured effort for models that accept the combination", async () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     await collect(
       runAgent(deps, {
@@ -414,7 +415,7 @@ describe("tools + reasoning_effort provider constraint", () => {
 
   it("keeps the configured effort for constrained models when no tools are wired", async () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     await collect(
       runAgent(deps, {
@@ -440,7 +441,7 @@ describe("recording the run's reasoning", () => {
 
   it("emits nothing unless the version asked for it", async () => {
     const channel = thinkingRun();
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -456,7 +457,7 @@ describe("recording the run's reasoning", () => {
 
   it("emits the thinking when it did", async () => {
     const channel = thinkingRun();
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -479,7 +480,7 @@ describe("recording the run's reasoning", () => {
       [reasoningChunk("first thought"), toolCallChunk(0, "call_1", "lookup", "{}"), usageChunk(1, 1)],
       [contentChunk("done"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
@@ -503,7 +504,7 @@ describe("recording the run's reasoning", () => {
       [reasoningChunk("look it up"), toolCallChunk(0, "call_1", "lookup", "{}"), usageChunk(1, 1)],
       [reasoningChunk("now answer"), contentChunk("done"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
@@ -531,7 +532,7 @@ describe("recording the run's reasoning", () => {
       [toolCallChunk(0, "call_1", "lookup", "{}"), usageChunk(1, 1)],
       [contentChunk("done"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
@@ -553,7 +554,7 @@ describe("recording the run's reasoning", () => {
 
   it("stays quiet about the constraint when the run did not ask to record", async () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -593,7 +594,7 @@ describe("recording the run's reasoning", () => {
         yield usageChunk(1, 1);
       },
     };
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
@@ -625,7 +626,7 @@ describe("recording the run's reasoning", () => {
     // trace off, `content` is empty for the whole run and every surface shows a
     // blank reply for a call that was billed in full.
     const channel = new FakeChannel([[reasoningChunk("the answer, as thinking"), usageChunk(3, 9)]]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -644,7 +645,7 @@ describe("recording the run's reasoning", () => {
     const channel = new FakeChannel([
       [reasoningChunk("thinking, not speaking"), toolCallChunk(0, "call_1", "lookup", "{}"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel: scriptedModels(channel),
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "result" }),
@@ -671,7 +672,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(
-        { channel, recordUsage: async () => {} },
+        { createToolSchemaValidator, channel, recordUsage: async () => {} },
         {
           projectName: "p",
           model: MODEL,
@@ -695,7 +696,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(
-        { channel, recordUsage: async () => {} },
+        { createToolSchemaValidator, channel, recordUsage: async () => {} },
         {
           projectName: "p",
           model: MODEL,
@@ -717,7 +718,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(
-        { channel, recordUsage: async () => {} },
+        { createToolSchemaValidator, channel, recordUsage: async () => {} },
         { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
       ),
     );
@@ -732,7 +733,7 @@ describe("recording the run's reasoning", () => {
 
     const chunks = await collect(
       runAgent(
-        { channel, recordUsage: async () => {} },
+        { createToolSchemaValidator, channel, recordUsage: async () => {} },
         { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
       ),
     );
@@ -751,7 +752,7 @@ describe("recording the run's reasoning", () => {
       const recorded: unknown[] = [];
       const chunks = await collect(
         runAgent(
-          { channel, recordUsage: async (r) => void recorded.push(r) },
+          { createToolSchemaValidator, channel, recordUsage: async (r) => void recorded.push(r) },
           { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] },
         ),
       );
@@ -775,7 +776,7 @@ describe("runAgent GenerateImage builtin", () => {
       expect(prompt).toBe("a red fox");
       return { b64: "aW1n", mimeType: "image/png", model: "openai/gpt-image-1" };
     });
-    const deps: AgentDeps = { channel, generateImage };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, generateImage };
     const chunks = await collect(
       runAgent(deps, {
         projectName: "artist",
@@ -803,7 +804,7 @@ describe("runAgent GenerateImage builtin", () => {
     const { FakeChannel: FC } = await import("./fakeChannel");
     const channel = new FC([[contentChunk("hi"), usageChunk(1, 1)]]);
     await collect(
-      runAgent({ channel }, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] }),
+      runAgent({ createToolSchemaValidator, channel }, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] }),
     );
     expect(channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage") ?? false).toBe(false);
   });
@@ -814,7 +815,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     await collect(
       runAgent(
-        { channel, loadSkillContent: async () => "body", loadAgent: async () => { throw new Error("Unexpected delegation"); } },
+        { createToolSchemaValidator, channel, loadSkillContent: async () => "body", loadAgent: async () => { throw new Error("Unexpected delegation"); } },
         {
           projectName: "p",
           model: MODEL,
@@ -877,7 +878,7 @@ describe("runAgent MCP server system prompt", () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     await collect(
       runAgent(
-        { channel },
+        { createToolSchemaValidator, channel },
         {
           projectName: "p",
           model: MODEL,
@@ -904,7 +905,7 @@ describe("runAgent MCP server system prompt", () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     await collect(
       runAgent(
-        { channel },
+        { createToolSchemaValidator, channel },
         {
           projectName: "p",
           model: MODEL,
@@ -924,7 +925,7 @@ describe("runAgent MCP server system prompt", () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     await collect(
       runAgent(
-        { channel },
+        { createToolSchemaValidator, channel },
         {
           projectName: "p",
           model: MODEL,
@@ -954,7 +955,7 @@ describe("runAgent skill and subagent system prompt", () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     await collect(
       runAgent(
-        { channel, loadSkillContent: async () => "" },
+        { createToolSchemaValidator, channel, loadSkillContent: async () => "" },
         {
           projectName: "p",
           model: MODEL,
@@ -1001,7 +1002,7 @@ describe("runAgent image input", () => {
 
     await collect(
       runAgent(
-        { channel },
+        { createToolSchemaValidator, channel },
         { projectName: "p", model: MODEL, messages: IMAGE_MESSAGE },
       ),
     );
@@ -1016,7 +1017,7 @@ describe("runAgent image input", () => {
     await expect(
       collect(
         runAgent(
-          { channel },
+          { createToolSchemaValidator, channel },
           { projectName: "p", model: "xai/grok-code-fast-1", messages: IMAGE_MESSAGE },
         ),
       ),
@@ -1029,7 +1030,7 @@ describe("runAgent image input", () => {
 
     await expect(
       collect(
-        runAgent({ channel }, { projectName: "p", model: "who/knows", messages: IMAGE_MESSAGE }),
+        runAgent({ createToolSchemaValidator, channel }, { projectName: "p", model: "who/knows", messages: IMAGE_MESSAGE }),
       ),
     ).rejects.toThrow("not in the registry");
   });
@@ -1041,7 +1042,7 @@ describe("runAgent image input", () => {
 
     await collect(
       runAgent(
-        { channel },
+        { createToolSchemaValidator, channel },
         {
           projectName: "p",
           model: MODEL,
@@ -1060,7 +1061,7 @@ describe("runAgent image input", () => {
 
     await collect(
       runAgent(
-        { channel },
+        { createToolSchemaValidator, channel },
         {
           projectName: "p",
           model: MODEL,
@@ -1093,7 +1094,7 @@ describe("runAgent skill system prompt", () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     await collect(
       runAgent(
-        { channel, loadSkillContent: async () => "" },
+        { createToolSchemaValidator, channel, loadSkillContent: async () => "" },
         {
           projectName: "p",
           model: MODEL,
@@ -1118,7 +1119,7 @@ describe("runAgent skill system prompt", () => {
  * turns it ran one statement into the next with nothing between them.
  */
 describe("runAgent separates what consecutive turns say", () => {
-  const deps = (channel: FakeChannel): AgentDeps => ({
+  const deps = (channel: FakeChannel): AgentDeps => ({ createToolSchemaValidator,
     channel,
     recordUsage: async () => {},
     callMcpTool: async () => ({ text: "ok" }),
@@ -1258,7 +1259,7 @@ describe("provider output cut (finish_reason: length)", () => {
     const channel = new FakeChannel([
       [contentChunk("partial answ"), finishReasonChunk("length"), usageChunk(2, 1)],
     ]);
-    const deps: AgentDeps = { channel: scriptedModels(channel), recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel: scriptedModels(channel), recordUsage: async () => {} };
 
     const chunks = await collect(
       runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
@@ -1274,7 +1275,7 @@ describe("provider output cut (finish_reason: length)", () => {
     const channel = new FakeChannel([
       [contentChunk("whole answer"), finishReasonChunk("stop"), usageChunk(2, 1)],
     ]);
-    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {} };
 
     const chunks = await collect(
       runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
@@ -1297,7 +1298,7 @@ describe("provider output cut (finish_reason: length)", () => {
       [contentChunk("recovered"), usageChunk(2, 1)],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "found" }));
-    const deps: AgentDeps = { channel, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, callMcpTool };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -1328,7 +1329,7 @@ describe("provider output cut (finish_reason: length)", () => {
       [contentChunk("answered"), usageChunk(2, 1)],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "found" }));
-    const deps: AgentDeps = { channel, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, callMcpTool };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -1351,7 +1352,7 @@ describe("provider output cut (finish_reason: length)", () => {
       [contentChunk("recovered"), usageChunk(2, 1)],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "found" }));
-    const deps: AgentDeps = { channel, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, callMcpTool };
 
     const chunks = await collect(
       runAgent(deps, {
@@ -1396,7 +1397,7 @@ describe("the final turn", () => {
       [toolCallChunk(0, "call_b", "loop", "{}"), usageChunk(1, 1)],
       [contentChunk("Here is what I found so far."), usageChunk(2, 2)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "ok" }),
@@ -1425,7 +1426,7 @@ describe("the final turn", () => {
 
   it("never appears in a run that finishes inside its budget", async () => {
     const channel = new FakeChannel([[contentChunk("done in one."), usageChunk(1, 1)]]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       callMcpTool: async () => ({ text: "ok" }),
@@ -1449,7 +1450,7 @@ describe("the final turn", () => {
       [toolCallChunk(0, "call_b", "loop", "{}"), usageChunk(1, 1)],
     ]);
     const callMcpTool = vi.fn(async () => ({ text: "ok" }));
-    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(runAgent(deps, loopingInput(2)));
 
@@ -1478,7 +1479,7 @@ describe("empty provider errors", () => {
         throw new Error("");
       },
     };
-    const deps: AgentDeps = { channel: scriptedModels(channel), recordUsage: async () => {} };
+    const deps: AgentDeps = { createToolSchemaValidator, channel: scriptedModels(channel), recordUsage: async () => {} };
 
     const chunks = await collect(
       runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
