@@ -1,13 +1,12 @@
 # File type icons
 
-Every icon here except `hwpx.svg` comes from
+Every icon here except `hwpx.svg` and `audio.svg` comes from
 [Material Icon Theme](https://github.com/PKief/vscode-material-icon-theme), licensed under
 the [MIT License](https://github.com/PKief/vscode-material-icon-theme/blob/main/LICENSE).
 Some are renamed to the file type this app names rather than the one the source set does:
 
 | here | upstream |
 |---|---|
-| `audio.svg` | `audio.svg` |
 | `pdf.svg` | `pdf.svg` |
 | `docx.svg` | `word.svg` |
 | `pptx.svg` | `powerpoint.svg` |
@@ -20,6 +19,9 @@ Some are renamed to the file type this app names rather than the one the source 
 
 `hwpx.svg` is derived from the same MIT-licensed document icon shape and carries an HWPX-specific
 `H` mark because the source set has no HWPX icon.
+
+`audio.svg` uses the speaker-shaped `volume` icon from `@tabler/icons-react` 3.46.0, with the
+gallery's audio color. It represents speech recordings and other audio as well as music.
 
 Taken as published, so the silhouettes are not uniform — `pdf`/`docx`/`pptx`/`csv`/`hwpx` are the
 folded-corner document, while `html`, `md`, `json` and `svg` are that format's own mark. That is
@@ -37,4 +39,30 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+## Tabler Icons license
+
+```text
+MIT License
+
+Copyright (c) 2020-2026 Paweł Kuna
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
