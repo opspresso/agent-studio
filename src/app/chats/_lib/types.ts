@@ -128,7 +128,7 @@ export interface LiveTurn {
    * the top-level agent takes over again, so a badge never claims a subagent is
    * still running after it returned.
    *
-   * A set rather than one chain: `dispatch_agents` has several children speaking
+   * A set rather than one chain: SDK delegation has several children speaking
    * at the same time, and a single slot would flicker between them.
    */
   authorPaths: string[][];

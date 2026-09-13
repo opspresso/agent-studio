@@ -108,6 +108,13 @@ mirror하고, 모델은 사내 OpenAI 호환 LLM·embedding·reranker endpoint�
 런타임 다운로드는 필요 없다. 지원 형식과 워커 실행 제약은
 [문서 엔진](design/documents.md)을 보라.
 
+Agent Runtime은 앱에 포함된 OpenAI Agents SDK를 사용한다. SDK Session은 같은 PostgreSQL의
+`runtime_sessions`에 저장하고 `AES_ENCRYPTION_KEY`로 인증 암호화한다. 공개 OpenAI trace
+전송은 로컬 processor로 교체되어 사내 모델만으로 실행할 수 있다. 기존 ChatMessage는 화면
+기록으로 보존하며 SDK Session의 모델 이력으로 자동 변환하지 않는다. 기존 대화에 SDK Session이
+없거나 만료됐으면 새 모델 문맥에서 시작한다는 경고를 표시한다. 모델 이력이 필요한 새
+대화는 현재 런타임에서 시작한다. 배포 교체 시 진행 중인 런을 먼저 drain하라.
+
 ## 데이터 이관
 
 v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQL에 이관한다.
@@ -128,6 +135,14 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 새 image tag로 교체하면 앱이 부팅 시 advisory lock 아래에서 schema migration을 적용한다. 별도
 migration job은 필요하지 않다. Rollback은 image tag를 되돌리는 것이며 schema를 내리지 않는다.
 IDC와 EKS의 구체적인 upgrade 및 rollback 명령은 각 배포 저장소가 소유한다.
+
+Better Auth 1.7.4 이상은 계정을 `providerId + accountId`로 찾는다. Migration 7은 기존
+`account.issuer`의 값과 컬럼을 보존하면서 `NOT NULL`과 issuer 기반 인덱스를 제거하고,
+provider 계정 키의 unique index를 만든다. 중복 키가 있으면 어떤 계정도 변경하지 않고
+실패한다. 서로 다른 issuer가 같은 provider ID를 쓴 경우 운영자가 신뢰할 수 있는 ID 매핑을
+확인해 충돌을 해결해야 한다. 로컬 설정을 쓰는 개발 서버에는
+`pnpm tsx --env-file=.env.local scripts/db-migrate.ts`를 적용한 뒤 재시작한다.
+[Better Auth 업그레이드 가이드](https://better-auth.com/docs/guides/1-7-upgrade-guide)를 따른다.
 
 이전 `SOURCE_FILES_BUCKET_NAME`에 파일이 있으면 worker와 새 작업 접수를 멈추고 진행 중인 업로드를
 정리한 뒤 `source-files/`의 키·본문·metadata를 `S3_BUCKET_NAME` 버킷으로 복사한다. 0바이트 삭제

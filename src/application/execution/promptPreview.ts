@@ -4,13 +4,13 @@ import type { Project, Version } from "@/domain/project/types";
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import { renderTemplate } from "@/shared/template";
 import { composeImagePrompt } from "@/application/image/composeImagePrompt";
-import * as engine from "@/application/llm/engine";
+import * as engine from "@/application/runtime";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
 import { callerFor, runClock, runStrategyFor } from "./deps";
 import { discoveryQueries, resolveRunTools } from "./bindings";
 import { noRecallTargetWarning, prepareMemoryForRun, recallTargets } from "./memoryRecall";
 import { closeMcp } from "./mcpTools";
-import { buildAgentDeps } from "./subagentRunner";
+import { buildAgentDeps } from "./agentBindings";
 
 /**
  * What a version would actually send. An agent run's system prompt is assembled
@@ -180,6 +180,7 @@ export async function previewPrompt(
         ? { warnings: [noRecallTargetWarning()] }
         : { warnings: [] };
     const { systemPrompt, tools } = engine.assembleAgentRun(agentDeps, {
+      blockedTools: version.parameters.policy?.blockedTools,
       ...(version.systemPrompt !== undefined ? { systemPrompt: version.systemPrompt } : {}),
       // No messages: a preview stands before the first turn, like a fresh run
       // with nothing attached.

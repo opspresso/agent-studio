@@ -104,13 +104,14 @@ const server = createServer((req, res) => {
         send({
           choices: [
             {
+              index: 0,
               delta: {
                 tool_calls: [
                   {
                     index: 0,
                     id: `call_${Date.now()}`,
                     type: "function",
-                    function: { name: "Skill", arguments: JSON.stringify({ name: skillName }) },
+                    function: { name: "Skill", arguments: JSON.stringify({ skill_name: skillName }) },
                   },
                 ],
               },
@@ -118,7 +119,7 @@ const server = createServer((req, res) => {
             },
           ],
         });
-        send({ choices: [{ delta: {}, finish_reason: "tool_calls" }] });
+        send({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] });
       } else {
         for (const piece of answer.match(/.{1,12}/gs) ?? []) {
           // The reader closing the tab is a thing this server is now used to
@@ -126,12 +127,12 @@ const server = createServer((req, res) => {
           if (res.destroyed) {
             return;
           }
-          send({ choices: [{ delta: { content: piece }, finish_reason: null }] });
+          send({ choices: [{ index: 0, delta: { content: piece }, finish_reason: null }] });
           if (DELAY_MS > 0) {
             await delay(DELAY_MS);
           }
         }
-        send({ choices: [{ delta: {}, finish_reason: "stop" }] });
+        send({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
       }
       send({ choices: [], usage: { prompt_tokens: 20, completion_tokens: 10 } });
       res.write("data: [DONE]\n\n");
@@ -142,7 +143,7 @@ const server = createServer((req, res) => {
         JSON.stringify({
           id: `cmpl-${Date.now()}`,
           choices: [
-            { message: { role: "assistant", content: answer }, finish_reason: "stop" },
+            { index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" },
           ],
           usage: { prompt_tokens: 20, completion_tokens: 10 },
         }),

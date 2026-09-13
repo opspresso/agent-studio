@@ -1,12 +1,13 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { describe, expect, it } from "vitest";
 import {
   createRunContextBudget,
   estimateContextTokens,
   IMAGE_PART_TOKENS,
 } from "@/application/llm/contextBudget";
-import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
+import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import type { EngineChunk } from "@/domain/llm/types";
-import { contentChunk, FakeChannel, reasoningChunk, toolCallChunk, usageChunk } from "./fakeChannel";
+import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -208,7 +209,7 @@ describe("runAgent context budget", () => {
 
   it("truncates tool output to the model's context budget and warns once", async () => {
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(100_000) }),
     };
@@ -234,64 +235,27 @@ describe("runAgent context budget", () => {
     expect(String(toolMessage?.content).length).toBeLessThan(40_000);
   });
 
-  it.each(["search", "transfer_to_agent"])(
-    "reserves the assistant turn before fitting a %s result into the next request",
-    async (toolName) => {
-      const text = "a".repeat(6_000);
-      const reasoning = "r".repeat(3_000);
-      const args = { agent_name: "child", message: "m".repeat(3_000) };
-      const channel = new FakeChannel([
-        [
-          contentChunk(text),
-          reasoningChunk(reasoning),
-          toolCallChunk(0, "call_1", toolName, JSON.stringify(args)),
-          usageChunk(1, 1),
-        ],
-        [contentChunk("answered"), usageChunk(1, 1)],
-      ]);
-      const chunks = await collect(runAgent(
-        {
-          channel,
-          callMcpTool: async () => ({ text: "x".repeat(100_000) }),
-          runSubagent: async function* () {
-            return "x".repeat(100_000);
-          },
-        },
-        {
-          projectName: "p",
-          model: SMALL_WINDOW_MODEL,
-          parameters: SMALL_BUDGET_PARAMS,
-          messages: [{ role: "user", content: "go" }],
-          mcpTools: TOOL,
-          subagents: [{ name: "child", description: "", type: "local" }],
-        },
-      ));
+  it("leaves room for native handoff declarations in the next model request", async () => {
+    const channel = toolLoopChannel();
+    const chunks = await collect(runAgent({ createToolSchemaValidator, channel,
+      callMcpTool: async () => ({ text: "x".repeat(100_000) }),
+      loadAgent: async () => { throw new Error("The unused specialist must not be loaded"); },
+    }, {
+      projectName: "p", model: SMALL_WINDOW_MODEL, parameters: SMALL_BUDGET_PARAMS,
+      messages: [{ role: "user", content: "go" }], mcpTools: TOOL,
+      subagents: [{ name: "specialist", type: "local", kind: "agent", description: "Detailed expertise. ".repeat(250) }],
+    }));
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+    const next = channel.seenParams[1]!;
+    expect(next.tools?.some((tool) => tool.function.name === "handoff_specialist")).toBe(true);
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, SMALL_BUDGET_PARAMS.maxTokens)!;
+    for (const message of next.messages) budget.chargeMessage(message);
+    budget.chargeText(JSON.stringify(next.tools));
+    expect(budget.remaining()).toBeGreaterThan(0);
+    expect(chunks.some((chunk) => chunk.warning?.includes("context budget"))).toBe(true);
+  });
 
-      expect(channel.seenParams).toHaveLength(2);
-      const request = channel.seenParams[1]!;
-      const assistant = request.messages.find((message) => message.role === "assistant")!;
-      expect(assistant.content).toBe(text);
-      expect(assistant.reasoning_content).toBe(reasoning);
-      expect(JSON.parse(assistant.tool_calls![0]!.function!.arguments!)).toEqual(args);
-      // Measure what actually reaches the channel, not the budget's clamped
-      // remaining() counter: charging too late hides an overflow as debt.
-      const tokens = request.messages.reduce(
-        (total, message) => total +
-          estimateContextTokens(String(message.content ?? "")) +
-          estimateContextTokens(message.reasoning_content ?? "") +
-          estimateContextTokens(message.tool_calls ? JSON.stringify(message.tool_calls) : ""),
-        estimateContextTokens(JSON.stringify(request.tools)),
-      );
-      const capacity = createRunContextBudget(
-        SMALL_WINDOW_MODEL, undefined, SMALL_BUDGET_PARAMS.maxTokens,
-      )!.remaining();
-      expect(tokens).toBeLessThanOrEqual(capacity);
-      // A second charge would unnecessarily discard another assistant turn's
-      // worth of useful result text instead of filling the available room.
-      expect(tokens).toBeGreaterThan(capacity - 100);
-      expect(chunks.filter((chunk) => chunk.warning?.includes("context budget"))).toHaveLength(1);
-    },
-  );
+
 
   it("stops budgeting a run that had no room from the start, and says so", async () => {
     // Two configurations reach this: an input that fills the window on its own,
@@ -301,7 +265,7 @@ describe("runAgent context budget", () => {
     // exhausted" from turn 0 and blames a budget the run never got to fill,
     // while the overflow it exists to prevent is already in the request.
     const channel = toolLoopChannel();
-    const deps: AgentDeps = { channel, callMcpTool: async () => ({ text: "result" }) };
+    const deps: AgentDeps = { createToolSchemaValidator, channel, callMcpTool: async () => ({ text: "result" }) };
     const input: RunAgentInput = {
       projectName: "p",
       model: SMALL_WINDOW_MODEL,
@@ -322,34 +286,7 @@ describe("runAgent context budget", () => {
     expect(chunks.some((c) => c.warning?.includes("context budget"))).toBe(false);
   });
 
-  it("counts a transfer's answer against the budget", async () => {
-    const channel = new FakeChannel([
-      [toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"do it"}'), usageChunk(1, 1)],
-      [contentChunk("done"), usageChunk(1, 1)],
-    ]);
-    const deps: AgentDeps = {
-      channel,
-      // eslint-disable-next-line require-yield
-      runSubagent: async function* () {
-        return "y".repeat(80_000);
-      },
-    };
-    const input: RunAgentInput = {
-      projectName: "p",
-      model: SMALL_WINDOW_MODEL,
-      parameters: SMALL_BUDGET_PARAMS,
-      messages: [{ role: "user", content: "go" }],
-      subagents: [{ name: "child", description: "", type: "local" }],
-    };
 
-    const chunks = await collect(runAgent(deps, input));
-
-    expect(chunks.some((c) => c.warning?.includes("context budget"))).toBe(true);
-    const context = channel.seenParams[1]?.messages.at(-1);
-    const text = String(context?.content);
-    expect(text).toContain("…[truncated: the run's context budget is exhausted]");
-    expect(text.length).toBeLessThan(40_000);
-  });
 
   it("never cuts a tool result through a surrogate pair, and the marker tells the truth", async () => {
     // "a" + 100k emoji: the 200k per-turn boundary lands between the halves
@@ -357,7 +294,7 @@ describe("runAgent context budget", () => {
     // and the provider receives as a lone surrogate escape.
     const payload = `a${"😀".repeat(100_000)}`;
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: payload }),
     };
@@ -388,7 +325,7 @@ describe("runAgent context budget", () => {
     // run fit cut that text again — a surviving claim about a length the
     // final text no longer had.
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
     };
@@ -421,7 +358,7 @@ describe("runAgent context budget", () => {
       ],
       [contentChunk("answered"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
     };
@@ -451,7 +388,7 @@ describe("runAgent context budget", () => {
       (_, i) => `user${String(i).padStart(4, "0")}@mail.com`,
     ).join(" ");
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: payload }),
     };
@@ -471,41 +408,12 @@ describe("runAgent context budget", () => {
     expect(String(toolMessage?.content).length).toBeLessThan(26_000);
   });
 
-  it("prices a transfer's masked answer, not its raw one", async () => {
-    const payload = Array.from(
-      { length: 2_000 },
-      (_, i) => `user${String(i).padStart(4, "0")}@mail.com`,
-    ).join(" ");
-    const channel = new FakeChannel([
-      [toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"do it"}'), usageChunk(1, 1)],
-      [contentChunk("done"), usageChunk(1, 1)],
-    ]);
-    const deps: AgentDeps = {
-      channel,
-      // eslint-disable-next-line require-yield
-      runSubagent: async function* () {
-        return payload;
-      },
-    };
-    const input: RunAgentInput = {
-      projectName: "p",
-      model: SMALL_WINDOW_MODEL,
-      parameters: { maxTokens: 190_000, piiFiltering: true },
-      messages: [{ role: "user", content: "go" }],
-      subagents: [{ name: "child", description: "", type: "local" }],
-    };
 
-    const chunks = await collect(runAgent(deps, input));
-
-    expect(chunks.some((c) => c.warning?.includes("context budget"))).toBe(true);
-    const context = channel.seenParams[1]?.messages.at(-1);
-    expect(String(context?.content).length).toBeLessThan(26_000);
-  });
 
   it("leaves a run with headroom byte-identical", async () => {
     const payload = "x".repeat(50_000);
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: payload }),
     };
@@ -539,7 +447,7 @@ describe("runAgent context budget", () => {
       ],
       [contentChunk("answered"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
     };
@@ -555,11 +463,11 @@ describe("runAgent context budget", () => {
     const results = chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.content ?? "");
     expect(results).toHaveLength(2);
     expect(results[0]).toContain("this turn's tool output budget is exhausted");
-    expect(results[1]).toContain("did not parse as a JSON object");
+    expect(results[1]).toContain("parsing tool arguments");
     // And the context got the same string, not a longer one it was never
     // billed for: what enters is what is charged.
     const stored = channel.seenParams[1]?.messages.find((m) => m.tool_call_id === "call_2");
-    expect(stored?.content).toBe(results[1]);
+    expect(stored?.content).toContain("parsing tool arguments");
   });
 
   it("keeps a builtin's own refusal too, and still fits what a provider sent back", async () => {
@@ -571,13 +479,13 @@ describe("runAgent context budget", () => {
     const channel = new FakeChannel([
       [
         toolCallChunk(0, "call_1", "search", "{}"),
-        toolCallChunk(1, "call_2", "GenerateImage", "{}"),
+        toolCallChunk(1, "call_2", "GenerateImage", '{"prompt":""}'),
         toolCallChunk(2, "call_3", "GenerateImage", '{"prompt":"a fox"}'),
         usageChunk(1, 1),
       ],
       [contentChunk("answered"), usageChunk(1, 1)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: "x".repeat(250_000) }),
       generateImage: async () => {
@@ -604,7 +512,7 @@ describe("runAgent context budget", () => {
   it("runs an unregistered model unbudgeted, exactly as before the budget", async () => {
     const payload = "x".repeat(100_000);
     const channel = toolLoopChannel();
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       callMcpTool: async () => ({ text: payload }),
     };

@@ -7,15 +7,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { runLocalSubagent } from "@/application/execution/subagentRunner";
 import { runImageSubagent } from "@/application/execution/imageTool";
-import type { ExecutionDeps } from "@/application/execution/deps";
 import type { RunOrigin } from "@/domain/execution/actor";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
-import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { Trace } from "@/domain/trace/types";
-import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 
 function project(name: string): Project {
   return {
@@ -46,61 +42,9 @@ function version(projectName: string, overrides: Partial<Version> = {}): Version
   };
 }
 
-async function collect(source: AsyncGenerator<EngineChunk, string>) {
-  const chunks: EngineChunk[] = [];
-  let step = await source.next();
-  while (!step.done) {
-    chunks.push(step.value);
-    step = await source.next();
-  }
-  return { chunks, text: step.value };
-}
 
-describe("runLocalSubagent with a nested transfer", () => {
-  it("keeps the grandchild's words out of the child's answer", async () => {
-    const channel = new FakeChannel([
-      // The child's first turn: transfer to the grandchild.
-      [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"grand","message":"go"}'),
-        usageChunk(1, 1),
-      ],
-      // The grandchild's whole run.
-      [contentChunk("grand-words"), usageChunk(1, 1)],
-      // The child answers after the transfer returns.
-      [contentChunk("child-answer"), usageChunk(1, 1)],
-    ]);
-    const projects = new Map([
-      ["child", project("child")],
-      ["grand", project("grand")],
-    ]);
-    const versions = new Map([
-      ["child", version("child", { subagentList: [{ name: "grand", type: "local" }] })],
-      ["grand", version("grand")],
-    ]);
-    const deps = {
-      channel,
-      projects: { get: async (name: string) => projects.get(name) ?? null },
-      versions: { get: async (name: string) => versions.get(name) ?? null },
-      skills: { get: async () => null, list: async () => [] },
-      externalAgents: { get: async () => null },
-    } as unknown as ExecutionDeps;
-    const origin = {
-      actor: { kind: "user", id: "u@example.com" },
-      ancestry: ["parent", "child"],
-    } as unknown as RunOrigin;
 
-    const { chunks, text } = await collect(
-      runLocalSubagent(deps, "child", "hi", 1, 8, async () => {}, origin),
-    );
 
-    // The grandchild still streams — its words reach the reader, authored.
-    expect(
-      chunks.some((c) => c.author === "grand" && c.delta?.content === "grand-words"),
-    ).toBe(true);
-    // But the child's answer is the child's alone.
-    expect(text).toBe("child-answer");
-  });
-});
 
 /**
  * The ceiling a child runs under.
@@ -111,72 +55,12 @@ describe("runLocalSubagent with a nested transfer", () => {
  * tripped `turn >= maxTurn` on entry and answered `""`, which the parent
  * reported as "returned no answer".
  */
-describe("runLocalSubagent and the child's own maxTurn", () => {
-  const child = (overrides: Partial<Version>) => {
-    const channel = new FakeChannel([[contentChunk("answered"), usageChunk(1, 1)]]);
-    const projects = new Map([["child", project("child")]]);
-    const versions = new Map([["child", version("child", overrides)]]);
-    const deps = {
-      channel,
-      projects: { get: async (name: string) => projects.get(name) ?? null },
-      versions: { get: async (name: string) => versions.get(name) ?? null },
-      skills: { get: async () => null, list: async () => [] },
-      externalAgents: { get: async () => null },
-    } as unknown as ExecutionDeps;
-    const origin = {
-      actor: { kind: "user", id: "u@example.com" },
-      ancestry: ["parent", "child"],
-    } as unknown as RunOrigin;
-    // Entered on turn 13 of a run whose own ceiling is 50 — past a child
-    // configured with 10, if that 10 were a point on the shared counter.
-    return collect(runLocalSubagent(deps, "child", "hi", 13, 50, async () => {}, origin));
-  };
 
-  it("gives a child transferred to late the turns its version asks for", async () => {
-    expect((await child({ maxTurn: 10 })).text).toBe("answered");
-  });
-
-  it("treats a maxTurn stored as null the way an absent one is treated", async () => {
-    // `versionRepository.fromItem` casts `item.maxTurn` blind out of JSONB, so
-    // a stored null arrives typed `undefined` and is not — and `turn + null` is
-    // `turn`, which trips the child on entry.
-    expect((await child({ maxTurn: null as unknown as number })).text).toBe("answered");
-    expect((await child({})).text).toBe("answered");
-  });
-});
 
 describe("subagent cancellation traces", () => {
   const origin = { ancestry: ["parent", "child"] } as RunOrigin;
 
-  it("records a caller-aborted prompt child as cancelled", async () => {
-    const controller = new AbortController();
-    const channel = new FakeChannel([[contentChunk("first"), contentChunk("second")]]);
-    const traces: Trace[] = [];
-    const deps = {
-      channel,
-      projects: { get: async () => project("child") },
-      versions: { get: async () => version("child") },
-      skills: { get: async () => null, list: async () => [] },
-      externalAgents: { get: async () => null },
-      traces: { put: async (trace: Trace) => void traces.push(trace) },
-    } as unknown as ExecutionDeps;
-    const stream = runLocalSubagent(
-      deps,
-      "child",
-      "hi",
-      1,
-      8,
-      async () => {},
-      origin,
-      controller.signal,
-    );
 
-    expect((await stream.next()).done).toBe(false);
-    controller.abort(new Error("ResponseAborted"));
-    await expect(stream.next()).rejects.toThrow("ResponseAborted");
-    expect(traces[0]?.status).toBe("cancelled");
-    expect(traces[0]?.error).toBeUndefined();
-  });
 
   it("records a caller-aborted image child as cancelled", async () => {
     const controller = new AbortController();

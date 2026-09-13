@@ -1,9 +1,10 @@
+import { CONTEXT_ENCRYPTED_PREFIX } from "@/domain/security/secretCipher";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { config } from "@/lib/config";
 import { decodeAes256Key } from "@/shared/aesKey";
 
 const V1_PREFIX = "enc:v1:";
-const V2_PREFIX = "enc:v2:";
+const V2_PREFIX = CONTEXT_ENCRYPTED_PREFIX;
 // Stored layout after the prefix: base64(iv(12) + tag(16) + ciphertext).
 const IV_AND_TAG_LENGTH = 28;
 

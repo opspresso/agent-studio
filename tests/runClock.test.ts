@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildAgentSystemPrompt, buildPromptMessages } from "@/application/llm/engine";
+import { buildAgentSystemPrompt, buildPromptMessages } from "@/application/runtime";
 
 const NOW = new Date("2026-07-30T06:12:00Z");
 const CLOCK_LINE =

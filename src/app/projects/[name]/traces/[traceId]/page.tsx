@@ -40,7 +40,7 @@ export default function TraceDetailPage() {
               <Text c="dimmed" fz="sm">version {trace.versionName} · {formatDateTime(trace.createdAt, locale)}</Text>
             </div>
             <Group gap="md">
-              <Badge color={trace.status === "completed" ? "teal" : trace.status === "turn-limit" || trace.status === "output-limit" ? "yellow" : "red"}>{trace.status}</Badge>
+              <Badge color={trace.status === "completed" ? "teal" : trace.status === "awaiting-approval" || trace.status === "turn-limit" || trace.status === "output-limit" ? "yellow" : "red"}>{trace.status}</Badge>
               <Text c="dimmed" fz="sm">{trace.durationMs} ms</Text>
             </Group>
           </Group>

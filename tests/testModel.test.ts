@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestModel } from "@/application/llm/testModel";
 import { ValidationError } from "@/application/errors";
-import type { LlmChannel } from "@/domain/llm/channel";
+import type { ModelProvider } from "@openai/agents";
 import { FakeChannel } from "./fakeChannel";
 import { loadSelfHostedModels } from "@/domain/llm/models";
 
@@ -11,12 +11,9 @@ afterEach(() => {
   loadSelfHostedModels([]);
 });
 
-function failingChannel(message: string): LlmChannel {
+function failingChannel(message: string): ModelProvider {
   return {
-    async chatCompletion() {
-      throw new Error(message);
-    },
-    async *chatCompletionStream() {
+    async getModel() {
       throw new Error(message);
     },
   };
@@ -48,8 +45,8 @@ describe("createTestModel", () => {
 
     const result = await createTestModel(channel)(KNOWN_MODEL);
 
-    expect(result.ok).toBe(true);
     expect(result.error).toBeUndefined();
+    expect(result.ok).toBe(true);
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
   });
 

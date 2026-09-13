@@ -1,6 +1,7 @@
 import type { SlackSuggestedPrompt } from "@/domain/slack/types";
 import type { MessageDestination } from "@/domain/messaging/destination";
 import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
+import type { RuntimePolicy } from "@/domain/execution/runtimeSession";
 
 export type ProjectType = "llm" | "agent" | "image";
 
@@ -166,6 +167,7 @@ export interface Project {
 }
 
 export interface VersionParameters {
+  policy?: RuntimePolicy;
   temperature?: number;
   presencePenalty?: number;
   maxTokens?: number;

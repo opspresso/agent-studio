@@ -11,7 +11,8 @@ import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
-import type { LlmChannel } from "@/domain/llm/channel";
+import type { ModelProvider } from "@openai/agents";
+import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
@@ -32,6 +33,8 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { RunActor, RunCaller, RunConversation, RunOrigin } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
 import type { SlackWorkspaceReader } from "@/domain/slack/reader";
+import type { RuntimeSessionServices } from "@/application/runtime/session";
+import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
 
 /**
  * Extends the run bracket's deps rather than restating them: every entry point
@@ -40,6 +43,8 @@ import type { SlackWorkspaceReader } from "@/domain/slack/reader";
  * a policy that silently stops applying to text runs.
  */
 export interface ExecutionDeps extends RunBracketDeps {
+  createToolSchemaValidator: () => ToolSchemaValidator;
+  runtimeSessions?: RuntimeSessionServices;
   versions: VersionRepository;
   projects: ProjectRepository;
   skills: SkillRepository;
@@ -47,7 +52,7 @@ export interface ExecutionDeps extends RunBracketDeps {
   externalAgents: ExternalAgentRepository;
   usage: UsageRepository;
   /** LLM channel — wired by the composition root; tests inject a fake. */
-  channel: LlmChannel;
+  channel: ModelProvider;
   /** Image channel — wired by the composition root; tests inject a fake. */
   imageChannel: ImageChannel;
   /** Secret cipher — wired by the composition root; tests inject a fake. */
@@ -153,6 +158,7 @@ export interface ExecuteVersionInput {
 }
 
 export interface ExecuteAgentInput {
+  resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   backgroundTask?: boolean;
   project: Project;
   version: Version;
@@ -283,6 +289,7 @@ export interface PromptPreview {
 export function toEngineParameters(version: Version): EngineParameters {
   const p = version.parameters;
   const params: EngineParameters = {};
+  if (p.policy) params.policy = p.policy;
   if (p.temperature !== undefined) {
     params.temperature = p.temperature;
   }

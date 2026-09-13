@@ -1,3 +1,5 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
+import { scriptedModels } from "./scriptedModels";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { sendA2aMessageMock } = vi.hoisted(() => ({
@@ -35,7 +37,7 @@ import type { ExecutionDeps } from "@/application/execution/runProject";
 import { withRunDeadline } from "@/shared/runDeadline";
 import { listModels } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
-import type { LlmChannel } from "@/domain/llm/channel";
+import type { LlmChannel } from "./channelFixtures";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version, VersionParameters } from "@/domain/project/types";
 import type { UsageDelta } from "@/domain/usage/types";
@@ -124,6 +126,7 @@ function executionDepsFixture(channel: LlmChannel) {
       listByProject: reject,
       listByDateRange: reject,
     },
+    createToolSchemaValidator,
     channel,
     imageChannel,
     cipher: secretCipher,
@@ -265,6 +268,7 @@ describe("execution cancellation", () => {
       },
     };
     const { deps } = executionDepsFixture(channel);
+    deps.channel = scriptedModels(channel);
     deps.traceSampleRate = 1;
     deps.sample = () => 0;
     const traces = captureTraces(deps);
@@ -586,7 +590,7 @@ describe("executeAgent image transfer to a subagent", () => {
   }
 
   const transferScript = (args: string) => [
-    [toolCallChunk(0, "call_t", "transfer_to_agent", args), usageChunk(1, 1)],
+    [toolCallChunk(0, "call_t", `delegate_${JSON.parse(args).agent_name}`, JSON.stringify({ input: JSON.parse(args).message, image_ids: JSON.parse(args).image_ids ?? [] })), usageChunk(1, 1)],
     [contentChunk("Done — the image is updated."), usageChunk(1, 1)],
   ];
 
@@ -741,8 +745,8 @@ describe("executeAgent image transfer to a subagent", () => {
 
     expect(edits).toEqual([]);
     expect(imageModels).toEqual([]);
-    const result = chunks.find((c) => c.toolResult?.name === "transfer_to_agent")?.toolResult;
-    expect(result?.content).toContain("unknown image id");
+    const result = chunks.find((c) => c.toolResult?.name === "delegate_simple-image: simple-image")?.toolResult;
+    expect(result?.content).toContain("Unknown image 'img_7'");
     expect(result?.content).toContain("img_1");
   });
 
@@ -776,9 +780,9 @@ describe("executeAgent image transfer to a subagent", () => {
       }),
     );
 
-    const failure = chunks.find((c) => c.error);
-    expect(failure?.author).toBe("text-child");
-    expect(failure?.error).toContain("image input");
+    const failure = chunks.find((c) => c.toolResult?.content.startsWith("Error:"));
+    expect(failure?.toolResult?.content).toContain("text-child");
+    expect(failure?.toolResult?.content).toContain("image input");
     // The parent resumed and answered, and the stream ended normally.
     expect(chunks.some((c) => c.delta?.content === "Done — the image is updated.")).toBe(true);
     expect(chunks.some((c) => c.done)).toBe(true);
@@ -799,7 +803,7 @@ describe("executeAgent image transfer to a subagent", () => {
     );
 
     const transfer = channel.seenParams[0]?.tools?.find(
-      (t) => t.function.name === "transfer_to_agent",
+      (t) => t.function.name === "delegate_simple-image",
     );
     const properties = transfer?.function.parameters?.properties as Record<string, unknown>;
     expect(properties).toHaveProperty("image_ids");
@@ -898,12 +902,12 @@ describe("executeAgent nested transfer identity", () => {
   const chainScript = [
     // bruce-bot hands off…
     [
-      toolCallChunk(0, "t1", "transfer_to_agent", '{"agent_name":"sample-agent","message":"draw"}'),
+      toolCallChunk(0, "t1", "delegate_sample-agent", "{\"input\":\"draw\",\"image_ids\":[]}"),
       usageChunk(1, 1),
     ],
     // …sample-agent hands off again…
     [
-      toolCallChunk(0, "t2", "transfer_to_agent", '{"agent_name":"simple-image","message":"a fox"}'),
+      toolCallChunk(0, "t2", "delegate_simple-image", "{\"input\":\"a fox\",\"image_ids\":[]}"),
       usageChunk(2, 2),
     ],
     // …sample-agent wraps up, then bruce-bot answers.
@@ -929,33 +933,26 @@ describe("executeAgent nested transfer identity", () => {
     expect(answer.map((c) => c.delta?.content).join("")).toBe("here is your fox");
   });
 
-  it("records the chain on every trace in the tree", async () => {
+  it("records native nested agents and action tools in one trace hierarchy", async () => {
     const channel = new FakeChannel(chainScript);
     const { deps, traces, top, version } = chainDeps(channel);
 
     await collect(executeAgent(deps, { project: top, version, messages: [{ role: "user", content: "draw a fox" }] }));
 
-    const byProject = new Map(traces.map((trace) => [trace.projectName, trace]));
-    expect(byProject.get("bruce-bot")?.ancestry).toBeUndefined(); // the root has no caller
-    expect(byProject.get("sample-agent")?.ancestry).toEqual(["bruce-bot", "sample-agent"]);
-    expect(byProject.get("simple-image")?.ancestry).toEqual([
-      "bruce-bot",
-      "sample-agent",
-      "simple-image",
-    ]);
-
-    // Each level links one step down, and names the chain it saw.
-    const rootSubagent = byProject
-      .get("bruce-bot")
-      ?.spans.find((span) => span.kind === "subagent");
-    // One span per transfer this run made, with how deep it went recorded on it.
-    expect(rootSubagent?.name).toBe("sample-agent");
-    expect(rootSubagent?.output?.chain).toBe("sample-agent → simple-image");
-    expect(rootSubagent?.output?.subagentTraceId).toBe(byProject.get("sample-agent")?.traceId);
-    const midSubagent = byProject
-      .get("sample-agent")
-      ?.spans.find((span) => span.kind === "subagent");
-    expect(midSubagent?.output?.subagentTraceId).toBe(byProject.get("simple-image")?.traceId);
+    // Specialized image execution retains its own image trace; text agents share SDK spans.
+    expect(traces.map((trace) => trace.projectName).sort()).toEqual(["bruce-bot", "simple-image"]);
+    const spans = traces.find((trace) => trace.projectName === "bruce-bot")!.spans;
+    const child = spans.find((span) => span.kind === "subagent" && span.name === "sample-agent");
+    const action = spans.find((span) => span.kind === "tool" && span.name === "delegate_simple-image");
+    expect(child?.parentSpanId).toBeDefined();
+    expect(action?.parentSpanId).toBeDefined();
+    const ancestors = new Set<string>();
+    let current = action;
+    while (current?.parentSpanId) {
+      ancestors.add(current.parentSpanId);
+      current = spans.find((span) => span.spanId === current?.parentSpanId);
+    }
+    expect(ancestors.has(child!.spanId)).toBe(true);
   });
 });
 
@@ -1051,6 +1048,7 @@ describe("executeAgent registry bindings that no longer resolve", () => {
     const { deps } = executionDepsFixture(channel);
     deps.projects.get = (async (name: string) =>
       name === "alive-agent" ? { ...projectFixture(), name } : null) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = async () => ({ ...versionFixture({ piiFiltering: false }), projectName: "alive-agent" });
 
     await collect(
       executeAgent(deps, {
@@ -1066,13 +1064,9 @@ describe("executeAgent registry bindings that no longer resolve", () => {
       }),
     );
 
-    const transfer = channel.seenParams[0]?.tools?.find(
-      (t) => t.function.name === "transfer_to_agent",
-    );
-    const agentName = (
-      transfer?.function.parameters?.properties as { agent_name?: { enum?: string[] } } | undefined
-    )?.agent_name;
-    expect(agentName?.enum).toEqual(["alive-agent"]);
+    const names = channel.seenParams[0]?.tools?.map((entry) => entry.function.name);
+    expect(names).toContain("delegate_alive-agent");
+    expect(names).not.toContain("delegate_deleted-agent");
     expect(String(channel.seenParams[0]?.messages[0]?.content)).not.toContain("deleted-agent");
   });
 });
@@ -1231,7 +1225,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
   it("runs an image-project child through image generation, never chat/completions", async () => {
     const channel = new FakeChannel([
       [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-img","message":"a cat"}'),
+        toolCallChunk(0, "call_t", "delegate_painter-img", "{\"input\":\"a cat\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [contentChunk("Here you go."), usageChunk(1, 1)],
@@ -1281,7 +1275,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
   it("prepends the image child's own system prompt as style on a transfer", async () => {
     const channel = new FakeChannel([
       [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-img","message":"a cat"}'),
+        toolCallChunk(0, "call_t", "delegate_painter-img", "{\"input\":\"a cat\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [contentChunk("Here you go."), usageChunk(1, 1)],
@@ -1329,7 +1323,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
     // its context it had none, and wrote one of its own.
     const channel = new FakeChannel([
       [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-img","message":"a cat"}'),
+        toolCallChunk(0, "call_t", "delegate_painter-img", "{\"input\":\"a cat\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [contentChunk("The image was refused."), usageChunk(1, 1)],
@@ -1376,7 +1370,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
 
     // And so is the model, in the very turn it answers from.
     const context = (channel.seenParams[1]?.messages ?? [])
-      .filter((message) => message.role === "user")
+      .filter((message) => message.role === "tool")
       .map((message) => (typeof message.content === "string" ? message.content : ""))
       .join("\n");
     expect(context).toContain("safety system");
@@ -1387,7 +1381,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
     // the tool loop drops it and the child answers from a bare system prompt.
     const channel = new FakeChannel([
       [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"summarizer","message":"three otters"}'),
+        toolCallChunk(0, "call_t", "delegate_summarizer", "{\"input\":\"three otters\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [contentChunk("Summarized."), usageChunk(1, 1)],
@@ -1439,8 +1433,8 @@ describe("executeAgent local subagent projectType dispatch", () => {
         toolCallChunk(
           0,
           "call_t",
-          "transfer_to_agent",
-          '{"agent_name":"summarizer","message":"three otters"}',
+          "delegate_summarizer",
+          "{\"input\":\"three otters\",\"image_ids\":[]}",
         ),
         usageChunk(1, 1),
       ],
@@ -1503,7 +1497,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
 
   const transferThenAnswer = (message: string) => [
     [
-      toolCallChunk(0, "call_t", "transfer_to_agent", JSON.stringify({ agent_name: "child", message })),
+      toolCallChunk(0, "call_t", "delegate_child", JSON.stringify({ input: message, image_ids: [] })),
       usageChunk(1, 1),
     ],
     [contentChunk("Child answer."), usageChunk(1, 1)],
@@ -1535,12 +1529,12 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     );
 
     const childTurn = String(channel.seenParams[1]?.messages.at(-1)?.content);
-    expect(childTurn).toContain("## Conversation so far");
+    expect(childTurn).toContain("Conversation context:");
     expect(childTurn).toContain("User: draw a cat");
     // The parent's own turns are labelled with the parent, so the child can
     // tell whose answers these were instead of reading them as its own.
     expect(childTurn).toContain(`${projectFixture().name}: Here is an orange cat.`);
-    expect(childTurn).toContain("## Request\n\nmake it bigger");
+    expect(childTurn).toContain("Request:\nmake it bigger");
     // The turn being answered is the request, not context: sending it twice
     // would double the child's input and say nothing new.
     expect(childTurn.match(/make it bigger/g)).toHaveLength(1);
@@ -1572,10 +1566,9 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
       }),
     );
 
-    // The transfer fails as a tool error and the parent still answers past it…
-    expect(chunks.some((chunk) => chunk.author === "child" && chunk.error)).toBe(true);
-    // …and what failed is on record at the level it failed at.
-    expect(traces.find((trace) => trace.projectName === "child")?.status).toBe("failed");
+    expect(chunks.some((chunk) => chunk.toolResult?.content.startsWith("Error:"))).toBe(true);
+    expect(traces[0]?.status).toBe("completed");
+    expect(traces[0]?.spans.find((span) => span.name === "delegate_child")?.status).toBe("error");
   });
 
   it("sends a first-turn transfer exactly as before, with no context block", async () => {
@@ -1599,11 +1592,11 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     // re-derived transcript would nest each hop's block inside the next.
     const channel = new FakeChannel([
       [
-        toolCallChunk(0, "t1", "transfer_to_agent", '{"agent_name":"child","message":"first hop"}'),
+        toolCallChunk(0, "t1", "delegate_child", "{\"input\":\"first hop\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [
-        toolCallChunk(0, "t2", "transfer_to_agent", '{"agent_name":"child2","message":"second hop"}'),
+        toolCallChunk(0, "t2", "handoff_child2", "{\"input\":\"second hop\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [contentChunk("Grandchild answer."), usageChunk(1, 1)],
@@ -1638,12 +1631,12 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
       }),
     );
 
-    const grandchildTurn = String(channel.seenParams[2]?.messages.at(-1)?.content);
-    expect(grandchildTurn).toContain("User: draw a cat");
-    expect(grandchildTurn).toContain("## Request\n\nsecond hop");
-    // One context block, holding the user's conversation — not the child's.
-    expect(grandchildTurn.match(/## Conversation so far/g)).toHaveLength(1);
-    expect(grandchildTurn).not.toContain("first hop");
+    const grandchildMessages = channel.seenParams[2]?.messages;
+    const context = JSON.stringify(grandchildMessages);
+    expect(context).toContain("User: draw a cat");
+    expect(grandchildMessages?.at(-1)?.content).toBe("second hop");
+    // Native handoff preserves the existing conversation in the same Runner.
+    expect(context.match(/Conversation context:/g)).toHaveLength(1);
   });
 
   it("leaves an image child's prompt alone", async () => {
@@ -1651,7 +1644,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     // would be drawn rather than read.
     const channel = new FakeChannel([
       [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-img","message":"a bigger orange cat"}'),
+        toolCallChunk(0, "call_t", "delegate_painter-img", "{\"input\":\"a bigger orange cat\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [contentChunk("Here you go."), usageChunk(1, 1)],
@@ -1693,17 +1686,15 @@ describe("executeAgent subagent turn budget", () => {
   it("clamps a child's maxTurn to the parent's ceiling", async () => {
     // The child continues the parent's turn counter, so a child version with a
     // larger maxTurn would raise the limit the whole run started under.
-    const childCall = (id: string) => toolCallChunk(0, id, "ping", "{}");
+    const childCall = (id: string) => toolCallChunk(0, id, "GenerateImage", '{"prompt":"fox"}');
     const channel = new FakeChannel([
       [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"go"}'),
+        toolCallChunk(0, "call_t", "delegate_child", "{\"input\":\"go\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [childCall("c1"), usageChunk(1, 1)],
-      [childCall("c2"), usageChunk(1, 1)],
-      [childCall("c3"), usageChunk(1, 1)],
-      [childCall("c4"), usageChunk(1, 1)],
-      [contentChunk("done"), usageChunk(1, 1)],
+      [contentChunk("partial findings"), usageChunk(1, 1)],
+      [contentChunk("parent recovered"), usageChunk(1, 1)],
     ]);
     const { deps } = executionDepsFixture(channel);
     deps.projects.get = (async (name: string) => ({
@@ -1716,11 +1707,12 @@ describe("executeAgent subagent turn budget", () => {
             ...versionFixture({ piiFiltering: false }),
             projectName: "child",
             model: "gpt-child",
+            parameters: { piiFiltering: false, imageGeneration: true },
             maxTurn: 50,
           }
         : null) as ExecutionDeps["versions"]["get"];
 
-    await collect(
+    const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
         version: {
@@ -1735,6 +1727,8 @@ describe("executeAgent subagent turn budget", () => {
     // Child starts at turn 1 and stops at the parent's ceiling of 3 — two model
     // calls. Its own maxTurn of 50 would have let it run until the scripts ran out.
     expect(channel.seenParams.filter((params) => params.model === "gpt-child")).toHaveLength(2);
+    expect(chunks.some((chunk) => chunk.author === "child" && chunk.warning?.includes("turn limit (2 turns)"))).toBe(true);
+    expect(chunks.filter((chunk) => !chunk.author && chunk.delta?.content).map((chunk) => chunk.delta?.content).join("")).toBe("parent recovered");
   });
 });
 
@@ -1761,14 +1755,14 @@ describe("executeAgent subagent recursion guards", () => {
     const transferToChild = toolCallChunk(
       0,
       "call_1",
-      "transfer_to_agent",
-      '{"agent_name":"child","message":"go"}',
+      "delegate_child",
+      "{\"input\":\"go\",\"image_ids\":[]}",
     );
     const transferToPainter = toolCallChunk(
       0,
       "call_2",
-      "transfer_to_agent",
-      '{"agent_name":"painter","message":"back"}',
+      "handoff_painter",
+      "{\"input\":\"back\",\"image_ids\":[]}",
     );
     const channel = new FakeChannel([
       [transferToChild, usageChunk(1, 1)],
@@ -1789,13 +1783,9 @@ describe("executeAgent subagent recursion guards", () => {
       }),
     );
 
-    const loopError = chunks.find((c) => c.error?.includes("would loop"));
+    const loopError = chunks.find((c) => c.warning?.includes("cycle"));
     expect(loopError).toBeDefined();
-    // The refusal names the transfer that was refused, and its path shows the hop
-    // it came through — the middle hop no longer overwrites the author.
-    expect(loopError?.author).toBe("painter");
-    expect(loopError?.authorPath).toEqual(["child", "painter"]);
-    expect(loopError?.error).toContain("painter -> child");
+    expect(loopError?.warning).toContain("painter");
     // The run still completes normally instead of being torn down.
     expect(chunks.some((c) => c.done)).toBe(true);
   });
@@ -1804,14 +1794,13 @@ describe("executeAgent subagent recursion guards", () => {
     // Each project transfers to a fresh name, so the cycle guard never fires —
     // only the depth cap can stop it.
     const transfer = (n: number) =>
-      toolCallChunk(0, `call_${n}`, "transfer_to_agent", `{"agent_name":"a${n}","message":"go"}`);
+      toolCallChunk(0, `call_${n}`, n === 1 ? `delegate_a${n}` : `handoff_a${n}`, JSON.stringify({ input: "go", image_ids: [] }));
     const channel = new FakeChannel([
       [transfer(1), usageChunk(1, 1)],
       [transfer(2), usageChunk(1, 1)],
       [transfer(3), usageChunk(1, 1)],
       [transfer(4), usageChunk(1, 1)],
       [transfer(5), usageChunk(1, 1)],
-      [transfer(6), usageChunk(1, 1)],
       [contentChunk("deep done"), usageChunk(1, 1)],
       [contentChunk("done"), usageChunk(1, 1)],
       [contentChunk("done"), usageChunk(1, 1)],
@@ -1845,7 +1834,7 @@ describe("executeAgent subagent recursion guards", () => {
       }),
     );
 
-    expect(chunks.some((c) => c.error?.includes("depth limit"))).toBe(true);
+    expect(chunks.some((c) => c.warning?.includes("depth limit"))).toBe(true);
   });
 });
 
@@ -1861,8 +1850,8 @@ describe("executeAgent remote A2A image subagent", () => {
         toolCallChunk(
           0,
           "call_t",
-          "transfer_to_agent",
-          '{"agent_name":"painter-a2a","message":"a watercolor cat"}',
+          "delegate_painter-a2a",
+          "{\"input\":\"a watercolor cat\",\"image_ids\":[]}",
         ),
         usageChunk(1, 1),
       ],
@@ -1944,7 +1933,7 @@ describe("executeAgent remote A2A conversation continuity", () => {
   }
   const transferTurn = () => [
     [
-      toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-a2a","message":"draw a cat"}'),
+      toolCallChunk(0, "call_t", "delegate_painter-a2a", "{\"input\":\"draw a cat\",\"image_ids\":[]}"),
       usageChunk(1, 1),
     ],
     [contentChunk("Done."), usageChunk(1, 1)],
@@ -2046,6 +2035,7 @@ describe("execution tracing policy", () => {
   it("stamps a sampled prompt traceId on its top-level chunks", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
+    deps.channel = scriptedModels(channel);
     deps.traceSampleRate = 1;
     deps.sample = () => 0;
     const traces = captureTraces(deps);
@@ -2078,7 +2068,7 @@ describe("execution tracing policy", () => {
       }),
     );
 
-    const prepare = traces[0]?.spans.filter((span) => span.kind === "prepare") ?? [];
+    const prepare = traces[0]?.spans.filter((span) => span.kind === "prepare" && !span.output?.sdkType) ?? [];
     expect(prepare.map((span) => span.name)).toEqual(["tools"]);
     expect(prepare[0]?.status).toBe("ok");
     expect(prepare[0]?.output).toMatchObject({ skills: 0, subagents: 0, mcpServers: 0, mcpTools: 0 });
@@ -2643,7 +2633,7 @@ describe("a transfer carries who is asking", () => {
   const script = () =>
     new FakeChannel([
       [
-        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"go"}'),
+        toolCallChunk(0, "call_t", "delegate_child", "{\"input\":\"go\",\"image_ids\":[]}"),
         usageChunk(1, 1),
       ],
       [contentChunk("child answer"), usageChunk(1, 1)],

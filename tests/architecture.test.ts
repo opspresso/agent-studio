@@ -262,10 +262,12 @@ const APP_WIRING_SITES = [
 ];
 
 /**
- * Packages `application` may name, because the protocol *is* the contract. See
- * the rule below for why this is a list of one rather than a port.
+ * Protocol/runtime SDKs whose native contracts are owned by their library.
+ * Studio's runtime uses Agent, Runner, Session and RunState directly; recreating
+ * those contracts as ports would recreate the agent runtime being replaced.
+ * Network clients and credential resolution still live in infrastructure.
  */
-const PROTOCOL_SDKS = ["@a2a-js/"];
+const PROTOCOL_SDKS = ["@a2a-js/", "@openai/agents"];
 
 const RULES: Rule[] = [
   {
@@ -306,13 +308,13 @@ const RULES: Rule[] = [
     // yet, and it arrives as a `import type` nobody reads twice.
     //
     // Protocol SDKs are the one exception, named rather than allowlisted.
-    // `@a2a-js/sdk` is it: `a2a/executor.ts` implements the SDK's
+    // `a2a/executor.ts` implements the SDK's
     // `AgentExecutor` and `a2a/exposure.ts` returns its `AgentCard`, so A2A's
     // shape does reach the use case. A port there would restate the protocol's
     // task lifecycle in our own types to gain nothing — there is one
-    // implementation of A2A and there will be one. That is a judgement rather
-    // than an oversight, which is what naming it here records; a second SDK has
-    // to be argued for in the same place.
+    // implementation of A2A and there will be one. The same ownership applies
+    // to the Agents SDK: Runner owns tool turns, approvals and handoffs. Studio
+    // owns admission, capabilities and persistence around that native runtime.
     name: "application imports only the domain and the standard library",
     from: "application",
     banned: (spec) => {
@@ -527,7 +529,7 @@ describe("configuration reads", () => {
  * `PromptPreview.tsx` reached `@/application/llm/template` for a regex over
  * `{{var}}` placeholders. That module was 29 lines with no imports of its own,
  * so it cost nothing and read as harmless — which is the point. The same line
- * naming `@/application/llm/engine` instead pulls the tool loop, the PII filter,
+ * naming `@/application/runtime` instead pulls the tool loop, the PII filter,
  * the context budget and the logger into the browser bundle, and no rule here
  * would have said a word.
  *
@@ -612,8 +614,10 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(98);
+    expect(entries.length).toBe(100);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
+      "src/app/chats/_components/PendingApproval.tsx",
+      "src/app/projects/[name]/_components/RuntimePolicyEditor.tsx",
       "src/app/projects/[name]/audio/page.tsx",
       "src/app/projects/[name]/_components/SourceMappings.tsx",
       "src/app/projects/[name]/_components/ProjectAudioContext.tsx",
@@ -747,7 +751,6 @@ describe("response shapes", () => {
 const RUN_ENDING_SITES = [
   "src/application/execution/imageTool.ts",
   "src/application/execution/runProject.ts",
-  "src/application/execution/subagentRunner.ts",
   "src/application/image/generateImage.ts",
 ];
 
@@ -1417,7 +1420,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     what: "the subagent nesting limit",
     pattern: /MAX_SUBAGENT_DEPTH\s*=/,
-    owner: "src/application/execution/subagentRunner.ts",
+    owner: "src/application/execution/agentBindings.ts",
   },
   {
     what: "the per-run MCP tool cap",
@@ -1434,9 +1437,9 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/member/tiers.ts",
   },
   {
-    what: "how many agents one dispatch may run",
-    pattern: /MAX_DISPATCH_TASKS\s*=/,
-    owner: "src/application/llm/agentAssembly.ts",
+    what: "concurrent SDK function tool executions",
+    pattern: /MAX_FUNCTION_TOOL_CONCURRENCY\s*=/,
+    owner: "src/application/runtime/runner.ts",
   },
   {
     what: "builtin tool wire names",
@@ -1507,8 +1510,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     pattern: /\.done\b|\.finishReason\b/,
     owner: "src/domain/llm/types.ts",
     alsoAllowedUnder: [
-      "src/application/llm/engine.ts",
-      "src/application/execution/subagentRunner.ts",
+      "src/application/runtime/execute.ts",
+      "src/application/runtime/agent.ts",
       "src/app/api/_lib/sse.ts",
       "src/app/api/chats/_lib/frames.ts",
       "src/application/run/leadingWarnings.ts",
@@ -1774,9 +1777,9 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // because chat replay legitimately builds `role: "tool"` messages from
     // stored rows — that is reconstruction, not dispatch.
     what: "what a tool result has to do, and in what order",
-    pattern: /tool_call_id: call\.id/,
-    owner: "src/application/llm/toolResultBudget.ts",
-    within: "src/application/llm/",
+    pattern: /function writeToolResult\(/,
+    owner: "src/application/runtime/output.ts",
+    within: "src/application/runtime/",
   },
   {
     // Whether a run's prompt may name the person asking. Three modules answered
@@ -2441,7 +2444,7 @@ const TOOL_RESOLUTION_SITES = [
   // The top-level agent run; queries come from the newest user turn.
   "src/application/execution/runProject.ts",
   // A transferred-to child; the transfer message is its whole request.
-  "src/application/execution/subagentRunner.ts",
+  "src/application/execution/agentBindings.ts",
   // The Playground preview; the request is optional there, and without one it
   // shows the floor every run starts from.
   "src/application/execution/promptPreview.ts",
@@ -2726,11 +2729,11 @@ describe("edge runtime compatibility", () => {
 describe("scanner", () => {
   it("reads the whole source tree", () => {
     expect(SOURCE_FILES.length).toBeGreaterThan(100);
-    expect(SOURCE_FILES.some((f) => f.path === "src/application/llm/engine.ts")).toBe(true);
+    expect(SOURCE_FILES.some((f) => f.path === "src/application/runtime/execute.ts")).toBe(true);
   });
 
   it("still sees a dependency that is known to exist", () => {
-    const engine = SOURCE_FILES.find((f) => f.path === "src/application/llm/engine.ts")!;
+    const engine = SOURCE_FILES.find((f) => f.path === "src/application/runtime/execute.ts")!;
     const specs = parseImports(engine.text).map((i) => i.spec);
     expect(specs.some((spec) => spec.startsWith("@/domain/"))).toBe(true);
   });
@@ -2774,7 +2777,7 @@ describe("scanner", () => {
       [
         `const { executeAgent: run, streamProjectRun } = await import("@/application/execution/runProject");`,
         `(await import("@/application/execution/runProject")).executeAgent;`,
-        `const engine = await import("@/application/llm/engine");`,
+        `const engine = await import("@/application/runtime");`,
         `import("@/application/execution/runProject").then(({ executeAgent: run }) => run);`,
       ].join("\n"),
     );
@@ -2802,7 +2805,7 @@ describe("scanner", () => {
     const parsed = parseImports(
       [
         `import { executeAgent as run, type Deps } from "@/application/execution/runProject";`,
-        `import * as engine from "@/application/llm/engine";`,
+        `import * as engine from "@/application/runtime";`,
         `import React from "react";`,
       ].join("\n"),
     );

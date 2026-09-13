@@ -3,8 +3,6 @@ import type { AguiEvent } from "@/domain/agui/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import { RateLimitedError } from "@/application/errors";
 import { toAguiEvents } from "@/application/agui/events";
-import { runAgent } from "@/application/llm/engine";
-import { contentChunk, FakeChannel, toolCallChunk } from "./fakeChannel";
 
 const RUN = { threadId: "t1", runId: "r1" };
 
@@ -221,12 +219,12 @@ describe("toAguiEvents — reasoning, steps and the other axes", () => {
 
   it("reports a subagent as a step and never as the answer, while keeping its picture and warning", async () => {
     const events = await translate([
-      { delta: { toolCalls: [{ id: "c1", type: "function", function: { name: "transfer_to_agent", arguments: "{}" } }] } },
+      { delta: { toolCalls: [{ id: "c1", type: "function", function: { name: "delegate_helper", arguments: "{}" } }] } },
       { author: "painter", authorPath: ["painter"], delta: { content: "child text" } },
       { author: "painter", authorPath: ["painter"], warning: "child lost a binding" },
       { author: "painter", authorPath: ["painter"], image: { b64: "AAAA", mimeType: "image/png", model: "x/img" } },
       { author: "painter", authorPath: ["painter"], error: "child failed", authorDone: true },
-      { toolResult: { toolCallId: "c1", name: "transfer_to_agent: painter", content: "Transferred.", displayOnly: true } },
+      { toolResult: { toolCallId: "c1", name: "delegate_painter: painter", content: "Error: child failed" } },
       { delta: { content: "done" } },
       { done: true },
     ]);
@@ -384,69 +382,17 @@ describe("toAguiEvents — identity and naming", () => {
 });
 
 describe("toAguiEvents — a transfer's result", () => {
-  it.each(["fresh answer", ""])("keeps dispatch and repeated transfers separate when the next answer is %j", async (answer) => {
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "dispatch", "dispatch_agents", JSON.stringify({
-          tasks: [
-            { agent_name: "helper", message: "old helper answer" },
-            { agent_name: "other", message: "old other answer" },
-          ],
-        })),
-        toolCallChunk(1, "transfer-1", "transfer_to_agent", JSON.stringify({ agent_name: "helper", message: "fresh" })),
-        toolCallChunk(2, "transfer-2", "transfer_to_agent", JSON.stringify({ agent_name: "helper", message: "latest answer" })),
-      ],
-      [contentChunk("parent answer")],
-    ]);
-    const events = await collect(toAguiEvents(runAgent({
-      channel,
-      runSubagent: async function* (name, message) {
-        // A different direct child may itself call helper. Those words are
-        // not the answer of the root's subsequent transfer to helper.
-        yield {
-          author: name === "other" ? "helper" : "nested",
-          authorPath: [name, name === "other" ? "helper" : "nested"],
-          delta: { content: "nested detail" },
-        };
-        const text = message === "fresh" ? answer : message;
-        if (text) {
-          yield { author: name, authorPath: [name], delta: { content: text } };
-        }
-        return text;
-      },
-    }, {
-      projectName: "parent",
-      model: "openai/gpt-5-mini",
-      messages: [{ role: "user", content: "go" }],
-      parameters: { piiFiltering: false },
-      canDispatch: true,
-      subagents: [
-        { name: "helper", description: "", type: "local" },
-        { name: "other", description: "", type: "local" },
-      ],
-    }), RUN, { newId: ids() }));
 
-    // The real engine announces the whole plan, streams each builtin's
-    // children, emits authorDone, then emits that top-level tool's result.
-    const results = events.filter((event) => event.type === "TOOL_CALL_RESULT");
-    expect(results.map((result) => result.toolCallId)).toEqual(["dispatch", "transfer-1", "transfer-2"]);
-    expect(results[0]!.content).toContain("old helper answer");
-    expect(results[0]!.content).toContain("old other answer");
-    expect(results[1]!.content).toBe(answer || "Transferred to 'helper'; its answer follows.");
-    expect(results[2]!.content).toBe("latest answer");
-    expect(results.every((result) => !result.content.includes("nested detail"))).toBe(true);
-    expect(events.at(-1)?.type).toBe("RUN_FINISHED");
-  });
 
-  it("carries the child's answer, not the engine's display-only marker", async () => {
+  it("carries the native delegate result without rebuilding it from child deltas", async () => {
     // A client replays tool results and nothing else, so the marker alone
     // would tell the next run the delegation returned nothing.
     const events = await translate([
-      { delta: { toolCalls: [{ id: "c1", type: "function", function: { name: "transfer_to_agent", arguments: "{}" } }] } },
+      { delta: { toolCalls: [{ id: "c1", type: "function", function: { name: "delegate_helper", arguments: "{}" } }] } },
       { author: "helper", authorPath: ["helper"], delta: { content: "The answer " } },
       { author: "helper", authorPath: ["helper"], delta: { content: "is 42." } },
       { author: "helper", authorPath: ["helper"], authorDone: true },
-      { toolResult: { toolCallId: "c1", name: "transfer_to_agent: helper", content: "Transferred to 'helper'; its answer follows.", displayOnly: true } },
+      { toolResult: { toolCallId: "c1", name: "delegate_helper: helper", content: "The answer is 42." } },
       { done: true },
     ]);
     const result = events.find((event) => event.type === "TOOL_CALL_RESULT");

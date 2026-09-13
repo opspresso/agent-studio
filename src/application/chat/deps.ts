@@ -6,11 +6,14 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
+import type { RuntimeSessionServices } from "@/application/runtime/session";
+import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
 
 export interface AgentRunParams {
+  resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   project: Project;
   version: Version;
-  /** OpenAI-shaped message history (see messageMapping.ts). */
+  /** The new user input; persisted SDK Session supplies previous model turns. */
   messages: ChatMessageInput[];
   /** Who caused the run — always the chat's owner, since chats are private. */
   actor: RunActor;
@@ -45,6 +48,7 @@ export interface AttachedDocumentInput {
 }
 
 export interface ChatDeps {
+  runtimeSessions?: RuntimeSessionServices;
   chats: ChatRepository;
   /**
    * Where a run writes itself down once its reader leaves. Required, not

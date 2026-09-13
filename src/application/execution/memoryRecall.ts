@@ -18,7 +18,7 @@
  * remember".
  */
 
-import type * as engine from "@/application/llm/engine";
+import type * as engine from "@/application/runtime";
 import { bindingsMayOfferRecall, RECALL_TOOL_NAME } from "@/domain/project/memoryRecall";
 import type { Version } from "@/domain/project/types";
 import type { RunOrigin } from "@/domain/execution/actor";
@@ -191,7 +191,7 @@ export async function recallForRun(input: {
  */
 export async function recallMemories(input: {
   /** The version as bound; only its own servers are asked (see {@link recallTargets}). */
-  version: Pick<Version, "mcpList">;
+  version: Pick<Version, "mcpList"> & Partial<Pick<Version, "parameters">>;
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;
   /** The newest user turn as text; nothing to ask with is reported, not asked. */
   query: string;
@@ -201,10 +201,15 @@ export async function recallMemories(input: {
   // `cutCodePoints`, not `slice`: the query goes out as JSON-RPC arguments and
   // a cut through a surrogate pair is not text a server can read.
   const query = cutCodePoints(input.query.trim(), MAX_QUERY_CHARS);
-  const targets = recallTargets(mcp, input.version);
-  if (targets.length === 0) {
+  const declared = recallTargets(mcp, input.version);
+  if (declared.length === 0) {
     return { warnings: [noRecallTargetWarning()], asked: 0, failed: 0 };
   }
+  const policy = input.version.parameters?.policy;
+  const gated = declared.filter(({ alias }) => policy?.blockedTools?.includes(alias) || policy?.approvalTools?.includes(alias));
+  const targets = declared.filter((entry) => !gated.includes(entry));
+  const policyWarnings = gated.map(({ server }) => `Automatic memory recall from '${server}' was skipped by the tool policy; approved tools run through the Agent.`);
+  if (!targets.length) return { warnings: policyWarnings, asked: 0, failed: 0 };
   if (!query || !mcp.callMcpTool) {
     // A picture-only turn, or a resolve that offered the tools but no way to
     // call them. Said out loud: the version says it recalls, and nothing did.
@@ -217,7 +222,7 @@ export async function recallMemories(input: {
     };
   }
   const callMcpTool = mcp.callMcpTool;
-  const warnings: string[] = [];
+  const warnings: string[] = [...policyWarnings];
   const sections: string[] = [];
   let failed = 0;
   const startedAt = Date.now();

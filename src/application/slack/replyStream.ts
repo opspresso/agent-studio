@@ -700,7 +700,7 @@ export function createReplySink(
         await sendStatus(usingPhrase(title));
         return;
       }
-      // The parent's own `transfer_to_agent` row already stands for the whole
+      // The parent's own native delegation row already stands for the whole
       // hand-off, and its result closes it when the child returns — so listing
       // the child's tools as well says the same thing again, once per call.
       if (opts?.nested) {

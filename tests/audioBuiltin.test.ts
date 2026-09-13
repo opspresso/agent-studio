@@ -1,5 +1,6 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { describe, expect, it, vi } from "vitest";
-import { runAgent } from "@/application/llm/engine";
+import { runAgent } from "@/application/runtime";
 import { contentChunk, FakeChannel, toolCallChunk } from "./fakeChannel";
 import { AUDIO_TOOL_NAMES } from "@/domain/llm/toolNames";
 import { createAudioTool } from "@/application/audio/audioTool";
@@ -75,14 +76,16 @@ describe("audio builtins", () => {
   });
   it("dispatches offered audio tools through the shared result stream", async () => {
     const audioTools = vi.fn(async () => ({ text: '{"status":"accepted","job":{"id":"job-1"}}' }));
+    const args = { source: { kind: "file", id: "file-1" }, model: "whisper", language: null,
+      retention: { unit: "days", value: 1, timezone: "UTC" }, processing_revision: null };
     const channel = new FakeChannel([
-      [toolCallChunk(0, "call-1", "TranscribeAudio", '{"file_id":"file-1"}')], [contentChunk("Queued")],
+      [toolCallChunk(0, "call-1", "TranscribeAudio", JSON.stringify(args))], [contentChunk("Queued")],
     ]);
     const chunks = [];
-    for await (const chunk of runAgent({ channel, recordUsage: async () => {}, audioTools }, {
+    for await (const chunk of runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {}, audioTools }, {
       projectName: "audio", model: "openai/gpt-5-mini", systemPrompt: "Transcribe audio", messages: [{ role: "user", content: "Transcribe" }],
     })) chunks.push(chunk);
-    expect(audioTools).toHaveBeenCalledWith("TranscribeAudio", { file_id: "file-1" });
+    expect(audioTools).toHaveBeenCalledWith("TranscribeAudio", args);
     expect(chunks.some((chunk) => chunk.toolResult?.content.includes("job-1"))).toBe(true);
     const offered = channel.seenParams[0]?.tools?.map((tool) => tool.function.name) ?? [];
     expect(offered).toEqual(expect.arrayContaining([...AUDIO_TOOL_NAMES]));
@@ -90,7 +93,7 @@ describe("audio builtins", () => {
 
   it("does not offer audio tools without the capability", async () => {
     const channel = new FakeChannel([[contentChunk("No tools")]]);
-    for await (const _chunk of runAgent({ channel, recordUsage: async () => {} }, {
+    for await (const _chunk of runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {} }, {
       projectName: "audio", model: "openai/gpt-5-mini", systemPrompt: "", messages: [],
     })) { /* drain */ }
     expect(channel.seenParams[0]?.tools?.some((tool) => AUDIO_TOOL_NAMES.includes(tool.function.name)) ?? false).toBe(false);

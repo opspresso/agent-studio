@@ -78,3 +78,7 @@ export function llmProviderApiKeyContext(name: string, baseUrl: string): string 
 export function settingsSecretContext(field: "github-token" | "a2a-api-key"): string {
   return JSON.stringify(["settings", field]);
 }
+
+export function runtimeSessionContext(sessionId: string, ownerEmail: string): string {
+  return JSON.stringify(["runtime-session", sessionId, ownerEmail]);
+}

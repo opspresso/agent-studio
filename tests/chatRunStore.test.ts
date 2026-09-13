@@ -97,6 +97,21 @@ afterEach(() => {
 });
 
 describe("runStore", () => {
+  it("resumes an approval with the exact revision and no phantom user message", async () => {
+    const fetch = vi.fn(async () => sse([{ runId: "resume-1" }, { delta: { content: "approved" } }, { ended: true }]));
+    vi.stubGlobal("fetch", fetch);
+    const store = fresh();
+    const decision = { revision: 7, decisions: [{ id: "a".repeat(64), approve: true }] };
+    expect(store.resumeApproval("c1", decision)).toBe("c1");
+    expect(store.resumeApproval("c1", decision)).toBeNull();
+    await settle();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith("/api/chats/c1/approval", expect.objectContaining({ method: "POST", body: JSON.stringify(decision) }));
+    expect(store.get("c1")?.pendingUser).toBeUndefined();
+    expect(store.get("c1")?.runId).toBe("resume-1");
+    expect(store.get("c1")?.live.text).toBe("approved");
+  });
+
   /**
    * The stopwatch a reader watches counts from the head frame, so a turn this
    * tab sent has to carry the instant the server named its run — and the

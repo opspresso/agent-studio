@@ -1,13 +1,15 @@
+import { scriptedModels } from "./scriptedModels";
 import type {
   ChannelChunk,
   ChannelCompletion,
   ChannelParams,
   ChannelToolCall,
   LlmChannel,
-} from "@/domain/llm/channel";
+} from "./channelFixtures";
 
 /** A channel that replays one scripted chunk list per successive call. */
 export class FakeChannel implements LlmChannel {
+  getModel(name?: string) { return scriptedModels(this).getModel(name); }
   calls = 0;
   readonly seenParams: ChannelParams[] = [];
 

@@ -34,7 +34,7 @@ before editing its subsystem.
 | Auth, secrets, SSRF, PII | [docs/SECURITY.md](docs/SECURITY.md) |
 | Setup, scripts, CI | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | Unbuilt work only | [docs/MILESTONES.md](docs/MILESTONES.md) |
-| LLM engine | `src/application/llm/AGENTS.md`, then [design/execution.md](docs/design/execution.md) |
+| Agent runtime | `src/application/runtime/AGENTS.md`, then [design/execution.md](docs/design/execution.md) |
 | Document parsing, generation, editing and workers | [design/documents.md](docs/design/documents.md) |
 | Chat persistence and replay | `src/application/chat/AGENTS.md`, then [design/chat.md](docs/design/chat.md) |
 
@@ -80,7 +80,8 @@ refuses to boot without an explicit `STAGE`. See [CONFIGURATION.md](docs/CONFIGU
 - `src/domain/` owns entities, value rules, and repository ports. It is pure TypeScript and
   imports no framework, AWS, infrastructure, or `shared` module.
 - `src/application/` owns use cases and orchestration. It imports domain, dependency-free shared
-  helpers, and the standard library only. `@a2a-js/sdk` is the single third-party exception; the pure `runMetrics` leaf is
+  helpers, and the standard library only. `@a2a-js/sdk` and `@openai/agents` are the explicit
+  protocol/runtime exceptions; their native contracts are not redefined as domain ports. The pure `runMetrics` leaf is
   the only current `lib` import. It never imports `container.ts`; dependencies are injected.
 - `src/infrastructure/` owns adapters: PostgreSQL/item store, vectors, object store, LLM, MCP,
   messaging, A2A, GitHub, network, and crypto.
@@ -135,7 +136,10 @@ key, cap, formatter, error identity, or collapse rule, search
 - Row keys come from `src/infrastructure/db/keys.ts`. The sole cross-layer cursor exception is
   `artifactCursor` in `src/domain/artifact/repository.ts`.
 - Repositories use `src/infrastructure/db/store.ts`, never raw SQL against `items`. Plain SQL is
-  limited to Better Auth tables, `catalog_vectors`, and `skillRepository.describe` projection.
+  limited to Better Auth tables, `catalog_vectors`, encrypted `runtime_sessions`, and
+  `skillRepository.describe` projection. SDK Session/checkpoint payloads use their own table because
+  native state can contain inline images larger than an item row; history and approval state commit
+  together with an owner-scoped revision check.
 - Unbounded lists take `limit`; post-read expiry filtering passes `notExpiredAt` so filtering
   occurs before the limit counts.
 - Expiring rows carry `expiresAt`; `sweepExpiredRows` performs retention on the schedule tick and
@@ -168,9 +172,9 @@ key, cap, formatter, error identity, or collapse rule, search
 
 ### Chat and console
 
-- Before editing chat `run.ts` or `messageMapping.ts`, read `src/application/chat/AGENTS.md`.
-  Replay preserves tool traffic; within-turn storage order is reverse wire order, call/result ids
-  are scoped to one run, and three independent context budgets apply.
+- Before editing chat persistence or approval use cases, read `src/application/chat/AGENTS.md`.
+  Native SDK Session owns model/tool history. Display storage order is reverse wire order;
+  call/result IDs remain scoped to one run. Session, display reads and reconnect logs have separate bounds.
 - A chat run outlives its initiating connection. Routes do not pass an `AbortController` to SSE;
   the detach wrapper remains outermost; clients do not abort the fetch on unmount.
 - `use-stick-to-bottom` alone owns chat viewport scrolling. Thread descendants cannot scroll on

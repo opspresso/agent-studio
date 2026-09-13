@@ -1,7 +1,7 @@
 import { createArtifactId } from "@/application/artifact/storeArtifact";
 /** The SaveFile builtin: text a run wrote, kept as a file the reader receives. */
 
-import type * as engine from "@/application/llm/engine";
+import type * as engine from "@/application/runtime";
 import type { McpToolResult } from "@/domain/llm/types";
 import {
   baseMimeType,

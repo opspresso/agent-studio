@@ -1,3 +1,5 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
+import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import type {
@@ -5,8 +7,8 @@ import type {
   ChannelCompletion,
   ChannelParams,
   LlmChannel,
-} from "@/domain/llm/channel";
-import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
+} from "./channelFixtures";
+import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { SAVE_FILE_TOOL_NAME } from "@/application/llm/agentAssembly";
 import { buildFileSaver } from "@/application/execution/saveFileTool";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
@@ -86,7 +88,7 @@ describe("announcing a call that carries a whole file", () => {
       [saveCall("c1", BODY), usageChunk(10, 5)],
       [contentChunk("done"), usageChunk(4, 2)],
     ]);
-    const chunks = await collect(runAgent({ ...saver(), channel }, input()));
+    const chunks = await collect(runAgent({ createToolSchemaValidator, ...saver(), channel }, input()));
 
     const shown = announced(chunks, "c1");
     expect(String(shown.content)).toContain(`${Buffer.byteLength(BODY, "utf8")} bytes`);
@@ -105,7 +107,7 @@ describe("announcing a call that carries a whole file", () => {
       [saveCall("c1", BODY), usageChunk(10, 5)],
       [contentChunk("done"), usageChunk(4, 2)],
     ]);
-    await collect(runAgent({ ...saver(), channel }, input()));
+    await collect(runAgent({ createToolSchemaValidator, ...saver(), channel }, input()));
 
     const sent = sentBack(channel, "c1");
     expect(sent.content).not.toBe(BODY);
@@ -125,7 +127,7 @@ describe("announcing a call that carries a whole file", () => {
       ],
       [contentChunk("done"), usageChunk(4, 2)],
     ]);
-    const chunks = await collect(runAgent({ ...saver(), channel }, input()));
+    const chunks = await collect(runAgent({ createToolSchemaValidator, ...saver(), channel }, input()));
 
     const raw = chunks.flatMap((chunk) => chunk.delta?.toolCalls ?? []);
     const args = String(raw[0]?.function?.arguments ?? "");
@@ -141,7 +143,7 @@ describe("announcing a call that carries a whole file", () => {
       [contentChunk("done"), usageChunk(4, 2)],
     ]);
     const chunks = await collect(
-      runAgent({ ...saver(), channel, callMcpTool: async () => ({ text: "ok" }) }, input()),
+      runAgent({ createToolSchemaValidator, ...saver(), channel, callMcpTool: async () => ({ text: "ok" }) }, input()),
     );
 
     expect(String(announced(chunks, "c1").content)).toContain("elided");
@@ -154,7 +156,7 @@ describe("what the run yields for a saved file", () => {
       [saveCall("c1", "<p>hi"), usageChunk(10, 5)],
       [contentChunk("done"), usageChunk(4, 2)],
     ]);
-    const chunks = await collect(runAgent({ ...saver(), channel }, input()));
+    const chunks = await collect(runAgent({ createToolSchemaValidator, ...saver(), channel }, input()));
 
     const file = chunks.find((chunk) => chunk.file)?.file;
     expect(file?.name).toBe("q3.html");
@@ -167,7 +169,7 @@ describe("what the run yields for a saved file", () => {
       [...calls, usageChunk(10, 5)],
       [contentChunk("done"), usageChunk(4, 2)],
     ]);
-    const chunks = await collect(runAgent({ ...saver(), channel }, input()));
+    const chunks = await collect(runAgent({ createToolSchemaValidator, ...saver(), channel }, input()));
 
     const files = chunks.filter((chunk) => chunk.file);
     expect(files).toHaveLength(10);
@@ -178,6 +180,7 @@ describe("what the run yields for a saved file", () => {
 
 /** Echoes back whatever it was sent, as a SaveFile call carrying it. */
 class SaveWhatItSaw implements LlmChannel {
+  getModel(name?: string) { return scriptedModels(this).getModel(name); }
   calls = 0;
   readonly seenParams: ChannelParams[] = [];
 
@@ -206,7 +209,7 @@ describe("a saved file and the PII boundary", () => {
     // values — a report full of their own placeholders is the bug.
     const channel = new SaveWhatItSaw();
     const saved: string[] = [];
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       saveFile: async ({ content }) => {

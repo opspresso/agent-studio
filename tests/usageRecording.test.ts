@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { EngineDeps } from "@/application/llm/engine";
-import { runPrompt, runPromptStream } from "@/application/llm/engine";
+import type { EngineDeps } from "@/application/runtime";
+import { runPrompt, runPromptStream } from "@/application/runtime";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
@@ -34,7 +34,7 @@ describe("cached prompt tokens", () => {
       ),
     );
     expect(recorded[0]).toMatchObject({ inputTokens: 100, cachedTokens: 80 });
-    expect(withCache.at(-1)?.usage).toMatchObject({ inputTokens: 100, cachedTokens: 80 });
+    expect(withCache.find((chunk) => chunk.usage)?.usage).toMatchObject({ inputTokens: 100, cachedTokens: 80 });
 
     recorded.length = 0;
     const silent = new FakeChannel([[contentChunk("hi"), usageChunk(100, 10)]]);
@@ -45,7 +45,7 @@ describe("cached prompt tokens", () => {
       ),
     );
     expect(recorded[0]).not.toHaveProperty("cachedTokens");
-    expect(withoutCache.at(-1)?.usage).not.toHaveProperty("cachedTokens");
+    expect(withoutCache.find((chunk) => chunk.usage)?.usage).not.toHaveProperty("cachedTokens");
   });
 });
 

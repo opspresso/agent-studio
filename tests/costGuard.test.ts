@@ -7,7 +7,7 @@ import {
   type CostGuardDeps,
 } from "@/application/usage/costGuard";
 import { openRun } from "@/application/run/runBracket";
-import { runLocalSubagent } from "@/application/execution/subagentRunner";
+import { prepareSubagent } from "@/application/execution/agentBindings";
 import {
   executeAgent,
   executeVersion,
@@ -514,7 +514,7 @@ describe("a subagent transfer is guarded too", () => {
     const f = fixture({ day: row({ m: spentUsd }) });
     return {
       ...f.deps,
-      projects: { get: async () => ({ ...child, publishedVersion: "v1" }) },
+      projects: { get: async () => ({ ...child, projectType: "llm", publishedVersion: "v1" }) },
       versions: { get: async () => childVersion },
       channel: {
         stream: () => {
@@ -524,31 +524,14 @@ describe("a subagent transfer is guarded too", () => {
     } as unknown as ExecutionDeps;
   }
 
-  async function firstChunk(spentUsd: number) {
-    const stream = runLocalSubagent(
-      deps(spentUsd),
-      "proj",
-      "hi",
-      1,
-      4,
-      async () => {},
-      { ancestry: ["parent"], actor: { kind: "user", id: "u@example.com" } },
-    );
-    return (await stream.next()).value as { author?: string; error?: string };
+  function prepareChild(spentUsd: number) {
+    return prepareSubagent(deps(spentUsd), { ...childVersion, projectName: "parent", subagentList: [{ name: "proj", type: "local" }] }, "proj", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });
   }
-
-  it("refuses a child whose project is over its daily block threshold", async () => {
-    const chunk = await firstChunk(100);
-    expect(chunk.author).toBe("proj");
-    expect(chunk.error).toMatch(/daily|limit|spend/i);
+  it("refuses a child over its own project spending limit", async () => {
+    await expect(prepareChild(100)).rejects.toThrow(/daily|limit|spend/i);
   });
-
-  it("lets a child under the threshold through to its own run", async () => {
-    // Reaching the channel is the assertion, and it is named rather than
-    // implied: without it this test would pass on any refusal at all, including
-    // the one it exists to rule out.
-    const chunk = await firstChunk(1);
-    expect(chunk.error).toContain("chatCompletionStream");
+  it("prepares a child under its project spending limit", async () => {
+    expect(await prepareChild(1)).toMatchObject({ kind: "agent", input: { model: childVersion.model } });
   });
 });
 

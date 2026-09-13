@@ -327,6 +327,7 @@ export async function* runAndPersist(
       !content &&
       !reasoning &&
       toolMessages.length === 0 &&
+      toolCalls.length === 0 &&
       generatedImages.length === 0 &&
       generatedFiles.length === 0 &&
       warnings.length === 0

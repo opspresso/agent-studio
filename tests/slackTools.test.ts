@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { describe, expect, it } from "vitest";
 import { createSlackWorkspaceReader, type SlackReaderPort } from "@/application/slack/workspaceRead";
 import {
@@ -6,7 +7,7 @@ import {
   SLACK_TOOL_NAMES,
   type AgentDeps,
   type RunAgentInput,
-} from "@/application/llm/engine";
+} from "@/application/runtime";
 import type { EngineChunk } from "@/domain/llm/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import type {
@@ -370,7 +371,7 @@ describe("dispatching a Slack tool", () => {
     // preview and the run cannot disagree about what this run can reach.
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
 
-    await collect(runAgent({ channel, recordUsage: async () => {} }, input()));
+    await collect(runAgent({ createToolSchemaValidator, channel, recordUsage: async () => {} }, input()));
 
     const offered = (channel.seenParams[0]?.tools ?? []).map((tool) => tool.function.name);
     expect(offered).not.toContain("SlackHistory");
@@ -385,7 +386,7 @@ describe("dispatching a Slack tool", () => {
       [contentChunk("they rolled back"), usageChunk(8, 4)],
     ]);
     const seen: Array<{ tool: string; args: Record<string, unknown> }> = [];
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       readSlack: async (tool, args) => {
@@ -408,7 +409,7 @@ describe("dispatching a Slack tool", () => {
       [toolCallChunk(0, "c1", "SlackChannels", "{}"), usageChunk(10, 5)],
       [contentChunk("I could not look"), usageChunk(8, 4)],
     ]);
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async () => {},
       readSlack: async () => {

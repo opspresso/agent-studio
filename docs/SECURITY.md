@@ -15,8 +15,14 @@ Better Auth의 `advanced.cookiePrefix`는 `agent-studio`다. 기본 세션 쿠�
 
 Better Auth 1.7 이 이 앱의 커넥션 풀 위에서 라이브러리 자신의 Postgres 어댑터로 돈다.
 `user`, `session`, `account`, `verification` 은 그것이 소유하는 테이블이고(`migrations.ts` 가
-만든다), email·token 의 유일성은 테이블의 유니크 제약이다. 로그인 수단은 **전부 선택**이고
-설치가 고른다 (`src/lib/config.ts` 의 `authProviders`, 그대로 `auth.ts` 와 로그인 페이지로):
+만든다), email·token 의 유일성은 테이블의 유니크 제약이다.
+
+계정의 식별자는 `providerId + accountId`이며 이 조합에 unique index를 둔다. `issuer`는
+기존 값을 보존하는 nullable 이력 컬럼이고 새 계정에는 쓰지 않는다. 같은 계정 키가 여러 행에
+있으면 업그레이드를 중단한다. 서로 다른 사용자를 자동 병합하거나 provider를 임의로 바꾸지 않는다.
+
+로그인 수단은 **전부 선택**이고 설치가 고른다 (`src/lib/config.ts` 의 `authProviders`,
+그대로 `auth.ts` 와 로그인 페이지로):
 
 | 수단 | 켜는 것 | 성질 |
 |---|---|---|
@@ -756,6 +762,22 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
 연결 대신 자기 `Authorization` 을 끼워 넣을 수 없다. 사용할 수 있는 연결이 없으면 서버는 그
 헤더들이 담고 있는 것으로 여전히 돌아간다. 그것들이 아무것도 담고 있지 않을 때만 경고와 함께
 드롭된다.
+
+## SDK Session과 승인 상태
+
+SDK Session 이력과 승인 대기 RunState는 `runtime_sessions`에 별도로 저장한다. 같은 배포의
+`AES_ENCRYPTION_KEY`를 사용하며 대화 ID와 소유자를 인증 데이터에 묶은 암호문만 읽는다.
+원문 상태에는 모델/도구 이력과 각 Agent의 PII 복원 매핑이 포함될 수 있다. DB 접근 권한과
+암호화 키를 분리해 관리하고 백업·복구 시 같은 키를 유지하라.
+
+승인은 Chat 소유자가 정확한 revision과 항목 ID를 지정한다. 동일 출처 session 변경 검사,
+프로젝트 접근 재확인, 실행 lease와 Session CAS를 함께 적용한다. 승인 상태는 도구 실행 전에
+pending에서 running으로 선점한다. 중복·낡은 결정, 변경된 버전과 연결은 거부하며 승인 후
+중단된 실행은 자동으로 반복하지 않는다. 삭제 tombstone은 늦게 끝난 실행의 재생성을 막는다.
+
+SDK tracing은 로컬 processor가 이름·시간·상태·사용량만 수집한다. SDK의 공개 exporter를
+설치하지 않으며 원문 모델/도구 입력·출력과 credential을 native span으로 내보내지 않는다.
+배포가 선택한 OTLP exporter와 실행 오류/경고 기록의 접근 범위는 기존 운영 정책을 따른다.
 
 ## PII 필터링, 그리고 그것이 멈추는 곳
 

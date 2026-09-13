@@ -22,6 +22,7 @@ import {
 } from "@mantine/core";
 import { IconHelp } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
+import { RuntimePolicyEditor } from "./RuntimePolicyEditor";
 import { CodeBlock } from "@/app/_components/CodeBlock";
 import { CopyButton } from "@/app/_components/CopyButton";
 import {
@@ -415,6 +416,8 @@ export function VersionEditor({
           onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
         />
       )}
+
+      {runsTools && <RuntimePolicyEditor value={value.parameters.policy} onChange={(policy) => patchParams({ policy })} />}
 
       {(projectType !== "image" || value.parameters.callerContext) && (
         <Checkbox

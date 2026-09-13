@@ -6,8 +6,10 @@ import { resolveMessageFiles } from "./resolveFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { log } from "@/shared/logger";
 import { listChatMessages } from "./messageList";
+import { pendingRuntimeApproval } from "@/application/runtime/session";
 
 export interface ChatWithMessages {
+  pendingApproval?: Awaited<ReturnType<typeof pendingRuntimeApproval>>;
   chat: Chat;
   /**
    * The chat's messages — all of them, or only those after `sinceSeq` when the
@@ -104,5 +106,6 @@ export async function getChat(
     chat,
     messages: withFiles.messages,
     ...(running && active ? { activeRun: { runId: active.runId } } : {}),
+    ...(deps.runtimeSessions ? { pendingApproval: await pendingRuntimeApproval(deps.runtimeSessions, chatId, userEmail) } : {}),
   };
 }

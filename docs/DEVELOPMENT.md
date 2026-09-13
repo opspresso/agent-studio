@@ -14,7 +14,7 @@ Agent Studio 를 로컬에서 셋업하고, 실행하고, 검증하는 방법.
 
 ```bash
 corepack enable && corepack prepare pnpm@11.24.0 --activate
-pnpm install
+pnpm install --frozen-lockfile
 ```
 
 ## 환경
@@ -43,6 +43,10 @@ pnpm db:migrate                      # 앱을 띄우지 않고 스키마만 적�
 이 이 컨테이너를 가리킨다. 스키마는 `src/infrastructure/db/migrations.ts` 가 부팅 때 advisory
 lock 아래에서 멱등하게 적용하므로 따로 만들 것이 없다. pgvector 확장도 거기서 만든다.
 고정 개발 자격 증명을 쓰는 PostgreSQL 과 MinIO 포트는 호스트 loopback 에만 공개된다.
+
+Next.js는 `.env.local`을 읽지만 별도 CLI 스크립트는 자동으로 읽지 않는다. 파일에 지정한 DB에
+마이그레이션하려면 `pnpm tsx --env-file=.env.local scripts/db-migrate.ts`를 사용한다.
+인증 계정의 키와 업그레이드 전제는 [설치 문서](INSTALL.md#업그레이드)를 따른다.
 
 `compose.yaml`은 `agent-studio-local` project에 PostgreSQL 18과 MinIO 전용 volume을 만든다.
 Agent Memory는 별도 project와 포트를 사용하므로 서로 독립적으로 시작하고 종료할 수 있다.
@@ -73,6 +77,12 @@ pnpm tsx --env-file=.env.local scripts/dev-session.ts
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
+모의 모델을 쓸 때는 선택한 모델의 provider별 endpoint 설정도 확인한다. 예를 들어
+`LLM_PROVIDER_OPENAI_BASE_URL`이 설정된 `openai/...` 모델은 `LLM_BASE_URL`보다 그 주소를
+우선하므로 해당 provider 주소도 mock으로 지정한다. 개발 세션 스크립트와 앱의
+`DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`을 일치시킨다. 출력된 쿠키는 로컬
+검증에만 사용하고 코드·로그·PR에 남기지 않는다.
+
 ## 명령
 
 ```bash
@@ -85,7 +95,7 @@ pnpm test:documents   # 실제 자식 프로세스로 생성·추출·검사·�
 pnpm test:watch       # vitest watch
 pnpm exec playwright install chromium # HTML 실행 미리보기 테스트용 브라우저
 pnpm test:html-preview # 로컬 HTTP fixture에서 실제 Chromium 기능·격리 검사
-pnpm test:integration # 로컬 PostgreSQL(agent_studio_test) 에 대한 리포지토리 + 엔진 검사
+pnpm test:integration # 로컬 PostgreSQL(agent_studio_test), 인증 스키마와 SDK 실행·Session 검사
 pnpm test:storage     # 로컬 MinIO 임시 bucket의 원본 파일 streaming·조건부 저장·삭제 검사
 pnpm test:audio       # ffmpeg로 실제 MP3 분할·WAV 크기·시간 범위·임시 파일 정리 검사
 pnpm test:audio:pipeline # PostgreSQL test DB·MinIO·ffmpeg·로컬 ASR mock을 통한 전체 전사 경로
@@ -96,7 +106,9 @@ pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원
 ```
 
 로컬 `.env.local`을 읽어 worker를 실행하려면 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`를 사용한다.
-`pnpm dev`는 오디오 worker를 자동 시작하지 않는다.
+`pnpm dev`는 오디오 worker를 자동 시작하지 않는다. 배포는 `pnpm start` 대신 standalone
+산출물의 `node server.js`로 실행한다. `public`·`.next/static`을 포함하는 방법은
+[운영 문서](OPERATIONS.md#빌드-아티팩트)를 따른다.
 
 CI는 저장소 밖에 복사한 standalone 디렉터리에서 `scripts/audio-worker-check.mjs`를 실행한다.
 worker 번들 로드, 실패한 DB poll 뒤 재개 대기, SIGTERM 종료를 합성 설정과 로컬 거절 소켓으로
@@ -136,7 +148,9 @@ pnpm exec vitest run -t "streamWithFallback"
 | `scripts/dev-session.ts` | 개발용 사용자와 세션을 Better Auth 의 테이블에 바로 써 넣고 서명된 세션 쿠키를 출력한다. 신원 제공자 왕복 없이 인증이 필요한 라우트를 시험한다. 로컬이 아닌 `DATABASE_URL` 은 거부한다. |
 | `scripts/mock-llm.ts` | `127.0.0.1:8002` (`MOCK_LLM_PORT`) 에서 도는 독립 실행형 OpenAI 호환 mock 서버. 스트리밍과 비스트리밍을 모두 지원하고, 도구가 제공되고 *동시에* 메시지가 `skill named "<slug>"` 를 언급할 때 `Skill` 도구 호출을 한 번 요청한다. `MOCK_LLM_CHUNKS` 와 `MOCK_LLM_DELAY_MS` 는 답변을 부풀리고 늦춰 긴 스트리밍 응답으로 만든다. 답이 도착하는 동안 chat 창이 무엇을 하는지 볼 수 있는 유일한 방법이다. 기본값은 통합 체크가 기대하는 한 줄 답변을 유지한다. |
 | `scripts/seed-skills.ts` | 샘플 Skill 을 멱등하게 시드한다. |
-| `scripts/integration-check.ts` | 저장소 왕복 전 구간 + 엔진(단발 실행과 agent 루프). |
+| `scripts/integration-check.ts` | 저장소 왕복, 인증 마이그레이션, SDK 모델·도구 실행과 영속 Session 승인·재개를 검증한다. 아래 두 helper를 함께 호출한다. |
+| `scripts/auth-schema-check.ts` | 테스트 DB의 임시 스키마에서 계정 키 중복 거부, 기존 계정 보존, issuer 없는 신규 계정 및 기존·신규 비밀번호 로그인을 검증한다. |
+| `scripts/runtime-session-check.ts` | 실제 SQL Session 저장소의 소유자 범위, CAS 경쟁, 암호화 문맥, 만료와 삭제 후 늦은 쓰기 방지를 검증한다. |
 | `scripts/check-models.ts` | 카탈로그 스냅샷(`src/domain/llm/catalog.json`)을 *이 배포의* 채널들이 서빙하는 id 와 대조한다. agent-models 가 provider 의 공개 카탈로그는 스스로 보므로, 여기서 보는 것은 게이트웨이·Bedrock·키의 범위 같은 이 배포만의 차이다. |
 | `scripts/sync-models.ts` | 발행된 카탈로그로 스냅샷을 갱신한다 (`--check` 는 뒤처졌으면 1 로 종료, `--from <file>` 은 URL 대신 로컬 카탈로그 문서를 읽는다, `MODELS_CATALOG_URL` 이 없거나 `none` 인 환경에서는 이것이 필수다). 런타임은 카탈로그를 직접 읽으므로, 테스트가 새 모델을 봐야 하거나 릴리즈 전일 때 돌린다. |
 | `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키로 `items` 에 upsert 한다. 지원하지 않는 managed MCP host-file `envRefs` 와 저장소 종속 `artifactAccessMode` 는 제거하고, 같은 이메일로 먼저 생긴 사용자는 export 의 원래 id 를 보존하기 위해 교체한다. 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
@@ -210,7 +224,7 @@ pnpm test:integration
 Chromium을 설치하고 HTML 실행·중지·입력 및 격리 경계를 검증한다. 기본 검증 순서는 다음과 같다:
 
 ```
-typecheck → test → test:integration → build → standalone 격리 → 문서 워커 smoke test → production server smoke test
+typecheck → test → test:integration → build → standalone 격리 → 문서·오디오 worker smoke test → production server smoke test
 ```
 
 `pgvector/pgvector:0.8.6-pg18-trixie` 서비스 컨테이너가 `POSTGRES_DB=agent_studio_test` 로 호스트 포트

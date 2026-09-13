@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 // MCP requests go through the SSRF-guarded fetch; forward it to the stubbed
@@ -85,6 +86,7 @@ function executionDepsFixture(channel: FakeChannel) {
     mcps: { get: reject },
     externalAgents: { get: reject },
     usage: { record: async () => {} },
+    createToolSchemaValidator,
     channel,
     imageChannel,
     cipher: secretCipher,
@@ -254,13 +256,13 @@ describe("previewPrompt", () => {
     expect(preview.toolNames).toEqual([
       "query",
       "Skill",
-      "transfer_to_agent",
-      "dispatch_agents",
+      "handoff_painter",
+      "delegate_painter",
     ]);
     expect(preview.tools.map((tool) => tool.name)).toEqual(preview.toolNames);
-    expect(preview.tools.find((tool) => tool.name === "dispatch_agents")).toMatchObject({
-      description: expect.stringContaining("Run several connected agents"),
-      parameters: expect.objectContaining({ required: ["tasks"] }),
+    expect(preview.tools.find((tool) => tool.name === "delegate_painter")).toMatchObject({
+      description: expect.stringContaining("Ask painter"),
+      parameters: expect.objectContaining({ required: ["input", "image_ids"] }),
     });
   });
 

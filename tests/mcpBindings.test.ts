@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
@@ -104,6 +105,7 @@ function depsFixture(
       listByProject: reject,
       listByDateRange: reject,
     },
+    createToolSchemaValidator,
     channel,
     imageChannel,
     cipher: secretCipher,

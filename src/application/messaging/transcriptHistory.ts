@@ -20,8 +20,7 @@ export const MAX_HISTORY_TURNS = 50;
  * turns of the size below would be a million characters — several times any
  * model's window — and the engine's context budget charges history but never
  * cuts it, so the bound has to be here, where the history is read. The chat
- * surface bounds its replay the same way (`MAX_HISTORY_CHARS` in
- * `messageMapping.ts`); a smaller number here because a bot's turn is a
+ * surface bounds its replay the same way (SDK Session history); a smaller number here because a bot's turn is a
  * message, not a run with tool traffic behind it. What is dropped is reported.
  */
 export const MAX_HISTORY_CHARS = 100_000;

@@ -11,6 +11,7 @@
 
 /** Header override values; `null` removes a registry default for one version. */
 export type HeaderOverrides = Record<string, string | null>;
+export const CONTEXT_ENCRYPTED_PREFIX = "enc:v2:";
 
 export interface SecretCipher {
   /** Encrypt new plaintext for storage, bound to its stable row/field identity. */

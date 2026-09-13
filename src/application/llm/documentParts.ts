@@ -55,9 +55,7 @@ export interface ReadDocument {
  * an agent that reads attachments should not hold authority you would not give
  * to whoever can drop a file in the channel.
  *
- * Exported because a stored chat turn is replayed from the extracted text
- * (`messageMapping`), and a replay wrapped differently from the original would
- * be a different turn than the one the chat records.
+ * Receiving surfaces use this framing before the SDK Session records the input.
  */
 export function framedDocument(name: string, text: string, note?: string, fileId?: string): string {
   const extent = note ? `${note}` : "complete";

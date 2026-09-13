@@ -1,12 +1,14 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
+import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it } from "vitest";
 import type {
   ChannelChunk,
   ChannelCompletion,
   ChannelParams,
   LlmChannel,
-} from "@/domain/llm/channel";
+} from "./channelFixtures";
 import type { EngineChunk } from "@/domain/llm/types";
-import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
+import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { contentChunk, usageChunk } from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
@@ -33,6 +35,7 @@ type StreamStep =
 
 /** Replays one stream step per successive call; steps may throw. */
 class ScriptedChannel implements LlmChannel {
+  getModel(name?: string) { return scriptedModels(this).getModel(name); }
   calls = 0;
   readonly seenParams: ChannelParams[] = [];
 
@@ -79,7 +82,7 @@ describe("runAgent streamWithFallback", () => {
       { kind: "chunks", chunks: [contentChunk("fallback answer"), usageChunk(3, 2)] },
     ]);
     const recorded: Array<{ model: string }> = [];
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async (r) => {
         recorded.push(r);
@@ -101,7 +104,7 @@ describe("runAgent streamWithFallback", () => {
   it("surfaces a retryable error as an error chunk when no fallback model is configured", async () => {
     const channel = new ScriptedChannel([{ kind: "throw", error: httpError(500) }]);
     const recorded: unknown[] = [];
-    const deps: AgentDeps = {
+    const deps: AgentDeps = { createToolSchemaValidator,
       channel,
       recordUsage: async (r) => {
         recorded.push(r);
@@ -123,7 +126,7 @@ describe("runAgent streamWithFallback", () => {
       { kind: "chunksThenThrow", chunks: [contentChunk("partial ")], error: httpError(503) },
       { kind: "chunks", chunks: [contentChunk("SHOULD NOT APPEAR")] },
     ]);
-    const deps: AgentDeps = { channel };
+    const deps: AgentDeps = { createToolSchemaValidator, channel };
 
     const chunks = await collect(runAgent(deps, agentInput({ fallbackModel: FALLBACK })));
 
@@ -143,7 +146,7 @@ describe("isRetryableError classification via fallback behaviour", () => {
         { kind: "throw", error: httpError(status) },
         { kind: "chunks", chunks: [contentChunk("ok"), usageChunk(1, 1)] },
       ]);
-      const deps: AgentDeps = { channel };
+      const deps: AgentDeps = { createToolSchemaValidator, channel };
 
       const chunks = await collect(runAgent(deps, agentInput({ fallbackModel: FALLBACK })));
 
@@ -160,7 +163,7 @@ describe("isRetryableError classification via fallback behaviour", () => {
         { kind: "throw", error: httpError(status) },
         { kind: "chunks", chunks: [contentChunk("SHOULD NOT APPEAR")] },
       ]);
-      const deps: AgentDeps = { channel };
+      const deps: AgentDeps = { createToolSchemaValidator, channel };
 
       const chunks = await collect(runAgent(deps, agentInput({ fallbackModel: FALLBACK })));
 

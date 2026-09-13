@@ -99,8 +99,7 @@ const MIGRATIONS: Migration[] = [
         "updatedAt" timestamptz NOT NULL DEFAULT now()
       )`,
       `CREATE INDEX IF NOT EXISTS "account_userId_idx" ON "account" ("userId")`,
-      // An account is addressed by issuer + accountId (`findAccountByKey`):
-      // the namespace an identity belongs to, and its id there.
+      // Better Auth 1.7.0–1.7.2 used issuer + accountId as the account key.
       `CREATE INDEX IF NOT EXISTS "account_issuer_accountId_idx" ON "account" ("issuer", "accountId")`,
       `CREATE TABLE IF NOT EXISTS "verification" (
         "id" text PRIMARY KEY,
@@ -132,7 +131,7 @@ const MIGRATIONS: Migration[] = [
   {
     version: 4,
     name: "account_issuer",
-    // Better Auth 1.7 addresses an account by issuer + accountId. A database
+    // Better Auth 1.7.0–1.7.2 addresses an account by issuer + accountId. A database
     // whose `account` table predates the column gets it here, backfilled with
     // the library's own namespaces: `local:credential` for a password
     // account, `local:oauth:<provider>` for a built-in social provider. A
@@ -161,11 +160,49 @@ const MIGRATIONS: Migration[] = [
          AND jsonb_typeof(data->'lastSeenAt') = 'string'`,
     ],
   },
+  {
+    version: 6,
+    name: "runtime_sessions",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS runtime_sessions (
+        session_id text PRIMARY KEY,
+        owner_email text NOT NULL,
+        project_name text NOT NULL,
+        revision bigint NOT NULL DEFAULT 1,
+        payload text NOT NULL,
+        deleted boolean NOT NULL DEFAULT false,
+        expires_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )`,
+      `CREATE INDEX IF NOT EXISTS runtime_sessions_expiry ON runtime_sessions (expires_at)`,
+    ],
+  },
+  {
+    version: 7,
+    name: "account_provider_identity",
+    // Better Auth >=1.7.3 uses providerId + accountId and no longer writes issuer.
+    // Preserve old issuer values; ambiguous identities require operator resolution.
+    statements: [
+      `LOCK TABLE "account" IN SHARE ROW EXCLUSIVE MODE`,
+      `DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM "account" GROUP BY "providerId", "accountId" HAVING count(*) > 1) THEN
+          RAISE EXCEPTION 'Duplicate Better Auth account keys: resolve providerId/accountId conflicts before upgrading; no accounts were changed';
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'account' AND column_name = 'issuer') THEN
+          ALTER TABLE "account" ALTER COLUMN "issuer" DROP NOT NULL;
+        END IF;
+      END $$`,
+      `DROP INDEX IF EXISTS "account_issuer_accountId_idx"`,
+      `DROP INDEX IF EXISTS "account_issuer_accountId_uidx"`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "account_providerId_accountId_uidx" ON "account" ("providerId", "accountId")`,
+    ],
+  },
 ];
 
 /** Bring the database to the current schema. Safe to call on every boot. */
-export async function migrate(): Promise<void> {
-  await withTransaction(async (client) => {
+export async function migrate(transaction: typeof withTransaction = withTransaction): Promise<void> {
+  await transaction(async (client) => {
     // The lock first, the ledger table second: `CREATE TABLE IF NOT EXISTS`
     // is not itself safe against a concurrent creator, so two instances
     // booting against an empty database would race it and one would crash

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildAgentDeps } from "@/application/execution/subagentRunner";
+import { buildAgentDeps } from "@/application/execution/agentBindings";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { descend } from "@/domain/execution/actor";
 import type { Version } from "@/domain/project/types";
@@ -22,7 +22,7 @@ describe("background audio recursion guard", () => {
     expect(background.audioTools).toBeUndefined(); expect(child.audioTools).toBeUndefined();
     for (const built of [background, child]) {
       expect(built.loadSkillContent).toBeDefined();
-      for (const capability of ["callMcpTool", "runSubagent", "saveFile", "fileTool", "generateImage", "editImage", "fetchUrl", "readSlack"] as const) {
+      for (const capability of ["callMcpTool", "loadAgent", "saveFile", "fileTool", "generateImage", "editImage", "fetchUrl", "readSlack"] as const) {
         expect(built[capability]).toBeUndefined();
       }
     }

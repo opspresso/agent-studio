@@ -1,29 +1,19 @@
 import { DOCUMENT_FORMATS, DOCUMENT_PROFILES } from "@/domain/document/processor";
-/**
- * What an agent run is told it can do — the prompt sections, the tool
- * definitions, and the one assembly (`assembleAgentRun`) both the tool loop and
- * the Playground preview go through.
- *
- * Split from `engine.ts` as one of its two internal modules (the other is
- * `toolResultBudget.ts`): everything here is pure derivation over the run's
- * capabilities, shared with the preview, and none of it touches loop state.
- * The engine re-exports the public surface, so callers keep one import path.
- */
+/** Shared capability and prompt assembly for SDK execution and preview. */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import { MAX_TOOLS_PER_REQUEST } from "@/domain/llm/toolLimits";
-import type { ChatMessageInput, EngineChunk, McpToolResult } from "@/domain/llm/types";
+import type { ChatMessageInput, McpToolResult } from "@/domain/llm/types";
 import { SAVABLE_TYPES } from "@/domain/artifact/types";
 import { AUDIO_TOOL_DEFS } from "@/application/audio/toolDefinitions";
 import { AUDIO_TOOL_NAMES } from "@/domain/llm/toolNames";
+import { agentToolName } from "@/domain/llm/toolNames";
 import { parseImageDataUrl } from "@/domain/llm/types";
 import type { RunCaller } from "@/domain/execution/actor";
 import { formatRunClock } from "@/shared/date";
 
 import {
   SKILL_TOOL_NAME,
-  TRANSFER_TOOL_NAME,
-  DISPATCH_TOOL_NAME,
   IMAGE_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
   FETCH_URL_TOOL_NAME,
@@ -40,8 +30,6 @@ import {
 
 export {
   SKILL_TOOL_NAME,
-  TRANSFER_TOOL_NAME,
-  DISPATCH_TOOL_NAME,
   IMAGE_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
   FETCH_URL_TOOL_NAME,
@@ -56,18 +44,6 @@ export {
   SLACK_TOOL_NAMES,
   BUILTIN_TOOL_NAMES,
 } from "@/domain/llm/toolNames";
-
-/**
- * Agents one `dispatch_agents` call may run at once.
- *
- * Lower than the MCP ceiling on purpose: a child is a whole run — its own tool
- * resolution, MCP sessions and multi-turn loop — not one request. And it is a
- * hard bound rather than a queue because a subagent run does not pass through
- * the run bracket, so these children are outside the concurrency and cost
- * guards; the only thing limiting them is this number and the fact that a child
- * is never offered this tool.
- */
-export const MAX_DISPATCH_TASKS = 4;
 
 /** An image this run can edit, addressed by a short id the model can quote. */
 export interface ImageHandle {
@@ -84,6 +60,10 @@ export interface ImageHandle {
  */
 export class ImageRegistry {
   private readonly handles: ImageHandle[] = [];
+
+  restore(handles: readonly ImageHandle[]): void {
+    this.handles.splice(0, this.handles.length, ...handles.map((handle) => ({ ...handle })));
+  }
 
   add(image: { b64: string; mimeType: string }, origin: string): ImageHandle {
     const handle: ImageHandle = { id: `img_${this.handles.length + 1}`, ...image, origin };
@@ -127,9 +107,11 @@ export interface SkillInfo {
 }
 
 export interface SubagentInfo {
+  signature?: string;
   name: string;
   description: string;
   type: "local" | "remote";
+  kind?: "agent" | "action";
 }
 
 /** Connected MCP server overview; tool names are the aliased names the model sees. */
@@ -141,26 +123,6 @@ export interface McpServerInfo {
 
 /** Load full skill content for progressive disclosure. */
 export type SkillContentLoader = (skillName: string, filePath?: string) => Promise<string>;
-
-/**
- * Run a subagent transfer. Yields the child's (already authored) stream
- * chunks and returns the child's final text for the "For context" message.
- */
-export type SubagentRunner = (
-  agentName: string,
-  message: string,
-  turn: number,
-  maxTurn: number,
-  /** Images the parent handed over; the child edits or looks at them. */
-  images?: Array<{ b64: string; mimeType: string }>,
-  /**
-   * The conversation the child was not part of, already rendered and budgeted
-   * (see `buildTransferTranscript`). Passed separately from `message` because
-   * only the runner knows the child's type: an image child's message *is* its
-   * image prompt, so a transcript must never be folded into it.
-   */
-  transcript?: string,
-) => AsyncGenerator<EngineChunk, string>;
 
 /**
  * Generate an image for the builtin GenerateImage tool.
@@ -226,7 +188,7 @@ export type FileSaver = (input: {
  */
 export interface AgentCapabilityDeps {
   loadSkillContent?: SkillContentLoader;
-  runSubagent?: SubagentRunner;
+  canDelegate?: boolean;
   generateImage?: ImageGenerator;
   editImage?: ImageEditor;
   fetchUrl?: UrlFetcher;
@@ -349,37 +311,20 @@ function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
  * `tableCell` escaping, so a description that spans lines or carries a pipe
  * cannot end the section early and swallow the agents listed after it.
  *
- * The set of names is not restated in prose: `transfer_to_agent`'s `agent_name`
- * is an enum, which constrains the call itself rather than asking for it.
+ * Public SDK tool names identify their target without a second agent-name argument.
  */
-function subagentSystemPromptAddition(subagents: SubagentInfo[], withDispatch: boolean): string {
-  const rows = subagents
-    .map(
-      (a) =>
-        `| ${a.name} | ${a.type} | ${tableCell(a.description) || "No description"} |`,
-    )
-    .join("\n");
-  // Only the constraints the framing cannot state. "Background" is deliberate
-  // and not "context you can rely on": the conversation rides along for an
-  // agent or prompt child, but an image child is handed the `message` alone
-  // (it is that child's image prompt), and the engine cannot tell them apart
-  // from here — so the request itself always has to be complete.
-  const lines = [
-    "## Available Agents",
-    "",
-    "`message` is the whole of the request: the other agent does not see your instructions, so say what it should do. Recent conversation may be passed as background depending on the agent type, but `message` must always be self-contained. Once it has answered, do not transfer to it again for the same request.",
-  ];
-  if (withDispatch) {
-    // Which of the two tools fits is specific to this section, like everything
-    // else stated here — it is a fact about these agents, not a routing rule,
-    // so it does not belong in the framing.
-    lines.push(
-      "",
-      `Parts that do not depend on each other go to \`${DISPATCH_TOOL_NAME}\` in **one** call, so they run at the same time. A single request goes to \`${TRANSFER_TOOL_NAME}\`.`,
-    );
-  }
-  lines.push("", "| Agent | Type | Description |", "|-------|------|-------------|", rows);
-  return lines.join("\n");
+function subagentSystemPromptAddition(subagents: SubagentInfo[], withDispatch: boolean, offeredNames?: readonly string[]): string {
+  const rows = subagents.map((agent) => {
+    const action = agent.type === "remote" || agent.kind === "action";
+    const tools = [
+      ...(!action ? [agentToolName(agent.name, "handoff")] : []),
+      ...(action || withDispatch ? [agentToolName(agent.name, "delegate")] : []),
+    ].filter((name) => !offeredNames || offeredNames.includes(name));
+    return `| ${agent.name} | ${tools.join(", ")} | ${tableCell(agent.description) || "No description"} |`;
+  });
+  return ["## Available Agents", "",
+    "A handoff changes which agent answers this conversation. A delegate tool returns a specialist's result so you can continue answering. Each tool takes a self-contained input and an image_ids array (empty when no images are needed). Independent delegate calls may run concurrently. Do not repeat a completed delegation for the same request.",
+    "", "| Agent | Tools | Description |", "|-------|-------|-------------|", ...rows].join("\n");
 }
 
 function skillToolDef(skills: SkillInfo[]): ChannelToolDef {
@@ -411,98 +356,28 @@ function skillToolDef(skills: SkillInfo[]): ChannelToolDef {
   };
 }
 
-function transferToolDef(subagents: SubagentInfo[], withImages: boolean): ChannelToolDef {
-  return {
-    type: "function",
-    function: {
-      name: TRANSFER_TOOL_NAME,
-      description: "Transfer a specific message to another connected agent.",
-      parameters: {
-        type: "object",
-        properties: {
-          agent_name: {
-            type: "string",
-            enum: subagents.map((a) => a.name),
-            description: "The agent name to transfer to.",
-          },
-          message: {
-            type: "string",
-            description: "The full message to send to the target agent.",
-          },
-          ...(withImages
-            ? {
-                image_ids: {
-                  type: "array",
-                  items: { type: "string" },
-                  description:
-                    "Ids of images to hand over (see Available Images). Pass these when a local agent must edit or look at an existing image instead of making one up. Remote agents cannot receive images.",
-                },
-              }
-            : {}),
-        },
-        required: ["agent_name", "message"],
-      },
-    },
-  };
+export interface DelegationTool {
+  name: string;
+  agentName: string;
+  mode: "handoff" | "delegate" | "external";
 }
 
-/**
- * Fan-out, where {@link transferToolDef} is handoff.
- *
- * Two tools rather than one widened tool. A call that runs several agents is a
- * different shape from one that hands the request to a single agent: the array
- * is what lets the model say "these do not depend on each other", and because it
- * is one call, the whole group keeps its place in call order and its answers
- * land in one tool result — spent from the same turn budget as every other tool
- * result rather than appended to the context with no budget at all.
- */
-function dispatchToolDef(subagents: SubagentInfo[], withImages: boolean): ChannelToolDef {
-  return {
-    type: "function",
-    function: {
-      name: DISPATCH_TOOL_NAME,
-      description: `Run several connected agents at the same time and collect their answers. Use this instead of ${TRANSFER_TOOL_NAME} when the request splits into parts that do not depend on each other. At most ${MAX_DISPATCH_TASKS} agents per call.`,
-      parameters: {
-        type: "object",
-        properties: {
-          tasks: {
-            type: "array",
-            minItems: 1,
-            maxItems: MAX_DISPATCH_TASKS,
-            description:
-              "One entry per agent. They run concurrently, so no entry may depend on another's answer — dependent work belongs in a later turn.",
-            items: {
-              type: "object",
-              properties: {
-                agent_name: {
-                  type: "string",
-                  enum: subagents.map((a) => a.name),
-                  description: "The agent to run.",
-                },
-                message: {
-                  type: "string",
-                  description:
-                    "The full message for this agent. It sees neither your instructions nor the other tasks.",
-                },
-                ...(withImages
-                  ? {
-                      image_ids: {
-                        type: "array",
-                        items: { type: "string" },
-                        description:
-                          "Ids of images to hand to this local agent (see Available Images). Remote agents cannot receive images.",
-                      },
-                    }
-                  : {}),
-              },
-              required: ["agent_name", "message"],
-            },
-          },
-        },
-        required: ["tasks"],
-      },
-    },
-  };
+export const AGENT_TASK_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    input: { type: "string", description: "The full request for the target agent." },
+    image_ids: { type: "array", items: { type: "string" }, description: "Image handles to include; use an empty array when no image is needed." },
+  },
+  required: ["input", "image_ids"],
+  additionalProperties: false as const,
+};
+
+function delegationDefinitions(subagents: SubagentInfo[], canDispatch: boolean): DelegationTool[] {
+  return subagents.flatMap((agent) => {
+    const action = agent.type === "remote" || agent.kind === "action";
+    const modes: DelegationTool["mode"][] = action ? ["external"] : canDispatch ? ["handoff", "delegate"] : ["handoff"];
+    return modes.map((mode) => ({ name: agentToolName(agent.name, mode), agentName: agent.name, mode }));
+  });
 }
 
 function imageSystemPromptAddition(
@@ -539,7 +414,7 @@ function imageSystemPromptAddition(
   }
   if (uses.canTransfer) {
     howTo.push(
-      `Pass ids as \`image_ids\` on \`${TRANSFER_TOOL_NAME}\`, or on each \`${DISPATCH_TOOL_NAME}\` task, so a local agent receives the actual picture instead of a description of it. Remote agents cannot receive images.`,
+      "Pass ids in image_ids on a delegate or handoff tool to include the real picture. Remote agents accept text only.",
     );
   }
   return ["## Available Images", "", ...howTo.flatMap((line) => [line, ""]), ...table].join("\n");
@@ -617,6 +492,7 @@ export function callerBlock(caller: RunCaller, canFetchUrl = false): string {
 }
 
 export interface AgentSystemPromptInput {
+  agentToolNames?: readonly string[];
   /** The version's own system prompt; the engine's blocks are appended to it. */
   base?: string;
   /** The application's own tools, as offered — the prompt says how a call to one ends. */
@@ -627,7 +503,7 @@ export interface AgentSystemPromptInput {
   images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean };
   /** The run's wall clock, injected. Omitted keeps the prompt clock-free. */
   now?: Date;
-  /** Whether this run is offered `dispatch_agents` (see {@link buildAgentTools}). */
+  /** Whether this run may offer SDK Agent-as-Tool delegation. */
   canDispatch?: boolean;
   /** Whether this run may read a URL — another way a picture can arrive. */
   withUrlTool?: boolean;
@@ -694,7 +570,7 @@ export function buildAgentSystemPrompt(input: AgentSystemPromptInput): string {
     sections.push(mcpSystemPromptAddition(mcpServers));
   }
   if (subagents.length > 0) {
-    sections.push(subagentSystemPromptAddition(subagents, canDispatch));
+    sections.push(subagentSystemPromptAddition(subagents, canDispatch, input.agentToolNames));
   }
   if (images.canEdit || images.canTransfer) {
     sections.push(imageSystemPromptAddition(images.handles, images, toolsCanReturnImages));
@@ -1026,6 +902,7 @@ const EDIT_IMAGE_TOOL_DEF: ChannelToolDef = {
  * offered/intercepted contract this function owns.
  */
 export interface AgentToolsInput {
+  blockedTools?: readonly string[];
   /** MCP tool definitions, already aliased for name collisions. */
   mcpTools?: ChannelToolDef[];
   /**
@@ -1074,7 +951,6 @@ export function buildAgentTools(input: AgentToolsInput): {
 } {
   const { mcpTools, skills, subagents, canLoadSkills, withImageTool, withEditTool, withUrlTool } =
     input;
-  const withImageTransfer = input.withImageTransfer;
   const canDispatch = input.canDispatch ?? false;
   const tools: ChannelToolDef[] = [...(mcpTools ?? [])];
   // The names of the builtins actually offered. The tool loop intercepts a call
@@ -1085,13 +961,15 @@ export function buildAgentTools(input: AgentToolsInput): {
     tools.push(skillToolDef(skills));
     builtinNames.add(SKILL_TOOL_NAME);
   }
-  if (subagents.length > 0) {
-    tools.push(transferToolDef(subagents, withImageTransfer));
-    builtinNames.add(TRANSFER_TOOL_NAME);
-    if (canDispatch) {
-      tools.push(dispatchToolDef(subagents, withImageTransfer));
-      builtinNames.add(DISPATCH_TOOL_NAME);
-    }
+  const delegations = delegationDefinitions(subagents, canDispatch);
+  for (const delegation of delegations) {
+    if (tools.some((tool) => tool.function.name === delegation.name)) continue;
+    tools.push({ type: "function", function: {
+      name: delegation.name,
+      description: `${delegation.mode === "handoff" ? "Hand this conversation over to" : "Ask"} ${delegation.agentName}. ${subagents.find((agent) => agent.name === delegation.agentName)?.description ?? ""}`,
+      parameters: AGENT_TASK_SCHEMA,
+    } });
+    builtinNames.add(delegation.name);
   }
   if (withImageTool) {
     tools.push(IMAGE_TOOL_DEF);
@@ -1125,11 +1003,22 @@ export function buildAgentTools(input: AgentToolsInput): {
   }
   const clientToolNames = new Set<string>();
   const warnings: string[] = [];
+  const blocked = new Set(input.blockedTools ?? []);
+  for (let index = tools.length - 1; index >= 0; index -= 1) {
+    const name = tools[index]!.function.name;
+    if (blocked.has(name)) { tools.splice(index, 1); builtinNames.delete(name); }
+  }
+  if (tools.length > MAX_TOOLS_PER_REQUEST) {
+    const dropped = tools.splice(MAX_TOOLS_PER_REQUEST);
+    for (const entry of dropped) builtinNames.delete(entry.function.name);
+    warnings.push(`${dropped.length} tool(s) were not offered because the provider allows at most ${MAX_TOOLS_PER_REQUEST}.`);
+  }
   if (input.clientTools && input.clientTools.length > 0) {
     const taken = new Set(tools.map((tool) => tool.function.name));
     const shadowed: string[] = [];
     const offered: ChannelToolDef[] = [];
     for (const tool of input.clientTools) {
+      if (blocked.has(tool.function.name)) continue;
       const name = tool.function.name;
       if (taken.has(name) || clientToolNames.has(name)) {
         shadowed.push(name);
@@ -1147,7 +1036,7 @@ export function buildAgentTools(input: AgentToolsInput): {
         `Application tool(s) not offered because the run already has a tool by that name: ${shadowed.join(", ")}.`,
       );
     }
-    const dropped = input.clientTools.length - shadowed.length - offered.length;
+    const dropped = input.clientTools.filter((entry) => !blocked.has(entry.function.name)).length - shadowed.length - offered.length;
     if (dropped > 0) {
       warnings.push(
         `${dropped} application tool(s) were not offered: a request may declare at most ${MAX_TOOLS_PER_REQUEST} tools in all.`,
@@ -1164,17 +1053,18 @@ export function buildAgentTools(input: AgentToolsInput): {
  * and the run cannot disagree about a section's presence.
  */
 export function imagePromptUses(
-  deps: Pick<AgentCapabilityDeps, "editImage" | "runSubagent">,
+  deps: Pick<AgentCapabilityDeps, "editImage" | "canDelegate">,
   subagents: SubagentInfo[],
 ): { canEdit: boolean; canTransfer: boolean } {
   return {
     canEdit: Boolean(deps.editImage),
-    canTransfer: subagents.some((agent) => agent.type === "local") && Boolean(deps.runSubagent),
+    canTransfer: subagents.some((agent) => agent.type === "local") && Boolean(deps.canDelegate),
   };
 }
 
 /** What a run's capabilities decide, assembled once. */
 export interface AgentRunAssembly {
+  delegations: DelegationTool[];
   systemPrompt: string;
   tools: ChannelToolDef[];
   /** Builtin names actually offered; the tool loop intercepts exactly these. */
@@ -1198,6 +1088,7 @@ export interface AgentRunAssembly {
 }
 
 export interface AssembleAgentRunInput {
+  blockedTools?: readonly string[];
   /** The version's own system prompt. */
   systemPrompt?: string;
   /** See {@link AgentToolsInput.clientTools}. */
@@ -1243,11 +1134,11 @@ export function assembleAgentRun(
   // message" — a message about the arguments when the reason was that nothing
   // could carry them. Emptying the list here gates the prompt section and both
   // tools at once, which is what keeps them from disagreeing.
-  const subagents = deps.runSubagent ? (input.subagents ?? []) : [];
+  const subagents = deps.canDelegate ? (input.subagents ?? []) : [];
   const { canEdit, canTransfer } = imagePromptUses(deps, subagents);
   // Fan-out additionally needs the facade to have admitted this as a top-level
   // run: a child that could dispatch would multiply the run count by depth.
-  const canDispatch = Boolean(input.canDispatch && deps.runSubagent);
+  const canDispatch = Boolean(input.canDispatch && deps.canDelegate);
   // Handles are worth keeping when something can act on them: this run can edit
   // an image, or it can hand one to another agent that will.
   const images = new ImageRegistry();
@@ -1260,6 +1151,7 @@ export function assembleAgentRun(
   const withSlackTools = Boolean(deps.readSlack);
   const withSaveFileTool = Boolean(deps.saveFile);
   const { tools, builtinNames, clientToolNames, warnings } = buildAgentTools({
+    blockedTools: input.blockedTools,
     ...(input.mcpTools ? { mcpTools: input.mcpTools } : {}),
     ...(input.clientTools ? { clientTools: input.clientTools } : {}),
     skills,
@@ -1275,26 +1167,34 @@ export function assembleAgentRun(
     withSlackTools,
     canDispatch,
   });
+  const offeredNames = new Set(tools.map((entry) => entry.function.name));
+  const offeredDelegations = delegationDefinitions(subagents, canDispatch).filter((entry) => offeredNames.has(entry.name));
+  const availableAgents = subagents.filter((agent) => offeredDelegations.some((entry) => entry.agentName === agent.name));
+  const visibleServers = (input.mcpServers ?? []).map((server) => ({ ...server, toolNames: server.toolNames.filter((name) => offeredNames.has(name)) })).filter((server) => server.toolNames.length > 0);
+  const availableEdit = canEdit && builtinNames.has(EDIT_IMAGE_TOOL_NAME);
+  const availableTransfer = canTransfer && availableAgents.some((agent) => agent.type === "local");
   const systemPrompt = buildAgentSystemPrompt({
     ...(input.systemPrompt !== undefined ? { base: input.systemPrompt } : {}),
-    skills,
-    subagents,
-    mcpServers: input.mcpServers ?? [],
-    images: { handles: images.list(), canEdit, canTransfer },
+    skills: builtinNames.has(SKILL_TOOL_NAME) ? skills : [],
+    subagents: availableAgents,
+    agentToolNames: [...offeredNames],
+    mcpServers: visibleServers,
+    images: { handles: images.list(), canEdit: availableEdit, canTransfer: availableTransfer },
     ...(input.now ? { now: input.now } : {}),
     canDispatch,
-    withUrlTool,
+    withUrlTool: builtinNames.has(FETCH_URL_TOOL_NAME),
     ...(input.caller ? { caller: input.caller } : {}),
     ...(input.remembered ? { remembered: input.remembered } : {}),
     clientTools: tools.filter((tool) => clientToolNames.has(tool.function.name)),
   });
   return {
+    delegations: offeredDelegations,
     systemPrompt,
     tools,
     builtinNames,
-    subagents,
-    canEdit,
-    canTransfer,
+    subagents: availableAgents,
+    canEdit: availableEdit,
+    canTransfer: availableTransfer,
     images,
     clientToolNames,
     warnings,

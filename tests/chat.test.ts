@@ -8,8 +8,8 @@ import type { ProjectRepository, VersionRepository } from "@/domain/project/repo
 import type { EngineChunk } from "@/domain/llm/types";
 import type { AgentRunner, ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
-import { toEngineMessages } from "@/application/chat/messageMapping";
-import { runAndPersist, userTurnContent } from "@/application/chat/run";
+
+import { runAndPersist } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { deleteChat } from "@/application/chat/deleteChat";
@@ -270,143 +270,8 @@ describe("titleFromMessage", () => {
   });
 });
 
-describe("toEngineMessages", () => {
-  it("maps user and assistant messages to OpenAI shapes", () => {
-    expect(
-      toEngineMessages([
-        message({ seq: 0, role: "user", content: "hi" }),
-        message({ seq: 1, role: "assistant", content: "hello" }),
-      ]).messages,
-    ).toEqual([
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "hello" },
-    ]);
-  });
-
-  it("drops orphaned tool messages with no matching assistant tool_calls", () => {
-    expect(
-      toEngineMessages([
-        message({ seq: 0, role: "user", content: "hi" }),
-        message({ seq: 1, role: "tool", content: "result", toolCallId: "call_1" }),
-        message({ seq: 2, role: "assistant", content: "answer" }),
-      ]).messages,
-    ).toEqual([
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "answer" },
-    ]);
-  });
-
-  it("pairs a tool row with its assistant even though storage writes it first", () => {
-    // A turn is stored as `tool… → assistant`, the reverse of what the wire
-    // format accepts, so the row is emitted after the call that declared it.
-    expect(
-      toEngineMessages([
-        message({ seq: 0, role: "user", content: "hi" }),
-        message({ seq: 1, role: "tool", content: "42", toolCallId: "call_1" }),
-        message({ seq: 2, role: "assistant", content: "", toolCalls: [{ id: "call_1" }] }),
-      ]).messages,
-    ).toEqual([
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "", tool_calls: [{ id: "call_1" }] },
-      { role: "tool", content: "42", tool_call_id: "call_1" },
-    ]);
-  });
-
-  it("marks an image-only turn whose images can no longer be addressed", () => {
-    // Left as-is it replays as an empty user message — a shape some providers
-    // refuse outright and none can make anything of. The marker also puts the
-    // loss where the model reads it, so a follow-up about the picture gets an
-    // answer that knows the picture is gone.
-    expect(
-      toEngineMessages([
-        message({ seq: 0, role: "user", content: "", images: [{ key: "images/gone.png" }] }),
-      ]).messages,
-    ).toEqual([{ role: "user", content: "[The image(s) attached to this turn are no longer available.]" }]);
-  });
-
-  it("leaves a turn that never carried an image alone", () => {
-    // The marker reports a loss; inventing one for a turn stored empty would
-    // put a sentence about a missing picture into a conversation that had none.
-    expect(
-      toEngineMessages([message({ seq: 0, role: "user", content: "" })]).messages,
-    ).toEqual([{ role: "user", content: "" }]);
-  });
-
-  it("drops a declared call whose result was never stored, rather than orphaning it", () => {
-    // A transfer's call has no persisted result; declaring it would make the
-    // whole payload invalid.
-    expect(
-      toEngineMessages([
-        message({ seq: 0, role: "user", content: "hi" }),
-        message({
-          seq: 1,
-          role: "assistant",
-          content: "done",
-          toolCalls: [{ id: "call_1" }, { id: "call_missing" }],
-        }),
-        message({ seq: 2, role: "tool", content: "42", toolCallId: "call_1" }),
-      ]).messages,
-    ).toEqual([
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "done", tool_calls: [{ id: "call_1" }] },
-      { role: "tool", content: "42", tool_call_id: "call_1" },
-    ]);
-  });
-
-  it("replays only the most recent turns' tools", () => {
-    const history = [0, 1, 2, 3].flatMap((turn) => [
-      message({ seq: turn * 3, role: "user", content: `q${turn}` }),
-      message({ seq: turn * 3 + 1, role: "tool", content: `r${turn}`, toolCallId: `call_${turn}` }),
-      message({
-        seq: turn * 3 + 2,
-        role: "assistant",
-        content: `a${turn}`,
-        toolCalls: [{ id: `call_${turn}` }],
-      }),
-    ]);
-
-    const mapped = toEngineMessages(history, { toolReplayTurns: 2 }).messages;
-
-    // Every turn's text survives; only the last two carry their tool traffic.
-    expect(mapped.filter((m) => m.role === "assistant")).toHaveLength(4);
-    expect(mapped.filter((m) => m.role === "tool").map((m) => m.content)).toEqual(["r2", "r3"]);
-    expect(mapped.filter((m) => m.role === "assistant" && m.tool_calls)).toHaveLength(2);
-  });
-
-  it("replays nothing when the option is zero", () => {
-    const mapped = toEngineMessages(
-      [
-        message({ seq: 0, role: "user", content: "hi" }),
-        message({ seq: 1, role: "tool", content: "42", toolCallId: "call_1" }),
-        message({ seq: 2, role: "assistant", content: "done", toolCalls: [{ id: "call_1" }] }),
-      ],
-      { toolReplayTurns: 0 },
-    ).messages;
-
-    expect(mapped).toEqual([
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "done" },
-    ]);
-  });
-
-  it("truncates replayed tool output rather than letting it fill the context", () => {
-    const huge = "x".repeat(30_000);
-    const mapped = toEngineMessages([
-      message({ seq: 0, role: "user", content: "hi" }),
-      message({ seq: 1, role: "tool", content: huge, toolCallId: "call_1" }),
-      message({ seq: 2, role: "assistant", content: "done", toolCalls: [{ id: "call_1" }] }),
-    ]).messages;
-
-    const replayed = mapped.find((m) => m.role === "tool");
-    expect(String(replayed?.content).length).toBeLessThan(huge.length);
-    expect(String(replayed?.content)).toContain("[truncated]");
-  });
-});
-
-describe("runAndPersist -> toEngineMessages round-trip", () => {
-  it("replays a turn's tool traffic on the next turn", async () => {
-    // Without this the follow-up question reaches a model that cannot see what
-    // the tool returned, so it calls the same tool again to answer.
+describe("runAndPersist display records", () => {
+  it("stores a turn's tool traffic beside the visible answer", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "hi" }),
     ]);
@@ -424,17 +289,8 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       stored.some((m) => m.role === "tool" && m.content === "42" && m.toolName === "lookup"),
     ).toBe(true);
     const assistant = stored.find((m) => m.role === "assistant");
-    expect(assistant).toMatchObject({ content: "The answer is 42." });
+    expect(assistant).toMatchObject({ content: "The answer is 42.", toolCalls: [{ id: "call_1", function: { name: "lookup" } }] });
 
-    expect(toEngineMessages(stored).messages).toEqual([
-      { role: "user", content: "hi" },
-      {
-        role: "assistant",
-        content: "The answer is 42.",
-        tool_calls: [{ id: "call_1", function: { name: "lookup" } }],
-      },
-      { role: "tool", content: "42", tool_call_id: "call_1" },
-    ]);
   });
 
   it("does not claim a subagent's tool calls as its own", async () => {
@@ -453,10 +309,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
 
     const stored = await repo.listMessages("c1");
     expect(stored.find((m) => m.role === "assistant")).not.toHaveProperty("toolCalls");
-    expect(toEngineMessages(stored).messages).toEqual([
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "Done." },
-    ]);
+
   });
 
   it("persists the top-level answer of a subagent-wired run, dropping authored chunks", async () => {
@@ -502,8 +355,6 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     expect(rows[0]).toMatchObject({ author: "child", displayOnly: true });
     expect(rows[1]).not.toHaveProperty("displayOnly");
 
-    const replayed = toEngineMessages(stored).messages.filter((m) => m.role === "tool");
-    expect(replayed).toEqual([{ role: "tool", content: "parent", tool_call_id: "call_1" }]);
   });
 
   it("records a successful transfer without replaying it as the answer", async () => {
@@ -513,11 +364,11 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       message({ seq: 0, role: "user", content: "hi" }),
     ]);
     async function* source(): AsyncGenerator<EngineChunk> {
-      yield { delta: { toolCalls: [{ id: "call_1", function: { name: "transfer_to_agent" } }] } };
+      yield { delta: { toolCalls: [{ id: "call_1", function: { name: "handoff_painter" } }] } };
       yield {
         toolResult: {
           toolCallId: "call_1",
-          name: "transfer_to_agent: painter",
+          name: "handoff_painter: painter",
           content: "Transferred to 'painter'; its answer follows.",
           displayOnly: true,
         },
@@ -530,33 +381,10 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
 
     const stored = await repo.listMessages("c1");
     expect(stored.find((m) => m.role === "tool")).toMatchObject({
-      toolName: "transfer_to_agent: painter",
+      toolName: "handoff_painter: painter",
       displayOnly: true,
     });
-    // The child's answer is not persisted, so replaying this marker in its place
-    // would tell the model the delegation came back empty.
-    expect(toEngineMessages(stored).messages.filter((m) => m.role === "tool")).toEqual([]);
-  });
 
-  it("keeps each run's results with its own calls when ids repeat across runs", async () => {
-    // Ids are only unique within the run that made them — a gateway that omits
-    // them has `call_1` synthesized every run. Matching chat-wide would let the
-    // newest result answer the oldest call.
-    const stored = [
-      message({ seq: 0, role: "user", content: "first" }),
-      message({ seq: 1, role: "tool", content: "old result", toolCallId: "call_1" }),
-      message({ seq: 2, role: "assistant", content: "a1", toolCalls: [{ id: "call_1" }] }),
-      message({ seq: 3, role: "user", content: "second" }),
-      message({ seq: 4, role: "tool", content: "new result", toolCallId: "call_1" }),
-      message({ seq: 5, role: "assistant", content: "a2", toolCalls: [{ id: "call_1" }] }),
-    ];
-
-    const mapped = toEngineMessages(stored).messages;
-
-    expect(mapped.filter((m) => m.role === "tool").map((m) => m.content)).toEqual([
-      "old result",
-      "new result",
-    ]);
   });
 
   it("says why a generated image is missing instead of dropping it in silence", async () => {
@@ -635,45 +463,6 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     expect(stored.find((m) => m.role === "assistant")).toMatchObject({
       warnings: ["MCP server 'crm' is unreachable."],
     });
-  });
-});
-
-describe("history bounds", () => {
-  /** `turns` complete runs, each carrying `chars` of assistant text. */
-  function history(turns: number, chars: number) {
-    return Array.from({ length: turns }, (_, turn) => [
-      message({ seq: turn * 2, role: "user", content: `q${turn}` }),
-      message({ seq: turn * 2 + 1, role: "assistant", content: "x".repeat(chars) }),
-    ]).flat();
-  }
-
-  it("replays a whole ordinary chat untouched", () => {
-    const { messages, warnings } = toEngineMessages(history(20, 500));
-
-    expect(messages).toHaveLength(40);
-    expect(warnings).toEqual([]);
-  });
-
-  it("drops the oldest runs once the chat outgrows one request, and says so", () => {
-    // Unbounded replay first costs a resend of the whole chat every turn, then
-    // fails outright once the provider's context limit is passed.
-    const { messages, warnings } = toEngineMessages(history(40, 20_000));
-
-    expect(messages.length).toBeLessThan(80);
-    // Whole runs only: never an assistant without the question it answered.
-    expect(messages.filter((m) => m.role === "user")).toHaveLength(
-      messages.filter((m) => m.role === "assistant").length,
-    );
-    // The newest turn always survives, and the drop is reported.
-    expect(messages.at(-2)).toMatchObject({ role: "user", content: "q39" });
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("left out");
-  });
-
-  it("keeps the newest run even when it alone exceeds the budget", () => {
-    const { messages } = toEngineMessages(history(1, 500_000));
-
-    expect(messages).toHaveLength(2);
   });
 });
 
@@ -900,7 +689,7 @@ describe("runAndPersist keeps the run's reasoning", () => {
     ]);
   });
 
-  it("does not replay a turn that answered with nothing but thinking", async () => {
+  it("keeps a reasoning-only turn in the display record", async () => {
     // `{ role: "assistant", content: "" }` with no tool calls is rejected by the
     // gateways in front of Anthropic and Bedrock: one such turn would fail the
     // next send and every one after it.
@@ -916,30 +705,10 @@ describe("runAndPersist keeps the run's reasoning", () => {
 
     const stored = await repo.listMessages("c1");
     expect(stored.find((m) => m.role === "assistant")).toMatchObject({ content: "" });
-    expect(toEngineMessages(stored).messages).toEqual([{ role: "user", content: "hi" }]);
+
   });
 
-  /**
-   * What dropping it leaves behind: the question that was never answered, and
-   * the one that follows it. Two `user` turns in a row is what actually
-   * happened, and OpenAI-compatible gateways accept it — an empty assistant
-   * block is the shape they reject. Pinned because the alternative reads like
-   * an oversight rather than the choice it is.
-   */
-  it("leaves the unanswered question next to the one that followed it", async () => {
-    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
-      message({ seq: 0, role: "user", content: "first" }),
-      { ...message({ seq: 1, role: "assistant", content: "" }), reasoning: "thought only" } as ChatMessage,
-      message({ seq: 2, role: "user", content: "second" }),
-    ]);
-
-    expect(toEngineMessages(await repo.listMessages("c1")).messages).toEqual([
-      { role: "user", content: "first" },
-      { role: "user", content: "second" },
-    ]);
-  });
-
-  it("is shown but never replayed as history", async () => {
+  it("stores reasoning beside the visible answer", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "hi" }),
     ]);
@@ -950,11 +719,7 @@ describe("runAndPersist keeps the run's reasoning", () => {
     for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
       // drain the stream
     }
-
-    expect(toEngineMessages(await repo.listMessages("c1")).messages).toEqual([
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "Done." },
-    ]);
+    expect((await repo.listMessages("c1")).find((row) => row.role === "assistant")).toMatchObject({ content: "Done.", reasoning: "weighing it" });
   });
 });
 
@@ -1134,15 +899,6 @@ describe("chat image attachments", () => {
     },
   };
 
-  it("does not replay a remote stored image URL to the provider", () => {
-    const stored = message({ seq: 0, role: "user", content: "look" });
-    (stored as { images?: Array<{ url: string }> }).images = [
-      { url: "https://bucket.s3.example.com/images/a.png" },
-    ];
-
-    expect(toEngineMessages([stored]).messages).toEqual([{ role: "user", content: "look" }]);
-  });
-
   it.each(["create", "send"])("attributes attached images to the uploader on %s", async (action) => {
     const userEmail = "uploader@x.com";
     const { repo } = makeChatRepo(chatFixture(userEmail));
@@ -1165,41 +921,6 @@ describe("chat image attachments", () => {
       versionName: "1",
       actor: { kind: "user", id: userEmail },
     }));
-  });
-
-  it("marks an image-only turn when its remote URL is omitted", () => {
-    const stored = message({ seq: 0, role: "user", content: "" });
-    (stored as { images?: Array<{ url: string }> }).images = [{ url: "https://x/y.png" }];
-
-    expect(toEngineMessages([stored]).messages).toEqual([
-      {
-        role: "user",
-        content: "[The image(s) attached to this turn are no longer available.]",
-      },
-    ]);
-  });
-
-  it("replays an image produced by an earlier assistant answer", () => {
-    const stored = message({
-      seq: 2,
-      role: "assistant",
-      content: "here is the image",
-      images: [{ url: "data:image/png;base64,cHJldmlvdXM=" }],
-    });
-
-    expect(toEngineMessages([stored]).messages).toEqual([
-      { role: "assistant", content: "here is the image" },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "[Image produced in the preceding assistant answer.]" },
-          {
-            type: "image_url",
-            image_url: { url: "data:image/png;base64,cHJldmlvdXM=" },
-          },
-        ],
-      },
-    ]);
   });
 
   /**
@@ -1243,140 +964,23 @@ describe("chat image attachments", () => {
     expect(state.activeRunId).toBeUndefined();
   });
 
-  it("omits and reports a stored image whose bytes cannot be restored", async () => {
-    const sign = async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`;
-    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
-      {
-        ...message({ seq: 0, role: "user", content: "look" }),
-        images: [{ key: "images/x.png" }],
-      } as ChatMessage,
-    ]);
-    const seenMessages: unknown[] = [];
-    const artifacts = signingArtifacts(sign);
-    const deps = makeDeps(repo, {
-      projects: agentProjects,
-      versions: publishedVersions,
-      artifacts: {
-        ...artifacts,
-        objects: {
-          ...artifacts.objects,
-          async read() {
-            throw new Error("read unavailable");
-          },
-        },
-      },
-      runAgent: (params) => {
-        seenMessages.push(...params.messages);
-        return emptyAgent();
-      },
-    });
-    const { stream } = await sendMessage(deps, {
-      chatId: "c1",
-      content: "and now?",
-      userEmail: "owner@x.com",
-    });
-    const chunks: unknown[] = [];
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-    expect(JSON.stringify(seenMessages)).not.toContain("https://signed.example");
-    expect(chunks).toContainEqual({
-      warning: "1 earlier image(s) were omitted or could not be read back and are missing from this run's context.",
-    });
-  });
-
-  it.each(["read-failure", "history-limit", "legacy-url", "storage-unconfigured"])(
-    "keeps an earlier image-only turn nonempty after %s",
-    async (reason) => {
-      const stored = message({
-        seq: 0,
-        role: "user",
-        images: [reason === "legacy-url"
-          ? { url: "https://bucket.example/legacy.png" }
-          : { key: "images/earlier.png" }],
-      });
-      const newer = reason === "history-limit"
-        ? [message({
-            seq: 1,
-            role: "assistant",
-            content: "newer images",
-            images: Array.from({ length: 4 }, (_, index) => ({ key: `images/new-${index}.png` })),
-          })]
-        : [];
-      const { repo } = makeChatRepo(chatFixture("owner@x.com"), [stored, ...newer]);
-      const { storage } = fakeArtifacts();
-      if (reason === "read-failure") {
-        storage.objects.read = async () => {
-          throw new Error("object unavailable");
-        };
-      }
-      const runAgent = vi.fn<AgentRunner>(() => emptyAgent());
-      const result = await sendMessage(makeDeps(repo, {
-        projects: agentProjects,
-        versions: publishedVersions,
-        artifacts: reason === "storage-unconfigured" ? undefined : storage,
-        runAgent,
-      }), {
-        chatId: "c1",
-        content: "and now?",
-        userEmail: "owner@x.com",
-      });
-      const chunks: unknown[] = [];
-      for await (const chunk of result.stream) {
-        chunks.push(chunk);
-      }
-
-      const sent = runAgent.mock.calls[0]?.[0].messages;
-      expect(sent?.[0]).toEqual({
-        role: "user",
-        content: "[The image(s) attached to this turn are no longer available.]",
-      });
-      expect(sent?.at(-1)).toEqual({ role: "user", content: "and now?" });
-      expect(JSON.stringify(sent)).not.toContain("https://");
-      expect(chunks).toContainEqual({
-        warning: "1 earlier image(s) were omitted or could not be read back and are missing from this run's context.",
-      });
-      expect((await repo.listMessages("c1"))[0]).toEqual(stored);
-    },
-  );
-
-  it("restores an earlier generated image as editable bytes", async () => {
-    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+  it("passes only the new turn and leaves model history to the SDK Session", async () => {
+    const earlier = [
       message({ seq: 0, role: "user", content: "make an image" }),
-      message({
-        seq: 1,
-        role: "assistant",
-        content: "done",
-        images: [{ key: "artifacts/image/previous.png" }],
-      }),
-    ]);
+      message({ seq: 1, role: "assistant", content: "display answer", images: [{ key: "artifacts/image/previous.png" }] }),
+    ];
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), earlier);
     const artifacts = fakeArtifacts();
-    const seenMessages: unknown[] = [];
-    const deps = makeDeps(repo, {
-      projects: agentProjects,
-      versions: publishedVersions,
-      artifacts: artifacts.storage,
-      runAgent: (params) => {
-        seenMessages.push(...params.messages);
-        return emptyAgent();
-      },
-    });
+    const runAgent = vi.fn<AgentRunner>(() => emptyAgent());
+    const { stream } = await sendMessage(makeDeps(repo, {
+      projects: agentProjects, versions: publishedVersions, artifacts: artifacts.storage, runAgent,
+    }), { chatId: "c1", content: "edit the previous image", userEmail: "owner@x.com" });
+    for await (const _ of stream) { /* drain persistence */ }
 
-    const { stream } = await sendMessage(deps, {
-      chatId: "c1",
-      content: "edit the previous image",
-      userEmail: "owner@x.com",
-    });
-    for await (const _ of stream) {
-      // drain
-    }
-
-    expect(artifacts.reads).toEqual([
-      { key: "artifacts/image/previous.png", maxBytes: 5 * 1024 * 1024 },
-    ]);
-    expect(JSON.stringify(seenMessages)).toContain(
-      "data:image/png;base64,c3RvcmVkLWltYWdl",
-    );
+    expect(runAgent.mock.calls[0]?.[0].messages).toEqual([{ role: "user", content: "edit the previous image" }]);
+    expect(runAgent.mock.calls[0]?.[0].conversation).toEqual({ surface: "chat", id: "c1" });
+    expect(artifacts.reads).toEqual([]);
+    expect((await repo.listMessages("c1")).slice(0, 2)).toEqual(earlier);
   });
 
   it("names the chat as the run's conversation, on the first message and every later one", async () => {
@@ -1843,20 +1447,6 @@ describe("attached documents", () => {
     expect((user as { documents?: unknown }).documents).toEqual([
       { name: "q3.txt", text: "Q3 revenue rose 12%" },
     ]);
-  });
-
-  it("replays a stored document exactly as the turn that sent it", () => {
-    const first = message({ seq: 0, role: "user", content: "summarise this" });
-    (first as { documents?: unknown }).documents = [{ name: "q3.txt", text: "revenue rose" }];
-
-    const replayed = toEngineMessages([first]).messages[0] as { content: string };
-
-    // Same wrapper, same order, same shape — otherwise a follow-up turn would
-    // put the model in a different conversation than the one the chat recorded.
-    expect(replayed.content).toBe(
-      userTurnContent("summarise this", [], [{ name: "q3.txt", text: "revenue rose" }]),
-    );
-    expect(replayed.content).toContain('[Attached file "q3.txt"');
   });
 
   it("reads office attachments through the native extractor", async () => {

@@ -1,3 +1,5 @@
+import { runStrategyFor } from "./deps";
+import { runtimeFingerprint } from "@/application/runtime/session";
 /** Resolving a version's skills, subagents and MCP tools for one run. */
 
 import type { McpBinding, SubagentRef, Version } from "@/domain/project/types";
@@ -12,7 +14,7 @@ import {
   type CatalogRerankReport,
   type CatalogSearchDeps,
 } from "@/application/catalog/searchCatalog";
-import * as engine from "@/application/llm/engine";
+import * as engine from "@/application/runtime";
 import type { ExecutionDeps } from "./deps";
 import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./mcpTools";
 import { MAX_TRACED_DISCOVERED } from "@/application/trace/recorder";
@@ -86,7 +88,7 @@ export async function resolveSkills(
 
 /** Same for subagents: an unresolvable target is not offered as a transfer. */
 export async function resolveSubagents(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects">,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "versions">,
   subagentList: SubagentRef[] | undefined,
 ): Promise<{ subagents: engine.SubagentInfo[]; warnings: string[] }> {
   const resolved = await Promise.all(
@@ -105,8 +107,11 @@ export async function resolveSubagents(
             warning: `${ref.type === "remote" ? "Remote agent" : "Agent project"} '${ref.name}' no longer exists; a transfer to it was not offered.`,
           };
         }
+        const version = "projectType" in target && target.publishedVersion ? await deps.versions.get(target.name, target.publishedVersion) : undefined;
         return {
-          subagent: { name: ref.name, description: target.description ?? "", type: ref.type },
+          subagent: { name: ref.name, description: target.description ?? "", type: ref.type,
+            signature: runtimeFingerprint("url" in target ? [target.name, target.url, target.protocol] : [target.name, target.projectType, version]),
+            kind: ref.type === "remote" || ("projectType" in target && runStrategyFor(target) === "image") ? "action" : "agent" },
         };
       },
     ),
@@ -472,7 +477,7 @@ export function toolsPrepared(resolved: {
  * checks) from needing to know the difference.
  */
 export async function resolveRunTools(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "versions" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
   version: Version,
   signal?: AbortSignal,
   queries?: readonly string[],

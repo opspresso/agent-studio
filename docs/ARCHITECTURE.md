@@ -14,10 +14,11 @@
 **어디서 시작할 것인가**: 이 파일을 처음부터 끝까지 읽어라. 그럴 만큼 짧다. 그다음 요청
 하나를 코드로 따라가라. 실행은 `src/application/execution/runProject.ts` 에서 시작한다.
 모든 진입점이 호출하는 파사드이며, [image](design/execution.md#images) project 만 예외다.
-그리고 툴 루프인 `src/application/llm/engine.ts` 로 내려간다.
+그리고 `src/application/runtime/`에서 OpenAI Agents SDK의 Agent·Runner로 실행한다.
 [요청 흐름](#요청-흐름) 절이 그 지도다.
 
-Agent Studio 는 **project, llm, agents(subagent + 외부 agent registry), skills, mcp, chat,
+Agent Studio는 **AgentOps / Control Plane**이며 OpenAI Agents SDK가 기본 Runtime이다.
+Studio는 **project, llm, agents(subagent + 외부 agent registry), skills, mcp, chat,
 cost/usage** 도메인을 아우르는 하나의 Next.js 16 풀스택 애플리케이션이다.
 
 그리고 그 애플리케이션은 **기업이 자기 네트워크 안에 설치해 운영하는** 것이다. 한 설치는 한
@@ -58,8 +59,8 @@ was lost*).
 - Node.js 24, pnpm 11 (`packageManager` 로 고정)
 - Next.js 16 App Router, React 19, TypeScript strict (`noUncheckedIndexedAccess`)
 - Mantine 9 (`@mantine/core` + hooks/form/notifications/charts, `@tabler/icons-react`)
-- Better Auth 1.7. 자기 Postgres 테이블 위에서, OIDC · Google · 비밀번호 중 배포가 켠 것으로
-- PostgreSQL 16+ (pgvector) 하나. 아이템 테이블 `items`, Better Auth 의 테이블, `catalog_vectors`
+- Better Auth 1.7.4 이상. 자기 Postgres 테이블 위에서, OIDC · Google · 비밀번호 중 배포가 켠 것으로
+- PostgreSQL 16+ (pgvector) 하나. 아이템 테이블 `items`, Better Auth 의 테이블, `catalog_vectors`, 암호화된 `runtime_sessions`
 - 런이 만든 것을 담는 S3 호환 오브젝트 스토어 (선택, MinIO, S3, Ceph RGW …)
 
 ## 레이어
@@ -72,7 +73,8 @@ src/
     audit/  plugin/  member/  a2a/  agui/  catalog/  vector/  artifact/  document/  net/
   application/      # 유스케이스. 도메인 포트에만 의존하고, composition root 에는 절대
                     # 의존하지 않는다 — deps 는 주입되지, 끌어오지 않는다.
-    llm/            # 엔진: 툴 루프, 에이전트 런 조립, 툴 결과 예산, PII 마스킹,
+    runtime/        # SDK Agent/Runner/Session/HITL, 네이티브 도구·MCP·트레이싱
+    llm/            # 런 조립, 툴 결과 예산, PII 마스킹,
                     # 컨텍스트 예산, 문서 파트
     execution/      # 파사드, 바인딩 + MCP 툴 해석, 서브에이전트, 이미지 툴
     run/            # 최상위 런을 감싸는 것: 브래킷, 동시성 가드, 미등록 모델 정책,
@@ -141,9 +143,11 @@ src/
   의존성은 *주입*되는 것이지 끌어오는 것이 아니다. 서드파티 패키지도 같은 방식으로,
   `domain` 과 같은 모양의 규칙으로 금지된다. 긍정형으로 서술해 **domain, 의존성 없는 shared 헬퍼와 표준
   라이브러리**다. 블록리스트는 이미 누군가 후회한 의존성만 이름
-  붙이기 때문이다. `@a2a-js/sdk` 가 유일하게 명시된 예외다: A2A 프로토콜 *자체*가 그
+  붙이기 때문이다. `@a2a-js/sdk` 와 `@openai/agents` 는 명시된 예외다: A2A 프로토콜 *자체*가 그
   executor 가 구현하는 계약이고, 포트를 두면 태스크 생명주기를 우리 타입으로 다시
-  적으면서 얻는 것이 없다.
+  적으면서 얻는 것이 없다. Agents SDK의 `Agent`·`Runner`·`Session`·`RunState`도 SDK의 계약을 직접
+  사용한다. `application/runtime`은 그 실행 정책을 조립하고, 모델 endpoint와 credential 해석은
+  infrastructure에 주입한다. SDK의 기본 외부 trace 전송은 비활성화한다.
 - `infrastructure` 는 `application` 도 `app` 도 import 하지 않고, `process.env` 도 읽지
   않는다. 어댑터에 필요한 설정은 `lib/config.ts` 가 선언하며, 파싱과 경고를 그쪽이
   소유한다. 모듈 스코프에서 읽으면 아무도 선언하지 않고, 아무도 주입하지 않았으며, 부팅
@@ -226,16 +230,16 @@ flowchart TB
 
 ## PostgreSQL 아이템 테이블 설계
 
-데이터베이스 하나(`DATABASE_URL`, pgvector 확장 포함)에 테이블 세 묶음이 있고, 스키마는
+데이터베이스 하나(`DATABASE_URL`, pgvector 확장 포함)에 아래 저장소가 있으며, 스키마는
 앱이 부팅 때 `src/infrastructure/db/migrations.ts` 로 만든다. 버전별로 멱등한 문장들이
 `schema_migrations` 에 기록되고, 인스턴스가 여럿이어도 advisory lock 아래에서 한 번만
 적용된다. `pnpm db:migrate` 는 앱을 띄우지 않고 같은 일을 한다.
 
-- **`items`**. 이 앱의 모든 엔티티가 들어가는 *아이템 테이블*. 행은 `pk`/`sk`(둘 다
+- **`items`**. project·registry·usage 등 엔티티가 들어가는 *아이템 테이블*. 행은 `pk`/`sk`(둘 다
   `COLLATE "C"`. 정렬 키는 바이트 순서로 쓰인 문자열이라 로케일 정렬이 범위 쿼리를 깨뜨린다)
   와 JSONB 문서 `data` 이고, `GSI1PK`/`GSI1SK`/`GSI2PK`/`GSI2SK` 와 `expiresAt` 은 문서에서
   파생되는 **generated column**(`gsi1pk` …, `expires_at`)으로 부분 인덱스를 받는다. 키
-  카탈로그(`keys.ts`)와 접근 패턴은 단일 테이블 설계 그대로이고, 리포지토리는 전부
+  카탈로그(`keys.ts`)와 접근 패턴은 단일 테이블 설계를 따르며, 아이템 리포지토리는
   `src/infrastructure/db/store.ts` 의 *키 주소 스토어*를 지난다. 아래 [관례](#관례).
 - **Better Auth 의 테이블**. `user`, `session`, `account`, `verification`. 라이브러리 자신의
   Postgres 어댑터가 소유하고, 유니크 제약은 진짜 제약이다. `memberRepository` 가 `user` 를
@@ -243,6 +247,9 @@ flowchart TB
 - **`catalog_vectors`**. capability 카탈로그의 임베딩(`key`, `embedding vector`,
   `metadata jsonb`). 폭을 선언하지 않는다: 폭은 `EMBEDDING_DIM` 이고 재색인이 모든 행을
   다시 쓴다. 수천 행이라 인덱스 없이 정확 스캔한다 (`src/infrastructure/vector/pgVectorStore.ts`).
+- **`runtime_sessions`**. Chat의 native SDK 이력과 승인 RunState를 압축·인증 암호화해 저장한다.
+  대화 ID·소유자·프로젝트·revision·만료 시각과 삭제 tombstone을 유지하며, 전용 리포지토리가
+  이력과 체크포인트를 CAS로 함께 갱신한다. 아이템 행보다 큰 native 상태를 담는 별도 테이블이다.
 
 아이템 테이블의 키는 `PK` / `SK` 이며 `GSI1`(`GSI1PK`/`GSI1SK`)과 `GSI2`(`GSI2PK`/`GSI2SK`)
 를 둔다. 주요 엔티티 행은 `entityType`으로 구분하며 claim·counter 같은 보조 행은 키와 상태 필드로 구분한다.
@@ -331,7 +338,8 @@ flowchart TB
   `ConditionalWriteFailed`(트랜잭션 안에서는 `TransactionCancelled`)로 올라오며 그 이름을
   application 에서 읽는 유일한 곳은 `src/application/errors.ts` 다. 스토어가 소유하지 않는
   테이블만 plain SQL 을 쓴다: Better Auth 의 테이블(`memberRepository`), `catalog_vectors`
-  (`pgVectorStore`), 그리고 `skillRepository.describe` 의 프로젝션.
+  (`pgVectorStore`), `runtime_sessions`(`runtimeSessionRepository`), 그리고
+  `skillRepository.describe`의 프로젝션.
 - **이름을 키로 갖는 registry 엔티티는 CRUD 를 `createKeyedRepository` 에서 받는다**
   (`keyedRepository.ts`): 아이템 하나짜리 파티션, SK 는 `META`, 목록은
   `TYPE#<entityType>` GSI1 파티션에서 읽으며, create / update / delete 각각이 파티션이
@@ -369,7 +377,8 @@ flowchart TB
 - **무한히 늘어나는 행은 `expiresAt` 를 갖는다**(`src/infrastructure/db/ttl.ts`). 만료는
   테이블의 기능이 아니라 **틱**이다: schedule-scan 틱마다 `sweepExpiredRows`
   (`store.deleteExpired`, 호출당 5,000행, Better Auth 의 `session` 테이블은
-  `memberRepository.deleteExpiredSessions` 가 같은 틱에서)가 지난 행을 지우고, 틱은 1분
+  `memberRepository.deleteExpiredSessions`가 최대 5,000행, `runtimeSessionRepository`가
+  최대 1,000행을 같은 틱에서)가 지난 행을 지우고, 틱은 1분
   간격이므로 읽기 쪽도 여전히 만료 행을 거른다. 티커가 없는 배포(`SCHEDULE_SCAN_TOKEN` 미설정)는
   아무것도 지우지 않는다. [OPERATIONS.md](OPERATIONS.md#행-보존).
 - **목록 쿼리는 `queryItems()` 가 매치 전체를 답한다**. 페이지 상한은 예전 스토어의
@@ -380,7 +389,7 @@ flowchart TB
 
 ## 요청 흐름
 
-열한 개의 실행 진입점이 `src/application/execution/runProject.ts` 로 모이고, 이 모듈은
+실행 진입점이 `src/application/execution/runProject.ts` 로 모이고, 이 모듈은
 서로 다른 두 질문을 두 층으로 답한다.
 
 | 층 | 함수 | 무엇을 결정하는가 |
@@ -398,7 +407,7 @@ dispatch 를 건너뛰는 방식이다. 요청을 추적하려면 dispatch 층�
 | Predict | `POST …/predict` | `executeProjectStream`(스트림) / `executeProject`(논스트림). 그래서 agent project 도 여기서 툴 루프를 돌고, (프롬프트 템플릿만 소비하는) `variables` 는 그 경우 무시된다. image project 는 → `generateImage`, 요청에 source `images` 가 오면 편집하고 아니면 생성한다 |
 | OpenAI 호환 | `POST …/chat/completions` | `executeProjectStream`(스트림) / `executeProject`(논스트림). image project 는 400 으로 거절된다. 이미지에는 chat completion 이 없다 |
 | Agent SSE | `POST …/agent` | `executeAgent` |
-| Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (`ChatDeps.runAgent` 로 바인딩) |
+| Chat | 생성·메시지 전송·승인 재개 API | `executeAgent` (`ChatDeps.runAgent` 로 바인딩) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (`SlackEventDeps` 경유) |
 | Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (`TelegramEventDeps` 경유). Slack 과 같은 공유 파이프라인 ([design/messaging.md](design/messaging.md)) |
 | Teams | `/api/teams/messages/[project]` → `handleTeamsActivity` → `handleTurn` | `executeAgent` (`TeamsEventDeps` 경유). 같은 파이프라인 |
@@ -406,14 +415,15 @@ dispatch 를 건너뛰는 방식이다. 요청을 추적하려면 dispatch 층�
 | AG-UI | `POST /api/agui/[name]` → `streamAguiRun` | `streamProjectRun`. 채팅 패널은 어느 타입이든 그릴 수 있으므로 image project 도 거절하지 않는다. 청크는 `src/application/agui/events.ts` 가 프로토콜의 이벤트로 바꾼다 ([design/agui.md](design/agui.md)) |
 | Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`container.ts` 에서 `triggerRunnerDeps.run` 으로 바인딩). AG-UI 와 함께, image project 를 거절하지 않고 스트리밍하는 dispatch 다. firing 의 행은 텍스트를 담으므로, 그림을 그렸다는 사실을 기록한다 |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
+| Audio 후처리 | audio worker가 고정한 project/version으로 실행 | `streamProjectRun` + `collectRun` (`backgroundTask: true`) |
 
 ```mermaid
 flowchart LR
-  subgraph surfaces["열한 개의 진입점"]
+  subgraph surfaces["실행 진입점"]
     predict["predict"]
     cc["chat/completions"]
     agentsse["agent SSE"]
-    chat["chat 메시지"]
+    chat["chat 생성 · 메시지 · 승인 재개"]
     slack["Slack 이벤트"]
     telegram["Telegram 업데이트"]
     teams["Teams activity"]
@@ -421,19 +431,21 @@ flowchart LR
     agui["AG-UI 이벤트"]
     webhook["webhook trigger"]
     schedule["schedule scan"]
+    audio["audio 후처리"]
   end
 
-  facade["runProject 파사드<br/>streamProjectRun · executeProjectStream · executeProject · executeAgent<br/>projectType dispatch: agent → 툴 루프, llm → 단발,<br/>image → streamProjectRun 은 스트리밍, completion 짝은 거절"]
+  facade["runProject 파사드<br/>streamProjectRun · executeProjectStream · executeProject · executeAgent<br/>projectType dispatch: agent → SDK 다중 턴, llm → SDK 단발,<br/>image → streamProjectRun 은 스트리밍, completion 짝은 거절"]
   imageuc["generateImage 유스케이스<br/>streamProjectRun 이 닿고, chunk 스트림이 나르지 못하는<br/>모양으로 답하는 두 표면도 닿는다"]
   bracket["런 브래킷 — openRun<br/>1. 프로젝트 비용 가드, fail open<br/>2. 멤버 tier 의 월간 상한, fail open<br/>3. 호출자별 동시성 슬롯, fail closed<br/>4. in-flight 메트릭 + correlation id + artifact recorder"]
   memory["명시적 바인딩의 메모리 recall<br/>관련 기억은 discovery 검색 문맥이 된다"]
   resolve["버전의 바인딩 해석<br/>요청 + 관련 기억으로 capability discovery<br/>skill · MCP 세션 · subagent<br/>쓸 수 없는 바인딩은 warning chunk 가 된다"]
-  engine["엔진<br/>runAgent · runPrompt(Stream)"]
-  channel["OpenAI 호환 채널"]
+  engine["SDK Runtime<br/>Agent · Runner · runAgent · runPrompt(Stream)"]
+  channel["SDK ModelProvider<br/>OpenAI 호환 endpoint"]
   imagechannel["이미지 채널"]
-  tools["MCP tool 동시 5개 이하 · Skill 로드<br/>transfer_to_agent / dispatch_agents · 이미지 빌트인"]
+  tools["SDK Tool · MCPServer<br/>function tool 동시성 5 · Handoff / Agent.asTool"]
+  session["Chat SDK Session + 승인 RunState<br/>runtime_sessions · owner/revision CAS"]
   usage["usage 기록<br/>agent 런은 버퍼링, 한 번 flush → 행 잠금 아래 합산"]
-  trace["trace 기록<br/>agent 런은 항상, 나머지는 샘플링"]
+  trace["로컬 SDK native spans + 준비 단계<br/>agent 런은 항상, 나머지는 샘플링"]
 
   predict --> facade
   cc --> facade
@@ -446,6 +458,7 @@ flowchart LR
   agui --> facade
   webhook --> facade
   schedule --> facade
+  audio --> facade
   predict -.-> imageuc
   a2a -.-> imageuc
   facade -.-> imageuc
@@ -456,6 +469,7 @@ flowchart LR
   bracket -->|"image 런"| imagechannel
   engine <--> channel
   engine <--> tools
+  engine <-->|"영속 Chat"| session
   engine --> usage
   engine --> trace
 ```
@@ -524,14 +538,10 @@ limit 에 걸릴 때마다 fallback 이 런 전체를 지기 때문이다. 이�
 브래킷에서 읽는 대신 브래킷으로 주입된다. `application` 은 `src/lib/runtime-settings.ts`
 에 닿을 수 없기 때문이다.
 
-**subagent transfer 는 브래킷이 아니지만, 공짜도 아니다.** 자식은 브래킷을 절대 열지
-않는다. top-level 런이 아니고, 동시성 가드는 의도적으로 적용되지 않는다. 팬아웃은 대신
-`MAX_DISPATCH_TASKS`, transfer 깊이 제한, 그리고 자식에게는 `dispatch_agents` 를 절대
-제공하지 않는다는 규칙으로 제한되기 때문이다. *지출*을 제한하는 두 정책은 적용되며, 자식의
-버전이 해석되는 자리(`subagentRunner.ts`)에서 검사된다: 값이 매겨지지 않은 자식은 값이
-매겨지지 않은 부모와 정확히 같은 만큼 새므로 모델 정책이 적용되고, transfer 는 자기 툴
-루프와 자기 usage 행을 가진 다른 프로젝트에서의 온전한 런이므로 **자식 프로젝트의** 일일
-비용 가드가 적용된다. 부모의 admit 은 그 프로젝트의 예산에 대해 아무 말도 하지 않았다.
+**하위 Agent 실행은 최상위 브래킷 안에 있다.** SDK function tool 동시성 5, 로컬 깊이 5와
+자식의 추가 Agent-as-Tool 위임 제한으로 fan-out을 제한한다. `agentBindings.ts`는 요청된
+자식의 발행 버전, 모델 정책과 그 프로젝트의 비용 한도를 검사한다. Agent-as-Tool은 부모에게
+남은 턴 수 이하로 제한되고 Handoff는 같은 SDK Runner의 턴 제한을 따른다.
 
 admit 만으로는 충분하지 않았다. block 과 alert 알림을 claim 하는 것은
 `settleCostLimit` 인데, 이것이 브래킷이 연 프로젝트에 대해서만 돌았다. 그래서 transfer 로만
@@ -642,7 +652,7 @@ agent preview에 요청을 입력하면 실제 런처럼 명시적 바인딩에�
 `EngineChunk`(`src/domain/llm/types.ts`)는 엔진과 모든 소비자(chat 영속화, Slack 과
 Telegram·Teams 가 공유하는 messaging 파이프라인, OpenAI 재구성, A2A, 브라우저 클라이언트) 사이의
 전송 단위다. top-level chunk 는 **`author` 를 갖지 않는다**. authored 인 것은 subagent
-chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. **`isTopLevelChunk()` 가
+chunk 뿐이며, SDK Agent-as-Tool의 출력 래퍼가 subagent 의 이름을 찍어 준다. **`isTopLevelChunk()` 가
 단일 소유된 술어(predicate)이며**, 소비자는 author 의미를 다시 유도하지 말고 그것을 써야
 한다.
 
@@ -656,14 +666,15 @@ chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. *
 | `image` | GenerateImage / EditImage 빌트인, 그리고 image project subagent | **author 와 무관하게** 소비된다(agent 가 그림을 그리는 방법이 곧 image subagent 에 위임하는 것이다): chat 이미지 영속화(오브젝트 스토어), chat 봇의 업로드(Slack, Telegram, Teams), OpenAI `images` 확장, AG-UI 의 `ACTIVITY_SNAPSHOT`(`agent-studio.image`), 클라이언트 갤러리 |
 | `file` | 파일을 반환한 툴. `File` 생성·편집, `SaveFile`, MCP 파일 출력 | 이미지 표시와 파일 다운로드를 구분하는 별도의 출력 축이다: chat 은 참조를 영속화하고 다운로드로 제공하며(assistant 메시지의 `files`, 저장될 파일 이름과 함께 읽을 때마다 서명된다), 런 로그는 대신 메모를 넣는다. 바이트는 그것을 저장한 브래킷이 걷어내며 **모델의 컨텍스트에 절대 들어가지 않는다**. 파일을 지목하는 것은 툴 결과 텍스트다. 이름과 media type 은 서버에서 오므로, 그것으로 무언가를 만들기 전에 둘 다 방어적으로 읽는다(`safeFileName`/`baseMediaType`). `image` 를 읽는 모든 표면은 이것도 읽는다. `/predict` 와 두 OpenAI 모양은 `files` 확장으로 싣고, `/agent` 는 프레임에서 키를 서명된 `url` 로 바꾸며, A2A 는 서명된 주소의 URL part 를 발행하고, AG-UI 는 서명된 주소를 `ACTIVITY_SNAPSHOT`(`agent-studio.file`)으로 싣고, messaging 파이프라인은 Slack·Telegram·Teams 응답 아래 링크하며, trigger 의 행은 그것을 이름으로 적는다. 해석은 `producedFiles.ts` 가 소유한다. 한 축을 읽으면서 다른 축을 읽지 않는 모듈은 `tests/architecture.test.ts` 를 실패시킨다 |
 | `usage` | 모델 호출마다 한 번씩 엔진이. 실제 호출 모델(`model`)도 싣기 때문에 fallback 턴을 trace 가 primary 로 오인하지 않는다 | `collectRun` 의 응답 usage. 여러 호출을 합산한 응답에서는 모델을 생략한다. DB 기록은 별개다(엔진 루프 안의 `recordUsage` / 애그리게이터) |
-| `error` | 실패 시 엔진이(스트림 도중, 재시도 없음). transfer 가 실패하면 authored 로 나간다 | **top-level** 에러만 스트림을 끝낸다. authored 인 것은 거의 모든 소비자가 *버린다*(messaging 파이프라인과 trace recorder 는 예외). 부모가 그것을 지나쳐 답하기 때문이다. 그래서 실패한 transfer 가 잃은 것은 이 필드가 아니라 그 transfer 의 `warning` 으로 독자에게, "For context" 턴으로 모델에게 닿는다 |
-| `done` | 루프가 툴 호출 없이 끝날 때 엔진이. 턴 가드가 멈춘 경우는 **아니다** | 아래의 `chunkTermination` 을 통해 읽는다: OpenAI `finish_reason: "stop"`, 클라이언트의 마무리 |
+| `error` | SDK 실행이 실패하면 Runtime이, 특화 자식 실행은 authored 오류를 낼 수 있다 | 최상위 오류만 전체 스트림을 실패시킨다. 위임 실패는 부모의 오류 도구 결과와 경고로 전달하며 부모가 계속 답할 수 있다 |
+| `done` | Runtime의 현재 전송 구간이 정상 종료될 때 | 승인 대기에서도 전송은 끝난다. Chat은 `approval`과 저장된 `pendingApproval`을 함께 읽어 완료된 답변과 구분한다 |
+| `approval` | 영속 Chat의 SDK RunState를 승인 대기로 저장했을 때 `{ pending: true }` | Chat이 승인 항목을 다시 조회한다. 항목의 전체 인자와 revision은 소유자에게만 반환한다 |
 | `finishReason` | `done` 이 말할 수 없는 이유로 런이 끝날 때 엔진이. 턴 가드(`turn-limit`)와 프로바이더의 출력 절단(`output-limit`), 각각 그것을 이름 붙인 `warning` 과 함께 | `chunkTermination`/`runTermination` 을 통해 읽는다: OpenAI `finish_reason: "length"`, trace 상태 `turn-limit`/`output-limit`, A2A 종단 상태 메시지, AG-UI 의 `RUN_FINISHED.result.termination`, predict 의 `finishReason` 필드 |
-| `author` | subagent chunk 만. **가장 안쪽** agent | 소비자는 `isTopLevelChunk` 로 거른다. 클라이언트는 지금 도는 agent 를 보여 준다 |
-| `authorPath` | subagent chunk 만. 바깥쪽부터 나열한 체인 | 클라이언트는 `sample-agent → simple-image` 로 렌더링한다. trace recorder 는 첫 원소로 transfer 를 묶고 artifact recorder 는 root project 뒤에 전체 경로를 붙여 provenance 로 저장한다 |
-| `transferId` | delegation 호출마다. trace sampling과 무관하게 자식의 모든 chunk와 `authorDone`에 같은 값 | trace recorder가 같은 agent로 간 여러 transfer를 각각 한 span으로 묶는다. `traceId`는 선택적인 하위 trace 링크일 뿐 identity가 아니다 |
-| `authorDone` | authored 런이 반환될 때 `runSubagent` 래퍼가 | 소비자는 그 체인을 더 이상 활성으로 표시하지 않는다 |
-| `traceId` | trace 가 있는 top-level chunk 와 subagent chunk. 각 실행 facade 가 자기 recorder id 를 찍는다 | trigger 이력은 top-level run 에, 클라이언트는 authored chunk 를 그 subagent 의 trace 에 연결한다 |
+| `author` | Agent-as-Tool 또는 특화 자식 실행의 청크 | 최상위 청크는 unauthored다. Handoff는 같은 Runner의 담당 Agent를 바꾸며 별도 author 경로를 추가하지 않는다 |
+| `authorPath` | subagent chunk 만. 바깥쪽부터 나열한 체인 | 클라이언트는 `sample-agent → simple-image` 로 렌더링한다. artifact recorder는 root project 뒤에 전체 경로를 붙여 provenance로 저장한다. SDK Trace는 native 부모 ID로 계층을 기록한다 |
+| `transferId` | delegation 호출마다. trace sampling과 무관하게 자식의 모든 chunk와 `authorDone`에 같은 값 | 화면의 동시 위임을 구분한다. SDK Trace의 span ID와는 별개다 |
+| `authorDone` | authored 런이 반환될 때 SDK Agent-as-Tool의 출력 래퍼가 | 소비자는 그 체인을 더 이상 활성으로 표시하지 않는다 |
+| `traceId` | 최상위 파사드가 붙이는 Studio Trace ID. 특화 자식 실행에는 별도 ID가 있을 수 있다 | text 자식은 최상위 Trace 안의 SDK span 계층에 기록되며 자식마다 별도 Studio Trace ID를 만들지 않는다 |
 
 > **런이 왜 끝났는지는 선언되는 것이지 추론되는 것이 아니다.** `RunTerminationReason`
 > (`completed` / `turn-limit` / `output-limit` / `cancelled` / `error`)은
@@ -729,8 +740,8 @@ slug 로 검증하며 `ValidationError` 를 throw 한다. registry 슬라이스�
 가 infrastructure 의 `SsrfError` 를 감싸며, 그 에러는 레이어 안에 머문다).
 
 **스트림 내 경로(첫 chunk 이후)**. 실패는 예외가 아니라 값이다. 엔진은 `{error}` chunk 를
-yield 하고 재시도하지 않는다. subagent 실패는 *authored* 에러 chunk 를 yield 하며 부모는
-그것을 딛고도 답할 수 있다. 그리고 dispatch 가드는 런을 실패시키는 대신 기능을 낮춰 진행한다.
+yield 하고 재시도하지 않는다. 위임된 Agent의 실패는 오류 도구 결과와 경고로 전달하며 부모는
+남은 정보로 답할 수 있다. 그리고 dispatch 가드는 런을 실패시키는 대신 기능을 낮춰 진행한다.
 SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건너뛰고, 멈춰 버린 MCP 요청은
 타임아웃 뒤 중단되어 모델이 반응할 수 있는 툴 에러 문자열이 된다.
 
@@ -743,7 +754,7 @@ SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건
 
 | 파일 | 답하는 것 |
 |---|---|
-| [design/execution.md](design/execution.md) | project 와 version 이 무엇인지, 엔진의 툴 루프, 그림을 그리는 세 경로, 그리고 런이 남기는 것 |
+| [design/execution.md](design/execution.md) | project 와 version 이 무엇인지, SDK Runtime과 Session, 그림을 그리는 세 경로, 그리고 런이 남기는 것 |
 | [design/mcp.md](design/mcp.md) | registry 항목, 프로토콜을 소유하는 세션, discovery 캐시, 루프백 위의 managed 컨테이너, 프로젝트별 OAuth |
 | [design/messaging.md](design/messaging.md) | 모든 chat-bot 표면이 공유하는 것. 턴 파이프라인, 응답 포트, webhook 꼬리. 과 각 플랫폼 고유의 결정이 시작되는 지점 |
 | [design/slack.md](design/slack.md) | 응답이 어떻게 전달되는지, 받은 메시지 중 어느 것이 봇을 향한 것인지, 런이 워크스페이스에서 무엇을 읽어도 되는지 |
@@ -757,7 +768,7 @@ SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건
 | [design/agui.md](design/agui.md) | 사용자를 마주하는 앱이 project 를 임베드하는 표면. 청크가 이벤트가 되는 방식, 클라이언트 tool 이 턴을 끝내는 이유 |
 
 두 서브시스템은 여기에 더해 자기 **불변식**을 코드 옆에 두고 있으며, 그 파일들이 해당
-코드를 고칠 때 무엇이 유지돼야 하는지의 권위다: `src/application/llm/AGENTS.md`(툴 루프)와
+코드를 고칠 때 무엇이 유지돼야 하는지의 권위다: `src/application/runtime/AGENTS.md`(SDK 런타임)와
 `src/application/chat/AGENTS.md`(영속화와 리플레이). `design/` 파일은 왜인지를 말하고,
 `AGENTS.md` 는 무엇을 깨면 안 되는지를 말한다.
 
@@ -830,7 +841,7 @@ OpenAI 호환 엔드포인트에는 Python/Node.js SDK 샘플이 있다. 자격 
 "agent" 라는 단어는 과부하돼 있다. 다음이 서로 구별되는 개념들이다.
 
 - **agent project** (`projectType: 'agent'`). 멀티턴 툴 루프를 도는 studio project.
-- **subagent** (버전 위의 `SubagentRef`). 런이 `transfer_to_agent` 빌트인으로 넘어갈 수
+- **subagent** (버전 위의 `SubagentRef`). 런이 SDK Handoff나 Agent-as-Tool로 연결할 수
   있는 다른 project(로컬)나 registry agent(원격).
 - **external agent** (`ExternalAgent`). 외부 엔드포인트(OpenAI 호환 또는 A2A)에 대한
   registry 항목. 원격 subagent 로 쓸 수 있다.

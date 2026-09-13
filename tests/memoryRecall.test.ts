@@ -1,3 +1,4 @@
+import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 /**
  * Memory recall before the first token — `parameters.memoryRecall`.
  *
@@ -20,7 +21,8 @@ import {
 import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
 import { buildAgentSystemPrompt, rememberedBlock } from "@/application/llm/agentAssembly";
 import { executeAgent } from "@/application/execution/runProject";
-import { runLocalSubagent } from "@/application/execution/subagentRunner";
+import { prepareSubagent } from "@/application/execution/agentBindings";
+import { runAgent } from "@/application/runtime";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import { previewPrompt } from "@/application/execution/promptPreview";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
@@ -336,6 +338,7 @@ function depsFixture(channel: FakeChannel): ExecutionDeps {
       listByProject: reject,
       listByDateRange: reject,
     },
+    createToolSchemaValidator,
     channel,
     imageChannel,
     cipher: secretCipher,
@@ -488,7 +491,12 @@ describe("a version that opted in recalls before the first token", () => {
     const query = "유정열을 검색해서 정리해";
     const stream = surface === "root"
       ? executeAgent(deps, { project, version, actor, messages: [{ role: "user", content: query }] })
-      : runLocalSubagent(deps, project.name, query, 1, 8, async () => {}, { actor, ancestry: ["parent", project.name] });
+      : (async function* () {
+          const prepared = await prepareSubagent(deps, { ...version, projectName: "parent", subagentList: [{ name: project.name, type: "local" }] }, project.name,
+            { message: query, images: [], maxTurns: 8 }, async () => {}, { actor, ancestry: ["parent"] });
+          if (prepared.kind !== "agent") throw new Error("Expected a native agent");
+          try { yield* runAgent(prepared.deps, prepared.input); } finally { await prepared.close(); }
+        })();
     const chunks: EngineChunk[] = [];
     for await (const chunk of stream) chunks.push(chunk);
 

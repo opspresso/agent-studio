@@ -2,10 +2,8 @@ import type { RunCaller } from "@/domain/execution/actor";
 import type { ChatMessage } from "@/domain/chat/types";
 import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
-import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
+import { ChatForbiddenError, ChatNotFoundError, ChatValidationError, ChatConflictError } from "./errors";
 import { userMayAccessProject } from "@/application/project/projectUseCases";
-import { resolveRunMessageImages } from "./resolveImages";
-import { toEngineMessages } from "./messageMapping";
 import {
   resolveVersion,
   runAndPersist,
@@ -16,7 +14,7 @@ import {
 import { claimChatRun } from "./runLease";
 import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { teeToRunLog } from "./runLog";
-import { listChatMessages } from "./messageList";
+import { readRuntimeSession } from "@/application/runtime/session";
 
 export interface SendMessageInput {
   chatId: string;
@@ -55,8 +53,7 @@ export interface SendMessageResult {
 }
 
 /**
- * Append a user message to an existing chat, run the agent against the full
- * history, and return a stream that persists the assistant reply on completion.
+ * Append a user message to an existing chat, append to the SDK Session, and return a stream that persists the assistant reply on completion.
  */
 export async function sendMessage(
   deps: ChatDeps,
@@ -89,9 +86,11 @@ export async function sendMessage(
     throw new ChatValidationError("project has no runnable version");
   }
 
+  const savedRuntime = deps.runtimeSessions ? await readRuntimeSession(deps.runtimeSessions, input.chatId, input.userEmail) : undefined;
+  if (savedRuntime?.document.checkpoint) throw new ChatConflictError("Resolve the pending approval before sending another message");
+  const sessionWarnings = savedRuntime === null ? ["Earlier chat records are visible, but this chat has no saved SDK Session. This run starts a new model context."] : [];
   const runId = await claimChatRun(deps.chats, input.chatId);
   try {
-    const existing = await listChatMessages(deps.chats, input.chatId);
     const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
     const startedAt = new Date();
     const now = startedAt.toISOString();
@@ -117,29 +116,11 @@ export async function sendMessage(
     };
     await deps.chats.appendMessage(userMessage);
 
-    // Resolved before mapping. At most the newest attachment budget becomes
-    // inline bytes; the provider never fetches a stored or caller-supplied URL.
-    const resolved = await resolveRunMessageImages(existing, deps.artifacts?.objects);
-    const history = toEngineMessages(resolved.messages, {
-      droppedImageSeqs: resolved.droppedImageSeqs,
-    });
-    // An image the replay could not address is a turn the model sees differently
-    // from the one the reader is looking at — and if that turn carried nothing
-    // else, the mapper substitutes an image-loss marker. Said out loud for the
-    // same reason a dropped history run is: the answer will be shaped by the gap either way.
-    const imageWarnings =
-      resolved.dropped > 0
-        ? [
-            `${resolved.dropped} earlier image(s) were omitted or could not be read back and are missing from this run's context.`,
-          ]
-        : [];
     const source = deps.runAgent({
       project,
       version,
-      // History replays from storage; this turn carries the attachment bytes
-      // themselves, which is what lets the agent edit what was just sent.
+      // The SDK Session supplies prior turns; this input contains only the new turn.
       messages: [
-        ...history.messages,
         { role: "user", content: userTurnContent(input.content, attachments, read.stored) },
       ],
       actor: { kind: "user", id: input.userEmail },
@@ -162,7 +143,7 @@ export async function sendMessage(
         deps,
         chat,
         withLeadingWarnings(
-          [...uploaded.warnings, ...read.warnings, ...imageWarnings, ...history.warnings],
+          [...sessionWarnings, ...uploaded.warnings, ...read.warnings],
           source,
         ),
         // So a stop is persisted as the note it is, rather than surfacing here
