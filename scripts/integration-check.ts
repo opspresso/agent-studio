@@ -13,6 +13,7 @@ import { assertLocalDatabase } from "./local-database";
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { execFileSync } from "node:child_process";
 import type { Task } from "@a2a-js/sdk";
 
 process.env.STAGE ??= "local";
@@ -40,6 +41,8 @@ async function main() {
   await checkRuntimeSessions();
   const { checkAuthSchema } = await import("./auth-schema-check");
   await checkAuthSchema();
+  // Isolate the auth singleton and its environment in a child process.
+  execFileSync(process.execPath, ["--import", "tsx", "scripts/keycloak-auth-check.ts"], { stdio: "inherit" });
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
   const { listProjects } = await import("@/application/project/projectUseCases");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");

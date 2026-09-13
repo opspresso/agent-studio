@@ -26,11 +26,11 @@ const GENERIC =
   "Sign-in did not complete. Try again, or contact your administrator if it keeps happening.";
 
 /**
- * The `providerId` the OIDC provider signs in under. `lib/auth.ts` registers
- * the provider under this id, and the sign-in button names it when starting a
- * sign-in — it lives here because the client cannot import the server module.
+ * Directory provider identities shared by server registration and sign-in
+ * buttons. The client cannot import the server auth module.
  */
 export const OIDC_PROVIDER_ID = "oidc";
+export const KEYCLOAK_PROVIDER_ID = "keycloak";
 
 /**
  * Copy for the `error` parameter `/login` was handed, or `undefined` when there

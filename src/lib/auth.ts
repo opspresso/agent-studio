@@ -2,10 +2,11 @@ import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth } from "better-auth/plugins";
+import { keycloak } from "better-auth/plugins/generic-oauth";
 import { DEFAULT_MEMBER_TIER } from "@/domain/member/tiers";
 import { getPool } from "@/infrastructure/db/client";
 import { log } from "@/shared/logger";
-import { EMAIL_DOMAIN_NOT_ALLOWED, OIDC_PROVIDER_ID } from "@/shared/signInError";
+import { EMAIL_DOMAIN_NOT_ALLOWED, KEYCLOAK_PROVIDER_ID, OIDC_PROVIDER_ID } from "@/shared/signInError";
 import { config } from "./config";
 import { AUTH_COOKIE_PREFIX } from "@/shared/authCookies";
 import { getAllowedEmailDomains, isConfiguredAdmin } from "./runtime-settings";
@@ -53,6 +54,7 @@ async function assertAllowedEmailDomain(email: string): Promise<void> {
 
 const google = config.googleOAuth;
 const oidc = config.oidc;
+const keycloakConfig = config.keycloak;
 
 export const auth = betterAuth({
   // The library's own Postgres adapter over this app's pool: the auth tables
@@ -134,21 +136,24 @@ export const auth = betterAuth({
   },
   plugins: [
     nextCookies(),
-    // A standard OIDC provider, found through its discovery document. One per
-    // installation: an enterprise has one directory, and a second provider is
-    // a second source of truth for who a person is.
-    ...(oidc
+    // Each configured directory has its own provider identity and callback.
+    ...(oidc || keycloakConfig
       ? [
           genericOAuth({
             config: [
-              {
+              ...(oidc ? [{
                 providerId: OIDC_PROVIDER_ID,
                 discoveryUrl: `${oidc.issuer}/.well-known/openid-configuration`,
                 clientId: oidc.clientId,
                 clientSecret: oidc.clientSecret,
                 scopes: oidc.scopes,
                 pkce: true,
-              },
+              }] : []),
+              ...(keycloakConfig ? [{
+                ...keycloak({ ...keycloakConfig, pkce: true, disableProviderLogout: true }),
+                providerId: KEYCLOAK_PROVIDER_ID,
+                requireIdTokenVerification: true,
+              }] : []),
             ],
           }),
         ]
