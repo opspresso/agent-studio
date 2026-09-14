@@ -39,6 +39,10 @@ export function mcpHeadersContext(name: string): string {
   return JSON.stringify(["mcp", name, "headers"]);
 }
 
+export function mcpOAuthClientSecretContext(name: string): string {
+  return JSON.stringify(["mcp", name, "oauth-client-secret"]);
+}
+
 export function managedMcpEnvironmentContext(name: string): string {
   return JSON.stringify(["mcp", name, "environment"]);
 }

@@ -14,12 +14,10 @@ import {
   beginMcpAuthorization,
   disconnectMcp,
   listMcpConnections,
-  saveMcpClientCredentials,
   type McpConnectionView,
 } from "../../lib/api";
 import { getMcp, type McpServer } from "@/app/tools/api";
-import { Button, Group, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
-import { monoInput } from "@/app/_components/monoInput";
+import { Button, Group, Stack, Text } from "@mantine/core";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
@@ -58,8 +56,6 @@ export function McpConnectionCard({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
   const t = useT();
   const locale = useLocale();
   // Held in a ref so the listener below does not depend on the callback's
@@ -85,11 +81,6 @@ export function McpConnectionCard({
     if (isCurrent() && connections.status === "fulfilled") {
       const found = connections.value.find((c) => c.serverName === serverName);
       setConnection(found);
-      setClientId(found?.clientId ?? "");
-      // The stored secret is shown masked, like every other secret in this
-      // console. Echoing the mask back on save keeps what is stored, typing over
-      // it replaces it, and emptying it clears it.
-      setClientSecret(found?.clientSecret ?? "");
     }
     const failure = [entry, connections].find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -180,19 +171,10 @@ export function McpConnectionCard({
   }
 
   const status = connection?.status ?? "needs_auth";
-  // A client comes from a metadata document this deployment publishes, from
-  // dynamic registration, or from the owner. Only registration can hide the
-  // boxes on its own: a document is a route *conditionally*, on this
-  // deployment's public base URL being an address the provider can fetch from,
-  // and that is a server-side fact the browser cannot check. Hiding the manual
-  // path on the capability flag alone is how the owner ended up being told to
-  // save credentials in a form that was not on the page.
-  const canSelfIdentify = Boolean(server.auth.registrationEndpoint);
-  // Distinct from the above: this sentence is about what the *provider* offers,
-  // so it must not appear for one that offers a document we merely cannot serve.
-  const needsManualClient =
-    !canSelfIdentify && !server.auth.clientIdMetadataDocumentSupported && !connection?.clientId;
-
+  const automaticClient = Boolean(
+    server.auth.registrationEndpoint || server.auth.clientIdMetadataDocumentSupported,
+  );
+  const missingClient = !server.auth.clientId && !automaticClient;
   return (
     <Stack gap="sm">
       <Group justify="space-between" gap="xs" wrap="nowrap">
@@ -210,26 +192,10 @@ export function McpConnectionCard({
         </Text>
       )}
 
-      {needsManualClient && (
+      {missingClient && (
         <Text fz="xs" c="dimmed">
           {t("mcpConn.noClientDocument")}
         </Text>
-      )}
-
-      {!canSelfIdentify && (
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-          <TextInput
-            value={clientId}
-            onChange={(e) => setClientId(e.currentTarget.value)}
-            placeholder={t("mcpConn.clientId")}
-          />
-          <TextInput
-            value={clientSecret}
-            onChange={(e) => setClientSecret(e.currentTarget.value)}
-            placeholder={t("mcpConn.clientSecret")}
-            styles={monoInput}
-          />
-        </SimpleGrid>
       )}
 
       {connection?.connectedAt && (
@@ -248,26 +214,8 @@ export function McpConnectionCard({
       )}
 
       <Group gap="xs" wrap="wrap">
-        {!canSelfIdentify && (
-          <Button
-            variant="default"
-            disabled={busy || !clientId.trim()}
-            onClick={() =>
-              run(async () => {
-                await saveMcpClientCredentials(projectName, serverName, {
-                  clientId: clientId.trim(),
-                  // Sent verbatim, empty included: this box arrives prefilled,
-                  // so an empty one means "clear it", not "I typed nothing".
-                  clientSecret,
-                });
-              }, true)
-            }
-          >
-            {t("mcpConn.saveCredentials")}
-          </Button>
-        )}
         <Button
-          disabled={busy || needsManualClient}
+          disabled={busy || missingClient}
           onClick={() =>
             run(async () => {
               const url = await beginMcpAuthorization(projectName, serverName);

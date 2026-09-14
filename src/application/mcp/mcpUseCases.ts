@@ -19,6 +19,7 @@ import { urlOriginForLog, urlWithoutQueryOrFragment } from "@/shared/url";
 import {
   managedMcpEnvironmentContext,
   mcpHeadersContext,
+  mcpOAuthClientSecretContext,
 } from "@/domain/security/secretContext";
 
 export interface CreateMcpInput {
@@ -63,6 +64,21 @@ function masked(cipher: SecretCipher, server: McpServer): McpServer {
             server.environment,
             managedMcpEnvironmentContext(server.name),
           ),
+        }
+      : {}),
+    ...(server.auth
+      ? {
+          auth: {
+            ...server.auth,
+            ...(server.auth.clientSecret
+              ? {
+                  clientSecret: cipher.mask(
+                    server.auth.clientSecret,
+                    mcpOAuthClientSecretContext(server.name),
+                  ),
+                }
+              : {}),
+          },
         }
       : {}),
   };

@@ -2,7 +2,8 @@
  * OAuth for registry MCP servers.
  *
  * Discovery runs once, when an admin registers or repairs a server, and stores
- * everything a run needs on the registry entry. The run path never reads a
+ * everything a run needs on the registry entry. Operator OAuth client settings
+ * live there too; project connections hold the resulting user grant. The run path never reads a
  * well-known document: that would add two round trips and a third party's
  * availability to every time-to-first-token.
  */
@@ -29,6 +30,7 @@ import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCiph
 import {
   mcpConnectionSecretContext,
   mcpHeadersContext,
+  mcpOAuthClientSecretContext,
   mcpOAuthStateContext,
 } from "@/domain/security/secretContext";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
@@ -280,6 +282,12 @@ export interface SaveClientCredentialsInput {
   scopes?: string[];
 }
 
+export interface SaveOAuthClientCredentialsInput {
+  clientId?: string;
+  clientSecret?: string;
+  redirectUri?: string;
+}
+
 function sameScopes(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((scope, index) => scope === b[index]);
 }
@@ -295,6 +303,15 @@ function sameScopes(a: readonly string[], b: readonly string[]): boolean {
  */
 function parseGrantedScopes(scope: string): string[] {
   return scope.split(/[\s,]+/).filter(Boolean);
+}
+
+function maskedAuth(cipher: SecretCipher, serverName: string, auth: McpServerAuth): McpServerAuth {
+  return {
+    ...auth,
+    ...(auth.clientSecret
+      ? { clientSecret: cipher.mask(auth.clientSecret, mcpOAuthClientSecretContext(serverName)) }
+      : {}),
+  };
 }
 
 export interface McpAuthUseCasesDeps {
@@ -330,6 +347,10 @@ export interface McpAuthUseCases {
   discover(name: string, opts?: { authorizationServer?: string }): Promise<DiscoverAuthResult>;
   /** Drop the OAuth block, returning the entry to static-header behaviour. */
   clearAuth(name: string): Promise<void>;
+  saveOAuthClientCredentials(
+    name: string,
+    input: SaveOAuthClientCredentialsInput,
+  ): Promise<McpServerAuth>;
 
   listConnections(projectName: string, userEmail: string): Promise<McpConnectionView[]>;
   saveClientCredentials(
@@ -435,6 +456,26 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       );
     }
     return uri;
+  }
+
+  function validateRedirectUri(uri: string): string {
+    let parsed: URL;
+    try {
+      parsed = new URL(uri);
+    } catch {
+      throw new ValidationError("The OAuth redirect URI must be a valid URL.");
+    }
+    if (
+      (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+      (parsed.protocol === "http:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      throw new ValidationError(
+        "The OAuth redirect URI must use https (or localhost) and cannot contain a query or fragment.",
+      );
+    }
+    return parsed.toString().replace(/\/$/, "");
   }
 
   /**
@@ -585,15 +626,47 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           : {}),
         tokenEndpointAuthMethod: selectAuthMethod(asMetadata),
         ...(scopesSupported ? { scopesSupported } : {}),
+        ...(server.auth?.issuer === asMetadata.issuer && server.auth.clientId
+          ? { clientId: server.auth.clientId }
+          : {}),
+        ...(server.auth?.issuer === asMetadata.issuer && server.auth.clientSecret
+          ? { clientSecret: server.auth.clientSecret }
+          : {}),
+        ...(server.auth?.issuer === asMetadata.issuer && server.auth.redirectUri
+          ? { redirectUri: server.auth.redirectUri }
+          : {}),
         discoveredAt: new Date().toISOString(),
       };
       await saveAuth(server, auth);
-      return { status: "discovered", auth };
+      return { status: "discovered", auth: maskedAuth(deps.cipher, name, auth) };
     },
 
     async clearAuth(name) {
       const server = await requireServer(name);
       await saveAuth(server, undefined);
+    },
+
+    async saveOAuthClientCredentials(name, input) {
+      const server = await requireOAuthServer(name);
+      const clientId = input.clientId?.trim() ?? "";
+      const submittedSecret = input.clientSecret;
+      const redirect = input.redirectUri?.trim() ?? "";
+      const nextAuth: McpServerAuth = {
+        ...server.auth,
+        ...(clientId ? { clientId } : { clientId: undefined, clientSecret: undefined }),
+        ...(redirect ? { redirectUri: validateRedirectUri(redirect) } : { redirectUri: undefined }),
+      };
+
+      if (clientId && submittedSecret !== undefined && !deps.cipher.isMasked(submittedSecret)) {
+        nextAuth.clientSecret = submittedSecret
+          ? deps.cipher.encrypt(submittedSecret, mcpOAuthClientSecretContext(name))
+          : undefined;
+      } else if (clientId && server.auth.clientSecret) {
+        nextAuth.clientSecret = server.auth.clientSecret;
+      }
+
+      await saveAuth(server, nextAuth);
+      return maskedAuth(deps.cipher, name, nextAuth);
     },
 
     async listConnections(projectName, userEmail) {
@@ -663,7 +736,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     async beginAuthorization(projectName, serverName, userEmail) {
       await assertProjectWritable(deps.projects, projectName, userEmail);
       const server = await requireOAuthServer(serverName);
-      const callback = await redirectUri();
+      const callback = server.auth.redirectUri ?? (await redirectUri());
       const issuer = server.auth.issuer;
       let connection = await deps.connections.get(projectName, serverName);
 
@@ -724,7 +797,21 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // still here, because a server on a 2025-era release offers no metadata
       // document and asking its owner to go and register an app by hand is not
       // an upgrade path, it is a working entry that stopped working.
-      if (!connection?.clientId || staleCredentials || staleDocument) {
+      const configuredClientSecret = server.auth.clientSecret
+        ? deps.cipher.decrypt(server.auth.clientSecret, mcpOAuthClientSecretContext(serverName))
+        : undefined;
+      const configuredClientChanged =
+        Boolean(server.auth.clientId) &&
+        (!connection ||
+          connection.clientId !== server.auth.clientId ||
+          (configuredClientSecret ?? undefined) !==
+            (connection.clientSecret
+              ? deps.cipher.decrypt(
+                  connection.clientSecret,
+                  mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+                )
+              : undefined));
+      if (!connection?.clientId || staleCredentials || staleDocument || configuredClientChanged) {
         const scopes = connection?.scopes ?? server.auth.scopesSupported ?? [];
         // Rebuilt rather than merged in either branch: whatever the previous
         // client authorized was granted by a different server, and must not
@@ -739,7 +826,20 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           updatedAt: new Date().toISOString(),
         };
         let fresh: McpConnection;
-        if (metadataUrl) {
+        if (server.auth.clientId) {
+          fresh = {
+            ...base,
+            clientId: server.auth.clientId,
+            ...(configuredClientSecret
+              ? {
+                  clientSecret: deps.cipher.encrypt(
+                    configuredClientSecret,
+                    mcpConnectionSecretContext(projectName, serverName, "client-secret"),
+                  ),
+                }
+              : {}),
+          };
+        } else if (metadataUrl) {
           // Nothing is requested and nothing is issued: the `client_id` is the
           // address of a document this deployment already serves, and the
           // server fetches it when the authorization arrives.
@@ -803,6 +903,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           serverName,
           codeVerifier: deps.cipher.encrypt(pkce.verifier, mcpOAuthStateContext(state)),
           userEmail,
+          redirectUri: callback,
           // Recorded alongside the verifier, as RFC 9207 requires: the registry
           // entry is exactly what may change while the user is at the provider,
           // so reading the expected issuer back off it would compare the
@@ -881,7 +982,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       };
       const tokens = await deps.oauth.exchangeCode(target, {
         code,
-        redirectUri: await redirectUri(),
+        redirectUri: pending.redirectUri ?? (server.auth.redirectUri ?? (await redirectUri())),
         codeVerifier: deps.cipher.decrypt(
           pending.codeVerifier,
           mcpOAuthStateContext(pending.state),

@@ -82,6 +82,17 @@ export async function clearMcpAuth(name: string): Promise<void> {
   await assertOk(await fetch(`/api/mcps/${name}/auth`, { method: "DELETE" }));
 }
 
+export function saveMcpOAuthClient(
+  name: string,
+  input: { clientId?: string; clientSecret?: string; redirectUri?: string },
+): Promise<McpServer> {
+  return fetch(`/api/mcps/${name}/auth`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  }).then((r) => readJson<McpServer>(r));
+}
+
 // --- managed servers ---------------------------------------------------------
 
 /**

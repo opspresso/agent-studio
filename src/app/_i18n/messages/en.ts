@@ -879,7 +879,7 @@ export const en = {
     "Layered over the registry entry’s headers, for this version only. Saved with the version.",
   "mcpSettings.connection": "Connection",
   "mcpSettings.connectionNote":
-    "This project’s own credentials for the server, shared by all its versions. Saved immediately, not with the version.",
+    "Authorize this project’s user account with the OAuth client configured by the operator. Saved immediately, not with the version.",
   "mcpSettings.title": "{server} settings",
   "mcpSettings.savesWholeVersion": "Saves the whole version, not just this server.",
   "mcpSettings.close": "Close",
@@ -929,7 +929,7 @@ export const en = {
   "preview.blurb":
     "Builds the system prompt the way a run does — recalled context, skill table, connected MCP servers and their tool names, transfer instructions — by contacting the configured services on demand.",
 
-  // A project's own credentials for one MCP server.
+  // A project's OAuth authorization for one MCP server.
   "mcpConn.connected": "Connected",
   "mcpConn.needsAuth": "Not authorized",
   "mcpConn.needsReauth": "Reconnect required",
@@ -941,7 +941,7 @@ export const en = {
   "mcpConn.noAuthNeeded":
     "This server does not require authorization. Whatever credentials it needs come from the registry entry’s own headers, plus any override above.",
   "mcpConn.noClientDocument":
-    "This provider accepts neither client ID metadata documents nor dynamic registration. Register an app with it, then save its client ID and secret here.",
+    "This provider requires a manually registered OAuth app. An administrator must save its client ID and secret in the MCP server’s Tools OAuth settings before a project can connect.",
   "mcpConn.authorizedBy": "Authorized by {who} on {when}",
   "mcpConn.saveCredentials": "Save credentials",
   "mcpConn.disconnect": "Disconnect",

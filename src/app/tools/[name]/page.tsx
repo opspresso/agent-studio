@@ -18,6 +18,7 @@ import {
   testMcpConnection,
   discoverMcpAuth,
   clearMcpAuth,
+  saveMcpOAuthClient,
   updateMcp,
   type McpServer,
   type McpTool,
@@ -505,10 +506,8 @@ export default function McpDetailPage() {
 /**
  * OAuth configuration for this registry entry (admin-only).
  *
- * This half is operator configuration — where the authorization server is —
- * shared by every project. The credentials that use it are per project and live
- * on the project page, which is what lets one entry serve a different app per
- * project.
+ * This is operator configuration shared by every project: where the authorization
+ * server is and, when required, which OAuth app all projects use.
  */
 function OAuthSection({
   server,
@@ -519,9 +518,22 @@ function OAuthSection({
   onChanged: () => void;
   editable: boolean;
 }) {
+  const defaultRedirectUri =
+    typeof window === "undefined"
+      ? ""
+      : `${window.location.origin}/api/mcps/oauth/callback`;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [choices, setChoices] = useState<string[] | null>(null);
+  const [clientId, setClientId] = useState(server.auth?.clientId ?? "");
+  const [clientSecret, setClientSecret] = useState(server.auth?.clientSecret ?? "");
+  const [redirectUri, setRedirectUri] = useState(server.auth?.redirectUri ?? defaultRedirectUri);
+
+  useEffect(() => {
+    setClientId(server.auth?.clientId ?? "");
+    setClientSecret(server.auth?.clientSecret ?? "");
+    setRedirectUri(server.auth?.redirectUri ?? defaultRedirectUri);
+  }, [defaultRedirectUri, server.auth]);
 
   async function discover(authorizationServer?: string) {
     setBusy(true);
@@ -555,6 +567,27 @@ function OAuthSection({
       setBusy(false);
     }
   }
+
+  async function saveClient() {
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await saveMcpOAuthClient(server.name, { clientId, clientSecret, redirectUri });
+      setClientId(saved.auth?.clientId ?? "");
+      setClientSecret(saved.auth?.clientSecret ?? "");
+      setRedirectUri(saved.auth?.redirectUri ?? defaultRedirectUri);
+      onChanged();
+    } catch (e) {
+      setError(reportError(e, "Failed to save OAuth client"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const automaticClient = Boolean(
+    server.auth?.clientIdMetadataDocumentSupported || server.auth?.registrationEndpoint,
+  );
+  const showManualClient = Boolean(server.auth?.clientId) || !automaticClient;
 
   return (
     <section>
@@ -611,6 +644,7 @@ function OAuthSection({
       )}
 
       {server.auth ? (
+        <Stack gap="sm">
         <Card component="dl" m={0}>
           {(
             [
@@ -665,10 +699,37 @@ function OAuthSection({
             </Group>
           ))}
         </Card>
+        {editable && automaticClient && !server.auth.clientId && (
+          <Text fz="sm" c="dimmed">
+            Client registration is automatic. Projects can connect without a manually configured OAuth app.
+          </Text>
+        )}
+        {editable && showManualClient && (
+          <Stack gap="xs">
+            <Text fz="sm" c="dimmed">
+              OAuth client credentials shared by this MCP across projects
+            </Text>
+            <TextInput label="Client ID" value={clientId} onChange={(event) => setClientId(event.currentTarget.value)} />
+            <TextInput label="Client secret" value={clientSecret} onChange={(event) => setClientSecret(event.currentTarget.value)} styles={monoInput} />
+            <TextInput
+              label="Redirect URI"
+              value={redirectUri}
+              onChange={(event) => setRedirectUri(event.currentTarget.value)}
+              placeholder="https://studio.example.com/api/mcps/oauth/callback"
+              styles={monoInput}
+            />
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => void saveClient()} loading={busy}>
+                Save OAuth client
+              </Button>
+            </Group>
+          </Stack>
+        )}
+        </Stack>
       ) : (
         <Text fz="sm" c="dimmed">
           Not configured. Discovery reads the server&apos;s published metadata; projects then
-          connect their own credentials from their project page.
+          authorize with the OAuth client configured here.
         </Text>
       )}
     </section>

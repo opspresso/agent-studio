@@ -224,7 +224,7 @@ AAD 는 environment와 같은 공통 map 규칙에 따라 저장된 키 철자�
 Version 의 MCP header override 는 `project + version + server + header` 에 묶인다. 저장된 version 을
 임시 preview draft 로 읽을 때는 값을 복호화해 `draft` 컨텍스트로 다시 암호화하고, project clone 은
 소유자의 override 를 애초에 복사하지 않는다.
-MCP OAuth connection 의 client secret·access token·refresh token 은 `project + server + field` 에,
+MCP OAuth client secret 은 `server + field` 에, project OAuth connection 의 access token·refresh token 은 `project + server + field` 에,
 인가 중인 PKCE verifier 는 일회성 state 값에 묶인다. Token refresh의 compare-and-set은 저장소가
 연결을 쓸 때마다 발급하는 revision을 비교한다. 토큰 값과 타임스탬프가 같아도 새 연결을 구분하며,
 갱신 경쟁에서 진 요청은 최초 issuer·resource와 일치하는 connected grant만 사용할 수 있다.
@@ -659,10 +659,11 @@ resource 문서는 항목 자신의 주소에서 읽으므로,
 운영자가 어떤 MCP 호스트를 내부라고 선언한 것은 그 호스트가 스스로 지목하는 authorization
 서버에 대해서는 아무 말도 하지 않는다.
 
-자격 증명은 **project 별** 이며 자기 자신의 `PROJECT#<name> / MCPCONN#<server>` 아이템에 있다.
-버전(설정 이력의 스냅샷)에도, project 아이템(그 `updatedAt` 은 publish 의 낙관적 동시성
-조건이다)에도 있지 않다. 그 분리가 하나의 공유 레지스트리 항목이 project 마다 다른 제공자 앱을
-섬길 수 있게 한다.
+OAuth client secret 은 공유 레지스트리 항목의 `auth` 블록에 암호화되어 있고, 사용자별 access/
+refresh token 은 자기 자신의 `PROJECT#<name> / MCPCONN#<server>` 아이템에 있다. 버전(설정
+이력의 스냅샷)에도, project 아이템(그 `updatedAt` 은 publish 의 낙관적 동시성 조건이다)에도
+있지 않다. 이 분리는 관리자가 OAuth 앱을 한 번 설정하고 각 project 소유자가 자신의 계정으로
+승인하게 한다.
 
 강제되는 속성:
 

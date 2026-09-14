@@ -114,6 +114,8 @@ export interface McpOAuthState {
   codeVerifier: string;
   /** The user who started the flow; the callback must be the same person. */
   userEmail: string;
+  /** The exact callback used in the authorization request. */
+  redirectUri?: string;
   /**
    * The issuer this flow was started against, recorded here rather than read
    * back off the registry entry: RFC 9207 requires the expected issuer to live
