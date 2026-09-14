@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { McpToolResult } from "@/domain/llm/types";
 import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
+import { workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
 import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types";
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { NotFoundError, ValidationError } from "@/application/errors";
@@ -35,7 +36,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     if (!request || typeof request !== "object" || Array.isArray(request)) throw new ValidationError("Workspace requires a request");
     const operation = request.operation;
     if (operation === "options") return reply({ project: context.projectName, runtimes: policy.runtimes,
-      repository: policy.repository ?? null, checks: policy.checks, git_actions: "Use the returned workspace_path to review and approve Git or deployment actions." });
+      repository: policy.repository ?? null, repositories: workspaceRepositories(policy), checks: policy.checks, git_actions: "Use the returned workspace_path to review and approve Git or deployment actions." });
     if (operation === "start" || operation === "run") {
       if (!callId || typeof request.task !== "string") throw new ValidationError("Workspace task identity is missing");
       const key = createHash("sha256").update(JSON.stringify([context.occurrence, context.projectName, callId])).digest("hex");
@@ -44,10 +45,10 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         if (!WORKSPACE_RUNTIMES.includes(runtime)) throw new ValidationError("Invalid Workspace runtime");
         if ((request.repository !== null && typeof request.repository !== "string") ||
           (request.base_branch !== null && typeof request.base_branch !== "string")) throw new ValidationError("Invalid repository selection");
-        if (request.repository !== null && request.repository !== policy.repository) throw new ValidationError("The requested repository is not configured for this project");
+        if (request.repository !== null && !workspaceAllowsRepository(policy, request.repository as string)) throw new ValidationError("The requested repository is not configured for this project");
         if ((request.repository === null) !== (request.base_branch === null)) throw new ValidationError("Repository work requires both repository and base_branch");
         const started = await deps.useCases.start({ projectName: context.projectName, runtime,
-          ...(request.repository !== null ? { baseBranch: String(request.base_branch) } : {}), input: input(runtime, request.task) }, context.ownerEmail, key);
+          ...(request.repository !== null ? { repository: String(request.repository), baseBranch: String(request.base_branch) } : {}), input: input(runtime, request.task) }, context.ownerEmail, key);
         return reply({ workspace_id: started.workspace.id, run_id: started.run.id, status: started.run.status,
           workspace_path: `/chats/${started.workspace.chatId}`, next: "wait", after_seq: 0 });
       }

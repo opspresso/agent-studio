@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
+import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
 import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
 import type { Workspace, RuntimeSession, WorkspaceRuntime } from "@/domain/workspace/types";
 
@@ -10,6 +10,17 @@ function fixtures(runtime: WorkspaceRuntime, nativeSessionId?: string): [Workspa
 }
 
 describe("native workspace runtime adapters", () => {
+  it("binds a configured model channel without copying unrelated host credentials", () => {
+    const channel = { name: "openai", baseUrl: "https://model.example/v1", apiKey: "test-model-key" };
+    const codex = withWorkspaceModelChannel("codex", { model: "model-id" }, channel);
+    expect(codex.environment).toEqual({ CODEX_API_KEY: channel.apiKey, OPENAI_BASE_URL: channel.baseUrl });
+    const claude = withWorkspaceModelChannel("claude", {}, { ...channel, name: "anthropic" });
+    expect(claude.environment?.ANTHROPIC_BASE_URL).toBe("https://model.example");
+    const opencode = withWorkspaceModelChannel("opencode", { model: "openai/model-id" }, channel);
+    expect(JSON.parse(opencode.environment!.OPENCODE_CONFIG_CONTENT!).provider.openai.models).toHaveProperty("model-id");
+    expect(() => withWorkspaceModelChannel("command", {}, channel)).toThrow();
+    expect(() => withWorkspaceModelChannel("codex", {}, { ...channel, auth: "sigv4" })).toThrow();
+  });
   it("uses stdin for explicit general scripts without a Git dependency", () => {
     const command = createWorkspaceRuntimeAdapter("command").command(...fixtures("command"), { kind: "command", script: "echo 'general task'" }, 1000);
     expect(command.argv).toEqual(["/bin/sh", "-s"]);

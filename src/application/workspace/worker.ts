@@ -7,13 +7,14 @@ import { assertProjectAccessible } from "@/application/project/projectUseCases";
 import { RateLimitedError } from "@/application/errors";
 import type { WorkspaceDeps } from "./workspaceUseCases";
 import { workspacePolicy } from "./workspaceUseCases";
+import { workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { claimWorkspace, WorkspaceLeaseLost, WorkspaceWorkerState, WORKSPACE_POLL_MS, WORKSPACE_RETRY_MS } from "./workerState";
 import { boundedWorkspaceText, boundWorkspaceEvent, foldWorkspaceOutput } from "./output";
 
 export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   provider: SandboxProvider;
   checkpoints: WorkspaceCheckpointStore;
-  runtime(kind: Workspace["runtime"]): WorkspaceRuntimeAdapter;
+  runtime(kind: Workspace["runtime"]): WorkspaceRuntimeAdapter | Promise<WorkspaceRuntimeAdapter>;
   coding?: CodingWorktree;
   runTimeoutMs: number;
   /** Composition binds the execution facade, which opens the shared run bracket. */
@@ -110,7 +111,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
   }
   await assertProjectAccessible(deps.projects, workspace.projectName, workspace.ownerEmail);
   const policy = workspacePolicy(deps, workspace.projectName);
-  if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && policy.repository !== workspace.coding.repository)) {
+  if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository))) {
     throw new Error("Workspace runtime or repository configuration changed");
   }
   if (!run.startedAt) {
@@ -119,7 +120,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
       session ? { session: { ...session, updatedAt: deps.now().toISOString() } } : {});
   }
   const sandbox = await ensureWorkspaceSandbox(deps, state);
-  const runtime = deps.runtime(workspace.runtime);
+  const runtime = await deps.runtime(workspace.runtime);
   let nextReview = 0;
   for (;;) {
     if (signal?.aborted) throw new WorkerStopping();

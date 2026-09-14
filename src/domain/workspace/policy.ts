@@ -5,8 +5,18 @@ export interface WorkspaceProjectPolicy {
   projectName: string;
   runtimes: WorkspaceRuntime[];
   repository?: string;
+  repositories?: string[];
   checks: { name: WorkspaceCheck["name"]; command: string }[];
   deploymentWorkflows: string[];
+}
+
+/** The default repository and any additional deployment-approved repositories. */
+export function workspaceRepositories(policy: Pick<WorkspaceProjectPolicy, "repository" | "repositories">): string[] {
+  return [...new Set([...(policy.repository ? [policy.repository] : []), ...(policy.repositories ?? [])])];
+}
+
+export function workspaceAllowsRepository(policy: WorkspaceProjectPolicy, repository: string): boolean {
+  return workspaceRepositories(policy).some(name => name.toLowerCase() === repository.toLowerCase());
 }
 
 export function isGitBranch(value: string): boolean {

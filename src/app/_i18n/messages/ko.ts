@@ -15,6 +15,7 @@ export const ko: Messages = {
   "workspace.new": "새 Workspace",
   "workspace.intro": "작업이 이어져도 파일과 Agent 문맥을 유지합니다.",
   "workspace.notConfigured": "사용할 수 있는 Workspace 프로젝트가 설정되지 않았습니다.",
+  "workspace.repository": "저장소",
   "workspace.runtime": "Runtime",
   "workspace.command": "명령 / 스크립트",
   "workspace.useRepository": "Git 저장소 사용",

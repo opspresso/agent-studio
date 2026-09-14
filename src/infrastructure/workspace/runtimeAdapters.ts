@@ -6,6 +6,23 @@ export interface WorkspaceRuntimeConfig {
   environment?: Record<string, string>;
 }
 
+/** Resolve an explicitly selected model channel at dispatch; secrets are never stored in Workspace metadata. */
+export function withWorkspaceModelChannel(kind: WorkspaceRuntime, config: WorkspaceRuntimeConfig,
+  channel: { name: string; baseUrl: string; apiKey: string; auth?: string }): WorkspaceRuntimeConfig {
+  if (!channel.apiKey || channel.auth === "sigv4") throw new Error("Workspace model channel requires an API key");
+  let environment: Record<string, string>;
+  if (kind === "codex") environment = { CODEX_API_KEY: channel.apiKey, OPENAI_BASE_URL: channel.baseUrl };
+  else if (kind === "claude") environment = { ANTHROPIC_API_KEY: channel.apiKey, ANTHROPIC_BASE_URL: channel.baseUrl.replace(/\/v1\/?$/, "") };
+  else if (kind === "opencode") {
+    if (!config.model?.startsWith("openai/")) throw new Error("Workspace OpenCode channel models must use the openai/ prefix");
+    const model = config.model.slice("openai/".length);
+    environment = { OPENAI_API_KEY: channel.apiKey, OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: {
+      openai: { options: { baseURL: channel.baseUrl }, models: { [model]: { name: model } } },
+    } }) };
+  } else throw new Error("The command runtime does not use a model channel");
+  return { ...config, environment: { ...environment, ...config.environment } };
+}
+
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

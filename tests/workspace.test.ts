@@ -39,6 +39,19 @@ async function create(runtime: "command" | "codex" = "command", coding = false) 
 }
 
 describe("workspace admission and persistence", () => {
+  it("uses an explicitly selected allowed repository and fences later policy removal", async () => {
+    const expanded = { ...policy, repositories: ["company/second"] };
+    const api = createWorkspaceUseCases({ repository, chats, projects, now: () => now, newId: () => `id-${++nextId}`, policy: () => expanded, idleTtlSeconds: 60 });
+    const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "Second repository", runtime: "codex", repository: "company/second", baseBranch: "main" }, owner);
+    expect(workspace.coding?.repository).toBe("company/second");
+    expanded.repositories = [];
+    await expect(api.enqueue(workspace.id, owner, { kind: "task", prompt: "continue" }, "removed-policy")).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("refuses a requested repository outside the deployment allowlist", async () => {
+    await expect(useCases.create({ chatId: "chat-1", projectName: "demo", title: "Task", runtime: "codex", repository: "other/private", baseBranch: "main" }, owner)).rejects.toMatchObject({ status: 400 });
+    expect(await repository.forChat("chat-1")).toBeNull();
+  });
   it("atomically starts a new chat and deduplicates concurrent creation retries", async () => {
     const input = { projectName: "demo", runtime: "command" as const, input: { kind: "command" as const, script: "echo hello" } };
     const [first, second] = await Promise.all([useCases.start(input, owner, "start-request-01"), useCases.start(input, owner, "start-request-01")]);

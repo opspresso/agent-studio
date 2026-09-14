@@ -5,7 +5,7 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import type { WorkspaceRepository } from "@/domain/workspace/repository";
 import type { Workspace, WorkspaceInput, WorkspaceRuntime, WorkspaceRun, RuntimeSession } from "@/domain/workspace/types";
 import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
-import { isGitBranch, isRepositoryName } from "@/domain/workspace/policy";
+import { isGitBranch, isRepositoryName, workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import type { CodingApproval } from "@/domain/coding/types";
 import { titleFromMessage } from "@/application/chat/title";
@@ -27,6 +27,7 @@ export interface CreateWorkspaceInput {
   projectName: string;
   runtime: WorkspaceRuntime;
   baseBranch?: string;
+  repository?: string;
   title: string;
   createChat?: boolean;
   creationFingerprint?: string;
@@ -93,7 +94,9 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       if (isLiveClaim(await deps.chats.getActiveRun(input.chatId), deps.now().getTime())) throw new ConflictError("Chat already has an agent run");
       if (await deps.repository.forChat(input.chatId)) throw new ConflictError("Chat already has a workspace");
       if (!input.title.trim() || input.title.length > 200) throw new ValidationError("Invalid workspace title");
-      if (input.baseBranch && (!policy.repository || !isRepositoryName(policy.repository) || !isGitBranch(input.baseBranch))) {
+      const repository = input.repository ?? workspaceRepositories(policy)[0];
+      if ((input.repository && !input.baseBranch) || (input.baseBranch && (!repository || !isRepositoryName(repository) ||
+        !workspaceAllowsRepository(policy, repository) || !isGitBranch(input.baseBranch)))) {
         throw new ValidationError("Invalid coding repository or base branch");
       }
       if (deps.idleTtlSeconds < WORKSPACE_LIMITS.minIdleTtlSeconds || deps.idleTtlSeconds > WORKSPACE_LIMITS.maxIdleTtlSeconds) {
@@ -108,7 +111,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
         runtime: input.runtime, sessionId: session.id, revision: 0, status: "active",
         createdAt: now, updatedAt: now, dueAt: new Date(deps.now().getTime() + deps.idleTtlSeconds * 1000).toISOString(),
         idleTtlSeconds: deps.idleTtlSeconds,
-        ...(input.baseBranch ? { coding: { repository: policy.repository!, baseBranch: input.baseBranch, branch: `agent/${id}` } } : {}),
+        ...(input.baseBranch ? { coding: { repository: repository!, baseBranch: input.baseBranch, branch: `agent/${id}` } } : {}),
       };
       try { await deps.repository.create(workspace, session, input.createChat ? { chatId: input.chatId, projectName: input.projectName,
         ownerEmail, title: workspace.title, createdAt: now, updatedAt: now } : undefined); }
@@ -127,14 +130,14 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       return { workspace: workspaceView(workspace), session, runs: runs.map(workspaceRunView), approvals };
     },
 
-    async start(input: { projectName: string; runtime: WorkspaceRuntime; baseBranch?: string; input: WorkspaceInput }, ownerEmail: string, requestKey: string): Promise<StartWorkspaceResult> {
+    async start(input: { projectName: string; runtime: WorkspaceRuntime; baseBranch?: string; repository?: string; input: WorkspaceInput }, ownerEmail: string, requestKey: string): Promise<StartWorkspaceResult> {
       if (!/^[\w-]{8,128}$/.test(requestKey)) throw new ValidationError("Invalid Idempotency-Key");
       validateInput({ runtime: input.runtime }, input.input);
-      const creationFingerprint = createHash("sha256").update(JSON.stringify([input.projectName, input.runtime, input.baseBranch ?? null, input.input])).digest("hex");
+      const creationFingerprint = createHash("sha256").update(JSON.stringify([input.projectName, input.runtime, input.repository ?? null, input.baseBranch ?? null, input.input])).digest("hex");
       const chatId = `ws-${createHash("sha256").update(JSON.stringify([ownerEmail, requestKey])).digest("hex").slice(0, 32)}`;
       let workspace = await deps.repository.forChat(chatId);
       if (!workspace) {
-        try { workspace = await this.create({ chatId, projectName: input.projectName, runtime: input.runtime, baseBranch: input.baseBranch,
+        try { workspace = await this.create({ chatId, projectName: input.projectName, runtime: input.runtime, baseBranch: input.baseBranch, repository: input.repository,
           title: titleFromMessage(input.input.kind === "task" ? input.input.prompt : input.input.script), createChat: true, creationFingerprint }, ownerEmail); }
         catch (error) {
           if (!(error instanceof ConflictError)) throw error;
@@ -163,7 +166,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
       const policy = workspacePolicy(deps, workspace.projectName);
       if (!policy.runtimes.includes(workspace.runtime)) throw new ValidationError("Workspace runtime is not enabled");
-      if (workspace.coding && workspace.coding.repository !== policy.repository) throw new ConflictError("Workspace repository configuration changed");
+      if (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository)) throw new ConflictError("Workspace repository configuration changed");
       validateInput(workspace, input);
       if (!/^[\w-]{8,128}$/.test(requestKey)) throw new ValidationError("Invalid Idempotency-Key");
       const fingerprint = createHash("sha256").update(JSON.stringify(input)).digest("hex");

@@ -4,6 +4,9 @@ import { apiError, parseName } from "@/app/api/_lib/http";
 
 export type WorkspaceBranchesResponse = Awaited<ReturnType<typeof workspaceBranches>>;
 export const GET = withMemberAuth(async (user, request: Request) => {
-  try { return Response.json(await workspaceBranches(parseName(new URL(request.url).searchParams.get("project") ?? ""), user.email) satisfies WorkspaceBranchesResponse); }
+  try {
+    const query = new URL(request.url).searchParams;
+    return Response.json(await workspaceBranches(parseName(query.get("project") ?? ""), user.email, query.get("repository") ?? undefined) satisfies WorkspaceBranchesResponse);
+  }
   catch (error) { return apiError(error); }
 });

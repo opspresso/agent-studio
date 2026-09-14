@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { parseWorkspaceConfig } from "@/lib/workspaceConfig";
 
 describe("Workspace deployment configuration", () => {
+  it("keeps model credentials in registered channels and bounds worker concurrency", () => {
+    const input = { image: "workspace:local", projects: [{ projectName: "demo", runtimes: ["codex"], repositories: ["org/first", "org/second"] }], workerConcurrency: 1, runtimes: { codex: { provider: "openai", model: "model-id" } } };
+    const configured = parseWorkspaceConfig(JSON.stringify(input));
+    expect(configured?.runtimes.codex?.provider).toBe("openai");
+    expect(configured?.runtimes.codex?.environment).toBeUndefined();
+    expect(configured?.workerConcurrency).toBe(1);
+    expect(() => parseWorkspaceConfig(JSON.stringify({ ...input, workerConcurrency: 0 }))).toThrow();
+  });
   it("stays disabled without configuration", () => {
     expect(parseWorkspaceConfig(undefined)).toBeUndefined();
     expect(parseWorkspaceConfig(" ")).toBeUndefined();
