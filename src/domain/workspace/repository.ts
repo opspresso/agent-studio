@@ -11,6 +11,9 @@ export interface WorkspaceWrite {
   events?: WorkspaceEvent[];
   /** Unique admission receipt, stored atomically with the queued run. */
   request?: { key: string; fingerprint: string; runId: string };
+  delivery?: { id: string; fingerprint: string };
+  /** Explicit owner follow-up may reopen a finished workspace; worker writes never set this. */
+  reopenOwner?: string;
 }
 
 export interface WorkspaceRepository {
@@ -29,4 +32,5 @@ export interface WorkspaceRepository {
   approval(workspaceId: string, id: string): Promise<CodingApproval | null>;
   approvals(workspaceId: string, limit: number): Promise<CodingApproval[]>;
   request(workspaceId: string, key: string): Promise<{ fingerprint: string; runId: string } | null>;
+  delivery(workspaceId: string, id: string): Promise<string | null>;
 }

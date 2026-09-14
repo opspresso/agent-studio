@@ -10,7 +10,11 @@ import { chatRepository } from "@/infrastructure/db/repositories/chatRepository"
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
 import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
 import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
-import { getWorkspaceConfig } from "@/lib/runtime-settings";
+import { createDockerCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
+import { createCodingGitHub } from "@/infrastructure/github/codingForge";
+import { createCodingUseCases } from "@/application/coding/codingUseCases";
+import { handleCodingWebhook } from "@/application/coding/webhook";
+import { getWorkspaceConfig, getWorkspaceGitHubConfig } from "@/lib/runtime-settings";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 import { createAudioConfigUseCases } from "@/application/audio/audioConfig";
 import { assertAudioPostprocessorVersionUnused, resolveAudioPostprocessor } from "@/application/audio/postprocessVersion";
@@ -1459,11 +1463,15 @@ export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);
 function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
   const settings = getWorkspaceConfig();
   if (!settings) throw new ValidationError("Workspaces are not configured");
+  const githubConfig = getWorkspaceGitHubConfig();
+  const github = githubConfig ? createCodingGitHub(githubConfig) : undefined;
   return {
     ...workspaceDeps,
     provider: createDockerSandboxProvider(settings),
     checkpoints: createWorkspaceCheckpointStore(secretCipher),
     runtime: kind => createWorkspaceRuntimeAdapter(kind, settings.runtimes[kind]),
+    ...(github && githubConfig ? { coding: createDockerCodingWorktree(settings, { webUrl: githubConfig.webUrl,
+      internalHosts: githubConfig.internalHosts, credential: github.credential }) } : {}),
     runTimeoutMs: MAX_RUN_DURATION_MS,
     execute: (workspace, work) => executeWorkspaceTask(executionDeps, projectRepository, workspace, work),
     sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
@@ -1479,4 +1487,22 @@ export async function closeChatWorkspace(chatId: string, ownerEmail: string): Pr
 
 export async function runWorkspaceWorkerService(signal: AbortSignal): Promise<void> {
   await runWorkspaceWorker(getWorkspaceWorkerDeps(), signal);
+}
+
+export function getCodingUseCases() {
+  const deps = getWorkspaceWorkerDeps();
+  const config = getWorkspaceGitHubConfig();
+  if (!deps.coding || !config) throw new ValidationError("Workspace GitHub integration is not configured");
+  return createCodingUseCases({ ...deps, coding: deps.coding, forge: createCodingGitHub(config).forge });
+}
+
+export function verifyWorkspaceGitHubWebhook(raw: string, signature: string | null): boolean {
+  const config = getWorkspaceGitHubConfig();
+  return !!config && createCodingGitHub(config).verifyWebhook(raw, signature);
+}
+
+export async function receiveWorkspaceGitHubWebhook(deliveryId: string, raw: string) {
+  const config = getWorkspaceGitHubConfig();
+  if (!config) throw new ValidationError("Workspace GitHub integration is not configured");
+  return handleCodingWebhook(workspaceRepository, createCodingGitHub(config).forge, deliveryId, raw);
 }

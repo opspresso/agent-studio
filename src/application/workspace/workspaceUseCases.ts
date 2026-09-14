@@ -119,8 +119,9 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
         if (!run) throw new ConflictError("The previous run has expired");
         return run;
       }
-      if (workspace.status === "closing" || workspace.status === "closed" || workspace.status === "suspending") throw new ConflictError("Workspace is closing or suspending");
+      if (workspace.status === "closing" || workspace.status === "suspending") throw new ConflictError("Workspace is closing or suspending");
       if (workspace.activeRunId) throw new ConflictError("Workspace already has an active run");
+      if (workspace.activeActionId) throw new ConflictError("Workspace has a pending action approval");
       const now = deps.now().toISOString();
       const run: WorkspaceRun = {
         id: `${deps.now().getTime()}-${deps.newId()}`, workspaceId: id, sessionId: workspace.sessionId,
@@ -129,7 +130,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       try {
         await deps.repository.write({ workspace: { ...workspace, status: "active", revision: workspace.revision + 1,
           activeRunId: run.id, updatedAt: now, dueAt: now, error: undefined }, expectedRevision: workspace.revision,
-          run, request: { key: requestKey, fingerprint, runId: run.id } });
+          run, request: { key: requestKey, fingerprint, runId: run.id }, ...(workspace.status === "closed" ? { reopenOwner: ownerEmail } : {}) });
       } catch (error) {
         if (!isConditionalWriteFailure(error, { includeTransaction: true })) throw error;
         const winner = await deps.repository.request(id, requestKey);

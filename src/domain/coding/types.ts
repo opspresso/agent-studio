@@ -5,6 +5,7 @@ export interface CodingRepository {
   branch: string;
   baseSha?: string;
   headSha?: string;
+  remoteUrl?: string;
 }
 
 export interface PullRequestInfo {
@@ -36,4 +37,11 @@ export interface CodingApproval {
   decidedAt?: string;
   operationId?: string;
   result?: string;
+  review: { headSha: string; treeSha: string; diff: string; truncated: boolean };
+}
+
+/** Pending/claimed effects cannot cross a workspace close or deletion fence. */
+export function mayAdvanceCodingApproval(workspace: { status: string; activeActionId?: string; deleteRequestedAt?: string }, approval: CodingApproval): boolean {
+  return !["pending", "executing"].includes(approval.status) ||
+    (workspace.status === "active" && !workspace.deleteRequestedAt && workspace.activeActionId === approval.id);
 }

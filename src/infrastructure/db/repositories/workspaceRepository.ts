@@ -1,10 +1,11 @@
 import type { WorkspaceRepository, WorkspaceWrite } from "@/domain/workspace/repository";
 import type { Workspace, WorkspaceRun, WorkspaceEvent } from "@/domain/workspace/types";
 import type { CodingApproval } from "@/domain/coding/types";
+import { mayAdvanceCodingApproval } from "@/domain/coding/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { keys } from "../keys";
 import { conditions, getItem, queryItems, transact, type Item, type TransactOp } from "../store";
-import { chatIsLive } from "../chatLifecycle";
+import { chatActivityFields, chatIsLive } from "../chatLifecycle";
 import { projectIsLive } from "../projectLifecycle";
 import { expiresAtSeconds, expiresAtFromNow, isExpired, RETENTION } from "../ttl";
 
@@ -72,14 +73,16 @@ export const workspaceRepository: WorkspaceRepository = {
     return rows.map(row => row.value as Workspace);
   },
   async write(change: WorkspaceWrite) {
-    const { workspace, expectedRevision, session, sandbox, run, approval, request, events = [] } = change;
+    const { workspace, expectedRevision, session, sandbox, run, approval, request, delivery, events = [] } = change;
     if (workspace.revision !== expectedRevision + 1) throw new Error("workspace revision must advance once");
     const operations: TransactOp[] = [{ kind: "put", item: workspaceItem(workspace), condition: row => {
       const previous = row?.value as Workspace | undefined;
       return row?.revision === expectedRevision && previous?.ownerEmail === workspace.ownerEmail &&
         previous?.chatId === workspace.chatId && previous?.projectName === workspace.projectName &&
         previous?.sessionId === workspace.sessionId && previous?.runtime === workspace.runtime &&
-        previous?.status !== "closed" && !isExpired(row?.expiresAt, Date.now()) &&
+        (previous?.status !== "closed" || (change.reopenOwner === workspace.ownerEmail && !previous.deleteRequestedAt &&
+          workspace.status === "active" && run?.status === "queued" && !!request)) && !isExpired(row?.expiresAt, Date.now()) &&
+        (!approval || mayAdvanceCodingApproval(previous!, approval)) &&
         (!previous?.deleteRequestedAt || workspace.deleteRequestedAt === previous.deleteRequestedAt);
     } }];
     for (const [kind, child] of [["SESSION", session], ["SANDBOX", sandbox], ["RUN", run], ["APPROVAL", approval]] as const) {
@@ -93,7 +96,7 @@ export const workspaceRepository: WorkspaceRepository = {
         throw new Error("request receipt must admit its queued run");
       }
       operations.push({ kind: "check", key: keys.project(workspace.projectName), condition: projectIsLive });
-      operations.push({ kind: "check", key: keys.chat(workspace.chatId), condition: row =>
+      operations.push({ kind: "update", key: keys.chat(workspace.chatId), patch: row => ({ ...row, ...chatActivityFields(workspace.updatedAt) }), condition: row =>
         chatIsLive(row) && row?.ownerEmail === workspace.ownerEmail && !isExpired(row?.expiresAt, Date.now()) });
       operations.push({ kind: "put", condition: conditions.notExists,
         item: { ...keys.workspaceChild(workspace.id, "REQUEST", request.key), value: request,
@@ -111,6 +114,9 @@ export const workspaceRepository: WorkspaceRepository = {
         expiresAt: expiry(event.createdAt),
       } });
     }
+    if (delivery) operations.push({ kind: "put", condition: conditions.notExists, item: {
+      ...keys.workspaceChild(workspace.id, "DELIVERY", delivery.id), value: delivery.fingerprint, expiresAt: expiry(workspace.updatedAt),
+    } });
     operations.push({ kind: "put", item: { ...keys.workspaceChat(workspace.chatId), value: workspace.id,
       expiresAt: expiry(workspace.updatedAt) }, condition: conditions.existsWith("value", workspace.id) });
     await transact(operations);
@@ -134,4 +140,5 @@ export const workspaceRepository: WorkspaceRepository = {
       forward: false, limit: page(limit), notExpiredAt: expiresAtFromNow(0) })).map(row => row.value as CodingApproval);
   },
   async request(id, key) { return value(await getItem(keys.workspaceChild(id, "REQUEST", key))); },
+  async delivery(id, deliveryId) { return value(await getItem(keys.workspaceChild(id, "DELIVERY", deliveryId))); },
 };

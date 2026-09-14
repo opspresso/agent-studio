@@ -9,6 +9,11 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 
 ## 규약
 
+Workspace GitHub webhook은 `POST /api/workspaces/github/webhook`이다.
+`X-Hub-Signature-256`의 HMAC-SHA256과 `X-GitHub-Delivery`를 요구하며 응답은 `{processed: boolean}`이다.
+중복·관련 없는 이벤트는 `processed: false`, 잘못된 서명은 401, 같은 delivery ID의 다른 본문은 409다.
+본문은 공용 이벤트 상한을 적용한다. 이 경로는 PR 상태만 갱신하고 작업 실행·승인을 수행하지 않는다.
+
 - **Content type**: 따로 언급하지 않는 한 요청과 응답은 JSON 이다. 스트리밍 응답은
   `text/event-stream` 이다.
 - **Auth**: 애플리케이션 라우트는 Better Auth 세션 쿠키를 요구한다 (Keycloak · 표준 OIDC · Google · 비밀번호

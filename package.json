@@ -16,6 +16,7 @@
     "test:integration": "tsx scripts/integration-check.ts",
     "test:sandbox": "tsx scripts/workspace-sandbox-check.ts",
     "test:workspace": "tsx scripts/workspace-worker-check.ts",
+    "test:workspace:git": "tsx scripts/workspace-git-check.ts",
     "worker:workspace": "tsx scripts/workspace-worker.ts",
     "build:workspace": "node scripts/build-workspace-worker.mjs",
     "test:storage": "tsx scripts/source-storage-check.ts",

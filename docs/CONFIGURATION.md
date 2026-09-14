@@ -458,14 +458,23 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `projects[].checks` | `[]` | `{name: "test" | "lint" | "build", command}`. 각 Run 뒤 Sandbox에서 실행할 검사 |
 | `runtimes` | `{}` | `command`, `codex`, `claude`, `opencode`별 `model`, `environment` |
 
-Runtime 환경은 `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,
+Runtime 환경은 `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,
 `ANTHROPIC_MODEL`, `OPENCODE_CONFIG_CONTENT`만 허용한다. Git·클라우드·운영 환경변수는 상속하지 않는다.
+Codex의 비대화형 API 인증은 `CODEX_API_KEY`를 사용한다.
 Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
 일반 명령은 모델 Version 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
 Studio의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
 
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐와 TTL이
 진행되지 않는다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
+
+코딩 작업은 `WORKSPACE_GITHUB_APP_ID`, `WORKSPACE_GITHUB_INSTALLATION_ID`,
+`WORKSPACE_GITHUB_PRIVATE_KEY`를 모두 요구한다. API·Git web 주소는 기존 `GITHUB_API_URL`과
+`GITHUB_WEB_URL`을 사용한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
+호스트 접미사를 선언하며, 다른 내부 URL 허용 목록과 공유하지 않는다.
+`WORKSPACE_GITHUB_WEBHOOK_SECRET`은 GitHub webhook HMAC 검증에 사용한다.
+App에는 Contents, Pull requests, Actions 쓰기와 Checks, Commit statuses 읽기를 부여하되,
+각 요청의 installation token은 실제 작업에 필요한 권한과 저장소로 좁힌다.
 
 ## 관측성과 보존 기간
 

@@ -132,6 +132,27 @@ describe("durable workspace worker", () => {
     await processWorkspace(deps, workspace.id);
     expect(provider.destroy).toHaveBeenCalledTimes(1);
   });
+  it("reopens a finished workspace for an explicit owner follow-up with the same session", async () => {
+    const { api, workspace } = await start();
+    await processWorkspace(deps, workspace.id);
+    await api.close(workspace.id, owner);
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.get(workspace.id))?.status).toBe("closed");
+    const next = await api.enqueue(workspace.id, owner, { kind: "command", script: "continue finished work" }, "request-0002");
+    expect(next.sessionId).toBe(workspace.sessionId);
+    await processWorkspace(deps, workspace.id);
+    expect(provider.restore).toHaveBeenCalledTimes(1);
+    expect((await repository.run(workspace.id, next.id))?.status).toBe("succeeded");
+  });
+  it("refreshes chat activity and native session retention on subsequent work", async () => {
+    const { api, workspace } = await start();
+    await processWorkspace(deps, workspace.id);
+    time += 20_000; vi.setSystemTime(time);
+    await api.enqueue(workspace.id, owner, { kind: "command", script: "continue" }, "request-0002");
+    expect((await chats.get("chat-1"))?.updatedAt).toBe(new Date(time).toISOString());
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.session(workspace.id, workspace.sessionId))?.updatedAt).toBe(new Date(time).toISOString());
+  });
   it("retries failed deletion and removes checkpoints when the chat was deleted", async () => {
     const { api, workspace } = await start();
     await processWorkspace(deps, workspace.id);

@@ -29,6 +29,7 @@ async function main() {
     assert.equal((await run(id, "test ! -e /var/run/docker.sock && test -z \"$DATABASE_URL$AWS_SECRET_ACCESS_KEY$GITHUB_TOKEN\" && echo isolated")).stdout.trim(), "isolated");
     assert.equal((await run(id, "printf first > state.txt; mkdir -p \"$HOME/.codex/sessions\"; printf native > \"$HOME/.codex/sessions/session.jsonl\"; printf excluded > \"$HOME/.codex/auth.json\"; ln -s state.txt state-link")).exitCode, 0);
     assert.equal((await run(id, "printf second >> state.txt; cat state.txt")).stdout, "firstsecond");
+    assert.equal((await run(id, "printf private > locked.txt; chmod 000 locked.txt")).exitCode, 0);
 
     const operationId = "stable-operation";
     const command = { argv: ["/bin/sh", "-s"], stdin: "printf once >> state.txt; echo streamed; sleep 1; echo ended", timeoutMs: 10_000 };
@@ -74,6 +75,7 @@ async function main() {
     await provider.restore(restored, checkpoint);
     assert.equal((await run(restored, "cat state-link; cat \"$HOME/.codex/sessions/session.jsonl\"")).stdout, "firstsecondoncenative");
     assert.equal((await run(restored, "test ! -e \"$HOME/.codex/auth.json\" && echo excluded")).stdout.trim(), "excluded");
+    assert.equal((await run(restored, "stat -c %a locked.txt")).stdout.trim(), "0", "file permissions survive restoration");
     await assert.rejects(provider.restore(restored, checkpoint), /empty sandbox/);
 
     const { externalId: empty } = await provider.ensure(`invalid-${randomUUID()}`);

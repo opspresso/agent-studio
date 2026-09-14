@@ -14,15 +14,15 @@ import { config } from "@/lib/config";
  * failure mode is an ALB idle timeout cutting the response with the sync
  * half-reported.
  */
-const GITHUB_TIMEOUT_MS = 15_000;
+export const GITHUB_TIMEOUT_MS = 15_000;
+
+export function githubHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+}
 
 export async function githubApi<T>(path: string, token: string): Promise<T> {
   const res = await fetch(`${config.githubApiUrl}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
+    headers: githubHeaders(token),
     signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
   });
   if (!res.ok) {

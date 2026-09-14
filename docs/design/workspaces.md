@@ -87,3 +87,33 @@ worker 중단은 실행 중단으로 기록하지 않는다. 다시 시작하면
 `suspended` 순으로 처리한다. 백업·삭제 실패는 재시도할 상태로 남긴다. 채팅 삭제는 먼저
 `closing`과 삭제 의도를 저장한다. 활동 중인 worker가 취소를 처리하거나 다음 worker가 정리하며,
 Sandbox가 삭제된 뒤에만 `closed`를 기록한다. chat 행과 Workspace 정리 행은 별도 수명이다.
+완료한 Workspace도 채팅 소유자의 새 요청으로 복원할 수 있다. 이 전이는 새 작업 접수와 함께
+기록하며 늦게 도착한 worker 쓰기는 Workspace를 다시 열 수 없다. 새 요청과 턴 완료는 채팅과
+native Session의 활동·보존 기한을 갱신한다. 완료 시 미결 승인 요청은 거절한다.
+
+## Git과 승인
+
+코딩 Workspace는 `sandbox/git.mjs`로 저장소를 clone하고 `agent/{workspace-id}` 브랜치를 만든다.
+Git 디렉터리는 root 소유 `/control/git`이며, Agent의 파일 쓰기 권한으로 branch·index·config를
+바꿀 수 없다. Git hook·외부 diff·textconv·credential helper를 사용하지 않는다. 공개 Git 호스트는
+DNS 검증 결과를 `http.curloptResolve`로 고정하고 redirect를 거절한다. 내부 Git 호스트는 배포가 선언한다.
+
+`CodingApproval`은 요청자·결정자·작업 인자와 검토한 전체 Git tree/HEAD의 fingerprint를 보관한다.
+화면용 Diff가 잘려도 승인 fingerprint는 전체 tree에서 계산한다. 승인은 Workspace를 잠그고
+실제 tree를 다시 확인한 뒤 `executing`으로 기록한다. 종료·삭제와 경합한 승인은 효과 전에 거절한다.
+Commit은 로컬 브랜치와 암호화된 체크포인트에 저장하고, PR 요청에서만 push한다. 동일 Commit
+operation ID는 Git receipt로 중복 생성되지 않는다.
+
+GitHub App의 private key는 서버에만 두고 Git 작업에는 저장소·권한을 한정한 1시간 이내의
+installation token을 잠시 전달한다. 토큰은 Git 설정이나 체크포인트에 쓰지 않는다. PR 생성은
+같은 작업 브랜치의 기존 PR을 재사용하며 Draft/Ready 전환도 명시적 승인을 따른다.
+main 병합은 소유한 PR·정확한 head·CI 성공을 확인하고 merge API의 `sha` 조건으로 실행한다.
+배포는 허용한 workflow의 `main` 실행과 검토한 inputs만 사용하며 Sandbox에서 배포하지 않는다.
+응답이 소실된 외부 효과는 `uncertain`으로 남기고 같은 승인을 자동 재실행하지 않는다.
+
+`POST /api/workspaces/github/webhook`은 HMAC 서명을 검증한 뒤 PR 상태만 갱신한다. 이벤트 본문으로
+작업을 실행하거나 승인하지 않는다. delivery ID와 본문 fingerprint를 상태 갱신과 함께 저장한다.
+중복 배달은 같은 효과를 다시 쓰지 않으며 payload가 달라진 ID 재사용은 거절한다.
+
+코딩 체크포인트는 Git 추적 파일과 무시되지 않은 새 파일, Git 이력과 native Session을 보관한다.
+Git에서 무시하는 의존성·빌드 산출물은 다시 생성한다. 일반 Workspace는 Git 필터를 적용하지 않는다.

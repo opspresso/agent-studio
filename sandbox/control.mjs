@@ -6,6 +6,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { StringDecoder } from "node:string_decoder";
+import { handleGit, checkpointGitFiles } from "./git.mjs";
 
 const root = "/control";
 const work = "/workspace/repo";
@@ -26,6 +27,7 @@ async function exists(file) {
 async function init() {
   await fs.mkdir(root, { recursive: true, mode: 0o755 });
   await fs.mkdir(`${root}/operations`, { recursive: true, mode: 0o700 });
+  await fs.writeFile(`${root}/git.flock`, "", { flag: "a", mode: 0o600 });
   await fs.mkdir(work, { recursive: true, mode: 0o1777 });
   await fs.chmod(work, 0o1777);
   await fs.mkdir(home, { recursive: true, mode: 0o700 });
@@ -51,8 +53,9 @@ function safeCommand(spec) {
   const env = { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: home, LANG: "C.UTF-8", CI: "true",
     CODEX_HOME: `${home}/.codex`, CLAUDE_CONFIG_DIR: `${home}/.claude`, XDG_DATA_HOME: `${home}/.local/share`,
     XDG_CONFIG_HOME: `${home}/.config`, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "safe.directory", GIT_CONFIG_VALUE_0: work,
-    DISABLE_AUTOUPDATER: "1", DISABLE_TELEMETRY: "1", OPENCODE_DISABLE_AUTOUPDATE: "true" };
-  const allowed = new Set(["OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "OPENCODE_CONFIG_CONTENT"]);
+    DISABLE_AUTOUPDATER: "1", DISABLE_TELEMETRY: "1", OPENCODE_DISABLE_AUTOUPDATE: "true",
+    OPENCODE_DISABLE_MODELS_FETCH: "true", OPENCODE_DISABLE_LSP_DOWNLOAD: "true", OPENCODE_DISABLE_DEFAULT_PLUGINS: "true" };
+  const allowed = new Set(["CODEX_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "OPENCODE_CONFIG_CONTENT"]);
   for (const [key, value] of Object.entries(spec.environment || {})) {
     if (!allowed.has(key) || typeof value !== "string" || value.includes("\0")) throw new Error("Unsupported runtime environment");
     env[key] = value;
@@ -141,12 +144,14 @@ async function run(id) {
 async function snapshot() {
   if (await exists(`${root}/active`)) throw new Error("Cannot checkpoint a running workspace");
   const entries = [];
+  const gitFiles = await checkpointGitFiles();
   let total = 0;
   const excluded = new Set(["repo/.git", "home/.codex/auth.json", "home/.claude/.credentials.json", "home/.local/share/opencode/auth.json"]);
   async function visit(base, relative = "") {
     for (const name of await fs.readdir(base)) {
       const rel = relative ? `${relative}/${name}` : name;
       if (excluded.has(rel)) continue;
+      if (gitFiles && rel.startsWith("repo/") && !gitFiles.has(rel)) continue;
       if (entries.length >= maxFiles) throw new Error("Workspace checkpoint file count exceeded");
       const file = path.join(base, name);
       const stat = await fs.lstat(file);
@@ -212,7 +217,7 @@ async function restore(encoded) {
     if (entry.kind === "directory") await fs.mkdir(file, { recursive: true });
     else if (entry.kind === "file") await fs.writeFile(file, Buffer.from(entry.content, "base64"), { flag: "wx" });
     else await fs.symlink(entry.target, file);
-    if (entry.kind !== "link") await fs.chmod(file, entry.kind === "directory" ? 0o755 : ((entry.mode || 0o644) & 0o777));
+    if (entry.kind !== "link") await fs.chmod(file, (Number.isInteger(entry.mode) ? entry.mode : entry.kind === "directory" ? 0o755 : 0o644) & 0o777);
     if (!entry.path.startsWith("git") && entry.path !== "repo") await fs.lchown(file, 1000, 1000);
   }
   await fs.chmod(work, 0o1777);
@@ -280,6 +285,7 @@ try {
     }
     else if (command === "checkpoint") result = await snapshot();
     else if (command === "restore") result = await restore(request.bytes);
+    else if (command.startsWith("git-")) result = await handleGit(command, request);
     else throw new Error("Unknown control command");
     process.stdout.write(JSON.stringify(result));
   }

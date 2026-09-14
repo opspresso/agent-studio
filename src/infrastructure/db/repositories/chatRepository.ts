@@ -9,7 +9,7 @@ import {
   updateItem,
   type Item,
 } from "@/infrastructure/db/store";
-import { chatIsLive, putChatItem } from "@/infrastructure/db/chatLifecycle";
+import { chatActivityFields, chatIsLive, putChatItem } from "@/infrastructure/db/chatLifecycle";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import { CHAT_PAGE, MAX_CHAT_PAGE, type ChatRepository } from "@/domain/chat/repository";
 import { boundedPageLimit, MAX_PAGE_LIMIT } from "@/shared/pageLimit";
@@ -49,17 +49,13 @@ function fromChatItem(item: Item): Chat {
 function chatFields(chat: Chat): Item {
   return {
     GSI1PK: keys.chatOwnerPartition(chat.ownerEmail),
-    GSI1SK: chat.updatedAt,
+    ...chatActivityFields(chat.updatedAt),
     entityType: CHAT_ENTITY,
     chatId: chat.chatId,
     title: chat.title,
     ownerEmail: chat.ownerEmail,
     projectName: chat.projectName ?? null,
     createdAt: chat.createdAt,
-    updatedAt: chat.updatedAt,
-    // Retention runs from last activity — each update pushes the expiry out,
-    // so an active chat is never purged mid-run.
-    expiresAt: expiresAtSeconds(chat.updatedAt, RETENTION.chatDays),
   };
 }
 

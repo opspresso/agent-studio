@@ -53,7 +53,7 @@ export function dockerCall(args: string[], input = "", maxBytes = 1024 * 1024): 
   });
 }
 
-export function createDockerSandboxProvider(config: DockerSandboxConfig): SandboxProvider {
+export function createDockerSandboxBackend(config: DockerSandboxConfig) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,300}$/.test(config.image) ||
     !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,100}$/.test(config.network) || ["host", "bridge", "default"].includes(config.network) ||
     (config.context && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,100}$/.test(config.context)) ||
@@ -80,7 +80,9 @@ export function createDockerSandboxProvider(config: DockerSandboxConfig): Sandbo
     checkedId(id);
     const info = await lookup(id);
     if (!info?.State.Running) throw new SandboxProviderError("Sandbox is not running");
-    return JSON.parse(await call(["exec", "-i", "--user", "0", id, "node", "/opt/workspace/control.mjs", action], JSON.stringify(request), maxBytes)) as T;
+    const lock = action.startsWith("git-") || action === "checkpoint" || action === "restore"
+      ? ["flock", "-w", "2", "/control/git.flock"] : [];
+    return JSON.parse(await call(["exec", "-i", "--user", "0", id, ...lock, "node", "/opt/workspace/control.mjs", action], JSON.stringify(request), maxBytes)) as T;
   }
 
   const provider: SandboxProvider = {
@@ -147,5 +149,9 @@ export function createDockerSandboxProvider(config: DockerSandboxConfig): Sandbo
       if (await lookup(checkedId(id))) await call(["rm", "-f", id]);
     },
   };
-  return provider;
+  return { provider, control };
+}
+
+export function createDockerSandboxProvider(config: DockerSandboxConfig): SandboxProvider {
+  return createDockerSandboxBackend(config).provider;
 }

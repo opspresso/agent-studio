@@ -1,7 +1,8 @@
 import type { WorkspaceWrite } from "@/domain/workspace/repository";
 import type { Workspace, WorkspaceEventData, WorkspaceRun } from "@/domain/workspace/types";
 import type { WorkspaceDeps } from "./workspaceUseCases";
-import { isConditionalWriteFailure } from "@/application/errors";
+import { ConflictError, isConditionalWriteFailure } from "@/application/errors";
+import { mayAdvanceCodingApproval } from "@/domain/coding/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 
 export const WORKSPACE_LEASE_MS = 180_000;
@@ -27,10 +28,11 @@ export class WorkspaceWorkerState {
     patch: Partial<Workspace> = {},
     runPatch?: Partial<WorkspaceRun>,
     events: WorkspaceEventData[] = [],
-    children: Pick<WorkspaceWrite, "sandbox" | "session"> = {},
+    children: Pick<WorkspaceWrite, "sandbox" | "session" | "approval"> = {},
   ): Promise<void> {
     for (let attempt = 0; attempt < 4; attempt++) {
       const { workspace, run } = await this.read();
+      if (children.approval && !mayAdvanceCodingApproval(workspace, children.approval)) throw new ConflictError("Workspace closed before the action could be claimed");
       const now = this.deps.now().toISOString();
       const leaseUntil = new Date(this.deps.now().getTime() + WORKSPACE_LEASE_MS).toISOString();
       const available = Math.max(0, WORKSPACE_LIMITS.eventsPerRun - 1 - (run?.lastEventSeq ?? 0));

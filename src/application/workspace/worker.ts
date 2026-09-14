@@ -28,7 +28,7 @@ async function sandboxFor(deps: WorkspaceWorkerDeps, workspace: Workspace): Prom
   return workspace.sandboxId ? deps.repository.sandbox(workspace.id, workspace.sandboxId) : null;
 }
 
-async function ensureSandbox(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState): Promise<Sandbox> {
+export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState): Promise<Sandbox> {
   const { workspace, run } = await state.read();
   const previous = await sandboxFor(deps, workspace);
   const status = previous ? await deps.provider.inspect(previous.externalId) : "missing";
@@ -45,18 +45,21 @@ async function ensureSandbox(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerSt
     const checkpoint = await deps.checkpoints.get(workspace.id, workspace.checkpointId);
     if (!checkpoint) throw new Error("Workspace recovery checkpoint has expired or is missing");
     await deps.provider.restore(sandbox.externalId, checkpoint);
+    if (workspace.coding) await state.save({}, undefined, [{ kind: "warning", text: "Workspace restored; Git-ignored dependencies and build outputs must be regenerated" }]);
   }
   let coding = workspace.coding;
   if (coding) {
     if (!deps.coding) throw new Error("Coding worktree adapter is not configured");
-    coding = await deps.coding.prepare(sandbox.externalId, coding);
+    const prepared = await deps.coding.prepare(sandbox.externalId, coding);
+    if (coding.headSha && coding.headSha !== prepared.headSha) await state.save({}, undefined, [{ kind: "warning", text: "Recovered Git head differs from the last recorded head; review the recovered changes before publishing" }]);
+    coding = prepared;
   }
   const ready: Sandbox = { ...sandbox, status: "ready", updatedAt: deps.now().toISOString() };
   await state.save({ ...(coding ? { coding } : {}) }, undefined, [], { sandbox: ready });
   return ready;
 }
 
-async function saveCheckpoint(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, sandbox: Sandbox): Promise<void> {
+export async function saveWorkspaceCheckpoint(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, sandbox: Sandbox): Promise<void> {
   await state.save();
   const bytes = await deps.provider.checkpoint(sandbox.externalId);
   await state.read();
@@ -82,18 +85,20 @@ async function cleanupWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorke
       }
     }
     ({ workspace, run } = await state.read());
-    if (computeStatus === "ready" && !workspace.deleteRequestedAt && sandbox.status === "ready") await saveCheckpoint(deps, state, sandbox);
+    if (computeStatus === "ready" && !workspace.deleteRequestedAt && sandbox.status === "ready") await saveWorkspaceCheckpoint(deps, state, sandbox);
     await state.save({}, undefined, [], { sandbox: { ...sandbox, status: "deleting", updatedAt: deps.now().toISOString() } });
     await deps.provider.destroy(sandbox.externalId);
   }
   ({ workspace, run } = await state.read());
   if (workspace.deleteRequestedAt) await deps.checkpoints.delete(workspace.id);
+  const session = await deps.repository.session(workspace.id, workspace.sessionId);
   const status = workspace.status === "closing" ? "closed" : "suspended";
   await state.save({ status, sandboxId: undefined, activeRunId: undefined, leaseToken: undefined, leaseUntil: undefined,
     ...(workspace.deleteRequestedAt ? { checkpointId: undefined } : {}), error: undefined },
   run && !isTerminalWorkspaceRun(run.status) ? { status: "cancelled", finishedAt: deps.now().toISOString() } : undefined,
   run && !isTerminalWorkspaceRun(run.status) ? [{ kind: "status", status: "cancelled", text: "Workspace closed" }] : [],
-  sandbox ? { sandbox: { ...sandbox, status: "deleted", updatedAt: deps.now().toISOString() } } : {});
+  { ...(sandbox ? { sandbox: { ...sandbox, status: "deleted", updatedAt: deps.now().toISOString() } } : {}),
+    ...(session && !workspace.deleteRequestedAt ? { session: { ...session, updatedAt: deps.now().toISOString() } } : {}) });
 }
 
 async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, signal?: AbortSignal): Promise<void> {
@@ -104,8 +109,12 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
   if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && policy.repository !== workspace.coding.repository)) {
     throw new Error("Workspace runtime or repository configuration changed");
   }
-  if (!run.startedAt) await state.save({}, { startedAt: deps.now().toISOString(), status: "running" }, [{ kind: "status", status: "running" }]);
-  const sandbox = await ensureSandbox(deps, state);
+  if (!run.startedAt) {
+    const session = await deps.repository.session(workspace.id, workspace.sessionId);
+    await state.save({}, { startedAt: deps.now().toISOString(), status: "running" }, [{ kind: "status", status: "running" }],
+      session ? { session: { ...session, updatedAt: deps.now().toISOString() } } : {});
+  }
+  const sandbox = await ensureWorkspaceSandbox(deps, state);
   const runtime = deps.runtime(workspace.runtime);
   let nextReview = 0;
   for (;;) {
@@ -120,7 +129,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
         const operation = await deps.provider.operation(sandbox.externalId, run.operationId);
         if (["running", "starting"].includes(operation.status)) { await state.save(); await deps.sleep(WORKSPACE_POLL_MS, signal); continue; }
       }
-      await saveCheckpoint(deps, state, sandbox);
+      await saveWorkspaceCheckpoint(deps, state, sandbox);
       const status = run.cancelRequestedAt ? "cancelled" : "failed";
       await finishRun(deps, state, status, run.cancelRequestedAt ? "Stopped by user" : "Workspace run deadline exceeded");
       return;
@@ -139,7 +148,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
         await state.save({}, { diff: diff.text, diffTruncated: review.truncated || diff.truncated },
           boundWorkspaceEvent({ kind: "diff", text: diff.text, truncated: review.truncated || diff.truncated }));
       }
-      await saveCheckpoint(deps, state, sandbox);
+      await saveWorkspaceCheckpoint(deps, state, sandbox);
       const status = run.runtimeFailed || run.exitCode !== 0 || run.checks.some(check => check.status === "failed") ? "failed" : "succeeded";
       await finishRun(deps, state, status, run.error);
       return;
@@ -163,7 +172,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     }
     if (operation.status === "missing") {
       await deps.provider.cancel(sandbox.externalId, operationId);
-      await saveCheckpoint(deps, state, sandbox);
+      await saveWorkspaceCheckpoint(deps, state, sandbox);
       await finishRun(deps, state, "interrupted", "Native operation handle was lost; execution was not replayed");
       return;
     }
@@ -202,9 +211,11 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
 
 async function finishRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, status: WorkspaceRun["status"], error?: string): Promise<void> {
   const { workspace } = await state.read();
+  const session = await deps.repository.session(workspace.id, workspace.sessionId);
   await state.save({ activeRunId: undefined, leaseToken: undefined, leaseUntil: undefined, error,
     dueAt: new Date(deps.now().getTime() + workspace.idleTtlSeconds * 1000).toISOString() },
-  { status, finishedAt: deps.now().toISOString(), error, protocolBuffer: "" }, [{ kind: "status", status, ...(error ? { text: error } : {}) }]);
+  { status, finishedAt: deps.now().toISOString(), error, protocolBuffer: "" }, [{ kind: "status", status, ...(error ? { text: error } : {}) }],
+  session ? { session: { ...session, updatedAt: deps.now().toISOString() } } : {});
 }
 
 /** A lost worker adopts the persisted native handle; it never starts an uncertain operation again. */
@@ -213,6 +224,18 @@ export async function processWorkspace(deps: WorkspaceWorkerDeps, id: string, si
   if (!state) return false;
   try {
     let { workspace } = await state.read();
+    if (workspace.activeActionId && !workspace.activeRunId) {
+      const approval = await deps.repository.approval(workspace.id, workspace.activeActionId);
+      if (workspace.status === "closing" && approval?.status === "pending") {
+        await state.save({ activeActionId: undefined }, undefined, [], { approval: { ...approval, status: "rejected", result: "Workspace closed before this action was approved" } });
+        ({ workspace } = await state.read());
+      } else if (!approval || approval.status !== "pending") {
+        await state.save({ activeActionId: undefined }, undefined, [], approval?.status === "executing" ? {
+          approval: { ...approval, status: "uncertain", result: "Action execution was interrupted; verify its external result before requesting it again" },
+        } : {});
+        ({ workspace } = await state.read());
+      }
+    }
     if (!workspace.deleteRequestedAt && !await deps.chats.get(workspace.chatId)) {
       await state.save({ status: "closing", deleteRequestedAt: deps.now().toISOString() });
       ({ workspace } = await state.read());

@@ -6,7 +6,7 @@ import { isRepositoryName } from "@/domain/workspace/policy";
 const runtime = z.enum(WORKSPACE_RUNTIMES);
 const runtimeSettings = z.object({
   model: z.string().min(1).max(200).optional(),
-  environment: z.partialRecord(z.enum(["OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "OPENCODE_CONFIG_CONTENT"]),
+  environment: z.partialRecord(z.enum(["CODEX_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "OPENCODE_CONFIG_CONTENT"]),
     z.string().max(32_000).refine(value => !value.includes("\0"))).optional(),
 }).strict();
 const workspaceConfig = z.object({

@@ -125,6 +125,17 @@ worker는 동일 핸들을 이어서 관찰하며 불확실한 작업을 자동�
 `WORKSPACE_SANDBOX_IMAGE`로 검사 이미지를 지정할 수 있고 `WORKSPACE_TEST_AGENTS=true`는
 세 CLI의 비특권 실행도 확인한다. 실제 모델 요청은 이 검사에서 보내지 않는다.
 
+코딩을 켜려면 같은 설정의 프로젝트에 `repository: "owner/repo"`를 추가하고 GitHub App을
+설정한다. App 설치 범위는 작업할 저장소로 한정한다. webhook URL은
+`/api/workspaces/github/webhook`이며 Pull requests, Check runs, Check suites, Workflow runs
+이벤트와 별도 webhook secret을 설정한다. main의 branch protection과 CI를 유지한다.
+배포할 workflow는 `workflow_dispatch`를 지원해야 하며 `deploymentWorkflows`에 파일명을
+명시한다. 예를 들어 `"deploymentWorkflows":["deploy.yml"]`이다. 배포 자격증명은 해당 workflow의
+보호된 환경이 소유한다. Sandbox에는 전달하지 않는다.
+
+`pnpm test:workspace:git`는 무통신 Docker 안에 일회용 Git HTTP 저장소를 만들어 clone·권한·Diff·
+승인 Commit·복원을 검증한다. GitHub App API와 승인 경합·webhook 중복은 단위 테스트로 검증한다.
+
 ## localdev
 
 Node 24와 pnpm 11을 설치하고:

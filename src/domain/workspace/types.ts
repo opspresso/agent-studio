@@ -23,6 +23,7 @@ export interface Workspace {
   leaseToken?: string;
   leaseUntil?: string;
   activeRunId?: string;
+  activeActionId?: string;
   sandboxId?: string;
   checkpointId?: string;
   coding?: CodingRepository;

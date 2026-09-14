@@ -338,3 +338,4 @@ export async function getUnknownModelPolicy(): Promise<UnknownModelPolicy> {
 
 /** Compute, images and model credentials are deployment-owned; no browser-editable override. */
 export function getWorkspaceConfig() { return config.workspace; }
+export function getWorkspaceGitHubConfig() { return config.workspaceGitHub; }
