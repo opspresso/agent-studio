@@ -46,9 +46,11 @@ async function release(deps: CodingDeps, state: WorkspaceWorkerState, approval?:
 
 async function validateAction(deps: CodingDeps, workspace: Workspace, action: CodingAction, review: WorktreeReview): Promise<PullRequestInfo | undefined> {
   const repo = repository(workspace);
-  if (action.kind === "commit") {
+  if (action.kind === "commit" || action.kind === "commit-and-push") {
     if (!action.message.trim() || action.message.length > 8000) throw new ValidationError("Invalid commit message");
     if (review.treeSha === review.headTreeSha) throw new ValidationError("There are no changes to commit");
+  } else if (action.kind === "push") {
+    if (review.treeSha !== review.headTreeSha) throw new ValidationError("Commit workspace changes before pushing");
   } else if (action.kind === "pull-request") {
     if (!action.title.trim() || action.title.length > 200 || action.body.length > 40_000) throw new ValidationError("Invalid pull request text");
     if (review.treeSha !== review.headTreeSha) throw new ValidationError("Commit workspace changes before creating a pull request");
@@ -116,13 +118,17 @@ export function createCodingUseCases(deps: CodingDeps) {
         let result: string;
         const patch: Partial<Workspace> = {};
         const action = previous.action;
-        if (action.kind === "commit") {
+        if (action.kind === "commit" || action.kind === "commit-and-push") {
           const sha = await deps.coding.commit(sandbox.externalId, { operationId: approvalId, fingerprint: previous.fingerprint,
             message: action.message, ownerEmail, createdAt: previous.requestedAt });
           patch.coding = { ...repo, headSha: sha };
           await state.save(patch);
           await saveWorkspaceCheckpoint(deps, state, sandbox);
+          if (action.kind === "commit-and-push") await deps.coding.push(sandbox.externalId, patch.coding);
           result = sha;
+        } else if (action.kind === "push") {
+          await deps.coding.push(sandbox.externalId, { ...repo, headSha: review.headSha });
+          result = review.headSha;
         } else if (action.kind === "pull-request") {
           await deps.coding.push(sandbox.externalId, { ...repo, headSha: review.headSha });
           const pullRequest = await deps.forge.openPullRequest(repo, action);

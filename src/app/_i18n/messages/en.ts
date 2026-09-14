@@ -33,6 +33,9 @@
  */
 export const en = {
   "workspace.new": "New Workspace",
+  "workspace.kind": "Workspace",
+  "workspace.list": "Workspaces",
+  "workspace.delete": "Delete Workspace",
   "workspace.intro": "Keep files and agent context across tasks.",
   "workspace.notConfigured": "No Workspace projects are configured for your account.",
   "workspace.repository": "Repository",
@@ -61,7 +64,7 @@ export const en = {
   "workspace.latest": "Latest",
   "workspace.followUp": "Continue this workspace…",
   "workspace.scriptPlaceholder": "Enter the next script…",
-  "workspace.sessionHint": "Files and Session stay with this Chat.",
+  "workspace.sessionHint": "Files and Session stay with this Workspace.",
   "workspace.stop": "Stop run",
   "workspace.send": "Send",
   "workspace.pendingActionHint": "Review the pending action in Git & deployment.",
@@ -714,10 +717,12 @@ export const en = {
 
   // Chats: the sidebar, the thread, the composer and the parts a turn is drawn
   // from.
-  "chat.more": "Show older chats",
+  "chat.more": "Show older entries",
   "chat.answerReady": "Answer complete",
   "chat.new": "New chat",
   "chat.list": "Chats",
+  "chat.kind": "Chat",
+  "chat.history": "Chats & Workspaces",
   "chat.none": "No chats yet.",
   "chat.delete": "Delete chat",
   "chat.notFound": "Chat not found.",

@@ -89,7 +89,9 @@ DNS 검증 결과를 `http.curloptResolve`로 고정하고 redirect를 거절한
 `CodingApproval`은 요청자·결정자·작업 인자와 검토한 전체 Git tree/HEAD의 fingerprint를 보관한다.
 화면용 Diff가 잘려도 승인 fingerprint는 전체 tree에서 계산한다. 승인은 Workspace를 잠그고
 실제 tree를 다시 확인한 뒤 `executing`으로 기록한다. 종료·삭제와 경합한 승인은 효과 전에 거절한다.
-Commit은 로컬 브랜치와 암호화된 체크포인트에 저장하고, PR 요청에서만 push한다. 동일 Commit
+Commit은 로컬 브랜치와 암호화된 체크포인트에 저장한다. Push는 승인한 HEAD만 작업 브랜치에
+게시하며 PR을 자동 생성하지 않는다. Commit & push는 한 번 검토한 변경을 커밋·체크포인트 저장한
+뒤 새 HEAD를 게시한다. PR 요청도 게시를 포함한다. 동일 Commit
 operation ID는 Git receipt로 중복 생성되지 않는다.
 
 GitHub App의 private key는 서버에만 두고 Git 작업에는 저장소·권한을 한정한 1시간 이내의
@@ -117,14 +119,19 @@ main 병합은 소유한 PR·정확한 head·CI 성공을 확인하고 merge API
 Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는 SDK 대화 이력과 native Session을
 섞지 않고, 반환된 `workspace_id`로 후속 요청을 연결한다. SDK run과 tool call ID가 접수 중복을
 막는다. `wait`는 최대 8초만 기다리고, 실행 중이면 반환된 Workspace 경로에서 계속 확인한다.
-도구 출력은 cursor로 읽으며 생략된 출력·Diff는 표시한다. 이 도구는 Git·배포 승인을 소비하지 않는다.
+도구 출력은 cursor로 읽으며 생략된 출력·Diff는 표시한다. `prepare_git`는 Commit·Push·Commit & push의
+검토를 준비하고 `approval_path`를 반환한다. Agent는 링크를 전달하고 승인까지 멈춘다.
+이 도구는 Git·배포 승인을 소비하지 않는다. Native 코딩 턴은 보호된 Git 경로와 승인 경계의
+환경 지침을 받으며, 권한 변경·임시 인덱스·GitHub 도구로 Git 쓰기를 우회하지 않는다.
 
 플러그인의 `workspace-task`, `sandbox-task`는 이 기능을 사용하는 공용 작업 지침이다.
 Agent의 설명·시스템 프롬프트에는 역할을 쓰고, 계정·저장소·변경사항은 사용자 요청에 둔다.
 
 Chats의 Workspace 선택에서 프로젝트, Runtime, 선택적 저장소·기준 브랜치와 작업 내용을
 입력한다. 기존 Chat 실행과 Workspace 실행은 같은 채팅 화면의 별도 경로를 사용한다.
-Workspace 화면은 실행 출력·Diff·검사 결과와 명시적 Git·배포 승인을 보여 준다. 새 요청은
+목록은 `workspaceId`로 Workspaces와 대화를 나눠 표시하고, 각 그룹은 접을 수 있다.
+Workspace 화면은 유형 배지와 실행 출력·Diff·검사 결과, 명시적 Git·배포 승인을 보여 준다.
+승인 링크의 `#actions`는 Git·배포 탭을 바로 연다. 새 요청은
 동일한 Workspace와 native Session에서 이어지며 페이지를 떠나도 서버 작업은 계속된다.
 
 `POST /api/workspaces`와 `POST /api/workspaces/{id}/runs`는 `Idempotency-Key`를 요구한다.

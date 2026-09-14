@@ -5,24 +5,22 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActionIcon,
   Button,
   Drawer,
   Group,
-  Loader,
   ScrollArea,
   Stack,
   Text,
-  UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconMessages, IconPlus, IconX } from "@tabler/icons-react";
+import { IconMessages, IconPlus } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import { CHAT_PAGE } from "@/domain/chat/repository";
 import type { ChatListResponse } from "@/app/api/chats/route";
 import type { Chat } from "../_lib/types";
 import { useRunningKeys } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
+import { ChatSidebarItems } from "./ChatSidebarItems";
 import classes from "./ChatSidebar.module.css";
 
 const NEW_CHAT_EVENT = "chats:new";
@@ -154,33 +152,7 @@ export function ChatSidebar() {
             {t("chat.none")}
           </Text>
         )}
-        {chats.map((chat) => (
-          <div
-            key={chat.chatId}
-            className={classes.row}
-            data-active={chat.chatId === activeId || undefined}
-          >
-            <UnstyledButton
-              component={Link}
-              href={`/chats/${chat.chatId}`}
-              fz="sm"
-              className={classes.title}
-            >
-              {chat.title}
-            </UnstyledButton>
-            {running.includes(chat.chatId) && <Loader size={10} />}
-            <ActionIcon
-              size="sm"
-              variant="subtle"
-              color="red"
-              className={classes.delete}
-              onClick={() => void handleDelete(chat.chatId)}
-              aria-label={t("chat.delete")}
-            >
-              <IconX size={14} />
-            </ActionIcon>
-          </div>
-        ))}
+        <ChatSidebarItems chats={chats} activeId={activeId} running={running} onDelete={chatId => void handleDelete(chatId)} />
         {hasMore && (
           <Button
             variant="subtle"
@@ -214,12 +186,12 @@ export function ChatSidebar() {
           leftSection={<IconMessages size={16} />}
           onClick={drawer.open}
         >
-          {t("chat.list")}
+          {t("chat.history")}
         </Button>
         {newChat}
       </Group>
       {/* No `hiddenFrom` needed: the only thing that opens it is hidden there. */}
-      <Drawer opened={drawerOpen} onClose={drawer.close} title={t("chat.list")} size="80%">
+      <Drawer opened={drawerOpen} onClose={drawer.close} title={t("chat.history")} size="80%">
         <Stack gap="sm" h="100%">
           {list}
         </Stack>

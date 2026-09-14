@@ -35,6 +35,13 @@ export function WorkspacePanel({ id }: { id: string }) {
   }).join(""), [events]);
 
   useEffect(() => {
+    const openActions = () => { if (window.location.hash === "#actions") setTab("actions"); };
+    openActions();
+    window.addEventListener("hashchange", openActions);
+    return () => window.removeEventListener("hashchange", openActions);
+  }, []);
+
+  useEffect(() => {
     let current = true;
     void fetch("/api/workspaces/options").then(response => readJson<WorkspaceOptionsResponse>(response)).then(data => { if (current) setOptions(data); }).catch(() => {});
     return () => { current = false; };
@@ -68,7 +75,7 @@ export function WorkspacePanel({ id }: { id: string }) {
 
   return <Stack h="100%" gap="sm">
     <Group justify="space-between" wrap="wrap">
-      <div><Title order={2} size="h4">{workspace.title}</Title><Group gap="xs" mt={4}><Text size="xs" c="dimmed">{workspace.projectName} · {workspace.runtime}</Text><Badge variant="light">{status(workspace.status)}</Badge></Group></div>
+      <div><Title order={2} size="h4">{workspace.title}</Title><Group gap="xs" mt={4}><Badge variant="outline" color="cyan">{t("workspace.kind")}</Badge><Text size="xs" c="dimmed">{workspace.projectName} · {workspace.runtime}</Text><Badge variant="light">{status(workspace.status)}</Badge></Group></div>
       <Button size="xs" variant="default" disabled={busy || workspace.status === "closed" || workspace.status === "closing"} onClick={() => { void stop(true); }}>{t("workspace.finish")}</Button>
     </Group>
     {workspace.coding && <Group gap="xs"><Code>{workspace.coding.branch}</Code><Text size="xs" c="dimmed">← {workspace.coding.baseBranch}</Text>

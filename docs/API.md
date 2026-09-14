@@ -729,7 +729,8 @@ Runtime은 `command`, `codex`, `claude`, `opencode`다. `input`은 일반 명령
 다른 내용으로 키를 재사용하면 409다. `baseBranch`가 없으면 Git을 사용하지 않는다.
 lease·operation handle·체크포인트 bytes와 주소는 사용자 응답에 넣지 않는다.
 
-Git 동작은 `commit`, `pull-request`(`draft` 선택), `merge`, `deploy`이며 자세한 승인 조건은
+Git 동작은 `commit`, `commit-and-push`, `push`, `pull-request`(`draft` 선택), `merge`, `deploy`다.
+`commit`·`commit-and-push`는 `message`를 받고 `push`는 추가 인자가 없다. 자세한 승인 조건은
 [Workspace 설계](design/workspaces.md#git과-승인)를 따른다. 승인 요청과 실제 실행 모두
 현재 파일 fingerprint를 확인한다. main 병합은 정확한 PR head와 CI 성공을 요구한다.
 

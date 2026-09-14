@@ -12,6 +12,7 @@ import { WORKSPACE_TOOL_DEF } from "@/application/llm/workspaceToolDefinition";
 import { assembleAgentRun } from "@/application/llm/agentAssembly";
 import { runAgent } from "@/application/runtime";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
+import type { CodingApproval } from "@/domain/coding/types";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
@@ -23,7 +24,8 @@ const useCases = createWorkspaceUseCases({ repository, chats, projects, now: () 
   policy: () => policy, idleTtlSeconds: 60 });
 const authorize = vi.fn(async () => {});
 const sleep = vi.fn(async (_ms: number) => {});
-const makeTool = (projectName = "demo", ownerEmail = owner) => createWorkspaceTool({ useCases, authorize, sleep, policy: () => policy }, { projectName, ownerEmail, occurrence: "parent-run" });
+const requestGit = vi.fn<(...args: unknown[]) => Promise<CodingApproval>>();
+const makeTool = (projectName = "demo", ownerEmail = owner) => createWorkspaceTool({ useCases, authorize, sleep, requestGit, policy: () => policy }, { projectName, ownerEmail, occurrence: "parent-run" });
 const invoke = async (request: Record<string, unknown>, callId = "call-start") => JSON.parse((await makeTool()({ request }, callId)).text);
 const start = { operation: "start", runtime: "command", repository: null, base_branch: null, task: "printf report > report.txt" };
 beforeEach(() => {
@@ -37,7 +39,7 @@ describe("Workspace Agent capability", () => {
     authorize.mockRejectedValueOnce(new Error("Access revoked"));
     await expect(invoke(start)).rejects.toThrow("Access revoked");
     expect(await repository.list(owner, 10)).toHaveLength(0);
-    const disabled = createWorkspaceTool({ useCases, authorize, sleep, policy: () => undefined }, { projectName: "demo", ownerEmail: owner, occurrence: "parent" });
+    const disabled = createWorkspaceTool({ useCases, authorize, sleep, requestGit, policy: () => undefined }, { projectName: "demo", ownerEmail: owner, occurrence: "parent" });
     await expect(disabled({ request: { operation: "options" } }, "read")).rejects.toThrow("not enabled");
   });
   it("queues a Git-free task once for a repeated SDK call and reports admission honestly", async () => {
@@ -77,8 +79,34 @@ describe("Workspace Agent capability", () => {
     const validate = createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!);
     expect(() => validate({ request: { operation: "approve", workspace_id: "id" } })).toThrow();
     expect(() => validate({ request: { ...start, token: "credential" } })).toThrow();
+    expect(() => validate({ request: { operation: "prepare_git", workspace_id: "id", action: { kind: "commit-and-push", message: "feat: change" } } })).not.toThrow();
+    expect(() => validate({ request: { operation: "prepare_git", workspace_id: "id", action: { kind: "push", approve: true } } })).toThrow();
     expect(assembleAgentRun({}, {}).tools.some(tool => tool.function.name === "Workspace")).toBe(false);
     expect(assembleAgentRun({ workspaceTool: makeTool() }, {}).tools.some(tool => tool.function.name === "Workspace")).toBe(true);
+  });
+  it("prepares an owned Git review and reuses a pending review without executing native tasks", async () => {
+    const workspace = await useCases.create({ projectName: "demo", chatId: "review-chat", createChat: true,
+      title: "Review", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+    const action = { kind: "commit-and-push" as const, message: "feat: change" };
+    const approval: CodingApproval = { id: "approval-1", workspaceId: workspace.id, action, requestedBy: owner,
+      requestedAt: now.toISOString(), status: "pending", fingerprint: "reviewed-tree",
+      review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "+change", truncated: false } };
+    requestGit.mockImplementationOnce(async () => {
+      await repository.write({ expectedRevision: workspace.revision,
+        workspace: { ...workspace, activeActionId: approval.id, revision: workspace.revision + 1 } });
+      await repository.write({ expectedRevision: workspace.revision + 1,
+        workspace: { ...workspace, activeActionId: approval.id, revision: workspace.revision + 2 }, approval });
+      return approval;
+    });
+    const request = { operation: "prepare_git", workspace_id: workspace.id, action };
+    const result = await invoke(request, "git-call");
+    expect(result).toMatchObject({ status: "pending", approval_id: approval.id, approval_path: "/chats/review-chat#actions" });
+    expect(await invoke(request, "git-call")).toEqual(result);
+    expect(requestGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner, action);
+    expect(await repository.runs(workspace.id, 10)).toHaveLength(0);
+    await expect(makeTool("foreign")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
+    await expect(makeTool("demo", "foreign@example.com")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
+    expect(requestGit).toHaveBeenCalledTimes(1);
   });
   it("executes through the SDK tool dispatcher with the SDK call identity", async () => {
     const channel = new FakeChannel([[toolCallChunk(0, "workspace-call", "Workspace", JSON.stringify({ request: { operation: "options" } }))], [contentChunk("Ready")]]);

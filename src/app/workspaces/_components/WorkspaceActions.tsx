@@ -20,6 +20,15 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
   const pending = detail.approvals.find(approval => approval.id === detail.workspace.activeActionId);
   const latest = detail.approvals[0];
   const disabled = !!detail.workspace.activeRunId || ["closed", "closing", "suspending"].includes(detail.workspace.status);
+  const needsMessage = kind === "commit" || kind === "commit-and-push";
+  function actionLabel(action: CodingAction) {
+    if (action.kind === "commit") return "Commit";
+    if (action.kind === "commit-and-push") return "Commit & push";
+    if (action.kind === "push") return "Push";
+    if (action.kind === "merge") return t("workspace.merge");
+    if (action.kind === "deploy") return t("workspace.deploy");
+    return action.draft ? "Draft PR" : "PR";
+  }
 
   async function perform(approval?: boolean) {
     setBusy(true); setError(null);
@@ -31,7 +40,8 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
         }));
       } else {
         let action: CodingAction;
-        if (kind === "commit") action = { kind: "commit", message: title };
+        if (kind === "commit" || kind === "commit-and-push") action = { kind, message: title };
+        else if (kind === "push") action = { kind: "push" };
         else if (kind === "pr" || kind === "draft") action = { kind: "pull-request", title, body, draft: kind === "draft" };
         else if (kind === "merge") {
           if (!detail.workspace.pullRequest) throw new Error("Create a pull request first");
@@ -49,7 +59,8 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
     {error && <Alert color="red">{error}</Alert>}
     {pending?.status === "pending" ? <>
       <Alert title={t("workspace.reviewAction")} color="yellow">{t("workspace.reviewHint")}</Alert>
-      <Text fw={600}>{pending.action.kind === "merge" ? t("workspace.merge") : pending.action.kind === "deploy" ? t("workspace.deploy") : pending.action.kind === "commit" ? "Commit" : pending.action.draft ? "Draft PR" : "PR"}</Text>
+      <Text fw={600}>{actionLabel(pending.action)}</Text>
+      <Text size="sm">{detail.workspace.coding?.repository} · {detail.workspace.coding?.branch}</Text>
       <Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", overflow: "visible" }}>{JSON.stringify(pending.action, null, 2)}</Code>
       <Text size="xs" c="dimmed">HEAD: {pending.review.headSha}</Text>
       {pending.review.truncated && <Alert color="yellow">{t("workspace.diffTruncated")}</Alert>}
@@ -59,15 +70,16 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
     </> : <>
       {pending && <Alert color="yellow">{t("workspace.actionInProgress")}</Alert>}
       <Select label={t("workspace.action")} value={kind} allowDeselect={false} onChange={value => setKind(value ?? "commit")} data={[
-        { value: "commit", label: "Commit" }, { value: "draft", label: "Draft PR" }, { value: "pr", label: "PR" },
+        { value: "commit", label: "Commit" }, { value: "commit-and-push", label: "Commit & push" }, { value: "push", label: "Push" },
+        { value: "draft", label: "Draft PR" }, { value: "pr", label: "PR" },
         { value: "merge", label: t("workspace.merge"), disabled: !detail.workspace.pullRequest },
         { value: "deploy", label: t("workspace.deploy"), disabled: !workflows.length },
       ]} disabled={busy || disabled || !!pending} />
-      {["commit", "draft", "pr"].includes(kind) && <TextInput label={kind === "commit" ? t("workspace.commitMessage") : t("workspace.prTitle")} value={title} onChange={event => setTitle(event.currentTarget.value)} />}
+      {(needsMessage || ["draft", "pr"].includes(kind)) && <TextInput label={needsMessage ? t("workspace.commitMessage") : t("workspace.prTitle")} value={title} onChange={event => setTitle(event.currentTarget.value)} />}
       {["draft", "pr"].includes(kind) && <Textarea label={t("workspace.prBody")} value={body} onChange={event => setBody(event.currentTarget.value)} minRows={3} autosize />}
       {kind === "merge" && <Alert color="orange">{t("workspace.mergeHint")}</Alert>}
       {kind === "deploy" && <><Select label={t("workspace.workflow")} value={workflow ?? workflows[0] ?? null} onChange={setWorkflow} data={workflows} /><Textarea label={t("workspace.workflowInputs")} value={inputs} onChange={event => setInputs(event.currentTarget.value)} minRows={3} /><Text size="sm" c="dimmed">{t("workspace.deployHint")}</Text></>}
-      <Button loading={busy} disabled={disabled || !!pending || (["commit", "draft", "pr"].includes(kind) && !title.trim())} onClick={() => { void perform(); }}>{t("workspace.prepareAction")}</Button>
+      <Button loading={busy} disabled={disabled || !!pending || ((needsMessage || ["draft", "pr"].includes(kind)) && !title.trim())} onClick={() => { void perform(); }}>{t("workspace.prepareAction")}</Button>
       {latest && <Text size="sm" c="dimmed">{latest.action.kind}: {latest.status}{latest.result ? ` — ${latest.result}` : ""}</Text>}
     </>}
   </Stack>;

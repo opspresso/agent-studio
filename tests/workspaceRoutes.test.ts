@@ -48,8 +48,8 @@ describe("Workspace HTTP contract", () => {
     expect((await detail.DELETE(request("/workspace-1", "DELETE"), context)).status).toBe(204);
     expect(f.close).toHaveBeenCalledWith("workspace-1", "owner@example.com");
   });
-  it("prepares a review separately from an explicit approval decision", async () => {
-    const action = { kind: "commit", message: "chore: bump release" };
+  it.each(["commit", "commit-and-push", "push"])("prepares %s separately from an explicit approval decision", async kind => {
+    const action = kind === "push" ? { kind } : { kind, message: "chore: bump release" };
     f.request.mockResolvedValue({ id: "approval-1", status: "pending" });
     expect((await actions.POST(request("/workspace-1/actions", "POST", action), context)).status).toBe(200);
     expect(f.request).toHaveBeenCalledWith("workspace-1", "owner@example.com", action);

@@ -435,6 +435,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
         >
           <Group gap="xs" className={classes.column}>
+            <Badge variant="outline" color="gray">{t("chat.kind")}</Badge>
             <Badge color={BADGE.owned} radius="xl">
               {chat.projectName}
             </Badge>

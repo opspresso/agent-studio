@@ -18,8 +18,13 @@ export interface PullRequestInfo {
   ci: "pending" | "passed" | "failed";
 }
 
-export type CodingAction =
+export type CodingGitAction =
   | { kind: "commit"; message: string }
+  | { kind: "commit-and-push"; message: string }
+  | { kind: "push" };
+
+export type CodingAction =
+  | CodingGitAction
   | { kind: "pull-request"; title: string; body: string; draft: boolean }
   | { kind: "merge"; pullRequestNumber: number; headSha: string }
   | { kind: "deploy"; workflow: string; ref: string; inputs: Record<string, string> };

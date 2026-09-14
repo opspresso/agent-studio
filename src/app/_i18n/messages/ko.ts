@@ -13,6 +13,9 @@ import type { Messages } from "./en";
 
 export const ko: Messages = {
   "workspace.new": "새 Workspace",
+  "workspace.kind": "Workspace",
+  "workspace.list": "Workspaces",
+  "workspace.delete": "Workspace 삭제",
   "workspace.intro": "작업이 이어져도 파일과 Agent 문맥을 유지합니다.",
   "workspace.notConfigured": "사용할 수 있는 Workspace 프로젝트가 설정되지 않았습니다.",
   "workspace.repository": "저장소",
@@ -41,7 +44,7 @@ export const ko: Messages = {
   "workspace.latest": "최신으로",
   "workspace.followUp": "이 Workspace에서 이어서 요청하세요…",
   "workspace.scriptPlaceholder": "다음에 실행할 스크립트를 입력하세요…",
-  "workspace.sessionHint": "파일과 Session은 이 Chat에서 이어집니다.",
+  "workspace.sessionHint": "파일과 Session은 이 Workspace에서 이어집니다.",
   "workspace.stop": "실행 중지",
   "workspace.send": "전송",
   "workspace.pendingActionHint": "Git · 배포 탭에서 승인 대기 작업을 확인하세요.",
@@ -665,10 +668,12 @@ export const ko: Messages = {
   "guide.trouble.supportBody":
     "앱 버전·프로젝트와 저장 버전 이름·호출 화면 또는 방식·시각과 시간대·오류 및 상태 코드·가능한 Trace ID·최소 재현 입력을 정리한다. 기대한 결과와 Playground에서도 실패하는지 함께 적는다. 토큰·쿠키·비공개 파일 링크·민감한 본문은 제거한다. 설치 환경별 기동·복구 문제는 배포 담당자나 패키지 공급자에게 전달한다.",
 
-  "chat.more": "이전 대화 더 보기",
+  "chat.more": "이전 항목 더 보기",
   "chat.answerReady": "답변 완료",
   "chat.new": "새 대화",
   "chat.list": "대화 목록",
+  "chat.kind": "대화",
+  "chat.history": "대화 · Workspaces",
   "chat.none": "아직 대화가 없습니다.",
   "chat.delete": "대화 삭제",
   "chat.notFound": "대화를 찾을 수 없습니다.",

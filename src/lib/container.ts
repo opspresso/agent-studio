@@ -1176,6 +1176,7 @@ export const executionDeps: ExecutionDeps = {
     };
     try { await authorize(); } catch { return undefined; }
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
+      requestGit: (id, ownerEmail, action) => getCodingUseCases().request(id, ownerEmail, action),
       policy: () => getWorkspaceConfig()?.projects.find(project => project.projectName === projectName),
       sleep: async ms => { await workspaceSleep(ms); },
     }, { projectName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID() });

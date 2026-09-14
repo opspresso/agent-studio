@@ -6,6 +6,7 @@ import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types"
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { NotFoundError, ValidationError } from "@/application/errors";
 import type { createWorkspaceUseCases } from "./workspaceUseCases";
+import type { CodingApproval, CodingGitAction } from "@/domain/coding/types";
 import { boundedWorkspaceText } from "./output";
 
 interface WorkspaceToolDeps {
@@ -13,6 +14,7 @@ interface WorkspaceToolDeps {
   policy(): WorkspaceProjectPolicy | undefined;
   authorize(): Promise<void>;
   sleep(ms: number): Promise<void>;
+  requestGit(id: string, ownerEmail: string, action: CodingGitAction): Promise<CodingApproval>;
 }
 interface WorkspaceToolContext { projectName: string; ownerEmail: string; occurrence: string }
 const WAIT_STEPS = 8;
@@ -36,7 +38,8 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     if (!request || typeof request !== "object" || Array.isArray(request)) throw new ValidationError("Workspace requires a request");
     const operation = request.operation;
     if (operation === "options") return reply({ project: context.projectName, runtimes: policy.runtimes,
-      repository: policy.repository ?? null, repositories: workspaceRepositories(policy), checks: policy.checks, git_actions: "Use the returned workspace_path to review and approve Git or deployment actions." });
+      repository: policy.repository ?? null, repositories: workspaceRepositories(policy), checks: policy.checks,
+      git_actions: "Use prepare_git for commit, commit-and-push or push, then return approval_path and stop. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
     if (operation === "start" || operation === "run") {
       if (!callId || typeof request.task !== "string") throw new ValidationError("Workspace task identity is missing");
       const key = createHash("sha256").update(JSON.stringify([context.occurrence, context.projectName, callId])).digest("hex");
@@ -59,6 +62,24 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     }
     const id = String(request.workspace_id);
     let detail = await owned(id);
+    if (operation === "prepare_git") {
+      if (!detail.workspace.coding) throw new ValidationError("This workspace has no Git repository");
+      const value = request.action as Record<string, unknown> | undefined;
+      if (!value || !["commit", "commit-and-push", "push"].includes(String(value.kind))) throw new ValidationError("Invalid Workspace Git action");
+      let action: CodingGitAction;
+      if (value.kind === "push") action = { kind: "push" };
+      else {
+        if (typeof value.message !== "string") throw new ValidationError("A commit message is required");
+        action = { kind: value.kind as "commit" | "commit-and-push", message: value.message };
+      }
+      const pending = detail.approvals.find(item => item.id === detail.workspace.activeActionId && item.status === "pending");
+      const same = pending?.action.kind === action.kind && (action.kind === "push" ||
+        ((pending.action.kind === "commit" || pending.action.kind === "commit-and-push") && pending.action.message === action.message));
+      const approval = same && pending ? pending : await deps.requestGit(id, context.ownerEmail, action);
+      return reply({ workspace_id: id, workspace_path: `/chats/${detail.workspace.chatId}`,
+        approval_path: `/chats/${detail.workspace.chatId}#actions`, approval_id: approval.id,
+        action: approval.action, status: approval.status, next: "Return approval_path to the user and stop. The action has not executed; do not run Git in the Sandbox or retry through GitHub tools." });
+    }
     if (operation === "cancel" || operation === "close") {
       if (operation === "cancel") await deps.useCases.cancel(id, context.ownerEmail);
       else await deps.useCases.close(id, context.ownerEmail);
@@ -86,6 +107,8 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     return reply({ workspace_id: id, workspace_status: detail.workspace.status, workspace_path: `/chats/${detail.workspace.chatId}`,
       run_id: run.id, status: run.status, error: run.error, runtime: detail.workspace.runtime,
       repository: detail.workspace.coding?.repository, branch: detail.workspace.coding?.branch,
+      git_action: detail.approvals[0] ? { id: detail.approvals[0].id, action: detail.approvals[0].action,
+        status: detail.approvals[0].status, result: detail.approvals[0].result } : undefined,
       checks: run.checks.map(({ output: _output, ...check }) => { void _output; return check; }),
       output: output.text, diff: diff.text, truncated: output.truncated || diff.truncated || !!run.diffTruncated,
       next_seq: selected.at(-1)?.seq ?? after, has_more: events.length > selected.length || (selected.at(-1)?.seq ?? Number(after)) < run.lastEventSeq,

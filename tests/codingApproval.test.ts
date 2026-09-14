@@ -49,6 +49,46 @@ beforeEach(async () => {
 afterEach(() => vi.useRealTimers());
 
 describe("explicit coding action approvals", () => {
+  it("commits, checkpoints and pushes the exact new head only after combined approval", async () => {
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "commit-and-push", message: "feat: publish" });
+    expect(deps.coding.commit).not.toHaveBeenCalled();
+    expect(deps.coding.push).not.toHaveBeenCalled();
+    vi.mocked(deps.coding.push).mockImplementationOnce(async (_id, repo) => {
+      expect(deps.checkpoints.put).toHaveBeenCalledTimes(1);
+      expect(repo.headSha).toBe("d".repeat(40));
+      expect((await repository.get(workspace.id))?.coding?.headSha).toBe(repo.headSha);
+    });
+    const done = await api.decide(workspace.id, owner, pending.id, true);
+    expect(done.status).toBe("succeeded");
+    expect(await api.decide(workspace.id, owner, pending.id, true)).toEqual(done);
+    expect(deps.coding.commit).toHaveBeenCalledTimes(1);
+    expect(deps.coding.push).toHaveBeenCalledTimes(1);
+    expect(deps.forge.openPullRequest).not.toHaveBeenCalled();
+  });
+  it("pushes an already committed tree without creating a commit or PR", async () => {
+    const api = createCodingUseCases(deps);
+    await expect(api.request(workspace.id, owner, { kind: "push" })).rejects.toThrow("Commit workspace changes");
+    review.treeSha = review.headTreeSha;
+    const pending = await api.request(workspace.id, owner, { kind: "push" });
+    expect(deps.coding.push).not.toHaveBeenCalled();
+    const done = await api.decide(workspace.id, owner, pending.id, true);
+    expect(done).toMatchObject({ status: "succeeded", result: head });
+    expect(deps.coding.push).toHaveBeenCalledWith("sandbox-1", expect.objectContaining({ headSha: head, branch: workspace.coding!.branch }));
+    expect(deps.coding.commit).not.toHaveBeenCalled();
+    expect(deps.forge.openPullRequest).not.toHaveBeenCalled();
+  });
+  it("retains the committed checkpoint and never replays an uncertain combined push", async () => {
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "commit-and-push", message: "feat: publish" });
+    vi.mocked(deps.coding.push).mockRejectedValueOnce(new Error("Publication response lost"));
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("uncertain");
+    expect((await repository.get(workspace.id))?.coding?.headSha).toBe("d".repeat(40));
+    expect(deps.checkpoints.put).toHaveBeenCalledTimes(1);
+    await api.decide(workspace.id, owner, pending.id, true);
+    expect(deps.coding.commit).toHaveBeenCalledTimes(1);
+    expect(deps.coding.push).toHaveBeenCalledTimes(1);
+  });
   it("does not commit on request, commits once on approval, and never implies push", async () => {
     const api = createCodingUseCases(deps);
     const pending = await api.request(workspace.id, owner, { kind: "commit", message: "feat: change" });
