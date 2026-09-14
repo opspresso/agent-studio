@@ -70,3 +70,20 @@ Provider는 Docker CLI에 인자 배열을 넘긴다. API 입력과 모델 설�
 경로 탈출, symlink 아래로 쓰는 복원, 특수 파일은 거절한다. 복원은 빈 Sandbox에서만 허용한다.
 CLI 로그인 자격증명 파일은 체크포인트에서 제외한다. 64 MiB의 파일 bytes 또는 20,000개
 항목을 넘으면 체크포인트를 실패시키며, 부분 백업을 성공으로 취급하지 않는다.
+
+## Worker와 복구
+
+`application/workspace/worker.ts`는 native 실행 → 검사 → 체크포인트 단계를 기록한다. Runtime
+출력의 cursor와 미완성 JSONL 줄은 Run에 함께 남긴다. workspace lease와 revision을 확인한
+쓰기만 이벤트·Session·Run을 바꿀 수 있다. 취소·종료 의도는 쓰기마다 다시 읽어 보존한다.
+worker 중단은 실행 중단으로 기록하지 않는다. 다시 시작하면 같은 operation ID를 관찰하며,
+전송 오류에는 Run을 유지하고 실제 핸들 소실에는 `interrupted`를 기록한다.
+
+실행은 `executeWorkspaceTask` facade와 공통 `openTaskRun` bracket을 지난다. 일반 명령에는
+모델 Version이 없으므로 모델을 임의로 만들지 않는다. 기존 프로젝트의 비용·멤버 상한,
+동시성 슬롯과 메트릭은 유지한다. Native CLI의 토큰·비용은 SDK 모델 usage와 별개다.
+
+비활성 Workspace는 `suspending`으로 바꿔 새 접수를 막은 뒤 체크포인트 저장 → Sandbox 삭제 →
+`suspended` 순으로 처리한다. 백업·삭제 실패는 재시도할 상태로 남긴다. 채팅 삭제는 먼저
+`closing`과 삭제 의도를 저장한다. 활동 중인 worker가 취소를 처리하거나 다음 worker가 정리하며,
+Sandbox가 삭제된 뒤에만 `closed`를 기록한다. chat 행과 Workspace 정리 행은 별도 수명이다.

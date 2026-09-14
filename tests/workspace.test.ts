@@ -45,6 +45,8 @@ describe("workspace admission and persistence", () => {
     expect(workspace.sessionId).not.toBe(workspace.chatId);
     expect(await repository.forChat("chat-1")).toEqual(workspace);
     expect((await repository.session(workspace.id, workspace.sessionId))?.runtime).toBe("command");
+    expect((await chats.get("chat-1"))?.workspaceId).toBe(workspace.id);
+    expect(await chats.claimRun("chat-1", "sdk-run", 0, 9999999999)).toBe(false);
   });
 
   it("supports an agent workspace without Git", async () => {

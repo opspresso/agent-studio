@@ -442,6 +442,31 @@ endpoint 에 붙여 넣는다 ([design/teams.md](design/teams.md)).
 
 Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 
+## Workspace 실행
+
+`WORKSPACE_CONFIG`는 선택적인 JSON 설정이다. 없으면 새 Workspace 실행을 비활성화한다.
+이미지·네트워크·모델 자격증명은 배포가 소유하며 콘솔 설정 오버라이드로 변경하지 않는다.
+
+| 필드 | 기본값 | 계약 |
+|---|---|---|
+| `image` | 필수 | `sandbox/Dockerfile`로 만든 실행 이미지 |
+| `network` | `none` | 운영자가 egress를 제한한 Docker 네트워크. `host`, `bridge`, `default`는 거절한다 |
+| `context` | Docker 기본 context | worker의 Docker context. 실행 중 변경하지 않는다 |
+| `memoryMb`, `diskMb`, `cpus` | `2048`, `2048`, `2` | 메모리·각 tmpfs 상한과 CPU 한도 |
+| `idleTtlSeconds` | `1800` | 최소 60초, 최대 7일. 턴 완료 후 비활성 Sandbox를 정리한다 |
+| `projects` | 필수 배열 | `projectName`, 허용 `runtimes`, 선택적인 `repository: "owner/repo"`, `checks`, `deploymentWorkflows` |
+| `projects[].checks` | `[]` | `{name: "test" | "lint" | "build", command}`. 각 Run 뒤 Sandbox에서 실행할 검사 |
+| `runtimes` | `{}` | `command`, `codex`, `claude`, `opencode`별 `model`, `environment` |
+
+Runtime 환경은 `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,
+`ANTHROPIC_MODEL`, `OPENCODE_CONFIG_CONTENT`만 허용한다. Git·클라우드·운영 환경변수는 상속하지 않는다.
+Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
+일반 명령은 모델 Version 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
+Studio의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
+
+Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐와 TTL이
+진행되지 않는다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
+
 ## 관측성과 보존 기간
 
 | 변수 | 기본값 | Runtime | 설명 |

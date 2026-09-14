@@ -42,14 +42,14 @@ async function main() {
     }
     assert.equal(state.status, "succeeded");
     const output = await provider.output(id, operationId, 0);
-    assert.match(output.text, /streamed/);
-    assert.match(output.text, /ended/);
-    assert.equal((await provider.output(id, operationId, output.nextOffset)).text, "");
+    assert.match(output.frames.map(frame => frame.text).join(""), /streamed/);
+    assert.match(output.frames.map(frame => frame.text).join(""), /ended/);
+    assert.deepEqual((await provider.output(id, operationId, output.nextOffset)).frames, []);
     assert.equal((await run(id, "cat state.txt")).stdout, "firstsecondonce", "duplicate start never executes twice");
     await provider.start(id, "unicode-operation", { argv: ["node", "-e", "process.stdout.write('x'.repeat(1999) + '😀')"], timeoutMs: 10_000 });
     for (let attempt = 0; attempt < 30 && (await provider.operation(id, "unicode-operation")).status !== "succeeded"; attempt++) await delay(100);
     const unicode = await provider.output(id, "unicode-operation", 0);
-    for (const frame of unicode.text.trim().split("\n").map(line => JSON.parse(line))) {
+    for (const frame of unicode.frames) {
       assert.equal(Buffer.from(frame.text, "utf8").toString("utf8"), frame.text, "every persisted frame contains complete Unicode characters");
     }
 

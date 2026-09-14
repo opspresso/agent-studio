@@ -2,7 +2,7 @@ import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
 
 export const WORKSPACE_RUNTIMES = ["command", "codex", "claude", "opencode"] as const;
 export type WorkspaceRuntime = (typeof WORKSPACE_RUNTIMES)[number];
-export type WorkspaceStatus = "active" | "suspended" | "closing" | "closed";
+export type WorkspaceStatus = "active" | "suspending" | "suspended" | "closing" | "closed";
 
 /** Durable identity; a sandbox may be replaced without changing this or its session. */
 export interface Workspace {
@@ -20,6 +20,8 @@ export interface Workspace {
   /** Scheduler deadline: queue, lease, idle TTL, or cleanup retry. */
   dueAt: string;
   idleTtlSeconds: number;
+  leaseToken?: string;
+  leaseUntil?: string;
   activeRunId?: string;
   sandboxId?: string;
   checkpointId?: string;
@@ -70,6 +72,11 @@ export interface WorkspaceRun {
   cancelRequestedAt?: string;
   /** An adapter operation handle is stable across worker restarts. */
   operationId?: string;
+  outputOffset?: number;
+  protocolBuffer?: string;
+  phase?: "runtime" | "checks" | "checkpoint";
+  checkIndex?: number;
+  runtimeFailed?: boolean;
   lastEventSeq: number;
   exitCode?: number;
   error?: string;
@@ -81,7 +88,7 @@ export interface WorkspaceRun {
 export interface WorkspaceCheck {
   name: "test" | "lint" | "build";
   command: string;
-  status: "running" | "passed" | "failed" | "skipped";
+  status: "pending" | "running" | "passed" | "failed" | "skipped";
   exitCode?: number;
   output: string;
   truncated?: boolean;

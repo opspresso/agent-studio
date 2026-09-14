@@ -5,6 +5,7 @@ export const WORKSPACE_LIMITS = {
   promptChars: 40_000,
   scriptChars: 40_000,
   eventBytes: 32_000,
+  errorBytes: 1500,
   eventsPerRun: 20_000,
   diffBytes: 256_000,
   checkOutputBytes: 64_000,

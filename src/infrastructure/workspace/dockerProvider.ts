@@ -119,7 +119,14 @@ export function createDockerSandboxProvider(config: DockerSandboxConfig): Sandbo
     async inspect(id) { const info = await lookup(checkedId(id)); return !info ? "missing" : info.State.Running ? "ready" : "stopped"; },
     async start(id, operationId, command) { await control(id, "start", { id: operationId, command }); },
     async operation(id, operationId) { return control(id, "operation", { id: operationId }); },
-    async output(id, operationId, offset) { return control(id, "output", { id: operationId, offset }); },
+    async output(id, operationId, offset) {
+      const result = await control<{ text: string; nextOffset: number }>(id, "output", { id: operationId, offset });
+      return { frames: result.text.split("\n").filter(Boolean).map(line => {
+        const frame = JSON.parse(line) as { stream: "stdout" | "stderr"; text: string };
+        if (!["stdout", "stderr"].includes(frame.stream) || typeof frame.text !== "string") throw new SandboxProviderError("Invalid sandbox output");
+        return frame;
+      }), nextOffset: result.nextOffset };
+    },
     async cancel(id, operationId) { await control(id, "cancel", { id: operationId }); },
     async execute(id, command: SandboxCommand): Promise<SandboxCommandResult> {
       // One isolated control invocation waits for its own finite command. Long tasks use start/operation instead.

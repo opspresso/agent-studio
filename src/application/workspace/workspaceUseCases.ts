@@ -119,7 +119,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
         if (!run) throw new ConflictError("The previous run has expired");
         return run;
       }
-      if (workspace.status === "closing" || workspace.status === "closed") throw new ConflictError("Workspace is closed");
+      if (workspace.status === "closing" || workspace.status === "closed" || workspace.status === "suspending") throw new ConflictError("Workspace is closing or suspending");
       if (workspace.activeRunId) throw new ConflictError("Workspace already has an active run");
       const now = deps.now().toISOString();
       const run: WorkspaceRun = {

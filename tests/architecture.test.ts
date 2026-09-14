@@ -2492,6 +2492,16 @@ describe("tool resolution", () => {
 });
 
 describe("agent runs", () => {
+  it("routes workspace execution through its facade and shared task bracket", () => {
+    const callers = SOURCE_FILES.filter(file => parseImports(file.text).some(i =>
+      resolveSpec(i.spec, file.path) === "@/application/execution/runProject" && !i.typeOnly && bindsName(i, "executeWorkspaceTask"),
+    )).map(file => file.path);
+    expect(callers).toEqual(["src/lib/container.ts"]);
+    const brackets = SOURCE_FILES.filter(file => parseImports(file.text).some(i =>
+      resolveSpec(i.spec, file.path) === "@/application/run/runBracket" && !i.typeOnly && bindsName(i, "openTaskRun"),
+    )).map(file => file.path);
+    expect(brackets).toEqual(["src/application/execution/workspaceRun.ts"]);
+  });
   it("start at the entry points that declare themselves here", () => {
     const callers = SOURCE_FILES.filter((file) =>
       parseImports(file.text).some(

@@ -36,6 +36,7 @@ function fromChatItem(item: Item): Chat {
     title: item.title as string,
     ownerEmail: item.ownerEmail as string,
     projectName: item.projectName as string | undefined,
+    workspaceId: item.workspaceId as string | undefined,
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
   };
@@ -205,6 +206,7 @@ export const chatRepository: ChatRepository = {
         },
         (row) =>
           chatIsLive(row) &&
+          row?.workspaceId === undefined &&
           (row?.activeRunId === undefined || Number(row?.activeRunExpiresAt ?? 0) < nowSeconds),
       );
       return true;

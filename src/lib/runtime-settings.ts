@@ -335,3 +335,6 @@ export async function getUnknownModelPolicy(): Promise<UnknownModelPolicy> {
   const stored = (await loadSettings())?.unknownModelPolicy;
   return toUnknownModelPolicy(stored ?? process.env.UNKNOWN_MODEL_POLICY);
 }
+
+/** Compute, images and model credentials are deployment-owned; no browser-editable override. */
+export function getWorkspaceConfig() { return config.workspace; }

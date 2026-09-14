@@ -1,5 +1,17 @@
 import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor } from "@/infrastructure/documents/workerAdapters";
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as workspaceSleep } from "node:timers/promises";
+import { createWorkspaceUseCases, type WorkspaceDeps } from "@/application/workspace/workspaceUseCases";
+import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
+import { runWorkspaceWorker } from "@/application/workspace/service";
+import { executeWorkspaceTask } from "@/application/execution/runProject";
+import { workspaceRepository } from "@/infrastructure/db/repositories/workspaceRepository";
+import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
+import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
+import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
+import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
+import { getWorkspaceConfig } from "@/lib/runtime-settings";
+import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 import { createAudioConfigUseCases } from "@/application/audio/audioConfig";
 import { assertAudioPostprocessorVersionUnused, resolveAudioPostprocessor } from "@/application/audio/postprocessVersion";
 import { audioJobConfigRepository } from "@/infrastructure/db/repositories/audioJobConfigRepository";
@@ -1434,4 +1446,37 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
     sweep: (signal) => runtime.files.sweep(undefined, signal),
     refresh: refreshModelCatalog,
   }, signal);
+}
+
+const workspaceDeps: WorkspaceDeps = {
+  repository: workspaceRepository, chats: chatRepository, projects: projectRepository,
+  policy: name => getWorkspaceConfig()?.projects.find(project => project.projectName === name),
+  now: () => new Date(), newId: randomUUID,
+  get idleTtlSeconds() { return getWorkspaceConfig()?.idleTtlSeconds ?? 1800; },
+};
+export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);
+
+function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
+  const settings = getWorkspaceConfig();
+  if (!settings) throw new ValidationError("Workspaces are not configured");
+  return {
+    ...workspaceDeps,
+    provider: createDockerSandboxProvider(settings),
+    checkpoints: createWorkspaceCheckpointStore(secretCipher),
+    runtime: kind => createWorkspaceRuntimeAdapter(kind, settings.runtimes[kind]),
+    runTimeoutMs: MAX_RUN_DURATION_MS,
+    execute: (workspace, work) => executeWorkspaceTask(executionDeps, projectRepository, workspace, work),
+    sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
+  };
+}
+
+export async function closeChatWorkspace(chatId: string, ownerEmail: string): Promise<void> {
+  const workspace = await workspaceRepository.forChat(chatId);
+  if (!workspace) return;
+  await workspaceUseCases.close(workspace.id, ownerEmail, true);
+  if (getWorkspaceConfig()) await processWorkspace(getWorkspaceWorkerDeps(), workspace.id);
+}
+
+export async function runWorkspaceWorkerService(signal: AbortSignal): Promise<void> {
+  await runWorkspaceWorker(getWorkspaceWorkerDeps(), signal);
 }

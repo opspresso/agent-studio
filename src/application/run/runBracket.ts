@@ -96,14 +96,13 @@ export interface RunBracket {
  * `Retry-After`; nothing has been counted or recorded when any of them is
  * thrown.
  *
- * The version is a required argument rather than an optional one on purpose: a
- * fifth entry point that has to supply it cannot quietly opt out of the policies
- * that read it.
+ * Model entry points require a Version through openModelCall/openRun. Workspace
+ * tasks use openTaskRun and share the remaining guards without inventing a model.
  */
-export async function openModelCall(
+async function openExecutionBracket(
   deps: RunBracketDeps,
   project: Project,
-  version: Pick<Version, "model" | "fallbackModel">,
+  version: Pick<Version, "model" | "fallbackModel"> | undefined,
   actor?: RunActor,
 ): Promise<Omit<RunBracket, "artifacts">> {
   // Before the first `await`, and therefore before this function leaves the
@@ -119,7 +118,7 @@ export async function openModelCall(
   // wrong rather than that the platform is busy. Costing nothing to check, it
   // should not be reached by way of a queue for a slot the run would be refused
   // on regardless.
-  if (deps.unknownModelPolicy) {
+  if (version && deps.unknownModelPolicy) {
     // Fail open on the *read*, exactly like the cost guard below — and for the
     // reason it states: the guard exists to bound something, not to be a second
     // way for a storage blip to take the platform down. This read is a database
@@ -176,6 +175,24 @@ export async function openModelCall(
       await settleCostLimit(deps, project);
     },
   };
+}
+
+export function openModelCall(
+  deps: RunBracketDeps,
+  project: Project,
+  version: Pick<Version, "model" | "fallbackModel">,
+  actor?: RunActor,
+): Promise<Omit<RunBracket, "artifacts">> {
+  return openExecutionBracket(deps, project, version, actor);
+}
+
+/** Non-model workspace jobs share cost, concurrency and metrics without inventing a Version/model. */
+export function openTaskRun(
+  deps: RunBracketDeps,
+  project: Project,
+  actor: RunActor,
+): Promise<Omit<RunBracket, "artifacts">> {
+  return openExecutionBracket(deps, project, undefined, actor);
 }
 
 /** Chunk-producing runs add artifact capture to the common metered model-call bracket. */

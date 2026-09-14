@@ -48,6 +48,8 @@ export interface AttachedDocumentInput {
 }
 
 export interface ChatDeps {
+  /** Persist cleanup intent before removing the chat; native compute is owned by Workspace. */
+  closeWorkspace?: (chatId: string, ownerEmail: string) => Promise<void>;
   runtimeSessions?: RuntimeSessionServices;
   chats: ChatRepository;
   /**

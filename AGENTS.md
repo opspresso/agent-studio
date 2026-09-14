@@ -37,6 +37,7 @@ before editing its subsystem.
 | Agent runtime | `src/application/runtime/AGENTS.md`, then [design/execution.md](docs/design/execution.md) |
 | Document parsing, generation, editing and workers | [design/documents.md](docs/design/documents.md) |
 | Chat persistence and replay | `src/application/chat/AGENTS.md`, then [design/chat.md](docs/design/chat.md) |
+| Persistent Workspace, Sandbox and coding jobs | [design/workspaces.md](docs/design/workspaces.md) |
 
 ## Commands
 
@@ -152,6 +153,9 @@ key, cap, formatter, error identity, or collapse rule, search
   chunk consumers, including image; `executeProjectStream`/`executeProject` for completion
   consumers, which refuse image projects. Direct `executeAgent` entry points refuse non-agent
   projects. See `AGENT_RUN_ENTRY_POINTS` in the architecture test.
+- Workspace jobs use `executeWorkspaceTask` and the shared `openTaskRun` bracket. Ordinary commands
+  have no model Version; native CLI history stays in the Workspace checkpoint. Workspace polling
+  must distinguish a missing operation from a transport failure and never replay uncertain work.
 - A surface needing only chunks stays behind `streamProjectRun`. Direct callers of
   `application/image/generateImage` are a deliberately bounded list.
 - `resolveRunTools` receives `discoveryQueries`; omitting them silently disables dynamic discovery.

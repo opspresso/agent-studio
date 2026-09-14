@@ -22,6 +22,11 @@ export interface SandboxOperation {
   truncated?: boolean;
 }
 
+export interface SandboxOutput {
+  frames: { stream: "stdout" | "stderr"; text: string }[];
+  nextOffset: number;
+}
+
 /** A provider owns compute and files, not agents, Git publication, or approvals. */
 export interface SandboxProvider {
   readonly kind: string;
@@ -30,7 +35,7 @@ export interface SandboxProvider {
   execute(externalId: string, command: SandboxCommand): Promise<SandboxCommandResult>;
   start(externalId: string, operationId: string, command: SandboxCommand): Promise<void>;
   operation(externalId: string, operationId: string): Promise<SandboxOperation>;
-  output(externalId: string, operationId: string, offset: number): Promise<{ text: string; nextOffset: number }>;
+  output(externalId: string, operationId: string, offset: number): Promise<SandboxOutput>;
   cancel(externalId: string, operationId: string): Promise<void>;
   checkpoint(externalId: string): Promise<Uint8Array>;
   restore(externalId: string, checkpoint: Uint8Array): Promise<void>;

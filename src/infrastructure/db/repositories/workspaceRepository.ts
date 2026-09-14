@@ -45,9 +45,10 @@ export const workspaceRepository: WorkspaceRepository = {
     if (workspace.revision !== 0 || workspace.sessionId !== session.id || workspace.runtime !== session.runtime) throw new Error("invalid initial workspace");
     await transact([
       { kind: "check", key: keys.project(workspace.projectName), condition: projectIsLive },
-      { kind: "check", key: keys.chat(workspace.chatId), condition: row =>
+      { kind: "update", key: keys.chat(workspace.chatId), patch: row => ({ ...row, workspaceId: workspace.id }), condition: row =>
         chatIsLive(row) && row?.ownerEmail === workspace.ownerEmail &&
-        row?.projectName === workspace.projectName && !isExpired(row?.expiresAt, Date.now()) },
+        row?.projectName === workspace.projectName && row?.workspaceId === undefined && row?.activeRunId === undefined &&
+        !isExpired(row?.expiresAt, Date.now()) },
       { kind: "put", item: workspaceItem(workspace), condition: conditions.notExists },
       { kind: "put", item: { ...keys.workspaceChat(workspace.chatId), value: workspace.id,
         expiresAt: expiry(workspace.updatedAt) }, condition: conditions.notExists },

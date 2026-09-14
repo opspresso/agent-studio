@@ -4,6 +4,7 @@ import { parseKeyValueList, parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { log } from "@/shared/logger";
 import { decodeAes256Key } from "@/shared/aesKey";
+import { parseWorkspaceConfig } from "./workspaceConfig";
 
 export type Stage = "local" | "alpha" | "prod";
 
@@ -147,6 +148,7 @@ export function fractionEnv(name: string, fallback: number): number {
 }
 
 export const config = {
+  get workspace() { return parseWorkspaceConfig(process.env.WORKSPACE_CONFIG); },
   get stage(): Stage {
     const stage = process.env.STAGE ?? "local";
     if (stage !== "local" && stage !== "alpha" && stage !== "prod") {

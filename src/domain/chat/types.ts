@@ -6,6 +6,7 @@ export interface Chat {
   title: string;
   ownerEmail: string;
   projectName?: string;
+  workspaceId?: string;
   createdAt: string;
   updatedAt: string;
 }
