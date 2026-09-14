@@ -456,6 +456,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `idleTtlSeconds` | `1800` | 최소 60초, 최대 7일. 턴 완료 후 비활성 Sandbox를 정리한다 |
 | `projects` | 필수 배열 | `projectName`, 허용 `runtimes`, 선택적인 `repository: "owner/repo"`, `checks`, `deploymentWorkflows` |
 | `projects[].checks` | `[]` | `{name: "test" | "lint" | "build", command}`. 각 Run 뒤 Sandbox에서 실행할 검사 |
+| `projects[].agentTools` | `false` | 로그인한 member 이상 사용자가 이 프로젝트의 Agent에서 `Workspace` 빌트인을 사용할 수 있게 한다 |
 | `runtimes` | `{}` | `command`, `codex`, `claude`, `opencode`별 `model`, `environment` |
 
 Runtime 환경은 `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,

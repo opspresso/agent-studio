@@ -4,6 +4,7 @@ import { setTimeout as workspaceSleep } from "node:timers/promises";
 import { createWorkspaceUseCases, type WorkspaceDeps } from "@/application/workspace/workspaceUseCases";
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { runWorkspaceWorker } from "@/application/workspace/service";
+import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
 import { executeWorkspaceTask } from "@/application/execution/runProject";
 import { workspaceRepository } from "@/infrastructure/db/repositories/workspaceRepository";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
@@ -1163,6 +1164,21 @@ export const executionDeps: ExecutionDeps = {
   documentRenderer: workerDocumentRenderer,
   documentEditor: workerDocumentEditor,
   registerMcpSource: async (input) => getAudioRuntime().references.register(input),
+  workspaceTool: async (projectName, origin) => {
+    if (origin.actor?.kind !== "user" || !getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.agentTools) return undefined;
+    const email = origin.actor.id;
+    const authorize = async () => {
+      const tier = await getMemberTier(email);
+      if (tier !== "member" && tier !== "admin") throw new ValidationError("Workspace tools require member access");
+      await projectUseCases.assertAccessible(projectName, email);
+      if (!getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.agentTools) throw new ValidationError("Workspace tools are disabled");
+    };
+    try { await authorize(); } catch { return undefined; }
+    return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
+      policy: () => getWorkspaceConfig()?.projects.find(project => project.projectName === projectName),
+      sleep: async ms => { await workspaceSleep(ms); },
+    }, { projectName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID() });
+  },
   sourceRefreshIdentity,
   audioTools: async (projectName, origin) => {
     if (!config.objectBucketName) return undefined;

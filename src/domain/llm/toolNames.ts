@@ -16,6 +16,7 @@ export const IMAGE_TOOL_NAME = "GenerateImage";
 export const EDIT_IMAGE_TOOL_NAME = "EditImage";
 export const FETCH_URL_TOOL_NAME = "FetchUrl";
 export const FILE_TOOL_NAME = "File";
+export const WORKSPACE_TOOL_NAME = "Workspace";
 export const IMPORT_FILE_TOOL_NAME = "ImportFile";
 export const TRANSCRIBE_AUDIO_TOOL_NAME = "TranscribeAudio";
 export const AUDIO_JOB_TOOL_NAME = "AudioJob";
@@ -49,6 +50,7 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
   FETCH_URL_TOOL_NAME,
   SAVE_FILE_TOOL_NAME,
   FILE_TOOL_NAME,
+  WORKSPACE_TOOL_NAME,
   ...AUDIO_TOOL_NAMES,
   ...SLACK_TOOL_NAMES,
 ];

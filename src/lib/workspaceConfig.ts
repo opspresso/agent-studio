@@ -19,6 +19,7 @@ const workspaceConfig = z.object({
   idleTtlSeconds: z.number().int().min(WORKSPACE_LIMITS.minIdleTtlSeconds).max(WORKSPACE_LIMITS.maxIdleTtlSeconds).default(1800),
   projects: z.array(z.object({
     projectName: z.string().min(1).max(100),
+    agentTools: z.boolean().default(false),
     runtimes: z.array(runtime).min(1).max(WORKSPACE_RUNTIMES.length),
     repository: z.string().refine(isRepositoryName).optional(),
     checks: z.array(z.object({ name: z.enum(["test", "lint", "build"]), command: z.string().min(1).max(4000) }).strict()).max(3).default([]),

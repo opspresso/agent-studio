@@ -12,12 +12,17 @@ describe("Workspace deployment configuration", () => {
       runtimes: { codex: { model: "model-id", environment: { OPENAI_API_KEY: "test-model-key" } } } }));
     expect(config?.projects[0]?.repository).toBeUndefined();
     expect(config?.network).toBe("none");
+    expect(config?.projects[0]?.agentTools).toBe(false);
     expect(config?.runtimes.codex?.environment?.OPENAI_API_KEY).toBe("test-model-key");
   });
   it("does not allow Git or production credentials in runtime environment", () => {
     const raw = JSON.stringify({ image: "workspace:local", projects: [], runtimes: { codex: { environment: { GITHUB_TOKEN: "sensitive-value" } } } });
     expect(() => parseWorkspaceConfig(raw)).toThrow("Invalid WORKSPACE_CONFIG");
     try { parseWorkspaceConfig(raw); } catch (error) { expect(String(error)).not.toContain("sensitive-value"); }
+  });
+  it("requires an explicit deployment choice to expose Workspace to Agent runs", () => {
+    expect(parseWorkspaceConfig(JSON.stringify({ image: "workspace:local", projects: [{ projectName: "demo", runtimes: ["codex"], agentTools: true }] }))?.projects[0]?.agentTools).toBe(true);
+    expect(() => parseWorkspaceConfig(JSON.stringify({ image: "workspace:local", projects: [{ projectName: "demo", runtimes: ["codex"], agentTools: "true" }] }))).toThrow();
   });
   it("rejects ambiguous project policies and invalid repository addresses", () => {
     const project = { projectName: "demo", runtimes: ["command"] };

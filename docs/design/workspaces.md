@@ -106,6 +106,20 @@ main 병합은 소유한 PR·정확한 head·CI 성공을 확인하고 merge API
 
 ## 사용자 화면과 API
 
+배포의 `projects[].agentTools`를 켜면 로그인한 member 이상 사용자의 해당 프로젝트 Agent에
+`Workspace` 빌트인을 제공한다. `options`, `start`, `run`, `status`, `wait`, `cancel`, `close`로
+설정 조회·작업 접수·후속 실행·결과 확인·정리를 수행한다. 호출마다 현재 멤버 권한과 프로젝트
+접근을 확인하며 다른 프로젝트의 Workspace ID는 거절한다. 비인간 실행과 background Task에는
+이 도구를 제공하지 않는다. 프롬프트 미리보기에도 같은 사용자 기준으로 제공 여부를 표시한다.
+
+Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는 SDK 대화 이력과 native Session을
+섞지 않고, 반환된 `workspace_id`로 후속 요청을 연결한다. SDK run과 tool call ID가 접수 중복을
+막는다. `wait`는 최대 8초만 기다리고, 실행 중이면 반환된 Workspace 경로에서 계속 확인한다.
+도구 출력은 cursor로 읽으며 생략된 출력·Diff는 표시한다. 이 도구는 Git·배포 승인을 소비하지 않는다.
+
+플러그인의 `workspace-task`, `sandbox-task`는 이 기능을 사용하는 공용 작업 지침이다.
+Agent의 설명·시스템 프롬프트에는 역할을 쓰고, 계정·저장소·변경사항은 사용자 요청에 둔다.
+
 Chats의 Workspace 선택에서 프로젝트, Runtime, 선택적 저장소·기준 브랜치와 작업 내용을
 입력한다. 기존 Chat 실행과 Workspace 실행은 같은 채팅 화면의 별도 경로를 사용한다.
 Workspace 화면은 실행 출력·Diff·검사 결과와 명시적 Git·배포 승인을 보여 준다. 새 요청은
