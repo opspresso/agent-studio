@@ -453,6 +453,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `TRACE_RETENTION_DAYS` | `30` | — | 행의 `expiresAt` 까지의 일수. 지난 행은 schedule-scan 틱이 쓸어낸다. |
 | `USAGE_RETENTION_DAYS` | `400` | — | 대시보드의 184일 질의 창보다 한참 길게 유지한다. 하한은 `31`. 한 달 전체. 인데, 월간 비용 가드가 그 달의 일별 행들을 합산하기 때문이다. 더 짧은 창은 월말로 갈수록 지출을 조용히 적게 세게 된다. |
 | `CHAT_RETENTION_DAYS` | `180` | — | chat 의 마지막 활동 시점부터 잰다. |
+| `WORKSPACE_RETENTION_DAYS` | `180` | — | Workspace 실행·승인·이벤트·암호화된 체크포인트 보존 기간이다. Sandbox가 정리된 Workspace의 META도 이 기간을 따른다. 실행·정리 중인 META는 컴퓨팅 자원 정리 전에 sweep되지 않는다. |
 | `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | 전달 이력은 운영 로그이지 보관할 기록이 아니다. |
 | `A2A_TASK_RETENTION_DAYS` | `1` | — | 일시적인 작업 상태로, `SendMessage` 이후 `GetTask`/`CancelTask` 가 가능할 만큼만 유지한다. |
 | `ARTIFACT_RETENTION_DAYS` | `180` | — | 런이 만들어 낸 것의 이름을 담는 행. 기본값은 `CHAT_RETENTION_DAYS` 에 맞췄다. 그것이 이미 생성된 이미지의 실효 수명이기 때문이다. **`CHAT_RETENTION_DAYS` 이상으로 유지하라**: 더 짧으면 대화에서 아직 보이는 그림이 자기 갤러리에서 먼저 사라진다. 이 창과 버킷의 lifecycle 규칙은 서로 독립된 두 설정이다. [OPERATIONS.md](OPERATIONS.md#행-보존) 를 보라. |

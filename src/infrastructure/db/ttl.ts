@@ -22,6 +22,10 @@ function retentionDays(envVar: string, fallback: number): number {
 }
 
 export const RETENTION = {
+  /** Workspace state and execution records; live compute must be cleaned before META expires. */
+  get workspaceDays(): number {
+    return retentionDays("WORKSPACE_RETENTION_DAYS", 180);
+  },
   /** Debug traces (sampled) — short-lived. */
   get traceDays(): number {
     return retentionDays("TRACE_RETENTION_DAYS", 30);

@@ -1,0 +1,76 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { workspaceRepository as repository } from "@/infrastructure/db/repositories/workspaceRepository";
+import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
+import { projectRepository as projects } from "@/infrastructure/db/repositories/projectRepository";
+import { chatRepository as chats } from "@/infrastructure/db/repositories/chatRepository";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCases";
+import { keys } from "@/infrastructure/db/keys";
+import { deleteItem, deletePartition, getItem, putItem } from "@/infrastructure/db/store";
+import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
+
+/** Runs only after integration-check's local `_test` database guard and migration. */
+export async function checkWorkspaces(): Promise<void> {
+  const suffix = randomUUID();
+  const projectName = `workspace-${suffix}`;
+  const chatId = `workspace-${suffix}`;
+  const owner = "workspace-integration@example.test";
+  const now = new Date().toISOString();
+  const checkpoints = createWorkspaceCheckpointStore(secretCipher);
+  let workspaceId: string | undefined;
+  const useCases = createWorkspaceUseCases({ repository, chats, projects, now: () => new Date(), newId: randomUUID,
+    idleTtlSeconds: 3600, policy: () => ({ projectName, runtimes: ["command"], checks: [], deploymentWorkflows: [] }) });
+  try {
+    await projects.create({ name: projectName, displayName: "Workspace integration", description: "",
+      ownerEmail: owner, projectType: "agent", createdAt: now, updatedAt: now });
+    await chats.create({ chatId, projectName, title: "Workspace integration", ownerEmail: owner, createdAt: now, updatedAt: now });
+    const workspace = await useCases.create({ chatId, projectName, title: "General task", runtime: "command" }, owner);
+    workspaceId = workspace.id;
+    assert.equal(workspace.coding, undefined);
+    const input = { kind: "command" as const, script: "printf integration" };
+    const runs = await Promise.all(Array.from({ length: 8 }, () => useCases.enqueue(workspace.id, owner, input, "request-0001")));
+    assert.equal(new Set(runs.map(run => run.id)).size, 1, "concurrent identical requests admit one run");
+    assert.equal((await repository.runs(workspace.id, 10)).length, 1);
+    const active = (await repository.get(workspace.id))!;
+    const run = runs[0]!;
+    const claim = { expectedRevision: active.revision, workspace: { ...active, revision: active.revision + 1 },
+      run: { ...run, status: "running" as const, leaseToken: "first-claim", lastEventSeq: 1 },
+      events: [{ workspaceId: workspace.id, runId: run.id, seq: 1, createdAt: now,
+        data: { kind: "message" as const, text: "claimed" } }] };
+    const claims = await Promise.allSettled([repository.write(claim), repository.write(claim)]);
+    assert.equal(claims.filter(result => result.status === "fulfilled").length, 1, "only one worker claim wins");
+    assert.equal((await repository.events(workspace.id, run.id, 0, 10)).length, 1);
+    assert.deepEqual(await repository.events(workspace.id, run.id, 1, 10), []);
+
+    const bytes = Buffer.alloc(WORKSPACE_LIMITS.checkpointChunkBytes + 10, 37);
+    await checkpoints.put(workspace.id, "checkpoint-1", bytes, now);
+    assert.deepEqual(await checkpoints.get(workspace.id, "checkpoint-1"), bytes);
+    const chunkKey = keys.workspaceCheckpointChunk(workspace.id, "checkpoint-1", 0);
+    const chunk = (await getItem(chunkKey))!;
+    assert.ok(String(chunk.encrypted).startsWith("enc:v2:"), "checkpoint encryption is context-bound AES-GCM");
+    const nextChunkKey = keys.workspaceCheckpointChunk(workspace.id, "checkpoint-1", 1);
+    await putItem({ ...chunk, ...nextChunkKey });
+    await assert.rejects(checkpoints.get(workspace.id, "checkpoint-1"), "copied ciphertext must not decrypt at another chunk address");
+
+    await useCases.close(workspace.id, owner, true);
+    await chats.delete(chatId);
+    const closing = (await repository.get(workspace.id))!;
+    assert.ok(closing.deleteRequestedAt, "chat deletion cannot remove the compute cleanup record");
+    await assert.rejects(repository.write(claim), "late worker cannot overwrite cleanup intent");
+    await assert.rejects(useCases.enqueue(workspace.id, owner, input, "request-0002"));
+    await repository.write({ expectedRevision: closing.revision, workspace: { ...closing, revision: closing.revision + 1,
+      status: "closed", activeRunId: undefined } });
+    await assert.rejects(repository.write({ expectedRevision: closing.revision + 1,
+      workspace: { ...closing, revision: closing.revision + 2, status: "active" } }), "closed workspace cannot be resurrected");
+    console.log("[ok] Workspace admission, PostgreSQL CAS, event replay, encrypted checkpoints and deletion fencing");
+  } finally {
+    if (workspaceId) {
+      await checkpoints.delete(workspaceId);
+      await deletePartition(keys.workspacePartition(workspaceId));
+    }
+    await deleteItem(keys.workspaceChat(chatId));
+    if (await chats.get(chatId)) await chats.delete(chatId);
+    if (await projects.get(projectName)) await projects.delete(projectName);
+  }
+}
