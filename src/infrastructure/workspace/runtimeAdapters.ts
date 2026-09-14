@@ -92,7 +92,7 @@ export function createWorkspaceRuntimeAdapter(kind: WorkspaceRuntime, config: Wo
       };
       if (kind === "claude") return {
         argv: ["claude", "--print", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-          "--dangerously-skip-permissions", "--setting-sources", "", "--strict-mcp-config", "--mcp-config", "{}",
+          "--dangerously-skip-permissions", "--setting-sources", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
           ...model, ...(resume ? ["--resume", resume] : ["--session-id", current.id])],
         stdin: input.prompt, cwd, timeoutMs, environment,
       };

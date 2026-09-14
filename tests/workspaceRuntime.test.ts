@@ -35,6 +35,8 @@ describe("native workspace runtime adapters", () => {
   });
   it("translates Claude partial messages without duplicating complete assistant text", () => {
     const adapter = createWorkspaceRuntimeAdapter("claude");
+    const command = adapter.command(...fixtures("claude"), { kind: "task", prompt: "Write a report" }, 1000);
+    expect(JSON.parse(command.argv[command.argv.indexOf("--mcp-config") + 1]!)).toEqual({ mcpServers: {} });
     expect(adapter.events('{"type":"system","subtype":"init","session_id":"session-1"}')[0]).toMatchObject({ kind: "session", nativeSessionId: "session-1" });
     expect(adapter.events('{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"hello"}}}')).toEqual([{ kind: "message", text: "hello" }]);
     expect(adapter.events('{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}')).toEqual([]);
