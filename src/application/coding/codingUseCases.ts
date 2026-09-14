@@ -3,12 +3,12 @@ import type { CodingForge } from "@/domain/coding/forge";
 import type { CodingWorktree, WorktreeReview } from "@/domain/coding/worktree";
 import type { Workspace } from "@/domain/workspace/types";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
-import { ownedWorkspace, workspacePolicy } from "@/application/workspace/workspaceUseCases";
+import { ownedWorkspace, workspacePolicy, workspaceView } from "@/application/workspace/workspaceUseCases";
 import { ensureWorkspaceSandbox, saveWorkspaceCheckpoint, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { WorkspaceWorkerState, WORKSPACE_LEASE_MS } from "@/application/workspace/workerState";
 import { boundedWorkspaceText } from "@/application/workspace/output";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
-import { workspaceAllowsRepository } from "@/domain/workspace/policy";
+import { isGitBranch, isRepositoryName, workspaceAllowsRepository } from "@/domain/workspace/policy";
 
 export interface CodingDeps extends WorkspaceWorkerDeps {
   coding: CodingWorktree;
@@ -20,12 +20,13 @@ function repository(workspace: Workspace): CodingRepository {
   return workspace.coding;
 }
 
-async function reserve(deps: CodingDeps, id: string, ownerEmail: string, actionId: string, resuming = false): Promise<WorkspaceWorkerState> {
+async function reserve(deps: CodingDeps, id: string, ownerEmail: string, actionId: string | undefined, resuming = false, attachRepository?: string): Promise<WorkspaceWorkerState> {
   const workspace = await ownedWorkspace(deps, id, ownerEmail);
   if (!["active", "suspended"].includes(workspace.status) || workspace.activeRunId ||
     (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) ||
     (workspace.activeActionId && (!resuming || workspace.activeActionId !== actionId))) throw new ConflictError("Workspace is busy");
-  if (!workspaceAllowsRepository(workspacePolicy(deps, workspace.projectName), repository(workspace).repository)) throw new ConflictError("Workspace repository configuration changed");
+  if (attachRepository && workspace.coding) throw new ConflictError("Workspace already has a Git repository");
+  if (!workspaceAllowsRepository(workspacePolicy(deps, workspace.projectName), attachRepository ?? repository(workspace).repository)) throw new ConflictError("Workspace repository configuration changed");
   const token = deps.newId();
   const leaseUntil = new Date(deps.now().getTime() + WORKSPACE_LEASE_MS).toISOString();
   try {
@@ -75,6 +76,26 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
 /** Every write effect is explicitly requested, reviewed, and claimed before execution. */
 export function createCodingUseCases(deps: CodingDeps) {
   return {
+    async attachRepository(id: string, ownerEmail: string, name: string, baseBranch: string) {
+      if (!isRepositoryName(name) || !isGitBranch(baseBranch)) throw new ValidationError("Invalid repository or base branch");
+      const existing = await ownedWorkspace(deps, id, ownerEmail);
+      if (existing.coding) {
+        if (existing.coding.repository.toLowerCase() !== name.toLowerCase() || existing.coding.baseBranch !== baseBranch) throw new ConflictError("The Workspace already uses a different repository or base branch");
+        return workspaceView(existing);
+      }
+      const state = await reserve(deps, id, ownerEmail, undefined, false, name);
+      try {
+        const sandbox = await ensureWorkspaceSandbox(deps, state);
+        const { workspace } = await state.read();
+        if (workspace.status !== "active" || workspace.deleteRequestedAt) throw new ConflictError("Workspace closed before repository attachment");
+        const coding = await deps.coding.prepare(sandbox.externalId, { repository: name, baseBranch, branch: `agent/${id}` });
+        // Persist the prepared Git bytes before claiming that the saved Workspace owns them.
+        await saveWorkspaceCheckpoint(deps, state, sandbox);
+        await state.save({ coding });
+        await release(deps, state);
+        return workspaceView(await ownedWorkspace(deps, id, ownerEmail));
+      } catch (error) { await release(deps, state); throw error; }
+    },
     async request(id: string, ownerEmail: string, action: CodingAction): Promise<CodingApproval> {
       const approvalId = `${deps.now().getTime()}-${deps.newId()}`;
       const state = await reserve(deps, id, ownerEmail, approvalId);

@@ -39,6 +39,61 @@ async function create(runtime: "command" | "codex" = "command", coding = false) 
 }
 
 describe("workspace admission and persistence", () => {
+  it("creates one Workspace for a source chat under concurrent starts with different tasks", async () => {
+    const input = { projectName: "demo", runtime: "command" as const, input: { kind: "command" as const, script: "echo first" } };
+    const results = await Promise.all(Array.from({ length: 8 }, (_, index) => useCases.startForChat(
+      { ...input, input: { ...input.input, script: `echo task-${index}` } }, owner, "chat-1")));
+    const ids = new Set(results.map(result => result.workspace.id));
+    expect(ids.size).toBe(1);
+    const id = results[0]!.workspace.id;
+    expect((await chats.get("chat-1"))?.linkedWorkspaces?.demo).toBe(id);
+    expect(await repository.list(owner, 20)).toHaveLength(1);
+    expect(await repository.runs(id, 20)).toHaveLength(1);
+    const again = await useCases.startForChat({ ...input, runtime: "codex", repository: "company/demo", baseBranch: "main",
+      input: { kind: "task", prompt: "different mode" } }, owner, "chat-1");
+    expect(again).toMatchObject({ reused: true, workspace: { id, runtime: "command" } });
+    expect(again.run).toBeUndefined();
+    expect(await repository.runs(id, 20)).toHaveLength(1);
+  });
+
+  it("retains a source binding across chat updates and rejects cross-owner selection", async () => {
+    const sourceBefore = (await chats.get("chat-1"))!;
+    const started = await useCases.startForChat({ projectName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, owner, "chat-1");
+    await chats.update({ ...sourceBefore, title: "Updated after streaming" });
+    expect((await useCases.forSourceChat("chat-1", "demo", owner))?.id).toBe(started.workspace.id);
+    await expect(useCases.forSourceChat("chat-1", "demo", "foreign@example.test")).rejects.toMatchObject({ status: 404 });
+    await expect(useCases.selectForChat("chat-1", started.workspace.id, "other", owner)).rejects.toMatchObject({ status: 404 });
+    await expect(useCases.selectForChat("chat-1", started.workspace.id, "demo", "foreign@example.test")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("selects an existing Workspace without creating compute or another run", async () => {
+    const existing = await useCases.start({ projectName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, owner, "existing-request");
+    await useCases.selectForChat("chat-1", existing.workspace.id, "demo", owner);
+    const selected = await useCases.startForChat({ projectName: "demo", runtime: "command", input: { kind: "command", script: "echo not queued" } }, owner, "chat-1");
+    expect(selected).toMatchObject({ reused: true, workspace: { id: existing.workspace.id } });
+    expect(await repository.list(owner, 20)).toHaveLength(1);
+    expect(await repository.runs(existing.workspace.id, 20)).toHaveLength(1);
+  });
+
+  it("bounds the source chat's project bindings before creating a Workspace", async () => {
+    const key = keys.chat("chat-1");
+    const row = (await store.getItem(key))!;
+    fake.seed([{ ...row, linkedWorkspaces: Object.fromEntries(Array.from({ length: WORKSPACE_LIMITS.linkedProjects }, (_, index) => [`project-${index}`, `workspace-${index}`])) }]);
+    await expect(useCases.startForChat({ projectName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, owner, "chat-1")).rejects.toThrow("project limit");
+    expect(await repository.list(owner, 20)).toHaveLength(0);
+  });
+
+  it("rolls back Workspace creation if its source chat is deleted before the transaction", async () => {
+    const original = repository.create.bind(repository);
+    vi.spyOn(repository, "create").mockImplementationOnce(async (...args) => {
+      await chats.delete("chat-1");
+      await original(...args);
+    });
+    await expect(useCases.startForChat({ projectName: "demo", runtime: "command", input: { kind: "command", script: "pwd" } }, owner, "chat-1")).rejects.toThrow();
+    expect(await repository.list(owner, 20)).toHaveLength(0);
+    expect(await chats.listByOwner(owner, { limit: 20 })).toHaveLength(0);
+    vi.restoreAllMocks();
+  });
   it("uses an explicitly selected allowed repository and fences later policy removal", async () => {
     const expanded = { ...policy, repositories: ["company/second"] };
     const api = createWorkspaceUseCases({ repository, chats, projects, now: () => now, newId: () => `id-${++nextId}`, policy: () => expanded, idleTtlSeconds: 60 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
 import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
 import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
 import type { Workspace, RuntimeSession, WorkspaceRuntime } from "@/domain/workspace/types";
@@ -23,9 +24,15 @@ describe("native workspace runtime adapters", () => {
   });
   it("uses stdin for explicit general scripts without a Git dependency", () => {
     const command = createWorkspaceRuntimeAdapter("command").command(...fixtures("command"), { kind: "command", script: "echo 'general task'" }, 1000);
-    expect(command.argv).toEqual(["/bin/sh", "-s"]);
+    expect(command.argv).toEqual(["/bin/sh", "-eu", "-s"]);
     expect(command.stdin).toBe("echo 'general task'");
     expect(command.environment).toBeUndefined();
+  });
+  it("stops a script before later writes when an earlier command fails", () => {
+    const command = createWorkspaceRuntimeAdapter("command").command(...fixtures("command"), { kind: "command", script: "false\nprintf should-not-run" }, 1000);
+    const result = spawnSync(command.argv[0]!, command.argv.slice(1), { input: command.stdin, encoding: "utf8" });
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toBe("");
   });
   it.each(["codex", "claude", "opencode"] as const)("%s resumes its exact native session and passes task text literally", runtime => {
     const adapter = createWorkspaceRuntimeAdapter(runtime);

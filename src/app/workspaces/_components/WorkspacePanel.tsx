@@ -69,7 +69,8 @@ export function WorkspacePanel({ id }: { id: string }) {
   if (!detail) return loadError ? <Alert color="red">{loadError}</Alert> : <Group p="lg"><Loader size="sm" /><Text>{t("common.loading")}</Text></Group>;
   const workspace = detail.workspace;
   const run = detail.runs.find(run => run.id === runId);
-  const blocked = busy || !!workspace.activeRunId || !!workspace.activeActionId || ["closing", "suspending"].includes(workspace.status);
+  const pending = detail.approvals.find(approval => approval.id === workspace.activeActionId && approval.status === "pending");
+  const blocked = busy || !!workspace.activeRunId || (!!workspace.activeActionId && !pending) || ["closing", "suspending"].includes(workspace.status);
   const status = (value: string) => t(`workspace.status.${value}` as MessageKey);
   const workflows = options?.projects.find(project => project.projectName === workspace.projectName)?.deploymentWorkflows ?? [];
 
@@ -109,7 +110,7 @@ export function WorkspacePanel({ id }: { id: string }) {
         {!isNearBottom && <Button size="compact-xs" variant="default" pos="absolute" bottom={12} right={12} leftSection={<IconArrowDown size={14} />} onClick={() => { void scrollToBottom(); }}>{t("workspace.latest")}</Button>}
       </Box>
     </Tabs>
-    {workspace.activeActionId && <Text size="xs" c="dimmed">{t("workspace.pendingActionHint")}</Text>}
+    {workspace.activeActionId && <Text size="xs" c="dimmed">{t(pending ? "workspace.pendingEditHint" : "workspace.pendingActionHint")}</Text>}
     <Textarea aria-label={t("workspace.followUp")} placeholder={workspace.runtime === "command" ? t("workspace.scriptPlaceholder") : t("workspace.followUp")} value={message} onChange={event => setMessage(event.currentTarget.value)} disabled={blocked} autosize minRows={2} maxRows={6}
       onKeyDown={event => { if (isSubmitEnter(event) && !event.shiftKey) { event.preventDefault(); void send(); } }} />
     <Group justify="space-between"><Text size="xs" c="dimmed">{t("workspace.sessionHint")}</Text>{workspace.activeRunId ? <Button color="red" variant="light" leftSection={<IconPlayerStop size={14} />} onClick={() => { void stop(false); }} loading={busy}>{t("workspace.stop")}</Button>

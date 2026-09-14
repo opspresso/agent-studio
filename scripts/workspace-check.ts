@@ -15,6 +15,8 @@ export async function checkWorkspaces(): Promise<void> {
   const suffix = randomUUID();
   const projectName = `workspace-${suffix}`;
   const chatId = `workspace-${suffix}`;
+  const sourceChatId = `source-${suffix}`;
+  const sourceWorkspaces = new Map<string, string>();
   const owner = "workspace-integration@example.test";
   const now = new Date().toISOString();
   const checkpoints = createWorkspaceCheckpointStore(secretCipher);
@@ -25,6 +27,19 @@ export async function checkWorkspaces(): Promise<void> {
     await projects.create({ name: projectName, displayName: "Workspace integration", description: "",
       ownerEmail: owner, projectType: "agent", createdAt: now, updatedAt: now });
     await chats.create({ chatId, projectName, title: "Workspace integration", ownerEmail: owner, createdAt: now, updatedAt: now });
+    await chats.create({ chatId: sourceChatId, projectName, title: "Agent source", ownerEmail: owner, createdAt: now, updatedAt: now });
+    const starts = await Promise.allSettled(Array.from({ length: 8 }, (_, index) => useCases.startForChat({ projectName, runtime: "command",
+      input: { kind: "command", script: `printf request-${index}` } }, owner, sourceChatId)));
+    for (const result of starts) if (result.status === "fulfilled") sourceWorkspaces.set(result.value.workspace.id, result.value.workspace.chatId);
+    assert.equal(starts.filter(result => result.status === "fulfilled").length, 8, "concurrent starts resolve the same source selection");
+    assert.equal(sourceWorkspaces.size, 1, "one source chat cannot create duplicate Workspaces");
+    const selectedId = [...sourceWorkspaces.keys()][0]!;
+    assert.equal((await chats.get(sourceChatId))?.linkedWorkspaces?.[projectName], selectedId);
+    assert.equal((await repository.runs(selectedId, 10)).length, 1, "only the winning start queues its first task");
+    const later = await useCases.startForChat({ projectName, runtime: "command", input: { kind: "command", script: "printf later" } }, owner, sourceChatId);
+    assert.equal(later.reused, true);
+    assert.equal(later.workspace.id, selectedId);
+    assert.equal((await repository.runs(selectedId, 10)).length, 1, "another start does not replay or enqueue work");
     const workspace = await useCases.create({ chatId, projectName, title: "General task", runtime: "command" }, owner);
     workspaceId = workspace.id;
     assert.equal(workspace.coding, undefined);
@@ -63,8 +78,15 @@ export async function checkWorkspaces(): Promise<void> {
       status: "closed", activeRunId: undefined } });
     await assert.rejects(repository.write({ expectedRevision: closing.revision + 1,
       workspace: { ...closing, revision: closing.revision + 2, status: "active" } }), "closed workspace cannot be resurrected");
-    console.log("[ok] Workspace admission, PostgreSQL CAS, event replay, encrypted checkpoints and deletion fencing");
+    console.log("[ok] Workspace source binding, concurrent start/admission, PostgreSQL CAS, event replay, checkpoints and deletion fencing");
   } finally {
+    for (const [id, childChatId] of sourceWorkspaces) {
+      await checkpoints.delete(id);
+      await deletePartition(keys.workspacePartition(id));
+      await deleteItem(keys.workspaceChat(childChatId));
+      await chats.delete(childChatId);
+    }
+    if (await chats.get(sourceChatId)) await chats.delete(sourceChatId);
     if (workspaceId) {
       await checkpoints.delete(workspaceId);
       await deletePartition(keys.workspacePartition(workspaceId));

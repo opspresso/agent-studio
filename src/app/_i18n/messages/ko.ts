@@ -48,6 +48,7 @@ export const ko: Messages = {
   "workspace.stop": "실행 중지",
   "workspace.send": "전송",
   "workspace.pendingActionHint": "Git · 배포 탭에서 승인 대기 작업을 확인하세요.",
+  "workspace.pendingEditHint": "새 작업을 보내면 대기 중인 Git 검토를 취소합니다. 수정 후 게시할 변경을 다시 검토하세요.",
   "workspace.reviewAction": "승인 전 검토",
   "workspace.reviewHint": "요청과 변경 내용을 확인하세요. Git 및 배포 작업은 승인이 필요합니다.",
   "workspace.approve": "승인 후 실행",

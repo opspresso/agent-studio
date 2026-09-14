@@ -7,6 +7,8 @@ export interface Chat {
   ownerEmail: string;
   projectName?: string;
   workspaceId?: string;
+  /** Agent conversations retain one selected Workspace per execution project. */
+  linkedWorkspaces?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }

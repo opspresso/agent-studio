@@ -37,6 +37,7 @@ function fromChatItem(item: Item): Chat {
     ownerEmail: item.ownerEmail as string,
     projectName: item.projectName as string | undefined,
     workspaceId: item.workspaceId as string | undefined,
+    linkedWorkspaces: item.linkedWorkspaces as Chat["linkedWorkspaces"],
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
   };

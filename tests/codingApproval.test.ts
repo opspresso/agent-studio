@@ -112,12 +112,42 @@ describe("explicit coding action approvals", () => {
     expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("failed");
     expect(deps.coding.commit).not.toHaveBeenCalled();
   });
-  it("blocks edits while an approval is pending and releases a rejected action", async () => {
+  it("atomically rejects an unapproved review when a new editing task is accepted", async () => {
     const api = createCodingUseCases(deps);
     const pending = await api.request(workspace.id, owner, { kind: "commit", message: "commit" });
-    await expect(createWorkspaceUseCases(deps).enqueue(workspace.id, owner, { kind: "task", prompt: "change files" }, "request-0001")).rejects.toMatchObject({ status: 409 });
-    expect((await api.decide(workspace.id, owner, pending.id, false)).status).toBe("rejected");
+    const run = await createWorkspaceUseCases(deps).enqueue(workspace.id, owner, { kind: "task", prompt: "change files" }, "request-0001");
+    expect((await repository.get(workspace.id))?.activeRunId).toBe(run.id);
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("rejected");
+    expect(deps.coding.commit).not.toHaveBeenCalled();
     expect((await repository.get(workspace.id))?.activeActionId).toBeUndefined();
+  });
+  it("does not enqueue a task once an approval has acquired its execution lease", async () => {
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "commit", message: "commit" });
+    const originalReview = deps.coding.review;
+    deps.coding.review = async id => {
+      await expect(createWorkspaceUseCases(deps).enqueue(workspace.id, owner, { kind: "task", prompt: "change files" }, "request-0001")).rejects.toThrow("busy");
+      return originalReview(id);
+    };
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("succeeded");
+    expect(await repository.runs(workspace.id, 20)).toHaveLength(0);
+  });
+  it("connects an empty Git-free Workspace without changing its identity or session", async () => {
+    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, projectName: "demo", title: "Files", runtime: "codex" }, owner);
+    const attached = await createCodingUseCases(deps).attachRepository(free.id, owner, "company/repo", "main");
+    expect(attached).toMatchObject({ id: free.id, sessionId: free.sessionId, coding: { repository: "company/repo", baseBranch: "main" } });
+    expect(await repository.runs(free.id, 20)).toHaveLength(0);
+    expect(deps.checkpoints.put).toHaveBeenCalledTimes(1);
+    expect(deps.coding.commit).not.toHaveBeenCalled();
+    await expect(createCodingUseCases(deps).attachRepository(free.id, owner, "other/repo", "main")).rejects.toThrow("different repository");
+  });
+  it("keeps the existing Workspace when repository attachment is refused", async () => {
+    const free = await createWorkspaceUseCases(deps).create({ chatId: "free-chat", createChat: true, projectName: "demo", title: "Files", runtime: "codex" }, owner);
+    deps.coding.prepare = async () => { throw new Error("workdir is not empty; existing files were kept"); };
+    await expect(createCodingUseCases(deps).attachRepository(free.id, owner, "company/repo", "main")).rejects.toThrow("existing files were kept");
+    expect((await repository.get(free.id))?.coding).toBeUndefined();
+    expect((await repository.get(free.id))?.leaseToken).toBeUndefined();
+    expect(deps.checkpoints.put).not.toHaveBeenCalled();
   });
   it("pushes only for an explicitly approved PR and persists its information", async () => {
     review.treeSha = review.headTreeSha;

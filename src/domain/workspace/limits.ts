@@ -2,6 +2,7 @@
 export const WORKSPACE_LIMITS = {
   page: 50,
   maxPage: 200,
+  linkedProjects: 32,
   promptChars: 40_000,
   scriptChars: 40_000,
   eventBytes: 32_000,

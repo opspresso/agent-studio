@@ -733,6 +733,8 @@ Git 동작은 `commit`, `commit-and-push`, `push`, `pull-request`(`draft` 선택
 `commit`·`commit-and-push`는 `message`를 받고 `push`는 추가 인자가 없다. 자세한 승인 조건은
 [Workspace 설계](design/workspaces.md#git과-승인)를 따른다. 승인 요청과 실제 실행 모두
 현재 파일 fingerprint를 확인한다. main 병합은 정확한 PR head와 CI 성공을 요구한다.
+새 Workspace Run의 접수는 아직 승인하지 않은 Git 검토를 원자적으로 거절한다. 실행 중이거나
+결과가 불확실한 Git 동작에는 새 Run을 접수하지 않는다.
 
 `POST /api/workspaces/github/webhook`은 `X-Hub-Signature-256`의 HMAC-SHA256과
 `X-GitHub-Delivery`를 요구하며 `{processed: boolean}`을 반환한다. 중복·관련 없는 이벤트는

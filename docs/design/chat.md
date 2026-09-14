@@ -11,11 +11,15 @@ agent project 를 상대로 하는 소유자 범위(owner-scoped)의 비공개 �
 > 버퍼인지를 말한다.
 
 ```ts
-Chat { chatId, title, ownerEmail, projectName?, createdAt, updatedAt }
+Chat { chatId, title, ownerEmail, projectName?, workspaceId?, linkedWorkspaces?, createdAt, updatedAt }
 ```
 
 메시지는 `seq` 를 갖는 append-only 다. Chat 실행은 agent 엔진을 직접 사용하고 — HTTP
 self-call 은 없다 — 클라이언트로 SSE 를 스트리밍한다.
+
+`workspaceId`는 그 Chat 자체가 Workspace 실행 화면일 때 사용한다. Agent 대화에서 작업을
+위임한 Workspace 선택은 별도 `linkedWorkspaces`에 프로젝트별로 보관한다. 이 연결은
+Workspace use case와 repository가 소유하며 일반 Chat 갱신은 덮어쓰지 않는다.
 
 한 chat 은 **한 번에 하나의 런**만 가진다: `claimChatRun` (`src/application/chat/runLease.ts`)
 이 chat 행에 conditional-write 리스(lease)를 잡고(`activeRunId`, `RUN_LEASE_SECONDS` 후

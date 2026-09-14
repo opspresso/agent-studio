@@ -134,6 +134,31 @@ Workspace 화면은 유형 배지와 실행 출력·Diff·검사 결과, 명시�
 승인 링크의 `#actions`는 Git·배포 탭을 바로 연다. 새 요청은
 동일한 Workspace와 native Session에서 이어지며 페이지를 떠나도 서버 작업은 계속된다.
 
+## 원래 채팅과 Workspace 선택
+
+Agent 대화의 `Chat.linkedWorkspaces`는 실행 프로젝트마다 선택한 Workspace ID를 보관한다.
+새 Workspace·전용 Chat·원래 Chat의 연결은 한 transaction에서 생성한다. 한 Chat의 연결은
+최대 32개 프로젝트로 제한한다. 동시 생성과 서로 다른 tool call ID의 `start`도 같은 연결을
+사용하며, 기존 Workspace를 반환할 때에는 새 작업을 접수하지 않는다. Chat이 없는 실행은
+한 실행 내에서 `start`가 하나의 Workspace만 생성한다.
+
+`options.current_workspace`는 현재 선택을 돌려준다. `run`은 선택된 Workspace에서 이어가며
+`workspace_id`를 생략할 수 있다. Runtime·저장소 선택 필드를 함께 보내면 현재 선택과 대조한다.
+`use_workspace`는 소유한 기존 Workspace를 명시적으로 선택하며 생성·실행·파일 복사는 하지 않는다.
+새 작업 공간이 필요하면 새 Chat이나 직접 Workspace 생성 화면을 사용한다.
+
+`attach_repository`는 Git 없는 Workspace의 빈 작업 폴더에만 저장소를 연결한다. ID와 Session은
+유지하고, 기존 파일이 있으면 덮어쓰지 않고 거절한다. 이미 연결된 저장소와 기준 브랜치는 바꾸지
+않는다. Git 파일의 체크포인트를 저장한 뒤 연결 메타데이터를 기록한다.
+
+`workdir`는 파일을 쓰는 실제 작업 폴더이고 `workspace_path`는 브라우저 링크다. 작업과 검사는
+기본 작업 폴더에서 상대 경로를 사용한다. `command`와 설정된 검사는 `/bin/sh -eu -s`로 실행해
+실패한 명령 뒤에 다른 경로로 쓰기를 계속하는 일을 막는다.
+
+새 Run을 접수하면 이전의 `pending` Git 검토를 같은 transaction에서 거절한다. 승인 실행이
+이미 lease를 잡았거나 결과가 불확실하면 새 Run은 거절한다. 수정 후에는 새 Diff를 검토하고
+다시 승인해야 한다. SDK 대화의 도구 승인·재개 계약과는 별개다.
+
 `POST /api/workspaces`와 `POST /api/workspaces/{id}/runs`는 `Idempotency-Key`를 요구한다.
 목록·이벤트는 제한된 페이지로 읽으며 클라이언트는 최근 실행 50개와 이벤트 2,000개를 유지한다.
 `GET /api/workspaces/{id}`의 공개 view에는 lease, operation handle과 체크포인트 주소를 넣지 않는다.

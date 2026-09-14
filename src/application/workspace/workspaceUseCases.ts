@@ -31,6 +31,15 @@ export interface CreateWorkspaceInput {
   title: string;
   createChat?: boolean;
   creationFingerprint?: string;
+  sourceChatId?: string;
+}
+
+export interface StartWorkspaceInput {
+  projectName: string;
+  runtime: WorkspaceRuntime;
+  baseBranch?: string;
+  repository?: string;
+  input: WorkspaceInput;
 }
 
 export type WorkspaceView = Omit<Workspace, "ownerEmail" | "leaseToken" | "leaseUntil" | "checkpointId" | "creationFingerprint">;
@@ -80,13 +89,27 @@ function validateInput(workspace: Pick<Workspace, "runtime">, input: WorkspaceIn
   }
 }
 
+function workspaceChatId(ownerEmail: string, requestKey: string): string {
+  return `ws-${createHash("sha256").update(JSON.stringify([ownerEmail, requestKey])).digest("hex").slice(0, 32)}`;
+}
+
 /** Receipts and revisions are persistent; HTTP retries never enqueue the same operation twice. */
 export function createWorkspaceUseCases(deps: WorkspaceDeps) {
+  async function sourceChat(chatId: string, ownerEmail: string) {
+    const chat = await deps.chats.get(chatId);
+    if (!chat || chat.ownerEmail !== ownerEmail) throw new NotFoundError("Source chat not found");
+    return chat;
+  }
   return {
     async create(input: CreateWorkspaceInput, ownerEmail: string): Promise<Workspace> {
       await assertProjectAccessible(deps.projects, input.projectName, ownerEmail);
       const policy = workspacePolicy(deps, input.projectName);
       if (!policy.runtimes.includes(input.runtime)) throw new ValidationError("Workspace runtime is not enabled");
+      if (input.sourceChatId) {
+        const source = await sourceChat(input.sourceChatId, ownerEmail);
+        if (!input.createChat || source.workspaceId || source.linkedWorkspaces?.[input.projectName]) throw new ConflictError("The source chat already has a Workspace");
+        if (Object.keys(source.linkedWorkspaces ?? {}).length >= WORKSPACE_LIMITS.linkedProjects) throw new ValidationError("The source chat has reached its Workspace project limit");
+      }
       const chat = input.createChat ? null : await deps.chats.get(input.chatId);
       if (!input.createChat && (!chat || chat.ownerEmail !== ownerEmail || chat.projectName !== input.projectName)) {
         throw new NotFoundError("Chat not found");
@@ -114,7 +137,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
         ...(input.baseBranch ? { coding: { repository: repository!, baseBranch: input.baseBranch, branch: `agent/${id}` } } : {}),
       };
       try { await deps.repository.create(workspace, session, input.createChat ? { chatId: input.chatId, projectName: input.projectName,
-        ownerEmail, title: workspace.title, createdAt: now, updatedAt: now } : undefined); }
+        ownerEmail, title: workspace.title, createdAt: now, updatedAt: now } : undefined, input.sourceChatId); }
       catch (error) {
         if (isConditionalWriteFailure(error, { includeTransaction: true })) throw new ConflictError("Chat or project changed while creating workspace");
         throw error;
@@ -130,15 +153,15 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       return { workspace: workspaceView(workspace), session, runs: runs.map(workspaceRunView), approvals };
     },
 
-    async start(input: { projectName: string; runtime: WorkspaceRuntime; baseBranch?: string; repository?: string; input: WorkspaceInput }, ownerEmail: string, requestKey: string): Promise<StartWorkspaceResult> {
+    async start(input: StartWorkspaceInput, ownerEmail: string, requestKey: string, sourceChatId?: string): Promise<StartWorkspaceResult> {
       if (!/^[\w-]{8,128}$/.test(requestKey)) throw new ValidationError("Invalid Idempotency-Key");
       validateInput({ runtime: input.runtime }, input.input);
       const creationFingerprint = createHash("sha256").update(JSON.stringify([input.projectName, input.runtime, input.repository ?? null, input.baseBranch ?? null, input.input])).digest("hex");
-      const chatId = `ws-${createHash("sha256").update(JSON.stringify([ownerEmail, requestKey])).digest("hex").slice(0, 32)}`;
+      const chatId = workspaceChatId(ownerEmail, requestKey);
       let workspace = await deps.repository.forChat(chatId);
       if (!workspace) {
         try { workspace = await this.create({ chatId, projectName: input.projectName, runtime: input.runtime, baseBranch: input.baseBranch, repository: input.repository,
-          title: titleFromMessage(input.input.kind === "task" ? input.input.prompt : input.input.script), createChat: true, creationFingerprint }, ownerEmail); }
+          title: titleFromMessage(input.input.kind === "task" ? input.input.prompt : input.input.script), createChat: true, creationFingerprint, sourceChatId }, ownerEmail); }
         catch (error) {
           if (!(error instanceof ConflictError)) throw error;
           workspace = await deps.repository.forChat(chatId);
@@ -148,6 +171,50 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       if (workspace.ownerEmail !== ownerEmail || workspace.creationFingerprint !== creationFingerprint) throw new ConflictError("Idempotency-Key was used for a different workspace request");
       const run = await this.enqueue(workspace.id, ownerEmail, input.input, requestKey);
       return { workspace: workspaceView(await ownedWorkspace(deps, workspace.id, ownerEmail)), run: workspaceRunView(run) };
+    },
+
+    async forStartRequest(projectName: string, ownerEmail: string, requestKey: string): Promise<WorkspaceView | null> {
+      const workspace = await deps.repository.forChat(workspaceChatId(ownerEmail, requestKey));
+      if (!workspace) return null;
+      const owned = await ownedWorkspace(deps, workspace.id, ownerEmail);
+      if (owned.projectName !== projectName) throw new NotFoundError("Workspace not found");
+      return workspaceView(owned);
+    },
+
+    async forSourceChat(chatId: string, projectName: string, ownerEmail: string): Promise<WorkspaceView | null> {
+      const chat = await sourceChat(chatId, ownerEmail);
+      const id = chat.workspaceId ?? chat.linkedWorkspaces?.[projectName];
+      if (!id) return null;
+      const workspace = await ownedWorkspace(deps, id, ownerEmail);
+      if (workspace.projectName !== projectName) throw new ConflictError("The source chat's Workspace belongs to a different project");
+      return workspaceView(workspace);
+    },
+
+    async selectForChat(chatId: string, id: string, projectName: string, ownerEmail: string): Promise<WorkspaceView> {
+      const workspace = await ownedWorkspace(deps, id, ownerEmail);
+      if (workspace.projectName !== projectName) throw new NotFoundError("Workspace not found");
+      const chat = await sourceChat(chatId, ownerEmail);
+      if (chat.workspaceId === id) return workspaceView(workspace);
+      if (chat.workspaceId) throw new ConflictError("A Workspace chat cannot select another Workspace");
+      try { await deps.repository.linkChat(workspace, chatId, chat.linkedWorkspaces?.[projectName]); }
+      catch (error) {
+        if (isConditionalWriteFailure(error, { includeTransaction: true })) throw new ConflictError("The source chat's Workspace selection changed");
+        throw error;
+      }
+      return workspaceView(workspace);
+    },
+
+    async startForChat(input: StartWorkspaceInput, ownerEmail: string, sourceChatId: string): Promise<{ workspace: WorkspaceView; run?: WorkspaceRunView; reused: boolean }> {
+      const current = await this.forSourceChat(sourceChatId, input.projectName, ownerEmail);
+      if (current) return { workspace: current, reused: true };
+      const key = createHash("sha256").update(JSON.stringify(["source-chat", ownerEmail, sourceChatId, input.projectName])).digest("hex");
+      try { return { ...await this.start(input, ownerEmail, key, sourceChatId), reused: false }; }
+      catch (error) {
+        if (!(error instanceof ConflictError)) throw error;
+        const winner = await this.forSourceChat(sourceChatId, input.projectName, ownerEmail);
+        if (!winner) throw error;
+        return { workspace: winner, reused: true };
+      }
     },
 
     async forChat(chatId: string, ownerEmail: string): Promise<string | null> {
@@ -179,7 +246,9 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       }
       if (workspace.status === "closing" || workspace.status === "suspending") throw new ConflictError("Workspace is closing or suspending");
       if (workspace.activeRunId) throw new ConflictError("Workspace already has an active run");
-      if (workspace.activeActionId) throw new ConflictError("Workspace has a pending action approval");
+      if (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) throw new ConflictError("Workspace is busy");
+      const pending = workspace.activeActionId ? await deps.repository.approval(id, workspace.activeActionId) : null;
+      if (workspace.activeActionId && pending?.status !== "pending") throw new ConflictError("Workspace has an executing or uncertain action");
       const now = deps.now().toISOString();
       const run: WorkspaceRun = {
         id: `${deps.now().getTime()}-${deps.newId()}`, workspaceId: id, sessionId: workspace.sessionId,
@@ -187,7 +256,8 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       };
       try {
         await deps.repository.write({ workspace: { ...workspace, status: "active", revision: workspace.revision + 1,
-          activeRunId: run.id, updatedAt: now, dueAt: now, error: undefined }, expectedRevision: workspace.revision,
+          activeRunId: run.id, activeActionId: undefined, updatedAt: now, dueAt: now, error: undefined }, expectedRevision: workspace.revision,
+          ...(pending ? { approval: { ...pending, status: "rejected" as const, decidedBy: ownerEmail, decidedAt: now, result: "Superseded by a new Workspace task" } } : {}),
           run, request: { key: requestKey, fingerprint, runId: run.id }, ...(workspace.status === "closed" ? { reopenOwner: ownerEmail } : {}) });
       } catch (error) {
         if (!isConditionalWriteFailure(error, { includeTransaction: true })) throw error;

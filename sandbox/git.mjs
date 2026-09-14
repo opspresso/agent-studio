@@ -121,6 +121,7 @@ export async function handleGit(action, request) {
     const config = networkConfig(request);
     if (!await exists(gitDir)) {
       if (request.existingOnly) throw new Error("Saved workspace Git metadata is missing");
+      if ((await fs.readdir(work)).length) throw new Error("Cannot attach repository: the workdir is not empty; existing files were kept");
       const bundleFile = `${root}/source.bundle`;
       try {
         if (request.bundle !== undefined) {

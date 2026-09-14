@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { gzipSync } from "node:zlib";
-import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
+import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
 
 /** Disposable, network-isolated containers; never uses host credentials or a host volume. */
 async function main() {
-  const provider = createDockerSandboxProvider({ image: process.env.WORKSPACE_SANDBOX_IMAGE || "agent-studio-workspace:test",
+  const { provider, control } = createDockerSandboxBackend({ image: process.env.WORKSPACE_SANDBOX_IMAGE || "agent-studio-workspace:test",
     network: "none", memoryMb: 512, diskMb: 256, cpus: 1 });
   const workspaceId = `smoke-${randomUUID()}`;
   const containers = new Set<string>();
@@ -31,6 +31,8 @@ async function main() {
     assert.equal((await run(id, "test ! -e /var/run/docker.sock && test -z \"$DATABASE_URL$AWS_SECRET_ACCESS_KEY$GITHUB_TOKEN\" && echo isolated")).stdout.trim(), "isolated");
     assert.equal((await run(id, "printf first > state.txt; mkdir -p \"$HOME/.codex/sessions\"; printf native > \"$HOME/.codex/sessions/session.jsonl\"; printf excluded > \"$HOME/.codex/auth.json\"; ln -s state.txt state-link")).exitCode, 0);
     assert.equal((await run(id, "printf second >> state.txt; cat state.txt")).stdout, "firstsecond");
+    await assert.rejects(control(id, "git-prepare", { branch: "agent/preserve-files", baseBranch: "main", url: "https://example.com/repo.git" }), /workdir is not empty/);
+    assert.equal((await run(id, "cat state.txt")).stdout, "firstsecond", "repository attachment must not overwrite task files");
     assert.equal((await run(id, "printf private > locked.txt; chmod 000 locked.txt")).exitCode, 0);
     assert.equal((await run(id, 'mkdir -p "$HOME/.codex/.tmp" "$HOME/.npm"; truncate -s 70000000 "$HOME/.npm/cache"; ln -s /usr/bin/node "$HOME/.codex/.tmp/alias"')).exitCode, 0);
 

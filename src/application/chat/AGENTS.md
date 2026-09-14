@@ -34,6 +34,10 @@ there are no framework, adapter or composition-root imports here. Read
 
 ## Display records and SDK Session
 
+- `Chat.linkedWorkspaces` is the Workspace use case's durable project selection for an Agent
+  conversation. Workspace creation binds it atomically; ordinary chat updates preserve it.
+  It is distinct from `Chat.workspaceId`, which routes the Workspace's own Chat to its panel.
+
 - `createChat` and `sendMessage` pass only the new user input to execution. Native SDK Session
   items are the sole model history. Do not reconstruct turns from flattened `ChatMessage` rows.
   Memory recall is an independent Context capability, not a Session persistence mechanism.

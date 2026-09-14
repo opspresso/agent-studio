@@ -10,7 +10,7 @@ import { workspaceRepository } from "@/infrastructure/db/repositories/workspaceR
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
 import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
-import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
+import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
 import { workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { createDockerCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
@@ -1177,9 +1177,12 @@ export const executionDeps: ExecutionDeps = {
     try { await authorize(); } catch { return undefined; }
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
       requestGit: (id, ownerEmail, action) => getCodingUseCases().request(id, ownerEmail, action),
+      attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
+      workdir: WORKSPACE_DIRECTORY,
       policy: () => getWorkspaceConfig()?.projects.find(project => project.projectName === projectName),
       sleep: async ms => { await workspaceSleep(ms); },
-    }, { projectName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID() });
+    }, { projectName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID(),
+      sourceChatId: origin.conversation?.surface === "chat" ? origin.conversation.id : undefined });
   },
   sourceRefreshIdentity,
   audioTools: async (projectName, origin) => {

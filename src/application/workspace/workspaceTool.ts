@@ -4,8 +4,8 @@ import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
 import { workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
 import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types";
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
-import { NotFoundError, ValidationError } from "@/application/errors";
-import type { createWorkspaceUseCases } from "./workspaceUseCases";
+import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
+import type { createWorkspaceUseCases, WorkspaceView } from "./workspaceUseCases";
 import type { CodingApproval, CodingGitAction } from "@/domain/coding/types";
 import { boundedWorkspaceText } from "./output";
 
@@ -15,19 +15,37 @@ interface WorkspaceToolDeps {
   authorize(): Promise<void>;
   sleep(ms: number): Promise<void>;
   requestGit(id: string, ownerEmail: string, action: CodingGitAction): Promise<CodingApproval>;
+  attachRepository(id: string, ownerEmail: string, repository: string, baseBranch: string): Promise<WorkspaceView>;
+  workdir: string;
 }
-interface WorkspaceToolContext { projectName: string; ownerEmail: string; occurrence: string }
+interface WorkspaceToolContext { projectName: string; ownerEmail: string; occurrence: string; sourceChatId?: string }
 const WAIT_STEPS = 8;
 const OUTPUT_BYTES = 12_000;
 
 /** The model can manage owned compute, but never consume Git/deployment approvals. */
 export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceToolContext) {
+  const startKey = createHash("sha256").update(JSON.stringify([context.occurrence, context.projectName, "workspace-start"])).digest("hex");
   const input = (runtime: WorkspaceRuntime, task: string): WorkspaceInput => runtime === "command"
     ? { kind: "command", script: task } : { kind: "task", prompt: task };
   const reply = (value: unknown): McpToolResult => ({ text: JSON.stringify(value) });
+  const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, workspace_path: `/chats/${workspace.chatId}`,
+    workdir: deps.workdir, runtime: workspace.runtime, repository: workspace.coding?.repository ?? null,
+    base_branch: workspace.coding?.baseBranch ?? null, branch: workspace.coding?.branch ?? null });
+  const current = () => context.sourceChatId
+    ? deps.useCases.forSourceChat(context.sourceChatId, context.projectName, context.ownerEmail)
+    : deps.useCases.forStartRequest(context.projectName, context.ownerEmail, startKey);
   async function owned(id: string) {
     const detail = await deps.useCases.get(id, context.ownerEmail, true);
     if (detail.workspace.projectName !== context.projectName) throw new NotFoundError("Workspace not found");
+    return detail;
+  }
+  async function resolve(request: Record<string, unknown>, mutate = false) {
+    const selected = (!request.workspace_id || mutate) ? await current() : null;
+    const id = typeof request.workspace_id === "string" ? request.workspace_id : selected?.id;
+    if (!id) throw new ValidationError("No Workspace is selected. Read options and start a Workspace first");
+    if (mutate && selected && selected.id !== id) throw new ConflictError(`This chat uses Workspace ${selected.id}. Use use_workspace to explicitly select another existing Workspace`);
+    const detail = await owned(id);
+    if (mutate && !selected && context.sourceChatId) await deps.useCases.selectForChat(context.sourceChatId, id, context.projectName, context.ownerEmail);
     return detail;
   }
   return async (args: Record<string, unknown>, callId: string): Promise<McpToolResult> => {
@@ -37,9 +55,20 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     const request = args.request as Record<string, unknown>;
     if (!request || typeof request !== "object" || Array.isArray(request)) throw new ValidationError("Workspace requires a request");
     const operation = request.operation;
-    if (operation === "options") return reply({ project: context.projectName, runtimes: policy.runtimes,
-      repository: policy.repository ?? null, repositories: workspaceRepositories(policy), checks: policy.checks,
+    if (operation === "options") {
+      const selected = await current();
+      return reply({ project: context.projectName, runtimes: policy.runtimes, workdir: deps.workdir,
+      current_workspace: selected ? location(selected) : null,
+      default_repository: policy.repository ?? null, repositories: workspaceRepositories(policy), checks: policy.checks,
+      workspace_selection: "A chat keeps one selected Workspace per project. Repeated start returns it without queueing work. Use run for follow-ups. Both repository and base_branch must be selected for a clone; null means deliberately Git-free. workspace_path is a browser link; task files belong in workdir, using relative paths.",
       git_actions: "Use prepare_git for commit, commit-and-push or push, then return approval_path and stop. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
+    }
+    if (operation === "use_workspace") {
+      if (!context.sourceChatId) throw new ValidationError("Workspace selection requires a chat");
+      const detail = await owned(String(request.workspace_id));
+      const selected = await deps.useCases.selectForChat(context.sourceChatId, detail.workspace.id, context.projectName, context.ownerEmail);
+      return reply({ ...location(selected), selected: true, task_queued: false, next: "run" });
+    }
     if (operation === "start" || operation === "run") {
       if (!callId || typeof request.task !== "string") throw new ValidationError("Workspace task identity is missing");
       const key = createHash("sha256").update(JSON.stringify([context.occurrence, context.projectName, callId])).digest("hex");
@@ -50,18 +79,43 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
           (request.base_branch !== null && typeof request.base_branch !== "string")) throw new ValidationError("Invalid repository selection");
         if (request.repository !== null && !workspaceAllowsRepository(policy, request.repository as string)) throw new ValidationError("The requested repository is not configured for this project");
         if ((request.repository === null) !== (request.base_branch === null)) throw new ValidationError("Repository work requires both repository and base_branch");
-        const started = await deps.useCases.start({ projectName: context.projectName, runtime,
-          ...(request.repository !== null ? { repository: String(request.repository), baseBranch: String(request.base_branch) } : {}), input: input(runtime, request.task) }, context.ownerEmail, key);
-        return reply({ workspace_id: started.workspace.id, run_id: started.run.id, status: started.run.status,
-          workspace_path: `/chats/${started.workspace.chatId}`, next: "wait", after_seq: 0 });
+        const startInput = { projectName: context.projectName, runtime,
+          ...(request.repository !== null ? { repository: String(request.repository), baseBranch: String(request.base_branch) } : {}), input: input(runtime, request.task) };
+        let started;
+        if (context.sourceChatId) started = await deps.useCases.startForChat(startInput, context.ownerEmail, context.sourceChatId);
+        else {
+          try { started = { ...await deps.useCases.start(startInput, context.ownerEmail, startKey), reused: false }; }
+          catch (error) {
+            if (!(error instanceof ConflictError)) throw error;
+            const existing = await current();
+            if (!existing) throw error;
+            started = { workspace: existing, reused: true };
+          }
+        }
+        if (started.reused) return reply({ ...location(started.workspace), reused: true, task_queued: false,
+          run_id: started.workspace.activeRunId ?? null, workspace_status: started.workspace.status,
+          next: started.workspace.activeRunId ? "wait" : "run", after_seq: 0,
+          message: "This chat already has a Workspace. No new Workspace or task was created. Use run for follow-up work. To attach a repository to a Git-free Workspace, use attach_repository; do not call start again." });
+        return reply({ ...location(started.workspace), run_id: started.run!.id, status: started.run!.status,
+          reused: false, task_queued: true, next: "wait", after_seq: 0 });
       }
-      const detail = await owned(String(request.workspace_id));
+      const detail = await resolve(request, true);
+      if ((request.runtime != null && request.runtime !== detail.workspace.runtime) ||
+        (request.repository != null && String(request.repository).toLowerCase() !== detail.workspace.coding?.repository.toLowerCase()) ||
+        (request.base_branch != null && request.base_branch !== detail.workspace.coding?.baseBranch)) {
+        throw new ValidationError("run keeps the selected Workspace's runtime and repository. Read options; use attach_repository to connect a Git-free Workspace");
+      }
       const run = await deps.useCases.enqueue(detail.workspace.id, context.ownerEmail, input(detail.workspace.runtime, request.task), key);
-      return reply({ workspace_id: detail.workspace.id, run_id: run.id, status: run.status,
-        workspace_path: `/chats/${detail.workspace.chatId}`, next: "wait", after_seq: 0 });
+      return reply({ ...location(detail.workspace), run_id: run.id, status: run.status, next: "wait", after_seq: 0 });
     }
-    const id = String(request.workspace_id);
-    let detail = await owned(id);
+    if (!["status", "wait", "attach_repository", "prepare_git", "cancel", "close"].includes(String(operation))) throw new ValidationError("Unknown Workspace operation");
+    let detail = await resolve(request, !["status", "wait"].includes(String(operation)));
+    const id = detail.workspace.id;
+    if (operation === "attach_repository") {
+      if (typeof request.repository !== "string" || typeof request.base_branch !== "string") throw new ValidationError("Repository and base_branch are required");
+      const workspace = await deps.attachRepository(id, context.ownerEmail, request.repository, request.base_branch);
+      return reply({ ...location(workspace), task_queued: false, next: "run" });
+    }
     if (operation === "prepare_git") {
       if (!detail.workspace.coding) throw new ValidationError("This workspace has no Git repository");
       const value = request.action as Record<string, unknown> | undefined;
@@ -76,20 +130,20 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       const same = pending?.action.kind === action.kind && (action.kind === "push" ||
         ((pending.action.kind === "commit" || pending.action.kind === "commit-and-push") && pending.action.message === action.message));
       const approval = same && pending ? pending : await deps.requestGit(id, context.ownerEmail, action);
-      return reply({ workspace_id: id, workspace_path: `/chats/${detail.workspace.chatId}`,
+      return reply({ ...location(detail.workspace),
         approval_path: `/chats/${detail.workspace.chatId}#actions`, approval_id: approval.id,
         action: approval.action, status: approval.status, next: "Return approval_path to the user and stop. The action has not executed; do not run Git in the Sandbox or retry through GitHub tools." });
     }
     if (operation === "cancel" || operation === "close") {
       if (operation === "cancel") await deps.useCases.cancel(id, context.ownerEmail);
       else await deps.useCases.close(id, context.ownerEmail);
-      return reply({ workspace_id: id, requested: operation, workspace_path: `/chats/${detail.workspace.chatId}` });
+      return reply({ ...location(detail.workspace), requested: operation });
     }
     if (operation !== "status" && operation !== "wait") throw new ValidationError("Unknown Workspace operation");
     const after = request.after_seq ?? 0;
     if (!Number.isSafeInteger(after) || Number(after) < 0) throw new ValidationError("Invalid Workspace cursor");
-    const runId = request.run_id === null ? detail.runs[0]?.id : String(request.run_id);
-    if (!runId) return reply({ workspace_id: id, status: detail.workspace.status });
+    const runId = request.run_id == null ? detail.runs[0]?.id : String(request.run_id);
+    if (!runId) return reply({ ...location(detail.workspace), status: detail.workspace.status, next: "run" });
     // An explicit old run remains readable without accepting a foreign run id.
     if (!detail.runs.some(run => run.id === runId)) detail = await deps.useCases.get(id, context.ownerEmail);
     let run = detail.runs.find(run => run.id === runId);
@@ -104,9 +158,8 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     const raw = selected.flatMap(event => event.data.kind === "output" || event.data.kind === "message" || event.data.kind === "warning" ? [event.data.text] : []).join("");
     const output = boundedWorkspaceText(raw, OUTPUT_BYTES);
     const diff = boundedWorkspaceText(run.diff ?? "", OUTPUT_BYTES);
-    return reply({ workspace_id: id, workspace_status: detail.workspace.status, workspace_path: `/chats/${detail.workspace.chatId}`,
-      run_id: run.id, status: run.status, error: run.error, runtime: detail.workspace.runtime,
-      repository: detail.workspace.coding?.repository, branch: detail.workspace.coding?.branch,
+    return reply({ ...location(detail.workspace), workspace_status: detail.workspace.status,
+      run_id: run.id, status: run.status, error: run.error,
       git_action: detail.approvals[0] ? { id: detail.approvals[0].id, action: detail.approvals[0].action,
         status: detail.approvals[0].status, result: detail.approvals[0].result } : undefined,
       checks: run.checks.map(({ output: _output, ...check }) => { void _output; return check; }),

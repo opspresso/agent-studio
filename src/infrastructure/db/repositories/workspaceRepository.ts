@@ -40,12 +40,25 @@ function assertChild(workspaceId: string, child: { workspaceId: string }): void 
   if (child.workspaceId !== workspaceId) throw new Error("workspace child scope mismatch");
 }
 
+function sourceChatLink(workspace: Workspace, sourceChatId: string, expectedWorkspaceId?: string): TransactOp {
+  return { kind: "update", key: keys.chat(sourceChatId),
+    patch: row => ({ ...row, linkedWorkspaces: { ...(row?.linkedWorkspaces as Record<string, string> | undefined), [workspace.projectName]: workspace.id } }),
+    condition: row => {
+      const links = (row?.linkedWorkspaces ?? {}) as Record<string, string>;
+      const current = links[workspace.projectName];
+      return chatIsLive(row) && row?.ownerEmail === workspace.ownerEmail && !row.workspaceId &&
+        !isExpired(row.expiresAt, Date.now()) && (current === workspace.id || current === expectedWorkspaceId) &&
+        (current !== undefined || Object.keys(links).length < WORKSPACE_LIMITS.linkedProjects);
+    } };
+}
+
 /** Revision checks fence every child write, including terminal events and approvals. */
 export const workspaceRepository: WorkspaceRepository = {
-  async create(workspace, session, chat) {
+  async create(workspace, session, chat, sourceChatId) {
     assertChild(workspace.id, session);
     if (chat && (chat.chatId !== workspace.chatId || chat.ownerEmail !== workspace.ownerEmail || chat.projectName !== workspace.projectName)) throw new Error("Workspace chat scope mismatch");
     if (workspace.revision !== 0 || workspace.sessionId !== session.id || workspace.runtime !== session.runtime) throw new Error("invalid initial workspace");
+    if (sourceChatId === workspace.chatId) throw new Error("Workspace cannot be its own source chat");
     await transact([
       { kind: "check", key: keys.project(workspace.projectName), condition: projectIsLive },
       ...(chat ? [{ kind: "put" as const, item: chatCreationItem({ ...chat, workspaceId: workspace.id }), condition: conditions.notExists }] : [
@@ -58,6 +71,18 @@ export const workspaceRepository: WorkspaceRepository = {
         expiresAt: expiry(workspace.updatedAt) }, condition: conditions.notExists },
       { kind: "put", item: { ...keys.workspaceChild(workspace.id, "SESSION", session.id), value: session,
         expiresAt: expiry(session.updatedAt) }, condition: conditions.notExists },
+      ...(sourceChatId ? [sourceChatLink(workspace, sourceChatId)] : []),
+    ]);
+  },
+  async linkChat(workspace, sourceChatId, expectedWorkspaceId) {
+    if (sourceChatId === workspace.chatId) throw new Error("Workspace cannot be its own source chat");
+    await transact([
+      { kind: "check", key: keys.workspace(workspace.id), condition: row => {
+        const current = row?.value as Workspace | undefined;
+        return current?.ownerEmail === workspace.ownerEmail && current.projectName === workspace.projectName &&
+          !current.deleteRequestedAt && !isExpired(row?.expiresAt, Date.now());
+      } },
+      sourceChatLink(workspace, sourceChatId, expectedWorkspaceId),
     ]);
   },
   async get(id) { return value<Workspace>(await getItem(keys.workspace(id))); },

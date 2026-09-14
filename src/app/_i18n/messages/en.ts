@@ -68,6 +68,7 @@ export const en = {
   "workspace.stop": "Stop run",
   "workspace.send": "Send",
   "workspace.pendingActionHint": "Review the pending action in Git & deployment.",
+  "workspace.pendingEditHint": "A new task cancels the pending Git review. Review the updated changes again before publishing.",
   "workspace.reviewAction": "Review before approval",
   "workspace.reviewHint": "Confirm the exact request and changes. Git and deployment actions require your approval.",
   "workspace.approve": "Approve and execute",

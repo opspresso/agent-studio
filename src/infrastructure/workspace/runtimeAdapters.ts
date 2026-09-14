@@ -1,5 +1,8 @@
 import type { WorkspaceRuntimeAdapter, SandboxCommand } from "@/domain/workspace/ports";
 import type { WorkspaceRuntime, WorkspaceEventData } from "@/domain/workspace/types";
+import { WORKSPACE_SHELL } from "@/shared/workspaceShell";
+
+export const WORKSPACE_DIRECTORY = "/workspace/repo";
 
 export interface WorkspaceRuntimeConfig {
   model?: string;
@@ -90,10 +93,10 @@ export function createWorkspaceRuntimeAdapter(kind: WorkspaceRuntime, config: Wo
     kind,
     command(_workspace, current, input, timeoutMs): SandboxCommand {
       if (current.runtime !== kind) throw new Error("Runtime session kind mismatch");
-      const cwd = "/workspace/repo";
+      const cwd = WORKSPACE_DIRECTORY;
       if (kind === "command") {
         if (input.kind !== "command") throw new Error("Command runtime requires a script");
-        return { argv: ["/bin/sh", "-s"], stdin: input.script, cwd, timeoutMs };
+        return { argv: [...WORKSPACE_SHELL], stdin: input.script, cwd, timeoutMs };
       }
       if (input.kind !== "task") throw new Error("Agent runtime requires task input");
       const model = config.model ? ["--model", config.model] : [];

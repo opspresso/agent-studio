@@ -11,6 +11,7 @@ import { workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { claimWorkspace, WorkspaceLeaseLost, WorkspaceWorkerState, WORKSPACE_POLL_MS, WORKSPACE_RETRY_MS } from "./workerState";
 import { boundedWorkspaceText, boundWorkspaceEvent, foldWorkspaceOutput } from "./output";
 import { workspaceTaskInput } from "./taskInput";
+import { WORKSPACE_SHELL } from "@/shared/workspaceShell";
 
 export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   provider: SandboxProvider;
@@ -170,7 +171,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     const operationId = run.operationId!;
     let operation = await deps.provider.operation(sandbox.externalId, operationId);
     if (operation.status === "not-started") {
-      const command = check ? { argv: ["/bin/sh", "-s"], stdin: check.command, timeoutMs: Math.max(1, Math.floor(remaining)) }
+      const command = check ? { argv: [...WORKSPACE_SHELL], stdin: check.command, timeoutMs: Math.max(1, Math.floor(remaining)) }
         : runtime.command(workspace, session, workspaceTaskInput(workspace, run.input), Math.max(1, Math.floor(remaining)));
       const current = await state.read();
       if (current.run?.id !== run.id) throw new WorkspaceLeaseLost();

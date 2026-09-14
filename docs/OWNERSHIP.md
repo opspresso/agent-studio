@@ -160,6 +160,8 @@
 | 일반 작업과 코딩 작업의 Workspace·Sandbox·Runtime Session·Run 계약 | `src/domain/workspace/`; Git 저장소와 PR·승인 형태는 `src/domain/coding/types.ts` |
 | Native 코딩 턴에 전달하는 Workspace Git 승인 경계 지침 | `src/application/workspace/taskInput.ts` |
 | Workspace admission과 중복 요청의 동일성 | `src/application/workspace/workspaceUseCases.ts`; revision·receipt·이벤트의 원자적 쓰기는 `src/infrastructure/db/repositories/workspaceRepository.ts` |
+| 원래 Chat의 프로젝트별 Workspace 선택과 동시 생성 차단 | `Chat.linkedWorkspaces`; `workspaceUseCases.startForChat`과 `workspaceRepository`의 source Chat transaction |
+| Workspace 명령과 검사에 공통인 셸 실패 처리 | `src/shared/workspaceShell.ts` |
 | Workspace 체크포인트의 저장 상한과 암호화 주소 | `src/domain/workspace/limits.ts`, `src/domain/security/secretContext.ts`; 청크·manifest 저장과 무결성 검사는 `src/infrastructure/db/repositories/workspaceCheckpointStore.ts` |
 | 모델 이력·승인 체크포인트·revision과 저장 예산 | `src/application/runtime/session.ts`; 저장 CAS와 tombstone은 `src/infrastructure/db/repositories/runtimeSessionRepository.ts` |
 | SDK native span의 로컬 수집과 안전한 메타데이터 변환 | `src/application/runtime/tracing.ts` |
