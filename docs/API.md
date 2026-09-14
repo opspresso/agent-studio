@@ -9,11 +9,6 @@ Agent Studio 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는
 
 ## 규약
 
-Workspace GitHub webhook은 `POST /api/workspaces/github/webhook`이다.
-`X-Hub-Signature-256`의 HMAC-SHA256과 `X-GitHub-Delivery`를 요구하며 응답은 `{processed: boolean}`이다.
-중복·관련 없는 이벤트는 `processed: false`, 잘못된 서명은 401, 같은 delivery ID의 다른 본문은 409다.
-본문은 공용 이벤트 상한을 적용한다. 이 경로는 PR 상태만 갱신하고 작업 실행·승인을 수행하지 않는다.
-
 - **Content type**: 따로 언급하지 않는 한 요청과 응답은 JSON 이다. 스트리밍 응답은
   `text/event-stream` 이다.
 - **Auth**: 애플리케이션 라우트는 Better Auth 세션 쿠키를 요구한다 (Keycloak · 표준 OIDC · Google · 비밀번호
@@ -709,6 +704,39 @@ chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name`, `note`와 다운
 실행은 다음 모델 문맥에서 제외한다. 승인 뒤 프로세스가 중단된 경우 `status: "running"`으로
 남으며 자동 재실행하지 않는다. 도구 결과를 확인한 뒤 폐기하고 새 턴을 시작한다.
 승인 대기 중 새 메시지는 `409`다. 모든 변경 요청은 session의 동일 출처 검사를 적용한다.
+
+## Workspaces
+
+Workspace 사용자 API는 `withMemberAuth`로 보호한다. 조회·실행·승인은 Chat 소유자만 가능하며
+현재 프로젝트 접근 권한도 확인한다. 다른 소유자의 Workspace는 404로 응답한다.
+
+| 경로 | 메서드 | 계약 |
+|---|---|---|
+| `/api/workspaces/options` | GET | 접근 가능한 프로젝트의 Runtime·저장소·workflow 선택지 |
+| `/api/workspaces/branches?project={name}` | GET | 설정한 저장소의 브랜치 100개와 `hasMore` |
+| `/api/workspaces` | POST | `{projectName, runtime, baseBranch?, input}`으로 Chat·Workspace·첫 Run을 만들고 `{workspace, run}`과 202 반환 |
+| `/api/workspaces/{id}` | GET | `{workspace, session, runs, approvals}`. 실행·승인은 최근 50개, `tail=1`이면 각각 1개 |
+| `/api/workspaces/{id}` | DELETE | 체크포인트 저장과 Sandbox 정리를 요청하고 204 반환 |
+| `/api/workspaces/{id}/runs` | POST | `input`으로 후속 Run을 접수하고 `{run}`과 202 반환 |
+| `/api/workspaces/{id}/runs` | DELETE | 현재 Run의 취소를 요청하고 204 반환 |
+| `/api/workspaces/{id}/events?run={runId}&after={seq}` | GET | 최대 200개의 `{events, nextSeq, hasMore}`. `after=0`도 유효한 cursor |
+| `/api/workspaces/{id}/actions` | POST | Git·배포 요청의 현재 tree/HEAD를 검토하고 `{approval}` 반환. 효과는 아직 실행하지 않음 |
+| `/api/workspaces/{id}/actions/{actionId}` | POST | `{approve: boolean}`으로 명시적 승인·거절. 같은 승인은 한 번만 소비 |
+
+Runtime은 `command`, `codex`, `claude`, `opencode`다. `input`은 일반 명령의
+`{kind:"command", script}` 또는 Agent의 `{kind:"task", prompt}`이며 각각 40,000자까지 받는다.
+생성과 후속 Run은 `Idempotency-Key`를 요구한다. 같은 키·같은 내용은 기존 결과를 반환하며
+다른 내용으로 키를 재사용하면 409다. `baseBranch`가 없으면 Git을 사용하지 않는다.
+lease·operation handle·체크포인트 bytes와 주소는 사용자 응답에 넣지 않는다.
+
+Git 동작은 `commit`, `pull-request`(`draft` 선택), `merge`, `deploy`이며 자세한 승인 조건은
+[Workspace 설계](design/workspaces.md#git과-승인)를 따른다. 승인 요청과 실제 실행 모두
+현재 파일 fingerprint를 확인한다. main 병합은 정확한 PR head와 CI 성공을 요구한다.
+
+`POST /api/workspaces/github/webhook`은 `X-Hub-Signature-256`의 HMAC-SHA256과
+`X-GitHub-Delivery`를 요구하며 `{processed: boolean}`을 반환한다. 중복·관련 없는 이벤트는
+`processed: false`, 잘못된 서명은 401, 같은 delivery ID의 다른 본문은 409다. 본문은 공용
+이벤트 상한을 적용한다. PR 상태만 갱신하며 작업 실행·승인을 수행하지 않는다.
 
 ## 레지스트리·연동 오퍼레이션
 

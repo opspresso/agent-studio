@@ -108,7 +108,8 @@ pnpm worker:workspace
 
 앱과 worker는 같은 PostgreSQL, `AES_ENCRYPTION_KEY`, Workspace 설정을 사용한다. DB는 기존
 migration 명령으로 먼저 준비한다. 배포 이미지는 `node build/workspace-worker.cjs`를 제공하며
-Docker CLI도 포함한다. worker만 Docker daemon 접근 권한을 갖는다. Sandbox에는 socket,
+Docker CLI도 포함한다. 실행 worker와 Git 승인 API가 있는 앱 서버는 같은 Docker daemon에
+접근해야 한다. 이 제어 프로세스에는 전용 daemon 또는 Docker context를 사용한다. Sandbox에는 socket,
 호스트 디렉터리나 운영 자격증명을 mount하지 않는다. 별도 worker의 HTTP healthcheck는 사용하지 않는다.
 
 `none` 네트워크는 일반 스크립트의 무통신 실행에 사용한다. 모델·저장소 접속이 필요한 작업은

@@ -795,6 +795,8 @@ Workspace는 chat 소유자에게만 공개되며 실행·승인은 현재 프�
 Sandbox에는 호스트 mount, Docker socket, 배포 자격증명과 장기 Git 자격증명을 전달하지 않는다.
 Git 메타데이터는 root 소유로 두고 Agent의 실행 계정은 작업 파일만 수정한다.
 GitHub App의 private key는 서버에 남고 clone/push에 발행하는 token은 저장소·권한·만료가 제한된다.
+계정 토큰 모드는 서버의 임시 bare Git 저장소에서 인증하고 Sandbox에는 자격증명 없는 bundle만
+전달한다. 서버에서는 저장소 checkout·hook·build script를 실행하지 않는다.
 공개 Git endpoint는 HTTPS와 DNS pinning을 사용하고 내부 호스트 예외는 배포의 별도 목록을 따른다.
 
 효과는 검토한 tree/HEAD와 사용자 결정에 묶인 승인 레코드를 먼저 claim한 뒤 실행한다.
