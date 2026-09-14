@@ -16,6 +16,7 @@ export async function deleteChat(
     // exists, and a chat is private to its owner (docs/API.md).
     throw new ChatNotFoundError();
   }
+  await deps.closeWorkspace?.(chatId, userEmail);
   await deps.runtimeSessions?.repository.delete(chatId, userEmail);
   await deps.chats.delete(chatId);
 }

@@ -26,6 +26,17 @@ function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Part
 }
 
 describe("Studio prepares native SDK agent bindings", () => {
+  it("binds Workspace for the requesting origin but excludes background task effects", async () => {
+    const f = fixture();
+    const handler = vi.fn(async () => ({ text: "ready" }));
+    f.deps.workspaceTool = vi.fn(async () => handler);
+    const bound = await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, f.origin);
+    expect(bound.workspaceTool).toBe(handler);
+    expect(f.deps.workspaceTool).toHaveBeenCalledWith("parent", f.origin);
+    const background = await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, { ...f.origin, backgroundTask: true });
+    expect(background.workspaceTool).toBeUndefined();
+    expect(f.deps.workspaceTool).toHaveBeenCalledTimes(1);
+  });
   it("loads only the version the published pointer names", async () => {
     const f = fixture();
     const prepared = await f.prepare();

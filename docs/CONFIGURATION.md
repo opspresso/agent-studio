@@ -442,6 +442,45 @@ endpoint 에 붙여 넣는다 ([design/teams.md](design/teams.md)).
 
 Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 
+## Workspace 실행
+
+`WORKSPACE_CONFIG`는 선택적인 JSON 설정이다. 없으면 새 Workspace 실행을 비활성화한다.
+이미지·네트워크·모델 자격증명은 배포가 소유하며 콘솔 설정 오버라이드로 변경하지 않는다.
+
+| 필드 | 기본값 | 계약 |
+|---|---|---|
+| `image` | 필수 | `sandbox/Dockerfile`로 만든 실행 이미지 |
+| `network` | `none` | 운영자가 egress를 제한한 Docker 네트워크. `host`, `bridge`, `default`는 거절한다 |
+| `context` | Docker 기본 context | worker의 Docker context. 실행 중 변경하지 않는다 |
+| `memoryMb`, `diskMb`, `cpus` | `2048`, `2048`, `2` | 메모리·각 tmpfs 상한과 CPU 한도 |
+| `idleTtlSeconds` | `1800` | 최소 60초, 최대 7일. 턴 완료 후 비활성 Sandbox를 정리한다 |
+| `projects` | 필수 배열 | `projectName`, 허용 `runtimes`, 선택적인 `repository: "owner/repo"`, `checks`, `deploymentWorkflows` |
+| `projects[].checks` | `[]` | `{name: "test" | "lint" | "build", command}`. 각 Run 뒤 Sandbox에서 실행할 검사 |
+| `projects[].agentTools` | `false` | 로그인한 member 이상 사용자가 이 프로젝트의 Agent에서 `Workspace` 빌트인을 사용할 수 있게 한다 |
+| `runtimes` | `{}` | `command`, `codex`, `claude`, `opencode`별 `model`, `environment` |
+
+Runtime 환경은 `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,
+`ANTHROPIC_MODEL`, `OPENCODE_CONFIG_CONTENT`만 허용한다. Git·클라우드·운영 환경변수는 상속하지 않는다.
+Codex의 비대화형 API 인증은 `CODEX_API_KEY`를 사용한다.
+Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
+일반 명령은 모델 Version 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
+Studio의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
+
+Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐와 TTL이
+진행되지 않는다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
+
+코딩 작업은 GitHub App 또는 서버 계정 토큰을 사용한다. 기본 `WORKSPACE_GITHUB_AUTH=app`은
+`WORKSPACE_GITHUB_APP_ID`, `WORKSPACE_GITHUB_INSTALLATION_ID`, `WORKSPACE_GITHUB_PRIVATE_KEY`를
+모두 요구한다. `WORKSPACE_GITHUB_AUTH=token`은 설정 화면의 GitHub token을 사용하며, 저장된
+오버라이드가 없으면 `GITHUB_TOKEN`을 읽는다. 이 모드는 Git 인증을 서버에서만 수행하고
+자격증명이 없는 Git bundle을 Sandbox에 전달한다. 서버에 Git 실행 파일과 임시 디스크 공간이
+필요하며 bundle은 체크포인트와 같은 64 MiB 한도를 따른다. API·Git web 주소는 기존 `GITHUB_API_URL`과
+`GITHUB_WEB_URL`을 사용한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
+호스트 접미사를 선언하며, 다른 내부 URL 허용 목록과 공유하지 않는다.
+`WORKSPACE_GITHUB_WEBHOOK_SECRET`은 GitHub webhook HMAC 검증에 사용한다.
+App에는 Contents, Pull requests, Actions 쓰기와 Checks, Commit statuses 읽기를 부여하되,
+각 요청의 installation token은 실제 작업에 필요한 권한과 저장소로 좁힌다.
+
 ## 관측성과 보존 기간
 
 | 변수 | 기본값 | Runtime | 설명 |
@@ -453,6 +492,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `TRACE_RETENTION_DAYS` | `30` | — | 행의 `expiresAt` 까지의 일수. 지난 행은 schedule-scan 틱이 쓸어낸다. |
 | `USAGE_RETENTION_DAYS` | `400` | — | 대시보드의 184일 질의 창보다 한참 길게 유지한다. 하한은 `31`. 한 달 전체. 인데, 월간 비용 가드가 그 달의 일별 행들을 합산하기 때문이다. 더 짧은 창은 월말로 갈수록 지출을 조용히 적게 세게 된다. |
 | `CHAT_RETENTION_DAYS` | `180` | — | chat 의 마지막 활동 시점부터 잰다. |
+| `WORKSPACE_RETENTION_DAYS` | `180` | — | Workspace 실행·승인·이벤트·암호화된 체크포인트 보존 기간이다. Sandbox가 정리된 Workspace의 META도 이 기간을 따른다. 실행·정리 중인 META는 컴퓨팅 자원 정리 전에 sweep되지 않는다. |
 | `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | 전달 이력은 운영 로그이지 보관할 기록이 아니다. |
 | `A2A_TASK_RETENTION_DAYS` | `1` | — | 일시적인 작업 상태로, `SendMessage` 이후 `GetTask`/`CancelTask` 가 가능할 만큼만 유지한다. |
 | `ARTIFACT_RETENTION_DAYS` | `180` | — | 런이 만들어 낸 것의 이름을 담는 행. 기본값은 `CHAT_RETENTION_DAYS` 에 맞췄다. 그것이 이미 생성된 이미지의 실효 수명이기 때문이다. **`CHAT_RETENTION_DAYS` 이상으로 유지하라**: 더 짧으면 대화에서 아직 보이는 그림이 자기 갤러리에서 먼저 사라진다. 이 창과 버킷의 lifecycle 규칙은 서로 독립된 두 설정이다. [OPERATIONS.md](OPERATIONS.md#행-보존) 를 보라. |

@@ -6,6 +6,8 @@ import { MAX_TOOLS_PER_REQUEST } from "@/domain/llm/toolLimits";
 import type { ChatMessageInput, McpToolResult } from "@/domain/llm/types";
 import { SAVABLE_TYPES } from "@/domain/artifact/types";
 import { AUDIO_TOOL_DEFS } from "@/application/audio/toolDefinitions";
+import { WORKSPACE_TOOL_DEF } from "./workspaceToolDefinition";
+import { WORKSPACE_TOOL_NAME } from "@/domain/llm/toolNames";
 import { AUDIO_TOOL_NAMES } from "@/domain/llm/toolNames";
 import { agentToolName } from "@/domain/llm/toolNames";
 import { parseImageDataUrl } from "@/domain/llm/types";
@@ -195,6 +197,7 @@ export interface AgentCapabilityDeps {
   saveFile?: FileSaver;
   fileTool?: (args: Record<string, unknown>) => Promise<McpToolResult>;
   audioTools?: (tool: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+  workspaceTool?: (args: Record<string, unknown>, callId: string) => Promise<McpToolResult>;
   /**
    * Serves the Slack read tools, or absent when this run has no workspace
    * to look at. One function rather than four deps: the tools differ only in
@@ -931,6 +934,7 @@ export interface AgentToolsInput {
   withSaveFileTool: boolean;
   withFileTool?: boolean;
   withAudioTools?: boolean;
+  withWorkspaceTool?: boolean;
   /** Whether this run may read the Slack workspace its project's bot is in. */
   withSlackTools: boolean;
   /**
@@ -994,6 +998,10 @@ export function buildAgentTools(input: AgentToolsInput): {
   if (input.withAudioTools) {
     tools.push(...AUDIO_TOOL_DEFS);
     for (const name of AUDIO_TOOL_NAMES) builtinNames.add(name);
+  }
+  if (input.withWorkspaceTool) {
+    tools.push(WORKSPACE_TOOL_DEF);
+    builtinNames.add(WORKSPACE_TOOL_NAME);
   }
   if (input.withSlackTools) {
     tools.push(...SLACK_TOOL_DEFS);
@@ -1160,6 +1168,7 @@ export function assembleAgentRun(
     withSaveFileTool,
     withFileTool: Boolean(deps.fileTool),
     withAudioTools: Boolean(deps.audioTools),
+    withWorkspaceTool: Boolean(deps.workspaceTool),
     withImageTool: Boolean(deps.generateImage),
     withEditTool: canEdit,
     withImageTransfer: canTransfer,

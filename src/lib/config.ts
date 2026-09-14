@@ -4,6 +4,7 @@ import { parseKeyValueList, parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { log } from "@/shared/logger";
 import { decodeAes256Key } from "@/shared/aesKey";
+import { parseWorkspaceConfig } from "./workspaceConfig";
 
 export type Stage = "local" | "alpha" | "prod";
 
@@ -147,6 +148,27 @@ export function fractionEnv(name: string, fallback: number): number {
 }
 
 export const config = {
+  get workspace() { return parseWorkspaceConfig(process.env.WORKSPACE_CONFIG); },
+  get workspaceGitHub() {
+    const auth = optionalEnv(process.env.WORKSPACE_GITHUB_AUTH);
+    if (auth && auth !== "app" && auth !== "token") throw new Error("Invalid WORKSPACE_GITHUB_AUTH");
+    if (auth === "token") {
+      if (!config.githubWebUrl) throw new Error("Workspace GitHub web URL is required");
+      return { apiUrl: config.githubApiUrl, webUrl: config.githubWebUrl, auth: "token" as const,
+        webhookSecret: optionalEnv(process.env.WORKSPACE_GITHUB_WEBHOOK_SECRET),
+        internalHosts: parseList(process.env.WORKSPACE_GITHUB_INTERNAL_HOSTS ?? "") };
+    }
+    const appId = optionalEnv(process.env.WORKSPACE_GITHUB_APP_ID);
+    const installationId = optionalEnv(process.env.WORKSPACE_GITHUB_INSTALLATION_ID);
+    const privateKey = optionalEnv(process.env.WORKSPACE_GITHUB_PRIVATE_KEY);
+    if (!appId && !installationId && !privateKey) return undefined;
+    if (!appId || !installationId || !privateKey || !/^\d+$/.test(installationId) || !config.githubWebUrl) throw new Error("Incomplete Workspace GitHub App configuration");
+    return { appId, installationId: Number(installationId), privateKey: privateKey.replaceAll("\\n", "\n"),
+      apiUrl: config.githubApiUrl, webUrl: config.githubWebUrl,
+      webhookSecret: optionalEnv(process.env.WORKSPACE_GITHUB_WEBHOOK_SECRET),
+      internalHosts: parseList(process.env.WORKSPACE_GITHUB_INTERNAL_HOSTS ?? ""),
+    };
+  },
   get stage(): Stage {
     const stage = process.env.STAGE ?? "local";
     if (stage !== "local" && stage !== "alpha" && stage !== "prod") {

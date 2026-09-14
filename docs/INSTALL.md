@@ -95,6 +95,50 @@ ffmpeg는 runtime 이미지에 포함돼 있다. 동시에 두 작업을 처리�
 비공개 Artifacts이며 외부 기록은 명시적으로 요청하거나 선택한 경우에만 수행한다. Memory delivery에는 수신 서버의
 문서 수집·멱등 저장 도구가 필요하다. 오디오 처리 화면에서 작업 설정과 한도를 revision으로 저장한다.
 
+## Workspace worker
+
+Workspace는 선택 기능이다. `sandbox/Dockerfile`로 별도 실행 이미지를 만들고, 아래처럼
+`WORKSPACE_CONFIG`에 허용할 Studio 프로젝트와 runtime을 선언한다. 일반 작업에는 저장소가 필요하지 않다.
+
+```bash
+docker build -t agent-studio-workspace:local sandbox
+export WORKSPACE_CONFIG='{"image":"agent-studio-workspace:local","network":"none","projects":[{"projectName":"tasks","runtimes":["command"]}]}'
+pnpm worker:workspace
+```
+
+앱과 worker는 같은 PostgreSQL, `AES_ENCRYPTION_KEY`, Workspace 설정을 사용한다. DB는 기존
+migration 명령으로 먼저 준비한다. 배포 이미지는 `node build/workspace-worker.cjs`를 제공하며
+Docker CLI도 포함한다. 실행 worker와 Git 승인 API가 있는 앱 서버는 같은 Docker daemon에
+접근해야 한다. 이 제어 프로세스에는 전용 daemon 또는 Docker context를 사용한다. Sandbox에는 socket,
+호스트 디렉터리나 운영 자격증명을 mount하지 않는다. 별도 worker의 HTTP healthcheck는 사용하지 않는다.
+
+`none` 네트워크는 일반 스크립트의 무통신 실행에 사용한다. 모델·저장소 접속이 필요한 작업은
+운영자가 egress 정책을 적용한 별도 Docker 네트워크를 지정한다. host/default bridge는 거절한다.
+폐쇄망에서는 완성된 이미지와 의존성을 반입하고 내부 모델·저장소만 허용한다.
+필수 부팅·로그인·기존 프로젝트 실행은 이 설정과 worker에 의존하지 않는다.
+
+worker는 실행 핸들, 출력 cursor, native Session, 검사 단계와 체크포인트를 저장한다. 중단된
+worker는 동일 핸들을 이어서 관찰하며 불확실한 작업을 자동으로 다시 실행하지 않는다. TTL에는
+체크포인트를 저장한 뒤 Sandbox를 삭제한다. worker를 중지하거나 설정을 제거하면 자동 TTL
+정리가 실행되지 않으므로, 설정·Docker context 변경 전에 기존 Workspace를 종료하라.
+
+`pnpm test:sandbox`는 Docker만, `pnpm test:workspace`는 Docker와 로컬 `_test` 데이터베이스를 사용한다.
+`WORKSPACE_SANDBOX_IMAGE`로 검사 이미지를 지정할 수 있고 `WORKSPACE_TEST_AGENTS=true`는
+세 CLI의 비특권 실행도 확인한다. 실제 모델 요청은 이 검사에서 보내지 않는다.
+
+코딩을 켜려면 같은 설정의 프로젝트에 `repository: "owner/repo"`를 추가하고 GitHub App 또는
+`WORKSPACE_GITHUB_AUTH=token`과 서버의 GitHub 계정 토큰을 설정한다. 계정 토큰 모드는 서버에서
+bare Git 저장소와 bundle을 주고받고 저장소 코드를 실행하지 않는다. 배포 이미지에는 Git을
+포함한다. App 설치 범위는 작업할 저장소로 한정한다. webhook URL은
+`/api/workspaces/github/webhook`이며 Pull requests, Check runs, Check suites, Workflow runs
+이벤트와 별도 webhook secret을 설정한다. main의 branch protection과 CI를 유지한다.
+배포할 workflow는 `workflow_dispatch`를 지원해야 하며 `deploymentWorkflows`에 파일명을
+명시한다. 예를 들어 `"deploymentWorkflows":["deploy.yml"]`이다. 배포 자격증명은 해당 workflow의
+보호된 환경이 소유한다. Sandbox에는 전달하지 않는다.
+
+`pnpm test:workspace:git`는 무통신 Docker 안에 일회용 Git HTTP 저장소를 만들어 clone·권한·Diff·
+승인 Commit·복원을 검증한다. GitHub App API와 승인 경합·webhook 중복은 단위 테스트로 검증한다.
+
 ## localdev
 
 Node 24와 pnpm 11을 설치하고:

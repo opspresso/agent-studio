@@ -39,6 +39,8 @@ async function main() {
   await checkAudioQueueMigration();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
+  const { checkWorkspaces } = await import("./workspace-check");
+  await checkWorkspaces();
   const { checkAuthSchema } = await import("./auth-schema-check");
   await checkAuthSchema();
   // Isolate the auth singleton and its environment in a child process.

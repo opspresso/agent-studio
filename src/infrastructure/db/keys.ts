@@ -8,6 +8,28 @@ export const CHAT_MESSAGE_MAX_SEQ = 999999;
 export const TELEGRAM_DESTINATION_INDEX_PREFIX = "TELEGRAMDESTINATION#";
 
 export const keys = {
+  workspace: (id: string) => ({ PK: `WORKSPACE#${id}`, SK: "META" }),
+  workspacePartition: (id: string) => `WORKSPACE#${id}`,
+  workspaceChat: (chatId: string) => ({ PK: `WORKSPACECHAT#${chatId}`, SK: "META" }),
+  workspaceOwner: (email: string) => `WORKSPACEOWNER#${email}`,
+  workspaceDue: () => "WORKSPACEDUE",
+  workspaceDueSort: (dueAt: string, id: string) => `${dueAt}#${id}`,
+  workspaceDueRange: (now: string) => ({ between: ["", `${now}#\uffff`] as [string, string] }),
+  workspaceChild: (id: string, kind: "SESSION" | "SANDBOX" | "RUN" | "APPROVAL" | "REQUEST" | "DELIVERY", childId: string) => ({
+    PK: `WORKSPACE#${id}`, SK: `${kind}#${childId}`,
+  }),
+  workspaceChildPrefix: (kind: "RUN" | "APPROVAL") => `${kind}#`,
+  workspaceEvent: (id: string, runId: string, seq: number) => ({
+    PK: `WORKSPACE#${id}`, SK: `EVENT#${runId}#${String(seq).padStart(8, "0")}`,
+  }),
+  workspaceEventRange: (runId: string, afterSeq: number) => ({
+    between: [`EVENT#${runId}#${String(afterSeq + 1).padStart(8, "0")}`, `EVENT#${runId}#99999999`] as [string, string],
+  }),
+  workspaceStatePartition: (id: string) => `WORKSPACESTATE#${id}`,
+  workspaceCheckpoint: (id: string, checkpointId: string) => ({ PK: `WORKSPACESTATE#${id}`, SK: `${checkpointId}#META` }),
+  workspaceCheckpointChunk: (id: string, checkpointId: string, index: number) => ({
+    PK: `WORKSPACESTATE#${id}`, SK: `${checkpointId}#${String(index).padStart(6, "0")}`,
+  }),
   project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
   projectPartition: (name: string) => `PROJECT#${name}`,
   projectApiToken: (name: string) => ({ PK: `PROJECT#${name}`, SK: "APITOKEN" }),

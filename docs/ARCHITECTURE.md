@@ -417,6 +417,7 @@ dispatch 를 건너뛰는 방식이다. 요청을 추적하려면 dispatch 층�
 | Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`container.ts` 에서 `triggerRunnerDeps.run` 으로 바인딩). AG-UI 와 함께, image project 를 거절하지 않고 스트리밍하는 dispatch 다. firing 의 행은 텍스트를 담으므로, 그림을 그렸다는 사실을 기록한다 |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
 | Audio 후처리 | audio worker가 고정한 project/version으로 실행 | `streamProjectRun` + `collectRun` (`backgroundTask: true`) |
+| Workspace | 별도 worker가 DB 큐와 native operation을 이어받는다 | `executeWorkspaceTask` + 공통 `openTaskRun`. 일반 명령과 외부 CLI runtime은 모델 Version 없이 실행한다 |
 
 ```mermaid
 flowchart LR
@@ -507,12 +508,16 @@ admit 하는 함수 목록에 함께 들어간다. agent 스트림을 하나의 
 
 ### 런 브래킷
 
-정확히 네 함수가 top-level 런을 admit 한다. [admit 층](#요청-흐름)의
+프로젝트 모델 실행에서는 네 함수가 top-level 런을 admit 한다. [admit 층](#요청-흐름)의
 `executeVersion`, `executeVersionStream`, `executeAgent`, 그리고 `generateImage`. 그리고
 각각이 브래킷(`src/application/run/runBracket.ts`)을 연다. 브래킷은 런이 어떻게
 시작됐든 그 런을 감싸는 모든 것의 단일 소유자다: in-flight 메트릭, 프로젝트의 비용 가드,
 멤버 tier 의 월간 상한, 호출자별 동시성 가드, 로그 correlation id, 그리고 artifact
 recorder([Artifacts](design/execution.md#artifacts) 참고).
+
+일반 Workspace 명령과 외부 CLI는 `executeWorkspaceTask`를 통해 같은 비용·동시성·메트릭
+bracket의 `openTaskRun`에 들어간다. 모델 Version을 만들지 않으며 native CLI 이력과 파일 복구는
+별도 Workspace 체크포인트가 소유한다. CLI/provider 사용량은 Studio SDK 모델 usage와 분리한다.
 
 네 진입점이 각자 in-flight 메트릭을 열면 비용 가드를 빠뜨릴 수 있는 자리도 네 곳이 된다.
 `tests/architecture.test.ts`가 브래킷을 고정하므로,

@@ -6,7 +6,7 @@ import {
   type ConcurrencyGuardDeps,
   type ConcurrencyLimits,
 } from "@/application/run/concurrencyGuard";
-import { openRun } from "@/application/run/runBracket";
+import { openRun, openTaskRun } from "@/application/run/runBracket";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
 import { TIER_LIMITS } from "@/domain/member/tiers";
@@ -297,6 +297,18 @@ describe("openRun with a tier resolver", () => {
 });
 
 describe("openRun with a concurrency limit", () => {
+  it("shares slots with Workspace tasks that have no model Version", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-14T00:00:00Z"));
+    try {
+      const d = { usage, runSlots: memorySlots().repo, limits: { perActor: 1, a2a: 1 } };
+      const task = await openTaskRun(d, project, user);
+      await expect(openRun(d, project, version, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+      await task.close({ failed: true });
+      const modelRun = await openRun(d, project, version, user);
+      await modelRun.close();
+    } finally { vi.useRealTimers(); }
+  });
   it("refuses past the limit without counting the run", async () => {
     resetRunMetrics();
     const d = { usage, ...deps() };

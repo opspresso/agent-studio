@@ -47,6 +47,7 @@ export type {
 export type { PromptPreview, PromptPreviewMessage } from "./deps";
 export { previewPrompt } from "./promptPreview";
 export { runStrategyFor, type RunStrategy } from "./deps";
+export { executeWorkspaceTask } from "./workspaceRun";
 
 function bindUsage(deps: ExecutionDeps, actor: string | undefined): engine.RecordUsageFn {
   return (record) => recordUsage(deps.usage, { ...record, ...(actor ? { actor } : {}) });

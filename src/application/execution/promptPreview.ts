@@ -164,8 +164,8 @@ export async function previewPrompt(
       resolved.version,
       project.name,
       async () => {},
-      // A preview runs nothing, so it has no actor to attribute.
-      { ancestry: [project.name] },
+      // Resolve actor-gated capabilities without executing them.
+      { ...origin, ancestry: [project.name] },
     );
     // The same assembly a run uses, not a second spelling of it. This is where
     // the two drifted: the preview omitted the caller and showed a prompt one

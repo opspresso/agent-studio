@@ -41,6 +41,7 @@ export async function buildAgentDeps(
     saveFile: buildFileSaver(deps),
     fileTool: buildFileTool(deps, projectName, origin, signal),
     audioTools: version.parameters.audioProcessing ? await deps.audioTools?.(projectName, origin) : undefined,
+    workspaceTool: await deps.workspaceTool?.(projectName, origin),
     readSlack: await buildSlackReader(deps, version, projectName),
   };
 }

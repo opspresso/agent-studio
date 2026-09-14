@@ -73,6 +73,9 @@ export interface ExecutionDeps extends RunBracketDeps {
   audioTools?: (projectName: string, origin: RunOrigin) => Promise<
     ((tool: string, args: Record<string, unknown>) => Promise<McpToolResult>) | undefined
   >;
+  workspaceTool?: (projectName: string, origin: RunOrigin) => Promise<
+    ((args: Record<string, unknown>, callId: string) => Promise<McpToolResult>) | undefined
+  >;
   registerMcpSource?: RegisterMcpSource;
   sourceRefreshIdentity?(input: { version: Version; binding: McpBinding; server: McpServer }): Promise<string>;
   /**

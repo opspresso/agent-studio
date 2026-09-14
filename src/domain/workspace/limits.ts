@@ -1,0 +1,16 @@
+/** Shared API/storage bounds; byte limits are checked before persistence. */
+export const WORKSPACE_LIMITS = {
+  page: 50,
+  maxPage: 200,
+  promptChars: 40_000,
+  scriptChars: 40_000,
+  eventBytes: 32_000,
+  errorBytes: 1500,
+  eventsPerRun: 20_000,
+  diffBytes: 256_000,
+  checkOutputBytes: 64_000,
+  checkpointBytes: 64 * 1024 * 1024,
+  checkpointChunkBytes: 128 * 1024,
+  minIdleTtlSeconds: 60,
+  maxIdleTtlSeconds: 7 * 24 * 60 * 60,
+} as const;

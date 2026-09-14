@@ -1,5 +1,22 @@
 import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor } from "@/infrastructure/documents/workerAdapters";
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as workspaceSleep } from "node:timers/promises";
+import { createWorkspaceUseCases, type WorkspaceDeps } from "@/application/workspace/workspaceUseCases";
+import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
+import { runWorkspaceWorker } from "@/application/workspace/service";
+import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
+import { executeWorkspaceTask } from "@/application/execution/runProject";
+import { workspaceRepository } from "@/infrastructure/db/repositories/workspaceRepository";
+import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
+import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
+import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
+import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
+import { createDockerCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
+import { createCodingGitHub } from "@/infrastructure/github/codingForge";
+import { createCodingUseCases } from "@/application/coding/codingUseCases";
+import { handleCodingWebhook } from "@/application/coding/webhook";
+import { getWorkspaceConfig, getWorkspaceGitHubConfig } from "@/lib/runtime-settings";
+import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 import { createAudioConfigUseCases } from "@/application/audio/audioConfig";
 import { assertAudioPostprocessorVersionUnused, resolveAudioPostprocessor } from "@/application/audio/postprocessVersion";
 import { audioJobConfigRepository } from "@/infrastructure/db/repositories/audioJobConfigRepository";
@@ -154,7 +171,7 @@ import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
 import { deleteExpired } from "@/infrastructure/db/store";
-import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
+import { createProjectUseCases, setAdminCheck, userMayAccessProject } from "@/application/project/projectUseCases";
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createVersionUseCases } from "@/application/project/versionUseCases";
@@ -1147,6 +1164,21 @@ export const executionDeps: ExecutionDeps = {
   documentRenderer: workerDocumentRenderer,
   documentEditor: workerDocumentEditor,
   registerMcpSource: async (input) => getAudioRuntime().references.register(input),
+  workspaceTool: async (projectName, origin) => {
+    if (origin.actor?.kind !== "user" || !getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.agentTools) return undefined;
+    const email = origin.actor.id;
+    const authorize = async () => {
+      const tier = await getMemberTier(email);
+      if (tier !== "member" && tier !== "admin") throw new ValidationError("Workspace tools require member access");
+      await projectUseCases.assertAccessible(projectName, email);
+      if (!getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.agentTools) throw new ValidationError("Workspace tools are disabled");
+    };
+    try { await authorize(); } catch { return undefined; }
+    return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
+      policy: () => getWorkspaceConfig()?.projects.find(project => project.projectName === projectName),
+      sleep: async ms => { await workspaceSleep(ms); },
+    }, { projectName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID() });
+  },
   sourceRefreshIdentity,
   audioTools: async (projectName, origin) => {
     if (!config.objectBucketName) return undefined;
@@ -1434,4 +1466,81 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
     sweep: (signal) => runtime.files.sweep(undefined, signal),
     refresh: refreshModelCatalog,
   }, signal);
+}
+
+const workspaceDeps: WorkspaceDeps = {
+  repository: workspaceRepository, chats: chatRepository, projects: projectRepository,
+  policy: name => getWorkspaceConfig()?.projects.find(project => project.projectName === name),
+  now: () => new Date(), newId: randomUUID,
+  get idleTtlSeconds() { return getWorkspaceConfig()?.idleTtlSeconds ?? 1800; },
+};
+export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);
+
+function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
+  const settings = getWorkspaceConfig();
+  if (!settings) throw new ValidationError("Workspaces are not configured");
+  const githubConfig = getWorkspaceGitHubConfig();
+  const github = githubConfig ? createCodingGitHub(githubConfig) : undefined;
+  return {
+    ...workspaceDeps,
+    provider: createDockerSandboxProvider(settings),
+    checkpoints: createWorkspaceCheckpointStore(secretCipher),
+    runtime: kind => createWorkspaceRuntimeAdapter(kind, settings.runtimes[kind]),
+    ...(github && githubConfig ? { coding: createDockerCodingWorktree(settings, { webUrl: githubConfig.webUrl,
+      internalHosts: githubConfig.internalHosts,
+      ...("getToken" in githubConfig ? { serverToken: githubConfig.getToken } : { credential: github.credential }) }) } : {}),
+    runTimeoutMs: MAX_RUN_DURATION_MS,
+    execute: (workspace, work) => executeWorkspaceTask(executionDeps, projectRepository, workspace, work),
+    sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
+  };
+}
+
+export async function closeChatWorkspace(chatId: string, ownerEmail: string): Promise<void> {
+  const workspace = await workspaceRepository.forChat(chatId);
+  if (!workspace) return;
+  await workspaceUseCases.close(workspace.id, ownerEmail, true);
+  if (getWorkspaceConfig()) await processWorkspace(getWorkspaceWorkerDeps(), workspace.id);
+}
+
+export async function runWorkspaceWorkerService(signal: AbortSignal): Promise<void> {
+  await runWorkspaceWorker(getWorkspaceWorkerDeps(), signal);
+}
+
+export function getCodingUseCases() {
+  const deps = getWorkspaceWorkerDeps();
+  const config = getWorkspaceGitHubConfig();
+  if (!deps.coding || !config) throw new ValidationError("Workspace GitHub integration is not configured");
+  return createCodingUseCases({ ...deps, coding: deps.coding, forge: createCodingGitHub(config).forge });
+}
+
+export function verifyWorkspaceGitHubWebhook(raw: string, signature: string | null): boolean {
+  const config = getWorkspaceGitHubConfig();
+  return !!config && createCodingGitHub(config).verifyWebhook(raw, signature);
+}
+
+export async function receiveWorkspaceGitHubWebhook(deliveryId: string, raw: string) {
+  const config = getWorkspaceGitHubConfig();
+  if (!config) throw new ValidationError("Workspace GitHub integration is not configured");
+  return handleCodingWebhook(workspaceRepository, createCodingGitHub(config).forge, deliveryId, raw);
+}
+
+export async function workspaceOptions(ownerEmail: string) {
+  const settings = getWorkspaceConfig();
+  const available = [];
+  for (const policy of settings?.projects ?? []) {
+    const project = await projectRepository.get(policy.projectName);
+    if (project && await userMayAccessProject(project, ownerEmail)) available.push({
+      projectName: project.name, displayName: project.displayName, description: project.description,
+      runtimes: policy.runtimes, repository: policy.repository, deploymentWorkflows: policy.deploymentWorkflows,
+    });
+  }
+  return { enabled: !!settings, gitEnabled: !!getWorkspaceGitHubConfig(), projects: available };
+}
+
+export async function workspaceBranches(projectName: string, ownerEmail: string) {
+  await projectUseCases.assertAccessible(projectName, ownerEmail);
+  const repo = getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.repository;
+  const config = getWorkspaceGitHubConfig();
+  if (!repo || !config) throw new ValidationError("Workspace GitHub integration is not configured");
+  return createCodingGitHub(config).forge.branches(repo);
 }

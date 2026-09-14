@@ -51,7 +51,8 @@ export type LogScope =
   | "trace"
   | "trigger"
   | "usage"
-  | "version";
+  | "version"
+  | "workspace-worker";
 
 /**
  * `[scope]` as before, plus the run this happened in when there is one.

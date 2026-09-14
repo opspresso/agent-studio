@@ -86,3 +86,7 @@ export function settingsSecretContext(field: "github-token" | "a2a-api-key"): st
 export function runtimeSessionContext(sessionId: string, ownerEmail: string): string {
   return JSON.stringify(["runtime-session", sessionId, ownerEmail]);
 }
+
+export function workspaceCheckpointContext(workspaceId: string, checkpointId: string, index: number): string {
+  return JSON.stringify(["workspace", workspaceId, "checkpoint", checkpointId, index]);
+}

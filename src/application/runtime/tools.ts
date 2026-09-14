@@ -3,7 +3,7 @@ import type { McpToolResult } from "@/domain/llm/types";
 import { imageDataUrl } from "@/domain/llm/types";
 import { describeImageInputReject } from "@/domain/llm/models";
 import { MAX_IMAGES_PER_TURN } from "@/domain/llm/imageLimits";
-import { AUDIO_TOOL_NAMES, FILE_TOOL_NAME } from "@/domain/llm/toolNames";
+import { AUDIO_TOOL_NAMES, FILE_TOOL_NAME, WORKSPACE_TOOL_NAME } from "@/domain/llm/toolNames";
 import {
   SKILL_TOOL_NAME, IMAGE_TOOL_NAME, EDIT_IMAGE_TOOL_NAME, FETCH_URL_TOOL_NAME,
   SAVE_FILE_TOOL_NAME, SLACK_TOOL_NAMES,
@@ -36,7 +36,7 @@ export function createRuntimeTools(
   const imageInputReject = describeImageInputReject(input.model);
   const serverByTool = new Map((input.mcpServers ?? []).flatMap((server) => server.toolNames.map((name) => [name, server.name] as const)));
 
-  async function invoke(name: string, args: Record<string, unknown>, display: Record<string, unknown>): Promise<CapabilityOutput> {
+  async function invoke(name: string, args: Record<string, unknown>, display: Record<string, unknown>, callId: string): Promise<CapabilityOutput> {
     const builtin = assembly.builtinNames.has(name);
     if (!builtin) return deps.callMcpTool ? deps.callMcpTool(name, display) : { text: `Error: Tool '${name}' cannot be executed in this context.` };
     if (name === SKILL_TOOL_NAME) {
@@ -73,6 +73,7 @@ export function createRuntimeTools(
         : deps.fileTool!(display);
     }
     if (AUDIO_TOOL_NAMES.includes(name)) return deps.audioTools!(name, display);
+    if (name === WORKSPACE_TOOL_NAME) return deps.workspaceTool!(display, callId);
     if (SLACK_TOOL_NAMES.includes(name)) return { text: await deps.readSlack!(name, display) };
     return { text: `Error: Tool '${name}' cannot be executed in this context.`, bounded: true };
   }
@@ -118,7 +119,7 @@ export function createRuntimeTools(
         const slot = claimToolSlot(turn, callId);
         if (name === SKILL_TOOL_NAME && string(display.skill_name)) displayNames.set(callId, `${name}: ${string(display.skill_name)}`);
         if (details?.toolCall) details.toolCall.arguments = JSON.stringify(boundToolArgsPair(args, display).wire);
-        const action = () => invoke(name, args, display);
+        const action = () => invoke(name, args, display, callId);
         const sequential = [IMAGE_TOOL_NAME, EDIT_IMAGE_TOOL_NAME, SKILL_TOOL_NAME, ...SLACK_TOOL_NAMES].includes(name);
         const task = sequential ? serial.then(action) : action();
         if (sequential) serial = task.then(() => {}, () => {});

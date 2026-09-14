@@ -9,7 +9,7 @@ import {
   updateItem,
   type Item,
 } from "@/infrastructure/db/store";
-import { chatIsLive, putChatItem } from "@/infrastructure/db/chatLifecycle";
+import { chatActivityFields, chatIsLive, putChatItem } from "@/infrastructure/db/chatLifecycle";
 import { expiresAtSeconds, isExpired, RETENTION } from "@/infrastructure/db/ttl";
 import { CHAT_PAGE, MAX_CHAT_PAGE, type ChatRepository } from "@/domain/chat/repository";
 import { boundedPageLimit, MAX_PAGE_LIMIT } from "@/shared/pageLimit";
@@ -36,6 +36,7 @@ function fromChatItem(item: Item): Chat {
     title: item.title as string,
     ownerEmail: item.ownerEmail as string,
     projectName: item.projectName as string | undefined,
+    workspaceId: item.workspaceId as string | undefined,
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
   };
@@ -48,18 +49,18 @@ function fromChatItem(item: Item): Chat {
 function chatFields(chat: Chat): Item {
   return {
     GSI1PK: keys.chatOwnerPartition(chat.ownerEmail),
-    GSI1SK: chat.updatedAt,
+    ...chatActivityFields(chat.updatedAt),
     entityType: CHAT_ENTITY,
     chatId: chat.chatId,
     title: chat.title,
     ownerEmail: chat.ownerEmail,
     projectName: chat.projectName ?? null,
     createdAt: chat.createdAt,
-    updatedAt: chat.updatedAt,
-    // Retention runs from last activity — each update pushes the expiry out,
-    // so an active chat is never purged mid-run.
-    expiresAt: expiresAtSeconds(chat.updatedAt, RETENTION.chatDays),
   };
+}
+
+export function chatCreationItem(chat: Chat): Item {
+  return { ...keys.chat(chat.chatId), ...chatFields(chat), nextSeq: 0, ...(chat.workspaceId ? { workspaceId: chat.workspaceId } : {}) };
 }
 
 function toMessageItem(message: ChatMessage): Item {
@@ -140,7 +141,7 @@ export const chatRepository: ChatRepository = {
   async create(chat) {
     await updateItem(
       keys.chat(chat.chatId),
-      () => ({ ...chatFields(chat), nextSeq: 0 }),
+      () => chatCreationItem(chat),
       conditions.notExists,
     );
   },
@@ -205,6 +206,7 @@ export const chatRepository: ChatRepository = {
         },
         (row) =>
           chatIsLive(row) &&
+          row?.workspaceId === undefined &&
           (row?.activeRunId === undefined || Number(row?.activeRunExpiresAt ?? 0) < nowSeconds),
       );
       return true;

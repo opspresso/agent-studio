@@ -789,6 +789,22 @@ OAuth 메타데이터와 공용 앱 저장은 읽은 `auth`와의 조건부 쓰�
 헤더들이 담고 있는 것으로 여전히 돌아간다. 그것들이 아무것도 담고 있지 않을 때만 경고와 함께
 드롭된다.
 
+## Workspace와 코딩 작업
+
+Workspace는 chat 소유자에게만 공개되며 실행·승인은 현재 프로젝트 접근도 다시 확인한다.
+Sandbox에는 호스트 mount, Docker socket, 배포 자격증명과 장기 Git 자격증명을 전달하지 않는다.
+Git 메타데이터는 root 소유로 두고 Agent의 실행 계정은 작업 파일만 수정한다.
+GitHub App의 private key는 서버에 남고 clone/push에 발행하는 token은 저장소·권한·만료가 제한된다.
+계정 토큰 모드는 서버의 임시 bare Git 저장소에서 인증하고 Sandbox에는 자격증명 없는 bundle만
+전달한다. 서버에서는 저장소 checkout·hook·build script를 실행하지 않는다.
+공개 Git endpoint는 HTTPS와 DNS pinning을 사용하고 내부 호스트 예외는 배포의 별도 목록을 따른다.
+
+효과는 검토한 tree/HEAD와 사용자 결정에 묶인 승인 레코드를 먼저 claim한 뒤 실행한다.
+종료·삭제가 먼저 기록되면 pending/실행 claim을 거절한다. main 병합은 PR 소유 범위와 CI를
+재확인하고 GitHub의 정확한 head SHA 조건을 사용한다. 배포는 허용된 main workflow와
+승인한 inputs로만 요청한다. 전송 오류 이후의 불확실한 효과는 자동 재실행하지 않는다.
+GitHub webhook은 서명과 delivery ID를 확인해 PR 메타데이터만 갱신하며 승인 권한이 없다.
+
 ## SDK Session과 승인 상태
 
 SDK Session 이력과 승인 대기 RunState는 `runtime_sessions`에 별도로 저장한다. 같은 배포의
