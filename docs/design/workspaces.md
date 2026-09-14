@@ -47,3 +47,26 @@ Codex·Claude·OpenCode를 사용하는 코딩 작업이 같은 생명주기와 
 - [OpenCode CLI](https://dev.opencode.ai/docs/cli/): JSON 출력, session 재개와 export/import.
 
 설치된 CLI의 `--help`도 함께 확인한다. 배포 이미지는 검증한 CLI 버전을 고정한다.
+
+## Docker 실행 계약
+
+`sandbox/Dockerfile`은 Node·Git·Python과 고정 버전 CLI를 담는다. 이미지 빌드는 인터넷에
+접근하는 빌드 환경에서 수행하고 폐쇄망에는 완성 이미지를 반입한다. `INSTALL_AGENTS=false`는
+일반 명령 실행 검증용 이미지를 만든다. `pnpm test:sandbox`는 기본적으로
+`agent-studio-workspace:test` 이미지와 `none` 네트워크에서 일회용 컨테이너를 검증한다.
+
+Provider는 Docker CLI에 인자 배열을 넘긴다. API 입력과 모델 설정은 stdin으로 전달한다.
+컨테이너 ID와 소유권 label을 확인한 뒤에만 조작하므로, 삭제 후 같은 이름으로 생긴 다른
+컨테이너에 이전 handle로 접근할 수 없다. 컨테이너에는 호스트 mount와 Docker socket이 없고,
+루트 파일시스템은 읽기 전용이다. 파일과 native Session은 크기가 제한된 tmpfs에 둔다.
+
+`sandbox/control.mjs`가 실행 핸들·출력·종료 결과를 보호된 `/control/operations`에 기록한다.
+명령은 uid/gid 1000으로 실행한다. 명령이 끝나면 같은 uid의 잔여 프로세스를 정리한다.
+동일 operation ID와 동일 입력은 한 번만 시작하며, 다른 입력으로 ID를 재사용하면 거절한다.
+이전 operation의 취소는 다음 operation에 적용되지 않는다. 재시작 시 PID와 `/proc`의 시작
+시각을 함께 검사하고, 시작 전·시작 중·실행 중·완료·핸들 소실을 구별한다.
+
+체크포인트는 파일·디렉터리·Workspace 내부 symlink와 native Session을 보관한다. 외부 경로,
+경로 탈출, symlink 아래로 쓰는 복원, 특수 파일은 거절한다. 복원은 빈 Sandbox에서만 허용한다.
+CLI 로그인 자격증명 파일은 체크포인트에서 제외한다. 64 MiB의 파일 bytes 또는 20,000개
+항목을 넘으면 체크포인트를 실패시키며, 부분 백업을 성공으로 취급하지 않는다.

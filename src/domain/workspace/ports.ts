@@ -4,6 +4,8 @@ export interface SandboxCommand {
   argv: string[];
   cwd?: string;
   stdin?: string;
+  /** Deployment-owned model settings only; never host environment inheritance. */
+  environment?: Record<string, string>;
   timeoutMs: number;
 }
 
@@ -15,8 +17,9 @@ export interface SandboxCommandResult {
 
 export interface SandboxOperation {
   id: string;
-  status: "running" | "succeeded" | "failed" | "missing";
+  status: "not-started" | "starting" | "running" | "succeeded" | "failed" | "missing";
   exitCode?: number;
+  truncated?: boolean;
 }
 
 /** A provider owns compute and files, not agents, Git publication, or approvals. */

@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "tsx scripts/integration-check.ts",
+    "test:sandbox": "tsx scripts/workspace-sandbox-check.ts",
     "test:storage": "tsx scripts/source-storage-check.ts",
     "test:audio": "tsx scripts/audio-segment-check.ts",
     "test:audio:pipeline": "tsx scripts/audio-pipeline-check.ts",
