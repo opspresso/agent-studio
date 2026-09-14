@@ -106,7 +106,8 @@ export WORKSPACE_CONFIG='{"image":"agent-studio-workspace:local","network":"none
 pnpm worker:workspace
 ```
 
-릴리스는 `ghcr.io/opspresso/agent-studio:workspace-vX.Y.Z` Sandbox 이미지도 게시한다.
+릴리스는 앱과 같은 ECR·GHCR 저장소에 `workspace-vX.Y.Z` tag의 Sandbox 이미지도 게시한다.
+배포는 접근 권한이 있는 registry를 선택하고 이미지 pull에 해당 registry의 인증을 사용한다.
 폐쇄망에는 앱과 해당 Sandbox 이미지를 함께 반입한다. `node build/workspace-health.cjs`는
 설정·Docker resource controller·이미지·네트워크·모델 채널을 검사하며 `--worker`는 큐 heartbeat도 확인한다.
 

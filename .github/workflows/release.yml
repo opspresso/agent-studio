@@ -138,7 +138,9 @@ jobs:
           push: true
           provenance: false
           sbom: false
-          tags: ghcr.io/${{ github.repository }}:workspace-${{ github.ref_name }}
+          tags: |
+            ${{ env.ECR_REPOSITORY }}:workspace-${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:workspace-${{ github.ref_name }}
 
   # Deployment manifests live in argocd-env-demo. This repository only sends
   # the image tag after the image exists; it does not own the target manifests.
