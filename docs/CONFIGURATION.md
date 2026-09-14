@@ -457,6 +457,9 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `projects` | 필수 배열 | `projectName`, 허용 `runtimes`, 선택적인 `repository: "owner/repo"`, `checks`, `deploymentWorkflows` |
 | `projects[].checks` | `[]` | `{name: "test" | "lint" | "build", command}`. 각 Run 뒤 Sandbox에서 실행할 검사 |
 | `projects[].agentTools` | `false` | 로그인한 member 이상 사용자가 이 프로젝트의 Agent에서 `Workspace` 빌트인을 사용할 수 있게 한다 |
+| `projects[].repositories` | `[]` | 기본 `repository` 외에 선택할 수 있는 저장소 허용 목록. 선택한 저장소를 실행·재개·Git 승인마다 확인한다 |
+| `workerConcurrency` | `4` | worker process의 동시 실행 수, 1~32 |
+| `runtimes.<kind>.provider` | 미설정 | 저장된 LLM 채널의 이름. 명시하면 해당 채널의 URL·API 키를 실행 직전에 읽으며 Workspace 설정에 키를 복사하지 않는다 |
 | `runtimes` | `{}` | `command`, `codex`, `claude`, `opencode`별 `model`, `environment` |
 
 Runtime 환경은 `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,

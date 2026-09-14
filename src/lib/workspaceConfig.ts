@@ -6,6 +6,7 @@ import { isRepositoryName } from "@/domain/workspace/policy";
 const runtime = z.enum(WORKSPACE_RUNTIMES);
 const runtimeSettings = z.object({
   model: z.string().min(1).max(200).optional(),
+  provider: z.enum(["openai", "anthropic", "openrouter", "selfhosted"]).optional(),
   environment: z.partialRecord(z.enum(["CODEX_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "OPENCODE_CONFIG_CONTENT"]),
     z.string().max(32_000).refine(value => !value.includes("\0"))).optional(),
 }).strict();
@@ -16,12 +17,14 @@ const workspaceConfig = z.object({
   memoryMb: z.number().int().min(128).max(65536).default(2048),
   diskMb: z.number().int().min(64).max(65536).default(2048),
   cpus: z.number().min(0.1).max(64).default(2),
+  workerConcurrency: z.number().int().min(1).max(32).default(4),
   idleTtlSeconds: z.number().int().min(WORKSPACE_LIMITS.minIdleTtlSeconds).max(WORKSPACE_LIMITS.maxIdleTtlSeconds).default(1800),
   projects: z.array(z.object({
     projectName: z.string().min(1).max(100),
     agentTools: z.boolean().default(false),
     runtimes: z.array(runtime).min(1).max(WORKSPACE_RUNTIMES.length),
     repository: z.string().refine(isRepositoryName).optional(),
+    repositories: z.array(z.string().refine(isRepositoryName)).max(100).optional(),
     checks: z.array(z.object({ name: z.enum(["test", "lint", "build"]), command: z.string().min(1).max(4000) }).strict()).max(3).default([]),
     deploymentWorkflows: z.array(z.string().min(1).max(200)).max(20).default([]),
   }).strict()).max(200),

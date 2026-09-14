@@ -8,6 +8,7 @@ import { ensureWorkspaceSandbox, saveWorkspaceCheckpoint, type WorkspaceWorkerDe
 import { WorkspaceWorkerState, WORKSPACE_LEASE_MS } from "@/application/workspace/workerState";
 import { boundedWorkspaceText } from "@/application/workspace/output";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
+import { workspaceAllowsRepository } from "@/domain/workspace/policy";
 
 export interface CodingDeps extends WorkspaceWorkerDeps {
   coding: CodingWorktree;
@@ -24,7 +25,7 @@ async function reserve(deps: CodingDeps, id: string, ownerEmail: string, actionI
   if (!["active", "suspended"].includes(workspace.status) || workspace.activeRunId ||
     (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) ||
     (workspace.activeActionId && (!resuming || workspace.activeActionId !== actionId))) throw new ConflictError("Workspace is busy");
-  if (repository(workspace).repository !== workspacePolicy(deps, workspace.projectName).repository) throw new ConflictError("Workspace repository configuration changed");
+  if (!workspaceAllowsRepository(workspacePolicy(deps, workspace.projectName), repository(workspace).repository)) throw new ConflictError("Workspace repository configuration changed");
   const token = deps.newId();
   const leaseUntil = new Date(deps.now().getTime() + WORKSPACE_LEASE_MS).toISOString();
   try {

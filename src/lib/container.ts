@@ -10,7 +10,8 @@ import { workspaceRepository } from "@/infrastructure/db/repositories/workspaceR
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
 import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
-import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
+import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
+import { workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { createDockerCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
 import { createCodingUseCases } from "@/application/coding/codingUseCases";
@@ -1485,7 +1486,13 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
     ...workspaceDeps,
     provider: createDockerSandboxProvider(settings),
     checkpoints: createWorkspaceCheckpointStore(secretCipher),
-    runtime: kind => createWorkspaceRuntimeAdapter(kind, settings.runtimes[kind]),
+    runtime: async kind => {
+      const runtime = settings.runtimes[kind];
+      if (!runtime?.provider) return createWorkspaceRuntimeAdapter(kind, runtime);
+      const channel = (await getLlmProviderConfigs()).find(provider => provider.name === runtime.provider);
+      if (!channel) throw new ValidationError("Workspace model channel is not configured");
+      return createWorkspaceRuntimeAdapter(kind, withWorkspaceModelChannel(kind, runtime, channel));
+    },
     ...(github && githubConfig ? { coding: createDockerCodingWorktree(settings, { webUrl: githubConfig.webUrl,
       internalHosts: githubConfig.internalHosts,
       ...("getToken" in githubConfig ? { serverToken: githubConfig.getToken } : { credential: github.credential }) }) } : {}),
@@ -1502,8 +1509,8 @@ export async function closeChatWorkspace(chatId: string, ownerEmail: string): Pr
   if (getWorkspaceConfig()) await processWorkspace(getWorkspaceWorkerDeps(), workspace.id);
 }
 
-export async function runWorkspaceWorkerService(signal: AbortSignal): Promise<void> {
-  await runWorkspaceWorker(getWorkspaceWorkerDeps(), signal);
+export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?: () => Promise<void>): Promise<void> {
+  await runWorkspaceWorker(getWorkspaceWorkerDeps(), signal, getWorkspaceConfig()?.workerConcurrency, heartbeat);
 }
 
 export function getCodingUseCases() {
@@ -1531,16 +1538,18 @@ export async function workspaceOptions(ownerEmail: string) {
     const project = await projectRepository.get(policy.projectName);
     if (project && await userMayAccessProject(project, ownerEmail)) available.push({
       projectName: project.name, displayName: project.displayName, description: project.description,
-      runtimes: policy.runtimes, repository: policy.repository, deploymentWorkflows: policy.deploymentWorkflows,
+      runtimes: policy.runtimes, repository: policy.repository, repositories: workspaceRepositories(policy), deploymentWorkflows: policy.deploymentWorkflows,
     });
   }
   return { enabled: !!settings, gitEnabled: !!getWorkspaceGitHubConfig(), projects: available };
 }
 
-export async function workspaceBranches(projectName: string, ownerEmail: string) {
+export async function workspaceBranches(projectName: string, ownerEmail: string, requestedRepository?: string) {
   await projectUseCases.assertAccessible(projectName, ownerEmail);
-  const repo = getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.repository;
+  const policy = getWorkspaceConfig()?.projects.find(project => project.projectName === projectName);
+  const repo = requestedRepository ?? (policy ? workspaceRepositories(policy)[0] : undefined);
   const config = getWorkspaceGitHubConfig();
-  if (!repo || !config) throw new ValidationError("Workspace GitHub integration is not configured");
+  if (!repo || !policy || !config) throw new ValidationError("Workspace GitHub integration is not configured");
+  if (!workspaceAllowsRepository(policy, repo)) throw new ValidationError("Repository is not enabled for this project");
   return createCodingGitHub(config).forge.branches(repo);
 }

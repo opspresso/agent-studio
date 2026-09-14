@@ -106,6 +106,10 @@ export WORKSPACE_CONFIG='{"image":"agent-studio-workspace:local","network":"none
 pnpm worker:workspace
 ```
 
+릴리스는 `ghcr.io/opspresso/agent-studio:workspace-vX.Y.Z` Sandbox 이미지도 게시한다.
+폐쇄망에는 앱과 해당 Sandbox 이미지를 함께 반입한다. `node build/workspace-health.cjs`는
+설정·Docker resource controller·이미지·네트워크·모델 채널을 검사하며 `--worker`는 큐 heartbeat도 확인한다.
+
 앱과 worker는 같은 PostgreSQL, `AES_ENCRYPTION_KEY`, Workspace 설정을 사용한다. DB는 기존
 migration 명령으로 먼저 준비한다. 배포 이미지는 `node build/workspace-worker.cjs`를 제공하며
 Docker CLI도 포함한다. 실행 worker와 Git 승인 API가 있는 앱 서버는 같은 Docker daemon에

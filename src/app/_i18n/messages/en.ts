@@ -35,6 +35,7 @@ export const en = {
   "workspace.new": "New Workspace",
   "workspace.intro": "Keep files and agent context across tasks.",
   "workspace.notConfigured": "No Workspace projects are configured for your account.",
+  "workspace.repository": "Repository",
   "workspace.runtime": "Runtime",
   "workspace.command": "Command / script",
   "workspace.useRepository": "Use a Git repository",

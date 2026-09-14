@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { WORKSPACE_RUNTIMES } from "@/domain/workspace/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
-import { isGitBranch } from "@/domain/workspace/policy";
+import { isGitBranch, isRepositoryName } from "@/domain/workspace/policy";
 import { isSlug } from "@/domain/naming";
 
 export const workspaceInputSchema = z.discriminatedUnion("kind", [
@@ -9,7 +9,7 @@ export const workspaceInputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("command"), script: z.string().min(1).max(WORKSPACE_LIMITS.scriptChars) }).strict(),
 ]);
 export const startWorkspaceSchema = z.object({ projectName: z.string().refine(isSlug), runtime: z.enum(WORKSPACE_RUNTIMES),
-  baseBranch: z.string().refine(isGitBranch).optional(), input: workspaceInputSchema }).strict();
+  repository: z.string().refine(isRepositoryName).optional(), baseBranch: z.string().refine(isGitBranch).optional(), input: workspaceInputSchema }).strict();
 export const codingActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("commit"), message: z.string().trim().min(1).max(8000) }).strict(),
   z.object({ kind: z.literal("pull-request"), title: z.string().trim().min(1).max(200), body: z.string().max(40_000), draft: z.boolean() }).strict(),

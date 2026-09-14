@@ -20,6 +20,7 @@ export function NewWorkspaceForm() {
   const [project, setProject] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<WorkspaceRuntime>("command");
   const [coding, setCoding] = useState(false);
+  const [repository, setRepository] = useState<string | null>(null);
   const [branch, setBranch] = useState("main");
   const [branches, setBranches] = useState<string[]>([]);
   const [task, setTask] = useState("");
@@ -34,7 +35,7 @@ export function NewWorkspaceForm() {
       if (!current) return;
       setOptions(data);
       const first = data.projects[0];
-      if (first) { setProject(first.projectName); setRuntime(first.runtimes[0]!); setCoding(!!first.repository && data.gitEnabled && first.runtimes[0] !== "command"); }
+      if (first) { setProject(first.projectName); setRuntime(first.runtimes[0]!); setRepository(first.repositories[0] ?? null); setCoding(!!first.repositories.length && data.gitEnabled && first.runtimes[0] !== "command"); }
     }).catch(error => { if (current) setError(error instanceof Error ? error.message : "Workspace options could not be loaded"); });
     return () => { current = false; };
   }, []);
@@ -42,16 +43,16 @@ export function NewWorkspaceForm() {
   useEffect(() => {
     let current = true;
     setBranches([]);
-    if (coding && project) void fetch(`/api/workspaces/branches?project=${encodeURIComponent(project)}`)
+    if (coding && project && repository) void fetch(`/api/workspaces/branches?project=${encodeURIComponent(project)}&repository=${encodeURIComponent(repository)}`)
       .then(response => readJson<WorkspaceBranchesResponse>(response)).then(data => { if (current) setBranches(data.names); })
       .catch(error => { if (current) setError(error instanceof Error ? error.message : "Branches could not be loaded"); });
     return () => { current = false; };
-  }, [coding, project]);
+  }, [coding, project, repository]);
 
   async function start() {
     if (!selected || !task.trim() || busy) return;
     setBusy(true); setError(null);
-    const body = JSON.stringify({ projectName: selected.projectName, runtime, ...(coding ? { baseBranch: branch } : {}),
+    const body = JSON.stringify({ projectName: selected.projectName, runtime, ...(coding ? { baseBranch: branch, repository } : {}),
       input: runtime === "command" ? { kind: "command", script: task } : { kind: "task", prompt: task } });
     if (request.current?.body !== body) request.current = { body, key: crypto.randomUUID() };
     try {
@@ -68,13 +69,13 @@ export function NewWorkspaceForm() {
     {!options && !error && <Loader size="sm" />}
     {options && !options.projects.length && <Alert>{t("workspace.notConfigured")}</Alert>}
     <Select label={t("chat.project")} searchable value={project} data={(options?.projects ?? []).map(option => ({ value: option.projectName, label: option.displayName }))}
-      onChange={value => { setProject(value); setCoding(false); setBranch("main"); setRuntime(options?.projects.find(option => option.projectName === value)?.runtimes[0] ?? "command"); }} disabled={busy} />
+      onChange={value => { setProject(value); setRepository(options?.projects.find(option => option.projectName === value)?.repositories[0] ?? null); setCoding(false); setBranch("main"); setRuntime(options?.projects.find(option => option.projectName === value)?.runtimes[0] ?? "command"); }} disabled={busy} />
     {selected?.description && <Text size="sm" c="dimmed">{selected.description}</Text>}
     <Select label={t("workspace.runtime")} value={runtime} allowDeselect={false} onChange={value => setRuntime(value as WorkspaceRuntime)} disabled={busy}
       data={(selected?.runtimes ?? []).map(value => ({ value, label: value === "command" ? t("workspace.command") : value === "codex" ? "Codex" : value === "claude" ? "Claude" : "OpenCode" }))} />
-    <Switch label={t("workspace.useRepository")} checked={coding} onChange={event => setCoding(event.currentTarget.checked)} disabled={busy || !selected?.repository || !options?.gitEnabled} />
-    {coding && <><Text size="sm">{selected?.repository}</Text><Autocomplete label={t("workspace.baseBranch")} value={branch} onChange={setBranch} data={branches} disabled={busy} /></>}
+    <Switch label={t("workspace.useRepository")} checked={coding} onChange={event => setCoding(event.currentTarget.checked)} disabled={busy || !selected?.repositories.length || !options?.gitEnabled} />
+    {coding && <><Select label={t("workspace.repository")} value={repository} data={selected?.repositories ?? []} onChange={value => { setRepository(value); setBranch("main"); }} allowDeselect={false} disabled={busy} /><Autocomplete label={t("workspace.baseBranch")} value={branch} onChange={setBranch} data={branches} disabled={busy} /></>}
     <Textarea label={runtime === "command" ? t("workspace.script") : t("workspace.task")} description={t("workspace.taskHint")} value={task} onChange={event => setTask(event.currentTarget.value)} autosize minRows={5} maxRows={12} disabled={busy} />
-    <Button onClick={() => { void start(); }} loading={busy} disabled={!selected || !task.trim() || (coding && !branch)}>{t("workspace.start")}</Button>
+    <Button onClick={() => { void start(); }} loading={busy} disabled={!selected || !task.trim() || (coding && (!branch || !repository))}>{t("workspace.start")}</Button>
   </Stack>;
 }
