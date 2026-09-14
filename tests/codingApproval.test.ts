@@ -91,9 +91,10 @@ describe("explicit coding action approvals", () => {
   });
   it("requires PR/CI/head review before merge and rechecks CI at approval", async () => {
     review.treeSha = review.headTreeSha;
-    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1, pullRequest: pull } });
+    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1, pullRequest: { ...pull, ci: "pending" } } });
     const api = createCodingUseCases(deps);
     const pending = await api.request(workspace.id, owner, { kind: "merge", pullRequestNumber: 7, headSha: head });
+    expect((await repository.get(workspace.id))?.pullRequest?.ci).toBe("passed");
     expect(deps.forge.merge).not.toHaveBeenCalled();
     pull.ci = "failed";
     expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("failed");

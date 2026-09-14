@@ -1,4 +1,4 @@
-import type { CodingAction, CodingApproval, CodingRepository } from "@/domain/coding/types";
+import type { CodingAction, CodingApproval, CodingRepository, PullRequestInfo } from "@/domain/coding/types";
 import type { CodingForge } from "@/domain/coding/forge";
 import type { CodingWorktree, WorktreeReview } from "@/domain/coding/worktree";
 import type { Workspace } from "@/domain/workspace/types";
@@ -43,7 +43,7 @@ async function release(deps: CodingDeps, state: WorkspaceWorkerState, approval?:
     dueAt: workspace.status === "closing" || approval?.status === "uncertain" ? deps.now().toISOString() : new Date(deps.now().getTime() + workspace.idleTtlSeconds * 1000).toISOString() }, undefined, [], approval ? { approval } : {});
 }
 
-async function validateAction(deps: CodingDeps, workspace: Workspace, action: CodingAction, review: WorktreeReview): Promise<void> {
+async function validateAction(deps: CodingDeps, workspace: Workspace, action: CodingAction, review: WorktreeReview): Promise<PullRequestInfo | undefined> {
   const repo = repository(workspace);
   if (action.kind === "commit") {
     if (!action.message.trim() || action.message.length > 8000) throw new ValidationError("Invalid commit message");
@@ -58,6 +58,7 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
       throw new ConflictError("Merge requires the approved PR head and successful CI");
     }
     if (review.treeSha !== review.headTreeSha) throw new ConflictError("Workspace has uncommitted changes");
+    return current;
   } else {
     const policy = workspacePolicy(deps, workspace.projectName);
     if (!policy.deploymentWorkflows.includes(action.workflow) || action.ref !== "main") throw new ValidationError("Deployment must use an allowed workflow on main");
@@ -65,6 +66,7 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
       throw new ValidationError("Invalid deployment workflow inputs");
     }
   }
+  return undefined;
 }
 
 /** Every write effect is explicitly requested, reviewed, and claimed before execution. */
@@ -77,11 +79,11 @@ export function createCodingUseCases(deps: CodingDeps) {
         const sandbox = await ensureWorkspaceSandbox(deps, state);
         const { workspace } = await state.read();
         const review = await deps.coding.review(sandbox.externalId);
-        await validateAction(deps, workspace, action, review);
+        const pullRequest = await validateAction(deps, workspace, action, review);
         const approval: CodingApproval = { id: approvalId, workspaceId: id, requestedBy: ownerEmail,
           requestedAt: deps.now().toISOString(), action, fingerprint: review.fingerprint, status: "pending",
           review: { headSha: review.headSha, treeSha: review.treeSha, diff: review.diff, truncated: review.truncated } };
-        await release(deps, state, approval, true);
+        await release(deps, state, approval, true, pullRequest ? { pullRequest } : {});
         return approval;
       } catch (error) { await release(deps, state); throw error; }
     },
