@@ -388,7 +388,7 @@ export const ko: Messages = {
     "관리자가 Tools에서 서버를 등록하고 discovery 결과에 필요한 도구가 나타나는지 확인한다. 버전에 서버를 연결하고 제공할 도구를 선택한 뒤 버전을 저장한다. 호출이 실패하면 서버 상태·필수 헤더·실행 경고를 확인한다. 서버에 접속할 수 있어도 사용할 도구가 없거나 별도 인증이 필요할 수 있다.",
   "guide.capabilities.oauth": "MCP 설정의 저장 범위",
   "guide.capabilities.oauthBody":
-    "도구 선택과 헤더 재정의는 버전 설정이며 버전의 Save가 필요하다. OAuth Connect·Disconnect·OAuth 클라이언트 자격 증명은 프로젝트 단위로 별도 저장되어 모든 버전이 공유한다. OAuth가 필요한 도구는 인증 연결을 완료한 뒤 시험한다.",
+    "도구 선택과 헤더 재정의는 버전 설정이며 버전의 Save가 필요하다. 관리자는 Tools의 OAuth에 공용 Client ID·Secret·Redirect URI를 등록하고, 프로젝트 소유자는 Connection에서 자신의 계정으로 Connect한다. 사용자별 토큰은 프로젝트 단위로 저장되어 모든 버전이 공유한다.",
   "guide.capabilities.agents": "다른 에이전트에 작업 위임",
   "guide.capabilities.agentsBody": "별도 전문 역할이 필요한 작업에 위임을 사용한다. 반복적인 절차는 Agent 하나와 skill로 구성할 수 있다. 배포된 로컬 프로젝트나 등록된 외부 OpenAI 호환·A2A Agent를 연결하고 역할을 명확히 설명한다. 위임된 활동은 작성 Agent 이름으로 구분하며 사용량은 원래 실행의 집계에 포함된다.",
   "guide.capabilities.plugins": "Plugins 가져오기와 동기화",
@@ -806,7 +806,7 @@ export const ko: Messages = {
     "이 버전에 한해 레지스트리 항목의 헤더 위에 덮어씁니다. 버전과 함께 저장됩니다.",
   "mcpSettings.connection": "연결",
   "mcpSettings.connectionNote":
-    "이 프로젝트가 서버에 쓰는 자격 증명이며 모든 버전이 공유합니다. 버전과 별개로 즉시 저장됩니다.",
+    "관리자가 설정한 OAuth 클라이언트로 이 프로젝트의 사용자 계정을 인증합니다. 버전과 별개로 즉시 저장됩니다.",
   "mcpSettings.title": "{server} 설정",
   "mcpSettings.savesWholeVersion": "이 서버만이 아니라 버전 전체를 저장합니다.",
   "mcpSettings.close": "닫기",
@@ -864,10 +864,16 @@ export const ko: Messages = {
   "mcpConn.noAuthNeeded":
     "이 서버는 인증이 필요 없습니다. 필요한 자격 증명은 레지스트리 항목의 헤더와 위의 재정의에서 옵니다.",
   "mcpConn.noClientDocument":
-    "이 프로바이더는 client ID 메타데이터 문서도 동적 등록도 지원하지 않습니다. 앱을 직접 등록한 뒤 client ID 와 secret 을 여기에 저장하세요.",
+    "이 프로바이더는 OAuth 앱 수동 등록이 필요합니다. 관리자가 Tools의 MCP OAuth 설정에 Client ID와 Secret을 저장해야 프로젝트를 연결할 수 있습니다.",
   "mcpConn.authorizedBy": "{who} 님이 {when} 에 인증함",
   "mcpConn.saveCredentials": "자격 증명 저장",
   "mcpConn.disconnect": "연결 해제",
+  "mcpOAuth.automatic": "OAuth 앱을 직접 등록하지 않고 프로젝트를 연결할 수 있습니다. 접근 가능한 클라이언트 메타데이터 문서를 우선 사용하고, 제공되는 경우 동적 등록을 사용합니다.",
+  "mcpOAuth.manual": "수동 OAuth 앱 설정",
+  "mcpOAuth.sharedHint": "이 MCP를 사용하는 프로젝트가 공유합니다. Client ID를 비우면 수동 앱을 제거하며, 제공자가 지원하는 경우에만 자동 등록을 사용합니다.",
+  "mcpOAuth.secretHint": "비워 두면 기존 Secret을 유지합니다. Client ID를 변경하면 제공자가 요구하는 새 Secret도 입력하세요.",
+  "mcpOAuth.redirectHint": "배포의 공개 주소로 자동 입력됩니다. OAuth 제공자에 이 콜백을 정확히 등록하세요.",
+  "mcpOAuth.save": "OAuth 클라이언트 저장",
 
   "registry.nameLabel": "이름",
   "registry.nameHint": "소문자·숫자·하이픈만 쓸 수 있습니다.",

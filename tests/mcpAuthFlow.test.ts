@@ -260,6 +260,31 @@ describe("beginAuthorization", () => {
     expect(connection?.clientSecret).toBe("enc:dcr-secret");
   });
 
+  it("uses the operator-configured client for every project authorization", async () => {
+    const h = harness({
+      server: {
+        ...SERVER,
+        auth: {
+          ...SERVER.auth!,
+          clientId: "github-app-id",
+          clientSecret: "enc:github-app-secret",
+          redirectUri: CALLBACK,
+          registrationEndpoint: "https://auth.example.com/register",
+        },
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const url = new URL(authorizeUrl);
+
+    expect(url.searchParams.get("client_id")).toBe("github-app-id");
+    expect(url.searchParams.get("redirect_uri")).toBe(CALLBACK);
+    expect(h.registrations).toHaveLength(0);
+    expect(h.connections.get("p/slack")?.clientSecret).toBeUndefined();
+    expect(h.connections.get("p/slack")?.clientFromRegistry).toBe(true);
+  });
+
   it("uses a client ID metadata document instead of registering, where the server takes one", async () => {
     // The point of CIMD: nothing is requested and nothing is issued. The
     // `client_id` is the address of a document this deployment already serves,

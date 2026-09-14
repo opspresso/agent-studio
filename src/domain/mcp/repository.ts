@@ -7,6 +7,6 @@ export interface McpRepository {
   update(server: McpServer): Promise<void>;
   put(server: McpServer): Promise<void>;
   /** Patch only OAuth metadata while the entry still exists at the expected URL. */
-  updateAuth(name: string, expectedUrl: string, auth: McpServerAuth | undefined, updatedAt: string): Promise<boolean>;
+  updateAuth(name: string, expectedUrl: string, auth: McpServerAuth | undefined, updatedAt: string, expected?: { auth?: McpServerAuth }): Promise<boolean>;
   delete(name: string): Promise<void>;
 }

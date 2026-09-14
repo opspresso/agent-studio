@@ -18,6 +18,8 @@ import {
   testMcpConnection,
   discoverMcpAuth,
   clearMcpAuth,
+  saveMcpOAuthClient,
+  getMcpOAuthClientSettings,
   updateMcp,
   type McpServer,
   type McpTool,
@@ -505,10 +507,8 @@ export default function McpDetailPage() {
 /**
  * OAuth configuration for this registry entry (admin-only).
  *
- * This half is operator configuration — where the authorization server is —
- * shared by every project. The credentials that use it are per project and live
- * on the project page, which is what lets one entry serve a different app per
- * project.
+ * This is operator configuration shared by every project: where the authorization
+ * server is and, when required, which OAuth app all projects use.
  */
 function OAuthSection({
   server,
@@ -519,9 +519,35 @@ function OAuthSection({
   onChanged: () => void;
   editable: boolean;
 }) {
+  const t = useT();
+  const [defaultRedirectUri, setDefaultRedirectUri] = useState("");
+  const [clientSettingsLoaded, setClientSettingsLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [choices, setChoices] = useState<string[] | null>(null);
+  const [clientId, setClientId] = useState(server.auth?.clientId ?? "");
+  const [clientSecret, setClientSecret] = useState(server.auth?.clientSecret ?? "");
+  const [redirectUri, setRedirectUri] = useState(server.auth?.redirectUri ?? defaultRedirectUri);
+
+  useEffect(() => {
+    setClientId(server.auth?.clientId ?? "");
+    setClientSecret(server.auth?.clientSecret ?? "");
+    setRedirectUri(server.auth?.redirectUri ?? "");
+    setClientSettingsLoaded(false);
+    if (!editable || !server.auth) return;
+    let cancelled = false;
+    void getMcpOAuthClientSettings(server.name).then((settings) => {
+      if (cancelled) return;
+      setClientId(settings.auth.clientId ?? "");
+      setClientSecret(settings.auth.clientSecret ?? "");
+      setDefaultRedirectUri(settings.defaultRedirectUri);
+      setRedirectUri(settings.auth.redirectUri ?? settings.defaultRedirectUri);
+      setClientSettingsLoaded(true);
+    }).catch((error) => {
+      if (!cancelled) setError(reportError(error, "Failed to load OAuth client settings"));
+    });
+    return () => { cancelled = true; };
+  }, [editable, server.name, server.auth]);
 
   async function discover(authorizationServer?: string) {
     setBusy(true);
@@ -555,6 +581,27 @@ function OAuthSection({
       setBusy(false);
     }
   }
+
+  async function saveClient() {
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await saveMcpOAuthClient(server.name, { clientId, clientSecret, redirectUri });
+      setClientId(saved.clientId ?? "");
+      setClientSecret(saved.clientSecret ?? "");
+      setRedirectUri(saved.redirectUri ?? defaultRedirectUri);
+      onChanged();
+    } catch (e) {
+      setError(reportError(e, "Failed to save OAuth client"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const automaticClient = Boolean(
+    server.auth?.clientIdMetadataDocumentSupported || server.auth?.registrationEndpoint,
+  );
+  const showManualClient = Boolean(server.auth?.clientId) || !automaticClient;
 
   return (
     <section>
@@ -611,6 +658,7 @@ function OAuthSection({
       )}
 
       {server.auth ? (
+        <Stack gap="sm">
         <Card component="dl" m={0}>
           {(
             [
@@ -665,10 +713,42 @@ function OAuthSection({
             </Group>
           ))}
         </Card>
+        {editable && automaticClient && !server.auth.clientId && (
+          <Text fz="sm" c="dimmed">
+            {t("mcpOAuth.automatic")}
+          </Text>
+        )}
+        {editable && (
+          <details open={showManualClient || undefined}>
+          <summary>{t("mcpOAuth.manual")}</summary>
+          <Stack gap="xs" mt="sm">
+            <Text fz="sm" c="dimmed">
+              {t("mcpOAuth.sharedHint")}
+            </Text>
+            <TextInput label="Client ID" value={clientId} onChange={(event) => setClientId(event.currentTarget.value)} disabled={busy || !clientSettingsLoaded} />
+            <TextInput label="Client secret" type="password" autoComplete="new-password" value={clientSecret} onChange={(event) => setClientSecret(event.currentTarget.value)} styles={monoInput} disabled={busy || !clientSettingsLoaded} description={t("mcpOAuth.secretHint")} />
+            <TextInput
+              label="Redirect URI"
+              value={redirectUri}
+              onChange={(event) => setRedirectUri(event.currentTarget.value)}
+              placeholder={defaultRedirectUri}
+              description={t("mcpOAuth.redirectHint")}
+              disabled={busy || !clientSettingsLoaded}
+              styles={monoInput}
+            />
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => void saveClient()} loading={busy} disabled={!clientSettingsLoaded}>
+                {t("mcpOAuth.save")}
+              </Button>
+            </Group>
+          </Stack>
+          </details>
+        )}
+        </Stack>
       ) : (
         <Text fz="sm" c="dimmed">
           Not configured. Discovery reads the server&apos;s published metadata; projects then
-          connect their own credentials from their project page.
+          authorize with the OAuth client configured here.
         </Text>
       )}
     </section>

@@ -4,9 +4,8 @@ import type { TokenEndpointAuthMethod } from "./types";
  * short-lived record of an authorization still in flight.
  *
  * The registry entry is shared and says *where* the authorization server is
- * (`McpServerAuth`); a connection is per project and says *who is asking*. That
- * split is what lets one `mcp.slack.com` entry serve a different Slack app per
- * project.
+ * (`McpServerAuth`), including an optional shared OAuth app. A connection is per
+ * project and holds the user's grant; a shared app's secret stays in the registry.
  *
  * Why its own item rather than the version's `McpBinding` or the project item:
  * a version is a snapshot of configuration history while an access token turns
@@ -25,6 +24,8 @@ export interface McpConnection {
   clientId: string;
   /** Encrypted. Absent for a public client (`token_endpoint_auth_method: "none"`). */
   clientSecret?: string;
+  /** Shared OAuth app; the current secret is read from the registry at exchange/refresh. */
+  clientFromRegistry?: boolean;
   /** True when RFC 7591 issued the credentials, so they can be re-registered. */
   clientRegistered?: boolean;
   /**
@@ -114,6 +115,12 @@ export interface McpOAuthState {
   codeVerifier: string;
   /** The user who started the flow; the callback must be the same person. */
   userEmail: string;
+  /** The exact callback used in the authorization request. */
+  redirectUri?: string;
+  /** Client and resource bound to this pending authorization. */
+  clientId?: string;
+  clientFromRegistry?: boolean;
+  resource?: string;
   /**
    * The issuer this flow was started against, recorded here rather than read
    * back off the registry entry: RFC 9207 requires the expected issuer to live

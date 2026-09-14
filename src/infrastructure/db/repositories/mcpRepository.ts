@@ -1,4 +1,5 @@
 import { isMcpSourceMappings } from "@/domain/mcp/sourceMapping";
+import { isDeepStrictEqual } from "node:util";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpRuntime, McpServer, McpServerAuth } from "@/domain/mcp/types";
 import { createKeyedRepository } from "../keyedRepository";
@@ -68,7 +69,7 @@ export const mcpRepository: McpRepository = {
     toItem,
     fromItem,
   }),
-  async updateAuth(name, expectedUrl, auth, updatedAt) {
+  async updateAuth(name, expectedUrl, auth, updatedAt, expected) {
     try {
       await updateItem(
         keys.mcp(name),
@@ -77,7 +78,11 @@ export const mcpRepository: McpRepository = {
           void _previous;
           return { ...current, ...(auth ? { auth } : {}), updatedAt };
         },
-        (row) => row !== null && row.url === expectedUrl,
+        (row) => row !== null && row.url === expectedUrl &&
+          (expected === undefined || isDeepStrictEqual(
+            row.auth ?? null,
+            JSON.parse(JSON.stringify(expected.auth ?? null)),
+          )),
       );
       return true;
     } catch (error) {

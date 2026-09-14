@@ -25,6 +25,12 @@ export type TokenEndpointAuthMethod = "client_secret_post" | "client_secret_basi
  */
 export interface McpServerAuth {
   type: "oauth2";
+  /** Operator-configured OAuth client ID shared by this registry entry. */
+  clientId?: string;
+  /** Encrypted operator-configured OAuth client secret. */
+  clientSecret?: string;
+  /** Optional operator-configured callback; otherwise the deployment callback is used. */
+  redirectUri?: string;
   /**
    * The RFC 9728 canonical URI of this MCP server, sent as the RFC 8707
    * `resource` parameter on every authorization and token request. Read off the

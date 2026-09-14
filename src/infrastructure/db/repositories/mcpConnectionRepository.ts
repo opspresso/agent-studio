@@ -59,6 +59,7 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
     serverName: item.serverName as string,
     clientId: item.clientId as string,
     clientSecret: optionalString(item.clientSecret),
+    ...(item.clientFromRegistry === true ? { clientFromRegistry: true } : {}),
     // Read back explicitly, unlike the write, which spreads the whole
     // connection: a field added to the type and not to this list is stored and
     // then silently lost. Both of these decide whether the issuer check applies

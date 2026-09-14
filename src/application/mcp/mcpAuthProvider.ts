@@ -20,6 +20,7 @@ import type { McpServerAuth } from "@/domain/mcp/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 import { mcpConnectionSecretContext } from "@/domain/security/secretContext";
+import { mcpTokenTarget, registryClientMismatch } from "./mcpOAuthClient";
 
 /**
  * How much life a token must have left to be used as-is.
@@ -68,7 +69,7 @@ function bearer(token: string): Record<string, string> {
 function mismatchReason(
   connection: McpConnection,
   serverName: string,
-  auth: Pick<McpServerAuth, "issuer" | "resource">,
+  auth: McpServerAuth,
 ): string | undefined {
   if (connection.issuer !== auth.issuer) {
     return `MCP server '${serverName}' points at a different authorization server than the one this project's credentials were registered with; it needs to be connected again.`;
@@ -76,13 +77,16 @@ function mismatchReason(
   if (connection.resource !== auth.resource) {
     return `MCP server '${serverName}' now identifies as a different resource than the one this project's access was granted for; it needs to be connected again.`;
   }
+  if (registryClientMismatch(connection, auth)) {
+    return `MCP server '${serverName}' has changed or removed its shared OAuth client; connect this project again.`;
+  }
   return undefined;
 }
 
 function unavailableReason(
   connection: McpConnection,
   serverName: string,
-  auth: Pick<McpServerAuth, "issuer" | "resource">,
+  auth: McpServerAuth,
 ): string | undefined {
   const mismatch = mismatchReason(connection, serverName, auth);
   if (mismatch) {
@@ -115,7 +119,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
   async function refresh(
     connection: McpConnection,
     target: TokenRequestTarget,
-    auth: Pick<McpServerAuth, "issuer" | "resource">,
+    auth: McpServerAuth,
   ): Promise<McpAuthResolution> {
     const stored = connection.refreshToken;
     if (!stored) {
@@ -251,20 +255,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         };
       }
 
-      return refresh(connection, {
-        tokenEndpoint: auth.tokenEndpoint,
-        clientId: connection.clientId,
-        ...(connection.clientSecret
-          ? {
-              clientSecret: deps.cipher.decrypt(
-                connection.clientSecret,
-                mcpConnectionSecretContext(projectName, serverName, "client-secret"),
-              ),
-            }
-          : {}),
-        tokenEndpointAuthMethod: connection.tokenEndpointAuthMethod ?? auth.tokenEndpointAuthMethod,
-        resource: auth.resource,
-      }, { issuer: auth.issuer, resource: auth.resource });
+      return refresh(connection, mcpTokenTarget(deps.cipher, connection, auth), auth);
     },
 
     async markUnauthorized(projectName, serverName, scope) {
