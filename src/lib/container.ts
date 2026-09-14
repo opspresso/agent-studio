@@ -170,7 +170,7 @@ import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
 import { deleteExpired } from "@/infrastructure/db/store";
-import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
+import { createProjectUseCases, setAdminCheck, userMayAccessProject } from "@/application/project/projectUseCases";
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createVersionUseCases } from "@/application/project/versionUseCases";
@@ -1471,7 +1471,8 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
     checkpoints: createWorkspaceCheckpointStore(secretCipher),
     runtime: kind => createWorkspaceRuntimeAdapter(kind, settings.runtimes[kind]),
     ...(github && githubConfig ? { coding: createDockerCodingWorktree(settings, { webUrl: githubConfig.webUrl,
-      internalHosts: githubConfig.internalHosts, credential: github.credential }) } : {}),
+      internalHosts: githubConfig.internalHosts,
+      ...("getToken" in githubConfig ? { serverToken: githubConfig.getToken } : { credential: github.credential }) }) } : {}),
     runTimeoutMs: MAX_RUN_DURATION_MS,
     execute: (workspace, work) => executeWorkspaceTask(executionDeps, projectRepository, workspace, work),
     sleep: async (ms, signal) => { await workspaceSleep(ms, undefined, { signal }); },
@@ -1505,4 +1506,25 @@ export async function receiveWorkspaceGitHubWebhook(deliveryId: string, raw: str
   const config = getWorkspaceGitHubConfig();
   if (!config) throw new ValidationError("Workspace GitHub integration is not configured");
   return handleCodingWebhook(workspaceRepository, createCodingGitHub(config).forge, deliveryId, raw);
+}
+
+export async function workspaceOptions(ownerEmail: string) {
+  const settings = getWorkspaceConfig();
+  const available = [];
+  for (const policy of settings?.projects ?? []) {
+    const project = await projectRepository.get(policy.projectName);
+    if (project && await userMayAccessProject(project, ownerEmail)) available.push({
+      projectName: project.name, displayName: project.displayName, description: project.description,
+      runtimes: policy.runtimes, repository: policy.repository, deploymentWorkflows: policy.deploymentWorkflows,
+    });
+  }
+  return { enabled: !!settings, gitEnabled: !!getWorkspaceGitHubConfig(), projects: available };
+}
+
+export async function workspaceBranches(projectName: string, ownerEmail: string) {
+  await projectUseCases.assertAccessible(projectName, ownerEmail);
+  const repo = getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.repository;
+  const config = getWorkspaceGitHubConfig();
+  if (!repo || !config) throw new ValidationError("Workspace GitHub integration is not configured");
+  return createCodingGitHub(config).forge.branches(repo);
 }

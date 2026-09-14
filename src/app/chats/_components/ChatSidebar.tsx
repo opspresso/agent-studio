@@ -1,4 +1,5 @@
 "use client";
+import { WORKSPACE_ACTIVITY_EVENT } from "@/app/workspaces/_lib/activity";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -104,6 +105,11 @@ export function ChatSidebar() {
   useEffect(() => {
     void load();
   }, [load, running]);
+  useEffect(() => {
+    const refresh = () => { void load(); };
+    window.addEventListener(WORKSPACE_ACTIVITY_EVENT, refresh);
+    return () => window.removeEventListener(WORKSPACE_ACTIVITY_EVENT, refresh);
+  }, [load]);
 
   // A tap that opens a chat has done what the drawer was opened for. Depend on
   // the stable `close` callback, not the handlers object — useDisclosure

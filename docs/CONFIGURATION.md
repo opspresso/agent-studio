@@ -468,8 +468,12 @@ Studio의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 �
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐와 TTL이
 진행되지 않는다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
 
-코딩 작업은 `WORKSPACE_GITHUB_APP_ID`, `WORKSPACE_GITHUB_INSTALLATION_ID`,
-`WORKSPACE_GITHUB_PRIVATE_KEY`를 모두 요구한다. API·Git web 주소는 기존 `GITHUB_API_URL`과
+코딩 작업은 GitHub App 또는 서버 계정 토큰을 사용한다. 기본 `WORKSPACE_GITHUB_AUTH=app`은
+`WORKSPACE_GITHUB_APP_ID`, `WORKSPACE_GITHUB_INSTALLATION_ID`, `WORKSPACE_GITHUB_PRIVATE_KEY`를
+모두 요구한다. `WORKSPACE_GITHUB_AUTH=token`은 설정 화면의 GitHub token을 사용하며, 저장된
+오버라이드가 없으면 `GITHUB_TOKEN`을 읽는다. 이 모드는 Git 인증을 서버에서만 수행하고
+자격증명이 없는 Git bundle을 Sandbox에 전달한다. 서버에 Git 실행 파일과 임시 디스크 공간이
+필요하며 bundle은 체크포인트와 같은 64 MiB 한도를 따른다. API·Git web 주소는 기존 `GITHUB_API_URL`과
 `GITHUB_WEB_URL`을 사용한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
 호스트 접미사를 선언하며, 다른 내부 URL 허용 목록과 공유하지 않는다.
 `WORKSPACE_GITHUB_WEBHOOK_SECRET`은 GitHub webhook HMAC 검증에 사용한다.

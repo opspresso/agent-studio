@@ -114,7 +114,10 @@ async function run(id) {
         writes = writes.then(() => out.write(frame));
       }
     };
-    const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd, env, uid: 1000, gid: 1000, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+    // Create native state directories as the workload user, never as the privileged supervisor.
+    const child = spawn("/bin/sh", ["-c",
+      'mkdir -p "$CODEX_HOME" "$CLAUDE_CONFIG_DIR" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" && exec "$@"',
+      "workspace-runtime", ...spec.argv], { cwd, env, uid: 1000, gid: 1000, detached: true, stdio: ["pipe", "pipe", "pipe"] });
     const timeout = setTimeout(() => { void killWorkload(); }, spec.timeoutMs);
     for (const stream of ["stdout", "stderr"]) {
       const decoder = new StringDecoder("utf8");
@@ -146,7 +149,8 @@ async function snapshot() {
   const entries = [];
   const gitFiles = await checkpointGitFiles();
   let total = 0;
-  const excluded = new Set(["repo/.git", "home/.codex/auth.json", "home/.claude/.credentials.json", "home/.local/share/opencode/auth.json"]);
+  const excluded = new Set(["repo/.git", "home/.codex/auth.json", "home/.claude/.credentials.json", "home/.local/share/opencode/auth.json",
+    "home/.npm", "home/.cache", "home/.codex/.tmp", "home/.codex/tmp"]);
   async function visit(base, relative = "") {
     for (const name of await fs.readdir(base)) {
       const rel = relative ? `${relative}/${name}` : name;

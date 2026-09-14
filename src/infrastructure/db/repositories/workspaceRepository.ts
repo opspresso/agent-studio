@@ -6,6 +6,7 @@ import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { keys } from "../keys";
 import { conditions, getItem, queryItems, transact, type Item, type TransactOp } from "../store";
 import { chatActivityFields, chatIsLive } from "../chatLifecycle";
+import { chatCreationItem } from "./chatRepository";
 import { projectIsLive } from "../projectLifecycle";
 import { expiresAtSeconds, expiresAtFromNow, isExpired, RETENTION } from "../ttl";
 
@@ -41,15 +42,17 @@ function assertChild(workspaceId: string, child: { workspaceId: string }): void 
 
 /** Revision checks fence every child write, including terminal events and approvals. */
 export const workspaceRepository: WorkspaceRepository = {
-  async create(workspace, session) {
+  async create(workspace, session, chat) {
     assertChild(workspace.id, session);
+    if (chat && (chat.chatId !== workspace.chatId || chat.ownerEmail !== workspace.ownerEmail || chat.projectName !== workspace.projectName)) throw new Error("Workspace chat scope mismatch");
     if (workspace.revision !== 0 || workspace.sessionId !== session.id || workspace.runtime !== session.runtime) throw new Error("invalid initial workspace");
     await transact([
       { kind: "check", key: keys.project(workspace.projectName), condition: projectIsLive },
-      { kind: "update", key: keys.chat(workspace.chatId), patch: row => ({ ...row, workspaceId: workspace.id }), condition: row =>
+      ...(chat ? [{ kind: "put" as const, item: chatCreationItem({ ...chat, workspaceId: workspace.id }), condition: conditions.notExists }] : [
+      { kind: "update" as const, key: keys.chat(workspace.chatId), patch: (row: Item | null) => ({ ...row, workspaceId: workspace.id }), condition: (row: Item | null) =>
         chatIsLive(row) && row?.ownerEmail === workspace.ownerEmail &&
         row?.projectName === workspace.projectName && row?.workspaceId === undefined && row?.activeRunId === undefined &&
-        !isExpired(row?.expiresAt, Date.now()) },
+        !isExpired(row?.expiresAt, Date.now()) }]),
       { kind: "put", item: workspaceItem(workspace), condition: conditions.notExists },
       { kind: "put", item: { ...keys.workspaceChat(workspace.chatId), value: workspace.id,
         expiresAt: expiry(workspace.updatedAt) }, condition: conditions.notExists },

@@ -283,11 +283,14 @@ export async function getPluginsRepoConfig(): Promise<{
   return {
     repo: stored?.pluginsRepo ?? config.pluginsRepo,
     branch: stored?.pluginsRepoBranch ?? config.pluginsRepoBranch,
-    token:
-      stored?.githubToken !== undefined
-        ? decryptSecret(stored.githubToken, settingsSecretContext("github-token"))
-        : config.githubToken,
+    token: await getGitHubToken(),
   };
+}
+
+export async function getGitHubToken(): Promise<string | undefined> {
+  const stored = await loadSettings();
+  return stored?.githubToken !== undefined
+    ? decryptSecret(stored.githubToken, settingsSecretContext("github-token")) : config.githubToken;
 }
 
 export async function getA2aApiKey(): Promise<string | undefined> {
@@ -338,4 +341,11 @@ export async function getUnknownModelPolicy(): Promise<UnknownModelPolicy> {
 
 /** Compute, images and model credentials are deployment-owned; no browser-editable override. */
 export function getWorkspaceConfig() { return config.workspace; }
-export function getWorkspaceGitHubConfig() { return config.workspaceGitHub; }
+export function getWorkspaceGitHubConfig() {
+  const settings = config.workspaceGitHub;
+  return settings?.auth === "token" ? { ...settings, getToken: async () => {
+    const token = await getGitHubToken();
+    if (!token) throw new Error("Workspace GitHub account token is not configured");
+    return token;
+  } } : settings;
+}

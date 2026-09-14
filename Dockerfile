@@ -19,7 +19,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-RUN apk add --no-cache ffmpeg docker-cli && addgroup -S app && adduser -S app -G app
+RUN apk add --no-cache ffmpeg docker-cli git && addgroup -S app && adduser -S app -G app
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public

@@ -70,6 +70,8 @@ Provider는 Docker CLI에 인자 배열을 넘긴다. API 입력과 모델 설�
 경로 탈출, symlink 아래로 쓰는 복원, 특수 파일은 거절한다. 복원은 빈 Sandbox에서만 허용한다.
 CLI 로그인 자격증명 파일은 체크포인트에서 제외한다. 64 MiB의 파일 bytes 또는 20,000개
 항목을 넘으면 체크포인트를 실패시키며, 부분 백업을 성공으로 취급하지 않는다.
+홈의 `.npm`, `.cache`, `.codex/.tmp`, `.codex/tmp`는 재생성 가능한 패키지·CLI 캐시라 제외한다.
+native Session 이력과 SQLite 상태는 보관한다. Codex의 자동 plugin·App·hook 로딩은 끈다.
 
 ## Worker와 복구
 
@@ -110,6 +112,25 @@ installation token을 잠시 전달한다. 토큰은 Git 설정이나 체크포�
 main 병합은 소유한 PR·정확한 head·CI 성공을 확인하고 merge API의 `sha` 조건으로 실행한다.
 배포는 허용한 workflow의 `main` 실행과 검토한 inputs만 사용하며 Sandbox에서 배포하지 않는다.
 응답이 소실된 외부 효과는 `uncertain`으로 남기고 같은 승인을 자동 재실행하지 않는다.
+
+계정 토큰 모드는 서버의 GitHub 설정을 재사용한다. 인증된 clone과 push는 서버의 임시 bare
+저장소에서 수행하며, Sandbox에는 자격증명이 없는 Git bundle만 전달한다. 서버는 저장소
+파일을 checkout하거나 hook·build script를 실행하지 않고 호스트의 Git 설정·credential helper를
+상속하지 않는다. 임시 디렉터리는 작업 후 삭제한다. PR publish는 bundle의 정확한 head를
+확인하고 지정된 `agent/` 브랜치만 push한다. [Git bundle](https://git-scm.com/docs/git-bundle)은
+전체 commit 이력을 유지하므로 Sandbox 안에서도 clone·검토·복원 계약이 같다.
+
+## 사용자 화면과 API
+
+Chats의 Workspace 선택에서 프로젝트, Runtime, 선택적 저장소·기준 브랜치와 작업 내용을
+입력한다. 기존 Chat 실행과 Workspace 실행은 같은 채팅 화면의 별도 경로를 사용한다.
+Workspace 화면은 실행 출력·Diff·검사 결과와 명시적 Git·배포 승인을 보여 준다. 새 요청은
+동일한 Workspace와 native Session에서 이어지며 페이지를 떠나도 서버 작업은 계속된다.
+
+`POST /api/workspaces`와 `POST /api/workspaces/{id}/runs`는 `Idempotency-Key`를 요구한다.
+목록·이벤트는 제한된 페이지로 읽으며 클라이언트는 최근 실행 50개와 이벤트 2,000개를 유지한다.
+`GET /api/workspaces/{id}`의 공개 view에는 lease, operation handle과 체크포인트 주소를 넣지 않는다.
+모든 사용자 API는 member 이상과 Chat 소유권·현재 프로젝트 접근 권한을 확인한다.
 
 `POST /api/workspaces/github/webhook`은 HMAC 서명을 검증한 뒤 PR 상태만 갱신한다. 이벤트 본문으로
 작업을 실행하거나 승인하지 않는다. delivery ID와 본문 fingerprint를 상태 갱신과 함께 저장한다.

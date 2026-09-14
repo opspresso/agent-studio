@@ -11,6 +11,7 @@ export interface Workspace {
   ownerEmail: string;
   projectName: string;
   title: string;
+  creationFingerprint?: string;
   runtime: WorkspaceRuntime;
   sessionId: string;
   status: WorkspaceStatus;

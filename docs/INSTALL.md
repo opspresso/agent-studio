@@ -125,8 +125,10 @@ worker는 동일 핸들을 이어서 관찰하며 불확실한 작업을 자동�
 `WORKSPACE_SANDBOX_IMAGE`로 검사 이미지를 지정할 수 있고 `WORKSPACE_TEST_AGENTS=true`는
 세 CLI의 비특권 실행도 확인한다. 실제 모델 요청은 이 검사에서 보내지 않는다.
 
-코딩을 켜려면 같은 설정의 프로젝트에 `repository: "owner/repo"`를 추가하고 GitHub App을
-설정한다. App 설치 범위는 작업할 저장소로 한정한다. webhook URL은
+코딩을 켜려면 같은 설정의 프로젝트에 `repository: "owner/repo"`를 추가하고 GitHub App 또는
+`WORKSPACE_GITHUB_AUTH=token`과 서버의 GitHub 계정 토큰을 설정한다. 계정 토큰 모드는 서버에서
+bare Git 저장소와 bundle을 주고받고 저장소 코드를 실행하지 않는다. 배포 이미지에는 Git을
+포함한다. App 설치 범위는 작업할 저장소로 한정한다. webhook URL은
 `/api/workspaces/github/webhook`이며 Pull requests, Check runs, Check suites, Workflow runs
 이벤트와 별도 webhook secret을 설정한다. main의 branch protection과 CI를 유지한다.
 배포할 workflow는 `workflow_dispatch`를 지원해야 하며 `deploymentWorkflows`에 파일명을

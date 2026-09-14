@@ -3,16 +3,20 @@ import { isGitBranch, isRepositoryName } from "@/domain/workspace/policy";
 import { isDeclaredInternalHost } from "@/domain/security/internalHosts";
 import { resolvePublicUrl } from "@/infrastructure/net/ssrfGuard";
 import { createDockerSandboxBackend, type DockerSandboxConfig } from "./dockerProvider";
+import { createGitBundleTransport } from "./gitBundleTransport";
+import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 
 export interface GitWorktreeConfig {
   webUrl: string;
   internalHosts: string[];
   /** A server-side broker issues a repository-scoped installation token, never a PAT. */
-  credential(repository: string, access: "read" | "write"): Promise<{ token: string; expiresAt: string }>;
+  credential?: (repository: string, access: "read" | "write") => Promise<{ token: string; expiresAt: string }>;
+  serverToken?: () => Promise<string>;
 }
 
 export function createDockerCodingWorktree(sandbox: DockerSandboxConfig, config: GitWorktreeConfig): CodingWorktree {
   const { control } = createDockerSandboxBackend(sandbox);
+  const transport = config.serverToken ? createGitBundleTransport(config.serverToken) : undefined;
   async function network(repository: string, access: "read" | "write", expectedUrl?: string) {
     if (!isRepositoryName(repository)) throw new Error("Invalid coding repository");
     const url = new URL(`${config.webUrl.replace(/\/+$/, "")}/${repository}.git`);
@@ -26,7 +30,8 @@ export function createDockerCodingWorktree(sandbox: DockerSandboxConfig, config:
       if (!ip) throw new Error("Git host did not resolve");
       resolve = `${url.hostname}:${url.port || (url.protocol === "https:" ? "443" : "80")}:${ip.includes(":") ? `[${ip}]` : ip}`;
     }
-    const credential = await config.credential(repository, access);
+    if (!transport && !config.credential) throw new Error("Workspace Git credentials are not configured");
+    const credential = transport ? {} : await config.credential!(repository, access);
     return { url: url.href, ...credential, ...(resolve ? { resolve } : {}) };
   }
   return {
@@ -35,14 +40,19 @@ export function createDockerCodingWorktree(sandbox: DockerSandboxConfig, config:
       const expectedUrl = `${config.webUrl.replace(/\/+$/, "")}/${repository.repository}.git`;
       if (repository.remoteUrl && repository.remoteUrl !== expectedUrl) throw new Error("Workspace repository origin changed");
       const remote = repository.baseSha ? { url: expectedUrl } : await network(repository.repository, "read", repository.remoteUrl);
-      const result = await control<{ baseSha: string; headSha: string }>(externalId, "git-prepare", { ...remote, ...repository, existingOnly: !!repository.baseSha });
+      const bundle = transport && !repository.baseSha ? await transport.download(remote, repository.baseBranch) : undefined;
+      const result = await control<{ baseSha: string; headSha: string }>(externalId, "git-prepare", { ...remote, ...repository, ...(bundle ? { bundle } : {}), existingOnly: !!repository.baseSha });
       if (repository.baseSha && repository.baseSha !== result.baseSha) throw new Error("Workspace Git base changed");
       return { ...repository, ...result, remoteUrl: remote.url };
     },
     review: externalId => control(externalId, "git-review", {}),
     async commit(externalId, input) { return (await control<{ sha: string }>(externalId, "git-commit", input)).sha; },
     async push(externalId, repository) {
-      await control(externalId, "git-push", { ...await network(repository.repository, "write", repository.remoteUrl), ...repository });
+      const remote = await network(repository.repository, "write", repository.remoteUrl);
+      if (transport) {
+        const { bundle } = await control<{ bundle: string }>(externalId, "git-bundle", { ...remote, ...repository }, Math.ceil(WORKSPACE_LIMITS.checkpointBytes * 4 / 3) + 1000);
+        await transport.upload(remote, repository.branch, repository.headSha!, bundle);
+      } else await control(externalId, "git-push", { ...remote, ...repository });
     },
   };
 }

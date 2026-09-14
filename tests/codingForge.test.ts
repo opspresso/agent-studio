@@ -43,6 +43,15 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("coding GitHub App adapter", () => {
+  it("uses account credentials only on the server and never issues them to a Sandbox", async () => {
+    const getToken = vi.fn(async () => "server-only-account-token");
+    const github = createCodingGitHub({ apiUrl: config.apiUrl, webUrl: config.webUrl, internalHosts: config.internalHosts, getToken }, () => now);
+    expect((await github.forge.branches(repository.repository)).names).toContain("main");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.headers.get("Authorization")).toBe("Bearer server-only-account-token");
+    expect(() => github.credential(repository.repository, "read")).toThrow("cannot be issued");
+    expect(getToken).toHaveBeenCalledTimes(1);
+  });
   it("issues short-lived tokens scoped to the selected repository and exact permission", async () => {
     const github = createCodingGitHub(config, () => now);
     const credential = await github.credential(repository.repository, "read");

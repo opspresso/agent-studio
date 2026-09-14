@@ -14,9 +14,11 @@ import { githubHeaders, GITHUB_TIMEOUT_MS } from "./client";
 export interface CodingGitHubConfig {
   apiUrl: string;
   webUrl: string;
-  appId: string;
-  installationId: number;
-  privateKey: string;
+  appId?: string;
+  installationId?: number;
+  privateKey?: string;
+  /** Account credentials are used only in the server, including Git bundle transport. */
+  getToken?: () => Promise<string>;
   webhookSecret?: string;
   internalHosts: string[];
 }
@@ -38,7 +40,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
   const api = new URL(config.apiUrl);
   const web = new URL(config.webUrl);
   if (![api, web].every(url => ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash) ||
-    !config.appId || !Number.isSafeInteger(config.installationId) || config.installationId < 1) throw new Error("Invalid coding GitHub configuration");
+    (!config.getToken && (!config.appId || !Number.isSafeInteger(config.installationId) || !config.installationId || config.installationId < 1 || !config.privateKey))) throw new Error("Invalid coding GitHub configuration");
   if ([api, web].some(url => url.protocol !== "https:" && !isDeclaredInternalHost(url.href, config.internalHosts))) throw new Error("Public GitHub endpoints require HTTPS");
   const base = config.apiUrl.replace(/\/+$/, "");
   async function request<T>(path: string, token: string, method = "GET", body?: unknown, graphql = false): Promise<T> {
@@ -59,11 +61,16 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
   }
   async function token(repository: string, permissions: Permissions) {
     if (!isRepositoryName(repository)) throw new Error("Invalid coding repository");
+    if (config.getToken) {
+      const value = await config.getToken();
+      if (!value || /[\r\n]/.test(value)) throw new Error("Workspace GitHub account token is not configured");
+      return { token: value, expiresAt: "" };
+    }
     const seconds = Math.floor(now().getTime() / 1000);
     const head = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
     const payload = Buffer.from(JSON.stringify({ iat: seconds - 60, exp: seconds + 540, iss: config.appId })).toString("base64url");
     let signature: string;
-    try { signature = sign("RSA-SHA256", Buffer.from(`${head}.${payload}`), config.privateKey).toString("base64url"); }
+    try { signature = sign("RSA-SHA256", Buffer.from(`${head}.${payload}`), config.privateKey!).toString("base64url"); }
     catch { throw new Error("Invalid GitHub App signing key"); }
     const result = await request<{ token: string; expires_at: string }>(`/app/installations/${config.installationId}/access_tokens`,
       `${head}.${payload}.${signature}`, "POST", { repositories: [repository.split("/")[1]], permissions });
@@ -144,7 +151,10 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
   };
   return {
     forge,
-    credential: (repository, access) => token(repository, { contents: access }),
+    credential: (repository, access) => {
+      if (config.getToken) throw new Error("Account credentials cannot be issued to a Sandbox");
+      return token(repository, { contents: access });
+    },
     verifyWebhook: (body, signature) => !!config.webhookSecret && !!signature && timingSafeEqualString(signature,
       `sha256=${createHmac("sha256", config.webhookSecret).update(body).digest("hex")}`),
   };

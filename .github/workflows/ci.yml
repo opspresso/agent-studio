@@ -54,6 +54,17 @@ jobs:
       - name: Integration tests
         run: pnpm test:integration
 
+      - name: Build isolated Workspace test image
+        run: docker build --build-arg INSTALL_AGENTS=false -t agent-studio-workspace:test -f sandbox/Dockerfile sandbox
+
+      - name: Workspace isolation, Git and worker recovery
+        env:
+          WORKSPACE_SANDBOX_IMAGE: agent-studio-workspace:test
+        run: |
+          pnpm test:sandbox
+          pnpm test:workspace:git
+          pnpm test:workspace
+
       - name: Build
         run: pnpm build
 

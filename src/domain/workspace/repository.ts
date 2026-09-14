@@ -1,4 +1,5 @@
 import type { CodingApproval } from "@/domain/coding/types";
+import type { Chat } from "@/domain/chat/types";
 import type { Workspace, RuntimeSession, Sandbox, WorkspaceRun, WorkspaceEvent } from "./types";
 
 export interface WorkspaceWrite {
@@ -17,7 +18,7 @@ export interface WorkspaceWrite {
 }
 
 export interface WorkspaceRepository {
-  create(workspace: Workspace, session: RuntimeSession): Promise<void>;
+  create(workspace: Workspace, session: RuntimeSession, chat?: Chat): Promise<void>;
   get(id: string): Promise<Workspace | null>;
   forChat(chatId: string): Promise<Workspace | null>;
   list(ownerEmail: string, limit: number): Promise<Workspace[]>;

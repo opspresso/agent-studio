@@ -49,6 +49,13 @@ async function main() {
     const clean = await control<WorktreeReview>(id, "git-review", {});
     assert.equal(clean.headSha, result.sha);
     assert.equal(clean.diff, "");
+    const exported = await control<{ bundle: string }>(id, "git-bundle", { ...repo, headSha: result.sha });
+    const { externalId: bundled } = await provider.ensure(`bundle-${workspaceId}`);
+    containers.add(bundled);
+    const imported = await control<{ headSha: string }>(bundled, "git-prepare", { url: repo.url,
+      baseBranch: repo.branch, branch: `agent/bundle-${workspaceId}`, bundle: exported.bundle });
+    assert.equal(imported.headSha, result.sha, "credential-free bundle cloning preserves the approved Git head");
+    assert.equal((await provider.execute(bundled, { argv: ["cat", "hello.txt"], timeoutMs: 10_000 })).stdout, "after");
     const snapshot = await provider.checkpoint(id);
     const entries = JSON.parse(gunzipSync(snapshot).toString("utf8")) as { content?: string }[];
     assert.ok(entries.every(entry => !entry.content || !Buffer.from(entry.content, "base64").toString("utf8").includes(credential.token)), "checkpoint contains no Git credential");

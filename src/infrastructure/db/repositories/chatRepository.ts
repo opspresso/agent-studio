@@ -59,6 +59,10 @@ function chatFields(chat: Chat): Item {
   };
 }
 
+export function chatCreationItem(chat: Chat): Item {
+  return { ...keys.chat(chat.chatId), ...chatFields(chat), nextSeq: 0, ...(chat.workspaceId ? { workspaceId: chat.workspaceId } : {}) };
+}
+
 function toMessageItem(message: ChatMessage): Item {
   const { PK, SK } = keys.chatMessage(message.chatId, message.seq);
   return {
@@ -137,7 +141,7 @@ export const chatRepository: ChatRepository = {
   async create(chat) {
     await updateItem(
       keys.chat(chat.chatId),
-      () => ({ ...chatFields(chat), nextSeq: 0 }),
+      () => chatCreationItem(chat),
       conditions.notExists,
     );
   },

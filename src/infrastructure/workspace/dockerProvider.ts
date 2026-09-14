@@ -102,9 +102,9 @@ export function createDockerSandboxBackend(config: DockerSandboxConfig) {
             ...["SETUID", "SETGID", "CHOWN", "FOWNER", "DAC_OVERRIDE", "KILL"].flatMap(cap => ["--cap-add", cap]),
             "--pids-limit", "256", "--memory", `${config.memoryMb}m`, "--memory-swap", `${config.memoryMb}m`,
             "--cpus", String(config.cpus), "--network", config.network,
-            "--tmpfs", `/workspace:rw,nosuid,nodev,size=${config.diskMb}m`,
+            "--tmpfs", `/workspace:rw,exec,nosuid,nodev,size=${config.diskMb}m`,
             "--tmpfs", `/control:rw,nosuid,nodev,size=${config.diskMb}m`,
-            "--tmpfs", "/tmp:rw,nosuid,nodev,size=256m", config.image])).trim();
+            "--tmpfs", "/tmp:rw,exec,nosuid,nodev,size=256m", config.image])).trim();
         } catch (error) {
           id = await find();
           if (!id) throw error;

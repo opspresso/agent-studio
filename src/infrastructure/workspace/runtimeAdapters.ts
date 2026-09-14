@@ -85,7 +85,9 @@ export function createWorkspaceRuntimeAdapter(kind: WorkspaceRuntime, config: Wo
       const environment = config.environment;
       if (kind === "codex") return {
         argv: ["codex", "exec", ...(resume ? ["resume"] : []), "--json", "--dangerously-bypass-approvals-and-sandbox",
-          "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", ...model, ...(resume ? [resume] : []), "-"],
+          "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
+          ...["plugins", "remote_plugin", "apps", "hooks", "skill_mcp_dependency_install"].flatMap(feature => ["--disable", feature]),
+          ...model, ...(resume ? [resume] : []), "-"],
         stdin: input.prompt, cwd, timeoutMs, environment,
       };
       if (kind === "claude") return {

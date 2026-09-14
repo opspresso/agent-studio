@@ -39,6 +39,24 @@ async function create(runtime: "command" | "codex" = "command", coding = false) 
 }
 
 describe("workspace admission and persistence", () => {
+  it("atomically starts a new chat and deduplicates concurrent creation retries", async () => {
+    const input = { projectName: "demo", runtime: "command" as const, input: { kind: "command" as const, script: "echo hello" } };
+    const [first, second] = await Promise.all([useCases.start(input, owner, "start-request-01"), useCases.start(input, owner, "start-request-01")]);
+    expect(first.workspace.id).toBe(second.workspace.id);
+    expect(first.run.id).toBe(second.run.id);
+    expect((await chats.get(first.workspace.chatId))?.workspaceId).toBe(first.workspace.id);
+    expect(await repository.runs(first.workspace.id, 10)).toHaveLength(1);
+    await expect(useCases.start({ ...input, input: { ...input.input, script: "changed" } }, owner, "start-request-01")).rejects.toMatchObject({ status: 409 });
+    expect(first.workspace).not.toHaveProperty("leaseToken");
+    expect(first.workspace).not.toHaveProperty("creationFingerprint");
+    expect(first.run).not.toHaveProperty("requestKey");
+  });
+
+  it("rejects mismatched start input without creating a chat or workspace", async () => {
+    const before = fake.rows.size;
+    await expect(useCases.start({ projectName: "demo", runtime: "codex", input: { kind: "command", script: "echo x" } }, owner, "bad-start-request")).rejects.toMatchObject({ status: 400 });
+    expect(fake.rows.size).toBe(before);
+  });
   it("creates a general workspace without a repository and keeps its own session", async () => {
     const workspace = await create();
     expect(workspace.coding).toBeUndefined();
