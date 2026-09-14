@@ -84,11 +84,18 @@ async function main() {
     assert.notEqual(sandbox.externalId, oldContainer);
     assert.equal((await repository.run(workspace.id, third.id))?.status, "succeeded");
     assert.equal((await read()).stdout, "oncetwicerestored");
+    await api.close(workspace.id, ownerEmail);
+    await processWorkspace(deps, workspace.id);
+    const finished = (await repository.get(workspace.id))!;
+    assert.equal(finished.status, "closed");
+    assert.ok(finished.checkpointId);
+    assert.ok(await checkpoints.get(workspace.id, finished.checkpointId));
     await api.close(workspace.id, ownerEmail, true);
     await chats.delete(chatId);
     await processWorkspace(deps, workspace.id);
     assert.equal((await repository.get(workspace.id))?.status, "closed");
     assert.equal(await provider.inspect(sandbox.externalId), "missing");
+    assert.equal(await checkpoints.get(workspace.id, finished.checkpointId), null, "deleting a finished Workspace removes its saved state");
     console.log("[ok] Workspace worker with Docker + PostgreSQL: restart adoption, follow-up, checks, TTL, encrypted restore and chat cleanup");
   } finally {
     for (const id of containers) await provider.destroy(id);

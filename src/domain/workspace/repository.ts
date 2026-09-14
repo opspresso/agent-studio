@@ -3,6 +3,8 @@ import type { Chat } from "@/domain/chat/types";
 import type { Workspace, RuntimeSession, Sandbox, WorkspaceRun, WorkspaceEvent } from "./types";
 
 export interface WorkspaceWrite {
+  /** An owner deleting its Chat may schedule cleanup of an already closed Workspace. */
+  deleteOwner?: string;
   workspace: Workspace;
   expectedRevision: number;
   session?: RuntimeSession;

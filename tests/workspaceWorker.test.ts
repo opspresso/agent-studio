@@ -76,6 +76,47 @@ async function start(runtime: "command" | "codex" = "command") {
 }
 
 describe("durable workspace worker", () => {
+  it("finishes an already cancelled admission without provisioning or restoring compute", async () => {
+    const { api, workspace, run } = await start();
+    await api.cancel(workspace.id, owner);
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("cancelled");
+    expect(provider.ensure).not.toHaveBeenCalled();
+    expect(provider.start).not.toHaveBeenCalled();
+    expect(provider.restore).not.toHaveBeenCalled();
+    expect((await repository.get(workspace.id))?.activeRunId).toBeUndefined();
+  });
+
+  it.each(["cancel", "close"] as const)("honors %s received during the operation probe before starting a command", async action => {
+    const { api, workspace, run } = await start();
+    vi.mocked(provider.operation).mockImplementationOnce(async () => {
+      await api[action](workspace.id, owner);
+      return { id: run.id, status: "not-started" };
+    });
+    await processWorkspace(deps, workspace.id);
+    expect(provider.start).not.toHaveBeenCalled();
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("cancelled");
+  });
+
+  it("deletes retained state when the owner deletes an already finished Workspace chat", async () => {
+    const { api, workspace } = await start();
+    await processWorkspace(deps, workspace.id);
+    await api.close(workspace.id, owner);
+    await processWorkspace(deps, workspace.id);
+    const closed = (await repository.get(workspace.id))!;
+    expect(closed.status).toBe("closed");
+    expect(checkpointRows.size).toBeGreaterThan(0);
+    const deletion = { ...closed, status: "closing" as const, deleteRequestedAt: deps.now().toISOString(), revision: closed.revision + 1 };
+    await expect(repository.write({ workspace: deletion, expectedRevision: closed.revision })).rejects.toMatchObject({ name: "TransactionCancelled" });
+    await expect(repository.write({ workspace: deletion, expectedRevision: closed.revision, deleteOwner: "other@example.test" })).rejects.toMatchObject({ name: "TransactionCancelled" });
+    await api.close(workspace.id, owner, true);
+    await chats.delete("chat-1");
+    await expect(api.get(workspace.id, owner)).rejects.toMatchObject({ status: 404 });
+    await processWorkspace(deps, workspace.id);
+    expect(checkpointRows.size).toBe(0);
+    expect((await repository.get(workspace.id))?.status).toBe("closed");
+    await expect(api.enqueue(workspace.id, owner, { kind: "command", script: "resume" }, "deleted-request")).rejects.toMatchObject({ status: 404 });
+  });
   it("runs a general task, saves output and checkpoint before releasing the run", async () => {
     const { workspace, run } = await start();
     expect(await processWorkspace(deps, workspace.id)).toBe(true);

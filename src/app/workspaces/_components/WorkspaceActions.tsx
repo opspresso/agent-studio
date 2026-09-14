@@ -19,7 +19,7 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
   const [error, setError] = useState<string | null>(null);
   const pending = detail.approvals.find(approval => approval.id === detail.workspace.activeActionId);
   const latest = detail.approvals[0];
-  const disabled = !!detail.workspace.activeRunId || ["closing", "suspending"].includes(detail.workspace.status);
+  const disabled = !!detail.workspace.activeRunId || ["closed", "closing", "suspending"].includes(detail.workspace.status);
 
   async function perform(approval?: boolean) {
     setBusy(true); setError(null);

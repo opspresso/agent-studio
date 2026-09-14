@@ -104,6 +104,10 @@ async function cleanupWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorke
 async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, signal?: AbortSignal): Promise<void> {
   let { workspace, run } = await state.read();
   if (!run) throw new Error("Workspace active run is missing");
+  if (run.cancelRequestedAt && !run.phase) {
+    await finishRun(deps, state, "cancelled", "Stopped by user");
+    return;
+  }
   await assertProjectAccessible(deps.projects, workspace.projectName, workspace.ownerEmail);
   const policy = workspacePolicy(deps, workspace.projectName);
   if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && policy.repository !== workspace.coding.repository)) {
@@ -166,7 +170,9 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     if (operation.status === "not-started") {
       const command = check ? { argv: ["/bin/sh", "-s"], stdin: check.command, timeoutMs: Math.max(1, Math.floor(remaining)) }
         : runtime.command(workspace, session, run.input, Math.max(1, Math.floor(remaining)));
-      await state.read();
+      const current = await state.read();
+      if (current.run?.id !== run.id) throw new WorkspaceLeaseLost();
+      if (current.run.cancelRequestedAt || current.workspace.status === "closing") continue;
       await deps.provider.start(sandbox.externalId, operationId, command);
       operation = await deps.provider.operation(sandbox.externalId, operationId);
     }

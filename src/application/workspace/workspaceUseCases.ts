@@ -212,9 +212,11 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
     async close(id: string, ownerEmail: string, deleting = false): Promise<void> {
       const workspace = await deps.repository.get(id);
       if (!workspace || workspace.ownerEmail !== ownerEmail) throw new NotFoundError("Workspace not found");
-      if (workspace.status === "closed" || (workspace.status === "closing" && (!deleting || workspace.deleteRequestedAt))) return;
+      if ((workspace.status === "closed" && (!deleting || workspace.deleteRequestedAt)) ||
+        (workspace.status === "closing" && (!deleting || workspace.deleteRequestedAt))) return;
       const now = deps.now().toISOString();
       await deps.repository.write({ expectedRevision: workspace.revision,
+        ...(workspace.status === "closed" && deleting ? { deleteOwner: ownerEmail } : {}),
         workspace: { ...workspace, status: "closing", revision: workspace.revision + 1, updatedAt: now, dueAt: now,
           ...(deleting ? { deleteRequestedAt: now } : {}) } });
     },

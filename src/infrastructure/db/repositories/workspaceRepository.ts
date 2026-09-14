@@ -83,8 +83,10 @@ export const workspaceRepository: WorkspaceRepository = {
       return row?.revision === expectedRevision && previous?.ownerEmail === workspace.ownerEmail &&
         previous?.chatId === workspace.chatId && previous?.projectName === workspace.projectName &&
         previous?.sessionId === workspace.sessionId && previous?.runtime === workspace.runtime &&
-        (previous?.status !== "closed" || (change.reopenOwner === workspace.ownerEmail && !previous.deleteRequestedAt &&
-          workspace.status === "active" && run?.status === "queued" && !!request)) && !isExpired(row?.expiresAt, Date.now()) &&
+        (previous?.status !== "closed" || (!previous.deleteRequestedAt && (
+          (change.reopenOwner === workspace.ownerEmail && workspace.status === "active" && run?.status === "queued" && !!request) ||
+          (change.deleteOwner === workspace.ownerEmail && workspace.status === "closing" && !!workspace.deleteRequestedAt && !run && !request)
+        ))) && !isExpired(row?.expiresAt, Date.now()) &&
         (!approval || mayAdvanceCodingApproval(previous!, approval)) &&
         (!previous?.deleteRequestedAt || workspace.deleteRequestedAt === previous.deleteRequestedAt);
     } }];
