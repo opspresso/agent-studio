@@ -268,7 +268,7 @@ describe("beginAuthorization", () => {
           ...SERVER.auth!,
           clientId: "github-app-id",
           clientSecret: "enc:github-app-secret",
-          redirectUri: "https://oauth.example.com/callback",
+          redirectUri: CALLBACK,
           registrationEndpoint: "https://auth.example.com/register",
         },
       },
@@ -279,9 +279,10 @@ describe("beginAuthorization", () => {
     const url = new URL(authorizeUrl);
 
     expect(url.searchParams.get("client_id")).toBe("github-app-id");
-    expect(url.searchParams.get("redirect_uri")).toBe("https://oauth.example.com/callback");
+    expect(url.searchParams.get("redirect_uri")).toBe(CALLBACK);
     expect(h.registrations).toHaveLength(0);
-    expect(h.connections.get("p/slack")?.clientSecret).toBe("enc:github-app-secret");
+    expect(h.connections.get("p/slack")?.clientSecret).toBeUndefined();
+    expect(h.connections.get("p/slack")?.clientFromRegistry).toBe(true);
   });
 
   it("uses a client ID metadata document instead of registering, where the server takes one", async () => {

@@ -868,6 +868,12 @@ export const ko: Messages = {
   "mcpConn.authorizedBy": "{who} 님이 {when} 에 인증함",
   "mcpConn.saveCredentials": "자격 증명 저장",
   "mcpConn.disconnect": "연결 해제",
+  "mcpOAuth.automatic": "OAuth 앱을 직접 등록하지 않고 프로젝트를 연결할 수 있습니다. 접근 가능한 클라이언트 메타데이터 문서를 우선 사용하고, 제공되는 경우 동적 등록을 사용합니다.",
+  "mcpOAuth.manual": "수동 OAuth 앱 설정",
+  "mcpOAuth.sharedHint": "이 MCP를 사용하는 프로젝트가 공유합니다. Client ID를 비우면 수동 앱을 제거하며, 제공자가 지원하는 경우에만 자동 등록을 사용합니다.",
+  "mcpOAuth.secretHint": "비워 두면 기존 Secret을 유지합니다. Client ID를 변경하면 제공자가 요구하는 새 Secret도 입력하세요.",
+  "mcpOAuth.redirectHint": "배포의 공개 주소로 자동 입력됩니다. OAuth 제공자에 이 콜백을 정확히 등록하세요.",
+  "mcpOAuth.save": "OAuth 클라이언트 저장",
 
   "registry.nameLabel": "이름",
   "registry.nameHint": "소문자·숫자·하이픈만 쓸 수 있습니다.",

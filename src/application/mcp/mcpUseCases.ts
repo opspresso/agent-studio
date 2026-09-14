@@ -15,12 +15,9 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ListToolsResult, McpToolProbe } from "@/domain/mcp/toolProbe";
 import { log } from "@/shared/logger";
-import { urlOriginForLog, urlWithoutQueryOrFragment } from "@/shared/url";
-import {
-  managedMcpEnvironmentContext,
-  mcpHeadersContext,
-  mcpOAuthClientSecretContext,
-} from "@/domain/security/secretContext";
+import { urlOriginForLog } from "@/shared/url";
+import { maskedMcpServer } from "./mcpViews";
+import { mcpHeadersContext } from "@/domain/security/secretContext";
 
 export interface CreateMcpInput {
   sourceOutputs?: McpServer["sourceOutputs"];
@@ -52,38 +49,6 @@ export interface McpUseCases extends RegistryUseCases<McpServer, CreateMcpInput,
   testConnection(name: string, userEmail?: string): Promise<ListToolsResult>;
 }
 
-/** Client-safe projection: encrypted secret values are replaced with a mask. */
-function masked(cipher: SecretCipher, server: McpServer): McpServer {
-  return {
-    ...server,
-    url: urlWithoutQueryOrFragment(server.url),
-    headers: cipher.maskHeaders(server.headers, mcpHeadersContext(server.name)),
-    ...(server.environment
-      ? {
-          environment: cipher.maskHeaders(
-            server.environment,
-            managedMcpEnvironmentContext(server.name),
-          ),
-        }
-      : {}),
-    ...(server.auth
-      ? {
-          auth: {
-            ...server.auth,
-            ...(server.auth.clientSecret
-              ? {
-                  clientSecret: cipher.mask(
-                    server.auth.clientSecret,
-                    mcpOAuthClientSecretContext(server.name),
-                  ),
-                }
-              : {}),
-          },
-        }
-      : {}),
-  };
-}
-
 export function createMcpUseCases(
   repo: McpRepository,
   cipher: SecretCipher,
@@ -101,7 +66,7 @@ export function createMcpUseCases(
     label: "MCP server",
     auditKind: "mcp",
     repo,
-    view: (server) => masked(cipher, server),
+    view: (server) => maskedMcpServer(cipher, server),
     async build(input, now) {
       if (input.sourceOutputs !== undefined && !isMcpSourceMappings(input.sourceOutputs)) throw new ValidationError("Invalid MCP source mappings");
       assertCredentialFreeRegistryUrl(input.url);

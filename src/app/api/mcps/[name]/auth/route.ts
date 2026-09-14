@@ -15,6 +15,16 @@ const clientSchema = z.object({
   clientId: z.string().optional(),
   clientSecret: z.string().optional(),
   redirectUri: z.string().optional(),
+}).strict().refine((input) => Object.keys(input).length > 0, "No OAuth client settings supplied");
+
+/** The callback uses configured deployment settings, never a request host. */
+export const GET = withAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
+  try {
+    const { name } = await ctx.params;
+    return Response.json(await mcpAuthUseCases.getOAuthClientSettings(parseName(name)));
+  } catch (error) {
+    return apiError(error);
+  }
 });
 
 /**

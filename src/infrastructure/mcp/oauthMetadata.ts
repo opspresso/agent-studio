@@ -201,9 +201,17 @@ export const oauthMetadataClient: OAuthMetadataClient = {
     // tenant-specific metadata in the 401.
     const challenged = await challengedMetadataUrl(mcpUrl, loopback);
     if (challenged) {
+      // Slack's documented /mcp challenge points to its origin-level resource
+      // document, whose resource is the bare origin. Keep this directed alias
+      // scoped to the official endpoint AND document; other resources stay exact.
+      const expectedResource =
+        mcpUrl === "https://mcp.slack.com/mcp" &&
+        challenged === "https://mcp.slack.com/.well-known/oauth-protected-resource"
+          ? "https://mcp.slack.com"
+          : mcpUrl;
       return firstUsable(
         [challenged],
-        (doc) => parseProtectedResource(doc, mcpUrl),
+        (doc) => parseProtectedResource(doc, expectedResource),
         "protected resource metadata",
         loopback,
       );

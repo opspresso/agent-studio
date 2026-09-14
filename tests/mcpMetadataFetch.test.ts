@@ -40,6 +40,35 @@ afterEach(() => {
 });
 
 describe("reading protected resource metadata", () => {
+  it("accepts Slack's /mcp challenge pointing to its documented origin resource", async () => {
+    guardedFetch.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? new Response(null, { status: 401, headers: {
+            "WWW-Authenticate": 'Bearer resource_metadata="https://mcp.slack.com/.well-known/oauth-protected-resource"',
+          } })
+        : jsonResponse({ resource: "https://mcp.slack.com", authorization_servers: ["https://mcp.slack.com"] }),
+    );
+    await expect(oauthMetadataClient.fetchProtectedResource("https://mcp.slack.com/mcp"))
+      .resolves.toMatchObject({ resource: "https://mcp.slack.com", authorizationServers: ["https://mcp.slack.com"] });
+    expect(guardedFetch.mock.calls.map(([url]) => url)).toEqual([
+      "https://mcp.slack.com/mcp", "https://mcp.slack.com/.well-known/oauth-protected-resource",
+    ]);
+  });
+
+  it.each([
+    ["https://mcp.slack.com/other", "https://mcp.slack.com/.well-known/oauth-protected-resource", "https://mcp.slack.com"],
+    ["https://mcp.slack.com/mcp", "https://elsewhere.test/metadata", "https://mcp.slack.com"],
+    ["https://mcp.slack.com/mcp", "https://mcp.slack.com/.well-known/oauth-protected-resource", "https://elsewhere.test"],
+    ["https://other.test/mcp", "https://other.test/.well-known/oauth-protected-resource", "https://other.test"],
+  ])("does not extend the Slack resource alias to %s → %s → %s", async (endpoint, document, resource) => {
+    guardedFetch.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? new Response(null, { status: 401, headers: { "WWW-Authenticate": `Bearer resource_metadata="${document}"` } })
+        : jsonResponse({ resource, authorization_servers: ["https://mcp.slack.com"] }),
+    );
+    await expect(oauthMetadataClient.fetchProtectedResource(endpoint)).rejects.toBeInstanceOf(McpMetadataError);
+  });
+
   it("follows internal challenge and metadata redirects only within their origin", async () => {
     const origin = new URL(INTERNAL_URL).origin;
     const cancel = vi.fn();

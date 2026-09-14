@@ -19,6 +19,7 @@ import {
   discoverMcpAuth,
   clearMcpAuth,
   saveMcpOAuthClient,
+  getMcpOAuthClientSettings,
   updateMcp,
   type McpServer,
   type McpTool,
@@ -518,10 +519,9 @@ function OAuthSection({
   onChanged: () => void;
   editable: boolean;
 }) {
-  const defaultRedirectUri =
-    typeof window === "undefined"
-      ? ""
-      : `${window.location.origin}/api/mcps/oauth/callback`;
+  const t = useT();
+  const [defaultRedirectUri, setDefaultRedirectUri] = useState("");
+  const [clientSettingsLoaded, setClientSettingsLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [choices, setChoices] = useState<string[] | null>(null);
@@ -532,8 +532,22 @@ function OAuthSection({
   useEffect(() => {
     setClientId(server.auth?.clientId ?? "");
     setClientSecret(server.auth?.clientSecret ?? "");
-    setRedirectUri(server.auth?.redirectUri ?? defaultRedirectUri);
-  }, [defaultRedirectUri, server.auth]);
+    setRedirectUri(server.auth?.redirectUri ?? "");
+    setClientSettingsLoaded(false);
+    if (!editable || !server.auth) return;
+    let cancelled = false;
+    void getMcpOAuthClientSettings(server.name).then((settings) => {
+      if (cancelled) return;
+      setClientId(settings.auth.clientId ?? "");
+      setClientSecret(settings.auth.clientSecret ?? "");
+      setDefaultRedirectUri(settings.defaultRedirectUri);
+      setRedirectUri(settings.auth.redirectUri ?? settings.defaultRedirectUri);
+      setClientSettingsLoaded(true);
+    }).catch((error) => {
+      if (!cancelled) setError(reportError(error, "Failed to load OAuth client settings"));
+    });
+    return () => { cancelled = true; };
+  }, [editable, server.name, server.auth]);
 
   async function discover(authorizationServer?: string) {
     setBusy(true);
@@ -573,9 +587,9 @@ function OAuthSection({
     setError(null);
     try {
       const saved = await saveMcpOAuthClient(server.name, { clientId, clientSecret, redirectUri });
-      setClientId(saved.auth?.clientId ?? "");
-      setClientSecret(saved.auth?.clientSecret ?? "");
-      setRedirectUri(saved.auth?.redirectUri ?? defaultRedirectUri);
+      setClientId(saved.clientId ?? "");
+      setClientSecret(saved.clientSecret ?? "");
+      setRedirectUri(saved.redirectUri ?? defaultRedirectUri);
       onChanged();
     } catch (e) {
       setError(reportError(e, "Failed to save OAuth client"));
@@ -701,29 +715,34 @@ function OAuthSection({
         </Card>
         {editable && automaticClient && !server.auth.clientId && (
           <Text fz="sm" c="dimmed">
-            Client registration is automatic. Projects can connect without a manually configured OAuth app.
+            {t("mcpOAuth.automatic")}
           </Text>
         )}
-        {editable && showManualClient && (
-          <Stack gap="xs">
+        {editable && (
+          <details open={showManualClient || undefined}>
+          <summary>{t("mcpOAuth.manual")}</summary>
+          <Stack gap="xs" mt="sm">
             <Text fz="sm" c="dimmed">
-              OAuth client credentials shared by this MCP across projects
+              {t("mcpOAuth.sharedHint")}
             </Text>
-            <TextInput label="Client ID" value={clientId} onChange={(event) => setClientId(event.currentTarget.value)} />
-            <TextInput label="Client secret" value={clientSecret} onChange={(event) => setClientSecret(event.currentTarget.value)} styles={monoInput} />
+            <TextInput label="Client ID" value={clientId} onChange={(event) => setClientId(event.currentTarget.value)} disabled={busy || !clientSettingsLoaded} />
+            <TextInput label="Client secret" type="password" autoComplete="new-password" value={clientSecret} onChange={(event) => setClientSecret(event.currentTarget.value)} styles={monoInput} disabled={busy || !clientSettingsLoaded} description={t("mcpOAuth.secretHint")} />
             <TextInput
               label="Redirect URI"
               value={redirectUri}
               onChange={(event) => setRedirectUri(event.currentTarget.value)}
-              placeholder="https://studio.example.com/api/mcps/oauth/callback"
+              placeholder={defaultRedirectUri}
+              description={t("mcpOAuth.redirectHint")}
+              disabled={busy || !clientSettingsLoaded}
               styles={monoInput}
             />
             <Group justify="flex-end">
-              <Button variant="default" onClick={() => void saveClient()} loading={busy}>
-                Save OAuth client
+              <Button variant="default" onClick={() => void saveClient()} loading={busy} disabled={!clientSettingsLoaded}>
+                {t("mcpOAuth.save")}
               </Button>
             </Group>
           </Stack>
+          </details>
         )}
         </Stack>
       ) : (

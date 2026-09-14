@@ -17,6 +17,7 @@
  */
 
 import type { McpRepository } from "@/domain/mcp/repository";
+import { maskedMcpServer } from "./mcpViews";
 import { listRegistry } from "@/application/registry/registryUseCases";
 import { isManagedLoopback, type McpServer } from "@/domain/mcp/types";
 import {
@@ -170,18 +171,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
   const lifecycleClaims = deps.lifecycleClaims ?? processManagedMcpLifecycleClaims();
 
   function view(entry: McpServer): McpServer {
-    return {
-      ...entry,
-      headers: deps.cipher.maskHeaders(entry.headers, mcpHeadersContext(entry.name)),
-      ...(entry.environment
-        ? {
-            environment: deps.cipher.maskHeaders(
-              entry.environment,
-              managedMcpEnvironmentContext(entry.name),
-            ),
-          }
-        : {}),
-    };
+    return maskedMcpServer(deps.cipher, entry);
   }
 
   async function requireManaged(name: string): Promise<McpServer> {

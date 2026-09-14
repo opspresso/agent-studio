@@ -250,11 +250,12 @@ env 파일에 둔 `PORT` 보다 `-e` 가 이기므로 매핑이 쓰는 쪽이 �
 레지스트리 항목은 등록 시점에 한 번 발견된 `auth` 블록을 실을 수 있다; **런 경로는 well-known
 문서를 결코 가져오지 않는다.**
 
-배치(placement) 결정이 곧 아키텍처 결정이다: 자격증명은 **project 별** 이고, 자기 자신의
-`PROJECT#<name> / MCPCONN#<server>` 아이템에 들어간다 — 버전(설정 이력의 스냅샷)에도 아니고,
-project 아이템(그 `updatedAt` 은 publish 의 낙관적 동시성 조건이다)에도 아니다. 그 분리가
-공유된 레지스트리 항목 하나가 project 마다 다른 provider 앱을 상대할 수 있게 하며, 레지스트리는
-admin 소유인데 connection 은 owner 소유인 이유도 그것이다.
+공용 OAuth 앱은 Tools의 레지스트리 `auth`에 저장하고 사용자 grant는
+`PROJECT#<name> / MCPCONN#<server>`에 저장한다. 공용 Secret은 connection에 복사하지 않고
+code 교환·refresh 때 읽으므로 관리자의 키 교체가 모든 연결에 적용된다.
+프로젝트 소유자는 Connection에서 승인하며, 모든 버전이 해당 grant를 공유한다.
+버전 저장이나 project의 publish 동시성 검사와 토큰 갱신은 독립적이다. 공용 앱이 없으면
+메타데이터 문서나 동적 등록을 사용하고, 동적 등록이 발급한 개별 Secret은 connection에 둔다.
 
 connection 은 서버를 통제(gating)하는 것이 아니라 자격증명을 **공급** 한다. 해석된 토큰은
 dispatch 시점에 적용되는 마지막 **자격증명** 이며 — 레지스트리 항목의 헤더와 바인딩의 override

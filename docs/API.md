@@ -127,7 +127,7 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/plugins/sync` | `GET` `POST` | member / admin |
 | `/api/plugins/sync/upload` | `POST` | admin |
 | `/api/mcps/{name}/tools` | `POST` | member |
-| `/api/mcps/{name}/auth` | `POST` `DELETE` | admin |
+| `/api/mcps/{name}/auth` | `GET` `POST` `PUT` `DELETE` | admin |
 | `/api/mcps/managed` | `POST` | admin |
 | `/api/mcps/managed/{name}` | `GET` `PUT` `DELETE` | admin |
 | `/api/mcps/managed/{name}/restart` | `POST` | admin |
@@ -1000,9 +1000,8 @@ POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400
 
 ## MCP OAuth
 
-소유자가 서로 다른 두 반쪽이다: **레지스트리 항목**의 authorization-server 메타데이터는 운영자
-설정(admin)이고, 그것을 쓰는 **인증 정보**는 project 별(owner)이다. 그래서 공유된 항목 하나가
-project 마다 다른 프로바이더 앱을 뒷받침할 수 있다.
+레지스트리 항목의 authorization-server 메타데이터와 공용 OAuth 앱은 운영자 설정(admin)이다.
+프로젝트 소유자는 Connection에서 자신의 계정으로 승인하며, access/refresh token은 프로젝트별로 저장한다.
 
 ### Discovery (admin)
 
@@ -1011,7 +1010,18 @@ POST   /api/mcps/{name}/auth   { "authorizationServer": "https://…"? }
 → 200 { status: "discovered", auth: {…} }
 → 200 { status: "choose", resource: "…", authorizationServers: ["…", "…"] }
 DELETE /api/mcps/{name}/auth   → 204     (return the entry to static-header behaviour)
+GET    /api/mcps/{name}/auth   → 200 { auth: {…}, defaultRedirectUri }
+PUT    /api/mcps/{name}/auth   { clientId?, clientSecret?, redirectUri? }
+→ 200 { …masked auth… }
 ```
+
+GET과 PUT도 admin 전용이다. Tools는 GET의 `defaultRedirectUri`로 Redirect URI를 자동 입력한다.
+이 주소는 서버의 공개 base 설정에서 만들며, 입력한 값도 동일한 콜백이어야 한다.
+PUT에서 생략한 필드는 보존하고, 빈 값이나 마스킹된 Secret은 같은 Client ID의 기존 Secret을
+유지한다. Client ID를 변경하면 이전 Secret은 재사용하지 않으며, 빈 Client ID는 공용 앱을 제거한다.
+빈 Redirect URI는 배포의 기본 콜백을 사용한다. 공용 앱이 없으면 Client ID Metadata Document,
+동적 등록 순서로 연결한다. 자동 등록 서버의 수동 설정은 Tools에서 접힌 상태로 제공한다.
+OAuth 설정을 읽은 뒤 다른 요청이 변경했다면 저장은 `409`로 거부한다.
 
 RFC 9728 protected-resource 메타데이터 → RFC 8414 authorization-server 메타데이터 순으로
 따라가며, 발견된 모든 엔드포인트를 SSRF 정책으로 다시 검증하고 `https` 일 것을 요구한다.
@@ -1082,7 +1092,8 @@ authorization server 가 **브라우저**를 여기로 리다이렉트하므로,
 `Cache-Control: no-store` 다.
 
 콜백은 code 를 교환하기 전에 RFC 9207 `iss` 를 검증하고, 사용자가 프로바이더에 가 있는 동안
-바뀔 수 있는 project 소유권을 다시 확인한다. 검사 전체는
+바뀔 수 있는 project 소유권과 OAuth client·resource를 다시 확인한다. 토큰 교환에는 pending
+state에 저장한 원래 Redirect URI를 사용한다. 검사 전체는
 [SECURITY.md](SECURITY.md#mcp-oauth) 를 보라.
 
 ### Client ID 메타데이터 문서

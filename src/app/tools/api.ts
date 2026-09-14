@@ -4,7 +4,7 @@ import type {
   ManagedMcpStatus,
   UpdateManagedInput,
 } from "@/application/mcp/managedMcpUseCases";
-import type { DiscoverAuthResult } from "@/application/mcp/mcpAuthUseCases";
+import type { DiscoverAuthResult, McpOAuthClientSettings, SaveOAuthClientCredentialsInput } from "@/application/mcp/mcpAuthUseCases";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 // Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
@@ -84,13 +84,17 @@ export async function clearMcpAuth(name: string): Promise<void> {
 
 export function saveMcpOAuthClient(
   name: string,
-  input: { clientId?: string; clientSecret?: string; redirectUri?: string },
-): Promise<McpServer> {
+  input: SaveOAuthClientCredentialsInput,
+): Promise<McpOAuthClientSettings["auth"]> {
   return fetch(`/api/mcps/${name}/auth`, {
     method: "PUT",
     headers: jsonHeaders,
     body: JSON.stringify(input),
-  }).then((r) => readJson<McpServer>(r));
+  }).then((r) => readJson<McpOAuthClientSettings["auth"]>(r));
+}
+
+export function getMcpOAuthClientSettings(name: string): Promise<McpOAuthClientSettings> {
+  return fetch(`/api/mcps/${name}/auth`).then((r) => readJson<McpOAuthClientSettings>(r));
 }
 
 // --- managed servers ---------------------------------------------------------

@@ -431,7 +431,7 @@ export const en = {
     "Have an administrator register the server on Tools and check that discovery lists the expected tools. Bind the server to the version, select the tools to expose, and save the version. If calls fail, inspect the server status, required headers, and run warnings. A reachable server can still return no usable tools or require authorization.",
   "guide.capabilities.oauth": "MCP connection settings have different scopes",
   "guide.capabilities.oauthBody":
-    "Tool selections and header overrides belong to the version and require its Save action. OAuth Connect, Disconnect, and OAuth client credentials belong to the project and are saved separately; all its versions share that connection. Complete authorization before testing a tool that requires OAuth.",
+    "Tool selections and header overrides belong to the version and require Save. Administrators configure a shared OAuth app in Tools when needed; project owners use Connect to authorize their own account. All versions share the project’s authorization.",
   "guide.capabilities.agents": "Delegate to another agent",
   "guide.capabilities.agentsBody":
     "Delegate when a task benefits from a separate specialist; a routine workflow can use one Agent with skills. Bind a published local project or a registered external OpenAI-compatible or A2A agent. Give each delegate a precise description. Delegated activity is labelled by author, while usage remains part of the originating run accounting.",
@@ -945,6 +945,12 @@ export const en = {
   "mcpConn.authorizedBy": "Authorized by {who} on {when}",
   "mcpConn.saveCredentials": "Save credentials",
   "mcpConn.disconnect": "Disconnect",
+  "mcpOAuth.automatic": "Projects can connect without a manually registered OAuth app. A reachable client metadata document is used first, then dynamic registration when available.",
+  "mcpOAuth.manual": "Manual OAuth app settings",
+  "mcpOAuth.sharedHint": "Shared by projects using this MCP. Clear Client ID to remove the manual app; automatic registration is used only when the provider supports it.",
+  "mcpOAuth.secretHint": "Leave blank to keep the stored secret. Changing Client ID requires a new secret if the provider uses one.",
+  "mcpOAuth.redirectHint": "Filled from the deployment’s public URL. Register this exact callback with the OAuth provider.",
+  "mcpOAuth.save": "Save OAuth client",
 
   // Wording the four registry catalogs (skills, tools, agents, plugins) share.
   // Each page had its own copy of these; a reader meets them on all four.

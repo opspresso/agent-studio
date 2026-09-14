@@ -224,7 +224,8 @@ AAD 는 environment와 같은 공통 map 규칙에 따라 저장된 키 철자�
 Version 의 MCP header override 는 `project + version + server + header` 에 묶인다. 저장된 version 을
 임시 preview draft 로 읽을 때는 값을 복호화해 `draft` 컨텍스트로 다시 암호화하고, project clone 은
 소유자의 override 를 애초에 복사하지 않는다.
-MCP OAuth client secret 은 `server + field` 에, project OAuth connection 의 access token·refresh token 은 `project + server + field` 에,
+공용 MCP OAuth client secret은 `server + field`에 묶이고 프로젝트에 복사하지 않는다.
+동적 등록이나 프로젝트 API로 등록한 개별 client secret과 access/refresh token은 `project + server + field`에,
 인가 중인 PKCE verifier 는 일회성 state 값에 묶인다. Token refresh의 compare-and-set은 저장소가
 연결을 쓸 때마다 발급하는 revision을 비교한다. 토큰 값과 타임스탬프가 같아도 새 연결을 구분하며,
 갱신 경쟁에서 진 요청은 최초 issuer·resource와 일치하는 connected grant만 사용할 수 있다.
@@ -665,6 +666,13 @@ refresh token 은 자기 자신의 `PROJECT#<name> / MCPCONN#<server>` 아이템
 있지 않다. 이 분리는 관리자가 OAuth 앱을 한 번 설정하고 각 project 소유자가 자신의 계정으로
 승인하게 한다.
 
+공용 앱 연결은 `clientFromRegistry`와 Client ID를 기록하며 code 교환·refresh 때 레지스트리의
+현재 Secret을 읽는다. Secret 교체는 기존 grant에 적용되고, 공용 Client ID 교체·제거는 기존
+grant 사용을 차단한다. 개별 동적 등록 클라이언트의 Secret은 해당 project connection에 유지한다.
+Tools의 Redirect URI는 서버의 공개 base URL로 자동 입력하며, 임의 호스트·경로로 덮어쓸 수 없다.
+인가 요청의 Redirect URI·Client ID·resource는 일회성 state에 저장하고 콜백에서 되읽는다.
+OAuth 메타데이터와 공용 앱 저장은 읽은 `auth`와의 조건부 쓰기로 경쟁 변경을 덮어쓰지 않는다.
+
 강제되는 속성:
 
 - **PKCE S256 은 필수다.** `state` 는 10분 TTL 의 일회용이다. 명세의 MUST 대로,
@@ -692,6 +700,10 @@ refresh token 은 자기 자신의 `PROJECT#<name> / MCPCONN#<server>` 아이템
   일으킨 MCP URL, well-known 문서는 그 주소를 도출한 resource identifier 와 `resource` 값이
   정확히 같아야 쓴다(RFC 9728 §3.3). 다른 audience 의 token 을 받아 공격자 resource 에 보내는
   impersonation/confused-deputy 경로를 닫는다.
+  Slack은 공식 `https://mcp.slack.com/mcp`가
+  `https://mcp.slack.com/.well-known/oauth-protected-resource`를 지목할 때만 문서의
+  `resource: https://mcp.slack.com`을 허용한다. 이 방향의 정확한 주소 조합 외에는 원래의 일치
+  검증을 적용한다. [Slack 공식 메타데이터 계약](https://docs.slack.dev/ai/slack-mcp-server/)을 따른다.
 - **동적 등록은 토큰 요청이 쓸 인증 방식으로 등록한다**, 그리고 서버가 기록한 방식이 돌아오면
   그것을 연결에 적는다. `client_secret_post` 로 등록해 놓고 `client_secret_basic` 으로 교환하던
   것은 기록된 방식을 강제하는 서버(Keycloak, Authentik 등)에서 `invalid_client` 루프였다.
