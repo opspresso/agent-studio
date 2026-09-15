@@ -11,13 +11,25 @@ function fixtures(runtime: WorkspaceRuntime, nativeSessionId?: string): [Workspa
 }
 
 describe("native workspace runtime adapters", () => {
+  it("routes non-OpenAI OpenCode channels through the bundled compatible SDK and preserves qualified model IDs", () => {
+    const selected = withWorkspaceModelChannel("opencode", { model: "openai/gpt-test" }, { name: "openrouter", baseUrl: "https://router.example/v1", apiKey: "test-key" });
+    expect(selected.model).toBe("studio-workspace/openai/gpt-test");
+    expect(selected.environment!.OPENCODE_DISABLE_MODELS_FETCH).toBe("true");
+    const configuration = JSON.parse(selected.environment!.OPENCODE_CONFIG_CONTENT!);
+    expect(configuration.provider.openai).toBeUndefined();
+    expect(configuration.provider["studio-workspace"]).toEqual({ npm: "@ai-sdk/openai-compatible", options: { baseURL: "https://router.example/v1", apiKey: "{env:OPENAI_API_KEY}" }, models: { "openai/gpt-test": { name: "openai/gpt-test" } } });
+    expect(JSON.stringify(configuration)).not.toContain("test-key");
+    const direct = withWorkspaceModelChannel("opencode", { model: "gpt-test" }, { name: "openai", baseUrl: "https://openai.example/v1", apiKey: "test-key" });
+    expect(direct.model).toBe("openai/gpt-test");
+    expect(JSON.parse(direct.environment!.OPENCODE_CONFIG_CONTENT!).provider.openai.npm).toBeUndefined();
+  });
   it("binds a configured model channel without copying unrelated host credentials", () => {
     const channel = { name: "openai", baseUrl: "https://model.example/v1", apiKey: "test-model-key" };
     const codex = withWorkspaceModelChannel("codex", { model: "model-id" }, channel);
     expect(codex.environment).toEqual({ CODEX_API_KEY: channel.apiKey, OPENAI_BASE_URL: channel.baseUrl });
     const claude = withWorkspaceModelChannel("claude", {}, { ...channel, name: "anthropic" });
     expect(claude.environment?.ANTHROPIC_BASE_URL).toBe("https://model.example");
-    const opencode = withWorkspaceModelChannel("opencode", { model: "openai/model-id" }, channel);
+    const opencode = withWorkspaceModelChannel("opencode", { model: "model-id" }, channel);
     expect(JSON.parse(opencode.environment!.OPENCODE_CONFIG_CONTENT!).provider.openai.models).toHaveProperty("model-id");
     expect(() => withWorkspaceModelChannel("command", {}, channel)).toThrow();
     expect(() => withWorkspaceModelChannel("codex", {}, { ...channel, auth: "sigv4" })).toThrow();

@@ -1,5 +1,5 @@
 FROM node:24-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 \
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 ripgrep \
     && rm -rf /var/lib/apt/lists/*
 ARG INSTALL_AGENTS=true
 RUN if [ "$INSTALL_AGENTS" = true ]; then \

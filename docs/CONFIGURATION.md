@@ -469,7 +469,10 @@ Codex·Claude·OpenCode의 모델은 **Models → 워크스페이스 런타임 �
 검사는 `test`, `lint`, `build`별 명령을 최대 하나씩 저장하며 각 Run 뒤 실행한다.
 
 Codex는 Responses 호환 채널, Claude는 Anthropic 채널, OpenCode는 지원하는 OpenAI 호환 채널을
-사용한다. 선택 가능한 모델은 text·tools 지원과 API 키 채널 연결이 필요하다. `sigv4`는 네이티브
+사용한다. OpenCode의 OpenAI 채널은 기본 Responses loader를 쓰고, 다른 호환 채널은 별도 provider와
+번들된 `@ai-sdk/openai-compatible`로 Chat Completions를 사용한다. 외부 모델 카탈로그 자동 조회는 끄고
+Studio에서 선택한 모델을 전달한다. provider/model의 전송용 이름은 유지한다.
+선택 가능한 모델은 text·tools 지원과 API 키 채널 연결이 필요하다. `sigv4`는 네이티브
 CLI에 제공하지 않는다. 모델을 해제하면 새 native 작업은 거절하지만 이미 시작한 operation의 조회·복구는
 유지한다. 일반 명령에는 모델이 필요 없다. Git·클라우드·운영 환경변수는 Sandbox에 상속하지 않는다.
 Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.

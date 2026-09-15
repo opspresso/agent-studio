@@ -352,7 +352,7 @@ export async function getWorkspaceRuntimeConfig(kind: WorkspaceRuntime) {
   const channel = model ? workspaceModelChannel(model, channels) : undefined;
   if (!model || !channel || !workspaceRuntimeModelCompatible(kind, model)) return undefined;
   const target = resolveProviderTarget(model.id, channels, { baseUrl: "", apiKey: "" });
-  return withWorkspaceModelChannel(kind, { model: kind === "opencode" ? `openai/${target.model}` : target.model }, channel);
+  return withWorkspaceModelChannel(kind, { model: target.model }, channel);
 }
 
 export function getWorkspaceGitHubConfig() {

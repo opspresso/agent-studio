@@ -14,16 +14,23 @@ export function withWorkspaceModelChannel(kind: WorkspaceRuntime, config: Worksp
   channel: { name: string; baseUrl: string; apiKey: string; auth?: string }): WorkspaceRuntimeConfig {
   if (!channel.apiKey || channel.auth === "sigv4") throw new Error("Workspace model channel requires an API key");
   let environment: Record<string, string>;
+  let model = config.model;
   if (kind === "codex") environment = { CODEX_API_KEY: channel.apiKey, OPENAI_BASE_URL: channel.baseUrl };
   else if (kind === "claude") environment = { ANTHROPIC_API_KEY: channel.apiKey, ANTHROPIC_BASE_URL: channel.baseUrl.replace(/\/v1\/?$/, "") };
   else if (kind === "opencode") {
-    if (!config.model?.startsWith("openai/")) throw new Error("Workspace OpenCode channel models must use the openai/ prefix");
-    const model = config.model.slice("openai/".length);
-    environment = { OPENAI_API_KEY: channel.apiKey, OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: {
-      openai: { options: { baseURL: channel.baseUrl }, models: { [model]: { name: model } } },
+    if (!model) throw new Error("Workspace OpenCode requires a selected model");
+    const provider = channel.name === "openai" ? "openai" : "studio-workspace";
+    const wireModel = model;
+    model = `${provider}/${wireModel}`;
+    environment = { OPENAI_API_KEY: channel.apiKey, OPENCODE_DISABLE_MODELS_FETCH: "true", OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: {
+      [provider]: {
+        // The built-in openai loader always calls Responses. A separate provider keeps compatible channels on chat/completions.
+        ...(provider === "openai" ? {} : { npm: "@ai-sdk/openai-compatible" }),
+        options: { baseURL: channel.baseUrl, apiKey: "{env:OPENAI_API_KEY}" }, models: { [wireModel]: { name: wireModel } },
+      },
     } }) };
   } else throw new Error("The command runtime does not use a model channel");
-  return { ...config, environment: { ...environment, ...config.environment } };
+  return { ...config, model, environment: { ...environment, ...config.environment } };
 }
 
 function object(value: unknown): Record<string, unknown> {

@@ -108,6 +108,7 @@ export WORKSPACE_NETWORK=none
 node --env-file=.env.local --import tsx scripts/workspace-worker.ts
 ```
 
+Sandbox 이미지는 파일 검색용 ripgrep을 포함하며 네이티브 도구의 시작 시 다운로드에 의존하지 않는다.
 릴리스는 앱과 같은 ECR·GHCR 저장소에 `workspace-vX.Y.Z` tag의 Sandbox 이미지도 게시한다.
 배포는 접근 권한이 있는 registry를 선택하고 이미지 pull에 해당 registry의 인증을 사용한다.
 폐쇄망에는 앱과 해당 Sandbox 이미지를 함께 반입한다. `node build/workspace-health.cjs`는
