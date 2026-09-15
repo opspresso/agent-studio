@@ -22,13 +22,14 @@ function repository(workspace: Workspace): CodingRepository {
   return workspace.coding;
 }
 
-async function reserve(deps: CodingDeps, id: string, ownerEmail: string, actionId: string | undefined, resuming = false, attachRepository?: string): Promise<WorkspaceWorkerState> {
+async function reserve(deps: CodingDeps, id: string, ownerEmail: string, actionId: string | undefined, resuming = false, attachRepository?: string, authorizeEffect = true): Promise<WorkspaceWorkerState> {
   const workspace = await ownedWorkspace(deps, id, ownerEmail);
+  if (authorizeEffect) await deps.authorize?.(workspace.projectName, ownerEmail);
   if (!["active", "suspended", "closed"].includes(workspace.status) || workspace.activeRunId ||
     (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) ||
     (workspace.activeActionId && (!resuming || workspace.activeActionId !== actionId))) throw new ConflictError("Workspace is busy");
   if (attachRepository && workspace.coding) throw new ConflictError("Workspace already has a Git repository");
-  if (!workspaceAllowsRepository(await workspacePolicy(deps, workspace.projectName), attachRepository ?? repository(workspace).repository)) throw new ConflictError("Workspace repository configuration changed");
+  if (authorizeEffect && !workspaceAllowsRepository(await workspacePolicy(deps, workspace.projectName), attachRepository ?? repository(workspace).repository)) throw new ConflictError("Workspace repository configuration changed");
   const token = deps.newId();
   const leaseUntil = new Date(deps.now().getTime() + WORKSPACE_LEASE_MS).toISOString();
   try {
@@ -154,7 +155,7 @@ export function createCodingUseCases(deps: CodingDeps) {
       const previous = await deps.repository.approval(id, approvalId);
       if (!previous || previous.requestedBy !== ownerEmail) throw new NotFoundError("Coding approval not found");
       if (previous.status !== "pending") return previous;
-      const state = await reserve(deps, id, ownerEmail, approvalId, true);
+      const state = await reserve(deps, id, ownerEmail, approvalId, true, undefined, approve);
       const decision = { ...previous, decidedBy: ownerEmail, decidedAt: deps.now().toISOString() };
       if (!approve) {
         const rejected: CodingApproval = { ...decision, status: "rejected" };

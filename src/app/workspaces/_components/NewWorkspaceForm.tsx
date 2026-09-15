@@ -45,7 +45,7 @@ export function NewWorkspaceForm() {
         setOptions(data);
         if (!initialized) {
           const first = data.projects[0];
-          if (first) { setProject(first.projectName); setRuntime(first.runtimes[0]!); setRepository(first.repositories[0] ?? null); setCoding(!!first.repositories.length && data.gitEnabled && first.runtimes[0] !== "command"); }
+          if (first) { setProject(first.projectName); setRuntime(first.defaultRuntime); setRepository(null); setCoding(false); }
           initialized = true;
         }
       }).catch(error => { if (current && reading === generation) setError(error instanceof Error ? error.message : "Workspace options could not be loaded"); });
@@ -65,7 +65,7 @@ export function NewWorkspaceForm() {
   }, [coding, project, repository, branchRepository, selected]);
 
   async function start() {
-    if (!selected || !task.trim() || busy || (coding && (!repositoryAllowed || !branch.trim()))) return;
+    if (!selected || !task.trim() || busy || !selected.runtimes.includes(runtime) || (coding && (!repositoryAllowed || !branch.trim()))) return;
     setBusy(true); setError(null);
     const body = JSON.stringify({ projectName: selected.projectName, runtime, ...(coding ? { baseBranch: branch, repository } : {}),
       input: runtime === "command" ? { kind: "command", script: task } : { kind: "task", prompt: task } });
@@ -84,13 +84,14 @@ export function NewWorkspaceForm() {
     {!options && !error && <Loader size="sm" />}
     {options && !options.projects.length && <Alert>{t("workspace.notConfigured")}</Alert>}
     <Select label={t("chat.project")} searchable value={project} data={(options?.projects ?? []).map(option => ({ value: option.projectName, label: option.displayName }))}
-      onChange={value => { setProject(value); setRepository(options?.projects.find(option => option.projectName === value)?.repositories[0] ?? null); setCoding(false); setBranch("main"); setRuntime(options?.projects.find(option => option.projectName === value)?.runtimes[0] ?? "command"); }} disabled={busy} />
+      onChange={value => { setProject(value); setRepository(null); setCoding(false); setBranch("main"); setRuntime(options?.projects.find(option => option.projectName === value)?.defaultRuntime ?? "command"); }} disabled={busy} />
     {selected?.description && <Text size="sm" c="dimmed">{selected.description}</Text>}
     <Select label={t("workspace.runtime")} value={runtime} allowDeselect={false} onChange={value => setRuntime(value as WorkspaceRuntime)} disabled={busy}
-      data={(selected?.runtimes ?? []).map(value => ({ value, label: value === "command" ? t("workspace.command") : value === "codex" ? "Codex" : value === "claude" ? "Claude" : "OpenCode" }))} />
+      error={selected && !selected.runtimes.includes(runtime) ? t("workspace.modelUnavailable") : undefined}
+      data={[...new Set([...(selected?.runtimes ?? []), runtime])].map(value => ({ value, disabled: !selected?.runtimes.includes(value), label: value === "command" ? t("workspace.command") : value === "codex" ? "Codex" : value === "claude" ? "Claude" : "OpenCode" }))} />
     <Switch label={t("workspace.useRepository")} checked={coding} onChange={event => setCoding(event.currentTarget.checked)} disabled={busy || !selected ||
       (!selected.repositories.length && selected.mode !== "all" && selected.mode !== "new" && !(selected.mode === "owners" && selected.repositoryOwners.length)) || !options?.gitEnabled} />
-    {project && <Anchor size="sm" href={`/projects/${encodeURIComponent(project)}/settings#workspace-repositories`} target="_blank" rel="noreferrer">{t("workspace.policy.manage")}</Anchor>}
+    {project && <Anchor size="sm" href={`/projects/${encodeURIComponent(project)}/workspace`} target="_blank" rel="noreferrer">{t("workspace.policy.manage")}</Anchor>}
     {coding && <>
       {selected?.mode === "new" && <Text size="sm" c="dimmed">{t("workspace.policy.modeHint.new")}</Text>}
       {selected?.mode === "owners" && !!selected.repositoryOwners.length && <Text size="sm" c="dimmed">{t("workspace.allowedOwners", { owners: selected.repositoryOwners.join(", ") })}</Text>}
@@ -100,6 +101,6 @@ export function NewWorkspaceForm() {
       {branchError && <Alert color="red">{branchError}</Alert>}
     </>}
     <Textarea label={runtime === "command" ? t("workspace.script") : t("workspace.task")} description={t("workspace.taskHint")} value={task} onChange={event => setTask(event.currentTarget.value)} autosize minRows={5} maxRows={12} disabled={busy} />
-    <Button onClick={() => { void start(); }} loading={busy} disabled={!selected || !task.trim() || (coding && (!branch.trim() || !repositoryAllowed))}>{t("workspace.start")}</Button>
+    <Button onClick={() => { void start(); }} loading={busy} disabled={!selected || !selected.runtimes.includes(runtime) || !task.trim() || (coding && (!branch.trim() || !repositoryAllowed))}>{t("workspace.start")}</Button>
   </Stack>;
 }

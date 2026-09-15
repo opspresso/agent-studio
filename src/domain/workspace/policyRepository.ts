@@ -1,9 +1,9 @@
-import type { WorkspaceRepositoryRules } from "./policy";
+import type { WorkspaceProjectSettings } from "./policy";
 
 export interface WorkspaceRepositoryPolicy {
   projectName: string;
-  /** Absent means deployment fallback; a reset preserves the revision fence. */
-  rules?: WorkspaceRepositoryRules;
+  /** Absent uses the project defaults; writes preserve the revision fence. */
+  rules?: WorkspaceProjectSettings;
   revision: number;
   updatedAt: string;
 }

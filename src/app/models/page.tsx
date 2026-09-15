@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceModelsSection } from "./WorkspaceModelsSection";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActionIcon,
@@ -1013,6 +1015,8 @@ export default function ModelsPage() {
       </CatalogHeader>
 
       {canEdit && <CatalogDocumentSection onChanged={loadCatalog} />}
+
+      {canEdit && <WorkspaceModelsSection />}
 
       {canEdit && selections && (
         <ModelSelectionSection

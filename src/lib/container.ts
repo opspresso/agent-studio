@@ -1,3 +1,4 @@
+import { createWorkspaceRuntimeModelUseCases } from "@/application/workspace/runtimeModels";
 import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor } from "@/infrastructure/documents/workerAdapters";
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as workspaceSleep } from "node:timers/promises";
@@ -17,13 +18,13 @@ import { chatRepository } from "@/infrastructure/db/repositories/chatRepository"
 import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLogRepository";
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
 import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
-import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
+import { createWorkspaceRuntimeAdapter, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
 import { workspaceRepositories, workspaceAllowsRepository, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import { createDockerCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
 import { createCodingUseCases } from "@/application/coding/codingUseCases";
 import { handleCodingWebhook } from "@/application/coding/webhook";
-import { getWorkspaceConfig, getWorkspaceProjectPolicy, getWorkspaceGitHubConfig } from "@/lib/runtime-settings";
+import { getWorkspaceConfig, getWorkspaceRuntimeConfig, getWorkspaceGitHubConfig } from "@/lib/runtime-settings";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 import { createAudioConfigUseCases } from "@/application/audio/audioConfig";
 import { assertAudioPostprocessorVersionUnused, resolveAudioPostprocessor } from "@/application/audio/postprocessVersion";
@@ -1174,7 +1175,7 @@ export const executionDeps: ExecutionDeps = {
   documentEditor: workerDocumentEditor,
   registerMcpSource: async (input) => getAudioRuntime().references.register(input),
   workspaceTool: async (projectName, origin) => {
-    if (origin.actor?.kind !== "user" || !getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.agentTools) return undefined;
+    if (origin.actor?.kind !== "user" || !getWorkspaceConfig() || !await workspaceRepositoryPolicyUseCases.enabled(projectName)) return undefined;
     const email = origin.actor.id;
     const authorize = () => authorizeWorkspaceTools(email, projectName);
     try { await authorize(); } catch { return undefined; }
@@ -1185,7 +1186,10 @@ export const executionDeps: ExecutionDeps = {
       attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
       workdir: WORKSPACE_DIRECTORY,
       publicBaseUrl: await getPublicBaseUrl(),
-      policy: () => getWorkspaceProjectPolicy(projectName),
+      policy: async () => {
+        const policy = await getWorkspaceProjectPolicy(projectName);
+        return policy ? { ...policy, runtimes: (await workspaceRuntimeModelUseCases.getView()).available } : undefined;
+      },
       sleep: async ms => { await workspaceSleep(ms); },
     }, { projectName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID(),
       sourceChatId: origin.conversation?.surface === "chat" ? origin.conversation.id : undefined });
@@ -1482,23 +1486,28 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
 const workspaceDeps: WorkspaceDeps = {
   repository: workspaceRepository, chats: chatRepository, projects: projectRepository,
   policy: getWorkspaceProjectPolicy,
+  authorize: (projectName, email) => authorizeWorkspaceTools(email, projectName),
+  assertRuntime: async kind => { if (!await getWorkspaceRuntimeConfig(kind)) throw new ValidationError("Select a Workspace runtime model in Models before starting work"); },
   now: () => new Date(), newId: randomUUID,
   checkRepository: async (repository, baseBranch) => {
     const settings = getWorkspaceGitHubConfig();
     if (!settings) throw new ValidationError("Workspace GitHub integration is not configured");
     await createCodingGitHub(settings).forge.checkRepository(repository, baseBranch);
   },
-  get idleTtlSeconds() { return getWorkspaceConfig()?.idleTtlSeconds ?? 1800; },
+  idleTtlSeconds: 1800,
 };
 export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);
+export const workspaceRuntimeModelUseCases = createWorkspaceRuntimeModelUseCases({
+  repository: settingsRepository, channels: getLlmProviderConfigs, invalidate: invalidateSettingsCache, now: () => new Date(),
+});
+async function getWorkspaceProjectPolicy(name: string) { return workspaceRepositoryPolicyUseCases.getPolicy(name); }
 export const workspaceRepositoryPolicyUseCases = createWorkspaceRepositoryPolicyUseCases({
-  projects: projectRepository, repository: workspacePolicyRepository,
-  deploymentPolicy: name => getWorkspaceConfig()?.projects.find(project => project.projectName === name),
+  projects: projectRepository, versions: versionRepository, repository: workspacePolicyRepository,
+  backendReady: () => !!getWorkspaceConfig(), runtimes: async () => (await workspaceRuntimeModelUseCases.getView()).available,
   isAdmin: isEffectiveConfiguredAdminByEmail, now: () => new Date(),
 });
 export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCreationUseCases({
   policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
-  deploymentPolicy: name => getWorkspaceConfig()?.projects.find(project => project.projectName === name),
   authorize: (projectName, ownerEmail) => authorizeWorkspaceTools(ownerEmail, projectName), now: () => new Date(),
   forge: () => {
     const settings = getWorkspaceGitHubConfig();
@@ -1511,7 +1520,8 @@ async function authorizeWorkspaceTools(email: string, projectName: string): Prom
   const tier = await getMemberTier(email);
   if (tier !== "member" && tier !== "admin") throw new ValidationError("Workspace tools require member access");
   await projectUseCases.assertAccessible(projectName, email);
-  if (!getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.agentTools) throw new ValidationError("Workspace tools are disabled");
+  if (!getWorkspaceConfig()) throw new ValidationError("Workspace Sandbox backend is not configured");
+  if (!await workspaceRepositoryPolicyUseCases.enabled(projectName)) throw new ValidationError("Workspace tools are disabled in the active agent version");
 }
 
 function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
@@ -1524,11 +1534,13 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
     provider: createDockerSandboxProvider(settings),
     checkpoints: createWorkspaceCheckpointStore(secretCipher),
     runtime: async kind => {
-      const runtime = settings.runtimes[kind];
-      if (!runtime?.provider) return createWorkspaceRuntimeAdapter(kind, runtime);
-      const channel = (await getLlmProviderConfigs()).find(provider => provider.name === runtime.provider);
-      if (!channel) throw new ValidationError("Workspace model channel is not configured");
-      return createWorkspaceRuntimeAdapter(kind, withWorkspaceModelChannel(kind, runtime, channel));
+      const runtime = await getWorkspaceRuntimeConfig(kind);
+      const adapter = createWorkspaceRuntimeAdapter(kind, runtime);
+      // A disabled model must not prevent observing an operation already running in the Sandbox.
+      return { ...adapter, command: (...args) => {
+        if (!runtime) throw new ValidationError("Workspace runtime model is not configured in Models");
+        return adapter.command(...args);
+      } };
     },
     ...(github && githubConfig ? { coding: createDockerCodingWorktree(settings, { webUrl: githubConfig.webUrl,
       internalHosts: githubConfig.internalHosts,
@@ -1585,13 +1597,13 @@ export async function receiveWorkspaceGitHubWebhook(deliveryId: string, raw: str
 export async function workspaceOptions(ownerEmail: string) {
   const settings = getWorkspaceConfig();
   const available = [];
-  for (const declared of settings?.projects ?? []) {
-    const project = await projectRepository.get(declared.projectName);
-    if (!project || !await userMayAccessProject(project, ownerEmail)) continue;
-    const policy = await getWorkspaceProjectPolicy(declared.projectName);
+  const runtimes = (await workspaceRuntimeModelUseCases.getView()).available;
+  for (const project of settings ? await projectUseCases.list() : []) {
+    if (!await userMayAccessProject(project, ownerEmail) || !await workspaceRepositoryPolicyUseCases.enabled(project.name)) continue;
+    const policy = await getWorkspaceProjectPolicy(project.name);
     if (policy) available.push({
       projectName: project.name, displayName: project.displayName, description: project.description,
-      runtimes: policy.runtimes, mode: workspaceRepositoryMode(policy), repository: policy.repository, repositories: workspaceRepositories(policy),
+      runtimes, defaultRuntime: policy.defaultRuntime ?? "command", mode: workspaceRepositoryMode(policy), repositories: workspaceRepositories(policy),
       repositoryOwners: policy.repositoryOwners ?? [], deploymentWorkflows: policy.deploymentWorkflows,
     });
   }
@@ -1599,9 +1611,9 @@ export async function workspaceOptions(ownerEmail: string) {
 }
 
 export async function workspaceBranches(projectName: string, ownerEmail: string, requestedRepository?: string) {
-  await projectUseCases.assertAccessible(projectName, ownerEmail);
+  await authorizeWorkspaceTools(ownerEmail, projectName);
   const policy = await getWorkspaceProjectPolicy(projectName);
-  const repo = requestedRepository ?? (policy ? workspaceRepositories(policy)[0] : undefined);
+  const repo = requestedRepository;
   const config = getWorkspaceGitHubConfig();
   if (!repo || !policy || !config) throw new ValidationError("Workspace GitHub integration is not configured");
   if (!workspaceAllowsRepository(policy, repo)) throw new ValidationError("Repository is not enabled for this project");

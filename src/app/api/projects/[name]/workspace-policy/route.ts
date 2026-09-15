@@ -1,6 +1,7 @@
+import { WORKSPACE_RUNTIMES } from "@/domain/workspace/types";
 import { z } from "zod";
 import { workspaceRepositoryPolicyUseCases } from "@/lib/container";
-import { withAdminAuth, withMemberAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { editorBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 import { isRepositoryName, isRepositoryOwner, WORKSPACE_REPOSITORY_MODES } from "@/domain/workspace/policy";
@@ -10,10 +11,13 @@ const updateSchema = z.object({
   revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER - 1).nullable(),
   rules: z.object({
     mode: z.enum(WORKSPACE_REPOSITORY_MODES),
-    repository: z.string().trim().refine(isRepositoryName).optional(),
     repositories: z.array(z.string().trim().refine(isRepositoryName)).max(WORKSPACE_LIMITS.policyRepositories),
     repositoryOwners: z.array(z.string().trim().refine(isRepositoryOwner)).max(WORKSPACE_LIMITS.policyOwners),
-  }).strict().nullable(),
+    defaultRuntime: z.enum(WORKSPACE_RUNTIMES),
+    idleTtlSeconds: z.number().int().min(WORKSPACE_LIMITS.minIdleTtlSeconds).max(WORKSPACE_LIMITS.maxIdleTtlSeconds),
+    checks: z.array(z.object({ name: z.enum(["test", "lint", "build"]), command: z.string().min(1).max(4000) }).strict()).max(3),
+    deploymentWorkflows: z.array(z.string().min(1).max(200)).max(20),
+  }).strict(),
 }).strict();
 type Context = { params: Promise<{ name: string }> };
 export type WorkspacePolicyResponse = Awaited<ReturnType<typeof workspaceRepositoryPolicyUseCases.getView>>;
@@ -23,7 +27,7 @@ export const GET = withMemberAuth(async (user, _request: Request, context: Conte
   catch (error) { return apiError(error); }
 });
 
-export const PUT = withAdminAuth(async (user, request: Request, context: Context) => {
+export const PUT = withMemberAuth(async (user, request: Request, context: Context) => {
   const body = await editorBody(request);
   if (body instanceof Response) return body;
   const parsed = updateSchema.safeParse(body);

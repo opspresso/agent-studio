@@ -17,7 +17,7 @@ const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const now = new Date("2026-09-14T00:00:00.000Z");
 const owner = "owner@example.com";
 const policy: WorkspaceProjectPolicy = { projectName: "demo", runtimes: ["command", "codex", "claude", "opencode"],
-  repository: "company/demo", checks: [], deploymentWorkflows: [] };
+  repositories: ["company/demo"], checks: [], deploymentWorkflows: [] };
 let nextId: number;
 const checkRepository = vi.fn(async (_repository: string, _baseBranch: string) => {});
 const useCases = createWorkspaceUseCases({ repository, chats, projects, now: () => now,
@@ -38,7 +38,7 @@ afterEach(() => vi.useRealTimers());
 
 async function create(runtime: "command" | "codex" = "command", coding = false) {
   return useCases.create({ chatId: "chat-1", projectName: "demo", title: "Task", runtime,
-    ...(coding ? { baseBranch: "main" } : {}) }, owner);
+    ...(coding ? { repository: "company/demo", baseBranch: "main" } : {}) }, owner);
 }
 
 describe("workspace admission and persistence", () => {
@@ -120,6 +120,23 @@ describe("workspace admission and persistence", () => {
     expect(await repository.list(owner, 20)).toHaveLength(0);
     expect(await chats.listByOwner(owner, { limit: 20 })).toHaveLength(0);
     vi.restoreAllMocks();
+  });
+  it("never chooses the first registered repository implicitly", async () => {
+    await expect(useCases.create({ chatId: "chat-1", projectName: "demo", title: "Task", runtime: "codex", baseBranch: "main" }, owner)).rejects.toMatchObject({ status: 400 });
+    expect(checkRepository).not.toHaveBeenCalled();
+  });
+  it("checks tool and model admission while preserving reads and close after revocation", async () => {
+    let enabled = true;
+    const authorize = vi.fn(async () => { if (!enabled) throw new Error("tools disabled"); });
+    const assertRuntime = vi.fn(async () => {});
+    const api = createWorkspaceUseCases({ repository, chats, projects, now: () => now, newId: () => `id-${++nextId}`, policy: () => ({ ...policy, idleTtlSeconds: 300 }), idleTtlSeconds: 1800, authorize, assertRuntime });
+    const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "Task", runtime: "command" }, owner);
+    expect(workspace.idleTtlSeconds).toBe(300);
+    enabled = false;
+    await expect(api.enqueue(workspace.id, owner, { kind: "command", script: "true" }, "revoked-123")).rejects.toThrow("tools disabled");
+    expect((await api.get(workspace.id, owner)).workspace.id).toBe(workspace.id);
+    await api.close(workspace.id, owner);
+    expect(assertRuntime).toHaveBeenCalledTimes(1);
   });
   it("uses an explicitly selected allowed repository and fences later policy removal", async () => {
     const expanded = { ...policy, repositories: ["company/second"] };

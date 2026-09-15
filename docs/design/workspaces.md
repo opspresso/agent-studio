@@ -83,30 +83,33 @@ native Session의 활동·보존 기한을 갱신한다. 완료 시 미결 승�
 
 ### 저장소 정책 관리
 
-관리자는 Project Settings의 **Workspace 저장소 접근** 또는 Settings의 같은 섹션에서 기본 저장소,
-추가 저장소와 허용 소유자를 관리한다. `repositoryOwners`는 정확한 계정·조직 이름을 대소문자 없이
-비교하며 해당 소유자의 현재·향후 저장소를 허용한다. 임의 wildcard·URL·부분 owner 일치는 허용하지 않는다.
+Agent Version에서 `parameters.workspaceTools`를 켜면 `/projects/{name}/workspace`에 전용 도구 탭이 나타난다.
+활성 버전은 published pointer, 미게시 프로젝트는 최신 저장 draft다. 실행 버전도 개별 opt-in을 확인한다.
+프로젝트 소유자·관리자가 저장소, 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다.
+기본 저장소는 없으며 Git 작업은 저장소와 기준 브랜치를 명시한다. 모델이 필요한 Runtime은 Models의
+전역 Runtime별 선택을 사용한다. 프로젝트 설정과 모델 설정은 환경변수로 관리하지 않는다.
+`repositoryOwners`는 정확한 계정·조직 이름을 대소문자 없이 비교하며 현재·향후 저장소를 허용한다.
 GitHub MCP 연결과 Workspace 서버 Git 자격증명은 별도이고, 정책 허용이 그 계정의 권한을 늘리지는 않는다.
 
 | 모드 | 기존 저장소 접근 | 새 저장소 생성 |
 |---|---|---|
-| `selected` — 저장소 고정 | 기본 저장소와 등록 목록 | 등록된 이름만 생성 가능 |
-| `owners` — 소유자 지정 | 기본·등록 목록 및 정확한 소유자 범위 | 해당 범위의 이름 |
+| `selected` — 저장소 고정 | 등록 목록 | 등록된 이름만 생성 가능 |
+| `owners` — 소유자 지정 | 등록 목록 및 정확한 소유자 범위 | 해당 범위의 이름 |
 | `all` — 모든 저장소 | 서버 GitHub 계정으로 접근 가능한 모든 이름 | GitHub 계정이 생성할 수 있는 계정·조직 |
-| `new` — 등록 목록 + 신규 자동 허용 | 기본·등록 목록만 | 이 프로젝트의 `Workspace.create_repository`가 성공하면 자동 등록 |
+| `new` — 등록 목록 + 신규 자동 허용 | 등록 목록만 | 이 프로젝트의 `Workspace.create_repository`가 성공하면 자동 등록 |
 
-`mode`를 생략한 배포 설정은 소유자 목록이 있으면 `owners`, 아니면 `selected`다. `all`은
-GitHub 권한을 우회하지 않으며, `new`는 생성 시각이나 모델이 제출한 생성 주장으로 기존 저장소를 허용하지 않는다.
+기본 `mode`는 `new`다. `all`은 GitHub 권한을 우회하지 않으며, `new`는 생성 시각이나 모델이
+제출한 생성 주장으로 기존 저장소를 허용하지 않는다.
 
-`PROJECT#{name}/WORKSPACEPOLICY`는 Git 범위만 덮어쓴다. 이미지·네트워크·Runtime·검사·자원 한도와
-`agentTools`는 배포가 소유한다. 저장된 규칙이 없으면 `WORKSPACE_CONFIG`로 돌아가고, 빈 규칙은
-`selected` 모드에서는 기본 저장소까지 포함해 모든 Git 작업을 차단한다. 초기화는 규칙만 제거하고 revision을 유지하므로
-오래된 편집으로 새 정책을 덮어쓸 수 없다. 프로젝트 삭제와 정책 저장은 같은 수명 경계를 사용한다.
-관리 변경은 감사 로그에 남으며 일반 Agent에는 정책을 수정하는 도구가 없다.
+`PROJECT#{name}/WORKSPACEPOLICY`에 프로젝트 설정과 revision을 저장한다. 모델 선택은 전역 Settings의
+`workspaceModels`이며 API 키는 기존 LLM 채널이 소유한다. 이미지·네트워크·자원 한도는 배포 인프라다.
+정책 저장은 revision과 프로젝트 수명 경계로 보호하며 일반 Agent에 설정 편집 도구를 제공하지 않는다.
+도구를 끄면 신규 실행·Git 승인·Chat 후속 실행을 거절한다. 기존 조회·취소·종료와 worker의 체크포인트
+관찰은 유지한다. 런타임 모델 해제도 이미 실행한 operation을 재실행하지 않는다.
 
-`getWorkspaceProjectPolicy`는 DB를 캐시하지 않는다. 앱의 접수·저장소 연결·Git 승인과 worker의 실행
-진입이 같은 정책을 읽고, 조회 실패를 배포 기본값으로 대체하지 않는다. 변경은 다음 접수와 승인에
-적용되며 이미 실행 중인 native 작업을 자동 취소하지 않는다. 정리·체크포인트는 별도 수명 규칙을 따른다.
+`repositoryPolicy.getPolicy`는 DB를 캐시하지 않는다. 접수·저장소 연결·Git 승인과 worker가 같은
+프로젝트 설정을 읽는다. 조회 실패를 기본값으로 대체하지 않으며 이미 실행 중인 native 작업을
+설정 변경만으로 자동 취소하지 않는다. 모델 채널의 캐시 수명은 전역 Runtime Settings 계약을 따른다.
 
 새 저장소 생성 전 Agent는 `check_repository_access`로 정확한 owner/name의 허용 여부를 먼저 확인한다.
 결과는 기존 접근의 `allowed`와 생성 가능 여부인 `creation_allowed`를 구분한다. `new`에서는
@@ -177,12 +180,12 @@ CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`
 
 같은 Version을 Publish해도 모든 진입점에 같은 도구·이력·승인이 제공되는 것은 아니다.
 `container.ts`의 Workspace 도구 바인딩은 `actor.kind=user`와 현재 member 권한, 프로젝트의
-`agentTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
+활성 버전의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
 
 | 창구 | Workspace 빌트인 | 원래 Chat으로 승인 결과 전달 |
 |---|---|---|
-| 로그인한 member/admin의 Agent Chat | 배포가 허용하면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
-| 로그인한 member/admin의 Playground·Agent 실행 API | 배포가 허용하면 제공 | source Chat이 없으므로 자동 재개 없음 |
+| 로그인한 member/admin의 Agent Chat | Agent의 Workspace 도구가 활성화되면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
+| 로그인한 member/admin의 Playground·Agent 실행 API | Agent의 Workspace 도구가 활성화되면 제공 | source Chat이 없으므로 자동 재개 없음 |
 | 프로젝트 API token | 미제공. actor는 `project-token` | Chat Session·승인 UI 없음 |
 | Slack·Telegram·Teams | 플랫폼 actor이므로 미제공 | 플랫폼 응답이며 Chat 승인 UI 없음 |
 | Webhook·Schedule | machine actor이므로 미제공. Schedule의 개인 문맥 옵션도 actor를 바꾸지 않음 | Trigger 이력으로 결과 확인 |
@@ -193,7 +196,7 @@ API token은 프로젝트 소유자로 인증하고 MCP에 소유자 email을 �
 
 ## 사용자 화면과 API
 
-배포의 `projects[].agentTools`를 켜면 로그인한 member 이상 사용자의 해당 프로젝트 Agent에
+Agent Version의 `parameters.workspaceTools`를 켜면 로그인한 member 이상 사용자의 해당 프로젝트 Agent에
 `Workspace` 빌트인을 제공한다. `options`, `start`, `run`, `status`, `wait`, `cancel`, `close`로
 설정 조회·작업 접수·후속 실행·결과 확인·정리를 수행한다. 호출마다 현재 멤버 권한과 프로젝트
 접근을 확인하며 다른 프로젝트의 Workspace ID는 거절한다. 비인간 실행과 background Task에는

@@ -1,3 +1,4 @@
+import { WORKSPACE_MODEL_RUNTIMES } from "@/domain/workspace/runtimeModels";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type {
   AppSettings,
@@ -48,6 +49,13 @@ function fromItem(item: Record<string, unknown>): AppSettings {
   }
   if (Array.isArray(item.selfHostedModels)) {
     settings.selfHostedModels = item.selfHostedModels as SelfHostedModelSetting[];
+  }
+  if (item.workspaceModels && typeof item.workspaceModels === "object" && !Array.isArray(item.workspaceModels)) {
+    settings.workspaceModels = {};
+    for (const runtime of WORKSPACE_MODEL_RUNTIMES) {
+      const model = (item.workspaceModels as Record<string, unknown>)[runtime];
+      if (typeof model === "string" && model.length > 0 && model.length <= 200) settings.workspaceModels[runtime] = model;
+    }
   }
   return settings;
 }

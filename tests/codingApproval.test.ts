@@ -32,7 +32,7 @@ beforeEach(async () => {
   pull = { number: 7, url: "https://example.test/company/repo/pull/7", headSha: head, baseBranch: "main", draft: false, state: "open", ci: "passed" };
   deps = { repository, chats, projects, now: () => now, newId: () => `id-${++id}`, idleTtlSeconds: 60, runTimeoutMs: 60_000,
     checkRepository: vi.fn(async () => {}),
-    policy: () => ({ projectName: "demo", repository: "company/repo", runtimes: ["codex"], checks: [], deploymentWorkflows: ["deploy.yml"] }),
+    policy: () => ({ projectName: "demo", repositories: ["company/repo"], runtimes: ["codex"], checks: [], deploymentWorkflows: ["deploy.yml"] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(); }, sleep: async () => {},
     provider: { kind: "fake", ensure: async () => ({ externalId: "sandbox-1" }), inspect: async () => "ready",
       execute: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })), start: vi.fn(async () => {}), operation: async () => ({ id: "", status: "not-started" }),
@@ -47,11 +47,21 @@ beforeEach(async () => {
   const at = now.toISOString();
   fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", ownerEmail: owner, projectType: "agent", createdAt: at, updatedAt: at }]);
   await chats.create({ chatId: "chat-1", projectName: "demo", title: "Task", ownerEmail: owner, createdAt: at, updatedAt: at });
-  workspace = await createWorkspaceUseCases(deps).create({ chatId: "chat-1", projectName: "demo", title: "Coding", runtime: "codex", baseBranch: "main" }, owner);
+  workspace = await createWorkspaceUseCases(deps).create({ chatId: "chat-1", projectName: "demo", title: "Coding", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
 });
 afterEach(() => vi.useRealTimers());
 
 describe("explicit coding action approvals", () => {
+  it("allows rejecting a pending review after tool or repository access was revoked, without Git effects", async () => {
+    const api = createCodingUseCases(deps);
+    const approval = await api.request(workspace.id, owner, { kind: "commit", message: "Reviewed change" });
+    deps.authorize = async () => { throw new Error("Workspace tools disabled"); };
+    deps.policy = () => ({ projectName: "demo", runtimes: ["codex"], mode: "selected", repositories: [], checks: [], deploymentWorkflows: [] });
+    await expect(api.decide(workspace.id, owner, approval.id, true)).rejects.toThrow("Workspace tools disabled");
+    expect((await api.decide(workspace.id, owner, approval.id, false)).status).toBe("rejected");
+    expect(deps.coding.commit).not.toHaveBeenCalled();
+    expect(deps.coding.push).not.toHaveBeenCalled();
+  });
   it("rechecks asynchronous repository policy after review and refuses a revoked repository before any Git effect", async () => {
     const api = createCodingUseCases(deps);
     const approval = await api.request(workspace.id, owner, { kind: "commit", message: "feat: add game" });

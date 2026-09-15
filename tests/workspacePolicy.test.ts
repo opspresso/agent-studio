@@ -5,20 +5,23 @@ import { keys } from "@/infrastructure/db/keys";
 import { projectRepository as projects } from "@/infrastructure/db/repositories/projectRepository";
 import { workspacePolicyRepository as repository } from "@/infrastructure/db/repositories/workspacePolicyRepository";
 import { createWorkspaceRepositoryPolicyUseCases } from "@/application/workspace/repositoryPolicy";
-import { workspaceAllowsRepository, withWorkspaceRepositoryRules, type WorkspaceProjectPolicy } from "@/domain/workspace/policy";
-import { getWorkspaceProjectPolicy } from "@/lib/runtime-settings";
+import { workspaceAllowsRepository, workspaceProjectPolicy } from "@/domain/workspace/policy";
+import type { VersionRepository } from "@/domain/project/repository";
+import type { Version } from "@/domain/project/types";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const now = new Date("2026-09-15T00:00:00Z");
 const owner = "owner@example.test";
-const deployment: WorkspaceProjectPolicy = { projectName: "demo", runtimes: ["codex"], repository: "company/old", checks: [], deploymentWorkflows: [] };
-const api = createWorkspaceRepositoryPolicyUseCases({ projects, repository, deploymentPolicy: name => name === "demo" ? deployment : undefined,
-  isAdmin: async email => email === owner, now: () => now });
+const version = { versionName: "v1", parameters: { workspaceTools: true }, createdAt: now.toISOString() } as Version;
+const versions = { get: vi.fn(async () => version), list: vi.fn(async () => [version]) } as unknown as VersionRepository;
+const api = createWorkspaceRepositoryPolicyUseCases({ projects, versions, repository,
+  backendReady: () => true, runtimes: async () => ["command", "codex"], isAdmin: async () => false, now: () => now });
+const getWorkspaceProjectPolicy = api.getPolicy;
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now); fake.rows.clear();
-  vi.stubEnv("WORKSPACE_CONFIG", JSON.stringify({ image: "workspace:test", projects: [deployment] }));
+  version.parameters.workspaceTools = true;
   fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", projectType: "agent", ownerEmail: owner,
     visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
 });
@@ -35,7 +38,7 @@ describe("Workspace repository access policy", () => {
     expect(workspaceAllowsRepository({ ...named, mode: "new" }, "company/other")).toBe(false);
   });
   it("allows exact repository owners, including new names, without matching neighboring owners or URLs", () => {
-    const rules = { repositoryOwners: ["NALBAM"] };
+    const rules = { mode: "owners" as const, repositoryOwners: ["NALBAM"] };
     expect(workspaceAllowsRepository(rules, "nalbam/not-created-yet")).toBe(true);
     for (const repo of ["nalbam-evil/repo", "evil/nalbam", "nalbam/../repo", "https://github.com/nalbam/repo", "nalbam/..", "nalbam/"]) {
       expect(workspaceAllowsRepository(rules, repo)).toBe(false);
@@ -44,40 +47,37 @@ describe("Workspace repository access policy", () => {
     expect(workspaceAllowsRepository({ repositories: ["company/repo"] }, "company/repo-other")).toBe(false);
   });
 
-  it("shares persisted changes across fresh runtime reads and keeps an empty override distinct from deployment fallback", async () => {
-    expect(workspaceAllowsRepository((await getWorkspaceProjectPolicy("demo"))!, "company/old")).toBe(true);
-    const saved = await api.update("demo", { revision: null, rules: { repositories: [" Company/One ", "company/one"], repositoryOwners: ["NALBAM"] } }, owner);
-    expect(saved).toMatchObject({ source: "override", revision: 1, rules: { repositories: ["company/one"], repositoryOwners: ["nalbam"] } });
+  it("defaults to registered plus new, without a default repository, and reads saved project settings", async () => {
+    expect(await api.getView("demo", owner)).toMatchObject({ enabled: true, canManage: true, rules: { mode: "new", repositories: [], defaultRuntime: "command" } });
+    const saved = await api.update("demo", { revision: null, rules: { mode: "owners", repositories: [" Company/One ", "company/one"], repositoryOwners: ["NALBAM"], defaultRuntime: "codex", idleTtlSeconds: 300 } }, owner);
+    expect(saved).toMatchObject({ revision: 1, rules: { repositories: ["company/one"], repositoryOwners: ["nalbam"], defaultRuntime: "codex" } });
     const effective = (await getWorkspaceProjectPolicy("demo"))!;
-    expect(effective.repository).toBeUndefined();
+    expect(effective).not.toHaveProperty("repository");
     expect(workspaceAllowsRepository(effective, "company/old")).toBe(false);
     expect(workspaceAllowsRepository(effective, "nalbam/dalada-3d")).toBe(true);
-    await api.update("demo", { revision: 1, rules: {} }, owner);
+    await api.update("demo", { revision: 1, rules: { mode: "selected" } }, owner);
     expect(workspaceAllowsRepository((await getWorkspaceProjectPolicy("demo"))!, "nalbam/dalada-3d")).toBe(false);
-    expect(workspaceAllowsRepository((await getWorkspaceProjectPolicy("demo"))!, "company/old")).toBe(false);
-    const reset = await api.update("demo", { revision: 2, rules: null }, owner);
-    expect(reset).toMatchObject({ source: "deployment", revision: 3 });
-    expect(workspaceAllowsRepository((await getWorkspaceProjectPolicy("demo"))!, "company/old")).toBe(true);
-    expect(await getWorkspaceProjectPolicy("not-enabled")).toBeUndefined();
+    expect(await getWorkspaceProjectPolicy("missing")).toBeUndefined();
   });
 
-  it("refuses non-admin writes and stale edits, including edits from before a reset", async () => {
+  it("refuses other members and stale edits", async () => {
     await expect(api.update("demo", { revision: null, rules: { repositoryOwners: ["nalbam"] } }, "member@example.test")).rejects.toMatchObject({ status: 403 });
     expect(await repository.get("demo")).toBeNull();
     await api.update("demo", { revision: null, rules: {} }, owner);
     await expect(api.update("demo", { revision: null, rules: { repositoryOwners: ["nalbam"] } }, owner)).rejects.toMatchObject({ status: 409 });
-    await api.update("demo", { revision: 1, rules: null }, owner);
+    await api.update("demo", { revision: 1, rules: {} }, owner);
     await expect(api.update("demo", { revision: 1, rules: {} }, owner)).rejects.toMatchObject({ status: 409 });
   });
 
-  it("preserves compute settings and never enables a deployment-disabled project", async () => {
-    expect(withWorkspaceRepositoryRules(deployment, { repositoryOwners: ["nalbam"] })).toMatchObject({ runtimes: ["codex"], checks: [], deploymentWorkflows: [] });
-    await projects.create({ name: "disabled", displayName: "Disabled", description: "", ownerEmail: owner, projectType: "agent", createdAt: now.toISOString(), updatedAt: now.toISOString() });
-    await expect(api.update("disabled", { revision: null, rules: {} }, owner)).rejects.toMatchObject({ status: 400 });
-    expect(await api.getView("disabled", owner)).toMatchObject({ enabled: false });
+  it("requires the agent tool opt-in and a configured default runtime", async () => {
+    await expect(api.update("demo", { revision: null, rules: { defaultRuntime: "claude" } }, owner)).rejects.toMatchObject({ status: 400 });
+    version.parameters.workspaceTools = false;
+    await expect(api.update("demo", { revision: null, rules: {} }, owner)).rejects.toMatchObject({ status: 400 });
+    expect(await api.getView("demo", owner)).toMatchObject({ enabled: false });
+    expect(workspaceProjectPolicy("demo").defaultRuntime).toBe("command");
   });
 
-  it.each([{ repository: "https://internal/repo" }, { repositoryOwners: ["*"] }, { repositoryOwners: ["nalbam/*"] }, { repositories: ["nalbam/*"] }, { repositoryOwners: Array(101).fill("nalbam") }])("rejects invalid or unbounded rules %j", async rules => {
+  it.each([{ repositories: ["https://internal/repo"] }, { repositoryOwners: ["*"] }, { repositoryOwners: ["nalbam/*"] }, { repositories: ["nalbam/*"] }, { repositoryOwners: Array(101).fill("nalbam") }])("rejects invalid or unbounded rules %j", async rules => {
     await expect(api.update("demo", { revision: null, rules }, owner)).rejects.toMatchObject({ status: 400 });
     expect(await repository.get("demo")).toBeNull();
   });

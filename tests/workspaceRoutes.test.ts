@@ -23,22 +23,22 @@ beforeEach(() => { vi.clearAllMocks(); f.events.mockResolvedValue([]); });
 
 describe("Workspace HTTP contract", () => {
   it.each(["selected", "owners", "all", "new"])("accepts the explicit %s repository mode", async mode => {
-    const body = { revision: null, rules: { mode, repositories: [], repositoryOwners: [] } };
+    const body = { revision: null, rules: { mode, repositories: [], repositoryOwners: [], defaultRuntime: "command", idleTtlSeconds: 1800, checks: [], deploymentWorkflows: [] } };
     f.update.mockResolvedValue({ projectName: "demo", rules: body.rules, revision: 1 });
     expect((await policy.PUT(request("/policy", "PUT", body), { params: Promise.resolve({ name: "demo" }) })).status).toBe(200);
-    expect(f.update).toHaveBeenCalledWith("demo", body, "admin@example.com");
+    expect(f.update).toHaveBeenCalledWith("demo", body, "owner@example.com");
   });
-  it("uses the admin identity and revision for repository policy writes and rejects compute or wildcard fields", async () => {
+  it("uses the member identity for project authorization and revision for repository policy writes and rejects compute or wildcard fields", async () => {
     const context = { params: Promise.resolve({ name: "demo" }) };
     f.update.mockResolvedValue({ projectName: "demo", revision: 2 });
-    const body = { revision: 1, rules: { mode: "owners", repositories: ["company/repo"], repositoryOwners: ["company"] } };
+    const body = { revision: 1, rules: { mode: "owners", repositories: ["company/repo"], repositoryOwners: ["company"], defaultRuntime: "codex", idleTtlSeconds: 300, checks: [{ name: "test", command: "pnpm test" }], deploymentWorkflows: [] } };
     expect((await policy.PUT(request("/policy", "PUT", body), context)).status).toBe(200);
-    expect(f.update).toHaveBeenCalledWith("demo", body, "admin@example.com");
+    expect(f.update).toHaveBeenCalledWith("demo", body, "owner@example.com");
     for (const invalid of [{ ...body, rules: { ...body.rules, image: "host-shell" } }, { ...body, rules: { ...body.rules, repositoryOwners: ["*"] } }, { ...body, revision: -1 }]) {
       expect((await policy.PUT(request("/policy", "PUT", invalid), context)).status).toBe(400);
     }
     expect(f.update).toHaveBeenCalledTimes(1);
-    expect((await policy.PUT(request("/policy", "PUT", { revision: 2, rules: null }), context)).status).toBe(200);
+    expect((await policy.PUT(request("/policy", "PUT", { revision: 2, rules: null }), context)).status).toBe(400);
     f.getView.mockResolvedValue({ projectName: "demo", canManage: false });
     expect((await policy.GET(request("/policy"), context)).status).toBe(200);
     expect(f.getView).toHaveBeenCalledWith("demo", "owner@example.com");

@@ -53,6 +53,8 @@ export interface AppSettings {
   llmProviders?: LlmProviderSetting[];
   /** Active capability-catalog embedding model; absent falls back to EMBEDDING_MODEL. */
   embeddingModel?: string;
+  /** Native Workspace runtime models selected in Models; no environment fallback. */
+  workspaceModels?: import("../workspace/types").WorkspaceRuntimeModels;
   /** Active capability-catalog reranker; absent falls back to RERANKER_MODEL. */
   rerankerModel?: string;
   /** Reranker relevance floor; absent falls back to RERANKER_MIN_SCORE. */

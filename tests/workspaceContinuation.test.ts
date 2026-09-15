@@ -37,7 +37,7 @@ async function fixture() {
     baseBranch: "main", state: "open", draft: false, ci: "passed" };
   const coding: CodingDeps = {
     repository, chats, projects, now: () => new Date(), newId: () => `id-${++serial}`, idleTtlSeconds: 60,
-    checkRepository: async () => {}, policy: () => ({ projectName: "project", repository: "company/repo", runtimes: ["codex"], checks: [], deploymentWorkflows: [] }),
+    checkRepository: async () => {}, policy: () => ({ projectName: "project", repositories: ["company/repo"], runtimes: ["codex"], checks: [], deploymentWorkflows: [] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind), runTimeoutMs: 1000,
     execute: async (_workspace, work) => { await work(); }, sleep: async () => {},
     provider: { kind: "fake", ensure: async () => ({ externalId: "sandbox-1" }), inspect: async () => "ready",

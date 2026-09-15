@@ -98,11 +98,13 @@ ffmpeg는 runtime 이미지에 포함돼 있다. 동시에 두 작업을 처리�
 ## Workspace worker
 
 Workspace는 선택 기능이다. `sandbox/Dockerfile`로 별도 실행 이미지를 만들고, 아래처럼
-`WORKSPACE_CONFIG`에 허용할 Studio 프로젝트와 runtime을 선언한다. 일반 작업에는 저장소가 필요하지 않다.
+실행 이미지와 네트워크를 연결한다. Agent Version에서 워크스페이스 도구를 켜고 프로젝트 전용 탭에서
+설정한다. 네이티브 Runtime 모델은 Models에서 선택한다. 일반 작업에는 저장소가 필요하지 않다.
 
 ```bash
 docker build -t agent-studio-workspace:local sandbox
-export WORKSPACE_CONFIG='{"image":"agent-studio-workspace:local","network":"none","projects":[{"projectName":"tasks","runtimes":["command"]}]}'
+export WORKSPACE_IMAGE=agent-studio-workspace:local
+export WORKSPACE_NETWORK=none
 node --env-file=.env.local --import tsx scripts/workspace-worker.ts
 ```
 
@@ -111,7 +113,7 @@ node --env-file=.env.local --import tsx scripts/workspace-worker.ts
 폐쇄망에는 앱과 해당 Sandbox 이미지를 함께 반입한다. `node build/workspace-health.cjs`는
 설정·Docker resource controller·이미지·네트워크·모델 채널을 검사하며 `--worker`는 큐 heartbeat도 확인한다.
 
-앱과 worker는 같은 PostgreSQL, `AES_ENCRYPTION_KEY`, Workspace 설정을 사용한다. DB는 기존
+앱과 worker는 같은 PostgreSQL, `AES_ENCRYPTION_KEY`, Sandbox 인프라 설정을 사용한다. 프로젝트·모델 설정은 공유 DB에서 읽는다. DB는 기존
 migration 명령으로 먼저 준비한다. 배포 이미지는 `node build/workspace-worker.cjs`를 제공하며
 Docker CLI도 포함한다. 실행 worker와 Git 승인 API가 있는 앱 서버는 같은 Docker daemon에
 접근해야 한다. 이 제어 프로세스에는 전용 daemon 또는 Docker context를 사용한다. Sandbox에는 socket,

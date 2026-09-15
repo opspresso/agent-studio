@@ -2,6 +2,8 @@ import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
 
 export const WORKSPACE_RUNTIMES = ["command", "codex", "claude", "opencode"] as const;
 export type WorkspaceRuntime = (typeof WORKSPACE_RUNTIMES)[number];
+export type WorkspaceModelRuntime = Exclude<WorkspaceRuntime, "command">;
+export type WorkspaceRuntimeModels = Partial<Record<WorkspaceModelRuntime, string>>;
 export type WorkspaceStatus = "active" | "suspending" | "suspended" | "closing" | "closed";
 
 /** Durable identity; a sandbox may be replaced without changing this or its session. */

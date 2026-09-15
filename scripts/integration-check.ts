@@ -270,7 +270,6 @@ async function main() {
     let repositoryCreates = 0;
     const repositoryRequest = { repository: `integration-owner/new-${suffix}`, description: "Integration fixture", private: true };
     const createRepository = createWorkspaceRepositoryCreationUseCases({ policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
-      deploymentPolicy: () => ({ projectName, mode: "new", runtimes: ["codex"], checks: [], deploymentWorkflows: [] }),
       authorize: async () => {}, now: () => new Date(now), forge: () => ({ createRepository: async request => {
         repositoryCreates++;
         return { repository: request.repository, repositoryId: 42, url: `https://github.example.test/${request.repository}`, baseBranch: "main", private: request.private };

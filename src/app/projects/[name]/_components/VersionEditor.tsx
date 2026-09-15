@@ -509,6 +509,9 @@ export function VersionEditor({
       {runsTools && <Checkbox label={t("audio.enableTools")} description={t("audio.enableToolsHint")}
         checked={value.parameters.audioProcessing ?? false}
         onChange={(e) => patchParams({ audioProcessing: e.currentTarget.checked ? true : undefined })} />}
+      {runsTools && <Checkbox label={t("workspace.enableTools")} description={t("workspace.enableToolsHint")}
+        checked={value.parameters.workspaceTools ?? false}
+        onChange={(e) => patchParams({ workspaceTools: e.currentTarget.checked ? true : undefined })} />}
       {(runsTools || value.parameters.urlFetch) && (
         <Stack gap="xs">
           <Checkbox

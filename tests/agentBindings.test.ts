@@ -29,6 +29,7 @@ describe("Studio prepares native SDK agent bindings", () => {
   it("binds Workspace for the requesting origin but excludes background task effects", async () => {
     const f = fixture();
     const handler = vi.fn(async () => ({ text: "ready" }));
+    f.version.parameters.workspaceTools = true;
     f.deps.workspaceTool = vi.fn(async () => handler);
     const bound = await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, f.origin);
     expect(bound.workspaceTool).toBe(handler);
@@ -36,6 +37,12 @@ describe("Studio prepares native SDK agent bindings", () => {
     const background = await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, { ...f.origin, backgroundTask: true });
     expect(background.workspaceTool).toBeUndefined();
     expect(f.deps.workspaceTool).toHaveBeenCalledTimes(1);
+  });
+  it("does not bind Workspace unless the executing version opted in", async () => {
+    const f = fixture();
+    f.deps.workspaceTool = vi.fn();
+    expect((await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, f.origin)).workspaceTool).toBeUndefined();
+    expect(f.deps.workspaceTool).not.toHaveBeenCalled();
   });
   it("loads only the version the published pointer names", async () => {
     const f = fixture();

@@ -20,7 +20,7 @@ const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const now = new Date("2026-09-14T00:00:00Z");
 const owner = "owner@example.com";
 let serial = 0;
-const policy = { projectName: "demo", runtimes: ["command", "codex"] as ("command" | "codex")[], repository: "org/repo", checks: [], deploymentWorkflows: [] };
+const policy = { projectName: "demo", runtimes: ["command", "codex"] as ("command" | "codex")[], repositories: ["org/repo"], checks: [], deploymentWorkflows: [] };
 const useCases = createWorkspaceUseCases({ repository, chats, projects, now: () => now, newId: () => `id-${++serial}`,
   policy: () => policy, idleTtlSeconds: 60, checkRepository: async () => {} });
 const authorize = vi.fn(async () => {});
@@ -57,11 +57,11 @@ describe("Workspace Agent capability", () => {
   it("checks policy before repository creation and returns a real management link without creating compute", async () => {
     const request = { operation: "check_repository_access", repository: "org/new-repo" };
     expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();
-    expect(await invoke(request)).toMatchObject({ allowed: false, repository_policy_url: "https://studio.example.test/projects/demo/settings#workspace-repositories" });
+    expect(await invoke(request)).toMatchObject({ allowed: false, repository_policy_url: "https://studio.example.test/projects/demo/workspace" });
     expect(await invoke({ ...request, repository: "org/repo" })).toMatchObject({ allowed: true });
     expect(await repository.list(owner, 20)).toHaveLength(0);
     expect(attachRepository).not.toHaveBeenCalled();
-    await expect(invoke({ operation: "check_repository", repository: "org/new-repo", base_branch: "main" })).rejects.toThrow("https://studio.example.test/projects/demo/settings#workspace-repositories");
+    await expect(invoke({ operation: "check_repository", repository: "org/new-repo", base_branch: "main" })).rejects.toThrow("https://studio.example.test/projects/demo/workspace");
   });
   it("checks repository readiness without creating compute or a chat", async () => {
     const request = { operation: "check_repository", repository: "org/repo", base_branch: "main" };
@@ -92,7 +92,8 @@ describe("Workspace Agent capability", () => {
     const options = JSON.parse((await later({ request: { operation: "options" } }, "options")).text);
     expect(options.current_workspace.workspace_id).toBe(workspace.id);
     expect(options.current_workspace.repository).toBeNull();
-    expect(options.default_repository).toBe("org/repo");
+    expect(options).not.toHaveProperty("default_repository");
+    expect(options.default_runtime).toBe("command");
   });
 
   it("requires explicit selection before mutating a different Workspace", async () => {

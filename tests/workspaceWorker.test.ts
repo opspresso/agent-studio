@@ -78,12 +78,13 @@ async function start(runtime: "command" | "codex" = "command") {
 
 describe("durable workspace worker", () => {
   it("rechecks asynchronous repository access before provisioning a queued Git task", async () => {
+    policy.mode = "owners";
     policy.repositoryOwners = ["company"];
     deps.policy = async () => policy;
     const api = createWorkspaceUseCases(deps);
     const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "New repository", runtime: "codex", repository: "company/new", baseBranch: "main" }, owner);
     const run = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "Implement feature" }, "request-0001");
-    policy = { ...policy, repositoryOwners: [] };
+    policy = { ...policy, mode: "owners", repositoryOwners: [] };
     await processWorkspace(deps, workspace.id);
     expect((await repository.run(workspace.id, run.id))?.status).toBe("failed");
     expect(provider.ensure).not.toHaveBeenCalled();
@@ -91,12 +92,12 @@ describe("durable workspace worker", () => {
     await expect(api.enqueue(workspace.id, owner, { kind: "task", prompt: "Try again" }, "request-0002")).rejects.toMatchObject({ status: 409 });
   });
   it("informs each native coding turn about the enforced Git approval boundary", async () => {
-    policy.repository = "company/repo";
+    policy.repositories = ["company/repo"];
     deps.coding = { prepare: async (_externalId, repo) => ({ ...repo, headSha: "a".repeat(40), baseSha: "a".repeat(40) }),
       review: async () => ({ headSha: "a".repeat(40), headTreeSha: "b".repeat(40), treeSha: "b".repeat(40), fingerprint: "tree", diff: "", truncated: false }),
       commit: vi.fn(async () => "unexpected"), push: vi.fn(async () => {}) };
     const api = createWorkspaceUseCases(deps);
-    const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "Git work", runtime: "codex", baseBranch: "main" }, owner);
+    const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "Git work", runtime: "codex", repository: "company/repo", baseBranch: "main" }, owner);
     await api.enqueue(workspace.id, owner, { kind: "task", prompt: "Commit and push the changes" }, "request-0001");
     await processWorkspace(deps, workspace.id);
     const command = vi.mocked(provider.start).mock.calls[0]![2];

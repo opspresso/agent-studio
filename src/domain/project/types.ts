@@ -193,6 +193,8 @@ export interface VersionParameters {
   urlFetch?: boolean;
   /** Opt into durable source-file and audio tools when storage and caller identity are available. */
   audioProcessing?: boolean;
+  /** Opt into project-managed persistent Workspaces and isolated Sandbox tools. */
+  workspaceTools?: boolean;
   /**
    * Whether this version's runs may read the Slack workspace its project's bot
    * is installed in — channel history, threads, who a user id is.

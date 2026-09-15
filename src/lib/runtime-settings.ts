@@ -14,14 +14,15 @@
  * shared invalidation signal, which is deliberately out of scope.
  */
 
+import type { WorkspaceRuntime } from "@/domain/workspace/types";
+import { workspaceModelChannel, workspaceRuntimeModelCompatible } from "@/domain/workspace/runtimeModels";
+import { withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
 import type { AppSettings, ArtifactAccessMode } from "@/domain/settings/types";
 import {
   toUnknownModelPolicy,
   type UnknownModelPolicy,
 } from "@/domain/settings/modelPolicy";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
-import { workspacePolicyRepository } from "@/infrastructure/db/repositories/workspacePolicyRepository";
-import { withWorkspaceRepositoryRules } from "@/domain/workspace/policy";
 import { parseProviderConfigs, resolveProviderTarget, type ResolvedTarget } from "@/infrastructure/llm/providers";
 import { getModelConfig, SELF_HOSTED_PROVIDERS, wireModelId } from "@/domain/llm/models";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
@@ -341,14 +342,19 @@ export async function getUnknownModelPolicy(): Promise<UnknownModelPolicy> {
   return toUnknownModelPolicy(stored ?? process.env.UNKNOWN_MODEL_POLICY);
 }
 
-/** Compute, images and model credentials are deployment-owned; no browser-editable override. */
+/** Docker compute infrastructure is deployment-owned; project and model settings are stored separately. */
 export function getWorkspaceConfig() { return config.workspace; }
-export async function getWorkspaceProjectPolicy(projectName: string) {
-  const deployment = getWorkspaceConfig()?.projects.find(project => project.projectName === projectName);
-  if (!deployment) return undefined;
-  const stored = await workspacePolicyRepository.get(projectName);
-  return withWorkspaceRepositoryRules(deployment, stored?.rules);
+export async function getWorkspaceRuntimeConfig(kind: WorkspaceRuntime) {
+  if (kind === "command") return {};
+  const selected = (await loadSettings())?.workspaceModels?.[kind];
+  const model = selected ? getModelConfig(selected) : undefined;
+  const channels = await getLlmProviderConfigs();
+  const channel = model ? workspaceModelChannel(model, channels) : undefined;
+  if (!model || !channel || !workspaceRuntimeModelCompatible(kind, model)) return undefined;
+  const target = resolveProviderTarget(model.id, channels, { baseUrl: "", apiKey: "" });
+  return withWorkspaceModelChannel(kind, { model: kind === "opencode" ? `openai/${target.model}` : target.model }, channel);
 }
+
 export function getWorkspaceGitHubConfig() {
   const settings = config.workspaceGitHub;
   return settings?.auth === "token" ? { ...settings, getToken: async () => {

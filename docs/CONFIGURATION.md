@@ -444,36 +444,34 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 
 ## Workspace 실행
 
-`WORKSPACE_CONFIG`는 선택적인 JSON 설정이다. 없으면 새 Workspace 실행을 비활성화한다.
-이미지·네트워크·모델 자격증명은 배포가 소유하며 콘솔 설정 오버라이드로 변경하지 않는다.
+Workspace 도구 사용 여부는 Agent Version의 `parameters.workspaceTools`로 선택한다. 활성 버전에서
+켜면 프로젝트에 **워크스페이스 도구** 탭이 나타난다. 프로젝트 소유자·관리자는 그 탭에서 저장소 목록,
+접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다. 기본 저장소는 없다.
+기본 접근 모드는 `new`(등록 + 신규), 기본 Runtime은 모델 없이 실행하는 `command`다.
+Codex·Claude·OpenCode의 모델은 **Models → 워크스페이스 런타임 모델**에서 관리자가 선택한다.
+선택 모델은 DB에 저장되며 환경변수의 모델 선언으로 대체하지 않는다. API 키와 URL은 기존 LLM
+채널에서 실행 직전에 읽는다. Workspace 설정이나 모델 선택 응답에 자격증명을 복사하지 않는다.
 
-| 필드 | 기본값 | 계약 |
+배포는 Sandbox 실행 인프라만 제공한다.
+
+| 변수 | 기본값 | 계약 |
 |---|---|---|
-| `image` | 필수 | `sandbox/Dockerfile`로 만든 실행 이미지 |
-| `network` | `none` | 운영자가 egress를 제한한 Docker 네트워크. `host`, `bridge`, `default`는 거절한다 |
-| `context` | Docker 기본 context | worker의 Docker context. 실행 중 변경하지 않는다 |
-| `memoryMb`, `diskMb`, `cpus` | `2048`, `2048`, `2` | 메모리·각 tmpfs 상한과 CPU 한도 |
-| `idleTtlSeconds` | `1800` | 최소 60초, 최대 7일. 턴 완료 후 비활성 Sandbox를 정리한다 |
-| `projects` | 필수 배열 | `projectName`, 허용 `runtimes`, 선택적인 `repository: "owner/repo"`, `checks`, `deploymentWorkflows` |
-| `projects[].checks` | `[]` | `{name: "test" | "lint" | "build", command}`. 각 Run 뒤 Sandbox에서 실행할 검사 |
-| `projects[].agentTools` | `false` | 로그인한 member 이상 사용자가 이 프로젝트의 Agent에서 `Workspace` 빌트인을 사용할 수 있게 한다 |
-| `projects[].mode` | 소유자 목록이 있으면 `owners`, 아니면 `selected` | `selected`, `owners`, `all`, `new`. 저장소 고정·소유자 범위·전체 접근·신규 생성 자동 등록 |
-| `projects[].repositories` | `[]` | 기본 `repository` 외에 선택할 수 있는 저장소 허용 목록. 선택한 저장소를 실행·재개·Git 승인마다 확인한다 |
-| `projects[].repositoryOwners` | `[]` | 정확한 GitHub 계정·조직 이름. 해당 소유자의 현재·향후 저장소를 허용한다. `*`·URL은 받지 않는다 |
-| `workerConcurrency` | `4` | worker process의 동시 실행 수, 1~32 |
-| `runtimes.<kind>.provider` | 미설정 | `openai`, `anthropic`, `openrouter`, `selfhosted` 중 저장된 LLM 채널의 이름. 명시하면 해당 채널의 URL·API 키를 실행 직전에 읽으며 Workspace 설정에 키를 복사하지 않는다 |
-| `runtimes` | `{}` | `command`, `codex`, `claude`, `opencode`별 `model`, `environment` |
+| `WORKSPACE_IMAGE` | 미설정 | `sandbox/Dockerfile`로 만든 이미지. 미설정이면 새 실행을 거절한다 |
+| `WORKSPACE_NETWORK` | `none` | egress를 제한한 Docker 네트워크. `host`, `bridge`, `default`는 거절한다 |
+| `WORKSPACE_DOCKER_CONTEXT` | Docker 기본 context | 앱과 worker가 공유하는 전용 Docker daemon의 context |
+| `WORKSPACE_MEMORY_MB`, `WORKSPACE_DISK_MB`, `WORKSPACE_CPUS` | `2048`, `2048`, `2` | 메모리·각 tmpfs·CPU 상한 |
+| `WORKSPACE_WORKER_CONCURRENCY` | `4` | worker process의 동시 실행 수, 1~32 |
 
-기본 저장소·추가 저장소·허용 소유자는 관리자가 Project Settings → Workspace 저장소 접근 또는
-Settings에서 DB 오버라이드로 변경한다. 추가 저장소와 소유자는 각각 최대 100개다. 저장된 오버라이드는
-모드와 목록을 함께 교체한다. `selected`에서 모두 비우면 Git을 차단하며 `all`은 목록 없이도 허용한다.
-`new`는 `Workspace.create_repository`로 생성한 저장소를 자동 등록한다. **배포 기본값 복원**은 오버라이드를
-제거한다. 앱·worker는 새 작업과 승인마다 같은 DB 정책을 읽으므로 재배포가 필요 없다. 이미지·
-네트워크·Runtime 권한은 이 화면에서 변경하지 않는다. [정책 계약](design/workspaces.md#저장소-정책-관리)을 따른다.
+프로젝트 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,
+`owners`는 목록과 정확한 소유자 범위를, `all`은 서버 GitHub 계정으로 접근 가능한 전체를 허용한다.
+`new`는 등록 목록을 유지하고 `Workspace.create_repository`의 실제 생성 성공을 자동 등록한다.
+[정책 계약](design/workspaces.md#저장소-정책-관리)을 따른다. 유휴 시간은 기본 1800초, 범위는 60초~7일이다.
+검사는 `test`, `lint`, `build`별 명령을 최대 하나씩 저장하며 각 Run 뒤 실행한다.
 
-Runtime 환경은 `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,
-`ANTHROPIC_MODEL`, `OPENCODE_CONFIG_CONTENT`만 허용한다. Git·클라우드·운영 환경변수는 상속하지 않는다.
-Codex의 비대화형 API 인증은 `CODEX_API_KEY`를 사용한다.
+Codex는 Responses 호환 채널, Claude는 Anthropic 채널, OpenCode는 지원하는 OpenAI 호환 채널을
+사용한다. 선택 가능한 모델은 text·tools 지원과 API 키 채널 연결이 필요하다. `sigv4`는 네이티브
+CLI에 제공하지 않는다. 모델을 해제하면 새 native 작업은 거절하지만 이미 시작한 operation의 조회·복구는
+유지한다. 일반 명령에는 모델이 필요 없다. Git·클라우드·운영 환경변수는 Sandbox에 상속하지 않는다.
 Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도 최초 시작 시각에서 계산한다.
 일반 명령은 모델 Version 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
 Studio의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.

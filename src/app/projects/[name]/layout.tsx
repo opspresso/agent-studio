@@ -1,5 +1,8 @@
 "use client";
 
+import { projectHasWorkspaceTools } from "@/domain/project/workspaceAccess";
+import { ProjectWorkspaceContext } from "./_components/ProjectWorkspaceContext";
+
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -40,7 +43,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const viewer = useViewer();
   const t = useT();
   const [project, setProject] = useState<SanitizedProject | null>(null);
-  const [audio, setAudio] = useState<{ name: string; enabled?: boolean; error?: string }>();
+  const [audio, setAudio] = useState<{ name: string; enabled?: boolean; workspace?: boolean; error?: string }>();
   const currentProject = project?.name === name ? project : null;
   const ownerEmail = currentProject?.ownerEmail ?? null;
 
@@ -59,7 +62,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
             setProject(project);
             const versions = project.projectType !== "agent" ? [] : project.publishedVersion
               ? [await getVersion(name, project.publishedVersion)] : await listVersions(name);
-            if (!cancelled && request === sequence) setAudio({ name, enabled: projectHasAudioTools(project, versions) });
+            if (!cancelled && request === sequence) setAudio({ name, enabled: projectHasAudioTools(project, versions), workspace: projectHasWorkspaceTools(project, versions) });
             return;
           } catch (error) {
             if (cancelled || request !== sequence) return;
@@ -83,6 +86,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     { href: `${base}/compare`, label: t("project.tab.compare"), Icon: IconGitCompare },
     { href: `${base}/usage`, label: t("project.tab.usage"), Icon: IconChartBar },
     ...(ownerEmail && viewer?.email === ownerEmail && audio?.name === name && audio.enabled ? [{ href: `${base}/audio`, label: t("audio.title"), Icon: IconSparkles }] : []),
+    ...(canManage && audio?.name === name && audio.workspace ? [{ href: `${base}/workspace`, label: t("workspace.toolsTitle"), Icon: IconSparkles }] : []),
     // Gated like Traces: these hold other people's runtime output, and the
     // delete here is the only way a Slack or trigger run's artifact is removed.
     ...(canManage
@@ -173,7 +177,9 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
       </Tabs>
 
       <ProjectAudioContext.Provider value={audio?.name === name ? { enabled: audio.enabled, error: audio.error } : {}}>
-        {children}
+        <ProjectWorkspaceContext.Provider value={audio?.name === name ? { enabled: audio.workspace, error: audio.error } : {}}>
+          {children}
+        </ProjectWorkspaceContext.Provider>
       </ProjectAudioContext.Provider>
     </Stack>
   );

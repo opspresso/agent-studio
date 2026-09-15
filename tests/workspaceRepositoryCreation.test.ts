@@ -21,15 +21,20 @@ const input = { repository: "company/new-game", description: "A game", private: 
 const created = (request: CreateWorkspaceRepositoryInput) => ({ repository: request.repository, repositoryId: 42, url: `https://github.example.test/${request.repository}`, baseBranch: "main", private: request.private });
 const createRepository = vi.fn<NonNullable<CodingForge["createRepository"]>>();
 let deployment: WorkspaceProjectPolicy;
-const api = createWorkspaceRepositoryCreationUseCases({ policies, creations, deploymentPolicy: () => deployment,
+async function saveSettings() {
+  const current = await policies.get("demo");
+  await policies.put({ projectName: "demo", revision: (current?.revision ?? 0) + 1, rules: deployment, updatedAt: now.toISOString() }, current?.revision ?? null);
+}
+const api = createWorkspaceRepositoryCreationUseCases({ policies, creations,
   authorize: async (_project, email) => { if (email !== owner) throw new ForbiddenError("Workspace access denied"); },
   forge: () => ({ createRepository }), now: () => now });
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.useFakeTimers(); vi.setSystemTime(now); fake.rows.clear();
   createRepository.mockReset().mockImplementation(async request => created(request));
   deployment = { projectName: "demo", mode: "new", repositories: ["company/existing"], runtimes: ["codex"], checks: [], deploymentWorkflows: [] };
   fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", projectType: "agent", displayName: "Demo", description: "", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
+  await saveSettings();
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
@@ -45,6 +50,7 @@ describe("server-owned repository creation and automatic access registration", (
 
   it("refuses unlisted creation in fixed mode before touching GitHub", async () => {
     deployment.mode = "selected";
+    await saveSettings();
     await expect(api.create("demo", input, owner)).rejects.toMatchObject({ status: 400 });
     expect(createRepository).not.toHaveBeenCalled();
     expect(await creations.get("demo", input.repository)).toBeNull();
@@ -61,6 +67,7 @@ describe("server-owned repository creation and automatic access registration", (
 
   it("permits all-mode creation without making the list an access restriction", async () => {
     deployment.mode = "all"; deployment.repositories = [];
+    await saveSettings();
     expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: true });
     expect(workspaceAllowsRepository(withWorkspaceRepositoryRules(deployment, (await policies.get("demo"))?.rules), "different/existing")).toBe(true);
   });
@@ -68,7 +75,7 @@ describe("server-owned repository creation and automatic access registration", (
   it("does not register a repository when GitHub says it already exists", async () => {
     createRepository.mockRejectedValueOnce(new CodingMutationRejectedError("GitHub rejected creation: repository exists"));
     expect(await api.create("demo", input, owner)).toMatchObject({ status: "failed", allowed: false });
-    expect((await policies.get("demo"))?.rules).toBeUndefined();
+    expect((await policies.get("demo"))?.rules?.repositories).toEqual(["company/existing"]);
     expect(workspaceAllowsRepository(deployment, input.repository)).toBe(false);
     expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: true });
     expect(createRepository).toHaveBeenCalledTimes(2);
@@ -101,7 +108,7 @@ describe("server-owned repository creation and automatic access registration", (
 
   it("records creation without granting access when an administrator revokes new mode during the request", async () => {
     createRepository.mockImplementation(async request => {
-      await policies.put({ projectName: "demo", revision: 1, updatedAt: now.toISOString(), rules: { mode: "selected", repositories: [] } }, null);
+      await policies.put({ projectName: "demo", revision: 2, updatedAt: now.toISOString(), rules: { mode: "selected", repositories: [] } }, 1);
       return created(request);
     });
     expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: false, error: expect.stringContaining("current policy") });
@@ -112,6 +119,7 @@ describe("server-owned repository creation and automatic access registration", (
 
   it("checks capacity and ownership before creating an external repository", async () => {
     deployment.repositories = Array.from({ length: 100 }, (_, index) => `company/repo-${index}`);
+    await saveSettings();
     await expect(api.create("demo", input, owner)).rejects.toMatchObject({ status: 400 });
     await expect(api.create("demo", input, "other@example.test")).rejects.toMatchObject({ status: 403 });
     expect(createRepository).not.toHaveBeenCalled();
@@ -119,6 +127,7 @@ describe("server-owned repository creation and automatic access registration", (
 
   it("counts normalized deployment entries rather than duplicate spellings against capacity", async () => {
     deployment.repositories = Array(100).fill("Company/Existing");
+    await saveSettings();
     expect(await api.create("demo", input, owner)).toMatchObject({ status: "created", allowed: true });
     expect((await policies.get("demo"))?.rules?.repositories).toEqual(["company/existing", input.repository]);
   });

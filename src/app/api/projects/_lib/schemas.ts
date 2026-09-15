@@ -148,6 +148,7 @@ export const versionParametersSchema = z.object({
   imageGeneration: z.boolean().optional(),
   urlFetch: z.boolean().optional(),
   audioProcessing: z.boolean().optional(),
+  workspaceTools: z.boolean().optional(),
   slackWorkspace: z.boolean().optional(),
   imageModel: z.string().optional(),
   dynamicCapabilities: z.boolean().optional(),

@@ -148,7 +148,7 @@ export function fractionEnv(name: string, fallback: number): number {
 }
 
 export const config = {
-  get workspace() { return parseWorkspaceConfig(process.env.WORKSPACE_CONFIG); },
+  get workspace() { return parseWorkspaceConfig(process.env); },
   get workspaceGitHub() {
     const auth = optionalEnv(process.env.WORKSPACE_GITHUB_AUTH);
     if (auth && auth !== "app" && auth !== "token") throw new Error("Invalid WORKSPACE_GITHUB_AUTH");

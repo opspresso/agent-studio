@@ -24,7 +24,7 @@ export const WORKSPACE_TOOL_DEF: ChannelToolDef = { type: "function", function: 
     object({ operation: operation("create_repository"), repository: text,
       description: { type: "string", maxLength: WORKSPACE_LIMITS.repositoryDescriptionChars }, private: { type: "boolean", description: "Follow requested visibility; default to private when unspecified." } }),
     object({ operation: operation("check_repository"), repository: text, base_branch: text }),
-    object({ operation: operation("start"), runtime, repository, base_branch: nullable(text), task }),
+    object({ operation: operation("start"), runtime: nullable(runtime), repository, base_branch: nullable(text), task }),
     object({ operation: operation("run"), workspace_id: nullable(text), task, runtime: nullable(runtime), repository,
       base_branch: nullable(text) }, ["operation", "task"]),
     object({ operation: operation("use_workspace"), workspace_id: text }),

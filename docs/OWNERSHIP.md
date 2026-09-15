@@ -158,7 +158,8 @@
 |---|---|
 | SDK Agent·Handoff·Agent-as-Tool 조립과 동시 호출의 identity | `src/application/runtime/agent.ts`, `boundAgent.ts`; SDK가 실행을 소유하고 Studio가 호출별 자원을 연결한다 |
 | 일반 작업과 코딩 작업의 Workspace·Sandbox·Runtime Session·Run 계약 | `src/domain/workspace/`; Git 저장소와 PR·승인 형태는 `src/domain/coding/types.ts` |
-| Workspace 저장소·소유자 허용과 빈 오버라이드 의미 | `src/domain/workspace/policy.ts`; 유효 정책 조회는 `src/lib/runtime-settings.ts`의 `getWorkspaceProjectPolicy`, 관리자 쓰기는 `application/workspace/repositoryPolicy.ts` |
+| Workspace 프로젝트 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자/관리자 쓰기는 `application/workspace/repositoryPolicy.ts`, 활성 버전은 `domain/project/activeVersion.ts` |
+| Workspace Runtime 모델 선택·호환성 | `domain/workspace/runtimeModels.ts`; 저장은 `application/workspace/runtimeModels.ts`, 실행 자격증명은 `lib/runtime-settings.ts` |
 | 신규 저장소 생성과 자동 등록의 증거·중복 방지 | `application/workspace/createRepository.ts`; GitHub 201 응답 검증은 `infrastructure/github/codingForge.ts`, 결과와 정책 transaction은 `workspaceRepositoryCreationStore.ts` |
 | 도구 결과의 실패 표시와 trace 오류 판정 | `src/shared/toolResultStatus.ts`의 `isToolErrorText`. Runtime의 `Error:` 결과를 Chat·Playground에도 실패로 표시한다 |
 | Native 코딩 턴에 전달하는 Workspace Git 승인 경계 지침 | `src/application/workspace/taskInput.ts` |
