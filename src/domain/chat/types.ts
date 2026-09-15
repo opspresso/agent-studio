@@ -1,5 +1,6 @@
 import type { FileReference } from "@/domain/artifact/types";
 import type { ChannelToolCall } from "../llm/types";
+import type { CodingAction, CodingApproval } from "../coding/types";
 
 export interface Chat {
   chatId: string;
@@ -110,6 +111,8 @@ export interface UserChatMessage extends ChatMessageBase {
 
 export interface AssistantChatMessage extends ChatMessageBase {
   role: "assistant";
+  /** Platform outcome, displayed separately from model-written answers. */
+  workspaceAction?: { workspaceId: string; approvalId: string; kind: CodingAction["kind"]; status: CodingApproval["status"] };
   /** Present when the turn requested tool calls (persisted for display only). */
   toolCalls?: ChannelToolCall[];
   /**

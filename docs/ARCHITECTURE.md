@@ -195,7 +195,7 @@ flowchart TB
 | Wiring site | 조립하는 것 |
 |---|---|
 | `src/lib/container.ts` | 리포지토리들, domain 포트들(`SecretCipher`, `UrlPolicy`, `RemoteAgentDispatcher`, `McpToolProbe`, `McpSessionFactory`), 모든 유스케이스 싱글턴. 세 개의 registry 슬라이스(`skillUseCases` / `mcpUseCases` / `agentUseCases`)와 그 옆에 얹힌 것들(managed MCP, MCP OAuth, trigger, settings). 그리고 `executionDeps` / `imageDeps` / `triggerRunnerDeps`. 필수인 LLM 채널과 이미지 채널까지 포함하므로, 주입이 빠지면 조용한 네트워크 호출이 아니라 타입 에러가 된다 |
-| `src/app/api/chats/_deps.ts` | `ChatDeps` bag (바인딩된 `runAgent` + 리포지토리들) |
+| `src/lib/container.ts`의 `chatDeps` (`src/app/api/chats/_deps.ts`에서 재노출) | HTTP Chat과 Workspace 승인 후속 실행의 공통 `ChatDeps` bag |
 | `src/app/api/slack/events/_lib/` | `SlackEventDeps` bag (바인딩된 `runAgent` + `SlackClientPort`), `ChatDeps` 와 같은 모양 |
 | `src/app/api/telegram/webhook/_lib/` | `TelegramEventDeps` bag (바인딩된 `runAgent` + `TelegramClientPort` + transcript 저장소), Slack 쪽과 같은 모양. 셋 다 모든 chat-bot 표면이 공통으로 지니는 절반인 `MessagingDeps` 를 확장한다 |
 | `src/app/api/teams/messages/_lib/` | `TeamsEventDeps` bag (바인딩된 `runAgent` + `TeamsClientPort` + transcript 저장소), 같은 모양 |

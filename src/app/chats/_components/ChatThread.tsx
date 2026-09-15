@@ -32,6 +32,7 @@ import { highestSeq, mergeMessages } from "../_lib/mergeMessages";
 import { SIGNATURE_REFRESH_MS } from "../_lib/refresh";
 import type { ChatWithMessages } from "@/application/chat/getChat";
 import { PendingApproval } from "./PendingApproval";
+import { startSequentialPoll } from "@/shared/sequentialPoll";
 
 interface Fetched {
   messages: ChatMessage[];
@@ -293,6 +294,20 @@ export function ChatThread({ chatId }: { chatId: string }) {
       dropped = true;
     };
   }, [syncFromServer, attachIfRunning]);
+
+  const hasWorkspace = Object.keys(chat?.linkedWorkspaces ?? {}).length > 0;
+  useEffect(() => {
+    if (!hasWorkspace) return;
+    return startSequentialPoll({
+      intervalMs: 3_000,
+      async poll(signal) {
+        if (document.visibilityState !== "visible" || runStore.get(chatId)?.status === "streaming") return;
+        const fresh = await syncFromServer({ tail: true });
+        if (!signal.aborted && fresh) attachIfRunning(fresh);
+      },
+      onError: () => { /* The next bounded tail read can recover a transport failure. */ },
+    });
+  }, [hasWorkspace, chatId, syncFromServer, attachIfRunning]);
 
   // Retire a finished turn: fetch first, then commit everything at once.
   useEffect(() => {

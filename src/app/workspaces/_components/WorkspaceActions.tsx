@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Button, Code, Group, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import { Alert, Anchor, Button, Code, Group, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import type { CodingApprovalResponse } from "@/app/api/workspaces/[id]/actions/route";
@@ -58,6 +58,11 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
 
   return <Stack gap="sm">
     {error && <Alert color="red">{error}</Alert>}
+    {(pending?.sourceChatId ?? latest?.sourceChatId) && <Alert color={detail.continuation?.status === "failed" ? "orange" : "blue"}>
+      <Text size="sm">{t("workspace.chatContinuationHint")}</Text>
+      {detail.continuation?.error && <Text size="sm">{detail.continuation.error}</Text>}
+      <Anchor href={`/chats/${pending?.sourceChatId ?? latest?.sourceChatId}`}>{t("workspace.returnToChat")}</Anchor>
+    </Alert>}
     {pending?.status === "pending" ? <>
       <Alert title={t("workspace.reviewAction")} color="yellow">{t("workspace.reviewHint")}</Alert>
       <Text fw={600}>{actionLabel(pending.action)}</Text>

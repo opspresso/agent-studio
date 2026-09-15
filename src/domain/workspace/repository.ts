@@ -1,6 +1,7 @@
 import type { CodingApproval } from "@/domain/coding/types";
-import type { Chat } from "@/domain/chat/types";
+import type { Chat, AssistantChatMessage } from "@/domain/chat/types";
 import type { Workspace, RuntimeSession, Sandbox, WorkspaceRun, WorkspaceEvent } from "./types";
+import type { WorkspaceContinuation } from "./continuation";
 
 export interface WorkspaceWrite {
   /** An owner deleting its Chat may schedule cleanup of an already closed Workspace. */
@@ -40,4 +41,8 @@ export interface WorkspaceRepository {
   approvals(workspaceId: string, limit: number): Promise<CodingApproval[]>;
   request(workspaceId: string, key: string): Promise<{ fingerprint: string; runId: string } | null>;
   delivery(workspaceId: string, id: string): Promise<string | null>;
+  dueContinuations(now: string, limit: number): Promise<WorkspaceContinuation[]>;
+  continuation(workspaceId: string, approvalId: string): Promise<WorkspaceContinuation | null>;
+  /** Compare-and-swap a notification; a claimed notification is never replayed. */
+  updateContinuation(next: WorkspaceContinuation, expectedRevision: number, notice?: AssistantChatMessage): Promise<boolean>;
 }

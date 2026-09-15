@@ -37,6 +37,10 @@ export function answerDurations(messages: readonly ChatMessage[]): Map<number, n
   const durations = new Map<number, number>();
   let askedAt: number | null = null;
   for (const message of messages) {
+    if (message.role === "assistant" && message.workspaceAction) {
+      askedAt = parsedInstant(message.createdAt);
+      continue;
+    }
     if (message.role === "user") {
       askedAt = parsedInstant(message.createdAt);
       continue;

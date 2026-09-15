@@ -5,9 +5,12 @@ import { createWorkspaceUseCases, type WorkspaceDeps } from "@/application/works
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { runWorkspaceWorker } from "@/application/workspace/service";
 import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
-import { executeWorkspaceTask } from "@/application/execution/runProject";
+import { executeWorkspaceTask, executeAgent } from "@/application/execution/runProject";
+import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
+import type { ChatDeps } from "@/application/chat/deps";
 import { workspaceRepository } from "@/infrastructure/db/repositories/workspaceRepository";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
+import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLogRepository";
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
 import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
 import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
@@ -260,7 +263,7 @@ setAuditSink(auditRepository);
  * `undefined` is the whole feature being off — the same shape `catalogDeps`
  * takes when this deployment has the capability catalog disabled.
  */
-export const artifactStorage = isObjectStoreConfigured()
+const artifactStorage = isObjectStoreConfigured()
   ? { rows: artifactRepository, objects: withArtifactAccessMode(artifactObjectStore) }
   : undefined;
 
@@ -1169,15 +1172,10 @@ export const executionDeps: ExecutionDeps = {
   workspaceTool: async (projectName, origin) => {
     if (origin.actor?.kind !== "user" || !getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.agentTools) return undefined;
     const email = origin.actor.id;
-    const authorize = async () => {
-      const tier = await getMemberTier(email);
-      if (tier !== "member" && tier !== "admin") throw new ValidationError("Workspace tools require member access");
-      await projectUseCases.assertAccessible(projectName, email);
-      if (!getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.agentTools) throw new ValidationError("Workspace tools are disabled");
-    };
+    const authorize = () => authorizeWorkspaceTools(email, projectName);
     try { await authorize(); } catch { return undefined; }
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
-      requestGit: (id, ownerEmail, action) => getCodingUseCases().request(id, ownerEmail, action),
+      requestGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().request(id, ownerEmail, action, sourceChatId),
       pullRequest: (id, ownerEmail) => getCodingUseCases().pullRequest(id, ownerEmail),
       attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
       workdir: WORKSPACE_DIRECTORY,
@@ -1489,6 +1487,13 @@ const workspaceDeps: WorkspaceDeps = {
 };
 export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);
 
+async function authorizeWorkspaceTools(email: string, projectName: string): Promise<void> {
+  const tier = await getMemberTier(email);
+  if (tier !== "member" && tier !== "admin") throw new ValidationError("Workspace tools require member access");
+  await projectUseCases.assertAccessible(projectName, email);
+  if (!getWorkspaceConfig()?.projects.find(project => project.projectName === projectName)?.agentTools) throw new ValidationError("Workspace tools are disabled");
+}
+
 function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {
   const settings = getWorkspaceConfig();
   if (!settings) throw new ValidationError("Workspaces are not configured");
@@ -1522,8 +1527,21 @@ export async function closeChatWorkspace(chatId: string, ownerEmail: string): Pr
 }
 
 export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?: () => Promise<void>): Promise<void> {
-  await runWorkspaceWorker(getWorkspaceWorkerDeps(), signal, getWorkspaceConfig()?.workerConcurrency, heartbeat);
+  const concurrency = getWorkspaceConfig()?.workerConcurrency ?? 1;
+  await Promise.all([
+    runWorkspaceWorker(getWorkspaceWorkerDeps(), signal, concurrency, heartbeat),
+    runWorkspaceContinuations({ chat: chatDeps, workspaces: workspaceRepository, authorize: authorizeWorkspaceTools,
+      now: () => new Date(), sleep: async (ms, abort) => { await workspaceSleep(ms, undefined, { signal: abort }); } }, signal, concurrency),
+  ]);
 }
+
+/** Shared by HTTP chats and durable Workspace action continuations. */
+export const chatDeps: ChatDeps = {
+  closeWorkspace: closeChatWorkspace, runtimeSessions, chats: chatRepository, runLog: chatRunLogRepository,
+  projects: projectRepository, versions: versionRepository,
+  runAgent: (params) => executeAgent(executionDeps, params), documents: executionDeps.documents,
+  ...(artifactStorage ? { artifacts: artifactStorage } : {}),
+};
 
 export function getCodingUseCases() {
   const deps = getWorkspaceWorkerDeps();

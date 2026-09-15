@@ -132,6 +132,18 @@ Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는
 막는다. `wait`는 최대 8초만 기다리고, 실행 중이면 반환된 Workspace 경로에서 계속 확인한다.
 도구 출력은 cursor로 읽으며 생략된 출력·Diff는 표시한다. `prepare_git`는 Commit·Push·Commit & push·PR·main 병합·main 직접 Push의
 검토를 준비하고 `approval_path`를 반환한다. Agent는 링크를 전달하고 승인까지 멈춘다.
+Chat에서 요청한 승인은 `sourceChatId`를 보관한다. 승인 성공·실패·거절·결과 불명 기록과
+`WorkspaceContinuation` 알림을 같은 transaction에 쓴다. 별도 Workspace worker의 알림 소비자는
+원래 Chat의 소유권·프로젝트 접근·현재 Workspace 선택을 다시 확인하고 Chat run lease를 잡는다.
+알림 claim과 채팅의 승인 결과 표시는 원자적으로 저장한다. 원래 SDK Session을 사용해 공통
+`executeAgent` facade로 남은 요청을 이어가며, 새 사용자 메시지를 저장하거나 Git 동작을 재실행하지 않는다.
+커밋·푸시 → PR → main 병합은 각각의 승인 결과가 다음 검토를 준비한다. 한 승인으로 뒤의 동작까지 승인하지 않는다.
+
+알림은 브라우저 연결과 독립적이다. 다른 Chat run이나 SDK 승인이 진행 중이면 대기한다. 이미 claim한
+알림의 lease가 만료되면 실패로 기록하고 자동 재실행하지 않는다. 사용자가 현재 결과를 확인한 뒤 이어가야 한다.
+삭제된 Chat·Workspace, 바뀐 Workspace 선택과 철회된 접근 권한은 후속 실행을 취소한다.
+Chat이 없는 Playground·직접 Workspace 화면 요청에는 원래 채팅을 추측해서 연결하지 않는다.
+
 이 도구는 Git·배포 승인을 소비하지 않는다. Native 코딩 턴은 보호된 Git 경로와 승인 경계의
 환경 지침을 받으며, 권한 변경·임시 인덱스·GitHub 도구로 Git 쓰기를 우회하지 않는다.
 `status`는 실제 Git 동작 결과와 PR 정보를 반환하며 PR의 현재 HEAD·검사 상태를 GitHub에서 갱신한다.

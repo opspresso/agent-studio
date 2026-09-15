@@ -8,6 +8,7 @@ import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
 import { isGitBranch, isRepositoryName, workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import type { CodingApproval } from "@/domain/coding/types";
+import type { WorkspaceContinuation } from "@/domain/workspace/continuation";
 import { CodingRepositoryNotReadyError } from "@/domain/coding/types";
 import { titleFromMessage } from "@/application/chat/title";
 import { assertProjectAccessible } from "@/application/project/projectUseCases";
@@ -73,6 +74,7 @@ export interface WorkspaceDetail {
   session: RuntimeSession | null;
   runs: WorkspaceRunView[];
   approvals: CodingApproval[];
+  continuation?: Pick<WorkspaceContinuation, "chatId" | "status" | "error"> | null;
 }
 
 export interface StartWorkspaceResult { workspace: WorkspaceView; run: WorkspaceRunView }
@@ -168,7 +170,11 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       const [session, runs, approvals] = await Promise.all([
         deps.repository.session(id, workspace.sessionId), deps.repository.runs(id, tail ? 1 : WORKSPACE_LIMITS.page), deps.repository.approvals(id, tail ? 1 : WORKSPACE_LIMITS.page),
       ]);
-      return { workspace: workspaceView(workspace), session, runs: runs.map(workspaceRunView), approvals };
+      const continuation = approvals[0]?.sourceChatId ? await deps.repository.continuation(id, approvals[0].id) : undefined;
+      return { workspace: workspaceView(workspace), session, runs: runs.map(workspaceRunView), approvals,
+        ...(continuation !== undefined ? { continuation: continuation ? {
+          chatId: continuation.chatId, status: continuation.status, ...(continuation.error ? { error: continuation.error } : {}),
+        } : null } : {}) };
     },
 
     async start(input: StartWorkspaceInput, ownerEmail: string, requestKey: string, sourceChatId?: string): Promise<StartWorkspaceResult> {

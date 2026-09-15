@@ -308,6 +308,7 @@ export const MessageView = memo(function MessageView({
 
   return (
     <Stack gap={4} align="flex-start" className={classes.turn}>
+      {message.workspaceAction && <Badge variant="light">{t("chat.workspaceActionResult")}</Badge>}
       {(message.warnings ?? []).map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}

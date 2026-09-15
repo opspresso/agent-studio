@@ -1,12 +1,13 @@
 import type { WorkspaceRepository, WorkspaceWrite } from "@/domain/workspace/repository";
 import type { Workspace, WorkspaceRun, WorkspaceEvent } from "@/domain/workspace/types";
 import type { CodingApproval } from "@/domain/coding/types";
-import { mayAdvanceCodingApproval } from "@/domain/coding/types";
+import { mayAdvanceCodingApproval, isTerminalCodingApproval } from "@/domain/coding/types";
+import type { WorkspaceContinuation } from "@/domain/workspace/continuation";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { keys } from "../keys";
-import { conditions, getItem, queryItems, transact, type Item, type TransactOp } from "../store";
+import { conditions, getItem, queryItems, transact, CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED, type Item, type TransactOp } from "../store";
 import { chatActivityFields, chatIsLive } from "../chatLifecycle";
-import { chatCreationItem } from "./chatRepository";
+import { chatCreationItem, chatMessageItem } from "./chatRepository";
 import { projectIsLive } from "../projectLifecycle";
 import { expiresAtSeconds, expiresAtFromNow, isExpired, RETENTION } from "../ttl";
 
@@ -38,6 +39,14 @@ function workspaceItem(workspace: Workspace): Item {
 
 function assertChild(workspaceId: string, child: { workspaceId: string }): void {
   if (child.workspaceId !== workspaceId) throw new Error("workspace child scope mismatch");
+}
+
+function continuationItem(item: WorkspaceContinuation): Item {
+  return { ...keys.workspaceChild(item.workspaceId, "CONTINUATION", item.approvalId), value: item,
+    expiresAt: expiry(item.createdAt),
+    ...(["pending", "running"].includes(item.status) ? {
+      GSI2PK: keys.workspaceContinuationsDue(), GSI2SK: keys.workspaceDueSort(item.dueAt, `${item.workspaceId}#${item.approvalId}`),
+    } : {}) };
 }
 
 function sourceChatLink(workspace: Workspace, sourceChatId: string, expectedWorkspaceId?: string): TransactOp {
@@ -123,6 +132,16 @@ export const workspaceRepository: WorkspaceRepository = {
       operations.push({ kind: "put", item: { ...keys.workspaceChild(workspace.id, kind, child.id), value: child,
         expiresAt: expiry(workspace.updatedAt) } });
     }
+    if (approval?.sourceChatId && isTerminalCodingApproval(approval.status)) {
+      const notification: WorkspaceContinuation = { workspaceId: workspace.id, approvalId: approval.id,
+        chatId: approval.sourceChatId, ownerEmail: approval.requestedBy, projectName: workspace.projectName, revision: 0, status: "pending",
+        createdAt: workspace.updatedAt, dueAt: workspace.updatedAt };
+      // The effect result and its delivery are one transaction. Re-saving an outcome
+      // must not reset a notification already claimed by a chat worker.
+      operations.push({ kind: "update", key: keys.workspaceChild(workspace.id, "CONTINUATION", approval.id),
+        patch: row => row ?? continuationItem(notification),
+        condition: row => !row || (row.value as WorkspaceContinuation).chatId === notification.chatId });
+    }
     if (request || change.reopenGitOwner) {
       operations.push({ kind: "check", key: keys.project(workspace.projectName), condition: projectIsLive });
       operations.push({ kind: "update", key: keys.chat(workspace.chatId), patch: row => ({ ...row, ...chatActivityFields(workspace.updatedAt) }), condition: row =>
@@ -175,4 +194,35 @@ export const workspaceRepository: WorkspaceRepository = {
   },
   async request(id, key) { return value(await getItem(keys.workspaceChild(id, "REQUEST", key))); },
   async delivery(id, deliveryId) { return value(await getItem(keys.workspaceChild(id, "DELIVERY", deliveryId))); },
+  async dueContinuations(now, limit) {
+    return (await queryItems({ index: "GSI2", pk: keys.workspaceContinuationsDue(), sk: keys.workspaceDueRange(now),
+      limit: page(limit), notExpiredAt: expiresAtFromNow(0, Date.parse(now)) })).map(row => row.value as WorkspaceContinuation);
+  },
+  async continuation(id, approvalId) { return value(await getItem(keys.workspaceChild(id, "CONTINUATION", approvalId))); },
+  async updateContinuation(next, expectedRevision, notice) {
+    if (next.revision !== expectedRevision + 1) throw new Error("Continuation revision must advance once");
+    if (notice && (notice.chatId !== next.chatId || notice.workspaceAction?.workspaceId !== next.workspaceId ||
+      notice.workspaceAction.approvalId !== next.approvalId || !next.runId || next.status !== "running")) throw new Error("Invalid continuation notice");
+    try {
+      await transact([{ kind: "update", key: keys.workspaceChild(next.workspaceId, "CONTINUATION", next.approvalId), patch: () => continuationItem(next), condition: row => {
+        const previous = row?.value as WorkspaceContinuation | undefined;
+        return previous?.revision === expectedRevision && previous.chatId === next.chatId &&
+          previous.ownerEmail === next.ownerEmail && previous.projectName === next.projectName && !isExpired(row?.expiresAt, Date.now());
+      } }, ...(notice ? [
+        { kind: "check" as const, key: keys.workspace(next.workspaceId), condition: (row: Item | null) => {
+          const workspace = row?.value as Workspace | undefined;
+          return workspace?.ownerEmail === next.ownerEmail && workspace.projectName === next.projectName &&
+            !workspace.deleteRequestedAt && !isExpired(row?.expiresAt, Date.now());
+        } },
+        { kind: "check" as const, key: keys.chat(next.chatId), condition: (row: Item | null) => chatIsLive(row) &&
+          row?.ownerEmail === next.ownerEmail && row?.activeRunId === next.runId &&
+          !isExpired(row?.expiresAt, Date.now()) && (row?.linkedWorkspaces as Record<string, string> | undefined)?.[next.projectName] === next.workspaceId },
+        { kind: "put" as const, item: chatMessageItem(notice), condition: conditions.notExists },
+      ] : [])]);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && [CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED].includes(error.name)) return false;
+      throw error;
+    }
+  },
 };

@@ -32,6 +32,9 @@
  * never one label at a time.
  */
 export const en = {
+  "chat.workspaceActionResult": "Workspace action result",
+  "workspace.chatContinuationHint": "The decision result returns to the requesting chat. The agent continues the remaining request there; later Git actions receive their own review.",
+  "workspace.returnToChat": "Return to requesting chat",
   "workspace.new": "New Workspace",
   "workspace.kind": "Workspace",
   "workspace.list": "Workspaces",

@@ -21,6 +21,12 @@ self-call 은 없다 — 클라이언트로 SSE 를 스트리밍한다.
 위임한 Workspace 선택은 별도 `linkedWorkspaces`에 프로젝트별로 보관한다. 이 연결은
 Workspace use case와 repository가 소유하며 일반 Chat 갱신은 덮어쓰지 않는다.
 
+Workspace 승인 결과는 `workspaceAction`을 가진 표시용 assistant 행으로 구분한다. 이를 모델이 작성한
+답변이나 사용자 요청으로 간주하지 않는다. Worker는 승인 결과 이벤트와 기존 SDK 이력으로 후속 런을
+시작하며, 처음부터 detached run-log에 기록해 어느 브라우저에서도 결과를 이어받을 수 있다.
+Workspace가 연결된 Chat 화면은 보이는 동안 실행 중이 아닐 때 3초마다 bounded tail을 확인한다.
+새 active run을 발견하면 기존 reconnect 경로로 붙는다. 후속 답변 시간은 승인 결과 행의 시각부터 계산한다.
+
 한 chat 은 **한 번에 하나의 런**만 가진다: `claimChatRun` (`src/application/chat/runLease.ts`)
 이 chat 행에 conditional-write 리스(lease)를 잡고(`activeRunId`, `RUN_LEASE_SECONDS` 후
 만료), 그 리스가 유지되는 동안 들어온 두 번째 전송은 `ChatConflictError` (409) 다. 이것은

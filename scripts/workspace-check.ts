@@ -1,3 +1,4 @@
+import type { CodingApproval } from "@/domain/coding/types";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { workspaceRepository as repository } from "@/infrastructure/db/repositories/workspaceRepository";
@@ -40,6 +41,32 @@ export async function checkWorkspaces(): Promise<void> {
     assert.equal(later.reused, true);
     assert.equal(later.workspace.id, selectedId);
     assert.equal((await repository.runs(selectedId, 10)).length, 1, "another start does not replay or enqueue work");
+    const sourceWorkspace = (await repository.get(selectedId))!;
+    const approval: CodingApproval = { id: "completed-approval", workspaceId: selectedId, requestedBy: owner,
+      requestedAt: now, sourceChatId, action: { kind: "push" }, fingerprint: "review", status: "succeeded", result: "a".repeat(40),
+      review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "", truncated: false } };
+    await repository.write({ expectedRevision: sourceWorkspace.revision,
+      workspace: { ...sourceWorkspace, revision: sourceWorkspace.revision + 1 }, approval });
+    const notification = (await repository.continuation(selectedId, approval.id))!;
+    assert.equal(notification.status, "pending", "terminal approval and continuation commit together");
+    assert.ok((await repository.dueContinuations(new Date().toISOString(), 50)).some(row => row.approvalId === approval.id));
+    const continuationRunId = "continuation-run";
+    await chats.claimRun(sourceChatId, continuationRunId, Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000) + 60);
+    const running = { ...notification, revision: 1, status: "running" as const, runId: continuationRunId };
+    const notice = { chatId: sourceChatId, seq: await chats.reserveMessageSeq(sourceChatId), role: "assistant" as const,
+      content: "push: succeeded", createdAt: now,
+      workspaceAction: { workspaceId: selectedId, approvalId: approval.id, kind: approval.action.kind, status: approval.status } };
+    const deliveries = await Promise.all([repository.updateContinuation(running, 0, notice), repository.updateContinuation(running, 0, notice)]);
+    assert.equal(deliveries.filter(Boolean).length, 1, "one delivery wins and writes one source-chat notice");
+    assert.equal((await chats.listMessages(sourceChatId)).filter(row => row.role === "assistant" && row.workspaceAction).length, 1);
+    await repository.updateContinuation({ ...running, revision: 2, status: "completed" }, 1);
+    await chats.releaseRun(sourceChatId, continuationRunId);
+    assert.ok(!(await repository.dueContinuations(new Date().toISOString(), 50)).some(row => row.approvalId === approval.id));
+    const sourceAfterDelivery = (await repository.get(selectedId))!;
+    await repository.write({ expectedRevision: sourceAfterDelivery.revision,
+      workspace: { ...sourceAfterDelivery, revision: sourceAfterDelivery.revision + 1 }, approval });
+    assert.equal((await repository.continuation(selectedId, approval.id))?.status, "completed", "saving an outcome again cannot redeliver it");
+
     const workspace = await useCases.create({ chatId, projectName, title: "General task", runtime: "command" }, owner);
     workspaceId = workspace.id;
     assert.equal(workspace.coding, undefined);
@@ -91,7 +118,7 @@ export async function checkWorkspaces(): Promise<void> {
     await assert.rejects(repository.write({ expectedRevision: closing.revision + 1, reopenGitOwner: owner,
       workspace: { ...closing, revision: closing.revision + 2, status: "active", activeRunId: undefined,
         activeActionId: "review-2", leaseToken: "git-review" } }), "Git review cannot resurrect a deleted Workspace");
-    console.log("[ok] Workspace source binding, concurrent start/admission, PostgreSQL CAS, event replay, checkpoints and deletion fencing");
+    console.log("[ok] Workspace source binding, concurrent start/admission, PostgreSQL CAS, event replay, durable action notifications, checkpoints and deletion fencing");
   } finally {
     for (const [id, childChatId] of sourceWorkspaces) {
       await checkpoints.delete(id);

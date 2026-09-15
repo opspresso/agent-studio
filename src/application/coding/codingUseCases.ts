@@ -121,7 +121,13 @@ export function createCodingUseCases(deps: CodingDeps) {
         return workspaceView(await ownedWorkspace(deps, id, ownerEmail));
       } catch (error) { await release(deps, state); throw error; }
     },
-    async request(id: string, ownerEmail: string, action: CodingAction): Promise<CodingApproval> {
+    async request(id: string, ownerEmail: string, action: CodingAction, sourceChatId?: string): Promise<CodingApproval> {
+      if (sourceChatId) {
+        const workspace = await ownedWorkspace(deps, id, ownerEmail);
+        const chat = await deps.chats.get(sourceChatId);
+        if (!chat || chat.ownerEmail !== ownerEmail || chat.workspaceId || !chat.projectName ||
+          chat.linkedWorkspaces?.[workspace.projectName] !== id) throw new NotFoundError("Source chat not found");
+      }
       const approvalId = `${deps.now().getTime()}-${deps.newId()}`;
       const state = await reserve(deps, id, ownerEmail, approvalId);
       try {
@@ -130,6 +136,7 @@ export function createCodingUseCases(deps: CodingDeps) {
         const review = await deps.coding.review(sandbox.externalId);
         const { pullRequest, main } = await validateAction(deps, workspace, action, review);
         const approval: CodingApproval = { id: approvalId, workspaceId: id, requestedBy: ownerEmail,
+          ...(sourceChatId ? { sourceChatId } : {}),
           requestedAt: deps.now().toISOString(), action, fingerprint: review.fingerprint, status: "pending",
           review: { headSha: review.headSha, treeSha: review.treeSha, diff: review.diff, truncated: review.truncated,
             ...(main ? { mainHeadSha: main.baseSha, ci: main.ci } : pullRequest ? { ci: pullRequest.ci } : {}) } };

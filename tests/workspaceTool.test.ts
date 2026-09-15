@@ -162,7 +162,7 @@ describe("Workspace Agent capability", () => {
     const result = await invoke(request, "git-call");
     expect(result).toMatchObject({ status: "pending", approval_id: approval.id, approval_path: "/chats/review-chat#actions", approval_url: "https://studio.example.test/chats/review-chat#actions" });
     expect(await invoke(request, "git-call")).toEqual(result);
-    expect(requestGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner, action);
+    expect(requestGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner, action, undefined);
     expect(await repository.runs(workspace.id, 10)).toHaveLength(0);
     await expect(makeTool("foreign")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
     await expect(makeTool("demo", "foreign@example.com")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });

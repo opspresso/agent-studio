@@ -9,6 +9,9 @@ there are no framework, adapter or composition-root imports here. Read
 - `run.ts` resolves the runnable version, folds display output and persists it.
 - `runLease.ts` claims one active run per chat; `runLog.ts` owns terminal logging and release.
 - `replayRunLog.ts` replays/follows a detached run; `cancelRun.ts` persists and polls cancellation.
+- `workspaceContinuation.ts` consumes durable Workspace action results once, claims the source chat lease,
+  records a platform notice and continues through the shared facade and native SDK Session. Never replay
+  a claimed continuation after a crash, or reconstruct the user request from display records.
 - `approval.ts` checks chat ownership/project access, claims the lease and resumes or discards
   an SDK checkpoint. `application/runtime/session.ts` owns native history, CAS and approval state.
 - `resolveImages.ts` and `resolveFiles.ts` sign references for the reader. Neither rebuilds model

@@ -64,7 +64,7 @@ export function chatCreationItem(chat: Chat): Item {
   return { ...keys.chat(chat.chatId), ...chatFields(chat), nextSeq: 0, ...(chat.workspaceId ? { workspaceId: chat.workspaceId } : {}) };
 }
 
-function toMessageItem(message: ChatMessage): Item {
+export function chatMessageItem(message: ChatMessage): Item {
   const { PK, SK } = keys.chatMessage(message.chatId, message.seq);
   return {
     PK,
@@ -97,6 +97,7 @@ function fromMessageItem(item: Item): ChatMessage {
     return {
       ...base,
       role,
+      workspaceAction: item.workspaceAction as Extract<ChatMessage, { role: "assistant" }>["workspaceAction"],
       toolCalls: item.toolCalls as ChannelToolCall[] | undefined,
       warnings: item.warnings as string[] | undefined,
       images: item.images as ChatMessageImage[] | undefined,
@@ -191,7 +192,7 @@ export const chatRepository: ChatRepository = {
   },
 
   async appendMessage(message) {
-    await putChatItem(message.chatId, toMessageItem(message), conditions.notExists);
+    await putChatItem(message.chatId, chatMessageItem(message), conditions.notExists);
   },
 
   async claimRun(chatId, runId, nowSeconds, expiresAtSeconds) {

@@ -819,7 +819,7 @@ const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = [
   // two of them right after guarding on `artifactUseCases` — re-deriving from
   // the store what the use case they had just called was built from. The root
   // exports `signArtifactUrl`; the store itself stays where a wiring site needs
-  // the pair (`chats/_deps.ts` hands both halves to the chat deps).
+  // the pair (the composition root supplies both halves to shared chat deps).
   "artifactStorage",
 ];
 
@@ -847,7 +847,8 @@ describe("composition in the app layer", () => {
       const sites = SOURCE_FILES.filter(
         (file) =>
           (wiringSite(file.path) || file.path === "src/lib/container.ts") &&
-          parseImports(file.text).some((i) => bindsName(i, name)),
+          (parseImports(file.text).some((i) => bindsName(i, name)) ||
+            (file.path === "src/lib/container.ts" && new RegExp(`^(?:export )?const ${name}\\b`, "m").test(file.text))),
       );
       expect(sites.length).toBeGreaterThan(0);
     },
@@ -2423,7 +2424,7 @@ const AGENT_RUN_ENTRY_POINTS = [
   // Answers with SSE chunks, for a caller driving one version directly.
   "src/app/api/projects/[name]/versions/[version]/agent/route.ts",
   // Binds `ChatDeps.runAgent`; the chat use cases never see the facade.
-  "src/app/api/chats/_deps.ts",
+  "src/lib/container.ts",
   // Binds `SlackEventDeps.runAgent`, the same way.
   "src/app/api/slack/events/_lib/handleEventRequest.ts",
   // Binds `TelegramEventDeps.runAgent`, the same way.

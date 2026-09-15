@@ -15,7 +15,7 @@ interface WorkspaceToolDeps {
   policy(): WorkspaceProjectPolicy | undefined;
   authorize(): Promise<void>;
   sleep(ms: number): Promise<void>;
-  requestGit(id: string, ownerEmail: string, action: CodingGitAction): Promise<CodingApproval>;
+  requestGit(id: string, ownerEmail: string, action: CodingGitAction, sourceChatId?: string): Promise<CodingApproval>;
   pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
   attachRepository(id: string, ownerEmail: string, repository: string, baseBranch: string): Promise<WorkspaceView>;
   workdir: string;
@@ -68,7 +68,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       default_repository: policy.repository ?? null, repositories: workspaceRepositories(policy), checks: policy.checks,
       repository_setup: "Repository names are an allowlist, not proof of existence. Use check_repository before clone. When the user requests a new repository, check/create it with an offered repository tool and initialize its first commit (for GitHub create_repository, autoInit=true). Then check the actual branch. No native task can create an uninitialized repository's missing base branch.",
       workspace_selection: "A chat keeps one selected Workspace per project. Repeated start returns it without queueing work. Use run for follow-ups. Both repository and base_branch must be selected for a clone; null means deliberately Git-free. workspace_path is a browser link; task files belong in workdir, using relative paths.",
-      git_actions: "Use prepare_git for commit, commit-and-push, push (work branch), pull-request (title/body/draft), merge (pullRequestNumber/headSha from status.pull_request), or push-main (already published work branch, fast-forward only). Return approval_url (or the relative approval_path) verbatim and stop. Read status after approval for the actual result. Closed Workspaces resume for Git review; never close or create another Workspace to publish. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
+      git_actions: "Use prepare_git for commit, commit-and-push, push (work branch), pull-request (title/body/draft), merge (pullRequestNumber/headSha from status.pull_request), or push-main (already published work branch, fast-forward only). Return approval_url verbatim and pause this turn. When requested from a chat, the decision outcome returns there automatically and the agent resumes the remaining request. Read status and prepare the next requested action for its own review. Closed Workspaces resume for Git review; never close or create another Workspace to publish. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
     }
     if (operation === "use_workspace") {
       if (!context.sourceChatId) throw new ValidationError("Workspace selection requires a chat");
@@ -147,11 +147,15 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       } else throw new ValidationError("Unsupported Git action. Use commit, commit-and-push, push, pull-request, merge or push-main; do not use a native task or another Workspace");
       const pending = detail.approvals.find(item => item.id === detail.workspace.activeActionId && item.status === "pending");
       const same = pending && isDeepStrictEqual(pending.action, action);
-      const approval = same && pending ? pending : await deps.requestGit(id, context.ownerEmail, action);
+      const approval = same && pending && pending.sourceChatId === context.sourceChatId ? pending
+        : await deps.requestGit(id, context.ownerEmail, action, context.sourceChatId);
       return reply({ ...location(detail.workspace),
         approval_path: `/chats/${detail.workspace.chatId}#actions`, approval_id: approval.id,
         approval_url: url(`/chats/${detail.workspace.chatId}#actions`),
-        action: approval.action, status: approval.status, next: "Return approval_url (or the relative approval_path) verbatim to the user and stop. The action has not executed; do not run Git in the Sandbox or retry through GitHub tools." });
+        ...(approval.sourceChatId ? { source_chat_url: url(`/chats/${approval.sourceChatId}`) } : {}),
+        action: approval.action, status: approval.status, next: approval.sourceChatId
+          ? "Return approval_url and pause this turn. After the decision, the result is delivered to this chat and the agent resumes the remaining user request automatically. This approves only this action; prepare any later Git action for its own review. Never replay a succeeded or uncertain action."
+          : "Return approval_url and pause. This request has no source chat; the caller must check status after approval." });
     }
     if (operation === "cancel" || operation === "close") {
       if (operation === "cancel") await deps.useCases.cancel(id, context.ownerEmail);

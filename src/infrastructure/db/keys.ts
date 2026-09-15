@@ -15,7 +15,8 @@ export const keys = {
   workspaceDue: () => "WORKSPACEDUE",
   workspaceDueSort: (dueAt: string, id: string) => `${dueAt}#${id}`,
   workspaceDueRange: (now: string) => ({ between: ["", `${now}#\uffff`] as [string, string] }),
-  workspaceChild: (id: string, kind: "SESSION" | "SANDBOX" | "RUN" | "APPROVAL" | "REQUEST" | "DELIVERY", childId: string) => ({
+  workspaceContinuationsDue: () => "WORKSPACECONTINUATIONDUE",
+  workspaceChild: (id: string, kind: "SESSION" | "SANDBOX" | "RUN" | "APPROVAL" | "REQUEST" | "DELIVERY" | "CONTINUATION", childId: string) => ({
     PK: `WORKSPACE#${id}`, SK: `${kind}#${childId}`,
   }),
   workspaceChildPrefix: (kind: "RUN" | "APPROVAL") => `${kind}#`,

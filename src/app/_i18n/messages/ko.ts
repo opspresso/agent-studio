@@ -12,6 +12,9 @@
 import type { Messages } from "./en";
 
 export const ko: Messages = {
+  "chat.workspaceActionResult": "Workspace 승인 결과",
+  "workspace.chatContinuationHint": "승인 결과가 요청한 채팅으로 전달되고 남은 작업을 이어서 진행합니다. 다음 Git 동작은 별도로 검토합니다.",
+  "workspace.returnToChat": "요청한 채팅으로 돌아가기",
   "workspace.new": "새 Workspace",
   "workspace.kind": "Workspace",
   "workspace.list": "Workspaces",

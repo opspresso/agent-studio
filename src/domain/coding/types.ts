@@ -36,6 +36,8 @@ export interface CodingApproval {
   workspaceId: string;
   requestedBy: string;
   requestedAt: string;
+  /** Set by the Workspace tool's trusted conversation context, never action arguments. */
+  sourceChatId?: string;
   action: CodingAction;
   fingerprint: string;
   status: "pending" | "approved" | "rejected" | "executing" | "succeeded" | "failed" | "uncertain";
@@ -57,6 +59,10 @@ export class CodingMutationRejectedError extends Error {}
 /** A configured repository name is not proof that clone can start. */
 export class CodingRepositoryNotReadyError extends Error {
   constructor(readonly reason: "unavailable" | "empty" | "branch-missing", message: string) { super(message); }
+}
+
+export function isTerminalCodingApproval(status: CodingApproval["status"]): boolean {
+  return ["succeeded", "failed", "rejected", "uncertain"].includes(status);
 }
 
 /** Pending/claimed effects cannot cross a workspace close or deletion fence. */
