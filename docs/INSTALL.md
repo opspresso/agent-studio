@@ -123,6 +123,8 @@ Docker CLI도 포함한다. 실행 worker와 Git 승인 API가 있는 앱 서버
 필수 부팅·로그인·기존 프로젝트 실행은 이 설정과 worker에 의존하지 않는다.
 
 worker는 실행 핸들, 출력 cursor, native Session, 검사 단계와 체크포인트를 저장한다.
+저장소 접근은 관리자가 Project Settings → Workspace 저장소 접근에서 배포 기본값을 덮어쓸 수 있다.
+저장소별 또는 정확한 소유자별 허용을 선택하며, 정책 변경에 앱·worker 재배포는 필요하지 않다.
 별도 큐가 Git 승인 결과와 CI 상태를 원래 Chat에 전달하고 SDK 이력으로 후속 실행을 시작한다. 중단된
 worker는 동일 핸들을 이어서 관찰하며 불확실한 작업을 자동으로 다시 실행하지 않는다. TTL에는
 체크포인트를 저장한 뒤 Sandbox를 삭제한다. worker를 중지하거나 설정을 제거하면 자동 TTL

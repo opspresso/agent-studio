@@ -52,6 +52,14 @@ beforeEach(async () => {
 afterEach(() => vi.useRealTimers());
 
 describe("explicit coding action approvals", () => {
+  it("rechecks asynchronous repository policy after review and refuses a revoked repository before any Git effect", async () => {
+    const api = createCodingUseCases(deps);
+    const approval = await api.request(workspace.id, owner, { kind: "commit", message: "feat: add game" });
+    deps.policy = async () => ({ projectName: "demo", runtimes: ["codex"], checks: [], deploymentWorkflows: [] });
+    await expect(api.decide(workspace.id, owner, approval.id, true)).rejects.toMatchObject({ status: 409 });
+    expect(deps.coding.commit).not.toHaveBeenCalled();
+    expect(deps.coding.push).not.toHaveBeenCalled();
+  });
   it("refreshes saved PR status for the Workspace UI without extending its lifetime or writing unchanged data", async () => {
     await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, pullRequest: { ...pull, ci: "none" }, revision: workspace.revision + 1 } });
     const before = (await repository.get(workspace.id))!;

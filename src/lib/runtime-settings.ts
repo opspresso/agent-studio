@@ -20,6 +20,8 @@ import {
   type UnknownModelPolicy,
 } from "@/domain/settings/modelPolicy";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
+import { workspacePolicyRepository } from "@/infrastructure/db/repositories/workspacePolicyRepository";
+import { withWorkspaceRepositoryRules } from "@/domain/workspace/policy";
 import { parseProviderConfigs, resolveProviderTarget, type ResolvedTarget } from "@/infrastructure/llm/providers";
 import { getModelConfig, SELF_HOSTED_PROVIDERS, wireModelId } from "@/domain/llm/models";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
@@ -341,6 +343,12 @@ export async function getUnknownModelPolicy(): Promise<UnknownModelPolicy> {
 
 /** Compute, images and model credentials are deployment-owned; no browser-editable override. */
 export function getWorkspaceConfig() { return config.workspace; }
+export async function getWorkspaceProjectPolicy(projectName: string) {
+  const deployment = getWorkspaceConfig()?.projects.find(project => project.projectName === projectName);
+  if (!deployment) return undefined;
+  const stored = await workspacePolicyRepository.get(projectName);
+  return withWorkspaceRepositoryRules(deployment, stored?.rules);
+}
 export function getWorkspaceGitHubConfig() {
   const settings = config.workspaceGitHub;
   return settings?.auth === "token" ? { ...settings, getToken: async () => {

@@ -23,6 +23,7 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { BADGE } from "@/app/_components/badgeColors";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { A2aClientKeysSection } from "./A2aClientKeysSection";
+import { WorkspacePoliciesSection } from "./WorkspacePoliciesSection";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
 
@@ -564,6 +565,7 @@ export default function SettingsPage() {
           </Group>
         </Stack>
       </form>
+      {view && <WorkspacePoliciesSection />}
     </Stack>
   );
 }

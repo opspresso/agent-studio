@@ -2,6 +2,7 @@ import { workerDocumentRenderer, workerDocumentEditor, workerDocumentExtractor }
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as workspaceSleep } from "node:timers/promises";
 import { createWorkspaceUseCases, type WorkspaceDeps } from "@/application/workspace/workspaceUseCases";
+import { createWorkspaceRepositoryPolicyUseCases } from "@/application/workspace/repositoryPolicy";
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { runWorkspaceWorker } from "@/application/workspace/service";
 import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
@@ -9,6 +10,7 @@ import { executeWorkspaceTask, executeAgent } from "@/application/execution/runP
 import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuation";
 import type { ChatDeps } from "@/application/chat/deps";
 import { workspaceRepository } from "@/infrastructure/db/repositories/workspaceRepository";
+import { workspacePolicyRepository } from "@/infrastructure/db/repositories/workspacePolicyRepository";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLogRepository";
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
@@ -19,7 +21,7 @@ import { createDockerCodingWorktree } from "@/infrastructure/workspace/gitWorktr
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
 import { createCodingUseCases } from "@/application/coding/codingUseCases";
 import { handleCodingWebhook } from "@/application/coding/webhook";
-import { getWorkspaceConfig, getWorkspaceGitHubConfig } from "@/lib/runtime-settings";
+import { getWorkspaceConfig, getWorkspaceProjectPolicy, getWorkspaceGitHubConfig } from "@/lib/runtime-settings";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 import { createAudioConfigUseCases } from "@/application/audio/audioConfig";
 import { assertAudioPostprocessorVersionUnused, resolveAudioPostprocessor } from "@/application/audio/postprocessVersion";
@@ -1180,7 +1182,7 @@ export const executionDeps: ExecutionDeps = {
       attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
       workdir: WORKSPACE_DIRECTORY,
       publicBaseUrl: await getPublicBaseUrl(),
-      policy: () => getWorkspaceConfig()?.projects.find(project => project.projectName === projectName),
+      policy: () => getWorkspaceProjectPolicy(projectName),
       sleep: async ms => { await workspaceSleep(ms); },
     }, { projectName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID(),
       sourceChatId: origin.conversation?.surface === "chat" ? origin.conversation.id : undefined });
@@ -1476,7 +1478,7 @@ export async function runAudioWorkerService(signal: AbortSignal): Promise<void> 
 
 const workspaceDeps: WorkspaceDeps = {
   repository: workspaceRepository, chats: chatRepository, projects: projectRepository,
-  policy: name => getWorkspaceConfig()?.projects.find(project => project.projectName === name),
+  policy: getWorkspaceProjectPolicy,
   now: () => new Date(), newId: randomUUID,
   checkRepository: async (repository, baseBranch) => {
     const settings = getWorkspaceGitHubConfig();
@@ -1486,6 +1488,11 @@ const workspaceDeps: WorkspaceDeps = {
   get idleTtlSeconds() { return getWorkspaceConfig()?.idleTtlSeconds ?? 1800; },
 };
 export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);
+export const workspaceRepositoryPolicyUseCases = createWorkspaceRepositoryPolicyUseCases({
+  projects: projectRepository, repository: workspacePolicyRepository,
+  deploymentPolicy: name => getWorkspaceConfig()?.projects.find(project => project.projectName === name),
+  isAdmin: isEffectiveConfiguredAdminByEmail, now: () => new Date(),
+});
 
 async function authorizeWorkspaceTools(email: string, projectName: string): Promise<void> {
   const tier = await getMemberTier(email);
@@ -1565,11 +1572,14 @@ export async function receiveWorkspaceGitHubWebhook(deliveryId: string, raw: str
 export async function workspaceOptions(ownerEmail: string) {
   const settings = getWorkspaceConfig();
   const available = [];
-  for (const policy of settings?.projects ?? []) {
-    const project = await projectRepository.get(policy.projectName);
-    if (project && await userMayAccessProject(project, ownerEmail)) available.push({
+  for (const declared of settings?.projects ?? []) {
+    const project = await projectRepository.get(declared.projectName);
+    if (!project || !await userMayAccessProject(project, ownerEmail)) continue;
+    const policy = await getWorkspaceProjectPolicy(declared.projectName);
+    if (policy) available.push({
       projectName: project.name, displayName: project.displayName, description: project.description,
-      runtimes: policy.runtimes, repository: policy.repository, repositories: workspaceRepositories(policy), deploymentWorkflows: policy.deploymentWorkflows,
+      runtimes: policy.runtimes, repository: policy.repository, repositories: workspaceRepositories(policy),
+      repositoryOwners: policy.repositoryOwners ?? [], deploymentWorkflows: policy.deploymentWorkflows,
     });
   }
   return { enabled: !!settings, gitEnabled: !!getWorkspaceGitHubConfig(), projects: available };
@@ -1577,7 +1587,7 @@ export async function workspaceOptions(ownerEmail: string) {
 
 export async function workspaceBranches(projectName: string, ownerEmail: string, requestedRepository?: string) {
   await projectUseCases.assertAccessible(projectName, ownerEmail);
-  const policy = getWorkspaceConfig()?.projects.find(project => project.projectName === projectName);
+  const policy = await getWorkspaceProjectPolicy(projectName);
   const repo = requestedRepository ?? (policy ? workspaceRepositories(policy)[0] : undefined);
   const config = getWorkspaceGitHubConfig();
   if (!repo || !policy || !config) throw new ValidationError("Workspace GitHub integration is not configured");

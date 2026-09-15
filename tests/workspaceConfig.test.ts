@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { parseWorkspaceConfig } from "@/lib/workspaceConfig";
 
 describe("Workspace deployment configuration", () => {
+  it("supports exact repository-owner scopes and rejects arbitrary wildcards", () => {
+    const config = { image: "workspace:local", projects: [{ projectName: "demo", runtimes: ["codex"], repositoryOwners: ["nalbam"] }] };
+    expect(parseWorkspaceConfig(JSON.stringify(config))?.projects[0]?.repositoryOwners).toEqual(["nalbam"]);
+    expect(() => parseWorkspaceConfig(JSON.stringify({ ...config, projects: [{ ...config.projects[0], repositoryOwners: ["*"] }] }))).toThrow("Invalid WORKSPACE_CONFIG");
+  });
   it("keeps model credentials in registered channels and bounds worker concurrency", () => {
     const input = { image: "workspace:local", projects: [{ projectName: "demo", runtimes: ["codex"], repositories: ["org/first", "org/second"] }], workerConcurrency: 1, runtimes: { codex: { provider: "openai", model: "model-id" } } };
     const configured = parseWorkspaceConfig(JSON.stringify(input));

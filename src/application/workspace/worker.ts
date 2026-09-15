@@ -112,7 +112,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     return;
   }
   await assertProjectAccessible(deps.projects, workspace.projectName, workspace.ownerEmail);
-  const policy = workspacePolicy(deps, workspace.projectName);
+  const policy = await workspacePolicy(deps, workspace.projectName);
   if (!policy.runtimes.includes(workspace.runtime) || (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository))) {
     throw new Error("Workspace runtime or repository configuration changed");
   }

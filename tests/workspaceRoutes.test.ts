@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NotFoundError } from "@/application/errors";
 
-const f = vi.hoisted(() => ({ start: vi.fn(), enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn(), get: vi.fn(), events: vi.fn(), request: vi.fn(), decide: vi.fn() }));
-vi.mock("@/lib/session", () => ({ withMemberAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "owner@example.com" }, ...args) }));
-vi.mock("@/lib/container", () => ({ workspaceUseCases: f, getCodingUseCases: () => f }));
+const f = vi.hoisted(() => ({ start: vi.fn(), enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn(), get: vi.fn(), events: vi.fn(), request: vi.fn(), decide: vi.fn(), getView: vi.fn(), update: vi.fn() }));
+vi.mock("@/lib/session", () => ({
+  withMemberAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "owner@example.com" }, ...args),
+  withAdminAuth: (handler: (user: unknown, ...args: unknown[]) => Promise<Response>) => (...args: unknown[]) => handler({ email: "admin@example.com" }, ...args),
+}));
+vi.mock("@/lib/container", () => ({ workspaceUseCases: f, getCodingUseCases: () => f, workspaceRepositoryPolicyUseCases: f }));
 const start = await import("@/app/api/workspaces/route");
 const runs = await import("@/app/api/workspaces/[id]/runs/route");
 const detail = await import("@/app/api/workspaces/[id]/route");
 const events = await import("@/app/api/workspaces/[id]/events/route");
 const actions = await import("@/app/api/workspaces/[id]/actions/route");
 const decision = await import("@/app/api/workspaces/[id]/actions/[action]/route");
+const policy = await import("@/app/api/projects/[name]/workspace-policy/route");
 const context = { params: Promise.resolve({ id: "workspace-1", action: "approval-1" }) };
 const request = (path: string, method = "GET", body?: unknown) => new Request(`http://localhost/api/workspaces${path}`, {
   method, headers: { "Content-Type": "application/json", "Idempotency-Key": "stable-request-key" },
@@ -18,6 +22,21 @@ const request = (path: string, method = "GET", body?: unknown) => new Request(`h
 beforeEach(() => { vi.clearAllMocks(); f.events.mockResolvedValue([]); });
 
 describe("Workspace HTTP contract", () => {
+  it("uses the admin identity and revision for repository policy writes and rejects compute or wildcard fields", async () => {
+    const context = { params: Promise.resolve({ name: "demo" }) };
+    f.update.mockResolvedValue({ projectName: "demo", revision: 2 });
+    const body = { revision: 1, rules: { repositories: ["company/repo"], repositoryOwners: ["company"] } };
+    expect((await policy.PUT(request("/policy", "PUT", body), context)).status).toBe(200);
+    expect(f.update).toHaveBeenCalledWith("demo", body, "admin@example.com");
+    for (const invalid of [{ ...body, rules: { ...body.rules, image: "host-shell" } }, { ...body, rules: { ...body.rules, repositoryOwners: ["*"] } }, { ...body, revision: -1 }]) {
+      expect((await policy.PUT(request("/policy", "PUT", invalid), context)).status).toBe(400);
+    }
+    expect(f.update).toHaveBeenCalledTimes(1);
+    expect((await policy.PUT(request("/policy", "PUT", { revision: 2, rules: null }), context)).status).toBe(200);
+    f.getView.mockResolvedValue({ projectName: "demo", canManage: false });
+    expect((await policy.GET(request("/policy"), context)).status).toBe(200);
+    expect(f.getView).toHaveBeenCalledWith("demo", "owner@example.com");
+  });
   it("forwards creation identity and member ownership and validates the runtime at the boundary", async () => {
     const input = { projectName: "demo", runtime: "codex", input: { kind: "task", prompt: "Make a report" } };
     f.start.mockResolvedValue({ workspace: { id: "workspace-1" }, run: { id: "run-1" } });

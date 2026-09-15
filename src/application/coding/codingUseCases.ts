@@ -28,7 +28,7 @@ async function reserve(deps: CodingDeps, id: string, ownerEmail: string, actionI
     (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) ||
     (workspace.activeActionId && (!resuming || workspace.activeActionId !== actionId))) throw new ConflictError("Workspace is busy");
   if (attachRepository && workspace.coding) throw new ConflictError("Workspace already has a Git repository");
-  if (!workspaceAllowsRepository(workspacePolicy(deps, workspace.projectName), attachRepository ?? repository(workspace).repository)) throw new ConflictError("Workspace repository configuration changed");
+  if (!workspaceAllowsRepository(await workspacePolicy(deps, workspace.projectName), attachRepository ?? repository(workspace).repository)) throw new ConflictError("Workspace repository configuration changed");
   const token = deps.newId();
   const leaseUntil = new Date(deps.now().getTime() + WORKSPACE_LEASE_MS).toISOString();
   try {
@@ -73,7 +73,7 @@ async function validateAction(deps: CodingDeps, workspace: Workspace, action: Co
     if (review.treeSha !== review.headTreeSha) throw new ConflictError("Workspace has uncommitted changes");
     return { pullRequest: current };
   } else {
-    const policy = workspacePolicy(deps, workspace.projectName);
+    const policy = await workspacePolicy(deps, workspace.projectName);
     if (!policy.deploymentWorkflows.includes(action.workflow) || action.ref !== "main") throw new ValidationError("Deployment must use an allowed workflow on main");
     if (Object.keys(action.inputs).length > 25 || Object.entries(action.inputs).some(([key, value]) => !/^[\w-]{1,100}$/.test(key) || typeof value !== "string" || value.length > 4000)) {
       throw new ValidationError("Invalid deployment workflow inputs");

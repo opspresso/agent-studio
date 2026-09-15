@@ -6,6 +6,7 @@ import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { describeTool, type ToolKind } from "@/app/_lib/toolCalls";
 import { useT } from "@/app/_i18n/provider";
 import type { ToolPair } from "@/app/_lib/toolPairs";
+import { isToolErrorText } from "@/shared/toolResultStatus";
 import { SUBAGENT_COLOR } from "./badgeColors";
 import { JsonHighlight } from "./JsonHighlight";
 import classes from "./CollapsibleRow.module.css";
@@ -33,6 +34,7 @@ export function ToolRow({ pair }: { pair: ToolPair }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const done = pair.content !== undefined;
+  const failed = pair.content !== undefined && isToolErrorText(pair.content);
   const described = describeTool(pair.name ?? "tool", pair.args);
   const kind = TOOL_KIND[described.kind] ?? TOOL_KIND.tool;
   return (
@@ -63,8 +65,8 @@ export function ToolRow({ pair }: { pair: ToolPair }) {
               {t("chat.via", { path: pair.author })}
             </Text>
           )}
-          <Text fz="xs" c="dimmed" ml="auto" style={{ whiteSpace: "nowrap" }}>
-            {done ? "✅" : "…"}
+          <Text fz="xs" c={failed ? "red" : "dimmed"} ml="auto" style={{ whiteSpace: "nowrap" }}>
+            {failed ? "❌" : done ? "✅" : "…"}
           </Text>
         </Group>
       </UnstyledButton>

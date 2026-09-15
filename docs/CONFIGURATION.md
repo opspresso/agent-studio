@@ -458,9 +458,16 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `projects[].checks` | `[]` | `{name: "test" | "lint" | "build", command}`. 각 Run 뒤 Sandbox에서 실행할 검사 |
 | `projects[].agentTools` | `false` | 로그인한 member 이상 사용자가 이 프로젝트의 Agent에서 `Workspace` 빌트인을 사용할 수 있게 한다 |
 | `projects[].repositories` | `[]` | 기본 `repository` 외에 선택할 수 있는 저장소 허용 목록. 선택한 저장소를 실행·재개·Git 승인마다 확인한다 |
+| `projects[].repositoryOwners` | `[]` | 정확한 GitHub 계정·조직 이름. 해당 소유자의 현재·향후 저장소를 허용한다. `*`·URL은 받지 않는다 |
 | `workerConcurrency` | `4` | worker process의 동시 실행 수, 1~32 |
 | `runtimes.<kind>.provider` | 미설정 | `openai`, `anthropic`, `openrouter`, `selfhosted` 중 저장된 LLM 채널의 이름. 명시하면 해당 채널의 URL·API 키를 실행 직전에 읽으며 Workspace 설정에 키를 복사하지 않는다 |
 | `runtimes` | `{}` | `command`, `codex`, `claude`, `opencode`별 `model`, `environment` |
+
+기본 저장소·추가 저장소·허용 소유자는 관리자가 Project Settings → Workspace 저장소 접근 또는
+Settings에서 DB 오버라이드로 변경한다. 추가 저장소와 소유자는 각각 최대 100개다. 저장된 오버라이드는
+세 항목을 함께 교체하고, 모두 비운 오버라이드는 Git을 차단한다. **배포 기본값 복원**은 오버라이드를
+제거한다. 앱·worker는 새 작업과 승인마다 같은 DB 정책을 읽으므로 재배포가 필요 없다. 이미지·
+네트워크·Runtime 권한은 이 화면에서 변경하지 않는다. [정책 계약](design/workspaces.md#저장소-정책-관리)을 따른다.
 
 Runtime 환경은 `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,
 `ANTHROPIC_MODEL`, `OPENCODE_CONFIG_CONTENT`만 허용한다. Git·클라우드·운영 환경변수는 상속하지 않는다.

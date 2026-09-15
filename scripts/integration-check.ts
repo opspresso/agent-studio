@@ -46,6 +46,7 @@ async function main() {
   // Isolate the auth singleton and its environment in a child process.
   execFileSync(process.execPath, ["--import", "tsx", "scripts/keycloak-auth-check.ts"], { stdio: "inherit" });
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
+  const { workspacePolicyRepository } = await import("@/infrastructure/db/repositories/workspacePolicyRepository");
   const { listProjects } = await import("@/application/project/projectUseCases");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
   const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
@@ -252,6 +253,17 @@ async function main() {
     const listed = await listProjects(projectRepository);
     assert.ok(listed.some((p) => p.name === projectName), "project list contains created");
     pass("project create/get/list");
+
+    const workspacePolicy = { projectName, revision: 1, updatedAt: now, rules: { repositoryOwners: ["integration-owner"] } };
+    const policyWrites = await Promise.allSettled([
+      workspacePolicyRepository.put(workspacePolicy, null), workspacePolicyRepository.put(workspacePolicy, null),
+    ]);
+    assert.equal(policyWrites.filter(result => result.status === "fulfilled").length, 1, "one policy writer wins");
+    assert.deepEqual((await workspacePolicyRepository.get(projectName))?.rules, workspacePolicy.rules);
+    await workspacePolicyRepository.put({ projectName, revision: 2, updatedAt: now }, 1);
+    assert.equal((await workspacePolicyRepository.get(projectName))?.rules, undefined, "reset retains revision without an override");
+    await assert.rejects(workspacePolicyRepository.put(workspacePolicy, 1), "stale policy edit cannot overwrite reset");
+    pass("Workspace repository policy persistence, concurrent edits and reset");
 
     await versionRepository.create({
       projectName,
@@ -1621,6 +1633,8 @@ async function main() {
       "a deleted project name remains reserved by its tombstone",
     );
     assert.equal(await versionRepository.get(projectName, "1"), null, "versions deleted");
+    assert.equal(await workspacePolicyRepository.get(projectName), null, "Workspace policy deleted");
+    await assert.rejects(workspacePolicyRepository.put(workspacePolicy, null), "deleted project cannot regain Workspace access");
     assert.equal(
       (await usageRepository.listByProject(projectName, today, today)).length,
       0,

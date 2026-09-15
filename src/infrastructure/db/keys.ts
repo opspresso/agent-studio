@@ -34,6 +34,7 @@ export const keys = {
   project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
   projectPartition: (name: string) => `PROJECT#${name}`,
   projectApiToken: (name: string) => ({ PK: `PROJECT#${name}`, SK: "APITOKEN" }),
+  workspacePolicy: (name: string) => ({ PK: `PROJECT#${name}`, SK: "WORKSPACEPOLICY" }),
   version: (projectName: string, versionName: string) => ({
     PK: `PROJECT#${projectName}`,
     SK: `VERSION#${versionName}`,

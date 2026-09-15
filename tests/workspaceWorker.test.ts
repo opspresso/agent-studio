@@ -77,6 +77,19 @@ async function start(runtime: "command" | "codex" = "command") {
 }
 
 describe("durable workspace worker", () => {
+  it("rechecks asynchronous repository access before provisioning a queued Git task", async () => {
+    policy.repositoryOwners = ["company"];
+    deps.policy = async () => policy;
+    const api = createWorkspaceUseCases(deps);
+    const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "New repository", runtime: "codex", repository: "company/new", baseBranch: "main" }, owner);
+    const run = await api.enqueue(workspace.id, owner, { kind: "task", prompt: "Implement feature" }, "request-0001");
+    policy = { ...policy, repositoryOwners: [] };
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("failed");
+    expect(provider.ensure).not.toHaveBeenCalled();
+    expect(provider.start).not.toHaveBeenCalled();
+    await expect(api.enqueue(workspace.id, owner, { kind: "task", prompt: "Try again" }, "request-0002")).rejects.toMatchObject({ status: 409 });
+  });
   it("informs each native coding turn about the enforced Git approval boundary", async () => {
     policy.repository = "company/repo";
     deps.coding = { prepare: async (_externalId, repo) => ({ ...repo, headSha: "a".repeat(40), baseSha: "a".repeat(40) }),

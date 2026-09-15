@@ -11,6 +11,7 @@ import { CostLimitsSection } from "./CostLimitsSection";
 import { VisibilitySection } from "./VisibilitySection";
 import { SchedulesSection } from "./SchedulesSection";
 import { WebhookSection } from "./WebhookSection";
+import { WorkspaceRepositoryPolicySection } from "@/app/workspaces/_components/WorkspaceRepositoryPolicySection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
@@ -175,6 +176,7 @@ export default function SettingsPage() {
       <VisibilitySection projectName={name} />
 
       <CostLimitsSection projectName={name} />
+      <WorkspaceRepositoryPolicySection key={name} projectName={name} />
 
       <WebhookSection projectName={name} />
 

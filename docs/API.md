@@ -714,9 +714,9 @@ Workspace 사용자 API는 `withMemberAuth`로 보호한다. 조회·실행·승
 
 | 경로 | 메서드 | 계약 |
 |---|---|---|
-| `/api/workspaces/options` | GET | 접근 가능한 프로젝트의 Runtime·저장소·workflow 선택지 |
-| `/api/workspaces/branches?project={name}` | GET | 설정한 저장소의 브랜치 100개와 `hasMore` |
-| `/api/workspaces` | POST | `{projectName, runtime, baseBranch?, input}`으로 Chat·Workspace·첫 Run을 만들고 `{workspace, run}`과 202 반환 |
+| `/api/workspaces/options` | GET | 접근 가능한 프로젝트의 Runtime·현재 유효한 `repository`, `repositories`, `repositoryOwners`·workflow 선택지 |
+| `/api/workspaces/branches?project={name}&repository={owner/repo}` | GET | 허용된 저장소의 브랜치 100개와 `hasMore`. repository 생략 시 기본 저장소 사용 |
+| `/api/workspaces` | POST | `{projectName, runtime, repository?, baseBranch?, input}`으로 Chat·Workspace·첫 Run을 만들고 `{workspace, run}`과 202 반환 |
 | `/api/workspaces/{id}` | GET | `{workspace, session, runs, approvals}`. 실행·승인은 최근 50개, `tail=1`이면 각각 1개 |
 | `/api/workspaces/{id}` | DELETE | 체크포인트 저장과 Sandbox 정리를 요청하고 204 반환 |
 | `/api/workspaces/{id}/runs` | POST | `input`으로 후속 Run을 접수하고 `{run}`과 202 반환 |
@@ -724,6 +724,16 @@ Workspace 사용자 API는 `withMemberAuth`로 보호한다. 조회·실행·승
 | `/api/workspaces/{id}/events?run={runId}&after={seq}` | GET | 최대 200개의 `{events, nextSeq, hasMore}`. `after=0`도 유효한 cursor |
 | `/api/workspaces/{id}/actions` | POST | Git·배포 요청의 현재 tree/HEAD를 검토하고 `{approval}` 반환. 효과는 아직 실행하지 않음 |
 | `/api/workspaces/{id}/actions/{actionId}` | POST | `{approve: boolean}`으로 명시적 승인·거절. 같은 승인은 한 번만 소비 |
+| `/api/projects/{name}/workspace-policy` | GET / PUT | GET은 접근 가능한 member의 정책 조회, PUT은 관리자 변경. 아래 계약을 따른다 |
+
+저장소 정책 GET은 `{projectName, enabled, canManage, source, revision, rules, runtimes, updatedAt?}`를
+반환한다. `source`는 `deployment` 또는 `override`다. PUT은 `{revision, rules}`를 받으며 `rules`는
+`{repository?, repositories: string[], repositoryOwners: string[]}` 또는 배포 기본값 복원을 뜻하는
+`null`이다. 첫 저장의 revision은 `null`, 이후 저장은 마지막으로 읽은 값을 사용한다. 동시 편집·삭제
+경합은 409다. 각 목록은 100개까지며 URL·wildcard·compute 설정·알 수 없는 필드는 400으로 거절한다.
+빈 규칙은 기본 저장소를 상속하지 않고 Git 접근을 차단한다. 일반 Agent 도구는 정책을 읽기만 한다.
+`Workspace.check_repository_access`는 저장소 생성 전 정책만 확인하고, `check_repository`는 허용된
+저장소의 실제 접근과 초기 commit·기준 branch를 확인한다. 둘 다 Workspace를 만들지 않는다.
 
 Runtime은 `command`, `codex`, `claude`, `opencode`다. `input`은 일반 명령의
 `{kind:"command", script}` 또는 Agent의 `{kind:"task", prompt}`이며 각각 40,000자까지 받는다.

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { McpToolResult } from "@/domain/llm/types";
 import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
-import { workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
+import { isRepositoryName, workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
 import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types";
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
@@ -12,7 +12,7 @@ import { boundedWorkspaceText } from "./output";
 
 interface WorkspaceToolDeps {
   useCases: ReturnType<typeof createWorkspaceUseCases>;
-  policy(): WorkspaceProjectPolicy | undefined;
+  policy(): WorkspaceProjectPolicy | undefined | Promise<WorkspaceProjectPolicy | undefined>;
   authorize(): Promise<void>;
   sleep(ms: number): Promise<void>;
   requestGit(id: string, ownerEmail: string, action: CodingGitAction, sourceChatId?: string): Promise<CodingApproval>;
@@ -32,6 +32,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     ? { kind: "command", script: task } : { kind: "task", prompt: task };
   const reply = (value: unknown): McpToolResult => ({ text: JSON.stringify(value) });
   const url = (path: string) => deps.publicBaseUrl ? new URL(path, deps.publicBaseUrl).href : path;
+  const repositoryPolicyUrl = url(`/projects/${encodeURIComponent(context.projectName)}/settings#workspace-repositories`);
   const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, workspace_path: `/chats/${workspace.chatId}`,
     workspace_url: url(`/chats/${workspace.chatId}`),
     workdir: deps.workdir, runtime: workspace.runtime, repository: workspace.coding?.repository ?? null,
@@ -56,7 +57,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
   }
   return async (args: Record<string, unknown>, callId: string): Promise<McpToolResult> => {
     await deps.authorize();
-    const policy = deps.policy();
+    const policy = await deps.policy();
     if (!policy) throw new ValidationError("Workspace tools are not enabled for this project");
     const request = args.request as Record<string, unknown>;
     if (!request || typeof request !== "object" || Array.isArray(request)) throw new ValidationError("Workspace requires a request");
@@ -65,10 +66,18 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       const selected = await current();
       return reply({ project: context.projectName, runtimes: policy.runtimes, workdir: deps.workdir,
       current_workspace: selected ? location(selected) : null,
-      default_repository: policy.repository ?? null, repositories: workspaceRepositories(policy), checks: policy.checks,
-      repository_setup: "Repository names are an allowlist, not proof of existence. Use check_repository before clone. When the user requests a new repository, check/create it with an offered repository tool and initialize its first commit (for GitHub create_repository, autoInit=true). Then check the actual branch. No native task can create an uninitialized repository's missing base branch.",
+      default_repository: policy.repository ?? null, repositories: workspaceRepositories(policy), repository_owners: policy.repositoryOwners ?? [],
+      repository_policy_url: repositoryPolicyUrl, checks: policy.checks,
+      repository_setup: "Before creating a repository, use check_repository_access for the exact owner/name. An explicit repository or exact allowed owner grants Workspace scope; it does not grant GitHub credentials or prove existence. If blocked, return repository_policy_url and ask an administrator to update the policy; do not create another repository or guess a settings location. Once allowed, use an offered GitHub tool to create and initialize a requested new repository (autoInit=true), then check_repository with the actual branch before clone. Policy changes apply without redeployment. Native tasks cannot create a missing base branch.",
       workspace_selection: "A chat keeps one selected Workspace per project. Repeated start returns it without queueing work. Use run for follow-ups. Both repository and base_branch must be selected for a clone; null means deliberately Git-free. workspace_path is a browser link; task files belong in workdir, using relative paths.",
       git_actions: "Use prepare_git for commit, commit-and-push, push (work branch), pull-request (title/body/draft), merge (pullRequestNumber/headSha from status.pull_request), or push-main (already published work branch, fast-forward only). Return approval_url verbatim and pause this turn. When requested from a chat, the decision outcome returns there automatically and the agent resumes the remaining request. Read status and prepare the next requested action for its own review. Closed Workspaces resume for Git review; never close or create another Workspace to publish. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
+    }
+    if (operation === "check_repository_access") {
+      if (typeof request.repository !== "string" || !isRepositoryName(request.repository)) throw new ValidationError("Repository must use owner/repository");
+      const allowed = workspaceAllowsRepository(policy, request.repository);
+      return reply({ repository: request.repository, allowed, repository_policy_url: repositoryPolicyUrl,
+        message: allowed ? "Workspace policy allows this name. GitHub existence, credentials and a first commit must still be checked before clone."
+          : "An administrator must allow this repository or its exact owner in the project's Workspace repository settings. No repository or Workspace was created." });
     }
     if (operation === "use_workspace") {
       if (!context.sourceChatId) throw new ValidationError("Workspace selection requires a chat");
@@ -78,6 +87,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     }
     if (operation === "check_repository") {
       if (typeof request.repository !== "string" || typeof request.base_branch !== "string") throw new ValidationError("Repository and base_branch are required");
+      if (!workspaceAllowsRepository(policy, request.repository)) throw new ValidationError(`Repository is not allowed by Workspace policy. An administrator can update ${repositoryPolicyUrl}`);
       await deps.useCases.checkRepository(context.projectName, context.ownerEmail, request.repository, request.base_branch);
       return reply({ repository: request.repository, base_branch: request.base_branch, ready: true,
         message: "The Workspace GitHub account can read the base branch. No Workspace, repository or task was created." });
@@ -90,7 +100,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         if (!WORKSPACE_RUNTIMES.includes(runtime)) throw new ValidationError("Invalid Workspace runtime");
         if ((request.repository !== null && typeof request.repository !== "string") ||
           (request.base_branch !== null && typeof request.base_branch !== "string")) throw new ValidationError("Invalid repository selection");
-        if (request.repository !== null && !workspaceAllowsRepository(policy, request.repository as string)) throw new ValidationError("The requested repository is not configured for this project");
+        if (request.repository !== null && !workspaceAllowsRepository(policy, request.repository as string)) throw new ValidationError(`Repository is not allowed by Workspace policy. An administrator can update ${repositoryPolicyUrl}`);
         if ((request.repository === null) !== (request.base_branch === null)) throw new ValidationError("Repository work requires both repository and base_branch");
         const startInput = { projectName: context.projectName, runtime,
           ...(request.repository !== null ? { repository: String(request.repository), baseBranch: String(request.base_branch) } : {}), input: input(runtime, request.task) };
@@ -126,6 +136,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     const id = detail.workspace.id;
     if (operation === "attach_repository") {
       if (typeof request.repository !== "string" || typeof request.base_branch !== "string") throw new ValidationError("Repository and base_branch are required");
+      if (!workspaceAllowsRepository(policy, request.repository)) throw new ValidationError(`Repository is not allowed by Workspace policy. An administrator can update ${repositoryPolicyUrl}`);
       const workspace = await deps.attachRepository(id, context.ownerEmail, request.repository, request.base_branch);
       return reply({ ...location(workspace), task_queued: false, next: "run" });
     }

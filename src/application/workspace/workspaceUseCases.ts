@@ -18,7 +18,7 @@ export interface WorkspaceDeps {
   repository: WorkspaceRepository;
   chats: ChatRepository;
   projects: ProjectRepository;
-  policy(projectName: string): WorkspaceProjectPolicy | undefined;
+  policy(projectName: string): WorkspaceProjectPolicy | undefined | Promise<WorkspaceProjectPolicy | undefined>;
   now(): Date;
   newId(): string;
   idleTtlSeconds: number;
@@ -88,8 +88,8 @@ export async function ownedWorkspace(deps: WorkspaceDeps, id: string, ownerEmail
   return workspace;
 }
 
-export function workspacePolicy(deps: WorkspaceDeps, projectName: string): WorkspaceProjectPolicy {
-  const policy = deps.policy(projectName);
+export async function workspacePolicy(deps: WorkspaceDeps, projectName: string): Promise<WorkspaceProjectPolicy> {
+  const policy = await deps.policy(projectName);
   if (!policy) throw new ValidationError("Workspaces are not enabled for this project");
   return policy;
 }
@@ -117,12 +117,12 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
   return {
     async checkRepository(projectName: string, ownerEmail: string, repository: string, baseBranch: string) {
       await assertProjectAccessible(deps.projects, projectName, ownerEmail);
-      if (!isRepositoryName(repository) || !isGitBranch(baseBranch) || !workspaceAllowsRepository(workspacePolicy(deps, projectName), repository)) throw new ValidationError("Repository or base branch is not configured for this project");
+      if (!isRepositoryName(repository) || !isGitBranch(baseBranch) || !workspaceAllowsRepository(await workspacePolicy(deps, projectName), repository)) throw new ValidationError("Repository or base branch is not configured for this project");
       await checkWorkspaceRepository(deps, repository, baseBranch);
     },
     async create(input: CreateWorkspaceInput, ownerEmail: string): Promise<Workspace> {
       await assertProjectAccessible(deps.projects, input.projectName, ownerEmail);
-      const policy = workspacePolicy(deps, input.projectName);
+      const policy = await workspacePolicy(deps, input.projectName);
       if (!policy.runtimes.includes(input.runtime)) throw new ValidationError("Workspace runtime is not enabled");
       if (input.sourceChatId) {
         const source = await sourceChat(input.sourceChatId, ownerEmail);
@@ -255,7 +255,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
 
     async enqueue(id: string, ownerEmail: string, input: WorkspaceInput, requestKey: string): Promise<WorkspaceRun> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
-      const policy = workspacePolicy(deps, workspace.projectName);
+      const policy = await workspacePolicy(deps, workspace.projectName);
       if (!policy.runtimes.includes(workspace.runtime)) throw new ValidationError("Workspace runtime is not enabled");
       if (workspace.coding && !workspaceAllowsRepository(policy, workspace.coding.repository)) throw new ConflictError("Workspace repository configuration changed");
       validateInput(workspace, input);
