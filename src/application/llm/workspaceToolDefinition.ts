@@ -17,7 +17,7 @@ const repository: Schema = nullable({ ...text, description: "The user's requeste
 
 export const WORKSPACE_TOOL_DEF: ChannelToolDef = { type: "function", function: {
   name: WORKSPACE_TOOL_NAME,
-  description: "Run persistent tasks in a Sandbox. Read options for current_workspace and workdir. A chat keeps one selected Workspace per project: start creates it once; another start returns it WITHOUT running another task. Use run for follow-ups; workspace_id can be omitted when this chat has a selection. use_workspace selects an existing owned Workspace without creating or running anything. attach_repository connects Git to an empty Git-free workdir while keeping the same Workspace. Set repository AND base_branch when the user requests clone/coding; null means Git-free. workspace_path is a BROWSER LINK, never a filesystem path. Use relative paths in workdir. status/wait report actual progress; queued/running is not success. close saves files and removes compute. New run cancels an unapproved Git review; executing/uncertain actions remain blocked. For commit/push use prepare_git, return approval_path and stop for user approval. NEVER run Git writes or permission/index workarounds in a native task, or retry via GitHub tools.",
+  description: "Run persistent tasks in a Sandbox. Read options for current_workspace and workdir. A chat keeps one selected Workspace per project: start creates it once; another start returns it WITHOUT running another task. Use run for follow-ups; workspace_id can be omitted when selected. use_workspace selects an existing owned Workspace. attach_repository connects Git to an empty Git-free workdir; it never detaches Git or changes runtime. Set repository AND base_branch for clone/coding; null means Git-free. workspace_path is a BROWSER LINK, never a directory. Use relative paths in workdir. status/wait report actual progress. Use prepare_git for commit, commit-and-push, push to the work branch, pull-request with title/body/draft, merge with pullRequestNumber/headSha from status.pull_request, or push-main for direct fast-forward publication of an already pushed branch. Return approval_path and STOP for approval, then read status for actual results. close only when the user ends the Workspace; it preserves the selection and files. run and prepare_git restore closed Workspaces. Never close/start to publish, change runtime or recover a tool error. New run cancels pending Git review; executing/uncertain actions stay blocked. NEVER run Git writes, curl GitHub writes, permission/index workarounds or credential requests in native tasks.",
   parameters: object({ request: { anyOf: [
     object({ operation: operation("options") }),
     object({ operation: operation("start"), runtime, repository, base_branch: nullable(text), task }),
@@ -28,6 +28,9 @@ export const WORKSPACE_TOOL_DEF: ChannelToolDef = { type: "function", function: 
     object({ operation: operation("prepare_git"), workspace_id: nullable(text), action: { anyOf: [
       object({ kind: { type: "string", enum: ["commit", "commit-and-push"] }, message: { type: "string", minLength: 1, maxLength: 8000 } }),
       object({ kind: operation("push") }),
+      object({ kind: operation("push-main") }),
+      object({ kind: operation("pull-request"), title: text, body: { type: "string", maxLength: 40_000 }, draft: { type: "boolean" } }),
+      object({ kind: operation("merge"), pullRequestNumber: { type: "integer", minimum: 1 }, headSha: { type: "string", pattern: "^[a-f0-9]{40,64}$" } }),
     ] } }, ["operation", "action"]),
     ...["status", "wait"].map(name => object({ operation: operation(name), workspace_id: nullable(text),
       run_id: nullable(text), after_seq: nullable({ type: "integer", minimum: 0 }) }, ["operation"])),

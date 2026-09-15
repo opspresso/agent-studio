@@ -15,18 +15,19 @@ export interface PullRequestInfo {
   baseBranch: string;
   draft: boolean;
   state: "open" | "closed" | "merged";
-  ci: "pending" | "passed" | "failed";
+  ci: "none" | "pending" | "passed" | "failed";
 }
 
 export type CodingGitAction =
   | { kind: "commit"; message: string }
   | { kind: "commit-and-push"; message: string }
-  | { kind: "push" };
+  | { kind: "push" }
+  | { kind: "push-main" }
+  | { kind: "pull-request"; title: string; body: string; draft: boolean }
+  | { kind: "merge"; pullRequestNumber: number; headSha: string };
 
 export type CodingAction =
   | CodingGitAction
-  | { kind: "pull-request"; title: string; body: string; draft: boolean }
-  | { kind: "merge"; pullRequestNumber: number; headSha: string }
   | { kind: "deploy"; workflow: string; ref: string; inputs: Record<string, string> };
 
 /** User intent and approval bind to one workspace revision and exact Git head/diff. */
@@ -42,8 +43,16 @@ export interface CodingApproval {
   decidedAt?: string;
   operationId?: string;
   result?: string;
-  review: { headSha: string; treeSha: string; diff: string; truncated: boolean };
+  review: { headSha: string; treeSha: string; diff: string; truncated: boolean; mainHeadSha?: string; ci?: PullRequestInfo["ci"] };
 }
+
+/** No reported checks is distinct from passing CI; GitHub still enforces branch rules. */
+export function codingCiAllowsPublication(ci: PullRequestInfo["ci"]): boolean {
+  return ci === "passed" || ci === "none";
+}
+
+/** A definitive remote refusal, as opposed to a lost mutation response. */
+export class CodingMutationRejectedError extends Error {}
 
 /** Pending/claimed effects cannot cross a workspace close or deletion fence. */
 export function mayAdvanceCodingApproval(workspace: { status: string; activeActionId?: string; deleteRequestedAt?: string }, approval: CodingApproval): boolean {

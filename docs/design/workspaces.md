@@ -97,7 +97,13 @@ operation ID는 Git receipt로 중복 생성되지 않는다.
 GitHub App의 private key는 서버에만 두고 Git 작업에는 저장소·권한을 한정한 1시간 이내의
 installation token을 잠시 전달한다. 토큰은 Git 설정이나 체크포인트에 쓰지 않는다. PR 생성은
 같은 작업 브랜치의 기존 PR을 재사용하며 Draft/Ready 전환도 명시적 승인을 따른다.
-main 병합은 소유한 PR·정확한 head·CI 성공을 확인하고 merge API의 `sha` 조건으로 실행한다.
+main 병합은 소유한 PR·정확한 head를 확인하고 merge API의 `sha` 조건으로 실행한다.
+실행 중·실패한 검사는 병합을 막는다. 보고된 검사가 없는 커밋은 `none`으로 구분하고 승인 화면에
+CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`을 CI 성공으로 기록하지 않는다.
+`push-main`은 이미 게시된 작업 브랜치의 커밋을 PR 없이 main에 fast-forward한다. 검토한 main SHA와
+소스 HEAD·검사 상태를 승인 시 다시 확인하고 GitHub ref API에 `force: false`를 사용한다.
+분기된 이력과 보호 규칙 거절을 우회하지 않는다. main 변경의 명시적 HTTP 거절은 `failed`로
+기록해 잠금을 해제하고, 응답 소실은 `uncertain`으로 남겨 자동 재실행을 막는다.
 배포는 허용한 workflow의 `main` 실행과 검토한 inputs만 사용하며 Sandbox에서 배포하지 않는다.
 응답이 소실된 외부 효과는 `uncertain`으로 남기고 같은 승인을 자동 재실행하지 않는다.
 
@@ -119,10 +125,13 @@ main 병합은 소유한 PR·정확한 head·CI 성공을 확인하고 merge API
 Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는 SDK 대화 이력과 native Session을
 섞지 않고, 반환된 `workspace_id`로 후속 요청을 연결한다. SDK run과 tool call ID가 접수 중복을
 막는다. `wait`는 최대 8초만 기다리고, 실행 중이면 반환된 Workspace 경로에서 계속 확인한다.
-도구 출력은 cursor로 읽으며 생략된 출력·Diff는 표시한다. `prepare_git`는 Commit·Push·Commit & push의
+도구 출력은 cursor로 읽으며 생략된 출력·Diff는 표시한다. `prepare_git`는 Commit·Push·Commit & push·PR·main 병합·main 직접 Push의
 검토를 준비하고 `approval_path`를 반환한다. Agent는 링크를 전달하고 승인까지 멈춘다.
 이 도구는 Git·배포 승인을 소비하지 않는다. Native 코딩 턴은 보호된 Git 경로와 승인 경계의
 환경 지침을 받으며, 권한 변경·임시 인덱스·GitHub 도구로 Git 쓰기를 우회하지 않는다.
+`status`는 실제 Git 동작 결과와 PR 정보를 반환하며 PR의 현재 HEAD·검사 상태를 GitHub에서 갱신한다.
+종료된 Workspace의 Git 검토는 소유자가 action lease를 획득하며 같은 파일·Session을 복원한다.
+새 native Run을 만들지 않으며, 삭제된 Chat과 Workspace는 복원하지 않는다.
 
 플러그인의 `workspace-task`, `sandbox-task`는 이 기능을 사용하는 공용 작업 지침이다.
 Agent의 설명·시스템 프롬프트에는 역할을 쓰고, 계정·저장소·변경사항은 사용자 요청에 둔다.

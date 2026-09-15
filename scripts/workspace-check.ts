@@ -68,6 +68,16 @@ export async function checkWorkspaces(): Promise<void> {
     await putItem({ ...chunk, ...nextChunkKey });
     await assert.rejects(checkpoints.get(workspace.id, "checkpoint-1"), "copied ciphertext must not decrypt at another chunk address");
 
+    const beforeFinish = (await repository.get(workspace.id))!;
+    const finished = { ...beforeFinish, revision: beforeFinish.revision + 1, status: "closed" as const, activeRunId: undefined };
+    await repository.write({ expectedRevision: beforeFinish.revision, workspace: finished });
+    const gitReview = { expectedRevision: finished.revision, workspace: { ...finished, revision: finished.revision + 1,
+      status: "active" as const, activeActionId: "review-1", leaseToken: "git-review", leaseUntil: new Date(Date.now() + 60_000).toISOString() } };
+    await assert.rejects(repository.write(gitReview), "worker writes cannot reopen a finished Workspace");
+    await assert.rejects(repository.write({ ...gitReview, reopenGitOwner: "foreign@example.test" }), "only the owner can reopen for Git review");
+    await repository.write({ ...gitReview, reopenGitOwner: owner });
+    assert.equal((await repository.get(workspace.id))?.sessionId, workspace.sessionId, "Git review preserves the Session");
+
     await useCases.close(workspace.id, owner, true);
     await chats.delete(chatId);
     const closing = (await repository.get(workspace.id))!;
@@ -78,6 +88,9 @@ export async function checkWorkspaces(): Promise<void> {
       status: "closed", activeRunId: undefined } });
     await assert.rejects(repository.write({ expectedRevision: closing.revision + 1,
       workspace: { ...closing, revision: closing.revision + 2, status: "active" } }), "closed workspace cannot be resurrected");
+    await assert.rejects(repository.write({ expectedRevision: closing.revision + 1, reopenGitOwner: owner,
+      workspace: { ...closing, revision: closing.revision + 2, status: "active", activeRunId: undefined,
+        activeActionId: "review-2", leaseToken: "git-review" } }), "Git review cannot resurrect a deleted Workspace");
     console.log("[ok] Workspace source binding, concurrent start/admission, PostgreSQL CAS, event replay, checkpoints and deletion fencing");
   } finally {
     for (const [id, childChatId] of sourceWorkspaces) {

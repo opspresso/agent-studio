@@ -800,9 +800,14 @@ GitHub App의 private key는 서버에 남고 clone/push에 발행하는 token�
 공개 Git endpoint는 HTTPS와 DNS pinning을 사용하고 내부 호스트 예외는 배포의 별도 목록을 따른다.
 
 효과는 검토한 tree/HEAD와 사용자 결정에 묶인 승인 레코드를 먼저 claim한 뒤 실행한다.
-종료·삭제가 먼저 기록되면 pending/실행 claim을 거절한다. main 병합은 PR 소유 범위와 CI를
+종료·삭제가 먼저 기록되면 pending/실행 claim을 거절한다. 종료된 Workspace의 새 Git 검토는
+소유자·살아 있는 Chat·프로젝트와 action lease를 원자적으로 확인한 뒤 복원하며 삭제는 되돌리지 않는다.
+main 병합은 PR 소유 범위와 CI를
 재확인하고 GitHub의 정확한 head SHA 조건을 사용한다. 배포는 허용된 main workflow와
 승인한 inputs로만 요청한다. 전송 오류 이후의 불확실한 효과는 자동 재실행하지 않는다.
+main 직접 푸시는 검토한 main SHA와 게시된 작업 HEAD를 대조하고 `force: false`로 실행한다.
+검사 미보고는 `none`으로 승인 화면에 표시하고, 대기 중·실패한 검사와 구분한다. 모든 main 반영은
+GitHub 브랜치 규칙을 따르며 권한·보호 규칙을 우회하는 옵션을 제공하지 않는다.
 GitHub webhook은 서명과 delivery ID를 확인해 PR 메타데이터만 갱신하며 승인 권한이 없다.
 
 ## SDK Session과 승인 상태

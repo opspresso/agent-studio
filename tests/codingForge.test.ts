@@ -14,10 +14,15 @@ let pull: { number: number; node_id: string; html_url: string; draft: boolean; s
 let checks: { status: string; conclusion: string }[];
 let existing: boolean;
 let dispatchCount: number;
+let mainSha: string;
+let branchSha: string;
+let comparison: string;
+let refusal: number;
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now);
   requests = []; existing = false; dispatchCount = 0;
+  mainSha = "e".repeat(40); branchSha = sha; comparison = "ahead"; refusal = 0;
   checks = [{ status: "completed", conclusion: "success" }];
   pull = { number: 7, node_id: "PR_node", html_url: "http://localhost:9009/company/repo/pull/7", draft: false, state: "open",
     head: { sha, ref: repository.branch, repo: { full_name: repository.repository } },
@@ -25,6 +30,9 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async (url: URL, init: RequestInit) => {
     const request = { url: String(url), method: init.method ?? "GET", headers: new Headers(init.headers), body: init.body ? JSON.parse(String(init.body)) : {} };
     requests.push(request);
+    if (request.url.includes("/git/ref/heads/")) return Response.json({ object: { type: "commit", sha: request.url.endsWith("/main") ? mainSha : branchSha } });
+    if (request.url.includes("/compare/")) return Response.json({ status: comparison });
+    if (request.url.includes("/git/refs/heads/main")) return refusal ? new Response("refused", { status: refusal }) : Response.json({ object: { sha: request.body.sha } });
     if (request.url.endsWith("/access_tokens")) return Response.json({ token: "short-lived-test-token", expires_at: "2026-09-14T01:00:00Z" });
     if (request.url.includes("/branches?")) return Response.json([{ name: "main" }, { name: "feature/change" }]);
     if (request.url.includes("/check-runs?")) return Response.json({ total_count: checks.length, check_runs: checks });
@@ -67,12 +75,45 @@ describe("coding GitHub App adapter", () => {
   it("does not treat absent, pending or failed CI as success", async () => {
     const forge = createCodingGitHub(config, () => now).forge;
     checks = [];
-    expect((await forge.pullRequest(repository, 7)).ci).toBe("pending");
+    expect((await forge.pullRequest(repository, 7)).ci).toBe("none");
     checks = [{ status: "in_progress", conclusion: "" }];
     expect((await forge.pullRequest(repository, 7)).ci).toBe("pending");
     checks = [{ status: "completed", conclusion: "failure" }];
     await expect(forge.merge(repository, 7, sha)).rejects.toThrow("CI changed");
     expect(requests.some(request => request.method === "PUT")).toBe(false);
+  });
+  it("merges a PR with no reported checks without claiming CI passed", async () => {
+    checks = [];
+    const forge = createCodingGitHub(config, () => now).forge;
+    expect((await forge.pullRequest(repository, 7)).ci).toBe("none");
+    await forge.merge(repository, 7, sha);
+    expect(requests.find(request => request.url.endsWith("/merge"))?.body.sha).toBe(sha);
+  });
+  it("publishes only the reviewed work branch to main with force disabled", async () => {
+    const forge = createCodingGitHub(config, () => now).forge;
+    expect(await forge.reviewMainPush(repository, sha)).toEqual({ baseSha: mainSha, ci: "passed" });
+    expect(await forge.pushMain(repository, sha, mainSha)).toBe(sha);
+    expect(requests.find(request => request.method === "PATCH")?.body).toEqual({ sha, force: false });
+    expect(requests.some(request => request.url.includes("/pulls"))).toBe(false);
+  });
+  it.each(["diverged", "behind"])("refuses a %s main update without sending a mutation", async state => {
+    comparison = state;
+    await expect(createCodingGitHub(config, () => now).forge.reviewMainPush(repository, sha)).rejects.toThrow("never overwrites history");
+    expect(requests.some(request => request.method === "PATCH")).toBe(false);
+  });
+  it("rejects unpublished, changed-base and pending-CI main pushes", async () => {
+    const forge = createCodingGitHub(config, () => now).forge;
+    branchSha = "f".repeat(40);
+    await expect(forge.reviewMainPush(repository, sha)).rejects.toThrow("Push the reviewed commit");
+    branchSha = sha;
+    await expect(forge.pushMain(repository, sha, "f".repeat(40))).rejects.toThrow("Main head or CI changed");
+    checks = [{ status: "queued", conclusion: "" }];
+    await expect(forge.pushMain(repository, sha, mainSha)).rejects.toThrow("Main head or CI changed");
+    expect(requests.some(request => request.method === "PATCH")).toBe(false);
+  });
+  it("distinguishes GitHub's definitive branch-rule refusal from a lost response", async () => {
+    refusal = 422;
+    await expect(createCodingGitHub(config, () => now).forge.pushMain(repository, sha, mainSha)).rejects.toMatchObject({ message: expect.stringContaining("branch rules") });
   });
   it("merges only the exact head and rejects foreign pull requests", async () => {
     const forge = createCodingGitHub(config, () => now).forge;
@@ -88,6 +129,11 @@ describe("coding GitHub App adapter", () => {
     expect(result.draft).toBe(false);
     expect(requests.filter(request => request.url.endsWith("/pulls") && request.method === "POST")).toHaveLength(0);
     expect(requests.find(request => request.url.endsWith("/graphql"))?.body.variables).toEqual({ id: "PR_node" });
+  });
+  it("does not edit an existing PR whose source head changed after publication", async () => {
+    existing = true; pull.head.sha = "f".repeat(40);
+    await expect(createCodingGitHub(config, () => now).forge.openPullRequest(repository, { title: "Title", body: "Body", draft: false })).rejects.toThrow("head changed");
+    expect(requests.some(request => request.method === "PATCH")).toBe(false);
   });
   it("dispatches a workflow through GitHub rather than Sandbox execution", async () => {
     const result = await createCodingGitHub(config, () => now).forge.dispatch(repository.repository, "deploy.yaml", "main", { target: "preview" });

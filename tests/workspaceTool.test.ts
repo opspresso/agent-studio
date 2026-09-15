@@ -13,7 +13,7 @@ import { WORKSPACE_TOOL_DEF } from "@/application/llm/workspaceToolDefinition";
 import { assembleAgentRun } from "@/application/llm/agentAssembly";
 import { runAgent } from "@/application/runtime";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
-import type { CodingApproval } from "@/domain/coding/types";
+import type { CodingApproval, CodingGitAction, PullRequestInfo } from "@/domain/coding/types";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
@@ -27,7 +27,8 @@ const authorize = vi.fn(async () => {});
 const sleep = vi.fn(async (_ms: number) => {});
 const requestGit = vi.fn<(...args: unknown[]) => Promise<CodingApproval>>();
 const attachRepository = vi.fn<(...args: unknown[]) => Promise<WorkspaceView>>();
-const makeTool = (projectName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { projectName, ownerEmail, sourceChatId, occurrence });
+const pullRequest = vi.fn<(...args: unknown[]) => Promise<PullRequestInfo | undefined>>();
+const makeTool = (projectName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { projectName, ownerEmail, sourceChatId, occurrence });
 const invoke = async (request: Record<string, unknown>, callId = "call-start") => JSON.parse((await makeTool()({ request }, callId)).text);
 const start = { operation: "start", runtime: "command", repository: null, base_branch: null, task: "printf report > report.txt" };
 beforeEach(() => {
@@ -76,7 +77,7 @@ describe("Workspace Agent capability", () => {
     authorize.mockRejectedValueOnce(new Error("Access revoked"));
     await expect(invoke(start)).rejects.toThrow("Access revoked");
     expect(await repository.list(owner, 10)).toHaveLength(0);
-    const disabled = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, workdir: WORKSPACE_DIRECTORY, policy: () => undefined }, { projectName: "demo", ownerEmail: owner, occurrence: "parent" });
+    const disabled = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, policy: () => undefined }, { projectName: "demo", ownerEmail: owner, occurrence: "parent" });
     await expect(disabled({ request: { operation: "options" } }, "read")).rejects.toThrow("not enabled");
   });
   it("queues a Git-free task once for a repeated SDK call and reports admission honestly", async () => {
@@ -128,21 +129,28 @@ describe("Workspace Agent capability", () => {
     expect(assembleAgentRun({}, {}).tools.some(tool => tool.function.name === "Workspace")).toBe(false);
     expect(assembleAgentRun({ workspaceTool: makeTool() }, {}).tools.some(tool => tool.function.name === "Workspace")).toBe(true);
   });
-  it("prepares an owned Git review and reuses a pending review without executing native tasks", async () => {
+  it.each<CodingGitAction>([
+    { kind: "commit-and-push", message: "feat: change" },
+    { kind: "pull-request", title: "Change", body: "Reviewed work", draft: false },
+    { kind: "merge", pullRequestNumber: 7, headSha: "a".repeat(40) },
+    { kind: "push-main" },
+  ])("prepares $kind through the actual tool schema and reuses its pending review without native tasks", async action => {
     const workspace = await useCases.create({ projectName: "demo", chatId: "review-chat", createChat: true,
       title: "Review", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
-    const action = { kind: "commit-and-push" as const, message: "feat: change" };
     const approval: CodingApproval = { id: "approval-1", workspaceId: workspace.id, action, requestedBy: owner,
       requestedAt: now.toISOString(), status: "pending", fingerprint: "reviewed-tree",
       review: { headSha: "a".repeat(40), treeSha: "b".repeat(40), diff: "+change", truncated: false } };
     requestGit.mockImplementationOnce(async () => {
+      // PostgreSQL jsonb does not preserve the caller's object key order.
+      const stored = { ...approval, action: Object.fromEntries(Object.entries(action).reverse()) as CodingGitAction };
       await repository.write({ expectedRevision: workspace.revision,
         workspace: { ...workspace, activeActionId: approval.id, revision: workspace.revision + 1 } });
       await repository.write({ expectedRevision: workspace.revision + 1,
-        workspace: { ...workspace, activeActionId: approval.id, revision: workspace.revision + 2 }, approval });
+        workspace: { ...workspace, activeActionId: approval.id, revision: workspace.revision + 2 }, approval: stored });
       return approval;
     });
     const request = { operation: "prepare_git", workspace_id: workspace.id, action };
+    expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();
     const result = await invoke(request, "git-call");
     expect(result).toMatchObject({ status: "pending", approval_id: approval.id, approval_path: "/chats/review-chat#actions" });
     expect(await invoke(request, "git-call")).toEqual(result);
@@ -151,6 +159,17 @@ describe("Workspace Agent capability", () => {
     await expect(makeTool("foreign")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
     await expect(makeTool("demo", "foreign@example.com")({ request }, "git-call")).rejects.toMatchObject({ status: 404 });
     expect(requestGit).toHaveBeenCalledTimes(1);
+  });
+  it("reports PR publication and refreshes its current head/CI even without a native run", async () => {
+    const workspace = await useCases.create({ projectName: "demo", chatId: "pr-chat", createChat: true,
+      title: "PR", runtime: "codex", repository: "org/repo", baseBranch: "main" }, owner);
+    const pr: PullRequestInfo = { number: 7, url: "https://example.test/org/repo/pull/7", headSha: "a".repeat(40), baseBranch: "main", draft: false, state: "open", ci: "pending" };
+    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, pullRequest: pr, revision: workspace.revision + 1 } });
+    pullRequest.mockResolvedValueOnce({ ...pr, ci: "none" });
+    const result = await invoke({ operation: "status", workspace_id: workspace.id });
+    expect(result.pull_request).toMatchObject({ number: 7, headSha: pr.headSha, ci: "none" });
+    expect(pullRequest).toHaveBeenCalledExactlyOnceWith(workspace.id, owner);
+    expect(await repository.runs(workspace.id, 10)).toHaveLength(0);
   });
   it("executes through the SDK tool dispatcher with the SDK call identity", async () => {
     const channel = new FakeChannel([[toolCallChunk(0, "workspace-call", "Workspace", JSON.stringify({ request: { operation: "options" } }))], [contentChunk("Ready")]]);

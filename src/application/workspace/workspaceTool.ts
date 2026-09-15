@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { McpToolResult } from "@/domain/llm/types";
 import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
 import { workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
@@ -6,7 +7,7 @@ import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types"
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import type { createWorkspaceUseCases, WorkspaceView } from "./workspaceUseCases";
-import type { CodingApproval, CodingGitAction } from "@/domain/coding/types";
+import type { CodingApproval, CodingGitAction, PullRequestInfo } from "@/domain/coding/types";
 import { boundedWorkspaceText } from "./output";
 
 interface WorkspaceToolDeps {
@@ -15,6 +16,7 @@ interface WorkspaceToolDeps {
   authorize(): Promise<void>;
   sleep(ms: number): Promise<void>;
   requestGit(id: string, ownerEmail: string, action: CodingGitAction): Promise<CodingApproval>;
+  pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined>;
   attachRepository(id: string, ownerEmail: string, repository: string, baseBranch: string): Promise<WorkspaceView>;
   workdir: string;
 }
@@ -30,7 +32,8 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
   const reply = (value: unknown): McpToolResult => ({ text: JSON.stringify(value) });
   const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, workspace_path: `/chats/${workspace.chatId}`,
     workdir: deps.workdir, runtime: workspace.runtime, repository: workspace.coding?.repository ?? null,
-    base_branch: workspace.coding?.baseBranch ?? null, branch: workspace.coding?.branch ?? null });
+    base_branch: workspace.coding?.baseBranch ?? null, branch: workspace.coding?.branch ?? null,
+    head_sha: workspace.coding?.headSha ?? null, workspace_status: workspace.status, pull_request: workspace.pullRequest ?? null });
   const current = () => context.sourceChatId
     ? deps.useCases.forSourceChat(context.sourceChatId, context.projectName, context.ownerEmail)
     : deps.useCases.forStartRequest(context.projectName, context.ownerEmail, startKey);
@@ -61,7 +64,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       current_workspace: selected ? location(selected) : null,
       default_repository: policy.repository ?? null, repositories: workspaceRepositories(policy), checks: policy.checks,
       workspace_selection: "A chat keeps one selected Workspace per project. Repeated start returns it without queueing work. Use run for follow-ups. Both repository and base_branch must be selected for a clone; null means deliberately Git-free. workspace_path is a browser link; task files belong in workdir, using relative paths.",
-      git_actions: "Use prepare_git for commit, commit-and-push or push, then return approval_path and stop. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
+      git_actions: "Use prepare_git for commit, commit-and-push, push (work branch), pull-request (title/body/draft), merge (pullRequestNumber/headSha from status.pull_request), or push-main (already published work branch, fast-forward only). Return approval_path and stop. Read status after approval for the actual result. Closed Workspaces resume for Git review; never close or create another Workspace to publish. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
     }
     if (operation === "use_workspace") {
       if (!context.sourceChatId) throw new ValidationError("Workspace selection requires a chat");
@@ -119,16 +122,21 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     if (operation === "prepare_git") {
       if (!detail.workspace.coding) throw new ValidationError("This workspace has no Git repository");
       const value = request.action as Record<string, unknown> | undefined;
-      if (!value || !["commit", "commit-and-push", "push"].includes(String(value.kind))) throw new ValidationError("Invalid Workspace Git action");
+      if (!value) throw new ValidationError("Invalid Workspace Git action");
       let action: CodingGitAction;
-      if (value.kind === "push") action = { kind: "push" };
-      else {
+      if (value.kind === "push" || value.kind === "push-main") action = { kind: value.kind };
+      else if (value.kind === "pull-request") {
+        if (typeof value.title !== "string" || typeof value.body !== "string" || typeof value.draft !== "boolean") throw new ValidationError("Pull request title, body and draft are required");
+        action = { kind: "pull-request", title: value.title, body: value.body, draft: value.draft };
+      } else if (value.kind === "merge") {
+        if (!Number.isSafeInteger(value.pullRequestNumber) || Number(value.pullRequestNumber) < 1 || typeof value.headSha !== "string" || !/^[a-f0-9]{40,64}$/.test(value.headSha)) throw new ValidationError("The pull request number and exact head SHA are required; read status.pull_request");
+        action = { kind: "merge", pullRequestNumber: Number(value.pullRequestNumber), headSha: value.headSha };
+      } else if (value.kind === "commit" || value.kind === "commit-and-push") {
         if (typeof value.message !== "string") throw new ValidationError("A commit message is required");
-        action = { kind: value.kind as "commit" | "commit-and-push", message: value.message };
-      }
+        action = { kind: value.kind, message: value.message };
+      } else throw new ValidationError("Unsupported Git action. Use commit, commit-and-push, push, pull-request, merge or push-main; do not use a native task or another Workspace");
       const pending = detail.approvals.find(item => item.id === detail.workspace.activeActionId && item.status === "pending");
-      const same = pending?.action.kind === action.kind && (action.kind === "push" ||
-        ((pending.action.kind === "commit" || pending.action.kind === "commit-and-push") && pending.action.message === action.message));
+      const same = pending && isDeepStrictEqual(pending.action, action);
       const approval = same && pending ? pending : await deps.requestGit(id, context.ownerEmail, action);
       return reply({ ...location(detail.workspace),
         approval_path: `/chats/${detail.workspace.chatId}#actions`, approval_id: approval.id,
@@ -140,10 +148,14 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       return reply({ ...location(detail.workspace), requested: operation });
     }
     if (operation !== "status" && operation !== "wait") throw new ValidationError("Unknown Workspace operation");
+    const git = { git_action: detail.approvals[0] ? { id: detail.approvals[0].id, action: detail.approvals[0].action,
+      status: detail.approvals[0].status, result: detail.approvals[0].result } : null,
+      pull_request: operation === "status" && detail.workspace.pullRequest
+        ? await deps.pullRequest(id, context.ownerEmail) : detail.workspace.pullRequest ?? null };
     const after = request.after_seq ?? 0;
     if (!Number.isSafeInteger(after) || Number(after) < 0) throw new ValidationError("Invalid Workspace cursor");
     const runId = request.run_id == null ? detail.runs[0]?.id : String(request.run_id);
-    if (!runId) return reply({ ...location(detail.workspace), status: detail.workspace.status, next: "run" });
+    if (!runId) return reply({ ...location(detail.workspace), ...git, status: detail.workspace.status, next: "run or prepare_git" });
     // An explicit old run remains readable without accepting a foreign run id.
     if (!detail.runs.some(run => run.id === runId)) detail = await deps.useCases.get(id, context.ownerEmail);
     let run = detail.runs.find(run => run.id === runId);
@@ -155,13 +167,12 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
     }
     const events = await deps.useCases.events(id, context.ownerEmail, runId, Number(after));
     const selected = events.slice(0, 20);
-    const raw = selected.flatMap(event => event.data.kind === "output" || event.data.kind === "message" || event.data.kind === "warning" ? [event.data.text] : []).join("");
+    const raw = selected.flatMap(event => event.data.kind === "output" ? [event.data.text] : event.data.kind === "message" || event.data.kind === "warning" ? [`\n${event.data.text}\n`] : []).join("");
     const output = boundedWorkspaceText(raw, OUTPUT_BYTES);
     const diff = boundedWorkspaceText(run.diff ?? "", OUTPUT_BYTES);
     return reply({ ...location(detail.workspace), workspace_status: detail.workspace.status,
       run_id: run.id, status: run.status, error: run.error,
-      git_action: detail.approvals[0] ? { id: detail.approvals[0].id, action: detail.approvals[0].action,
-        status: detail.approvals[0].status, result: detail.approvals[0].result } : undefined,
+      ...git,
       checks: run.checks.map(({ output: _output, ...check }) => { void _output; return check; }),
       output: output.text, diff: diff.text, truncated: output.truncated || diff.truncated || !!run.diffTruncated,
       next_seq: selected.at(-1)?.seq ?? after, has_more: events.length > selected.length || (selected.at(-1)?.seq ?? Number(after)) < run.lastEventSeq,

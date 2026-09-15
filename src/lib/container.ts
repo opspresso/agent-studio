@@ -1177,6 +1177,7 @@ export const executionDeps: ExecutionDeps = {
     try { await authorize(); } catch { return undefined; }
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
       requestGit: (id, ownerEmail, action) => getCodingUseCases().request(id, ownerEmail, action),
+      pullRequest: (id, ownerEmail) => getCodingUseCases().pullRequest(id, ownerEmail),
       attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
       workdir: WORKSPACE_DIRECTORY,
       policy: () => getWorkspaceConfig()?.projects.find(project => project.projectName === projectName),

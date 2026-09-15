@@ -110,6 +110,8 @@ export const workspaceRepository: WorkspaceRepository = {
         previous?.sessionId === workspace.sessionId && previous?.runtime === workspace.runtime &&
         (previous?.status !== "closed" || (!previous.deleteRequestedAt && (
           (change.reopenOwner === workspace.ownerEmail && workspace.status === "active" && run?.status === "queued" && !!request) ||
+          (change.reopenGitOwner === workspace.ownerEmail && workspace.status === "active" && !!workspace.activeActionId &&
+            !!workspace.leaseToken && !workspace.activeRunId && !run && !request && !approval) ||
           (change.deleteOwner === workspace.ownerEmail && workspace.status === "closing" && !!workspace.deleteRequestedAt && !run && !request)
         ))) && !isExpired(row?.expiresAt, Date.now()) &&
         (!approval || mayAdvanceCodingApproval(previous!, approval)) &&
@@ -121,13 +123,15 @@ export const workspaceRepository: WorkspaceRepository = {
       operations.push({ kind: "put", item: { ...keys.workspaceChild(workspace.id, kind, child.id), value: child,
         expiresAt: expiry(workspace.updatedAt) } });
     }
+    if (request || change.reopenGitOwner) {
+      operations.push({ kind: "check", key: keys.project(workspace.projectName), condition: projectIsLive });
+      operations.push({ kind: "update", key: keys.chat(workspace.chatId), patch: row => ({ ...row, ...chatActivityFields(workspace.updatedAt) }), condition: row =>
+        chatIsLive(row) && row?.ownerEmail === workspace.ownerEmail && !isExpired(row?.expiresAt, Date.now()) });
+    }
     if (request) {
       if (run?.id !== request.runId || run.status !== "queued" || workspace.activeRunId !== run.id) {
         throw new Error("request receipt must admit its queued run");
       }
-      operations.push({ kind: "check", key: keys.project(workspace.projectName), condition: projectIsLive });
-      operations.push({ kind: "update", key: keys.chat(workspace.chatId), patch: row => ({ ...row, ...chatActivityFields(workspace.updatedAt) }), condition: row =>
-        chatIsLive(row) && row?.ownerEmail === workspace.ownerEmail && !isExpired(row?.expiresAt, Date.now()) });
       operations.push({ kind: "put", condition: conditions.notExists,
         item: { ...keys.workspaceChild(workspace.id, "REQUEST", request.key), value: request,
           expiresAt: expiry(workspace.updatedAt) } });

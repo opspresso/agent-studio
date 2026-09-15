@@ -1,6 +1,7 @@
 import { createHmac, sign } from "node:crypto";
 import type { CodingForge } from "@/domain/coding/forge";
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
+import { codingCiAllowsPublication, CodingMutationRejectedError } from "@/domain/coding/types";
 import { GITHUB_PAGE_SIZE } from "@/domain/coding/limits";
 import { isRepositoryName } from "@/domain/workspace/policy";
 import { isDeclaredInternalHost } from "@/domain/security/internalHosts";
@@ -44,7 +45,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
   if ([api, web].some(url => url.protocol !== "https:" && !isDeclaredInternalHost(url.href, config.internalHosts))) throw new Error("Public GitHub endpoints require HTTPS");
   const base = config.apiUrl.replace(/\/+$/, "");
   async function request<T>(path: string, token: string, method = "GET", body?: unknown, graphql = false): Promise<T> {
-    if (!path.startsWith("/") || path.startsWith("//") || path.includes("..")) throw new Error("Invalid GitHub API path");
+    if (!path.startsWith("/") || path.startsWith("//") || path.split("?")[0]!.split("/").some(segment => [".", ".."].includes(decodeURIComponent(segment)))) throw new Error("Invalid GitHub API path");
     const url = graphql ? `${base.replace(/\/api\/v3$/, "/api")}/graphql` : `${base}${path}`;
     const internal = isDeclaredInternalHost(url, config.internalHosts);
     if (!internal) await resolvePublicUrl(url);
@@ -54,7 +55,11 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     });
     if (!response.ok) {
       await response.body?.cancel();
-      throw new Error(`GitHub ${method} request failed (${response.status})`);
+      const hint = response.status === 403 ? "Check repository permissions and branch protection rules" :
+        response.status === 404 ? "Repository, branch or pull request is missing or inaccessible" :
+        [405, 409, 422].includes(response.status) ? "GitHub rejected the change; check branch rules, conflicts and the current head" : "Request was not successful";
+      const ErrorType = method !== "GET" && response.status >= 400 && response.status < 500 && response.status !== 408 ? CodingMutationRejectedError : Error;
+      throw new ErrorType(`GitHub ${method} request failed (${response.status}). ${hint}`);
     }
     if (response.status === 204) return undefined as T;
     return JSON.parse(await readBodyText(response, 2 * 1024 * 1024)) as T;
@@ -82,25 +87,28 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     if (!isRepositoryName(repository)) throw new Error("Invalid coding repository");
     return `/repos/${repository}`;
   };
+  async function ci(repository: string, headSha: string, accessToken: string): Promise<PullRequestInfo["ci"]> {
+    const path = repoPath(repository);
+    const [checks, statuses] = await Promise.all([
+      request<{ total_count: number; check_runs: { status: string; conclusion: string | null }[] }>(`${path}/commits/${headSha}/check-runs?per_page=${GITHUB_PAGE_SIZE}`, accessToken),
+      request<{ total_count: number; state: string }>(`${path}/commits/${headSha}/status?per_page=${GITHUB_PAGE_SIZE}`, accessToken),
+    ]);
+    const all = checks.check_runs;
+    const bounded = [checks.total_count, statuses.total_count].every(count => Number.isSafeInteger(count) && count >= 0 && count <= GITHUB_PAGE_SIZE) && all.length === checks.total_count;
+    const failing = all.some(check => check.status === "completed" && !["success", "neutral", "skipped"].includes(check.conclusion ?? "")) ||
+      (statuses.total_count > 0 && ["failure", "error"].includes(statuses.state));
+    const complete = bounded && all.every(check => check.status === "completed" && ["success", "neutral", "skipped"].includes(check.conclusion ?? "")) &&
+      (statuses.total_count === 0 || statuses.state === "success") && (all.length > 0 || statuses.total_count > 0);
+    return failing ? "failed" : complete ? "passed" : bounded && !all.length && !statuses.total_count ? "none" : "pending";
+  }
   async function view(repository: CodingRepository, pull: Pull, accessToken: string): Promise<PullRequestInfo> {
     if (pull.head.repo.full_name.toLowerCase() !== repository.repository.toLowerCase() ||
       pull.base.repo.full_name.toLowerCase() !== repository.repository.toLowerCase() || pull.head.ref !== repository.branch ||
       pull.base.ref !== repository.baseBranch || !/^[a-f0-9]{40,64}$/.test(pull.head.sha) || new URL(pull.html_url).origin !== web.origin) {
       throw new Error("Pull request does not belong to this workspace");
     }
-    const path = repoPath(repository.repository);
-    const [checks, statuses] = await Promise.all([
-      request<{ total_count: number; check_runs: { status: string; conclusion: string | null }[] }>(`${path}/commits/${pull.head.sha}/check-runs?per_page=${GITHUB_PAGE_SIZE}`, accessToken),
-      request<{ total_count: number; state: string }>(`${path}/commits/${pull.head.sha}/status?per_page=${GITHUB_PAGE_SIZE}`, accessToken),
-    ]);
-    const all = checks.check_runs;
-    const bounded = checks.total_count <= GITHUB_PAGE_SIZE && statuses.total_count <= GITHUB_PAGE_SIZE && all.length === checks.total_count;
-    const failing = all.some(check => check.status === "completed" && !["success", "neutral", "skipped"].includes(check.conclusion ?? "")) ||
-      (statuses.total_count > 0 && ["failure", "error"].includes(statuses.state));
-    const complete = bounded && all.every(check => check.status === "completed" && ["success", "neutral", "skipped"].includes(check.conclusion ?? "")) &&
-      (statuses.total_count === 0 || statuses.state === "success") && (all.some(check => check.conclusion === "success") || statuses.total_count > 0);
     return { number: pull.number, url: pull.html_url, headSha: pull.head.sha, baseBranch: pull.base.ref, draft: pull.draft,
-      state: pull.merged ? "merged" : pull.state, ci: failing ? "failed" : complete ? "passed" : "pending" };
+      state: pull.merged ? "merged" : pull.state, ci: await ci(repository.repository, pull.head.sha, accessToken) };
   }
   const readPermissions: Permissions = { contents: "read", pull_requests: "read", checks: "read", statuses: "read" };
   const forge: CodingForge = {
@@ -122,6 +130,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       if (!pull) pull = await request<Pull>(`${path}/pulls`, access.token, "POST", { title: input.title, body: input.body, draft: input.draft, head: repository.branch, base: repository.baseBranch });
       else {
         await view(repository, pull, access.token);
+        if (repository.headSha && pull.head.sha !== repository.headSha) throw new Error("Pull request head changed since review");
         pull = await request<Pull>(`${path}/pulls/${pull.number}`, access.token, "PATCH", { title: input.title, body: input.body });
         if (pull.draft !== input.draft) {
           const mutation = input.draft ? "convertPullRequestToDraft" : "markPullRequestReadyForReview";
@@ -132,16 +141,39 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
           pull = { ...pull, draft: input.draft };
         }
       }
+      if (repository.headSha && pull.head.sha !== repository.headSha) throw new Error("Pull request head changed since review");
       return view(repository, pull, access.token);
     },
     async merge(repository, number, headSha) {
       if (repository.baseBranch !== "main") throw new Error("Main merge requires a pull request targeting main");
       const current = await forge.pullRequest(repository, number);
-      if (current.headSha !== headSha || current.state !== "open" || current.draft || current.ci !== "passed") throw new Error("Pull request head or CI changed since approval");
+      if (current.headSha !== headSha || current.state !== "open" || current.draft || !codingCiAllowsPublication(current.ci)) throw new CodingMutationRejectedError("Pull request head or CI changed since approval");
       const access = await token(repository.repository, { contents: "write" });
       const result = await request<{ merged: boolean; sha: string }>(`${repoPath(repository.repository)}/pulls/${number}/merge`, access.token, "PUT", { sha: headSha, merge_method: "merge" });
-      if (!result.merged) throw new Error("GitHub refused to merge the pull request");
+      if (!result.merged) throw new CodingMutationRejectedError("GitHub refused to merge the pull request");
       return result.sha;
+    },
+    async reviewMainPush(repository, headSha) {
+      if (repository.baseBranch !== "main" || !repository.branch.startsWith("agent/") || !/^[a-f0-9]{40,64}$/.test(headSha)) throw new CodingMutationRejectedError("Main push requires this Workspace's exact published head");
+      const access = await token(repository.repository, readPermissions);
+      const path = repoPath(repository.repository);
+      type Ref = { object: { type: string; sha: string } };
+      const [main, branch] = await Promise.all([
+        request<Ref>(`${path}/git/ref/heads/main`, access.token),
+        request<Ref>(`${path}/git/ref/heads/${encodeURIComponent(repository.branch)}`, access.token),
+      ]);
+      if (main.object.type !== "commit" || !/^[a-f0-9]{40,64}$/.test(main.object.sha) || branch.object.type !== "commit" || branch.object.sha !== headSha) throw new CodingMutationRejectedError("Push the reviewed commit to the Workspace branch before preparing main push");
+      const comparison = await request<{ status: string }>(`${path}/compare/${main.object.sha}...${headSha}?per_page=1`, access.token);
+      if (!["ahead", "identical"].includes(comparison.status)) throw new CodingMutationRejectedError("Main has diverged from this branch. Use a reviewed pull request; direct push never overwrites history");
+      return { baseSha: main.object.sha, ci: await ci(repository.repository, headSha, access.token) };
+    },
+    async pushMain(repository, headSha, baseSha) {
+      const current = await forge.reviewMainPush(repository, headSha);
+      if (current.baseSha !== baseSha || !codingCiAllowsPublication(current.ci)) throw new CodingMutationRejectedError("Main head or CI changed since approval; prepare a new review");
+      const access = await token(repository.repository, { contents: "write" });
+      const result = await request<{ object: { sha: string } }>(`${repoPath(repository.repository)}/git/refs/heads/main`, access.token, "PATCH", { sha: headSha, force: false });
+      if (result.object.sha !== headSha) throw new Error("GitHub did not confirm the reviewed main head");
+      return result.object.sha;
     },
     async dispatch(repository, workflow, ref, inputs) {
       const access = await token(repository, { actions: "write" });

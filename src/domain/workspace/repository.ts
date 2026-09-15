@@ -17,6 +17,8 @@ export interface WorkspaceWrite {
   delivery?: { id: string; fingerprint: string };
   /** Explicit owner follow-up may reopen a finished workspace; worker writes never set this. */
   reopenOwner?: string;
+  /** Owner-requested Git review can restore a finished Workspace under an action lease. */
+  reopenGitOwner?: string;
 }
 
 export interface WorkspaceRepository {

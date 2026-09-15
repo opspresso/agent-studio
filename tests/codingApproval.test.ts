@@ -13,6 +13,7 @@ import { processWorkspace } from "@/application/workspace/worker";
 import type { WorktreeReview } from "@/domain/coding/worktree";
 import type { Workspace } from "@/domain/workspace/types";
 import type { PullRequestInfo } from "@/domain/coding/types";
+import { CodingMutationRejectedError } from "@/domain/coding/types";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
@@ -39,6 +40,7 @@ beforeEach(async () => {
     coding: { prepare: async (_externalId, repo) => ({ ...repo, baseSha: head, headSha: head }), review: async () => ({ ...review }),
       commit: vi.fn(async () => "d".repeat(40)), push: vi.fn(async () => {}) },
     forge: { branches: async () => ({ names: ["main"], hasMore: false }), pullRequest: vi.fn(async () => ({ ...pull })),
+      reviewMainPush: vi.fn(async () => ({ baseSha: "e".repeat(40), ci: "none" as const })), pushMain: vi.fn(async () => head),
       openPullRequest: vi.fn(async () => ({ ...pull })), merge: vi.fn(async () => "merged-sha"), dispatch: vi.fn(async () => ({ runId: 99 })) },
   };
   const at = now.toISOString();
@@ -49,6 +51,58 @@ beforeEach(async () => {
 afterEach(() => vi.useRealTimers());
 
 describe("explicit coding action approvals", () => {
+  it("restores a closed Workspace for PR review without another native task or Workspace", async () => {
+    review.treeSha = review.headTreeSha;
+    await createWorkspaceUseCases(deps).close(workspace.id, owner);
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.get(workspace.id))?.status).toBe("closed");
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "pull-request", title: "Change", body: "", draft: false });
+    expect(pending.status).toBe("pending");
+    expect((await repository.get(workspace.id))?.status).toBe("active");
+    expect((await repository.get(workspace.id))?.sessionId).toBe(workspace.sessionId);
+    expect(await repository.list(owner, 20)).toHaveLength(1);
+    expect(deps.forge.openPullRequest).not.toHaveBeenCalled();
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("succeeded");
+  });
+  it("binds a direct main push to the reviewed main head and never creates a PR", async () => {
+    review.treeSha = review.headTreeSha;
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "push-main" });
+    expect(pending.review).toMatchObject({ mainHeadSha: "e".repeat(40), ci: "none" });
+    expect(deps.forge.pushMain).not.toHaveBeenCalled();
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("succeeded");
+    await api.decide(workspace.id, owner, pending.id, true);
+    expect(deps.forge.pushMain).toHaveBeenCalledExactlyOnceWith(expect.anything(), head, "e".repeat(40));
+    expect(deps.forge.openPullRequest).not.toHaveBeenCalled();
+  });
+  it("rejects main movement between review and approval", async () => {
+    review.treeSha = review.headTreeSha;
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "push-main" });
+    vi.mocked(deps.forge.reviewMainPush).mockResolvedValueOnce({ baseSha: "f".repeat(40), ci: "none" });
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("failed");
+    expect(deps.forge.pushMain).not.toHaveBeenCalled();
+  });
+  it.each([false, true])("keeps lost main mutation responses uncertain, but releases a definitive refusal (%s)", async definite => {
+    review.treeSha = review.headTreeSha;
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "push-main" });
+    vi.mocked(deps.forge.pushMain).mockRejectedValueOnce(definite ? new CodingMutationRejectedError("Branch rule rejected the push") : new Error("Response lost"));
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe(definite ? "failed" : "uncertain");
+    expect((await repository.get(workspace.id))?.activeActionId).toBe(definite ? undefined : pending.id);
+    await api.decide(workspace.id, owner, pending.id, true);
+    expect(deps.forge.pushMain).toHaveBeenCalledTimes(1);
+  });
+  it("reports absent CI honestly through approved PR merge", async () => {
+    review.treeSha = review.headTreeSha; pull.ci = "none";
+    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, pullRequest: pull, revision: workspace.revision + 1 } });
+    const api = createCodingUseCases(deps);
+    const pending = await api.request(workspace.id, owner, { kind: "merge", pullRequestNumber: pull.number, headSha: head });
+    expect(pending.review.ci).toBe("none");
+    expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("succeeded");
+    expect((await repository.get(workspace.id))?.pullRequest?.ci).toBe("none");
+  });
   it("commits, checkpoints and pushes the exact new head only after combined approval", async () => {
     const api = createCodingUseCases(deps);
     const pending = await api.request(workspace.id, owner, { kind: "commit-and-push", message: "feat: publish" });
