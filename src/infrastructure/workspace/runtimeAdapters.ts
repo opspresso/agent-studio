@@ -22,7 +22,7 @@ export function withWorkspaceModelChannel(kind: WorkspaceRuntime, config: Worksp
     const provider = channel.name === "openai" ? "openai" : "studio-workspace";
     const wireModel = model;
     model = `${provider}/${wireModel}`;
-    environment = { OPENAI_API_KEY: channel.apiKey, OPENCODE_DISABLE_MODELS_FETCH: "true", OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: {
+    environment = { OPENAI_API_KEY: channel.apiKey, OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: {
       [provider]: {
         // The built-in openai loader always calls Responses. A separate provider keeps compatible channels on chat/completions.
         ...(provider === "openai" ? {} : { npm: "@ai-sdk/openai-compatible" }),

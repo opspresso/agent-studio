@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { gzipSync } from "node:zlib";
+import { withWorkspaceModelChannel } from "@/infrastructure/workspace/runtimeAdapters";
 import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
 
 /** Disposable, network-isolated containers; never uses host credentials or a host volume. */
@@ -23,6 +24,12 @@ async function main() {
         assert.match(version.stdout, /\d+\.\d+/);
       }
     }
+    const runtime = withWorkspaceModelChannel("opencode", { model: "provider/test-model" }, { name: "selfhosted", baseUrl: "http://127.0.0.1:19090/v1", apiKey: "test-only-key" });
+    const admission = await provider.execute(id, { argv: ["node", "-e", 'console.log(JSON.stringify({ disabled: process.env.OPENCODE_DISABLE_MODELS_FETCH, sdk: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT).provider["studio-workspace"].npm }))'],
+      environment: runtime.environment, timeoutMs: 10_000 });
+    assert.equal(admission.exitCode, 0, "runtime channel environment must pass the actual Sandbox command boundary");
+    assert.deepEqual(JSON.parse(admission.stdout), { disabled: "true", sdk: "@ai-sdk/openai-compatible" });
+    await assert.rejects(provider.execute(id, { argv: ["true"], environment: { GITHUB_TOKEN: "test-only-key" }, timeoutMs: 10_000 }), /Unsupported runtime environment/);
     assert.equal((await run(id, "id -u")).stdout.trim(), "1000");
     assert.equal((await run(id, 'test -d "$CODEX_HOME" && test -w "$CODEX_HOME"')).exitCode, 0, "native runtime home exists before the first task");
     assert.equal((await run(id, "printf '#!/bin/sh\\nprintf executable' > executable.sh; chmod +x executable.sh; ./executable.sh")).stdout, "executable", "workspace package binaries must execute");

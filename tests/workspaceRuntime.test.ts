@@ -14,7 +14,7 @@ describe("native workspace runtime adapters", () => {
   it("routes non-OpenAI OpenCode channels through the bundled compatible SDK and preserves qualified model IDs", () => {
     const selected = withWorkspaceModelChannel("opencode", { model: "openai/gpt-test" }, { name: "openrouter", baseUrl: "https://router.example/v1", apiKey: "test-key" });
     expect(selected.model).toBe("studio-workspace/openai/gpt-test");
-    expect(selected.environment!.OPENCODE_DISABLE_MODELS_FETCH).toBe("true");
+    expect(selected.environment).not.toHaveProperty("OPENCODE_DISABLE_MODELS_FETCH");
     const configuration = JSON.parse(selected.environment!.OPENCODE_CONFIG_CONTENT!);
     expect(configuration.provider.openai).toBeUndefined();
     expect(configuration.provider["studio-workspace"]).toEqual({ npm: "@ai-sdk/openai-compatible", options: { baseURL: "https://router.example/v1", apiKey: "{env:OPENAI_API_KEY}" }, models: { "openai/gpt-test": { name: "openai/gpt-test" } } });
