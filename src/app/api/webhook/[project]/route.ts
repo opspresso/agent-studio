@@ -45,7 +45,13 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   const admitted = await admitDelivery(
     triggerRunnerDeps,
     project,
-    request.headers.get("x-trigger-secret"),
+    // GitHub does not send X-Trigger-Secret. Its Secret field produces a body
+    // signature. Presence of GitHub headers selects that scheme without a
+    // fallback to a generic secret when a signature is invalid or missing.
+    ["x-hub-signature-256", "x-hub-signature", "x-github-delivery", "x-github-event"].some(name => request.headers.has(name))
+      ? { kind: "github", signature: request.headers.get("x-hub-signature-256"), body,
+        deliveryId: request.headers.get("x-github-delivery"), event: request.headers.get("x-github-event") }
+      : request.headers.get("x-trigger-secret"),
     request.headers.get("idempotency-key"),
   );
 
@@ -53,7 +59,11 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     case "unauthorized":
       // The shared shape — a webhook caller reads a 401 the same way a session
       // or token caller does.
-      return unauthorized();
+      return unauthorized('Webhook realm="project", headers="X-Trigger-Secret or X-Hub-Signature-256"');
+    case "invalid-delivery":
+      return Response.json({ error: "GitHub deliveries require a valid X-GitHub-Delivery and X-GitHub-Event" }, { status: 400 });
+    case "ping":
+      return Response.json({ ok: true, status: "ping" }, { status: 202 });
     case "not-configured":
       // Deliberately the same answer a wrong secret would get for a project that
       // does have a webhook would not be — but a project with no webhook at all

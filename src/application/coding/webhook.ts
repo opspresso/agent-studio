@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { WorkspaceRepository } from "@/domain/workspace/repository";
 import type { CodingForge } from "@/domain/coding/forge";
 import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
+import { isGitHubDeliveryId } from "@/shared/githubWebhook";
 
 function field(value: unknown, ...path: string[]): unknown {
   let current = value;
@@ -14,7 +15,7 @@ function field(value: unknown, ...path: string[]): unknown {
 
 /** Signed deliveries refresh authoritative PR state only; webhook content never starts a task or approves an effect. */
 export async function handleCodingWebhook(repository: WorkspaceRepository, forge: CodingForge, deliveryId: string, raw: string): Promise<{ processed: boolean }> {
-  if (!/^[a-zA-Z0-9_-]{8,160}$/.test(deliveryId)) throw new ValidationError("Invalid GitHub delivery id");
+  if (!isGitHubDeliveryId(deliveryId)) throw new ValidationError("Invalid GitHub delivery id");
   let payload: unknown;
   try { payload = JSON.parse(raw); } catch { throw new ValidationError("Invalid GitHub webhook JSON"); }
   const branch = field(payload, "pull_request", "head", "ref") ?? field(payload, "workflow_run", "head_branch") ??

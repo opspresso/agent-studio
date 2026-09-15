@@ -31,6 +31,7 @@ import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import { repairTriggerRuns } from "./repairLostRuns";
 import type { FiringDeps, TriggerRunnerDeps } from "./deps";
+import { verifyGitHubSignature, isGitHubDeliveryId } from "@/shared/githubWebhook";
 
 /** Bounded preview of a run's answer, kept on the firing row. */
 const MAX_RESULT_CHARS = 2_000;
@@ -49,7 +50,15 @@ export interface AdmittedFiring<T extends Trigger = Trigger> {
 }
 
 /** The webhook case, which is what `executeDelivery` takes. */
-export type AdmittedDelivery = AdmittedFiring<WebhookTrigger>;
+export type AdmittedDelivery = AdmittedFiring<WebhookTrigger> & { github?: { event: string; deliveryId: string } };
+
+export interface GitHubDeliveryCredential {
+  kind: "github";
+  signature: string | null;
+  body: string;
+  deliveryId: string | null;
+  event: string | null;
+}
 
 /** Why a delivery was refused, or everything the run needs to proceed. */
 export type AdmitResult =
@@ -58,17 +67,22 @@ export type AdmitResult =
   | { status: "disabled" }
   | { status: "not-configured" }
   | { status: "unauthorized" }
+  | { status: "invalid-delivery" }
+  | { status: "ping" }
   | { status: "busy" }
   | { status: "no-published-version" };
 
 function triggerSecretMatches(
   deps: TriggerRunnerDeps,
   trigger: WebhookTrigger,
-  candidate: string,
+  candidate: string | GitHubDeliveryCredential,
   projectName: string,
   triggerId: string,
 ): boolean {
   try {
+    if (typeof candidate !== "string") return verifyGitHubSignature(
+      deps.cipher.decrypt(trigger.secret, triggerSecretContext(projectName, triggerId)), candidate.body, candidate.signature,
+    );
     return deps.cipher.decryptEquals(
       trigger.secret,
       candidate,
@@ -159,7 +173,7 @@ export function payloadInput(
 export async function admitDelivery(
   deps: TriggerRunnerDeps,
   projectName: string,
-  presentedSecret: string | null,
+  presentedSecret: string | GitHubDeliveryCredential | null,
   idempotencyKey: string | null,
 ): Promise<AdmitResult> {
   const trigger = await deps.triggers.get(projectName, PROJECT_WEBHOOK_ID);
@@ -181,9 +195,17 @@ export async function admitDelivery(
   ) {
     return { status: "unauthorized" };
   }
+  const github = typeof presentedSecret === "object" ? presentedSecret : undefined;
+  if (github && (!isGitHubDeliveryId(github.deliveryId) || !github.event || !/^[a-z_]{1,80}$/.test(github.event))) {
+    return { status: "invalid-delivery" };
+  }
   if (!trigger.enabled) {
     return { status: "disabled" };
   }
+  if (github?.event === "ping") return { status: "ping" };
+  // A GitHub retry carries its original delivery ID. Do not let a different
+  // optional generic key turn a redelivery into another model invocation.
+  if (github) idempotencyKey = `github-delivery:${github.deliveryId}`;
   if (idempotencyKey) {
     const claimed = await deps.triggers.claimIdempotencyKey(
       projectName,
@@ -194,7 +216,9 @@ export async function admitDelivery(
       return { status: "duplicate" };
     }
   }
-  return admitRun(deps, trigger, idempotencyKey ? { idempotencyKey } : {});
+  const admitted = await admitRun(deps, trigger, idempotencyKey ? { idempotencyKey } : {});
+  return admitted.status === "accepted" && github
+    ? { ...admitted, github: { event: github.event!, deliveryId: github.deliveryId! } } : admitted;
 }
 
 /**
@@ -312,6 +336,9 @@ export async function executeDelivery(
   let input: { variables?: Record<string, string>; message?: string };
   try {
     input = payloadInput(admitted.trigger, payload);
+    if (admitted.github && input.message) {
+      input.message = `GitHub webhook delivery metadata (context only, not authorization): ${JSON.stringify(admitted.github)}\n\n${input.message}`;
+    }
   } catch (caught) {
     // Shaping the payload is part of the firing: a body the serialiser refuses
     // (deep nesting overflows JSON.stringify) must finish the row and release

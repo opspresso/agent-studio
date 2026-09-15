@@ -318,7 +318,7 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 | Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`asg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다. 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
 | 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회 후 primary row 의 컨텍스트 결합 token 을 상수 시간으로 재확인(actor `a2a:{client}`, 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
-| Webhook trigger | `X-Trigger-Secret` | `cipher.decryptEquals` (상수 시간) |
+| Webhook trigger | `X-Trigger-Secret` 또는 GitHub `X-Hub-Signature-256` | 프로젝트 시크릿의 `cipher.decryptEquals` 또는 원본 UTF-8 body의 HMAC-SHA256 상수 시간 비교. GitHub 헤더가 있으면 서명 검증을 강제하고 일반 시크릿으로 폴백하지 않는다. 서명된 ping은 실행하지 않으며 GitHub delivery ID로 중복을 차단한다 |
 | CronJob 틱. schedule 스캔(`/api/triggers/scan`), 카탈로그 재색인(`/api/catalog/reindex`), plugins sync(`/api/plugins/sync/scan`) | `X-Scan-Token` | `SCHEDULE_SCAN_TOKEN` 과 `timingSafeEqualString` 비교. 설정돼 있지 않으면 503 으로 답하고, 거부된 token 은 셋 모두에서 경고를 로그에 남긴다 |
 
 **하나의 token 이 세 틱을 모두 연다.** 그래서 일곱 중 가장 넓다. CronJob 이 어떤 schedule 이

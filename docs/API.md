@@ -183,7 +183,7 @@ admin 목록에 속함(목록이 비면 모든 세션 사용자). `owner` = 그 
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
 | `/api/telegram/webhook/{project}` | `POST` | `X-Telegram-Bot-Api-Secret-Token` |
 | `/api/teams/messages/{project}` | `POST` | Bot Framework bearer 토큰 |
-| `/api/webhook/{project}` | `POST` | `X-Trigger-Secret` |
+| `/api/webhook/{project}` | `POST` | `X-Trigger-Secret` 또는 GitHub `X-Hub-Signature-256` |
 | `/api/objects/{...key}` | `GET` | 주소의 서명 토큰 (`exp`, `sig`). 세션 없음 |
 | `/api/triggers/scan` | `POST` | `X-Scan-Token` |
 | `/api/catalog/reindex` | `POST` | `X-Scan-Token` |
@@ -1432,8 +1432,17 @@ POST /api/webhook/{project}
   { "any": "json payload" }
 → 202 { ok: true, status: "accepted", runId }
 → 202 { ok: true, status: "duplicate" | "disabled" | "busy" | "no-published-version" }
-→ 401 (wrong or missing secret) | 404 (no webhook on this project) | 400 (bad JSON) | 413 (>1MB)
+→ 401 (wrong or missing secret/signature) | 404 (no webhook on this project) | 400 (bad JSON or GitHub metadata) | 413 (>1MB)
 ```
+
+GitHub도 같은 URL을 사용한다. GitHub Webhook의 Content type은 `application/json`, Secret은
+이 프로젝트가 발급한 Webhook 시크릿으로 설정한다. `X-Hub-Signature-256`의 HMAC-SHA256을
+원본 UTF-8 body로 검증하며, 직접 `X-Trigger-Secret` 헤더를 추가할 필요가 없다. GitHub 헤더가
+있으면 서명 방식을 선택하고 누락·잘못된 서명에서 일반 시크릿 방식으로 폴백하지 않는다.
+`X-GitHub-Delivery`와 `X-GitHub-Event`를 요구하며 delivery ID를 중복 방지 키로 쓴다.
+서명된 `ping`은 `202 {ok:true,status:"ping"}`으로 연결만 확인하고 모델을 실행하지 않는다.
+이 인증은 원래의 webhook actor를 유지하며 사용자 OAuth·Workspace 실행 권한을 부여하지 않는다.
+Workspace PR 메타데이터 전용 `/api/workspaces/github/webhook`과는 목적과 시크릿이 다르다.
 
 이것이 **유일한** 전달 주소다. `admitDelivery` 는 project 이름 자체에서 그 행을 해석하고 trigger
 id 를 받지 않으므로, 바깥의 무엇도 전달이 어느 webhook 에 떨어질지 지목할 수 없다.

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHmac } from "node:crypto";
 import {
   admitDelivery,
   executeDelivery,
@@ -194,6 +195,44 @@ describe("payloadInput", () => {
 });
 
 describe("admitDelivery", () => {
+  const signed = (overrides: Partial<import("@/application/trigger/runTrigger").GitHubDeliveryCredential> = {}) => {
+    const body = '{ "action": "opened", "issue": {"title":"박쥐 🦇"} }\n';
+    return { kind: "github" as const, body, signature: `sha256=${createHmac("sha256", SECRET).update(body).digest("hex")}`,
+      deliveryId: "87258b0a-b0c4-11f1-9543-0a7acefe4b6c", event: "issues", ...overrides };
+  };
+  it("accepts GitHub signatures without a plaintext secret and deduplicates GitHub redeliveries", async () => {
+    const f = fixture();
+    const delivery = signed();
+    const first = await admitDelivery(f.deps, "p", delivery, "generic-key-1");
+    expect(first.status).toBe("accepted");
+    expect(f.rows[0]?.idempotencyKey).toBe(`github-delivery:${delivery.deliveryId}`);
+    expect((await admitDelivery(f.deps, "p", delivery, "generic-key-2")).status).toBe("duplicate");
+    expect(f.rows).toHaveLength(1);
+    if (first.status === "accepted") await executeDelivery(f.deps, first, JSON.parse(delivery.body));
+    expect(f.runs[0]).toMatchObject({ actorKind: "webhook", message: expect.stringContaining('"event":"issues"') });
+    expect(f.runs[0]?.message).not.toContain(SECRET);
+    expect(f.runs[0]?.message).not.toContain(delivery.signature);
+  });
+  it.each([null, "sha256=" + "a".repeat(64)])("rejects invalid signatures before claims or disabled state", async signature => {
+    const f = fixture({ stored: trigger({ enabled: false }) });
+    expect((await admitDelivery(f.deps, "p", signed({ signature }), null)).status).toBe("unauthorized");
+    expect(f.claimed.size).toBe(0);
+    expect(f.rows).toHaveLength(0);
+  });
+  it("rejects tampering and signatures scoped to another project", async () => {
+    const f = fixture();
+    expect((await admitDelivery(f.deps, "p", signed({ body: '{}' }), null)).status).toBe("unauthorized");
+    expect((await admitDelivery(f.deps, "another-project", signed(), null)).status).toBe("unauthorized");
+    expect(f.claimed.size).toBe(0);
+  });
+  it("authenticates ping without starting a model and validates delivery metadata", async () => {
+    const f = fixture();
+    expect((await admitDelivery(f.deps, "p", signed({ event: "ping" }), null)).status).toBe("ping");
+    expect((await admitDelivery(f.deps, "p", signed({ deliveryId: null }), null)).status).toBe("invalid-delivery");
+    expect((await admitDelivery(f.deps, "p", signed({ event: null }), null)).status).toBe("invalid-delivery");
+    expect(f.claimed.size).toBe(0);
+    expect(f.rows).toHaveLength(0);
+  });
   it("refuses a wrong secret", async () => {
     const f = fixture();
     const result = await admitDelivery(f.deps, "p", "wrong", null);

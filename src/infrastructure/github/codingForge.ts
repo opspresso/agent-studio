@@ -1,4 +1,4 @@
-import { createHmac, sign } from "node:crypto";
+import { sign } from "node:crypto";
 import type { CodingForge } from "@/domain/coding/forge";
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
 import { codingCiAllowsPublication, CodingMutationRejectedError, CodingRepositoryNotReadyError } from "@/domain/coding/types";
@@ -9,7 +9,7 @@ import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { fetchSameOrigin } from "@/infrastructure/net/redirectPolicy";
 import { resolvePublicUrl } from "@/infrastructure/net/ssrfGuard";
 import { readBodyText } from "@/shared/httpBody";
-import { timingSafeEqualString } from "@/shared/timingSafe";
+import { verifyGitHubSignature } from "@/shared/githubWebhook";
 import { githubHeaders, GITHUB_TIMEOUT_MS } from "./client";
 
 export interface CodingGitHubConfig {
@@ -212,7 +212,6 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       if (config.getToken) throw new Error("Account credentials cannot be issued to a Sandbox");
       return token(repository, { contents: access });
     },
-    verifyWebhook: (body, signature) => !!config.webhookSecret && !!signature && timingSafeEqualString(signature,
-      `sha256=${createHmac("sha256", config.webhookSecret).update(body).digest("hex")}`),
+    verifyWebhook: (body, signature) => verifyGitHubSignature(config.webhookSecret, body, signature),
   };
 }

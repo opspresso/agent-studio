@@ -143,6 +143,7 @@ export function WebhookSection({ projectName }: { projectName: string }) {
         {webhook && (
           <>
             <CopyableUrl url={url} />
+            <Text fz="sm" c="dimmed">{t("webhook.githubHint")}</Text>
             {revealed ? (
               <Alert color="yellow" variant="light" p="sm">
                 <Group gap="xs" wrap="nowrap">
@@ -153,8 +154,7 @@ export function WebhookSection({ projectName }: { projectName: string }) {
                   </Button>
                 </Group>
                 <Text fz="xs" mt={4}>
-                  Send it as <Code>X-Trigger-Secret</Code>. Anyone holding it can start this
-                  project&apos;s published version.
+                  {t("webhook.secretHint")}
                 </Text>
               </Alert>
             ) : (

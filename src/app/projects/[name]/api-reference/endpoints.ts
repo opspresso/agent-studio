@@ -21,7 +21,7 @@ export type AuthKind =
 export const AUTH_LABEL: Record<AuthKind, string> = {
   token: "Bearer token",
   "a2a-key": "X-A2A-Key header",
-  "trigger-secret": "X-Trigger-Secret header",
+  "trigger-secret": "X-Trigger-Secret or GitHub X-Hub-Signature-256",
   "slack-signature": "Slack signature",
   "telegram-secret": "Telegram secret token",
   "teams-token": "Bot Framework token",
@@ -526,9 +526,9 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: webhookPath,
       title: "Project webhook",
       description:
-        "Starts a run of the published version from outside. The secret goes in X-Trigger-Secret; the JSON body (up to 1MB) becomes the run's input — serialised into the user message, or turned into template variables when the webhook's payload mode says so. " +
+        "Starts a run of the published version from outside. Generic senders use X-Trigger-Secret. GitHub uses the same secret in its Secret setting to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message, or turned into template variables when the webhook's payload mode says so. " +
         "It answers 202 immediately and runs in the background, because a run can take minutes and no sender waits that long: the answer lands on the delivery's history row under Settings → Webhook, not in this response. " +
-        "Send an Idempotency-Key header to make a redelivery safe — a repeat within 24 hours is acknowledged as duplicate without running.",
+        "Generic senders use Idempotency-Key; GitHub redeliveries are deduplicated by X-GitHub-Delivery for 24 hours. Signed GitHub ping deliveries return status=ping without starting a run.",
       auth: "trigger-secret",
       streaming: false,
       responseFields: [
@@ -537,7 +537,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           name: "status",
           type: "string",
           description:
-            '"accepted" when a run started; "disabled", "duplicate", "busy" (a run from this webhook was still going and overlap is off) or "no-published-version" when it deliberately did not. All four are 202: the delivery was fine, the run is what did not happen.',
+            '"accepted" when a run started; "disabled", "duplicate", "busy" (overlap is off), "no-published-version" or "ping" when no run starts. These acknowledgements return 202.',
         },
         {
           name: "runId",

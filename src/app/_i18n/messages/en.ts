@@ -601,7 +601,7 @@ export const en = {
     "A2A exposes published public projects to compatible agents; administrators configure shared or named client keys in Settings, and callers use X-A2A-Key. Check the Agent Card URL in Integrations. AG-UI runs a published project inside your own interface using the project token. Copy its client example from Integrations and let your application manage the message thread and render protocol events.",
   "guide.integrations.webhook": "Receive a webhook",
   "guide.integrations.webhookBody":
-    "In project Settings, configure and enable the webhook, copy its URL, and send the secret in X-Trigger-Secret. Choose message payload mode for an agent message or variables mode for template fields. HTTP 202 acknowledges delivery, not a finished answer; inspect the trigger's run history for success, output, skips, or failures. Concurrent deliveries are skipped unless allowed.",
+    "In project Settings, configure and enable the webhook, copy its URL, and send the secret in X-Trigger-Secret. For GitHub, choose application/json and enter the same value in its Secret field; GitHub signs the body with X-Hub-Signature-256. Choose message payload mode for an agent message or variables mode for template fields. HTTP 202 acknowledges delivery, not a finished answer; inspect the trigger's run history for success, output, skips, or failures. Concurrent deliveries are skipped unless allowed.",
   "guide.integrations.schedule": "Schedule a recurring task",
   "guide.integrations.scheduleBody":
     "In project Settings, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message or variables to run. Select any delivery destinations and enable it. Schedules use the published version and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
@@ -1269,8 +1269,10 @@ export const en = {
   // The project webhook and schedules — the two ways something outside the
   // console starts a run.
   "webhook.section": "Webhook",
+  "webhook.githubHint": "GitHub: use this URL as the Payload URL, choose application/json, and enter this project’s webhook secret in GitHub’s Secret field. GitHub sends X-Hub-Signature-256; no custom header is needed. Select only the events this project should handle. Signed ping deliveries verify the connection without running the agent.",
+  "webhook.secretHint": "Generic senders use X-Trigger-Secret. GitHub uses this same value in its Secret field to sign deliveries. Anyone holding it can start this project’s published version.",
   "webhook.intro":
-    "One address per project, off until you turn it on. An outside system starts a run by posting JSON to it with the secret in the X-Trigger-Secret header; the delivery is acknowledged immediately and its outcome lands in the history below. The webhook always runs the project's published version.",
+    "One address per project, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome lands in the history below. The webhook always runs the project's published version.",
   "schedule.section": "Schedules",
   "schedule.intro":
     "A cron expression in a timezone, fired without anyone asking. Schedules always run the project's published version, and their outcomes show up under each one.",

@@ -161,6 +161,7 @@
 | Native 코딩 턴에 전달하는 Workspace Git 승인 경계 지침 | `src/application/workspace/taskInput.ts` |
 | Workspace admission과 중복 요청의 동일성 | `src/application/workspace/workspaceUseCases.ts`; revision·receipt·이벤트의 원자적 쓰기는 `src/infrastructure/db/repositories/workspaceRepository.ts` |
 | 원래 Chat의 프로젝트별 Workspace 선택과 동시 생성 차단 | `Chat.linkedWorkspaces`; `workspaceUseCases.startForChat`과 `workspaceRepository`의 source Chat transaction |
+| GitHub Webhook HMAC-SHA256 서명과 delivery ID 형식 | `src/shared/githubWebhook.ts`; 프로젝트 Trigger와 Workspace 메타데이터 Webhook은 각자 시크릿을 해석하고 같은 검증을 사용한다 |
 | Workspace 승인 결과의 원래 Chat 전달과 단일 후속 실행 | `CodingApproval.sourceChatId`, `domain/workspace/continuation.ts`; `workspaceRepository`의 원자적 알림과 `application/chat/workspaceContinuation.ts` 소비자 |
 | Workspace 명령과 검사에 공통인 셸 실패 처리 | `src/shared/workspaceShell.ts` |
 | Workspace 체크포인트의 저장 상한과 암호화 주소 | `src/domain/workspace/limits.ts`, `src/domain/security/secretContext.ts`; 청크·manifest 저장과 무결성 검사는 `src/infrastructure/db/repositories/workspaceCheckpointStore.ts` |

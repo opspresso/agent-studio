@@ -556,7 +556,7 @@ export const ko: Messages = {
     "A2A는 배포된 public 프로젝트를 호환 에이전트에 제공한다. 관리자가 Settings에서 공용 키나 이름 있는 클라이언트 키를 설정하며 호출자는 X-A2A-Key를 사용한다. Integrations에서 Agent Card URL을 확인한다. AG-UI는 프로젝트 토큰으로 배포된 프로젝트를 자체 화면에서 실행한다. Integrations의 클라이언트 예제를 사용하고 자체 앱에서 대화 이력과 프로토콜 이벤트 표시를 관리한다.",
   "guide.integrations.webhook": "웹훅으로 실행하기",
   "guide.integrations.webhookBody":
-    "프로젝트 Settings에서 webhook을 설정·활성화하고 URL을 복사한 뒤 X-Trigger-Secret 헤더로 비밀값을 보낸다. agent 메시지에는 message 모드, 템플릿 필드에는 variables 모드를 선택한다. HTTP 202는 전달 접수이며 답변 완료가 아니다. 트리거 실행 이력에서 성공·결과·건너뜀·실패를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
+    "프로젝트 Settings에서 webhook을 설정·활성화하고 URL을 복사한 뒤 X-Trigger-Secret 헤더로 비밀값을 보낸다. GitHub에서는 application/json을 선택하고 같은 값을 Secret에 입력하면 X-Hub-Signature-256으로 서명한다. agent 메시지에는 message 모드, 템플릿 필드에는 variables 모드를 선택한다. HTTP 202는 전달 접수이며 답변 완료가 아니다. 트리거 실행 이력에서 성공·결과·건너뜀·실패를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
   "guide.integrations.schedule": "반복 작업 예약하기",
   "guide.integrations.scheduleBody":
     "프로젝트 Settings에서 다섯 필드 cron 식, Asia/Seoul 같은 IANA 시간대, 실행할 메시지나 변수를 지정해 스케줄을 추가한다. 필요하면 전송 목적지를 선택하고 활성화한다. 스케줄은 배포 버전을 사용하며 배포 환경의 외부 티커가 필요하다. 답변 생성은 성공해도 봇 전송이 실패할 수 있으므로 실행 상태와 전달 결과를 함께 확인한다.",
@@ -1177,8 +1177,10 @@ export const ko: Messages = {
   "pset.teamsEnable": "이 endpoint 에서 메시지 처리 활성화",
 
   "webhook.section": "Webhook",
+  "webhook.githubHint": "GitHub에서는 이 주소를 Payload URL로, Content type을 application/json으로 설정하고 프로젝트 Webhook 시크릿을 Secret에 입력합니다. GitHub가 X-Hub-Signature-256 서명을 보내므로 별도 헤더는 필요 없습니다. 처리할 이벤트만 선택하세요. 서명된 ping은 에이전트를 실행하지 않고 연결만 확인합니다.",
+  "webhook.secretHint": "일반 발신자는 X-Trigger-Secret 헤더로 전송합니다. GitHub에서는 같은 값을 Secret에 입력해 전달에 서명합니다. 이 값을 가진 쪽은 프로젝트의 published 버전을 실행할 수 있습니다.",
   "webhook.intro":
-    "프로젝트마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 헤더에 시크릿을 담아 JSON 을 POST 해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 아래 이력에 남습니다. Webhook 은 항상 프로젝트의 published 버전을 실행합니다.",
+    "프로젝트마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 아래 이력에 남습니다. Webhook 은 항상 프로젝트의 published 버전을 실행합니다.",
   "schedule.section": "스케줄",
   "schedule.intro":
     "타임존과 함께 지정한 cron 식으로 스스로 발화합니다. 스케줄도 항상 프로젝트의 published 버전을 실행하며, 결과는 각 스케줄 아래에 표시됩니다.",
