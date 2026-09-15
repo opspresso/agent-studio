@@ -84,6 +84,14 @@ describe("explicit coding action approvals", () => {
     expect((await api.decide(workspace.id, owner, pending.id, true)).status).toBe("failed");
     expect(deps.forge.pushMain).not.toHaveBeenCalled();
   });
+  it("exposes a refused main review as an actionable conflict and releases its lease", async () => {
+    review.treeSha = review.headTreeSha;
+    vi.mocked(deps.forge.reviewMainPush).mockRejectedValueOnce(new CodingMutationRejectedError("Main has diverged; use a pull request"));
+    await expect(createCodingUseCases(deps).request(workspace.id, owner, { kind: "push-main" })).rejects.toMatchObject({ status: 409, message: "Main has diverged; use a pull request" });
+    expect((await repository.get(workspace.id))?.activeActionId).toBeUndefined();
+    expect((await repository.get(workspace.id))?.leaseToken).toBeUndefined();
+    expect(deps.forge.pushMain).not.toHaveBeenCalled();
+  });
   it.each([false, true])("keeps lost main mutation responses uncertain, but releases a definitive refusal (%s)", async definite => {
     review.treeSha = review.headTreeSha;
     const api = createCodingUseCases(deps);

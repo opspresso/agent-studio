@@ -123,7 +123,11 @@ export function createCodingUseCases(deps: CodingDeps) {
             ...(main ? { mainHeadSha: main.baseSha, ci: main.ci } : pullRequest ? { ci: pullRequest.ci } : {}) } };
         await release(deps, state, approval, true, pullRequest ? { pullRequest } : {});
         return approval;
-      } catch (error) { await release(deps, state); throw error; }
+      } catch (error) {
+        await release(deps, state);
+        if (error instanceof CodingMutationRejectedError) throw new ConflictError(error.message);
+        throw error;
+      }
     },
 
     async decide(id: string, ownerEmail: string, approvalId: string, approve: boolean): Promise<CodingApproval> {
