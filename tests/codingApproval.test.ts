@@ -31,6 +31,7 @@ beforeEach(async () => {
   review = { headSha: head, treeSha: "b".repeat(40), headTreeSha: "c".repeat(40), fingerprint: "full-tree-fingerprint", diff: "+change", truncated: false };
   pull = { number: 7, url: "https://example.test/company/repo/pull/7", headSha: head, baseBranch: "main", draft: false, state: "open", ci: "passed" };
   deps = { repository, chats, projects, now: () => now, newId: () => `id-${++id}`, idleTtlSeconds: 60, runTimeoutMs: 60_000,
+    checkRepository: vi.fn(async () => {}),
     policy: () => ({ projectName: "demo", repository: "company/repo", runtimes: ["codex"], checks: [], deploymentWorkflows: ["deploy.yml"] }),
     runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(); }, sleep: async () => {},
     provider: { kind: "fake", ensure: async () => ({ externalId: "sandbox-1" }), inspect: async () => "ready",
@@ -39,7 +40,7 @@ beforeEach(async () => {
     checkpoints: { put: vi.fn(async () => {}), get: async () => new Uint8Array([1]), delete: async () => {} },
     coding: { prepare: async (_externalId, repo) => ({ ...repo, baseSha: head, headSha: head }), review: async () => ({ ...review }),
       commit: vi.fn(async () => "d".repeat(40)), push: vi.fn(async () => {}) },
-    forge: { branches: async () => ({ names: ["main"], hasMore: false }), pullRequest: vi.fn(async () => ({ ...pull })),
+    forge: { checkRepository: async () => {}, branches: async () => ({ names: ["main"], hasMore: false }), pullRequest: vi.fn(async () => ({ ...pull })),
       reviewMainPush: vi.fn(async () => ({ baseSha: "e".repeat(40), ci: "none" as const })), pushMain: vi.fn(async () => head),
       openPullRequest: vi.fn(async () => ({ ...pull })), merge: vi.fn(async () => "merged-sha"), dispatch: vi.fn(async () => ({ runId: 99 })) },
   };

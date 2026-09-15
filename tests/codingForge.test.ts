@@ -18,11 +18,15 @@ let mainSha: string;
 let branchSha: string;
 let comparison: string;
 let refusal: number;
+let branchNames: string[];
+let repositoryStatus: number;
+let branchStatus: number;
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now);
   requests = []; existing = false; dispatchCount = 0;
   mainSha = "e".repeat(40); branchSha = sha; comparison = "ahead"; refusal = 0;
+  branchNames = ["main", "feature/change"]; repositoryStatus = 200; branchStatus = 200;
   checks = [{ status: "completed", conclusion: "success" }];
   pull = { number: 7, node_id: "PR_node", html_url: "http://localhost:9009/company/repo/pull/7", draft: false, state: "open",
     head: { sha, ref: repository.branch, repo: { full_name: repository.repository } },
@@ -34,7 +38,8 @@ beforeEach(() => {
     if (request.url.includes("/compare/")) return Response.json({ status: comparison });
     if (request.url.includes("/git/refs/heads/main")) return refusal ? new Response("refused", { status: refusal }) : Response.json({ object: { sha: request.body.sha } });
     if (request.url.endsWith("/access_tokens")) return Response.json({ token: "short-lived-test-token", expires_at: "2026-09-14T01:00:00Z" });
-    if (request.url.includes("/branches?")) return Response.json([{ name: "main" }, { name: "feature/change" }]);
+    if (request.url.includes("/branches?")) return Response.json(branchNames.map(name => ({ name })), { status: repositoryStatus });
+    if (request.url.includes("/branches/")) return Response.json({}, { status: branchStatus });
     if (request.url.includes("/check-runs?")) return Response.json({ total_count: checks.length, check_runs: checks });
     if (request.url.includes("/status?")) return Response.json({ total_count: 0, state: "pending" });
     if (request.url.includes("/pulls?")) return Response.json(existing ? [pull] : []);
@@ -51,6 +56,26 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("coding GitHub App adapter", () => {
+  it.each([401, 403, 404])("reports unavailable repository access before clone (%s)", async status => {
+    repositoryStatus = status;
+    await expect(createCodingGitHub(config, () => now).forge.checkRepository(repository.repository, "main"))
+      .rejects.toMatchObject({ reason: "unavailable", message: expect.stringContaining(`HTTP ${status}`) });
+    expect(requests.filter(row => !row.url.endsWith("/access_tokens")).every(row => row.method === "GET")).toBe(true);
+  });
+  it("distinguishes an empty repository from a missing branch and accepts a ready branch", async () => {
+    const forge = createCodingGitHub(config, () => now).forge;
+    branchNames = [];
+    await expect(forge.checkRepository(repository.repository, "main")).rejects.toMatchObject({ reason: "empty" });
+    branchNames = ["develop"]; branchStatus = 404;
+    await expect(forge.checkRepository(repository.repository, "main")).rejects.toMatchObject({ reason: "branch-missing" });
+    branchStatus = 200;
+    await expect(forge.checkRepository(repository.repository, "main")).resolves.toBeUndefined();
+  });
+  it("does not call a transport failure a missing repository", async () => {
+    repositoryStatus = 503;
+    await expect(createCodingGitHub(config, () => now).forge.checkRepository(repository.repository, "main"))
+      .rejects.toMatchObject({ status: 503 });
+  });
   it("uses account credentials only on the server and never issues them to a Sandbox", async () => {
     const getToken = vi.fn(async () => "server-only-account-token");
     const github = createCodingGitHub({ apiUrl: config.apiUrl, webUrl: config.webUrl, internalHosts: config.internalHosts, getToken }, () => now);

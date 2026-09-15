@@ -350,7 +350,7 @@ export class ToolManager {
     const missing = allowed.filter((name) => !discovered.some((tool) => tool.name === name));
     if (missing.length > 0) {
       this._warnings.push(
-        `MCP server '${server.name}' no longer offers ${missing.map((name) => `'${name}'`).join(", ")}; that selection was skipped.`,
+        `MCP server '${server.name}' no longer offers ${missing.map((name) => `'${name}'`).join(", ")}; those tools were skipped. Other selected tools remain available. Check the server's toolset configuration.`,
       );
     }
     return offered;

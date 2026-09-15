@@ -5,7 +5,7 @@ import type { CodingForge } from "@/domain/coding/forge";
 import type { CodingWorktree, WorktreeReview } from "@/domain/coding/worktree";
 import type { Workspace } from "@/domain/workspace/types";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
-import { ownedWorkspace, workspacePolicy, workspaceView } from "@/application/workspace/workspaceUseCases";
+import { ownedWorkspace, workspacePolicy, workspaceView, checkWorkspaceRepository } from "@/application/workspace/workspaceUseCases";
 import { ensureWorkspaceSandbox, saveWorkspaceCheckpoint, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { WorkspaceWorkerState, WORKSPACE_LEASE_MS } from "@/application/workspace/workerState";
 import { boundedWorkspaceText } from "@/application/workspace/output";
@@ -109,6 +109,7 @@ export function createCodingUseCases(deps: CodingDeps) {
       }
       const state = await reserve(deps, id, ownerEmail, undefined, false, name);
       try {
+        await checkWorkspaceRepository(deps, name, baseBranch);
         const sandbox = await ensureWorkspaceSandbox(deps, state);
         const { workspace } = await state.read();
         if (workspace.status !== "active" || workspace.deleteRequestedAt) throw new ConflictError("Workspace closed before repository attachment");

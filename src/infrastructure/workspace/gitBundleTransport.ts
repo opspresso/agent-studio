@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { isGitBranch } from "@/domain/workspace/policy";
+import { serverGitFailure } from "./gitFailure";
 
 export interface GitBundleRemote { url: string; resolve?: string }
 
@@ -27,18 +28,24 @@ export function createGitBundleTransport(getToken: () => Promise<string>) {
     return new Promise((resolve, reject) => {
       const child = spawn("git", args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
       const chunks: Buffer[] = [];
+      const diagnostics: Buffer[] = [];
+      let diagnosticBytes = 0;
       let bytes = 0;
       const timer = setTimeout(() => child.kill("SIGKILL"), 90_000);
       child.stdout.on("data", (chunk: Buffer) => {
         bytes += chunk.length;
         if (bytes > 1024 * 1024) child.kill("SIGKILL"); else chunks.push(chunk);
       });
-      // Remote diagnostics may contain credentials or repository-controlled text.
-      child.stderr.resume();
+      // Keep only a bounded prefix for classification; never emit raw remote diagnostics.
+      child.stderr.on("data", (chunk: Buffer) => {
+        const remaining = WORKSPACE_LIMITS.errorBytes - diagnosticBytes;
+        if (remaining > 0) { const kept = chunk.subarray(0, remaining); diagnostics.push(kept); diagnosticBytes += kept.length; }
+      });
       child.once("error", () => { clearTimeout(timer); reject(new Error("Unable to start server Git")); });
       child.once("close", code => {
         clearTimeout(timer);
-        if (code !== 0 || bytes > 1024 * 1024) reject(new Error(`Server Git ${args[0]} failed (exit ${code ?? "signal"})`));
+        const operation = args[0]?.startsWith("--git-dir=") ? args[1]! : args[0]!;
+        if (code !== 0 || bytes > 1024 * 1024) reject(new Error(serverGitFailure(operation, code, remote ? Buffer.concat(diagnostics).toString("utf8") : "")));
         else resolve(Buffer.concat(chunks).toString("utf8").trim());
       });
     });

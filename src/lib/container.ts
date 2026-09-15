@@ -1180,6 +1180,7 @@ export const executionDeps: ExecutionDeps = {
       pullRequest: (id, ownerEmail) => getCodingUseCases().pullRequest(id, ownerEmail),
       attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
       workdir: WORKSPACE_DIRECTORY,
+      publicBaseUrl: await getPublicBaseUrl(),
       policy: () => getWorkspaceConfig()?.projects.find(project => project.projectName === projectName),
       sleep: async ms => { await workspaceSleep(ms); },
     }, { projectName, ownerEmail: email, occurrence: currentRunContext()?.runId ?? randomUUID(),
@@ -1478,6 +1479,11 @@ const workspaceDeps: WorkspaceDeps = {
   repository: workspaceRepository, chats: chatRepository, projects: projectRepository,
   policy: name => getWorkspaceConfig()?.projects.find(project => project.projectName === name),
   now: () => new Date(), newId: randomUUID,
+  checkRepository: async (repository, baseBranch) => {
+    const settings = getWorkspaceGitHubConfig();
+    if (!settings) throw new ValidationError("Workspace GitHub integration is not configured");
+    await createCodingGitHub(settings).forge.checkRepository(repository, baseBranch);
+  },
   get idleTtlSeconds() { return getWorkspaceConfig()?.idleTtlSeconds ?? 1800; },
 };
 export const workspaceUseCases = createWorkspaceUseCases(workspaceDeps);

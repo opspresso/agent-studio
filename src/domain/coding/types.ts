@@ -54,6 +54,11 @@ export function codingCiAllowsPublication(ci: PullRequestInfo["ci"]): boolean {
 /** A definitive remote refusal, as opposed to a lost mutation response. */
 export class CodingMutationRejectedError extends Error {}
 
+/** A configured repository name is not proof that clone can start. */
+export class CodingRepositoryNotReadyError extends Error {
+  constructor(readonly reason: "unavailable" | "empty" | "branch-missing", message: string) { super(message); }
+}
+
 /** Pending/claimed effects cannot cross a workspace close or deletion fence. */
 export function mayAdvanceCodingApproval(workspace: { status: string; activeActionId?: string; deleteRequestedAt?: string }, approval: CodingApproval): boolean {
   return !["pending", "executing"].includes(approval.status) ||

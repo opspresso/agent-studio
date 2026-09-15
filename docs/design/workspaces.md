@@ -81,6 +81,11 @@ native Session의 활동·보존 기한을 갱신한다. 완료 시 미결 승�
 
 ## Git과 승인
 
+Git Workspace 생성과 아직 clone되지 않은 공간의 실행 접수는 서버 GitHub 계정으로 저장소·기준 브랜치를
+미리 확인한다. 허용 목록은 존재 여부가 아니며 저장소를 만들지 않는다. 접근 불가·초기 commit 없음·
+기준 브랜치 없음은 구체적인 오류로 반환하고, 전송 실패와 구별한다. 이미 준비된 파일 작업에는 이
+원격 사전 검사를 반복하지 않는다. clone 중 경합으로 실패하면 Git 진단을 제한해서 분류하며 원문·자격증명은 노출하지 않는다.
+
 코딩 Workspace는 `sandbox/git.mjs`로 저장소를 clone하고 `agent/{workspace-id}` 브랜치를 만든다.
 Git 디렉터리는 root 소유 `/control/git`이며, Agent의 파일 쓰기 권한으로 branch·index·config를
 바꿀 수 없다. Git hook·외부 diff·textconv·credential helper를 사용하지 않는다. 공개 Git 호스트는
@@ -130,6 +135,9 @@ Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는
 이 도구는 Git·배포 승인을 소비하지 않는다. Native 코딩 턴은 보호된 Git 경로와 승인 경계의
 환경 지침을 받으며, 권한 변경·임시 인덱스·GitHub 도구로 Git 쓰기를 우회하지 않는다.
 `status`는 실제 Git 동작 결과와 PR 정보를 반환하며 PR의 현재 HEAD·검사 상태를 GitHub에서 갱신한다.
+`check_repository`는 공간 생성 없이 저장소 준비를 확인한다. 새 저장소가 요청되면 제공된 저장소 도구로
+생성·초기화한 뒤 실제 브랜치를 검사한다. `workspace_url`·`approval_url`은 설정된 공개 주소가 있으면
+완전한 웹 주소를 반환하며, 기존 path 필드는 상대 웹 경로로 유지한다.
 사용 중·일시 중지한 Workspace는 변경된 PR 상태를 revision 조건으로 저장해 화면에도 반영한다.
 동시 실행·종료가 먼저 기록되면 그 상태를 덮어쓰지 않으며 조회로 보존 기한을 연장하지 않는다.
 종료된 Workspace의 Git 검토는 소유자가 action lease를 획득하며 같은 파일·Session을 복원한다.

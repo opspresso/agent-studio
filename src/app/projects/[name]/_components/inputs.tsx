@@ -589,7 +589,7 @@ export function McpBindingInput({
         // the tool selection sitting in the same dialog.
         const { headers: _previous, ...rest } = binding;
         const headers = rowsToOverrides(rows);
-        return headers ? { ...rest, headers } : rest;
+        return { ...rest, headers: headers ?? {} };
       }),
     );
   }

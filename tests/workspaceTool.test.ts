@@ -22,13 +22,13 @@ const owner = "owner@example.com";
 let serial = 0;
 const policy = { projectName: "demo", runtimes: ["command", "codex"] as ("command" | "codex")[], repository: "org/repo", checks: [], deploymentWorkflows: [] };
 const useCases = createWorkspaceUseCases({ repository, chats, projects, now: () => now, newId: () => `id-${++serial}`,
-  policy: () => policy, idleTtlSeconds: 60 });
+  policy: () => policy, idleTtlSeconds: 60, checkRepository: async () => {} });
 const authorize = vi.fn(async () => {});
 const sleep = vi.fn(async (_ms: number) => {});
 const requestGit = vi.fn<(...args: unknown[]) => Promise<CodingApproval>>();
 const attachRepository = vi.fn<(...args: unknown[]) => Promise<WorkspaceView>>();
 const pullRequest = vi.fn<(...args: unknown[]) => Promise<PullRequestInfo | undefined>>();
-const makeTool = (projectName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { projectName, ownerEmail, sourceChatId, occurrence });
+const makeTool = (projectName = "demo", ownerEmail = owner, sourceChatId?: string, occurrence = "parent-run") => createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => policy }, { projectName, ownerEmail, sourceChatId, occurrence });
 const invoke = async (request: Record<string, unknown>, callId = "call-start") => JSON.parse((await makeTool()({ request }, callId)).text);
 const start = { operation: "start", runtime: "command", repository: null, base_branch: null, task: "printf report > report.txt" };
 beforeEach(() => {
@@ -38,11 +38,19 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Workspace Agent capability", () => {
+  it("checks repository readiness without creating compute or a chat", async () => {
+    const request = { operation: "check_repository", repository: "org/repo", base_branch: "main" };
+    expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();
+    expect(await invoke(request)).toMatchObject({ ready: true, repository: "org/repo" });
+    expect(await repository.list(owner, 20)).toHaveLength(0);
+    await expect(invoke({ ...request, repository: "other/repo" })).rejects.toMatchObject({ status: 400 });
+  });
   it("reuses the source chat across tool IDs and turns, then accepts a minimal follow-up run", async () => {
     await chats.create({ chatId: "source-chat", projectName: "demo", title: "Task", ownerEmail: owner, createdAt: now.toISOString(), updatedAt: now.toISOString() });
     const tool = makeTool("demo", owner, "source-chat");
     const first = JSON.parse((await tool({ request: start }, "start-1")).text);
     expect(first.workdir).toBe(WORKSPACE_DIRECTORY);
+    expect(first.workspace_url).toBe(`https://studio.example.test${first.workspace_path}`);
     const later = makeTool("demo", owner, "source-chat", "next-user-turn");
     const reused = JSON.parse((await later({ request: { ...start, task: "a different task" } }, "start-2")).text);
     expect(reused).toMatchObject({ workspace_id: first.workspace_id, reused: true, task_queued: false });
@@ -152,7 +160,7 @@ describe("Workspace Agent capability", () => {
     const request = { operation: "prepare_git", workspace_id: workspace.id, action };
     expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();
     const result = await invoke(request, "git-call");
-    expect(result).toMatchObject({ status: "pending", approval_id: approval.id, approval_path: "/chats/review-chat#actions" });
+    expect(result).toMatchObject({ status: "pending", approval_id: approval.id, approval_path: "/chats/review-chat#actions", approval_url: "https://studio.example.test/chats/review-chat#actions" });
     expect(await invoke(request, "git-call")).toEqual(result);
     expect(requestGit).toHaveBeenCalledExactlyOnceWith(workspace.id, owner, action);
     expect(await repository.runs(workspace.id, 10)).toHaveLength(0);

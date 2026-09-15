@@ -56,6 +56,7 @@ beforeEach(async () => {
     destroy: vi.fn(async externalId => { existing.delete(externalId); }),
   };
   deps = { repository, chats, projects, provider, policy: () => policy, idleTtlSeconds: 60,
+    checkRepository: async () => {},
     now: () => new Date(time), newId: () => `id-${++id}`, runTimeoutMs: 10_000,
     runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(); },
     sleep: async ms => { time += ms; vi.setSystemTime(time); await onSleep?.(); },

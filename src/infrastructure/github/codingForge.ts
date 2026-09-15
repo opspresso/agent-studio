@@ -1,9 +1,9 @@
 import { createHmac, sign } from "node:crypto";
 import type { CodingForge } from "@/domain/coding/forge";
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
-import { codingCiAllowsPublication, CodingMutationRejectedError } from "@/domain/coding/types";
+import { codingCiAllowsPublication, CodingMutationRejectedError, CodingRepositoryNotReadyError } from "@/domain/coding/types";
 import { GITHUB_PAGE_SIZE } from "@/domain/coding/limits";
-import { isRepositoryName } from "@/domain/workspace/policy";
+import { isRepositoryName, isGitBranch } from "@/domain/workspace/policy";
 import { isDeclaredInternalHost } from "@/domain/security/internalHosts";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { fetchSameOrigin } from "@/infrastructure/net/redirectPolicy";
@@ -31,6 +31,9 @@ interface Pull {
   base: { ref: string; repo: { full_name: string } };
 }
 type Permissions = Record<string, "read" | "write">;
+class GitHubReadError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
 
 /** App private keys and publication credentials remain in the control plane. */
 export function createCodingGitHub(config: CodingGitHubConfig, now = () => new Date()): {
@@ -59,7 +62,9 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
         response.status === 404 ? "Repository, branch or pull request is missing or inaccessible" :
         [405, 409, 422].includes(response.status) ? "GitHub rejected the change; check branch rules, conflicts and the current head" : "Request was not successful";
       const ErrorType = method !== "GET" && response.status >= 400 && response.status < 500 && response.status !== 408 ? CodingMutationRejectedError : Error;
-      throw new ErrorType(`GitHub ${method} request failed (${response.status}). ${hint}`);
+      const message = `GitHub ${method} request failed (${response.status}). ${hint}`;
+      if (method === "GET") throw new GitHubReadError(response.status, message);
+      throw new ErrorType(message);
     }
     if (response.status === 204) return undefined as T;
     return JSON.parse(await readBodyText(response, 2 * 1024 * 1024)) as T;
@@ -112,6 +117,26 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
   }
   const readPermissions: Permissions = { contents: "read", pull_requests: "read", checks: "read", statuses: "read" };
   const forge: CodingForge = {
+    async checkRepository(repository, baseBranch) {
+      if (!isGitBranch(baseBranch)) throw new Error("Invalid Git base branch");
+      const access = await token(repository, { contents: "read" });
+      const path = repoPath(repository);
+      let branches: { name: string }[];
+      try { branches = await request<{ name: string }[]>(`${path}/branches?per_page=1`, access.token); }
+      catch (error) {
+        if (error instanceof GitHubReadError && [401, 403, 404].includes(error.status)) {
+          throw new CodingRepositoryNotReadyError("unavailable", `Repository ${repository} is missing or inaccessible to the Workspace GitHub account (HTTP ${error.status}). The allowlist does not create repositories. Check repository access; if the user requested a new repository, create and initialize it before starting Workspace work.`);
+        }
+        throw error;
+      }
+      if (!branches.length) throw new CodingRepositoryNotReadyError("empty", `Repository ${repository} has no commits or branches. Initialize it with a README when creating it, then select its actual base branch before starting Workspace work.`);
+      if (branches[0]!.name === baseBranch) return;
+      try { await request(`${path}/branches/${encodeURIComponent(baseBranch)}`, access.token); }
+      catch (error) {
+        if (error instanceof GitHubReadError && error.status === 404) throw new CodingRepositoryNotReadyError("branch-missing", `Repository ${repository} has no branch ${baseBranch}. Select an existing base branch before starting Workspace work.`);
+        throw error;
+      }
+    },
     async branches(repository) {
       const access = await token(repository, { contents: "read" });
       const rows = await request<{ name: string }[]>(`${repoPath(repository)}/branches?per_page=${GITHUB_PAGE_SIZE}`, access.token);

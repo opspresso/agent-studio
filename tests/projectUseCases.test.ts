@@ -616,6 +616,26 @@ describe("MCP binding header overrides", () => {
     { name: "shared-mcp", headers },
   ];
 
+  it("preserves endpoint headers when updating only a model and tool selection, and clears them explicitly", async () => {
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    const versions = makeVersionRepo();
+    const created = await createVersion(versions, projects, "p", {
+      ...versionInput(), mcpList: bindingWith({ "X-MCP-Toolsets": "repos,actions" }),
+    }, OWNER);
+    const updated = await updateVersion(versions, projects, "p", created.versionName, {
+      model: "openai/gpt-5-mini", mcpList: [{ name: "shared-mcp", tools: ["actions_get"] }],
+    }, OWNER);
+    expect(updated.mcpList[0]?.headers).toEqual(created.mcpList[0]?.headers);
+    expect(updated.mcpList[0]?.tools).toEqual(["actions_get"]);
+    expect(mergeOutboundHeaders({}, updated.mcpList[0]!.headers!, undefined,
+      versionMcpHeadersContext("p", created.versionName, "shared-mcp"))["X-MCP-Toolsets"]).toBe("repos,actions");
+    const cleared = await updateVersion(versions, projects, "p", created.versionName, {
+      mcpList: [{ name: "shared-mcp", tools: ["actions_get"], headers: {} }],
+    }, OWNER);
+    expect(cleared.mcpList[0]?.headers).toBeUndefined();
+    expect(cleared.mcpList[0]?.headerTarget).toBeUndefined();
+  });
+
   it("encrypts override values at rest and never stores plaintext", async () => {
     const created = await createVersion(
       makeVersionRepo(),

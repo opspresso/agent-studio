@@ -1,6 +1,7 @@
 import type { CodingRepository, PullRequestInfo } from "./types";
 
 export interface CodingForge {
+  checkRepository(repository: string, baseBranch: string): Promise<void>;
   branches(repository: string): Promise<{ names: string[]; hasMore: boolean }>;
   pullRequest(repository: CodingRepository, number: number): Promise<PullRequestInfo>;
   openPullRequest(repository: CodingRepository, input: { title: string; body: string; draft: boolean }): Promise<PullRequestInfo>;

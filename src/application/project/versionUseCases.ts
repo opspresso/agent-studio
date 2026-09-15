@@ -234,11 +234,16 @@ async function resolveMcpBindings(
       // fields. Rebuilding it from `{ name, headers }` is what silently dropped
       // `tools`; the submitted target is ignored because only the server can
       // bind a newly entered secret to the current registry URL.
-      const { headers: submitted, headerTarget: _untrustedTarget, ...rest } = binding;
+      const { headers: inputHeaders, headerTarget: _untrustedTarget, ...rest } = binding;
+      const stored = storedByName.get(binding.name);
+      // Editing a tool selection or model must not erase its endpoint configuration.
+      // An explicit empty map clears overrides; an omitted map preserves them.
+      const submitted = inputHeaders ?? (stored?.headers
+        ? cipher.maskHeaderOverrides(stored.headers, versionMcpHeadersContext(projectName, existingVersionName, binding.name))
+        : undefined);
       if (!submitted || Object.keys(submitted).length === 0) {
         return rest;
       }
-      const stored = storedByName.get(binding.name);
       const current = await mcps.get(binding.name);
       const hasNewSecret = Object.values(submitted).some(
         (value) => typeof value === "string" && value !== "" && !cipher.isMasked(value),
@@ -290,7 +295,7 @@ export async function resolveDraftMcpBindings(
   versionName: string | undefined,
   bindings: McpBinding[],
 ): Promise<McpBinding[]> {
-  if (!bindings.some((binding) => binding.headers)) {
+  if (!versionName && !bindings.some((binding) => binding.headers)) {
     return bindings;
   }
   const saved = versionName ? await versions.get(projectName, versionName) : null;

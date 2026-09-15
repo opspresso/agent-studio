@@ -8,6 +8,7 @@ import { projectRepository as projects } from "@/infrastructure/db/repositories/
 import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCases";
 import { isGitBranch } from "@/domain/workspace/policy";
 import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
+import { CodingRepositoryNotReadyError } from "@/domain/coding/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import * as store from "@/infrastructure/db/store";
 
@@ -18,13 +19,15 @@ const owner = "owner@example.com";
 const policy: WorkspaceProjectPolicy = { projectName: "demo", runtimes: ["command", "codex", "claude", "opencode"],
   repository: "company/demo", checks: [], deploymentWorkflows: [] };
 let nextId: number;
+const checkRepository = vi.fn(async (_repository: string, _baseBranch: string) => {});
 const useCases = createWorkspaceUseCases({ repository, chats, projects, now: () => now,
-  newId: () => `id-${++nextId}`, policy: () => policy, idleTtlSeconds: 3600 });
+  newId: () => `id-${++nextId}`, policy: () => policy, idleTtlSeconds: 3600, checkRepository });
 
 beforeEach(async () => {
   vi.useFakeTimers();
   vi.setSystemTime(now);
   nextId = 0;
+  checkRepository.mockReset();
   fake.rows.clear();
   fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner,
     visibility: "public", projectType: "agent", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
@@ -39,6 +42,30 @@ async function create(runtime: "command" | "codex" = "command", coding = false) 
 }
 
 describe("workspace admission and persistence", () => {
+  it("does not create a Workspace or source binding for an unavailable repository", async () => {
+    checkRepository.mockRejectedValueOnce(new CodingRepositoryNotReadyError("unavailable", "Repository is missing or inaccessible"));
+    await expect(useCases.startForChat({ projectName: "demo", runtime: "codex", repository: "company/demo", baseBranch: "main",
+      input: { kind: "task", prompt: "Implement a project" } }, owner, "chat-1")).rejects.toMatchObject({ status: 400, message: expect.stringContaining("missing") });
+    expect(await repository.list(owner, 20)).toHaveLength(0);
+    expect((await chats.get("chat-1"))?.linkedWorkspaces).toBeUndefined();
+  });
+  it("checks an uninitialized repository before accepting a recovery run", async () => {
+    const workspace = await create("codex", true);
+    checkRepository.mockRejectedValueOnce(new CodingRepositoryNotReadyError("empty", "Initialize the repository first"));
+    await expect(useCases.enqueue(workspace.id, owner, { kind: "task", prompt: "Retry work" }, "retry-0001")).rejects.toMatchObject({ status: 400 });
+    expect(await repository.runs(workspace.id, 20)).toHaveLength(0);
+    const run = await useCases.enqueue(workspace.id, owner, { kind: "task", prompt: "Retry work" }, "retry-0001");
+    expect(run.status).toBe("queued");
+    expect(await repository.list(owner, 20)).toHaveLength(1);
+  });
+  it("keeps prepared Workspace file work independent of remote repository availability", async () => {
+    const workspace = await create("codex", true);
+    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1,
+      coding: { ...workspace.coding!, baseSha: "a".repeat(40) } } });
+    checkRepository.mockClear();
+    await useCases.enqueue(workspace.id, owner, { kind: "task", prompt: "Run local tests" }, "offline-0001");
+    expect(checkRepository).not.toHaveBeenCalled();
+  });
   it("creates one Workspace for a source chat under concurrent starts with different tasks", async () => {
     const input = { projectName: "demo", runtime: "command" as const, input: { kind: "command" as const, script: "echo first" } };
     const results = await Promise.all(Array.from({ length: 8 }, (_, index) => useCases.startForChat(
@@ -96,7 +123,7 @@ describe("workspace admission and persistence", () => {
   });
   it("uses an explicitly selected allowed repository and fences later policy removal", async () => {
     const expanded = { ...policy, repositories: ["company/second"] };
-    const api = createWorkspaceUseCases({ repository, chats, projects, now: () => now, newId: () => `id-${++nextId}`, policy: () => expanded, idleTtlSeconds: 60 });
+    const api = createWorkspaceUseCases({ repository, chats, projects, now: () => now, newId: () => `id-${++nextId}`, policy: () => expanded, idleTtlSeconds: 60, checkRepository });
     const workspace = await api.create({ chatId: "chat-1", projectName: "demo", title: "Second repository", runtime: "codex", repository: "company/second", baseBranch: "main" }, owner);
     expect(workspace.coding?.repository).toBe("company/second");
     expanded.repositories = [];

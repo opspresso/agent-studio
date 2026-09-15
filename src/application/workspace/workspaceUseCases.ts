@@ -8,9 +8,10 @@ import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
 import { isGitBranch, isRepositoryName, workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import type { CodingApproval } from "@/domain/coding/types";
+import { CodingRepositoryNotReadyError } from "@/domain/coding/types";
 import { titleFromMessage } from "@/application/chat/title";
 import { assertProjectAccessible } from "@/application/project/projectUseCases";
-import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
+import { ConflictError, NotFoundError, ValidationError, UpstreamError, isConditionalWriteFailure } from "@/application/errors";
 
 export interface WorkspaceDeps {
   repository: WorkspaceRepository;
@@ -20,6 +21,17 @@ export interface WorkspaceDeps {
   now(): Date;
   newId(): string;
   idleTtlSeconds: number;
+  checkRepository?(repository: string, baseBranch: string): Promise<void>;
+}
+
+export async function checkWorkspaceRepository(deps: WorkspaceDeps, repository: string, baseBranch: string): Promise<void> {
+  if (!deps.checkRepository) throw new ValidationError("Workspace repository validation is not configured");
+  try { await deps.checkRepository(repository, baseBranch); }
+  catch (error) {
+    if (error instanceof CodingRepositoryNotReadyError) throw new ValidationError(error.message);
+    if (error instanceof ValidationError) throw error;
+    throw new UpstreamError("Workspace repository readiness could not be checked. Verify the GitHub endpoint and server connection before retrying.");
+  }
 }
 
 export interface CreateWorkspaceInput {
@@ -101,6 +113,11 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
     return chat;
   }
   return {
+    async checkRepository(projectName: string, ownerEmail: string, repository: string, baseBranch: string) {
+      await assertProjectAccessible(deps.projects, projectName, ownerEmail);
+      if (!isRepositoryName(repository) || !isGitBranch(baseBranch) || !workspaceAllowsRepository(workspacePolicy(deps, projectName), repository)) throw new ValidationError("Repository or base branch is not configured for this project");
+      await checkWorkspaceRepository(deps, repository, baseBranch);
+    },
     async create(input: CreateWorkspaceInput, ownerEmail: string): Promise<Workspace> {
       await assertProjectAccessible(deps.projects, input.projectName, ownerEmail);
       const policy = workspacePolicy(deps, input.projectName);
@@ -125,6 +142,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       if (deps.idleTtlSeconds < WORKSPACE_LIMITS.minIdleTtlSeconds || deps.idleTtlSeconds > WORKSPACE_LIMITS.maxIdleTtlSeconds) {
         throw new ValidationError("Invalid workspace idle TTL");
       }
+      if (input.baseBranch) await checkWorkspaceRepository(deps, repository!, input.baseBranch);
       const now = deps.now().toISOString();
       const id = deps.newId();
       const session: RuntimeSession = { id: deps.newId(), workspaceId: id, runtime: input.runtime, createdAt: now, updatedAt: now };
@@ -249,6 +267,7 @@ export function createWorkspaceUseCases(deps: WorkspaceDeps) {
       if (workspace.leaseToken && Date.parse(workspace.leaseUntil ?? "") > deps.now().getTime()) throw new ConflictError("Workspace is busy");
       const pending = workspace.activeActionId ? await deps.repository.approval(id, workspace.activeActionId) : null;
       if (workspace.activeActionId && pending?.status !== "pending") throw new ConflictError("Workspace has an executing or uncertain action");
+      if (workspace.coding && !workspace.coding.baseSha) await checkWorkspaceRepository(deps, workspace.coding.repository, workspace.coding.baseBranch);
       const now = deps.now().toISOString();
       const run: WorkspaceRun = {
         id: `${deps.now().getTime()}-${deps.newId()}`, workspaceId: id, sessionId: workspace.sessionId,
