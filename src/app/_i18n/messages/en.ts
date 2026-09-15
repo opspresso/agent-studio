@@ -842,6 +842,7 @@ export const en = {
   "bindings.serverUnreachable": "Could not reach this server",
   "bindings.serverUnreachableSuffix":
     " — a run would offer none of this server’s tools until it answers.",
+  "bindings.refreshTools": "Refresh tools",
   "bindings.loadingTools": "Loading tools…",
   "bindings.noTools": "This server exposes no tools.",
   "bindings.allToolsOffered": "Every tool is offered. Select some to narrow what the model sees.",

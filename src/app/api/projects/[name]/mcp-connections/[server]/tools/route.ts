@@ -7,6 +7,7 @@ import { editorBody } from "@/app/api/_lib/body";
 type RouteContext = { params: Promise<{ name: string; server: string }> };
 
 const bodySchema = z.object({
+  versionName: z.string().min(1).max(200).optional(),
   /** The binding's own header layer, so the answer matches what a run offers. */
   headerOverrides: z.record(z.string(), z.string().nullable()).optional(),
 });
@@ -37,6 +38,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
       parseName(server),
       user.email,
       parsed.data.headerOverrides,
+      parsed.data.versionName,
     );
     if (!result.ok) {
       return Response.json({ error: result.error }, { status: 502 });

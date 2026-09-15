@@ -1,3 +1,5 @@
+process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
+
 /**
  * The authorization flow: begin, callback, and what each refuses.
  *
@@ -23,7 +25,9 @@ import type { McpServer } from "@/domain/mcp/types";
 import type { TokenRequestTarget, TokenSet } from "@/domain/mcp/oauth";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
-import { mcpOAuthStateContext } from "@/domain/security/secretContext";
+import { mcpOAuthStateContext, versionMcpHeadersContext } from "@/domain/security/secretContext";
+import type { Version } from "@/domain/project/types";
+import { mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 
 const OWNER = "owner@example.com";
@@ -1083,6 +1087,29 @@ describe("saveClientCredentials", () => {
 });
 
 describe("listing a server's tools as the project", () => {
+  it("resolves a saved masked toolset for discovery and fences moved endpoints", async () => {
+    const h = harness({ connection: {} });
+    const context = versionMcpHeadersContext("p", "1", "slack");
+    const headers = secretCipher.mergeHeaderOverrideUpdate({}, { "X-MCP-Toolsets": "context,repos,actions" }, context);
+    const version = { projectName: "p", versionName: "1", mcpList: [
+      { name: "slack", headers, headerTarget: mcpHeaderTarget(SERVER.url) },
+    ] } as Version;
+    const versions = { get: vi.fn(async () => version) };
+    const uc = createMcpAuthUseCases({ ...h.deps, versions, cipher: secretCipher });
+    await uc.listTools("p", "slack", OWNER, secretCipher.maskHeaderOverrides(headers, context), "1");
+    expect(h.probes[0]?.headers["X-MCP-Toolsets"]).toBe("context,repos,actions");
+    expect(h.probes[0]?.headers.Authorization).toBe("Bearer at");
+    expect(versions.get).toHaveBeenCalledWith("p", "1");
+    await uc.listTools("p", "slack", OWNER, {}, "1");
+    expect(h.probes[1]?.headers["X-MCP-Toolsets"]).toBeUndefined();
+    version.mcpList[0]!.headerTarget = mcpHeaderTarget("https://old.example.test/mcp");
+    await uc.listTools("p", "slack", OWNER, secretCipher.maskHeaderOverrides(headers, context), "1");
+    expect(h.probes[2]?.headers["X-MCP-Toolsets"]).toBeUndefined();
+    versions.get.mockClear();
+    await expect(uc.listTools("p", "slack", "outsider@example.test", undefined, "1")).rejects.toThrow(ForbiddenError);
+    expect(versions.get).not.toHaveBeenCalled();
+  });
+
   it("sends the project's token, not just the registry entry's headers", async () => {
     // The registry probe carries only the entry's static headers, so against an
     // OAuth server it can do nothing but 401 — the credential is the project's.

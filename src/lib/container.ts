@@ -531,6 +531,7 @@ const mcpAuthProvider = createMcpAuthProvider({
   cipher: secretCipher,
 });
 export const mcpAuthUseCases = createMcpAuthUseCases({
+  versions: versionRepository,
   mcps: mcpRepository,
   projects: projectRepository,
   connections: mcpConnectionRepository,

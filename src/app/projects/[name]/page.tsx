@@ -342,6 +342,7 @@ export default function PlaygroundPage() {
               // would write version A's edits into version B's draft.
               key={`${name}/${selectedName || "unsaved"}`}
               projectName={project.name}
+              versionName={selectedName || undefined}
               projectType={project.projectType}
               models={models.filter((m) =>
                 modelType(m) === (project.projectType === "image" ? "image" : "text"),

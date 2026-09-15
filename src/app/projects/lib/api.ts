@@ -532,11 +532,12 @@ export async function listProjectMcpTools(
   name: string,
   server: string,
   headerOverrides?: Record<string, string | null>,
+  versionName?: string,
 ): Promise<McpTool[]> {
   const response = await fetch(`/api/projects/${name}/mcp-connections/${server}/tools`, {
     method: "POST",
     headers: jsonHeaders,
-    body: JSON.stringify(headerOverrides ? { headerOverrides } : {}),
+    body: JSON.stringify({ headerOverrides, versionName }),
   });
   if (response.status === 403) {
     return testMcpConnection(server);

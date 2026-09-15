@@ -783,6 +783,7 @@ export const ko: Messages = {
   "bindings.searchSubagents": "프로젝트와 외부 에이전트 검색",
   "bindings.serverUnreachable": "이 서버에 연결하지 못했습니다",
   "bindings.serverUnreachableSuffix": " — 서버가 응답하기 전까지 실행은 이 서버의 도구를 하나도 쓰지 않습니다.",
+  "bindings.refreshTools": "도구 새로고침",
   "bindings.loadingTools": "도구를 불러오는 중…",
   "bindings.noTools": "이 서버는 도구를 제공하지 않습니다.",
   "bindings.allToolsOffered": "모든 도구를 제공합니다. 일부만 골라 모델에게 보일 범위를 좁힐 수 있습니다.",

@@ -6,6 +6,7 @@ import {
   ActionIcon,
   Autocomplete,
   Badge,
+  Button,
   Anchor,
   Checkbox,
   Group,
@@ -490,12 +491,14 @@ function OverrideEditor({
  */
 export function McpBindingInput({
   projectName,
+  versionName,
   values,
   onChange,
   options,
   save,
 }: {
   projectName: string;
+  versionName?: string;
   values: McpBinding[];
   onChange: (values: McpBinding[]) => void;
   options: PickerOption[];
@@ -634,18 +637,24 @@ export function McpBindingInput({
               onChange={(sourceOutputs) => onChange(values.map((binding) => binding.name === settingsFor ? { ...binding, sourceOutputs } : binding))} />}
             onConnectionChanged={() => setConnectionEpoch((epoch) => epoch + 1)}
             tools={
-              <ToolSelector
-                selected={values.find((v) => v.name === settingsFor)?.tools}
-                onChange={(tools) => setTools(settingsFor, tools)}
-                reloadOn={connectionEpoch}
-                load={() =>
-                  listProjectMcpTools(
-                    projectName,
-                    settingsFor,
-                    values.find((v) => v.name === settingsFor)?.headers,
-                  )
-                }
-              />
+              <Stack gap="xs">
+                <Button variant="subtle" size="xs" onClick={() => setConnectionEpoch((epoch) => epoch + 1)}>
+                  {t("bindings.refreshTools")}
+                </Button>
+                <ToolSelector
+                  selected={values.find((v) => v.name === settingsFor)?.tools}
+                  onChange={(tools) => setTools(settingsFor, tools)}
+                  reloadOn={connectionEpoch}
+                  load={() =>
+                    listProjectMcpTools(
+                      projectName,
+                      settingsFor,
+                      values.find((v) => v.name === settingsFor)?.headers,
+                      versionName,
+                    )
+                  }
+                />
+              </Stack>
             }
             headers={
               <OverrideEditor

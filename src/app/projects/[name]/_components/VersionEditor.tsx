@@ -72,6 +72,7 @@ type SubagentOption = PickerOption & { type: "local" | "remote" };
 
 export function VersionEditor({
   projectName,
+  versionName,
   projectType,
   models,
   imageModels,
@@ -83,6 +84,7 @@ export function VersionEditor({
   save,
 }: {
   projectName: string;
+  versionName?: string;
   projectType: ProjectType;
   models: SelectableModel[];
   imageModels: SelectableModel[];
@@ -546,6 +548,7 @@ export function VersionEditor({
           )}
           <McpBindingInput
             projectName={projectName}
+            versionName={versionName}
             values={value.mcpList}
             onChange={(mcpList) => patch({ mcpList })}
             options={mcpOptions}
