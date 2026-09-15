@@ -88,10 +88,12 @@ export function NewWorkspaceForm() {
     {selected?.description && <Text size="sm" c="dimmed">{selected.description}</Text>}
     <Select label={t("workspace.runtime")} value={runtime} allowDeselect={false} onChange={value => setRuntime(value as WorkspaceRuntime)} disabled={busy}
       data={(selected?.runtimes ?? []).map(value => ({ value, label: value === "command" ? t("workspace.command") : value === "codex" ? "Codex" : value === "claude" ? "Claude" : "OpenCode" }))} />
-    <Switch label={t("workspace.useRepository")} checked={coding} onChange={event => setCoding(event.currentTarget.checked)} disabled={busy || (!selected?.repositories.length && !selected?.repositoryOwners.length) || !options?.gitEnabled} />
+    <Switch label={t("workspace.useRepository")} checked={coding} onChange={event => setCoding(event.currentTarget.checked)} disabled={busy || !selected ||
+      (!selected.repositories.length && selected.mode !== "all" && selected.mode !== "new" && !(selected.mode === "owners" && selected.repositoryOwners.length)) || !options?.gitEnabled} />
     {project && <Anchor size="sm" href={`/projects/${encodeURIComponent(project)}/settings#workspace-repositories`} target="_blank" rel="noreferrer">{t("workspace.policy.manage")}</Anchor>}
     {coding && <>
-      {!!selected?.repositoryOwners.length && <Text size="sm" c="dimmed">{t("workspace.allowedOwners", { owners: selected.repositoryOwners.join(", ") })}</Text>}
+      {selected?.mode === "new" && <Text size="sm" c="dimmed">{t("workspace.policy.modeHint.new")}</Text>}
+      {selected?.mode === "owners" && !!selected.repositoryOwners.length && <Text size="sm" c="dimmed">{t("workspace.allowedOwners", { owners: selected.repositoryOwners.join(", ") })}</Text>}
       <Autocomplete label={t("workspace.repository")} placeholder="owner/repository" value={repository ?? ""} data={selected?.repositories ?? []}
         onChange={value => { setRepository(value.trim()); setBranch("main"); }} disabled={busy} error={repository && !repositoryAllowed ? t("workspace.repositoryNotAllowed") : undefined} />
       <Autocomplete label={t("workspace.baseBranch")} value={branch} onChange={setBranch} data={branches} disabled={busy} />

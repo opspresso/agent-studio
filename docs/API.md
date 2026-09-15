@@ -714,7 +714,7 @@ Workspace 사용자 API는 `withMemberAuth`로 보호한다. 조회·실행·승
 
 | 경로 | 메서드 | 계약 |
 |---|---|---|
-| `/api/workspaces/options` | GET | 접근 가능한 프로젝트의 Runtime·현재 유효한 `repository`, `repositories`, `repositoryOwners`·workflow 선택지 |
+| `/api/workspaces/options` | GET | 접근 가능한 프로젝트의 Runtime·현재 유효한 `mode`, `repository`, `repositories`, `repositoryOwners`·workflow 선택지 |
 | `/api/workspaces/branches?project={name}&repository={owner/repo}` | GET | 허용된 저장소의 브랜치 100개와 `hasMore`. repository 생략 시 기본 저장소 사용 |
 | `/api/workspaces` | POST | `{projectName, runtime, repository?, baseBranch?, input}`으로 Chat·Workspace·첫 Run을 만들고 `{workspace, run}`과 202 반환 |
 | `/api/workspaces/{id}` | GET | `{workspace, session, runs, approvals}`. 실행·승인은 최근 50개, `tail=1`이면 각각 1개 |
@@ -728,12 +728,20 @@ Workspace 사용자 API는 `withMemberAuth`로 보호한다. 조회·실행·승
 
 저장소 정책 GET은 `{projectName, enabled, canManage, source, revision, rules, runtimes, updatedAt?}`를
 반환한다. `source`는 `deployment` 또는 `override`다. PUT은 `{revision, rules}`를 받으며 `rules`는
-`{repository?, repositories: string[], repositoryOwners: string[]}` 또는 배포 기본값 복원을 뜻하는
+`{mode: "selected" | "owners" | "all" | "new", repository?, repositories: string[], repositoryOwners: string[]}` 또는 배포 기본값 복원을 뜻하는
 `null`이다. 첫 저장의 revision은 `null`, 이후 저장은 마지막으로 읽은 값을 사용한다. 동시 편집·삭제
 경합은 409다. 각 목록은 100개까지며 URL·wildcard·compute 설정·알 수 없는 필드는 400으로 거절한다.
-빈 규칙은 기본 저장소를 상속하지 않고 Git 접근을 차단한다. 일반 Agent 도구는 정책을 읽기만 한다.
-`Workspace.check_repository_access`는 저장소 생성 전 정책만 확인하고, `check_repository`는 허용된
-저장소의 실제 접근과 초기 commit·기준 branch를 확인한다. 둘 다 Workspace를 만들지 않는다.
+`selected`의 빈 규칙은 Git 접근을 차단하며 `all`은 목록으로 접근을 제한하지 않는다. 일반 Agent는
+정책 모드를 변경할 수 없다. `Workspace.check_repository_access`는 `allowed`, `creation_allowed`,
+`repository_mode`, `repository_policy_url`을 반환한다. `check_repository`는 허용된 저장소의 실제
+접근과 초기 commit·기준 branch를 확인한다. 둘 다 Workspace를 만들지 않는다.
+
+`Workspace.create_repository`는 `{request:{operation:"create_repository", repository:"owner/repo",
+description:"...", private:true}}`를 받는다. description은 최대 350자이며 공개 여부는 명시해야 한다.
+서버에서 README를 포함한 저장소를 생성하고 `new` 모드라면 허용 목록에 자동 등록한다.
+결과의 `status`는 `created`, `failed`, `uncertain`이며 `allowed`, `reused`, 검증된 `repository_url`·
+`base_branch` 또는 오류를 제공한다. 생성된 저장소와 실제 작업 접수는 별개라 이 호출은 Workspace나
+Run을 만들지 않는다. 같은 완료 요청은 재사용하고 불명확한 요청은 다시 생성하지 않는다.
 
 Runtime은 `command`, `codex`, `claude`, `opencode`다. `input`은 일반 명령의
 `{kind:"command", script}` 또는 Agent의 `{kind:"task", prompt}`이며 각각 40,000자까지 받는다.

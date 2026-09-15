@@ -457,6 +457,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `projects` | 필수 배열 | `projectName`, 허용 `runtimes`, 선택적인 `repository: "owner/repo"`, `checks`, `deploymentWorkflows` |
 | `projects[].checks` | `[]` | `{name: "test" | "lint" | "build", command}`. 각 Run 뒤 Sandbox에서 실행할 검사 |
 | `projects[].agentTools` | `false` | 로그인한 member 이상 사용자가 이 프로젝트의 Agent에서 `Workspace` 빌트인을 사용할 수 있게 한다 |
+| `projects[].mode` | 소유자 목록이 있으면 `owners`, 아니면 `selected` | `selected`, `owners`, `all`, `new`. 저장소 고정·소유자 범위·전체 접근·신규 생성 자동 등록 |
 | `projects[].repositories` | `[]` | 기본 `repository` 외에 선택할 수 있는 저장소 허용 목록. 선택한 저장소를 실행·재개·Git 승인마다 확인한다 |
 | `projects[].repositoryOwners` | `[]` | 정확한 GitHub 계정·조직 이름. 해당 소유자의 현재·향후 저장소를 허용한다. `*`·URL은 받지 않는다 |
 | `workerConcurrency` | `4` | worker process의 동시 실행 수, 1~32 |
@@ -465,7 +466,8 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 
 기본 저장소·추가 저장소·허용 소유자는 관리자가 Project Settings → Workspace 저장소 접근 또는
 Settings에서 DB 오버라이드로 변경한다. 추가 저장소와 소유자는 각각 최대 100개다. 저장된 오버라이드는
-세 항목을 함께 교체하고, 모두 비운 오버라이드는 Git을 차단한다. **배포 기본값 복원**은 오버라이드를
+모드와 목록을 함께 교체한다. `selected`에서 모두 비우면 Git을 차단하며 `all`은 목록 없이도 허용한다.
+`new`는 `Workspace.create_repository`로 생성한 저장소를 자동 등록한다. **배포 기본값 복원**은 오버라이드를
 제거한다. 앱·worker는 새 작업과 승인마다 같은 DB 정책을 읽으므로 재배포가 필요 없다. 이미지·
 네트워크·Runtime 권한은 이 화면에서 변경하지 않는다. [정책 계약](design/workspaces.md#저장소-정책-관리)을 따른다.
 
@@ -491,6 +493,10 @@ Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 wo
 `/api/webhook/{project}`는 프로젝트 Settings에서 발급한 별도 Trigger 시크릿을 사용한다.
 App에는 Contents, Pull requests, Actions 쓰기와 Checks, Commit statuses 읽기를 부여하되,
 각 요청의 installation token은 실제 작업에 필요한 권한과 저장소로 좁힌다.
+GitHub App·fine-grained 토큰의 저장소 생성에는 Administration 쓰기가 필요하다. classic 토큰은
+공개 저장소에 `public_repo` 또는 `repo`, 비공개 저장소에 `repo` scope가 필요하다. 계정 토큰은 자신의 개인
+저장소 또는 권한 있는 조직에 생성하며, App은 설치된 조직에만 생성한다. 생성용 App token은
+미래 저장소로 범위를 좁힐 수 없으므로 `administration: write`만 요청하고 서버에서만 사용한다.
 
 Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 실행 프로젝트별 선택을 최대 32개
 보관한다. 이는 Workspace 개수나 동시에 실행할 수 있는 작업 수가 아니다. 저장소 목록·조회는

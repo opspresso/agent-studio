@@ -1,6 +1,8 @@
 import type { CodingRepository, PullRequestInfo } from "./types";
+import type { CreateWorkspaceRepositoryInput, CreatedWorkspaceRepository } from "@/domain/workspace/repositoryCreation";
 
 export interface CodingForge {
+  createRepository?(input: CreateWorkspaceRepositoryInput): Promise<CreatedWorkspaceRepository>;
   checkRepository(repository: string, baseBranch: string): Promise<void>;
   branches(repository: string): Promise<{ names: string[]; hasMore: boolean }>;
   pullRequest(repository: CodingRepository, number: number): Promise<PullRequestInfo>;

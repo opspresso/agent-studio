@@ -38,6 +38,22 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Workspace Agent capability", () => {
+  it("distinguishes new-repository permission from existing access and routes creation through the server", async () => {
+    const createRepository = vi.fn(async () => ({ repository: "org/new", status: "created" as const, allowed: true, reused: false,
+      result: { repository: "org/new", repositoryId: 42, url: "https://github.example.test/org/new", baseBranch: "main", private: true } }));
+    const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, attachRepository, pullRequest, createRepository,
+      workdir: WORKSPACE_DIRECTORY, publicBaseUrl: "https://studio.example.test", policy: () => ({ ...policy, mode: "new" }) },
+    { projectName: "demo", ownerEmail: owner, occurrence: "creation-test" });
+    const access = JSON.parse((await tool({ request: { operation: "check_repository_access", repository: "org/new" } }, "check")).text);
+    expect(access).toMatchObject({ allowed: false, creation_allowed: true, repository_mode: "new" });
+    const request = { operation: "create_repository", repository: "org/new", description: "New project", private: true };
+    const validate = createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!);
+    expect(() => validate({ request })).not.toThrow();
+    expect(() => validate({ request: { ...request, created_at: "2026-09-15" } })).toThrow();
+    expect(JSON.parse((await tool({ request }, "create")).text)).toMatchObject({ status: "created", allowed: true,
+      repository_url: "https://github.example.test/org/new", base_branch: "main", workspace_created: false, task_queued: false });
+    expect(createRepository).toHaveBeenCalledWith("demo", { repository: "org/new", description: "New project", private: true }, owner);
+  });
   it("checks policy before repository creation and returns a real management link without creating compute", async () => {
     const request = { operation: "check_repository_access", repository: "org/new-repo" };
     expect(() => createToolSchemaValidator().compile(WORKSPACE_TOOL_DEF.function.parameters!)({ request })).not.toThrow();

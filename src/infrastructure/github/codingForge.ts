@@ -47,7 +47,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     (!config.getToken && (!config.appId || !Number.isSafeInteger(config.installationId) || !config.installationId || config.installationId < 1 || !config.privateKey))) throw new Error("Invalid coding GitHub configuration");
   if ([api, web].some(url => url.protocol !== "https:" && !isDeclaredInternalHost(url.href, config.internalHosts))) throw new Error("Public GitHub endpoints require HTTPS");
   const base = config.apiUrl.replace(/\/+$/, "");
-  async function request<T>(path: string, token: string, method = "GET", body?: unknown, graphql = false): Promise<T> {
+  async function request<T>(path: string, token: string, method = "GET", body?: unknown, graphql = false, expectedStatus?: number): Promise<T> {
     if (!path.startsWith("/") || path.startsWith("//") || path.split("?")[0]!.split("/").some(segment => [".", ".."].includes(decodeURIComponent(segment)))) throw new Error("Invalid GitHub API path");
     const url = graphql ? `${base.replace(/\/api\/v3$/, "/api")}/graphql` : `${base}${path}`;
     const internal = isDeclaredInternalHost(url, config.internalHosts);
@@ -66,6 +66,10 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       if (method === "GET") throw new GitHubReadError(response.status, message);
       throw new ErrorType(message);
     }
+    if (expectedStatus !== undefined && response.status !== expectedStatus) {
+      await response.body?.cancel();
+      throw new Error("GitHub did not confirm repository creation");
+    }
     if (response.status === 204) return undefined as T;
     return JSON.parse(await readBodyText(response, 2 * 1024 * 1024)) as T;
   }
@@ -76,14 +80,20 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       if (!value || /[\r\n]/.test(value)) throw new Error("Workspace GitHub account token is not configured");
       return { token: value, expiresAt: "" };
     }
+    return appToken(permissions, [repository.split("/")[1]!]);
+  }
+  function appJwt() {
     const seconds = Math.floor(now().getTime() / 1000);
     const head = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
     const payload = Buffer.from(JSON.stringify({ iat: seconds - 60, exp: seconds + 540, iss: config.appId })).toString("base64url");
     let signature: string;
     try { signature = sign("RSA-SHA256", Buffer.from(`${head}.${payload}`), config.privateKey!).toString("base64url"); }
     catch { throw new Error("Invalid GitHub App signing key"); }
+    return `${head}.${payload}.${signature}`;
+  }
+  async function appToken(permissions: Permissions, repositories?: string[]) {
     const result = await request<{ token: string; expires_at: string }>(`/app/installations/${config.installationId}/access_tokens`,
-      `${head}.${payload}.${signature}`, "POST", { repositories: [repository.split("/")[1]], permissions });
+      appJwt(), "POST", { ...(repositories ? { repositories } : {}), permissions });
     if (typeof result.token !== "string" || !result.token || !Number.isFinite(Date.parse(result.expires_at)) ||
       Date.parse(result.expires_at) <= now().getTime() || Date.parse(result.expires_at) > now().getTime() + 3_700_000) throw new Error("GitHub returned invalid short-lived credentials");
     return { token: result.token, expiresAt: result.expires_at };
@@ -117,6 +127,42 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
   }
   const readPermissions: Permissions = { contents: "read", pull_requests: "read", checks: "read", statuses: "read" };
   const forge: CodingForge = {
+    async createRepository(input) {
+      if (!isRepositoryName(input.repository)) throw new CodingMutationRejectedError("Invalid repository name");
+      const [owner, name] = input.repository.split("/") as [string, string];
+      let path: string;
+      let access: { token: string };
+      try {
+        if (config.getToken) {
+          access = await token(input.repository, { administration: "write" });
+          const user = await request<{ login: string }>("/user", access.token);
+          if (typeof user.login !== "string" || !user.login) throw new Error("GitHub account identity could not be verified");
+          if (user.login.toLowerCase() === owner.toLowerCase()) path = "/user/repos";
+          else {
+            const org = await request<{ login: string }>(`/orgs/${owner}`, access.token);
+            if (org.login?.toLowerCase() !== owner.toLowerCase()) throw new Error("Repository owner is not the authenticated account or an accessible organization");
+            path = `/orgs/${owner}/repos`;
+          }
+        } else {
+          const installation = await request<{ account: { login: string; type: string } }>(`/app/installations/${config.installationId}`, appJwt());
+          if (installation.account?.type !== "Organization" || installation.account.login.toLowerCase() !== owner.toLowerCase()) {
+            throw new Error("GitHub App repository creation requires its installed organization; personal repositories require an account token");
+          }
+          access = await appToken({ administration: "write" });
+          path = `/orgs/${owner}/repos`;
+        }
+      } catch (error) {
+        throw new CodingMutationRejectedError(error instanceof Error ? error.message : "GitHub repository creation credentials could not be verified");
+      }
+      const created = await request<{ id: number; full_name: string; html_url: string; default_branch: string; private: boolean }>(path, access.token, "POST",
+        { name, description: input.description, private: input.private, auto_init: true }, false, 201);
+      const url = new URL(created.html_url);
+      if (!Number.isSafeInteger(created.id) || created.id <= 0 || created.full_name?.toLowerCase() !== input.repository.toLowerCase() ||
+        url.origin !== web.origin || url.username || url.password || url.search || url.hash ||
+        url.pathname.toLowerCase() !== `${web.pathname.replace(/\/$/, "")}/${input.repository}`.toLowerCase() ||
+        !isGitBranch(created.default_branch) || created.private !== input.private) throw new Error("GitHub returned an unexpected repository creation result");
+      return { repository: created.full_name.toLowerCase(), repositoryId: created.id, url: url.href, baseBranch: created.default_branch, private: created.private };
+    },
     async checkRepository(repository, baseBranch) {
       if (!isGitBranch(baseBranch)) throw new Error("Invalid Git base branch");
       const access = await token(repository, { contents: "read" });

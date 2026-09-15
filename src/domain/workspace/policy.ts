@@ -1,8 +1,12 @@
 import type { WorkspaceRuntime, WorkspaceCheck } from "./types";
 import { WORKSPACE_LIMITS } from "./limits";
 
+export const WORKSPACE_REPOSITORY_MODES = ["selected", "owners", "all", "new"] as const;
+export type WorkspaceRepositoryMode = (typeof WORKSPACE_REPOSITORY_MODES)[number];
+
 /** Administrator-controlled Git scope. An empty override deliberately disables Git access. */
 export interface WorkspaceRepositoryRules {
+  mode?: WorkspaceRepositoryMode;
   repository?: string;
   repositories?: string[];
   repositoryOwners?: string[];
@@ -23,9 +27,20 @@ export function workspaceRepositories(policy: WorkspaceRepositoryRules): string[
 
 export function workspaceAllowsRepository(policy: WorkspaceRepositoryRules, repository: string): boolean {
   if (!isRepositoryName(repository)) return false;
+  const mode = workspaceRepositoryMode(policy);
+  if (mode === "all") return true;
   const name = repository.toLowerCase();
   return workspaceRepositories(policy).includes(name) ||
-    (policy.repositoryOwners ?? []).some(owner => owner.toLowerCase() === name.split("/")[0]);
+    (mode === "owners" && (policy.repositoryOwners ?? []).some(owner => owner.toLowerCase() === name.split("/")[0]));
+}
+
+export function workspaceRepositoryMode(policy: WorkspaceRepositoryRules): WorkspaceRepositoryMode {
+  return policy.mode ?? (policy.repositoryOwners?.length ? "owners" : "selected");
+}
+
+/** New-only permits creation, not access to an arbitrary existing repository. */
+export function workspaceAllowsRepositoryCreation(policy: WorkspaceRepositoryRules, repository: string): boolean {
+  return isRepositoryName(repository) && (workspaceRepositoryMode(policy) === "new" || workspaceAllowsRepository(policy, repository));
 }
 
 export function isRepositoryOwner(value: string): boolean {
@@ -34,10 +49,9 @@ export function isRepositoryOwner(value: string): boolean {
 
 /** An override replaces Git scope; it never inherits a removed deployment default. */
 export function withWorkspaceRepositoryRules(policy: WorkspaceProjectPolicy, rules: WorkspaceRepositoryRules | undefined): WorkspaceProjectPolicy {
-  if (rules === undefined) return policy;
-  const { repository: _repository, repositories: _repositories, repositoryOwners: _owners, ...compute } = policy;
-  void [_repository, _repositories, _owners];
-  return { ...compute, ...normalizeWorkspaceRepositoryRules(rules) };
+  const { mode: _mode, repository: _repository, repositories: _repositories, repositoryOwners: _owners, ...compute } = policy;
+  void [_mode, _repository, _repositories, _owners];
+  return { ...compute, ...normalizeWorkspaceRepositoryRules(rules ?? policy) };
 }
 
 export function isGitBranch(value: string): boolean {
@@ -55,6 +69,7 @@ export function isRepositoryName(value: string): boolean {
 
 export function normalizeWorkspaceRepositoryRules(rules: WorkspaceRepositoryRules): WorkspaceRepositoryRules {
   if (!rules || typeof rules !== "object" || Array.isArray(rules)) throw new Error("Invalid Workspace repository access rules");
+  if (rules.mode !== undefined && !WORKSPACE_REPOSITORY_MODES.includes(rules.mode)) throw new Error("Invalid Workspace repository access mode");
   if (rules.repository !== undefined && (typeof rules.repository !== "string" || !isRepositoryName(rules.repository.trim()))) {
     throw new Error("Default repository must use owner/repository");
   }
@@ -68,7 +83,7 @@ export function normalizeWorkspaceRepositoryRules(rules: WorkspaceRepositoryRule
       owners.some(name => typeof name !== "string" || !isRepositoryOwner(name.trim()))) {
     throw new Error("Allowed repository owners must be account or organization names");
   }
-  return { ...(rules.repository ? { repository: rules.repository.trim().toLowerCase() } : {}),
+  return { mode: workspaceRepositoryMode(rules), ...(rules.repository ? { repository: rules.repository.trim().toLowerCase() } : {}),
     repositories: [...new Set(repositories.map(name => name.trim().toLowerCase()))],
     repositoryOwners: [...new Set(owners.map(name => name.trim().toLowerCase()))] };
 }

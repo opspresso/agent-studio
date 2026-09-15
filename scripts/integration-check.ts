@@ -47,6 +47,8 @@ async function main() {
   execFileSync(process.execPath, ["--import", "tsx", "scripts/keycloak-auth-check.ts"], { stdio: "inherit" });
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
   const { workspacePolicyRepository } = await import("@/infrastructure/db/repositories/workspacePolicyRepository");
+  const { workspaceRepositoryCreationStore } = await import("@/infrastructure/db/repositories/workspaceRepositoryCreationStore");
+  const { createWorkspaceRepositoryCreationUseCases } = await import("@/application/workspace/createRepository");
   const { listProjects } = await import("@/application/project/projectUseCases");
   const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
   const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
@@ -264,6 +266,23 @@ async function main() {
     assert.equal((await workspacePolicyRepository.get(projectName))?.rules, undefined, "reset retains revision without an override");
     await assert.rejects(workspacePolicyRepository.put(workspacePolicy, 1), "stale policy edit cannot overwrite reset");
     pass("Workspace repository policy persistence, concurrent edits and reset");
+
+    let repositoryCreates = 0;
+    const repositoryRequest = { repository: `integration-owner/new-${suffix}`, description: "Integration fixture", private: true };
+    const createRepository = createWorkspaceRepositoryCreationUseCases({ policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
+      deploymentPolicy: () => ({ projectName, mode: "new", runtimes: ["codex"], checks: [], deploymentWorkflows: [] }),
+      authorize: async () => {}, now: () => new Date(now), forge: () => ({ createRepository: async request => {
+        repositoryCreates++;
+        return { repository: request.repository, repositoryId: 42, url: `https://github.example.test/${request.repository}`, baseBranch: "main", private: request.private };
+      } }) });
+    const repositoryAttempts = await Promise.allSettled([createRepository.create(projectName, repositoryRequest, "it@example.com"), createRepository.create(projectName, repositoryRequest, "it@example.com")]);
+    assert.ok(repositoryAttempts.some(result => result.status === "fulfilled"));
+    assert.equal(repositoryCreates, 1, "one external create across concurrent requests");
+    assert.deepEqual((await workspacePolicyRepository.get(projectName))?.rules?.repositories, [repositoryRequest.repository]);
+    assert.equal((await workspaceRepositoryCreationStore.get(projectName, repositoryRequest.repository))?.status, "created");
+    assert.equal((await createRepository.create(projectName, repositoryRequest, "it@example.com")).reused, true);
+    assert.equal(repositoryCreates, 1, "completed receipt is not recreated");
+    pass("Workspace repository creation: durable claim, atomic registration and replay");
 
     await versionRepository.create({
       projectName,
@@ -1634,6 +1653,7 @@ async function main() {
     );
     assert.equal(await versionRepository.get(projectName, "1"), null, "versions deleted");
     assert.equal(await workspacePolicyRepository.get(projectName), null, "Workspace policy deleted");
+    assert.equal(await workspaceRepositoryCreationStore.get(projectName, repositoryRequest.repository), null, "Repository creation receipt deleted");
     await assert.rejects(workspacePolicyRepository.put(workspacePolicy, null), "deleted project cannot regain Workspace access");
     assert.equal(
       (await usageRepository.listByProject(projectName, today, today)).length,

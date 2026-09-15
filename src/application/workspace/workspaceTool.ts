@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { McpToolResult } from "@/domain/llm/types";
 import type { WorkspaceProjectPolicy } from "@/domain/workspace/policy";
-import { isRepositoryName, workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
+import { isRepositoryName, workspaceRepositories, workspaceAllowsRepository, workspaceAllowsRepositoryCreation, workspaceRepositoryMode } from "@/domain/workspace/policy";
+import type { createWorkspaceRepositoryCreationUseCases } from "./createRepository";
 import type { WorkspaceRuntime, WorkspaceInput } from "@/domain/workspace/types";
 import { WORKSPACE_RUNTIMES, isTerminalWorkspaceRun } from "@/domain/workspace/types";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
@@ -12,6 +13,7 @@ import { boundedWorkspaceText } from "./output";
 
 interface WorkspaceToolDeps {
   useCases: ReturnType<typeof createWorkspaceUseCases>;
+  createRepository?: ReturnType<typeof createWorkspaceRepositoryCreationUseCases>["create"];
   policy(): WorkspaceProjectPolicy | undefined | Promise<WorkspaceProjectPolicy | undefined>;
   authorize(): Promise<void>;
   sleep(ms: number): Promise<void>;
@@ -30,7 +32,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
   const startKey = createHash("sha256").update(JSON.stringify([context.occurrence, context.projectName, "workspace-start"])).digest("hex");
   const input = (runtime: WorkspaceRuntime, task: string): WorkspaceInput => runtime === "command"
     ? { kind: "command", script: task } : { kind: "task", prompt: task };
-  const reply = (value: unknown): McpToolResult => ({ text: JSON.stringify(value) });
+  const reply = (value: unknown, failed = false): McpToolResult => ({ text: `${failed ? "Error: " : ""}${JSON.stringify(value)}` });
   const url = (path: string) => deps.publicBaseUrl ? new URL(path, deps.publicBaseUrl).href : path;
   const repositoryPolicyUrl = url(`/projects/${encodeURIComponent(context.projectName)}/settings#workspace-repositories`);
   const location = (workspace: WorkspaceView) => ({ workspace_id: workspace.id, workspace_path: `/chats/${workspace.chatId}`,
@@ -66,18 +68,29 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
       const selected = await current();
       return reply({ project: context.projectName, runtimes: policy.runtimes, workdir: deps.workdir,
       current_workspace: selected ? location(selected) : null,
+      repository_mode: workspaceRepositoryMode(policy), can_create_repositories: !!deps.createRepository,
       default_repository: policy.repository ?? null, repositories: workspaceRepositories(policy), repository_owners: policy.repositoryOwners ?? [],
       repository_policy_url: repositoryPolicyUrl, checks: policy.checks,
-      repository_setup: "Before creating a repository, use check_repository_access for the exact owner/name. An explicit repository or exact allowed owner grants Workspace scope; it does not grant GitHub credentials or prove existence. If blocked, return repository_policy_url and ask an administrator to update the policy; do not create another repository or guess a settings location. Once allowed, use an offered GitHub tool to create and initialize a requested new repository (autoInit=true), then check_repository with the actual branch before clone. Policy changes apply without redeployment. Native tasks cannot create a missing base branch.",
+      repository_setup: "Check repository access for the exact owner/name before creation. selected permits listed names; owners also permits listed owners; all permits any name the GitHub account can access; new permits listed names plus repositories created by this project's Workspace create_repository operation. In new mode, creation_allowed may be true while allowed is false. For a user-requested NEW repository use Workspace create_repository; it initializes a README and automatically registers a successful creation. Do not use an MCP create tool or claim an existing repository is new to obtain registration. Then check_repository with the returned base_branch before clone. If both access and creation are blocked, return repository_policy_url. Never create another name to bypass policy.",
       workspace_selection: "A chat keeps one selected Workspace per project. Repeated start returns it without queueing work. Use run for follow-ups. Both repository and base_branch must be selected for a clone; null means deliberately Git-free. workspace_path is a browser link; task files belong in workdir, using relative paths.",
       git_actions: "Use prepare_git for commit, commit-and-push, push (work branch), pull-request (title/body/draft), merge (pullRequestNumber/headSha from status.pull_request), or push-main (already published work branch, fast-forward only). Return approval_url verbatim and pause this turn. When requested from a chat, the decision outcome returns there automatically and the agent resumes the remaining request. Read status and prepare the next requested action for its own review. Closed Workspaces resume for Git review; never close or create another Workspace to publish. Only the user's Workspace approval UI executes these actions. Native tasks cannot write /control/git; do not retry Git writes with a temporary index, changed permissions or GitHub tools." });
     }
     if (operation === "check_repository_access") {
       if (typeof request.repository !== "string" || !isRepositoryName(request.repository)) throw new ValidationError("Repository must use owner/repository");
       const allowed = workspaceAllowsRepository(policy, request.repository);
-      return reply({ repository: request.repository, allowed, repository_policy_url: repositoryPolicyUrl,
+      const creationAllowed = !!deps.createRepository && workspaceAllowsRepositoryCreation(policy, request.repository);
+      return reply({ repository: request.repository, allowed, creation_allowed: creationAllowed, repository_mode: workspaceRepositoryMode(policy), repository_policy_url: repositoryPolicyUrl,
         message: allowed ? "Workspace policy allows this name. GitHub existence, credentials and a first commit must still be checked before clone."
+          : creationAllowed ? "An existing repository is not allowed, but you may create this name with Workspace create_repository when the user requested a new repository. Successful server creation is automatically registered."
           : "An administrator must allow this repository or its exact owner in the project's Workspace repository settings. No repository or Workspace was created." });
+    }
+    if (operation === "create_repository") {
+      if (!deps.createRepository) throw new ValidationError("Workspace repository creation is not configured");
+      if (typeof request.repository !== "string" || typeof request.description !== "string" || typeof request.private !== "boolean") throw new ValidationError("Repository, description and private are required");
+      const outcome = await deps.createRepository(context.projectName, { repository: request.repository, description: request.description, private: request.private }, context.ownerEmail);
+      return reply({ ...outcome, ...(outcome.result ? { repository_url: outcome.result.url, base_branch: outcome.result.baseBranch } : {}),
+        repository_policy_url: repositoryPolicyUrl, workspace_created: false, task_queued: false,
+        next: outcome.status === "created" && outcome.allowed ? "check_repository with base_branch, then start the requested work" : "inspect the reported outcome and policy; never repeat an uncertain creation" }, outcome.status !== "created" || !outcome.allowed);
     }
     if (operation === "use_workspace") {
       if (!context.sourceChatId) throw new ValidationError("Workspace selection requires a chat");

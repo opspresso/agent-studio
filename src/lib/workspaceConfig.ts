@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { WORKSPACE_RUNTIMES } from "@/domain/workspace/types";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
-import { isRepositoryName, isRepositoryOwner } from "@/domain/workspace/policy";
+import { isRepositoryName, isRepositoryOwner, WORKSPACE_REPOSITORY_MODES } from "@/domain/workspace/policy";
 
 const runtime = z.enum(WORKSPACE_RUNTIMES);
 const runtimeSettings = z.object({
@@ -23,6 +23,7 @@ const workspaceConfig = z.object({
     projectName: z.string().min(1).max(100),
     agentTools: z.boolean().default(false),
     runtimes: z.array(runtime).min(1).max(WORKSPACE_RUNTIMES.length),
+    mode: z.enum(WORKSPACE_REPOSITORY_MODES).optional(),
     repository: z.string().refine(isRepositoryName).optional(),
     repositories: z.array(z.string().refine(isRepositoryName)).max(WORKSPACE_LIMITS.policyRepositories).optional(),
     repositoryOwners: z.array(z.string().refine(isRepositoryOwner)).max(WORKSPACE_LIMITS.policyOwners).optional(),

@@ -25,6 +25,15 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe("Workspace repository access policy", () => {
+  it("separates fixed, owner, all and new repository access", () => {
+    const named = { repositories: ["company/existing"], repositoryOwners: ["company"] };
+    expect(workspaceAllowsRepository({ ...named, mode: "selected" }, "company/other")).toBe(false);
+    expect(workspaceAllowsRepository({ ...named, mode: "owners" }, "company/other")).toBe(true);
+    expect(workspaceAllowsRepository({ mode: "all" }, "different/existing")).toBe(true);
+    expect(workspaceAllowsRepository({ mode: "all" }, "https://internal/secret")).toBe(false);
+    expect(workspaceAllowsRepository({ ...named, mode: "new" }, "company/existing")).toBe(true);
+    expect(workspaceAllowsRepository({ ...named, mode: "new" }, "company/other")).toBe(false);
+  });
   it("allows exact repository owners, including new names, without matching neighboring owners or URLs", () => {
     const rules = { repositoryOwners: ["NALBAM"] };
     expect(workspaceAllowsRepository(rules, "nalbam/not-created-yet")).toBe(true);

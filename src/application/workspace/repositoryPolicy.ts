@@ -1,7 +1,7 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { WorkspacePolicyRepository } from "@/domain/workspace/policyRepository";
 import type { WorkspaceProjectPolicy, WorkspaceRepositoryRules } from "@/domain/workspace/policy";
-import { normalizeWorkspaceRepositoryRules, workspaceRepositories, withWorkspaceRepositoryRules } from "@/domain/workspace/policy";
+import { normalizeWorkspaceRepositoryRules, workspaceRepositories, workspaceRepositoryMode, withWorkspaceRepositoryRules } from "@/domain/workspace/policy";
 import { assertProjectAccessible } from "@/application/project/projectUseCases";
 import { ConflictError, ForbiddenError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
@@ -32,7 +32,7 @@ export function createWorkspaceRepositoryPolicyUseCases(deps: RepositoryPolicyDe
     const stored = await deps.repository.get(projectName);
     const effective = deployment && withWorkspaceRepositoryRules(deployment, stored?.rules);
     return { projectName, enabled: !!deployment, canManage: await deps.isAdmin(email), source: stored?.rules === undefined ? "deployment" : "override",
-      revision: stored?.revision ?? null, rules: { ...(effective?.repository ? { repository: effective.repository } : {}),
+      revision: stored?.revision ?? null, rules: { mode: workspaceRepositoryMode(effective ?? {}), ...(effective?.repository ? { repository: effective.repository } : {}),
         repositories: effective?.repositories ?? [], repositoryOwners: effective?.repositoryOwners ?? [] },
       runtimes: deployment?.runtimes ?? [], ...(stored ? { updatedAt: stored.updatedAt } : {}) };
   }
@@ -53,7 +53,7 @@ export function createWorkspaceRepositoryPolicyUseCases(deps: RepositoryPolicyDe
         throw error;
       }
       await recordAudit({ actorEmail: email, action: "settings.update", target: auditTarget("workspace-policy", projectName),
-        detail: rules ? `repository access override: ${workspaceRepositories(rules).length} repositories, ${rules.repositoryOwners?.length ?? 0} owners` : "repository access reset to deployment" }, deps.now());
+        detail: rules ? `repository access ${workspaceRepositoryMode(rules)}: ${workspaceRepositories(rules).length} repositories, ${rules.repositoryOwners?.length ?? 0} owners` : "repository access reset to deployment" }, deps.now());
       return view(projectName, email);
     },
   };

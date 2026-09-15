@@ -22,10 +22,16 @@ const request = (path: string, method = "GET", body?: unknown) => new Request(`h
 beforeEach(() => { vi.clearAllMocks(); f.events.mockResolvedValue([]); });
 
 describe("Workspace HTTP contract", () => {
+  it.each(["selected", "owners", "all", "new"])("accepts the explicit %s repository mode", async mode => {
+    const body = { revision: null, rules: { mode, repositories: [], repositoryOwners: [] } };
+    f.update.mockResolvedValue({ projectName: "demo", rules: body.rules, revision: 1 });
+    expect((await policy.PUT(request("/policy", "PUT", body), { params: Promise.resolve({ name: "demo" }) })).status).toBe(200);
+    expect(f.update).toHaveBeenCalledWith("demo", body, "admin@example.com");
+  });
   it("uses the admin identity and revision for repository policy writes and rejects compute or wildcard fields", async () => {
     const context = { params: Promise.resolve({ name: "demo" }) };
     f.update.mockResolvedValue({ projectName: "demo", revision: 2 });
-    const body = { revision: 1, rules: { repositories: ["company/repo"], repositoryOwners: ["company"] } };
+    const body = { revision: 1, rules: { mode: "owners", repositories: ["company/repo"], repositoryOwners: ["company"] } };
     expect((await policy.PUT(request("/policy", "PUT", body), context)).status).toBe(200);
     expect(f.update).toHaveBeenCalledWith("demo", body, "admin@example.com");
     for (const invalid of [{ ...body, rules: { ...body.rules, image: "host-shell" } }, { ...body, rules: { ...body.rules, repositoryOwners: ["*"] } }, { ...body, revision: -1 }]) {

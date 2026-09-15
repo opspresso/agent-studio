@@ -3,12 +3,13 @@ import { workspaceRepositoryPolicyUseCases } from "@/lib/container";
 import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { editorBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
-import { isRepositoryName, isRepositoryOwner } from "@/domain/workspace/policy";
+import { isRepositoryName, isRepositoryOwner, WORKSPACE_REPOSITORY_MODES } from "@/domain/workspace/policy";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 
 const updateSchema = z.object({
   revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER - 1).nullable(),
   rules: z.object({
+    mode: z.enum(WORKSPACE_REPOSITORY_MODES),
     repository: z.string().trim().refine(isRepositoryName).optional(),
     repositories: z.array(z.string().trim().refine(isRepositoryName)).max(WORKSPACE_LIMITS.policyRepositories),
     repositoryOwners: z.array(z.string().trim().refine(isRepositoryOwner)).max(WORKSPACE_LIMITS.policyOwners),

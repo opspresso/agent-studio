@@ -88,9 +88,19 @@ native Session의 활동·보존 기한을 갱신한다. 완료 시 미결 승�
 비교하며 해당 소유자의 현재·향후 저장소를 허용한다. 임의 wildcard·URL·부분 owner 일치는 허용하지 않는다.
 GitHub MCP 연결과 Workspace 서버 Git 자격증명은 별도이고, 정책 허용이 그 계정의 권한을 늘리지는 않는다.
 
+| 모드 | 기존 저장소 접근 | 새 저장소 생성 |
+|---|---|---|
+| `selected` — 저장소 고정 | 기본 저장소와 등록 목록 | 등록된 이름만 생성 가능 |
+| `owners` — 소유자 지정 | 기본·등록 목록 및 정확한 소유자 범위 | 해당 범위의 이름 |
+| `all` — 모든 저장소 | 서버 GitHub 계정으로 접근 가능한 모든 이름 | GitHub 계정이 생성할 수 있는 계정·조직 |
+| `new` — 등록 목록 + 신규 자동 허용 | 기본·등록 목록만 | 이 프로젝트의 `Workspace.create_repository`가 성공하면 자동 등록 |
+
+`mode`를 생략한 배포 설정은 소유자 목록이 있으면 `owners`, 아니면 `selected`다. `all`은
+GitHub 권한을 우회하지 않으며, `new`는 생성 시각이나 모델이 제출한 생성 주장으로 기존 저장소를 허용하지 않는다.
+
 `PROJECT#{name}/WORKSPACEPOLICY`는 Git 범위만 덮어쓴다. 이미지·네트워크·Runtime·검사·자원 한도와
 `agentTools`는 배포가 소유한다. 저장된 규칙이 없으면 `WORKSPACE_CONFIG`로 돌아가고, 빈 규칙은
-기본 저장소까지 포함해 모든 Git 작업을 차단한다. 초기화는 규칙만 제거하고 revision을 유지하므로
+`selected` 모드에서는 기본 저장소까지 포함해 모든 Git 작업을 차단한다. 초기화는 규칙만 제거하고 revision을 유지하므로
 오래된 편집으로 새 정책을 덮어쓸 수 없다. 프로젝트 삭제와 정책 저장은 같은 수명 경계를 사용한다.
 관리 변경은 감사 로그에 남으며 일반 Agent에는 정책을 수정하는 도구가 없다.
 
@@ -99,10 +109,29 @@ GitHub MCP 연결과 Workspace 서버 Git 자격증명은 별도이고, 정책 �
 적용되며 이미 실행 중인 native 작업을 자동 취소하지 않는다. 정리·체크포인트는 별도 수명 규칙을 따른다.
 
 새 저장소 생성 전 Agent는 `check_repository_access`로 정확한 owner/name의 허용 여부를 먼저 확인한다.
-차단 결과와 `options`는 실제 `repository_policy_url`을 반환한다. 허용되지 않은 이름으로 원격 저장소를
-먼저 만들거나, 관리 메뉴를 추측하거나, 이름을 바꿔 다른 저장소를 생성하지 않는다. 허용된 이름을 생성·
-초기화한 뒤 `check_repository`로 서버 계정과 실제 branch를 검사한다. UI는 소유자 범위 내 새 이름도
+결과는 기존 접근의 `allowed`와 생성 가능 여부인 `creation_allowed`를 구분한다. `new`에서는
+`allowed=false`, `creation_allowed=true`일 수 있다. 둘 다 차단되면 실제 `repository_policy_url`을
+반환한다. 생성은 `Workspace.create_repository`로 수행하고, 반환된 `base_branch`를
+`check_repository`로 검사한다. UI는 허용 모드에 따라 목록 밖의 이름도
 입력받으며 관리 탭에서 돌아오면 규칙을 새로 읽고 작성 중인 작업 입력은 유지한다.
+
+### 신규 저장소 생성과 등록
+
+서버가 저장소 생성 전 `PROJECT#{name}/REPOSITORYCREATE#{owner/repo}`에 요청자·인자 fingerprint·
+revision을 기록한다. 개인 저장소는 서버 계정의 `/user/repos`, 조직 저장소는 `/orgs/{owner}/repos`를
+사용하며 README 초기화를 항상 요청한다. GitHub App은 설치된 조직의 생성만 지원한다. 개인 저장소에는
+계정 토큰이 필요하다. 필요한 GitHub 권한은 [Repository API](https://docs.github.com/en/rest/repos/repos)를 따른다.
+
+HTTP 201과 저장소 ID·이름·URL·공개 범위·기준 branch를 검증한 결과만 생성 성공으로 인정한다.
+`new` 모드의 허용 목록 추가와 생성 결과 기록은 같은 DB transaction이다. 그때의 현재 정책을 다시
+읽으므로 생성 중 관리자가 정책을 철회하면 접근을 추가하지 않고, 생성된 저장소와 차단 상태를 함께
+보고한다. 등록 목록은 100개까지이며 가득 찼으면 생성 전에 거절한다. 동시에 용량이 소진되면 생성
+사실을 보존하고 관리자 등록이 필요함을 알린다.
+
+완료한 같은 요청은 저장된 결과를 재사용한다. 명시적 GitHub 거절은 원인을 수정한 뒤 다시 시도할 수
+있으나, 전송 오류·응답 유실·결과 저장 실패는 생성 여부가 불확실하므로 자동 재생성하지 않는다.
+프로젝트 삭제는 정책과 생성 receipt를 함께 제거하고 늦은 쓰기를 차단한다. GitHub의 원격 저장소를
+자동 삭제하지는 않는다. MCP가 별도로 생성한 저장소는 관리자가 기존 저장소로 등록해야 한다.
 
 ### Git 작업
 

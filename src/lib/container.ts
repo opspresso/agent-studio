@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as workspaceSleep } from "node:timers/promises";
 import { createWorkspaceUseCases, type WorkspaceDeps } from "@/application/workspace/workspaceUseCases";
 import { createWorkspaceRepositoryPolicyUseCases } from "@/application/workspace/repositoryPolicy";
+import { createWorkspaceRepositoryCreationUseCases } from "@/application/workspace/createRepository";
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { runWorkspaceWorker } from "@/application/workspace/service";
 import { createWorkspaceTool } from "@/application/workspace/workspaceTool";
@@ -11,12 +12,13 @@ import { runWorkspaceContinuations } from "@/application/chat/workspaceContinuat
 import type { ChatDeps } from "@/application/chat/deps";
 import { workspaceRepository } from "@/infrastructure/db/repositories/workspaceRepository";
 import { workspacePolicyRepository } from "@/infrastructure/db/repositories/workspacePolicyRepository";
+import { workspaceRepositoryCreationStore } from "@/infrastructure/db/repositories/workspaceRepositoryCreationStore";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLogRepository";
 import { createWorkspaceCheckpointStore } from "@/infrastructure/db/repositories/workspaceCheckpointStore";
 import { createDockerSandboxProvider } from "@/infrastructure/workspace/dockerProvider";
 import { createWorkspaceRuntimeAdapter, withWorkspaceModelChannel, WORKSPACE_DIRECTORY } from "@/infrastructure/workspace/runtimeAdapters";
-import { workspaceRepositories, workspaceAllowsRepository } from "@/domain/workspace/policy";
+import { workspaceRepositories, workspaceAllowsRepository, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import { createDockerCodingWorktree } from "@/infrastructure/workspace/gitWorktree";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
 import { createCodingUseCases } from "@/application/coding/codingUseCases";
@@ -1177,6 +1179,7 @@ export const executionDeps: ExecutionDeps = {
     const authorize = () => authorizeWorkspaceTools(email, projectName);
     try { await authorize(); } catch { return undefined; }
     return createWorkspaceTool({ useCases: workspaceUseCases, authorize,
+      ...(getWorkspaceGitHubConfig() ? { createRepository: workspaceRepositoryCreationUseCases.create } : {}),
       requestGit: (id, ownerEmail, action, sourceChatId) => getCodingUseCases().request(id, ownerEmail, action, sourceChatId),
       pullRequest: (id, ownerEmail) => getCodingUseCases().pullRequest(id, ownerEmail),
       attachRepository: (id, ownerEmail, repository, baseBranch) => getCodingUseCases().attachRepository(id, ownerEmail, repository, baseBranch),
@@ -1493,6 +1496,16 @@ export const workspaceRepositoryPolicyUseCases = createWorkspaceRepositoryPolicy
   deploymentPolicy: name => getWorkspaceConfig()?.projects.find(project => project.projectName === name),
   isAdmin: isEffectiveConfiguredAdminByEmail, now: () => new Date(),
 });
+export const workspaceRepositoryCreationUseCases = createWorkspaceRepositoryCreationUseCases({
+  policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
+  deploymentPolicy: name => getWorkspaceConfig()?.projects.find(project => project.projectName === name),
+  authorize: (projectName, ownerEmail) => authorizeWorkspaceTools(ownerEmail, projectName), now: () => new Date(),
+  forge: () => {
+    const settings = getWorkspaceGitHubConfig();
+    if (!settings) throw new ValidationError("Workspace GitHub integration is not configured");
+    return createCodingGitHub(settings).forge;
+  },
+});
 
 async function authorizeWorkspaceTools(email: string, projectName: string): Promise<void> {
   const tier = await getMemberTier(email);
@@ -1578,7 +1591,7 @@ export async function workspaceOptions(ownerEmail: string) {
     const policy = await getWorkspaceProjectPolicy(declared.projectName);
     if (policy) available.push({
       projectName: project.name, displayName: project.displayName, description: project.description,
-      runtimes: policy.runtimes, repository: policy.repository, repositories: workspaceRepositories(policy),
+      runtimes: policy.runtimes, mode: workspaceRepositoryMode(policy), repository: policy.repository, repositories: workspaceRepositories(policy),
       repositoryOwners: policy.repositoryOwners ?? [], deploymentWorkflows: policy.deploymentWorkflows,
     });
   }
