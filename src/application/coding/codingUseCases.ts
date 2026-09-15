@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { CodingAction, CodingApproval, CodingRepository, PullRequestInfo } from "@/domain/coding/types";
 import { codingCiAllowsPublication, CodingMutationRejectedError } from "@/domain/coding/types";
 import type { CodingForge } from "@/domain/coding/forge";
@@ -87,7 +88,17 @@ export function createCodingUseCases(deps: CodingDeps) {
     async pullRequest(id: string, ownerEmail: string): Promise<PullRequestInfo | undefined> {
       const workspace = await ownedWorkspace(deps, id, ownerEmail);
       if (!workspace.pullRequest) return undefined;
-      return deps.forge.pullRequest(repository(workspace), workspace.pullRequest.number);
+      const pullRequest = await deps.forge.pullRequest(repository(workspace), workspace.pullRequest.number);
+      if (["active", "suspended"].includes(workspace.status) && !isDeepStrictEqual(workspace.pullRequest, pullRequest)) {
+        try {
+          await deps.repository.write({ expectedRevision: workspace.revision,
+            workspace: { ...workspace, revision: workspace.revision + 1, pullRequest } });
+        } catch (error) {
+          // A concurrent run or close owns its newer revision; never overwrite it to refresh a view.
+          if (!isConditionalWriteFailure(error, { includeTransaction: true })) throw error;
+        }
+      }
+      return pullRequest;
     },
     async attachRepository(id: string, ownerEmail: string, name: string, baseBranch: string) {
       if (!isRepositoryName(name) || !isGitBranch(baseBranch)) throw new ValidationError("Invalid repository or base branch");

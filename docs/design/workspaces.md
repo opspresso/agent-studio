@@ -130,6 +130,8 @@ Agent가 만든 Workspace는 자신의 Chat을 가진다. 요청을 조율하는
 이 도구는 Git·배포 승인을 소비하지 않는다. Native 코딩 턴은 보호된 Git 경로와 승인 경계의
 환경 지침을 받으며, 권한 변경·임시 인덱스·GitHub 도구로 Git 쓰기를 우회하지 않는다.
 `status`는 실제 Git 동작 결과와 PR 정보를 반환하며 PR의 현재 HEAD·검사 상태를 GitHub에서 갱신한다.
+사용 중·일시 중지한 Workspace는 변경된 PR 상태를 revision 조건으로 저장해 화면에도 반영한다.
+동시 실행·종료가 먼저 기록되면 그 상태를 덮어쓰지 않으며 조회로 보존 기한을 연장하지 않는다.
 종료된 Workspace의 Git 검토는 소유자가 action lease를 획득하며 같은 파일·Session을 복원한다.
 새 native Run을 만들지 않으며, 삭제된 Chat과 Workspace는 복원하지 않는다.
 

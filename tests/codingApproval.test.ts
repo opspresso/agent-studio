@@ -51,6 +51,30 @@ beforeEach(async () => {
 afterEach(() => vi.useRealTimers());
 
 describe("explicit coding action approvals", () => {
+  it("refreshes saved PR status for the Workspace UI without extending its lifetime or writing unchanged data", async () => {
+    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, pullRequest: { ...pull, ci: "none" }, revision: workspace.revision + 1 } });
+    const before = (await repository.get(workspace.id))!;
+    pull.state = "merged";
+    const api = createCodingUseCases(deps);
+    expect(await api.pullRequest(workspace.id, owner)).toEqual(pull);
+    const after = (await repository.get(workspace.id))!;
+    expect(after.pullRequest).toEqual(pull);
+    expect(after.updatedAt).toBe(before.updatedAt);
+    expect(after.dueAt).toBe(before.dueAt);
+    expect(after.revision).toBe(before.revision + 1);
+    await api.pullRequest(workspace.id, owner);
+    expect((await repository.get(workspace.id))?.revision).toBe(after.revision);
+  });
+  it("does not overwrite a close that races with PR status refresh", async () => {
+    await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, pullRequest: pull, revision: workspace.revision + 1 } });
+    vi.mocked(deps.forge.pullRequest).mockImplementationOnce(async () => {
+      await createWorkspaceUseCases(deps).close(workspace.id, owner);
+      return { ...pull, state: "merged" };
+    });
+    expect((await createCodingUseCases(deps).pullRequest(workspace.id, owner))?.state).toBe("merged");
+    expect((await repository.get(workspace.id))?.status).toBe("closing");
+    expect(deps.provider.start).not.toHaveBeenCalled();
+  });
   it("restores a closed Workspace for PR review without another native task or Workspace", async () => {
     review.treeSha = review.headTreeSha;
     await createWorkspaceUseCases(deps).close(workspace.id, owner);
