@@ -6,8 +6,7 @@
  * Kept apart from `imageLimits` because the constraints are different in kind.
  * An image is bounded by what a provider will accept. A document becomes *text
  * inside the turn*, so it is bounded by the prompt it has to fit and — in a
- * console chat — by the single row the message is stored as and replayed
- * from on every later turn.
+ * console chat — by both display storage and the separate native SDK Session.
  */
 
 import { baseMimeType } from "@/domain/artifact/types";
@@ -25,8 +24,8 @@ export const MAX_DOCUMENT_SIZE_LABEL = `${MAX_DOCUMENT_BYTES / (1024 * 1024)}MB`
  *
  * Deliberately far below what a URL-fetching tool returns for the same file. A
  * tool result is transient; an attached document is inlined into a turn, and a
- * console chat stores that turn as one row it reads back whole on every later
- * turn — where Korean text costs three bytes per character. Truncation is
+ * console chat keeps display text and native SDK history under separate limits,
+ * and Korean text costs three bytes per character in storage. Truncation is
  * reported, so what this costs is visible rather than silent.
  */
 export const MAX_DOCUMENT_CHARS = 20_000;

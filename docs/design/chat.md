@@ -1,7 +1,7 @@
 # Chat
 
 agent project 를 상대로 하는 소유자 범위(owner-scoped)의 비공개 대화이며 —
-히스토리가 플랫폼 자신이 소유하는 무제한 입력인 유일한 표면이다. 첨부(attachment)가
+이력이 계속 누적되지만 화면 조회·SDK 문맥·재접속 로그에 각각 별도 상한을 적용하는 표면이다. 첨부(attachment)가
 여기에 있는 이유는 대부분의 첨부가 chat 으로 도착하기 때문이다.
 
 > **영속화(persistence)와 재생(replay) 불변식은 코드 옆에 있다.**
@@ -14,8 +14,8 @@ agent project 를 상대로 하는 소유자 범위(owner-scoped)의 비공개 �
 Chat { chatId, title, ownerEmail, projectName?, workspaceId?, linkedWorkspaces?, createdAt, updatedAt }
 ```
 
-메시지는 `seq` 를 갖는 append-only 다. Chat 실행은 agent 엔진을 직접 사용하고 — HTTP
-self-call 은 없다 — 클라이언트로 SSE 를 스트리밍한다.
+메시지는 `seq`를 가진다. Chat은 공통 `ChatDeps.runAgent`가 바인딩한 `executeAgent` facade를 통해
+실행하고 HTTP self-call 없이 SSE를 전달한다. 승인·CI 결과의 후속 실행도 같은 경로를 사용한다.
 
 `workspaceId`는 그 Chat 자체가 Workspace 실행 화면일 때 사용한다. Agent 대화에서 작업을
 위임한 Workspace 선택은 별도 `linkedWorkspaces`에 프로젝트별로 보관한다. 이 연결은
@@ -164,17 +164,15 @@ tool 행은 항상 `toolCallId` 를 나르고, assistant 행은 `toolCalls`/`ima
 subagent 의 것과 transfer 의 것도 포함하며, 이들은 `author`/`displayOnly` 를 나르므로 읽는
 사람은 무엇이 실행됐는지 보되 재생은 그것들을 거부한다.
 
-**tool 트래픽은 재생된다.** 이것이 chat 을 다른 모든 표면과 다르게 만드는 결정이다: chat 은
-이 플랫폼이 소유하면서 제한 없이 자라도록 두는 유일한 입력원이므로, 나중 턴이 무엇을 볼 수
-있는지를 호출자가 아니라 여기서 정해야 한다. 세 가지 budget 이 그것을 제한한다 — 마지막
-N개의 assistant 턴, tool 텍스트 budget, 그리고 런 전체 단위의 히스토리 budget — 그리고 오직
-세 번째만 **자기가 버린 것을 `warning` chunk 로 보고한다**. 앞의 둘은 설계대로 버리는
-것인 반면 세 번째는 읽는 사람이 쓴 것을 버리기 때문이다.
+**모델의 tool 트래픽은 SDK Session에서 재생된다.** `runtime/session.ts`가 완전한 턴, 텍스트,
+이미지와 저장 크기 예산을 적용하며 native call/result 순서를 유지한다. 화면의 `ChatMessage`는
+표시용으로 평탄화된 기록이라 모델 입력으로 다시 조립하지 않는다. 보이는 도구 결과와 모델이
+실제로 받는 과거 이력은 같지 않을 수 있으며 생략·Session 소실은 경고로 드러낸다.
 
-거기서 따라 나오는 메커니즘(한 턴 안의 저장 순서는 wire 순서의 역순이라는 것, tool-call id 가
-한 런 안에서만 유일하므로 짝짓기는 한 런으로 범위가 한정된다는 것, 저장된 결과가 없는 호출은
-미아로 남기지 않고 버린다는 것)은 설계라기보다 함정이고, `src/application/chat/AGENTS.md` 가
-그것들을 편집에 필요한 만큼 상세히 담고 있다.
+화면 저장은 도구 행 뒤에 해당 assistant 행이 오는 순서다. call ID는 런 안에서 짝지으며 하위
+Agent의 author를 보존한다. Workspace 승인·CI 결과 행은 플랫폼 이벤트로 구분하고 후속 SDK
+실행에는 검증한 결과 이벤트만 새 입력으로 보낸다. 상세 계약은 `src/application/chat/AGENTS.md`와
+`src/application/runtime/AGENTS.md`를 따른다.
 
 ## 사이드바와 스레드가 읽는 범위
 

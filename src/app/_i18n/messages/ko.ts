@@ -244,13 +244,15 @@ export const ko: Messages = {
   "login.product": "Agent Studio, AI 에이전트를 만들고 활용하는 플랫폼입니다.",
   "login.domains": "이 배포가 허용한 도메인의 계정으로 로그인하세요.",
 
+  "home.domain.workspaces": "Workspace와 Sandbox",
+  "home.domain.workspacesBody": "운영자가 활성화하면 Workspace에 코드·파일·실행 이력을 유지하고 격리된 Sandbox에서 작업합니다. Git 변경을 검토한 뒤 게시하며 승인 결과는 요청한 채팅으로 돌아옵니다.",
   "home.flow.title": "아이디어에서 실행까지",
   "home.flow.build": "프로젝트 구성",
   "home.flow.buildBody": "모델과 지침을 정하고, 에이전트에 필요한 스킬과 도구를 연결하세요.",
   "home.flow.run": "배포하고 실행",
   "home.flow.runBody": "버전을 배포한 뒤 콘솔, API 또는 연결한 메신저에서 실행하세요.",
   "home.flow.review": "결과 확인",
-  "home.flow.reviewBody": "대화와 결과물을 다시 열고, 같은 워크스페이스에서 실행 기록과 사용량을 확인하세요.",
+  "home.flow.reviewBody": "채팅·Workspace 검토·Artifact로 돌아와 결과를 확인하고 트레이스와 사용량을 함께 살펴보세요.",
   "home.eyebrow": "프로젝트 · 버전 · 배포",
   "home.headline": "AI 에이전트를 만들고",
   "home.headlineAccent": " 다양한 작업에 활용하세요.",
@@ -258,7 +260,7 @@ export const ko: Messages = {
     "Agent Studio는 모델, 스킬, 도구를 하나로 연결하는 에이전트 플랫폼입니다. 프롬프트, 에이전트, 이미지 작업을 프로젝트로 만들고 대화, API, 메신저에서 활용하세요.",
   "home.signInHint": "허용된 도메인의 계정으로 로그인하세요.",
   "home.proof.network": "아이디어를 에이전트로",
-  "home.proof.networkNote": "만들기부터 테스트와 배포까지 한곳에서",
+  "home.proof.networkNote": "한 플랫폼에서 생성·검증·배포",
   "home.proof.engine": "모델을 하나의 방식으로 연결",
   "home.proof.engineNote": "작업에 맞는 모델을 자유롭게 선택",
   "home.proof.cost": "실행별 비용과 트레이스",
@@ -298,15 +300,15 @@ export const ko: Messages = {
     "보고서·발표자료·스프레드시트를 만들고, 지원되는 첨부 문서를 원본을 유지한 채 새 파일로 수정합니다. 저장소를 구성하면 원본과 결과를 보관하고 내려받을 수 있습니다.",
   "home.domain.surfaces": "Slack · A2A · 웹훅",
   "home.domain.surfacesBody":
-    "에이전트 프로젝트를 Slack, Telegram, Teams에 연결합니다. 배포된 버전은 웹훅, 스케줄, 양방향 A2A 호출에서도 실행할 수 있습니다.",
+    "프로젝트를 메신저·API·Webhook·스케줄로 호출합니다. 창구마다 식별자·이력·승인 규칙이 다르며 Workspace 지원 범위도 다릅니다.",
   "home.domain.cost": "비용과 한도",
   "home.domain.costBody":
-    "실행별 비용을 기록하고 프로젝트, 호출자, 날짜별로 집계합니다. 일간·월간 임계값을 설정해 알림을 보내거나 새 실행을 차단할 수 있습니다.",
+    "Studio 모델 호출 비용을 프로젝트·호출자·날짜별로 기록합니다. 설정한 임계값으로 알리거나 새 실행을 차단하며, 외부 Workspace CLI 사용량은 해당 제공자 기록에서 별도로 확인합니다.",
   "home.domain.traces": "트레이스와 감사 로그",
   "home.domain.tracesBody":
-    "각 실행의 턴과 도구 호출을 트레이스에서 확인합니다. 시크릿 열람, 관리자 변경, 삭제 작업은 감사 로그에 남습니다.",
+    "기록된 모델 실행·도구 활동·사용량을 확인합니다. 트레이스와 감사는 범위·보존 기간이 다르며 관리자 변경과 발급된 시크릿 접근을 감사 기록에 남깁니다.",
   "home.guide.title": "Agent Studio 시작하기",
-  "home.guide.body": "가이드에서 첫 프로젝트 만들기, 도구 연결, 대화 시작 방법을 살펴보세요. 로그인 없이 읽을 수 있습니다.",
+  "home.guide.body": "프로젝트 설정, 도구 연결, Workspace 사용과 승인 결과 확인을 안내합니다. 실행 창구마다 지원하는 기능을 확인할 수 있으며 로그인 없이 읽을 수 있습니다.",
   "home.product": "AI 에이전트 플랫폼입니다.",
 
   "catalog.clearSearch": "검색어 지우기",
@@ -396,8 +398,9 @@ export const ko: Messages = {
   "overview.allProjects": "전체 보기",
   "overview.projectsFailed": "프로젝트를 불러오지 못했습니다.",
   "overview.noProjects": "아직 프로젝트가 없습니다.",
-  "overview.recentChats": "최근 대화",
-  "overview.recentChatsNote": "이전에 나눈 대화를 이어서 시작하세요.",
+  "overview.chatsFailed": "최근 채팅과 Workspace를 불러오지 못했습니다. 새로고침해 다시 확인하세요.",
+  "overview.recentChats": "최근 채팅과 Workspace",
+  "overview.recentChatsNote": "유형을 확인하고 대화 또는 파일 작업을 이어가세요.",
   "overview.allChats": "전체 보기",
   "overview.noChats": "아직 대화가 없습니다.",
   "overview.getStarted": "프로젝트로 시작하기",
@@ -467,7 +470,7 @@ export const ko: Messages = {
     "관리자가 Tools에서 서버를 등록하고 discovery 결과에 필요한 도구가 나타나는지 확인한다. 버전에 서버를 연결하고 제공할 도구를 선택한 뒤 버전을 저장한다. 호출이 실패하면 서버 상태·필수 헤더·실행 경고를 확인한다. 서버에 접속할 수 있어도 사용할 도구가 없거나 별도 인증이 필요할 수 있다.",
   "guide.capabilities.oauth": "MCP 설정의 저장 범위",
   "guide.capabilities.oauthBody":
-    "도구 선택과 헤더 재정의는 버전 설정이며 버전의 Save가 필요하다. 관리자는 Tools의 OAuth에 공용 Client ID·Secret·Redirect URI를 등록하고, 프로젝트 소유자는 Connection에서 자신의 계정으로 Connect한다. 사용자별 토큰은 프로젝트 단위로 저장되어 모든 버전이 공유한다.",
+    "도구 선택과 헤더 오버라이드는 버전에 속하며 Save가 필요하다. 헤더를 바꾼 뒤 도구 목록을 새로고침한다. 부분 수정에서 생략한 저장 헤더는 보존하며 명시적으로 모두 지우면 제거된다. 관리자는 Tools에서 OAuth 앱을 설정하고 소유자는 계정을 연결한다. 버전들은 프로젝트 연결을 공유하며 도구 발견 성공이 저장소 접근까지 증명하지는 않는다.",
   "guide.capabilities.agents": "다른 에이전트에 작업 위임",
   "guide.capabilities.agentsBody": "별도 전문 역할이 필요한 작업에 위임을 사용한다. 반복적인 절차는 Agent 하나와 skill로 구성할 수 있다. 배포된 로컬 프로젝트나 등록된 외부 OpenAI 호환·A2A Agent를 연결하고 역할을 명확히 설명한다. 위임된 활동은 작성 Agent 이름으로 구분하며 사용량은 원래 실행의 집계에 포함된다.",
   "guide.capabilities.plugins": "Plugins 가져오기와 동기화",
@@ -487,7 +490,7 @@ export const ko: Messages = {
     "새 대화를 만들고 접근 가능한 agent 프로젝트를 선택한다. 배포 버전이 있으면 그 버전을, 없으면 최신 저장 버전을 사용한다. llm과 image 프로젝트는 선택 대상이 아니다. 따라서 버전 배포나 수정으로 기존 대화의 후속 답변 동작도 달라질 수 있다.",
   "guide.chat.context": "대화 맥락의 한계",
   "guide.chat.contextBody":
-    "대화에는 메시지와 도구 활동이 남지만 모델에 전달하는 기록에는 한도가 있다. 긴 대화나 큰 도구 결과는 일부가 잘리고 경고가 표시될 수 있다. 오래된 이미지는 화면에 남아 있어도 후속 실행에 전달되지 않을 수 있으므로 필요한 이미지를 다시 첨부한다. 핵심 조건은 다시 전달하고 작업이 크게 달라지면 새 대화를 시작한다.",
+    "화면 메시지와 모델의 암호화된 SDK Session은 별개다. Session은 제한된 이전 턴·도구 결과·최근 이미지를 제공하고 Memory는 선택적인 장기 자료다. 이력이 생략되면 경고하며 Session이 만료된 경우 보이는 메시지로 모델 이력을 다시 만들지 않는다. 새 문맥으로 시작할 때 필요한 제약을 다시 전달한다.",
   "guide.chat.attachments": "이미지와 문서 첨부",
   "guide.chat.attachmentsBody":
     "이미지 입력을 지원하는 모델에 PNG·JPEG·GIF·WebP를 첨부한다. PDF, UTF-8 텍스트, DOCX, XLSX, PPTX, HWP 5.x, HWPX, ODT/ODS/ODP, RTF는 내장 문서 엔진이 읽는다. 문서는 한 번에 최대 4개, 각각 10 MiB까지 첨부한다. 대화에는 제한된 추출문을 남기며 저장소가 구성되면 원본도 보관한다. 전송 후 추출·저장 경고를 확인한다.",
@@ -500,6 +503,37 @@ export const ko: Messages = {
   "guide.chat.stop": "페이지를 닫아도 대화 실행은 계속됨",
   "guide.chat.stopBody":
     "중단하려면 대화의 정지 버튼을 사용한다. 다른 화면으로 이동하거나 브라우저 탭을 닫으면 화면 연결만 끊기므로, 해당 대화를 다시 열어 저장된 결과를 확인한다. 중단 요청으로 이미 완료한 도구 작업이 되돌아가지는 않는다. 서버 자체가 중단되면 진행 중인 실행이 완료되지 못할 수 있다.",
+
+  "guide.chat.approvals": "도구 승인과 채팅 재개",
+  "guide.chat.approvalsBody": "버전은 선택한 도구를 실행하기 전에 승인을 요구할 수 있다. 채팅에서 Agent·도구·인자를 확인하고 승인하거나 거절한다. SDK 승인 대기 중에는 새 메시지 대신 승인 또는 폐기를 먼저 처리한다. 버전·연결이 바뀌면 대기 중 체크포인트를 재개할 수 없을 수 있다. Workspace Git 검토는 별도 절차이며, 해당 Workspace에서 정확한 Git 동작을 승인하면 원래 채팅이 결과를 받아 재개된다.",
+  "guide.workspaces.title": "Workspace와 격리 실행",
+  "guide.workspaces.body": "Workspace는 파일과 실행 Session을 유지하고 Sandbox는 이를 실행하는 일시적 컴퓨팅 자원이다. Agent 채팅은 요청을 조율하고, 별도 Workspace 화면은 출력·Diff·검사·Git 검토를 보여 준다.",
+  "guide.workspaces.setup": "1. 실행 기능 확인",
+  "guide.workspaces.setupBody": "운영자가 Workspace worker, 실행 이미지·네트워크와 허용 프로젝트·Runtime을 설정해야 한다. Agent 도구 사용에는 member 또는 admin과 프로젝트의 agentTools 활성화도 필요하다. Skill 설치나 GitHub 연결만으로 이 기능이 생기지는 않는다. Chats의 Workspace 선택으로 직접 작업하거나 활성화된 Agent에게 조율을 요청한다.",
+  "guide.workspaces.tasks": "2. 작업에 맞는 절차 선택",
+  "guide.workspaces.tasksBody": "PR 리뷰, Issue 수정, 기능 구현, 리팩토링, 의존성 업그레이드, CI 조사, 보안 수정과 프로젝트 생성에 맞는 Skill을 사용한다. 파일 변환·데이터 분석·스크립트 자동화도 Workspace에서 수행할 수 있다. 원격 조회만 필요하면 MCP를 사용하고 실행 공간을 만들지 않는다. Skill은 절차를 제공하며 실행 가능 범위는 실제 도구와 배포 설정이 결정한다.",
+  "guide.workspaces.reuse": "3. 선택한 Workspace 재사용",
+  "guide.workspaces.reuseBody": "Agent 채팅은 프로젝트마다 선택한 Workspace 하나를 유지한다. Start는 최초 생성이며 반복하면 새 작업 없이 기존 선택만 반환한다. 후속 작업은 Run으로 이어가고, 다른 공간으로 옮길 때만 소유한 기존 Workspace를 선택한다. Workspace 링크는 웹 페이지 주소이고 파일 경로는 workdir 안에 있다. 홈페이지와 사이드바에서 Chat과 Workspace 유형을 구분해 표시한다.",
+  "guide.workspaces.runtime": "4. 코딩 Runtime과 명령 실행 구분",
+  "guide.workspaces.runtimeBody": "설정된 Codex·Claude·OpenCode에는 자연어 작업과 검증 방법을 전달한다. Command는 정확한 비대화형 셸 스크립트를 실행하므로 설명 문장이나 번호 목록을 명령으로 보내지 않는다. Run으로 현재 Runtime을 바꿀 수는 없다. 보고서·파일 처리·실험 등 Git 없는 작업도 가능하다.",
+  "guide.workspaces.repository": "5. clone 전에 저장소 준비",
+  "guide.workspaces.repositoryBody": "Git 작업에는 저장소와 기준 브랜치를 함께 지정하며 둘 다 선택하지 않으면 Git 없는 공간을 만든다. 허용 목록에 이름이 있어도 저장소가 존재한다는 뜻은 아니다. 새 저장소 요청은 생성·첫 commit·접근 가능한 기준 브랜치를 준비한 뒤 clone한다. GitHub MCP 연결과 Workspace 서버의 Git 계정은 별개다. 나중에 Git을 연결하려면 Git 없는 workdir가 비어 있어야 한다.",
+  "guide.workspaces.approvals": "6. 게시 단계를 각각 검토",
+  "guide.workspaces.approvalsBody": "Commit, commit-and-push, PR 생성, 병합과 main 직접 푸시는 서로 다른 검토다. 각 승인은 검토한 동작과 정확한 변경에만 적용된다. 결과가 원래 채팅으로 돌아오면 다음에 요청한 검토를 준비한다. PR의 CI 대기가 등록되면 해당 HEAD의 검사를 최대 30분 관찰하고 결과에 따라 채팅을 재개한다. 검사 실패·HEAD 변경·결과 불명은 게시 권한이 아니다. main 직접 푸시는 fast-forward만 가능하며 브랜치 보호 규칙을 따른다.",
+  "guide.workspaces.results": "7. 실행·검사·산출물 구분",
+  "guide.workspaces.resultsBody": "대기·실행 중은 완료가 아니다. 최종 실행 상태·출력·Diff를 확인한다. Workspace에 설정한 검사, 코딩 Runtime이 직접 실행한 검사, GitHub 검사와 배포 상태는 서로 다른 근거다. Workspace 파일이 자동으로 다운로드 Artifact나 공개 미리보기가 되지는 않는다. 실행하지 못한 검사를 밝히고 실제 반환된 Workspace·저장소·Artifact 링크만 사용한다.",
+  "guide.workspaces.lifecycle": "8. 중지·종료·복구",
+  "guide.workspaces.lifecycleBody": "Cancel은 현재 작업을 중지한다. Close는 선택한 Workspace와 체크포인트를 유지하면서 컴퓨팅을 종료하며, 후속 작업으로 복원할 수 있다. 비활성 정리는 파일과 Session을 저장한 뒤 Sandbox를 제거한다. 체크포인트 한도를 넘으면 정리가 완료되지 않을 수 있다. Workspace 채팅을 삭제하면 정리를 요청하고 해당 공간을 되살리지 않는다. Workspace 개수와 worker 동시 실행 수는 다르며 자원·보존·설정 한도가 실행 범위를 결정한다.",
+  "guide.surfaces.title": "실행 창구마다 가능한 기능이 다르다",
+  "guide.surfaces.body": "Publish는 실행할 버전을 정하며 모든 창구에 같은 권한을 부여하지 않는다. 인증, 대화 이력, 개인 문맥, Workspace 접근과 승인 화면은 각각의 규칙을 따른다.",
+  "guide.surfaces.chat": "Chats: 영속 이력과 승인 결과",
+  "guide.surfaces.chatBody": "로그인한 채팅 소유자는 영속 SDK Session과 도구 승인 화면을 사용한다. 활성화된 Workspace의 승인 결과와 CI 갱신은 원래 채팅으로 돌아온다. Workspace Runtime의 Session과 파일은 별도이며 상위 Agent의 모든 Skill·계정 연결을 자동 상속하지 않는다.",
+  "guide.surfaces.api": "Playground와 API: 저장된 설정과 호출자 이력",
+  "guide.surfaces.apiBody": "Playground는 저장한 설정을 실행한다. 로그인한 member는 활성화된 Workspace 도구를 사용할 수 있지만 원래 Chat이 없으면 승인 후 자동 재개를 받지 못한다. HTTP 클라이언트는 자신의 이력을 전달한다. 프로젝트 API 토큰은 서비스 actor를 사용하고 소유자 이메일을 MCP에 전달하지만 브라우저 세션은 아니며 Workspace 도구나 영속 Chat 승인 화면을 활성화하지 않는다.",
+  "guide.surfaces.bots": "메신저: 플랫폼 식별자와 응답",
+  "guide.surfaces.botsBody": "Slack·Telegram·Teams는 각 플랫폼의 actor 식별자로 실행하고 그곳에 답한다. 개인 MCP 문맥은 해당 창구가 검증한 이메일을 해석할 수 있을 때만 제공한다. 봇 호출에는 user 전용 Workspace 빌트인이나 브라우저 Chat 승인 화면이 제공되지 않는다. 봇 자격 증명 검사와 실제 이벤트 전달을 별도로 확인한다.",
+  "guide.surfaces.automation": "Webhook과 스케줄: 기계 호출자",
+  "guide.surfaces.automationBody": "유효한 Webhook 서명은 전달을 인증하며 발신자에게 개인 세션이나 Workspace 접근을 부여하지 않는다. 결과는 Chat이 아니라 Trigger 이력에 남는다. 스케줄은 소유자가 명시적으로 개인 문맥을 켜고 권한을 재확인한 경우 지원되는 MCP·오디오 기능에 그 문맥을 사용할 수 있다. 이때도 schedule actor이며 Workspace 도구를 얻지 않는다. 오디오 후처리는 별도의 제한된 worker 절차를 따른다.",
 
   "guide.audio.title": "오디오 처리와 개인 기록",
   "guide.audio.body": "Agent 하나가 재사용 가능한 skill을 읽고 수집·전사·요약·요청한 기록을 수행할 수 있다. 긴 작업은 별도 worker가 이어가므로 Agent 응답이 끝나거나 화면을 닫아도 계속된다.",
@@ -525,7 +559,7 @@ export const ko: Messages = {
     "각 프로젝트의 API Reference는 해당 프로젝트 주소와 배포 버전을 채워 보여 준다. 요청 필드·응답 형식·오류 코드·curl 또는 SDK 예제가 포함되어 있다. 아래 절차와 함께 사용하며 소스 checkout은 필요하지 않다.",
   "guide.api.token": "프로젝트와 인증 정보 준비",
   "guide.api.tokenBody":
-    "실행 예제가 나타나도록 검증한 버전을 Publish한다. 소유자나 관리자가 Integrations에서 토큰을 발급하며 소유자의 등급이 API 토큰을 허용해야 한다. 예제의 $PROJECT_API_TOKEN을 이 토큰으로 바꾸고 Authorization: Bearer <token>으로 전송한다. 모델 공급자의 API 키가 아닌 프로젝트 전용 자격 증명이며 해당 프로젝트 실행에만 사용한다.",
+    "검증한 버전을 Publish하고 Integrations에서 프로젝트 토큰을 발급한다. 소유자 tier가 API 토큰을 허용해야 한다. Authorization: Bearer <token>으로 보내며 해당 프로젝트 실행으로 범위가 제한된다. 서비스 actor로 실행하고 연결된 MCP 서버에는 소유자 이메일을 전달하므로 해당 도구에 접근하는 자격 증명으로 취급한다. 브라우저 로그인이나 Workspace 도구를 얻는 수단은 아니다.",
   "guide.api.version": "특정 버전과 published 선택",
   "guide.api.versionBody":
     "실행 URL은 /api/projects/{name}/versions/{version}/ 뒤에 엔드포인트를 붙인다. 자동 생성 예제는 현재 배포된 버전의 이름을 사용한다. 그 버전을 지정하려면 이름을 유지하고, 이후 Publish 변경을 따라가려면 published를 사용한다. 호스트는 호출 시스템에서 접근 가능한 Agent Studio 주소인지 확인한다.",
@@ -553,7 +587,7 @@ export const ko: Messages = {
     "agent 프로젝트의 Integrations에서 Telegram bot token을 저장하고 활성화하면 webhook이 등록된다. 앱 주소가 바뀌면 Register webhook으로 다시 등록한다. Teams는 Azure Bot의 Teams 채널을 활성화하고 application ID·client secret, 단일 tenant 앱이면 tenant ID를 저장한 뒤 표시된 URL을 messaging endpoint로 설정한다. 그룹 멘션을 시험하기 전에 다이렉트 대화에서 확인한다.",
   "guide.integrations.a2a": "A2A와 AG-UI",
   "guide.integrations.a2aBody":
-    "A2A는 배포된 public 프로젝트를 호환 에이전트에 제공한다. 관리자가 Settings에서 공용 키나 이름 있는 클라이언트 키를 설정하며 호출자는 X-A2A-Key를 사용한다. Integrations에서 Agent Card URL을 확인한다. AG-UI는 프로젝트 토큰으로 배포된 프로젝트를 자체 화면에서 실행한다. Integrations의 클라이언트 예제를 사용하고 자체 앱에서 대화 이력과 프로토콜 이벤트 표시를 관리한다.",
+    "A2A는 Publish된 public 프로젝트의 Card를 공개하며 설정된 공용 키나 이름 있는 키는 계약에 따라 private 프로젝트의 지정 endpoint도 호출할 수 있다. AG-UI는 프로젝트 토큰으로 Publish된 실행을 자체 화면에 연결한다. 클라이언트가 메시지 이력과 프로토콜 이벤트 표시를 관리하며 두 프로토콜이 브라우저 Chat이나 Workspace 승인 화면을 만들지는 않는다.",
   "guide.integrations.webhook": "웹훅으로 실행하기",
   "guide.integrations.webhookBody":
     "프로젝트 Settings에서 webhook을 설정·활성화하고 URL을 복사한 뒤 X-Trigger-Secret 헤더로 비밀값을 보낸다. GitHub에서는 application/json을 선택하고 같은 값을 Secret에 입력하면 X-Hub-Signature-256으로 서명한다. agent 메시지에는 message 모드, 템플릿 필드에는 variables 모드를 선택한다. HTTP 202는 전달 접수이며 답변 완료가 아니다. 트리거 실행 이력에서 성공·결과·건너뜀·실패를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
@@ -650,7 +684,7 @@ export const ko: Messages = {
     "PostgreSQL·저장된 object·배포 설정·암호화 및 세션 secret을 접근 제한된 위치에 백업한다. 별도 환경에 함께 복구하고 로그인·자격 증명 복호화·프로젝트 실행·파일 접근을 검증한다. AES_ENCRYPTION_KEY를 잃거나 임의 교체하면 저장된 자격 증명을 읽을 수 없다. 앱 이미지는 데이터 백업이 아니다.",
   "guide.operations.upgrade": "복구 절차를 준비한 업그레이드",
   "guide.operations.upgradeBody":
-    "이미지를 바꾸기 전에 현재 버전을 기록하고 백업을 확인한다. 종료 시 진행 중인 실행이 마무리될 유예 시간을 주고, 새 기동의 migration 로그와 로그인·실행·파일 확인을 반복한다. 이미지 태그를 되돌려도 DB 스키마는 내려가지 않는다. rollback에 의존하기 전에 스키마 호환성과 해당 배포의 복구 절차를 확인한다.",
+    "배포 전 앱과 worker 이미지 버전 및 백업을 확인한다. HTTP 앱·오디오 worker·Workspace worker의 스키마와 설정을 맞추고 대응되는 Sandbox 이미지를 준비한다. 로그인·실행·파일·승인 재개를 다시 검사한다. 이미지 롤백은 DB 스키마를 되돌리지 않는다. 현재·복구용 이미지는 보존하고 디스크가 부족하면 미사용 캐시만 정리한다.",
 
   "guide.trouble.title": "문제 해결",
   "guide.trouble.body":
@@ -669,7 +703,7 @@ export const ko: Messages = {
     "저장된 버전에 기능이 연결되어 있고 Prompt preview에 표시되는지 확인한다. 도구 선택·discovery·OAuth 연결·실행 경고를 점검하고 실제로 해당 도구가 필요한 질문으로 시험한다. 내부 호스트 차단은 배포 담당자에게 확인하고 메모리는 연결 서버에 recall이 있는지 확인한다. 문서 읽기 도구는 검색 가능 상태만으로 부족하며 명시적으로 연결해야 한다.",
   "guide.trouble.automation": "봇·스케줄이 응답하지 않음",
   "guide.trouble.automationBody":
-    "배포 버전·연동 활성화·자격 증명·콜백 도달 여부를 확인하고 봇 다이렉트 메시지나 명시적 멘션으로 시험한다. 스케줄은 활성화·cron 시간대·외부 티커도 확인한다. 프로젝트 Settings에서 건너뜀·실패 이력과 전달 결과를 본다. 모델 실행 성공 후 목적지 전송만 실패했다면 전달 경로의 문제다.",
+    "Webhook 202는 accepted·duplicate·disabled·busy·배포 버전 없음·ping일 수 있으므로 응답과 Trigger 이력을 확인한다. GitHub는 Secret으로 X-Hub-Signature-256을 만들고 일반 발신자는 X-Trigger-Secret을 사용한다. 전달 성공은 Workspace 실행 권한이 아니다. 스케줄은 ticker, Workspace 승인·CI 재개는 해당 worker가 필요하다. 각 결과가 기록되는 창구에서 상태를 확인한다.",
   "guide.trouble.files": "첨부·다운로드 실패",
   "guide.trouble.filesBody":
     "파일 형식과 첨부 한도를 먼저 확인한다. 이미지는 이미지 입력 모델이 필요하고 Office 읽기는 내장 엔진이 처리한다. 암호화 파일, OCR이 필요한 스캔본, 지원되지 않는 편집은 다른 작업 방식이 필요하다. File 도구가 없거나 원본이 보관되지 않았다면 관리자에게 저장소 구성을 확인한다. 다운로드 실패는 Artifacts를 다시 열고 저장 경고·접근 모드·공개 주소·연결·보존 기간을 점검한다.",

@@ -1,7 +1,8 @@
 /**
  * Who caused a run.
  *
- * Projects are a shared catalog — any signed-in user may run any project — so
+ * Project access follows visibility and membership; multiple callers can run a
+ * shared project, so
  * the project name does not identify the spender, and until this existed "who
  * spent this" had no answer at all on a platform whose purpose is cost
  * management. Every execution entry point has a subject even when no human is
@@ -31,9 +32,8 @@ export interface RunActor {
    * Stable within the kind. An email for `user` and `project-token` (a token
    * runs on its owner's behalf, and the kind is what keeps the two apart), a
    * Slack user id for `slack`, a Telegram user id for `telegram`, an Entra
-   * object id for `teams`. `a2a` has no
-   * caller identity beyond the shared key, so it carries the constant below
-   * rather than pretending to one.
+   * object id for `teams`. A2A uses the shared-key identity or a named client
+   * key identity; it does not imply a person.
    */
   id: string;
 }

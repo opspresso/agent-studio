@@ -11,7 +11,7 @@
 WebhookTrigger  { projectName, triggerId (slug), kind: "webhook", description, enabled,
                   secret (AES-encrypted, masked on read), variables?, payloadMode,
                   allowConcurrent, createdAt, updatedAt }
-ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), message?, deliveries? }
+ScheduleTrigger { …same base…, kind: "schedule", executionEmail?, cron, timezone (IANA), message?, deliveries? }
 ```
 
 - **한 Project 는 webhook 하나와 임의 개수의 schedule 을 갖는다.** webhook 은 예약된 id
@@ -34,8 +34,11 @@ ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), mess
 - 시크릿은 enabled 플래그를 읽기 **전에** 상수 시간으로 비교된다. 그래야 비활성 트리거가
   틀린 시크릿에 활성 트리거와 다르게 답하지 못한다 — 그 차이는 어떤 트리거가 존재하는지
   알려 주는 oracle 이다.
+- GitHub 전달은 같은 프로젝트 시크릿으로 원본 body의 `X-Hub-Signature-256`을 검증한다.
+  GitHub 헤더가 있으면 서명 방식을 강제하고 일반 시크릿으로 폴백하지 않는다. delivery ID와
+  event 헤더를 요구하며, 서명된 ping은 모델을 실행하지 않고 연결만 확인한다.
 - `Idempotency-Key` 는 조건부 쓰기(24h TTL)로 클레임되며, Slack 이벤트 클레임과 같은
-  모양이다.
+  모양이다. GitHub 전달은 `X-GitHub-Delivery`를 그 키로 사용한다.
 - `allowConcurrent: false` (기본값) 는 **런 슬롯을 재사용해서** 강제한다: "동시에 최대 하나,
   그리고 죽은 인스턴스의 점유는 만료된다" 가 바로 `RunSlotRepository` 그 자체다. 기본이
   꺼짐인 이유는, 런이 걸리는 시간보다 빠르게 발화하는 webhook 이 그러지 않으면 비용 가드가
@@ -57,6 +60,17 @@ ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), mess
   커버된다. Slack 은 그 갭을 의도적으로 남겨 둔다: 유실된 이벤트는 마감할 행을 남기지 않고
   답을 받지 못한 사용자만 남기며, 그것을 다시 실행하는 것은 schedule 결정이 이미 판정한
   비멱등성과 충돌한다.
+
+## 실행 문맥과 결과
+
+인증된 Webhook도 actor는 `webhook`이며 개인 사용자 email을 payload에서 추출해 권한으로 쓰지 않는다.
+따라서 user 전용 Workspace 빌트인·Chat Session·Chat 승인 화면을 제공하지 않는다. 연결된 Skill은
+실제 제공된 도구의 절차를 안내할 뿐 권한을 추가하지 않는다. 결과는 Trigger 이력과 project Artifact에 남는다.
+
+Schedule은 소유자가 개인 문맥 실행을 명시적으로 켠 경우에만 `executionEmail`을 저장한다.
+접수와 실제 실행 직전에 현재 project 소유권과 member 상태를 다시 검사한다. 이 email은
+지원되는 개인 MCP·오디오 문맥에 사용되지만 actor는 `schedule`로 유지되고 Workspace 도구를 얻지 않는다.
+[창구별 실행 계약](workspaces.md#실행-창구별-계약)과 [사용자 문맥](../SECURITY.md)을 따른다.
 
 ## Schedule
 

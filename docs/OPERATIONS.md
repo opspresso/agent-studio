@@ -10,7 +10,7 @@
 ## 빌드 아티팩트
 
 배포 대상은 컨테이너 이미지다. 빌드는 멀티스테이지이며 Next.js **standalone** 출력을 싣는다.
-의존성과 문서·오디오 워커 번들, PDF용 한글 폰트가 아티팩트 안으로 추적돼 들어가므로 런타임
+의존성과 문서·오디오·Workspace 워커 번들, PDF용 한글 폰트가 아티팩트 안으로 추적돼 들어가므로 런타임
 스테이지에는 `node_modules` 설치나 폰트 다운로드가 없다. 문서 작업은 앱이 띄우는 자식
 프로세스에서 실행하며 별도 MCP 서비스는 필요 없다. 실행 한계는 [문서 엔진](design/documents.md#실행-자원)을 보라.
 
@@ -61,10 +61,28 @@ DB·기존 `S3_BUCKET_NAME`의 비공개 Artifacts 저장소·암호화 키·전
 4. 빈 작업 목록과 중복 claim 정리를 확인하고 설정·schedule을 다시 켠다. 다음 실행은 설정된 수집
    시작 범위에서 한도 내의 녹음을 새로 처리한다. 이 작업은 외부 Memory·Document를 삭제하지 않는다.
 
+## Workspace와 승인 후속 실행 운영
+
+HTTP 앱과 Workspace worker는 같은 DB·암호화 키·Workspace 설정과 Docker daemon을 사용한다.
+worker는 native 작업 큐와 Chat 후속 실행 큐를 별도로 처리하며 각 큐에 workerConcurrency 상한을
+적용한다. `node build/workspace-health.cjs --worker`로 Docker·이미지·채널과 heartbeat를 확인한다.
+프로세스가 살아 있다는 사실만으로 특정 작업의 성공을 판단하지 않고 Run·승인·전달 상태를 확인한다.
+
+승인 결과의 알림은 DB에 남으므로 브라우저를 닫아도 대기한다. pending은 아직 소비하지 않은 알림,
+waiting-ci는 등록된 PR HEAD의 검사 대기, running은 claim한 Chat 실행이다. claim 이후 중단되면
+결과를 확인하기 전 자동 재실행하지 않는다. worker가 없으면 작업·TTL·승인 전달·CI 대기가 진행되지 않는다.
+잘못된 저장소 이름·빈 저장소·접근 거절을 새 Workspace 생성으로 우회하지 않는다.
+
+Sandbox 이미지는 전용 Docker daemon에도 저장된다. rootless daemon을 쓰면 앱 daemon의 이미지
+정리만으로 그 디스크가 비워지지 않는다. 해당 daemon의 image/container 목록과 여유 공간을 확인하고
+사용 중인 이미지와 복구용 버전은 보존한다. 다시 받을 수 있는 미사용 이미지·빌드 캐시만 정리하며,
+Workspace 체크포인트·DB·오브젝트 volume을 이미지 캐시와 함께 삭제하지 않는다.
+
 ## 릴리스 파이프라인
 
 `.github/workflows/release.yml`, `v*` 태그 push 로만 트리거된다. 임의 ref 를 고를 수 있는 수동
-dispatch 는 persistent self-hosted runner와 OIDC·registry·GitOps 자격 증명 경계에 두지 않는다:
+dispatch는 제공하지 않는다. 검증·릴리스는 GitHub-hosted Ubuntu runner에서 실행하며
+OIDC·registry·GitOps 자격 증명은 해당 릴리스 작업에만 제공한다:
 ECR role 의 trust 도 `Release` workflow 와 `v*` tag subject 를 함께 요구하며, 권한은 이 account 와
 region 의 `agent-studio` repository 에 image 를 push 하는 action 으로 한정된다. 적용할 policy 와 별도
 model-check role 은 `.github/aws-role/` 에 있다. `v*` tag 를 release operator 만 만들도록 보호하는
@@ -80,7 +98,8 @@ model-check role 은 `.github/aws-role/` 에 있다. `v*` tag 를 release operat
    - **release**. `linux/amd64` 를 한 번 빌드해 두 레지스트리에 `:{tag}` 와 `:latest` 로
      푸시한다: **`ghcr.io/opspresso/agent-studio`**(`GITHUB_TOKEN` 으로 로그인, 이 AWS 계정 밖의
      설치가 pull 하는 경로이고, 폐쇄망 레지스트리로 미러링을 시작하는 지점이다)와 ECR(GitHub
-     OIDC 로 AWS role 을 assume, 장기 키 없음).
+     OIDC 로 AWS role 을 assume, 장기 키 없음). 같은 작업이 Sandbox 이미지를
+     `workspace-{tag}`로 두 레지스트리에 게시한다.
 
 3. **GitOps 트리거**. `release` 의 이미지 push 뒤 `argocd-env-demo` 에 새 tag 를 전달한다.
    `github-release` 의 성공 여부는 기다리지 않는다. 배포 manifest 와 rollout 은 그 저장소가
@@ -88,24 +107,22 @@ model-check role 은 `.github/aws-role/` 에 있다. `v*` tag 를 release operat
 
 ### 실패한 릴리스를 다시 돌리기
 
-수동 dispatch 가 없으므로 재실행은 **태그를 다시 밀어** 한다. 어느 job 이 실패했는지에 따라
-둘 중 하나다.
+같은 커밋의 실패한 작업은 원래 Actions run에서 재실행한다. `gh run view <run-id>`로 실패 지점을
+확인하고 `gh run rerun <run-id> --failed`를 사용한다. 성공한 Release 생성·이미지 push까지 무조건
+반복하지 않는다. 특정 job은 `gh run view <run-id> --json jobs`의 `databaseId`로 지정한다.
+기존 tag나 GitHub Release를 삭제하는 것은 재실행의 전제가 아니다.
 
-- **같은 커밋을 다시**: 원격 태그를 지우고 같은 커밋에 다시 단다.
-  `git push origin :refs/tags/vX.Y.Z && git push origin vX.Y.Z`. `github-release` 가 이미
-  성공한 뒤였다면 그 Release 를 먼저 지운다 (`gh release delete vX.Y.Z`). ECR·GHCR push 는
-  같은 태그를 덮어쓰므로 그대로 두면 된다.
-- **고칠 것이 있으면 다음 patch 태그로**: 수정 커밋을 올리고 `vX.Y.Z+1` 을 단다. 태그를 옮기는
-  것보다 이쪽이 기본값이다 — 태그가 가리키는 커밋이 바뀌면 이미 그 태그를 pull 한 설치와
-  이력이 어긋난다.
+코드·의존성·빌드 설정을 고쳐야 하면 수정 커밋과 다음 patch tag로 릴리스한다. 공개된 tag를 다른
+커밋으로 옮기지 않는다. 릴리스 게시, 앱 이미지, Sandbox 이미지, GitOps 전달과 실제 rollout 상태를
+각각 확인한다. GitHub Release가 존재한다는 사실만으로 이미지 빌드·배포까지 완료됐다고 판단하지 않는다.
 
 Actions 자체가 막혀 있으면(결제 한도, 러너 다운) 릴리스는 로컬에서 같은 순서로 할 수 있다:
 검증 → 태그 → `linux/amd64` 빌드 → ECR·GHCR push → GitOps tag 전달.
 
 자명하지 않은 빌드 설정이 둘 있다:
 
-- **amd64 전용.** 배포 대상들이 amd64 이고, 무료 arm64 호스티드 러너는 프라이빗 저장소에서
-  제공되지 않는다.
+- **amd64 전용.** 현재 릴리스 workflow가 앱과 Sandbox 이미지를 `linux/amd64`로 빌드한다.
+  다른 아키텍처가 필요한 배포는 별도 빌드·실행 검증이 필요하다.
 - **`provenance: false`, `sbom: false`.** BuildKit 은 기본적으로 provenance attestation 을
   붙이는데, attestation 은 이미지 인덱스 안의 추가 매니페스트로 실려 간다. 그래서 단일 플랫폼
   빌드조차 인덱스 하나와 태그 없는 자식 둘을 푸시했다. 릴리스마다 ECR 엔트리가 하나가 아니라
@@ -491,7 +508,7 @@ sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이�
 
 | 동작 | 무엇에 묶이는가 | 결과 |
 |---|---|---|
-| 런타임 설정 전파 | `SETTINGS_CACHE_TTL_MS` (5s) | 강등된 admin 이나 회전된 A2A 키가 캐시가 만료될 때까지 다른 곳에서는 계속 통한다. 쓰기 시 무효화는 프로세스 안에서만 일어난다. |
+| 런타임 설정 전파 | `SETTINGS_CACHE_TTL_MS` (5s) | 관리자 설정이나 회전된 A2A 키는 설정 캐시가 만료될 때까지 다른 곳에서 이전 값으로 동작할 수 있다. email 기반 member tier의 캐시는 별도 30초이며 쓰기 시 무효화는 프로세스 안에서만 일어난다. |
 | MCP 레지스트리 편집 | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | 한 인스턴스에서 한 편집이 그 구간만큼 다른 인스턴스들에게 보이지 않는다. |
 | 관리형 MCP | — | **호스트당 앱 인스턴스 하나.** 관리형 컨테이너가 게시하는 호스트 루프백 포트를 앱이 공유한다. |
 | 메트릭 카운터 | — | 프로세스 단위. 인스턴스들 사이의 집계는 스크레이프 계층에서 하라. |

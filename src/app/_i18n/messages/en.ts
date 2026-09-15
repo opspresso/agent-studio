@@ -270,13 +270,15 @@ export const en = {
   "login.domains": "Use an account on one of this deployment’s allowed domains.",
 
   // The signed-out landing page.
+  "home.domain.workspaces": "Workspaces & Sandboxes",
+  "home.domain.workspacesBody": "When enabled by the operator, keep code, files and runtime sessions in a Workspace and execute tasks in an isolated Sandbox. Review Git changes before publishing; approval results return to the requesting chat.",
   "home.flow.title": "From an idea to a working agent",
   "home.flow.build": "Configure a project",
   "home.flow.buildBody": "Choose a model and instructions. Add skills and tools when your agent needs them.",
   "home.flow.run": "Publish and run",
   "home.flow.runBody": "Publish a version, then run it in the console, through an API, or a connected messenger.",
   "home.flow.review": "Review the results",
-  "home.flow.reviewBody": "Return to conversations and artifacts. Inspect run traces and usage in the same workspace.",
+  "home.flow.reviewBody": "Return to chats, Workspace reviews and artifacts. Inspect traces and usage alongside the results.",
   "home.eyebrow": "Project · version · publish",
   "home.headline": "Build AI agents",
   "home.headlineAccent": " and put them to work.",
@@ -284,7 +286,7 @@ export const en = {
     "Agent Studio brings models, skills, and tools together in one agent platform. Create prompt, agent, and image projects, then use them in conversations, through APIs, or from your favorite messengers.",
   "home.signInHint": "Sign in with an account from an allowed domain.",
   "home.proof.network": "From ideas to agents",
-  "home.proof.networkNote": "Create, test, and publish in one workspace",
+  "home.proof.networkNote": "Create, test, and publish in one platform",
   "home.proof.engine": "One interface for your models",
   "home.proof.engineNote": "Connect the right model for each task",
   "home.proof.cost": "Cost and traces per run",
@@ -324,15 +326,15 @@ export const en = {
     "Create reports, presentations, and spreadsheets. Edit supported attachments into new files while keeping the originals. Configured storage keeps originals and results available for download.",
   "home.domain.surfaces": "Slack, A2A & webhooks",
   "home.domain.surfacesBody":
-    "Connect agent projects to Slack, Telegram, and Teams. Published versions can also run from webhooks, schedules, and inbound or outbound A2A calls.",
+    "Connect projects to messengers, APIs, webhooks and schedules. Identity, history, approval rules and Workspace availability differ by entry point.",
   "home.domain.cost": "Cost & guards",
   "home.domain.costBody":
-    "Record each run's cost and summarize it by project, caller, and day. Daily and monthly thresholds can send an alert or block new runs.",
+    "Record Studio model-call cost by project, caller and day. Configured thresholds can alert or block new runs; external Workspace CLI usage is tracked separately by its provider.",
   "home.domain.traces": "Traces & audit",
   "home.domain.tracesBody":
-    "Inspect each run turn by turn, including tool calls. Secret access, administrative changes, and deletions are recorded in the audit log.",
+    "Inspect recorded model runs, tool activity and usage. Tracing and audit have separate scopes and retention; administrative changes and issued-secret access are audited.",
   "home.guide.title": "Get started with Agent Studio",
-  "home.guide.body": "Explore the guide to create your first project, connect tools, and start a conversation. No sign-in is needed to read it.",
+  "home.guide.body": "Learn to configure projects, connect tools, use Workspaces and follow approval results. Check which capabilities each execution surface supports. The guide is readable without signing in.",
   "home.product": "An AI agent platform.",
 
   // Vocabulary more than one page uses. A word here is one a reader meets on
@@ -434,8 +436,9 @@ export const en = {
   "overview.allProjects": "All projects",
   "overview.projectsFailed": "Projects could not be loaded.",
   "overview.noProjects": "No projects yet.",
-  "overview.recentChats": "Recent chats",
-  "overview.recentChatsNote": "Continue a conversation where you left off.",
+  "overview.chatsFailed": "Could not load recent chats and Workspaces. Reload to try again.",
+  "overview.recentChats": "Recent chats & Workspaces",
+  "overview.recentChatsNote": "Check the type and continue the conversation or file task.",
   "overview.allChats": "All chats",
   "overview.noChats": "No chats yet.",
   "overview.getStarted": "Start with a project",
@@ -510,7 +513,7 @@ export const en = {
     "Have an administrator register the server on Tools and check that discovery lists the expected tools. Bind the server to the version, select the tools to expose, and save the version. If calls fail, inspect the server status, required headers, and run warnings. A reachable server can still return no usable tools or require authorization.",
   "guide.capabilities.oauth": "MCP connection settings have different scopes",
   "guide.capabilities.oauthBody":
-    "Tool selections and header overrides belong to the version and require Save. Administrators configure a shared OAuth app in Tools when needed; project owners use Connect to authorize their own account. All versions share the project’s authorization.",
+    "Tool selections and header overrides belong to the version and require Save. Refresh tools after changing headers. Saved overrides are preserved by partial updates; explicitly clearing the map removes them. Administrators configure the OAuth app in Tools and project owners connect their account. Versions share that project connection; a reachable tool does not prove repository access.",
   "guide.capabilities.agents": "Delegate to another agent",
   "guide.capabilities.agentsBody":
     "Delegate when a task benefits from a separate specialist; a routine workflow can use one Agent with skills. Bind a published local project or a registered external OpenAI-compatible or A2A agent. Give each delegate a precise description. Delegated activity is labelled by author, while usage remains part of the originating run accounting.",
@@ -532,7 +535,7 @@ export const en = {
     "Start a new chat and select an accessible agent project. Chats uses the published version when one exists, otherwise the latest saved version. llm and image projects are not chat choices. Publishing or editing a version can therefore change the behavior of later turns in an existing conversation.",
   "guide.chat.context": "Conversation history has limits",
   "guide.chat.contextBody":
-    "The thread retains messages and tool activity, but the model receives a bounded history. A long conversation or large tool result can be shortened and produce a warning. Older images may remain visible in the thread without being sent in a later turn; attach the relevant image again when needed. Restate essential constraints and start a new conversation when the task changes substantially.",
+    "Display messages and the model’s encrypted SDK Session are separate. The Session supplies bounded prior turns, tool results and recent images; Memory is an optional long-term source. Omitted history produces a warning. If the Session has expired, visible messages are not rebuilt into model history. Restate essential constraints when starting again.",
   "guide.chat.attachments": "Images and documents",
   "guide.chat.attachmentsBody":
     "Attach PNG, JPEG, GIF, or WebP images to a model that supports image input. PDF, UTF-8 text, DOCX, XLSX, PPTX, HWP 5.x, HWPX, ODT/ODS/ODP, and RTF are read by the built-in document engine. Attach up to four documents of 10 MiB each. The conversation retains bounded extracted text; configured storage also keeps the originals. Check extraction and storage warnings after sending.",
@@ -545,6 +548,37 @@ export const en = {
   "guide.chat.stop": "Closing the page does not stop a chat run",
   "guide.chat.stopBody":
     "Use the chat's stop control to request cancellation. Navigating away or closing the browser tab only disconnects the view; reopen the conversation to read the saved result. Cancellation cannot undo actions a tool has already completed. A server interruption can still prevent an active run from finishing.",
+
+  "guide.chat.approvals": "Tool approval and resuming a chat",
+  "guide.chat.approvalsBody": "A version can require approval before selected tools run. Review the agent, tool and arguments in the chat, then approve or reject. An SDK approval pauses new messages until resolved or discarded. Changing the version or connection can invalidate a pending checkpoint. Workspace Git reviews are separate: approve the exact Git action in its Workspace; the result resumes its source chat.",
+  "guide.workspaces.title": "Workspaces and isolated execution",
+  "guide.workspaces.body": "A Workspace retains files and a runtime session. A Sandbox is the temporary compute that runs them. The agent chat coordinates work, while a separate Workspace view shows execution, diffs, checks and Git reviews.",
+  "guide.workspaces.setup": "1. Confirm execution is enabled",
+  "guide.workspaces.setupBody": "The operator must configure the Workspace worker, execution image, network and allowed projects/runtimes. Agent tool access also requires a member or administrator and agentTools enabled for that project. Installing a skill or connecting GitHub does not create these capabilities. In Chats, use the Workspace selector for direct tasks or ask an enabled agent to manage one.",
+  "guide.workspaces.tasks": "2. Pick the task workflow",
+  "guide.workspaces.tasksBody": "Use task skills for PR review, issue fixes, feature implementation, refactoring, dependency upgrades, CI investigation, security remediation and project generation. File conversion, data analysis and scripted automation also use Workspaces. Read-only repository investigation can use MCP without creating compute. A skill supplies instructions; the offered tools and deployment determine what can execute.",
+  "guide.workspaces.reuse": "3. Continue the selected Workspace",
+  "guide.workspaces.reuseBody": "An agent chat keeps one selected Workspace per project. Start creates it once; repeating Start returns the selection without running another task. Use Run for follow-up work and select an existing owned Workspace only when you intend to switch. The Workspace link opens a web page; file paths belong to its workdir. The home and sidebar label Chats and Workspaces separately.",
+  "guide.workspaces.runtime": "4. Choose a coding runtime or an exact script",
+  "guide.workspaces.runtimeBody": "Codex, Claude and OpenCode accept complete natural-language tasks and validation instructions when configured. Command executes an exact non-interactive shell script; prose and numbered instructions are not commands. The selected runtime cannot change during Run. A task can be Git-free, including reports, file processing and experiments.",
+  "guide.workspaces.repository": "5. Prepare the repository before cloning",
+  "guide.workspaces.repositoryBody": "Select both the repository and base branch for Git work; selecting neither deliberately creates a Git-free Workspace. An allowlisted name does not prove the repository exists. A requested new repository needs creation, a first commit and a readable base branch before clone. The GitHub MCP connection and the Workspace server Git account are separate. Attaching Git later requires an empty Git-free workdir.",
+  "guide.workspaces.approvals": "6. Review publication one action at a time",
+  "guide.workspaces.approvalsBody": "Commit, commit-and-push, PR creation, merge and direct main push are distinct reviews. Each approval applies only to the reviewed action and exact changes. The result returns to the originating chat, which prepares the next requested review. When CI waiting is registered for a PR, its exact HEAD is watched for up to 30 minutes and the chat resumes when checks settle. Failed checks, changed HEADs and uncertain outcomes are not permission to publish. Direct main push is fast-forward only; branch protections still apply.",
+  "guide.workspaces.results": "7. Distinguish execution, checks and artifacts",
+  "guide.workspaces.resultsBody": "Queued and running do not mean completed. Inspect the final run state, output and diff. Configured Workspace checks, commands run by the coding runtime, GitHub checks and deployment status are different evidence. A Workspace file is not automatically a downloadable Artifact or public preview. Report checks that could not run and use only returned Workspace, repository or Artifact links.",
+  "guide.workspaces.lifecycle": "8. Pause, close and recover",
+  "guide.workspaces.lifecycleBody": "Cancel stops the current task. Close ends compute while preserving the selected Workspace and its checkpoint; later work can restore it. Idle cleanup saves files and session state before removing the Sandbox. Checkpoint limits can prevent cleanup from completing. Deleting its Workspace chat requests cleanup and prevents resurrection. Workspace count is not the same as worker concurrency; capacity, retention and configured limits determine what can run.",
+  "guide.surfaces.title": "Execution surfaces do not share every capability",
+  "guide.surfaces.body": "Publishing selects a version, not identical permissions on every entry point. Authentication, conversation history, personal context, Workspace access and approval interfaces have separate rules.",
+  "guide.surfaces.chat": "Chats: persistent history and approval return",
+  "guide.surfaces.chatBody": "The signed-in chat owner receives a persistent SDK Session and tool approval UI. Enabled Workspace actions and their CI updates return to the source chat. The Workspace runtime has its own session and files; it does not inherit all of the parent agent’s skills or account connections.",
+  "guide.surfaces.api": "Playground and APIs: saved input, caller-owned history",
+  "guide.surfaces.apiBody": "Playground runs saved settings. A signed-in member can use enabled Workspace tools, but without a source Chat it cannot receive automatic approval continuation. HTTP clients supply their own history. A project API token uses a service actor and passes the owner’s email to MCP; it is not a browser session and does not enable Workspace tools or the persistent Chat approval UI.",
+  "guide.surfaces.bots": "Messengers: platform identity and replies",
+  "guide.surfaces.botsBody": "Slack, Telegram and Teams reply on their own platforms and use their platform actor identities. Personal MCP context is available only when that surface resolves a verified email. These bot calls do not receive the user-only Workspace builtin or the browser Chat approval UI. Configure the bot and verify delivery separately from its credential test.",
+  "guide.surfaces.automation": "Webhooks and schedules: machine actors",
+  "guide.surfaces.automationBody": "A valid webhook signature authenticates delivery; it does not grant the sender a personal session or Workspace access. Results go to trigger history, not a Chat. Schedules may explicitly use the current owner’s personal context for supported MCP/audio tools after rechecking authorization, but retain the schedule actor and do not gain Workspace tools. Audio postprocessing has its own restricted worker workflow.",
 
   "guide.audio.title": "Audio processing and personal records",
   "guide.audio.body": "One Agent can handle collection, transcription, summaries, and requested records with reusable skills. A separate worker continues long jobs after the Agent response or browser page ends.",
@@ -570,7 +604,7 @@ export const en = {
     "API Reference is built into each project and fills in its address and published version. It contains request fields, response shapes, error codes, and curl or SDK examples. Use it alongside the steps here; no source checkout is needed.",
   "guide.api.token": "Prepare the project and credential",
   "guide.api.tokenBody":
-    "Publish a tested version so execution examples appear. The owner or an administrator issues the token in Integrations; the owner's tier must allow API tokens. Replace $PROJECT_API_TOKEN in the example with that token and send Authorization: Bearer <token>. It is a project credential, not the LLM provider key, and it only runs that project.",
+    "Publish a tested version and issue a project token in Integrations; the owner’s tier must allow API tokens. Send it as Authorization: Bearer <token>. It is scoped to that project’s execution, uses a service actor and passes the owner’s email to bound MCP servers. Treat it as access to those configured tools, not as a browser login or a way to obtain Workspace tools.",
   "guide.api.version": "Choose a fixed version or published",
   "guide.api.versionBody":
     "Execution URLs use /api/projects/{name}/versions/{version}/ followed by the endpoint. The generated examples name the version currently published. Keep that name to target it explicitly, or use published to follow future Publish changes. Confirm the host is the Agent Studio address reachable from the calling system.",
@@ -598,7 +632,7 @@ export const en = {
     "In an agent project's Integrations, save and enable the Telegram bot token; enabling registers its webhook. Use Register webhook again after an application URL change. For Teams, enable the Azure Bot's Teams channel, save its application ID and client secret (plus tenant ID for a single-tenant app), and set its messaging endpoint to the displayed URL. Test in a direct conversation before trying group mentions.",
   "guide.integrations.a2a": "A2A and AG-UI",
   "guide.integrations.a2aBody":
-    "A2A exposes published public projects to compatible agents; administrators configure shared or named client keys in Settings, and callers use X-A2A-Key. Check the Agent Card URL in Integrations. AG-UI runs a published project inside your own interface using the project token. Copy its client example from Integrations and let your application manage the message thread and render protocol events.",
+    "A2A exposes cards for published public projects; a configured shared or named key can call the addressed project, including private projects under the key’s contract. AG-UI embeds published project runs in your interface using its project token. Supply the message history and render protocol events in that client; neither protocol creates a browser Chat or Workspace approval UI.",
   "guide.integrations.webhook": "Receive a webhook",
   "guide.integrations.webhookBody":
     "In project Settings, configure and enable the webhook, copy its URL, and send the secret in X-Trigger-Secret. For GitHub, choose application/json and enter the same value in its Secret field; GitHub signs the body with X-Hub-Signature-256. Choose message payload mode for an agent message or variables mode for template fields. HTTP 202 acknowledges delivery, not a finished answer; inspect the trigger's run history for success, output, skips, or failures. Concurrent deliveries are skipped unless allowed.",
@@ -697,7 +731,7 @@ export const en = {
     "Back up PostgreSQL, stored objects, deployment configuration, and the encryption/session secrets under restricted access. Restore them together in a separate environment and verify sign-in, credential decryption, project runs, and file access. Losing or arbitrarily replacing AES_ENCRYPTION_KEY makes stored credentials unreadable. An application image is not a data backup.",
   "guide.operations.upgrade": "Upgrade with a recovery plan",
   "guide.operations.upgradeBody":
-    "Record the current image version and verify backups before changing the image. Allow active runs time to drain during shutdown, then check startup migration logs and repeat the basic sign-in/run/file checks. Reverting the image tag does not downgrade the database schema. Confirm schema compatibility and the deployment's restore procedure before relying on rollback.",
+    "Record app and worker image versions and verify backups before deployment. Keep HTTP app, audio worker and Workspace worker on compatible schemas and configuration, and supply the matching Sandbox image. Recheck sign-in, runs, files and approval continuation. An image rollback does not downgrade the database. Retain current and rollback images; remove only unused caches when disk capacity requires it.",
 
   "guide.trouble.title": "Troubleshooting",
   "guide.trouble.body":
@@ -716,7 +750,7 @@ export const en = {
     "Confirm the capability is bound to the saved version and visible in Prompt preview. Check tool selection, discovery, OAuth connection, and run warnings. Ask a question that actually requires the tool. For internal-host blocks, involve the deployment operator; for memory, verify a bound server offers recall. A document reader must be explicitly bound, not merely discoverable.",
   "guide.trouble.automation": "A bot or schedule is silent",
   "guide.trouble.automationBody":
-    "Check the published version, integration enabled state, credentials, and callback reachability. Test a direct bot message or explicit mention. For schedules, also check enabled state, cron time zone, and the external ticker. Inspect skipped/failed runs and delivery results in project Settings; a successful model run with a failed destination is a delivery problem.",
+    "A webhook 202 may mean accepted, duplicate, disabled, busy, no published version or ping; inspect the response and trigger history. GitHub uses its Secret field to produce X-Hub-Signature-256, while generic callers use X-Trigger-Secret. A successful delivery does not grant Workspace execution. Schedules require a running ticker; Workspace approval/CI continuation requires its worker. Check each result at the surface that owns it.",
   "guide.trouble.files": "Attachments or downloads fail",
   "guide.trouble.filesBody":
     "Check the file type and upload limits first. An image needs an image-capable model; Office reading uses the built-in engine. Password-protected files, scans needing OCR, and unsupported edits require another workflow. If File is unavailable or the original was not kept, ask the operator to check storage configuration. For download failures, reopen Artifacts and check storage warnings, access mode, public base URL, connectivity, and retention.",

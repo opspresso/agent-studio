@@ -53,7 +53,7 @@ export async function authenticateExecution(
     // working bypass behind. This is the load-bearing half of "token spend is
     // not personal spend": the budget exclusion is safe only because a tier
     // without token rights cannot present one. A 403 with the reason, not a
-    // 401 — the credential is valid; the policy refuses it. Fails open on an
+    // 401 — the credential is valid; the policy refuses it.
     // A missing member row has the default guest posture. A repository failure
     // is a 503 rather than permission to use the credential.
     let ownerTier: MemberTier | null;

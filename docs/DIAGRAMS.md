@@ -1,7 +1,6 @@
 # 아키텍처 다이어그램
 
-Agent Studio 전체를 그림으로 본다. 각 그림은 요약이고, 정본은 옆에 링크한 문서다. 그림과 문서가
-어긋나면 문서가 맞다. 그림은 [ARCHITECTURE.md](ARCHITECTURE.md) 의 순서를 따른다: 계층 → 요청
+Agent Studio 전체를 그림으로 본다. 각 그림은 요약이고, 정본은 옆에 링크한 문서다. 구현·설계·그림은 같은 현재 계약을 설명해야 한다. 그림은 [ARCHITECTURE.md](ARCHITECTURE.md) 의 순서를 따른다: 계층 → 요청
 흐름 → 런 브래킷 → 메시징 표면 → 조립 지점 → 저장 모델.
 
 ## 1. 계층과 의존 방향
@@ -34,7 +33,7 @@ flowchart TB
   lib --> shared
 ```
 
-## 2. 요청 흐름: 열한 진입점과 이미지 예외
+## 2. 요청 흐름과 이미지 예외
 
 chunk 소비자는 `src/application/execution/runProject.ts` 로 모인다. 완성된 이미지 응답을 직접
 만드는 predict 와 A2A 는 `generateImage` 로 갈라지고, 그 밖의 표면은 *어떻게 들어오는지*
@@ -73,7 +72,7 @@ flowchart LR
   engine["SDK Agent · Runner — runAgent / runPrompt(Stream)"]
   channel["SDK ModelProvider (OpenAI 호환 endpoint)"]
   imagechannel["이미지 채널"]
-  tools["도구: MCP(≤5 동시) · Skill · SDK Handoff / Agent.asTool · 이미지 · FetchUrl · SaveFile · File · Slack 읽기"]
+  tools["도구: MCP · Skill · SDK Handoff / Agent.asTool · 이미지 · FetchUrl · File · 오디오 · Workspace"]
   usage["사용량 기록 (런 종료 시 1회 flush)"]
   trace["로컬 SDK native spans + 준비 단계<br/>에이전트 항상, 그 외 샘플링"]
   session["영속 Chat: SDK Session + 승인 RunState<br/>암호화 저장 · revision CAS"]
@@ -111,8 +110,8 @@ flowchart LR
 
 ## 3. 런 브래킷: 최상위 런을 감싸는 한 곳
 
-네 함수(`executeVersion` · `executeVersionStream` · `executeAgent` · `generateImage`)가 최상위
-런을 admit 하고, 각각 브래킷을 연다. 가드는 메트릭 *앞*에서, `close()` 는 사용량 flush *뒤*에서
+모델 실행 경로(`executeVersion` · `executeVersionStream` · `executeAgent` · `generateImage`)는
+`openRun`을 열고, Workspace 작업은 `executeWorkspaceTask`가 모델 Version 없이 `openTaskRun`을 연다. 가드는 메트릭 *앞*에서, `close()` 는 사용량 flush *뒤*에서
 ([ARCHITECTURE.md#런-브래킷](ARCHITECTURE.md#런-브래킷)).
 
 ```mermaid
@@ -183,15 +182,15 @@ flowchart LR
   after -.-> p4
 ```
 
-## 5. 조립 지점: 일곱 곳
+## 5. 조립 지점
 
-유스케이스는 어댑터 위에 정확히 일곱 곳에서 조립된다. 라우트는 조립된 객체를 받는다
+유스케이스는 허용된 wiring site에서 조립하고 라우트는 조립된 객체를 받는다
 ([ARCHITECTURE.md#조립은-의도적으로-고른-몇-곳에서만](ARCHITECTURE.md#조립은-의도적으로-고른-몇-곳에서만)).
 
 ```mermaid
 flowchart TB
-  container["src/lib/container.ts<br/>리포지토리 · 도메인 포트 · 레지스트리 슬라이스 · projectSlack/Telegram/TeamsUseCases<br/>executionDeps · imageDeps · triggerRunnerDeps"]
-  chatdeps["src/app/api/chats/_deps.ts<br/>ChatDeps (runAgent 바인딩)"]
+  container["src/lib/container.ts<br/>리포지토리 · 도메인 포트 · 레지스트리 슬라이스 · projectSlack/Telegram/TeamsUseCases<br/>executionDeps · imageDeps · triggerRunnerDeps · chatDeps"]
+  chatdeps["src/app/api/chats/_deps.ts<br/>container의 공통 ChatDeps 재노출"]
   slackdeps["src/app/api/slack/events/_lib/<br/>SlackEventDeps"]
   tgdeps["src/app/api/telegram/webhook/_lib/<br/>TelegramEventDeps"]
   teamsdeps["src/app/api/teams/messages/_lib/<br/>TeamsEventDeps"]
@@ -292,3 +291,30 @@ flowchart LR
 
 후처리 런에는 Skill 읽기만 제공한다. 작업 제출·외부 저장을 재귀 호출하지 않는다.
 파일 삭제는 DB의 완료 이력·중복 방지 기록을 초기화하지 않는다.
+
+
+## 7. Workspace·Sandbox·Chat 승인 재개
+
+[Workspace 설계](design/workspaces.md)가 수명·권한·저장 경계를 소유한다. Skill은 절차이며 실행 자원이나
+계정 권한을 만들지 않는다. 일반 Chat과 Workspace 전용 Chat은 화면·Session·수명이 다르다.
+
+```mermaid
+flowchart LR
+  chat["원래 Agent Chat<br/>SDK Session"] --> tool["Workspace 빌트인<br/>사용자·프로젝트 권한 확인"]
+  tool --> queue["DB Workspace 작업 큐<br/>한 Chat/프로젝트의 선택 재사용"]
+  queue --> worker["Workspace worker"]
+  worker --> sandbox["격리 Sandbox<br/>command · Codex · Claude · OpenCode"]
+  sandbox --> checkpoint["암호화 파일·native Session 체크포인트"]
+  tool --> review["prepare_git<br/>정확한 tree/HEAD 검토"]
+  review --> approval["Workspace 승인 화면"]
+  approval --> git["서버 Git 동작<br/>commit · push · PR · merge"]
+  git --> saved["결과 + 전달 알림<br/>동일 transaction"]
+  saved --> resume["별도 알림 소비자<br/>Chat lease · SDK 이력 · 공통 facade"]
+  resume --> chat
+  resume --> ci["PR pending: 해당 HEAD 검사 대기<br/>15초 조회 · 최대 30분"]
+  ci -->|"검사 완료·실패·변경·기한 초과"| resume
+```
+
+한 승인은 한 동작만 허용한다. 성공 후 같은 채팅이 다음 요청 단계의 검토를 준비하며, 실패·거절·
+결과 불명을 성공처럼 반복하지 않는다. 알림 claim 후 중단된 모델 실행은 자동 재실행하지 않는다.
+`waiting-ci`는 모델을 실행하는 상태가 아니며 원격 검사만 관찰한다.

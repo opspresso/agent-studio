@@ -9,6 +9,7 @@ import {
   IconPlugConnected,
   IconRoute,
   IconVocabulary,
+  IconTerminal2,
 } from "@tabler/icons-react";
 import type { TablerIcon } from "@tabler/icons-react";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -104,10 +105,40 @@ const SECTIONS: readonly GuideSection[] = [
       { title: "guide.chat.editFiles", body: "guide.chat.editFilesBody" },
       { title: "guide.chat.fileLimits", body: "guide.chat.fileLimitsBody" },
       { title: "guide.chat.stop", body: "guide.chat.stopBody" },
+      { title: "guide.chat.approvals", body: "guide.chat.approvalsBody" },
     ],
     links: [
       { href: "/chats", label: "nav.chats" },
       { href: "/artifacts", label: "nav.artifacts" },
+    ],
+  },
+  {
+    id: "workspaces",
+    title: "guide.workspaces.title",
+    body: "guide.workspaces.body",
+    Icon: IconTerminal2,
+    entries: [
+      { title: "guide.workspaces.setup", body: "guide.workspaces.setupBody" },
+      { title: "guide.workspaces.tasks", body: "guide.workspaces.tasksBody" },
+      { title: "guide.workspaces.reuse", body: "guide.workspaces.reuseBody" },
+      { title: "guide.workspaces.runtime", body: "guide.workspaces.runtimeBody" },
+      { title: "guide.workspaces.repository", body: "guide.workspaces.repositoryBody" },
+      { title: "guide.workspaces.approvals", body: "guide.workspaces.approvalsBody" },
+      { title: "guide.workspaces.results", body: "guide.workspaces.resultsBody" },
+      { title: "guide.workspaces.lifecycle", body: "guide.workspaces.lifecycleBody" },
+    ],
+    links: [{ href: "/chats", label: "nav.chats" }, { href: "/projects", label: "nav.projects" }],
+  },
+  {
+    id: "execution-surfaces",
+    title: "guide.surfaces.title",
+    body: "guide.surfaces.body",
+    Icon: IconRoute,
+    entries: [
+      { title: "guide.surfaces.chat", body: "guide.surfaces.chatBody" },
+      { title: "guide.surfaces.api", body: "guide.surfaces.apiBody" },
+      { title: "guide.surfaces.bots", body: "guide.surfaces.botsBody" },
+      { title: "guide.surfaces.automation", body: "guide.surfaces.automationBody" },
     ],
   },
   {

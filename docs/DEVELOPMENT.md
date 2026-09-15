@@ -57,12 +57,11 @@ Agent Memory는 별도 project와 포트를 사용하므로 서로 독립적으�
 
 ## 로컬 MCP (deploy/local)
 
-기본 셋업에는 MCP 가 없다: 레지스트리가 등록하는 MCP URL 은 클러스터 DNS 이름이라 로컬에서
-해석되지 않고, plugins sync 는 그 서버들을 전부 `invalid-url` 로 스킵한다.
-[deploy/local/](../deploy/local/README.md) 은 그 이름들을 network alias 와 OrbStack 커스텀
-도메인으로 단 MCP 컨테이너들을 docker compose 로 띄워, 호스트의 `pnpm dev` 가 같은 레지스트리
-행으로, 실제 배포와 같은 경로로 MCP dispatch 까지 테스트하게 한다. `.env.local` 에
-`MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local` 한 줄이 필요하다.
+MCP는 선택 기능이다. 공개 원격 서버는 해당 서비스의 연결·인증으로 사용하고, 사설 DNS의 서버는
+배포가 허용한 내부 suffix와 실제 네트워크 도달성이 있어야 한다. [deploy/local/](../deploy/local/README.md)은
+OrbStack의 network alias와 도메인으로 로컬 MCP 컨테이너를 제공한다. 필요한 서버를 실행하고
+`.env.local`에 해당 MCP 내부 suffix를 설정한다. 플러그인 동기화는 서버 URL을 등록하는 절차이며
+모든 원격 서비스나 OAuth 계정을 자동으로 띄우는 작업은 아니다.
 
 ## 실제 자격 증명 없이 작업하기
 
@@ -87,7 +86,7 @@ pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 
 ```bash
 pnpm dev              # 문서 워커 번들 후 next dev
-pnpm build            # 문서·오디오 워커 번들 + 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
+pnpm build            # 문서·오디오·Workspace 워커 번들 + 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
 pnpm start            # 이미 만든 Next.js production build 실행
 pnpm typecheck        # tsc --noEmit, strict + 추가 검사 (아래)
 pnpm test             # vitest run
@@ -99,6 +98,10 @@ pnpm test:integration # 로컬 PostgreSQL(agent_studio_test), 인증 스키마�
 pnpm test:storage     # 로컬 MinIO 임시 bucket의 원본 파일 streaming·조건부 저장·삭제 검사
 pnpm test:audio       # ffmpeg로 실제 MP3 분할·WAV 크기·시간 범위·임시 파일 정리 검사
 pnpm test:audio:pipeline # PostgreSQL test DB·MinIO·ffmpeg·로컬 ASR mock을 통한 전체 전사 경로
+pnpm worker:workspace # 환경변수가 주입된 별도 Workspace·승인 후속 실행 worker
+pnpm test:sandbox     # 무통신 Docker 격리·체크포인트 검사
+pnpm test:workspace   # Docker + PostgreSQL *_test 실행·복구 검사
+pnpm test:workspace:git # 무통신 Git fixture와 승인·게시 검사
 pnpm worker:audio     # 환경변수가 주입된 별도 오디오 worker. 앱이 DB를 초기화한 뒤 실행
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)
 pnpm check-models     # 카탈로그 스냅샷과 이 배포의 채널이 서빙하는 것의 차이
@@ -106,7 +109,8 @@ pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원
 ```
 
 로컬 `.env.local`을 읽어 worker를 실행하려면 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`를 사용한다.
-`pnpm dev`는 오디오 worker를 자동 시작하지 않는다. 배포는 `pnpm start` 대신 standalone
+`pnpm dev`는 오디오·Workspace worker를 자동 시작하지 않는다. Workspace도
+`node --env-file=.env.local --import tsx scripts/workspace-worker.ts`로 별도 실행한다. 배포는 `pnpm start` 대신 standalone
 산출물의 `node server.js`로 실행한다. `public`·`.next/static`을 포함하는 방법은
 [운영 문서](OPERATIONS.md#빌드-아티팩트)를 따른다.
 

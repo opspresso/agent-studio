@@ -119,6 +119,24 @@ CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`
 확인하고 지정된 `agent/` 브랜치만 push한다. [Git bundle](https://git-scm.com/docs/git-bundle)은
 전체 commit 이력을 유지하므로 Sandbox 안에서도 clone·검토·복원 계약이 같다.
 
+## 실행 창구별 계약
+
+같은 Version을 Publish해도 모든 진입점에 같은 도구·이력·승인이 제공되는 것은 아니다.
+`container.ts`의 Workspace 도구 바인딩은 `actor.kind=user`와 현재 member 권한, 프로젝트의
+`agentTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
+
+| 창구 | Workspace 빌트인 | 원래 Chat으로 승인 결과 전달 |
+|---|---|---|
+| 로그인한 member/admin의 Agent Chat | 배포가 허용하면 제공 | 같은 Chat의 SDK Session으로 자동 재개 |
+| 로그인한 member/admin의 Playground·Agent 실행 API | 배포가 허용하면 제공 | source Chat이 없으므로 자동 재개 없음 |
+| 프로젝트 API token | 미제공. actor는 `project-token` | Chat Session·승인 UI 없음 |
+| Slack·Telegram·Teams | 플랫폼 actor이므로 미제공 | 플랫폼 응답이며 Chat 승인 UI 없음 |
+| Webhook·Schedule | machine actor이므로 미제공. Schedule의 개인 문맥 옵션도 actor를 바꾸지 않음 | Trigger 이력으로 결과 확인 |
+| Workspace 화면의 직접 작업·Git 검토 | 전용 API로 소유한 공간을 조작 | Agent가 만든 source Chat 연결이 있는 승인만 전달 |
+
+API token은 프로젝트 소유자로 인증하고 MCP에 소유자 email을 전달한다. 이것은 브라우저 사용자
+세션, Workspace 실행 자격, SDK 승인 UI와는 별개다. Skill이나 system prompt로 이 경계를 바꾸지 않는다.
+
 ## 사용자 화면과 API
 
 배포의 `projects[].agentTools`를 켜면 로그인한 member 이상 사용자의 해당 프로젝트 Agent에

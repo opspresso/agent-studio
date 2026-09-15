@@ -389,12 +389,13 @@ CSV 를 표로, JSON 을 다시 들여쓴 텍스트로 보여 주는 것이 각 
 | `svg` | `data:` URL 로 `<img>` 안에 |
 | `text` | 원문 그대로 |
 
-markdown 이 같은 렌더러인 것은 의도다: 같은 리포트가 어느 표면에서 읽히느냐에 따라 다르게
-보여서는 안 되고, 저장소에 markdown 방언이 둘이면 표·체크리스트·코드 펜스의 edge case 도 두
-벌이 된다. 그리고 그 렌더러가 원시 HTML 을 텍스트로 내보낸다. SVG 는 인라인이 아니라 `<img>`
-안에 놓고, HTML 은 script·event handler·`meta`·CSS·form·embedded context 를 제거한다. 모든
-view 는 어떤 `allow-*` 도 없는 같은 sandbox 정책 아래 나간다. 변환기의 allowlist 와 브라우저의
-격리를 함께 적용한다.
+Markdown은 채팅과 같은 렌더러로 표시하고 raw HTML을 텍스트로 처리한다. CSV·JSON·SVG·텍스트의
+정적 view는 `ARTIFACT_VIEW_POLICY`를 사용하고 스크립트를 허용하지 않는다. SVG는 `<img>` 안에 놓는다.
+HTML은 별도 wrapper와 escaped srcdoc으로 전달하고 `INTERACTIVE_HTML_VIEW_POLICY` 및 iframe의
+`sandbox=allow-scripts`로 즉시 실행한다. same-origin·popup·form·다운로드 권한은 주지 않으며,
+Stop/Restart는 iframe 실행 상태만 바꾸고 원본을 저장하지 않는다. CSP가 제한하는 통신 범위와
+브라우저 자원 격리의 한계는 [문서 미리보기](documents.md#html-실행-미리보기)와
+[보안 계약](../SECURITY.md#데이터-노출과-보존)을 따른다.
 
 `artifactId` 가 chat 행과 라이브 스트림 프레임에 함께 실리는 것이 이 때문이다. 나머지 표면은
 그것을 나르지 않는다: 서명한 주소로 충분하고, 독자가 행 id 로 할 수 있는 일이 없었다. 페이지가
@@ -406,14 +407,11 @@ view 는 어떤 `allow-*` 도 없는 같은 sandbox 정책 아래 나간다. 변
 |---|---|---|---|---|
 | Artifact | `ARTIFACT#{id}` | `META` | `ARTIFACTPROJECT#{project}` / `{createdAt}#{id}` | `ARTIFACTOWNER#{email}` / `{createdAt}#{id}` |
 
-A2A·webhook·schedule 런은 메일함을 지목하지 않는다 — 그 actor 는 client id 이거나 trigger 다 —
-그래서 그 행들은 owner 인덱스에 보이지 않고, project 자신의 탭이 그것들이 목록에 오르거나
-삭제되는 유일한 자리다. Slack 런의 actor 는 workspace 사용자 id 라 인덱스가 그것으로도 키를 만들
-수 없지만, 그 표면은 질문한 사람의 주소를 알아낼 수 있으므로 그렇게 한다: artifact 는 그것을
-요청한 사람 앞으로 정리된다(`ownerEmail` 은 actor 에 접어 넣지 않고 그 옆에 둔다. actor 키가
-지출과 한도를 정하기 때문이다). Project 가 공유 카탈로그이므로 그 역도 참이다: 남의 project 를
-읽는 것으로 자기 작업을 찾을 수는 없다. `artifactOwnerEmail` 이 정하고, 답이 아무도 아닐 때는
-GSI2 속성을 쓰지 않는다.
+`artifactOwnerEmail`은 actor 또는 표면이 검증한 사용자 문맥으로 개인 소유자를 결정한다.
+사용자·프로젝트 토큰의 소유자, 검증된 이메일이 있는 메시징과 개인 문맥 Schedule의 결과는
+소유자 인덱스에 나타날 수 있다. 개인 문맥이 없는 A2A·Webhook·Schedule 결과는 Project 탭에서
+확인한다. 비공개 오디오 파일은 별도 사용자 권한과 보존 계약을 적용한다. 소유자 미지정 결과에
+project 소유자의 개인 정체성을 임의로 붙이지 않는다.
 
 오브젝트 키는 행 id 에서 도출되며(`artifacts/{kind}/{id}.{ext}`), 그것이 오브젝트와 그 행이
 서로를 찾게 해 준다. 레거시 `images/{uuid}` 키는 아무것도 참조하지 않아서, 그 배치 아래의 고아는

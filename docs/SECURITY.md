@@ -808,7 +808,11 @@ main 병합은 PR 소유 범위와 CI를
 main 직접 푸시는 검토한 main SHA와 게시된 작업 HEAD를 대조하고 `force: false`로 실행한다.
 검사 미보고는 `none`으로 승인 화면에 표시하고, 대기 중·실패한 검사와 구분한다. 모든 main 반영은
 GitHub 브랜치 규칙을 따르며 권한·보호 규칙을 우회하는 옵션을 제공하지 않는다.
-GitHub webhook은 서명과 delivery ID를 확인해 PR 메타데이터만 갱신하며 승인 권한이 없다.
+`/api/workspaces/github/webhook`은 서명과 delivery ID로 PR 메타데이터만 갱신하며 승인 권한이 없다.
+프로젝트 Trigger인 `/api/webhook/{project}`는 별도 프로젝트 시크릿으로 실행을 시작한다.
+Webhook·Schedule·메신저·project-token actor에는 user 전용 Workspace 빌트인을 제공하지 않는다.
+승인·CI 결과의 Chat 재개는 원래 소유자·프로젝트 접근·Workspace 선택과 SDK Session을 다시 확인한다.
+그 결과 이벤트는 새 사용자 요청이나 다음 Git 동작에 대한 승인으로 취급하지 않는다.
 
 ## SDK Session과 승인 상태
 

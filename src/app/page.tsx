@@ -29,6 +29,7 @@ import {
   IconSearch,
   IconTimeline,
   IconTool,
+  IconTerminal2,
 } from "@tabler/icons-react";
 import { SignInButton } from "@/components/SignInButton";
 import { config } from "@/lib/config";
@@ -86,6 +87,12 @@ const DOMAINS = [
     title: "home.domain.chats",
     body: "home.domain.chatsBody",
     Icon: IconMessageCircle,
+  },
+  {
+    label: "workspaces",
+    title: "home.domain.workspaces",
+    body: "home.domain.workspacesBody",
+    Icon: IconTerminal2,
   },
   {
     label: "images",

@@ -11,7 +11,7 @@ SDK에 포함된 기능과 제품에서 연결·운영하는 기능은 구분한
 | 기능 | 제품의 적용 범위 | 구현과 검증 근거 |
 |---|---|---|
 | 에이전트 루프 | SDK `Agent`·`Runner`가 모델/도구 반복, 스트리밍과 종료를 소유한다. Studio는 턴·비용·문맥 한도와 취소를 적용한다 | `runtime/execute.ts`, `model.ts`; `engine.test.ts`, `engineParallelTools.test.ts`, `agentModels.test.ts` |
-| 샌드박스 실행 | 미제공. 모델이 명령을 실행하는 작업공간·셸·스냅샷·재개 기능은 없다 | 아래 도입 조건을 따른다. 문서 worker와 관리형 MCP 컨테이너는 이 기능을 제공하지 않는다 |
+| Workspace·Sandbox 실행 | Studio의 영속 Workspace와 격리 Docker Sandbox를 제공한다. command·Codex·Claude·OpenCode 작업, 검사·체크포인트·재개와 별도 Git 승인을 지원한다. SDK `SandboxAgent`를 사용하는 구현은 아니다 | `application/workspace/`, `infrastructure/workspace/`, `sandbox/`; `workspaceContinuation.test.ts`, `workspaceWorker.test.ts`, `scripts/workspace-check.ts`. [Workspace 계약](workspaces.md)을 따른다 |
 | 음성 에이전트 | 파일 기반 전사·후처리·내보내기를 제공한다. SDK `RealtimeAgent`·`RealtimeSession`, 양방향 실시간 음성, VAD와 발화 인터럽션은 미제공이다 | `application/audio/`, `infrastructure/llm/audioSegmenter.ts`; `audioJobProcessor.test.ts`, `audioPostprocess.test.ts`, `audioBuiltin.test.ts` |
 | TypeScript 우선 | SDK의 Agent·ModelProvider·Session·RunState 계약을 직접 사용하고 domain port로 배포 자원을 주입한다 | `runtime/types.ts`, `boundAgent.ts`; `architecture.test.ts`, `pnpm typecheck` |
 | Agents as tools·Handoff | text agent는 `Agent.asTool` 또는 같은 Runner의 Handoff로 연결한다. 로컬 발행 버전, 깊이·순환·남은 턴 제한을 적용한다. 원격/이미지 대상은 function tool이다 | `runtime/agent.ts`, `execution/agentBindings.ts`; `nativeDelegation.test.ts`, `agentBindings.test.ts`, `runtimeSession.test.ts` |
@@ -51,11 +51,11 @@ SDK에 포함된 기능과 제품에서 연결·운영하는 기능은 구분한
 
 ## 선택적 실행 환경의 도입 조건
 
-**샌드박스**는 SDK의 별도 `SandboxAgent` 실행 형태다. 도입하려면 사내에서 운영하는 격리
-compute, 모델이 읽고 쓸 작업공간 범위, 셸 명령·네트워크·시크릿 권한, 자원/시간 한도,
-workspace와 snapshot 보존/삭제, 승인 재개와 artifact 반출 계약을 정해야 한다. SDK의 local
-개발용 client를 앱 서버의 일반 셸 실행 권한으로 연결하는 것만으로 격리를 구현했다고 보지 않는다.
-기존 문서 worker의 정해진 작업 실행이나 MCP 서버 컨테이너 관리와 별도 기능으로 다룬다.
+**Workspace와 Sandbox**는 Studio가 소유한다. 상위 Agent는 제공된 Workspace 빌트인으로 작업을
+조율하고, 별도 worker가 격리된 Docker에서 CLI 또는 명령을 실행한다. Chat SDK Session과
+Workspace의 native Session·파일 체크포인트는 서로 다른 저장 계약이다. 문서 worker와 관리형
+MCP 컨테이너도 이 실행 공간과 구분한다. SDK 자체 Sandbox API를 사용하지 않는 것이 제품의
+Sandbox 미지원이라는 뜻은 아니다. 활성화·권한·원격 Git 승인과 자동 재개는 [workspaces.md](workspaces.md)를 따른다.
 
 **실시간 음성**은 Realtime 호환 transport와 모델이 필요하다. 일반 Chat Completions gateway의
 존재만으로 WebRTC/WebSocket 음성을 지원한다고 판단하지 않는다. 폐쇄망 접근 가능 endpoint,

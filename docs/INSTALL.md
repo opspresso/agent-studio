@@ -103,7 +103,7 @@ Workspace는 선택 기능이다. `sandbox/Dockerfile`로 별도 실행 이미�
 ```bash
 docker build -t agent-studio-workspace:local sandbox
 export WORKSPACE_CONFIG='{"image":"agent-studio-workspace:local","network":"none","projects":[{"projectName":"tasks","runtimes":["command"]}]}'
-pnpm worker:workspace
+node --env-file=.env.local --import tsx scripts/workspace-worker.ts
 ```
 
 릴리스는 앱과 같은 ECR·GHCR 저장소에 `workspace-vX.Y.Z` tag의 Sandbox 이미지도 게시한다.
@@ -122,7 +122,8 @@ Docker CLI도 포함한다. 실행 worker와 Git 승인 API가 있는 앱 서버
 폐쇄망에서는 완성된 이미지와 의존성을 반입하고 내부 모델·저장소만 허용한다.
 필수 부팅·로그인·기존 프로젝트 실행은 이 설정과 worker에 의존하지 않는다.
 
-worker는 실행 핸들, 출력 cursor, native Session, 검사 단계와 체크포인트를 저장한다. 중단된
+worker는 실행 핸들, 출력 cursor, native Session, 검사 단계와 체크포인트를 저장한다.
+별도 큐가 Git 승인 결과와 CI 상태를 원래 Chat에 전달하고 SDK 이력으로 후속 실행을 시작한다. 중단된
 worker는 동일 핸들을 이어서 관찰하며 불확실한 작업을 자동으로 다시 실행하지 않는다. TTL에는
 체크포인트를 저장한 뒤 Sandbox를 삭제한다. worker를 중지하거나 설정을 제거하면 자동 TTL
 정리가 실행되지 않으므로, 설정·Docker context 변경 전에 기존 Workspace를 종료하라.

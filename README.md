@@ -28,6 +28,7 @@ Handoff, Agent-as-Tool, Guardrail과 승인 중단·재개를 관리한다.
 | **MCP tools** | MCP 서버의 공유 레지스트리. 버전별 binding 이 tool 목록을 좁히고 아웃바운드 헤더를 덮어쓸 수 있다. Managed 서버와 OAuth 를 지원한다(아래). |
 | **Agents** | 로컬 text project를 SDK Handoff 또는 Agent-as-Tool로 연결한다. 외부 OpenAI 호환/A2A 엔드포인트와 image project는 특화 도구로 호출한다. |
 | **Chats** | 소유자별 비공개 대화. 모델 이력은 암호화된 SDK Session에 저장하고, 화면용 메시지·도구 트래픽·artifact 참조는 별도로 보존한다. 도구 승인·거절·폐기와 서버 재시작 후 승인 재개를 지원한다. |
+| **Workspaces & Sandboxes** | 코드·파일·데이터·자동화 작업의 영속 공간과 격리 실행. command·Codex·Claude·OpenCode, 체크포인트·복구·Git 검토와 승인 결과의 원래 Chat 재개를 제공한다. 배포 설정과 worker가 필요하다. |
 | **Files** | 첨부 문서를 읽고, 기본 `File` 도구로 문서를 생성·검사·편집한다. 원본과 수정본은 별도 파일로 보관한다. [지원 형식과 제약](docs/design/documents.md)을 보라. |
 | **Audio** | 선택적인 비공개 저장소·ASR 채널·worker로 녹음을 보관·전사·후처리한다. 기본은 Agent 하나와 skill 구성이며 원본·전사·요약·대화 결과를 Artifacts에 보관한다. 개인 기록은 별도 요청으로 수행한다. |
 | **Cost dashboard** | project 별·model 별 일일 지출과 caller 별 귀속. project 카탈로그를 공유하므로 caller 축이 필요하다. |
@@ -108,7 +109,7 @@ A2A·Slack·Telegram·Teams 엔드포인트가 더해진다.
 
 **Project → Integrations → API token** 에서 토큰을 발급해 세션 쿠키 대신
 `Authorization: Bearer <token>` 으로 보내라. 토큰은 그 project 실행으로 범위가 한정되며
-개인 사용자 인증이나 개인 MCP 실행 문맥을 대신하지 않는다. 전체 계약은 [docs/API.md](docs/API.md#실행) 에 있다.
+브라우저 로그인 세션과는 다르다. `project-token` actor의 id와 MCP의 `X-User-Email`에는 소유자 이메일이 전달되며, 연결된 도구의 접근 범위를 함께 고려해야 한다. user 전용 Workspace 도구와 영속 Chat 승인 화면을 제공하지는 않는다. 전체 계약은 [docs/API.md](docs/API.md#실행) 에 있다.
 
 ### 여러 LLM provider
 
@@ -161,6 +162,21 @@ agent 런은 빌트인 `GenerateImage` 도구로 그릴 수 있고 `EditImage` �
 아우르므로 "이제 밤으로 만들어 줘" 가 어느 쪽에도 통하고, subagent transfer 를 타고 넘어가므로
 에이전트가 그림을 전용 image project 에 넘겨도 다시 그리지 않고 *편집* 하게 할 수 있다.
 
+### Workspace와 Sandbox
+
+Workspace는 파일·native Session·Git 상태를 유지하고 Sandbox는 작업을 실행하는 일시적 자원이다.
+PR 리뷰, Issue 수정, 기능 구현, 리팩토링, 의존성 업그레이드, CI 조사, 보안 수정과 프로젝트 생성뿐
+아니라 일반 파일·데이터 처리도 같은 실행 경로를 사용한다. 원격 조회만 필요하면 MCP만 사용한다.
+
+로그인한 member 이상에게 프로젝트별 `agentTools` 설정으로 빌트인을 제공한다. Chat은 프로젝트마다
+선택한 Workspace 하나를 재사용한다. Git 없는 작업도 가능하며 저장소 작업은 존재·접근·첫 commit·
+기준 브랜치를 먼저 검사한다. Skill 설치·GitHub OAuth만으로 worker나 저장소 허용 목록이 생기지는 않는다.
+
+커밋·푸시·PR·main 반영은 각각 검토한 변경으로 승인한다. 결과는 원래 Chat에 영속적으로 전달되어
+남은 요청을 재개하고, 등록된 CI 대기는 검사 완료 후 후속 검토를 준비한다. 공개 미리보기·Artifact
+export를 자동 제공하지는 않는다. 사용 절차는 앱의 `/guide#workspaces`, 설계와 제약은
+[Workspace 설계](docs/design/workspaces.md), 활성화는 [설치 문서](docs/INSTALL.md#workspace-worker)를 따른다.
+
 ### 문서와 파일
 
 첨부 문서는 텍스트를 추출해 모델에 전달하고, object store가 있으면 원본도 보관한다.
@@ -198,8 +214,11 @@ curl -X POST https://<host>/api/webhook/my-project \
 
 언제나 **publish 된** 버전을 실행하고, 즉시 `202` 로 답한 뒤 백그라운드에서 돌며,
 `Idempotency-Key` 로 24시간 동안 중복을 제거하고, 기본적으로 겹치는 런을 거부한다.
-비활성·중복·사용 중·publish 된 버전 없음 같은 모든 거부는 상태를 가진 history 행으로 남으므로,
-로그를 읽지 않고도 "아예 발화하지 않았다" 와 "발화했는데 실패했다" 를 구분할 수 있다.
+인증 실패·비활성·중복·ping은 응답만 반환하고 새 실행 이력을 만들지 않는다. 사용 중·publish 된
+버전 없음은 skipped 이력으로, 접수된 실행은 running 이후 succeeded 또는 failed로 기록한다.
+GitHub에서는 같은 URL과 프로젝트 시크릿을 Payload URL·Secret에 설정하면
+`X-Hub-Signature-256`으로 인증하고 `X-GitHub-Delivery`로 중복을 막는다. Webhook actor는
+개인 사용자 세션이나 Workspace 권한이 아니므로 Issue 이벤트 수신과 자동 코드 수정은 같은 기능이 아니다.
 [docs/API.md](docs/API.md#triggers) 를 보라.
 
 ### Slack

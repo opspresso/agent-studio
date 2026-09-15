@@ -408,7 +408,7 @@ dispatch 를 건너뛰는 방식이다. 요청을 추적하려면 dispatch 층�
 | Predict | `POST …/predict` | `executeProjectStream`(스트림) / `executeProject`(논스트림). 그래서 agent project 도 여기서 툴 루프를 돌고, (프롬프트 템플릿만 소비하는) `variables` 는 그 경우 무시된다. image project 는 → `generateImage`, 요청에 source `images` 가 오면 편집하고 아니면 생성한다 |
 | OpenAI 호환 | `POST …/chat/completions` | `executeProjectStream`(스트림) / `executeProject`(논스트림). image project 는 400 으로 거절된다. 이미지에는 chat completion 이 없다 |
 | Agent SSE | `POST …/agent` | `executeAgent` |
-| Chat | 생성·메시지 전송·승인 재개 API | `executeAgent` (`ChatDeps.runAgent` 로 바인딩) |
+| Chat | 생성·메시지 전송·SDK 승인 재개 API, Workspace 승인·CI 결과의 후속 실행 | `executeAgent` (`ChatDeps.runAgent` 로 바인딩) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (`SlackEventDeps` 경유) |
 | Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (`TelegramEventDeps` 경유). Slack 과 같은 공유 파이프라인 ([design/messaging.md](design/messaging.md)) |
 | Teams | `/api/teams/messages/[project]` → `handleTeamsActivity` → `handleTurn` | `executeAgent` (`TeamsEventDeps` 경유). 같은 파이프라인 |
@@ -418,6 +418,9 @@ dispatch 를 건너뛰는 방식이다. 요청을 추적하려면 dispatch 층�
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
 | Audio 후처리 | audio worker가 고정한 project/version으로 실행 | `streamProjectRun` + `collectRun` (`backgroundTask: true`) |
 | Workspace | 별도 worker가 DB 큐와 native operation을 이어받는다 | `executeWorkspaceTask` + 공통 `openTaskRun`. 일반 명령과 외부 CLI runtime은 모델 Version 없이 실행한다 |
+
+실행 창구별 권한은 [Workspace 계약](design/workspaces.md#실행-창구별-계약)을 따른다. 같은 Version이라도
+Webhook·메신저·API token에 사용자 Workspace 권한이나 Chat Session을 자동 부여하지 않는다.
 
 ```mermaid
 flowchart LR

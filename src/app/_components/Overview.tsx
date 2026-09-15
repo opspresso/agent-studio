@@ -30,6 +30,7 @@ import {
 } from "@tabler/icons-react";
 import { readJson } from "@/app/_lib/httpClient";
 import { recentProjects } from "@/app/_lib/overview";
+import type { Chat } from "@/domain/chat/types";
 import { listProjects, type SanitizedProject } from "@/app/projects/lib/api";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
@@ -41,12 +42,7 @@ import { Dashboard } from "./Dashboard";
 import classes from "./Overview.module.css";
 
 /** A chat as the list endpoint returns it. Newest first, per `listChats`. */
-interface ChatSummary {
-  chatId: string;
-  title: string;
-  projectName?: string;
-  updatedAt: string;
-}
+type ChatSummary = Pick<Chat, "chatId" | "title" | "projectName" | "updatedAt" | "workspaceId">;
 
 const RECENT_PROJECTS = 4;
 const RECENT_CHATS = 7;
@@ -103,6 +99,7 @@ export function Overview({
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [chatsLoaded, setChatsLoaded] = useState(false);
+  const [chatsFailed, setChatsFailed] = useState(false);
   /**
    * One entry per catalog, absent until it answers. A count that failed stays
    * absent and renders as a dash: a catalog nobody could read must not be shown
@@ -143,7 +140,7 @@ export function Overview({
         }
       })
       .catch(() => {
-        // An unreadable chat list leaves the section empty; it never errors the page.
+        if (!cancelled) setChatsFailed(true);
       })
       .finally(() => {
         if (!cancelled) {
@@ -185,7 +182,7 @@ export function Overview({
   // Only once both have answered, so the first-run panel never flashes over a
   // workspace that simply had not loaded yet.
   const isNewWorkspace =
-    projectsLoaded && chatsLoaded && (projects?.length ?? 0) === 0 && chats.length === 0;
+    projectsLoaded && chatsLoaded && projects !== null && projects.length === 0 && !chatsFailed && chats.length === 0;
 
   return (
     <Stack gap={32}>
@@ -268,7 +265,8 @@ export function Overview({
             linkLabel={t("overview.allChats")}
           >
             {!chatsLoaded && <RowSkeleton rows={3} />}
-            {chatsLoaded && chats.length === 0 && <EmptyLine>{t("overview.noChats")}</EmptyLine>}
+            {chatsLoaded && chatsFailed && <Alert color="red" variant="light">{t("overview.chatsFailed")}</Alert>}
+            {chatsLoaded && !chatsFailed && chats.length === 0 && <EmptyLine>{t("overview.noChats")}</EmptyLine>}
             <Stack gap={2}>
               {chats.slice(0, RECENT_CHATS).map((chat) => (
                 <UnstyledButton
@@ -277,9 +275,10 @@ export function Overview({
                   href={`/chats/${chat.chatId}`}
                   className={classes.chatRow}
                 >
-                  <Text fz="sm" truncate>
-                    {chat.title}
-                  </Text>
+                  <Group gap="xs" wrap="nowrap">
+                    <Badge size="xs" variant="light">{chat.workspaceId ? t("workspace.kind") : t("chat.kind")}</Badge>
+                    <Text fz="sm" truncate>{chat.title}</Text>
+                  </Group>
                   <Text fz="xs" c="dimmed" mt={2}>
                     {chat.projectName ? `${chat.projectName} · ` : ""}
                     {formatDate(chat.updatedAt, locale)}

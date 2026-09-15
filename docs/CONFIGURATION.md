@@ -459,7 +459,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | `projects[].agentTools` | `false` | 로그인한 member 이상 사용자가 이 프로젝트의 Agent에서 `Workspace` 빌트인을 사용할 수 있게 한다 |
 | `projects[].repositories` | `[]` | 기본 `repository` 외에 선택할 수 있는 저장소 허용 목록. 선택한 저장소를 실행·재개·Git 승인마다 확인한다 |
 | `workerConcurrency` | `4` | worker process의 동시 실행 수, 1~32 |
-| `runtimes.<kind>.provider` | 미설정 | 저장된 LLM 채널의 이름. 명시하면 해당 채널의 URL·API 키를 실행 직전에 읽으며 Workspace 설정에 키를 복사하지 않는다 |
+| `runtimes.<kind>.provider` | 미설정 | `openai`, `anthropic`, `openrouter`, `selfhosted` 중 저장된 LLM 채널의 이름. 명시하면 해당 채널의 URL·API 키를 실행 직전에 읽으며 Workspace 설정에 키를 복사하지 않는다 |
 | `runtimes` | `{}` | `command`, `codex`, `claude`, `opencode`별 `model`, `environment` |
 
 Runtime 환경은 `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,
@@ -469,8 +469,8 @@ Workspace 실행 시간은 `MAX_RUN_DURATION_MS`를 사용하며 재시작해도
 일반 명령은 모델 Version 없이 공통 비용·동시성·메트릭 bracket을 사용한다. CLI 모델 사용량은
 Studio의 SDK 모델 usage와 별개이며 CLI/provider의 사용량 기록을 따른다.
 
-Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐와 TTL이
-진행되지 않는다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
+Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
+진행되지 않는다. Workspace task와 채팅 후속 실행은 각각 workerConcurrency 상한을 적용하는 별도 큐다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
 
 코딩 작업은 GitHub App 또는 서버 계정 토큰을 사용한다. 기본 `WORKSPACE_GITHUB_AUTH=app`은
 `WORKSPACE_GITHUB_APP_ID`, `WORKSPACE_GITHUB_INSTALLATION_ID`, `WORKSPACE_GITHUB_PRIVATE_KEY`를
@@ -480,9 +480,16 @@ Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 wo
 필요하며 bundle은 체크포인트와 같은 64 MiB 한도를 따른다. API·Git web 주소는 기존 `GITHUB_API_URL`과
 `GITHUB_WEB_URL`을 사용한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
 호스트 접미사를 선언하며, 다른 내부 URL 허용 목록과 공유하지 않는다.
-`WORKSPACE_GITHUB_WEBHOOK_SECRET`은 GitHub webhook HMAC 검증에 사용한다.
+`WORKSPACE_GITHUB_WEBHOOK_SECRET`은 `/api/workspaces/github/webhook`의 PR 메타데이터 갱신용이다.
+`/api/webhook/{project}`는 프로젝트 Settings에서 발급한 별도 Trigger 시크릿을 사용한다.
 App에는 Contents, Pull requests, Actions 쓰기와 Checks, Commit statuses 읽기를 부여하되,
 각 요청의 installation token은 실제 작업에 필요한 권한과 저장소로 좁힌다.
+
+Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 실행 프로젝트별 선택을 최대 32개
+보관한다. 이는 Workspace 개수나 동시에 실행할 수 있는 작업 수가 아니다. 저장소 목록·조회는
+페이지 상한을 적용하고 실제 실행은 worker 동시성·소유자 run slot·시간·자원 한도를 따른다.
+체크포인트는 64 MiB의 파일 bytes 또는 20,000개 항목을 넘으면 실패한다.
+승인 결과의 Chat 재개는 기존 run lease를 사용하며, 등록된 PR 검사 대기는 15초마다 최대 30분 관찰한다.
 
 ## 관측성과 보존 기간
 

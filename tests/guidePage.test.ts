@@ -56,6 +56,8 @@ describe("the guide page", () => {
     expect(html).toContain(t("guide.contents"));
     expect(html).toContain(t("guide.install.title"));
     expect(html).toContain(t("guide.operations.title"));
+    expect(html).toContain(t("guide.workspaces.title"));
+    expect(html).toContain(t("guide.surfaces.title"));
     expect(html).not.toMatch(/(?:href|src)="https?:\/\//);
     expect(html).not.toContain("docs/");
   });
