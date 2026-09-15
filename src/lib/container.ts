@@ -1531,6 +1531,7 @@ export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?:
   await Promise.all([
     runWorkspaceWorker(getWorkspaceWorkerDeps(), signal, concurrency, heartbeat),
     runWorkspaceContinuations({ chat: chatDeps, workspaces: workspaceRepository, authorize: authorizeWorkspaceTools,
+      pullRequest: (id, owner) => getCodingUseCases().pullRequest(id, owner),
       now: () => new Date(), sleep: async (ms, abort) => { await workspaceSleep(ms, undefined, { signal: abort }); } }, signal, concurrency),
   ]);
 }

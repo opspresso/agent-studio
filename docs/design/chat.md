@@ -26,6 +26,8 @@ Workspace 승인 결과는 `workspaceAction`을 가진 표시용 assistant 행�
 시작하며, 처음부터 detached run-log에 기록해 어느 브라우저에서도 결과를 이어받을 수 있다.
 Workspace가 연결된 Chat 화면은 보이는 동안 실행 중이 아닐 때 3초마다 bounded tail을 확인한다.
 새 active run을 발견하면 기존 reconnect 경로로 붙는다. 후속 답변 시간은 승인 결과 행의 시각부터 계산한다.
+PR 검사 대기는 모델 턴을 소비하지 않으며, 검사가 끝난 후 `workspaceAction.event=ci`로 구분한
+검사 결과 행과 후속 응답을 전달한다. 이미 성공한 Git 동작을 재실행하는 것이 아니다.
 
 한 chat 은 **한 번에 하나의 런**만 가진다: `claimChatRun` (`src/application/chat/runLease.ts`)
 이 chat 행에 conditional-write 리스(lease)를 잡고(`activeRunId`, `RUN_LEASE_SECONDS` 후

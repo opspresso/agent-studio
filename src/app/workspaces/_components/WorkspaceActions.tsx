@@ -60,6 +60,7 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
     {error && <Alert color="red">{error}</Alert>}
     {(pending?.sourceChatId ?? latest?.sourceChatId) && <Alert color={detail.continuation?.status === "failed" ? "orange" : "blue"}>
       <Text size="sm">{t("workspace.chatContinuationHint")}</Text>
+      {detail.continuation?.status === "waiting-ci" && <Text size="sm">{t("workspace.waitingCi")}</Text>}
       {detail.continuation?.error && <Text size="sm">{detail.continuation.error}</Text>}
       <Anchor href={`/chats/${pending?.sourceChatId ?? latest?.sourceChatId}`}>{t("workspace.returnToChat")}</Anchor>
     </Alert>}

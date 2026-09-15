@@ -63,7 +63,7 @@ async function fixture() {
   const runAgent = vi.fn<ChatDeps["runAgent"]>(async function* (input) {
     for (const chunk of await f.run(channel, "", undefined, { workspaceTool }, { messages: input.messages })) yield chunk;
   });
-  const deps: WorkspaceContinuationDeps = { workspaces: repository, authorize: vi.fn(async () => {}), now: () => new Date(), sleep: async () => {},
+  const deps: WorkspaceContinuationDeps = { workspaces: repository, authorize: vi.fn(async () => {}), pullRequest: vi.fn(git.pullRequest), now: () => new Date(), sleep: async () => {},
     chat: { chats, projects, versions: { get: async () => f.version } as unknown as ChatDeps["versions"], runtimeSessions: f.services, runAgent,
       runLog: { append: vi.fn(async () => {}), read: async () => [] }, documents: { extract: async () => ({ text: "" }) } } };
   const approval = await git.request(workspace.id, owner, { kind: "commit-and-push", message: "feat: implement" }, f.scope.sessionId);
@@ -71,11 +71,81 @@ async function fixture() {
     const queued = await repository.dueContinuations(new Date().toISOString(), 20);
     await Promise.all(queued.map(item => processWorkspaceContinuation(deps, item)));
   };
-  return { ...f, deps, coding, workspace, git, approval, owner, drain, runAgent,
+  return { ...f, deps, coding, workspace, git, approval, owner, drain, runAgent, pull,
     setChannel: (next: FakeChannel) => { channel = next; } };
 }
 
 describe("Workspace decisions returning to their source chat", () => {
+  async function waitingForCi() {
+    const f = await fixture();
+    await f.git.decide(f.workspace.id, f.owner, f.approval.id, true);
+    await f.drain();
+    const pr = await f.git.request(f.workspace.id, f.owner, { kind: "pull-request", title: "Change", body: "Validated", draft: false }, f.scope.sessionId);
+    f.pull.ci = "pending";
+    await f.git.decide(f.workspace.id, f.owner, pr.id, true);
+    await f.drain();
+    expect((await repository.continuation(f.workspace.id, pr.id))?.status).toBe("waiting-ci");
+    f.runAgent.mockClear();
+    return { ...f, pr };
+  }
+
+  it("waits without spending model turns, then resumes the same request to prepare merge when CI completes", async () => {
+    const f = await waitingForCi();
+    vi.setSystemTime(Date.now() + 16_000);
+    await f.drain();
+    expect(f.runAgent).not.toHaveBeenCalled();
+    f.pull.ci = "passed";
+    const merge = { request: { operation: "prepare_git", action: { kind: "merge", pullRequestNumber: 1, headSha: f.pull.headSha } } };
+    const channel = new FakeChannel([[toolCallChunk(0, "merge-after-ci", "Workspace", JSON.stringify(merge))], [contentChunk("Merge is ready for approval")]]);
+    f.setChannel(channel);
+    vi.setSystemTime(Date.now() + 16_000);
+    await f.drain();
+    expect(f.runAgent).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(channel.seenParams[0]?.messages)).toContain("workspace_ci_result");
+    expect((await repository.approvals(f.workspace.id, 10))[0]).toMatchObject({ action: { kind: "merge" }, status: "pending" });
+    expect(f.coding.forge.merge).not.toHaveBeenCalled();
+    const notices = (await chats.listMessages(f.scope.sessionId)).filter(row => row.role === "assistant" && row.workspaceAction?.approvalId === f.pr.id);
+    expect(notices).toHaveLength(2);
+    expect(notices[1]).toMatchObject({ workspaceAction: { event: "ci", status: "succeeded" } });
+    expect((await repository.continuation(f.workspace.id, f.pr.id))?.status).toBe("completed");
+    await f.drain();
+    expect(f.runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["failed", "head-changed", "timeout"])("delivers a non-publishable CI outcome when %s", async mode => {
+    const f = await waitingForCi();
+    if (mode === "failed") f.pull.ci = "failed";
+    if (mode === "head-changed") f.pull.headSha = "e".repeat(40);
+    vi.setSystemTime(Date.now() + (mode === "timeout" ? 31 * 60_000 : 16_000));
+    await f.drain();
+    const event = JSON.parse(f.runAgent.mock.calls[0]![0].messages[1]!.content as string);
+    expect(event).toMatchObject({ event: "workspace_ci_result", status: "failed" });
+    expect(f.coding.forge.merge).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.pr.id))?.status).toBe("completed");
+  });
+
+  it("keeps a CI transport failure pending and notifies on its deadline without replaying Git", async () => {
+    const f = await waitingForCi();
+    vi.mocked(f.deps.pullRequest).mockRejectedValue(new Error("Connection lost"));
+    vi.setSystemTime(Date.now() + 16_000);
+    await f.drain();
+    expect(f.runAgent).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.pr.id))?.status).toBe("waiting-ci");
+    vi.setSystemTime(Date.now() + 31 * 60_000);
+    await f.drain();
+    expect(JSON.parse(f.runAgent.mock.calls[0]![0].messages[1]!.content as string)).toMatchObject({ status: "failed" });
+    expect(f.coding.forge.openPullRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a CI watch when a newer action owns the workflow", async () => {
+    const f = await waitingForCi();
+    await f.git.request(f.workspace.id, f.owner, { kind: "push" }, f.scope.sessionId);
+    vi.setSystemTime(Date.now() + 16_000);
+    await f.drain();
+    expect(f.runAgent).not.toHaveBeenCalled();
+    expect((await repository.continuation(f.workspace.id, f.pr.id))?.status).toBe("cancelled");
+  });
+
   it("continues commit/push → PR → merge in the same native Session, one approval per action", async () => {
     const f = await fixture();
     const pr = { request: { operation: "prepare_git", action: { kind: "pull-request", title: "Implement", body: "Validated", draft: false } } };

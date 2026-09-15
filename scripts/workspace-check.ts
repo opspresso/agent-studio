@@ -59,7 +59,11 @@ export async function checkWorkspaces(): Promise<void> {
     const deliveries = await Promise.all([repository.updateContinuation(running, 0, notice), repository.updateContinuation(running, 0, notice)]);
     assert.equal(deliveries.filter(Boolean).length, 1, "one delivery wins and writes one source-chat notice");
     assert.equal((await chats.listMessages(sourceChatId)).filter(row => row.role === "assistant" && row.workspaceAction).length, 1);
-    await repository.updateContinuation({ ...running, revision: 2, status: "completed" }, 1);
+    const waiting = { ...running, revision: 2, status: "waiting-ci" as const, phase: "ci" as const,
+      ciWatch: { number: 1, headSha: "a".repeat(40), deadline: new Date(Date.now() + 60_000).toISOString() } };
+    assert.equal(await repository.updateContinuation(waiting, 1), true);
+    assert.ok((await repository.dueContinuations(new Date().toISOString(), 50)).some(row => row.approvalId === approval.id && row.status === "waiting-ci"));
+    await repository.updateContinuation({ ...waiting, revision: 3, status: "completed" }, 2);
     await chats.releaseRun(sourceChatId, continuationRunId);
     assert.ok(!(await repository.dueContinuations(new Date().toISOString(), 50)).some(row => row.approvalId === approval.id));
     const sourceAfterDelivery = (await repository.get(selectedId))!;

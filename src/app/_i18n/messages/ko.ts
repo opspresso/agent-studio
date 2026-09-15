@@ -13,8 +13,10 @@ import type { Messages } from "./en";
 
 export const ko: Messages = {
   "chat.workspaceActionResult": "Workspace 승인 결과",
+  "chat.workspaceCiResult": "Workspace CI 결과",
   "workspace.chatContinuationHint": "승인 결과가 요청한 채팅으로 전달되고 남은 작업을 이어서 진행합니다. 다음 Git 동작은 별도로 검토합니다.",
   "workspace.returnToChat": "요청한 채팅으로 돌아가기",
+  "workspace.waitingCi": "PR 검사 결과를 기다리고 있습니다. 검사가 끝나거나 30분 대기 시간이 지나면 채팅이 재개됩니다.",
   "workspace.new": "새 Workspace",
   "workspace.kind": "Workspace",
   "workspace.list": "Workspaces",

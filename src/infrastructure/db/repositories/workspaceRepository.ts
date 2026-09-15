@@ -44,7 +44,7 @@ function assertChild(workspaceId: string, child: { workspaceId: string }): void 
 function continuationItem(item: WorkspaceContinuation): Item {
   return { ...keys.workspaceChild(item.workspaceId, "CONTINUATION", item.approvalId), value: item,
     expiresAt: expiry(item.createdAt),
-    ...(["pending", "running"].includes(item.status) ? {
+    ...(["pending", "waiting-ci", "running"].includes(item.status) ? {
       GSI2PK: keys.workspaceContinuationsDue(), GSI2SK: keys.workspaceDueSort(item.dueAt, `${item.workspaceId}#${item.approvalId}`),
     } : {}) };
 }

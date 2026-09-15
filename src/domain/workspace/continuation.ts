@@ -6,7 +6,10 @@ export interface WorkspaceContinuation {
   ownerEmail: string;
   projectName: string;
   revision: number;
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  status: "pending" | "waiting-ci" | "running" | "completed" | "failed" | "cancelled";
+  /** A second event observes checks; it never replays the completed Git action. */
+  ciWatch?: { number: number; headSha: string; deadline: string };
+  phase?: "ci";
   createdAt: string;
   dueAt: string;
   runId?: string;

@@ -154,7 +154,7 @@ export function createWorkspaceTool(deps: WorkspaceToolDeps, context: WorkspaceT
         approval_url: url(`/chats/${detail.workspace.chatId}#actions`),
         ...(approval.sourceChatId ? { source_chat_url: url(`/chats/${approval.sourceChatId}`) } : {}),
         action: approval.action, status: approval.status, next: approval.sourceChatId
-          ? "Return approval_url and pause this turn. After the decision, the result is delivered to this chat and the agent resumes the remaining user request automatically. This approves only this action; prepare any later Git action for its own review. Never replay a succeeded or uncertain action."
+          ? "Return approval_url and pause this turn. After the decision, the result is delivered to this chat and the agent resumes the remaining user request automatically. A resumed PR result with ci_watch also resumes when that head's checks finish (up to 30 minutes); do not poll repeatedly or ask the user to repeat the request. This approves only this action; prepare any later Git action for its own review. Never replay a succeeded or uncertain action."
           : "Return approval_url and pause. This request has no source chat; the caller must check status after approval." });
     }
     if (operation === "cancel" || operation === "close") {

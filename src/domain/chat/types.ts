@@ -112,7 +112,7 @@ export interface UserChatMessage extends ChatMessageBase {
 export interface AssistantChatMessage extends ChatMessageBase {
   role: "assistant";
   /** Platform outcome, displayed separately from model-written answers. */
-  workspaceAction?: { workspaceId: string; approvalId: string; kind: CodingAction["kind"]; status: CodingApproval["status"] };
+  workspaceAction?: { workspaceId: string; approvalId: string; kind: CodingAction["kind"]; status: CodingApproval["status"]; event?: "ci" };
   /** Present when the turn requested tool calls (persisted for display only). */
   toolCalls?: ChannelToolCall[];
   /**
