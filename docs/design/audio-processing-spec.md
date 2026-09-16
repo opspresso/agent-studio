@@ -238,8 +238,9 @@ Unicode 경계를 보존하는 문자 offset cursor로 남은 내용을 다음 �
 
 - 공개 URL은 기존 DNS·SSRF·redirect 검증을 모든 hop에 적용한다. 출처 인증 header를 다른
   다운로드 호스트로 전달하지 않는다. 내부 ASR·MinIO는 등록된 운영 endpoint를 사용한다.
-- streaming으로 크기와 checksum을 확인하고 실제 MIME·decoder로 형식을 검증한다. 오디오는
-  adapter 지원 형식으로 판정한다. 첫 검증 대상은 MP3이며 지원하지 않는 형식은 명시적으로 거절한다.
+- streaming으로 크기와 checksum을 확인한다. 제공자가 선언한 MIME은 메타데이터이며 실제
+  디코더를 강제하지 않는다. ffmpeg는 바이트에서 MP3·WAV·FLAC·Ogg 형식을 판별하며,
+  MP3로 선언된 Ogg/Opus도 처리한다. 허용 목록 밖의 컨테이너·playlist는 거절한다.
 - 일시 URL 만료는 같은 외부 item의 참조를 갱신한다. OAuth 실패는 기존 `needs_reauth`를 사용한다.
   source identity와 item ID를 dedup에 사용하고 token refresh revision을 계정 ID로 쓰지 않는다.
 - 안정적인 계정 ID가 없으면 연결 generation을 사용한다. 재인증 시 동일 계정인지 확인되지 않으면

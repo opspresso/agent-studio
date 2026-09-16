@@ -12,6 +12,7 @@ const DEMUXERS: Readonly<Record<string, string>> = {
   "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
   "audio/flac": "flac", "audio/ogg": "ogg",
 };
+const ALLOWED_DEMUXERS = [...new Set(Object.values(DEMUXERS))].join(",");
 
 function decode(binary: string, args: string[], searchPath: string | undefined, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -39,8 +40,7 @@ export function createAudioSegmenter(options: { binary?: string; searchPath?: st
   return {
     async *split(input, signal) {
       signal?.throwIfAborted();
-      const demuxer = Object.hasOwn(DEMUXERS, input.mimeType) ? DEMUXERS[input.mimeType] : undefined;
-      if (!demuxer) throw new TranscriptionError("unsupported", "Audio format is not supported by the decoder");
+      if (!Object.hasOwn(DEMUXERS, input.mimeType)) throw new TranscriptionError("unsupported", "Audio format is not supported by the decoder");
       if (!input.bytes.byteLength || !Number.isFinite(input.segmentSeconds) || input.segmentSeconds <= 0 ||
         !Number.isSafeInteger(input.maxSegmentBytes) || input.maxSegmentBytes <= WAV_HEADER_BYTES + 1) {
         throw new TranscriptionError("invalid_input", "Audio segment limits or input are invalid");
@@ -54,7 +54,8 @@ export function createAudioSegmenter(options: { binary?: string; searchPath?: st
         const decoded = join(directory, "decoded.pcm");
         await writeFile(source, input.bytes, { mode: 0o600, signal });
         await decode(options.binary ?? "ffmpeg", ["-hide_banner", "-loglevel", "error", "-nostdin", "-xerror", "-y",
-          "-max_alloc", "268435456", "-protocol_whitelist", "file", "-threads", "1", "-f", demuxer,
+          // Source MIME is a provider hint. Probe bytes within the supported formats, excluding playlists.
+          "-max_alloc", "268435456", "-protocol_whitelist", "file", "-threads", "1", "-format_whitelist", ALLOWED_DEMUXERS,
           "-i", source, "-map", "0:a:0", "-vn", "-sn", "-dn", "-threads", "1",
           "-t", String(MAX_AUDIO_SECONDS + 1), "-ar", String(SAMPLE_RATE), "-ac", "1",
           "-c:a", "pcm_s16le", "-f", "s16le", decoded], options.searchPath, signal);

@@ -114,7 +114,7 @@ async function main() {
     }
     const path = join(directory, "source.mp3");
     await promisify(execFile)(process.env.FFMPEG_PATH ?? "ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
-      "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5", "-ar", "16000", "-ac", "1", path]);
+      "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5", "-c:a", "libopus", "-f", "ogg", path]);
     const bytes = await readFile(path);
     const runtime = getAudioRuntime();
     const retention = { unit: "months" as const, value: 3, timezone: "Asia/Seoul" };
