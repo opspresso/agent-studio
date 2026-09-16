@@ -26,7 +26,7 @@ function readPath(value: unknown, path: readonly string[]): unknown {
 }
 
 /** Text responses may append provider guidance after a complete JSON value. */
-function readJsonContainer(text: string): unknown {
+function readJsonContainer(text: string): { value: unknown; rest: string } {
   const start = text.search(/\S/);
   if (text[start] !== "{" && text[start] !== "[") throw new Error("Source response must begin with JSON");
   let depth = 0;
@@ -40,9 +40,24 @@ function readJsonContainer(text: string): unknown {
       else if (char === '"') quoted = false;
     } else if (char === '"') quoted = true;
     else if (char === "{" || char === "[") depth++;
-    else if ((char === "}" || char === "]") && --depth === 0) return JSON.parse(text.slice(start, index + 1));
+    else if ((char === "}" || char === "]") && --depth === 0) {
+      return { value: JSON.parse(text.slice(start, index + 1)), rest: text.slice(index + 1) };
+    }
   }
   throw new Error("Incomplete source JSON object");
+}
+
+/** Providers may isolate untrusted data in a named block after an explanatory preamble. */
+function readSourceText(text: string): unknown {
+  const content = text.trimStart();
+  if (content.startsWith("{") || content.startsWith("[")) return readJsonContainer(content).value;
+  // Require a single explicit envelope, never search arbitrary prose for a JSON object.
+  const [opening, another] = text.matchAll(/^[\t ]*<([A-Za-z_][\w:.-]*)(?:[\t ]+[A-Za-z_][\w:.-]*=(?:"[^"<>\r\n]*"|'[^'<>\r\n]*'))*[\t ]*>[\t ]*\r?$/gm);
+  if (!opening || another) throw new Error("Source response must contain one JSON data block");
+  const { value, rest } = readJsonContainer(text.slice(opening.index + opening[0].length));
+  // Find the closing delimiter only after parsing JSON: a quoted tag is still data.
+  if (!rest.trimStart().startsWith(`</${opening[1]}>`)) throw new Error("Incomplete source data block");
+  return value;
 }
 
 export function readMcpSourceResult(raw: unknown, mapping: McpSourceMapping, serverName: string) {
@@ -52,7 +67,7 @@ export function readMcpSourceResult(raw: unknown, mapping: McpSourceMapping, ser
     const block = item as { type?: unknown; text?: unknown } | null;
     return block?.type === "text" && typeof block.text === "string" ? [block.text] : [];
   }).join("\n");
-  const body: unknown = result.structuredContent ?? readJsonContainer(text);
+  const body: unknown = result.structuredContent ?? readSourceText(text);
   const url = readPath(body, mapping.urlPath);
   const rawId = readPath(body, mapping.idPath);
   const itemId = typeof rawId === "number" && Number.isSafeInteger(rawId) ? String(rawId) : rawId;

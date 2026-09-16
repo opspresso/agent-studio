@@ -44,9 +44,9 @@ async function main() {
       const input = JSON.parse(body.toString("utf-8"));
       assert.ok((input.tools ?? []).every((tool: { function: { name: string } }) => tool.function.name === "Skill"), "postprocessing must not receive effectful tools");
       postprocessCalls += 1;
-      const content = JSON.stringify({ text: "Summary of sample", memories: [
+      const content = input.response_format?.type === "json_schema" ? JSON.stringify({ text: "Summary of sample", memories: [
         { kind: "fact", title: "Sample", content: "Sample transcript", evidence: ["Sample transcript"] },
-      ], warnings: [] });
+      ], warnings: [] }) : "Summary of sample";
       response.setHeader("content-type", "text/event-stream");
       response.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n` +
         `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } })}\n\n` +
