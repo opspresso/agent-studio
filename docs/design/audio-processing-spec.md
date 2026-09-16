@@ -302,7 +302,8 @@ lease generation·file ref·checksum·expiry·segment manifest·output manifest�
 같은 후처리 기능의 서로 다른 설정이다. 플랫폼은 파일/텍스트·선택적 Memory 후보·근거 참조·
 warnings를 담는 결과 envelope만 정의한다. 업무별 필드를 engine에 추가하지 않는다.
 
-긴 입력은 구간별 처리 후 통합하며 source/segment 근거를 유지한다. 불완전 전사의 저장 허용 여부와
+긴 입력은 구간별 처리 후 통합하며 source/segment 근거를 유지한다. 구간 요약과 통합 요약은 같은
+출력 상한을 적용하며, 여러 결과의 통합이 진행되지 않으면 중단한다. 불완전 전사의 저장 허용 여부와
 검수 조건은 설정한 품질 정책으로 검증한다. source 내용은 실행 권한이나 목적지를 바꾸지 못한다.
 생성 결과와 후보 payload를 먼저 고정·저장하고 원격 저장 retry에서 다시 생성하지 않는다.
 후처리의 text는 비어 있지 않은 원문 언어 Markdown 요약이다. Memory 후보가 없어도 요약은 작성하며

@@ -32,6 +32,27 @@ function fixture(text = "Fact one.") {
 }
 
 describe("durable Agent postprocessing", () => {
+  it("accepts a final combined summary within the output cap even when it exceeds half its notes", async () => {
+    const f = fixture("Fact one. ".repeat(2000));
+    const summary = "Combined summary. ".repeat(170);
+    vi.mocked(f.deps.run).mockImplementation(async (_job, _text, mode) => JSON.stringify({
+      text: mode === "extract" ? "Source summary. ".repeat(120) : summary, memories: [], warnings: [],
+    }));
+    await f.run(f.job, f.context);
+    expect(f.deps.run).toHaveBeenCalledTimes(3);
+    expect(new TextDecoder().decode(f.saved.get("job-summary"))).toBe(summary);
+    await f.run(f.job, f.context);
+    expect(f.deps.run).toHaveBeenCalledTimes(3);
+  });
+  it("still rejects combined summaries exceeding the output cap", async () => {
+    const f = fixture("Fact one. ".repeat(2000));
+    vi.mocked(f.deps.run).mockImplementation(async (_job, _text, mode) => JSON.stringify({
+      text: mode === "extract" ? "Source summary." : "x".repeat(6001), memories: [], warnings: [],
+    }));
+    await expect(f.run(f.job, f.context)).rejects.toThrow("postprocess_output_invalid");
+    expect(f.saved.has("job-summary")).toBe(false);
+  });
+
   it.each(["", "   "])("rejects an empty summary before storing any checkpoint or result", async (text) => {
     const f = fixture();
     vi.mocked(f.deps.run).mockResolvedValue(JSON.stringify({ text, memories: [], warnings: ["No memories found"] }));

@@ -56,20 +56,19 @@ export function createAudioPostprocessStep(deps: AudioPostprocessDeps) {
     const execute = async (text: string, round: number, index: number): Promise<AudioPostprocessOutput> => {
       if (++calls > MAX_CALLS) throw new AudioJobStepError("postprocess_call_limit", false);
       const mode = round === 0 ? "extract" : "reduce";
-      const maxChars = mode === "extract" ? OUTPUT_CHARS : Math.min(OUTPUT_CHARS, Math.max(256, Math.floor(text.length / 2)));
       const digest = createHash("sha256").update(JSON.stringify([job.postprocess!.version, text, mode])).digest("hex");
       const id = `${job.id}-post-${round}-${index}`;
       await deps.files.import({ id, projectName: job.projectName, userEmail: job.userEmail,
         filename: "postprocess.json", mimeType: "application/json", retention: job.retention, retainUntil: file.file.retireAt,
         derived: { jobId: job.id, kind: "checkpoint" } }, async () => {
-        const output = parseAudioPostprocessOutput(await deps.run(job, text, mode, maxChars, context.signal), transcript.text, maxChars);
+        const output = parseAudioPostprocessOutput(await deps.run(job, text, mode, OUTPUT_CHARS, context.signal), transcript.text, OUTPUT_CHARS);
         const bytes = new TextEncoder().encode(JSON.stringify({ digest, output }));
         return (async function* () { yield bytes; })();
       }, context.signal);
       const cached = await deps.files.read(job.projectName, id, job.userEmail, MAX_TRANSCRIPT_BYTES, context.signal);
       const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(cached.bytes)) as { digest: string; output: AudioPostprocessOutput };
       if (value.digest !== digest) throw new AudioJobStepError("postprocess_checkpoint_mismatch", false);
-      return parseAudioPostprocessOutput(JSON.stringify(value.output), transcript.text, maxChars);
+      return parseAudioPostprocessOutput(JSON.stringify(value.output), transcript.text, OUTPUT_CHARS);
     };
     let outputs: AudioPostprocessOutput[] = [];
     const extracted: AudioMemoryCandidate[] = [];
