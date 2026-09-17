@@ -10,7 +10,7 @@ permissions:
 jobs:
   verify:
     # Branch code runs on a disposable GitHub-hosted worker.
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     services:
       # A fresh database per job. The name ends in `_test`, which is what the
       # integration check insists on before it writes and cascade-deletes; the
