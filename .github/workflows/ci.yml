@@ -78,15 +78,12 @@ jobs:
           echo "DOCUMENT_SMOKE_DIR=$document_smoke_dir" >> "$GITHUB_ENV"
 
       - name: Native document worker smoke test
-        working-directory: ${{ env.DOCUMENT_SMOKE_DIR }}
-        run: '"$GITHUB_WORKSPACE/node_modules/.bin/tsx" --tsconfig "$GITHUB_WORKSPACE/tsconfig.json" "$GITHUB_WORKSPACE/scripts/document-worker-check.ts"'
+        run: 'cd "$DOCUMENT_SMOKE_DIR" && "$GITHUB_WORKSPACE/node_modules/.bin/tsx" --tsconfig "$GITHUB_WORKSPACE/tsconfig.json" "$GITHUB_WORKSPACE/scripts/document-worker-check.ts"'
 
       - name: Durable audio worker smoke test
-        working-directory: ${{ env.DOCUMENT_SMOKE_DIR }}
-        run: node "$GITHUB_WORKSPACE/scripts/audio-worker-check.mjs"
+        run: 'cd "$DOCUMENT_SMOKE_DIR" && node "$GITHUB_WORKSPACE/scripts/audio-worker-check.mjs"'
 
       - name: Production server smoke test
-        working-directory: ${{ env.DOCUMENT_SMOKE_DIR }}
         env:
           STAGE: local
           DATABASE_URL: postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test
@@ -98,6 +95,7 @@ jobs:
           HOSTNAME: 127.0.0.1
           PORT: 3000
         run: |
+          cd "$DOCUMENT_SMOKE_DIR"
           node server.js > /tmp/agent-studio-production.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
