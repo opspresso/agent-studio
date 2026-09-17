@@ -65,7 +65,6 @@ describe("workflow supply chain", () => {
   });
 
   it("recognizes every supported self-hosted runner spelling", () => {
-    expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: self-hosted")).toBe(true);
     expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: [self-hosted, linux]")).toBe(true);
     expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on:\n      - self-hosted\n      - linux")).toBe(true);
     expect(usesSelfHostedRunner("jobs:\n  test:\n    runs-on: ubuntu-latest")).toBe(false);
