@@ -10,8 +10,7 @@
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:opspresso/agent-studio:ref:refs/heads/main",
-          "token.actions.githubusercontent.com:workflow": "Check models"
+          "token.actions.githubusercontent.com:sub": "repo:opspresso/agent-studio:ref:refs/heads/main"
         }
       }
     }

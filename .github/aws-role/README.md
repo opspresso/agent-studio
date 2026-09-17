@@ -9,7 +9,8 @@ policy to the other.
 | `github--agent-studio-models` | scheduled `Check models` on `main` | `models-trust-policy.json` | `models-role-policy.json` |
 
 The release trust assumes that `v*` tags are protected so only release operators can create them.
-The workflow-name condition prevents another workflow on an allowed ref from borrowing the role.
+The trust policy uses the tag subject and audience conditions supported by AWS GitHub OIDC;
+AWS does not support GitHub's custom workflow claim as an IAM condition.
 
 ## Create or update a role
 

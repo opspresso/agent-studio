@@ -83,7 +83,7 @@ Workspace 체크포인트·DB·오브젝트 volume을 이미지 캐시와 함께
 `.github/workflows/release.yml`, `v*` 태그 push 로만 트리거된다. 임의 ref 를 고를 수 있는 수동
 dispatch는 제공하지 않는다. 검증·릴리스는 GitHub-hosted Ubuntu runner에서 실행하며
 OIDC·registry·GitOps 자격 증명은 해당 릴리스 작업에만 제공한다:
-ECR role 의 trust 도 `Release` workflow 와 `v*` tag subject 를 함께 요구하며, 권한은 이 account 와
+ECR role 의 trust 는 `v*` tag subject와 audience를 요구하며, `Release` workflow가 사용하는 role이다. 권한은 이 account 와
 region 의 `agent-studio` repository 에 image 를 push 하는 action 으로 한정된다. 적용할 policy 와 별도
 model-check role 은 `.github/aws-role/` 에 있다. `v*` tag 를 release operator 만 만들도록 보호하는
 것은 이 trust가 전제하는 GitHub 설정이다.
