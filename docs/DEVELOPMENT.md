@@ -253,8 +253,8 @@ typecheck → test → test:integration → build → standalone 격리 → 문�
 CI는 최소 `contents: read` 권한의 일회용 GitHub-hosted runner에서 실행하고 checkout credential을
 작업 트리에 남기지 않는다. PR 검사는 base 저장소의 branch에 push된 commit에 붙은 CI 상태를
 사용한다. 검토 전 branch 코드는 사내망에 연결된 persistent runner에 도달하지 않는다.
-시크릿이 필요한 `check-models`는 default branch의 schedule에서만, release는 `v*` tag push에서만
-GitHub-hosted `ubuntu-24.04` runner를 쓴다. 임의 ref를 선택하는 `workflow_dispatch`는 두 workflow 모두 제공하지
+시크릿이 필요한 `check-models`는 default branch의 schedule에서만 GitHub-hosted runner를 쓰고, release는
+`v*` tag push에서만 Docker를 사용할 수 있는 persistent self-hosted Linux runner를 쓴다. 임의 ref를 선택하는 `workflow_dispatch`는 두 workflow 모두 제공하지
 않는다.
 
 `.github/workflows/check-models.yml` 은 `pnpm check-models --strict --since=7d` 를 pull request
