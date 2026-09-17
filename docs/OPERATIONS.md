@@ -95,7 +95,7 @@ model-check role 은 `.github/aws-role/` 에 있다. `v*` tag 를 release operat
      `git log` 로 생성된다 (`chore: release` 커밋은 걸러낸다). 이것이 이 프로젝트의 변경
      이력이다: 완료된 마일스톤은 [MILESTONES.md](MILESTONES.md) 에 보관되는 것이 아니라
      *삭제*되므로, git log 와 Releases 페이지가 그 기록이다.
-   - **release**. `linux/amd64` 를 한 번 빌드해 두 레지스트리에 `:{tag}` 와 `:latest` 로
+   - **release**. `linux/amd64`와 `linux/arm64`를 multi-platform manifest로 빌드해 두 레지스트리에 `:{tag}` 와 `:latest` 로
      푸시한다: **`ghcr.io/opspresso/agent-studio`**(`GITHUB_TOKEN` 으로 로그인, 이 AWS 계정 밖의
      설치가 pull 하는 경로이고, 폐쇄망 레지스트리로 미러링을 시작하는 지점이다)와 ECR(GitHub
      OIDC 로 AWS role 을 assume, 장기 키 없음). 같은 작업이 Sandbox 이미지를
@@ -117,12 +117,12 @@ model-check role 은 `.github/aws-role/` 에 있다. `v*` tag 를 release operat
 각각 확인한다. GitHub Release가 존재한다는 사실만으로 이미지 빌드·배포까지 완료됐다고 판단하지 않는다.
 
 Actions 자체가 막혀 있으면(결제 한도, 러너 다운) 릴리스는 로컬에서 같은 순서로 할 수 있다:
-검증 → 태그 → `linux/amd64` 빌드 → ECR·GHCR push → GitOps tag 전달.
+검증 → 태그 → `linux/amd64`·`linux/arm64` multi-platform 빌드 → ECR·GHCR push → GitOps tag 전달.
 
 자명하지 않은 빌드 설정이 둘 있다:
 
-- **amd64 전용.** 현재 릴리스 workflow가 앱과 Sandbox 이미지를 `linux/amd64`로 빌드한다.
-  다른 아키텍처가 필요한 배포는 별도 빌드·실행 검증이 필요하다.
+- **multi-platform 이미지.** 현재 릴리스 workflow가 앱과 Sandbox 이미지를 `linux/amd64`와
+  `linux/arm64`로 빌드한다. 두 아키텍처 모두에서 이미지 자체의 실행 검증이 필요하다.
 - **`provenance: false`, `sbom: false`.** BuildKit 은 기본적으로 provenance attestation 을
   붙이는데, attestation 은 이미지 인덱스 안의 추가 매니페스트로 실려 간다. 그래서 단일 플랫폼
   빌드조차 인덱스 하나와 태그 없는 자식 둘을 푸시했다. 릴리스마다 ECR 엔트리가 하나가 아니라
