@@ -152,17 +152,50 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, linux]
     timeout-minutes: 5
+    # No OIDC here — the only credential is the app installation token below.
     permissions:
       contents: read
     steps:
+      # A repository_dispatch to another repository cannot use GITHUB_TOKEN: it
+      # is scoped to the repository running the workflow. This mints a
+      # short-lived installation token instead, scoped to argocd-env-demo alone,
+      # so there is no long-lived PAT to rotate or over-scope.
+      #
+      # The JWT timestamps come from GitHub's own Date header, not the runner
+      # clock: actions/create-github-app-token signs with local time, and a
+      # self-hosted runner drifting ahead makes GitHub reject the token with
+      # "'exp' is too far in the future".
       - name: Mint a token for the GitOps repository
         id: gitops-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ vars.GITOPS_CLIENT_ID }}
-          private-key: ${{ secrets.GITOPS_PRIVATE_KEY }}
-          owner: opspresso
-          repositories: argocd-env-demo
+        env:
+          CLIENT_ID: ${{ vars.GITOPS_CLIENT_ID }}
+          PRIVATE_KEY: ${{ secrets.GITOPS_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          github_date=$(curl -fsSI https://api.github.com/ | tr -d '\r' \
+            | awk -F': ' 'tolower($1)=="date"{print $2}')
+          github_now=$(date -u -d "$github_date" +%s)
+          header=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+          payload=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' \
+            "$((github_now - 60))" "$((github_now + 540))" "$CLIENT_ID" | b64url)
+          signature=$(printf '%s.%s' "$header" "$payload" \
+            | openssl dgst -sha256 -sign <(printf '%s' "$PRIVATE_KEY") -binary \
+            | b64url)
+          jwt="$header.$payload.$signature"
+          installation_id=$(curl -fsS \
+            -H "Authorization: Bearer $jwt" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/opspresso/argocd-env-demo/installation \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          token=$(curl -fsS -X POST \
+            -H "Authorization: Bearer $jwt" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"repositories":["argocd-env-demo"]}' \
+            "https://api.github.com/app/installations/${installation_id}/access_tokens" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
 
       - name: Trigger GitOps 🚀
         env:
