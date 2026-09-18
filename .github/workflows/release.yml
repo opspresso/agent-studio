@@ -143,7 +143,7 @@ jobs:
           gh api repos/opspresso/argocd-env-demo/dispatches \
             -f event_type=gitops \
             -f client_payload[username]=opspresso \
-            -f client_payload[project]=agent-memory \
+            -f client_payload[project]=agent-studio \
             -f client_payload[version]="${GITHUB_REF_NAME}" \
             -f client_payload[container]=app \
             -f client_payload[phase]=alpha \
