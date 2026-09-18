@@ -182,8 +182,7 @@ MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
 
 ## 배포 이미지
 
-버전 tag는 release workflow가 `linux/amd64`와 `linux/arm64`를 지원하는 multi-platform 이미지를
-ECR과 GHCR에 발행한다.
+버전 tag는 release workflow가 `linux/amd64` 이미지로 ECR과 GHCR에 발행한다.
 
 ```text
 ghcr.io/opspresso/agent-studio:vX.Y.Z
