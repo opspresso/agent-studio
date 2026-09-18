@@ -1,25 +1,55 @@
-# AWS OIDC role
-
-The `Release` workflow assumes `github--agent-studio-ecr` only for version tags and
-pushes the application and Workspace images to the `agent-studio` ECR repository.
-
-The trust policy intentionally uses only the GitHub OIDC `aud` and `sub` claims.
-GitHub's workflow-name claim is not an AWS IAM-supported condition key and must not
-be added to the trust policy.
-
-Apply the trust policy and permission policy from this directory when the workflow or
-repository identity changes:
+# aws role
 
 ```bash
-ROLE_NAME=github--agent-studio-ecr
-POLICY_ARN=arn:aws:iam::396608815058:policy/github--agent-studio-ecr
+export NAME="github--agent-studio-ecr"
+```
 
-aws iam update-assume-role-policy \
-  --role-name "$ROLE_NAME" \
-  --policy-document file://trust-policy.json
+## create role
 
-aws iam create-policy-version \
-  --policy-arn "$POLICY_ARN" \
-  --policy-document file://role-policy.json \
-  --set-as-default
+```bash
+export DESCRIPTION="${NAME} role"
+
+aws iam create-role --role-name "${NAME}" --description "${DESCRIPTION}" --assume-role-policy-document file://trust-policy.json | jq .
+
+aws iam get-role --role-name "${NAME}" | jq .
+```
+
+## create policy
+
+```bash
+export DESCRIPTION="${NAME} policy"
+
+aws iam create-policy --policy-name "${NAME}" --policy-document file://role-policy.json | jq .
+
+export ACCOUNT_ID=$(aws sts get-caller-identity | jq .Account -r)
+export POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${NAME}"
+
+aws iam get-policy --policy-arn "${POLICY_ARN}" | jq .
+
+aws iam create-policy-version --policy-arn "${POLICY_ARN}" --policy-document file://role-policy.json --set-as-default | jq .
+```
+
+## attach role policy
+
+```bash
+aws iam attach-role-policy --role-name "${NAME}" --policy-arn "${POLICY_ARN}"
+# aws iam attach-role-policy --role-name "${NAME}" --policy-arn "arn:aws:iam::aws:policy/PowerUserAccess"
+# aws iam attach-role-policy --role-name "${NAME}" --policy-arn "arn:aws:iam::aws:policy/AdministratorAccess"
+```
+
+## add role-assume
+
+```yaml
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: "arn:aws:iam::396608815058:role/github--agent-studio-ecr"
+          role-session-name: github-actions-ci-bot
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sts GetCallerIdentity
+        run: |
+          aws sts get-caller-identity
+
 ```
