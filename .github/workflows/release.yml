@@ -94,8 +94,6 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
-      # GHCR as well: the pull path an installation outside this AWS account
-      # uses, and the one a mirror into an air-gapped registry starts from.
       - name: Login to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -103,12 +101,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Attestations off. BuildKit adds a provenance attestation by default, and
-      # an attestation is carried as an extra manifest inside an image index.
-      # That creates untagged ECR children, which makes the obvious "expire
-      # untagged" lifecycle rule delete image manifests a released tag needs.
-      # Nothing here consumes the provenance. See
-      # docs.docker.com/build/metadata/attestations.
       - name: Build and push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -136,65 +128,22 @@ jobs:
             ${{ env.ECR_REPOSITORY }}:workspace-${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:workspace-${{ github.ref_name }}
 
-  # Deployment manifests live in argocd-env-demo. This repository only sends
-  # the image tag after the image exists; it does not own the target manifests.
   gitops:
     needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # No OIDC here — the only credential is the app installation token below.
     permissions:
       contents: read
     steps:
-      # A repository_dispatch to another repository cannot use GITHUB_TOKEN: it
-      # is scoped to the repository running the workflow. This mints a
-      # short-lived installation token instead, scoped to argocd-env-demo alone,
-      # so there is no long-lived PAT to rotate or over-scope.
-      #
-      # The JWT timestamps come from GitHub's own Date header, not the runner
-      # clock: actions/create-github-app-token signs with local time, and a
-      # self-hosted runner drifting ahead makes GitHub reject the token with
-      # "'exp' is too far in the future".
-      - name: Mint a token for the GitOps repository
-        id: gitops-token
-        env:
-          CLIENT_ID: ${{ vars.GITOPS_CLIENT_ID }}
-          PRIVATE_KEY: ${{ secrets.GITOPS_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
-          github_date=$(curl -fsSI https://api.github.com/ | tr -d '\r' \
-            | awk -F': ' 'tolower($1)=="date"{print $2}')
-          github_now=$(date -u -d "$github_date" +%s)
-          header=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
-          payload=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' \
-            "$((github_now - 60))" "$((github_now + 540))" "$CLIENT_ID" | b64url)
-          signature=$(printf '%s.%s' "$header" "$payload" \
-            | openssl dgst -sha256 -sign <(printf '%s' "$PRIVATE_KEY") -binary \
-            | b64url)
-          jwt="$header.$payload.$signature"
-          installation_id=$(curl -fsS \
-            -H "Authorization: Bearer $jwt" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/opspresso/argocd-env-demo/installation \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-          token=$(curl -fsS -X POST \
-            -H "Authorization: Bearer $jwt" \
-            -H "Accept: application/vnd.github+json" \
-            -d '{"repositories":["argocd-env-demo"]}' \
-            "https://api.github.com/app/installations/${installation_id}/access_tokens" \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
-          echo "::add-mask::$token"
-          echo "token=$token" >> "$GITHUB_OUTPUT"
-
       - name: Trigger GitOps 🚀
         env:
-          GH_TOKEN: ${{ steps.gitops-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh api repos/opspresso/argocd-env-demo/dispatches \
             -f event_type=gitops \
             -f client_payload[username]=opspresso \
-            -f client_payload[project]=agent-studio \
+            -f client_payload[project]=agent-memory \
             -f client_payload[version]="${GITHUB_REF_NAME}" \
             -f client_payload[container]=app \
             -f client_payload[phase]=alpha \
