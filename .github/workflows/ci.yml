@@ -9,8 +9,8 @@ permissions:
 
 jobs:
   verify:
-    # Branch code runs on a disposable GitHub-hosted worker.
-    runs-on: ubuntu-24.04
+    # Branch code runs on the cost-controlled persistent runner.
+    runs-on: [self-hosted, linux]
     services:
       # A fresh database per job. The name ends in `_test`, which is what the
       # integration check insists on before it writes and cascade-deletes; the
@@ -123,7 +123,7 @@ jobs:
           exit 1
 
   html-preview:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

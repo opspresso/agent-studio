@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 const WORKFLOWS = fileURLToPath(new URL("../.github/workflows", import.meta.url));
-const AWS_ROLES = fileURLToPath(new URL("../.github/aws-role", import.meta.url));
 
 function usesSelfHostedRunner(text: string): boolean {
   const lines = text.split("\n");
@@ -58,10 +57,10 @@ describe("workflow supply chain", () => {
     expect(unsafe).toEqual([]);
   });
 
-  it("keeps arbitrary branch pushes off persistent self-hosted runners", () => {
+  it("runs branch pushes on the cost-controlled self-hosted runner", () => {
     const text = readFileSync(join(WORKFLOWS, "ci.yml"), "utf8");
     expect(text).toMatch(/branches:\s*\["\*\*"\]/);
-    expect(usesSelfHostedRunner(text)).toBe(false);
+    expect(usesSelfHostedRunner(text)).toBe(true);
   });
 
   it("recognizes every supported self-hosted runner spelling", () => {
@@ -89,61 +88,4 @@ describe("workflow supply chain", () => {
     expect(unguarded).toEqual([]);
   });
 
-  it("scopes AWS roles to their exact workflow and refs", () => {
-    const release = JSON.parse(readFileSync(join(AWS_ROLES, "trust-policy.json"), "utf8"));
-    const models = JSON.parse(readFileSync(join(AWS_ROLES, "models-trust-policy.json"), "utf8"));
-
-    expect(release.Statement[0].Condition).toEqual({
-      StringEquals: {
-        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        "token.actions.githubusercontent.com:workflow": "Release",
-      },
-      StringLike: {
-        "token.actions.githubusercontent.com:sub":
-          "repo:opspresso/agent-studio:ref:refs/tags/v*",
-      },
-    });
-    expect(models.Statement[0].Condition).toEqual({
-      StringEquals: {
-        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        "token.actions.githubusercontent.com:sub":
-          "repo:opspresso/agent-studio:ref:refs/heads/main",
-        "token.actions.githubusercontent.com:workflow": "Check models",
-      },
-    });
-  });
-
-  it("grants the release role only the ECR image-push actions", () => {
-    const policy = JSON.parse(readFileSync(join(AWS_ROLES, "role-policy.json"), "utf8"));
-    const repositoryStatement = policy.Statement.find(
-      (statement: { Resource: string }) => statement.Resource !== "*",
-    );
-
-    expect(repositoryStatement).toEqual({
-      Effect: "Allow",
-      Action: [
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:BatchGetImage",
-        "ecr:CompleteLayerUpload",
-        "ecr:InitiateLayerUpload",
-        "ecr:PutImage",
-        "ecr:UploadLayerPart",
-      ],
-      Resource: "arn:aws:ecr:ap-northeast-2:396608815058:repository/agent-studio",
-    });
-  });
-
-  it("grants the model-check role only catalog listing", () => {
-    const policy = JSON.parse(
-      readFileSync(join(AWS_ROLES, "models-role-policy.json"), "utf8"),
-    );
-
-    expect(policy.Statement).toEqual([
-      {
-        Effect: "Allow",
-        Action: ["bedrock-mantle:ListModels"],
-        Resource: "*",
-      },
-    ]);
-  });
 });

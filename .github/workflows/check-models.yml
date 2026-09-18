@@ -9,9 +9,8 @@ name: Check models
 # The channels have to be the deployment's channels. With `LLM_BASE_URL` alone
 # this job compared the registry against a single provider-direct endpoint,
 # which serves bare ids — nothing matched, and every registered model was
-# reported as retired. So the five provider channels of
-# Production-like provider channels are configured here too, Bedrock included:
-# it signs with SigV4, hence the OIDC role rather than a key.
+# reported as retired. So the provider channels of production-like deployments
+# are configured here too.
 #
 # Requires repository/organization secrets: LLM_BASE_URL, LLM_API_KEY,
 # LLM_PROVIDER_OPENAI_API_KEY, LLM_PROVIDER_ANTHROPIC_API_KEY,
@@ -21,16 +20,6 @@ on:
   schedule:
     # Weekdays 08:00 KST (Sunday–Thursday 23:00 UTC).
     - cron: "0 23 * * 0-4"
-
-permissions:
-  id-token: write
-  contents: read
-
-env:
-  # Where Bedrock's OpenAI-compatible host lives. The signer reads the region off
-  # the URL, so this one only has to be a region the role can be assumed in.
-  AWS_REGION: us-east-1
-  AWS_ROLE_ARN: arn:aws:iam::396608815058:role/github--agent-studio-models
 
 jobs:
   check-models:
@@ -50,12 +39,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
       - name: Check model registry against served models
         id: models
         env:
@@ -71,9 +54,6 @@ jobs:
           LLM_PROVIDER_XAI_API_KEY: ${{ secrets.LLM_PROVIDER_XAI_API_KEY }}
           LLM_PROVIDER_OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
           LLM_PROVIDER_OPENROUTER_API_KEY: ${{ secrets.LLM_PROVIDER_OPENROUTER_API_KEY }}
-          # No key: the role assumed above is what signs this channel.
-          LLM_PROVIDER_BEDROCK_BASE_URL: https://bedrock-mantle.us-east-1.api.aws/v1
-          LLM_PROVIDER_BEDROCK_AUTH: sigv4
         run: |
           set +e
           pnpm check-models --strict --since=7d 2>&1 | tee model-check.log
