@@ -230,7 +230,7 @@ pnpm test:integration
 
 ## CI
 
-`.github/workflows/ci.yml`은 모든 branch push에서 실행된다. 별도 `html-preview` job은
+`.github/workflows/ci.yml`은 pull request와 `main` push에서 실행된다. 별도 `html-preview` job은
 Chromium을 설치하고 HTML 실행·중지·입력 및 격리 경계를 검증한다. 기본 검증 순서는 다음과 같다:
 
 ```
