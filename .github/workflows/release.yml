@@ -73,7 +73,11 @@ jobs:
           else
             notes="$(git log --no-merges --pretty='- %s' "${tag}" | grep -v '^- chore: release' || true)"
           fi
-          gh release create "$tag" --title "$tag" --notes "$notes"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "$tag" --notes "$notes"
+          else
+            gh release create "$tag" --title "$tag" --notes "$notes"
+          fi
 
   release:
     needs: verify
