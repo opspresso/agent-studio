@@ -138,7 +138,7 @@ jobs:
     steps:
       - name: Trigger GitOps 🚀
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GHP_TOKEN }}
         run: |
           gh api repos/opspresso/argocd-env-demo/dispatches \
             -f event_type=gitops \
