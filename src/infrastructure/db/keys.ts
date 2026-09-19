@@ -32,6 +32,7 @@ export const keys = {
     PK: `WORKSPACESTATE#${id}`, SK: `${checkpointId}#${String(index).padStart(6, "0")}`,
   }),
   project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
+  legacyProjectConfiguration: (name: string) => ({ PK: `PROJECT#${name}`, SK: "LEGACYCONFIGURATION" }),
   projectPartition: (name: string) => `PROJECT#${name}`,
   projectApiToken: (name: string) => ({ PK: `PROJECT#${name}`, SK: "APITOKEN" }),
   workspacePolicy: (name: string) => ({ PK: `PROJECT#${name}`, SK: "WORKSPACEPOLICY" }),

@@ -229,6 +229,10 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 
 ## 업그레이드
 
+Version 기반 설치에서 Agent 현재 설정으로 전환할 때는 [Agent 설정 데이터 이전](AGENT-MIGRATION.md)을
+먼저 수행한다. 이 작업은 부팅 시 자동 실행되지 않으며, 원본 보관·템플릿 처리·MCP 헤더 재암호화와
+승인 대기·Audio 작업 정리 절차를 포함한다.
+
 새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
 개발 중인 프로젝트라 API·설정·저장 형식의 하위 호환을 보장하지 않으며 자동 down migration도 없다.
 이미지 tag만 되돌려도 복구된다고 가정하지 않는다. 교체 전에 DB·객체·암호화 키를 백업하고,

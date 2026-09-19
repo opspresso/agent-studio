@@ -155,6 +155,7 @@ discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·
 | 스크립트 | 용도 |
 |---|---|
 | `scripts/db-migrate.ts` | `DATABASE_URL` 의 데이터베이스를 현재 스키마로 올린다. 앱이 부팅 때 하는 것과 같은 마이그레이션이고, CI 나 첫 부팅 전에 앱 없이 돌리는 형태다. |
+| `scripts/migrate-agent-configuration.ts` | Version 기반 데이터를 원본 보관 후 현재 Agent 설정으로 옮기는 수동 계획·적용 도구다. [이전 절차](AGENT-MIGRATION.md)를 따른다. |
 | `scripts/dev-session.ts` | 개발용 사용자와 세션을 Better Auth 의 테이블에 바로 써 넣고 서명된 세션 쿠키를 출력한다. 신원 제공자 왕복 없이 인증이 필요한 라우트를 시험한다. 로컬이 아닌 `DATABASE_URL` 은 거부한다. |
 | `scripts/mock-llm.ts` | `127.0.0.1:8002` (`MOCK_LLM_PORT`) 에서 도는 독립 실행형 OpenAI 호환 mock 서버. 스트리밍과 비스트리밍을 모두 지원하고, 도구가 제공되고 *동시에* 메시지가 `skill named "<slug>"` 를 언급할 때 `Skill` 도구 호출을 한 번 요청한다. `MOCK_LLM_CHUNKS` 와 `MOCK_LLM_DELAY_MS` 는 답변을 부풀리고 늦춰 긴 스트리밍 응답으로 만든다. 답이 도착하는 동안 chat 창이 무엇을 하는지 볼 수 있는 유일한 방법이다. 기본값은 통합 체크가 기대하는 한 줄 답변을 유지한다. |
 | `scripts/seed-skills.ts` | 샘플 Skill 을 멱등하게 시드한다. |
