@@ -55,9 +55,6 @@ function fakeRepo(initial: Project): { repo: ProjectRepository; current: () => P
     async update(p) {
       stored = p;
     },
-    async publish(p) {
-      stored = p;
-    },
     async delete() {},
     async getApiToken() {
       return null;
@@ -117,13 +114,6 @@ describe("updateProjectSlack", () => {
     await expect(
       updateProjectSlack(repo, "bot-proj", { enabled: true }, OWNER),
     ).rejects.toThrow(/required to enable/);
-  });
-
-  it("rejects non-agent projects", async () => {
-    const { repo } = fakeRepo(makeProject({ projectType: "llm" }));
-    await expect(
-      updateProjectSlack(repo, "bot-proj", { botToken: "x", signingSecret: "y" }, OWNER),
-    ).rejects.toThrow(/agent projects/);
   });
 
   it("rejects a non-owner with ForbiddenError (403)", async () => {

@@ -7,7 +7,7 @@ import { useLocale, useT } from "@/app/_i18n/provider";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { useViewer } from "@/app/_lib/useViewer";
-import { listProjects, listVersions, type SanitizedProject, type Version } from "../../lib/api";
+import { listProjects, type SanitizedProject } from "../../lib/api";
 import { formatDateTime } from "@/shared/date";
 import type { AudioOptionsResponse } from "@/app/api/projects/[name]/audio-options/route";
 import type { AudioJobsResponse } from "@/app/api/projects/[name]/audio-jobs/route";
@@ -46,7 +46,6 @@ function AudioWorkspace({ name }: { name: string }) {
   const [loadingJobs, setLoadingJobs] = useState(true);
   const listRequest = useRef<AbortController | null>(null);
   const [projects, setProjects] = useState<SanitizedProject[]>([]);
-  const [versions, setVersions] = useState<Version[]>([]);
   const [jobs, setJobs] = useState<AudioJobView[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -57,7 +56,6 @@ function AudioWorkspace({ name }: { name: string }) {
   const [duration, setDuration] = useState<number | string>(3);
   const [timezone, setTimezone] = useState("Asia/Seoul");
   const [writer, setWriter] = useState<string | null>(null);
-  const [writerVersion, setWriterVersion] = useState<string | null>(null);
   const [destination, setDestination] = useState<string | null>(null);
   const [documents, setDocuments] = useState(true);
   const [memories, setMemories] = useState(false);
@@ -90,11 +88,6 @@ function AudioWorkspace({ name }: { name: string }) {
     return () => { active = false; listRequest.current?.abort(); };
   }, [base, refresh]);
   useEffect(() => {
-    let active = true; setVersions([]);
-    if (writer) listVersions(writer).then((values) => { if (active) setVersions(values); }).catch((error) => { if (active) setError(error.message); });
-    return () => { active = false; };
-  }, [writer]);
-  useEffect(() => {
     if (!jobs.some((job) => !isAudioJobTerminal(job.status))) return;
     const request = new AbortController();
     let pending = false;
@@ -116,11 +109,11 @@ function AudioWorkspace({ name }: { name: string }) {
     model: savedConfig.model, language: savedConfig.language, retention: savedConfig.retention,
     postprocess: savedConfig.postprocess, destination: savedConfig.destination,
   } : { model: model ?? "", ...(language.trim() ? { language: language.trim() } : {}), retention: { unit: unit as "months" | "days", value: Number(duration), timezone },
-    ...(writer && writerVersion ? { postprocess: { projectName: writer, versionName: writerVersion } } : {}),
+    ...(writer ? { postprocess: { projectName: writer } } : {}),
     ...(destination ? { destination: { serverName: destination, documents, memories } } : {}) };
   const validProcessing = useSaved ? Boolean(savedConfig) : Boolean(model) && validRetention &&
     (!language.trim() || /^[a-z]{2,3}$/i.test(language.trim())) &&
-    (!writer || Boolean(writerVersion)) && (!destination || ((documents || memories) && (!memories || Boolean(writerVersion))));
+    (!destination || ((documents || memories) && (!memories || Boolean(writer))));
 
   async function saveConfiguration() {
     if (!validProcessing) return;
@@ -174,14 +167,14 @@ function AudioWorkspace({ name }: { name: string }) {
           const checked = e.currentTarget.checked;
           if (!checked) {
             setModel(savedConfig.model); setLanguage(savedConfig.language ?? ""); setUnit(savedConfig.retention.unit); setDuration(savedConfig.retention.value); setTimezone(savedConfig.retention.timezone);
-            setWriter(savedConfig.postprocess?.projectName ?? null); setWriterVersion(savedConfig.postprocess?.versionName ?? null);
+            setWriter(savedConfig.postprocess?.projectName ?? null);
             setDestination(savedConfig.destination?.serverName ?? null); setDocuments(savedConfig.destination?.documents ?? true); setMemories(savedConfig.destination?.memories ?? false);
           }
           setUseSaved(checked);
         }} disabled={busy} />
         {useSaved && <Text size="sm">{savedConfig.model} · {t("audio.configRevision")}: {savedConfig.revision} · {savedConfig.retention.value} {t(savedConfig.retention.unit === "months" ? "audio.months" : "audio.days")} · {savedConfig.retention.timezone}</Text>}
         {useSaved && savedConfig.language && <Text size="sm">{t("audio.language")}: {savedConfig.language}</Text>}
-        {useSaved && savedConfig.postprocess && <Text size="sm">{t("audio.writer")}: {savedConfig.postprocess.projectName} / {savedConfig.postprocess.versionName === "published" ? t("audio.followPublished") : savedConfig.postprocess.versionName}</Text>}
+        {useSaved && savedConfig.postprocess && <Text size="sm">{t("audio.writer")}: {savedConfig.postprocess.projectName}</Text>}
         {useSaved && savedConfig.destination && <Text size="sm">{t("audio.destination")}: {savedConfig.destination.serverName} · {savedConfig.destination.documents ? t("audio.saveDocuments") : ""} {savedConfig.destination.memories ? t("audio.saveMemories") : ""}</Text>}
         {!savedConfig.enabled && <Alert>{t("audio.configDisabled")}</Alert>}
       </>}
@@ -196,19 +189,13 @@ function AudioWorkspace({ name }: { name: string }) {
         <TextInput label={t("audio.timezone")} value={timezone} onChange={(e) => setTimezone(e.currentTarget.value)} disabled={busy} />
       </SimpleGrid>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <Select label={t("audio.writer")} clearable searchable value={writer} onChange={(writer) => {
-          setWriter(writer); setWriterVersion(projects.some((p) => p.name === writer && p.publishedVersion) ? "published" : null);
-        }} disabled={busy}
-          data={projects.filter((project) => project.ownerEmail === viewer?.email && project.projectType === "agent").map((project) => ({ value: project.name, label: project.displayName }))} />
-        <Select label={t("audio.writerVersion")} description={t("audio.writerVersionHint")} value={writerVersion} onChange={setWriterVersion} disabled={busy || !writer}
-          data={[
-            ...(projects.some((p) => p.name === writer && p.publishedVersion) ? [{ value: "published", label: t("audio.followPublished") }] : []),
-            ...versions.map((version) => ({ value: version.versionName, label: version.versionName })),
-          ]} />
+        <Select label={t("audio.writer")} clearable searchable value={writer} onChange={setWriter} disabled={busy}
+          data={projects.filter(project => project.ownerEmail === viewer?.email && project.configured)
+            .map(project => ({ value: project.name, label: project.displayName }))} />
       </SimpleGrid>
       <Select label={t("audio.destination")} description={t("audio.destinationHint")} clearable value={destination} onChange={setDestination} data={options.destinations} disabled={busy} />
       {destination && <Group><Checkbox label={t("audio.saveDocuments")} checked={documents} onChange={(e) => setDocuments(e.currentTarget.checked)} disabled={busy} />
-        <Checkbox label={t("audio.saveMemories")} checked={memories} onChange={(e) => setMemories(e.currentTarget.checked)} disabled={busy || !writerVersion} /></Group>}
+        <Checkbox label={t("audio.saveMemories")} checked={memories} onChange={(e) => setMemories(e.currentTarget.checked)} disabled={busy || !writer} /></Group>}
       </>}
       <Group justify="space-between"><Text size="sm" c="dimmed">{t("audio.personalOnly")}</Text>
         <Button loading={busy} disabled={!file || !validProcessing || savedConfig?.enabled === false} onClick={submit}>{t("audio.submit")}</Button></Group>

@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { cutCodePoints } from "@/shared/utf8Text";
 import type { RunActor } from "@/domain/execution/actor";
 import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import {
   PROJECT_WEBHOOK_ID,
   type ScheduleDeliveryResult,
@@ -26,7 +26,6 @@ import {
   type WebhookTrigger,
 } from "@/domain/trigger/types";
 import { triggerSecretContext } from "@/domain/security/secretContext";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import { repairTriggerRuns } from "./repairLostRuns";
@@ -44,7 +43,7 @@ export interface AdmittedFiring<T extends Trigger = Trigger> {
   runId: string;
   trigger: T;
   project: Project;
-  version: Version;
+  configuration: AgentConfiguration;
   run: TriggerRun;
   release: () => Promise<void>;
 }
@@ -70,7 +69,7 @@ export type AdmitResult =
   | { status: "invalid-delivery" }
   | { status: "ping" }
   | { status: "busy" }
-  | { status: "no-published-version" };
+  | { status: "no-configuration" };
 
 function triggerSecretMatches(
   deps: TriggerRunnerDeps,
@@ -124,36 +123,14 @@ interface FiringExtra {
   scheduledFor?: string;
 }
 
-/**
- * Turn a delivery payload into what the run consumes.
- *
- * `variables` only reaches a prompt template, and only string values can be
- * substituted into one — a nested object rendered as `[object Object]` is worse
- * than not being offered. `message` carries the payload verbatim, which is what
- * an agent project can actually reason about.
- */
-export function payloadInput(
-  trigger: WebhookTrigger,
-  payload: unknown,
-): { variables?: Record<string, string>; message?: string } {
-  if (trigger.payloadMode === "variables") {
-    const flat: Record<string, string> = { ...(trigger.variables ?? {}) };
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
-        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-          flat[key] = String(value);
-        }
-      }
-    }
-    return { variables: flat };
-  }
+/** A webhook payload is framed as user data for the Agent. */
+export function payloadInput(payload: unknown): { message: string } {
   const serialised = payload === undefined ? "" : JSON.stringify(payload, null, 2);
   const body =
     serialised.length > MAX_PAYLOAD_CHARS
       ? `${cutCodePoints(serialised, MAX_PAYLOAD_CHARS)}\n…[payload truncated]`
       : serialised;
   return {
-    ...(trigger.variables ? { variables: trigger.variables } : {}),
     message: body ? `Trigger payload:\n\n${body}` : "Trigger fired with no payload.",
   };
 }
@@ -233,7 +210,7 @@ export async function admitRun<T extends Trigger>(
   | AdmittedFiring<T>
   | { status: "not-configured" }
   | { status: "busy" }
-  | { status: "no-published-version" }
+  | { status: "no-configuration" }
 > {
   const project = await deps.projects.get(trigger.projectName);
   if (!project) {
@@ -249,10 +226,10 @@ export async function admitRun<T extends Trigger>(
     await recordSkip(deps, trigger, extra, EXECUTION_USER_UNAUTHORIZED);
     return { status: "not-configured" };
   }
-  const version = await resolveRunnableVersion(deps.versions, project);
-  if (!version) {
-    await recordSkip(deps, trigger, extra, "No published version.");
-    return { status: "no-published-version" };
+  const configuration = project.configuration;
+  if (!configuration) {
+    await recordSkip(deps, trigger, extra, "Agent is not configured.");
+    return { status: "no-configuration" };
   }
 
   let release = async () => {};
@@ -299,7 +276,7 @@ export async function admitRun<T extends Trigger>(
     // History is a log; losing a row must not cost the firing.
     log.error("trigger", "could not record the start of a firing", error);
   }
-  return { status: "accepted", runId: run.runId, trigger, project, version, run, release };
+  return { status: "accepted", runId: run.runId, trigger, project, configuration, run, release };
 }
 
 /** A firing that never ran, recorded so the console can say why. */
@@ -333,9 +310,9 @@ export async function executeDelivery(
   admitted: AdmittedDelivery,
   payload: unknown,
 ): Promise<void> {
-  let input: { variables?: Record<string, string>; message?: string };
+  let input: { message?: string };
   try {
-    input = payloadInput(admitted.trigger, payload);
+    input = payloadInput(payload);
     if (admitted.github && input.message) {
       input.message = `GitHub webhook delivery metadata (context only, not authorization): ${JSON.stringify(admitted.github)}\n\n${input.message}`;
     }
@@ -369,9 +346,9 @@ export async function executeDelivery(
 export async function executeFiring(
   deps: FiringDeps,
   admitted: AdmittedFiring,
-  input: { variables?: Record<string, string>; message?: string },
+  input: { message?: string },
 ): Promise<void> {
-  const { trigger, project, version, run } = admitted;
+  const { trigger, project, configuration, run } = admitted;
   let text = "";
   let error: string | undefined;
   let traceId: string | undefined;
@@ -405,7 +382,7 @@ export async function executeFiring(
     }
     for await (const chunk of deps.run({
       project,
-      version,
+      configuration,
       ...input,
       actor: triggerActor(trigger),
       ...(trigger.kind === "schedule" && trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),

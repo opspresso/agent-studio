@@ -1,28 +1,7 @@
 /**
- * Whether a run may execute a model the registry does not know.
- *
- * An unregistered id still dispatches — the channel takes any string — but
- * `calculateCost` has no pricing for it and books the call at **$0**. Inside a
- * company that is a corrupted dashboard; where the usage rows become an invoice
- * it is revenue leaking through the one report that would have shown it. The
- * default therefore stays `allow`, byte-identical to the behaviour every
- * existing deployment has, and a deployment that bills for its runs can choose
- * `refuse` instead.
- *
- * The check belongs to the run bracket, which is the only point all four
- * admitting functions pass through. Putting it in the execution facade would
- * miss image runs entirely, since `generateImage` never enters one.
- *
- * The bracket is not, however, the whole set of paths that spend money. A
- * subagent transfer never opens one — by design, since it is not a top-level run
- * — yet it dispatches to the provider and books a usage row exactly as its
- * parent does, and the parent's model being registered says nothing about the
- * child's. `agentBindings` applies this where the child's version resolves, for
- * that reason and no other.
- *
- * It is *not* attached to saving a version. Storing an id the registry has not
- * caught up with is how a new model gets adopted; the warning there already says
- * so. What this bounds is spending money under an id nothing can price.
+ * Enforce the deployment's pricing policy before a model spends budget.
+ * The run bracket checks primary and fallback models; delegated Agents apply
+ * the same policy when resolving their own settings inside the parent bracket.
  */
 
 import { getModelConfig } from "@/domain/llm/models";

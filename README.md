@@ -1,7 +1,6 @@
 # Agent Studio
 
-기업이 자기 네트워크 안에 설치해 운영하는 AI 에이전트 플랫폼이다. 프롬프트와 에이전트를
-Project로 만들고, 실행 구성을 Version으로 관리하며, 발행한 버전을 콘솔·API·메신저·자동화에서
+기업이 자기 네트워크 안에 설치해 운영하는 AI 에이전트 플랫폼이다. Project를 Agent로 만들고, 현재 모델·프롬프트·도구 설정을 저장해 콘솔·API·메신저·자동화에서
 호출한다. Studio가 권한·자격 증명·비용·기록을 관리하고 OpenAI Agents SDK가 모델 턴과 도구 실행을 담당한다.
 
 한 설치가 한 기업의 경계다. 사내 PostgreSQL, 모델 엔드포인트와 로그인 수단으로 구성하면
@@ -12,10 +11,10 @@ Project로 만들고, 실행 구성을 Version으로 관리하며, 발행한 버
 
 | 영역 | 제공하는 기능 | 상세 계약 |
 |---|---|---|
-| Projects와 Versions | 단발 프롬프트(`llm`), 도구를 사용하는 에이전트(`agent`), 이미지 생성·편집(`image`); 편집·비교·발행 | [실행](docs/design/execution.md) |
+| Projects와 Agent 설정 | 현재 설정 편집·실행, 이미지 생성·편집 도구 | [실행](docs/design/execution.md) |
 | 모델 | OpenAI 호환 기본·provider 채널, fallback, 공개 카탈로그와 자체 호스팅 모델, Embedding·Rerank·Transcription 선택 | [설정](docs/CONFIGURATION.md#llm-채널) |
 | Skills·Memory·검색 | 필요한 지침과 참고 파일 로드, Plugin 동기화, capability 검색, 연결된 MCP의 장기 Memory 회상 | [Capabilities](docs/design/capabilities.md) |
-| MCP·하위 Agent | 버전별 도구·헤더 binding, 프로젝트별 OAuth, Docker 관리형 MCP, Handoff·Agent-as-Tool·외부 Agent | [MCP](docs/design/mcp.md), [SDK 적용 범위](docs/design/sdk-capabilities.md) |
+| MCP·하위 Agent | Agent별 도구·헤더 binding, 프로젝트별 OAuth, Docker 관리형 MCP, Handoff·Agent-as-Tool·외부 Agent | [MCP](docs/design/mcp.md), [SDK 적용 범위](docs/design/sdk-capabilities.md) |
 | Chat | 비공개 대화, 암호화된 SDK Session, 도구 승인·거절·재개, 연결이 끊겨도 계속되는 실행 | [Chat](docs/design/chat.md) |
 | 문서·이미지·Artifacts | 첨부 추출, 문서 생성·검사·편집, 이미지 생성·편집, 결과 보관·다운로드·격리된 HTML 미리보기 | [문서](docs/design/documents.md), [Artifacts](docs/design/execution.md#artifacts) |
 | 오디오 | 원본 가져오기·업로드, 비동기 전사·Agent 후처리, 비공개 결과와 요청한 개인 기록 | [오디오](docs/design/audio-processing-spec.md) |
@@ -57,15 +56,14 @@ pnpm dev
 
 ## 첫 프로젝트와 외부 호출
 
-1. member 이상 계정으로 Projects에서 유형을 선택해 프로젝트를 만든다.
-2. Version에 모델·프롬프트를 설정하고, Agent라면 필요한 Skill·MCP·하위 Agent를 연결한다.
-3. Playground에서 검증한 뒤 사용할 Version을 publish한다. Version은 수정 가능한 실행 구성이고,
-   publish는 그 이름을 가리키는 포인터다.
+1. member 이상 계정으로 Projects에서 Agent 프로젝트를 만든다.
+2. Playground에서 모델·시스템 프롬프트를 설정하고 필요한 Skill·MCP·하위 Agent를 연결한다.
+3. 현재 설정을 저장하고 요청을 실행한다. 저장한 내용은 다음 실행부터 적용된다.
 4. 영속 대화는 Chat에서, 외부 실행 예제는 프로젝트의 API Reference 탭에서 확인한다.
 
 Project → Integrations에서 발급한 API token은 해당 프로젝트 실행에 쓰는 Bearer credential이다.
 사용자 로그인 세션과 승인 화면을 만들지는 않는다. 로그인한 사용자, 프로젝트 토큰, 메신저와
-자동화는 같은 Version을 사용해도 권한·이력·승인 경로가 다르다.
+자동화는 같은 Agent 설정을 사용해도 권한·이력·승인 경로가 다르다.
 [실행 API](docs/API.md#실행)와 [실행 창구별 계약](docs/design/workspaces.md#실행-창구별-계약)을 확인하라.
 콘솔의 `/guide`는 첫 프로젝트부터 파일·오디오·Workspace 사용까지 안내한다.
 

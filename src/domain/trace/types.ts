@@ -32,7 +32,7 @@ export interface TraceSpan {
 export interface Trace {
   traceId: string;
   projectName: string;
-  versionName: string;
+  versionName?: string;
   projectType: string;
   /**
    * Who caused the run. A subagent's trace carries the actor of the top-level

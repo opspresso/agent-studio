@@ -20,7 +20,6 @@ export const MAX_TRACED_DISCOVERED = 20;
 
 export interface TraceContext {
   projectName: string;
-  versionName: string;
   projectType: string;
   model: string;
   messageCount: number;
@@ -329,7 +328,6 @@ export class TraceRecorder {
     const trace: Trace = {
       traceId: this.traceId,
       projectName: this.context.projectName,
-      versionName: this.context.versionName,
       projectType: this.context.projectType,
       ...(this.context.ancestry && this.context.ancestry.length > 1
         ? { ancestry: this.context.ancestry }

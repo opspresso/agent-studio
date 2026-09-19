@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildMcpTools, type McpToolDeps } from "@/application/execution/mcpTools";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 
 describe("orchestrated private source ownership", () => {
   it("uses plugin mappings by default, scopes accounts, and honors an empty override", async () => {
@@ -14,17 +14,17 @@ describe("orchestrated private source ownership", () => {
       sourceRefreshIdentity: async () => identity, mcpSessions: { open: async (value: McpServerConfig[]) => {
         servers = value; return { tools: [], toolNamesByServer: new Map(), warnings: [], unauthorizedServers: [], aliasFor: () => undefined, close: async () => {} };
       } } } as unknown as McpToolDeps;
-    const version = { projectName: "audio", versionName: "1", mcpList: [{ name: "files" }] } as unknown as Version;
+    const configuration = { projectName: "audio", mcpList: [{ name: "files" }] } as unknown as AgentConfiguration;
     const raw = { content: [{ type: "text", text: JSON.stringify({ id: "recording", url: "https://files.example.test/audio?sig=private" }) }] };
-    await buildMcpTools(deps, version, undefined, { userEmail: "owner@example.test" });
+    await buildMcpTools(deps, configuration, undefined, { userEmail: "owner@example.test" });
     expect((await servers[0]!.resultTransforms!.read!(raw)).text).not.toContain("sig=");
     const first = vi.mocked(register).mock.calls[0] as unknown as [{ namespace: string }];
     identity = "connection-2";
-    await buildMcpTools(deps, version, undefined, { userEmail: "owner@example.test" });
+    await buildMcpTools(deps, configuration, undefined, { userEmail: "owner@example.test" });
     await servers[0]!.resultTransforms!.read!(raw);
     const second = vi.mocked(register).mock.calls[1] as unknown as [{ namespace: string }];
     expect(second[0].namespace).not.toBe(first[0].namespace);
-    await buildMcpTools(deps, { ...version, mcpList: [{ name: "files", sourceOutputs: [] }] }, undefined, { userEmail: "owner@example.test" });
+    await buildMcpTools(deps, { ...configuration, mcpList: [{ name: "files", sourceOutputs: [] }] }, undefined, { userEmail: "owner@example.test" });
     expect(servers[0]!.resultTransforms).toBeUndefined();
   });
   it("registers the source under the main Agent while retaining the child connection for refresh", async () => {
@@ -35,13 +35,13 @@ describe("orchestrated private source ownership", () => {
       sourceRefreshIdentity: async () => "child-connection", mcpSessions: { open: async (value: McpServerConfig[]) => {
         servers = value; return { tools: [], toolNamesByServer: new Map(), warnings: [], unauthorizedServers: [], aliasFor: () => undefined, close: async () => {} };
       } } } as unknown as McpToolDeps;
-    const version = { projectName: "downloader", versionName: "2", mcpList: [{ name: "files", sourceOutputs: [
+    const configuration = { projectName: "downloader", mcpList: [{ name: "files", sourceOutputs: [
       { tool: "read", namespace: "account", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg", refreshArgument: "id" },
-    ] }] } as unknown as Version;
-    await buildMcpTools(deps, version, undefined, { actor: { kind: "user", id: "owner@example.test" }, ancestry: ["main", "downloader"] });
+    ] }] } as unknown as AgentConfiguration;
+    await buildMcpTools(deps, configuration, undefined, { actor: { kind: "user", id: "owner@example.test" }, ancestry: ["main", "downloader"] });
     const result = await servers[0]!.resultTransforms!.read!({ content: [{ type: "text", text: JSON.stringify({ id: "recording", url: "https://files.example.test/audio?sig=private" }) }] });
     expect(register).toHaveBeenCalledWith(expect.objectContaining({ projectName: "main", userEmail: "owner@example.test",
-      refresh: expect.objectContaining({ projectName: "downloader", versionName: "2", identity: "child-connection" }) }));
+      refresh: expect.objectContaining({ projectName: "downloader", identity: "child-connection" }) }));
     expect(result.text).toContain("private-ref");
     expect(result.text).not.toContain("sig=");
   });

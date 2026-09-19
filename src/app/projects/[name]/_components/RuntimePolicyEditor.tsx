@@ -8,12 +8,12 @@ export function RuntimePolicyEditor({ value, onChange }: { value: RuntimePolicy 
   const t = useT();
   const policy = value ?? {};
   return <Stack gap="xs">
-    <Text fw={600} size="sm">{t("version.runtimePolicy")}</Text>
-    <NumberInput label={t("version.maxInputChars")} min={1} max={1_000_000} allowDecimal={false}
+    <Text fw={600} size="sm">{t("configuration.runtimePolicy")}</Text>
+    <NumberInput label={t("configuration.maxInputChars")} min={1} max={1_000_000} allowDecimal={false}
       value={policy.maxInputChars ?? ""} onChange={(next) => onChange({ ...policy, maxInputChars: typeof next === "number" ? next : undefined })} />
-    <TagsInput label={t("version.blockedTools")} value={policy.blockedTools ?? []}
+    <TagsInput label={t("configuration.blockedTools")} value={policy.blockedTools ?? []}
       onChange={(blockedTools) => onChange({ ...policy, blockedTools })} />
-    <TagsInput label={t("version.approvalTools")} description={t("version.approvalToolsHint")} value={policy.approvalTools ?? []}
+    <TagsInput label={t("configuration.approvalTools")} description={t("configuration.approvalToolsHint")} value={policy.approvalTools ?? []}
       onChange={(approvalTools) => onChange({ ...policy, approvalTools })} />
   </Stack>;
 }

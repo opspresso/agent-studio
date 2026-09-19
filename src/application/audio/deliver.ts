@@ -48,7 +48,7 @@ export function createAudioDeliveryStep(deps: AudioDeliveryDeps) {
     const metadata = { jobId: job.id, sourceFileId: job.fileId, model: transcript.model,
       sourceChecksum: transcript.sourceChecksum, coverage: transcript.coverage, sourceIdentity: job.sourceIdentity,
       ...(job.postprocess ? { postprocess: { projectName: job.postprocess.projectName,
-        versionName: job.postprocess.versionName, model: job.postprocess.version?.model } } : {}) };
+        model: job.postprocess.configuration?.model } } : {}) };
     const client = await deps.open(job, context.signal);
     try {
       let ready = true;

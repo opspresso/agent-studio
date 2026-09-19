@@ -155,6 +155,7 @@ discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·
 | 스크립트 | 용도 |
 |---|---|
 | `scripts/db-migrate.ts` | `DATABASE_URL` 의 데이터베이스를 현재 스키마로 올린다. 앱이 부팅 때 하는 것과 같은 마이그레이션이고, CI 나 첫 부팅 전에 앱 없이 돌리는 형태다. |
+| `scripts/migrate-agent-configuration.ts` | Version 기반 데이터를 원본 보관 후 현재 Agent 설정으로 옮기는 수동 계획·적용 도구다. [이전 절차](AGENT-MIGRATION.md)를 따른다. |
 | `scripts/dev-session.ts` | 개발용 사용자와 세션을 Better Auth 의 테이블에 바로 써 넣고 서명된 세션 쿠키를 출력한다. 신원 제공자 왕복 없이 인증이 필요한 라우트를 시험한다. 로컬이 아닌 `DATABASE_URL` 은 거부한다. |
 | `scripts/mock-llm.ts` | `127.0.0.1:8002` (`MOCK_LLM_PORT`) 에서 도는 독립 실행형 OpenAI 호환 mock 서버. 스트리밍과 비스트리밍을 모두 지원하고, 도구가 제공되고 *동시에* 메시지가 `skill named "<slug>"` 를 언급할 때 `Skill` 도구 호출을 한 번 요청한다. `MOCK_LLM_CHUNKS` 와 `MOCK_LLM_DELAY_MS` 는 답변을 부풀리고 늦춰 긴 스트리밍 응답으로 만든다. 답이 도착하는 동안 chat 창이 무엇을 하는지 볼 수 있는 유일한 방법이다. 기본값은 통합 체크가 기대하는 한 줄 답변을 유지한다. |
 | `scripts/seed-skills.ts` | 샘플 Skill 을 멱등하게 시드한다. |
@@ -298,10 +299,9 @@ pnpm install --frozen-lockfile → typecheck → test → test:integration
       `notExpiredAt` 을 넘긴다. 필터가 `LIMIT` 보다 먼저 돌게.
 - [ ] 한없이 늘어나는 새 행은 `src/infrastructure/db/ttl.ts` 에서 온 `expiresAt` 을 갖는다.
       그래야 틱의 sweep 이 지운다.
-- [ ] 새 실행 진입점은 projectType 디스패치를 다시 구현하는 대신 파사드를 호출하고, 런 브래킷을
+- [ ] 새 실행 진입점은 파사드로 같은 Agent 도구 루프를 호출하고, 런 브래킷을
       연다. 런을 chunk 로 받는 소비자(이미지 포함)에게는 `streamProjectRun`, completion 으로
-      답하는 소비자에게는 `executeProjectStream`/`executeProject` 이고, 후자는 이미지 project 를
-      거부한다.
+      답하는 소비자에게는 `executeProjectStream`/`executeProject`을 사용한다. 이미지도 Agent 도구의 출력으로 처리한다.
 - [ ] 이제 두 곳에 존재하게 된 결정은 단일 소유자와 `SINGLE_OWNERS` 항목을 갖는다.
 - [ ] `pnpm typecheck && pnpm test && pnpm build` 가 통과한다.
 

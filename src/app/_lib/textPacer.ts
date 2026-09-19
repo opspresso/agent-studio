@@ -4,8 +4,7 @@
  * A streamed axis arrives one token at a time, and a surface that commits each
  * one re-renders per token over a string that only grows — quadratic over the
  * run. The chat thread solves this in its store (`notifyDelayFor`); the
- * Playground and Compare hold their stream in component state and have nowhere
- * to put the same rule, so they take it from here.
+ * Playground holds its stream in component state and uses this shared pacer.
  *
  * The interval grows with what has been committed, for the reason the store's
  * does: the render it schedules costs more as the text gets longer, and one

@@ -6,7 +6,6 @@ import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatValidationError } from "./errors";
 import { userMayAccessProject } from "@/application/project/projectUseCases";
 import {
-  resolveVersion,
   runAndPersist,
   readMessageDocuments,
   storeAttachedImages,
@@ -69,13 +68,10 @@ export async function createChat(
   if (!(await userMayAccessProject(project, input.userEmail))) {
     throw new ChatForbiddenError(`project "${project.name}" is private`);
   }
-  if (project.projectType !== "agent") {
-    throw new ChatValidationError("chat requires an agent project");
-  }
 
-  const version = await resolveVersion(deps, project);
-  if (!version) {
-    throw new ChatValidationError("project has no runnable version");
+  const configuration = project.configuration;
+  if (!configuration) {
+    throw new ChatValidationError("project has no Agent configuration");
   }
 
   const startedAt = new Date();
@@ -95,12 +91,12 @@ export async function createChat(
     const attachments = input.images ?? [];
     const uploaded = await storeAttachedImages(
       deps,
-      { projectName: project.name, versionName: version.versionName, actor: { kind: "user", id: input.userEmail } },
+      { projectName: project.name, actor: { kind: "user", id: input.userEmail } },
       attachments,
     );
     const documentInput = input.documents ?? [];
     const read = await readMessageDocuments(deps, {
-      projectName: project.name, versionName: version.versionName,
+      projectName: project.name,
       actor: { kind: "user", id: input.userEmail },
     }, documentInput);
     const userSeq = await deps.chats.reserveMessageSeq(chat.chatId);
@@ -117,7 +113,7 @@ export async function createChat(
 
     const source = deps.runAgent({
       project,
-      version,
+      configuration,
       // The attachment bytes go straight to the engine; the stored URLs are for
       // replay on later turns.
       messages: [

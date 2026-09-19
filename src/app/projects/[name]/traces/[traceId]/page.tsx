@@ -37,7 +37,7 @@ export default function TraceDetailPage() {
           <Group justify="space-between" align="flex-start" wrap="wrap">
             <div>
               <Title order={2} fz="h3">Trace {trace.traceId}</Title>
-              <Text c="dimmed" fz="sm">version {trace.versionName} · {formatDateTime(trace.createdAt, locale)}</Text>
+              <Text c="dimmed" fz="sm">{formatDateTime(trace.createdAt, locale)}</Text>
             </div>
             <Group gap="md">
               <Badge color={trace.status === "completed" ? "teal" : trace.status === "awaiting-approval" || trace.status === "turn-limit" || trace.status === "output-limit" ? "yellow" : "red"}>{trace.status}</Badge>

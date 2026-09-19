@@ -8,7 +8,6 @@ import type { EngineChunk } from "@/domain/llm/types";
 const NOW = "2026-08-12T04:00:00.000Z";
 const CONTEXT = {
   projectName: "poster-bot",
-  versionName: "v3",
   actor: { kind: "user" as const, id: "bruce@daangn.com" },
   ancestry: ["poster-bot"],
   runId: "run-1",
@@ -130,9 +129,9 @@ describe("storeArtifact", () => {
       mimeType: "image/png",
       producedBy: "image-child",
     });
+    expect(artifact).not.toHaveProperty("versionName");
     expect(artifact).toMatchObject({
       projectName: "poster-bot",
-      versionName: "v3",
       actor: { kind: "user", id: "bruce@daangn.com" },
       ancestry: ["poster-bot"],
       producedBy: "image-child",
@@ -160,7 +159,7 @@ describe("storeArtifact", () => {
     const storage = fakeStorage();
     const artifact = await storeArtifact(
       storage,
-      { projectName: "p", versionName: "1" },
+      { projectName: "p" },
       { kind: "document", source: "generated", bytes: Buffer.from("x"), mimeType: "application/pdf" },
     );
     expect(artifact.actor).toBeUndefined();

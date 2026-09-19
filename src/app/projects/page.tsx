@@ -13,7 +13,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  Select,
 } from "@mantine/core";
 import { IconFolder } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
@@ -22,22 +21,14 @@ import { useSession } from "@/lib/auth-client";
 import { tierMayCreateProjects } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import { toSlug } from "@/domain/naming";
-import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
-import { createProject, listProjects, type SanitizedProject, type ProjectType } from "./lib/api";
+import { createProject, listProjects, type SanitizedProject } from "./lib/api";
 import { CardGrid } from "@/app/_components/CardGrid";
-import { PROJECT_TYPE_COLOR } from "@/app/_components/badgeColors";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { reportError } from "@/app/_lib/reportError";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
-
-const TYPE_OPTIONS = [
-  { value: "llm", label: "projects.type.llm" },
-  { value: "agent", label: "projects.type.agent" },
-  { value: "image", label: "projects.type.image" },
-] as const satisfies ReadonlyArray<{ value: ProjectType; label: MessageKey }>;
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -49,7 +40,6 @@ export default function ProjectsPage() {
   const createRequested = searchParams.get("create") === "1";
   const [projects, setProjects] = useState<SanitizedProject[]>([]);
   const [filter, setFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
@@ -81,7 +71,6 @@ export default function ProjectsPage() {
   }, [createRequested, mayCreate, open, router]);
 
   const visibleProjects = projects.filter((project) =>
-    (!typeFilter || project.projectType === typeFilter) &&
     matchesFilter(filter, project.displayName, project.name, project.description),
   );
 
@@ -111,16 +100,7 @@ export default function ProjectsPage() {
             placeholder={t("projects.filter")}
             resultCount={visibleProjects.length}
             totalCount={projects.length}
-            onReset={filter || typeFilter ? () => { setFilter(""); setTypeFilter(null); } : undefined}
-          />
-          <Select
-            aria-label={t("projects.allTypes")}
-            placeholder={t("projects.allTypes")}
-            data={TYPE_OPTIONS.map((option) => ({ value: option.value, label: t(option.label) }))}
-            value={typeFilter}
-            onChange={setTypeFilter}
-            clearable
-            w={{ base: "100%", sm: 220 }}
+            onReset={filter ? () => setFilter("") : undefined}
           />
         </Group>
       )}
@@ -147,7 +127,6 @@ export default function ProjectsPage() {
                     {t("projects.privateBadge")}
                   </Badge>
                 )}
-                <Badge color={PROJECT_TYPE_COLOR[project.projectType]}>{project.projectType}</Badge>
               </Group>
             </Group>
             <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
@@ -161,11 +140,6 @@ export default function ProjectsPage() {
             <Text fz="sm" c="dimmed" mt="xs" lineClamp={3}>
               {project.description}
             </Text>
-            {project.publishedVersion && (
-              <Text fz="xs" c="light-dark(var(--mantine-color-teal-9), var(--mantine-color-teal-3))" mt="sm">
-                {t("projects.published", { version: project.publishedVersion })}
-              </Text>
-            )}
           </Card>
         ))}
       </CardGrid>
@@ -197,7 +171,6 @@ function CreateProjectModal({
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [departmentCode, setDepartmentCode] = useState("");
-  const [projectType, setProjectType] = useState<ProjectType>("llm");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const t = useT();
@@ -212,7 +185,6 @@ function CreateProjectModal({
     setDisplayName("");
     setDescription("");
     setDepartmentCode("");
-    setProjectType("llm");
   }
 
   async function submit() {
@@ -223,7 +195,7 @@ function CreateProjectModal({
         name,
         displayName: displayName || name,
         description,
-        projectType,
+        projectType: "agent",
         departmentCode: departmentCode || undefined,
       });
       reset();
@@ -277,13 +249,6 @@ function CreateProjectModal({
         onChange={(e) => setDepartmentCode(e.currentTarget.value)}
         placeholder="ENG"
         description={t("projects.departmentHint")}
-      />
-      <Select
-        label={t("projects.type")}
-        value={projectType}
-        onChange={(value) => setProjectType((value ?? "llm") as ProjectType)}
-        data={TYPE_OPTIONS.map(({ value, label }) => ({ value, label: t(label) }))}
-        allowDeselect={false}
       />
     </FormModal>
   );

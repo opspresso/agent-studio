@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Badge, Button, Code, Group, Select, Stack, Switch, Text } from "@mantine/core";
+import { Alert, Badge, Button, Code, Group, Stack, Switch, Text } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { CopyButton } from "@/app/_components/CopyButton";
@@ -178,24 +178,6 @@ export function WebhookSection({ projectName }: { projectName: string }) {
             )}
 
             <Group gap="md" align="flex-end">
-              <Select
-                label={t("trigger.payload")}
-                data={[
-                  { value: "message", label: "User message (agent)" },
-                  { value: "variables", label: "Template variables (prompt)" },
-                ]}
-                w={220}
-                value={webhook.payloadMode ?? "message"}
-                disabled={busy}
-                onChange={(value) =>
-                  value &&
-                  act(async () => {
-                    await updateTrigger(projectName, PROJECT_WEBHOOK_ID, {
-                      payloadMode: value as "variables" | "message",
-                    });
-                  })
-                }
-              />
               <Switch
                 label={t("trigger.allowOverlap")}
                 checked={webhook.allowConcurrent}

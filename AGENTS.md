@@ -156,13 +156,12 @@ key, cap, formatter, error identity, or collapse rule, search
 
 - Every new execution entry uses the facade and opens the run bracket. Use `streamProjectRun` for
   chunk consumers, including image; `executeProjectStream`/`executeProject` for completion
-  consumers, which refuse image projects. Direct `executeAgent` entry points refuse non-agent
-  projects. See `AGENT_RUN_ENTRY_POINTS` in the architecture test.
+  consumers. All Project executions use the same Agent loop, including image tools. See `AGENT_RUN_ENTRY_POINTS` in the architecture test.
 - Workspace jobs use `executeWorkspaceTask` and the shared `openTaskRun` bracket. Ordinary commands
-  have no model Version; native CLI history stays in the Workspace checkpoint. Workspace polling
+  have no Studio model configuration; native CLI history stays in the Workspace checkpoint. Workspace polling
   must distinguish a missing operation from a transport failure and never replay uncertain work.
-- A surface needing only chunks stays behind `streamProjectRun`. Direct callers of
-  `application/image/generateImage` are a deliberately bounded list.
+- A surface needing only chunks stays behind `streamProjectRun`. Image generation and editing
+  run through `application/execution/imageTool.ts` inside the same Agent bracket.
 - `resolveRunTools` receives `discoveryQueries`; omitting them silently disables dynamic discovery.
   Keep `TOOL_RESOLUTION_SITES` accurate.
 - The facade forwards `caller` through `toRunInput`; `callerFor` is the only prompt gate.

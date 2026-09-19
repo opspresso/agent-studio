@@ -1,5 +1,3 @@
-import type { Project, Version } from "@/domain/project/types";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import type {
   Chat,
   ChatMessageDocument,
@@ -19,17 +17,6 @@ import { endNoticeFor } from "./cancelRun";
 import { log } from "@/shared/logger";
 import { cutUtf8Bytes } from "@/shared/utf8Text";
 import { prepareDocumentAttachments } from "@/application/document/attachments";
-
-/**
- * Chat is an interactive surface, so it may fall back to the newest draft
- * when nothing is published (see resolveRunnableVersion for the policy).
- */
-export async function resolveVersion(
-  deps: ChatDeps,
-  project: Project,
-): Promise<Version | null> {
-  return resolveRunnableVersion(deps.versions, project, { allowDraftFallback: true });
-}
 
 /**
  * The engine body for a user turn. Attachments travel as inline data URLs, so

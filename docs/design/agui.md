@@ -1,6 +1,6 @@
 # AG-UI
 
-사용자를 마주하는 애플리케이션이 published 된 Project 를 자기 화면 안에 넣는 프로토콜.
+사용자를 마주하는 애플리케이션이 설정된 Agent 를 자기 화면 안에 넣는 프로토콜.
 MCP 가 agent 에 tool 을 주고 A2A 가 agent 끼리 말하게 한다면, AG-UI 는 agent 를 사람이 쓰는
 앱 안으로 가져온다 — CopilotKit 같은 프론트엔드가 이 표면을 호출한다.
 
@@ -16,17 +16,15 @@ HTTP 계약은 [API.md](../API.md#ag-ui-인바운드) 에, 인증은
   토큰 또는 콘솔 세션. 호출자는 이 project 를 자기 앱에 넣는 소유자의 앱이고, project 토큰이
   정확히 그것을 위한 자격 증명이다. 런은 토큰 소유자(`project-token:{email}`) 또는 세션
   사용자에게 귀속된다.
-- **어느 version 이 답하는가.** published 된 것만(`resolveRunnableVersion`, draft 폴백 없음).
-  앱은 A2A 와 같은 외부 표면이고, draft 가 그 사용자에게 새어 나가면 안 된다. 없으면 404.
+- **어떤 설정으로 답하는가.** Project와 함께 읽은 현재 Agent 설정을 사용한다. 없으면 404.
 - **어느 대화인가.** 클라이언트의 `threadId` 가 런의 conversation 이다 —
   `agui:{caller}:{threadId}`. `X-Conversation-Id` 헤더와 같은 가명 네임스페이스(호출자 actor
   키의 keyed digest)라서, 스레드를 1 부터 세는 두 앱은 두 대화이고 토큰 뒤의 이메일이 MCP
   서버에 키로 닿지 않는다. 프로토콜에서 스레드는 필수이므로, 너무 긴 id 는 헤더처럼 400 으로
   거절하지 대화 없이 돌리지 않는다.
 
-런 자체는 파사드의 것이다. `streamProjectRun` 을 부르므로 agent project 는 tool 루프를 돌고,
-prompt project는 SDK에서 한 번 답하고, image project는 그림을 그린다 — 채팅 패널은 셋 다 보여 줄 수
-있다. 새 진입점이 `projectType` dispatch 를 다시 쓰지 않는다는 규칙 그대로다.
+런 자체는 `streamProjectRun`의 Agent 도구 루프로 실행한다. 이미지 생성·편집도 같은 실행의
+도구와 출력 축이며 이 표면은 별도의 실행 분기를 만들지 않는다.
 
 ## 청크에서 이벤트로
 
@@ -38,7 +36,7 @@ prompt project는 SDK에서 한 번 답하고, image project는 그림을 그린
 | 청크 | 이벤트 |
 |---|---|
 | top-level `delta.content` | `TEXT_MESSAGE_START` (처음) → `TEXT_MESSAGE_CONTENT` … → `TEXT_MESSAGE_END` (tool 호출·step·종료가 닫는다) |
-| top-level `delta.reasoningContent` (version 이 `reasoningTrace` 를 켰을 때만 온다) | `REASONING_START` + `REASONING_MESSAGE_START` → `REASONING_MESSAGE_CONTENT` … → `REASONING_MESSAGE_END` + `REASONING_END` (답변이 시작되면 닫힌다) |
+| top-level `delta.reasoningContent` (Agent가 `reasoningTrace` 를 켰을 때만 온다) | `REASONING_START` + `REASONING_MESSAGE_START` → `REASONING_MESSAGE_CONTENT` … → `REASONING_MESSAGE_END` + `REASONING_END` (답변이 시작되면 닫힌다) |
 | top-level `delta.toolCalls` | 호출마다 `TOOL_CALL_START` → `TOOL_CALL_ARGS` (인자가 있을 때) → `TOOL_CALL_END`. 그 턴이 처음 말하거나 부를 때 만든 assistant 메시지 id 를 모든 호출이 `parentMessageId` 로 공유한다 |
 | top-level `toolResult` | `TOOL_CALL_RESULT` (`role: "tool"`). Runtime이 만든 native 도구 결과를 그대로 전달한다. 자식 delta를 다시 누적해 결과를 만들지 않는다 |
 | authored 청크의 첫 등장 / `authorDone` | `STEP_STARTED` / `STEP_FINISHED` (`stepName` 은 `authorPath` 체인). 자식의 텍스트와 호출은 이벤트가 되지 않는다 — 그 답은 부모의 tool 결과로 돌아온다 |
@@ -54,7 +52,7 @@ prompt project는 SDK에서 한 번 답하고, image project는 그림을 그린
 네임스페이스를 가진 `CUSTOM` 이벤트이고, `RUN_FINISHED.result` 가 종료 사유와 잃은 것을 싣는다.
 
 **그림과 파일은 `CUSTOM` 이 아니라 `ACTIVITY_SNAPSHOT` 이다.** 클라이언트의 `apply` 는 custom
-이벤트를 subscriber 에게만 전하고 스레드에는 넣지 않는다 — image project 를 AG-UI 로 부르면
+이벤트를 subscriber 에게만 전하고 스레드에는 넣지 않는다 — Agent가 이미지를 출력하면
 화면은 빈 런이었다. activity 는 스레드의 메시지가 되고(`activityType` 별 렌더러), 클라이언트가
 다음 런 입력에서 제거하므로 "바이트는 모델로 돌아가지 않는다" 는 설계가 그대로 성립한다.
 
@@ -86,14 +84,8 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
 쪽에서 실행한다(지도 보여 주기, 폼 채우기). 이것이 엔진에 닿는 방식은
 `src/application/runtime/AGENTS.md`가 불변식으로 소유한다. 요지는:
 
-- agent project 에만 제공된다. prompt project 에는 끝낼 턴이 없고 image project 에는 제공할
-  모델이 없으므로, 그런 project 에 선언된 tool 은 버리지 않고 **경고로 보고** 한다 — 앱은
-  올 수 없는 호출을 기다리고 있을 것이기 때문이다.
-- 런 자신의 tool 뒤에 붙고, 요청 전체 `MAX_TOOLS_PER_REQUEST`(프로바이더의 128) 에 남은
-  자리만큼만 제공되며, 빌트인이나 MCP alias 가 이미 쓰는 이름은 제공되지 않는다 — 루프가 둘을
-  구분할 수 없다. 어느 쪽이든 경고가 된다. 파사드는 prompt·image project 에 client tool 이
-  오면 **거절** 한다(`ValidationError`) — 확인하지 않은 호출자를 위한 것이고, 이 표면은
-  확인한 뒤 걷어내며 경고한다.
+- Agent의 서버 도구 뒤에 붙고 `MAX_TOOLS_PER_REQUEST`에 남은 자리만큼 제공한다.
+  builtin 또는 MCP alias와 이름이 충돌하거나 한도를 넘은 도구는 제외하고 경고한다.
 - 시스템 프롬프트의 `## Application Tools` 섹션이 한 가지만 말한다: 이 tool 은 상대편에서
   돌고, 부르면 턴이 끝나며, 결과는 대화와 함께 돌아온다.
 - 실행 가능한 클라이언트 tool 호출은 SDK `needsApproval`로 런을 중단한다. 호출 인자는
@@ -105,7 +97,7 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
   AG-UI의 이력은 이 입력이 소유하며 영속 Chat Session을 자동으로 연결하지 않는다.
 - 위임의 답은 native 도구 결과에 들어 있다. 서버 도구의 그림은 해당 실행에서 전달되지만 다음
   AG-UI 입력으로 자동 재생되지 않는 경우 경고한다.
-- 버전의 `approvalTools`는 영속 Chat용 HITL 정책이다. AG-UI frontend tool의 중단/후속 요청과
+- Agent 설정의 `approvalTools`는 영속 Chat용 HITL 정책이다. AG-UI frontend tool의 중단/후속 요청과
   별개의 기능이며 이 표면에는 Chat 승인 API가 연결되지 않는다.
 
 ## 입력
@@ -142,5 +134,5 @@ AG-UI 의 고유한 것: 앱이 `tools` 로 자기 tool 을 선언하고, 모델
 ## 콘솔
 
 Integrations 탭의 AG-UI 섹션이 주소와 `@ag-ui/client` 예시를 보여 주고, API Reference 에
-`agui` 항목이 있다. 둘 다 published version 에 게이트된다. 설정할 것은 없다 — 표면은 토큰이
-있는 모든 published project 에 항상 열려 있다.
+`agui` 항목이 있다. 둘 다 현재 Agent 설정 유무를 검사한다. 설정할 것은 없다 — 표면은 토큰이
+있는 모든 설정된 Agent 에 항상 열려 있다.

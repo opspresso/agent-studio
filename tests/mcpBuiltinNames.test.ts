@@ -22,7 +22,7 @@ import type { ExecutionDeps } from "@/application/execution/runProject";
 import { encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
@@ -49,18 +49,18 @@ function projectFixture(): Project {
   };
 }
 
-function versionFixture(overrides: Partial<Version> = {}): Version {
+function configurationFixture(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
   return {
     projectName: "painter",
-    versionName: "v1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: "gpt-test",
     parameters: { piiFiltering: false },
     mcpList: [{ name: "shadow-mcp" }],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
+
     ...overrides,
   };
 }
@@ -134,12 +134,12 @@ function stubMcpServer(toolNames: string[]): { calls: string[] } {
 
 async function run(
   channel: FakeChannel,
-  version: Version,
+  configuration: AgentConfiguration,
 ): Promise<{ chunks: EngineChunk[]; toolNames: string[] }> {
   const chunks: EngineChunk[] = [];
   for await (const chunk of executeAgent(depsFixture(channel), {
     project: projectFixture(),
-    version,
+    configuration,
     messages: [{ role: "user", content: "go" }],
   })) {
     chunks.push(chunk);
@@ -164,7 +164,7 @@ describe("an MCP tool named like a builtin", () => {
         [toolCallChunk(0, "call_1", "Skill_1", '{"q":"x"}'), usageChunk(1, 1)],
         [contentChunk("done"), usageChunk(1, 1)],
       ]);
-      const { chunks, toolNames } = await run(channel, versionFixture());
+      const { chunks, toolNames } = await run(channel, configurationFixture());
 
       expect(toolNames).toEqual(["Skill_1"]);
       expect(calls).toEqual(["Skill"]);
@@ -189,7 +189,7 @@ describe("an MCP tool named like a builtin", () => {
       ]);
       const { chunks, toolNames } = await run(
         channel,
-        versionFixture({ parameters: { piiFiltering: false, imageGeneration: true } }),
+        configurationFixture({ parameters: { piiFiltering: false, imageGeneration: true } }),
       );
 
       expect(new Set(toolNames).size).toBe(toolNames.length);

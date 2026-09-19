@@ -170,9 +170,6 @@ export async function updateProjectSlack(
   cipher: SecretCipher,
 ): Promise<ProjectSlackResult> {
   const project = await assertProjectWritable(repo, name, userEmail);
-  if (project.projectType !== "agent") {
-    throw new ValidationError("Slack bots can only be attached to agent projects");
-  }
   const prompts =
     update.suggestedPrompts !== undefined
       ? cleanPrompts(update.suggestedPrompts)

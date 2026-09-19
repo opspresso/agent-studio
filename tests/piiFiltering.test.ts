@@ -1,7 +1,7 @@
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
 import { describe, expect, it, vi } from "vitest";
-import { runAgent, runPrompt, runPromptStream } from "@/application/runtime";
+import { runAgent } from "@/application/runtime";
 import { PiiFilter } from "@/application/llm/pii";
 import type {
   ChannelChunk,
@@ -281,23 +281,23 @@ describe("PiiFilter", () => {
     expect(filter.restore(secondMasked)).toBe(collidingOriginal);
   });
 
-  it("masks the prompt before a non-streaming call and restores the response", async () => {
+  it("masks the Agent input and restores the collected response", async () => {
     const channel = new EchoChannel();
     const input = "email@example.com, 010-1234-5678";
 
-    const result = await runPrompt(
+    const result = await collectText(runAgent(
       { channel },
       {
         model: "test/model",
-        userPromptTemplate: input,
+        projectName: "test", messages: [{ role: "user", content: input }],
         parameters: { piiFiltering: true },
       },
-    );
+    ));
 
     const sent = String(channel.seenParams[0]?.messages[0]?.content);
     expect(sent).not.toContain("email@example.com");
     expect(sent).not.toContain("010-1234-5678");
-    expect(result.content).toBe(`Contact ${input}`);
+    expect(result).toBe(`Contact ${input}`);
   });
 
   it("restores replacements split across streaming chunk boundaries", async () => {
@@ -305,11 +305,11 @@ describe("PiiFilter", () => {
     const input = "email@example.com, 010-1234-5678";
 
     const result = await collectText(
-      runPromptStream(
+      runAgent(
         { channel },
         {
           model: "test/model",
-          userPromptTemplate: input,
+          projectName: "test", messages: [{ role: "user", content: input }],
           parameters: { piiFiltering: true },
         },
       ),
@@ -412,11 +412,11 @@ describe("PiiFilter", () => {
     const channel = new ErrorChannel();
     const chunks: EngineChunk[] = [];
 
-    for await (const chunk of runPromptStream(
+    for await (const chunk of runAgent(
       { channel },
       {
         model: "test/model",
-        userPromptTemplate: "email@example.com",
+        projectName: "test", messages: [{ role: "user", content: "email@example.com" }],
         parameters: { piiFiltering: true },
       },
     )) {
@@ -432,11 +432,11 @@ describe("PiiFilter", () => {
     const input = "email@example.com, 010-1234-5678";
 
     const result = await collectText(
-      runPromptStream(
+      runAgent(
         { channel },
         {
           model: "test/model",
-          userPromptTemplate: input,
+          projectName: "test", messages: [{ role: "user", content: input }],
           parameters: { piiFiltering: false },
         },
       ),

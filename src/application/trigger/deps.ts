@@ -1,8 +1,8 @@
 import type { RunActor } from "@/domain/execution/actor";
 import type { RunSlotRepository } from "@/domain/execution/runSlot";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, Version } from "@/domain/project/types";
+import type { ProjectRepository } from "@/domain/project/repository";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type { ScheduleDelivery } from "@/domain/trigger/types";
@@ -11,12 +11,10 @@ import type { ScheduleDelivery } from "@/domain/trigger/types";
 export interface FiringDeps {
   triggers: TriggerRepository;
   projects: ProjectRepository;
-  versions: VersionRepository;
   /** Runs the resolved version; the composition root binds the facade. */
   run: (input: {
     project: Project;
-    version: Version;
-    variables?: Record<string, string>;
+    configuration: AgentConfiguration;
     message?: string;
     actor: RunActor;
     userEmail?: string;

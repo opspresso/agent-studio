@@ -35,7 +35,7 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("audio job processor", () => {
   it("runs standalone postprocessing from an existing transcript without ASR or external writes", async () => {
-    await submit({ task: "postprocess", model: "", postprocess: { projectName: "writer", versionName: "1" } });
+    await submit({ task: "postprocess", model: "", postprocess: { projectName: "writer" } });
     const d = deps();
     vi.mocked(d.postprocess).mockResolvedValue({ draftRef: "draft", summaryRef: "summary", dialogueRef: "dialogue" });
     expect(await processAudioJob(d, "audio", "job-1")).toMatchObject({ status: "completed", transcriptRef: "stored", draftRef: "draft", summaryRef: "summary", dialogueRef: "dialogue" });
@@ -77,7 +77,7 @@ describe("audio job processor", () => {
   });
 
   it("resumes storage without repeating import, ASR or postprocessing", async () => {
-    await submit({ postprocess: { projectName: "writer", versionName: "1" },
+    await submit({ postprocess: { projectName: "writer" },
       destination: { serverName: "memory", documents: true, memories: true } });
     const d = deps();
     vi.mocked(d.store).mockImplementationOnce(async (_job, context) => {

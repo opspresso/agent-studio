@@ -22,7 +22,7 @@ import type { McpBinding, SubagentRef } from "../../lib/api";
 import { listProjectMcpTools } from "../../lib/api";
 import { getMcp } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
-import { McpBindingSettings, type VersionSave } from "./McpBindingSettings";
+import { McpBindingSettings, type ConfigurationSave } from "./McpBindingSettings";
 import { SourceMappings } from "./SourceMappings";
 import { HeaderRowsEditor } from "@/app/_components/HeaderRows";
 
@@ -491,19 +491,17 @@ function OverrideEditor({
  */
 export function McpBindingInput({
   projectName,
-  versionName,
   values,
   onChange,
   options,
   save,
 }: {
   projectName: string;
-  versionName?: string;
   values: McpBinding[];
   onChange: (values: McpBinding[]) => void;
   options: PickerOption[];
   /** The page's version save, for the settings dialog's footer. */
-  save: VersionSave;
+  save: ConfigurationSave;
 }) {
   const t = useT();
   /** Which binding's settings modal is open; one at a time. */
@@ -650,8 +648,7 @@ export function McpBindingInput({
                       projectName,
                       settingsFor,
                       values.find((v) => v.name === settingsFor)?.headers,
-                      versionName,
-                    )
+                                        )
                   }
                 />
               </Stack>

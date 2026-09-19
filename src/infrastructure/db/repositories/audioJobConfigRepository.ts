@@ -1,8 +1,7 @@
 import type { AudioJobConfig, AudioJobConfigRepository } from "@/domain/audio/config";
 import { keys } from "../keys";
 import { projectIsLive } from "../projectLifecycle";
-import { getItem, transact, conditions, type TransactOp, CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED } from "../store";
-import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
+import { getItem, transact, type TransactOp, CONDITIONAL_WRITE_FAILED, TRANSACTION_CANCELLED } from "../store";
 
 export const audioJobConfigRepository: AudioJobConfigRepository = {
   async get(projectName) {
@@ -11,19 +10,10 @@ export const audioJobConfigRepository: AudioJobConfigRepository = {
   },
   async save(config, expectedRevision) {
     const reference = config.enabled ? config.postprocess : undefined;
-    const target = reference ? await getItem(keys.project(reference.projectName)) : null;
-    const versionName = reference?.versionName === "published" ? target?.publishedVersion : reference?.versionName;
-    if (reference && typeof versionName !== "string") return false;
-    const referenceChecks: TransactOp[] = reference ? [
-      // Share the version deletion's project fence. A save that lands after its
-      // reference scan invalidates the deletion's expected project timestamp.
-      { kind: "update", key: keys.project(reference.projectName),
-        condition: (row) => projectIsLive(row) && row?.ownerEmail === config.userEmail &&
-          (reference.versionName !== "published" || row.publishedVersion === versionName),
-        patch: (row) => ({ ...row, updatedAt: nextUpdatedAt(String(row?.updatedAt ?? ""), Date.parse(config.updatedAt)) }) },
-      // If deletion won first, the recipe must not be stored with a missing target.
-      { kind: "check", key: keys.version(reference.projectName, versionName as string), condition: conditions.exists },
-    ] : [];
+    const referenceChecks: TransactOp[] = reference ? [{
+      kind: "check", key: keys.project(reference.projectName),
+      condition: row => projectIsLive(row) && row?.ownerEmail === config.userEmail && !!row.configuration,
+    }] : [];
     try {
       await transact([
         { kind: "check", key: keys.project(config.projectName), condition: projectIsLive },

@@ -111,14 +111,14 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 404 로 감춘다.
 
 private project 를 local subagent 로 *바인딩* 하는 것도 읽기다: 편집자가 접근할 수 없는
-project 는 버전 저장 시점에 거절된다 (`assertSubagentProjectsAccessible`). 이미 바인딩된
+project 는 Agent 설정 저장 시점에 거절된다 (`assertSubagentProjectsAccessible`). 이미 바인딩된
 참조는 project 가 뒤늦게 private 이 되어도 편집 가능성을 잃지 않는다. 실행 시점의 transfer
 는 소유자의 token 과 같은 플랫폼 자신의 조립이다. 비용 대시보드의 project *합계* 는
 visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 운영의 일부로 남겨 둔 결정이다.
 
 | 리소스 | 읽기 | 쓰기 |
 |---|---|---|
-| Project, version | 접근 가능한 사용자 (`assertProjectAccessible`, public 은 전원, private 은 소유자·초대 멤버·admin) | 소유자 또는 설정된 admin (`assertProjectWritable`) |
+| Project, Agent 설정 | 접근 가능한 사용자 (`assertProjectAccessible`, public 은 전원, private 은 소유자·초대 멤버·admin) | 소유자 또는 설정된 admin (`assertProjectWritable`) |
 | Project trace | 소유자 또는 설정된 admin | — |
 | Project Slack 설정 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
 | Project API token, trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
@@ -202,7 +202,7 @@ admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘�
 
 ## 저장된 시크릿
 
-저장되는 모든 자격 증명. MCP 서버 헤더, 외부 agent 헤더, 버전별 헤더 오버라이드, MCP OAuth 의
+저장되는 모든 자격 증명. MCP 서버 헤더, 외부 agent 헤더, Agent별 헤더 오버라이드, MCP OAuth 의
 access/refresh token·client secret·인가 중인 PKCE verifier, Slack 봇 token 과 서명 시크릿,
 Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿, 앱 전역 A2A 키와
 이름 있는 A2A 클라이언트 키, project API token, webhook trigger 시크릿, 그리고 시크릿인 앱
@@ -218,20 +218,9 @@ MCP·external agent 의 registry header 는 항목 이름과 header 이름에, m
 항목 이름과 변수 이름에 묶인다. HTTP header의 override 병합만 이름의 대소문자를 무시하고,
 AAD 는 environment와 같은 공통 map 규칙에 따라 저장된 키 철자를 그대로 쓴다.
 
-Version 의 MCP header override 는 `project + version + server + header` 에 묶인다. 저장된 version 을
-임시 preview draft 로 읽을 때는 값을 복호화해 `draft` 컨텍스트로 다시 암호화하고, project clone 은
-소유자의 override 를 애초에 복사하지 않는다.
-공용 MCP OAuth client secret은 `server + field`에 묶이고 프로젝트에 복사하지 않는다.
-동적 등록이나 프로젝트 API로 등록한 개별 client secret과 access/refresh token은 `project + server + field`에,
-인가 중인 PKCE verifier 는 일회성 state 값에 묶인다. Token refresh의 compare-and-set은 저장소가
-연결을 쓸 때마다 발급하는 revision을 비교한다. 토큰 값과 타임스탬프가 같아도 새 연결을 구분하며,
-갱신 경쟁에서 진 요청은 최초 issuer·resource와 일치하는 connected grant만 사용할 수 있다.
-앱 설정의 기본 LLM key 는 effective base URL 에, provider별 key 는 `provider name + base URL` 에
-묶인다. 따라서 DB에서 key만 다른 endpoint로 옮기거나 저장 뒤 환경의 base URL만 바꾸면
-복호화되지 않으며 새 key를 입력해야 한다. GitHub token과 shared A2A key는 각각 고정된 settings
-field 컨텍스트를 쓴다.
-부팅, 저장 시크릿 암호화, proxied URL 서명은 모두 `decodeAes256Key` 를 거쳐 canonical base64 로
-인코딩된 정확히 32바이트 key 만 사용한다.
+Agent의 MCP header override는 `project + agent + server + header`에 묶인다. 현재 설정을
+같은 Agent에서 수정해도 암호화 문맥은 유지되며 다른 Agent로 복제할 때는 시크릿을 복사하지
+않는다. 기존 Version 문맥의 암호문은 [데이터 이전](AGENT-MIGRATION.md)에서 복호화·재암호화한다.
 
 ### 읽을 때의 마스킹
 
@@ -257,7 +246,7 @@ field 컨텍스트를 쓴다.
 없다. 헤더 오버라이드 맵의 `null` 은 명시적 제거로 그대로 통과한다. 제거는 시크릿이 아니다.
 새로 입력한 값은 `enc:v1:` 또는 `enc:v2:` 로 시작하더라도 평문으로 취급해 항상 새로 암호화한다. 암호문 접두사는
 저장소에서 읽은 값의 형식일 뿐, API 입력이 신뢰할 수 있는 저장 값이라는 증거가 아니다.
-버전별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerprint 와 함께 보관한다. 같은
+Agent별 MCP 문자열 오버라이드는 저장 당시 registry URL 의 fingerprint 와 함께 보관한다. 같은
 이름의 URL 이 바뀌거나 fingerprint 가 없는 예전 값이면 옛 시크릿을 보내지 않는다. 새 endpoint
 용 자격 증명을 다시 입력해야 한다.
 
@@ -593,7 +582,7 @@ firing이나 대화 ID 없는 요청은 대화 header를 보내지 않는다.
   도달할 수 없다"를 받고, 상세는 origin 만 로그로 간다. URL 자체가 자격 증명인 경우가 많다.
 - **런당 제한된다.** `MAX_URL_FETCHES_PER_RUN`(20)은 요청의 *개수* 를 제한하는데, 다른 어떤
   예산도 그렇게 하지 않는다. "많은 요청, 전부 실패"는 네트워크 스윕이 취하는 모양이다.
-- **기본은 꺼짐.** 버전이 `parameters.urlFetch` 로 옵트인한다. 그 capability 는 주입된
+- **기본은 꺼짐.** Agent가 `parameters.urlFetch` 로 옵트인한다. 그 capability 는 주입된
   의존성에서 파생되므로 Playground 프리뷰와 런이 서로 어긋날 수 없다.
 
 **이것이 막지 못하는 것.** 공개돼 있지만 민감한 호스트. 파드의 이그레스 주소를 신뢰하는 IP
@@ -686,7 +675,7 @@ refresh token을 생략한 응답은 이전 값을 유지하고 새 값이 있�
 403 `insufficient_scope`는 그 요청의 typed challenge에서 scope를 얻어 재인가에 보탠다.
 병렬 도구 호출의 결과를 세션 전체의 마지막 challenge로 해석하지 않는다.
 
-token은 registry·Version header보다 우선하는 마지막 credential이다.
+token은 registry·Agent header보다 우선하는 마지막 credential이다.
 grant를 사용할 수 없어도 별도의 정적 credential이 있으면 서버를 호출할 수 있고,
 인증할 방법이 없으면 warning과 함께 제외한다.
 예약 신원 header는 credential로 계산하지 않는다.
@@ -735,7 +724,7 @@ SDK Session 이력과 승인 대기 RunState는 `runtime_sessions`에 별도로 
 
 승인은 Chat 소유자가 정확한 revision과 항목 ID를 지정한다. 동일 출처 session 변경 검사,
 프로젝트 접근 재확인, 실행 lease와 Session CAS를 함께 적용한다. 승인 상태는 도구 실행 전에
-pending에서 running으로 선점한다. 중복·낡은 결정, 변경된 버전과 연결은 거부하며 승인 후
+pending에서 running으로 선점한다. 중복·낡은 결정, 변경된 설정과 연결은 거부하며 승인 후
 중단된 실행은 자동으로 반복하지 않는다. 삭제 tombstone은 늦게 끝난 실행의 재생성을 막는다.
 
 SDK tracing은 로컬 processor가 이름·시간·상태·사용량만 수집한다. SDK의 공개 exporter를
@@ -744,7 +733,7 @@ SDK tracing은 로컬 processor가 이름·시간·상태·사용량만 수집�
 
 ## PII 필터링, 그리고 그것이 멈추는 곳
 
-`parameters.piiFiltering`은 Version별 선택 기능이다. SDK 모델 요청의 텍스트와 system prompt에서
+`parameters.piiFiltering`은 Agent별 선택 기능이다. SDK 모델 요청의 텍스트와 system prompt에서
 탐지한 값을 `[[PII:…]]`로 치환하고 표시할 응답에서 복원한다. 스트리밍의 토큰 경계와
 하위 Agent의 치환 매핑도 유지한다. 소유 코드는 `application/llm/pii.ts`,
 `runtime/model.ts`, `runtime/tools.ts`다.
@@ -760,7 +749,7 @@ SDK tracing은 로컬 processor가 이름·시간·상태·사용량만 수집�
 | 자동 Memory recall | 최신 요청을 연결된 MCP에 원문으로 보낸다. 회상 결과가 모델 prompt에 들어갈 때는 필터를 지난다 |
 | MCP 신원 헤더 | 확인한 이메일 등 플랫폼 메타데이터를 평문으로 전달한다. 필터 대상이 아니다 |
 
-직접 실행하는 image Project 전체나 이미지 bytes에 대한 PII 제거를 보장하지 않는다.
+이미지 bytes의 개인정보 제거는 보장하지 않는다.
 일반적인 이름·이미지 속 개인정보·패턴에 맞지 않는 값도 탐지 대상이 아니다.
 탐지 범위는 email, 전화번호, 한국 주민/외국인등록번호의 지원 형식, Luhn 검사를 통과한
 13–19자리 결제 카드 번호다. 범용 DLP로 사용하지 않는다.
@@ -775,7 +764,7 @@ preview는 모델을 호출하지 않아도 recall·discovery를 수행할 수 �
 
 ## 호출자 컨텍스트
 
-`parameters.callerContext` 로 버전별 옵트인. 켜져 있으면 Slack 런은 누가 묻고 있는지를 모델에게
+`parameters.callerContext` 로 Agent별 옵트인. 켜져 있으면 Slack 런은 누가 묻고 있는지를 모델에게
 알려 주고. 표시 이름, 시간대, 아바타의 URL. 한 스레드에 사람이 둘 이상이면 화자마다 라벨을
 붙인다. Telegram 런과 Teams 런은 각자의 이벤트가 실어 오는 것으로 같은 일을 한다. 보낸 사람의
 이름, 그리고 그 밖에는 아무것도 없다. 둘 다 시간대도 email 도 넘겨주지 않는다.
@@ -783,7 +772,7 @@ preview는 모델을 호출하지 않아도 recall·discovery를 수행할 수 �
 **이름은 `piiFiltering` 이 마스킹하지 않는 PII 다.** 그 패턴들은 email, 전화번호,
 등록번호/카드 번호에 맞고 사람의 이름은 그 어느 것에도 맞지 않으므로, 호출자 블록이 싣는 것은
 필터링이 켜져 있어도 쓰인 그대로 모델에 도달한다. 그래서 그 블록은 **email 을 싣지 않으며**,
-그래서 이것이 기본 동작이 아니라 버전별 옵트인이다. 켜는 것은 실제 사람의 이름을 프롬프트에,
+그래서 이것이 기본 동작이 아니라 Agent별 옵트인이다. 켜는 것은 실제 사람의 이름을 프롬프트에,
 그리고 제공자가 로깅하는 무엇에든 집어넣겠다는 결정이다.
 
 옵트인은 모델에 넣을 이름·시간대·아바타를 위한 프로필 조회를 게이트한다. Slack 의 private
@@ -791,8 +780,8 @@ project 접근 검사와 artifact 소유자 식별에 필요한 email 조회는 
 `users.info` 를 호출할 수 있다. 그 email 은 모델의 caller 블록에 들어가지 않는다.
 이름이 메시지와 함께 도착하는 Telegram 에서는 옵트인하지 않은 이름이 대화 트랜스크립트에 쓰이지도
 않는다([데이터 노출과 보존](#데이터-노출과-보존) 참고). **transfer 는 호출자를
-자식에게 실어 나르고**(`RunOrigin`), 거기서 자식 버전 자신의 옵트인이 다시 결정한다. 그래서
-이름은 몇 홉 떨어져 있든 그것을 요청한 버전에만 도달하고, 소유자가 한 번도 옵트인하지 않은
+자식에게 실어 나르고**(`RunOrigin`), 거기서 자식 Agent 자신의 옵트인이 다시 결정한다. 그래서
+이름은 몇 홉 떨어져 있든 그것을 요청한 Agent에만 도달하고, 소유자가 한 번도 옵트인하지 않은
 project 는 그것을 결코 보지 않는다. 해석된 프로필은 워크스페이스별로 메모리에
 캐시되고(1시간, 실패는 1분), 크기가 제한되며, 결코 영속되지 않는다.
 
@@ -819,12 +808,12 @@ reference, 알림을 만들지 않는 date token은 보존한다.
 
 ## Slack 워크스페이스 읽기
 
-`parameters.slackWorkspace` 로 버전별 옵트인. 켜져 있으면 런은 자기 project 의 봇이 설치된
+`parameters.slackWorkspace` 로 Agent별 옵트인. 켜져 있으면 런은 자기 project 의 봇이 설치된
 워크스페이스의 채널 히스토리, 스레드, 사용자 이름을 읽을 수 있다.
 
 **Project 는 공유 카탈로그다** (private project 라면 그 접근 범위 안에서). 따라서 project 를
 실행할 수 있는 사람은 누구나 그 봇이 읽을 수 있는 것을 읽을 수 있다. 봇이 초대된 모든
-채널이며, `groups:history` 가 적용되는 비공개 채널도 포함이다. 그것이 이것을 Slack 에 연결된 모든 project 가 갖는 capability 가 아니라 버전별
+채널이며, `groups:history` 가 적용되는 비공개 채널도 포함이다. 그것이 이것을 Slack 에 연결된 모든 project 가 갖는 capability 가 아니라 Agent별
 옵트인으로 만든 이유 전부다. 켜는 것은 어떤 채널의 내용을 그 채널 자신의 멤버보다 더 넓은
 사람들에게 닿게 하겠다는 결정이다.
 
@@ -872,8 +861,8 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 - **문서는 읽힐 뿐, 실행되거나 렌더링되지 않는다.** 추출은 텍스트만 내놓는다. HTML 은
   마크업과 활성 내용을 제거한 텍스트로 읽히며, 스크립트를 실행하거나 외부 리소스를 가져오지 않는다.
 - **문서를 대신해 무언가를 가져오는 것은 없다.** 첨부 안의 URL 은 다른 것과 마찬가지로 텍스트일
-  뿐이다. 버전이 바인딩한 도구만이 그것에 작용할 수 있고, 그 도구 자신의 가드 아래에서 그렇다.
-- **텍스트는 PII 필터를 지난다.** 버전이 옵트인하면 턴의 나머지와 마찬가지이고, 한계도 같다
+  뿐이다. Agent가 바인딩한 도구만이 그것에 작용할 수 있고, 그 도구 자신의 가드 아래에서 그렇다.
+- **텍스트는 PII 필터를 지난다.** Agent가 옵트인하면 턴의 나머지와 마찬가지이고, 한계도 같다
   (email, 전화번호, 한국 등록번호, 카드 번호, 이름은 아니다).
 - **Chat은 원본과 추출문을 분리해 보관한다.** 턴당 최대 40,000자의 추출문과 파일 참조는
   소유자 전용 chat 행에 남고, 원본은 `source: attachment`인 artifact로 저장한다. 원본은
@@ -885,11 +874,11 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 - Trace 는 **제한된 메타데이터만** 저장한다. 문자 수, token, 비용, 소요 시간, subagent 의
   trace id. 원본 프롬프트와 도구 결과는 영속되지 않지만, trace 의 `error` 와 `warnings` 는 실패
   텍스트를 그대로 최대 1,000자까지 보관하고, 제공자나 도구의 에러 문자열은 내용을 품을 수 있다.
-- **런의 추론은 켠 버전에서 복원된 채로 저장된다.** `parameters.reasoningTrace` 를 켠 버전은
+- **런의 추론은 켠 Agent에서 복원된 채로 저장된다.** `parameters.reasoningTrace` 를 켠 Agent는
   assistant 메시지에 그 런의 사고를 남기는데(`AssistantChatMessage.reasoning`, 메시지당 최대
   40,000바이트), 그것은 `content` 와 같은 출처. 즉 **마스킹이 풀린** 텍스트다. PII 필터는
   *모델이 보는 것*을 제한하지 콘솔에 저장되는 것을 제한하지 않으므로(`content` 도 마찬가지다),
-  `piiFiltering` 을 켠 버전에서도 추론은 걸러지지 않은 채 chat 행에 앉는다. 추론은 요청을 모델
+  `piiFiltering` 을 켠 Agent에서도 추론은 걸러지지 않은 채 chat 행에 앉는다. 추론은 요청을 모델
   자신의 말로 되풀이하는 자리라 입력이 실어 온 것을 그대로 품기 쉽다. 옵트인인 이유가 이것이고,
   보존 기간은 chat 행과 같다(`RETENTION.chatDays`).
 - `/api/metrics` 는 project, 사용자, model 을 지목하지 않는다. 메트릭 라벨은 히스토그램의
@@ -905,8 +894,8 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   보관한다. 대화별로 질문과 답을. 두 플랫폼 모두 히스토리를 돌려주지 않아 후속 질문이 그 앞의
   질문을 실어 날라야 하기 때문이다. 그것은 chat 메시지처럼 저장된 사용자 텍스트다. chat 과 달리
   그 대화의 다음 런 외에는 아무것도 그것을 읽지 않는다. 보낸 사람의 플랫폼 사용자 id(Telegram
-  user id, Teams 는 Entra object id)는 턴 옆에 저장되고, 보낸 사람의 *이름* 은 버전이 `callerContext` 에 옵트인했을 때만 저장되며, 옵트인을 끈
-  버전은 이전에 저장된 이름도 읽지 않는다. 행은 project 파티션에 있어 project 를 지우면 함께
+  user id, Teams 는 Entra object id)는 턴 옆에 저장되고, 보낸 사람의 *이름* 은 Agent가 `callerContext` 에 옵트인했을 때만 저장되며, 옵트인을 끈
+  Agent는 이전에 저장된 이름도 읽지 않는다. 행은 project 파티션에 있어 project 를 지우면 함께
   지워진다.
 - **생성된 이미지** 는 `S3_BUCKET_NAME` 이 설정돼 있으면 추측할 수 없는 UUID 키 아래 저장되고,
   chat 행은 주소가 아니라 **오브젝트 키** 를 보관한다. 읽기 시점에 키가 주소가 되며, 수명은
@@ -985,7 +974,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
     남는다. PII 필터링은 *모델* 이 보는 것을 한정할 뿐, 저장되는 것을 한정하지 않는다.
   - project 의 artifact 탭은 그 project 의 소유자와 admin 이 읽을 수 있다. trace 가 쓰는 것과
     같은 규칙이고, 이유도 같다(다른 사람의 런타임 출력을 담고 있다). 실제로는 trace 보다 더 넓은
-    노출이다. trace 는 샘플링되고 30일을 보관하지만, artifact 는 모든 오브젝트이고 180일을
+    노출이다. Agent trace는 항상 기록하고 기본 30일을 보관하지만, artifact 는 모든 오브젝트이고 180일을
     보관한다.
   - artifact 를 지우면 오브젝트를 먼저, 행을 나중에 지우므로 중단된 삭제는 재시도로 수렴한다.
     chat 메시지는 그 키의 사본을 자기 안에 갖고 있으므로 트랜스크립트는 그 뒤로 이미지를 사용할

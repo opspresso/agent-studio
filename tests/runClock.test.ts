@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildAgentSystemPrompt, buildPromptMessages } from "@/application/runtime";
+import { buildAgentSystemPrompt } from "@/application/runtime";
 
 const NOW = new Date("2026-07-30T06:12:00Z");
 const CLOCK_LINE =
@@ -44,32 +44,5 @@ describe("agent prompt clock", () => {
     expect(prompt).toContain("## Available Skills");
     // One break for everything the engine appends, not one per block.
     expect(prompt.match(/^---$/gm)).toHaveLength(1);
-  });
-});
-
-describe("single-shot prompt clock", () => {
-  const base = { model: "openai/gpt-5.4", userPromptTemplate: "Summarize this." };
-
-  it("leaves the system prompt untouched when no clock is injected", () => {
-    const messages = buildPromptMessages({ ...base, systemPrompt: "You summarize." });
-    expect(messages[0]).toEqual({ role: "system", content: "You summarize." });
-  });
-
-  it("appends the clock behind the same boundary the agent prompt uses", () => {
-    const messages = buildPromptMessages({ ...base, systemPrompt: "You summarize.", now: NOW });
-    expect(messages[0]).toEqual({
-      role: "system",
-      content: `You summarize.\n\n---\n\n${CLOCK_LINE}`,
-    });
-  });
-
-  it("sends the clock alone when the version has no system prompt", () => {
-    const messages = buildPromptMessages({ ...base, now: NOW });
-    expect(messages[0]).toEqual({ role: "system", content: CLOCK_LINE });
-  });
-
-  it("sends no system message at all with neither a prompt nor a clock", () => {
-    const messages = buildPromptMessages(base);
-    expect(messages.some((message) => message.role === "system")).toBe(false);
   });
 });

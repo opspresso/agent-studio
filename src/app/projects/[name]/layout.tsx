@@ -12,8 +12,6 @@ import {
   IconApi,
   IconArrowLeft,
   IconChartBar,
-  IconGitCompare,
-  IconHistory,
   IconPlayerPlay,
   IconPhoto,
   IconPlugConnected,
@@ -22,8 +20,8 @@ import {
 } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
-import { getProject, getVersion, listVersions, type SanitizedProject } from "../lib/api";
-import { onVersionChange } from "../lib/versionEvents";
+import { getProject, getConfiguration, type SanitizedProject } from "../lib/api";
+import { onConfigurationChange } from "../lib/configurationEvents";
 import { projectHasAudioTools } from "@/domain/project/audioAccess";
 import { ProjectAudioContext } from "./_components/ProjectAudioContext";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
@@ -60,9 +58,10 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
             const project = await getProject(name);
             if (cancelled || request !== sequence) return;
             setProject(project);
-            const versions = project.projectType !== "agent" ? [] : project.publishedVersion
-              ? [await getVersion(name, project.publishedVersion)] : await listVersions(name);
-            if (!cancelled && request === sequence) setAudio({ name, enabled: projectHasAudioTools(project, versions), workspace: projectHasWorkspaceTools(project, versions) });
+            const { configuration } = await getConfiguration(name);
+            if (!cancelled && request === sequence) setAudio({ name,
+              enabled: projectHasAudioTools({ configuration: configuration ?? undefined }),
+              workspace: projectHasWorkspaceTools({ configuration: configuration ?? undefined }) });
             return;
           } catch (error) {
             if (cancelled || request !== sequence) return;
@@ -72,7 +71,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
       })();
     };
     reload();
-    const unsubscribe = onVersionChange(name, reload);
+    const unsubscribe = onConfigurationChange(name, reload);
     return () => {
       cancelled = true;
       unsubscribe();
@@ -82,8 +81,6 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const canManage = canEditProject(viewer, ownerEmail);
   const tabs = [
     { href: base, label: t("project.tab.playground"), Icon: IconPlayerPlay },
-    { href: `${base}/versions`, label: t("project.tab.versions"), Icon: IconHistory },
-    { href: `${base}/compare`, label: t("project.tab.compare"), Icon: IconGitCompare },
     { href: `${base}/usage`, label: t("project.tab.usage"), Icon: IconChartBar },
     ...(ownerEmail && viewer?.email === ownerEmail && audio?.name === name && audio.enabled ? [{ href: `${base}/audio`, label: t("audio.title"), Icon: IconSparkles }] : []),
     ...(canManage && audio?.name === name && audio.workspace ? [{ href: `${base}/workspace`, label: t("workspace.toolsTitle"), Icon: IconSparkles }] : []),

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { EngineDeps } from "@/application/runtime";
-import { runPrompt, runPromptStream } from "@/application/runtime";
+import { runAgent } from "@/application/runtime";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
@@ -28,9 +28,9 @@ describe("cached prompt tokens", () => {
 
     const cached = new FakeChannel([[contentChunk("hi"), usageChunk(100, 10, 80)]]);
     const withCache = await collect(
-      runPromptStream(
+      runAgent(
         { channel: cached, recordUsage: record },
-        { projectName: "p", model: "openai/gpt-5-mini", userPromptTemplate: "hi" },
+        { projectName: "p", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hi" }] },
       ),
     );
     expect(recorded[0]).toMatchObject({ inputTokens: 100, cachedTokens: 80 });
@@ -39,9 +39,9 @@ describe("cached prompt tokens", () => {
     recorded.length = 0;
     const silent = new FakeChannel([[contentChunk("hi"), usageChunk(100, 10)]]);
     const withoutCache = await collect(
-      runPromptStream(
+      runAgent(
         { channel: silent, recordUsage: record },
-        { projectName: "p", model: "openai/gpt-5-mini", userPromptTemplate: "hi" },
+        { projectName: "p", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hi" }] },
       ),
     );
     expect(recorded[0]).not.toHaveProperty("cachedTokens");
@@ -49,25 +49,14 @@ describe("cached prompt tokens", () => {
   });
 });
 
-describe("single-shot usage recording is best-effort", () => {
-  it("runPrompt still returns the generation when recordUsage throws", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const channel = new FakeChannel([[contentChunk("hello"), usageChunk(1, 1)]]);
-    const result = await runPrompt(
-      { channel, recordUsage: failingUsage },
-      { projectName: "p", model: "openai/gpt-5-mini", userPromptTemplate: "hi" },
-    );
-    expect(result.content).toBe("hello");
-    spy.mockRestore();
-  });
-
-  it("runPromptStream ends with done and no error frame when recordUsage throws", async () => {
+describe("Agent usage recording is best-effort", () => {
+  it("runAgent ends with done and no error frame when recordUsage throws", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const channel = new FakeChannel([[contentChunk("hello"), usageChunk(1, 1)]]);
     const chunks = await collect(
-      runPromptStream(
+      runAgent(
         { channel, recordUsage: failingUsage },
-        { projectName: "p", model: "openai/gpt-5-mini", userPromptTemplate: "hi" },
+        { projectName: "p", model: "openai/gpt-5-mini", messages: [{ role: "user", content: "hi" }] },
       ),
     );
     expect(chunks.some((c) => c.error)).toBe(false);

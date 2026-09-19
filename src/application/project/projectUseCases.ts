@@ -1,5 +1,5 @@
 import type { ProjectRepository } from "@/domain/project/repository";
-import type { CostLimits, Project, ProjectType, ProjectVisibility } from "@/domain/project/types";
+import type { AgentConfiguration, CostLimits, Project, ProjectType, ProjectVisibility } from "@/domain/project/types";
 import { mayAccessProject, normalizeMemberEmails } from "@/domain/project/access";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
@@ -40,7 +40,8 @@ export interface CreateProjectInput {
   name: string;
   displayName: string;
   description: string;
-  projectType: ProjectType;
+  projectType?: ProjectType;
+  configuration?: Omit<AgentConfiguration, "projectName">;
   ownerEmail: string;
   departmentCode?: string;
   /**
@@ -272,7 +273,8 @@ export async function createProject(
     name: input.name,
     displayName: input.displayName,
     description: input.description,
-    projectType: input.projectType,
+    projectType: "agent",
+    ...(input.configuration ? { configuration: { ...structuredClone(input.configuration), projectName: input.name } } : {}),
     ownerEmail: input.ownerEmail,
     departmentCode: input.departmentCode,
     ...(input.visibility ? { visibility: input.visibility } : {}),

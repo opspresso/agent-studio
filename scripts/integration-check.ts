@@ -39,6 +39,8 @@ async function main() {
   await checkAudioQueueMigration();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
+  const { checkAgentConfiguration } = await import("./agent-configuration-check");
+  await checkAgentConfiguration();
   const { checkWorkspaces } = await import("./workspace-check");
   await checkWorkspaces();
   const { checkAuthSchema } = await import("./auth-schema-check");
@@ -50,7 +52,6 @@ async function main() {
   const { workspaceRepositoryCreationStore } = await import("@/infrastructure/db/repositories/workspaceRepositoryCreationStore");
   const { createWorkspaceRepositoryCreationUseCases } = await import("@/application/workspace/createRepository");
   const { listProjects } = await import("@/application/project/projectUseCases");
-  const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
   const { skillRepository } = await import("@/infrastructure/db/repositories/skillRepository");
   const { mcpRepository } = await import("@/infrastructure/db/repositories/mcpRepository");
   const { externalAgentRepository } = await import(
@@ -85,7 +86,7 @@ async function main() {
     "@/infrastructure/db/repositories/transcriptRepository"
   );
   const { executionDeps } = await import("@/lib/container");
-  const { executeVersion, executeAgent } = await import("@/application/execution/runProject");
+  const { executeProject, executeAgent } = await import("@/application/execution/runProject");
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
@@ -239,7 +240,7 @@ async function main() {
     });
     pass("migration backfills Telegram destination recency index");
 
-    // ---------- project + version ----------
+    // ---------- project + current settings ----------
     await projectRepository.create({
       name: projectName,
       displayName: "Integration Project",
@@ -283,29 +284,14 @@ async function main() {
     assert.equal(repositoryCreates, 1, "completed receipt is not recreated");
     pass("Workspace repository creation: durable claim, atomic registration and replay");
 
-    await versionRepository.create({
-      projectName,
-      versionName: "1",
-      systemPrompt: "You are a helpful integration bot.",
-      userPromptTemplate: "Hello {{name}}",
-      model: "openai/gpt-5-mini",
-      parameters: { piiFiltering: false },
-      mcpList: [],
-      skillList: ["integration-skill"],
-      subagentList: [],
-      maxTurn: 5,
-      createdAt: now,
-    });
-    const publishedAt = new Date(Date.parse(now) + 1).toISOString();
-    await projectRepository.publish(
-      { ...project, publishedVersion: "1", updatedAt: publishedAt },
-      "1",
-      now,
-    );
-    const published = await versionRepository.get(projectName, "published");
-    assert.ok(published, "published pointer resolves");
-    assert.equal(published.versionName, "1");
-    pass("version create + published pointer resolution");
+    const configuration = {
+      projectName, systemPrompt: "You are a helpful integration bot.", model: "integration/model",
+      parameters: { piiFiltering: false }, mcpList: [], skillList: ["integration-skill"], subagentList: [], maxTurn: 5,
+    };
+    const configuredAt = new Date(Date.parse(now) + 1).toISOString();
+    await projectRepository.update({ ...project, configuration, updatedAt: configuredAt }, now);
+    assert.deepEqual((await projectRepository.get(projectName))?.configuration, configuration);
+    pass("current Agent configuration round-trip");
     await assert.rejects(
       projectRepository.update(
         { ...project, description: "stale write", updatedAt: new Date(Date.parse(now) + 2).toISOString() },
@@ -1387,40 +1373,25 @@ async function main() {
       pass("transact: a checked key locks share-mode, a written one exclusively");
     }
 
-    // ---------- audio configuration/version deletion fence ----------
+    // ---------- audio configuration target availability ----------
     {
       const { audioJobConfigRepository: configs } = await import("@/infrastructure/db/repositories/audioJobConfigRepository");
-      const project = (await projectRepository.get(projectName))!;
-      const versionName = "audio-reference-check";
-      await versionRepository.create({ projectName, versionName, model: "integration/model", systemPrompt: "", userPromptTemplate: "",
-        parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [], createdAt: now });
-      const config = { projectName, userEmail: project.ownerEmail, revision: 1, enabled: true, model: "integration/asr",
+      const target = (await projectRepository.get(projectName))!;
+      const config = { projectName, userEmail: target.ownerEmail, revision: 1, enabled: true, model: "integration/asr",
         retention: { unit: "months" as const, value: 3, timezone: "UTC" }, maxActive: 1, maxPerOccurrence: 1,
-        postprocess: { projectName, versionName }, updatedAt: now };
+        postprocess: { projectName }, updatedAt: now };
       assert.equal(await configs.save(config, 0), true);
-      await assert.rejects(versionRepository.delete(projectName, versionName, project.updatedAt));
-      assert.ok(await versionRepository.get(projectName, versionName));
-      assert.equal(await configs.save({ ...config, enabled: false, revision: 2 }, 1), true);
-      const current = (await projectRepository.get(projectName))!;
-      await versionRepository.delete(projectName, versionName, current.updatedAt);
-      assert.equal(await configs.save({ ...config, revision: 3 }, 2), false);
-      assert.equal((await configs.get(projectName))?.enabled, false);
-      await versionRepository.create({ projectName, versionName, model: "integration/model", systemPrompt: "", userPromptTemplate: "",
-        parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [], createdAt: now });
-      const beforeRace = (await projectRepository.get(projectName))!;
-      const raced = await Promise.allSettled([
-        configs.save({ ...config, revision: 3 }, 2),
-        versionRepository.delete(projectName, versionName, beforeRace.updatedAt),
+      const before = (await projectRepository.get(projectName))!;
+      assert.deepEqual(before.configuration, target.configuration, "saving a recipe preserves Agent settings");
+      assert.equal(await configs.save({ ...config, userEmail: "other@example.test", revision: 2 }, 1), false);
+      assert.equal(await configs.save({ ...config, postprocess: { projectName: "missing-target" }, revision: 2 }, 1), false);
+      assert.equal((await configs.get(projectName))?.revision, 1);
+      const raced = await Promise.all([
+        configs.save({ ...config, maxActive: 2, revision: 2 }, 1),
+        configs.save({ ...config, maxActive: 3, revision: 2 }, 1),
       ]);
-      const saved = raced[0].status === "fulfilled" && raced[0].value;
-      const deleted = raced[1].status === "fulfilled";
-      assert.notEqual(saved, deleted, "exactly one of saving the reference and deleting its version may succeed");
-      if (saved) {
-        assert.ok(await versionRepository.get(projectName, versionName));
-        assert.equal(await configs.save({ ...config, enabled: false, revision: 4 }, 3), true);
-        await versionRepository.delete(projectName, versionName, (await projectRepository.get(projectName))!.updatedAt);
-      } else assert.equal((await configs.get(projectName))?.enabled, false);
-      pass("audio configuration: version deletion and reference save cannot leave a dangling target");
+      assert.equal(raced.filter(Boolean).length, 1, "one concurrent recipe update wins");
+      pass("audio configuration: current target checks and concurrent recipe CAS");
     }
 
     // ---------- durable usage receipts ----------
@@ -1586,22 +1557,22 @@ async function main() {
     );
     pass("concurrency slots: exact limit, release, lease reclaim");
 
-    // ---------- engine: single-shot ----------
-    const runResult = await executeVersion(executionDeps, {
+    // ---------- Agent: collected completion ----------
+    const runResult = await executeProject(executionDeps, {
       project,
-      version: published,
-      variables: { name: "world" },
+      configuration,
+      messages: [{ role: "user", content: "Hello world" }],
     });
-    assert.equal(runResult.content, "plain answer", "executeVersion content");
-    assert.ok(runResult.usage.inputTokens > 0, "executeVersion usage recorded");
-    pass("executeVersion single-shot via mock LLM");
+    assert.equal(runResult.content, "streamed answer", "executeProject content");
+    assert.ok(runResult.usage.inputTokens > 0, "executeProject usage recorded");
+    pass("executeProject collected Agent via mock LLM");
 
     // ---------- engine: agent loop with Skill tool ----------
     const chunks: Array<{ delta?: { content?: string }; toolResult?: unknown; error?: string }> =
       [];
     for await (const chunk of executeAgent(executionDeps, {
       project,
-      version: published,
+      configuration,
       messages: [{ role: "user", content: "use your skill" }],
       actor: { kind: "user", id: "it@example.com" },
     })) {
@@ -1623,8 +1594,8 @@ async function main() {
       const { pendingRuntimeApproval } = await import("@/application/runtime/session");
       const sessionId = `integration-session-${suffix}`;
       const owner = "it@example.com";
-      const version = { ...published, parameters: { ...published.parameters, policy: { approvalTools: ["Skill"] } } };
-      const base = { project, version, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
+      const approvalConfiguration = { ...configuration, parameters: { ...configuration.parameters, policy: { approvalTools: ["Skill"] } } };
+      const base = { project, configuration: approvalConfiguration, actor: { kind: "user" as const, id: owner }, conversation: { surface: "chat" as const, id: sessionId } };
       const first = [];
       for await (const chunk of executeAgent(executionDeps, { ...base, messages: [{ role: "user", content: "use your skill" }] })) first.push(chunk);
       assert.ok(first.some((chunk) => chunk.approval), "approval is persisted before notifying the client");
@@ -1650,7 +1621,6 @@ async function main() {
       () => projectRepository.create(project),
       "a deleted project name remains reserved by its tombstone",
     );
-    assert.equal(await versionRepository.get(projectName, "1"), null, "versions deleted");
     assert.equal(await workspacePolicyRepository.get(projectName), null, "Workspace policy deleted");
     assert.equal(await workspaceRepositoryCreationStore.get(projectName, repositoryRequest.repository), null, "Repository creation receipt deleted");
     await assert.rejects(workspacePolicyRepository.put(workspacePolicy, null), "deleted project cannot regain Workspace access");
@@ -1664,7 +1634,7 @@ async function main() {
       0,
       "transcript turns deleted with the project",
     );
-    pass("project cascade delete (name tombstone + versions + usage + transcript)");
+    pass("project cascade delete (name tombstone + settings + usage + transcript)");
   } finally {
     // cleanup non-cascading fixtures
     await skillRepository.delete("integration-skill").catch(() => {});

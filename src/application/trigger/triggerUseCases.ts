@@ -15,7 +15,6 @@ import {
   type Trigger,
   type TriggerKind,
   type TriggerRun,
-  type TriggerPayloadMode,
   type WebhookTrigger,
 } from "@/domain/trigger/types";
 import {
@@ -44,8 +43,6 @@ export interface CreateTriggerInput {
   kind?: TriggerKind;
   description?: string;
   enabled?: boolean;
-  variables?: Record<string, string>;
-  payloadMode?: TriggerPayloadMode;
   allowConcurrent?: boolean;
   cron?: string;
   timezone?: string;
@@ -57,8 +54,6 @@ export interface UpdateTriggerInput {
   runAsOwner?: boolean;
   description?: string;
   enabled?: boolean;
-  variables?: Record<string, string>;
-  payloadMode?: TriggerPayloadMode;
   allowConcurrent?: boolean;
   /** True re-issues the secret; the previous one stops working immediately. */
   rotateSecret?: boolean;
@@ -81,12 +76,10 @@ export interface TriggerView {
   kind: TriggerKind;
   description: string;
   enabled: boolean;
-  variables?: Record<string, string>;
   allowConcurrent: boolean;
   createdAt: string;
   updatedAt: string;
   /** Webhook only. */
-  payloadMode?: TriggerPayloadMode;
   secretMasked?: string;
   /** Present only on create/rotate. */
   secret?: string;
@@ -229,7 +222,6 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         triggerId: input.triggerId,
         description: input.description ?? "",
         enabled: input.enabled ?? true,
-        ...(input.variables ? { variables: input.variables } : {}),
         // Overlap is off unless asked for: a firing that comes faster than the
         // run takes would otherwise pile runs up until the cost guard notices.
         allowConcurrent: input.allowConcurrent ?? false,
@@ -241,9 +233,6 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       if (input.kind === "schedule") {
         if (input.cron === undefined || input.timezone === undefined) {
           throw new ValidationError("A schedule trigger needs a cron expression and a timezone");
-        }
-        if (input.payloadMode !== undefined) {
-          throw new ValidationError("A schedule trigger has no payload");
         }
         assertScheduleFields(input);
         trigger = {
@@ -274,7 +263,6 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           ...base,
           kind: "webhook",
           secret: deps.cipher.encrypt(secret, triggerSecretContext(projectName, input.triggerId)),
-          payloadMode: input.payloadMode ?? "message",
         };
       }
       try {
@@ -301,14 +289,13 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       const shared = {
         description: input.description ?? existing.description,
         enabled: input.enabled ?? existing.enabled,
-        variables: input.variables ?? existing.variables,
         allowConcurrent: input.allowConcurrent ?? existing.allowConcurrent,
         updatedAt: new Date().toISOString(),
       };
       if (existing.kind === "schedule") {
         // Explicit refusal over silent no-op: a caller asking a schedule for a
         // secret rotation is confused about what it is talking to.
-        if (input.rotateSecret || input.payloadMode !== undefined) {
+        if (input.rotateSecret) {
           throw new ValidationError("A schedule trigger has no secret and no payload");
         }
         assertScheduleFields(input);
@@ -344,7 +331,6 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       const updated: WebhookTrigger = {
         ...existing,
         ...shared,
-        payloadMode: input.payloadMode ?? existing.payloadMode,
         ...(rotated
           ? { secret: deps.cipher.encrypt(rotated, triggerSecretContext(projectName, triggerId)) }
           : {}),

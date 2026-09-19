@@ -19,7 +19,7 @@ function projectFixture(overrides: Partial<Project> = {}): Project {
     description: "Draws things on request.",
     projectType: "agent",
     ownerEmail: "owner@x.com",
-    publishedVersion: "1",
+
     slack: { botToken: "enc", signingSecret: "enc", enabled: true, suggestedPrompts: PROMPTS },
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -119,17 +119,13 @@ describe("handleThreadStart", () => {
     expect(prompts).toEqual([]);
   });
 
-  it("stays silent for a project that is missing or not an agent", async () => {
+  it("stays silent for a missing project", async () => {
     const missing = makeDeps(null);
     await handleThreadStart(missing.deps, LEGACY_THREAD_STARTED, BINDING);
-
-    const wrongType = makeDeps(projectFixture({ projectType: "llm" }));
-    await handleThreadStart(wrongType.deps, LEGACY_THREAD_STARTED, BINDING);
 
     // Nobody asked a question, so an error message would be an unprompted
     // complaint in a thread the user just opened.
     expect(missing.posted).toEqual([]);
-    expect(wrongType.posted).toEqual([]);
   });
 
   it("keeps going when the greeting fails", async () => {

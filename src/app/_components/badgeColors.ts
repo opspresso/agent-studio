@@ -45,9 +45,7 @@ export function stateColor(on: boolean): string {
 
 /** What a project runs: a single prompt, a tool loop, or an image model. */
 export const PROJECT_TYPE_COLOR: Record<ProjectType, string> = {
-  llm: "cyan",
   agent: "violet",
-  image: "grape",
 };
 
 /** How an external agent is spoken to. */

@@ -237,9 +237,7 @@ export function Overview({
                       {project.displayName || project.name}
                     </Text>
                     <Group gap={6} wrap="nowrap">
-                      {project.publishedVersion && (
-                        <Badge color="teal">v{project.publishedVersion}</Badge>
-                      )}
+
                       <Badge color={PROJECT_TYPE_COLOR[project.projectType]}>
                         {project.projectType}
                       </Badge>

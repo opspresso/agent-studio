@@ -1,3 +1,4 @@
+import { withConfigurations } from "./projectConfigurations";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,10 +16,9 @@ import {
   executeAgent,
   executeProject,
   executeProjectStream,
-  executeVersion,
   streamProjectRun,
 } from "@/application/execution/runProject";
-import { statusForError, ValidationError } from "@/application/errors";
+import { statusForError } from "@/application/errors";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { remoteAgentDispatcher } from "@/infrastructure/agent/dispatcher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
@@ -39,7 +39,7 @@ import { listModels } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { LlmChannel } from "./channelFixtures";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version, VersionParameters } from "@/domain/project/types";
+import type { Project, AgentConfiguration, AgentParameters } from "@/domain/project/types";
 import type { UsageDelta } from "@/domain/usage/types";
 import type { Trace } from "@/domain/trace/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
@@ -55,33 +55,28 @@ function projectFixture(): Project {
     description: "",
     projectType: "agent",
     ownerEmail: "owner@example.com",
-    publishedVersion: "v1",
+
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
-function versionFixture(parameters: VersionParameters): Version {
+function configurationFixture(parameters: AgentParameters): AgentConfiguration {
   return {
     projectName: "painter",
-    versionName: "v1",
+
     systemPrompt: "You are helpful.",
-    userPromptTemplate: "",
+
     model: "gpt-test",
     parameters,
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
 /** Pinned so the clock line a prompt carries is deterministic. */
 const TEST_NOW = new Date("2026-07-30T06:12:00Z");
-/** What {@link TEST_NOW} renders as, behind the engine-block boundary. */
-const CLOCK_LINE =
-  'Current date and time: 2026-07-30 (Thursday) 06:12 UTC. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.';
-
 function executionDepsFixture(channel: LlmChannel) {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const recorded: UsageDelta[] = [];
@@ -111,8 +106,8 @@ function executionDepsFixture(channel: LlmChannel) {
   };
   const deps = {
     now: () => TEST_NOW,
-    projects: { get: reject, list: reject, put: reject, delete: reject },
-    versions: { get: reject, list: reject, put: reject, delete: reject },
+    projects: withConfigurations({ get: reject, list: reject, put: reject, delete: reject }, ({ get: reject, list: reject, put: reject, delete: reject }).get),
+
     skills: fakeSkillRepository(reject),
     mcps: { get: reject, list: reject, put: reject, delete: reject },
     externalAgents: { get: reject, list: reject, put: reject, delete: reject },
@@ -167,7 +162,7 @@ function offersImageTool(channel: FakeChannel): boolean {
 }
 
 describe("version sampling parameters", () => {
-  it.each(["agent", "llm"] as const)("forwards presence penalties through the %s execution facade", async (projectType) => {
+  it.each(["agent"] as const)("forwards presence penalties through the %s execution facade", async (projectType) => {
     vi.useFakeTimers();
     vi.setSystemTime(TEST_NOW);
     try {
@@ -176,7 +171,7 @@ describe("version sampling parameters", () => {
         const { deps } = executionDepsFixture(channel);
         await executeProject(deps, {
           project: { ...projectFixture(), projectType },
-          version: versionFixture({ piiFiltering: false, presencePenalty }),
+          configuration: configurationFixture({ piiFiltering: false, presencePenalty }),
           messages: [{ role: "user", content: "Answer briefly" }],
         });
         expect(channel.seenParams[0]?.presencePenalty).toBe(presencePenalty);
@@ -207,7 +202,7 @@ describe("withRunDeadline", () => {
 
 describe("execution cancellation", () => {
   it.each([
-    ["agent", false], ["agent", true], ["llm", false], ["llm", true],
+    ["agent", false], ["agent", true],
   ] as const)("records a streamed %s failure even when collected=%s", async (projectType, collected) => {
     resetRunMetrics();
     const channel = new FakeChannel([]);
@@ -217,11 +212,10 @@ describe("execution cancellation", () => {
     };
     const { deps } = executionDepsFixture(channel);
     const traces = captureTraces(deps);
-    deps.traceSampleRate = 1;
-    deps.sample = () => 0;
+
     const stream = executeProjectStream(deps, {
       project: { ...projectFixture(), projectType },
-      version: versionFixture({ piiFiltering: false }),
+      configuration: configurationFixture({ piiFiltering: false }),
       messages: [{ role: "user", content: "hello" }],
     });
     if (collected) {
@@ -238,9 +232,10 @@ describe("execution cancellation", () => {
     const { deps } = executionDepsFixture(channel);
     const abortController = new AbortController();
 
-    await executeVersion(deps, {
+    await executeProject(deps, {
+      messages: [{ role: "user", content: "hello" }],
       project: projectFixture(),
-      version: versionFixture({ piiFiltering: false }),
+      configuration: configurationFixture({ piiFiltering: false }),
       signal: abortController.signal,
     });
 
@@ -254,32 +249,30 @@ describe("execution cancellation", () => {
     expect(sent?.aborted).toBe(true);
   });
 
-  it("records a sampled caller-aborted prompt as cancelled", async () => {
+  it("records a caller-aborted Agent as cancelled", async () => {
     const controller = new AbortController();
     const responseAborted = new Error("ResponseAborted");
     const channel: LlmChannel = {
-      async chatCompletion(params) {
+      async chatCompletion() { throw new Error("not used"); },
+      async *chatCompletionStream(params) {
         controller.abort(responseAborted);
         params.signal?.throwIfAborted();
         throw responseAborted;
       },
-      async *chatCompletionStream() {
-        throw new Error("not used");
-      },
     };
     const { deps } = executionDepsFixture(channel);
     deps.channel = scriptedModels(channel);
-    deps.traceSampleRate = 1;
-    deps.sample = () => 0;
+
     const traces = captureTraces(deps);
 
     await expect(
-      executeVersion(deps, {
-        project: { ...projectFixture(), projectType: "llm" },
-        version: versionFixture({ piiFiltering: false }),
+      executeProject(deps, {
+      messages: [{ role: "user", content: "hello" }],
+        project: { ...projectFixture(), projectType: "agent" },
+        configuration: configurationFixture({ piiFiltering: false }),
         signal: controller.signal,
       }),
-    ).rejects.toBe(responseAborted);
+    ).rejects.toThrow("ResponseAborted");
 
     expect(traces[0]?.status).toBe("cancelled");
     expect(traces[0]?.error).toBeUndefined();
@@ -298,7 +291,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: false, imageGeneration: true }),
+        configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -311,7 +304,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: false }),
+        configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -324,7 +317,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: false, imageGeneration: false }),
+        configuration: configurationFixture({ piiFiltering: false, imageGeneration: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -337,7 +330,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({
+        configuration: configurationFixture({
           piiFiltering: false,
           imageGeneration: true,
           imageModel: "google/gemini-3-pro-image",
@@ -356,7 +349,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: false, imageGeneration: true }),
+        configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
         messages: [{ role: "user", content: "draw a fox" }],
       }),
     );
@@ -369,7 +362,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({
+        configuration: configurationFixture({
           piiFiltering: false,
           imageGeneration: true,
           imageModel: "removed/model",
@@ -401,7 +394,7 @@ describe("executeAgent GenerateImage opt-in", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({
+        configuration: configurationFixture({
           piiFiltering: false,
           imageGeneration: true,
           imageModel: "removed/model",
@@ -422,8 +415,8 @@ describe("executeAgent GenerateImage opt-in", () => {
 describe("executeAgent EditImage", () => {
   const ATTACHED = "data:image/png;base64,YXR0YWNoZWQ=";
   /** A vision-capable model: an image-bearing run is gated on the registry. */
-  const visionVersion = (parameters: VersionParameters): Version => ({
-    ...versionFixture(parameters),
+  const visionVersion = (parameters: AgentParameters): AgentConfiguration => ({
+    ...configurationFixture(parameters),
     model: "google/gemini-2.5-flash",
   });
   const editScript = [
@@ -445,7 +438,7 @@ describe("executeAgent EditImage", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        configuration: visionVersion({ piiFiltering: false, imageGeneration: true }),
         messages: [
           {
             role: "user",
@@ -475,7 +468,7 @@ describe("executeAgent EditImage", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        configuration: visionVersion({ piiFiltering: false, imageGeneration: true }),
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -500,7 +493,7 @@ describe("executeAgent EditImage", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        configuration: visionVersion({ piiFiltering: false, imageGeneration: true }),
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -520,7 +513,7 @@ describe("executeAgent EditImage", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: visionVersion({ piiFiltering: false, imageGeneration: false }),
+        configuration: visionVersion({ piiFiltering: false, imageGeneration: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -542,7 +535,7 @@ describe("executeAgent EditImage", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        configuration: visionVersion({ piiFiltering: false, imageGeneration: true }),
         messages: [{ role: "user", content: "draw a fox, then make it night" }],
       }),
     );
@@ -570,29 +563,38 @@ describe("executeAgent image transfer to a subagent", () => {
     const child: Project = {
       ...projectFixture(),
       name: "simple-image",
-      projectType: "image",
-      publishedVersion: "1",
+      projectType: "agent",
     };
-    const childVersion: Version = {
-      ...versionFixture({ piiFiltering: false }),
+    const childVersion: AgentConfiguration = {
+      ...configurationFixture({ piiFiltering: false }),
       projectName: "simple-image",
-      model: DEFAULT_IMAGE_MODEL ?? "openai/gpt-image-2",
+      model: "google/gemini-2.5-flash",
+      parameters: { piiFiltering: false, imageGeneration: true, imageModel: DEFAULT_IMAGE_MODEL },
     };
     const deps = {
       ...fixture.deps,
-      projects: { get: async (name: string) => (name === "simple-image" ? child : parent) },
-      versions: {
+      projects: withConfigurations({ get: async (name: string) => (name === "simple-image" ? child : parent) }, ({
         get: async (project: string) => (project === "simple-image" ? childVersion : null),
         list: async () => [childVersion],
-      },
+      }).get),
+
     } as unknown as ExecutionDeps;
     return { ...fixture, deps, parent };
   }
 
-  const transferScript = (args: string) => [
-    [toolCallChunk(0, "call_t", `delegate_${JSON.parse(args).agent_name}`, JSON.stringify({ input: JSON.parse(args).message, image_ids: JSON.parse(args).image_ids ?? [] })), usageChunk(1, 1)],
-    [contentChunk("Done — the image is updated."), usageChunk(1, 1)],
-  ];
+  const transferScript = (args: string) => {
+    const request = JSON.parse(args);
+    const images: string[] = request.image_ids ?? [];
+    const imageTask = request.agent_name === "simple-image" && images.every(id => id === "img_1");
+    return [
+      [toolCallChunk(0, "call_t", `delegate_${request.agent_name}`, JSON.stringify({ input: request.message, image_ids: images })), usageChunk(1, 1)],
+      ...(imageTask ? [
+        [toolCallChunk(0, "image", images.length ? "EditImage" : "GenerateImage", JSON.stringify({ prompt: request.message, ...(images.length ? { image_id: "img_1" } : {}) })), usageChunk(1, 1)],
+        [contentChunk("Image ready."), usageChunk(1, 1)],
+      ] : []),
+      [contentChunk("Done — the image is updated."), usageChunk(1, 1)],
+    ];
+  };
 
   /**
    * The fake channel now throws on an aborted signal, because the real one does
@@ -611,7 +613,7 @@ describe("executeAgent image transfer to a subagent", () => {
       (async () => {
         for await (const chunk of executeAgent(deps, {
           project: projectFixture(),
-          version: versionFixture({ piiFiltering: false }),
+          configuration: configurationFixture({ piiFiltering: false }),
           messages: [{ role: "user", content: "hi" }],
           signal: controller.signal,
         })) {
@@ -660,7 +662,7 @@ describe("executeAgent image transfer to a subagent", () => {
     await collect(
       executeAgent(guarded, {
         project: fixture.parent,
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [{ role: "user", content: "draw a fox" }],
       }),
     );
@@ -668,13 +670,31 @@ describe("executeAgent image transfer to a subagent", () => {
     expect(claims).toEqual([{ project: "simple-image", kind: "alert" }]);
   });
 
-  function parentVersion(): Version {
+  function parentVersion(): AgentConfiguration {
     return {
-      ...versionFixture({ piiFiltering: false }),
+      ...configurationFixture({ piiFiltering: false }),
       model: "google/gemini-2.5-flash",
       subagentList: [{ name: "simple-image", type: "local" }],
     };
   }
+
+  it("cancels a delegated image tool with its parent run", async () => {
+    const controller = new AbortController();
+    const fixture = imageProjectDeps(new FakeChannel(transferScript('{"agent_name":"simple-image","message":"draw a fox"}')));
+    const traces = captureTraces(fixture.deps);
+    const generate = vi.fn(async ({ signal }: { signal?: AbortSignal }) => {
+      controller.abort(new Error("image cancelled"));
+      signal?.throwIfAborted();
+      throw new Error("Image call should have been cancelled");
+    });
+    fixture.deps.imageChannel.generateImage = generate;
+    await expect(collect(executeAgent(fixture.deps, {
+      project: fixture.parent, configuration: parentVersion(), signal: controller.signal,
+      messages: [{ role: "user", content: "draw a fox" }],
+    }))).rejects.toThrow();
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(traces).toEqual([expect.objectContaining({ status: "cancelled" })]);
+  });
 
   it("hands the named image to an image subagent, which edits instead of drawing", async () => {
     const channel = new FakeChannel(
@@ -685,7 +705,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: parent,
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [
           {
             role: "user",
@@ -701,7 +721,7 @@ describe("executeAgent image transfer to a subagent", () => {
     expect(edits).toEqual([
       {
         model: DEFAULT_IMAGE_MODEL,
-        prompt: "You are helpful.\n\nmake it blue",
+        prompt: "make it blue",
         sources: ["YXR0YWNoZWQ="],
       },
     ]);
@@ -718,7 +738,7 @@ describe("executeAgent image transfer to a subagent", () => {
     await collect(
       executeAgent(deps, {
         project: parent,
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [{ role: "user", content: "draw a fox" }],
       }),
     );
@@ -736,7 +756,7 @@ describe("executeAgent image transfer to a subagent", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: parent,
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -758,22 +778,22 @@ describe("executeAgent image transfer to a subagent", () => {
       transferScript('{"agent_name":"text-child","message":"look","image_ids":["img_1"]}'),
     );
     const fixture = executionDepsFixture(channel);
-    const childVersion: Version = {
-      ...versionFixture({ piiFiltering: false }),
+    const childVersion: AgentConfiguration = {
+      ...configurationFixture({ piiFiltering: false }),
       projectName: "text-child",
       // Not in the model registry, so image input is rejected.
       model: "gpt-test",
     };
     const deps = {
       ...fixture.deps,
-      projects: { get: async (name: string) => ({ ...projectFixture(), name }) },
-      versions: { get: async () => childVersion, list: async () => [childVersion] },
+      projects: withConfigurations({ get: async (name: string) => ({ ...projectFixture(), name }) }, ({ get: async () => childVersion, list: async () => [childVersion] }).get),
+
     } as unknown as ExecutionDeps;
 
     const chunks = await collect(
       executeAgent(deps, {
         project: { ...projectFixture(), name: "sample-agent" },
-        version: { ...parentVersion(), subagentList: [{ name: "text-child", type: "local" }] },
+        configuration: { ...parentVersion(), subagentList: [{ name: "text-child", type: "local" }] },
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -795,7 +815,7 @@ describe("executeAgent image transfer to a subagent", () => {
     await collect(
       executeAgent(deps, {
         project: parent,
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [
           { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
         ],
@@ -823,7 +843,7 @@ describe("executeAgent image transfer to a subagent", () => {
     await collect(
       executeAgent(deps, {
         project: parent,
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [{ role: "user", content: "draw me a cat" }],
       }),
     );
@@ -845,7 +865,7 @@ describe("executeAgent image transfer to a subagent", () => {
     await collect(
       executeAgent(deps, {
         project: parent,
-        version: { ...parentVersion(), parameters: { piiFiltering: false, imageGeneration: true } },
+        configuration: { ...parentVersion(), parameters: { piiFiltering: false, imageGeneration: true } },
         messages: [{ role: "user", content: "draw me a cat" }],
       }),
     );
@@ -865,38 +885,37 @@ describe("executeAgent nested transfer identity", () => {
       "simple-image": {
         ...projectFixture(),
         name: "simple-image",
-        projectType: "image",
-        publishedVersion: "1",
+        projectType: "agent",
       },
     };
-    const versions: Record<string, Version> = {
+    const versions: Record<string, AgentConfiguration> = {
       "bruce-bot": {
-        ...versionFixture({ piiFiltering: false }),
+        ...configurationFixture({ piiFiltering: false }),
         projectName: "bruce-bot",
         model: "google/gemini-2.5-flash",
         subagentList: [{ name: "sample-agent", type: "local" }],
       },
       "sample-agent": {
-        ...versionFixture({ piiFiltering: false }),
+        ...configurationFixture({ piiFiltering: false }),
         projectName: "sample-agent",
         model: "google/gemini-2.5-flash",
         subagentList: [{ name: "simple-image", type: "local" }],
       },
       "simple-image": {
-        ...versionFixture({ piiFiltering: false }),
+        ...configurationFixture({ piiFiltering: false }),
         projectName: "simple-image",
-        model: DEFAULT_IMAGE_MODEL ?? "openai/gpt-image-2",
+        model: "google/gemini-2.5-flash",
+      parameters: { piiFiltering: false, imageGeneration: true, imageModel: DEFAULT_IMAGE_MODEL },
       },
     };
     const traces: Trace[] = [];
     const deps = {
       ...fixture.deps,
-      projects: { get: async (name: string) => projects[name] ?? null },
-      versions: { get: async (project: string) => versions[project] ?? null, list: async () => [] },
+      projects: withConfigurations({ get: async (name: string) => projects[name] ?? null }, ({ get: async (project: string) => versions[project] ?? null, list: async () => [] }).get),
+
       traces: { put: async (trace: Trace) => void traces.push(trace) },
-      traceSampleRate: 1,
     } as unknown as ExecutionDeps;
-    return { deps, traces, top: projects["bruce-bot"] as Project, version: versions["bruce-bot"] as Version };
+    return { deps, traces, top: projects["bruce-bot"] as Project, configuration: versions["bruce-bot"] as AgentConfiguration };
   }
 
   const chainScript = [
@@ -907,24 +926,25 @@ describe("executeAgent nested transfer identity", () => {
     ],
     // …sample-agent hands off again…
     [
-      toolCallChunk(0, "t2", "delegate_simple-image", "{\"input\":\"a fox\",\"image_ids\":[]}"),
+      toolCallChunk(0, "t2", "handoff_simple-image", "{\"input\":\"a fox\",\"image_ids\":[]}"),
       usageChunk(2, 2),
     ],
-    // …sample-agent wraps up, then bruce-bot answers.
+    [toolCallChunk(0, "image", "GenerateImage", '{"prompt":"a fox"}'), usageChunk(1, 1)],
+    // The handed-off Agent finishes the delegated run, then the parent answers.
     [contentChunk("passing it up"), usageChunk(3, 3)],
     [contentChunk("here is your fox"), usageChunk(4, 4)],
   ];
 
-  it("reports the innermost agent and the full chain, not the first hop", async () => {
+  it("keeps a handoff within the delegated output scope", async () => {
     const channel = new FakeChannel(chainScript);
-    const { deps, top, version } = chainDeps(channel);
+    const { deps, top, configuration } = chainDeps(channel);
 
-    const chunks = await collect(executeAgent(deps, { project: top, version, messages: [{ role: "user", content: "draw a fox" }] }));
+    const chunks = await collect(executeAgent(deps, { project: top, configuration, messages: [{ role: "user", content: "draw a fox" }] }));
 
-    // The image came from two levels down; before this it surfaced as "sample-agent".
+    // Handoff changes the active Agent inside the same delegated Runner.
     const imageChunk = chunks.find((c) => c.image);
-    expect(imageChunk?.author).toBe("simple-image");
-    expect(imageChunk?.authorPath).toEqual(["sample-agent", "simple-image"]);
+    expect(imageChunk?.author).toBe("sample-agent");
+    expect(imageChunk?.authorPath).toEqual(["sample-agent"]);
     // The middle hop still reports itself for its own output.
     const middle = chunks.find((c) => c.author === "sample-agent" && c.delta?.content);
     expect(middle?.authorPath).toEqual(["sample-agent"]);
@@ -935,15 +955,15 @@ describe("executeAgent nested transfer identity", () => {
 
   it("records native nested agents and action tools in one trace hierarchy", async () => {
     const channel = new FakeChannel(chainScript);
-    const { deps, traces, top, version } = chainDeps(channel);
+    const { deps, traces, top, configuration } = chainDeps(channel);
 
-    await collect(executeAgent(deps, { project: top, version, messages: [{ role: "user", content: "draw a fox" }] }));
+    await collect(executeAgent(deps, { project: top, configuration, messages: [{ role: "user", content: "draw a fox" }] }));
 
-    // Specialized image execution retains its own image trace; text agents share SDK spans.
-    expect(traces.map((trace) => trace.projectName).sort()).toEqual(["bruce-bot", "simple-image"]);
+    // Agent handoffs and image tools stay in the parent Trace hierarchy.
+    expect(traces.map((trace) => trace.projectName).sort()).toEqual(["bruce-bot"]);
     const spans = traces.find((trace) => trace.projectName === "bruce-bot")!.spans;
-    const child = spans.find((span) => span.kind === "subagent" && span.name === "sample-agent");
-    const action = spans.find((span) => span.kind === "tool" && span.name === "delegate_simple-image");
+    const child = spans.find((span) => span.kind === "subagent" && span.name === "simple-image");
+    const action = spans.find((span) => span.kind === "tool" && span.name === "GenerateImage");
     expect(child?.parentSpanId).toBeDefined();
     expect(action?.parentSpanId).toBeDefined();
     const ancestors = new Set<string>();
@@ -978,7 +998,7 @@ describe("executeAgent registry bindings that no longer resolve", () => {
   }
 
   const boundToTwoSkills = () => ({
-    ...versionFixture({ piiFiltering: false }),
+    ...configurationFixture({ piiFiltering: false }),
     skillList: ["alive", "deleted"],
   });
 
@@ -999,7 +1019,7 @@ describe("executeAgent registry bindings that no longer resolve", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: boundToTwoSkills(),
+        configuration: boundToTwoSkills(),
         messages: [{ role: "user", content: "use a skill" }],
       }),
     );
@@ -1034,7 +1054,7 @@ describe("executeAgent registry bindings that no longer resolve", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: boundToTwoSkills(),
+        configuration: boundToTwoSkills(),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -1048,13 +1068,13 @@ describe("executeAgent registry bindings that no longer resolve", () => {
     const { deps } = executionDepsFixture(channel);
     deps.projects.get = (async (name: string) =>
       name === "alive-agent" ? { ...projectFixture(), name } : null) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = async () => ({ ...versionFixture({ piiFiltering: false }), projectName: "alive-agent" });
+    deps.projects = withConfigurations(deps.projects, async () => ({ ...configurationFixture({ piiFiltering: false }), projectName: "alive-agent" })) as ExecutionDeps["projects"];
 
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
+        configuration: {
+          ...configurationFixture({ piiFiltering: false }),
           subagentList: [
             { name: "alive-agent", type: "local" },
             { name: "deleted-agent", type: "local" },
@@ -1085,8 +1105,8 @@ describe("executeAgent reports the bindings it could not use", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
+        configuration: {
+          ...configurationFixture({ piiFiltering: false }),
           skillList: ["gone-skill"],
           subagentList: [{ name: "gone-agent", type: "local" }],
         },
@@ -1120,8 +1140,8 @@ describe("executeAgent reports the bindings it could not use", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
+        configuration: {
+          ...configurationFixture({ piiFiltering: false }),
           mcpList: [{ name: "gone-mcp" }],
         },
         messages: [{ role: "user", content: "hi" }],
@@ -1148,7 +1168,7 @@ describe("executeAgent reports the bindings it could not use", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: { ...versionFixture({ piiFiltering: false }), skillList: ["here"] },
+        configuration: { ...configurationFixture({ piiFiltering: false }), skillList: ["here"] },
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -1164,7 +1184,7 @@ describe("executeAgent PII filtering", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering }),
+        configuration: configurationFixture({ piiFiltering }),
         messages: [{ role: "user", content: "email@example.com or 010-1234-5678" }],
       }),
     );
@@ -1203,7 +1223,7 @@ describe("executeAgent MCP dispatch SSRF re-check", () => {
       const chunks = await collect(
         executeAgent(deps, {
           project: projectFixture(),
-          version: { ...versionFixture({ piiFiltering: false }), mcpList: [{ name: "internal-mcp" }] },
+          configuration: { ...configurationFixture({ piiFiltering: false }), mcpList: [{ name: "internal-mcp" }] },
           messages: [{ role: "user", content: "hi" }],
         }),
       );
@@ -1222,210 +1242,6 @@ describe("executeAgent MCP dispatch SSRF re-check", () => {
 });
 
 describe("executeAgent local subagent projectType dispatch", () => {
-  it("runs an image-project child through image generation, never chat/completions", async () => {
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "call_t", "delegate_painter-img", "{\"input\":\"a cat\",\"image_ids\":[]}"),
-        usageChunk(1, 1),
-      ],
-      [contentChunk("Here you go."), usageChunk(1, 1)],
-    ]);
-    const { deps, recorded, imageModels } = executionDepsFixture(channel);
-    deps.projects.get = (async (name: string) =>
-      name === "painter-img"
-        ? { ...projectFixture(), name: "painter-img", projectType: "image" }
-        : null) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string, versionName: string) =>
-      projectName === "painter-img" && versionName === "v1"
-        ? {
-            ...versionFixture({ piiFiltering: false }),
-            projectName: "painter-img",
-            model: "google/gemini-3-pro-image",
-          }
-        : null) as ExecutionDeps["versions"]["get"];
-
-    const chunks = await collect(
-      executeAgent(deps, {
-        project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
-          subagentList: [{ name: "painter-img", type: "local" }],
-        },
-        messages: [{ role: "user", content: "고양이 그려줘" }],
-      }),
-    );
-
-    // The child's image model runs through the image channel only.
-    expect(imageModels).toEqual(["google/gemini-3-pro-image"]);
-    expect(channel.seenParams.every((p) => p.model === "gpt-test")).toBe(true);
-
-    const imageChunk = chunks.find((c) => c.image);
-    expect(imageChunk?.author).toBe("painter-img");
-    expect(imageChunk?.image?.prompt).toBe("a cat");
-    // The child's model, not the parent's `gpt-test` — which is the whole reason
-    // the artifact row reads this off the chunk instead of off the run.
-    expect(imageChunk?.image?.model).toBe("google/gemini-3-pro-image");
-    expect(chunks.some((c) => c.error)).toBe(false);
-    // Usage is billed to the child project under its image model.
-    expect(
-      recorded.some((d) => d.projectName === "painter-img" && d.model === "google/gemini-3-pro-image"),
-    ).toBe(true);
-  });
-
-  it("prepends the image child's own system prompt as style on a transfer", async () => {
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "call_t", "delegate_painter-img", "{\"input\":\"a cat\",\"image_ids\":[]}"),
-        usageChunk(1, 1),
-      ],
-      [contentChunk("Here you go."), usageChunk(1, 1)],
-    ]);
-    const { deps } = executionDepsFixture(channel);
-    const seen: string[] = [];
-    const drawUnstyled = deps.imageChannel.generateImage;
-    deps.imageChannel.generateImage = async (params) => {
-      seen.push(params.prompt);
-      return drawUnstyled(params);
-    };
-    deps.projects.get = (async (name: string) =>
-      name === "painter-img"
-        ? { ...projectFixture(), name: "painter-img", projectType: "image" }
-        : null) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string, versionName: string) =>
-      projectName === "painter-img" && versionName === "v1"
-        ? {
-            ...versionFixture({ piiFiltering: false }),
-            projectName: "painter-img",
-            model: "google/gemini-3-pro-image",
-            systemPrompt: "Watercolor, no text.",
-          }
-        : null) as ExecutionDeps["versions"]["get"];
-
-    await collect(
-      executeAgent(deps, {
-        project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
-          subagentList: [{ name: "painter-img", type: "local" }],
-        },
-        messages: [{ role: "user", content: "고양이 그려줘" }],
-      }),
-    );
-
-    expect(seen).toEqual(["Watercolor, no text.\n\na cat"]);
-  });
-
-  it("says why an image child came back with nothing, rather than leaving the model to guess", async () => {
-    // The reported failure, end to end. The provider refuses, `runImageSubagent`
-    // reports it as an authored `error` chunk and returns "" — and every
-    // consumer drops authored errors, on the grounds that the parent answers
-    // past them. It did answer, but until the transfer folded the reason into
-    // its context it had none, and wrote one of its own.
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "call_t", "delegate_painter-img", "{\"input\":\"a cat\",\"image_ids\":[]}"),
-        usageChunk(1, 1),
-      ],
-      [contentChunk("The image was refused."), usageChunk(1, 1)],
-    ]);
-    const { deps } = executionDepsFixture(channel);
-    deps.imageChannel.generateImage = async () => {
-      throw new Error("400 rejected by the safety system. safety_violations=[sexual].");
-    };
-    deps.projects.get = (async (name: string) =>
-      name === "painter-img"
-        ? { ...projectFixture(), name: "painter-img", projectType: "image" }
-        : null) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string, versionName: string) =>
-      projectName === "painter-img" && versionName === "v1"
-        ? {
-            ...versionFixture({ piiFiltering: false }),
-            projectName: "painter-img",
-            model: "google/gemini-3-pro-image",
-          }
-        : null) as ExecutionDeps["versions"]["get"];
-
-    const chunks = await collect(
-      executeAgent(deps, {
-        project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
-          subagentList: [{ name: "painter-img", type: "local" }],
-        },
-        messages: [{ role: "user", content: "고양이 그려줘" }],
-      }),
-    );
-
-    // The child still reports the way it always did, and draws nothing.
-    const failure = chunks.find((chunk) => chunk.error);
-    expect(failure?.author).toBe("painter-img");
-    expect(failure?.error).toContain("safety system");
-    expect(chunks.some((chunk) => chunk.image)).toBe(false);
-
-    // The reader is told, on a channel nothing filters by author.
-    const warning = chunks.find((chunk) => chunk.warning);
-    expect(warning?.author).toBeUndefined();
-    expect(warning?.warning).toContain("painter-img");
-    expect(warning?.warning).toContain("safety system");
-
-    // And so is the model, in the very turn it answers from.
-    const context = (channel.seenParams[1]?.messages ?? [])
-      .filter((message) => message.role === "tool")
-      .map((message) => (typeof message.content === "string" ? message.content : ""))
-      .join("\n");
-    expect(context).toContain("safety system");
-  });
-
-  it("answers a prompt-project child through its user prompt template", async () => {
-    // A prompt project's behaviour IS its template. Sending the transfer down
-    // the tool loop drops it and the child answers from a bare system prompt.
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "call_t", "delegate_summarizer", "{\"input\":\"three otters\",\"image_ids\":[]}"),
-        usageChunk(1, 1),
-      ],
-      [contentChunk("Summarized."), usageChunk(1, 1)],
-      [contentChunk("Passed on."), usageChunk(1, 1)],
-    ]);
-    const { deps } = executionDepsFixture(channel);
-    deps.projects.get = (async (name: string) =>
-      name === "summarizer"
-        ? { ...projectFixture(), name: "summarizer", projectType: "llm" }
-        : null) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string, versionName: string) =>
-      projectName === "summarizer" && versionName === "v1"
-        ? {
-            ...versionFixture({ piiFiltering: false }),
-            projectName: "summarizer",
-            systemPrompt: "You summarize.",
-            userPromptTemplate: "Answer in exactly one sentence.",
-          }
-        : null) as ExecutionDeps["versions"]["get"];
-
-    const chunks = await collect(
-      executeAgent(deps, {
-        project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
-          subagentList: [{ name: "summarizer", type: "local" }],
-        },
-        messages: [{ role: "user", content: "summarize this" }],
-      }),
-    );
-
-    const childRequest = channel.seenParams[1];
-    expect(childRequest?.messages.map((m) => m.content)).toEqual([
-      `You summarize.\n\n---\n\n${CLOCK_LINE}`,
-      "Answer in exactly one sentence.",
-      "three otters",
-    ]);
-    // No tool loop: the child was never offered tools.
-    expect(childRequest?.tools).toBeUndefined();
-    expect(chunks.some((c) => c.error)).toBe(false);
-    expect(chunks.find((c) => c.author === "summarizer" && c.delta?.content)?.delta?.content).toBe(
-      "Summarized.",
-    );
-  });
 
   it("pins the clock for the whole run, so a child cannot say a different now", async () => {
     const channel = new FakeChannel([
@@ -1451,23 +1267,23 @@ describe("executeAgent local subagent projectType dispatch", () => {
     deps.now = () => instants[Math.min(reads++, instants.length - 1)] as Date;
     deps.projects.get = (async (name: string) =>
       name === "summarizer"
-        ? { ...projectFixture(), name: "summarizer", projectType: "llm" }
+        ? { ...projectFixture(), name: "summarizer", projectType: "agent" }
         : null) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string, versionName: string) =>
-      projectName === "summarizer" && versionName === "v1"
+    deps.projects = withConfigurations(deps.projects, async (projectName: string) =>
+      projectName === "summarizer"
         ? {
-            ...versionFixture({ piiFiltering: false }),
+            ...configurationFixture({ piiFiltering: false }),
             projectName: "summarizer",
             systemPrompt: "You summarize.",
             userPromptTemplate: "Answer in exactly one sentence.",
           }
-        : null) as ExecutionDeps["versions"]["get"];
+        : null) as ExecutionDeps["projects"];
 
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
+        configuration: {
+          ...configurationFixture({ piiFiltering: false }),
           subagentList: [{ name: "summarizer", type: "local" }],
         },
         messages: [{ role: "user", content: "summarize this" }],
@@ -1488,10 +1304,10 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     const { deps, ...rest } = executionDepsFixture(channel);
     deps.projects.get = (async (name: string) =>
       name === "child" ? { ...projectFixture(), name: "child" } : null) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string) =>
+    deps.projects = withConfigurations(deps.projects, async (projectName: string) =>
       projectName === "child"
-        ? { ...versionFixture({ piiFiltering: false }), projectName: "child" }
-        : null) as ExecutionDeps["versions"]["get"];
+        ? { ...configurationFixture({ piiFiltering: false }), projectName: "child" }
+        : null) as ExecutionDeps["projects"];
     return { deps, ...rest };
   }
 
@@ -1506,7 +1322,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
 
   function parentVersion() {
     return {
-      ...versionFixture({ piiFiltering: false }),
+      ...configurationFixture({ piiFiltering: false }),
       subagentList: [{ name: "child", type: "local" as const }],
     };
   }
@@ -1519,7 +1335,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [
           { role: "user", content: "draw a cat" },
           { role: "assistant", content: "Here is an orange cat." },
@@ -1548,20 +1364,20 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     const { deps } = chainDeps(channel);
     // The child binds a skill and the fixture's skill repository rejects every
     // read. The parent binds none, so only the child's resolve reaches it.
-    deps.versions.get = (async (projectName: string) =>
+    deps.projects = withConfigurations(deps.projects, async (projectName: string) =>
       projectName === "child"
         ? {
-            ...versionFixture({ piiFiltering: false }),
+            ...configurationFixture({ piiFiltering: false }),
             projectName: "child",
             skillList: ["unreadable"],
           }
-        : null) as ExecutionDeps["versions"]["get"];
+        : null) as ExecutionDeps["projects"];
     const traces = captureTraces(deps);
 
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -1579,7 +1395,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [{ role: "user", content: "draw a cat" }],
       }),
     );
@@ -1608,21 +1424,21 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
       name === "child" || name === "child2"
         ? { ...projectFixture(), name }
         : null) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string) =>
+    deps.projects = withConfigurations(deps.projects, async (projectName: string) =>
       projectName === "child"
         ? {
-            ...versionFixture({ piiFiltering: false }),
+            ...configurationFixture({ piiFiltering: false }),
             projectName: "child",
             subagentList: [{ name: "child2", type: "local" as const }],
           }
         : projectName === "child2"
-          ? { ...versionFixture({ piiFiltering: false }), projectName: "child2" }
-          : null) as ExecutionDeps["versions"]["get"];
+          ? { ...configurationFixture({ piiFiltering: false }), projectName: "child2" }
+          : null) as ExecutionDeps["projects"];
 
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: parentVersion(),
+        configuration: parentVersion(),
         messages: [
           { role: "user", content: "draw a cat" },
           { role: "assistant", content: "Here is an orange cat." },
@@ -1639,47 +1455,6 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     expect(context.match(/Conversation context:/g)).toHaveLength(1);
   });
 
-  it("leaves an image child's prompt alone", async () => {
-    // The message IS the image prompt here, so a conversation prepended to it
-    // would be drawn rather than read.
-    const channel = new FakeChannel([
-      [
-        toolCallChunk(0, "call_t", "delegate_painter-img", "{\"input\":\"a bigger orange cat\",\"image_ids\":[]}"),
-        usageChunk(1, 1),
-      ],
-      [contentChunk("Here you go."), usageChunk(1, 1)],
-    ]);
-    const { deps } = executionDepsFixture(channel);
-    deps.projects.get = (async (name: string) =>
-      name === "painter-img"
-        ? { ...projectFixture(), name: "painter-img", projectType: "image" }
-        : null) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string) =>
-      projectName === "painter-img"
-        ? {
-            ...versionFixture({ piiFiltering: false }),
-            projectName: "painter-img",
-            model: "google/gemini-3-pro-image",
-          }
-        : null) as ExecutionDeps["versions"]["get"];
-
-    const chunks = await collect(
-      executeAgent(deps, {
-        project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
-          subagentList: [{ name: "painter-img", type: "local" }],
-        },
-        messages: [
-          { role: "user", content: "draw a cat" },
-          { role: "assistant", content: "Here is an orange cat." },
-          { role: "user", content: "make it bigger" },
-        ],
-      }),
-    );
-
-    expect(chunks.find((c) => c.image)?.image?.prompt).toBe("a bigger orange cat");
-  });
 });
 
 describe("executeAgent subagent turn budget", () => {
@@ -1701,22 +1476,22 @@ describe("executeAgent subagent turn budget", () => {
       ...projectFixture(),
       name,
     })) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string, versionName: string) =>
-      projectName === "child" && versionName === "v1"
+    deps.projects = withConfigurations(deps.projects, async (projectName: string) =>
+      projectName === "child"
         ? {
-            ...versionFixture({ piiFiltering: false }),
+            ...configurationFixture({ piiFiltering: false }),
             projectName: "child",
             model: "gpt-child",
             parameters: { piiFiltering: false, imageGeneration: true },
             maxTurn: 50,
           }
-        : null) as ExecutionDeps["versions"]["get"];
+        : null) as ExecutionDeps["projects"];
 
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
+        configuration: {
+          ...configurationFixture({ piiFiltering: false }),
           subagentList: [{ name: "child", type: "local" }],
           maxTurn: 3,
         },
@@ -1740,12 +1515,12 @@ describe("executeAgent subagent recursion guards", () => {
       ...projectFixture(),
       name,
     })) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string) => ({
-      ...versionFixture({ piiFiltering: false }),
+    deps.projects = withConfigurations(deps.projects, async (projectName: string) => ({
+      ...configurationFixture({ piiFiltering: false }),
       projectName,
       subagentList: [{ name: target(projectName), type: "local" as const }],
       maxTurn: 50,
-    })) as ExecutionDeps["versions"]["get"];
+    })) as ExecutionDeps["projects"];
     return { deps, recorded };
   }
 
@@ -1775,8 +1550,8 @@ describe("executeAgent subagent recursion guards", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
+        configuration: {
+          ...configurationFixture({ piiFiltering: false }),
           subagentList: [{ name: "child", type: "local" }],
         },
         messages: [{ role: "user", content: "start" }],
@@ -1813,21 +1588,21 @@ describe("executeAgent subagent recursion guards", () => {
       ...projectFixture(),
       name,
     })) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string) => {
+    deps.projects = withConfigurations(deps.projects, async (projectName: string) => {
       const depth = Number(projectName.replace("a", "")) || 0;
       return {
-        ...versionFixture({ piiFiltering: false }),
+        ...configurationFixture({ piiFiltering: false }),
         projectName,
         subagentList: [{ name: `a${depth + 1}`, type: "local" as const }],
         maxTurn: 50,
       };
-    }) as ExecutionDeps["versions"]["get"];
+    }) as ExecutionDeps["projects"];
 
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
+        configuration: {
+          ...configurationFixture({ piiFiltering: false }),
           subagentList: [{ name: "a1", type: "local" }],
         },
         messages: [{ role: "user", content: "start" }],
@@ -1874,8 +1649,8 @@ describe("executeAgent remote A2A image subagent", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
+        configuration: {
+          ...configurationFixture({ piiFiltering: false }),
           subagentList: [{ name: "painter-a2a", type: "remote" }],
         },
         messages: [{ role: "user", content: "고양이를 그려줘" }],
@@ -1953,7 +1728,7 @@ describe("executeAgent remote A2A conversation continuity", () => {
     await collect(
       executeAgent(painterDeps(new FakeChannel(transferTurn()), rows), {
         project: projectFixture(),
-        version: { ...versionFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
+        configuration: { ...configurationFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
         messages: [{ role: "user", content: "고양이를 그려줘" }],
         conversation,
       }),
@@ -1961,7 +1736,7 @@ describe("executeAgent remote A2A conversation continuity", () => {
     await collect(
       executeAgent(painterDeps(new FakeChannel(transferTurn()), rows), {
         project: projectFixture(),
-        version: { ...versionFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
+        configuration: { ...configurationFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
         messages: [{ role: "user", content: "한 마리 더" }],
         conversation,
       }),
@@ -1981,7 +1756,7 @@ describe("executeAgent remote A2A conversation continuity", () => {
     await collect(
       executeAgent(painterDeps(new FakeChannel(transferTurn()), rows), {
         project: projectFixture(),
-        version: { ...versionFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
+        configuration: { ...configurationFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
         messages: [{ role: "user", content: "고양이를 그려줘" }],
       }),
     );
@@ -1995,13 +1770,13 @@ describe("execution tracing policy", () => {
   it("always traces agent runs", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
-    deps.traceSampleRate = 0;
+
     const traces = captureTraces(deps);
 
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: false }),
+        configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -2022,7 +1797,7 @@ describe("execution tracing policy", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: false }),
+        configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -2032,18 +1807,17 @@ describe("execution tracing policy", () => {
     expect(topLevel.every((chunk) => chunk.traceId === traces[0]?.traceId)).toBe(true);
   });
 
-  it("stamps a sampled prompt traceId on its top-level chunks", async () => {
+  it("stamps the shared facade traceId on its top-level chunks", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     deps.channel = scriptedModels(channel);
-    deps.traceSampleRate = 1;
-    deps.sample = () => 0;
+
     const traces = captureTraces(deps);
 
     const chunks = await collect(
       executeProjectStream(deps, {
-        project: { ...projectFixture(), projectType: "llm" },
-        version: versionFixture({ piiFiltering: false }),
+        project: { ...projectFixture(), projectType: "agent" },
+        configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -2063,7 +1837,7 @@ describe("execution tracing policy", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: false }),
+        configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -2082,7 +1856,7 @@ describe("execution tracing policy", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: false, memoryRecall: true }),
+        configuration: configurationFixture({ piiFiltering: false, memoryRecall: true }),
         messages: [{ role: "user", content: "what did we decide?" }],
       }),
     );
@@ -2096,29 +1870,6 @@ describe("execution tracing policy", () => {
     expect(memory?.output).toMatchObject({ asked: 0, warnings: 1 });
   });
 
-  it("honors the configured sampling rate for non-agent runs", async () => {
-    const skippedChannel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
-    const skippedFixture = executionDepsFixture(skippedChannel);
-    skippedFixture.deps.traceSampleRate = 0;
-    const skipped = captureTraces(skippedFixture.deps);
-    const project = { ...projectFixture(), projectType: "llm" as const };
-
-    await executeVersion(skippedFixture.deps, {
-      project,
-      version: versionFixture({ piiFiltering: false }),
-    });
-    expect(skipped).toHaveLength(0);
-
-    const tracedChannel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
-    const tracedFixture = executionDepsFixture(tracedChannel);
-    tracedFixture.deps.traceSampleRate = 1;
-    const traced = captureTraces(tracedFixture.deps);
-    await executeVersion(tracedFixture.deps, {
-      project,
-      version: versionFixture({ piiFiltering: false }),
-    });
-    expect(traced).toHaveLength(1);
-  });
 });
 
 describe("executeProject non-streaming dispatch", () => {
@@ -2128,7 +1879,7 @@ describe("executeProject non-streaming dispatch", () => {
 
     const run = await executeProject(deps, {
       project: projectFixture(),
-      version: versionFixture({ piiFiltering: false }),
+      configuration: configurationFixture({ piiFiltering: false }),
       messages: [{ role: "user", content: "hi" }],
     });
 
@@ -2136,33 +1887,6 @@ describe("executeProject non-streaming dispatch", () => {
     expect(run.images).toEqual([]);
     expect(run.usage.inputTokens).toBe(3);
     expect(run.usage.outputTokens).toBe(5);
-  });
-
-  it("runs an llm project through the single-shot path", async () => {
-    const channel = new FakeChannel([[contentChunk("plain answer"), usageChunk(1, 1)]]);
-    const { deps } = executionDepsFixture(channel);
-
-    const run = await executeProject(deps, {
-      project: { ...projectFixture(), projectType: "llm" },
-      version: versionFixture({ piiFiltering: false }),
-      messages: [{ role: "user", content: "hi" }],
-    });
-
-    expect(run.content).toBe("plain answer");
-    expect(run.images).toEqual([]);
-  });
-
-  it("refuses an image project instead of running it as text", async () => {
-    const channel = new FakeChannel([]);
-    const { deps } = executionDepsFixture(channel);
-    const input = {
-      project: { ...projectFixture(), projectType: "image" as const },
-      version: versionFixture({ piiFiltering: false }),
-      messages: [],
-    };
-
-    await expect(executeProject(deps, input)).rejects.toBeInstanceOf(ValidationError);
-    expect(() => executeProjectStream(deps, input)).toThrow(ValidationError);
   });
 
   /**
@@ -2180,8 +1904,8 @@ describe("executeProject non-streaming dispatch", () => {
 
     const run = await executeProject(deps, {
       project: projectFixture(),
-      version: {
-        ...versionFixture({ piiFiltering: false }),
+      configuration: {
+        ...configurationFixture({ piiFiltering: false }),
         skillList: ["gone-skill"],
         subagentList: [{ name: "gone-agent", type: "local" }],
       },
@@ -2202,7 +1926,7 @@ describe("executeProject non-streaming dispatch", () => {
 
     const run = await executeProject(deps, {
       project: projectFixture(),
-      version: versionFixture({ piiFiltering: false }),
+      configuration: configurationFixture({ piiFiltering: false }),
       messages: [{ role: "user", content: "hi" }],
     });
 
@@ -2305,7 +2029,7 @@ describe("executeAgent project type", () => {
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: versionFixture({ piiFiltering: false }),
+        configuration: configurationFixture({ piiFiltering: false }),
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -2313,26 +2037,6 @@ describe("executeAgent project type", () => {
     expect(chunks.some((chunk) => chunk.delta?.content === "answer")).toBe(true);
   });
 
-  it.each(["llm", "image"] as const)("refuses a %s project before dispatching it", async (projectType) => {
-    const channel = new FakeChannel([[contentChunk("should never run"), usageChunk(1, 1)]]);
-    const { deps, recorded } = executionDepsFixture(channel);
-
-    await expect(
-      collect(
-        executeAgent(deps, {
-          project: { ...projectFixture(), projectType },
-          version: versionFixture({ piiFiltering: false }),
-          messages: [{ role: "user", content: "hi" }],
-        }),
-      ),
-    ).rejects.toBeInstanceOf(ValidationError);
-
-    // The refusal has to come *before* the run, not from something downstream
-    // failing: an llm project would otherwise answer from a bare system prompt
-    // and succeed, and an image model would reach chat/completions.
-    expect(channel.calls).toBe(0);
-    expect(recorded).toEqual([]);
-  });
 });
 
 describe("executeAgent retrieval usage", () => {
@@ -2368,7 +2072,7 @@ describe("executeAgent retrieval usage", () => {
 
     await collect(executeAgent(deps, {
       project: projectFixture(),
-      version: versionFixture({ piiFiltering: false, dynamicCapabilities: true }),
+      configuration: configurationFixture({ piiFiltering: false, dynamicCapabilities: true }),
       messages: [{ role: "user", content: "find the AWS docs" }],
     }));
 
@@ -2393,144 +2097,22 @@ describe("executeAgent retrieval usage", () => {
  * construct. That is also where its `done` chunk went missing once.
  */
 describe("streamProjectRun", () => {
-  function imageProject(): { project: Project; version: Version } {
-    return {
-      project: { ...projectFixture(), projectType: "image" },
-      version: {
-        ...versionFixture({ piiFiltering: false }),
-        model: DEFAULT_IMAGE_MODEL!,
-        userPromptTemplate: "a {{animal}} in watercolour",
-      },
-    };
-  }
-
-  it("streams an image project as the picture, what it cost, and the ending", async () => {
-    const { deps, imageModels, recorded } = executionDepsFixture(new FakeChannel([]));
-
-    const chunks = await collect(
-      streamProjectRun(deps, {
-        ...imageProject(),
-        messages: [{ role: "user", content: "a fox on a bicycle" }],
-      }),
-    );
-
-    expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
-    expect(chunks).toEqual([
-      { image: { b64: "aW1n", mimeType: "image/png", model: DEFAULT_IMAGE_MODEL } },
-      { usage: expect.objectContaining({ inputTokens: 10, outputTokens: 100 }) },
-      { done: true },
-    ]);
-    // Booked against the project like any other run, not silently free.
-    expect(recorded).toHaveLength(1);
-  });
-
-  it("edits only the source images in the latest user turn", async () => {
-    const { deps, edits, imageModels } = executionDepsFixture(new FakeChannel([]));
-    const older = { role: "user" as const, content: [
-      { type: "image_url" as const, image_url: { url: "data:image/png;base64,b2xk" } },
-    ] };
-    await collect(streamProjectRun(deps, {
-      ...imageProject(),
-      messages: [older, { role: "user", content: [
-        { type: "text", text: "recolor this" },
-        { type: "image_url", image_url: { url: "data:image/png;base64,bmV3" } },
-      ] }],
+  it("streams Agent text, image output, usage and completion through one facade", async () => {
+    const channel = new FakeChannel(imageCallScript);
+    const { deps, imageModels, recorded } = executionDepsFixture(channel);
+    const chunks = await collect(streamProjectRun(deps, {
+      project: projectFixture(), configuration: configurationFixture({ piiFiltering: false, imageGeneration: true }),
+      messages: [{ role: "user", content: "Draw a red fox" }],
     }));
-    expect(edits).toEqual([{
-      model: DEFAULT_IMAGE_MODEL,
-      prompt: "You are helpful.\n\nrecolor this",
-      sources: ["bmV3"],
-    }]);
-    expect(imageModels).toEqual([]);
-
-    await collect(streamProjectRun(deps, {
-      ...imageProject(),
-      messages: [older, { role: "user", content: "draw another" }],
-    }));
-    expect(edits).toHaveLength(1);
     expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
-  });
-
-  it("refuses an image edit source that cannot be decoded inline", async () => {
-    const { deps, edits, imageModels } = executionDepsFixture(new FakeChannel([]));
-    await expect(collect(streamProjectRun(deps, {
-      ...imageProject(),
-      messages: [{ role: "user", content: [
-        { type: "text", text: "edit it" },
-        { type: "image_url", image_url: { url: "https://private.example/image.png" } },
-      ] }],
-    }))).rejects.toBeInstanceOf(ValidationError);
-    expect(edits).toEqual([]);
-    expect(imageModels).toEqual([]);
-  });
-
-  it("draws the newest user turn, and falls back to the version's template", async () => {
-    const { deps } = executionDepsFixture(new FakeChannel([]));
-    const prompts: string[] = [];
-    deps.imageChannel.generateImage = (async (params: { prompt: string }) => {
-      prompts.push(params.prompt);
-      return {
-        b64: "aW1n",
-        mimeType: "image/png",
-        usage: { textInputTokens: 1, imageInputTokens: 0, imageOutputTokens: 1 },
-      };
-    }) as ExecutionDeps["imageChannel"]["generateImage"];
-
-    await collect(
-      streamProjectRun(deps, {
-        ...imageProject(),
-        messages: [
-          { role: "user", content: "ignore this" },
-          { role: "assistant", content: "ok" },
-          { role: "user", content: "a heron" },
-        ],
-      }),
-    );
-    await collect(
-      streamProjectRun(deps, {
-        ...imageProject(),
-        messages: [],
-        variables: { animal: "otter" },
-      }),
-    );
-
-    expect(prompts).toEqual([
-      "You are helpful.\n\na heron",
-      "You are helpful.\n\na otter in watercolour",
-    ]);
-  });
-
-  it("sends every other project type down the completion path", async () => {
-    const channel = new FakeChannel([[contentChunk("plain answer"), usageChunk(1, 1)]]);
-    const { deps } = executionDepsFixture(channel);
-
-    const chunks = await collect(
-      streamProjectRun(deps, {
-        project: { ...projectFixture(), projectType: "llm" },
-        version: versionFixture({ piiFiltering: false }),
-        messages: [{ role: "user", content: "hi" }],
-      }),
-    );
-
-    expect(chunks.some((chunk) => chunk.delta?.content === "plain answer")).toBe(true);
+    expect(chunks.some(chunk => chunk.image?.mimeType === "image/png")).toBe(true);
+    expect(chunks.some(chunk => chunk.delta?.content)).toBe(true);
+    expect(chunks.some(chunk => chunk.usage)).toBe(true);
+    expect(chunks.some(chunk => chunk.done)).toBe(true);
+    expect(recorded.some(record => record.model === DEFAULT_IMAGE_MODEL)).toBe(true);
   });
 });
 
-/**
- * What the facade carries down to whichever executor it picked.
- *
- * `caller` was declared on the facade's input, documented, and set by both
- * routes that go through it — and then dropped, because each branch rebuilt the
- * executor's input as a fresh literal and none of the four mentioned it. An
- * optional field makes that a silent drop rather than a type error, so the same
- * version named its caller on `/agent`, in a chat and in Slack (all of which
- * call `executeAgent` directly) while running anonymously on `/predict` and
- * `/chat/completions`.
- *
- * Asserted on the prompt the channel actually received, not on the input object:
- * a projection that carried the field to an executor that then ignored it would
- * pass an argument-shape test and fail the user exactly the same way.
- */
 describe("executeProject dispatch carries the caller", () => {
   const CALLER = { displayName: "Bruce" };
 
@@ -2542,7 +2124,7 @@ describe("executeProject dispatch carries the caller", () => {
     return String(channel.seenParams[0]?.messages[0]?.content ?? "");
   }
 
-  it.each(["agent", "llm"] as const)("through the streaming path of a %s project", async (projectType) => {
+  it.each(["agent"] as const)("through the streaming path of a %s project", async (projectType) => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
 
@@ -2550,7 +2132,7 @@ describe("executeProject dispatch carries the caller", () => {
       collect(
         executeProjectStream(deps, {
           project: { ...projectFixture(), projectType },
-          version: versionFixture({ piiFiltering: false, callerContext: true }),
+          configuration: configurationFixture({ piiFiltering: false, callerContext: true }),
           messages: [{ role: "user", content: "hi" }],
           caller: CALLER,
         }),
@@ -2560,14 +2142,14 @@ describe("executeProject dispatch carries the caller", () => {
     expect(prompt).toContain("You are answering Bruce.");
   });
 
-  it.each(["agent", "llm"] as const)("through the collected path of a %s project", async (projectType) => {
+  it.each(["agent"] as const)("through the collected path of a %s project", async (projectType) => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
 
     const prompt = await systemPromptOf(channel, () =>
       executeProject(deps, {
         project: { ...projectFixture(), projectType },
-        version: versionFixture({ piiFiltering: false, callerContext: true }),
+        configuration: configurationFixture({ piiFiltering: false, callerContext: true }),
         messages: [{ role: "user", content: "hi" }],
         caller: CALLER,
       }),
@@ -2587,7 +2169,7 @@ describe("executeProject dispatch carries the caller", () => {
       collect(
         executeProjectStream(deps, {
           project: projectFixture(),
-          version: versionFixture({ piiFiltering: false }),
+          configuration: configurationFixture({ piiFiltering: false }),
           messages: [{ role: "user", content: "hi" }],
           caller: CALLER,
         }),
@@ -2610,7 +2192,7 @@ describe("a transfer carries who is asking", () => {
   /** A parent that transfers to `child`, whose version this test decides. */
   function transferDeps(
     channel: FakeChannel,
-    childParameters: VersionParameters,
+    childParameters: AgentParameters,
     childType: "agent" | "llm" = "agent",
   ) {
     const { deps } = executionDepsFixture(channel);
@@ -2619,14 +2201,14 @@ describe("a transfer carries who is asking", () => {
       name,
       ...(name === "child" ? { projectType: childType } : {}),
     })) as ExecutionDeps["projects"]["get"];
-    deps.versions.get = (async (projectName: string) =>
+    deps.projects = withConfigurations(deps.projects, async (projectName: string) =>
       projectName === "child"
         ? {
-            ...versionFixture(childParameters),
+            ...configurationFixture(childParameters),
             projectName: "child",
             model: "gpt-child",
           }
-        : null) as ExecutionDeps["versions"]["get"];
+        : null) as ExecutionDeps["projects"];
     return deps;
   }
 
@@ -2644,8 +2226,8 @@ describe("a transfer carries who is asking", () => {
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false, callerContext: parentOptedIn }),
+        configuration: {
+          ...configurationFixture({ piiFiltering: false, callerContext: parentOptedIn }),
           subagentList: [{ name: "child", type: "local" }],
           maxTurn: 50,
         },
@@ -2667,18 +2249,6 @@ describe("a transfer carries who is asking", () => {
     expect(prompt).toContain("Asia/Seoul");
   });
 
-  it("names it through a prompt child too, which runs by another path", async () => {
-    // A prompt project answers a transfer through `runPromptSubagent`, not the
-    // tool loop — the second of the two places a child's prompt is assembled,
-    // and the one a fix applied to the first would silently miss.
-    const channel = script();
-    const deps = transferDeps(channel, { piiFiltering: false, callerContext: true }, "llm");
-
-    const prompt = await childPrompt(channel, deps, true);
-
-    expect(prompt).toContain("You are answering Bruce.");
-  });
-
   it("leaves a child that did not ask anonymous", async () => {
     const channel = script();
     const deps = transferDeps(channel, { piiFiltering: false });
@@ -2697,44 +2267,5 @@ describe("a transfer carries who is asking", () => {
     const prompt = await childPrompt(channel, deps, false);
 
     expect(prompt).toContain("You are answering Bruce.");
-  });
-});
-
-describe("client tools off the agent loop", () => {
-  const tool = {
-    type: "function" as const,
-    function: { name: "showMap", description: "Show a map", parameters: {} },
-  };
-
-  async function drain(source: AsyncGenerator<EngineChunk>): Promise<void> {
-    for await (const chunk of source) {
-      void chunk;
-    }
-  }
-
-  it("are refused for a prompt project on both dispatch points", async () => {
-    const { deps } = executionDepsFixture(new FakeChannel([]));
-    const input = {
-      project: { ...projectFixture(), projectType: "llm" as const },
-      version: versionFixture({ piiFiltering: false }),
-      messages: [{ role: "user" as const, content: "hi" }],
-      clientTools: [tool],
-    };
-    expect(() => executeProjectStream(deps, input)).toThrow(ValidationError);
-    await expect(executeProject(deps, input)).rejects.toBeInstanceOf(ValidationError);
-  });
-
-  it("are refused for an image project", async () => {
-    const { deps } = executionDepsFixture(new FakeChannel([]));
-    await expect(
-      drain(
-        streamProjectRun(deps, {
-          project: { ...projectFixture(), projectType: "image" },
-          version: { ...versionFixture({ piiFiltering: false }), model: DEFAULT_IMAGE_MODEL! },
-          messages: [{ role: "user", content: "a fox" }],
-          clientTools: [tool],
-        }),
-      ),
-    ).rejects.toBeInstanceOf(ValidationError);
   });
 });

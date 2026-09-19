@@ -1,23 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { findTemplateVariables } from "@/shared/template";
+import { useEffect, useRef, useState } from "react";
 import {
   previewPrompt,
-  type ProjectType,
   type PromptPreview,
-  type VersionInput,
+  type AgentConfigurationInput,
 } from "../../lib/api";
 import {
   Alert,
   Button,
   Code,
   Group,
-  Input,
   Spoiler,
   Stack,
   Text,
-  TextInput,
   Textarea,
 } from "@mantine/core";
 import { useLocale, useT } from "@/app/_i18n/provider";
@@ -55,14 +51,11 @@ function charCount(preview: PromptPreview): number {
  */
 export function PromptPreview({
   projectName,
-  projectType,
   draft,
   validationError,
-  versionName,
 }: {
   projectName: string;
-  projectType: ProjectType;
-  draft: VersionInput;
+  draft: AgentConfigurationInput;
   validationError: string | null;
   /**
    * The saved version the draft started from, or null for one never saved. The
@@ -70,11 +63,9 @@ export function PromptPreview({
    * server is dialled with the wrong headers, and the preview would describe a
    * request no run makes.
    */
-  versionName: string | null;
 }) {
   const [preview, setPreview] = useState<PromptPreview | null>(null);
   const [previewOf, setPreviewOf] = useState<string>("");
-  const [variables, setVariables] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,27 +83,16 @@ export function PromptPreview({
     };
   }, [latestOnly]);
 
-  // Only the user prompt template is rendered with variables — a {{var}} in
-  // the system prompt reaches the model as literal text, and an agent run
-  // never sends the template at all — so only a rendered template gets fields.
-  const varNames = useMemo(
-    () =>
-      projectType === "agent" ? [] : [...findTemplateVariables(draft.userPromptTemplate)],
-    [projectType, draft.userPromptTemplate],
-  );
   // Discovery and memory recall both depend on the request. Without either,
   // the box would suggest the assembled prompt varies when it does not.
   const usesRequest =
-    projectType === "agent" &&
     (draft.parameters.dynamicCapabilities === true || draft.parameters.memoryRecall === true);
   // The saved version identifies the stored header overrides a masked draft is
   // resolved against. Two versions can render the same fields but decrypt to
   // different credentials, so that identity is part of preview freshness too.
   const current = JSON.stringify({
     projectName,
-    versionName,
-    draft,
-    variables,
+      draft,
     ...(usesRequest ? { message } : {}),
   });
   const stale = preview !== null && (validationError !== null || previewOf !== current);
@@ -146,8 +126,6 @@ export function PromptPreview({
         projectName,
         {
           ...draft,
-          ...(versionName ? { versionName } : {}),
-          variables,
           ...(usesRequest && message.trim() ? { message } : {}),
         },
         controller.signal,
@@ -211,32 +189,6 @@ export function PromptPreview({
           </Button>
         </Group>
       </Group>
-
-      {varNames.length > 0 && (
-        <Input.Wrapper label={t("run.variables")} labelElement="div">
-          <Stack gap="xs" mt={4}>
-            {varNames.map((name) => (
-              <TextInput
-                key={name}
-                value={variables[name] ?? ""}
-                onChange={(e) => {
-                  // Captured here: React nulls `currentTarget` when the handler
-                  // returns, and the updater below runs on the next render.
-                  const value = e.currentTarget.value;
-                  setVariables((prev) => ({ ...prev, [name]: value }));
-                }}
-                leftSectionWidth={132}
-                leftSectionPointerEvents="none"
-                leftSection={
-                  <Text fz="xs" ff="monospace" c="dimmed" truncate px="xs">
-                    {name}
-                  </Text>
-                }
-              />
-            ))}
-          </Stack>
-        </Input.Wrapper>
-      )}
 
       {usesRequest && (
         <Textarea

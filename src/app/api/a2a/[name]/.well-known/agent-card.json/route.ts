@@ -24,7 +24,7 @@ export async function GET(request: Request, ctx: RouteContext): Promise<Response
   // JSON-RPC endpoint from the visibility gate — does not apply here. The same
   // 404 as an unpublished project, so the card's absence says nothing.
   if (!exposed || isProjectPrivate(exposed.project)) {
-    return Response.json({ error: "Project not found or has no published version" }, { status: 404 });
+    return Response.json({ error: "Project not found or has no Agent configuration" }, { status: 404 });
   }
   const requestedVersion = request.headers.get(A2A_VERSION_HEADER);
   if (requestedVersion && requestedVersion !== A2A_PROTOCOL_VERSION) {

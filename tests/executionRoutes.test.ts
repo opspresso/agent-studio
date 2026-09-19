@@ -1,16 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 
-const { projectGet, versionGet, calls } = vi.hoisted(() => ({
+const { projectGet, calls } = vi.hoisted(() => ({
   projectGet: vi.fn(),
-  versionGet: vi.fn(),
   calls: [] as string[],
 }));
 
 vi.mock("@/lib/container", () => ({
   executionDeps: {},
   projectUseCases: { get: projectGet },
-  versionUseCases: { get: versionGet },
   signArtifactUrl: undefined,
 }));
 
@@ -53,13 +51,13 @@ vi.mock("@/application/execution/runProject", () => ({
 }));
 
 const { POST: chatCompletions } = await import(
-  "@/app/api/projects/[name]/versions/[version]/chat/completions/route"
+  "@/app/api/projects/[name]/chat/completions/route"
 );
 const { POST: agent } = await import(
-  "@/app/api/projects/[name]/versions/[version]/agent/route"
+  "@/app/api/projects/[name]/agent/route"
 );
 
-const context = { params: Promise.resolve({ name: "proj", version: "1" }) };
+const context = { params: Promise.resolve({ name: "proj" }) };
 const request = (path: string, body: unknown) =>
   new Request(`http://localhost${path}`, {
     method: "POST",
@@ -73,25 +71,22 @@ beforeEach(() => {
     name: "proj",
     ownerEmail: "owner@example.com",
     projectType: "agent",
-  });
-  versionGet.mockResolvedValue({
+    configuration: {
     projectName: "proj",
-    versionName: "1",
     systemPrompt: "",
-    userPromptTemplate: "",
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
+    },
   });
 });
 
 describe("POST /chat/completions", () => {
   it("wraps a collected run in the OpenAI response shape", async () => {
     const response = await chatCompletions(
-      request("/api/projects/proj/versions/1/chat/completions", {
+      request("/api/projects/proj/chat/completions", {
         model: "a-client-side-alias",
         messages: [{ role: "user", content: "hello" }],
       }),
@@ -115,7 +110,7 @@ describe("POST /chat/completions", () => {
 
   it("streams OpenAI chunks and the terminal marker", async () => {
     const response = await chatCompletions(
-      request("/api/projects/proj/versions/1/chat/completions", {
+      request("/api/projects/proj/chat/completions", {
         messages: [{ role: "user", content: "hello" }],
         stream: true,
       }),
@@ -135,7 +130,7 @@ describe("POST /chat/completions", () => {
 describe("POST /agent", () => {
   it("streams the agent facade without reshaping its chunks", async () => {
     const response = await agent(
-      request("/api/projects/proj/versions/1/agent", {
+      request("/api/projects/proj/agent", {
         messages: [{ role: "user", content: "hello" }],
       }),
       context,
@@ -151,7 +146,7 @@ describe("POST /agent", () => {
 
   it("rejects an empty transcript before starting a run", async () => {
     const response = await agent(
-      request("/api/projects/proj/versions/1/agent", { messages: [] }),
+      request("/api/projects/proj/agent", { messages: [] }),
       context,
     );
 

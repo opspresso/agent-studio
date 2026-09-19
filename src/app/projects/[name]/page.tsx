@@ -2,397 +2,136 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import {
-  createVersion,
-  getProject,
-  listModels,
-  listVersions,
-  publishVersion,
-  updateVersion,
-  type SelectableModel,
-  type SanitizedProject,
-  type Version,
-  type VersionInput,
-} from "../lib/api";
+import { Alert, Button, Grid, Group, Stack, Text } from "@mantine/core";
+import { getConfiguration, getProject, listModels, putConfiguration,
+  type AgentConfiguration, type AgentConfigurationInput, type SelectableModel, type SanitizedProject } from "../lib/api";
 import { useT } from "@/app/_i18n/provider";
-import { useConfirm } from "@/app/_components/useConfirm";
-import { parseVersionDraft, VersionEditor } from "./_components/VersionEditor";
-import { RunPanel } from "./_components/RunPanel";
-import { PromptPreview } from "./_components/PromptPreview";
-import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
-import { LoadingText } from "@/app/_components/PageState";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { modelType } from "@/domain/llm/models";
-import { Alert, Button, Grid, Group, Select, Stack, Text } from "@mantine/core";
+import { LoadingText } from "@/app/_components/PageState";
+import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { AgentConfigurationEditor, parseConfigurationDraft } from "./_components/AgentConfigurationEditor";
+import { PromptPreview } from "./_components/PromptPreview";
+import { RunPanel } from "./_components/RunPanel";
+import { createLatestOnly } from "@/app/_lib/latestOnly";
 import classes from "./Playground.module.css";
 
-/**
- * Whether the run's model can take the images the panel would attach — vision for
- * a text run, the edit endpoint for an image project. `undefined` when the model
- * is not in the fetched catalog, so an unlisted-but-valid model is not blocked.
- */
-function runImageCapability(
-  models: SelectableModel[],
-  modelId: string,
-  projectType: SanitizedProject["projectType"],
-): boolean | undefined {
-  const model = models.find((m) => m.id === modelId);
-  if (!model) {
-    return undefined;
-  }
-  return projectType === "image"
-    ? Boolean(model.capabilities.imageGeneration)
-    : model.capabilities.imageInput;
+function editable(configuration: AgentConfiguration): AgentConfigurationInput {
+  const { projectName: _project, ...settings } = configuration;
+  return settings;
 }
-
-/** How long "Saved" stays up. Longer than the copy buttons' flash, because it
- *  confirms a write rather than a clipboard, and short enough to stay current. */
-const SAVED_NOTICE_MS = 3000;
-
-function toInput(version: Version): VersionInput {
-  return {
-    systemPrompt: version.systemPrompt,
-    userPromptTemplate: version.userPromptTemplate,
-    model: version.model,
-    fallbackModel: version.fallbackModel,
-    parameters: version.parameters,
-    mcpList: version.mcpList,
-    skillList: version.skillList,
-    subagentList: version.subagentList,
-    maxTurn: version.maxTurn,
-  };
-}
-
-function emptyInput(models: SelectableModel[]): VersionInput {
-  return {
-    systemPrompt: "",
-    userPromptTemplate: "",
-    model: models[0]?.id ?? "",
-    parameters: { piiFiltering: false },
-    mcpList: [],
-    skillList: [],
-    subagentList: [],
-  };
+function emptyInput(models: SelectableModel[] = []): AgentConfigurationInput {
+  return { systemPrompt: "", model: models.find(model => modelType(model) === "text" && model.capabilities.tools)?.id ?? "",
+    parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] };
 }
 
 export default function PlaygroundPage() {
-  const params = useParams<{ name: string }>();
-  const name = params.name;
-
-  const viewer = useViewer();
+  const { name } = useParams<{ name: string }>();
   const t = useT();
+  const viewer = useViewer();
   const [project, setProject] = useState<SanitizedProject | null>(null);
-  const [versions, setVersions] = useState<Version[]>([]);
   const [models, setModels] = useState<SelectableModel[]>([]);
-  const [selectedName, setSelectedName] = useState<string>("");
-  const [draft, setDraft] = useState<VersionInput>(emptyInput([]));
+  const [configuration, setConfiguration] = useState<AgentConfiguration | null>(null);
+  const [updatedAt, setUpdatedAt] = useState("");
+  const [draft, setDraft] = useState<AgentConfigurationInput>(emptyInput());
+  const [snapshot, setSnapshot] = useState("");
   const [schemaText, setSchemaText] = useState<string | null>(null);
-  const [snapshot, setSnapshot] = useState<string>("");
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  /**
-   * Which version the last save wrote. A save is fast enough that "Saving…" is
-   * gone before it registers, so the confirmation outlives it — but only for a
-   * moment, the way the copy buttons do it. It reads as stale the longer it
-   * sits, since the thing it confirms is already several actions back.
-   */
-  const [savedName, setSavedName] = useState<string | null>(null);
-  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { confirm, confirmModal } = useConfirm();
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const latestOnly = useRef(createLatestOnly()).current;
 
   useEffect(() => {
-    return () => {
-      if (savedTimer.current) {
-        clearTimeout(savedTimer.current);
-      }
-    };
-  }, []);
-
-  function clearSaved() {
-    if (savedTimer.current) {
-      clearTimeout(savedTimer.current);
-      savedTimer.current = null;
-    }
-    setSavedName(null);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [proj, vers, mods] = await Promise.all([
-          getProject(name),
-          listVersions(name),
-          listModels(),
-        ]);
-        if (cancelled) {
-          return;
-        }
-        setProject(proj);
-        setVersions(vers);
-        setModels(mods);
-        setSchemaText(null);
-
-        const initial =
-          vers.find((v) => v.versionName === proj.publishedVersion) ??
-          [...vers].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
-        if (initial) {
-          setSelectedName(initial.versionName);
-          const input = toInput(initial);
-          setDraft(input);
-          setSnapshot(JSON.stringify(input));
-        } else {
-          const input = emptyInput(mods);
-          setSelectedName("");
-          setDraft(input);
-          setSnapshot("");
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : t("playground.loadFailed"));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [name]);
-
-  const currentSchemaText = schemaText ?? (
-    draft.parameters.jsonSchema ? JSON.stringify(draft.parameters.jsonSchema, null, 2) : ""
-  );
-  const validatedDraft = useMemo(
-    () => parseVersionDraft(draft, currentSchemaText),
-    [draft, currentSchemaText],
-  );
-  const schemaError = validatedDraft === null ? t("version.invalidJson") : null;
-  const dirty = validatedDraft === null || JSON.stringify(validatedDraft) !== snapshot;
-
-  function selectVersion(versionName: string) {
-    if (versionName === "") {
-      // New versions start as a copy of whatever is currently in the editor.
-      setSelectedName("");
-      setSnapshot("");
-      return;
-    }
-    const version = versions.find((v) => v.versionName === versionName);
-    if (version) {
-      const input = toInput(version);
-      setSelectedName(versionName);
-      setDraft(input);
+    const isCurrent = latestOnly();
+    setSaving(false);
+    setLoading(true);
+    setError(null);
+    setSaved(false);
+    setSaveError(null);
+    void Promise.all([getProject(name), getConfiguration(name), listModels()]).then(([project, view, models]) => {
+      if (!isCurrent()) return;
+      const next = view.configuration ? editable(view.configuration) : emptyInput(models);
+      setProject(project);
+      setModels(models);
+      setConfiguration(view.configuration);
+      setUpdatedAt(view.updatedAt);
+      setDraft(next);
+      setSnapshot(JSON.stringify(next));
       setSchemaText(null);
-      setSnapshot(JSON.stringify(input));
-      clearSaved();
-    }
-  }
+    }).catch(error => {
+      if (isCurrent()) setError(error instanceof Error ? error.message : t("playground.loadFailed"));
+    }).finally(() => { if (isCurrent()) setLoading(false); });
+    return () => { latestOnly(); };
+  }, [name, latestOnly]);
+
+  const currentSchema = schemaText ?? (draft.parameters.jsonSchema ? JSON.stringify(draft.parameters.jsonSchema, null, 2) : "");
+  const parsed = useMemo(() => parseConfigurationDraft(draft, currentSchema), [draft, currentSchema]);
+  const schemaError = parsed === null ? t("configuration.invalidJson") : null;
+  const dirty = parsed === null || JSON.stringify(parsed) !== snapshot;
 
   async function save() {
-    if (validatedDraft === null) {
-      return;
-    }
+    if (!parsed || saving) return;
+    const isCurrent = latestOnly();
     setSaving(true);
     setSaveError(null);
-    clearSaved();
-    let savedVersion: string | null = null;
+    setSaved(false);
     try {
-      const saved =
-        selectedName === ""
-          ? await createVersion(name, validatedDraft)
-          : await updateVersion(name, selectedName, {
-              ...validatedDraft,
-              fallbackModel: validatedDraft.fallbackModel ?? null,
-              maxTurn: validatedDraft.maxTurn ?? null,
-            });
-      const refreshed = await listVersions(name);
-      setVersions(refreshed);
-      setSelectedName(saved.versionName);
-      const input = toInput(saved);
-      setDraft(input);
-      setSnapshot(JSON.stringify(schemaText === null ? input : parseVersionDraft(input, schemaText)));
-      setSavedName(saved.versionName);
-      savedTimer.current = setTimeout(() => setSavedName(null), SAVED_NOTICE_MS);
-      savedVersion = saved.versionName;
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : t("playground.saveFailed"));
-    } finally {
-      setSaving(false);
-    }
-    // A save on a never-published project is the natural moment to ask whether
-    // it is ready for callers. Publish is what turns the external surfaces on
-    // (API, A2A, triggers, Slack, the subagent picker), so it stays a question
-    // rather than a side effect; once anything is published, saves stop asking.
-    if (savedVersion && project && !project.publishedVersion) {
-      const publish = await confirm({
-        title: t("playground.publishTitle"),
-        message: t("playground.publishBody", {
-          project: project.displayName || name,
-          version: savedVersion,
-        }),
-        confirmLabel: t("playground.publishConfirm", { version: savedVersion }),
-        color: "teal",
-      });
-      if (publish) {
-        try {
-          setProject(await publishVersion(name, savedVersion));
-        } catch (e) {
-          setSaveError(e instanceof Error ? e.message : t("playground.publishFailed"));
-        }
-      }
-    }
+      const result = await putConfiguration(name, { ...parsed, expectedUpdatedAt: updatedAt });
+      if (!isCurrent()) return;
+      const next = editable(result.configuration!);
+      setConfiguration(result.configuration);
+      setUpdatedAt(result.updatedAt);
+      setDraft(next);
+      setSnapshot(JSON.stringify(next));
+      setSchemaText(null);
+      setSaved(true);
+    } catch (error) {
+      if (isCurrent()) setSaveError(error instanceof Error ? error.message : t("playground.saveFailed"));
+    } finally { if (isCurrent()) setSaving(false); }
   }
 
-  // A protected page never receives a signed-out viewer: the root shell starts
-  // the login redirect first. Keep the guard so an auth transition cannot draw
-  // project data while that redirect is taking over.
-  if (loading || viewer === null) {
-    return <LoadingText />;
-  }
-  if (error || !project) {
-    return (
-      <Alert color="red" variant="light">
-        {error ?? t("playground.notFound")}
-      </Alert>
-    );
-  }
-
+  if (loading || viewer === null) return <LoadingText />;
+  if (error || !project || project.name !== name) return <Alert color="red">{error ?? t("playground.notFound")}</Alert>;
   const canEdit = canEditProject(viewer, project.ownerEmail);
-  // The same rung `POST /preview` answers on, for the same reason: the panel
-  // renders the prompt, the skill table and the tool names — the capability
-  // registry a guest is refused, assembled for one project.
   const canPreview = tierAtLeast(viewer.tier, "member");
+  const runModel = models.find(model => model.id === configuration?.model);
+  const saveState = { run: save, saving, disabled: !draft.model || schemaError !== null,
+    error: schemaError ?? saveError, saved: saved && !dirty, label: t("playground.save") };
 
   return (
     <Grid gap="lg">
-      {confirmModal}
       <Grid.Col span={{ base: 12, lg: 6 }}>
         <Stack gap="md">
-          <Group justify="space-between" gap="xs" wrap="nowrap">
-            <Select
-              value={selectedName}
-              onChange={(value) => selectVersion(value ?? "")}
-              allowDeselect={false}
-              data={[
-                ...(canEdit ? [{ value: "", label: t("playground.newVersion") }] : []),
-                ...versions.map((version) => ({
-                  value: version.versionName,
-                  label:
-                    project.publishedVersion === version.versionName
-                      ? t("playground.versionPublished", { version: version.versionName })
-                      : t("playground.version", { version: version.versionName }),
-                })),
-              ]}
-            />
-            {canEdit ? (
-              <Group gap="xs" wrap="nowrap">
-                {dirty ? (
-                  <Text fz="xs" c="orange">
-                    {t("playground.unsaved")}
-                  </Text>
-                ) : (
-                  savedName && (
-                    <Text fz="xs" c="teal">
-                      {t("playground.saved", { version: savedName })}
-                    </Text>
-                  )
-                )}
-                <Button onClick={save} loading={saving} disabled={!draft.model || schemaError !== null}>
-                  {selectedName === "" ? t("playground.createVersion") : t("playground.save")}
-                </Button>
-              </Group>
-            ) : (
-              <Text fz="xs" c="dimmed">
-                {t("playground.readOnly")}
-              </Text>
-            )}
+          <Group justify="space-between">
+            <Text fw={600}>{t("configuration.title")}</Text>
+            {canEdit ? <Group gap="xs">
+              {dirty ? <Text fz="xs" c="orange">{t("playground.unsaved")}</Text>
+                : saved ? <Text fz="xs" c="teal">{t("configuration.saved")}</Text> : null}
+              <Button onClick={save} loading={saving} disabled={saveState.disabled}>{t("playground.save")}</Button>
+            </Group> : <Text fz="xs" c="dimmed">{t("playground.readOnly")}</Text>}
           </Group>
-
-          {saveError && (
-            <Alert color="red" variant="light">
-              {saveError}
-            </Alert>
-          )}
-
-          {/*
-           * The save above is gated for a non-editor, and this inerts the form
-           * itself: a disabled fieldset disables every nested native control,
-           * and everything interactive in the editor is one — inputs, selects,
-           * checkboxes, the binding dialogs' and chips' buttons. Run and
-           * Preview live outside it on purpose; both are session surfaces.
-           */}
-          <fieldset
-            disabled={!canEdit}
-            className={canEdit ? undefined : classes.readonlyEditor}
-            style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
-          >
-            <VersionEditor
-              // Remount on version switch, like RunPanel below: the editor
-              // holds per-version state initialised once (the header-override
-              // rows), and carried across versions it
-              // would write version A's edits into version B's draft.
-              key={`${name}/${selectedName || "unsaved"}`}
-              projectName={project.name}
-              versionName={selectedName || undefined}
-              projectType={project.projectType}
-              models={models.filter((m) =>
-                modelType(m) === (project.projectType === "image" ? "image" : "text"),
-              )}
-              imageModels={models.filter((m) => modelType(m) === "image")}
-              value={draft}
-              onChange={setDraft}
-              schemaText={currentSchemaText}
-              onSchemaChange={setSchemaText}
-              schemaError={schemaError}
-              save={{
-                run: save,
-                saving,
-                disabled: !draft.model || schemaError !== null,
-                error: schemaError ?? saveError,
-                savedName: dirty ? null : savedName,
-                label: selectedName === "" ? t("playground.createVersion") : t("playground.save"),
-              }}
-            />
+          {saveError && <Alert color="red">{saveError}</Alert>}
+          <fieldset disabled={!canEdit || saving} className={canEdit ? undefined : classes.readonlyEditor}
+            style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+            <AgentConfigurationEditor key={name} projectName={name}
+              models={models.filter(model => modelType(model) === "text")}
+              imageModels={models.filter(model => modelType(model) === "image")}
+              value={draft} onChange={setDraft} schemaText={currentSchema} onSchemaChange={setSchemaText}
+              schemaError={schemaError} save={saveState} />
           </fieldset>
         </Stack>
       </Grid.Col>
-
       <Grid.Col span={{ base: 12, lg: 6 }}>
         <Stack gap="md">
-          {canPreview && (
-            <CollapsibleSection title={t("playground.preview")}>
-              <PromptPreview
-                projectName={name}
-                projectType={project.projectType}
-                draft={validatedDraft ?? draft}
-                validationError={schemaError}
-                versionName={selectedName || null}
-              />
-            </CollapsibleSection>
-          )}
-
-          {/*
-            Open on arrival: running the version is what the Playground is for,
-            and it is the only panel on this page a guest is offered at all.
-          */}
+          {canPreview && <CollapsibleSection title={t("playground.preview")}>
+            <PromptPreview projectName={name} draft={parsed ?? draft} validationError={schemaError} />
+          </CollapsibleSection>}
           <CollapsibleSection title={t("playground.run")} defaultOpen>
-            <RunPanel
-              key={`${name}/${selectedName || "unsaved"}`}
-              projectName={name}
-              versionName={dirty && selectedName === "" ? null : selectedName || null}
-              projectType={project.projectType}
-              userPromptTemplate={draft.userPromptTemplate}
-              modelAcceptsImages={runImageCapability(models, draft.model, project.projectType)}
-            />
+            <RunPanel key={name} projectName={name} configured={configuration !== null}
+              modelAcceptsImages={runModel?.capabilities.imageInput} />
           </CollapsibleSection>
         </Stack>
       </Grid.Col>

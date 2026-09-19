@@ -36,7 +36,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       const exposed = await resolveAguiProject(aguiDeps, name);
       if (!exposed) {
         return Response.json(
-          { error: "Project not found or has no published version" },
+          { error: "Project not found or has no Agent configuration" },
           { status: 404 },
         );
       }
@@ -45,7 +45,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       return await sseResponseRaw(
         streamAguiRun(aguiDeps, {
           project: exposed.project,
-          version: exposed.version,
+          configuration: exposed.configuration,
           input: parsed.data,
           actor,
           ...(principal.caller ? { caller: principal.caller } : {}),

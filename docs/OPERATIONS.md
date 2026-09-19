@@ -207,7 +207,7 @@ provider 보고 비용을 사용하는 텍스트 호출은 이 계산을 거치�
 
 ## 로깅
 
-`src/shared/logger.ts`가 로그 형식과 실행 문맥을 소유한다. 공통 run bracket은 Trace 샘플링과
+`src/shared/logger.ts`가 로그 형식과 실행 문맥을 소유한다. 공통 run bracket은 Trace 저장과
 독립적인 correlation ID를 만들며 Trace가 있으면 함께 기록한다.
 
 ```text
@@ -225,8 +225,7 @@ domain의 제한된 경고와 브라우저 오류 경계 등 예외는 구조 �
 
 ## 트레이싱
 
-Agent 런은 **항상** 트레이싱된다. 비-agent 런과 이미지 predict 런은 `TRACE_SAMPLE_RATE` 로
-샘플링된다.
+Agent 런은 **항상** 트레이싱되며 이미지 도구도 같은 실행 Trace에 포함된다.
 
 트레이스는 프로젝트 소유자와 관리자(`assertProjectWritable` 기준)에게 보인다. SDK span은 이름·종류·상태·시간,
 native ID와 부모 ID, 모델 토큰·비용을 저장한다. `prepare`에는 skill·Agent·MCP·도구의 수와

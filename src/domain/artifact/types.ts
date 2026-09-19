@@ -34,7 +34,7 @@ export interface Artifact {
   byteSize: number;
   /** The project whose run bracket admitted this. Always present. */
   projectName: string;
-  versionName: string;
+  versionName?: string;
   /**
    * Who caused the run, reusing the run's own attribution rather than restating
    * it: a usage row and an artifact row must not name the same run differently.

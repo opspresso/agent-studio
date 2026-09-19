@@ -1,3 +1,4 @@
+import { withConfigurations } from "./projectConfigurations";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
@@ -10,9 +11,9 @@ import type {
 import type { SlackMessage } from "@/infrastructure/slack/client";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { RunCaller } from "@/domain/execution/actor";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { ProjectRepository } from "@/domain/project/repository";
 import { MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS } from "@/domain/slack/reader";
 
 const NOW = 1_750_000_000_000;
@@ -24,24 +25,23 @@ function projectFixture(): Project {
     description: "",
     projectType: "agent",
     ownerEmail: "owner@x.com",
-    publishedVersion: "1",
+
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
-function versionFixture(): Version {
+function configurationFixture(): AgentConfiguration {
   return {
     projectName: "painter",
-    versionName: "1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -305,13 +305,8 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
           ? { text }
           : { text: text.slice(0, maxChars), note: `the first ${maxChars} characters of ${name}` };
       } },
-    projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
-    versions: {
-      // The pointer is read off the project, so the fake answers its concrete name.
-      get: async (_project: string, name: string) =>
-        name === projectFixture().publishedVersion ? versionFixture() : null,
-      list: async () => [],
-    } as unknown as VersionRepository,
+    projects: withConfigurations({ get: async () => projectFixture() } as unknown as ProjectRepository, async () => configurationFixture()),
+
     slack,
   };
 }
@@ -350,7 +345,7 @@ describe("handleSlackEvent", () => {
     deps.projects = {
       get: async (name: string) => {
         requestedProject = name;
-        return projectFixture();
+        return { ...projectFixture(), configuration: configurationFixture() };
       },
     } as unknown as ProjectRepository;
     deps.runAgent = async function* (input) {
@@ -1385,13 +1380,10 @@ describe("streaming a Slack reply", () => {
  */
 describe("telling the run who is asking", () => {
   function withCallerContext(deps: SlackEventDeps, on: boolean) {
-    deps.versions = {
-      get: async () => ({
-        ...versionFixture(),
+    deps.projects = withConfigurations(deps.projects, async () => ({
+        ...configurationFixture(),
         parameters: { piiFiltering: false, callerContext: on },
-      }),
-      list: async () => [],
-    } as unknown as VersionRepository;
+      }));
   }
 
   it("looks up nobody when the version did not ask", async () => {
@@ -2042,10 +2034,7 @@ describe("filing a Slack run's output under its author", () => {
     const { slack, emails } = makeSlackFake();
     emails.set("U1", "me@nalbam.com");
     const deps = deps0(slack);
-    deps.versions = {
-      get: async () => ({ ...versionFixture(), parameters: { piiFiltering: false } }),
-      list: async () => [],
-    } as unknown as VersionRepository;
+    deps.projects = withConfigurations(deps.projects, async () => ({ ...configurationFixture(), parameters: { piiFiltering: false } }));
     let seen: { ownerEmail?: string; caller?: unknown } = {};
     deps.runAgent = async function* (input) {
       seen = input;
@@ -2240,6 +2229,7 @@ describe("commands", () => {
 describe("private project visibility gate", () => {
   const privateProject = (): Project => ({
     ...projectFixture(),
+    configuration: configurationFixture(),
     visibility: "private",
     memberEmails: ["invited@x.com"],
   });

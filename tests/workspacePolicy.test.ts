@@ -6,24 +6,22 @@ import { projectRepository as projects } from "@/infrastructure/db/repositories/
 import { workspacePolicyRepository as repository } from "@/infrastructure/db/repositories/workspacePolicyRepository";
 import { createWorkspaceRepositoryPolicyUseCases } from "@/application/workspace/repositoryPolicy";
 import { workspaceAllowsRepository, workspaceProjectPolicy } from "@/domain/workspace/policy";
-import type { VersionRepository } from "@/domain/project/repository";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const now = new Date("2026-09-15T00:00:00Z");
 const owner = "owner@example.test";
-const version = { versionName: "v1", parameters: { workspaceTools: true }, createdAt: now.toISOString() } as Version;
-const versions = { get: vi.fn(async () => version), list: vi.fn(async () => [version]) } as unknown as VersionRepository;
-const api = createWorkspaceRepositoryPolicyUseCases({ projects, versions, repository,
+const configuration: AgentConfiguration = { projectName: "demo", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false, workspaceTools: true }, mcpList: [], skillList: [], subagentList: [] };
+const api = createWorkspaceRepositoryPolicyUseCases({ projects, repository,
   backendReady: () => true, runtimes: async () => ["command", "codex"], isAdmin: async () => false, now: () => now });
 const getWorkspaceProjectPolicy = api.getPolicy;
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now); fake.rows.clear();
-  version.parameters.workspaceTools = true;
+  configuration.parameters.workspaceTools = true;
   fake.seed([{ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo", projectType: "agent", ownerEmail: owner,
-    visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
+    configuration, visibility: "public", createdAt: now.toISOString(), updatedAt: now.toISOString() }]);
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
@@ -71,7 +69,8 @@ describe("Workspace repository access policy", () => {
 
   it("requires the agent tool opt-in and a configured default runtime", async () => {
     await expect(api.update("demo", { revision: null, rules: { defaultRuntime: "claude" } }, owner)).rejects.toMatchObject({ status: 400 });
-    version.parameters.workspaceTools = false;
+    const project = (await projects.get("demo"))!;
+    await projects.update({ ...project, configuration: { ...configuration, parameters: { piiFiltering: false, workspaceTools: false } } }, project.updatedAt);
     await expect(api.update("demo", { revision: null, rules: {} }, owner)).rejects.toMatchObject({ status: 400 });
     expect(await api.getView("demo", owner)).toMatchObject({ enabled: false });
     expect(workspaceProjectPolicy("demo").defaultRuntime).toBe("command");

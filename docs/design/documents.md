@@ -1,7 +1,7 @@
 # 문서 엔진
 
 문서 형식 처리는 `src/infrastructure/documents/`가 소유한다. MCP 서버 등록이나
-프로젝트 Version binding 없이 동작하며 파일 ID, 사용자 권한, 저장소, 다운로드 URL은
+프로젝트 Agent binding 없이 동작하며 파일 ID, 사용자 권한, 저장소, 다운로드 URL은
 엔진 밖에서 관리한다. 문서의 외부 링크나 매크로는 실행하지 않는다.
 
 ## 읽기
@@ -90,7 +90,7 @@ Chat은 `prepareDocumentAttachments`로 원본을 기존 artifact 저장소에 �
 ## 실행 도구
 
 `File`은 agent 실행과 Playground의 agent 실행에 같은 조건으로 제공하는 기본 도구다.
-`llm`·`image` 프로젝트와 실행하지 않는 프롬프트 미리보기에는 파일 도구 호출이 없다.
+실행하지 않는 프롬프트 미리보기에는 파일 도구 호출이 없다.
 MCP 등록은 필요하지 않으며 문서 엔진과 artifact 저장소가 구성되어야 한다.
 `operation`은 `read`, `inspect`, `create`, `edit`이고 기존 파일은 `file_id`로 지목한다.
 읽기와 검사 결과만 모델 문맥에 들어가며, 생성·편집 바이트는 `EngineChunk.file`로

@@ -66,7 +66,7 @@ worker 중단은 실행 중단으로 기록하지 않는다. 다시 시작하면
 전송 오류에는 Run을 유지하고 실제 핸들 소실에는 `interrupted`를 기록한다.
 
 실행은 `executeWorkspaceTask` facade와 공통 `openTaskRun` bracket을 지난다. 일반 명령에는
-모델 Version이 없으므로 모델을 임의로 만들지 않는다. 기존 프로젝트의 비용·멤버 상한,
+Studio 모델 설정이 없으므로 모델을 임의로 만들지 않는다. 기존 프로젝트의 비용·멤버 상한,
 동시성 슬롯과 메트릭은 유지한다. Native CLI의 토큰·비용은 SDK 모델 usage와 별개다.
 
 비활성 Workspace는 `suspending`으로 바꿔 새 접수를 막은 뒤 체크포인트 저장 → Sandbox 삭제 →
@@ -83,8 +83,8 @@ native Session의 활동·보존 기한을 갱신한다. 완료 시 미결 승�
 
 ### 저장소 정책 관리
 
-Agent Version에서 `parameters.workspaceTools`를 켜면 `/projects/{name}/workspace`에 전용 도구 탭이 나타난다.
-활성 버전은 published pointer, 미게시 프로젝트는 최신 저장 draft다. 실행 버전도 개별 opt-in을 확인한다.
+Agent 설정에서 `parameters.workspaceTools`를 켜면 `/projects/{name}/workspace`에 전용 도구 탭이 나타난다.
+탭과 실행 모두 현재 Agent 설정의 개별 opt-in을 확인한다.
 프로젝트 소유자·관리자가 저장소, 접근 모드, 기본 Runtime, 유휴 시간, 검사 명령과 배포 workflow를 관리한다.
 기본 저장소는 없으며 Git 작업은 저장소와 기준 브랜치를 명시한다. 모델이 필요한 Runtime은 Models의
 전역 Runtime별 선택을 사용한다. 프로젝트 설정과 모델 설정은 환경변수로 관리하지 않는다.
@@ -178,9 +178,9 @@ CI 증거가 없음을 표시하며 GitHub 브랜치 규칙을 따른다. `none`
 
 ## 실행 창구별 계약
 
-같은 Version을 Publish해도 모든 진입점에 같은 도구·이력·승인이 제공되는 것은 아니다.
+같은 Agent라도 모든 진입점에 같은 도구·이력·승인이 제공되는 것은 아니다.
 `container.ts`의 Workspace 도구 바인딩은 `actor.kind=user`와 현재 member 권한, 프로젝트의
-활성 버전의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
+현재 설정의 `workspaceTools`를 확인한다. `backgroundTask` 후처리에는 외부 효과 도구를 제공하지 않는다.
 
 | 창구 | Workspace 빌트인 | 원래 Chat으로 승인 결과 전달 |
 |---|---|---|
@@ -196,7 +196,7 @@ API token은 프로젝트 소유자로 인증하고 MCP에 소유자 email을 �
 
 ## 사용자 화면과 API
 
-Agent Version의 `parameters.workspaceTools`를 켜면 로그인한 member 이상 사용자의 해당 프로젝트 Agent에
+Agent 설정의 `parameters.workspaceTools`를 켜면 로그인한 member 이상 사용자의 해당 프로젝트 Agent에
 `Workspace` 빌트인을 제공한다. `options`, `start`, `run`, `status`, `wait`, `cancel`, `close`로
 설정 조회·작업 접수·후속 실행·결과 확인·정리를 수행한다. 호출마다 현재 멤버 권한과 프로젝트
 접근을 확인하며 다른 프로젝트의 Workspace ID는 거절한다. 비인간 실행과 background Task에는

@@ -2,7 +2,7 @@ import type { DocumentRenderer, DocumentEditor } from "@/domain/document/process
 import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import type { FileToolDeps } from "@/application/document/fileTool";
 /**
- * Types the execution facade exposes, plus the version → engine parameter
+ * Types the execution facade exposes, plus the Agent → engine parameter
  * mapping every runner shares. Separate from the entry points so the modules
  * below can use them without importing the facade itself.
  */
@@ -16,8 +16,8 @@ import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, Version, McpBinding } from "@/domain/project/types";
+import type { ProjectRepository } from "@/domain/project/repository";
+import type { Project, AgentConfiguration, McpBinding } from "@/domain/project/types";
 import type { McpServer } from "@/domain/mcp/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
@@ -45,7 +45,6 @@ import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession"
 export interface ExecutionDeps extends RunBracketDeps {
   createToolSchemaValidator: () => ToolSchemaValidator;
   runtimeSessions?: RuntimeSessionServices;
-  versions: VersionRepository;
   projects: ProjectRepository;
   skills: SkillRepository;
   mcps: McpRepository;
@@ -77,7 +76,7 @@ export interface ExecutionDeps extends RunBracketDeps {
     ((args: Record<string, unknown>, callId: string) => Promise<McpToolResult>) | undefined
   >;
   registerMcpSource?: RegisterMcpSource;
-  sourceRefreshIdentity?(input: { version: Version; binding: McpBinding; server: McpServer }): Promise<string>;
+  sourceRefreshIdentity?(input: { configuration: AgentConfiguration; binding: McpBinding; server: McpServer }): Promise<string>;
   /**
    * A reader for the Slack workspace this project's bot is installed in, or
    * null when it has no enabled bot.
@@ -113,7 +112,7 @@ export interface ExecutionDeps extends RunBracketDeps {
   mcpConnections?: Pick<McpConnectionRepository, "listByProject">;
   /**
    * The global capability catalog, when this deployment has one. Absent means
-   * a version's `dynamicCapabilities` has nothing to search and the run offers
+   * a Agent's `dynamicCapabilities` has nothing to search and the run offers
    * exactly what it bound — the feature is off rather than failing.
    */
   catalog?: CatalogSearchDeps;
@@ -125,52 +124,25 @@ export interface ExecutionDeps extends RunBracketDeps {
    */
   internalHostSuffixes?: readonly string[];
   traces?: TraceRepository;
-  traceSampleRate?: number;
   /**
    * The wall clock a run's prompt is stamped with. Injected for the same reason
    * the channel is — a test that asserts on a prompt needs a fixed instant.
    * Unset means the real clock (see {@link runClock}).
    */
   now?: () => Date;
-  /**
-   * The draw the trace sampling decision compares against `traceSampleRate`,
-   * in `[0, 1)`. Injected like {@link now} so a test can pin the outcome at a
-   * fractional rate. Unset means `Math.random` (see `traceSampled`).
-   */
-  sample?: () => number;
-}
-
-export interface ExecuteVersionInput {
-  project: Project;
-  version: Version;
-  variables?: Record<string, string>;
-  /** Prior OpenAI-shaped messages; `messages` is the route-layer alias. */
-  extraMessages?: ChatMessageInput[];
-  messages?: ChatMessageInput[];
-  /** Who caused this run. Recorded on the trace and on the caller's usage row. */
-  actor?: RunActor;
-  /**
-   * Who that actor is, in words. Reaches the prompt only when the version opted
-   * in (`parameters.callerContext`); the surface is expected not to resolve one
-   * at all otherwise.
-   */
-  caller?: RunCaller;
-  /** Which conversation this run belongs to, when the surface has one. */
-  conversation?: RunConversation;
-  signal?: AbortSignal;
 }
 
 export interface ExecuteAgentInput {
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   backgroundTask?: boolean;
   project: Project;
-  version: Version;
+  configuration: AgentConfiguration;
   /** OpenAI-shaped message history from the route/chat boundary. */
   messages: ChatMessageInput[];
   actor?: RunActor;
-  /** See {@link ExecuteVersionInput.caller}. */
+  /** Display identity, included only when callerContext is enabled. */
   caller?: RunCaller;
-  /** See {@link ExecuteVersionInput.conversation}. */
+  /** Surface-scoped conversation identity. */
   conversation?: RunConversation;
   /**
    * Which user this run belongs to when the surface resolves an address the
@@ -192,62 +164,42 @@ export interface ExecuteAgentInput {
 export interface ExecuteProjectInput {
   backgroundTask?: boolean;
   project: Project;
-  version: Version;
-  variables?: Record<string, string>;
+  configuration: AgentConfiguration;
   messages: ChatMessageInput[];
   actor?: RunActor;
   /** Server-resolved user identity for non-user entry points such as schedules. */
   ownerEmail?: string;
-  /** See {@link ExecuteVersionInput.caller}. */
+  /** See {@link ExecuteAgentInput.caller}. */
   caller?: RunCaller;
-  /** See {@link ExecuteVersionInput.conversation}. */
+  /** See {@link ExecuteAgentInput.conversation}. */
   conversation?: RunConversation;
-  /**
-   * See {@link ExecuteAgentInput.clientTools}. Reaches the agent loop only: a
-   * single-shot run has no loop to end, and an image run no model to offer
-   * them to — a surface with tools to declare checks the strategy first.
-   */
+  /** Tools the calling application declares and executes; see ExecuteAgentInput. */
   clientTools?: ChannelToolDef[];
   signal?: AbortSignal;
 }
 
 /**
- * The caller the prompt is allowed to name — the version's opt-in decides, not
+ * The caller the prompt is allowed to name — the Agent's opt-in decides, not
  * the surface. A surface that resolved one anyway (a cached profile, a replayed
- * run) must not be able to leak a name into a version that never asked for it.
+ * run) must not be able to leak a name into a Agent that never asked for it.
  *
  * Here rather than beside the runners because the Playground preview asks the
  * same question. One shared gate keeps prompt and agent previews aligned.
  */
-export function callerFor(input: { version: Version; caller?: RunCaller }): { caller?: RunCaller } {
-  return input.version.parameters.callerContext && input.caller ? { caller: input.caller } : {};
+export function callerFor(input: { configuration: AgentConfiguration; caller?: RunCaller }): { caller?: RunCaller } {
+  return input.configuration.parameters.callerContext && input.caller ? { caller: input.caller } : {};
 }
 
-/**
- * What the facade hands whichever executor it picked, projected in one place.
- *
- * Both dispatch points rebuilt this literal per branch — four copies of "which
- * fields travel down" — and every one of them omitted `caller`. Optional fields
- * make that a silent drop rather than a type error, so a version that opted into
- * `callerContext` ran anonymously through `/predict` and `/chat/completions`
- * while the same version named its caller on `/agent`, in a chat and in Slack,
- * all of which reach `executeAgent` directly. The gate itself is not applied
- * here: {@link callerFor} answers that once, at the engine-input boundary, and a
- * second gate on the way there could only disagree with it.
- *
- * `variables` is deliberately not part of this. It belongs to the single-shot
- * path — an agent run has no template to render with it — so that branch adds
- * it rather than every branch carrying a field one of them must ignore.
- */
+/** Forward surface context unchanged; callerFor owns the prompt's identity opt-in. */
 export function toRunInput(
   input: ExecuteProjectInput,
 ): Pick<
   ExecuteAgentInput,
-  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal" | "ownerEmail" | "backgroundTask"
+  "project" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal" | "ownerEmail" | "backgroundTask"
 > {
   return {
     project: input.project,
-    version: input.version,
+    configuration: input.configuration,
     messages: input.messages,
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
@@ -267,7 +219,7 @@ export interface PromptPreviewMessage {
 }
 
 export interface PromptPreview {
-  /** The messages this version would open a run with. */
+  /** The messages this Agent would open a run with. */
   messages: PromptPreviewMessage[];
   /** Tool names the model would be offered, aliases applied. */
   toolNames: string[];
@@ -280,17 +232,17 @@ export interface PromptPreview {
   /** What the preview — and therefore a run — could not resolve. */
   warnings: string[];
   /**
-   * Capabilities a search added on top of the version's bindings, by name.
+   * Capabilities a search added on top of the Agent's bindings, by name.
    *
    * Separate from `warnings` because it is the opposite of one, and this panel
    * is the only place an author can read it: the prompt above shows the widened
-   * result without saying which rows the version never bound.
+   * result without saying which rows the Agent never bound.
    */
   discovered: string[];
 }
 
-export function toEngineParameters(version: Version): EngineParameters {
-  const p = version.parameters;
+export function toEngineParameters(configuration: AgentConfiguration): EngineParameters {
+  const p = configuration.parameters;
   const params: EngineParameters = {};
   if (p.policy) params.policy = p.policy;
   if (p.temperature !== undefined) {
@@ -316,26 +268,6 @@ export function toEngineParameters(version: Version): EngineParameters {
     params.reasoningTrace = p.reasoningTrace;
   }
   return params;
-}
-
-/** How a project is executed. */
-export type RunStrategy = "image" | "agent" | "prompt";
-
-/**
- * The single owner of "which project type runs which way".
- *
- * `executeProjectStream` already dispatches agent vs. single-shot internally,
- * but the image path returns a value rather than a stream, so callers had to
- * ask the question again — three of them did, each spelling out
- * `projectType === "image"` and `=== "agent"` for itself. Adding a fourth
- * project type meant finding all three. They now ask here and only decide how
- * to serialise the answer.
- */
-export function runStrategyFor(project: Project): RunStrategy {
-  if (project.projectType === "image") {
-    return "image";
-  }
-  return project.projectType === "agent" ? "agent" : "prompt";
 }
 
 /**

@@ -1,16 +1,9 @@
-/** The GenerateImage/EditImage builtins and the image-project subagent. */
+/** Image generation and editing capabilities of an Agent. */
 
-import type { RunOrigin } from "@/domain/execution/actor";
-import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
-import type { ImageBytes } from "@/domain/llm/imageChannel";
+import type { AgentConfiguration } from "@/domain/project/types";
 import { getModelConfig, getVisibleModels, toImageUsageRecord } from "@/domain/llm/models";
 import * as engine from "@/application/runtime";
-import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import type { ExecutionDeps } from "./deps";
-import { runEnding } from "@/application/run/runDeadline";
-import { runDeadlineExceeded } from "@/shared/runDeadline";
-import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 import { log } from "@/shared/logger";
 
 /**
@@ -25,21 +18,21 @@ export function defaultImageModel(): string | undefined {
 }
 
 /**
- * The image model a version's builtins draw with — one answer for both.
+ * The image model a Agent's builtins draw with — one answer for both.
  *
- * They are gated on the same per-version opt-in and reach the same model, and
+ * They are gated on the same per-Agent opt-in and reach the same model, and
  * therefore share one resolution. Otherwise generator and editor can disagree
  * about a retired `imageModel` and whether its fallback should be reported.
  *
- * `undefined` means the version did not opt in, or that no registry entry can
+ * `undefined` means the Agent did not opt in, or that no registry entry can
  * draw at all. A model that left the registry falls back to the default instead
- * of disabling the tools the version asked for.
+ * of disabling the tools the Agent asked for.
  */
-export function resolveImageModel(version: Version, projectName: string): string | undefined {
-  if (version.parameters.imageGeneration !== true) {
+export function resolveImageModel(configuration: AgentConfiguration, projectName: string): string | undefined {
+  if (configuration.parameters.imageGeneration !== true) {
     return undefined;
   }
-  const requested = version.parameters.imageModel;
+  const requested = configuration.parameters.imageModel;
   if (requested && getModelConfig(requested)?.capabilities.imageGeneration) {
     return requested;
   }
@@ -47,7 +40,7 @@ export function resolveImageModel(version: Version, projectName: string): string
   if (requested) {
     log.warn(
       "image",
-      `version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${fallback}`,
+      `Agent ${projectName} requests unavailable image model "${requested}"; falling back to ${fallback}`,
     );
   }
   return fallback;
@@ -55,7 +48,7 @@ export function resolveImageModel(version: Version, projectName: string): string
 
 /**
  * The GenerateImage builtin, over the model {@link resolveImageModel} chose.
- * Absent when there is none — the version did not opt in, or nothing registered
+ * Absent when there is none — the Agent did not opt in, or nothing registered
  * can draw.
  */
 export function buildImageGenerator(
@@ -85,8 +78,8 @@ export function buildImageGenerator(
 }
 
 /**
- * The EditImage builtin rides on the same per-version opt-in as GenerateImage —
- * a version that may draw may also redraw — and on the same model. Whether that
+ * The EditImage builtin rides on the same per-Agent opt-in as GenerateImage —
+ * a Agent that may draw may also redraw — and on the same model. Whether that
  * model's provider implements the edit endpoint is only known at dispatch, so a
  * provider refusal comes back as a tool-result error rather than hiding the tool.
  */
@@ -118,75 +111,4 @@ export function buildImageEditor(
     await recordUsageFn({ projectName, model, ...recorded });
     return { b64: result.b64, mimeType: result.mimeType, model };
   };
-}
-
-/**
- * An image-project child produces one image from the transfer message: it edits
- * the images the parent handed over, or draws from scratch when there are none.
- */
-export async function* runImageSubagent(
-  deps: Pick<ExecutionDeps, "imageChannel" | "traces">,
-  agentName: string,
-  project: Project,
-  version: Version,
-  message: string,
-  recordUsageFn: engine.RecordUsageFn,
-  origin: RunOrigin,
-  signal?: AbortSignal,
-  images?: ImageBytes[],
-): AsyncGenerator<EngineChunk, string> {
-  const model = version.model;
-  const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, project, version, 1, origin)
-    : undefined;
-  if (!getModelConfig(model)?.capabilities.imageGeneration) {
-    yield {
-      author: agentName,
-      error: `Agent '${agentName}' uses a model without image generation: ${model}`,
-      ...(recorder ? { traceId: recorder.traceId } : {}),
-    };
-    await finishTrace(
-      recorder,
-      new Error(`Agent '${agentName}' uses a model without image generation: ${model}`),
-    );
-    return "";
-  }
-  try {
-    signal?.throwIfAborted();
-    const sources = images ?? [];
-    // The child's own style, exactly as its predict path would compose it.
-    const prompt = composeImagePrompt(version, message);
-    const result =
-      sources.length > 0
-        ? await deps.imageChannel.editImage({ model, prompt, images: sources, signal })
-        : await deps.imageChannel.generateImage({ model, prompt, signal });
-    const recorded = toImageUsageRecord(model, {
-      ...result.usage,
-      sourceImages: sources.length,
-    });
-    await recordUsageFn({ projectName: project.name, model, ...recorded });
-    recorder?.observeResult({ content: "", model, usage: recorded });
-    yield {
-      author: agentName,
-      ...(recorder ? { traceId: recorder.traceId } : {}),
-      image: { b64: result.b64, mimeType: result.mimeType, prompt: message, model },
-    };
-    await finishTrace(recorder);
-    return `Generated an image for: ${message}`;
-  } catch (caught) {
-    // The trace is written whichever way this ends. Classify an abort before
-    // rethrowing so cancelled and deadline-stopped children retain their row.
-    const error = runEnding(caught, signal);
-    if (signal?.aborted) {
-      await finishTrace(recorder, error, !runDeadlineExceeded(signal));
-      throw error;
-    }
-    yield {
-      author: agentName,
-      ...(recorder ? { traceId: recorder.traceId } : {}),
-      error: error instanceof Error ? error.message : "image generation failed",
-    };
-    await finishTrace(recorder, error);
-    return "";
-  }
 }

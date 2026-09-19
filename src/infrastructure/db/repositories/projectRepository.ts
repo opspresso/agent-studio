@@ -7,13 +7,13 @@ import {
   getItem,
   putItem,
   queryItems,
-  transact,
   updateItem,
 } from "@/infrastructure/db/store";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectApiToken } from "@/domain/project/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
 import { projectIsLive, putProjectItem } from "@/infrastructure/db/projectLifecycle";
+import { readAgentConfiguration } from "@/infrastructure/db/projectConfiguration";
 
 const ENTITY_TYPE = "PROJECT";
 const TOMBSTONE_ENTITY_TYPE = "PROJECT_TOMBSTONE";
@@ -39,10 +39,10 @@ function requiredString(item: Record<string, unknown>, field: string): string {
 }
 
 function projectType(value: unknown): Project["projectType"] {
-  if (value === "llm" || value === "agent" || value === "image") {
+  if (value === "agent") {
     return value;
   }
-  throw new Error("project row has invalid projectType");
+  throw new Error("Project requires migration to an Agent before use");
 }
 
 function visibility(value: unknown): Project["visibility"] {
@@ -72,7 +72,9 @@ function fromItem(item: Record<string, unknown>): Project {
     visibility: visibility(item.visibility),
     memberEmails: memberEmails(item.memberEmails),
     departmentCode: item.departmentCode as string | undefined,
-    publishedVersion: item.publishedVersion as string | undefined,
+    ...(item.configuration === undefined ? {} : {
+      configuration: readAgentConfiguration(item.configuration, requiredString(item, "name")),
+    }),
     slack: item.slack as Project["slack"] | undefined,
     telegram: item.telegram as Project["telegram"] | undefined,
     teams: item.teams as Project["teams"] | undefined,
@@ -139,17 +141,6 @@ export const projectRepository: ProjectRepository = {
 
   async update(project: Project, expectedUpdatedAt: string): Promise<void> {
     await putItem(toItem(project), liveAt(expectedUpdatedAt));
-  },
-
-  async publish(
-    project: Project,
-    versionName: string,
-    expectedUpdatedAt: string,
-  ): Promise<void> {
-    await transact([
-      { kind: "check", key: keys.version(project.name, versionName), condition: conditions.exists },
-      { kind: "put", item: toItem(project), condition: liveAt(expectedUpdatedAt) },
-    ]);
   },
 
   /**

@@ -4,7 +4,6 @@ export interface SourceRefresh {
   /** Project owning the MCP binding and OAuth connection, independent of artifact ownership. */
   projectName?: string;
   serverName: string;
-  versionName: string;
   mapping: McpSourceMapping;
   /** Fingerprint of the endpoint, binding and connection generation, excluding rotated OAuth tokens. */
   identity: string;

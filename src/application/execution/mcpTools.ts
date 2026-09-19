@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 /** A version's MCP bindings resolved into offered tools, and session cleanup. */
 
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import { conversationKey, type RunOrigin } from "@/domain/execution/actor";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
@@ -23,7 +23,7 @@ import { log } from "@/shared/logger";
 import { mapMcpSource, MCP_SOURCE_RESULT_DESCRIPTION } from "@/application/audio/mapMcpSource";
 import {
   mcpHeadersContext,
-  versionMcpHeadersContext,
+  agentMcpHeadersContext,
 } from "@/domain/security/secretContext";
 
 export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
@@ -36,7 +36,7 @@ export type McpToolDeps = Pick<
 
 export async function buildMcpTools(
   deps: McpToolDeps,
-  version: Version,
+  configuration: AgentConfiguration,
   signal?: AbortSignal,
   /** Where the run came from; its email actor and conversation reach the server as headers. */
   origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation"> & Partial<Pick<RunOrigin, "ancestry">>,
@@ -57,7 +57,7 @@ export async function buildMcpTools(
   /** Releases the MCP sessions; call in a `finally` once the run is over. */
   close?: () => Promise<void>;
 }> {
-  const mcpList = version.mcpList ?? [];
+  const mcpList = configuration.mcpList ?? [];
   if (mcpList.length === 0) {
     return { mcpTools: [], mcpServers: [], warnings: [], signature: runtimeFingerprint([]) };
   }
@@ -111,17 +111,16 @@ export async function buildMcpTools(
         const sourceOutputs = binding.sourceOutputs ?? mcp.sourceOutputs;
         const defaults = binding.sourceOutputs === undefined && Boolean(sourceOutputs?.length);
         const refreshIdentity = defaults || sourceOutputs?.some((mapping) => mapping.refreshArgument)
-          ? await deps.sourceRefreshIdentity?.({ version, binding, server: mcp }) : undefined;
+          ? await deps.sourceRefreshIdentity?.({ configuration, binding, server: mcp }) : undefined;
         // Default namespaces belong to the authenticated connection, never to a shared plugin account.
         const mappings = sourceOutputs?.map((mapping) => defaults ? { ...mapping,
-          namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, version.projectName, refreshIdentity])).digest("hex") } : mapping);
+          namespace: createHash("sha256").update(JSON.stringify([mapping.namespace, configuration.projectName, refreshIdentity])).digest("hex") } : mapping);
         const headers = deps.cipher.mergeOutboundHeaders(
           mcp.headers,
           overrides,
           mcpHeadersContext(mcp.name),
-          versionMcpHeadersContext(
-            version.projectName,
-            version.versionName,
+          agentMcpHeadersContext(
+            configuration.projectName,
             binding.name,
           ),
         );
@@ -138,7 +137,7 @@ export async function buildMcpTools(
           // whether the connection still belongs to what this name points at —
           // it is already in hand here, which keeps that check off the read path.
           const resolved = await deps.mcpAuth.headersFor(
-            version.projectName,
+            configuration.projectName,
             mcp.name,
             mcp.auth,
           );
@@ -160,7 +159,7 @@ export async function buildMcpTools(
         // removed every stored spelling, so nothing merged from the registry
         // or a binding survives to be folded with these.
         applyMcpUserEmail(headers, mcpUserEmail(origin?.actor, origin?.userEmail));
-        headers[TENANT_ID_HEADER] = version.projectName;
+        headers[TENANT_ID_HEADER] = configuration.projectName;
         return {
           server: {
             name: mcp.name,
@@ -170,8 +169,8 @@ export async function buildMcpTools(
             ...(contextHeaders ? { contextHeaders } : {}),
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
             ...(mappings?.length ? { resultTransforms: Object.fromEntries(mappings.map((mapping) => [mapping.tool,
-              (result: unknown) => defaults && !refreshIdentity ? Promise.resolve({ text: "Error: default file mapping requires a connection identity." }) : mapMcpSource({ result, mapping, serverName: mcp.name, projectName: origin?.ancestry?.[0] ?? version.projectName,
-                ...(mapping.refreshArgument && refreshIdentity ? { refresh: { projectName: version.projectName, serverName: mcp.name, versionName: version.versionName, mapping, identity: refreshIdentity } } : {}),
+              (result: unknown) => defaults && !refreshIdentity ? Promise.resolve({ text: "Error: default file mapping requires a connection identity." }) : mapMcpSource({ result, mapping, serverName: mcp.name, projectName: origin?.ancestry?.[0] ?? configuration.projectName,
+                ...(mapping.refreshArgument && refreshIdentity ? { refresh: { projectName: configuration.projectName, serverName: mcp.name, mapping, identity: refreshIdentity } } : {}),
                 userEmail: mcpUserEmail(origin?.actor, origin?.userEmail), register: deps.registerMcpSource })])) } : {}),
           },
           description: mcp.description ?? "",
@@ -198,7 +197,7 @@ export async function buildMcpTools(
   // tool the engine would then shadow.
   // The factory releases anything it opened if discovery fails, so a run
   // cancelled mid-init leaks nothing.
-  const reservedNames = [...engine.BUILTIN_TOOL_NAMES, ...(version.subagentList ?? []).flatMap((agent) => [agentToolName(agent.name, "handoff"), agentToolName(agent.name, "delegate")])];
+  const reservedNames = [...engine.BUILTIN_TOOL_NAMES, ...(configuration.subagentList ?? []).flatMap((agent) => [agentToolName(agent.name, "handoff"), agentToolName(agent.name, "delegate")])];
   const toolManager = await deps.mcpSessions.open(servers, reservedNames, signal);
   // A server that rejected the token is the one failure the project itself can
   // fix. Recorded so the console offers a reconnect rather than leaving the
@@ -211,7 +210,7 @@ export async function buildMcpTools(
       }
       flagged.add(serverName);
       await deps.mcpAuth
-        .markUnauthorized(version.projectName, serverName, toolManager.scopeChallenges?.get(serverName))
+        .markUnauthorized(configuration.projectName, serverName, toolManager.scopeChallenges?.get(serverName))
         .catch((error: unknown) => {
           log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });

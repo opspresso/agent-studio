@@ -131,7 +131,7 @@ export async function handleTeamsActivity(
   if (!runnable) {
     return;
   }
-  const { project, version } = runnable;
+  const { project, configuration } = runnable;
 
   log.info(
     "teams",
@@ -144,7 +144,7 @@ export async function handleTeamsActivity(
   const arrivedAt = activity.timestamp ? new Date(activity.timestamp) : new Date();
   await runRememberedTurn(deps, {
     project,
-    version,
+    configuration,
     reply,
     conversation: teamsConversation(conversationId),
     text: disposition.text,

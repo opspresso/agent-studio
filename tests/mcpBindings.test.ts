@@ -25,12 +25,12 @@ import type { ExecutionDeps } from "@/application/execution/runProject";
 import { encryptHeaderOverrides, encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { McpBinding, Project, Version } from "@/domain/project/types";
+import type { McpBinding, Project, AgentConfiguration } from "@/domain/project/types";
 import type { RunActor, RunConversation } from "@/domain/execution/actor";
 import { getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
 import {
   mcpHeadersContext,
-  versionMcpHeadersContext,
+  agentMcpHeadersContext,
 } from "@/domain/security/secretContext";
 import type { UsageDelta } from "@/domain/usage/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
@@ -64,12 +64,12 @@ function projectFixture(name: string): Project {
   };
 }
 
-function versionFixture(projectName: string, mcpList: McpBinding[]): Version {
+function configurationFixture(projectName: string, mcpList: McpBinding[]): AgentConfiguration {
   return {
     projectName,
-    versionName: "v1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: "gpt-test",
     parameters: { piiFiltering: false },
     mcpList: mcpList.map((binding) =>
@@ -79,7 +79,6 @@ function versionFixture(projectName: string, mcpList: McpBinding[]): Version {
     ),
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -155,7 +154,7 @@ async function dispatchHeaders(
     const chunks: EngineChunk[] = [];
     for await (const chunk of executeAgent(depsFixture(channel, overrides), {
       project: projectFixture(projectName),
-      version: versionFixture(projectName, mcpList),
+      configuration: configurationFixture(projectName, mcpList),
       messages: [{ role: "user", content: "hi" }],
       ...(overrides.actor ? { actor: overrides.actor } : {}),
       ...(overrides.conversation ? { conversation: overrides.conversation } : {}),
@@ -193,7 +192,7 @@ describe("per-project MCP header overrides at dispatch", () => {
           name: "shared-mcp",
           headers: encryptHeaderOverrides(
             { Authorization: "Bearer project" },
-            versionMcpHeadersContext("bound", "v1", "shared-mcp"),
+            agentMcpHeadersContext("bound", "shared-mcp"),
           ),
         },
       ],
@@ -388,7 +387,7 @@ describe("per-project MCP header overrides at dispatch", () => {
         }),
         {
           project: projectFixture("no-connection"),
-          version: versionFixture("no-connection", [{ name: "shared-mcp" }]),
+          configuration: configurationFixture("no-connection", [{ name: "shared-mcp" }]),
           messages: [{ role: "user", content: "hi" }],
         },
       )) {
@@ -487,7 +486,7 @@ describe("per-project MCP header overrides at dispatch", () => {
       const fetchMock = globalThis.fetch as unknown as { mock: { calls: unknown[][] } };
       for await (const _chunk of executeAgent(depsFixture(channel), {
         project: projectFixture("url-check"),
-        version: versionFixture("url-check", [
+        configuration: configurationFixture("url-check", [
           {
             name: "shared-mcp",
             headers: encryptHeaderOverrides({ Authorization: "Bearer x" }),
@@ -516,7 +515,7 @@ describe("what a run may offer from a bound server", () => {
       const chunks: EngineChunk[] = [];
       for await (const chunk of executeAgent(depsFixture(channel), {
         project: projectFixture("p"),
-        version: versionFixture("p", mcpList),
+        configuration: configurationFixture("p", mcpList),
         messages: [{ role: "user", content: "hi" }],
       })) {
         chunks.push(chunk);

@@ -1,12 +1,9 @@
 /**
  * The id that ties one run's log lines together.
  *
- * Not the trace id, deliberately. Traces are sampled on the non-agent paths
- * (`TRACE_SAMPLE_RATE`, default 0.1), so using one as the correlation id would
- * leave nine out of ten prompt and image runs with nothing to correlate on —
- * and the runs worth reading logs for are exactly the ones that went wrong,
- * which sampling does not favour. Every run gets a correlation id; a trace, when
- * there is one, is *linked* to it.
+ * Every run receives a correlation id before admission. A Trace is linked when
+ * execution starts, so admission failures and non-model tasks also have logs
+ * that can be correlated.
  *
  * `AsyncLocalStorage` rather than a threaded parameter: a run is a generator
  * consumed across many awaits, and the code that logs is often four layers below

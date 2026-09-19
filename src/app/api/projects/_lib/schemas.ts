@@ -2,7 +2,7 @@ import { z } from "zod";
 import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
 import { isMcpSourceMapping, MAX_MCP_SOURCE_MAPPINGS } from "@/domain/mcp/sourceMapping";
 import { isSlug, SLUG_RULE } from "@/domain/naming";
-import { attachedDocumentsSchema, attachedImagesSchema } from "@/app/api/_lib/attachments";
+import { attachedDocumentsSchema } from "@/app/api/_lib/attachments";
 import {
   isInlineImageDataUrl,
   MAX_IMAGE_SIZE_LABEL,
@@ -24,7 +24,7 @@ export const createProjectSchema = z.object({
   name: projectNameSchema,
   displayName: z.string().min(1),
   description: z.string().default(""),
-  projectType: z.enum(["llm", "agent", "image"]),
+  projectType: z.literal("agent").default("agent"),
   departmentCode: z.string().max(64).optional(),
 });
 
@@ -95,9 +95,6 @@ export const updateProjectSchema = z.object({
   memberEmails: z.array(z.string().trim().email()).max(200).optional(),
 });
 
-/** Trigger payload handling; see `TriggerPayloadMode`. */
-const payloadModeSchema = z.enum(["variables", "message"]);
-
 // Cron/timezone validity and which kind may carry which field are enforced in
 // `triggerUseCases` — the rules live beside the code that reads them.
 export const createTriggerSchema = z.object({
@@ -108,30 +105,26 @@ export const createTriggerSchema = z.object({
   kind: z.enum(["webhook", "schedule"]).optional(),
   description: z.string().default(""),
   enabled: z.boolean().optional(),
-  variables: z.record(z.string().min(1), z.string()).optional(),
-  payloadMode: payloadModeSchema.optional(),
   allowConcurrent: z.boolean().optional(),
   cron: z.string().optional(),
   timezone: z.string().optional(),
   message: z.string().optional(),
   deliveries: messageDestinationsSchema.optional(),
-});
+}).strict();
 
 export const updateTriggerSchema = z.object({
   runAsOwner: z.boolean().optional(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
-  variables: z.record(z.string().min(1), z.string()).optional(),
-  payloadMode: payloadModeSchema.optional(),
   allowConcurrent: z.boolean().optional(),
   rotateSecret: z.boolean().optional(),
   cron: z.string().optional(),
   timezone: z.string().optional(),
   message: z.string().optional(),
   deliveries: messageDestinationsSchema.optional(),
-});
+}).strict();
 
-export const versionParametersSchema = z.object({
+export const agentParametersSchema = z.object({
   policy: z.object({
     maxInputChars: z.number().int().min(1).max(1_000_000).optional(),
     blockedTools: z.array(z.string().min(1).max(64)).max(128).optional(),
@@ -184,58 +177,24 @@ export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([
   }),
 ]);
 
-export const versionInputSchema = z.object({
+export const agentConfigurationInputSchema = z.object({
   systemPrompt: z.string().default(""),
-  userPromptTemplate: z.string().default(""),
   model: z.string().min(1),
   fallbackModel: z.string().optional(),
-  parameters: versionParametersSchema.default({ piiFiltering: false }),
+  parameters: agentParametersSchema.default({ piiFiltering: false }),
   mcpList: z.array(mcpBindingSchema).default([]),
   skillList: z.array(z.string()).default([]),
   subagentList: z.array(subagentRefSchema).default([]),
   maxTurn: z.number().int().positive().optional(),
 });
 
-export const versionNameSchema = z
-  .string()
-  .refine(isSlug, `versionName ${SLUG_RULE}`)
-  .refine((name) => name !== "published", {
-    message: '"published" is reserved for the published-version pointer',
-  });
+export const putAgentConfigurationSchema = agentConfigurationInputSchema.extend({
+  expectedUpdatedAt: z.string().datetime(),
+}).strict();
 
-export const createVersionSchema = versionInputSchema.extend({
-  versionName: versionNameSchema.optional(),
-});
-
-export const updateVersionSchema = versionInputSchema.partial().extend({
-  fallbackModel: z.string().nullable().optional(),
-  maxTurn: z.number().int().positive().nullable().optional(),
-});
-
-export const publishSchema = z.object({ versionName: z.string().min(1) });
-
-/**
- * A version as it stands in the editor, plus the variables to render its
- * template with. The body carries the whole draft rather than a version name
- * because the point of the preview is to see what is *not saved yet*.
- *
- * `versionName` is the exception, and it is not the draft's identity: it names
- * the saved version the editor started from, so that masked header overrides
- * can be resolved back to the secrets they stand for. A form reads them masked
- * and echoes them back, and a mask is not a credential — without this the
- * preview dials the bound MCP servers with the wrong headers. Absent for a
- * version that was never saved, which has nothing to resolve against.
- */
-export const previewPromptSchema = versionInputSchema.extend({
-  versionName: z.string().min(1).optional(),
-  variables: z.record(z.string(), z.string()).optional(),
-  /**
-   * A request to preview against. Capability discovery and memory recall read
-   * it; the assembled prompt still stands before the first turn, so it is
-   * bounded at the length a query is useful at rather than a conversation's.
-   */
+export const previewPromptSchema = agentConfigurationInputSchema.extend({
   message: z.string().max(8000).optional(),
-});
+}).strict();
 
 /**
  * One OpenAI content part. Image bytes arrive inline as `data:image/…;base64,…`;
@@ -287,21 +246,14 @@ export const chatMessageSchema = z.object({
 );
 
 export const predictSchema = z.object({
-  variables: z.record(z.string(), z.string()).optional(),
-  messages: z.array(chatMessageSchema).optional(),
+  messages: z.array(chatMessageSchema).min(1),
   stream: z.boolean().optional(),
-  prompt: z.string().optional(),
-  size: z.string().optional(),
-  quality: z.string().optional(),
-  /** Source images for an `image` project: present means edit, absent means draw. */
-  images: attachedImagesSchema,
   documents: attachedDocumentsSchema,
-});
+}).strict();
 
 export const chatCompletionsSchema = z.object({
   model: z.string().optional(),
   messages: z.array(chatMessageSchema).min(1),
-  variables: z.record(z.string(), z.string()).optional(),
   stream: z.boolean().optional(),
   temperature: z.number().optional(),
   max_tokens: z.number().optional(),

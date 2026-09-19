@@ -29,7 +29,7 @@ describe("TraceRecorder", () => {
     try {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
-        projectName: "parent", versionName: "1", projectType: "agent", model: "model", messageCount: 1,
+        projectName: "parent", projectType: "agent", model: "model", messageCount: 1,
       });
       const contexts: Partial<EngineChunk>[] = [
         {},
@@ -74,7 +74,7 @@ describe("TraceRecorder", () => {
     try {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
-        projectName: "parent", versionName: "1", projectType: "agent", model: "model", messageCount: 1,
+        projectName: "parent", projectType: "agent", model: "model", messageCount: 1,
       });
       const context = (transferId: string) => ({
         author: "child",
@@ -112,7 +112,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "parent",
-      versionName: "3",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 4,
@@ -136,9 +135,9 @@ describe("TraceRecorder", () => {
     await recorder.finish();
 
     expect(traces).toHaveLength(1);
+    expect(traces[0]).not.toHaveProperty("versionName");
     expect(traces[0]).toMatchObject({
       projectName: "parent",
-      versionName: "3",
       status: "completed",
     });
     // A subagent's tokens do NOT become a model span here: this run does not know
@@ -160,7 +159,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "p",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -182,7 +180,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "parent",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -201,7 +198,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "parent",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -230,7 +226,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "bruce-bot",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -264,7 +259,6 @@ describe("TraceRecorder", () => {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
         projectName: "parent",
-        versionName: "1",
         projectType: "agent",
         model: "openai/gpt-5-mini",
         messageCount: 1,
@@ -296,7 +290,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "p",
-      versionName: "1",
       projectType: "agent",
       model: "openai/primary",
       messageCount: 1,
@@ -323,7 +316,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "p",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -351,7 +343,6 @@ describe("TraceRecorder", () => {
       // that throws must still leave a trace.
       const recorder = new TraceRecorder(repository, {
         projectName: "parent",
-        versionName: "1",
         projectType: "agent",
         model: "openai/gpt-5-mini",
         messageCount: 1,
@@ -391,7 +382,6 @@ describe("TraceRecorder", () => {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
         projectName: "parent",
-        versionName: "1",
         projectType: "agent",
         model: "openai/gpt-5-mini",
         messageCount: 1,
@@ -427,7 +417,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "parent",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -458,7 +447,6 @@ describe("TraceRecorder", () => {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
         projectName: "parent",
-        versionName: "1",
         projectType: "agent",
         model: "openai/gpt-5-mini",
         messageCount: 1,
@@ -492,7 +480,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "parent",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -512,7 +499,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "p",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -531,7 +517,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "p",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -548,7 +533,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "p",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -567,7 +551,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "p",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -586,7 +569,6 @@ describe("TraceRecorder", () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
       projectName: "p",
-      versionName: "1",
       projectType: "agent",
       model: "openai/gpt-5-mini",
       messageCount: 1,
@@ -605,7 +587,7 @@ describe("TraceRecorder", () => {
     try {
       const { repository, traces } = memoryRepository();
       const recorder = new TraceRecorder(repository, {
-        projectName: "p", versionName: "1", projectType: "llm", model: "model", messageCount: 1,
+        projectName: "p", projectType: "llm", model: "model", messageCount: 1,
       });
       recorder.observeResult({
         content: "partial", model: "model", usage: { inputTokens: 5, outputTokens: 10, costUsd: 0 },

@@ -1,7 +1,6 @@
 # 실행
 
-Project 가 무엇이고, Version 이 무엇을 선언하며, 하나가 실행될 때 무슨 일이 일어나는가: 도구
-루프, 그림을 그리는 세 경로, 그리고 런이 남기는 것.
+Agent의 현재 설정, SDK 도구 실행, 이미지 도구와 실행 기록의 계약을 설명한다.
 
 이것이 놓여 있는 형태 — 레이어, 진입점, 런 브래킷, `EngineChunk` 계약 — 는
 [ARCHITECTURE.md](../ARCHITECTURE.md) 다. 여기서 이름 붙인 상한들은
@@ -10,65 +9,35 @@ Project 가 무엇이고, Version 이 무엇을 선언하며, 하나가 실행�
 > 실행 불변식의 정본은 `src/application/runtime/AGENTS.md`다. SDK API는
 > [OpenAI Agents SDK](https://openai.github.io/openai-agents-js/)의 계약을 직접 사용한다.
 
-## Project / Version
+## Project와 현재 설정
 
-```ts
-Project { name (slug, immutable id), displayName, description,
-          projectType: 'llm' | 'agent' | 'image', ownerEmail,
-          visibility?, memberEmails?, departmentCode?, publishedVersion?,
-          slack?, telegram?, teams?, costLimits?, createdAt, updatedAt }
+Project는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동·비용 정책과 현재
+`AgentConfiguration`을 같은 Project 행에 보관한다. 설정에는 모델·fallback·system prompt·
+생성 파라미터·Skill·MCP·하위 Agent·실행 정책이 들어간다. 이미지 생성·편집은 Agent 도구다.
 
-Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fallbackModel?,
-          parameters { temperature?, presencePenalty?, maxTokens?, reasoningEffort?, piiFiltering,
-                       callerContext?, structuredOutput?/jsonSchema,
-                       imageGeneration?/imageModel?, urlFetch?, slackWorkspace?,
-                       dynamicCapabilities?, memoryRecall?, reasoningTrace?, audioProcessing?,
-                       workspaceTools?, policy? },
-          mcpList: McpBinding[], skillList: string[],
-          subagentList: { name, type: 'local' | 'remote' }[], maxTurn?, createdAt }
-```
+- `configurationUseCases`가 접근·소유자 검사, 모델 capability와 참조 검증, 시크릿 병합을 소유한다.
+  저장은 전체 설정 교체이며 `expectedUpdatedAt`과 Project의 `updatedAt`으로 동시 수정을 거절한다.
+- `model`은 도구 호출을 지원하는 텍스트 모델이다. `imageModel`은 이미지 도구의 모델이다.
+  카탈로그 모델의 capability 충돌은 거절하며 사용자 모델과 미등록 모델 정책은
+  [모델 설정](../CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)을 따른다.
+- `mcpList`·`skillList`·`subagentList`의 중복과 새 참조를 검사한다. 기존 참조가 사라져도
+  나머지 설정을 수정할 수 있다. MCP의 URL은 registry가 소유하고 Agent binding은 허용 도구와
+  헤더를 설정한다. 헤더는 안정적인 Agent·서버 문맥으로 암호화하고 응답에서는 마스킹한다.
+  저장 당시 URL fingerprint와 현재 URL이 다르면 옛 credential을 전송하지 않는다.
+- `presencePenalty`는 -2부터 2까지이며 provider가 지원할 때 `presence_penalty`로 전달한다.
+  미설정 값은 provider 기본값을 유지하며 하위 Agent는 자신의 설정을 사용한다.
+- 모든 실행 창구가 Project와 함께 읽은 현재 설정을 사용한다. 실행 중 설정을 다시 선택하지
+  않으며, 승인 대기에는 설정과 연결 fingerprint를 보존해 변경된 상태의 재개를 거절한다.
+- 입력은 사용자 메시지다. 사용자 프롬프트 템플릿·이름 있는 Version·발행 포인터는 없다.
+  기존 행·시크릿·승인 대기의 보존과 전환은 [데이터 이전](../AGENT-MIGRATION.md)을 따른다.
 
-- `CostLimits { alertThresholdUsd?, blockThresholdUsd?, monthlyAlertThresholdUsd?,
-  monthlyBlockThresholdUsd?, alertDestinations? }` — 목적지는 Slack·Telegram·Teams 중 플랫폼마다
-  하나씩 선택한다. 창(window)은 둘, **UTC 일**(usage 행이
-  키로 삼는 단위)과 **UTC 월**이며, 월의 지출은 그 일별 행들의 합이다 — 한 파티션에 최대
-  31개, 한 번의 한정된 query — 그래서 어긋날 별도의 집계값이 존재하지 않는다.
-- `McpBinding { name, headers?: Record<string, string | null>, tools?: string[] }` 는 version 을
-  registry 의 MCP 서버에 묶는다. `tools` 는 그 서버의 도구 중 런이 제공할 것을 좁힌다.
-  **URL 은 언제나 registry 의 것이고**, `headers` 는 dispatch 시점에 서버 자신의 헤더 위로
-  겹쳐진다(문자열 = 교체/추가, `null` = 기본값 제거, 대소문자 구분 없이 매칭). 그래서 하나의
-  registry 서버가 서로 다른 자격 증명으로 여러 project 를 섬긴다. 오버라이드 값은 registry
-  헤더와 같은 AES 암호화/마스킹 수명주기를 따르며 — 이 때문에 version 은 시크릿을 갖는 첫
-  엔티티가 된다: API 응답은 `toVersionView` 를 지나고, 실행 경로는 repository 값을 읽어
-  dispatch 시점에 복호화한다. 저장 시 registry URL 의 fingerprint 를 함께 기록하고 실행 시
-  다시 비교하므로 같은 이름의 서버가 이동해도 옛 endpoint 의 credential 은 따라가지 않는다.
-  fingerprint 가 없는 예전 secret 도 실패 폐쇄하며 다시 입력해야 한다. 오버라이드가 생기기
-  전에 쓰인 행은 `mcpList` 를 `string[]` 로 저장했다. 읽을 때 정규화되고, API 도 여전히 그
-  형태를 받는다.
-- 템플릿 변수 `{{var}}` 는 dispatch 전에 서버 측에서 렌더링된다.
-- `presencePenalty`는 선택적인 생성 설정이며 OpenAI-compatible 요청의 `presence_penalty`로 전달한다.
-  허용 범위는 -2부터 2까지이고, 양수는 이미 나온 토큰에 페널티를 적용한다. 미설정이면 provider 기본값을 유지하며,
-  모델이 지원하는 경우에만 사용한다. `maxTokens`와 함께 버전에 저장하고 각 하위 Agent는 자신의 설정을 사용한다.
-- Version 쓰기는 catalog 모델에 대해 **capability 적합성**을 검증한다(agent project 는
-  `capabilities.tools` 를 요구하고, `structuredOutput` 은 그 capability 를 요구한다). 알 수
-  없는/커스텀 모델 id는 경고와 함께 저장할 수 있다. 실행의 미등록 정책과 provider 보고 비용·
-  카탈로그 가격 fallback은 [설정](../CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)을 따른다.
-- Version 쓰기는 `mcpList`/`skillList`/`subagentList` 항목이 **resolve 되는지**(`VersionRefRepos`,
-  composition root 가 `versionUseCases` 에 한 번 바인딩한다), 그리고 그 project type 이 실제로
-  그것들을 실행할 수 있는지도 검증한다 — `agent` project 만 그러하므로, 다른 type 에 추가된
-  binding 은 저장돼 에디터에 표시되고 런타임에는 조용히 무시되는 대신 거부된다. 업데이트
-  시에는 *새로 추가된* 항목만 검사하므로, registry 항목을 삭제해도 그것을 이미 참조하던
-  version 들이 고립되는 일이 없고, 이 규칙들이 생기기 전에 저장된 설정도 계속 편집하고
-  제거할 수 있다.
-- **런이 어느 version 을 실행하는가**는 `resolveRunnableVersion`
-  (`src/application/project/resolveRunnableVersion.ts`)이 소유한다: published 포인터가 언제나
-  이긴다. 대화형 표면(chat)만 최신 draft 로 폴백하는 쪽을 택하고, 외부 표면(Slack, A2A,
-  webhook trigger, subagent transfer)은 published 전용이라 draft 가 새어 나가지 않는다.
+전체 HTTP 형태와 마스킹 규칙은 [Agent 설정 API](../API.md#agent-현재-설정),
+Project의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부하-가드)가 소유한다.
 
 ## Native Agent Runtime
 
 Agent Studio는 AgentOps / Control Plane이며 OpenAI Agents SDK가 기본 Agent Runtime이다.
-Studio는 버전·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가
+Studio는 현재 설정·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가
 모델 턴·도구 실행·Handoff·Agent-as-Tool·Guardrail·승인 중단과 재개를 수행한다.
 `src/application/runtime/`가 SDK 계약을 직접 사용한다. 자체 모델/도구 루프는 두지 않는다.
 SDK의 각 기능을 어디까지 제공하는지와 선택적 실행 환경의 도입 조건은
@@ -76,7 +45,7 @@ SDK의 각 기능을 어디까지 제공하는지와 선택적 실행 환경의 
 
 ```mermaid
 flowchart TB
-  surface["Chat · API · 메시징 · Trigger"] --> control["Studio Control Plane<br/>버전 · 권한 · 비용/동시성 가드 · 바인딩"]
+  surface["Chat · API · 메시징 · Trigger"] --> control["Studio Control Plane<br/>현재 설정 · 권한 · 비용/동시성 가드 · 바인딩"]
   control --> runtime["SDK Agent + Runner"]
   runtime --> model["SDK ModelProvider<br/>OpenAI / 호환 gateway / vLLM"]
   runtime --> capabilities["SDK Tool · MCPServer"]
@@ -107,7 +76,7 @@ flowchart TB
 
 ### 모델과 실행
 
-`runPrompt`와 `runPromptStream`도 SDK Agent/Runner를 사용한다. `runAgent`의 도구 반복은 SDK가
+`runAgent`의 모델·도구 반복은 SDK가
 수행하며, Studio 모델 wrapper는 모델별 설정·PII·사용량·컨텍스트 예산과 마지막 턴 정책을 적용한다.
 마지막 허용 턴에는 도구를 제공하지 않고 현재 정보로 답하도록 지시한다. SDK의 `maxTurns`도
 동시에 강제한다. 제공되지 않은 도구와 잘못된 인자는 SDK의 오류 결과/실패 계약을 따른다.
@@ -144,10 +113,9 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 `delegate_<name>`으로 specialist의 결과를 받은 뒤 계속 답할 수 있다. 인자는
 `{ input: string, image_ids: string[] }`다. Handoff는 같은 Runner의 모델/도구 이력을 이어받고,
 Agent-as-Tool은 SDK가 별도 실행을 관리한다. 후자의 요청에는 최신 SDK Session 이력에서
-만든 한정된 배경 문맥을 전달한다. 원격 Agent와 image project는 별도 기능을 수행하는
-SDK function tool이며 text agent로 가장하지 않는다.
+만든 한정된 배경 문맥을 전달한다. 원격 Agent는 별도 기능을 수행하는 SDK function tool로 연결한다.
 
-Studio는 요청된 대상의 발행 버전만 준비하고 순환, 깊이 5, 모델/비용 정책을 검사한다.
+Studio는 요청된 대상의 현재 설정을 준비하고 순환, 깊이 5, 모델/비용 정책을 검사한다.
 자식은 부모에게 남은 턴 수 이하로 제한되며 추가 Agent-as-Tool 병렬 위임을 제공하지 않는다.
 필요한 로컬 Handoff와 원격/이미지 도구는 자식에도 제공할 수 있다. 자식 실패는 부모의 오류
 도구 결과와 경고가 되고, 부모는 남은 정보로 답할 수 있다.
@@ -171,9 +139,9 @@ revision CAS를 사용하고, 이력과 승인 대기 `RunState`를 한 번에 �
 해당 정책이 적용되는 실행을 거부한다. Handoff 대신 `delegate_<name>`에 승인 정책을 적용한다.
 구체적인 HTTP 요청은 [Chat 승인 API](../API.md#chat-승인과-재개)를 따른다.
 
-승인 대기 상태에는 버전·도구/연결 fingerprint·이미지 핸들·소비한 예산·각 Agent의 PII 매핑을
+승인 대기 상태에는 현재 설정·도구/연결 fingerprint·이미지 핸들·소비한 예산·각 Agent의 PII 매핑을
 보존한다. 재개 전 pending revision을 running으로 원자적으로 선점한다. 중복 결정과 바뀐
-버전/바인딩은 거부한다. 승인 이후 프로세스가 중단되어 결과가 불확실하면 자동 재실행하지
+설정/바인딩은 거부한다. 승인 이후 프로세스가 중단되어 결과가 불확실하면 자동 재실행하지
 않는다. 사용자는 기록을 확인한 뒤 미완료 실행을 폐기할 수 있다. 폐기는 화면 기록을 보존하고
 미완료 실행만 이후 모델 문맥에서 제외한다.
 
@@ -186,7 +154,7 @@ Chat 삭제는 tombstone으로 늦게 끝난 실행의 이력 재생성을 막�
 
 ### 로컬 Tracing
 
-SDK의 기본 공개 exporter는 로컬 `TracingProcessor`로 교체한다. 샘플링된 Studio Trace에
+SDK의 기본 공개 exporter는 로컬 `TracingProcessor`로 교체한다. 각 Agent의 Studio Trace에
 native Agent·generation·function·MCP listing·Guardrail·Handoff span을 연결하며 native
 span ID와 부모 ID를 보존한다. 모델 입력·출력, 도구 인자와 credential은 수집하지 않는다.
 승인 대기 실행은 `awaiting-approval` 상태다. 선택적인 운영 OTLP 전송은 배포가 구성한
@@ -194,23 +162,15 @@ span ID와 부모 ID를 보존한다. 모델 입력·출력, 도구 인자와 cr
 
 ## Images
 
-이미지의 생성·편집은 `ImageChannel` 포트에서 만난다.
+이미지의 생성·편집은 `ImageChannel` 포트에서 만난다. Agent와 하위 Agent 모두
+`application/execution/imageTool.ts`의 GenerateImage·EditImage를 사용한다.
+`parameters.imageGeneration`이 도구 제공을 제어하며 `imageModel` 또는 사용 가능한 첫 이미지
+모델로 실행한다. Agent 행동 지침을 이미지 스타일로 복사하지 않는다.
 
-| 진입 | 실행 위치 | 모델 선택 |
-|---|---|---|
-| image Project | `application/image/generateImage.ts` | 해당 Version의 model |
-| GenerateImage·EditImage | `application/execution/imageTool.ts` | 활성화한 `imageModel`, 사용할 수 없으면 첫 visible 이미지 모델 |
-| image 하위 Project | 같은 파일의 `runImageSubagent` | 자식의 발행 Version model |
-
-원본 이미지가 있으면 편집하고 없으면 생성한다. `img_1` 같은 런 이미지 핸들은 사용자 첨부와
-생성 결과를 함께 지목하며 위임의 `image_ids`로 전달할 수 있다.
-image Project는 `composeImagePrompt`로 자기 system prompt를 스타일로 붙인다.
-Agent의 이미지 builtin은 Agent 행동 지침을 스타일로 복사하지 않는다.
-
-직접 image 실행은 capability와 주제 prompt를 admission 전에 검사한다.
-builtin 제공은 `parameters.imageGeneration`이 제어하고 편집 endpoint 미지원은 실행 시
-도구 오류로 드러난다. 자식의 실패는 authored 오류로 부모에 전달한다.
-호출자 취소·런 deadline·provider 실패는 signal과 공통 종료 판정으로 구분한다.
+원본 이미지가 있으면 편집하고 없으면 생성한다. `img_1` 같은 핸들은 사용자 첨부와 생성 결과를
+지목하며 위임의 `image_ids`로 전달할 수 있다. 이미지 bytes는 같은 Agent 실행의 출력 축이다.
+편집 미지원은 도구 오류로 보고하고 호출자 취소·deadline·provider 실패는 signal과 공통 종료
+판정으로 구분한다.
 
 ### Provider adapter
 
@@ -242,7 +202,7 @@ provider 청구액을 그대로 보관하는 텍스트 경로와 다르다.
 
 Artifact는 보관한 파일의 metadata이며 bytes는 객체 저장소에 둔다.
 사용자 첨부는 첨부 보관 유스케이스, 실행 출력은 최상위 `openRun`의 recorder가 저장한다.
-producer마다 저장 로직을 두지 않아 이미지 Project·builtin·하위 Agent·MCP 출력을 함께 다룬다.
+producer마다 저장 로직을 두지 않아 이미지 builtin·하위 Agent·MCP 출력을 함께 다룬다.
 
 | Chunk | `captureRunArtifacts`의 처리 |
 |---|---|
@@ -259,8 +219,8 @@ recorder가 없는 배포에서는 캡처 wrapper가 원래 chunk를 통과시�
 참조할 수 있고 A2A는 URL part의 metadata에 전달한다.
 읽기·편집 권한은 [문서 설계](documents.md#채널-간-파일-참조)를 따른다.
 
-Artifact는 project·version·actor·run ID·위임 경로를 기록한다.
-`model`은 실제 생성자가 명시한 이미지 모델만 사용하고 부모 Version에서 추측하지 않는다.
+Artifact는 project·actor·run ID·위임 경로를 기록한다. 이전 기록의 versionName은 읽기용으로만 보존한다.
+`model`은 실제 생성자가 명시한 이미지 모델만 사용하고 부모 Agent 설정에서 추측하지 않는다.
 MCP가 준 bytes나 첨부처럼 모델을 확정할 수 없는 경우에는 비운다.
 저장 실패는 원래 응답을 실패로 바꾸지 않고 손실 건수와 제한된 원인 분류를 경고한다.
 

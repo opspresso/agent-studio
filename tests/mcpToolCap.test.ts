@@ -7,7 +7,7 @@ import { MAX_MCP_TOOLS_PER_RUN } from "@/domain/llm/toolLimits";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { McpServer } from "@/domain/mcp/types";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
@@ -69,7 +69,7 @@ function depsFor(): ExecutionDeps {
   } as unknown as ExecutionDeps;
 }
 
-const version = { projectName: "p", mcpList: [{ name: "srv" }] } as unknown as Version;
+const configuration = { projectName: "p", mcpList: [{ name: "srv" }] } as unknown as AgentConfiguration;
 
 describe("the per-run MCP tool cap", () => {
   beforeEach(() => {
@@ -80,7 +80,7 @@ describe("the per-run MCP tool cap", () => {
   it("offers at most the cap, and says what it left out", async () => {
     stubServerWith(MAX_MCP_TOOLS_PER_RUN + 5);
 
-    const resolved = await buildMcpTools(depsFor(), version);
+    const resolved = await buildMcpTools(depsFor(), configuration);
 
     expect(resolved.mcpTools).toHaveLength(MAX_MCP_TOOLS_PER_RUN);
     expect(resolved.warnings.join(" ")).toContain("5 MCP tool(s) were not offered");
@@ -88,7 +88,7 @@ describe("the per-run MCP tool cap", () => {
 
   it("refuses a tool it cut rather than running it and reporting a result", async () => {
     stubServerWith(MAX_MCP_TOOLS_PER_RUN + 5);
-    const resolved = await buildMcpTools(depsFor(), version);
+    const resolved = await buildMcpTools(depsFor(), configuration);
     const cut = `tool_${MAX_MCP_TOOLS_PER_RUN + 1}`;
 
     const result = await resolved.callMcpTool?.(cut, {});
@@ -100,7 +100,7 @@ describe("the per-run MCP tool cap", () => {
 
   it("still dispatches a tool it did offer", async () => {
     stubServerWith(MAX_MCP_TOOLS_PER_RUN + 5);
-    const resolved = await buildMcpTools(depsFor(), version);
+    const resolved = await buildMcpTools(depsFor(), configuration);
 
     const result = await resolved.callMcpTool?.("tool_0", {});
 
@@ -112,7 +112,7 @@ describe("the per-run MCP tool cap", () => {
     // memory recall — and it must answer from the same offered set, or the cap
     // would have a side door.
     stubServerWith(MAX_MCP_TOOLS_PER_RUN + 5);
-    const resolved = await buildMcpTools(depsFor(), version);
+    const resolved = await buildMcpTools(depsFor(), configuration);
 
     expect(resolved.aliasFor?.("srv", "tool_0")).toBe("tool_0");
     expect(resolved.aliasFor?.("srv", `tool_${MAX_MCP_TOOLS_PER_RUN + 1}`)).toBeUndefined();

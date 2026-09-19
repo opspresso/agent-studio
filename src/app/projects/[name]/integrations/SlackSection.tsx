@@ -11,8 +11,8 @@ import {
   testProjectSlack,
   updateProjectSlack,
 } from "../../lib/api";
-import type { ProjectSlackResponse, ProjectType, SlackSuggestedPrompt } from "../../lib/api";
-import { Alert, Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
+import type { ProjectSlackResponse, SlackSuggestedPrompt } from "../../lib/api";
+import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
@@ -34,10 +34,8 @@ function emptyPrompts(stored: SlackSuggestedPrompt[]): SlackSuggestedPrompt[] {
 
 export function SlackSection({
   projectName,
-  projectType,
 }: {
   projectName: string;
-  projectType: ProjectType;
 }) {
   const t = useT();
   const [view, setView] = useState<ProjectSlackResponse | null>(null);
@@ -158,12 +156,6 @@ export function SlackSection({
     }
   }
 
-  // A Slack mention runs the agent loop, which refuses every other project
-  // type — nothing to configure, so nothing to show. A leftover bot stays
-  // visible below so its credentials can still be disconnected.
-  if (projectType !== "agent" && !view.configured) {
-    return null;
-  }
 
   return (
     <CollapsibleSection
@@ -175,12 +167,6 @@ export function SlackSection({
       }
     >
       <Stack gap="sm">
-        {projectType !== "agent" && (
-          <Alert color="yellow" variant="light" fz="xs">
-            Slack mentions run the agent loop, and a &quot;{projectType}&quot; project refuses
-            them — this bot answers nothing. Disconnect to clear the stored credentials.
-          </Alert>
-        )}
         <Text fz="xs" c="dimmed" lh={1.6}>
           Create a dedicated Slack app for this project from the manifest below (api.slack.com/apps
           → Create New App → From a manifest), install it, then paste the bot token and signing

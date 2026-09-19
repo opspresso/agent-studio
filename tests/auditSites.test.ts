@@ -77,7 +77,6 @@ function projects(overrides: Partial<ProjectRepository> = {}): ProjectRepository
     list: async () => [project],
     create: async () => {},
     update: async () => {},
-    publish: async () => {},
     delete: async () => {},
     getApiToken: async () => ({
       token: "enc:v1:tok_secret",
@@ -242,7 +241,6 @@ describe("webhook trigger secrets", () => {
     description: "",
     enabled: true,
     secret: "enc:v1:whsec",
-    payloadMode: "message",
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
