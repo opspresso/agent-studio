@@ -1,3 +1,4 @@
+import { withConfigurations } from "./projectConfigurations";
 import { describe, expect, it, vi } from "vitest";
 import { openRun } from "@/application/run/runBracket";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
@@ -9,7 +10,7 @@ import { prepareSubagent } from "@/application/execution/agentBindings";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { ValidationError } from "@/application/errors";
 import { listModels } from "@/domain/llm/models";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 
 /**
@@ -31,18 +32,18 @@ const project: Project = {
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-function version(overrides: Partial<Version> = {}): Version {
+function configuration(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
   return {
     projectName: "p",
-    versionName: "v1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: REGISTERED,
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00Z",
+
     ...overrides,
   };
 }
@@ -124,7 +125,7 @@ describe("the run bracket enforces it", () => {
       openRun(
         { usage: counting, unknownModelPolicy: async () => "refuse" },
         project,
-        version({ model: UNKNOWN }),
+        configuration({ model: UNKNOWN }),
       ),
     ).rejects.toBeInstanceOf(ValidationError);
     expect(costReads).toBe(0);
@@ -134,7 +135,7 @@ describe("the run bracket enforces it", () => {
     const bracket = await openRun(
       { usage, unknownModelPolicy: async () => "allow" },
       project,
-      version({ model: UNKNOWN }),
+      configuration({ model: UNKNOWN }),
     );
 
     // Admitted means a usable bracket, not merely the absence of a throw: with
@@ -146,7 +147,7 @@ describe("the run bracket enforces it", () => {
 
   it("admits it when no policy is injected at all", async () => {
     // A deps bag assembled before this existed must behave exactly as it did.
-    const bracket = await openRun({ usage }, project, version({ model: UNKNOWN }));
+    const bracket = await openRun({ usage }, project, configuration({ model: UNKNOWN }));
 
     expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
     await bracket.close();
@@ -170,7 +171,7 @@ describe("the run bracket enforces it", () => {
         },
       },
       project,
-      version({ model: UNKNOWN }),
+      configuration({ model: UNKNOWN }),
     );
 
     expect(bracket.runId).toBeTruthy();
@@ -180,11 +181,11 @@ describe("the run bracket enforces it", () => {
 });
 
 describe("subagent preparation enforces model policy", () => {
-  const child: Project = { ...project, name: "child", projectType: "agent", publishedVersion: "v1" };
-  const parent = version({ projectName: "parent", subagentList: [{ name: "child", type: "local" }] });
+  const child: Project = { ...project, name: "child", projectType: "agent" };
+  const parent = configuration({ projectName: "parent", subagentList: [{ name: "child", type: "local" }] });
   function prepare(policy: UnknownModelPolicy | undefined, model: string) {
     const deps = {
-      projects: { get: async () => child }, versions: { get: async () => version({ projectName: "child", model }) },
+      projects: withConfigurations({ get: async () => child }, ({ get: async () => configuration({ projectName: "child", model }) }).get),
       ...(policy ? { unknownModelPolicy: async () => policy } : {}),
     } as unknown as ExecutionDeps;
     return prepareSubagent(deps, parent, "child", { message: "hi", images: [] }, async () => {}, { ancestry: ["parent"] });

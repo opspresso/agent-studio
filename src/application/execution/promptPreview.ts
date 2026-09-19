@@ -1,6 +1,6 @@
 /** Rendering what a run would send, without dispatching the model. */
 
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import * as engine from "@/application/runtime";
 import type { ExecutionDeps, PromptPreview } from "./deps";
@@ -36,7 +36,7 @@ export async function previewPrompt(
   deps: ExecutionDeps,
   input: {
     project: Project;
-    version: Version;
+    configuration: AgentConfiguration;
     variables?: Record<string, string>;
     /**
      * The caller's connection, so a preview stops when they navigate away.
@@ -65,16 +65,16 @@ export async function previewPrompt(
     actor?: RunActor;
   },
 ): Promise<PromptPreview> {
-  const { project, version } = input;
+  const { project, configuration } = input;
   const warnings: string[] = [];
-  if (version.parameters.piiFiltering) {
+  if (configuration.parameters.piiFiltering) {
     warnings.push(
       "PII filtering is on: emails, phone numbers, Korean registration numbers and card numbers are replaced with tokens before dispatch.",
     );
   }
 
   if (
-    version.parameters.memoryRecall &&
+    configuration.parameters.memoryRecall &&
     !input.message?.trim()
   ) {
     warnings.push(
@@ -82,15 +82,10 @@ export async function previewPrompt(
     );
   }
 
-  if (version.userPromptTemplate.trim()) {
-    warnings.push(
-      "An agent run does not send the user prompt template; the conversation supplies the user turn.",
-    );
-  }
   const origin = input.actor ? { actor: input.actor } : undefined;
   const memory = input.message?.trim()
     ? await prepareMemoryForRun(deps, {
-        version,
+        configuration,
         query: input.message,
         signal: input.signal,
         ...(origin ? { origin } : {}),
@@ -98,10 +93,10 @@ export async function previewPrompt(
     : { input: {}, warnings: [], asked: 0, failed: 0 };
   const resolved = await resolveRunTools(
     deps,
-    version,
+    configuration,
     input.signal,
     discoveryQueries(
-      version,
+      configuration,
       input.message === undefined ? [] : [input.message],
       memory.input.remembered,
     ),
@@ -114,7 +109,7 @@ export async function previewPrompt(
       deps,
       // As widened by discovery, so the preview stands for the run it describes
       // rather than the version as saved.
-      resolved.version,
+      resolved.configuration,
       project.name,
       async () => {},
       // Resolve actor-gated capabilities without executing them.
@@ -128,13 +123,13 @@ export async function previewPrompt(
     // author can act on from the editor.
     const missingMemory =
       !input.message?.trim() &&
-      version.parameters.memoryRecall &&
-      recallTargets(resolved.mcp, version).length === 0
+      configuration.parameters.memoryRecall &&
+      recallTargets(resolved.mcp, configuration).length === 0
         ? { warnings: [noRecallTargetWarning()] }
         : { warnings: [] };
     const { systemPrompt, tools } = engine.assembleAgentRun(agentDeps, {
-      blockedTools: version.parameters.policy?.blockedTools,
-      ...(version.systemPrompt !== undefined ? { systemPrompt: version.systemPrompt } : {}),
+      blockedTools: configuration.parameters.policy?.blockedTools,
+      ...(configuration.systemPrompt !== undefined ? { systemPrompt: configuration.systemPrompt } : {}),
       // No messages: a preview stands before the first turn, like a fresh run
       // with nothing attached.
       skills: resolved.skills,
@@ -144,7 +139,7 @@ export async function previewPrompt(
       // The clock a run started now would carry, so the preview does not hide a
       // line the model will read.
       now: runClock(deps),
-      ...callerFor({ version, caller: input.caller }),
+      ...callerFor({ configuration, caller: input.caller }),
       ...(memory.input.remembered ? { remembered: memory.input.remembered } : {}),
       // A preview stands for a top-level run, and that is the only kind offered
       // fan-out — hiding it here would show a prompt nobody sends.

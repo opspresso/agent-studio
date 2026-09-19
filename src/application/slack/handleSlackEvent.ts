@@ -2,7 +2,6 @@ import type { Project } from "@/domain/project/types";
 import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
 import { slackMessageText } from "@/domain/slack/messageText";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { isProjectPrivate } from "@/domain/project/access";
 import { userMayAccessProject } from "@/application/project/projectUseCases";
 import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
@@ -383,7 +382,7 @@ export async function handleSlackEvent(
 
   const project = await deps.projects.get(projectName);
   // External surface: published-only, drafts never leak (resolveRunnableVersion policy).
-  const version = project ? await resolveRunnableVersion(deps.versions, project) : null;
+  const configuration = project ? project.configuration : null;
   const target: ReplyTarget = {
     channel: event.channel,
     threadTs,
@@ -393,7 +392,7 @@ export async function handleSlackEvent(
       : {}),
   };
   const reply = slackReplyChannel(deps, token, target);
-  if (!project || !version) {
+  if (!project || !configuration) {
     await reply.say(
       `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
     );
@@ -457,7 +456,7 @@ export async function handleSlackEvent(
   // The version's opt-in gates the *lookup*, not just the prompt: a project that
   // did not ask to know who is asking should not be sending anyone's id to
   // Slack's profile API either.
-  const named = version.parameters.callerContext
+  const named = configuration.parameters.callerContext
     ? await resolveSpeakers(deps, token, rawTurns, event.user)
     : { caller: undefined, nameByUser: undefined };
   // Whose gallery this run's output belongs in. Not gated on `callerContext`,
@@ -509,7 +508,7 @@ export async function handleSlackEvent(
     deps,
     {
       project,
-      version,
+      configuration,
       text: askText,
       attachments: (event.files ?? []).map((file) => toAttachment(deps, token, file)),
       history: turns.map((turn) => toHistoryTurn(deps, token, turn)),

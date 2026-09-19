@@ -75,8 +75,8 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       return Response.json({ ok: true, status: "duplicate" }, { status: 202 });
     case "busy":
       return Response.json({ ok: true, status: "busy" }, { status: 202 });
-    case "no-published-version":
-      return Response.json({ ok: true, status: "no-published-version" }, { status: 202 });
+    case "no-configuration":
+      return Response.json({ ok: true, status: "no-configuration" }, { status: 202 });
     case "accepted":
       break;
   }

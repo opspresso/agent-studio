@@ -140,11 +140,6 @@ export default function ProjectsPage() {
             <Text fz="sm" c="dimmed" mt="xs" lineClamp={3}>
               {project.description}
             </Text>
-            {project.publishedVersion && (
-              <Text fz="xs" c="light-dark(var(--mantine-color-teal-9), var(--mantine-color-teal-3))" mt="sm">
-                {t("projects.published", { version: project.publishedVersion })}
-              </Text>
-            )}
           </Card>
         ))}
       </CardGrid>

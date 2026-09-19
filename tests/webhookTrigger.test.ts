@@ -10,7 +10,7 @@ import type { TriggerRunnerDeps } from "@/application/trigger/deps";
 import { REPAIR_AFTER_SECONDS } from "@/application/trigger/repairLostRuns";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import {
   PROJECT_WEBHOOK_ID,
@@ -31,22 +31,21 @@ const project: Project = {
   description: "",
   projectType: "agent",
   ownerEmail: "owner@example.com",
-  publishedVersion: "v1",
+
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-const version: Version = {
+const configuration: AgentConfiguration = {
   projectName: "p",
-  versionName: "v1",
+
   systemPrompt: "",
-  userPromptTemplate: "",
+
   model: "openai/gpt-5-mini",
   parameters: { piiFiltering: false },
   mcpList: [],
   skillList: [],
   subagentList: [],
-  createdAt: "2026-01-01T00:00:00Z",
 };
 
 function trigger(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
@@ -94,7 +93,7 @@ interface Fixture {
 function fixture(
   opts: {
     stored?: WebhookTrigger | null;
-    published?: Version | null;
+    published?: AgentConfiguration | null;
     chunks?: EngineChunk[];
     runThrows?: Error;
   } = {},
@@ -142,13 +141,7 @@ function fixture(
     runs,
     deps: {
       triggers,
-      projects: { get: async () => project, list: async () => [], put: async () => {}, delete: async () => {} } as never,
-      versions: {
-        get: async () => (opts.published === undefined ? version : opts.published),
-        list: async () => (opts.published === undefined ? [version] : []),
-        put: async () => {},
-        delete: async () => {},
-      } as never,
+      projects: { get: async () => ({ ...project, configuration: opts.published === undefined ? configuration : opts.published ?? undefined }), list: async () => [], put: async () => {}, delete: async () => {} } as never,
       cipher: secretCipher,
       runSlots: memorySlots(),
       async *run(input) {
@@ -315,7 +308,7 @@ describe("admitDelivery", () => {
   it("records a skip when the project has no published version", async () => {
     const f = fixture({ published: null });
     const result = await admitDelivery(f.deps, "p", SECRET, null);
-    expect(result.status).toBe("no-published-version");
+    expect(result.status).toBe("no-configuration");
     // A skip is a row: "it never fired" must be distinguishable in the console
     // from "it fired and failed" without reading logs.
     expect(f.rows).toEqual([expect.objectContaining({ status: "skipped" })]);

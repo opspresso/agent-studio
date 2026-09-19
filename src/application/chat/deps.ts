@@ -1,8 +1,8 @@
 import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository } from "@/domain/chat/runLog";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, Version } from "@/domain/project/types";
+import type { ProjectRepository } from "@/domain/project/repository";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
@@ -12,7 +12,7 @@ import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession"
 export interface AgentRunParams {
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   project: Project;
-  version: Version;
+  configuration: AgentConfiguration;
   /** The new user input; persisted SDK Session supplies previous model turns. */
   messages: ChatMessageInput[];
   /** Who caused the run — always the chat's owner, since chats are private. */
@@ -59,7 +59,6 @@ export interface ChatDeps {
    */
   runLog: ChatRunLogRepository;
   projects: ProjectRepository;
-  versions: VersionRepository;
   runAgent: AgentRunner;
   /**
    * Where a chat's images are kept, and where its stored keys are signed for

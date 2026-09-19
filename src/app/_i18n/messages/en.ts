@@ -773,7 +773,7 @@ export const en = {
     "Confirm the capability is bound to the saved version and visible in Prompt preview. Check tool selection, discovery, OAuth connection, and run warnings. Ask a question that actually requires the tool. For internal-host blocks, involve the deployment operator; for memory, verify a bound server offers recall. A document reader must be explicitly bound, not merely discoverable.",
   "guide.trouble.automation": "A bot or schedule is silent",
   "guide.trouble.automationBody":
-    "A webhook 202 may mean accepted, duplicate, disabled, busy, no published version or ping; inspect the response and trigger history. GitHub uses its Secret field to produce X-Hub-Signature-256, while generic callers use X-Trigger-Secret. A successful delivery does not grant Workspace execution. Schedules require a running ticker; Workspace approval/CI continuation requires its worker. Check each result at the surface that owns it.",
+    "A webhook 202 may mean accepted, duplicate, disabled, busy, no Agent configuration or ping; inspect the response and trigger history. GitHub uses its Secret field to produce X-Hub-Signature-256, while generic callers use X-Trigger-Secret. A successful delivery does not grant Workspace execution. Schedules require a running ticker; Workspace approval/CI continuation requires its worker. Check each result at the surface that owns it.",
   "guide.trouble.files": "Attachments or downloads fail",
   "guide.trouble.filesBody":
     "Check the file type and upload limits first. An image needs an image-capable model; Office reading uses the built-in engine. Password-protected files, scans needing OCR, and unsupported edits require another workflow. If File is unavailable or the original was not kept, ask the operator to check storage configuration. For download failures, reopen Artifacts and check storage warnings, access mode, public base URL, connectivity, and retention.",
@@ -881,6 +881,9 @@ export const en = {
   "playground.unsaved": "unsaved",
   "playground.saved": "Saved v{version}",
   "playground.createVersion": "Create version",
+  "configuration.title": "Current Agent settings",
+  "configuration.saved": "Saved",
+  "configuration.saveToRun": "Save the Agent settings before running it.",
   "playground.save": "Save",
   "playground.readOnly": "Read-only — the owner or an admin can edit",
   "playground.publishTitle": "Publish this project?",

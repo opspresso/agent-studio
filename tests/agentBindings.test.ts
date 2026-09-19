@@ -2,34 +2,35 @@ import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { describe, expect, it, vi } from "vitest";
 import { buildAgentDeps, prepareSubagent, MAX_SUBAGENT_DEPTH } from "@/application/execution/agentBindings";
 import type { ExecutionDeps } from "@/application/execution/deps";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import { FakeChannel } from "./fakeChannel";
 
-function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Partial<Version> = {}) {
+function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Partial<AgentConfiguration> = {}) {
   const now = "2026-09-12T00:00:00Z";
-  const project: Project = { name: "child", displayName: "Child", description: "Specialist", projectType: "agent", ownerEmail: "owner@example.com", publishedVersion: "published-v1", createdAt: now, updatedAt: now, ...projectOverrides };
-  const version: Version = { projectName: "child", versionName: "published-v1", systemPrompt: "Child instructions", userPromptTemplate: "Template instructions", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [], createdAt: now, ...versionOverrides };
-  const parent: Version = { ...version, projectName: "parent", subagentList: [{ name: "child", type: "local" }] };
+  const project: Project = { name: "child", displayName: "Child", description: "Specialist", projectType: "agent", ownerEmail: "owner@example.com",  createdAt: now, updatedAt: now, ...projectOverrides };
+  const configuration: AgentConfiguration = { projectName: "child",  systemPrompt: "Child instructions",  model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [],  ...versionOverrides };
+  const parent: AgentConfiguration = { ...configuration, projectName: "parent", subagentList: [{ name: "child", type: "local" }] };
+  project.configuration = configuration;
+  if ("configuration" in projectOverrides) project.configuration = projectOverrides.configuration;
   const projects = { get: vi.fn(async () => project) };
-  const versions = { get: vi.fn(async () => version), list: vi.fn(async () => ({ items: [version], cursor: undefined })) };
   const deps = {
     createToolSchemaValidator,
-    channel: new FakeChannel([]), projects, versions,
+    channel: new FakeChannel([]), projects,
     skills: { get: async () => null, describe: async () => [], list: async () => [] },
     externalAgents: { get: async () => null },
     now: () => new Date(now),
   } as unknown as ExecutionDeps;
   const origin: RunOrigin = { ancestry: ["parent"], actor: { kind: "user", id: "reader@example.com" }, caller: { displayName: "Reader" } };
   const prepare = (overrides: Partial<RunOrigin> = {}) => prepareSubagent(deps, parent, "child", { message: "task", images: [], maxTurns: 7 }, async () => {}, { ...origin, ...overrides });
-  return { deps, parent, project, version, origin, prepare, projects, versions };
+  return { deps, parent, project, configuration, origin, prepare, projects };
 }
 
 describe("Studio prepares native SDK agent bindings", () => {
   it("binds Workspace for the requesting origin but excludes background task effects", async () => {
     const f = fixture();
     const handler = vi.fn(async () => ({ text: "ready" }));
-    f.version.parameters.workspaceTools = true;
+    f.configuration.parameters.workspaceTools = true;
     f.deps.workspaceTool = vi.fn(async () => handler);
     const bound = await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, f.origin);
     expect(bound.workspaceTool).toBe(handler);
@@ -44,19 +45,16 @@ describe("Studio prepares native SDK agent bindings", () => {
     expect((await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, f.origin)).workspaceTool).toBeUndefined();
     expect(f.deps.workspaceTool).not.toHaveBeenCalled();
   });
-  it("loads only the version the published pointer names", async () => {
+  it("loads the current configuration from the Project", async () => {
     const f = fixture();
     const prepared = await f.prepare();
     expect(prepared.kind).toBe("agent");
-    expect(f.versions.get).toHaveBeenCalledWith("child", "published-v1");
-    expect(f.versions.list).not.toHaveBeenCalled();
+    expect(f.projects.get).toHaveBeenCalledWith("child");
   });
 
-  it("never executes an unpublished draft", async () => {
-    const f = fixture({ publishedVersion: undefined });
-    await expect(f.prepare()).rejects.toThrow("no published version");
-    expect(f.versions.list).not.toHaveBeenCalled();
-    expect(f.versions.get).not.toHaveBeenCalled();
+  it("refuses an Agent without current settings", async () => {
+    const f = fixture({ configuration: undefined });
+    await expect(f.prepare()).rejects.toThrow("no Agent configuration");
   });
 
   it("refuses an undeclared target before reading its project", async () => {
@@ -103,12 +101,10 @@ describe("Studio prepares native SDK agent bindings", () => {
     expect(f.projects.get).not.toHaveBeenCalled();
   });
 
-
   it("does not pre-load unused delegated agents", async () => {
     const f = fixture();
     const bound = await buildAgentDeps(f.deps, f.parent, "parent", async () => {}, f.origin);
     expect(bound.loadAgent).toEqual(expect.any(Function));
     expect(f.projects.get).not.toHaveBeenCalled();
-    expect(f.versions.get).not.toHaveBeenCalled();
   });
 });

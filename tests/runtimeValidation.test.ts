@@ -42,7 +42,7 @@ describe("SDK runtime validation boundaries", () => {
     const chunks = await f.run(root, "help", undefined, {
       loadAgent: async (name, task) => ({
         kind: "agent", deps: { channel: child }, warnings: [], close,
-        input: { projectName: name, model: f.version.model, messages: [{ role: "user", content: task.message }], parameters: { policy: { maxInputChars: 2 } } },
+        input: { projectName: name, model: f.configuration.model, messages: [{ role: "user", content: task.message }], parameters: { policy: { maxInputChars: 2 } } },
       }),
     }, { subagents: [{ name: "child", type: "local", kind: "agent", description: "child" }] });
     expect(child.calls).toBe(0);

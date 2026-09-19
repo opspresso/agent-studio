@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   previewPrompt,
   type PromptPreview,
-  type VersionInput,
+  type AgentConfigurationInput,
 } from "../../lib/api";
 import {
   Alert,
@@ -53,10 +53,9 @@ export function PromptPreview({
   projectName,
   draft,
   validationError,
-  versionName,
 }: {
   projectName: string;
-  draft: VersionInput;
+  draft: AgentConfigurationInput;
   validationError: string | null;
   /**
    * The saved version the draft started from, or null for one never saved. The
@@ -64,7 +63,6 @@ export function PromptPreview({
    * server is dialled with the wrong headers, and the preview would describe a
    * request no run makes.
    */
-  versionName: string | null;
 }) {
   const [preview, setPreview] = useState<PromptPreview | null>(null);
   const [previewOf, setPreviewOf] = useState<string>("");
@@ -94,8 +92,7 @@ export function PromptPreview({
   // different credentials, so that identity is part of preview freshness too.
   const current = JSON.stringify({
     projectName,
-    versionName,
-    draft,
+      draft,
     ...(usesRequest ? { message } : {}),
   });
   const stale = preview !== null && (validationError !== null || previewOf !== current);
@@ -129,7 +126,6 @@ export function PromptPreview({
         projectName,
         {
           ...draft,
-          ...(versionName ? { versionName } : {}),
           ...(usesRequest && message.trim() ? { message } : {}),
         },
         controller.signal,
@@ -193,7 +189,6 @@ export function PromptPreview({
           </Button>
         </Group>
       </Group>
-
 
       {usesRequest && (
         <Textarea

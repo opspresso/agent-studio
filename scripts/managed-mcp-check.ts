@@ -9,7 +9,7 @@ import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { McpServer } from "@/domain/mcp/types";
 import type { McpProvisioner } from "@/domain/mcp/provisioner";
 import type { ExecutionDeps } from "@/application/execution/deps";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 
 /**
  * The whole path, against a server actually listening on loopback: provision,
@@ -51,7 +51,7 @@ function startLoopbackMcp(): Promise<{ server: Server; port: number }> {
               supportedVersions: ["2026-07-28"],
               capabilities: { tools: {} },
               _meta: {
-                "io.modelcontextprotocol/serverInfo": { name: "loopback-mcp", version: "1.0" },
+                "io.modelcontextprotocol/serverInfo": { name: "loopback-mcp", configuration: "1.0" },
               },
             },
           }),
@@ -145,7 +145,7 @@ export async function checkManagedMcpTransport(): Promise<void> {
     resolved = await buildMcpTools(deps, {
       projectName: "p",
       mcpList: [{ name: "image-fetch" }],
-    } as unknown as Version);
+    } as unknown as AgentConfiguration);
 
     assert.deepEqual(resolved.warnings, []);
     assert.deepEqual(resolved.mcpTools.map((t) => t.function.name), ["fetch_image"]);

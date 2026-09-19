@@ -1,9 +1,8 @@
 import { buildFileTool } from "@/application/document/fileTool";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import { descend, type RunOrigin } from "@/domain/execution/actor";
 import { imageDataUrl } from "@/domain/llm/types";
 import type { AgentDeps, AgentTask, PreparedAgent, RecordUsageFn } from "@/application/runtime/types";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import { ValidationError } from "@/application/errors";
@@ -22,32 +21,32 @@ export const MAX_SUBAGENT_DEPTH = 5;
 
 /** Bind Studio capabilities and credentials. SDK Agent/Runner owns execution. */
 export async function buildAgentDeps(
-  deps: ExecutionDeps, version: Version, projectName: string, recordUsage: RecordUsageFn,
+  deps: ExecutionDeps, configuration: AgentConfiguration, projectName: string, recordUsage: RecordUsageFn,
   origin: RunOrigin, signal?: AbortSignal, callMcpTool?: AgentDeps["callMcpTool"],
   runtime?: RuntimeTurnPersistence,
 ): Promise<AgentDeps> {
   const common = { channel: deps.channel, createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };
   if (origin.backgroundTask) return common;
-  const imageModel = resolveImageModel(version, projectName);
+  const imageModel = resolveImageModel(configuration, projectName);
   return {
     ...common,
     ...(callMcpTool ? { callMcpTool } : {}),
-    canDelegate: (version.subagentList?.length ?? 0) > 0,
-    loadAgent: (name, request) => prepareSubagent(deps, version, name, request, recordUsage, origin, runtime),
+    canDelegate: (configuration.subagentList?.length ?? 0) > 0,
+    loadAgent: (name, request) => prepareSubagent(deps, configuration, name, request, recordUsage, origin, runtime),
     generateImage: buildImageGenerator(deps, imageModel, projectName, recordUsage, signal),
     editImage: buildImageEditor(deps, imageModel, projectName, recordUsage, signal),
-    fetchUrl: buildUrlFetcher(deps, version),
+    fetchUrl: buildUrlFetcher(deps, configuration),
     saveFile: buildFileSaver(deps),
     fileTool: buildFileTool(deps, projectName, origin, signal),
-    audioTools: version.parameters.audioProcessing ? await deps.audioTools?.(projectName, origin) : undefined,
-    workspaceTool: version.parameters.workspaceTools ? await deps.workspaceTool?.(projectName, origin) : undefined,
-    readSlack: await buildSlackReader(deps, version, projectName),
+    audioTools: configuration.parameters.audioProcessing ? await deps.audioTools?.(projectName, origin) : undefined,
+    workspaceTool: configuration.parameters.workspaceTools ? await deps.workspaceTool?.(projectName, origin) : undefined,
+    readSlack: await buildSlackReader(deps, configuration, projectName),
   };
 }
 
 /** Resolve only a requested target; unused bindings open no connections and spend no tokens. */
 export async function prepareSubagent(
-  deps: ExecutionDeps, parent: Version, name: string, task: AgentTask,
+  deps: ExecutionDeps, parent: AgentConfiguration, name: string, task: AgentTask,
   recordUsage: RecordUsageFn, parentOrigin: RunOrigin,
   runtime?: RuntimeTurnPersistence,
 ): Promise<PreparedAgent> {
@@ -65,10 +64,10 @@ export async function prepareSubagent(
   if (parentOrigin.ancestry.length >= MAX_SUBAGENT_DEPTH) throw new ValidationError(`Subagent depth limit (${MAX_SUBAGENT_DEPTH}) reached`);
   const project = await deps.projects.get(name);
   if (!project) throw new ValidationError(`Agent project '${name}' was not found`);
-  const version = await resolveRunnableVersion(deps.versions, project);
-  if (!version) throw new ValidationError(`Agent '${name}' has no published version`);
-  runtime?.checkBinding(`${task.invocationId ?? name}/version`, runtimeFingerprint(version));
-  if (deps.unknownModelPolicy) assertModelsPriceable(await deps.unknownModelPolicy(), version);
+  const configuration = project.configuration;
+  if (!configuration) throw new ValidationError(`Agent '${name}' has no Agent configuration`);
+  runtime?.checkBinding(`${task.invocationId ?? name}/configuration`, runtimeFingerprint(configuration));
+  if (deps.unknownModelPolicy) assertModelsPriceable(await deps.unknownModelPolicy(), configuration);
   await assertWithinCostLimit(deps, project);
   const origin = descend(parentOrigin, name);
   const message = task.transcript ? `Conversation context:\n${task.transcript}\n\nRequest:\n${task.message}` : task.message;
@@ -77,17 +76,17 @@ export async function prepareSubagent(
     content: task.images.length ? [{ type: "text" as const, text: message }, ...task.images.map((image) => ({ type: "image_url" as const, image_url: { url: imageDataUrl(image) } }))] : message,
   };
   const baseInput = {
-    projectName: project.name, model: version.model, fallbackModel: version.fallbackModel,
-    systemPrompt: version.systemPrompt, parameters: toEngineParameters(version),
-    now: runClock(deps), ...callerFor({ version, caller: origin.caller }),
-    maxTurn: Math.min(version.maxTurn ?? 50, task.maxTurns ?? 50),
+    projectName: project.name, model: configuration.model, fallbackModel: configuration.fallbackModel,
+    systemPrompt: configuration.systemPrompt, parameters: toEngineParameters(configuration),
+    now: runClock(deps), ...callerFor({ configuration, caller: origin.caller }),
+    maxTurn: Math.min(configuration.maxTurn ?? 50, task.maxTurns ?? 50),
     signal: task.signal, messages: [userMessage],
   };
-  const memory = await prepareMemoryForRun(deps, { version, query: task.message, signal: task.signal, origin });
-  const resolved = await resolveRunTools(deps, version, task.signal, discoveryQueries(version, [task.message], memory.input.remembered), origin, recordUsage);
+  const memory = await prepareMemoryForRun(deps, { configuration, query: task.message, signal: task.signal, origin });
+  const resolved = await resolveRunTools(deps, configuration, task.signal, discoveryQueries(configuration, [task.message], memory.input.remembered), origin, recordUsage);
   try {
     runtime?.checkBinding(`${task.invocationId ?? name}/tools`, runtimeFingerprint([resolved.mcp.signature, resolved.subagents, resolved.skills]));
-    const childDeps = await buildAgentDeps(deps, resolved.version, name, recordUsage, origin, task.signal, resolved.mcp.callMcpTool, runtime);
+    const childDeps = await buildAgentDeps(deps, resolved.configuration, name, recordUsage, origin, task.signal, resolved.mcp.callMcpTool, runtime);
     return {
       kind: "agent", deps: childDeps,
       input: { ...baseInput, ...memory.input, skills: resolved.skills, subagents: resolved.subagents, mcpTools: resolved.mcp.mcpTools, mcpServers: resolved.mcp.mcpServers, canDispatch: false },

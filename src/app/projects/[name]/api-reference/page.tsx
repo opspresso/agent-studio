@@ -217,9 +217,9 @@ export default function ApiReferencePage() {
         const ctx: ApiReferenceContext = {
           projectName: project.name,
           projectType: project.projectType,
-          publishedVersion: project.publishedVersion ?? null,
+          configured: project.configured ?? null,
           origin: typeof window === "undefined" ? "" : window.location.origin,
-          a2a: a2a ? { enabled: a2a.enabled, published: a2a.published } : null,
+          a2a: a2a ? { enabled: a2a.enabled, configured: a2a.configured } : null,
           slack: slack ? { configured: slack.configured } : null,
           telegram: telegram ? { configured: telegram.configured } : null,
           teams: teams ? { configured: teams.configured } : null,
@@ -257,7 +257,7 @@ export default function ApiReferencePage() {
     <Stack gap="md">
       <Text fz="sm" c="dimmed">
         Endpoints for calling this project from outside the console. Paths are filled in with the
-        project name and its published version; replace <Code>$PROJECT_API_TOKEN</Code> and other{" "}
+        project name and its configured version; replace <Code>$PROJECT_API_TOKEN</Code> and other{" "}
         <Code>$…</Code> placeholders with your own credentials. Generate a token under Settings →
         API token.
       </Text>

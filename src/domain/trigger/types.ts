@@ -116,7 +116,7 @@ export type TriggerRunStatus =
   | "running"
   | "succeeded"
   | "failed"
-  /** Refused before running: overlap not allowed, or no published version. */
+  /** Refused before running: overlap not allowed, or no Agent configuration. */
   | "skipped";
 
 export interface TriggerRun {

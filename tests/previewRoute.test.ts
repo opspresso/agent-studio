@@ -10,8 +10,7 @@ const { state, projectRepo, calls } = vi.hoisted(() => ({
   state: { email: "owner@example.com" },
   projectRepo: { get: vi.fn() },
   calls: [] as Array<{
-    versionName: string;
-    variables?: Record<string, string>;
+    systemPrompt: string;
     message?: string;
     actor?: { kind: string; id: string };
   }>,
@@ -31,10 +30,9 @@ vi.mock("@/lib/container", async () => ({
   ).createProjectUseCases(projectRepo as never),
   // `versions` is read by the draft-mask resolution the route delegates to;
   // a draft with no masked overrides never reaches it.
-  versionUseCases: (
-    await import("@/application/project/versionUseCases")
-  ).createVersionUseCases({
-    versions: { get: vi.fn().mockResolvedValue(null) } as never,
+  configurationUseCases: (
+    await import("@/application/project/configurationUseCases")
+  ).createConfigurationUseCases({
     projects: projectRepo as never,
     refs: {} as never,
     cipher: {} as never,
@@ -45,15 +43,13 @@ vi.mock("@/application/execution/runProject", () => ({
   previewPrompt: async (
     _deps: unknown,
     input: {
-      version: { versionName: string };
-      variables?: Record<string, string>;
-      message?: string;
+      configuration: { systemPrompt: string };
+        message?: string;
       actor?: { kind: string; id: string };
     },
   ) => {
     calls.push({
-      versionName: input.version.versionName,
-      variables: input.variables,
+      systemPrompt: input.configuration.systemPrompt,
       ...(input.message ? { message: input.message } : {}),
       ...(input.actor ? { actor: input.actor } : {}),
     });
@@ -89,13 +85,12 @@ beforeEach(() => {
 
 describe("POST /api/projects/[name]/preview", () => {
   it("assembles the draft in the body, not a saved version", async () => {
-    const res = await POST(body({ systemPrompt: "You are helpful.", variables: { a: "b" } }), ctx());
+    const res = await POST(body({ systemPrompt: "You are helpful." }), ctx());
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ messages: [{ role: "system", content: "assembled" }] });
     expect(calls).toEqual([{
-      versionName: "draft",
-      variables: { a: "b" },
+      systemPrompt: "You are helpful.",
       actor: { kind: "user", id: "owner@example.com" },
     }]);
   });
@@ -107,8 +102,7 @@ describe("POST /api/projects/[name]/preview", () => {
 
     expect(res.status).toBe(200);
     expect(calls).toEqual([{
-      versionName: "draft",
-      variables: undefined,
+      systemPrompt: "",
       actor: { kind: "user", id: "someone@example.com" },
     }]);
   });

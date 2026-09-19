@@ -4,7 +4,7 @@ import type { RunCaller } from "@/domain/execution/actor";
 import type { ChatMessageInput, EngineChunk, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { AgentCapabilityDeps, SkillInfo, SubagentInfo, McpServerInfo } from "@/application/llm/agentAssembly";
 import type { RuntimeApproval, RuntimeApprovalDecision } from "@/domain/execution/runtimeSession";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import type { PiiFilter } from "@/application/llm/pii";
 import type { ImageHandle } from "@/application/llm/agentAssembly";
 import type { TraceSpan } from "@/domain/trace/types";
@@ -145,7 +145,7 @@ export interface RuntimeCheckpoint {
   state: string;
   approvals: RuntimeApproval[];
   input: Omit<RunAgentInput, "signal" | "runtime" | "now"> & { now?: string };
-  version: Version;
+  configuration: AgentConfiguration;
   pii: Array<[string, string]>;
   bindings: Record<string, string>;
   previousItemCount: number;

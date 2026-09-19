@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ActiveChatRun, Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { ProjectRepository } from "@/domain/project/repository";
 import type { ChatDeps } from "@/application/chat/deps";
 import { openRunLogReplay } from "@/application/chat/replayRunLog";
 import { getChat } from "@/application/chat/getChat";
@@ -77,7 +77,6 @@ function makeDeps(options: {
       chats,
       runLog,
       projects: {} as ProjectRepository,
-      versions: {} as VersionRepository,
       runAgent: () => (async function* () {})(),
       documents: { extract: async () => ({ text: "" }) },
     },

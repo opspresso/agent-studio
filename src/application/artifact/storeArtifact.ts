@@ -37,7 +37,7 @@ export async function registerSourceArtifact(rows: ArtifactRepository, file: Sou
     kind: file.mimeType.startsWith("audio/") ? "audio" : "document",
     source: file.derived ? "generated" : "attachment", key: sourceFileObjectKey(file.id),
     mimeType: file.mimeType, filename: file.filename, byteSize: file.byteSize!,
-    projectName: file.projectName, versionName: "", ownerEmail: file.userEmail,
+    projectName: file.projectName, ownerEmail: file.userEmail,
     createdAt: file.storedAt ?? file.createdAt }); }
   catch (error) {
     if (isTransactionCancelled(error)) throw new ConflictError("Private file changed or expired before Artifact registration");
@@ -54,7 +54,7 @@ export interface ArtifactStorage {
 /** What the run already knows, bound once by the bracket that opened it. */
 export interface ArtifactContext {
   projectName: string;
-  versionName: string;
+  versionName?: string;
   actor?: RunActor;
   /** The mailbox this run's output belongs to, when the surface knows one. */
   ownerEmail?: string;

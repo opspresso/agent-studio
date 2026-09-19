@@ -6,7 +6,7 @@
 
 import type { RunActor } from "@/domain/execution/actor";
 import type { MemberTier } from "@/domain/member/tiers";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import { beginRun, endRun } from "@/lib/runMetrics";
 import { enterRunContext } from "@/shared/runContext";
 import { assertWithinCostLimit, settleCostLimit, type CostGuardDeps } from "@/application/usage/costGuard";
@@ -82,7 +82,7 @@ export interface RunBracket {
 async function openExecutionBracket(
   deps: RunBracketDeps,
   project: Project,
-  version: Pick<Version, "model" | "fallbackModel"> | undefined,
+  configuration: Pick<AgentConfiguration, "model" | "fallbackModel"> | undefined,
   actor?: RunActor,
 ): Promise<Omit<RunBracket, "artifacts">> {
   // Before the first `await`, and therefore before this function leaves the
@@ -98,7 +98,7 @@ async function openExecutionBracket(
   // wrong rather than that the platform is busy. Costing nothing to check, it
   // should not be reached by way of a queue for a slot the run would be refused
   // on regardless.
-  if (version && deps.unknownModelPolicy) {
+  if (configuration && deps.unknownModelPolicy) {
     // Fail open on the *read*, exactly like the cost guard below — and for the
     // reason it states: the guard exists to bound something, not to be a second
     // way for a storage blip to take the platform down. This read is a database
@@ -116,8 +116,8 @@ async function openExecutionBracket(
       log.error("cost-guard", "could not read the unknown-model policy; allowing the run", error);
     }
     assertModelsPriceable(policy, {
-      model: version.model,
-      ...(version.fallbackModel ? { fallbackModel: version.fallbackModel } : {}),
+      model: configuration.model,
+      ...(configuration.fallbackModel ? { fallbackModel: configuration.fallbackModel } : {}),
     });
   }
   await assertWithinCostLimit(deps, project);
@@ -160,10 +160,10 @@ async function openExecutionBracket(
 export function openModelCall(
   deps: RunBracketDeps,
   project: Project,
-  version: Pick<Version, "model" | "fallbackModel">,
+  configuration: Pick<AgentConfiguration, "model" | "fallbackModel">,
   actor?: RunActor,
 ): Promise<Omit<RunBracket, "artifacts">> {
-  return openExecutionBracket(deps, project, version, actor);
+  return openExecutionBracket(deps, project, configuration, actor);
 }
 
 /** Non-model workspace jobs share cost, concurrency and metrics without inventing a Version/model. */
@@ -179,15 +179,15 @@ export function openTaskRun(
 export async function openRun(
   deps: RunBracketDeps,
   project: Project,
-  version: Version,
+  configuration: AgentConfiguration,
   actor?: RunActor,
   opts: { ownerEmail?: string } = {},
 ): Promise<RunBracket> {
-  const bracket = await openModelCall(deps, project, version, actor);
+  const bracket = await openModelCall(deps, project, configuration, actor);
   return {
     ...bracket,
     ...(deps.artifacts ? { artifacts: createArtifactRecorder(deps.artifacts, {
-      projectName: project.name, versionName: version.versionName,
+      projectName: project.name,
       ...(actor ? { actor } : {}), ...(opts.ownerEmail ? { ownerEmail: opts.ownerEmail } : {}),
       ancestry: [project.name], runId: bracket.runId,
     }) } : {}),

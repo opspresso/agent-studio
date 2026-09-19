@@ -1,6 +1,5 @@
-import type { Project, Version } from "./types";
-import { activeAgentVersion } from "./activeVersion";
+import type { Project } from "./types";
 
-export function projectHasWorkspaceTools(project: Pick<Project, "projectType" | "publishedVersion">, versions: readonly Version[]): boolean {
-  return activeAgentVersion(project, versions)?.parameters.workspaceTools === true;
+export function projectHasWorkspaceTools(project: Pick<Project, "configuration">): boolean {
+  return project.configuration?.parameters.workspaceTools === true;
 }

@@ -1,3 +1,4 @@
+import { withConfigurations } from "./projectConfigurations";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertWithinCostLimit,
@@ -15,7 +16,7 @@ import {
   type ExecutionDeps,
 } from "@/application/execution/runProject";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
-import type { CostLimits, Project, Version } from "@/domain/project/types";
+import type { CostLimits, Project, AgentConfiguration } from "@/domain/project/types";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageRow } from "@/domain/usage/types";
 import { fakeSkillRepository } from "./fakeSkills";
@@ -424,8 +425,8 @@ describe("every top-level entry point is guarded", () => {
     const f = fixture({ day: row({ m: 100 }) });
     return {
       ...f.deps,
-      projects: { get: reject, list: reject, put: reject, delete: reject },
-      versions: { get: reject, list: reject, put: reject, delete: reject },
+      projects: withConfigurations({ get: reject, list: reject, put: reject, delete: reject }, ({ get: reject, list: reject, put: reject, delete: reject }).get),
+
       skills: fakeSkillRepository(reject),
       mcps: { get: reject, list: reject, put: reject, delete: reject },
       externalAgents: { get: reject, list: reject, put: reject, delete: reject },
@@ -435,38 +436,37 @@ describe("every top-level entry point is guarded", () => {
   }
 
   const blocked = project({ blockThresholdUsd: 10 });
-  const version: Version = {
+  const configuration: AgentConfiguration = {
     projectName: "proj",
-    versionName: "v1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00Z",
   };
 
   it("executeProject refuses", async () => {
     await expect(
-      executeProject(blockedDeps(), { project: blocked, version, messages: [] }),
+      executeProject(blockedDeps(), { project: blocked, configuration, messages: [] }),
     ).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
   it("executeProjectStream refuses before the first chunk", async () => {
-    const stream = executeProjectStream(blockedDeps(), { project: blocked, version, messages: [] });
+    const stream = executeProjectStream(blockedDeps(), { project: blocked, configuration, messages: [] });
     await expect(stream.next()).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
   it("executeAgent refuses before the first chunk", async () => {
-    const stream = executeAgent(blockedDeps(), { project: blocked, version, messages: [] });
+    const stream = executeAgent(blockedDeps(), { project: blocked, configuration, messages: [] });
     await expect(stream.next()).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
   it("guards an Agent that enables image tools before any image call", async () => {
     await expect(executeProject(blockedDeps(), { project: blocked,
-      version: { ...version, parameters: { piiFiltering: false, imageGeneration: true } },
+      configuration: { ...configuration, parameters: { piiFiltering: false, imageGeneration: true } },
       messages: [{ role: "user", content: "Draw a cat" }],
     })).rejects.toBeInstanceOf(CostLimitExceededError);
   });
@@ -477,7 +477,7 @@ describe("every top-level entry point is guarded", () => {
     const traces: unknown[] = [];
     deps.traces = { put: async (t: unknown) => void traces.push(t) } as ExecutionDeps["traces"];
 
-    await expect(executeProject(deps, { project: blocked, version, messages: [] })).rejects.toBeInstanceOf(
+    await expect(executeProject(deps, { project: blocked, configuration, messages: [] })).rejects.toBeInstanceOf(
       CostLimitExceededError,
     );
     expect(traces).toHaveLength(0);
@@ -493,26 +493,24 @@ describe("a subagent transfer is guarded too", () => {
    * threshold ran anyway on the strength of its parent's admission.
    */
   const child = project({ blockThresholdUsd: 10 });
-  const childVersion: Version = {
+  const childVersion: AgentConfiguration = {
     projectName: "proj",
-    versionName: "v1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00Z",
-    publishedVersion: undefined,
-  } as Version;
+  } as AgentConfiguration;
 
   function deps(spentUsd: number) {
     const f = fixture({ day: row({ m: spentUsd }) });
     return {
       ...f.deps,
-      projects: { get: async () => ({ ...child, projectType: "agent", publishedVersion: "v1" }) },
-      versions: { get: async () => childVersion },
+      projects: withConfigurations({ get: async () => ({ ...child, projectType: "agent" }) }, ({ get: async () => childVersion }).get),
+
       channel: {
         stream: () => {
           throw new Error("the guard should have refused before the channel");
@@ -534,23 +532,22 @@ describe("a subagent transfer is guarded too", () => {
 
 describe("openRun", () => {
   /** Minimal version; the bracket reads only its model ids. */
-  const version: Version = {
+  const configuration: AgentConfiguration = {
     projectName: "proj",
-    versionName: "v1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00Z",
   };
 
   it("does not count a run the guard refused", async () => {
     resetRunMetrics();
     const f = fixture({ day: row({ m: 50 }) });
-    await expect(openRun(f.deps, project({ blockThresholdUsd: 10 }), version)).rejects.toBeInstanceOf(
+    await expect(openRun(f.deps, project({ blockThresholdUsd: 10 }), configuration)).rejects.toBeInstanceOf(
       CostLimitExceededError,
     );
     expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 0, runsStarted: 0 });
@@ -559,7 +556,7 @@ describe("openRun", () => {
   it("counts an admitted run and releases it exactly once", async () => {
     resetRunMetrics();
     const f = fixture({ day: null });
-    const bracket = await openRun(f.deps, project({ blockThresholdUsd: 10 }), version);
+    const bracket = await openRun(f.deps, project({ blockThresholdUsd: 10 }), configuration);
     expect(runMetricsSnapshot().activeRuns).toBe(1);
     await bracket.close();
     // A generator reaches its `finally` through both a return and a consumer's

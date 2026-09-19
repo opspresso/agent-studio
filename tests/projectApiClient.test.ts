@@ -27,7 +27,6 @@ describe("project API client failures", () => {
       "demo",
       {
         systemPrompt: "",
-        userPromptTemplate: "",
         model: "gpt-test",
         parameters: { piiFiltering: false },
         mcpList: [],
@@ -82,7 +81,7 @@ describe("project API client failures", () => {
       vi.fn(async () => Response.json({ error: "Image model is unavailable" }, { status: 503 })),
     );
 
-    await expect(streamAgent("demo", "v1", [{ role: "user", content: "draw" }])).rejects.toThrow(
+    await expect(streamAgent("demo", [{ role: "user", content: "draw" }])).rejects.toThrow(
       "Image model is unavailable",
     );
   });

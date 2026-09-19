@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Chat, ChatMessage, ChatMessageFile } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { ProjectRepository } from "@/domain/project/repository";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { collectGeneratedFiles, runAndPersist } from "@/application/chat/run";
@@ -222,7 +222,6 @@ describe("runAndPersist", () => {
         chats,
         runLog: { async append() {}, async read() { return []; } },
         projects: {} as ProjectRepository,
-        versions: {} as VersionRepository,
         runAgent: () => (async function* () {})(),
         documents: { extract: async () => ({ text: "" }) },
         artifacts: {} as ChatDeps["artifacts"],

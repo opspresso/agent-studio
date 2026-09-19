@@ -6,14 +6,13 @@ import type { SourceRefresh } from "@/domain/artifact/sourceReference";
 vi.mock("@/application/execution/mcpTools", () => ({ buildMcpTools: vi.fn(), closeMcp: async (close?: () => Promise<void>) => close?.() }));
 beforeEach(() => vi.clearAllMocks());
 function fixture() {
-  const recipe: SourceRefresh = { serverName: "files", versionName: "1", identity: "epoch-1", mapping: {
+  const recipe: SourceRefresh = { serverName: "files", identity: "epoch-1", mapping: {
     tool: "get_file", namespace: "account", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg", refreshArgument: "file_id",
   } };
-  const version = { projectName: "audio", versionName: "1", mcpList: [{ name: "files", sourceOutputs: [recipe.mapping] }] };
+  const configuration = { projectName: "audio", mcpList: [{ name: "files", sourceOutputs: [recipe.mapping] }] };
   const identity = vi.fn(async () => "epoch-1");
-  const getVersion = vi.fn(async () => version);
-  const getProject = vi.fn(async () => ({ ownerEmail: "owner@example.test" }));
-  const deps = { projects: { get: getProject }, versions: { get: getVersion }, mcps: { get: async () => ({ name: "files" }) }, sourceRefreshIdentity: identity } as unknown as Parameters<typeof createMcpSourceRefresher>[0];
+  const getProject = vi.fn(async () => ({ ownerEmail: "owner@example.test", configuration }));
+  const deps = { projects: { get: getProject }, mcps: { get: async () => ({ name: "files" }) }, sourceRefreshIdentity: identity } as unknown as Parameters<typeof createMcpSourceRefresher>[0];
   const call = vi.fn(async () => {
     await vi.mocked(buildMcpTools).mock.calls[0]?.[0].registerMcpSource?.({ projectName: "audio", userEmail: "owner@example.test", namespace: "account", itemId: "42", url: "https://files.example.test/fresh", filename: "source", mimeType: "audio/mpeg" });
     return { text: "opaque projected result" };
@@ -22,15 +21,15 @@ function fixture() {
   vi.mocked(buildMcpTools).mockResolvedValue({ signature: "test", mcpTools: [{ type: "function", function: { name: "file_read", parameters: { properties: { file_id: { type: "integer" } } } } }],
     mcpServers: [], warnings: [], aliasFor: () => "file_read", callMcpTool: call, close });
   const job = { projectName: "audio", userEmail: "owner@example.test", sourceIdentity: { namespace: "account", itemId: "42" } } as AudioJob;
-  return { run: createMcpSourceRefresher(deps), job, recipe, call, close, identity, getVersion, getProject };
+  return { run: createMcpSourceRefresher(deps), job, recipe, call, close, identity, configuration, getProject };
 }
 describe("registered MCP source replay", () => {
   it("refreshes through the sub-agent binding and rejects ownership changes after the read", async () => {
     const f = fixture(); f.recipe.projectName = "downloader";
     await f.run(f.job, f.recipe, new AbortController().signal);
-    expect(f.getVersion).toHaveBeenCalledWith("downloader", "1");
+    expect(f.getProject).toHaveBeenCalledWith("downloader");
     expect(f.getProject).toHaveBeenCalledTimes(2);
-    f.getProject.mockResolvedValueOnce({ ownerEmail: "owner@example.test" }).mockResolvedValueOnce({ ownerEmail: "new-owner@example.test" });
+    f.getProject.mockResolvedValueOnce({ ownerEmail: "owner@example.test", configuration: f.configuration }).mockResolvedValueOnce({ ownerEmail: "new-owner@example.test", configuration: f.configuration });
     await expect(f.run(f.job, f.recipe, new AbortController().signal)).rejects.toThrow("source_project_access_changed");
     expect(f.close).toHaveBeenCalledTimes(2);
   });

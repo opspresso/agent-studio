@@ -75,7 +75,6 @@ async function main() {
   const { artifactRepository } = await import("@/infrastructure/db/repositories/artifactRepository");
   const { getS3Client, deleteStoredObject } = await import("@/infrastructure/storage/s3ObjectStore");
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
-  const { versionRepository } = await import("@/infrastructure/db/repositories/versionRepository");
   const { getLlmChannelConfig, getLlmProviderConfigs } = await import("@/lib/runtime-settings");
   const { resolveProviderTarget } = await import("@/infrastructure/llm/providers");
   assert.equal(resolveProviderTarget("openai/gpt-5-mini", await getLlmProviderConfigs(), await getLlmChannelConfig()).baseUrl,
@@ -98,19 +97,17 @@ async function main() {
       [id, "Audio Pipeline Test", email, now]); });
     userCreated = true;
     await projectRepository.create({ name: projectName, ownerEmail: email, displayName: "Audio Pipeline Test",
-      description: "", projectType: "agent", visibility: "private", createdAt: now, updatedAt: now });
-    projectCreated = true;
-    await versionRepository.create({ projectName, versionName: "writer", model: "openai/gpt-5-mini",
-      systemPrompt: "Summarize the source.", userPromptTemplate: "", parameters: { piiFiltering: false, audioProcessing: true,
+      description: "", projectType: "agent", visibility: "private", createdAt: now, updatedAt: now,
+      configuration: { projectName, model: "openai/gpt-5-mini",
+      systemPrompt: "Summarize the source.", parameters: { piiFiltering: false, audioProcessing: true,
         dynamicCapabilities: true, memoryRecall: true, urlFetch: true, imageGeneration: true, slackWorkspace: true },
-      skillList: [], mcpList: [{ name: "must-not-resolve" }], subagentList: [{ name: "must-not-run", type: "remote" }], createdAt: now });
+      skillList: [], mcpList: [{ name: "must-not-resolve" }], subagentList: [{ name: "must-not-run", type: "remote" }] } });
+    projectCreated = true;
     if (memoryUrl) {
       await mcpUseCases.create({ name: memoryName, url: memoryUrl.href, headers: { Authorization: `Bearer ${memoryToken}` } });
       memoryRegistered = true;
-      const writer = await versionRepository.get(projectName, "writer"); assert.ok(writer);
-      await versionRepository.create({ ...writer, versionName: "collector", mcpList: [{ name: memoryName }] });
-      const project = await projectRepository.get(projectName); assert.ok(project);
-      await projectRepository.publish({ ...project, publishedVersion: "collector" }, "collector", project.updatedAt);
+      const project = await projectRepository.get(projectName); assert.ok(project?.configuration);
+      await projectRepository.update({ ...project, configuration: { ...project.configuration, mcpList: [{ name: memoryName }] } }, project.updatedAt);
     }
     const path = join(directory, "source.mp3");
     await promisify(execFile)(process.env.FFMPEG_PATH ?? "ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
@@ -121,7 +118,7 @@ async function main() {
     const file = await runtime.files.import({ id: randomUUID(), projectName, userEmail: email,
       filename: "source.mp3", mimeType: "audio/mpeg", retention }, async () => (async function* () { yield bytes; })());
     const input = { task: "process" as const, source: { kind: "file" as const, fileId: file.id }, model: "openai/whisper-1", retention,
-      postprocess: { projectName, versionName: "writer" },
+      postprocess: { projectName },
       ...(memoryUrl ? { destination: { serverName: memoryName, documents: true, memories: true } } : {}) };
     let configuration = await runtime.configuration.save(projectName, email, { enabled: true, model: input.model, retention,
       postprocess: input.postprocess, destination: input.destination, maxActive: 1, maxPerOccurrence: 1 }, 0);

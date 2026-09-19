@@ -5,7 +5,6 @@ import {
   signArtifactUrl,
   executionDeps,
   projectRepository,
-  versionRepository,
 } from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
 import { classifyTeamsActivity } from "@/application/teams/engagement";
@@ -18,7 +17,6 @@ import { log } from "@/shared/logger";
 const teamsEventDeps: TeamsEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
   projects: projectRepository,
-  versions: versionRepository,
   teams: teamsClient,
   documents: executionDeps.documents,
   artifacts: executionDeps.artifacts,

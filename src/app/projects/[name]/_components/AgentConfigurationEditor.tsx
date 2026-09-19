@@ -34,7 +34,7 @@ import { monoInput } from "@/app/_components/monoInput";
 import { listProjects } from "../../lib/api";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
-import type { SelectableModel, VersionInput, VersionParameters } from "../../lib/api";
+import type { SelectableModel, AgentConfigurationInput, AgentParameters } from "../../lib/api";
 import {
   McpBindingInput,
   NumberField,
@@ -42,7 +42,7 @@ import {
   SubagentInput,
 } from "./inputs";
 import type { PickerOption } from "./inputs";
-import type { VersionSave } from "./McpBindingSettings";
+import type { ConfigurationSave } from "./McpBindingSettings";
 import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
 import { SUBAGENT_KIND_COLOR } from "@/app/_components/badgeColors";
 import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
@@ -59,7 +59,7 @@ export function parseJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
-export function parseVersionDraft(value: VersionInput, schemaText: string): VersionInput | null {
+export function parseConfigurationDraft(value: AgentConfigurationInput, schemaText: string): AgentConfigurationInput | null {
   const jsonSchema = schemaText.trim() === "" ? undefined : parseJsonObject(schemaText);
   if (jsonSchema === null) {
     return value.parameters.structuredOutput ? null : value;
@@ -69,9 +69,8 @@ export function parseVersionDraft(value: VersionInput, schemaText: string): Vers
 
 type SubagentOption = PickerOption & { type: "local" | "remote" };
 
-export function VersionEditor({
+export function AgentConfigurationEditor({
   projectName,
-  versionName,
   models,
   imageModels,
   value,
@@ -82,16 +81,15 @@ export function VersionEditor({
   save,
 }: {
   projectName: string;
-  versionName?: string;
   models: SelectableModel[];
   imageModels: SelectableModel[];
-  value: VersionInput;
-  onChange: (value: VersionInput) => void;
+  value: AgentConfigurationInput;
+  onChange: (value: AgentConfigurationInput) => void;
   schemaText: string;
   onSchemaChange: (text: string) => void;
   schemaError: string | null;
   /** Passed through to the MCP settings dialog, which covers the page's Save. */
-  save: VersionSave;
+  save: ConfigurationSave;
 }) {
   const t = useT();
   const [mcpOptions, setMcpOptions] = useState<PickerOption[]>([]);
@@ -134,7 +132,7 @@ export function VersionEditor({
         const locals: SubagentOption[] =
           projects.status === "fulfilled"
             ? projects.value
-                .filter((p) => p.publishedVersion && p.name !== projectName)
+                .filter((p) => p.configured && p.name !== projectName)
                 .map((p) => ({
                   value: p.name,
                   description: p.description,
@@ -168,10 +166,10 @@ export function VersionEditor({
   const supportsReasoning = selectedModel?.capabilities.reasoning ?? true;
   const supportsStructured = selectedModel?.capabilities.structuredOutput ?? true;
 
-  function patch(next: Partial<VersionInput>) {
+  function patch(next: Partial<AgentConfigurationInput>) {
     onChange({ ...value, ...next });
   }
-  function patchParams(next: Partial<VersionParameters>) {
+  function patchParams(next: Partial<AgentParameters>) {
     onChange({ ...value, parameters: { ...value.parameters, ...next } });
   }
 
@@ -248,33 +246,6 @@ export function VersionEditor({
         styles={monoInput}
       />
 
-      {/*
-        An agent run never sends the template, so the field would only invite
-        text with nowhere to go. It stays visible while it holds leftover
-        content, so that content can be seen and cleared — clearing it makes
-        the field disappear.
-      */}
-      {(value.userPromptTemplate !== "") && (
-        <div>
-          <Textarea
-            label={t("version.userPromptTemplate")}
-            value={value.userPromptTemplate}
-            onChange={(e) => patch({ userPromptTemplate: e.currentTarget.value })}
-            placeholder={t("version.userPromptPlaceholder")}
-            autosize
-            minRows={4}
-            maxRows={20}
-            styles={monoInput}
-          />
-          <Group justify="space-between" gap="xs" mt={4} wrap="nowrap">
-            <Text fz="xs" c="dimmed">
-              {t("version.userPromptAgentHint")}
-            </Text>
-
-          </Group>
-        </div>
-      )}
-
       <SimpleGrid cols={2} spacing="sm">
         <NumberField
           label={t("version.temperature")}
@@ -310,7 +281,7 @@ export function VersionEditor({
           value={value.parameters.reasoningEffort ?? ""}
           onChange={(effort) =>
             patchParams({
-              reasoningEffort: (effort || undefined) as VersionParameters["reasoningEffort"],
+              reasoningEffort: (effort || undefined) as AgentParameters["reasoningEffort"],
             })
           }
           allowDeselect={false}
@@ -481,7 +452,6 @@ export function VersionEditor({
 
         <McpBindingInput
           projectName={projectName}
-          versionName={versionName}
           values={value.mcpList}
           onChange={(mcpList) => patch({ mcpList })}
           options={mcpOptions}

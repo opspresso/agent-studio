@@ -13,7 +13,6 @@ import { chatRepository } from "@/infrastructure/db/repositories/chatRepository"
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
-import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 import { artifactRepository } from "@/infrastructure/db/repositories/artifactRepository";
@@ -143,7 +142,7 @@ afterAll(() => {
   vi.useRealTimers();
 });
 
-describe("project/version atomic writes", () => {
+describe("Project atomic writes", () => {
   const project = {
     name: "atomic",
     displayName: "Atomic",
@@ -212,54 +211,7 @@ describe("project/version atomic writes", () => {
     expect((await projectRepository.get(project.name))?.updatedAt).toBe(project.updatedAt);
   });
 
-  it("publishes only when both the version exists and the project snapshot is current", async () => {
-    seedProject(project.name);
-    const published = { ...project, publishedVersion: "1" };
 
-    // No version "1" yet: the pointer must not be written to a version that
-    // does not exist, and the project row is left exactly as it was.
-    await expect(projectRepository.publish(published, "1", NOW)).rejects.toThrow(
-      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
-    );
-    expect((await projectRepository.get(project.name))?.publishedVersion).toBeUndefined();
-
-    store.seed([{ ...keys.version(project.name, "1"), entityType: "VERSION" }]);
-    await expect(projectRepository.publish(published, "1", "stale")).rejects.toThrow(
-      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
-    );
-    expect((await projectRepository.get(project.name))?.publishedVersion).toBeUndefined();
-
-    await projectRepository.publish(published, "1", NOW);
-    expect((await projectRepository.get(project.name))?.publishedVersion).toBe("1");
-  });
-
-  it("deletes only when the project snapshot is current and the version is unpublished", async () => {
-    seedProject(project.name, { publishedVersion: "1" });
-    store.seed([
-      { ...keys.version(project.name, "1"), entityType: "VERSION" },
-      { ...keys.version(project.name, "2"), entityType: "VERSION" },
-    ]);
-
-    // The published version is what the project answers with; deleting it
-    // would leave the pointer dangling.
-    await expect(versionRepository.delete(project.name, "1", NOW)).rejects.toThrow(
-      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
-    );
-    expect(await store.getItem(keys.version(project.name, "1"))).not.toBeNull();
-
-    await expect(versionRepository.delete(project.name, "2", "stale")).rejects.toThrow(
-      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
-    );
-    expect(await store.getItem(keys.version(project.name, "2"))).not.toBeNull();
-
-    await versionRepository.delete(project.name, "2", NOW);
-    expect(await store.getItem(keys.version(project.name, "2"))).toBeNull();
-
-    // And a version that is not there is a failed delete, not a silent one.
-    await expect(versionRepository.delete(project.name, "2", NOW)).rejects.toThrow(
-      expect.objectContaining({ name: store.TRANSACTION_CANCELLED }),
-    );
-  });
 });
 
 describe("runSlotRepository ownership", () => {
@@ -369,24 +321,18 @@ describe("triggerRepository messaging destination round-trip", () => {
   });
 });
 
-describe("versionRepository mcpList normalization", () => {
-  const legacyKey = keys.version("legacy", "1");
+describe("current configuration MCP normalization", () => {
+  const legacyKey = keys.project("legacy");
 
   function writeRaw(mcpList: unknown): void {
     store.seed([
       {
-        ...legacyKey,
-        entityType: "VERSION",
-        projectName: "legacy",
-        versionName: "1",
-        systemPrompt: "",
-        userPromptTemplate: "",
-        model: "openai/gpt-5-mini",
-        parameters: { piiFiltering: false },
-        mcpList,
-        skillList: [],
-        subagentList: [],
-        createdAt: NOW,
+        ...legacyKey, entityType: "PROJECT", name: "legacy", displayName: "Legacy", projectType: "agent", ownerEmail: "owner@example.test",
+        configuration: {
+          projectName: "legacy", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false },
+          mcpList, skillList: [], subagentList: [],
+        },
+        createdAt: NOW, updatedAt: NOW,
       },
     ]);
   }
@@ -395,7 +341,7 @@ describe("versionRepository mcpList normalization", () => {
     // Legacy rows carry a plain string[]; they are still valid bindings.
     writeRaw(["alpha", "beta"]);
 
-    const version = await versionRepository.get("legacy", "1");
+    const version = (await projectRepository.get("legacy"))?.configuration;
 
     expect(version?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
   });
@@ -403,7 +349,7 @@ describe("versionRepository mcpList normalization", () => {
   it("keeps overrides on rows written in the binding shape", async () => {
     writeRaw([{ name: "alpha", headers: { Authorization: "enc:v1:x", "X-Gone": null } }]);
 
-    const version = await versionRepository.get("legacy", "1");
+    const version = (await projectRepository.get("legacy"))?.configuration;
 
     expect(version?.mcpList).toEqual([
       { name: "alpha", headers: { Authorization: "enc:v1:x", "X-Gone": null } },
@@ -416,7 +362,7 @@ describe("versionRepository mcpList normalization", () => {
     // what the version asked for.
     writeRaw([{ name: "alpha", tools: ["search", "fetch"] }]);
 
-    const version = await versionRepository.get("legacy", "1");
+    const version = (await projectRepository.get("legacy"))?.configuration;
 
     expect(version?.mcpList).toEqual([{ name: "alpha", tools: ["search", "fetch"] }]);
   });
@@ -431,7 +377,7 @@ describe("versionRepository mcpList normalization", () => {
       },
     ]);
 
-    const version = await versionRepository.get("legacy", "1");
+    const version = (await projectRepository.get("legacy"))?.configuration;
 
     expect(version?.mcpList).toEqual([
       {
@@ -448,7 +394,7 @@ describe("versionRepository mcpList normalization", () => {
     // not be stored as a narrowing that would offer none.
     writeRaw([{ name: "alpha", tools: [] }, { name: "beta", tools: "search" }]);
 
-    const version = await versionRepository.get("legacy", "1");
+    const version = (await projectRepository.get("legacy"))?.configuration;
 
     expect(version?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
   });
@@ -456,7 +402,7 @@ describe("versionRepository mcpList normalization", () => {
   it("drops entries with no usable name instead of failing the read", async () => {
     writeRaw(["ok", "", { headers: {} }, null, 42]);
 
-    const version = await versionRepository.get("legacy", "1");
+    const version = (await projectRepository.get("legacy"))?.configuration;
 
     expect(version?.mcpList).toEqual([{ name: "ok" }]);
   });

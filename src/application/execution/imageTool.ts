@@ -1,6 +1,6 @@
 /** Image generation and editing capabilities of an Agent. */
 
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import { getModelConfig, getVisibleModels, toImageUsageRecord } from "@/domain/llm/models";
 import * as engine from "@/application/runtime";
 import type { ExecutionDeps } from "./deps";
@@ -28,11 +28,11 @@ export function defaultImageModel(): string | undefined {
  * draw at all. A model that left the registry falls back to the default instead
  * of disabling the tools the version asked for.
  */
-export function resolveImageModel(version: Version, projectName: string): string | undefined {
-  if (version.parameters.imageGeneration !== true) {
+export function resolveImageModel(configuration: AgentConfiguration, projectName: string): string | undefined {
+  if (configuration.parameters.imageGeneration !== true) {
     return undefined;
   }
-  const requested = version.parameters.imageModel;
+  const requested = configuration.parameters.imageModel;
   if (requested && getModelConfig(requested)?.capabilities.imageGeneration) {
     return requested;
   }
@@ -40,7 +40,7 @@ export function resolveImageModel(version: Version, projectName: string): string
   if (requested) {
     log.warn(
       "image",
-      `version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${fallback}`,
+      `Agent ${projectName} requests unavailable image model "${requested}"; falling back to ${fallback}`,
     );
   }
   return fallback;

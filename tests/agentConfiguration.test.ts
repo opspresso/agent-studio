@@ -69,7 +69,7 @@ describe("current Agent configuration", () => {
     const stored = await projectRepository.get(project.name);
     expect(stored?.configuration).toEqual({ projectName: project.name, ...input() });
     expect(saved.updatedAt).not.toBe(NOW);
-    expect(stored?.publishedVersion).toBeUndefined();
+    expect(stored).not.toHaveProperty("publishedVersion");
     expect([...store.rows.values()].some(row => row.entityType === "VERSION")).toBe(false);
     expect(saved.configuration).not.toHaveProperty("versionName");
     expect(saved.configuration).not.toHaveProperty("createdAt");

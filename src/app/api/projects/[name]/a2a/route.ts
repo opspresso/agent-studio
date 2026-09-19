@@ -10,9 +10,9 @@ type RouteContext = { params: Promise<{ name: string }> };
 export interface ProjectA2aResponse {
   /** The inbound surface is on: a shared key or at least one client key. */
   enabled: boolean;
-  published: boolean;
+  configured: boolean;
   cardUrl: string | null;
-  /** The Agent Card that this project publishes, or null with no published version. */
+  /** The Agent Card that this project publishes, or null with no configured version. */
   card: AgentCard | null;
 }
 

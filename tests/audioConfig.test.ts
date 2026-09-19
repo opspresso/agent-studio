@@ -5,52 +5,41 @@ import { createAudioConfigUseCases, type AudioConfigInput } from "@/application/
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 import * as store from "@/infrastructure/db/store";
 import { audioJobConfigRepository as configs } from "@/infrastructure/db/repositories/audioJobConfigRepository";
-import { versionRepository as versions } from "@/infrastructure/db/repositories/versionRepository";
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
 const input: AudioConfigInput = { enabled: true, model: "openai/whisper-1", retention: { unit: "months", value: 3, timezone: "Asia/Seoul" }, maxActive: 1, maxPerOccurrence: 1 };
 const authorize = vi.fn(async () => {});
 const api = createAudioConfigUseCases({ configs, authorize, validate: async () => {}, now: () => new Date("2026-09-09T00:00:00Z") });
 beforeEach(() => { vi.clearAllMocks(); fake.rows.clear(); fake.seed([{ ...keys.project("audio"), entityType: "PROJECT" }]); });
 describe("revisioned audio configuration", () => {
-  const updatedAt = "2026-09-08T00:00:00.000Z";
-  const seedWriter = () => fake.seed([
-    { ...keys.project("writer"), entityType: "PROJECT", ownerEmail: "owner@example.test", updatedAt },
-    { ...keys.version("writer", "1"), entityType: "VERSION", projectName: "writer", versionName: "1" },
+  const seedWriter = (overrides = {}) => fake.seed([
+    { ...keys.project("writer"), entityType: "PROJECT", ownerEmail: "owner@example.test", configuration: { model: "text" }, ...overrides },
   ]);
-  const fixedWriter = { ...input, postprocess: { projectName: "writer", versionName: "1" } };
+  const writerInput = { ...input, postprocess: { projectName: "writer" } };
 
-  it("fences a version deletion that checked references before this save", async () => {
+  it("stores a reference to a live configured Agent without changing its settings", async () => {
     seedWriter();
     const before = await store.getItem(keys.project("writer"));
-    await api.save("audio", "owner@example.test", fixedWriter, 0);
-    expect(await store.getItem(keys.project("writer"))).toEqual({ ...before, updatedAt: expect.any(String) });
-    await expect(versions.delete("writer", "1", updatedAt)).rejects.toThrow();
-    expect(await store.getItem(keys.version("writer", "1"))).not.toBeNull();
+    await api.save("audio", "owner@example.test", writerInput, 0);
+    expect(await store.getItem(keys.project("writer"))).toEqual(before);
+    expect((await configs.get("audio"))?.postprocess).toEqual({ projectName: "writer" });
   });
-
-  it("refuses a reference saved after its version was deleted", async () => {
-    seedWriter();
-    await versions.delete("writer", "1", updatedAt);
-    await expect(api.save("audio", "owner@example.test", fixedWriter, 0)).rejects.toMatchObject({ status: 409 });
+  it.each([{ configuration: undefined }, { deletingAt: "now" }, { ownerEmail: "other@example.test" }])(
+    "refuses a postprocessor that became unavailable: %j", async overrides => {
+      seedWriter(overrides);
+      await expect(api.save("audio", "owner@example.test", writerInput, 0)).rejects.toMatchObject({ status: 409 });
+      expect(await configs.get("audio")).toBeNull();
+    },
+  );
+  it("refuses a missing postprocessor", async () => {
+    await expect(api.save("audio", "owner@example.test", writerInput, 0)).rejects.toMatchObject({ status: 409 });
     expect(await configs.get("audio")).toBeNull();
   });
-
-  it("rolls back the reference fence if the configuration revision loses", async () => {
+  it("keeps both records intact when a concurrent recipe edit wins", async () => {
     seedWriter();
-    await api.save("audio", "owner@example.test", fixedWriter, 0);
-    const before = await store.getItem(keys.project("writer"));
-    await expect(api.save("audio", "owner@example.test", fixedWriter, 0)).rejects.toMatchObject({ status: 409 });
-    expect(await store.getItem(keys.project("writer"))).toEqual(before);
-  });
-
-  it("checks published aliases and advances a same-timestamp fence", async () => {
-    seedWriter();
-    const sameTime = "2026-09-09T00:00:00.000Z";
-    fake.seed([{ ...keys.project("writer"), entityType: "PROJECT", ownerEmail: "owner@example.test", publishedVersion: "1", updatedAt: sameTime }]);
-    const dynamic = { ...input, postprocess: { projectName: "writer", versionName: "published" } };
-    await api.save("audio", "owner@example.test", dynamic, 0);
-    expect((await store.getItem(keys.project("writer")))?.updatedAt).toBe("2026-09-09T00:00:00.001Z");
-    expect((await configs.get("audio"))?.postprocess?.versionName).toBe("published");
+    await api.save("audio", "owner@example.test", writerInput, 0);
+    const before = await configs.get("audio");
+    await expect(api.save("audio", "owner@example.test", { ...writerInput, maxActive: 2 }, 0)).rejects.toMatchObject({ status: 409 });
+    expect(await configs.get("audio")).toEqual(before);
   });
   it("allows one winner when concurrent edits use the same revision", async () => {
     expect((await api.save("audio", "owner@example.test", input, 0)).revision).toBe(1);

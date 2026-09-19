@@ -1,5 +1,6 @@
+import { requireAgentConfiguration } from "@/application/project/configurationUseCases";
 import { sseResponse } from "@/app/api/_lib/sse";
-import { executionDeps, projectUseCases, signArtifactUrl, versionUseCases } from "@/lib/container";
+import { executionDeps, projectUseCases, signArtifactUrl } from "@/lib/container";
 import { resolveProducedFile, resolveProducedFiles } from "@/application/artifact/producedFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
@@ -10,10 +11,10 @@ import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { withTurnBody } from "@/app/api/_lib/body";
 import { toChatCompletion, toChatCompletionChunks } from "@/app/api/projects/_lib/openai";
 
-type RouteContext = { params: Promise<{ name: string; version: string }> };
+type RouteContext = { params: Promise<{ name: string }> };
 
 export const POST = async (request: Request, ctx: RouteContext) => {
-  const { name, version } = await ctx.params;
+  const { name } = await ctx.params;
   const principal = await authenticateExecution(request, name);
   if (principal instanceof Response) {
     return principal;
@@ -25,15 +26,14 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     }
     try {
       const project = await projectUseCases.get(name);
-      const versionEntity = await versionUseCases.get(name, version);
+      const configuration = requireAgentConfiguration(project);
       // The strategy→executor mapping lives in runProject; this route only
       // wraps the answer in the OpenAI schema. An image project is refused
       // there — an image has no chat completion.
       const conversation = requestConversation(request, principalActor(principal));
       const params = {
         project,
-        version: versionEntity,
-        variables: parsed.data.variables,
+        configuration,
         messages: parsed.data.messages,
         actor: principalActor(principal),
         ...(principal.caller ? { caller: principal.caller } : {}),
@@ -50,7 +50,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
           signal: abortController.signal,
         });
         return await sseResponse(
-          toChatCompletionChunks(source, versionEntity.model, (file) =>
+          toChatCompletionChunks(source, configuration.model, (file) =>
             resolveProducedFile(file, signArtifactUrl, VIEW_URL_TTL_SECONDS),
           ),
           abortController,

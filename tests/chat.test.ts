@@ -1,10 +1,11 @@
+import { withConfigurations } from "./projectConfigurations";
 import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { describe, expect, it, vi } from "vitest";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { ProjectRepository } from "@/domain/project/repository";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { AgentRunner, ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
@@ -128,7 +129,6 @@ const emptyProjects: ProjectRepository = {
   },
   async create() {},
   async update() {},
-  async publish() {},
   async delete() {},
   async getApiToken() {
     return null;
@@ -137,16 +137,11 @@ const emptyProjects: ProjectRepository = {
   async deleteApiToken() {},
 };
 
-const emptyVersions: VersionRepository = {
+const emptyConfigurations = {
   async get() {
     return null;
   },
-  async list() {
-    return [];
-  },
-  async create() {},
-  async put() {},
-  async delete() {},
+
 };
 
 async function* emptyAgent(): AsyncGenerator<EngineChunk> {}
@@ -228,8 +223,8 @@ function makeDeps(repo: ChatRepository, overrides: Partial<ChatDeps> = {}): Chat
   return {
     chats: repo,
     runLog: makeRunLog().repo,
-    projects: emptyProjects,
-    versions: emptyVersions,
+    projects: withConfigurations(emptyProjects, (emptyConfigurations).get),
+
     runAgent: () => emptyAgent(),
     // Extraction has its own tests; here it only has to turn bytes into text so
     // a document's route through persistence and replay is what is exercised.
@@ -818,7 +813,7 @@ describe("chat access to a private project", () => {
         ownerEmail: "someone-else@x.com",
         visibility: "private",
         memberEmails: ["invited@x.com"],
-        publishedVersion: "1",
+
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
@@ -859,7 +854,7 @@ describe("chat access to a private project", () => {
         content: "hey",
         userEmail: "invited@x.com",
       }),
-    ).rejects.toThrow("no runnable version");
+    ).rejects.toThrow("no Agent configuration");
   });
 });
 
@@ -875,26 +870,25 @@ describe("chat image attachments", () => {
         description: "",
         projectType: "agent",
         ownerEmail: "owner@x.com",
-        publishedVersion: "1",
+
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
     },
   };
-  const publishedVersions: VersionRepository = {
-    ...emptyVersions,
+  const savedConfigurations = {
+    ...emptyConfigurations,
     async get() {
       return {
         projectName: "p1",
-        versionName: "1",
+
         systemPrompt: "",
-        userPromptTemplate: "",
+
         model: "google/gemini-2.5-flash",
         parameters: { piiFiltering: false },
         mcpList: [],
         skillList: [],
         subagentList: [],
-        createdAt: "2026-01-01T00:00:00.000Z",
       };
     },
   };
@@ -905,8 +899,8 @@ describe("chat image attachments", () => {
     const { storage } = fakeArtifacts();
     const put = vi.spyOn(storage.rows, "put");
     const deps = makeDeps(repo, {
-      projects: agentProjects,
-      versions: publishedVersions,
+      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+
       artifacts: storage,
     });
     const result = action === "create"
@@ -918,7 +912,6 @@ describe("chat image attachments", () => {
     expect(put).toHaveBeenCalledWith(expect.objectContaining({
       source: "attachment",
       projectName: "p1",
-      versionName: "1",
       actor: { kind: "user", id: userEmail },
     }));
   });
@@ -937,7 +930,7 @@ describe("chat image attachments", () => {
     };
 
     await expect(
-      sendMessage(makeDeps(repo, { projects: agentProjects, versions: publishedVersions }), {
+      sendMessage(makeDeps(repo, { projects: withConfigurations(agentProjects, (savedConfigurations).get) }), {
         chatId: "c1",
         content: "hey",
         userEmail: "owner@x.com",
@@ -954,7 +947,7 @@ describe("chat image attachments", () => {
     };
 
     await expect(
-      sendMessage(makeDeps(repo, { projects: agentProjects, versions: publishedVersions }), {
+      sendMessage(makeDeps(repo, { projects: withConfigurations(agentProjects, (savedConfigurations).get) }), {
         chatId: "c1",
         content: "hey",
         userEmail: "owner@x.com",
@@ -973,7 +966,7 @@ describe("chat image attachments", () => {
     const artifacts = fakeArtifacts();
     const runAgent = vi.fn<AgentRunner>(() => emptyAgent());
     const { stream } = await sendMessage(makeDeps(repo, {
-      projects: agentProjects, versions: publishedVersions, artifacts: artifacts.storage, runAgent,
+      projects: withConfigurations(agentProjects, (savedConfigurations).get),  artifacts: artifacts.storage, runAgent,
     }), { chatId: "c1", content: "edit the previous image", userEmail: "owner@x.com" });
     for await (const _ of stream) { /* drain persistence */ }
 
@@ -990,7 +983,7 @@ describe("chat image attachments", () => {
       return emptyAgent();
     };
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
-    const deps = makeDeps(repo, { projects: agentProjects, versions: publishedVersions, runAgent });
+    const deps = makeDeps(repo, { projects: withConfigurations(agentProjects, (savedConfigurations).get),  runAgent });
     const { stream } = await sendMessage(deps, {
       chatId: "c1",
       content: "and now?",
@@ -1007,8 +1000,8 @@ describe("chat image attachments", () => {
     const seenMessages: unknown[] = [];
     const attachmentStore = fakeArtifacts();
     const deps = makeDeps(repo, {
-      projects: agentProjects,
-      versions: publishedVersions,
+      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+
       artifacts: attachmentStore.storage,
       runAgent: (params) => {
         seenMessages.push(...params.messages);
@@ -1048,8 +1041,8 @@ describe("chat image attachments", () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const seenMessages: unknown[] = [];
     const deps = makeDeps(repo, {
-      projects: agentProjects,
-      versions: publishedVersions,
+      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+
       runAgent: (params) => {
         seenMessages.push(...params.messages);
         return emptyAgent();
@@ -1380,26 +1373,25 @@ describe("attached documents", () => {
         description: "",
         projectType: "agent",
         ownerEmail: "owner@x.com",
-        publishedVersion: "1",
+
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
     },
   };
-  const publishedVersions: VersionRepository = {
-    ...emptyVersions,
+  const savedConfigurations = {
+    ...emptyConfigurations,
     async get() {
       return {
         projectName: "agent",
-        versionName: "1",
+
         systemPrompt: "",
-        userPromptTemplate: "",
+
         model: "google/gemini-2.5-flash",
         parameters: { piiFiltering: false },
         mcpList: [],
         skillList: [],
         subagentList: [],
-        createdAt: "2026-01-01T00:00:00.000Z",
       };
     },
   };
@@ -1408,8 +1400,8 @@ describe("attached documents", () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const seenMessages: unknown[] = [];
     const deps = makeDeps(repo, {
-      projects: agentProjects,
-      versions: publishedVersions,
+      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+
       runAgent: (params) => {
         seenMessages.push(...params.messages);
         return emptyAgent();
@@ -1453,8 +1445,8 @@ describe("attached documents", () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const extract = vi.fn(async () => ({ text: "| Quarter | Revenue |\n| --- | --- |\n| Q3 | 12 |" }));
     const deps = makeDeps(repo, {
-      projects: agentProjects,
-      versions: publishedVersions,
+      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+
       documents: { extract },
     });
 
@@ -1478,8 +1470,8 @@ describe("attached documents", () => {
     const { repo } = makeChatRepo(null);
     const extract = vi.fn(async () => ({ text: "revenue rose" }));
     const deps = makeDeps(repo, {
-      projects: agentProjects,
-      versions: publishedVersions,
+      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+
       documents: { extract },
     });
 
@@ -1499,8 +1491,8 @@ describe("attached documents", () => {
   it("answers, and says why, when the document could not be read", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const deps = makeDeps(repo, {
-      projects: agentProjects,
-      versions: publishedVersions,
+      projects: withConfigurations(agentProjects, (savedConfigurations).get),
+
       documents: {
         extract: async () => {
           throw new DocumentExtractionError("it is password-protected");

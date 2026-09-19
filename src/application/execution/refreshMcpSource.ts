@@ -4,30 +4,30 @@ import { buildMcpTools, closeMcp, type McpToolDeps } from "@/application/executi
 import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import { AudioJobStepError } from "@/application/audio/processJob";
 
-export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps, "versions" | "projects">): NonNullable<SourceReferenceDeps["refresh"]> {
+export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps, "projects">): NonNullable<SourceReferenceDeps["refresh"]> {
   return async (job, recipe, signal) => {
     const check = async () => {
+      const project = await deps.projects.get(recipe.projectName ?? job.projectName);
       if (recipe.projectName && recipe.projectName !== job.projectName) {
-        const project = await deps.projects.get(recipe.projectName);
         if (project?.ownerEmail !== job.userEmail) throw new AudioJobStepError("source_project_access_changed", false);
       }
-      const version = await deps.versions.get(recipe.projectName ?? job.projectName, recipe.versionName);
+      const configuration = project?.configuration;
       const server = await deps.mcps.get(recipe.serverName);
-      const binding = version?.mcpList.find((entry) => entry.name === recipe.serverName);
-      if (!version || !server || !binding || !recipe.mapping.refreshArgument ||
-        await deps.sourceRefreshIdentity?.({ version, server, binding }) !== recipe.identity) {
+      const binding = configuration?.mcpList.find((entry) => entry.name === recipe.serverName);
+      if (!configuration || !server || !binding || !recipe.mapping.refreshArgument ||
+        await deps.sourceRefreshIdentity?.({ configuration, server, binding }) !== recipe.identity) {
         throw new AudioJobStepError("source_connection_changed", false);
       }
-      return { version, binding };
+      return { configuration, binding };
     };
-    const { version, binding } = await check();
+    const { configuration, binding } = await check();
     let refreshed: Parameters<RegisterMcpSource>[0] | undefined;
     // Project before the model-facing result cap; a large provider response may
     // otherwise lose the closing JSON delimiter. This callback persists nothing.
     const client = await buildMcpTools({ ...deps, registerMcpSource: async (source) => {
       refreshed = source;
       return { sourceRef: "refresh", filename: source.filename, mimeType: source.mimeType };
-    } }, { ...version,
+    } }, { ...configuration,
       mcpList: [{ ...binding, tools: [recipe.mapping.tool], sourceOutputs: [{ ...recipe.mapping, refreshArgument: undefined }] }] }, signal,
     { actor: job.actor, userEmail: job.userEmail });
     try {

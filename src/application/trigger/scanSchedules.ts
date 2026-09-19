@@ -69,7 +69,7 @@ export interface ScheduleScanSummary {
   fired: number;
   /** Occurrences another tick or instance had already claimed — expected noise. */
   alreadyClaimed: number;
-  /** Occurrences claimed but refused (overlap, superseded, no published version); each is a row. */
+  /** Occurrences claimed but refused (overlap, superseded, no Agent configuration); each is a row. */
   skipped: number;
   /** Rows of **either** kind stuck in `running` past any live lease, finished as failed. */
   repaired: number;

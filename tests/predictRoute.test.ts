@@ -3,9 +3,8 @@ import type { EngineChunk } from "@/domain/llm/types";
 
 // Route-handler test: the container repos and the execution facade are mocked
 // so the assertion is purely "which execution path did this project type take".
-const { projectRepo, versionRepo, calls } = vi.hoisted(() => ({
+const { projectRepo, calls } = vi.hoisted(() => ({
   projectRepo: { get: vi.fn() },
-  versionRepo: { get: vi.fn() },
   calls: [] as string[],
 }));
 
@@ -24,16 +23,7 @@ vi.mock("@/lib/container", async () => ({
   projectUseCases: (
     await import("@/application/project/projectUseCases")
   ).createProjectUseCases(projectRepo as never),
-  // Only `get` is reached here; the reference lookups and the cipher belong to
-  // the write path, which this route does not take.
-  versionUseCases: (
-    await import("@/application/project/versionUseCases")
-  ).createVersionUseCases({
-    versions: versionRepo as never,
-    projects: projectRepo as never,
-    refs: {} as never,
-    cipher: {} as never,
-  }),
+
 }));
 
 vi.mock("@/app/api/projects/_lib/executionAuth", async (importOriginal) => ({
@@ -61,11 +51,11 @@ vi.mock("@/application/execution/runProject", () => ({
   },
 }));
 
-const { POST } = await import("@/app/api/projects/[name]/versions/[version]/predict/route");
+const { POST } = await import("@/app/api/projects/[name]/predict/route");
 
-const ctx = { params: Promise.resolve({ name: "proj", version: "1" }) };
+const ctx = { params: Promise.resolve({ name: "proj" }) };
 const req = (body: unknown) =>
-  new Request("http://localhost/api/projects/proj/versions/1/predict", {
+  new Request("http://localhost/api/projects/proj/predict", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -73,18 +63,7 @@ const req = (body: unknown) =>
 beforeEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
-  versionRepo.get.mockResolvedValue({
-    projectName: "proj",
-    versionName: "1",
-    systemPrompt: "",
-    userPromptTemplate: "",
-    model: "openai/gpt-5-mini",
-    parameters: { piiFiltering: false },
-    mcpList: [],
-    skillList: [],
-    subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
-  });
+
 });
 
 describe("POST /predict dispatches on project type", () => {
@@ -93,6 +72,7 @@ describe("POST /predict dispatches on project type", () => {
       name: "proj",
       ownerEmail: "owner@example.com",
       projectType: "agent",
+      configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
     const res = await POST(req({ messages: [{ role: "user", content: "hi" }] }), ctx);
@@ -102,17 +82,18 @@ describe("POST /predict dispatches on project type", () => {
     expect(calls).toEqual(["executeProject"]);
   });
 
-  it("hands a prompt project to the same facade", async () => {
+  it("rejects retired template inputs before starting execution", async () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
       projectType: "agent",
+      configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
     const res = await POST(req({ variables: { topic: "otters" } }), ctx);
 
-    expect(await res.json()).toMatchObject({ result: "collected answer" });
-    expect(calls).toEqual(["executeProject"]);
+    expect(res.status).toBe(400);
+    expect(calls).toEqual([]);
   });
 
   it("streams through the shared type dispatch", async () => {
@@ -120,6 +101,7 @@ describe("POST /predict dispatches on project type", () => {
       name: "proj",
       ownerEmail: "owner@example.com",
       projectType: "agent",
+      configuration: { projectName: "proj", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] },
     });
 
     const res = await POST(req({ messages: [{ role: "user", content: "hi" }], stream: true }), ctx);

@@ -1,6 +1,6 @@
 import { tierMayCreateProjects } from "@/domain/member/tiers";
 import { withAuth } from "@/lib/session";
-import { createProjectWithInitialVersion, projectUseCases } from "@/lib/container";
+import { createAgent, projectUseCases } from "@/lib/container";
 import { createProjectSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sanitizeProject } from "@/app/api/projects/_lib/http";
@@ -33,7 +33,7 @@ export const POST = withAuth(async (user, request: Request) => {
   try {
     // Project plus its initial version "1" — see createProjectFlow.ts for why
     // the version is created and deliberately not published.
-    const project = await createProjectWithInitialVersion({
+    const project = await createAgent({
       ...parsed.data,
       ownerEmail: user.email,
     });

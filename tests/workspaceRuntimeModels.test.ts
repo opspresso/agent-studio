@@ -7,7 +7,7 @@ import { getVisibleModels } from "@/domain/llm/models";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
 import { getWorkspaceRuntimeConfig, invalidateSettingsCache } from "@/lib/runtime-settings";
 import { projectHasWorkspaceTools } from "@/domain/project/workspaceAccess";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
@@ -49,10 +49,10 @@ describe("Workspace runtime model selection", () => {
     expect(await getWorkspaceRuntimeConfig("codex")).toBeUndefined();
     expect(await getWorkspaceRuntimeConfig("command")).toEqual({});
   });
-  it("keeps tool availability tied to the published version or latest draft, independently from audio", () => {
-    const old = { versionName: "old", createdAt: "2026-09-01", parameters: { workspaceTools: true } } as Version;
-    const latest = { versionName: "latest", createdAt: "2026-09-15", parameters: { audioProcessing: true } } as Version;
-    expect(projectHasWorkspaceTools({ projectType: "agent", publishedVersion: "old" }, [latest, old])).toBe(true);
-    expect(projectHasWorkspaceTools({ projectType: "agent" }, [latest, old])).toBe(false);
+  it("uses the current Workspace opt-in independently from audio", () => {
+    const configuration: AgentConfiguration = { projectName: "p", systemPrompt: "", model: "openai/gpt-5-mini", parameters: { piiFiltering: false, workspaceTools: true, audioProcessing: false }, mcpList: [], skillList: [], subagentList: [] };
+    expect(projectHasWorkspaceTools({ configuration })).toBe(true);
+    expect(projectHasWorkspaceTools({ configuration: { ...configuration, parameters: { piiFiltering: false, workspaceTools: false, audioProcessing: true } } })).toBe(false);
+    expect(projectHasWorkspaceTools({})).toBe(false);
   });
 });

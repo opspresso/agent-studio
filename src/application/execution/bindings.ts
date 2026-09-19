@@ -1,7 +1,7 @@
 import { runtimeFingerprint } from "@/application/runtime/session";
 /** Resolving a version's skills, subagents and MCP tools for one run. */
 
-import type { McpBinding, SubagentRef, Version } from "@/domain/project/types";
+import type { McpBinding, SubagentRef, AgentConfiguration } from "@/domain/project/types";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput } from "@/domain/llm/types";
 import type { RunOrigin } from "@/domain/execution/actor";
@@ -87,7 +87,7 @@ export async function resolveSkills(
 
 /** Same for subagents: an unresolvable target is not offered as a transfer. */
 export async function resolveSubagents(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "versions">,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects">,
   subagentList: SubagentRef[] | undefined,
 ): Promise<{ subagents: engine.SubagentInfo[]; warnings: string[] }> {
   const resolved = await Promise.all(
@@ -106,10 +106,10 @@ export async function resolveSubagents(
             warning: `${ref.type === "remote" ? "Remote agent" : "Agent project"} '${ref.name}' no longer exists; a transfer to it was not offered.`,
           };
         }
-        const version = "projectType" in target && target.publishedVersion ? await deps.versions.get(target.name, target.publishedVersion) : undefined;
+        const configuration = "projectType" in target ? target.configuration : undefined;
         return {
           subagent: { name: ref.name, description: target.description ?? "", type: ref.type,
-            signature: runtimeFingerprint("url" in target ? [target.name, target.url, target.protocol] : [target.name, target.projectType, version]),
+            signature: runtimeFingerprint("url" in target ? [target.name, target.url, target.protocol] : [target.name, target.projectType, configuration]),
             kind: ref.type === "remote" ? "action" : "agent" },
         };
       },
@@ -207,7 +207,7 @@ export function recentUserQueries(messages: readonly ChatMessageInput[]): string
  * vector-store queries for an answer the first copy already gives.
  */
 export function discoveryQueries(
-  version: Version,
+  configuration: AgentConfiguration,
   requests: readonly string[] = [],
   remembered?: string,
 ): string[] {
@@ -221,7 +221,7 @@ export function discoveryQueries(
   return [
     ...new Set(
       [
-        version.systemPrompt.slice(0, PROMPT_QUERY_CHARS),
+        configuration.systemPrompt.slice(0, PROMPT_QUERY_CHARS),
         ...requests.map((request) => request.slice(0, PROMPT_QUERY_CHARS)),
         ...(contextualQuery ? [contextualQuery] : []),
       ].filter((query) => query.trim() !== ""),
@@ -256,7 +256,7 @@ async function discoverCapabilities(
     mcps: Pick<ExecutionDeps["mcps"], "get">;
     mcpConnections?: ExecutionDeps["mcpConnections"];
   },
-  version: Version,
+  configuration: AgentConfiguration,
   queries: readonly string[],
   signal?: AbortSignal,
   recordUsage?: engine.RecordUsageFn,
@@ -267,9 +267,9 @@ async function discoverCapabilities(
   notes: string[];
   rerank: CatalogRerankReport;
 }> {
-  const boundSkills = new Set(version.skillList ?? []);
-  const boundAgents = new Set((version.subagentList ?? []).map((ref) => ref.name));
-  const boundServers = new Set((version.mcpList ?? []).map((binding) => binding.name));
+  const boundSkills = new Set(configuration.skillList ?? []);
+  const boundAgents = new Set((configuration.subagentList ?? []).map((ref) => ref.name));
+  const boundServers = new Set((configuration.mcpList ?? []).map((binding) => binding.name));
 
   // One embedding pass for all four: the vector is the query, and only the
   // filter differs. Asking per kind meant four identical embeddings per run.
@@ -304,7 +304,7 @@ async function discoverCapabilities(
     await Promise.all(
       search.rerank.usage.map((usage) =>
         recordUsage({
-          projectName: version.projectName,
+          projectName: configuration.projectName,
           model: usage.model,
           inputTokens: usage.inputTokens,
           outputTokens: 0,
@@ -326,7 +326,7 @@ async function discoverCapabilities(
   // `needs_reauth` are connections in name only — the console shows both as
   // something a person still has to finish — so only `connected` counts.
   const connections = deps.mcpConnections
-    ? await listProjectMcpConnections(deps.mcpConnections, version.projectName)
+    ? await listProjectMcpConnections(deps.mcpConnections, configuration.projectName)
     : [];
   const connected = new Set<string>(
     connections
@@ -476,8 +476,8 @@ export function toolsPrepared(resolved: {
  * checks) from needing to know the difference.
  */
 export async function resolveRunTools(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "versions" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
-  version: Version,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
+  configuration: AgentConfiguration,
   signal?: AbortSignal,
   queries?: readonly string[],
   /**
@@ -519,12 +519,12 @@ export async function resolveRunTools(
    * enum and the prompt's table, and answered `Unknown agent` when the model
    * used it.
    */
-  version: Version;
+  configuration: AgentConfiguration;
 }> {
   // Background postprocessing consumes source data; the worker owns every external effect.
   if (origin?.backgroundTask) {
-    version = { ...version, mcpList: [], subagentList: [], parameters: {
-      ...version.parameters, dynamicCapabilities: false, memoryRecall: false,
+    configuration = { ...configuration, mcpList: [], subagentList: [], parameters: {
+      ...configuration.parameters, dynamicCapabilities: false, memoryRecall: false,
     } };
   }
   const discoveryNotes: string[] = [];
@@ -536,7 +536,7 @@ export async function resolveRunTools(
   // preview shows the same prompt — the feature reads as on and is inert. That
   // is the shape of the defect this branch was itself found to have, one call
   // site up, so it is not left to be discovered the same way twice.
-  if (version.parameters.dynamicCapabilities) {
+  if (configuration.parameters.dynamicCapabilities) {
     if (!deps.catalog) {
       discoveryNotes.push(
         "This version is set to find capabilities for each request, but this deployment has no capability catalog; only its own bindings were offered.",
@@ -553,16 +553,16 @@ export async function resolveRunTools(
             mcps: deps.mcps,
             ...(deps.mcpConnections ? { mcpConnections: deps.mcpConnections } : {}),
           },
-          version,
+          configuration,
           queries,
           signal,
           recordRerankUsage,
         );
-        version = {
-          ...version,
-          skillList: [...(version.skillList ?? []), ...found.skillList],
-          subagentList: [...(version.subagentList ?? []), ...found.subagentList],
-          mcpList: [...(version.mcpList ?? []), ...found.mcpList],
+        configuration = {
+          ...configuration,
+          skillList: [...(configuration.skillList ?? []), ...found.skillList],
+          subagentList: [...(configuration.subagentList ?? []), ...found.subagentList],
+          mcpList: [...(configuration.mcpList ?? []), ...found.mcpList],
         };
         rerank = found.rerank;
         if (rerank.failed > 0) {
@@ -592,7 +592,7 @@ export async function resolveRunTools(
     }
   }
 
-  const mcpPending = buildMcpTools(deps, version, signal, origin);
+  const mcpPending = buildMcpTools(deps, configuration, signal, origin);
   // Claim the rejection now: a sibling that rejects first would otherwise let
   // this one surface as an unhandled rejection before the catch below runs.
   const mcpSettled = mcpPending.then(
@@ -601,8 +601,8 @@ export async function resolveRunTools(
   );
   try {
     const [skills, subagents, settled] = await Promise.all([
-      resolveSkills(deps, version.skillList),
-      resolveSubagents(deps, version.subagentList),
+      resolveSkills(deps, configuration.skillList),
+      resolveSubagents(deps, configuration.subagentList),
       mcpSettled,
     ]);
     if ("error" in settled) {
@@ -612,7 +612,7 @@ export async function resolveRunTools(
       skills: skills.skills,
       subagents: subagents.subagents,
       mcp: settled.mcp,
-      version,
+      configuration,
       discovered,
       rerank,
       // Discovery's losses lead — a search that could not run, or a server it

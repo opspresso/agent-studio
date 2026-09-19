@@ -17,7 +17,7 @@ import type { McpConnection } from "@/domain/mcp/connection";
 import type { McpServer } from "@/domain/mcp/types";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
@@ -452,18 +452,17 @@ function projectFixture(): Project {
   };
 }
 
-function versionFixture(): Version {
+function configurationFixture(): AgentConfiguration {
   return {
     projectName: "p",
-    versionName: "v1",
+
     systemPrompt: "",
-    userPromptTemplate: "",
+
     model: "gpt-test",
     parameters: { piiFiltering: false },
     mcpList: [{ name: "slack" }],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -520,7 +519,7 @@ async function runOnce(deps: ExecutionDeps): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
   for await (const chunk of executeAgent(deps, {
     project: projectFixture(),
-    version: versionFixture(),
+    configuration: configurationFixture(),
     messages: [{ role: "user", content: "hi" }],
   })) {
     chunks.push(chunk);

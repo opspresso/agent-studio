@@ -77,7 +77,6 @@ function projects(overrides: Partial<ProjectRepository> = {}): ProjectRepository
     list: async () => [project],
     create: async () => {},
     update: async () => {},
-    publish: async () => {},
     delete: async () => {},
     getApiToken: async () => ({
       token: "enc:v1:tok_secret",

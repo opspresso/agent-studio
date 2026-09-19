@@ -26,7 +26,7 @@ export default function IntegrationsPage() {
   const name = params.name;
   const viewer = useViewer();
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
-  const [published, setPublished] = useState(false);
+  const [configured, setConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +36,7 @@ export default function IntegrationsPage() {
       .then((project) => {
         if (!cancelled) {
           setOwnerEmail(project.ownerEmail);
-          setPublished(Boolean(project.publishedVersion));
+          setConfigured(Boolean(project.configured));
         }
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load project"))
@@ -82,7 +82,7 @@ export default function IntegrationsPage() {
 
       <A2aSection projectName={name} />
 
-      <AguiSection projectName={name} published={published} />
+      <AguiSection projectName={name} configured={configured} />
     </Stack>
   );
 }

@@ -14,7 +14,7 @@ import {
   type RequestContext,
   type TaskStore,
 } from "@a2a-js/sdk/server";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import {
@@ -74,7 +74,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
   constructor(
     private readonly deps: ExecutionDeps,
     private readonly project: Project,
-    private readonly version: Version,
+    private readonly configuration: AgentConfiguration,
     private readonly store: TaskStore,
     private readonly actor: RunActor = A2A_ACTOR,
     private readonly callContext: ServerCallContext = new ServerCallContext(),
@@ -111,7 +111,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
       // reaches an MCP server and any onward transfer as the same one.
       const source = executeProjectStream(this.deps, {
         project: this.project,
-        version: this.version,
+        configuration: this.configuration,
         messages,
         actor: this.actor,
         ...(conversation ? { conversation } : {}),

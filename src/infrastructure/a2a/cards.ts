@@ -5,7 +5,7 @@
  */
 
 import { A2A_PROTOCOL_VERSION, type AgentCard } from "@a2a-js/sdk";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project } from "@/domain/project/types";
 import { buildPublicUrl } from "@/lib/public-url";
 
 const IMAGE_MODES = ["image/png", "image/jpeg", "image/webp"];
@@ -25,7 +25,7 @@ export async function buildProjectAgentCardUrl(projectName: string): Promise<str
   return `${await buildProjectA2aRpcUrl(projectName)}/.well-known/agent-card.json`;
 }
 
-export async function buildAgentCard(project: Project, version: Version): Promise<AgentCard> {
+export async function buildAgentCard(project: Project): Promise<AgentCard> {
   const rpcUrl = await buildProjectA2aRpcUrl(project.name);
   const securityRequirements = [{ schemes: { [SECURITY_SCHEME]: { list: [] } } }];
   return {
@@ -35,7 +35,7 @@ export async function buildAgentCard(project: Project, version: Version): Promis
       { url: rpcUrl, protocolBinding: "JSONRPC", tenant: "", protocolVersion: A2A_PROTOCOL_VERSION },
     ],
     provider: undefined,
-    version: version.versionName,
+    version: project.updatedAt,
     capabilities: { streaming: true, pushNotifications: false, extensions: [] },
     defaultInputModes: MODES,
     defaultOutputModes: MODES,

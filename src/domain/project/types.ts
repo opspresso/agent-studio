@@ -157,7 +157,6 @@ export interface Project {
    */
   memberEmails?: string[];
   departmentCode?: string;
-  publishedVersion?: string;
   /** Current Agent settings, read as one snapshot with the project. */
   configuration?: AgentConfiguration;
   slack?: SlackIntegration;
@@ -316,12 +315,4 @@ export interface AgentConfiguration {
   skillList: string[];
   subagentList: SubagentRef[];
   maxTurn?: number;
-}
-
-export type VersionParameters = AgentParameters;
-
-export interface Version extends AgentConfiguration {
-  versionName: string;
-  userPromptTemplate: string;
-  createdAt: string;
 }

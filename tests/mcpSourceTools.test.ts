@@ -5,7 +5,7 @@ import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import type { AudioJob } from "@/domain/audio/job";
 import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 import type { McpServer } from "@/domain/mcp/types";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
@@ -31,10 +31,10 @@ function fixture() {
     cipher: { mergeOutboundHeaders: () => ({}) }, urlPolicy: { assertAllowed: async () => {} },
     sourceRefreshIdentity: async () => "connection-1", registerMcpSource: register, mcpSessions: mcpSessionFactory,
   } as unknown as McpToolDeps;
-  const version = { projectName: "audio", versionName: "1", mcpList: servers.map(({ name }) => ({ name })) } as Version;
-  const open = (bindings = version.mcpList) => buildMcpTools(deps, { ...version, mcpList: bindings }, undefined,
+  const configuration = { projectName: "audio", model: "test", systemPrompt: "", parameters: { piiFiltering: false }, skillList: [], subagentList: [], mcpList: servers.map(({ name }) => ({ name })) } as AgentConfiguration;
+  const open = (bindings = configuration.mcpList) => buildMcpTools(deps, { ...configuration, mcpList: bindings }, undefined,
     { actor: { kind: "user", id: "owner@example.test" } });
-  return { open, register, version, deps };
+  return { open, register, configuration, deps };
 }
 
 const recording = { id: "recording-1", name: "meeting", presigned_url: sourceUrl };
@@ -76,9 +76,9 @@ describe("mapped MCP tools offered to an Agent", () => {
     const refreshedUrl = "https://files.example.test/audio?signature=renewed-private";
     stubSourceResponse(wrapped(refreshedUrl));
     const refresh = createMcpSourceRefresher({ ...f.deps,
-      versions: { get: async () => f.version }, projects: { get: async () => null },
+      projects: { get: async () => ({ configuration: f.configuration }) },
     } as unknown as Parameters<typeof createMcpSourceRefresher>[0]);
-    const job = { projectName: f.version.projectName, userEmail: "owner@example.test",
+    const job = { projectName: f.configuration.projectName, userEmail: "owner@example.test",
       sourceIdentity: { namespace: registered.namespace, itemId: registered.itemId } } as AudioJob;
     const source = await refresh(job, registered.refresh!, new AbortController().signal);
     expect(source).toMatchObject({ url: refreshedUrl, namespace: registered.namespace, itemId: recording.id,

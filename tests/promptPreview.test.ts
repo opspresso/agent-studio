@@ -19,7 +19,7 @@ import type { ExecutionDeps } from "@/application/execution/runProject";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
@@ -38,25 +38,24 @@ function projectFixture(): Project {
   };
 }
 
-function versionFixture(): Version {
+function configurationFixture(): AgentConfiguration {
   return {
     projectName: "helper",
-    versionName: "v1",
+
     systemPrompt: "You are helpful.",
-    userPromptTemplate: "",
+
     model: "gpt-test",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
 /** A version bound to a skill, an MCP server and a subagent. */
-function boundVersion(): Version {
+function boundVersion(): AgentConfiguration {
   return {
-    ...versionFixture(),
+    ...configurationFixture(),
     skillList: ["greeting"],
     mcpList: [{ name: "crm" }],
     subagentList: [{ name: "painter", type: "local" }],
@@ -188,8 +187,8 @@ describe("previewPrompt", () => {
     };
     const preview = await previewPrompt(deps, {
       project: projectFixture(),
-      version: {
-        ...versionFixture(),
+      configuration: {
+        ...configurationFixture(),
         mcpList: [{ name: "memory" }],
         parameters: {
           piiFiltering: false,
@@ -215,13 +214,13 @@ describe("previewPrompt", () => {
     const deps = executionDepsFixture(channel);
     wireRegistry(deps);
     stubMcpServer(["query", "update"]);
-    const version = boundVersion();
+    const configuration = boundVersion();
 
-    const preview = await previewPrompt(deps, { project: projectFixture(), version });
+    const preview = await previewPrompt(deps, { project: projectFixture(), configuration });
     await drain(
       executeAgent(deps, {
         project: projectFixture(),
-        version,
+        configuration,
         messages: [{ role: "user", content: "hi" }],
       }),
     );
@@ -248,7 +247,7 @@ describe("previewPrompt", () => {
 
     const preview = await previewPrompt(deps, {
       project: projectFixture(),
-      version: boundVersion(),
+      configuration: boundVersion(),
     });
 
     // `dispatch_agents` rides along with the transfer tool: a preview stands for
@@ -274,7 +273,7 @@ describe("previewPrompt", () => {
     wireRegistry(deps);
     const server = stubMcpServer(["query"]);
 
-    await previewPrompt(deps, { project: projectFixture(), version: boundVersion() });
+    await previewPrompt(deps, { project: projectFixture(), configuration: boundVersion() });
 
     expect(server.verbs).not.toContain("DELETE");
     expect(server.verbs.every((verb) => verb === "POST")).toBe(true);
@@ -290,7 +289,7 @@ describe("previewPrompt", () => {
 
       const preview = await previewPrompt(deps, {
         project: projectFixture(),
-        version: boundVersion(),
+        configuration: boundVersion(),
       });
 
       expect(preview.warnings.some((w) => w.includes("greeting"))).toBe(true);
@@ -300,26 +299,12 @@ describe("previewPrompt", () => {
     }
   });
 
-  it("tells an agent project that its user prompt template is never sent", async () => {
-    const deps = executionDepsFixture(new FakeChannel([]));
-    wireRegistry(deps);
-    stubMcpServer(["query"]);
-
-    const preview = await previewPrompt(deps, {
-      project: projectFixture(),
-      version: { ...boundVersion(), userPromptTemplate: "Answer {{topic}}." },
-    });
-
-    expect(preview.warnings.some((w) => w.includes("user prompt template"))).toBe(true);
-  });
-
-
   it("says so when PII filtering will rewrite what is sent", async () => {
     const deps = executionDepsFixture(new FakeChannel([]));
 
     const preview = await previewPrompt(deps, {
       project: { ...projectFixture(), projectType: "agent" },
-      version: { ...versionFixture(), parameters: { piiFiltering: true } },
+      configuration: { ...configurationFixture(), parameters: { piiFiltering: true } },
     });
 
     expect(preview.warnings.some((w) => w.includes("PII"))).toBe(true);
@@ -361,8 +346,8 @@ describe("previewPrompt", () => {
 
       const preview = await previewPrompt(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture(),
+        configuration: {
+          ...configurationFixture(),
           parameters: { piiFiltering: false, dynamicCapabilities: true },
         },
         message: "say hello to the customer",
@@ -387,8 +372,8 @@ describe("previewPrompt", () => {
 
       await previewPrompt(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture(),
+        configuration: {
+          ...configurationFixture(),
           parameters: { piiFiltering: false, dynamicCapabilities: true },
         },
         message: "say hello to the customer",
@@ -405,8 +390,8 @@ describe("previewPrompt", () => {
 
       const preview = await previewPrompt(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture(),
+        configuration: {
+          ...configurationFixture(),
           parameters: { piiFiltering: false, dynamicCapabilities: true },
         },
       });
@@ -423,7 +408,7 @@ describe("previewPrompt", () => {
 
       const preview = await previewPrompt(deps, {
         project: projectFixture(),
-        version: versionFixture(),
+        configuration: configurationFixture(),
         message: "say hello to the customer",
       });
 

@@ -3,7 +3,7 @@ import { projectWebhookPath } from "@/domain/trigger/types";
 
 /**
  * Builds the API Reference tab's endpoint descriptors from a project's public
- * context (name, type, published pointer, integration flags). This module is
+ * context (name, type, configured pointer, integration flags). This module is
  * intentionally pure — it takes **no** secrets, so every rendered example and
  * code sample can only ever contain the placeholder tokens below, never a real
  * session cookie, A2A key, or Slack secret.
@@ -105,12 +105,12 @@ export interface ApiEndpoint {
 export interface ApiReferenceContext {
   projectName: string;
   projectType: ProjectType;
-  /** The published version name, or null when the project has no published version. */
-  publishedVersion: string | null;
+  /** The configured version name, or null when the project has no configured version. */
+  configured: boolean;
   /** Absolute origin for example URLs (e.g. window.location.origin); "" is tolerated. */
   origin: string;
   /** A2A exposure status, or null when unknown. */
-  a2a: { enabled: boolean; published: boolean } | null;
+  a2a: { enabled: boolean; configured: boolean } | null;
   /**
    * The project webhook's switch, or null when not visible to the viewer — the
    * secret it is authenticated with is owner-readable, so a viewer who cannot
@@ -182,18 +182,16 @@ function curlExample(opts: {
 function pythonSdkExample(opts: {
   baseUrl: string;
   messages: unknown;
-  variables?: Record<string, string>;
   stream?: boolean;
   /** Show the conversation header, per call — the SDK's `extra_headers`. */
   conversation?: boolean;
 }): CodeExample {
-  const extraBody = opts.variables ? `,\n    extra_body={"variables": ${JSON.stringify(opts.variables)}}` : "";
   const extraHeaders = opts.conversation
     ? `\n    extra_headers={"X-Conversation-Id": "$CONVERSATION_ID"},  # same value on every turn of one conversation`
     : "";
   const createArgs = `
-    model="",  # ignored — the project version selects the model
-    messages=${JSON.stringify(opts.messages)}${extraBody},${opts.stream ? "\n    stream=True," : ""}${extraHeaders}
+    model="",  # ignored — the Agent configuration selects the model
+    messages=${JSON.stringify(opts.messages)},${opts.stream ? "\n    stream=True," : ""}${extraHeaders}
 `;
   const call = opts.stream
     ? `stream = client.chat.completions.create(${createArgs})
@@ -216,15 +214,13 @@ ${call}`;
 function nodeSdkExample(opts: {
   baseUrl: string;
   messages: unknown;
-  variables?: Record<string, string>;
   stream?: boolean;
   /** Show the conversation header, per call — the SDK's request options. */
   conversation?: boolean;
 }): CodeExample {
-  const extraBody = opts.variables ? `,\n  variables: ${JSON.stringify(opts.variables)},` : "";
   const createArgs = `
-  model: "", // ignored — the project version selects the model
-  messages: ${JSON.stringify(opts.messages)}${extraBody},${opts.stream ? "\n  stream: true," : ""}
+  model: "", // ignored — the Agent configuration selects the model
+  messages: ${JSON.stringify(opts.messages)},${opts.stream ? "\n  stream: true," : ""}
 `;
   const requestOptions = opts.conversation
     ? `, {
@@ -256,39 +252,33 @@ const USAGE_FIELDS: FieldSpec[] = [
 ];
 
 export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
-  const { projectName, publishedVersion, origin, a2a, slack, telegram, teams, webhook } = ctx;
+  const { projectName, configured, origin, a2a, slack, telegram, teams, webhook } = ctx;
   const abs = (path: string): string => `${origin}${path}`;
   const endpoints: ApiEndpoint[] = [];
 
-  // Execution endpoints target the published version; without one they are hidden.
-  if (publishedVersion) {
-    const versionBase = `/api/projects/${projectName}/versions/${publishedVersion}`;
+  // Execution endpoints target the current Agent configuration; without one they are hidden.
+  if (configured) {
+    const agentBase = `/api/projects/${projectName}`;
 
     {
-      const predictPath = `${versionBase}/predict`;
-      const predictBody = { variables: { topic: "otters" }, stream: false };
+      const predictPath = `${agentBase}/predict`;
+      const predictBody = { messages: [{ role: "user", content: "Tell me about otters." }], stream: false };
       endpoints.push({
         id: "predict",
         method: "POST",
         path: predictPath,
         title: "Predict",
         description:
-          ('Runs the published version — for an agent project that is the multi-turn tool loop, with its skills, MCP servers and subagents. Set "stream": true for an SSE response.' +
-              CONVERSATION_NOTE),
+          'Runs the Agent tool loop with its skills, MCP servers and subagents. Set "stream": true for an SSE response.' + CONVERSATION_NOTE,
         auth: "token",
         streaming: false,
         requestFields: [
           {
-            name: "variables",
-            type: "object",
-            description:
-              ("Ignored by agent projects — an agent run has no prompt template to render."),
-          },
-          {
             name: "messages",
             type: "array[object]",
+            required: true,
             description:
-              ("OpenAI-style messages the agent runs against."),
+              "OpenAI-style messages the Agent runs against.",
           },
           { name: "stream", type: "boolean", description: "Return an SSE stream instead of one JSON body." },
         ],
@@ -322,12 +312,12 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             url: abs(predictPath),
             auth: "token",
             body: predictBody,
-            ...(({ extraHeaders: CONVERSATION_HEADER })),
+            extraHeaders: CONVERSATION_HEADER,
           }),
         ],
       });
 
-      const ccPath = `${versionBase}/chat/completions`;
+      const ccPath = `${agentBase}/chat/completions`;
       const ccMessages = [{ role: "user", content: "hi" }];
       endpoints.push({
         id: "chat-completions",
@@ -335,18 +325,13 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         path: ccPath,
         title: "OpenAI chat completions",
         description:
-          (("OpenAI-compatible endpoint; agent projects run the multi-turn tool loop. ")) +
-          'temperature/max_tokens are accepted but ignored — sampling comes from the version. The same endpoint streams when "stream": true (chat.completion.chunk SSE).' +
-          ((CONVERSATION_NOTE)),
+          "OpenAI-compatible endpoint; Agents run the multi-turn tool loop. " +
+          'temperature/max_tokens are accepted but ignored — sampling comes from Agent settings. The same endpoint streams when "stream": true (chat.completion.chunk SSE).' +
+          CONVERSATION_NOTE,
         auth: "token",
         streaming: false,
         requestFields: [
           { name: "messages", type: "array[object]", required: true, description: "OpenAI chat messages." },
-          {
-            name: "variables",
-            type: "object",
-            description: "Values substituted into {{var}} placeholders in the prompt template.",
-          },
           {
             name: "stream",
             type: "boolean",
@@ -387,17 +372,17 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             url: abs(ccPath),
             auth: "token",
             body: { messages: ccMessages, stream: false },
-            ...(({ extraHeaders: CONVERSATION_HEADER })),
+            extraHeaders: CONVERSATION_HEADER,
           }),
-          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, conversation: true }),
-          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true, conversation: true }),
-          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, conversation: true }),
-          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true, conversation: true }),
+          pythonSdkExample({ baseUrl: abs(agentBase), messages: ccMessages, conversation: true }),
+          pythonSdkExample({ baseUrl: abs(agentBase), messages: ccMessages, stream: true, conversation: true }),
+          nodeSdkExample({ baseUrl: abs(agentBase), messages: ccMessages, conversation: true }),
+          nodeSdkExample({ baseUrl: abs(agentBase), messages: ccMessages, stream: true, conversation: true }),
         ],
       });
 
       {
-        const agentPath = `${versionBase}/agent`;
+        const agentPath = `${agentBase}/agent`;
         const agentBody = { messages: [{ role: "user", content: "hi" }] };
         endpoints.push({
           id: "agent",
@@ -405,7 +390,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           path: agentPath,
           title: "Agent stream",
           description:
-            "SSE stream of EngineChunk frames (delta.content, delta.reasoningContent when the version records its reasoning, toolResult, warning, author for subagent turns, error, and a terminal done: true or finishReason naming why the run ended), terminated by data: [DONE]." +
+            "SSE stream of EngineChunk frames (delta.content, delta.reasoningContent when the Agent records its reasoning, toolResult, warning, author for subagent turns, error, and a terminal done: true or finishReason naming why the run ended), terminated by data: [DONE]." +
             CONVERSATION_NOTE,
           auth: "token",
           streaming: true,
@@ -428,10 +413,10 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     }
   }
 
-  // AG-UI: every published project, whatever its type — the run goes through
+  // AG-UI: every configured project, whatever its type — the run goes through
   // `streamProjectRun`, so a chat panel can show a prompt project's answer and
   // an image project's picture as readily as an agent's tool loop.
-  if (publishedVersion) {
+  if (configured) {
     const aguiPath = `/api/agui/${projectName}`;
     const aguiBody = {
       threadId: "thread-1",
@@ -446,7 +431,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: aguiPath,
       title: "AG-UI run",
       description:
-        "Runs the published version for an AG-UI client (CopilotKit, @ag-ui/client) and streams the protocol's events: RUN_STARTED, TEXT_MESSAGE_*, TOOL_CALL_* with TOOL_CALL_RESULT, REASONING_* when the version records its thinking, STEP_* for subagents, ACTIVITY_SNAPSHOT (activityType agent-studio.image / agent-studio.file) for a picture or a file the run produced, CUSTOM agent-studio.warning for what the run lost, and RUN_FINISHED carrying usage and result.termination, or RUN_ERROR. " +
+        "Runs the current Agent configuration for an AG-UI client (CopilotKit, @ag-ui/client) and streams the protocol's events: RUN_STARTED, TEXT_MESSAGE_*, TOOL_CALL_* with TOOL_CALL_RESULT, REASONING_* when the Agent records its thinking, STEP_* for subagents, ACTIVITY_SNAPSHOT (activityType agent-studio.image / agent-studio.file) for a picture or a file the run produced, CUSTOM agent-studio.warning for what the run lost, and RUN_FINISHED carrying usage and result.termination, or RUN_ERROR. " +
         "threadId is the run's conversation — send the same one on every run of a thread. Tools the client declares are offered to an agent project and executed by the client: a turn that calls one ends the run, and the results come back as tool messages in the next run's history. A user turn may carry text, image and document parts; context and a non-empty state reach the model as a read-only system turn. " +
         "Call it from your own server (a CopilotKit runtime, a backend): the token is a server credential and the endpoint sends no CORS headers. The stream closes after the terminal event, with no [DONE] frame.",
       auth: "token",
@@ -469,8 +454,8 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
   }
 
   // The project webhook: shown once it is switched on, and deliberately not
-  // gated on a published version — the address is live either way, and what it
-  // answers without one is the `no-published-version` status documented below.
+  // gated on a configured version — the address is live either way, and what it
+  // answers without one is the `no-configuration` status documented below.
   if (webhook && webhook.enabled) {
     const webhookPath = projectWebhookPath(projectName);
     const webhookBody = { event: "build.finished", status: "ok" };
@@ -480,7 +465,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: webhookPath,
       title: "Project webhook",
       description:
-        "Starts a run of the published version from outside. Generic senders use X-Trigger-Secret. GitHub uses the same secret in its Secret setting to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message, or turned into template variables when the webhook's payload mode says so. " +
+        "Starts a run of the current Agent configuration from outside. Generic senders use X-Trigger-Secret. GitHub uses the same secret in its Secret setting to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message, or turned into template variables when the webhook's payload mode says so. " +
         "It answers 202 immediately and runs in the background, because a run can take minutes and no sender waits that long: the answer lands on the delivery's history row under Settings → Webhook, not in this response. " +
         "Generic senders use Idempotency-Key; GitHub redeliveries are deduplicated by X-GitHub-Delivery for 24 hours. Signed GitHub ping deliveries return status=ping without starting a run.",
       auth: "trigger-secret",
@@ -491,7 +476,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           name: "status",
           type: "string",
           description:
-            '"accepted" when a run started; "disabled", "duplicate", "busy" (overlap is off), "no-published-version" or "ping" when no run starts. These acknowledgements return 202.',
+            '"accepted" when a run started; "disabled", "duplicate", "busy" (overlap is off), "no-configuration" or "ping" when no run starts. These acknowledgements return 202.',
         },
         {
           name: "runId",
@@ -513,8 +498,8 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     });
   }
 
-  // A2A endpoints appear only when the key is configured and a version is published.
-  if (a2a && a2a.enabled && a2a.published) {
+  // A2A endpoints appear only when the key is configured and the Agent has settings.
+  if (a2a && a2a.enabled && a2a.configured) {
     const cardPath = `/api/a2a/${projectName}/.well-known/agent-card.json`;
     endpoints.push({
       id: "a2a-card",

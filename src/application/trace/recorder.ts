@@ -20,7 +20,7 @@ export const MAX_TRACED_DISCOVERED = 20;
 
 export interface TraceContext {
   projectName: string;
-  versionName: string;
+  versionName?: string;
   projectType: string;
   model: string;
   messageCount: number;

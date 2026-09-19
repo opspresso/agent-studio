@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { cutCodePoints } from "@/shared/utf8Text";
 import type { RunActor } from "@/domain/execution/actor";
 import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import {
   PROJECT_WEBHOOK_ID,
   type ScheduleDeliveryResult,
@@ -26,7 +26,6 @@ import {
   type WebhookTrigger,
 } from "@/domain/trigger/types";
 import { triggerSecretContext } from "@/domain/security/secretContext";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import { repairTriggerRuns } from "./repairLostRuns";
@@ -44,7 +43,7 @@ export interface AdmittedFiring<T extends Trigger = Trigger> {
   runId: string;
   trigger: T;
   project: Project;
-  version: Version;
+  configuration: AgentConfiguration;
   run: TriggerRun;
   release: () => Promise<void>;
 }
@@ -70,7 +69,7 @@ export type AdmitResult =
   | { status: "invalid-delivery" }
   | { status: "ping" }
   | { status: "busy" }
-  | { status: "no-published-version" };
+  | { status: "no-configuration" };
 
 function triggerSecretMatches(
   deps: TriggerRunnerDeps,
@@ -233,7 +232,7 @@ export async function admitRun<T extends Trigger>(
   | AdmittedFiring<T>
   | { status: "not-configured" }
   | { status: "busy" }
-  | { status: "no-published-version" }
+  | { status: "no-configuration" }
 > {
   const project = await deps.projects.get(trigger.projectName);
   if (!project) {
@@ -249,10 +248,10 @@ export async function admitRun<T extends Trigger>(
     await recordSkip(deps, trigger, extra, EXECUTION_USER_UNAUTHORIZED);
     return { status: "not-configured" };
   }
-  const version = await resolveRunnableVersion(deps.versions, project);
-  if (!version) {
-    await recordSkip(deps, trigger, extra, "No published version.");
-    return { status: "no-published-version" };
+  const configuration = project.configuration;
+  if (!configuration) {
+    await recordSkip(deps, trigger, extra, "Agent is not configured.");
+    return { status: "no-configuration" };
   }
 
   let release = async () => {};
@@ -299,7 +298,7 @@ export async function admitRun<T extends Trigger>(
     // History is a log; losing a row must not cost the firing.
     log.error("trigger", "could not record the start of a firing", error);
   }
-  return { status: "accepted", runId: run.runId, trigger, project, version, run, release };
+  return { status: "accepted", runId: run.runId, trigger, project, configuration, run, release };
 }
 
 /** A firing that never ran, recorded so the console can say why. */
@@ -371,7 +370,7 @@ export async function executeFiring(
   admitted: AdmittedFiring,
   input: { variables?: Record<string, string>; message?: string },
 ): Promise<void> {
-  const { trigger, project, version, run } = admitted;
+  const { trigger, project, configuration, run } = admitted;
   let text = "";
   let error: string | undefined;
   let traceId: string | undefined;
@@ -405,7 +404,7 @@ export async function executeFiring(
     }
     for await (const chunk of deps.run({
       project,
-      version,
+      configuration,
       ...input,
       actor: triggerActor(trigger),
       ...(trigger.kind === "schedule" && trigger.executionEmail ? { userEmail: trigger.executionEmail } : {}),

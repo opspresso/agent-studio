@@ -24,7 +24,7 @@ function fromItem(item: Record<string, unknown>): Artifact {
     ...(typeof item.filename === "string" ? { filename: item.filename } : {}),
     byteSize: Number(item.byteSize ?? 0),
     projectName: String(item.projectName ?? ""),
-    versionName: String(item.versionName ?? ""),
+    ...(typeof item.versionName === "string" ? { versionName: item.versionName } : {}),
     ...(item.actor ? { actor: item.actor as Artifact["actor"] } : {}),
     // Read by name like every other field. The write spreads the whole artifact,
     // so a field missing from here stores fine, type-checks fine and comes back

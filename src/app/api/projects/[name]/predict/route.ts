@@ -1,10 +1,10 @@
+import { requireAgentConfiguration } from "@/application/project/configurationUseCases";
 import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { sseResponse } from "@/app/api/_lib/sse";
 import {
   executionDeps,
   projectUseCases,
   signArtifactUrl,
-  versionUseCases,
 } from "@/lib/container";
 import { resolveProducedFiles, withAddressedFiles } from "@/application/artifact/producedFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
@@ -19,10 +19,10 @@ import {
   readExecutionDocuments,
 } from "@/app/api/projects/_lib/documents";
 
-type RouteContext = { params: Promise<{ name: string; version: string }> };
+type RouteContext = { params: Promise<{ name: string }> };
 
 export const POST = async (request: Request, ctx: RouteContext) => {
-  const { name, version } = await ctx.params;
+  const { name } = await ctx.params;
   const principal = await authenticateExecution(request, name);
   if (principal instanceof Response) {
     return principal;
@@ -34,14 +34,13 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     }
     try {
       const project = await projectUseCases.get(name);
-      const versionEntity = await versionUseCases.get(name, version);
+      const configuration = requireAgentConfiguration(project);
       const actor = principalActor(principal);
       const conversation = requestConversation(request, actor);
-      const read = await readExecutionDocuments(executionDeps, { projectName: project.name, versionName: versionEntity.versionName, actor }, parsed.data.documents);
+      const read = await readExecutionDocuments(executionDeps, { projectName: project.name, actor }, parsed.data.documents);
       const params = {
         project,
-        version: versionEntity,
-        variables: parsed.data.variables,
+        configuration,
         messages: attachDocumentsToMessages(parsed.data.messages ?? [], read.documents),
         actor,
         // Not on the image branch above: an image run's prompt is the rendered

@@ -20,7 +20,7 @@
 
 import type * as engine from "@/application/runtime";
 import { bindingsMayOfferRecall, RECALL_TOOL_NAME } from "@/domain/project/memoryRecall";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import type { RunOrigin } from "@/domain/execution/actor";
 import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./mcpTools";
 import { log } from "@/shared/logger";
@@ -73,9 +73,9 @@ export interface RecallResult {
  */
 export function recallTargets(
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor">,
-  version: Pick<Version, "mcpList">,
+  configuration: Pick<AgentConfiguration, "mcpList">,
 ): Array<{ server: string; alias: string }> {
-  const bound = new Set((version.mcpList ?? []).map((binding) => binding.name));
+  const bound = new Set((configuration.mcpList ?? []).map((binding) => binding.name));
   return mcp.mcpServers.flatMap((server) => {
     const alias = bound.has(server.name) ? mcp.aliasFor?.(server.name, RECALL_TOOL_NAME) : undefined;
     return alias ? [{ server: server.name, alias }] : [];
@@ -123,21 +123,21 @@ export function memoryPrepared(memory: {
 export async function prepareMemoryForRun(
   deps: McpToolDeps,
   input: {
-    version: Version;
+    configuration: AgentConfiguration;
     query: string;
     signal?: AbortSignal;
     origin?: Pick<RunOrigin, "actor" | "userEmail" | "conversation" | "backgroundTask">;
   },
 ): Promise<Awaited<ReturnType<typeof recallForRun>>> {
-  if (input.origin?.backgroundTask || !input.version.parameters.memoryRecall) {
+  if (input.origin?.backgroundTask || !input.configuration.parameters.memoryRecall) {
     return { input: {}, warnings: [], asked: 0, failed: 0 };
   }
   // Preserve binding selections: an unrestricted document server need not
   // offer recall. Inventing that selection would report a missing-tool warning.
   // Only recall is called; final resolution reuses the cached catalogs.
   const mcp = await buildMcpTools(deps, {
-    ...input.version,
-    mcpList: (input.version.mcpList ?? [])
+    ...input.configuration,
+    mcpList: (input.configuration.mcpList ?? [])
       .filter((binding) => bindingsMayOfferRecall([binding])),
   }, input.signal, input.origin);
   try {
@@ -160,7 +160,7 @@ export async function prepareMemoryForRun(
  * discovery (see {@link recallTargets}); `mcp` is the resolve that ran.
  */
 export async function recallForRun(input: {
-  version: Version;
+  configuration: AgentConfiguration;
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;
   query: string;
   signal?: AbortSignal;
@@ -170,7 +170,7 @@ export async function recallForRun(input: {
   asked: number;
   failed: number;
 }> {
-  if (!input.version.parameters.memoryRecall) {
+  if (!input.configuration.parameters.memoryRecall) {
     return { input: {}, warnings: [], asked: 0, failed: 0 };
   }
   const result = await recallMemories(input);
@@ -191,7 +191,7 @@ export async function recallForRun(input: {
  */
 export async function recallMemories(input: {
   /** The version as bound; only its own servers are asked (see {@link recallTargets}). */
-  version: Pick<Version, "mcpList"> & Partial<Pick<Version, "parameters">>;
+  configuration: Pick<AgentConfiguration, "mcpList"> & Partial<Pick<AgentConfiguration, "parameters">>;
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;
   /** The newest user turn as text; nothing to ask with is reported, not asked. */
   query: string;
@@ -201,11 +201,11 @@ export async function recallMemories(input: {
   // `cutCodePoints`, not `slice`: the query goes out as JSON-RPC arguments and
   // a cut through a surrogate pair is not text a server can read.
   const query = cutCodePoints(input.query.trim(), MAX_QUERY_CHARS);
-  const declared = recallTargets(mcp, input.version);
+  const declared = recallTargets(mcp, input.configuration);
   if (declared.length === 0) {
     return { warnings: [noRecallTargetWarning()], asked: 0, failed: 0 };
   }
-  const policy = input.version.parameters?.policy;
+  const policy = input.configuration.parameters?.policy;
   const gated = declared.filter(({ alias }) => policy?.blockedTools?.includes(alias) || policy?.approvalTools?.includes(alias));
   const targets = declared.filter((entry) => !gated.includes(entry));
   const policyWarnings = gated.map(({ server }) => `Automatic memory recall from '${server}' was skipped by the tool policy; approved tools run through the Agent.`);

@@ -16,8 +16,8 @@ import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, Version, McpBinding } from "@/domain/project/types";
+import type { ProjectRepository } from "@/domain/project/repository";
+import type { Project, AgentConfiguration, McpBinding } from "@/domain/project/types";
 import type { McpServer } from "@/domain/mcp/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
@@ -45,7 +45,6 @@ import type { RuntimeApprovalDecision } from "@/domain/execution/runtimeSession"
 export interface ExecutionDeps extends RunBracketDeps {
   createToolSchemaValidator: () => ToolSchemaValidator;
   runtimeSessions?: RuntimeSessionServices;
-  versions: VersionRepository;
   projects: ProjectRepository;
   skills: SkillRepository;
   mcps: McpRepository;
@@ -77,7 +76,7 @@ export interface ExecutionDeps extends RunBracketDeps {
     ((args: Record<string, unknown>, callId: string) => Promise<McpToolResult>) | undefined
   >;
   registerMcpSource?: RegisterMcpSource;
-  sourceRefreshIdentity?(input: { version: Version; binding: McpBinding; server: McpServer }): Promise<string>;
+  sourceRefreshIdentity?(input: { configuration: AgentConfiguration; binding: McpBinding; server: McpServer }): Promise<string>;
   /**
    * A reader for the Slack workspace this project's bot is installed in, or
    * null when it has no enabled bot.
@@ -137,7 +136,7 @@ export interface ExecuteAgentInput {
   resumeApproval?: { revision: number; decisions: RuntimeApprovalDecision[] };
   backgroundTask?: boolean;
   project: Project;
-  version: Version;
+  configuration: AgentConfiguration;
   /** OpenAI-shaped message history from the route/chat boundary. */
   messages: ChatMessageInput[];
   actor?: RunActor;
@@ -165,7 +164,7 @@ export interface ExecuteAgentInput {
 export interface ExecuteProjectInput {
   backgroundTask?: boolean;
   project: Project;
-  version: Version;
+  configuration: AgentConfiguration;
   variables?: Record<string, string>;
   messages: ChatMessageInput[];
   actor?: RunActor;
@@ -192,8 +191,8 @@ export interface ExecuteProjectInput {
  * Here rather than beside the runners because the Playground preview asks the
  * same question. One shared gate keeps prompt and agent previews aligned.
  */
-export function callerFor(input: { version: Version; caller?: RunCaller }): { caller?: RunCaller } {
-  return input.version.parameters.callerContext && input.caller ? { caller: input.caller } : {};
+export function callerFor(input: { configuration: AgentConfiguration; caller?: RunCaller }): { caller?: RunCaller } {
+  return input.configuration.parameters.callerContext && input.caller ? { caller: input.caller } : {};
 }
 
 /**
@@ -216,11 +215,11 @@ export function toRunInput(
   input: ExecuteProjectInput,
 ): Pick<
   ExecuteAgentInput,
-  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal" | "ownerEmail" | "backgroundTask"
+  "project" | "configuration" | "messages" | "actor" | "caller" | "conversation" | "clientTools" | "signal" | "ownerEmail" | "backgroundTask"
 > {
   return {
     project: input.project,
-    version: input.version,
+    configuration: input.configuration,
     messages: input.messages,
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
@@ -262,8 +261,8 @@ export interface PromptPreview {
   discovered: string[];
 }
 
-export function toEngineParameters(version: Version): EngineParameters {
-  const p = version.parameters;
+export function toEngineParameters(configuration: AgentConfiguration): EngineParameters {
+  const p = configuration.parameters;
   const params: EngineParameters = {};
   if (p.policy) params.policy = p.policy;
   if (p.temperature !== undefined) {

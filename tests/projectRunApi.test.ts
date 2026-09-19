@@ -13,8 +13,8 @@ describe("project run API", () => {
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
 
-    await streamPredict("demo", "v1", {}, controller.signal);
-    await streamAgent("demo", "v1", [], controller.signal);
+    await streamPredict("demo", { messages: [] }, controller.signal);
+    await streamAgent("demo", [], controller.signal);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const call of fetchMock.mock.calls) {
@@ -29,8 +29,8 @@ describe("project run API", () => {
     vi.stubGlobal("fetch", fetchMock);
     const document = { b64: "AQID", mimeType: "application/octet-stream", name: "report.docx" };
 
-    await streamPredict("demo", "v1", { documents: [document] });
-    await streamAgent("demo", "v1", [{ role: "user", content: "read it" }], undefined, [document]);
+    await streamPredict("demo", { messages: [{ role: "user", content: "read it" }], documents: [document] });
+    await streamAgent("demo", [{ role: "user", content: "read it" }], undefined, [document]);
 
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       documents: [document],

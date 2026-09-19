@@ -6,9 +6,8 @@ import { readSse } from "@/app/_lib/sse";
 // Route-handler test: repositories and the execution facade are mocked, so the
 // assertions are about what the route decides — who may call, what it refuses,
 // and that the run's chunks leave as AG-UI frames.
-const { projectRepo, versionRepo, runs, extract } = vi.hoisted(() => ({
+const { projectRepo, runs, extract } = vi.hoisted(() => ({
   projectRepo: { get: vi.fn() },
-  versionRepo: { get: vi.fn(), list: vi.fn(async () => []) },
   runs: [] as unknown[],
   extract: vi.fn(),
 }));
@@ -28,7 +27,6 @@ vi.mock("@/lib/config", async (importOriginal) => {
 vi.mock("@/lib/container", async () => ({
   aguiDeps: {
     projects: projectRepo,
-    versions: versionRepo,
     execution: {
       documents: { extract },
     },
@@ -87,21 +85,17 @@ beforeEach(() => {
     description: "",
     projectType: "agent",
     ownerEmail: "owner@example.com",
-    publishedVersion: "1",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-  });
-  versionRepo.get.mockResolvedValue({
+    configuration: {
     projectName: "proj",
-    versionName: "1",
     systemPrompt: "",
-    userPromptTemplate: "",
     model: "openai/gpt-5-mini",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
+    },
   });
   script = async function* () {
     yield { delta: { content: "hello" } };
@@ -144,12 +138,12 @@ describe("POST /api/agui/[name]", () => {
     expect(events[0]).toEqual({ type: "RUN_STARTED", threadId: "thread-1", runId: "run-1" });
   });
 
-  it("runs the published version as the token's owner, in the thread's conversation", async () => {
+  it("runs the current configuration as the token's owner, in the thread's conversation", async () => {
     await frames(await POST(req(input), ctx));
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
       project: { name: "proj" },
-      version: { versionName: "1" },
+      configuration: { projectName: "proj" },
       messages: [{ role: "user", content: "hi" }],
       actor: { kind: "project-token", id: "owner@example.com" },
       conversation: { surface: "agui" },

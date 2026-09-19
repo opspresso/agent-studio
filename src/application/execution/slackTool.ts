@@ -1,7 +1,7 @@
 /** The Slack workspace read tools, over this project's own bot. */
 
 import type * as engine from "@/application/runtime";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import type { ExecutionDeps } from "./deps";
 
 /**
@@ -22,10 +22,10 @@ import type { ExecutionDeps } from "./deps";
  */
 export async function buildSlackReader(
   deps: Pick<ExecutionDeps, "slackWorkspace" | "projects">,
-  version: Version,
+  configuration: AgentConfiguration,
   projectName: string,
 ): Promise<engine.AgentCapabilityDeps["readSlack"]> {
-  if (version.parameters.slackWorkspace !== true) {
+  if (configuration.parameters.slackWorkspace !== true) {
     return undefined;
   }
   const project = await deps.projects.get(projectName);

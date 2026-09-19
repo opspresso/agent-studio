@@ -20,7 +20,7 @@ import { McpConnectionCard } from "./McpConnectionCard";
  * can be committed from here. Without it the dialog covers the only button that
  * would store what it just edited.
  */
-export interface VersionSave {
+export interface ConfigurationSave {
   run: () => void;
   /** True while the write is in flight. */
   saving: boolean;
@@ -33,7 +33,7 @@ export interface VersionSave {
    */
   error: string | null;
   /** Version the last save wrote, or null once the draft is edited again. */
-  savedName: string | null;
+  saved: boolean;
   /** "Save" or "Create version" — the page owns which, so the two agree. */
   label: string;
 }
@@ -51,7 +51,7 @@ export function McpBindingSettings({
   projectName: string;
   serverName: string;
   onClose: () => void;
-  save: VersionSave;
+  save: ConfigurationSave;
   /**
    * Forwarded to the connection card. The tool list above it is what a changed
    * connection invalidates, and the caller owns that list — this dialog only
@@ -101,9 +101,9 @@ export function McpBindingSettings({
             <Text fz="xs" c="red" mr="auto">
               {save.error}
             </Text>
-          ) : save.savedName ? (
+          ) : save.saved ? (
             <Text fz="xs" c="teal" mr="auto">
-              {t("playground.saved", { version: save.savedName })}
+              {t("configuration.saved")}
             </Text>
           ) : (
             <Text fz="xs" c="dimmed" mr="auto">

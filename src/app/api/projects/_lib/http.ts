@@ -26,6 +26,7 @@ export interface IntegrationSummary {
  * without ever seeing a credential.
  */
 export type SanitizedProject = Omit<Project, "slack" | "telegram" | "teams" | "configuration"> & {
+  configured: boolean;
   slack?: IntegrationSummary;
   telegram?: IntegrationSummary;
   teams?: IntegrationSummary;
@@ -38,6 +39,7 @@ export function sanitizeProject(
   const { slack, telegram, teams, memberEmails, configuration: _configuration, ...rest } = project;
   return {
     ...rest,
+    configured: project.configuration !== undefined,
     ...(opts.withMemberEmails && memberEmails !== undefined ? { memberEmails } : {}),
     ...(slack
       ? {

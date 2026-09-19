@@ -1,10 +1,10 @@
-const EVENT = "studio:project-version-changed";
+const EVENT = "studio:project-configuration-changed";
 
-export function notifyVersionChange(projectName: string): void {
+export function notifyConfigurationChange(projectName: string): void {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(EVENT, { detail: projectName }));
 }
 
-export function onVersionChange(projectName: string, reload: () => void): () => void {
+export function onConfigurationChange(projectName: string, reload: () => void): () => void {
   const listener = (event: Event) => { if ((event as CustomEvent<string>).detail === projectName) reload(); };
   window.addEventListener(EVENT, listener);
   return () => window.removeEventListener(EVENT, listener);

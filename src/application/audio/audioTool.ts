@@ -95,8 +95,8 @@ export function createAudioTool(deps: AudioToolDeps, context: {
       if (!["submit", "process", "postprocess"].includes(operation ?? "")) throw new ValidationError("Invalid audio operation");
       const task = operation === "postprocess" ? "postprocess" : "process";
       const post = object(args, "postprocess"); const destination = object(args, "destination");
-      const projectName = post && text(post, "projectName"); const versionName = post && text(post, "versionName");
-      if (post && (!projectName || !versionName)) throw new ValidationError("A postprocessing Agent version is required");
+      const projectName = post && text(post, "projectName");
+      if (post && !projectName) throw new ValidationError("A postprocessing Agent is required");
       const serverName = destination && text(destination, "serverName");
       if (destination && (!serverName || typeof destination.documents !== "boolean" || typeof destination.memories !== "boolean")) {
         throw new ValidationError("Invalid destination");
@@ -121,7 +121,7 @@ export function createAudioTool(deps: AudioToolDeps, context: {
         model: text(args, "model"), language: text(args, "language"), retention: args.retention === undefined ? undefined : retention(args.retention),
         ...(configRevision !== undefined ? { configRevision } : {}),
         processingRevision: text(args, "processing_revision"),
-        ...(post ? { postprocess: { projectName: projectName!, versionName: versionName! } } : {}),
+        ...(post ? { postprocess: { projectName: projectName! } } : {}),
         ...(destination ? { destination: { serverName: serverName!, documents: destination.documents as boolean, memories: destination.memories as boolean } } : {}),
       }, { occurrence: context.occurrence, actor: context.actor,
         ...(context.producedBy ? { producedBy: context.producedBy } : {}) });

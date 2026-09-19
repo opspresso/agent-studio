@@ -68,11 +68,11 @@ function toolCallView(raw: unknown, chunk: EngineChunk): ToolCallView {
 
 export function RunPanel({
   projectName,
-  versionName,
+  configured,
   modelAcceptsImages,
 }: {
   projectName: string;
-  versionName: string | null;
+  configured: boolean;
   /** From the model registry; `undefined` when the model is not in the catalog. */
   modelAcceptsImages?: boolean;
 }) {
@@ -120,7 +120,7 @@ export function RunPanel({
 
   // An image-only turn is a legitimate run: "what is in this picture?" needs no words.
   const canRun =
-    versionName !== null &&
+    configured &&
     !running &&
     !reading &&
     (message.trim() !== "" || attachments.length > 0 || documents.length > 0);
@@ -135,7 +135,7 @@ export function RunPanel({
   );
 
   async function run() {
-    if (versionName === null || activeRequest.current !== null) {
+    if (!configured || activeRequest.current !== null) {
       return;
     }
     const controller = new AbortController();
@@ -173,7 +173,6 @@ export function RunPanel({
       }));
       const res = await streamAgent(
         projectName,
-        versionName,
         [{
           role: "user",
           content: imageParts.length > 0
@@ -299,18 +298,7 @@ export function RunPanel({
       style={{ position: "relative" }}
     >
       {dragging && <DropHint />}
-      {versionName === null ? (
-        <Alert color="yellow" variant="light" fz="xs">
-          Save a version to run it.
-        </Alert>
-      ) : (
-        <Text fz="xs" c="dimmed">
-          Running version{" "}
-          <Text component="span" ff="monospace" fz="xs">
-            {versionName}
-          </Text>
-        </Text>
-      )}
+      {!configured && <Alert color="yellow" variant="light" fz="xs">{t("configuration.saveToRun")}</Alert>}
 
       <Textarea
         label={t("run.messageLabel")}

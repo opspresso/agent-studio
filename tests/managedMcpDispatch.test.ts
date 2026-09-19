@@ -9,7 +9,7 @@ import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { buildMcpTools } from "@/application/execution/mcpTools";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { McpServer } from "@/domain/mcp/types";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
@@ -68,7 +68,7 @@ function depsFor(server: McpServer, policy: UrlPolicy): ExecutionDeps {
   } as unknown as ExecutionDeps;
 }
 
-const version = { projectName: "p", mcpList: [{ name: "srv" }] } as unknown as Version;
+const configuration = { projectName: "p", mcpList: [{ name: "srv" }] } as unknown as AgentConfiguration;
 
 function entry(patch: Partial<McpServer>): McpServer {
   return {
@@ -93,7 +93,7 @@ afterEach(() => {
 describe("managed loopback dispatch", () => {
   it("reaches a managed loopback server without consulting the policy", async () => {
     const policy = strictPolicy();
-    const resolved = await buildMcpTools(depsFor(entry({ runtime: "managed" }), policy), version);
+    const resolved = await buildMcpTools(depsFor(entry({ runtime: "managed" }), policy), configuration);
 
     expect(policy.calls).toEqual([]);
     expect(resolved.mcpTools.map((t) => t.function.name)).toEqual(["fetch_image"]);
@@ -105,7 +105,7 @@ describe("managed loopback dispatch", () => {
     // The bypass must follow provenance, not the address: an operator who types
     // a loopback URL into an ordinary entry gets the guard, as before.
     const policy = strictPolicy();
-    const resolved = await buildMcpTools(depsFor(entry({ runtime: "remote" }), policy), version);
+    const resolved = await buildMcpTools(depsFor(entry({ runtime: "remote" }), policy), configuration);
 
     expect(policy.calls).toEqual(["http://127.0.0.1:3001/mcp"]);
     expect(resolved.mcpTools).toEqual([]);
@@ -114,7 +114,7 @@ describe("managed loopback dispatch", () => {
 
   it("still guards a row written before managed servers existed", async () => {
     const policy = strictPolicy();
-    const resolved = await buildMcpTools(depsFor(entry({}), policy), version);
+    const resolved = await buildMcpTools(depsFor(entry({}), policy), configuration);
 
     expect(policy.calls).toHaveLength(1);
     expect(resolved.warnings[0]).toContain("was blocked");
@@ -125,7 +125,7 @@ describe("managed loopback dispatch", () => {
     const policy = strictPolicy();
     const resolved = await buildMcpTools(
       depsFor(entry({ runtime: "managed", url: "http://169.254.169.254/mcp" }), policy),
-      version,
+      configuration,
     );
 
     expect(policy.calls).toEqual(["http://169.254.169.254/mcp"]);
@@ -140,7 +140,7 @@ describe("the tenant header", () => {
     const spoofing = {
       projectName: "p",
       mcpList: [{ name: "srv", headers: { "x-TENANT-id": "other-project" } }],
-    } as unknown as Version;
+    } as unknown as AgentConfiguration;
     const resolved = await buildMcpTools(
       depsFor(entry({ runtime: "managed" }), strictPolicy()),
       spoofing,

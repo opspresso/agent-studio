@@ -19,7 +19,7 @@ function projectFixture(overrides: Partial<Project> = {}): Project {
     description: "Draws things on request.",
     projectType: "agent",
     ownerEmail: "owner@x.com",
-    publishedVersion: "1",
+
     slack: { botToken: "enc", signingSecret: "enc", enabled: true, suggestedPrompts: PROMPTS },
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -122,7 +122,6 @@ describe("handleThreadStart", () => {
   it("stays silent for a missing project", async () => {
     const missing = makeDeps(null);
     await handleThreadStart(missing.deps, LEGACY_THREAD_STARTED, BINDING);
-
 
     // Nobody asked a question, so an error message would be an unprompted
     // complaint in a thread the user just opened.

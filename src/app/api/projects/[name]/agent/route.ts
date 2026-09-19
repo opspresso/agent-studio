@@ -1,6 +1,7 @@
+import { requireAgentConfiguration } from "@/application/project/configurationUseCases";
 import { withLeadingWarnings } from "@/application/run/leadingWarnings";
 import { sseResponse } from "@/app/api/_lib/sse";
-import { executionDeps, projectUseCases, signArtifactUrl, versionUseCases } from "@/lib/container";
+import { executionDeps, projectUseCases, signArtifactUrl } from "@/lib/container";
 import { withAddressedFiles } from "@/application/artifact/producedFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { executeAgent } from "@/application/execution/runProject";
@@ -14,10 +15,10 @@ import {
   readExecutionDocuments,
 } from "@/app/api/projects/_lib/documents";
 
-type RouteContext = { params: Promise<{ name: string; version: string }> };
+type RouteContext = { params: Promise<{ name: string }> };
 
 export const POST = async (request: Request, ctx: RouteContext) => {
-  const { name, version } = await ctx.params;
+  const { name } = await ctx.params;
   const principal = await authenticateExecution(request, name);
   if (principal instanceof Response) {
     return principal;
@@ -29,10 +30,10 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     }
     try {
       const project = await projectUseCases.get(name);
-      const versionEntity = await versionUseCases.get(name, version);
+      const configuration = requireAgentConfiguration(project);
       const actor = principalActor(principal);
       const conversation = requestConversation(request, actor);
-      const read = await readExecutionDocuments(executionDeps, { projectName: project.name, versionName: versionEntity.versionName, actor }, parsed.data.documents);
+      const read = await readExecutionDocuments(executionDeps, { projectName: project.name, actor }, parsed.data.documents);
       const abortController = new AbortController();
       return await sseResponse(
         // A file chunk leaves here addressed: the object key and artifact id the
@@ -45,7 +46,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
             read.warnings,
             executeAgent(executionDeps, {
               project,
-              version: versionEntity,
+              configuration,
               messages: attachDocumentsToMessages(parsed.data.messages, read.documents),
               actor,
               ...(principal.caller ? { caller: principal.caller } : {}),

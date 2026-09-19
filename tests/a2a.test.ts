@@ -1,3 +1,4 @@
+import { withConfigurations } from "./projectConfigurations";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -28,7 +29,7 @@ import {
   sendA2aMessage,
 } from "@/infrastructure/a2a/client";
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
-import type { Project, Version } from "@/domain/project/types";
+import type { Project, AgentConfiguration } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import type { LlmChannel } from "./channelFixtures";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
@@ -60,25 +61,25 @@ function projectFixture(overrides: Partial<Project> = {}): Project {
     description: "A helper agent",
     projectType: "agent",
     ownerEmail: "owner@example.com",
-    publishedVersion: "v1",
+
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
   };
 }
 
-function versionFixture(overrides: Partial<Version> = {}): Version {
+function configurationFixture(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
   return {
     projectName: "helper",
-    versionName: "v1",
+
     systemPrompt: "You are helpful.",
-    userPromptTemplate: "{{message}}",
+
     model: "gpt-test",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
     subagentList: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
+
     ...overrides,
   };
 }
@@ -114,19 +115,18 @@ class CollectingBus implements ExecutionEventBus {
 // --- cards ------------------------------------------------------------------
 
 describe("buildAgentCard", () => {
-  it("builds a JSONRPC card from project and published version", async () => {
-    const card = await buildAgentCard(projectFixture(), versionFixture());
+  it("builds a JSONRPC card from current project metadata", async () => {
+    const card = await buildAgentCard(projectFixture());
     expect(card.name).toBe("Helper");
-    expect(card.version).toBe("v1");
+    expect(card.version).toBe(projectFixture().updatedAt);
     expect(card.capabilities?.streaming).toBe(true);
     expect(card.supportedInterfaces[0]?.url).toBe(await buildProjectA2aRpcUrl("helper"));
     expect(card.skills).toHaveLength(1);
     expect(card.skills[0]?.id).toBe("helper");
   });
 
-
   it("advertises text and image output modes for agent projects", async () => {
-    const card = await buildAgentCard(projectFixture({ projectType: "agent" }), versionFixture());
+    const card = await buildAgentCard(projectFixture({ projectType: "agent" }));
     expect(card.defaultOutputModes).toEqual([
       "text/plain",
       "image/png",
@@ -799,8 +799,8 @@ function imageToolChannel(edit = false): FakeChannel {
   ]);
 }
 
-function imageToolVersion(): Version {
-  return versionFixture({ model: "google/gemini-2.5-flash", parameters: { piiFiltering: false,
+function imageToolVersion(): AgentConfiguration {
+  return configurationFixture({ model: "google/gemini-2.5-flash", parameters: { piiFiltering: false,
     imageGeneration: true, imageModel: "openai/gpt-image-2" } });
 }
 
@@ -861,7 +861,7 @@ describe("ProjectA2aExecutor", () => {
     const executor = new ProjectA2aExecutor(
       executionDepsFixture(channel),
       projectFixture(),
-      versionFixture(),
+      configurationFixture(),
       fakeStore(),
     );
     const bus = new CollectingBus();
@@ -908,7 +908,7 @@ describe("ProjectA2aExecutor", () => {
     ]);
     const deps = executionDepsFixture(channel);
     // Metadata resolves, then the child's unreadable skill fails preparation.
-    deps.versions.get = async () => versionFixture({ projectName: "child", skillList: ["unreadable"] });
+    deps.projects = withConfigurations(deps.projects, async () => configurationFixture({ projectName: "child", skillList: ["unreadable"] })) as typeof deps.projects;
     (deps as { projects: unknown }).projects = {
       get: async () => projectFixture({ name: "child", projectType: "agent" }),
       list: () => Promise.reject(new Error("not used")),
@@ -918,7 +918,7 @@ describe("ProjectA2aExecutor", () => {
     const executor = new ProjectA2aExecutor(
       deps,
       projectFixture({ projectType: "agent" }),
-      versionFixture({ subagentList: [{ name: "child", type: "local" }] }),
+      configurationFixture({ subagentList: [{ name: "child", type: "local" }] }),
       fakeStore(),
     );
     const bus = new CollectingBus();
@@ -939,7 +939,7 @@ describe("ProjectA2aExecutor", () => {
     const executor = new ProjectA2aExecutor(
       executionDepsFixture(new FakeChannel([])),
       projectFixture({ projectType: "agent" }),
-      versionFixture({ maxTurn: 0 }),
+      configurationFixture({ maxTurn: 0 }),
       fakeStore(),
     );
     const bus = new CollectingBus();
@@ -970,7 +970,7 @@ describe("ProjectA2aExecutor conversation", () => {
     const executor = new ProjectA2aExecutor(
       deps,
       projectFixture({ projectType: "agent" }),
-      versionFixture(),
+      configurationFixture(),
       fakeStore(),
       { kind: "a2a", id: "billing-bot" },
     );
@@ -994,7 +994,7 @@ describe("ProjectA2aExecutor cancel", () => {
     const executor = new ProjectA2aExecutor(
       executionDepsFixture(new FakeChannel([])),
       projectFixture(),
-      versionFixture(),
+      configurationFixture(),
       store,
     );
     const bus = new CollectingBus();
@@ -1016,7 +1016,7 @@ describe("ProjectA2aExecutor cancel", () => {
     const executor = new ProjectA2aExecutor(
       executionDepsFixture(new FakeChannel([])),
       projectFixture(),
-      versionFixture(),
+      configurationFixture(),
       store,
     );
     const bus = new CollectingBus();
@@ -1038,7 +1038,7 @@ describe("ProjectA2aExecutor cancel", () => {
     const executor = new ProjectA2aExecutor(
       executionDepsFixture(channel),
       projectFixture(),
-      versionFixture(),
+      configurationFixture(),
       store,
     );
     const bus = new CollectingBus();
@@ -1075,7 +1075,7 @@ describe("ProjectA2aExecutor cancel", () => {
         load: async () =>
           taskFixture({ id: "t1", contextId: "c1", status: taskStatus(TaskState.TASK_STATE_CANCELED) }),
       });
-      const executor = new ProjectA2aExecutor(deps, projectFixture(), versionFixture(), store);
+      const executor = new ProjectA2aExecutor(deps, projectFixture(), configurationFixture(), store);
       const bus = new CollectingBus();
       const done = executor.execute(requestContext(userMessage("hi")), bus);
       // The provider never yields; advance time so the background poll reads the
@@ -1112,7 +1112,7 @@ describe("ProjectA2aExecutor cancel", () => {
           });
         },
       });
-      const executor = new ProjectA2aExecutor(deps, projectFixture(), versionFixture(), store);
+      const executor = new ProjectA2aExecutor(deps, projectFixture(), configurationFixture(), store);
       const done = executor.execute(requestContext(userMessage("hi")), new CollectingBus());
 
       await vi.advanceTimersByTimeAsync(5_100);
@@ -1167,7 +1167,7 @@ describe("ProjectA2aExecutor cancel", () => {
 
 describe("buildAgentCard — what a peer needs to call us", () => {
   it("declares the X-A2A-Key scheme the endpoint requires, and what it can take", async () => {
-    const card = await buildAgentCard(projectFixture({ projectType: "agent" }), versionFixture());
+    const card = await buildAgentCard(projectFixture({ projectType: "agent" }));
     expect(card.securitySchemes).toEqual({
       a2aKey: {
         scheme: {
@@ -1191,7 +1191,7 @@ describe("buildAgentCard — what a peer needs to call us", () => {
     expect(card.defaultInputModes).toEqual(["text/plain", "image/png", "image/jpeg", "image/webp"]);
     expect(card.skills[0]?.tags).toEqual(["agent-studio", "agent"]);
     // An image project takes a picture to edit beside its prompt.
-    const image = await buildAgentCard(projectFixture({ projectType: "agent" }), versionFixture());
+    const image = await buildAgentCard(projectFixture({ projectType: "agent" }));
     expect(image.defaultInputModes).toEqual(["text/plain", "image/png", "image/jpeg", "image/webp"]);
   });
 });
@@ -1371,7 +1371,7 @@ describe("ProjectA2aExecutor — what a message may carry", () => {
     const executor = new ProjectA2aExecutor(
       executionDepsFixture(channel),
       projectFixture({ projectType: "agent" }),
-      versionFixture({ model: "google/gemini-2.5-flash" }),
+      configurationFixture({ model: "google/gemini-2.5-flash" }),
       fakeStore(),
     );
     const bus = new CollectingBus();

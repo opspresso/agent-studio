@@ -238,7 +238,7 @@ export async function executeProject(
   deps: ExecutionDeps,
   input: ExecuteProjectInput,
 ): Promise<CollectedRun> {
-  return collectRun(streamProjectRun(deps, input), input.version.model);
+  return collectRun(streamProjectRun(deps, input), input.configuration.model);
 }
 
 // --- Agent execution --------------------------------------------------------
@@ -268,11 +268,11 @@ export async function* executeAgent(
     ...(input.conversation ? { conversation: input.conversation } : {}),
   };
   const usage = createUsageAggregator(deps.usage, input.actor && toActorKey(input.actor));
-  const bracket = await openRun(deps, input.project, input.version, input.actor, {
+  const bracket = await openRun(deps, input.project, input.configuration, input.actor, {
     ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),
   });
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length, origin)
+    ? createTraceRecorder(deps.traces, input.project, input.configuration, input.messages.length, origin)
     : undefined;
   let failure: unknown;
   let completed = false;
@@ -288,7 +288,7 @@ export async function* executeAgent(
     // on different dates across a midnight boundary is the exact confusion the
     // clock exists to remove. The pinned deps travel down the transfer chain.
     const runtime = deps.runtimeSessions && input.conversation?.surface === "chat" && input.actor?.kind === "user"
-      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, ownerEmail: input.actor.id, projectName: input.project.name, version: input.version }, input.resumeApproval)
+      ? await openRuntimeSession(deps.runtimeSessions, { sessionId: input.conversation.id, ownerEmail: input.actor.id, projectName: input.project.name, configuration: input.configuration }, input.resumeApproval)
       : undefined;
     if (input.resumeApproval && !runtime) throw new ValidationError("Approval resumption requires a persisted chat session");
     const messages = runtime?.checkpoint?.input.messages ?? input.messages;
@@ -302,12 +302,12 @@ export async function* executeAgent(
     const recordRecall = (
       detail: { status?: "ok" | "error"; output?: Record<string, unknown> },
     ): void => {
-      if (input.version.parameters.memoryRecall) {
+      if (input.configuration.parameters.memoryRecall) {
         recorder?.observePrepare("memory", recallStartedAt, detail);
       }
     };
     const memory = await (runtime?.checkpoint ? Promise.resolve({ input: { remembered: runtime.checkpoint.input.remembered }, warnings: [], asked: 0, failed: 0 }) : prepareMemoryForRun(deps, {
-      version: input.version,
+      configuration: input.configuration,
       origin,
       query: latestUserText(messages) ?? "",
       signal: runSignal,
@@ -339,9 +339,9 @@ export async function* executeAgent(
     const prepared = await (async () => {
       const resolved = await resolveRunTools(
         deps,
-        input.version,
+        input.configuration,
         runSignal,
-        discoveryQueries(input.version, recentUserQueries(messages), memory.input.remembered),
+        discoveryQueries(input.configuration, recentUserQueries(messages), memory.input.remembered),
         origin,
         usage.record,
       );
@@ -355,7 +355,7 @@ export async function* executeAgent(
         // What the resolve actually read, which discovery may have widened: the
         // original would offer a discovered agent and then refuse to transfer
         // to it.
-        resolved.version,
+        resolved.configuration,
         input.project.name,
         usage.record,
         origin,
@@ -401,11 +401,11 @@ export async function* executeAgent(
     for await (const chunk of captureRunArtifacts(bracket.artifacts, engine.runAgent(agentDeps, {
       projectName: input.project.name,
       ...(runtime ? { runtime } : {}),
-      model: input.version.model,
-      fallbackModel: input.version.fallbackModel,
-      systemPrompt: input.version.systemPrompt,
+      model: input.configuration.model,
+      fallbackModel: input.configuration.fallbackModel,
+      systemPrompt: input.configuration.systemPrompt,
       messages,
-      parameters: toEngineParameters(input.version),
+      parameters: toEngineParameters(input.configuration),
       now: startedAt,
       ...callerFor(input),
       ...memory.input,
@@ -414,7 +414,7 @@ export async function* executeAgent(
       // subagent run does not pass through the run bracket — so nothing but this
       // asymmetry keeps those children inside a bound.
       canDispatch: true,
-      maxTurn: input.version.maxTurn,
+      maxTurn: input.configuration.maxTurn,
       skills,
       subagents,
       mcpTools: mcp.mcpTools,

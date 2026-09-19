@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { ProjectRepository } from "@/domain/project/repository";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { runAndPersist } from "@/application/chat/run";
@@ -80,7 +80,6 @@ function recordingDeps(overrides: Partial<ChatDeps> = {}) {
     chats,
     runLog,
     projects: {} as ProjectRepository,
-    versions: {} as VersionRepository,
     runAgent: () => (async function* () {})(),
     documents: { extract: async () => ({ text: "" }) },
     ...overrides,

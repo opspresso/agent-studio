@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemberTier } from "@/domain/member/tiers";
 
-const { createProjectWithInitialVersion, sessionTier } = vi.hoisted(() => ({
-  createProjectWithInitialVersion: vi.fn(),
+const { createAgent, sessionTier } = vi.hoisted(() => ({
+  createAgent: vi.fn(),
   sessionTier: { value: "member" as string },
 }));
 
@@ -16,7 +16,7 @@ vi.mock("@/lib/session", () => ({
       ),
 }));
 vi.mock("@/lib/container", () => ({
-  createProjectWithInitialVersion,
+  createAgent,
   projectUseCases: { list: vi.fn() },
 }));
 
@@ -51,12 +51,12 @@ describe("POST /api/projects", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
-    createProjectWithInitialVersion.mockResolvedValue(project);
+    createAgent.mockResolvedValue(project);
 
     const response = await POST(postRequest(body));
 
     expect(response.status).toBe(201);
-    expect(createProjectWithInitialVersion).toHaveBeenCalledWith({
+    expect(createAgent).toHaveBeenCalledWith({
       ...body,
       description: "",
       ownerEmail: "u@x.com",
@@ -66,25 +66,25 @@ describe("POST /api/projects", () => {
   it.each(["llm", "image"])("rejects the removed %s type before creating a project", async (projectType) => {
     const response = await POST(postRequest({ ...body, projectType }));
     expect(response.status).toBe(400);
-    expect(createProjectWithInitialVersion).not.toHaveBeenCalled();
+    expect(createAgent).not.toHaveBeenCalled();
   });
 
   it("creates an Agent when the request has no type selector", async () => {
-    createProjectWithInitialVersion.mockResolvedValue({ ...body, ownerEmail: "u@x.com" });
+    createAgent.mockResolvedValue({ ...body, ownerEmail: "u@x.com" });
     expect((await POST(postRequest({ name: body.name, displayName: body.displayName }))).status).toBe(201);
-    expect(createProjectWithInitialVersion).toHaveBeenCalledWith(expect.objectContaining({ projectType: "agent" }));
+    expect(createAgent).toHaveBeenCalledWith(expect.objectContaining({ projectType: "agent" }));
   });
 
   it("403s a guest before parsing the body", async () => {
     signedInAs("guest");
     const response = await POST(postRequest(body));
     expect(response.status).toBe(403);
-    expect(createProjectWithInitialVersion).not.toHaveBeenCalled();
+    expect(createAgent).not.toHaveBeenCalled();
   });
 
   it("does not let admin-list access widen a guest tier", async () => {
     signedInAs("guest");
     expect((await POST(postRequest(body))).status).toBe(403);
-    expect(createProjectWithInitialVersion).not.toHaveBeenCalled();
+    expect(createAgent).not.toHaveBeenCalled();
   });
 });

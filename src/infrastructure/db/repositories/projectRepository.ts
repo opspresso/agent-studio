@@ -7,7 +7,6 @@ import {
   getItem,
   putItem,
   queryItems,
-  transact,
   updateItem,
 } from "@/infrastructure/db/store";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -73,7 +72,6 @@ function fromItem(item: Record<string, unknown>): Project {
     visibility: visibility(item.visibility),
     memberEmails: memberEmails(item.memberEmails),
     departmentCode: item.departmentCode as string | undefined,
-    publishedVersion: item.publishedVersion as string | undefined,
     ...(item.configuration === undefined ? {} : {
       configuration: readAgentConfiguration(item.configuration, requiredString(item, "name")),
     }),
@@ -143,17 +141,6 @@ export const projectRepository: ProjectRepository = {
 
   async update(project: Project, expectedUpdatedAt: string): Promise<void> {
     await putItem(toItem(project), liveAt(expectedUpdatedAt));
-  },
-
-  async publish(
-    project: Project,
-    versionName: string,
-    expectedUpdatedAt: string,
-  ): Promise<void> {
-    await transact([
-      { kind: "check", key: keys.version(project.name, versionName), condition: conditions.exists },
-      { kind: "put", item: toItem(project), condition: liveAt(expectedUpdatedAt) },
-    ]);
   },
 
   /**

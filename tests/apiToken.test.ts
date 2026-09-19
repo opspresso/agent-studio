@@ -66,7 +66,6 @@ function makeRepo(p: Project | null): {
     },
     async create() {},
     async update() {},
-    async publish() {},
     async delete() {},
     async getApiToken() {
       return token;

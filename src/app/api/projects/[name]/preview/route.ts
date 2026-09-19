@@ -1,5 +1,5 @@
 import { withMemberAuth } from "@/lib/session";
-import { executionDeps, projectUseCases, versionUseCases } from "@/lib/container";
+import { executionDeps, projectUseCases, configurationUseCases } from "@/lib/container";
 import { previewPrompt } from "@/application/execution/runProject";
 import { previewPromptSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -45,22 +45,19 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
   const caller = sessionCaller(user);
   try {
     const project = await projectUseCases.assertAccessible(name, user.email);
-    const { variables, versionName, message, ...draft } = parsed.data;
+    const { message, ...draft } = parsed.data;
     const preview = await previewPrompt(executionDeps, {
       signal: request.signal,
       project,
-      version: {
+      configuration: {
         ...draft,
         // The console echoes overrides masked; the draft's masks resolve
         // against the stored version, exactly as the save path does.
-        mcpList: await versionUseCases.resolveDraftMcpBindings(name, versionName, draft.mcpList),
+        mcpList: await configurationUseCases.resolveDraftBindings(name, draft.mcpList, user.email),
         projectName: name,
         // The draft may not be saved yet, so it has no name or timestamp of its
         // own; neither reaches the assembled prompt.
-        versionName: "draft",
-        createdAt: new Date().toISOString(),
       },
-      variables,
       // What memory recall and capability discovery search with.
       ...(message ? { message } : {}),
       actor: { kind: "user", id: user.email },

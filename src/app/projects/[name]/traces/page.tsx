@@ -75,7 +75,7 @@ export default function TracesPage() {
                       fz="sm"
                     >{trace.traceId.slice(0, 8)}</Anchor>
                     <Text component="span" fz="sm" c="dimmed" ml="xs">
-                      version {trace.versionName} · {trace.spans.length} spans
+                      {trace.spans.length} spans
                       {trace.spansDropped ? ` (+${trace.spansDropped} dropped)` : ""}
                     </Text>
                   </div>

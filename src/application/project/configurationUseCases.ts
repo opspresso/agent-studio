@@ -2,7 +2,7 @@ import type { AgentConfiguration, McpBinding, Project } from "@/domain/project/t
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { agentMcpHeadersContext } from "@/domain/security/secretContext";
-import { ConflictError } from "@/application/errors";
+import { ConflictError, ValidationError } from "@/application/errors";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { assertProjectAccessible, assertProjectWritable } from "./projectUseCases";
 import { persistProjectUpdate } from "./projectUpdate";
@@ -14,6 +14,12 @@ import {
 } from "./configurationPolicy";
 
 export type { AgentConfigurationInput } from "./configurationPolicy";
+
+/** Execution uses the settings read with its Project; there is no publication lookup. */
+export function requireAgentConfiguration(project: Project): AgentConfiguration {
+  if (!project.configuration) throw new ValidationError(`Agent "${project.name}" is not configured`);
+  return project.configuration;
+}
 
 export interface AgentConfigurationView {
   configuration: AgentConfiguration | null;

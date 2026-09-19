@@ -1,17 +1,15 @@
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { ProjectRepository } from "@/domain/project/repository";
 import type { WorkspacePolicyRepository } from "@/domain/workspace/policyRepository";
 import type { WorkspaceProjectSettings } from "@/domain/workspace/policy";
 import { normalizeWorkspaceProjectSettings, workspaceProjectPolicy, workspaceRepositories, workspaceRepositoryMode } from "@/domain/workspace/policy";
 import { projectHasWorkspaceTools } from "@/domain/project/workspaceAccess";
 import type { WorkspaceRuntime } from "@/domain/workspace/types";
 import { assertProjectAccessible, assertProjectWritable } from "@/application/project/projectUseCases";
-import { listVersions } from "@/application/project/versionUseCases";
 import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
 interface RepositoryPolicyDeps {
   projects: ProjectRepository;
-  versions: VersionRepository;
   repository: WorkspacePolicyRepository;
   backendReady(): boolean;
   runtimes(): Promise<WorkspaceRuntime[]>;
@@ -34,8 +32,7 @@ export function createWorkspaceRepositoryPolicyUseCases(deps: RepositoryPolicyDe
   async function enabled(projectName: string): Promise<boolean> {
     const project = await deps.projects.get(projectName);
     if (!project) return false;
-    const versions = project.publishedVersion ? [await deps.versions.get(projectName, project.publishedVersion)].filter(value => value !== null) : await listVersions(deps.versions, projectName);
-    return projectHasWorkspaceTools(project, versions);
+    return projectHasWorkspaceTools(project);
   }
   async function view(projectName: string, email: string): Promise<WorkspaceRepositoryPolicyView> {
     const project = await assertProjectAccessible(deps.projects, projectName, email);

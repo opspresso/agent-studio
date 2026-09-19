@@ -3,15 +3,15 @@ import { randomUUID } from "node:crypto";
 import { runtimeSessionRepository as repository } from "@/infrastructure/db/repositories/runtimeSessionRepository";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { openRuntimeSession, readRuntimeSession } from "@/application/runtime/session";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 
 /** Called only by integration-check after its dedicated-test-database guard. */
 export async function checkRuntimeSessions(): Promise<void> {
   const id = randomUUID();
   const owner = "runtime-integration@example.test";
-  const version: Version = { projectName: "runtime-integration", versionName: "v1", model: "openai/gpt-5-mini", systemPrompt: "", userPromptTemplate: "", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [], createdAt: new Date().toISOString() };
+  const configuration: AgentConfiguration = { projectName: "runtime-integration",  model: "openai/gpt-5-mini", systemPrompt: "",  parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] };
   const services = { repository, cipher: secretCipher, retentionDays: 1 };
-  await openRuntimeSession(services, { sessionId: id, ownerEmail: owner, projectName: version.projectName, version });
+  await openRuntimeSession(services, { sessionId: id, ownerEmail: owner, projectName: configuration.projectName, configuration });
   const row = await repository.get(id, owner);
   assert.ok(row);
   assert.ok(row.payload.startsWith("enc:v2:"));

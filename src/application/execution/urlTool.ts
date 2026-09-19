@@ -2,7 +2,7 @@
 
 import type * as engine from "@/application/runtime";
 import { readUrlContent } from "@/application/llm/urlContent";
-import type { Version } from "@/domain/project/types";
+import type { AgentConfiguration } from "@/domain/project/types";
 import type { ExecutionDeps } from "./deps";
 
 /**
@@ -17,9 +17,9 @@ import type { ExecutionDeps } from "./deps";
  */
 export function buildUrlFetcher(
   deps: Pick<ExecutionDeps, "http" | "documents">,
-  version: Version,
+  configuration: AgentConfiguration,
 ): engine.AgentCapabilityDeps["fetchUrl"] {
-  if (version.parameters.urlFetch !== true) {
+  if (configuration.parameters.urlFetch !== true) {
     return undefined;
   }
   return (url) => readUrlContent({ http: deps.http, documents: deps.documents }, url);

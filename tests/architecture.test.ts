@@ -614,7 +614,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(109);
+    expect(entries.length).toBe(108);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/chats/_components/PendingApproval.tsx",
       "src/app/chats/_components/NewChatEntry.tsx",
@@ -812,7 +812,6 @@ describe("a run's ending", () => {
  */
 const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = [
   "projectRepository",
-  "versionRepository",
   "traceRepository",
   "usageRepository",
   "secretCipher",
@@ -2215,8 +2214,8 @@ const ONE_AXIS_ON_PURPOSE = [
  * be spent on a reader who may not be attached.
  */
 const RAW_CHUNK_STREAM_ROUTES = [
-  "src/app/api/projects/[name]/versions/[version]/agent/route.ts",
-  "src/app/api/projects/[name]/versions/[version]/predict/route.ts",
+  "src/app/api/projects/[name]/agent/route.ts",
+  "src/app/api/projects/[name]/predict/route.ts",
 ];
 
 describe("what a run produced", () => {
@@ -2354,7 +2353,7 @@ describe("folding a run's reasoning", () => {
  */
 const AGENT_RUN_ENTRY_POINTS = [
   // Answers with SSE chunks, for a caller driving one version directly.
-  "src/app/api/projects/[name]/versions/[version]/agent/route.ts",
+  "src/app/api/projects/[name]/agent/route.ts",
   // Binds `ChatDeps.runAgent`; the chat use cases never see the facade.
   "src/lib/container.ts",
   // Binds `SlackEventDeps.runAgent`, the same way.
