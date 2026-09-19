@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyAgentMigration, migrationProjectNames, planAgentMigration } from "../scripts/agent-configuration-migration";
+import { applyAgentMigration, loadMigrationModelRegistry, migrationProjectNames, planAgentMigration } from "../scripts/agent-configuration-migration";
+import snapshot from "@/domain/llm/catalog.json";
+import { loadModelCatalog, loadSelfHostedModels } from "@/domain/llm/models";
 import { agentMcpHeadersContext, versionMcpHeadersContext } from "@/domain/security/secretContext";
 import { keys } from "@/infrastructure/db/keys";
 import * as store from "@/infrastructure/db/store";
@@ -24,9 +26,61 @@ beforeEach(() => {
   fake.rows.clear(); vi.useFakeTimers(); vi.setSystemTime(NOW);
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 9).toString("base64"));
 });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+afterEach(() => {
+  loadSelfHostedModels([]); loadModelCatalog(snapshot, { maxDropFraction: 1 });
+  vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks();
+});
 
 describe("offline Agent configuration migration", () => {
+  it("uses deployment-owned image model declarations without a public request", async () => {
+    const network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network is unavailable"));
+    const id = "selfhosted/migration-image";
+    fake.seed([project({ projectType: "image" }), version("1", { model: id }), {
+      ...keys.settings(), selfHostedModels: [{ id, provider: "selfhosted", family: "migration-image", maker: "local",
+        displayName: "Local image", pricing: { inputPer1M: 0, outputPer1M: 0 }, contextWindow: 0, maxTokens: 0,
+        capabilities: { tools: false, structuredOutput: false, imageInput: true, imageGeneration: true, reasoning: false } }],
+    }]);
+    const overrides = { model: "openai/gpt-5-mini" };
+    expect((await planAgentMigration("demo", overrides)).status).toBe("blocked");
+    await loadMigrationModelRegistry();
+    const plan = await planAgentMigration("demo", overrides);
+    expect(plan.status).toBe("ready");
+    await applyAgentMigration("demo", plan.expectedFingerprint, secretCipher, overrides);
+    expect((await projectRepository.get("demo"))?.configuration?.parameters.imageModel).toBe(id);
+    expect(network).not.toHaveBeenCalled();
+  });
+
+  it("honors an operator's installed catalog even when it is older and smaller", async () => {
+    const image = snapshot.models.find(model => model.id === "openai/gpt-image-2")!;
+    const text = snapshot.models.find(model => model.id === "openai/gpt-5-mini")!;
+    const id = "openai/operator-image";
+    fake.seed([project({ projectType: "image" }), version("1", { model: id }), {
+      ...keys.modelCatalog(), document: { ...snapshot, updatedAt: "2026-01-01T00:00:00.000Z",
+        models: [text, { ...image, id, family: "operator-image" }] }, uploadedAt: NOW,
+    }]);
+    await loadMigrationModelRegistry();
+    expect((await planAgentMigration("demo", { model: text.id })).status).toBe("ready");
+  });
+
+  it("refuses a declared model without Agent tools instead of treating it as an unknown ID", async () => {
+    const id = "selfhosted/migration-text";
+    fake.seed([project({ projectType: "llm" }), version("1", { model: id }), {
+      ...keys.settings(), selfHostedModels: [{ id, provider: "selfhosted", family: "migration-text", maker: "local",
+        displayName: "Local text", pricing: { inputPer1M: 0, outputPer1M: 0 }, contextWindow: 32768, maxTokens: 8192,
+        capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false } }],
+    }]);
+    await loadMigrationModelRegistry();
+    expect((await planAgentMigration("demo")).status).toBe("blocked");
+  });
+
+  it("stops on stored model read failures before changing any project", async () => {
+    fake.seed([project(), version("1")]);
+    const before = structuredClone([...fake.rows.values()]);
+    vi.spyOn(store, "getItem").mockRejectedValueOnce(new Error("Database unavailable"));
+    await expect(loadMigrationModelRegistry()).rejects.toThrow("Database unavailable");
+    expect([...fake.rows.values()]).toEqual(before);
+  });
+
   it("plans without writes and preserves every source when applying the published selection", async () => {
     const meta = project({ publishedVersion: "1" });
     const first = version("1"); const second = version("2", { createdAt: "2026-09-20T00:00:00.000Z" });

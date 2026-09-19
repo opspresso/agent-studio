@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { AgentMigrationError, applyAgentMigration, migrationProjectNames, planAgentMigration } from "./agent-configuration-migration";
+import { AgentMigrationError, applyAgentMigration, loadMigrationModelRegistry, migrationProjectNames, planAgentMigration } from "./agent-configuration-migration";
 
 const overridesSchema = z.object({
   model: z.string().min(1).optional(), imageModel: z.string().min(1).optional(), fallbackModel: z.string().min(1).nullable().optional(),
@@ -19,6 +19,7 @@ async function main() {
   }
   if (values.overrides && !values.project) throw new AgentMigrationError("Overrides require --project");
   const overrides = values.overrides ? overridesSchema.parse(JSON.parse(await readFile(values.overrides, "utf8"))) : {};
+  await loadMigrationModelRegistry();
   if (values.apply) {
     const { secretCipher } = await import("@/infrastructure/crypto/secretCipher");
     console.log(JSON.stringify(await applyAgentMigration(values.project!, values.expect!, secretCipher, overrides)));
