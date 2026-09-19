@@ -1,0 +1,948 @@
+# 기능 목록과 개편 검토
+
+현재 구현을 개편 여부를 결정할 수 있는 기능 단위로 정리한다. 화면뿐 아니라 API·도메인
+타입·실행 경로·worker를 대조한 목록이다. 아래의 구현 여부는 코드 기준이며, 선택 기능이
+현재 운영 환경에서도 활성화돼 있다는 뜻은 아니다.
+
+이 문서는 기능 범위와 개편 판단의 목록을 소유한다. 개념과 연결 관계는
+[시스템 개요](AGENT_STUDIO.md), HTTP 계약은 [API](API.md), 활성 조건과 제한값은
+[CONFIGURATION](CONFIGURATION.md), 실행 원리는 [설계 문서](ARCHITECTURE.md#서브시스템)를 따른다.
+마지막의 검토 후보는 확정된 작업이 아니며, 채택한 미완료 작업만 [MILESTONES](MILESTONES.md)에서 관리한다.
+
+## 명칭과 기능 경계
+
+| 현재 명칭 | 실제 역할 |
+|---|---|
+| Projects | 프롬프트·Agent·이미지 프로젝트를 관리하는 로컬 실행 단위 |
+| Agents | 다른 시스템의 원격 Agent를 등록하는 레지스트리 |
+| Tools | MCP 서버 등록·연결·운영 기능 |
+| Plugins | Skills와 MCP 서버를 가져오는 동기화 묶음 |
+
+`light / mid / heavy` 역할별 모델 배정은 현재 없다. 기본 모델·fallback 모델·이미지 도구
+모델이 있고, Reasoning은 모델의 capability와 실행 설정이다.
+
+## 1. Projects — 내부 Agent·프롬프트·이미지 프로젝트
+
+### 기본 관리
+
+- 프로젝트 목록과 검색: 이름·표시 이름·설명.
+- 유형 필터: `llm`, `agent`, `image`.
+- 고유 이름, 표시 이름, 설명, 소유자, 부서 코드.
+- 프로젝트 생성.
+- 표시 이름·설명·부서 코드 수정.
+- 프로젝트 복제.
+- 프로젝트 삭제.
+- 발행 버전 및 공개 범위 표시.
+- 조직 공개 / 비공개 설정.
+- 비공개 프로젝트의 사용자 이메일 초대.
+
+현재 공개는 로그인한 조직 사용자에게 공개한다는 의미다. 초대 사용자는 조회·실행·복제가
+가능하지만 편집자는 소유자·관리자다.
+
+### 프로젝트 유형
+
+- `llm`: 프롬프트·템플릿 기반 단발 모델 실행.
+- `agent`: 모델과 도구를 반복 호출하는 Agent 실행.
+- `image`: 이미지 생성·편집.
+
+### 버전 관리
+
+- 버전 목록·모델·생성 시각·발행 상태 조회.
+- 현재 설정을 복사해 새 버전 생성.
+- 버전 설정 수정.
+- 실행할 버전 선택.
+- 발행 버전 지정·변경.
+- 버전 삭제.
+- 저장하지 않은 변경 표시.
+- 권한 없는 사용자의 읽기 전용 조회.
+
+발행 버전도 수정할 수 있다. 발행은 불변 릴리스 생성이 아니라 `publishedVersion` 포인터
+변경이다. 현재 발행본 삭제는 제한되며, 별도 발행 취소 기능은 없다.
+
+### 모델과 프롬프트
+
+- 기본 모델 선택.
+- 모델 검색·즐겨찾기 그룹·capability 확인.
+- Fallback 모델 선택.
+- 시스템 프롬프트.
+- 사용자 프롬프트 템플릿.
+- `{{변수}}` 치환.
+- Temperature.
+- 최대 출력 토큰.
+- Presence penalty.
+- Reasoning effort: 기본값 / low / medium / high.
+- Reasoning 표시·기록 여부.
+- Structured output 활성화.
+- JSON Schema 입력·구문 검사.
+- 요청자 정보 전달 여부: 이름, 표면이 제공하는 시간대·아바타. 이메일은 모델용 요청자 정보에서 제외.
+- PII filtering: 이메일·전화번호·한국 주민등록번호·카드번호 치환.
+
+사용자 프롬프트 템플릿은 `llm/image`에서 사용한다. Agent는 대화 메시지를 직접 사용한다.
+Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환하는 기능이며 난이도별 모델 라우팅이 아니다.
+이미지 프로젝트에는 fallback 모델이 없고 PII filtering도 이미지 프롬프트에는 적용하지 않는다.
+
+### Agent 역량과 실행 정책
+
+- 복수 Skills 연결.
+- 복수 MCP 서버 연결.
+- 서버별 사용할 도구 선택.
+- 버전별 MCP 헤더 추가·교체·제거.
+- MCP 결과의 원본 파일 매핑 설정.
+- 프로젝트별 MCP OAuth 연결·재인증·해제.
+- 로컬 프로젝트를 하위 Agent로 연결.
+- 외부 Agent 연결.
+- Handoff.
+- Agent-as-Tool 위임.
+- 이미지 프로젝트 위임.
+- 최대 Agent 턴 수.
+- 최대 입력 문자 수.
+- 차단할 도구 이름 목록.
+- 승인이 필요한 도구 이름 목록.
+- 도구 입력 스키마 검증.
+- 위임 깊이·순환·남은 턴 검사.
+- 잘린 결과·누락된 역량·실행 손실 경고.
+
+### Memory·자동 검색
+
+- 실행 전 Memory recall 활성화.
+- 연결된 MCP의 `recall`로 관련 기억 조회.
+- 조회한 기억을 모델 문맥에 추가.
+- MCP가 제공하는 기억 저장 도구 사용.
+- Dynamic capabilities 활성화.
+- Skill·MCP 서버·MCP 도구·외부 Agent의 의미 기반 검색.
+- Embedding 검색과 선택적 Rerank.
+- 명시적으로 연결한 역량에 검색 결과 추가.
+- 검색된 역량·준비 경고 표시.
+
+장기 Memory는 외부 MCP 기반이다. Chat 이력과 별개이며, Studio 내부의 독립 Memory 관리
+화면은 없다. 로컬 Project는 자동 capability 검색 대상이 아니라 명시적 하위 Agent 연결 대상이다.
+
+### 내장 도구
+
+- `Skill`: 지침·참고 파일 읽기.
+- `GenerateImage`, `EditImage`: 이미지 생성·편집.
+- `FetchUrl`: URL 내용 읽기.
+- `SaveFile`: 텍스트 계열 파일 생성.
+- `File`: 문서 읽기·검사·생성·편집.
+- `Workspace`: Sandbox 작업·코딩·Git 검토 요청.
+- `ImportFile`, `TranscribeAudio`, `AudioJob`: 파일 가져오기·전사·오디오 작업.
+- Slack 읽기 도구: `SlackHistory`, `SlackThread`, `SlackUser`, `SlackUsers`, `SlackChannels`, `SlackReactions`.
+
+도구마다 버전 설정·저장소·연동·호출자 권한 등의 활성 조건이 있다.
+
+구현 근거: [Project·Version 정의](../src/domain/project/types.ts),
+[Version 편집기](../src/app/projects/[name]/_components/VersionEditor.tsx),
+[내장 도구 목록](../src/domain/llm/toolNames.ts).
+
+## 2. Playground·Compare
+
+### Playground
+
+- 저장된 버전 선택.
+- 설정 편집과 실행 결과를 함께 표시.
+- 저장 전 초안의 Prompt preview: 조립된 시스템·사용자 메시지, 템플릿 변수 입력,
+  실제 도구 JSON Schema, 발견한 역량, Memory·바인딩·PII 관련 경고, 결과 복사.
+- 저장된 버전 테스트 실행.
+- 텍스트 메시지·템플릿 변수 입력.
+- 이미지·문서 첨부.
+- 이미지 생성·원본 이미지 편집.
+- 이미지 크기·품질 선택.
+- 답변 스트리밍.
+- Reasoning·도구 호출·하위 Agent 진행 표시.
+- 생성 이미지·파일 표시.
+- 비용·오류·경고·종료 상태 표시.
+
+Prompt preview는 모델 답변을 생성하지 않지만 검색·MCP 조회·Memory recall은 실제 수행할 수
+있다. 실제 Run은 저장된 버전을 실행한다.
+
+### Compare
+
+- 같은 프로젝트의 버전 두 개 선택.
+- 동일 입력으로 나란히 실행.
+- 답변·Reasoning·이미지·생성 파일 비교.
+- 비용·실행 시간 비교.
+- 오류·경고 확인.
+
+현재는 수동 비교다. 평가 데이터셋·자동 채점·A/B 트래픽 배분은 없다.
+
+구현 근거: [Prompt preview](../src/app/projects/[name]/_components/PromptPreview.tsx),
+[실행 패널](../src/app/projects/[name]/_components/RunPanel.tsx),
+[Compare](../src/app/projects/[name]/compare/page.tsx).
+
+## 3. Chats
+
+- 접근 가능한 Agent 프로젝트 선택·검색.
+- 새 대화 생성.
+- 마지막 선택 프로젝트 기억.
+- 첫 메시지 기반 제목 자동 생성.
+- 본인 대화 목록·최근 활동순 표시.
+- 일반 Chat과 Workspace 대화 구분.
+- 목록 더 보기.
+- 실행 중 표시.
+- 대화 삭제.
+- 텍스트·이미지·문서 첨부.
+- 파일 선택·드래그앤드롭·붙여넣기.
+- Markdown 답변·복사.
+- Reasoning 표시.
+- 도구 이름·인자·결과 표시.
+- 하위 Agent·위임 경로 표시.
+- 실행 시간 표시.
+- 이미지 확대·파일 미리보기·다운로드.
+- Stop으로 실행 취소.
+- 이전 대화·모델·도구 이력 유지.
+- 화면 이동·연결 종료 후 서버 실행 유지.
+- 재접속 시 실행 상태·제한된 로그 이어받기.
+- 도구별 승인·거절.
+- 승인 체크포인트에서 실행 재개.
+- 불확실하게 중단된 승인 실행 폐기.
+- Workspace 승인·CI 결과 수신 및 후속 실행.
+
+Chat은 소유자 개인 대화다. 공유 프로젝트를 사용하더라도 대화가 공유되지는 않는다.
+별도 모델·버전 선택, 메시지 수정, 답변 재생성, 대화 공유·내보내기·전문 검색 UI는 없다.
+연결 종료 뒤 실행 유지가 서버 프로세스 급사 후 자동 복구까지 뜻하지는 않는다.
+
+구현 근거: [새 대화](../src/app/chats/_components/NewChatPanel.tsx),
+[대화 소유권·조회](../src/application/chat/getChat.ts), [Chat 설계](design/chat.md).
+
+## 4. Models
+
+### 목록·탐색
+
+- 모델 ID·표시 이름·제작사·provider.
+- 모델 유형: Text, Image, Embedding, Rerank, Transcription.
+- Tools·Structured output·Vision·Reasoning capability.
+- Context window.
+- 입력·출력·캐시 등 유형별 가격.
+- 할인율·다른 provider 공급 경로.
+- 공급 채널 사용 가능 상태.
+- 이름·ID·제작사·provider 검색.
+- Provider·유형·capability 필터.
+- 이름·provider·가격 정렬.
+- 필터·정렬 상태 기억.
+- 개인 즐겨찾기.
+
+### 관리자 관리
+
+- 모델 선택 목록에서 숨김·해제.
+- 전체 숨김 해제.
+- Text·Image·Rerank 연결 테스트.
+- 테스트 성공 여부·지연시간·오류 표시.
+- 카탈로그 즉시 새로고침.
+- 부팅·주기적 카탈로그 갱신.
+- 오프라인 스냅샷 사용.
+- JSON 카탈로그 업로드·설치·제거.
+- 설치자·설치 시각·모델 수·스킵 항목 확인.
+
+### Self-hosted
+
+- 서버가 제공하는 모델 발견.
+- 모델 선언 추가·편집·제거.
+- 표시 이름·유형·문맥 크기·출력 토큰·capability 설정.
+- 선언과 실제 serving 상태 불일치 표시.
+
+모델 다운로드·서빙 프로세스 실행·파인튜닝 기능은 아니다.
+
+### 특수 목적 모델 설정
+
+- Capability 검색용 Embedding 모델.
+- Embedding 변경 시 확인 후 재색인.
+- Rerank 모델·최소 점수.
+- Codex·Claude·OpenCode별 Workspace 모델.
+- Workspace 모델 선택 해제로 해당 runtime 비활성화.
+
+모델 숨김은 기존 버전의 실행 금지와 다르다. 관리자 모델 테스트도 프로젝트의 일반 실행·Usage
+기록과 분리돼 있다. Embedding·Transcription의 독립 Test 버튼은 없다.
+
+구현 근거: [Models 화면](../src/app/models/page.tsx),
+[모델 연결 테스트](../src/application/llm/testModel.ts),
+[모델 선택](../src/application/llm/modelSelection.ts).
+
+## 5. Plugins
+
+- 설치된 Plugin 목록·검색.
+- 이름·버전·설명.
+- 포함된 Skill·MCP 서버 수.
+- 동기화 시각·commit.
+- 상세 구성 요소 조회.
+- 원본 저장소·branch·경로·commit 링크.
+- GitHub 저장소 동기화.
+- 오프라인 `.tar / .tar.gz / .tgz` 업로드 동기화.
+- Skill 본문·참고 파일 가져오기.
+- MCP 서버 정의·설명·운영 문서 가져오기.
+- 기존 항목 갱신 및 출처 인수.
+- 변경·생성·스킵·실패 보고서.
+- 변경된 필드·스킵 이유 표시.
+- 원본에서 사라진 항목 감지.
+- 해당 항목을 사용하는 프로젝트·버전 표시.
+- 사라진 Plugin·Skill·MCP의 명시적 선택 삭제.
+- 최근 동기화 보고서 보관.
+- 외부 ticker 기반 자동 동기화.
+- 동기화 후 capability 재색인.
+
+현재는 동기화 중심이다. Plugin 직접 작성·편집, 스토어 검색·개별 설치, Plugin별 활성 스위치가
+있는 구조는 아니다. 동기화가 자동으로 항목을 삭제하지도 않는다. 저장소의 header credential은
+가져오지 않는다.
+
+구현 근거: [Plugin 목록](../src/app/plugins/page.tsx),
+[동기화 보고서](../src/app/_components/PluginSyncSummary.tsx),
+[Plugin 동기화](../src/application/plugin/syncPlugins.ts).
+
+## 6. Skills
+
+- Skill 목록·검색.
+- 이름·설명·Plugin 출처·참고 파일 수.
+- 수동 Skill 생성.
+- Markdown 지침 본문 작성.
+- 설명·본문 편집.
+- 수동 Skill 삭제.
+- 본문 조회.
+- 참고 파일 경로·내용 조회.
+- 소유 Plugin으로 이동.
+- 프로젝트에 명시적으로 연결.
+- 자동 capability 검색으로 발견.
+- 실행 중 필요한 지침·참고 파일만 읽기.
+
+Plugin 소유 Skill은 원본 동기화로 관리한다. 수동 첨부 업로드·편집 UI는 없으며, Skill 자체를
+프로그램처럼 실행하는 기능도 아니다.
+
+구현 근거: [Skill 목록](../src/app/skills/page.tsx),
+[Skill 상세](../src/app/skills/[name]/page.tsx), [Skill 로딩](../src/application/skill/loadSkill.ts).
+
+## 7. Tools — MCP 서버
+
+### 원격 서버
+
+- 목록·검색.
+- 이름·URL·모델용 설명·운영 문서.
+- HTTP 헤더·자격 증명.
+- 서버 등록·편집·삭제.
+- Plugin 출처 표시.
+- 자격 증명 마스킹.
+- 연결 테스트.
+- 제공 도구 이름·설명·개수 조회.
+- 연결 오류 표시.
+- 프로젝트에서 사용할 도구 선택.
+
+현재 화면은 MCP 도구 발견까지 지원한다. 임의 도구의 인자 입력 폼을 만들어 직접 실행하는
+범용 Tool Tester는 없다.
+
+### OAuth
+
+- 서버 인증 메타데이터 발견·재발견.
+- Authorization server 선택.
+- Resource·authorize/token endpoint 조회.
+- Client 등록 방식 확인.
+- 공유 Client ID·Client Secret·Redirect URI 설정.
+- OAuth 설정 제거.
+- 프로젝트별 연결·재인증·해제.
+- Token 갱신·재인증 필요 상태 처리.
+
+### Managed MCP — 조건부
+
+- Docker 기반 서버 생성·시작.
+- 이미지·포트·환경변수·실행 인자·endpoint 설정.
+- 설명·운영 문서.
+- 실행·연결 상태 조회.
+- 재시작.
+- 실행 설정 변경 시 재시작.
+- 컨테이너와 등록 항목 삭제.
+- 앱 부팅 후 상태 확인·복구.
+
+Docker와 Managed MCP 설정이 필요하다. Kubernetes 관리형 runtime은 현재 구현돼 있지 않다.
+
+구현 근거: [MCP 관리 화면](../src/app/tools/[name]/page.tsx),
+[Managed MCP 생성](../src/app/tools/_components/ManagedMcpModal.tsx), [MCP 설계](design/mcp.md).
+
+## 8. Agents — 외부 Agent
+
+- 외부 Agent 목록·검색.
+- 이름·설명.
+- 프로토콜 선택: OpenAI-compatible / A2A.
+- 실행 endpoint 또는 Agent Card URL.
+- HTTP 헤더·자격 증명.
+- 등록·편집·삭제.
+- 테스트 메시지 전송.
+- 응답·오류 확인.
+- 프로젝트 하위 Agent로 연결.
+- 자동 capability 검색 대상으로 사용.
+- 발행된 로컬 프로젝트의 A2A 목록 조회.
+- Agent Card URL 복사·JSON 조회.
+
+이 메뉴에는 자체 모델·시스템 프롬프트·Skills·비용한도 설정이 없다.
+
+구현 근거: [외부 Agent 목록](../src/app/agents/page.tsx),
+[외부 Agent 상세](../src/app/agents/[name]/page.tsx), [A2A 설계](design/agents-a2a.md).
+
+## 9. Integrations·API Reference
+
+### 프로젝트 API Token
+
+- 생성.
+- 상태·마스킹 값·발급 시각 조회.
+- 값 보기·숨기기·복사.
+- 재발급.
+- 폐기.
+- 소유자 tier에 따른 발급·사용 제한.
+
+현재 프로젝트당 Token 하나다.
+
+### 실행 API·Reference
+
+- Predict 완료형·스트리밍.
+- Agent raw chunk 스트리밍.
+- OpenAI-compatible Chat Completions.
+- 이미지 생성·편집 API.
+- 템플릿 변수·메시지·이미지·문서 입력.
+- 모델·사용량·비용·경고·종료 이유·출력 파일 반환.
+- 선택적 대화 ID 전달.
+- Endpoint·인증·요청/응답·오류 문서.
+- curl·Python·Node.js·AG-UI 예제.
+- 예제 복사.
+
+API Reference는 발행본 예제를 보여주지만, 버전별 REST endpoint에서는 지정한 미발행 버전도
+실행할 수 있다.
+
+### Slack
+
+- App manifest 생성·복사.
+- Bot Token·Signing Secret.
+- 활성화·연결 테스트·해제.
+- 이벤트 endpoint 안내.
+- 제안 프롬프트·채널 키워드 설정.
+- DM·mention·참여 중인 thread 응답.
+- 키워드 기반 참여.
+- Assistant 시작 안내·제안 프롬프트.
+- `!help / !mute / !unmute`.
+- 스트리밍 답변·진행 표시.
+- Thread 문맥·이미지·문서 읽기.
+- 생성 이미지·파일 전달.
+- Private 프로젝트의 사용자 접근 검사.
+- Schedule·비용 알림 목적지.
+
+### Telegram
+
+- Bot Token.
+- 활성화·연결 테스트·해제.
+- Webhook 자동 등록·해제·재등록.
+- 개인 Chat·그룹 mention·봇 답장 처리.
+- `/start / /help`.
+- 타이핑·편집 방식 응답·긴 답변 분할.
+- 이미지·문서 입력과 결과 전달.
+- 대화 이력·forum topic 구분.
+- 관찰한 Chat·topic을 알림 목적지로 선택.
+
+음성 메시지 자동 전사 기능으로 보면 안 된다.
+
+### Microsoft Teams
+
+- App ID·Client Secret·선택 Tenant ID.
+- 활성화·연결 테스트·해제.
+- Messaging endpoint 안내.
+- 개인 Chat·채널/그룹 mention 응답.
+- 타이핑·메시지 편집·긴 답변 분할.
+- 이미지·문서 입력과 결과 전달.
+- 대화 이력.
+- Schedule·비용 알림 목적지.
+
+Azure Bot·Teams App 자체를 자동 생성하는 기능은 아니다.
+
+### A2A
+
+- Agent Card 조회·복사.
+- 공유 키·이름 있는 Client Key 인증.
+- 메시지 전송·스트리밍.
+- Task 조회·목록·취소·재구독.
+- 상태·문맥·시각 필터와 페이지 조회.
+- Task 결과 저장.
+- 텍스트·inline image 입력.
+- 텍스트·이미지·파일 출력.
+- 발행 프로젝트 노출.
+
+Push notification과 Chat 같은 영속 모델 이력이 자동 제공되는 것은 아니다.
+
+### AG-UI
+
+- 외부 UI에서 발행 프로젝트 실행.
+- 실행·텍스트·Reasoning·도구·하위 Agent 이벤트.
+- 이미지·파일·사용량·경고 이벤트.
+- Thread·Run ID.
+- 텍스트·이미지·문서 입력.
+- 클라이언트 context·state 전달.
+- Frontend tool 호출과 후속 요청으로 결과 전달.
+
+State 변경 이벤트·프로토콜 resume·영속 승인 UI는 현재 없다.
+
+구현 근거: [연동 화면](../src/app/projects/[name]/integrations/page.tsx),
+[API Reference](../src/app/projects/[name]/api-reference/endpoints.ts),
+[메시징 설계](design/messaging.md), [A2A](design/agents-a2a.md), [AG-UI](design/agui.md).
+
+## 10. Webhook·Schedules
+
+### Webhook
+
+- 프로젝트별 Webhook 설정.
+- 호출 주소 복사.
+- 활성화.
+- Secret 생성·확인·회전.
+- 메시지 / 템플릿 변수 payload 모드.
+- 겹침 실행 허용 여부.
+- Secret header·GitHub 서명 검증.
+- 중복 요청 억제.
+- 접수 후 백그라운드 실행.
+- 발행 버전 실행.
+- 최근 실행 상태·결과·오류·경고.
+- 생성 Artifact 보관.
+- API에서 고정 변수·설명 설정.
+
+### Schedules
+
+- 여러 Schedule 생성·조회·수정·삭제.
+- Schedule ID.
+- 5필드 cron.
+- IANA 시간대.
+- 실행 메시지.
+- 활성화.
+- 겹침 실행 허용 여부.
+- 소유자 문맥으로 실행 여부.
+- Slack·Telegram·Teams 결과 배달.
+- 최근 실행 결과.
+- 플랫폼별 배달 성공·실패.
+- 제한된 놓친 실행 보충.
+- 중복 tick 억제.
+- 유실된 실행 상태 정리.
+- API에서 고정 변수·설명 설정.
+
+예약 실행에는 외부 ticker가 필요하다. 현재 수동 “지금 실행” 버튼은 없다.
+
+구현 근거: [Webhook 설정](../src/app/projects/[name]/settings/WebhookSection.tsx),
+[Schedule 설정](../src/app/projects/[name]/settings/SchedulesSection.tsx), [Trigger 설계](design/triggers.md).
+
+## 11. Workspace·Sandbox·Coding
+
+### 작업 실행
+
+- Chat / Workspace 실행 방식 선택.
+- 프로젝트 선택.
+- Runtime 선택: Command, Codex, Claude, OpenCode.
+- Script 또는 자연어 코딩 작업 접수.
+- 저장소·기준 브랜치 선택.
+- 같은 Workspace에서 후속 작업.
+- 작업 상태·실행 이력.
+- stdout·stderr·메시지·경고 조회.
+- Git Diff 조회.
+- Test·Lint·Build 결과 조회.
+- 작업 취소.
+- Workspace 종료.
+- PR 링크·CI 상태 조회.
+
+### 영속성
+
+- 작업 큐.
+- 파일·Git·native Session 체크포인트.
+- 유휴 Sandbox 정리.
+- 후속 요청 시 복구.
+- Worker 재시작 후 작업 관찰·이어받기.
+- 결과가 불명확한 외부 작업의 자동 재실행 방지.
+
+### 프로젝트 정책
+
+- Workspace 도구 활성화.
+- 기본 Runtime.
+- 저장소·허용 owner 목록.
+- 저장소 접근 범위: 지정 저장소, 지정 owner, 서버 계정이 접근 가능한 전체,
+  프로젝트가 만든 신규 저장소 자동 허용.
+- 유휴 TTL.
+- Test·Lint·Build 명령.
+- 배포 허용 workflow.
+
+### Git·배포 승인
+
+- Commit.
+- Commit & push.
+- 작업 브랜치 Push.
+- Draft PR·PR 생성·상태 변경.
+- PR 병합.
+- 조건부 main fast-forward push.
+- 허용된 GitHub workflow 실행.
+- 정확한 HEAD·Diff·CI 상태를 확인한 승인·거절.
+- 작업 결과·거절·실패·결과 불명 상태 보관.
+- GitHub Webhook 기반 PR·CI 상태 갱신.
+- 원래 Chat으로 결과 전달·후속 실행.
+
+### Agent 도구로 가능한 추가 작업
+
+- 저장소 접근 확인.
+- 새 저장소 생성.
+- Workspace 생성·선택.
+- 저장소 연결.
+- 작업 실행·상태 확인·대기·취소·종료.
+- Git 검토 준비와 승인 URL 발급.
+
+Docker·별도 worker·runtime 모델 설정이 필요하다. Command 실행은 모델을 사용하지 않는다.
+현재는 제출형 작업과 출력 화면이며, 웹 IDE·파일 탐색기·대화형 터미널은 아니다.
+Agent의 Workspace 도구는 로그인한 member 이상 사용자의 실행에서 제공하며, 프로젝트 Token이나
+메신저·예약 실행이 같은 권한을 자동으로 얻지는 않는다.
+
+구현 근거: [Workspace 화면](../src/app/workspaces/_components/WorkspacePanel.tsx),
+[Workspace 도구](../src/application/workspace/workspaceTool.ts), [Workspace 설계](design/workspaces.md).
+
+## 12. Documents·파일 생성·편집
+
+### 읽기·추출
+
+- UTF-8 텍스트·Markdown·CSV·JSON·XML·YAML.
+- HTML.
+- PDF 텍스트 레이어.
+- DOCX·XLSX·PPTX.
+- HWP 5.x·HWPX.
+- ODT·ODS·ODP.
+- RTF.
+- 추출 실패·누락·길이 초과 경고.
+- Artifact ID로 저장된 파일 읽기.
+
+### 문서 검사
+
+- 문서 구조.
+- 편집 대상 텍스트 위치.
+- 시트·셀 주소·값·수식.
+- 숨김 시트 포함 여부.
+- 범위를 나눠 조회.
+
+### 문서 생성
+
+- DOCX.
+- PDF.
+- HWPX.
+- PPTX.
+- XLSX.
+- 제목·파일명·문서 스타일 프로필.
+- 지원 형식의 이미지 삽입.
+- 시트·셀·수식 지정.
+- 생성 결과의 구조 검사·재열기 검증.
+
+### 파일 편집
+
+- 텍스트·HTML·SVG 문자열 교체.
+- JSON 수정 및 문법 검사.
+- DOCX·PPTX·HWPX의 지정 텍스트 교체.
+- XLSX 셀 값·수식 변경.
+- 원본 보존 및 수정본 생성.
+- 원본과 수정본의 관계 기록.
+
+### SaveFile
+
+- HTML·Markdown·TXT·CSV·JSON·SVG 생성.
+- 다운로드 및 Artifact 연결.
+
+OCR·원본 PDF 편집·범용 Office 편집기·수식 계산 엔진은 없다. 문서 업로드도 독립 Knowledge
+Base에 색인하는 방식이 아니라, 추출문을 문맥에 넣거나 파일 ID로 읽는 방식이다.
+
+구현 근거: [문서 처리 계약](../src/domain/document/processor.ts),
+[File 도구](../src/application/document/fileTool.ts), [문서 설계](design/documents.md).
+
+## 13. Audio Processing
+
+- MP3·WAV·FLAC·Ogg 업로드.
+- 원본 파일 가져오기.
+- Transcription 모델 선택.
+- 언어 지정.
+- 원본 보존 기간·시간대.
+- 후처리 Agent·버전 선택.
+- 고정 버전 또는 발행본 사용.
+- 외부 MCP 저장 목적지.
+- Documents·Memories 저장 여부.
+- 활성화·활성 작업 수·발생당 작업 수 설정.
+- 가져오기만 / 전사 / 후처리 / 전체 처리.
+- 영속 작업 큐·중복 접수 억제.
+- 긴 오디오 변환·분할 전사.
+- 완료된 구간 재사용.
+- 긴 전사문 분할 후처리·통합.
+- 단계·진행률·시도 횟수·오류 조회.
+- 자동 재시도·수동 재시도·취소.
+- 종료된 작업 이력 삭제.
+- 원본 다운로드.
+- 전사 JSON·요약 Markdown·구조화 결과·대화록.
+- 외부 Documents·Memory 저장 결과 확인.
+- 원본·파생 파일 만료 정리.
+- Agent가 `AudioJob`으로 작업 제출·조회·읽기.
+
+저장소·전사 채널·별도 worker가 필요하다. 프로젝트 소유자인 member 이상의 개인 원본 처리이며,
+실시간 음성 통화·마이크 받아쓰기·TTS 기능은 아니다. 외부 Documents·Memory 저장은 수신 MCP의
+도구와 계약이 있어야 한다.
+
+구현 근거: [Audio 화면](../src/app/projects/[name]/audio/page.tsx),
+[Audio 도구](../src/application/audio/toolDefinitions.ts), [오디오 설계](design/audio-processing-spec.md).
+
+## 14. Artifacts
+
+- 개인 갤러리.
+- 프로젝트별 갤러리.
+- 이미지·문서·오디오 필터.
+- 불러온 목록에서 파일명·프롬프트·프로젝트·Agent·모델 검색.
+- 목록 더 보기.
+- 이미지 썸네일·확대.
+- 원본 첨부와 생성 파일 구분.
+- 파일명·크기·생성 시각·생성 모델·출처 표시.
+- 다운로드.
+- HTML·Markdown·CSV·JSON·SVG·텍스트 미리보기.
+- HTML 상호작용 미리보기: 버튼·입력·스크립트·Canvas, Sandbox iframe, Stop·Restart,
+  스크립트 오류·차단 리소스 안내.
+- 삭제.
+- 실행·사용자·버전·하위 Agent·원본 관계 보관.
+- API·자동화 등 다른 실행 표면의 출력 수집.
+
+공개 프로젝트라고 산출물이 모두 공개되는 것은 아니다. 갤러리 검색은 전체 서버 전문 검색이
+아니며, Office·PDF 원본은 다운로드 중심이다. 개인 Audio 원본·파생 파일의 소유권과 만료
+검사는 일반 프로젝트 산출물 권한과 구분한다.
+
+구현 근거: [Artifact 갤러리](../src/app/artifacts/_components/ArtifactGallery.tsx),
+[산출물 권한](../src/application/artifact/artifactUseCases.ts).
+
+## 15. Usage·비용 한도
+
+### 사용량 조회
+
+- 기간·빠른 기간 선택.
+- 전체 비용.
+- 모델 호출 수.
+- 평균 호출 비용.
+- 일별 비용 차트.
+- 프로젝트별 집계.
+- 모델별 집계.
+- Provider별 집계.
+- 부서별 집계.
+- 캐시 사용 비율.
+- 프로젝트별 호출자 수.
+- 호출자별 호출 수·비용.
+- 개인 사용량.
+- 개인 월 예산 사용률.
+- API·저장 데이터의 입력·출력·캐시 토큰과 비용.
+
+위치는 전체 Overview, 프로젝트 Usage, 개인 Profile로 나뉜다. 전체 Overview는 프로젝트·모델·
+provider·부서별, 프로젝트 Usage는 모델·provider별, Profile은 프로젝트·모델·provider별 집계를
+제공한다. 호출자별 상세는 소유자·관리자 전용이다.
+
+### 프로젝트 비용 정책
+
+- 일별 경고 한도.
+- 일별 차단 한도.
+- 월별 경고 한도.
+- 월별 차단 한도.
+- 한도 해제.
+- Slack·Telegram·Teams 알림 목적지.
+- 임계액 도달 알림.
+- 차단 한도 도달 후 추가 실행 거부.
+- UTC 일·월 기준 집계.
+
+### 사용자 등급 정책
+
+- Guest·Member·Admin별 월 비용 정책.
+- 등급별 동시 실행 정책.
+- 프로젝트 생성 가능 여부.
+- 프로젝트 API Token 사용 가능 여부.
+
+등급별 한도는 현재 코드 정책이며, 관리자가 임의 숫자를 편집하는 콘솔은 없다.
+비용 가드는 정확한 선불 예약·정산 시스템과 구분해야 한다.
+
+구현 근거: [전체 비용 화면](../src/app/_components/Dashboard.tsx),
+[사용량 조회·권한](../src/application/usage/usageUseCases.ts),
+[등급 정책](../src/domain/member/tiers.ts), [비용·기록 설계](design/observability.md).
+
+## 16. Traces
+
+- 프로젝트별 기간 조회.
+- Trace 상세.
+- 버전·실행 시간·상태.
+- 완료·실패·취소·승인 대기·턴/출력 제한 구분.
+- 호출자·대화 ID·Agent 호출 경로 기록.
+- 모델·도구·하위 Agent·준비·Guardrail span.
+- 입력·출력·캐시·Reasoning 토큰.
+- Span별 상태·시간.
+- 준비한 역량·Memory 통계.
+- 오류·경고.
+- 하위 Trace 이동.
+- 생략된 span 수 표시.
+- Agent 실행의 상시 기록.
+- 기타 실행의 샘플링.
+- 선택적 OTLP export.
+
+소유자·관리자에게 제공하며, 현재는 span 표 중심이다. 모델·도구 원문 전체 로그나 시각적
+실행 그래프 편집기는 아니다.
+
+구현 근거: [Trace 목록](../src/app/projects/[name]/traces/page.tsx),
+[Span 표시](../src/app/projects/[name]/traces/TraceContent.tsx), [Trace 설계](design/observability.md#trace).
+
+## 17. Audit
+
+- 관리자 감사 기록 조회.
+- 기간 필터.
+- 시각·행위·행위자·대상·상세 표시.
+- 시크릿 조회·발급/회전·폐기 기록.
+- 관리자 프로젝트 변경 기록.
+- 설정 변경.
+- 프로젝트 삭제.
+- 모델 카탈로그 설치·제거.
+- 공유 레지스트리 삭제·소유 출처 변경.
+- 타인 Artifact 삭제.
+- 사용자 tier 변경.
+- 보존 기간에 따른 정리.
+
+현재 콘솔은 기간별 조회 중심이다. 행위자·대상별 검색 폼이나 사용자에 의한 기록 수정·삭제
+기능은 없다.
+
+구현 근거: [감사 화면](../src/app/audit/page.tsx), [감사 대상 행위](../src/domain/audit/types.ts).
+
+## 18. 인증·Members·Profile
+
+### 인증
+
+- Keycloak 로그인.
+- 표준 OIDC 로그인.
+- Google 로그인.
+- 선택적 이메일·비밀번호 로그인.
+- 초기 관리자 부트스트랩.
+- 허용 이메일 도메인 제한.
+- 세션 로그인·로그아웃.
+- 로그인 후 원래 페이지로 복귀.
+- 역할별 페이지·API 접근 제어.
+
+비밀번호 자체 가입 폼은 없다.
+
+### Members
+
+- 관리자용 사용자 목록.
+- 이름·이메일·프로필 이미지.
+- 가입 시각·마지막 로그인.
+- Guest / Member / Admin 변경.
+- 설정으로 지정한 관리자 tier 잠금.
+
+사용자 초대 메일·계정 삭제·비밀번호 초기화 등을 제공하는 종합 계정 관리 화면은 아니다.
+
+### Profile
+
+- 본인 이름·이메일·이미지·tier.
+- 가입 시각·마지막 로그인.
+- 동시 실행·월 예산 정책.
+- 이번 달 지출·한도 사용률.
+- 기간별 개인 사용량.
+- 프로젝트·모델·provider별 개인 비용.
+
+현재 Profile은 조회 중심이며 프로필 편집 화면은 아니다.
+
+구현 근거: [인증 구성](../src/lib/auth.ts), [Members 화면](../src/app/members/page.tsx),
+[Profile 화면](../src/app/profile/page.tsx), [인증·인가 계약](SECURITY.md).
+
+## 19. Settings
+
+현재 실제 섹션은 `General / Access / LLM / Plugins repo / A2A`다.
+
+### General
+
+- Public Base URL.
+- Artifact 접근 방식: Authenticated, Public, Proxied.
+
+### Access
+
+- 관리자 이메일 목록.
+- 허용 이메일 도메인.
+
+### LLM·Providers
+
+- 기본 LLM Base URL.
+- 기본 API Key.
+- 미등록 모델 허용·거부 정책.
+- Provider별 채널 추가·제거.
+- Provider 선택.
+- Base URL.
+- API Key.
+- Bearer / AWS SigV4 인증.
+- 모델 provider prefix 유지 여부.
+
+### Plugins repo
+
+- GitHub 저장소.
+- Branch.
+- GitHub Token.
+
+### A2A
+
+- 공유 API Key.
+- 생성·재발급·조회·숨기기·복사.
+- 이름 있는 Client Key 목록.
+- Client 이름·설명.
+- Client Key 생성·조회·폐기.
+- Client별 실행 귀속.
+
+### 설정 공통
+
+- 현재 값의 출처 표시: override / env / default / unset.
+- 환경변수 대신 DB override 저장.
+- Override 해제 시 환경변수로 복귀.
+- 시크릿 마스킹·암호화 보관.
+
+SSO·DB·스토리지·worker·retention 등 모든 배포 설정을 이 화면에서 편집할 수 있는 것은 아니다.
+
+구현 근거: [Settings 섹션 정의](../src/app/settings/page.tsx),
+[Settings API](../src/app/api/settings/route.ts), [설정 계약](CONFIGURATION.md).
+
+## 20. 공통 화면·운영 기능
+
+### 공통 화면
+
+- 공개 소개 화면.
+- 로그인 후 Overview.
+- 최근 프로젝트·대화.
+- 새 프로젝트·Chat 바로가기.
+- 카탈로그 수·비용 요약.
+- 최초 사용 안내.
+- 사용 가이드.
+- 한국어·영어.
+- Light·Dark·System 테마.
+- 반응형 메뉴.
+- 사용자 메뉴·로그아웃.
+
+### 운영·기반 기능 — 별도 관리 UI가 없는 항목 포함
+
+- 사내 설치·공개 인터넷 없는 필수 실행 경로.
+- 부팅 시 설정 검사·DB migration.
+- S3-compatible 저장소.
+- 시크릿 암호화·마스킹.
+- URL 접근·SSRF 제한.
+- 실행 동시성·시간·문맥·도구 결과 상한.
+- Liveness·Readiness endpoint.
+- Prometheus 메트릭.
+- 선택적 OTLP tracing.
+- 종료 시 draining.
+- 외부 ticker 기반 예약·Plugin 동기화·카탈로그 재색인.
+- 만료 데이터 정리.
+- Audio·Workspace worker.
+- Managed MCP 복구.
+
+구현 근거: [공통 메뉴](../src/components/AppLayout.tsx),
+[Overview](../src/app/_components/Overview.tsx), [부팅](../src/instrumentation.ts),
+[메트릭](../src/app/api/metrics/route.ts), [운영 계약](OPERATIONS.md).
+
+## 개편 시 별도로 결정할 항목
+
+아래는 기존 기능과 혼동하지 않고 개편·추가 후보로 분리해야 하는 항목이다.
+모든 후보는 미결정 상태이며, 이 표에 있다는 이유만으로 구현·삭제하기로 합의한 것은 아니다.
+
+| 항목 | 현재 상태 | 결정할 내용 |
+|---|---|---|
+| Agents 명칭 | 로컬 Projects와 외부 Agents가 별도 | 명칭 변경·메뉴 통합 여부 |
+| 역할별 모델 | 기본·fallback·이미지 모델 | light/mid/heavy/reasoning 역할과 자동 라우팅 추가 여부 |
+| 발행 버전 | 수정 가능한 버전 포인터 | 불변 발행본·승인·롤백 정책 |
+| Memory | Chat 이력과 MCP 장기 기억이 별도 | 독립 Memory 관리 기능 여부 |
+| Knowledge Base | 파일 추출과 capability 검색만 존재 | 사용자 문서 수집·색인·검색 추가 여부 |
+| 평가 | 수동 2개 버전 비교 | 평가셋·자동 채점·피드백 수집 여부 |
+| Chat 편의 기능 | 기본 대화·승인·첨부 | 수정·재생성·검색·공유·내보내기 |
+| Tools | MCP 연결·발견 중심 | 내장 도구 통합 관리·직접 실행 테스트 |
+| Plugins | 저장소 전체 동기화 중심 | 선택 설치·활성화·제거 UX |
+| 공동 작업 | 프로젝트 초대는 조회·실행 권한 | 공동 편집·세분화된 역할 |
+| 비용 정책 | 프로젝트 설정과 고정 tier 정책 | 관리자 편집형 사용자·팀 예산 |
+| 음성 | 파일 전사·후처리 | 실시간 음성·TTS·음성 메시지 연동 |
+| Workspace | 제출형 작업·Git 승인 | 파일 탐색·편집·대화형 터미널 |
+| 관측성 | Usage·Trace·Audit가 분리 | 통합 실행 상세·검색·원문 보관 정책 |
+
+이 목록을 기준으로 각 항목에 유지 / 개편 / 통합 / 제거 / 추가, 우선순위, 완료 조건을 붙여
+개편 범위를 정한다. 결정 전에는 현재 구현 목록과 검토 후보를 섞지 않는다.
