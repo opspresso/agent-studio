@@ -51,7 +51,7 @@
 
 버전에 연결된 프롬프트·역량 설정은 Agent의 현재 설정으로 옮긴다. 유지하기로 한 실행 경로의
 버전/발행본 참조도 함께 정리하며, 제거할 부가 기능을 새 구조로 이식하지 않는다.
-버전 기반 Compare도 제거하고 이번 개편에서 별도 모델 비교·평가 기능으로 대체하지 않는다.
+버전 기반 Compare는 제공하지 않으며 별도 모델 비교·평가 기능을 추가하지 않는다.
 
 구현 전에 정할 세부사항:
 
@@ -267,7 +267,7 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환하는 기능이�
 [Version 편집기](../src/app/projects/[name]/_components/VersionEditor.tsx),
 [내장 도구 목록](../src/domain/llm/toolNames.ts).
 
-## 2. Playground·Compare
+## 2. Playground
 
 ### Playground
 
@@ -288,20 +288,8 @@ Fallback은 첫 출력 전 429·5xx 오류에서 한 번 전환하는 기능이�
 Prompt preview는 모델 답변을 생성하지 않지만 검색·MCP 조회·Memory recall은 실제 수행할 수
 있다. 실제 Run은 저장된 버전을 실행한다.
 
-### Compare
-
-- 같은 프로젝트의 버전 두 개 선택.
-- 동일 입력으로 나란히 실행.
-- 답변·Reasoning·이미지·생성 파일 비교.
-- 비용·실행 시간 비교.
-- 오류·경고 확인.
-
-현재는 수동 비교다. 평가 데이터셋·자동 채점·A/B 트래픽 배분은 없다.
-버전 기반 Compare는 [버전 관리 제거의 영향 범위](#확정된-개편-방향)에 포함된다.
-
 구현 근거: [Prompt preview](../src/app/projects/[name]/_components/PromptPreview.tsx),
-[실행 패널](../src/app/projects/[name]/_components/RunPanel.tsx),
-[Compare](../src/app/projects/[name]/compare/page.tsx).
+[실행 패널](../src/app/projects/[name]/_components/RunPanel.tsx).
 
 ## 3. Chats
 

@@ -366,7 +366,7 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 |---|---|
 | `/`, `/login`, `/guide` | 로그인 상태별 개요·랜딩, 로그인, 사용자 가이드. `/dashboard`는 `/`로 redirect |
 | `/projects`, `/projects/[name]` | 카탈로그·생성·Playground |
-| 프로젝트 하위 `versions`·`compare`·`usage`·`traces`·`artifacts` | 버전·비교·비용·실행 기록·산출물 |
+| 프로젝트 하위 `versions`·`usage`·`traces`·`artifacts` | 버전·비용·실행 기록·산출물 |
 | 프로젝트 하위 `api-reference`·`integrations`·`settings`·`audio`·`workspace` | 호출 예제·연동·설정·선택적 비동기 작업 |
 | `/chats`, `/chats/[chatId]`, `/artifacts` | 개인 대화·작업·파일 |
 | `/skills`·`/tools`·`/agents`·`/plugins`와 각 상세 | 공유 capability registry |

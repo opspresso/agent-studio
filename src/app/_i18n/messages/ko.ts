@@ -475,9 +475,9 @@ export const ko: Messages = {
     "대화·검색·도구 호출·다른 에이전트에 대한 위임이 필요한 작업에 사용한다. 시스템 프롬프트에 역할·작업 범위·결과 형식을 쓰고 메시지로 작업을 전달한다. 모델이 제공된 도구의 사용 여부를 판단하므로 도구를 연결했다고 반드시 호출하는 것은 아니다.",
   "guide.projects.image": "image: 이미지 생성과 편집",
   "guide.projects.imageBody":
-    "이미지 생성 모델을 선택하고 원하는 그림을 설명한다. 원본 이미지를 첨부하면 편집하고, 첨부하지 않으면 새로 생성한다. 시스템 프롬프트로 공통 스타일을 지정할 수 있다. Playground나 Compare에서 시험하고 predict API로 연동한다. Chats와 chat completions는 image 프로젝트를 실행하지 않는다.",
+    "이미지 생성 모델을 선택하고 원하는 그림을 설명한다. 원본 이미지를 첨부하면 편집하고, 첨부하지 않으면 새로 생성한다. 시스템 프롬프트로 공통 스타일을 지정할 수 있다. Playground에서 시험하고 predict API로 연동한다. Chats와 chat completions는 image 프로젝트를 실행하지 않는다.",
 
-  "guide.versions.title": "버전 설정·비교·배포",
+  "guide.versions.title": "버전 설정·배포",
   "guide.versions.body":
     "버전은 이름이 붙은 수정 가능한 설정이다. 시험용 버전은 Playground의 버전 선택에서 + New version을 고르면 현재 편집 내용이 복사되고 Save로 생성된다. 다른 호출자가 사용 중인 설정을 시험할 때 이 방식으로 별도 버전을 만든다.",
   "guide.versions.model": "모델과 대체 모델",
@@ -488,9 +488,6 @@ export const ko: Messages = {
     "Prompt preview에서 현재 편집 내용으로 조립한 프롬프트를 확인한다. 답변은 생성하지 않지만 요청을 입력하면 memory recall, MCP 서버 조회와 동적 검색의 embedding/rerank 서비스에 실제 요청을 보낼 수 있다. 실행 패널은 저장된 버전을 실행하므로 먼저 저장한다. agent는 사용자 메시지를 직접 받으며 llm의 템플릿 변수 방식으로 입력을 전달하지 않는다.",
   "guide.versions.limits": "실행 범위와 한도 설정",
   "guide.versions.limitsBody": "작업에 맞게 최대 출력 토큰과 Agent 턴 수를 설정한다. 반복 억제는 선택한 모델이 지원할 때 쓰는 선택적 설정이다. 턴·출력 한도에 도달하면 일부 답변만 남을 수 있고 설치의 실행 시간 제한은 오류로 종료할 수 있다. 종료 이유와 경고를 확인한다. 추론 과정 기록은 표시 여부를 바꾸며 모델의 추론 자체를 켜거나 끄지는 않는다.",
-  "guide.versions.compare": "같은 입력으로 버전 비교",
-  "guide.versions.compareBody":
-    "후보 버전을 저장한 뒤 Compare에서 저장된 두 버전을 선택하고 같은 입력으로 실행한다. 답변 품질·경고·소요 시간·사용량을 비교한다. 양쪽 모두 실제 호출이므로 사용량과 동시 실행 한도에 포함되며 무료 미리보기가 아니다.",
   "guide.versions.publish": "Publish 이후 바뀌는 대상 확인",
   "guide.versions.publishBody":
     "Versions의 Publish는 프로젝트 기본값을 선택한 버전으로 바꾼다. published로 호출하면 이 기본값을 따르고, 버전 이름을 직접 지정하면 해당 버전을 계속 사용한다. 배포 중인 버전을 수정해 저장하면 다음 실행부터 즉시 반영된다. 기본값을 되돌리려면 검증된 다른 버전을 Publish하고, 버전 이름을 지정한 호출자는 별도로 변경한다.",
@@ -824,7 +821,6 @@ export const ko: Messages = {
   "project.cloneTitle": "{name} 복제",
   "project.tab.playground": "Playground",
   "project.tab.versions": "버전",
-  "project.tab.compare": "비교",
   "project.tab.usage": "사용량",
   "project.tab.artifacts": "Artifacts",
   "project.tab.traces": "트레이스",

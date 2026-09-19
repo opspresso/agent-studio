@@ -614,7 +614,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(110);
+    expect(entries.length).toBe(109);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/chats/_components/PendingApproval.tsx",
       "src/app/chats/_components/NewChatEntry.tsx",
@@ -2322,22 +2322,13 @@ describe("what a run produced", () => {
  * am not reading it" — which is how it reached nowhere at all for as long as it
  * did, emitted by the engine and consumed by no one.
  *
- * Four surfaces fold it now, and each pairs the same three decisions: keep only
- * what `isTopLevelChunk` allows (a child's thinking is its own run's), pace the
- * commit (it arrives a token at a time and the string only grows), and carry
- * the token count beside the text (the common OpenAI shape reports a count and
- * streams nothing). `SideResult` had already dropped the third before this list
- * existed. A fifth surface is added here on purpose.
- *
- * The chat's two are one fold each on either side of the wire — what the store
- * shows and what the run persists — and the console's two hold it in component
- * state, which is why they are the pair that needs `textPacer`.
+ * Each consumer keeps top-level reasoning and its token count. The Playground
+ * paces component state updates; the chat store paces its own notifications.
  */
 const REASONING_FOLD_SITES = [
   "src/application/chat/run.ts",
   "src/app/chats/_lib/stream.ts",
   "src/app/projects/[name]/_components/RunPanel.tsx",
-  "src/app/projects/[name]/compare/page.tsx",
   // Forwards it as the protocol's REASONING_* events rather than folding it,
   // but the same two of the three decisions apply: top level only, and the
   // token count beside it (on RUN_FINISHED's usage).

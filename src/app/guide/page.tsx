@@ -67,7 +67,6 @@ const SECTIONS: readonly GuideSection[] = [
       { title: "guide.versions.model", body: "guide.versions.modelBody" },
       { title: "guide.versions.prompt", body: "guide.versions.promptBody" },
       { title: "guide.versions.limits", body: "guide.versions.limitsBody" },
-      { title: "guide.versions.compare", body: "guide.versions.compareBody" },
       { title: "guide.versions.publish", body: "guide.versions.publishBody" },
     ],
   },

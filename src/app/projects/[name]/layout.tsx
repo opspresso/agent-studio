@@ -12,7 +12,6 @@ import {
   IconApi,
   IconArrowLeft,
   IconChartBar,
-  IconGitCompare,
   IconHistory,
   IconPlayerPlay,
   IconPhoto,
@@ -83,7 +82,6 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const tabs = [
     { href: base, label: t("project.tab.playground"), Icon: IconPlayerPlay },
     { href: `${base}/versions`, label: t("project.tab.versions"), Icon: IconHistory },
-    { href: `${base}/compare`, label: t("project.tab.compare"), Icon: IconGitCompare },
     { href: `${base}/usage`, label: t("project.tab.usage"), Icon: IconChartBar },
     ...(ownerEmail && viewer?.email === ownerEmail && audio?.name === name && audio.enabled ? [{ href: `${base}/audio`, label: t("audio.title"), Icon: IconSparkles }] : []),
     ...(canManage && audio?.name === name && audio.workspace ? [{ href: `${base}/workspace`, label: t("workspace.toolsTitle"), Icon: IconSparkles }] : []),

@@ -245,7 +245,7 @@ export interface VersionParameters {
    * A reasoning model bills for tokens it spends before the first visible word,
    * and until this is on those tokens leave nothing behind: the engine emits
    * them and every consumer drops them. With it on, the console renders the
-   * thinking — the chat thread, the Playground, Compare — and a chat run keeps
+   * thinking — the chat thread and the Playground — and a chat run keeps
    * it on the assistant message beside the answer.
    *
    * The console is where it is *rendered*, not the boundary it stops at: the

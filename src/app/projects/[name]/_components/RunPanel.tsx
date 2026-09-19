@@ -542,7 +542,7 @@ export function RunPanel({
       {/* Ahead of the answer, where it happened. Open while the model is still
           thinking and has said nothing, so a long silence shows what fills it. */}
       <ReasoningRow
-        // Same identity the chat and Compare use: the run's own start, stable
+        // Same identity the chat uses: the run's own start, stable
         // for its whole life. A new one per Run, so collapsing the panel once
         // does not switch off the auto-open for every later run; and nothing
         // that changes at the finish, which would shut it as the answer lands.

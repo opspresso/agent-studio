@@ -517,9 +517,9 @@ export const en = {
     "Use agent when a task requires conversation, searches, tool calls, or delegation. Write its role, task boundaries, and expected output in the system prompt, then send the task as a message. The model chooses whether to use the tools made available to it; enabling a tool does not guarantee a call.",
   "guide.projects.image": "image: generation and editing",
   "guide.projects.imageBody":
-    "Select an image generation model and describe the desired picture. Attach source images to edit them; without source images, the project generates a new picture. The system prompt supplies a recurring style. Test in Playground or Compare, and call the predict API for integration. Chats and chat completions do not run image projects.",
+    "Select an image generation model and describe the desired picture. Attach source images to edit them; without source images, the project generates a new picture. The system prompt supplies a recurring style. Test in Playground, and call the predict API for integration. Chats and chat completions do not run image projects.",
 
-  "guide.versions.title": "Configure, compare, and publish versions",
+  "guide.versions.title": "Configure and publish versions",
   "guide.versions.body":
     "Treat a version as a named, editable configuration. For an experiment, choose + New version in Playground's version selector: it copies the current editor contents, and Save creates the new version. Use this path when callers already depend on the current configuration.",
   "guide.versions.model": "Model and fallback",
@@ -531,9 +531,6 @@ export const en = {
   "guide.versions.limits": "Control run size",
   "guide.versions.limitsBody":
     "Set output length and agent turn limits to match the task. Presence penalty is an optional control for repeated tokens when the selected model supports it. Turn and output limits can leave a partial answer; a deployment deadline can stop the run with an error. Read completion reasons and warnings. Reasoning trace controls displayed reasoning, not whether the model reasons.",
-  "guide.versions.compare": "Compare with the same input",
-  "guide.versions.compareBody":
-    "Save the candidate version, open Compare, choose two saved versions, and run the same input. Compare answer quality, warnings, duration, and usage. Both sides make real calls and count toward usage and concurrency limits; the comparison is not a free preview.",
   "guide.versions.publish": "Understand what changes after Publish",
   "guide.versions.publishBody":
     "In Versions, Publish points the project default at the selected version. Requests using published follow that pointer; requests naming a version keep using that name. Saving changes to a published version affects its next run immediately. To revert the default, publish a known good version; named-version callers must be updated separately.",
@@ -880,7 +877,6 @@ export const en = {
   "project.cloneTitle": "Clone {name}",
   "project.tab.playground": "Playground",
   "project.tab.versions": "Versions",
-  "project.tab.compare": "Compare",
   "project.tab.usage": "Usage",
   "project.tab.artifacts": "Artifacts",
   "project.tab.traces": "Traces",
