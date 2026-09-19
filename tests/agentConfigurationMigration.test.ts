@@ -138,6 +138,13 @@ describe("offline Agent configuration migration", () => {
     await expect(applyAgentMigration("demo", plan.expectedFingerprint, secretCipher)).rejects.toThrow("Audio jobs");
   });
 
+  it.each([{ payloadMode: "variables" }, { variables: { topic: "fixed" } }])("requires an explicit transition for template automation %j", async input => {
+    fake.seed([project(), version("1"), { ...keys.trigger("demo", "webhook"), enabled: true, ...input }]);
+    expect((await planAgentMigration("demo")).status).toBe("blocked");
+    fake.seed([{ ...keys.trigger("demo", "webhook"), enabled: false, ...input }]);
+    expect((await planAgentMigration("demo")).status).toBe("ready");
+  });
+
   it("does not fall back from a dangling publication or overwrite an archive", async () => {
     fake.seed([project({ publishedVersion: "gone" }), version("1")]);
     expect((await planAgentMigration("demo")).status).toBe("blocked");

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
 import { runtimeSessionFixture } from "./runtimeSessionFixture";
-import { runAgent, runPrompt, runPromptStream } from "@/application/runtime";
+import { runAgent } from "@/application/runtime";
 import { pendingRuntimeApproval } from "@/application/runtime/session";
 
 beforeEach(() => {
@@ -22,16 +22,14 @@ describe("SDK runtime validation boundaries", () => {
     expect(chunks).toEqual([{ error: "Tool schema validation is not configured" }]);
   });
 
-  it("applies the same input limit before PII masking to streaming and completion runs", async () => {
+  it("applies the input limit before PII masking", async () => {
     const message = "person@example.com";
-    const input = { model: "openai/gpt-5-mini", userPromptTemplate: message, parameters: { piiFiltering: true, policy: { maxInputChars: message.length } } };
-    const completion = new FakeChannel([[contentChunk("done")]]);
-    expect((await runPrompt({ channel: completion }, input)).content).toBe("done");
-    const stream = new FakeChannel([[contentChunk("done")]]);
+    const channel = new FakeChannel([[contentChunk("done")]]);
     const chunks = [];
-    for await (const chunk of runPromptStream({ channel: stream }, input)) chunks.push(chunk);
+    for await (const chunk of runAgent({ channel }, { projectName: "p", model: "openai/gpt-5-mini",
+      messages: [{ role: "user", content: message }], parameters: { piiFiltering: true, policy: { maxInputChars: message.length } } })) chunks.push(chunk);
     expect(chunks.at(-1)).toMatchObject({ done: true });
-    expect(JSON.stringify([completion.seenParams, stream.seenParams])).not.toContain(message);
+    expect(JSON.stringify(channel.seenParams)).not.toContain(message);
   });
 
   it("checks a handoff target's input policy before its first model request", async () => {

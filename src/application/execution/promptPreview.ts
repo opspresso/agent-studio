@@ -37,7 +37,6 @@ export async function previewPrompt(
   input: {
     project: Project;
     configuration: AgentConfiguration;
-    variables?: Record<string, string>;
     /**
      * The caller's connection, so a preview stops when they navigate away.
      *

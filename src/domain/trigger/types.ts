@@ -41,16 +41,6 @@ export function projectWebhookPath(projectName: string): string {
   return `/api/webhook/${projectName}`;
 }
 
-/** How a delivery's payload reaches the run. */
-export type TriggerPayloadMode =
-  /**
-   * The payload's top-level string fields become template variables, under the
-   * trigger's own fixed ones. Only a prompt project consumes variables.
-   */
-  | "variables"
-  /** The payload is serialised into the user message. What an agent project wants. */
-  | "message";
-
 /** A destination that receives a schedule's completed text report. */
 export type ScheduleDelivery = MessageDestination;
 
@@ -71,8 +61,6 @@ interface TriggerBase {
   description: string;
   /** A disabled trigger never runs — a webhook's URL stays valid, a schedule's occurrences pass. */
   enabled: boolean;
-  /** Fixed variables every run starts from. */
-  variables?: Record<string, string>;
   /**
    * Whether a firing may start while a run from this trigger is still going.
    * False is the safer default — a webhook that fires faster than the run takes
@@ -88,7 +76,6 @@ export interface WebhookTrigger extends TriggerBase {
   kind: "webhook";
   /** AES-encrypted at rest, masked on read, compared in constant time. */
   secret: string;
-  payloadMode: TriggerPayloadMode;
 }
 
 /**

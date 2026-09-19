@@ -56,7 +56,6 @@ function trigger(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
     description: "",
     enabled: true,
     secret: secretCipher.encrypt(SECRET, triggerSecretContext("p", PROJECT_WEBHOOK_ID)),
-    payloadMode: "message",
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -87,7 +86,7 @@ interface Fixture {
   deps: TriggerRunnerDeps;
   rows: TriggerRun[];
   claimed: Set<string>;
-  runs: Array<{ variables?: Record<string, string>; message?: string; actorKind: string }>;
+  runs: Array<{ message?: string; actorKind: string }>;
 }
 
 function fixture(
@@ -146,7 +145,6 @@ function fixture(
       runSlots: memorySlots(),
       async *run(input) {
         runs.push({
-          ...(input.variables ? { variables: input.variables } : {}),
           ...(input.message ? { message: input.message } : {}),
           actorKind: input.actor.kind,
         });
@@ -162,28 +160,18 @@ function fixture(
 }
 
 describe("payloadInput", () => {
-  it("flattens scalar payload fields into variables under the fixed ones", () => {
-    const input = payloadInput(
-      trigger({ payloadMode: "variables", variables: { env: "prod", who: "fixed" } }),
-      { who: "payload", count: 3, ok: true, nested: { a: 1 } },
-    );
-    expect(input.variables).toEqual({ env: "prod", who: "payload", count: "3", ok: "true" });
-    expect(input.message).toBeUndefined();
-  });
-
-  it("drops non-scalar fields rather than rendering them as [object Object]", () => {
-    const input = payloadInput(trigger({ payloadMode: "variables" }), { nested: { a: 1 } });
-    expect(input.variables).toEqual({});
+  it("preserves scalar and nested payload fields in the user message", () => {
+    const payload = { who: "payload", count: 3, ok: true, nested: { a: 1 } };
+    expect(payloadInput(payload).message).toBe(`Trigger payload:\n\n${JSON.stringify(payload, null, 2)}`);
   });
 
   it("serialises the payload into the message for an agent project", () => {
-    const input = payloadInput(trigger({ payloadMode: "message" }), { event: "push" });
+    const input = payloadInput({ event: "push" });
     expect(input.message).toContain('"event": "push"');
-    expect(input.variables).toBeUndefined();
   });
 
   it("still says something when a delivery carries no payload", () => {
-    expect(payloadInput(trigger(), undefined).message).toBe("Trigger fired with no payload.");
+    expect(payloadInput(undefined).message).toBe("Trigger fired with no payload.");
   });
 });
 

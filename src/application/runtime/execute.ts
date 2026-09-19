@@ -1,17 +1,13 @@
-import { Agent, MaxTurnsExceededError, ModelBehaviorError, RunState, type JsonSchemaDefinition } from "@openai/agents";
+import { MaxTurnsExceededError, ModelBehaviorError, RunState } from "@openai/agents";
 import { ValidationError } from "@/application/errors";
-import { PiiFilter } from "@/application/llm/pii";
-import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN } from "@/application/llm/toolResultBudget";
 import { describeImageInputReject } from "@/domain/llm/models";
-import { hasImageParts, type EngineChunk, type RunResult } from "@/domain/llm/types";
-import { buildPromptMessages, toAgentInput, maskMessage } from "./messages";
-import { createRunModel, type RuntimeTurn } from "./model";
+import { hasImageParts, type EngineChunk } from "@/domain/llm/types";
+import { toAgentInput, maskMessage } from "./messages";
 import { createStudioRunner } from "./runner";
-import type { AgentDeps, EngineDeps, RunAgentInput, RunPromptInput } from "./types";
+import type { AgentDeps, RunAgentInput } from "./types";
 import type { RuntimeEmitter } from "./output";
 import { compileAgent, restoreHandoffGraph, snapshotGraph, type AgentGraph } from "./agent";
 import { approvalId } from "./session";
-import { inputGuardrails } from "./policy";
 import { withNativeTracing } from "./tracing";
 
 /** SDK Runner is the only owner of model/tool turns. This generator carries Studio output. */
@@ -126,37 +122,4 @@ function turnLimitWarning(input: RunAgentInput, answered: boolean): string {
   return answered
     ? `The run reached its turn limit (${limit} turns); the last turn was answered from what it already had, with no tools offered.`
     : `The run stopped at its turn limit (${limit} turns) before the model finished answering.`;
-}
-
-export function runPromptStream(deps: EngineDeps, input: RunPromptInput): AsyncGenerator<EngineChunk> {
-  return runAgent(deps, {
-    projectName: input.projectName ?? "",
-    model: input.model,
-    fallbackModel: input.fallbackModel,
-    messages: buildPromptMessages(input),
-    parameters: input.parameters,
-    maxTurn: 1,
-    signal: input.signal,
-  });
-}
-
-export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promise<RunResult> {
-  const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
-  const messages = buildPromptMessages(input, filter);
-  if (messages.some(hasImageParts)) {
-    const refusal = describeImageInputReject(input.model);
-    if (refusal) throw new ValidationError(refusal);
-  }
-  const turn: RuntimeTurn = {
-    number: 0, maxTurns: 1, finalTurn: false, outputCut: false,
-    model: input.model, results: createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN), clientTools: new Set(),
-  };
-  let usage: RunResult["usage"] = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
-  const model = createRunModel(deps, { ...input, projectName: input.projectName ?? "", messages }, turn, (chunk) => { if (chunk.usage) usage = chunk.usage; }, filter);
-  const agent = new Agent({ name: input.projectName || "prompt", model, inputGuardrails: inputGuardrails(messages, input.parameters?.policy, filter), outputType: input.parameters?.structuredOutput && input.parameters.jsonSchema
-    ? { type: "json_schema", name: "response", strict: false, schema: input.parameters.jsonSchema as JsonSchemaDefinition["schema"] } : "text" });
-  const result = await withNativeTracing(deps.onSdkSpan, () => createStudioRunner(deps.channel).run(agent, toAgentInput(messages), { maxTurns: 1, signal: input.signal }));
-  input.signal?.throwIfAborted();
-  const content = typeof result.finalOutput === "string" ? result.finalOutput : JSON.stringify(result.finalOutput ?? "");
-  return { content: filter?.restore(content) ?? content, model: turn.model, usage, termination: turn.outputCut ? "output-limit" : "completed" };
 }

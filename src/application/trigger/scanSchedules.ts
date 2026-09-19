@@ -86,22 +86,9 @@ export interface ScheduleScanResult {
   firings: ScheduleFiring[];
 }
 
-/**
- * What a schedule firing runs: its fixed variables, and the configured message
- * when there is one. Deliberately no synthetic fallback turn — a prompt
- * project runs on its rendered template and an image project on its own
- * prompt, and an invented sentence would reach both with nothing in the
- * trigger's configuration explaining it.
- */
-export function scheduleInput(trigger: ScheduleTrigger): {
-  variables?: Record<string, string>;
-  message?: string;
-} {
-  const message = trigger.message?.trim() ? trigger.message : undefined;
-  return {
-    ...(trigger.variables ? { variables: trigger.variables } : {}),
-    ...(message ? { message } : {}),
-  };
+/** A schedule runs its saved message alongside the Agent's system instructions. */
+export function scheduleInput(trigger: ScheduleTrigger): { message?: string } {
+  return trigger.message?.trim() ? { message: trigger.message } : {};
 }
 
 /** Drive firings through a bounded pool; `drive` must not throw (and does not). */

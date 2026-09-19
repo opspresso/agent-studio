@@ -165,7 +165,6 @@ export interface ExecuteProjectInput {
   backgroundTask?: boolean;
   project: Project;
   configuration: AgentConfiguration;
-  variables?: Record<string, string>;
   messages: ChatMessageInput[];
   actor?: RunActor;
   /** Server-resolved user identity for non-user entry points such as schedules. */

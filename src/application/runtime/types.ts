@@ -60,26 +60,6 @@ export type PreparedAgent = {
   run: () => AsyncGenerator<EngineChunk, string>;
 };
 
-export interface RunPromptInput {
-  projectName?: string;
-  model: string;
-  fallbackModel?: string;
-  systemPrompt?: string;
-  userPromptTemplate: string;
-  variables?: Record<string, string>;
-  extraMessages?: ChatMessageInput[];
-  parameters?: EngineParameters;
-  /**
-   * The run's wall clock, injected rather than read: the engine stays pure and
-   * its tests stay off the real clock. Omitted leaves the prompt exactly as it
-   * was before there was a clock.
-   */
-  now?: Date;
-  /** Who is asking. Absent leaves the prompt exactly as it was without one. */
-  caller?: RunCaller;
-  signal?: AbortSignal;
-}
-
 export interface RunAgentInput {
   runtime?: RuntimeTurnPersistence;
   projectName: string;
@@ -88,9 +68,9 @@ export interface RunAgentInput {
   systemPrompt?: string;
   messages: ChatMessageInput[];
   parameters?: EngineParameters;
-  /** See {@link RunPromptInput.now} — injected, never read from the clock here. */
+  /** The run clock is injected; the runtime does not read wall-clock time. */
   now?: Date;
-  /** See {@link RunPromptInput.caller}. */
+  /** The caller display identity, already gated by the Agent configuration. */
   caller?: RunCaller;
   /**
    * What the run recalled before this turn — the memory server's answer to the

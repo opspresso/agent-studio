@@ -241,7 +241,6 @@ describe("webhook trigger secrets", () => {
     description: "",
     enabled: true,
     secret: "enc:v1:whsec",
-    payloadMode: "message",
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",

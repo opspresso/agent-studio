@@ -1249,7 +1249,6 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
     yield* streamProjectRun(executionDeps, {
       project: input.project,
       configuration: input.configuration,
-      ...(input.variables ? { variables: input.variables } : {}),
       messages: input.message ? [{ role: "user", content: input.message }] : [],
       actor: input.actor,
       ...(input.userEmail ? { ownerEmail: input.userEmail } : {}),

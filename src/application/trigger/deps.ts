@@ -15,7 +15,6 @@ export interface FiringDeps {
   run: (input: {
     project: Project;
     configuration: AgentConfiguration;
-    variables?: Record<string, string>;
     message?: string;
     actor: RunActor;
     userEmail?: string;

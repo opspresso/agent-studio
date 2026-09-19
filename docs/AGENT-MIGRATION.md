@@ -17,6 +17,10 @@ Version 기반 설치를 현재 Agent 설정으로 옮기는 일회성 작업이
 - `llm`의 비어 있지 않은 사용자 프롬프트 템플릿은 자동 변환하지 않는다. 새 `systemPrompt`를
   제공하거나 `discardUserPromptTemplate: true`로 미사용을 명시한다. 원문은 Version 행에 남는다.
   실행 호출자는 템플릿 변수 대신 `messages`를 보낸다.
+- Webhook의 변수 모드와 Trigger의 고정 `variables`는 지원하지 않는다. 활성 자동화가 이를
+  사용하면 이전을 막는다. 기존 앱에서 비활성화하거나 고정 입력을 Agent 지시문·예약 메시지로
+  옮긴 뒤 다시 계획한다. Webhook은 JSON 전체를 사용자 메시지로 전달한다. 기존 Trigger 행은
+  이전 도구가 삭제하지 않지만 새 런타임은 템플릿 필드를 사용하지 않는다.
 - `image`는 `model`에 도구 호출을 지원하는 텍스트 모델을 반드시 지정한다. 원래 이미지 모델은
   `parameters.imageModel`, 이미지 생성은 `parameters.imageGeneration: true`로 옮긴다.
   기존 이미지 모델이 현재 카탈로그에 없으면 `imageModel`도 지정한다. 이전의 고정 size·quality는

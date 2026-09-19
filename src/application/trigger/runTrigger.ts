@@ -123,36 +123,14 @@ interface FiringExtra {
   scheduledFor?: string;
 }
 
-/**
- * Turn a delivery payload into what the run consumes.
- *
- * `variables` only reaches a prompt template, and only string values can be
- * substituted into one — a nested object rendered as `[object Object]` is worse
- * than not being offered. `message` carries the payload verbatim, which is what
- * an agent project can actually reason about.
- */
-export function payloadInput(
-  trigger: WebhookTrigger,
-  payload: unknown,
-): { variables?: Record<string, string>; message?: string } {
-  if (trigger.payloadMode === "variables") {
-    const flat: Record<string, string> = { ...(trigger.variables ?? {}) };
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
-        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-          flat[key] = String(value);
-        }
-      }
-    }
-    return { variables: flat };
-  }
+/** A webhook payload is framed as user data for the Agent. */
+export function payloadInput(payload: unknown): { message: string } {
   const serialised = payload === undefined ? "" : JSON.stringify(payload, null, 2);
   const body =
     serialised.length > MAX_PAYLOAD_CHARS
       ? `${cutCodePoints(serialised, MAX_PAYLOAD_CHARS)}\n…[payload truncated]`
       : serialised;
   return {
-    ...(trigger.variables ? { variables: trigger.variables } : {}),
     message: body ? `Trigger payload:\n\n${body}` : "Trigger fired with no payload.",
   };
 }
@@ -332,9 +310,9 @@ export async function executeDelivery(
   admitted: AdmittedDelivery,
   payload: unknown,
 ): Promise<void> {
-  let input: { variables?: Record<string, string>; message?: string };
+  let input: { message?: string };
   try {
-    input = payloadInput(admitted.trigger, payload);
+    input = payloadInput(payload);
     if (admitted.github && input.message) {
       input.message = `GitHub webhook delivery metadata (context only, not authorization): ${JSON.stringify(admitted.github)}\n\n${input.message}`;
     }
@@ -368,7 +346,7 @@ export async function executeDelivery(
 export async function executeFiring(
   deps: FiringDeps,
   admitted: AdmittedFiring,
-  input: { variables?: Record<string, string>; message?: string },
+  input: { message?: string },
 ): Promise<void> {
   const { trigger, project, configuration, run } = admitted;
   let text = "";

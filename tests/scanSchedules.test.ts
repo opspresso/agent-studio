@@ -80,7 +80,6 @@ function webhook(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
     description: "",
     enabled: true,
     secret: "enc:v1:whatever",
-    payloadMode: "message",
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -108,7 +107,7 @@ interface Fixture {
   deps: FiringDeps;
   rows: TriggerRun[];
   claimed: Set<string>;
-  runs: Array<{ variables?: Record<string, string>; message?: string; actorKind: string }>;
+  runs: Array<{ message?: string; actorKind: string }>;
 }
 
 function fixture(
@@ -199,7 +198,6 @@ function fixture(
       runSlots: slots,
       async *run(input) {
         runs.push({
-          ...(input.variables ? { variables: input.variables } : {}),
           ...(input.message ? { message: input.message } : {}),
           actorKind: input.actor.kind,
         });
@@ -662,9 +660,8 @@ describe("scanSchedules", () => {
 });
 
 describe("scheduleInput", () => {
-  it("carries the fixed variables and configured message", () => {
-    expect(scheduleInput(schedule({ variables: { env: "prod" } }))).toEqual({
-      variables: { env: "prod" },
+  it("carries the configured message", () => {
+    expect(scheduleInput(schedule())).toEqual({
       message: "Summarise yesterday.",
     });
   });

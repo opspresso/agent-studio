@@ -95,9 +95,6 @@ export const updateProjectSchema = z.object({
   memberEmails: z.array(z.string().trim().email()).max(200).optional(),
 });
 
-/** Trigger payload handling; see `TriggerPayloadMode`. */
-const payloadModeSchema = z.enum(["variables", "message"]);
-
 // Cron/timezone validity and which kind may carry which field are enforced in
 // `triggerUseCases` — the rules live beside the code that reads them.
 export const createTriggerSchema = z.object({
@@ -108,28 +105,24 @@ export const createTriggerSchema = z.object({
   kind: z.enum(["webhook", "schedule"]).optional(),
   description: z.string().default(""),
   enabled: z.boolean().optional(),
-  variables: z.record(z.string().min(1), z.string()).optional(),
-  payloadMode: payloadModeSchema.optional(),
   allowConcurrent: z.boolean().optional(),
   cron: z.string().optional(),
   timezone: z.string().optional(),
   message: z.string().optional(),
   deliveries: messageDestinationsSchema.optional(),
-});
+}).strict();
 
 export const updateTriggerSchema = z.object({
   runAsOwner: z.boolean().optional(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
-  variables: z.record(z.string().min(1), z.string()).optional(),
-  payloadMode: payloadModeSchema.optional(),
   allowConcurrent: z.boolean().optional(),
   rotateSecret: z.boolean().optional(),
   cron: z.string().optional(),
   timezone: z.string().optional(),
   message: z.string().optional(),
   deliveries: messageDestinationsSchema.optional(),
-});
+}).strict();
 
 export const agentParametersSchema = z.object({
   policy: z.object({

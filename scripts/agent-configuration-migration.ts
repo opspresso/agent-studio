@@ -91,6 +91,13 @@ async function inspect(projectName: string, overrides: AgentMigrationOverrides) 
   if (legacyRecipe && (!Number.isSafeInteger(recipe?.revision) || typeof recipe?.postprocess?.projectName !== "string")) {
     issues.push("Audio recipe metadata is invalid");
   }
+  for await (const row of pages({ pk: keys.projectPartition(projectName), sk: { prefix: keys.triggerPrefix() } })) {
+    fingerprint.update(JSON.stringify(row));
+    if (row.enabled && (row.payloadMode === "variables" || row.variables && typeof row.variables === "object" && Object.keys(row.variables).length)) {
+      issues.push("Disable or reconfigure template-based triggers in the old app; use Agent instructions or a schedule message for fixed input");
+      break;
+    }
+  }
 
   // A stopped worker can still leave queued work. Do not reinterpret its pinned inputs.
   for await (const row of pages({ pk: keys.projectPartition(projectName), sk: { prefix: keys.audioJobPrefix() } })) {

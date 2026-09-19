@@ -2,9 +2,6 @@ import type { AgentInputItem } from "@openai/agents";
 import type { ChannelMessage } from "@/domain/llm/channel";
 import { ValidationError } from "@/application/errors";
 import { PiiFilter } from "@/application/llm/pii";
-import { withEngineBlocks, runClockBlock, callerBlock } from "@/application/llm/agentAssembly";
-import { renderTemplate } from "@/shared/template";
-import type { RunPromptInput } from "./types";
 
 /** Translate the public Chat Completions input into the SDK's native history. */
 export function toAgentInput(messages: ChannelMessage[]): AgentInputItem[] {
@@ -91,26 +88,4 @@ export function restoreValues(filter: PiiFilter, value: unknown): unknown {
     );
   }
   return value;
-}
-
-export function buildPromptMessages(input: RunPromptInput, filter?: PiiFilter): ChannelMessage[] {
-  const messages: ChannelMessage[] = [];
-  // The same boundary the agent prompt uses. A single-shot run has no capability
-  // block, so the clock is the only thing that can sit behind the break — and
-  // with no clock the author's text is sent exactly as it was.
-  const systemPrompt = withEngineBlocks(input.systemPrompt, [
-    ...(input.now ? [runClockBlock(input.now)] : []),
-    ...(input.caller ? [callerBlock(input.caller)] : []),
-  ]);
-  if (systemPrompt) {
-    messages.push({ role: "system", content: systemPrompt });
-  }
-  const rendered = renderTemplate(input.userPromptTemplate, input.variables);
-  if (rendered) {
-    messages.push({ role: "user", content: rendered });
-  }
-  if (input.extraMessages && input.extraMessages.length > 0) {
-    messages.push(...(input.extraMessages as ChannelMessage[]));
-  }
-  return filter ? messages.map((message) => maskMessage(filter, message)) : messages;
 }
