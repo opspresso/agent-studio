@@ -1,7 +1,7 @@
 # 아키텍처 다이어그램
 
-Agent Studio 전체를 그림으로 본다. 각 그림은 요약이고, 정본은 옆에 링크한 문서다. 구현·설계·그림은 같은 현재 계약을 설명해야 한다. 그림은 [ARCHITECTURE.md](ARCHITECTURE.md) 의 순서를 따른다: 계층 → 요청
-흐름 → 런 브래킷 → 메시징 표면 → 조립 지점 → 저장 모델.
+Agent Studio의 계층·요청·실행 정책·메시징·저장·worker 흐름을 요약한다.
+세부 계약은 각 그림 옆에 연결한 문서가 소유한다.
 
 ## 1. 계층과 의존 방향
 
@@ -22,7 +22,7 @@ flowchart TB
   application --> domain
   infrastructure --> domain
   infrastructure --> lib
-  app -->|"wiring site 를 통해서만"| lib
+  app -->|"설정 · 인증 · 바인딩된 유스케이스"| lib
   lib --> domain
   lib -->|"container.ts 가 유스케이스를 조립"| application
   lib -->|"wiring 모듈만"| infrastructure
@@ -66,14 +66,14 @@ flowchart LR
 
   imageuc["이미지 유스케이스 — generateImage"]
 
-  bracket["런 브래킷 — openRun<br/>모델 정책 → 프로젝트 비용 가드 → 멤버 월 상한 → 동시성 슬롯 → 메트릭·상관 id·아티팩트 레코더"]
+  bracket["런 브래킷 — openRun<br/>상관 ID → 모델 정책 → 프로젝트 비용 → 멤버 월 상한 → 동시성 슬롯 → 메트릭·Artifact recorder"]
   memory["메모리 준비 (memory prepare span)<br/>명시적 바인딩 recall"]
   resolve["바인딩 해석 (tools prepare span)<br/>요청 + 관련 기억으로 (옵트인) 카탈로그 검색<br/>스킬 · MCP 세션 · 서브에이전트"]
   engine["SDK Agent · Runner — runAgent / runPrompt(Stream)"]
   channel["SDK ModelProvider (OpenAI 호환 endpoint)"]
   imagechannel["이미지 채널"]
   tools["도구: MCP · Skill · SDK Handoff / Agent.asTool · 이미지 · FetchUrl · File · 오디오 · Workspace"]
-  usage["사용량 기록 (런 종료 시 1회 flush)"]
+  usage["사용량 기록<br/>Agent는 실행 종료 시 집계 flush"]
   trace["로컬 SDK native spans + 준비 단계<br/>에이전트 항상, 그 외 샘플링"]
   session["영속 Chat: SDK Session + 승인 RunState<br/>암호화 저장 · revision CAS"]
 
@@ -101,6 +101,8 @@ flowchart LR
   engine <--> session
   engine --> usage
   engine --> trace
+  imagechannel --> usage
+  imagechannel --> trace
 ```
 
 응답 모양은 표면마다 다르다: `predict`·`chat/completions` 는 완성 응답(또는 SSE), `agent` 는
@@ -111,7 +113,8 @@ flowchart LR
 ## 3. 런 브래킷: 최상위 런을 감싸는 한 곳
 
 모델 실행 경로(`executeVersion` · `executeVersionStream` · `executeAgent` · `generateImage`)는
-`openRun`을 열고, Workspace 작업은 `executeWorkspaceTask`가 모델 Version 없이 `openTaskRun`을 연다. 가드는 메트릭 *앞*에서, `close()` 는 사용량 flush *뒤*에서
+`openRun`을 열고, 오디오 전사는 `openModelCall`, Workspace는 모델 Version 없는 `openTaskRun`을 연다.
+가드는 메트릭 앞에서, `close()`는 사용량 flush 뒤에서 실행한다
 ([ARCHITECTURE.md#런-브래킷](ARCHITECTURE.md#런-브래킷)).
 
 ```mermaid
@@ -122,7 +125,7 @@ sequenceDiagram
   participant E as engine.runAgent
   participant T as 도구 · MCP · 서브에이전트
   S->>F: executeAgent(deps, {project, version, messages, actor, caller, conversation})
-  F->>B: openRun — 모델 정책 · 비용 가드(fail-open) · 멤버 상한(fail-open) · 동시성 슬롯(fail-closed) · 메트릭 · 상관 id · 아티팩트 레코더
+  F->>B: openRun — 상관 ID · 모델 정책 · 비용(fail-open) · 동시성(fail-closed) · 메트릭 · Artifact recorder
   B-->>F: bracket
   F->>F: prepareMemoryForRun (명시적 바인딩 recall)<br/>memory prepare span 으로 기록
   F->>F: resolveRunTools (요청 + 관련 기억으로 discovery · 스킬 / MCP / 서브에이전트 병렬)<br/>tools prepare span 으로 기록 — 첫 model span 은 그 뒤에서 시작한다
@@ -131,7 +134,7 @@ sequenceDiagram
   loop tool_calls 가 없거나 turn 가드에 걸릴 때까지
     E->>E: 채널 스트림 (첫 청크 전 fallback 1회)
     E-->>S: EngineChunk (delta / toolCalls / usage)
-    E->>T: 도구 호출 (builtin 순서대로 · MCP 동시)
+    E->>T: SDK 도구 실행 (동시성 5)<br/>Skill·이미지·Slack 읽기는 순차화
     T-->>E: 도구 결과
     E-->>S: EngineChunk (toolResult / image / file)
   end
@@ -223,8 +226,10 @@ flowchart LR
   end
   subgraph objects["S3 호환 오브젝트 스토어 — S3_BUCKET_NAME (선택)"]
     objs["artifacts/{kind}/{id}.{ext} — ARTIFACT 행이 키를 지목<br/>독자에게는 proxied(/api/objects, HMAC 토큰) · pre-signed · 직접 URL 중 ARTIFACT_ACCESS_MODE"]
+    sources["source-files/{id}<br/>비공개 원본·전사·후처리·checkpoint<br/>소유권·만료 검사 후 전용 경로로 읽기"]
   end
   items -.-> objs
+  items -.-> sources
 ```
 
 ```mermaid
@@ -235,6 +240,8 @@ flowchart LR
     tok["APITOKEN"]
     trig["TRIGGER#{id} · TRIGGERRUN#…"]
     conn["MCPCONN#{server} · REMOTECTX#…"]
+    jobs["AUDIOJOB#… · AUDIOSLOTS · AUDIOCONFIG"]
+    policy["WORKSPACEPOLICY · REPOSITORYCREATE#…"]
   end
   subgraph chat["CHAT#{chatId} 파티션"]
     cmeta["META (nextSeq, activeRunId)"]
@@ -258,6 +265,13 @@ flowchart LR
     sthread["SLACKTHREAD#{project}#{channel}#{ts}"]
     transcript["PROJECT 파티션 안: TELEGRAMUPDATE#… · TELEGRAMALBUM#… · TEAMSACTIVITY#… · TRANSCRIPT#{conversation}#TURN#…"]
     a2atask["A2ATASK#{project}#{tenant:client}<br/>TASK#{taskId}"]
+  end
+  subgraph workspace["Workspace 영속 상태"]
+    ws["WORKSPACE#{id}<br/>META · SESSION · SANDBOX · RUN · EVENT · APPROVAL · CONTINUATION"]
+    cp["WORKSPACESTATE#{id}<br/>암호화 checkpoint manifest·chunks"]
+    mapping["WORKSPACECHAT#{chatId}<br/>전용 Chat 역참조"]
+    ws --> cp
+    mapping --> ws
   end
 ```
 
@@ -293,7 +307,7 @@ flowchart LR
 파일 삭제는 DB의 완료 이력·중복 방지 기록을 초기화하지 않는다.
 
 
-## 7. Workspace·Sandbox·Chat 승인 재개
+## 8. Workspace·Sandbox·Chat 승인 재개
 
 [Workspace 설계](design/workspaces.md)가 수명·권한·저장 경계를 소유한다. Skill은 절차이며 실행 자원이나
 계정 권한을 만들지 않는다. 일반 Chat과 Workspace 전용 Chat은 화면·Session·수명이 다르다.

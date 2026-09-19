@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile
 ## 환경
 
 ```bash
-cp .env.example .env.local
+test -f .env.local || cp .env.example .env.local
 ```
 
 실제 런에 필요한 최소값은 `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`,
@@ -114,9 +114,9 @@ pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원
 산출물의 `node server.js`로 실행한다. `public`·`.next/static`을 포함하는 방법은
 [운영 문서](OPERATIONS.md#빌드-아티팩트)를 따른다.
 
-CI는 저장소 밖에 복사한 standalone 디렉터리에서 `scripts/audio-worker-check.mjs`를 실행한다.
-worker 번들 로드, 실패한 DB poll 뒤 재개 대기, SIGTERM 종료를 합성 설정과 로컬 거절 소켓으로
-검사한다. 실제 DB·스토리지·전사 처리는 `test:audio:pipeline`이 검증한다.
+`scripts/audio-worker-check.mjs`는 저장소 밖에 복사한 standalone 디렉터리에서 worker 번들 로드,
+DB poll 실패 후 대기와 SIGTERM 종료를 확인하는 별도 smoke 검사다. 현재 CI가 자동 실행하지는 않는다.
+실제 DB·스토리지·전사 처리는 `test:audio:pipeline`이 검증한다.
 
 `test:audio:pipeline`은 선택적으로 실제 Agent Memory MCP까지 검증한다. 별도 폐기 가능한
 Memory 설치를 `localhost`에 띄우고 문서 worker를 켠다. 합성 사용자(`@example.test`)의 개인 계정·검증된 email과
@@ -167,50 +167,25 @@ discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·
 
 ### `check-models`
 
-레지스트리는 [agent-models](https://github.com/opspresso/agent-models) 가 관리하고 provider
-의 공개 카탈로그를 매일 대조한다 ([CONFIGURATION.md](CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)).
-그것이 볼 수 없는 것은 *이 배포의* 채널이다. `LLM_BASE_URL` 의 게이트웨이, Bedrock 경로, 일부
-모델만 닿는 키. 이 스크립트는 그 차이를 본다: 채널이 서빙하지만 레지스트리에 없는 id (agent-models
-에 추가할 후보), 레지스트리에 있지만 어떤 채널도 서빙하지 않는 id (이 배포에서 쓸 수 없는 것).
-전용 `EMBEDDING_BASE_URL`과 `RERANKER_BASE_URL`도 독립 채널로 확인한다. OpenRouter는 기본
-`/models`가 text 중심이므로 `output_modalities` 필터로 image, embeddings, rerank, transcription을
-각각 추가 조회한다.
+공개 모델 사실은 agent-models가 소유하고, 이 스크립트는 현재 배포의 채널이 실제로 나열하는
+모델과 로컬 카탈로그를 대조한다. 기본·provider 채널, 전용 Embedding·Rerank endpoint를 확인하며
+OpenRouter는 modality별 목록도 조회한다. 실제 모델 실행 성공을 보장하는 검사는 아니다.
 
 ```bash
-pnpm check-models              # 양방향 보고; 차이 자체로는 실패하지 않음
-pnpm check-models --since=90d  # 최근 90일 안에 출시된 모델만
-pnpm check-models --strict     # 제공되던 라우트가 사라졌거나 검사가 실행되지 못했으면 1 로 종료
+pnpm check-models
+pnpm check-models --since=90d
+pnpm check-models --since=2026-01-01
+pnpm check-models --strict
 ```
 
-`--strict` 는 **제공되던 라우트가 사라졌을 때**, 그리고 **실행되지 못한 검사**에서 실패한다.
-뒤쪽은 응답하지 않은 채널이 하나라도 있을 때, 그리고 모든 채널이 답했지만 그중 아무도
-`provider/model` 형태의 id 를 주지 않았을 때다. 뒤의 경우는 채널 구성의 문제이지 카탈로그의
-문제가 아닌데, 그것을 구별하지 않으면 레지스트리 전체가 은퇴 후보로 출력된다.
+`--strict`는 제공 대상 route가 사라졌거나 채널 확인에 실패하거나 비교할 ID가 없을 때 실패한다.
+채널이 설정되지 않은 provider와 이미 숨긴 route는 은퇴 판정에서 제외한다.
+채널이 제공하는 새 ID는 추가 후보로 보고하며 그것만으로 실패하지 않는다.
+`--since`는 새 ID 보고 범위만 좁히고 실패 판정을 바꾸지 않는다.
 
-앞쪽에서 두 가지가 빠진다. 답이 이미 정해져 있어 소식이 아니기 때문이다.
-
-- **채널이 없는 provider 의 라우트**. 물어본 적이 없는 것이지 provider 가 내린 것이 아니다.
-  `google/*` 이 그렇다(어떤 배포도 `LLM_PROVIDER_GOOGLE_*` 을 설정하지 않는다). 별도 목록으로
-  보고된다. provider 채널이 하나도 없으면 default 채널이 모든 id 를 받으므로 이 제외는 비어 있다.
-- **`hidden` 라우트**. 이 앱이 이미 은퇴시킨 것이다. `models.ts` 는 그 항목을 일부러 영구히
-  남긴다(과거 런의 usage 행이 거기서 가격을 찾는다, 지우면 이력이 $0 으로 다시 매겨진다).
-  그래서 "hidden 인데 서빙되지 않는다"는 은퇴의 문서화된 종착점이지 발견이 아니다.
-
-또한 provider 가 **자기 항목에 선언한 별칭**은 서빙된 것으로 인정한다. xAI 는 정식 id 만
-나열하고 나머지 철자를 `aliases` 에 담아서, 살아 있는 `grok-4.20`(= `grok-4.20-0309-reasoning`)
-과 `grok-code-fast-1`(= `grok-build-0.1`)이 그것 없이는 은퇴 후보로 읽힌다.
-
-반면 서빙되지만 등록되지 않은 id 에서는 의도적으로 **실패하지 않는다**: 그 목록은 provider 의
-전체 카탈로그에서 이 앱이 골라 담은 선택(realtime, 내부 코드네임)을 뺀 것이라,
-그것으로 게이팅하면 결코 초록이 될 수 없는 종료 코드가 된다. `--since` 는 그 목록을 읽는
-사람을 위해 좁힐 뿐 게이팅하지 않는다. 라우터 채널은 계속 모델을 내놓기 때문에(OpenRouter 는
-최근 7일에만 새 id 5개를 올렸고 그중 이 앱이 담을 만한 것은 없었다) 7일로 좁힌 형태도 같은
-성질이다. 새 모델은 보고서로 남고, 사람이 읽고 판단한다.
-
-`sigv4` 채널은 런타임이 디스패치할 때 쓰는 것과 같은 서명자를 통해 읽으므로, Bedrock 채널에는
-환경에 AWS 자격 증명이 있어야 한다 (로컬에서는 `AWS_PROFILE=opspresso`). 없으면 실패한 채널로
-보고된다. 라우터 채널은 본질적으로 미등록 목록을 길게 만든다: OpenRouter 는 수백 개의 id 를
-서빙하므로, 그쪽 절반을 읽을 때는 `--since` 를 쓰라.
+배포와 같은 URL·provider prefix·credential 설정으로 실행하라. SigV4 채널은 AWS credential도
+필요하다. 별도 CLI의 `.env.local` 로딩은 명시해야 한다.
+실제 외부 API와 자격 증명을 사용하는 검사이며 현재 자동 실행 workflow는 없다.
 
 ## 통합 체크
 
@@ -230,45 +205,23 @@ pnpm test:integration
 
 ## CI
 
-`.github/workflows/ci.yml`은 pull request와 `main` push에서 실행된다. 별도 `html-preview` job은
-Chromium을 설치하고 HTML 실행·중지·입력 및 격리 경계를 검증한다. 기본 검증 순서는 다음과 같다:
+현재 workflow는 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 하나다.
+`pull_request`와 `v*` tag push에 반응하며 `verify`는 GitHub-hosted `ubuntu-24.04`에서 실행한다.
 
+```text
+pnpm install --frozen-lockfile → typecheck → test → test:integration
 ```
-typecheck → test → test:integration → build → standalone 격리 → 문서·오디오 worker smoke test → production server smoke test
-```
 
-`pgvector/pgvector:0.8.6-pg18-trixie` 서비스 컨테이너가 `POSTGRES_DB=agent_studio_test` 로 호스트 포트
-`5432` 에 뜬다. 통합 체크가 기본값으로 접속하는 주소이고 이름이 `_test` 로 끝나므로 그 가드를
-지난다. job 마다 새로 뜨는 컨테이너는 비어 있고, 검사가 자기 스키마를 적용하므로 워크플로에 설정할
-것이 없다.
+통합 검사는 일회용 PostgreSQL 18 + pgvector 서비스의 `agent_studio_test`를 사용한다.
+현재 `verify`에는 production build, HTML 미리보기, standalone·문서·오디오·Workspace smoke
+검사가 없다. 로컬에서 필요한 범위를 따로 실행해야 하며 `main` push나 모델 드리프트의
+독립적인 정기 검사 workflow도 없다.
 
-빌드 뒤 standalone 산출물을 저장소 밖의 임시 디렉터리로 복사하고 Dockerfile 과 같이
-`public` 및 `.next/static` 을 더한다. 그 디렉터리에서 실제 문서 워커의 생성·추출·검사·편집을
-검증해 번들과 폰트가 배포 산출물에 포함되는지 확인한다. 마지막 smoke test 는 같은
-디렉터리에서 `node server.js`로 production 서버를 실행한다.
-`/api/health`, 첫 화면, 로고, 대표 JavaScript chunk 의 200을 확인한다. 하류 상태를 보는
-`/api/ready` 가 아니라 liveness 를 쓰므로 mock LLM 서버는 필요 없다. 프로세스가 먼저 끝나거나
-30초 안에 응답하지 않으면 서버 로그를 출력하고 실패한다.
-
-CI는 최소 `contents: read` 권한의 일회용 GitHub-hosted runner에서 실행하고 checkout credential을
-작업 트리에 남기지 않는다. PR 검사는 base 저장소의 branch에 push된 commit에 붙은 CI 상태를
-사용한다. 검토 전 branch 코드는 사내망에 연결된 persistent runner에 도달하지 않는다.
-시크릿이 필요한 `check-models`는 default branch의 schedule에서만 GitHub-hosted runner를 쓰고, release는
-`v*` tag push에서만 Docker를 사용할 수 있는 persistent self-hosted Linux runner를 쓴다. 임의 ref를 선택하는 `workflow_dispatch`는 두 workflow 모두 제공하지
-않는다.
-
-`.github/workflows/check-models.yml` 은 `pnpm check-models --strict --since=7d` 를 pull request
-마다가 아니라 스케줄(cron `0 23 * * 0-4`, 일–목 23:00 UTC)로 돌린다: 살아 있는 provider API 와 저장소 시크릿이
-필요하기 때문이다(드리프트는 런이 실패하기 전에 Slack 으로 전송된다). provider 장애나 시크릿 없는
-fork 가 PR 을 실패시켜서는 안 된다. 각 provider 요청은 30초에 중단되고 job 전체는 20분으로
-제한되어, 멈춘 채널 하나가 결과와 Slack 알림을 무기한 막지 못한다.
-
-**이 job 의 채널은 배포의 채널과 같아야 한다.** `LLM_BASE_URL` / `LLM_API_KEY` 만 주면 default
-채널 하나로 도는데, 이 배포에서 그것은 라우터가 아니라 provider 자신의 엔드포인트라 맨 id 를
-서빙한다. 비교되는 것이 하나도 없고, 등록된 모든 모델이 은퇴 후보로 보고된다. 그래서 차트가
-쓰는 provider 채널 다섯이 여기에도 설정돼 있다: `LLM_PROVIDER_{OPENAI,ANTHROPIC,XAI,OPENROUTER}_API_KEY`
-시크릿과, 키가 아니라 OIDC 로 서명하는 Bedrock (`github--agent-studio-models` 역할, 권한은
-`bedrock-mantle:ListModels` 하나뿐). base URL 은 시크릿이 아니라 워크플로에 평문으로 있다.
+`github-release`와 `release`는 `verify` 뒤에 실행되고, 이미지 빌드에서 Dockerfile의
+`pnpm build`가 수행된다. 다만 두 job에 tag 전용 조건이 없어 PR에서도 실행을 시도하는
+현재 제약이 있다. tag 조건이 있는 job은 `gitops`뿐이다.
+릴리스 권한과 완료 확인은 [OPERATIONS](OPERATIONS.md#릴리스-파이프라인),
+해결할 조건은 [MILESTONES](MILESTONES.md#release-event-gating)를 따른다.
 
 ## 테스트
 
@@ -288,72 +241,21 @@ fork 가 PR 을 실패시켜서는 안 된다. 각 provider 요청은 30초에 �
 
 ### `tests/architecture.test.ts`
 
-이것이 구조 게이트이고, 경고하는 대신 요란하게 실패한다. 강제하는 것:
+구조 테스트는 다음 범위를 검사한다. 세부 소유자와 호출 집합은 테스트의 선언을 정본으로 삼는다.
 
-1. **레이어 규칙 열세 개**, 각각 **빈 허용 목록**을 갖는다. `domain` 은 다른 무엇도, 프레임워크·
-   `pg`·AWS SDK·인증 라이브러리도 import 하지 않는다(domain 과 표준 라이브러리뿐이다).
-   `application` 은 `infrastructure` 나 `app` 을,
-   `lib` 의 순수 leaf 를 넘어선 무엇도, 도메인과 표준 라이브러리 바깥의 무엇도 import 하지 않는다.
-   `infrastructure` 는 `application` 이나 `app` 을 import 하지 않는다. `shared` 는 자기 형제를 빼면
-   `@/` 에서 아무것도, 표준 라이브러리 바깥의 어떤 패키지도 import 하지 않는다. 어댑터와 use case
-   는 composition root 를 import 하지 않는다. `app` 은 자기 wiring site 바깥에서 `infrastructure`
-   를 import 하지 않는다. `lib` 은 자기 wiring 모듈 바깥에서 `infrastructure` 를, composition root
-   바깥에서 `application` 을 import 하지 않는다. `components` 는 `infrastructure` 나 `application`
-   을 import 하지 않는다.
-2. **단일 소유자 불변식**. 이름 붙인 결정과 그것을 소유한 파일. 사본이 하나 더 생기면 실패하고,
-   *소유자가 정의를 잃어도 마찬가지로 실패한다*. 목록은 [OWNERSHIP.md](OWNERSHIP.md) 다.
-3. **한정된 호출자 목록**. 소유자가 아니라 고정된 호출 지점 집합을 갖는 세 결정을 위한 것이다:
-   어느 표면이 이미지 런을 시작하는가(`IMAGE_RUN_ENTRY_POINTS`), 어느 표면이 `executeAgent` 를
-   직접 불러 agent 런을 시작하는가(`AGENT_RUN_ENTRY_POINTS`), 그리고 버전의 도구가 어디서 resolve
-   되는가(`TOOL_RESOLUTION_SITES`, 각 지점은 `discoveryQueries` 도 함께 명시해야 한다. 그것 없이
-   resolve 하면 capability discovery 가 조용히 꺼진다). 여기에 런의 바이트가 어디서 캡처되는가
-   (`ARTIFACT_CAPTURE_SITES`)가 더해지고, 이것은 캡처까지 하지 않는 `openRun` 호출자를 실패시키는
-   두 번째 검사와 짝을 이룬다. 잊어버린 다섯 번째 진입점은 자기 출력을 조용히 흘려버릴 것이다.
-   이 목록들에 항목이 더해지는 것은 의도적인 행위이고, 목록이 사는 값이 바로 그것이다.
-4. **두 출력 축은 함께 다닌다**. `EngineChunk.image` 를 읽는 모듈은 `EngineChunk.file` 도 읽는다.
-   목록이 아니라 짝짓기로 강제하며, 주제가 정말로 한 축뿐인 모듈은 이름으로 예외 처리한다. raw
-   chunk 로 답하는 모든 라우트는 둘 다 주소로 바꾸는지 검사된다.
-5. **모델이 고른 URL**. 정확히 하나의 어댑터만 그것을 가져오고, 그 어댑터는 `skipsUrlGuard` 를
-   절대 import 하지 않으며(거기서 내부 호스트 예외를 존중하면 프롬프트 인젝션 한 번이 클러스터
-   내부 서비스에 대한 읽기로 바뀐다), 이 배포의 자격 증명은 아무것도 붙이지 않는다.
-6. **달러 금액은 절대 손으로 쓰지 않는다**. `formatUsd`/`formatBytes` 를 뺀 `app` 어디에도
-   `${…toFixed(…)}` 는 없다. 합계가 `$0.0043` 인 행들 위에 대시보드가 총계로 `$0.00` 을 보여 준 적이
-   있는데, 그게 그 이유다. `app` 으로 범위를 한정한 것은 소유자에 닿을 수 있는 곳이 거기이기
-   때문이다: 비용 가드는 `application` 에서 달러를 포맷하는데, 그 레이어는 `@/app` 을 import 할 수
-   없다.
-7. **조립**. 라우트가 더 이상 조립하지 않는 저장소는 어떤 라우트 핸들러에도 닿지 않고, `app` 은
-   자기 wiring site 에서만 조립하며, application 슬라이스 그래프에는 순환이 없고, composition root
-   는 선택적인 `ExecutionDeps` 필드를 전부 이름으로 결정한다.
-8. **설정 읽기**. `process.env` 는 domain, shared, 어댑터, use case 어디에서도 닿지 않는다. 설정은
-   주입되어 도착한다. 파일 하나가 이름으로 예외 처리돼 있고, 그 예외 자체가 여전히 참인지도
-   검사된다.
-9. **클라이언트 번들**. `"use client"` 진입점이 전이적으로 닿을 수 있는 범위. 진입점 개수는 단지
-   비어 있지 않다는 정도가 아니라 정확한 수로 단언한다. 눈이 멀어 버린 스캔은 깨끗한 통과와 똑같이
-   읽히기 때문이다.
-10. **React 이벤트 처리**, 규칙 두 개. `setState` 업데이터 안에서 `currentTarget` 을 읽지 않는다.
-   핸들러가 반환되면 React 가 `SyntheticEvent.currentTarget` 을 null 로 만들기 때문에, 미뤄진 읽기는
-   React 가 배칭할 때마다 throw 한다. 그리고 `<Text>` 나 `<Title>` 안에 블록 루트를 갖는 Mantine
-   컴포넌트(`Badge`, `Group`, `Stack`, …)를 두지 않는다. 그것들은 `<p>`/`<h*>` 를 렌더하는데,
-   브라우저는 그 안에서 `<div>` 가 열리는 자리에서 그 태그를 *닫아* 버리므로 서버의 HTML 과 React 의
-   트리가 어긋나 hydration 이 실패한다. 안쪽에 `component="span"` 을, 또는 바깥쪽에
-   `component="div"` 를 주는 것이 해법이고 규칙이 찾는 것도 그것이다.
-11. **Edge 런타임 호환성**. `node:crypto`, `pg`, AWS SDK 처럼 edge 가 구현하지 않는 것을
-    `instrumentation.ts`·`proxy.ts` 의 edge 번들로 끌어들일 import.
-12. **생성 모달은 자기가 선언한 것을 초기화한다**. 생성 모달이 `useState` 로 들고 있는 모든 필드는
-    `onCreated()` 전에 비워지므로, 다시 연 모달이 직전 항목의 값을 보여 주는 일이 없다.
-13. **스캐너 자신의 테스트**. 조용히 매칭을 멈춘 규칙을 잡아내기 위해서다.
-14. **요청 본문 할당**. JSON 라우트는 파싱 전에 공용 바이트 상한을 적용하고, 큰 본문을
-    `request.json()` 으로 먼저 메모리에 올리지 않는다.
-15. **응답 타입의 소유권**. 브라우저 모듈은 producer 가 선언한 response 타입을 type-only 로
-    import하며, 비교하는 양쪽을 스캐너가 실제로 읽었는지도 확인한다.
-16. **런 종료 분류**. deadline과 호출자 취소를 합성하는 모든 지점이 같은 종료 판정을 사용한다.
-17. **카탈로그 재색인 직렬화**. production 의 모든 reindex 가 composition root 의 설치 전역 lease 를
-    지나고, 우회 호출이 생기면 실패한다.
-18. **추론 fold**. `reasoningContent` 를 모으는 고정 지점만 허용하고, 모두 top-level chunk 만
-    접으며 component state 에 넣는 곳은 `createTextPacer` 를 사용한다.
+| 검사 영역 | 지키는 계약 |
+|---|---|
+| 계층·조립 | domain/application/infrastructure/app/lib/shared 의존 방향, 조립 지점, application 순환 의존 금지 |
+| 단일 소유 | 상수·형태·formatter·오류·정책의 중복 금지와 소유자 정의 존재 |
+| 실행 표면 | 이미지·Agent·도구 해석·Artifact 캡처·raw stream의 제한된 호출 집합 |
+| 스트림 | 이미지와 파일 두 축, 최상위 종료·reasoning fold, 문맥·손실 보고 |
+| 경계 | 모델 URL의 공개망 제한, 주입된 설정, 본문 파싱 전 크기 제한, producer 소유 응답 타입 |
+| 번들 | client의 서버 runtime import 금지, edge 경로의 Node 전용 import 제한 |
+| UI | 이벤트 target 수명, HTML nesting, 생성 상태 초기화, 공용 포맷·스크롤·출력 pacing |
+| 검사기 자체 | 스캔 범위와 fixture를 확인해 검사 대상이 사라진 상태를 통과로 보지 않는다 |
 
-> 이 중 하나가 실패하면 **규칙을 넓히지 말고 import 를 고쳐라.** 허용 목록이 비어 있는 것은
-> 의도된 것이다: 위반을 추가하는 일은 조용한 결정이 아니라 눈에 보이는 결정이어야 한다.
+실패하면 [AGENTS.md](../AGENTS.md), [아키텍처](ARCHITECTURE.md)와
+[단일 소유자](OWNERSHIP.md)를 확인해 구조를 고친다. 검사 통과만을 위해 허용 목록을 넓히지 않는다.
 
 ## 코드베이스에 추가하기
 
@@ -385,25 +287,18 @@ fork 가 PR 을 실패시켜서는 안 된다. 각 provider 요청은 30초에 �
 
 ## 문서
 
-| 파일 | 역할 |
-|---|---|
-| [../README.md](../README.md) | 무엇인지, 어떻게 실행하는지, 무엇을 할 수 있는지 |
-| [../AGENTS.md](../AGENTS.md) | 코딩 에이전트를 위한 작업 규칙 (`CLAUDE.md` 가 이 파일의 symlink 다) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 모든 런이 지나는 형태. 레이어, 테이블, 요청 경로 |
-| [design/](design/) | 서브시스템마다 한 파일: 무엇을 결정하고 왜 그런지 |
-| [OWNERSHIP.md](OWNERSHIP.md) | 모든 단일 소유자 결정과 그것을 소유한 파일 |
-| [API.md](API.md) | HTTP 계약 |
-| [CONFIGURATION.md](CONFIGURATION.md) | 모든 환경변수와 고정 한계값 |
-| [OPERATIONS.md](OPERATIONS.md) | 배포, 프로브, 스케일, 보존 |
-| [SECURITY.md](SECURITY.md) | 인증, 시크릿, SSRF, PII |
-| [MILESTONES.md](MILESTONES.md) | 남은 작업 (한국어) |
+전체 읽기 경로는 [README의 문서 색인](../README.md#문서-읽기)을 따른다.
+문서에는 현재 동작·계약·제약을 기록하고, 환경변수는 CONFIGURATION, HTTP 형태는 API,
+실행 원리는 해당 설계 문서에서 한 번 설명한다. 같은 내용을 복사하기보다 링크한다.
 
-서브시스템 둘은 자기만의 로컬 `AGENTS.md` 를 갖고 있고, 그 안의 불변식에 대해서는 그 파일이
-정본이다. 해당 파일들을 고치기 전에 읽어라:
+하위 시스템 변경 전에는 해당 로컬 지침을 읽는다.
 
-- `src/application/llm/AGENTS.md`. 도구 루프, 시스템 프롬프트 조립, author 계약, fallback 시맨틱,
-  PII 경계, usage 기록.
-- `src/application/chat/AGENTS.md`. chat 영속화, 리플레이, 히스토리 예산.
+- [Runtime](../src/application/runtime/AGENTS.md): SDK Agent·도구·Handoff·Session·승인·Tracing.
+- [LLM 준비](../src/application/llm/AGENTS.md): 프롬프트 조립·PII·문맥 예산·모델 카탈로그.
+- [Chat](../src/application/chat/AGENTS.md): 화면 영속화·재연결·SDK Session·승인·Workspace 후속 실행.
+
+문서만 바뀌면 명령·링크·앵커·코드 참조와 전체 diff를 확인한다. 런타임 코드를 바꿨을 때는
+해당 동작의 회귀 검사와 저장소 필수 검사를 실행한다.
 
 문서는 변경 이력이 아니라 **현재** 상태를 기록한다: 완료된 마일스톤은 `MILESTONES.md` 에서
 삭제하고, 이력은 git log 와 태그별 GitHub Release 가 남긴다.

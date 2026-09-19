@@ -46,8 +46,8 @@ DB·기존 `S3_BUCKET_NAME`의 비공개 Artifacts 저장소·암호화 키·전
 시작하고 성공한 단계·외부 receipt·파일 만료는 유지한다. 원본이 없어졌거나 연결이 바뀐 경우에는
 그 원인을 복구해야 한다. 다른 모델·원본으로 새 처리가 필요하면 명시적 processingRevision을 사용한다.
 
-원본과 최종 Artifact는 파일별 만료까지 보존하고 checkpoint만 완료 시 정리한다. 원본 bucket의
-삭제 표식은 유지한다. 일반 Artifact bucket 수명주기를 이 bucket에 적용하지 않는다. 작업 이력과
+원본과 최종 Artifact는 파일별 만료까지 보존하고 checkpoint만 완료 시 정리한다. 같은 버킷의 source-files 경로에 있는
+삭제 표식은 유지한다. 일반 Artifact 객체의 일괄 만료 규칙을 이 경로에 적용하지 않는다. 작업 이력과
 중복 방지 기록은 파일 만료와 별개이므로 파일을 지워도 다음 schedule이 같은 녹음을 다시 처리하지 않는다.
 
 전체 초기화가 필요한 개발·운영 유지보수에서는 다음 범위만 정리한다. 전용 reset API나 화면 버튼은 없다.
@@ -80,30 +80,24 @@ Workspace 체크포인트·DB·오브젝트 volume을 이미지 캐시와 함께
 
 ## 릴리스 파이프라인
 
-`.github/workflows/release.yml`, `v*` 태그 push 로만 트리거된다. 임의 ref 를 고를 수 있는 수동
-dispatch는 제공하지 않는다. 검증·릴리스는 Docker를 사용할 수 있는 persistent self-hosted Linux runner에서 실행하며
-OIDC·registry·GitOps 자격 증명은 해당 릴리스 작업에만 제공한다:
-ECR role 의 trust 는 `v*` tag subject와 audience를 요구하며, `Release` workflow가 사용하는 role이다. 권한은 이 account 와
-region 의 `agent-studio` repository 에 image 를 push 하는 action 으로 한정된다. 적용할 policy 와 별도
-model-check role 은 `.github/aws-role/` 에 있다. `v*` tag 를 release operator 만 만들도록 보호하는
-것은 이 trust가 전제하는 GitHub 설정이다.
+[`.github/workflows/release.yml`](../.github/workflows/release.yml)은 PR과 `v*` tag push에서 실행하며
+모든 job은 GitHub-hosted `ubuntu-24.04`를 사용한다. 수동 dispatch는 없다.
 
-1. **verify**. 전용 PostgreSQL test database 에 대해 `pnpm typecheck` + `pnpm test` +
-   `pnpm test:integration`.
-2. verify 가 통과하면 다음 둘이 **병렬**로 돈다.
-   - **github-release**. GitHub Release 를 만든다. 릴리스 노트는 직전 태그와 이번 태그 사이의
-     `git log` 로 생성된다 (`chore: release` 커밋은 걸러낸다). 이것이 이 프로젝트의 변경
-     이력이다: 완료된 마일스톤은 [MILESTONES.md](MILESTONES.md) 에 보관되는 것이 아니라
-     *삭제*되므로, git log 와 Releases 페이지가 그 기록이다.
-   - **release**. `linux/amd64` 이미지로 빌드해 두 레지스트리에 `:{tag}` 와 `:latest` 로
-     푸시한다: **`ghcr.io/opspresso/agent-studio`**(`GITHUB_TOKEN` 으로 로그인, 이 AWS 계정 밖의
-     설치가 pull 하는 경로이고, 폐쇄망 레지스트리로 미러링을 시작하는 지점이다)와 ECR(GitHub
-     OIDC 로 AWS role 을 assume, 장기 키 없음). 같은 작업이 Sandbox 이미지를
-     `workspace-{tag}`로 두 레지스트리에 게시한다.
+| Job | 선행·동작 |
+|---|---|
+| `verify` | 타입·단위·전용 PostgreSQL 통합 검사 |
+| `github-release` | verify 이후 커밋 메시지로 GitHub Release 노트를 생성·갱신한다 |
+| `release` | verify 이후 Dockerfile로 빌드하고 ECR·GHCR에 앱 `{tag}`·`latest`, Sandbox `workspace-{tag}`를 게시한다 |
+| `gitops` | 이미지 게시 이후 `v*` tag에서만 `argocd-env-demo`에 배포 이벤트를 전달한다 |
 
-3. **GitOps 트리거**. `release` 의 이미지 push 뒤 `argocd-env-demo` 에 새 tag 를 전달한다.
-   `github-release` 의 성공 여부는 기다리지 않는다. 배포 manifest 와 rollout 은 그 저장소가
-   소유하며, 이 저장소는 tag 전달만 담당한다.
+`github-release`와 `release`는 서로 기다리지 않는다. 현재 두 job에 tag 전용 조건이 없어
+PR에서도 실행을 시도하는 제약이 있다. 해결 조건은
+[MILESTONES](MILESTONES.md#release-event-gating)에 기록한다.
+
+ECR은 workflow의 OIDC role, GHCR은 `GITHUB_TOKEN`, GitOps 전달은 `GHP_TOKEN`을 사용한다.
+체크인된 [AWS trust policy](../.github/aws-role/trust-policy.json)는 `v*` tag subject와
+audience를 요구한다. 정책 파일은 실제 AWS에 적용됐다는 증거가 아니므로 배포 관리자가 확인한다.
+release tag 작성 권한과 registry 게시 권한도 배포의 GitHub·AWS 설정에서 제한한다.
 
 ### 실패한 릴리스를 다시 돌리기
 
@@ -119,15 +113,9 @@ model-check role 은 `.github/aws-role/` 에 있다. `v*` tag 를 release operat
 Actions 자체가 막혀 있으면(결제 한도, 러너 다운) 릴리스는 로컬에서 같은 순서로 할 수 있다:
 검증 → 태그 → `linux/amd64` 빌드 → ECR·GHCR push → GitOps tag 전달.
 
-자명하지 않은 빌드 설정이 둘 있다:
-
-- **단일 플랫폼 이미지.** 현재 릴리스 workflow가 앱과 Sandbox 이미지를 `linux/amd64`로
-  빌드한다. 배포 환경은 이 아키텍처를 사용해야 한다.
-- **`provenance: false`, `sbom: false`.** BuildKit 은 기본적으로 provenance attestation 을
-  붙이는데, attestation 은 이미지 인덱스 안의 추가 매니페스트로 실려 간다. 그래서 단일 플랫폼
-  빌드조차 인덱스 하나와 태그 없는 자식 둘을 푸시했다. 릴리스마다 ECR 엔트리가 하나가 아니라
-  셋씩 들었고, 태그가 실제로 가리키는 것이 바로 그 태그 없는 것들이라, "태그 없는 이미지를
-  만료시킨다" 는 뻔한 lifecycle 규칙이 릴리스된 태그가 필요로 하는 이미지를 지워 버린다.
+앱과 Sandbox는 현재 `linux/amd64`로 빌드한다. 다른 CPU 아키텍처는 이 릴리스 산출물의
+지원 범위에 포함하지 않는다. workflow는 `provenance: false`, `sbom: false`를 지정한다.
+registry 정리 정책은 tag뿐 아니라 이미지가 참조하는 manifest와 layer도 보존해야 한다.
 
 ## 헬스 프로브
 
@@ -207,9 +195,9 @@ duration 합계를 실제 설정값에 맞춰 해석하라. 데드라인까지 �
 기록된다.
 
 **`agent_studio_unknown_model_calls_total` 의 rate 가 0 이 아니면 알림을 걸어라.**
-`src/domain/llm/models.ts` 에 없는 model id 도 실행은 되지만, 그 usage 는 **$0** 로 기록된다.
-그 누락이 망가뜨리는 바로 그 비용 대시보드에서 누락이 보이지 않는다. 누락마다 `[cost] unknown
-model id` 를 한 번씩 로그로 남기기도 한다. `UNKNOWN_MODEL_POLICY=refuse` (env 또는 런타임
+미등록 모델의 카탈로그 가격 계산은 $0이며 이 경로가 경고·카운터를 남긴다.
+provider 보고 비용을 사용하는 텍스트 호출은 이 계산을 거치지 않을 수 있으므로 카운터를
+전체 미등록 호출 수로 해석하지 않는다. `UNKNOWN_MODEL_POLICY=refuse` (env 또는 런타임
 설정)는 이 카운터를 거부로 바꾼다: 런 브래킷이 어떤 가드보다도 먼저 `400` 을 답한다.
 
 카운터는 프로세스 단위이며 **project 도 user 도 model 도 이름 붙이지 않는다**. 라벨은
@@ -219,41 +207,21 @@ model id` 를 한 번씩 로그로 남기기도 한다. `UNKNOWN_MODEL_POLICY=re
 
 ## 로깅
 
-모든 top-level 런은 런 브래킷이 admit 할 때 **correlation id** 를 받는다. 그 id 는
-`AsyncLocalStorage` 에 실려, 그 런이 만들어 내는 모든 로그 라인에 찍힌다:
+`src/shared/logger.ts`가 로그 형식과 실행 문맥을 소유한다. 공통 run bracket은 Trace 샘플링과
+독립적인 correlation ID를 만들며 Trace가 있으면 함께 기록한다.
 
-```
+```text
 [mcp run=… trace=…] skipping server 'shared-mcp': …
 ```
 
-이것은 의도적으로 trace id 가 **아니다**: 비-agent 경로에서는 trace 가 샘플링되므로
-(`TRACE_SAMPLE_RATE`, 기본 `0.1`), trace id 를 correlation id 로 삼으면 프롬프트 런과 이미지
-런 열 중 아홉은 상관지을 것이 없게 된다. 게다가 샘플링은 로그를 읽어 볼 가치가 있는 런을
-우대하지 않는다. trace 가 실제로 존재하는 경우에는 두 id 가 함께 나온다.
+Webhook·메신저 접수 작업은 delivery/event ID도 문맥으로 사용한다.
+`apiError`는 알 수 없는 예외를 error, 설명 가능한 5xx를 warn으로 기록하고 4xx는 일반적으로
+기록하지 않는다. scan token 거절처럼 별도 운영 신호가 필요한 경계는 자체 경고를 남긴다.
+비스트리밍 호출자가 응답 전에 떠난 것은 info이며 upstream 실패로 분류하지 않는다.
 
-요청 밖에서 시작된 작업은 운영자가 이미 볼 수 있는 id 를 쓴다: **webhook 전달**은 자기 history
-행의 delivery id 를, **Slack 이벤트**는 Slack event id 를, **Telegram 업데이트**는 자신의
-`update_id` 를, **Teams activity** 는 자신의 activity id 를 실어 나른다.
-
-콘솔에 쓰는 일은 `src/shared/logger.ts` 가 소유하며 `tests/architecture.test.ts` 가 이를
-고정한다. 상시 예외가 둘 있다: 아무것도 import 하지 않아 로거에 닿을 수 없는 `domain`. 위의
-`[cost] unknown model id` warn 이 그중 하나이며, 정확히 그 이유로 `run=` 접미사가 없다.
-그리고 SDK 예제가 `console.log` 를 단지 *보여 줄* 뿐인 API 레퍼런스 페이지다.
-
-실패한 요청은 `apiError` 를 거쳐 로그에 도달하며, 그 레벨이 누구 잘못인지를 말한다: 설명할 수
-없는 throw 는 `error` 다. caller 는 `Internal server error` 를 받고 메시지는 여기 남는다.
-타입이 있는 `5xx` 는 `warn` 이며 그 메시지는 caller 가 이미 갖고 있다. `4xx` 는 어디에도
-남기지 않는다: 그것은 API 가 제대로 동작하는 것이고, 거부된 body 를 전부 기록하면 앞의 둘이
-묻힌다. 업스트림의 거부를 애초에 grep 할 수 있는 이유가 이것이다. `apiError` 가 타입 있는
-에러를 로그 없이 답하던 동안에는, 실패에 타입을 주는 일이 곧 그것을 조용히 기록에서 빼는
-일이었다.
-
-비스트리밍 응답(`predict`, `chat/completions`) 전에 끊고 나간 caller 는 세 번째 경우이며,
-`[api run=…] caller left before the answer` 로 `info` 레벨에 남는다. 실패도 결함도 아니고,
-아무도 없으므로 되돌려 보내는 것도 없다. 있는 그대로 읽어라: xAI 의 이미지 생성은 1분쯤
-걸리는데, 그동안 새로고침한 사람은 예전에 로그에 `Image generation failed for xai/…: ` 를
-**콜론 뒤에 아무것도 없이** 남겼고, 그것이 프로바이더의 거부처럼 읽혔다. Next 는 메시지가 없는
-에러로 요청을 abort 하는데, 런의 abort 가 마치 프로바이더의 답인 것처럼 매핑되고 있었다.
+원문 프롬프트와 credential을 로그에 넣지 않는다. 라이브러리·provider 오류 문자열에도
+민감 정보가 포함될 수 있으므로 로그 접근과 보존을 제한한다.
+domain의 제한된 경고와 브라우저 오류 경계 등 예외는 구조 테스트가 관리한다.
 
 ## 트레이싱
 
@@ -289,72 +257,50 @@ Chat 소유자가 도구별 인자를 확인하고 승인·거절한다. 재개�
 
 ## 행 보존
 
-SDK Session과 승인 체크포인트는 `runtime_sessions.expires_at`으로 만료되며 chat 보존 기간을
-사용한다. 만료된 행은 읽기에서 제외한다. Chat 삭제 tombstone은 늦은 실행의 저장을 막고
-run-log 보존 기간 뒤 정리된다. 스캔 토큰이 없으면 이 테이블도 자동으로 정리되지 않는다.
+보존 기간과 기본값의 정본은 [CONFIGURATION](CONFIGURATION.md#관측성과-보존-기간),
+행 만료 계산은 `src/infrastructure/db/ttl.ts`다. 만료는 다음과 같이 서로 다른 경로가 수행한다.
 
-트레이스, usage 행, chat 과 그 메시지, 아티팩트 행, 트리거 전달, 인바운드 A2A 태스크,
-Slack·Telegram·Teams 중복 제거 claim 은 모두 유닉스 초 단위 `expiresAt` 을
-지니며, 수명이 고정된 여섯 종류의 행도 마찬가지다: webhook 멱등 claim (24h), Slack 스레드 참여
-(1일, 봇이 답한 스레드가 "봇의 것" 으로 남아 있는 구간), 원격 대화 (7일, 사용할 때마다 갱신.
-A2A 에이전트의 `contextId` 가 우리 쪽 대화 하나를 위해 이어지는 구간이며, 그것을 넘기면 다음
-transfer 는 맨바닥에서 시작한다), Telegram·Teams 대화 트랜스크립트 턴 (각 7일. 두 플랫폼 모두 히스토리를
-돌려주지 않으므로 후속 메시지가 나르는 컨텍스트), MCP OAuth 진행 중 state (10분), 그리고 런
-동시성 슬롯 (리스 길이, TTL 이 없어도 동시성은 정확하지만, 행이 런당 하나씩 쌓인다).
-
-> **만료는 테이블의 기능이 아니라 틱이다.** schedule-scan 틱(`POST /api/triggers/scan`)이 돌
-> 때마다 `sweepExpiredRows` 가 `expiresAt` 이 지난 행을 지운다. 한 번에 `items` 에서 최대
-> 5,000행, Better Auth `session`에서 최대 5,000행, SDK `runtime_sessions`에서 최대
-> 1,000행을 지우므로 총 상한은 11,000행이다.
-> 밀린 분량은 다음 틱들이 나눠 가져가고, 실패해도 스캔은 실패하지 않는다. `session` 은 자기
-> `expiresAt` 을 기준으로 쓴다: 라이브러리는 만료된
-> 세션을 그 쿠키가 다시 올 때만 지우므로, 돌아오지 않은 브라우저의 행은 틱이 아니면 영원히 남는다.
-> **`SCHEDULE_SCAN_TOKEN` 이 없는 배포는 티커가 없고, 따라서 아무것도 지우지 않는다.** 앱은
-> 그 사실을 경고로 올릴 길이 없다. 테이블 크기만이 말해 준다. 배포 저장소는 이 endpoint를
-> 호출하는 ticker를 반드시 구성해야 한다 ([Schedule 티커](#schedule-티커)).
-
-| 행 | 기본값 | 변수 | 기준 시점 |
-|---|---|---|---|
-| 트레이스 (+ 그 삭제 참조) | 30일 | `TRACE_RETENTION_DAYS` | 트레이스의 `createdAt` |
-| Usage | 400일 | `USAGE_RETENTION_DAYS` | usage 행의 날짜 |
-| Chat + 메시지 | 180일 | `CHAT_RETENTION_DAYS` | 마지막 활동 / 메시지의 `createdAt` |
-| 아티팩트 행 | 180일 | `ARTIFACT_RETENTION_DAYS` | 아티팩트의 `createdAt` |
-| 트리거 전달 | 30일 | `TRIGGER_RUN_RETENTION_DAYS` | 전달 시작 |
-| 인바운드 A2A 태스크 | 1일 | `A2A_TASK_RETENTION_DAYS` | 마지막 쓰기 |
-| 감사 기록 | 400일 | `AUDIT_RETENTION_DAYS` | 행위의 `createdAt` |
-| chat 런 리플레이 로그 | 런 리스 + 15분 | *(파생값이며 설정 불가)* | 그 행의 쓰기 시점 |
-
-usage 와 감사 행이 가장 오래 남는다. 대시보드는 최대 184일 전까지 질의하고, 감사 행이 답하는
-질문("지난 분기에 admin 목록을 누가 바꿨나")은 그 행위로부터 한참 뒤에 던져진다. 트레이스와
-그 삭제 참조는 만료 시점을 공유하므로 참조가 매달린 채로 남는 일이 없다. chat 런 리플레이
-로그는 이 표 전체에 대한 예외다: 그것은 연결이 끊긴 리더가 따라잡는 버퍼이지 기록이 아니며,
-그 구간은 설정되는 것이 아니라 `MAX_RUN_DURATION_MS` 에서 파생된다. 런보다 짧게 설정될 수
-있는 값이라면 resume 한가운데에 구멍을 남길 것이기 때문이다.
-
-틱은 1분 간격이므로 행은 만료 뒤 한 틱까지 살아 있을 수 있고, 그래서 **읽기 쪽에서도 이미
-만료된 행을 걸러낸다**. `queryItems` 의 `notExpiredAt` 이 `LIMIT` 보다 먼저 도는 `WHERE`
-라, `traceRepository` 의 상위 N 개는 살아 있는 행으로 찬다.
-
-런이 만들어 낸 것은 데이터베이스 밖에 살고, **거기서의 만료는 오브젝트 스토어의 몫이다**.
-아티팩트 행은 오브젝트를 지목하고 의도적으로 삭제할 수도 있지만(갤러리의 삭제 버튼이 정확히
-그렇게 한다), 만료를 훑는 것은 아무것도 없다: sweep 은 `DELETE` 한 문장으로 행을 지우고
-애플리케이션은 어느 행이 갔는지 관측하지 못하므로, 연쇄 삭제를 걸 순간 자체가 없다.
-
-**각 prefix 에 lifecycle 규칙을 붙여라**, 행의 구간에 맞춰서. AWS S3 는 버킷 lifecycle,
-MinIO 는 `mc ilm rule add --expire-days …`:
-
-| Prefix | 구간 | 담는 것 |
+| 데이터 | 삭제를 수행하는 경로 | 운영 조건 |
 |---|---|---|
-| `artifacts/image/` | `ARTIFACT_RETENTION_DAYS` | 생성된 이미지와 첨부된 이미지 |
-| `artifacts/document/` | `ARTIFACT_RETENTION_DAYS` | 첨부 문서 원본과 도구가 생성·편집한 파일 |
-| `images/` | `CHAT_RETENTION_DAYS` | 아티팩트 이전의 레이아웃; 아직 읽지만 쓰지는 않는다 |
+| `items.expires_at` | schedule scan의 `sweepExpiredRows`, 최대 5,000행/틱 | `SCHEDULE_SCAN_TOKEN`과 반복 POST가 필요하다 |
+| Better Auth `session` | 같은 sweep, 최대 5,000행/틱 | 만료 세션 정리이며 user·account 삭제가 아니다 |
+| SDK `runtime_sessions` | 같은 sweep, 최대 1,000행/틱 | Chat 보존 기간; 삭제 tombstone은 run-log 보존 기간 |
+| 일반 Artifact bytes | 객체 저장소의 prefix별 lifecycle | DB 만료 삭제는 객체 삭제를 호출하지 않는다 |
+| 비공개 오디오 `source-files/` | audio worker의 파일별 만료·삭제 처리 | 0바이트 삭제 표식을 보존하고 일괄 객체 만료를 적용하지 않는다 |
+| Workspace Sandbox | Workspace worker의 정리·체크포인트 | worker가 멈추면 compute 정리도 멈춘다 |
+| 종료·중지 Workspace 상태와 자식 기록 | DB 만료 sweep | `WORKSPACE_RETENTION_DAYS`; 실행 중 META는 먼저 compute 정리가 필요하다 |
 
-이 두 설정은 앱이 맞춰 줄 수 없고, 어긋나는 두 방향 모두 눈에 보인다: 행이 먼저 만료되면
-아무것도 이름 붙이지 않는 오브젝트가 남고. 인벤토리로만 다시 찾을 수 있으니 보이지 않는
-누수다. 오브젝트가 먼저 만료되면 갤러리가 404 나는 미리보기를 나열한다. UI 는 두 번째 경우를
-깨진 이미지가 아니라 "더 이상 사용할 수 없음" 으로 렌더링한다. 아티팩트 이전의 `images/`
-오브젝트는 어떤 행도 지목하지 않으므로 그 prefix 의 규칙에 맡겨라.
-[SECURITY.md](SECURITY.md#데이터-노출과-보존) 를 보라.
+schedule scan이 없으면 위 DB sweep이 실행되지 않는다. 읽기는 만료를 별도로 검사하지만
+저장 공간은 줄지 않는다. 삭제량이 틱 상한을 넘으면 여러 틱이 필요하므로 실제 purge 지연은
+호출 주기와 backlog에 달려 있다. sweep 실패는 로그에 남고 다음 호출에서 다시 처리한다.
+
+고정 수명의 보조 상태에는 webhook 중복 claim, 메신저 delivery·참여·transcript,
+MCP OAuth state, 원격 A2A 대화와 동시성 슬롯이 있다. 수명은 기능 계약의 일부이며
+[고정 제한](CONFIGURATION.md#코드에-고정된-제한)과 해당 설계 문서에서 확인한다.
+Chat replay log는 장기 이력이 아니라 실행 lease보다 오래 남는 재접속 버퍼다.
+
+일반 객체에는 다음 lifecycle을 구성한다. 갤러리의 명시적 삭제와 TTL 정리는 별개다.
+
+| Prefix | 보존 기준 | 내용 |
+|---|---|---|
+| `artifacts/image/` | `ARTIFACT_RETENTION_DAYS` | 생성·첨부 이미지 |
+| `artifacts/document/` | `ARTIFACT_RETENTION_DAYS` | 첨부 원본과 생성·편집 파일 |
+| `images/` | `CHAT_RETENTION_DAYS` | 아직 읽을 수 있는 이전 이미지 저장 경로 |
+
+행보다 객체가 오래 남으면 참조 없는 bytes가 쌓이고, 먼저 사라지면 목록의 파일을 읽을 수 없다.
+비공개 오디오 파일은 같은 버킷에 있어도 `source-files/` 전용 보존 계약을 적용한다.
+만료 파일을 재다운로드하거나 완료 job·중복 claim을 자동 초기화하지 않는다.
+
+## 백업과 복원
+
+PostgreSQL, 객체 bytes, `AES_ENCRYPTION_KEY`와 인증 secret을 같은 배포의 복구 단위로 관리한다.
+DB만 복원하면 파일 참조가 끊길 수 있고 암호화 키를 잃으면 credential·SDK Session·checkpoint를
+읽을 수 없다. 실제 backup 도구·주기·보관 장소·접근 권한은 배포 저장소가 소유한다.
+
+복원은 격리된 환경에서 검증한다. worker와 ticker를 먼저 켜지 말고 DB 스키마·키 복호화·
+대표 파일·로그인·프로젝트 실행을 확인한 뒤 외부 연결을 재개한다. 복원한 승인·job이
+이미 수행된 외부효과를 반복하지 않는지 확인한다. `catalog_vectors`는 재색인할 수 있지만
+Project·Session·Usage·Audit와 원본 파일은 파생 캐시가 아니다.
 
 ## 지출 가드와 부하 가드
 
@@ -503,8 +449,9 @@ sweep도 이 틱에 얹혀 있다**. 1분마다 이미 도는 유일한 것이�
 ## 다중 인스턴스 주의사항
 
 아래는 **한 배포 안에서 인스턴스가 여럿일 때**의 이야기다. 같은 데이터베이스를 보는 프로세스들
-사이의 문제다. 런 상태는 전부 데이터베이스에 있으므로 레플리카를 늘려도 되고, 스키마 마이그레이션은
-부팅 때 advisory lock 아래에서 한 번만 돈다. 먼저 뜬 인스턴스가 적용하고 나머지는 기다린다.
+사이의 문제다. 공유 설정·lease·이력은 DB에 있지만 실행 중인 SDK Runner와 HTTP background 작업은 해당 프로세스에 있다.
+레플리카 간 중복 방지는 DB의 조건부 쓰기가 담당하고 migration은 advisory lock으로 직렬화한다.
+프로세스 교체가 진행 중인 실행의 자동 복구를 뜻하지는 않는다.
 
 | 동작 | 무엇에 묶이는가 | 결과 |
 |---|---|---|

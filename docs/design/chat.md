@@ -1,257 +1,145 @@
 # Chat
 
-agent project 를 상대로 하는 소유자 범위(owner-scoped)의 비공개 대화이며 —
-이력이 계속 누적되지만 화면 조회·SDK 문맥·재접속 로그에 각각 별도 상한을 적용하는 표면이다. 첨부(attachment)가
-여기에 있는 이유는 대부분의 첨부가 chat 으로 도착하기 때문이다.
+Chat은 agent Project를 실행하는 소유자별 비공개 대화다. 다른 사용자는 존재 여부도 조회할 수 없다.
+실행은 공통 `ChatDeps.runAgent`에 바인딩한 `executeAgent`를 사용하고 HTTP self-call 없이
+SSE로 전달한다. HTTP 계약은 [Chat API](../API.md#chats), 변경 불변식은
+[Chat 지침](../../src/application/chat/AGENTS.md)과 [Runtime 지침](../../src/application/runtime/AGENTS.md)을 따른다.
 
-> **영속화(persistence)와 재생(replay) 불변식은 코드 옆에 있다.**
-> 표면의 정본은 `src/application/chat/AGENTS.md`, 모델 이력의 정본은 `src/application/runtime/AGENTS.md`다 —
-> 재개(resume)가 기대는 순서, 재생이 무엇을 거부하는지, 각 budget 이 어디에 적용되는지.
-> 이 파일은 왜 런이 자기 연결보다 오래 사는지, 그리고 왜 그 로그가 기록(record)이 아니라
-> 버퍼인지를 말한다.
+## 저장과 실행의 경계
 
-```ts
-Chat { chatId, title, ownerEmail, projectName?, workspaceId?, linkedWorkspaces?, createdAt, updatedAt }
-```
+| 상태 | 목적·소유자 |
+|---|---|
+| Chat META | 제목·소유자·Project, `nextSeq`, 실행 lease, Workspace 연결 |
+| ChatMessage | 화면의 user·assistant·tool 기록, 경고와 Artifact 참조. `run.ts`가 저장한다 |
+| SDK Session | 모델에 재생할 native 이력과 승인 RunState. `runtime/session.ts`와 전용 SQL repository가 소유한다 |
+| run log | 연결이 끊긴 독자가 실행을 따라잡는 짧은 버퍼. `runLog.ts`가 기록한다 |
+| 브라우저 run store | 화면 이동 중 유지하는 현재 스트림과 표시 상태. `app/chats/_lib/runStore.ts`가 소유한다 |
 
-메시지는 `seq`를 가진다. Chat은 공통 `ChatDeps.runAgent`가 바인딩한 `executeAgent` facade를 통해
-실행하고 HTTP self-call 없이 SSE를 전달한다. 승인·CI 결과의 후속 실행도 같은 경로를 사용한다.
+한 Chat은 한 번에 한 실행 lease만 가진다. `claimChatRun`이 조건부 쓰기로 획득하고
+다른 전송은 409로 거절한다. 이는 호출자 전체의 동시 실행 슬롯과 별개다.
+Chat을 지우거나 실행이 다른 claim으로 넘어가면 이전 실행이 계속 쓰지 못하도록 상태를 확인한다.
 
-`workspaceId`는 그 Chat 자체가 Workspace 실행 화면일 때 사용한다. Agent 대화에서 작업을
-위임한 Workspace 선택은 별도 `linkedWorkspaces`에 프로젝트별로 보관한다. 이 연결은
-Workspace use case와 repository가 소유하며 일반 Chat 갱신은 덮어쓰지 않는다.
+화면 저장에서는 도구 행 다음에 그 실행의 평탄화된 assistant 행을 둔다. assistant는 최상위
+답변·도구 호출·이미지·파일·경고를 담고 자식 결과에는 author 정보를 유지한다.
+호출 ID는 run·author 범위에서 짝짓는다. 도구 호출만 있거나 파일만 나온 턴도 의미 있는 기록이다.
 
-Workspace 승인 결과는 `workspaceAction`을 가진 표시용 assistant 행으로 구분한다. 이를 모델이 작성한
-답변이나 사용자 요청으로 간주하지 않는다. Worker는 승인 결과 이벤트와 기존 SDK 이력으로 후속 런을
-시작하며, 처음부터 detached run-log에 기록해 어느 브라우저에서도 결과를 이어받을 수 있다.
-Workspace가 연결된 Chat 화면은 보이는 동안 실행 중이 아닐 때 3초마다 bounded tail을 확인한다.
-새 active run을 발견하면 기존 reconnect 경로로 붙는다. 후속 답변 시간은 승인 결과 행의 시각부터 계산한다.
-PR 검사 대기는 모델 턴을 소비하지 않으며, 검사가 끝난 후 `workspaceAction.event=ci`로 구분한
-검사 결과 행과 후속 응답을 전달한다. 이미 성공한 Git 동작을 재실행하는 것이 아니다.
-
-한 chat 은 **한 번에 하나의 런**만 가진다: `claimChatRun` (`src/application/chat/runLease.ts`)
-이 chat 행에 conditional-write 리스(lease)를 잡고(`activeRunId`, `RUN_LEASE_SECONDS` 후
-만료), 그 리스가 유지되는 동안 들어온 두 번째 전송은 `ChatConflictError` (409) 다. 이것은
-호출자별 run-slot 가드와는 별개다: 그쪽은 *한 사람*의 동시성을 제한하고, 이쪽은 두 런이 한
-chat 의 append-only 히스토리를 교차 기록하지 못하게 막는다.
+답변과 reasoning은 같은 아이템 예산을 공유한다. reasoning은 `reasoningTrace`를 켠 실행의
+최상위 텍스트만 보관하고 `reasoningTokens`도 보관한 텍스트가 있을 때 함께 저장한다.
+모델 Usage의 reasoning 토큰 집계는 이 표시 기록과 별개다.
+한계값은 [CONFIGURATION](../CONFIGURATION.md#코드에-고정된-제한)에 있다.
 
 ## SDK Session과 승인
 
-ChatMessage는 화면에 보여 주는 기록이며, 모델 이력은 별도 암호화된 SDK Session에 있다.
-새 턴은 새 입력만 전달하고 SDK가 이전 native 모델·도구 items를 결합한다. Memory recall은
-별도 Context 기능으로 유지한다. Session은 오래된 완전한 턴과 이미지를 제한하며 생략을 알린다.
-기존 대화의 Session이 없거나 만료되면 화면 기록을 유지하고 새 모델 문맥으로 시작한다는 경고를 표시한다.
+새 턴은 새 사용자 입력만 실행에 전달한다. SDK Session이 이전 native 모델·도구 items를 결합하며
+화면용 ChatMessage에서 이력을 재구성하지 않는다. Memory recall은 독립적인 장기 문맥 기능이다.
+Session이 없거나 만료되면 화면 기록은 유지하고 새 모델 문맥으로 시작한다는 경고를 표시한다.
 
-승인이 필요한 도구는 효과를 실행하기 전에 SDK RunState와 이력을 함께 저장한다. Chat 소유자는
-Agent·도구·전체 인자를 검토하고 승인하거나 거절한다. 새 사용자 메시지를 추가하지 않고 재개하며,
-revision CAS로 중복 실행을 막는다. 변경된 버전/연결과 실행 결과가 불확실한 체크포인트는
-자동으로 재개하지 않는다. 실행 중이 아닐 때 폐기하면 화면 기록은 보존하고 미완료 문맥을 제거한다.
-자세한 요청 형식은 [승인 API](../API.md#chat-승인과-재개)를 따른다.
+Session은 오래된 완전한 턴과 이미지를 예산에 맞춰 생략하고 그 손실을 알린다.
+모델의 reasoning은 표시 옵션과 무관하게 원래 모델 턴에 붙어 재생된다.
+이력과 승인 체크포인트는 같은 암호화 payload와 revision CAS로 저장한다.
+
+승인이 필요한 도구는 효과 실행 전에 RunState를 저장한다. 소유자는 Agent·도구·전체 인자를
+검토하고 승인·거절한다. 승인 중에는 새 메시지를 보내지 못하며 승인 재개는 새 user 행을 만들지 않는다.
+재개는 정확한 revision·항목 ID, 현재 프로젝트 접근, 버전·도구 binding fingerprint를 검사한다.
+
+체크포인트를 running으로 선점한 후 중단된 실행은 도구 효과가 불확실하므로 자동 재실행하지 않는다.
+살아 있는 lease가 없을 때 폐기하면 화면 기록은 보존하고 미완료 실행을 다음 모델 문맥에서 제외한다.
+Chat 삭제는 Session tombstone을 먼저 남겨 늦게 끝난 실행이 모델 이력을 되살리지 못하게 한다.
+암호화와 권한은 [보안 계약](../SECURITY.md#sdk-session과-승인-상태)을 따른다.
 
 ## 런은 자기 연결보다 오래 산다
 
-chat 런은 브라우저 연결과 **분리(detach)한다**. 연결 종료를 런 abort로 해석하면
-새로고침·탭 닫기·하드 내비게이션이 반쯤 쓰인 답변과 매달린 사용자 턴을 남기기 때문이다.
-`detachOnReturn` (`src/shared/detachOnReturn.ts`) 이
-소비자의 `return()` 을 "읽던 사람이 떠났다"로 바꾸고, 백그라운드에서 런을 완료까지 계속
-당기며, 라우트는 그 나머지를 `after()` 에 등록해 graceful shutdown 이 그것을 기다리게 한다.
-그래서 chat 라우트는 `sseResponse` 에 **`AbortController` 를 넘기지 않는다** — 라우트가
-만드는 controller 는 대신 취소 감시(cancel watch)에 연결된다.
+브라우저 연결 종료와 실행 취소는 별개다. `detachOnReturn`은 소비자가 떠나면 source를
+백그라운드에서 끝까지 읽는다. route는 그 작업을 `after()`에 등록하고 SSE에
+`AbortController`를 넘기지 않는다. 서버 프로세스 자체의 급사까지 복구하는 영속 worker는 아니다.
 
-그 결과 런을 멈추는 일은 명시적인 행위가 된다: `DELETE /api/chats/{chatId}/runs/{runId}` 가
-chat 행에 `cancelRequestedAt` 을 쓰고 `watchChatCancel` 이 그것을 순차 폴링한다. 이전 읽기가
-끝난 뒤에만 다음 타이머를 잡으므로 느린 저장소에서 같은 run 의 조회가 겹치지 않는다. 누름을
-받아 준
-인스턴스가 답을 실행 중인 인스턴스라는 보장이 없기 때문이며 — A2A executor 가
-`CancelTask` 에 쓰는 것과 같은 모양이다. 엔진은 자기가 받은 abort 를 그대로 다시 던지므로
-그것이 *어느* 종류였는지가 signal 의 reason 에 남아 살아남고, `endNoticeFor` 가 그것을
-되읽는다: 중지와 이미 넘어간 claim 은 각각, 끝난 런이 끝나는 방식 그대로 런을 끝내며, 자기
-안내문이 스트리밍되고 **또한** 런이 방금 저장한 메시지에 영속화된다.
+Stop은 `DELETE /api/chats/{chatId}/runs/{runId}`로 `cancelRequestedAt`을 기록한다.
+실행 측은 모델 출력이 없는 동안에도 `watchChatCancel`로 상태를 순차 조회한다.
+다른 인스턴스가 받은 취소도 전달되며 사용자 중지와 실행 claim 교체를 구분해 기록한다.
 
-읽던 사람이 돌아올 수 있도록, `teeToRunLog` (`src/application/chat/runLog.ts`) 는
-**재생 로그(replay log)** 를 유지한다: chat 자신의 파티션에 놓인 짧은 TTL 행들이고, 각 행은
-그 런의 프레임 묶음을 나른다. 이 로그는 **읽는 사람이 붙어 있는 동안에는 아무것도 쓰지
-않고** — 그들은 이미 모든 프레임을 보고 있다 — 연결이 끊기는 순간 지금까지의 런 전체를
-flush 한 뒤, 그 후로는 500ms 마다 쓴다.
-`GET /api/chats/{chatId}/runs/{runId}/stream` 은 그것을 처음부터 재생하고 이어서 따라가며,
-`getChat` 은 `activeRun` 을 알려 주므로 새로고침한 브라우저는 무엇을 요청해야 하는지 안다.
-순서가 곧 계약이다: **영속화 → 종료 항목 → 리스 해제**, 그래서 리스 해제는 `runAndPersist`
-가 아니라 `runLog.ts` 에 있다.
+종료 순서는 **화면 메시지 저장 → 종단 로그 → 실행 lease 해제**다.
+lease 해제는 source 바깥의 `runLog.ts`가 맡는다. 준비 단계 실패는 준비 측이 획득한 claim을 정리한다.
+저장·로그 실패는 보고하며 분리된 실행의 drain 실패가 lease를 영구히 잡아 두지 않게 한다.
 
-로그가 의도적으로 하지 못하는 것이 둘 있다. 이미지 바이트는 절대 들어가지 않는다 (그 자리에는
-안내문이 들어간다; 그림은 영속화된 메시지와 함께 도착하거나, object storage 가 설정돼 있지
-않으면 아예 오지 않는다 — 그 사실을 안내문이 말한다). 그리고 한 창이 붙어 있는 동안 로그는
-비어 있으므로, 같은 런을 보고 있는 두 번째 창은 첫 창이 닫힐 때까지 아무것도 보지 못한다 —
-멈춘 것처럼 보이도록 두는 대신 5초 뒤에 그 사실을 알린다.
+### 재생 로그
 
-클라이언트에서 스트림은 라우터보다 위에 있는 모듈 레벨 store
-(`src/app/chats/_lib/runStore.ts`) 가 소유한다. 그래서 내비게이션이 한 턴을 끊을 수 없다:
-컴포넌트는 `useSyncExternalStore` 로 구독하고, 다시 마운트된 뷰는 런이 여전히 진행 중임을
-발견한다. store 는 도착하는 모든 프레임을 자기 항목에 접어 넣지만 **수집 윈도(collection
-window) 단위로 구독자에게 알린다**. 알림 하나가 곧 스레드 전체의 렌더이기 때문이고, 답변이
-길어질수록 윈도도 넓어지는 것은 다시 파싱할 markdown 이 많아질수록 그 알림이 예약하는 렌더가
-비싸지기 때문이다. `MessageView` 는 참조가 안정적인 메시지 배열에 대해 메모이즈돼 있어,
-스트리밍 중인 답변만 자기를 다시 그리고 나머지는 그리지 않는다.
+연결이 유지되는 일반 실행은 프레임을 제한된 메모리 버퍼에만 모은다. 연결이 끊기면 남아 있는
+버퍼를 저장하고 이후 출력을 묶어 기록한다. 버퍼가 넘으면 앞부분을 버리며 replay에 누락 경고를 넣는다.
+이를 실행 전체의 영구 기록으로 사용하지 않는다.
 
-런이 진행 중이라는 사실은 정적인 문구가 아니라 **움직이는 표시와 경과 시간**으로 말한다
-(`RunProgress`, `parts.tsx`). 답변의 첫 토큰이 도착한 뒤에도 사라지지 않는데, 런은 여전히
-진행 중이고 도구가 끝나기를 기다리는 사람이 알고 싶은 것은 시작 전과 같기 때문이다. 스톱워치는
-자기 컴포넌트 안에 있어서 매초의 렌더가 그 한 줄에만 닿는다 — `LiveAssistant` 에 두면 초마다
-답변의 markdown 을 다시 파싱하게 되고, 그것은 수집 윈도가 프레임마다 치르지 않으려고 존재하는
-바로 그 비용이다.
+이미지·파일 bytes와 순수 reasoning 프레임은 로그에 넣지 않고 안내문으로 대체한다.
+그 결과는 실행이 끝난 뒤 저장된 메시지에서 읽는다. 저장소가 없거나 저장에 실패한 출력은
+재접속으로 복원할 수 없다.
 
-**head frame 은 런의 나이(`elapsedMs`)를 싣고, 시계는 그것을 빼서 시작점을 잡는다.** 누름도,
-프레임이 도착한 순간도 아니다 — 그 둘 사이에는 턴의 준비가 있다(첨부를 오브젝트 스토리지에 쓰고,
-문서를 추출하고, 리스를 잡는 일). 그 자리를 이어받는 배지는 서버가 user 행에 찍은 시각에서 재므로
-그 준비 시간을 포함한다. 프레임 도착부터 세면 그만큼이 빠져 저장된 답변으로 교체될 때 숫자가
-*줄고*, 누름부터 세면 서버가 아직 보지 못한 업로드가 더해진다. 나이는 서버가 자기 시계 안에서만
-계산하므로 두 시계가 어긋나도 상관없다.
+`GET …/runs/{runId}/stream`은 로그를 재생하고 새 행을 따라간다. 원래 창이 계속 연결되어
+로그가 비어 있으면 두 번째 창은 동일 출력을 실시간으로 받지 못하며 잠시 후 안내를 받는다.
+반면 Workspace 후속 실행은 처음부터 detached 기록을 시작한다.
 
-**`attach` 로 이어받은 런에는 숫자가 없다**: 재생 스트림의 head frame 은 나이를 싣지 않고, 새로고침
-뒤에 붙은 런이 얼마나 돌았는지는 wire 어디에도 없다. 0부터 세는 시계는 1분 된 답변을 방금 시작한
-것으로 보고하게 된다. 재접속의 head frame 도 시계를 다시 시작하지 않는다 — 처음 배운 id 하나만
-시작이고, 같은 런에 다시 붙을 때는 이전 항목의 시작점을 그대로 가져온다(끊긴 긴 런이 정확히 그
-경우다).
+### 클라이언트 상태와 시간
 
-스트림이 끝나면 그 자리는 **멈춘 소요 시간**이 이어받는다(`endedAtMs`). 저장된 메시지가 자기
-배지를 달고 오지만 그것은 retire 의 fetch 가 돌아온 뒤이고, 그 fetch 가 실패하는 동안에는 이것이
-읽는 사람이 가진 유일한 숫자다. `endedAtMs` 는 **런이 스스로 끝났다고 말한 경우에만** 찍는다 —
-실패한 스트림은 읽는 사람에게 끝난 것이 아니고, 재접속 probe 가 알아낸 종료는 죽은 연결을 붙들고
-있던 시간 뒤에 오므로 그 시간이 답변에 청구된다.
+모듈 단위 run store가 fetch를 소유하고 컴포넌트는 `useSyncExternalStore`로 구독한다.
+내비게이션·unmount로 fetch를 중단하지 않는다. 프레임은 즉시 fold하되 구독 알림은 수집
+윈도로 묶고 메시지 참조를 안정적으로 유지해 과거 답변의 재렌더를 줄인다.
 
-그 줄은 **높이를 예약한다**(`PROGRESS_LINE_HEIGHT`). 스크롤 컨테이너 안에서 spinner → 멈춘 숫자 →
-아무것도 없음으로 바뀌는 줄이고, 높이가 변하면 읽는 중인 문장이 밀린다 — `RunningAgents` 를 스레드
-밖 composer 가 그리는 것과 같은 이유다.
+`{ ended: true }` 없이 연결이 끝나면 실행 상태를 조회하고 필요한 경우 replay에 다시 붙는다.
+새 로그는 처음부터 다시 fold할 수 있으며 연속 실패와 전체 재접속 횟수에 각각 상한이 있다.
+연결 실패만으로 서버 실행 완료를 추측하지 않는다.
 
-끝난 답변이 얼마나 걸렸는지는 **저장하지 않고 대화 자체에서 유도한다**
-(`answerDurations`, `_lib/turnDuration.ts`) — user 행의 시각은 턴을 받아들일 때, assistant
-행의 시각은 다 쓰고 났을 때 찍히므로 그 간격이 곧 읽는 사람이 기다린 시간이다. 메시지에
-`durationMs` 를 새로 쓰는 쪽은 그 필드가 생긴 뒤의 대화만 답할 수 있는 반면, 이미 저장된 모든
-답변이 같은 것을 말하는 타임스탬프 두 개를 이미 나르고 있다. 스톱워치와 이 배지는 **같은
-방식으로 내림한다** — 읽는 사람은 몇 초 간격으로 같은 자리에서 둘을 보므로, 한쪽만 반올림하면
-런이 멈춘 뒤에 숫자가 한 번 더 올라간다. 짝짓기는 `seq` 를 따라 걸어
-그 사이의 tool 행을 지나친다 — 그것들은 assistant 행과 같은 순간에 찍히므로, "바로 앞 메시지"
-로 짝지으면 도구를 쓴 모든 답변이 즉답으로 보고된다.
+처음 받은 head의 `elapsedMs`로 실행 시계를 시작한다. replay만으로 시작한 창은 시작 시각을
+모르므로 0초짜리 새 실행처럼 표시하지 않는다. 같은 run에 다시 붙으면 알고 있던 시작점을 유지한다.
+`endedAtMs`는 실제 종단 프레임을 받은 경우에만 설정한다.
 
-**뷰포트는 effect 가 아니라 `use-stick-to-bottom`** (`ChatThread`) 의 것이다: 읽는 사람이
-이미 맨 아래에 있을 때만 답변을 따라가고, 그렇지 않을 때는 최신으로 점프하는 컨트롤을
-제공하며, 이것을 뒤집는 것은 정확히 하나 — 메시지를 보내는 일뿐이다. 이것이 대체한 코드는
-매 렌더마다 스크롤했고, 그래서 읽는 사람을 맨 아래에 가두는 동시에, 초당 수십 번 다시
-시작되는 `smooth` 스크롤이 되어 스레드를 떨리게 만들었다. 이 라이브러리가 부과하는 제약 둘은
-실수로 되돌리기 쉬워서 각각 그 자리에 주석이 달려 있다: 점프 컨트롤은 `isAtBottom`(의도이고,
-리사이즈 중에는 쓸 수 없다) 이 아니라 `isNearBottom`(기하)을 읽는다는 것, 그리고 스레드 안의
-어떤 것도 양쪽 축 모두에서 스크롤 컨테이너가 되어서는 안 된다는 것 — 그러면 라이브러리가
-따라가는 wheel 이벤트를 삼킨다. `{ ended: true }` 프레임 없이 끝난 스트림은 끝난 런이 아니라
-끊긴 연결이므로, store 는 `GET /api/chats/{chatId}/runs/{runId}` 로 런이 아직 진행 중인지
-묻고 재생 엔드포인트에 다시 붙는다 — 처음부터 붙으며, `reduceChunk` 가 순수 fold 이므로
-그래도 안전하다. 재접속 예산은 *연속* 실패를 센다: 10분짜리 답변은 깔끔하게 재접속되는 한
-몇 번을 끊겨도 살아남고, 생애 상한이 있어서 열릴 때마다 죽는 스트림은 결국 끝난다.
+저장된 답변 시간은 `turnDuration.ts`가 seq 순서의 user·assistant 시각에서 유도하고
+중간 도구 행은 건너뛴다. Workspace 후속 답변은 플랫폼 결과 행을 기준으로 한다.
+스톱워치와 저장 시간은 같은 내림 규칙을 사용하며 진행 표시 높이를 예약해 레이아웃 이동을 줄인다.
 
-`ChatMessage` 는 `role` (`user` | `assistant` | `tool`) 에 대한 discriminated union 이다:
-tool 행은 항상 `toolCallId` 를 나르고, assistant 행은 `toolCalls`/`images`/`files` 를 나를 수
-있으며, user 행은 `images`/`documents` 를 나를 수 있고, 불법인 조합은 표현 자체가 불가능하다.
-`files` 는 런이 만들어 낸 것이자 읽는 사람이 내려받는 것이다. 그것을 주소로 해석하는 것은
-오직 뷰뿐인데, 이미지와 달리 파일은 재생되는 턴 안으로 fetch 되는 일이 결코 없기 때문이다.
+### 스크롤과 입력
 
-버전이 `reasoningTrace` 를 켰다면 assistant 행은 그 런의 `reasoning` 과 `reasoningTokens` 도
-나른다. 토큰 수는 텍스트와 독립이다 — 흔한 OpenAI 모양은 개수만 보고하고 사고 자체는 결코
-스트리밍하지 않으므로, 둘을 묶으면 4,000토큰을 생각한 런이 아무 일도 없었다고 기록하게 된다.
-보여 주기만 하고 재생하지 않는 이유와 아이템 예산을 답변과 나눠 쓰는 이유는
-`src/application/chat/AGENTS.md` 에 있다.
-
-한 런은 누적된 텍스트와 그 런의 top-level `toolCalls`, 그리고 그 런이 보고한 `warnings` 를
-담은 **평탄화된 assistant 메시지 하나**를 영속화하고, 그 앞에 자기 tool 행들을 둔다 —
-subagent 의 것과 transfer 의 것도 포함하며, 이들은 `author`/`displayOnly` 를 나르므로 읽는
-사람은 무엇이 실행됐는지 보되 재생은 그것들을 거부한다.
-
-**모델의 tool 트래픽은 SDK Session에서 재생된다.** `runtime/session.ts`가 완전한 턴, 텍스트,
-이미지와 저장 크기 예산을 적용하며 native call/result 순서를 유지한다. 화면의 `ChatMessage`는
-표시용으로 평탄화된 기록이라 모델 입력으로 다시 조립하지 않는다. 보이는 도구 결과와 모델이
-실제로 받는 과거 이력은 같지 않을 수 있으며 생략·Session 소실은 경고로 드러낸다.
-
-화면 저장은 도구 행 뒤에 해당 assistant 행이 오는 순서다. call ID는 런 안에서 짝지으며 하위
-Agent의 author를 보존한다. Workspace 승인·CI 결과 행은 플랫폼 이벤트로 구분하고 후속 SDK
-실행에는 검증한 결과 이벤트만 새 입력으로 보낸다. 상세 계약은 `src/application/chat/AGENTS.md`와
-`src/application/runtime/AGENTS.md`를 따른다.
+`ChatThread`의 `use-stick-to-bottom`이 viewport를 소유한다. 아래를 읽을 때 답변을 따라가고,
+위로 이동한 사용자는 최신으로 이동하는 버튼으로 돌아온다. 메시지 전송은 다시 답변을 따라가는 행동이다.
+버튼은 `isNearBottom`을 사용하고 스레드 자식이 양 축을 모두 스크롤해 wheel 이벤트를 가로채지 않게 한다.
+Enter 전송은 IME 조합을 보존하는 공통 `isSubmitEnter`를 사용한다.
 
 ## 사이드바와 스레드가 읽는 범위
 
-두 읽기 모두 *턴마다* 일어난다 — 사이드바는 런이 시작할 때와 끝날 때, 스레드는 끝난 턴을
-저장본으로 갈아 끼울 때. 그래서 이 둘의 비용은 방문당이 아니라 턴당이고, 둘 다 무제한이던
-동안에는 콘솔을 가장 많이 쓰는 사람이 가장 비싼 읽기를 했다.
+사이드바는 `CHAT_PAGE` 단위로 조회하고 더 보기는 증가한 `limit`을 요청한다.
+동일한 `updatedAt`을 갖는 Chat을 구분하는 cursor가 없어 크기를 늘려 다시 읽는다.
+서버 상한을 넘는 무한 더 보기 버튼을 만들지 않으며 경로 변경만으로 목록을 다시 읽지 않는다.
 
-**스레드는 꼬리만 읽는다.** 런이 끝나면 `?sinceSeq=` 로 자기가 이미 들고 있는 시퀀스 다음의
-행만 가져와 병합한다(`mergeMessages`). 전체를 다시 읽던 때는 대화가 길어질수록 쿼리·전송·
-저장된 이미지마다의 서명이 같이 늘었고, 그 증가분은 답변 하나를 화면에 올리는 데 매번 들었다.
-전체 읽기에서 필요한 이미지·파일 주소는 transcript 순서를 보존하는 8-worker queue 로 서명해,
-긴 대화도 object signer 를 메시지 수만큼 한꺼번에 실행하지 않는다.
-**꼬리에는 천장이 있다.** 전체 읽기가 조용히 하던 일이 하나 더 있었다 — 그 안의 모든 이미지·
-파일 주소를 다시 서명하는 것. 주소는 읽는 시점에 `VIEW_URL_TTL_SECONDS` 만큼만 유효하므로,
-꼬리만 읽으면 오래 열어 둔 대화의 예전 그림이 만료되어 `AccessDenied` 가 된다(화면에는 아무
-설명도 없고, 새로고침 전까지 돌아오지 않는다). 그래서 마지막 전체 읽기로부터
-`SIGNATURE_REFRESH_MS` 가 지나면 다음 retire 는 꼬리 대신 전체를 읽는다. 클라이언트는
-`application/` 의 TTL 상수를 import 할 수 없으므로, 둘의 관계는 테스트가 지킨다.
+메시지 DB 조회는 `listChatMessages`의 페이지당 100행이다. 전체 대화 읽기는 페이지들을 합치므로
+응답 전체가 100행으로 제한되는 것은 아니다. 실행 뒤에는 `sinceSeq` 다음 행만 읽고,
+`sinceSeq=0`도 실제 경계로 처리한다. Chat을 바꾸면 이전 tail 기준을 지운다.
 
-병합의 규칙 둘은 각각 이유가 있다 — **가져온 사본이 이긴다**(그쪽 이미지 주소가 방금 서명된
-것이고, 들고 있던 쪽은 만료됐을 수 있다), **정렬은 시퀀스 순**(도착 순으로 붙이면 다시 읽은
-중간 행이 끝으로 간다). 첫 읽기와 채팅을 바꿀 때는 경계가 없으므로 전체를 읽는다.
-
-**사이드바는 페이지를 읽는다.** `CHAT_PAGE` 개씩, "더 보기"는 커서가 아니라 그만큼 더 큰
-`limit` 을 요청한다. 이 파티션의 정렬 키는 chat 의 `updatedAt` 하나뿐이라 행을 식별하지 못한다 —
-같은 밀리초에 손댄 두 chat 이 같은 키를 갖고, 거기서 만든 커서는 하나를 건너뛰거나 두 번
-돌려준다. 이미 가진 행을 다시 읽는 쪽이 더 싼 오답이고, 그것도 사람이 버튼을 누를 때만
-일어난다. `hasMore` 는 *요청한* 크기와 비교해서 답한다 — 서버가 상한에서 잘라 준 개수와
-비교하면 상한을 넘긴 사람에게 버튼이 영원히 남고 목록은 영원히 그대로다. 사이드바는
-**경로 변경으로는 다시 읽지 않는다**: 어느 행이 활성인지는 경로에서
-직접 계산하고, 읽는 중에 생기는 chat 은 런이 시작된 chat 이라 running 집합이 이미 알려 준다.
+새로 읽은 메시지가 기존 사본을 대체하고 seq 순으로 정렬한다. 원본 파일·이미지의 서명은
+제한된 동시성으로 수행한다. 오래 열린 화면은 서명 만료 전에 다음 완료 동기화에서 전체를
+다시 읽어 주소를 갱신한다. 화면 조회, 모델 Session, 재접속 로그의 예산을 서로 혼용하지 않는다.
 
 ## 첨부
 
-한 턴은 두 종류의 첨부를 나를 수 있고, 둘은 서로 다른 경로를 탄다.
+이미지는 검증된 inline bytes로 모델에 전달하며 모델의 `imageInput` capability가 필요하다.
+SDK Session이 최근 이미지와 편집 핸들을 다음 턴으로 이어 준다.
+화면에서는 Artifact 참조를 서명하지만 모델 이력을 그 URL로 다시 구성하지 않는다.
 
-**이미지**는 바이트로 이동한다. `image_url` content part 가 되고, 런이 이미지를 편집할 수
-있도록 엔진이 각각에 핸들을 등록하며, 모델은 `imageInput` 을 선언해야 한다 — 텍스트 전용
-모델이 거부하는 part를 보내면 턴 전체가 실패한다. SDK Session이 최신 inline 이미지 네 개와
-생성 이미지의 편집 핸들을 다음 턴에 전달한다. 오래된 이미지는 문맥에서 생략하고 텍스트 표시와
-warning을 남긴다. 화면 이미지는 별도의 artifact key에서 서명한다. 모델 제공자는 원격 URL을
-직접 가져오지 않으며, 후속 턴의 모델 bytes를 화면용 object URL에서 다시 구성하지 않는다.
+문서는 수신 표면의 `DocumentExtractor`가 텍스트로 바꾸고 `documentParts.ts`가
+파일명·데이터 경계를 붙여 턴에 넣는다. 원본이 보관되면 모델에는 파일 ID를 안내하고,
+화면 조회에는 추출문 대신 파일명·상태·원본 참조를 제공한다.
+추출 실패·예산 초과·빈 텍스트는 경고하며 원본 참조와 순서를 유지한다.
 
-**문서는 그것을 받은 표면에서 텍스트가 된다.** PDF, 평문 텍스트, Markdown, CSV/TSV, JSON,
-YAML, XML, HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF를 모두 내장 extractor가 읽는다.
-Office 형식은 내부 문서 엔진으로 처리하며 MCP 등록이나 version binding을 요구하지 않는다.
-파싱에 실패하면 warning으로 보고한다. 어느 쪽이든 provider 고유의 file part 가 아니라 텍스트 part 로
-턴 안에 읽힌다. 이것은
-단순화가 아니라 이 배포에 대한 결정이다: 하나의 model id 는 기본 라우터가 서빙할 수도 있고
-그 provider 자신의 OpenAI 호환 엔드포인트(`LLM_PROVIDER_<NAME>_BASE_URL`)가 서빙할 수도
-있는데, 그 둘은 file part 를 어떻게 — 또는 보낼 수 있는지 자체를 — 두고 서로 다르게 말한다.
-반면 `ModelCapabilities` 는 *모델* 단위라서 채널에 속한 차이를 표현하지 못한다. 텍스트는
-capability 게이트가 아예 필요 없고, chat 영속화·재생·PII 필터를 그대로 통과해 살아남는다.
+텍스트만 있는 턴은 문자열이고 이미지가 있을 때 content-parts 배열을 만든다.
+`decodeUtf8Text`로 UTF-8을 확인하며 잘못된 bytes를 replacement 문자로 바꾼 성공으로 취급하지 않는다.
+형식별 읽기·편집과 파일 권한은 [문서 엔진](documents.md)이 소유한다.
 
-| 조각 | 소유자 |
-|---|---|
-| 캡(cap), 그리고 어떤 파일이 문서인지 (`documentKind`) | `src/domain/llm/documentLimits.ts` |
-| 추출 포트와 내장 어댑터 | `src/domain/llm/documentExtractor.ts`, `src/infrastructure/llm/documentExtractor.ts`, `src/infrastructure/documents/engine/` |
-| budget, warning, 그리고 모델이 읽는 래퍼 | `src/application/llm/documentParts.ts` |
-| 바이트가 애초에 텍스트인지 | `src/shared/utf8Text.ts` 의 `decodeUtf8Text` |
-| 전송될 때와 재생될 때의 user 턴 본문 | `src/application/llm/documentParts.ts` 의 `turnContent` |
+## Workspace 후속 실행
 
-**전부 텍스트인 턴은 문자열로 남는다.** content-parts 배열을 필요하게 만드는 것은 이미지뿐이고,
-모델이 받을 수 있다고 선언해야만 통과하는 게이트가 걸리는 것도 이미지뿐이다. 문서가 있다는
-이유만으로 텍스트를 part 로 감싸면, 이전에는 어떤 턴도 쓰지 않던 모양을 wire 에 올리면서 얻는
-것은 없고 — 어차피 part 들은 이어 붙여진다 — 텍스트를 옳은 선택으로 만들었던 바로 그 채널
-독립성을 도로 내주게 된다. `turnContent` 가 그것을 소유하며, 전송과 재생 모두에 대해 그렇다.
+`Chat.workspaceId`는 Chat 자체가 Workspace 실행 패널일 때 사용한다.
+일반 Agent 대화가 선택한 작업 공간은 `linkedWorkspaces`에 프로젝트별로 기록한다.
+Workspace use case의 transaction이 이 선택을 관리하고 일반 Chat 갱신은 보존한다.
 
-하중을 받는 성질이 둘 있다. **아무것도 조용히 사라지지 않는다** — 잘린 문서, 파싱에 실패한
-문서, 턴당 개수를 넘은 문서: 각각은 `warning` 이 된다. 아무것도 기여하지 못한 문서는 그 문서를
-무시한 모델과 정확히 똑같아 보이기 때문이다. 그리고 **텍스트가 하나도 나오지 않는 파일은
-보고된 실패이지, 결코 빈 성공이 아니다**: "이것은 텍스트 레이어가 없는 스캔본이다"는 조치할 수
-있는 정보인 반면, 빈 문자열은 "그 문서는 비어 있다"로 읽힌다.
+승인·CI 결과는 `workspaceAction`이 있는 플랫폼 assistant 행으로 표시한다.
+worker는 원래 소유자·프로젝트·Workspace 선택·SDK Session을 확인한 뒤 검증한 결과 이벤트로
+후속 실행을 시작한다. 플랫폼 결과를 새 사용자 요청이나 다음 Git 동작의 승인으로 해석하지 않는다.
 
-`decodeUtf8Text` 가 존재하는 이유는 `Buffer.toString("utf-8")` 이 결코 throw 하지 않기
-때문이다 — 잘못된 시퀀스는 U+FFFD 가 된다 — 그래서 순진한 디코드는 PDF 를 대체 문자로 바꿔
-놓고는 성공했다고 보고한다. 이 함수는 바이트를 보고 판정하며(UTF-8 왕복, 그리고 ASCII
-UTF-16 을 걸러내기 위한 NUL 검사), 선언된 content type 으로는 결코 판정하지 않는다 — 그 값은
-없거나 틀린 경우가 잦아서 진짜 파일을 잃게 만든다. 같은 판정이 MCP tool 결과도 지킨다:
-이미지가 아닌 `resource.blob` 이 텍스트가 아니면 `MAX_TOOL_FILE_BYTES` 안에 들어가는 동안은
-`file` chunk 로 이동하고(사용자에게 전달된 것으로 결과 텍스트에 이름이 적힌다), 그 크기를
-넘으면 통째로 쏟아내는 대신 이름만 적고 생략한다.
+연결된 화면은 보이는 동안 실행이 없을 때 tail을 확인하고 새 run을 발견하면 재접속한다.
+CI 대기는 모델 턴을 소비하지 않으며 결과를 `workspaceAction.event=ci`로 전달한다.
+알림 선점 후 중단된 실행은 자동 반복하지 않는다.
+상태·권한·worker 계약은 [Workspace 설계](workspaces.md#원래-채팅과-workspace-선택)를 따른다.

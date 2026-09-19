@@ -1,306 +1,142 @@
 # MCP
 
-레지스트리 항목, 프로토콜을 소유하는 세션, 런이 서버에게 자기 자신에 대해 알리는 것,
-그리고 항목을 계속 도달 가능하게 유지하는 세 가지: discovery 캐시, 루프백 위의 managed
-컨테이너, 그리고 project 별 OAuth.
+전역 registry의 서버를 Version에 연결하고 SDK Runtime에 도구로 제공한다.
+서버 주소·설명은 registry, 도구 선택·헤더 override는 Version, OAuth grant는 Project가 소유한다.
+HTTP 형태는 [API](../API.md#mcp-oauth), 설정은 [CONFIGURATION](../CONFIGURATION.md#mcp),
+인가·SSRF·OAuth 검사는 [SECURITY](../SECURITY.md#mcp-oauth)를 따른다.
 
-보안 쪽 절반 — SSRF 가드, 루프백 예외, 모든 OAuth 검사, 그리고 서버가 호출자에 대해 알 수
-있는 것 — 은 [SECURITY.md](../SECURITY.md#mcp-oauth) 다. 조절값(knob)은
-[CONFIGURATION.md](../CONFIGURATION.md#mcp) 다.
+## Registry와 binding
 
-```ts
-McpServer { name, url, description?, content?, source?, runtime?: 'remote' | 'managed',
-            headers: Record<string, string>,   // 저장 시 암호화, 읽을 때 마스킹
-            auth?,
-            // managed 전용; `environment` 는 `headers` 처럼 저장 시 암호화
-            image?, args?, endpointPath?, containerPort?, environment?,
-            createdAt, updatedAt }
-```
+`McpServer`는 이름·URL·설명·운영 노트·암호화된 header, 선택적 OAuth와 managed 설정을 저장한다.
+`description`은 모델의 Connected MCP Servers 표에, `content`는 콘솔에 표시한다.
+실제로 도달할 수 있고 허용된 도구가 있는 서버만 프롬프트에 설명한다.
 
-`description` 은 한 줄 요약이며 **모델이 보는 유일한 필드**다 — 시스템 프롬프트의 서버
-표에서 한 행이 된다. `content` 는 콘솔에만 표시되는 마크다운 운영자 노트다; Skill 의
-content 와 달리 모델에는 결코 닿지 않는다. description 은 표로 렌더링될 때 이스케이프되므로,
-여러 줄로 된 레거시 값이 표를 깨뜨릴 수 없다.
+Version의 `mcpList`는 서버 이름, `tools`, `headers`, 선택적 `sourceOutputs`를 가진다.
+URL은 registry에서 온다. 기존 binding의 header 생략은 보존, `{}`는 제거,
+문자열은 추가·교체, `null`은 registry 기본값 제거다.
+마스킹과 endpoint fingerprint 계약은 [API 바인딩](../API.md#mcp-바인딩과-version-별-헤더-오버라이드)을 따른다.
 
-레지스트리 항목은 plugins sync 를 통해서도 들어온다: Plugin 의 `mcp.json` 이 자기 서버들을
-선언하고, `type: "streamable-http"` 항목만 바인딩된다 — `stdio` 는 저장소가 제공한 명령을
-호스트에서 실행한다는 뜻이므로, 보고하고 건너뛸 뿐 절대 실행하지 않는다
-(`src/domain/plugin/types.ts` 의 `classifyMcpJsonServer` 가 유일한 transport 결정이다).
-닫힌 mcp.json 스키마에는 description 필드가 없으므로, 각 서버의 모델용 description 과 운영자
-노트는 Plugin 의 `org.opspresso.agent-studio/mcp/<server>.md` 확장 문서에 실려 온다 — 스펙이
-정의하는 역도메인(reverse-domain) 클라이언트 확장 관례다. 여기서 걸린 것은 Skill 때보다
-크다: 항목은 암호화된 헤더와 발견된 OAuth 블록도 함께 들고 있으므로, mcp.json 에 선언된
-헤더는 절대 임포트되지 않고(버려진 이름은 보고된다), 호출자가 이름을 지정한 덮어쓰기조차
-문서가 소유한 필드만 교체하며, 각 URL 은 직접 입력된 URL 과 똑같은 아웃바운드 가드를 거친다
-— 거부는 실패한 sync 가 아니라 건너뜀이다.
+Plugin sync는 streamable-HTTP 서버만 가져오며 header를 가져오지 않는다.
+모델용 설명과 운영 노트는 Plugin의 `org.opspresso.agent-studio/mcp/<server>.md`를 사용한다.
+파일 응답 매핑은 opaque source reference로 변환할 때 사용한다.
+[Plugin 동기화](capabilities.md#plugin-동기화)와 [오디오 설계](audio-processing-spec.md#범용-설정과-도구)를 보라.
 
-버전 바인딩의 도구 선택과 헤더는 함께 저장한다. 기존 바인딩의 `headers`를 생략한 부분 수정은
-저장된 오버라이드를 보존하고 `{}`는 명시적으로 제거한다. 설정 화면의 도구 조회도 저장 버전의
-마스킹된 값을 복원해 실제 실행과 같은 헤더로 발견한다. 서버 URL이 바뀌면 이전 주소용 자격증명은
-그대로 전달하지 않는다. 자세한 요청 의미는 [API 바인딩 계약](../API.md#mcp-바인딩과-version-별-헤더-오버라이드)을 따른다.
+### 실행 신원
 
-Agent 런은 시스템 프롬프트에 **"Connected MCP Servers"** 표(서버 이름, description, alias
-된 tool 이름)를 덧붙여, 모델이 어떤 tool 그룹이 어느 서버에 속하는지 알게 한다; 도달할 수
-없거나 tool 을 노출하지 않는 서버는 생략된다.
+`application/mcpMetadataHeaders.ts`가 세 예약 header를 소유한다.
+저장된 header의 모든 대소문자 표기를 OAuth 가용성 검사 전에 제거하고 서버가 결정한 값을 붙인다.
 
-**런이 하는 모든 요청은 자신을 호출한 project 의 이름을 밝힌다.** `X-Tenant-Id`
-(`src/application/mcpMetadataHeaders.ts` 의 `TENANT_ID_HEADER`)로 나가므로, 멀티테넌트
-서버는 project 별 등록 없이도 자기 데이터를 project 단위로 스코프한다. 세 예약 헤더의 저장된
-표기는 병합 직후, OAuth 가용성 검사가 헤더 맵을 읽기 **전에** 한꺼번에 제거되고
-(`stripMcpMetadataHeaders`) 플랫폼의 값은 그 뒤에 찍힌다 — 그래서 레지스트리 항목도, 버전의
-override 도 어떤 철자로든 다른 project 의 tenant 를 사칭할 수 없고, 연결을 쓸 수
-없는 서버를 인증하는 수단으로 이 메타데이터가 인정되는 일도 없다. 뒤에 project 가 없는
-호출자는 아무것도 보내지 않는다: 카탈로그 probe 와 "Test connection" 은 tenant 를 싣지
-않는다. 같은 헤더 맵에 실려 가기 때문에 [discovery 캐시](#discovery-캐시) 의 키도 project
-별로 나뉘고, 그래서 tenant 마다 다른 tool 을 노출해도 되는 서버는 tenant 별로 캐시된다.
-**Email actor 가 있는 요청은 사용자도 밝힌다.** `X-User-Email`
-(같은 파일의 `USER_EMAIL_HEADER`) 은 `user` 와 `project-token` actor 의
-정규화된 email 을 싣고, Slack 처럼 actor id 가 email 이 아닌 표면은 별도로 해석한 사용자의
-주소를 싣는다. 레지스트리/바인딩/OAuth header 뒤에 적용되므로 저장된 값으로 다른 사용자를
-사칭할 수 없고, email 을 알 수 없는 런에서는 모든 저장된 표기를 제거한다. 서버가
-사용자별로 catalog 와 권한을 달리할 수 있으므로 이 값은 identity header 이자 discovery cache
-key 다. 로그인 사용자가 시작한 두 tool probe 도 이를 보내고, 사용자 없는 system probe 는
-보내지 않는다.
-**그리고 자신의 conversation 의 이름도 밝힌다.** `X-Conversation-Id`(같은 파일의
-`CONVERSATION_ID_HEADER`)로, 런이 `conversationKey` 를 가진 경우 그것을 실어 보낸다 —
-memory 서버가 한 스레드의 작업 노트와 project 의 공유 지식을 구분하는 데 필요한 헤더다.
-tenant 처럼 예약되어 있고 병합 이후에 찍히지만, 세션의 identity 헤더가 아니라 *context*
-헤더(`McpServerConfig.contextHeaders`)에 실린다. 그래서 모든 요청에 도달하면서도
-**discovery 캐시 키에는 결코 들어가지 않는다**: conversation 은 서버가 어떤 tool 을
-노출하는지에 대해 아무것도 결정하지 않으며, 그것으로 키를 잡으면 바뀌지도 않은 카탈로그를
-위해 스레드마다 전체 discovery 비용을 치르게 된다. 전체 계약은
-[SECURITY.md](../SECURITY.md#mcp-서버가-호출자에-대해-듣는-것) 에 있다.
+| Header | 의미 | discovery cache |
+|---|---|---|
+| `X-Tenant-Id` | 호출하는 Project 이름 | 신원 키에 포함 |
+| `X-User-Email` | 확인한 user·project-token 이메일 또는 표면이 해석한 이메일 | 신원 키에 포함 |
+| `X-Conversation-Id` | 표면과 호출자 범위로 구분한 대화 주소 | 요청 문맥으로만 전달 |
+
+이 값은 credential을 대신하지 않는다. MCP 서버는 자기 Bearer/OAuth와 함께 인가해야 한다.
+시스템 probe에는 사용자·대화가 없으며 registry Test와 프로젝트 도구 조회는 요청 사용자 email을
+사용한다. 프로젝트 도구 조회도 tenant header는 보내지 않는 현재 차이가 있다.
+각 probe와 런의 정확한 범위는 [보안 계약](../SECURITY.md#mcp-서버가-호출자에-대해-듣는-것)에 있다.
 
 ## Transport 와 세션
 
-Tool 로딩은 MCP streamable HTTP(`tools/list`, `tools/call` JSON-RPC)를 쓴다. 프로토콜에는
-**소유자가 하나** 있다. `McpSession`(`src/infrastructure/mcp/session.ts`) 이며 — 엔진의
-`ToolManager` 도, 레지스트리의 "Test connection" probe 도 그 위에서 돈다.
+`infrastructure/mcp/session.ts`의 `McpSession`이 프로토콜을 소유한다.
+ToolManager와 registry probe는 이 세션을 공유하고 SDK Runtime에는 준비된 alias·도구 스냅샷을 제공한다.
 
-세션은 **`@modelcontextprotocol/client`** 위의 어댑터이고, 그 이유는 `2026-07-28`
-리비전이다: 이 리비전이 `initialize` 핸드셰이크를 없앴으므로, 클라이언트는 이제 서버가 어느
-era 를 구현하는지 감지해서 핸드셰이크나 요청별 `_meta` 봉투 중 하나를 말해야 한다. 모든
-연결은 **`server/discover`** 로 시작한다; 여기에 답하는 서버와는 상태 없이(statelessly)
-대화하고, `-32601` 로 답하는 서버에는 대신 `initialize` 핸드셰이크를 건넨다. 이 클라이언트가
-모르는 리비전만 지원하는 서버는 자기가 말하는 것을 이름 붙여 `-32022` 로 답하는데,
-`unusableServerReason` 은 그것을 도달 불가 호스트가 아니라 *이 클라이언트를 올려야 한다* 로
-보고한다.
+현재 `@modelcontextprotocol/client`에 `versionNegotiation: { mode: "auto" }`를 사용한다.
+`server/discover` probe는 `2026-07-28`을 제안하며, 인식하지 못하는 서버는 legacy
+`initialize` 협상으로 연결한다. legacy 제안 revision은 SDK의 `LATEST_PROTOCOL_VERSION`에서 온다.
+서버가 지원하는 revision을 알지만 현재 SDK로 말할 수 없으면 업그레이드가 필요한 서버로 보고한다.
 
-**대신 리비전을 고정(pin)하는 쪽도 시도했다가 되돌렸다.** 그쪽이 더 싸다 — 핸드셰이크,
-세션 id, 그리고 그 둘레의 만료 복구가 전부 사라지고, 그와 함께 이중 era 클라이언트가 조용히
-틀릴 수 있는 이음매도 사라진다. 대가는 아직 옮겨오지 않은 모든 서버이고, MCP 서버란 남의
-릴리즈 일정 위에 놓인 남의 배포다: 이 앱이 올라갔다는 이유로 동작을 멈춘 레지스트리 항목은
-그 소유자가 고칠 수 없는 실패다. 어떤 항목도 발맞춰 올릴 필요가 없도록 이 이음매를 여기에
-남겨 둔다.
+| 경계 | 동작 |
+|---|---|
+| 네트워크 | transport에 bounded fetch를 주입한다. 연결·목록·호출·해제가 같은 URL·응답 크기 정책을 지난다 |
+| 연결 준비 | 서버에는 병렬 연결하되 alias 배정은 binding 순서를 유지한다 |
+| 도구 이름 | provider 함수 이름 규격에 맞게 정규화하고 충돌에는 suffix를 붙인다. 호출 시 원래 이름으로 역변환한다 |
+| 목록 | `tools` capability가 없으면 묻지 않고 그 이유를 알린다. 페이지 상한 초과는 discovery 전체 실패이며 부분 목록을 성공으로 쓰지 않는다 |
+| legacy 세션 소실 | session ID를 보낸 요청의 404만 한 번 재연결·재시도한다. 같은 세션을 잃은 동시 호출은 새 연결을 공유한다 |
+| modern 요청 | SDK가 `Mcp-Method`·`Mcp-Name`·허용된 `Mcp-Param-*`를 만든다. 캐시된 tool definition도 호출에 넘긴다 |
+| 서버 추가 입력 요구 | `input_required`를 구체적인 도구 실패로 보고한다. elicitation·sampling·roots를 자동 수행하지 않는다 |
+| 401·scope 부족 | 해당 요청의 typed challenge로 연결을 재인증 상태로 표시하고 필요한 scope를 보탠다 |
+| 취소·종료 | 호출자의 취소를 실패 캐시에 넣지 않는다. 해제는 제한 시간 안에서 best-effort로 수행하며 modern 연결은 legacy DELETE를 보내지 않는다 |
 
-SDK 는 어댑터 계층의 의존성이고, 프로토콜 클라이언트가 있어야 할 자리가 거기다;
-[AGENTS.md](../../AGENTS.md#dependency-direction) 의 규칙이 그것을 `application` 과 `domain`
-밖에 붙들어 둔다. SDK 가 의견을 갖지 않는 것은 세션에 남으며, 아래 각각은 한 번씩 결함이었던
-것들이다: SSRF 가드(transport 의 `fetch` 로 주입되므로, 운영자가 준 MCP URL 이라도 메타데이터
-서비스를 지목할 수 없다), 한 응답이 메모리로 끌어올 수 있는 양의 상한, 아래의 lazy connect,
-그리고 만료된 세션의 재시도 — SDK 는 이것을 구현하지 않는다.
+연결·목록·호출·해제의 제한은 [CONFIGURATION](../CONFIGURATION.md#코드에-고정된-제한)에 있다.
+legacy 404 재시도는 서버가 세션을 찾지 못해 효과 실행 전에 거절했다는 프로토콜 계약에 기대며
+일반적인 도구 실패를 다시 실행하는 정책이 아니다.
 
-**SDK 는 다른 모든 의존성과 마찬가지로 caret 범위(`^2.0.0`)를 따르지만, 그 동작 중 넷은
-여기서 하중을 받고 있고 어느 것도 semver 로 보장되지 않는다**: `LATEST_PROTOCOL_VERSION` 이
-어느 리비전을 가리키는지(2026 era 로 올라가면 핸드셰이크 폴백이 무용지물이 된다),
-`mode: "auto"` 가 무엇으로 폴백하는지, `listMaxPages` 가 잘라내지 않고 throw 한다는 것,
-그리고 `unusableServerReason` 이 읽는 `SdkErrorCode` 값들. 따라서 SDK 를 올리는 것은 —
-lockfile 갱신을 포함해 — 그냥 통과시킬 의존성 업데이트가 아니라 저 넷을 대조해 확인해야 할
-프로토콜 변경이다.
+SDK 갱신은 protocol 변경으로 검토한다. 협상 revision, auto fallback, `listMaxPages`의
+throw 동작과 `SdkErrorCode` 매핑을 확인한다.
+검사는 `toolManager.test.ts`, `mcpClientMetadata.test.ts`, `mcpDiscoveryCache.test.ts`,
+`mcpProtocolStub.ts`의 서버 fixture를 사용한다.
 
-- Tool 이름 충돌은 역방향 매핑을 갖는 `_1`/`_2` 접미사 alias 를 받고, 같은 aliasing 이
-  **provider** 라면 거부했을 이름도 실어 나른다: MCP 는 128자와 점을 허용하지만
-  (`admin.tools.list` 는 스펙 자신의 예시다) 함수 이름은 `[A-Za-z0-9_-]{1,64}` 다. 그 tool 을
-  조용히 버리는 대신, 충돌 alias 와 똑같이 이름을 규격에 맞는 것으로 정규화한다 — 서버는
-  여전히 자신이 공표한 이름으로 호출된다. alias 를 만들 재료가 아무것도 없는 이름만
-  거부된다. Tool
-  결과는 100,000자로 제한된다.
-- 서버는 init 시점에 **병렬로** 접촉한다(그렇지 않으면 도달 불가 서버 하나가 자기 타임아웃
-  전체를 time-to-first-token 에 더한다). 반면 alias 할당은 설정된 순서를 지키므로 이름은
-  결정적이다.
-- 세션은 첫 요청 전에 등록되고, 런이 끝나면 `DELETE` 로 해제된다(`ToolManager.close()`,
-  실행 파사드의 `finally` 에서 호출된다 — discovery 자체가 실패했거나 취소된 경우를 포함해서).
-- **`Mcp-Session-Id` 를 실은 채 `404`** 로 답을 받은 요청은, 서버가 그 세션을 잊었고
-  transport 가 새 세션을 요구한다는 뜻이다: 연결을 버리고, 새 연결 뒤에서 요청을 **한 번**
-  재생한다. 재생이 안전한 이유는 404 가 세션 조회 실패이기 때문이다 — 서버는 무엇이든
-  실행하기 전에 메시지를 거부했으므로, 404 를 받은 `tools/call` 에는 반복될 효과가 없었다.
-  한 번으로 제한하는데, 그러지 않으면 정말로 사라진 엔드포인트에 영원히 재연결하게 된다.
-  **자기 세션이 아직 현재 세션인 호출자만 그것을 버린다**: 모델의 한 응답이 자기 MCP 호출들을
-  한꺼번에 보내므로 여럿이 같은 죽은 id 를 들고 있을 수 있고, 각자 차례로 리셋하면 다른
-  호출자가 시작한 연결을 버리고 호출자마다 서버 쪽 세션을 하나씩 찍어내게 된다. 이것이
-  없으면 서버의 세션 TTL 보다 오래 사는 런은 — 여기 런은 최대 10분까지 간다 — 남은 tool 호출을
-  전부 잃고, 모델은 `HTTP 404` 를 읽으며 돌아갈 길이 없다. 이건 세션 자신의 코드다: SDK 에는
-  그런 복구가 없다. 프로토콜 `2026-07-28` 은 세션을 아예 찍어내지 않으므로, modern 연결에서는
-  이 재시도가 구조적으로 도달 불가이고 teardown 도 `DELETE` 를 보내지 않는다.
-- 핸드셰이크 이후의 요청은 제안한 프로토콜 버전이 아니라 **서버** 가 합의한 버전을 밝힌다.
-  핸드셰이크 자신은 *본문* 에서 제안한다: 헤더는 사용 중인 리비전을 이름 붙이는 것이고,
-  서버가 답하기 전까지는 사용 중인 리비전이 없다. 그보다 앞선 era probe 는 이 클라이언트가
-  말하는 가장 새로운 리비전을 싣는데, 그것이 바로 묻고 있는 대상이다.
-- `2026-07-28` 연결에서는 모든 POST 가 자기 본문을 **`Mcp-Method`** 로, 무언가를 이름으로
-  지목하는 요청은 **`Mcp-Name`** 으로, tool 이 `x-mcp-header` 로 표시한 파라미터는
-  `Mcp-Param-*` (SEP-2243) 로 미러링한다. 그래야 게이트웨이나 rate limiter 가 본문을 파싱하지
-  않고도 라우팅하고 계측할 수 있다. 출력 가능한 ASCII 밖의 이름은 Base64 로 인코딩되어
-  이동한다(`=?base64?…?=`). **2025 era 교환에는 이 중 어느 것도 나타나지 않으며**, 그것은
-  누락이 아니라 의도적이다: 스펙은 중간자에게, 서버가 검증했음을 보장하는 버전과 대조할 수
-  없는 미러링 값은 거부하라고 말한다. 그러니 그런 검증을 약속한 적 없는 서버에 그 값을 보내는
-  것은 안 보내는 것보다 나쁘다. 미러링은 SDK 가 소유하며, `x-mcp-header` 선언이 제약을 깨는
-  tool 을 배제하는 것도 포함한다 — 잘못된 tool 하나가 나머지 전부를 잃게 두지 않기 위해서다.
-  **tool 의 정의는 호출에 함께 넘긴다.** SDK 는 자기가 직접 보낸 `tools/list` 의
-  `inputSchema` 에서 `Mcp-Param-*` 를 끌어내는데 — discovery 캐시가 따뜻하면 아무것도 보내지
-  않은 경우가 잦기 때문이다. 그러지 않으면 캐시된 카탈로그 위의 런은 값이 본문에 들어 있는
-  헤더를 빠뜨리게 되고, 그것으로 라우팅하는 서버는 그 요청을 거부할 수밖에 없다.
-- **`resultType: "input_required"`** 로 표시된 결과 — 서버가 답하기 전에 승인이나 빠진 인자를
-  필요로 한다는 뜻이다(MRTR, 프로토콜 `2026-07-28`) — 는 "no content" 검사로 흘러가지 않고
-  그 자체의 실패로 보고된다. 흘러갔다면 운영자를, 자기 프로토콜이 말한 그대로 행동하고 있는
-  서버를 들여다보라고 보내는 셈이 된다. 이 클라이언트는 그런 요청에 답하지 않는다. 이 필드가
-  없는 결과는 스펙이 요구하는 대로 평범한 결과다.
-- tool 의 **이미지** 결과(`image` 블록, 그리고 이미지 mime 타입을 가진 `resource` blob)는
-  버려지지 않고 바이트로 돌아온다: 엔진이 그것을 등록해 사용자에게 스트리밍하고, 후속 user
-  메시지로 그 턴에 붙인다 — 마지막 단계는 모델이 이미지 입력을 받는 경우에만 한다. 텍스트만
-  받는 모델이라면 그 파트를 거부해 턴을 실패시킬 것이기 때문이다. 전달 자체는 모델에 달려
-  있지 않다: 스크린샷을 요청한 사람은 모델이 아니며, 결과 텍스트는 그림이 대화 속이 아니라
-  그 사람에게 갔다고 말한다.
-- **다른 모든 content 타입은 프로토콜이 정의한 대로 읽는다.** `resource_link` 는 자기 URI 와
-  그것을 식별하는 정보가 된다 — 페이로드가 아니라 모델이 요청할 수 있는 포인터다. `audio`
-  블록은 이름이 붙는 데서 그친다. 한 턴은 텍스트와 이미지만 나르므로, 모델에게는 녹음이
-  존재한다고 알려 주고 모델은 전사를 요청할 수 있다.
-- **스키마를 깨는 결과는 통째로 거부된다.** 클라이언트가 결과 전체를 검증하므로, tool 하나가
-  객체가 아닌 `inputSchema` 를 선언하면 그 서버는 카탈로그 전부를 잃고, 스키마가 모르는
-  타입의 content 블록은 그 호출을 실패시킨다. 파싱되는 것은 읽고 나머지는 이름만 남기던
-  수제(hand-rolled) 클라이언트에서 바뀐 점이다 — 맞바꾼 것은, 잘못된 응답이 조용히 얇아지는
-  대신 보고된다는 것과, 블록 타입을 추가하는 리비전에는 SDK 업그레이드가 필요해진다는 것이다.
-  이것은 "도달 불가"(`unusableServerReason`)에서 제외한다. 서버는 살아서 답하고 있고, 고칠
-  곳은 이쪽 아니면 저쪽이지 결코 네트워크가 아니기 때문이다.
-- **`tools` capability 를 선언하지 않은 서버에는 카탈로그를 아예 묻지 않는다.** 스펙은 tool
-  을 가진 서버라면 반드시 선언하라고 요구하며, SDK 는 `tools/list` 를 보내지 않고 빈 목록을
-  반환한다. 그것은 조용한 손실이 되므로, 런은 둘 중 어느 쪽이 일어났는지 말한다: 비어 있음
-  경고가 읽는 것이 `McpSession.declaresTools` 다.
-- **페이징이 끝나지 않는 카탈로그는 그 전부를 잃는다.** 집계 순회는 페이지 상한에서 throw
-  하고 부분 결과를 남기지 않는다. 수제 구현은 가진 페이지를 반환하고 남은 꼬리를 경고했었다 —
-  그래서 이제 상한은 공짜가 아니고, 그보다 낮은 값이 아니라 SDK 자신의 기본값인 64 에 놓이며,
-  거기에 도달하면 이 클라이언트가 쓸 수 없는 서버로 보고된다. 수렴하지 않는 커서에 대한 진짜
-  방어는 discovery 데드라인이다.
-- **서버가 content 블록을 하나도 보내지 않았을 때 `structuredContent` 를 읽는다.** 그것을
-  텍스트 블록으로 직렬화하는 것은 SHOULD 일 뿐이므로, 건너뛴 서버도 여전히 답하고 있는 것이다
-  — 그 결과는 예전에 "no content" 로 보고됐는데, 성공한 호출에 대한 실패 보고였다. 둘 다 있을
-  때는 content 블록이 이긴다. 텍스트 블록이 곧 그 직렬화이기 때문이다. 설명할 것이 아무것도
-  없는 `isError` 결과는 비어 있음을 보고하는 대신 **판정** 을 유지한다; 빈 `content` 배열은
-  실패가 아니라 할 말 없이 성공한 호출(무언가를 지운 삭제)이며, 더 이상 문자열 `[]` 로
-  모델에 닿지 않는다.
-- **tool 호출에서 온 401** 은 discovery 에서 온 401 과 똑같이 그 연결에 재연결 플래그를
-  붙이며, 그래야만 한다: discovery 는 캐시되므로, 캐시가 따뜻한 런은 그 서버로의 첫 요청을
-  *첫 tool 호출에서* 하게 되고, 마지막 discovery 이후에 회수된 토큰은 다른 어디에서도 드러날
-  수 없다. 몇 번의 호출을 거부당하든 서버당 한 번만 기록되고, 런이 세션을 해제할 때 적용된다.
-  모든 tool 실패는 tool 과 서버의 이름도 함께 밝힌다 — 한 런이 여럿을 바인딩할 수 있고, 맨몸의
-  `HTTP 500` 은 그중 어느 것도 가리키지 못한다.
+### 결과 해석
+
+`toolManager.ts`는 검증된 결과를 모델용 텍스트·이미지·파일로 나눈다.
+
+| MCP 결과 | Studio 처리 |
+|---|---|
+| text | 도구 결과 예산 내 텍스트 |
+| image 또는 image resource blob | 제한된 bytes를 사용자에게 전달하고 이미지 지원 모델의 문맥에도 연결 |
+| 그 밖의 resource blob | UTF-8이면 텍스트, 그렇지 않으면 크기 한도 내 파일 출력 |
+| resource link | URI와 설명을 포인터로 제공하며 자동으로 내려받지 않는다 |
+| audio | 존재를 알리는 설명. 일반 모델 턴에 오디오 bytes를 넣지 않는다 |
+| content 없는 structuredContent | JSON 텍스트로 전달한다. content가 있으면 그것이 우선한다 |
+| 빈 content | 빈 성공과 `isError` 실패를 구분한다 |
+| schema를 어긴 결과 | 해당 응답을 거절하고 오류를 설명한다 |
+
+파일과 이미지의 저장은 [실행 브래킷](execution.md#artifacts)이 담당한다.
+`sourceOutputs`가 지정된 도구는 모델용 길이 제한보다 먼저 비공개 파일 참조를 추출한다.
+응답에 알려지지 않은 content 타입이 추가되면 SDK 변경이 필요할 수 있다.
 
 ## Discovery 캐시
 
-Discovery 는 `url + headers` 단위로 캐시된다(`discoveryCache.ts`). 히트하면 세션은 연결되지
-않은 채로 남고 첫 tool 호출에서 lazy 하게 연결하므로, **tool 을 하나도 호출하지 않는 턴은 MCP
-요청을 아예 하지 않는다** — 예전 chat 은 서버마다 메시지마다 핸드셰이크 전체를 치렀다. 헤더가
-키의 일부이므로 한 tenant 의 tool 목록이 다른 tenant 에게 답하는 일은 결코 없다.
+캐시 키는 URL과 신원 header다. 사용자·프로젝트별 도구 목록을 공유하지 않는다.
+대화 header는 key에 포함하지 않는다. 캐시가 맞으면 세션을 열지 않고 준비할 수 있으며
+실제 도구 호출 시 lazy 연결한다.
 
-실패도 짧게, 그리고 하나의 값(`DiscoveryFailure`)으로 캐시된다. 그래서 재생된 실패는 살아
-있던 실패가 그랬던 것과 똑같이 자기를 설명한다 — "도달 불가" 가 아닌 두 가지 해석을 포함해서:
-401 은 *project* 에게 재연결을 요구하고, 쓸 수 없는 서버는 이쪽 아니면 저쪽에서의 수정을
-요구한다.
-
-`tools/list` 에 캐싱 힌트 `ttlMs` (SEP-2549)를 보내는 서버는 자기 항목의 수명을 스스로 정한다
-— 자기 카탈로그는 자기가 알고, 로컬 기본값은 남의 것에 대한 추측일 뿐이기 때문이다 — 다만
-별도의 상한에 묶인다. **페이지로 나뉜** 카탈로그에서 그 힌트는 첫 페이지의 것이다. 이
-클라이언트는 예전에 페이지들 중 가장 짧은 값을 취했다: SDK 의 페이지별 호출은 커서를 넘겨
-선택되는데, 첫 페이지에는 커서가 없다. 두 knob 에 대한 전체 논거와 그 값은
-[CONFIGURATION.md](../CONFIGURATION.md#mcp) 에 있다.
+서버 `ttlMs` hint는 첫 페이지에서 읽고 배포 상한 안에서 적용한다.
+로컬 TTL이 0이면 캐시를 끄며 서버 hint가 다시 켜지 못한다.
+실패도 짧게 캐시하고 인증 실패·프로토콜 미지원·응답 검증 실패를 구분해 재생한다.
+편집 무효화는 프로세스 로컬이므로 다중 인스턴스는 TTL에 따라 갱신된다.
 
 ## Managed 서버
 
-`runtime: "managed"` 는 **이 앱이 자기 호스트 위에서 직접 띄우는** 컨테이너이며, 호스트의
-Docker CLI 로(`MANAGED_MCP_RUNTIME=docker`, 유일한 런타임) 시작되고 `127.0.0.1:<port>` 로
-도달한다. 그 주소는 URL 정책이 거부하는
-주소다 — 운영자가 타이핑한 무언가에 대해서는 그게 맞다 — 그래서 신뢰는 대신
-**출처(provenance)** 에 기댄다: 프로비저너가 포트를 바인딩한 뒤 그 주소를 기록했다는 사실이다. 그
-우회로가 좁다는 것 자체가 보안 속성이다;
-[SECURITY.md](../SECURITY.md#managed-루프백-예외) 를 보라.
+`MANAGED_MCP_RUNTIME=docker`와 registry 설정이 있는 배포에서 앱이 호스트 Docker CLI를 호출한다.
+`127.0.0.1:<port>:<containerPort>` 매핑을 게시하고 그 주소를 등록한다.
+이 주소는 사용자 입력의 사설 URL 허용과 구분되는 managed provenance 예외다.
 
-저장된 행은 `image`, `args`, `endpointPath`, `containerPort` 와 컨테이너의 환경을 싣는다 —
-재시작이 필요로 하는 전부다. 재시작 시점에는 다시 물어볼 운영자가 없기 때문이다. `environment`
-값은 다른 저장 자격증명과 마찬가지로 저장 시 암호화되고, Docker 를 호출하기 직전에만 0600 임시
-env file 로 복호화된다. 호스트 파일 경로를 받지 않으므로 다른 workload 의 파일을 컨테이너에
-주입할 수 없다. `PORT` 는 런타임이 소유하므로 입력에서 거부된다.
+행에는 image·args·endpointPath·containerPort·암호화 environment를 저장한다.
+Docker에는 argv 배열과 process가 만든 0600 임시 env 파일을 넘기며 호스트 파일 경로를 받지 않는다.
+`PORT`는 runtime이 지정하고 args의 `{{PORT}}`를 실제 listen 포트로 치환한다.
+자원·파일시스템·capability 제한은 [보안 계약](../SECURITY.md#managed-루프백-예외)을 따른다.
 
-`containerPort` 는 컨테이너가 리슨할 것으로 기대되는 포트다: 프로비저너는
-`127.0.0.1:<port>:<containerPort>` 매핑을 게시하고 `-e PORT=<containerPort>` 를 써 넣어 — 운영자가
-env 파일에 둔 `PORT` 보다 `-e` 가 이기므로 매핑이 쓰는 쪽이 이긴다 — 이미지가 그것을 따르게
-한다. 인자 안의 `{{PORT}}` 는 실제 리슨 포트가 되므로, `PORT` 환경변수를 따르지 않는 이미지도
-그대로 동작한다. 값이 없는(저장되기 전의) 항목은 게시되는 포트 자신으로 매핑한다.
+같은 이름의 생성·재시작·변경을 process-wide claim으로 직렬화한다.
+생성 후 DB 저장 실패, 안전하지 않은 주소, 삭제된 행과의 경합에서는 새 workload를 정리하고
+cleanup 실패도 숨기지 않는다. Docker와 DB를 하나의 원자적 transaction으로 취급하지 않는다.
 
-같은 이름의 생성·재시작·workload 변경은 container를 건드리기 전에 process-wide claim으로
-직렬화한다. DB의 conditional create만으로는 늦다. 두 요청이 모두 같은 이름으로 `rm`과 `run`을
-마친 다음 row 쓰기에서 승패가 갈리면, 승자의 row가 패자의 container 설정을 가리키기 때문이다.
-등록 쓰기가 실패한 생성은 시작한 container를 제거하며, 제거까지 실패하면 원래 실패와 함께
-운영 오류로 드러낸다. 재시작이 안전하지 않은 주소를 받거나 그사이 삭제된 행을 발견한 경우도
-새 workload를 제거하며, 제거 실패를 숨기고 정지했다고 보고하지 않는다.
-
-**재배포에서 살아남기.** 포트 매핑은 앱 컨테이너가 아니라 호스트의 루프백에 게시되므로, 이
-앱을 교체해도 컨테이너의 주소는 그대로다 — 그 대신 앱 프로세스가 그 루프백을 봐야 하고(호스트에서
-돌거나 호스트 네트워크를 공유), 같은 이유로 **호스트당 앱 인스턴스 하나** 가 전제다. `reconcile`
-(`src/application/mcp/managedMcpUseCases.ts`)은 부팅 시 `instrumentation.ts` 에서 발화되고
-결코 await 되지 않으며, 모든 managed 항목을 probe 해서 답하지 않는 것들을 재시작한다.
-`status` 가 **도달 가능성을 liveness 와 분리해서** 보고하는 것도 같은 이유다: 후자만 보고했던
-것이 닿을 수 없는 컨테이너를 보이지 않게 만들었다.
+앱은 호스트 loopback과 Docker daemon에 접근해야 하며 호스트당 앱 인스턴스 하나를 전제로 한다.
+앱 교체가 호스트 포트 매핑을 옮기는 것은 아니다. 부팅의 `reconcile`은 서버를 probe하고
+도달하지 못한 컨테이너를 재시작하며 listen을 막지 않는다.
+running과 reachable을 별도로 확인한다. [운영](../OPERATIONS.md#재배포-이후의-관리형-mcp)을 보라.
 
 ## OAuth
 
-레지스트리 항목은 등록 시점에 한 번 발견된 `auth` 블록을 실을 수 있다; **런 경로는 well-known
-문서를 결코 가져오지 않는다.**
+관리자는 서버에서 discovery한 `auth`와 공유 OAuth 앱을 관리하고,
+프로젝트 소유자는 그 앱으로 자기 계정의 grant를 연결한다.
+access/refresh token과 연결 revision은 프로젝트별 연결 행에 보관하며 Version이나 publish 상태와 분리한다.
 
-공용 OAuth 앱은 Tools의 레지스트리 `auth`에 저장하고 사용자 grant는
-`PROJECT#<name> / MCPCONN#<server>`에 저장한다. 공용 Secret은 connection에 복사하지 않고
-code 교환·refresh 때 읽으므로 관리자의 키 교체가 모든 연결에 적용된다.
-프로젝트 소유자는 Connection에서 승인하며, 모든 버전이 해당 grant를 공유한다.
-버전 저장이나 project의 publish 동시성 검사와 토큰 갱신은 독립적이다. 공용 앱이 없으면
-메타데이터 문서나 동적 등록을 사용하고, 동적 등록이 발급한 개별 Secret은 connection에 둔다.
+실행 경로는 well-known 문서를 다시 가져오지 않는다. 저장된 메타데이터로 grant를 해석하고
+필요하면 갱신한다. 공유 client secret은 registry에서 읽어 회전을 반영하고,
+Client ID가 달라지면 기존 grant를 거절한다. 개별 등록 client secret은 해당 connection에 남는다.
 
-connection 은 서버를 통제(gating)하는 것이 아니라 자격증명을 **공급** 한다. 해석된 토큰은
-dispatch 시점에 적용되는 마지막 **자격증명** 이며 — 레지스트리 항목의 헤더와 바인딩의 override
-위에 얹힌다 — 그래서 버전은 project 의 connection 자리에 자기 `Authorization` 을 대신 넣을 수
-없다. (`X-Tenant-Id` 와 `X-User-Email` 은 그 뒤에 찍히지만 자격증명은 아니다.) 쓸 수 있는 connection 이
-없으면 서버는 여전히 그 헤더들이 들고 있는 것으로 돈다; 그것들이 아무것도 들고 있지 않을
-때에만 경고와 함께 버려진다. 어떤 항목에서 OAuth 를 발견하는 것은 그것을 인증할 방법을
-*더하는* 일이지 운영자가 이미 설정해 둔 방법을 빼앗는 일이어서는 안 된다. 그래서 항목 하나가
-정적 헤더를 쓰는 project 와 OAuth 를 쓰는 project 를 나란히 상대할 수 있다.
+credential 선택은 기존 client, 사용할 수 있는 Client ID Metadata Document,
+dynamic registration 순서다. 프로젝트별 공개 metadata URL은 설정한 공개 base로만 만든다.
+제공자가 가져올 수 없는 주소이면 다른 지원 경로를 사용하거나 구체적인 설정 오류로 거절한다.
 
-토큰 갱신은 `MAX_RUN_DURATION_MS` 에서 파생된 여유(margin) 안에서만 일어난다. 그래야 토큰이
-런 도중에 만료될 수 없고 *동시에* 헤더가 런 사이에 바이트 단위로 동일하게 유지된다 — 매 런마다
-갱신하면 매 런마다 discovery 캐시 키가 바뀐다.
+refresh는 남은 실행 시간을 고려한 여유 구간에서 수행한다.
+갱신은 revision CAS로 저장하고 경쟁에서 진 호출은 동일 issuer·resource의 유효한 승자 grant만 사용한다.
+일시 5xx·timeout은 grant를 폐기하지 않으며 실제 인증 거절은 재연결이 필요한 상태로 바꾼다.
 
-**클라이언트 자신이 어디서 오는가** 는 프로토콜 `2026-07-28` 에서 바뀌었다. 이 리비전은 동적
-등록(dynamic registration)을 폐기하고 **Client ID Metadata Documents** 를 택한다: `client_id`
-는 클라이언트가 호스팅하는 HTTPS URL 이고, authorization 서버가 그것을 가져간다. 등록은 그
-뒤에 남아, 달리 아무것도 제공하지 않는 서버들을 위해 쓰인다 — 2025 era authorization 서버는
-`registration_endpoint` 를 광고할 뿐 문서 지원은 없고, 그것들을 거부하면 그 소유자들은 잘
-되던 연결을 위해 앱을 손으로 등록하게 된다. 이 배포는 배포 단위로 하나가 아니라 project 마다
-하나를 게시하는데(`/api/mcps/oauth/client-metadata/{project}`), 그 문서가 바로 사람이 연결을
-승인할 때 보는 것이기 때문이다 — 하나뿐이라면 어느 project 가 요청하는지 알 길 없이
-"Agent Studio" 에 접근 권한을 달라고 요구하는 셈이 되는데, 등록 방식은 자기가 만든 모든
-클라이언트에 project 이름을 붙였었다. 아무것도 요청하지 않고 아무것도 저장하지 않는다:
-예전에 등록하고 시크릿을 받아 암호화하던 흐름이 이제는 이미 알고 있던 URL 을 적을 뿐이다.
-
-**메타데이터를 어디서 읽는가.** authorization 서버의 문서는 명세가 정한 순서의 세 주소에서
-찾고(`authorizationServerCandidates`), 경로가 있는 issuer 의 root 문서는 다른 issuer 의 것이라
-시도하지 않으며, `issuer` 가 맞지 않는 문서는 쓰지 않는다(RFC 8414 의 요구대로 문자열을
-code-point 단위로 그대로 비교한다). Google Workspace가 광고하는 `https://accounts.google.com/`
-에는 Google 메타데이터의 `https://accounts.google.com`만 추가로 허용한다. 일반적인 URL
-정규화가 아니며, 저장한 issuer와 OAuth 콜백은 메타데이터 원문으로 엄격하게 비교한다.
-**알려진 한계**: Microsoft Entra 의 `…/common/v2.0`
-은 테넌트 issuer 로 답하므로 그 문서는 거부된다 — 리소스가 테넌트 issuer 를 직접 광고해야 한다. resource metadata 는 well-known
-서버 자신의 401 이 `WWW-Authenticate` 로 지목하는 주소를 먼저 읽고, 주소가 없을 때만 well-known
-경로 둘을 순서대로 읽는다 — challenge 가 있으면 그것이 authoritative 하다는 MCP discovery 규칙을
-따른다. 프로브는 어차피 클라이언트가 처음 보낼 `initialize` 다. 런타임의 401/403 도 같은
-헤더를 SDK 의 요청별 `InsufficientScopeError` 로 읽어 `insufficient_scope` 가 이름 댄 scope 를
-연결에 합친다. 한 turn 의 tool 호출은 병렬이므로 session 전체의 마지막 challenge 를 읽지 않는다.
-등록은 토큰 요청이 쓸 인증 방식으로 하고 서버가 기록한 방식을 연결에 적는다.
-
-프로토콜 수준의 검사(PKCE, `resource`, `iss`, issuer 바인딩 — 메타데이터 문서 클라이언트에서는
-이것이 뒤집힌다)는 [SECURITY.md](../SECURITY.md#mcp-oauth) 에 있다.
+OAuth는 credential을 공급한다. 유효한 token이 있으면 정적·binding Authorization보다 우선하고,
+연결이 없더라도 별도 정적 credential이 있으면 사용할 수 있다.
+PKCE·resource·issuer·state·콜백 소유권, Google·Slack metadata의 제한된 예외와 내부 URL 경계는
+[SECURITY의 OAuth 계약](../SECURITY.md#mcp-oauth)을 따른다.

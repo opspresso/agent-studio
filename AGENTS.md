@@ -51,8 +51,9 @@ pnpm exec vitest run tests/engine.test.ts
 pnpm exec vitest run -t "streamWithFallback"
 ```
 
-There is no lint step. CI runs typecheck → test → integration test → build. Node 24 and pnpm
-11 are required (`packageManager` is pinned).
+There is no lint step. CI's `verify` job runs typecheck → test → integration test; the
+image-release job builds through Dockerfile. Run build locally when required below. Node 24
+and pnpm 11 are required (`packageManager` is pinned). See `docs/DEVELOPMENT.md` for CI scope.
 
 ```bash
 docker compose up -d postgres minio minio-init
@@ -144,8 +145,8 @@ key, cap, formatter, error identity, or collapse rule, search
 - Unbounded lists take `limit`; post-read expiry filtering passes `notExpiredAt` so filtering
   occurs before the limit counts.
 - Expiring rows carry `expiresAt`; `sweepExpiredRows` performs retention on the schedule tick and
-  reads still filter expired values. Without `SCHEDULE_SCAN_TOKEN`, nothing is purged; document
-  that deployment consequence.
+  reads still filter expired values. Without authenticated schedule ticks, the DB retention sweep
+  does not run. Object lifecycle, audio-file deletion and Sandbox cleanup have separate owners.
 
 ### Execution and streams
 

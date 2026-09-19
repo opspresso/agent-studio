@@ -1,168 +1,93 @@
 # 트리거
 
-사람이 아닌 무언가가 런을 시작하는 두 경로 — webhook 전달(delivery)과 schedule 발화(firing)
-— 그리고 인스턴스가 붙잡은 채 죽은 행을 마감하는 스윕(sweep).
+Webhook 전달과 Schedule 발화는 발행된 Project Version을 백그라운드 실행한다.
+HTTP 요청·응답은 [API](../API.md#triggers), ticker·보존·알림은
+[OPERATIONS](../OPERATIONS.md#schedule-티커)를 따른다.
 
-티커(ticker)의 계약과 그 요약이 뜻하는 바는
-[OPERATIONS.md](../OPERATIONS.md#schedule-티커) 에 있고, 전달 엔드포인트는
-[API.md](../API.md#triggers) 에 있다.
+## Webhook
 
-```ts
-WebhookTrigger  { projectName, triggerId (slug), kind: "webhook", description, enabled,
-                  secret (AES-encrypted, masked on read), variables?, payloadMode,
-                  allowConcurrent, createdAt, updatedAt }
-ScheduleTrigger { …same base…, kind: "schedule", executionEmail?, cron, timezone (IANA), message?, deliveries? }
-```
+Project에는 예약 ID `webhook`인 Webhook 하나와 이름이 있는 Schedule들을 둘 수 있다.
+Webhook 주소는 `projectWebhookPath`가 만드는 `/api/webhook/{project}`다.
+다른 ID의 Webhook이나 `webhook`이라는 Schedule 생성은 거절한다.
 
-- **한 Project 는 webhook 하나와 임의 개수의 schedule 을 갖는다.** webhook 은 예약된 id
-  `PROJECT_WEBHOOK_ID` 아래의 트리거 행이고 `POST /api/webhook/{project}` 로 전달된다 —
-  Project 이름이 주소 전체이므로 아무도 이름을 붙이지 않으며, 콘솔은 처음 켜질 때 그 행을
-  쓰는 스위치다. 이것이 트리거 행으로 남는 이유는 전달에 필요한 모든 것이 이미 거기 살기
-  때문이다: 시크릿, 발화 이력, 멱등성 클레임, 겹침 리스(lease), Project cascade delete.
-  별도 엔티티였다면 그 하나하나를 다시 유도했을 것이다. "webhook 하나"라는 부분은 관례가
-  아니라 구조다: `admitDelivery` 는 Project 이름을 받아 id 를 스스로 해석하므로 어떤
-  호출자도 다른 행을 지목할 수 없고, `create` 는 다른 id 아래의 webhook (문 없는 시크릿을
-  발급하는 꼴이다) 도, 이 id 아래의 schedule 도 거부한다. 주소를 만드는 곳은
-  `src/domain/trigger/types.ts` 의 `projectWebhookPath` 하나뿐이다.
-- 트리거와 그 전달 이력은 둘 다 **project 파티션**에 산다. 그래서 Project cascade delete 가
-  이미 그것들을 제거하고, 한 트리거의 런은 `begins_with` 하나다. 런 행에는 TTL 이 붙는다 —
-  전달 로그는 남겨 둘 기록이 아니기 때문이다.
-- **published 만**, `resolveRunnableVersion` 을 통해 — draft 는 작성 중인 설정이고, 외부
-  시스템이 거기에 발화하면 편집자가 마침 저장해 둔 무엇이든 실행하게 된다.
-- `triggerId` 는 Project 이름과 같은 규칙을 따르는 slug 이고, 클라이언트 쪽에서 공용
-  `toSlug` 로 정규화되며 스키마가 그것을 강제한다.
-- 시크릿은 enabled 플래그를 읽기 **전에** 상수 시간으로 비교된다. 그래야 비활성 트리거가
-  틀린 시크릿에 활성 트리거와 다르게 답하지 못한다 — 그 차이는 어떤 트리거가 존재하는지
-  알려 주는 oracle 이다.
-- GitHub 전달은 같은 프로젝트 시크릿으로 원본 body의 `X-Hub-Signature-256`을 검증한다.
-  GitHub 헤더가 있으면 서명 방식을 강제하고 일반 시크릿으로 폴백하지 않는다. delivery ID와
-  event 헤더를 요구하며, 서명된 ping은 모델을 실행하지 않고 연결만 확인한다.
-- `Idempotency-Key` 는 조건부 쓰기(24h TTL)로 클레임되며, Slack 이벤트 클레임과 같은
-  모양이다. GitHub 전달은 `X-GitHub-Delivery`를 그 키로 사용한다.
-- `allowConcurrent: false` (기본값) 는 **런 슬롯을 재사용해서** 강제한다: "동시에 최대 하나,
-  그리고 죽은 인스턴스의 점유는 만료된다" 가 바로 `RunSlotRepository` 그 자체다. 기본이
-  꺼짐인 이유는, 런이 걸리는 시간보다 빠르게 발화하는 webhook 이 그러지 않으면 비용 가드가
-  알아챌 때까지 런을 쌓아 올리기 때문이다.
-- `payloadMode` 는 payload 가 무엇이 될지 정한다. `variables` 는 payload 의 최상위 스칼라
-  필드를 트리거의 고정 변수 위에 평탄화한다 — 템플릿에 치환될 수 있는 것은 문자열뿐이므로,
-  중첩 객체는 `[object Object]` 로 렌더되는 대신 버려진다. `message` 는 payload 를 사용자
-  턴으로 직렬화하며, 그것이 agent project 가 추론할 수 있는 형태다.
-- **문을 지난 뒤의 모든 거절은 상태를 가진 이력 행이 된다.** skip (Project 가 사라짐,
-  published 버전 없음, 이미 런이 진행 중) 도 포함이다: 운영자는 로그를 읽지 않고도 "애초에
-  발화하지 않았다" 와 "발화했고 실패했다" 를 구별할 수 있어야 한다. 문 자체가 돌려보내는 것
-  — webhook 미설정, 틀린 시크릿, 비활성 트리거, 중복된 `Idempotency-Key` — 은 이력 행을
-  남기지 않는다: 그것들은 전달 자체의 답(`404`, `401`, 상태를 담은 `202`)이고, 틀린 시크릿은
-  아무것도 쓰지 않아야 한다.
-- 엔드포인트는 **202** 로 답하고 Slack 경로처럼 `after()` 로 실행한다: 여기서 런은 10분까지
-  갈 수 있고 그렇게 오래 기다리는 webhook 발신자는 없다. 전달 도중 인스턴스를 잃으면
-  `running` 에 멈춘 행이 남고, [복구 스윕](#유실된-발화-복구)이 그것을 `failed` 로
-  마감한다 — 스캔 틱과 그 트리거 자신의 다음 전달이 함께 이를 구동하므로, 티커가 없는 배포도
-  커버된다. Slack 은 그 갭을 의도적으로 남겨 둔다: 유실된 이벤트는 마감할 행을 남기지 않고
-  답을 받지 못한 사용자만 남기며, 그것을 다시 실행하는 것은 schedule 결정이 이미 판정한
-  비멱등성과 충돌한다.
+trigger와 실행 이력은 프로젝트 파티션에 저장하고 실행 이력에 보존 기간을 적용한다.
+모델 실행은 `resolveRunnableVersion`으로 발행 버전만 선택한다.
+
+| 경계 | 동작 |
+|---|---|
+| 인증 | enabled 검사 전에 프로젝트 secret을 상수 시간 비교한다 |
+| GitHub | 원본 body의 HMAC과 event·delivery header를 검사한다. GitHub 헤더가 있으면 일반 secret 방식으로 후퇴하지 않는다 |
+| 중복 | `Idempotency-Key`, GitHub의 경우 delivery ID를 조건부 claim한다 |
+| 겹침 | 기본 `allowConcurrent: false`; DB 실행 슬롯으로 같은 trigger의 겹침을 거절한다 |
+| 입력 | message 모드는 JSON을 사용자 턴으로 직렬화하고 variables 모드는 최상위 scalar만 고정 변수 위에 덮는다 |
+| 실행 | 202 접수 후 `after()`에서 실행한다. 202는 성공적인 처리 완료가 아니다 |
+
+인증 실패·미설정·비활성·중복·서명된 ping은 새 실행 이력을 만들지 않는다.
+admission에서 Project·발행 버전이 없거나 겹침·실행 사용자 정책에 거절된 경우에는
+skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 failed로 마감한다.
+한도나 capability 손실은 succeeded에서도 warning으로 남을 수 있다.
 
 ## 실행 문맥과 결과
 
-인증된 Webhook도 actor는 `webhook`이며 개인 사용자 email을 payload에서 추출해 권한으로 쓰지 않는다.
-따라서 user 전용 Workspace 빌트인·Chat Session·Chat 승인 화면을 제공하지 않는다. 연결된 Skill은
-실제 제공된 도구의 절차를 안내할 뿐 권한을 추가하지 않는다. 결과는 Trigger 이력과 project Artifact에 남는다.
+Webhook actor는 `webhook`이며 payload의 이메일을 사용자 권한으로 사용하지 않는다.
+Schedule은 소유자가 `runAsOwner`를 명시적으로 켰을 때만 확인한 `executionEmail`을 저장하고
+admission·실행 직전에 현재 프로젝트 소유권과 member 상태를 다시 검사한다.
 
-Schedule은 소유자가 개인 문맥 실행을 명시적으로 켠 경우에만 `executionEmail`을 저장한다.
-접수와 실제 실행 직전에 현재 project 소유권과 member 상태를 다시 검사한다. 이 email은
-지원되는 개인 MCP·오디오 문맥에 사용되지만 actor는 `schedule`로 유지되고 Workspace 도구를 얻지 않는다.
-[창구별 실행 계약](workspaces.md#실행-창구별-계약)과 [사용자 문맥](../SECURITY.md)을 따른다.
+이메일은 개인 MCP·오디오 문맥에 사용할 수 있지만 actor는 `schedule`로 유지한다.
+Webhook·Schedule은 user 전용 Workspace 도구와 영속 Chat 승인 화면을 얻지 않는다.
+[창구별 계약](workspaces.md#실행-창구별-계약)을 따른다.
+
+실행 출력은 Trigger 이력과 Artifact에 기록한다. 이력은 제한된 텍스트·오류·경고를 담으며
+이미지 bytes를 넣지 않고 생성 사실을 적는다. 별도 객체 저장소가 있으면 결과 파일을 보관한다.
+Schedule의 플랫폼 전송 결과는 아래의 `deliveryResults`로 구분한다.
 
 ## Schedule
 
-**스케줄러 경계** — 이 기능이 기다리고 있던 배포 결정 — 는 **인증된 엔드포인트를 틱하는
-외부 ticker** (`POST /api/triggers/scan`, 공유 토큰, 1분에 한 번) 이다. 티커는 상태도
-cron 지식도 갖지 않는다: 어떤 발생(occurrence)이 도래했는지, 각각을 누가 차지하는지, 무엇이
-실행되는지는 전부 `scanSchedules` 에서 결정되므로 두 번 틱하든, 두 곳에서 틱하든, 늦게
-틱하든 안전하다. 대안들은 상태 때문에 졌다: EventBridge Scheduler 는 트리거별 CRUD 를 AWS
-컨트롤 플레인에 둔다 — 진짜 테이블과 어긋날 수 있는 트리거 테이블의 두 번째 사본이다 —
-그리고 전용 worker Deployment 는 앱이 이미 서빙할 수 있는 폴 루프를 위해 런타임 전체를
-복제한다. 저울에 올린 소비자는 하나가 아니라 셋이었다: Slack 이벤트와 webhook 전달은 ack 후
-`after()` 라는 같은 내구성 갭을 공유하고, 클레임된 작업에 대한 무상태 틱은 그 둘 모두로
-일반화된다 — 그러나 그것들을 이관하는 일은 의도적으로 이 결정의 **일부가 아니다**; 소비자가
-셋이 되는 순간 그것은 배포 선택이기를 그만두고 실행 경로 셋을 다시 쓰는 일이 된다. 틱이
-그 뒤에 실제로 떠맡은 것은 webhook 에 대한 그 갭의 *원장(ledger)* 쪽 절반이고, 그쪽은 이관이
-전혀 필요 없다 — 아래를 보라.
+외부 ticker가 공유 token으로 `POST /api/triggers/scan`을 호출한다.
+ticker는 cron 상태를 갖지 않고 `scanSchedules`가 발생 판정·claim·admission을 수행한다.
 
-- **"정확히 한 번" 은 클레임의 성질이지 티커의 성질이 아니다.** 각 발생(UTC 분 단위 instant)
-  은 webhook 전달을 dedup 하는 것과 같은 조건부 쓰기로, 키 `schedule:{instant}` 로
-  클레임된다. 인스턴스가 몇 개든 동시에 스캔해도 되고, 쓰기 하나가 이긴다.
-- **클레임은 영구적이다 — 죽어 버린 발화는 재실행되지 않는다.** 런은 멱등이 아니고(그 도구에는
-  부작용이 있다) 다음 발생이 자연스러운 재시도다. 유실된 인스턴스가 남기는 것은 `running` 에
-  멈춘 행이고, 아래의 복구 스윕이 그것을 마감한다.
-- **한 트리거의 실패는 그 트리거의 것이다.** 틱 안의 모든 repository 호출은 트리거별·발생별로
-  울타리가 쳐져 있다. 클레임을 얻은 뒤에 throw 가 나면 skip 행을 쓰고 — 그 클레임은 다시
-  제공되지 않는다 — 앞서 얻은 클레임들을 좌초시킨 채 틱을 중단시키는 대신 요약의 `errors`
-  카운트로 잡힌다.
-- **cron 평가에는 소유자가 하나다**, `src/domain/trigger/cron.ts`: 표준 다섯 필드를 트리거의
-  IANA 타임존 벽시계로 읽고, 발생은 UTC instant 로 키를 잡는다 — 그래서 DST 에 특수 케이스가
-  필요 없다 (봄에 건너뛴 시각은 아예 발생하지 않고, 가을에 되돌아온 시각은 두 번 발생하며 각
-  instant 가 저마다의 클레임이다).
-- 스캔은 한정된 **catch-up 윈도**(10분)만큼만 뒤를 돌아본다: 틱을 한 번 놓치거나 스캐너가
-  잠깐 죽어도 잃는 것이 없고, 그보다 오래된 것은 영영 놓친 것이 된다 — 이는 복구가 한 번에
-  시작할 수 있는 런의 수도 함께 제한한다. 윈도가 겹쳐도 안전하다; 클레임이 중복을 제거한다.
-  트리거의 **마지막 편집**보다 오래된 발생은 결코 발화하지 않으므로, 윈도 중간에 schedule 을
-  만들거나 다시 켜도 운영자의 결정 이전 instant 로 소급 발화할 수 없다. 겹침이 허용되지 않을
-  때 catch-up 은 **가장 최근** 발생을 실행하고, 낡은 것들은 뒤늦게 실행하는 대신 superseded
-  로 기록한다. 한 틱이 승인한 발화들은 각각 백그라운드 태스크 하나씩이 아니라 한정된 풀(8)로
-  구동된다. 발생 판정과 admission 도 트리거 최대 8개를 병렬로 처리하되 입력 순서대로 결과를
-  합쳐, 느린 저장소 왕복 하나가 나머지 schedule 을 직렬로 막지 않게 한다.
-- schedule 행만이 `GSI1` (`TYPE#SCHEDULE`) 을 갖는다. 그래서 이 인덱스를 Project 경계 없이
-  100행씩 순회할 수 있고, 한 DB 응답과 메모리 배열이 전체 schedule 수만큼 커지지 않는다.
-  webhook 행은 발화 스캔에 보이지 않는다. 아래의 복구 스윕은 다른 경로로, 그럴 이유가 있어서
-  둘 다에 닿는다. 설정 화면이 각 schedule의 최근 이력을 읽을 때도 동시에 최대 8개 요청만
-  보낸다.
-- schedule 에는 **시크릿도 payload 도 없다**: 외부에서 자격 증명을 제시하는 것이 없고, 모든
-  발화는 트리거의 고정된 `variables`/`message` 를 published 버전에 대해 실행하며 `schedule`
-  actor kind 로 귀속된다.
-- schedule 은 Slack, Telegram, Teams 를 각각 최대 한 번 목적지로 지정할 수 있다. 런이 오류 없이
-  끝나고 텍스트 답을 만들면 세 목적지를 독립적으로 전송한다. 한 플랫폼의 실패는 다른 전송이나
-  런 자체를 실패로 바꾸지 않으며, 이력 행의 `deliveryResults` 와 `warning` 에 남는다. Slack
-  목적지는 프로젝트 bot이 참가한 채널 목록에서 고른 channel id 다. Telegram 은 chat id 와 선택적
-  topic id 를, Teams 는 conversation id 를 저장한다. Teams 의 `serviceUrl` 은 입력으로 받지 않고
-  공개 클라우드 Bot Framework endpoint 를 코드가 고정해 사용하므로 bot token을 임의 호스트로
-  보낼 수 없다.
+cron의 정본은 `domain/trigger/cron.ts`다. 분·시·일·월·요일의 다섯 필드에
+별표·목록·범위·step과 월·요일의 3글자 이름을 지원한다. 요일 0과 7은 일요일이다.
+일과 요일을 모두 제한하면 둘 중 하나가 맞는 전통적인 OR 규칙을 사용한다.
+발생은 IANA 시간대의 벽시계를 UTC 분 instant로 바꾸어 식별한다.
+DST에서 없는 시각은 발생하지 않고 반복되는 시각은 서로 다른 두 instant다.
+
+| 상황 | 처리 |
+|---|---|
+| 여러 인스턴스·겹친 tick | `schedule:{instant}` 조건부 claim에서 한 요청만 이긴다 |
+| 잠시 놓친 tick | 한정된 catch-up 창 안의 발생만 처리한다 |
+| 생성·편집·재활성화 | 마지막 편집 이전의 발생을 소급 실행하지 않는다 |
+| 겹침 금지 상태의 여러 누락 발생 | 가장 최근 것을 실행하고 오래된 것은 superseded로 기록한다 |
+| 일부 trigger의 저장소 오류 | 해당 발생을 거절·기록하고 summary의 errors를 증가시킨다 |
+| claim 후 프로세스 유실 | 같은 발생을 자동 재실행하지 않고 이력만 복구한다 |
+
+claim은 보존 기간이 있는 중복 방지 행이다. 소비한 발생을 다시 실행하지 않는 것은 실행 정책이며
+DB 행을 영구 보관한다는 뜻은 아니다. 정상 catch-up 창은 claim 보존 기간보다 짧다.
+Webhook의 같은 멱등 키는 만료 시각이 지났어도 행이 실제 sweep되기 전까지 중복으로 거절한다.
+scan이 없는 배포에서는 같은 키가 계속 남을 수 있으므로 새 이벤트에는 새 키를 사용한다.
+
+Schedule은 고정 variables·message를 사용하고 자기 secret이나 외부 payload를 요구하지 않는다.
+schedule 인덱스는 페이지로 순회하며 admission과 실제 발화에 각각 동시성 상한을 적용한다.
+한 번의 DB 조회와 동시에 수행하는 작업을 제한하는 것이며, 전체 프로젝트·발생 수의 전역 cap은 아니다.
+구체적인 값은 [CONFIGURATION](../CONFIGURATION.md#코드에-고정된-제한)을 따른다.
+
+Slack·Telegram·Teams를 각각 하나의 delivery 대상으로 고를 수 있다.
+오류 없이 끝난 텍스트 응답을 독립적으로 전송하고 `sent`·`failed`를 `deliveryResults`에 남긴다.
+전송 실패는 모델 실행 성공을 실패로 바꾸지 않고 warning을 추가한다.
+Slack은 프로젝트 bot의 참가 채널, Telegram은 chat과 선택적 topic, Teams는 conversation을 사용한다.
+Teams serviceUrl을 사용자 입력으로 받지 않는다.
 
 ## 유실된 발화 복구
 
-두 종류 모두 먼저 ack 하고 `after()` 안에서 실행하므로, 발화 도중 죽은 인스턴스는 실제로는
-아무것도 없는데 런이 진행 중이라고 주장하는 행을 남긴다. `repairLostRuns`
-(`src/application/trigger/repairLostRuns.ts`) 는 그 행이 언제 죽은 것인지와 무엇이 그것을
-마감하는지에 대한 단일 소유자이며, **두 종류 모두**에 대해 그렇다: `RUN_LEASE_SECONDS` 에
-10분의 여유를 더한 것보다 오래된 `running` 행은 `failed` 로 마감된다. 이 여유분은 틱
-한 번어치의 슬랙이 아니다 — `startedAt` 은 백그라운드 런이 시작될 때가 아니라 발화가
-*승인될* 때 찍히므로, 그 둘 사이의 거리를 덮어야 한다. 늦게 복구하는 것은 겉모습의 문제지만,
-살아 있는 런을 복구하면 건강한 인스턴스를 유실된 것으로 낙인찍는다.
+Webhook·Schedule은 ACK 후 웹 프로세스에서 실행하므로 급사하면 running 이력이 남을 수 있다.
+`repairLostRuns.ts`는 실행 lease와 추가 여유가 지난 running 행을 failed로 마감한다.
+도구의 외부효과를 알 수 없으므로 작업을 재실행하지 않는다.
 
-이것이 바로잡는 것은 **원장이지 작업이 아니다**. 재실행은 schedule 의 크래시 정책이 이미
-배제한 것이고, 어차피 webhook 에는 재시도해 들어갈 다음 발생이 없다.
+주기적 scan의 복구 tick은 모든 프로젝트의 Webhook·Schedule을 순회한다.
+Webhook 전달이 끝날 때도 자기 trigger의 과거 실행을 정리하므로 ticker가 없는 설치는
+다음 전달에서 정리할 수 있다. ticker도 다음 전달도 없으면 자동 정리가 진행되지 않는다.
 
-**호출자가 둘인 이유는 틱 하나가 보장이 아니기 때문이다.** 스캔은 게이트된 틱마다 모든
-Project 를 훑고, webhook 전달은 자기 일을 끝내면서 자기 트리거를 훑는다. 두 번째는 webhook 은
-서비스하면서 티커는 전혀 설정하지 않는 배포 — 지원되는 형태이며
-([OPERATIONS.md](../OPERATIONS.md)), 틱만으로 스윕하면 좌초된 행이 전부 영원히 `running` 으로
-남는 배포 — 를 커버하는 쪽이다. 전달의 스윕은 자기 행을 마감한 뒤에 돌고 리스 하나만큼 과거의
-윈도를 읽으므로, 발신자를 지연시킬 수도 없고 자기 자신의 발화를 잔해로 오인할 수도 없다. 비용은
-전달마다 한정된 쿼리 하나 — 틱이 아니라 매 발화마다 지불하는 것이고, 그것이 배포가 갖고 있지
-않을 수도 있는 컴포넌트에 의존하지 않는 값이다.
-
-**윈도는 시작 시각과 실행 상태로 한정된다.** `listRuns` 는 정렬 키에 대응되는
-`startedBefore` 경계와 `status: "running"` 필터를 받는다. 두 조건과 만료 필터를 적용한 뒤
-최대 50행을 반환하므로, 최근 발화나 이미 완료된 과거 발화가 복구할 행을 가리지 않는다.
-복구된 행은 다음 스윕의 조회 대상에서 빠져 더 오래된 유실 행도 순차적으로 처리된다.
-
-**스윕은 인덱스가 아니라 Project 를 걸어 다니고**, 그것이 여기서의 설계 결정이다. schedule
-행이 `TYPE#SCHEDULE` 을 갖는 이유는 틱이 그것들을 매분 발화시키기 때문이다 — 열거가 그 스캔의
-핫 패스다. 복구는 그 반대다: 5분에 한 번으로 게이트되고, 오직 잔해를 찾기 위해서만 돈다.
-webhook 행에 짝이 되는 인덱스를 부여해도 그것이 존재한 *이후에* 쓰인 행만 커버하는데, 복구
-기능보다 먼저 있던 webhook 트리거야말로 이미 행을 좌초시켜 두었을 가능성이 가장 높은 바로 그
-트리거다 — 그러니 그 인덱스는 자기가 추가된 이유인 행들을 놓치게 된다. `listProjects()` 로
-100개씩 읽고 Project 당 트리거 쿼리 하나면 오늘 존재하는 모든 것을 읽고 백필도 필요 없다.
-Project 파티션은 한 틱에서 최대 8개를 병렬로 읽어 전체 Project 수만큼 왕복 시간이 직렬로
-늘어나지 않게 한다.
-Project 마다, 트리거마다 울타리가 쳐져 있다: 읽을 수 없는 파티션 하나는 스윕에 `errors`
-카운트 하나를 물릴 뿐, 틱을 물리지 않는다.
+복구 query는 시작 시각·running 상태·만료 조건을 limit 전에 적용한다.
+완료 행이 복구 대상의 자리를 차지하지 않으며 한 번에 읽을 행 수와 프로젝트 병렬 처리 수를 제한한다.
+비활성 trigger의 이전 실행도 확인하고 개별 파티션 오류는 다른 복구를 중단시키지 않는다.
+마감 기준·주기는 [고정 제한](../CONFIGURATION.md#코드에-고정된-제한)이 소유한다.

@@ -22,7 +22,8 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
           parameters { temperature?, presencePenalty?, maxTokens?, reasoningEffort?, piiFiltering,
                        callerContext?, structuredOutput?/jsonSchema,
                        imageGeneration?/imageModel?, urlFetch?, slackWorkspace?,
-                       dynamicCapabilities?, memoryRecall?, reasoningTrace?, policy? },
+                       dynamicCapabilities?, memoryRecall?, reasoningTrace?, audioProcessing?,
+                       workspaceTools?, policy? },
           mcpList: McpBinding[], skillList: string[],
           subagentList: { name, type: 'local' | 'remote' }[], maxTurn?, createdAt }
 ```
@@ -50,8 +51,8 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
   모델이 지원하는 경우에만 사용한다. `maxTokens`와 함께 버전에 저장하고 각 하위 Agent는 자신의 설정을 사용한다.
 - Version 쓰기는 catalog 모델에 대해 **capability 적합성**을 검증한다(agent project 는
   `capabilities.tools` 를 요구하고, `structuredOutput` 은 그 capability 를 요구한다). 알 수
-  없는/커스텀 모델 id 는 경고와 함께 계속 허용되며 — catalog 에 추가되기 전까지는 $0 으로
-  가격이 매겨진다.
+  없는/커스텀 모델 id는 경고와 함께 저장할 수 있다. 실행의 미등록 정책과 provider 보고 비용·
+  카탈로그 가격 fallback은 [설정](../CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)을 따른다.
 - Version 쓰기는 `mcpList`/`skillList`/`subagentList` 항목이 **resolve 되는지**(`VersionRefRepos`,
   composition root 가 `versionUseCases` 에 한 번 바인딩한다), 그리고 그 project type 이 실제로
   그것들을 실행할 수 있는지도 검증한다 — `agent` project 만 그러하므로, 다른 type 에 추가된
@@ -193,240 +194,113 @@ span ID와 부모 ID를 보존한다. 모델 입력·출력, 도구 인자와 cr
 
 ## Images
 
-세 경로가 그림을 그리고, 그것들은 하나의 use case 가 아니라 하나의 port — `ImageChannel`
-(`src/domain/llm/imageChannel.ts`) — 에서 만난다. 각 경로에 도달하는 것이 다르기 때문이다:
-라우트, 모델의 tool call, transfer.
+이미지의 생성·편집은 `ImageChannel` 포트에서 만난다.
 
-| 경로 | 실행되는 곳 | 모델 |
+| 진입 | 실행 위치 | 모델 선택 |
 |---|---|---|
-| `image` project | `generateImage` (`src/application/image/generateImage.ts`) | version 자신의 `model` |
-| agent 런의 `GenerateImage` / `EditImage` builtin | `src/application/execution/imageTool.ts` | `parameters.imageModel` 이 여전히 이미지 가능 모델인 동안에는 그것, 아니면 `defaultImageModel()` — 그 capability 를 가진 첫 *visible* 카탈로그 항목 |
-| transfer 를 거쳐 도달한 `image` project | `runImageSubagent` (같은 파일) | 자식 version 자신의 `model` |
+| image Project | `application/image/generateImage.ts` | 해당 Version의 model |
+| GenerateImage·EditImage | `application/execution/imageTool.ts` | 활성화한 `imageModel`, 사용할 수 없으면 첫 visible 이미지 모델 |
+| image 하위 Project | 같은 파일의 `runImageSubagent` | 자식의 발행 Version model |
 
-**생성과 편집은 하나의 결정이고, 입력에서 읽는다.** 모든 경로는 원본 바이트를 들고 있으면
-`editImage` 를, 들고 있지 않으면 `generateImage` 를 호출한다 — Images API 자신이 긋는 구분이다.
-그래서 "이제 밤으로 만들어줘"가 사용자가 첨부한 그림에도, 런이 그린 그림에도, transfer 가
-`image_ids` 로 이미지 자식에게 넘긴 그림에도 내려앉으며, 그중 어느 것도 별도의 도구를 필요로
-하지 않는다.
+원본 이미지가 있으면 편집하고 없으면 생성한다. `img_1` 같은 런 이미지 핸들은 사용자 첨부와
+생성 결과를 함께 지목하며 위임의 `image_ids`로 전달할 수 있다.
+image Project는 `composeImagePrompt`로 자기 system prompt를 스타일로 붙인다.
+Agent의 이미지 builtin은 Agent 행동 지침을 스타일로 복사하지 않는다.
 
-**Version 의 시스템 프롬프트가 그 스타일이다.** 이미지 provider 에는 system 메시지가 없으므로,
-`composeImagePrompt`(`src/application/image/composeImagePrompt.ts`)는 `image` project 의 version
-을 실행하는 두 경로에서 모든 주제 프롬프트 — 호출자의 `prompt`, 렌더링된 템플릿, transfer 의
-메시지 — 앞에 version 의 시스템 프롬프트를 붙인다. Agent builtin 은 의도된 예외다: agent 의
-시스템 프롬프트는 그 행동이지 그림 스타일이 아니므로, builtin 호출은 모델 자신의 프롬프트를
-손대지 않고 보낸다. 스타일만으로는 주제가 되지 않는다 — 주제 프롬프트가 빈 런은 여전히
-거부된다.
+직접 image 실행은 capability와 주제 prompt를 admission 전에 검사한다.
+builtin 제공은 `parameters.imageGeneration`이 제어하고 편집 endpoint 미지원은 실행 시
+도구 오류로 드러난다. 자식의 실패는 authored 오류로 부모에 전달한다.
+호출자 취소·런 deadline·provider 실패는 signal과 공통 종료 판정으로 구분한다.
 
-**capability 를 어디서 검사하느냐가 거부의 모양을 정한다.** `generateImage` 는 런 브래킷을 열기
-*전에* `capabilities.imageGeneration` 을 검증하고 프롬프트를 렌더링한다. 그래서 잘못 설정된
-version 은 슬롯을 써 버린 런이 아니라 `400` 이 된다. Builtin 은 같은 질문에 wiring 시점에
-답한다 — `parameters.imageGeneration` 에 옵트인하지 않은 version 에는 애초에 제공되지 않고,
-저장된 `imageModel` 이 그 사이 registry 에서 사라졌다면 도구를 조용히 비활성화하는 대신
-기본값으로 폴백한다. 이미지 subagent 는 스트림 도중에만 답할 수 있으므로 그렇게 답한다 —
-author 가 붙은 `error` chunk 로. 해석된 모델의 provider 가 *edit* 엔드포인트를 구현하는지는
-dispatch 전에는 알 수 없고, 그래서 그 거부는 숨겨진 도구가 아니라 tool-result 에러다.
+### Provider adapter
 
-**호출자가 떠난 것은 provider 가 실패한 것이 아니며, 그것을 말해 주는 것은 signal 이다.**
-`fetch` 는 런의 signal 이 무엇으로 abort 되었든 *그것*으로 reject 하고, 맨 `abort()` 만이 DOM 의
-`AbortError` 다 — Next.js 는 `request.signal` 을 자신의 `ResponseAborted` 로 abort 하는데, 이름이
-다르고 메시지도 없는 Error 다. 그래서 `generateImage` 는 취소와 거부(`providerFailure`)를
-구분하려고 `signal.aborted` 를 읽는다. 에러 이름으로 판정하던 때에는, 1분 걸리는 xAI 생성 도중
-새로고침한 사람이 `502 Image generation failed for …: ` 로, 콜론 뒤에 아무것도 없이 로그에
-남았다. 런의 signal 이 밖으로 나가는 호출에 닿는 곳이면 어디서나 같은 규칙이 성립한다: A2A
-transfer 는 호출자의 signal 로는 "cancelled" 를, 자신의 idle signal 로는 "timed out" 을
-보고하고, 호출자가 취소한 discovery 는 결코 MCP 실패 캐시에 쓰이지 않는다 — 그 캐시는
-`url + headers` 단위라서, 새로고침 한 번이 실패 기간 내내 그 project 의 모든 런에 "server
-unavailable" 을 되풀이해 재생했을 것이다.
+현재 `infrastructure/llm/imageChannel.ts`는 다음 형태로 요청한다.
+이는 adapter의 구현 계약이며 실제 모델·route의 지원 여부는 배포 채널에서 확인해야 한다.
 
-**Port는 의도를 말하고 adapter는 provider별 요청 형태를 다룬다.** 텍스트는
-`src/infrastructure/llm/agentModels.ts`의 SDK Chat Completions 어댑터를 사용한다.
-Images API는 provider별 요청 형태가 달라 별도 이미지 어댑터에서 번역한다. Port의 `size`와 `quality`는 도구
-스키마가 모델에게 제공하는 어휘이고, 모델은 어느 provider 가 자신을 서빙할지 전혀 모른다.
-그것들을 번역하는 일은 `src/infrastructure/llm/imageChannel.ts` 의 몫이며, 이 파일이
-`ResolvedTarget.providerName` 의 유일한 독자다. xAI 는 같은 의도를 `aspect_ratio` + `resolution`
-이라 부르고, 모르는 인자를 무시하는 대신 **거부하며**(`400 Argument not supported: size`),
-`response_format` 의 기본값이 이 adapter 가 쓸 수 없는 URL 이고, 편집은 `application/json` 으로만
-받는다 — 그 API 문서가 OpenAI SDK 의 multipart `images.edit()` 를 미지원으로 적어 두었고, 그래서
-그 호출 하나는 `fetch` 위에 손으로 짰다.
+| 대상 | 생성·편집 요청 | 응답·제약 |
+|---|---|---|
+| 일반 Images API | SDK의 `images.generate` / multipart `images.edit`; size·quality 전달 | `b64_json`, `mime_type`과 image usage를 읽는다 |
+| xAI | JSON 요청, size를 `aspect_ratio`·`resolution`으로 변환 | base64 응답 요청, quality 생략, mask 편집 거절 |
+| OpenRouter | `/images`; 편집은 `input_references`를 추가 | `media_type`과 completion usage를 읽고 quality·mask를 보내지 않는다. mask 요청은 거절한다 |
 
-**OpenRouter 는 어휘가 같고 나머지가 전부 다르다.** `size`(픽셀 또는 티어)는 port 가 말하는 그대로
-받아 뒤에 있는 provider 에 맞게 정규화한다. **`quality` 는 정규화하지 않으므로 보내지 않는다** —
-그대로 통과시키는데 Gemini 는 무시하고, GPT Image 는 OpenAI 의 네 값을 받고, Grok 은 툴 스키마가
-모델에게 허용하는 "high" 에 `400 … quality: not supported. Accepted: low, medium` 으로 답한다.
-넷 모두에 안전한 값이 없어서 아무것도 보내지 않고, 각 provider 가 자기 기본 티어로 그린다 —
-레지스트리의 `perImage` 가 값을 매긴 그 티어다. 하지만 경로는 `images` 하나뿐이라
-`images/generations` 는 404 이고, 편집은
-두 번째 경로가 아니라 같은 호출에 `input_references` 를 더한 것이며(mask 는 없어서 xAI 와 같은
-이유로 거부한다), 응답은 `mime_type` 이 아니라 `media_type` 으로 답하고 usage 는 Chat Completions
-의 이름들(`prompt_tokens`, `completion_tokens_details.image_tokens`)로 답한다. 입력 쪽 text/image
-분할은 보고하지 않으므로 참조 이미지의 토큰은 text input 으로 센다 — 이미지 입력이 텍스트보다 비싼
-모델(GPT Image 2: $8 대 $5)에서만 그만큼 낮게 잡히고, 분할을 지어내는 것은 아무도 공개하지 않은
-숫자다. 그래서 transport 만 xAI 와 공유하고 응답 리더는 각자다.
+SigV4 image 채널은 지원하지 않는다. 응답 크기·base64·MIME·이미지 한도를 검사하고
+이미지 모델의 endpoint와 credential은 함께 해석한다.
+회귀 검사는 `tests/imageChannelAdapter.test.ts`가 각 wire 형태를 고정한다.
 
-여기 추가되는 provider 는 방언을 가정하지 말고 확인해야 한다:
-`tests/imageChannelAdapter.test.ts` 가 각각의 wire 형태를 고정한다.
+`toImageUsageRecord`가 text input·image input·image output을 Usage의 형태로 변환한다.
+provider가 입력 종류를 구분하지 않으면 분할을 추측하지 않는다.
+토큰 사용량이 없는 모델은 카탈로그의 장당 가격을 사용할 수 있으며, 이미지 비용은
+provider 청구액을 그대로 보관하는 텍스트 경로와 다르다.
+가격의 정본과 미등록 정책은 [CONFIGURATION](../CONFIGURATION.md#모델-레지스트리-agent-models-의-카탈로그)을 따른다.
 
-**mime type 은 읽는 것이지 결코 가정하는 것이 아니다.** `image/png` 하드코딩은 OpenAI의
-기본 출력에만 맞고 xAI의 JPEG 응답을 잘못 표시한다. 이 값은
-겉치레가 아니다 — 불변 캐시 헤더 아래 저장 오브젝트의 확장자와 `Content-Type` 이 되고, *두 번째*
-모델에게 돌려주는 바이트의 `data:` 접두사가 되며, Slack 업로드의 파일명과 A2A artifact 의 type
-이 된다.
-
-**usage 의 축약은 정확히 한 곳에서 일어난다.** 이미지 모델은 세 가지 토큰 수를 청구하는데 usage
-행은 둘을 나른다. `toImageUsageRecord`(`src/domain/llm/models.ts`)가 세 경로 모두에 대해 그
-축약을 소유한다. 토큰 수를 전혀 보고하지 않는 provider — xAI 는 이것들을 이미지 단위로 매기고
-그것을 `cost_in_usd_ticks` 로 말한다 — 는 0 을 기록하고, `calculateImageCost` 는 registry 의
-`perImage` 로 폴백하는데 그것이 실제로 청구되는 값이다. 그것을 기록하는 일은 telemetry 다 —
-provider 는 이미 그림을 그렸고 청구했으므로, 쓰기 실패는 결과를 내던지는 500 으로 바꾸는 대신
-로그로 남긴다.
-
-**바이트가 어디로 가는지는 소비자의 결정이지 engine 의 결정이 아니다.** 같은 `image` chunk 가
-모든 표면에 도달하고 — 하나를 어떻게 읽는지는
-[EngineChunk 계약](../ARCHITECTURE.md#enginechunk-계약) 에 있다 — 각자 그것으로 다른 일을
-한다: chat 은 런 브래킷이 이미 저장해 둔 **오브젝트 키**를 영속화하고, Slack 은 런이 끝나면
-스레드에 업로드하며, OpenAI 호환 표면은 `images` 확장으로 나르고, predict 는 텍스트 옆에 함께
-돌려준다. 오브젝트 스토리지가 설정돼 있지 않으면 chat 이미지는 라이브 스트림 동안에만
-렌더링되고, 빈자리를 남기는 대신 그렇다고 말한다.
-
-**저장된 이미지는 키이고, 그 주소는 읽을 때마다 해석된다.** 행은 접근 정책을 확정하지 않는다.
-`ARTIFACT_ACCESS_MODE=proxied` 는 키를 이 앱의 서명 주소(`/api/objects`, HMAC 토큰)로,
-`authenticated` 는 스토어의 시간 제한이 있는 pre-signed URL 로, `public` 은 스토어의 직접 URL 로
-해석한다 — 앞의 둘은 수명이 같고(`src/shared/artifactUrlTtl.ts`), 셋 모두 `withArtifactAccessMode`
-(`src/infrastructure/storage/artifactAccess.ts`)가 S3 어댑터 위에서 호출마다 고르므로 설정
-페이지의 전환은 다음 서명에 반영된다. 이미지는 *보여지는* 것이라 파일명을 요구하지 않으며
-public 에서는 서명 없는 주소로 충분하다. **문서**는 자기 이름을 달고 가져가는 것이고 S3 는
-서명된 요청에서만 그것을 받아 주므로, 문서는 어느 모드에서든 서명된다. `resolveImageUrl`
-(`src/domain/chat/imageRefs.ts`)이 단 하나의 호환 규칙을 소유한다 — `key` 는 해석하고 레거시
-`url` 은 그대로 통과시킨다. 두 번째 표기가 생기는 순간 view가 조용히 이미지의 절반을 보여
-주지 않게 되기 때문이다. view는 매핑 전에 주소를 해석한다. 런은 주소를
-만들지 않고 object-store port로 바이트를 읽은 뒤 매핑하므로, `toEngineMessages`는 replay 계약이
-테스트하는 순수 동기 함수로 남는다.
-
-authenticated 모드의 chat 뷰는 이미 그 페이지를 가진 사람이 읽으므로 15분이면 넉넉하다.
-런 replay는 URL을 만들지 않는다. 저장된 최신 이미지 네 개를 제한된 크기로 다시 읽어 inline
-바이트로 전달하고, 그보다 오래됐거나 읽지 못한 것은 문맥에서 빼고 warning으로 보고한다. 호출자가
-고른 주소를 모델 provider에게 넘기면 이 앱의 SSRF 경계가 닿지 않기 때문이다. 두 번째 수명은
-SigV4 pre-sign의 상한인 7일이며 proxied 토큰도 같은 값을 쓴다. Slack 스레드나 저장된 A2A
-task처럼 지속되는 무언가에 적히는 링크를 위한 것이고, 런이 끝나고 한참 뒤에 읽힌다. 둘 다
-`src/shared/artifactUrlTtl.ts`가 소유한다.
-
-**chat 은 결코 오브젝트를 삭제하지 않는다.** chat 행은 `expiresAt` 이 지나면 틱의 sweep 이
-`DELETE` 한 문장으로 지우는데 애플리케이션은 어느 행이 갔는지 관측하지 않으므로, cascade 할 수
-있는 순간 자체가 없다 — 만료는 오브젝트 스토어의 lifecycle 규칙이고,
-[OPERATIONS.md](../OPERATIONS.md#운영-체크리스트) 의 체크리스트에 있다.
-
-의도적인 제거는 이 경로가 아니라 artifact 갤러리의 몫이다: artifact 행이 오브젝트를 가리키고,
-`artifactUseCases.remove` 는 재시도가 수렴하도록 행보다 오브젝트를 *먼저* 삭제한다
-([Artifacts](#artifacts) 참고). chat 메시지는 키의 사본을 따로 갖고 있으므로, 거기서 삭제된
-이미지는 대화 기록에서 사용할 수 없음으로 렌더링된다 — 그 사실은 확인 절차에서 미리 말해 준다.
-그것을 보여 준 모든 chat 과 Slack 스레드로 되돌아가는 cascade 는 artifact 슬라이스가 그것들을
-전부 import 하지 않고는 할 수 없는 일이기 때문이다.
+이미지는 공통 chunk로 표면에 전달된다. Chat은 저장 참조와 라이브 bytes를 사용하고,
+메신저는 플랫폼에 업로드하며, completion 응답은 `images` 확장을 사용한다.
+화면의 서명 URL은 SDK Session의 inline 이미지 이력과 별개다.
+후속 모델 턴이 사용자 지정 원격 URL을 provider에게 넘겨 가져오게 하지 않는다.
 
 ## Artifacts
 
-런이 남긴 것: 저장된 오브젝트당 행 하나. 그래서 바이트를 목록으로 볼 수 있고, 미리 볼 수 있고,
-제거할 수 있다. 그 전에는 재고 목록이 아예 없었다 — 생성된 이미지는 무작위 UUID 아래로 버킷에
-갔고 그 키는 마침 열려 있던 chat 메시지에 쓰였다. 그래서 무엇도 그것을 열거할 수 없었고, 무엇도
-삭제할 수 없었으며, trigger 나 A2A 호출이 그린 그림은 아무 데도 가지 못했다.
+Artifact는 보관한 파일의 metadata이며 bytes는 객체 저장소에 둔다.
+사용자 첨부는 첨부 보관 유스케이스, 실행 출력은 최상위 `openRun`의 recorder가 저장한다.
+producer마다 저장 로직을 두지 않아 이미지 Project·builtin·하위 Agent·MCP 출력을 함께 다룬다.
 
-**런 브래킷에서 포착한다.** 네 함수가 top-level 런을 admit 하고 그 모두가 바이트를 만들어 낼 수
-있으므로, `openRun` 이 런의 정체 — project, version, actor, transfer 체인, correlation id — 를
-이미 바인딩한 상태로 recorder 를 만든다. 대신 `generateImage` 에 붙였다면 경우의 4분의 1만
-감당했을 것이다: 이미지는 네 생산자로부터 스트림에 도달하고(image project,
-`GenerateImage`/`EditImage` builtin, 이미지 subagent, 이미지를 돌려준 MCP 도구) 그중 첫 번째만이
-그 use case 다. `captureRunArtifacts` 가 engine 의 스트림을 감싸고, `generateImage` 는 자신의
-단일 결과를 직접 기록한다. 다섯 번째 출처는 같은 축을 타지만 포착이 유일하게 건너뛰는 것이다:
-`FetchUrl` 이 가져온 그림은 `fetched` 를 달고 전달되며 결코 보관되지 않는다 — 런은 그 바이트를
-만든 것이 아니라 읽었고, 그 표시를 붙이는 것은 그 builtin 뿐이다. MCP 도구의 그림은 읽어 온
-것일 수도 있지만 그려 낸 것일 수도 있기 때문이다.
-
-| Chunk | 포착이 하는 일 |
+| Chunk | `captureRunArtifacts`의 처리 |
 |---|---|
-| `image` | 바이트를 저장하고 그것을 **유지하며**, `artifactId`/`key` 를 추가한다. 라이브 뷰는 여전히 chunk 에서 렌더링한다. `fetched` 표시가 붙은 것은 저장되지 않은 채 지나간다. |
-| `file` | 바이트를 저장하고 그것을 **떼어 내어**, 이름·크기·artifact ID·키와 원본 관계를 남긴다. 렌더링된 문서는 그릴 것이 없고, 다운로드 링크 하나 만들자고 SSE 연결로 수 MB 의 base64 를 밀어 내리는 것은 순수한 비용이다. |
+| `image` | bytes를 저장하고 `artifactId`·`key`를 추가한다. 라이브 표시에 쓸 bytes는 유지한다 |
+| `image.fetched` | 모델이 URL에서 읽은 이미지로, 생성 Artifact로 보관하지 않는다 |
+| `file` | 저장 시도 후 bytes를 제거하고 파일명·크기·참조를 남긴다. 실패하면 다운로드가 없음을 알린다 |
 
-파일의 생산자는 MCP 도구, 텍스트를 저장하는 `SaveFile`, 내장 문서 엔진을 호출하는 `File`이다.
-chunk의 `source`는 `mcp: …` 또는 `builtin: …`로 생산자를 설명하며 스트림 안에서만 산다.
-도구는 결과에 바이트를 싣고 `captureRunArtifacts`가 저장한다. 내장 파일 도구는
-`createArtifactId`로 ID를 예약해 모델에게 알리며, 브래킷은 같은 ID로 저장한다.
-편집본의 `derivedFrom`은 원본 artifact를 가리킨다. 원본은 덮어쓰지 않는다.
+recorder가 없는 배포에서는 캡처 wrapper가 원래 chunk를 통과시킨다.
+파일 소비자는 `producedFiles.ts`로 저장 참조·URL·손실을 처리하며, bytes가 있다는 이유만으로
+영속 다운로드를 제공했다고 보지 않는다. 파일 bytes는 모델 문맥에 들어가지 않는다.
 
-**무엇이 그렸는지는 그린 쪽이 말한다.** artifact 행의 `model` 은 chunk 가 실어 온 것이고
-(`EngineChunk.image.model`), 브래킷이 version 에서 유추하지 않는다 — 런의 모델은 그림을 그린
-모델이 아니기 때문이다. builtin 은 `resolveImageModel` 이 고른 이미지 모델로, 이미지
-subagent 는 자기 version 의 모델로 그린다. 브래킷에서 채웠다면 자식의 그림에 부모의 모델
-이름이 붙고 아무것도 그 사실을 말하지 않았을 것이다. 이름을 댈 수 있는 생산자는 셋이다: image
-project(`generateImage`), `GenerateImage`/`EditImage` builtin(`ImageGenerator`/`ImageEditor` 의
-반환이 모델을 *필수로* 담는다), 이미지 subagent. **나머지는 비운다** — MCP 도구의 그림, 원격
-A2A 에이전트의 그림, 도구가 렌더링한 문서, 사람이 가져온 첨부. 거기서 빈 값이 참이고, 런의
-모델을 fallback 으로 쓰는 것은 추측을 사실처럼 적는 일이다. 갤러리 카드는 이것을
-`producedBy` 와 한 줄로 함께 보여 주고, 검색 필터도 이 두 값을 본다.
+내장 File·SaveFile은 저장할 ID를 미리 예약하고 recorder가 같은 ID를 사용한다.
+편집본의 `derivedFrom`은 원본을 지목하며 덮어쓰지 않는다. 다른 표면도 `fileId`로 파일을
+참조할 수 있고 A2A는 URL part의 metadata에 전달한다.
+읽기·편집 권한은 [문서 설계](documents.md#채널-간-파일-참조)를 따른다.
 
-실패한 쓰기는 결코 런을 실패시키지 않는다: 비싼 부분은 그림이었고, 사본을 잃는 것은 답을 잃는
-것보다 엄격히 덜 값어치 있다. 손실은 스트림 **이후에** 런의 진짜 총계로 한 번 보고된다 — 첫
-실패에서 경고하면 "파일 하나"라고 말한 뒤 이후의 모든 실패를 같은 일회성 플래그에 흡수해 버릴
-것이다.
+Artifact는 project·version·actor·run ID·위임 경로를 기록한다.
+`model`은 실제 생성자가 명시한 이미지 모델만 사용하고 부모 Version에서 추측하지 않는다.
+MCP가 준 bytes나 첨부처럼 모델을 확정할 수 없는 경우에는 비운다.
+저장 실패는 원래 응답을 실패로 바꾸지 않고 손실 건수와 제한된 원인 분류를 경고한다.
 
-**독자가 *여는* 것은 주소가 아니라 앱을 통해 나간다.** 다른 모든 읽기는 서명한 오브젝트 URL 이다 — 바이트는
-앱을 거치지 않는다. 독자가 *여는* 것만은 그럴 수 없다. 서명된 주소는 sandbox 헤더를 실을 수
-없고, 건네진 뒤에는 그것을 연 사람의 권한보다 오래 살며 public 모드에서는 영구다. 그래서
-`/api/artifacts/{id}/view` 가 삭제와 같은 술어로 인가한 뒤 바이트로 답하고,
-`Content-Security-Policy` 의 `sandbox` 가 문서를 불투명 오리진에 놓는다. 목록이 짧은 것은 표시
-가능성이 아니라 **여는 것이냐 보관하는 것이냐**를 묻기 때문이다 — 브라우저가 알아서 그리는 PDF
-는 sandbox 가 필요 없고, 다운로드는 애초에 신뢰를 요구하지 않는다.
+### 소유권과 읽기
 
-`inlineViewOf` 가 boolean 이 아니라 **종류**를 돌려주는 것은 답이 하나가 아니기 때문이다.
-CSV 를 표로, JSON 을 다시 들여쓴 텍스트로 보여 주는 것이 각 파일을 *그것답게* 보여 주는
-것이고, 전부에 `<pre>` 하나를 쓰면 아무도 묻지 않은 질문에 답하는 셈이 된다. `text/html` 은
-즉시 실행되는 격리 iframe에 넣고, 나머지는 바이트로부터 정적 페이지를 만든다.
+`artifactOwnerEmail`은 email actor 또는 표면이 확인한 별도 이메일로 개인 귀속을 정한다.
+이메일이 없는 결과는 Project 목록에서 관리하며 프로젝트 소유자 이메일을 임의로 채우지 않는다.
+개인 목록과 프로젝트 목록의 DB 주소는 [저장 키 지도](../ARCHITECTURE.md#postgresql-아이템-테이블-설계)에 있다.
 
-| 종류 | 어떻게 |
+일반 파일은 생성·첨부 소유자 또는 프로젝트 소유자/admin이 읽고 삭제한다.
+일반적인 public 프로젝트 실행 권한만으로 남의 출력에 접근하지 못한다.
+비공개 오디오 source 파일은 파일 소유권·현재 프로젝트 접근·상태·만료를 별도로 검사한다.
+
+일반 파일의 주소는 `ARTIFACT_ACCESS_MODE`에 따라 proxied·pre-signed·직접 URL로 해석한다.
+proxied 모드의 bytes도 앱을 통해 전달되며 URL token이 읽기 credential이다.
+다운로드·미리보기·원본 파일의 접근 방식은 같지 않다.
+[보안](../SECURITY.md#데이터-노출과-보존)이 URL 수명과 CSP를 소유한다.
+
+### 미리보기와 삭제
+
+`inlineViewOf`가 텍스트 기반 파일의 미리보기 형태를 고른다.
+
+| 형식 | 표시 |
 |---|---|
-| `html` | UTF-8로 디코딩한 원문을 escaped srcdoc으로 전달. 페이지를 열면 sandbox iframe에서 즉시 실행 |
-| `markdown` | 채팅 스레드와 **같은 렌더러**(`react-markdown` + `remark-gfm`) |
-| `csv` | RFC 4180 파싱 후 표. 첫 행이 머리행이고(미디어 타입의 기본값이다), 2,000행에서 끊고 무엇을 뺐는지 말한다 |
-| `json` | `JSON.parse` → 2칸 들여쓰기. 파싱되지 않으면 원문 그대로 + 그 사실을 말한다 |
-| `svg` | `data:` URL 로 `<img>` 안에 |
-| `text` | 원문 그대로 |
+| HTML | 선언한 charset으로 엄격하게 디코딩해 sandbox iframe에서 실행 |
+| Markdown | Chat과 같은 Markdown 렌더러; raw HTML은 텍스트 |
+| CSV | 표로 표시하고 행 상한을 넘으면 생략을 알린다 |
+| JSON | 유효하면 들여쓰기, 아니면 원문과 오류 안내 |
+| SVG | `data:` 이미지로 표시 |
+| 평문 | 원문 텍스트 |
 
-Markdown은 채팅과 같은 렌더러로 표시하고 raw HTML을 텍스트로 처리한다. CSV·JSON·SVG·텍스트의
-정적 view는 `ARTIFACT_VIEW_POLICY`를 사용하고 스크립트를 허용하지 않는다. SVG는 `<img>` 안에 놓는다.
-HTML은 별도 wrapper와 escaped srcdoc으로 전달하고 `INTERACTIVE_HTML_VIEW_POLICY` 및 iframe의
-`sandbox=allow-scripts`로 즉시 실행한다. same-origin·popup·form·다운로드 권한은 주지 않으며,
-Stop/Restart는 iframe 실행 상태만 바꾸고 원본을 저장하지 않는다. CSP가 제한하는 통신 범위와
-브라우저 자원 격리의 한계는 [문서 미리보기](documents.md#html-실행-미리보기)와
-[보안 계약](../SECURITY.md#데이터-노출과-보존)을 따른다.
+`/api/artifacts/{id}/view`는 매번 읽기 권한을 검사한다.
+HTML의 Stop/Restart는 iframe 실행 상태만 바꾸며 원본을 저장하지 않는다.
+다른 텍스트 미리보기는 스크립트를 실행하지 않는다. 지원 범위와 제한은
+[문서 미리보기](documents.md#html-실행-미리보기)를 따른다.
 
-`artifactId` 가 chat 행과 라이브 스트림 프레임에 함께 실리는 것이 이 때문이다. 나머지 표면은
-그것을 나르지 않는다: 서명한 주소로 충분하고, 독자가 행 id 로 할 수 있는 일이 없었다. 페이지가
-생기고 나서야 그것은 독자가 누를 수 있는 무언가가 됐고, 그래서 페이지에만 붙는다.
+삭제는 객체 먼저, metadata 행 나중에 처리해 중단되면 다시 시도할 수 있게 한다.
+남의 출력을 제거하면 `artifact.delete` 감사 기록을 남긴다.
+Chat은 파일 참조를 갖지만 Chat 삭제·만료가 일반 Artifact를 지우지는 않는다.
+반대로 Artifact를 지우면 기존 대화의 파일은 사용할 수 없음으로 표시된다.
 
-**인덱스가 둘인 이유는 각자 상대가 닿지 못하는 행에 닿기 때문이다.**
-
-| | PK | SK | GSI1 | GSI2 (sparse) |
-|---|---|---|---|---|
-| Artifact | `ARTIFACT#{id}` | `META` | `ARTIFACTPROJECT#{project}` / `{createdAt}#{id}` | `ARTIFACTOWNER#{email}` / `{createdAt}#{id}` |
-
-`artifactOwnerEmail`은 actor 또는 표면이 검증한 사용자 문맥으로 개인 소유자를 결정한다.
-사용자·프로젝트 토큰의 소유자, 검증된 이메일이 있는 메시징과 개인 문맥 Schedule의 결과는
-소유자 인덱스에 나타날 수 있다. 개인 문맥이 없는 A2A·Webhook·Schedule 결과는 Project 탭에서
-확인한다. 비공개 오디오 파일은 별도 사용자 권한과 보존 계약을 적용한다. 소유자 미지정 결과에
-project 소유자의 개인 정체성을 임의로 붙이지 않는다.
-
-오브젝트 키는 행 id 에서 도출되며(`artifacts/{kind}/{id}.{ext}`), 그것이 오브젝트와 그 행이
-서로를 찾게 해 준다. 레거시 `images/{uuid}` 키는 아무것도 참조하지 않아서, 그 배치 아래의 고아는
-다시는 식별할 수 없다. kind 로 나누는 것은 접두사에 적용되는 lifecycle 규칙 때문이다. 스토리지
-adapter 는 모든 독자를 런타임 artifact 접근 모드로 해석한다: 앱에게만 닿는 스토어면 이 앱의
-proxied 주소, 비공개 버킷이면 pre-signed URL, 공개 버킷이면 직접 URL.
-
-**삭제는 오브젝트 먼저다.** 그 순서가 남길 수 있는 것은 미리보기가 깨진 행뿐이고 — 삭제를 다시
-누르면 해결된다. S3 호환 스토어는 없는 키에 204 로 답하기 때문이다 — 반대 순서는 어떤 재고 목록도 이름
-붙이지 않는, 영영 닿을 수 없는 바이트를 남긴다. 읽기와 삭제는 하나의 술어를 쓴다(생성자, 아니면
-`assertProjectWritable`). 각각에 다른 규칙을 두면 삭제 버튼이 403 으로 답하는 행들을 나열하는
-갤러리가 나오기 때문이다. 남의 출력을 제거하는 것은 `artifact.delete` 를 기록하고, 자기 것을
-정리하는 것은 기록하지 않는다. 삭제마다 행을 남기면 그 감사 기록이 존재하는 이유인 행위들이
-묻히기 때문이다.
-
-행은 `ARTIFACT_RETENTION_DAYS` 에 따른 `expiresAt` 을 갖는다. 그 기간과 버킷의 lifecycle 규칙은
-앱이 맞출 수 없는 두 개의 독립된 설정이다 — [OPERATIONS.md](../OPERATIONS.md#행-보존)
-참고.
+metadata TTL, 객체 lifecycle, 비공개 source 파일 정리는 서로 다른 경로다.
+[OPERATIONS](../OPERATIONS.md#행-보존)에 따라 각각 설정한다.

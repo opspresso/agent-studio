@@ -146,7 +146,8 @@ V8 old-space는 256MiB로 제한한다. 이 값은 프로세스 전체 RSS 제�
 `pnpm dev`와 `pnpm build`는 esbuild로 `build/document-worker.cjs`를 만든다.
 워커 의존성과 한글 폰트는 standalone 배포물에 포함한다. 런타임 패키지 설치나
 외부 폰트 다운로드는 필요하지 않다. `pnpm test:documents`는 실제 IPC와 다섯 형식의
-왕복을 검증하며, CI는 standalone 디렉터리에서도 같은 검사를 실행한다.
+왕복을 검증한다. 현재 CI의 verify job에는 이 검사가 없으므로 standalone 배포물의 번들·폰트
+검증이 필요하면 별도로 실행한다. 자동 검사 범위는 [개발 문서](../DEVELOPMENT.md#ci)를 따른다.
 
 ## 채널 간 파일 참조
 

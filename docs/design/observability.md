@@ -9,49 +9,18 @@
 
 ## Audit 기록
 
-민감한 행위는 로그 한 줄만이 아니라 행(row)을 남기고, 둘을 나란히 두는 이유는 서로 다른
-독자에게 답하기 때문이다. 로그 한 줄은 이미 스트림을 지켜보고 있는 사람에게 닿고, 그것을
-실어 나르는 것이 무엇이든 그쪽 정책대로 보존되며, "지난 분기에 admin 목록을 누가 바꿨나"에는
-답하지 못한다. audit 행은 정확히 그 질문에 답하고 그 외에는 답하지 않는다.
+`recordAudit`는 민감 작업의 행위자·action·target·시각과 제한된 detail을 기록한다.
+action의 닫힌 집합은 `domain/audit/types.ts`, HTTP 필드와 조회 범위는
+[Audit API](../API.md#감사-기록)가 정본이다. detail에는 바뀐 설정 key 등만 기록하고 credential을 넣지 않는다.
 
-```ts
-AuditEvent { eventId, actorEmail,
-             action: 'secret.reveal' | 'secret.rotate' | 'secret.revoke'
-                   | 'project.admin-override' | 'settings.update'
-                   | 'project.delete' | 'registry.delete' | 'registry.adopt'
-                   | 'artifact.delete' | 'member.set-tier',
-             target,        // `kind:name` — `project:my-bot`, `skill:pdf-reader`
-             detail?, createdAt }
-```
+`instrumentation.ts`는 요청 수신 전에 감사 sink를 연결하고 확인한다.
+`Symbol.for` process 슬롯을 사용해 서로 다른 Next server bundle도 같은 sink를 읽는다.
+직접 container를 조립하는 CLI도 같은 설정을 사용한다.
 
-**작성자는 하나**, `recordAudit` (`src/application/audit/recordAudit.ts`) 이며
-`tests/architecture.test.ts` 가 고정한다. 기록되는 모든 행위가 이곳을 지난다. 두 번째
-작성자가 생기면 `target` 을 제 나름대로 적을 것이고, reveal 에는 통하던 필터가 deletion 에는
-조용히 아무것도 돌려주지 않는다 — 어긋난 audit trail 의 전형적인 실패다. 버그가 아니라
-이벤트가 없는 것처럼 보이기 때문이다. 저장소는 `setAdminCheck` 와 같은 이유로 composition
-root 가 **밀어 넣는다**: 그것을 넘겨야 하는 호출 지점은 잊을 수 있고, 기록되지 않은 행위
-하나는 애초에 일어나지 않은 행위와 구별되지 않는다. `src/instrumentation.ts` 는 composition
-root 자신의 import 에 맡기지 않고 **await 되는** 부팅 경로에서 이를 연결한다: 기록하는 모든
-라우트가 컨테이너에서 무언가를 필요로 하지는 않고 — A2A 키 reveal 은 아무것도 필요로 하지
-않는다 — 그 떠 있는(floating) import 가 resolve 되기 전에 처리된 요청은 자격 증명을 노출하고
-아무것도 기록하지 않는다. sink 는 `Symbol.for` 로 이름 붙인 process-wide 슬롯에 있으므로 Next 가
-instrumentation 과 route module 을 서로 다른 server bundle 에서 평가해도 같은 저장소를 본다.
-project admin 판정 함수도 같은 이유로 process-wide 슬롯을 쓴다.
-
-**쓰기 실패는 로그로 남기고 throw 하지 않는다.** 행위는 이미 일어났다. 뒤늦게 거부하면
-저장소의 순간적인 장애가 모든 민감 작업이 한꺼번에 멈추는 장애로 바뀐다. 각 지점에 원래 있던
-`log.warn` 줄들은 바로 이 경우를 위해 의도적으로 남겨 뒀다 — audit 저장소 자체가 고장 났을 때
-남는 것이 그것이다.
-
-`action` 은 닫힌 집합이라 읽는 쪽이 텍스트 검색이 아니라 필터가 되고, 새로운 종류의 행위를
-기록하는 일이 의도적인 편집이 된다. `detail` 은 자격 증명을 절대 담지 않는다: settings 쓰기는
-*어떤* 키가 움직였는지를 기록하고 그 값은 절대 기록하지 않으며, 그 키 중 둘은 secret 이다.
-
-행은 그 일이 일어난 **UTC 일자**로 키가 매겨지고 하루씩 읽는다. usage 가 이미 쓰고 있는
-모양이며 — 한 배포의 전체 이력이 한 파티션에 계속 덧붙는 것을 막아 준다. 앱 안의 어떤 것도
-행을 갱신하거나 삭제하지 않는다. 만료는 `expiresAt` 과 틱의 sweep 이 맡는다. 그 대상이 고칠 수 있는 기록은
-기록이 아니고, *삭제된* project 의 소유자에게도 여전히 책임을 물을 수 있게 하는 것이 바로 이
-점이다 — 그 사실을 알고 있던 다른 행은 cascade 가 전부 가져가기 때문이다.
+감사 쓰기 실패는 로그로 보고하고 이미 수행한 작업을 실패로 바꾸지 않는다.
+따라서 Audit은 모든 외부효과와 원자적으로 commit되는 원장이 아니다.
+행은 UTC 일자별로 저장하고, 사용자 API로 갱신·삭제하지 않으며 보존 sweep이 만료를 정리한다.
+Project 삭제가 그 행위의 감사 기록까지 cascade하지는 않는다.
 
 ## 사용량과 비용 귀속
 
@@ -59,14 +28,11 @@ project 별·model 별 일일 집계다 ([키 맵](../ARCHITECTURE.md#postgresql
 참고). 대시보드는 범위에 걸쳐 `USAGEDATE#{date}` GSI 파티션을 읽고 클라이언트 쪽에서
 project / provider / model 로 다시 묶는다.
 
-**프롬프트에서 캐시된 비중은 지표 중 하나이고**, 청구서에서 유추하는 값이 아니다.
-`calculateCost` 는 입력 가격을 매기려고 늘 `prompt_tokens_details.cached_tokens` 를 읽었고,
-그다음 그 수치를 버렸다 — 그래서 캐시가 되지 않게 된 프롬프트는 턴마다 비용이 더 들었는데도
-호출 수·토큰·답변은 전과 똑같아 보였다. 이제 그 값은 `UsageInfo` 를 타고(따라서 `usage`
-chunk 에도) 일일 행에 `cachedTokens.{model}` 로 들어가고, trace 의 각 model span 에도 실린다.
-거기서는 캐시 퇴행이 턴 단위로 읽힌다: 런의 첫 턴은 정의상 cold 이고, 캐시가 깨졌다는 것은
-이후의 모든 턴도 cold 라는 뜻이다. 분해 표는 아무것도 보고하지 않은 자리에 **빈 칸**을 그린다
-— `0%` 는 그 필드를 아예 보고하지 않는 channel 에 대해 캐시가 cold 라고 주장하는 셈이 된다.
+지표는 모델별 `calls`, `inputTokens`, `outputTokens`, `cachedTokens`, `costUsd`다.
+cached token은 입력 토큰의 부분집합이며 reasoning token은 출력 토큰의 부분집합이다.
+reasoning 수치는 UsageInfo·Trace에 쓰고 일일 Usage의 독립 과금 축으로 저장하지 않는다.
+채널이 보고하지 않은 값과 실제 0을 해석할 때는 해당 provider·저장 경로의 계약을 확인한다.
+첫 호출이라고 항상 cache miss이거나 토큰 수만 같으면 같은 비용인 것은 아니다.
 
 **누가 썼는지는 두 번째 행이지, 첫 행에 붙는 또 하나의 차원이 아니다.** Project 는 공유
 카탈로그이고, 공개 project 는 로그인한 누구나 실행하며 private project 도 여러 멤버가 함께
@@ -91,8 +57,14 @@ chunk 에도) 일일 행에 `cachedTokens.{model}` 로 들어가고, trace 의 �
 파티션의 별도 행은 두 읽기 모두를 각자의 질문만큼만 넓게 유지하고, project cascade 는 이미
 파티션 전체를 삭제한다.
 
-project 합계는 **먼저, 무조건** 쓰고 actor 행이 뒤따른다. 귀속은 덧붙는 것이다 — 호출자를
-지목하지 못하는 경로도 자기가 유발한 지출은 그대로 기록한다.
+일반 Usage 기록은 project 합계를 먼저 쓰고 actor와 user별 행을 순서대로 더한다.
+각 쓰기는 원자적이지만 세 집계가 하나의 transaction인 것은 아니므로 중간 실패 시 일부 귀속이
+누락될 수 있다. Agent는 메모리 aggregator를 종료 시 best-effort로 flush하며 급사 전 미정산량은
+자동 복구하지 않는다. 비용 가드는 외부 청구서의 정확한 예약 장부가 아니다.
+
+오디오처럼 `idempotencyKey`가 있는 사용량은 별도 `recordOnce` 경로를 사용한다.
+receipt와 관련 집계를 transaction으로 저장해 같은 결과의 재정산을 막는다.
+이는 ASR 자체의 중복 호출·과금까지 exactly-once로 만드는 계약은 아니다.
 
 **actor 는 런의 것이지 턴의 것이 아니다.** `createUsageAggregator` 는 그것과 한 번 묶이므로,
 subagent transfer 가 다른 project 에서 하는 호출도 여전히 런을 시작한 사람에게 귀속된다.
@@ -125,13 +97,9 @@ subagent transfer 가 다른 project 에서 하는 호출도 여전히 런을 �
 — trace 하나를 읽을 때 상관 짓기 위해서다. 아직 이것으로 인덱싱하거나 필터링하는 것은 없으니,
 "이 스레드의 모든 런"은 오늘 무엇도 답해 주지 못하는 질의다.
 
-`conversationOf` 는 **치환하지 않고 인코딩한다**: 공백, 제어 문자, 출력 가능한 ASCII 를
-벗어나는 모든 것, 그리고 `%` 자신이 자기 UTF-8 바이트에 대해 `%XX` 가 된다. 그래서 UUID 든
-Slack 주소든 그대로 다시 읽히고, 서로 다른 두 외부 id — A2A `contextId`, 호출자의 헤더 — 가
-하나의 대화가 되는 일이 없다. 그것들을 placeholder 로 치환하는 것이 첫 버전이었고, 그 방식은
-모든 한국어 단어를 밑줄 두 개로 만들었다: 대화는 둘, 메모리는 하나. 인코딩된 512자를 넘으면
-같은 이유로 짧아진 대화가 아니라 대화가 아예 없다. API 표면은 그에 대해 400 을 답하는데,
-대화를 선언해 놓고 조용히 대화 없이 실행된 호출자는 그 사실을 알 방법이 없기 때문이다.
+`conversationOf`는 공백·제어 문자·ASCII 밖의 문자와 `%`를 UTF-8 percent encoding한다.
+서로 다른 ID를 같은 placeholder로 만들지 않는다. 인코딩 상한을 넘으면 잘라 쓰지 않고 거절하거나
+대화 없음으로 처리하며 API는 잘못된 대화 ID에 400으로 응답한다.
 
 ## Trace
 
@@ -159,7 +127,7 @@ SDK 실행 전 `memory`와 `tools` 준비는 Studio `prepare` span이다. 바인
 개수와 최대 20개의 이름, 손실과 준비 오류를 기록하며 원문 query/description은 기록하지 않는다.
 MCP 준비 실패가 기록되어도 실행이 계속된 경우 Trace 전체를 실패로 처리하지 않는다.
 
-최상위 청크에서 종료·경고를 읽는다. 하위 Agent의 한도/실패가 부모의 완료를 덮지 않으며,
+최상위 청크로 전체 종료를 판정하고 경고는 자식의 손실도 수집한다. 하위 Agent의 한도/실패가 부모의 완료를 덮지 않으며,
 승인 대기는 `awaiting-approval`이다. 취소와 실패는 한도 상태보다 우선한다. 최대 span 100개,
 warning 20개를 저장하고, 생략된 span은 `spansDropped`로 센다. 실행 경고/오류 문구는 최대
 1,000자로 제한되며 원문 오류에 민감 정보가 있을 수 있어 소유자와 admin만 읽을 수 있다.

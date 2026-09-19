@@ -1,7 +1,7 @@
 # 보안
 
-누가 무엇을 할 수 있는지, 자격 증명이 어떻게 저장되고 건네지는지, 이 앱이 강제하는 경계가
-어디에 있고. 어디서 끝나는지.
+인증·인가, 시크릿, 네트워크, 모델 입력과 저장 데이터의 보안 경계를 설명한다.
+설정만으로 보장하는 것과 배포 환경이 책임지는 것을 구분한다.
 
 관련 문서: 여기서 언급하는 변수는 [CONFIGURATION.md](CONFIGURATION.md), 엔드포인트별 인가는
 [API.md](API.md), 조각들이 어떻게 맞물리는지는 [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -56,7 +56,7 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 | 표면 | 게이트 | 무엇을 결정하는가 |
 |---|---|---|
 | 페이지 | `src/proxy.ts` | 로그아웃 상태의 방문자를 `/login?next=…` 로 리다이렉트 |
-| API 라우트 | `withAuth` / `withMemberAuth` / `withAdminAuth` (`src/lib/session.ts`) | 세션이 없으면 401, 요구 tier(`member`, `admin`) 미만이면 403; 핸들러에 `SessionUser` 를 건넨다 |
+| API 라우트 | `withAuth` / `withMemberAuth` / `withAdminAuth` (`src/lib/session.ts`) | 세션이 없으면 401. member gate는 tier를, admin gate는 아래의 effective admin 판정을 사용한다. 실패는 403이며 성공하면 `SessionUser`를 건넨다 |
 
 `src/shared/pageAccess.ts` 는 어떤 페이지가 공개인지에 대한 단일 소유자다. `/`, `/login`, `/guide`.
 가이드는 로그인 없이 읽는 정적 안내이며, 가이드에서 연결하는 프로젝트·설정 페이지와 API는
@@ -82,15 +82,8 @@ admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt`
 `safeNextPath`(`src/shared/safeNextPath.ts`)로 되읽는다. `//host` 와 `/\host` 를 거부하지
 않으면 로그인 플로우가 오픈 리다이렉트가 된다.
 
-거부는 같은 주소창을 통해 되돌아 나간다. Better Auth 는 브라우저의 `error` 파라미터를 던져진
-에러의 *메시지* 로 만들기 때문에, 그 메시지는 산문이 아니라 와이어 포맷이다. 거기에 쓴 문장은
-URL 에 실리고, 그것이 배포의 허용 도메인 목록이 방금 거절당한 사람에게 전달되던 경로였다.
-코드는 대신 `src/shared/signInError.ts` 에 있고(`EMAIL_DOMAIN_NOT_ALLOWED` 가 이 앱이 올리는
-유일한 코드다), `/login` 이 그 코드를 자신이 소유한 문구로 매핑한다. 인식하지 못한 값은
-**그대로 되비추는 대신** 하나의 일반 문구로 수렴한다. 그 파라미터는 서버가 쓴 텍스트이고, 그
-매핑이 생기기 전에 리다이렉트된 배포는 지금도 자기 도메인을 밝힌 문장 하나를 통째로 보낼 수
-있다. Better Auth 가 스스로 올리는 코드. 취소된 동의 화면, 만료된 콜백. 는 서버 로그만이
-조치할 수 있는 방식으로 다르므로, 그것들도 함께 수렴한다.
+로그인 오류는 `signInError.ts`의 코드로 전달하고 로그인 페이지가 자기 문구로 표시한다.
+알 수 없는 `error` 값은 일반 오류로 바꾸며 제공자의 텍스트나 허용 도메인 목록을 그대로 반사하지 않는다.
 
 ## 인가 모델
 
@@ -136,6 +129,9 @@ visibility 이전처럼 열려 있다: 이름과 지출 집계는 카탈로그 �
 | 모델 즐겨찾기 | 로그인한 사용자 본인 | 로그인한 사용자 본인 |
 | 멤버 디렉터리 | admin | admin (tier 변경, `member.set-tier` 로 감사) |
 | Chat | 소유자만 (소유자가 아니면 404) | 소유자만 |
+| Workspace | 소유자와 현재 프로젝트 접근 검사 | 소유자; 실행·Git 승인은 활성화·정책·승인 상태도 검사 |
+| 오디오 job·비공개 source 파일 | 작업/파일 소유자와 프로젝트 접근 검사 | 소유자 범위와 job/file 상태에 따른 조작 |
+| 일반 Artifact | 생성·첨부 소유자 또는 프로젝트 소유자/admin | 같은 소유권 범위에서 삭제. 비공개 source 파일은 위 전용 경계 |
 
 trace 와 Slack 설정은 *읽기* 도 게이트되는데, 다른 사용자의 런타임 입출력과 마스킹된 자격
 증명의 가장자리를 노출하기 때문이다. project *합계* 는 카탈로그가 공유되므로 열어 둔다.
@@ -185,7 +181,8 @@ project* 의 한도에서 지출한다. token 은 서비스 자격 증명이다.
 것은 token 게이트다. API token 권한이 없는 tier 는 token 을 발급할 수도 없고(소유자 범위,
 admin 포함) 이미 있는 token 으로 인증할 수도 없다. `authenticateExecution` 은 모든 bearer
 요청에서 소유자의 현재 tier 를 다시 확인하고 403 으로 답하므로, 강등은 그 소유자의 token 을
-즉시 멈춘다. 멤버 행이 없으면 기본 `guest` 로 거절하고, tier 저장소를 읽지 못하면 503 으로
+멈춘다. 다만 이 검사는 `getMemberTier`의 인스턴스별 30초 캐시를 사용하므로 다른 인스턴스에는
+그만큼 전파가 늦을 수 있다. 멤버 행이 없으면 기본 `guest`로 거절하고, 캐시를 갱신할 때 tier 저장소를 읽지 못하면 503으로
 fail-closed 한다. 권한 저장소 장애가 이미 제한된 credential 을 다시 활성화해서는 안 된다.
 
 admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘기는 대신 `assertProjectWritable`
@@ -309,7 +306,7 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 
 ## 머신 호출자의 요청 인증
 
-세션 쿠키가 없는 호출자를 인증하는 자격 증명이 일곱 가지 있다:
+세션 쿠키가 없는 호출자는 표면별 자격 증명을 사용한다:
 
 | 표면 | 자격 증명 | 검증 |
 |---|---|---|
@@ -319,9 +316,10 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 | Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다. 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
 | 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회 후 primary row 의 컨텍스트 결합 token 을 상수 시간으로 재확인(actor `a2a:{client}`, 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
 | Webhook trigger | `X-Trigger-Secret` 또는 GitHub `X-Hub-Signature-256` | 프로젝트 시크릿의 `cipher.decryptEquals` 또는 원본 UTF-8 body의 HMAC-SHA256 상수 시간 비교. GitHub 헤더가 있으면 서명 검증을 강제하고 일반 시크릿으로 폴백하지 않는다. 서명된 ping은 실행하지 않으며 GitHub delivery ID로 중복을 차단한다 |
+| Workspace GitHub webhook | `X-Hub-Signature-256`과 `X-GitHub-Delivery` | 별도 배포 시크릿으로 검증하고 PR/CI 메타데이터만 갱신한다. Git 실행 승인이 아니다 |
 | CronJob 틱. schedule 스캔(`/api/triggers/scan`), 카탈로그 재색인(`/api/catalog/reindex`), plugins sync(`/api/plugins/sync/scan`) | `X-Scan-Token` | `SCHEDULE_SCAN_TOKEN` 과 `timingSafeEqualString` 비교. 설정돼 있지 않으면 503 으로 답하고, 거부된 token 은 셋 모두에서 경고를 로그에 남긴다 |
 
-**하나의 token 이 세 틱을 모두 연다.** 그래서 일곱 중 가장 넓다. CronJob 이 어떤 schedule 이
+**하나의 token 이 세 틱을 모두 연다.** 세 endpoint 전체에 쓰기 권한을 주는 배포 credential이다. CronJob 이 어떤 schedule 이
 도래했는지 물을 수 있게 해 주는 그 문자열이 plugins sync 도 실행하고, 그 sync 는 두 레지스트리
 skill 과 MCP 서버. 를 모두 쓴다. 저장소가 선언한 이름을 채택하고 provenance 를 그것으로 다시
 쓴다. 그것은 프로브가 아니라 쓰기 자격 증명으로 범위를 잡고 회전시켜라.
@@ -343,11 +341,12 @@ trigger 와 다르게 답할 수 없게 하기 위해서다. 그 차이는 어�
 상수 시간 비교는 소유자가 하나, `src/shared/timingSafe.ts` 이고
 `tests/architecture.test.ts` 가 고정한다.
 
-리플레이 방지: Slack 이벤트는 `event_id` 로, Telegram 업데이트는 project·봇별 `update_id` 로,
-Teams activity 는 project·App ID 별 activity id 로 정확히 한 번만 처리되도록 중복 제거된다(조건부 put, 24시간 TTL, 공유된 하나의
-claim-and-settle 저장소). 그 claim 은 나중에 정산되는 **리스** 이므로, 처리 도중 죽은
-인스턴스는 아무도 처리하지 않았는데 처리된 것으로 기록된 이벤트가 아니라 다시 가져갈 수 있는
-claim 을 남긴다. Webhook 배달도 같은 방식으로 `Idempotency-Key` 를 선점한다.
+리플레이 억제는 Slack `event_id`, Telegram의 project·bot·`update_id`,
+Teams의 project·App ID·conversation·activity ID를 키로 한 조건부 claim을 사용한다.
+완료 claim은 중복을 막고, 실패 또는 만료된 처리 lease는 재전달 시 다시 claim할 수 있다.
+ACK 후 실행하는 과정과 외부 도구 효과를 하나의 transaction으로 묶지는 않으므로
+end-to-end exactly-once를 보장하지 않는다. 플랫폼이 재전달하지 않으면 유실 이벤트를
+스스로 복구하는 worker도 없다. Project webhook의 멱등 계약은 [Trigger 설계](design/triggers.md)를 따른다.
 
 ## 인바운드 요청 크기
 
@@ -362,10 +361,8 @@ JSON 본문은 schema 검증 전에 bounded reader를 지난다. 관리·편집 
 내부 drain 완료까지 유지한다. 일반 text turn은 아무것도 쓰지 않는다. 예산이 모자라면 body를
 취소한 뒤 `Retry-After`를 포함한 429를 답한다. A2A raw JSON 경로도 같은 게이트를 지난다.
 
-**개수가 아니라 바이트인 이유**: 큰 본문의 크기는 두 자릿수 배 차이가 난다. 요청 수로 세면
-스크린샷 한 장(수백 KB)을 실은 대화가 84MB 짜리 문서 네 개짜리 턴과 같은 permit 을 쓰고,
-permit 은 런이 끝날 때까지 유지되므로 그런 대화 둘이 도는 동안 나머지 전원이 최대
-`MAX_RUN_DURATION_MS` 동안 429 를 받는다. 막아야 하는 것은 heap 이므로 heap 을 센다.
+예산은 요청 수가 아니라 메모리에 유지하는 큰 본문의 바이트를 센다.
+정확한 상한과 소유 파일은 [고정 제한](CONFIGURATION.md#코드에-고정된-제한)을 따른다.
 
 `tests/architecture.test.ts`는 API route의 직접 `request.json()`과 `request.formData()` 호출을
 거부한다. Zod의 필드 크기 검사는 파싱 뒤의 값 규칙이지, 파싱 전에 발생하는 메모리 할당 제한이
@@ -386,20 +383,14 @@ Cookie session으로 인증하는 `POST`·`PUT`·`PATCH`·`DELETE`는 `Origin`�
 
 ## 응답 헤더
 
-`next.config.ts` 에서 콘솔과 일반 API 경로에 기본으로 설정한다. 저장된 바이트를 응답하는
-`/api/artifacts/{id}/view` 와 `/api/objects/*` 는 제외되고 각자 sandbox CSP 를 설정한다.
-`frame-ancestors 'none'` 과
-`X-Frame-Options: DENY` 는 콘솔에 artifact 를 지우고 키를 회전시키는 버튼이 있고, 프레임에 넣은
-페이지가 바로 그 클릭을 수집하는 방법이기 때문이다. `X-Content-Type-Options: nosniff` 는 한
-라우트가 `text/html` 로 답하면서 인가 서버의 말을 거기에 싣기 때문이다. `Referrer-Policy:
-strict-origin-when-cross-origin` 은 여기서는 URL 자체가 자격 증명인 경우가 많고. 서명된
-오브젝트 주소, webhook 경로. 전체 리퍼러는 그것을 독자가 다음에 클릭하는 곳에 건네주기
-때문이다.
+[`next.config.ts`](../next.config.ts)는 일반 경로에 framing 차단 CSP,
+`X-Frame-Options: DENY`, `nosniff`, `strict-origin-when-cross-origin`을 적용한다.
+일반 콘솔에는 script/style의 로드를 제한하는 CSP가 없으므로 이 정책이 script injection까지
+차단한다고 보지 않는다.
 
-일반 script/style 로드를 제한하는 CSP 는 아직 없다. 현재 정책은 framing 만 막는다. Mantine 과
-Next 둘 다 인라인 스타일을 내보내므로 쓸모 있는 정책에는 nonce 파이프라인이 필요하다. 잘못된
-정책은 콘솔을 조용히 망가뜨리는데, 그것은 없는 것보다 나쁘다. 그때까지 일반 경로의 CSP 는
-주입된 스크립트에 대한 두 번째 방어선이 아니다. 각 싱크에서의 이스케이핑이 유일한 방어선이다.
+`/api/artifacts/{id}/view`와 `/api/objects/*`는 이 규칙에서 제외하고 각 route가 자체 sandbox
+정책을 설정한다. 오류 응답에도 헤더가 필요하다. 라우트의 CSP를 바꿀 때는 전역 헤더가
+덮어쓰지 않는지 실제 응답을 확인한다. 파일별 정책은 [데이터 노출과 보존](#데이터-노출과-보존)을 따른다.
 
 ## 아웃바운드 요청 (SSRF)
 
@@ -416,8 +407,9 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
 닿는 정상 경로가 그것이기 때문이다. `64:ff9b::8.8.8.8` 은 통과하고 `64:ff9b::10.0.0.1` 은
 거부된다.
 
-디스패치는 `fetchPublicUrl`(`src/infrastructure/net/publicFetch.ts`)을 거치고, 그것이 단일
-아웃바운드 경계다:
+이 registry의 공개 주소 디스패치는 `fetchPublicUrl`(`src/infrastructure/net/publicFetch.ts`)을 지난다.
+배포가 지정한 LLM·인증·스토리지·카탈로그 endpoint까지 모두 이 가드로 검사하는 것은 아니다.
+그 주소들은 배포 설정의 신뢰 경계다. 공개 registry 요청에는 다음 검사를 적용한다:
 
 - DNS 는 **모든 요청과 모든 리다이렉트 홉마다** 다시 해석하고 다시 확인한다. 등록과 사용
   사이의 DNS 리바인딩 창을 (완전히 닫지는 못하지만) 좁힌다.
@@ -546,60 +538,29 @@ capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesys
 
 ### MCP 서버가 호출자에 대해 듣는 것
 
-런이 MCP 서버로 보내는 모든 요청은 호출하는 project 의 이름을 담은 `X-Tenant-Id` 를 싣는다
-(`src/application/mcpMetadataHeaders.ts` 의 `TENANT_ID_HEADER`). 이것은 멀티테넌트 서버가.
-mcp-memory 는 이것으로 자기 데이터를 스코프한다. project 별 등록 없이 project 마다 동작하도록
-존재한다. 그것을 읽지 않는 서버는 무시하고, 이미 `X-Tenant-Id` 를 자기 테넌시 스위치로 다루는
-서버는 우리 것에 반응하는데, 그게 이 일반적인 이름의 요점이다. 세 예약 헤더(`X-Tenant-Id`,
-`X-User-Email`, `X-Conversation-Id`)의 저장된 표기는 병합 직후, OAuth 가용성 판정이 헤더 맵을
-읽기 *전에* 한꺼번에 제거된다(`stripMcpMetadataHeaders`) — 그래서 저장된 metadata 헤더는 연결
-없는 서버를 "인증하는 수단"으로 계산되지 않고, 런이든 probe 든 다른 project·사용자·대화를
-사칭한 채 서버에 닿지 않는다. 플랫폼 자신의 값은 그 뒤에 찍히고, 테넌트는 세션의 헤더 맵에
-실려 discovery 캐시가 project 별로 키잉된 상태를 유지한다. 카탈로그
-재색인 프로브와 "Test connection" 은 project 를 지니지 않아 헤더를 보내지 않는다. 그것을
-요구하는 서버는 그 목록 조회를 거부하고 서버 수준으로만 색인된다.
+`application/mcpMetadataHeaders.ts`가 저장된 예약 header를 제거하고 확인한 신원을 붙인다.
+다른 대소문자 표기도 같은 이름으로 취급하며 OAuth 가용성 검사 전에 제거한다.
+사용자가 정적 header를 저장해 다른 사람·프로젝트·대화를 사칭할 수 없다.
 
-`user` 또는 `project-token` actor 가 일으킨 런은 `X-User-Email` 도 싣는다
-(`src/application/mcpMetadataHeaders.ts` 의 `USER_EMAIL_HEADER`). 전자는 로그인 사용자, 후자는 token 이 대신하는 project
-owner 의 email 이다. Slack 은 workspace user id 를 actor 로 유지하되 profile 에서 해석한 질문자의
-email 을 별도로 싣는다. 이 값은 레지스트리/바인딩/OAuth header 를 모두 조립한 뒤 마지막에
-적용하고, 어떤 대소문자 표기로 저장된 값도 먼저 제거한다. Telegram·Teams·A2A·trigger 처럼
-email 을 알 수 없는 런은 header 를 보내지 않으며, 정적 header 로 사용자를 사칭할 수도 없다.
-이 값은 MCP 서버가 Agent Memory 같은 사용자별 권한을 적용할 수 있게 하는 위임 신원이지, 그
-자체가 credential 은 아니다. 서버는 별도의 Bearer token 이나 OAuth grant 와 함께 검증해야 한다.
+| Header | 의미·범위 |
+|---|---|
+| `X-Tenant-Id` | 실행 Project 이름. 프로젝트별 도구 목록과 discovery cache를 구분한다 |
+| `X-User-Email` | user·project-token의 정규화 이메일 또는 Slack이 확인한 이메일. 신원 cache key에 포함한다 |
+| `X-Conversation-Id` | 대화 주소. 요청의 context header이며 discovery cache key에 포함하지 않는다 |
 
-Email 은 서버가 권한별 tool catalog 를 내놓거나 요청 자체를 거부할 수 있는 identity 이므로
-`X-User-Email` 은 `X-Tenant-Id` 와 같은 세션 header 및 discovery cache key 에 포함한다. 권한 없는
-사용자의 discovery 실패나 권한 있는 사용자의 catalog 가 다른 사용자에게 재사용되지 않는다.
-로그인 사용자가 시작하는 registry "Test connection", project 별 도구 목록, prompt preview 도
-같은 header 를 보낸다. 반면 catalog reindex 와 managed health probe 처럼 사용자가 없는 시스템
-호출은 보내지 않는다.
+이메일은 MCP discovery부터 평문으로 전송하며 PII 필터가 가리지 않는다.
+서버 등록은 사용자 이메일과 복원된 도구 인자 공개를 포함하는 신뢰 결정이다.
+이 header만으로 인증되지 않으며 서버는 별도 Bearer·OAuth grant와 함께 위임 신원을 검증해야 한다.
 
-콘솔의 project 별 도구 목록(`src/application/mcp/mcpAuthUseCases.ts` 의 `listTools`)은 project 를
-*가지고 있으면서도* 테넌트를 보내지 않는 유일한 프로브다. 그 project 의 OAuth token 과 요청
-사용자의 email 을 해석하고 런이 조립할 것과 같은 나머지 헤더를 조립한다. 테넌트별로 다른 도구를
-노출하는 서버에서 소유자에게 보이는 목록은 따라서 그의 런에 제공되는 목록과 반드시 같지는 않다.
+registry Test와 프로젝트 도구 조회는 요청 사용자 email을 전송한다.
+카탈로그·managed health probe에는 사용자·대화가 없다.
+프로젝트 도구 조회는 OAuth와 override를 사용하지만 tenant header는 보내지 않는 현재 차이가 있다.
+따라서 tenant마다 도구 목록이 다른 서버에서는 probe와 런의 목록이 다를 수 있다.
 
-런이 대화 안에 있을 때는 그 옆에 헤더가 하나 더 실린다. `X-Conversation-Id`
-(`CONVERSATION_ID_HEADER`, 같은 파일)에 런의 대화 키가 담긴다. `chat:{chatId}`,
-`slack:{channel}:{threadTs}`, `a2a:{client}:{contextId}`, 또는 자기 `X-Conversation-Id` 를 보낸
-호출자에게는 `api:{caller}:{value}`. 여기서 `{caller}` 는 actor 키의 다이제스트이며 **이 배포의
-`AES_ENCRYPTION_KEY` 로 키잉된다**. 여기서는 한 호출자에 대해 안정적이라 서버가 그의 대화들을
-구별할 수 있고, email 의 평범한 해시가 아니라서 주소 목록으로 오프라인에서 역산할 수 없다.
-이것은 익명성이 아니라 가명이다. 같은 다이제스트를 두 번 본 서버는 같은 호출자가 두 번
-물었다는 것을 알고, 그게 요점이다. 그리고 이 배포의 키가 없는 누구에게도 아무 의미가 없다.
-테넌트와 똑같이 예약돼 있고 병합 이후에 찍히므로 바인딩이 다른 대화를 지목할 수 없다. 이것은
-세션의 신원 헤더가 아니라 *컨텍스트* 헤더로 이동하므로 discovery 캐시를 키잉하지 않는다. 대화는
-서버가 어떤 도구를 노출할지에 대해 아무것도 결정하지 않으며, 스레드마다 discovery 비용을 치르는
-것은 결정한다고 가정하는 대가일 뿐이다. 발화(firing)에는 대화가 없어 아무것도 보내지 않고, 위의
-프로브들도 보내지 않는다. 테넌트와 마찬가지로 이것은 아무것도 인증하지 않는다. 메모리 서버가
-이것으로 작업 노트를 스코프해도 좋지만, 인가로 다뤄서는 안 된다.
-
-이 세 header 가 자동으로 전송되는 신원 메타데이터다. 테넌트는 project 이름, 사용자 header 는
-email actor 의 실제 주소, 대화는 불투명한 스레드 주소다. `X-User-Email` 은 PII filtering 보다
-앞선 MCP discovery 부터 평문으로 전송되며 masking 대상이 아니다. 따라서 MCP 서버 등록은 사용자
-email 공개를 포함하는 신뢰 결정이다. 서버는 그 밖에도 모델이 도구 인자에 넣은 값과, OAuth
-항목이면 `Agent Studio — <project>` 라는 client 이름 및 연결한 사람의 grant 를 볼 수 있다.
+API·AG-UI 대화 주소의 caller 부분은 배포 키로 만든 digest다.
+이메일의 평문 hash가 아니지만 동일 사용자를 연결할 수 있는 가명이지 익명화는 아니다.
+메신저·Chat·A2A의 주소 형식은 [관측성 설계](design/observability.md#사용량과-비용-귀속)를 따른다.
+firing이나 대화 ID 없는 요청은 대화 header를 보내지 않는다.
 
 ### 모델이 고른 URL
 
@@ -642,152 +603,93 @@ email 공개를 포함하는 신뢰 결정이다. 서버는 그 밖에도 모델
 아래에서 MCP 도구 인자에 대해 이미 말한 것과 같은 한계다. 차이는 URL 이 마찰이 더 적은 통로라는
 점이다.
 
-**그리고 그 대가.** 이 노출은 예전에도 있었지만, 자기 자격 증명이 하나도 없는 별도의 파드에
-있었다. 이제는 AES 마스터 키, 데이터베이스 자격 증명, Slack token 을 쥐고 있는 앱 프로세스 안에서 돈다.
-그래서 SSRF 인접 결함의 폭발 반경이 더 크고, 앱의 이그레스 정책은 열린 웹에 닿을 만큼 넓어야
-한다. 완화된 것이지 제거된 것이 아니다.
+이 HTTP 요청은 앱 프로세스에서 수행한다. SSRF 가드와 별개로 배포의 egress 정책을 적용하고,
+허용한 내부 페이지와 IP 기반 신뢰 서비스가 모델에 노출될 수 있음을 고려한다.
 
 ## MCP OAuth
 
-레지스트리 항목은 등록 시 한 번 발견된 `auth` 블록을 지닐 수 있다(RFC 9728 protected-resource
-메타데이터 → RFC 8414 authorization-server 메타데이터). 두 문서 중 어느 쪽에서 꺼낸
-엔드포인트든 URL 정책으로 다시 검증되고 `https` 여야 한다. **런 경로는 well-known 문서를 결코
-가져오지 않는다.**
+관리자는 registry에 OAuth 메타데이터와 선택적 공유 client를 등록하고,
+프로젝트별 connection은 사용자 grant를 보관한다.
+실행 경로는 well-known 문서를 다시 읽지 않고 저장된 계약으로 token을 해석한다.
+발견·연결·callback의 HTTP 형태는 [API](API.md#mcp-oauth), refresh 수명은
+[MCP 설계](design/mcp.md#oauth)를 따른다.
 
-resource 문서는 항목 자신의 주소에서 읽으므로,
-[선언된 내부 호스트](#선언된-내부-호스트)는 런이 다이얼하는 것과 같은 방식으로 읽힌다.
-**authorization 서버는 그렇지 않다**. 그 URL 은 레지스트리가 아니라 제3자의 문서에서 나오고,
-운영자가 어떤 MCP 호스트를 내부라고 선언한 것은 그 호스트가 스스로 지목하는 authorization
-서버에 대해서는 아무 말도 하지 않는다.
+### 메타데이터와 주소
 
-OAuth client secret 은 공유 레지스트리 항목의 `auth` 블록에 암호화되어 있고, 사용자별 access/
-refresh token 은 자기 자신의 `PROJECT#<name> / MCPCONN#<server>` 아이템에 있다. 버전(설정
-이력의 스냅샷)에도, project 아이템(그 `updatedAt` 은 publish 의 낙관적 동시성 조건이다)에도
-있지 않다. 이 분리는 관리자가 OAuth 앱을 한 번 설정하고 각 project 소유자가 자신의 계정으로
-승인하게 한다.
+protected-resource 문서는 MCP 주소의 401 challenge가 지정한 URL을 우선한다.
+challenge가 없으면 well-known 후보를 읽는다. resource 문서는 그 MCP 항목의 내부 호스트
+예외를 사용할 수 있지만, 문서가 지목한 authorization server까지 같은 예외를 주지는 않는다.
+authorization·token·registration endpoint는 HTTPS와 URL 정책으로 검사한다.
 
-공용 앱 연결은 `clientFromRegistry`와 Client ID를 기록하며 code 교환·refresh 때 레지스트리의
-현재 Secret을 읽는다. Secret 교체는 기존 grant에 적용되고, 공용 Client ID 교체·제거는 기존
-grant 사용을 차단한다. 개별 동적 등록 클라이언트의 Secret은 해당 project connection에 유지한다.
-Tools의 Redirect URI는 서버의 공개 base URL로 자동 입력하며, 임의 호스트·경로로 덮어쓸 수 없다.
-인가 요청의 Redirect URI·Client ID·resource는 일회성 state에 저장하고 콜백에서 되읽는다.
-OAuth 메타데이터와 공용 앱 저장은 읽은 `auth`와의 조건부 쓰기로 경쟁 변경을 덮어쓰지 않는다.
+resource identifier는 문서를 찾은 대상과 일치해야 한다. 제한된 예외는
+`https://mcp.slack.com/mcp`가 공식 well-known 문서를 지목할 때
+문서의 `resource: https://mcp.slack.com`을 허용하는 조합이다.
+다른 origin·경로 조합으로 일반화하지 않는다.
 
-강제되는 속성:
+authorization server는 RFC 8414 path-inserted, OpenID path-inserted, OpenID path-appended
+순서로 발견한다. 경로를 가진 issuer에서 root 문서로 후퇴하지 않으며 문서의 issuer를 검증한다.
+Google discovery는 광고 주소 `https://accounts.google.com/`에 대해 메타데이터의
+`https://accounts.google.com`만 추가로 허용한다. callback의 `iss`에는 이 예외를 적용하지 않는다.
+Entra의 common endpoint처럼 문서가 다른 tenant issuer를 돌려주면 일치 검사를 통과하지 못하므로
+resource가 사용할 tenant issuer를 직접 광고해야 한다.
 
-- **PKCE S256 은 필수다.** `state` 는 10분 TTL 의 일회용이다. 명세의 MUST 대로,
-  `code_challenge_methods_supported` 를 광고하지 않는 authorization 서버는 **기본적으로 거부**한다
- . `code_challenge` 를 무시하는 서버에 대고 진행하는 것은 code injection 방어를 조용히 내려놓는
-  것이다. 광고 없이 PKCE 를 지원하는 서버는 흔하므로 `MCP_OAUTH_ALLOW_UNADVERTISED_PKCE=true` 가
-  배포 단위로 그 위험을 받아들인다. 항목 단위가 아니라, 한 번.
-- **authorization 서버 메타데이터는 명세의 순서로 찾고, `issuer` 를 검증한다.** 경로가 있는
-  issuer 는 RFC 8414 path-inserted → OpenID path-inserted → OpenID path-appended 이고 root 형은
-  시도하지 않는다; root 폴백은 Keycloak realm이나 Okta custom AS를 다른 issuer의 문서에
-  조용히 바인딩할 수 있기 때문이다. `issuer`가 요청한 것과 다르거나 없는 문서는 쓰지 않는다.
-  Google Workspace의 명시적인 discovery 호환성 예외는 광고 주소
-  `https://accounts.google.com/` → 메타데이터 issuer `https://accounts.google.com` 한 쌍이다.
-  다른 호스트·경로·포트나 반대 방향에는 적용하지 않는다. 발견한 원본 issuer를 저장하며
-  콜백의 `iss` 비교에는 이 예외를 적용하지 않는다.
-  resource metadata 는 먼저 서버 자신의 401 `WWW-Authenticate` 를 확인한다.
-  `resource_metadata` 주소가 있으면 그 주소만 정본으로 읽고, 없을 때 well-known 경로를
-  시도한다(RFC 9728).
-- **`WWW-Authenticate` 는 런타임에도 읽는다.** 403 `insufficient_scope` 가 이름 댄 scope 는
-  연결의 scope 에 합쳐지고 연결은 `needs_reauth` 가 되어, 콘솔의 재연결이 서버가 방금 거절한
-  것과 같은 grant 대신 넓어진 grant 를 요청한다(step-up). 전에는 403 이 "unreachable" 로 보여
-  소유자가 scope 를 줄 길이 없었다. challenge 는 SDK 가 해당 요청의 typed error 에 붙인다. 한
-  turn 에서 병렬 호출된 다른 tool 의 성공이나 403 이 이를 지우거나 바꿀 수 없다.
-- **protected-resource metadata 는 resource 에 묶는다.** challenge 가 지목한 문서는 challenge 를
-  일으킨 MCP URL, well-known 문서는 그 주소를 도출한 resource identifier 와 `resource` 값이
-  정확히 같아야 쓴다(RFC 9728 §3.3). 다른 audience 의 token 을 받아 공격자 resource 에 보내는
-  impersonation/confused-deputy 경로를 닫는다.
-  Slack은 공식 `https://mcp.slack.com/mcp`가
-  `https://mcp.slack.com/.well-known/oauth-protected-resource`를 지목할 때만 문서의
-  `resource: https://mcp.slack.com`을 허용한다. 이 방향의 정확한 주소 조합 외에는 원래의 일치
-  검증을 적용한다. [Slack 공식 메타데이터 계약](https://docs.slack.dev/ai/slack-mcp-server/)을 따른다.
-- **동적 등록은 토큰 요청이 쓸 인증 방식으로 등록한다**, 그리고 서버가 기록한 방식이 돌아오면
-  그것을 연결에 적는다. `client_secret_post` 로 등록해 놓고 `client_secret_basic` 으로 교환하던
-  것은 기록된 방식을 강제하는 서버(Keycloak, Authentik 등)에서 `invalid_client` 루프였다.
-  `client_secret_basic` 의 ID 와 secret 은 RFC 6749 가 정한 form encoding 후 Base64 로 인코딩한다.
-- **RFC 8707 `resource`** 는 모든 authorization 요청과 token 요청에 실린다. 명세가 그것을
-  무조건으로 규정하며, 한 MCP 서버용으로 발급된 token 이 다른 서버에 재사용되는 것을 막는 것이
-  바로 그것이다.
-- **RFC 9207 `iss`** 는 code 를 교환하기 전에 검증된다(SEP-2468). 기대 issuer 는 PKCE verifier
-  옆의 pending-state 아이템에 기록되며. 재발견이 바꿔 놓았을 수 있는 레지스트리 항목에서
-  되읽지 *않는다*. **문자 그대로** 비교된다. 대소문자, 포트, 끝의 슬래시, 퍼센트 인코딩 정규화
-  중 무엇도 하지 않는데, 각각이 서로 다른 두 issuer 가 같다고 비교될 또 하나의 방법이기
-  때문이다. `iss` 가 없는 것은 서버의 메타데이터가
-  `authorization_response_iss_parameter_supported` 를 광고할 때만 치명적이다. 같은 확인이 에러
-  응답에도 돌기 때문에, 이 앱이 귀속시킬 수 없는 리다이렉트에서 온 제공자 제어
-  `error_description` 텍스트는 결코 중계되지 않는다.
-- **자격 증명에 대한 issuer 바인딩**(SEP-2352): 연결의 클라이언트 자격 증명은 그것이 등록된
-  issuer 를 지니고, 그 token 은 발행될 때의 `resource` 를 지닌다. 무엇이든 건네주기 전에 둘 다
-  확인된다. 갱신 경로에서 *그리고* 살아 있는 token 을 읽기만 하는 경로에서도. bearer token 에는
-  audience 가 있고, 확인 없이 하나를 내주는 것은 클라이언트 시크릿을 쓰는 것과 같은 실수이기
-  때문이다. **둘 다 기본값으로 채우는 것이 아니라 필수다.** 그것들이 기록되기 전에 쓰인 행은
-  *연결 없음* 으로 되읽히고, 그래서 콘솔이 재연결을 제안한다. 예전의 폴백은 그런 행이 지금
-  항목이 가리키는 것에 속한다고 가정했는데, 그 가정을 하지 않으려고 이 필드들이 존재하는 것이다
- . 그리고 추측에 대고 확인한 token 은 확인된 것이 아니다. issuer 를 지니지 않은 state 의
-  pending authorization 에도 같은 것이 적용된다. 확인 없이 완료하는 대신 거부한다.
-- **항목의 URL 을 편집하면 그 `auth` 블록은 통째로 버려진다.** 그 블록은 옛 주소의 well-known
-  문서에서 읽은 것이다. 항목은 admin 이 Discover 를 다시 돌릴 때까지 자기 헤더로 되돌아간다.
-  다시 돌리고 나면, 위의 두 확인이 옛 서버에 속했던 모든 연결을 잡아낸다. 항목을 지우고 같은
-  이름으로 다시 만드는 것도 같은 방식으로 잡힌다. 레지스트리는 admin 소유인데 연결은 소유자
-  소유이고 그 둘을 잇는 유일한 것이 이름이므로, 이것은 중요하다.
-- **클라이언트를 얻는 방법은 명세 자신의 순서를 따른다**: 이미 보유한 자격 증명(한 번
-  등록했거나 손으로 입력한 것), 그다음 Client ID Metadata Document, 그다음 동적 등록, 그다음
-  소유자가 무엇을 해야 하는지 밝히는 에러. 등록은 프로토콜 `2026-07-28` 부터 그 문서 방식에
-  밀려 deprecated 이므로 `client_id_metadata_document_supported` 를 광고하는 서버에는 결코
-  등록하지 않는다. 하지만 그 밖에 아무것도 광고하지 않는 서버들을 위해 남겨 둔다. 2025년대
-  릴리스의 authorization 서버가 전부 그렇다. 걷어냈다가 되돌린 적이 있다. 동작하던 연결을
-  연결 불가능하게 만들고, 그 소유자에게 자기가 통제하지도 못하는 리비전 날짜를 두고 손으로
-  앱을 등록하러 가라고 말하게 된다.
-- **문서는 제공자가 그것을 가져올 수 있는 곳에서만 경로가 된다.** `client_id` 는
-  *authorization 서버* 가 가져가는 URL 이므로, 공개 베이스가 `http://localhost` 이거나 내부
-  호스트명인 배포는 아무 데도 해석되지 않는 것을 발행한다. 그리고 제공자는 사용자가 승인한
-  *뒤에야* 그것을 *Unknown OAuth client* 라고 말하는데, 이는 URL 의 문제가 아니라 클라이언트의
-  문제처럼 읽힌다. 그 주소는 항목 자신의 엔드포인트가 받는 것과 같은 https·공개 라우팅 가능
-  확인을 받는다. 그것을 통과하지 못하면 등록으로 넘어가고, 넘어갈 등록이 없을 때의 거부는
-  제공자가 아니라 베이스 URL 을 지목한다. 저장된 문서의 `client_id` 가 더 이상 이 배포가 제공할
-  그것이 아니면 같은 이유로 다시 만들어진다. 그러지 않으면 행은 `clientId` 를 계속 갖고 있어
-  모든 분기가 건너뛰어지고, 가져올 수 없는 같은 URL 이 영원히 제시된다.
-- 동적 등록(RFC 7591)은 OpenID Connect 기본값이 적용되게 두는 대신
-  `application_type: "web"` 을 선언한다(SEP-837). 시크릿이 없는 public 클라이언트는 서버의
-  메타데이터가 무엇을 선호했든 `none` 을 보낸다.
-- **Client ID Metadata Document 는 project 별로 공개 제공된다.**
-  `/api/mcps/oauth/client-metadata/{project}` 이며, 세션 확인이 없는 유일한 MCP 라우트이고
-  의도적으로 그렇다. 그 독자는 URL 인 `client_id` 를 해석하는 authorization 서버이며, 제공자가
-  도는 어디에서든 쿠키 없이 도착한다. 그 안에는 시크릿이 하나도 없다. 이 배포의 이름과 자신이
-  받아들이는 단 하나의 redirect URI 를 밝히는데, 그것은 예전에 등록이 POST 본문으로 보내던
-  것이다. 그 안의 `client_id` 는 그것을 가져온 URL 과 같아야 하므로, 둘 다 하나의
-  함수(`clientMetadataUrl` / `clientMetadataDocument`)가 **설정된** 공개 베이스에서 만든다.
-  요청에서 만드는 일은 결코 없다. 요청에서 만들면 호출자가 자기 호스트로의 리다이렉트를 승인하는
-  문서를 게시할 수 있게 된다. project 는 조회하지 않는다. 요청마다 데이터베이스를 읽는 공개
-  엔드포인트는 인증되지 않은 트래픽을 그 안으로 초대하는 셈이고, 모르는 이름에 404 를 주면 어떤
-  project 가 존재하는지가 새어 나간다. 존재하지 않는 project 의 문서는 무해하다. 그것이 시작할
-  수 있는 authorization 은 콜백에 도착하고, 콜백은 연결을 찾지 못해 멈춘다.
-- **그런 클라이언트는 구조상 public 이므로**, 이 플로우의 방어는 공유 시크릿이 아니라 PKCE 와 그
-  고정된 redirect URI 다. 다른 누군가가 시작한 authorization 도 결국 자기 code 를 이 배포의
-  콜백으로 배달하고, 거기서는 verifier 없이는 쓸모가 없다.
-- **위의 issuer 바인딩 규칙은 그것에 대해서는 뒤집힌다.** 등록했거나 손으로 입력한 `client_id`
-  는 그것을 발급한 서버를 떠나면 의미가 없고, 그래서 issuer 로 키잉되며 issuer 가 바뀌면 다시
-  등록된다. 또는 여기서 다시 발급할 수 있는 것이 아무것도 없을 때는, 소유자가 등록해야 하는
-  서버를 지목하며 거부된다. 메타데이터 문서의 `client_id` 는 자체 호스팅되고 요청받은 서버가
-  그때그때 해석하므로 항목이 옮겨져도 살아남는다. 그것을 거부하는 것은 가지고 있지도 않은 자격
-  증명을 이유로 동작하던 연결을 깨뜨리는 일이 될 것이다.
-- 콜백은 **project 소유권을 다시 확인한다.** 사용자가 제공자에 가 있는 동안 소유권이 바뀔 수 있기
-  때문이다.
+registry URL 변경은 이전 `auth`를 폐기한다. 새 주소의 Discover가 필요하며 이전 연결을 같은
+이름이라는 이유로 재사용하지 않는다. OAuth 메타데이터와 공유 앱 저장은 읽은 auth에 대한
+조건부 쓰기로 동시 변경을 보호한다.
 
-갱신은 연결 revision에 대한 compare-and-set이다. 응답이 refresh token을 생략하면 기존 값을
-보존하고 새 값을 주면 교체한다. 경쟁에서 진 쪽은 원래 issuer·resource에 속하며 연결된 상태인
-승자의 grant만 사용한다. **거절된 grant** 만이 연결을
-`needs_reauth` 로 표시한다. 5xx 나 타임아웃은 그대로 둔다. (갱신 타이밍은 보안 제약이 아니라
-설계 제약이다. [design/mcp.md](design/mcp.md#oauth) 참고.)
+### Client·인가·콜백
 
-연결은 서버를 게이트하는 것이 아니라 자격 증명을 **공급한다**. 해석된 token 은 디스패치 시
-마지막에 적용된다. 레지스트리 항목의 헤더와 버전의 오버라이드 위에. 그래서 버전이 project 의
-연결 대신 자기 `Authorization` 을 끼워 넣을 수 없다. 사용할 수 있는 연결이 없으면 서버는 그
-헤더들이 담고 있는 것으로 여전히 돌아간다. 그것들이 아무것도 담고 있지 않을 때만 경고와 함께
-드롭된다.
+| 검사 | 구현 계약 |
+|---|---|
+| client 선택 | 기존 credential → 사용할 수 있는 Client ID Metadata Document → dynamic registration → 설정 오류 |
+| PKCE | S256 필수. 광고하지 않는 서버는 기본 거절하며 배포의 `MCP_OAUTH_ALLOW_UNADVERTISED_PKCE`만 예외를 허용 |
+| state | 일회용·10분 만료. verifier, client, issuer, resource와 redirect URI를 함께 보관 |
+| redirect URI | 서버 공개 base의 고정 callback. Tools의 수동 값도 같은 주소여야 함 |
+| resource | authorization과 token 요청에 대상 resource를 포함 |
+| callback issuer | code 교환 전에 pending state의 issuer와 문자 그대로 비교. provider가 지원을 광고했는데 `iss`가 없으면 거절 |
+| 오류 callback | issuer를 검증할 수 없는 응답의 `error_description`을 그대로 전달하지 않음 |
+| callback 권한 | 현재 프로젝트 쓰기 권한과 client·resource를 다시 확인 |
+| token endpoint 인증 | 등록한 인증 방식을 연결에 저장·사용. basic은 client ID와 secret을 form encoding 후 Base64. secret 없는 client는 `none` |
+| 동적 등록 | `application_type: "web"`을 명시하고 token 요청과 같은 인증 방식으로 등록 |
+
+등록 client credential은 발급 issuer에, token은 발급 당시 resource에 묶인다.
+이 필드가 없는 연결이나 pending state를 현재 registry에 속한다고 추측하지 않는다.
+새 연결이 필요하다고 알리고 grant 사용·인가 완료를 거절한다.
+
+공유 앱은 `clientFromRegistry`와 Client ID를 기록하고 code 교환·refresh 때 현재 Secret을 읽는다.
+Secret 회전은 기존 grant에 반영하지만 Client ID의 교체·제거는 기존 grant를 차단한다.
+개별 동적 등록 Secret은 해당 프로젝트 connection에 보관한다.
+
+### 공개 Client ID 문서
+
+`/api/mcps/oauth/client-metadata/{project}`는 authorization server가 쿠키 없이 가져가는 문서다.
+secret은 없고 client 이름·client ID URL·고정 redirect URI를 제공한다.
+요청 Host 대신 설정된 공개 base로 주소를 만든다. 이 URL을 실제 client ID로 선택하는
+인가 준비 단계에서 HTTPS·공개 도달 가능 조건을 확인한다.
+
+project 존재 여부는 조회하지 않는다. 모르는 이름에도 문서를 제공하는 것이 인가를 만들지는 않으며,
+실제 callback은 저장된 state·연결·프로젝트 권한을 요구한다.
+공개 base가 없거나 provider가 가져갈 수 없는 주소면 metadata 방식 대신 지원되는 등록 경로를
+사용하거나 설정 오류를 반환한다.
+
+metadata client는 자기 호스팅 URL이므로 등록 client와 달리 issuer 변경 때 client ID 자체를
+폐기할 필요는 없다. 다만 grant의 issuer·resource 검사는 그대로 적용한다.
+배포의 공개 base가 달라지면 새 문서 주소로 갱신한다.
+
+### 갱신과 dispatch
+
+refresh 결과는 connection revision을 비교해 저장한다.
+refresh token을 생략한 응답은 이전 값을 유지하고 새 값이 있으면 교체한다.
+경쟁에서 진 요청은 원래 issuer·resource에 속한 connected 상태의 승자 grant만 사용한다.
+
+인증 거절만 `needs_reauth`로 표시하고 5xx·timeout은 연결을 유지한다.
+403 `insufficient_scope`는 그 요청의 typed challenge에서 scope를 얻어 재인가에 보탠다.
+병렬 도구 호출의 결과를 세션 전체의 마지막 challenge로 해석하지 않는다.
+
+token은 registry·Version header보다 우선하는 마지막 credential이다.
+grant를 사용할 수 없어도 별도의 정적 credential이 있으면 서버를 호출할 수 있고,
+인증할 방법이 없으면 warning과 함께 제외한다.
+예약 신원 header는 credential로 계산하지 않는다.
 
 ## Workspace와 코딩 작업
 
@@ -842,61 +744,34 @@ SDK tracing은 로컬 processor가 이름·시간·상태·사용량만 수집�
 
 ## PII 필터링, 그리고 그것이 멈추는 곳
 
-`parameters.piiFiltering` 으로 버전별 옵트인. 나가는 메시지와 변수 안의 email, 전화번호, 한국
-등록번호, 결제 카드 번호는 모든 LLM 디스패치 전에 되돌릴 수 있고 형식을 보존하는 `[[PII:…]]`
-token 으로 치환되고, 응답에서 원본이 복원된다. 스트리밍도 포함해서, token 경계 버퍼링과 함께.
-그래서 모델은 실제 값을 결코 보지 않는다. 그 매핑은 subagent transfer 를 넘어 이어진다.
+`parameters.piiFiltering`은 Version별 선택 기능이다. SDK 모델 요청의 텍스트와 system prompt에서
+탐지한 값을 `[[PII:…]]`로 치환하고 표시할 응답에서 복원한다. 스트리밍의 토큰 경계와
+하위 Agent의 치환 매핑도 유지한다. 소유 코드는 `application/llm/pii.ts`,
+`runtime/model.ts`, `runtime/tools.ts`다.
 
-**경계는 LLM 채널과 엔진 자신의 컨텍스트이지, 모든 아웃바운드 호출이 아니다.** 모델이 MCP
-도구를 호출하면 `callMcpTool` 은 **복원된** 인자를 받는다. `a@b.com` 으로 메일을 보내라는
-도구에는 token 이 아니라 그 주소가 필요하다. 따라서 연결된 MCP 서버는 자신에게 전달된 PII 를
-여전히 본다. (subagent transfer 는 정반대다. 자식 agent 는 마스킹된 메시지를 받는다.) MCP 서버
-등록은 그 자체의 기준으로 검토하라. `piiFiltering` 은 그것을 다루지 않는다.
+| 경계 | 전달·보관하는 내용 |
+|---|---|
+| 텍스트 모델 요청·모델에 돌아가는 도구 결과 | 탐지한 PII를 치환한다 |
+| MCP·FetchUrl·파일 생성/편집·Workspace 등 실제 도구 dispatch | 복원한 인자를 사용한다. 수신 시스템은 그 값을 본다 |
+| Agent의 GenerateImage·EditImage prompt | 치환된 인자를 이미지 모델에 전달한다. 사용자에게 보이는 prompt는 복원한다 |
+| 하위 Agent 요청 | 치환된 메시지와 필요한 매핑을 전달한다 |
+| 사용자 응답·Chat 화면 기록·생성 파일 | 복원한 내용이다. 저장 익명화 기능이 아니다 |
+| capability embedding·rerank | 최근 요청과 제한된 recall 문맥을 준비 단계에서 원문으로 보낸다 |
+| 자동 Memory recall | 최신 요청을 연결된 MCP에 원문으로 보낸다. 회상 결과가 모델 prompt에 들어갈 때는 필터를 지난다 |
+| MCP 신원 헤더 | 확인한 이메일 등 플랫폼 메타데이터를 평문으로 전달한다. 필터 대상이 아니다 |
 
-**`SaveFile`과 `File`의 생성·편집도 복원된 인자를 사용한다.** 그 파일은 물어본 사람이 받는 것이고, 그가 같은
-화면에서 읽는 답변이 이미 복원된 텍스트다. 마스킹된 사본으로 저장하면 자기 컨텍스트를 위해
-치환된 placeholder 로 가득 찬 리포트가 자기에게 돌아온다. 그래서 저장은 `displayArgs` 에서
-읽는다. 어느 사본에서 디스패치하는지가 이 경계를 정하는 곳이라는 뜻이기도 하다: 다른 모델로
-건너가는 것(transfer 의 `message`, dispatch 의 `tasks`)은 `args`, 사람이나 이미 신뢰된 바깥
-시스템에 닿는 것(MCP 디스패치, 이미지 프롬프트, `SaveFile`·`File`의 파일)은 `displayArgs`다.
+직접 실행하는 image Project 전체나 이미지 bytes에 대한 PII 제거를 보장하지 않는다.
+일반적인 이름·이미지 속 개인정보·패턴에 맞지 않는 값도 탐지 대상이 아니다.
+탐지 범위는 email, 전화번호, 한국 주민/외국인등록번호의 지원 형식, Luhn 검사를 통과한
+13–19자리 결제 카드 번호다. 범용 DLP로 사용하지 않는다.
 
-**capability discovery 도 그 밖에 있고, 구조적인 이유가 있다.** `dynamicCapabilities` 가 켜진
-버전은 가장 최근 사용자 턴들(마지막 하나만이 아니라 짧은 창)을 자기 질의 중 하나로 삼아
-카탈로그를 검색하고, 그 텍스트는 임베딩 제공자와 설정된 reranker에게 *그대로* 간다. `resolveRunTools` 는
-`engine.runAgent` 보다 먼저 도는데, 필터가 구성되는 곳이자 런이 어떻게 마스킹하는지를 소유하는
-유일한 자리가 바로 거기이기 때문이다. 그래서 전화번호를 실은 요청은 필터링이 켜져 있어도
-마스킹되지 않은 채 Bedrock 또는 설정된 `/embeddings`·`/rerank` 엔드포인트에 도달한다. 그것을 마스킹했을
-디스패치보다 한 호출 앞서서다. 실제로는 chat 채널이 이미 쓰고 있는 것과 같은 제공자 계정이고,
-그래서 별도의 노출로 다루는 대신 여기에 적어 둔다. 하지만 이는 플래그를 켤 때 내려야 하는
-결정이지 필터가 덮어 주는 무언가가 아니다. 그것을 받아들일 수 없는 배포는 필터링된 버전에서
-`dynamicCapabilities` 를 꺼 두고, 그게 기본값이다. **`memoryRecall` 도 같은 자리에 있다.**
-엔진이 필터를 구성하기 전에 가장 최근 사용자 턴이 `recall` 질의로 바인딩된 메모리 서버에
-전송된다. 연결된 MCP 서버는 이미 복원된 도구 인자를 보므로 이것은 한 턴 앞선 같은 노출이고,
-플래그를 켤 때 내려야 하는 같은 결정이다. 돌아온 것은 회상된 텍스트로 *시스템 프롬프트* 에
-들어가고, 시스템 프롬프트는 필터링된 버전에서 마스킹**된다**. 그래서 email 을 지목하는 저장된
-메모리는 메모리 서버가 그것을 평문으로 갖고 있더라도 모델에게는 `[[PII:…]]` 로 도달한다. 메모리
-서버가 무엇을 보관하는지는 이 플래그가 아니라 그 서버 자신의 등록이 관장한다.
-`memoryRecall`과 `dynamicCapabilities`를 함께 켜면, 회상 결과의 제한된 앞부분도 최신 요청과 함께
-카탈로그 임베딩·rerank 제공자에게 평문으로 전달된다. 이는 엔진의 PII 필터가 덮지 않는 준비 단계다.
-회상된 텍스트는 검색 단서이며 URL·자격 증명·권한을 지정하는 설정으로 해석하지 않는다.
-요청을 입력한 project preview도 모델을 부르지는 않지만 같은 recall과 discovery를 수행한다. 이
-endpoint는 member tier로 제한되고, MCP에는 로그인 사용자의 email을 실제 런과 같이 전달한다.
+preview는 모델을 호출하지 않아도 recall·discovery를 수행할 수 있으며 조립한 원문을 보여준다.
+준비 단계의 원문 전송이 허용되지 않는 환경에서는 해당 capability와 연결을 선택하지 않아야 한다.
+외부 제공자가 동일한 계정인지와 무관하게 각 채널의 전송·보존 정책을 확인한다.
 
-**회상된 텍스트는 그 자체로 프롬프트 인젝션 표면이다.** 메모리는 `remember` 가 쓴다. 모델이,
-사용자의 말에서, 어떤 대화에서든, project 를 실행할 수 있는 누구에 의해서든. 그리고 그것을
-회상하는 이후 모든 대화의 *시스템 메시지* 로 되읽힌다. 그것은 도구 결과보다 한 걸음 더 나간
-것이다. 지속되고, 대화와 사람을 넘나든다. 그래서 그 블록은 울타리에 넣고
-(`<recalled>…</recalled>`), 저장된 `## …` 헤딩이 프롬프트 자신의 섹션 중 하나인 척하지 못하도록
-줄 단위로 인용하며, 지시가 아니라 배경으로 틀 지운다(`src/application/llm/agentAssembly.ts` 의
-`rememberedBlock`). 그것은 메모리가 어떻게 *읽히는지* 를 한정한다. 호출자 이름 정제와
-마찬가지로, 모델이 자기가 읽는 텍스트에 면역이 되게 만들지는 못한다. project 가 어떤 메모리를
-보관하는지는 그 서버 자신의 기준으로 그 서버의 `remember` 정책을 검토할 일이다.
-
-탐지는 정규식 기반이고 email, 전화번호, 한국 주민/외국인등록번호(하이픈 형식, 날짜 절반은
-검증한다), 결제 카드 번호(13-19자리, Luhn 검사를 하므로 주문 id 가 *카드로* 마스킹되지 않는다.
-검사를 통과하지 못한 구간은 다른 패턴들이 다시 훑어서, 카드 엔티티가 생기기 전에 전화번호
-패턴이 마스킹하던 것을 그대로 유지한다)를 다룬다. 보장이 아니라 최선 노력 마스킹으로 다뤄라.
-꺼져 있을 때는 필터링하지 않는 경로와 바이트 단위로 동일하다.
+회상된 기억과 첨부·도구 결과는 신뢰할 수 없는 텍스트다. `rememberedBlock`은 기억을
+`<recalled>` 경계와 인용문으로 감싸 지시와 구분하지만 prompt injection을 제거하지 않는다.
+무엇을 기억하고 누가 검색할 수 있는지는 연결된 Memory 서버의 저장·권한 정책이 소유한다.
 
 ## 호출자 컨텍스트
 
@@ -964,15 +839,10 @@ reference, 알림을 만들지 않는 date token은 보존한다.
   [호출자 컨텍스트](#호출자-컨텍스트)가 이미 적용하는 규칙이고, 이유도 같다. email 은 Slack 밖에서
   사람을 식별하며, 어떤 답도 잘 쓰이기 위해 그것을 필요로 하지 않는다.
 
-  주소를 *읽기는* 한다. 한 가지 용도, **런의 결과물을 그 작성자 아래에 정리하기** 위해서다.
-  Slack actor 는 워크스페이스 id 이고 artifact 소유자 인덱스는 email 로 키잉되므로, 누군가 봇에게
-  그려 달라고 한 그림은 그 project 를 통해서만 닿을 수 있었고 자기 갤러리에서는 결코 닿을 수
-  없었다. 그것은 actor 와 분리된 `ownerEmail` 로 실려 나른다. 그 키는 표면별로 usage 를 묶고
-  런이 어느 tier 의 지출 상한과 동시성 제한에 답할지를 결정하는데, 등록되지 않은 주소는
-  `guest`(동시 런 1개, 월 $2)로 해석되며 이는 다른 결정에 속하는 변경이다. `toUserDetail` 은 그
-  주소를 복사하지 않으므로 도구가 반환하는 어떤 것도 그것을 실을 수 없고, 그 조회는
-  `callerContext` 에 게이트되지 않는다. 그 파라미터는 모델이 무엇을 듣는지를 결정하는 것이고,
-  어떤 사람의 그림이 자기 갤러리에서 사라지는 일은 그것이 일으킬 수 있어야 하는 것이 아니다.
+  이메일은 private 프로젝트 접근 판정, MCP 위임 신원과 Artifact의 개인 귀속에 별도로 사용한다.
+  Slack actor는 발신자의 Slack 사용자 ID다. `ownerEmail`을 해석해도 actor를 email로 바꾸거나
+  개인 user tier 예산으로 다시 분류하지 않는다. `toUserDetail`은 이메일을 모델용 도구 결과에
+  복사하지 않는다. 이 조회는 모델 표시 문맥을 제어하는 `callerContext`와 독립적이다.
 
 *안으로* 실려 오는 것은 첨부된 문서와 똑같은 방식으로 신뢰되지 않는다. 채널의 메시지는 그 채널에
 있는 누구든 쓴 것이고, 그것이 텍스트로 모델에 도달한다. PII 필터링은 다른 것과 마찬가지로 그
@@ -1026,7 +896,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   `le` 와 build 정보의 유한한 `version`·`stage`뿐이다.
 - 로그 라인은 런의 correlation id 를 실을 뿐, 프롬프트 내용은 결코 싣지 않는다.
 - Trace, usage 행, chat, trigger 배달, 인바운드 A2A 태스크는 모두 `expiresAt` 을 지니고
-  schedule-scan 틱의 sweep 이 지운다. 티커가 없는 배포는 아무것도 지우지 않는다.
+  schedule-scan 틱의 sweep 이 지운다. scan 호출이 없는 배포에서는 이 DB sweep이 실행되지 않는다.
   [OPERATIONS.md](OPERATIONS.md#행-보존) 참고.
 - **메시징 파일 참조 기록**은 Slack·Telegram·Teams에서 대화·actor별로 생성 파일 ID와
   이름만 7일간 보관한다. URL이나 바이트는 기록하지 않는다. 최근 20개 기록, 기록당 20개
@@ -1069,9 +939,8 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
     나르는데 S3 는 익명 GET 에서 그것을 거부하므로, 서명되지 않은 링크는 오브젝트를 UUID 키로만
     저장할 수 있다.
   - 레거시 행은 공개 `url` 을 지니고 있을 수 있고 그대로 되읽힌다. 그것을 다시 쓴다고 해서 이미
-    공개인 그 오브젝트들에 누가 닿을 수 있는지는 아무것도 바뀌지 않는다. 그러니 **버킷이 한
-    번이라도 공개 읽기였다면, 그 안의 기존 오브젝트는 지금도 공개다.** 비공개로 만드는 것은
-    운영자의 몫이고, 그렇게 하는 순간 옛 행들은 해석되지 않는다.
+    공개인 그 오브젝트들에 누가 닿을 수 있는지는 아무것도 바뀌지 않는다. 공개 노출 여부는 현재 bucket policy·ACL이 결정한다. 앱의 metadata나 access mode만 바꿔서는
+    기존 객체를 비공개로 전환하지 못한다. 정책을 닫으면 옛 공개 URL도 더는 접근되지 않을 수 있다.
   - **페이지는 오브젝트 주소로 나가지 않는다.** `SAVABLE_TYPES` 에 포함된, 사람이 읽도록 만든
     artifact 만 `/view` 를 통해 앱이 바이트로 답한다. 서명한 오브젝트 URL 은 sandbox 헤더를 실을 수 없고,
     한 번 건네지면 그것을 연 사람의 권한보다 오래 살며, `public` 모드에서는 영구다. 임의의
@@ -1097,15 +966,9 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   - **정적 view는 스크립트를 실행하지 않는다.** `ARTIFACT_VIEW_POLICY`에는 어떤 `allow-*`도
     붙이지 않는다. Markdown은 raw HTML을 텍스트로 내보내고, CSV는 이스케이프된 표,
     SVG는 `<img>`로 표시한다. HTML 실행 정책은 이 경로에 적용하지 않는다.
-  - **`next.config.ts` 의 헤더가 라우트의 헤더를 이긴다. 이것이 sandbox 를 한 번 통째로
-    무력화했다.** `headers()` 에 선언한 키는 라우트 핸들러가 세운 같은 키를 *대체*한다. 콘솔용
-    `SECURITY_HEADERS` 가 `/:path*` 로 걸려 있었으므로 `/view` 의 응답은 sandbox 정책 대신
-    `frame-ancestors 'none'` 을 달고 나갔고, artifact 의 마크업은 콘솔 오리진에서 그 쿠키와
-    스토리지를 손 닿는 곳에 두고 실행됐다. 그 라우트가 서명 URL 이 아니라 바이트로 답하는
-    이유 전체가, 실제로는 보내지지 않던 헤더였다. 지금은 그 주소만 negative lookahead 로
-    제외한다. 콘솔 규칙을 좁히는 대신 그렇게 한 이유는, 내일 추가되는 페이지는 기본으로
-    보호받고 자기 정책을 세우는 주소만 비켜 가야 하기 때문이다. **응답 헤더를 라우트에서
-    세우는 변경은 이 파일과 충돌하지 않는지 확인하라.**
+  - **전역 헤더와의 충돌을 검사한다.** `next.config.ts`는 자체 CSP를 사용하는 두 경로를 제외한다.
+    새 파일 응답이나 정책 변경도 [응답 헤더](#응답-헤더)의 경계를 유지해야 한다.
+
   - **일반 런 Artifact의 object 만료는 저장소 정책이 담당한다.** 틱은 메타데이터 행을 지우며
     `artifacts/`의 bytes에는 별도 lifecycle을 적용한다. 비공개 `source-files/`는 worker가 파일별
     보존 기한을 검사하고 본문을 삭제 표식으로 교체하므로 같은 일괄 만료 규칙을 적용하지 않는다.
@@ -1132,7 +995,7 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
 
 - **고쳐 쓰지 말고 회전시켜라.** 유출된 A2A 키, project token, trigger 시크릿은 콘솔에서
   회전시킨다(`POST …/a2a-key`, `POST …/token`, `rotateSecret: true` 를 실은
-  `PUT …/triggers/{id}`). 이전 값은 즉시 동작을 멈춘다.
+  `PUT …/triggers/{id}`). 이전 값의 무효화 시점은 아래의 캐시 전파 범위를 따른다.
 - **설정 전파는 즉시가 아니다.** 강등된 admin 이나 회전된 A2A 키는 그 쓰기를 처리하지 않은
   인스턴스에서 설정 캐시가 만료될 때까지 계속 동작한다(`SETTINGS_CACHE_TTL_MS`, 기본 5초).
   인스턴스 간 즉시 취소에는 공유 무효화 신호가 필요한데, 아직 없다. 쓰기를 처리한 인스턴스는
@@ -1146,4 +1009,5 @@ Slack 채널에서 그것은 묻는 사람만이 아니다. 봇이 볼 수 있�
   `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 쌍으로 온다. MinIO 같은 S3 호환 스토어의
   자격 증명은 그것과 다른 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 쌍이다. 한 프로세스가 둘 다 쓸 수 있다. 키를 이미지에 굽지 마라.
 - **`AES_ENCRYPTION_KEY` 를 회전하면 저장된 시크릿만이 아니라 proxied 오브젝트 주소도 전부
-  무효가 된다**. 서명 키가 거기서 파생된다. Slack 스레드에 적힌 7일짜리 링크가 그날로 죽는다.
+  무효가 된다**. 서명 키가 거기서 파생된다. 발급된 링크가 무효화되고 기존 credential·SDK Session·Workspace checkpoint도 새 키로는
+  복호화할 수 없다. 키 교체만으로 기존 암호문을 다시 암호화하는 자동 이관은 제공하지 않는다.

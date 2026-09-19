@@ -19,7 +19,8 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 - 32-byte base64 `AES_ENCRYPTION_KEY`.
 - S3 호환 object store는 선택이다. 없으면 artifact 영속화와 `File` 도구가 꺼진다.
   첨부 문서의 텍스트 추출은 계속되지만 원본 보관·재열기·편집은 할 수 없다.
-- production에서는 `STAGE`, `ADMIN_EMAILS`, 로그인 방식 하나가 추가로 필요하다.
+- `NODE_ENV=production`에서는 `STAGE`를 명시한다. `STAGE=alpha|prod`는 추가로
+  `ADMIN_EMAILS`와 로그인 방식 하나를 요구한다.
 
 전체 환경변수와 고정 한계는 [CONFIGURATION.md](CONFIGURATION.md), 운영 계약은
 [OPERATIONS.md](OPERATIONS.md)를 보라.
@@ -156,9 +157,10 @@ bare Git 저장소와 bundle을 주고받고 저장소 코드를 실행하지 �
 Node 24와 pnpm 11을 설치하고:
 
 ```bash
-cp .env.example .env.local
+test -f .env.local || cp .env.example .env.local
+# LLM 채널·암호화 키·로그인 값을 먼저 채운다.
 docker compose up -d postgres minio minio-init
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
@@ -227,9 +229,11 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 
 ## 업그레이드
 
-새 image tag로 교체하면 앱이 부팅 시 advisory lock 아래에서 schema migration을 적용한다. 별도
-migration job은 필요하지 않다. Rollback은 image tag를 되돌리는 것이며 schema를 내리지 않는다.
-IDC와 EKS의 구체적인 upgrade 및 rollback 명령은 각 배포 저장소가 소유한다.
+새 image tag의 앱은 부팅 시 advisory lock 아래에서 schema migration을 적용한다.
+개발 중인 프로젝트라 API·설정·저장 형식의 하위 호환을 보장하지 않으며 자동 down migration도 없다.
+이미지 tag만 되돌려도 복구된다고 가정하지 않는다. 교체 전에 DB·객체·암호화 키를 백업하고,
+기존 런과 worker를 정리한 뒤 새 앱·worker를 같은 버전으로 맞춘다. 이전 앱이 새 스키마를 읽을 수
+없으면 검증한 백업 복원 또는 전진 수정이 필요하다. 구체적인 교체·복원 명령은 배포 저장소가 소유한다.
 
 Better Auth 1.7.4 이상은 계정을 `providerId + accountId`로 찾는다. Migration 7은 기존
 `account.issuer`의 값과 컬럼을 보존하면서 `NOT NULL`과 issuer 기반 인덱스를 제거하고,

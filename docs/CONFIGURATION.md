@@ -16,17 +16,15 @@ Agent Studio 가 환경에서 읽는 모든 값, 그리고 코드에 고정돼 �
 SETTINGS#app 행의 override (데이터베이스)   →   environment variable   →   built-in default
 ```
 
-오버라이드 계층은 admin 전용 `/settings` 페이지다. 아래 표에서 **runtime** 으로 표시된 키만
-거기서 오버라이드할 수 있고, 나머지는 전부 env 전용이다. settings 행을 읽기 전에 필요한
-값이거나(`AES_ENCRYPTION_KEY` 가 그 행을 복호화한다) 프로세스가 이미 묶여 있는
-인프라이기 때문이다(`STAGE`, `DATABASE_URL`, Better Auth).
+표의 **runtime**은 admin의 `/settings`, **models**는 admin의 `/models` 선택을 통해 DB에서
+덮어쓰는 값이다. **boot**는 시작 시 구성하는 갱신기 설정이고 **—**는 환경 전용이다.
+DB를 읽기 전 필요한 키·DB 주소·로그인 설정과 Sandbox 인프라는 재배포 설정으로 관리한다.
 
 읽기는 `src/lib/runtime-settings.ts` 를 지나가며, dispatch 시점에 `process.env` 를 직접
 읽는 일은 결코 없다. 그러지 않으면 오버라이드가 settings 페이지에서만 적용되고 다른
 어디에도 적용되지 않는다. 값은 `SETTINGS_CACHE_TTL_MS` 동안 메모리에 캐시되고 쓰기 시
-캐시가 무효화되지만, **무효화는 프로세스 로컬**이다: 다중 인스턴스 배포에서 TTL 은 강등된
-admin 이나 회전된 A2A 키가 그 쓰기를 처리하지 않은 인스턴스들에서 계속 동작하는 시간이다.
-기본값이 1분이 아니라 5초인 이유가 그것이다.
+캐시가 무효화되지만 무효화는 프로세스 로컬이다. 다른 인스턴스는 TTL까지 이전 설정을 사용할 수 있다.
+멤버 tier의 email 조회는 별도 30초 캐시이며 자세한 권한 전파는 [SECURITY](SECURITY.md#인가-모델)를 따른다.
 
 settings 쓰기는 최신 `SETTINGS#app` 행을 row lock 아래에서 읽고 patch를 합친 뒤 같은 transaction
 에서 저장한다. 일반 설정 저장, A2A key 회전, Embedding/Rerank 선택이 동시에 도착해도 한 요청의
@@ -82,7 +80,7 @@ fail-open 이 될 수는 없다.
 |---|---|---|---|
 | `STAGE` | production 밖에서는 `local` | — | `local` \| `alpha` \| `prod`. 그 밖의 값은 부팅 시 throw 하며, 프로덕션 프로세스는 이 값을 명시적으로 설정해야 한다. 위의 접근 제어 검사를 게이트한다. |
 | `DATABASE_URL` | — (필수) | — | PostgreSQL 접속 문자열 (`postgres://user:pass@host:5432/db`). 이 앱의 모든 행. 아이템 테이블, Better Auth 의 테이블, capability 카탈로그의 벡터. 이 여기 있다. 서버에 `pgvector` 확장을 *만들 수 있어야* 한다 (`CREATE EXTENSION IF NOT EXISTS vector` 를 부팅 때 앱이 실행한다). 스키마는 부팅 때 마이그레이션된다. |
-| `DATABASE_POOL_SIZE` | `10` | — | 인스턴스 하나가 열어 두는 커넥션 수. 런은 모델 호출 동안 커넥션을 쥐지 않고 밀리초 단위로만 빌리므로 10 이면 넉넉하고, 함대 전체가 기본 `max_connections` 100 아래에 남을 만큼 작다. 하한 `1`. |
+| `DATABASE_POOL_SIZE` | `10` | — | 프로세스 하나의 최대 DB connection 수, 하한 1. 웹 replica와 worker별 pool을 합산해 DB의 접속 한도 안에 배치한다. 모델 응답을 기다리는 동안 DB connection을 계속 점유하지 않는다. |
 | `AWS_REGION` | `ap-northeast-2` | — | AWS 를 쓰는 기능. Bedrock 임베딩, `S3_ENDPOINT` 없이 AWS S3 자체를 쓸 때의 클라이언트. 이 쓰는 리전. 그 밖에는 읽히지 않는다. |
 | `AES_ENCRYPTION_KEY` | — (필수) | — | 32바이트 base64. 저장되는 모든 시크릿을 암호화하고, proxied 오브젝트 주소의 서명 키도 여기서 HKDF 로 파생된다. [SECURITY.md](SECURITY.md#저장된-시크릿) 를 보라. |
 | `S3_BUCKET_NAME` | 미설정 | — | Artifacts의 공통 버킷. 일반 생성 파일은 `artifacts/<kind>/`, 비공개 오디오·전사·요약은 `source-files/`에 저장한다. 어느 S3 호환 스토어든 된다 (MinIO, Garage, Ceph RGW, AWS S3). 행에는 오브젝트 키가 저장되고 URL 은 절대 저장되지 않는다. 자격증명은 스토어 자신의 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 쌍이고, 비어 있으면 SDK 기본 체인(`AWS_*`, 인스턴스 역할, AWS 자신에는 이것이 맞다)이다; 그 주체에게는 (레거시 `images/*` 만이 아니라) **`artifacts/*`와 `source-files/*`**의 put·get·delete와 비공개 파일의 multipart 업로드 권한이 있어야 한다. 설정하지 않으면 영속화가 통째로 꺼진다: 런은 여전히 그림을 그리고, 바이트는 표면까지 도달했다가 거기서 멈추며, artifact 갤러리는 404 로 답한다. |
@@ -91,11 +89,11 @@ fail-open 이 될 수는 없다.
 | `S3_PUBLIC_BASE_URL` | 미설정 | — | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
 | `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만 Slack·A2A 같은 외부 독자에게는 주소가 아니다). 모델 입력 이미지는 URL이 아니라 저장소에서 읽은 bounded inline bytes로 전달된다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
 | `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 버전이 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
-| `EMBEDDING_PROVIDER` | `openai` | — | `openai` \| `cohere` \| `bedrock`. `openai` 는 `EMBEDDING_BASE_URL` 이 있으면 전용 채널을, 없으면 `LLM_BASE_URL`/`LLM_API_KEY` 를 재사용하며 그 엔드포인트가 `/embeddings` 를 제공할 것을 요구한다. OpenAI 호환이면 무엇이든 되므로 폐쇄망의 vLLM · TEI · Ollama 가 여기 해당한다. `cohere` 와 `bedrock` 은 Bedrock 을 통해 가고 프로세스의 AWS 자격증명(`bedrock:InvokeModel`)을 쓴다. 인식되지 않는 값은 무엇이든 `openai` 로 읽힌다. 어느 모델을 고를지는 아래 표의 실측을 보라. |
+| `EMBEDDING_PROVIDER` | `openai` | — | `openai` \| `cohere` \| `bedrock`. OpenAI 호환 경로는 아래 endpoint 해석 규칙을 사용한다. Cohere·Bedrock 경로는 AWS SDK credential과 `bedrock:InvokeModel`을 사용한다. 알 수 없는 값은 `openai`로 해석한다. |
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | 미설정 | — | OpenAI 호환 embedding 전용 채널. 등록된 공개 모델의 provider 채널이 있으면 그 URL·key·wire ID를 우선 사용한다. Self-hosted 모델은 이 전용 채널을 사용하며, base URL 이 없으면 기본 LLM 채널을 재사용한다. base URL 만 설정한 인증 없는 endpoint에는 비밀이 아닌 placeholder credential을 보내며 LLM key를 전달하지 않는다. 인증이 필요하면 API key도 설정하라. |
 | `EMBEDDING_MODEL` | provider 별로: `text-embedding-3-small`, `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0` | **models** | 배포 기본값. `/models`에서 Embedding 타입의 등록 모델을 선택하면 DB override가 우선한다. 선택 변경은 승인 뒤 전체 인덱스를 다시 만들며, 실패하면 이전 선택과 vector를 복원한다. 두 모델에서 나온 벡터는 비교할 수 없다. Cohere v4 는 **inference profile** 을 통해 도달한다. |
 | `EMBEDDING_DIM` | `1024` | — | provider 에 요청하는 폭. `native` 는 폭 파라미터를 생략해 모델의 native dimension을 쓴다. 테이블의 모든 행이 같은 폭이어야 pgvector 가 거리를 계산하므로 값을 바꾼 뒤 반드시 재색인하라. Cohere v4, Titan v2, OpenAI v3처럼 폭 선택을 지원하는 모델은 명시값을 사용하고, 폭 파라미터를 거부하는 모델은 `native` 를 사용한다. |
-| `CATALOG_MIN_SCORE` | `0.25` | — | 관련성 하한, 범위는 `[0, 1]`. 이 값은 검색이 아니라 **임베딩 모델**에 속한다, `EMBEDDING_MODEL` 이 바뀔 때마다 다시 측정하라. 그러지 않으면 카탈로그가 전부 답하거나 아무것도 답하지 않는다. 아래 표를 보라. `TRACE_SAMPLE_RATE` 처럼 폴백하는 대신 경고와 함께 `0`–`1` 로 **clamp** 된다. 숫자가 아닌 값은 기본값을 쓴다. 이것은 컷의 절반일 뿐이고, 나머지 절반은 그 쿼리 자신의 최고 점수에 대한 쿼리별 비율이며, 둘 중 높은 쪽이 이긴다, 그래서 `0` 으로 clamp 된 값이 전부를 통과시키지는 않는다. 비율이 볼 수 없는 경우, 즉 카탈로그에 맞는 것이 아예 하나도 없다는 경우에 대한 답을 없앨 뿐이다. |
+| `CATALOG_MIN_SCORE` | `0.25` | — | vector 검색의 절대 하한. 유한한 숫자는 0–1로 clamp하고 그 밖에는 기본값을 사용하며 경고한다. query별 최고 점수의 상대 하한과 함께 적용한다. 모델·질의 언어가 바뀌면 [선택 절차](#임베딩-모델-선택)로 다시 확인한다. |
 | `RERANKER_BASE_URL` / `RERANKER_MODEL` | 미설정 | `RERANKER_MODEL`은 **models** | 둘을 함께 설정하면 query별로 모든 capability kind의 오버샘플 vector 후보를 한 `/rerank` 호출로 2차 정렬한다. endpoint 실패는 기존 cosine/name 순위로 격하되고, 사용자 취소는 즉시 전파된다. `RERANKER_MODEL`은 배포 기본값이고 `/models`의 Rerank 타입 선택이 DB override한다. 등록된 공개 모델의 provider 채널이 있으면 그 URL·key·wire ID로 probe와 검색을 수행한다. Self-hosted 모델은 reranker 전용 채널을 사용한다. 하나만 설정하면 부팅을 거부한다. 미설정이면 기존 cosine/name 순위를 그대로 쓴다. |
 | `RERANKER_API_KEY` | 미설정 | — | reranker의 선택형 Bearer credential. 인증 없는 사내 vLLM endpoint는 비워 둔다. |
 | `RERANKER_MIN_SCORE` | `0.01` | **models** | activation된 reranker relevance score의 noise floor. 각 query에서 최고 점수의 10%와 이 값 중 높은 쪽을 최종 하한으로 쓴다. 범위 밖 env 값은 `0`–`1`로 clamp한다. capability 설명은 답 자체가 아니라 답을 만들 도구이므로 adapter는 전용 instruction을 함께 보낸다. 모델을 바꾸면 다시 측정하고 `/models`에서 함께 저장하라. DB override가 env보다 우선하며 다음 검색부터 적용된다. |
@@ -103,27 +101,14 @@ fail-open 이 될 수는 없다.
 
 ### 임베딩 모델 선택
 
-영어로 기술돼 있고 한국어로 질의되는 opspresso 의 레지스트리를 대상으로, 파이프라인 전체를
-통과시켜 측정했다 (셋 중 Titan 과 Cohere 는 Bedrock 경유, `3-large` 는 OpenAI 호환 엔드포인트
-폐쇄망의 자체 임베딩 서버도 같은 `openai` 경로로 붙고 같은 방법으로 다시 재면 된다):
+모델과 검색 임계값은 같은 배포의 실제 질의·capability 설명으로 함께 검증한다.
+설명과 질의가 다른 언어라면 해당 조합을 포함하고, 관련 항목과 무관한 항목의 점수 분포를
+비교한다. 다른 모델에서 사용한 `CATALOG_MIN_SCORE`를 그대로 옮기지 않는다.
 
-| 모델 | 정답 | 무관 | 한국어 질의, 영어 설명 |
-|---|---|---|---|
-| `amazon.titan-embed-text-v2:0` | 0.34–0.41 | 0.04–0.12 | **0.065**. 노이즈와 구별되지 않는다 |
-| `text-embedding-3-large` | 0.41–0.58 | 0.21–0.22 | 0.169. 노이즈보다 *아래* |
-| **`global.cohere.embed-v4:0`** | 0.30–0.53 | 0.21–0.24 | **0.393**. 노이즈에서 확실히 벗어난다 |
-| `Qwen/Qwen3-Embedding-4B` | 0.81–0.83 | 0.25–0.46 | **0.811**. `EMBEDDING_DIM=native`, `CATALOG_MIN_SCORE=0.5` |
-
-관리형 세 모델 중 실제 케이스를 갈라내는 것은 Cohere 뿐이다. Titan 에서
-"깃헙 레포 알려줘" 는 `github` 서버에 대해 0.065, 무관한 skill 에 대해 0.041 이 나와서
-어떤 임계값으로도 찾아낼 수 없다. `3-large` 에서는 무관한 행들보다 *낮은* 점수가 나온다. Cohere 는 토큰당 비용이
-`3-large` 와 비슷하고 Titan 의 몇 배인데, 카탈로그 규모에서 그것은 한 달에 1~2달러다.
-선택 기준은 가격이 아니라 정확도다.
-
-Cohere 가 대신 치르는 대가는 모든 점수가 더 높게 나온다는 것이고, 그래서 여기서
-`CATALOG_MIN_SCORE` 는 0.25 이며 Titan 이었다면 0.15 였을 것이다. 자체 호스팅한 Qwen3은
-한국어 질의도 정답과 잡음을 더 넓게 갈랐고 `0.5`를 쓴다. 레지스트리와 요청이 같은 언어를 쓰는
-배포는 이 차이를 덜 본다.
+`EMBEDDING_DIM`은 endpoint가 허용하는 차원이어야 한다. 차원 선택을 지원하지 않으면
+`native`로 파라미터를 생략한다. 모델 또는 차원이 바뀌면 전체 재색인이 필요하다.
+선택 저장·probe·재색인 실패 시 복원 계약은 [Models API](API.md#models),
+검색·rerank 동작은 [Capabilities 설계](design/capabilities.md#케이퍼빌리티-카탈로그)를 따른다.
 
 ## 인증과 접근 제어
 
@@ -197,16 +182,11 @@ API 의 컨텍스트 길이·vlm 타입으로 보강, `GET /api/models/selfhoste
 
 ### 모델 레지스트리: agent-models 의 카탈로그
 
-Text, Image, Embedding, Rerank, Transcription 모델. 가격, 컨텍스트 윈도, 출력 상한, capability 플래그, 어떤 route 가 그것을
-서빙하는지. 는 **이 저장소에 있지 않다.** [opspresso/agent-models](https://github.com/opspresso/agent-models)
-가 관리한다: 모델마다 **family** 하나(표시 이름, 가격, 윈도, capability), 경로마다 **offering**
-하나(provider, wire 이름, 그 경로가 바꾸는 것), 그리고 provider 들의 공개 카탈로그로부터 매일
-갱신(가격·할인·한도, 신규 모델과 경로의 추가, 7일 연속 부재 뒤 은퇴). 그 결과가
-`https://models.opspresso.com/models.json` 으로 발행되고, 이 앱은 그것을 **읽기만 한다**. 모델을
-추가하거나 은퇴시키거나 요율을 고치는 일은 거기서 하며, 여기서는 절대 하지 않는다.
-`tests/models.test.ts` 가 `src/domain/llm/models.ts` 에 숫자가 돌아오는 것을 막는다.
-유일한 예외가 selfhosted 모델이다: 그 발행자는 배포 자신이고, 카탈로그가 아니라 배포의
-선언이 레지스트리 오버레이로 들어온다 (위 *LLM 채널* 절).
+공개 모델의 가격·컨텍스트·capability·provider route는
+[opspresso/agent-models](https://github.com/opspresso/agent-models)가 소유한다.
+Studio는 loader 형태와 `SUPPORTED_PROVIDERS`, 커밋된 오프라인 스냅샷을 소유한다.
+공개 모델의 추가·은퇴·가격 수정은 발행 저장소에서 하고 `pnpm sync-models`로 반영한다.
+자체 호스팅 모델은 배포의 `selfHostedModels` 선언을 별도 overlay로 설치한다.
 
 카탈로그의 항목은 이 앱의 `ModelConfig` 그대로다. 타입은 별도 필드가 아니라 capability 에서
 파생한다: `embedding: true` 는 Embedding, `rerank: true` 는 Rerank,
@@ -215,8 +195,7 @@ Text, Image, Embedding, Rerank, Transcription 모델. 가격, 컨텍스트 윈�
 `perSearch`로, Transcription은 input/output token 또는 `perAudioMinute`로 가격을 표현한다.
 Embedding과 Rerank의 `outputPer1M`·`maxTokens`는 0이다. `/models` 카탈로그에는 다섯 타입을 모두 표시하지만 version picker와 `/api/models` 는 실행
 가능한 Text·Image만 제공한다. id 는 `provider/family` 이고, 같은 모델의 세 경로는 같은
-이름·윈도·타입을 가진다. `wireId` 는 경로가 모델 이름을 다르게 쓸 때만 둔다. 두 벌이 프로세스에
-도달한다:
+이름·윈도·타입을 가진다. `wireId` 는 경로가 모델 이름을 다르게 쓸 때만 둔다. 카탈로그를 읽는 경로는 다음과 같다:
 
 - **스냅샷** `src/domain/llm/catalog.json`. 커밋된 사본. 모듈 평가 시 로드되어 단위 테스트와
   `next build` 가 보는 것이고, 발행된 카탈로그를 못 가져온 부팅이 기대는 것이다.
@@ -256,31 +235,19 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 | `MODELS_CATALOG_URL` | — (원격 읽기 꺼짐) | boot | 발행된 카탈로그의 주소. 명시한 배포만 부팅과 간격마다 읽는다. 구성값이지 사용자가 친 주소가 아니라서 SSRF 가드를 지나지 않는다. 미설정 또는 **`none`**(대소문자 무관)이면 fetch 가 없고, 카탈로그는 스냅샷과 admin 의 업로드뿐이다. 간격 자체는 켜져 있다: 다른 인스턴스의 업로드와 self-hosted 선언이 이 프로세스에 닿는 길이므로, URL 없는 틱은 데이터베이스만 읽는다. |
 | `MODELS_CATALOG_REFRESH_MS` | `3600000` (1시간) | boot | 다시 읽는 간격. `0` 이면 간격을 끄고 부팅 때만 읽는다. |
 
-**Bedrock 의 모델 목록은 이 프로토콜이 도달할 수 있는 모델의 목록이 아니다.** OpenAI 호환
-엔드포인트는 `bedrock-mantle`(`https://bedrock-mantle.<region>.api.aws/v1`, `_AUTH=sigv4`)
-인데, 거기의 `GET /v1/models` 는 `POST /v1/chat/completions` 가 그다음 거부하는 모델들을
-돌려준다: 모든 `anthropic.*` 모델(이들은 Anthropic Messages API 를 받는데 이 앱은 그 말을
-하지 못한다), `xai.grok-4.3`, 그리고 `openai.gpt-5.4`\|`5.5`\|`5.6-*` 전부
-(`isn't supported on this route`)이며, AWS 는 그것들에 대해 가격도 공개한다. 즉 목록에서
-독점 모델을 보고 경로가 생겼다고 읽으면 안 된다. 목록에 오르는 것과 이 라우트로 호출되는
-것은 별개다. 그래서 Bedrock offering 은 실제 호출이 답을 돌려준 뒤에만 추가한다.
-레지스트리에 있는 것들은 open-weight 모델이고 하나하나 smoke test 를 거쳤다. 또한
-`bedrock-mantle` 은 `ap-northeast-2` 에 존재하지 않으므로 그 base URL 은 배포의 나머지와
-다른 리전을 지목한다. 서명자는 `AWS_REGION` 이 아니라 그 URL 에서 리전을 읽는다.
+모델 목록 조회 성공은 선택한 프로토콜로 실제 생성할 수 있다는 보장이 아니다.
+특히 Bedrock의 OpenAI 호환 채널과 native Bedrock 임베딩은 다른 경로다.
+SigV4 서명자는 endpoint URL에서 대상 region을 해석한다. 도입할 모델은 실제 채널의 Test로
+확인하고 provider의 전송 모델명을 사용한다.
 
-**자기 비용을 보고하는 채널은 믿는다. 텍스트 경로에서.** OpenRouter 는 모든 호출에
-`usage.cost`(USD)를 돌려주고, usage 행에 기록되는 것은 레지스트리의 요율이 아니라 그 수치다.
-레지스트리 가격은 런 전에 보여 주는 추정치이자, 토큰만 보고하는 모든 채널을 위한 폴백으로 남는다.
+텍스트 경로는 provider가 반환한 실제 `usage.cost`가 있으면 우선하며, 없으면 카탈로그 요율로
+계산한다. 이미지 경로의 `ImageGenerationResult.usage`는 보고된 금액을 담지 않아 카탈로그
+요율을 사용한다. 추정값과 실제 청구액의 일치를 고정 비율로 보장하지 않는다.
 
-**이미지 경로는 그렇지 않다.** `ImageGenerationResult.usage` 는 토큰 셋만 나르고 보고된 금액을
-담을 자리가 없어서, OpenRouter 이미지 모델도 레지스트리 요율로 값이 매겨진다. 실측 오차는
-2% 안쪽이지만(추정 $0.0336 대 청구 $0.03418), **레지스트리 숫자가 곧 청구액이 되는 유일한
-경로**라는 뜻이다. 그 숫자가 틀리면 그것을 바로잡을 것이 아무것도 없다.
-
-**레지스트리에 없는 모델도 기본값에서는 그대로 실행되지만, 그 usage 는 $0 으로 값이 매겨진다**
-그래서 그 공백은 자기가 망가뜨리는 비용 대시보드에서 보이지 않는다. 놓칠 때마다
-`[cost] unknown model id` 를 한 번 로그하고 `agent_studio_unknown_model_calls_total` 을
-증가시킨다. 비용을 알아차릴 때까지 기다리지 말고 0 이 아닌 비율에 알림을 걸어라.
+미등록 모델은 기본 정책에서 실행할 수 있다. 텍스트 provider가 유효한 `usage.cost` 또는
+`cost_usd`를 보고하면 그 값을 사용하지만, 카탈로그 계산으로 fallback하면 요율이 없어 $0이다.
+후자의 계산은 `[cost] unknown model id` 경고와 `agent_studio_unknown_model_calls_total`로
+드러난다. 이 지표는 모든 미등록 모델 호출의 완전한 목록이 아니라 가격 계산 누락 신호다.
 `pnpm check-models` 는 레지스트리를 설정된 채널들이 실제로 제공하는 것과 비교한다.
 [DEVELOPMENT.md](DEVELOPMENT.md#스크립트) 를 보라.
 
@@ -317,7 +284,7 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 
 **이 문서의 거의 모든 숫자 설정이 그렇게 동작한다**: 이들은 `positiveIntEnv` 를 지나가며,
 파싱과 경고까지 `src/lib/config.ts` 가 그것을 소유한다. 그 바깥에 있는 설정이 두 종류 있고
-각각 자기 행에서 그렇게 말한다: `0`–`1` 값들(`TRACE_SAMPLE_RATE`, `CATALOG_MIN_SCORE`)은
+각각 자기 행에서 그렇게 말한다: `0`–`1` 값들(`TRACE_SAMPLE_RATE`, `CATALOG_MIN_SCORE`, `RERANKER_MIN_SCORE`)은
 폴백하는 대신 **clamp** 하고, `MAX_RUN_DURATION_MS` 는 `src/shared/runDeadline.ts` 에서 스스로
 파싱한다. `application` 이 그 데드라인을 필요로 하는데 `lib` 를 import 할 수 없기 때문이다.
 `AbortSignal.timeout` 의 정의역에 대해 값을 검증하고 같은 경고와 함께 기본값으로 떨어진다.
@@ -327,8 +294,8 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 `SETTINGS_CACHE_TTL_MS` 는 `src/lib/runtime-settings.ts` 에서 선언한다. 어댑터는 변수를 직접
 읽지 않는다. `tests/architecture.test.ts` 는 `domain`, `shared`, `infrastructure`,
 `application` 어디에서든 `process.env` 를 읽으면 실패하고, `runDeadline.ts` 가 **이름이 명시된**
-유일한 예외라서 두 번째 예외가 조용히 들어올 수 없다. 경고는 설정마다 값마다 한 번씩만
-나온다. 이 중 몇몇은 행을 쓸 때마다 읽히기 때문이다.
+유일한 예외라서 두 번째 예외가 조용히 들어올 수 없다. 경고는 설정·값 조합마다 한 번씩 남긴다. Workspace 인프라는 별도 Zod schema로 검사해 잘못된
+구성에 오류를 내며, 일부 오디오 설정도 허용되지 않는 형식이나 불완전한 쌍을 거절한다.
 
 ## MCP
 
@@ -339,28 +306,18 @@ provider(`SELF_HOSTED_PROVIDERS`, 역시 코드)는 예외다. 직접 서빙하�
 | `MCP_OAUTH_ALLOW_UNADVERTISED_PKCE` | `false` | — | `true` 면 `code_challenge_methods_supported` 를 광고하지 않는 OAuth authorization 서버를 받아들인다. 명세는 거부하라고 하지만(PKCE 다운그레이드 방어), 광고 없이 PKCE 를 지원하는 서버가 흔하다. 배포 단위의 결정이라 env 다. [SECURITY.md](SECURITY.md#mcp-oauth). |
 | `MCP_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | 사설 주소로 resolve 되더라도 MCP 항목이 쓸 수 있는 호스트의 DNS suffix 목록, 쉼표 구분. `<namespace>.svc.cluster.local` 이나 사내 존. 명시한 `localhost`는 그 호스트만 허용하며 하위 도메인·IP 주소는 포함하지 않는다. 비어 있으면 SSRF 가드는 원래 그대로다. [SECURITY.md](SECURITY.md#선언된-내부-호스트) 를 보라. |
 | `URL_FETCH_INTERNAL_HOST_SUFFIXES` | 비어 있음 | — | `FetchUrl` 빌트인이 사설 주소로 resolve 되는데도 읽어도 되는 호스트의 DNS suffix 목록. 사내 위키, 내부 API. **위와 의도적으로 별개의 목록이다**: 이 앱이 부르는 서비스라고 해서 모델이 설득당해 읽어도 되는 페이지인 것은 아니다. 같은 매칭 규칙(`isDeclaredInternalHost`, 레이블 경계, 명시한 `localhost`만 정확히 허용, 다른 단일 레이블·IP 리터럴 거부), 같은 이유로 env 전용. [SECURITY.md](SECURITY.md#모델이-고른-url). |
-| `MANAGED_MCP_RUNTIME` | 미설정 | — | managed MCP 컨테이너를 어떻게 띄우는가. 유일한 값은 `docker`. 앱이 자기 호스트의 Docker CLI 를 직접 구동해 `127.0.0.1:<port>` 로 포트를 게시하고 그 주소를 등록한다. 다른 값은 경고와 함께 무시되어 기능이 꺼진다. 앱 프로세스가 `docker` 바이너리와 호스트 loopback 에 닿아야 한다. 기본 앱 이미지에는 Docker CLI가 없으므로 배포 저장소가 이미지와 네트워크를 명시적으로 구성해야 한다. |
-| `MANAGED_MCP_REGISTRY` | 미설정 | — | 관리형 MCP 기능을 켜기 위해 필요한 레지스트리 설정이다. 앱이 `docker login` 을 수행하지 않으므로 호스트의 Docker credential 을 미리 준비해야 한다. 이미지 pull 은 호스트가 접근할 수 있는 레지스트리를 사용한다. |
+| `MANAGED_MCP_RUNTIME` | 미설정 | — | managed MCP 컨테이너를 어떻게 띄우는가. 유일한 값은 `docker`. 앱이 자기 호스트의 Docker CLI 를 직접 구동해 `127.0.0.1:<port>` 로 포트를 게시하고 그 주소를 등록한다. 다른 값은 경고와 함께 무시되어 기능이 꺼진다. 앱 프로세스가 `docker` 바이너리와 호스트 loopback 에 닿아야 한다. 기본 앱 이미지는 Docker CLI를 포함하지만 daemon 접근·권한·loopback 네트워크는 배포가 구성해야 한다. |
+| `MANAGED_MCP_REGISTRY` | 미설정 | — | 관리형 MCP 기능을 켜기 위해 필요한 설정이다. 허용 이미지 registry를 제한하는 allowlist는 아니다. 앱이 `docker login` 을 수행하지 않으므로 호스트의 Docker credential 을 미리 준비해야 한다. 이미지 pull 은 호스트가 접근할 수 있는 레지스트리를 사용한다. |
 
 `MANAGED_MCP_RUNTIME` 과 `MANAGED_MCP_REGISTRY` 중 하나라도 설정되지 않으면 managed-MCP 라우트는
 기능을 절반만 켜는 대신 `503` 으로 답한다. 컨테이너의 `environment` 값은 저장 시 암호화되고,
 Docker 를 호출하기 직전에만 0600 임시 env file 로 복호화된다. 호스트 파일 경로는 입력으로 받지
 않는다. `PORT` 는 런타임이 써 넣으므로 거부된다.
 
-**discovery TTL 에 손잡이가 둘인 이유.** 항목의 수명은 숫자 하나로 두 질문에 답한다. 서버의
-힌트는 첫 번째에 답한다. 자기 카탈로그가 얼마나 신선한가. 그리고 그건 이 앱보다 서버가 더
-잘 안다. 그런데 같은 숫자가 두 번째에도 한계를 둔다: 레지스트리 편집 시의 무효화는 프로세스
-로컬이라, 그 숫자는 *다른* 인스턴스들에서 그 편집이 보이지 않는 시간이기도 하다. 두 번째
-답은 서버가 아니라 배포에 속하고, 상한이 없으면 한 시간을 요청하는 서버 하나가 그것을 함대
-전체에 대해 결정해 버린다. 대신 `MCP_DISCOVERY_CACHE_TTL_MS` 를 올리면 힌트가 없는 서버들도
-다시 읽히지 않게 되는데, 그건 반대 방향의 거래다. 그래서 손잡이가 따로 있다. 단일 인스턴스
-배포는 `MCP_MAX_SERVER_TTL_MS` 를 마음껏 올려도 되고, 다중 인스턴스 배포는 감수할 수 있는
-낡음 정도에 가깝게 유지해야 한다.
-
-실패한 discovery 도 캐시되며, 기간은 `MCP_DISCOVERY_CACHE_TTL_MS` 와 30초 중 작은 쪽이다.
-그것이 없으면 죽어 있는 서버는. 또는 토큰이 폐기된 연결은. 모든 메시지의 첫 토큰 전에
-실패하는 연결 비용을 다시 치른다. 창이 짧은 이유는, 낡은 실패는 복구를 가리는 반면 낡은
-성공은 조금 오래된 도구 목록을 내놓을 뿐이기 때문이다.
+로컬 TTL은 일반 캐시 수명, 서버 TTL 상한은 서버의 freshness 힌트를 얼마나 허용할지 결정한다.
+편집 후 무효화는 프로세스 로컬이므로 다중 인스턴스의 도구 목록 갱신 지연도 고려한다.
+실패한 discovery는 로컬 TTL과 30초 중 작은 기간 동안 캐시한다.
+연결·hint·캐시 키의 상세 동작은 [MCP 설계](design/mcp.md#discovery-캐시)에 있다.
 
 ## 소스 저장소
 
@@ -372,35 +329,14 @@ Docker 를 호출하기 직전에만 0600 임시 env file 로 복호화된다. �
 | `GITHUB_API_URL` | `https://api.github.com` | — | GitHub REST API 가 답하는 곳. GitHub Enterprise Server 나 미러라면 `https://<host>/api/v3`. 끝의 슬래시는 떼어 낸다. |
 | `GITHUB_WEB_URL` | public GitHub 또는 표준 GHES API 주소에서 도출 | — | plugin 상세의 repository·commit 링크가 향하는 web base. API mirror나 비표준 경로처럼 도출할 수 없으면 명시하라. 없고 도출할 수도 없으면 잘못된 링크를 만드는 대신 텍스트만 표시한다. |
 
-**GitHub 에 닿지 않는 배포는 저장소를 아카이브로 올린다.** `/plugins` 의 업로드
-(`POST /api/plugins/sync/upload`, 체크아웃의 `.tar.gz`/`.tgz`/`.tar`, `git archive` 든
-`tar czf` 든)는 *같은 sync* 에 입력만 다르게 넣는 것이다: 트리를 스냅샷으로 만드는 워커
-(`src/infrastructure/plugin/snapshot.ts`)를 GitHub 클라이언트와 공유하므로 어느 디렉터리가
-무엇인지는 한 번만 정해진다. 행의 provenance 는 설정된 `PLUGINS_REPO`, 없으면 고정 이름
-`archive` 이고(`archiveSyncRepo`). 그래서 GitHub 가 닿던 시절 sync 된 행은 같은 저장소가
-손으로 도착해도 주인을 유지한다. `branch` 는 `archive`, `commitSha` 는 아카이브의 sha256
-이라 같은 파일을 다시 올리면 unchanged 로 보고된다. `PLUGINS_REPO` 없이도 동작하고,
-`GITHUB_TOKEN` 은 필요 없다. 상한은 [코드에 고정된 제한](#코드에-고정된-제한).
+GitHub에 닿지 않는 배포는 `/plugins`에서 checkout의 tar 아카이브를 올린다.
+원격과 업로드 경로는 같은 snapshot·sync 로직을 사용한다. provenance는 설정된 저장소,
+없으면 `archive`로 기록한다. 아카이브 sync에는 GitHub token이 필요 없다.
 
-**저장소는 자기가 선언한 것을. 이름으로. 소유하고, 삭제는 사람이 소유한다.** sync 가 만든
-항목, 다른 출처에서 입양한 항목(provenance 는 plugin 단위로 `github:<repo>#<plugin>`), 그리고
-sync 가 존재하기 전에 손으로 등록된 항목은 전부 매 sync 마다 provenance 를 포함해 저장소의
-버전으로 자동으로 맞춰진다. 저장소가 선언한 이름에 가한 콘솔 편집은 대체된다. 어떤 plugin 도
-선언하지 않은 이름을 가진, 손으로 등록된 항목은 손대지 않는다. 이전 sync 가 만들었지만
-저장소가 더 이상 들고 있지 않은 이름은 plugin 단위로 고아로 보고될 뿐이고, 사람이 콘솔에서
-그것을 골랐을 때 삭제된다. MCP 항목은 자격증명을 담고 있을 수 있다.
-
-`mcp.json` 에 선언된 헤더는 **가져오지 않으며**. 시크릿은 git 에 있을 것이 아니다. 버려진
-헤더 이름들은 보고된다. 자격증명은 sync 이후 콘솔에서 설정하고, 그것들은 결코 주소를 따라가지
-않는다: 저장소가 서버의 URL 을 옮기면 저장된 헤더와 OAuth 블록은 새 호스트로 보내지는 대신
-버려지고 보고된다(`credentials-reset`). 클러스터 내부 URL 은 그 호스트가
-`MCP_INTERNAL_HOST_SUFFIXES` 에 덮여 있을 때만 이 방식으로 등록 가능하다. sync 는 타이핑된
-URL 과 똑같은 outbound 가드를 마주하며, 거부는 전체 실행을 실패시키는 대신 skip 으로 보고된다.
-
-sync 는 저장소당 한 번에 하나씩만 돈다(두 번째 요청은 409 로 답한다). 자기 리포트를 영속화하며
-(`/plugins` 에서 새로고침을 넘어 보인다), schedule CronJob 이
-`POST /api/plugins/sync/scan` (`X-Scan-Token`: `SCHEDULE_SCAN_TOKEN`)으로 tick 을 걸 수 있다.
-이 경로는 브랜치 head 가 마지막 클린 리포트와 일치하는 동안에는 스냅샷을 통째로 건너뛴다.
+sync는 선언된 이름의 항목을 갱신하고 사라진 항목은 orphan으로 보고한다. 삭제는 별도 작업이며
+`mcp.json`의 credential header는 가져오지 않는다. 서버 주소 변경 시 저장된 credential을
+새 주소로 옮기지 않는다. [Capabilities 설계](design/capabilities.md#skills)와
+[Plugins API](API.md#레지스트리연동-오퍼레이션), [sync 티커](OPERATIONS.md#plugins-sync-티커)를 따른다.
 
 ## Slack
 
@@ -513,20 +449,20 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 미설정 | — | OTLP HTTP base 엔드포인트 (없으면 `/v1/traces` 를 덧붙인다). 설정되면 플랫폼이 영속화하는 모든 trace 가 데이터베이스 쓰기 이후에 OTEL span 으로도 내보내진다. export 실패는 `[otel]` 로그 라인으로 드러날 뿐, 결코 런으로 드러나지 않는다. 설정하지 않으면 export 자체가 없고 OTEL SDK 는 로드되지도 않는다. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | 미설정 | — | 표준 `key=value,key2=value2` 형식이며 모든 OTLP 요청에 실려 간다. 대소문자를 보존한다: 값들이 collector 자격증명이고, 정규화된 bearer 토큰은 다른 토큰, 즉 틀린 토큰이 되기 때문이다. |
 | `SETTINGS_CACHE_TTL_MS` | `5000` | — | settings 행의 인메모리 TTL. 모든 runtime 오버라이드의 인스턴스 간 낡음에 한계를 둔다. [해석 순서](#해석-순서) 를 보라. 하한이 `1` 이라 `0` 은 캐시를 끄는 대신 기본값으로 떨어진다. |
-| `TRACE_RETENTION_DAYS` | `30` | — | 행의 `expiresAt` 까지의 일수. 지난 행은 schedule-scan 틱이 쓸어낸다. |
+| `TRACE_RETENTION_DAYS` | `30` | — | Trace의 `createdAt` 기준. 프로젝트 삭제 참조도 같은 만료를 사용한다. |
 | `USAGE_RETENTION_DAYS` | `400` | — | 대시보드의 184일 질의 창보다 한참 길게 유지한다. 하한은 `31`. 한 달 전체. 인데, 월간 비용 가드가 그 달의 일별 행들을 합산하기 때문이다. 더 짧은 창은 월말로 갈수록 지출을 조용히 적게 세게 된다. |
-| `CHAT_RETENTION_DAYS` | `180` | — | chat 의 마지막 활동 시점부터 잰다. |
+| `CHAT_RETENTION_DAYS` | `180` | — | Chat META는 마지막 활동, 화면 메시지는 각 `createdAt`, SDK Session은 저장 시점 기준이다. |
 | `WORKSPACE_RETENTION_DAYS` | `180` | — | Workspace 실행·승인·이벤트·암호화된 체크포인트 보존 기간이다. Sandbox가 정리된 Workspace의 META도 이 기간을 따른다. 실행·정리 중인 META는 컴퓨팅 자원 정리 전에 sweep되지 않는다. |
-| `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | 전달 이력은 운영 로그이지 보관할 기록이 아니다. |
+| `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | 전달 이력의 `startedAt` 기준이다. |
 | `A2A_TASK_RETENTION_DAYS` | `1` | — | 일시적인 작업 상태로, `SendMessage` 이후 `GetTask`/`CancelTask` 가 가능할 만큼만 유지한다. |
 | `ARTIFACT_RETENTION_DAYS` | `180` | — | 런이 만들어 낸 것의 이름을 담는 행. 기본값은 `CHAT_RETENTION_DAYS` 에 맞췄다. 그것이 이미 생성된 이미지의 실효 수명이기 때문이다. **`CHAT_RETENTION_DAYS` 이상으로 유지하라**: 더 짧으면 대화에서 아직 보이는 그림이 자기 갤러리에서 먼저 사라진다. 이 창과 버킷의 lifecycle 규칙은 서로 독립된 두 설정이다. [OPERATIONS.md](OPERATIONS.md#행-보존) 를 보라. |
-| `AUDIT_RETENTION_DAYS` | `400` | — | 감사 기록. usage 와 함께 여기서 가장 긴 창이다: 감사 행이 답하는 질문은 그 행위로부터 한참 뒤에 던져지고, 그 행은 런당 하나가 아니라 민감한 행위당 하나다. |
+| `AUDIT_RETENTION_DAYS` | `400` | — | 감사 행위의 `createdAt` 기준이다. |
 
-보존 값은 일 단위 정수이고 최소 `1` 이다. 그 밖의 값은 여기 다른 모든 숫자 설정과 마찬가지로
+보존 값은 일 단위 정수이고 최소 `1`이다. Usage만 최소 `31`일을 요구한다. 그 밖의 값은 여기 다른 모든 숫자 설정과 마찬가지로
 **경고와 함께** 기본값으로 떨어진다. 운영자가 잘못 넣은 그 값이 바로 행이 얼마나 오래
 살아남을지를 정하는 값이라, 조용한 폴백은 최악의 종류다. 만료된 행을 실제로 지우는 것은
 **schedule-scan 틱**(`POST /api/triggers/scan`)에 얹힌 sweep 이다. 그래서
-`SCHEDULE_SCAN_TOKEN` 이 없는 배포는 이 창들을 설정해 두고도 아무것도 지우지 않는다.
+scan 호출이 없는 배포에서는 이 창들을 설정해도 DB 만료 sweep이 실행되지 않는다.
 [OPERATIONS.md](OPERATIONS.md#행-보존) 를 보라.
 
 ## 로컬 스크립트 전용
@@ -552,19 +488,22 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 | subagent 로 넘기는 transfer transcript | `8,000` 자 | `src/application/runtime/transcript.ts` |
 | subagent 중첩 깊이 | `5` | `src/application/execution/agentBindings.ts` |
 | 한 런이 읽을 수 있는 주소 수 (`FetchUrl`) | `20` | `src/application/runtime/tools.ts` |
-| `FetchUrl` 하나가 끌어올 수 있는 바이트 | `5 MB` | `src/application/llm/urlContent.ts` |
+| `FetchUrl` 하나가 끌어올 수 있는 바이트 | `5 MiB` | `src/application/llm/urlContent.ts` |
 | `FetchUrl` 요청 하나, 모델에 도구 에러가 건네지기 전까지 | `15s` | `src/infrastructure/net/httpResource.ts` |
 | 가져온 주소 하나에서 유지하는 텍스트 | `90,000` 자 | `src/application/llm/urlContent.ts` |
 | 추출 전에 훑어 읽는 HTML 원문 | `500,000` 자 | `src/infrastructure/llm/htmlText.ts` |
 | MCP 도구 결과 하나가 나를 수 있는 파일 | `10.5 MB` × 4 | `src/infrastructure/mcp/toolManager.ts` |
 | artifact 행에 남기는 프롬프트 발췌 | `500` 자 | `src/application/artifact/storeArtifact.ts` |
-| `/view` 가 메모리로 읽어 들이는 artifact | `2 MB` | `src/domain/artifact/types.ts` |
+| `/view` 가 메모리로 읽어 들이는 artifact | `2 MiB` | `src/domain/artifact/types.ts` |
+| `/view`에서 렌더하는 Markdown | `256 KiB`; 넘는 내용은 생략 표시 | `src/app/api/artifacts/[artifactId]/view/_lib/viewPage.tsx` |
 | `/view` 가 CSV 에서 그리는 행 수 | `2,000` | `src/app/api/artifacts/[artifactId]/view/_lib/viewPage.tsx` |
-| `SaveFile` 생성 및 `File` 평문 편집의 바이트(중간 결과 포함) | `1 MB` | `src/domain/artifact/types.ts` |
-| `/api/objects` 가 proxied 주소 하나에 대해 메모리로 읽어 들이는 오브젝트. 고른 숫자가 아니라 저장될 수 있는 것의 최대(첨부 · 문서 · 저장 파일 상한 중 큰 쪽) | `10 MB` | `src/infrastructure/storage/artifactAccess.ts` 의 `MAX_PROXIED_OBJECT_BYTES` |
-| admin 이 올리는 모델 카탈로그 문서 | `4 MB` | `src/app/api/_lib/body.ts` |
-| 올리는 plugins 아카이브. 전송 크기 / 풀었을 때 / 엔트리 수 (헤더 기준, 파일·디렉터리·확장 레코드 모두) | `32 MB` / `64 MB` / `20,000` | `src/app/api/plugins/sync/upload/route.ts`, `src/infrastructure/archive/tar.ts` |
+| `SaveFile` 생성 및 `File` 평문 편집의 바이트(중간 결과 포함) | `1 MiB` | `src/domain/artifact/types.ts` |
+| `/api/objects` 가 proxied 주소 하나에 대해 메모리로 읽어 들이는 오브젝트. 고른 숫자가 아니라 저장될 수 있는 것의 최대(첨부 · 문서 · 저장 파일 상한 중 큰 쪽) | `10 MiB` | `src/infrastructure/storage/artifactAccess.ts` 의 `MAX_PROXIED_OBJECT_BYTES` |
+| admin 이 올리는 모델 카탈로그 문서 | `4 MiB` | `src/app/api/_lib/body.ts` |
+| 올리는 plugins 아카이브. 전송 크기 / 풀었을 때 / 엔트리 수 (헤더 기준, 파일·디렉터리·확장 레코드 모두) | `32 MiB` / `64 MiB` / `20,000` | `src/app/api/plugins/sync/upload/route.ts`, `src/infrastructure/archive/tar.ts` |
 | 한 틱의 retention sweep 이 지우는 행 수 (나머지는 다음 틱) | `items` 최대 `5,000` + Better Auth session 최대 `5,000` + SDK Session 최대 `1,000` | `store.deleteExpired`, `memberRepository.deleteExpiredSessions`, `runtimeSessionRepository.sweepExpired` |
+| Chat 재접속 로그와 Session 삭제 tombstone의 보존 | 행을 쓴 시각부터 실행 lease + `15분` | `src/infrastructure/db/ttl.ts`의 `RUN_LOG_TTL_SECONDS` |
+| Webhook·Schedule의 멱등 claim / 메신저 delivery claim 행 TTL | 생성부터 `24시간`; 실제 삭제는 sweep | `src/infrastructure/db/repositories/triggerRepository.ts`, `inboundClaimRepository.ts` |
 | 한 런의 파일 쓰기 시도 수 (`SaveFile`과 `File` 생성·편집 공유) | `10` | `src/application/runtime/tools.ts` |
 | 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (skill / 외부 agent / MCP 서버) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
 | 각 MCP 인덱스에 요청하는 카탈로그 매치 수. 그 상한을 넘겨 oversampling 한다. 여러 도구 행이 한 서버로 합쳐지고, 런이 바인딩할 수 없는 후보가 슬롯을 잡아먹어서는 안 되기 때문이다 | MCP 서버 상한의 `4×`(tool 인덱스) / `3×`(server 인덱스) | `src/application/execution/bindings.ts` |
@@ -572,14 +511,14 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 | 메모리 recall (`memoryRecall`): 보내는 질의 / 프롬프트에 유지하는 텍스트 / 첫 토큰이 그것을 기다리는 시간 | `2,000` 자 / `4,000` 자 / `10s` | `src/application/execution/memoryRecall.ts` |
 | 인코딩된 대화 id (그것을 넘으면 대화가 없고, API 헤더는 400 으로 답한다) | `512` 자 | `src/domain/execution/actor.ts` 의 `MAX_CONVERSATION_ID_LENGTH` |
 | 원격 agent 의 `contextId` 를 우리 쪽 대화 하나에 대해 유지하는 기간 | `7` 일, 사용 시 갱신 | `src/infrastructure/db/ttl.ts` |
-| 런당 MCP 도구 준비 상한 (= 128 − 예약 builtin 15개) | `113`; 최종 도구 집합은 위임·클라이언트 도구까지 포함해 `128`개 이하 | `src/domain/llm/toolLimits.ts` |
+| 런당 MCP 도구 준비 상한 (= 128 − 예약 builtin 16개) | `112`; 최종 도구 집합은 위임·클라이언트 도구까지 포함해 `128`개 이하 | `src/domain/llm/toolLimits.ts` |
 | MCP 도구 결과 하나 | `100,000` 자 | `src/infrastructure/mcp/toolManager.ts` |
 | MCP 서버의 HTTP 응답 | `14.5MB` | `src/infrastructure/mcp/session.ts` |
 | MCP 서버 하나에서 읽는 `tools/list` 페이지 수 (상한에 닿으면 그 discovery 는 실패한다, SDK 는 부분 카탈로그를 남기지 않는다) | `64` | `src/infrastructure/mcp/session.ts` |
-| MCP OAuth 메타데이터 / 토큰 응답 | 각 `256KB` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
+| MCP OAuth 메타데이터 / 토큰 응답 | 각 `256,000 bytes` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | MCP discovery 캐시 항목 수 | `200` | `src/infrastructure/mcp/discoveryCache.ts` |
 | 호스트당 managed MCP 서버 수 / 컨테이너당 메모리·swap·CPU·PID·writable tmpfs | `8` / `512MiB`·`512MiB`·`1`·`256`·`64MiB` | `src/application/mcp/managedMcpUseCases.ts`, `src/infrastructure/mcp/dockerProvisioner.ts` |
-| 원격 agent(A2A / 외부)의 응답 | `2MB` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts` |
+| 원격 Agent 응답 (OpenAI 호환 / A2A) | `2,000,000 bytes` / `2 MiB` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts`, `src/infrastructure/a2a/client.ts` |
 | MCP 도구 호출 하나, 모델에 타임아웃 에러가 건네지기 전까지 (도구가 정당하게 몇 분씩 걸릴 수도 있다) | `120s` | `src/infrastructure/mcp/session.ts` |
 | MCP discovery. 모든 런의 첫 토큰이 지나는 크리티컬 패스 위에 있어서, 빠르게 실패하고 그 서버의 도구만 잃는다. **요청당**: 연결과 `tools/list` 가 각각 이 값을 받는다 (그래서 느린 서버 하나에 최대 ~20초). 캐시로 제공된 세션의 첫 도구 호출에서 일어나는 지연 연결도 이 값을 받는다 | `10s` | `src/infrastructure/mcp/session.ts` |
 | 런이 끝날 때 MCP 세션을 해제하기. 단계별로: 레거시 세션이 보내는 `DELETE`, 그다음 close | 각 `5s` | `src/infrastructure/mcp/session.ts` |
@@ -595,21 +534,25 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 | 프로젝트 설정에 표시하는 최근 Telegram destination | `100` | `src/application/telegram/projectTelegram.ts` |
 | GitHub API 요청 하나 (plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
 | 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
-| 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP·원격 A2A) | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
+| 턴당 입력 이미지 수 / 이미지당 바이트(입력·생성·MCP·원격 A2A) | `4` / `5 MiB` | `src/domain/llm/imageLimits.ts` |
 | PDF에 삽입하는 PNG의 총 디코딩 픽셀 | `16,777,216` | `src/domain/llm/imageLimits.ts`의 `MAX_PDF_IMAGE_PIXELS` |
 | 앱 프로세스당 문서 워커 동시 실행 / 대기 작업 | `2` / `8` | `src/infrastructure/documents/workerPool.ts` |
 | 문서 작업 기한 (대기 포함) / 자식 V8 old-space | `30s` / `256MiB` | `src/infrastructure/documents/workerPool.ts` |
 | 문서 생성 Markdown / 편집 요청 JSON 문자 예산 | `500,000` 자 | `src/infrastructure/documents/engine/limits.ts`, `workerPool.ts` |
+| Office ZIP 엔트리 / 전체 전개 / 단일 엔트리 / 압축비 | `2,000` / `100 MiB` / `25 MiB` / `1,000` | `src/infrastructure/documents/engine/limits.ts` |
+| 문서 XML 이벤트 / 깊이 | `1,000,000` / `256` | `src/infrastructure/documents/engine/limits.ts` |
+| Spreadsheet 처리 행 / 셀 / 검사 셀 | `100,000` / `1,000,000` / `10,000` | `src/infrastructure/documents/engine/limits.ts` |
+| 문서 검사 block / block preview 문자 | `500` / `120` | `src/infrastructure/documents/engine/limits.ts` |
 | 생성·편집 문서 출력 | `10,000,000` bytes | `src/infrastructure/documents/engine/limits.ts` |
 | 문서 생성 이미지 asset 수 / 총 바이트 | `12` / `6 MiB` | `src/domain/document/processor.ts` |
 | File 읽기·검사 텍스트 / 한 번의 편집 수 | `90,000` 자 / `100` | `src/domain/document/processor.ts` |
 | XLSX 생성 시트 JSON 입력(UTF-8) | `10 MiB` | `src/infrastructure/documents/workerPool.ts` |
-| 턴당 문서 수 / 각 바이트 | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
+| 턴당 문서 수 / 각 바이트 | `4` / `10 MiB` | `src/domain/llm/documentLimits.ts` |
 | 유지하는 추출 텍스트, 문서당 / 턴당 | `20,000` / `40,000` 자 | `src/domain/llm/documentLimits.ts` |
-| 턴을 나르는 요청 본문 (첨부 상한에서 파생) | ~`80MB` | `src/app/api/_lib/body.ts` |
-| 프로세스가 동시에 보유하는 attachment-scale turn 본문 바이트 (`256KiB` 초과분만 과금, 상한은 최대 turn 본문의 2배) | ~`168MB` | `src/app/api/_lib/body.ts` |
-| Skill 첨부. 파일당 바이트 / skill 당 파일 수 / skill 당 바이트 (어느 하나라도 넘는 파일은 sync 에서 건너뛰고 이유를 보고한다) | `64KB` / `20` / `200KB` | `src/domain/skill/files.ts` |
-| 레지스트리 또는 버전 편집의 요청 본문 (skill 파일 상한에서 파생) | `456KB` | `src/app/api/_lib/body.ts` |
+| 턴을 나르는 요청 본문 (첨부 상한에서 파생) | `84,148,240 bytes` (약 `80.25 MiB`) | `src/app/api/_lib/body.ts` |
+| 프로세스가 동시에 보유하는 attachment-scale turn 본문 바이트 (`256KiB` 초과분만 과금, 상한은 최대 turn 본문의 2배) | `168,296,480 bytes` (약 `160.5 MiB`) | `src/app/api/_lib/body.ts` |
+| Skill 첨부. 파일당 바이트 / skill 당 파일 수 / skill 당 바이트 (어느 하나라도 넘는 파일은 sync 에서 건너뛰고 이유를 보고한다) | `64 KiB` / `20` / `200 KiB` | `src/domain/skill/files.ts` |
+| 레지스트리 또는 버전 편집의 요청 본문 (skill 파일 상한에서 파생) | `456 KiB` | `src/app/api/_lib/body.ts` |
 | 턴이 넘칠 때 유지하는 transfer transcript 한 줄 | 최소 `500` 자 | `src/application/runtime/transcript.ts` |
 | 컨텍스트 예산 추정 (ASCII / 그 외 / 이미지 part / 여유분) | 토큰당 `3` 자 / 자당 `1.5` 토큰 / `2,500` 토큰 / `2,000` 토큰 | `src/application/llm/contextBudget.ts` |
 | 런의 컨텍스트 예산이 잘라 낼 때 유지하는 도구 결과 | 최소 `500` 자 | `src/application/llm/toolResultBudget.ts` |
@@ -641,9 +584,9 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 | 스트리밍되는 Slack `markdown_text` 쓰기 하나 (Slack 자신의 상한이다. edit-in-place 폴백은 잘리지 않는다) | `12,000` 자 | `src/application/slack/replyStream.ts` |
 | Slack 상태 갱신 (Slack 은 `2m` 에 만료시킨다) | `45s` | `src/application/slack/replyStream.ts` |
 | Slack 프로필 캐시 (성공 / 실패 / 항목 수) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |
-| Telegram 메시지 하나 (Telegram 자신의 상한이다. 더 긴 답변은 다음 메시지로 이어지며, 마지막 `800` 자 안에 줄바꿈이 있으면 거기서 자른다) | `4,096` 자 | `src/application/telegram/replyChannel.ts` |
+| Telegram 메시지 하나 (Telegram 자신의 상한이다. 더 긴 답변은 다음 메시지로 이어지며, 마지막 `800` 자 범위에서 공통 문단·줄·문장·공백 경계를 선택한다) | `4,096` 자 | `src/application/telegram/replyChannel.ts` |
 | Telegram 답변 편집 주기 / typing 갱신 (Telegram 은 typing 을 `5s` 에 만료시킨다) | `2s` / `4s` | `src/application/telegram/replyChannel.ts` |
-| Teams 메시지 하나 (더 긴 답변은 다음 메시지로 이어진다) / inline 그림 (Teams 가 문서화한 상한) | `20,000` 자 / `1MB` | `src/application/teams/replyChannel.ts` |
+| Teams 메시지 하나 (더 긴 답변은 다음 메시지로 이어진다) / inline 그림 (Teams 가 문서화한 상한) | `20,000` 자 / `1 MiB` | `src/application/teams/replyChannel.ts` |
 | Teams 답변 편집 주기 / typing 갱신 | `2s` / `3s` | `src/application/teams/replyChannel.ts` |
 | Telegram·Teams 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
 | usage 요약 질의 범위 | `184` 일 | `src/app/api/usages/summary/validation.ts` |
@@ -657,32 +600,15 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 
 ### 런 전체의 컨텍스트 예산
 
-위의 항목별 제한들은 그 합에 대해서는 아무 말도 하지 않으므로,
-`src/application/llm/contextBudget.ts` 가 한계 하나를 더 소유한다: agent 런의 전체 컨텍스트로,
-모델의 `contextWindow` 에서 출력 예약분과 프로토콜 여유분을 뺀 값이다. 예약분은 버전의
-`maxTokens` 가 설정돼 있으면 그 값이고, 없으면 그 모델의 레지스트리 최대치다. `max_tokens` 가
-wire 에 실리지 않으면 호출을 처리하는 모델이 자기 최대치까지 생성할 수 있기 때문이다. 폴백이
-설정돼 있으면 예산은 **두 용량 중 작은 쪽**이고, 각 용량은 그 모델 *자신의* 창에서 자신의
-예약분을 뺀 값이다. 런 중간에 폴백으로 바뀌어도 그때까지 쌓인 것이 담겨야 하기 때문이다.
-"각자 자기 창에서" 가 요점이다: 한 모델의 출력 예약을 다른 모델의 창에서 빼면 아무것도
-강제되지 않으면서 예산만 사라진다. 근거는 "각 모델의 입력 + 그 모델의 출력이 그 모델의 창에
-들어가야 한다" 하나뿐이다. "출력 상한이 큰 모델은 창도 크다" 는 더 짧은 설명은 이 레지스트리에서
-거짓이다(`minimax-m2.5` 는 204,800 창에 196,608 을 생성하고, `nemotron-3-super-120b` 는
-1,000,000 창에 16,384 를 생성한다). **입력과 도구 선언만으로 예산이 이미 0 이 되는 런은 예산 없이
-돌고 경고를 하나 남긴다**. 막아야 할 넘침이 이미 요청 안에 들어 있어 자를 것이 없고, 그대로 두면
-턴 0부터 모든 도구 호출을 거부하기 때문이다. 입력, 도구
-정의, 매 턴의 출력, 도구 결과, 전달받은 답변이 모두 이 예산에서 차감된다. 절단 표시, 래퍼,
-생략 문자열까지 포함해서이며, 표시는 잘라 낸 안쪽에 자리를 예약해 두지 결코 그 위에 덧붙이지
-않는다. 더 이상 들어가지 않는 것은 모델이 읽을 수 있는 표시와 함께 잘리고 `warning` chunk 로
-한 번 보고된다. 런 도중에 provider `400` 으로 넘쳐 버리는 대신에 그렇게 한다.
+`contextBudget.ts`는 agent의 입력·도구 정의·출력·도구 결과·위임 응답이 함께 쓰는 문맥을 추정한다.
+모델별 입력 용량은 `contextWindow − 출력 예약 − 프로토콜 여유`이고, fallback이 있으면
+두 모델의 용량 중 작은 쪽을 쓴다. 출력 예약은 Version의 `maxTokens`, 없으면 각 모델의
+카탈로그 출력 상한이다.
 
-토큰은 문자로부터 보수적으로 추정한다 (부류별로: ASCII 는 토큰당 3자, 그 외는 자당 1.5토큰,
-이미지 part 는 일괄 2,500토큰). 정확한 개수를 세려면 각 provider 의 tokenizer 가 필요하다.
-레지스트리에 없는 모델은 **예산을 받지 못한다**: 예산을 도출할 윈도가 없기 때문이고, 그런 런은
-예산이라는 것이 존재하기 전의 모든 런이 그랬듯 예산 없이 남는다. `maxTokens` 가 윈도에 용량을
-전혀 남기지 않는 버전도 마찬가지다. 0 예산은 런이 채워 보지도 못한 예산을 탓하면서 모든 도구
-호출을 거부하게 되기 때문이다. 단발성(`llm`) 런도 예산이 없다. 한 번의 호출에서는 아무것도
-누적되지 않고, 입력은 호출자 자신의 것이다.
+토큰은 위 표의 문자·이미지 추정값으로 계산한다. 결과가 남은 예산을 넘으면 표시 문자열까지
+포함해 자르고 warning으로 알린다. 미등록 모델처럼 윈도를 모르거나 입력·도구만으로 양의 예산을
+확보하지 못하면 문맥 예산을 강제할 수 없다. 이 경우의 경고를 확인해야 하며 provider가
+요청을 수락한다고 보장하지 않는다. 단발 `llm` 경로는 반복 누적 예산을 적용하지 않는다.
 
 ## 오디오 전사 설정
 

@@ -1,260 +1,140 @@
 # 케이퍼빌리티
 
-런이 자기 프롬프트 너머로 닿을 수 있는 것: progressive disclosure 로 전달되는 skill, 버전이
-dispatch 시점에 검색할 수 있는 글로벌 카탈로그, 그리고 런보다 오래 남는 메모리 — 이것은 이 앱이
-저장할 것이 아니다.
-
-그 케이퍼빌리티들이 바인딩되는 서버는 [mcp.md](mcp.md) 다. embedding 모델을 고르는 일과 검색이
-잘라내는 하한선은 [CONFIGURATION.md](../CONFIGURATION.md#임베딩-모델-선택) 이고,
-discovery 가 PII 필터를 기준으로 어디에 놓이는지는
-[SECURITY.md](../SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳) 다.
+Skill 지침, 전역 capability 검색과 외부 Memory를 설명한다.
+서버 연결은 [MCP](mcp.md), 설정값은 [CONFIGURATION](../CONFIGURATION.md),
+준비 단계의 원문 전송은 [보안](../SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳)을 따른다.
 
 ## Skills
 
-skill 은 **progressive disclosure** 로 전달되는 마크다운 행동 지침이다: 시스템 프롬프트에는 이름 +
-설명 표만 실리고, 모델이 빌트인 `Skill` 툴을 호출해 `SKILL.md` 본문을 — 또는 `file_path` 로 특정
-첨부 파일을 — 로드한다. 본문은 **그 뒤에 첨부 파일 경로들이 나열된 채로** 제공되고, 제공할 수 없는
-`file_path` 도 그 목록을 함께 알려 준다: `file_path` 는 자유 텍스트 추측이라, SKILL.md 가 마침
-`references/api.md` 를 언급하지 않는 skill 은 그 파일이 저장되고 인덱싱된 채 닿을 수 없었다. 이는
-알 수 없는 agent, 알 수 없는 image id, 알 수 없는 skill 이름이 한 단계 아래에서 이미 받고 있는
-것과 같은 답이다.
+Skill은 Markdown 지침과 선택적 참고 파일이다. 시스템 프롬프트에는 이름·설명 표만 넣고
+모델이 `Skill`로 본문 또는 `file_path`의 참고 파일을 읽는다. 본문 응답에는 읽을 수 있는
+파일 경로도 포함한다. 알 수 없는 경로는 가능한 목록과 함께 오류로 반환한다.
 
-```ts
-Skill { name, description, content (markdown), files?: { path, content }[],
-        source?, createdAt, updatedAt }
-```
+`domain/skill/files.ts`는 확장자·개수·바이트 한도를 소유한다. 경로는 Skill 루트 내부로
+정규화하고 절대 경로·`..`·다른 Skill 접근·symlink를 거절한다.
+Skill을 교체하면 참고 파일 묶음도 교체하며 생략된 파일은 이유를 보고한다.
 
-`source` 는 plugins repo 에서 sync 된 skill 을 표시한다 (`github:<repo>#<plugin>` — 그것을 선언한
-repo 와 plugin). 그리고 이 값이 고아 항목과 누군가 콘솔에서 직접 쓴 항목을 구별해 주므로, sync 는
-자기가 만든 것에 도장을 찍고 자기가 만들지 않은 이름은 결코 보고하지 않는다. `files` 는 skill 루트
-아래에서 수집된 첨부 파일이다.
+### Plugin 동기화
 
-plugins sync (`syncPluginsFromSnapshot`, `src/application/plugin/syncPlugins.ts`) 는
-[Agent Plugins 1.0.0](https://agent-plugins.org/) 저장소(`PLUGINS_REPO`)를 읽는다: `plugin.json`
-을 가진 디렉터리 하나하나가 plugin 하나이고 (다른 루트 안에 중첩된 루트는 거부된다), 각 plugin 의
-skill 은 그 `skills/` 디렉터리의 직계 자식 중 Agent Skills 스펙을 따르는 SKILL.md 를 가진 것들이다
-— frontmatter 의 `name` 이 디렉터리 이름과 일치하고, `description` 이 있으며 스펙의 상한 안에 들어야
-한다. `plugin.json` 과 `mcp.json` 의 해석은 domain 이 소유하고
-(`src/domain/plugin/types.ts`), 트리에서 어느 파일이 plugin·skill·확장 문서인지를 고르는 것은
-`src/infrastructure/plugin/snapshot.ts` 의 워커 하나다 — 저장소가 이 배포에 도달하는 두 길,
-GitHub 의 트리 API 와 **admin 이 올린 아카이브**(`POST /api/plugins/sync/upload`, GitHub 에 닿지
-않는 배포의 sync)가 그것을 공유하므로 어느 디렉터리가 무엇인지는 한 번만 정해진다. 각 소스는
-파일을 어떻게 나열하고 읽는지만 건넨다: GitHub 클라이언트는 가져오기만 하고(`GITHUB_API_URL`
-로 GitHub Enterprise 도 된다), `archiveSnapshot.ts` 는 tar 를 풀어 같은 스냅샷을 만든다 —
-provenance 는 설정된 저장소 아니면 `archive`(`archiveSyncRepo`), 브랜치는 `archive`, commit
-은 아카이브의 sha256 이다(업로드의 이름일 뿐, 바뀌었는지는 행마다 내용으로 판정한다). 선택된
-파일은 plugin 하나당 동시에 최대 8개만 읽는다. 지원되는 텍스트 첨부 파일은 각
-skill 루트 아래에서 수집되며 (`src/domain/skill/files.ts`: `ALLOWED_SKILL_FILE_EXTENSIONS`),
-파일당·skill 당·파일 개수 상한으로 제한되고 (값은
-[CONFIGURATION.md](../CONFIGURATION.md#코드에-고정된-제한) 에 있다) 심볼릭 링크는 제외된다 —
-두 소스 모두 git 의 모드 `120000`(`SYMLINK_MODE`)으로 보고하므로 같은 규칙으로 건너뛰고 같은
-이유로 보고된다.
-`file_path` 는 정규화되어 skill 루트 안에 갇힌다: 절대 경로 없음, `..` 없음, skill 간 접근 없음.
-덮어쓰기는 skill 항목 전체를 교체하므로 낡은 첨부 파일도 함께 사라진다. 건너뛴 파일은 이유와 함께
-보고된다.
+`syncPluginsFromSnapshot`은 GitHub 저장소와 업로드 아카이브의 같은 snapshot을 사용한다.
+`infrastructure/plugin/snapshot.ts`가 Plugin·Skill·확장 문서를 찾고
+`domain/plugin/types.ts`가 manifest를 해석한다.
 
-각 plugin 도 행 하나가 된다 (`src/domain/plugin/types.ts` 의 `Plugin`: manifest 메타데이터와 그것이
-선언한 컴포넌트 이름들) — sync 가 무조건 upsert 하는 유일한 대상인데, 그 위에 운영자가 쓴 것이 하나도
-없기 때문이다. 부모 plugin 행을 먼저 저장한 뒤에만 그 provenance 를 가진 skill/MCP 컴포넌트를
-쓴다. 부모 쓰기가 실패하면 그 plugin 의 컴포넌트는 이번 sync 에서 그대로 두므로 출처 링크가
-없는 plugin 을 가리키지 않는다. 콘솔의 Plugins 페이지가 이들을 나열한다.
+| 입력 | 처리 |
+|---|---|
+| `plugin.json` | 디렉터리를 Plugin 루트로 지정한다. 다른 Plugin 안의 중첩 루트는 거절한다 |
+| `skills/<name>/SKILL.md` | 직계 Skill의 frontmatter 이름·설명과 디렉터리 이름을 검증한다 |
+| Skill 참고 파일 | 허용 텍스트 파일을 제한된 동시성으로 읽고 한도 초과·symlink를 보고한다 |
+| `mcp.json` | streamable-HTTP 서버만 등록한다. stdio·SSE는 보고하고 실행하지 않는다 |
+| `org.opspresso.agent-studio/mcp/<server>.md` | MCP의 모델용 설명과 콘솔 운영 노트 |
+| `extensions.org.opspresso.agent-studio.mcpSourceOutputs` | 파일 응답을 source reference로 바꾸는 서버별 기본 매핑. [오디오 설계](audio-processing-spec.md#범용-설정과-도구)를 따른다 |
 
-**저장소는 자기가 선언한 것을 소유하고, 삭제는 사람이 소유한다**
-(`src/domain/sync/types.ts` 가 skip 어휘를 소유하고, kind 로 한정된 보고는
-`src/domain/plugin/sync.ts` 에 있다): repo 를 출처로 하는 항목은 — 다른 출처에서 넘겨받아
-provenance 까지 함께 다시 쓴 것을 포함해 — 자동으로 저장소의 버전에 맞춰지고, 고아가 된 항목은
-호출자가 그것을 지목할 때만 삭제된다. sync 계약은
-[API.md](../API.md#레지스트리연동-오퍼레이션) 를 보라. 손으로 등록했더라도 저장소가 같은 이름을 선언하면 출처와 내용을
-함께 인수한다. 어느 plugin 도 선언하지 않은 수동 항목은 그대로 둔다.
+GitHub는 트리·파일을 읽고 아카이브는 같은 인터페이스로 파일을 제공한다.
+아카이브 provenance는 설정된 저장소, 없으면 `archive`이며 branch는 `archive`,
+commit은 아카이브 hash다. 내용을 비교해 변경을 판정한다. 아카이브 경로 탈출·과대 전개·잘못된
+텍스트는 거절한다. 입력·보고 형태는 [Plugins API](../API.md#레지스트리연동-오퍼레이션)에 있다.
+
+동기화는 선언된 이름을 소유한다. 수동 항목이나 다른 출처의 같은 이름도 내용과 provenance를
+인수하며, 어떤 Plugin도 선언하지 않은 수동 항목은 보존한다.
+부모 Plugin 저장 성공 후에만 그 Plugin의 컴포넌트를 쓴다.
+
+저장소에서 사라진 항목은 orphan으로 보고하며 자동 삭제하지 않는다.
+명시적 제거는 해당 유스케이스를 거쳐 권한·감사·managed 컨테이너 정리를 적용한다.
+읽을 수 없는 manifest를 빈 선언으로 취급해 orphan을 만들지 않는다.
+
+`mcp.json`의 header는 가져오지 않는다. credential은 콘솔에서 설정하고,
+sync로 서버 URL이 바뀌면 이전 주소의 header·OAuth를 새 주소로 보내지 않고 초기화 사실을 보고한다.
+등록 URL에는 수동 등록과 같은 정책을 적용한다.
+저장소별 lease·예약 실행·아카이브 우선권은 [운영](../OPERATIONS.md#plugins-sync-티커)을 따른다.
 
 ## 케이퍼빌리티 카탈로그
 
-런이 닿을 수 있는 모든 것 위에 놓인 **글로벌** 인덱스 하나 — 모든 skill, 모든 MCP 서버와 그것이
-제공하는 툴, 모든 외부 agent. project 별이 아니다: 그중 어느 것을 특정 런이 쓸 수 있는지는 dispatch
-시점에 그 버전의 바인딩으로 정해지며, 그 결정을 이미 내려 둔 인덱스라면 project 가 바뀔 때마다 다시
-만들어야 할 것이다.
+`catalog_vectors`는 설치 전역의 Skill·MCP 서버·MCP 도구·외부 Agent를 색인한다.
+로컬 Project는 자동 검색 대상이 아니며 명시적 하위 Agent binding으로 연결한다.
+카탈로그는 실행 권한을 부여하지 않는다. 실제 연결과 정책은 dispatch에서 확인한다.
 
-```
-CapabilityEntry { kind: 'skill' | 'mcpServer' | 'mcpTool' | 'agent', name, toolName?, description }
-key = kind#name  (or kind#name#toolName)          — src/domain/catalog/types.ts
-```
+항목은 `CapabilityEntry { kind, name, toolName?, description }`이며
+`kind#name[#toolName]`으로 식별한다. pgvector의 cosine 거리로 정확 검색하고 metadata를
+같은 행에 둔다. 별도 벡터 서비스나 HNSW 인덱스를 요구하지 않는다.
 
-인덱스는 다른 모든 행과 같은 데이터베이스의 `catalog_vectors` 테이블에 산다
-(`src/infrastructure/vector/pgVectorStore.ts`, `CATALOG_ENABLED=true` 로 켠다): 키, pgvector
-의 `embedding`, 그리고 본문을 실은 `metadata` — mcp-memory 가 정착시킨 방식대로 본문이 행에
-타므로 검색이 텍스트를 이미 쥔 채 답하고 fan-out 할 조회가 없다. 거리는 cosine(`<=>`)이고
-점수는 그 보수(1 − 거리)라 `CATALOG_MIN_SCORE` 의 의미는 스토어에 붙지 않는다. 벡터 컬럼은
-폭을 선언하지 않으며 — 폭은 임베딩 모델의 것, 배포의 설정이다 — 수천 행이라 HNSW 없이 정확
-스캔한다. 임베딩 자체는 `EMBEDDING_PROVIDER` 가 정하는 대로 OpenAI 호환 `/embeddings`
-엔드포인트(폐쇄망의 vLLM · TEI · Ollama 포함)나 Bedrock 에서 온다.
+`queryCache.ts`는 반복 query의 embedding만 프로세스 내 LRU로 재사용한다.
+재색인 문서는 캐시하지 않고 embedding space와 query를 함께 key로 사용한다.
+OpenAI 호환 경로는 선택 모델·실제 endpoint·wire ID를, Bedrock 경로는 모델을 space로 구분해
+모델 또는 채널 전환 후 이전 query 벡터를 재사용하지 않는다.
 
-`RERANKER_BASE_URL` 과 `RERANKER_MODEL` 을 함께 설정한 배포는 각 vector 검색의 오버샘플 후보를
-`/rerank` 로 2차 정렬한다. Rerank가 켜져 있으면 cosine 하한을 먼저 적용하지 않는다. 두 번째
-모델이 첫 번째 모델의 false negative를 되살릴 수 있어야 하기 때문이다. 같은 query의 Skill,
-Agent, MCP Tool, MCP Server 후보는 한 document batch로 보내고 결과를 kind별로 다시 나눠 각자의
-limit과 하한을 적용한다. 따라서 한 query는 Rerank 호출 하나다. 재평가하는 문서는 색인 때와 같은
-`capabilityText` 다. 이 문서는 답 passage가 아니라 답을 만들 수 있는 기능 설명이므로
-`searchCatalog.ts`가 그 과업을 명시한 instruction을 함께 보낸다. activation된 점수는
-`RERANKER_MIN_SCORE`와 그 query·kind 최고 점수의 10% 중 높은 하한으로 자른다. 이 절대 점수는
-모델마다 분포가 달라 `/models`에서 Rerank 모델과 함께 운영 설정으로 관리하며, DB override가 env를
-앞서고 다음 검색에서 읽힌다. Rerank endpoint가
-timeout, HTTP 오류, 잘못된 응답으로 실패하면 해당 query는 기존 cosine/name 하한과 순위로
-격하되고 런은 그 사실을 warning으로 보고한다. 사용자 취소는 격하하지 않고 즉시 전파한다.
-reranker를 설정하지 않으면 기존 vector 점수와 순서가 그대로 남는다.
+### 색인과 모델 전환
 
-성공한 Rerank 호출은 endpoint가 보고한 input token과 실제 registry model id를 run의 usage
-aggregator에 기록한다. `perSearch` 가격이 있으면 호출당 그 값을, 없으면 input token 가격을 쓴다.
-따라서 Rerank 비용도 project·actor usage와 비용 guard에 포함된다. Prompt preview와 모델 선택
-probe는 실행 run이 아니므로 project usage를 만들지 않는다.
+`reindexCatalog`는 현재 항목을 먼저 upsert하고 마지막에 잔여 키를 삭제한다.
+MCP 서버는 도구 discovery가 실패해도 서버 항목으로 색인하고 `undiscovered`에 보고한다.
+도구와 서버가 별도 항목인 이유는 구체적인 기능 검색과 인증되지 않은 서버 발견을 함께 지원하기 위해서다.
 
-활성 Embedding과 Rerank는 `/models`의 같은 레지스트리에서 각각 자기 type으로 선택한다.
-env의 `EMBEDDING_MODEL`·`RERANKER_MODEL`은 배포 기본값이고 DB 선택이 우선한다. Embedding 변경은
-확인 뒤 설치 전역 lease 아래에서 동기 재색인하며 실패하면 이전 선택과 vector를 복원한다. 다른
-인스턴스의 동시 migration은 409로 거절한다. Lease row의 generation은 release 뒤에도 남는다.
-검색은 시작 전, vector 조회 후, 반환 직전에 generation과 active 상태를 비교하고, 재색인과 겹친
-결과는 사용하지 않는다. 재색인 중에는 dynamic discovery가 빈 결과로 진행되므로 새 모델의 query가
-이전 모델의 vector를 검색하거나 in-place 교체 중인 두 공간을 섞지 않는다. Reranker 변경은 저장 vector를 바꾸지 않으므로
-재색인하지 않는다. 대신 선택 전 production capability instruction을 사용하는 semantic probe가
-관련 capability를 먼저 매기는지 확인한다. `RERANKER_MIN_SCORE`도 모델 선택과 같은 화면에서 저장한다.
+일반 registry 편집은 재색인을 수행하지 않는다. 외부 reindex ticker나 수동 요청이 반영한다.
+완료된 Plugin sync는 결과 저장 이후 재색인하며, 실패하면 로그를 남기고 다음 tick에 복구한다.
+설치 전역 lease가 재색인을 직렬화한다.
 
-MCP 서버는 **두 번** 등장하고, 둘은 서로 다른 질문에 답한다. `mcpTool` 항목은 요청이 매칭되는
-대상이고 — "PR 에 코멘트를 남긴다" 는 툴의 description 에 있지 다른 어디에도 없다 — `mcpServer` 는
-버전이 실제로 바인딩할 수 있는 대상이다. discovery 를 거부하는 서버도 두 번째 항목은 얻는다: 아무도
-연결하지 않은 OAuth 서버는 여기서 보면 고장 난 서버와 똑같아 보이는데, 누군가 그것을 연결하려면
-필요한 것이 바로 그 항목이다.
+Embedding 선택 변경은 새 모델로 재색인을 끝까지 수행하고 실패하면 이전 선택·벡터를 복원한다.
+lease의 generation은 해제 후에도 유지한다. 검색은 시작·vector 조회 후·반환 직전에 generation과
+활성 상태를 비교해 재색인과 겹친 결과를 사용하지 않는다.
+Rerank는 저장 벡터를 바꾸지 않으므로 semantic probe 후 선택만 저장한다.
+[모델 선택 API](../API.md#models)와 [설정](../CONFIGURATION.md#임베딩-모델-선택)을 따른다.
 
-`reindexCatalog` 는 인덱스 전체를 다시 쓰고 **그다음에** 자기가 쓰지 않은 것을 지운다. 그 순서가
-계약이다: 둘 사이에서 죽으면 다음 tick 이 치울 낡은 항목이 남지만, 반대 순서는 살아 있는 케이퍼빌리티
-하나가 빠진 구간을 남겨 검색이 조용히 덜 답하게 만든다. schedule scan·plugins sync 와 같은 CronJob
-토큰으로 돌고 (`POST /api/catalog/reindex`), 레지스트리 쓰기에서는 절대 돌지 않는다 — 성공한 저장이
-인덱싱 실패 때문에 500 이 되어서는 안 되고, 카탈로그는 런이 *discover 하는* 것에만 영향을 주기
-때문이다. prune snapshot은 key를 500개씩 읽고, MCP tool discovery는 registry 순서를 유지한 채
-동시에 최대 8개 서버만 probe한다.
+### 검색과 순위
 
-**완료된 plugins sync 가 유일한 예외**이고, 차이는 실패가 치를 대가에 있다. sync 는 레지스트리를 한
-번에 가장 많이 움직이는 단일 사건이다 — 머지 하나가 skill 과 서버 열댓 개를 한꺼번에 추가·개명·폐기할
-수 있다 — 그래서 최대 한 시간을 기다린다는 것은 레지스트리에 더 이상 없는 skill 을 런이 discover
-한다는 뜻이 된다. reindex 하는 시점이면 sync 는 이미 커밋됐고 그 보고서도 이미 저장돼 있으므로,
-실패해도 바뀌는 것이 없어 로그만 남기고 삼킨다. 다음 tick 이 그것을 고친다. 또한 티커가
-없는 배포 — `ticker` 프로파일을 켜지 않은 **로컬** — 가 조금이라도 갱신되는 유일한
-경로이기도 하다.
+`searchCatalog.ts`는 여러 query를 독립적으로 처리한다. 실행 query는 시스템 프롬프트와
+최근 사용자 턴이며, recall이 있으면 최신 요청과 제한된 기억을 합친 query도 추가한다.
+각 capability는 query별 생존 결과의 최고 점수로 합쳐진다.
 
-검색은 **여러 개의 쿼리**를 받는다. 런이 자기에게 필요한 것에 대해 할 말이 두 가지이기 때문이다:
-버전의 시스템 프롬프트(이 agent 가 대체로 무엇을 위한 것인지)와 가장 최근의 사용자 턴들(지금 무엇을
-요청받고 있는지 — 마지막 턴 하나가 아니라 짧은 윈도인데, "첫 번째 것을 리뷰해 줘" 같은 후속 발화는
-아무것도 지목하지 않는 반면 그 앞 턴이 전부를 지목했고, 대화가 이미 쓰고 있던 케이퍼빌리티가 사용자가
-그것을 되짚는 순간 검색되지 않게 되어서는 안 되기 때문이다). 둘을 하나의 점으로 평균 내면 어느 쪽도
-서술하지 못한다. 각 항목은 합이 아니라 자기 최고 점수를 유지하므로, 넓이가 적합도를 앞지르지 않는다.
-벡터 위에는 보정이 둘 얹힌다: 무언가를 정확히 지목한 쿼리는 그저 그렇게 읽히기만 하는 description
-보다 가산점을 받고, 결과는 **두 개의 하한선 중 더 높은 쪽**으로 잘린다. 비율(최고 점수의 일정
-비율)은 강한 후보군이 자기 약한 꼬리까지 끌고 들어오는 것을 막는다. 절대 코사인 값은 embedding 모델이
-바뀌면 살아남지 못하므로, 그 부분은 절대값일 수 없다. 하지만 비율만으로는 *아무것도* 매칭되지
-않았다는 것을 볼 수 없다 — 나쁜 최고 점수의 절반은 여전히 나쁜 점수이고, 카탈로그에 답할 것이 하나도
-없는 요청이 가득 찬 결과를 돌려받는다. `DEFAULT_MIN_SCORE` 가 아니라고 말하는 하한선이다.
+| 단계 | 계약 |
+|---|---|
+| query embedding | 같은 query 벡터를 모든 kind에 공유한다 |
+| vector 후보 | 종류별로 상한보다 넓게 조회하고 이름을 직접 지목한 경우 보정한다 |
+| reranker 미사용·실패 | cosine 절대 하한과 해당 query·kind 최고 점수의 상대 하한 중 높은 값을 적용한다 |
+| reranker 사용 | cosine 하한을 미리 적용하지 않고 한 query의 모든 kind 후보를 한 번에 재평가한다 |
+| 최종 병합 | query별 하한을 통과한 후보의 최고 점수를 유지하고 종류별 limit으로 자른다 |
 
-두 숫자 모두 검색이 아니라 **embedding 모델**에 속하고, 서로 옮겨지지 않는다 — 이 배포를 Cohere v4
-로 정한 실측은 [CONFIGURATION.md](../CONFIGURATION.md#임베딩-모델-선택) 를 보라. 짧게
-말하면: 이 레지스트리는 영어로 서술되고 한국어로 질의되는데, 대안들이 풀지 못하는 경우가 바로
-그것이다.
+reranker 장애는 vector 순위로 돌아가고 실제 런에 warning을 남긴다. 사용자 취소는 즉시 전파한다.
+실제 런의 성공한 rerank 사용량은 프로젝트·actor 비용에 포함한다.
+preview·모델 선택 probe는 프로젝트 Usage를 만들지 않는다.
+임베딩 모델별 점수 분포가 다르므로 다른 모델의 임계값이나 과거 실험 수치를 그대로 쓰지 않는다.
 
-**각 쿼리는 독립적으로 선택형 reranker로 재정렬되고 자기 최고 점수를 기준으로 후보가 잘린 뒤,
-살아남은 것들이 병합된다.** 하나의
-컷을 둘이 공유하면 강한 쿼리가 약한 쿼리를 지워 버린다: "당신은 Slack 어시스턴트" 라고 쓰인 시스템
-프롬프트는 `slack` 을 0.583 에 놓고, 그래서 합집합 위에서 잡은 비율은 0.408 이 되어 0.393 인
-`github` 을 떨어뜨린다 — 요청이 실제로 지목한 바로 그 항목을. 서로 다른 질문을 하는 두 쿼리는 비례
-컷을 공유할 수 없다.
+### 실행 시 discovery
 
-**서버 하나는 후보 하나이고, 두 인덱스 중 더 나은 증거로 점수가 매겨진다.** 두 인덱스는 서버 이름당
-후보 하나로 병합되고, 각 후보는 자기 tool 히트 점수와 server 히트 점수 중 높은 쪽을 유지한다 — 둘은
-하나의 embedding 공간을 공유하고 각 종류가 이미 자기 최고 점수를 기준으로 잘렸으므로 비교 가능하다.
-출처 순서로는 안 된다: 모든 tool 히트가 모든 server 히트를 앞서니, 페르소나 프롬프트에 우연히 걸린
-tool 매치들이 요청이 직접 지목한 서버들보다 앞서 세 자리를 모두 채웠다. tool 히트는 알고 server
-히트는 모르는 것 — *어느* 툴이 매칭됐는지 — 은 순위 특권이 아니라 바인딩의 `tools` 좁히기가 된다.
-그래서 discover 된 서버가 자기 카탈로그의 나머지에 런의 툴 예산을 쓰지 않는다. server 인덱스만
-도달한 후보는 통째로 바인딩되고 dispatch 시점의 목록 조회가 결정한다.
+`parameters.dynamicCapabilities`를 켜면 `resolveRunTools`가 검색 결과를 명시적 binding 뒤에
+추가한다. 기존 binding을 밀어내거나 재정렬하지 않는다.
+카탈로그 미구성·검색 실패·query 부재는 경고와 함께 명시적 binding만 제공한다.
 
-두 검색 모두 **바인딩 상한을 넘겨 오버샘플링된다** (`src/application/execution/bindings.ts` 의
-`DISCOVERY_LIMITS`: 툴은 서버 상한의 네 배, 서버는 세 배). 순회가 후보를 건너뛰기 때문인데 — 이
-project 가 연결하지 않은 OAuth 서버, 인덱스가 만들어진 뒤 삭제된 항목 — **건너뛴 후보가 자리 하나를
-잡아먹어서는 안 된다**. 상한과 정확히 같은 크기로 잡았을 때는, 연결되지 않은 높은 점수 하나가 요청이
-원한 서버들을 굶겼다. 그다음 각 목록은 **점수가 아니라 이름으로 정렬된다**: 순서는 하류에서 아무
-의미도 갖지 않지만, 이름이 충돌하는 MCP 툴 중 어느 것이 맨 이름을 유지하는지(alias 할당이 목록
-순서대로 서버를 순회하므로, 자리가 바뀌면 히스토리가 replay 하는 툴 호출이 다른 곳으로 간다)와 시스템
-프롬프트의 바이트 배치를 결정하고, 프로바이더의 prompt cache 가 그 배치를 키로 삼는다. 점수는
-메시지마다 다르게 순위를 매기지만, 이름은 그렇지 않다.
+MCP 후보는 tool hit와 server hit를 서버 이름으로 합치고 더 높은 점수로 선택한다.
+tool hit가 있으면 그 도구들로 binding을 좁히고 server hit만 있으면 서버를 연결한 뒤 목록을 읽는다.
+후보를 넉넉하게 읽어 삭제됐거나 연결 권한이 없는 후보가 유효한 슬롯을 차지하지 않게 한다.
 
-**런 시점의 discovery 는 opt-in 이고 엄격히 덧붙이기만 한다.** `parameters.dynamicCapabilities` 가
-그것을 켠다. 그러면 `resolveRunTools` 가 찾아낸 것을 해석 *전에* 버전 자신의 목록에 덧붙이므로,
-이후의 모든 단계 — 프롬프트 표, 툴 enum, 도달성 검사 — 는 바인딩된 것과 discover 된 것을 똑같이
-다룬다. 바인딩은 결코 밀려나거나 순서가 바뀌거나 잘리지 않는다. 자격 증명이 project 별 OAuth 연결인
-MCP 서버는 **그 project 가 이미 연결해 둔 곳에서만** 추가된다 — 콘솔에서 하나를 인가한다는 것은 이
-project 가 그것을 써도 된다는 뜻이고, discovery 는 자격 증명을 해석하는 대신 연결 행을 읽는다.
-해석했다면 토큰을 갱신하게 되어 discovery 를 쓰기 주체로 만들었을 것이다. 카탈로그가 실패하면 런을
-실패시키는 대신 warning 과 함께 바인딩만으로 격하된다 — 카탈로그가 없는 배포에서 discovery 를 요청한 버전도
-마찬가지인데, 그러지 않으면 검색이 그냥 아무것도 찾지 못한 경우와 구별되지 않는다.
+OAuth 서버는 해당 프로젝트의 `connected` 연결이 있을 때만 자동 추가한다.
+선택한 추가 목록은 이름순으로 정렬해 alias 배정과 프롬프트 배치가 query 점수에 따라 흔들리지 않게 한다.
+새 capability는 `discovered`로 반환하며 손실인 warning과 구분한다.
+실행은 로그, preview는 별도 목록으로 표시한다.
 
-**무엇을 *찾아냈는가* 는 warning 이 아니다.** `resolveRunTools` 는 그것을 `discovered` 로 따로 반환한다.
-discovery 성공을 `warning` chunk로 보내면 모든 정상 런이 손실을 보고한 것으로 표시된다.
-`collectedWarning`은 런이 잃은 것을 소유하는데, capability를 찾은 것은 그 반대다. 런은 그것을
-로그로 남긴다. Playground
-프리뷰는 그것을 따로 렌더링하는데, 작성자가 다른 방법으로는 볼 수 없는 유일한 자리이기 때문이다 —
-런이 실제로 *쓴* 것은 이미 그 툴 트래픽에 있다.
-
-엔진은 이 중 아무것도 모른다. discovery 는 `assembleAgentRun` 이 이미 받는 배열들을 — 그리고 그것이
-돌려주는 버전을 — 넓힐 뿐이고, 그래서 `buildSubagentRunner` 는 모델에게 알려 준 것과 같은 목록으로
-dispatch 맵을 만든다. 대신 호출자 자신의 버전을 줬을 때는, discover 된 agent 가 transfer enum 에
-앉아 있다가 모델이 그것을 쓰는 순간 `Unknown agent` 라고 답했다.
+준비한 Version과 capability 목록은 SDK Agent 조립과 실제 대상 해석에 함께 사용한다.
+최상위 런·로컬 자식·preview의 호출 지점은 `TOOL_RESOLUTION_SITES`가 검사한다.
+background 후처리는 discovery·MCP·subagent를 제공하지 않는다.
 
 ## 메모리
 
-장기 지식은 연결된 Memory 서버가 보관한다. 서버는 결정·관례·사실을 `recall`, `remember`,
-`list_memories`, `forget` 같은 도구로 제공하며 Studio는 MCP 경계로 접근한다. tenant·사용자·대화
-헤더는 [MCP 계약](mcp.md)을 따른다. 메모리의 범위와 저장 정책은 서버가 정한다.
+장기 지식은 연결된 MCP 서버가 보관한다. Studio는 서버의 `recall`·`remember` 등의 도구를
+사용하며 저장 범위·ACL·보존은 서버가 결정한다. Chat의 SDK Session은 해당 대화의 모델 이력으로
+장기 Memory와 별개다.
 
-Chat의 SDK Session은 이와 별개다. Studio가 보관하는 정확한 모델·도구 이력과 승인 상태이며,
-Session에 포함된 recall 문맥과 도구 결과는 해당 대화의 이력이다. 장기 Memory 원본의
-갱신·삭제와 보존 정책은 계속 Memory 서버가 소유한다.
+`parameters.memoryRecall`은 첫 모델 호출 전에 명시적 MCP binding의 `recall`을 호출한다.
+dynamic discovery가 우연히 찾은 서버는 자동 recall 대상이 아니다.
+`prepareMemoryForRun`이 회상용 세션을 준비·해제하고 `recallMemories`가
+query 제한·타임아웃·병렬 호출·병합을 담당한다. 이름의 정본은 `domain/project/memoryRecall.ts`다.
 
-앱이 더하는 것은 툴이 스스로 할 수 없는 단 한 가지다: **모델이 물어볼 생각을 하기 전에 먼저 묻기.**
-`parameters.memoryRecall`을 켠 버전은 `recall`을 제공하고 도구 정책이 허용하는 바인딩된 서버에
-대해 런이 그것을 호출하게 한다 — 그 이름으로. 설정이 아니라 관례인데, 설정이라 해 봐야 언제까지나 이 문자열 하나만
-가리킬 것이기 때문이다. 그리고 *바인딩된* 이란 버전 자신의 `mcpList` 를 뜻하지, 이번 요청을 위해
-discovery 가 추가한 서버를 뜻하지 않는다. 그쪽의 `recall` 은 모델이 호출할 수 있는 툴로 남을 뿐,
-요청마다 묻지도 않았는데 건네지지는 않는다 — 가장 최근의 사용자 턴을 쿼리로 삼아 첫 토큰 전에
-호출하고, 돌아온 것을 *What you remember* 블록으로 시스템 프롬프트에 넣는다. 자리는 시계와 caller
-뒤, 케이퍼빌리티 절들 앞이다: 런에 대한 사실이며, 지시가 아니라 배경으로 틀 지어진다 — 메모리는
-저장된 텍스트이고, 모델이 무언가에 설득당하는 통로가 바로 저장된 텍스트이기 때문이다.
-회상은 capability discovery보다 먼저 실행한다. `prepareMemoryForRun`은 도구 선택에서 `recall`을
-제외하지 않은 명시적 바인딩을 준비하고, 회상용 세션을 `finally`에서 닫는다. 이후 최종 MCP 해석은 같은 사용자·project의
-discovery 캐시를 재사용하며 도구 선택·alias·세션 수명을 독립적으로 소유한다. 동적 탐색도 켜져 있으면
-`discoveryQueries`는 원래 쿼리를 보존하면서 최신 요청과 관련 기억을 결합한 쿼리 하나를 더한다.
-추가 쿼리도 기존 2,000자 한도 안에 요청과 기억의 공간을 나눠 사용한다. 소속 조직이나 문서 위치가
-기억에만 있더라도 카탈로그의 서버 설명과 연결할 수 있다. 기억에서 URL이나 서버 권한을 생성하지
-않으며 기존 카탈로그·OAuth·SSRF·호출자 이메일 검사를 그대로 거친다. 모델은 소속 같은 검색 단서를
-찾은 것과 요청을 조사한 것을 구분하고, 연결된 서버에서 근거를 확보한 뒤 정리한다. 이 순서는 최상위
-런과 로컬 서브에이전트에 동일하게 적용된다. `blockedTools` 또는 `approvalTools`에 지정된 recall
-alias는 자동 실행하지 않고 경고한다. 승인 대상 호출은 SDK Agent의 도구 실행 경로에서 결정한다.
-승인 재개 시 최상위 런은 체크포인트의 recall 문맥을 재사용한다.
+최근 사용자 요청으로 묻고 결과를 `What you remember` 블록에 배경 데이터로 넣는다.
+이 문맥은 capability 검색에도 쓸 수 있지만 기억에서 URL·credential·권한을 생성하지 않는다.
+회상 세션과 최종 실행 세션은 같은 사용자·프로젝트의 discovery cache를 재사용할 수 있다.
 
-`recallMemories` (`src/application/execution/memoryRecall.ts`) 가 그 전부를 소유한다 — 쿼리 한도,
-프롬프트 예산, 타임아웃, 그리고 여러 서버에 걸친 병합 — 그리고 엔진은 그 결과를 입력
-필드(`remembered`)로 받는다. 툴 이름만은 `src/domain/project/memoryRecall.ts` 에 있는데, 버전
-편집기가 같은 이름을 읽기 때문이다: 회상을 켠 버전에 `recall` 을 제공할 수 있는 바인딩이 하나도
-없으면 — 바인딩이 없거나 모든 바인딩의 도구 선택이 그것을 뺐으면 — 편집기가 그 자리에서 경고한다
-(`bindingsMayOfferRecall`). 바인딩만으로 확실한 것만 말하고, 바인딩된 서버가 실제로 그 툴을 제공하는지는
-프리뷰가 물어서 답한다. caller 를 받는 것과 정확히 같은 방식이다. transfer 로 넘겨진 자식은
-자기 버전을 보고 스스로 결정하며, transfer 메시지로 묻는다.
+도구 선택에서 제외하거나 차단·승인 정책에 걸린 recall은 자동 호출하지 않는다.
+승인 대상 도구는 SDK의 승인 가능한 경로에 남는다. background 작업은 사전 recall을 하지 않는다.
+최상위 승인 재개는 저장된 회상 문맥을 재사용한다.
 
-성질 셋이 하중을 진다. **recall 은 결코 런을 끝내지 않는다**: 실패하거나 타임아웃되거나 `Error:` 로
-답하는 서버는 `warning` 이 되고 런은 그것 없이 계속된다 — 회상보다 답이 더 값지다. **손실에는 이름을
-붙인다**: 플래그를 켰는데 `recall` 을 제공하는 바인딩된 서버가 하나도 없는 버전은, 기억하는 버전인
-것처럼 조용히 읽히는 대신 메모리 없이 시작했다고 경고한다. 그리고 **프리뷰는 자기가 보여 줄 수 없는
-것을 말한다**: 요청이 있는 프리뷰는 런과 같은 순서로 메모리를 호출하고 회상 블록과 그 기억으로
-추가된 capability를 표시한다. 요청이 없으면 메모리를 호출하지 않고 무엇이 빠졌는지 보고한다.
-툴은 이전처럼 계속 제공된다. recall 은 그 위에
-더해지는 것이고, 모델은 런 중간에도 여전히 `remember` 와 `recall` 을 부를 수 있다.
-
-이것이 의도적으로 열어 두는 결정이 둘 있다. *메모리가 어디에 붙는가* — project 에(오늘 mcp-memory
-가 하는 방식) 붙는지 대화에 붙는지 — 는 서버의 몫이고, 서버는 이제 두 키를 다 갖고 있다. 그리고
-*무엇이 되쓰이는가* 는 `remember` 를 통해 모델의 몫으로 남으며, 요청에 실린 대화와 tenant 가 그
-provenance 다. 런 자신은 결코 쓰지 않는다.
+실패·timeout·오류 결과·대상 부재는 경고로 알리고 기억 없이 계속한다. 사용자 취소는 예외다.
+preview도 요청을 주면 같은 준비를 수행하고, 요청이 없으면 회상을 하지 않았다고 알린다.
+자동 회상은 읽기뿐이며 런 중 기억 저장은 모델이 연결된 도구를 호출하는 별도 행동이다.

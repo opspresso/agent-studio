@@ -1,4 +1,4 @@
-# 범용 오디오 처리·비동기 작업 개발 스펙
+# 오디오 처리와 영속 작업
 
 한 Agent가 plugin skill의 절차에 따라 도구를 호출하고 Artifact ID로 결과를
 전달한다. HTTP API·Agent 도구·별도 worker가 긴 작업과 재시도를 담당한다. 외부 기록은 사용자
@@ -9,6 +9,9 @@ Agent Memory 수신 측은 문서 수집·멱등 저장 계약을 제공해야 �
 변환과 기본 설정·작업 UI를 제공한다. Studio의 delivery는 수신 서버가 필요한 도구와 idempotencyKey를
 노출해야 활성화된다. 실행과 설치 조건은 [개발 안내](../DEVELOPMENT.md)와
 [설치 안내](../INSTALL.md#오디오-worker)를 따른다. 운영 Agent 생성·OAuth·스케줄 활성화는 별도 운영 작업이다.
+
+이 문서는 현재 Studio 구현의 계약이다. Agent Memory·출처 Plugin의 설명은 연동에 필요한
+상대 시스템의 계약이며, 해당 배포가 그 기능을 제공하거나 설정됐다는 뜻은 아니다.
 
 ## 목표와 설계 원칙
 
@@ -27,8 +30,8 @@ Agent가 다양한 출처의 파일을 보관하고, 오디오를 지정 모델�
 | 사용자 문맥 전달 | 로그인/설정 과정에서 확인한 실행 사용자 email |
 | 원본 만료 | 기간의 단위·값·시간대, 삭제 대상과 완료 기록 유지 |
 
-첫 구현에서 임의 DAG·스크립트 실행기나 시각적 workflow 편집기를 만들지 않는다.
-파일 가져오기, 전사, 선택적 Agent 후처리, 선택적 저장을 조합하는 제한된 작업 계약부터 구현한다.
+임의 DAG·스크립트 실행기나 시각적 workflow 편집기는 제공하지 않는다.
+파일 가져오기, 전사, 선택적 Agent 후처리, 선택적 저장을 조합하는 작업 계약을 사용한다.
 전사만 실행하거나 이미 보관된 파일을 사용하는 흐름도 같은 기능을 사용한다.
 
 ## Artifact 중심 Agent 구성
@@ -263,10 +266,16 @@ worker 배포에서 메모리와 scratch volume 용량을 함께 제한한다. �
 
 ## 작업·재시도·완료 계약
 
-단계는 `queued → importing → transcribing → postprocessing? → storing? → cleaning → completed`다.
-가져오기 전용 작업은 원본 보관 후 완료한다.
-선택하지 않은 단계는 건너뛴다. `blocked`, `failed`, `cancelled`와 실패 단계·safe error code를
-별도 기록한다. 특정 종류의 문서 2개나 결정·할 일을 고정된 완료 조건으로 두지 않는다.
+`status`와 `stage`는 독립된 값이다. `status`는 `queued`, `running`, `waiting`, `completed`,
+`blocked`, `failed`, `cancelled`다. `stage`는 마지막으로 처리한 아래 단계이며 완료 후에도 유지된다.
+
+```text
+importing → transcribing → postprocessing(선택) → storing(선택) → cleaning
+```
+
+가져오기 전용은 importing 뒤 completed가 되고, 전사 전용은 후처리·저장을 건너뛰며,
+기존 전사문 후처리는 transcribing을 건너뛴다. 실패 단계와 safe error code를 별도로 기록한다.
+완료 여부는 stage 이름 대신 status로 판정한다.
 
 job은 project·source identity·item ID·config/version snapshot·실행 email·stage·attempt·retryAt·
 lease generation·file ref·checksum·expiry·segment manifest·output manifest·receipts를 저장한다.
@@ -326,21 +335,21 @@ unknown usage를 0으로 표시하지 않는다. 각 구간 전에 잔여 예산
 | `document_ingest_retry` | document ID·idempotencyKey·관측한 expectedAttempts → 기존 ID와 상태. 기존 문서 write 권한 필요 |
 | `remember` | 기존 입력 + 선택적 idempotencyKey → 기존 Memory ID·version |
 
-인증·email 해석·scope 검증은 기존 MCP 경계를 공유한다. 문서 유스케이스·quota·worker를 재사용하고
-별도 개인 인증 경로를 만들지 않는다. Studio는 전사문을 LLM에게 다시 쓰게 하지 않고 저장된 결과를
-직접 전달한다. MCP body 상한은 UTF-8 문서 10 MiB의 JSON escaping과 metadata를 포함해 정의하며
-현재 문서 512-chunk 제한도 적용한다. 초과를 잘라서 성공시키지 않는다.
+Studio는 도구 discovery에서 필요한 도구와 멱등 인자를 확인하고 저장된 결과를 직접 전달한다.
+문서 본문을 LLM에게 다시 쓰게 하지 않는다. 수신 서버의 본문·chunk·quota 제한은 그 서버의
+계약이며 Studio의 일반 문서 한도와 동일하다고 가정하지 않는다. 초과를 잘라 성공으로 표시하지 않는다.
 
-수신 측 unique key는 `(설치 조직, 위임 user ID, operation, idempotencyKey)`다. key에는 Studio가
+수신 측은 `(설치 조직, 위임 user ID, operation, idempotencyKey)` 범위의 멱등성을 제공해야 한다. key에는 Studio가
 발급한 job UUID·산출물 종류·ordinal을 넣어 다른 출처와 구분한다. 같은 키·같은 payload hash는
 같은 ID를, 같은 키·다른 payload는 conflict를 반환한다. Bearer 교체로 identity를 바꾸지 않는다.
 기존 receipt 반환에도 현재 email 권한을 검사한다. claim·resource·receipt는 하나의 DB transaction,
 object upload·queue 등록의 갭은 staging cleanup과 기존 reconciliation으로 복구한다.
 archive 뒤에도 tombstone을 유지해 자동 재생성을 막는다. 수정은 기존 revision API를 따른다.
 
-source metadata는 source namespace·item ID·시각·job ID·checksum·model/config revision·coverage·
-evidence refs를 사용한다. 원래 서비스의 필드명은 mapping이 변환한다. secret·서명 URL·storage key는
-저장하지 않는다. 안정적인 job URI도 별도 인증된 조회 주소이며 자체 접근 권한을 부여하지 않는다.
+source metadata는 source identity·job ID·파일 참조·checksum·model/config revision·coverage·
+evidence를 사용한다. 원래 서비스의 필드명은 mapping이 변환한다. secret·서명 URL·storage key를
+외부 metadata에 넣지 않는다. `urn:agent-studio:audio-job:<id>`는 출처 식별자이며
+HTTP 조회 주소나 접근 권한이 아니다.
 
 ## 파일 보존·개인 접근·운영
 

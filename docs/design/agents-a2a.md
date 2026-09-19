@@ -34,8 +34,8 @@ task 를 `taskId` 로 잇는 메시지는 거절하며(이 executor 는 메시�
 `input-required` 에 들어가지 않으므로, 둘째 런이 같은 `result` artifact 를 서로 리셋했을
 것이다), `ResubscribeTask` 는 요청별 event bus 대신 **저장소를 따라간다** — 스냅샷, 도착하는
 artifact, 종단 status — 인스턴스가 달라도 되는 유일한 방식이다. 스트리밍 메서드가 첫 이벤트
-전에 거절되면 라우트가 JSON-RPC 에러로 답한다(HTTP 500 이 아니라). 그림은 `image/*` raw/url part
-로 들어와 모델에 닿고, `result` artifact 는 비어 있지 않은 실제 마지막 update 에
+전에 거절되면 라우트가 JSON-RPC 에러로 답한다. 입력 이미지는 지원되는 `image/*`의 raw bytes만
+허용하며 URL·data·다른 media type은 거절한다. `result` artifact는 비어 있지 않은 실제 마지막 update에
 `lastChunk: true` 를 붙여 닫힌다. Task 상태는 Project·tenant·인증된 client 단위로 단일
 테이블에 저장되므로(`createA2aTaskStore`) 재배포를 견디고 인스턴스 간에 공유되며, terminal
 상태를 지키는 조건부 쓰기가 붙어 있어 동시에 들어온 complete/cancel 이 이미 끝난 task 를
