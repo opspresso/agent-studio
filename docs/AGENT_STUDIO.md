@@ -195,11 +195,13 @@ Usage는 비용, Trace는 실행 구조·시간·상태, Audit은 민감 작업�
 
 ## 코드를 읽고 변경하기
 
+Clean Architecture를 기반으로 모듈의 책임과 의존성 경계를 나눈다.
 의존 방향은 `app → application → domain ← infrastructure`다. `lib`는 서버 설정·인증·조립,
 `shared`는 의존성 없는 헬퍼를 둔다. application에 어댑터를 주입하며
 `container.ts`를 역으로 import하지 않는다. 허용된 조립 지점과 주요 경로는
 [ARCHITECTURE](ARCHITECTURE.md), 상수·형태·정책의 단일 소유 위치는 [OWNERSHIP](OWNERSHIP.md)에 있다.
 
 [DEVELOPMENT](DEVELOPMENT.md)는 로컬 셋업, 테스트별 전제와 현재 CI 범위를 설명한다.
+문제 해결은 [근본 원인 중심의 개선](DEVELOPMENT.md#근본-원인-중심의-개선)을 따른다.
 [AGENTS.md](../AGENTS.md)와 변경 영역의 로컬 지침을 읽고 관련 검사를 실행한다.
 [MILESTONES](MILESTONES.md)는 미완료 작업과 완료 조건을 관리하며, 완료 이력은 git과 Release에 남긴다.

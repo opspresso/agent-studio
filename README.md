@@ -93,8 +93,12 @@ HTTP 형태는 API, 실행 원리는 해당 설계 문서에서 확인한다.
 
 Next.js 16 App Router·React 19·TypeScript strict·Mantine 9 기반의 단일 풀스택 앱이다.
 Better Auth가 인증을 담당하며 PostgreSQL + pgvector에 상태를 저장한다.
-의존 방향 `app → application → domain ← infrastructure`는 구조 테스트로 검사한다.
+[Clean Architecture](docs/ARCHITECTURE.md#레이어)를 바탕으로 모듈의 책임을 분리하고,
+의존 방향 `app → application → domain ← infrastructure`는 구조 테스트로 강제한다.
 정확한 의존성 버전은 [package.json](package.json)과 [잠금 파일](pnpm-lock.yaml)이 정본이다.
+
+변경은 [모듈 경계와 재사용](docs/ARCHITECTURE.md#모듈-경계와-재사용),
+[근본 원인 중심의 개선](docs/DEVELOPMENT.md#근본-원인-중심의-개선) 원칙을 따른다.
 
 ```bash
 pnpm typecheck

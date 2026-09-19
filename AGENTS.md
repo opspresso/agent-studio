@@ -75,6 +75,10 @@ refuses to boot without an explicit `STAGE`. See [CONFIGURATION.md](docs/CONFIGU
 
 ## Architecture contract
 
+Use Clean Architecture with high cohesion and low coupling. Follow the
+[module boundaries and reuse rules](docs/ARCHITECTURE.md#모듈-경계와-재사용) when choosing
+responsibilities and abstractions.
+
 ### Dependency direction
 
 **`app → application → domain ← infrastructure`**
@@ -246,6 +250,8 @@ key, cap, formatter, error identity, or collapse rule, search
 Before finishing:
 
 - Read the authority and any nested `AGENTS.md` for the changed subsystem.
+- For fixes, follow [root-cause improvement](docs/DEVELOPMENT.md#근본-원인-중심의-개선) and
+  verify that the owning layer and other affected paths are addressed.
 - Confirm every import follows the dependency direction and every new decision has one owner.
 - Confirm required paths still work offline and no secret or unbounded read was introduced.
 - Run the checks appropriate to the risk, then inspect the complete diff.
