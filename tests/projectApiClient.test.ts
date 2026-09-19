@@ -3,7 +3,7 @@ import {
   generateProjectToken,
   getProjectSlack,
   previewPrompt,
-  predictImage,
+  streamAgent,
   updateProjectSlack,
 } from "@/app/projects/lib/api";
 
@@ -76,13 +76,13 @@ describe("project API client failures", () => {
     );
   });
 
-  it("preserves server error details for image generation", async () => {
+  it("preserves server error details for Agent execution", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => Response.json({ error: "Image model is unavailable" }, { status: 503 })),
     );
 
-    await expect(predictImage("demo", "v1", { prompt: "draw" })).rejects.toThrow(
+    await expect(streamAgent("demo", "v1", [{ role: "user", content: "draw" }])).rejects.toThrow(
       "Image model is unavailable",
     );
   });

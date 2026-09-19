@@ -3,7 +3,7 @@ import type { MessageDestination } from "@/domain/messaging/destination";
 import type { McpSourceMapping } from "@/domain/mcp/sourceMapping";
 import type { RuntimePolicy } from "@/domain/execution/runtimeSession";
 
-export type ProjectType = "llm" | "agent" | "image";
+export type ProjectType = "agent";
 
 /**
  * Who may see and run a project. `public` is the shared catalog: any signed-in

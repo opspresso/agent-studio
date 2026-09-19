@@ -3,7 +3,7 @@
 읽는 사람이 서로 다른 세 개의 원장(ledger) — 민감한 행위에 대한 audit 행, 무엇을 누가
 썼는지에 대한 usage 행, 그리고 한 런이 어떻게 흘러갔는지에 대한 trace.
 
-보존 기간, 샘플링, 그리고 누가 trace 를 읽을 수 있는지는
+보존 기간과 누가 trace 를 읽을 수 있는지는
 [OPERATIONS.md](../OPERATIONS.md#행-보존) 다. trace 가 의도적으로 저장하지 *않는*
 것은 [SECURITY.md](../SECURITY.md#데이터-노출과-보존) 다.
 
@@ -103,7 +103,7 @@ subagent transfer 가 다른 project 에서 하는 호출도 여전히 런을 �
 
 ## Trace
 
-Agent 런은 항상 기록하며 나머지 런은 설정된 비율로 샘플링한다. Studio Trace는 준비 단계,
+Agent 런은 항상 기록한다. Studio Trace는 준비 단계,
 SDK native span과 최상위 종료 상태를 한정된 행으로 저장한다.
 
 ```ts
@@ -132,5 +132,5 @@ MCP 준비 실패가 기록되어도 실행이 계속된 경우 Trace 전체를 
 warning 20개를 저장하고, 생략된 span은 `spansDropped`로 센다. 실행 경고/오류 문구는 최대
 1,000자로 제한되며 원문 오류에 민감 정보가 있을 수 있어 소유자와 admin만 읽을 수 있다.
 
-선택적인 OTLP exporter와 보존·샘플링 설정은 [운영](../OPERATIONS.md#트레이싱)을 따른다.
+선택적인 OTLP exporter와 보존 설정은 [운영](../OPERATIONS.md#트레이싱)을 따른다.
 기본 실행은 공개 OpenAI trace exporter나 외부 tracing 서비스에 의존하지 않는다.

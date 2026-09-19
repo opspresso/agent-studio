@@ -50,7 +50,6 @@ const SECTIONS: readonly GuideSection[] = [
     body: "guide.projects.body",
     Icon: IconBook2,
     entries: [
-      { title: "guide.projects.llm", body: "guide.projects.llmBody" },
       { title: "guide.projects.agent", body: "guide.projects.agentBody" },
       { title: "guide.projects.image", body: "guide.projects.imageBody" },
     ],

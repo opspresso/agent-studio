@@ -59,7 +59,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
             const project = await getProject(name);
             if (cancelled || request !== sequence) return;
             setProject(project);
-            const versions = project.projectType !== "agent" ? [] : project.publishedVersion
+            const versions = project.publishedVersion
               ? [await getVersion(name, project.publishedVersion)] : await listVersions(name);
             if (!cancelled && request === sequence) setAudio({ name, enabled: projectHasAudioTools(project, versions), workspace: projectHasWorkspaceTools(project, versions) });
             return;

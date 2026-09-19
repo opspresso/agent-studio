@@ -119,17 +119,14 @@ describe("handleThreadStart", () => {
     expect(prompts).toEqual([]);
   });
 
-  it("stays silent for a project that is missing or not an agent", async () => {
+  it("stays silent for a missing project", async () => {
     const missing = makeDeps(null);
     await handleThreadStart(missing.deps, LEGACY_THREAD_STARTED, BINDING);
 
-    const wrongType = makeDeps(projectFixture({ projectType: "llm" }));
-    await handleThreadStart(wrongType.deps, LEGACY_THREAD_STARTED, BINDING);
 
     // Nobody asked a question, so an error message would be an unprompted
     // complaint in a thread the user just opened.
     expect(missing.posted).toEqual([]);
-    expect(wrongType.posted).toEqual([]);
   });
 
   it("keeps going when the greeting fails", async () => {

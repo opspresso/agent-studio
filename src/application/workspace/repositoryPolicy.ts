@@ -33,7 +33,7 @@ export interface WorkspaceRepositoryPolicyView {
 export function createWorkspaceRepositoryPolicyUseCases(deps: RepositoryPolicyDeps) {
   async function enabled(projectName: string): Promise<boolean> {
     const project = await deps.projects.get(projectName);
-    if (!project || project.projectType !== "agent") return false;
+    if (!project) return false;
     const versions = project.publishedVersion ? [await deps.versions.get(projectName, project.publishedVersion)].filter(value => value !== null) : await listVersions(deps.versions, projectName);
     return projectHasWorkspaceTools(project, versions);
   }
@@ -50,7 +50,7 @@ export function createWorkspaceRepositoryPolicyUseCases(deps: RepositoryPolicyDe
     // Already admitted operations retain their policy for observation and safe cleanup.
     async getPolicy(projectName: string) {
       const project = await deps.projects.get(projectName);
-      return project?.projectType === "agent" ? workspaceProjectPolicy(projectName, (await deps.repository.get(projectName))?.rules) : undefined;
+      return project ? workspaceProjectPolicy(projectName, (await deps.repository.get(projectName))?.rules) : undefined;
     },
     async update(projectName: string, input: { rules: WorkspaceProjectSettings; revision: number | null }, email: string): Promise<WorkspaceRepositoryPolicyView> {
       await assertProjectWritable(deps.projects, projectName, email);

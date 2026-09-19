@@ -284,7 +284,7 @@ SigV4 서명자는 endpoint URL에서 대상 region을 해석한다. 도입할 �
 
 **이 문서의 거의 모든 숫자 설정이 그렇게 동작한다**: 이들은 `positiveIntEnv` 를 지나가며,
 파싱과 경고까지 `src/lib/config.ts` 가 그것을 소유한다. 그 바깥에 있는 설정이 두 종류 있고
-각각 자기 행에서 그렇게 말한다: `0`–`1` 값들(`TRACE_SAMPLE_RATE`, `CATALOG_MIN_SCORE`, `RERANKER_MIN_SCORE`)은
+각각 자기 행에서 그렇게 말한다: `0`–`1` 값들(`CATALOG_MIN_SCORE`, `RERANKER_MIN_SCORE`)은
 폴백하는 대신 **clamp** 하고, `MAX_RUN_DURATION_MS` 는 `src/shared/runDeadline.ts` 에서 스스로
 파싱한다. `application` 이 그 데드라인을 필요로 하는데 `lib` 를 import 할 수 없기 때문이다.
 `AbortSignal.timeout` 의 정의역에 대해 값을 검증하고 같은 경고와 함께 기본값으로 떨어진다.
@@ -445,7 +445,6 @@ Workspace 저장 개수 자체의 전역 고정 상한은 없다. 한 Chat은 �
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `TRACE_SAMPLE_RATE` | `0.1` | — | `0`–`1`, top-level predict 런과 이미지 런에 적용된다. agent 런은 항상 trace 된다. 위의 제한들과 달리, 범위를 벗어난 값은 폴백하는 대신 범위 안으로 **clamp** 된다. `2` 라는 비율은 "가능한 한 많이" 를 뜻한다. 반면 숫자가 아닌 값은 기본값을 쓴다. 둘 다 로그에 그렇게 남긴다: 조용히 다른 값이 돼 버린 샘플링 비율은 배포가 기록한 적도 없는 trace 로부터 추론하게 만드는 방식이다. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 미설정 | — | OTLP HTTP base 엔드포인트 (없으면 `/v1/traces` 를 덧붙인다). 설정되면 플랫폼이 영속화하는 모든 trace 가 데이터베이스 쓰기 이후에 OTEL span 으로도 내보내진다. export 실패는 `[otel]` 로그 라인으로 드러날 뿐, 결코 런으로 드러나지 않는다. 설정하지 않으면 export 자체가 없고 OTEL SDK 는 로드되지도 않는다. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | 미설정 | — | 표준 `key=value,key2=value2` 형식이며 모든 OTLP 요청에 실려 간다. 대소문자를 보존한다: 값들이 collector 자격증명이고, 정규화된 bearer 토큰은 다른 토큰, 즉 틀린 토큰이 되기 때문이다. |
 | `SETTINGS_CACHE_TTL_MS` | `5000` | — | settings 행의 인메모리 TTL. 모든 runtime 오버라이드의 인스턴스 간 낡음에 한계를 둔다. [해석 순서](#해석-순서) 를 보라. 하한이 `1` 이라 `0` 은 캐시를 끄는 대신 기본값으로 떨어진다. |

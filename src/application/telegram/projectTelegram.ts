@@ -151,9 +151,6 @@ export async function updateProjectTelegram(
   baseUrl: string,
 ): Promise<ProjectTelegramResult> {
   const project = await assertProjectWritable(repo, name, userEmail);
-  if (project.projectType !== "agent") {
-    throw new ValidationError("Telegram bots can only be attached to agent projects");
-  }
   const stored = project.telegram;
   const previous = resolveProjectTelegramCredentials(cipher, project);
   let botToken = stored?.botToken ?? "";

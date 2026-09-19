@@ -36,16 +36,7 @@ describe("buildApiReference — endpoint selection by project type", () => {
     expect(ids({ projectType: "agent" })).toEqual(["predict", "chat-completions", "agent", "agui"]);
   });
 
-  it("llm project exposes predict and chat/completions only (no agent/chat)", () => {
-    expect(ids({ projectType: "llm" })).toEqual(["predict", "chat-completions", "agui"]);
-  });
 
-  it("image project exposes only the image predict endpoint", () => {
-    const endpoints = buildApiReference(ctx({ projectType: "image" }));
-    expect(endpoints.map((e) => e.id)).toEqual(["predict-image", "agui"]);
-    expect(endpoints[0]?.requestFields?.some((f) => f.name === "prompt")).toBe(true);
-    expect(endpoints[0]?.responseFields?.some((f) => f.name === "imageBase64")).toBe(true);
-  });
 });
 
 describe("buildApiReference — published version gating", () => {
@@ -64,7 +55,7 @@ describe("buildApiReference — published version gating", () => {
 
 describe("buildApiReference — request/response field specs", () => {
   it("documents predict request and response fields", () => {
-    const predict = buildApiReference(ctx({ projectType: "llm" })).find((e) => e.id === "predict");
+    const predict = buildApiReference(ctx({ projectType: "agent" })).find((e) => e.id === "predict");
     expect(predict?.requestFields?.map((f) => f.name)).toEqual(["variables", "messages", "stream"]);
     expect(predict?.responseFields?.map((f) => f.name)).toEqual([
       "result",

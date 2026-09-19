@@ -1,16 +1,9 @@
-/** The GenerateImage/EditImage builtins and the image-project subagent. */
+/** Image generation and editing capabilities of an Agent. */
 
-import type { RunOrigin } from "@/domain/execution/actor";
-import type { EngineChunk } from "@/domain/llm/types";
-import type { Project, Version } from "@/domain/project/types";
-import type { ImageBytes } from "@/domain/llm/imageChannel";
+import type { Version } from "@/domain/project/types";
 import { getModelConfig, getVisibleModels, toImageUsageRecord } from "@/domain/llm/models";
 import * as engine from "@/application/runtime";
-import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import type { ExecutionDeps } from "./deps";
-import { runEnding } from "@/application/run/runDeadline";
-import { runDeadlineExceeded } from "@/shared/runDeadline";
-import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 import { log } from "@/shared/logger";
 
 /**
@@ -118,75 +111,4 @@ export function buildImageEditor(
     await recordUsageFn({ projectName, model, ...recorded });
     return { b64: result.b64, mimeType: result.mimeType, model };
   };
-}
-
-/**
- * An image-project child produces one image from the transfer message: it edits
- * the images the parent handed over, or draws from scratch when there are none.
- */
-export async function* runImageSubagent(
-  deps: Pick<ExecutionDeps, "imageChannel" | "traces">,
-  agentName: string,
-  project: Project,
-  version: Version,
-  message: string,
-  recordUsageFn: engine.RecordUsageFn,
-  origin: RunOrigin,
-  signal?: AbortSignal,
-  images?: ImageBytes[],
-): AsyncGenerator<EngineChunk, string> {
-  const model = version.model;
-  const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, project, version, 1, origin)
-    : undefined;
-  if (!getModelConfig(model)?.capabilities.imageGeneration) {
-    yield {
-      author: agentName,
-      error: `Agent '${agentName}' uses a model without image generation: ${model}`,
-      ...(recorder ? { traceId: recorder.traceId } : {}),
-    };
-    await finishTrace(
-      recorder,
-      new Error(`Agent '${agentName}' uses a model without image generation: ${model}`),
-    );
-    return "";
-  }
-  try {
-    signal?.throwIfAborted();
-    const sources = images ?? [];
-    // The child's own style, exactly as its predict path would compose it.
-    const prompt = composeImagePrompt(version, message);
-    const result =
-      sources.length > 0
-        ? await deps.imageChannel.editImage({ model, prompt, images: sources, signal })
-        : await deps.imageChannel.generateImage({ model, prompt, signal });
-    const recorded = toImageUsageRecord(model, {
-      ...result.usage,
-      sourceImages: sources.length,
-    });
-    await recordUsageFn({ projectName: project.name, model, ...recorded });
-    recorder?.observeResult({ content: "", model, usage: recorded });
-    yield {
-      author: agentName,
-      ...(recorder ? { traceId: recorder.traceId } : {}),
-      image: { b64: result.b64, mimeType: result.mimeType, prompt: message, model },
-    };
-    await finishTrace(recorder);
-    return `Generated an image for: ${message}`;
-  } catch (caught) {
-    // The trace is written whichever way this ends. Classify an abort before
-    // rethrowing so cancelled and deadline-stopped children retain their row.
-    const error = runEnding(caught, signal);
-    if (signal?.aborted) {
-      await finishTrace(recorder, error, !runDeadlineExceeded(signal));
-      throw error;
-    }
-    yield {
-      author: agentName,
-      ...(recorder ? { traceId: recorder.traceId } : {}),
-      error: error instanceof Error ? error.message : "image generation failed",
-    };
-    await finishTrace(recorder, error);
-    return "";
-  }
 }

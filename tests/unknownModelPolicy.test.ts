@@ -180,7 +180,7 @@ describe("the run bracket enforces it", () => {
 });
 
 describe("subagent preparation enforces model policy", () => {
-  const child: Project = { ...project, name: "child", projectType: "llm", publishedVersion: "v1" };
+  const child: Project = { ...project, name: "child", projectType: "agent", publishedVersion: "v1" };
   const parent = version({ projectName: "parent", subagentList: [{ name: "child", type: "local" }] });
   function prepare(policy: UnknownModelPolicy | undefined, model: string) {
     const deps = {

@@ -1,27 +1,7 @@
 /**
- * What wraps every top-level run, in one place.
- *
- * Four functions admit a top-level run — `executeVersion`,
- * `executeVersionStream`, `executeAgent` and `generateImage` — and each one used
- * to open and close the in-flight metric for itself. That was already the seam
- * every cross-cutting run policy wants, so it is now a named one: a policy added
- * here reaches all four, and a fifth entry point that forgets to open a bracket
- * is missing its metric as loudly as it is missing its guards.
- *
- * The image path is why this is not simply "the execution facade": `generateImage`
- * lives in its own module and is called directly by the predict route and the A2A
- * executor, never through `runProject`.
- *
- * Order matters at every step. The guards run *before* the metric opens, so a
- * refused run is never counted as one that ran. The model policy runs before
- * both, being the one refusal that costs nothing to decide and says the version
- * is misconfigured rather than that the platform is busy. Concurrency is taken
- * after cost:
- * a project that is over budget should be told so rather than made to queue for
- * a slot it will be refused on anyway. `close()` runs *after* the caller has
- * flushed its usage, so the settle step sees the spend of the run it is
- * settling — an agent run buffers usage until the end, and a settle before the
- * flush would always be reading the previous run's total.
+ * Common admission, accounting and artifact scope for Agent executions.
+ * Model and cost policies run before acquiring a slot. Call close only after
+ * usage is flushed so settlement includes this run, including delegated work.
  */
 
 import type { RunActor } from "@/domain/execution/actor";

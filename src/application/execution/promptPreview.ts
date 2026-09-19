@@ -2,11 +2,9 @@
 
 import type { Project, Version } from "@/domain/project/types";
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
-import { renderTemplate } from "@/shared/template";
-import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import * as engine from "@/application/runtime";
-import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
-import { callerFor, runClock, runStrategyFor } from "./deps";
+import type { ExecutionDeps, PromptPreview } from "./deps";
+import { callerFor, runClock } from "./deps";
 import { discoveryQueries, resolveRunTools } from "./bindings";
 import { noRecallTargetWarning, prepareMemoryForRun, recallTargets } from "./memoryRecall";
 import { closeMcp } from "./mcpTools";
@@ -70,63 +68,18 @@ export async function previewPrompt(
   const { project, version } = input;
   const warnings: string[] = [];
   if (version.parameters.piiFiltering) {
-    // The filter exists on the chat paths only; an image prompt is sent as-is.
     warnings.push(
-      runStrategyFor(project) === "image"
-        ? "PII filtering does not apply to an image run — the prompt reaches the provider unmasked."
-        : "PII filtering is on: emails, phone numbers, Korean registration numbers and card numbers are replaced with tokens before dispatch.",
+      "PII filtering is on: emails, phone numbers, Korean registration numbers and card numbers are replaced with tokens before dispatch.",
     );
   }
 
   if (
     version.parameters.memoryRecall &&
-    runStrategyFor(project) === "agent" &&
     !input.message?.trim()
   ) {
     warnings.push(
       "Memory recall is on, but the preview has no request to recall with; recalled context and any capabilities it would discover are not shown.",
     );
-  }
-
-  if (runStrategyFor(project) === "image") {
-    // An image run has no system message — the version's system prompt rides in
-    // front of the prompt as its persistent style, and the Playground's own
-    // prompt box supplies the subject at run time (overriding the template).
-    const subject = renderTemplate(version.userPromptTemplate, input.variables ?? {}).trim();
-    if (!subject) {
-      warnings.push(
-        "This project's prompt template renders empty; a run would have to supply the prompt itself.",
-      );
-    }
-    const prompt = composeImagePrompt(version, subject);
-    return {
-      messages: prompt ? [{ role: "user", content: prompt }] : [],
-      toolNames: [],
-      tools: [],
-      warnings,
-      discovered: [],
-    };
-  }
-
-  if (runStrategyFor(project) !== "agent") {
-    return {
-      messages: toPreviewMessages(
-        engine.buildPromptMessages({
-          model: version.model,
-          systemPrompt: version.systemPrompt,
-          userPromptTemplate: version.userPromptTemplate,
-          variables: input.variables,
-          now: runClock(deps),
-          // The same opt-in a run applies, so prompt and agent previews agree
-          // about whether the caller is named.
-          ...callerFor({ version, caller: input.caller }),
-        }),
-      ),
-      toolNames: [],
-      tools: [],
-      warnings,
-      discovered: [],
-    };
   }
 
   if (version.userPromptTemplate.trim()) {
@@ -214,14 +167,4 @@ export async function previewPrompt(
   } finally {
     await closeMcp(resolved.mcp.close);
   }
-}
-
-export function toPreviewMessages(
-  messages: Array<{ role: string; content?: unknown }>,
-): PromptPreviewMessage[] {
-  return messages.flatMap((message) =>
-    (message.role === "system" || message.role === "user") && typeof message.content === "string"
-      ? [{ role: message.role, content: message.content }]
-      : [],
-  );
 }

@@ -38,10 +38,10 @@
 | SDK function tool 동시 실행 수 | `src/application/runtime/runner.ts`의 `MAX_FUNCTION_TOOL_CONCURRENCY` | 구조 |
 | Agent 런의 프롬프트와 tool 집합을 어떻게 조립하는가 | `src/application/llm/agentAssembly.ts` 의 `assembleAgentRun` | 구조 |
 | Model 의 window 로부터 런의 컨텍스트 예산을 도출하기 | `src/application/llm/contextBudget.ts` | 구조 |
-| 런의 trace 를 샘플링할지 여부 | `src/application/run/traceLifecycle.ts` | 구조 |
+| Agent 실행 Trace의 생성과 종료 | `src/application/run/traceLifecycle.ts` | 코드 |
 | 사람이 읽을 경과·소요 시간 | `src/app/_lib/duration.ts` 의 `formatSeconds`/`formatDuration`. 단위는 `common.duration*` 카탈로그가 가지므로 어느 페이지든 그대로 쓴다. 진행 중 시계와 끝난 뒤 배지가 같은 규칙(내림)으로 읽히는 것이 이 소유의 요점이다 | 구조 |
 | top-level 런을 감싸는 것 | `src/application/run/runBracket.ts` | 구조 |
-| 어떤 project type 이 어떤 방식으로 실행되는가 | `src/application/execution/deps.ts` | 구조 |
+| Agent 실행과 완료 응답 수집 | `src/application/execution/runProject.ts` | 코드 |
 | 런의 프롬프트가 자기 caller 를 이름으로 불러도 되는가 | `src/application/execution/deps.ts` 의 `callerFor` | 구조 |
 | tool 결과가 무엇을, 어떤 순서로 해야 하는가 | `src/application/runtime/output.ts` 의 `writeToolResult` | 구조 |
 | SDK Agent·Handoff·Agent-as-Tool 조립과 동시 호출의 identity | `src/application/runtime/agent.ts`, `boundAgent.ts`; SDK가 실행을 소유하고 Studio가 호출별 자원을 연결한다 | 코드 |

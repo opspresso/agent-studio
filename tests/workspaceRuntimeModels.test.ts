@@ -54,6 +54,5 @@ describe("Workspace runtime model selection", () => {
     const latest = { versionName: "latest", createdAt: "2026-09-15", parameters: { audioProcessing: true } } as Version;
     expect(projectHasWorkspaceTools({ projectType: "agent", publishedVersion: "old" }, [latest, old])).toBe(true);
     expect(projectHasWorkspaceTools({ projectType: "agent" }, [latest, old])).toBe(false);
-    expect(projectHasWorkspaceTools({ projectType: "llm", publishedVersion: "old" }, [old])).toBe(false);
   });
 });

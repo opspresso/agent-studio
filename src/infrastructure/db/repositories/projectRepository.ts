@@ -39,10 +39,10 @@ function requiredString(item: Record<string, unknown>, field: string): string {
 }
 
 function projectType(value: unknown): Project["projectType"] {
-  if (value === "llm" || value === "agent" || value === "image") {
+  if (value === "agent") {
     return value;
   }
-  throw new Error("project row has invalid projectType");
+  throw new Error("Project requires migration to an Agent before use");
 }
 
 function visibility(value: unknown): Project["visibility"] {

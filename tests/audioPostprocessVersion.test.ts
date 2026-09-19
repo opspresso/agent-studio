@@ -37,12 +37,9 @@ describe("postprocessing version resolution", () => {
     expect(get).toHaveBeenCalledTimes(1);
   });
 
-  it("distinguishes a non-Agent project from an unsupported model", async () => {
+  it("rejects an unsupported postprocessing model", async () => {
     const get = vi.fn(async () => version("1"));
     const reference = { projectName: project.name, versionName: "1" };
-    await expect(resolveAudioPostprocessor({ get }, async () => ({ ...project, projectType: "llm" }), reference, owner))
-      .rejects.toThrow("requires an Agent project");
-    expect(get).not.toHaveBeenCalled();
     get.mockResolvedValue({ ...version("1"), model: listModels().find(m => !m.capabilities.structuredOutput)!.id });
     await expect(resolveAudioPostprocessor({ get }, async () => project, reference, owner)).rejects.toThrow("does not support structured output");
   });

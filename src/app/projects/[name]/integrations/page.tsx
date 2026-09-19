@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Alert, Stack, Text } from "@mantine/core";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
-import { getProject, type ProjectType } from "../../lib/api";
+import { getProject } from "../../lib/api";
 import { LoadingText } from "@/app/_components/PageState";
 import { A2aSection } from "./A2aSection";
 import { AguiSection } from "./AguiSection";
@@ -26,7 +26,6 @@ export default function IntegrationsPage() {
   const name = params.name;
   const viewer = useViewer();
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
-  const [projectType, setProjectType] = useState<ProjectType>("agent");
   const [published, setPublished] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +36,6 @@ export default function IntegrationsPage() {
       .then((project) => {
         if (!cancelled) {
           setOwnerEmail(project.ownerEmail);
-          setProjectType(project.projectType);
           setPublished(Boolean(project.publishedVersion));
         }
       })
@@ -76,11 +74,11 @@ export default function IntegrationsPage() {
       </Text>
       <TokenSection projectName={name} />
 
-      <SlackSection projectName={name} projectType={projectType} />
+      <SlackSection projectName={name} />
 
-      <TelegramSection projectName={name} projectType={projectType} />
+      <TelegramSection projectName={name} />
 
-      <TeamsSection projectName={name} projectType={projectType} />
+      <TeamsSection projectName={name} />
 
       <A2aSection projectName={name} />
 

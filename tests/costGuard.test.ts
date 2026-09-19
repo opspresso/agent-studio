@@ -10,12 +10,10 @@ import { openRun } from "@/application/run/runBracket";
 import { prepareSubagent } from "@/application/execution/agentBindings";
 import {
   executeAgent,
-  executeVersion,
-  executeVersionStream,
+  executeProject,
+  executeProjectStream,
   type ExecutionDeps,
 } from "@/application/execution/runProject";
-import { generateImage, type ImageGenerationDeps } from "@/application/image/generateImage";
-import { listModels } from "@/domain/llm/models";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 import type { CostLimits, Project, Version } from "@/domain/project/types";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
@@ -433,7 +431,7 @@ describe("every top-level entry point is guarded", () => {
       externalAgents: { get: reject, list: reject, put: reject, delete: reject },
       channel: { stream: reject },
       imageChannel: { generateImage: reject, editImage: reject },
-    } as unknown as ExecutionDeps & ImageGenerationDeps;
+    } as unknown as ExecutionDeps;
   }
 
   const blocked = project({ blockThresholdUsd: 10 });
@@ -442,9 +440,7 @@ describe("every top-level entry point is guarded", () => {
     versionName: "v1",
     systemPrompt: "",
     userPromptTemplate: "",
-    // An image-capable model, so `generateImage` reaches the guard rather than
-    // being turned away by its capability check first.
-    model: listModels().find((m) => m.capabilities.imageGeneration)?.id ?? "openai/gpt-image-2",
+    model: "openai/gpt-5-mini",
     parameters: { piiFiltering: false },
     mcpList: [],
     skillList: [],
@@ -452,14 +448,14 @@ describe("every top-level entry point is guarded", () => {
     createdAt: "2026-01-01T00:00:00Z",
   };
 
-  it("executeVersion refuses", async () => {
+  it("executeProject refuses", async () => {
     await expect(
-      executeVersion(blockedDeps(), { project: blocked, version }),
+      executeProject(blockedDeps(), { project: blocked, version, messages: [] }),
     ).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
-  it("executeVersionStream refuses before the first chunk", async () => {
-    const stream = executeVersionStream(blockedDeps(), { project: blocked, version });
+  it("executeProjectStream refuses before the first chunk", async () => {
+    const stream = executeProjectStream(blockedDeps(), { project: blocked, version, messages: [] });
     await expect(stream.next()).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
@@ -468,10 +464,11 @@ describe("every top-level entry point is guarded", () => {
     await expect(stream.next()).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
-  it("generateImage refuses", async () => {
-    await expect(
-      generateImage(blockedDeps(), { project: blocked, version, prompt: "a cat" }),
-    ).rejects.toBeInstanceOf(CostLimitExceededError);
+  it("guards an Agent that enables image tools before any image call", async () => {
+    await expect(executeProject(blockedDeps(), { project: blocked,
+      version: { ...version, parameters: { piiFiltering: false, imageGeneration: true } },
+      messages: [{ role: "user", content: "Draw a cat" }],
+    })).rejects.toBeInstanceOf(CostLimitExceededError);
   });
 
   it("a refused run records no usage and opens no trace", async () => {
@@ -479,8 +476,8 @@ describe("every top-level entry point is guarded", () => {
     const deps = blockedDeps();
     const traces: unknown[] = [];
     deps.traces = { put: async (t: unknown) => void traces.push(t) } as ExecutionDeps["traces"];
-    deps.traceSampleRate = 1;
-    await expect(executeVersion(deps, { project: blocked, version })).rejects.toBeInstanceOf(
+
+    await expect(executeProject(deps, { project: blocked, version, messages: [] })).rejects.toBeInstanceOf(
       CostLimitExceededError,
     );
     expect(traces).toHaveLength(0);
@@ -514,7 +511,7 @@ describe("a subagent transfer is guarded too", () => {
     const f = fixture({ day: row({ m: spentUsd }) });
     return {
       ...f.deps,
-      projects: { get: async () => ({ ...child, projectType: "llm", publishedVersion: "v1" }) },
+      projects: { get: async () => ({ ...child, projectType: "agent", publishedVersion: "v1" }) },
       versions: { get: async () => childVersion },
       channel: {
         stream: () => {

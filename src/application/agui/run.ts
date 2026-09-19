@@ -18,7 +18,6 @@ import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/ac
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
 import {
-  runStrategyFor,
   streamProjectRun,
   type ExecutionDeps,
 } from "@/application/execution/runProject";
@@ -71,13 +70,7 @@ export async function* streamAguiRun(
   request: AguiRunRequest,
 ): AsyncGenerator<AguiEvent> {
   const clientTools = request.input.tools.map(toChannelTool);
-  const toolsApply = runStrategyFor(request.project) === "agent";
-  const warnings =
-    !toolsApply && clientTools.length > 0
-      ? [
-          `${clientTools.length} application tool(s) were not offered: only an agent project can call tools, and "${request.project.name}" is a ${request.project.projectType} project.`,
-        ]
-      : [];
+  const warnings: string[] = [];
   // Documents are read here, before the run opens: an unreadable attachment
   // is a warning beside the answer, reported with the surface's own.
   const messages = await toEngineMessages(request.input.messages, request.input.context, request.input.state, {
@@ -98,7 +91,7 @@ export async function* streamAguiRun(
     actor: request.actor,
     ...(request.caller ? { caller: request.caller } : {}),
     ...(request.conversation ? { conversation: request.conversation } : {}),
-    ...(toolsApply && clientTools.length > 0 ? { clientTools } : {}),
+    ...(clientTools.length > 0 ? { clientTools } : {}),
     ...(request.signal ? { signal: request.signal } : {}),
   });
   yield* toAguiEvents(

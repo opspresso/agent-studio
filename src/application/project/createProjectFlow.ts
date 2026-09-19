@@ -18,7 +18,7 @@ import type { Project } from "@/domain/project/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { log } from "@/shared/logger";
 import { createProject, type CreateProjectInput } from "./projectUseCases";
-import { modelFitsProjectType } from "./modelCompatibility";
+import { modelFitsAgent } from "./modelCompatibility";
 import { createVersion, type VersionRefRepos } from "./versionUseCases";
 
 export interface CreateProjectFlowDeps {
@@ -42,11 +42,11 @@ export function composeCreateProjectWithInitialVersion(
   return async (input) => {
     const project = await createProject(deps.projects, input);
     const model = (await deps.offered())
-      .find((candidate) => modelFitsProjectType(input.projectType, candidate))?.id ?? null;
+      .find((candidate) => modelFitsAgent(candidate))?.id ?? null;
     if (model === null) {
       log.warn(
         "version",
-        `no offered model fits a ${input.projectType} project; "${input.name}" starts without a version`,
+        `no offered model fits an Agent; "${input.name}" starts without a version`,
       );
       return project;
     }

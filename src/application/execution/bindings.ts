@@ -1,4 +1,3 @@
-import { runStrategyFor } from "./deps";
 import { runtimeFingerprint } from "@/application/runtime/session";
 /** Resolving a version's skills, subagents and MCP tools for one run. */
 
@@ -111,7 +110,7 @@ export async function resolveSubagents(
         return {
           subagent: { name: ref.name, description: target.description ?? "", type: ref.type,
             signature: runtimeFingerprint("url" in target ? [target.name, target.url, target.protocol] : [target.name, target.projectType, version]),
-            kind: ref.type === "remote" || ("projectType" in target && runStrategyFor(target) === "image") ? "action" : "agent" },
+            kind: ref.type === "remote" ? "action" : "agent" },
         };
       },
     ),

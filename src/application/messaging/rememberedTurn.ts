@@ -70,7 +70,7 @@ export async function resolveAgentProject(
 ): Promise<{ project: Project; version: Version } | null> {
   const project = await deps.projects.get(projectName);
   const version = project ? await resolveRunnableVersion(deps.versions, project) : null;
-  if (!project || project.projectType !== "agent" || !version) {
+  if (!project || !version) {
     await reply.say(
       `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
     );

@@ -14,7 +14,7 @@ import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
 import { assertProjectWritable, userMayAccessProject } from "./projectUseCases";
-import { modelCompatibilityRejectReason } from "./modelCompatibility";
+import { agentModelRejectReason } from "./modelCompatibility";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { log } from "@/shared/logger";
 import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
@@ -52,38 +52,6 @@ function alreadyReferenced(existing?: VersionRefs) {
     skills: new Set(existing?.skillList ?? []),
     subagents: new Set((existing?.subagentList ?? []).map(subagentKey)),
   };
-}
-
-/**
- * Reject tool bindings on a project type that cannot run them. Only agent
- * projects run the tool loop — `executeProjectStream` sends every other type to
- * a single-shot completion that offers no tools — so a binding stored on one of
- * them is accepted, displayed, and then silently ignored at run time. Project
- * type is fixed at creation, so this can never become true later.
- */
-function assertToolBindingsRunnable(
-  project: Project,
-  next: VersionRefs,
-  existing?: VersionRefs,
-): void {
-  if (project.projectType === "agent") {
-    return;
-  }
-  const known = alreadyReferenced(existing);
-  const added = [
-    ...(next.mcpList ?? [])
-      .filter((binding) => !known.mcps.has(binding.name))
-      .map((binding) => `MCP server "${binding.name}"`),
-    ...(next.skillList ?? []).filter((name) => !known.skills.has(name)).map((name) => `skill "${name}"`),
-    ...(next.subagentList ?? [])
-      .filter((ref) => !known.subagents.has(subagentKey(ref)))
-      .map((ref) => `agent "${ref.name}"`),
-  ];
-  if (added.length > 0) {
-    throw new ValidationError(
-      `A "${project.projectType}" project does not run tools, so ${added.join(", ")} would never be used. Only agent projects can use MCP servers, skills and subagents.`,
-    );
-  }
 }
 
 /**
@@ -376,7 +344,7 @@ function assertProjectModelType(project: Project, model: string): void {
   if (!cfg) {
     return;
   }
-  const reason = modelCompatibilityRejectReason(project.projectType, cfg);
+  const reason = agentModelRejectReason(cfg);
   if (reason === "tools") {
     throw new ValidationError(
       `Model does not support tool calling required by agent projects: ${model}`,
@@ -457,7 +425,6 @@ export async function createVersion(
     assertProjectModelType(project, input.fallbackModel);
   }
   warnUnknownCatalogModel(projectName, input.model);
-  assertToolBindingsRunnable(project, input);
   assertUniqueReferences(input);
   await assertReferencesExist(refs, input);
   await assertSubagentProjectsAccessible(refs, input, userEmail);
@@ -517,7 +484,6 @@ export async function updateVersion(
     warnUnknownCatalogModel(projectName, input.model);
   }
   const existing = await getVersion(versions, projectName, versionName);
-  assertToolBindingsRunnable(project, input, existing);
   // Only the lists this update supplies; an omitted list keeps the stored one,
   // which its own write already checked.
   assertUniqueReferences(input);

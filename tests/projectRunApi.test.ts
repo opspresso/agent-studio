@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { predictImage, streamAgent, streamPredict } from "@/app/projects/lib/api";
+import { streamAgent, streamPredict } from "@/app/projects/lib/api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -15,15 +15,14 @@ describe("project run API", () => {
 
     await streamPredict("demo", "v1", {}, controller.signal);
     await streamAgent("demo", "v1", [], controller.signal);
-    await predictImage("demo", "v1", { prompt: "draw" }, controller.signal);
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const call of fetchMock.mock.calls) {
       expect(call[1]).toMatchObject({ signal: controller.signal });
     }
   });
 
-  it("sends playground documents on agent and prompt runs", async () => {
+  it("sends playground documents on both Agent endpoints", async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       Response.json({}),
     );

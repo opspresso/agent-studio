@@ -352,7 +352,6 @@ export const ko: Messages = {
   "catalog.resultCount": "전체 {total}개 중 {count}개",
   "catalog.noResults": "조건에 맞는 결과가 없습니다. 검색어를 바꾸거나 필터를 초기화해 보세요.",
   "projects.filter": "프로젝트 검색…",
-  "projects.allTypes": "모든 프로젝트 유형",
   "common.loading": "불러오는 중…",
   "common.cancel": "취소",
   "common.copy": "복사",
@@ -449,14 +448,12 @@ export const ko: Messages = {
   "guide.contents": "목차",
 
   "guide.start.title": "처음 시작하기",
-  "guide.start.body":
-    "Agent Studio는 프롬프트·에이전트·이미지 프로젝트를 위한 플랫폼이다. 이 가이드는 로그인 없이 읽을 수 있다. 대화를 시작하려면 로그인 후 Chats에서 기존 에이전트를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
+  "guide.start.body": "Agent Studio는 요청에 답하고 도구를 사용하는 Agent를 관리하는 플랫폼이다. 이 가이드는 로그인 없이 읽을 수 있다. 대화를 시작하려면 로그인 후 Chats에서 Agent를 선택하고, 직접 만들려면 아래 순서로 진행한다.",
   "guide.start.account": "1. 로그인과 권한 확인",
   "guide.start.accountBody":
     "조직에서 받은 접속 주소를 열고 화면에 표시된 방식으로 로그인한다. Profile에서 내 등급·사용량·한도를 확인한다. 새 계정은 보통 guest로 시작하므로 프로젝트 생성이 불가능하면 관리자에게 Members에서 등급 변경을 요청한다.",
   "guide.start.create": "2. 첫 프로젝트 만들기",
-  "guide.start.createBody":
-    "Projects에서 New project를 선택하고 식별자·표시 이름·유형을 입력한다. 프롬프트 템플릿을 시험하려면 llm, 대화형 도우미를 만들려면 agent를 선택한다. 도구를 연결하기 전에 답변의 적절성을 판단할 수 있는 짧은 작업부터 시작한다.",
+  "guide.start.createBody": "Projects에서 New project를 선택하고 식별자와 표시 이름을 입력한다. 도구를 연결하기 전에 답변의 적절성을 판단할 수 있는 짧은 작업부터 시작한다.",
   "guide.start.test": "3. 저장한 뒤 실행하고 확인하기",
   "guide.start.testBody":
     "Playground에서 사용 가능한 모델과 지시문을 설정한다. 버전을 저장한 뒤 시험 입력을 넣고 실행한다. 답변·경고·사용량·도구 활동을 확인한다. 실행은 저장된 버전을 사용하므로 편집만 하고 저장하지 않으면 이전 설정을 시험하게 된다.",
@@ -464,28 +461,21 @@ export const ko: Messages = {
   "guide.start.publishBody":
     "Versions에서 검증한 버전을 Publish한다. HTTP로 호출하려면 Integrations에서 프로젝트 토큰을 발급하고 API Reference의 예제를 따른다. Publish는 기본 버전을 지정하는 동작이며 별도 애플리케이션을 만들거나 설정을 고정하지 않는다.",
 
-  "guide.projects.title": "프로젝트 유형 선택",
-  "guide.projects.body":
-    "프로젝트는 하나의 식별자 아래 버전·공개 범위·연동·사용량을 묶는다. 버전에는 모델·프롬프트·사용 기능·실행 한도를 저장한다. 필요한 결과물과 작업 방식에 맞춰 유형을 선택한다.",
-  "guide.projects.llm": "llm: 프롬프트 템플릿",
-  "guide.projects.llmBody":
-    "요약·분류·문장 수정처럼 모델 응답 한 번으로 처리하는 작업에 사용한다. 사용자 프롬프트 템플릿에 {{topic}} 같은 변수를 넣고 실행할 때 값을 입력한다. 시스템 프롬프트에는 공통 지시를 작성한다. 도구를 호출하거나 도구 결과를 받아 반복 실행하지 않는다.",
-  "guide.projects.agent": "agent: 대화와 도구 실행",
+  "guide.projects.title": "Agent 설정",
+  "guide.projects.body": "모든 프로젝트는 Agent다. 버전에는 모델·시스템 프롬프트·역량·실행 한도를 저장하고, 공개 범위·연동·사용량은 프로젝트에서 관리한다.",
+  "guide.projects.agent": "대화와 도구 실행",
   "guide.projects.agentBody":
     "대화·검색·도구 호출·다른 에이전트에 대한 위임이 필요한 작업에 사용한다. 시스템 프롬프트에 역할·작업 범위·결과 형식을 쓰고 메시지로 작업을 전달한다. 모델이 제공된 도구의 사용 여부를 판단하므로 도구를 연결했다고 반드시 호출하는 것은 아니다.",
-  "guide.projects.image": "image: 이미지 생성과 편집",
-  "guide.projects.imageBody":
-    "이미지 생성 모델을 선택하고 원하는 그림을 설명한다. 원본 이미지를 첨부하면 편집하고, 첨부하지 않으면 새로 생성한다. 시스템 프롬프트로 공통 스타일을 지정할 수 있다. Playground에서 시험하고 predict API로 연동한다. Chats와 chat completions는 image 프로젝트를 실행하지 않는다.",
+  "guide.projects.image": "이미지 생성·편집 도구",
+  "guide.projects.imageBody": "이미지 도구를 켜고 이미지 모델을 선택한다. Agent에게 이미지를 생성하도록 요청하거나 원본을 첨부하고 편집을 요청한다. Playground·Chat·실행 API에서 같은 Agent를 사용한다.",
 
   "guide.versions.title": "버전 설정·배포",
   "guide.versions.body":
     "버전은 이름이 붙은 수정 가능한 설정이다. 시험용 버전은 Playground의 버전 선택에서 + New version을 고르면 현재 편집 내용이 복사되고 Save로 생성된다. 다른 호출자가 사용 중인 설정을 시험할 때 이 방식으로 별도 버전을 만든다.",
   "guide.versions.model": "모델과 대체 모델",
-  "guide.versions.modelBody":
-    "agent 프로젝트에는 tool calling, 그림을 읽는 작업에는 image input, image 프로젝트에는 image generation을 지원하는 모델을 선택한다. llm과 agent 프로젝트는 필요하면 대체 모델을 지정한다. 대체 모델도 요청에 필요한 기능을 지원해야 하며 이미지 입력을 지원하지 않는 모델로 그림을 읽게 할 수는 없다.",
+  "guide.versions.modelBody": "도구 호출을 지원하는 텍스트 모델을 선택한다. 그림을 읽는 작업에는 이미지 입력 지원도 필요하다. 필요하면 호환되는 대체 모델을 지정한다. 이미지 생성·편집은 별도로 설정한 이미지 도구 모델을 사용한다.",
   "guide.versions.prompt": "프롬프트 미리보기와 저장 구분",
-  "guide.versions.promptBody":
-    "Prompt preview에서 현재 편집 내용으로 조립한 프롬프트를 확인한다. 답변은 생성하지 않지만 요청을 입력하면 memory recall, MCP 서버 조회와 동적 검색의 embedding/rerank 서비스에 실제 요청을 보낼 수 있다. 실행 패널은 저장된 버전을 실행하므로 먼저 저장한다. agent는 사용자 메시지를 직접 받으며 llm의 템플릿 변수 방식으로 입력을 전달하지 않는다.",
+  "guide.versions.promptBody": "Prompt preview에서 현재 초안으로 조립한 프롬프트를 확인한다. 답변을 생성하지 않지만 Memory 회상과 역량 검색은 설정된 서비스에 요청할 수 있다. 실행 패널은 저장한 버전을 사용하고 작업은 메시지로 받으므로 실행 전에 저장한다.",
   "guide.versions.limits": "실행 범위와 한도 설정",
   "guide.versions.limitsBody": "작업에 맞게 최대 출력 토큰과 Agent 턴 수를 설정한다. 반복 억제는 선택한 모델이 지원할 때 쓰는 선택적 설정이다. 턴·출력 한도에 도달하면 일부 답변만 남을 수 있고 설치의 실행 시간 제한은 오류로 종료할 수 있다. 종료 이유와 경고를 확인한다. 추론 과정 기록은 표시 여부를 바꾸며 모델의 추론 자체를 켜거나 끄지는 않는다.",
   "guide.versions.publish": "Publish 이후 바뀌는 대상 확인",
@@ -789,8 +779,7 @@ export const ko: Messages = {
   "chat.generatedImage": "생성된 이미지",
   "chat.documentRead": "{note} 읽음",
 
-  "projects.lede":
-    "프롬프트·에이전트·이미지 프로젝트를 버전으로 다듬고, 하나를 배포해 호출자에게 제공합니다.",
+  "projects.lede": "Agent를 설정하고 도구를 연결해 요청을 실행한다.",
   "projects.new": "새 프로젝트",
   "projects.empty": "아직 프로젝트가 없습니다. 첫 프로젝트를 만들어 보세요.",
   "projects.loadFailed": "프로젝트를 불러오지 못했습니다",
@@ -807,10 +796,6 @@ export const ko: Messages = {
     "공개된 프로젝트가 로컬 서브에이전트로 바인딩될 때 상위 에이전트에게 표시되고 A2A Agent Card에도 실립니다. 어떤 요청을 받고 어떤 결과를 돌려주는지 쓰세요.",
   "projects.departmentCode": "부서 코드",
   "projects.departmentHint": "프로젝트 소유와 비용을 묶는 선택 코드입니다.",
-  "projects.type": "타입",
-  "projects.type.llm": "llm — 단발 프롬프트",
-  "projects.type.agent": "agent — 멀티턴 도구 루프",
-  "projects.type.image": "image — 이미지 생성·편집",
   "projects.privateBadge": "비공개",
   "projects.cloneFailed": "프로젝트 복제에 실패했습니다",
 

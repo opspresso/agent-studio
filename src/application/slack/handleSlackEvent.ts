@@ -393,7 +393,7 @@ export async function handleSlackEvent(
       : {}),
   };
   const reply = slackReplyChannel(deps, token, target);
-  if (!project || project.projectType !== "agent" || !version) {
+  if (!project || !version) {
     await reply.say(
       `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
     );

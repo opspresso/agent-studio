@@ -1,12 +1,6 @@
 /**
- * Keeping what a run produced.
- *
- * Every path that makes bytes — an image project, the GenerateImage/EditImage
- * builtins, an image subagent, an MCP tool returning a picture or a rendered
- * document — converges on the run's chunk stream, so that stream is where the
- * bytes are taken. Which is why this is wired at the run bracket rather than at
- * the image use case: `generateImage` is one of those four producers, and the
- * chat surface's images mostly are not it.
+ * Capture generated image and file bytes at the Agent run bracket. Builtins,
+ * MCP and delegated Agents share the same recorder and ownership context.
  */
 
 import type { Artifact } from "@/domain/artifact/types";

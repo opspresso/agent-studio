@@ -199,7 +199,7 @@ function AudioWorkspace({ name }: { name: string }) {
         <Select label={t("audio.writer")} clearable searchable value={writer} onChange={(writer) => {
           setWriter(writer); setWriterVersion(projects.some((p) => p.name === writer && p.publishedVersion) ? "published" : null);
         }} disabled={busy}
-          data={projects.filter((project) => project.ownerEmail === viewer?.email && project.projectType === "agent").map((project) => ({ value: project.name, label: project.displayName }))} />
+          data={projects.filter((project) => (project.ownerEmail === viewer?.email)).map((project) => ({ value: project.name, label: project.displayName }))} />
         <Select label={t("audio.writerVersion")} description={t("audio.writerVersionHint")} value={writerVersion} onChange={setWriterVersion} disabled={busy || !writer}
           data={[
             ...(projects.some((p) => p.name === writer && p.publishedVersion) ? [{ value: "published", label: t("audio.followPublished") }] : []),

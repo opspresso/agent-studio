@@ -9,21 +9,7 @@ import type { Project, Version } from "@/domain/project/types";
 import { buildPublicUrl } from "@/lib/public-url";
 
 const IMAGE_MODES = ["image/png", "image/jpeg", "image/webp"];
-const OUTPUT_MODES: Record<Project["projectType"], string[]> = {
-  llm: ["text/plain"],
-  image: IMAGE_MODES,
-  agent: ["text/plain", ...IMAGE_MODES],
-};
-/**
- * What a message to this agent may carry. A text or agent project runs a
- * model that may read a picture; an image project takes a prompt and,
- * beside it, the picture to edit.
- */
-const INPUT_MODES: Record<Project["projectType"], string[]> = {
-  llm: ["text/plain", ...IMAGE_MODES],
-  image: ["text/plain", ...IMAGE_MODES],
-  agent: ["text/plain", ...IMAGE_MODES],
-};
+const MODES = ["text/plain", ...IMAGE_MODES];
 /**
  * The credential the endpoint requires, declared where a client looks for
  * it. A client that attaches credentials from `securityRequirements` sent nothing
@@ -51,8 +37,8 @@ export async function buildAgentCard(project: Project, version: Version): Promis
     provider: undefined,
     version: version.versionName,
     capabilities: { streaming: true, pushNotifications: false, extensions: [] },
-    defaultInputModes: INPUT_MODES[project.projectType],
-    defaultOutputModes: OUTPUT_MODES[project.projectType],
+    defaultInputModes: MODES,
+    defaultOutputModes: MODES,
     securitySchemes: {
       [SECURITY_SCHEME]: {
         scheme: {
@@ -69,8 +55,8 @@ export async function buildAgentCard(project: Project, version: Version): Promis
         description: project.description,
         tags: ["agent-studio", project.projectType],
         examples: [],
-        inputModes: INPUT_MODES[project.projectType],
-        outputModes: OUTPUT_MODES[project.projectType],
+        inputModes: MODES,
+        outputModes: MODES,
         securityRequirements,
       },
     ],

@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
-import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
+import type { EngineChunk } from "../../lib/api";
+import { readSse, streamAgent } from "../../lib/api";
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
-import { findTemplateVariables } from "@/shared/template";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { useImageViewer } from "@/app/_components/ImageViewer";
@@ -38,11 +37,9 @@ import {
   Image,
   Input,
   Paper,
-  Select,
   Stack,
   Text,
   Textarea,
-  TextInput,
   UnstyledButton,
 } from "@mantine/core";
 import { BADGE, SUBAGENT_COLOR } from "@/app/_components/badgeColors";
@@ -72,24 +69,13 @@ function toolCallView(raw: unknown, chunk: EngineChunk): ToolCallView {
 export function RunPanel({
   projectName,
   versionName,
-  projectType,
-  userPromptTemplate,
   modelAcceptsImages,
 }: {
   projectName: string;
   versionName: string | null;
-  projectType: ProjectType;
-  userPromptTemplate: string;
   /** From the model registry; `undefined` when the model is not in the catalog. */
   modelAcceptsImages?: boolean;
 }) {
-  // Only the user prompt template is rendered with variables — a {{var}} in
-  // the system prompt reaches the model as literal text, so it gets no field.
-  const varNames = useMemo(
-    () => [...findTemplateVariables(userPromptTemplate)],
-    [userPromptTemplate],
-  );
-  const [variables, setVariables] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
 
   const [running, setRunning] = useState(false);
@@ -111,7 +97,6 @@ export function RunPanel({
   // the one that stayed silent.
   const [warnings, setWarnings] = useState<string[]>([]);
   const [cost, setCost] = useState<number | null>(null);
-  const [image, setImage] = useState<ImageResult | null>(null);
   const [agentImages, setAgentImages] = useState<
     Array<{ b64: string; mimeType: string; prompt?: string }>
   >([]);
@@ -120,8 +105,6 @@ export function RunPanel({
   const [agentFiles, setAgentFiles] = useState<
     Array<{ name: string; byteSize?: number; url?: string }>
   >([]);
-  const [size, setSize] = useState("1024x1024");
-  const [quality, setQuality] = useState("medium");
   const activeRequest = useRef<AbortController | null>(null);
   const {
     attachments,
@@ -131,23 +114,17 @@ export function RunPanel({
     addFiles,
     removeAt,
     removeDocumentAt,
-  } = useAttachments({ documents: projectType !== "image" });
+  } = useAttachments({ documents: true });
   const t = useT();
   const view = useImageViewer();
 
-  const needsMessage = projectType === "agent" || projectType === "image";
   // An image-only turn is a legitimate run: "what is in this picture?" needs no words.
   const canRun =
     versionName !== null &&
     !running &&
     !reading &&
-    (!needsMessage || message.trim() !== "" || attachments.length > 0 || documents.length > 0);
-  const attachHint =
-    projectType === "image"
-      ? attachments.length > 0
-        ? t("run.attachHintEdits")
-        : t("run.attachHintGenerate")
-      : t("run.attachHintLook");
+    (message.trim() !== "" || attachments.length > 0 || documents.length > 0);
+  const attachHint = t("run.attachHintLook");
 
   useEffect(
     () => () => {
@@ -184,75 +161,28 @@ export function RunPanel({
     setError(null);
     setWarnings([]);
     setCost(null);
-    setImage(null);
     setAgentImages([]);
     setAgentFiles([]);
     let totalCost = 0;
 
     try {
-      if (projectType === "image") {
-        const result = await predictImage(
-          projectName,
-          versionName,
-          {
-            prompt: message,
-            size,
-            quality,
-            images: toRequestImages(attachments),
-          },
-          controller.signal,
-        );
-        if (!isCurrent()) {
-          return;
-        }
-        setImage(result);
-        setCost(result.usage.costUsd);
-        // A picture that was drawn and not kept is a loss like any other, and
-        // this panel is the one surface that had nowhere to put it: the
-        // streaming paths yield it as a `warning` chunk.
-        if (result.warning) {
-          setWarnings([result.warning]);
-        }
-        return;
-      }
+
       const imageParts = toRequestImages(attachments).map((image) => ({
         type: "image_url" as const,
         image_url: { url: imageDataUrl(image) },
       }));
-      const res =
-        projectType === "agent"
-          ? await streamAgent(
-              projectName,
-              versionName,
-              [
-                {
-                  role: "user",
-                  content:
-                    imageParts.length > 0
-                      ? [
-                          ...(message ? [{ type: "text" as const, text: message }] : []),
-                          ...imageParts,
-                        ]
-                      : message,
-                },
-              ],
-              controller.signal,
-              documents,
-            )
-          : await streamPredict(
-              projectName,
-              versionName,
-              {
-                variables,
-                documents,
-                // The prompt itself comes from the template; an attachment rides
-                // along as an extra user turn for the model to look at.
-                ...(imageParts.length > 0
-                  ? { messages: [{ role: "user", content: imageParts }] }
-                  : {}),
-              },
-              controller.signal,
-            );
+      const res = await streamAgent(
+        projectName,
+        versionName,
+        [{
+          role: "user",
+          content: imageParts.length > 0
+            ? [...(message ? [{ type: "text" as const, text: message }] : []), ...imageParts]
+            : message,
+        }],
+        controller.signal,
+        documents,
+      );
 
       for await (const chunk of readSse(res) as AsyncGenerator<EngineChunk>) {
         if (!isCurrent()) {
@@ -382,61 +312,19 @@ export function RunPanel({
         </Text>
       )}
 
-      {needsMessage ? (
-        <Textarea
-          label={
-            projectType === "image"
-              ? attachments.length > 0
-                ? t("run.editLabel")
-                : t("run.imagePromptLabel")
-              : t("run.messageLabel")
-          }
-          value={message}
-          onChange={(e) => setMessage(e.currentTarget.value)}
-          onPaste={onPaste}
-          autosize
-          minRows={4}
-          maxRows={16}
-          placeholder={
-            projectType === "image"
-              ? attachments.length > 0
-                ? t("run.editPlaceholder")
-                : t("run.generatePlaceholder")
-              : t("run.askPlaceholder")
-          }
-        />
-      ) : varNames.length > 0 ? (
-        <Input.Wrapper label={t("run.variables")} labelElement="div">
-          <Stack gap="xs" mt={4}>
-            {varNames.map((name) => (
-              <TextInput
-                key={name}
-                value={variables[name] ?? ""}
-                onChange={(e) => {
-                  // Captured here: React nulls `currentTarget` when the handler
-                  // returns, and the updater below runs on the next render.
-                  const value = e.currentTarget.value;
-                  setVariables((prev) => ({ ...prev, [name]: value }));
-                }}
-                leftSectionWidth={132}
-                leftSectionPointerEvents="none"
-                leftSection={
-                  <Text fz="xs" ff="monospace" c="dimmed" truncate px="xs">
-                    {name}
-                  </Text>
-                }
-              />
-            ))}
-          </Stack>
-        </Input.Wrapper>
-      ) : (
-        <Text fz="xs" c="dimmed">
-          {t("run.noVariables")}
-        </Text>
-      )}
+      <Textarea
+        label={t("run.messageLabel")}
+        value={message}
+        onChange={(e) => setMessage(e.currentTarget.value)}
+        onPaste={onPaste}
+        autosize
+        minRows={4}
+        maxRows={16}
+        placeholder={t("run.askPlaceholder")}
+      />
 
       <Input.Wrapper
-        label={projectType === "image" ? t("run.sourceImages") : t("run.images")}
+        label={t("run.images")}
         labelElement="div"
         description={attachHint}
         inputWrapperOrder={["label", "description", "input"]}
@@ -453,35 +341,16 @@ export function RunPanel({
             <AttachButton
               onPick={(files) => void addFiles(files)}
               disabled={running}
-              documents={projectType !== "image"}
+              documents
             />
           </Group>
           {modelAcceptsImages === false && attachments.length > 0 && (
             <Text fz="xs" c="red">
-              {projectType === "image" ? t("run.cannotEdit") : t("run.noImageInput")}
+              {t("run.noImageInput")}
             </Text>
           )}
         </Stack>
       </Input.Wrapper>
-
-      {projectType === "image" && (
-        <Group gap="sm" align="flex-end">
-          <Select
-            label={t("run.size")}
-            value={size}
-            onChange={(value) => setSize(value ?? "1024x1024")}
-            allowDeselect={false}
-            data={["1024x1024", "1536x1024", "1024x1536"]}
-          />
-          <Select
-            label={t("run.quality")}
-            value={quality}
-            onChange={(value) => setQuality(value ?? "medium")}
-            allowDeselect={false}
-            data={["low", "medium", "high"]}
-          />
-        </Group>
-      )}
 
       <Group>
         <Button onClick={run} loading={running || reading} disabled={!canRun}>
@@ -552,42 +421,13 @@ export function RunPanel({
         streaming={running && text === "" && reasoning !== ""}
       />
 
-      {projectType === "image" ? (
-        <Paper withBorder p="sm" mih={96}>
-          {image ? (
-            <UnstyledButton
-              type="button"
-              aria-label={t("chat.generatedImage")}
-              w="100%"
-              onClick={() =>
-                view({
-                  src: imageDataUrl({ b64: image.imageBase64, mimeType: image.mimeType }),
-                  alt: t("chat.generatedImage"),
-                })
-              }
-              style={{ cursor: "zoom-in" }}
-            >
-              <Image
-                src={imageDataUrl({ b64: image.imageBase64, mimeType: image.mimeType })}
-                alt={t("chat.generatedImage")}
-                radius="sm"
-              />
-            </UnstyledButton>
-          ) : (
-            <Text fz="sm" c="dimmed">
-              {running ? t("run.generating") : t("run.imageWillAppear")}
-            </Text>
-          )}
-        </Paper>
-      ) : (
-        <Paper withBorder p="sm" mih={96} style={{ whiteSpace: "pre-wrap" }}>
-          {text || (
-            <Text fz="sm" c="dimmed">
-              {t("run.outputWillStream")}
-            </Text>
-          )}
-        </Paper>
-      )}
+      <Paper withBorder p="sm" mih={96} style={{ whiteSpace: "pre-wrap" }}>
+        {text || (
+          <Text fz="sm" c="dimmed">
+            {t("run.outputWillStream")}
+          </Text>
+        )}
+      </Paper>
 
       {agentImages.map((img, i) => (
         <UnstyledButton

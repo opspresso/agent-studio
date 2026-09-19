@@ -12,9 +12,6 @@ export async function resolveAudioPostprocessor(
   email: string,
 ) {
   const project = await authorize(reference.projectName, email);
-  if (project.projectType !== "agent") {
-    throw new ValidationError(`Postprocessing requires an Agent project: ${project.name}`);
-  }
   const version = await versions.get(project.name, reference.versionName);
   if (!version) {
     throw new ValidationError(`Postprocessing version "${project.name}/${reference.versionName}" was not found. Select an existing version or "published".`);

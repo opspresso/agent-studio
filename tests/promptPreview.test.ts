@@ -313,91 +313,12 @@ describe("previewPrompt", () => {
     expect(preview.warnings.some((w) => w.includes("user prompt template"))).toBe(true);
   });
 
-  it("renders a prompt project's template with its variables", async () => {
-    const deps = executionDepsFixture(new FakeChannel([]));
-
-    const preview = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "llm" },
-      version: {
-        ...versionFixture(),
-        systemPrompt: "You summarize.",
-        userPromptTemplate: "Summarize {{topic}} in one line.",
-      },
-      variables: { topic: "otters" },
-    });
-
-    expect(preview.messages).toEqual([
-      { role: "system", content: `You summarize.\n\n---\n\n${CLOCK_LINE}` },
-      { role: "user", content: "Summarize otters in one line." },
-    ]);
-    expect(preview.toolNames).toEqual([]);
-  });
-
-  it("names the caller in a prompt project's preview, on the version's opt-in", async () => {
-    // The agent branch went through `assembleAgentRun` and carried the block;
-    // this one built its messages itself and never asked, so a prompt project
-    // that opted into `callerContext` previewed anonymously while a run of the
-    // same version named the person.
-    const deps = executionDepsFixture(new FakeChannel([]));
-    const version: Version = {
-      ...versionFixture(),
-      systemPrompt: "You summarize.",
-      userPromptTemplate: "Summarize.",
-    };
-
-    const withOptIn = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "llm" },
-      version: { ...version, parameters: { piiFiltering: false, callerContext: true } },
-      caller: { displayName: "Bruce" },
-    });
-    const without = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "llm" },
-      version,
-      caller: { displayName: "Bruce" },
-    });
-
-    expect(withOptIn.messages[0]?.content).toContain("You are answering Bruce.");
-    // The gate is the version's, not the surface's: a caller resolved by a page
-    // must not reach a version that never asked for one.
-    expect(without.messages[0]?.content).not.toContain("Bruce");
-  });
-
-  it("previews an image project's rendered prompt, which is all it sends", async () => {
-    const deps = executionDepsFixture(new FakeChannel([]));
-
-    const preview = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "image" },
-      version: { ...versionFixture(), userPromptTemplate: "A {{animal}} in watercolour" },
-      variables: { animal: "otter" },
-    });
-
-    expect(preview.messages).toEqual([
-      { role: "user", content: "You are helpful.\n\nA otter in watercolour" },
-    ]);
-  });
-
-  it("says PII filtering does not apply to an image run, instead of claiming it does", async () => {
-    const deps = executionDepsFixture(new FakeChannel([]));
-
-    const preview = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "image" },
-      version: {
-        ...versionFixture(),
-        userPromptTemplate: "A heron",
-        parameters: { piiFiltering: true },
-      },
-    });
-
-    expect(preview.warnings).toEqual([
-      "PII filtering does not apply to an image run — the prompt reaches the provider unmasked.",
-    ]);
-  });
 
   it("says so when PII filtering will rewrite what is sent", async () => {
     const deps = executionDepsFixture(new FakeChannel([]));
 
     const preview = await previewPrompt(deps, {
-      project: { ...projectFixture(), projectType: "llm" },
+      project: { ...projectFixture(), projectType: "agent" },
       version: { ...versionFixture(), parameters: { piiFiltering: true } },
     });
 

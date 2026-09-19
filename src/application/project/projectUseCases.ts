@@ -40,7 +40,7 @@ export interface CreateProjectInput {
   name: string;
   displayName: string;
   description: string;
-  projectType: ProjectType;
+  projectType?: ProjectType;
   ownerEmail: string;
   departmentCode?: string;
   /**
@@ -272,7 +272,7 @@ export async function createProject(
     name: input.name,
     displayName: input.displayName,
     description: input.description,
-    projectType: input.projectType,
+    projectType: "agent",
     ownerEmail: input.ownerEmail,
     departmentCode: input.departmentCode,
     ...(input.visibility ? { visibility: input.visibility } : {}),

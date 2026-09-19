@@ -14,7 +14,7 @@ const INPUT: CreateProjectInput = {
   name: "my-bot",
   displayName: "My Bot",
   description: "",
-  projectType: "llm",
+  projectType: "agent",
   ownerEmail: "owner@example.com",
 };
 
@@ -93,23 +93,12 @@ describe("createProjectWithInitialVersion", () => {
     });
   });
 
-  it("starts an image project on an image-capable model", async () => {
-    const repos = makeRepos();
-    const flow = makeFlow(repos, async () => [
-      config("openai/gpt-5-mini"),
-      config("openai/gpt-image-2"),
-    ]);
-
-    await flow({ ...INPUT, projectType: "image" });
-
-    expect(repos.versions[0]?.model).toBe("openai/gpt-image-2");
-  });
 
   it("creates only the project when nothing offered fits", async () => {
     const repos = makeRepos();
-    const flow = makeFlow(repos, async () => [config("openai/gpt-5-mini")]);
+    const flow = makeFlow(repos, async () => [config("openai/gpt-image-2")]);
 
-    const project = await flow({ ...INPUT, projectType: "image" });
+    const project = await flow(INPUT);
 
     expect(project.name).toBe("my-bot");
     expect(repos.versions).toHaveLength(0);
@@ -136,7 +125,7 @@ describe("createProjectWithInitialVersion", () => {
       name: "taken",
       displayName: "Taken",
       description: "",
-      projectType: "llm",
+      projectType: "agent",
       ownerEmail: "owner@example.com",
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",

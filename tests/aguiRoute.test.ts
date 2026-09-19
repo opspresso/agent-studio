@@ -173,26 +173,6 @@ describe("POST /api/agui/[name]", () => {
     });
   });
 
-  it("reports the application's tools as not offered on a project that cannot call them", async () => {
-    projectRepo.get.mockResolvedValue({
-      name: "proj",
-      projectType: "llm",
-      ownerEmail: "owner@example.com",
-      publishedVersion: "1",
-    });
-    const tools = [{ name: "showMap", description: "Show a map" }];
-    const events = await frames(await POST(req({ ...input, tools }), ctx));
-    expect(runs[0]).not.toHaveProperty("clientTools");
-    expect(events[1]).toEqual({
-      type: "CUSTOM",
-      name: "agent-studio.warning",
-      value: {
-        message:
-          '1 application tool(s) were not offered: only an agent project can call tools, and "proj" is a llm project.',
-      },
-    });
-  });
-
   it("refuses a tool name a provider would reject", async () => {
     const response = await POST(req({ ...input, tools: [{ name: "show map", description: "" }] }), ctx);
     expect(response.status).toBe(400);

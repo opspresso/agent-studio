@@ -24,7 +24,7 @@ export const createProjectSchema = z.object({
   name: projectNameSchema,
   displayName: z.string().min(1),
   description: z.string().default(""),
-  projectType: z.enum(["llm", "agent", "image"]),
+  projectType: z.literal("agent").default("agent"),
   departmentCode: z.string().max(64).optional(),
 });
 

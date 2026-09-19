@@ -69,9 +69,6 @@ export async function createChat(
   if (!(await userMayAccessProject(project, input.userEmail))) {
     throw new ChatForbiddenError(`project "${project.name}" is private`);
   }
-  if (project.projectType !== "agent") {
-    throw new ChatValidationError("chat requires an agent project");
-  }
 
   const version = await resolveVersion(deps, project);
   if (!version) {

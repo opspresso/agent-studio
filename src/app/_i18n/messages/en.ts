@@ -380,7 +380,6 @@ export const en = {
   "catalog.resultCount": "{count} of {total} results",
   "catalog.noResults": "No matches found. Try another search or reset your filters.",
   "projects.filter": "Search projects…",
-  "projects.allTypes": "All project types",
   "common.loading": "Loading…",
   "common.cancel": "Cancel",
   "common.copy": "Copy",
@@ -491,14 +490,12 @@ export const en = {
   "guide.contents": "Contents",
 
   "guide.start.title": "Start here",
-  "guide.start.body":
-    "Agent Studio is a platform for prompt, agent, and image projects. Read this guide without signing in. To start a conversation, sign in and choose an existing agent in Chats; to build your own, follow the steps below.",
+  "guide.start.body": "Agent Studio manages Agents that answer requests and use tools. Read this guide without signing in. To start a conversation, sign in and choose an Agent in Chats; to build your own, follow the steps below.",
   "guide.start.account": "1. Sign in and check your access",
   "guide.start.accountBody":
     "Open the address provided by your organization and use the sign-in method shown. Profile shows your tier, usage, and limits. New accounts normally start as guest; if project creation is unavailable, ask an administrator to change your tier in Members.",
   "guide.start.create": "2. Create a small first project",
-  "guide.start.createBody":
-    "In Projects, choose New project, enter an identifier and display name, and choose a type. For a first test, use llm for a prompt template or agent for a conversational assistant. Start with a short task whose expected answer you can judge before adding tools.",
+  "guide.start.createBody": "In Projects, choose New project and enter an identifier and display name. Start with a short task whose expected answer you can judge before adding tools.",
   "guide.start.test": "3. Save, run, and inspect",
   "guide.start.testBody":
     "In Playground, select an available model and write the instructions. Save the version, enter a test input, and run it. Check the answer, warnings, usage, and tool activity. Run uses the saved version, so editing without saving does not test your new settings.",
@@ -506,28 +503,21 @@ export const en = {
   "guide.start.publishBody":
     "Publish the tested version from Versions. For an HTTP caller, issue a project token in Integrations and follow API Reference. Publishing selects a default version; it does not create a separate application or freeze the configuration.",
 
-  "guide.projects.title": "Choose the project type",
-  "guide.projects.body":
-    "A project groups versions, visibility, integrations, and usage under one identifier. A version holds the model, prompts, capabilities, and execution limits. Choose the type for the output and workflow you need.",
-  "guide.projects.llm": "llm: a prompt template",
-  "guide.projects.llmBody":
-    "Use llm for summarization, classification, or rewriting in one model response. Put placeholders such as {{topic}} in the user prompt template and supply their values when running it. A system prompt sets the standing instructions. This type does not call tools or continue a tool loop.",
-  "guide.projects.agent": "agent: conversation and tools",
+  "guide.projects.title": "Configure an Agent",
+  "guide.projects.body": "Each project is an Agent. Its versions hold the model, system prompt, capabilities, and execution limits. Visibility, integrations, and usage belong to the project.",
+  "guide.projects.agent": "Conversation and tools",
   "guide.projects.agentBody":
     "Use agent when a task requires conversation, searches, tool calls, or delegation. Write its role, task boundaries, and expected output in the system prompt, then send the task as a message. The model chooses whether to use the tools made available to it; enabling a tool does not guarantee a call.",
-  "guide.projects.image": "image: generation and editing",
-  "guide.projects.imageBody":
-    "Select an image generation model and describe the desired picture. Attach source images to edit them; without source images, the project generates a new picture. The system prompt supplies a recurring style. Test in Playground, and call the predict API for integration. Chats and chat completions do not run image projects.",
+  "guide.projects.image": "Image generation and editing tools",
+  "guide.projects.imageBody": "Enable image tools and select an image model. Ask the Agent to generate an image, or attach a picture and request an edit. The same Agent can handle these requests in Playground, Chat, and execution APIs.",
 
   "guide.versions.title": "Configure and publish versions",
   "guide.versions.body":
     "Treat a version as a named, editable configuration. For an experiment, choose + New version in Playground's version selector: it copies the current editor contents, and Save creates the new version. Use this path when callers already depend on the current configuration.",
   "guide.versions.model": "Model and fallback",
-  "guide.versions.modelBody":
-    "Select a model that supports the task: tool calling for agent projects, image input for reading pictures, or image generation for an image project. For llm and agent projects, configure a fallback model if needed. A fallback still needs the capabilities required by the request; it cannot make an incompatible model read an image.",
+  "guide.versions.modelBody": "Select a text model with tool calling support. Reading pictures also requires image input. Configure a compatible fallback if needed. Image generation and editing use the separately configured image tool model.",
   "guide.versions.prompt": "Preview and save are different",
-  "guide.versions.promptBody":
-    "Use Prompt preview to inspect the prompt assembled from the current draft. It does not generate an answer, but a supplied request can call memory recall, contact MCP servers, and call embedding/rerank services for dynamic discovery. Save before using the run panel: its request executes the saved version. An agent receives user messages directly; llm template variables are not an agent input mechanism.",
+  "guide.versions.promptBody": "Use Prompt preview to inspect the prompt assembled from the current draft. It does not generate an answer, but memory recall and capability discovery can contact the configured services. Save before running: the execution panel uses the saved version and takes your task as a message.",
   "guide.versions.limits": "Control run size",
   "guide.versions.limitsBody":
     "Set output length and agent turn limits to match the task. Presence penalty is an optional control for repeated tokens when the selected model supports it. Turn and output limits can leave a partial answer; a deployment deadline can stop the run with an error. Read completion reasons and warnings. Reasoning trace controls displayed reasoning, not whether the model reasons.",
@@ -844,8 +834,7 @@ export const en = {
   // for a fetch that never reached a server. A message the server *did* send
   // arrives on the `Error` and is shown as written — English, per the rule at
   // the top of this file.
-  "projects.lede":
-    "Prompt, agent, and image projects — iterate in versions, publish one for callers.",
+  "projects.lede": "Configure Agents, connect their tools, and run requests.",
   "projects.new": "New project",
   "projects.empty": "No projects yet. Create your first one.",
   "projects.loadFailed": "Failed to load projects",
@@ -862,10 +851,6 @@ export const en = {
     "Shown to parent agents when this published project is bound as a local subagent, and published in its A2A Agent Card. State which requests it should receive and what result it returns.",
   "projects.departmentCode": "Department code",
   "projects.departmentHint": "Optional code for grouping project ownership and costs.",
-  "projects.type": "Type",
-  "projects.type.llm": "llm — single-shot prompt",
-  "projects.type.agent": "agent — multi-turn tool loop",
-  "projects.type.image": "image — generate or edit images",
   "projects.privateBadge": "Private",
   "projects.cloneFailed": "Failed to clone project",
 

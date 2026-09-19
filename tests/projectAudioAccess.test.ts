@@ -14,8 +14,7 @@ describe("audio page availability", () => {
     expect(projectHasAudioTools({ projectType: "agent" }, versions)).toBe(true);
     expect(projectHasAudioTools({ projectType: "agent" }, [...versions, version("newest", false, "2026-01-03")])).toBe(false);
   });
-  it("hides audio for non-agents, missing versions and broken publication pointers", () => {
-    expect(projectHasAudioTools({ projectType: "llm" }, [version("1", true, "2026-01-01")])).toBe(false);
+  it("hides audio for missing versions and broken publication pointers", () => {
     expect(projectHasAudioTools({ projectType: "agent" }, [])).toBe(false);
     expect(projectHasAudioTools({ projectType: "agent", publishedVersion: "missing" }, [version("1", true, "2026-01-01")])).toBe(false);
   });

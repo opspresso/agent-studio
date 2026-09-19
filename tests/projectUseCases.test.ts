@@ -84,7 +84,7 @@ function projectFixture(name: string, overrides: Partial<Project> = {}): Project
     name,
     displayName: name,
     description: "",
-    projectType: "llm",
+    projectType: "agent",
     ownerEmail: "owner@x.com",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -360,61 +360,6 @@ describe("createVersion naming", () => {
   });
 });
 
-describe("tool bindings on a project type that cannot run them", () => {
-  // Only agent projects run the tool loop; every other type is dispatched to a
-  // single-shot completion. A binding stored on one of those would be
-  // accepted, shown in the editor, and then silently ignored at run time.
-  it("rejects an MCP server, skill or subagent added to a non-agent project", async () => {
-    for (const input of [
-      { mcpList: [{ name: "real-mcp" }] },
-      { skillList: ["real-skill"] },
-      { subagentList: [{ name: "real-project", type: "local" as const }] },
-    ]) {
-      await expect(
-        createVersion(
-          makeVersionRepo(),
-          makeProjectRepo([projectFixture("p", { projectType: "llm" })]),
-          "p",
-          { ...versionInput(), ...input },
-          OWNER,
-        ),
-      ).rejects.toThrow(/does not run tools/);
-    }
-  });
-
-  it("still lets an existing binding be edited away", async () => {
-    // A version stored before the rule must stay saveable, or the dead
-    // configuration can never be removed.
-    const existing = {
-      ...versionFixture("p", "1"),
-      mcpList: [{ name: "legacy-mcp" }],
-      skillList: ["legacy-skill"],
-    };
-    const updated = await updateVersion(
-      makeVersionRepo([existing]),
-      makeProjectRepo([projectFixture("p", { projectType: "llm" })]),
-      "p",
-      "1",
-      { mcpList: [{ name: "legacy-mcp" }], skillList: [] },
-      OWNER,
-    );
-
-    expect(updated.skillList).toEqual([]);
-    expect(updated.mcpList).toEqual([{ name: "legacy-mcp" }]);
-  });
-
-  it("accepts them on an agent project", async () => {
-    const created = await createVersion(
-      makeVersionRepo(),
-      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
-      "p",
-      { ...versionInput(), skillList: ["real-skill"] },
-      OWNER,
-    );
-
-    expect(created.skillList).toEqual(["real-skill"]);
-  });
-});
 
 describe("model type validation", () => {
   const embedding = "openrouter/text-embedding-3-small";
@@ -428,7 +373,7 @@ describe("model type validation", () => {
         { ...versionInput(), model: embedding },
         OWNER,
       ),
-    ).rejects.toThrow(/Model type does not support llm projects/);
+    ).rejects.toThrow(/Model type does not support agent projects/);
   });
 
   it("rejects an embedding model as the fallback model", async () => {
@@ -440,20 +385,9 @@ describe("model type validation", () => {
         { ...versionInput(), fallbackModel: embedding },
         OWNER,
       ),
-    ).rejects.toThrow(/Model type does not support llm projects/);
+    ).rejects.toThrow(/Model type does not support agent projects/);
   });
 
-  it("requires an image model for an image project", async () => {
-    await expect(
-      createVersion(
-        makeVersionRepo(),
-        makeProjectRepo([projectFixture("p", { projectType: "image" })]),
-        "p",
-        versionInput(),
-        OWNER,
-      ),
-    ).rejects.toThrow(/Model type does not support image projects/);
-  });
 
   it("reports a text model without tools as an agent capability mismatch", async () => {
     await expect(
@@ -1242,7 +1176,7 @@ describe("createProject race", () => {
         name: "p",
         displayName: "P",
         description: "",
-        projectType: "llm",
+        projectType: "agent",
         ownerEmail: OWNER,
       }),
     ).rejects.toBeInstanceOf(ConflictError);

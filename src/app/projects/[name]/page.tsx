@@ -35,15 +35,12 @@ import classes from "./Playground.module.css";
 function runImageCapability(
   models: SelectableModel[],
   modelId: string,
-  projectType: SanitizedProject["projectType"],
 ): boolean | undefined {
   const model = models.find((m) => m.id === modelId);
   if (!model) {
     return undefined;
   }
-  return projectType === "image"
-    ? Boolean(model.capabilities.imageGeneration)
-    : model.capabilities.imageInput;
+  return model.capabilities.imageInput;
 }
 
 /** How long "Saved" stays up. Longer than the copy buttons' flash, because it
@@ -343,9 +340,8 @@ export default function PlaygroundPage() {
               key={`${name}/${selectedName || "unsaved"}`}
               projectName={project.name}
               versionName={selectedName || undefined}
-              projectType={project.projectType}
               models={models.filter((m) =>
-                modelType(m) === (project.projectType === "image" ? "image" : "text"),
+                modelType(m) === "text",
               )}
               imageModels={models.filter((m) => modelType(m) === "image")}
               value={draft}
@@ -372,7 +368,6 @@ export default function PlaygroundPage() {
             <CollapsibleSection title={t("playground.preview")}>
               <PromptPreview
                 projectName={name}
-                projectType={project.projectType}
                 draft={validatedDraft ?? draft}
                 validationError={schemaError}
                 versionName={selectedName || null}
@@ -389,9 +384,7 @@ export default function PlaygroundPage() {
               key={`${name}/${selectedName || "unsaved"}`}
               projectName={name}
               versionName={dirty && selectedName === "" ? null : selectedName || null}
-              projectType={project.projectType}
-              userPromptTemplate={draft.userPromptTemplate}
-              modelAcceptsImages={runImageCapability(models, draft.model, project.projectType)}
+              modelAcceptsImages={runImageCapability(models, draft.model)}
             />
           </CollapsibleSection>
         </Stack>

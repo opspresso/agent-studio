@@ -256,7 +256,7 @@ const USAGE_FIELDS: FieldSpec[] = [
 ];
 
 export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
-  const { projectName, projectType, publishedVersion, origin, a2a, slack, telegram, teams, webhook } = ctx;
+  const { projectName, publishedVersion, origin, a2a, slack, telegram, teams, webhook } = ctx;
   const abs = (path: string): string => `${origin}${path}`;
   const endpoints: ApiEndpoint[] = [];
 
@@ -264,45 +264,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
   if (publishedVersion) {
     const versionBase = `/api/projects/${projectName}/versions/${publishedVersion}`;
 
-    if (projectType === "image") {
-      const path = `${versionBase}/predict`;
-      const body = { prompt: "a sea otter floating on its back", size: "1024x1024" };
-      endpoints.push({
-        id: "predict-image",
-        method: "POST",
-        path,
-        title: "Generate image",
-        description:
-          "Single-shot image run against the published version — draws from the prompt, or edits the attached source images when images is present. The version's system prompt is prepended to the prompt as its persistent style.",
-        auth: "token",
-        streaming: false,
-        requestFields: [
-          { name: "prompt", type: "string", required: true, description: "Image generation prompt." },
-          {
-            name: "images",
-            type: "array",
-            description:
-              "Source images to edit, up to 4 of { b64, mimeType }. Present means edit, absent means draw.",
-          },
-          { name: "size", type: "string", description: "Requested dimensions, e.g. 1024x1024." },
-          { name: "quality", type: "string", description: "Provider-specific quality hint." },
-        ],
-        responseFields: [
-          { name: "imageBase64", type: "string", description: "Base64-encoded image bytes." },
-          { name: "mimeType", type: "string", description: "Image MIME type, e.g. image/png." },
-          { name: "model", type: "string", description: "Image model that served the call." },
-          { name: "usage", type: "object", description: "Token counts and cost.", children: USAGE_FIELDS },
-        ],
-        responseExample: pretty({
-          imageBase64: "<base64>",
-          mimeType: "image/png",
-          model: "openai/gpt-image-1",
-          usage: { inputTokens: 12, outputTokens: 0, costUsd: 0.04 },
-        }),
-        errorCodes: [400, 401, 404],
-        codeExamples: [curlExample({ method: "POST", url: abs(path), auth: "token", body })],
-      });
-    } else {
+    {
       const predictPath = `${versionBase}/predict`;
       const predictBody = { variables: { topic: "otters" }, stream: false };
       endpoints.push({
@@ -311,10 +273,8 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         path: predictPath,
         title: "Predict",
         description:
-          projectType === "agent"
-            ? 'Runs the published version — for an agent project that is the multi-turn tool loop, with its skills, MCP servers and subagents. Set "stream": true for an SSE response.' +
-              CONVERSATION_NOTE
-            : 'Single-shot run against the published version. Set "stream": true for an SSE response.',
+          ('Runs the published version — for an agent project that is the multi-turn tool loop, with its skills, MCP servers and subagents. Set "stream": true for an SSE response.' +
+              CONVERSATION_NOTE),
         auth: "token",
         streaming: false,
         requestFields: [
@@ -322,17 +282,13 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             name: "variables",
             type: "object",
             description:
-              projectType === "agent"
-                ? "Ignored by agent projects — an agent run has no prompt template to render."
-                : "Values substituted into {{var}} placeholders in the prompt template.",
+              ("Ignored by agent projects — an agent run has no prompt template to render."),
           },
           {
             name: "messages",
             type: "array[object]",
             description:
-              projectType === "agent"
-                ? "OpenAI-style messages the agent runs against."
-                : "Optional OpenAI-style messages appended after the rendered prompt.",
+              ("OpenAI-style messages the agent runs against."),
           },
           { name: "stream", type: "boolean", description: "Return an SSE stream instead of one JSON body." },
         ],
@@ -366,7 +322,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             url: abs(predictPath),
             auth: "token",
             body: predictBody,
-            ...(projectType === "agent" ? { extraHeaders: CONVERSATION_HEADER } : {}),
+            ...(({ extraHeaders: CONVERSATION_HEADER })),
           }),
         ],
       });
@@ -379,11 +335,9 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         path: ccPath,
         title: "OpenAI chat completions",
         description:
-          (projectType === "agent"
-            ? "OpenAI-compatible endpoint; agent projects run the multi-turn tool loop. "
-            : "OpenAI-compatible completion. ") +
+          (("OpenAI-compatible endpoint; agent projects run the multi-turn tool loop. ")) +
           'temperature/max_tokens are accepted but ignored — sampling comes from the version. The same endpoint streams when "stream": true (chat.completion.chunk SSE).' +
-          (projectType === "agent" ? CONVERSATION_NOTE : ""),
+          ((CONVERSATION_NOTE)),
         auth: "token",
         streaming: false,
         requestFields: [
@@ -433,16 +387,16 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             url: abs(ccPath),
             auth: "token",
             body: { messages: ccMessages, stream: false },
-            ...(projectType === "agent" ? { extraHeaders: CONVERSATION_HEADER } : {}),
+            ...(({ extraHeaders: CONVERSATION_HEADER })),
           }),
-          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, conversation: projectType === "agent" }),
-          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true, conversation: projectType === "agent" }),
-          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, conversation: projectType === "agent" }),
-          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true, conversation: projectType === "agent" }),
+          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, conversation: true }),
+          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true, conversation: true }),
+          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, conversation: true }),
+          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true, conversation: true }),
         ],
       });
 
-      if (projectType === "agent") {
+      {
         const agentPath = `${versionBase}/agent`;
         const agentBody = { messages: [{ role: "user", content: "hi" }] };
         endpoints.push({

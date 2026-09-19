@@ -11,7 +11,6 @@ const { projectRepo, versionRepo, calls } = vi.hoisted(() => ({
 
 vi.mock("@/lib/container", async () => ({
   executionDeps: {},
-  imageDeps: {},
   // No object storage in this deployment, which is what makes the file branch
   // below say "not kept" rather than mint an address.
   signArtifactUrl: undefined,
@@ -42,14 +41,7 @@ vi.mock("@/app/api/projects/_lib/executionAuth", async (importOriginal) => ({
   authenticateExecution: async () => ({ email: "owner@example.com", viaToken: false }),
 }));
 
-vi.mock("@/application/execution/runProject", async (importOriginal) => ({
-  // The image branch still asks the real strategy; the completion dispatch
-  // itself lives in executeProject and is exercised in runProject.test.ts —
-  // here the assertion is that the route hands the run to the facade and only
-  // serialises its answer.
-  runStrategyFor: (
-    await importOriginal<typeof import("@/application/execution/runProject")>()
-  ).runStrategyFor,
+vi.mock("@/application/execution/runProject", () => ({
   executeProject: async () => {
     calls.push("executeProject");
     return {
@@ -114,7 +106,7 @@ describe("POST /predict dispatches on project type", () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
-      projectType: "llm",
+      projectType: "agent",
     });
 
     const res = await POST(req({ variables: { topic: "otters" } }), ctx);

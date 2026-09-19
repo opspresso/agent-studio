@@ -63,6 +63,18 @@ describe("POST /api/projects", () => {
     });
   });
 
+  it.each(["llm", "image"])("rejects the removed %s type before creating a project", async (projectType) => {
+    const response = await POST(postRequest({ ...body, projectType }));
+    expect(response.status).toBe(400);
+    expect(createProjectWithInitialVersion).not.toHaveBeenCalled();
+  });
+
+  it("creates an Agent when the request has no type selector", async () => {
+    createProjectWithInitialVersion.mockResolvedValue({ ...body, ownerEmail: "u@x.com" });
+    expect((await POST(postRequest({ name: body.name, displayName: body.displayName }))).status).toBe(201);
+    expect(createProjectWithInitialVersion).toHaveBeenCalledWith(expect.objectContaining({ projectType: "agent" }));
+  });
+
   it("403s a guest before parsing the body", async () => {
     signedInAs("guest");
     const response = await POST(postRequest(body));

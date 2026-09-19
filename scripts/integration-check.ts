@@ -85,7 +85,7 @@ async function main() {
     "@/infrastructure/db/repositories/transcriptRepository"
   );
   const { executionDeps } = await import("@/lib/container");
-  const { executeVersion, executeAgent } = await import("@/application/execution/runProject");
+  const { executeProject, executeAgent } = await import("@/application/execution/runProject");
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
@@ -1586,15 +1586,15 @@ async function main() {
     );
     pass("concurrency slots: exact limit, release, lease reclaim");
 
-    // ---------- engine: single-shot ----------
-    const runResult = await executeVersion(executionDeps, {
+    // ---------- Agent: collected completion ----------
+    const runResult = await executeProject(executionDeps, {
       project,
       version: published,
-      variables: { name: "world" },
+      messages: [{ role: "user", content: "Hello world" }],
     });
-    assert.equal(runResult.content, "plain answer", "executeVersion content");
-    assert.ok(runResult.usage.inputTokens > 0, "executeVersion usage recorded");
-    pass("executeVersion single-shot via mock LLM");
+    assert.equal(runResult.content, "streamed answer", "executeProject content");
+    assert.ok(runResult.usage.inputTokens > 0, "executeProject usage recorded");
+    pass("executeProject collected Agent via mock LLM");
 
     // ---------- engine: agent loop with Skill tool ----------
     const chunks: Array<{ delta?: { content?: string }; toolResult?: unknown; error?: string }> =

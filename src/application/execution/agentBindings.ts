@@ -3,7 +3,6 @@ import type { Version } from "@/domain/project/types";
 import { descend, type RunOrigin } from "@/domain/execution/actor";
 import { imageDataUrl } from "@/domain/llm/types";
 import type { AgentDeps, AgentTask, PreparedAgent, RecordUsageFn } from "@/application/runtime/types";
-import { buildPromptMessages } from "@/application/runtime/messages";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
@@ -11,13 +10,13 @@ import { ValidationError } from "@/application/errors";
 import { runtimeFingerprint, type RuntimeTurnPersistence } from "@/application/runtime/session";
 import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools } from "./bindings";
 import { prepareMemoryForRun } from "./memoryRecall";
-import { buildImageEditor, buildImageGenerator, resolveImageModel, runImageSubagent } from "./imageTool";
+import { buildImageEditor, buildImageGenerator, resolveImageModel } from "./imageTool";
 import { buildUrlFetcher } from "./urlTool";
 import { buildFileSaver } from "./saveFileTool";
 import { buildSlackReader } from "./slackTool";
 import { runRemoteSubagent } from "./remoteAgent";
 import { closeMcp } from "./mcpTools";
-import { callerFor, runClock, runStrategyFor, toEngineParameters, type ExecutionDeps } from "./deps";
+import { callerFor, runClock, toEngineParameters, type ExecutionDeps } from "./deps";
 
 export const MAX_SUBAGENT_DEPTH = 5;
 
@@ -72,9 +71,6 @@ export async function prepareSubagent(
   if (deps.unknownModelPolicy) assertModelsPriceable(await deps.unknownModelPolicy(), version);
   await assertWithinCostLimit(deps, project);
   const origin = descend(parentOrigin, name);
-  if (runStrategyFor(project) === "image") {
-    return { kind: "action", run: () => runImageSubagent(deps, name, project, version, task.message, recordUsage, origin, task.signal, task.images) };
-  }
   const message = task.transcript ? `Conversation context:\n${task.transcript}\n\nRequest:\n${task.message}` : task.message;
   const userMessage = {
     role: "user" as const,
@@ -86,11 +82,6 @@ export async function prepareSubagent(
     now: runClock(deps), ...callerFor({ version, caller: origin.caller }),
     maxTurn: Math.min(version.maxTurn ?? 50, task.maxTurns ?? 50),
     signal: task.signal, messages: [userMessage],
-  };
-  if (runStrategyFor(project) === "prompt") return {
-    kind: "agent", deps: { channel: deps.channel, recordUsage },
-    input: { ...baseInput, maxTurn: 1, messages: buildPromptMessages({ ...baseInput, userPromptTemplate: version.userPromptTemplate, extraMessages: [userMessage] }).filter((message) => message.role !== "system") },
-    warnings: [], close: async () => {},
   };
   const memory = await prepareMemoryForRun(deps, { version, query: task.message, signal: task.signal, origin });
   const resolved = await resolveRunTools(deps, version, task.signal, discoveryQueries(version, [task.message], memory.input.remembered), origin, recordUsage);

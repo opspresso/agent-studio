@@ -168,7 +168,6 @@ import type { AguiDeps } from "@/application/agui/run";
 import type { PostCostAlert } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/run/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
-import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import { cacheQueryEmbeddings } from "@/application/catalog/queryCache";
@@ -1227,7 +1226,6 @@ export const executionDeps: ExecutionDeps = {
   ...(catalogDeps ? { catalog: catalogDeps } : {}),
   internalHostSuffixes: config.mcpInternalHostSuffixes,
   traces: runTraceRepository,
-  traceSampleRate: config.traceSampleRate,
   postAlert: deliverProjectMessage,
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
@@ -1235,18 +1233,6 @@ export const executionDeps: ExecutionDeps = {
   resolveActorTier: actorTierResolver,
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
-
-/**
- * Dependencies for image-generation projects.
- *
- * The same bag, not a second copy of it. `ExecutionDeps` already satisfies
- * `ImageGenerationDeps`, and the seven run-bracket fields were written out twice
- * — which the wiring test could not see, because it asks whether each optional
- * field is named *anywhere* in this file. So the next policy added to the
- * bracket would have reached `/predict`'s image path and nothing else, with the
- * test green. This narrows the declared type without restating the value.
- */
-export const imageDeps: ImageGenerationDeps = executionDeps;
 
 /**
  * The webhook delivery path. `run` binds the facade's chunk-stream entry point

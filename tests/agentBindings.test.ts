@@ -8,7 +8,7 @@ import { FakeChannel } from "./fakeChannel";
 
 function fixture(projectOverrides: Partial<Project> = {}, versionOverrides: Partial<Version> = {}) {
   const now = "2026-09-12T00:00:00Z";
-  const project: Project = { name: "child", displayName: "Child", description: "Specialist", projectType: "llm", ownerEmail: "owner@example.com", publishedVersion: "published-v1", createdAt: now, updatedAt: now, ...projectOverrides };
+  const project: Project = { name: "child", displayName: "Child", description: "Specialist", projectType: "agent", ownerEmail: "owner@example.com", publishedVersion: "published-v1", createdAt: now, updatedAt: now, ...projectOverrides };
   const version: Version = { projectName: "child", versionName: "published-v1", systemPrompt: "Child instructions", userPromptTemplate: "Template instructions", model: "openai/gpt-5-mini", parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [], createdAt: now, ...versionOverrides };
   const parent: Version = { ...version, projectName: "parent", subagentList: [{ name: "child", type: "local" }] };
   const projects = { get: vi.fn(async () => project) };
@@ -77,17 +77,16 @@ describe("Studio prepares native SDK agent bindings", () => {
     expect(f.projects.get).not.toHaveBeenCalled();
   });
 
-  it("uses the prompt project's template and its own caller opt-in", async () => {
+  it("prepares the Agent's task and its own caller opt-in", async () => {
     const f = fixture({}, { parameters: { piiFiltering: false, callerContext: true } });
     const prepared = await f.prepare();
     if (prepared.kind !== "agent") throw new Error("Expected a text agent");
     expect(prepared.input.messages).toEqual(expect.arrayContaining([
-      { role: "user", content: "Template instructions" },
       { role: "user", content: "task" },
     ]));
     expect(prepared.input.caller).toEqual({ displayName: "Reader" });
     expect(prepared.input.systemPrompt).toBe("Child instructions");
-    expect(prepared.input.maxTurn).toBe(1);
+    expect(prepared.input.maxTurn).toBe(7);
   });
 
   it("clamps a specialist's SDK turn limit to its caller's remaining allowance", async () => {
@@ -104,10 +103,6 @@ describe("Studio prepares native SDK agent bindings", () => {
     expect(f.projects.get).not.toHaveBeenCalled();
   });
 
-  it("keeps image generation outside the text SDK model loop", async () => {
-    const f = fixture({ projectType: "image" }, { model: "openai/gpt-image-2" });
-    expect(await f.prepare()).toMatchObject({ kind: "action", run: expect.any(Function) });
-  });
 
   it("does not pre-load unused delegated agents", async () => {
     const f = fixture();

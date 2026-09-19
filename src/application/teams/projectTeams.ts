@@ -95,9 +95,6 @@ export async function updateProjectTeams(
   cipher: SecretCipher,
 ): Promise<ProjectTeamsResult> {
   const project = await assertProjectWritable(repo, name, userEmail);
-  if (project.projectType !== "agent") {
-    throw new ValidationError("Teams bots can only be attached to agent projects");
-  }
   const stored = project.teams;
   // Lower-cased, because the Bot Framework writes the same GUID lower-case
   // into every token's audience and a pasted upper-case one must still match.

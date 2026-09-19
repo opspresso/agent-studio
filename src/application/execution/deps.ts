@@ -125,39 +125,12 @@ export interface ExecutionDeps extends RunBracketDeps {
    */
   internalHostSuffixes?: readonly string[];
   traces?: TraceRepository;
-  traceSampleRate?: number;
   /**
    * The wall clock a run's prompt is stamped with. Injected for the same reason
    * the channel is — a test that asserts on a prompt needs a fixed instant.
    * Unset means the real clock (see {@link runClock}).
    */
   now?: () => Date;
-  /**
-   * The draw the trace sampling decision compares against `traceSampleRate`,
-   * in `[0, 1)`. Injected like {@link now} so a test can pin the outcome at a
-   * fractional rate. Unset means `Math.random` (see `traceSampled`).
-   */
-  sample?: () => number;
-}
-
-export interface ExecuteVersionInput {
-  project: Project;
-  version: Version;
-  variables?: Record<string, string>;
-  /** Prior OpenAI-shaped messages; `messages` is the route-layer alias. */
-  extraMessages?: ChatMessageInput[];
-  messages?: ChatMessageInput[];
-  /** Who caused this run. Recorded on the trace and on the caller's usage row. */
-  actor?: RunActor;
-  /**
-   * Who that actor is, in words. Reaches the prompt only when the version opted
-   * in (`parameters.callerContext`); the surface is expected not to resolve one
-   * at all otherwise.
-   */
-  caller?: RunCaller;
-  /** Which conversation this run belongs to, when the surface has one. */
-  conversation?: RunConversation;
-  signal?: AbortSignal;
 }
 
 export interface ExecuteAgentInput {
@@ -168,9 +141,9 @@ export interface ExecuteAgentInput {
   /** OpenAI-shaped message history from the route/chat boundary. */
   messages: ChatMessageInput[];
   actor?: RunActor;
-  /** See {@link ExecuteVersionInput.caller}. */
+  /** Display identity, included only when callerContext is enabled. */
   caller?: RunCaller;
-  /** See {@link ExecuteVersionInput.conversation}. */
+  /** Surface-scoped conversation identity. */
   conversation?: RunConversation;
   /**
    * Which user this run belongs to when the surface resolves an address the
@@ -198,9 +171,9 @@ export interface ExecuteProjectInput {
   actor?: RunActor;
   /** Server-resolved user identity for non-user entry points such as schedules. */
   ownerEmail?: string;
-  /** See {@link ExecuteVersionInput.caller}. */
+  /** See {@link ExecuteAgentInput.caller}. */
   caller?: RunCaller;
-  /** See {@link ExecuteVersionInput.conversation}. */
+  /** See {@link ExecuteAgentInput.conversation}. */
   conversation?: RunConversation;
   /**
    * See {@link ExecuteAgentInput.clientTools}. Reaches the agent loop only: a
@@ -316,26 +289,6 @@ export function toEngineParameters(version: Version): EngineParameters {
     params.reasoningTrace = p.reasoningTrace;
   }
   return params;
-}
-
-/** How a project is executed. */
-export type RunStrategy = "image" | "agent" | "prompt";
-
-/**
- * The single owner of "which project type runs which way".
- *
- * `executeProjectStream` already dispatches agent vs. single-shot internally,
- * but the image path returns a value rather than a stream, so callers had to
- * ask the question again — three of them did, each spelling out
- * `projectType === "image"` and `=== "agent"` for itself. Adding a fourth
- * project type meant finding all three. They now ask here and only decide how
- * to serialise the answer.
- */
-export function runStrategyFor(project: Project): RunStrategy {
-  if (project.projectType === "image") {
-    return "image";
-  }
-  return project.projectType === "agent" ? "agent" : "prompt";
 }
 
 /**

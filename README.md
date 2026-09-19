@@ -12,7 +12,7 @@ Project로 만들고, 실행 구성을 Version으로 관리하며, 발행한 버
 
 | 영역 | 제공하는 기능 | 상세 계약 |
 |---|---|---|
-| Projects와 Versions | 단발 프롬프트(`llm`), 도구를 사용하는 에이전트(`agent`), 이미지 생성·편집(`image`); 편집·발행 | [실행](docs/design/execution.md) |
+| Projects와 Versions | Agent와 이미지 생성·편집 도구; 버전 편집·발행 | [실행](docs/design/execution.md) |
 | 모델 | OpenAI 호환 기본·provider 채널, fallback, 공개 카탈로그와 자체 호스팅 모델, Embedding·Rerank·Transcription 선택 | [설정](docs/CONFIGURATION.md#llm-채널) |
 | Skills·Memory·검색 | 필요한 지침과 참고 파일 로드, Plugin 동기화, capability 검색, 연결된 MCP의 장기 Memory 회상 | [Capabilities](docs/design/capabilities.md) |
 | MCP·하위 Agent | 버전별 도구·헤더 binding, 프로젝트별 OAuth, Docker 관리형 MCP, Handoff·Agent-as-Tool·외부 Agent | [MCP](docs/design/mcp.md), [SDK 적용 범위](docs/design/sdk-capabilities.md) |
@@ -57,7 +57,7 @@ pnpm dev
 
 ## 첫 프로젝트와 외부 호출
 
-1. member 이상 계정으로 Projects에서 유형을 선택해 프로젝트를 만든다.
+1. member 이상 계정으로 Projects에서 Agent 프로젝트를 만든다.
 2. Version에 모델·프롬프트를 설정하고, Agent라면 필요한 Skill·MCP·하위 Agent를 연결한다.
 3. Playground에서 검증한 뒤 사용할 Version을 publish한다. Version은 수정 가능한 실행 구성이고,
    publish는 그 이름을 가리키는 포인터다.

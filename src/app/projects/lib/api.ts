@@ -32,7 +32,6 @@ import type { ProjectSlackResponse } from "@/app/api/projects/[name]/slack/route
 import type { ProjectTelegramResponse } from "@/app/api/projects/[name]/telegram/route";
 import type { ProjectTeamsResponse } from "@/app/api/projects/[name]/teams/route";
 import type { PromptPreview } from "@/application/execution/deps";
-import type { GenerateImageOutput } from "@/application/image/generateImage";
 import type { ApiTokenStatus } from "@/application/project/apiTokenUseCases";
 import type {
   CreateVersionInput,
@@ -276,30 +275,6 @@ export async function streamAgent(
   });
   await assertOk(res);
   return res;
-}
-
-/** What `POST /predict` answers with for an image project, as the use case built it. */
-export type ImageResult = GenerateImageOutput;
-
-export async function predictImage(
-  name: string,
-  version: string,
-  body: {
-    prompt: string;
-    size?: string;
-    quality?: string;
-    /** Source images to edit; omit to generate from the prompt alone. */
-    images?: Array<{ b64: string; mimeType: string }>;
-  },
-  signal?: AbortSignal,
-): Promise<ImageResult> {
-  const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify(body),
-    signal,
-  });
-  return readJson<ImageResult>(res);
 }
 
 export type { ActorUsageView };

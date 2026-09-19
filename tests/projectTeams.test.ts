@@ -81,13 +81,11 @@ describe("updateProjectTeams", () => {
     expect(current().teams?.enabled).toBe(true);
   });
 
-  it("refuses a malformed App ID or tenant, enabling without credentials, a non-agent project and a non-owner", async () => {
+  it("refuses a malformed App ID or tenant, enabling without credentials, a non-owner", async () => {
     const { repo } = fakeRepo(makeProject());
     await expect(update(repo, { appId: "not-a-guid", appPassword: "x" })).rejects.toThrow(ValidationError);
     await expect(update(repo, { appId: APP, appPassword: "x", tenantId: "nope" })).rejects.toThrow(ValidationError);
     await expect(update(repo, { enabled: true })).rejects.toThrow(ValidationError);
-    const llm = fakeRepo(makeProject({ projectType: "llm" }));
-    await expect(update(llm.repo, { appId: APP, appPassword: "x" })).rejects.toThrow(ValidationError);
     await expect(update(repo, { appId: APP, appPassword: "x" }, OTHER)).rejects.toThrow(ForbiddenError);
   });
 

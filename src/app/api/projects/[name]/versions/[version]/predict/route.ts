@@ -1,16 +1,13 @@
 import { withLeadingWarnings } from "@/application/run/leadingWarnings";
-import { runStrategyFor } from "@/application/execution/runProject";
 import { sseResponse } from "@/app/api/_lib/sse";
 import {
   executionDeps,
-  imageDeps,
   projectUseCases,
   signArtifactUrl,
   versionUseCases,
 } from "@/lib/container";
 import { resolveProducedFiles, withAddressedFiles } from "@/application/artifact/producedFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
-import { generateImage } from "@/application/image/generateImage";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
@@ -40,22 +37,6 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       const versionEntity = await versionUseCases.get(name, version);
       const actor = principalActor(principal);
       const conversation = requestConversation(request, actor);
-      if (runStrategyFor(project) === "image") {
-        const image = await generateImage(imageDeps, {
-          project,
-          version: versionEntity,
-          variables: parsed.data.variables,
-          prompt: parsed.data.prompt,
-          // With source images the prompt edits them instead of drawing anew.
-          images: parsed.data.images,
-          actor,
-          ...(conversation ? { conversation } : {}),
-          size: parsed.data.size,
-          quality: parsed.data.quality,
-          signal: request.signal,
-        });
-        return Response.json(image);
-      }
       const read = await readExecutionDocuments(executionDeps, { projectName: project.name, versionName: versionEntity.versionName, actor }, parsed.data.documents);
       const params = {
         project,

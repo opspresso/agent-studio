@@ -7,7 +7,6 @@ import { listMcps } from "@/app/tools/api";
 import {
   ActionIcon,
   Alert,
-  Button,
   Checkbox,
   Code,
   Group,
@@ -35,7 +34,7 @@ import { monoInput } from "@/app/_components/monoInput";
 import { listProjects } from "../../lib/api";
 import { tierAtLeast } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
-import type { ProjectType, SelectableModel, VersionInput, VersionParameters } from "../../lib/api";
+import type { SelectableModel, VersionInput, VersionParameters } from "../../lib/api";
 import {
   McpBindingInput,
   NumberField,
@@ -73,7 +72,6 @@ type SubagentOption = PickerOption & { type: "local" | "remote" };
 export function VersionEditor({
   projectName,
   versionName,
-  projectType,
   models,
   imageModels,
   value,
@@ -85,7 +83,6 @@ export function VersionEditor({
 }: {
   projectName: string;
   versionName?: string;
-  projectType: ProjectType;
   models: SelectableModel[];
   imageModels: SelectableModel[];
   value: VersionInput;
@@ -100,13 +97,6 @@ export function VersionEditor({
   const [mcpOptions, setMcpOptions] = useState<PickerOption[]>([]);
   const [skillOptions, setSkillOptions] = useState<PickerOption[]>([]);
   const [subagentOptions, setSubagentOptions] = useState<SubagentOption[]>([]);
-  // Only agent projects run the tool loop. The inputs below stay visible on the
-  // other types when something is already bound, so a version stored before
-  // this rule can still be cleaned up instead of holding dead configuration.
-  const runsTools = projectType === "agent";
-  const hasToolBindings =
-    value.mcpList.length > 0 || value.skillList.length > 0 || value.subagentList.length > 0;
-
   // The capability registries are `member`-gated server-side (`withMemberAuth`),
   // so a guest's picker requests are guaranteed 403s — the same predicate
   // decides here whether to ask at all. Projects stay: every tier may list them.
@@ -219,9 +209,8 @@ export function VersionEditor({
         />
       )}
 
-      {/* Retried on a completion failure — a path an image run does not have. */}
-      {projectType !== "image" &&
-        (models.length > 0 ? (
+      {/* Fallback applies to retryable model failures before the first output. */}
+      {(models.length > 0 ? (
           <Select
             label={t("version.fallbackModel")}
             value={value.fallbackModel ?? null}
@@ -252,14 +241,7 @@ export function VersionEditor({
         label={t("version.systemPrompt")}
         value={value.systemPrompt}
         onChange={(e) => patch({ systemPrompt: e.currentTarget.value })}
-        placeholder={
-          projectType === "image"
-            ? t("version.systemPromptImagePlaceholder")
-            : t("version.systemPromptPlaceholder")
-        }
-        description={
-          projectType === "image" ? t("version.systemPromptImageHint") : undefined
-        }
+        placeholder={t("version.systemPromptPlaceholder")}
         autosize
         minRows={8}
         maxRows={30}
@@ -272,7 +254,7 @@ export function VersionEditor({
         content, so that content can be seen and cleared — clearing it makes
         the field disappear.
       */}
-      {(projectType !== "agent" || value.userPromptTemplate !== "") && (
+      {(value.userPromptTemplate !== "") && (
         <div>
           <Textarea
             label={t("version.userPromptTemplate")}
@@ -286,67 +268,43 @@ export function VersionEditor({
           />
           <Group justify="space-between" gap="xs" mt={4} wrap="nowrap">
             <Text fz="xs" c="dimmed">
-              {projectType === "agent"
-                ? t("version.userPromptAgentHint")
-                : t("version.userPromptHint")}
+              {t("version.userPromptAgentHint")}
             </Text>
-            {projectType !== "agent" && (
-              <Button
-                variant="default"
-                size="compact-xs"
-                ff="monospace"
-                onClick={() =>
-                  patch({
-                    userPromptTemplate: value.userPromptTemplate
-                      ? `${value.userPromptTemplate}{{input}}`
-                      : "{{input}}",
-                  })
-                }
-              >
-                + {"{{input}}"}
-              </Button>
-            )}
+
           </Group>
         </div>
       )}
 
-      {/*
-        Sampling parameters ride the chat channel (`buildChannelParams`); an
-        image run sends only prompt, size and quality, so none of these reach
-        it and offering them would store settings that do nothing.
-      */}
-      {projectType !== "image" && (
-        <SimpleGrid cols={2} spacing="sm">
-          <NumberField
-            label={t("version.temperature")}
-            value={value.parameters.temperature}
-            onChange={(temperature) => patchParams({ temperature })}
-            step={0.1}
-            min={0}
-            max={2}
-            placeholder={t("version.defaultPlaceholder")}
-          />
-          <NumberField
-            label={t("version.maxTokens")}
-            value={value.parameters.maxTokens}
-            onChange={(maxTokens) => patchParams({ maxTokens })}
-            step={1}
-            min={1}
-            placeholder={t("version.defaultPlaceholder")}
-          />
-          <NumberField
-            label={t("version.presencePenalty")}
-            value={value.parameters.presencePenalty}
-            onChange={(presencePenalty) => patchParams({ presencePenalty })}
-            step={0.1}
-            min={PRESENCE_PENALTY_RANGE.min}
-            max={PRESENCE_PENALTY_RANGE.max}
-            placeholder={t("version.defaultPlaceholder")}
-          />
-        </SimpleGrid>
-      )}
+      <SimpleGrid cols={2} spacing="sm">
+        <NumberField
+          label={t("version.temperature")}
+          value={value.parameters.temperature}
+          onChange={(temperature) => patchParams({ temperature })}
+          step={0.1}
+          min={0}
+          max={2}
+          placeholder={t("version.defaultPlaceholder")}
+        />
+        <NumberField
+          label={t("version.maxTokens")}
+          value={value.parameters.maxTokens}
+          onChange={(maxTokens) => patchParams({ maxTokens })}
+          step={1}
+          min={1}
+          placeholder={t("version.defaultPlaceholder")}
+        />
+        <NumberField
+          label={t("version.presencePenalty")}
+          value={value.parameters.presencePenalty}
+          onChange={(presencePenalty) => patchParams({ presencePenalty })}
+          step={0.1}
+          min={PRESENCE_PENALTY_RANGE.min}
+          max={PRESENCE_PENALTY_RANGE.max}
+          placeholder={t("version.defaultPlaceholder")}
+        />
+      </SimpleGrid>
 
-      {projectType !== "image" && supportsReasoning && (
+      {supportsReasoning && (
         <Select
           label={t("version.reasoningEffort")}
           value={value.parameters.reasoningEffort ?? ""}
@@ -370,7 +328,7 @@ export function VersionEditor({
         unlike the effort select above it: saving is *rejected* for that pair, so
         hiding the control would leave an author unable to save anything at all.
       */}
-      {projectType !== "image" && (supportsReasoning || value.parameters.reasoningTrace) && (
+      {(supportsReasoning || value.parameters.reasoningTrace) && (
         <Stack gap={4}>
           <Checkbox
             label={t("version.reasoningTrace")}
@@ -384,7 +342,6 @@ export function VersionEditor({
               this model refuses to think while it can call tools, so an agent
               run records its final turn and nothing before it. */}
           {value.parameters.reasoningTrace === true &&
-            runsTools &&
             selectedModel?.capabilities.reasoningWithTools === false && (
               <Text fz="xs" c="yellow.7">
                 {t("models.reasoningNoTools")}
@@ -393,46 +350,32 @@ export function VersionEditor({
         </Stack>
       )}
 
-      {projectType === "agent" && (
-        <NumberField
-          label={t("version.maxTurns")}
-          value={value.maxTurn}
-          onChange={(maxTurn) => patch({ maxTurn })}
-          step={1}
-          min={1}
-          placeholder="50"
-        />
-      )}
+      <NumberField
+        label={t("version.maxTurns")}
+        value={value.maxTurn}
+        onChange={(maxTurn) => patch({ maxTurn })}
+        step={1}
+        min={1}
+        placeholder="50"
+      />
 
-      {/*
-        Neither filter nor caller block exists on the image path — each stays
-        visible only while a stored value needs to be seen and turned off.
-      */}
-      {(projectType !== "image" || value.parameters.piiFiltering) && (
-        <Checkbox
-          label={t("version.piiFiltering")}
-          description={
-            projectType === "image" ? t("version.piiImageHint") : t("version.piiHint")
-          }
-          checked={value.parameters.piiFiltering}
-          onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
-        />
-      )}
+      <Checkbox
+        label={t("version.piiFiltering")}
+        description={t("version.piiHint")}
+        checked={value.parameters.piiFiltering}
+        onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
+      />
 
-      {runsTools && <RuntimePolicyEditor value={value.parameters.policy} onChange={(policy) => patchParams({ policy })} />}
+      <RuntimePolicyEditor value={value.parameters.policy} onChange={(policy) => patchParams({ policy })} />
 
-      {(projectType !== "image" || value.parameters.callerContext) && (
-        <Checkbox
-          label={t("version.callerContext")}
-          description={
-            projectType === "image" ? t("version.callerImageHint") : t("version.callerHint")
-          }
-          checked={value.parameters.callerContext ?? false}
-          onChange={(e) => patchParams({ callerContext: e.currentTarget.checked })}
-        />
-      )}
+      <Checkbox
+        label={t("version.callerContext")}
+        description={t("version.callerHint")}
+        checked={value.parameters.callerContext ?? false}
+        onChange={(e) => patchParams({ callerContext: e.currentTarget.checked })}
+      />
 
-      {projectType !== "image" && (supportsStructured || schemaError !== null) && (
+      {(supportsStructured || schemaError !== null) && (
         <Stack gap="xs">
           <Group gap={6} wrap="nowrap">
             <Checkbox
@@ -467,140 +410,121 @@ export function VersionEditor({
         </Stack>
       )}
 
-      {(runsTools || value.parameters.imageGeneration) && (
-        <Stack gap="xs">
-          <Checkbox
-            label={t("version.imageTools")}
-            checked={value.parameters.imageGeneration ?? false}
-            onChange={(e) =>
-              patchParams(
-                e.currentTarget.checked
-                  ? { imageGeneration: true }
-                  : { imageGeneration: undefined, imageModel: undefined },
-              )
-            }
+      <Stack gap="xs">
+        <Checkbox
+          label={t("version.imageTools")}
+          checked={value.parameters.imageGeneration ?? false}
+          onChange={(e) =>
+            patchParams(
+              e.currentTarget.checked
+                ? { imageGeneration: true }
+                : { imageGeneration: undefined, imageModel: undefined },
+            )
+          }
+        />
+        <Text fz="xs" c="dimmed">
+          {t("version.imageToolsHint")}
+        </Text>
+        {value.parameters.imageGeneration && (
+          <Select
+            label={t("version.imageModel")}
+            value={value.parameters.imageModel ?? ""}
+            onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
+            allowDeselect={false}
+            data={modelSelectData(
+              imageModels,
+              [
+                { value: "", label: t("version.default") },
+                ...(value.parameters.imageModel && !selectedImageModel
+                  ? [{ value: value.parameters.imageModel, label: value.parameters.imageModel }]
+                  : []),
+              ],
+              t("models.favorites"),
+            )}
+            renderOption={renderModelOption(imageModels)}
+            description={selectedImageModel ? modelSummary(selectedImageModel) : undefined}
           />
-          <Text fz="xs" c="dimmed">
-            {t("version.imageToolsHint")}
-          </Text>
-          {value.parameters.imageGeneration && (
-            <Select
-              label={t("version.imageModel")}
-              value={value.parameters.imageModel ?? ""}
-              onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
-              allowDeselect={false}
-              data={modelSelectData(
-                imageModels,
-                [
-                  { value: "", label: t("version.default") },
-                  ...(value.parameters.imageModel && !selectedImageModel
-                    ? [{ value: value.parameters.imageModel, label: value.parameters.imageModel }]
-                    : []),
-                ],
-                t("models.favorites"),
-              )}
-              renderOption={renderModelOption(imageModels)}
-              description={selectedImageModel ? modelSummary(selectedImageModel) : undefined}
-            />
-          )}
-        </Stack>
-      )}
+        )}
+      </Stack>
 
-      {runsTools && <Checkbox label={t("audio.enableTools")} description={t("audio.enableToolsHint")}
-        checked={value.parameters.audioProcessing ?? false}
-        onChange={(e) => patchParams({ audioProcessing: e.currentTarget.checked ? true : undefined })} />}
-      {runsTools && <Checkbox label={t("workspace.enableTools")} description={t("workspace.enableToolsHint")}
-        checked={value.parameters.workspaceTools ?? false}
-        onChange={(e) => patchParams({ workspaceTools: e.currentTarget.checked ? true : undefined })} />}
-      {(runsTools || value.parameters.urlFetch) && (
-        <Stack gap="xs">
-          <Checkbox
-            label={t("version.fetchUrl")}
-            checked={value.parameters.urlFetch ?? false}
-            onChange={(e) => patchParams({ urlFetch: e.currentTarget.checked ? true : undefined })}
-          />
-          <Text fz="xs" c="dimmed">
-            {t("version.fetchUrlHint")}
-          </Text>
-        </Stack>
-      )}
+      <Checkbox label={t("audio.enableTools")} description={t("audio.enableToolsHint")}
+      checked={value.parameters.audioProcessing ?? false}
+      onChange={(e) => patchParams({ audioProcessing: e.currentTarget.checked ? true : undefined })} />
+      <Checkbox label={t("workspace.enableTools")} description={t("workspace.enableToolsHint")}
+      checked={value.parameters.workspaceTools ?? false}
+      onChange={(e) => patchParams({ workspaceTools: e.currentTarget.checked ? true : undefined })} />
+      <Stack gap="xs">
+        <Checkbox
+          label={t("version.fetchUrl")}
+          checked={value.parameters.urlFetch ?? false}
+          onChange={(e) => patchParams({ urlFetch: e.currentTarget.checked ? true : undefined })}
+        />
+        <Text fz="xs" c="dimmed">
+          {t("version.fetchUrlHint")}
+        </Text>
+      </Stack>
 
-      {(runsTools || value.parameters.slackWorkspace) && (
-        <Stack gap="xs">
-          <Checkbox
-            label={t("version.slackWorkspace")}
-            checked={value.parameters.slackWorkspace ?? false}
-            onChange={(e) =>
-              patchParams({ slackWorkspace: e.currentTarget.checked ? true : undefined })
-            }
-          />
-          <Text fz="xs" c="dimmed">
-            {t("version.slackWorkspaceHint")}
-          </Text>
-        </Stack>
-      )}
+      <Stack gap="xs">
+        <Checkbox
+          label={t("version.slackWorkspace")}
+          checked={value.parameters.slackWorkspace ?? false}
+          onChange={(e) =>
+            patchParams({ slackWorkspace: e.currentTarget.checked ? true : undefined })
+          }
+        />
+        <Text fz="xs" c="dimmed">
+          {t("version.slackWorkspaceHint")}
+        </Text>
+      </Stack>
 
-      {(runsTools || hasToolBindings) && (
-        <Stack gap="sm">
-          {!runsTools && (
+      <Stack gap="sm">
+
+        <McpBindingInput
+          projectName={projectName}
+          versionName={versionName}
+          values={value.mcpList}
+          onChange={(mcpList) => patch({ mcpList })}
+          options={mcpOptions}
+          save={save}
+        />
+        <SearchSelectInput
+          label={t("version.skills")}
+          values={value.skillList}
+          onChange={(skillList) => patch({ skillList })}
+          options={skillOptions}
+          placeholder={t("version.searchSkills")}
+        />
+        <SubagentInput
+          values={value.subagentList}
+          onChange={(subagentList) => patch({ subagentList })}
+          options={subagentOptions}
+        />
+        <Checkbox
+          label={t("version.dynamicCapabilities")}
+          description={t("version.dynamicCapabilitiesHint")}
+          checked={value.parameters.dynamicCapabilities ?? false}
+          onChange={(e) => patchParams({ dynamicCapabilities: e.currentTarget.checked })}
+        />
+        <Checkbox
+          label={t("version.memoryRecall")}
+          description={t("version.memoryRecallHint")}
+          checked={value.parameters.memoryRecall ?? false}
+          onChange={(e) =>
+            patchParams({ memoryRecall: e.currentTarget.checked ? true : undefined })
+          }
+        />
+        {value.parameters.memoryRecall === true &&
+          !bindingsMayOfferRecall(value.mcpList) && (
+            // The run's own warning, moved up to where the setting is made:
+            // a version that recalls with nothing bound to answer would
+            // otherwise say so only once a run has started without a memory.
+            // Only what the bindings alone rule out — a bound server that
+            // turns out not to offer the tool is for the preview to report.
             <Alert color="yellow" variant="light" fz="xs">
-              {projectType === "image"
-                ? t("version.bindingsInertImage")
-                : t("version.bindingsInertLlm")}
+              {t("version.memoryRecallUnbound")}
             </Alert>
           )}
-          <McpBindingInput
-            projectName={projectName}
-            versionName={versionName}
-            values={value.mcpList}
-            onChange={(mcpList) => patch({ mcpList })}
-            options={mcpOptions}
-            save={save}
-          />
-          <SearchSelectInput
-            label={t("version.skills")}
-            values={value.skillList}
-            onChange={(skillList) => patch({ skillList })}
-            options={skillOptions}
-            placeholder={t("version.searchSkills")}
-          />
-          <SubagentInput
-            values={value.subagentList}
-            onChange={(subagentList) => patch({ subagentList })}
-            options={subagentOptions}
-          />
-          {runsTools && (
-            <Checkbox
-              label={t("version.dynamicCapabilities")}
-              description={t("version.dynamicCapabilitiesHint")}
-              checked={value.parameters.dynamicCapabilities ?? false}
-              onChange={(e) => patchParams({ dynamicCapabilities: e.currentTarget.checked })}
-            />
-          )}
-          {(runsTools || value.parameters.memoryRecall) && (
-            <Checkbox
-              label={t("version.memoryRecall")}
-              description={t("version.memoryRecallHint")}
-              checked={value.parameters.memoryRecall ?? false}
-              onChange={(e) =>
-                patchParams({ memoryRecall: e.currentTarget.checked ? true : undefined })
-              }
-            />
-          )}
-          {runsTools &&
-            value.parameters.memoryRecall === true &&
-            !bindingsMayOfferRecall(value.mcpList) && (
-              // The run's own warning, moved up to where the setting is made:
-              // a version that recalls with nothing bound to answer would
-              // otherwise say so only once a run has started without a memory.
-              // Only what the bindings alone rule out — a bound server that
-              // turns out not to offer the tool is for the preview to report.
-              <Alert color="yellow" variant="light" fz="xs">
-                {t("version.memoryRecallUnbound")}
-              </Alert>
-            )}
-        </Stack>
-      )}
+      </Stack>
     </Stack>
   );
 }
