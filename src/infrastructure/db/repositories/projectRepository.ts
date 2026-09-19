@@ -14,6 +14,7 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectApiToken } from "@/domain/project/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
 import { projectIsLive, putProjectItem } from "@/infrastructure/db/projectLifecycle";
+import { readAgentConfiguration } from "@/infrastructure/db/projectConfiguration";
 
 const ENTITY_TYPE = "PROJECT";
 const TOMBSTONE_ENTITY_TYPE = "PROJECT_TOMBSTONE";
@@ -73,6 +74,9 @@ function fromItem(item: Record<string, unknown>): Project {
     memberEmails: memberEmails(item.memberEmails),
     departmentCode: item.departmentCode as string | undefined,
     publishedVersion: item.publishedVersion as string | undefined,
+    ...(item.configuration === undefined ? {} : {
+      configuration: readAgentConfiguration(item.configuration, requiredString(item, "name")),
+    }),
     slack: item.slack as Project["slack"] | undefined,
     telegram: item.telegram as Project["telegram"] | undefined,
     teams: item.teams as Project["teams"] | undefined,

@@ -25,7 +25,7 @@ export interface IntegrationSummary {
  * to summaries, which is exactly what lets a client ask "is Slack connected"
  * without ever seeing a credential.
  */
-export type SanitizedProject = Omit<Project, "slack" | "telegram" | "teams"> & {
+export type SanitizedProject = Omit<Project, "slack" | "telegram" | "teams" | "configuration"> & {
   slack?: IntegrationSummary;
   telegram?: IntegrationSummary;
   teams?: IntegrationSummary;
@@ -35,7 +35,7 @@ export function sanitizeProject(
   project: Project,
   opts: { withMemberEmails?: boolean } = {},
 ): SanitizedProject {
-  const { slack, telegram, teams, memberEmails, ...rest } = project;
+  const { slack, telegram, teams, memberEmails, configuration: _configuration, ...rest } = project;
   return {
     ...rest,
     ...(opts.withMemberEmails && memberEmails !== undefined ? { memberEmails } : {}),

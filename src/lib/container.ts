@@ -183,6 +183,7 @@ import { createProjectUseCases, setAdminCheck, userMayAccessProject } from "@/ap
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createVersionUseCases } from "@/application/project/versionUseCases";
+import { createConfigurationUseCases } from "@/application/project/configurationUseCases";
 import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
 import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
 import { a2aClientKeyRepository } from "@/infrastructure/db/repositories/a2aClientKeyRepository";
@@ -1008,6 +1009,12 @@ const versionRefRepos = {
   externalAgents: externalAgentRepository,
   projects: projectRepository,
 };
+
+export const configurationUseCases = createConfigurationUseCases({
+  projects: projectRepository,
+  refs: versionRefRepos,
+  cipher: secretCipher,
+});
 
 export const versionUseCases = createVersionUseCases({
   versions: versionRepository,

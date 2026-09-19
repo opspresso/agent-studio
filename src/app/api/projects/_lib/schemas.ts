@@ -184,9 +184,8 @@ export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([
   }),
 ]);
 
-export const versionInputSchema = z.object({
+export const agentConfigurationInputSchema = z.object({
   systemPrompt: z.string().default(""),
-  userPromptTemplate: z.string().default(""),
   model: z.string().min(1),
   fallbackModel: z.string().optional(),
   parameters: versionParametersSchema.default({ piiFiltering: false }),
@@ -194,6 +193,14 @@ export const versionInputSchema = z.object({
   skillList: z.array(z.string()).default([]),
   subagentList: z.array(subagentRefSchema).default([]),
   maxTurn: z.number().int().positive().optional(),
+});
+
+export const putAgentConfigurationSchema = agentConfigurationInputSchema.extend({
+  expectedUpdatedAt: z.string().datetime(),
+}).strict();
+
+export const versionInputSchema = agentConfigurationInputSchema.extend({
+  userPromptTemplate: z.string().default(""),
 });
 
 export const versionNameSchema = z

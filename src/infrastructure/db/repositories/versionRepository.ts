@@ -1,10 +1,10 @@
 import { keys } from "@/infrastructure/db/keys";
 import { conditions, getItem, queryItems, transact } from "@/infrastructure/db/store";
 import type { VersionRepository } from "@/domain/project/repository";
-import type { McpBinding, Version } from "@/domain/project/types";
+import type { Version } from "@/domain/project/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
 import { projectIsLive } from "@/infrastructure/db/projectLifecycle";
-import { isMcpSourceMapping, MAX_MCP_SOURCE_MAPPINGS } from "@/domain/mcp/sourceMapping";
+import { toMcpBindings } from "@/infrastructure/db/projectConfiguration";
 
 const ENTITY_TYPE = "VERSION";
 const PUBLISHED = "published";
@@ -17,65 +17,6 @@ function toItem(version: Version): Record<string, unknown> {
     SK: key.SK,
     entityType: ENTITY_TYPE,
   };
-}
-
-/**
- * `mcpList` was a plain `string[]` before per-version header overrides existed.
- * Rows written then are still valid bindings with no override, so normalize on
- * read rather than migrating the table.
- *
- * This rebuilds the binding field by field rather than spreading the stored
- * object, so that a row can never introduce an attribute the domain type does
- * not have. The cost is that a field added to `McpBinding` and not added here is
- * written, stored, and then silently dropped on every read — which is exactly
- * what happened to `tools`: narrowing a server's tool list saved without
- * complaint and did nothing, because the run reads its version back through
- * here. Anything added to the binding must be added below.
- */
-function toMcpBindings(raw: unknown): McpBinding[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  return raw.flatMap((entry) => {
-    if (typeof entry === "string") {
-      return entry ? [{ name: entry }] : [];
-    }
-    if (entry && typeof entry === "object") {
-      const binding = entry as {
-        name?: unknown;
-        headers?: unknown;
-        headerTarget?: unknown;
-        tools?: unknown;
-        sourceOutputs?: unknown;
-      };
-      if (typeof binding.name === "string" && binding.name) {
-        if (binding.sourceOutputs !== undefined && (!Array.isArray(binding.sourceOutputs) ||
-          binding.sourceOutputs.length > MAX_MCP_SOURCE_MAPPINGS || !binding.sourceOutputs.every(isMcpSourceMapping) ||
-          new Set(binding.sourceOutputs.map((item) => item.tool)).size !== binding.sourceOutputs.length)) {
-          throw new Error("Stored MCP source mappings are invalid");
-        }
-        // An empty list means the same as no list — every tool — so it is
-        // dropped rather than stored as a narrowing that offers nothing.
-        const tools = Array.isArray(binding.tools)
-          ? binding.tools.filter((tool): tool is string => typeof tool === "string" && tool !== "")
-          : [];
-        return [
-          {
-            name: binding.name,
-            ...(binding.sourceOutputs ? { sourceOutputs: binding.sourceOutputs as McpBinding["sourceOutputs"] } : {}),
-            ...(binding.headers && typeof binding.headers === "object"
-              ? { headers: binding.headers as McpBinding["headers"] }
-              : {}),
-            ...(typeof binding.headerTarget === "string"
-              ? { headerTarget: binding.headerTarget }
-              : {}),
-            ...(tools.length > 0 ? { tools } : {}),
-          },
-        ];
-      }
-    }
-    return [];
-  });
 }
 
 function fromItem(item: Record<string, unknown>): Version {

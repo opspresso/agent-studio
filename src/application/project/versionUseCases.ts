@@ -1,244 +1,23 @@
+import { assertUniqueReferences, assertReferencesExist, assertSubagentProjectsAccessible,
+  assertValidImageModel, warnUnknownCatalogModel, assertProjectModelType, assertModelSupports,
+  type AgentConfigurationInput, type ConfigurationRefRepos } from "./configurationPolicy";
+import { resolveMcpBindings } from "./mcpBindingSettings";
+export type VersionRefRepos = ConfigurationRefRepos;
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type {
   McpBinding,
   Project,
-  SubagentRef,
   Version,
-  VersionParameters,
 } from "@/domain/project/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { versionMcpHeadersContext } from "@/domain/security/secretContext";
-import type { SkillRepository } from "@/domain/skill/repository";
 import type { McpRepository } from "@/domain/mcp/repository";
-import type { ExternalAgentRepository } from "@/domain/agent/repository";
-import { getModelConfig } from "@/domain/llm/models";
-import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
-import { assertProjectWritable, userMayAccessProject } from "./projectUseCases";
-import { agentModelRejectReason } from "./modelCompatibility";
+import { ConflictError, NotFoundError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
+import { assertProjectWritable } from "./projectUseCases";
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
-import { log } from "@/shared/logger";
-import { hasMcpHeaderSecrets, mcpHeaderTarget } from "@/application/mcpHeaderTarget";
 
-/**
- * Registry lookups a version's references are checked against. A dangling
- * reference degrades silently at run time (an unknown skill loads as an empty
- * description, an unknown subagent yields a tool error), so a typo would only
- * surface as a subtly worse answer — catch it at the write boundary instead.
- */
-export interface VersionRefRepos {
-  skills: Pick<SkillRepository, "get">;
-  mcps: Pick<McpRepository, "get">;
-  externalAgents: Pick<ExternalAgentRepository, "get">;
-  /** Local subagents are other projects. */
-  projects: Pick<ProjectRepository, "get">;
-}
-
-/** The reference lists as they appear on a version. */
-interface VersionRefs {
-  mcpList?: McpBinding[];
-  skillList?: string[];
-  subagentList?: SubagentRef[];
-}
-
-const subagentKey = (ref: SubagentRef): string => `${ref.type}:${ref.name}`;
-
-/**
- * What the version already referenced. Both checks below look only at what an
- * edit *adds*, so a version stays editable after the world around it changed.
- */
-function alreadyReferenced(existing?: VersionRefs) {
-  return {
-    mcps: new Set((existing?.mcpList ?? []).map((binding) => binding.name)),
-    skills: new Set(existing?.skillList ?? []),
-    subagents: new Set((existing?.subagentList ?? []).map(subagentKey)),
-  };
-}
-
-/**
- * Reject a list that names the same reference twice. Subagents because the
- * transfer tools address agents by name, so a duplicate is unaddressable; MCP
- * bindings because a duplicate opens the server's session twice and the second
- * row silently overwrites the first everywhere the run keys by server name (the
- * prompt's server table, the binding's tool selection); skills because a
- * duplicate is a duplicate row in the prompt's table. The console's pickers
- * cannot produce any of these — the API can, so the same write boundary that
- * checks references catches them.
- */
-function assertUniqueReferences(refs: VersionRefs): void {
-  const firstDuplicate = (names: readonly string[]): string | undefined => {
-    const seen = new Set<string>();
-    for (const name of names) {
-      if (seen.has(name)) {
-        return name;
-      }
-      seen.add(name);
-    }
-    return undefined;
-  };
-  const agent = firstDuplicate((refs.subagentList ?? []).map((ref) => ref.name));
-  if (agent) {
-    throw new ValidationError(
-      `Agent name "${agent}" is used more than once; connected agents must have unique names.`,
-    );
-  }
-  const mcp = firstDuplicate((refs.mcpList ?? []).map((binding) => binding.name));
-  if (mcp) {
-    throw new ValidationError(
-      `MCP server "${mcp}" is bound more than once; a server can be bound once per version.`,
-    );
-  }
-  const skill = firstDuplicate(refs.skillList ?? []);
-  if (skill) {
-    throw new ValidationError(
-      `Skill "${skill}" is bound more than once; a skill can be bound once per version.`,
-    );
-  }
-}
-
-/**
- * Reject references that do not resolve. Only entries absent from `existing`
- * are checked: a version whose skill or MCP server was deleted afterwards must
- * still be editable, otherwise deleting a registry entry would strand every
- * version that ever used it.
- */
-async function assertReferencesExist(
-  refs: VersionRefRepos,
-  next: VersionRefs,
-  existing?: VersionRefs,
-): Promise<void> {
-  const { mcps: knownMcps, skills: knownSkills, subagents: knownSubagents } =
-    alreadyReferenced(existing);
-
-  const checks: Array<Promise<string | null>> = [
-    ...(next.mcpList ?? [])
-      .filter((binding) => !knownMcps.has(binding.name))
-      .map(async ({ name }) =>
-        (await refs.mcps.get(name)) ? null : `MCP server "${name}" does not exist`,
-      ),
-    ...(next.skillList ?? [])
-      .filter((name) => !knownSkills.has(name))
-      .map(async (name) =>
-        (await refs.skills.get(name)) ? null : `Skill "${name}" does not exist`,
-      ),
-    ...(next.subagentList ?? [])
-      .filter((ref) => !knownSubagents.has(subagentKey(ref)))
-      .map(async (ref) => {
-        const found =
-          ref.type === "remote"
-            ? await refs.externalAgents.get(ref.name)
-            : await refs.projects.get(ref.name);
-        return found ? null : `${ref.type === "remote" ? "Agent" : "Project"} "${ref.name}" does not exist`;
-      }),
-  ];
-
-  const missing = (await Promise.all(checks)).filter((message): message is string => message !== null);
-  if (missing.length > 0) {
-    throw new ValidationError(missing.join("; "));
-  }
-}
-
-/**
- * Reject binding a local subagent project the editor may not access. A local
- * subagent runs another project inside this one's runs, so binding one is the
- * strongest form of reading it — a private project would otherwise be
- * reachable through any public project that named it. Only *added* refs are
- * checked, like the existence check above: a version stays editable after a
- * project it already bound went private, and the run-time transfer is the
- * platform's own composition, like the owner's token. A ref that does not
- * resolve is `assertReferencesExist`'s to report, not this one's.
- */
-async function assertSubagentProjectsAccessible(
-  refs: VersionRefRepos,
-  next: VersionRefs,
-  userEmail: string,
-  existing?: VersionRefs,
-): Promise<void> {
-  const known = alreadyReferenced(existing).subagents;
-  for (const ref of next.subagentList ?? []) {
-    if (ref.type !== "local" || known.has(subagentKey(ref))) {
-      continue;
-    }
-    const project = await refs.projects.get(ref.name);
-    if (project && !(await userMayAccessProject(project, userEmail))) {
-      throw new ValidationError(
-        `Project "${ref.name}" is private; ask its owner for an invite before binding it as an agent.`,
-      );
-    }
-  }
-}
-
-export interface VersionInput {
-  systemPrompt: string;
+export interface VersionInput extends AgentConfigurationInput {
   userPromptTemplate: string;
-  model: string;
-  fallbackModel?: string;
-  parameters: VersionParameters;
-  mcpList: McpBinding[];
-  skillList: string[];
-  subagentList: SubagentRef[];
-  maxTurn?: number;
-}
-
-/**
- * Resolve submitted MCP bindings to their stored form: header override values
- * are encrypted at rest, and a masked or empty value keeps the secret already
- * stored under the same server, header name, and endpoint fingerprint. A move
- * drops preserved values; only credentials freshly entered for the current URL
- * survive. A binding with no overrides is stored without either secret field.
- */
-async function resolveMcpBindings(
-  cipher: SecretCipher,
-  mcps: Pick<McpRepository, "get">,
-  projectName: string,
-  versionName: string,
-  next: McpBinding[],
-  existing: McpBinding[] = [],
-  existingVersionName: string = versionName,
-): Promise<McpBinding[]> {
-  const storedByName = new Map(existing.map((binding) => [binding.name, binding]));
-  return Promise.all(
-    next.map(async (binding) => {
-      // Carry the binding forward and replace only the internal credential
-      // fields. Rebuilding it from `{ name, headers }` is what silently dropped
-      // `tools`; the submitted target is ignored because only the server can
-      // bind a newly entered secret to the current registry URL.
-      const { headers: inputHeaders, headerTarget: _untrustedTarget, ...rest } = binding;
-      const stored = storedByName.get(binding.name);
-      // Editing a tool selection or model must not erase its endpoint configuration.
-      // An explicit empty map clears overrides; an omitted map preserves them.
-      const submitted = inputHeaders ?? (stored?.headers
-        ? cipher.maskHeaderOverrides(stored.headers, versionMcpHeadersContext(projectName, existingVersionName, binding.name))
-        : undefined);
-      if (!submitted || Object.keys(submitted).length === 0) {
-        return rest;
-      }
-      const current = await mcps.get(binding.name);
-      const hasNewSecret = Object.values(submitted).some(
-        (value) => typeof value === "string" && value !== "" && !cipher.isMasked(value),
-      );
-      if (!current && hasNewSecret) {
-        throw new ValidationError(
-          `MCP server "${binding.name}" does not exist; its header credentials cannot be bound to an endpoint.`,
-        );
-      }
-      const currentTarget = current ? mcpHeaderTarget(current.url) : undefined;
-      const storedHeaders =
-        !current || stored?.headerTarget === currentTarget ? stored?.headers ?? {} : {};
-      const headers = cipher.mergeHeaderOverrideUpdate(
-        storedHeaders,
-        submitted,
-        versionMcpHeadersContext(projectName, versionName, binding.name),
-        versionMcpHeadersContext(projectName, existingVersionName, binding.name),
-      );
-      if (Object.keys(headers).length === 0) {
-        return rest;
-      }
-      const headerTarget = hasMcpHeaderSecrets(headers)
-        ? currentTarget ?? stored?.headerTarget
-        : undefined;
-      return { ...rest, headers, ...(headerTarget ? { headerTarget } : {}) };
-    }),
-  );
 }
 
 /**
@@ -270,11 +49,10 @@ export async function resolveDraftMcpBindings(
   return resolveMcpBindings(
     cipher,
     mcps,
-    projectName,
-    "draft",
     bindings,
     saved?.mcpList ?? [],
-    saved?.versionName ?? "draft",
+    (server) => versionMcpHeadersContext(projectName, "draft", server),
+    (server) => versionMcpHeadersContext(projectName, saved?.versionName ?? "draft", server),
   );
 }
 
@@ -316,60 +94,6 @@ export type UpdateVersionInput = Partial<Omit<VersionInput, "fallbackModel" | "m
   fallbackModel?: string | null;
   maxTurn?: number | null;
 };
-
-/** Reject an imageModel that is unknown or lacks the imageGeneration capability. */
-function assertValidImageModel(parameters: VersionParameters): void {
-  if (parameters.imageModel && !getModelConfig(parameters.imageModel)?.capabilities.imageGeneration) {
-    throw new ValidationError(`Model does not support image generation: ${parameters.imageModel}`);
-  }
-}
-
-/** Warn (non-blocking) when a version references a model missing from the catalog. */
-function warnUnknownCatalogModel(projectName: string, model: string): void {
-  if (!getModelConfig(model)) {
-    log.warn(
-      "version",
-      `${projectName}: model "${model}" is not in the catalog; usage will be recorded with $0 cost`,
-    );
-  }
-}
-
-/**
- * Reject capability mismatches for catalog models. Unknown/custom ids stay on
- * the warn-only path — a mismatch on a KNOWN model is a misconfiguration, not
- * a catalog lag.
- */
-function assertProjectModelType(project: Project, model: string): void {
-  const cfg = getModelConfig(model);
-  if (!cfg) {
-    return;
-  }
-  const reason = agentModelRejectReason(cfg);
-  if (reason === "tools") {
-    throw new ValidationError(
-      `Model does not support tool calling required by agent projects: ${model}`,
-    );
-  }
-  if (reason === "type") {
-    throw new ValidationError(
-      `Model type does not support ${project.projectType} projects: ${model}`,
-    );
-  }
-}
-
-function assertModelSupports(project: Project, model: string, parameters: VersionParameters): void {
-  const cfg = getModelConfig(model);
-  if (!cfg) {
-    return;
-  }
-  assertProjectModelType(project, model);
-  if (parameters.structuredOutput && !cfg.capabilities.structuredOutput) {
-    throw new ValidationError(`Model does not support structured output: ${model}`);
-  }
-  if (parameters.reasoningTrace && !cfg.capabilities.reasoning) {
-    throw new ValidationError(`Model does not produce reasoning to record: ${model}`);
-  }
-}
 
 function nextVersionName(existing: Version[]): string {
   const maxNumeric = existing.reduce((max, version) => {
@@ -446,9 +170,9 @@ export async function createVersion(
     mcpList: await resolveMcpBindings(
       cipher,
       refs.mcps,
-      projectName,
-      versionName,
       input.mcpList,
+      [],
+      (server) => versionMcpHeadersContext(projectName, versionName, server),
     ),
     skillList: input.skillList,
     subagentList: input.subagentList,
@@ -501,10 +225,9 @@ export async function updateVersion(
       ? await resolveMcpBindings(
           cipher,
           refs.mcps,
-          projectName,
-          existing.versionName,
           input.mcpList,
           existing.mcpList,
+          (server) => versionMcpHeadersContext(projectName, existing.versionName, server),
         )
       : existing.mcpList,
     skillList: input.skillList ?? existing.skillList,

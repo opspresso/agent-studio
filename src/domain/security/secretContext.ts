@@ -59,6 +59,11 @@ export function versionMcpHeadersContext(
   return JSON.stringify(["project", projectName, "version", versionName, "mcp", serverName]);
 }
 
+/** Agent settings retain the same credential identity across ordinary edits. */
+export function agentMcpHeadersContext(projectName: string, serverName: string): string {
+  return JSON.stringify(["project", projectName, "agent", "mcp", serverName]);
+}
+
 export function mcpConnectionSecretContext(
   projectName: string,
   serverName: string,

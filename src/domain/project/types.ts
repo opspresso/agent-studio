@@ -158,6 +158,8 @@ export interface Project {
   memberEmails?: string[];
   departmentCode?: string;
   publishedVersion?: string;
+  /** Current Agent settings, read as one snapshot with the project. */
+  configuration?: AgentConfiguration;
   slack?: SlackIntegration;
   telegram?: TelegramIntegration;
   teams?: TeamsIntegration;
@@ -166,7 +168,7 @@ export interface Project {
   updatedAt: string;
 }
 
-export interface VersionParameters {
+export interface AgentParameters {
   policy?: RuntimePolicy;
   temperature?: number;
   presencePenalty?: number;
@@ -303,18 +305,23 @@ export interface McpBinding {
   tools?: string[];
 }
 
-export interface Version {
+/** Mutable current settings; execution retains the snapshot it admitted. */
+export interface AgentConfiguration {
   projectName: string;
-  versionName: string;
   systemPrompt: string;
-  userPromptTemplate: string;
   model: string;
   fallbackModel?: string;
-  parameters: VersionParameters;
-  /** Bound MCP servers. Legacy rows stored plain names; reads normalize them. */
+  parameters: AgentParameters;
   mcpList: McpBinding[];
   skillList: string[];
   subagentList: SubagentRef[];
   maxTurn?: number;
+}
+
+export type VersionParameters = AgentParameters;
+
+export interface Version extends AgentConfiguration {
+  versionName: string;
+  userPromptTemplate: string;
   createdAt: string;
 }

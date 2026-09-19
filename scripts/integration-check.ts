@@ -39,6 +39,8 @@ async function main() {
   await checkAudioQueueMigration();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
+  const { checkAgentConfiguration } = await import("./agent-configuration-check");
+  await checkAgentConfiguration();
   const { checkWorkspaces } = await import("./workspace-check");
   await checkWorkspaces();
   const { checkAuthSchema } = await import("./auth-schema-check");
