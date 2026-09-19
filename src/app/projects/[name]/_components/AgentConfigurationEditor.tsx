@@ -177,10 +177,10 @@ export function AgentConfigurationEditor({
     <Stack gap="md">
       {models.length > 0 ? (
         <Select
-          label={t("version.model")}
+          label={t("configuration.model")}
           value={value.model}
           onChange={(model) => patch({ model: model ?? "" })}
-          placeholder={t("version.selectModel")}
+          placeholder={t("configuration.selectModel")}
           searchable
           data={modelSelectData(
             models,
@@ -194,13 +194,13 @@ export function AgentConfigurationEditor({
           description={selectedModel ? modelSummary(selectedModel) : undefined}
           error={
             value.model && !selectedModel
-              ? t("version.modelUnlisted")
+              ? t("configuration.modelUnlisted")
               : undefined
           }
         />
       ) : (
         <TextInput
-          label={t("version.model")}
+          label={t("configuration.model")}
           value={value.model}
           onChange={(e) => patch({ model: e.currentTarget.value })}
           placeholder="openai/gpt-5-mini"
@@ -210,10 +210,10 @@ export function AgentConfigurationEditor({
       {/* Fallback applies to retryable model failures before the first output. */}
       {(models.length > 0 ? (
           <Select
-            label={t("version.fallbackModel")}
+            label={t("configuration.fallbackModel")}
             value={value.fallbackModel ?? null}
             onChange={(fallbackModel) => patch({ fallbackModel: fallbackModel ?? undefined })}
-            placeholder={t("version.none")}
+            placeholder={t("configuration.none")}
             clearable
             searchable
             data={modelSelectData(
@@ -229,17 +229,17 @@ export function AgentConfigurationEditor({
           />
         ) : (
           <TextInput
-            label={t("version.fallbackModel")}
+            label={t("configuration.fallbackModel")}
             value={value.fallbackModel ?? ""}
             onChange={(e) => patch({ fallbackModel: e.currentTarget.value || undefined })}
           />
         ))}
 
       <Textarea
-        label={t("version.systemPrompt")}
+        label={t("configuration.systemPrompt")}
         value={value.systemPrompt}
         onChange={(e) => patch({ systemPrompt: e.currentTarget.value })}
-        placeholder={t("version.systemPromptPlaceholder")}
+        placeholder={t("configuration.systemPromptPlaceholder")}
         autosize
         minRows={8}
         maxRows={30}
@@ -248,36 +248,36 @@ export function AgentConfigurationEditor({
 
       <SimpleGrid cols={2} spacing="sm">
         <NumberField
-          label={t("version.temperature")}
+          label={t("configuration.temperature")}
           value={value.parameters.temperature}
           onChange={(temperature) => patchParams({ temperature })}
           step={0.1}
           min={0}
           max={2}
-          placeholder={t("version.defaultPlaceholder")}
+          placeholder={t("configuration.defaultPlaceholder")}
         />
         <NumberField
-          label={t("version.maxTokens")}
+          label={t("configuration.maxTokens")}
           value={value.parameters.maxTokens}
           onChange={(maxTokens) => patchParams({ maxTokens })}
           step={1}
           min={1}
-          placeholder={t("version.defaultPlaceholder")}
+          placeholder={t("configuration.defaultPlaceholder")}
         />
         <NumberField
-          label={t("version.presencePenalty")}
+          label={t("configuration.presencePenalty")}
           value={value.parameters.presencePenalty}
           onChange={(presencePenalty) => patchParams({ presencePenalty })}
           step={0.1}
           min={PRESENCE_PENALTY_RANGE.min}
           max={PRESENCE_PENALTY_RANGE.max}
-          placeholder={t("version.defaultPlaceholder")}
+          placeholder={t("configuration.defaultPlaceholder")}
         />
       </SimpleGrid>
 
       {supportsReasoning && (
         <Select
-          label={t("version.reasoningEffort")}
+          label={t("configuration.reasoningEffort")}
           value={value.parameters.reasoningEffort ?? ""}
           onChange={(effort) =>
             patchParams({
@@ -286,7 +286,7 @@ export function AgentConfigurationEditor({
           }
           allowDeselect={false}
           data={[
-            { value: "", label: t("version.default") },
+            { value: "", label: t("configuration.default") },
             { value: "low", label: "low" },
             { value: "medium", label: "medium" },
             { value: "high", label: "high" },
@@ -302,8 +302,8 @@ export function AgentConfigurationEditor({
       {(supportsReasoning || value.parameters.reasoningTrace) && (
         <Stack gap={4}>
           <Checkbox
-            label={t("version.reasoningTrace")}
-            description={t("version.reasoningTraceHint")}
+            label={t("configuration.reasoningTrace")}
+            description={t("configuration.reasoningTraceHint")}
             checked={value.parameters.reasoningTrace ?? false}
             onChange={(e) =>
               patchParams({ reasoningTrace: e.currentTarget.checked ? true : undefined })
@@ -322,7 +322,7 @@ export function AgentConfigurationEditor({
       )}
 
       <NumberField
-        label={t("version.maxTurns")}
+        label={t("configuration.maxTurns")}
         value={value.maxTurn}
         onChange={(maxTurn) => patch({ maxTurn })}
         step={1}
@@ -331,8 +331,8 @@ export function AgentConfigurationEditor({
       />
 
       <Checkbox
-        label={t("version.piiFiltering")}
-        description={t("version.piiHint")}
+        label={t("configuration.piiFiltering")}
+        description={t("configuration.piiHint")}
         checked={value.parameters.piiFiltering}
         onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
       />
@@ -340,8 +340,8 @@ export function AgentConfigurationEditor({
       <RuntimePolicyEditor value={value.parameters.policy} onChange={(policy) => patchParams({ policy })} />
 
       <Checkbox
-        label={t("version.callerContext")}
-        description={t("version.callerHint")}
+        label={t("configuration.callerContext")}
+        description={t("configuration.callerHint")}
         checked={value.parameters.callerContext ?? false}
         onChange={(e) => patchParams({ callerContext: e.currentTarget.checked })}
       />
@@ -350,13 +350,13 @@ export function AgentConfigurationEditor({
         <Stack gap="xs">
           <Group gap={6} wrap="nowrap">
             <Checkbox
-              label={t("version.structuredOutput")}
+              label={t("configuration.structuredOutput")}
               checked={value.parameters.structuredOutput ?? false}
               onChange={(e) => patchParams({ structuredOutput: e.currentTarget.checked })}
             />
             <ActionIcon
               size="sm"
-              aria-label={t("version.aboutStructuredOutput")}
+              aria-label={t("configuration.aboutStructuredOutput")}
               onClick={() => setSchemaHelpOpen(true)}
             >
               <IconHelp size={15} stroke={1.7} />
@@ -383,7 +383,7 @@ export function AgentConfigurationEditor({
 
       <Stack gap="xs">
         <Checkbox
-          label={t("version.imageTools")}
+          label={t("configuration.imageTools")}
           checked={value.parameters.imageGeneration ?? false}
           onChange={(e) =>
             patchParams(
@@ -394,18 +394,18 @@ export function AgentConfigurationEditor({
           }
         />
         <Text fz="xs" c="dimmed">
-          {t("version.imageToolsHint")}
+          {t("configuration.imageToolsHint")}
         </Text>
         {value.parameters.imageGeneration && (
           <Select
-            label={t("version.imageModel")}
+            label={t("configuration.imageModel")}
             value={value.parameters.imageModel ?? ""}
             onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
             allowDeselect={false}
             data={modelSelectData(
               imageModels,
               [
-                { value: "", label: t("version.default") },
+                { value: "", label: t("configuration.default") },
                 ...(value.parameters.imageModel && !selectedImageModel
                   ? [{ value: value.parameters.imageModel, label: value.parameters.imageModel }]
                   : []),
@@ -426,25 +426,25 @@ export function AgentConfigurationEditor({
       onChange={(e) => patchParams({ workspaceTools: e.currentTarget.checked ? true : undefined })} />
       <Stack gap="xs">
         <Checkbox
-          label={t("version.fetchUrl")}
+          label={t("configuration.fetchUrl")}
           checked={value.parameters.urlFetch ?? false}
           onChange={(e) => patchParams({ urlFetch: e.currentTarget.checked ? true : undefined })}
         />
         <Text fz="xs" c="dimmed">
-          {t("version.fetchUrlHint")}
+          {t("configuration.fetchUrlHint")}
         </Text>
       </Stack>
 
       <Stack gap="xs">
         <Checkbox
-          label={t("version.slackWorkspace")}
+          label={t("configuration.slackWorkspace")}
           checked={value.parameters.slackWorkspace ?? false}
           onChange={(e) =>
             patchParams({ slackWorkspace: e.currentTarget.checked ? true : undefined })
           }
         />
         <Text fz="xs" c="dimmed">
-          {t("version.slackWorkspaceHint")}
+          {t("configuration.slackWorkspaceHint")}
         </Text>
       </Stack>
 
@@ -458,11 +458,11 @@ export function AgentConfigurationEditor({
           save={save}
         />
         <SearchSelectInput
-          label={t("version.skills")}
+          label={t("configuration.skills")}
           values={value.skillList}
           onChange={(skillList) => patch({ skillList })}
           options={skillOptions}
-          placeholder={t("version.searchSkills")}
+          placeholder={t("configuration.searchSkills")}
         />
         <SubagentInput
           values={value.subagentList}
@@ -470,14 +470,14 @@ export function AgentConfigurationEditor({
           options={subagentOptions}
         />
         <Checkbox
-          label={t("version.dynamicCapabilities")}
-          description={t("version.dynamicCapabilitiesHint")}
+          label={t("configuration.dynamicCapabilities")}
+          description={t("configuration.dynamicCapabilitiesHint")}
           checked={value.parameters.dynamicCapabilities ?? false}
           onChange={(e) => patchParams({ dynamicCapabilities: e.currentTarget.checked })}
         />
         <Checkbox
-          label={t("version.memoryRecall")}
-          description={t("version.memoryRecallHint")}
+          label={t("configuration.memoryRecall")}
+          description={t("configuration.memoryRecallHint")}
           checked={value.parameters.memoryRecall ?? false}
           onChange={(e) =>
             patchParams({ memoryRecall: e.currentTarget.checked ? true : undefined })
@@ -491,7 +491,7 @@ export function AgentConfigurationEditor({
             // Only what the bindings alone rule out — a bound server that
             // turns out not to offer the tool is for the preview to report.
             <Alert color="yellow" variant="light" fz="xs">
-              {t("version.memoryRecallUnbound")}
+              {t("configuration.memoryRecallUnbound")}
             </Alert>
           )}
       </Stack>
@@ -527,7 +527,7 @@ const SAMPLE_REPLY = JSON.stringify(
 function StructuredOutputHelp({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const t = useT();
   return (
-    <Modal opened={opened} onClose={onClose} title={t("version.structuredOutputTitle")} size="lg">
+    <Modal opened={opened} onClose={onClose} title={t("configuration.structuredOutputTitle")} size="lg">
       <Stack gap="sm">
         <Text fz="sm" lh={1.6}>
           {t("structured.intro1")}

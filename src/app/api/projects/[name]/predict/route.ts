@@ -43,13 +43,10 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         configuration,
         messages: attachDocumentsToMessages(parsed.data.messages ?? [], read.documents),
         actor,
-        // Not on the image branch above: an image run's prompt is the rendered
-        // template, with no system prompt for a caller block to live in.
         ...(principal.caller ? { caller: principal.caller } : {}),
         ...(conversation ? { conversation } : {}),
       };
-      // The strategy→executor mapping lives in runProject; this route only
-      // decides how to serialise the answer.
+      // The facade owns execution; this route chooses the response representation.
       if (parsed.data.stream) {
         const abortController = new AbortController();
         return await sseResponse(

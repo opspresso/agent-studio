@@ -11,26 +11,9 @@ import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./agentBindings";
 
 /**
- * What a version would actually send. An agent run's system prompt is assembled
- * at dispatch (skill table, connected MCP servers and their aliased tool names,
- * the transfer instructions, the image section), so the text in the editor is
- * never the text the model reads; a prompt project's template is rendered with
- * its variables. Both go through the engine's own builders, so the preview
- * cannot drift from the run it describes.
- *
- * MCP servers are contacted for real, exactly as a run does, which is the only
- * way the tool names are the true ones — so the sessions this opens are
- * released before returning.
- *
- * With a request, memory recall and dynamic capability discovery run in the
- * same order as a real run. Skipping either would put the preview back where the
- * caller block once had it: describing a smaller prompt than the version
- * actually sends, and silently — the discovered rows are the ones an author has
- * no other way to see.
- *
- * PII masking is not applied: the preview has at most one request, not the
- * complete message set from which a run builds its mapping. A version with the
- * filter on says so in its warnings instead.
+ * Assemble the Agent's current editor draft using the same capabilities as a run.
+ * MCP discovery and optional recall are real reads; connections close before return.
+ * PII is not masked in this preview, which reports that limitation when enabled.
  */
 export async function previewPrompt(
   deps: ExecutionDeps,
@@ -56,7 +39,7 @@ export async function previewPrompt(
     message?: string;
     /**
      * Who is previewing. Reaches the prompt on the same condition a run's does
-     * — the version's `callerContext` opt-in — because a preview that showed
+     * — the Agent's `callerContext` opt-in — because a preview that showed
      * the block unconditionally would be as wrong as one that never showed it.
      */
     caller?: RunCaller;
@@ -103,11 +86,11 @@ export async function previewPrompt(
   );
   try {
     // The same deps a run is given: whether the image section and the image
-    // tools appear is decided from them, not from the version alone.
+    // tools appear is decided from them, not from the Agent alone.
     const agentDeps = await buildAgentDeps(
       deps,
       // As widened by discovery, so the preview stands for the run it describes
-      // rather than the version as saved.
+      // rather than the Agent as saved.
       resolved.configuration,
       project.name,
       async () => {},
@@ -116,8 +99,8 @@ export async function previewPrompt(
     );
     // The same assembly a run uses, not a second spelling of it. This is where
     // the two drifted: the preview omitted the caller and showed a prompt one
-    // block short of what the version actually sends.
-    // Nothing is asked — a preview has no request — but whether a version with
+    // block short of what the Agent actually sends.
+    // Nothing is asked — a preview has no request — but whether a Agent with
     // recall on has anywhere to recall *from* is the one memory warning an
     // author can act on from the editor.
     const missingMemory =

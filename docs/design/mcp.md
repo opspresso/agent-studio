@@ -1,7 +1,7 @@
 # MCP
 
-전역 registry의 서버를 Version에 연결하고 SDK Runtime에 도구로 제공한다.
-서버 주소·설명은 registry, 도구 선택·헤더 override는 Version, OAuth grant는 Project가 소유한다.
+전역 registry의 서버를 Agent 설정에 연결하고 SDK Runtime에 도구로 제공한다.
+서버 주소·설명은 registry, 도구 선택·헤더 override는 Agent 설정, OAuth grant는 Project가 소유한다.
 HTTP 형태는 [API](../API.md#mcp-oauth), 설정은 [CONFIGURATION](../CONFIGURATION.md#mcp),
 인가·SSRF·OAuth 검사는 [SECURITY](../SECURITY.md#mcp-oauth)를 따른다.
 
@@ -11,10 +11,10 @@ HTTP 형태는 [API](../API.md#mcp-oauth), 설정은 [CONFIGURATION](../CONFIGUR
 `description`은 모델의 Connected MCP Servers 표에, `content`는 콘솔에 표시한다.
 실제로 도달할 수 있고 허용된 도구가 있는 서버만 프롬프트에 설명한다.
 
-Version의 `mcpList`는 서버 이름, `tools`, `headers`, 선택적 `sourceOutputs`를 가진다.
+Agent 설정의 `mcpList`는 서버 이름, `tools`, `headers`, 선택적 `sourceOutputs`를 가진다.
 URL은 registry에서 온다. 기존 binding의 header 생략은 보존, `{}`는 제거,
 문자열은 추가·교체, `null`은 registry 기본값 제거다.
-마스킹과 endpoint fingerprint 계약은 [API 바인딩](../API.md#mcp-바인딩과-version-별-헤더-오버라이드)을 따른다.
+마스킹과 endpoint fingerprint 계약은 [API 바인딩](../API.md#mcp-바인딩과-agent-헤더-오버라이드)을 따른다.
 
 Plugin sync는 streamable-HTTP 서버만 가져오며 header를 가져오지 않는다.
 모델용 설명과 운영 노트는 Plugin의 `org.opspresso.agent-studio/mcp/<server>.md`를 사용한다.
@@ -122,7 +122,7 @@ running과 reachable을 별도로 확인한다. [운영](../OPERATIONS.md#재배
 
 관리자는 서버에서 discovery한 `auth`와 공유 OAuth 앱을 관리하고,
 프로젝트 소유자는 그 앱으로 자기 계정의 grant를 연결한다.
-access/refresh token과 연결 revision은 프로젝트별 연결 행에 보관하며 Version이나 publish 상태와 분리한다.
+access/refresh token과 연결 revision은 프로젝트별 연결 행에 보관하며 Agent 실행 설정과 분리한다.
 
 실행 경로는 well-known 문서를 다시 가져오지 않는다. 저장된 메타데이터로 grant를 해석하고
 필요하면 갱신한다. 공유 client secret은 registry에서 읽어 회전을 반영하고,

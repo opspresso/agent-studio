@@ -55,7 +55,7 @@ export interface RunBracket {
   readonly runId: string;
   /**
    * Where this run's output goes, with the run's own identity already bound —
-   * project, version, actor, transfer chain, correlation id.
+   * project, Agent, actor, transfer chain, correlation id.
    *
    * It is built here for the same reason the guards are: four entry points admit
    * a top-level run, and every one of them produces bytes. Binding the context
@@ -68,7 +68,7 @@ export interface RunBracket {
 /**
  * Admit a top-level run, or refuse it.
  *
- * Throws `ValidationError` when the version names a model this deployment
+ * Throws `ValidationError` when the Agent names a model this deployment
  * refuses to price, `CostLimitExceededError` when the project is over its daily
  * block threshold, `MemberCostLimitExceededError` when the member behind the
  * actor has spent their tier's monthly cap, or `ConcurrencyLimitError` when the
@@ -166,7 +166,7 @@ export function openModelCall(
   return openExecutionBracket(deps, project, configuration, actor);
 }
 
-/** Non-model workspace jobs share cost, concurrency and metrics without inventing a Version/model. */
+/** Non-model workspace jobs share cost, concurrency and metrics without inventing a model. */
 export function openTaskRun(
   deps: RunBracketDeps,
   project: Project,

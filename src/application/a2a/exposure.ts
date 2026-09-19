@@ -1,11 +1,4 @@
-/**
- * Which projects are exposed over A2A, and the Agent Card each one publishes.
- *
- * This lived in four route handlers, each re-deriving "configured version → card"
- * and each reaching past {@link resolveRunnableVersion} to read the pointer
- * itself. That policy has one owner; a second copy is how an external surface
- * starts serving drafts. Routes now only choose status codes.
- */
+/** A2A surfaces expose accessible Agents with current settings through one policy. */
 
 import type { AgentCard } from "@a2a-js/sdk";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -15,7 +8,7 @@ import { mapWithLimit } from "@/shared/mapWithLimit";
 
 export interface A2aExposureDeps {
   projects: ProjectRepository;
-  /** Renders the Agent Card for a runnable project/version pair. */
+  /** Renders the Agent Card for a configured Agent. */
   buildCard(project: Project): Promise<AgentCard>;
   /** Public URL of a project's Agent Card. */
   cardUrlFor(projectName: string): Promise<string>;
@@ -35,11 +28,7 @@ export interface A2aProjectListItem {
   cardUrl: string;
 }
 
-/**
- * Resolve a project to its configured version and card, or null when either is
- * missing. Configured-only: A2A is an external surface, so a draft never leaks
- * (`resolveRunnableVersion` owns that rule).
- */
+/** Resolve a configured Agent and its card, or null if unavailable. */
 export async function resolveExposedProject(
   deps: A2aExposureDeps,
   name: string,
@@ -60,15 +49,7 @@ async function exposeProject(
   return { project, configuration, card: await deps.buildCard(project) };
 }
 
-/**
- * Version lookups this listing keeps in flight.
- *
- * Deciding "is this one runnable" costs a read per project — the configured
- * pointer, or the version list behind a draft fallback — so the listing's cost
- * scales with the deployment rather than with the page. One `Promise.all` over
- * every accessible project opens that many database round trips at once, and
- * for an admin "every accessible project" is all of them.
- */
+/** Bound concurrent Agent Card URL resolution across the catalog. */
 export const MAX_CONCURRENT_A2A_EXPOSURE_READS = 8;
 
 /** Every project this viewer may see that is currently exposed over A2A. */

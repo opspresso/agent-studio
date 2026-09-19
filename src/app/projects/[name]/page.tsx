@@ -69,7 +69,7 @@ export default function PlaygroundPage() {
 
   const currentSchema = schemaText ?? (draft.parameters.jsonSchema ? JSON.stringify(draft.parameters.jsonSchema, null, 2) : "");
   const parsed = useMemo(() => parseConfigurationDraft(draft, currentSchema), [draft, currentSchema]);
-  const schemaError = parsed === null ? t("version.invalidJson") : null;
+  const schemaError = parsed === null ? t("configuration.invalidJson") : null;
   const dirty = parsed === null || JSON.stringify(parsed) !== snapshot;
 
   async function save() {

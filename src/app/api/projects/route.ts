@@ -31,8 +31,7 @@ export const POST = withAuth(async (user, request: Request) => {
     return invalidRequest(parsed.error);
   }
   try {
-    // Project plus its initial version "1" — see createProjectFlow.ts for why
-    // the version is created and deliberately not published.
+    // Project metadata and initial Agent settings are created atomically.
     const project = await createAgent({
       ...parsed.data,
       ownerEmail: user.email,

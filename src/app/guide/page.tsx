@@ -36,7 +36,7 @@ const SECTIONS: readonly GuideSection[] = [
       { title: "guide.start.account", body: "guide.start.accountBody" },
       { title: "guide.start.create", body: "guide.start.createBody" },
       { title: "guide.start.test", body: "guide.start.testBody" },
-      { title: "guide.start.publish", body: "guide.start.publishBody" },
+      { title: "guide.start.connect", body: "guide.start.connectBody" },
     ],
     links: [
       { href: "/chats", label: "nav.chats" },
@@ -58,15 +58,15 @@ const SECTIONS: readonly GuideSection[] = [
     ],
   },
   {
-    id: "versions",
-    title: "guide.versions.title",
-    body: "guide.versions.body",
+    id: "configuration",
+    title: "guide.configuration.title",
+    body: "guide.configuration.body",
     Icon: IconRoute,
     entries: [
-      { title: "guide.versions.model", body: "guide.versions.modelBody" },
-      { title: "guide.versions.prompt", body: "guide.versions.promptBody" },
-      { title: "guide.versions.limits", body: "guide.versions.limitsBody" },
-      { title: "guide.versions.publish", body: "guide.versions.publishBody" },
+      { title: "guide.configuration.model", body: "guide.configuration.modelBody" },
+      { title: "guide.configuration.prompt", body: "guide.configuration.promptBody" },
+      { title: "guide.configuration.limits", body: "guide.configuration.limitsBody" },
+      { title: "guide.configuration.apply", body: "guide.configuration.applyBody" },
     ],
   },
   {
@@ -96,7 +96,7 @@ const SECTIONS: readonly GuideSection[] = [
     body: "guide.chat.body",
     Icon: IconVocabulary,
     entries: [
-      { title: "guide.chat.version", body: "guide.chat.versionBody" },
+      { title: "guide.chat.configuration", body: "guide.chat.configurationBody" },
       { title: "guide.chat.context", body: "guide.chat.contextBody" },
       { title: "guide.chat.attachments", body: "guide.chat.attachmentsBody" },
       { title: "guide.chat.createFiles", body: "guide.chat.createFilesBody" },
@@ -147,7 +147,7 @@ const SECTIONS: readonly GuideSection[] = [
     entries: [
       { title: "guide.audio.setup", body: "guide.audio.setupBody" },
       { title: "guide.audio.skills", body: "guide.audio.skillsBody" },
-      { title: "guide.audio.version", body: "guide.audio.versionBody" },
+      { title: "guide.audio.configuration", body: "guide.audio.configurationBody" },
       { title: "guide.audio.run", body: "guide.audio.runBody" },
       { title: "guide.audio.results", body: "guide.audio.resultsBody" },
       { title: "guide.audio.records", body: "guide.audio.recordsBody" },
@@ -166,7 +166,7 @@ const SECTIONS: readonly GuideSection[] = [
     Icon: IconRoute,
     entries: [
       { title: "guide.api.token", body: "guide.api.tokenBody" },
-      { title: "guide.api.version", body: "guide.api.versionBody" },
+      { title: "guide.api.address", body: "guide.api.addressBody" },
       { title: "guide.api.input", body: "guide.api.inputBody" },
       { title: "guide.api.sdk", body: "guide.api.sdkBody" },
       { title: "guide.api.stream", body: "guide.api.streamBody" },

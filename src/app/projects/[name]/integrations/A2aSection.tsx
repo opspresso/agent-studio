@@ -46,7 +46,7 @@ export function A2aSection({ projectName }: { projectName: string }) {
     >
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>
-          The configured version is exposed as an A2A agent. Share the Agent Card URL with external
+          The current Agent configuration is exposed over A2A. Share the Agent Card URL with external
           systems; callers authenticate with the <Code>X-A2A-Key</Code> header.
         </Text>
 
@@ -57,7 +57,7 @@ export function A2aSection({ projectName }: { projectName: string }) {
         )}
         {view.enabled && !view.configured && (
           <Text fz="sm" c="dimmed">
-            Publish a version to expose this project over A2A.
+            Save the Agent settings to expose this project over A2A.
           </Text>
         )}
 

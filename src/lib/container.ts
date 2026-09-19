@@ -571,7 +571,7 @@ const RERANKER = config.reranker;
 /**
  * The capability catalog, when this deployment turned it on. Undefined where
  * it did not: the reindex endpoint answers 503 and a run resolves exactly the
- * bindings its version names — which is what every run did before the catalog
+ * bindings its configuration names — which is what every run did before the catalog
  * existed, so the feature is off rather than half-present. Off by default
  * because it needs an embedding model the deployment's channel can serve,
  * which nothing here can verify at boot.
@@ -592,8 +592,8 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = c
         const result = await mcpUseCases.testConnection(serverName);
         return result.ok ? result.tools : undefined;
       },
-      // Wrapped so a version's system prompt — the same text on every run of
-      // that version — is embedded once per process rather than once per run.
+      // Wrapped so an Agent's system prompt — the same text on every run of
+      // that Agent — is embedded once per process rather than once per run.
       // Only queries are cached; a reindex's documents pass straight through.
       //
       // The space a cached vector belongs to is the model *and*, for the
@@ -995,8 +995,8 @@ export const usageUseCases = createUsageUseCases({
 });
 
 /**
- * Registry lookups a version's mcp/skill/subagent references are validated
- * against. Module-local: the version slice below is the only consumer, and an
+ * Registry lookups an Agent's mcp/skill/subagent references are validated
+ * against. Module-local: the configuration slice below is the only consumer, and an
  * exported bundle of repositories is the door the factory just closed —
  * `REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE` bans the two names, not a object
  * holding them.
@@ -1256,7 +1256,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
   },
 };
 
-/** AG-UI: the published version resolved over the same repositories, run through `executionDeps`. */
+/** AG-UI reads the current Agent configuration and runs through `executionDeps`. */
 export const aguiDeps: AguiDeps = {
   projects: projectRepository,
 
@@ -1307,7 +1307,7 @@ export function getAudioRuntime() {
       if (input.destination.memories && !result.postprocess) throw new ValidationError("Memory extraction requires a postprocessing Agent");
       const configuration = (await projectRepository.get(projectName))?.configuration;
       const binding = configuration?.mcpList.find((entry) => entry.name === input.destination!.serverName);
-      if (!configuration || !binding) throw new ValidationError("The destination must be bound to the project's published version");
+      if (!configuration || !binding) throw new ValidationError("The destination must be bound to the Agent's current settings");
       result.destination = { ...input.destination, configuration: { ...configuration, mcpList: [binding] } };
       const destination = await openDestination({ projectName, userEmail: email, destination: result.destination });
       await destination.close();
@@ -1499,7 +1499,7 @@ async function authorizeWorkspaceTools(email: string, projectName: string): Prom
   if (tier !== "member" && tier !== "admin") throw new ValidationError("Workspace tools require member access");
   await projectUseCases.assertAccessible(projectName, email);
   if (!getWorkspaceConfig()) throw new ValidationError("Workspace Sandbox backend is not configured");
-  if (!await workspaceRepositoryPolicyUseCases.enabled(projectName)) throw new ValidationError("Workspace tools are disabled in the active agent version");
+  if (!await workspaceRepositoryPolicyUseCases.enabled(projectName)) throw new ValidationError("Workspace tools are disabled in the current Agent settings");
 }
 
 function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps {

@@ -185,7 +185,7 @@ export interface AgentParameters {
   imageGeneration?: boolean;
   imageModel?: string;
   /**
-   * Whether this version's runs may read an address the model names.
+   * Whether this Agent's runs may read an address the model names.
    *
    * Off by default. Every other outbound request goes to a URL an operator
    * registered; this one goes wherever the model says, and a model is talked
@@ -197,7 +197,7 @@ export interface AgentParameters {
   /** Opt into project-managed persistent Workspaces and isolated Sandbox tools. */
   workspaceTools?: boolean;
   /**
-   * Whether this version's runs may read the Slack workspace its project's bot
+   * Whether this Agent's runs may read the Slack workspace its project's bot
    * is installed in — channel history, threads, who a user id is.
    *
    * Off by default, and opt-in for the same reason `urlFetch` is: it widens
@@ -211,13 +211,13 @@ export interface AgentParameters {
    */
   slackWorkspace?: boolean;
   /**
-   * Whether a run may reach capabilities this version did not bind, found by
-   * searching the global catalog with this version's system prompt and the
+   * Whether a run may reach capabilities this Agent did not bind, found by
+   * searching the global catalog with this Agent's system prompt and the
    * request being answered.
    *
    * Opt-in, and off for everything written before it existed, because it is the
    * one parameter that changes what a run *can do* rather than how it does it.
-   * A version is a snapshot of configuration; silently widening what an existing
+   * A Agent is a snapshot of configuration; silently widening what an existing
    * one reaches would make its past traces describe a different agent.
    *
    * What it adds is strictly additive: bindings are resolved first and in full,
@@ -266,7 +266,7 @@ export interface AgentParameters {
    * changes who can read the thinking rather than what the run can do: reasoning
    * restates the request in the model's own words, so it lands in storage and on
    * a reader's screen with whatever the request carried. Inert on a model with
-   * no reasoning, and the version editor offers it only where the model has it.
+   * no reasoning, and the Agent editor offers it only where the model has it.
    *
    * It does not change what the *model* is sent: a turn's thinking goes back to
    * the provider attached to that turn either way.
@@ -280,8 +280,8 @@ export interface SubagentRef {
 }
 
 /**
- * A version's binding to a registry MCP server. The URL always comes from the
- * registry; only headers may be redefined per version.
+ * A Agent's binding to a registry MCP server. The URL always comes from the
+ * registry; only headers may be redefined per Agent.
  *
  * `headers` layers over the registry server's own headers at dispatch:
  * a string value replaces a registry default or adds a new header, and `null`
@@ -296,7 +296,7 @@ export interface McpBinding {
   /** Internal fingerprint of the registry URL that encrypted header values belong to. */
   headerTarget?: string;
   /**
-   * Which of the server's tools this version offers the model. Absent means all
+   * Which of the server's tools this Agent offers the model. Absent means all
    * of them — the shape every binding had before, and the right default for a
    * small server. A large server is worth narrowing: every tool costs prompt
    * budget and dilutes the model's choice.

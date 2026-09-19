@@ -1,11 +1,4 @@
-/**
- * Triggers: something outside the console starting a run.
- *
- * A trigger always runs the project's **published** version. A draft is
- * configuration in progress; an external system firing at one would run
- * whatever an editor happened to have saved, which is the same reason Slack and
- * A2A are published-only (`resolveRunnableVersion`).
- */
+/** Triggers start runs using the Agent settings read when the firing is admitted. */
 
 import type {
   MessageDestination,
@@ -79,7 +72,7 @@ export interface WebhookTrigger extends TriggerBase {
 }
 
 /**
- * Fires the published version at cron occurrences. No secret and no payload:
+ * Runs the current Agent configuration at cron occurrences. No secret and no payload:
  * nothing external presents credentials — the scan endpoint authenticates the
  * ticker itself — and every firing runs the same fixed input.
  */

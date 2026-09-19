@@ -69,7 +69,7 @@ receipt와 관련 집계를 transaction으로 저장해 같은 결과의 재정�
 **actor 는 런의 것이지 턴의 것이 아니다.** `createUsageAggregator` 는 그것과 한 번 묶이므로,
 subagent transfer 가 다른 project 에서 하는 호출도 여전히 런을 시작한 사람에게 귀속된다.
 `RunOrigin { actor?, userEmail?, caller?, conversation?, ancestry }` 가 모든 transfer hop 을 따라
-이들을 내려보낸다 — `caller` 는 caller context 를 켠 version 을 위해 actor 가 *말로* 누구인지를 담는
+이들을 내려보낸다 — `caller` 는 caller context를 켠 Agent를 위해 actor 가 *말로* 누구인지를 담는
 값이다. subagent 는 부모와 같은 사람에게 답하고 같은 사람에게 비용을 물리므로, 값들은 여덟
 개의 시그니처를 나란히 꿰고 지나가는 파라미터가 아니라 언제나 하나로 함께 이동한다.
 
@@ -107,7 +107,7 @@ Agent 런은 항상 기록한다. Studio Trace는 준비 단계,
 SDK native span과 최상위 종료 상태를 한정된 행으로 저장한다.
 
 ```ts
-Trace { traceId, projectName, versionName, projectType, actor?, ancestry?, conversation?,
+Trace { traceId, projectName, versionName? (이전 기록만), projectType, actor?, ancestry?, conversation?,
         status: 'completed' | 'awaiting-approval' | 'turn-limit' | 'output-limit' | 'failed' | 'cancelled',
         spans, spansDropped?, warnings?, startedAt, endedAt, durationMs, error?, createdAt }
 TraceSpan { spanId, parentSpanId?, kind: 'model' | 'tool' | 'subagent' | 'guardrail' | 'prepare',

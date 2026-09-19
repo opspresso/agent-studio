@@ -299,10 +299,9 @@ pnpm install --frozen-lockfile → typecheck → test → test:integration
       `notExpiredAt` 을 넘긴다. 필터가 `LIMIT` 보다 먼저 돌게.
 - [ ] 한없이 늘어나는 새 행은 `src/infrastructure/db/ttl.ts` 에서 온 `expiresAt` 을 갖는다.
       그래야 틱의 sweep 이 지운다.
-- [ ] 새 실행 진입점은 projectType 디스패치를 다시 구현하는 대신 파사드를 호출하고, 런 브래킷을
+- [ ] 새 실행 진입점은 파사드로 같은 Agent 도구 루프를 호출하고, 런 브래킷을
       연다. 런을 chunk 로 받는 소비자(이미지 포함)에게는 `streamProjectRun`, completion 으로
-      답하는 소비자에게는 `executeProjectStream`/`executeProject` 이고, 후자는 이미지 project 를
-      거부한다.
+      답하는 소비자에게는 `executeProjectStream`/`executeProject`을 사용한다. 이미지도 Agent 도구의 출력으로 처리한다.
 - [ ] 이제 두 곳에 존재하게 된 결정은 단일 소유자와 `SINGLE_OWNERS` 항목을 갖는다.
 - [ ] `pnpm typecheck && pnpm test && pnpm build` 가 통과한다.
 

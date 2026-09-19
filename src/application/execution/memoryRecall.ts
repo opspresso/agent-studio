@@ -5,7 +5,7 @@
  * A memory server (mcp-memory) keeps what outlives a run and offers it through
  * a `recall(query)` tool. Left to the tool alone, the model has to think of
  * asking, and the run that did not starts from nothing — the one limitation
- * the server itself names. So a version that opts in (`parameters.memoryRecall`)
+ * the server itself names. So a Agent that opts in (`parameters.memoryRecall`)
  * has the *run* ask, once, before the first token: every bound server offering
  * `recall` is called with the newest user turn, and what came back is put in
  * the system prompt as something the run already knows.
@@ -44,17 +44,17 @@ const RECALL_TIMEOUT_MS = 10_000;
 export interface RecallResult {
   /** What the run remembers, ready for the prompt; absent when nothing came back. */
   remembered?: string;
-  /** What was lost — a server that failed, a version with nothing to ask. */
+  /** What was lost — a server that failed, a Agent with nothing to ask. */
   warnings: string[];
   /** Servers actually asked. Zero when there was none to ask, or nothing to ask with. */
   asked: number;
   /**
    * Of those, how many failed.
    *
-   * Told apart from `warnings` because they are not the same event: a version
+   * Told apart from `warnings` because they are not the same event: a Agent
    * bound to no memory server warns on every run it will ever make, and marking
    * *that* as a stage failure would put a red span on every trace of a
-   * permanently misconfigured version — the same dilution the discovery/warning
+   * permanently misconfigured Agent — the same dilution the discovery/warning
    * split exists to avoid. A server that was asked and did not answer is the
    * one worth flagging.
    */
@@ -66,7 +66,7 @@ export interface RecallResult {
  * preview's question. Separate from the recall itself so an empty query is
  * never a way of saying "just look": at run time an empty query is a loss.
  *
- * Only the servers the version **bound**: a resolve may have been widened by
+ * Only the servers the Agent **bound**: a resolve may have been widened by
  * discovery, and a server the catalog added for this request is not one the
  * author decided to hand every request to before the model has said a word.
  * The discovered server's `recall` stays a tool the model may call.
@@ -83,7 +83,7 @@ export function recallTargets(
 }
 
 /**
- * The warning both callers raise when a version recalls and nothing offers it.
+ * The warning both callers raise when a Agent recalls and nothing offers it.
  * "On this run", because a server may well have the tool and this run may not
  * be offering it — past the per-run tool cap, or narrowed out by the binding —
  * and the cap's own warning says which.
@@ -98,9 +98,9 @@ export function noRecallTargetWarning(): string {
  * and a field added to one copy is a field the other silently stops carrying.
  *
  * `status` is the part worth stating: a server that was asked and did not
- * answer is a stage that failed, while a version bound to nothing that offers
+ * answer is a stage that failed, while a Agent bound to nothing that offers
  * `recall` warns on every run it will ever make — flagging *that* red puts an
- * error on every trace a misconfigured version writes.
+ * error on every trace a misconfigured Agent writes.
  */
 export function memoryPrepared(memory: {
   input: Pick<engine.RunAgentInput, "remembered">;
@@ -154,9 +154,9 @@ export async function prepareMemoryForRun(
 }
 
 /**
- * The recall a run makes, gated on its version — what both run sites call, so
+ * The recall a run makes, gated on its Agent — what both run sites call, so
  * the opt-in check, the query and the way the answer reaches the engine are
- * spelled once. `version` is the version *as bound*, not as widened by
+ * spelled once. `Agent` is the Agent *as bound*, not as widened by
  * discovery (see {@link recallTargets}); `mcp` is the resolve that ran.
  */
 export async function recallForRun(input: {
@@ -190,7 +190,7 @@ export async function recallForRun(input: {
  * was cancelled meanwhile is the one exception, and it propagates as itself.
  */
 export async function recallMemories(input: {
-  /** The version as bound; only its own servers are asked (see {@link recallTargets}). */
+  /** The Agent as bound; only its own servers are asked (see {@link recallTargets}). */
   configuration: Pick<AgentConfiguration, "mcpList"> & Partial<Pick<AgentConfiguration, "parameters">>;
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;
   /** The newest user turn as text; nothing to ask with is reported, not asked. */
@@ -212,7 +212,7 @@ export async function recallMemories(input: {
   if (!targets.length) return { warnings: policyWarnings, asked: 0, failed: 0 };
   if (!query || !mcp.callMcpTool) {
     // A picture-only turn, or a resolve that offered the tools but no way to
-    // call them. Said out loud: the version says it recalls, and nothing did.
+    // call them. Said out loud: the Agent says it recalls, and nothing did.
     return {
       warnings: [
         "Memory recall is on, but this turn carried no text to ask memory with; the run started without a memory.",

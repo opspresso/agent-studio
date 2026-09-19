@@ -60,44 +60,39 @@ flowchart LR
 
   subgraph facade["실행 파사드 — runProject.ts"]
     direction TB
-    dispatch["projectType 디스패치<br/>agent → SDK 다중 턴 · llm → SDK 단발 · image → generateImageStream"]
-    fns["streamProjectRun (청크 소비자, 이미지 포함)<br/>executeProjectStream / executeProject (완성 응답, 이미지 거부)<br/>executeAgent (에이전트 전용)"]
+    dispatch["현재 Agent 설정 → SDK 도구 루프"]
+    fns["streamProjectRun (청크)<br/>executeProjectStream / executeProject (스트림·수집형)<br/>executeAgent (설정·실행·정산)"]
   end
 
-  imageuc["이미지 유스케이스 — generateImage"]
 
   bracket["런 브래킷 — openRun<br/>상관 ID → 모델 정책 → 프로젝트 비용 → 멤버 월 상한 → 동시성 슬롯 → 메트릭·Artifact recorder"]
   memory["메모리 준비 (memory prepare span)<br/>명시적 바인딩 recall"]
   resolve["바인딩 해석 (tools prepare span)<br/>요청 + 관련 기억으로 (옵트인) 카탈로그 검색<br/>스킬 · MCP 세션 · 서브에이전트"]
-  engine["SDK Agent · Runner — runAgent / runPrompt(Stream)"]
+  engine["SDK Agent · Runner — runAgent"]
   channel["SDK ModelProvider (OpenAI 호환 endpoint)"]
   imagechannel["이미지 채널"]
   tools["도구: MCP · Skill · SDK Handoff / Agent.asTool · 이미지 · FetchUrl · File · 오디오 · Workspace"]
   usage["사용량 기록<br/>Agent는 실행 종료 시 집계 flush"]
-  trace["로컬 SDK native spans + 준비 단계<br/>에이전트 항상, 그 외 샘플링"]
+  trace["로컬 SDK native spans + 준비 단계<br/>모든 Agent 실행"]
   session["영속 Chat: SDK Session + 승인 RunState<br/>암호화 저장 · revision CAS"]
 
-  predict -->|"agent / llm"| facade
-  predict -.->|"image"| imageuc
+  predict --> facade
   cc --> facade
   agentsse --> facade
   chat -->|"ChatDeps.runAgent"| facade
   slack -->|"handleTurn → runAgent"| facade
   telegram -->|"handleTurn → runAgent"| facade
   teams -->|"handleTurn → runAgent"| facade
-  a2a -->|"agent / llm"| facade
-  a2a -.->|"image"| imageuc
+  a2a --> facade
   agui -->|"streamAguiRun"| facade
   webhook -->|"triggerRunnerDeps.run"| facade
   schedule -->|"triggerRunnerDeps.run"| facade
   audio -->|"backgroundTask"| facade
   facade --> bracket
-  imageuc --> bracket
   bracket -->|"agent"| memory --> resolve --> engine
-  bracket -->|"llm"| engine
-  bracket -->|"image"| imagechannel
   engine <--> channel
   engine <--> tools
+  tools --> imagechannel
   engine <--> session
   engine --> usage
   engine --> trace
@@ -112,8 +107,8 @@ flowchart LR
 
 ## 3. 런 브래킷: 최상위 런을 감싸는 한 곳
 
-모델 실행 경로(`executeVersion` · `executeVersionStream` · `executeAgent` · `generateImage`)는
-`openRun`을 열고, 오디오 전사는 `openModelCall`, Workspace는 모델 Version 없는 `openTaskRun`을 연다.
+모든 프로젝트 실행은 `executeAgent`를 통해
+`openRun`을 열고, 오디오 전사는 `openModelCall`, Workspace는 모델 설정 없는 `openTaskRun`을 연다.
 가드는 메트릭 앞에서, `close()`는 사용량 flush 뒤에서 실행한다
 ([ARCHITECTURE.md#런-브래킷](ARCHITECTURE.md#런-브래킷)).
 
@@ -124,7 +119,7 @@ sequenceDiagram
   participant B as openRun (runBracket)
   participant E as engine.runAgent
   participant T as 도구 · MCP · 서브에이전트
-  S->>F: executeAgent(deps, {project, version, messages, actor, caller, conversation})
+  S->>F: executeAgent(deps, {project, configuration, messages, actor, caller, conversation})
   F->>B: openRun — 상관 ID · 모델 정책 · 비용(fail-open) · 동시성(fail-closed) · 메트릭 · Artifact recorder
   B-->>F: bracket
   F->>F: prepareMemoryForRun (명시적 바인딩 recall)<br/>memory prepare span 으로 기록
@@ -235,8 +230,8 @@ flowchart LR
 ```mermaid
 flowchart LR
   subgraph project["PROJECT#{name} 파티션"]
-    meta["META (프로젝트, publishedVersion 포인터)"]
-    ver["VERSION#{v}"]
+    meta["META (Project + 현재 configuration)"]
+    ver["LEGACYCONFIGURATION · VERSION#…<br/>이전 원본 보관, 실행에서 미사용"]
     tok["APITOKEN"]
     trig["TRIGGER#{id} · TRIGGERRUN#…"]
     conn["MCPCONN#{server} · REMOTECTX#…"]

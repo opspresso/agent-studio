@@ -39,7 +39,7 @@ tool call 은 `step` 으로, tool result 는 `stepDone` 으로, 그리고 top-le
 있도록, 자신이 전달한 것을 돌려준다.
 
 문서 첨부는 내장 추출기로 PDF·텍스트·Office 형식을 읽는다. Office 문서에도 MCP 연결이나
-Version binding이 필요하지 않으며, 파일 바이트를 외부 문서 서버로 전달하지 않는다.
+Agent binding이 필요하지 않으며, 파일 바이트를 외부 문서 서버로 전달하지 않는다.
 
 **어댑터는 플랫폼이 정하는 모든 것을 소유한다.** 전달된 이벤트 중 어느 것이 런을 일으키는지,
 그리고 그 판정은 라우트에서 dedup claim *보다 앞에서* 실행되므로 아무도 부르지 않은 이벤트는
@@ -73,7 +73,7 @@ id 아래 백그라운드로 작업을 예약하며, claim 을 정산한다. 모
 - `domain/<platform>/client.ts` 의 **클라이언트 port** 와 그 fetch 어댑터,
 - **gate** — 플랫폼의 이벤트 중 어느 것이 봇에게 온 것인지 — claim 보다 앞서 라우트에서
   실행되는 것,
-- **update handler** — 프로젝트를 해석하고 (published 버전만. 거절 문구는 관례로 공유한다),
+- **update handler** — 프로젝트를 해석하고 (현재 설정. 거절 문구는 관례로 공유한다),
   이벤트를 `TurnInput` 으로 정규화하고, `ReplyChannel` 을 열고, "생각 중"을 한 번 말하고,
   `handleTurn` 을 호출하며, 그 뒤에 플랫폼의 장부 정리를 하는 것,
 - 플랫폼의 렌더링을 위한 **`ReplyChannel`** 과, 모든 channel 이 통과해야 하는 테스트

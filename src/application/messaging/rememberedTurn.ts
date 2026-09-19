@@ -57,11 +57,7 @@ export interface RememberedTurnInput {
   scope: LogScope;
 }
 
-/**
- * The project a bot is bound to, if it can run: exists, is an agent project,
- * has a published version — drafts never leak to an external surface. When
- * it cannot, the reply says so and nothing runs.
- */
+/** Resolve the Agent and its current settings before accepting a messaging turn. */
 export async function resolveAgentProject(
   deps: MessagingDeps,
   projectName: string,
@@ -71,7 +67,7 @@ export async function resolveAgentProject(
   const configuration = project ? project.configuration : null;
   if (!project || !configuration) {
     await reply.say(
-      `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
+      `Agent project not available: ${projectName} (must exist and have current Agent settings)`,
     );
     return null;
   }

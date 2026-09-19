@@ -170,11 +170,9 @@ export const en = {
   "audio.months": "Calendar months",
   "audio.timezone": "Timezone",
   "audio.writer": "Postprocessing Agent (optional)",
-  "audio.writerVersion": "Agent version",
-  "audio.followPublished": "Follow published version",
-  "audio.writerVersionHint": "The selected version is fixed when a job is submitted. New publications apply only to new jobs.",
+
   "audio.destination": "Memory destination (optional)",
-  "audio.destinationHint": "Choose an MCP server bound to this project’s published version.",
+  "audio.destinationHint": "Choose an MCP server bound to the Agent’s current settings.",
   "audio.saveDocuments": "Save documents",
   "audio.saveMemories": "Save grounded memories",
   "audio.personalOnly": "Originals and results are private Artifacts. Accepted jobs continue after you leave.",
@@ -185,7 +183,7 @@ export const en = {
   "audio.original": "Original file",
   "audio.transcript": "Transcript",
   "audio.dialogue": "Dialogue",
-  "audio.toolsRequired": "Enable audio processing tools in the published version to use this page. Before the first publication, the latest saved version is used.",
+  "audio.toolsRequired": "Enable audio processing tools in the Agent settings to use this page.",
   "audio.result": "Processed result",
   "audio.delete": "Delete job",
   "audio.deleteTitle": "Delete processing job?",
@@ -240,7 +238,7 @@ export const en = {
   "audio.runAsOwnerHint": "Use your verified email for personal MCP data. Only the project owner can enable this.",
   "audio.mappingTitle": "File response mappings",
   "audio.mappingDefaults": "Plugin defaults apply automatically when available. No manual mapping is needed for those servers.",
-  "audio.mappingOverride": "This version overrides plugin defaults. An empty override disables file mapping.",
+  "audio.mappingOverride": "This Agent overrides plugin defaults. An empty override disables file mapping.",
   "audio.useMappingDefaults": "Use plugin defaults",
   "audio.mappingHint": "Map a tool's JSON fields to private file references. Separate nested fields with dots. Use a distinct namespace for each account.",
   "audio.mappingTool": "Tool name",
@@ -311,18 +309,18 @@ export const en = {
   "home.flow.title": "From an idea to a working agent",
   "home.flow.build": "Configure a project",
   "home.flow.buildBody": "Choose a model and instructions. Add skills and tools when your agent needs them.",
-  "home.flow.run": "Publish and run",
-  "home.flow.runBody": "Publish a version, then run it in the console, through an API, or a connected messenger.",
+  "home.flow.run": "Save and run",
+  "home.flow.runBody": "Save the Agent settings, then run from the console, API, or connected messaging service.",
   "home.flow.review": "Review the results",
   "home.flow.reviewBody": "Return to chats, Workspace reviews and artifacts. Inspect traces and usage alongside the results.",
-  "home.eyebrow": "Project · version · publish",
+  "home.eyebrow": "Agent · tools · run",
   "home.headline": "Build AI agents",
   "home.headlineAccent": " and put them to work.",
   "home.lede":
-    "Agent Studio brings models, skills, and tools together in one agent platform. Create prompt, agent, and image projects, then use them in conversations, through APIs, or from your favorite messengers.",
+    "Agent Studio connects models, skills, and tools in one platform. Configure an Agent and use it in conversations, APIs, messaging, and automation.",
   "home.signInHint": "Sign in with an account from an allowed domain.",
   "home.proof.network": "From ideas to agents",
-  "home.proof.networkNote": "Create, test, and publish in one platform",
+  "home.proof.networkNote": "Create, test, and run in one platform",
   "home.proof.engine": "One interface for your models",
   "home.proof.engineNote": "Connect the right model for each task",
   "home.proof.cost": "Cost and traces per run",
@@ -331,15 +329,15 @@ export const en = {
   "home.streamCaption": "agent run · text/event-stream",
   "home.streamLive": "example",
   "home.coverage": "What Agent Studio covers",
-  "home.domain.projects": "Projects & versions",
+  "home.domain.projects": "Agents and settings",
   "home.domain.projectsBody":
-    "Manage a prompt, agent, or image workload as a project. Save its settings as named versions; callers use the published version unless they request a specific one.",
+    "Each project is an Agent with one current configuration: its model, instructions, capabilities, and limits. Saved settings apply to the next run.",
   "home.domain.agent": "Agent loop",
   "home.domain.agentBody":
     "An agent can load skills, call MCP tools, delegate to subagents, and read URLs. Turn and context limits keep each run bounded.",
   "home.domain.mcp": "MCP tools",
   "home.domain.mcpBody":
-    "Register a server once, then bind it to any version. Each binding can limit the available tools and override outbound headers. Project-specific OAuth is supported, and secrets are encrypted at rest.",
+    "Register a server once, then bind it to any Agent. Each binding can limit the available tools and override outbound headers. Project-specific OAuth is supported, and secrets are encrypted at rest.",
   "home.domain.skills": "Skills",
   "home.domain.skillsBody":
     "Reusable instructions written in Markdown. The model sees a short list of names and descriptions, then loads the full instructions when needed.",
@@ -348,7 +346,7 @@ export const en = {
     "Bring reusable skills and MCP tools into your projects from plugin repositories or uploaded archives.",
   "home.domain.catalog": "Capability catalog",
   "home.domain.catalogBody":
-    "Search skills, MCP tools, and agents in one catalog. An opted-in version adds relevant capabilities for the current run without changing its saved bindings.",
+    "Search skills, MCP tools, and agents in one catalog. An opted-in Agent adds relevant capabilities for the current run without changing its saved bindings.",
   "home.domain.chats": "Chats",
   "home.domain.chatsBody":
     "Talk to an agent in the console. Read PDF, text, and Office attachments without a document MCP server, and follow replies and tool calls. Closing the tab does not stop the run.",
@@ -463,7 +461,7 @@ export const en = {
   "overview.welcome": "Welcome back, {name}",
   "overview.welcomeAnon": "Welcome back",
   "overview.lede":
-    "Create prompt, agent, and image projects, test them in the console, and publish them for other systems. Agent tools also support document work and background audio processing.",
+    "Configure Agents, test requests in the console, and connect them to other systems. Agent tools support images, documents, and background audio processing.",
   "overview.newProject": "New project",
   "overview.newChat": "New chat",
   "overview.recentProjects": "Recent projects",
@@ -478,7 +476,7 @@ export const en = {
   "overview.noChats": "No chats yet.",
   "overview.getStarted": "Start with a project",
   "overview.getStartedBody":
-    "Create a project, configure its first version in the Playground, and run it there. Agent projects can use skills and MCP tools, and a published agent is also available in Chats.",
+    "Create a project, configure its Agent settings in the Playground, and run a request. Connect skills and MCP tools as needed, then continue in Chats.",
   "overview.browseSkills": "Browse skills",
 
   // The guide page: what this console is for, and the shortest path through it.
@@ -498,51 +496,51 @@ export const en = {
   "guide.start.createBody": "In Projects, choose New project and enter an identifier and display name. Start with a short task whose expected answer you can judge before adding tools.",
   "guide.start.test": "3. Save, run, and inspect",
   "guide.start.testBody":
-    "In Playground, select an available model and write the instructions. Save the version, enter a test input, and run it. Check the answer, warnings, usage, and tool activity. Run uses the saved version, so editing without saving does not test your new settings.",
-  "guide.start.publish": "4. Publish and connect",
-  "guide.start.publishBody":
-    "Publish the tested version from Versions. For an HTTP caller, issue a project token in Integrations and follow API Reference. Publishing selects a default version; it does not create a separate application or freeze the configuration.",
+    "Set a model and instructions in the Playground, save, and try a short request. Check the answer, warnings, usage, and tool activity. The Run panel uses saved settings.",
+  "guide.start.connect": "4. Connect callers",
+  "guide.start.connectBody":
+    "Saved Agent settings are ready for Chat and configured integrations. For HTTP calls, issue a project token in Integrations and follow API Reference.",
 
   "guide.projects.title": "Configure an Agent",
-  "guide.projects.body": "Each project is an Agent. Its versions hold the model, system prompt, capabilities, and execution limits. Visibility, integrations, and usage belong to the project.",
+  "guide.projects.body": "Every project is an Agent. Its current settings hold the model, system prompt, capabilities, and execution limits. Visibility, integrations, and usage belong to the project.",
   "guide.projects.agent": "Conversation and tools",
   "guide.projects.agentBody":
     "Use agent when a task requires conversation, searches, tool calls, or delegation. Write its role, task boundaries, and expected output in the system prompt, then send the task as a message. The model chooses whether to use the tools made available to it; enabling a tool does not guarantee a call.",
   "guide.projects.image": "Image generation and editing tools",
   "guide.projects.imageBody": "Enable image tools and select an image model. Ask the Agent to generate an image, or attach a picture and request an edit. The same Agent can handle these requests in Playground, Chat, and execution APIs.",
 
-  "guide.versions.title": "Configure and publish versions",
-  "guide.versions.body":
-    "Treat a version as a named, editable configuration. For an experiment, choose + New version in Playground's version selector: it copies the current editor contents, and Save creates the new version. Use this path when callers already depend on the current configuration.",
-  "guide.versions.model": "Model and fallback",
-  "guide.versions.modelBody": "Select a text model with tool calling support. Reading pictures also requires image input. Configure a compatible fallback if needed. Image generation and editing use the separately configured image tool model.",
-  "guide.versions.prompt": "Preview and save are different",
-  "guide.versions.promptBody": "Use Prompt preview to inspect the prompt assembled from the current draft. It does not generate an answer, but memory recall and capability discovery can contact the configured services. Save before running: the execution panel uses the saved version and takes your task as a message.",
-  "guide.versions.limits": "Control run size",
-  "guide.versions.limitsBody":
+  "guide.configuration.title": "Configure an Agent",
+  "guide.configuration.body":
+    "Edit the Agent’s current settings in the Playground and save them. To experiment independently, clone the project and configure the copy.",
+  "guide.configuration.model": "Model and fallback",
+  "guide.configuration.modelBody": "Select a text model with tool calling support. Reading pictures also requires image input. Configure a compatible fallback if needed. Image generation and editing use the separately configured image tool model.",
+  "guide.configuration.prompt": "Preview and save are different",
+  "guide.configuration.promptBody": "Prompt preview assembles the current draft. It does not generate an answer, but memory recall and capability discovery can contact configured services. Save before running; the Run panel uses saved settings.",
+  "guide.configuration.limits": "Control run size",
+  "guide.configuration.limitsBody":
     "Set output length and agent turn limits to match the task. Presence penalty is an optional control for repeated tokens when the selected model supports it. Turn and output limits can leave a partial answer; a deployment deadline can stop the run with an error. Read completion reasons and warnings. Reasoning trace controls displayed reasoning, not whether the model reasons.",
-  "guide.versions.publish": "Understand what changes after Publish",
-  "guide.versions.publishBody":
-    "In Versions, Publish points the project default at the selected version. Requests using published follow that pointer; requests naming a version keep using that name. Saving changes to a published version affects its next run immediately. To revert the default, publish a known good version; named-version callers must be updated separately.",
+  "guide.configuration.apply": "When saved settings take effect",
+  "guide.configuration.applyBody":
+    "The next run uses the saved settings. Runs and queued Audio jobs keep the settings they started with. An approval pending across a settings or connection change must be discarded and started again. Concurrent edits produce a conflict; reload before saving again.",
 
   "guide.capabilities.title": "Add skills, tools, and other agents",
   "guide.capabilities.body":
-    "Administrators register capabilities on Skills, Tools, Agents, and Plugins. Project owners bind the available entries to a version, save, and test a task that needs them. Registration alone does not expose every capability to every run.",
+    "Administrators register capabilities on Skills, Tools, Agents, and Plugins. Project owners bind the available entries to an Agent, save, and test a task that needs them. Registration alone does not expose every capability to every run.",
   "guide.capabilities.skills": "Skills: reusable instructions",
   "guide.capabilities.skillsBody":
-    "Have an administrator create the skill on Skills with a clear description, then bind it in the version editor. The model initially sees the name and description and can load the full instructions when needed. Use skills for repeatable procedures and domain guidance, and verify that the task actually causes the intended skill to be loaded.",
+    "Have an administrator create the skill on Skills with a clear description, then bind it in the Agent settings editor. The model initially sees the name and description and can load the full instructions when needed. Use skills for repeatable procedures and domain guidance, and verify that the task actually causes the intended skill to be loaded.",
   "guide.capabilities.tools": "MCP: discover and select tools",
   "guide.capabilities.toolsBody":
-    "Have an administrator register the server on Tools and check that discovery lists the expected tools. Bind the server to the version, select the tools to expose, and save the version. If calls fail, inspect the server status, required headers, and run warnings. A reachable server can still return no usable tools or require authorization.",
+    "Have an administrator register the server on Tools and check that discovery lists the expected tools. Bind the server to the Agent, select the tools to expose, and save the settings. If calls fail, inspect the server status, required headers, and run warnings. A reachable server can still return no usable tools or require authorization.",
   "guide.capabilities.oauth": "MCP connection settings have different scopes",
   "guide.capabilities.oauthBody":
-    "Tool selections and header overrides belong to the version and require Save. Refresh tools after changing headers. Saved overrides are preserved by partial updates; explicitly clearing the map removes them. Administrators configure the OAuth app in Tools and project owners connect their account. Versions share that project connection; a reachable tool does not prove repository access.",
+    "Tool selections and header overrides belong to the Agent settings and require Save. Refresh tools after changing headers. Masked values preserve stored secrets; clearing the map removes overrides. Administrators configure the OAuth app in Tools and owners connect the project account. A reachable tool does not prove access to its resources.",
   "guide.capabilities.agents": "Delegate to another agent",
   "guide.capabilities.agentsBody":
-    "Delegate when a task benefits from a separate specialist; a routine workflow can use one Agent with skills. Bind a published local project or a registered external OpenAI-compatible or A2A agent. Give each delegate a precise description. Delegated activity is labelled by author, while usage remains part of the originating run accounting.",
+    "Bind a configured local Agent or a registered external Agent when the task benefits from a specialist. Give each delegate a precise description. Delegated activity is labelled by author, with usage attributed to the originating run.",
   "guide.capabilities.plugins": "Import and synchronize plugins",
   "guide.capabilities.pluginsBody":
-    "An administrator imports skills and MCP definitions from a configured repository or an uploaded checkout archive in Plugins. Use archive upload when the repository is unreachable. Inspect skipped/invalid entries and bind imported capabilities to your version. Imported skill content and MCP URLs/descriptions are maintained at the source and synchronized again; configure credentials separately in the console, because MCP headers are not imported. Sync does not delete orphaned entries automatically; review and remove them explicitly from its results.",
+    "An administrator imports skills and MCP definitions from a configured repository or an uploaded checkout archive in Plugins. Use archive upload when the repository is unreachable. Inspect skipped/invalid entries and bind imported capabilities to your Agent. Imported skill content and MCP URLs/descriptions are maintained at the source and synchronized again; configure credentials separately in the console, because MCP headers are not imported. Sync does not delete orphaned entries automatically; review and remove them explicitly from its results.",
   "guide.capabilities.discovery": "Dynamic discovery and memory",
   "guide.capabilities.discoveryBody":
     "Dynamic discovery matches the system prompt and current request against capability names and descriptions, then adds relevant skills, MCP servers/tools, and external agents without changing saved bindings. A precise description is the routing signal: say when the capability should be used and what it returns. It needs a working capability catalog and embedding setup; ask an administrator if results are missing. Memory recall is separate and needs a bound MCP server offering recall.",
@@ -553,9 +551,9 @@ export const en = {
   "guide.chat.title": "Conversations and attachments",
   "guide.chat.body":
     "Chats keeps conversations with agent projects. Use Playground for configuration tests and Chats for continuing work over multiple messages.",
-  "guide.chat.version": "Choose the agent and version behavior",
-  "guide.chat.versionBody":
-    "Start a new chat and select an accessible agent project. Chats uses the published version when one exists, otherwise the latest saved version. llm and image projects are not chat choices. Publishing or editing a version can therefore change the behavior of later turns in an existing conversation.",
+  "guide.chat.configuration": "Choose an Agent",
+  "guide.chat.configurationBody":
+    "Start a chat and select an accessible configured Agent. Each new turn uses its current saved settings; changes can affect later turns in an existing conversation.",
   "guide.chat.context": "Conversation history has limits",
   "guide.chat.contextBody":
     "Display messages and the model’s encrypted SDK Session are separate. The Session supplies bounded prior turns, tool results and recent images; Memory is an optional long-term source. Omitted history produces a warning. If the Session has expired, visible messages are not rebuilt into model history. Restate essential constraints when starting again.",
@@ -573,11 +571,11 @@ export const en = {
     "Use the chat's stop control to request cancellation. Navigating away or closing the browser tab only disconnects the view; reopen the conversation to read the saved result. Cancellation cannot undo actions a tool has already completed. A server interruption can still prevent an active run from finishing.",
 
   "guide.chat.approvals": "Tool approval and resuming a chat",
-  "guide.chat.approvalsBody": "A version can require approval before selected tools run. Review the agent, tool and arguments in the chat, then approve or reject. An SDK approval pauses new messages until resolved or discarded. Changing the version or connection can invalidate a pending checkpoint. Workspace Git reviews are separate: approve the exact Git action in its Workspace; the result resumes its source chat.",
+  "guide.chat.approvalsBody": "An Agent can require approval before selected tools run. Review the agent, tool and arguments in the chat, then approve or reject. An SDK approval pauses new messages until resolved or discarded. Changing the settings or connection can invalidate a pending checkpoint. Workspace Git reviews are separate: approve the exact Git action in its Workspace; the result resumes its source chat.",
   "guide.workspaces.title": "Workspaces and isolated execution",
   "guide.workspaces.body": "A Workspace retains files and a runtime session. A Sandbox is the temporary compute that runs them. The agent chat coordinates work, while a separate Workspace view shows execution, diffs, checks and Git reviews.",
   "guide.workspaces.setup": "1. Confirm execution is enabled",
-  "guide.workspaces.setupBody": "Enable Workspace tools in the active agent version. Its Workspace tools tab manages repositories, access mode and default runtime. Select native runtime models in Models. The operator connects the Sandbox backend and worker; skills and GitHub connections do not enable tools on their own. Signed-in members can use enabled agents or the Workspace selector in Chats.",
+  "guide.workspaces.setupBody": "Enable Workspace tools in the Agent settings. Its Workspace tools tab manages repositories, access mode and default runtime. Select native runtime models in Models. The operator connects the Sandbox backend and worker; skills and GitHub connections do not enable tools on their own. Signed-in members can use enabled agents or the Workspace selector in Chats.",
   "guide.workspaces.tasks": "2. Pick the task workflow",
   "guide.workspaces.tasksBody": "Use task skills for PR review, issue fixes, feature implementation, refactoring, dependency upgrades, CI investigation, security remediation and project generation. File conversion, data analysis and scripted automation also use Workspaces. Read-only repository investigation can use MCP without creating compute. A skill supplies instructions; the offered tools and deployment determine what can execute.",
   "guide.workspaces.reuse": "3. Continue the selected Workspace",
@@ -593,7 +591,7 @@ export const en = {
   "guide.workspaces.lifecycle": "8. Pause, close and recover",
   "guide.workspaces.lifecycleBody": "Cancel stops the current task. Close ends compute while preserving the selected Workspace and its checkpoint; later work can restore it. Idle cleanup saves files and session state before removing the Sandbox. Checkpoint limits can prevent cleanup from completing. Deleting its Workspace chat requests cleanup and prevents resurrection. Workspace count is not the same as worker concurrency; capacity, retention and configured limits determine what can run.",
   "guide.surfaces.title": "Execution surfaces do not share every capability",
-  "guide.surfaces.body": "Publishing selects a version, not identical permissions on every entry point. Authentication, conversation history, personal context, Workspace access and approval interfaces have separate rules.",
+  "guide.surfaces.body": "Execution surfaces share the Agent settings. Authentication, conversation history, personal context, Workspace access, and approval interfaces follow each surface’s rules.",
   "guide.surfaces.chat": "Chats: persistent history and approval return",
   "guide.surfaces.chatBody": "The signed-in chat owner receives a persistent SDK Session and tool approval UI. Enabled Workspace actions and their CI updates return to the source chat. The Workspace runtime has its own session and files; it does not inherit all of the parent agent’s skills or account connections.",
   "guide.surfaces.api": "Playground and APIs: saved input, caller-owned history",
@@ -606,11 +604,11 @@ export const en = {
   "guide.audio.title": "Audio processing and personal records",
   "guide.audio.body": "One Agent can handle collection, transcription, summaries, and requested records with reusable skills. A separate worker continues long jobs after the Agent response or browser page ends.",
   "guide.audio.setup": "Enable audio tools",
-  "guide.audio.setupBody": "Ask an administrator to configure a private file store, a transcription service, and the audio worker. Enable Audio processing tools in your Agent version. The project owner sees the Audio processing tab when the published version enables it; before the first publication, the latest saved version is used.",
+  "guide.audio.setupBody": "Ask an administrator to configure private file storage, transcription, and the audio worker. Enable Audio processing tools in the Agent settings. The project owner can then use the Audio processing tab.",
   "guide.audio.skills": "Keep one Agent and reusable skills",
   "guide.audio.skillsBody": "With the workspace plugin, bind audio-processing for the workflow, meeting-minutes for summaries, and personal-records for requested Document or Memory storage. Keep the system prompt short. Connect the recording source to this Agent and authenticate there. Separate download, transcription, and recording agents are not required.",
-  "guide.audio.version": "Choose processing settings",
-  "guide.audio.versionBody": "In Audio processing, select the transcription model, language, retention, and optional postprocessing Agent, then save project settings. The same Agent can do postprocessing. Follow published version uses the version published when each job is submitted and keeps that snapshot. An enabled setting that names a fixed version must be changed before that version can be deleted.",
+  "guide.audio.configuration": "Choose processing settings",
+  "guide.audio.configurationBody": "Choose a transcription model, language, retention, and an optional postprocessing Agent, then save. Each submitted job keeps a snapshot of the current postprocessor and destination settings. Later edits apply only to new jobs.",
   "guide.audio.run": "Start a job or schedule collection",
   "guide.audio.runBody": "Upload an audio file on the project page, or ask the Agent to collect a recording through its connected tool. For recurring collection, configure a schedule with a search range and maximum number of new recordings. Enable Run with my personal context as the owner. The worker and schedule ticker must be running; turning on audio tools alone does not schedule anything.",
   "guide.audio.results": "Read private Artifacts",
@@ -624,19 +622,19 @@ export const en = {
 
   "guide.api.title": "Call a project over HTTP",
   "guide.api.body":
-    "API Reference is built into each project and fills in its address and published version. It contains request fields, response shapes, error codes, and curl or SDK examples. Use it alongside the steps here; no source checkout is needed.",
+    "API Reference is built into each project and fills in its address. It contains request fields, response shapes, error codes, and curl or SDK examples. Use it alongside the steps here; no source checkout is needed.",
   "guide.api.token": "Prepare the project and credential",
   "guide.api.tokenBody":
-    "Publish a tested version and issue a project token in Integrations; the owner’s tier must allow API tokens. Send it as Authorization: Bearer <token>. It is scoped to that project’s execution, uses a service actor and passes the owner’s email to bound MCP servers. Treat it as access to those configured tools, not as a browser login or a way to obtain Workspace tools.",
-  "guide.api.version": "Choose a fixed version or published",
-  "guide.api.versionBody":
-    "Execution URLs use /api/projects/{name}/versions/{version}/ followed by the endpoint. The generated examples name the version currently published. Keep that name to target it explicitly, or use published to follow future Publish changes. Confirm the host is the Agent Studio address reachable from the calling system.",
-  "guide.api.input": "Match the input to the project type",
+    "Save the tested Agent settings and issue a project token in Integrations; the owner’s tier must allow API tokens. Send it as Authorization: Bearer <token>. It is scoped to that project’s execution, uses a service actor and passes the owner’s email to bound MCP servers. Treat it as access to those configured tools, not as a browser login or a way to obtain Workspace tools.",
+  "guide.api.address": "Use the Agent address",
+  "guide.api.addressBody":
+    "Execution URLs start with /api/projects/{name}/ and use the Agent’s current saved settings. Send the task in messages. Use the Agent Studio host reachable from the calling system.",
+  "guide.api.input": "Send the task as messages",
   "guide.api.inputBody":
-    "For llm predict, send variables matching the user prompt template, such as {\"variables\":{\"topic\":\"meeting notes\"},\"stream\":false}. For agent predict, send messages, such as {\"messages\":[{\"role\":\"user\",\"content\":\"Summarize these notes\"}],\"stream\":false}; variables are ignored. For image predict, send prompt and optionally source images for editing. Begin with a non-streaming request and inspect its response.",
+    "Send {\"messages\":[{\"role\":\"user\",\"content\":\"Summarize these notes\"}],\"stream\":false} to predict. Include supported inline image parts when needed. Images are generated or edited by the Agent’s image tools. Begin with one request and inspect its answer, warnings, and usage.",
   "guide.api.sdk": "OpenAI-compatible clients",
   "guide.api.sdkBody":
-    "Use chat/completions for llm and agent projects and copy the Python or JavaScript example from API Reference. Set the SDK base URL to the version's URL shown there and the API key to the project token. The saved version selects the model and sampling parameters; sending model, temperature, or max_tokens does not override them. Image projects use predict instead.",
+    "Use chat/completions and the Python or JavaScript examples in API Reference. Set the SDK base URL to the project address and the API key to its token. Saved Agent settings determine the model and sampling parameters; model, temperature, and max_tokens do not override them.",
   "guide.api.stream": "Streaming and conversation history",
   "guide.api.streamBody":
     "For text predict or chat/completions, stream:true returns SSE; agent also provides an endpoint for streaming text and tool activity. Keep the connection open and handle warning, error, and completion events, because HTTP 200 alone does not prove the run succeeded. HTTP callers send their own message history. X-Conversation-Id can preserve downstream MCP/A2A conversation identity, but does not load past messages for you.",
@@ -646,7 +644,7 @@ export const en = {
 
   "guide.integrations.title": "Bots, protocols, and automation",
   "guide.integrations.body":
-    "Project owners and administrators configure integrations. Publish a version first and verify one real call after setup. External platforms need their own credentials and network connectivity; they are optional in an offline installation.",
+    "Project owners and administrators configure integrations. Save the Agent settings first and verify one real call after setup. External platforms need their own credentials and network connectivity; they are optional in an offline installation.",
   "guide.integrations.slack": "Slack",
   "guide.integrations.slackBody":
     "For an agent project, copy the app manifest from Integrations, create and install the dedicated Slack app, and save its bot token and signing secret. Enable events, check the displayed events URL, and run Test connection. Invite the bot to the target channel and mention it. A successful credential test does not prove Slack can deliver events to the application.",
@@ -655,13 +653,13 @@ export const en = {
     "In an agent project's Integrations, save and enable the Telegram bot token; enabling registers its webhook. Use Register webhook again after an application URL change. For Teams, enable the Azure Bot's Teams channel, save its application ID and client secret (plus tenant ID for a single-tenant app), and set its messaging endpoint to the displayed URL. Test in a direct conversation before trying group mentions.",
   "guide.integrations.a2a": "A2A and AG-UI",
   "guide.integrations.a2aBody":
-    "A2A exposes cards for published public projects; a configured shared or named key can call the addressed project, including private projects under the key’s contract. AG-UI embeds published project runs in your interface using its project token. Supply the message history and render protocol events in that client; neither protocol creates a browser Chat or Workspace approval UI.",
+    "A2A exposes cards for configured public projects; a configured shared or named key can call the addressed project, including private projects under the key’s contract. AG-UI embeds Agent runs in your interface using its project token. Supply the message history and render protocol events in that client; neither protocol creates a browser Chat or Workspace approval UI.",
   "guide.integrations.webhook": "Receive a webhook",
   "guide.integrations.webhookBody":
-    "In project Settings, configure and enable the webhook, copy its URL, and send the secret in X-Trigger-Secret. For GitHub, choose application/json and enter the same value in its Secret field; GitHub signs the body with X-Hub-Signature-256. Choose message payload mode for an agent message or variables mode for template fields. HTTP 202 acknowledges delivery, not a finished answer; inspect the trigger's run history for success, output, skips, or failures. Concurrent deliveries are skipped unless allowed.",
+    "Enable the project webhook in Settings. Generic callers send X-Trigger-Secret; GitHub uses the same secret to sign X-Hub-Signature-256. The JSON payload becomes a user message. HTTP 202 acknowledges delivery; check Trigger history for execution and skipped runs. With overlap disabled, deliveries arriving during a run are skipped.",
   "guide.integrations.schedule": "Schedule a recurring task",
   "guide.integrations.scheduleBody":
-    "In project Settings, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message or variables to run. Select any delivery destinations and enable it. Schedules use the published version and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
+    "In project Settings, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message to run. Select any delivery destinations and enable it. Schedules use the current Agent configuration and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
 
   "guide.records.title": "Results, usage, and limits",
   "guide.records.artifacts": "Find originals and generated files",
@@ -682,13 +680,13 @@ export const en = {
     "Choose access rules before sharing a project or connecting data sources. The console, model provider, tools, and file store are separate places where information may be processed.",
   "guide.security.visibility": "Public, private, and editing rights",
   "guide.security.visibilityBody":
-    "A public project is accessible to signed-in users of this installation; it is not anonymous access to every API. Private projects limit access to the owner, invited emails, and administrators. Invitations allow viewing and running, not editing. Owners and administrators manage versions, settings, integrations, traces, and project-wide artifacts. Machine credentials have their own access rules.",
+    "A public project is accessible to signed-in users of this installation; it is not anonymous access to every API. Private projects limit access to the owner, invited emails, and administrators. Invitations allow viewing and running, not editing. Owners and administrators manage Agent settings, integrations, traces, and project-wide artifacts. Machine credentials have their own access rules.",
   "guide.security.credentials": "Secrets and shared links",
   "guide.security.credentialsBody":
     "Do not put API keys in prompts, skill text, browser code, screenshots, or support messages. Use the dedicated credential fields. A masked value is a display placeholder, not a working key to copy. Treat signed artifact links as credentials: someone holding a link may read the file until it expires. If a token leaks, revoke or regenerate it and update its callers.",
   "guide.security.pii": "PII filtering is a limited protection",
   "guide.security.piiBody":
-    "A version's PII filtering replaces recognized patterns before sending model text and restores them in user-facing output. It is not complete anonymization: restored information can appear in tool arguments, saved answers, reasoning, and files. Discovery embedding/rerank queries and memory recall queries are outside this filter. Use approved model and tool services for sensitive work.",
+    "The Agent’s PII filtering replaces recognized patterns before sending model text and restores them in user-facing output. It is not complete anonymization: restored information can appear in tool arguments, saved answers, reasoning, and files. Discovery embedding/rerank queries and memory recall queries are outside this filter. Use approved model and tool services for sensitive work.",
   "guide.security.network": "Private services need explicit network access",
   "guide.security.networkBody":
     "Ask the deployment operator to allow the specific internal DNS suffix when a legitimate internal service is blocked. MCP servers use MCP_INTERNAL_HOST_SUFFIXES; URL reading uses URL_FETCH_INTERNAL_HOST_SUFFIXES. They are different settings. A declared host must still be reachable and authorized; an allow entry does not supply credentials or open a firewall.",
@@ -764,13 +762,13 @@ export const en = {
     "Check the configured sign-in method, allowed email domain, and account with the administrator. A missing create/edit control can be a tier or ownership restriction. For API 401, check the token and project name; for 403, check current owner tier and permissions. A private or inaccessible project can return 404, so do not assume the URL alone is wrong.",
   "guide.trouble.model": "A model is missing or a call fails",
   "guide.trouble.modelBody":
-    "In Models, check hidden and availability states and run Test. Ask the administrator to confirm the provider URL, base path, credentials, and model ID, then save the intended model in the project version. For 400, compare the request fields and image/tool requirements with API Reference. For provider errors such as 502, inspect the reported upstream error; retrying unchanged does not fix a wrong model or URL.",
+    "In Models, check hidden and availability states and run Test. Ask the administrator to confirm the provider URL, base path, credentials, and model ID, then save the intended model in the Agent settings. For 400, compare the request fields and image/tool requirements with API Reference. For provider errors such as 502, inspect the reported upstream error; retrying unchanged does not fix a wrong model or URL.",
   "guide.trouble.limits": "429, timeout, or an incomplete answer",
   "guide.trouble.limitsBody":
-    "For 429, inspect concurrent runs, project daily/monthly blocks, and personal tier usage; follow Retry-After on API responses. For a timeout or stream error, inspect the provider, slow tools, and deployment deadline. For turn-limit, output-limit, or length, narrow the task or adjust the saved version's appropriate limit. Avoid blind retries when a tool may already have changed external data.",
+    "For 429, inspect concurrent runs, project daily/monthly blocks, and personal tier usage; follow Retry-After on API responses. For a timeout or stream error, inspect the provider, slow tools, and deployment deadline. For turn-limit, output-limit, or length, narrow the task or adjust the saved settings's appropriate limit. Avoid blind retries when a tool may already have changed external data.",
   "guide.trouble.tools": "A tool or memory is not used",
   "guide.trouble.toolsBody":
-    "Confirm the capability is bound to the saved version and visible in Prompt preview. Check tool selection, discovery, OAuth connection, and run warnings. Ask a question that actually requires the tool. For internal-host blocks, involve the deployment operator; for memory, verify a bound server offers recall. A document reader must be explicitly bound, not merely discoverable.",
+    "Confirm the capability is bound to the saved settings and visible in Prompt preview. Check tool selection, discovery, OAuth connection, and run warnings. Ask a question that actually requires the tool. For internal-host blocks, involve the deployment operator; for memory, verify a bound server offers recall. A document reader must be explicitly bound, not merely discoverable.",
   "guide.trouble.automation": "A bot or schedule is silent",
   "guide.trouble.automationBody":
     "A webhook 202 may mean accepted, duplicate, disabled, busy, no Agent configuration or ping; inspect the response and trigger history. GitHub uses its Secret field to produce X-Hub-Signature-256, while generic callers use X-Trigger-Secret. A successful delivery does not grant Workspace execution. Schedules require a running ticker; Workspace approval/CI continuation requires its worker. Check each result at the surface that owns it.",
@@ -779,7 +777,7 @@ export const en = {
     "Check the file type and upload limits first. An image needs an image-capable model; Office reading uses the built-in engine. Password-protected files, scans needing OCR, and unsupported edits require another workflow. If File is unavailable or the original was not kept, ask the operator to check storage configuration. For download failures, reopen Artifacts and check storage warnings, access mode, public base URL, connectivity, and retention.",
   "guide.trouble.support": "What to send for support",
   "guide.trouble.supportBody":
-    "Record the application version, project and saved version names, surface, time and time zone, error/status code, trace ID if available, and a minimal input that reproduces the issue. Include what you expected and whether the failure occurs in Playground too. Remove tokens, cookies, private file links, and sensitive content. Installation-specific startup and recovery problems belong with the deployment operator or package provider.",
+    "Record the application version, project, execution surface, time and time zone, error/status code, trace ID, and a minimal reproducing request. Include the expected result and whether Playground also fails. Remove tokens, cookies, private file links, and sensitive content.",
 
   // Chats: the sidebar, the thread, the composer and the parts a turn is drawn
   // from.
@@ -801,11 +799,11 @@ export const en = {
   "chat.reject": "Reject",
   "chat.discardApproval": "Discard pending run",
   "chat.discardApprovalHint": "Discarding keeps the visible chat record and removes this unfinished run from future model context.",
-  "version.runtimePolicy": "Runtime policy",
-  "version.maxInputChars": "Maximum input text characters",
-  "version.blockedTools": "Blocked tool names",
-  "version.approvalTools": "Tool names requiring approval",
-  "version.approvalToolsHint": "Use names from Prompt preview. Approvals require Chat. Use delegate tools instead of handoffs for approved delegation.",
+  "configuration.runtimePolicy": "Runtime policy",
+  "configuration.maxInputChars": "Maximum input text characters",
+  "configuration.blockedTools": "Blocked tool names",
+  "configuration.approvalTools": "Tool names requiring approval",
+  "configuration.approvalToolsHint": "Use names from Prompt preview. Approvals require Chat. Use delegate tools instead of handoffs for approved delegation.",
   "chat.send": "Send",
   "chat.stop": "Stop",
   "chat.placeholder": "Send a message…",
@@ -839,7 +837,7 @@ export const en = {
   "projects.empty": "No projects yet. Create your first one.",
   "projects.loadFailed": "Failed to load projects",
   "projects.createFailed": "Failed to create project",
-  "projects.published": "published: v{version}",
+
   "projects.create": "Create",
   "projects.name": "Name",
   "projects.namePlaceholder": "my-project",
@@ -848,7 +846,7 @@ export const en = {
   "projects.displayNamePlaceholder": "My Project",
   "projects.description": "Description",
   "projects.descriptionHint":
-    "Shown to parent agents when this published project is bound as a local subagent, and published in its A2A Agent Card. State which requests it should receive and what result it returns.",
+    "Shown to parent Agents that bind this project and in its A2A Agent Card. Describe the requests it should receive and the results it returns.",
   "projects.departmentCode": "Department code",
   "projects.departmentHint": "Optional code for grouping project ownership and costs.",
   "projects.privateBadge": "Private",
@@ -861,7 +859,7 @@ export const en = {
   "project.clone": "Clone",
   "project.cloneTitle": "Clone {name}",
   "project.tab.playground": "Playground",
-  "project.tab.versions": "Versions",
+
   "project.tab.usage": "Usage",
   "project.tab.artifacts": "Artifacts",
   "project.tab.traces": "Traces",
@@ -870,30 +868,24 @@ export const en = {
   "project.tab.integrations": "Integrations",
   "project.tab.settings": "Settings",
 
-  // The playground: version picker, save, and the publish ask.
+  // The Playground edits one current Agent configuration.
   "playground.loadFailed": "Failed to load project",
-  "playground.saveFailed": "Failed to save version",
-  "playground.publishFailed": "Failed to publish version",
+  "playground.saveFailed": "Failed to save Agent settings",
+
   "playground.notFound": "Project not found",
-  "playground.newVersion": "+ New version",
-  "playground.version": "v{version}",
-  "playground.versionPublished": "v{version} (published)",
+
   "playground.unsaved": "unsaved",
-  "playground.saved": "Saved v{version}",
-  "playground.createVersion": "Create version",
+
   "configuration.title": "Current Agent settings",
   "configuration.saved": "Saved",
   "configuration.saveToRun": "Save the Agent settings before running it.",
   "playground.save": "Save",
   "playground.readOnly": "Read-only — the owner or an admin can edit",
-  "playground.publishTitle": "Publish this project?",
-  "playground.publishBody":
-    "“{project}” is not published yet. Publish v{version} to open it to callers — the API, A2A, triggers, Slack, and other projects’ subagents.",
-  "playground.publishConfirm": "Publish v{version}",
+
   "playground.preview": "Preview",
   "playground.run": "Run",
 
-  // What a version binds: MCP servers, their tools, header overrides, subagents.
+  // What an Agent binds: MCP servers, their tools, header overrides, subagents.
   "bindings.mcpServers": "MCP servers",
   "bindings.searchServers": "Search registered MCP servers",
   "bindings.subagents": "Subagents",
@@ -910,54 +902,46 @@ export const en = {
   "bindings.addHeaderOverride": "+ Add header override",
   "bindings.noOverridesNoDefaults":
     "No overrides, and this server’s registry entry defines no headers either.",
-  "bindings.noOverrides": "No overrides — this version uses the headers above unchanged.",
+  "bindings.noOverrides": "No overrides — this Agent uses the registry headers above.",
 
-  // The version editor's form. The example JSON schema in the "Structured
+  // The Agent settings editor's form. The example JSON schema in the "Structured
   // output" dialog is not here: it is a snippet to copy, not prose to read.
-  "version.invalidJson": "Enter a JSON object",
-  "version.model": "Model",
-  "version.selectModel": "Select a model…",
-  "version.modelUnlisted":
+  "configuration.invalidJson": "Enter a JSON object",
+  "configuration.model": "Model",
+  "configuration.selectModel": "Select a model…",
+  "configuration.modelUnlisted":
     "Model is unavailable for new selection. A hidden model keeps running; a removed model may be recorded with $0 cost.",
-  "version.fallbackModel": "Fallback model (optional)",
-  "version.none": "None",
-  "version.default": "Default",
-  "version.systemPrompt": "System prompt",
-  "version.systemPromptImagePlaceholder":
-    "Watercolor style, soft pastel tones, no text in the image.",
-  "version.systemPromptPlaceholder": "You are a helpful assistant.",
-  "version.systemPromptImageHint":
-    "Prepended to every image prompt as the version’s persistent style.",
-  "version.userPromptTemplate": "User prompt template",
-  "version.userPromptPlaceholder": "Summarize: {{input}}",
+  "configuration.fallbackModel": "Fallback model (optional)",
+  "configuration.none": "None",
+  "configuration.default": "Default",
+  "configuration.systemPrompt": "System prompt",
+
+  "configuration.systemPromptPlaceholder": "You are a helpful assistant.",
+
   // The double braces are the template's own syntax, not a placeholder for the
   // translator: `interpolate` leaves them alone because `t` is called with no
   // values here.
-  "version.userPromptHint": "Use {{variable}} placeholders rendered server-side at run time.",
-  "version.userPromptAgentHint":
-    "Agent runs ignore this template — the conversation supplies the user turn. Clear it to remove this field.",
-  "version.temperature": "Temperature",
-  "version.presencePenalty": "Presence penalty",
-  "version.maxTokens": "Max tokens",
-  "version.defaultPlaceholder": "default",
-  "version.reasoningTrace": "Record the reasoning",
-  "version.reasoningTraceHint":
-    "Keep what the model thought before answering, so it can be read back in the chat and the playground. Off by default: reasoning restates the request in the model's own words, and it also reaches anyone holding this project's API token. It is shown, never sent back as history.",
-  "version.reasoningEffort": "Reasoning effort",
-  "version.maxTurns": "Max turns",
-  "version.piiFiltering": "PII filtering",
-  "version.piiImageHint":
-    "Does not apply to an image run — the prompt reaches the provider unmasked. Uncheck to remove this option.",
-  "version.piiHint":
+
+  "configuration.temperature": "Temperature",
+  "configuration.presencePenalty": "Presence penalty",
+  "configuration.maxTokens": "Max tokens",
+  "configuration.defaultPlaceholder": "default",
+  "configuration.reasoningTrace": "Record the reasoning",
+  "configuration.reasoningTraceHint":
+    "Show reasoning in Chat and Playground and include it in raw execution streams. Off by default; reasoning can repeat sensitive request content. This controls display and does not remove reasoning from the model’s replay history.",
+  "configuration.reasoningEffort": "Reasoning effort",
+  "configuration.maxTurns": "Max turns",
+  "configuration.piiFiltering": "PII filtering",
+
+  "configuration.piiHint":
     "Masks emails, phone numbers, Korean registration numbers and card numbers with reversible tokens before dispatch. What an MCP tool receives is not masked.",
-  "version.callerContext": "Tell the run who is asking (name, timezone)",
-  "version.callerImageHint":
-    "Does not apply to an image run — its prompt has no caller block. Uncheck to remove this option.",
-  "version.callerHint":
+  "configuration.callerContext": "Tell the run who is asking (name, timezone)",
+
+  "configuration.callerHint":
     "Anywhere a person runs it — chat, Playground, a signed-in API call, Slack. An API token, a trigger and inbound A2A carry no caller. PII filtering does not mask a name.",
-  "version.structuredOutput": "Structured output (JSON schema)",
-  "version.aboutStructuredOutput": "About structured output",
-  "version.structuredOutputTitle": "Structured output",
+  "configuration.structuredOutput": "Structured output (JSON schema)",
+  "configuration.aboutStructuredOutput": "About structured output",
+  "configuration.structuredOutputTitle": "Structured output",
 
   // The structured-output help dialog. Split into fragments around the inline
   // `<Code>` tokens rather than kept as whole sentences: the tokens are the
@@ -980,44 +964,41 @@ export const en = {
   "structured.empty2": " is sent and the reply stays plain text.",
   "structured.sampleSchema": "Sample schema",
   "structured.whatReturns": "What the model returns",
-  "version.imageTools": "Images (GenerateImage + EditImage tools)",
-  "version.imageToolsHint":
+  "configuration.imageTools": "Images (GenerateImage + EditImage tools)",
+  "configuration.imageToolsHint":
     "Lets the agent draw a picture and change an existing one — an image the user attached, or one it drew earlier.",
-  "version.imageModel": "Image model",
-  "version.fetchUrl": "Read URLs (FetchUrl tool)",
-  "version.fetchUrlHint":
+  "configuration.imageModel": "Image model",
+  "configuration.fetchUrl": "Read URLs (FetchUrl tool)",
+  "configuration.fetchUrlHint":
     "Lets the agent read a web address it names — a page, a PDF, a data file or an image. Off by default: every other outbound request goes somewhere an operator registered, while this one goes wherever the model decides.",
-  "version.slackWorkspace": "Read Slack (SlackHistory, SlackThread, SlackUser, SlackChannels)",
-  "version.slackWorkspaceHint":
+  "configuration.slackWorkspace": "Read Slack (SlackHistory, SlackThread, SlackUser, SlackChannels)",
+  "configuration.slackWorkspaceHint":
     "Lets the agent read the Slack workspace this project's bot is installed in: channel history, threads, and who a user id is. Read-only — it can never post. Off by default, and inert unless the project has an enabled Slack bot. Note that projects are a shared catalog, so anyone who can run this project can read anything the bot can.",
-  "version.bindingsInertImage":
-    "An “image” project draws from a prompt and offers no tools — the bindings below are stored but never used. Remove them here; new ones cannot be added.",
-  "version.bindingsInertLlm":
-    "An “llm” project runs a single completion, which offers no tools — the bindings below are stored but never used. Remove them here; new ones cannot be added.",
-  "version.skills": "Skills",
-  "version.searchSkills": "Search registered skills",
-  "version.dynamicCapabilities": "Find capabilities for each request",
-  "version.dynamicCapabilitiesHint":
-    "Searches capability names and descriptions with this version’s system prompt and the incoming request, then offers the matching skills, MCP servers/tools, and external agents on top of the bindings above. The opening 500 characters of each description are indexed, so say what request the capability handles before implementation details. Bindings are always offered in full. An MCP server that needs its own sign-in is offered only after this project connects it.",
 
-  "version.memoryRecall": "Recall memory before each run",
-  "version.memoryRecallHint":
+  "configuration.skills": "Skills",
+  "configuration.searchSkills": "Search registered skills",
+  "configuration.dynamicCapabilities": "Find capabilities for each request",
+  "configuration.dynamicCapabilitiesHint":
+    "Searches capability names and descriptions with this Agent’s system prompt and the incoming request, then offers the matching skills, MCP servers/tools, and external agents on top of the bindings above. The opening 500 characters of each description are indexed, so say what request the capability handles before implementation details. Bindings are always offered in full. An MCP server that needs its own sign-in is offered only after this project connects it.",
+
+  "configuration.memoryRecall": "Recall memory before each run",
+  "configuration.memoryRecallHint":
     "Before the first token, the run asks every bound MCP server that offers a “recall” tool (mcp-memory) about the incoming request and adds what it remembers to the system prompt — so the model starts from what this project already knows instead of having to think of asking. The recall tools stay available as before. Costs one call per run; inert, with a warning, when no bound server offers one.",
-  "version.memoryRecallUnbound":
-    "Recall is on, but none of this version’s MCP bindings can offer a “recall” tool — none is bound, or every binding’s tool selection leaves it out. Bind a memory server (mcp-memory) or turn recall off; until then every run starts without a memory and says so.",
+  "configuration.memoryRecallUnbound":
+    "Recall is on, but none of this Agent’s MCP bindings can offer a “recall” tool — none is bound, or every binding’s tool selection leaves it out. Bind a memory server (mcp-memory) or turn recall off; until then every run starts without a memory and says so.",
 
   // The three tabs of one binding's settings dialog.
   "mcpSettings.tools": "Tools",
   "mcpSettings.toolsNote":
-    "Which of this server’s tools this version offers the model. Saved with the version.",
+    "Which of this server’s tools this Agent offers the model. Saved with the Agent settings.",
   "mcpSettings.overrides": "Header overrides",
   "mcpSettings.overridesNote":
-    "Layered over the registry entry’s headers, for this version only. Saved with the version.",
+    "Layered over the registry entry’s headers, for this Agent only. Saved with the Agent settings.",
   "mcpSettings.connection": "Connection",
   "mcpSettings.connectionNote":
-    "Authorize this project’s user account with the OAuth client configured by the operator. Saved immediately, not with the version.",
+    "Authorize this project’s user account with the OAuth client configured by the operator. Saved immediately, not with the Agent settings.",
   "mcpSettings.title": "{server} settings",
-  "mcpSettings.savesWholeVersion": "Saves the whole version, not just this server.",
+  "mcpSettings.savesConfiguration": "Saves all current Agent settings.",
   "mcpSettings.close": "Close",
 
   // The playground's Run panel.
@@ -1126,7 +1107,7 @@ export const en = {
 
   // External agents.
   "agents.lede":
-    "External OpenAI-compatible and A2A endpoints a project version can bind as remote subagents.",
+    "External OpenAI-compatible and A2A endpoints an Agent can bind as remote subagents.",
   "agents.descriptionRole":
     "External agent descriptions drive dynamic discovery and are shown in the model’s Available Agents table for transfer decisions. The opening 500 characters are indexed. Workspace project descriptions are not dynamically discovered, but they appear when bound as local agents and in published A2A Agent Cards.",
   "agents.descriptionHint":
@@ -1144,7 +1125,7 @@ export const en = {
 
   // MCP servers.
   "tools.lede":
-    "MCP servers that expose tools to agents over streamable HTTP — registered once, bound per version.",
+    "MCP servers that expose tools to agents over streamable HTTP — registered once, bound per Agent.",
   "tools.descriptionRole":
     "The server name and opening 500 characters of its description are indexed for dynamic discovery and shown in the model’s Connected MCP Servers table. Each tool’s own description is also indexed and sent with its input schema, so it usually decides which action matches. Content is operator-only notes.",
   "tools.descriptionHint":
@@ -1264,8 +1245,8 @@ export const en = {
     "How other systems reach this project — the token an API caller presents, the chat platforms whose bots run it, and its A2A and AG-UI exposure. What the project itself is, its cost limits and its triggers stay under Settings.",
   "pint.ownerOnly": "Only the project owner ({owner}) or an admin can change these integrations.",
   "pint.aguiLede":
-    "The published version answers AG-UI runs at this address — an application sends a RunAgentInput and reads an event stream. The thread id it sends is the run’s conversation, and any tools it declares are offered to the run and executed on its side. Call it from a server of your own — the token is a server credential — presenting it in",
-  "pint.aguiPublish": "Publish a version to expose this project over AG-UI.",
+    "The Agent’s current settings answers AG-UI runs at this address — an application sends a RunAgentInput and reads an event stream. The thread id it sends is the run’s conversation, and any tools it declares are offered to the run and executed on its side. Call it from a server of your own — the token is a server credential — presenting it in",
+  "pint.aguiConfigure": "Save the Agent settings to expose this project over AG-UI.",
   "pint.aguiCopy": "Copy example",
 
   // A project's settings tab: the sections and their forms.
@@ -1324,12 +1305,12 @@ export const en = {
   // console starts a run.
   "webhook.section": "Webhook",
   "webhook.githubHint": "GitHub: use this URL as the Payload URL, choose application/json, and enter this project’s webhook secret in GitHub’s Secret field. GitHub sends X-Hub-Signature-256; no custom header is needed. Select only the events this project should handle. Signed ping deliveries verify the connection without running the agent.",
-  "webhook.secretHint": "Generic senders use X-Trigger-Secret. GitHub uses this same value in its Secret field to sign deliveries. Anyone holding it can start this project’s published version.",
+  "webhook.secretHint": "Generic senders use X-Trigger-Secret. GitHub uses this same value in its Secret field to sign deliveries. Anyone holding it can start the Agent’s current settings.",
   "webhook.intro":
-    "One address per project, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome lands in the history below. The webhook always runs the project's published version.",
+    "One address per project, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome lands in the history below. The webhook always runs the Agent’s current configuration.",
   "schedule.section": "Schedules",
   "schedule.intro":
-    "A cron expression in a timezone, fired without anyone asking. Schedules always run the project's published version, and their outcomes show up under each one.",
+    "A cron expression in a timezone, fired without anyone asking. Schedules always run the Agent’s current configuration, and their outcomes show up under each one.",
   "trigger.newId": "New schedule id",
   "trigger.newIdPlaceholder": "nightly-report",
   "trigger.cron": "Cron",
@@ -1341,7 +1322,7 @@ export const en = {
   "trigger.messagePlaceholder": "What each firing asks the project",
   "trigger.enabled": "Enabled",
   "trigger.allowOverlap": "Allow overlapping runs",
-  "trigger.payload": "Payload",
+
   "trigger.destinations": "Report destinations",
   "trigger.destinationType": "Destination",
   "trigger.addDestination": "Add destination",
@@ -1482,12 +1463,7 @@ export const en = {
   "projectUsage.perCallerRange": "Per caller in the selected range",
   "projectUsage.topCallersRange": "Top {count} callers by cost in the selected range",
   "projectUsage.caller": "Caller",
-  "versions.empty": "No versions yet. Create one in the Playground tab.",
-  "versions.published": "Published",
-  "versions.publish": "Publish",
-  "versions.delete": "Delete",
-  "versions.deleteTitle": "Delete version",
-  "versions.deleteBody": "Delete version v{name}? This cannot be undone.",
+
 } as const;
 
 export type MessageKey = keyof typeof en;

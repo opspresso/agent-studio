@@ -112,7 +112,7 @@ OAuth 서버는 해당 프로젝트의 `connected` 연결이 있을 때만 자�
 새 capability는 `discovered`로 반환하며 손실인 warning과 구분한다.
 실행은 로그, preview는 별도 목록으로 표시한다.
 
-준비한 Version과 capability 목록은 SDK Agent 조립과 실제 대상 해석에 함께 사용한다.
+준비한 Agent 설정과 capability 목록은 SDK Agent 조립과 실제 대상 해석에 함께 사용한다.
 최상위 런·로컬 자식·preview의 호출 지점은 `TOOL_RESOLUTION_SITES`가 검사한다.
 background 후처리는 discovery·MCP·subagent를 제공하지 않는다.
 

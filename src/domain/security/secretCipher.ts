@@ -9,7 +9,7 @@
  * speculatively.
  */
 
-/** Header override values; `null` removes a registry default for one version. */
+/** Header override values; `null` removes a registry default for one Agent. */
 export type HeaderOverrides = Record<string, string | null>;
 export const CONTEXT_ENCRYPTED_PREFIX = "enc:v2:";
 
@@ -36,7 +36,7 @@ export interface SecretCipher {
     headers: Record<string, string>,
     context: string,
   ): Record<string, string>;
-  /** Registry headers with a version's overrides layered on, decrypted. */
+  /** Registry headers with a Agent's overrides layered on, decrypted. */
   mergeOutboundHeaders(
     registryHeaders: Record<string, string>,
     overrides: HeaderOverrides | undefined,

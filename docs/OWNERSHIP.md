@@ -28,10 +28,10 @@
 | capability 가 색인되는 키 | `src/domain/catalog/types.ts` 의 `capabilityKey` | 구조 |
 | capability 가 어떤 텍스트로 embedding 되는가 | `src/domain/catalog/types.ts` 의 `capabilityText` | 구조 |
 | 검색이 한 런에 얼마나 더할 수 있는가 | `src/application/execution/bindings.ts` 의 `DISCOVERY_LIMITS` | 구조 |
-| 런이 자기 메모리를 어떻게 준비하는가. 언제 준비하고, 어떤 tool 에게 무엇으로 묻고, 그 답이 무엇이 되는가 | `src/application/execution/memoryRecall.ts` 의 `prepareMemoryForRun` / `recallMemories` / `MAX_RECALLED_CHARS`; 묻는 tool 의 이름과 "바인딩만으로 회상이 불가능한가" 는 `src/domain/project/memoryRecall.ts` 의 `RECALL_TOOL_NAME` / `bindingsMayOfferRecall`. 버전 편집기가 런 전에 같은 답을 읽는다 | 구조 |
+| 런이 자기 메모리를 어떻게 준비하는가. 언제 준비하고, 어떤 tool 에게 무엇으로 묻고, 그 답이 무엇이 되는가 | `src/application/execution/memoryRecall.ts` 의 `prepareMemoryForRun` / `recallMemories` / `MAX_RECALLED_CHARS`; 묻는 tool 의 이름과 "바인딩만으로 회상이 불가능한가" 는 `src/domain/project/memoryRecall.ts` 의 `RECALL_TOOL_NAME` / `bindingsMayOfferRecall`. Agent 설정 편집기가 런 전에 같은 답을 읽는다 | 구조 |
 | 런이 무엇으로 카탈로그를 검색하는가 | `src/application/execution/bindings.ts` 의 `discoveryQueries` — 원래 요청과 회상으로 보강한 검색 문맥의 한도·조합 | 구조 |
 | subagent 중첩 한도 | `src/application/execution/agentBindings.ts` | 구조 |
-| MCP 기본 파일 매핑 선택과 연결별 namespace | `src/application/execution/mcpTools.ts`; 버전 설정이 없을 때만 레지스트리 기본값을 사용한다 | 구조 |
+| MCP 기본 파일 매핑 선택과 연결별 namespace | `src/application/execution/mcpTools.ts`; Agent 설정이 없을 때만 레지스트리 기본값을 사용한다 | 구조 |
 | 매핑된 MCP 도구의 모델용 응답 계약 | `src/application/audio/mapMcpSource.ts`의 `MCP_SOURCE_RESULT_DESCRIPTION`; 실행 바인딩이 해당 alias의 설명에만 덧붙인다 | 구조 |
 | 호출자별 동시 실행 slot 수의 저장 상한 | `src/domain/execution/runSlot.ts` 의 `MAX_RUN_SLOTS` / `boundedRunSlotLimit`. 저장 키의 세 자리 index가 표현하는 `0..999`이며 config와 repository가 함께 적용한다 | 구조 |
 | 런의 conversation 을 어떻게 만들고 무엇으로 키를 삼는가 | `src/domain/execution/actor.ts` 의 `conversationOf` / `conversationKey`. 각 표면의 철자는 저마다 자기 빌더(`chatConversation`, `slackConversation`, `telegramConversation`, `a2aConversation`, `aguiConversation`, `requestConversation`)를 갖지만, 그 전부가 이 둘을 지난다 | 구조 |
@@ -48,10 +48,10 @@
 | Workspace Runtime 모델 선택·호환성 | `domain/workspace/runtimeModels.ts`; 저장은 `application/workspace/runtimeModels.ts`, 실행 자격증명은 `lib/runtime-settings.ts` | 코드 |
 | 모델 이력·승인 체크포인트·revision과 저장 예산 | `src/application/runtime/session.ts`; 저장 CAS와 tombstone은 `src/infrastructure/db/repositories/runtimeSessionRepository.ts` | 코드 |
 | SDK native span의 로컬 수집과 안전한 메타데이터 변환 | `src/application/runtime/tracing.ts` | 코드 |
-| 버전의 입력 Guardrail과 Handoff 대상 검사 | `src/application/runtime/policy.ts`; 도구 정책은 SDK 도구 조립에 적용한다 | 코드 |
+| Agent의 입력 Guardrail과 Handoff 대상 검사 | `src/application/runtime/policy.ts`; 도구 정책은 SDK 도구 조립에 적용한다 | 코드 |
 | 스키마. `items`와 파생 컬럼·부분 인덱스, Better Auth 테이블, `catalog_vectors`, `runtime_sessions`, 적용된 버전 | `src/infrastructure/db/migrations.ts`. 추가만 하는 목록, advisory lock 아래에서 부팅마다 | 코드 |
 | Model 이 무엇이고, 어떤 route 가 그것을 서빙하는가 | **이 저장소 밖**. [opspresso/agent-models](https://github.com/opspresso/agent-models) 의 `models/` (family/offering), `https://models.opspresso.com/models.json` 으로 발행된다. 앱에서는 `src/domain/llm/models.ts` 의 `loadModelCatalog` 가 받아들이는 *유일한 입구* 이고, 숫자는 절대 여기 쓰지 않는다 (`tests/models.test.ts` 가 막는다) | 코드 |
-| 어떤 모델이 새 선택에 보이는가 | `src/domain/llm/models.ts` 의 `offeredModels`. catalog visibility 와 provider channel 에서 admin 의 `hiddenModels` denylist 를 뺀다. 기존 version 의 실행 가능성은 바꾸지 않는다 | 코드 |
+| 어떤 모델이 새 선택에 보이는가 | `src/domain/llm/models.ts` 의 `offeredModels`. catalog visibility 와 provider channel 에서 admin 의 `hiddenModels` denylist 를 뺀다. 기존 Agent의 실행 가능성은 바꾸지 않는다 | 코드 |
 | 모델 즐겨찾기의 개인 범위와 상한 | `src/domain/llm/modelPreferences.ts` 의 `ModelPreferencesRepository` / `MAX_FAVORITE_MODELS`. user id 별 한 행이며 picker 그룹화는 `src/app/_components/modelOptions.tsx` 의 `modelSelectData` 가 소유한다 | 코드 |
 | admin 이 올린 모델 카탈로그 문서의 자리, 그리고 그것이 발행 카탈로그보다 우선한다는 규칙 | `src/infrastructure/db/keys.ts` 의 `modelCatalog` (행 `MODELCATALOG#doc`), 우선순위는 `src/application/llm/modelCatalogStoredSource.ts` 의 `createCompositeModelCatalogSource`. 부팅 refresher 와 콘솔의 refresh 버튼이 같은 조합을 쓴다 | 코드 |
 | 누가 project 에 접근할 수 있는가 (공개 범위·초대 목록의 판정) | `src/domain/project/access.ts` 의 `mayAccessProject`. admin 오버라이드를 합친 형태는 `projectUseCases.ts` 의 `assertProjectAccessible`/`userMayAccessProject` 뿐이고, 표면들은 그 둘을 지난다 ([SECURITY.md](SECURITY.md#인가-모델)) | 코드 |
@@ -67,7 +67,7 @@
 | 모든 chat-bot 표면이 구현하는 답변 port | `src/domain/messaging/reply.ts` 의 `ReplySink` / `ReplyChannel`. 파이프라인이 그것을 호출하고, 각 어댑터가 그것을 렌더하며, 어느 쪽도 다른 쪽을 import 하지 않는다 | 구조 |
 | 모든 chat 플랫폼이 공유하는 webhook 꼬리. claim, ack, 이벤트의 id 아래에서 작업, settle | `src/app/api/_lib/inboundEvent.ts` 의 `admitInboundEvent` | 구조 |
 | 일반 작업과 코딩 작업의 Workspace·Sandbox·Runtime Session·Run 계약 | `src/domain/workspace/`; Git 저장소와 PR·승인 형태는 `src/domain/coding/types.ts` | 코드 |
-| Workspace 프로젝트 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자/관리자 쓰기는 `application/workspace/repositoryPolicy.ts`, 활성 버전은 `domain/project/activeVersion.ts` | 코드 |
+| Workspace 프로젝트 설정·저장소 범위·기본값 | `src/domain/workspace/policy.ts`; 읽기·소유자/관리자 쓰기는 `application/workspace/repositoryPolicy.ts`, 도구 활성 여부는 `domain/project/workspaceAccess.ts` | 코드 |
 | 신규 저장소 생성과 자동 등록의 증거·중복 방지 | `application/workspace/createRepository.ts`; GitHub 201 응답 검증은 `infrastructure/github/codingForge.ts`, 결과와 정책 transaction은 `workspaceRepositoryCreationStore.ts` | 코드 |
 | 도구 결과의 실패 표시와 trace 오류 판정 | `src/shared/toolResultStatus.ts`의 `isToolErrorText`. Runtime의 `Error:` 결과를 Chat·Playground에도 실패로 표시한다 | 코드 |
 | Native 코딩 턴에 전달하는 Workspace Git 승인 경계 지침 | `src/application/workspace/taskInput.ts` | 코드 |
@@ -171,7 +171,7 @@
 | 마크다운 frontmatter 블록의 파싱 | `src/domain/plugin/frontmatter.ts` | 구조 |
 | repo 소유 컴포넌트의 provenance 문자열(`github:<repo>#<plugin>`) | `src/domain/plugin/types.ts` 의 `pluginSourcePrefix`(sync 가 `startsWith`/`slice` 로 기대는 쪽)·`pluginSource`·`parsePluginSource` | 구조 |
 | catalog 재색인 중 동시에 probe할 MCP 서버 수 | `src/application/catalog/reindexCatalog.ts` 의 `MAX_CONCURRENT_CATALOG_PROBES` | 구조 |
-| A2A 노출 목록이 동시에 확인할 project version 수 | `src/application/a2a/exposure.ts` 의 `MAX_CONCURRENT_A2A_EXPOSURE_READS` | 구조 |
+| A2A 노출 목록이 동시에 확인할 Agent Card URL 작업 수 | `src/application/a2a/exposure.ts` 의 `MAX_CONCURRENT_A2A_EXPOSURE_READS` | 구조 |
 | builtin 도구의 wire 이름과 예약 집합 | `src/domain/llm/toolNames.ts` — 엔진, MCP alias 할당, 클라이언트 표시가 함께 사용한다 | 구조 |
 | 런당 MCP tool 상한 | `src/domain/llm/toolLimits.ts` | 구조 |
 | MCP 서버가 보낸 401 이 뜻하는 것 | `src/infrastructure/mcp/session.ts` | 구조 |
@@ -222,7 +222,7 @@
 | Bedrock 에 닿기 | `src/infrastructure/llm/bedrockClient.ts` | 구조 |
 | 호출자가 요청한 페이지 크기를 읽는 법과, 한 페이지가 커질 수 있는 상한 | `src/shared/pageLimit.ts`의 `parsePageLimit` / `boundedPageLimit` / `MAX_PAGE_LIMIT`. 각 자원은 자기 상한을 전달한다. 전체 열거는 repository별 자연 키·시간·seq cursor로 페이지를 순회한다 | 구조 |
 | UTC 날짜를 시각으로 읽는 법, 하루의 길이, 그리고 날짜 범위를 걸어가는 법 | `src/shared/date.ts`의 `isUtcDay` / `daySpan` / `daysBetween`. 날짜 유효성·범위 계산을 공유하고 순회 방향은 호출자가 선택한다 | 구조 |
-| presence penalty의 허용 범위 | `src/domain/llm/channel.ts`의 `PRESENCE_PENALTY_RANGE`. 버전 API 검증과 편집기가 함께 사용한다 | 구조 |
+| presence penalty의 허용 범위 | `src/domain/llm/channel.ts`의 `PRESENCE_PENALTY_RANGE`. Agent 설정 API 검증과 편집기가 함께 사용한다 | 구조 |
 | schedule 이 언제 발화하는지 판정하기 | `src/domain/trigger/cron.ts` | 구조 |
 | Project 의 webhook 이 어디로 전달되는가 | `src/domain/trigger/types.ts` 의 `projectWebhookPath` | 구조 |
 | Project optimistic update 가 경쟁에서 졌을 때의 오류 계약 | `src/application/project/projectUpdate.ts` 의 `persistProjectUpdate` | 구조 |
@@ -244,7 +244,7 @@
 | 백그라운드 타이머가 프로세스를 붙잡아 두지 않게 하기 | `src/shared/unrefTimer.ts` | 코드 |
 | 목록 읽기. 매치 전체를 답하고, 경계는 호출자의 `limit`, 만료 필터는 `LIMIT` 보다 먼저 도는 `notExpiredAt`, 호출자가 가져온 필터도 같은 자리에서 도는 `filter` | `src/infrastructure/db/store.ts`의 `queryItems`. 호출자의 limit과 만료·조건 필터를 같은 쿼리에 적용한다 | 코드 |
 | chunk 가 top-level 인지 여부 | `src/domain/llm/types.ts` 의 `isTopLevelChunk()` | 코드 |
-| 런이 어떤 Version 을 실행하는가 | `src/application/project/` 의 `resolveRunnableVersion` | 코드 |
+| 현재 Agent 설정의 접근·저장·실행 시점 snapshot | `src/application/project/configurationUseCases.ts`; Project repository의 META CAS와 runtime Session fingerprint 검사 | 코드 |
 | 행의 `expiresAt`. 보존 창과 그것을 초로 바꾸는 헬퍼 | `src/infrastructure/db/ttl.ts` | 코드 |
 | usage 행의 키가 되는 UTC 날짜 | `src/shared/date.ts` 의 `utcDay` | 코드 |
 | repo sync 가 무엇을 했고, 무엇을 사람에게 남겼는가 | `src/domain/sync/types.ts` | 코드 |

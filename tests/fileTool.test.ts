@@ -28,7 +28,7 @@ function setup() {
   };
   const deps = { artifacts: storage, documents: documentExtractor, documentRenderer, documentEditor, now: () => now };
   const call = buildFileTool(deps, "project", { actor, ancestry: ["project"] })!;
-  const recorder = createArtifactRecorder(storage, { projectName: "project", versionName: "1", actor });
+  const recorder = createArtifactRecorder(storage, { projectName: "project", actor });
   async function capture(result: McpToolResult) {
     async function* output(): AsyncGenerator<EngineChunk> {
       for (const file of result.files ?? []) yield { file: { ...file, source: "builtin: File" } };

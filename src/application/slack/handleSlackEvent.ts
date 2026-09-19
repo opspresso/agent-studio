@@ -381,7 +381,7 @@ export async function handleSlackEvent(
   }
 
   const project = await deps.projects.get(projectName);
-  // External surface: published-only, drafts never leak (resolveRunnableVersion policy).
+  // Pin current settings alongside the Project for this messaging turn.
   const configuration = project ? project.configuration : null;
   const target: ReplyTarget = {
     channel: event.channel,
@@ -394,7 +394,7 @@ export async function handleSlackEvent(
   const reply = slackReplyChannel(deps, token, target);
   if (!project || !configuration) {
     await reply.say(
-      `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
+      `Agent project not available: ${projectName} (must exist and have current Agent settings)`,
     );
     return;
   }

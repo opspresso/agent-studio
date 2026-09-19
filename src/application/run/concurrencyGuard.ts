@@ -80,7 +80,7 @@ const UNLIMITED: AcquiredSlot = { release: async () => {} };
  * opens. This one protects the platform itself, and opening it when the store
  * is failing adds load at exactly the moment the store cannot take it. A 429
  * with a short `Retry-After` is also a better answer than the 500 the run would
- * have produced anyway — every run reads its project and version from the same
+ * have produced anyway — every run reads its project and Agent from the same
  * table, so a store that cannot answer here was about to fail the run regardless.
  */
 export async function acquireRunSlot(

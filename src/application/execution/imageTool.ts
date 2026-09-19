@@ -18,15 +18,15 @@ export function defaultImageModel(): string | undefined {
 }
 
 /**
- * The image model a version's builtins draw with — one answer for both.
+ * The image model a Agent's builtins draw with — one answer for both.
  *
- * They are gated on the same per-version opt-in and reach the same model, and
+ * They are gated on the same per-Agent opt-in and reach the same model, and
  * therefore share one resolution. Otherwise generator and editor can disagree
  * about a retired `imageModel` and whether its fallback should be reported.
  *
- * `undefined` means the version did not opt in, or that no registry entry can
+ * `undefined` means the Agent did not opt in, or that no registry entry can
  * draw at all. A model that left the registry falls back to the default instead
- * of disabling the tools the version asked for.
+ * of disabling the tools the Agent asked for.
  */
 export function resolveImageModel(configuration: AgentConfiguration, projectName: string): string | undefined {
   if (configuration.parameters.imageGeneration !== true) {
@@ -48,7 +48,7 @@ export function resolveImageModel(configuration: AgentConfiguration, projectName
 
 /**
  * The GenerateImage builtin, over the model {@link resolveImageModel} chose.
- * Absent when there is none — the version did not opt in, or nothing registered
+ * Absent when there is none — the Agent did not opt in, or nothing registered
  * can draw.
  */
 export function buildImageGenerator(
@@ -78,8 +78,8 @@ export function buildImageGenerator(
 }
 
 /**
- * The EditImage builtin rides on the same per-version opt-in as GenerateImage —
- * a version that may draw may also redraw — and on the same model. Whether that
+ * The EditImage builtin rides on the same per-Agent opt-in as GenerateImage —
+ * a Agent that may draw may also redraw — and on the same model. Whether that
  * model's provider implements the edit endpoint is only known at dispatch, so a
  * provider refusal comes back as a tool-result error rather than hiding the tool.
  */

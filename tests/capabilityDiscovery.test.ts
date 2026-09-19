@@ -168,14 +168,14 @@ describe("capability discovery", () => {
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
   });
 
-  it("says so when the version asked for discovery and the deployment has no catalog", async () => {
+  it("says so when the Agent asked for discovery and the deployment has no catalog", async () => {
     // Nothing else can tell the author: the checkbox stays ticked, the bindings
     // resolve, the run answers normally and the preview shows the same prompt.
     const { deps } = harness();
     const resolved = await resolveRunTools(deps, configuration({ skillList: ["bound"] }), undefined, QUERIES);
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
     expect(resolved.warnings).toEqual([
-      "This version is set to find capabilities for each request, but this deployment has no capability catalog; only its own bindings were offered.",
+      "This Agent is set to find capabilities for each request, but this deployment has no capability catalog; only its own bindings were offered.",
     ]);
   });
 

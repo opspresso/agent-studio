@@ -107,7 +107,7 @@ export function McpBindingSettings({
             </Text>
           ) : (
             <Text fz="xs" c="dimmed" mr="auto">
-              {t("mcpSettings.savesWholeVersion")}
+              {t("mcpSettings.savesConfiguration")}
             </Text>
           )}
           <Button variant="subtle" color="gray" onClick={onClose}>

@@ -54,7 +54,6 @@ export interface ArtifactStorage {
 /** What the run already knows, bound once by the bracket that opened it. */
 export interface ArtifactContext {
   projectName: string;
-  versionName?: string;
   actor?: RunActor;
   /** The mailbox this run's output belongs to, when the surface knows one. */
   ownerEmail?: string;
@@ -110,7 +109,6 @@ export async function storeArtifact(
     ...(input.filename ? { filename: input.filename } : {}),
     byteSize: input.bytes.byteLength,
     projectName: context.projectName,
-    versionName: context.versionName,
     ...(context.actor ? { actor: context.actor } : {}),
     ...(context.ownerEmail ? { ownerEmail: context.ownerEmail } : {}),
     ...(context.ancestry && context.ancestry.length > 0 ? { ancestry: context.ancestry } : {}),

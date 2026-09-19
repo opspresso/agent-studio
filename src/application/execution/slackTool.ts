@@ -8,12 +8,12 @@ import type { ExecutionDeps } from "./deps";
  * The Slack reader, or nothing when this run has no workspace to look at.
  *
  * Three separate conditions have to hold, and each means something different:
- * the version asked for the tools, the project exists, and it has an enabled
+ * the Agent asked for the tools, the project exists, and it has an enabled
  * bot. Any of them missing leaves the run without the tools rather than with
  * tools that fail — a model offered a capability it cannot use spends turns
  * discovering that.
  *
- * The version's opt-in is checked first, so a run that did not ask for Slack
+ * The Agent's opt-in is checked first, so a run that did not ask for Slack
  * costs no extra project read.
  *
  * Which token the reader holds is decided by `deps.slackWorkspace`, bound by

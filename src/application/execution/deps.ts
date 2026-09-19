@@ -2,7 +2,7 @@ import type { DocumentRenderer, DocumentEditor } from "@/domain/document/process
 import type { RegisterMcpSource } from "@/application/audio/mapMcpSource";
 import type { FileToolDeps } from "@/application/document/fileTool";
 /**
- * Types the execution facade exposes, plus the version → engine parameter
+ * Types the execution facade exposes, plus the Agent → engine parameter
  * mapping every runner shares. Separate from the entry points so the modules
  * below can use them without importing the facade itself.
  */
@@ -112,7 +112,7 @@ export interface ExecutionDeps extends RunBracketDeps {
   mcpConnections?: Pick<McpConnectionRepository, "listByProject">;
   /**
    * The global capability catalog, when this deployment has one. Absent means
-   * a version's `dynamicCapabilities` has nothing to search and the run offers
+   * a Agent's `dynamicCapabilities` has nothing to search and the run offers
    * exactly what it bound — the feature is off rather than failing.
    */
   catalog?: CatalogSearchDeps;
@@ -173,19 +173,15 @@ export interface ExecuteProjectInput {
   caller?: RunCaller;
   /** See {@link ExecuteAgentInput.conversation}. */
   conversation?: RunConversation;
-  /**
-   * See {@link ExecuteAgentInput.clientTools}. Reaches the agent loop only: a
-   * single-shot run has no loop to end, and an image run no model to offer
-   * them to — a surface with tools to declare checks the strategy first.
-   */
+  /** Tools the calling application declares and executes; see ExecuteAgentInput. */
   clientTools?: ChannelToolDef[];
   signal?: AbortSignal;
 }
 
 /**
- * The caller the prompt is allowed to name — the version's opt-in decides, not
+ * The caller the prompt is allowed to name — the Agent's opt-in decides, not
  * the surface. A surface that resolved one anyway (a cached profile, a replayed
- * run) must not be able to leak a name into a version that never asked for it.
+ * run) must not be able to leak a name into a Agent that never asked for it.
  *
  * Here rather than beside the runners because the Playground preview asks the
  * same question. One shared gate keeps prompt and agent previews aligned.
@@ -194,22 +190,7 @@ export function callerFor(input: { configuration: AgentConfiguration; caller?: R
   return input.configuration.parameters.callerContext && input.caller ? { caller: input.caller } : {};
 }
 
-/**
- * What the facade hands whichever executor it picked, projected in one place.
- *
- * Both dispatch points rebuilt this literal per branch — four copies of "which
- * fields travel down" — and every one of them omitted `caller`. Optional fields
- * make that a silent drop rather than a type error, so a version that opted into
- * `callerContext` ran anonymously through `/predict` and `/chat/completions`
- * while the same version named its caller on `/agent`, in a chat and in Slack,
- * all of which reach `executeAgent` directly. The gate itself is not applied
- * here: {@link callerFor} answers that once, at the engine-input boundary, and a
- * second gate on the way there could only disagree with it.
- *
- * `variables` is deliberately not part of this. It belongs to the single-shot
- * path — an agent run has no template to render with it — so that branch adds
- * it rather than every branch carrying a field one of them must ignore.
- */
+/** Forward surface context unchanged; callerFor owns the prompt's identity opt-in. */
 export function toRunInput(
   input: ExecuteProjectInput,
 ): Pick<
@@ -238,7 +219,7 @@ export interface PromptPreviewMessage {
 }
 
 export interface PromptPreview {
-  /** The messages this version would open a run with. */
+  /** The messages this Agent would open a run with. */
   messages: PromptPreviewMessage[];
   /** Tool names the model would be offered, aliases applied. */
   toolNames: string[];
@@ -251,11 +232,11 @@ export interface PromptPreview {
   /** What the preview — and therefore a run — could not resolve. */
   warnings: string[];
   /**
-   * Capabilities a search added on top of the version's bindings, by name.
+   * Capabilities a search added on top of the Agent's bindings, by name.
    *
    * Separate from `warnings` because it is the opposite of one, and this panel
    * is the only place an author can read it: the prompt above shows the widened
-   * result without saying which rows the version never bound.
+   * result without saying which rows the Agent never bound.
    */
   discovered: string[];
 }

@@ -105,7 +105,7 @@ export interface ApiEndpoint {
 export interface ApiReferenceContext {
   projectName: string;
   projectType: ProjectType;
-  /** The configured version name, or null when the project has no configured version. */
+  /** Whether the Agent has saved settings that can be executed. */
   configured: boolean;
   /** Absolute origin for example URLs (e.g. window.location.origin); "" is tolerated. */
   origin: string;
@@ -454,7 +454,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
   }
 
   // The project webhook: shown once it is switched on, and deliberately not
-  // gated on a configured version — the address is live either way, and what it
+  // gated on saved Agent settings — the address is live either way, and what it
   // answers without one is the `no-configuration` status documented below.
   if (webhook && webhook.enabled) {
     const webhookPath = projectWebhookPath(projectName);
@@ -465,7 +465,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: webhookPath,
       title: "Project webhook",
       description:
-        "Starts a run of the current Agent configuration from outside. Generic senders use X-Trigger-Secret. GitHub uses the same secret in its Secret setting to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message, or turned into template variables when the webhook's payload mode says so. " +
+        "Starts a run of the current Agent configuration from outside. Generic senders use X-Trigger-Secret. GitHub uses the same secret in its Secret setting to sign X-Hub-Signature-256, with X-GitHub-Delivery and X-GitHub-Event headers; the JSON body (up to 1MB) becomes the run's input — serialised into the user message. " +
         "It answers 202 immediately and runs in the background, because a run can take minutes and no sender waits that long: the answer lands on the delivery's history row under Settings → Webhook, not in this response. " +
         "Generic senders use Idempotency-Key; GitHub redeliveries are deduplicated by X-GitHub-Delivery for 24 hours. Signed GitHub ping deliveries return status=ping without starting a run.",
       auth: "trigger-secret",

@@ -34,7 +34,7 @@ export function AguiSection({ projectName, configured }: { projectName: string; 
         </Text>
         {!configured && (
           <Text fz="sm" c="dimmed">
-            {t("pint.aguiPublish")}
+            {t("pint.aguiConfigure")}
           </Text>
         )}
         <CopyableUrl url={url} />
