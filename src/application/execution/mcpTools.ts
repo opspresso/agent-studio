@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-/** A version's MCP bindings resolved into offered tools, and session cleanup. */
+/** An Agent's MCP bindings resolved into offered tools, and session cleanup. */
 
 import type { AgentConfiguration } from "@/domain/project/types";
 import { conversationKey, type RunOrigin } from "@/domain/execution/actor";
@@ -28,7 +28,7 @@ import {
 
 export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
 
-/** What resolving a version's MCP bindings actually reads off the run's deps. */
+/** What resolving an Agent's MCP bindings actually reads off the run's deps. */
 export type McpToolDeps = Pick<
   ExecutionDeps,
   "mcps" | "cipher" | "urlPolicy" | "mcpSessions" | "mcpAuth" | "internalHostSuffixes" | "registerMcpSource" | "sourceRefreshIdentity"
@@ -49,7 +49,7 @@ export async function buildMcpTools(
    * The offered name of one server's own tool, when this run offers it — the
    * way a run addresses a tool it knows by its server's name rather than by the
    * alias the model sees (`memoryRecall.ts` asks for each server's `recall`).
-   * Absent, like `callMcpTool`, when the version binds no server.
+   * Absent, like `callMcpTool`, when the Agent binds no server.
    */
   aliasFor?: (serverName: string, toolName: string) => string | undefined;
   /** Why a bound server contributed no tools; surfaced to the user by the run. */
@@ -104,7 +104,7 @@ export async function buildMcpTools(
             Object.entries(overrides ?? {}).filter(([, value]) => value === null),
           );
           credentialWarning =
-            `MCP server '${mcp.name}' moved since its version header credentials were saved; ` +
+            `MCP server '${mcp.name}' moved since its Agent header credentials were saved; ` +
             "those credentials were not sent. Re-enter them for the current endpoint.";
           log.warn("mcp", credentialWarning);
         }
@@ -131,7 +131,7 @@ export async function buildMcpTools(
         stripMcpMetadataHeaders(headers);
         if (mcp.auth) {
           // A per-project credential, resolved and refreshed by the auth
-          // provider. Applied last on purpose: a version must not be able to
+          // provider. Applied last on purpose: an Agent must not be able to
           // substitute its own Authorization for the project's connection.
           // The entry's own OAuth block goes with it, so the provider can tell
           // whether the connection still belongs to what this name points at —
@@ -191,7 +191,7 @@ export async function buildMcpTools(
     }
   }
 
-  // Every builtin name is reserved, not just the ones this version activates:
+  // Every builtin name is reserved, not just the ones this Agent activates:
   // aliases are allocated here, before the engine decides which builtins to
   // offer, and a name that a builtin *may* claim must never resolve to an MCP
   // tool the engine would then shadow.

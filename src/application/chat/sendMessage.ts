@@ -22,7 +22,7 @@ export interface SendMessageInput {
   images?: AttachedImage[];
   documents?: AttachedDocumentInput[];
   userEmail: string;
-  /** The owner in words, for a version that opted into `callerContext`. */
+  /** The owner in words, for an Agent that opted into `callerContext`. */
   caller?: RunCaller;
   signal?: AbortSignal;
 }

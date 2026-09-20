@@ -7,7 +7,7 @@ import type { RunActor } from "@/domain/execution/actor";
 export type TraceStatus = "completed" | "awaiting-approval" | "turn-limit" | "output-limit" | "failed" | "cancelled";
 /**
  * `prepare` is the work a run does before its first model call — resolving the
- * version's tools (which opens every bound MCP server) and, when the version
+ * Agent's tools (which opens every bound MCP server) and, when the Agent
  * asks for it, recalling memory. Its own kind because it is neither: billed to
  * the first `model` span, as it was, a run that waited eight seconds on a slow
  * MCP server reported an eight-second model, and "why was the first token so
@@ -60,7 +60,7 @@ export interface Trace {
   /**
    * Bindings the run could not use (a deleted skill, an unreachable MCP server).
    * The run still answered, so this is not an `error` — but the answer was
-   * produced with less than the version declares, which is what makes an
+   * produced with less than the Agent declares, which is what makes an
    * otherwise puzzling trace readable.
    */
   warnings?: string[];

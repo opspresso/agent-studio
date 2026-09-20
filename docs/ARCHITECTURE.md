@@ -62,7 +62,7 @@ Session 계약을 직접 사용하고, 배포별 저장·모델·자격 증명�
 | 관심사 | 코드 |
 |---|---|
 | 프로젝트·현재 설정과 접근 | `application/project/`, `domain/project/` |
-| 유형별 실행·바인딩·Memory·미리보기 | `application/execution/` |
+| Agent 실행 준비·바인딩·Memory·미리보기 | `application/execution/` |
 | SDK Agent·Runner·도구·Session·승인 | `application/runtime/` |
 | 프롬프트 조립·PII·문맥 예산·모델 카탈로그 | `application/llm/` |
 | 공통 실행 정책·Trace 수명 | `application/run/` |
@@ -313,7 +313,7 @@ Chat의 연결 분리 wrapper는 이 계층 바깥에 있다. 브라우저 연�
 | `done` / `finishReason` | 전송 구간 종료와 턴·출력 한도. `runTermination`이 최상위 종료만 판정한다. 취소는 소비자의 signal/return으로 판정한다 |
 | `approval` | `{ pending: true }`면 영속 Chat의 승인 항목을 조회한다. 이 경우 전송이 끝나도 작업이 완료된 것은 아니다 |
 | `author` / `authorPath` | 자식 출력의 이름과 위임 경로. Handoff는 같은 Runner의 담당 Agent를 바꾸므로 별도 작성 경로를 만들지 않는다 |
-| `transferId` / `authorDone` | 동시 위임 호출의 식별자와 해당 자식 실행 종료. Trace 샘플링과 독립적이다 |
+| `transferId` / `authorDone` | 동시 위임 호출의 식별자와 해당 자식 실행 종료. Trace 저장과 별개로 스트림에 전달한다 |
 | `traceId` | Studio Trace 식별자. text 자식은 최상위 Trace의 SDK span 계층을 사용하며 특화 자식은 별도 Trace를 가질 수 있다 |
 
 이미지와 파일을 소비하는 표면은 두 축을 모두 다룬다. raw chunk route는 `withAddressedFiles`로

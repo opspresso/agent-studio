@@ -149,7 +149,7 @@ export default function ProjectsPage() {
         onClose={close}
         onCreated={(createdName) => {
           close();
-          // Straight to the playground: the initial version is already there,
+          // Straight to the playground: initial Agent settings are available when a model fits,
           // so the next step is writing the prompt, not finding the card.
           router.push(`/projects/${createdName}`);
         }}

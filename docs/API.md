@@ -317,7 +317,7 @@ PUT /api/projects/{name}/configuration
 읽기는 프로젝트 접근 권한을, 쓰기는 소유자 또는 effective configured admin 권한을 요구한다.
 PUT은 현재 설정 전체를 대체한다. GET의 `updatedAt`을 `expectedUpdatedAt`으로 보내야 하며,
 Project 메타데이터나 설정의 동시 수정이 먼저 저장되면 409를 반환한다. 저장 결과의 `updatedAt`을
-다음 수정에 사용한다. 이름 있는 설정 목록이나 별도 발행 단계는 없다.
+다음 수정에 사용한다. 저장한 설정은 다음 실행부터 적용한다.
 
 `model`은 필수이며 Agent 도구 호출을 지원하는 텍스트 모델을 사용한다. `parameters`는
 `temperature?`, `presencePenalty?`, `maxTokens?`, `reasoningEffort?`, `piiFiltering`,
@@ -1185,6 +1185,10 @@ DELETE /api/projects/{name}/token          → 204
 
 설정된 Agent의 최소 호출 예제다. 로컬 서버의 실제 프로젝트 이름과 발급한 token을 사용한다.
 
+화면 API Reference의 curl·SDK 예제는 호출 프로세스의 `PROJECT_API_TOKEN` 환경변수를 사용한다.
+대화 식별 예제에는 `CONVERSATION_ID`도 설정한다. curl의 인증 헤더는 큰따옴표로 감싸 환경변수가
+치환되며 Python은 `os.environ`, Node.js는 `process.env`로 읽는다. 값은 호출 서버에 보관한다.
+
 ```bash
 curl --fail-with-body http://localhost:3000/api/projects/my-agent/predict \
   -H "Authorization: Bearer $PROJECT_API_TOKEN" \
@@ -1306,6 +1310,9 @@ byteSize?, url } ]` 와 스트림의 `choices[0].delta.files` 프레임이다. �
 **런이 잃은 것.** 같은 취급, 같은 이유다: completion 객체의 `warnings: [ "…" ]` 와 스트림의
 `choices[0].delta.warnings` 프레임이다. 런이 진행하면서 보고하는 손실이며 (위 `/predict` 참조),
 이것이 없으면 이 표면에서는 성능이 깎인 런과 깨끗한 런이 같은 응답이 된다.
+
+OpenAI 완료형 응답에는 `usage`가 포함되지만 스트리밍 응답에는 usage 프레임이 없다.
+스트림의 토큰 합계는 Studio 사용량·Trace에서 확인한다. raw Agent 스트림은 `usage` 축을 제공한다.
 
 ### `POST /api/projects/{name}/agent`
 
@@ -1448,7 +1455,6 @@ id 를 받지 않으므로, 바깥의 무엇도 전달이 어느 webhook 에 떨
 행이 그것을 위한 유일한 통로다.
 
 Webhook JSON 본문은 사용자 메시지로 직렬화한다. 예약 실행은 저장한 `message`를 사용한다.
-`variables`·`payloadMode` 입력은 거절한다. 템플릿 변수 치환은 제공하지 않는다.
 
 `allowConcurrent` 의 기본값은 false 다: 하나가 아직 돌고 있는 동안 온 두 번째 전달은 런을 쌓아
 올리는 대신 `skipped` 로 기록된다.
@@ -1706,11 +1712,12 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (A2A 1.0 JSON-RPC: SendM
                                                          CancelTask, ResubscribeTask, ListTasks)
 ```
 
-`GET /api/a2a` 는 A2A 로 노출된 publish 된 project 들을 나열한다: `enabled` 는 그 표면이 켜져
-있는지를 알려 주고. 공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키 하나 이상. 각 project
-항목은 `{ name, displayName, description, cardUrl }` 을 싣는다.
+`GET /api/a2a`는 현재 설정이 있고 로그인한 사용자가 읽을 수 있는 Agent를 나열한다.
+`enabled`는 공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키가 하나 이상 있어 표면이 켜져
+있는지를 나타낸다. 목록은 표면이 꺼져 있어도 반환되며, private Agent의 공개 Card는 제공하지
+않는다. 각 항목은 `{ name, displayName, description, cardUrl }`을 싣는다.
 
-Agent Card GET 은 표면이 꺼져 있으면 `503`, project 가 private 이거나 publish 되지 않았으면
+Agent Card GET 은 표면이 꺼져 있으면 `503`, project 가 없거나 private이거나 현재 설정이 없으면
 `404`, 요청의 선택적인 `A2A-Version` 이 `1.0` 이 아니면 `400` 으로 답한다.
 
 `503` (설정되지 않음) 은 표면이 완전히 꺼져 있을 때만 답한다: 공유 키도 없고 **그리고** 클라이언트
@@ -1756,9 +1763,9 @@ TTL(`A2A_TASK_RETENTION_DAYS`, 기본 1일)로 만료된다. `ListTasks` 는 sta
 
 ## AG-UI (인바운드)
 
-사용자를 마주하는 앱이 published 된 project 를 임베드하는 표면
-([design/agui.md](design/agui.md)). 설정할 것은 없다. 현재 설정이 있는 모든
-project 가 답한다.
+사용자를 마주하는 앱이 현재 설정을 가진 Agent를 임베드하는 표면이다
+([design/agui.md](design/agui.md)). 별도 활성화 설정은 없으며 프로젝트 token 또는 접근 가능한
+사용자 session으로 실행한다.
 
 ```
 POST /api/agui/{project}    Authorization: Bearer <project token>  (또는 session)

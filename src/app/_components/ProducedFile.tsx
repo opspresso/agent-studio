@@ -19,9 +19,8 @@ import { useT } from "@/app/_i18n/provider";
  * not jump the moment the answer lands. Every other surface reading a run's
  * chunks gets the address on the frame and never draws this state.
  *
- * Shared rather than chat's own, because the Playground and the compare view
- * answer with the same thing: three surfaces drawing one file three ways is how
- * a reader learns the size in one place and not in another.
+ * Chat and Playground share this presentation so filenames, sizes and download
+ * links remain consistent across both surfaces.
  */
 export function ProducedFile({
   name,

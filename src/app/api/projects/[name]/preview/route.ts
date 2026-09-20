@@ -52,7 +52,7 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
       configuration: {
         ...draft,
         // The console echoes overrides masked; the draft's masks resolve
-        // against the stored version, exactly as the save path does.
+        // against the stored Agent, exactly as the save path does.
         mcpList: await configurationUseCases.resolveDraftBindings(name, draft.mcpList, user.email),
         projectName: name,
         // The draft may not be saved yet, so it has no name or timestamp of its
@@ -63,7 +63,7 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
       actor: { kind: "user", id: user.email },
       // The person looking at the preview is the one a run started from this
       // page would name. Without it the Playground showed a prompt one block
-      // short of what the version actually sends.
+      // short of what the Agent actually sends.
       ...(caller ? { caller } : {}),
     });
     return Response.json(preview);

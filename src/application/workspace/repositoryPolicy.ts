@@ -51,7 +51,7 @@ export function createWorkspaceRepositoryPolicyUseCases(deps: RepositoryPolicyDe
     },
     async update(projectName: string, input: { rules: WorkspaceProjectSettings; revision: number | null }, email: string): Promise<WorkspaceRepositoryPolicyView> {
       await assertProjectWritable(deps.projects, projectName, email);
-      if (!await enabled(projectName)) throw new ValidationError("Enable Workspace tools in the active agent version first");
+      if (!await enabled(projectName)) throw new ValidationError("Enable Workspace tools in the current Agent settings first");
       if (input.revision !== null && (!Number.isSafeInteger(input.revision) || input.revision < 1)) throw new ValidationError("Invalid Workspace policy revision");
       let rules: WorkspaceProjectSettings;
       try { rules = normalizeWorkspaceProjectSettings(input.rules); }

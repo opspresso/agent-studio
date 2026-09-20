@@ -34,9 +34,10 @@ Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사�
 Project는 이름으로 호출하는 Agent다. 현재 설정에 모델·fallback·시스템 프롬프트·생성 설정,
 Skill·MCP·하위 Agent binding과 실행 정책을 저장한다. 이미지 생성·편집도 Agent의 도구로 제공한다.
 
-설정 저장은 Project의 `updatedAt`으로 동시 수정을 검사한다. 별도 발행 없이 다음 실행부터
-적용되며 진행 중 실행과 제출한 Audio 작업은 시작 시점 설정을 유지한다. 모든 실행 창구가
-같은 현재 설정을 읽고, 설정이 없으면 실행을 거절한다. 승인 대기 중 설정·연결 변경은 재개를 막는다.
+설정 저장은 Project의 `updatedAt`으로 동시 수정을 검사한다. 저장한 설정은 다음 실행부터
+적용된다. 각 Agent는 준비 시점의 설정을 유지하며 로컬 하위 Agent는 호출될 때 자기 설정을 읽는다.
+접수된 Audio 작업은 접수 시점의 설정을 유지한다. 실행에는 현재 설정이 필요하며,
+승인 대기 중 설정·연결 변경은 재개를 막는다.
 
 [실행 설계](design/execution.md#project와-현재-설정)와 [설정 API](API.md#agent-현재-설정)가
 계약을 설명하며 [`configurationUseCases.ts`](../src/application/project/configurationUseCases.ts)가

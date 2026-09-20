@@ -5,7 +5,7 @@
  * A memory server (mcp-memory) keeps what outlives a run and offers it through
  * a `recall(query)` tool. Left to the tool alone, the model has to think of
  * asking, and the run that did not starts from nothing — the one limitation
- * the server itself names. So a Agent that opts in (`parameters.memoryRecall`)
+ * the server itself names. So an Agent that opts in (`parameters.memoryRecall`)
  * has the *run* ask, once, before the first token: every bound server offering
  * `recall` is called with the newest user turn, and what came back is put in
  * the system prompt as something the run already knows.
@@ -44,14 +44,14 @@ const RECALL_TIMEOUT_MS = 10_000;
 export interface RecallResult {
   /** What the run remembers, ready for the prompt; absent when nothing came back. */
   remembered?: string;
-  /** What was lost — a server that failed, a Agent with nothing to ask. */
+  /** What was lost — a server that failed, an Agent with nothing to ask. */
   warnings: string[];
   /** Servers actually asked. Zero when there was none to ask, or nothing to ask with. */
   asked: number;
   /**
    * Of those, how many failed.
    *
-   * Told apart from `warnings` because they are not the same event: a Agent
+   * Told apart from `warnings` because they are not the same event: an Agent
    * bound to no memory server warns on every run it will ever make, and marking
    * *that* as a stage failure would put a red span on every trace of a
    * permanently misconfigured Agent — the same dilution the discovery/warning
@@ -83,7 +83,7 @@ export function recallTargets(
 }
 
 /**
- * The warning both callers raise when a Agent recalls and nothing offers it.
+ * The warning both callers raise when an Agent recalls and nothing offers it.
  * "On this run", because a server may well have the tool and this run may not
  * be offering it — past the per-run tool cap, or narrowed out by the binding —
  * and the cap's own warning says which.
@@ -98,7 +98,7 @@ export function noRecallTargetWarning(): string {
  * and a field added to one copy is a field the other silently stops carrying.
  *
  * `status` is the part worth stating: a server that was asked and did not
- * answer is a stage that failed, while a Agent bound to nothing that offers
+ * answer is a stage that failed, while an Agent bound to nothing that offers
  * `recall` warns on every run it will ever make — flagging *that* red puts an
  * error on every trace a misconfigured Agent writes.
  */

@@ -12,7 +12,7 @@ export interface ProjectA2aResponse {
   enabled: boolean;
   configured: boolean;
   cardUrl: string | null;
-  /** The Agent Card that this project publishes, or null with no configured version. */
+  /** The Agent Card that this project publishes, or null with no current Agent settings. */
   card: AgentCard | null;
 }
 

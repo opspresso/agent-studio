@@ -145,12 +145,12 @@ export default function AgentsPage() {
         <Stack component="section" gap="sm">
           <div>
             <Title order={2} fz="h4">
-              Workspace projects (A2A)
+              {t("agents.studioTitle")}
             </Title>
             <Text fz="sm" c="dimmed" mt={4}>
               {a2aProjects.enabled
-                ? "Published projects, exposed as A2A agents — share the Agent Card URL, no registration needed."
-                : "Published projects. Generate an A2A key in Settings to expose them as A2A agents."}
+                ? t("agents.studioEnabled")
+                : t("agents.studioDisabled")}
             </Text>
           </div>
           <CardList>

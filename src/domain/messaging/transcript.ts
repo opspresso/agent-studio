@@ -20,7 +20,7 @@ export interface TranscriptTurn {
   /** The platform's id for the human who wrote it. Absent on the bot's turns. */
   userId?: string;
   /**
-   * How that human is named to the model, kept only when the version asked to
+   * How that human is named to the model, kept only when the Agent asked to
    * know who is asking (`callerContext`) — the same opt-in that gates the name
    * reaching a prompt gates it being written down.
    */

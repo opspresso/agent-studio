@@ -1,9 +1,10 @@
 import type { ProjectType } from "@/domain/project/types";
 import { projectWebhookPath } from "@/domain/trigger/types";
+import { MAX_DOCUMENTS, MAX_DOCUMENT_SIZE_LABEL } from "@/domain/llm/documentLimits";
 
 /**
  * Builds the API Reference tab's endpoint descriptors from a project's public
- * context (name, type, configured pointer, integration flags). This module is
+ * context (name, saved settings, integration flags). This module is
  * intentionally pure — it takes **no** secrets, so every rendered example and
  * code sample can only ever contain the placeholder tokens below, never a real
  * session cookie, A2A key, or Slack secret.
@@ -40,11 +41,8 @@ export const PLACEHOLDERS = {
 } as const;
 
 /**
- * The optional conversation header the three execution endpoints read, shown
- * on an agent project's examples: that is where a conversation reaches
- * something — an A2A transfer, an MCP server — where a prompt project's run
- * has nothing to continue. The value is the caller's own; the placeholder is
- * not a credential.
+ * The optional conversation header reaches MCP and remote A2A calls.
+ * It does not persist the calling client's model history.
  */
 const CONVERSATION_HEADER = { "X-Conversation-Id": "$CONVERSATION_ID" } as const;
 const CONVERSATION_NOTE =
@@ -61,7 +59,7 @@ export function aguiClientExample(url: string): string {
     "",
     "const agent = new HttpAgent({",
     `  url: "${url}",`,
-    `  headers: { Authorization: "Bearer ${PLACEHOLDERS.token}" },`,
+    '  headers: { Authorization: `Bearer ${process.env.PROJECT_API_TOKEN}` },',
     '  initialMessages: [{ id: crypto.randomUUID(), role: "user", content: "Hello" }],',
     "});",
     "",
@@ -144,29 +142,29 @@ function curlExample(opts: {
   }
   switch (opts.auth) {
     case "token":
-      lines.push(`  -H 'Authorization: Bearer ${PLACEHOLDERS.token}'`);
+      lines.push(`  -H "Authorization: Bearer ${PLACEHOLDERS.token}"`);
       break;
     case "a2a-key":
-      lines.push(`  -H 'X-A2A-Key: ${PLACEHOLDERS.a2aKey}'`);
+      lines.push(`  -H "X-A2A-Key: ${PLACEHOLDERS.a2aKey}"`);
       break;
     case "trigger-secret":
-      lines.push(`  -H 'X-Trigger-Secret: ${PLACEHOLDERS.webhookSecret}'`);
+      lines.push(`  -H "X-Trigger-Secret: ${PLACEHOLDERS.webhookSecret}"`);
       break;
     case "slack-signature":
-      lines.push(`  -H 'X-Slack-Signature: ${PLACEHOLDERS.slackSignature}'`);
-      lines.push(`  -H 'X-Slack-Request-Timestamp: ${PLACEHOLDERS.slackTimestamp}'`);
+      lines.push(`  -H "X-Slack-Signature: ${PLACEHOLDERS.slackSignature}"`);
+      lines.push(`  -H "X-Slack-Request-Timestamp: ${PLACEHOLDERS.slackTimestamp}"`);
       break;
     case "telegram-secret":
-      lines.push(`  -H 'X-Telegram-Bot-Api-Secret-Token: ${PLACEHOLDERS.telegramSecret}'`);
+      lines.push(`  -H "X-Telegram-Bot-Api-Secret-Token: ${PLACEHOLDERS.telegramSecret}"`);
       break;
     case "teams-token":
-      lines.push(`  -H 'Authorization: Bearer ${PLACEHOLDERS.teamsToken}'`);
+      lines.push(`  -H "Authorization: Bearer ${PLACEHOLDERS.teamsToken}"`);
       break;
     case "public":
       break;
   }
   for (const [name, value] of Object.entries(opts.extraHeaders ?? {})) {
-    lines.push(`  -H '${name}: ${value}'`);
+    lines.push(`  -H "${name}: ${value}"`);
   }
   if (opts.body !== undefined) {
     lines.push(`  -d '${JSON.stringify(opts.body)}'`);
@@ -177,7 +175,7 @@ function curlExample(opts: {
 /**
  * OpenAI Python SDK sample for the OpenAI-compatible endpoint. The project API
  * token is passed as `api_key`; the SDK sends it as `Authorization: Bearer`, so
- * only the $PROJECT_API_TOKEN placeholder ever appears.
+ * the credential is read from the calling process's environment.
  */
 function pythonSdkExample(opts: {
   baseUrl: string;
@@ -187,7 +185,7 @@ function pythonSdkExample(opts: {
   conversation?: boolean;
 }): CodeExample {
   const extraHeaders = opts.conversation
-    ? `\n    extra_headers={"X-Conversation-Id": "$CONVERSATION_ID"},  # same value on every turn of one conversation`
+    ? `\n    extra_headers={"X-Conversation-Id": os.environ["CONVERSATION_ID"]},  # same value on every turn of one conversation`
     : "";
   const createArgs = `
     model="",  # ignored — the Agent configuration selects the model
@@ -199,11 +197,12 @@ for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="")`
     : `response = client.chat.completions.create(${createArgs})
 print(response.choices[0].message.content)`;
-  const code = `from openai import OpenAI
+  const code = `import os
+from openai import OpenAI
 
 client = OpenAI(
     base_url="${opts.baseUrl}",
-    api_key="${PLACEHOLDERS.token}",  # sent as Authorization: Bearer
+    api_key=os.environ["PROJECT_API_TOKEN"],  # sent as Authorization: Bearer
 )
 
 ${call}`;
@@ -224,7 +223,7 @@ function nodeSdkExample(opts: {
 `;
   const requestOptions = opts.conversation
     ? `, {
-  headers: { "X-Conversation-Id": "$CONVERSATION_ID" }, // same value on every turn of one conversation
+  headers: { "X-Conversation-Id": process.env.CONVERSATION_ID }, // same value on every turn of one conversation
 }`
     : "";
   const call = opts.stream
@@ -238,7 +237,7 @@ console.log(response.choices[0].message.content);`;
 
 const client = new OpenAI({
   baseURL: "${opts.baseUrl}",
-  apiKey: "${PLACEHOLDERS.token}", // sent as Authorization: Bearer
+  apiKey: process.env.PROJECT_API_TOKEN, // sent as Authorization: Bearer
 });
 
 ${call}`;
@@ -248,7 +247,24 @@ ${call}`;
 const USAGE_FIELDS: FieldSpec[] = [
   { name: "inputTokens", type: "number", description: "Prompt tokens billed." },
   { name: "outputTokens", type: "number", description: "Completion tokens billed." },
-  { name: "costUsd", type: "number", description: "Estimated cost in USD from registry pricing." },
+  { name: "cachedTokens", type: "number", description: "Optional cached subset of inputTokens; do not add it to the total." },
+  { name: "reasoningTokens", type: "number", description: "Optional reasoning subset of outputTokens; do not add it to the total." },
+  { name: "costUsd", type: "number", description: "Aggregate run cost: text calls prefer provider-reported cost; registry pricing covers fallbacks and image calls." },
+];
+
+const DOCUMENTS_FIELD: FieldSpec = {
+  name: "documents", type: "array[object]",
+  description: `Optional document attachments: at most ${MAX_DOCUMENTS}, each up to ${MAX_DOCUMENT_SIZE_LABEL}. Extracted text is appended to the latest user message, or a user turn is added if absent.`,
+  children: [
+    { name: "b64", type: "string", required: true, description: "Base64-encoded document bytes, without a data URL prefix." },
+    { name: "mimeType", type: "string", required: true, description: "Document MIME type; the filename is also checked for format recognition." },
+    { name: "name", type: "string", required: true, description: "Filename including its extension." },
+  ],
+};
+
+const OUTPUT_FIELDS: FieldSpec[] = [
+  { name: "images", type: "array[object]", description: "Generated or edited images: { b64, mimeType, prompt? }. Present only when the run produced images." },
+  { name: "files", type: "array[object]", description: "Addressed files: { fileId, name, mimeType, byteSize?, url }. Download before the signed URL expires; fileId supports authorized follow-up tool calls." },
 ];
 
 export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
@@ -281,6 +297,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
               "OpenAI-style messages the Agent runs against.",
           },
           { name: "stream", type: "boolean", description: "Return an SSE stream instead of one JSON body." },
+          DOCUMENTS_FIELD,
         ],
         responseFields: [
           { name: "result", type: "string", description: "Assistant text output." },
@@ -298,6 +315,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             description:
               "What the run lost on the way to this answer — a binding no longer in the registry, a blocked MCP server, a clipped transfer transcript. Present only when something was lost; a stream says each of these in a warning frame instead.",
           },
+          ...OUTPUT_FIELDS,
         ],
         responseExample: pretty({
           result: "…assistant text…",
@@ -305,7 +323,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           usage: { inputTokens: 12, outputTokens: 34, costUsd: 0.0001 },
           finishReason: "completed",
         }),
-        errorCodes: [400, 401, 404],
+        errorCodes: [400, 401, 403, 404, 413, 429, 500, 502, 503, 504],
         codeExamples: [
           curlExample({
             method: "POST",
@@ -326,27 +344,33 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         title: "OpenAI chat completions",
         description:
           "OpenAI-compatible endpoint; Agents run the multi-turn tool loop. " +
-          'temperature/max_tokens are accepted but ignored — sampling comes from Agent settings. The same endpoint streams when "stream": true (chat.completion.chunk SSE).' +
+          'temperature/max_tokens are accepted but ignored — sampling comes from Agent settings. The same endpoint streams when "stream": true (chat.completion.chunk SSE); image/file/warning extensions then appear in choices[0].delta and usage frames are not emitted.' +
           CONVERSATION_NOTE,
         auth: "token",
         streaming: false,
         requestFields: [
+          { name: "model", type: "string", description: "Accepted for SDK compatibility; the Agent's saved model is used." },
           { name: "messages", type: "array[object]", required: true, description: "OpenAI chat messages." },
           {
             name: "stream",
             type: "boolean",
             description: "Emit chat.completion.chunk SSE frames instead of one object.",
           },
+          { name: "temperature", type: "number", description: "Accepted and ignored; sampling uses saved Agent settings." },
+          { name: "max_tokens", type: "number", description: "Accepted and ignored; the output cap uses saved Agent settings." },
         ],
         responseFields: [
           { name: "id", type: "string", description: "Completion id." },
           { name: "object", type: "string", description: '"chat.completion" (or ".chunk" when streaming).' },
+          { name: "created", type: "number", description: "Response creation time, in Unix seconds." },
           { name: "model", type: "string", description: "Model that served the call." },
           {
             name: "choices",
             type: "array[object]",
-            description: "Completion choices.",
+            description: "Collected choices carry message; streaming choices carry delta.",
             children: [
+              { name: "index", type: "number", description: "Choice index, currently 0." },
+              { name: "delta", type: "object", description: "Streaming only: role, content and optional images/files/warnings extensions." },
               { name: "message", type: "object", description: "Assistant message (role, content)." },
               {
                 name: "finish_reason",
@@ -356,16 +380,21 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
               },
             ],
           },
+          { name: "usage", type: "object", description: "Collected responses include prompt_tokens, completion_tokens, total_tokens, and optional completion_tokens_details.reasoning_tokens. Streaming responses do not include usage frames." },
+          { name: "warnings", type: "array[string]", description: "Loss warnings; streaming responses carry these in choices[0].delta.warnings." },
+          ...OUTPUT_FIELDS,
         ],
         responseExample: pretty({
           id: "chatcmpl-…",
           object: "chat.completion",
+          created: 1780000000,
           model: "openai/gpt-5-mini",
+          usage: { prompt_tokens: 12, completion_tokens: 34, total_tokens: 46 },
           choices: [
             { index: 0, message: { role: "assistant", content: "…" }, finish_reason: "stop" },
           ],
         }),
-        errorCodes: [400, 401, 404],
+        errorCodes: [400, 401, 403, 404, 413, 429, 500, 502, 503, 504],
         codeExamples: [
           curlExample({
             method: "POST",
@@ -390,14 +419,15 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           path: agentPath,
           title: "Agent stream",
           description:
-            "SSE stream of EngineChunk frames (delta.content, delta.reasoningContent when the Agent records its reasoning, toolResult, warning, author for subagent turns, error, and a terminal done: true or finishReason naming why the run ended), terminated by data: [DONE]." +
+            "SSE stream of EngineChunk frames (delta.content, delta.reasoningContent when enabled, toolResult, image, file, usage, warning, author for subagent turns, error, and a terminal done: true or finishReason naming why the run ended), terminated by data: [DONE]. Once the stream opens, failures are error frames rather than a new HTTP status." +
             CONVERSATION_NOTE,
           auth: "token",
           streaming: true,
           requestFields: [
             { name: "messages", type: "array[object]", required: true, description: "Conversation so far." },
+            DOCUMENTS_FIELD,
           ],
-          errorCodes: [400, 401, 404],
+          errorCodes: [400, 401, 403, 404, 413, 429, 500, 503],
           codeExamples: [
             curlExample({
               method: "POST",
@@ -413,9 +443,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     }
   }
 
-  // AG-UI: every configured project, whatever its type — the run goes through
-  // `streamProjectRun`, so a chat panel can show a prompt project's answer and
-  // an image project's picture as readily as an agent's tool loop.
+  // AG-UI adapts the same configured Agent run to protocol events.
   if (configured) {
     const aguiPath = `/api/agui/${projectName}`;
     const aguiBody = {
@@ -445,7 +473,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         { name: "state", type: "any", description: "Shared with the model read-only, as JSON in the system turn. Never updated: no STATE_SNAPSHOT is sent back." },
         { name: "forwardedProps", type: "any", description: "Accepted and ignored." },
       ],
-      errorCodes: [400, 401, 404],
+      errorCodes: [400, 401, 403, 404, 413, 429, 500, 503],
       codeExamples: [
         curlExample({ method: "POST", url: abs(aguiPath), auth: "token", body: aguiBody, streaming: true }),
         { language: "javascript", label: "@ag-ui/client", code: aguiClientExample(abs(aguiPath)) },

@@ -7,7 +7,7 @@ import { a2aSurfaceEnabled } from "@/app/api/a2a/_lib/auth";
 type RouteContext = { params: Promise<{ name: string }> };
 
 /**
- * Public A2A Agent Card for a published project. Serving the card without
+ * Public A2A Agent Card for a configured Agent. Serving the card without
  * authentication follows the A2A convention; execution on the JSON-RPC
  * endpoint is what the keys protect. The A2A handshake starts here, so a
  * client-key-only deployment must serve the card too — a 503 would stop a
@@ -22,7 +22,7 @@ export async function GET(request: Request, ctx: RouteContext): Promise<Response
   // A private project has no public card: this route carries no credential at
   // all, so "the credential itself is access" — what exempts the key-gated
   // JSON-RPC endpoint from the visibility gate — does not apply here. The same
-  // 404 as an unpublished project, so the card's absence says nothing.
+  // 404 as an unconfigured project, so the card's absence says nothing.
   if (!exposed || isProjectPrivate(exposed.project)) {
     return Response.json({ error: "Project not found or has no Agent configuration" }, { status: 404 });
   }

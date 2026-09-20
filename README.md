@@ -72,7 +72,7 @@ Project → Integrations에서 발급한 API token은 해당 프로젝트 실행
 | 목적 | 읽을 문서 |
 |---|---|
 | 제품과 개념을 한 번에 파악하기 | [시스템 개요](docs/AGENT_STUDIO.md) — 검색·RAG에도 사용할 수 있는 통합 지도 |
-| 구현 기능과 개편 결정·후보 검토 | [기능 목록](docs/FEATURES.md) |
+| 현재 기능과 사용 조건 | [기능 목록](docs/FEATURES.md) |
 | 설치·폐쇄망·worker 구성 | [INSTALL](docs/INSTALL.md) |
 | 로컬 개발·검증·기여 | [DEVELOPMENT](docs/DEVELOPMENT.md) |
 | 코드의 계층·저장소·실행 경로 | [ARCHITECTURE](docs/ARCHITECTURE.md), [DIAGRAMS](docs/DIAGRAMS.md) |

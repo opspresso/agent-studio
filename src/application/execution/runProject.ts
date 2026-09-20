@@ -1,5 +1,5 @@
 /**
- * Execution use cases — the composition point that resolves a version's skills,
+ * Execution use cases — the composition point that resolves an Agent's skills,
  * MCP tools and subagents from repositories, runs the LLM engine, and records
  * usage. Surfaces dispatch through `executeProjectStream` / `executeProject`
  * rather than picking an executor themselves; keep these signatures stable.
@@ -258,7 +258,7 @@ export async function* executeAgent(
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.ownerEmail ? { userEmail: input.ownerEmail } : {}),
     // Carried unconditionally, like the actor: a child is answering the same
-    // person as its parent. Whether a *prompt* names them stays a per-version
+    // person as its parent. Whether a *prompt* names them stays a per-Agent
     // question that `callerFor` answers at each engine-input boundary — this
     // run's own opt-in decides nothing for the project it transfers to.
     ...(input.caller ? { caller: input.caller } : {}),
@@ -297,7 +297,7 @@ export async function* executeAgent(
     // Recall explicit bindings before discovery, so remembered associations can
     // help find the sources needed to answer the request.
     const recallStartedAt = new Date();
-    // Only when the version asked: a run that recalls nothing spent no time
+    // Only when the Agent asked: a run that recalls nothing spent no time
     // here, and a zero-length span on every trace would say less than none.
     const recordRecall = (
       detail: { status?: "ok" | "error"; output?: Record<string, unknown> },
@@ -326,11 +326,11 @@ export async function* executeAgent(
     // patched afterwards.
     //
     // The queries are built here because this is where the request is: the
-    // newest user turns are what the run is being asked for, and the version's
+    // newest user turns are what the run is being asked for, and the Agent's
     // system prompt is what it is generally for. `resolveRunTools` ignores them
-    // unless the version opted in.
+    // unless the Agent opted in.
     // Timed, because this is the run's other network stage: every bound MCP
-    // server is opened and listed here, and a version with discovery on embeds
+    // server is opened and listed here, and an Agent with discovery on embeds
     // its queries and searches the catalog. The recorder bills it to a
     // `prepare` span instead of to the model that has not been called yet.
     const resolveStartedAt = new Date();

@@ -24,7 +24,7 @@ export function isMcpSourceMapping(value: unknown): value is McpSourceMapping {
     (item.namePath === undefined || path(item.namePath)) && typeof item.mimeType === "string" && /^[a-z]+\/[a-z0-9.+-]+$/i.test(item.mimeType);
 }
 
-/** Registry defaults and version overrides share the same bounded mapping contract. */
+/** Registry defaults and Agent overrides share the same bounded mapping contract. */
 export function isMcpSourceMappings(value: unknown): value is McpSourceMapping[] {
   return Array.isArray(value) && value.length <= MAX_MCP_SOURCE_MAPPINGS && value.every(isMcpSourceMapping) &&
     new Set(value.map((item) => item.tool)).size === value.length;

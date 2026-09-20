@@ -7,8 +7,8 @@
  * logs, so a skip is a row too.
  *
  * The webhook-specific steps (secret, idempotency key, payload shaping) live in
- * `admitDelivery`/`payloadInput`; everything from "resolve the published
- * version" on is `admitRun`/`executeFiring`, shared with the schedule scan
+ * `admitDelivery`/`payloadInput`; everything from resolving current Agent
+ * settings on is `admitRun`/`executeFiring`, shared with the schedule scan
  * (`scanSchedules.ts`) so the two kinds cannot drift on overlap policy, run
  * rows, or how an answer is previewed.
  */
@@ -199,8 +199,8 @@ export async function admitDelivery(
 }
 
 /**
- * Admit a firing whose dedup claim is already won: resolve the published
- * version, guard overlap, and open the history row. Both kinds pass here.
+ * Admit a firing whose dedup claim is already won: resolve current Agent
+ * settings, guard overlap, and open the history row. Both kinds pass here.
  */
 export async function admitRun<T extends Trigger>(
   deps: FiringDeps,
@@ -220,8 +220,7 @@ export async function admitRun<T extends Trigger>(
     await recordSkip(deps, trigger, extra, "Project not found.");
     return { status: "not-configured" };
   }
-  // Published only. A draft is configuration in progress; an external system
-  // firing at one would run whatever an editor happened to have saved.
+  // Recheck the configured execution user's access before using current settings.
   if (!await executionUserAllowed(deps, trigger, project)) {
     await recordSkip(deps, trigger, extra, EXECUTION_USER_UNAUTHORIZED);
     return { status: "not-configured" };

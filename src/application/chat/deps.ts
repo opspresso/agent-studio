@@ -18,7 +18,7 @@ export interface AgentRunParams {
   /** Who caused the run — always the chat's owner, since chats are private. */
   actor: RunActor;
   /**
-   * That owner in words. Reaches the prompt only when the version opted into
+   * That owner in words. Reaches the prompt only when the Agent opted into
    * `callerContext`; the facade applies that gate, not this boundary.
    */
   caller?: RunCaller;

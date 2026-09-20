@@ -86,7 +86,7 @@ export interface TurnInput {
   /** Earlier turns, oldest first, already cut to what this surface carries. */
   history: HistoryTurn[];
   actor?: RunActor;
-  /** Who is asking, when the surface resolved it. The facade gates it on the version. */
+  /** Who is asking, when the surface resolved it. The facade gates it on the Agent settings. */
   caller?: RunCaller;
   conversation: RunConversation;
   /** The user's gallery and MCP identity, when the surface knows an email address. */

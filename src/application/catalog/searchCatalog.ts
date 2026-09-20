@@ -2,7 +2,7 @@
  * Finding capabilities for a request.
  *
  * Takes several queries rather than one because a run has two different things
- * to say about what it needs: the version's system prompt describes what this
+ * to say about what it needs: the Agent's system prompt describes what this
  * agent is generally for, and the user's message describes what it is being
  * asked for right now. Concatenating them would average the two into a point
  * that is neither; searching separately and keeping each entry's best score lets

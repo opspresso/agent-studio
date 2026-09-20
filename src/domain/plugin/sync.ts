@@ -69,9 +69,9 @@ export interface SyncWrite {
 }
 
 /**
- * One entry the repository no longer declares, with the version bindings that
+ * One entry the repository no longer declares, with the Agent bindings that
  * would dangle if it were deleted — the blast radius the delete checkbox
- * needs, as `project/version` labels. Empty when nothing binds it.
+ * needs, as project names. Empty when nothing binds it.
  */
 export interface SyncOrphan {
   name: string;
@@ -90,7 +90,7 @@ export interface PluginKindReport {
   skipped: SyncSkip[];
 }
 
-/** Which versions bind the names a sync is about to offer for deletion. */
+/** Which Agents bind the names a sync is about to offer for deletion. */
 export interface OrphanBindings {
   skills: Record<string, string[]>;
   mcpServers: Record<string, string[]>;

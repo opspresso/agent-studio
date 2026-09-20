@@ -259,7 +259,7 @@ export const config = {
    * Whether this deployment keeps a capability catalog (`CATALOG_ENABLED`).
    *
    * Off means indexing refuses and a run resolves exactly the bindings its
-   * version names, which is what every run did before. Off by default because
+   * Agent settings name. Off by default because
    * the catalog needs an embedding model the deployment's channel can serve
    * — a self-hosted router without one would index nothing and say so only
    * in a log line — so turning it on is a statement that there is one. The

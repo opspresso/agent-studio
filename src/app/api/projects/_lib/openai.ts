@@ -36,7 +36,7 @@ function wireFinishReason(termination: RunTerminationReason | undefined): "stop"
   }
 }
 
-/** Wrap a single-shot result as an OpenAI ChatCompletion object. */
+/** Wrap a collected Agent result as an OpenAI ChatCompletion object. */
 export function toChatCompletion(
   result: RunResult & {
     images?: RunImage[];

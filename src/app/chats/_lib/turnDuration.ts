@@ -4,7 +4,7 @@
  * A turn is a user message and the assistant message the run wrote when it was
  * done: the first is stamped as `sendMessage` accepts the turn, the second as
  * `runAndPersist` finishes writing it. The gap between them is the wait the
- * reader actually sat through — the version resolution, the documents being
+ * reader actually sat through — reading the current settings, the documents being
  * read, the model, the tools, and the picture being uploaded — which is the
  * number they are asking for when they ask how long a reply took.
  *

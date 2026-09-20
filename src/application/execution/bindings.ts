@@ -1,5 +1,5 @@
 import { runtimeFingerprint } from "@/application/runtime/session";
-/** Resolving a Agent's skills, subagents and MCP tools for one run. */
+/** Resolving an Agent's skills, subagents and MCP tools for one run. */
 
 import type { McpBinding, SubagentRef, AgentConfiguration } from "@/domain/project/types";
 import { messageText } from "@/domain/llm/types";
@@ -233,7 +233,7 @@ export function discoveryQueries(
  * Capabilities to offer beyond what the Agent bound.
  *
  * Everything here is *additive*: it returns names to append, and the caller
- * appends them after the bindings. A Agent's own list is never reordered,
+ * appends them after the bindings. An Agent's own list is never reordered,
  * filtered or truncated by this — which is the whole reason a project can turn
  * discovery on without auditing what it already relies on.
  *
@@ -316,8 +316,7 @@ async function discoverCapabilities(
 
   const skillList = skills.map((match) => match.name).filter((name) => !boundSkills.has(name));
   // Every catalogued agent is an external one: a project is reachable as a
-  // subagent, but only through a binding someone made, and its published
-  // Agent is what decides whether it can run at all.
+  // subagent through an explicit local binding and must have current settings.
   const subagentList: SubagentRef[] = agents
     .filter((match) => !boundAgents.has(match.name))
     .map((match) => ({ name: match.name, type: "remote" as const }));
@@ -462,7 +461,7 @@ export function toolsPrepared(resolved: {
 }
 
 /**
- * Resolve a Agent's skills, subagents and MCP tools together.
+ * Resolve an Agent's skills, subagents and MCP tools together.
  *
  * The MCP promise is handled separately so a *sibling's* failure still releases
  * the sessions that opened: awaiting all three as a plain `Promise.all` drops
@@ -530,7 +529,7 @@ export async function resolveRunTools(
   const discoveryNotes: string[] = [];
   const discovered: string[] = [];
   let rerank: CatalogRerankReport = { calls: 0, candidates: 0, failed: 0, usage: [] };
-  // A Agent that asked for discovery and did not get it says so, on the same
+  // An Agent that asked for discovery and did not get it says so, on the same
   // channel a failed search uses. Nothing else can tell the author: the checkbox
   // stays ticked, the bindings still resolve, the run answers normally, and the
   // preview shows the same prompt — the feature reads as on and is inert. That

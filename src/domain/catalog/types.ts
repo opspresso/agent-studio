@@ -4,7 +4,7 @@
  * The catalog is one global index over everything a run could reach — every
  * skill, every MCP server and the tools it offers, every external agent. It is
  * not per project: which of them a given run may use is decided at dispatch,
- * from the version's bindings and this deployment's connections, and an index
+ * from the Agent's bindings and this deployment's connections, and an index
  * that had already made that decision would have to be rebuilt whenever a
  * project changed.
  */
@@ -12,7 +12,7 @@
 /**
  * An MCP server appears twice over, and the two answer different questions.
  * `mcpTool` is what a request matches — "leave a comment on a PR" is in a tool's
- * description and nowhere else — while `mcpServer` is what a version can
+ * description and nowhere else — while `mcpServer` is what an Agent can
  * actually bind, and the only entry a server that refused discovery gets.
  */
 export type CapabilityKind = "skill" | "mcpServer" | "mcpTool" | "agent";

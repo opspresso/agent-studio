@@ -52,7 +52,7 @@ export async function prepareSubagent(
 ): Promise<PreparedAgent> {
   task.signal?.throwIfAborted();
   const ref = parent.subagentList?.find((entry) => entry.name === name);
-  if (!ref) throw new ValidationError(`Agent '${name}' is not connected to this version`);
+  if (!ref) throw new ValidationError(`Agent '${name}' is not connected to the current Agent settings`);
   if (ref.type === "remote") {
     if (task.images.length) throw new ValidationError(`Remote agent '${name}' accepts text only`);
     const target = await deps.externalAgents.get(name);

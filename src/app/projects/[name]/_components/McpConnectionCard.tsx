@@ -1,12 +1,8 @@
 "use client";
 
 /**
- * This project's OAuth connection to one shared registry server.
- *
- * Scoped to the project, not the version: every version binding this server
- * uses the same connection, and a token turning over must not read as a version
- * edit. It therefore saves on its own buttons rather than riding the version's
- * Save — which is why the modal it sits in says so.
+ * OAuth connections belong to the Project and save independently of Agent settings.
+ * Token rotation does not edit the current model, tools or prompt configuration.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";

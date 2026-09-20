@@ -112,7 +112,7 @@ export interface ExecutionDeps extends RunBracketDeps {
   mcpConnections?: Pick<McpConnectionRepository, "listByProject">;
   /**
    * The global capability catalog, when this deployment has one. Absent means
-   * a Agent's `dynamicCapabilities` has nothing to search and the run offers
+   * an Agent's `dynamicCapabilities` has nothing to search and the run offers
    * exactly what it bound — the feature is off rather than failing.
    */
   catalog?: CatalogSearchDeps;
@@ -181,7 +181,7 @@ export interface ExecuteProjectInput {
 /**
  * The caller the prompt is allowed to name — the Agent's opt-in decides, not
  * the surface. A surface that resolved one anyway (a cached profile, a replayed
- * run) must not be able to leak a name into a Agent that never asked for it.
+ * run) must not be able to leak a name into an Agent that never asked for it.
  *
  * Here rather than beside the runners because the Playground preview asks the
  * same question. One shared gate keeps prompt and agent previews aligned.

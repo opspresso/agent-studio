@@ -40,7 +40,7 @@ export const SLACK_TOOL_NAMES: readonly string[] = [
 /**
  * Every name a builtin may claim. An MCP tool that arrives under one of these
  * must be aliased even when that builtin is inactive for the run: whether a
- * builtin is offered depends on the version, while the alias must be stable and
+ * builtin is offered depends on the Agent, while the alias must be stable and
  * decided before the run's tool set is built.
  */
 export const BUILTIN_TOOL_NAMES: readonly string[] = [

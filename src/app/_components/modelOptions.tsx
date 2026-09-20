@@ -9,7 +9,7 @@
  * 4.8"s is a coin flip; these group the options by provider and put the price
  * on each one, which is the pair of facts the choice actually turns on.
  *
- * Shared rather than written per picker: the version editor alone has three
+ * Shared rather than written per picker: the Agent settings editor alone has three
  * (model, fallback, image model) and the /models console prices the same way.
  */
 
@@ -137,7 +137,7 @@ export function modelSelectData(
  * The tick has to be drawn here. Mantine renders its own check icon only for
  * the *default* option renderer — supplying `renderOption` replaces that whole
  * row, and the first version of this dropped the mark silently: a list of
- * sixty models with no indication of which one the version already uses.
+ * sixty models with no indication of which one the Agent already uses.
  * `checked` arrives beside the option for exactly this.
  *
  * The renderer is also handed only `{ value, label }`, so the model is looked

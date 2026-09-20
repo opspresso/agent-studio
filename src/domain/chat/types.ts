@@ -125,7 +125,7 @@ export interface AssistantChatMessage extends ChatMessageBase {
   /** Present when the run produced files — what the reader downloads. */
   files?: ChatMessageFile[];
   /**
-   * The run's own thinking, kept only when the version opted in
+   * The run's own thinking, kept only when the Agent opted in
    * (`parameters.reasoningTrace`). Flattened exactly as `content` is: one block
    * per run, with a blank line between turns.
    *

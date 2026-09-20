@@ -77,7 +77,7 @@ export interface AppSettings {
   /**
    * Registry model ids hidden from selection (the /api/models list and every
    * dropdown it feeds). Absent means nothing is hidden. Selection-time only —
-   * a version already holding a hidden model keeps running.
+   * an Agent already holding a hidden model keeps running.
    */
   hiddenModels?: string[];
   /**

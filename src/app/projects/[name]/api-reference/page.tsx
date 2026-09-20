@@ -187,6 +187,7 @@ function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
 }
 
 export default function ApiReferencePage() {
+  const t = useT();
   const { name } = useParams<{ name: string }>();
   const viewer = useViewer();
   const [endpoints, setEndpoints] = useState<ApiEndpoint[] | null>(null);
@@ -256,14 +257,14 @@ export default function ApiReferencePage() {
   return (
     <Stack gap="md">
       <Text fz="sm" c="dimmed">
-        Endpoints for calling this project from outside the console. Paths are filled in with the
-        project name and its configured version; replace <Code>$PROJECT_API_TOKEN</Code> and other{" "}
-        <Code>$…</Code> placeholders with your own credentials. Generate a token under Settings →
-        API token.
+        {t("apiReference.intro")}
+      </Text>
+      <Text fz="sm" c="dimmed">
+        {t("apiReference.environmentHint")}
       </Text>
       {endpoints.length === 0 ? (
         <Text fz="sm" c="dimmed">
-          No callable endpoints yet — publish a version to expose this project.
+          {t("apiReference.configureFirst")}
         </Text>
       ) : (
         endpoints.map((endpoint) => <EndpointCard key={endpoint.id} endpoint={endpoint} />)

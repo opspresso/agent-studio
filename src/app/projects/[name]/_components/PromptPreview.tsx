@@ -37,17 +37,9 @@ function charCount(preview: PromptPreview): number {
 }
 
 /**
- * What this version would actually send.
- *
- * The editor shows the version's own text, but an agent run's system prompt is
- * assembled at dispatch — the skill table, the connected MCP servers and their
- * tool names, the transfer instructions — and a prompt project's template is
- * rendered with its variables. This panel asks the server to perform that same
- * assembly and shows the result.
- *
- * Fetched only on demand: it may recall memory, contact MCP servers for their
- * real tool names, and search the capability catalog. A draft edited after the
- * last fetch is marked stale rather than refetched.
+ * Assemble the current draft on demand using the run's capability preparation.
+ * MCP discovery, catalog search and memory recall can perform real reads.
+ * Editing the draft marks the previous result stale and cancels an active preview.
  */
 export function PromptPreview({
   projectName,
@@ -57,12 +49,6 @@ export function PromptPreview({
   projectName: string;
   draft: AgentConfigurationInput;
   validationError: string | null;
-  /**
-   * The saved version the draft started from, or null for one never saved. The
-   * server resolves masked header overrides against it — without it a bound MCP
-   * server is dialled with the wrong headers, and the preview would describe a
-   * request no run makes.
-   */
 }) {
   const [preview, setPreview] = useState<PromptPreview | null>(null);
   const [previewOf, setPreviewOf] = useState<string>("");
@@ -87,12 +73,10 @@ export function PromptPreview({
   // the box would suggest the assembled prompt varies when it does not.
   const usesRequest =
     (draft.parameters.dynamicCapabilities === true || draft.parameters.memoryRecall === true);
-  // The saved version identifies the stored header overrides a masked draft is
-  // resolved against. Two versions can render the same fields but decrypt to
-  // different credentials, so that identity is part of preview freshness too.
+  // Project identity scopes masked overrides; draft and request changes invalidate the result.
   const current = JSON.stringify({
     projectName,
-      draft,
+    draft,
     ...(usesRequest ? { message } : {}),
   });
   const stale = preview !== null && (validationError !== null || previewOf !== current);
@@ -212,7 +196,7 @@ export function PromptPreview({
 
       {preview && preview.discovered.length > 0 && (
         // Blue, not yellow: these were *found*, and the prompt above already
-        // includes them without saying which rows the version never bound.
+        // includes them without saying which rows the Agent never bound.
         <Alert color="blue" variant="light" fz="xs">
           {t("preview.discovered", { names: preview.discovered.join(", ") })}
         </Alert>

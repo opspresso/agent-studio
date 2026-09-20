@@ -215,10 +215,9 @@ export interface AgentParameters {
    * searching the global catalog with this Agent's system prompt and the
    * request being answered.
    *
-   * Opt-in, and off for everything written before it existed, because it is the
-   * one parameter that changes what a run *can do* rather than how it does it.
-   * A Agent is a snapshot of configuration; silently widening what an existing
-   * one reaches would make its past traces describe a different agent.
+   * Opt-in because it permits capabilities beyond the saved bindings. Each
+   * run uses a prepared configuration snapshot; discovery widens only that
+   * run's capabilities and never changes the saved configuration.
    *
    * What it adds is strictly additive: bindings are resolved first and in full,
    * and nothing found by search can displace or truncate them.
@@ -280,7 +279,7 @@ export interface SubagentRef {
 }
 
 /**
- * A Agent's binding to a registry MCP server. The URL always comes from the
+ * An Agent's binding to a registry MCP server. The URL always comes from the
  * registry; only headers may be redefined per Agent.
  *
  * `headers` layers over the registry server's own headers at dispatch:

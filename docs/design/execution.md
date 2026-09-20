@@ -26,9 +26,11 @@ Project는 이름으로 호출하는 Agent다. 공개 범위·소유권·연동�
   저장 당시 URL fingerprint와 현재 URL이 다르면 옛 credential을 전송하지 않는다.
 - `presencePenalty`는 -2부터 2까지이며 provider가 지원할 때 `presence_penalty`로 전달한다.
   미설정 값은 provider 기본값을 유지하며 하위 Agent는 자신의 설정을 사용한다.
-- 모든 실행 창구가 Project와 함께 읽은 현재 설정을 사용한다. 실행 중 설정을 다시 선택하지
-  않으며, 승인 대기에는 설정과 연결 fingerprint를 보존해 변경된 상태의 재개를 거절한다.
-- 입력은 사용자 메시지다. 사용자 프롬프트 템플릿·이름 있는 Version·발행 포인터는 없다.
+- 모든 실행 창구가 Project와 함께 읽은 현재 설정을 사용한다. 각 Agent는 준비 시점의 설정을
+  유지한다. 로컬 하위 Agent는 실제 호출할 때 자기 Project의 현재 설정을 읽으므로 부모 시작
+  시점에 전체 하위 그래프가 고정되는 것은 아니다. 승인 대기에는 설정·연결 fingerprint를
+  보존해 변경된 상태의 재개를 거절한다.
+- 입력은 사용자 메시지이며 저장한 시스템 프롬프트와 함께 실행한다.
   기존 행·시크릿·승인 대기의 보존과 전환은 [데이터 이전](../AGENT-MIGRATION.md)을 따른다.
 
 전체 HTTP 형태와 마스킹 규칙은 [Agent 설정 API](../API.md#agent-현재-설정),
@@ -64,7 +66,7 @@ flowchart TB
 | Skill | 읽을 수 있는 지식과 지침. `Skill` 도구로 필요한 본문/파일을 점진적으로 읽는다 |
 | Tool | 실행 가능한 기능. SDK가 호출·결과를 관리하며 주입된 JSON Schema 검증기가 실행 전 인자를 검사한다 |
 | MCP | 외부 도구 프로토콜. Studio가 검증한 연결과 alias 스냅샷을 SDK `MCPServer`로 제공한다 |
-| Memory | 버전이 선택한 장기 지식/문맥. MCP recall 결과는 discovery와 프롬프트 준비에 사용한다 |
+| Memory | Agent가 선택한 장기 지식/문맥. MCP recall 결과는 discovery와 프롬프트 준비에 사용한다 |
 | Session | 특정 대화의 정확한 모델/도구 이력. Memory와 별도 저장·수명주기를 가진다 |
 | Policy | 입력 Guardrail, 차단 도구, 승인이 필요한 도구 및 플랫폼 실행 한도 |
 | Credential | Studio가 endpoint별로 해석하는 비밀. 모델 요청 시점과 도구 dispatch 경계에서 주입한다 |

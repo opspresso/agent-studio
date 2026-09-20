@@ -220,7 +220,7 @@ export function RunPanel({
         if (content && isTopLevelChunk(chunk)) {
           setText((prev) => prev + content);
         }
-        // Only a version with `reasoningTrace` on produces any; top-level for
+        // Only an Agent with `reasoningTrace` on produces any; top-level for
         // the reason the answer is — a child's thinking is its own run's.
         const reasoned = chunk.delta?.reasoningContent;
         if (reasoned && isTopLevelChunk(chunk)) {

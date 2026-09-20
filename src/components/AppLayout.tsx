@@ -70,7 +70,7 @@ const NAV_GROUPS = [
     key: "intelligence",
     label: "nav.group.intelligence",
     // Plugins are the source that fills the skill and tool registries, followed
-    // by the other registries a version can draw on.
+    // by the other registries an Agent can draw on.
     items: [
       { href: "/plugins", label: "nav.plugins", Icon: IconPackage },
       { href: "/skills", label: "nav.skills", Icon: IconBook2 },

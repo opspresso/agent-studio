@@ -11,7 +11,7 @@ import type { ScheduleDelivery } from "@/domain/trigger/types";
 export interface FiringDeps {
   triggers: TriggerRepository;
   projects: ProjectRepository;
-  /** Runs the resolved version; the composition root binds the facade. */
+  /** Runs the resolved Agent; the composition root binds the facade. */
   run: (input: {
     project: Project;
     configuration: AgentConfiguration;

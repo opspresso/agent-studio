@@ -97,12 +97,8 @@ export async function previewPrompt(
       // Resolve actor-gated capabilities without executing them.
       { ...origin, ancestry: [project.name] },
     );
-    // The same assembly a run uses, not a second spelling of it. This is where
-    // the two drifted: the preview omitted the caller and showed a prompt one
-    // block short of what the Agent actually sends.
-    // Nothing is asked — a preview has no request — but whether a Agent with
-    // recall on has anywhere to recall *from* is the one memory warning an
-    // author can act on from the editor.
+    // Without a preview request, recall performs no query. Still report missing
+    // recall bindings so the author can fix them before running the Agent.
     const missingMemory =
       !input.message?.trim() &&
       configuration.parameters.memoryRecall &&

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { agentSchema, chatCompletionsSchema, predictSchema } from "@/app/api/projects/_lib/schemas";
 import {
   buildApiReference,
   PLACEHOLDERS,
@@ -56,16 +57,29 @@ describe("buildApiReference — current configuration gating", () => {
 describe("buildApiReference — request/response field specs", () => {
   it("documents predict request and response fields", () => {
     const predict = buildApiReference(ctx({ projectType: "agent" })).find((e) => e.id === "predict");
-    expect(predict?.requestFields?.map((f) => f.name)).toEqual(["messages", "stream"]);
+    expect(predict?.requestFields?.map((f) => f.name)).toEqual(["messages", "stream", "documents"]);
     expect(predict?.responseFields?.map((f) => f.name)).toEqual([
       "result",
       "model",
       "usage",
       "finishReason",
       "warnings",
+      "images",
+      "files",
     ]);
     // usage carries nested children.
     expect(predict?.responseFields?.find((f) => f.name === "usage")?.children).toBeDefined();
+  });
+
+  it.each([
+    ["predict", predictSchema], ["chat-completions", chatCompletionsSchema], ["agent", agentSchema],
+  ] as const)("keeps %s request fields and its curl body aligned with the route schema", (id, schema) => {
+    const endpoint = buildApiReference(ctx()).find(item => item.id === id)!;
+    expect(endpoint.requestFields!.map(field => field.name).sort()).toEqual(Object.keys(schema.shape).sort());
+    const required = Object.entries(schema.shape).filter(([, field]) => !field.isOptional()).map(([name]) => name);
+    expect(endpoint.requestFields!.filter(field => field.required).map(field => field.name)).toEqual(required);
+    const body = JSON.parse(/-d '([^']+)'$/.exec(codeOf(endpoint, "bash")!)![1]!);
+    expect(schema.parse(body)).toEqual(body);
   });
 
   it("marks chat/completions messages as required", () => {
@@ -241,8 +255,8 @@ describe("buildApiReference — no real secrets leak into examples", () => {
 
     expect(codeOf(byId("predict"), "bash")).toContain(PLACEHOLDERS.token);
     expect(codeOf(byId("predict"), "bash")).toContain("Authorization: Bearer");
-    expect(codeOf(byId("chat-completions"), "python")).toContain(PLACEHOLDERS.token);
-    expect(codeOf(byId("chat-completions"), "javascript")).toContain(PLACEHOLDERS.token);
+    expect(codeOf(byId("chat-completions"), "python")).toContain('os.environ["PROJECT_API_TOKEN"]');
+    expect(codeOf(byId("chat-completions"), "javascript")).toContain("process.env.PROJECT_API_TOKEN");
     expect(codeOf(byId("a2a-rpc"), "bash")).toContain(PLACEHOLDERS.a2aKey);
     expect(codeOf(byId("slack-events"), "bash")).toContain(PLACEHOLDERS.slackSignature);
     expect(codeOf(byId("telegram-webhook"), "bash")).toContain(PLACEHOLDERS.telegramSecret);

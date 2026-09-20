@@ -49,7 +49,7 @@ export const skillRepository: SkillRepository = {
    *
    * The name comes back from the key that was asked for, not from the item's
    * own `name` attribute. The caller looks the answer up by the name its
-   * version bound, so echoing a stored one makes a row whose attribute has
+   * Agent bound, so echoing a stored one makes a row whose attribute has
    * drifted from its key — a hand repair, a partial write — report as
    * *deleted* to the prompt while `get` on the same name still returns the
    * skill.

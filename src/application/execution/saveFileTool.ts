@@ -72,7 +72,7 @@ export function saveFileResult(input: {
 /**
  * The SaveFile builtin, or nothing when this deployment keeps nothing.
  *
- * Gated on storage rather than on the version, unlike the image builtins and
+ * Gated on storage rather than on the Agent, unlike the image builtins and
  * FetchUrl. Those two are decisions — one spends money per call, the other
  * sends a request to wherever the model says. Writing a file the person asked
  * for is neither: it costs a PUT, reaches nothing outside this deployment, and

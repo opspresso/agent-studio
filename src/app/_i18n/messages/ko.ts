@@ -58,7 +58,7 @@ export const ko: Messages = {
   "workspace.list": "Workspaces",
   "workspace.delete": "Workspace 삭제",
   "workspace.intro": "작업이 이어져도 파일과 Agent 문맥을 유지합니다.",
-  "workspace.notConfigured": "에이전트 버전에서 워크스페이스 도구를 활성화하면 작업을 시작할 수 있습니다.",
+  "workspace.notConfigured": "Agent 설정에서 Workspace 도구를 켜면 작업을 시작할 수 있습니다.",
   "workspace.repository": "저장소",
   "workspace.runtime": "Runtime",
   "workspace.command": "명령 / 스크립트",
@@ -326,7 +326,7 @@ export const ko: Messages = {
     "콘솔에서 에이전트와 대화합니다. 별도 문서 MCP 서버 없이 PDF·텍스트·Office 첨부를 읽고, 답변과 도구 호출을 확인합니다. 탭을 닫아도 실행은 계속됩니다.",
   "home.domain.images": "이미지",
   "home.domain.imagesBody":
-    "이미지 프로젝트, 에이전트의 기본 도구, 이미지 서브에이전트로 이미지를 만들거나 편집합니다. 첨부한 이미지와 현재 실행에서 만든 이미지를 다시 편집할 수 있습니다.",
+    "Agent 설정에서 이미지 도구를 켜면 지정한 이미지 모델로 이미지를 만들거나 편집합니다. 첨부한 이미지와 현재 실행에서 만든 이미지를 다시 편집할 수 있습니다.",
   "home.domain.audio": "오디오 전사·요약",
   "home.domain.audioBody": "업로드하거나 연결 도구에서 가져온 오디오를 지정 모델로 전사하고 백그라운드에서 요약합니다. 원본과 결과는 비공개 Artifacts에 보관하며, 개인 기록은 요청했을 때 저장합니다.",
   "home.domain.artifacts": "문서와 결과 파일",
@@ -459,7 +459,7 @@ export const ko: Messages = {
   "guide.start.connectBody":
     "저장한 Agent 설정은 Chat과 구성된 연동에서 바로 사용한다. HTTP로 호출하려면 Integrations에서 프로젝트 토큰을 발급하고 API Reference의 예제를 따른다.",
 
-  "guide.projects.title": "Agent 설정",
+  "guide.projects.title": "Agent로 작업하기",
   "guide.projects.body": "모든 프로젝트는 Agent다. 현재 설정에는 모델·시스템 프롬프트·역량·실행 한도를 저장하고, 공개 범위·연동·사용량은 프로젝트에서 관리한다.",
   "guide.projects.agent": "대화와 도구 실행",
   "guide.projects.agentBody":
@@ -478,7 +478,7 @@ export const ko: Messages = {
   "guide.configuration.limitsBody": "작업에 맞게 최대 출력 토큰과 Agent 턴 수를 설정한다. 반복 억제는 선택한 모델이 지원할 때 쓰는 선택적 설정이다. 턴·출력 한도에 도달하면 일부 답변만 남을 수 있고 설치의 실행 시간 제한은 오류로 종료할 수 있다. 종료 이유와 경고를 확인한다. 추론 과정 기록은 표시 여부를 바꾸며 모델의 추론 자체를 켜거나 끄지는 않는다.",
   "guide.configuration.apply": "저장한 설정의 적용 시점",
   "guide.configuration.applyBody":
-    "다음 실행부터 저장한 설정을 사용한다. 진행 중 실행과 접수된 Audio 작업은 시작 시점의 설정을 유지한다. 승인 대기 중 설정이나 연결이 바뀌면 해당 실행을 폐기하고 다시 시작한다. 동시 편집 충돌이 발생하면 새로 불러온 뒤 저장한다.",
+    "다음 실행부터 저장한 설정을 사용한다. 각 Agent는 준비 시점의 설정을 유지하며 로컬 하위 Agent는 호출될 때 자기 설정을 읽는다. 접수된 Audio 작업은 당시 설정을 유지한다. 승인 대기 중 설정·연결이 바뀌면 재개를 거절한다. 동시 편집 충돌이 발생하면 새로 불러온 뒤 저장한다.",
 
   "guide.capabilities.title": "스킬·도구·에이전트 확장",
   "guide.capabilities.body":
@@ -589,13 +589,13 @@ export const ko: Messages = {
     "predict에 {\"messages\":[{\"role\":\"user\",\"content\":\"이 메모를 요약해 줘\"}],\"stream\":false}를 보낸다. 필요하면 지원되는 인라인 이미지 part를 추가한다. 이미지 생성·편집은 Agent의 이미지 도구가 수행한다. 요청 하나로 답변·경고·사용량을 먼저 확인한다.",
   "guide.api.sdk": "OpenAI 호환 클라이언트",
   "guide.api.sdkBody":
-    "API Reference의 Python 또는 JavaScript 예제로 chat/completions를 호출한다. SDK base URL은 프로젝트 주소, API key는 프로젝트 토큰으로 설정한다. 모델과 샘플링 파라미터는 저장한 Agent 설정이 결정하며 model·temperature·max_tokens로 덮어쓰지 않는다.",
+    "API Reference의 Python 또는 JavaScript 예제로 chat/completions를 호출한다. SDK base URL은 프로젝트 주소, API key는 프로젝트 토큰으로 설정한다. 모델과 샘플링 파라미터는 저장한 Agent 설정이 결정하며 model·temperature·max_tokens로 덮어쓰지 않는다. 예제를 실행하기 전에 호출 프로세스의 환경변수 PROJECT_API_TOKEN과 CONVERSATION_ID를 설정한다.",
   "guide.api.stream": "스트리밍과 대화 이력",
   "guide.api.streamBody":
     "텍스트 predict나 chat/completions에 stream:true를 보내면 SSE로 응답하며 agent에는 텍스트와 도구 활동을 스트리밍하는 전용 엔드포인트도 있다. 연결을 유지하고 경고·오류·종료 이벤트까지 처리한다. HTTP 200만으로 실행 성공을 판단할 수는 없다. HTTP 호출자는 이전 메시지를 직접 보내야 한다. X-Conversation-Id는 하위 MCP/A2A의 대화 식별을 이어 주지만 과거 메시지를 자동으로 불러오지는 않는다.",
   "guide.api.result": "결과 확인과 토큰 관리",
   "guide.api.resultBody":
-    "답변뿐 아니라 usage·warnings·종료 사유도 확인한다. predict의 turn-limit·output-limit는 부분 결과를 뜻하며 chat completions의 한도 종료는 length로 표시된다. 파일 결과는 링크가 만료되기 전에 내려받는다. 토큰은 호출 서버의 비밀 저장소에 보관한다. 재발급하거나 폐기하면 기존 토큰이 즉시 무효가 되므로 모든 호출자를 함께 갱신한다.",
+    "답변뿐 아니라 usage·warnings·종료 사유도 확인한다. predict의 turn-limit·output-limit는 부분 결과를 뜻하며 chat completions의 한도 종료는 length로 표시된다. 파일 결과는 링크가 만료되기 전에 내려받는다. 토큰은 호출 서버의 비밀 저장소에 보관한다. 재발급하거나 폐기하면 기존 토큰이 즉시 무효가 되므로 모든 호출자를 함께 갱신한다. OpenAI 호출의 토큰 합계는 완료형 응답이나 Studio 사용량 화면에서 확인한다.",
 
   "guide.integrations.title": "봇·프로토콜·자동화 연동",
   "guide.integrations.body":
@@ -627,7 +627,7 @@ export const ko: Messages = {
     "프로젝트 Settings에서 일간·월간 알림 기준과 차단 기준을 따로 설정한다. 알림은 목적지가 설정되어야 전달되며, 차단은 알림 설정이 없어도 UTC 기준 날짜나 월이 바뀔 때까지 새 실행을 거절한다. 호출 방식에 따라 개인 등급 한도와 호출자 동시 실행 한도도 적용된다. 비용은 실행 완료 후 반영될 수 있어 기준값이 초과 지출을 완전히 막는 선불 잔액은 아니다.",
   "guide.records.traces": "Traces로 실행 조사하기",
   "guide.records.tracesBody":
-    "소유자와 관리자는 프로젝트 Traces에서 준비 단계·모델 호출·도구·위임·소요 시간·사용량·경고를 확인한다. Trace는 진단 기록이며 프롬프트와 도구 결과 원문 전체를 보관하는 문서가 아니다. agent는 실행을 추적하고 llm·image는 표본 추적일 수 있다. Trace가 없으면 실행 시작 전에 요청이 거절된 경우도 확인한다.",
+    "소유자와 관리자는 프로젝트 Traces에서 준비 단계·모델 호출·도구·위임·소요 시간·사용량·경고를 확인한다. 모든 Agent 실행을 추적하지만 프롬프트와 도구 결과 원문 전체를 저장하지는 않는다. Trace가 없으면 실행 전 거절이나 기록 저장 실패 여부를 확인한다.",
 
   "guide.security.title": "접근 권한과 민감정보",
   "guide.security.body":
@@ -650,13 +650,13 @@ export const ko: Messages = {
     "Members·Settings·Models·Audit는 역할이 다르다. 여기서 변경한 값은 여러 프로젝트에 영향을 줄 수 있으므로 저장 후 해당 기능을 시험한다. 기능 레지스트리 화면은 member 이상이 열람하며 항목 생성·관리는 관리자 작업이다.",
   "guide.admin.members": "사용자 등급 관리",
   "guide.admin.membersBody":
-    "Members에서 사용자를 찾아 프로젝트 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다. Members는 계정 생성이나 비밀번호 재설정 화면이 아니다.",
+    "Members에서 사용자를 찾아 프로젝트 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다.",
   "guide.admin.settings": "Settings 재정의와 배포 설정",
   "guide.admin.settingsBody":
     "Settings에서 공개 base URL·Artifact 접근 방식·접근 목록·LLM 채널·플러그인 저장소·A2A 자격 증명을 관리한다. 저장값이 배포 환경변수보다 우선하고 그다음 기본값을 사용한다. 빈 필드 저장은 재정의를 제거하고 환경변수로 돌아가는 동작이므로 비밀값을 비워도 해당 서비스가 꺼진다고 단정할 수 없다. DB·암호화·로그인 공급자·저장소 연결·보존 기간·내부 호스트 설정은 배포 설정에서 관리한다.",
   "guide.admin.models": "모델 연결과 검증",
   "guide.admin.modelsBody":
-    "Settings에서 기본 LLM 또는 공급자 채널의 URL과 자격 증명을 설정하고 엔드포인트가 요구하는 API base 경로를 포함한다. URL을 바꿀 때는 해당 키도 함께 입력하며 기존 마스킹 키를 새 목적지에 재사용할 수 없다. Models에서 기능과 제공 상태를 확인하고 Test 후 짧은 프로젝트를 실행한다. 카탈로그 등록은 모델의 설명이며 모델을 설치하거나 서빙하는 작업이 아니다.",
+    "Settings에서 기본 LLM 또는 공급자 채널의 URL과 자격 증명을 설정하고 엔드포인트가 요구하는 API base 경로를 포함한다. URL을 바꿀 때는 해당 키도 함께 입력하며 기존 마스킹 키를 새 목적지에 재사용할 수 없다. Models에서 기능과 제공 상태를 확인하고 Test 후 짧은 프로젝트를 실행한다. 카탈로그에는 연결한 엔드포인트에서 제공하는 모델의 정보를 등록한다.",
   "guide.admin.offline": "폐쇄망의 카탈로그와 검색 모델",
   "guide.admin.offlineBody":
     "원격 동기화가 불가능하면 Models에서 모델 카탈로그 문서를 업로드한다. 내부 엔드포인트가 실제 제공하는 모델은 Self-hosted에서 선언한다. 기능 검색에는 배포의 CATALOG_ENABLED=true와 동작하는 embedding 설정이 필요하며 rerank는 선택 사항이다. embedding을 바꾸면 색인을 다시 만든다. 알 수 없는 모델 ID는 배포의 허용·거부 정책을 따르며 비용 추정치가 없을 수 있다.",
@@ -667,9 +667,9 @@ export const ko: Messages = {
   "guide.admin.auditBody":
     "Audit에서 기간을 선택해 작업자·동작·대상·상세를 확인한다. 자격 증명 원문 조회도 기록된다. 설정 변경이나 발급된 비밀값 조회를 조사할 때 이 기록을 사용하고 실행 진단에는 프로젝트 Traces를 사용한다. 두 기록 모두 보존 기간의 영향을 받는다.",
 
-  "guide.install.title": "소스 없이 설치하기",
+  "guide.install.title": "Agent Studio 설치하기",
   "guide.install.body":
-    "배포 담당자를 위한 절차다. 일반 콘솔 사용자는 앱 주소와 계정만 있으면 된다. 패키지 공급자로부터 릴리스 이미지와 해당 환경의 실행·secret·ingress·backup 설정을 받는다. 이미지 사용에 소스 파일이나 개발 명령은 필요하지 않다.",
+    "배포 담당자를 위한 절차다. 콘솔 사용자는 앱 주소와 계정으로 접속한다. 패키지 공급자로부터 릴리스 이미지와 해당 환경의 실행·secret·ingress·backup 설정을 받는다.",
   "guide.install.prepare": "1. 서비스와 이미지 준비",
   "guide.install.prepareBody":
     "버전이 지정된 릴리스 이미지, pgvector가 있는 PostgreSQL(배포 기준 PostgreSQL 18), 접근 가능한 OpenAI 호환 LLM 엔드포인트를 준비한다. 폐쇄망에는 진입 전에 이미지를 내부 registry로 반입한다. 파일 영속 보관이 필요하면 S3 호환 저장소를 추가한다. 서비스 주소·자격 증명·볼륨·TLS·라우팅은 배포 환경에서 구성한다.",
@@ -684,7 +684,7 @@ export const ko: Messages = {
     "파일을 영속 보관하려면 bucket을 만들고 S3_BUCKET_NAME을 설정한다. AWS가 아닌 저장소는 S3_ENDPOINT·S3_ACCESS_KEY_ID·S3_SECRET_ACCESS_KEY도 설정한다. AWS S3는 배포의 AWS 자격 증명이나 역할 설정을 사용할 수 있다. 저장소 계정에는 해당 bucket의 artifacts/*·source-files/* 읽기·쓰기·삭제와 비공개 파일의 multipart 업로드 권한을 부여한다. 비 AWS 저장소의 키는 다른 공급자도 사용하는 AWS_* 대신 S3 전용 변수에 넣는다. Settings에서 Artifact 접근 방식을 정하고 사용자 네트워크에서 다운로드를 검증한다.",
   "guide.install.verify": "5. 기동과 전체 경로 확인",
   "guide.install.verifyBody":
-    "앱은 기동 시 설정을 검증하고 DB migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한 뒤 모델 Test와 작은 프로젝트 생성을 거쳐 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험하며 콘솔에 접속된다는 사실만으로 모두 정상이라고 판단하지 않는다.",
+    "앱은 기동 시 설정을 검증하고 DB 스키마 migration을 적용한다. health·readiness를 확인하고 관리자로 로그인한 뒤 모델 Test와 작은 프로젝트 생성을 거쳐 실행한다. 저장소가 구성되었다면 생성 파일을 다시 연다. 내부 MCP와 활성화한 연동도 각각 시험한다.",
 
   "guide.operations.title": "운영·보존·업그레이드",
   "guide.operations.body":
@@ -705,7 +705,7 @@ export const ko: Messages = {
     "PostgreSQL·저장된 object·배포 설정·암호화 및 세션 secret을 접근 제한된 위치에 백업한다. 별도 환경에 함께 복구하고 로그인·자격 증명 복호화·프로젝트 실행·파일 접근을 검증한다. AES_ENCRYPTION_KEY를 잃거나 임의 교체하면 저장된 자격 증명을 읽을 수 없다. 앱 이미지는 데이터 백업이 아니다.",
   "guide.operations.upgrade": "복구 절차를 준비한 업그레이드",
   "guide.operations.upgradeBody":
-    "배포 전 앱과 worker 이미지 버전 및 백업을 확인한다. HTTP 앱·오디오 worker·Workspace worker의 스키마와 설정을 맞추고 대응되는 Sandbox 이미지를 준비한다. 로그인·실행·파일·승인 재개를 다시 검사한다. 이미지 롤백은 DB 스키마를 되돌리지 않는다. 현재·복구용 이미지는 보존하고 디스크가 부족하면 미사용 캐시만 정리한다.",
+    "배포 전 앱과 worker 이미지 버전 및 백업을 확인한다. 대상 릴리스에 필요한 데이터 이전 절차를 준비하고 앱과 worker를 멈춘 상태에서 적용한다. HTTP 앱·오디오 worker·Workspace worker의 스키마와 설정을 맞추고 대응되는 Sandbox 이미지를 준비한다. 로그인·실행·파일·승인 재개를 다시 검사한다. 복구에는 호환되는 이미지와 DB 백업을 사용한다. 현재·복구용 이미지는 보존하고 디스크가 부족하면 미사용 캐시를 정리한다.",
 
   "guide.trouble.title": "문제 해결",
   "guide.trouble.body":
@@ -809,6 +809,9 @@ export const ko: Messages = {
   "project.tab.traces": "트레이스",
   "trace.inConversation": "대화",
   "project.tab.apiReference": "API 레퍼런스",
+  "apiReference.intro": "이 프로젝트 주소는 현재 저장된 Agent 설정을 실행합니다. 연동 → API 토큰에서 프로젝트 토큰을 발급하세요.",
+  "apiReference.environmentHint": "호출 프로세스에 PROJECT_API_TOKEN과 CONVERSATION_ID 환경변수를 설정하세요. curl은 $…를 치환하고 Python·Node.js는 환경변수를 읽습니다. 자격 증명은 호출 서버에 보관하세요.",
+  "apiReference.configureFirst": "Playground에서 Agent 설정을 저장하면 실행 API를 사용할 수 있습니다.",
   "project.tab.integrations": "연동",
   "project.tab.settings": "설정",
 
@@ -931,7 +934,6 @@ export const ko: Messages = {
 
   "run.failed": "실행에 실패했습니다",
   "run.variables": "변수",
-  "run.noVariables": "템플릿 변수가 없습니다.",
   "run.messageLabel": "메시지",
   "run.editLabel": "편집 지시",
   "run.imagePromptLabel": "이미지 프롬프트",
@@ -966,7 +968,7 @@ export const ko: Messages = {
   "preview.tools": "· 도구 {count} 개",
   "preview.stale": "· 오래됨",
   "preview.discovered": "이 미리보기에서 바인딩 외에 추가로 찾은 것: {names}",
-  "preview.noPrompt": "이 Agent은 자체 프롬프트를 보내지 않습니다. 모든 내용은 대화가 채웁니다.",
+  "preview.noPrompt": "미리 볼 시스템 지시문이나 역량이 없습니다. 작업은 메시지로 전달하세요.",
   "preview.toolsOffered": "제공하는 도구 ({count})",
   "preview.blurb":
     "실행과 같은 방식으로 시스템 프롬프트를 만든다 — 회상한 문맥, Skill 표, 연결된 MCP 서버와 도구 이름, 전환 지시 — 이를 위해 설정된 서비스에 필요할 때 실제로 접속한다.",
@@ -1027,7 +1029,7 @@ export const ko: Messages = {
   "skills.noContent": "본문이 없습니다.",
 
   "agents.lede":
-    "프로젝트 버전이 원격 서브에이전트로 바인딩할 수 있는 외부 OpenAI 호환·A2A 엔드포인트입니다.",
+    "Agent에 원격 하위 Agent로 연결할 수 있는 외부 OpenAI 호환·A2A 엔드포인트입니다.",
   "agents.descriptionRole":
     "외부 에이전트 설명은 동적 검색에 쓰이며 모델의 Available Agents 표에 표시되어 전환 대상을 고르게 합니다. 첫 500자가 색인됩니다. 워크스페이스 프로젝트 설명은 동적으로 검색되지 않지만 로컬 에이전트로 바인딩될 때와 공개 A2A Agent Card에 표시됩니다.",
   "agents.descriptionHint":
@@ -1041,10 +1043,13 @@ export const ko: Messages = {
   "agents.namePlaceholder": "my-agent",
   "agents.protocol": "프로토콜",
   "agents.cardUrl": "Agent Card URL",
+  "agents.studioTitle": "Studio Agent (A2A)",
+  "agents.studioEnabled": "설정을 저장한 Agent를 A2A로 호출합니다. 공개 Agent는 Agent Card URL도 제공합니다.",
+  "agents.studioDisabled": "설정을 저장한 Agent 목록입니다. Settings에서 A2A 키를 발급하면 A2A 호출을 활성화합니다.",
   "agents.sendPlaceholder": "에이전트에게 메시지 하나를 보내보세요…",
 
   "tools.lede":
-    "streamable HTTP 로 에이전트에게 도구를 제공하는 MCP 서버입니다. 한 번 등록하면 버전마다 바인딩합니다.",
+    "streamable HTTP로 도구를 제공하는 MCP 서버입니다. 한 번 등록한 뒤 필요한 Agent에 연결합니다.",
   "tools.descriptionRole":
     "서버 이름과 설명의 첫 500자는 동적 검색에 색인되고 모델의 Connected MCP Servers 표에 표시됩니다. 각 도구의 설명도 별도로 색인되고 입력 스키마와 함께 모델에 전달되므로 실제 동작 선택에는 도구 설명이 주로 쓰입니다. 본문은 운영자 전용 메모입니다.",
   "tools.descriptionHint":
@@ -1162,6 +1167,8 @@ export const ko: Messages = {
   "pint.aguiCopy": "예시 복사",
 
   "pset.dangerZone": "위험 구역",
+  "pset.deleteConfirm": "\"{name}\"의 설정·연동·Trace·사용량 기록을 삭제합니다. 되돌릴 수 없으며 프로젝트 이름을 다시 사용할 수 없습니다.",
+  "pset.deleteHint": "프로젝트를 삭제하면 설정과 프로젝트 소유 기록을 제거합니다. Chat과 Artifact는 각각의 보존 규칙을 따르며 프로젝트 이름은 재사용할 수 없습니다.",
   "pset.visibility": "공개 범위",
   "pset.visibilityPublic": "공개",
   "pset.visibilityPublicHint": "로그인한 모든 멤버가 이 프로젝트를 보고, 실행하고, 복제할 수 있습니다.",

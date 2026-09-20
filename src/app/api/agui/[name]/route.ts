@@ -15,9 +15,8 @@ type RouteContext = { params: Promise<{ name: string }> };
  *
  * Authenticated like the three execution endpoints — a project API token, or
  * the console session — because the caller is an application this project's
- * owner is embedding it in, which is what a project token is for. Published
- * only: the application is an external surface, and a draft must not reach
- * its users. The thread the client names is the run's conversation, so an MCP
+ * owner is embedding it in, which is what a project token is for. The run uses
+ * the Agent's saved settings. The thread the client names is the run's conversation, so an MCP
  * server that keeps state and a remote agent a transfer reaches both see one
  * conversation across the thread's runs.
  */

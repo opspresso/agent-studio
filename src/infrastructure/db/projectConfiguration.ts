@@ -32,17 +32,9 @@ export function readAgentConfiguration(raw: unknown, projectName: string): Agent
 }
 
 /**
- * `mcpList` was a plain `string[]` before per-version header overrides existed.
- * Rows written then are still valid bindings with no override, so normalize on
- * read rather than migrating the table.
- *
- * This rebuilds the binding field by field rather than spreading the stored
- * object, so that a row can never introduce an attribute the domain type does
- * not have. The cost is that a field added to `McpBinding` and not added here is
- * written, stored, and then silently dropped on every read — which is exactly
- * what happened to `tools`: narrowing a server's tool list saved without
- * complaint and did nothing, because the run reads its version back through
- * here. Anything added to the binding must be added below.
+ * Normalize bare server names to bindings without overrides. Object bindings
+ * are rebuilt field by field so stored data cannot introduce unknown fields.
+ * Every persisted McpBinding field must be decoded here or reads will drop it.
  */
 export function toMcpBindings(raw: unknown): McpBinding[] {
   if (!Array.isArray(raw)) {

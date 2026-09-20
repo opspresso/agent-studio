@@ -178,7 +178,7 @@ export interface EngineChunk {
      * tool or a remote agent handed back, or one `FetchUrl` merely read.
      *
      * The run's model is *not* the fallback. A run and the thing that drew for
-     * it are routinely different models, so filling this in from the version
+     * it are routinely different models, so filling this in from the Agent settings
      * would put the parent's name on a child's work with nothing saying so.
      */
     model?: string;
@@ -393,7 +393,7 @@ export interface RunResult {
   termination?: RunTerminationReason;
 }
 
-/** Sampling / generation parameters resolved from a version. */
+/** Sampling / generation parameters resolved from Agent settings. */
 export interface EngineParameters {
   policy?: RuntimePolicy;
   temperature?: number;

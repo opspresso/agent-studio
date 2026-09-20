@@ -76,7 +76,7 @@ export interface RunBracket {
  * `Retry-After`; nothing has been counted or recorded when any of them is
  * thrown.
  *
- * Model entry points require a Version through openModelCall/openRun. Workspace
+ * Model entry points require Agent model settings through openModelCall/openRun. Workspace
  * tasks use openTaskRun and share the remaining guards without inventing a model.
  */
 async function openExecutionBracket(

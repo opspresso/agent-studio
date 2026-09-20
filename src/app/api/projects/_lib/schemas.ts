@@ -155,8 +155,7 @@ export const subagentRefSchema = z.object({
 });
 
 /**
- * An MCP binding. A bare string stays accepted — that was the whole shape
- * before per-version header overrides — and normalizes to a binding with none.
+ * An MCP binding. A bare server name normalizes to a binding without overrides.
  * In the object form, a `null` header value removes a registry default.
  */
 export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([

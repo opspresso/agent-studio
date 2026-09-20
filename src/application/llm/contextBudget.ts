@@ -221,7 +221,7 @@ export function restoreRunContextBudget(state: { left: number; truncated: boolea
  * How much input one model can hold: its own window, less what it may generate
  * into that window.
  *
- * The version's `maxTokens` bounds both models' calls on the wire, so when it is
+ * The Agent's `maxTokens` bounds both models' calls on the wire, so when it is
  * set it is the reserve for each. When it is not, no `max_tokens` is sent and
  * whichever model serves the call may generate up to its own registry maximum —
  * which is that model's number, and comes out of that model's window.

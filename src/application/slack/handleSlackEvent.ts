@@ -344,8 +344,8 @@ export async function handleSlackEvent(
   // mention has neither, and streaming into one needs the recipient named.
   const isAssistantThread = event.channel_type === "im";
 
-  // Ahead of the *version* lookup, because a command is answered whether or
-  // not this project has a runnable version — `!mute` in particular has to
+  // Ahead of the current-settings lookup, because a command is answered whether or
+  // not this project has current Agent settings — `!mute` in particular has to
   // work on a bot that is currently failing, which is exactly when someone
   // reaches for it. Not ahead of the visibility gate: a command writes the
   // project's engagement state, so an uninvited user muting a private
@@ -453,7 +453,7 @@ export async function handleSlackEvent(
   }
   await reply.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
 
-  // The version's opt-in gates the *lookup*, not just the prompt: a project that
+  // The Agent's opt-in gates the *lookup*, not just the prompt: a project that
   // did not ask to know who is asking should not be sending anyone's id to
   // Slack's profile API either.
   const named = configuration.parameters.callerContext
@@ -462,7 +462,7 @@ export async function handleSlackEvent(
   // Whose gallery this run's output belongs in. Not gated on `callerContext`,
   // which decides what the *model* is told: this address reaches no prompt and
   // no tool result, and a person's own pictures going missing from their own
-  // gallery is not something a version parameter should be able to cause.
+  // gallery is not something an Agent parameter should be able to cause.
   //
   // Best effort in both directions — a workspace that does not share addresses,
   // or a bot without the scope, files by project exactly as before.

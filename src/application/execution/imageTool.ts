@@ -18,7 +18,7 @@ export function defaultImageModel(): string | undefined {
 }
 
 /**
- * The image model a Agent's builtins draw with — one answer for both.
+ * The image model an Agent's builtins draw with — one answer for both.
  *
  * They are gated on the same per-Agent opt-in and reach the same model, and
  * therefore share one resolution. Otherwise generator and editor can disagree
@@ -79,7 +79,7 @@ export function buildImageGenerator(
 
 /**
  * The EditImage builtin rides on the same per-Agent opt-in as GenerateImage —
- * a Agent that may draw may also redraw — and on the same model. Whether that
+ * an Agent that may draw may also redraw — and on the same model. Whether that
  * model's provider implements the edit endpoint is only known at dispatch, so a
  * provider refusal comes back as a tool-result error rather than hiding the tool.
  */

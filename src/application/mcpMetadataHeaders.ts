@@ -2,7 +2,7 @@
  * The metadata headers this platform reserves on every outbound MCP request:
  * who is calling (`X-Tenant-Id`), for whom (`X-User-Email`), and in which
  * conversation (`X-Conversation-Id`). Reserved means stored configuration —
- * a registry entry's headers, a version's overrides — can never supply them:
+ * a registry entry's headers, an Agent's overrides — can never supply them:
  * every stored spelling is stripped before any decision reads the header map,
  * and the platform's own values are stamped afterwards. One module owns the
  * spellings, the strip, and the actor-to-email judgement, so a run and every

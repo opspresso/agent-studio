@@ -76,7 +76,7 @@ export function describeTool(toolName: string, args?: string): ToolDescription {
   }
   // Not a builtin, so the half in front is the MCP server that served it — the
   // one thing an MCP tool's own name never says, and the thing worth knowing
-  // once a version has several servers attached.
+  // once an Agent has several servers attached.
   return decorated === undefined
     ? { kind: "tool", name: toolName }
     : { kind: "tool", name: decorated, source: base };

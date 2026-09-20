@@ -36,7 +36,7 @@ export interface SecretCipher {
     headers: Record<string, string>,
     context: string,
   ): Record<string, string>;
-  /** Registry headers with a Agent's overrides layered on, decrypted. */
+  /** Registry headers with an Agent's overrides layered on, decrypted. */
   mergeOutboundHeaders(
     registryHeaders: Record<string, string>,
     overrides: HeaderOverrides | undefined,

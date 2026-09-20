@@ -44,7 +44,7 @@ export async function deleteAgent(name: string): Promise<void> {
 
 export type { A2aProjectListItem, A2aProjectListResponse };
 
-/** Published studio projects exposed over A2A (derived, not registered). */
+/** Accessible configured Studio Agents available over A2A without registration. */
 export function listA2aProjects(): Promise<A2aProjectListResponse> {
   return fetch("/api/a2a").then((r) => readJson<A2aProjectListResponse>(r));
 }

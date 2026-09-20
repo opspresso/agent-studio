@@ -42,7 +42,7 @@ export interface RememberedTurnInput {
   /** The platform's id for the person, for the transcript and the speaker labels. */
   userId?: string;
   /**
-   * Who is asking, resolved only when the version asked to know: the opt-in
+   * Who is asking, resolved only when the Agent asked to know: the opt-in
    * gates the lookup, the prompt, and what is written down.
    */
   callerOf: () => RunCaller | undefined;
@@ -85,9 +85,9 @@ export async function runRememberedTurn(
   const remembered = await loadTranscriptHistory(deps.transcripts, project.name, key, warnings, scope);
   await reply.status("is thinking…");
 
-  // The version's opt-in gates whether a name reaches the model, and so
+  // The Agent's opt-in gates whether a name reaches the model, and so
   // whether one is written down beside the turn at all — and whether one an
-  // earlier version wrote down is read back.
+  // earlier run wrote down is read back.
   const namesAllowed = configuration.parameters.callerContext === true;
   const named = namesAllowed ? input.callerOf() : undefined;
   const { history, label } = withSpeakerLabels(remembered, input.userId, namesAllowed);

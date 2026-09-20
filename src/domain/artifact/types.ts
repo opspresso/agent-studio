@@ -64,11 +64,10 @@ export interface Artifact {
   /**
    * The model that drew these bytes, named by whichever producer made them.
    *
-   * Carried on the chunk rather than derived from the run's version, because a
-   * run's model is not what drew the picture: the builtins draw with the image
-   * model `resolveImageModel` chose, and an image subagent draws with its own
-   * version's. Filling this in at the bracket would put the parent's model on a
-   * child's work and never say so.
+   * Carried on the chunk because the text model did not draw the picture.
+   * Image tools use resolveImageModel, and a child Agent can select a different
+   * image model from its parent. The run bracket must preserve the producer's
+   * model instead of substituting the root Agent's model.
    *
    * Absent whenever nothing can honestly name one — an attachment somebody
    * brought, a document a tool rendered, a picture an MCP tool or a remote A2A

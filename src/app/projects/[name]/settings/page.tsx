@@ -83,7 +83,7 @@ export default function SettingsPage() {
   async function remove() {
     const ok = await confirm({
       title: "Delete project",
-      message: `Deleting "${name}" removes all its versions and usage records. This cannot be undone.`,
+      message: t("pset.deleteConfirm", { name }),
       confirmLabel: "Delete project",
       requireText: name,
     });
@@ -183,7 +183,7 @@ export default function SettingsPage() {
       <CollapsibleSection title={t("pset.dangerZone")} danger>
         <Stack gap="sm" align="flex-start">
           <Text fz="sm" c="dimmed">
-            Deleting a project removes all its versions and usage records.
+            {t("pset.deleteHint")}
           </Text>
           <Button variant="default" color="red" onClick={remove} loading={deleting}>
             Delete project

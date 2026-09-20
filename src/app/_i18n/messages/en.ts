@@ -78,7 +78,7 @@ export const en = {
   "workspace.list": "Workspaces",
   "workspace.delete": "Delete Workspace",
   "workspace.intro": "Keep files and agent context across tasks.",
-  "workspace.notConfigured": "Enable Workspace tools in an agent version to start work.",
+  "workspace.notConfigured": "Enable Workspace tools in the Agent settings to start work.",
   "workspace.repository": "Repository",
   "workspace.runtime": "Runtime",
   "workspace.command": "Command / script",
@@ -352,7 +352,7 @@ export const en = {
     "Talk to an agent in the console. Read PDF, text, and Office attachments without a document MCP server, and follow replies and tool calls. Closing the tab does not stop the run.",
   "home.domain.images": "Images",
   "home.domain.imagesBody":
-    "Generate or edit images with an image project, an agent's built-in tools, or an image subagent. An agent can edit an attached image or one produced earlier in the run.",
+    "Enable image tools in the Agent settings to generate or edit images. The Agent can edit an attached image or one produced earlier in the run using its configured image model.",
   "home.domain.audio": "Audio transcription & summaries",
   "home.domain.audioBody": "Import audio from uploads or connected tools, transcribe it with a selected model, and produce summaries in the background. Keep originals and results as private Artifacts; personal records are saved when requested.",
   "home.domain.artifacts": "Documents & artifacts",
@@ -399,7 +399,7 @@ export const en = {
   // action ("Delete", "Publish"), which only the caller knows.
   "confirm.typeToConfirm": "Type “{text}” to confirm",
 
-  // The secret key/value editor, shared by the MCP registry and version bindings.
+  // The secret key/value editor, shared by the MCP registry and Agent bindings.
   "headers.caption": "Headers",
   "headers.empty": "No headers. Add one if the server needs auth.",
   "headers.add": "+ Add header",
@@ -501,7 +501,7 @@ export const en = {
   "guide.start.connectBody":
     "Saved Agent settings are ready for Chat and configured integrations. For HTTP calls, issue a project token in Integrations and follow API Reference.",
 
-  "guide.projects.title": "Configure an Agent",
+  "guide.projects.title": "Work with an Agent",
   "guide.projects.body": "Every project is an Agent. Its current settings hold the model, system prompt, capabilities, and execution limits. Visibility, integrations, and usage belong to the project.",
   "guide.projects.agent": "Conversation and tools",
   "guide.projects.agentBody":
@@ -521,7 +521,7 @@ export const en = {
     "Set output length and agent turn limits to match the task. Presence penalty is an optional control for repeated tokens when the selected model supports it. Turn and output limits can leave a partial answer; a deployment deadline can stop the run with an error. Read completion reasons and warnings. Reasoning trace controls displayed reasoning, not whether the model reasons.",
   "guide.configuration.apply": "When saved settings take effect",
   "guide.configuration.applyBody":
-    "The next run uses the saved settings. Runs and queued Audio jobs keep the settings they started with. An approval pending across a settings or connection change must be discarded and started again. Concurrent edits produce a conflict; reload before saving again.",
+    "The next run uses the saved settings. Each Agent keeps the settings read when it is prepared; a local subagent reads its settings when called. Queued Audio jobs retain their submission-time settings. Pending approvals reject changed settings or connections. Concurrent edits produce a conflict; reload before saving again.",
 
   "guide.capabilities.title": "Add skills, tools, and other agents",
   "guide.capabilities.body":
@@ -634,13 +634,13 @@ export const en = {
     "Send {\"messages\":[{\"role\":\"user\",\"content\":\"Summarize these notes\"}],\"stream\":false} to predict. Include supported inline image parts when needed. Images are generated or edited by the Agent’s image tools. Begin with one request and inspect its answer, warnings, and usage.",
   "guide.api.sdk": "OpenAI-compatible clients",
   "guide.api.sdkBody":
-    "Use chat/completions and the Python or JavaScript examples in API Reference. Set the SDK base URL to the project address and the API key to its token. Saved Agent settings determine the model and sampling parameters; model, temperature, and max_tokens do not override them.",
+    "Use chat/completions and the Python or JavaScript examples in API Reference. Set the SDK base URL to the project address and the API key to its token. Saved Agent settings determine the model and sampling parameters; model, temperature, and max_tokens do not override them. Set PROJECT_API_TOKEN and CONVERSATION_ID in the calling process environment before running the examples.",
   "guide.api.stream": "Streaming and conversation history",
   "guide.api.streamBody":
     "For text predict or chat/completions, stream:true returns SSE; agent also provides an endpoint for streaming text and tool activity. Keep the connection open and handle warning, error, and completion events, because HTTP 200 alone does not prove the run succeeded. HTTP callers send their own message history. X-Conversation-Id can preserve downstream MCP/A2A conversation identity, but does not load past messages for you.",
   "guide.api.result": "Check the result and protect the token",
   "guide.api.resultBody":
-    "Inspect usage, warnings, and the completion reason as well as the answer. turn-limit or output-limit on predict means a partial result; chat completions reports length for limit stops. Download file results before their links expire. Keep tokens in the calling server's secret storage. Regenerating or revoking a project token invalidates the old token immediately, so update every caller.",
+    "Inspect usage, warnings, and the completion reason as well as the answer. turn-limit or output-limit on predict means a partial result; chat completions reports length for limit stops. Download file results before their links expire. Keep tokens in the calling server's secret storage. Regenerating or revoking a project token invalidates the old token immediately, so update every caller. Inspect token totals in collected OpenAI responses or the Studio Usage page.",
 
   "guide.integrations.title": "Bots, protocols, and automation",
   "guide.integrations.body":
@@ -673,7 +673,7 @@ export const en = {
     "Project Settings separates daily/monthly alert and block thresholds. Alerts notify when a destination is configured; blocks refuse new runs until the UTC day or month resets, even without notifications. Personal tier limits and caller concurrency limits also apply where relevant. Costs can arrive after a run finishes, so thresholds are not a prepaid balance that guarantees no overspend.",
   "guide.records.traces": "Investigate a run in Traces",
   "guide.records.tracesBody":
-    "Owners and administrators can open project Traces to inspect preparation, model calls, tools, delegates, durations, usage, and warnings. Traces is a diagnostic record, not a complete archive of prompts and tool output. Agent runs are traced, while llm and image tracing can be sampled. A missing trace can also mean the request was refused before execution started.",
+    "Owners and administrators can inspect preparation, model calls, tools, delegates, durations, usage, and warnings in project Traces. Every Agent run is traced; prompts and tool output are not stored in full. A missing trace can mean the request was refused before execution started or the trace could not be stored.",
 
   "guide.security.title": "Access and sensitive data",
   "guide.security.body":
@@ -696,13 +696,13 @@ export const en = {
     "Members, Settings, Models, and Audit serve different purposes. Changes here can affect multiple projects, so verify the affected path after saving. Registry pages are available to members and administrators; creating and maintaining their entries is an administrator task.",
   "guide.admin.members": "Manage member tiers",
   "guide.admin.membersBody":
-    "In Members, find the user and change the tier when they need project creation or API-token access. Profile is where the user checks their resulting limits. Administrators listed in ADMIN_EMAILS have a fixed admin tier; removing an email from the list does not automatically demote its stored tier. Members is not an account-creation or password-reset screen.",
+    "In Members, find the user and change the tier when they need project creation or API-token access. Profile is where the user checks their resulting limits. Administrators listed in ADMIN_EMAILS have a fixed admin tier; removing an email from the list does not automatically demote its stored tier.",
   "guide.admin.settings": "Settings overrides and deployment values",
   "guide.admin.settingsBody":
     "Settings manages the public base URL, artifact access mode, access lists, LLM channels, plugin repository, and A2A credentials. Saved values override deployment environment values, which override defaults. Saving an empty field removes that override and falls back to the environment; for a secret, this is not a guarantee that the service becomes disabled. Database, encryption, sign-in provider, storage connection, retention, and internal-host settings remain deployment configuration.",
   "guide.admin.models": "Connect and verify models",
   "guide.admin.modelsBody":
-    "Configure the default LLM or provider channel URL and credentials in Settings, including the API base path required by the endpoint. When changing a URL, enter its matching key too; the old masked key cannot be reused for a new destination. In Models, inspect capabilities and availability, run Test, then run a short project. A catalog entry describes a model; it does not install or serve it.",
+    "Configure the default LLM or provider channel URL and credentials in Settings, including the API base path required by the endpoint. When changing a URL, enter its matching key too; the old masked key cannot be reused for a new destination. In Models, inspect capabilities and availability, run Test, then run a short project. Catalog entries describe models served by the configured endpoint.",
   "guide.admin.offline": "Catalog and retrieval in an offline deployment",
   "guide.admin.offlineBody":
     "Upload a model catalog document in Models when remote synchronization is unavailable. Use Self-hosted declarations for models actually served by your internal endpoint. Capability discovery requires CATALOG_ENABLED=true in the deployment and a working embedding setup; rerank is optional. Changing embedding requires rebuilding the index. Unknown model IDs follow the deployment's allow/refuse policy and may lack cost estimates.",
@@ -713,9 +713,9 @@ export const en = {
   "guide.admin.auditBody":
     "Use Audit to inspect the selected date range, actor, action, target, and details. Credential reveal operations are recorded as well. Use these records to identify who changed configuration or accessed an issued secret, and use project Traces for execution diagnostics. Retention limits apply to both kinds of record.",
 
-  "guide.install.title": "Install without source code",
+  "guide.install.title": "Install Agent Studio",
   "guide.install.body":
-    "This section is for the deployment operator. An ordinary console user only needs the application address and an account. Obtain the release image and the deployment-specific launch, secret, ingress, and backup settings from the package provider; source files and development commands are not prerequisites for using the image.",
+    "This section is for the deployment operator. Console users need the application address and an account. Obtain the release image and the deployment-specific launch, secret, ingress, and backup settings from the package provider.",
   "guide.install.prepare": "1. Prepare the services and image",
   "guide.install.prepareBody":
     "Use a versioned release image, PostgreSQL with pgvector (the deployment baseline is PostgreSQL 18), and a reachable OpenAI-compatible LLM endpoint. Mirror the image into an internal registry before entering an isolated network. Add an S3-compatible object store if files must persist. The deployment owns service addresses, credentials, volumes, TLS, and routing.",
@@ -730,7 +730,7 @@ export const en = {
     "For persistent files, create a bucket and set S3_BUCKET_NAME. For a non-AWS store, also set S3_ENDPOINT, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY. AWS S3 can use the deployment's AWS credential or role configuration. Grant the storage identity read, write, and delete access to artifacts/* and source-files/* in that bucket, plus multipart upload permissions for private files. Keep non-AWS storage keys in the S3 fields rather than AWS_* variables used by other providers. Select the artifact access mode in Settings and verify downloads from the user's network.",
   "guide.install.verify": "5. Start and verify the full path",
   "guide.install.verifyBody":
-    "The application validates configuration and applies database migrations on startup. Check health and readiness, sign in as the administrator, test a model, and create and run a small project. If storage is configured, reopen a generated file. Test internal MCP and any enabled integrations individually; a reachable console alone does not validate them.",
+    "The application validates configuration and applies database schema migrations on startup. Check health and readiness, sign in as the administrator, test a model, and create and run a small project. If storage is configured, reopen a generated file. Test internal MCP and each enabled integration.",
 
   "guide.operations.title": "Operate, retain, and upgrade",
   "guide.operations.body":
@@ -752,7 +752,7 @@ export const en = {
     "Back up PostgreSQL, stored objects, deployment configuration, and the encryption/session secrets under restricted access. Restore them together in a separate environment and verify sign-in, credential decryption, project runs, and file access. Losing or arbitrarily replacing AES_ENCRYPTION_KEY makes stored credentials unreadable. An application image is not a data backup.",
   "guide.operations.upgrade": "Upgrade with a recovery plan",
   "guide.operations.upgradeBody":
-    "Record app and worker image versions and verify backups before deployment. Keep HTTP app, audio worker and Workspace worker on compatible schemas and configuration, and supply the matching Sandbox image. Recheck sign-in, runs, files and approval continuation. An image rollback does not downgrade the database. Retain current and rollback images; remove only unused caches when disk capacity requires it.",
+    "Record app and worker image versions and verify backups before deployment. Prepare any data migration required by the target release and stop the app and workers while applying it. Keep the HTTP app, audio worker and Workspace worker on compatible schemas and configuration, and supply the matching Sandbox image. Recheck sign-in, runs, files and approval continuation. Recovery uses a compatible image and database backup. Retain current and recovery images; clean unused caches when disk capacity requires it.",
 
   "guide.trouble.title": "Troubleshooting",
   "guide.trouble.body":
@@ -865,6 +865,9 @@ export const en = {
   "project.tab.traces": "Traces",
   "trace.inConversation": "conversation",
   "project.tab.apiReference": "API Reference",
+  "apiReference.intro": "These project URLs run the current saved Agent settings. Create a project token in Integrations → API token.",
+  "apiReference.environmentHint": "Set PROJECT_API_TOKEN and CONVERSATION_ID in the calling process environment. curl expands $… placeholders; Python and Node.js read environment variables. Keep credentials on your server.",
+  "apiReference.configureFirst": "Save the Agent settings in Playground to enable execution endpoints.",
   "project.tab.integrations": "Integrations",
   "project.tab.settings": "Settings",
 
@@ -917,10 +920,6 @@ export const en = {
   "configuration.systemPrompt": "System prompt",
 
   "configuration.systemPromptPlaceholder": "You are a helpful assistant.",
-
-  // The double braces are the template's own syntax, not a placeholder for the
-  // translator: `interpolate` leaves them alone because `t` is called with no
-  // values here.
 
   "configuration.temperature": "Temperature",
   "configuration.presencePenalty": "Presence penalty",
@@ -1004,7 +1003,6 @@ export const en = {
   // The playground's Run panel.
   "run.failed": "Run failed",
   "run.variables": "Variables",
-  "run.noVariables": "No template variables detected.",
   "run.messageLabel": "Message",
   "run.editLabel": "Edit instruction",
   "run.imagePromptLabel": "Image prompt",
@@ -1041,7 +1039,7 @@ export const en = {
   "preview.stale": "· stale",
   "preview.discovered": "Found for this preview, on top of the bindings: {names}",
   "preview.noPrompt":
-    "This version sends no prompt of its own; the conversation supplies everything.",
+    "This Agent has no system instructions or capabilities to preview; send its task as a message.",
   "preview.toolsOffered": "Tools offered ({count})",
   "preview.blurb":
     "Builds the system prompt the way a run does — recalled context, skill table, connected MCP servers and their tool names, transfer instructions — by contacting the configured services on demand.",
@@ -1109,7 +1107,7 @@ export const en = {
   "agents.lede":
     "External OpenAI-compatible and A2A endpoints an Agent can bind as remote subagents.",
   "agents.descriptionRole":
-    "External agent descriptions drive dynamic discovery and are shown in the model’s Available Agents table for transfer decisions. The opening 500 characters are indexed. Workspace project descriptions are not dynamically discovered, but they appear when bound as local agents and in published A2A Agent Cards.",
+    "External agent descriptions drive dynamic discovery and are shown in the model’s Available Agents table for transfer decisions. The opening 500 characters are indexed. Workspace project descriptions are not dynamically discovered, but they appear when bound as local agents and in A2A Agent Cards.",
   "agents.descriptionHint":
     "Used for dynamic discovery and transfer selection. State which requests this agent should handle and what result it returns.",
   "agents.descriptionPlaceholder": "Investigates Kubernetes incidents and returns evidence-backed remediation steps",
@@ -1121,11 +1119,14 @@ export const en = {
   "agents.namePlaceholder": "my-agent",
   "agents.protocol": "Protocol",
   "agents.cardUrl": "Agent Card URL",
+  "agents.studioTitle": "Studio Agents (A2A)",
+  "agents.studioEnabled": "Agents with saved settings are callable over A2A. Public Agents also expose an Agent Card URL.",
+  "agents.studioDisabled": "Agents with saved settings. Generate an A2A key in Settings to enable A2A calls.",
   "agents.sendPlaceholder": "Send one message to the agent…",
 
   // MCP servers.
   "tools.lede":
-    "MCP servers that expose tools to agents over streamable HTTP — registered once, bound per Agent.",
+    "MCP servers expose tools over streamable HTTP. Register a server once, then bind it to an Agent.",
   "tools.descriptionRole":
     "The server name and opening 500 characters of its description are indexed for dynamic discovery and shown in the model’s Connected MCP Servers table. Each tool’s own description is also indexed and sent with its input schema, so it usually decides which action matches. Content is operator-only notes.",
   "tools.descriptionHint":
@@ -1251,6 +1252,8 @@ export const en = {
 
   // A project's settings tab: the sections and their forms.
   "pset.dangerZone": "Danger zone",
+  "pset.deleteConfirm": "Deleting \"{name}\" removes its settings, integrations, traces and usage records. This cannot be undone, and the project name cannot be reused.",
+  "pset.deleteHint": "Project deletion removes its settings and project-owned records. Chats and artifacts follow their own retention rules; the project name remains reserved.",
   "pset.visibility": "Visibility",
   "pset.visibilityPublic": "Public",
   "pset.visibilityPublicHint": "Every signed-in member can view, run and clone this project.",

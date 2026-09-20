@@ -1060,7 +1060,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const resolvedOverrides = binding?.headers;
       // Assembled exactly as a run assembles it (see execution/mcpTools) — the
       // binding's overrides layered over the entry, then the project's
-      // Authorization last so a version cannot substitute its own. A list built
+      // Authorization last so an Agent cannot substitute its own. A list built
       // any other way would be answering a question nobody asked.
       const headers = deps.cipher.mergeOutboundHeaders(
         server.headers,

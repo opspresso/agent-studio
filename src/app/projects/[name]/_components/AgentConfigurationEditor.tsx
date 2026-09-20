@@ -184,8 +184,8 @@ export function AgentConfigurationEditor({
           searchable
           data={modelSelectData(
             models,
-            // A stored model unavailable for new selection stays present so a
-            // version can be saved without silently losing it.
+            // A stored model unavailable for new selection stays present so an
+            // Agent can be saved without silently losing it.
             value.model && !selectedModel ? [{ value: value.model, label: value.model }] : [],
             t("models.favorites"),
           )}
@@ -486,7 +486,7 @@ export function AgentConfigurationEditor({
         {value.parameters.memoryRecall === true &&
           !bindingsMayOfferRecall(value.mcpList) && (
             // The run's own warning, moved up to where the setting is made:
-            // a version that recalls with nothing bound to answer would
+            // an Agent that recalls with nothing bound to answer would
             // otherwise say so only once a run has started without a memory.
             // Only what the bindings alone rule out — a bound server that
             // turns out not to offer the tool is for the preview to report.

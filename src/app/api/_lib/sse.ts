@@ -72,7 +72,7 @@ async function awaitFirstChunkBriefly(pending: Promise<unknown>): Promise<void> 
  * response exists, so every second spent here is a second of the 60s idle
  * budget spent in silence. Two runs routinely produce nothing for longer than
  * that: an image, whose bytes arrive in one chunk at the end, and a reasoning
- * model whose thinking a version did not opt into recording — that stream's
+ * model whose thinking an Agent did not opt into recording — that stream's
  * first chunk is the end-of-turn usage. The grace must not cut either run while
  * it is working silently.
  *

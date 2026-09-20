@@ -36,11 +36,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       const read = await readExecutionDocuments(executionDeps, { projectName: project.name, actor }, parsed.data.documents);
       const abortController = new AbortController();
       return await sseResponse(
-        // A file chunk leaves here addressed: the object key and artifact id the
-        // bracket put on it are this platform's own bookkeeping, and a caller
-        // holding them can do nothing but wonder. The console's Playground and
-        // compare view read this stream too, which is how both of them ended up
-        // drawing the picture a run made and saying nothing about the document.
+        // API clients and Playground receive addressed files from the run bracket.
         withAddressedFiles(
           withLeadingWarnings(
             read.warnings,

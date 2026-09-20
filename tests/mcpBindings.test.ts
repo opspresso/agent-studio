@@ -474,7 +474,7 @@ describe("per-project MCP header overrides at dispatch", () => {
 
     expect(headers.authorization).toBeUndefined();
     expect(warning).toHaveBeenCalledWith(
-      expect.stringContaining("moved since its version header credentials were saved"),
+      expect.stringContaining("moved since its Agent header credentials were saved"),
     );
     warning.mockRestore();
   });
