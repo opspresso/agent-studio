@@ -793,6 +793,8 @@ GET /api/projects/{name}/a2a
 ```
 
 `card`는 현재 설정으로 실행 가능한 Agent의 Card이며, Agent가 미설정 상태이면 `null`이다.
+인증된 미리보기는 private 프로젝트나 A2A 비활성 상태에서도 접근 가능한 사용자에게 제공한다.
+`cardUrl`은 공개 Card를 제공할 수 있을 때만 반환하며 private·비활성·미설정 상태에서는 `null`이다.
 
 sync 엔드포인트는 `GET` 은 member 에게 답하고 `POST` 는 admin 권한을 요구한다. 레지스트리 테스트
 오퍼레이션은 `member` tier 를 요구하고, 등록과 dispatch 때 쓰는 것과 같은 SSRF 가드를 적용한다.
@@ -1232,7 +1234,7 @@ Slack 답글은 `slack:{channel}:{threadTs}`, 인바운드 A2A 메시지는 `a2a
 }
 ```
 
-`files` 는 도구가 만들어 낸 문서다. 바이트는 artifact 로 보관되고 런의 스트림에서 떼어내지므로,
+`files` 는 도구가 만들어 낸 문서다. 바이트는 artifact 로 보관되고 런의 스트림에서 제거되므로,
 여기 실리는 것은 파일이 아니라 **서명된 다운로드 주소**다. 서명은 수명이 짧다 (API 응답에는 15분,
 링크가 지속되는 기록으로 들어가는 곳. Slack 스레드, 저장된 A2A task. 에는 7일). artifact 자체는
 그 project 의 갤러리에 남는다. 오브젝트 스토리지가 없는 배포에서는 바이트를 떼어내지 않으므로,
@@ -1277,8 +1279,8 @@ OpenAI Chat Completions 호환 형태로 같은 Agent 도구 루프를 실행한
 ] } ] }
 ```
 
-**이미지 출력.** 런이 만들어 낸 이미지(`GenerateImage` / `EditImage` 빌트인, 또는 `image`
-subagent)는 OpenAI 스키마에 자리가 없으므로 확장으로 함께 실려 간다: completion 객체의
+**이미지 출력.** Agent의 `GenerateImage` / `EditImage` 도구가 만든 이미지는
+OpenAI 스키마에 자리가 없으므로 확장으로 함께 실려 간다: completion 객체의
 `images: [ { b64, mimeType, prompt? } ]`, 그리고 스트림에서는 `choices[0].delta.images`
 프레임이다. 이 필드를 모르는 클라이언트는 그냥 무시한다.
 
@@ -1735,8 +1737,7 @@ byteSize? }`. 15분 서명 URL). 로 스레드의 메시지가 되고, 클라이
 
 `threadId` 는 런의 conversation(`agui:{caller}:{threadId}`)이다. 한 스레드의 모든 런에 같은
 값을 보낸다. `tools` 는 agent project 에 제공되고 클라이언트가 실행한다: 하나를 부른 턴이 런의
-마지막이고, 결과는 다음 런의 `messages` 에 `tool` 메시지로 돌아온다. 다른 타입의 project 에
-선언된 tool 은 `agent-studio.warning` 으로 보고된다.
+마지막이고, 결과는 다음 런의 `messages` 에 `tool` 메시지로 돌아온다.
 
 ## 플랫폼 엔드포인트
 

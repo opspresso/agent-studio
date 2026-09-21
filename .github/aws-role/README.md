@@ -43,5 +43,5 @@ aws iam attach-role-policy --role-name github--agent-studio-ecr \
 
 tag 실행에서 OIDC role 획득과 지정 repository 게시를 확인하고, PR에는 게시 job이 실행되지
 않도록 workflow 조건도 검사한다. AWS의 tag trust만으로 GitHub Release 게시를 제한할 수 없다.
-현재 workflow 제약은 [미완료 작업](../../docs/MILESTONES.md#release-event-gating),
-릴리스 완료 판정은 [운영 문서](../../docs/OPERATIONS.md#릴리스-파이프라인)에 있다.
+현재 workflow의 게시 조건과 릴리스 완료 판정은
+[운영 문서](../../docs/OPERATIONS.md#릴리스-파이프라인)에 있다.
