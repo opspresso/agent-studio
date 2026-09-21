@@ -53,7 +53,7 @@ test.beforeEach(async ({ page }) => {
       }
       if (route.request().method() === "POST") {
         const model = route.request().postDataJSON() as RegisteredModel;
-        saves.push(model); selected.push(model);
+        saves.push(model); selected = [...selected.filter(item => item.id !== model.id), model];
       }
       return route.fulfill({ json: { models: selected } });
     }
@@ -193,4 +193,32 @@ test("restores provider, query, type, capability filters, selected-only and sort
   await expect(zeta).toContainText("Selected");
   await page.getByRole("button", { name: "Reset filters" }).click();
   await expect(page.getByRole("article")).toHaveCount(4);
+});
+
+test("a removed provider preference cannot hide the remaining registered models", async ({ page }) => {
+  await page.getByRole("article").filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await expect.poll(() => selected.length).toBe(1);
+  selected.push({ ...selected[0]!, id: "other/temporary", wireId: "temporary", provider: "other", displayName: "Temporary" });
+  await page.goto(`${base}/selected`);
+  await page.getByRole("combobox", { name: "Providers", exact: true }).click();
+  await page.getByRole("option", { name: "other", exact: true }).click();
+  await expect(page.getByRole("article")).toHaveCount(1);
+  selected = selected.filter(model => model.provider !== "other");
+  await page.reload();
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(page.getByRole("article")).toContainText("Zeta");
+});
+
+test("editing uses the registration rules without retaining obsolete output types", async ({ page }) => {
+  await page.getByRole("article").filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
+  await expect.poll(() => selected.length).toBe(1);
+  await page.goto(`${base}/registered`);
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("dialog").getByRole("textbox", { name: "Name", exact: true }).fill("Edited model");
+  await page.getByRole("dialog").getByRole("combobox", { name: "Model type", exact: true }).click();
+  await page.getByRole("option", { name: "Embedding", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(selected[0]).toMatchObject({ id: "fixture/vendor/zeta", wireId: "vendor/zeta", displayName: "Edited model", type: "embedding", maxTokens: 0, pricing: { cachedInputPer1M: 1 } });
+  expect(selected[0]?.outputModalities).toBeUndefined();
 });

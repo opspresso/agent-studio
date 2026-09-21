@@ -62,9 +62,7 @@ export function modelPriceLabel(
     return `${formatModelPrice(perAudioMinute)} / audio minute`;
   }
   if (imageOutputPer1M === undefined && perImage === undefined) {
-    // Zero on both sides is a self-hosted model's stated price — the registry
-    // refuses it everywhere else — and `$0.00 in · $0.00 out` reads like
-    // missing data rather than a free channel.
+    // Explicit zero prices are free; missing pricing was handled above.
     if (inputPer1M === 0 && outputPer1M === 0) {
       return "Free";
     }

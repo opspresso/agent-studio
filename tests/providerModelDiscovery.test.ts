@@ -130,6 +130,16 @@ describe("provider model discovery", () => {
     expect(models[2]?.pricing).toBeUndefined();
   });
 
+  it("uses a live image-token rate instead of an older catalog's per-image estimate", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data: [{
+      id: "google/gemini-3.1-flash-image", architecture: { output_modalities: ["image"] },
+      pricing: { prompt: "0.000001", completion: "0.000003", image_output: "0.0001" },
+    }] })));
+    const [model] = await createProviderModelDiscovery().list(provider("openrouter"));
+    expect(model?.pricing?.imageOutputPer1M).toBe(100);
+    expect(model?.pricing?.perImage).toBeUndefined();
+  });
+
   it("uses native Anthropic pagination and a provider kind distinct from its registration name", async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(Response.json({ data: [{ id: "claude-a", display_name: "Claude A", max_input_tokens: 5000, max_tokens: 1000, capabilities: { thinking: { supported: true } } }], has_more: true, last_id: "claude-a" }))

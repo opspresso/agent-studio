@@ -65,7 +65,7 @@ Google도 필요하면 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 함께 �
 오디오 전사는 선택 기능이다. HTTP 앱과 같은 이미지의 `node build/audio-worker.cjs`를 별도 process로
 실행한다. 로컬 `.env.local`을 사용할 때는 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`로 실행한다.
 환경변수가 이미 주입된 환경에서는 `pnpm worker:audio`를 사용한다. DB 초기화는 앱 또는 기존 migration 명령으로
-먼저 수행한다. worker는 카탈로그·self-hosted 선언을 주기적으로 갱신하고 작업과 원본 만료를 처리한다.
+먼저 수행한다. worker는 DB의 선택 모델·프로바이더 설정을 주기적으로 읽고 작업과 원본 만료를 처리한다.
 여러 파일은 DB 큐에 접수하며 프로젝트마다 한 건씩 순차 실행한다. `maxActive`는 대기·진행 작업을
 합친 접수 상한이고 `maxPerOccurrence`는 한 요청에서 접수할 수 있는 새 작업 수다.
 앱과 worker는 같은 큐 스키마 버전을 사용해야 한다. 큐 인덱스 변경을 포함한 업그레이드는 구버전
@@ -101,7 +101,7 @@ Agent 설정의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저
 
 Workspace는 선택 기능이다. `sandbox/Dockerfile`로 별도 실행 이미지를 만들고, 아래처럼
 실행 이미지와 네트워크를 연결한다. Agent 설정에서 워크스페이스 도구를 켜고 프로젝트 전용 탭에서
-설정한다. 네이티브 Runtime 모델은 Models에서 선택한다. 일반 작업에는 저장소가 필요하지 않다.
+설정한다. 네이티브 Runtime 모델은 Settings → Models → 모델 사용 설정에서 선택한다. 일반 작업에는 저장소가 필요하지 않다.
 
 ```bash
 docker build -t agent-studio-workspace:local sandbox

@@ -25,6 +25,19 @@ beforeEach(async () => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); invalidateSettingsCache(); });
 
 describe("Workspace runtime model selection", () => {
+  it.each(["sigv4", "missing-key"])("rechecks a provider changed to %s before committing the selection", async change => {
+    let reads = 0;
+    const selecting = createWorkspaceRuntimeModelUseCases({ repository: settingsRepository, invalidate: invalidateSettingsCache, now: () => now,
+      channels: async () => {
+        if (++reads === 2) await settingsRepository.update(current => ({ ...current, updatedAt: now.toISOString(), llmProviders: [{
+          ...channels[0]!, apiKey: "", auth: change === "sigv4" ? "sigv4" : "bearer",
+        }] }));
+        return channels;
+      },
+    });
+    await expect(selecting.select("codex", openai.id, "admin@test")).rejects.toMatchObject({ status: 400 });
+    expect((await settingsRepository.get())?.workspaceModels).toBeUndefined();
+  });
   it("starts with only command and rejects incompatible, hidden and unconfigured models", async () => {
     expect(await api.getView()).toMatchObject({ selections: {}, available: ["command"] });
     await expect(api.select("claude", openai.id, "admin@test")).rejects.toMatchObject({ status: 400 });

@@ -29,6 +29,7 @@ function Fixture() {
     <Stack maw={760} mx="auto" p="md">
       <Card><SecretInput label="Provider key" value={draft} onChange={setDraft} storedValue={stored} allowReset />
         <Button mt="sm" onClick={() => { setStored(draft ? `next${"•".repeat(64)}tail` : ""); setDraft(draft ? `next${"•".repeat(64)}tail` : ""); }}>Save provider</Button>
+        <Button onClick={() => setDraft(stored)}>Save with unchanged mask</Button>
         <output aria-label="Input unchanged">{String(draft === stored)}</output>
       </Card>
       <Card><SecretControl key={identity} label={identity} configured={configured} masked={mask}

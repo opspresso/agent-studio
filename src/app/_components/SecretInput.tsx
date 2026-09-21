@@ -37,6 +37,7 @@ export function SecretInput({ value, onChange, storedValue, allowReset = false, 
       onChange={event => {
         const next = event.currentTarget.value;
         if (!next) setVisible(false);
+        setReplacing(next.length === 0);
         onChange(next || storedValue || "");
       }} />
       : <TextInput label={fieldLabel} description={description} value={resetting ? "" : compactSecretMask(storedValue!)} readOnly disabled={disabled}

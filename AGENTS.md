@@ -216,7 +216,9 @@ key, cap, formatter, error identity, or collapse rule, search
 
 - Models are deployment-owned selections in Settings. Provider discovery never enables a model.
   `providerModels.ts` owns registration shapes; `models.ts` owns runtime facts and pricing.
-  There is no external model catalog or production snapshot. Self-hosted connections use the same
+  Published facts come from the committed `opspresso/agent-models` snapshot, maintained with
+  `pnpm sync-models`. Discovery uses it only to fill missing facts on exact provider/wire ID matches;
+  boot and execution never fetch it or enroll its models. Self-hosted connections use the same
   registration flow and may have distinct names, endpoints and model types.
 - Image caps and data-URL rules live in `src/domain/llm/imageLimits.ts`; document caps live in
   `documentLimits.ts`. Never copy either locally.

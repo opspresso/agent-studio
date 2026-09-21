@@ -3,28 +3,26 @@
 import { LoadingText } from "@/app/_components/PageState";
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Select, Stack  } from "@mantine/core";
+import { Alert, Select, Stack } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { ModelSelectionSection } from "@/app/models/ModelSelectionSection";
 import { WorkspaceModelsSection } from "@/app/models/WorkspaceModelsSection";
 import type { ModelsCatalogResponse } from "@/app/api/models/catalog/route";
-import type { ModelRegistryResponse } from "@/app/api/models/registry/route";
 import type { DefaultModelResponse } from "@/app/api/models/default/route";
 
-interface UsageView { catalog: ModelsCatalogResponse; registered: ModelRegistryResponse; selected: DefaultModelResponse }
+interface UsageView { catalog: ModelsCatalogResponse; selected: DefaultModelResponse }
 export default function ModelUsagePage() {
   const t = useT();
   const [view, setView] = useState<UsageView>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
-    const [catalog, registered, selected] = await Promise.all([
+    const [catalog, selected] = await Promise.all([
       fetch("/api/models/catalog").then(response => readJson<ModelsCatalogResponse>(response)),
-      fetch("/api/models/registry").then(response => readJson<ModelRegistryResponse>(response)),
       fetch("/api/models/default").then(response => readJson<DefaultModelResponse>(response)),
     ]);
-    return { catalog, registered, selected };
+    return { catalog, selected };
   }, []);
   useEffect(() => {
     let current = true;
@@ -36,8 +34,8 @@ export default function ModelUsagePage() {
     if (!model || busy) return;
     setBusy(true); setError(undefined);
     try {
-      await readJson<DefaultModelResponse>(await fetch("/api/models/default", { method: "PUT", headers: jsonHeaders, body: JSON.stringify({ model }) }));
-      setView(await load());
+      const selected = await readJson<DefaultModelResponse>(await fetch("/api/models/default", { method: "PUT", headers: jsonHeaders, body: JSON.stringify({ model }) }));
+      setView(current => current ? { ...current, selected } : current);
     } catch (error) { setError(error instanceof Error ? error.message : "Could not save default model"); }
     finally { setBusy(false); }
   }
@@ -47,7 +45,7 @@ export default function ModelUsagePage() {
     {!view && !error && <LoadingText />}
     {view && <>
       <Select label={t("modelAdmin.default")} placeholder={t("models.selection.unconfigured")} searchable disabled={busy} allowDeselect={false}
-        value={view.selected.model} data={view.registered.models.filter(model => ["text", "decisions"].includes(model.type) && model.capabilities.tools).map(model => ({ value: model.id, label: `${model.displayName} (${model.provider})` }))} onChange={model => void select(model)} />
+        value={view.selected.model} data={view.catalog.models.filter(model => ["text", "decisions"].includes(model.type) && model.capabilities.tools).map(model => ({ value: model.id, label: `${model.displayName} (${model.provider})` }))} onChange={model => void select(model)} />
       <WorkspaceModelsSection />
       <ModelSelectionSection models={view.catalog.models} selections={view.catalog.selections} rerankerMinScore={view.catalog.rerankerMinScore}
         available={view.catalog.selectionAvailable} onChanged={async () => setView(await load())} />

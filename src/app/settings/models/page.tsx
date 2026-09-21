@@ -7,13 +7,12 @@ import { LoadingText, EmptyState } from "@/app/_components/PageState";
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { useT } from "@/app/_i18n/provider";
-import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
+import { readJson } from "@/app/_lib/httpClient";
 import { ModelCollection } from "@/app/models/ModelCollection";
 import { MODEL_BROWSER_KEYS, deserializeModelProvider } from "@/app/models/modelTable";
 import { REGISTRY_MODEL_TYPES, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
 import type { SettingsView } from "@/application/settings/settingsUseCases";
-import type { ModelRegistryResponse } from "@/app/api/models/registry/route";
-import type { ModelDiscoveryResponse } from "@/app/api/models/discover/route";
+import { deleteRegisteredModel, discoverProviderModels, listRegisteredModels, saveRegisteredModel } from "@/app/models/api";
 
 export default function ModelSelectionPage() {
   const t = useT();
@@ -41,10 +40,10 @@ export default function ModelSelectionPage() {
     let current = true;
     void Promise.all([
       fetch("/api/settings").then(response => readJson<SettingsView>(response)),
-      fetch("/api/models/registry").then(response => readJson<ModelRegistryResponse>(response)),
+      listRegisteredModels(),
     ]).then(([settings, selection]) => {
       if (!current) return;
-      setProviders(settings.llmProviders.items); setRegistered(selection.models);
+      setProviders(settings.llmProviders.items); setRegistered(selection);
     }).catch(error => { if (current) setError(error instanceof Error ? error.message : "Could not load models"); });
     return () => { current = false; generation.current++; };
   }, []);
@@ -53,8 +52,8 @@ export default function ModelSelectionPage() {
     const request = ++generation.current;
     setBusy(true); setError(undefined);
     try {
-      const result = await readJson<ModelDiscoveryResponse>(await fetch(`/api/models/discover?provider=${encodeURIComponent(provider)}`));
-      if (request === generation.current) setCatalogs(previous => new Map(previous).set(provider, result.models));
+      const result = await discoverProviderModels(provider);
+      if (request === generation.current) setCatalogs(previous => new Map(previous).set(provider, result));
     } catch (error) { if (request === generation.current) setError(error instanceof Error ? error.message : "Could not discover models"); }
     finally { if (request === generation.current) setBusy(false); }
   }
@@ -62,10 +61,8 @@ export default function ModelSelectionPage() {
     if (!provider || pending) return;
     setAdding(model.wireId); setError(undefined);
     try {
-      const result = await readJson<ModelRegistryResponse>(await fetch("/api/models/registry", {
-        method: "POST", headers: jsonHeaders, body: JSON.stringify(registrationFromDiscovery(provider, model)),
-      }));
-      setRegistered(result.models); setManual(false); setManualId("");
+      const result = await saveRegisteredModel(registrationFromDiscovery(provider, model));
+      setRegistered(result); setManual(false); setManualId("");
     } catch (error) { setError(error instanceof Error ? error.message : "Could not register model"); }
     finally { setAdding(undefined); }
   }
@@ -73,7 +70,7 @@ export default function ModelSelectionPage() {
     if (pending || !await confirm({ title: t("modelAdmin.deleteModel"), message: t("modelAdmin.deleteModelHint"), confirmLabel: t("modelAdmin.delete") })) return;
     setRemoving(model.wireId); setError(undefined);
     try {
-      await assertOk(await fetch(`/api/models/registry?id=${encodeURIComponent(model.id)}`, { method: "DELETE" }));
+      await deleteRegisteredModel(model.id);
       setRegistered(previous => previous.filter(item => item.id !== model.id));
     } catch (error) { setError(error instanceof Error ? error.message : "Could not delete model"); }
     finally { setRemoving(undefined); }

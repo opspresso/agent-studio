@@ -97,7 +97,7 @@ Session 계약을 직접 사용하고, 배포별 저장·모델·자격 증명�
 | `src/app/api/telegram/webhook/_lib/` | Telegram 실행·클라이언트·transcript deps |
 | `src/app/api/teams/messages/_lib/` | Teams 실행·클라이언트·transcript deps |
 | `src/app/api/a2a/[name]/route.ts` | 프로젝트 카드와 실행 deps 위의 요청별 SDK handler |
-| `src/instrumentation.ts` | 설정 검증·migration·관리자 bootstrap·감사 sink·모델 카탈로그·managed MCP 복구 |
+| `src/instrumentation.ts` | 설정 검증·migration·관리자 bootstrap·감사 sink·선택 모델 로드·managed MCP 복구 |
 
 추가로 `lib/auth.ts`, `runtime-settings.ts`, `memberAccess.ts`만 어댑터에 직접 닿는
 lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 번 바인딩하거나 실행 경로에

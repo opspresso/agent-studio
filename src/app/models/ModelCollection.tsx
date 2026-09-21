@@ -4,16 +4,14 @@ import { useMemo } from "react";
 import { useLocalStorage } from "@mantine/hooks";
 import { Badge, Button, Card, Checkbox, Group, Pagination, Select, Stack, Text } from "@mantine/core";
 import { CardList } from "@/app/_components/CardGrid";
-import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
+import { CatalogSearch } from "@/app/_components/CatalogSearch";
 import { EmptyState } from "@/app/_components/PageState";
 import { formatModelPrice, modelPriceLabel } from "@/app/_components/modelOptions";
 import { useT } from "@/app/_i18n/provider";
 import { contextWindowLabel } from "@/domain/llm/models";
-import { REGISTRY_MODEL_TYPES, type DiscoveredModel } from "@/domain/llm/providerModels";
-import { DEFAULT_MODEL_BROWSER_STATE, MODEL_BROWSER_KEYS, deserializeModelBrowserState, modelOutputTypes, nextSort, sortModelRows, type ModelBrowserState } from "./modelTable";
+import { REGISTRY_MODEL_TYPES } from "@/domain/llm/providerModels";
+import { activeModelProvider, DEFAULT_MODEL_BROWSER_STATE, MODEL_BROWSER_KEYS, MODEL_FILTER_CAPABILITIES, deserializeModelBrowserState, filterModelRows, modelOutputTypes, nextSort, type ModelBrowserState, type ModelRow } from "./modelTable";
 
-const capabilities = ["tools", "imageInput", "reasoning", "structuredOutput"] as const;
-type ModelRow = DiscoveredModel & { id?: string; provider?: string };
 
 /** Discovery, selected models and administration share the same facts, filters and ordering. */
 export function ModelCollection<T extends ModelRow>({ models, provider, emptyText, renderActions, isSelected, scope }: {
@@ -29,14 +27,11 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
     key: MODEL_BROWSER_KEYS[scope], defaultValue: DEFAULT_MODEL_BROWSER_STATE, deserialize: deserializeModelBrowserState, sync: false,
   });
   const { query, type, capabilities: flags, sortKey, direction, page, selectedOnly } = preferences;
-  const selectedProvider = provider ? null : preferences.provider;
+  const selectedProvider = provider ? null : activeModelProvider(models, preferences.provider);
   const update = (patch: Partial<ModelBrowserState>) => setPreferences(current => ({ ...current, page: 1, ...patch }));
   const providers = [...new Set(models.flatMap(model => model.provider ? [model.provider] : []))].sort();
-  const filtered = useMemo(() => sortModelRows(models.filter(model =>
-    (!type || modelOutputTypes(model).includes(type)) && (!selectedProvider || model.provider === selectedProvider) &&
-    (!isSelected || !selectedOnly || isSelected(model)) &&
-    flags.every(flag => model.capabilities?.[flag] === true) && matchesFilter(query, model.displayName, model.wireId, model.provider, model.maker),
-  ), sortKey, direction), [models, type, selectedProvider, flags, query, sortKey, direction, selectedOnly, isSelected]);
+  const filtered = useMemo(() => filterModelRows(models, { ...preferences, provider: selectedProvider }, isSelected),
+    [models, preferences, selectedProvider, isSelected]);
   const pages = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(page, pages);
   return <Stack gap="md">
@@ -51,7 +46,7 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
     </Group>
     <Group justify="space-between" gap="md">
       <Group gap="md">{isSelected && <Checkbox label={t("models.selectedOnly")} checked={selectedOnly} onChange={event => update({ selectedOnly: event.currentTarget.checked })} />}
-        {capabilities.map(flag => <Checkbox key={flag} label={t(`models.capability.${flag}`)} checked={flags.includes(flag)} onChange={event => {
+        {MODEL_FILTER_CAPABILITIES.map(flag => <Checkbox key={flag} label={t(`models.capability.${flag}`)} checked={flags.includes(flag)} onChange={event => {
         update({ capabilities: event.currentTarget.checked ? [...flags, flag] : flags.filter(value => value !== flag) });
       }} />)}</Group>
       <Group gap="xs" role="group" aria-label={t("models.sort")}>
@@ -72,7 +67,7 @@ export function ModelCollection<T extends ModelRow>({ models, provider, emptyTex
             {modelOutputTypes(model).length ? modelOutputTypes(model).map(type => <Badge key={type}>
               {REGISTRY_MODEL_TYPES.includes(type as typeof REGISTRY_MODEL_TYPES[number]) ? t(`models.type.${type as typeof REGISTRY_MODEL_TYPES[number]}`) : type}
             </Badge>) : <Badge>{t("modelAdmin.unknownType")}</Badge>}
-            {capabilities.filter(flag => model.capabilities?.[flag] === true).map(flag => <Badge key={flag} variant="outline" color="gray">{t(`models.capability.${flag}`)}</Badge>)}
+            {MODEL_FILTER_CAPABILITIES.filter(flag => model.capabilities?.[flag] === true).map(flag => <Badge key={flag} variant="outline" color="gray">{t(`models.capability.${flag}`)}</Badge>)}
           </Group>
           <div>
             <Text size="sm" fw={500}>{modelPriceLabel(model.pricing, model.type)}</Text>

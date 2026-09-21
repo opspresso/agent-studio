@@ -65,6 +65,15 @@ test("shows and copies only a revealed value, and discards it on hide or resourc
   await expect(page.getByRole("textbox", { name: "Other project token" })).not.toHaveValue("synthetic-revealed-key");
 });
 
+test("finishes replacement even when the saved key has identical visible edges and length", async ({ page }) => {
+  const input = page.getByLabel("Provider key", { exact: false });
+  await page.getByRole("button", { name: "Replace", exact: true }).first().click();
+  await input.fill("head-synthetic-replacement-tail");
+  await page.getByRole("button", { name: "Save with unchanged mask" }).click();
+  await expect(input).toHaveAttribute("readonly", "");
+  await expect(input).toHaveValue("head••••••••tail");
+});
+
 test("confirms replacement and revocation, and returns to generation after revocation", async ({ page }) => {
   const token = page.getByRole("group", { name: "Project token", exact: true });
   await token.getByRole("button", { name: "Regenerate", exact: true }).click();

@@ -143,12 +143,8 @@ export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
  * two of these fields *are* credentials, and a third is the admin list, so
  * recording what changed must never record what it changed to.
  *
- * Diffed against what was stored rather than read off the patch's key set,
- * because the settings page submits every field on every save. Keys-carried
- * would make the detail a constant listing all ten, which says only "the form
- * was saved" — the one thing the row already says by existing. "Who changed the
- * admin list last quarter" is the question this trail exists for, and a constant
- * cannot answer it.
+ * Compare stored values rather than submitted field names: an unchanged mask
+ * or a value equal to the environment does not constitute a settings change.
  *
  * The comparison is on the *stored* form, so a masked secret resubmitted
  * unchanged compares equal and a cleared override compares against `undefined`.
@@ -353,13 +349,9 @@ export function createSettingsUseCases(
     /**
      * Merge semantics, plus one rule about what an override *is*.
      *
-     * A submitted value equal to the environment's is not stored. The page
-     * posts every field on every save, so without this the first save turned
-     * all ten into overrides — each one a row that reads `override` while
-     * naming the value it was already falling back to, and, worse, one that
-     * keeps naming it after the deployment's env var moves on. "Same as env"
-     * has no way to say "and pin it there", which is the only thing the stored
-     * copy would add.
+     * A submitted value equal to the environment is not pinned as an override.
+     * Later deployment changes remain effective until an operator stores a
+     * different value explicitly.
      */
     async update(patch, userEmail) {
       let changed: string[] = [];

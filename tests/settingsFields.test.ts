@@ -3,7 +3,7 @@ import type { SettingKey, SettingsView } from "@/application/settings/settingsUs
 import { SETTINGS_FIELDS, settingsPatch } from "@/app/settings/fields";
 
 const current = {
-  publicBaseUrl: "https://studio.example.test", artifactAccessMode: "proxied",
+  publicBaseUrl: "https://studio.example.test", artifactAccessMode: "proxied", unknownModelPolicy: "allow",
   adminEmails: "admin@example.test", allowedEmailDomains: "example.test",
   pluginsRepo: "org/plugins", pluginsRepoBranch: "main",
   githubToken: "****************", a2aApiKey: "****************",
@@ -27,6 +27,10 @@ describe("settings tab updates", () => {
   });
   it("preserves an intentional clear without resubmitting unrelated secrets", () => {
     expect(settingsPatch("keys", { ...current, githubToken: "" }, view)).toEqual({ githubToken: "" });
+  });
+  it("saves the unpriced-model policy from General without touching model selections", () => {
+    expect(settingsPatch("general", { ...current, unknownModelPolicy: "refuse" }, view)).toEqual({ unknownModelPolicy: "refuse" });
+    expect(settingsPatch("keys", { ...current, unknownModelPolicy: "refuse" }, view)).toEqual({});
   });
   it("never clears fields missing from a partial draft", () => {
     const values: Partial<Record<SettingKey, string>> = { pluginsRepo: "org/new" };

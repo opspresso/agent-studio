@@ -92,14 +92,6 @@ export const en = {
   "settings.source.default": "Default",
   "settings.source.unset": "Not set",
   "settings.overrideHint": "Only changed fields are saved. Clearing an override restores its environment value. Unchanged masked secrets are preserved.",
-  "settings.sharedA2aKey": "Shared A2A key actions",
-  "settings.rotateTitle": "Replace the shared A2A key?",
-  "settings.rotateHint": "The existing shared key will stop authenticating new requests.",
-  "settings.generate": "Generate key",
-  "settings.regenerate": "Replace key",
-  "settings.revealKey": "Reveal key",
-  "settings.hideKey": "Hide",
-  "settings.keyIssued": "The new key is active. Update clients that used the previous shared key.",
   "settings.clientKeys": "Client keys",
   "settings.clientKeysHint": "Issue a separate key for each A2A client so you can identify or revoke it independently.",
   "settings.issueKey": "Issue key",
@@ -144,6 +136,10 @@ export const en = {
   "modelAdmin.enabled": "Selected",
   "modelAdmin.select": "Select",
   "modelAdmin.add": "Add model",
+  "settings.field.unknownModelPolicy": "Models without pricing",
+  "settings.hint.unknownModelPolicy": "Choose whether registered models with missing prices can run. Unregistered models are always refused.",
+  "settings.unknownModelPolicy.allow": "Allow execution and report missing costs",
+  "settings.unknownModelPolicy.refuse": "Require configured prices",
   "modelAdmin.discoverHint": "Discover models to browse this provider. Saved selections appear here immediately.",
   "models.selectedOnly": "Selected models only",
   "modelAdmin.chooseType": "Choose model type",
@@ -717,7 +713,7 @@ export const en = {
   "guide.workspaces.title": "Workspaces and isolated execution",
   "guide.workspaces.body": "A Workspace retains files and a runtime session. A Sandbox is the temporary compute that runs them. The agent chat coordinates work, while a separate Workspace view shows execution, diffs, checks and Git reviews.",
   "guide.workspaces.setup": "1. Confirm execution is enabled",
-  "guide.workspaces.setupBody": "Enable Workspace tools in the Agent settings. Its Workspace tools tab manages repositories, access mode and default runtime. Select native runtime models in Models. The operator connects the Sandbox backend and worker; skills and GitHub connections do not enable tools on their own. Signed-in members can use enabled agents or the Workspace selector in Chats.",
+  "guide.workspaces.setupBody": "Enable Workspace tools in the Agent settings. Its Workspace tools tab manages repositories, access mode and default runtime. Select native runtime models in Settings → Models → Model usage. The operator connects the Sandbox backend and worker; skills and GitHub connections do not enable tools on their own. Signed-in members can use enabled agents or the Workspace selector in Chats.",
   "guide.workspaces.tasks": "2. Pick the task workflow",
   "guide.workspaces.tasksBody": "Use task skills for PR review, issue fixes, feature implementation, refactoring, dependency upgrades, CI investigation, security remediation and project generation. File conversion, data analysis and scripted automation also use Workspaces. Read-only repository investigation can use MCP without creating compute. A skill supplies instructions; the offered tools and deployment determine what can execute.",
   "guide.workspaces.reuse": "3. Continue the selected Workspace",
@@ -824,8 +820,7 @@ export const en = {
   "guide.security.visibilityBody":
     "A public project is accessible to signed-in users of this installation; it is not anonymous access to every API. Private projects limit access to the owner, invited emails, and administrators. Invitations allow viewing and running, not editing. Owners and administrators manage Agent settings, integrations, traces, and project-wide artifacts. Machine credentials have their own access rules.",
   "guide.security.credentials": "Secrets and shared links",
-  "guide.security.credentialsBody":
-    "Do not put API keys in prompts, skill text, browser code, screenshots, or support messages. Use the dedicated credential fields. A masked value is a display placeholder, not a working key to copy. Treat signed artifact links as credentials: someone holding a link may read the file until it expires. If a token leaks, revoke or regenerate it and update its callers.",
+  "guide.security.credentialsBody": "Saved keys display four characters at each end; values of eight characters or fewer remain hidden. Replace opens a separate draft, and clearing or cancelling the draft keeps the saved key. Reset to environment explicitly removes a settings override. Studio-issued project, Webhook and A2A credentials share Show, Hide, Copy and supported generation or revocation controls. Copy appears only while plaintext is shown; replacement and revocation require confirmation. Browser preferences do not store credentials. Treat signed artifact URLs as credentials too.",
   "guide.security.pii": "PII filtering is a limited protection",
   "guide.security.piiBody":
     "The Agent’s PII filtering replaces recognized patterns before sending model text and restores them in user-facing output. It is not complete anonymization: restored information can appear in tool arguments, saved answers, reasoning, and files. Discovery embedding/rerank queries and memory recall queries are outside this filter. Use approved model and tool services for sensitive work.",
@@ -840,14 +835,13 @@ export const en = {
   "guide.admin.membersBody":
     "In Members, find the user and change the tier when they need project creation or API-token access. Profile is where the user checks their resulting limits. Administrators listed in ADMIN_EMAILS have a fixed admin tier; removing an email from the list does not automatically demote its stored tier.",
   "guide.admin.settings": "Settings overrides and deployment values",
-  "guide.admin.settingsBody":
-    "Settings manages the public base URL, artifact access mode, access lists, LLM channels, plugin repository, and A2A credentials. Saved values override deployment environment values, which override defaults. Saving an empty field removes that override and falls back to the environment; for a secret, this is not a guarantee that the service becomes disabled. Database, encryption, sign-in provider, storage connection, retention, and internal-host settings remain deployment configuration.",
+  "guide.admin.settingsBody": "Settings groups General, Plugins, Models and Keys. General manages public access, artifact access and execution with unpriced registered models. Plugins manages the repository; Models manages provider connections and selected models; Keys manages GitHub and A2A credentials. Only changed fields are saved. Deployment settings still own the database, encryption, sign-in providers, storage and retention.",
   "guide.admin.models": "Connect and verify models",
-  "guide.admin.modelsBody":
-    "Configure the default LLM or provider channel URL and credentials in Settings, including the API base path required by the endpoint. When changing a URL, enter its matching key too; the old masked key cannot be reused for a new destination. In Models, inspect capabilities and availability, run Test, then run a short project. Catalog entries describe models served by the configured endpoint.",
+  "guide.admin.modelsBody": "In Settings → Models → Providers, register the provider type, a unique connection name, its API base URL and key. Self-hosted connections use the same flow and may omit a key. A changed credential destination requires a matching new key. In Model usage, choose the default, Workspace and search models from registered compatible models.",
+  "guide.admin.modelSelection": "Browse, select and maintain models",
+  "guide.admin.modelSelectionBody": "Model selection always loads the provider’s complete list. Compare output types, independent Tools/Vision/Reasoning badges, context limits and prices; sort by name or price. Add model registers immediately. Selected models only narrows the view and allows deletion; Registered models offers editing and availability checks. Provider, search, filters and ordering are remembered in this browser. Models is the read-only list of saved selections. A successful listing does not prove that inference will succeed; verify with a short project run.",
   "guide.admin.offline": "Catalog and retrieval in an offline deployment",
-  "guide.admin.offlineBody":
-    "Upload a model catalog document in Models when remote synchronization is unavailable. Use Self-hosted declarations for models actually served by your internal endpoint. Capability discovery requires CATALOG_ENABLED=true in the deployment and a working embedding setup; rerank is optional. Changing embedding requires rebuilding the index. Unknown model IDs follow the deployment's allow/refuse policy and may lack cost estimates.",
+  "guide.admin.offlineBody": "Saved models and internal provider connections work without the public internet. Bundled published metadata only fills missing facts; it does not register models. The deployment operator can refresh that metadata from a local catalog file. Capability search requires an enabled search service and a registered embedding model; rerank is optional. Changing embedding rebuilds the index. Unregistered models are always refused; General controls whether registered models with unknown prices may run.",
   "guide.admin.artifacts": "Choose how users reach artifacts",
   "guide.admin.artifactsBody":
     "Set PUBLIC_BASE_URL to the application's user-facing address. In Settings, proxied artifact access sends bytes through the application and suits a store that browsers cannot reach. authenticated returns an expiring storage URL, so browsers need direct storage access. public requires public-read storage policy and lets anyone with the URL read it. Validate by generating, reopening, and downloading a file from a user's network.",
@@ -903,8 +897,7 @@ export const en = {
   "guide.trouble.accessBody":
     "Check the configured sign-in method, allowed email domain, and account with the administrator. A missing create/edit control can be a tier or ownership restriction. For API 401, check the token and project name; for 403, check current owner tier and permissions. A private or inaccessible project can return 404, so do not assume the URL alone is wrong.",
   "guide.trouble.model": "A model is missing or a call fails",
-  "guide.trouble.modelBody":
-    "In Models, check hidden and availability states and run Test. Ask the administrator to confirm the provider URL, base path, credentials, and model ID, then save the intended model in the Agent settings. For 400, compare the request fields and image/tool requirements with API Reference. For provider errors such as 502, inspect the reported upstream error; retrying unchanged does not fix a wrong model or URL.",
+  "guide.trouble.modelBody": "Check the selected model in Models. In Settings → Models, reset filters, discover the provider’s complete list, and use Registered models to edit or check availability. Confirm the provider URL, base path, key and exact model ID before saving the Agent configuration. For 400, compare the request and image/tool requirements with API Reference. For upstream errors such as 502, inspect the reported error; repeating a wrong model or URL does not fix it.",
   "guide.trouble.limits": "429, timeout, or an incomplete answer",
   "guide.trouble.limitsBody":
     "For 429, inspect concurrent runs, project daily/monthly blocks, and personal tier usage; follow Retry-After on API responses. For a timeout or stream error, inspect the provider, slow tools, and deployment deadline. For turn-limit, output-limit, or length, narrow the task or adjust the saved settings's appropriate limit. Avoid blind retries when a tool may already have changed external data.",
@@ -1537,38 +1530,6 @@ export const en = {
   "models.showAll": "Show all",
   "models.oneVisible": "At least one model must remain visible.",
   "models.generateTestImage": "Generate test image",
-  "models.catalogUpdated": "catalog updated",
-  "models.refreshNow": "Refresh now",
-  "models.catalogFile.title": "Catalog document",
-  "models.catalogFile.lede":
-    "A catalog JSON installed here is the registry, ahead of the published catalog — for a deployment without a route to it. Remove it to follow the published catalog again.",
-  "models.catalogFile.none":
-    "No document is installed; the registry follows the published catalog or the built-in snapshot.",
-  "models.catalogFile.installed":
-    "Installed by {by} on {at} — {count} models, catalog updated {updated}",
-  "models.catalogFile.skipped": "{count} entries the registry refuses",
-  "models.catalogFile.choose": "Catalog JSON",
-  "models.catalogFile.upload": "Install",
-  "models.catalogFile.remove": "Remove",
-  "models.selfHosted.title": "Self-hosted models",
-  "models.selfHosted.lede":
-    "Models this deployment serves itself, declared here and dispatched through the selfhosted channel. The list is what the channel reports; a declared model joins the registry at zero price.",
-  "models.selfHosted.servedBy": "served by the channel",
-  "models.selfHosted.notServed": "not served",
-  "models.selfHosted.notServedHint":
-    "The channel does not list this name right now — a run will fail until it is served again.",
-  "models.selfHosted.notInstalled": "not installed",
-  "models.selfHosted.notInstalledHint":
-    "Stored, but not installed in this instance's registry — a name the published catalog also carries, or, right after saving, a replica that has not run its next catalog tick. A refusal's reason is in the server log.",
-  "models.selfHosted.empty": "The channel serves no models right now.",
-  "models.selfHosted.declare": "Declare",
-  "models.selfHosted.edit": "Edit",
-  "models.selfHosted.save": "Save",
-  "models.selfHosted.remove": "Remove",
-  "models.selfHosted.cancel": "Cancel",
-  "models.selfHosted.displayName": "Display name",
-  "models.selfHosted.context": "Context window",
-  "models.selfHosted.maxOutput": "Max output",
   "models.promoTooltip":
     "Promotional rate at the route's default endpoint, already applied — list price {list}",
   "models.reasoningNoTools":

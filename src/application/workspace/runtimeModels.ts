@@ -42,7 +42,9 @@ export function createWorkspaceRuntimeModelUseCases(deps: RuntimeModelsDeps) {
         if (modelId !== null) {
           const model = current?.registeredModels?.find(model => model.id === modelId);
           const provider = (current?.llmProviders ?? channels).find(provider => provider.name === model?.provider);
-          if (!model || !provider || !workspaceRuntimeModelCompatible(runtime, registeredModelConfig(model, providerKind(provider)))) {
+          const configured = model && provider ? registeredModelConfig(model, providerKind(provider)) : undefined;
+          const channel = provider ? { ...provider, auth: provider.auth ?? "bearer", keepModelPrefix: provider.keepModelPrefix ?? false } : undefined;
+          if (!configured || !channel || !workspaceRuntimeModelCompatible(runtime, configured) || !workspaceModelChannel(configured, [channel])) {
             throw new ValidationError("Workspace model is no longer registered or compatible");
           }
         }

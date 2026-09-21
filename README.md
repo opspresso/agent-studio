@@ -12,7 +12,7 @@
 | 영역 | 제공하는 기능 | 상세 계약 |
 |---|---|---|
 | Projects와 Agent 설정 | 현재 설정 편집·실행, 이미지 생성·편집 도구 | [실행](docs/design/execution.md) |
-| 모델 | OpenAI 호환 기본·provider 채널, fallback, 공개 카탈로그와 자체 호스팅 모델, Embedding·Rerank·Transcription 선택 | [설정](docs/CONFIGURATION.md#llm-채널) |
+| 모델 | Provider 연결·선택 모델 관리, 기능·가격 비교, fallback, 자체 호스팅과 Embedding·Rerank·Transcription·Decisions | [설정](docs/CONFIGURATION.md#llm-채널) |
 | Skills·Memory·검색 | 필요한 지침과 참고 파일 로드, Plugin 동기화, capability 검색, 연결된 MCP의 장기 Memory 회상 | [Capabilities](docs/design/capabilities.md) |
 | MCP·하위 Agent | Agent별 도구·헤더 binding, 프로젝트별 OAuth, Docker 관리형 MCP, Handoff·Agent-as-Tool·외부 Agent | [MCP](docs/design/mcp.md), [SDK 적용 범위](docs/design/sdk-capabilities.md) |
 | Chat | 비공개 대화, 암호화된 SDK Session, 도구 승인·거절·재개, 연결이 끊겨도 계속되는 실행 | [Chat](docs/design/chat.md) |

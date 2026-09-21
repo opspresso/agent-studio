@@ -72,14 +72,6 @@ export const ko: Messages = {
   "settings.source.default": "기본값",
   "settings.source.unset": "미설정",
   "settings.overrideHint": "변경한 항목만 저장한다. 저장값을 비우면 환경변수 값을 사용한다. 변경하지 않은 마스킹된 키는 유지한다.",
-  "settings.sharedA2aKey": "공유 A2A 키 관리",
-  "settings.rotateTitle": "공유 A2A 키를 교체할까요?",
-  "settings.rotateHint": "기존 공유 키로 새 요청을 인증할 수 없게 된다.",
-  "settings.generate": "키 생성",
-  "settings.regenerate": "키 교체",
-  "settings.revealKey": "키 보기",
-  "settings.hideKey": "숨기기",
-  "settings.keyIssued": "새 키가 활성화됐다. 기존 공유 키를 사용하던 클라이언트를 갱신한다.",
   "settings.clientKeys": "클라이언트 키",
   "settings.clientKeysHint": "A2A 클라이언트마다 별도 키를 발급해 호출자를 식별하고 개별적으로 폐기한다.",
   "settings.issueKey": "키 발급",
@@ -124,6 +116,10 @@ export const ko: Messages = {
   "modelAdmin.enabled": "선택됨",
   "modelAdmin.select": "선택",
   "modelAdmin.add": "모델 추가",
+  "settings.field.unknownModelPolicy": "가격 정보가 없는 모델",
+  "settings.hint.unknownModelPolicy": "등록된 모델의 가격이 미지정일 때 실행을 허용할지 정한다. 미등록 모델은 항상 거부한다.",
+  "settings.unknownModelPolicy.allow": "실행 허용 및 비용 누락 표시",
+  "settings.unknownModelPolicy.refuse": "가격 설정 후 실행",
   "modelAdmin.discoverHint": "모델 조회를 실행하면 Provider의 모델을 볼 수 있다. 저장된 선택 모델은 바로 표시한다.",
   "models.selectedOnly": "선택된 모델만 보기",
   "modelAdmin.chooseType": "모델 유형 선택",
@@ -672,7 +668,7 @@ export const ko: Messages = {
   "guide.workspaces.title": "Workspace와 격리 실행",
   "guide.workspaces.body": "Workspace는 파일과 실행 Session을 유지하고 Sandbox는 이를 실행하는 일시적 컴퓨팅 자원이다. Agent 채팅은 요청을 조율하고, 별도 Workspace 화면은 출력·Diff·검사·Git 검토를 보여 준다.",
   "guide.workspaces.setup": "1. 실행 기능 확인",
-  "guide.workspaces.setupBody": "Agent 설정에서 워크스페이스 도구를 켠다. 생성된 전용 탭에서 저장소·접근 모드·기본 런타임을 관리하고 Models에서 네이티브 런타임 모델을 선택한다. 운영자는 Sandbox 실행 서버와 worker를 연결한다. Skill·GitHub 연결만으로 도구가 켜지지는 않는다. 로그인한 member 이상이 Agent 또는 Chats의 Workspace 선택으로 작업한다.",
+  "guide.workspaces.setupBody": "Agent 설정에서 워크스페이스 도구를 켠다. 생성된 전용 탭에서 저장소·접근 모드·기본 런타임을 관리하고 Settings → Models → 모델 사용 설정에서 네이티브 런타임 모델을 선택한다. 운영자는 Sandbox 실행 서버와 worker를 연결한다. Skill·GitHub 연결만으로 도구가 켜지지는 않는다. 로그인한 member 이상이 Agent 또는 Chats의 Workspace 선택으로 작업한다.",
   "guide.workspaces.tasks": "2. 작업에 맞는 절차 선택",
   "guide.workspaces.tasksBody": "PR 리뷰, Issue 수정, 기능 구현, 리팩토링, 의존성 업그레이드, CI 조사, 보안 수정과 프로젝트 생성에 맞는 Skill을 사용한다. 파일 변환·데이터 분석·스크립트 자동화도 Workspace에서 수행할 수 있다. 원격 조회만 필요하면 MCP를 사용하고 실행 공간을 만들지 않는다. Skill은 절차를 제공하며 실행 가능 범위는 실제 도구와 배포 설정이 결정한다.",
   "guide.workspaces.reuse": "3. 선택한 Workspace 재사용",
@@ -778,8 +774,7 @@ export const ko: Messages = {
   "guide.security.visibilityBody":
     "public 프로젝트는 이 설치에 로그인한 사용자가 접근할 수 있다는 뜻이며 모든 API를 익명 공개하는 의미는 아니다. private 프로젝트는 소유자·초대 이메일·관리자로 접근을 제한한다. 초대는 조회·실행 권한이며 편집 권한이 아니다. 소유자와 관리자가 Agent 설정·연동·Trace·프로젝트 전체 Artifact를 관리한다. 기계 호출의 자격 증명에는 별도 접근 규칙이 적용된다.",
   "guide.security.credentials": "비밀값과 공유 링크",
-  "guide.security.credentialsBody":
-    "API 키를 프롬프트·스킬 본문·브라우저 코드·화면 캡처·지원 요청에 넣지 않고 전용 자격 증명 필드에 저장한다. 마스킹된 값은 표시용이며 복사해서 사용할 키가 아니다. 서명된 Artifact 링크도 자격 증명으로 취급한다. 링크를 가진 사람이 만료 전 파일에 접근할 수 있다. 토큰이 노출되면 폐기하거나 재발급하고 호출자를 갱신한다.",
+  "guide.security.credentialsBody": "저장된 키는 앞뒤 4자를 표시하고 8자 이하는 전부 숨긴다. 교체를 누르면 별도 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다. 환경변수로 복원은 설정 재정의를 명시적으로 제거한다. Studio 발급 프로젝트·Webhook·A2A 키는 보기·숨기기·복사와 지원되는 생성·폐기 동작을 공통으로 사용한다. 원문을 표시한 동안에만 복사하며 교체·폐기는 확인을 거친다. 브라우저 조회 조건에는 자격 증명을 저장하지 않는다. 서명된 Artifact URL도 자격 증명으로 취급한다.",
   "guide.security.pii": "PII 필터의 적용 범위",
   "guide.security.piiBody":
     "Agent의 PII filtering은 모델에 보낼 텍스트에서 인식한 패턴을 치환하고 사용자에게 보여 줄 결과에서 복원한다. 완전한 익명화는 아니며 도구 인자·저장된 답변·추론·파일에 복원된 정보가 포함될 수 있다. 동적 검색의 embedding/rerank 질의와 memory recall 질의는 이 필터 밖이다. 민감한 작업에는 승인된 모델과 도구 서비스를 사용한다.",
@@ -794,14 +789,13 @@ export const ko: Messages = {
   "guide.admin.membersBody":
     "Members에서 사용자를 찾아 프로젝트 생성이나 API 토큰 사용에 필요한 등급으로 변경한다. 적용된 한도는 사용자가 Profile에서 확인한다. ADMIN_EMAILS에 지정된 사용자는 admin으로 고정되며 목록에서 제거해도 저장된 등급이 자동 강등되지는 않는다.",
   "guide.admin.settings": "Settings 재정의와 배포 설정",
-  "guide.admin.settingsBody":
-    "Settings에서 공개 base URL·Artifact 접근 방식·접근 목록·LLM 채널·플러그인 저장소·A2A 자격 증명을 관리한다. 저장값이 배포 환경변수보다 우선하고 그다음 기본값을 사용한다. 빈 필드 저장은 재정의를 제거하고 환경변수로 돌아가는 동작이므로 비밀값을 비워도 해당 서비스가 꺼진다고 단정할 수 없다. DB·암호화·로그인 공급자·저장소 연결·보존 기간·내부 호스트 설정은 배포 설정에서 관리한다.",
+  "guide.admin.settingsBody": "Settings는 General·Plugins·Models·Keys 탭으로 나눈다. General에서 공개 접근·Artifact 접근 방식·가격 미지정 모델의 실행 정책을 관리한다. Plugins는 저장소, Models는 프로바이더 연결과 선택 모델, Keys는 GitHub·A2A 자격 증명을 관리한다. 변경한 항목만 저장한다. DB·암호화·로그인 공급자·스토리지·보존 기간은 배포 설정에서 관리한다.",
   "guide.admin.models": "모델 연결과 검증",
-  "guide.admin.modelsBody":
-    "Settings에서 기본 LLM 또는 공급자 채널의 URL과 자격 증명을 설정하고 엔드포인트가 요구하는 API base 경로를 포함한다. URL을 바꿀 때는 해당 키도 함께 입력하며 기존 마스킹 키를 새 목적지에 재사용할 수 없다. Models에서 기능과 제공 상태를 확인하고 Test 후 짧은 프로젝트를 실행한다. 카탈로그에는 연결한 엔드포인트에서 제공하는 모델의 정보를 등록한다.",
+  "guide.admin.modelsBody": "Settings → Models → 프로바이더에서 종류·고유 연결 이름·API base URL·키를 등록한다. Self-hosted도 같은 흐름을 사용하며 키를 생략할 수 있다. 인증 대상 주소를 바꾸면 새 키가 필요하다. 모델 사용 설정에서는 등록된 호환 모델 중 기본·Workspace·검색 모델을 선택한다.",
+  "guide.admin.modelSelection": "모델 조회·선택·관리",
+  "guide.admin.modelSelectionBody": "Model 선택은 항상 Provider의 전체 목록을 조회한다. 출력 유형과 독립적인 Tools·Vision·Reasoning 배지, 컨텍스트 한도와 가격을 비교하고 이름순·가격순으로 정렬한다. 모델 추가는 즉시 등록한다. 선택된 모델만 보기로 목록을 좁히고 삭제하며, 등록 모델 관리에서 수정·제공 상태를 확인한다. Provider·검색어·필터·정렬은 이 브라우저에 저장한다. Models는 저장된 선택의 읽기 전용 목록이다. 목록 조회 성공이 추론 성공을 뜻하지 않으므로 짧은 프로젝트 실행으로 확인한다.",
   "guide.admin.offline": "폐쇄망의 카탈로그와 검색 모델",
-  "guide.admin.offlineBody":
-    "원격 동기화가 불가능하면 Models에서 모델 카탈로그 문서를 업로드한다. 내부 엔드포인트가 실제 제공하는 모델은 Self-hosted에서 선언한다. 기능 검색에는 배포의 CATALOG_ENABLED=true와 동작하는 embedding 설정이 필요하며 rerank는 선택 사항이다. embedding을 바꾸면 색인을 다시 만든다. 알 수 없는 모델 ID는 배포의 허용·거부 정책을 따르며 비용 추정치가 없을 수 있다.",
+  "guide.admin.offlineBody": "저장된 모델과 내부 프로바이더 연결은 공개 인터넷 없이 사용한다. 내장 공개 메타데이터는 누락된 정보만 보완하며 모델을 등록하지 않는다. 운영자는 로컬 카탈로그 파일로 이 정보를 갱신할 수 있다. 기능 검색은 검색 기능을 켜고 등록된 Embedding 모델을 지정해야 하며 Rerank는 선택 사항이다. Embedding을 바꾸면 색인을 다시 만든다. 미등록 모델은 항상 거부하며, 가격 미지정 등록 모델의 실행 허용 여부는 General에서 정한다.",
   "guide.admin.artifacts": "사용자의 Artifact 접근 방식",
   "guide.admin.artifactsBody":
     "PUBLIC_BASE_URL에 사용자가 접속하는 앱 주소를 설정한다. Settings의 proxied 방식은 앱이 파일을 전달하므로 브라우저가 저장소에 직접 접근하지 못하는 환경에 적합하다. authenticated는 만료되는 저장소 URL을 반환하므로 브라우저의 직접 접근이 필요하다. public은 공개 읽기 저장소 정책이 필요하며 URL을 가진 누구나 읽을 수 있다. 사용자 네트워크에서 파일 생성·다시 열기·다운로드로 검증한다.",
@@ -856,8 +850,7 @@ export const ko: Messages = {
   "guide.trouble.accessBody":
     "관리자와 로그인 방식·허용 이메일 도메인·계정을 확인한다. 생성·편집 버튼이 없으면 등급이나 소유권 제한일 수 있다. API 401은 토큰과 프로젝트 이름을, 403은 현재 소유자 등급과 권한을 확인한다. private 또는 접근 불가 프로젝트는 404일 수 있으므로 URL만 잘못되었다고 단정하지 않는다.",
   "guide.trouble.model": "모델이 없거나 호출 실패",
-  "guide.trouble.modelBody":
-    "Models에서 숨김·제공 상태를 확인하고 Test를 실행한다. 관리자와 공급자 URL·base 경로·자격 증명·모델 ID를 확인한 뒤 원하는 모델을 프로젝트 Agent 설정에 저장한다. 400은 요청 필드와 이미지·도구 요구사항을 API Reference와 대조한다. 502 같은 공급자 오류는 표시된 상위 서비스 오류를 확인하며 잘못된 모델이나 URL은 같은 요청을 반복해도 해결되지 않는다.",
+  "guide.trouble.modelBody": "Models에서 선택된 모델을 확인한다. Settings → Models에서 필터를 초기화하고 Provider 전체 목록을 조회하며, 등록 모델 관리에서 수정하거나 제공 상태를 확인한다. Provider URL·base 경로·키·정확한 모델 ID를 확인한 뒤 Agent 설정을 저장한다. 400은 요청과 이미지·도구 요구사항을 API Reference와 대조한다. 502 같은 상위 서비스 오류는 표시된 오류를 확인하며 잘못된 모델이나 URL은 반복 요청으로 해결되지 않는다.",
   "guide.trouble.limits": "429·시간 초과·부분 답변",
   "guide.trouble.limitsBody":
     "429는 동시 실행·프로젝트 일간 및 월간 차단·개인 등급 사용량을 확인하고 API 응답의 Retry-After를 따른다. 시간 초과나 스트림 오류는 공급자·느린 도구·배포 실행 시간 한도를 확인한다. turn-limit·output-limit·length는 작업을 좁히거나 저장된 설정의 해당 한도를 조정한다. 도구가 이미 외부 데이터를 바꿨을 수 있으므로 확인 없이 재시도를 반복하지 않는다.",
@@ -1449,38 +1442,6 @@ export const ko: Messages = {
   "models.showAll": "모두 표시",
   "models.oneVisible": "적어도 하나의 모델은 표시해야 합니다.",
   "models.generateTestImage": "테스트 이미지 생성",
-  "models.catalogUpdated": "카탈로그 갱신",
-  "models.refreshNow": "지금 갱신",
-  "models.catalogFile.title": "카탈로그 문서",
-  "models.catalogFile.lede":
-    "여기 설치한 카탈로그 JSON 이 발행된 카탈로그보다 우선해 레지스트리가 됩니다 — 발행 카탈로그에 닿을 수 없는 배포를 위한 경로입니다. 제거하면 다시 발행 카탈로그를 따릅니다.",
-  "models.catalogFile.none":
-    "설치된 문서가 없습니다. 레지스트리는 발행된 카탈로그 또는 내장 스냅샷을 따릅니다.",
-  "models.catalogFile.installed":
-    "{by} 가 {at} 에 설치 — 모델 {count}개, 카탈로그 갱신 {updated}",
-  "models.catalogFile.skipped": "레지스트리가 거부한 항목 {count}개",
-  "models.catalogFile.choose": "카탈로그 JSON",
-  "models.catalogFile.upload": "설치",
-  "models.catalogFile.remove": "제거",
-  "models.selfHosted.title": "Self-hosted 모델",
-  "models.selfHosted.lede":
-    "이 배포가 직접 서빙하는 모델 — 여기서 선언하고 selfhosted 채널로 디스패치한다. 목록은 채널이 보고한 것이고, 선언한 모델은 0 가격으로 레지스트리에 올라간다.",
-  "models.selfHosted.servedBy": "채널이 서빙 중",
-  "models.selfHosted.notServed": "서빙 안 됨",
-  "models.selfHosted.notServedHint":
-    "채널이 지금 이 이름을 나열하지 않는다 — 다시 서빙될 때까지 런이 실패한다.",
-  "models.selfHosted.notInstalled": "설치 안 됨",
-  "models.selfHosted.notInstalledHint":
-    "저장은 됐지만 이 인스턴스의 레지스트리에는 설치되지 않았다 — 발행 카탈로그가 같은 이름을 갖고 있거나, 방금 저장했다면 아직 다음 카탈로그 틱을 돌지 않은 다른 인스턴스다. 거부된 경우 서버 로그에 이유가 있다.",
-  "models.selfHosted.empty": "채널이 지금 서빙하는 모델이 없다.",
-  "models.selfHosted.declare": "선언",
-  "models.selfHosted.edit": "편집",
-  "models.selfHosted.save": "저장",
-  "models.selfHosted.remove": "제거",
-  "models.selfHosted.cancel": "취소",
-  "models.selfHosted.displayName": "표시 이름",
-  "models.selfHosted.context": "컨텍스트 윈도",
-  "models.selfHosted.maxOutput": "최대 출력",
   "models.promoTooltip": "이미 적용된 프로모션 요율(기본 엔드포인트) — 정가 {list}",
   "models.reasoningNoTools":
     "tools 와 함께는 불가: provider 가 그 조합을 거부해, agent 런은 effort 를 none 으로 강제합니다",

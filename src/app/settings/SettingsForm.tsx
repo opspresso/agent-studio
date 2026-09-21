@@ -113,9 +113,9 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
             <Badge variant="light" color={meta?.source === "override" ? "brand" : "gray"}>{t(`settings.source.${meta?.source ?? "unset"}`)}</Badge></Group>;
           const description = field.hint ? t(field.hint) : undefined;
           const value = values[field.key] ?? "";
-          if (field.type === "artifactAccess") return <Select key={field.key} label={label} description={description} value={value || "authenticated"} allowDeselect={false}
-            data={["authenticated", "proxied", "public"].map(value => ({ value, label: t(`settings.artifactAccess.${value as "authenticated" | "proxied" | "public"}`) }))}
-            onChange={value => change(field.key, value ?? "authenticated")} />;
+          if (field.type === "select") return <Select key={field.key} label={label} description={description} value={value || field.fallback} allowDeselect={false}
+            data={field.options.map(option => ({ value: option.value, label: t(option.label) }))}
+            onChange={value => change(field.key, value ?? field.fallback)} />;
           if (field.type === "emails" || field.type === "domains") return <TagsInput key={field.key} label={label} description={description} placeholder={field.placeholder}
             value={parseList(value)} splitChars={[",", " "]} onChange={items => change(field.key, items.join(", "))} />;
           if (field.type === "secret") return <SecretInput key={field.key} label={label} description={description} value={value} storedValue={meta?.value} allowReset={meta?.source === "override"}

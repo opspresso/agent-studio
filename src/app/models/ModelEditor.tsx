@@ -4,50 +4,34 @@ import { useState } from "react";
 import { Checkbox, NumberInput, Select, SimpleGrid, Text, TextInput } from "@mantine/core";
 import { FormModal } from "@/app/_components/FormModal";
 import { useT } from "@/app/_i18n/provider";
-import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
-import { REGISTRY_MODEL_TYPES, registeredModelId, registrationFromDiscovery, type DiscoveredModel, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
-import type { ModelRegistryResponse } from "@/app/api/models/registry/route";
+import { REGISTRY_MODEL_TYPES, registrationFromDiscovery, type RegisteredModel, type RegistryModelType } from "@/domain/llm/providerModels";
+import { saveRegisteredModel } from "./api";
 
-export function ModelRegistrationForm({ provider, candidate, onSaved, onCancel }: {
-  provider: string;
-  candidate?: DiscoveredModel;
+export function ModelEditor({ model, onSaved, onCancel }: {
+  model: RegisteredModel;
   onSaved(models: RegisteredModel[]): void;
   onCancel(): void;
 }) {
   const t = useT();
-  const [form, setForm] = useState({
-    wireId: candidate?.wireId ?? "", displayName: candidate?.displayName ?? "",
-    type: candidate?.type ?? "text" as RegistryModelType,
-    contextWindow: candidate?.contextWindow ?? 0, maxTokens: candidate?.maxTokens ?? 0,
-    capabilities: registrationFromDiscovery(provider, { wireId: "", displayName: "", ...candidate, type: candidate?.type ?? "text" }).capabilities,
-    pricing: candidate?.pricing ?? { inputPer1M: 0, outputPer1M: 0 },
-  });
-  const [priced, setPriced] = useState(candidate?.pricing !== undefined);
+  const [form, setForm] = useState(() => ({ ...model, pricing: model.pricing ?? { inputPer1M: 0, outputPer1M: 0 } }));
+  const [priced, setPriced] = useState(model.pricing !== undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   async function save() {
     if (busy) return;
     setBusy(true); setError(undefined);
     try {
-      const { pricing, ...fields } = form;
-      const model: RegisteredModel = {
-        ...fields, provider, id: registeredModelId(provider, form.wireId.trim()),
-        wireId: form.wireId.trim(), displayName: form.displayName.trim(),
-        maxTokens: form.type === "embedding" || form.type === "rerank" ? 0 : form.maxTokens,
-        ...(candidate?.maker ? { maker: candidate.maker } : {}),
-        ...(candidate?.inputModalities ? { inputModalities: candidate.inputModalities } : {}),
-        ...(candidate?.outputModalities ? { outputModalities: candidate.outputModalities } : {}),
-        ...(priced ? { pricing } : {}),
-      };
-      const saved = await readJson<ModelRegistryResponse>(await fetch("/api/models/registry", { method: "POST", headers: jsonHeaders, body: JSON.stringify(model) }));
-      onSaved(saved.models);
-    } catch (error) { setError(error instanceof Error ? error.message : "Could not register model"); }
+      onSaved(await saveRegisteredModel(registrationFromDiscovery(model.provider, {
+        ...form, displayName: form.displayName.trim(), pricing: priced ? form.pricing : undefined,
+        outputModalities: form.type === model.type ? model.outputModalities : undefined,
+      })));
+    } catch (error) { setError(error instanceof Error ? error.message : "Could not save model"); }
     finally { setBusy(false); }
   }
   return <FormModal opened onClose={onCancel} title={t("modelAdmin.confirmModel")} error={error ?? null}
     submitting={busy} submitLabel={t("modelAdmin.save")} submitDisabled={!form.wireId.trim() || !form.displayName.trim()} onSubmit={() => void save()}>
-    <Text size="sm" c="dimmed">{provider}</Text>
-    <TextInput label={t("modelAdmin.wireId")} value={form.wireId} disabled={busy || !!candidate} required onChange={event => setForm({ ...form, wireId: event.currentTarget.value })} />
+    <Text size="sm" c="dimmed">{model.provider}</Text>
+    <TextInput label={t("modelAdmin.wireId")} value={model.wireId} readOnly />
     <TextInput label={t("modelAdmin.name")} value={form.displayName} disabled={busy} required onChange={event => setForm({ ...form, displayName: event.currentTarget.value })} />
     <Select label={t("models.type")} value={form.type} disabled={busy} allowDeselect={false}
       data={REGISTRY_MODEL_TYPES.map(value => ({ value, label: t(`models.type.${value}`) }))}

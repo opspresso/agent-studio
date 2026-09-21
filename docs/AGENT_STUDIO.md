@@ -21,7 +21,7 @@ Agent Studio는 기업 내부에 설치하는 AI Agent Control Plane이다. 사�
 모델 채널을 구성하면 필수 부팅·로그인·실행·콘솔 경로를 공개 인터넷 없이 운영할 수 있다.
 
 파일 보관에는 S3 호환 저장소, 오디오와 Workspace에는 별도 worker가 필요하다. 외부 모델,
-원격 카탈로그·Plugin sync, Slack·Telegram·Teams·GitHub·A2A는 배포가 선택하는 연결이다.
+Plugin sync, Slack·Telegram·Teams·GitHub·A2A는 배포가 선택하는 연결이다.
 문서 worker, 오디오 worker, Workspace Sandbox와 관리형 MCP는 서로 다른 실행 자원이다.
 
 애플리케이션은 Next.js App Router 기반의 단일 풀스택 앱이다. 이 저장소는 앱과 이미지,
@@ -176,7 +176,7 @@ DB에는 네 영역이 있다. `items`는 대부분의 제품 상태, Better Aut
 `catalog_vectors`는 검색 벡터, `runtime_sessions`는 SDK 이력과 승인을 저장한다.
 키와 접근 패턴은 [아키텍처](ARCHITECTURE.md#postgresql-아이템-테이블-설계)가 설명한다.
 
-부팅은 필수 설정 검사, migration, 관리자 bootstrap, 감사 sink 연결과 모델 카탈로그 갱신을
+부팅은 필수 설정 검사, migration, 관리자 bootstrap, 감사 sink 연결과 저장된 선택 모델 로드를
 순서대로 수행한다. 관리형 MCP 복구는 listen을 막지 않는 별도 작업이다. 만료 행 삭제는
 schedule scan, 오디오 파일 정리는 audio worker, Sandbox 정리는 Workspace worker가 담당한다.
 프로세스가 켜져 있다는 사실만으로 이 작업들이 진행되는 것은 아니다.

@@ -6,9 +6,8 @@ import { IconCpu } from "@tabler/icons-react";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
 import { useT } from "@/app/_i18n/provider";
-import { readJson } from "@/app/_lib/httpClient";
+import { listRegisteredModels } from "./api";
 import type { RegisteredModel } from "@/domain/llm/providerModels";
-import type { ModelRegistryResponse } from "@/app/api/models/registry/route";
 import { ModelCollection } from "./ModelCollection";
 
 export default function ModelsPage() {
@@ -17,8 +16,8 @@ export default function ModelsPage() {
   const [error, setError] = useState<string>();
   useEffect(() => {
     let current = true;
-    void fetch("/api/models/registry").then(response => readJson<ModelRegistryResponse>(response))
-      .then(value => { if (current) setModels(value.models); })
+    void listRegisteredModels()
+      .then(value => { if (current) setModels(value); })
       .catch(error => { if (current) setError(error instanceof Error ? error.message : "Could not load models"); });
     return () => { current = false; };
   }, []);

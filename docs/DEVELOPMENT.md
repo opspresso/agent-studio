@@ -24,9 +24,10 @@ pnpm install --frozen-lockfile
 test -f .env.local || cp .env.example .env.local
 ```
 
-실제 런에 필요한 최소값은 `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`,
-`AES_ENCRYPTION_KEY`(32바이트 base64, `openssl rand -base64 32`) 다. `src/instrumentation.ts`
-가 이들을 부팅 시점에 검증하므로, 빠진 값이 있으면 첫 요청이 아니라 기동 단계에서 실패한다.
+부팅에 필요한 최소값은 `DATABASE_URL`과 `AES_ENCRYPTION_KEY`(32바이트 base64,
+`openssl rand -base64 32`)다. `src/instrumentation.ts`가 부팅 시점에 검증한다.
+실행하려면 Settings에서 프로바이더 연결과 사용할 모델을 등록한다. 기본 LLM 환경변수만
+설정해도 모델이 등록되거나 실행 채널로 선택되는 것은 아니다.
 신원 제공자(Keycloak · 표준 OIDC · Google · 비밀번호)는 실제 로그인에만 필요하다. `STAGE=local` 은 하나도
 없이 부팅하고, 아래의 dev-session 스크립트가 로그인을 우회한다.
 
@@ -78,7 +79,7 @@ OrbStack의 network alias와 도메인으로 로컬 MCP 컨테이너를 제공�
 ## 실제 자격 증명 없이 작업하기
 
 ```bash
-# 모의 OpenAI 호환 LLM 서버; 그다음 LLM_BASE_URL=http://127.0.0.1:8002/v1 로 설정
+# 모의 OpenAI 호환 LLM 서버; Settings에서 해당 주소를 프로바이더로 등록
 pnpm tsx scripts/mock-llm.ts
 
 # 개발용 사용자 + 세션을 만들고 서명된 세션 쿠키를 출력
@@ -88,9 +89,7 @@ pnpm tsx --env-file=.env.local scripts/dev-session.ts
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
-모의 모델을 쓸 때는 선택한 모델의 provider별 endpoint 설정도 확인한다. 예를 들어
-`LLM_PROVIDER_OPENAI_BASE_URL`이 설정된 `openai/...` 모델은 `LLM_BASE_URL`보다 그 주소를
-우선하므로 해당 provider 주소도 mock으로 지정한다. 개발 세션 스크립트와 앱의
+모의 모델은 프로바이더 주소를 mock 서버로 지정하고 조회·등록한 뒤 사용한다. 개발 세션 스크립트와 앱의
 `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`을 일치시킨다. 출력된 쿠키는 로컬
 검증에만 사용하고 코드·로그·PR에 남기지 않는다.
 

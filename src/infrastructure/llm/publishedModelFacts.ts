@@ -42,6 +42,8 @@ export function withPublishedModelFacts(provider: string, discovered: Discovered
   const inheritedContext = liveMax && contextWindow && liveMax > contextWindow ? 0 : contextWindow;
   const mergedPricing = { ...pricing, ...discovered.pricing };
   if ((mergedPricing.cachedInputPer1M ?? 0) > mergedPricing.inputPer1M) delete mergedPricing.cachedInputPer1M;
+  // A live token rate supersedes a catalog's illustrative per-image estimate.
+  if (discovered.pricing?.imageOutputPer1M !== undefined && discovered.pricing.perImage === undefined) delete mergedPricing.perImage;
   return {
     contextWindow: inheritedContext, maxTokens: inheritedMax, maker, type: modelType(known), ...discovered,
     ...(discovered.outputModalities?.length && !discovered.type ? { type: undefined } : {}),
