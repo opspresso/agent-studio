@@ -80,7 +80,7 @@ Workspace 체크포인트·DB·오브젝트 volume을 이미지 캐시와 함께
 
 ## 릴리스 파이프라인
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml)은 PR과 `v*` tag push에서 실행하며
+[`.github/workflows/release.yml`](../.github/workflows/release.yml)은 `v*` tag push에서 실행하며
 모든 job은 GitHub-hosted `ubuntu-24.04`를 사용한다. 수동 dispatch는 없다.
 
 | Job | 선행·동작 |
@@ -90,9 +90,8 @@ Workspace 체크포인트·DB·오브젝트 volume을 이미지 캐시와 함께
 | `release` | verify 이후 Dockerfile로 빌드하고 ECR·GHCR에 앱 `{tag}`·`latest`, Sandbox `workspace-{tag}`를 게시한다 |
 | `gitops` | 이미지 게시 이후 `v*` tag에서만 `argocd-env-demo`에 배포 이벤트를 전달한다 |
 
-`github-release`와 `release`는 서로 기다리지 않는다. 현재 두 job에 tag 전용 조건이 없어
-PR에서도 실행을 시도하는 제약이 있다. 해결 조건은
-[MILESTONES](MILESTONES.md#release-event-gating)에 기록한다.
+`github-release`와 `release`는 서로 기다리지 않는다.
+PR은 별도의 [pr.yml](../.github/workflows/pr.yml)에서 검증만 수행하며 게시 작업은 실행하지 않는다.
 
 ECR은 workflow의 OIDC role, GHCR은 `GITHUB_TOKEN`, GitOps 전달은 `GHP_TOKEN`을 사용한다.
 체크인된 [AWS trust policy](../.github/aws-role/trust-policy.json)는 `v*` tag subject와

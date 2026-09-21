@@ -27,9 +27,8 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     try {
       const project = await projectUseCases.get(name);
       const configuration = requireAgentConfiguration(project);
-      // The strategy→executor mapping lives in runProject; this route only
-      // wraps the answer in the OpenAI schema. An image project is refused
-      // there — an image has no chat completion.
+      // The facade runs the Agent; this route wraps text, images and files
+      // in the OpenAI-compatible response shape.
       const conversation = requestConversation(request, principalActor(principal));
       const params = {
         project,

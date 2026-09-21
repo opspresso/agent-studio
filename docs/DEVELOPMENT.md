@@ -218,8 +218,9 @@ pnpm test:integration
 
 ## CI
 
-현재 workflow는 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 하나다.
-`pull_request`와 `v*` tag push에 반응하며 `verify`는 GitHub-hosted `ubuntu-24.04`에서 실행한다.
+[`.github/workflows/pr.yml`](../.github/workflows/pr.yml)은 `pull_request`에서 검증만 수행한다.
+[`.github/workflows/release.yml`](../.github/workflows/release.yml)은 `v*` tag push에서 실행한다.
+두 workflow의 `verify`는 GitHub-hosted `ubuntu-24.04`에서 다음 검사를 수행한다.
 
 ```text
 pnpm install --frozen-lockfile → typecheck → test → test:integration
@@ -230,11 +231,10 @@ pnpm install --frozen-lockfile → typecheck → test → test:integration
 검사가 없다. 로컬에서 필요한 범위를 따로 실행해야 하며 `main` push나 모델 드리프트의
 독립적인 정기 검사 workflow도 없다.
 
-`github-release`와 `release`는 `verify` 뒤에 실행되고, 이미지 빌드에서 Dockerfile의
-`pnpm build`가 수행된다. 다만 두 job에 tag 전용 조건이 없어 PR에서도 실행을 시도하는
-현재 제약이 있다. tag 조건이 있는 job은 `gitops`뿐이다.
-릴리스 권한과 완료 확인은 [OPERATIONS](OPERATIONS.md#릴리스-파이프라인),
-해결할 조건은 [MILESTONES](MILESTONES.md#release-event-gating)를 따른다.
+tag workflow의 `github-release`와 `release`는 `verify` 뒤에 실행되고, 이미지 빌드에서
+Dockerfile의 `pnpm build`가 수행된다. 이미지 게시가 끝나면 `gitops`가 배포 이벤트를 전달한다.
+PR workflow에는 Release 생성·registry 게시·GitOps 전달 job이 없다.
+릴리스 권한과 완료 확인은 [OPERATIONS](OPERATIONS.md#릴리스-파이프라인)를 따른다.
 
 ## 테스트
 

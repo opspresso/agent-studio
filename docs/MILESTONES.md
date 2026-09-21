@@ -72,20 +72,6 @@
 - 어댑터 미설정·비활성·실패가 기본 경로의 부팅·실행을 막지 않는지, 각 어댑터의 인증·중복 처리·
   응답·사용량·Trace 계약이 유지되는지 회귀 검증하고 API·설계·기능 문서를 갱신한다.
 
-## release-event-gating
-
-현재 [release.yml](../.github/workflows/release.yml)은 `pull_request`와 `v*` tag push를 받지만
-`github-release`와 `release` job에는 tag 전용 조건이 없다. 따라서 PR에서도 Release 생성과
-이미지 게시 작업을 시도한다. `gitops`에만 tag 조건이 있으며, ECR OIDC trust의 tag 제한은
-GitHub Release job의 실행 조건을 대신하지 않는다.
-
-완료 조건:
-
-- PR에서는 게시 권한·registry 로그인·Release 생성 없이 검증 job만 실행한다.
-- `v*` tag에서는 검증 성공 뒤 Release·앱/Sandbox 이미지 게시와 GitOps 전달이 실행된다.
-- workflow의 이벤트·job 조건과 실제 PR/tag 실행 결과로 두 경로를 확인한다.
-- [개발](DEVELOPMENT.md#ci)·[운영](OPERATIONS.md#릴리스-파이프라인)의 현재 제약 설명을 갱신한다.
-
 ## 기능별 범위 검토
 
 실제 사용 여부와 운영 근거를 확인해 유지·통합·제거 범위를 결정한다.
