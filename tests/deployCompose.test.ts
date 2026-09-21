@@ -28,14 +28,6 @@ function serviceBlock(compose: string, name: string): string {
 }
 
 describe("deployment configuration", () => {
-  it("probes the local Brave listener without spending API quota", () => {
-    const service = serviceBlock(localMcpCompose, "mcp-brave-search");
-    const probe = /^\s+test:.*$/m.exec(service)?.[0] ?? "";
-    expect(service).toContain("healthcheck:");
-    expect(probe).toContain("require('node:net').connect(80,'127.0.0.1')");
-    expect(probe).not.toMatch(/curl|wget|brave\.com|tools\/call/);
-  });
-
   it("keeps local AWS-backed MCP services behind the aws profile", () => {
     expect(serviceBlock(localMcpCompose, "mcp-cloudwatch")).toContain("profiles: [aws]");
   });
@@ -53,7 +45,6 @@ describe("deployment configuration", () => {
     for (const name of ["argocd", "grafana", "kubernetes"]) {
       expect(serviceBlock(localMcpCompose, `mcp-${name}`)).toContain(`profiles: [${name}]`);
     }
-    expect(serviceBlock(localMcpCompose, "mcp-brave-search")).not.toContain("env_file:");
     expect(serviceBlock(localMcpCompose, "mcp-kubernetes")).toContain("create_host_path: false");
     expect(serviceBlock(localMcpCompose, "mcp-kubernetes")).toContain('"--read-only"');
     expect(serviceBlock(localMcpCompose, "mcp-argocd")).toContain('MCP_READ_ONLY: "true"');

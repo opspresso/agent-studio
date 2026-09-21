@@ -11,7 +11,6 @@
 | 프로필 | 컨테이너 | 필요한 설정 |
 |---|---|---|
 | `aws` | mcp-cloudwatch | `.env.aws`의 AWS 자격증명 |
-| `brave` | mcp-brave-search | `.env`의 `BRAVE_API_KEY` |
 | `argocd` | mcp-argocd | `ARGOCD_BASE_URL`, `ARGOCD_API_TOKEN` |
 | `grafana` | mcp-grafana | `GRAFANA_URL`, `GRAFANA_SERVICE_ACCOUNT_TOKEN` |
 | `kubernetes` | mcp-kubernetes | `KUBECONFIG_PATH` |

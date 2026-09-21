@@ -19,7 +19,6 @@ export function validateConfig(config: ComposeConfig, fileExists = isFile): stri
     "mcp-cloudwatch": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
     "mcp-argocd": ["ARGOCD_BASE_URL", "ARGOCD_API_TOKEN"],
     "mcp-grafana": ["GRAFANA_URL", "GRAFANA_SERVICE_ACCOUNT_TOKEN"],
-    "mcp-brave-search": ["BRAVE_API_KEY"],
   };
   for (const [name, keys] of Object.entries(required)) {
     const service = config.services?.[name];
