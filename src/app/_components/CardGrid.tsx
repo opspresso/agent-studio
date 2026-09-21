@@ -10,9 +10,9 @@
 
 "use client";
 
-import { Center, Paper, SimpleGrid, Skeleton, Stack, Text, ThemeIcon } from "@mantine/core";
-import { IconSparkles } from "@tabler/icons-react";
+import { Paper, SimpleGrid, Skeleton } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
+import { EmptyState } from "./PageState";
 
 /** The grid alone, for a section that has already decided it has something to show. */
 export function CardList({ children }: { children: React.ReactNode }) {
@@ -49,20 +49,7 @@ export function CardGrid({
     );
   }
   if (empty) {
-    return (
-      <Paper withBorder py={48} px="lg">
-        <Center>
-          <Stack gap="xs" align="center">
-            <ThemeIcon variant="light" size={40} radius="xl">
-              <IconSparkles size={20} stroke={1.7} />
-            </ThemeIcon>
-            <Text size="sm" c="dimmed" ta="center">
-              {emptyText}
-            </Text>
-          </Stack>
-        </Center>
-      </Paper>
-    );
+    return <EmptyState>{emptyText}</EmptyState>;
   }
   return <CardList>{children}</CardList>;
 }

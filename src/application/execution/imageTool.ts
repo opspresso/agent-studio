@@ -1,7 +1,9 @@
 /** Image generation and editing capabilities of an Agent. */
 
 import type { AgentConfiguration } from "@/domain/project/types";
+import type { ImageGenerationResult } from "@/domain/llm/imageChannel";
 import { getModelConfig, getVisibleModels, toImageUsageRecord } from "@/domain/llm/models";
+import type { ImageToolResult } from "@/application/llm/agentAssembly";
 import * as engine from "@/application/runtime";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
@@ -10,7 +12,7 @@ import { log } from "@/shared/logger";
  * Default image model: the first *visible* registry entry that can draw. A
  * function, not a constant — the registry is a catalog loaded at boot and
  * refreshed after — and "first" is a decision the catalog's publisher curates:
- * agent-models states its order deliberately (see `listModels`), so a retired
+ * The registry holds administrator-selected models (see `listModels`), so a removed
  * (hidden) model can never become the default by sitting early in the list.
  */
 export function defaultImageModel(): string | undefined {
@@ -71,9 +73,7 @@ export function buildImageGenerator(
       quality,
       signal,
     });
-    const recorded = toImageUsageRecord(model, result.usage);
-    await recordUsageFn({ projectName, model, ...recorded });
-    return { b64: result.b64, mimeType: result.mimeType, model };
+    return recordImageResult(result, model, projectName, recordUsageFn);
   };
 }
 
@@ -104,11 +104,22 @@ export function buildImageEditor(
       quality,
       signal,
     });
-    const recorded = toImageUsageRecord(model, {
-      ...result.usage,
-      sourceImages: images.length,
-    });
-    await recordUsageFn({ projectName, model, ...recorded });
-    return { b64: result.b64, mimeType: result.mimeType, model };
+    return recordImageResult(result, model, projectName, recordUsageFn, images.length);
   };
+}
+
+/** Generation and editing record and report the same normalized usage once. */
+async function recordImageResult(
+  result: ImageGenerationResult,
+  model: string,
+  projectName: string,
+  recordUsage: engine.RecordUsageFn,
+  sourceImages?: number,
+): Promise<ImageToolResult> {
+  const usage = { model, ...toImageUsageRecord(model, {
+    ...result.usage,
+    ...(sourceImages === undefined ? {} : { sourceImages }),
+  }) };
+  await recordUsage({ projectName, ...usage });
+  return { b64: result.b64, mimeType: result.mimeType, model, usage };
 }

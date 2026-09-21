@@ -9,8 +9,8 @@ import type { A2aProjectListItem } from "@/application/a2a/exposure";
 import type { A2aProjectListResponse } from "@/app/api/a2a/route";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
-// Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
-// each end, 21+ reveal 4) header values — never the full plaintext or ciphertext.
+// Server responses carry masked (length-preserving, with four visible characters
+// at each end above eight characters) header values — never the full plaintext or ciphertext.
 export type { AgentProtocol, ExternalAgent };
 export type { CreateAgentInput, UpdateAgentInput };
 

@@ -77,8 +77,8 @@ describe("length-preserving masking", () => {
     const headers = { Authorization: "Bearer secret-token", "X-Api-Key": "abc123" };
     const masked = maskHeaders(encryptHeaders(headers));
 
-    // 19 chars: reveals two at each end. 6 chars: fully hidden.
-    expect(masked.Authorization).toBe(`Be${"•".repeat(15)}en`);
+    // 19 chars: reveals four at each end. 6 chars: fully hidden.
+    expect(masked.Authorization).toBe(`Bear${"•".repeat(11)}oken`);
     expect(masked.Authorization).toHaveLength("Bearer secret-token".length);
     expect(masked["X-Api-Key"]).toBe("*".repeat("abc123".length));
   });
@@ -127,12 +127,12 @@ describe("partial-reveal masking tiers", () => {
     }
   });
 
-  it("reveals two characters at each end from 9 through 20", () => {
+  it("reveals four characters at each end from 9 through 20", () => {
     const nine = "abcdefghi";
-    expect(maskSecret(nine)).toBe(`ab${bullets(5)}hi`);
+    expect(maskSecret(nine)).toBe(`abcd${bullets(1)}fghi`);
 
-    const twenty = "ab" + chars(16) + "yz";
-    expect(maskSecret(twenty)).toBe(`ab${bullets(16)}yz`);
+    const twenty = "abcd" + chars(12) + "wxyz";
+    expect(maskSecret(twenty)).toBe(`abcd${bullets(12)}wxyz`);
     expect(maskSecret(twenty)).toHaveLength(20);
   });
 
@@ -148,8 +148,8 @@ describe("partial-reveal masking tiers", () => {
   it("keeps every tier boundary exact", () => {
     // The boundaries are the whole point of the rule; pin both sides of each.
     expect(maskSecret(chars(8))).toBe("*".repeat(8));
-    expect(maskSecret(chars(9))).toBe(`aa${bullets(5)}aa`);
-    expect(maskSecret(chars(20))).toBe(`aa${bullets(16)}aa`);
+    expect(maskSecret(chars(9))).toBe(`aaaa${bullets(1)}aaaa`);
+    expect(maskSecret(chars(20))).toBe(`aaaa${bullets(12)}aaaa`);
     expect(maskSecret(chars(21))).toBe(`aaaa${bullets(13)}aaaa`);
   });
 

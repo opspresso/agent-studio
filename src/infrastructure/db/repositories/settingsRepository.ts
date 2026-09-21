@@ -3,7 +3,6 @@ import type { SettingsRepository } from "@/domain/settings/repository";
 import type {
   AppSettings,
   LlmProviderSetting,
-  SelfHostedModelSetting,
 } from "@/domain/settings/types";
 import { getItem, updateItem } from "../store";
 import { keys } from "../keys";
@@ -11,6 +10,7 @@ import { keys } from "../keys";
 const ENTITY_TYPE = "SETTINGS" as const;
 
 const FIELDS = [
+  "defaultModel",
   "adminEmails",
   "allowedEmailDomains",
   "llmBaseUrl",
@@ -44,11 +44,8 @@ function fromItem(item: Record<string, unknown>): AppSettings {
   if (Array.isArray(item.llmProviders)) {
     settings.llmProviders = item.llmProviders as LlmProviderSetting[];
   }
-  if (Array.isArray(item.hiddenModels)) {
-    settings.hiddenModels = item.hiddenModels as string[];
-  }
-  if (Array.isArray(item.selfHostedModels)) {
-    settings.selfHostedModels = item.selfHostedModels as SelfHostedModelSetting[];
+  if (Array.isArray(item.registeredModels)) {
+    settings.registeredModels = item.registeredModels as NonNullable<AppSettings["registeredModels"]>;
   }
   if (item.workspaceModels && typeof item.workspaceModels === "object" && !Array.isArray(item.workspaceModels)) {
     settings.workspaceModels = {};

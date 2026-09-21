@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { Stack } from "@mantine/core";
 import { IconPhoto } from "@tabler/icons-react";
-import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { ArtifactGallery } from "./_components/ArtifactGallery";
 import { listMyArtifacts, type ArtifactQuery } from "./api";
 import { useT } from "@/app/_i18n/provider";
@@ -13,7 +13,7 @@ export default function ArtifactsPage() {
   const load = useCallback((query: ArtifactQuery) => listMyArtifacts(query), []);
   return (
     <Stack gap="lg">
-      <CatalogHeader
+      <PageHeader
         title={t("nav.artifacts")}
         description={t("artifacts.lede")}
         Icon={IconPhoto}

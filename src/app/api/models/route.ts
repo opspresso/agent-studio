@@ -1,6 +1,6 @@
 import { offeredModels, type ModelConfig } from "@/domain/llm/models";
 import { modelPreferenceUseCases } from "@/lib/container";
-import { getHiddenModels, getLlmProviderConfigs } from "@/lib/runtime-settings";
+import { getLlmProviderConfigs, getDefaultModel } from "@/lib/runtime-settings";
 import { withAuth } from "@/lib/session";
 
 export type SelectableModel = ModelConfig & { favorite: boolean };
@@ -9,22 +9,19 @@ export interface ModelsResponse {
   models: SelectableModel[];
 }
 
-/**
- * GET /api/models — the models this deployment offers for selection. The rule
- * (visible × configured providers − hidden-model denylist) is
- * `offeredModels` in the domain; this route only feeds it the runtime
- * settings.
- */
+/** Administrator-selected execution models with registered connections, default first. */
 export const GET = withAuth(async (user) => {
-  const [providerConfigs, hiddenModels, favoriteModels] = await Promise.all([
+  const [providerConfigs, favoriteModels, defaultModel] = await Promise.all([
     getLlmProviderConfigs(),
-    getHiddenModels(),
     modelPreferenceUseCases.list(user.id),
+    getDefaultModel(),
   ]);
   const favorites = new Set(favoriteModels);
   const models = offeredModels(
     providerConfigs.map((provider) => provider.name),
-    hiddenModels,
+    undefined,
+    undefined,
+    defaultModel,
   ).map((model) => ({ ...model, favorite: favorites.has(model.id) }));
   return Response.json({ models } satisfies ModelsResponse);
 });

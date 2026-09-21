@@ -29,6 +29,12 @@ describe("settingsRepository", () => {
     // declarations vanished within a tick and the next unrelated save deleted
     // the stored row's copy for good.
     const stored: Required<import("@/domain/settings/types").AppSettings> = {
+      registeredModels: [{
+        id: "openai/gpt-test", provider: "openai", wireId: "gpt-test", displayName: "Test", type: "text",
+        contextWindow: 10000, maxTokens: 2000,
+        capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: false },
+      }],
+      defaultModel: "openai/gpt-test",
       workspaceModels: { codex: "openai/gpt-test" },
       adminEmails: "admin@example.com",
       allowedEmailDomains: "example.com",
@@ -45,20 +51,6 @@ describe("settingsRepository", () => {
       publicBaseUrl: "https://studio.example.com",
       artifactAccessMode: "public",
       unknownModelPolicy: "refuse",
-      hiddenModels: ["openai/gpt-5.4"],
-      selfHostedModels: [
-        {
-          id: "selfhosted/qwen/qwen3.8-27b",
-          provider: "selfhosted",
-          family: "qwen/qwen3.8-27b",
-          maker: "qwen",
-          displayName: "Qwen3.8 27B",
-          pricing: { inputPer1M: 0, outputPer1M: 0 },
-          capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-          contextWindow: 262144,
-          maxTokens: 8192,
-        },
-      ],
       updatedAt: "2026-01-01T00:00:00Z",
     };
     await settingsRepository.update(() => stored);

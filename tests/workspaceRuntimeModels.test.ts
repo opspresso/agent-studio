@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fixtureRegistrations } from "./modelFixtures";
 import { createFakeStore } from "./fakeStore";
 import * as store from "@/infrastructure/db/store";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
@@ -16,23 +17,37 @@ const openai = getVisibleModels().find(model => model.provider === "openai" && m
 const anthropic = getVisibleModels().find(model => model.provider === "anthropic" && model.capabilities.tools && !model.hidden)!;
 let channels: ProviderChannelConfig[];
 const api = createWorkspaceRuntimeModelUseCases({ repository: settingsRepository, channels: async () => channels, invalidate: invalidateSettingsCache, now: () => now });
-beforeEach(() => {
+beforeEach(async () => {
   vi.useFakeTimers(); vi.setSystemTime(now); fake.rows.clear(); invalidateSettingsCache();
+  await settingsRepository.update(() => ({ registeredModels: fixtureRegistrations(), updatedAt: "" }));
   channels = [{ name: "openai", baseUrl: "http://localhost:9999/v1", apiKey: "test-key", auth: "bearer", keepModelPrefix: false }];
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); invalidateSettingsCache(); });
 
 describe("Workspace runtime model selection", () => {
+  it.each(["sigv4", "missing-key"])("rechecks a provider changed to %s before committing the selection", async change => {
+    let reads = 0;
+    const selecting = createWorkspaceRuntimeModelUseCases({ repository: settingsRepository, invalidate: invalidateSettingsCache, now: () => now,
+      channels: async () => {
+        if (++reads === 2) await settingsRepository.update(current => ({ ...current, updatedAt: now.toISOString(), llmProviders: [{
+          ...channels[0]!, apiKey: "", auth: change === "sigv4" ? "sigv4" : "bearer",
+        }] }));
+        return channels;
+      },
+    });
+    await expect(selecting.select("codex", openai.id, "admin@test")).rejects.toMatchObject({ status: 400 });
+    expect((await settingsRepository.get())?.workspaceModels).toBeUndefined();
+  });
   it("starts with only command and rejects incompatible, hidden and unconfigured models", async () => {
     expect(await api.getView()).toMatchObject({ selections: {}, available: ["command"] });
     await expect(api.select("claude", openai.id, "admin@test")).rejects.toMatchObject({ status: 400 });
     await expect(api.select("claude", anthropic.id, "admin@test")).rejects.toMatchObject({ status: 400 });
-    await settingsRepository.update(() => ({ hiddenModels: [openai.id], updatedAt: now.toISOString() }));
+    channels = [];
     await expect(api.select("codex", openai.id, "admin@test")).rejects.toMatchObject({ status: 400 });
     expect((await settingsRepository.get())?.workspaceModels).toBeUndefined();
   });
   it("preserves unrelated settings and concurrent runtime selections, without returning credentials", async () => {
-    await settingsRepository.update(() => ({ embeddingModel: "embedding-preserved", updatedAt: now.toISOString() }));
+    await settingsRepository.update(() => ({ embeddingModel: "embedding-preserved", registeredModels: fixtureRegistrations(), updatedAt: now.toISOString() }));
     await Promise.all([api.select("codex", openai.id, "admin@test"), api.select("opencode", openai.id, "admin@test")]);
     expect(await settingsRepository.get()).toMatchObject({ embeddingModel: "embedding-preserved", workspaceModels: { codex: openai.id, opencode: openai.id } });
     expect(JSON.stringify(await api.getView())).not.toContain("test-key");

@@ -24,9 +24,10 @@ pnpm install --frozen-lockfile
 test -f .env.local || cp .env.example .env.local
 ```
 
-실제 런에 필요한 최소값은 `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`,
-`AES_ENCRYPTION_KEY`(32바이트 base64, `openssl rand -base64 32`) 다. `src/instrumentation.ts`
-가 이들을 부팅 시점에 검증하므로, 빠진 값이 있으면 첫 요청이 아니라 기동 단계에서 실패한다.
+부팅에 필요한 최소값은 `DATABASE_URL`과 `AES_ENCRYPTION_KEY`(32바이트 base64,
+`openssl rand -base64 32`)다. `src/instrumentation.ts`가 부팅 시점에 검증한다.
+실행하려면 Settings에서 프로바이더 연결과 사용할 모델을 등록한다. 기본 LLM 환경변수만
+설정해도 모델이 등록되거나 실행 채널로 선택되는 것은 아니다.
 신원 제공자(Keycloak · 표준 OIDC · Google · 비밀번호)는 실제 로그인에만 필요하다. `STAGE=local` 은 하나도
 없이 부팅하고, 아래의 dev-session 스크립트가 로그인을 우회한다.
 
@@ -78,7 +79,7 @@ OrbStack의 network alias와 도메인으로 로컬 MCP 컨테이너를 제공�
 ## 실제 자격 증명 없이 작업하기
 
 ```bash
-# 모의 OpenAI 호환 LLM 서버; 그다음 LLM_BASE_URL=http://127.0.0.1:8002/v1 로 설정
+# 모의 OpenAI 호환 LLM 서버; Settings에서 해당 주소를 프로바이더로 등록
 pnpm tsx scripts/mock-llm.ts
 
 # 개발용 사용자 + 세션을 만들고 서명된 세션 쿠키를 출력
@@ -88,9 +89,7 @@ pnpm tsx --env-file=.env.local scripts/dev-session.ts
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
-모의 모델을 쓸 때는 선택한 모델의 provider별 endpoint 설정도 확인한다. 예를 들어
-`LLM_PROVIDER_OPENAI_BASE_URL`이 설정된 `openai/...` 모델은 `LLM_BASE_URL`보다 그 주소를
-우선하므로 해당 provider 주소도 mock으로 지정한다. 개발 세션 스크립트와 앱의
+모의 모델은 프로바이더 주소를 mock 서버로 지정하고 조회·등록한 뒤 사용한다. 개발 세션 스크립트와 앱의
 `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`을 일치시킨다. 출력된 쿠키는 로컬
 검증에만 사용하고 코드·로그·PR에 남기지 않는다.
 
@@ -106,6 +105,9 @@ pnpm test:documents   # 실제 자식 프로세스로 생성·추출·검사·�
 pnpm test:watch       # vitest watch
 pnpm exec playwright install chromium # HTML 실행 미리보기 테스트용 브라우저
 pnpm test:html-preview # 로컬 HTTP fixture에서 실제 Chromium 기능·격리 검사
+pnpm exec playwright test --config playwright.preview.config.ts browser-tests/credentials.spec.ts # 합성 키로 공통 입력·표시·교체·폐기 UI 검사
+pnpm exec playwright test --config playwright.preview.config.ts browser-tests/model-selection.spec.ts # Provider 응답 분류·다중 기능·정렬·즉시 등록 UI 검사
+pnpm sync-models       # 공개 모델 facts의 커밋된 오프라인 스냅샷 갱신 (실행 모델을 등록하지 않는다)
 pnpm test:integration # 로컬 PostgreSQL(agent_studio_test), 인증 스키마와 SDK 실행·Session 검사
 pnpm test:storage     # 로컬 MinIO 임시 bucket의 원본 파일 streaming·조건부 저장·삭제 검사
 pnpm test:audio       # ffmpeg로 실제 MP3 분할·WAV 크기·시간 범위·임시 파일 정리 검사
@@ -116,8 +118,6 @@ pnpm test:workspace   # Docker + PostgreSQL *_test 실행·복구 검사
 pnpm test:workspace:git # 무통신 Git fixture와 승인·게시 검사
 pnpm worker:audio     # 환경변수가 주입된 별도 오디오 worker. 앱이 DB를 초기화한 뒤 실행
 pnpm db:migrate       # DATABASE_URL 의 데이터베이스를 현재 스키마로 (db:migrate:test 는 테스트 DB)
-pnpm check-models     # 카탈로그 스냅샷과 이 배포의 채널이 서빙하는 것의 차이
-pnpm sync-models --from path/to/models.json # 로컬 카탈로그로 갱신 (원격은 MODELS_CATALOG_URL 설정)
 ```
 
 로컬 `.env.local`을 읽어 worker를 실행하려면 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`를 사용한다.
@@ -174,31 +174,7 @@ discovery·PKCE·콜백·세션 생성·재로그인을 확인한다. audience·
 | `scripts/integration-check.ts` | 저장소 왕복, 인증 마이그레이션, SDK 모델·도구 실행과 영속 Session 승인·재개를 검증한다. 아래 두 helper를 함께 호출한다. |
 | `scripts/auth-schema-check.ts` | 테스트 DB의 임시 스키마에서 계정 키 중복 거부, 기존 계정 보존, issuer 없는 신규 계정 및 기존·신규 비밀번호 로그인을 검증한다. |
 | `scripts/runtime-session-check.ts` | 실제 SQL Session 저장소의 소유자 범위, CAS 경쟁, 암호화 문맥, 만료와 삭제 후 늦은 쓰기 방지를 검증한다. |
-| `scripts/check-models.ts` | 카탈로그 스냅샷(`src/domain/llm/catalog.json`)을 *이 배포의* 채널들이 서빙하는 id 와 대조한다. agent-models 가 provider 의 공개 카탈로그는 스스로 보므로, 여기서 보는 것은 게이트웨이·Bedrock·키의 범위 같은 이 배포만의 차이다. |
-| `scripts/sync-models.ts` | 발행된 카탈로그로 스냅샷을 갱신한다 (`--check` 는 뒤처졌으면 1 로 종료, `--from <file>` 은 URL 대신 로컬 카탈로그 문서를 읽는다, `MODELS_CATALOG_URL` 이 없거나 `none` 인 환경에서는 이것이 필수다). 런타임은 카탈로그를 직접 읽으므로, 테스트가 새 모델을 봐야 하거나 릴리즈 전일 때 돌린다. |
 | `scripts/import-dynamodb-export.ts` | 일회성 이관: AWS CLI 로 내보낸 옛 DynamoDB 테이블(`aws dynamodb scan … --output json`)을 이 스키마로 들여온다. `AUTH#` 행은 Better Auth 의 테이블로, 유니크 락 행은 버리고, 나머지는 같은 키로 `items` 에 upsert 한다. 지원하지 않는 managed MCP host-file `envRefs` 와 저장소 종속 `artifactAccessMode` 는 제거하고, 같은 이메일로 먼저 생긴 사용자는 export 의 원래 id 를 보존하기 위해 교체한다. 절차는 [INSTALL.md](INSTALL.md#데이터-이관). |
-
-### `check-models`
-
-공개 모델 사실은 agent-models가 소유하고, 이 스크립트는 현재 배포의 채널이 실제로 나열하는
-모델과 로컬 카탈로그를 대조한다. 기본·provider 채널, 전용 Embedding·Rerank endpoint를 확인하며
-OpenRouter는 modality별 목록도 조회한다. 실제 모델 실행 성공을 보장하는 검사는 아니다.
-
-```bash
-pnpm check-models
-pnpm check-models --since=90d
-pnpm check-models --since=2026-01-01
-pnpm check-models --strict
-```
-
-`--strict`는 제공 대상 route가 사라졌거나 채널 확인에 실패하거나 비교할 ID가 없을 때 실패한다.
-채널이 설정되지 않은 provider와 이미 숨긴 route는 은퇴 판정에서 제외한다.
-채널이 제공하는 새 ID는 추가 후보로 보고하며 그것만으로 실패하지 않는다.
-`--since`는 새 ID 보고 범위만 좁히고 실패 판정을 바꾸지 않는다.
-
-배포와 같은 URL·provider prefix·credential 설정으로 실행하라. SigV4 채널은 AWS credential도
-필요하다. 별도 CLI의 `.env.local` 로딩은 명시해야 한다.
-실제 외부 API와 자격 증명을 사용하는 검사이며 현재 자동 실행 workflow는 없다.
 
 ## 통합 체크
 

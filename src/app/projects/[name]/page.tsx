@@ -22,7 +22,7 @@ function editable(configuration: AgentConfiguration): AgentConfigurationInput {
   return settings;
 }
 function emptyInput(models: SelectableModel[] = []): AgentConfigurationInput {
-  return { systemPrompt: "", model: models.find(model => modelType(model) === "text" && model.capabilities.tools)?.id ?? "",
+  return { systemPrompt: "", model: models.find(model => ["text", "decisions"].includes(modelType(model)) && model.capabilities.tools)?.id ?? "",
     parameters: { piiFiltering: false }, mcpList: [], skillList: [], subagentList: [] };
 }
 
@@ -117,7 +117,7 @@ export default function PlaygroundPage() {
           <fieldset disabled={!canEdit || saving} className={canEdit ? undefined : classes.readonlyEditor}
             style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
             <AgentConfigurationEditor key={name} projectName={name}
-              models={models.filter(model => modelType(model) === "text")}
+              models={models.filter(model => ["text", "decisions"].includes(modelType(model)))}
               imageModels={models.filter(model => modelType(model) === "image")}
               value={draft} onChange={setDraft} schemaText={currentSchema} onSchemaChange={setSchemaText}
               schemaError={schemaError} save={saveState} />

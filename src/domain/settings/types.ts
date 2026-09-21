@@ -1,21 +1,12 @@
-/**
- * Global app settings stored as a single item. Every field is an optional
- * override of the matching environment variable — absent means "fall back to
- * env". Values are kept in their raw env string form (comma-separated lists
- * stay comma-separated). Secret fields hold `enc:v1:` ciphertext at rest.
- */
-/**
- * How a channel proves who it is.
- *
- * `bearer` is every OpenAI-compatible endpoint: a key in an `Authorization`
- * header. `sigv4` is AWS's request signing, which carries no key at all — the
- * pod's own identity is the credential, so a `sigv4` channel is configured
- * with a base URL and nothing else.
- */
-export type ChannelAuth = "bearer" | "sigv4";
+/** Deployment settings, provider connections and selected models share one atomic settings item.
+ * Secrets are encrypted at rest. Model selections are DB-owned; environment-backed settings
+ * retain their documented fallback semantics. */
+import type { ChannelAuth } from "../llm/providerModels";
+export type { ChannelAuth, ProviderChannelConfig } from "../llm/providerModels";
 
 /** One per-provider LLM channel override (replaces the LLM_PROVIDER_* env set). */
 export interface LlmProviderSetting {
+  kind?: import("../llm/models").SupportedProvider;
   /** Lowercase provider key matching the model id prefix (e.g. "openai"). */
   name: string;
   baseUrl: string;
@@ -33,17 +24,9 @@ export interface LlmProviderSetting {
  */
 export type ArtifactAccessMode = "authenticated" | "public" | "proxied";
 
-/**
- * One deployment-declared self-hosted model, stored as the full catalog-shaped
- * entry the registry loader validates (`loadSelfHostedModels`). The deployment
- * is the publisher here — these models exist only where an operator runs the
- * serving stack, so their facts live in this row rather than in agent-models.
- * The shape is the registry's (`domain/llm/models.ts`), because that is who
- * reads it back.
- */
-export type SelfHostedModelSetting = import("../llm/selfHostedModels").SelfHostedModelDeclaration;
-
 export interface AppSettings {
+  registeredModels?: import("../llm/providerModels").RegisteredModel[];
+  defaultModel?: string;
   adminEmails?: string;
   allowedEmailDomains?: string;
   llmBaseUrl?: string;
@@ -51,11 +34,11 @@ export interface AppSettings {
   llmApiKey?: string;
   /** When set, replaces the whole LLM_PROVIDER_* env-derived provider list. */
   llmProviders?: LlmProviderSetting[];
-  /** Active capability-catalog embedding model; absent falls back to EMBEDDING_MODEL. */
+  /** Active capability-catalog embedding model; absent means no model selected. */
   embeddingModel?: string;
   /** Native Workspace runtime models selected in Models; no environment fallback. */
   workspaceModels?: import("../workspace/types").WorkspaceRuntimeModels;
-  /** Active capability-catalog reranker; absent falls back to RERANKER_MODEL. */
+  /** Active capability-catalog reranker; absent disables reranking. */
   rerankerModel?: string;
   /** Reranker relevance floor; absent falls back to RERANKER_MIN_SCORE. */
   rerankerMinScore?: string;
@@ -74,28 +57,5 @@ export interface AppSettings {
    * `toUnknownModelPolicy` is what reads it.
    */
   unknownModelPolicy?: string;
-  /**
-   * Registry model ids hidden from selection (the /api/models list and every
-   * dropdown it feeds). Absent means nothing is hidden. Selection-time only —
-   * an Agent already holding a hidden model keeps running.
-   */
-  hiddenModels?: string[];
-  /**
-   * Self-hosted models this deployment declares (the deployment is their
-   * publisher — agent-models carries external routes only). Installed into the
-   * registry overlay on save and on every catalog refresh tick.
-   */
-  selfHostedModels?: SelfHostedModelSetting[];
   updatedAt: string;
-}
-
-/** An LLM provider channel resolved from settings or the environment. */
-export interface ProviderChannelConfig {
-  /** Lowercase provider key matching the model id prefix (e.g. "openai"). */
-  name: string;
-  baseUrl: string;
-  /** Empty when `auth` is `sigv4`. */
-  apiKey: string;
-  keepModelPrefix: boolean;
-  auth: ChannelAuth;
 }

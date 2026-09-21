@@ -359,7 +359,7 @@ describe("PiiFilter", () => {
         channel,
         generateImage: async (prompt) => {
           generatedPrompt = prompt;
-          return { b64: "aW1n", mimeType: "image/png", model: "openai/gpt-image-1" };
+          return { b64: "aW1n", mimeType: "image/png", model: "openai/gpt-image-1", usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } };
         },
       },
       {

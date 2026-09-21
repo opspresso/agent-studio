@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { settingsUseCases } from "@/lib/container";
-import { MAX_HIDDEN_MODELS, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
@@ -14,7 +14,8 @@ const updateSchema = z.object({
   llmProviders: z
     .array(
       z.object({
-        name: z.enum(SUPPORTED_PROVIDERS),
+        name: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+        kind: z.enum(SUPPORTED_PROVIDERS).optional(),
         baseUrl: z.string().max(4000),
         apiKey: z.string().max(4000),
         keepModelPrefix: z.boolean().optional(),
@@ -43,33 +44,7 @@ const updateSchema = z.object({
   // field that cannot be cleared would fail the whole save, losing every other
   // edit in the form along with it.
   unknownModelPolicy: z.enum(["allow", "refuse", ""]).optional(),
-  // Full replacement; empty array clears the override (no models hidden).
-  hiddenModels: z.array(z.string().max(200)).max(MAX_HIDDEN_MODELS).optional(),
-  // Full replacement; empty array removes every declaration. Shape-level only —
-  // the semantic rules (zero pricing, catalog collisions, family agreement)
-  // are the registry loader's, applied in the use case.
-  selfHostedModels: z
-    .array(
-      z.object({
-        // The serving stack's own name — no whitespace or control characters,
-        // which would otherwise ride into ids, log lines, and dispatch.
-        family: z.string().min(1).max(200).regex(/^\S+$/u, "must not contain whitespace"),
-        displayName: z.string().min(1).max(200),
-        maker: z.string().max(100).optional(),
-        type: z.enum(["text", "image", "embedding", "rerank", "transcription"]),
-        contextWindow: z.number().int().nonnegative(),
-        maxTokens: z.number().int().nonnegative(),
-        capabilities: z.object({
-          tools: z.boolean(),
-          structuredOutput: z.boolean(),
-          imageInput: z.boolean(),
-          reasoning: z.boolean(),
-        }),
-      }),
-    )
-    .max(50)
-    .optional(),
-});
+}).strict();
 
 export const GET = withAdminAuth(async () => {
   return Response.json(await settingsUseCases.getView());

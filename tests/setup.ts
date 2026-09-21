@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 import { createFakeStore } from "./fakeStore";
 
 /**
@@ -40,3 +40,7 @@ vi.mock("@/infrastructure/db/client", async () => {
 });
 
 vi.mock("@/infrastructure/db/store", () => createFakeStore());
+
+import { resetTestModels } from "./modelFixtures";
+resetTestModels();
+beforeEach(resetTestModels);

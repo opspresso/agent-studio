@@ -43,7 +43,7 @@ export function createTestModel(models: ModelProvider, deps: TestModelDeps = {})
       throw new ValidationError(`Unknown model "${modelId}"`);
     }
     const type = modelType(model);
-    if (type !== "text" && type !== "image" && type !== "rerank") {
+    if (type !== "text" && type !== "decisions" && type !== "image" && type !== "rerank") {
       throw new ValidationError(
         `${type[0]?.toUpperCase()}${type.slice(1)} model cannot be tested through chat completion: ${modelId}`,
       );

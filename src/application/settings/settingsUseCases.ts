@@ -6,20 +6,10 @@ import type {
   LlmProviderSetting,
   ProviderChannelConfig,
 } from "@/domain/settings/types";
-import {
-  getModelConfig,
-  loadSelfHostedModels,
-  MAX_HIDDEN_MODELS,
-  modelType,
-  offeredModels,
-  selfHostedModelRejectReason,
-  SUPPORTED_PROVIDERS,
-} from "@/domain/llm/models";
-import {
-  selfHostedModelFromInput,
-  type SelfHostedModelInput,
-} from "@/domain/llm/selfHostedModels";
+import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { DEFAULT_RERANKER_MIN_SCORE } from "@/domain/catalog/types";
+import { providerBaseUrl, providerKind } from "@/domain/llm/providerModels";
+import type { SupportedProvider } from "@/domain/llm/models";
 import { parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
@@ -35,7 +25,7 @@ export type ParseProviderConfigs = (env: NodeJS.ProcessEnv) => ProviderChannelCo
 
 export type SettingKey = Exclude<
   keyof AppSettings,
-  "updatedAt" | "llmProviders" | "hiddenModels" | "selfHostedModels" | "workspaceModels"
+  "updatedAt" | "llmProviders" | "workspaceModels" | "registeredModels" | "defaultModel"
 >;
 
 interface FieldSpec {
@@ -69,8 +59,8 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
   },
   { key: "llmBaseUrl", secret: false, env: () => optionalEnv(env.LLM_BASE_URL) },
   { key: "llmApiKey", secret: true, env: () => optionalEnv(env.LLM_API_KEY) },
-  { key: "embeddingModel", secret: false, env: () => optionalEnv(env.EMBEDDING_MODEL) },
-  { key: "rerankerModel", secret: false, env: () => optionalEnv(env.RERANKER_MODEL) },
+  { key: "embeddingModel", secret: false, env: () => undefined },
+  { key: "rerankerModel", secret: false, env: () => undefined },
   {
     key: "rerankerMinScore",
     secret: false,
@@ -108,7 +98,7 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
 ];
 
 export interface SettingFieldView {
-  /** Masked for secrets (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4) —
+  /** Masked for secrets (length-preserving; four visible characters at each end above eight characters) —
    * never the full plaintext or the ciphertext. */
   value: string;
   source: "override" | "env" | "default" | "unset";
@@ -117,8 +107,9 @@ export interface SettingFieldView {
 
 export interface LlmProviderView {
   name: string;
+  kind: SupportedProvider;
   baseUrl: string;
-  /** Masked (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */
+  /** Masked (length-preserving; four visible characters at each end above eight characters). */
   apiKey: string;
   keepModelPrefix: boolean;
   auth: ChannelAuth;
@@ -133,6 +124,7 @@ export interface SettingsView {
 
 export interface LlmProviderInput {
   name: string;
+  kind?: SupportedProvider;
   baseUrl: string;
   /** Masked keeps the currently effective key for this provider name. */
   apiKey: string;
@@ -141,15 +133,9 @@ export interface LlmProviderInput {
   auth?: ChannelAuth;
 }
 
-export type { SelfHostedModelInput };
-
 export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
-  /** Full replacement list; empty array removes the override (env fallback). */
+  /** Full replacement list; empty array disables every provider. */
   llmProviders?: LlmProviderInput[];
-  /** Full replacement list; empty array removes the override (no models hidden). */
-  hiddenModels?: string[];
-  /** Full replacement list; empty array removes every declaration. */
-  selfHostedModels?: SelfHostedModelInput[];
 };
 
 /**
@@ -157,12 +143,8 @@ export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
  * two of these fields *are* credentials, and a third is the admin list, so
  * recording what changed must never record what it changed to.
  *
- * Diffed against what was stored rather than read off the patch's key set,
- * because the settings page submits every field on every save. Keys-carried
- * would make the detail a constant listing all ten, which says only "the form
- * was saved" — the one thing the row already says by existing. "Who changed the
- * admin list last quarter" is the question this trail exists for, and a constant
- * cannot answer it.
+ * Compare stored values rather than submitted field names: an unchanged mask
+ * or a value equal to the environment does not constitute a settings change.
  *
  * The comparison is on the *stored* form, so a masked secret resubmitted
  * unchanged compares equal and a cleared override compares against `undefined`.
@@ -175,12 +157,6 @@ function changedKeys(specs: FieldSpec[], stored: AppSettings | null, next: AppSe
   // carries one, so identity would report a change for a resubmitted list.
   if (JSON.stringify(stored?.llmProviders) !== JSON.stringify(next.llmProviders)) {
     changed.push("llmProviders");
-  }
-  if (JSON.stringify(stored?.hiddenModels) !== JSON.stringify(next.hiddenModels)) {
-    changed.push("hiddenModels");
-  }
-  if (JSON.stringify(stored?.selfHostedModels) !== JSON.stringify(next.selfHostedModels)) {
-    changed.push("selfHostedModels");
   }
   return changed;
 }
@@ -215,6 +191,7 @@ function toProviderViews(
       source: "override",
       items: stored.map((provider) => ({
         name: provider.name,
+        kind: providerKind(provider),
         baseUrl: provider.baseUrl,
         apiKey: cipher.mask(
           provider.apiKey,
@@ -229,6 +206,7 @@ function toProviderViews(
     source: "env",
     items: parseProviderConfigs(env).map((provider) => ({
       name: provider.name,
+      kind: providerKind(provider),
       baseUrl: provider.baseUrl,
       apiKey: cipher.mask(provider.apiKey),
       keepModelPrefix: provider.keepModelPrefix,
@@ -288,11 +266,15 @@ function toProviderSetting(
   stored: LlmProviderSetting[] | undefined,
 ): LlmProviderSetting {
   const name = input.name.trim().toLowerCase();
-  const baseUrl = input.baseUrl.trim();
+  let baseUrl: string;
+  try { baseUrl = providerBaseUrl(input.baseUrl.trim()); }
+  catch { throw new ValidationError("Provider URL must be HTTP(S) without credentials, query parameters or fragments"); }
   if (!name || !baseUrl) {
     throw new ValidationError("Each LLM provider needs a name and a base URL");
   }
-  if (!(SUPPORTED_PROVIDERS as readonly string[]).includes(name)) {
+  const kind = providerKind({ name, kind: input.kind });
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(name)) throw new ValidationError("Invalid provider name");
+  if (!(SUPPORTED_PROVIDERS as readonly string[]).includes(kind)) {
     throw new ValidationError(
       `Unsupported LLM provider "${name}" — supported: ${SUPPORTED_PROVIDERS.join(", ")}`,
     );
@@ -303,6 +285,7 @@ function toProviderSetting(
   if (input.auth === "sigv4") {
     return {
       name,
+      kind,
       baseUrl,
       apiKey: "",
       auth: "sigv4",
@@ -311,29 +294,32 @@ function toProviderSetting(
   }
   const apiKey = input.apiKey.trim();
   let storedKey: string;
-  if (!cipher.isMasked(apiKey)) {
-    if (!apiKey) {
-      throw new ValidationError(`LLM provider "${name}" needs an API key`);
-    }
+  const existing = stored?.find((provider) => provider.name === name);
+  const fromEnv = parseProviderConfigs(env).find((provider) => provider.name === name);
+  const previous = existing ?? fromEnv;
+  if (!apiKey && kind === "selfhosted" && !previous?.apiKey) {
+    storedKey = "";
+  } else if (apiKey && !cipher.isMasked(apiKey)) {
     storedKey = cipher.encrypt(apiKey, llmProviderApiKeyContext(name, baseUrl));
   } else {
-    const existing = stored?.find((provider) => provider.name === name);
-    const fromEnv = parseProviderConfigs(env).find((provider) => provider.name === name);
-    const previous = existing ?? fromEnv;
     if (!previous?.apiKey) {
       throw new ValidationError(`LLM provider "${name}" needs an API key (no stored value to keep)`);
     }
-    if ((previous.auth ?? "bearer") !== "bearer" || previous.baseUrl !== baseUrl) {
+    if ((previous.auth ?? "bearer") !== "bearer" || providerBaseUrl(previous.baseUrl) !== baseUrl || providerKind(previous) !== kind) {
       throw new ValidationError(
         `Changing LLM provider "${name}" endpoint or auth requires a new API key`,
       );
     }
     storedKey = existing
-      ? existing.apiKey
+      ? existing.baseUrl === baseUrl ? existing.apiKey : cipher.encrypt(
+          cipher.decrypt(existing.apiKey, llmProviderApiKeyContext(name, existing.baseUrl)),
+          llmProviderApiKeyContext(name, baseUrl),
+        )
       : cipher.encrypt(previous.apiKey, llmProviderApiKeyContext(name, baseUrl));
   }
   return {
     name,
+    kind,
     baseUrl,
     apiKey: storedKey,
     ...(input.keepModelPrefix ? { keepModelPrefix: true } : {}),
@@ -363,13 +349,9 @@ export function createSettingsUseCases(
     /**
      * Merge semantics, plus one rule about what an override *is*.
      *
-     * A submitted value equal to the environment's is not stored. The page
-     * posts every field on every save, so without this the first save turned
-     * all ten into overrides — each one a row that reads `override` while
-     * naming the value it was already falling back to, and, worse, one that
-     * keeps naming it after the deployment's env var moves on. "Same as env"
-     * has no way to say "and pin it there", which is the only thing the stored
-     * copy would add.
+     * A submitted value equal to the environment is not pinned as an override.
+     * Later deployment changes remain effective until an operator stores a
+     * different value explicitly.
      */
     async update(patch, userEmail) {
       let changed: string[] = [];
@@ -403,6 +385,12 @@ export function createSettingsUseCases(
             continue;
           }
           const value = raw.trim();
+          if (value && (spec.key === "embeddingModel" || spec.key === "rerankerModel")) {
+            const type = spec.key === "embeddingModel" ? "embedding" : "rerank";
+            if (!stored?.registeredModels?.some(model => model.id === value && model.type === type)) {
+              throw new ValidationError(`The selected ${type} model is no longer registered`);
+            }
+          }
           if (spec.key === "rerankerMinScore" && value !== "") {
             const score = Number(value);
             if (!Number.isFinite(score) || score < 0 || score > 1) {
@@ -458,106 +446,16 @@ export function createSettingsUseCases(
         }
 
         if (patch.llmProviders !== undefined) {
-          if (patch.llmProviders.length === 0) {
-            delete next.llmProviders;
-          } else {
-            const providers = patch.llmProviders.map((input) =>
-              toProviderSetting(cipher, env, parseProviderConfigs, input, stored?.llmProviders),
-            );
-            const names = new Set(providers.map((provider) => provider.name));
-            if (names.size !== providers.length) {
-              throw new ValidationError("LLM provider names must be unique");
-            }
-            next.llmProviders = providers;
-          }
-        }
-
-        if (patch.selfHostedModels !== undefined) {
-          if (patch.selfHostedModels.length === 0) {
-            delete next.selfHostedModels;
-          } else {
-            const declarations = patch.selfHostedModels.map(selfHostedModelFromInput);
-            // The same validation the install runs, surfaced as the save's
-            // error instead of a warning after it — a declaration that cannot
-            // install must fail the form, not silently vanish from the picker.
-            const problems = declarations
-              .map((entry) => {
-                const reason = selfHostedModelRejectReason(entry);
-                return reason === null ? null : `${entry.id} — ${reason}`;
-              })
-              .filter((problem): problem is string => problem !== null);
-            if (problems.length > 0) {
-              throw new ValidationError(`Invalid self-hosted model(s): ${problems.join("; ")}`);
-            }
-            const ids = new Set(declarations.map((entry) => entry.id));
-            if (ids.size !== declarations.length) {
-              throw new ValidationError("Self-hosted model families must be unique");
-            }
-            next.selfHostedModels = declarations;
-          }
-          const declarationsById = new Map(
-            (next.selfHostedModels ?? []).map((entry) => [entry.id, entry]),
+          const providers = patch.llmProviders.map((input) =>
+            toProviderSetting(cipher, env, parseProviderConfigs, input, stored?.llmProviders),
           );
-          for (const [selectionType, id] of [
-            ["embedding", next.embeddingModel ?? optionalEnv(env.EMBEDDING_MODEL)],
-            ["rerank", next.rerankerModel ?? optionalEnv(env.RERANKER_MODEL)],
-          ] as const) {
-            if (id?.startsWith("selfhosted/") !== true) continue;
-            const declaration = declarationsById.get(id);
-            if (!declaration) {
-              throw new ValidationError(`Selected self-hosted models must remain declared: ${id}`);
-            }
-            if (modelType(declaration) !== selectionType) {
-              throw new ValidationError(
-                `Selected self-hosted model must remain ${selectionType}: ${id}`,
-              );
-            }
+          const names = new Set(providers.map((provider) => provider.name));
+          if (names.size !== providers.length) {
+            throw new ValidationError("LLM provider names must be unique");
           }
-          const declaredIds = new Set(declarationsById.keys());
-          if (next.hiddenModels !== undefined) {
-            next.hiddenModels = next.hiddenModels.filter(
-              (id) => !id.startsWith("selfhosted/") || declaredIds.has(id),
-            );
-            if (next.hiddenModels.length === 0) delete next.hiddenModels;
-          }
-        }
-
-        if (patch.hiddenModels !== undefined) {
-          if (patch.hiddenModels.length > MAX_HIDDEN_MODELS) {
-            throw new ValidationError(`At most ${MAX_HIDDEN_MODELS} models may be hidden`);
-          }
-          if (patch.hiddenModels.length === 0) {
-            delete next.hiddenModels;
-          } else {
-            // Sorted and deduplicated so a resubmitted hidden list compares equal
-            // in `changedKeys` regardless of the order the toggles were flipped.
-            const ids = [...new Set(patch.hiddenModels.map((id) => id.trim()))].sort();
-            // A declaration in this same patch counts: it installs right after
-            // the write below, so one PUT may declare and hide it together.
-            const declaredNow = new Set((next.selfHostedModels ?? []).map((entry) => entry.id));
-            const unknown = ids.filter(
-              (id) => getModelConfig(id) === undefined && !declaredNow.has(id),
-            );
-            if (unknown.length > 0) {
-              throw new ValidationError(`Unknown model ids: ${unknown.join(", ")}`);
-            }
-            // Judged against what `/api/models` would actually offer — the same
-            // provider-channel narrowing (`offeredModels`, with this patch's
-            // provider override when it carries one) — so a deployment with one
-            // configured provider cannot hide that provider's whole list while
-            // models no channel dispatches keep the guard quiet.
-            const channelNames = (next.llmProviders ?? parseProviderConfigs(env)).map(
-              (provider) => provider.name,
-            );
-            const remaining = offeredModels(channelNames, ids).filter(
-              (model) => patch.selfHostedModels === undefined || model.provider !== "selfhosted",
-            );
-            const declaredVisible = offeredModels(channelNames, ids, next.selfHostedModels ?? []).length > 0;
-            if (remaining.length === 0 && !declaredVisible) {
-              throw new ValidationError("At least one model must remain visible");
-            }
-            next.hiddenModels = ids;
-          }
+          const orphaned = (stored?.registeredModels ?? []).filter((model) => !names.has(model.provider));
+          if (orphaned.length) throw new ValidationError("Delete this provider's registered models before removing the provider");
+          next.llmProviders = providers;
         }
 
         /*
@@ -598,10 +496,6 @@ export function createSettingsUseCases(
         return next;
       };
       const { after: next } = await repo.update(mutate);
-      // Install what was just persisted: this process offers the declared
-      // models immediately; other instances pick them up at their next
-      // catalog tick, which re-reads the declarations (`localModels`).
-      loadSelfHostedModels(next.selfHostedModels ?? []);
       // The row keeps only *which* keys were written, never their values: the
       // admin list is one of them and the LLM credential is another. Without
       // this the settings item held `updatedAt` and nothing about who moved it.

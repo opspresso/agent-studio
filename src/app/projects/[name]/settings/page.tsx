@@ -1,5 +1,6 @@
 "use client";
 
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
@@ -130,7 +131,8 @@ export default function SettingsPage() {
   // app-settings page carries: a fraction of the row keeps shrinking after the
   // content has run out of room, and nothing here is sharing that row.
   return (
-    <Stack gap="xl" maw={760}>
+    <Stack gap="lg" maw={860}>
+      <SectionHeading title={t("project.tab.settings")} />
       <form onSubmit={save}>
         <Stack gap="md">
           {error && (

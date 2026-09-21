@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "@/app/_components/PageHeader";
+import { IconPuzzle } from "@tabler/icons-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -11,7 +13,6 @@ import {
   Group,
   Stack,
   Text,
-  Title,
 } from "@mantine/core";
 import { BackLink } from "@/app/_components/BackLink";
 import { CardList } from "@/app/_components/CardGrid";
@@ -92,23 +93,15 @@ export default function PluginDetailPage() {
     <Stack gap="lg">
       <BackLink href="/plugins" label={t("nav.plugins")} />
 
-      <div>
-        <Group gap="xs" wrap="nowrap">
-          <Title order={1} fz="h2">
-            {plugin.name}
-          </Title>
+      <PageHeader title={plugin.name} Icon={IconPuzzle} description={plugin.description}
+        badges={<>
           {plugin.version && (
             <Badge size="sm" variant="light">
               v{plugin.version}
             </Badge>
           )}
-        </Group>
-        {plugin.description && (
-          <Text fz="sm" c="dimmed" mt={4} maw={620}>
-            {plugin.description}
-          </Text>
-        )}
-        <Text fz="xs" c="dimmed" mt={6}>
+        </>}
+        details={<><Text fz="xs" c="dimmed" mt={6}>
           {treeUrl ? (
             <Anchor href={treeUrl} target="_blank" rel="noreferrer" fz="xs">
               {location}
@@ -131,8 +124,7 @@ export default function PluginDetailPage() {
           )}
           {" · synced "}
           {formatDateTime(plugin.syncedAt, locale)}
-        </Text>
-      </div>
+        </Text></>} />
 
       <Alert color="blue" variant="light" title={t("plugins.descriptionTitle")}>
         {t("plugins.descriptionRole")}

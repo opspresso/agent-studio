@@ -1,5 +1,7 @@
 "use client";
 
+import { Stack } from "@mantine/core";
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useCallback } from "react";
 import { useParams } from "next/navigation";
 import { ArtifactGallery } from "@/app/artifacts/_components/ArtifactGallery";
@@ -18,10 +20,13 @@ export default function ProjectArtifactsPage() {
     [name],
   );
   return (
+    <Stack gap="lg">
+      <SectionHeading title={t("project.tab.artifacts")} />
     <ArtifactGallery
       load={load}
       showProject={false}
       emptyText={t("projectArtifacts.empty")}
     />
+    </Stack>
   );
 }

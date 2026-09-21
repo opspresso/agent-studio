@@ -248,7 +248,7 @@ Unicode 경계를 보존하는 문자 offset cursor로 남은 내용을 다음 �
 - `TranscriptionPort`는 file 참조·model·language·segment 범위·signal을 받고 text, 선택적 timestamp·
   speaker, 실제 model·usage·coverage·warnings를 반환한다. provider API는 infrastructure가 소유한다.
 - endpoint·credential·wire ID는 runtime settings resolver가 결정하고 published 모델 사실은
-  agent-models를 따른다. 실제 모델 선정 후 공식 provider 계약을 확인한다.
+  관리자가 등록한 모델의 요율을 따른다. 실제 모델 선정 후 공식 provider 계약을 확인한다.
 - 플랫폼 상한은 파일 512 MiB, 오디오 6시간, 다운로드와 구간 ASR 각각 10분,
   한 실행 구간 24시간이다. 모델과 플랫폼 중 작은 제한을 적용하고 외부 모델로 자동 fallback하지 않는다.
 - 분할·변환은 이미지에 포함한 ffmpeg로 수행하고 network·CPU·메모리·scratch disk를 제한한다.

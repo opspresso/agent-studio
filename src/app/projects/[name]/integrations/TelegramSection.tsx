@@ -1,5 +1,6 @@
 "use client";
 
+import { SecretInput } from "@/app/_components/SecretInput";
 import { useEffect, useState } from "react";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { useConfirm } from "@/app/_components/useConfirm";
@@ -12,8 +13,7 @@ import {
   updateProjectTelegram,
 } from "../../lib/api";
 import type { ProjectTelegramResponse } from "../../lib/api";
-import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
-import { monoInput } from "@/app/_components/monoInput";
+import { Badge, Button, Checkbox, Group, Stack, Text } from "@mantine/core";
 import { stateColor } from "@/app/_components/badgeColors";
 import { useT } from "@/app/_i18n/provider";
 import { reportError } from "@/app/_lib/reportError";
@@ -146,12 +146,12 @@ export function TelegramSection({
           {t("pset.telegramIntro")}
         </Text>
 
-        <TextInput
+        <SecretInput
           label={t("pset.botToken")}
           value={botToken}
-          onChange={(e) => setBotToken(e.currentTarget.value)}
+          storedValue={view.botToken}
+          onChange={setBotToken}
           placeholder="123456789:AA…"
-          styles={monoInput}
         />
         {view.botUsername && (
           <Text fz="sm">

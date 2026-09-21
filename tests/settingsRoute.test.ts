@@ -86,24 +86,16 @@ describe("PUT /api/settings", () => {
     expect(useCases.update).not.toHaveBeenCalled();
   });
 
-  it("forwards hiddenModels, which the /api/models list reads", async () => {
-    const body = { hiddenModels: ["openai/gpt-5.4"] };
-    const res = await put(body);
-    expect(res.status).toBe(200);
-    expect(useCases.update).toHaveBeenCalledWith(body, "admin@example.com");
+  it("rejects the removed hidden-model setting instead of silently accepting it", async () => {
+    const res = await put({ hiddenModels: ["openai/gpt-5.4"] });
+    expect(res.status).toBe(400);
+    expect(useCases.update).not.toHaveBeenCalled();
   });
 
-  it("does not bypass model selection and embedding migration", async () => {
-    const res = await put({
-      pluginsRepo: "org/plugins",
-      embeddingModel: "selfhosted/other-embedding",
-      rerankerModel: "selfhosted/other-reranker",
-    });
-    expect(res.status).toBe(200);
-    expect(useCases.update).toHaveBeenCalledWith(
-      { pluginsRepo: "org/plugins" },
-      "admin@example.com",
-    );
+  it("rejects direct model usage changes outside the selection use case", async () => {
+    const res = await put({ embeddingModel: "local/embedding", rerankerModel: "local/reranker" });
+    expect(res.status).toBe(400);
+    expect(useCases.update).not.toHaveBeenCalled();
   });
 
   it("400s on a hiddenModels that is not a string array", async () => {

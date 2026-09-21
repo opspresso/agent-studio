@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, CopyButton as MantineCopyButton } from "@mantine/core";
+import { Button, CopyButton as MantineCopyButton, type ButtonProps } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 
 /**
@@ -10,12 +10,12 @@ import { useT } from "@/app/_i18n/provider";
  * would otherwise each spell out the same `{({ copied, copy }) => …}` block,
  * and the label is the only thing any of them varies.
  */
-export function CopyButton({ text, label }: { text: string; label?: string }) {
+export function CopyButton({ text, label, size = "compact-xs", disabled }: { text: string; label?: string; size?: ButtonProps["size"]; disabled?: boolean }) {
   const t = useT();
   return (
     <MantineCopyButton value={text} timeout={1500}>
       {({ copied, copy }) => (
-        <Button variant="default" size="compact-xs" onClick={copy} style={{ flexShrink: 0 }}>
+        <Button variant="default" size={size} disabled={disabled} onClick={copy} style={{ flexShrink: 0 }}>
           {copied ? t("common.copied") : (label ?? t("common.copy"))}
         </Button>
       )}

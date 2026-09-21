@@ -1,6 +1,7 @@
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 9).toString("base64");
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fixtureRegistrations } from "./modelFixtures";
 import type { AppSettings } from "@/domain/settings/types";
 
 vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
@@ -34,7 +35,7 @@ import {
 const mockGet = vi.mocked(settingsRepository.get);
 
 function stub(settings: AppSettings | null): void {
-  mockGet.mockResolvedValue(settings);
+  mockGet.mockResolvedValue(settings ? { registeredModels: fixtureRegistrations(), ...settings } : null);
 }
 
 const ENV_KEYS = [
@@ -214,12 +215,7 @@ describe("runtime settings precedence", () => {
     await expect(getRerankerTarget("openrouter/rerank-2.5")).resolves.toMatchObject({
       baseUrl, apiKey: "router-secret", model: "voyageai/rerank-2.5",
     });
-    await expect(getEmbeddingTarget("selfhosted/Qwen/Qwen3-Embedding-4B")).resolves.toEqual({
-      baseUrl: "http://spark.test:8001/v1", apiKey: "not-required", model: "Qwen/Qwen3-Embedding-4B",
-    });
-    await expect(getRerankerTarget("selfhosted/Qwen/Qwen3-Reranker-0.6B")).resolves.toEqual({
-      baseUrl: "http://spark.test:8002/v1", model: "Qwen/Qwen3-Reranker-0.6B",
-    });
+
   });
 
   it("preserves provider model prefixes when the retrieval channel requires them", async () => {
@@ -235,7 +231,7 @@ describe("runtime settings precedence", () => {
     });
   });
 
-  it("keeps deployment retrieval endpoints when no matching provider channel is registered", async () => {
+  it("refuses retrieval without a registered provider instead of using legacy endpoints", async () => {
     process.env.EMBEDDING_BASE_URL = "http://embedding.test/v1";
     process.env.EMBEDDING_API_KEY = "embedding-key";
     process.env.RERANKER_BASE_URL = "http://reranker.test/v1";
@@ -243,12 +239,8 @@ describe("runtime settings precedence", () => {
     process.env.RERANKER_API_KEY = "reranker-key";
     stub({ llmProviders: [], updatedAt: "2026-01-01T00:00:00Z" });
 
-    await expect(getEmbeddingTarget("openrouter/text-embedding-3-small")).resolves.toEqual({
-      baseUrl: "http://embedding.test/v1", apiKey: "embedding-key", model: "openai/text-embedding-3-small",
-    });
-    await expect(getRerankerTarget("openrouter/rerank-2.5")).resolves.toEqual({
-      baseUrl: "http://reranker.test/v1", apiKey: "reranker-key", model: "voyageai/rerank-2.5",
-    });
+    await expect(getEmbeddingTarget("openrouter/text-embedding-3-small")).rejects.toThrow("registered embedding");
+    await expect(getRerankerTarget("openrouter/rerank-2.5")).rejects.toThrow("registered rerank");
   });
 
   it("refuses to send unsigned retrieval requests to a SigV4 provider", async () => {
@@ -256,8 +248,8 @@ describe("runtime settings precedence", () => {
       llmProviders: [{ name: "openrouter", baseUrl: "https://signed.test/v1", auth: "sigv4", apiKey: "" }],
       updatedAt: "2026-01-01T00:00:00Z",
     });
-    await expect(getRerankerTarget("openrouter/rerank-2.5")).rejects.toThrow("retrieval authentication");
-    await expect(getEmbeddingTarget("openrouter/text-embedding-3-small")).rejects.toThrow("retrieval authentication");
+    await expect(getRerankerTarget("openrouter/rerank-2.5")).rejects.toThrow("API-key provider");
+    await expect(getEmbeddingTarget("openrouter/text-embedding-3-small")).rejects.toThrow("API-key provider");
   });
 
   it("resolves embedding and reranker selections from DB before env", async () => {
@@ -280,13 +272,10 @@ describe("runtime settings precedence", () => {
     invalidateSettingsCache();
     stub(null);
     await expect(getEmbeddingModelSelection()).resolves.toEqual({
-      model: "openrouter/qwen3-embedding-4b",
-      source: "env",
+      model: "",
+      source: "default",
     });
-    await expect(getRerankerModelSelection()).resolves.toEqual({
-      model: "selfhosted/env-reranker",
-      source: "env",
-    });
+    await expect(getRerankerModelSelection()).resolves.toBeUndefined();
   });
 
   it("resolves the reranker score floor from DB before env and default", async () => {

@@ -132,9 +132,9 @@ describe("required config", () => {
     set("DATABASE_URL", "postgres://unit:unit@localhost:5432/unit");
     set("LLM_BASE_URL", "https://router.example/v1");
     set("AES_ENCRYPTION_KEY", Buffer.alloc(32, 5).toString("base64"));
-    set("LLM_API_KEY", raw);
+    set("AES_ENCRYPTION_KEY", raw);
     expect(() => assertRequiredConfig()).toThrow(
-      "Missing required environment variables: LLM_API_KEY",
+      "Missing required environment variables: AES_ENCRYPTION_KEY",
     );
   });
 

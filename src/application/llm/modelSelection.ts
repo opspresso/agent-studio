@@ -1,4 +1,4 @@
-import { ConflictError, ValidationError } from "@/application/errors";
+import { ConflictError, UpstreamError, ValidationError } from "@/application/errors";
 import type { ReindexReport } from "@/application/catalog/reindexCatalog";
 import { getModelConfig, modelType } from "@/domain/llm/models";
 import {
@@ -80,7 +80,10 @@ export function createModelSelectionUseCases(
           throw new ValidationError("The reranker endpoint is not configured");
         }
         if (model !== currentModel) {
-          await deps.testReranker(model);
+          try { await deps.testReranker(model); }
+          catch (error) {
+            throw new UpstreamError(`Reranker verification failed: ${error instanceof Error ? error.message : "Provider did not respond"}`);
+          }
         }
         const settings = await deps.settings.update(
           {

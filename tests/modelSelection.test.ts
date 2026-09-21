@@ -3,14 +3,14 @@ import {
   createModelSelectionUseCases,
   type ModelSelectionDeps,
 } from "@/application/llm/modelSelection";
-import { loadSelfHostedModels } from "@/domain/llm/models";
+import { addTestModels } from "./modelFixtures";
 import type { AppSettings } from "@/domain/settings/types";
 
 const EMBEDDING = "selfhosted/Qwen/Qwen3-Embedding-4B";
 const RERANKER = "selfhosted/Qwen/Qwen3-Reranker-0.6B";
 
 function installModels(): void {
-  loadSelfHostedModels([
+  addTestModels([
     {
       id: EMBEDDING,
       provider: "selfhosted",
@@ -108,7 +108,7 @@ function deps(initial: AppSettings | null = null): {
 }
 
 afterEach(() => {
-  loadSelfHostedModels([]);
+  addTestModels([]);
 });
 
 describe("modelSelectionUseCases", () => {
@@ -240,6 +240,15 @@ describe("modelSelectionUseCases", () => {
         "admin@example.com",
       ),
     ).rejects.toThrow("is not an embedding model");
+  });
+
+  it("reports a failed reranker probe without changing the active selection", async () => {
+    installModels();
+    const setup = deps();
+    setup.deps.testReranker = vi.fn().mockRejectedValueOnce(new Error("Relevant capability was not ranked first"));
+    await expect(createModelSelectionUseCases(setup.deps).select("rerank", RERANKER, false, "admin@example.com"))
+      .rejects.toMatchObject({ status: 502, message: "Reranker verification failed: Relevant capability was not ranked first" });
+    expect(setup.value()?.rerankerModel).toBeUndefined();
   });
 
   it("changes the rerank score floor without probing or rebuilding", async () => {

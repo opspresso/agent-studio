@@ -1,5 +1,6 @@
 "use client";
 
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
@@ -171,6 +172,7 @@ export default function UsagePage() {
 
   return (
     <Stack gap="md">
+      <SectionHeading title={t("project.tab.usage")} />
       <DateRangePicker value={range} onChange={setRange} />
 
       {error && (

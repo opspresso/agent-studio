@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "@/app/_components/PageHeader";
+import { IconBook2 } from "@tabler/icons-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -18,7 +20,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
@@ -109,12 +110,8 @@ export default function SkillDetailPage() {
       {confirmModal}
       <BackLink href="/skills" label={t("nav.skills")} />
 
-      <Group justify="space-between" align="flex-start" gap="md">
-        <div>
-          <Group gap="xs" wrap="wrap">
-            <Title order={1} fz="h2">
-              {skill.name}
-            </Title>
+      <PageHeader title={skill.name} Icon={IconBook2}
+        badges={<>
             {plugin && (
               <Badge
                 color={PLUGIN_COLOR}
@@ -125,14 +122,13 @@ export default function SkillDetailPage() {
                 {plugin.plugin}
               </Badge>
             )}
-          </Group>
-          {skill.source && (
+          </>}
+        details={skill.source && (
             <Text fz="xs" c="dimmed" mt={4}>
               Owned by {skill.source} — the console cannot edit or delete it. Change it in the
               repository; the sync applies it.
             </Text>
-          )}
-        </div>
+          )}>
         {/* A repo-owned skill has no console actions at all: the API refuses
             them, so offering the buttons would only manufacture a 403. */}
         {!editing && viewer?.isAdmin && !skill.source && (
@@ -145,7 +141,7 @@ export default function SkillDetailPage() {
             </Button>
           </Group>
         )}
-      </Group>
+      </PageHeader>
 
       {error && (
         <Alert color="red" variant="light">

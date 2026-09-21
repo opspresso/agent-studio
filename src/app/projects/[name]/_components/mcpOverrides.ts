@@ -17,7 +17,7 @@ export type OverrideRow = HeaderRow;
 
 export function overridesToRows(headers: McpBinding["headers"]): OverrideRow[] {
   return Object.entries(headers ?? {}).map(([key, value]) =>
-    value === null ? { key, value: "", remove: true } : { key, value, remove: false },
+    value === null ? { key, value: "", remove: true } : { key, value, storedValue: value, remove: false },
   );
 }
 

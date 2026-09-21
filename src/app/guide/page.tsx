@@ -229,6 +229,7 @@ const SECTIONS: readonly GuideSection[] = [
       { title: "guide.admin.members", body: "guide.admin.membersBody" },
       { title: "guide.admin.settings", body: "guide.admin.settingsBody" },
       { title: "guide.admin.models", body: "guide.admin.modelsBody" },
+      { title: "guide.admin.modelSelection", body: "guide.admin.modelSelectionBody" },
       { title: "guide.admin.offline", body: "guide.admin.offlineBody" },
       { title: "guide.admin.artifacts", body: "guide.admin.artifactsBody" },
       { title: "guide.admin.audit", body: "guide.admin.auditBody" },

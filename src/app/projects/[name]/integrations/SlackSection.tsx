@@ -1,5 +1,6 @@
 "use client";
 
+import { SecretInput } from "@/app/_components/SecretInput";
 import { useEffect, useState } from "react";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CollapsibleCode } from "@/app/_components/CollapsibleCode";
@@ -13,7 +14,6 @@ import {
 } from "../../lib/api";
 import type { ProjectSlackResponse, SlackSuggestedPrompt } from "../../lib/api";
 import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
-import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
 import { parseList } from "@/shared/parseList";
@@ -180,19 +180,19 @@ export function SlackSection({
           copyLabel="Copy manifest"
         />
 
-        <TextInput
+        <SecretInput
           label={t("pset.botToken")}
           value={botToken}
-          onChange={(e) => setBotToken(e.currentTarget.value)}
+          storedValue={view.botToken}
+          onChange={setBotToken}
           placeholder="xoxb-…"
-          styles={monoInput}
         />
-        <TextInput
+        <SecretInput
           label={t("pset.signingSecret")}
           value={signingSecret}
-          onChange={(e) => setSigningSecret(e.currentTarget.value)}
+          storedValue={view.signingSecret}
+          onChange={setSigningSecret}
           placeholder={t("pset.signingSecretPlaceholder")}
-          styles={monoInput}
         />
         <Stack gap="xs">
           {confirmModal}

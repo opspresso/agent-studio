@@ -3,12 +3,12 @@ import { createTestModel } from "@/application/llm/testModel";
 import { ValidationError } from "@/application/errors";
 import type { ModelProvider } from "@openai/agents";
 import { FakeChannel } from "./fakeChannel";
-import { loadSelfHostedModels } from "@/domain/llm/models";
+import { addTestModels } from "./modelFixtures";
 
 const KNOWN_MODEL = "openai/gpt-5.4";
 
 afterEach(() => {
-  loadSelfHostedModels([]);
+  addTestModels([]);
 });
 
 function failingChannel(message: string): ModelProvider {
@@ -92,7 +92,7 @@ describe("createTestModel", () => {
   it("tests a rerank model through the specialized endpoint", async () => {
     const channel = new FakeChannel([[]]);
     const testReranker = vi.fn(async () => {});
-    loadSelfHostedModels([
+    addTestModels([
       {
         id: "selfhosted/reranker",
         provider: "selfhosted",
@@ -119,7 +119,7 @@ describe("createTestModel", () => {
   });
 
   it("reports a rerank probe failure as a test result", async () => {
-    loadSelfHostedModels([
+    addTestModels([
       {
         id: "selfhosted/reranker",
         provider: "selfhosted",
@@ -150,7 +150,7 @@ describe("createTestModel", () => {
 
   it("does not send a transcription model to chat completion", async () => {
     const channel = new FakeChannel([[]]);
-    loadSelfHostedModels([
+    addTestModels([
       {
         id: "selfhosted/transcriber",
         provider: "selfhosted",

@@ -22,20 +22,10 @@ const { state } = vi.hoisted(() => ({
 vi.mock("@/lib/config", () => ({
   assertRequiredConfig: () => {},
   assertAccessControlConfig: () => {},
-  config: { modelsCatalogUrl: "https://models.test/models.json", modelsCatalogRefreshMs: 0 },
+  config: {},
 }));
 
-// The catalog refresh is a network read that must not reach out of a unit
-// test; a source that fails leaves the snapshot in place, which is the branch
-// the boot takes offline anyway.
-vi.mock("@/infrastructure/llm/modelCatalogHttpSource", () => ({
-  createHttpModelCatalogSource: (url: string) => ({
-    description: url,
-    load: async () => {
-      throw new Error("offline");
-    },
-  }),
-}));
+vi.mock("@/lib/runtime-settings", () => ({ getLlmProviderConfigs: async () => [] }));
 
 vi.mock("@/shared/lifecycle", () => ({
   registerShutdownSignals: () => {},

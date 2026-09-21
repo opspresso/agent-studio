@@ -11,6 +11,7 @@ import { CreateBucketCommand, DeleteBucketCommand, ListObjectsV2Command } from "
 import { assertLocalDatabase } from "./local-database";
 import { sourceFileObjectKey } from "@/domain/artifact/sourceFile";
 
+let restoreModelSettings: (() => Promise<unknown>) | undefined;
 async function main() {
   process.env.STAGE = "local";
   process.env.DATABASE_URL ??= "postgres://agent_studio:agent_studio@localhost:5432/agent_studio_test";
@@ -71,13 +72,30 @@ async function main() {
   process.env.LLM_PROVIDER_OPENAI_API_KEY = "test";
   const { migrate } = await import("@/infrastructure/db/migrations");
   await migrate();
+  const { settingsRepository } = await import("@/infrastructure/db/repositories/settingsRepository");
+  const previousSettings = await settingsRepository.get();
+  restoreModelSettings = () => settingsRepository.update(() => previousSettings ?? { updatedAt: "" });
+  const { encryptSecret } = await import("@/infrastructure/crypto/secretEncryption");
+  const { llmProviderApiKeyContext } = await import("@/domain/security/secretContext");
+  const baseUrl = process.env.TRANSCRIPTION_BASE_URL;
+  await settingsRepository.update(current => ({ ...current,
+    llmProviders: [{ name: "openai", baseUrl, apiKey: encryptSecret("test", llmProviderApiKeyContext("openai", baseUrl)) }],
+    registeredModels: ["gpt-5-mini", "whisper-1"].map(wireId => ({
+      id: `openai/${wireId}`, provider: "openai", wireId, displayName: wireId,
+      type: wireId === "whisper-1" ? "transcription" as const : "text" as const,
+      contextWindow: 128000, maxTokens: wireId === "whisper-1" ? 0 : 4000,
+      capabilities: { tools: wireId !== "whisper-1", structuredOutput: true, imageInput: false, reasoning: false },
+      pricing: { inputPer1M: 0, outputPer1M: 0, ...(wireId === "whisper-1" ? { perAudioMinute: 0 } : {}) },
+    })), updatedAt: new Date().toISOString(),
+  }));
+
   const { getAudioRuntime, mcpUseCases, artifactUseCases } = await import("@/lib/container");
   const { artifactRepository } = await import("@/infrastructure/db/repositories/artifactRepository");
   const { getS3Client, deleteStoredObject } = await import("@/infrastructure/storage/s3ObjectStore");
   const { projectRepository } = await import("@/infrastructure/db/repositories/projectRepository");
-  const { getLlmChannelConfig, getLlmProviderConfigs } = await import("@/lib/runtime-settings");
+  const { getLlmProviderConfigs } = await import("@/lib/runtime-settings");
   const { resolveProviderTarget } = await import("@/infrastructure/llm/providers");
-  assert.equal(resolveProviderTarget("openai/gpt-5-mini", await getLlmProviderConfigs(), await getLlmChannelConfig()).baseUrl,
+  assert.equal(resolveProviderTarget("openai/gpt-5-mini", await getLlmProviderConfigs()).baseUrl,
     process.env.TRANSCRIPTION_BASE_URL, "pipeline checks must use the local mock channel");
   const { withTransaction, closePool } = await import("@/infrastructure/db/client");
   const { deleteItem } = await import("@/infrastructure/db/store");
@@ -219,9 +237,10 @@ async function main() {
     await deleteItem(keys.usageMember(email, new Date().toISOString().slice(0, 10), projectName));
     if (userCreated) await withTransaction(async (db) => { await db.query(`DELETE FROM "user" WHERE "id" = $1`, [id]); });
     await client.send(new DeleteBucketCommand({ Bucket: bucket }));
+    await restoreModelSettings?.(); restoreModelSettings = undefined;
     client.destroy(); await closePool();
     await new Promise<void>((resolve) => mock.close(() => resolve()));
     await rm(directory, { recursive: true, force: true });
   }
 }
-main().catch((error: unknown) => { console.error(error instanceof Error ? error.message : "Audio pipeline check failed"); process.exitCode = 1; });
+main().catch(async (error: unknown) => { await restoreModelSettings?.(); console.error(error instanceof Error ? error.message : "Audio pipeline check failed"); process.exitCode = 1; });

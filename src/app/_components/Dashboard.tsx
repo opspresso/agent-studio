@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatUsd } from "@/app/_lib/formatUsd";
-import { Alert, Card, Group, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Alert, Card, Group, SimpleGrid, Stack } from "@mantine/core";
 import {
   IconActivity,
   IconChartAreaLine,
@@ -11,6 +11,7 @@ import {
 } from "@tabler/icons-react";
 import type { SanitizedProject } from "@/app/projects/lib/api";
 import { useLocale, useT } from "@/app/_i18n/provider";
+import { SectionHeading } from "./SectionHeading";
 import { CardHeading } from "./CardHeading";
 import { GROUP_BY_LABEL, GroupByControl } from "./GroupByControl";
 import { StatCard } from "./StatCard";
@@ -111,15 +112,7 @@ export function Dashboard({ projects }: { projects: SanitizedProject[] | null })
 
   return (
     <Stack gap="xl">
-      <Group justify="space-between" align="flex-end" gap="md" wrap="wrap">
-        <div>
-          <Title order={2} fz={{ base: 22, md: 26 }} lts="-0.03em">
-            {t("cost.title")}
-          </Title>
-          <Text c="dimmed" fz="sm" mt={4} maw={620}>
-            {t("cost.lede")}
-          </Text>
-        </div>
+      <SectionHeading title={t("cost.title")} description={t("cost.lede")}>
         <DateRangePicker
           value={{ from, to }}
           onChange={(range) => {
@@ -127,7 +120,7 @@ export function Dashboard({ projects }: { projects: SanitizedProject[] | null })
             setTo(range.to);
           }}
         />
-      </Group>
+      </SectionHeading>
 
       {error && (
         <Alert color="red" variant="light">

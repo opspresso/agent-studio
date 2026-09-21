@@ -1,0 +1,11 @@
+.viewport {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.list { flex-wrap: nowrap; min-width: max-content; gap: 4px; }
+.tab { display: flex; gap: var(--mantine-spacing-xs); min-height: 40px; white-space: nowrap; font-weight: 500; }
+@media (max-width: $mantine-breakpoint-sm) {
+  .tab { min-height: 44px; }
+}

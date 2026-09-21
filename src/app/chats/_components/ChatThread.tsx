@@ -447,7 +447,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
         <Box
           pb="xs"
           mb="sm"
-          style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
+          style={{ borderBottom: "1px solid var(--studio-border)" }}
         >
           <Group gap="xs" className={classes.column}>
             <Badge variant="outline" color="gray">{t("chat.kind")}</Badge>
@@ -538,7 +538,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           </ActionIcon>
         )}
       </Box>
-      <Box pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
+      <Box pt="sm" style={{ borderTop: "1px solid var(--studio-border)" }}>
         <Box className={classes.column}>
           {banner && (
             <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">

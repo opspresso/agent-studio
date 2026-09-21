@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getVisibleModels, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { getVisibleModels } from "@/domain/llm/models";
 
 const {
   getLlmProviderConfigs,
@@ -76,18 +76,10 @@ beforeEach(() => {
 });
 
 describe("GET /api/models/catalog", () => {
-  it("marks every provider available through the default channel and every model visible", async () => {
+  it("reports only registered providers and selected model facts", async () => {
     const body = await catalog();
 
-    expect(body.providers).toEqual(
-      // The default channel serves every prefix except the self-hosted ones,
-      // which only their own channel can dispatch (`providerOffered`).
-      SUPPORTED_PROVIDERS.map((name) => ({
-        name,
-        available: name !== "selfhosted",
-        dedicated: false,
-      })),
-    );
+    expect(body.providers).toEqual([]);
     expect(body.models).toHaveLength(getVisibleModels().length);
     expect(body.models.every((model) => !model.selectionHidden && !model.favorite)).toBe(true);
     expect(body.models.every((model) => !Object.hasOwn(model, "hidden"))).toBe(true);
@@ -100,7 +92,7 @@ describe("GET /api/models/catalog", () => {
     });
     expect(body.selectionAvailable).toEqual({ embedding: false, rerank: false });
     expect(body.rerankerMinScore).toEqual({ value: 0.01, source: "default" });
-    expect(body.source).toBe("default");
+    expect(body.source).toBe("override");
   });
 
   it("marks only configured providers available once any dedicated channel exists", async () => {
@@ -121,24 +113,7 @@ describe("GET /api/models/catalog", () => {
       available: true,
       dedicated: true,
     });
-    expect(body.providers.find((provider) => provider.name === "anthropic")).toEqual({
-      name: "anthropic",
-      available: false,
-      dedicated: false,
-    });
-  });
-
-  it("still lists hidden models, flagged, when an override is stored", async () => {
-    getHiddenModels.mockResolvedValue(["openai/gpt-5.4"]);
-
-    const body = await catalog();
-
-    expect(body.source).toBe("override");
-    expect(body.models).toHaveLength(getVisibleModels().length);
-    expect(body.models.find((model) => model.id === "openai/gpt-5.4")?.selectionHidden).toBe(true);
-    expect(
-      body.models.find((model) => model.id === "anthropic/claude-fable-5")?.selectionHidden,
-    ).toBe(false);
+    expect(body.providers.find(provider => provider.name === "anthropic")).toBeUndefined();
   });
 
   it("marks favorites for the signed-in user", async () => {
@@ -162,9 +137,9 @@ describe("GET /api/models/catalog", () => {
     });
   });
 
-  it("offers rerank selection only when the catalog and reranker endpoint are both enabled", async () => {
+  it("allows selecting a registered reranker without a separate legacy endpoint", async () => {
     config.catalogEnabled = true;
-    expect((await catalog()).selectionAvailable.rerank).toBe(false);
+    expect((await catalog()).selectionAvailable.rerank).toBe(true);
 
     config.reranker = { baseUrl: "http://reranker.internal/v1" };
     expect((await catalog()).selectionAvailable.rerank).toBe(true);

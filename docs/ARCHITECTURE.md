@@ -21,7 +21,7 @@ Agent Studio의 계층, 저장 구조, 실행 경로와 스트림 계약을 설�
 | 모델 실행 | 사내 OpenAI 호환 모델 endpoint |
 | 콘솔 | 앱이 제공하는 페이지·정적 자산 |
 
-S3 호환 저장소, capability 검색, MCP, 메신저, 원격 모델·Plugin 카탈로그, 오디오·Workspace는
+S3 호환 저장소, capability 검색, MCP, 메신저, 외부 모델 프로바이더·Plugin 카탈로그, 오디오·Workspace는
 각각 활성화 조건을 갖는다. [설치 문서](INSTALL.md)는 필요한 서비스와 오프라인 구성을 설명한다.
 선택 기능의 실패로 실행 중 일부 능력이나 결과가 사라지면 warning으로 알린다.
 
@@ -97,7 +97,7 @@ Session 계약을 직접 사용하고, 배포별 저장·모델·자격 증명�
 | `src/app/api/telegram/webhook/_lib/` | Telegram 실행·클라이언트·transcript deps |
 | `src/app/api/teams/messages/_lib/` | Teams 실행·클라이언트·transcript deps |
 | `src/app/api/a2a/[name]/route.ts` | 프로젝트 카드와 실행 deps 위의 요청별 SDK handler |
-| `src/instrumentation.ts` | 설정 검증·migration·관리자 bootstrap·감사 sink·모델 카탈로그·managed MCP 복구 |
+| `src/instrumentation.ts` | 설정 검증·migration·관리자 bootstrap·감사 sink·선택 모델 로드·managed MCP 복구 |
 
 추가로 `lib/auth.ts`, `runtime-settings.ts`, `memberAccess.ts`만 어댑터에 직접 닿는
 lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 번 바인딩하거나 실행 경로에
@@ -182,7 +182,6 @@ lib wiring 모듈이다. 유스케이스는 `createXUseCases` 팩토리로 한 �
 | 앱 설정 (환경변수 오버라이드) | `SETTINGS#app` | `META` | — | — |
 | Capability catalog reindex lease + 영구 generation (in-place rebuild와 겹친 검색은 결과를 버린다) | `CATALOGREINDEX#global` | `LOCK` | — | — |
 | 사용자별 모델 즐겨찾기 | `MODELPREFERENCES#{userId}` | `META` | — | — |
-| admin 이 업로드한 모델 카탈로그 문서 (배포당 하나, 발행 카탈로그보다 우선) | `MODELCATALOG#doc` | `META` | — | — |
 
 두 번째 인덱스는 다음 목록을 담당한다:
 
@@ -375,7 +374,18 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 서버의 `resolveViewer`가 shell의 권한을 해석하며, 클라이언트 조회도 같은 viewer 계약을 쓴다.
 로그아웃 상태에서는 내비게이션 내용을 렌더하지 않는다.
 
-Mantine 테마의 소유자는 `app/theme.ts`다. 공통 검색은 `CatalogSearch`, IME Enter 전송은
+Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액션은 `PageHeader`, 하위 섹션은
+`SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. 목록·빈 상태·폼 모달은
+`DataTable`/`CardGrid`, `PageState`, `FormModal`이 공통 표현을 소유한다.
+외부에서 발급받는 키는 `SecretInput`으로 입력한다. 저장된 마스킹 값과 교체 초안을 분리하고,
+저장된 키는 앞뒤 4자를 드러낸 서버 마스크로 표시한다(8자 이하는 전부 숨긴다).
+교체를 눌러 초안을 입력하며, 초안을 비우거나 취소하면 기존 키를 유지한다.
+설정 override 삭제는 별도 동작으로 제공한다.
+Studio가 발급하는 프로젝트 토큰·Webhook·A2A 키는 `SecretControl`로 표시·복사·생성·재생성·폐기한다.
+지원하는 동작은 각 API의 기능과 권한에 따른다. 원문을 표시한 동안에만 복사할 수 있고,
+재생성·교체·폐기는 공통 확인창을 거친다. 평문은 브라우저 저장소에 기록하지 않는다.
+Settings는 General·Plugins·Models·Keys 탭으로 관리하고, `/models`는 등록된 모델 조회·검색만 제공한다.
+공통 검색은 `CatalogSearch`, IME Enter 전송은
 `isSubmitEnter`, Chat 스크롤은 `use-stick-to-bottom`이 담당한다.
 시스템 테마는 hydration 전후 기본값을 일치시키고, 답변·추론의 고빈도 출력은
 `createTextPacer`로 묶는다. API Reference 예제는 프로젝트 주소에 맞춰 만들고 credential은

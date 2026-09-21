@@ -4,8 +4,7 @@
  * misconfiguration fails fast at boot rather than as a 500 on the first request
  * that touches the missing value, and arms graceful-shutdown signal handling.
  *
- * It also loads the published model catalog over the committed snapshot and
- * keeps it refreshed, and repairs managed MCP servers, because a new process
+ * It also loads administrator-selected models and repairs managed MCP servers, because a new process
  * is exactly the event that breaks them: their containers join this app's
  * network namespace, and replacing this app strands them in the old one.
  *
@@ -90,57 +89,9 @@ export async function register(): Promise<void> {
     // nothing in-process can. Without it the same defect is silent until the
     // first audited act, which writes nothing and says nothing.
     assertAuditSinkWired();
-    // The model registry: the committed snapshot until this lands, today's
-    // published catalog after. Awaited so the first request prices against
-    // the catalog rather than the snapshot, and bounded by the source's own
-    // deadline; a failure keeps the snapshot and is logged, never fatal. The
-    // refresher then re-reads on its interval for the life of the process.
-    const [
-      { createModelCatalogRefresher, processModelCatalogRefreshCoordinator },
-      { createCompositeModelCatalogSource },
-      { createHttpModelCatalogSource },
-      { modelCatalogRepository },
-      { config },
-    ] = await Promise.all([
-      import("@/application/llm/modelCatalogRefresh"),
-      import("@/application/llm/modelCatalogStoredSource"),
-      import("@/infrastructure/llm/modelCatalogHttpSource"),
-      import("@/infrastructure/db/repositories/modelCatalogRepository"),
-      import("@/lib/config"),
-    ]);
-    const modelCatalog = createModelCatalogRefresher({
-      // An admin's uploaded document over the published catalog, and under
-      // no `MODELS_CATALOG_URL` or `none` (answered as `undefined`) means the
-      // upload alone: no fetch leaves this process, and a tick with nothing
-      // stored is silent. The same composition the console's refresh button
-      // uses (`lib/container.ts`).
-      source: createCompositeModelCatalogSource({
-        stored: modelCatalogRepository,
-        remote:
-          config.modelsCatalogUrl === undefined
-            ? undefined
-            : createHttpModelCatalogSource(config.modelsCatalogUrl),
-      }),
-      intervalMs: config.modelsCatalogRefreshMs,
-      // Shared with the console refresher even when Next evaluates the two
-      // composition sites from separate server bundles.
-      coordinator: processModelCatalogRefreshCoordinator(),
-      // The second publisher: this deployment's own self-hosted declarations,
-      // re-read on the same schedule so a settings write on another instance
-      // reaches this process within a tick. Deadlined like the catalog fetch —
-      // the boot refresh is awaited before the first request, and a hung
-      // settings table must not hold the boot the way an unreachable one
-      // (which rejects fast and is logged) already cannot.
-      localModels: async () => {
-        const [{ getSelfHostedModels }, { withTimeout }] = await Promise.all([
-          import("@/lib/runtime-settings"),
-          import("@/shared/withTimeout"),
-        ]);
-        return withTimeout(getSelfHostedModels(), 10_000);
-      },
-    });
-    await modelCatalog.refresh();
-    modelCatalog.start();
+    // Required boot paths read only the deployment's persisted model selections.
+    const { getLlmProviderConfigs } = await import("@/lib/runtime-settings");
+    await getLlmProviderConfigs();
     // The import is inside the guard so the edge build folds it away, and off
     // the awaited path because evaluating the composition root constructs every
     // AWS client — `register` is awaited before the server accepts connections,

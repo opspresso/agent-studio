@@ -23,8 +23,9 @@ import {
   type UnknownModelPolicy,
 } from "@/domain/settings/modelPolicy";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
-import { parseProviderConfigs, resolveProviderTarget, type ResolvedTarget } from "@/infrastructure/llm/providers";
-import { getModelConfig, SELF_HOSTED_PROVIDERS, wireModelId } from "@/domain/llm/models";
+import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
+import { getModelConfig, replaceModelRegistry } from "@/domain/llm/models";
+import { registeredModelConfig, providerKind } from "@/domain/llm/providerModels";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import type { TranscriptionConfig } from "@/infrastructure/llm/transcription";
 import { config, positiveIntEnv } from "./config";
@@ -61,6 +62,12 @@ async function loadSettings(): Promise<AppSettings | null> {
       .then((value) => {
         if (generation === cacheGeneration) {
           cache = { value, fetchedAt: now };
+          const providers = value?.llmProviders ?? parseProviderConfigs(process.env);
+          const models = (value?.registeredModels ?? []).flatMap(model => {
+            const provider = providers.find(item => item.name === model.provider);
+            return provider ? [registeredModelConfig(model, providerKind(provider))] : [];
+          });
+          replaceModelRegistry(models, value?.updatedAt ?? "");
         }
         return value;
       })
@@ -78,6 +85,10 @@ async function loadSettings(): Promise<AppSettings | null> {
 export function invalidateSettingsCache(): void {
   cacheGeneration += 1;
   cache = undefined;
+}
+
+export async function getDefaultModel(): Promise<string | undefined> {
+  return (await loadSettings())?.defaultModel;
 }
 
 export async function getAdminEmails(): Promise<string[]> {
@@ -145,51 +156,29 @@ export async function getEmbeddingChannelConfig(): Promise<{ baseUrl: string; ap
   return getLlmChannelConfig();
 }
 
-async function getRetrievalProviderTarget(model: string): Promise<ResolvedTarget | undefined> {
+async function selectedTarget(model: string, type?: "embedding" | "rerank") {
+  const providers = await getLlmProviderConfigs();
   const registered = getModelConfig(model);
-  if (!registered || SELF_HOSTED_PROVIDERS.some((name) => name === registered.provider)) {
-    return undefined;
-  }
-  const provider = (await getLlmProviderConfigs()).find((entry) => entry.name === registered.provider);
-  if (!provider) {
-    return undefined;
-  }
-  if (provider.auth === "sigv4") {
-    throw new Error(`Provider "${provider.name}" does not support OpenAI-compatible retrieval authentication`);
-  }
-  return resolveProviderTarget(model, [provider], provider);
+  if (!registered || (type && !registered.capabilities[type])) throw new Error(`Select a registered ${type ?? "provider"} model`);
+  const target = resolveProviderTarget(model, providers);
+  if (target.auth !== "bearer") throw new Error("This model type requires an API-key provider");
+  return target;
 }
 
 export async function getEmbeddingTarget(model: string): Promise<{ baseUrl: string; apiKey: string; model: string }> {
-  return await getRetrievalProviderTarget(model)
-    ?? { ...await getEmbeddingChannelConfig(), model: wireModelId(model) };
+  return selectedTarget(model, "embedding");
 }
-
-export async function getRerankerTarget(model: string): Promise<{ baseUrl: string; apiKey?: string; model: string }> {
-  const provider = await getRetrievalProviderTarget(model);
-  if (provider) {
-    return provider;
-  }
-  const reranker = config.reranker;
-  if (!reranker) {
-    throw new Error("The reranker endpoint is not configured");
-  }
-  return { ...reranker, model: wireModelId(model) };
+export async function getRerankerTarget(model: string): Promise<{ baseUrl: string; apiKey: string; model: string }> {
+  return selectedTarget(model, "rerank");
 }
 
 /** ASR requires an explicit channel; never fall through to an unrelated text provider. */
 export async function getTranscriptionTarget(model: string): Promise<TranscriptionConfig & { segmentSeconds: number }> {
+  await getLlmProviderConfigs();
   const registered = getModelConfig(model);
   if (!registered?.capabilities.transcription) throw new Error("The selected model is not a registered transcription model");
   const settings = config.transcription;
-  let target: { baseUrl: string; apiKey?: string; model: string };
-  if (settings.baseUrl) {
-    target = { baseUrl: settings.baseUrl, apiKey: settings.apiKey, model: wireModelId(model) };
-  } else {
-    const provider = (await getLlmProviderConfigs()).find((entry) => entry.name === registered.provider);
-    if (!provider || provider.auth === "sigv4") throw new Error("An OpenAI-compatible transcription channel is not configured");
-    target = resolveProviderTarget(model, [provider], provider);
-  }
+  const target = await selectedTarget(model);
   return { baseUrl: target.baseUrl, apiKey: target.apiKey, id: model, wireId: target.model,
     maxInputBytes: settings.maxInputBytes, responseFormat: settings.responseFormat,
     ...(settings.chunkingStrategy ? { chunkingStrategy: settings.chunkingStrategy } : {}),
@@ -211,14 +200,13 @@ export async function getEmbeddingModelSelection(): Promise<ModelSelection> {
   if (stored !== undefined) {
     return { model: stored, source: "override" };
   }
-  const fromEnv = optionalEnv(process.env.EMBEDDING_MODEL);
-  return fromEnv
-    ? { model: fromEnv, source: "env" }
-    : { model: config.embeddingModel, source: "default" };
+  return { model: "", source: "default" };
 }
 
 export async function getEmbeddingModel(): Promise<string> {
-  return (await getEmbeddingModelSelection()).model;
+  const model = (await getEmbeddingModelSelection()).model;
+  if (!model) throw new Error("Select an embedding model in model usage settings");
+  return model;
 }
 
 export async function getRerankerModelSelection(): Promise<ModelSelection | undefined> {
@@ -226,8 +214,7 @@ export async function getRerankerModelSelection(): Promise<ModelSelection | unde
   if (stored !== undefined) {
     return { model: stored, source: "override" };
   }
-  const fromEnv = optionalEnv(process.env.RERANKER_MODEL);
-  return fromEnv ? { model: fromEnv, source: "env" } : undefined;
+  return undefined;
 }
 
 export async function getRerankerModel(): Promise<string> {
@@ -260,6 +247,7 @@ export async function getLlmProviderConfigs(): Promise<ProviderChannelConfig[]> 
   if (stored !== undefined) {
     return stored.map((provider) => ({
       name: provider.name,
+      ...(provider.kind ? { kind: provider.kind } : {}),
       baseUrl: provider.baseUrl,
       // A `sigv4` row stores an empty key, which is not ciphertext — decrypting
       // it would be asking the cipher to answer a question it was never given.
@@ -314,25 +302,6 @@ export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {
 }
 
 /**
- * The hidden-model denylist; `undefined` means no restriction. Read at
- * selection time only (the /api/models list) — the run bracket never sees it,
- * so an Agent already holding a hidden model keeps running.
- */
-export async function getHiddenModels(): Promise<string[] | undefined> {
-  return (await loadSettings())?.hiddenModels;
-}
-
-/**
- * The deployment's self-hosted model declarations, as stored; `[]` when none.
- * DB-only — there is no env fallback, because the deployment is the publisher
- * of these and a declaration is data, not configuration. Read by the catalog
- * refresher (boot and every tick) and installed into the registry overlay.
- */
-export async function getSelfHostedModels(): Promise<NonNullable<AppSettings["selfHostedModels"]>> {
-  return (await loadSettings())?.selfHostedModels ?? [];
-}
-
-/**
  * Whether a run may execute a model the registry cannot price. Injected into
  * the run bracket rather than read there — `application` may not import this
  * module. The parsing is the domain's, one layer below both of us.
@@ -351,8 +320,8 @@ export async function getWorkspaceRuntimeConfig(kind: WorkspaceRuntime) {
   const channels = await getLlmProviderConfigs();
   const channel = model ? workspaceModelChannel(model, channels) : undefined;
   if (!model || !channel || !workspaceRuntimeModelCompatible(kind, model)) return undefined;
-  const target = resolveProviderTarget(model.id, channels, { baseUrl: "", apiKey: "" });
-  return withWorkspaceModelChannel(kind, { model: target.model }, channel);
+  const target = resolveProviderTarget(model.id, channels);
+  return withWorkspaceModelChannel(kind, { model: target.model }, { ...target, name: target.providerName ?? channel.name });
 }
 
 export function getWorkspaceGitHubConfig() {

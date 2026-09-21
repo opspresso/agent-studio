@@ -11,7 +11,7 @@ await new Promise((resolve) => unavailableDatabase.listen(0, "127.0.0.1", resolv
 const { port } = unavailableDatabase.address();
 const child = spawn(process.execPath, [join(process.cwd(), "build/audio-worker.cjs")], {
   env: {
-    NODE_ENV: "production", STAGE: "local", MODELS_CATALOG_URL: "none",
+    NODE_ENV: "production", STAGE: "local",
     DATABASE_URL: `postgres://test:test@127.0.0.1:${port}/audio_worker_test`,
     S3_BUCKET_NAME: "audio-worker-check", S3_ENDPOINT: `http://127.0.0.1:${port}`,
     LLM_BASE_URL: `http://127.0.0.1:${port}/v1`, LLM_API_KEY: "test",

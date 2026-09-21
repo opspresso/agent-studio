@@ -38,6 +38,7 @@ import { tierAtLeast, tierMayCreateProjects, type MemberTier } from "@/domain/me
 import { formatDate } from "@/shared/date";
 import { PROJECT_TYPE_COLOR } from "./badgeColors";
 import { OwnerLine } from "./OwnerLine";
+import { PageHeader } from "./PageHeader";
 import { Dashboard } from "./Dashboard";
 import classes from "./Overview.module.css";
 
@@ -186,16 +187,7 @@ export function Overview({
 
   return (
     <Stack gap={32}>
-      <Group justify="space-between" align="flex-end" gap="md" wrap="wrap">
-        <div>
-          <Title order={1} fz={{ base: 26, md: 30 }} lts="-0.035em">
-            {firstName ? t("overview.welcome", { name: firstName }) : t("overview.welcomeAnon")}
-          </Title>
-          <Text c="dimmed" mt={6} maw={620}>
-            {t("overview.lede")}
-          </Text>
-        </div>
-        <Group gap="xs" wrap="wrap">
+      <PageHeader title={firstName ? t("overview.welcome", { name: firstName }) : t("overview.welcomeAnon")} description={t("overview.lede")} Icon={IconSparkles}>
           <Button component={Link} href={canCreateProjects ? "/projects?create=1" : "/projects"} leftSection={canCreateProjects ? <IconPlus size={16} /> : <IconFolder size={16} />}>
             {t(canCreateProjects ? "overview.newProject" : "overview.allProjects")}
           </Button>
@@ -207,8 +199,7 @@ export function Overview({
           >
             {t("overview.newChat")}
           </Button>
-        </Group>
-      </Group>
+      </PageHeader>
 
       {isNewWorkspace ? (
         <GetStarted showCatalogs={showCatalogs} canCreateProjects={canCreateProjects} />

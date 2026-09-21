@@ -1,5 +1,8 @@
 "use client";
 
+import { SecretInput } from "@/app/_components/SecretInput";
+import { PageHeader } from "@/app/_components/PageHeader";
+import { IconTool } from "@tabler/icons-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -37,7 +40,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
   NumberInput,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
@@ -263,13 +265,8 @@ export default function McpDetailPage() {
       {confirmModal}
       <BackLink href="/tools" label={t("nav.tools")} />
 
-      <Group justify="space-between" align="flex-start" gap="md">
-        <div>
-          {/* The same badges the list shows; the detail page had none. */}
-          <Group gap="xs" wrap="wrap">
-            <Title order={1} fz="h2">
-              {server.name}
-            </Title>
+      <PageHeader title={server.name} Icon={IconTool}
+        badges={<>
             {plugin && (
               <Badge
                 color={PLUGIN_COLOR}
@@ -284,7 +281,8 @@ export default function McpDetailPage() {
               <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>
             )}
             <CredentialBadges server={server} />
-          </Group>
+          </>}
+        details={<>
           <Text fz="xs" c="dimmed" mt={4}>
             {server.url}
           </Text>
@@ -338,7 +336,7 @@ export default function McpDetailPage() {
               )}
             </Group>
           )}
-        </div>
+        </>}>
         {!editing && viewer?.isAdmin && (
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" onClick={() => setEditing(true)}>
@@ -353,7 +351,7 @@ export default function McpDetailPage() {
             )}
           </Group>
         )}
-      </Group>
+      </PageHeader>
 
       {error && (
         <Alert color="red" variant="light">
@@ -527,11 +525,13 @@ function OAuthSection({
   const [choices, setChoices] = useState<string[] | null>(null);
   const [clientId, setClientId] = useState(server.auth?.clientId ?? "");
   const [clientSecret, setClientSecret] = useState(server.auth?.clientSecret ?? "");
+  const [storedClientSecret, setStoredClientSecret] = useState(server.auth?.clientSecret ?? "");
   const [redirectUri, setRedirectUri] = useState(server.auth?.redirectUri ?? defaultRedirectUri);
 
   useEffect(() => {
     setClientId(server.auth?.clientId ?? "");
     setClientSecret(server.auth?.clientSecret ?? "");
+    setStoredClientSecret(server.auth?.clientSecret ?? "");
     setRedirectUri(server.auth?.redirectUri ?? "");
     setClientSettingsLoaded(false);
     if (!editable || !server.auth) return;
@@ -540,6 +540,7 @@ function OAuthSection({
       if (cancelled) return;
       setClientId(settings.auth.clientId ?? "");
       setClientSecret(settings.auth.clientSecret ?? "");
+      setStoredClientSecret(settings.auth.clientSecret ?? "");
       setDefaultRedirectUri(settings.defaultRedirectUri);
       setRedirectUri(settings.auth.redirectUri ?? settings.defaultRedirectUri);
       setClientSettingsLoaded(true);
@@ -589,6 +590,7 @@ function OAuthSection({
       const saved = await saveMcpOAuthClient(server.name, { clientId, clientSecret, redirectUri });
       setClientId(saved.clientId ?? "");
       setClientSecret(saved.clientSecret ?? "");
+      setStoredClientSecret(saved.clientSecret ?? "");
       setRedirectUri(saved.redirectUri ?? defaultRedirectUri);
       onChanged();
     } catch (e) {
@@ -726,7 +728,7 @@ function OAuthSection({
               {t("mcpOAuth.sharedHint")}
             </Text>
             <TextInput label="Client ID" value={clientId} onChange={(event) => setClientId(event.currentTarget.value)} disabled={busy || !clientSettingsLoaded} />
-            <TextInput label="Client secret" type="password" autoComplete="new-password" value={clientSecret} onChange={(event) => setClientSecret(event.currentTarget.value)} styles={monoInput} disabled={busy || !clientSettingsLoaded} description={t("mcpOAuth.secretHint")} />
+            <SecretInput label="Client secret" value={clientSecret} storedValue={storedClientSecret} onChange={setClientSecret} disabled={busy || !clientSettingsLoaded} description={t("mcpOAuth.secretHint")} />
             <TextInput
               label="Redirect URI"
               value={redirectUri}

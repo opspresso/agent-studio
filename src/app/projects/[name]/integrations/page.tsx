@@ -1,8 +1,9 @@
 "use client";
 
+import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Alert, Stack, Text } from "@mantine/core";
+import { Alert, Stack } from "@mantine/core";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { getProject } from "../../lib/api";
 import { LoadingText } from "@/app/_components/PageState";
@@ -69,9 +70,7 @@ export default function IntegrationsPage() {
 
   return (
     <Stack gap="xl" maw={760}>
-      <Text fz="sm" c="dimmed">
-        {t("pint.lede")}
-      </Text>
+      <SectionHeading title={t("project.tab.integrations")} description={t("pint.lede")} />
       <TokenSection projectName={name} />
 
       <SlackSection projectName={name} />

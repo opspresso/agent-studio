@@ -16,7 +16,7 @@ backup, rollout, ticker는 각 배포 저장소에서 관리한다.
 ## 필요한 런타임
 
 - PostgreSQL 18 + pgvector. 앱이 부팅할 때 스키마를 적용하고 `vector` 확장을 만든다.
-- OpenAI 호환 LLM endpoint.
+- 관리자가 등록한 OpenAI 호환 LLM endpoint. 로그인 후 프로바이더와 모델을 등록할 수 있으므로 부팅에는 모델 연결이 필요하지 않다.
 - 32-byte base64 `AES_ENCRYPTION_KEY`.
 - S3 호환 object store는 선택이다. 없으면 artifact 영속화와 `File` 도구가 꺼진다.
   첨부 문서의 텍스트 추출은 계속되지만 원본 보관·재열기·편집은 할 수 없다.
@@ -65,7 +65,7 @@ Google도 필요하면 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 함께 �
 오디오 전사는 선택 기능이다. HTTP 앱과 같은 이미지의 `node build/audio-worker.cjs`를 별도 process로
 실행한다. 로컬 `.env.local`을 사용할 때는 `node --env-file=.env.local --import tsx scripts/audio-worker.ts`로 실행한다.
 환경변수가 이미 주입된 환경에서는 `pnpm worker:audio`를 사용한다. DB 초기화는 앱 또는 기존 migration 명령으로
-먼저 수행한다. worker는 카탈로그·self-hosted 선언을 주기적으로 갱신하고 작업과 원본 만료를 처리한다.
+먼저 수행한다. worker는 DB의 선택 모델·프로바이더 설정을 주기적으로 읽고 작업과 원본 만료를 처리한다.
 여러 파일은 DB 큐에 접수하며 프로젝트마다 한 건씩 순차 실행한다. `maxActive`는 대기·진행 작업을
 합친 접수 상한이고 `maxPerOccurrence`는 한 요청에서 접수할 수 있는 새 작업 수다.
 앱과 worker는 같은 큐 스키마 버전을 사용해야 한다. 큐 인덱스 변경을 포함한 업그레이드는 구버전
@@ -101,7 +101,7 @@ Agent 설정의 `parameters.audioProcessing=true`로 Agent 도구를 켠다. 저
 
 Workspace는 선택 기능이다. `sandbox/Dockerfile`로 별도 실행 이미지를 만들고, 아래처럼
 실행 이미지와 네트워크를 연결한다. Agent 설정에서 워크스페이스 도구를 켜고 프로젝트 전용 탭에서
-설정한다. 네이티브 Runtime 모델은 Models에서 선택한다. 일반 작업에는 저장소가 필요하지 않다.
+설정한다. 네이티브 Runtime 모델은 Settings → Models → 모델 사용 설정에서 선택한다. 일반 작업에는 저장소가 필요하지 않다.
 
 ```bash
 docker build -t agent-studio-workspace:local sandbox
@@ -215,8 +215,8 @@ Release workflow는 새 tag를 `argocd-env-demo`에 전달한다. Kubernetes man
 ## 폐쇄망
 
 부팅·로그인·런·콘솔은 public internet 없이 동작한다. 이미지는 외부에서 빌드해 사내 registry로
-mirror하고, 모델은 사내 OpenAI 호환 LLM·embedding·reranker endpoint를 사용한다. 모델 catalog는 `/models`에서 문서를
-업로드할 수 있고, plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
+mirror하고, 모델은 `/settings/providers`에서 사내 endpoint를 등록한 뒤 `/settings/models`에서
+조회하거나 직접 등록한다. Plugin은 `/plugins`에서 checkout archive를 업로드할 수 있다. 내부 URL과 MCP
 주소는 각각 `URL_FETCH_INTERNAL_HOST_SUFFIXES`, `MCP_INTERNAL_HOST_SUFFIXES`에 선언한다.
 
 문서 파서·생성기와 PDF용 한글 폰트는 앱 이미지에 포함된다. 별도 문서 MCP 서버나
@@ -246,6 +246,11 @@ v0.86 이전 DynamoDB 배포는 `scripts/import-dynamodb-export.ts`로 PostgreSQ
 위해 그 행을 교체한다. 실행 결과가 제거·교체 건수를 출력하므로 이관 뒤 반드시 확인하라.
 
 ## 업그레이드
+
+모델은 `items`의 설정 행에 저장된 등록 목록만 사용한다. 기존 카탈로그·self-hosted 선언은
+자동 이관하지 않으므로, 모델 등록이 없는 설치는 관리 화면에서 연결과 사용할 모델을 등록하고
+기존 Agent의 모델 ID 및 기본·Embedding·Rerank·Workspace 선택을 확인한다. 등록 전에는 해당
+모델 실행이 거부된다. 테이블을 직접 수정할 필요는 없으며 [모델 등록과 사용](CONFIGURATION.md#모델-등록과-사용)을 따른다.
 
 Version 기반 설치에서 Agent 현재 설정으로 전환할 때는 [Agent 설정 데이터 이전](AGENT-MIGRATION.md)을
 먼저 수행한다. 이 작업은 부팅 시 자동 실행되지 않으며, 원본 보관·템플릿 처리·MCP 헤더 재암호화와

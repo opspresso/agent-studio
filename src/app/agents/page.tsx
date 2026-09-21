@@ -35,7 +35,7 @@ import { LoadingText } from "@/app/_components/PageState";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid, CardList } from "@/app/_components/CardGrid";
 import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL, BADGE } from "@/app/_components/badgeColors";
-import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
@@ -81,13 +81,13 @@ export default function AgentsPage() {
 
   return (
     <Stack gap="lg">
-      <CatalogHeader
+      <PageHeader
         title={t("nav.agents")}
         description={t("agents.lede")}
         Icon={IconRobot}
       >
         {viewer?.isAdmin && <Button onClick={open}>{t("agents.register")}</Button>}
-      </CatalogHeader>
+      </PageHeader>
 
       <Alert color="blue" variant="light" title={t("capabilities.descriptionTitle")}>
         {t("agents.descriptionRole")}

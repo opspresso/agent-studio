@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyAgentMigration, loadMigrationModelRegistry, migrationProjectNames, planAgentMigration } from "../scripts/agent-configuration-migration";
-import snapshot from "@/domain/llm/catalog.json";
-import { loadModelCatalog, loadSelfHostedModels } from "@/domain/llm/models";
+import { snapshot, resetTestModels } from "./modelFixtures";
+import { modelType, type ModelConfig } from "@/domain/llm/models";
 import { agentMcpHeadersContext, versionMcpHeadersContext } from "@/domain/security/secretContext";
 import { keys } from "@/infrastructure/db/keys";
 import * as store from "@/infrastructure/db/store";
@@ -14,6 +14,9 @@ vi.mock("node:crypto", async original => ({
   ...(await original<typeof import("node:crypto")>()), randomBytes: (size: number) => Buffer.alloc(size, 17),
 }));
 const fake = store as unknown as ReturnType<typeof createFakeStore>;
+const registered = (model: ModelConfig) => ({ ...model, wireId: model.family, type: modelType(model) });
+const providers = [{ name: "openai", baseUrl: "https://example.test/v1", apiKey: "" }, { name: "selfhosted", baseUrl: "http://localhost:8000/v1", apiKey: "" }];
+const textModel = registered(snapshot.models.find(model => model.id === "openai/gpt-5-mini")!);
 const NOW = "2026-09-19T00:00:00.000Z";
 const project = (extra = {}) => ({ ...keys.project("demo"), entityType: "PROJECT", name: "demo", displayName: "Demo",
   GSI1PK: keys.typePartition("PROJECT"), GSI1SK: "demo", projectType: "agent", ownerEmail: "owner@example.test",
@@ -27,7 +30,7 @@ beforeEach(() => {
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 9).toString("base64"));
 });
 afterEach(() => {
-  loadSelfHostedModels([]); loadModelCatalog(snapshot, { maxDropFraction: 1 });
+  resetTestModels();
   vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks();
 });
 
@@ -36,7 +39,7 @@ describe("offline Agent configuration migration", () => {
     const network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network is unavailable"));
     const id = "selfhosted/migration-image";
     fake.seed([project({ projectType: "image" }), version("1", { model: id }), {
-      ...keys.settings(), selfHostedModels: [{ id, provider: "selfhosted", family: "migration-image", maker: "local",
+      ...keys.settings(), llmProviders: providers, registeredModels: [textModel, { id, provider: "selfhosted", wireId: "migration-image", type: "image",
         displayName: "Local image", pricing: { inputPer1M: 0, outputPer1M: 0 }, contextWindow: 0, maxTokens: 0,
         capabilities: { tools: false, structuredOutput: false, imageInput: true, imageGeneration: true, reasoning: false } }],
     }]);
@@ -50,13 +53,12 @@ describe("offline Agent configuration migration", () => {
     expect(network).not.toHaveBeenCalled();
   });
 
-  it("honors an operator's installed catalog even when it is older and smaller", async () => {
+  it("uses only the models the administrator selected", async () => {
     const image = snapshot.models.find(model => model.id === "openai/gpt-image-2")!;
     const text = snapshot.models.find(model => model.id === "openai/gpt-5-mini")!;
     const id = "openai/operator-image";
     fake.seed([project({ projectType: "image" }), version("1", { model: id }), {
-      ...keys.modelCatalog(), document: { ...snapshot, updatedAt: "2026-01-01T00:00:00.000Z",
-        models: [text, { ...image, id, family: "operator-image" }] }, uploadedAt: NOW,
+      ...keys.settings(), llmProviders: providers, registeredModels: [registered(text), registered({ ...image, id, family: "operator-image" })], updatedAt: NOW,
     }]);
     await loadMigrationModelRegistry();
     expect((await planAgentMigration("demo", { model: text.id })).status).toBe("ready");
@@ -65,7 +67,7 @@ describe("offline Agent configuration migration", () => {
   it("refuses a declared model without Agent tools instead of treating it as an unknown ID", async () => {
     const id = "selfhosted/migration-text";
     fake.seed([project({ projectType: "llm" }), version("1", { model: id }), {
-      ...keys.settings(), selfHostedModels: [{ id, provider: "selfhosted", family: "migration-text", maker: "local",
+      ...keys.settings(), llmProviders: providers, registeredModels: [{ id, provider: "selfhosted", wireId: "migration-text", type: "text",
         displayName: "Local text", pricing: { inputPer1M: 0, outputPer1M: 0 }, contextWindow: 32768, maxTokens: 8192,
         capabilities: { tools: false, structuredOutput: false, imageInput: false, reasoning: false } }],
     }]);
