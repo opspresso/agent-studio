@@ -4,6 +4,7 @@ import {
   MAX_DOCUMENT_SIZE_LABEL,
   SUPPORTED_DOCUMENT_TYPES,
 } from "@/domain/llm/documentLimits";
+import { readAttachmentDataUrl } from "./readAttachmentDataUrl";
 
 /** A document staged in a composer, before the turn is sent. */
 export interface DocumentAttachment {
@@ -55,19 +56,14 @@ export function isDocumentFile(file: File): boolean {
  * submit is what lets the composer explain the problem next to the file that
  * caused it.
  */
-export async function readDocumentAttachment(file: File): Promise<DocumentAttachment> {
+export async function readDocumentAttachment(file: File, signal?: AbortSignal): Promise<DocumentAttachment> {
   if (!isDocumentFile(file)) {
     throw new Error(`${file.name}: not a document this can read`);
   }
   if (file.size > MAX_DOCUMENT_BYTES) {
     throw new Error(`${file.name}: larger than ${MAX_DOCUMENT_SIZE_LABEL}`);
   }
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error(`${file.name}: could not be read`));
-    reader.readAsDataURL(file);
-  });
+  const dataUrl = await readAttachmentDataUrl(file, signal);
   return {
     b64: dataUrl.slice(dataUrl.indexOf(",") + 1),
     // The picker's type is what the browser guessed; the name travels with it so
