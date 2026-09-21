@@ -125,11 +125,10 @@ test("a cell says how far it spans, which is what makes the grid exact", () => {
     `<hp:tr>${cell('colSpan="1" rowSpan="1"', "a")}${cell('colSpan="1" rowSpan="1"', "b")}` +
     `${cell('colSpan="1" rowSpan="1"', "c")}</hp:tr></hp:tbl>`;
   const table = sectionXmlToBlocks(xml).find((block) => block.kind === "table");
-  if (table?.kind === "table") {
-    assert.equal(table.columns, 3);
-    assert.equal(table.rows[0]?.cells[0]?.colspan, 2);
-    assert.equal(table.merged, true);
-  }
+  assert.ok(table, "The merged table must be present");
+  assert.equal(table.columns, 3);
+  assert.equal(table.rows[0]?.cells[0]?.colspan, 2);
+  assert.equal(table.merged, true);
 });
 
 test("a picture leaves a mark saying it was there", () => {

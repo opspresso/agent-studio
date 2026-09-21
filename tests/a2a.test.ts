@@ -908,13 +908,11 @@ describe("ProjectA2aExecutor", () => {
     ]);
     const deps = executionDepsFixture(channel);
     // Metadata resolves, then the child's unreadable skill fails preparation.
-    deps.projects = withConfigurations(deps.projects, async () => configurationFixture({ projectName: "child", skillList: ["unreadable"] })) as typeof deps.projects;
-    (deps as { projects: unknown }).projects = {
-      get: async () => projectFixture({ name: "child", projectType: "agent" }),
-      list: () => Promise.reject(new Error("not used")),
-      put: () => Promise.reject(new Error("not used")),
-      delete: () => Promise.reject(new Error("not used")),
-    };
+    const describeSkills = vi.spyOn(deps.skills, "describe").mockRejectedValue(new Error("unreadable skill metadata"));
+    deps.projects = withConfigurations(
+      { ...deps.projects, get: async (name) => name === "child" ? projectFixture({ name: "child", projectType: "agent" }) : null },
+      async () => configurationFixture({ projectName: "child", skillList: ["unreadable"] }),
+    );
     const executor = new ProjectA2aExecutor(
       deps,
       projectFixture({ projectType: "agent" }),
@@ -924,6 +922,11 @@ describe("ProjectA2aExecutor", () => {
     const bus = new CollectingBus();
     await executor.execute(requestContext(userMessage("hi")), bus);
 
+    expect(describeSkills).toHaveBeenCalledExactlyOnceWith(["unreadable"]);
+    expect(channel.calls).toBe(2);
+    expect(channel.seenParams[1]?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "tool", content: expect.stringContaining("unreadable skill metadata") }),
+    ]));
     const last = bus.events.at(-1);
     expect(last?.kind).toBe("statusUpdate");
     expect(statusEvent(bus.events)?.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);

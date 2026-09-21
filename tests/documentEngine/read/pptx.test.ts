@@ -225,11 +225,10 @@ test("a cell that spans columns says so", () => {
     `<p:spTree><a:tbl><a:tr>${cell('gridSpan="2"', "2026년")}${cell('hMerge="1"', "")}` +
     `${cell("", "비고")}</a:tr><a:tr>${cell("", "a")}${cell("", "b")}${cell("", "c")}</a:tr></a:tbl></p:spTree>`;
   const table = slideXmlToBlocks(xml).find((block) => block.kind === "table");
-  if (table?.kind === "table") {
-    assert.equal(table.columns, 3);
-    assert.equal(table.rows[0]?.cells[0]?.colspan, 2);
-    assert.equal(table.merged, true);
-  }
+  assert.ok(table, "The merged table must be present");
+  assert.equal(table.columns, 3);
+  assert.equal(table.rows[0]?.cells[0]?.colspan, 2);
+  assert.equal(table.merged, true);
 });
 
 test("explicitly disabled merge flags do not discard table cells", () => {

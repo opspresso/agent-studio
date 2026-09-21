@@ -751,16 +751,29 @@ describe("runStore", () => {
   });
 
   it("asks the server to stop the run behind an entry", async () => {
-    const { urls } = stubFetch([
-      () => sse([{ runId: "run-1" }, { delta: { content: "…" } }], { close: true }),
-      () => Response.json({ cancelled: true }),
-      () => Response.json({}),
-    ]);
+    vi.useFakeTimers({ now: new Date("2026-09-21T00:00:00Z") });
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockRejectedValue(new Error("unexpected fetch"))
+      .mockResolvedValueOnce(sseOpen([{ runId: "run-1" }, { delta: { content: "…" } }]))
+      .mockResolvedValueOnce(Response.json({ cancelled: true }));
+    vi.stubGlobal("fetch", fetch);
     const store = fresh();
-    store.startTurn("c1", PENDING);
-    await settle();
-    store.cancelRun("c1");
-    await settle();
-    expect(urls).toContain("/api/chats/c1/runs/run-1");
+    try {
+      store.startTurn("c1", PENDING);
+      await settle();
+      expect(store.get("c1")?.status).toBe("streaming");
+      expect(fetch).toHaveBeenCalledExactlyOnceWith("/api/chats/c1/messages", expect.objectContaining({ method: "POST" }));
+
+      store.cancelRun("c1");
+      await settle();
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenNthCalledWith(2, "/api/chats/c1/runs/run-1", { method: "DELETE" });
+      // The server's acknowledgement does not end the reply's open stream.
+      expect(store.get("c1")?.status).toBe("streaming");
+      expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+    } finally {
+      store.abort("c1");
+    }
   });
 });

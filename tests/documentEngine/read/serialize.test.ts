@@ -81,9 +81,8 @@ test("a spanning cell keeps its column and leaves the rest empty", () => {
   ]);
   assert.equal(text.split("\n")[0], "| 2026년 |  | 비고 |");
   const [block] = parseMarkdown(text).blocks;
-  if (block?.kind === "table") {
-    assert.deepEqual(block.rows.map((row) => row.map(plainTextOf)), [["a", "b", "c"]]);
-  }
+  assert.ok(block?.kind === "table", text);
+  assert.deepEqual(block.rows.map((row) => row.map(plainTextOf)), [["a", "b", "c"]]);
 });
 
 test("a cell that spans rows leaves the row below it empty in that column", () => {
@@ -225,9 +224,8 @@ test("an alt text that holds a bracket does not become a link to somewhere else"
 test("a target that holds a bracket or a space is still the target", () => {
   const { text } = write([{ kind: "image", alt: "x", target: "media/a (1).png" }]);
   const [block] = parseMarkdown(text).blocks;
-  if (block?.kind === "paragraph") {
-    assert.equal(block.runs[0]?.href, "media/a (1).png", text);
-  }
+  assert.ok(block?.kind === "paragraph", text);
+  assert.equal(block.runs[0]?.href, "media/a (1).png", text);
 });
 
 test("a break's name is one line, because a heading is", () => {
