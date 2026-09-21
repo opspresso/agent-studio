@@ -89,7 +89,8 @@ pnpm tsx --env-file=.env.local scripts/dev-session.ts
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
-모의 모델은 프로바이더 주소를 mock 서버로 지정하고 조회·등록한 뒤 사용한다. 개발 세션 스크립트와 앱의
+모의 모델은 프로바이더 주소를 `http://127.0.0.1:8002/v1`로 지정하고 조회되는 `mock-text`를 등록한 뒤 사용한다.
+이 모델은 텍스트와 Skill 도구 호출용이며 이미지·추론·구조화 출력을 지원하지 않는다. 개발 세션 스크립트와 앱의
 `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`을 일치시킨다. 출력된 쿠키는 로컬
 검증에만 사용하고 코드·로그·PR에 남기지 않는다.
 

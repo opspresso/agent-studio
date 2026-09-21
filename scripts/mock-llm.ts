@@ -64,6 +64,15 @@ function longAnswer(targetChars: number): string {
 }
 
 const server = createServer((req, res) => {
+  if (req.method === "GET" && req.url?.endsWith("/models")) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ object: "list", data: [{
+      id: "mock-text", object: "model", owned_by: "agent-studio", type: "text",
+      context_length: 128000, max_tokens: 4000,
+      capabilities: { tools: true, structuredOutput: false, imageInput: false, reasoning: false },
+    }] }));
+    return;
+  }
   let raw = "";
   req.on("data", (chunk) => (raw += chunk));
   req.on("end", async () => {
