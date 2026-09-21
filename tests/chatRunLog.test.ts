@@ -342,6 +342,44 @@ describe("teeToRunLog", () => {
     }
   });
 
+  it.each([false, true])("flushes the final frames after an in-flight append (failure=%s)", async (failFirstWrite) => {
+    vi.useFakeTimers();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { deps, appended, frames, calls, messages } = recordingDeps();
+      const gate = Promise.withResolvers<void>();
+      const append = deps.runLog.append;
+      let first = true;
+      deps.runLog.append = async (chatId, runId, entries) => {
+        if (first) {
+          first = false;
+          await gate.promise;
+          if (failFirstWrite) throw new Error("first append failed");
+        }
+        await append(chatId, runId, entries);
+      };
+      const chunks: EngineChunk[] = [
+        { delta: { content: "before" } },
+        { delta: { content: " after" } },
+        { done: true },
+      ];
+      const draining = run(deps, chunks, { leaveAfter: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(messages.at(-1)?.content).toBe("before after");
+      expect(calls).not.toContain("chats.releaseRun");
+
+      gate.resolve();
+      await draining;
+      expect(frames()).toEqual(failFirstWrite ? chunks.slice(1) : chunks);
+      expect(appended.map((entry) => entry.seq)).toEqual(failFirstWrite ? [1, 2] : [0, 1, 2]);
+      expect(calls.slice(-2)).toEqual(["runLog.terminal", "chats.releaseRun"]);
+      expect(appended.at(-1)?.terminal).toBe(true);
+    } finally {
+      consoleError.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   /**
    * DynamoDB counts bytes; `String.length` counts UTF-16 units, and
    * `JSON.stringify` leaves non-ASCII alone. Measured the wrong way a Korean run
