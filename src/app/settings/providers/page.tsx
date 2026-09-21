@@ -1,15 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Group, Loader, Modal, PasswordInput, Select, Stack, Table, Text, TextInput } from "@mantine/core";
-import { IconPlug } from "@tabler/icons-react";
-import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { Alert, Button, Group, Loader, Modal, PasswordInput, Select, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { useT } from "@/app/_i18n/provider";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { SUPPORTED_PROVIDERS, type SupportedProvider } from "@/domain/llm/models";
 import type { LlmProviderInput, SettingsView } from "@/application/settings/settingsUseCases";
-import { ModelSettingsNav } from "../ModelSettingsNav";
 
 const empty = (): LlmProviderInput => ({ name: "", kind: "openai", baseUrl: "", apiKey: "", auth: "bearer" });
 
@@ -44,10 +41,9 @@ export default function ProvidersPage() {
   }
 
   return <Stack gap="lg">
-    <CatalogHeader title={t("modelAdmin.providers")} description={t("modelAdmin.providerHint")} Icon={IconPlug}>
+    <Group justify="space-between" align="flex-start"><div><Title order={2} size="h3">{t("modelAdmin.providers")}</Title><Text c="dimmed" size="sm" mt={4}>{t("modelAdmin.providerHint")}</Text></div>
       <Button disabled={!view || busy} onClick={() => { setForm(empty()); setEditing(""); setError(undefined); }}>{t("modelAdmin.addProvider")}</Button>
-    </CatalogHeader>
-    <ModelSettingsNav />
+    </Group>
     {confirmModal}
     {error && editing === null && <Alert color="red">{error}</Alert>}
     {!view && !error && <Loader />}
@@ -65,7 +61,7 @@ export default function ProvidersPage() {
         {error && <Alert color="red">{error}</Alert>}
         <TextInput label={t("modelAdmin.name")} value={form.name} disabled={!!editing || busy} required onChange={event => setForm({ ...form, name: event.currentTarget.value })} />
         <Select label={t("modelAdmin.kind")} data={[...SUPPORTED_PROVIDERS]} value={form.kind} disabled={busy} allowDeselect={false} onChange={kind => { if (kind) setForm({ ...form, kind: kind as SupportedProvider }); }} />
-        <TextInput label={t("modelAdmin.url")} placeholder="https://api.example.com/v1" value={form.baseUrl} required disabled={busy} onChange={event => setForm({ ...form, baseUrl: event.currentTarget.value })} />
+        <TextInput type="url" label={t("modelAdmin.url")} placeholder="https://api.example.com/v1" value={form.baseUrl} required disabled={busy} onChange={event => setForm({ ...form, baseUrl: event.currentTarget.value })} />
         <PasswordInput label={t("modelAdmin.key")} description={t("modelAdmin.keyHint")} value={form.apiKey} disabled={busy} autoComplete="new-password" onChange={event => setForm({ ...form, apiKey: event.currentTarget.value })} />
         <Group justify="flex-end"><Button variant="default" disabled={busy} onClick={() => setEditing(null)}>{t("common.cancel")}</Button>
           <Button loading={busy} disabled={!view || !form.name.trim() || !form.baseUrl.trim()} onClick={() => {

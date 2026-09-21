@@ -1586,6 +1586,9 @@ Handoff·MCP listing·Guardrail span을 저장한다. `spanId`, `parentSpanId?`,
 
 ## Models
 
+`/models` 화면은 선택·등록된 모델의 목록과 검색을 제공한다. 등록·수정·삭제·상태 확인과
+모델 사용 설정은 Settings → Models에서 관리한다.
+
 모델 등록·선택·기본값·상태 검사는 admin 전용이며 목록은 member부터 읽는다.
 `GET /api/models`는 로그인한 사용자에게 등록된 실행 모델(Text·Image·Decisions)을 제공한다.
 연결이 없는 모델은 제공하지 않으며 기본 모델을 먼저 정렬한다. 즐겨찾기는 사용자별이다.

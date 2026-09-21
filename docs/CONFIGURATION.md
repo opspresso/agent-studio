@@ -16,7 +16,7 @@ Agent Studio 가 환경에서 읽는 모든 값, 그리고 코드에 고정돼 �
 SETTINGS#app 행의 override (데이터베이스)   →   environment variable   →   built-in default
 ```
 
-표의 **runtime**은 admin의 `/settings`, **models**는 admin의 `/models` 선택을 통해 DB에서
+표의 **runtime**은 admin의 `/settings`, **models**는 admin의 Settings → Models 선택을 통해 DB에서
 덮어쓰는 값이다. **boot**는 시작 시 구성하는 갱신기 설정이고 **—**는 환경 전용이다.
 DB를 읽기 전 필요한 키·DB 주소·로그인 설정과 Sandbox 인프라는 재배포 설정으로 관리한다.
 
@@ -121,6 +121,15 @@ fail-open 이 될 수는 없다.
 | `TRUSTED_PROXY_CIDRS` | 비어 있음 | — | 이 배포 앞에 있는 리버스 프록시들의 IP/CIDR 범위, 쉼표 구분 (예: Caddy 와 ingress controller 처럼 두 홉이 `X-Forwarded-For` 에 덧붙일 때). Better Auth 는 rate limiting 의 키로 삼는 클라이언트 IP 를 알아내기 위해 체인 오른쪽에서 이 홉들을 벗겨 낸다. 비어 있으면 값이 하나뿐인 헤더만 신뢰하므로, 프록시 두 개 뒤에서는 모든 요청이 하나의 공유 버킷에 떨어진다. |
 | `ADMIN_EMAILS` | 비어 있음 | **runtime** | 쉼표 구분. 레지스트리·설정 변경 권한과 남이 소유한 프로젝트에 대한 쓰기 권한을 준다. 목록에 있는 멤버는 저장된 `admin` tier 로 승격되고 거기 고정된다. 목록에서 빼도 자동 강등은 없다. 비어 있으면 레지스트리·설정 변경에는 *제한 없음*, 프로젝트 오버라이드에는 *아무도 아님* 을 뜻한다. 두 질문이 서로 다른 술어로 답해지는 것은 의도적이다 ([SECURITY.md](SECURITY.md#인가-모델)). |
 
+## 설정 화면
+
+`/settings`는 General·Plugins·Models·Keys 탭으로 구성한다. General은 서비스 URL·Artifact
+접근 방식·관리자와 허용 도메인, Plugins는 저장소와 브랜치, Keys는 GitHub 토큰·공유 및
+클라이언트 A2A 키를 관리한다. Models에는 프로바이더 연결·모델 선택·사용 설정·등록 모델
+관리를 둔다. 프로바이더 키는 주소와 함께 Models의 연결 설정에서 관리한다.
+URL·목록·비밀값·선택값은 각각 주소 입력·태그 입력·비밀번호 입력·선택 컨트롤을 사용한다.
+저장은 현재 탭에서 변경한 필드만 전송하며 변경하지 않은 마스크나 다른 탭의 값은 전송하지 않는다.
+
 ## LLM 채널
 
 관리자는 `/settings/providers`에서 프로바이더의 이름·종류·API base URL·키를 등록한다.
@@ -144,7 +153,7 @@ Self-hosted는 키를 생략할 수 있다. 프로바이더 목록은 최대 50�
 1. `/settings/models`에서 등록한 프로바이더를 선택하고 **Model 조회**를 실행한다.
 2. 사용할 항목의 타입·한도·기능을 확인하고 저장한다. 직접 등록도 같은 검증을 거친다.
 3. `/settings/model-usage`에서 기본 모델, Workspace Runtime별 모델, 검색의 Embedding·Rerank를 선택한다.
-4. `/models`에서 선택된 목록을 검색·수정·삭제하고 프로바이더 목록에 모델이 있는지 확인한다.
+4. Settings → Models → 등록 모델 관리에서 수정·삭제·상태 확인을 수행한다. `/models`는 선택·등록된 모델의 조회와 검색만 제공한다.
 
 타입은 `text`, `image`, `transcription`, `embedding`, `rerank`, `decisions`다.
 `decisions`는 판단·분류용 텍스트 모델이며 Chat Completions 계약으로 실행한다.
@@ -274,7 +283,7 @@ endpoint 에 붙여 넣는다 ([design/teams.md](design/teams.md)).
 
 | 변수 | 기본값 | Runtime | 설명 |
 |---|---|---|---|
-| `A2A_API_KEY` | 미설정 | **runtime** | 인바운드 A2A JSON-RPC 를 위한 공유 키 (`X-A2A-Key`). 이 표면은 이 값이 설정되지 않고 **그리고** 이름이 붙은 클라이언트 키도 하나도 없을 때만 꺼진다 (`/settings` → Client keys). 값을 지어내지 말고 `/settings` 에서 발급하라. |
+| `A2A_API_KEY` | 미설정 | **runtime** | 인바운드 A2A JSON-RPC 를 위한 공유 키 (`X-A2A-Key`). 이 표면은 이 값이 설정되지 않고 **그리고** 이름이 붙은 클라이언트 키도 하나도 없을 때만 꺼진다 (Settings → Keys → 클라이언트 키). 값을 지어내지 말고 `/settings` 에서 발급하라. |
 
 Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 

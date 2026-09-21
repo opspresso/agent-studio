@@ -12,7 +12,7 @@ export function ModelSettingsNav() {
     ["/settings/providers", "modelAdmin.providers"],
     ["/settings/models", "modelAdmin.selection"],
     ["/settings/model-usage", "modelAdmin.usage"],
-    ["/models", "nav.models"],
+    ["/settings/models/registered", "settings.models.registered"],
   ] as const;
   return <Group gap="xs">{links.map(([href, label]) => <Button component={Link} href={href} key={href}
     variant={path === href ? "light" : "subtle"} aria-current={path === href ? "page" : undefined}>{t(label)}</Button>)}</Group>;

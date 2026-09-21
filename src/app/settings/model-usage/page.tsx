@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Loader, Select, Stack } from "@mantine/core";
-import { IconAdjustments } from "@tabler/icons-react";
-import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { Alert, Loader, Select, Stack, Text, Title } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { readJson, jsonHeaders } from "@/app/_lib/httpClient";
 import { ModelSelectionSection } from "@/app/models/ModelSelectionSection";
@@ -11,7 +9,6 @@ import { WorkspaceModelsSection } from "@/app/models/WorkspaceModelsSection";
 import type { ModelsCatalogResponse } from "@/app/api/models/catalog/route";
 import type { ModelRegistryResponse } from "@/app/api/models/registry/route";
 import type { DefaultModelResponse } from "@/app/api/models/default/route";
-import { ModelSettingsNav } from "../ModelSettingsNav";
 
 interface UsageView { catalog: ModelsCatalogResponse; registered: ModelRegistryResponse; selected: DefaultModelResponse }
 export default function ModelUsagePage() {
@@ -43,8 +40,7 @@ export default function ModelUsagePage() {
     finally { setBusy(false); }
   }
   return <Stack gap="lg">
-    <CatalogHeader title={t("modelAdmin.usage")} description={t("modelAdmin.usageHint")} Icon={IconAdjustments} />
-    <ModelSettingsNav />
+    <div><Title order={2} size="h3">{t("modelAdmin.usage")}</Title><Text c="dimmed" size="sm" mt={4}>{t("modelAdmin.usageHint")}</Text></div>
     {error && <Alert color="red">{error}</Alert>}
     {!view && !error && <Loader />}
     {view && <>

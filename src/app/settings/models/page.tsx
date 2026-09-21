@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button, Group, Loader, Modal, Pagination, Select, Stack, Table, Text, TextInput } from "@mantine/core";
-import { IconCpu } from "@tabler/icons-react";
-import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { Alert, Badge, Button, Group, Loader, Modal, Pagination, Select, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { readJson } from "@/app/_lib/httpClient";
 import { REGISTRY_MODEL_TYPES, type DiscoveredModel, type RegisteredModel } from "@/domain/llm/providerModels";
@@ -11,7 +9,6 @@ import type { SettingsView } from "@/application/settings/settingsUseCases";
 import type { ModelRegistryResponse } from "@/app/api/models/registry/route";
 import type { ModelDiscoveryResponse } from "@/app/api/models/discover/route";
 import { ModelRegistrationForm } from "@/app/models/ModelRegistrationForm";
-import { ModelSettingsNav } from "../ModelSettingsNav";
 
 export default function ModelSelectionPage() {
   const t = useT();
@@ -51,8 +48,7 @@ export default function ModelSelectionPage() {
   const selected = new Set(registered.filter(model => model.provider === provider).map(model => model.wireId));
   const totalPages = Math.max(1, Math.ceil(filtered.length / 30));
   return <Stack gap="lg">
-    <CatalogHeader title={t("modelAdmin.selection")} description={t("modelAdmin.selectionHint")} Icon={IconCpu} />
-    <ModelSettingsNav />
+    <div><Title order={2} size="h3">{t("modelAdmin.selection")}</Title><Text c="dimmed" size="sm" mt={4}>{t("modelAdmin.selectionHint")}</Text></div>
     {error && <Alert color="red">{error}</Alert>}
     {!providers && !error && <Loader />}
     {providers && !providers.length && <Text c="dimmed">{t("modelAdmin.emptyProviders")}</Text>}

@@ -103,9 +103,9 @@ export function A2aClientKeysSection() {
   async function revoke(keyName: string) {
     if (
       !(await confirm({
-        title: "Revoke client key",
-        message: `Revoke the client key "${keyName}"? Its runs stop authenticating immediately.`,
-        confirmLabel: "Revoke",
+        title: t("settings.revokeTitle"),
+        message: t("settings.revokeHint", { name: keyName }),
+        confirmLabel: t("settings.revokeKey"),
       }))
     ) {
       return;
@@ -127,16 +127,14 @@ export function A2aClientKeysSection() {
       {confirmModal}
       <Group gap="xs">
         <Text fz="sm" fw={500}>
-          Client keys
+          {t("settings.clientKeys")}
         </Text>
         <Badge variant="light" color={BADGE.neutral} radius="xl">
           {items.length}
         </Badge>
       </Group>
       <Text fz="xs" c="dimmed">
-        A client key works like the shared key but names its caller: runs are attributed to{" "}
-        <Code>a2a:&#123;name&#125;</Code>, the per-caller concurrency limit applies per client,
-        and revoking one client does not rotate everyone else.
+        {t("settings.clientKeysHint")}
       </Text>
       {error && (
         <Alert color="red" variant="light" p="sm">
@@ -149,7 +147,7 @@ export function A2aClientKeysSection() {
             <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{shown.key}</Code>
             <CopyButton text={shown.key} />
             <Button variant="default" size="compact-xs" onClick={() => setShown(null)}>
-              Hide
+              {t("settings.hideKey")}
             </Button>
           </Group>
           <Text fz="xs" mt={4}>
@@ -175,7 +173,7 @@ export function A2aClientKeysSection() {
                       onClick={() => reveal(item.name)}
                       disabled={busy}
                     >
-                      Reveal
+                      {t("settings.revealKey")}
                     </Button>
                     <Button
                       variant="default"
@@ -184,7 +182,7 @@ export function A2aClientKeysSection() {
                       onClick={() => revoke(item.name)}
                       disabled={busy}
                     >
-                      Revoke
+                      {t("settings.revokeKey")}
                     </Button>
                   </Group>
                 </Table.Td>
@@ -217,7 +215,7 @@ export function A2aClientKeysSection() {
           loading={busy}
           disabled={!toSlug(name)}
         >
-          Issue key
+          {t("settings.issueKey")}
         </Button>
       </Group>
     </Stack>
